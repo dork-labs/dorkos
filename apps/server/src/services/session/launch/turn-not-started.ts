@@ -102,8 +102,12 @@ export interface WatchedTurn {
  * `ok` with {@link TURN_NO_ANSWER} when it ended on an error with no agent output.
  *
  * @param source - The runtime's per-turn stream.
+ * @param onStarted - Called once at the first agent output, never for a synthetic turn start.
  */
-export function watchNotStarted(source: AsyncIterable<StreamEvent>): WatchedTurn {
+export function watchNotStarted(
+  source: AsyncIterable<StreamEvent>,
+  onStarted?: () => void
+): WatchedTurn {
   let reason: TurnRefusal | undefined;
   let sawError = false;
   let sawOutput = false;
@@ -111,7 +115,10 @@ export function watchNotStarted(source: AsyncIterable<StreamEvent>): WatchedTurn
     for await (const event of source) {
       reason ??= notStartedReason(event);
       if (event.type === 'error') sawError = true;
-      if (AGENT_OUTPUT.has(event.type)) sawOutput = true;
+      if (!sawOutput && AGENT_OUTPUT.has(event.type)) {
+        sawOutput = true;
+        onStarted?.();
+      }
       yield event;
     }
   }

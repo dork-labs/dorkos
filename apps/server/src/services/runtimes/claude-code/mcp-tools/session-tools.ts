@@ -43,6 +43,9 @@
  *
  * @module services/runtimes/claude-code/mcp-tools/session-tools
  */
+import { discardUnstartedSession, stampStartMessage } from './session-start-setup.js';
+import { marksForTurn } from '../../../core/turn-power/turn-marks.js';
+import { getSpinOffStartup } from '../../../session/chat-messages/startup/spin-off-startup.js';
 import { SessionCapacityError } from '@dorkos/shared/running-chats';
 import crypto from 'node:crypto';
 import path from 'node:path';
@@ -62,7 +65,6 @@ import { chatMarkdownLink, sessionPath } from '@dorkos/shared/session-link';
 import { START_WORK_LIMITS } from '@dorkos/shared/extension-decision-schemas';
 import type { EffortLevel, PermissionMode } from '@dorkos/shared/types';
 import { validateBoundaryOrDorkHome } from '../../../../lib/boundary.js';
-import { logError, logger } from '../../../../lib/logger.js';
 import { isInsideRoomsDir } from '../../../core/agent-identity/index.js';
 import {
   creditsModelRefusal,
@@ -311,22 +313,6 @@ function callerOf(
 }
 
 /**
- * Remove what a launch that never started left under its id. The id was minted
- * by this tool a moment ago, so nothing else can hold it; a failure to delete is
- * logged, never thrown over the refusal the caller is about to get.
- */
-async function discardUnstartedSession(sessionId: string): Promise<void> {
-  try {
-    await runtimeRegistry.discardSessionSettings(sessionId);
-  } catch (err) {
-    logger.warn('[session_start] could not remove the settings of a session that never started', {
-      sessionId,
-      ...logError(err),
-    });
-  }
-}
-
-/**
  * Handler factory for `session_start`.
  *
  * Every check runs before anything is written, in this order: the caller, the
@@ -484,6 +470,9 @@ export function createSessionStartHandler(
     });
     if (!claimed.ok) return refuse(claimed.message, 'START_LIMIT');
     const reservation = claimed.reservation;
+    const startup = getSpinOffStartup();
+    let startupId = sessionId;
+    if (parentChatId) startup?.watch(sessionId, agentPath, marksForTurn(markedCeiling));
     // What the pre-launch picker saves, saved the same way: an unbound settings
     // row the first send reads and the binding write fills around. Only the row:
     // no runtime holds an in-memory session for this id until the send. The
@@ -496,6 +485,7 @@ export function createSessionStartHandler(
         permissionMode: permission.mode,
       });
     } catch (err) {
+      startup?.forget(startupId);
       reservation?.cancel();
       throw err;
     }
@@ -505,19 +495,21 @@ export function createSessionStartHandler(
     // the app shows "From <agent> · <chat>". Only from a calling chat: the
     // external server has no chat to name.
     const messageId = crypto.randomUUID();
-    const chatMessages = getChatMessageService();
-    const stamped =
-      chatMessages && caller.chat?.sessionId
-        ? await chatMessages.beginStart(
-            { sessionId: caller.chat.sessionId, agentPath },
-            sessionId,
-            args.prompt,
-            messageId
-          )
-        : null;
-    const settleStamp = (canonical: string | null) => {
-      if (stamped) chatMessages?.settleStart(stamped.id, canonical);
-    };
+    let firstMessage: Awaited<ReturnType<typeof stampStartMessage>>;
+    try {
+      firstMessage = await stampStartMessage(
+        parentChatId ? { sessionId: parentChatId, agentPath } : null,
+        sessionId,
+        args.prompt,
+        messageId
+      );
+    } catch (err) {
+      startup?.forget(startupId);
+      reservation?.cancel();
+      await discardUnstartedSession(sessionId);
+      throw err;
+    }
+    const settleStamp = firstMessage.settle;
 
     // The chat's title: the agent's own, else one from its reason, never from
     // the brief (DOR-2824). Set once the launch is accepted; see below.
@@ -538,7 +530,7 @@ export function createSessionStartHandler(
         sessionId,
         messageId,
         request: {
-          content: stamped?.content ?? args.prompt,
+          content: firstMessage.content,
           cwd,
           runtime: runtimeType,
           ...(account ? { account: account.id } : {}),
@@ -574,12 +566,18 @@ export function createSessionStartHandler(
         // A session minted here is in no room.
         roomSessionPlace: undefined,
         countsTowardLaunchCap: true,
-        onSettled: () => {
+        onSettled: (outcome, refusal) => {
+          if (outcome === 'failed')
+            startup?.noteFailure(
+              startupId,
+              refusal ?? 'The runtime ended before its first turn started.'
+            );
           reservation?.settle();
           lastTitleTry?.();
         },
       });
     } catch (err) {
+      startup?.forget(startupId);
       reservation?.cancel();
       settleStamp(null);
       await discardUnstartedSession(sessionId);
@@ -587,6 +585,7 @@ export function createSessionStartHandler(
       throw err;
     }
     if (isSessionLaunchRefusal(result)) {
+      startup?.forget(startupId);
       reservation?.cancel();
       settleStamp(null);
       await discardUnstartedSession(sessionId);
@@ -599,6 +598,7 @@ export function createSessionStartHandler(
       );
     }
     if (!result.accepted) {
+      startup?.forget(startupId);
       reservation?.cancel();
       settleStamp(null);
       await discardUnstartedSession(sessionId);
@@ -606,6 +606,8 @@ export function createSessionStartHandler(
     }
 
     const canonicalId = result.canonicalId ?? sessionId;
+    startup?.rekey(sessionId, canonicalId);
+    startupId = canonicalId;
     // Under the id the chat settled on too; a later rename is carried by `aliasTurnLevel`.
     if (carriesWords && canonicalId !== sessionId) noteRoomTurnWords(canonicalId, true);
     settleStamp(canonicalId);

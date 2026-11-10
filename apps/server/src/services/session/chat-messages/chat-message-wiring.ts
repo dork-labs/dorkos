@@ -56,6 +56,8 @@ import { setChatMessageStore, type ChatMessageStore } from './chat-message-store
 import { stampHistory } from './chat-message-stamps.js';
 import { ChatReportBack, type RoomSeatReport } from './chat-report-back.js';
 import type { ChatReadDeps } from './chat-read.js';
+import { getSpinOffStartup } from './startup/spin-off-startup.js';
+import { wireSpinOffStartup } from './startup/wire-spin-off-startup.js';
 
 /** How far down a chat's chain of spin-offs a reader may follow. */
 const DESCENDANT_DEPTH = 8;
@@ -294,6 +296,7 @@ export function wireChatMessaging(deps: WireChatMessagingDeps): {
     mayRead: async (caller, target) => mayReadChat(deps.store, caller, target),
     maySeeTitle: async (caller, target) => maySeeChat(caller, target),
     history: chatHistoryOf,
+    startupFailure: (sessionId) => getSpinOffStartup()?.failureOf(sessionId) ?? null,
     status: (sessionId) => {
       const projector = peekProjector(sessionId);
       return projector
@@ -429,7 +432,10 @@ export function wireChatReportBack(
     service,
     store,
     reportTargetOf: (sessionId) => reportTargetOf(sessionId),
-    agentPathOf: (sessionId) => runtimeRegistry.getSessionAgentPath(sessionId),
+    agentPathOf: async (sessionId) =>
+      (await runtimeRegistry.getSessionAgentPath(sessionId).catch(() => null)) ??
+      getSpinOffStartup()?.agentPathOf(sessionId) ??
+      null,
     marksOfTurn: (sessionId) => marksOf(sessionId, undefined),
     holdsBackgroundWork: async (sessionId) => {
       const runtime = await runtimeRegistry.resolveForSession(sessionId);
@@ -439,12 +445,13 @@ export function wireChatReportBack(
     history: chatHistoryOf,
     toRoomSeat: (parentSessionId, report) => deliverToRoomSeat(parentSessionId, report),
   });
+  const stopStartup = wireSpinOffStartup(reportBack);
   // What each chat's open ask is about, kept from the interaction events so the
   // "needs the person" report can say it; a DorkOS capability hold has none.
   const askWhat = new Map<string, string>();
   const turnStarts = new Map<string, number>();
   const offTurn = onProjectorTurnBoundary((sessionId, kind) => {
-    if (kind !== 'turn_end') return;
+    if (kind !== 'turn_end' || getSpinOffStartup()?.isWatching(sessionId)) return;
     // Read NOW, in the boundary itself: a queued message starts the next turn
     // a moment later and would change both.
     const ended = peekProjector(sessionId)?.getStatus() ?? null;
@@ -484,6 +491,7 @@ export function wireChatReportBack(
       );
   });
   return () => {
+    stopStartup();
     offTurn();
     offAsk();
     offStatus();

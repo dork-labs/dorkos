@@ -9,7 +9,7 @@
  *
  * @module services/session/chat-messages/chat-read
  */
-import type { ChatMessageKind, ChatMessageSender } from '@dorkos/shared/chat-messages';
+import type { ChatState, ChatMessageKind, ChatMessageSender } from '@dorkos/shared/chat-messages';
 import type { HistoryMessage } from '@dorkos/shared/types';
 import type { SessionStatus } from '@dorkos/shared/session-stream';
 import { chatMarkdownLink } from '@dorkos/shared/session-link';
@@ -29,9 +29,7 @@ export const CHAT_READ_MIN_MAX_CHARS = 500;
 /** The largest budget a caller may ask for. */
 export const CHAT_READ_MAX_MAX_CHARS = 100_000;
 
-/** Where a chat is, in the words a reader needs. */
-export type ChatState =
-  'running' | 'needs-you' | 'done' | 'failed' | 'stopped' | 'paused-at-limit' | 'idle';
+export type { ChatState } from '@dorkos/shared/chat-messages';
 
 /** What `chat_read` takes. */
 export interface ChatReadInput {
@@ -83,6 +81,8 @@ export interface ChatReadResult {
     link: string;
     agent: string | null;
     state: ChatState;
+    /** Why the spin-off never opened its first turn, when its deadline passed. */
+    startupFailure?: string;
   };
   /** The messages, oldest first. */
   messages: ChatReadMessage[];
@@ -114,6 +114,8 @@ export interface ChatReadDeps {
   history: (sessionId: string) => Promise<HistoryMessage[]>;
   /** The chat's status, when a live projector holds one. */
   status: (sessionId: string) => { status: SessionStatus; needsYou: boolean } | null;
+  /** The reason a spin-off missed its first-turn deadline, if any. */
+  startupFailure?: (sessionId: string) => string | null;
   /** The chat's title and agent name. */
   describe: (sessionId: string) => Promise<{ title: string | null; agent: string | null }>;
   /** Message ids in the chat matching the words, best first. */
@@ -227,12 +229,14 @@ export async function readChat(
     );
   }
   const described = await deps.describe(input.chat);
-  const chat = {
+  const startupFailure = deps.startupFailure?.(input.chat);
+  const chat: ChatReadResult['chat'] = {
     id: input.chat,
     title: described.title,
     link: chatMarkdownLink(input.chat, described.title),
     agent: described.agent,
-    state: chatStateOf(deps.status(input.chat)),
+    state: startupFailure ? 'never-started' : chatStateOf(deps.status(input.chat)),
+    ...(startupFailure ? { startupFailure } : {}),
   };
   const sent = yourMessagesTo(deps.store, caller.sessionId, input.chat);
   const yours = sent.length > 0 ? { yourMessages: sent } : {};

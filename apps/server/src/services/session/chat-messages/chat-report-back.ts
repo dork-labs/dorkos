@@ -92,12 +92,14 @@ export const DEFER_MAX_MS = 15 * 60_000;
 export const DELIVERY_RETRY_MS: readonly number[] = [5_000, 30_000, 120_000, 600_000, 1_800_000];
 
 /** Why a report went. */
-export type ReportReason = 'finished' | 'failed' | 'stopped' | 'limit' | 'needs-you' | 'holding';
+export type ReportReason =
+  'finished' | 'failed' | 'stopped' | 'limit' | 'needs-you' | 'holding' | 'never-started';
 
 /** The status line each reason opens a report with. */
 const STATUS_LINE: Record<ReportReason, string> = {
   finished: 'Finished this turn.',
   failed: 'This turn failed.',
+  'never-started': 'Failed: never started.',
   stopped: 'This turn was stopped.',
   limit: 'Paused: the account this chat runs on hit its usage limit.',
   'needs-you': 'Waiting on the person to answer before it can go on.',
@@ -108,6 +110,7 @@ const STATUS_LINE: Record<ReportReason, string> = {
 const SUMMARY: Record<ReportReason, string> = {
   finished: 'Finished',
   failed: 'Failed',
+  'never-started': 'Failed: never started',
   stopped: 'Stopped',
   limit: 'Paused at a usage limit',
   'needs-you': 'Needs the person',
@@ -380,6 +383,24 @@ export class ChatReportBack {
     return reason;
   }
 
+  /** Report a startup deadline through the same chat/room delivery and retry path. */
+  async onNeverStarted(
+    sessionId: string,
+    why: string,
+    initialMarks: TurnMarks = NO_MARKS
+  ): Promise<void> {
+    const target = this.deps.reportTargetOf(sessionId);
+    if (target)
+      await this.report(
+        sessionId,
+        target,
+        'never-started',
+        mergeMarks(this.marksOfTurn(sessionId), initialMarks),
+        '',
+        why
+      );
+  }
+
   /** The marks the chat's latest turn carries. */
   private marksOfTurn(sessionId: string): TurnMarks {
     return this.deps.marksOfTurn?.(sessionId) ?? NO_MARKS;
@@ -562,7 +583,9 @@ export class ChatReportBack {
  *
  * @param status - The chat's live status, or null.
  */
-export function reasonOf(status: SessionStatus | null): Exclude<ReportReason, 'holding'> | null {
+export function reasonOf(
+  status: SessionStatus | null
+): Exclude<ReportReason, 'holding' | 'never-started'> | null {
   if (!status) return 'finished';
   if (status.limit) return 'limit';
   switch (status.lifecycle) {

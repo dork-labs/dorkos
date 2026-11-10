@@ -122,7 +122,7 @@ import { awaitDispatchDecision } from './launch/dispatch-decision.js';
 import { SESSIONS } from '../../config/constants.js';
 import { startSpan, SPAN, ATTR } from '../observability/index.js';
 import { logError, logger } from '../../lib/logger.js';
-import { watchNotStarted } from './launch/turn-not-started.js';
+import { watchSpinOffTurn } from './chat-messages/startup/spin-off-turn.js';
 import { tapEachEvent, warnOnRuntimeError } from './turn-stream/tap-each-event.js';
 import type {
   PrivateSessionMessageClaimResult,
@@ -1033,7 +1033,7 @@ export async function triggerTurn(opts: TriggerTurnOpts): Promise<TriggerTurnRes
     }
     // A runtime that refuses a turn before the agent sees it settles without a
     // throw, so the refusal is read off the stream (DOR-2994).
-    const watched = watchNotStarted(source);
+    const watched = watchSpinOffTurn(source, projector);
     const tapped = tapEachEvent(watched.stream, (event) => {
       if (event) warnOnRuntimeError(event, sessionId, deps.type);
       signalFirstEvent();

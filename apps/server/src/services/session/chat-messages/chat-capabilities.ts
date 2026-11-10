@@ -27,6 +27,7 @@ import {
   CHAT_SEND_TOOL,
   CHAT_STOP_TOOL,
   ChatDeliverySchema,
+  ChatStateSchema,
   ChatMessageKindSchema,
   ChatMessageSenderSchema,
   ChatMessageStatusSchema,
@@ -212,8 +213,9 @@ export const chatDomain: CapabilityDomain = {
       id: 'chat.read',
       title: 'Read another chat',
       description:
-        'Read a chat’s state (running, needs-you, done, failed, stopped, paused-at-limit, idle) ' +
-        'and its messages, so you never read transcript files. By default you get only what is ' +
+        'Read a chat’s state (running, needs-you, done, failed, stopped, paused-at-limit, idle, never-started). ' +
+        'chat.startupFailure says why a spin-off never started. ' +
+        'Read its messages, so you never read transcript files. By default you get only what is ' +
         'new since your last read (`since: "last-read"`), newest 10 at most. `last: n` reads the ' +
         'newest n instead; `since` also takes a message id or an ISO time. `include: "status"` ' +
         'is the cheapest check (no messages); `"tools"` adds one line per tool call. A long read ' +
@@ -270,15 +272,8 @@ export const chatDomain: CapabilityDomain = {
             title: z.string().nullable(),
             link: z.string(),
             agent: z.string().nullable(),
-            state: z.enum([
-              'running',
-              'needs-you',
-              'done',
-              'failed',
-              'stopped',
-              'paused-at-limit',
-              'idle',
-            ]),
+            state: ChatStateSchema,
+            startupFailure: z.string().optional(),
           }),
           messages: z.array(
             z.object({

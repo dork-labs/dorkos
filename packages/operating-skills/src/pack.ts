@@ -401,8 +401,10 @@ export interface OperatingSkill {
  *   and that the agent gets the ones turned on for it (DOR-3213). An agent seeded
  *   at 51 would not know where an unexplained server came from, or would offer
  *   to add one for every agent itself.
+ * - 53: working-with-spin-off-chats names never-started and the five-minute startup
+ *   report (DOR-3351). Agents seeded at 52 would treat a failed startup as idle.
  */
-export const OPERATING_SKILLS_VERSION = 52;
+export const OPERATING_SKILLS_VERSION = 53;
 
 /**
  * The canonical pack, umbrella skill first. Every entry is validated against the

@@ -5,6 +5,12 @@
  * `FakeAgentRuntime`: the refusal is an `error` + `done` pair, never a throw,
  * which is exactly the shape that used to read as a turn that ran.
  */
+import { ChatReportBack } from '../chat-messages/chat-report-back.js';
+import {
+  getSpinOffStartup,
+  SPIN_OFF_START_TIMEOUT_MS,
+} from '../chat-messages/startup/spin-off-startup.js';
+import { wireSpinOffStartup } from '../chat-messages/startup/wire-spin-off-startup.js';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -127,5 +133,75 @@ describe('a turn the runtime refused before the agent saw it', () => {
 
     expect(await send('hello')).toEqual(['ok', undefined]);
     expect(settled[0]).not.toHaveProperty('reason');
+  });
+});
+
+describe('spin-off first-turn deadline through the real dispatcher (DOR-3351)', () => {
+  let stop: () => void;
+  let report: ReturnType<typeof vi.fn>;
+  beforeEach(() => {
+    vi.useFakeTimers();
+    report = vi.fn().mockResolvedValue(undefined);
+    const reports = new ChatReportBack({
+      service: { send: report },
+      store: { listStopsOf: () => [], latestInterruptFrom: () => undefined },
+      reportTargetOf: () => ({ parentSessionId: 'starter' }),
+      agentPathOf: async () => home,
+      holdsBackgroundWork: async () => false,
+      statusOf: () => null,
+      history: async () => [],
+    });
+    stop = wireSpinOffStartup(reports);
+    getSpinOffStartup()!.watch(SESSION, home);
+  });
+  afterEach(() => {
+    stop();
+    vi.useRealTimers();
+  });
+
+  it.each(['refused', 'throws', 'empty'] as const)(
+    'reports a runtime that %s before producing any output',
+    async (mode) => {
+      runtime.withScenarios([
+        async function* (): AsyncGenerator<StreamEvent> {
+          if (mode === 'refused') yield* turnNotStarted(SESSION, 'warm-ceiling', REFUSAL);
+          if (mode === 'throws') throw new Error('The runtime failed before reading the message.');
+        },
+      ]);
+      await send('Start the made-up task');
+      await vi.advanceTimersByTimeAsync(SPIN_OFF_START_TIMEOUT_MS - 1);
+      expect(report).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(1);
+      expect(report).toHaveBeenCalledOnce();
+      const reason =
+        mode === 'refused'
+          ? REFUSAL
+          : mode === 'throws'
+            ? 'The runtime failed before reading the message.'
+            : 'The runtime did not start its first turn within five minutes.';
+      expect(report).toHaveBeenCalledWith(
+        expect.objectContaining({ sessionId: SESSION }),
+        expect.objectContaining({
+          to: 'starter',
+          summary: 'Failed: never started',
+          message: 'Failed: never started.\n\n' + reason,
+        }),
+        'report'
+      );
+      expect(getSpinOffStartup()!.failureOf(SESSION)).toBe(reason);
+    }
+  );
+
+  it('does not report a runtime that answers normally and then goes idle', async () => {
+    runtime.withScenarios([
+      async function* (): AsyncGenerator<StreamEvent> {
+        yield { type: 'text_delta', data: { text: 'Done.' } };
+        yield { type: 'done', data: {} };
+      },
+    ]);
+    await send('Start the made-up task');
+    await vi.advanceTimersByTimeAsync(SPIN_OFF_START_TIMEOUT_MS);
+    expect(report).not.toHaveBeenCalled();
+    expect(getSpinOffStartup()!.failureOf(SESSION)).toBeNull();
   });
 });

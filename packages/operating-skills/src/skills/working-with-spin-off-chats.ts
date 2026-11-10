@@ -79,12 +79,15 @@ So after you start one, end your turn. Do not poll it.
 chats you started, and chats you have messaged or that messaged you.
 
 1. Start cheap: \`chat_read\` with \`include: "status"\`. You get its state
-   (running, needs-you, done, failed, stopped, paused-at-limit, idle) and no
+   (running, needs-you, done, failed, stopped, paused-at-limit, idle, never-started) and no
    messages.
 2. Then read what is new: \`chat_read\` with \`since: "last-read"\`, the default.
 3. Only when needed: \`last\` for the newest few, \`query\` to find words,
    \`include: "tools"\` for one line per tool call, \`cursor\` to continue a
    long read.
+
+A spin-off that misses its first turn reports back after five minutes.
+Its state is \`never-started\`; \`chat.startupFailure\` says why.
 
 Never read transcript files to check on a chat.
 
