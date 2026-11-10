@@ -231,3 +231,25 @@ it.each(['forget', 'delete'] as const)(
     }
   }
 );
+
+// DOR-3207: `/pause` skips the person check on purpose, because a stop should be
+// easy to press. That is safe only while it stays a stop: it may never end or
+// answer a handoff, move the page or tab, open or close anything, or lift a pause.
+it('POST /pause is stop-only: it reaches the stop and nothing else', async () => {
+  const response = await request(server).post('/api/local-browser/pause').set('Host', 'localhost');
+  expect(response.status).toBe(200);
+  expect(spies.pause).toHaveBeenCalledOnce();
+  for (const [name, spy] of Object.entries(spies))
+    if (name !== 'pause') expect(spy, name).not.toHaveBeenCalled();
+});
+
+it('POST /pause ignores a body that names a handoff, a page or a tab', async () => {
+  const response = await request(server)
+    .post('/api/local-browser/pause')
+    .set('Host', 'localhost')
+    .send({ handoffId: 'h1', url: 'https://example.test/', tabId: 'tab-1', resume: true });
+  expect(response.status).toBe(200);
+  expect(spies.pause).toHaveBeenCalledWith();
+  for (const [name, spy] of Object.entries(spies))
+    if (name !== 'pause') expect(spy, name).not.toHaveBeenCalled();
+});
