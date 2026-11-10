@@ -85,6 +85,15 @@ describe('a scheduled run with no agent', () => {
     ['a planted CLAUDE.md', () => fs.writeFileSync(path.join(runs, 'CLAUDE.md'), '# planted')],
     ['a planted .mcp.json', () => fs.writeFileSync(path.join(runs, '.mcp.json'), '{}')],
     ['a symlink', () => fs.symlinkSync(home, path.join(runs, 'link'))],
+    [
+      'a planted .claude/CLAUDE.md folder',
+      () => {
+        fs.mkdirSync(path.join(runs, '.claude'));
+        fs.writeFileSync(path.join(runs, '.claude', 'CLAUDE.md'), '# planted');
+      },
+    ],
+    ['a planted .git folder', () => fs.mkdirSync(path.join(runs, '.git'))],
+    ['a folder with a run-like but wrong name', () => fs.mkdirSync(path.join(runs, 'run-x'))],
   ])('is refused when the scheduled-runs folder holds %s', (_name, plant) => {
     fs.mkdirSync(runs, { mode: 0o700 });
     plant();

@@ -24,6 +24,9 @@ import { protectedPathRoots } from '../../runtimes/shared/policy/protected-path-
 /** Where agent-less runs get their own folders, inside the data folder. */
 export const SCHEDULED_RUNS_DIR = 'scheduled-runs';
 
+/** The name `mkdtemp` gives a run folder: `run-` and six letters or digits. */
+const RUN_FOLDER_NAME = /^run-[A-Za-z0-9]{6}$/;
+
 /** The sentence a run records when that folder holds anything but run folders. */
 export const SCHEDULED_RUNS_UNSAFE_MESSAGE =
   "The scheduled-runs folder holds something it shouldn't, so this run didn't start.";
@@ -118,7 +121,10 @@ function freshRunFolder(): string {
     throw new Error(SCHEDULED_RUNS_UNSAFE_MESSAGE);
   }
   for (const entry of fs.readdirSync(parent, { withFileTypes: true })) {
-    if (!entry.isDirectory()) throw new Error(SCHEDULED_RUNS_UNSAFE_MESSAGE);
+    // Only folders this guard made: a planted `.claude/` or `.git/` is a folder too.
+    if (!entry.isDirectory() || !RUN_FOLDER_NAME.test(entry.name)) {
+      throw new Error(SCHEDULED_RUNS_UNSAFE_MESSAGE);
+    }
   }
   // mkdtemp makes the folder with mode 0700, under a name nobody chose.
   return fs.mkdtempSync(path.join(parent, 'run-'));

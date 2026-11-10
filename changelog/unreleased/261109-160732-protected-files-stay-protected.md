@@ -6,6 +6,7 @@ covers:
   - 'fix(server): a scheduled run never stands in the home folder or the data folder (DOR-4060)'
   - "refactor(server): session_start's early protected-folder check moves unchanged into its own file (DOR-4060)"
   - 'fix(server): a scheduled run with no agent runs in a fresh, private folder of its own (DOR-4060)'
+  - 'fix(server): the scheduled-runs folder may hold only run folders, so a planted folder refuses the run (DOR-4060)'
 ---
 
 ### Fixed
