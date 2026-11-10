@@ -3,7 +3,7 @@ import { defineConfig } from '@playwright/test';
 /** Self-contained real-app security proof: ephemeral listeners and data, no inference. */
 export default defineConfig({
   testDir: './tests/workbench',
-  testMatch: 'served-document-isolation.spec.ts',
+  testMatch: ['served-document-isolation.spec.ts', 'app-framing.spec.ts'],
   reporter: [['list'], ['./reporters/manifest-reporter.ts']],
   workers: 1,
   retries: 0,

@@ -47,6 +47,14 @@ const server = createServer((request, response) => {
         "FRAME-ANCESTORS 'self'",
       ]);
       break;
+    case '/explicit-none':
+      response.writeHead(200, {
+        'Content-Security-Policy': "default-src 'self'; frame-ancestors 'none'",
+      });
+      break;
+    case '/own-xfo':
+      response.setHeader('X-Frame-Options', 'SAMEORIGIN');
+      break;
     case '/existing':
       response.setHeader('Content-Security-Policy', [
         "default-src 'none'",
@@ -144,6 +152,47 @@ describe('HTTP frame ancestors (DOR-3615)', () => {
     const response = await fetch(`${base}/report-only`);
     expect(response.headers.get('content-security-policy')).toBe("frame-ancestors 'none'");
     expect(response.headers.get('content-security-policy-report-only')).toBe('frame-ancestors *');
+    await response.arrayBuffer();
+  });
+});
+
+// DOR-3370: a browser that predates `frame-ancestors` must be refused too, and
+// the header must never undo an allowance a modern browser honours.
+describe('HTTP frame ancestors: X-Frame-Options (DOR-3370)', () => {
+  it.each([200, 303, 403, 500])(
+    'sends DENY beside the default refusal (status %s)',
+    async (status) => {
+      const response = await fetch(`${base}/${status}`, { redirect: 'manual' });
+      expect(response.headers.get('x-frame-options')).toBe('DENY');
+      await response.arrayBuffer();
+    }
+  );
+
+  it('sends DENY on a raw stream answered through writeHead', async () => {
+    const response = await fetch(`${base}/raw`);
+    expect(response.headers.get('x-frame-options')).toBe('DENY');
+    expect(response.headers.getSetCookie()).toEqual(['first=one', 'second=two']);
+    await response.arrayBuffer();
+  });
+
+  it('sends DENY beside a route’s own refusal of every ancestor', async () => {
+    const response = await fetch(`${base}/explicit-none`);
+    expect(response.headers.get('x-frame-options')).toBe('DENY');
+    await response.arrayBuffer();
+  });
+
+  it.each(['/workbench', '/pdf', '/explicit'])(
+    'never sends it beside an allowance (%s)',
+    async (path) => {
+      const response = await fetch(`${base}${path}`);
+      expect(response.headers.get('x-frame-options')).toBeNull();
+      await response.arrayBuffer();
+    }
+  );
+
+  it('keeps a route’s own value instead of adding a second one', async () => {
+    const response = await fetch(`${base}/own-xfo`);
+    expect(response.headers.get('x-frame-options')).toBe('SAMEORIGIN');
     await response.arrayBuffer();
   });
 });

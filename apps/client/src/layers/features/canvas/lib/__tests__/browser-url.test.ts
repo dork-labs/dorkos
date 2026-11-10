@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   classifyBrowserTarget,
   describeAddress,
+  isThisAppsAddress,
   loopbackStrategy,
   normalizeAddressInput,
   WORKBENCH_SANDBOX_ISOLATED,
@@ -164,5 +165,46 @@ describe('describeAddress', () => {
       kind: 'raw',
       text: 'javascript:alert(1)',
     });
+  });
+});
+
+// DOR-3370: the frame fallback must know this app's own server when it sees it,
+// under every name the server answers to, or it frames it with same-origin powers.
+describe('isThisAppsAddress', () => {
+  const local = {
+    origin: 'http://localhost:4242',
+    hostname: 'localhost',
+    port: '4242',
+    protocol: 'http:',
+  };
+  const tunnel = {
+    origin: 'https://box.tail.ts.net',
+    hostname: 'box.tail.ts.net',
+    port: '',
+    protocol: 'https:',
+  };
+
+  it('knows the page’s own origin', () => {
+    expect(isThisAppsAddress('http://localhost:4242/api/health', local)).toBe(true);
+    expect(isThisAppsAddress('https://box.tail.ts.net/x', tunnel)).toBe(true);
+  });
+
+  it('knows every loopback name for the page’s own port', () => {
+    for (const host of ['127.0.0.1', '0.0.0.0', '[::1]', 'app.localhost']) {
+      expect(isThisAppsAddress(`http://${host}:4242/`, local)).toBe(true);
+    }
+  });
+
+  it('treats a relative or unparseable source as the page’s own', () => {
+    expect(isThisAppsAddress('/api/files', local)).toBe(true);
+    expect(isThisAppsAddress('http://[bad', local)).toBe(true);
+  });
+
+  it('leaves another port, and another site, alone', () => {
+    expect(isThisAppsAddress('http://localhost:5173/', local)).toBe(false);
+    expect(isThisAppsAddress('http://127.0.0.1:4243/', local)).toBe(false);
+    expect(isThisAppsAddress('https://example.com/', local)).toBe(false);
+    // From a tunnel, localhost:443 is the viewer's own machine, not this app.
+    expect(isThisAppsAddress('https://localhost/', tunnel)).toBe(false);
   });
 });

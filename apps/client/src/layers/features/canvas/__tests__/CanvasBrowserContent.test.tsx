@@ -373,6 +373,37 @@ describe('CanvasBrowserContent — a dev server on this machine', () => {
     await waitFor(() => expect(iframeSrc()).toBe(DEV_URL));
   });
 
+  // DOR-3370. The direct fallback earns WORKBENCH_SANDBOX_EXTERNAL because a dev
+  // server is someone else's origin; this app's own port is not, so a page
+  // there must never be framed with this app's powers.
+  it.each([
+    ['this page’s own address', () => `${window.location.origin}/`],
+    [
+      'another loopback name for this page’s port',
+      () => `http://127.0.0.1:${window.location.port}/`,
+    ],
+  ])('frames %s without same-origin powers or a bridge', async (_what, url) => {
+    probeLoopbackPort.mockResolvedValue(null);
+    createProxyUrl.mockResolvedValue(null as never);
+    render(<CanvasBrowserContent documentId="doc" content={{ type: 'browser', url: url() }} />);
+
+    await waitFor(() => expect(iframeSrc()).toBe(url()));
+    const sandbox = document.querySelector('iframe')?.getAttribute('sandbox');
+    expect(sandbox).toBe(WORKBENCH_SANDBOX_ISOLATED);
+    expect(sandbox).not.toContain('allow-same-origin');
+  });
+
+  it('still frames a dev server on another port with its own origin', async () => {
+    probeLoopbackPort.mockResolvedValue(null);
+    createProxyUrl.mockResolvedValue(null as never);
+    render(<CanvasBrowserContent documentId="doc" content={{ type: 'browser', url: DEV_URL }} />);
+
+    await waitFor(() => expect(iframeSrc()).toBe(DEV_URL));
+    expect(document.querySelector('iframe')?.getAttribute('sandbox')).toBe(
+      WORKBENCH_SANDBOX_EXTERNAL
+    );
+  });
+
   it('works from another device, where the dev server’s own address never could', async () => {
     // On a phone over Tailscale, `localhost` is the phone. The preview origin is
     // on the machine that can actually reach the dev server.
