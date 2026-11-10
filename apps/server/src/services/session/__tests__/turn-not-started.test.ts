@@ -5,13 +5,13 @@
  * `FakeAgentRuntime`: the refusal is an `error` + `done` pair, never a throw,
  * which is exactly the shape that used to read as a turn that ran.
  */
-import { ChatReportBack } from '../chat-messages/chat-report-back.js';
+import { ChatReportBack, type ChatReportBackDeps } from '../chat-messages/chat-report-back.js';
 import {
   getSpinOffStartup,
   SPIN_OFF_START_TIMEOUT_MS,
 } from '../chat-messages/startup/spin-off-startup.js';
 import { wireSpinOffStartup } from '../chat-messages/startup/wire-spin-off-startup.js';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -138,10 +138,12 @@ describe('a turn the runtime refused before the agent saw it', () => {
 
 describe('spin-off first-turn deadline through the real dispatcher (DOR-3351)', () => {
   let stop: () => void;
-  let report: ReturnType<typeof vi.fn>;
+  let report: Mock<ChatReportBackDeps['service']['send']>;
   beforeEach(() => {
     vi.useFakeTimers();
-    report = vi.fn().mockResolvedValue(undefined);
+    report = vi
+      .fn<ChatReportBackDeps['service']['send']>()
+      .mockResolvedValue({ messageId: 'report', chatId: 'starter', status: 'queued' });
     const reports = new ChatReportBack({
       service: { send: report },
       store: { listStopsOf: () => [], latestInterruptFrom: () => undefined },

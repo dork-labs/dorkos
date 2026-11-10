@@ -471,7 +471,8 @@ export function createSessionStartHandler(
     if (!claimed.ok) return refuse(claimed.message, 'START_LIMIT');
     const reservation = claimed.reservation;
     const startup = getSpinOffStartup();
-    let startupId = sessionId;
+    // Widened from the UUID type: the runtime's canonical id need not be one.
+    let startupId: string = sessionId;
     if (parentChatId) startup?.watch(sessionId, agentPath, marksForTurn(markedCeiling));
     // What the pre-launch picker saves, saved the same way: an unbound settings
     // row the first send reads and the binding write fills around. Only the row:

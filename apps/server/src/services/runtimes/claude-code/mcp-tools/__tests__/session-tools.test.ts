@@ -10,7 +10,10 @@
  * turn (the account hint, the origin, the cap) is what production sends.
  */
 import { watchNotStarted } from '../../../../session/launch/turn-not-started.js';
-import { ChatReportBack } from '../../../../session/chat-messages/chat-report-back.js';
+import {
+  ChatReportBack,
+  type ChatReportBackDeps,
+} from '../../../../session/chat-messages/chat-report-back.js';
 import {
   getSpinOffStartup,
   SPIN_OFF_START_TIMEOUT_MS,
@@ -23,7 +26,7 @@ import {
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi, type Mock } from 'vitest';
 import { z } from 'zod';
 import { SessionCapacityError } from '@dorkos/shared/running-chats';
 import type { MeshCore } from '@dorkos/mesh';
@@ -995,14 +998,14 @@ describe('session_start records who started the new session (spec flow-multiproj
 
   describe('first-turn watchdog (DOR-3351)', () => {
     let stop: () => void;
-    let send: ReturnType<typeof vi.fn>;
+    let send: Mock<ChatReportBackDeps['service']['send']>;
     const children: string[] = [];
 
     beforeEach(() => {
       vi.useFakeTimers();
       wireChats(true);
       send = vi
-        .fn()
+        .fn<ChatReportBackDeps['service']['send']>()
         .mockResolvedValue({ messageId: 'report', chatId: 'parent-chat', status: 'queued' });
       const reports = new ChatReportBack({
         service: { send },
@@ -1068,7 +1071,7 @@ describe('session_start records who started the new session (spec flow-multiproj
       for await (const _event of answered.stream) {
         /* drain real output watcher */
       }
-      projector.ingest({ type: 'turn_end', reason: 'complete' });
+      projector.ingest({ type: 'turn_end' });
       await vi.advanceTimersByTimeAsync(SPIN_OFF_START_TIMEOUT_MS);
       expect(send).not.toHaveBeenCalled();
       expect(getSpinOffStartup()?.failureOf(sessionId)).toBeNull();
@@ -1084,7 +1087,7 @@ describe('session_start records who started the new session (spec flow-multiproj
     });
 
     it('disarms a refused launch that already returned an error to the starter', async () => {
-      vi.mocked(dispatchMessage).mockRejectedValueOnce(new SessionCapacityError('test'));
+      vi.mocked(dispatchMessage).mockRejectedValueOnce(new SessionCapacityError(50));
       const result = await fromChat('parent-chat')(BASE);
       expect(result.isError).toBe(true);
       await vi.advanceTimersByTimeAsync(SPIN_OFF_START_TIMEOUT_MS);

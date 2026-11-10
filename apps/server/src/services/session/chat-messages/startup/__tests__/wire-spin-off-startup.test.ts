@@ -1,5 +1,7 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
 import { createTestDb } from '@dorkos/test-utils/db';
+import type { SessionEvent } from '@dorkos/shared/session-stream';
+import type { ChatReportBack } from '../../chat-report-back.js';
 import { MessageQueueStore, setMessageQueueStore } from '../../../message-queue-store.js';
 import {
   disposeProjector,
@@ -9,11 +11,16 @@ import {
 import { getSpinOffStartup, SPIN_OFF_START_TIMEOUT_MS } from '../spin-off-startup.js';
 import { startupFailureReason, wireSpinOffStartup } from '../wire-spin-off-startup.js';
 
+/** A runtime's `error` event, as the projector takes it. */
+function runtimeError(message: string): Omit<Extract<SessionEvent, { type: 'error' }>, 'seq'> {
+  return { type: 'error', message };
+}
+
 let stop: () => void;
-let report: ReturnType<typeof vi.fn>;
+let report: Mock<ChatReportBack['onNeverStarted']>;
 beforeEach(() => {
   vi.useFakeTimers();
-  report = vi.fn().mockResolvedValue(undefined);
+  report = vi.fn<ChatReportBack['onNeverStarted']>().mockResolvedValue(undefined);
   stop = wireSpinOffStartup({ onNeverStarted: report });
 });
 afterEach(() => {
@@ -40,10 +47,7 @@ describe('startup monitoring in production wiring', () => {
 
   it('reports the observed runtime error instead of guessing why it did not start', async () => {
     getSpinOffStartup()!.watch('startup-request', '/demo/agent');
-    getOrCreateProjector('startup-request').ingest({
-      type: 'error',
-      message: 'Runtime unavailable.',
-    });
+    getOrCreateProjector('startup-request').ingest(runtimeError('Runtime unavailable.'));
     await vi.advanceTimersByTimeAsync(SPIN_OFF_START_TIMEOUT_MS);
     expect(report).toHaveBeenCalledExactlyOnceWith('startup-request', 'Runtime unavailable.', {});
   });
@@ -51,7 +55,7 @@ describe('startup monitoring in production wiring', () => {
   it('keeps the first deadline and diagnostic across a real projector rename', async () => {
     getSpinOffStartup()!.watch('startup-request', '/demo/agent');
     const projector = getOrCreateProjector('startup-request');
-    projector.ingest({ type: 'error', message: 'Account unavailable.' });
+    projector.ingest(runtimeError('Account unavailable.'));
     await vi.advanceTimersByTimeAsync(1000);
     rekeyProjector('startup-request', 'startup-canonical');
     await vi.advanceTimersByTimeAsync(SPIN_OFF_START_TIMEOUT_MS - 1000);

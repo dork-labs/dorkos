@@ -1,6 +1,7 @@
 ---
 covers:
   - 'fix(chat): report spin-offs that never start (DOR-3351)'
+  - 'fix(chat): type the never-started watchdog paths'
 ---
 
 ### Fixed
