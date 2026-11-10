@@ -30,6 +30,9 @@
  * a failed write cleans up after itself ({@link snapshotSqlite}), and every site
  * that reuses an existing file verifies its contents first.
  *
+ * **No snapshot keeps recorded turn text.** Both writers empty it out of the
+ * copy before anyone can rely on the file (`snapshot-scrub.ts`, DOR-4001).
+ *
  * Snapshots are a **manual** escape hatch. Nothing here ever restores one, and
  * nothing here ever deletes, moves or recreates a live database — see
  * `DatabaseOpenError` in `index.ts` for the other half of that rule.
@@ -42,6 +45,7 @@ import fs from 'fs';
 import path from 'path';
 import type { Db } from './index.js';
 import { migrationsFolder } from './migrations-folder.js';
+import { scrubSnapshot } from './snapshot-scrub.js';
 
 /**
  * Thrown when a snapshot could not be written.
@@ -145,26 +149,54 @@ function utcStamp(now: Date): string {
  */
 export function snapshotSqlite(sqlite: BetterSqlite3.Database, destPath: string): void {
   fs.mkdirSync(path.dirname(destPath), { recursive: true });
-  // Whether anything was already here decides what cleanup is allowed to touch.
-  // The commonest failure of all is `VACUUM INTO` refusing to overwrite, and
-  // deleting the file it refused to overwrite would destroy a good snapshot to
-  // tidy up after a write that never started.
-  const preexisting = fs.existsSync(destPath);
+  // The refusal `VACUUM INTO` used to make at this name, kept: a snapshot never
+  // writes over another, and nothing here deletes a file it did not write.
+  if (fs.existsSync(destPath)) throw new Error(`Snapshot already exists: ${destPath}`);
+  // Written and emptied of recorded turn text under a name no snapshot pattern
+  // matches, then renamed into place (DOR-4001). A process that dies part way
+  // leaves only a `.partial`, which the next snapshot in this folder removes.
+  removeStalePartials(path.dirname(destPath));
+  const partial = `${destPath}${PARTIAL_SUFFIX}`;
   try {
-    sqlite.prepare('VACUUM INTO ?').run(destPath);
+    sqlite.prepare('VACUUM INTO ?').run(partial);
+    scrubSnapshot(partial);
+    fs.renameSync(partial, destPath);
   } catch (err) {
-    if (!preexisting) {
-      try {
-        fs.rmSync(destPath, { force: true });
-        // SQLite builds the vacuum output in rollback-journal mode, so this is
-        // the one sidecar an interrupted write can leave next to it.
-        fs.rmSync(`${destPath}-journal`, { force: true });
-      } catch {
-        // Cleanup is best-effort and must never replace the error that caused
-        // it — that error is the one naming what the operator has to fix.
-      }
+    try {
+      // SQLite builds the vacuum output in rollback-journal mode, so the
+      // journal is the one sidecar an interrupted write can leave next to it.
+      for (const suffix of ['', '-journal']) fs.rmSync(`${partial}${suffix}`, { force: true });
+    } catch {
+      // Cleanup is best-effort and must never replace the error that caused
+      // it — that error is the one naming what the operator has to fix.
     }
     throw err;
+  }
+}
+
+/** The suffix a snapshot carries while it is being written and emptied. */
+const PARTIAL_SUFFIX = '.partial';
+
+/**
+ * Remove what an earlier snapshot left when its process died part way: a
+ * `.partial` copy, which may still hold recorded turn text, and its sidecars.
+ * Snapshots of one folder are taken one at a time (the pre-migration one at
+ * boot, before anything else runs; the daily one serialized by its own lock),
+ * so no `.partial` here is still being written.
+ *
+ * @param dir - The snapshot folder
+ */
+export function removeStalePartials(dir: string): void {
+  let names: string[];
+  try {
+    names = fs.readdirSync(dir);
+  } catch {
+    return;
+  }
+  for (const name of names) {
+    if (/\.db\.partial(?:-journal|-wal|-shm)?$/.test(name)) {
+      fs.rmSync(path.join(dir, name), { force: true });
+    }
   }
 }
 
@@ -198,7 +230,8 @@ export async function snapshotSqliteInSteps(
   // Built under a name no snapshot pattern matches and renamed into place only
   // when whole, so nothing can mistake a copy in progress for wreckage and
   // delete it, or for a snapshot and keep it.
-  const partial = `${destPath}.partial`;
+  removeStalePartials(path.dirname(destPath));
+  const partial = `${destPath}${PARTIAL_SUFFIX}`;
   const removePartial = () => {
     for (const suffix of ['', '-journal', '-wal', '-shm']) {
       fs.rmSync(`${partial}${suffix}`, { force: true });
@@ -225,6 +258,9 @@ export async function snapshotSqliteInSteps(
     } finally {
       copy.close();
     }
+    // Emptied before it takes its name, so no file at a snapshot's name ever
+    // holds recorded turn text (DOR-4001).
+    scrubSnapshot(partial);
     fs.renameSync(partial, destPath);
   } catch (err) {
     try {
@@ -462,6 +498,9 @@ export interface SnapshotOptions {
  * @throws {SnapshotFailedError} When the snapshot cannot be written.
  */
 export function snapshotBeforeMigrations(db: Db, options: SnapshotOptions): string | null {
+  // Every boot passes here, whether or not a migration is pending: the moment to
+  // remove a `.partial` a process that died mid-snapshot left (DOR-4001).
+  removeStalePartials(options.dir);
   const { pending, fresh } = readMigrationState(db);
   if (fresh || pending.length === 0) return null;
 
@@ -475,12 +514,13 @@ export function snapshotBeforeMigrations(db: Db, options: SnapshotOptions): stri
   // collision into a server that will not start. Wreckage at this name is
   // cleared instead, because trusting it would mean migrating unprotected while
   // logging that a snapshot was taken.
-  if (!reuseOrClear(dest, DRIZZLE_MIGRATIONS_TABLE)) {
-    try {
-      snapshotSqlite(db.$client, dest);
-    } catch (err) {
-      throw new SnapshotFailedError(options.dir, err);
-    }
+  try {
+    // A reused snapshot is emptied of recorded turn text too: it may predate
+    // the scrub, or have been written by a process that died before it (DOR-4001).
+    if (reuseOrClear(dest, DRIZZLE_MIGRATIONS_TABLE)) scrubSnapshot(dest);
+    else snapshotSqlite(db.$client, dest);
+  } catch (err) {
+    throw new SnapshotFailedError(options.dir, err);
   }
   pruneSnapshots(options.dir, PRE_MIGRATION_PATTERN, SNAPSHOT_RETENTION.preMigration);
   return dest;
@@ -507,7 +547,17 @@ export function snapshotBeforeMigrations(db: Db, options: SnapshotOptions): stri
 export async function snapshotDaily(db: Db, options: SnapshotOptions): Promise<string | null> {
   const now = options.now ?? new Date();
   const dest = path.join(options.dir, `dork-${utcDay(now)}-daily.db`);
-  if (reuseOrClear(dest)) return null;
+  // Runs at boot and on the hourly tick, so it is where a stale `.partial` from
+  // a crashed snapshot is found even on a day nothing new is written (DOR-4001).
+  removeStalePartials(options.dir);
+  if (reuseOrClear(dest)) {
+    try {
+      scrubSnapshot(dest);
+    } catch (err) {
+      throw new SnapshotFailedError(options.dir, err);
+    }
+    return null;
+  }
 
   try {
     await snapshotSqliteInSteps(db.$client, dest);

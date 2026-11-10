@@ -334,6 +334,19 @@ export class TurnContextStore {
   }
 
   /**
+   * Every session id holding at least one record: the boot reconcile's input,
+   * so a chat that vanished while DorkOS was down takes its records with it
+   * (DOR-4002). Ids only, never text.
+   */
+  listSessionIds(): string[] {
+    return this.db
+      .selectDistinct({ sessionId: turnContexts.sessionId })
+      .from(turnContexts)
+      .all()
+      .map((row) => row.sessionId);
+  }
+
+  /**
    * Move a session's records to the id it is now known by, when a first turn's
    * request id gives way to the runtime's canonical one.
    *

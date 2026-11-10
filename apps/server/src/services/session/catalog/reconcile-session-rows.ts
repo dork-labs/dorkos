@@ -1,7 +1,8 @@
 /**
- * Boot-time reconcile for the two durable per-session tables — the queued
- * messages of `session_message_queue` and the held words of
- * `session_staged_context` (DOR-1436).
+ * Boot-time reconcile for the durable per-session tables — the queued
+ * messages of `session_message_queue`, the held words of
+ * `session_staged_context` (DOR-1436), and the record of what each turn was
+ * sent, the turn-context record (DOR-4002).
  *
  * ## The gap this closes
  *
@@ -86,7 +87,7 @@ function processStartedAt(): number {
 
 /** What one boot reconcile found and did. */
 export interface SessionRowReconcileReport {
-  /** Distinct sessions holding rows in either table. */
+  /** Distinct sessions holding rows in any of the tables. */
   candidates: number;
   /** Sessions judged gone — every guard passed, so their rows were deleted. */
   reaped: number;
@@ -103,7 +104,7 @@ export interface SessionRowReconcileReport {
    */
   kept: number;
   /**
-   * How many of the two table deletes failed (0–2). Non-zero means some judged
+   * How many of the table deletes failed (0–3). Non-zero means some judged
    * rows are still there and this boot's reclamation was partial — the one
    * outcome a `reaped > 0` line would otherwise report as a clean success.
    */
@@ -126,6 +127,16 @@ export interface SessionRowReconcileDeps {
   };
   /** Sessions holding staged words, and the delete that clears them. */
   staged: {
+    listSessionIds(): string[];
+    deleteForSessions(sessionIds: string[]): number;
+  };
+  /**
+   * Sessions holding turn-context records, and the delete that clears them and
+   * any recorded text only they held (DOR-4002). Optional: a host that has not
+   * installed the record has nothing to reclaim. Its deletes run under the same
+   * four guards as the other two tables.
+   */
+  contextRecords?: {
     listSessionIds(): string[];
     deleteForSessions(sessionIds: string[]): number;
   };
@@ -197,7 +208,13 @@ export async function reconcileSessionRows(
 ): Promise<SessionRowReconcileReport> {
   let candidates: string[];
   try {
-    candidates = [...new Set([...deps.queue.listSessionIds(), ...deps.staged.listSessionIds()])];
+    candidates = [
+      ...new Set([
+        ...deps.queue.listSessionIds(),
+        ...deps.staged.listSessionIds(),
+        ...(deps.contextRecords?.listSessionIds() ?? []),
+      ]),
+    ];
   } catch (err) {
     logger.warn('[SessionRows] could not read the sessions holding rows', {
       error: err instanceof Error ? err.message : String(err),
@@ -253,8 +270,11 @@ export async function reconcileSessionRows(
 
   const queued = deleteFrom(deps.queue, doomed, 'session_message_queue');
   const held = deleteFrom(deps.staged, doomed, 'session_staged_context');
-  const rows = queued.rows + held.rows;
-  const failedDeletes = Number(queued.failed) + Number(held.failed);
+  const recorded = deps.contextRecords
+    ? deleteFrom(deps.contextRecords, doomed, 'turn context records')
+    : { rows: 0, failed: false };
+  const rows = queued.rows + held.rows + recorded.rows;
+  const failedDeletes = Number(queued.failed) + Number(held.failed) + Number(recorded.failed);
 
   logger.info('[SessionRows] cleared what vanished sessions left behind', {
     candidates: candidates.length,

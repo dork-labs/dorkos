@@ -22,14 +22,26 @@ const SERVER_SRC = path.join(REPO, 'apps/server/src');
 const RECORD_DIR = path.join(SERVER_SRC, 'services/session/turn-context') + path.sep;
 const STORE = 'apps/server/src/services/session/turn-context/turn-context-store.ts';
 const SCHEMA = 'packages/db/src/schema/session/turn-context.ts';
+/** Files allowed to name the tables freely: the store and the schema. */
+const MAY_NAME_TABLES = new Set([STORE, SCHEMA]);
+/**
+ * The backup scrub (DOR-4001) may name the text table only to empty it: its
+ * one constant, a presence check and the DELETE. Any other statement there
+ * that reaches the table is a reader (S7).
+ */
+const SCRUB = 'packages/db/src/snapshot-scrub.ts';
+const SCRUB_CONSTANT = /const RECORDED_TEXT_TABLE = 'turn_context_bodies';/;
+const SCRUB_SQL_ALLOWED =
+  /^(?:SELECT 1 FROM (?:\$\{RECORDED_TEXT_TABLE\}|turn_context_bodies) LIMIT 1|DELETE FROM (?:\$\{RECORDED_TEXT_TABLE\}|turn_context_bodies))$/;
 
 /** Files allowed to import the record, relative to the repo. Writers only. */
 const ALLOWED_IMPORTERS = new Set([
   // The installer and the hourly sweep.
   'apps/server/src/startup/steps/core-stores.ts',
   'apps/server/src/startup/steps/after-listen.ts',
-  // Deletion with the session.
+  // Deletion with the session, live and at boot (DOR-4002).
   'apps/server/src/services/session/message-dispatcher/queue-upkeep.ts',
+  'apps/server/src/services/session/catalog/boot-session-reconcile.ts',
   // The four adapters, each at the point it hands the prompt over.
   'apps/server/src/services/runtimes/claude-code/messaging/turn-context/turn-context-record.ts',
   'apps/server/src/services/runtimes/codex/turn-input.ts',
@@ -38,7 +50,9 @@ const ALLOWED_IMPORTERS = new Set([
 ]);
 
 /** The tables, by their code names and their exact SQL names (never Codex's `turn_context`). */
-const TABLE_NAME = /\bturnContext(?:s|Parts|Bodies)\b|\bturn_context(?:s|_parts|_bodies)\b/;
+const TABLE_NAME = /\bturnContext(?:s|Parts|Bodies)\b/;
+/** The SQL names, in any case: SQLite ignores case in a table name (DOR-4006). */
+const SQL_TABLE_NAME = /\bturn_context(?:s|_parts|_bodies)\b/i;
 /** Every module specifier: `from '…'`, `import('…')`, `require('…')`. */
 const SPECIFIER = /(?:from\s*|import\s*\(\s*|require\s*\(\s*)['"`]([^'"`]+)['"`]/g;
 
@@ -84,12 +98,41 @@ function importsRecord(file: SourceFile): boolean {
   });
 }
 
+/** Whether the scrub reaches the text table only through its allowed statements. */
+function scrubStaysAWriter(source: string): boolean {
+  // Comments say what the file does; only code can read anything.
+  const code = source
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/(^|[^:])\/\/.*$/gm, '$1')
+    .replace(SCRUB_CONSTANT, '');
+  const strings = [...code.matchAll(/(['"`])((?:\\.|(?!\1)[\s\S])*?)\1/g)].map((m) => m[2]!);
+  const touching = strings.filter(
+    (text) => /RECORDED_TEXT_TABLE/.test(text) || SQL_TABLE_NAME.test(text) || TABLE_NAME.test(text)
+  );
+  const outsideStrings = strings.reduce((rest, text) => rest.replace(text, ''), code);
+  // The one bare use: the presence check (`sqlite_master … name = ?`) binds the constant.
+  const bare = (outsideStrings.match(/[^\n]*RECORDED_TEXT_TABLE[^\n]*/g) ?? []).filter(
+    (line) => !/^\s*\.get\(RECORDED_TEXT_TABLE\);\s*$/.test(line)
+  );
+  return (
+    touching.every((text) => SCRUB_SQL_ALLOWED.test(text.trim())) &&
+    !SQL_TABLE_NAME.test(outsideStrings) &&
+    !TABLE_NAME.test(outsideStrings) &&
+    bare.length === 0
+  );
+}
+
 /** Every way the given sources reach the record that these rules do not allow. */
 function violations(files: readonly SourceFile[]): string[] {
   const found: string[] = [];
   for (const file of files) {
     const inRecord = path.join(REPO, file.rel).startsWith(RECORD_DIR);
-    if (file.rel !== STORE && file.rel !== SCHEMA && TABLE_NAME.test(file.source)) {
+    const namesTable = TABLE_NAME.test(file.source) || SQL_TABLE_NAME.test(file.source);
+    if (file.rel === SCRUB) {
+      if (!scrubStaysAWriter(file.source)) {
+        found.push(`${file.rel}: reaches the text table beyond its scrub`);
+      }
+    } else if (!MAY_NAME_TABLES.has(file.rel) && namesTable) {
       found.push(`${file.rel}: names a turn-context table`);
     }
     if (!inRecord && !ALLOWED_IMPORTERS.has(file.rel) && importsRecord(file)) {
@@ -138,6 +181,19 @@ describe('turn-context privacy', () => {
         rel: route,
         source:
           "export const load = async () => (await import('../services/session/turn-context/index.js')).getTurnContextStore();",
+      },
+      'a reader inside the backup scrub, by name': {
+        rel: SCRUB,
+        source: `${fs.readFileSync(path.join(REPO, SCRUB), 'utf8')}\nexport const readBodies = (db) => db.prepare('SELECT body FROM turn_context_bodies').all();`,
+      },
+      'a reader inside the backup scrub, through its constant': {
+        rel: SCRUB,
+        source: `${fs.readFileSync(path.join(REPO, SCRUB), 'utf8')}\nexport const readBodies = (db) => db.prepare(\`SELECT body FROM \${RECORDED_TEXT_TABLE}\`).all();`,
+      },
+      'raw SQL in upper case': {
+        rel: route,
+        source:
+          "export const rows = (db) => db.$client.prepare('SELECT BODY FROM TURN_CONTEXT_BODIES').all();",
       },
       'raw SQL': {
         rel: route,
