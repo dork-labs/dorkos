@@ -4,6 +4,7 @@ covers:
   - 'fix(server): the canvas browser, folders inside the data folder and room reads follow the same rule (DOR-4060)'
   - "fix(server): an agent's fork with no folder runs in its own folder, and a refusal says to name one (DOR-4060)"
   - 'fix(server): a scheduled run never stands in the home folder or the data folder (DOR-4060)'
+  - "refactor(server): session_start's early protected-folder check moves unchanged into its own file (DOR-4060)"
 ---
 
 ### Fixed
