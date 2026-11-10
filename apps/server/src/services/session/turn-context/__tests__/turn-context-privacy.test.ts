@@ -16,6 +16,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { lexWithoutComments } from '../../../../../../../scripts/lib/code-only.mjs';
 
 const REPO = path.resolve(__dirname, '../../../../../../..');
 const SERVER_SRC = path.join(REPO, 'apps/server/src');
@@ -100,11 +101,9 @@ function importsRecord(file: SourceFile): boolean {
 
 /** Whether the scrub reaches the text table only through its allowed statements. */
 function scrubStaysAWriter(source: string): boolean {
-  // Comments say what the file does; only code can read anything.
-  const code = source
-    .replace(/\/\*[\s\S]*?\*\//g, '')
-    .replace(/(^|[^:])\/\/.*$/gm, '$1')
-    .replace(SCRUB_CONSTANT, '');
+  // Comments say what the file does; only code can read anything. The shared
+  // lexer blanks them and keeps every string, which is what is read below.
+  const code = lexWithoutComments(source).code.replace(SCRUB_CONSTANT, '');
   const strings = [...code.matchAll(/(['"`])((?:\\.|(?!\1)[\s\S])*?)\1/g)].map((m) => m[2]!);
   const touching = strings.filter(
     (text) => /RECORDED_TEXT_TABLE/.test(text) || SQL_TABLE_NAME.test(text) || TABLE_NAME.test(text)
