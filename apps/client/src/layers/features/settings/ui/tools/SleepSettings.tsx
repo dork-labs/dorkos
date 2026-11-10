@@ -12,9 +12,8 @@
  * leaves the switch working: the server keeps trying, and switching it off and
  * on tries again at once.
  *
- * "Wake for scheduled tasks" is not offered here yet: the setting exists, but
- * nothing reads it until waking is built, and a switch that does nothing is
- * worse than no switch.
+ * Scheduled waking is not built. A hint explains the limit under the existing
+ * keep-awake control without offering another setting.
  *
  * @module features/settings/ui/tools/SleepSettings
  */
@@ -64,6 +63,7 @@ export function SleepSettings() {
               <span className="flex flex-col gap-1">
                 <span>Stays awake during chats, rooms and tasks. Sleeps as usual when idle.</span>
                 <span data-testid="sleep-settings-note">{unsupported ?? KEEP_AWAKE_CAVEAT}</span>
+                <span>{"Scheduled tasks can't run while it sleeps, even with this on."}</span>
               </span>
             }
             checked={status.enabled}

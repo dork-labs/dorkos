@@ -82,9 +82,14 @@ describe('SleepSettings', () => {
     );
   });
 
-  it('offers no switch for waking the computer yet', async () => {
+  it('explains scheduled tasks under the existing keep-awake switch without a wake row', async () => {
     renderWith(status({}));
     await toggle();
-    expect(screen.queryByText(/Wake for scheduled tasks/)).not.toBeInTheDocument();
+    expect(
+      screen.getByText("Scheduled tasks can't run while it sleeps, even with this on.")
+    ).toBeInTheDocument();
+    expect(screen.getAllByRole('switch')).toHaveLength(1);
+    expect(screen.queryByText('Wake for scheduled tasks')).not.toBeInTheDocument();
+    expect(screen.queryByText(/Coming soon/)).not.toBeInTheDocument();
   });
 });

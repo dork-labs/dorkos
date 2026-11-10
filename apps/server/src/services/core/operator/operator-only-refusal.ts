@@ -6,6 +6,7 @@
  * @module services/core/operator/operator-only-refusal
  */
 import { OPERATOR_ONLY_STAKES } from './operator-only-stakes.js';
+import { personSettingGuidance } from './person-setting-guidance.js';
 
 /**
  * The clause for a refused path with no stake on file. Deliberately says only
@@ -46,7 +47,7 @@ export function describeOperatorOnlyRefusal(paths: readonly string[]): string {
     'DorkOS changed nothing.',
     "These settings are the person's to choose, not yours.",
     ...clauses,
-    'Ask the person to change them in DorkOS Settings.',
+    personSettingGuidance(paths, 'Ask the person to change them in DorkOS Settings.'),
     'If your patch also had ordinary settings in it, send those again on their own and they will go through.',
   ].join(' ');
 }
