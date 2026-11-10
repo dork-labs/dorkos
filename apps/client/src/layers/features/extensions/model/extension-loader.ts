@@ -1,4 +1,5 @@
 import type {
+  ExtensionManifest,
   ExtensionRecordPublic,
   ExtensionModule,
   SecretDeclaration,
@@ -50,7 +51,11 @@ async function fetchExtensionsOrThrow(): Promise<ExtensionRecordPublic[]> {
 export const EXTENSION_IMPORT_TIMEOUT_MS = 15_000;
 
 /** Import one bundle, returning null on failure or timeout. */
-async function importBundle(id: string, cacheBust: boolean): Promise<ExtensionModule | null> {
+async function importBundle(
+  id: string,
+  cacheBust: boolean,
+  manifest: ExtensionManifest
+): Promise<ExtensionModule | null> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
     // Local bundles can be large; 15 seconds allows a cold load without letting
@@ -58,7 +63,8 @@ async function importBundle(id: string, cacheBust: boolean): Promise<ExtensionMo
     // race discards late results, and only this settled result may activate.
     return await Promise.race([
       importExtensionModule(
-        extensionApiUrl(`/extensions/${id}/bundle${cacheBust ? `?t=${Date.now()}` : ''}`)
+        extensionApiUrl(`/extensions/${id}/bundle${cacheBust ? `?t=${Date.now()}` : ''}`),
+        manifest
       ),
       new Promise<never>((_, reject) => {
         timer = setTimeout(
@@ -204,8 +210,12 @@ export class ExtensionLoader {
         const attempt = requestedAttempts?.get(rec.id) ?? ++this.nextAttempt;
         if (requestedAttempts && this.attempts.get(rec.id) !== attempt) return;
         this.attempts.set(rec.id, attempt);
+        if (rec.manifest.clientApiVersion !== 2) {
+          this.markFailed(rec);
+          return;
+        }
         setExtensionClientState(rec.id, 'starting');
-        const module = await importBundle(rec.id, cacheBust);
+        const module = await importBundle(rec.id, cacheBust, rec.manifest);
         if (this.disposed || gen !== this.generation || this.attempts.get(rec.id) !== attempt)
           return;
         this.failedSettings.get(rec.id)?.();
@@ -220,7 +230,12 @@ export class ExtensionLoader {
           rec.manifest.capabilities?.events ?? []
         );
         try {
-          const deactivate = module.activate(api);
+          const deactivate = await module.activate(api);
+          if (this.disposed || gen !== this.generation || this.attempts.get(rec.id) !== attempt) {
+            if (typeof deactivate === 'function') deactivate();
+            runCleanups(rec.id, cleanups);
+            return;
+          }
           this.autoRegisterConfigTab(rec, cleanups);
           this.loaded.set(rec.id, {
             id: rec.id,
@@ -255,6 +270,7 @@ export class ExtensionLoader {
       component: () =>
         createElement(ExtensionLoadFailure, {
           retry: () => this.reloadExtensions([rec.id]),
+          needsUpdate: rec.manifest.clientApiVersion !== 2,
         }),
     });
     this.failedSettings.set(rec.id, unsubscribe);

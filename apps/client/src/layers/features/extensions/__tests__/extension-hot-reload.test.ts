@@ -52,7 +52,7 @@ function makeDeps(overrides: Partial<ExtensionAPIDeps> = {}): ExtensionAPIDeps {
 function makeRecord(overrides: Partial<ExtensionRecordPublic> = {}): ExtensionRecordPublic {
   return {
     id: 'test-ext',
-    manifest: { id: 'test-ext', name: 'Test Extension', version: '1.0.0' },
+    manifest: { clientApiVersion: 2, id: 'test-ext', name: 'Test Extension', version: '1.0.0' },
     status: 'compiled',
     scope: 'global',
     origin: 'user',
@@ -82,7 +82,7 @@ function seedLoaded(
   const loaded = (loader as unknown as { loaded: Map<string, LoadedExtension> }).loaded;
   loaded.set(entry.id, {
     id: entry.id,
-    manifest: { id: entry.id, name: `Ext ${entry.id}`, version: '1.0.0' },
+    manifest: { clientApiVersion: 2, id: entry.id, name: `Ext ${entry.id}`, version: '1.0.0' },
     module: { activate: vi.fn() },
     api: {} as LoadedExtension['api'],
     cleanups: entry.cleanups ?? [],

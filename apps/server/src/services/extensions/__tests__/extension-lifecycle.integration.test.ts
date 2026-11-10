@@ -11,6 +11,7 @@ import path from 'path';
 import os from 'os';
 import { ExtensionDiscovery } from '../extension-discovery.js';
 import { ExtensionCompiler } from '../extension-compiler.js';
+import { clientBundleExports } from '../client-bundle-exports.js';
 import type { ExtensionRecord } from '@dorkos/extension-api';
 import type { CoreExtensionInfo, ExtensionsConfig } from '../extension-enable-resolution.js';
 
@@ -272,9 +273,10 @@ describe('Extension Lifecycle Integration', () => {
       const bundle = await compiler.readBundle('hello-world', compileResult.sourceHash);
       expect(bundle).toBeTruthy();
 
-      // Import the bundle via data URI (same mechanism as testExtension)
-      const dataUri = `data:text/javascript;base64,${Buffer.from(bundle!).toString('base64')}`;
-      const mod = await import(/* @vite-ignore */ dataUri);
+      // Evaluate the classic-script bundle (same mechanism as testExtension)
+      const mod = clientBundleExports(bundle!, 'hello-world.bundle.js') as {
+        activate: (api: unknown) => unknown;
+      };
       expect(typeof mod.activate).toBe('function');
 
       // Activate against a simple tracking API stub

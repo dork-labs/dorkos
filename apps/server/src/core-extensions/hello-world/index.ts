@@ -1,4 +1,4 @@
-import type { ExtensionAPI, ExtensionPageProps, StatusBarSlotContext } from '@dorkos/extension-api';
+import type { FrameExtensionAPI as ExtensionAPI, ExtensionPageProps, StatusBarSlotContext } from '@dorkos/extension-api';
 
 // React is provided by the host as a global — do not import it.
 
@@ -75,7 +75,7 @@ export function activate(api: ExtensionAPI): () => void {
   );
 
   // Demonstrate persistent storage
-  api.loadData<{ visits: number }>().then((data) => {
+  if (api.context === 'registration') api.loadData<{ visits: number }>().then((data) => {
     const visits = (data?.visits ?? 0) + 1;
     api.saveData({ visits });
     console.log(`[hello-world] Visit count: ${visits}`);

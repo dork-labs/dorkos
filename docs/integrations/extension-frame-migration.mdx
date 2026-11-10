@@ -1,0 +1,81 @@
+---
+title: Updating an extension for its own frame
+description: What changed in version 2 of the extension API, and what to change in your extension
+---
+
+# Updating an extension for its own frame
+
+Each extension's screens now run in a frame of their own, walled off from the DorkOS page. The frame cannot read your sign-in, call DorkOS directly, or touch the rest of the app. Everything your extension does goes through the `api` object DorkOS hands it, and DorkOS checks each call against the extension that made it.
+
+This is version 2 of the extension API. There is no compatibility mode: an extension that has not been updated shows "This app needs an update for this version of DorkOS" in Settings, with a link here, and does not load.
+
+## 1. Say you support version 2
+
+Add one line to `extension.json`:
+
+```json
+{
+  "id": "my-extension",
+  "name": "My Extension",
+  "version": "1.1.0",
+  "clientApiVersion": 2
+}
+```
+
+## 2. Call your own server through `api.request`
+
+The frame has no network access, so `fetch` fails. Call your server half with `api.request` instead, and declare it in the manifest:
+
+```json
+{
+  "capabilities": { "http": true }
+}
+```
+
+```typescript
+// Before
+const res = await fetch('/api/ext/my-extension/status');
+const status = await res.json();
+
+// After
+const status = await api.request<Status>('/status');
+await api.request('/items', { method: 'POST', body: { title: 'New item' } });
+```
+
+The path is relative to your own routes (`/api/ext/my-extension/`). It must be a plain path inside them: `..`, encoded slashes and full URLs are refused. A response that is not OK rejects the promise.
+
+To read your extension's settings, use `api.settings.get()` instead of fetching `/api/extensions/my-extension/settings`.
+
+## 3. Drop what the frame no longer has
+
+- **`executeCommand` and `openCanvas`** are gone. Use `api.navigate` to move the person to a page.
+- **`document.cookie`, `localStorage`, `sessionStorage` and `window.parent`** are not available. Keep data with `api.saveData` and `api.loadData`.
+- **`window.electronAPI`** is gone. `api.request` works the same on the web, the desktop app and the phone.
+- **Imports** are limited to `react`, `react-dom`, `react-dom/client`, `react/jsx-runtime` and `@dorkos/extension-api`. Bundle anything else into your extension. `React` is still a global.
+
+## 4. Expect `activate` to run more than once
+
+DorkOS calls `activate` once to learn what your extension adds (its pages, panels, commands and settings tabs), then once more inside each screen it shows. `api.context` tells you which:
+
+```typescript
+export function activate(api: FrameExtensionAPI) {
+  api.registerPage('', Dashboard, { title: 'My Extension' });
+
+  // One-time work belongs to the registration run only.
+  if (api.context === 'registration') {
+    void api.loadData().then(migrateOldData);
+  }
+}
+```
+
+Type against `FrameExtensionAPI` from `@dorkos/extension-api` to get the version 2 surface, including `context`, `request` and `settings`.
+
+## 5. Check functions you receive
+
+Props DorkOS passes your components still arrive as values and functions. A function crosses the frame as a message, so calling it works, but it returns nothing to your code. `when` and `visibleWhen` options on a component still work, and run inside your frame. An icon component cannot cross the frame, so a right-panel tab shows the default puzzle-piece icon; a command's `icon` stays a string, as before.
+
+## What stays the same
+
+Registering pages, panels, Activity sections, status-bar items, commands, dialogs and settings tabs; `getState` and `subscribe`; `api.events`; `api.rooms`; `api.forward`; decisions and per-project settings; `notify`, `navigate`, `setTabMarker` and `setPageBadge`. Your server half does not change at all.
+
+Your screens pick up DorkOS's styles, light or dark mode and font choice, and follow them when the person changes them.

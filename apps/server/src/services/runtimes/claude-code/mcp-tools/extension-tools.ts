@@ -28,10 +28,12 @@ const EXTENSION_API_REFERENCE = `# DorkOS Extension API Reference
 
 ## Client-Side: ExtensionModule Interface
 
-Your extension must export an \`activate\` function:
+Runs in a sandboxed frame: no network, cookies or parent window; use \`api\`.
+The manifest MUST set \`"clientApiVersion": 2\` or the app never loads.
+\`activate\` runs per screen too: guard one-time work with \`api.context === 'registration'\`.
 
 \`\`\`typescript
-import type { ExtensionAPI } from '@dorkos/extension-api';
+import type { FrameExtensionAPI as ExtensionAPI } from '@dorkos/extension-api';
 
 export function activate(api: ExtensionAPI): void | (() => void) {
   // Register contributions, return optional cleanup function
@@ -46,20 +48,21 @@ interface ExtensionAPI {
 
   // --- UI Contributions ---
   // options.label names the contribution where the slot shows a label or tab (e.g. the
-  // right-panel tab strip; defaults to the id). options.icon is the tab-strip glyph for
-  // slots that render one (right-panel) — any { className } component; omit it and the
-  // strip falls back to a default puzzle-piece. Not 'dialog': use registerDialog.
+  // right-panel tab strip; defaults to the id). Not 'dialog': use registerDialog.
   // showIn: where a right-panel tab shows (pages 'session', 'channels', '*'=all).
-  registerComponent(slot: ExtensionPointId, id: string, component: ComponentType, options?: { priority?: number; label?: string; icon?: ComponentType<{ className?: string }>; showIn?: { agents?: string[]; rooms?: string[]; pages?: string[] } }): () => void;
+  registerComponent(slot: ExtensionPointId, id: string, component: ComponentType, options?: { priority?: number; label?: string; showIn?: { agents?: string[]; rooms?: string[]; pages?: string[] } }): () => void;
   registerCommand(id: string, label: string, callback: () => void, options?: { icon?: string; shortcut?: string }): () => void;
   // Mounted only while open; draw your own frame, call onOpenChange(false) to close.
   registerDialog(id: string, component: ComponentType<{ onOpenChange: (open: boolean) => void }>): { open: () => void; close: () => void };
   registerSettingsTab(id: string, label: string, component: ComponentType): () => void;
 
   // --- UI Control ---
-  executeCommand(command: UiCommand): void;
-  openCanvas(content: UiCanvasContent): void;
   navigate(path: string): void;
+
+  // --- Own server routes, /api/ext/<id>/<path> (needs manifest capabilities.http) ---
+  request<T>(path: string, options?: { method?: string; body?: unknown }): Promise<T>;
+  settings: { get<T>(): Promise<T> };
+  readonly context: 'registration' | 'view';
 
   // --- State ---
   getState(): ExtensionReadableState;
@@ -149,23 +152,11 @@ export function activate(api: ExtensionAPI) {
 
 ### Right-Panel Tab (contextual inspector)
 \`\`\`typescript
-// icon is a { className } component — the host sizes it. React can't import
-// lucide-react here, so ship an inline SVG. Omit icon for a default puzzle-piece.
-function MyTabIcon({ className }: { className?: string }) {
-  return (
-    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-      <rect x="3" y="3" width="18" height="18" rx="2" />
-      <path d="M15 3v18" />
-    </svg>
-  );
-}
-
 export function activate(api: ExtensionAPI) {
   // label names the tab; priority sorts the strip (lower = leftward). The panel
   // container owns the header (tab strip + close), so MyPanel renders only the body.
   api.registerComponent('right-panel', 'my-panel', MyPanel, {
     label: 'My Panel',
-    icon: MyTabIcon,
     priority: 50,
     showIn: { pages: ['session'] },
   });

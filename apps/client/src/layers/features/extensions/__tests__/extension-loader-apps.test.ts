@@ -62,7 +62,7 @@ afterEach(() => {
 function record(id: string, scope: 'global' | 'local' = 'global'): ExtensionRecordPublic {
   return {
     id,
-    manifest: { id, name: id, version: '1.0.0' },
+    manifest: { clientApiVersion: 2, id, name: id, version: '1.0.0' },
     status: 'compiled',
     scope,
     origin: 'user',
@@ -86,6 +86,32 @@ function catalog(records: ExtensionRecordPublic[]) {
     clientStates: getExtensionClientStates(),
   });
 }
+
+describe('apps built for the old extension API', () => {
+  it('never loads their code and says they need an update', async () => {
+    const old = record('meadow');
+    delete (old.manifest as { clientApiVersion?: 2 }).clientApiVersion;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => ({ ok: true, json: async () => [old] }))
+    );
+    await loader.initialize();
+    expect(importExtensionModule).not.toHaveBeenCalled();
+    expect(loader.getLoaded().has('meadow')).toBe(false);
+    const tab = useExtensionRegistry
+      .getState()
+      .slots['settings.tabs'].find((entry) => entry.id === 'meadow:load-error');
+    expect(tab).toBeDefined();
+    render(createElement(tab!.component));
+    expect(
+      screen.getByText('This app needs an update for this version of DorkOS.')
+    ).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'How to update it' })).toHaveAttribute(
+      'href',
+      'https://dorkos.ai/docs/integrations/extension-frame-migration'
+    );
+  });
+});
 
 describe('independent app loads', () => {
   it('activates two good apps and their Settings before a third import settles', async () => {
@@ -164,7 +190,8 @@ describe('independent app loads', () => {
     });
     expect(fetch).toHaveBeenCalledTimes(2);
     expect(importExtensionModule).toHaveBeenLastCalledWith(
-      expect.stringMatching(/\/extensions\/pond\/bundle\?t=\d+/)
+      expect.stringMatching(/\/extensions\/pond\/bundle\?t=\d+/),
+      expect.objectContaining({ id: 'pond' })
     );
     expect(loader.getLoaded().has('pond')).toBe(true);
     expect(useExtensionRegistry.getState().slots['settings.tabs'].map((tab) => tab.id)).toEqual([

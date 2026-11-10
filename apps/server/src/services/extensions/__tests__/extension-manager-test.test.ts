@@ -318,9 +318,9 @@ describe('ExtensionManager.testExtension', () => {
 
     // Bundle that throws during activate
     const bundle = `
-      export function activate(api) {
+      var __dorkosExtension = { activate(api) {
         throw new Error('Activation kaboom');
-      }
+      } };
     `;
     mockReadBundle.mockResolvedValue(bundle);
 
@@ -341,7 +341,7 @@ describe('ExtensionManager.testExtension', () => {
     mockCompile.mockResolvedValue({ code: 'code', sourceHash: 'hash789' });
 
     // Bundle with no activate export
-    const bundle = `export const name = 'No activate here';`;
+    const bundle = `var __dorkosExtension = { name: 'No activate here' };`;
     mockReadBundle.mockResolvedValue(bundle);
 
     await manager.initialize(null);
@@ -361,11 +361,11 @@ describe('ExtensionManager.testExtension', () => {
 
     // Bundle that registers components
     const bundle = `
-      export function activate(api) {
+      var __dorkosExtension = { activate(api) {
         api.registerComponent('dashboard.sections', 'card-1', function() {});
         api.registerCommand('say-hello', 'Say Hello', function() {});
         api.registerSettingsTab('prefs', 'Preferences', function() {});
-      }
+      } };
     `;
     mockReadBundle.mockResolvedValue(bundle);
 
@@ -389,7 +389,7 @@ describe('ExtensionManager.testExtension', () => {
     mockDiscover.mockResolvedValue([record]);
     mockCompile.mockResolvedValue({ code: 'code', sourceHash: 'emptyhash' });
 
-    const bundle = `export function activate(api) { /* no-op */ }`;
+    const bundle = `var __dorkosExtension = { activate(api) { /* no-op */ } };`;
     mockReadBundle.mockResolvedValue(bundle);
 
     await manager.initialize(null);

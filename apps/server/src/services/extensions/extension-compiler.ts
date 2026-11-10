@@ -15,6 +15,7 @@ import { HOST_HONO_NAMESPACE, hostHono, hostHonoPlugin } from './server-bundle/h
 import { logger } from '../../lib/logger.js';
 import { BundleVouchers } from './pin/extension-bundle-vouchers.js';
 import type { ExtensionRecord } from '@dorkos/extension-api';
+import { EXTENSION_BUNDLE_GLOBAL as CLIENT_BUNDLE_GLOBAL } from '@dorkos/extension-api';
 import {
   buildStartTime,
   computeBuildKey,
@@ -280,14 +281,23 @@ interface BuildTarget {
   hostHono: boolean;
 }
 
-/** Browser ESM bundle the client `import()`s. */
+/**
+ * Browser bundle the client runs inside an app's sandboxed frame (DOR-3293).
+ *
+ * A classic script, not ESM: the frame is a `srcdoc` document, which inherits
+ * the app shell's CSP, and that policy allows inline scripts but no `blob:`
+ * module, so an ESM bundle could never be imported there. The frame runtime
+ * defines `require` for the three externals and reads the exports from
+ * {@link CLIENT_BUNDLE_GLOBAL}.
+ */
 const CLIENT_TARGET: BuildTarget = {
   subDir: null,
   prefix: '',
   noun: 'bundle',
   options: {
     bundle: true,
-    format: 'esm',
+    format: 'iife',
+    globalName: CLIENT_BUNDLE_GLOBAL,
     platform: 'browser',
     target: 'es2022',
     external: ['react', 'react-dom', '@dorkos/extension-api'],

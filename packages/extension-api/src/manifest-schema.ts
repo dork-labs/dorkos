@@ -20,6 +20,8 @@ import { runEntryProblem } from './run-allowlist.js';
  * kinds are rejected at runtime — this is the capability gate.
  */
 const ExtensionCapabilitiesSchema = z.object({
+  /** Allows requests to this app's own server routes through the frame bridge. */
+  http: z.boolean().optional(),
   /** Event kinds or categories this extension is allowed to subscribe to. */
   events: z.array(z.enum(EXTENSION_EVENT_DECLARATIONS)).optional(),
   /**
@@ -420,6 +422,8 @@ const ExtensionManifestObjectSchema = z.object({
   summary: z.string().min(1).max(80).optional(),
   /** Author name or identifier. */
   author: z.string().optional(),
+  /** Client bridge major. Version 2 runs in an isolated frame; older bundles need rebuilding. */
+  clientApiVersion: z.literal(2).optional(),
   /** Minimum DorkOS version required (semver). If host is older, extension cannot be enabled. */
   minHostVersion: z.string().optional(),
   /** Declares which slots this extension contributes to. Informational only — not enforced. */

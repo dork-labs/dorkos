@@ -13,6 +13,14 @@ vi.mock('@/layers/shared/lib/ui-action-dispatcher', () => ({
   executeUiCommand: vi.fn(),
 }));
 
+// A bundle cannot start in jsdom (it needs a real sandboxed frame), so every
+// import here fails the way an unreachable bundle does.
+vi.mock('../model/extension-bundle-import', () => ({
+  importExtensionModule: vi.fn(async () => {
+    throw new Error('The app bundle could not be read.');
+  }),
+}));
+
 import { ExtensionLoader } from '../model/extension-loader';
 import type { ExtensionAPIDeps } from '../model/types';
 import type { ExtensionRecordPublic } from '@dorkos/extension-api';
@@ -52,7 +60,7 @@ function makeDeps(overrides: Partial<ExtensionAPIDeps> = {}): ExtensionAPIDeps {
 function makeRecord(overrides: Partial<ExtensionRecordPublic> = {}): ExtensionRecordPublic {
   return {
     id: 'test-ext',
-    manifest: { id: 'test-ext', name: 'Test Extension', version: '1.0.0' },
+    manifest: { clientApiVersion: 2, id: 'test-ext', name: 'Test Extension', version: '1.0.0' },
     status: 'compiled',
     scope: 'global',
     origin: 'user',
@@ -68,7 +76,7 @@ function makeRecord(overrides: Partial<ExtensionRecordPublic> = {}): ExtensionRe
 function makeCompiledRecord(id = 'test-ext'): ExtensionRecordPublic {
   return makeRecord({
     id,
-    manifest: { id, name: `Ext ${id}`, version: '1.0.0' },
+    manifest: { clientApiVersion: 2, id, name: `Ext ${id}`, version: '1.0.0' },
     status: 'compiled',
     bundleReady: true,
   });
@@ -144,7 +152,7 @@ describe('ExtensionLoader', () => {
     const loadedMap = (loader as unknown as { loaded: Map<string, unknown> }).loaded;
     loadedMap.set('my-ext', {
       id: 'my-ext',
-      manifest: { name: 'My Ext', version: '2.0.0', entry: 'index.js' },
+      manifest: { clientApiVersion: 2, name: 'My Ext', version: '2.0.0', entry: 'index.js' },
       module: { activate },
       api: {},
       cleanups: [],
@@ -204,7 +212,7 @@ describe('ExtensionLoader', () => {
     const loaded = (loader as unknown as { loaded: Map<string, unknown> }).loaded;
     loaded.set('ext-1', {
       id: 'ext-1',
-      manifest: { name: 'Ext 1', version: '1.0.0', entry: 'index.js' },
+      manifest: { clientApiVersion: 2, name: 'Ext 1', version: '1.0.0', entry: 'index.js' },
       module: {},
       api: {},
       cleanups: [cleanup1a, cleanup1b],
@@ -212,7 +220,7 @@ describe('ExtensionLoader', () => {
     });
     loaded.set('ext-2', {
       id: 'ext-2',
-      manifest: { name: 'Ext 2', version: '1.0.0', entry: 'index.js' },
+      manifest: { clientApiVersion: 2, name: 'Ext 2', version: '1.0.0', entry: 'index.js' },
       module: {},
       api: {},
       cleanups: [cleanup2],
@@ -242,7 +250,7 @@ describe('ExtensionLoader', () => {
     const loaded = (loader as unknown as { loaded: Map<string, unknown> }).loaded;
     loaded.set('ext-resilience', {
       id: 'ext-resilience',
-      manifest: { name: 'Resilience', version: '1.0.0', entry: 'index.js' },
+      manifest: { clientApiVersion: 2, name: 'Resilience', version: '1.0.0', entry: 'index.js' },
       module: {},
       api: {},
       cleanups: [cleanupGood1, cleanupThrows, cleanupGood2],
@@ -267,7 +275,12 @@ describe('ExtensionLoader', () => {
     const loaded = (loader as unknown as { loaded: Map<string, unknown> }).loaded;
     loaded.set('ext-bad-deactivate', {
       id: 'ext-bad-deactivate',
-      manifest: { name: 'Bad Deactivate', version: '1.0.0', entry: 'index.js' },
+      manifest: {
+        clientApiVersion: 2,
+        name: 'Bad Deactivate',
+        version: '1.0.0',
+        entry: 'index.js',
+      },
       module: {},
       api: {},
       cleanups: [cleanup],
@@ -347,7 +360,7 @@ describe('ExtensionLoader', () => {
     const loaded = (loader as unknown as { loaded: Map<string, unknown> }).loaded;
     loaded.set('no-deactivate', {
       id: 'no-deactivate',
-      manifest: { name: 'No Deactivate', version: '0.1.0', entry: 'index.js' },
+      manifest: { clientApiVersion: 2, name: 'No Deactivate', version: '0.1.0', entry: 'index.js' },
       module: {},
       api: {},
       cleanups: [cleanup],
@@ -383,7 +396,7 @@ describe('ExtensionLoader', () => {
     for (let i = 0; i < 3; i++) {
       loaded.set(`ext-${i}`, {
         id: `ext-${i}`,
-        manifest: { name: `Ext ${i}`, version: '1.0.0', entry: 'index.js' },
+        manifest: { clientApiVersion: 2, name: `Ext ${i}`, version: '1.0.0', entry: 'index.js' },
         module: {},
         api: {},
         cleanups: [],
@@ -407,7 +420,7 @@ describe('ExtensionLoader server lifecycle coordination', () => {
   it('calls POST init-server for extensions with hasServerEntry', async () => {
     const rec = makeRecord({
       id: 'server-ext',
-      manifest: { id: 'server-ext', name: 'Server Ext', version: '1.0.0' },
+      manifest: { clientApiVersion: 2, id: 'server-ext', name: 'Server Ext', version: '1.0.0' },
       status: 'compiled',
       bundleReady: true,
       hasServerEntry: true,
@@ -518,7 +531,7 @@ describe('ExtensionLoader server lifecycle coordination', () => {
   it('calls POST init-server for extensions with hasDataProxy', async () => {
     const rec = makeRecord({
       id: 'proxy-ext',
-      manifest: { id: 'proxy-ext', name: 'Proxy Ext', version: '1.0.0' },
+      manifest: { clientApiVersion: 2, id: 'proxy-ext', name: 'Proxy Ext', version: '1.0.0' },
       status: 'compiled',
       bundleReady: true,
       hasServerEntry: false,
@@ -548,7 +561,7 @@ describe('ExtensionLoader server lifecycle coordination', () => {
     const loaded = (loader as unknown as { loaded: Map<string, unknown> }).loaded;
     loaded.set('resilient-ext', {
       id: 'resilient-ext',
-      manifest: { name: 'Resilient', version: '1.0.0', entry: 'index.js' },
+      manifest: { clientApiVersion: 2, name: 'Resilient', version: '1.0.0', entry: 'index.js' },
       module: { activate: vi.fn() },
       api: {},
       cleanups: [],
@@ -627,6 +640,7 @@ describe('ExtensionLoader auto-register config tab', () => {
     const rec = makeRecord({
       id: 'settings-only',
       manifest: {
+        clientApiVersion: 2,
         id: 'settings-only',
         name: 'Settings Only Extension',
         version: '1.0.0',
@@ -665,6 +679,7 @@ describe('ExtensionLoader auto-register config tab', () => {
     const rec = makeRecord({
       id: 'combined-ext',
       manifest: {
+        clientApiVersion: 2,
         id: 'combined-ext',
         name: 'Combined Extension',
         version: '1.0.0',
@@ -700,11 +715,7 @@ describe('ExtensionLoader auto-register config tab', () => {
   it('does not auto-register config tab when extension has no secrets or settings', () => {
     const deps = makeDeps();
     const rec = makeRecord({
-      manifest: {
-        id: 'ui-only',
-        name: 'UI Only Extension',
-        version: '1.0.0',
-      },
+      manifest: { clientApiVersion: 2, id: 'ui-only', name: 'UI Only Extension', version: '1.0.0' },
     });
 
     const loader = new ExtensionLoader(deps);
@@ -724,6 +735,7 @@ describe('ExtensionLoader auto-register config tab', () => {
     const deps = makeDeps();
     const rec = makeRecord({
       manifest: {
+        clientApiVersion: 2,
         id: 'empty-ext',
         name: 'Empty Extension',
         version: '1.0.0',
@@ -762,6 +774,7 @@ describe('ExtensionLoader auto-register config tab', () => {
     });
     const rec = makeRecord({
       manifest: {
+        clientApiVersion: 2,
         id: 'tracked',
         name: 'Tracked',
         version: '1.0.0',
