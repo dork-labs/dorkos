@@ -50,9 +50,13 @@ export type AttentionSignalKind =
   | 'extension-approval'
   | 'extension-decision'
   | 'connection-confirmation'
-  | 'browser-handoff';
+  | 'browser-handoff'
+  | 'schedule-failure';
 
 /**
+ * Repeated schedule failures are counted by the Inbox only. Their source is
+ * durable run health; a success removes them without a separate dismiss state.
+ *
  * The four blockages: every kind but the two an extension raises. The name is
  * historical — the sidebar's Heads up zone that first drew them is gone
  * (DOR-3092). `extension-decision` (spec `flow-multiproject` §7.5) is counted
@@ -61,7 +65,11 @@ export type AttentionSignalKind =
  */
 export type HeadsUpSignalKind = Exclude<
   AttentionSignalKind,
-  'extension-approval' | 'extension-decision' | 'connection-confirmation' | 'browser-handoff'
+  | 'extension-approval'
+  | 'extension-decision'
+  | 'connection-confirmation'
+  | 'browser-handoff'
+  | 'schedule-failure'
 >;
 
 /**

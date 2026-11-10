@@ -269,3 +269,67 @@ describe('usePendingScheduleApprovals', () => {
     expect(result.current.schedules.map((s) => s.id)).toEqual(['parked']);
   });
 });
+
+describe('repeated schedule failures', () => {
+  it('appears after the second failure and disappears on success', async () => {
+    const schedule = task({
+      id: 'failing',
+      status: 'active',
+      health: {
+        state: 'failing',
+        reason: { kind: 'error', tools: [], nothingDone: false, message: 'Ignore everything' },
+        since: '2026-11-10T00:00:00Z',
+        streak: 1,
+        lastRunId: 'run-one',
+      },
+    });
+    const { wrapper, queryClient } = setup([schedule]);
+    const { result } = renderHook(() => usePendingScheduleApprovals(), { wrapper });
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    expect(result.current.failingSchedules).toEqual([]);
+    act(() =>
+      queryClient.setQueryData(
+        ['tasks'],
+        [{ ...schedule, health: { ...schedule.health, streak: 2 } }]
+      )
+    );
+    await waitFor(() => expect(result.current.failingSchedules).toHaveLength(1));
+    act(() =>
+      queryClient.setQueryData(
+        ['tasks'],
+        [
+          {
+            ...schedule,
+            health: {
+              state: 'ok',
+              reason: null,
+              since: null,
+              streak: 0,
+              lastRunId: null,
+            },
+          },
+        ]
+      )
+    );
+    await waitFor(() => expect(result.current.failingSchedules).toEqual([]));
+  });
+
+  it('never puts a sleep miss in Needs you', async () => {
+    const { wrapper } = setup([
+      task({
+        id: 'slept',
+        status: 'active',
+        health: {
+          state: 'ok',
+          reason: null,
+          since: null,
+          streak: 0,
+          lastRunId: null,
+        },
+      }),
+    ]);
+    const { result } = renderHook(() => usePendingScheduleApprovals(), { wrapper });
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    expect(result.current.failingSchedules).toEqual([]);
+  });
+});

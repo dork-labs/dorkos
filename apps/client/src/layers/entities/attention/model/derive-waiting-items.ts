@@ -76,6 +76,8 @@ export interface WaitingQueueSources {
   asks: readonly InteractionPendingEvent[];
   /** Schedules an agent proposed and parked. */
   schedules: readonly Task[];
+  /** Schedules with two or more consecutive failed or blocked runs. */
+  failingSchedules?: readonly Task[];
   /**
    * Installed extensions waiting for a person to turn them on (DOR-2517).
    * Optional so a caller that only reads the three blocking queues — the
@@ -114,6 +116,10 @@ export function deriveWaitingItems(sources: WaitingQueueSources): WaitingItem[] 
 
   for (const task of sources.schedules) {
     items.push({ id: scheduleSignalId(task.id), kind: 'schedule-approval' });
+  }
+
+  for (const task of sources.failingSchedules ?? []) {
+    items.push({ id: `schedule-failure:${task.id}`, kind: 'schedule-failure' });
   }
 
   for (const approval of sources.extensionApprovals ?? []) {

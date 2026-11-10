@@ -13,3 +13,11 @@ describe('ADDRESS_SEARCH_PARAMS (DOR-2824)', () => {
     expect([...ADDRESS_SEARCH_PARAMS].filter((key) => !read.has(key))).toEqual([]);
   });
 });
+
+it('keeps a schedule notice’s run target on the tasks route', async () => {
+  const { tasksSearchSchema } = await import('../route-search');
+  expect(tasksSearchSchema.parse({ schedule: 'schedule', run: 'run-two' })).toMatchObject({
+    schedule: 'schedule',
+    run: 'run-two',
+  });
+});

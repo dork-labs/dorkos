@@ -1,4 +1,5 @@
-import { refusedToolsColumnOf, type RunCap } from './history/run-cap-column.js';
+import { RunNoticeObserver } from './notices/run-notice-observer.js';
+import { updateRunRow, type RunUpdate } from './history/update-run-row.js';
 import { eq, ne, desc, and, count, inArray, notInArray, lt, isNull, sql } from 'drizzle-orm';
 import {
   pulseSchedules,
@@ -12,8 +13,6 @@ import type {
   Task,
   TaskRun,
   TaskHealth,
-  TaskRunOutcome,
-  TaskRunStatus,
   TaskRunTrigger,
   UpdateTaskRequest,
 } from '@dorkos/shared/types';
@@ -99,26 +98,6 @@ export type UntimedTaskUpdate = Omit<UpdateTaskRequest, 'cron' | 'timezone' | 'r
   resetTiming?: never;
 };
 
-/** Fields that can be updated on a run. */
-interface RunUpdate {
-  status?: TaskRunStatus;
-  finishedAt?: string;
-  durationMs?: number;
-  outputSummary?: string;
-  error?: string;
-  sessionId?: string;
-  /**
-   * The tools this run was refused for want of somebody to approve them, in
-   * the order they were first refused. Omitted leaves the stored list alone;
-   * `[]` is a real answer and clears it.
-   */
-  refusedTools?: string[];
-  /** The run runs capped, because its SKILL file changed (DOR-3703, M4). Never unset. */
-  cappedAt?: RunCap;
-  /** How much a `needs_attention` run got done (DOR-3123). */
-  outcome?: TaskRunOutcome;
-}
-
 /**
  * Callback fired exactly once when a run transitions to a terminal status
  * (DOR-240). The store stays a pure data layer: it holds this reference and
@@ -138,6 +117,8 @@ export type RunTerminalListener = (run: TaskRun, task: Task | null) => void;
  * for immediate consistency. The reconciler periodically re-syncs.
  */
 export class TaskStore {
+  /** Committed run observations used only for quiet system notices. */
+  readonly runNotices = new RunNoticeObserver();
   private db: Db;
   private readonly runSessions: RunSessionStore;
   /** Optional listener fired once per run's terminal transition (DOR-240). */
@@ -501,36 +482,13 @@ export class TaskStore {
       return existing;
     }
 
-    this.db
-      .update(pulseRuns)
-      .set({
-        status: update.status ?? existing.status,
-        finishedAt: update.finishedAt ?? existing.finishedAt,
-        durationMs: update.durationMs ?? existing.durationMs,
-        output: update.outputSummary ?? existing.outputSummary,
-        error: update.error ?? existing.error,
-        sessionId: update.sessionId ?? existing.sessionId,
-        // Serialized here rather than by the caller, so the one shape this
-        // column holds is decided in one place (`run-cap-column.ts`). An absent
-        // list leaves the stored value alone, as every field above does, and a
-        // run's cap, once set, stays (DOR-3703, M4).
-        refusedTools: refusedToolsColumnOf(
-          update.refusedTools ?? existing.refusedTools,
-          update.cappedAt ?? existing.cappedAt
-        ),
-        outcome: update.outcome ?? existing.outcome,
-      })
-      .where(eq(pulseRuns.id, id))
-      .run();
+    updateRunRow(this.db, id, existing, update);
 
     const updated = this.getRun(id);
+    if (update.status && isTerminalRunStatus(update.status))
+      this.runNotices.emit('terminal', updated);
 
-    // Terminal hook (DOR-240): fire exactly once, only on the write that moves a
-    // non-terminal run to a terminal status. Reaching here means the guard above
-    // did NOT short-circuit, so `existing` was non-terminal; a terminal
-    // `update.status` is therefore a genuine non-terminal→terminal transition.
-    // Dispatched fire-and-forget so notification latency never blocks the status
-    // write, and wrapped so a listener throw can never corrupt run persistence.
+    // Terminal consumers observe only genuine transitions, after the write.
     if (this.onRunTerminal && updated && update.status && isTerminalRunStatus(update.status)) {
       const listener = this.onRunTerminal;
       const task = this.getTask(updated.scheduleId);
@@ -816,7 +774,9 @@ export class TaskStore {
       return id;
     });
 
-    return runId ? this.getRun(runId) : null;
+    const run = runId ? this.getRun(runId) : null;
+    this.runNotices.emit('scheduled', run);
+    return run;
   }
 
   /**

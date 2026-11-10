@@ -1,3 +1,4 @@
+import { wireScheduleNotices } from '../../services/tasks/notices/wire-schedule-notices.js';
 /**
  * Work that needs Mesh: carried Claude accounts, the team room, live change
  * broadcasts, moment detectors, the relay adapters and the notification
@@ -285,6 +286,16 @@ export async function wireTeamRoomAndRelayAdapters(
   //      reached the feed only on the next poll.
   const taskStore = refs.taskStore;
   if (taskStore) {
+    wireScheduleNotices({
+      taskStore,
+      within: (write) => db.transaction(() => write()),
+      rooms: roomService,
+      store: roomStore,
+      authors: roomAuthors,
+      directChats,
+      mesh: refs.meshCore,
+      operatorAuthorId: resolveOperatorAuthorId,
+    });
     // The fourth consumer (DOR-2717): a run whose agent finishes the work in a
     // turn it starts after the run's own turn ended has that turn's words added
     // to the run, rather than left only in its session.
