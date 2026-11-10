@@ -523,7 +523,9 @@ describe('the claude-code prompt names tools the way the runtime exposes them', 
     // its searchable ending.
     // 144 -> 145 for `agent_instructions` (spec `context-viewer` phase 3): no prompt block names
     // it, so it stays deferred.
-    expect(advertised.size).toBe(145);
+    // 145 -> 149 for the four work-queue verbs an agent uses on another agent's queue:
+    // deferred, no prompt block names them.
+    expect(advertised.size).toBe(149);
     for (const name of [
       'configure_doc_channel',
       'approve_doc_route',

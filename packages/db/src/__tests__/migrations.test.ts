@@ -392,6 +392,8 @@ describe('Database Migrations', () => {
       'user',
       'verification',
       'work_queue_control',
+      // Who queued a work item, at what level, and its first-run ceiling (VR-A).
+      'work_queue_item_authority',
       'workspaces',
     ]);
   });

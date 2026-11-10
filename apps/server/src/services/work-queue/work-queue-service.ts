@@ -1,15 +1,7 @@
-/**
- * The rules of an agent's work queue (DOR-3462): who may change what.
- *
- * An agent works on its own queue only, as `session_start` starts chats only as
- * the caller: it may add and remove items, and read the list. Everything about how
- * a queue runs is a person's: turning it on (off by default, and off is how it is
- * paused), its target, its daily start cap, the order, queueing an ended item
- * again, and the stop on every queue. No agent tool reaches those methods.
- *
- * @module services/work-queue/work-queue-service
- */
+/** Reads and changes work queues after the calling surface authorizes the exact action. */
 import path from 'node:path';
+import type { TurnPermissionLevel } from '@dorkos/shared/agent-runtime';
+import { recordAudit } from '../audit/audit-trail.js';
 import { ulid } from 'ulidx';
 import type { AgentWorkItemRow } from '@dorkos/db';
 import {
@@ -23,11 +15,26 @@ import {
 import type { WorkQueueStore } from './work-queue-store.js';
 
 /** Who is acting on a queue. */
-export type WorkQueueActor = { kind: 'person' } | { kind: 'agent'; agentId: string };
+export type WorkQueueActor =
+  | { kind: 'person' }
+  | {
+      kind: 'agent';
+      agentId: string;
+      sessionId?: string;
+      level?: TurnPermissionLevel;
+      otherQueueApproved?: true;
+    };
 
 /** A stable refusal code. */
 export type WorkQueueErrorCode =
-  'NOT_FOUND' | 'NOT_YOURS' | 'NOT_QUEUED' | 'NOT_ENDED' | 'FULL' | 'BAD_CWD';
+  | 'NOT_FOUND'
+  | 'NOT_YOURS'
+  | 'NOT_QUEUED'
+  | 'NOT_ENDED'
+  | 'FULL'
+  | 'BAD_CWD'
+  | 'CAP_CEILING'
+  | 'STALE_QUEUE';
 
 /** A refusal, in a sentence the caller can show. */
 export class WorkQueueError extends Error {
@@ -124,6 +131,16 @@ export class WorkQueueService {
       addedBy: actor.kind,
       createdAt: this.now().toISOString(),
     });
+    this.deps.store.recordAuthority({
+      itemId: row.id,
+      authorAgentId: actor.kind === 'agent' ? actor.agentId : null,
+      authorSessionId: actor.kind === 'agent' ? (actor.sessionId ?? null) : null,
+      requestedLevel:
+        actor.kind === 'agent'
+          ? JSON.stringify(actor.level ?? { asks: 'always', reach: 'read', outsider: true })
+          : null,
+    });
+    this.record('add', agentId, null, toWorkItem(row));
     this.deps.wake();
     return toWorkItem(row);
   }
@@ -141,25 +158,42 @@ export class WorkQueueService {
     if (!this.deps.store.remove(id)) {
       throw new WorkQueueError('NOT_QUEUED', 'That item has already started.');
     }
+    this.record('remove', item.agentId, toWorkItem(item), null);
   }
 
   /**
-   * Turn an agent's queue on or off, or set its target or daily start cap. A
-   * person's call, only ever reached from the person's route.
+   * Change queue settings after the surface authorizes the exact change. A person’s
+   * daily-cap choice also sets the ceiling; an agent’s change never moves it.
    *
    * @param agentId - The agent.
    * @param body - What changes.
+   * @param options - Whether this is an authorized agent change.
    */
-  update(agentId: string, body: UpdateWorkQueueRequest): WorkQueue {
+  update(agentId: string, body: UpdateWorkQueueRequest, options: { agent?: true } = {}): WorkQueue {
+    const before = this.read(agentId);
+    if (
+      body.dailyStartCap !== undefined &&
+      options.agent &&
+      body.dailyStartCap > this.deps.store.settings(agentId).dailyCapCeiling
+    ) {
+      throw new WorkQueueError(
+        'CAP_CEILING',
+        'Daily cap exceeds the Settings limit. Lower it first.'
+      );
+    }
     this.deps.store.updateSettings(
       agentId,
       {
+        ...(!options.agent && body.dailyStartCap !== undefined
+          ? { dailyCapCeiling: body.dailyStartCap }
+          : {}),
         ...(body.enabled !== undefined ? { enabled: body.enabled } : {}),
         ...(body.target !== undefined ? { target: body.target } : {}),
         ...(body.dailyStartCap !== undefined ? { dailyStartCap: body.dailyStartCap } : {}),
       },
       this.now().toISOString()
     );
+    this.record('configure', agentId, before, this.read(agentId));
     this.deps.wake();
     return this.read(agentId);
   }
@@ -183,7 +217,9 @@ export class WorkQueueService {
    * @param itemIds - The items, first to start first.
    */
   reorder(agentId: string, itemIds: readonly string[]): WorkQueue {
+    const before = this.read(agentId);
     this.deps.store.reorder(agentId, itemIds);
+    this.record('reorder', agentId, before, this.read(agentId));
     return this.read(agentId);
   }
 
@@ -198,12 +234,31 @@ export class WorkQueueService {
     if (!this.deps.store.requeue(id)) {
       throw new WorkQueueError('NOT_ENDED', 'That item has not ended.');
     }
+    this.record('requeue', item.agentId, toWorkItem(item), toWorkItem(this.deps.store.get(id)!));
     this.deps.wake();
     return toWorkItem(this.deps.store.get(id) as AgentWorkItemRow);
   }
 
+  /** Read the exact item before approving a requeue or removal. */
+  item(id: string): WorkItem {
+    const item = this.deps.store.get(id);
+    if (!item) throw new WorkQueueError('NOT_FOUND', 'Queued work was not found.');
+    return toWorkItem(item);
+  }
+
+  private record(verb: string, agentId: string, before: unknown, after: unknown): void {
+    recordAudit({
+      action: `work-queue.${verb}`,
+      operation: 'modify',
+      target: { type: 'agent', id: agentId },
+      outcome: 'ok',
+      change: [{ field: 'workQueue', before, after }],
+      summary: `Changed queued work: ${verb}`,
+    });
+  }
+
   private assertOwn(actor: WorkQueueActor, agentId: string): void {
-    if (actor.kind === 'agent' && actor.agentId !== agentId) {
+    if (actor.kind === 'agent' && actor.agentId !== agentId && !actor.otherQueueApproved) {
       throw new WorkQueueError('NOT_YOURS', 'An agent can change only its own queue.');
     }
   }

@@ -43,6 +43,9 @@ const AGENT: AgentIdentity = {
 
 /** Every destructive action that still asks under Trusted, and why. */
 const STILL_ASKS: Record<string, string> = {
+  'work-queue.add': 'adding deferred work always asks',
+  'work-queue.configure': 'widening a queue always asks',
+  'work-queue.requeue': 'a new start always asks',
   'operator.update_agent_boundaries': 'Safety limits is a floor',
   'operator.update_agent_execution': 'its card shows old and new (alwaysAsks)',
   'marketplace.link': 'no area: runs code from a folder',
