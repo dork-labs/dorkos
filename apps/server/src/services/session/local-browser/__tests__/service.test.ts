@@ -540,6 +540,36 @@ describe('local browser ownership and observations', () => {
     ).rejects.toMatchObject({ code: 'stale_page' });
     expect(click).toHaveBeenCalledTimes(2); // trial plus exactly one real click
   });
+  // DOR-3207: an agent may press pause (the route skips the person check), so
+  // pause must only take access away. It moves nothing, closes nothing, and
+  // stays on until a person resumes.
+  it('pause is stop-only: the page, tab and window are untouched, and the agent stays out', async () => {
+    const { service, page, context, browser, click } = await create();
+    await selectOwned(service);
+    const before = await service.state();
+    const { revision } = await service.observe();
+    vi.mocked(page.goto).mockClear();
+    vi.mocked(page.bringToFront).mockClear();
+    vi.mocked(context.newPage).mockClear();
+
+    const paused = await service.pause();
+
+    expect(paused.paused).toBe(true);
+    expect(paused.selectedTabId).toBe(before.selectedTabId);
+    expect(paused.tabs).toEqual(before.tabs);
+    expect(page.goto).not.toHaveBeenCalled();
+    expect(page.bringToFront).not.toHaveBeenCalled();
+    expect(context.newPage).not.toHaveBeenCalled();
+    expect(context.close).not.toHaveBeenCalled();
+    expect(browser.close).not.toHaveBeenCalled();
+    await expect(
+      service.action({ kind: 'click', role: 'button', name: 'Save', revision })
+    ).rejects.toMatchObject({ code: 'paused' });
+    expect(click).not.toHaveBeenCalled();
+    // A second press is still only a stop, and does not lift the first.
+    expect((await service.pause()).paused).toBe(true);
+    await service.disconnect();
+  });
   it('pause during actionability wait prevents effect dispatch', async () => {
     const { service, click } = await create();
     await selectOwned(service);

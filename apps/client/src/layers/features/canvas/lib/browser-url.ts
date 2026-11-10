@@ -62,6 +62,46 @@ function isLoopbackHost(hostname: string): boolean {
   return LOOPBACK_HOSTS.has(hostname) || hostname.endsWith('.localhost');
 }
 
+/** The parts of the page's own `Location` {@link isThisAppsAddress} reads. */
+export interface PageAddress {
+  /** The page's origin, e.g. `http://localhost:4242`. */
+  origin: string;
+  /** The page's hostname, e.g. `localhost`. */
+  hostname: string;
+  /** The page's port as `Location` reports it (`''` for the scheme's default). */
+  port: string;
+  /** The page's scheme with its colon, e.g. `http:`. */
+  protocol: string;
+}
+
+/**
+ * Whether a frame source is this app's own server, so framing it with
+ * `allow-same-origin` would hand the framed page the app's own powers.
+ *
+ * Two shapes count. The page's exact origin, which a tunnel or Wi-Fi address
+ * reaches as an `external` target. And, while the page is on a loopback name,
+ * any loopback name on the page's own port: `127.0.0.1:4242` is a different
+ * origin string from `localhost:4242` but the same server, and the server
+ * trusts both. A source that does not parse is treated as this app's, since a
+ * relative URL resolves onto the page's own origin.
+ *
+ * @param src - The URL about to be framed (absolute, or relative to the page).
+ * @param page - The page rendering the frame, normally `window.location`.
+ */
+export function isThisAppsAddress(src: string, page: PageAddress): boolean {
+  let target: URL;
+  try {
+    target = new URL(src, page.origin);
+  } catch {
+    return true;
+  }
+  if (target.origin === page.origin) return true;
+  if (!isLoopbackHost(page.hostname) || !isLoopbackHost(target.hostname)) return false;
+  const pagePort = page.port || String(defaultPort(page.protocol));
+  const targetPort = target.port || String(defaultPort(target.protocol));
+  return pagePort === targetPort;
+}
+
 /** How a loopback (`proxy`) target is loaded: straight into the frame, or via the server. */
 export type LoopbackStrategy = 'direct' | 'server';
 
@@ -85,6 +125,8 @@ export type LoopbackStrategy = 'direct' | 'server';
  * a loosening: the origin is `http://<host>:<port>`, cross-origin to the cockpit
  * and absent from the server's trusted origins, so it cannot read `/api/*`. It
  * is exactly as privileged as the same dev server open in another browser tab.
+ * The one address that premise fails for is this app's own, which
+ * {@link isThisAppsAddress} catches before any frame is published.
  * The `serve` path — local files on the DorkOS origin, where the untrusted-HTML
  * threat actually lives — keeps its opaque origin.
  *

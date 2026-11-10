@@ -2,7 +2,9 @@
 import type { ServerResponse } from 'node:http';
 
 const CSP = 'content-security-policy';
+const XFO = 'x-frame-options';
 const FRAME_ANCESTORS = /(?:^|[;,])\s*frame-ancestors(?:\s|$)/i;
+const FRAME_ANCESTORS_NONE = /(?:^|[;,])\s*frame-ancestors\s+'none'\s*(?:[;,]|$)/i;
 type HeaderValue = number | string | readonly string[] | undefined;
 
 /** The headers supplied directly to writeHead override earlier setHeader calls. */
@@ -21,21 +23,25 @@ function valuesFrom(headers: unknown, name: string): string[] | undefined {
   return values.length ? values : undefined;
 }
 
-/** Replace only CSP; keep other headers, including repeated Set-Cookie fields, intact. */
-function withPolicy(headers: unknown, policy: readonly string[]): unknown {
+/**
+ * Replace only CSP, and add `X-Frame-Options` when asked; keep other headers,
+ * including repeated Set-Cookie fields, intact.
+ */
+function withPolicy(headers: unknown, policy: readonly string[], deny: boolean): unknown {
   if (Array.isArray(headers)) {
     const kept: unknown[] = [];
     for (let index = 0; index < headers.length; index += 2)
       if (String(headers[index]).toLowerCase() !== CSP)
         kept.push(headers[index], headers[index + 1]);
     for (const value of policy) kept.push(CSP, value);
+    if (deny) kept.push(XFO, 'DENY');
     return kept;
   }
   if (headers && typeof headers === 'object') {
     const kept = Object.fromEntries(
       Object.entries(headers).filter(([key]) => key.toLowerCase() !== CSP)
     );
-    return { ...kept, [CSP]: policy };
+    return deny ? { ...kept, [CSP]: policy, [XFO]: 'DENY' } : { ...kept, [CSP]: policy };
   }
   return headers;
 }
@@ -44,7 +50,8 @@ function withPolicy(headers: unknown, policy: readonly string[]): unknown {
  * Deny framing unless a route supplies an explicit framing policy. Workbench
  * content already supplies one. Successful PDFs need trusted app ancestors for
  * the canvas's native object viewer; other responses, including API refusals,
- * redirects, errors and streams, default to none. Existing CSP directives stay.
+ * redirects, errors and streams, default to none, with `X-Frame-Options: DENY`
+ * beside it. Existing CSP directives stay.
  *
  * Installed before admission, and applied at writeHead so raw streams and the
  * Hono adapter cannot overwrite it accidentally. Never buffers a response body.
@@ -76,8 +83,16 @@ export function protectResponseFraming(
           : "frame-ancestors 'none'"
       );
     }
+    // The same refusal for a browser that predates `frame-ancestors`, wherever
+    // an enforced policy refuses every ancestor. It is never sent beside an
+    // allowance (the PDF and workbench ones), and a route's own value is kept.
+    const deny =
+      policies.some((policy) => FRAME_ANCESTORS_NONE.test(policy)) &&
+      valuesFrom(headers, XFO) === undefined &&
+      !response.hasHeader(XFO);
     response.setHeader(CSP, policies);
-    if (headers !== undefined) args[headersAt] = withPolicy(headers, policies);
+    if (deny) response.setHeader(XFO, 'DENY');
+    if (headers !== undefined) args[headersAt] = withPolicy(headers, policies, deny);
     return writeHead(...args);
   }) as ServerResponse['writeHead'];
 }
