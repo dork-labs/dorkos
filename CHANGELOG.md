@@ -27,8 +27,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - DorkOS's own database backups never keep the text of what your agents were told. A backup keeps each record's details and a fingerprint of each text, never the words. And when a Claude Code chat was deleted while DorkOS was closed, its record is now removed the next time DorkOS starts. (DOR-4001, DOR-4002)
 - The Permissions, Securing your instance and Threat model guides now explain where DorkOS keeps the key that protects your saved secrets, and which programs on your computer can read it. (DOR-3053)
 
-DorkOS now counts a mini app's post in a room as words it can't vouch for. It doesn't yet count an email or web page read through a connected app, so these limits don't cover those cases.
-
 ### Added
 
 - **See what every agent is told.** Settings › Agent instructions lists each part of the instructions DorkOS gives agents, in the order the model reads it. Each part says where it comes from, when it is included, roughly how long it is, and whether it is locked. Spots that differ per agent, like its name, show as small chips.
