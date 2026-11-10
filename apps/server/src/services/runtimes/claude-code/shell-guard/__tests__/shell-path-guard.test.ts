@@ -84,6 +84,24 @@ beforeAll(() => {
   touch(path.join(other, '.mcp.json'));
   touch(path.join(dorkHome, 'relay', 'adapters.json'));
   touch(path.join(home, '.config', 'gh', 'hosts.yml'));
+  touch(path.join(home, 'Library', 'Application Support', 'DorkOS', 'Network', 'Cookies'));
+  touch(
+    path.join(
+      home,
+      'Library',
+      'Application Support',
+      'DorkOS',
+      'Local Storage',
+      'leveldb',
+      '000003.log'
+    )
+  );
+  touch(path.join(dorkHome, 'browser', 'storage-state.json'));
+  touch(path.join(dorkHome, 'browser-profiles', 'p1', 'Default', 'Cookies'));
+  symlinkSync(
+    path.join(home, 'Library', 'Application Support', 'DorkOS'),
+    path.join(cwd, 'app-data')
+  );
   mkdirSync(path.join(root, 'linked'));
   symlinkSync(path.join(root, 'with-env'), path.join(root, 'linked', 'to-env'));
   roots = {
@@ -170,6 +188,25 @@ describe('commandReachesProtectedRead', () => {
     ['inside eval', `eval 'cat ~/.ssh/id_ed25519'`],
     ['a Claude sign-in', `cat ${'$'}HOME/../account/.credentials.json`],
     ['the database', 'sed -n 1p $DORK_HOME/dork.db'],
+    // DOR-3613: the person's DorkOS sign-in and the agent browser's cookies.
+    [
+      'the desktop app’s cookie store',
+      'sqlite3 ~/"Library/Application Support/DorkOS/Network/Cookies" .dump',
+    ],
+    [
+      'the desktop app’s page storage',
+      'strings ~/Library/Application\\ Support/DorkOS/Local\\ Storage/leveldb/000003.log',
+    ],
+    ['the agent browser’s saved sign-in', 'cat $DORK_HOME/browser/storage-state.json'],
+    ['a named profile’s cookies', 'cp $DORK_HOME/browser-profiles/p1/Default/Cookies /tmp/c'],
+    ['cat on the cookie store', 'cat ~/"Library/Application Support/DorkOS/Network/Cookies"'],
+    ['cp of the cookie store', 'cp ~/"Library/Application Support/DorkOS/Network/Cookies" jar'],
+    [
+      'the cookie store in other case',
+      'cat ~/"library/application support/dorkos/Network/Cookies"',
+    ],
+    ['the cookie store through a link', 'sqlite3 app-data/Network/Cookies .dump'],
+    ['the app folder by a glob', 'cat ~/Library/Application*/Dork*/Network/Cookies'],
   ])('sees %s', async (_label, command) => {
     expect(await commandReachesProtectedRead(command, roots)).toBe(true);
   });

@@ -78,6 +78,24 @@ describe.each(['default', 'acceptEdits', 'bypassPermissions'])(
       expect(files['/probe/agent/.agents']).toBe('read');
     });
 
+    // DOR-3613: the person's DorkOS sign-in and the agent browser's cookies.
+    it('keeps the desktop app’s data and the agent browser’s cookies from reads, even at Full', () => {
+      const config = codexProtectedConfig(roots.cwd, filePolicy, { permissionMode });
+      const profiles = config.permissions as Record<string, { filesystem: Record<string, string> }>;
+      const files = profiles[codexPermissionProfile({ permissionMode })]!.filesystem;
+      for (const folder of [
+        '/probe/home/Library/Application Support/DorkOS',
+        '/probe/home/AppData/Roaming/DorkOS',
+        '/probe/home/.config/DorkOS',
+        '/probe/data/browser/profile',
+        '/probe/data/browser-profiles',
+        '/probe/data/local-browser/saved-logins',
+        '/probe/home/.dork/browser/profile',
+      ])
+        expect(files[folder], folder).toBe('deny');
+      expect(files['/probe/data/browser/storage-state.json']).toBe('deny');
+    });
+
     it('renders every glob with a ripgrep suffix that survives an absolute search root', () => {
       const config = codexProtectedConfig(roots.cwd, filePolicy, { permissionMode });
       const profiles = config.permissions as Record<string, { filesystem: Record<string, string> }>;

@@ -129,6 +129,20 @@ export const ANYWHERE_SECRET_PATHS = group('anywhere', 'read', [
 ]);
 
 /**
+ * Where the desktop app keeps its data, relative to the home folder. Electron's
+ * `userData` is `<app data>/<app name>`, and the app name is the product name
+ * `DorkOS` in a packaged build and the package name `@dorkos/desktop` in a
+ * development one (`apps/desktop`, run with no `--user-data-dir`). The app data
+ * folder is `Library/Application Support` on macOS, `AppData/Roaming` on
+ * Windows and `.config` on Linux.
+ */
+export const DESKTOP_APP_DATA_FOLDERS = ['DorkOS', '@dorkos/desktop'].flatMap((name) => [
+  `Library/Application Support/${name}`,
+  `AppData/Roaming/${name}`,
+  `.config/${name}`,
+]);
+
+/**
  * The person's own keys and tokens in their home folder: only well-known spots
  * that hold a credential, the default Claude account's sign-in, and the default
  * data folder's secrets, whatever account and data folder a launch uses.
@@ -145,6 +159,11 @@ export const HOME_SECRET_PATHS: readonly ProtectedPath[] = [
     ['.claude.json*', 'file'],
     ['.claude/.credentials*', 'file'],
     ['.claude/backups', 'folder'],
+    // The desktop app's own browser data, where macOS, Windows and Linux keep
+    // it: its cookie store holds the person's DorkOS sign-in, its page storage
+    // the person proof beside it, and `Partitions/` the built-in browser's
+    // sign-ins (DOR-3613). Nothing an agent needs lives there.
+    ...DESKTOP_APP_DATA_FOLDERS.map((folder) => [folder, 'folder'] as const),
   ]),
   ...DATA_FOLDER_SECRET_PATHS.map((entry): ProtectedPath => ({
     ...entry,
