@@ -1,3 +1,4 @@
+import { ScheduleRunAction } from './ScheduleRunAction';
 /**
  * The conversation speaking about ITSELF — one quiet full-width line with a
  * mark on it.
@@ -408,6 +409,7 @@ export function NoticeRow({
       </span>
       <span className="min-w-0">
         {sessionLink ? linkedText(entry.body.text, sessionLink, subjectName) : entry.body.text}
+        {entry.body.scheduleRun && <ScheduleRunAction report={entry.body.scheduleRun} />}
       </span>
     </p>
   );

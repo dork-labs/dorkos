@@ -1,3 +1,4 @@
+import { FailedRunDetailSheet } from '@/layers/features/dashboard-attention';
 import { useMemo, useState } from 'react';
 import { motion } from 'motion/react';
 import {
@@ -32,7 +33,7 @@ export function TasksPage() {
 
 /** Every state of the `/tasks` page below its heading. */
 function TasksPageBody() {
-  const search = useSafeSearch() as { schedule?: string };
+  const search = useSafeSearch() as { schedule?: string; run?: string };
   const navigate = useSafeNavigate();
   const tasksEnabled = useTasksEnabled();
   const { data: allTasks = [], isLoading, isError, refetch } = useTasks(tasksEnabled);
@@ -158,8 +159,15 @@ function TasksPageBody() {
         </motion.div>
       )}
 
+      <FailedRunDetailSheet
+        open={!!search.run}
+        itemId={search.run}
+        onClose={() => {
+          if (navigate) void navigate({ ...appRoutes.tasks(), search: {}, replace: true });
+        }}
+      />
       <CreateTaskDialog
-        open={dialogOpen || linkedTask !== undefined}
+        open={dialogOpen || (linkedTask !== undefined && !search.run)}
         onOpenChange={handleDialogOpenChange}
         editTask={linkedTask ?? editTask}
         initialPreset={appliedPreset}

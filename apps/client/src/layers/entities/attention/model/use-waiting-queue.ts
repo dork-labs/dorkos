@@ -56,6 +56,8 @@ export interface WaitingQueueState {
   asks: readonly InteractionPendingEvent[];
   /** Schedules an agent proposed and parked, oldest first. */
   schedules: readonly Task[];
+  /** Two or more failures since the last successful run. */
+  failingSchedules?: readonly Task[];
   /**
    * Installed extensions waiting for a person to turn them on, oldest first
    * (DOR-2517). Counted like every other waiting item, and never a blockage:
@@ -149,6 +151,7 @@ export function useWaitingQueue(): WaitingQueueState {
   } = usePendingInteractions();
   const {
     schedules,
+    failingSchedules,
     isLoading: schedulesLoading,
     isError: schedulesError,
   } = usePendingScheduleApprovals();
@@ -211,6 +214,7 @@ export function useWaitingQueue(): WaitingQueueState {
         approvals,
         asks,
         schedules,
+        failingSchedules,
         extensionApprovals,
         extensionDecisions,
         pausedConnections,
@@ -220,6 +224,7 @@ export function useWaitingQueue(): WaitingQueueState {
       approvals,
       asks,
       schedules,
+      failingSchedules,
       extensionApprovals,
       extensionDecisions,
       pausedConnections,
@@ -231,6 +236,7 @@ export function useWaitingQueue(): WaitingQueueState {
     approvals,
     asks,
     schedules,
+    failingSchedules,
     extensionApprovals,
     extensionDecisions,
     decisionOffers,

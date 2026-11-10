@@ -170,7 +170,11 @@ export type ActivitySearch = z.infer<typeof activitySearchSchema>;
  */
 export const tasksSearchSchema = mergeDialogSearch(
   z
-    .object({ sort: z.string().optional(), schedule: z.string().optional() })
+    .object({
+      sort: z.string().optional(),
+      schedule: z.string().optional(),
+      run: z.string().optional(),
+    })
     .merge(taskFilterSchema.searchValidator)
 );
 

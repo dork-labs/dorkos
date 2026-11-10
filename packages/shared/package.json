@@ -668,6 +668,10 @@
     "./schedule-file-problems": {
       "types": "./src/schedule-file-problems.ts",
       "default": "./dist/schedule-file-problems.js"
+    },
+    "./schedule-notice-copy": {
+      "types": "./src/schedule-notice-copy.ts",
+      "default": "./dist/schedule-notice-copy.js"
     }
   },
   "scripts": {

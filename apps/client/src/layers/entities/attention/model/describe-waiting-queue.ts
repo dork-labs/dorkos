@@ -17,7 +17,7 @@ export type WaitingQueueCounts = Pick<
   WaitingQueueState,
   'approvals' | 'schedules' | 'asks' | 'extensionApprovals' | 'extensionDecisions'
 > &
-  Partial<Pick<WaitingQueueState, 'pausedConnections' | 'browserHandoffId'>>;
+  Partial<Pick<WaitingQueueState, 'pausedConnections' | 'browserHandoffId' | 'failingSchedules'>>;
 
 /** The sentence for an open Agent browser handoff, added to whatever else is waiting. */
 export const BROWSER_HANDOFF_WAITING = 'A site wants a person to continue.';
@@ -65,9 +65,18 @@ function describeWaitingMiniApps(waiting: WaitingQueueCounts['extensionApprovals
  */
 export function describeWaitingQueue(queue: WaitingQueueCounts): string {
   const others = describeOtherWaiting(queue);
-  if (!queue.browserHandoffId) return others;
+  const failures = queue.failingSchedules?.length ?? 0;
+  const combined = failures
+    ? [
+        others,
+        failures === 1 ? '1 schedule needs attention.' : `${failures} schedules need attention.`,
+      ]
+        .filter(Boolean)
+        .join(' ')
+    : others;
+  if (!queue.browserHandoffId) return combined;
   // Alone, the card right under this line already says it.
-  return others ? `${others} ${BROWSER_HANDOFF_WAITING}` : '';
+  return combined ? `${combined} ${BROWSER_HANDOFF_WAITING}` : '';
 }
 
 function describeOtherWaiting(queue: WaitingQueueCounts): string {

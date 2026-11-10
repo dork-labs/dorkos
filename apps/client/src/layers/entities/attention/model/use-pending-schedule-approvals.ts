@@ -1,3 +1,4 @@
+import { scheduleNeedsAttention } from '@dorkos/shared/schedule-notice-copy';
 /**
  * Schedules an agent proposed and parked for a person to decide on.
  *
@@ -31,6 +32,8 @@ const NO_SCHEDULES: readonly Task[] = [];
 export interface PendingScheduleApprovals {
   /** Schedules waiting on a person, oldest proposal first. */
   schedules: readonly Task[];
+  /** Repeated failures, derived from the same current schedule query. */
+  failingSchedules?: readonly Task[];
   /**
    * True while the list is still on its first read.
    *
@@ -86,8 +89,14 @@ export function usePendingScheduleApprovals(): PendingScheduleApprovals {
     return parked.length === 0 ? NO_SCHEDULES : parked;
   }, [data]);
 
+  const failingSchedules = useMemo(() => {
+    const failing = (data ?? []).filter(scheduleNeedsAttention);
+    return failing.length ? failing : NO_SCHEDULES;
+  }, [data]);
+
   return {
     schedules,
+    failingSchedules,
     isLoading: configLoading || isLoading,
     // **Only while Tasks is on.** The `['tasks']` query is shared: with Tasks
     // off the route answers 404, and any other observer that reads it ungated

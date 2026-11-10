@@ -5,7 +5,15 @@ import '@testing-library/jest-dom/vitest';
 import type { Task } from '@dorkos/shared/types';
 
 let mockTasks: Task[] = [];
-const route = vi.hoisted(() => ({ search: {} as { schedule?: string }, navigate: vi.fn() }));
+vi.mock('@/layers/features/dashboard-attention', () => ({
+  FailedRunDetailSheet: ({ open, itemId }: { open: boolean; itemId?: string }) =>
+    open ? <div data-testid="linked-run">{itemId}</div> : null,
+}));
+
+const route = vi.hoisted(() => ({
+  search: {} as { schedule?: string; run?: string },
+  navigate: vi.fn(),
+}));
 
 vi.mock('@/layers/shared/model', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/layers/shared/model')>()),
@@ -78,4 +86,12 @@ describe('TasksPage — the empty state is taller than a phone', () => {
 
     expect(screen.getByTestId('empty-state').closest('.justify-center')).toBeNull();
   });
+});
+
+it('opens the specific run rather than the schedule editor', () => {
+  route.search = { schedule: 'nightly', run: 'failed-run' };
+  mockTasks = [{ id: 'nightly', name: 'Nightly sweep' } as Task];
+  render(<TasksPage />);
+  expect(screen.queryByRole('button', { name: 'Editing Nightly sweep' })).toBeNull();
+  expect(screen.getByTestId('linked-run')).toHaveTextContent('failed-run');
 });
