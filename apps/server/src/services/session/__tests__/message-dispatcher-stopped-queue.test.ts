@@ -88,6 +88,14 @@ function send(content: string) {
   });
 }
 
+/** The terminal status a runtime reports for a turn DorkOS asked to stop. */
+function stoppedStatus(): StreamEvent {
+  return {
+    type: 'session_status',
+    data: { sessionId: session, terminalReason: 'aborted_streaming', stopWasRequested: true },
+  };
+}
+
 describe('messages after stopped, done and idle chats', () => {
   it.each(['stopped', 'done', 'idle'] as const)(
     'starts the next turn for a %s chat',
@@ -106,13 +114,8 @@ describe('messages after stopped, done and idle chats', () => {
               async function* (): AsyncGenerator<StreamEvent> {
                 yield { type: 'text_delta', data: { text: 'working' } };
                 await held;
-                yield {
-                  type: 'done',
-                  data:
-                    state === 'stopped'
-                      ? { terminalReason: 'aborted_streaming', stopWasRequested: true }
-                      : {},
-                };
+                if (state === 'stopped') yield stoppedStatus();
+                yield { type: 'done', data: {} };
               },
               quick,
             ]
@@ -169,10 +172,8 @@ describe('chat_send interrupt handoff', () => {
       async function* (): AsyncGenerator<StreamEvent> {
         yield { type: 'text_delta', data: { text: 'working' } };
         await initial;
-        yield {
-          type: 'done',
-          data: { terminalReason: 'aborted_streaming', stopWasRequested: true },
-        };
+        yield stoppedStatus();
+        yield { type: 'done', data: {} };
       },
       async function* (): AsyncGenerator<StreamEvent> {
         yield { type: 'text_delta', data: { text: 'taking the interrupted handoff' } };
@@ -241,13 +242,8 @@ describe('messages already queued when a turn ends', () => {
         async function* (): AsyncGenerator<StreamEvent> {
           yield { type: 'text_delta', data: { text: 'working' } };
           await held;
-          yield {
-            type: 'done',
-            data:
-              state === 'stopped'
-                ? { terminalReason: 'aborted_streaming', stopWasRequested: true }
-                : {},
-          };
+          if (state === 'stopped') yield stoppedStatus();
+          yield { type: 'done', data: {} };
         },
         async function* (): AsyncGenerator<StreamEvent> {
           yield { type: 'text_delta', data: { text: 'answering the queued message' } };
