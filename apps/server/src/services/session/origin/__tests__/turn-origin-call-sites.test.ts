@@ -38,8 +38,9 @@ const EXPECTED: Readonly<Record<string, readonly string[]>> = {
   'startup/computers.ts': ['interactive'],
   // A room turn, carrying the one fact that decides its power.
   'services/rooms/room-turn-runner.ts': ['room'],
-  // A task's run — the timer's, or a person's "Run now".
-  'services/tasks/task-scheduler-service.ts': ['schedule'],
+  // A task's run — the timer's, or a person's "Run now" — on either dispatch
+  // path, recorded with the agent the scheduler verified (DOR-4027).
+  'services/tasks/session/record-run-session.ts': ['schedule'],
   // A message addressed to an agent over the relay: one of our agents, a chat
   // binding's own adapter, or a sender from outside (the A2A gateway), decided
   // by `relayTurnOrigin`.

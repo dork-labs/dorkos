@@ -18,7 +18,7 @@
  * @vitest-environment node
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { mkdtemp, rm, mkdir, writeFile, readFile } from 'node:fs/promises';
+import { mkdtemp, rm, mkdir, writeFile, readFile, realpath } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createTestDb } from '@dorkos/test-utils/db';
@@ -48,6 +48,17 @@ import {
 } from '../../../core/agent-identity/__tests__/agent-home-fixture.js';
 import { CONNECTOR_RUNTIME_TOOL_TIMEOUT_MS } from '../../connector-tools.js';
 import { CONNECTOR_REQUEST_LIVE_HOLD_MS } from '../../../connectors/runtime-capability-scope.js';
+import { CanonicalConnectorRuntimeAuthorityResolver } from '../../../connectors/principal/runtime-authority-resolver.js';
+import { ConnectorRuntimePrincipalService } from '../../../connectors/principal/runtime-principal-service.js';
+import { runtimeRegistry } from '../../../core/runtime-registry.js';
+import { TaskStore } from '../../../tasks/task-store.js';
+import {
+  TaskSchedulerService,
+  singleRuntimeSource,
+} from '../../../tasks/task-scheduler-service.js';
+import { bodyHash } from '../../../tasks/agent-mode/file-cap/file-hash.js';
+import { initBoundary } from '../../../../lib/boundary.js';
+import type { MeshCore } from '@dorkos/mesh';
 
 // Every scratch folder counts as a registered home here, so this suite's
 // mocked mesh decides who is an agent, as it did before homes (DOR-2355).
@@ -369,6 +380,73 @@ describe('the dorkos tool server on a Codex turn', () => {
   });
 
   describe('connector runtime binding', () => {
+    it.each([false, true])(
+      'a scheduled Codex turn exposes connected apps only when uncapped (capped=%s)',
+      async (capped) => {
+        agentDir = await realpath(agentDir);
+        await initBoundary(agentDir);
+        configState.value = { tasks: { agentModeControl: true } };
+        const runtime = makeRuntime();
+        runtimeRegistry.setDb(db);
+        runtimeRegistry.register(runtime);
+        const principals = new ConnectorRuntimePrincipalService({
+          db,
+          authority: new CanonicalConnectorRuntimeAuthorityResolver({
+            sessions: runtimeRegistry,
+            mesh: meshWithAgent(agentDir),
+            owner: { kind: 'local_install', installationId: 'codex-scheduled-test' },
+          }),
+        });
+        await principals.initializeBoot();
+        runtime.setConnectorRuntimeTools({
+          principals,
+          listenerUrl: 'http://127.0.0.1:4341/mcp',
+          agentToolsUrl: 'http://127.0.0.1:4341/agent-mcp',
+          isConnectorCapabilityId: (id) => id.startsWith('connectors.'),
+        });
+        const store = new TaskStore(db);
+        const filePath = path.join(agentDir, 'SKILL.md');
+        await writeFile(
+          filePath,
+          "---\nname: scheduled-test\ndescription: test\nschedule:\n  cron: '0 3 * * *'\n---\nRead mail"
+        );
+        const task = store.createTask({
+          name: 'scheduled-test',
+          description: 'test',
+          prompt: 'Read mail',
+          filePath,
+          agentId: '01JAGENT0000000000000000',
+          runtime: 'codex',
+        });
+        store.approvals.patchAgentModeColumn(task.id, {
+          fileAttest: {
+            hash: bodyHash(capped ? 'Previously approved' : 'Read mail'),
+            by: 'person',
+            at: new Date().toISOString(),
+          },
+        });
+        const service = new TaskSchedulerService({
+          store,
+          runtimes: singleRuntimeSource(runtime),
+          config: { maxConcurrentRuns: 1, retentionCount: 10, mayFire: true, firingReason: 'test' },
+          meshCore: { getProjectPath: () => agentDir } as unknown as MeshCore,
+        });
+        try {
+          const run = await service.triggerManualRun(task.id);
+          await vi.waitFor(() => expect(store.getRun(run!.id)?.status).toBe('completed'));
+          const finished = store.getRun(run!.id)!;
+          expect(finished.cappedAt).toBe(capped ? 'dontAsk' : undefined);
+          expect(await runtimeRegistry.getSessionAgentPath(finished.sessionId!)).toBe(
+            capped ? null : agentDir
+          );
+          expect(Boolean(lastMcpServers()['dorkos_connections'])).toBe(!capped);
+          expect(sdkMocks.prompts.at(-1)?.includes('<accounts_access>')).toBe(!capped);
+        } finally {
+          await service.stop();
+        }
+      }
+    );
+
     it('sends fresh account awareness on a resumed thread', async () => {
       let revision = 'grant-one';
       const runtime = makeRuntime({ accessSnapshot: async () => ({ accountCount: 1, revision }) });

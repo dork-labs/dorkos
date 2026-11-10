@@ -1,17 +1,5 @@
 import { refusedToolsColumnOf, type RunCap } from './history/run-cap-column.js';
-import {
-  eq,
-  ne,
-  desc,
-  and,
-  count,
-  inArray,
-  notInArray,
-  lt,
-  isNull,
-  isNotNull,
-  sql,
-} from 'drizzle-orm';
+import { eq, ne, desc, and, count, inArray, notInArray, lt, isNull, sql } from 'drizzle-orm';
 import {
   pulseSchedules,
   pulseRuns,
@@ -32,6 +20,7 @@ import type {
 import { parseDuration } from '@dorkos/skills/duration';
 import { logger } from '../../lib/logger.js';
 import { TaskApprovals } from './approvals/task-approvals.js';
+import { RunSessionStore, type RunSessionBinding } from './session/run-session-store.js';
 import { TaskFileSync } from './sync/task-file-sync.js';
 import { scheduleContentKey } from './schedule-permission-clamp.js';
 import { mapTaskRow, mapRunRow } from './task-row-mappers.js';
@@ -150,6 +139,7 @@ export type RunTerminalListener = (run: TaskRun, task: Task | null) => void;
  */
 export class TaskStore {
   private db: Db;
+  private readonly runSessions: RunSessionStore;
   /** Optional listener fired once per run's terminal transition (DOR-240). */
   private onRunTerminal: RunTerminalListener | null = null;
   /**
@@ -167,6 +157,7 @@ export class TaskStore {
 
   constructor(db: Db) {
     this.db = db;
+    this.runSessions = new RunSessionStore(db);
     this.approvals = new TaskApprovals(db);
     this.fileSync = new TaskFileSync(db, (id) => this.getTask(id), this);
   }
@@ -659,12 +650,12 @@ export class TaskStore {
    * DOR-1615): a session belongs to one runtime and the id names a transcript in
    * that program's store.
    *
-   * The run row is the authority on that, not `session_metadata`. Only an
-   * interactive session ever calls `persistSessionRuntime`, so a scheduled run's
-   * session has no binding recorded — asking the registry answered `null` for
-   * every scheduled run ever made, which made the rule inert in production
-   * (DOR-1615 review). `resolved_runtime` is stamped by the scheduler on every
-   * dispatch, so it is the one place the answer actually exists.
+   * The run row is the authority on that, not `session_metadata`. Scheduled
+   * runs used to record no binding there, so asking the registry answered
+   * `null` for every scheduled run, which made the rule inert in production
+   * (DOR-1615 review). Runs record one now (DOR-4027), but older sessions still
+   * have none; `resolved_runtime` is stamped by the scheduler on every
+   * dispatch, so it is the one place the answer exists for every run.
    *
    * One query rather than two, so the id and the runtime cannot come from
    * different runs.
@@ -675,19 +666,12 @@ export class TaskStore {
    *   which reads as "no owner on record" and never as a mismatch.
    */
   latestStickyRun(taskId: string): { sessionId: string; runtime: string | null } | null {
-    const row = this.db
-      .select({ sessionId: pulseRuns.sessionId, runtime: pulseRuns.resolvedRuntime })
-      .from(pulseRuns)
-      .where(and(eq(pulseRuns.scheduleId, taskId), isNotNull(pulseRuns.sessionId)))
-      // `created_at` is an ISO string at millisecond resolution with no
-      // tiebreaker, so two runs written in the same millisecond order
-      // arbitrarily (the same hazard `pruneRuns` documents). Here the tie would
-      // resume the WRONG session, so `rowid` — strict insertion order — breaks
-      // it deterministically toward the run written last.
-      .orderBy(desc(pulseRuns.createdAt), sql`rowid DESC`)
-      .limit(1)
-      .get();
-    return row?.sessionId ? { sessionId: row.sessionId, runtime: row.runtime ?? null } : null;
+    return this.runSessions.latestStickyRun(taskId);
+  }
+
+  /** Read a prior conversation's durable runtime and owner, never inferred from cwd. */
+  getRunSessionBinding(sessionId: string): RunSessionBinding | null {
+    return this.runSessions.getRunSessionBinding(sessionId);
   }
 
   /** Count total runs, optionally filtered by task. */

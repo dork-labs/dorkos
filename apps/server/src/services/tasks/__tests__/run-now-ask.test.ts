@@ -34,6 +34,7 @@ import {
 import { RELAY_DISPATCH_OK } from '../../relay/task-dispatch/readiness.js';
 import { TASK_RUN_CLIENT_ID } from '../session/run-projection.js';
 import { TaskStore } from '../task-store.js';
+import { runtimeRegistry } from '../../core/runtime-registry.js';
 import {
   disposeProjector,
   getOrCreateProjector,
@@ -116,6 +117,7 @@ describe('a "Run now" ask reaches the person waiting for it', () => {
 
   beforeEach(() => {
     db = createTestDb();
+    runtimeRegistry.setDb(db);
     store = new TaskStore(db);
     sessions = [];
     ensureOpts = [];
@@ -345,6 +347,7 @@ describe('a "Run now" ask reaches the person waiting for it', () => {
     // The session this task's next fire will resume, with a person mid-turn on
     // it: their window holds the lock.
     const shared = '99999999-8888-4777-8666-555555555555';
+    await runtimeRegistry.persistSessionRuntime(shared, 'claude-code', { kind: 'schedule' });
     store.createRun(task.id, 'scheduled');
     const previous = store.listRuns({ taskId: task.id })[0]!;
     store.updateRun(previous.id, {

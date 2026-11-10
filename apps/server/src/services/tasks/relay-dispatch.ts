@@ -19,6 +19,7 @@ import type { TaskDispatchPayload } from '@dorkos/shared/relay-schemas';
 import { TASK_SCHEDULER_PRINCIPAL, taskDispatchSubject } from '@dorkos/shared/relay-schemas';
 import { buildTaskAppend } from './task-append.js';
 import { resolveRunSession } from './session/sticky-session.js';
+import { recordRunSession } from './session/record-run-session.js';
 import type { RunExecution } from './execution/resolve-run-execution.js';
 import type { TaskStore } from './task-store.js';
 import { isTerminalRunStatus } from './lifecycle/run-statuses.js';
@@ -188,7 +189,11 @@ export async function dispatchRunViaRelay(
   // the id written on its row linked to a 400.
   const { sessionId, hasStarted } = resolveRunSession(deps.store, task, {
     runtimeType: execution.runtimeType,
+    agentPath: deps.forAgent,
   });
+  // Match direct dispatch: file-capped history carries no connected-app authority.
+  const connectedAgent = deps.store.getRun(run.id)?.cappedAt ? undefined : deps.forAgent;
+  await recordRunSession(sessionId, execution.runtimeType, connectedAgent);
   deps.onSession?.(sessionId);
 
   const payload: TaskDispatchPayload = {
