@@ -1,9 +1,0 @@
----
-covers:
-  - 'feat(server): record what each turn actually handed its runtime (context viewer phase 1)'
-  - "fix(server): close Security's four Musts on the turn-context record"
----
-
-### Added
-
-- DorkOS now keeps a private record of exactly what each agent was told on every turn: the instructions it started with and the notes added to that turn. This is the groundwork for a future screen where you can see what your agents are told. Nothing shows it yet. The saved text stays on your computer and is never sent anywhere. For Claude Code chats it is deleted with the chat or after 30 days, whichever comes first. For Codex, OpenCode and Doe chats it is deleted after 30 days. DorkOS's own database backups never keep it. Known kinds of passwords and keys are removed before anything is saved.
