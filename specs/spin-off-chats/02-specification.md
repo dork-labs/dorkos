@@ -26,7 +26,8 @@ Area `messages` (Messages: "Message other agents, and message you"). `chat_send`
 
 - `chat`: a chat id the caller may read (§4).
 - Returns `{ chat: { id, title, agent, state, limit? }, messages: [...], more: boolean, cursor? }`.
-- `state`: `running | needs-you | done | failed | stopped | paused-at-limit | idle`.
+- `state`: `running | needs-you | done | failed | stopped | paused-at-limit | idle | never-started`.
+- `startupFailure`: the reason a spin-off missed its five-minute first-turn deadline, when present.
 - `since`: `'last-read'` (default; a per-reader cursor in `chat_read_cursors` keyed by reader chat and target chat), a message id, or an ISO time.
 - `last`: the newest n messages instead (default 10, max 100). `since` and `last` together: the newest `last` after `since`.
 - `include`: `text` (default; the person's and agents' words), `tools` (also tool calls, one line each), `status` (no messages: the cheapest check; does not move the cursor).

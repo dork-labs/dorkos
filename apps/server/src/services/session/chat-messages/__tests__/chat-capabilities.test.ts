@@ -60,6 +60,23 @@ describe('chatCallerOf', () => {
 });
 
 describe('chat domain', () => {
+  it('keeps never-started and its diagnostic in the shared output contract', () => {
+    const value = {
+      ok: true,
+      chat: {
+        id: 'child',
+        title: 'Build',
+        link: '/session?session=child',
+        agent: 'Builder',
+        state: 'never-started',
+        startupFailure: 'Runtime unavailable.',
+      },
+      messages: [],
+      more: false,
+    };
+    expect(capability('chat.read').output.parse(value)).toEqual(value);
+  });
+
   it('declares exactly the three in-session tools, in the messages area', () => {
     expect(chatDomain.capabilities.map((c) => [c.id, c.surfaces.mcp?.toolName, c.area])).toEqual([
       ['chat.send', 'chat_send', 'messages'],

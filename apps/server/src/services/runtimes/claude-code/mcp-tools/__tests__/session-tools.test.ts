@@ -9,6 +9,16 @@
  * The launch service is real here, down to the dispatcher, so what reaches the
  * turn (the account hint, the origin, the cap) is what production sends.
  */
+import { watchNotStarted } from '../../../../session/launch/turn-not-started.js';
+import {
+  ChatReportBack,
+  type ChatReportBackDeps,
+} from '../../../../session/chat-messages/chat-report-back.js';
+import {
+  getSpinOffStartup,
+  SPIN_OFF_START_TIMEOUT_MS,
+} from '../../../../session/chat-messages/startup/spin-off-startup.js';
+import { wireSpinOffStartup } from '../../../../session/chat-messages/startup/wire-spin-off-startup.js';
 import {
   setChatMessageService,
   setRoomSeatReports,
@@ -16,7 +26,7 @@ import {
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi, type Mock } from 'vitest';
 import { z } from 'zod';
 import { SessionCapacityError } from '@dorkos/shared/running-chats';
 import type { MeshCore } from '@dorkos/mesh';
@@ -91,7 +101,8 @@ vi.mock('../../../../session/session-state-projector.js', async (importOriginal)
   ...(await importOriginal<object>()),
   getOrCreateProjector: vi.fn(() => ({ cwd: undefined })),
 }));
-vi.mock('../../../../session/projector-persistence.js', () => ({
+vi.mock('../../../../session/projector-persistence.js', async (importOriginal) => ({
+  ...(await importOriginal<object>()),
   persistenceModeFor: vi.fn(() => 'none'),
 }));
 vi.mock('../../../../observability/dispatch-buffers.js', () => ({
@@ -984,6 +995,105 @@ describe('session_start records who started the new session (spec flow-multiproj
     } as never);
   }
   afterEach(() => setChatMessageService(undefined));
+
+  describe('first-turn watchdog (DOR-3351)', () => {
+    let stop: () => void;
+    let send: Mock<ChatReportBackDeps['service']['send']>;
+    const children: string[] = [];
+
+    beforeEach(() => {
+      vi.useFakeTimers();
+      wireChats(true);
+      send = vi
+        .fn<ChatReportBackDeps['service']['send']>()
+        .mockResolvedValue({ messageId: 'report', chatId: 'parent-chat', status: 'queued' });
+      const reports = new ChatReportBack({
+        service: { send },
+        store: { listStopsOf: () => [], latestInterruptFrom: () => undefined },
+        reportTargetOf: (id) => {
+          const row = store.get(id);
+          return row?.reportBack && row.startedBySessionId
+            ? { parentSessionId: row.startedBySessionId }
+            : null;
+        },
+        agentPathOf: async (id) => getSpinOffStartup()?.agentPathOf(id) ?? null,
+        holdsBackgroundWork: async () => false,
+        statusOf: () => null,
+        history: async () => [],
+      });
+      stop = wireSpinOffStartup(reports);
+    });
+    afterEach(async () => {
+      stop();
+      const { disposeProjector } = await vi.importActual<
+        typeof import('../../../../session/session-state-projector.js')
+      >('../../../../session/session-state-projector.js');
+      for (const id of children.splice(0)) disposeProjector(id);
+    });
+
+    it('reports an accepted launch that never opens its first turn to its real starter', async () => {
+      const { sessionId } = payloadOf(await fromChat('parent-chat')(BASE)) as { sessionId: string };
+      vi.mocked(dispatchMessage)
+        .mock.calls.at(-1)![0]
+        .onSettled?.('failed', 'The account cannot start another turn.');
+      await vi.advanceTimersByTimeAsync(SPIN_OFF_START_TIMEOUT_MS - 1);
+      expect(send).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(1);
+      expect(send).toHaveBeenCalledOnce();
+      expect(send).toHaveBeenCalledWith(
+        expect.objectContaining({ sessionId, agentPath: AGENT_HOME }),
+        expect.objectContaining({
+          to: 'parent-chat',
+          summary: 'Failed: never started',
+          message: 'Failed: never started.\n\nThe account cannot start another turn.',
+        }),
+        'report'
+      );
+      expect(getSpinOffStartup()?.failureOf(sessionId)).toBe(
+        'The account cannot start another turn.'
+      );
+    });
+
+    it('clears the watchdog on a real first turn, even if it ends before five minutes', async () => {
+      const { sessionId } = payloadOf(await fromChat('parent-chat')(BASE)) as { sessionId: string };
+      const { getOrCreateProjector } = await vi.importActual<
+        typeof import('../../../../session/session-state-projector.js')
+      >('../../../../session/session-state-projector.js');
+      const projector = getOrCreateProjector(sessionId);
+      children.push(sessionId);
+      projector.ingest({ type: 'turn_start' });
+      const answered = watchNotStarted(
+        (async function* () {
+          yield { type: 'text_delta' as const, data: { text: 'Done.' } };
+        })(),
+        () => getSpinOffStartup()?.started(sessionId)
+      );
+      for await (const _event of answered.stream) {
+        /* drain real output watcher */
+      }
+      projector.ingest({ type: 'turn_end' });
+      await vi.advanceTimersByTimeAsync(SPIN_OFF_START_TIMEOUT_MS);
+      expect(send).not.toHaveBeenCalled();
+      expect(getSpinOffStartup()?.failureOf(sessionId)).toBeNull();
+    });
+
+    it('honors reportBack off while still exposing the startup failure', async () => {
+      const { sessionId } = payloadOf(
+        await fromChat('parent-chat')({ ...BASE, reportBack: 'off' })
+      ) as { sessionId: string };
+      await vi.advanceTimersByTimeAsync(SPIN_OFF_START_TIMEOUT_MS);
+      expect(send).not.toHaveBeenCalled();
+      expect(getSpinOffStartup()?.failureOf(sessionId)).toContain('five minutes');
+    });
+
+    it('disarms a refused launch that already returned an error to the starter', async () => {
+      vi.mocked(dispatchMessage).mockRejectedValueOnce(new SessionCapacityError(50));
+      const result = await fromChat('parent-chat')(BASE);
+      expect(result.isError).toBe(true);
+      await vi.advanceTimersByTimeAsync(SPIN_OFF_START_TIMEOUT_MS);
+      expect(send).not.toHaveBeenCalled();
+    });
+  });
 
   it('promises no reports to a parent that cannot take chat messages (a room, a run)', async () => {
     wireChats(false);

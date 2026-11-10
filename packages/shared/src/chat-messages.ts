@@ -20,6 +20,20 @@ import { extendZodWithOpenApiOnce } from './zod-openapi.js';
 
 extendZodWithOpenApiOnce();
 
+/** Where a chat is, in the words a reader needs. */
+export const ChatStateSchema = z.enum([
+  'running',
+  'needs-you',
+  'done',
+  'failed',
+  'stopped',
+  'paused-at-limit',
+  'idle',
+  'never-started',
+]);
+/** A chat's reported state, including a spin-off whose first turn missed its deadline. */
+export type ChatState = z.infer<typeof ChatStateSchema>;
+
 /** The tool a chat sends another chat a message with. */
 export const CHAT_SEND_TOOL = 'chat_send';
 /** The tool a chat reads another chat with. */

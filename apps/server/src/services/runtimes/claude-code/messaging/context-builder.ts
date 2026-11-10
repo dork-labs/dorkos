@@ -169,7 +169,7 @@ Message a chat or an agent:
 Check on a chat:
   ${T}chat_read(chat=<id>, include="status")  — the cheapest check: its state (running,
                                               needs-you, done, failed, stopped,
-                                              paused-at-limit, idle), no messages.
+                                              paused-at-limit, idle, never-started), no messages.
   ${T}chat_read(chat=<id>)                    — what is new since you last read it.
   last=n reads the newest n instead; query="words" finds messages; include="tools" adds
   one line per tool call; a long read is cut at maxChars and cursor continues it.
