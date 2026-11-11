@@ -374,10 +374,7 @@ export function createHonoApi(options: HonoApiOptions): Hono<ApiEnv> {
   // `/:id/events` is an upgrade, answered before any route
   // (`routes/session-events-socket.ts`).
   app.route('/api/sessions/running', createRunningChatsRoutes(deps.sessions ?? {}));
-  // An app's "opened by" mark on a canvas names only an app whose screens run
-  // (DOR-3293), answered by the extension manager's own records.
-  const appScreenRuns = deps.extensions ? appScreenRunsIn(deps.extensions.manager) : undefined;
-  app.route('/api/sessions', createSessionRoutes({ ...deps.sessions, appScreenRuns }));
+  app.route('/api/sessions', createSessionRoutes(deps.sessions ?? {}));
   // The global event stream over SSE. Its WebSocket twin on the same path is an
   // upgrade, answered before any route (`routes/events-socket.ts`).
   app.route('/api/events', eventsRoutes);
