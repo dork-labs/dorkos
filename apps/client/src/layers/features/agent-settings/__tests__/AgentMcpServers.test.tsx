@@ -569,6 +569,46 @@ describe('AgentMcpServers', () => {
     expect(within(container).queryByRole('button', { name: /^Sign in/ })).not.toBeInTheDocument();
   });
 
+  // DOR-3207, design pass row 11: a browser the agent-browser guard leaves out says why, calmly.
+  it('says a left-out browser uses DorkOS’s own browser, with no red, code or actions', async () => {
+    const leftOutBrowser = {
+      name: 'browser',
+      enabled: true,
+      connection: {
+        transport: 'stdio' as const,
+        command: 'npx',
+        args: ['-y', '@playwright/mcp@0.0.82', '--executable-path', '/opt/my-chrome'],
+        env: {},
+      },
+      addedAt: '2026-01-01T00:00:00.000Z',
+      addedBy: 'operator',
+      leftOut: 'own-browser-only' as const,
+    };
+    const transport = createMockTransport({
+      listAgentMcpServers: vi.fn().mockResolvedValue([leftOutBrowser]),
+      getMcpConfig: vi.fn().mockResolvedValue({
+        servers: [{ name: 'browser', type: 'stdio', status: 'failed', error: 'spawn ENOENT' }],
+      }),
+    });
+    const { container } = renderComponent(transport);
+
+    await waitFor(() =>
+      expect(
+        within(container).getByText(
+          "DorkOS uses its own browser for agents. Custom browser paths aren't allowed."
+        )
+      ).toBeInTheDocument()
+    );
+    expect(within(container).getByText('Not used')).toBeInTheDocument();
+    expect(within(container).queryByText('Off')).not.toBeInTheDocument();
+    expect(within(container).queryByText('Failed')).not.toBeInTheDocument();
+    expect(within(container).queryByText(/ENOENT/)).not.toBeInTheDocument();
+    expect(within(container).queryByRole('button', { name: /^Sign in/ })).not.toBeInTheDocument();
+    expect(
+      within(container).queryByRole('button', { name: /^(Test|Try)/ })
+    ).not.toBeInTheDocument();
+  });
+
   it('shows a Sign in button only when the server needs OAuth sign-in', async () => {
     const transport = createMockTransport({
       listAgentMcpServers: vi.fn().mockResolvedValue([oauthServer]),

@@ -19744,6 +19744,12 @@
                   "dcr",
                   "manual"
                 ]
+              },
+              "leftOut": {
+                "type": "string",
+                "enum": [
+                  "own-browser-only"
+                ]
               }
             }
           }

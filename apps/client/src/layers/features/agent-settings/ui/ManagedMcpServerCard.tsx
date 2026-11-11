@@ -105,9 +105,13 @@ export function ManagedMcpServerCard({
   const startingSignIn = signin.state.step === 'starting';
   const signinOnScreen =
     signin.state.step === 'disclosure' || signin.state.step === 'waiting' || startingSignIn;
-  const status: McpCardStatus = signinOnScreen ? 'signing-in' : resolved;
+  // A browser DorkOS leaves out of every session (DOR-3207) never runs, so it reads as
+  // "Not used", calmly, with nothing to test or sign in to.
+  const leftOut = server.leftOut === 'own-browser-only';
+  const status: McpCardStatus = leftOut ? 'not-used' : signinOnScreen ? 'signing-in' : resolved;
 
   const showSignIn =
+    !leftOut &&
     offersSignIn({ statusKey: resolved, testResult: probe, signedInNow }) &&
     (signin.state.step === 'idle' || startingSignIn);
 
@@ -119,12 +123,12 @@ export function ManagedMcpServerCard({
   // consent panel a person is reading, competing with it and describing a moment
   // that is being superseded as they look at it.
   const sentenceStatus = signinOnScreen ? status : probeAdjustedStatus({ status, probe });
-  const sentence = cardSentence(sentenceStatus, {
+  const sentence = cardSentence(leftOut ? 'not-used' : sentenceStatus, {
     displayName: parsed.displayName,
     toolCount,
     justSignedIn: signedInNow,
   });
-  const primary = signinOnScreen ? 'none' : primaryActionFor(sentenceStatus);
+  const primary = signinOnScreen || leftOut ? 'none' : primaryActionFor(sentenceStatus);
   const canReauth = holdsSignIn({ connection: server.connection, authStatus: server.authStatus });
 
   return (
@@ -227,7 +231,7 @@ export function ManagedMcpServerCard({
           rawName={parsed.rawName}
           displayName={parsed.displayName}
           toolCount={toolCount}
-          error={probe?.ok === false ? probe.error : live?.error}
+          error={leftOut ? undefined : probe?.ok === false ? probe.error : live?.error}
         />
       }
     >
