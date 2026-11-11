@@ -7,5 +7,7 @@
   "artifacts": {
     "specification": "02-specification.md",
     "tasks": "03-tasks.json"
-  }
+  },
+  "linearIssue": "DOR-4185",
+  "project": "Codebase cleanup: smaller, simpler, faster"
 }

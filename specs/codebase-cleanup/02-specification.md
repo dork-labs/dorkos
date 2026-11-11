@@ -3,6 +3,8 @@ slug: codebase-cleanup
 number: 261111-174805
 created: 2026-11-11
 status: specified
+linear-issue: DOR-4185
+project: 'Codebase cleanup: smaller, simpler, faster'
 ---
 
 # Codebase cleanup: smaller, simpler, faster
@@ -12,8 +14,18 @@ status: specified
 Make changes faster to check and the repo easier to maintain. Remove unused code,
 low-value tests and stale documents while keeping the checks that catch real bugs.
 
-This specification defines six phases, numbered 0–5. It does not implement them.
-Execution needs a separate go-ahead. Phases 2–4 wait for the Nov 17 cut.
+This specification defines six approved phases, numbered 0–5. Work starts now,
+in parallel across four lanes. Priority: Must, ASAP. Cleanup may slow the Nov 17
+cut; a launch PR rebases unless it is already armed.
+
+Project: **Codebase cleanup: smaller, simpler, faster**. Parent: **DOR-4185**.
+
+| Lane | Scope                                               | Phase tickets                |
+| ---- | --------------------------------------------------- | ---------------------------- |
+| A    | Measurement, dead code and lasting checks (0, 1, 5) | DOR-4186, DOR-4187, DOR-4191 |
+| B    | Upgrade floor and database baseline (2)             | DOR-4188                     |
+| C    | Current docs (3)                                    | DOR-4189                     |
+| D    | Test value and speed (4)                            | DOR-4190                     |
 
 ## Baseline and targets
 
@@ -38,16 +50,19 @@ reported baseline. Never delete a useful test just to reach it.
 
 - Work only in the public repo. Keep private code, account details, internal agent
   names and chat identifiers out of committed files.
-- Use one cleanup lane, separate from work for the Nov 17 cut. Phases 0–1 touch
-  only areas no active release PR touches. Recheck overlap before each PR.
+- All four lanes start now. Check open launch PRs through the coordinator before
+  deleting files. Avoid files an armed PR touches. Other launch PRs rebase around
+  cleanup changes. Keep conflicting batches small.
 - Check open Linear projects and related issues before deleting anything
   unfinished. If the tracker cannot be checked, defer that candidate.
 - Put in-progress code on a dated ignore list. Every entry names its path, reason,
   owner, tracking issue and review date. Broad or ownerless ignores do not qualify.
 - A security reviewer signs off any deletion on a security path, including tests.
   Existing review gates remain in force.
-- Ship small PRs within the WIP limit of eight. Pure deletions get light review;
-  that does not waive security review or checks for changed behavior.
+- Ship small PRs within the WIP limit of eight. Pure-deletion PRs may go past that
+  limit and get light review. Security review and behavior checks still apply.
+- Each implementation PR says `Refs DOR-41xx` for its phase. Never use closing
+  language on a partial PR. The coordinator pushes and opens lane commits.
 - Each PR records before/after numbers, exact commands, source revisions, tool
   versions and any skips. Use the same counting scope and comparable runners.
 - Pipeline changes follow [the CI guide](../../contributing/ci.md), including a
@@ -102,36 +117,41 @@ Reviewers ask: “Would this fail if the behavior broke? Does it survive a refac
 
 ### Phase 0: Measure and guardrails
 
-**Starts:** November 11. **Due:** November 20, 2026.
+**Lane:** A. **Ticket:** DOR-4186.
+**Starts:** November 11. **Due:** November 13, 2026.
 
 First PRs:
 
 1. Record the knip baseline, including production entry points and justified
    ignores. Knip finds unused files, exports and dependencies. Add
    `knip --production` to CI as a can-only-go-down check.
-2. Produce per-test duration and flake reports. Distinguish first-run failures,
-   retry passes and skips; do not hide failures by increasing retries.
+2. Produce per-test duration and flake reports from CI data. Distinguish first-run
+   failures, retry passes and skips; do not hide failures by increasing retries.
 3. Add the testing rules above to `AGENTS.md` and the TDD skill (test-driven
    development), plus the two reviewer questions.
 
-Run a bounded Stryker per-test pilot on shared, relay and server core. Record the
-exact server-core scope, settings, elapsed time and resource use. Use the results
-to judge the deletion filters before applying them broadly.
+Run Stryker on CI only, never on this Mac. Start with a bounded per-test pilot on
+shared, relay and server core. Record the exact scopes, settings, elapsed time and
+resource use. If CI time blocks the third scope, cap Phase 0 to shared and relay
+and report the deferred server-core scope to the coordinator. Use results to
+calibrate deletion filters as they arrive; other lanes can start their inventories
+and clear candidates in parallel.
 
 **Before/after measures:** Compare the reported baseline with measured test and
 product lines, files, cases, workflow duration and shard timings. Record knip
 findings by kind, per-test timings, retry-pass rate, pilot mutation results and
 measurement cost. Missing data is labeled unknown, never zero.
 
-**Done when:** Reports are reproducible, the pilot has results for all three
-scopes, testing rules are in place, and the production knip check rejects a new
-unexplained issue. Existing findings have a counted baseline; temporary ignores
-have owners and review dates. No suite pruning happens in this phase.
+**Done when:** Reports are reproducible, the CI-only pilot has results for all
+three scopes (or the reported shared-and-relay fallback), testing rules are in
+place, and the production knip check rejects a new unexplained issue. Existing
+findings have a counted baseline; temporary ignores have owners and review dates. No suite pruning happens in this phase.
 
 ### Phase 1: Dead code
 
-**Starts:** November 11, after Phase 0 measurements for each affected area.
-**Due:** November 20, 2026.
+**Lane:** A. **Ticket:** DOR-4187.
+**Starts:** November 11, with before/after measurements for each batch.
+**Due:** November 13, 2026.
 
 First PRs:
 
@@ -150,11 +170,12 @@ Record affected check results for every batch.
 **Done when:** The three named strays are resolved, confirmed unused code and
 dependencies are gone, and dedupe is complete. Production knip has zero unexplained
 issues. Every remaining in-progress exception is narrow, dated and owned. No
-active release work or protected behavior was removed.
+armed release work or protected behavior was removed.
 
 ### Phase 2: Old-version support
 
-**Gate:** After the Nov 17 cut. **Due:** November 27, 2026.
+**Lane:** B. **Ticket:** DOR-4188.
+**Starts:** November 11. **Due:** November 18, 2026.
 
 Set the minimum upgrade-from version to `0.115`. Remove config migrators for
 `0.44`–`0.89`, plus compatibility paths and flags for features older than `0.115`
@@ -168,7 +189,9 @@ Combine the reported 172 Drizzle database migrations into one baseline. First
 compare it with the full migration history, including hand-written data and schema
 fixes. Prove that fresh creation and supported upgrades reach the same correct
 schema and data. Run the real-data QA upgrade check from `0.115` and the latest
-version on protected temporary copies. A security reviewer reviews this change.
+version on protected temporary copies. Security review and QA are booked for
+Monday, November 16. Put the Drizzle baseline in its own PR with `hold`; both
+reviews must finish before it merges.
 
 Going forward, support 20 minor versions back. An `@deprecated` marker names its
 removal version; lint flags it once that version has passed. Document how each
@@ -181,11 +204,13 @@ versions, plus the below-floor refusal result.
 
 **Done when:** The floor is enforced, the bridge route is verified, both supported
 upgrade checks and the fresh-database comparison pass, hand-written fixes survive,
-and security review is complete. No migration is deleted before that evidence.
+and security and QA reviews are complete. No migration is deleted before that
+evidence.
 
 ### Phase 3: Docs
 
-**Gate:** After the Nov 17 cut. **Due:** November 27, 2026.
+**Lane:** C. **Ticket:** DOR-4189.
+**Starts:** November 11. **Due:** November 18, 2026.
 
 Run lychee to check links in `docs/`. Add a script that flags references to removed
 files or symbols. Delete or merge stale pages, keep one current doc per topic, and
@@ -207,7 +232,9 @@ planning material is neither active nor needed by a live document.
 
 ### Phase 4: Tests
 
-**Gate:** After the Nov 17 cut and Phase 0 calibration. **Due:** December 4, 2026.
+**Lane:** D. **Ticket:** DOR-4190.
+**Starts:** November 11, using Phase 0 measurements as they arrive.
+**Due:** November 25, 2026.
 
 Prune in this order: duplicate Playwright tests, mock-only unit tests, then snapshots
 and trivial tests. Record a reason and surviving coverage for every deletion
@@ -232,7 +259,9 @@ violations; the full merge-queue suite remains required.
 
 ### Phase 5: Keep it from growing back
 
-**Depends on:** The earlier phases' measured baselines. **Due:** December 4, 2026.
+**Lane:** A. **Ticket:** DOR-4191.
+**Starts:** November 11; add checks as measured baselines become available.
+**Due:** November 25, 2026.
 
 Keep knip and test budgets in CI. Add size-limit checks for the client and desktop
 bundles. Use dependency-cruiser to reject cycles and package-boundary violations.
@@ -249,20 +278,22 @@ monthly review has an owner and a checklist for expired ignores and deprecations
 
 ## Schedule and delivery
 
-All dates below are in 2026. The specification is due November 12 at midday Central
-Time. The six tasks in `03-tasks.json` are ready for one tracking child per phase;
-this docs step does not create tracker entries or start execution.
+All dates below are in 2026. The specification is due today, November 11. The six
+tasks in `03-tasks.json` map to the existing phase tickets under DOR-4185. Each has
+a clean title and a one-paragraph done-when for the coordinator to paste into
+Linear. Lane A owns Phases 0, 1 and 5; the other lanes own Phases 2, 3 and 4.
 
-| Deliverable                   | Due                   |
-| ----------------------------- | --------------------- |
-| Ticket and specification      | Thursday, November 12 |
-| Phases 0–1 merged             | Friday, November 20   |
-| Phases 2–3 complete           | Friday, November 27   |
-| Phase 4 and ratchets complete | Friday, December 4    |
+| Deliverable                   | Due                    |
+| ----------------------------- | ---------------------- |
+| Ticket and specification      | Wednesday, November 11 |
+| Phases 0–1 merged             | Friday, November 13    |
+| Phases 2–3 complete           | Wednesday, November 18 |
+| Phase 4 and ratchets complete | Wednesday, November 25 |
 
-Follow capture, triage, specify, decompose, execute, verify and close. Triage is
-Must, not urgent. Phases 2–4 wait for the Nov 17 cut even if earlier work finishes
-early. This schedule does not change the product launch date.
+Follow capture, triage, specify, decompose, execute, verify and close. Priority is
+Must, ASAP. All phases run now in parallel, even if cleanup slows the Nov 17 cut.
+A launch PR rebases unless it is already armed. Security and QA review the Drizzle
+baseline on Monday, November 16, before its merge.
 
 ## Verification and evidence
 
@@ -281,12 +312,13 @@ configuration needed to reproduce them.
 - **Lost hand-written database fixes.** A generated Drizzle baseline may preserve
   schema but lose data repairs. Compare full history, fresh databases and both
   supported upgrade paths before deleting history.
-- **Stryker cost on this Mac.** Mutation runs can consume hours and crowd out other
-  work. Bound the three pilot scopes and record resource use before expanding.
+- **Stryker cost in CI.** Mutation runs consume runner time. Run them on CI only,
+  never on this Mac. Bound each scope and record elapsed time and resource use.
+  If CI time blocks server core, cap Phase 0 to shared and relay and report it.
 - **Hidden coverage loss.** Duplicate-looking tests can catch different bugs. Keep
   protected classes and require surviving behavior evidence, not overlap alone.
 - **Unfinished work mistaken for dead code.** Check open projects, public package
-  entry points and active PRs; defer uncertain paths with an owner and review date.
+  entry points and armed PRs; defer uncertain paths with an owner and review date.
 - **Misleading speed gains.** Runner load, retries or fewer executed tests can make
   a workflow look faster. Report comparable timing and executed, skipped and failed
   counts together.
