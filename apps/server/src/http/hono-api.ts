@@ -77,6 +77,7 @@ import { createDiscoveryRoutes } from '../routes/discovery.js';
 import errorRoutes from '../routes/errors.js';
 import { createExtensionApiRoutes } from '../routes/extension-api.js';
 import { createExtensionsRoutes, type ExtensionsRouterDeps } from '../routes/extensions.js';
+import { createExtensionFrameRoutes } from '../routes/extension-frame.js';
 import {
   createExtensionDecisionsRoutes,
   type ExtensionDecisionsRouterDeps,
@@ -494,6 +495,8 @@ export function createHonoApi(options: HonoApiOptions): Hono<ApiEnv> {
       })
     );
     app.route('/api/ext', createExtensionApiRoutes(deps.extensions.manager));
+    // The empty, sandboxed document every app's screens run in (DOR-3293).
+    app.route('/api/extension-frame', createExtensionFrameRoutes());
   }
   // These two are mounted on all of `/api`, because their paths span several
   // prefixes. Their groups register only their own concrete paths, so mounting them at `/api` claims

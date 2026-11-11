@@ -5,6 +5,7 @@ import {
 } from '@dorkos/extension-api';
 import { z } from 'zod';
 import runtime from 'virtual:dorkos-extension-frame';
+import { resolveApiBaseUrl } from '@/layers/shared/lib';
 import {
   args,
   FrameCallSchema,
@@ -16,9 +17,12 @@ import {
 
 /** The sandbox grants scripts only: no origin, popups, downloads, forms, or parent navigation. */
 export const EXTENSION_FRAME_SANDBOX = 'allow-scripts';
-/** No frame resource can contact DorkOS or an outside account directly. */
-export const EXTENSION_FRAME_CSP =
-  "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; connect-src 'none'; form-action 'none'; base-uri 'none'";
+/**
+ * The document every app's screens run in. Served by DorkOS with its own CSP
+ * (sandboxed, nonce-only scripts, no network); see `routes/extension-frame.ts`.
+ * Never a `srcdoc` frame, which would inherit the app shell's policy.
+ */
+export const EXTENSION_FRAME_PATH = '/extension-frame';
 const TIMEOUT_MS = 15_000;
 /** Every placement a frame may ask about; the host answers which ones it has. */
 const FRAME_SLOTS: ExtensionPointId[] = [
@@ -103,7 +107,7 @@ export function createFrameConnection(options: FrameOptions): FrameConnection {
   iframe.setAttribute('sandbox', EXTENSION_FRAME_SANDBOX);
   iframe.setAttribute('referrerpolicy', 'no-referrer');
   iframe.className = 'block h-full w-full border-0';
-  iframe.srcdoc = `<!doctype html><meta http-equiv="Content-Security-Policy" content="${EXTENSION_FRAME_CSP}"><div id="root"></div><script>${runtime.replace(/<\/script/gi, '<\\/script')}</script>`;
+  iframe.src = resolveApiBaseUrl() + EXTENSION_FRAME_PATH;
   const channel = new MessageChannel();
   let closed = false;
   let initialized = false;
@@ -210,6 +214,8 @@ export function createFrameConnection(options: FrameOptions): FrameConnection {
       return;
     }
     initialized = true;
+    // The page runs only its own bootstrap; it takes the runtime once, from us.
+    iframe.contentWindow?.postMessage({ type: 'dorkos-frame-runtime', runtime }, '*');
     const css = Array.from(document.styleSheets)
       .map((sheet) => {
         try {

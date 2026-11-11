@@ -199,6 +199,7 @@
     "GET /api/documents/resolve",
     "GET /api/events",
     "GET /api/extension-decisions",
+    "GET /api/extension-frame",
     "GET /api/extensions",
     "GET /api/extensions/:id/bundle",
     "GET /api/extensions/:id/data",

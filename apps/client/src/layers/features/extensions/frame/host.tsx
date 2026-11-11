@@ -10,7 +10,7 @@ import { z } from 'zod';
 import { extensionApiUrl } from '../model/extension-api-url';
 import { offerAppDownload } from './download';
 import {
-  EXTENSION_FRAME_CSP,
+  EXTENSION_FRAME_PATH,
   EXTENSION_FRAME_SANDBOX,
   createFrameConnection,
   frameFit,
@@ -339,4 +339,4 @@ export function isolatedExtensionModule(
   };
 }
 
-export { EXTENSION_FRAME_CSP, EXTENSION_FRAME_SANDBOX };
+export { EXTENSION_FRAME_PATH, EXTENSION_FRAME_SANDBOX };

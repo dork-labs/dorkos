@@ -3,6 +3,7 @@ import type { ExtensionAPI, ExtensionManifest } from '@dorkos/extension-api';
 import {
   isolatedExtensionModule,
   extensionRequestPath,
+  EXTENSION_FRAME_PATH,
   EXTENSION_FRAME_SANDBOX,
 } from '../frame/host';
 
@@ -98,9 +99,10 @@ describe('isolated app host', () => {
     const frame = document.querySelector('iframe')!;
     expect(frame.getAttribute('sandbox')).toBe(EXTENSION_FRAME_SANDBOX);
     expect(frame.getAttribute('sandbox')).not.toContain('allow-same-origin');
-    expect(frame.srcdoc).toContain("connect-src 'none'");
-    // A blob: script would let a bundle load more code the host never fetched.
-    expect(frame.srcdoc).toMatch(/script-src 'unsafe-inline';/);
+    // Never a srcdoc frame, which would inherit the shell's 'unsafe-inline' policy:
+    // DorkOS's own frame route sends the document and its policy.
+    expect(frame.hasAttribute('srcdoc')).toBe(false);
+    expect(frame.getAttribute('src')).toBe(`/api${EXTENSION_FRAME_PATH}`);
     expect((globalThis as Record<string, unknown>).executed).toBeUndefined();
     stop?.();
     expect(port.closed).toBe(true);

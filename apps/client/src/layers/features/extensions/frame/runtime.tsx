@@ -40,6 +40,8 @@ function evaluateBundle(code: string): { activate?: (api: ExtensionAPI) => unkno
   };
   window.addEventListener('error', onError);
   const script = document.createElement('script');
+  // The frame page runs only scripts carrying its nonce, which its bootstrap kept for us.
+  script.nonce = (globalThis as { __dorkosFrameNonce?: string }).__dorkosFrameNonce ?? '';
   script.textContent = `${code}\n;globalThis[${JSON.stringify(Sdk.EXTENSION_BUNDLE_GLOBAL)}] = ${Sdk.EXTENSION_BUNDLE_GLOBAL};`;
   document.head.append(script);
   script.remove();
