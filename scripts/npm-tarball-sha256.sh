@@ -44,9 +44,11 @@ fail() {
 
 # Whole-string semver (major.minor.patch, optional dot-separated prerelease),
 # no leading zeros. Bash's =~ anchors $ at the end of the string, not a line.
+# The refusal never echoes the version: a newline in it could start a
+# workflow command (`::...::`) of its own in the job log (DOR-4175).
 semver='^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$'
 if ! [[ "$VERSION" =~ $semver ]]; then
-  fail "version '${VERSION}' isn't a plain semver like 0.135.6; refusing it"
+  fail "the version isn't a plain semver like 0.135.6; refusing it"
 fi
 
 url="https://registry.npmjs.org/dorkos/-/dorkos-${VERSION}.tgz"

@@ -56,14 +56,16 @@ fi
 
 # Whole-string semver (major.minor.patch, optional dot-separated prerelease),
 # no leading zeros, checked before the version reaches a URL or `npm view`.
-# The same pattern as scripts/npm-tarball-sha256.sh (DOR-4161).
+# The same pattern as scripts/npm-tarball-sha256.sh (DOR-4161). Neither
+# refusal echoes its value: a newline in it could start a workflow command
+# (`::...::`) of its own in the job log (DOR-4175).
 semver='^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$'
 if ! [[ "$VERSION" =~ $semver ]]; then
-  echo "::error::version '${VERSION}' isn't a plain semver like 0.135.6; refusing it" >&2
+  echo "::error::the version isn't a plain semver like 0.135.6; refusing it" >&2
   exit 1
 fi
 if ! [[ "$TIMEOUT_MINUTES" =~ ^[0-9]+$ ]]; then
-  echo "::error::timeout '${TIMEOUT_MINUTES}' isn't a whole number of minutes" >&2
+  echo "::error::the timeout isn't a whole number of minutes; refusing it" >&2
   exit 1
 fi
 

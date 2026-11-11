@@ -37,23 +37,40 @@ jobs:
     # max(10, ceil(3 x p95)). Raise it only with new data and a ci/ledger entry.
     timeout-minutes: 92
     steps:
+      # Every run needs the shared scripts: release-version.sh for the version
+      # below, and npm-tarball-sha256.sh for the checksum. So this checkout runs
+      # first, on manual runs too; only the npm wait is skipped for those.
+      - name: Checkout for the shared release scripts
+        uses: actions/checkout@v7
+        with:
+          sparse-checkout: |
+            scripts/release-version.sh
+            scripts/wait-for-npm.sh
+            scripts/npm-tarball-sha256.sh
+
+      # The tag, the release's tag and the manual input are all untrusted text,
+      # so each goes through release-version.sh, which refuses anything but a
+      # plain release version before it reaches $GITHUB_OUTPUT (DOR-4175). A
+      # newline in the input could otherwise write a second `version=` line.
       - name: Get version
         id: version
         env:
           INPUT_VERSION: ${{ github.event.inputs.version }}
           RELEASE_TAG: ${{ github.event.release.tag_name }}
         run: |
+          set -euo pipefail
           if [ "$GITHUB_EVENT_NAME" = "push" ]; then
-            # Tag run: derive the version from the pushed tag (strip the `v`).
-            VERSION="${GITHUB_REF_NAME#v}"
+            # Tag run: derive the version from the pushed tag.
+            TAG="$GITHUB_REF_NAME"
           elif [ "$GITHUB_EVENT_NAME" = "release" ]; then
             # Release-published run: derive it from the release's tag.
-            VERSION="${RELEASE_TAG#v}"
-          elif [ -n "$INPUT_VERSION" ]; then
-            VERSION="$INPUT_VERSION"
+            TAG="$RELEASE_TAG"
+          elif [ -n "${INPUT_VERSION:-}" ]; then
+            TAG="$INPUT_VERSION"
           else
-            VERSION=$(npm view dorkos version)
+            TAG=$(npm view dorkos version)
           fi
+          VERSION=$(bash scripts/release-version.sh "$TAG")
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "Updating Homebrew formula to v$VERSION"
 
@@ -66,15 +83,6 @@ jobs:
       # byte-for-byte as before. Shares scripts/wait-for-npm.sh with
       # publish-docker.yml's "Wait for npm package availability" step
       # (DOR-1606) rather than carrying its own copy of the loop.
-      # Every run needs scripts/npm-tarball-sha256.sh, so this checkout runs on
-      # manual runs too; only the wait below is skipped for them.
-      - name: Checkout for the shared npm scripts
-        uses: actions/checkout@v7
-        with:
-          sparse-checkout: |
-            scripts/wait-for-npm.sh
-            scripts/npm-tarball-sha256.sh
-
       - name: Wait for npm package availability
         if: github.event_name == 'push' || github.event_name == 'release'
         env:
