@@ -10,13 +10,14 @@ DorkOS uses Feature-Sliced Design (FSD) to organize frontend code by business do
 dorkos/
 ├── apps/
 │   ├── client/           # @dorkos/client — React 19 SPA with FSD layers
-│   ├── community/        # @dorkos/community — independent Hono/Postgres community service
+│   ├── space/            # @dorkos/community — space-server package; code in server/src/services/spaces
 │   ├── design-system/    # @dorkos/design-system — standalone shared UI catalog
 │   ├── desktop/          # @dorkos/desktop — Electron shell
 │   ├── server/           # @dorkos/server — Hono API (routes + domain-grouped services)
 │   ├── site/             # @dorkos/site — Marketing site & docs (Next.js 16, Fumadocs)
 │   └── e2e/              # @dorkos/e2e — Playwright browser tests
 ├── packages/
+│   ├── browser/          # @dorkos/browser — managed-browser engine contracts
 │   ├── cli/              # dorkos — Publishable npm CLI
 │   ├── shared/           # @dorkos/shared — Zod schemas, types, AgentRuntime + Transport interfaces
 │   ├── db/               # @dorkos/db — Drizzle ORM schemas (SQLite)
@@ -24,6 +25,8 @@ dorkos/
 │   ├── mesh/             # @dorkos/mesh — Agent discovery & registry
 │   ├── harness/          # @dorkos/harness — Projects .agents/ + plugins to every agent harness
 │   ├── memory/           # @dorkos/memory — MEMORY.md store behind the MemoryProvider port
+│   ├── decisions/        # @dorkos/decisions — decision models and escalation ladder
+│   ├── doe/              # @dorkos/doe — agent engine
 │   ├── keep-awake/       # @dorkos/keep-awake — Holds the computer awake while work runs
 │   ├── a2a-gateway/      # @dorkos/a2a-gateway — A2A protocol gateway
 │   ├── connector-providers/ # @dork-labs/connector-providers — Confined external connector SDK adapters
@@ -65,7 +68,7 @@ src/
 │   │   │   └── app-store/   # Zustand app store — panels, canvas, preferences, types
 │   │   ├── lib/         # cn(), Transports, font-config, favicon-utils, celebrations, ui-action-dispatcher
 │   │   └── config/      # home-surface tab table, home-tabs, tour-anchors
-│   ├── entities/        # Business domain objects (~29 slices; highlights below)
+│   ├── entities/        # Business domain objects (selected slices below)
 │   │   ├── session/     # Session types, hooks, transport calls
 │   │   │   ├── ui/
 │   │   │   ├── model/
@@ -75,20 +78,20 @@ src/
 │   │   │   ├── model/
 │   │   │   ├── api/
 │   │   │   └── index.ts
-│   │   ├── agent/       # Agent identity hooks (useCurrentAgent, useAgentToolStatus, etc.)
+│   │   ├── agent/       # Agent identity and configuration hooks (useCurrentAgent, useUpdateAgent)
 │   │   ├── room/        # Rooms/channels/DMs domain: use-room(s), reactions, threads, response mode
 │   │   ├── team/        # Team roster domain hooks
-│   │   ├── tasks/       # Task scheduler hooks (useSchedules, useRuns, etc.)
+│   │   ├── tasks/       # Task scheduler hooks (useTasks, useTaskRuns)
 │   │   ├── relay/       # Relay messaging hooks (useRelayMessages, useRelayAdapters, etc.)
 │   │   ├── connectors/  # Connections domain: connector management/credential/resource hooks
 │   │   ├── mesh/        # Mesh discovery hooks (useRegisteredAgents, useDiscoverAgents, etc.)
 │   │   ├── discovery/   # Shared discovery scan state (Zustand store + useDiscoveryScan hook)
-│   │   ├── runtime/     # Runtime capabilities (useRuntimeCapabilities, useDefaultCapabilities)
-│   │   ├── permissions/ # Permission mode / approval domain hooks
+│   │   ├── runtime/     # Runtime capabilities (useRuntimeCapabilities, useCapabilitiesForRuntime)
+│   │   ├── permissions/ # Resolved permissions, levels, writes and history hooks
 │   │   ├── tunnel/      # Tunnel state hooks
 │   │   ├── binding/     # Adapter-agent binding hooks (useBindings, useCreateBinding, etc.)
 │   │   └── marketplace/ # Marketplace hooks (useMarketplacePackages, useInstallPackage, etc.)
-│   ├── features/        # Complete user-facing functionality (~60 slices; highlights below)
+│   ├── features/        # Complete user-facing functionality (selected slices below)
 │   │   ├── chat/        # A session's model: useChatSession, streaming, message parts
 │   │   │   ├── ui/
 │   │   │   │   ├── input/    # QueuePanel, StopConfirmDialog, AnimatedPlaceholder
@@ -234,21 +237,18 @@ Not all segments are needed — create only what the module requires.
 Every module MUST have an `index.ts` that exports its public API. Other layers import from this file only.
 
 ```typescript
-// entities/session/index.ts
-export { SessionBadge } from './ui/SessionBadge';
-export { useSession, useSessions } from './model/hooks';
-export type { Session, SessionMetadata } from './model/types';
-
-// DON'T export internals
-// export { parseTranscript } from './lib/transcript-parser'  // Keep internal
+// Selected exports from entities/session/index.ts
+export { useSessionDetail } from './model/query/use-session-detail';
+export { useSessions } from './model/query/use-sessions';
+export { sessionDisplayTitle } from './lib/session-display-title';
 ```
 
 ```typescript
-// Consumer imports from index
-import { SessionBadge, useSession } from '@/layers/entities/session';
+// Consumer imports from the public barrel
+import { useSessionDetail, sessionDisplayTitle } from '@/layers/entities/session';
 
-// NEVER import internal paths
-import { SessionBadge } from '@/layers/entities/session/ui/SessionBadge'; // WRONG
+// NEVER import a slice's internals from another slice
+import { useSessionDetail } from '@/layers/entities/session/model/query/use-session-detail'; // WRONG
 ```
 
 ## Adding a New Feature
@@ -282,7 +282,7 @@ import { SessionBadge } from '@/layers/entities/session/ui/SessionBadge'; // WRO
    ```typescript
    // ui/MyFeature.tsx
    import { Button } from '@/layers/shared/ui';
-   import { useSession } from '@/layers/entities/session';
+   import { useSessionDetail } from '@/layers/entities/session';
    import { useMyFeature } from '../model/use-my-feature';
    ```
 
@@ -362,17 +362,13 @@ apps/server/src/
 │   ├── search.ts
 │   ├── permissions.ts
 │   └── admin.ts
-├── services/        # One directory per domain — a complete census (alphabetical): activity,
-│   │                #   canvas, communities, connectors, core, core-extensions, diff, extensions,
-│   │                #   harness, identity, marketplace, marketplace-mcp, mcp-apps, memory, mesh,
-│   │                #   notifications, observability, relay, rooms, runtimes, search, session,
-│   │                #   shapes, tasks, terminal, workbench-serve, workspace (AGENTS.md keeps the
-│   │                #   census current; this tree expands the domains with the deepest nesting)
+├── services/        # One directory per domain; selected domains expanded below.
+│   │                # Browse this directory for the current full inventory.
 │   ├── core/                    # Shared infrastructure services
 │   │   ├── runtime-registry.ts  # Registry of AgentRuntime instances (keyed by type, per-session binding)
 │   │   ├── config-manager.ts    # Persistent user config (~/.dork/config.json)
 │   │   ├── openapi-registry.ts  # Auto-generated OpenAPI spec from Zod schemas
-│   │   ├── streams/             # SSE plumbing (stream-adapter, stream-socket, durable-stream-sink)
+│   │   ├── streams/             # Durable WebSocket/SSE plumbing (stream-adapter, stream-socket, durable-stream-sink)
 │   │   ├── approvals/           # Approval service, expiry sweep, decision authority
 │   │   ├── capabilities/        # Capability defs, MCP/OpenAPI projection, permission enforcement
 │   │   ├── cloud/               # DorkOS Cloud client (credits-inference, hosted-communities, plan)
@@ -398,6 +394,8 @@ apps/server/src/
 │   │   │   └── mcp-tools/              # In-process MCP tool server for Claude Agent SDK
 │   │   ├── codex/                # CodexRuntime — SDK threads (ADR-0309)
 │   │   ├── opencode/             # OpencodeRuntime — managed sidecar (ADR-0308)
+│   │   ├── doe/                  # DoeRuntime — DorkOS agent engine
+│   │   ├── context-preview/      # Read-only runtime-context previews
 │   │   ├── connect/              # Runtime credentials / delegated login
 │   │   ├── connectors/, connector-mcp/ # Connector-backed MCP bridging shared across runtimes
 │   │   ├── shared/                # Cross-runtime helpers used by the conformance suite
@@ -412,6 +410,7 @@ apps/server/src/
 │   │   └── session-bindings/     # Session ↔ room binding
 │   ├── communities/               # CommunityAdapter backends: local/ (this machine's SQLite rooms,
 │   │   │                          #   registered LOCAL_COMMUNITY) + remote-community aggregation
+│   ├── spaces/                    # Hosted space server, migrations and routes (apps/space package)
 │   ├── connectors/                # Connections: connector accounts, agent-access requests/cleanup
 │   ├── marketplace/               # Package install/uninstall/update pipeline
 │   │   ├── installer/                # Orchestrator: staging, dispatch per kind, update, metadata
@@ -420,7 +419,7 @@ apps/server/src/
 │   │   ├── transaction.ts            # Atomic transaction engine (backup/rollback)
 │   │   ├── sources/, preview/, consent/, telemetry/, recovery/, lib/ # Per-concern subfolders
 │   │   └── flows/                    # Per-kind install flows, update, and uninstall/
-│   ├── marketplace-mcp/           # The 10 marketplace MCP tools + personal-marketplace recommend engine
+│   ├── marketplace-mcp/           # Marketplace MCP capabilities + personal-marketplace recommend engine
 │   ├── tasks/                    # Task scheduler services
 │   │   ├── task-scheduler-service.ts # Cron engine (croner) with overrun protection
 │   │   ├── task-store.ts             # SQLite + JSON schedule/run state
@@ -433,6 +432,8 @@ apps/server/src/
 │   ├── session/                  # Session aggregation, activity, asks, attachments, browser-seat
 │   ├── identity/                 # Avatars, display names, operator profile, team aggregation
 │   ├── notifications/            # Notification center (channels/, emitters/, escalation-service)
+│   ├── audit/, browser/, computers/, decisions/, docs/, health/, heartbeats/, projects/,
+│   │   todos/, work-queue/        # Other server domains; see each module for its contract
 │   ├── activity/, canvas/, diff/, extensions/, harness/, mcp-apps/, observability/, shapes/,
 │   │   terminal/, workbench-serve/, workspace/  # One folder each; browse for per-domain detail
 │   └── core-extensions/          # Toggleable first-party extensions staged at server startup
@@ -453,7 +454,7 @@ Routes are thin HTTP handlers — they delegate to services. Routes resolve a se
 ```typescript
 // FSD layer imports (within apps/client)
 import { ChatPanel } from '@/layers/features/chat';
-import { useSession } from '@/layers/entities/session';
+import { useSessionDetail } from '@/layers/entities/session';
 import { Button } from '@/layers/shared/ui';
 import { cn } from '@/layers/shared/lib/utils';
 
