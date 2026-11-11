@@ -184,6 +184,47 @@ describe('unguardableBrowserReason', () => {
   });
 });
 
+// Every refused flag beside its environment twin, read from `@playwright/mcp` 0.0.82's own
+// `configFromEnv`: a browser is left out whichever form it uses. `--endpoint` and
+// `--save-session` have no twin there; a later version that adds one is refused all the same,
+// since every `PLAYWRIGHT_MCP_*` variable is.
+const REFUSED_FLAG_TWINS: readonly [flag: string[], env: string | null][] = [
+  [['--extension'], 'PLAYWRIGHT_MCP_EXTENSION'],
+  [['--executable-path', '/opt/browser'], 'PLAYWRIGHT_MCP_EXECUTABLE_PATH'],
+  [['--no-isolated'], 'PLAYWRIGHT_MCP_ISOLATED'],
+  [['--cdp-endpoint', 'http://127.0.0.1:9222'], 'PLAYWRIGHT_MCP_CDP_ENDPOINT'],
+  [['--endpoint', 'ws://x'], null],
+  [['--user-data-dir', '/p'], 'PLAYWRIGHT_MCP_USER_DATA_DIR'],
+  [['--proxy-server', 'http://proxy:8080'], 'PLAYWRIGHT_MCP_PROXY_SERVER'],
+  [['--config', '/mine.json'], 'PLAYWRIGHT_MCP_CONFIG'],
+  [['--save-session'], null],
+  [['--output-dir', '/out'], 'PLAYWRIGHT_MCP_OUTPUT_DIR'],
+  [['--allow-unrestricted-file-access'], 'PLAYWRIGHT_MCP_ALLOW_UNRESTRICTED_FILE_ACCESS'],
+  [['--init-page', '/page.ts'], 'PLAYWRIGHT_MCP_INIT_PAGE'],
+  [['--caps', 'storage'], 'PLAYWRIGHT_MCP_CAPS'],
+  [['--storage-state', '/other.json'], 'PLAYWRIGHT_MCP_STORAGE_STATE'],
+];
+
+describe('refused flags and their environment twins', () => {
+  const base = agentBrowserConnection('/s.json').args;
+
+  it.each(REFUSED_FLAG_TWINS.map(([flag, env]) => [flag.join(' '), flag, env] as const))(
+    'refuses %s as a flag and as its environment twin',
+    (_label, flag, env) => {
+      expect(
+        unguardableBrowserReason({ transport: 'stdio', args: [...base, ...flag] })
+      ).toBeTruthy();
+      if (env === null) return;
+      for (const name of [env, env.toLowerCase()]) {
+        expect(
+          unguardableBrowserReason({ transport: 'stdio', args: base, env: { [name]: 'storage' } }),
+          name
+        ).toBeTruthy();
+      }
+    }
+  );
+});
+
 describe('agentBrowserStateFileOf', () => {
   it('finds the session file of a Playwright MCP server, whatever it is named', () => {
     expect(agentBrowserStateFileOf(agentBrowserConnection('/s.json'))).toBe('/s.json');
