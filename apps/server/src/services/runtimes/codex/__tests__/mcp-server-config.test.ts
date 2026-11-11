@@ -9,6 +9,9 @@ import {
   withLiteralHeaders,
 } from '../mcp-server-config.js';
 
+/** Every entry turns off the browser tool that runs code outside the page. */
+const WITHHELD = { disabled_tools: ['browser_run_code_unsafe'] };
+
 describe('toCodexMcpServerConfig', () => {
   it('maps a stdio connection to command/args/env', () => {
     const connection: McpAppServerConnection = {
@@ -22,6 +25,7 @@ describe('toCodexMcpServerConfig', () => {
         command: 'npx',
         args: ['-y', 'server-filesystem'],
         env: { API_KEY: 'x' },
+        ...WITHHELD,
       },
       env: {},
     });
@@ -35,7 +39,7 @@ describe('toCodexMcpServerConfig', () => {
       env: {},
     };
     const entry = toCodexMcpServerConfig('files', connection, new Set());
-    expect(entry?.config).toEqual({ command: 'npx' });
+    expect(entry?.config).toEqual({ command: 'npx', ...WITHHELD });
     expect(entry?.config).not.toHaveProperty('args');
     expect(entry?.config).not.toHaveProperty('env');
   });
@@ -53,6 +57,7 @@ describe('toCodexMcpServerConfig', () => {
       config: {
         url: 'https://example.com/mcp',
         env_http_headers: { Authorization: 'DORKOS_MCP_HDR_REMOTE_AUTHORIZATION' },
+        ...WITHHELD,
       },
       env: { DORKOS_MCP_HDR_REMOTE_AUTHORIZATION: 'Bearer x' },
     });
@@ -83,9 +88,27 @@ describe('toCodexMcpServerConfig', () => {
       { transport: 'http', url: 'https://example.com/mcp', headers: {} },
       new Set()
     );
-    expect(entry).toEqual({ config: { url: 'https://example.com/mcp' }, env: {} });
+    expect(entry).toEqual({ config: { url: 'https://example.com/mcp', ...WITHHELD }, env: {} });
     expect(entry?.config).not.toHaveProperty('env_http_headers');
     expect(entry?.config).not.toHaveProperty('http_headers');
+  });
+
+  // Any server, not only one shaped like the agent browser: a Playwright server started through
+  // a wrapper script is turned off too, and a name a server lacks turns nothing off.
+  it('turns off the browser tool that runs code outside the page, on every server', () => {
+    const browser = toCodexMcpServerConfig(
+      'browser',
+      { transport: 'stdio', command: 'npx', args: ['-y', '@playwright/mcp@0.0.82', '--isolated'] },
+      new Set()
+    );
+    const wrapped = toCodexMcpServerConfig(
+      'my-browser',
+      { transport: 'stdio', command: 'node', args: ['start-browser.js'] },
+      new Set()
+    );
+    expect(browser?.config.disabled_tools).toEqual(['browser_run_code_unsafe']);
+    expect(wrapped?.config.disabled_tools).toEqual(['browser_run_code_unsafe']);
+    expect(browser?.config.disabled_tools).not.toContain('browser_evaluate');
   });
 
   it('returns null for an sse connection — Codex has no SSE transport', () => {
@@ -110,8 +133,8 @@ describe('toCodexMcpServers', () => {
       new Set()
     );
     expect(servers).toEqual({
-      files: { command: 'npx' },
-      remote: { url: 'https://example.com/mcp' },
+      files: { command: 'npx', ...WITHHELD },
+      remote: { url: 'https://example.com/mcp', ...WITHHELD },
     });
     expect(servers).not.toHaveProperty('stream');
     expect(skipped).toEqual(['stream']);
@@ -217,9 +240,13 @@ describe('withLiteralHeaders (app-server)', () => {
     );
     const literal = withLiteralHeaders(managed);
     expect(literal).toEqual({
-      notion: { url: 'https://n.example/mcp', http_headers: { Authorization: 'Bearer N' } },
-      github: { url: 'https://g.example/mcp', http_headers: { 'X-Key': 'G' } },
-      local: { command: 'run-me', args: ['--x'] },
+      notion: {
+        url: 'https://n.example/mcp',
+        http_headers: { Authorization: 'Bearer N' },
+        ...WITHHELD,
+      },
+      github: { url: 'https://g.example/mcp', http_headers: { 'X-Key': 'G' }, ...WITHHELD },
+      local: { command: 'run-me', args: ['--x'], ...WITHHELD },
     });
     expect(JSON.stringify(literal)).not.toContain('DORKOS_MCP_HDR_');
     // The input is untouched: exec still reads the env form.

@@ -35,6 +35,7 @@
  * @module services/runtimes/codex/mcp-server-config
  */
 import type { CodexOptions } from '@openai/codex-sdk';
+import { AGENT_BROWSER_WITHHELD_TOOLS } from '@dorkos/shared/agent-browser';
 import type {
   McpAppServerConnection,
   ManagedMcpServerResolver,
@@ -95,6 +96,10 @@ export interface CodexMcpServerEntry {
  * the variable name the child process sees — that residue is named out loud at
  * the `mergeOAuthHeaders` custody disclosure rather than left implied.
  *
+ * Every entry turns off the agent-browser tools no agent is offered
+ * (`AGENT_BROWSER_WITHHELD_TOOLS`), on any server, so one started through a
+ * wrapper is covered too; Codex ignores a name a server lacks.
+ *
  * @param name - The server's name, which seeds readable variable names.
  * @param connection - The runtime-neutral managed-server connection.
  * @param takenEnvVars - Variable names already minted this turn. **Mutated**:
@@ -119,6 +124,7 @@ export function toCodexMcpServerConfig(
           ...(connection.env && Object.keys(connection.env).length > 0
             ? { env: connection.env }
             : {}),
+          disabled_tools: [...AGENT_BROWSER_WITHHELD_TOOLS],
         },
         env: {},
       };
@@ -128,6 +134,7 @@ export function toCodexMcpServerConfig(
         config: {
           url: connection.url,
           ...(Object.keys(names).length > 0 ? { env_http_headers: names } : {}),
+          disabled_tools: [...AGENT_BROWSER_WITHHELD_TOOLS],
         },
         env: values,
       };

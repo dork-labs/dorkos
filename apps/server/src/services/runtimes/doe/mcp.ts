@@ -11,6 +11,7 @@ import {
   type ToolRegistry,
   type McpTransportConfig,
 } from '@dorkos/doe';
+import { AGENT_BROWSER_WITHHELD_TOOLS } from '@dorkos/shared/agent-browser';
 import type { McpServerEntry } from '@dorkos/shared/transport';
 import type { McpAppServerConnection } from '@dorkos/shared/agent-runtime';
 import {
@@ -102,6 +103,8 @@ export async function assembleDoeMcp(options: DoeMcpOptions): Promise<DoeMcpAsse
         // Recover names from the registry projection's search hint, not by stripping hashes.
         const bare = tool.searchHint?.slice(id.length + 1);
         if (!bare) throw new Error('MCP discovery omitted its registered name');
+        // No configured server offers a browser tool that runs code outside the page.
+        if (!host && AGENT_BROWSER_WITHHELD_TOOLS.includes(bare)) return;
         const name = host ? bare : tool.name;
         names.set(`${id}:${bare}`, name);
         if (host || id === 'dorkos_connections') trustedHostToolNames.add(name);

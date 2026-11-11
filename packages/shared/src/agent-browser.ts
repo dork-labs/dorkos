@@ -28,22 +28,31 @@ export const AGENT_BROWSER_SERVER_NAME = 'browser';
  * It runs through `npx` on the agent's machine, so `@latest` would let any new
  * upstream release change, unreviewed, what every agent's browser can do. It
  * has already moved in ways this feature depends on: which tools are always on
- * (there is no switch to turn off `browser_run_code_unsafe` or
- * `browser_network_request` in 0.0.82, which is why the docs spell out that an
- * agent with the browser can read the saved sign-ins), and whether
+ * (0.0.82 has no switch for `browser_run_code_unsafe` or `browser_network_request`,
+ * so each runtime withholds the first itself: {@link AGENT_BROWSER_WITHHELD_TOOLS}), and whether
  * `--storage-state` tolerates a file (0.0.82 fails every browser tool when the
  * file is missing, which is why DorkOS keeps an empty one in place).
  *
  * To bump it: change this string, then run the real-Chrome smoke test
  * (`DORKOS_BROWSER_SMOKE=1`, `packages/cli/src/lib/agent-browser/__tests__/agent-browser-smoke.test.ts`),
  * re-read `npx @playwright/mcp@<new> --help` for the flags the connection below
- * passes, and re-check the always-on tool list the docs describe
- * (`docs/guides/agent-browser.mdx`, "The trade-off, honestly").
+ * passes, and re-check the always-on tool list for any new tool that runs code
+ * outside the page, which belongs in {@link AGENT_BROWSER_WITHHELD_TOOLS}.
  */
 export const AGENT_BROWSER_MCP_VERSION = '0.0.82';
 
 /** The Playwright MCP package spec agents run: {@link AGENT_BROWSER_MCP_VERSION}, pinned. */
 export const AGENT_BROWSER_MCP_PACKAGE = `@playwright/mcp@${AGENT_BROWSER_MCP_VERSION}`;
+
+/**
+ * Playwright MCP tools no agent is offered, on any server. `browser_run_code_unsafe` runs any
+ * JavaScript in the browser server's own process, outside the page, so it reaches files and the
+ * network past every rule an agent's own tools follow. It is always on in 0.0.82, so each runtime
+ * withholds it: a deny rule on Claude Code, `disabled_tools` on Codex, never registered on Doe,
+ * and on OpenCode, which cannot hold back one tool, no agent browser at all.
+ * `browser_evaluate` stays: it runs inside the page.
+ */
+export const AGENT_BROWSER_WITHHELD_TOOLS: readonly string[] = ['browser_run_code_unsafe'];
 
 /** What an empty saved session looks like: valid for Playwright, signed in to nothing. */
 export const EMPTY_STORAGE_STATE = { cookies: [], origins: [] } as const;
@@ -213,9 +222,10 @@ export function unguardableBrowserReason(connection: BrowserConnectionLike): str
  *   redirect and every request the page makes. The server writes that file
  *   (`services/browser/agent-browser-guard.ts`).
  *
- * Neither reaches a request an agent's own Playwright code sends from Node
- * (`browser_run_code_unsafe` and `page.request`); that is why the saved
- * session never holds a Cloud sign-in in the first place. Only call this on a
+ * Neither reaches a request sent from Node rather than the page (Playwright
+ * code run in the server, which {@link AGENT_BROWSER_WITHHELD_TOOLS} keeps from
+ * agents, and `page.request`); that is why the saved session never holds a
+ * Cloud sign-in in the first place. Only call this on a
  * connection {@link unguardableBrowserReason} accepts. An operator's own
  * `--blocked-origins` entries are kept beside the Cloud ones. A server that is
  * not a Playwright MCP browser is returned unchanged.

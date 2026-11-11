@@ -20,6 +20,7 @@
  */
 import type { McpLocalConfig, McpRemoteConfig } from '@opencode-ai/sdk';
 import type { McpAppServerConnection } from '@dorkos/shared/agent-runtime';
+import { isPlaywrightBrowser } from '@dorkos/shared/agent-browser';
 
 /** One OpenCode MCP server config, the `config` body of `client.mcp.add`. */
 export type OpenCodeMcpServerConfig = McpLocalConfig | McpRemoteConfig;
@@ -68,6 +69,12 @@ export interface OpenCodeMcpConversion {
   servers: Record<string, OpenCodeMcpServerConfig>;
   /** Names skipped because OpenCode has no matching transport (`sse`), for a one-line diagnostic. */
   skipped: string[];
+  /**
+   * Agent browsers left out: OpenCode cannot hold back one of a server's tools, and the agent
+   * browser's always-on tools include one that runs code outside the page
+   * (`AGENT_BROWSER_WITHHELD_TOOLS`), so the whole server stays out.
+   */
+  withheld: string[];
 }
 
 /**
@@ -75,7 +82,8 @@ export interface OpenCodeMcpConversion {
  * `AgentMcpServerService` resolved for a session cwd) into a name →
  * OpenCode-config record. `sse` servers land in
  * {@link OpenCodeMcpConversion.skipped} rather than the output — absence
- * withholds (safe-default), never a silent mismap.
+ * withholds (safe-default), never a silent mismap. An agent browser lands in
+ * {@link OpenCodeMcpConversion.withheld}, for the reason that field gives.
  *
  * @param connections - Enabled managed servers by name, from the resolver.
  */
@@ -84,7 +92,12 @@ export function toOpenCodeMcpServers(
 ): OpenCodeMcpConversion {
   const servers: Record<string, OpenCodeMcpServerConfig> = {};
   const skipped: string[] = [];
+  const withheld: string[] = [];
   for (const [name, connection] of Object.entries(connections)) {
+    if (isPlaywrightBrowser(connection)) {
+      withheld.push(name);
+      continue;
+    }
     const config = toOpenCodeMcpServerConfig(connection);
     if (config === null) {
       skipped.push(name);
@@ -92,5 +105,5 @@ export function toOpenCodeMcpServers(
     }
     servers[name] = config;
   }
-  return { servers, skipped };
+  return { servers, skipped, withheld };
 }

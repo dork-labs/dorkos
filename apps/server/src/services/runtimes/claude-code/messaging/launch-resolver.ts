@@ -75,6 +75,7 @@ import type { AgentIdentityPin } from '../sessions/launch-fingerprint.js';
 import { transcriptIdTaken } from '../sessions/session-root-index.js';
 import { narrowToClaudeCodeMode } from '../runtime-constants.js';
 import { applyDirectoryGrants, applyPersonOnlyDataDeny } from './directory-grants.js';
+import { applyBrowserToolDeny, browserToolHookMatcher } from '../tool-gate/browser-tool-deny.js';
 import { applySecretReadDeny } from '../secret-files/secret-read-deny.js';
 import { heldRuntimeNotice } from '../folder-settings/held-runtime-notice.js';
 import { applyLaunchExtensionsDeny } from '../folder-settings/agent-extensions-deny.js';
@@ -792,6 +793,8 @@ export async function resolveLaunch(args: {
     });
   }
   applyRepoMcpServers(sdkOptions, repoConfig);
+  // No server offers a browser tool that runs code outside the page.
+  applyBrowserToolDeny(sdkOptions);
 
   // Nothing here sets `allowedTools`, on purpose (DOR-519). The retired tool-group
   // toggles used to feed it a list, on the premise that the SDK option restricts which tools
@@ -839,6 +842,8 @@ export async function resolveLaunch(args: {
   const auditHooks = auditToolHookMatchers(auditTurn);
   sdkOptions.hooks = {
     PreToolUse: [
+      // A browser tool that runs code outside the page, on any server, at every level.
+      browserToolHookMatcher(),
       // DorkOS's own tools and protected files (DOR-4060): refused before any card.
       protectedFileMatcher({
         sessionId: () => session.sdkSessionId || sessionId,

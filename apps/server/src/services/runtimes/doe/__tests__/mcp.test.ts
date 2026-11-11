@@ -98,6 +98,29 @@ describe('authenticated Doe MCP assembly', () => {
     ]);
     await assembly.dispose();
   });
+  // On any configured server, not only one shaped like the agent browser: a Playwright server
+  // started through a wrapper script is covered too. `browser_evaluate` runs in the page and stays.
+  it('never offers a browser tool that runs code outside the page', async () => {
+    calls.names = ['browser_snapshot', 'browser_evaluate', 'browser_run_code_unsafe'];
+    const assembly = await assembleDoeMcp({
+      agentPath: '/agent',
+      servers: {
+        browser: { transport: 'stdio', command: 'npx', args: ['-y', '@playwright/mcp@0.0.82'] },
+        wrapped: { transport: 'stdio', command: 'node', args: ['start-browser.js'] },
+      },
+      signal: new AbortController().signal,
+    });
+    const names = assembly.tools.map((tool) => tool.name);
+    for (const server of ['managed:browser', 'managed:wrapped']) {
+      expect(names).toContain(mcpAlias(server, 'browser_snapshot'));
+      expect(names).toContain(mcpAlias(server, 'browser_evaluate'));
+      expect(names).not.toContain(mcpAlias(server, 'browser_run_code_unsafe'));
+    }
+    expect([...assembly.names.keys()].some((key) => key.endsWith(':browser_run_code_unsafe'))).toBe(
+      false
+    );
+    await assembly.dispose();
+  });
   it('holds the eager schema budget constant as registry contributions grow', async () => {
     const measure = async () => {
       const assembly = await assembleDoeMcp({
