@@ -159,25 +159,28 @@ describe('Agent Convention File Operations', () => {
       );
     });
 
-    it('renders traits with DEFAULT_TRAITS for scaffolding', async () => {
-      await request(server).post('/api/agents').send({ path: '/home/user/project' });
+    it('writes a SOUL.md that names the agent and carries the default traits', async () => {
+      // The real template and trait renderer, so the assertion is on the file
+      // a new agent gets, not on which helpers the route happened to call.
+      const traits = await vi.importActual<typeof import('@dorkos/shared/trait-renderer')>(
+        '@dorkos/shared/trait-renderer'
+      );
+      const templates = await vi.importActual<typeof import('@dorkos/shared/convention-files')>(
+        '@dorkos/shared/convention-files'
+      );
+      mockRenderTraits.mockImplementation(traits.renderTraits);
+      mockDefaultSoulTemplate.mockImplementation(templates.defaultSoulTemplate);
 
-      expect(mockRenderTraits).toHaveBeenCalledWith({
-        verbosity: 3,
-        autonomy: 3,
-        chaos: 3,
-        creativity: 3,
-        humor: 3,
-        spice: 3,
-      });
-    });
-
-    it('uses provided agent name in soul template', async () => {
-      await request(server)
+      const res = await request(server)
         .post('/api/agents')
         .send({ path: '/home/user/project', name: 'My Custom Agent' });
+      expect(res.status).toBe(201);
 
-      expect(mockDefaultSoulTemplate).toHaveBeenCalledWith('My Custom Agent', 'rendered-traits');
+      const soul = mockWriteConventionFile.mock.calls.find(([, file]) => file === 'SOUL.md');
+      expect(soul?.[2]).toBe(
+        templates.defaultSoulTemplate('My Custom Agent', traits.renderTraits(traits.DEFAULT_TRAITS))
+      );
+      expect(soul?.[2]).toContain('My Custom Agent');
     });
   });
 
