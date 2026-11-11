@@ -212,6 +212,16 @@ for v in 'v1.2.3' '1.2' '1.2.3.4' '01.2.3' '1.2.3/../x' '1.2.3 ' '1.2.3;id' '1.2
   rm -rf "$stub_dir"
 done
 
+# Case 8b (DOR-4175): the refusal never echoes the version, so a second line
+# in it can't become a workflow command of its own.
+out=$("$CHECK" $'1.2.3\n::warning::injected' 2>&1)
+rc=$?
+if [ "$rc" -eq 1 ] && ! printf '%s\n' "$out" | grep -q -e '^::warning::' -e 'injected'; then
+  ok
+else
+  bad "newline version: expected exit 1 and no echo of it, got rc=$rc output=$out"
+fi
+
 # Case 9: a non-numeric timeout is refused rather than read as 0 minutes.
 out=$("$CHECK" 1.2.3 soon 2>&1)
 rc=$?

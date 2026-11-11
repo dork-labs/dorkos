@@ -124,6 +124,16 @@ for v in 'v1.2.3' '1.2' '1.2.3.4' '01.2.3' '1.2.3/../x' '1.2.3 ' '1.2.3;id' '1.2
   if [ -s "$fixtures/calls" ]; then bad "bad version '$v': reached $(tr '\n' ' ' <"$fixtures/calls")"; else ok; fi
 done
 
+# Case 9b (DOR-4175): the refusal never echoes the version, so a second line
+# in it can't become a workflow command of its own.
+run "$fixtures/real.tgz" 0 "$real_integrity" 0 $'1.2.3\n::warning::injected'
+refused "newline version"
+if printf '%s\n' "$err" | grep -q -e '^::warning::' -e 'injected'; then
+  bad "newline version: the refusal echoed it: $err"
+else
+  ok
+fi
+
 # Case 10: a prerelease version is still a valid one.
 run "$fixtures/real.tgz" 0 "$real_integrity" 0 1.2.3-rc.1
 if [ "$rc" -eq 0 ] && [ "$out" = "$real_sha256" ]; then ok; else bad "prerelease: rc=$rc out=$out err=$err"; fi
