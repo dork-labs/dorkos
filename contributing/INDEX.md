@@ -93,6 +93,8 @@ Example: If `apps/client/src/layers/shared/ui/button.tsx` changes, it matches:
 
 ## Maintenance Tracking
 
+2026-11-11: Reconciled `authentication.md`, `api-reference.md` and `configuration.md` with per-request gate policy, local person-session requirements, MCP credential cases and the config tool’s strictest-value authority hand-off. Coverage patterns are unchanged.
+
 2026-11-11: Corrected remaining Transport examples in `data-fetching.md` and `interactive-tools.md`: rename/install/preview methods, batch approval names, boolean Always Allow argument and neutral UI context shape. Coverage patterns are unchanged.
 
 2026-11-11: Reconciled `api-reference.md` session queue acceptance, stop receipts, durable socket delivery, runtime capability shape and caller-filtered MCP inventory. Coverage patterns are unchanged.
