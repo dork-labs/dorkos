@@ -516,10 +516,43 @@ describe('whole-profile disk removal (DOR-3887)', () => {
             outcome: 'ok',
             target: { type: 'browser-profile', id },
           });
+          // The actor is whoever ran Forget: the summary says what Forget found, never
+          // that the actor planted the link.
+          expect(recordAudit.mock.calls[0]![0].summary).toMatch(/^Forget found /);
           const written = JSON.stringify(recordAudit.mock.calls);
           expect(written).not.toContain(theirs);
           expect(written).not.toContain(home);
           expect(written).not.toContain('made-up-person-file');
+        } finally {
+          await rm(theirs, { recursive: true, force: true });
+        }
+      } finally {
+        vi.doUnmock('../../../audit/audit-trail.js');
+        vi.resetModules();
+      }
+    });
+
+    it('records a swapped folder as what Forget found, with no target and no path', async () => {
+      vi.resetModules();
+      const recordAudit = vi.fn();
+      vi.doMock('../../../audit/audit-trail.js', () => ({ recordAudit }));
+      try {
+        const { BrowserProfileRemoval: Audited } = await import('../profile-removal/index.js');
+        const theirs = await mkdtemp(path.join(tmpdir(), 'dorkos-persons-own-'));
+        try {
+          await symlink(theirs, path.join(home, 'browser-profiles'));
+          await expect(
+            new Audited({ dataDirectory: () => home, busy: () => false }).forgetAll([])
+          ).rejects.toMatchObject({ code: 'profiles_folder_changed' });
+          expect(recordAudit).toHaveBeenCalledTimes(1);
+          const event = recordAudit.mock.calls[0]![0];
+          expect(event).toMatchObject({
+            action: 'local_browser.profiles.root_not_directory',
+            outcome: 'refused',
+            target: null,
+          });
+          expect(event.summary).toMatch(/^Forget found /);
+          expect(JSON.stringify(recordAudit.mock.calls)).not.toContain(theirs);
         } finally {
           await rm(theirs, { recursive: true, force: true });
         }

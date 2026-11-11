@@ -39,8 +39,9 @@ function folderChanged(): LocalBrowserError {
 }
 
 /**
- * Record a tamper finding in the audit trail. The last writer isn't tracked, so the actor
- * is whoever asked for the Forget; the target is the profile id alone.
+ * Record a tamper finding in the audit trail. The actor is whoever ran Forget, so each
+ * summary says what Forget found, never that the actor changed the folder. The target is
+ * the profile id alone.
  */
 const auditTamper: ProfileTamperWriter = (finding, profileId) => {
   recordAudit({
@@ -48,8 +49,8 @@ const auditTamper: ProfileTamperWriter = (finding, profileId) => {
     operation: 'remove',
     summary:
       finding === 'planted_link'
-        ? 'Removed a link planted in an Agent browser profile'
-        : 'Refused to forget sign-ins: their folder was changed outside DorkOS',
+        ? 'Forget found a link someone put in an Agent browser profile, and removed it'
+        : 'Forget found the sign-ins folder changed outside DorkOS, and cleared nothing',
     outcome: finding === 'planted_link' ? 'ok' : 'refused',
     target: profileId === null ? null : { type: 'browser-profile', id: profileId },
   });
