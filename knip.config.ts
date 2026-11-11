@@ -39,6 +39,10 @@ const config: KnipConfig = {
   ignoreBinaries: ['gh'],
 
   workspaces: {
+    '.': {
+      // Invoked by the required typecheck workflow, outside the app import graph.
+      entry: ['scripts/check-knip.ts!'],
+    },
     'apps/client': {
       // shadcn/ui add-on-demand registry (main.tsx + test-setup are auto-detected).
       // The space's own website (server-merge step 7e) is a second entry, built by
@@ -87,7 +91,7 @@ const config: KnipConfig = {
       entry: ['src/components/ui/**/*.{ts,tsx}'],
     },
     'apps/e2e': {
-      // Measurement scripts run by hand against a cockpit the operator started
+      // Measurement scripts run by hand against an app the operator started
       // (see each file's header for the command). They are entry points with no
       // importer by design — a spec that ran them would turn a benchmark into a
       // gate, which is the opposite of what they are for.
