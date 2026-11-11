@@ -109,3 +109,19 @@ describe('the card’s apps, in DorkOS’s words', () => {
     ]);
   });
 });
+
+describe('what an app’s screens can change (Security item 8)', () => {
+  it('lists what every screen can change, and rooms or forwarding only when declared', async () => {
+    const { screenWrites } = await import('../screen-writes.js');
+    expect(screenWrites({})).toEqual(['data', 'canvas', 'inbox', 'work', 'files']);
+    expect(screenWrites({ capabilities: { rooms: true, forward: true } })).toEqual([
+      'data',
+      'canvas',
+      'inbox',
+      'work',
+      'files',
+      'rooms',
+      'forward',
+    ]);
+  });
+});

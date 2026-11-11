@@ -79,6 +79,13 @@ export function ExtensionPermissionLines({
             )
           )}
           {line.apps && <CalledAppRows apps={line.apps} />}
+          {line.rows && (
+            <ul className="mt-1 space-y-0.5 pl-3" data-slot="permission-rows">
+              {line.rows.map((row) => (
+                <li key={row}>{row}</li>
+              ))}
+            </ul>
+          )}
           {line.items && (
             <>
               {' '}

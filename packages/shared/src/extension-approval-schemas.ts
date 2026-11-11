@@ -45,6 +45,13 @@ export const ExtensionApprovalPermissionsSchema = z
     /** Whether it has screens (a client bundle), which run in DorkOS with your access. */
     hasPage: z.boolean(),
     /**
+     * What its screens can change through the bridge (DOR-3293), as DorkOS's
+     * own keys, read from its manifest: the card turns each into words.
+     */
+    writes: z
+      .array(z.enum(['data', 'canvas', 'inbox', 'work', 'files', 'rooms', 'forward']))
+      .optional(),
+    /**
      * The other apps it calls (DOR-3293), each with DorkOS's name for it and
      * what that app shares with it, read from that app's own exports. `name`
      * and `access` are `null` for an app that is not installed or not on.

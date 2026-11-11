@@ -98,3 +98,44 @@ describe('It uses other apps', () => {
     expect(permissionsAddedSince(seen, { ...seen, apps: [] })).toBeNull();
   });
 });
+
+describe('It can change (Security item 8)', () => {
+  it('lists, in DorkOS’s words, every write a fixture app that writes can make', () => {
+    const writer: ExtensionPermissionView = {
+      runtime: 'in-process',
+      net: [],
+      run: [],
+      agents: false,
+      hasServer: false,
+      hasPage: true,
+      writes: ['data', 'canvas', 'inbox', 'work', 'files', 'rooms', 'forward'],
+      apps: [
+        { id: 'desk', name: 'Desk', access: 'reads' },
+        { id: 'mkt-core', name: 'Marketing core', access: 'both' },
+      ],
+    };
+    render(<ExtensionPermissionLines permissions={writer} />);
+    const rows = [...document.querySelectorAll('li')].map((row) => row.textContent);
+    expect(rows).toMatchInlineSnapshot(`
+      [
+        "Its screens run in DorkOS with your access.",
+        "It can change:Its own saved data and project settingsDocuments it opens on your canvasIts own items in your inbox, which it can answerWork it starts for an agent when you clickFiles it offers to save, once you choose SaveReplies in the room threads you pickMessages to the agent you pick, sent as your words",
+        "Its own saved data and project settings",
+        "Documents it opens on your canvas",
+        "Its own items in your inbox, which it can answer",
+        "Work it starts for an agent when you click",
+        "Files it offers to save, once you choose Save",
+        "Replies in the room threads you pick",
+        "Messages to the agent you pick, sent as your words",
+        "It uses other apps:Desk · readsMarketing core · reads and changes",
+        "Desk · reads",
+        "Marketing core · reads and changes",
+      ]
+    `);
+  });
+
+  it('draws nothing to change for an app with no screens', () => {
+    const keys = extensionPermissionLines(view(undefined)).map((entry) => entry.key);
+    expect(keys).not.toContain('writes');
+  });
+});

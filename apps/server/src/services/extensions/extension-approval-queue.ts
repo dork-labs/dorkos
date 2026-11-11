@@ -83,6 +83,7 @@ import {
 } from './extension-load-policy.js';
 import { addedSince, declaredSet } from './isolation/permission-coverage.js';
 import { calledAppsView } from './isolation/called-apps.js';
+import { screenWrites } from './isolation/screen-writes.js';
 import { approvedVersionOf, changedFilesSince } from './pin/extension-content-pin.js';
 import { PROGRAM_NOT_FOUND } from './isolation/resolve-program.js';
 
@@ -519,7 +520,10 @@ export async function permissionsOf(
 ): Promise<ExtensionApprovalPermissions> {
   const hasPage = await hasClientEntry(record.runPath ?? record.path);
   const called = calledAppsView(record, lookup);
-  const apps = called.length > 0 ? { apps: called } : {};
+  const apps = {
+    ...(hasPage ? { writes: screenWrites(record.manifest) } : {}),
+    ...(called.length > 0 ? { apps: called } : {}),
+  };
   const isolation = record.isolation;
   if (!isolation) {
     return { runtime: 'in-process', net: [], run: [], agents: false, hasPage, ...apps };

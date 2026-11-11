@@ -42,6 +42,8 @@ export interface ExtensionPermissionView {
    * that app shares with it. Absent where unknown.
    */
   apps?: readonly ExtensionCalledApp[];
+  /** What its screens can change through the bridge, as DorkOS's keys. Absent where unknown. */
+  writes?: ExtensionApprovalPermissions['writes'];
   /**
    * Whether it has a server half (a server entry or a data proxy). `false`
    * means only screens, which act as you in DorkOS and nothing more, so the
@@ -85,6 +87,8 @@ export interface ExtensionPermissionLine {
   items?: readonly string[];
   /** Other apps it calls, one per row under the label. */
   apps?: readonly ExtensionCalledAppEntry[];
+  /** Plain rows under the label, one per thing. */
+  rows?: readonly string[];
   /** How it reads. */
   tone: ExtensionPermissionTone;
 }
@@ -142,6 +146,7 @@ export function permissionLineText(line: ExtensionPermissionLine): string {
   if (line.apps) {
     return [body, ...line.apps.map((app) => `${app.name} · ${app.detail}`)].join(' ');
   }
+  if (line.rows) return [body, ...line.rows].join(' ');
   return line.items ? `${body} ${line.items.join(', ')}` : body;
 }
 
@@ -161,9 +166,38 @@ export function extensionPermissionLines(
   permissions: ExtensionPermissionView,
   added?: ExtensionPermissionAdditions | null
 ): ExtensionPermissionLine[] {
+  const writes = screenWritesLine(permissions.writes);
   const apps = calledAppsLine(permissions.apps, added?.apps);
-  const lines = reachLines(permissions, added);
-  return apps ? [...lines, apps] : lines;
+  return [...reachLines(permissions, added), ...(writes ? [writes] : []), ...(apps ? [apps] : [])];
+}
+
+/** What each write means, in DorkOS's words (DOR-3293, Security item 8). */
+const WRITE_WORDS: Record<NonNullable<ExtensionPermissionView['writes']>[number], string> = {
+  data: 'Its own saved data and project settings',
+  canvas: 'Documents it opens on your canvas',
+  inbox: 'Its own items in your inbox, which it can answer',
+  work: 'Work it starts for an agent when you click',
+  files: 'Files it offers to save, once you choose Save',
+  rooms: 'Replies in the room threads you pick',
+  forward: 'Messages to the agent you pick, sent as your words',
+};
+
+/**
+ * "It can change:", one row per thing its screens can change through the
+ * bridge, in DorkOS's words: never the app's own description of itself.
+ *
+ * @param writes - What its screens can change.
+ */
+function screenWritesLine(
+  writes: ExtensionPermissionView['writes']
+): ExtensionPermissionLine | null {
+  if (!writes || writes.length === 0) return null;
+  return {
+    key: 'writes',
+    parts: ['It can change:'],
+    tone: 'plain',
+    rows: writes.map((write) => WRITE_WORDS[write]),
+  };
 }
 
 /** What each app shares, in the designer's words (DOR-3293). */

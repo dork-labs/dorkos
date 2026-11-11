@@ -14033,6 +14033,21 @@
           "hasPage": {
             "type": "boolean"
           },
+          "writes": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "data",
+                "canvas",
+                "inbox",
+                "work",
+                "files",
+                "rooms",
+                "forward"
+              ]
+            }
+          },
           "apps": {
             "type": "array",
             "items": {
@@ -14216,6 +14231,13 @@
               },
               "agents": {
                 "type": "boolean"
+              },
+              "apps": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 20
               }
             },
             "required": [
@@ -20814,6 +20836,13 @@
                         },
                         "agents": {
                           "type": "boolean"
+                        },
+                        "apps": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          },
+                          "maxItems": 20
                         }
                       },
                       "required": [
@@ -20964,6 +20993,13 @@
                     },
                     "agents": {
                       "type": "boolean"
+                    },
+                    "apps": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      },
+                      "maxItems": 20
                     }
                   },
                   "required": [
