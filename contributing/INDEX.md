@@ -93,6 +93,8 @@ Example: If `apps/client/src/layers/shared/ui/button.tsx` changes, it matches:
 
 ## Maintenance Tracking
 
+2026-11-11: Historical spec links in `agent-operator-surface.md`, `marketplace-installs.md`, and `marketplace-telemetry.md` now use Git permalinks.
+
 Browser guide coverage refreshed on 2026-10-15 for both owned browser modes and legacy CLI tools.
 
 Routing guide added on 2026-10-06 for file-based routes, opaque identity and explicit draft lifecycle.

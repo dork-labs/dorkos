@@ -56,7 +56,7 @@ Everything above used to be hand-registered (a descriptor here, a CLI handler th
 
 **Pair this guide with:**
 
-- [spec `capability-registry`](../specs/capability-registry/02-specification.md): the registry design this surface implements.
+- [spec `capability-registry`](https://github.com/dork-labs/dorkos/blob/78baefc5ac7aeac33c67f5e697fbe2f36179a960/specs/capability-registry/02-specification.md): the registry design this surface implements.
 - [spec `agents-as-operators`](../specs/agents-as-operators/02-specification.md): phase 1, the operator/marketplace capabilities and the frozen tool-name contracts.
 - [research: agents as first-class operators](../research/20260722_agents-as-first-class-operators.md): the analysis that motivated the surface and the registry.
 - [`contributing/adding-a-runtime.md`](adding-a-runtime.md): why MCP injection is claude-code-only and the CLI is the universal path.

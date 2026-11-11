@@ -6,7 +6,7 @@ The install machinery for the DorkOS Marketplace — how `dorkos install` turns 
 
 Pair this guide with:
 
-- [`specs/marketplace-02-install/02-specification.md`](../specs/marketplace-02-install/02-specification.md) — the authoritative spec. If this guide and the spec disagree, the spec wins and this file needs a patch.
+- [`specs/marketplace-02-install/02-specification.md`](https://github.com/dork-labs/dorkos/blob/78baefc5ac7aeac33c67f5e697fbe2f36179a960/specs/marketplace-02-install/02-specification.md) — the historical install design. Use this guide and the current source for the maintained contract.
 - [`contributing/architecture.md`](architecture.md) — the broader DorkOS hexagonal architecture.
 - [ADR-0304](../decisions/0304-file-scoped-rollback-for-marketplace-installs.md): why every flow runs through the file-scoped `runTransaction` (supersedes ADR-0231's git backup-branch rollback).
 - [ADR-0232](../decisions/0232-content-addressable-marketplace-cache-with-ttl.md) — why `marketplace.json` has a TTL and cloned packages do not.

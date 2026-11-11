@@ -4,7 +4,7 @@ The opt-in install telemetry pipeline that powers ranking and analytics for `dor
 
 Pair this guide with:
 
-- [`specs/marketplace-04-web-and-registry/02-specification.md`](../specs/marketplace-04-web-and-registry/02-specification.md) — the authoritative spec. The 2026-04-07 changelog entry explains why telemetry is Neon + Drizzle only (single source of truth, no Redis, no queues).
+- [`specs/marketplace-04-web-and-registry/02-specification.md`](https://github.com/dork-labs/dorkos/blob/78baefc5ac7aeac33c67f5e697fbe2f36179a960/specs/marketplace-04-web-and-registry/02-specification.md) — the historical telemetry design. The 2026-04-07 changelog entry explains why telemetry is Neon + Drizzle only (single source of truth, no Redis, no queues).
 - [`contributing/marketplace-installs.md`](marketplace-installs.md) — the install pipeline that emits the events this guide stores.
 - [`contributing/marketplace-registry.md`](marketplace-registry.md) — the public registry repo that the rankings are computed for.
 

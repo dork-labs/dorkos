@@ -25,7 +25,7 @@ tags: [marketplace, mcp, agent, ai-native, personal-marketplace]
 
 - **Parent ideation:** [`specs/dorkos-marketplace/01-ideation.md`](../dorkos-marketplace/01-ideation.md)
 - **Foundation spec:** [`specs/marketplace-01-foundation/02-specification.md`](../marketplace-01-foundation/02-specification.md)
-- **Install spec:** [`specs/marketplace-02-install/02-specification.md`](../marketplace-02-install/02-specification.md)
+- **Install spec:** [`specs/marketplace-02-install/02-specification.md`](https://github.com/dork-labs/dorkos/blob/78baefc5ac7aeac33c67f5e697fbe2f36179a960/specs/marketplace-02-install/02-specification.md)
 
 This is the **capstone spec** that delivers Vision 2 (AI-Native Discovery via MCP Server) and lays the foundation for Vision 3 (Build-to-Install Pipeline). It can ship in parallel with spec 04 since both depend on 02 but not on each other.
 
