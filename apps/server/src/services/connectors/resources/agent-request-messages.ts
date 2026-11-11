@@ -165,6 +165,40 @@ export function grantedVerb(held: ReadonlySet<string>): string {
   return 'use';
 }
 
+/** A class an agent can ask for: reading, or changing things. */
+export type RequestClass = 'read' | 'write';
+
+/**
+ * How an account offers one class: through the level that names it, only one
+ * action at a time (every change action there is `destructive`, which no level
+ * covers, ADR 260928-121730), or not at all.
+ */
+export type ClassOffer = 'level' | 'exact' | 'none';
+
+/**
+ * Why one class the agent asked for is missing, and what the person can do
+ * about it: they chose less, the app offers those actions only one at a
+ * time, or the app has none (DOR-4193, DOR-3021).
+ */
+export function missingClassNote(app: string, kind: RequestClass, offer: ClassOffer): string {
+  const doing = kind === 'write' ? `change anything in ${app}` : `read ${app}`;
+  switch (offer) {
+    case 'level':
+      return `The person didn't allow you to ${doing}.`;
+    case 'exact':
+      return (
+        `You can't ${doing} yet: no level covers ${app}'s actions that change things, so ` +
+        'the person allows them one at a time. Ask the person to choose the exact actions ' +
+        `you need under ${app} on the Connections page.`
+      );
+    case 'none':
+      return (
+        `You can't ${doing}: this ${app} account has no actions for that. If that seems ` +
+        `wrong, the person can connect ${app} again on the Connections page.`
+      );
+  }
+}
+
 /**
  * The refusal for an app the agent already asked for in another chat, saying
  * only what is true: whether it was answered, and whether that answer (or

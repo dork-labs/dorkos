@@ -30,7 +30,7 @@ import { AccountChoice } from './AccountChoice';
 import { AgentChecklist } from './AgentChecklist';
 import { LEVEL_LABELS } from './access-labels';
 import { EveryAgentWarning } from './EveryAgentWarning';
-import { RequestedAccess } from './RequestedAccess';
+import { RequestedAccess, requestedWriteOffer } from './RequestedAccess';
 import { savedSummary } from './saved-summary';
 import { StopSharingFallback } from './StopSharingFallback';
 import { WhoCanUseChoice } from './WhoCanUseChoice';
@@ -516,9 +516,9 @@ function AccessEditor({
             'The agent'
           }
           serviceName={props.serviceName}
-          reason={props.request.reason}
-          access={props.request.access}
+          request={props.request}
           level={level}
+          writeOffer={requestedWriteOffer(preview.candidates)}
         />
       )}
       {whoView}

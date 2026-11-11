@@ -152,6 +152,66 @@ function seedConnection(
   }
 }
 
+/**
+ * A second Gmail account, `connection-2`, on a route of its own whose actions
+ * are exactly `revisions`: a read-only one, or one whose every change action
+ * is destructive (no level covers it), the shape Linear has (DOR-4193).
+ */
+function seedSecondAccount(
+  db: Db,
+  revisions: ReadonlyArray<readonly [string, 'read' | 'write' | 'destructive']>
+): void {
+  const stamp = NOW.toISOString();
+  db.insert(connectorProviderInstances)
+    .values({
+      id: 'provider-2',
+      type: 'test',
+      mode: 'byo',
+      displayName: 'Second provider',
+      custody: 'self-host',
+      capabilityJson: '{}',
+      executionConfigGeneration: 1,
+      ownerKind: 'local_install',
+      ownerId: OWNER.installationId,
+      status: 'available',
+      createdAt: stamp,
+      updatedAt: stamp,
+    })
+    .run();
+  db.insert(connections)
+    .values({
+      id: 'connection-2',
+      providerInstanceId: 'provider-2',
+      externalAccountRef: 'private-account-ref-2',
+      toolkit: 'gmail',
+      label: 'Second mail',
+      status: 'active',
+      lifecycleState: 'connected',
+      enabled: true,
+      grantReconciliationStatus: 'ready',
+      createdAt: stamp,
+      updatedAt: stamp,
+    })
+    .run();
+  for (const [revisionId, classification] of revisions) {
+    db.insert(connectorOperationRevisions)
+      .values({
+        id: revisionId,
+        providerInstanceId: 'provider-2',
+        toolkit: 'gmail',
+        operationSlug: `gmail.${revisionId}`,
+        toolkitVersion: '1',
+        schemaHash: `hash-${revisionId}`,
+        capabilityClassification: classification,
+        retryPolicy: 'never',
+        providerRevisionRef: `hosted-${revisionId}`,
+        inputSchemaJson: '{}',
+        discoveredAt: stamp,
+      })
+      .run();
+  }
+}
+
 describe('ConnectorAgentRequestService', () => {
   let db: Db;
   let authorityLive: boolean;
@@ -577,69 +637,27 @@ describe('ConnectorAgentRequestService', () => {
         expect(db.select().from(connectorAgentRequests).all()).toHaveLength(1);
       });
 
-      it('opens no card for a level the account has no actions of', async () => {
-        // A second account whose route offers reading only.
-        const stamp = NOW.toISOString();
-        db.insert(connectorProviderInstances)
-          .values({
-            id: 'provider-2',
-            type: 'test',
-            mode: 'byo',
-            displayName: 'Read-only provider',
-            custody: 'self-host',
-            capabilityJson: '{}',
-            executionConfigGeneration: 1,
-            ownerKind: 'local_install',
-            ownerId: OWNER.installationId,
-            status: 'available',
-            createdAt: stamp,
-            updatedAt: stamp,
-          })
-          .run();
-        db.insert(connections)
-          .values({
-            id: 'connection-2',
-            providerInstanceId: 'provider-2',
-            externalAccountRef: 'private-account-ref-2',
-            toolkit: 'gmail',
-            label: 'Read-only mail',
-            status: 'active',
-            lifecycleState: 'connected',
-            enabled: true,
-            grantReconciliationStatus: 'ready',
-            createdAt: stamp,
-            updatedAt: stamp,
-          })
-          .run();
-        db.insert(connectorOperationRevisions)
-          .values({
-            id: 'revision-read-only',
-            providerInstanceId: 'provider-2',
-            toolkit: 'gmail',
-            operationSlug: 'gmail.read',
-            toolkitVersion: '1',
-            schemaHash: 'hash-read-only',
-            capabilityClassification: 'read',
-            retryPolicy: 'never',
-            providerRevisionRef: 'hosted-read-only',
-            inputSchemaJson: '{}',
-            discoveredAt: stamp,
-          })
-          .run();
-        const requests = service();
+      it('opens a new card for Read and write after Read, even on an account with no write (DOR-4193)', async () => {
+        seedSecondAccount(db, [['read-2', 'read']]);
+        const onChanged = vi.fn();
+        const requests = service({ onChanged });
         const first = await requests.create(principal(), INPUT);
-        grantLive(['revision-read-only'], 'connection-2');
+        grantLive(['read-2'], 'connection-2');
         await requests.resolve(OWNER, first.requestId, {
           decision: 'current_access',
           connectionId: 'connection-2' as ConnectionId,
         });
+        clock = new Date(NOW.getTime() + 1_000);
+        const calls = onChanged.mock.calls.length;
 
-        await expect(requests.create(principal(), READ_WRITE)).resolves.toMatchObject({
-          requestId: first.requestId,
-          status: 'granted',
-          notGranted: [],
-        });
-        expect(db.select().from(connectorAgentRequests).all()).toHaveLength(1);
+        const more = await requests.create(principal(), READ_WRITE);
+
+        // Never the Read answer reported as granted: the person gets a card.
+        expect(more).toMatchObject({ status: 'awaiting_owner', access: 'read-write' });
+        expect(more.requestId).not.toBe(first.requestId);
+        expect(more).not.toHaveProperty('grantedOperationRevisionIds');
+        expect(onChanged.mock.calls.length).toBe(calls + 1);
+        expect(db.select().from(connectorAgentRequests).all()).toHaveLength(2);
       });
     });
 
@@ -1819,63 +1837,55 @@ describe('ConnectorAgentRequestService', () => {
       });
     });
 
-    it('does not report a class the account has no action of as refused', async () => {
-      // A second route to Gmail whose only action reads.
-      db.insert(connectorProviderInstances)
-        .values({
-          id: 'provider-2',
-          type: 'test',
-          mode: 'byo',
-          displayName: 'Read-only provider',
-          custody: 'self-host',
-          capabilityJson: '{}',
-          executionConfigGeneration: 1,
-          ownerKind: 'local_install',
-          ownerId: OWNER.installationId,
-          status: 'available',
-          createdAt: NOW.toISOString(),
-          updatedAt: NOW.toISOString(),
-        })
-        .run();
-      db.insert(connections)
-        .values({
-          id: 'connection-2',
-          providerInstanceId: 'provider-2',
-          externalAccountRef: 'other-account-ref',
-          toolkit: 'gmail',
-          label: 'Home mail',
-          status: 'active',
-          lifecycleState: 'connected',
-          enabled: true,
-          grantReconciliationStatus: 'ready',
-          createdAt: NOW.toISOString(),
-          updatedAt: NOW.toISOString(),
-        })
-        .run();
-      db.insert(connectorOperationRevisions)
-        .values({
-          id: 'revision-read-2',
-          providerInstanceId: 'provider-2',
-          toolkit: 'gmail',
-          operationSlug: 'gmail.read',
-          toolkitVersion: '1',
-          schemaHash: 'hash-read-2',
-          capabilityClassification: 'read',
-          retryPolicy: 'never',
-          providerRevisionRef: 'hosted-read-2',
-          inputSchemaJson: '{}',
-          discoveredAt: NOW.toISOString(),
-        })
-        .run();
-      const requests = service();
-      const created = await requests.create(principal(), READ_WRITE);
-      grantLive(['revision-read-2'], 'connection-2');
-      await expect(
-        requests.resolve(OWNER, created.requestId, {
+    describe('a level the account cannot give (DOR-4193)', () => {
+      /** Ask for Read and write, and answer it with exactly `ids` on the second account. */
+      async function answeredOnSecond(requests: ConnectorAgentRequestService, ids: string[]) {
+        const created = await requests.create(principal(), READ_WRITE);
+        grantLive(ids, 'connection-2');
+        return requests.resolve(OWNER, created.requestId, {
           decision: 'current_access',
           connectionId: 'connection-2' as ConnectionId,
-        })
-      ).resolves.toMatchObject({ notGranted: [], note: expect.stringContaining('Carry on') });
+        });
+      }
+
+      it('lists write as not granted when the account has no actions that change things', async () => {
+        seedSecondAccount(db, [['read-2', 'read']]);
+        const resolved = await answeredOnSecond(service(), ['read-2']);
+
+        expect(resolved).toMatchObject({ status: 'granted', notGranted: ['write'] });
+        expect(resolved.note).toContain('You can now read Gmail.');
+        expect(resolved.note).toContain("You can't change anything in Gmail");
+        expect(resolved.note).toContain('connect Gmail again on the Connections page');
+        expect(resolved.note).not.toContain('Carry on');
+      });
+
+      it('says the change actions are allowed one at a time when no level covers them', async () => {
+        // Linear's shape: every action that changes things is destructive.
+        seedSecondAccount(db, [
+          ['read-2', 'read'],
+          ['create-2', 'destructive'],
+        ]);
+        const resolved = await answeredOnSecond(service(), ['read-2']);
+
+        expect(resolved).toMatchObject({ status: 'granted', notGranted: ['write'] });
+        expect(resolved.note).toContain('the person allows them one at a time');
+        expect(resolved.note).toContain('choose the exact actions you need under Gmail');
+        expect(resolved.note).not.toContain("The person didn't allow you");
+        expect(resolved.note).not.toContain('Carry on');
+      });
+
+      it('counts an exact action that changes things as write', async () => {
+        seedSecondAccount(db, [
+          ['read-2', 'read'],
+          ['create-2', 'destructive'],
+        ]);
+        const resolved = await answeredOnSecond(service(), ['read-2', 'create-2']);
+
+        expect(resolved).toMatchObject({
+          notGranted: [],
+          note: 'You can now read and change things in Gmail. Carry on with what you were doing.',
+        });
+      });
     });
 
     it('treats a retry for another account as a different answer', async () => {
