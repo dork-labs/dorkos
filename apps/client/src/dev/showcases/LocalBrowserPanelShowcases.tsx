@@ -56,7 +56,7 @@ function NotOpenDemo() {
 
 /**
  * Forget refused because the sign-ins folder was changed outside DorkOS (DOR-4172).
- * Press Forget… then Forget sign-ins to see the line, which offers no Try again.
+ * Press Forget… then Forget sign-ins: the dialog becomes the answer, with only Close.
  */
 function FolderChangedDemo() {
   const [transport] = useState<Transport>(() =>

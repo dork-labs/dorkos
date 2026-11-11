@@ -7,9 +7,6 @@ const MESSAGES: Record<string, string> = {
   profile_busy: 'Close the Agent browser and finish signing in, then try again.',
   profile_not_found: 'Those sign-ins are already gone. Refresh and try again.',
   sign_ins_partial: 'Some sign-ins couldn’t be cleared. Try again.',
-  // No Try again: retrying can't fix a folder changed outside DorkOS (DOR-4172).
-  profiles_folder_changed:
-    'Sign-ins weren’t forgotten. Their folder was changed outside DorkOS, so DorkOS left it alone.',
   browser_download: 'Couldn’t download the browser. Check your connection and try again.',
   cancelled: 'Browser setup stopped. Open it again to continue.',
   focus_unavailable: 'This tab stopped responding. Choose it again.',

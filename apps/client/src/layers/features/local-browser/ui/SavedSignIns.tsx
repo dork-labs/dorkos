@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { LOCAL_BROWSER_STATE_KEY } from '@/layers/entities/local-browser';
 import { useTransport } from '@/layers/shared/model';
@@ -31,8 +31,16 @@ export function SavedSignIns({
   const [asking, setAsking] = useState(false);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // A folder changed outside DorkOS can't be fixed by trying again, so the dialog
+  // becomes the answer: no question, no Forget button, just Close (DOR-4172).
+  const [folderChanged, setFolderChanged] = useState(false);
   const [notice, setNotice] = useState('');
   const opener = useRef<HTMLButtonElement | null>(null);
+  const close = useRef<HTMLButtonElement | null>(null);
+  // The answer replaces the question in place, so focus moves to its one button.
+  useEffect(() => {
+    if (folderChanged) close.current?.focus();
+  }, [folderChanged]);
   const forget = async () => {
     if (pending) return;
     setPending(true);
@@ -43,7 +51,9 @@ export function SavedSignIns({
       await client.invalidateQueries({ queryKey: LOCAL_BROWSER_STATE_KEY });
       setAsking(false);
     } catch (cause) {
-      setError(browserErrorMessage(cause));
+      if ((cause as { code?: string } | null)?.code === 'profiles_folder_changed')
+        setFolderChanged(true);
+      else setError(browserErrorMessage(cause));
     } finally {
       setPending(false);
     }
@@ -67,6 +77,7 @@ export function SavedSignIns({
         disabled={disabled || pending}
         onClick={() => {
           setError(null);
+          setFolderChanged(false);
           setNotice('');
           setAsking(true);
         }}
@@ -88,30 +99,48 @@ export function SavedSignIns({
             opener.current?.focus();
           }}
         >
-          <AlertDialogHeader>
-            <AlertDialogTitle>Forget saved sign-ins?</AlertDialogTitle>
-            <AlertDialogDescription>
-              This signs every agent here out of every site. It can’t be undone.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          {error && (
-            <p role="alert" className="text-sm">
-              {error}
-            </p>
+          {folderChanged ? (
+            <>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Sign-ins weren’t forgotten</AlertDialogTitle>
+                <AlertDialogDescription>
+                  Their folder was changed outside DorkOS, so DorkOS left it alone.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogAction ref={close} onClick={() => setAsking(false)}>
+                  Close
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </>
+          ) : (
+            <>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Forget saved sign-ins?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  This signs every agent here out of every site. It can’t be undone.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              {error && (
+                <p role="alert" className="text-sm">
+                  {error}
+                </p>
+              )}
+              <AlertDialogFooter>
+                <AlertDialogCancel disabled={pending}>Cancel</AlertDialogCancel>
+                <AlertDialogAction
+                  variant="destructive"
+                  disabled={pending}
+                  onClick={(event) => {
+                    event.preventDefault();
+                    void forget();
+                  }}
+                >
+                  {pending ? 'Forgetting…' : 'Forget sign-ins'}
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </>
           )}
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={pending}>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              variant="destructive"
-              disabled={pending}
-              onClick={(event) => {
-                event.preventDefault();
-                void forget();
-              }}
-            >
-              {pending ? 'Forgetting…' : 'Forget sign-ins'}
-            </AlertDialogAction>
-          </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
     </section>
