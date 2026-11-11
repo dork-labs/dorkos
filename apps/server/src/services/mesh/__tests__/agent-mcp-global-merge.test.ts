@@ -68,6 +68,18 @@ afterEach(async () => {
 });
 
 describe('injectableServersForCwd with servers for every agent', () => {
+  it('passes a change to the servers for every agent on to whoever listens (DOR-3872)', async () => {
+    const listeners: Array<() => void> = [];
+    const { service } = await setup({
+      ...source({ docs: GLOBAL }),
+      onChange: (listener) => void listeners.push(listener),
+    });
+    let heard = 0;
+    service.onChange(() => heard++);
+    listeners.forEach((listener) => listener());
+    expect(heard).toBe(1);
+  });
+
   it('hands an agent the global servers, asked for by its own id', async () => {
     const globals = source({ docs: GLOBAL });
     const { service, projectPath } = await setup(globals);

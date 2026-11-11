@@ -2271,6 +2271,47 @@ describe('OpenCodeRuntime', () => {
       expect(disconnectNames).not.toContain('userserver');
     });
 
+    it('retries a failed disconnect on the next turn instead of leaving the server running (DOR-3872)', async () => {
+      const harness = makeRuntime();
+      const { runtime, client } = harness;
+      const resolver = resolverReturning({ fs: STDIO_CONN, api: HTTP_CONN });
+      runtime.setManagedMcpServers(resolver);
+      const sessionId = nextSessionId();
+      await driveTurn(harness, sessionId, 1);
+
+      resolver.injectableServersForCwd.mockReturnValue({ fs: STDIO_CONN });
+      client.mcp.disconnect.mockRejectedValueOnce(new Error('transient boom'));
+      await driveTurn(harness, sessionId, 2);
+      await driveTurn(harness, sessionId, 3);
+
+      const disconnectNames = client.mcp.disconnect.mock.calls.map((c) => c[0]!.path!.name);
+      expect(disconnectNames).toEqual(['api', 'api']);
+    });
+
+    it('disconnects a removed server from every folder that has it, without waiting for a turn (DOR-3872)', async () => {
+      const harness = makeRuntime();
+      const { runtime, client } = harness;
+      const listeners: Array<() => void> = [];
+      const resolver = {
+        ...resolverReturning({ fs: STDIO_CONN, api: HTTP_CONN }),
+        onChange: (listener: () => void) => void listeners.push(listener),
+      };
+      runtime.setManagedMcpServers(resolver);
+      await driveTurn(harness, nextSessionId(), 1);
+      expect(client.mcp.disconnect).not.toHaveBeenCalled();
+
+      // A person removes `api`: the store says so, and no turn runs.
+      resolver.injectableServersForCwd.mockReturnValue({ fs: STDIO_CONN });
+      listeners.forEach((listener) => listener());
+      await vi.waitFor(() => expect(client.mcp.disconnect).toHaveBeenCalled());
+
+      const disconnectNames = client.mcp.disconnect.mock.calls.map((c) => c[0]!.path!.name);
+      expect(disconnectNames).toEqual(['api']);
+      // Nothing left to do on the next turn.
+      await driveTurn(harness, nextSessionId(), 2);
+      expect(client.mcp.disconnect).toHaveBeenCalledTimes(1);
+    });
+
     it('skips a managed server whose name collides with a user-configured one and surfaces it as a conflict', async () => {
       const harness = makeRuntime();
       const { runtime, client } = harness;

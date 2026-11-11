@@ -183,6 +183,27 @@ describe('authenticated Doe MCP assembly', () => {
     });
     await assembly.dispose();
   });
+  it('refuses a call to a server the agent no longer gets, mid-turn (DOR-3872)', async () => {
+    calls.names = ['create_issue'];
+    let current = ['github', 'tracker'];
+    const assembly = await assembleDoeMcp({
+      agentPath: '/agent',
+      servers: {
+        github: { transport: 'stdio', command: 'node', args: ['gh.js'] },
+        tracker: { transport: 'stdio', command: 'node', args: ['t.js'] },
+      },
+      stillManaged: (name) => current.includes(name),
+      signal: new AbortController().signal,
+    });
+    const tool = (server: string) =>
+      assembly.tools.find((entry) => entry.name === mcpAlias(`managed:${server}`, 'create_issue'))!;
+    const context = { signal: new AbortController().signal, emit: () => {} } as never;
+    await expect(tool('github').execute({}, context)).resolves.toBeDefined();
+    current = ['tracker'];
+    await expect(tool('github').execute({}, context)).rejects.toThrow('removed or turned off');
+    await expect(tool('tracker').execute({}, context)).resolves.toBeDefined();
+    await assembly.dispose();
+  });
   it('holds the eager schema budget constant as registry contributions grow', async () => {
     const measure = async () => {
       const assembly = await assembleDoeMcp({

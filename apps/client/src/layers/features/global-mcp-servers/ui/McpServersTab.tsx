@@ -123,7 +123,7 @@ export function McpServersTab() {
         ))}
 
       <div className="text-muted-foreground space-y-1 text-xs">
-        <p>Changes reach new chats. Open ones may keep a server until they stop.</p>
+        <p>Changes reach every chat on its next message.</p>
         <p>A server added for one agent lives in that agent’s Toolkit.</p>
       </div>
 

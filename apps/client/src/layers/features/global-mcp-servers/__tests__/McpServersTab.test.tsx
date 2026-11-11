@@ -650,9 +650,7 @@ describe('what a person is told about a saved value', () => {
   it('the page says a change reaches new chats, whatever is listed', async () => {
     renderTab(transportWith([]));
     expect(
-      await screen.findByText(
-        'Changes reach new chats. Open ones may keep a server until they stop.'
-      )
+      await screen.findByText('Changes reach every chat on its next message.')
     ).toBeInTheDocument();
   });
 });
@@ -670,9 +668,7 @@ describe('removing a server', () => {
     renderTab(transportWith([createMockGlobalMcpServer()]));
     const ask = await askToRemove(user);
     expect(ask.getByRole('heading')).toHaveTextContent('Remove made-up-server?');
-    expect(
-      ask.getByText('New chats won’t get its tools. Open ones may keep them until they stop.')
-    ).toBeInTheDocument();
+    expect(ask.getByText('Changes reach every chat on its next message.')).toBeInTheDocument();
     expect(ask.queryByText(/Its key/)).toBeNull();
     expect(ask.getByRole('button', { name: 'Cancel' })).toHaveFocus();
   });

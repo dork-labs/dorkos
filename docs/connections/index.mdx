@@ -162,12 +162,13 @@ The **MCP servers** tab on the Connections page holds servers you add once for e
 - **Hide a value.** Select the lock next to a setting such as a key. It says **Hide this value** when you point at it. Names that look like keys are hidden for you. A hidden value doesn't show on the page again, but agents that get the server can use it.
 - **Confirm it's you.** Once DorkOS has an owner account, adding a server, turning one on, or giving it to more agents asks for your password.
 - **Change it.** There's no edit. Remove the server and add it again.
-- **When it reaches agents.** Changes reach new chats. Open ones may keep a server until they stop.
+- **When it reaches agents.** Changes reach every chat on its next message, including chats already open. No restart.
+
+On Codex, a reply that's already running can finish with the server.
 
 <Callout type="warn">
-  Removing a global MCP server stops new chats from using it. Chats that are already running keep it
-  until they end or you restart them. If you remove a server because you no longer trust it, restart
-  DorkOS so no chat can still reach it.
+  If you remove a server because you no longer trust it, also revoke its key at the service: a
+  program it already started may still hold the key.
 </Callout>
 
 A server reached over SSE doesn't reach Codex or OpenCode agents, and its row says so. If an agent has its own server with the same name, the agent's own one is used. Agents can't list or change the servers on this tab.

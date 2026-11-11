@@ -187,6 +187,12 @@ describe('the launch options every Claude Code turn is given', () => {
     ).toBe('1');
   });
 
+  it('registers the hook that refuses a removed MCP server mid-chat, on MCP tools (DOR-3872)', async () => {
+    const options = await captureSdkOptions();
+    const matchers = (options.hooks?.PreToolUse ?? []).map((m) => m.matcher);
+    expect(matchers).toContain('^mcp__');
+  });
+
   it("registers the hooks that record a helper agent's tool calls, on every tool", async () => {
     const options = await captureSdkOptions();
     const unmatched = (options.hooks?.PostToolUse ?? []).filter((m) => m.matcher === undefined);
