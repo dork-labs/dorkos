@@ -286,11 +286,12 @@ export const WIFI_REFUSED_ROUTES: readonly WifiRefusedRoute[] = [
   {
     // A connected app holds a sign-in to an outside account; using one
     // directly acts in that account, as an `act` capability would. Undoing an
-    // agent's access change can give access back, so it is refused here too.
+    // agent's access change can give access back, so it is refused here too,
+    // and so is a person letting a mini app read an account (DOR-3547).
     surface: 'front-door',
     methods: 'writes',
     pattern:
-      /^\/api\/connectors\/(?:connections|reconciliation|executions|cli|agent-requests|access-changes)(?:\/|$)/,
+      /^\/api\/connectors\/(?:connections|reconciliation|executions|cli|agent-requests|access-changes|mini-app-access\/decision)(?:\/|$)/,
     reason: `Manage connected apps ${ON_THE_COMPUTER}`,
   },
   {

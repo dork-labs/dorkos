@@ -9,6 +9,7 @@ covers:
   - 'feat(connectors): the Connections page lists what mini apps wait for and may read, and can take a yes back'
   - 'feat(connections): a mini app waiting to read an app shows in Needs you as a link, and each account lists the mini apps that can read it'
   - 'feat(connectors): a person lets a mini app read an app only on its own page, outside the app'
+  - "fix(connectors): agents can neither give nor take back a mini app's access, and over Wi-Fi only taking it back works"
   - 'fix(connectors): the mini app decide page says it is DorkOS, and its labels, buttons and account read cleanly in both themes'
   - 'docs(api): the mini app access list and revoke are in the API reference, and the route census knows the new routes'
   - 'fix(connectors): a single account on the mini app decide page reads as a fact, not a field'
