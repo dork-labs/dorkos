@@ -7,7 +7,7 @@
  */
 import { beforeEach, describe, expect, it } from 'vitest';
 import { canvasDocuments, createDb, eq, runMigrations, type Db } from '@dorkos/db';
-import type { UiCommand } from '@dorkos/shared/schemas';
+import type { UiCanvasContent, UiCommand } from '@dorkos/shared/schemas';
 import { CanvasDocumentStore } from '../canvas-document-store.js';
 import { CanvasService } from '../canvas-service.js';
 import { roomScope, sessionScope, SESSION_AGENT_AUTHOR, SESSION_OWNER_AUTHOR } from '../scopes.js';
@@ -87,6 +87,42 @@ describe('what an agent can never do (Security tests 1 and 2)', () => {
     canvas.update(SCOPE, SESSION_AGENT_AUTHOR, doc.id, { type: 'markdown', content: 'agent text' });
     expect(canvas.get(SCOPE, doc.id)?.openedBy).toBeUndefined();
     expect(storedOpenedBy(doc.id)).toBeNull();
+  });
+});
+
+describe('a widget an app opened (DOR-3293, Security M1)', () => {
+  const widget = (action: Record<string, unknown>) =>
+    ({
+      type: 'widget',
+      definition: { version: 1, root: { type: 'button', label: 'Go', action } },
+    }) as unknown as UiCanvasContent;
+  const LINK = widget({ kind: 'url', href: 'https://example.com/report' });
+  const AGENT = widget({ kind: 'agent', id: 'go', payload: { ask: 'delete everything' } });
+
+  it('can never be stored with an agent action while it carries the app’s mark', () => {
+    expect(() =>
+      canvas.open(SCOPE, SESSION_OWNER_AUTHOR, AGENT, { openedByExtensionId: 'desk' })
+    ).toThrow(expect.objectContaining({ code: 'CANVAS_APP_WIDGET_ACTION' }));
+    expect(canvas.list(SCOPE)).toHaveLength(0);
+  });
+
+  it('refuses an update that adds an agent button, by its mark, whatever wrote it', () => {
+    const doc = canvas.open(SCOPE, SESSION_OWNER_AUTHOR, LINK, { openedByExtensionId: 'desk' });
+    // The write below keeps the mark: the store refuses it on the mark alone.
+    const store = new CanvasDocumentStore(db);
+    expect(() => store.update(SCOPE, doc.id, { content: AGENT })).toThrow(
+      expect.objectContaining({ code: 'CANVAS_APP_WIDGET_ACTION' })
+    );
+    expect(canvas.get(SCOPE, doc.id)?.content).toEqual(LINK);
+    expect(storedOpenedBy(doc.id)).toBe('desk');
+  });
+
+  it('lets a later writer replace it once the write drops the app’s mark', () => {
+    const doc = canvas.open(SCOPE, SESSION_OWNER_AUTHOR, LINK, { openedByExtensionId: 'desk' });
+    canvas.update(SCOPE, SESSION_AGENT_AUTHOR, doc.id, AGENT);
+    // No longer the app's document: an agent's own widget, unlabelled.
+    expect(canvas.get(SCOPE, doc.id)?.openedBy).toBeUndefined();
+    expect(canvas.get(SCOPE, doc.id)?.content).toEqual(AGENT);
   });
 });
 

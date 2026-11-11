@@ -21,6 +21,7 @@ covers:
   - "fix(extensions): an app that names another app by anything but its id can't be installed or updated (DOR-3293)"
   - 'fix(marketplace): a refused package names itself as its title does and offers only Close (DOR-3293)'
   - "fix(extensions): an app's canvas widget may only link out, and a trusted app asks again when its screens reach further (DOR-3293)"
+  - 'fix(canvas): a document an app opened can never hold a widget action other than a link, on any write (DOR-3293)'
 ---
 
 ### Security

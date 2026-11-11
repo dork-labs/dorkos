@@ -36,6 +36,7 @@ import {
   type DocChannelInitialization,
 } from './doc-channel/lifecycle.js';
 import { logger } from '../../lib/logger.js';
+import { assertAppOpenedContent } from './app-opened-content.js';
 
 /** Everything a fresh row is written from. */
 export interface CanvasDocumentInsert {
@@ -277,6 +278,9 @@ export class CanvasDocumentStore {
     input: CanvasDocumentInsert,
     channel?: DocChannelInitialization | ((tx: DbTransaction) => DocChannelInitialization)
   ): void {
+    // The row the service inserts carries the mark beside these fields.
+    const mark = (input as { openedByExtensionId?: string | null }).openedByExtensionId;
+    assertAppOpenedContent(mark, input.content);
     this.db.transaction((tx) => {
       tx.insert(canvasDocuments)
         .values({
@@ -319,6 +323,14 @@ export class CanvasDocumentStore {
       openedByExtensionId: string | null;
     }>
   ): void {
+    // Keyed on the mark the row will carry, whichever write this is (DOR-3293).
+    if (patch.content) {
+      const mark =
+        'openedByExtensionId' in patch
+          ? patch.openedByExtensionId
+          : this.get(scope, documentId)?.openedByExtensionId;
+      assertAppOpenedContent(mark, patch.content);
+    }
     this.db
       .update(canvasDocuments)
       .set(patch)
