@@ -25,12 +25,19 @@ export function needsClientUpdate(manifest: { clientApiVersion?: number }): bool
 export interface FrameExtensionAPI extends Omit<ExtensionAPI, 'executeCommand' | 'openCanvas'> {
   /** Activation runs once for registrations and once per mounted view. Keep startup work in registration. */
   readonly context: 'registration' | 'view';
-  /** Request JSON from this app's own server router. Requires capabilities.http. */
+  /**
+   * Request JSON from this app's own server router. Requires capabilities.http.
+   *
+   * With `app`, calls that app's router instead. This app must list it in
+   * `capabilities.http.apps`, and it must list the route and method in its
+   * `exports.http`. DorkOS tells the other app which app called.
+   */
   request<T = unknown>(
     path: string,
     options?: {
       method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
       body?: unknown;
+      app?: string;
     }
   ): Promise<T>;
   /**

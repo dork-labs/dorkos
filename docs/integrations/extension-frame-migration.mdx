@@ -99,6 +99,38 @@ await api.openCanvas({ type: 'markdown', content: '# Weekly report', title: 'Rep
 
 You may open Markdown, JSON, a widget, a picture (`data:` or `https:`) or a web page (`http:` or `https:`). Files, PDFs, diffs, local paths and MCP apps are refused. What you open is always a new tab, never one already showing. The tab shows the app icon and the title, and says "Opened by" with your app's name as DorkOS knows it. Nothing on the canvas sends messages back to your app.
 
+## Calling another app
+
+One app can call another app's server routes, but only when both say so in their manifests.
+
+The app that calls lists the exact apps it calls:
+
+```json
+{ "capabilities": { "http": { "apps": ["ledger"] } } }
+```
+
+The app it calls lists each route other apps may use. Nothing is shared unless it is listed here. A read is a `GET`; each write needs its own method in `methods`. `callers` narrows a route to named apps. A route in `personOnly` only answers the app's own screens, and is never shared, whatever `http` says:
+
+```json
+{
+  "exports": {
+    "http": [
+      { "path": "/entries", "methods": ["GET"] },
+      { "path": "/entries/:id", "methods": ["GET", "PATCH"], "callers": ["reports"] }
+    ],
+    "personOnly": ["/approve"]
+  }
+}
+```
+
+Then call it with `app`:
+
+```tsx
+const entries = await api.request('/entries', { app: 'ledger' });
+```
+
+`:id` stands for exactly one path segment. Listing an app works one way only: it gives that app nothing back. DorkOS checks both manifests in the window and again on the server, tells the other app which app called in the `X-DorkOS-Caller-App` header, and records every call in the audit log. A refused call rejects before anything is sent.
+
 ## Showing pictures and video
 
 The frame cannot reach the network, so a picture or video has to come through DorkOS. Serve it from your own server routes, then ask for it:

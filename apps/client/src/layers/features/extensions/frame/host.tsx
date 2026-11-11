@@ -1,5 +1,6 @@
 import { createElement, useEffect, useRef, useState, type ReactElement } from 'react';
 import {
+  APP_ROUTE_METHODS,
   EXTENSION_EVENT_KINDS as SDK_EVENT_KINDS,
   type ExtensionManifest,
   type ExtensionModule,
@@ -7,6 +8,7 @@ import {
 import { z } from 'zod';
 import { extensionApiUrl } from '../model/extension-api-url';
 import { readAppMedia } from './app-media';
+import { assertAppCall } from './app-call';
 import { extensionRequestPath, readAppResponse } from './app-request';
 import { offerAppDownload } from './download';
 import {
@@ -231,14 +233,25 @@ export function isolatedExtensionModule(
                 text,
                 z
                   .object({
-                    method: z.enum(['GET', 'POST', 'PUT', 'PATCH', 'DELETE']).default('GET'),
+                    method: z.enum(APP_ROUTE_METHODS).default('GET'),
                     body: json.optional(),
+                    // Another app to call, which must list this route in its exports.
+                    app: z.string().max(120).optional(),
                   })
                   .strict()
               ).parse(input);
-              const response = await fetch(extensionApiUrl(extensionRequestPath(api.id, path)), {
+              const target =
+                options.app !== undefined && options.app !== api.id ? options.app : null;
+              const address = extensionRequestPath(target ?? api.id, path);
+              if (target !== null) assertAppCall(manifest, target, options.method, path);
+              const response = await fetch(extensionApiUrl(address), {
                 method: options.method,
-                headers: { 'Content-Type': 'application/json', 'X-DorkOS-Extension': api.id },
+                headers: {
+                  'Content-Type': 'application/json',
+                  'X-DorkOS-Extension': api.id,
+                  // Set by the host alone: the frame never builds a header.
+                  ...(target !== null ? { 'X-DorkOS-Caller-App': api.id } : {}),
+                },
                 ...(options.body !== undefined ? { body: JSON.stringify(options.body) } : {}),
               });
               return readAppResponse(response);

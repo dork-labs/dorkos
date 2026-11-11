@@ -7,6 +7,8 @@ import {
   EXTENSION_FRAME_SANDBOX,
 } from '../frame/host';
 
+import { setRunningApps } from '../frame/running-apps';
+
 vi.mock('virtual:dorkos-extension-frame', () => ({ default: '' }));
 vi.mock('../model/extension-api-url', () => ({ extensionApiUrl: (path: string) => `/api${path}` }));
 
@@ -180,6 +182,84 @@ describe('isolated app host', () => {
     );
     expect(await call('media', ['/../quill/cover.png'])).toHaveProperty('error');
     expect(fetch).toHaveBeenCalledTimes(1);
+  });
+  describe('calling another app (DOR-3293)', () => {
+    const ledger = {
+      id: 'ledger',
+      status: 'compiled',
+      approvedToRun: true,
+      manifest: {
+        id: 'ledger',
+        name: 'Ledger',
+        version: '1.0.0',
+        exports: {
+          http: [
+            { path: '/entries', methods: ['GET'] },
+            { path: '/entries/:id', methods: ['GET', 'PATCH'] },
+          ],
+          personOnly: ['/approve'],
+        },
+      },
+    };
+    beforeEach(() => setRunningApps([ledger] as never));
+    afterEach(() => setRunningApps([]));
+    const callsLedger: Partial<ExtensionManifest> = {
+      capabilities: { http: { apps: ['ledger'] } },
+    };
+
+    it('reaches an exported route, and the host names the caller', async () => {
+      await start(callsLedger);
+      expect(await call('request', ['/entries', { app: 'ledger' }])).toHaveProperty('value');
+      expect(fetch).toHaveBeenCalledWith(
+        '/api/ext/ledger/entries',
+        expect.objectContaining({
+          method: 'GET',
+          headers: expect.objectContaining({
+            'X-DorkOS-Extension': 'atlas',
+            'X-DorkOS-Caller-App': 'atlas',
+          }),
+        })
+      );
+    });
+    it('refuses a target this app does not list', async () => {
+      await start({ capabilities: { http: true } });
+      expect(await call('request', ['/entries', { app: 'ledger' }])).toHaveProperty('error');
+      expect(fetch).not.toHaveBeenCalled();
+    });
+    it('refuses a route the target does not export, and a personOnly one', async () => {
+      await start(callsLedger);
+      expect(await call('request', ['/secrets', { app: 'ledger' }])).toHaveProperty('error');
+      expect(await call('request', ['/approve', { app: 'ledger', method: 'POST' }])).toHaveProperty(
+        'error'
+      );
+      expect(fetch).not.toHaveBeenCalled();
+    });
+    it('refuses a write the export does not list', async () => {
+      await start(callsLedger);
+      expect(
+        await call('request', ['/entries', { app: 'ledger', method: 'POST', body: {} }])
+      ).toHaveProperty('error');
+      expect(
+        await call('request', ['/entries/e-17', { app: 'ledger', method: 'PATCH', body: {} }])
+      ).toHaveProperty('value');
+      expect(fetch).toHaveBeenCalledTimes(1);
+    });
+    it('refuses a target that is not running', async () => {
+      setRunningApps([]);
+      await start(callsLedger);
+      expect(await call('request', ['/entries', { app: 'ledger' }])).toHaveProperty('error');
+      expect(fetch).not.toHaveBeenCalled();
+    });
+    it('never takes a header from the frame, so a forged caller header goes nowhere', async () => {
+      await start(callsLedger);
+      const forged = { app: 'ledger', headers: { 'X-DorkOS-Caller-App': 'quill' } };
+      expect(await call('request', ['/entries', forged])).toHaveProperty('error');
+      expect(fetch).not.toHaveBeenCalled();
+      // An own call never carries a caller header at all.
+      await call('request', ['/loop', { app: 'atlas' }]);
+      const [, init] = vi.mocked(fetch).mock.calls[0]!;
+      expect(init?.headers).not.toHaveProperty('X-DorkOS-Caller-App');
+    });
   });
   it('refuses prototype names as bridge operations', async () => {
     await start();

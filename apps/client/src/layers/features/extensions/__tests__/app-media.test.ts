@@ -35,6 +35,11 @@ describe('api.media: a picture or video from the app’s own routes (DOR-3293)',
     expect(blob.size).toBe(3);
   });
 
+  it('types the Blob with the allow-list value, never the raw header', async () => {
+    const blob = await readAppMedia(reply('x', { 'Content-Type': 'IMAGE/PNG; x=1' }));
+    expect(blob.type).toBe('image/png');
+  });
+
   it('reads the type without its parameters, in any case', async () => {
     const blob = await readAppMedia(reply('x', { 'Content-Type': 'Video/MP4; codecs="avc1"' }));
     expect(blob.type).toBe('video/mp4');

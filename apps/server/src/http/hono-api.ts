@@ -498,7 +498,14 @@ export function createHonoApi(options: HonoApiOptions): Hono<ApiEnv> {
         mesh: () => deps.mesh?.meshCore,
       })
     );
-    app.route('/api/ext', createExtensionApiRoutes(deps.extensions.manager));
+    const { manager } = deps.extensions;
+    app.route(
+      '/api/ext',
+      createExtensionApiRoutes(manager, {
+        manifest: (id) => manager.get(id)?.manifest,
+        callerRuns: appScreenRunsIn(manager),
+      })
+    );
     // The empty, sandboxed document every app's screens run in (DOR-3293).
     app.route('/api/extension-frame', createExtensionFrameRoutes());
   }

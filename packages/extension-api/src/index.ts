@@ -55,6 +55,19 @@ export type {
   ExtensionAllow,
   ExtensionLimits,
 } from './manifest-schema.js';
+export {
+  APP_ROUTE_METHODS,
+  calledApps,
+  decideAppCall,
+  exportedAccess,
+  routeMatches,
+  type AppCallDecision,
+  type AppCallRefusal,
+  type AppExportRoute,
+  type AppRouteMethod,
+  type CrossAppManifest,
+  type ExtensionExports,
+} from './cross-app.js';
 export type {
   ExtensionAPI,
   ExtensionDialogControls,

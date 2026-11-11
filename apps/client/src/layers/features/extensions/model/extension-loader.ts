@@ -13,6 +13,7 @@ import { ManifestSettingsPanel, ManifestSettingsIcon } from '../ui/ManifestSetti
 import { extensionApiUrl } from './extension-api-url';
 import { setExtensionClientState } from '@/layers/shared/lib/extension-client-state';
 import { setExtensionNames } from '@/layers/shared/lib/extension-names';
+import { setRunningApps } from '../frame/running-apps';
 import { ExtensionLoadFailure } from '../ui/ExtensionLoadFailure';
 import { importExtensionModule } from './extension-bundle-import';
 import { AppNeedsUpdateNotice, runningCopiesOnly } from '@/layers/entities/extension';
@@ -349,6 +350,7 @@ export class ExtensionLoader {
     }
     // DorkOS's own names for its apps, for surfaces that say which app did something.
     setExtensionNames(Object.fromEntries(extensions.map((ext) => [ext.id, ext.manifest.name])));
+    setRunningApps(extensions);
 
     this.teardownLoaded();
     return this.activateFrom(extensions, gen);
