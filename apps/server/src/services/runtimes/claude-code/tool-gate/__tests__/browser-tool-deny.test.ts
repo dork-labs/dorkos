@@ -127,6 +127,21 @@ describe('browserToolHookMatcher', () => {
     }
   });
 
+  it('refuses a file argument that is merely present: empty, null or in another case', async () => {
+    for (const input of [
+      { filename: '' },
+      { filename: null },
+      { paths: [] },
+      { paths: null },
+      { Filename: 'x' },
+      { PATHS: ['y'] },
+    ]) {
+      expect(await hookAnswer('mcp__browser__browser_snapshot', input)).toEqual(
+        refused(BROWSER_FILE_MESSAGE)
+      );
+    }
+  });
+
   it('answers nothing for every other browser call, browser_evaluate included', async () => {
     for (const name of [
       'mcp__browser__browser_evaluate',

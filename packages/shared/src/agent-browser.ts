@@ -87,7 +87,8 @@ export function isWithheldBrowserTool(tool: string): boolean {
 
 /**
  * Whether a browser tool call names a file ({@link AGENT_BROWSER_FILE_ARGUMENTS}): a tool whose
- * bare name starts `browser_`, in any case, with either argument present.
+ * bare name starts `browser_`, in any case, with either argument present, in any case and with
+ * any value, an empty one included.
  *
  * @param tool - The tool's own name, without any server prefix.
  * @param input - The call's arguments.
@@ -95,10 +96,8 @@ export function isWithheldBrowserTool(tool: string): boolean {
 export function browserCallNamesFile(tool: string, input: unknown): boolean {
   if (!/^browser_/i.test(tool)) return false;
   if (!input || typeof input !== 'object') return false;
-  const args = input as Record<string, unknown>;
-  return AGENT_BROWSER_FILE_ARGUMENTS.some(
-    (name) => args[name] !== undefined && args[name] !== null
-  );
+  // Present at all is enough, whatever its value (`""` and `null` too) and its letter case.
+  return Object.keys(input).some((key) => AGENT_BROWSER_FILE_ARGUMENTS.includes(key.toLowerCase()));
 }
 
 /** What an empty saved session looks like: valid for Playwright, signed in to nothing. */

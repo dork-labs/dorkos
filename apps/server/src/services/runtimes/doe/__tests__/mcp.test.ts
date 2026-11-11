@@ -143,6 +143,11 @@ describe('authenticated Doe MCP assembly', () => {
     await expect(
       tool('Browser_File_Upload').execute({ paths: ['/home/me/.dork/x'] }, context)
     ).rejects.toThrow("can't save or upload files");
+    for (const args of [{ filename: '' }, { filename: null }, { Paths: [] }]) {
+      await expect(tool('browser_take_screenshot').execute(args as never, context)).rejects.toThrow(
+        "can't save or upload files"
+      );
+    }
     await expect(tool('browser_take_screenshot').execute({}, context)).resolves.toEqual({
       content: [{ type: 'text', text: 'managed:pw' }],
     });
