@@ -13,6 +13,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Only /system:release compiles fragments into a version section below.
 -->
 
+## [0.135.6] - 2026-11-11
+
+> DorkOS 0.135.6 makes a file you closed open again when you click it, refuses tricky addresses over Remote Access, and smooths several rough edges in the Agent browser.
+
+### Note for people upgrading
+
+- On Linux, Codex at Full access doesn't start if Claude Code has run on the same machine, and that includes the Docker image. Use Ask first or Workspace write there for now. We're fixing it (DOR-3965).
+- Removing a global MCP server stops new chats from using it. Chats that are already running keep it until they end or you restart them. If you remove a server because you no longer trust it, restart DorkOS so no chat can still reach it. The Connections guide says so (DOR-3872).
+- Over Remote Access, **Unblock agent** on an agent's profile doesn't work for now. Unblock it on the computer running DorkOS.
+- Over your own ngrok tunnel, the agent-to-agent address (`/a2a`) and its agent cards now answer "Not found" from another device, the same as over DorkOS's remote access. On this computer nothing changes.
+- The Agent browser no longer has named profiles. Profiles made before stay on disk until you choose **Forget…**, which now clears them along with the shared sign-ins. Scripts that call `POST /api/local-browser/profiles` now get a 403 `profiles_closed` error. (DOR-4105)
+
+### Security
+
+- **Addresses with tricks like `..` in them are now refused from another device,** over both your own ngrok tunnel and DorkOS's remote access. The agent-to-agent pages were never open to another device without a key, so this is defence in depth, not an open door.
+
+### Fixed
+
+- **Clicking a file in the Files tab opens it again after you closed its tab.** Before, the click seemed to do nothing. (DOR-4179)
+- A room's Files list no longer asks for folders from the agent you browsed before. (DOR-4179)
+- In **New browser window** mode, the window your agent drives now shows which agent is using it, for example "Atlas is using this window". When a site asks for a check only a person can do, the card in the chat also says "Your turn: Atlas can’t see or use this window." While you have the browser, your agent can't read the page, take a picture of it, or act on it, whichever AI app it runs on. (DOR-3111)
+- While you have the Agent browser after your agent hands it to you, its panel lists each tab by its site only, such as `https://accounts.example.com`, without the rest of the address or the page title. A sign-in page's address or title can carry a one-time code, and both stay out of view until the handoff ends. (DOR-4163)
+- The Agent browser panel now shows one **Saved sign-ins** row: "Kept apart from your own browser. Every agent here shares them." **Forget…** asks before it signs every agent out of every site, including sign-ins kept for any older named profile. It replaces the old list of profiles. (DOR-4105)
+- If the folder holding the Agent browser's saved sign-ins was changed outside DorkOS, **Forget…** now answers "Sign-ins weren’t forgotten" and "Their folder was changed outside DorkOS, so DorkOS left it alone." with a single **Close** button. It used to tell you to close the browser's windows and try again, which could never work. What was found is also recorded in the audit log. (DOR-4172)
+- When the Agent browser isn't open, its panel now says "Not open yet" instead of "Disconnected", which made it look broken. It says "Disconnected" when a browser it was showing as open disconnects. (DOR-4104)
+- An agent browser set up with a custom browser path or a shared profile no longer looks like it should work. Its card in the agent's MCP servers list now says **Not used** and reads "DorkOS uses its own browser for agents. Custom browser paths aren't allowed." (DOR-3207)
+
+### Going back
+
+0.135.6 doesn't change the database or your settings. To go back, install 0.135.5. On 0.135.5, any older named browser profiles show in the Agent browser panel again, signed out if you used **Forget…**.
+
 ## [0.135.5] - 2026-11-11
 
 > DorkOS 0.135.5 is a security release. The agent browser no longer offers a tool that runs code outside the page, and agents now ask before they add work to a queue. This release changes the database, so read Going back before downgrading.
@@ -370,82 +401,10 @@ Settings saved for agents' to-do actions don't come back on 0.132.0 after the re
 
 Going back can undo things you changed since the upgrade. If you removed access or revoked a connection, do it again.
 
-## [0.132.0] - 2026-11-04
+Older releases (v0.1.0 – v0.132.0) are archived in [changelog/archive/CHANGELOG-v0.1.0-to-v0.132.0.md](changelog/archive/CHANGELOG-v0.1.0-to-v0.132.0.md).
 
-> DorkOS 0.132.0 fixes the desktop app failing to open a saved page. Chats with one agent now open as direct messages.
-
-### Note for people upgrading
-
-- This release replaces the withdrawn 0.131.0 desktop build. If you installed 0.131.0, update forward to this version.
-
-- This release changes the database, including when upgrading from 0.131.0. Read Going back below before downgrading.
-
-### Added
-
-- When an agent hands you the Agent browser, the Inbox shows the same card, so you can continue or stop it with the chat closed. On your phone, a note names the site and the agent and tells you to continue on your computer.
-
-- When a site needs a person, your agent stops and a card appears in the chat. It names the site and the agent, tells you what to do, and has Continue and Stop task. If the page asks for a password, the card opens a plain sign-in window that no agent can reach, and tells you when your sign-in is saved.
-
-### Changed
-
-- A chat with one agent now reads like a direct message: the agent's face and name, its replies, and a message box like a channel's. Every way to reach an agent opens this same chat. Upgrading turns it on once, unless you already switched it yourself. To go back, turn off **Chats with one agent read like a DM** in Settings → Advanced → Experiments.
-- The model, account and context move behind **Show sessions**, in the same place. If you opened a chat other than an agent's main one in the last 30 days, Show sessions is already on for you.
-
-- Use a newer browser engine for agent work and sign-ins (DOR-3884).
-
-### Fixed
-
-- Fix the desktop app failing to start when reopening a saved page after an update.
-
-- Other websites can no longer frame API replies or fallback pages. App pages already blocked framing. PDF previews and the pages you open in the canvas keep working (DOR-3615).
-
-- When an agent creates a schedule, its notice names the permissions it will use and explains command limits. Open the notice to review that schedule. Commands needing approval are refused on timer runs because nobody can answer. An agent creating a task without a separate mode grant gets at most Accept edits, even when the default is Full autonomy.
-
-- Schedules now say when a command was refused in their notices and run history. The notice opens its schedule; chat messages carry only the title.
-
-- A schedule’s permissions notice now names the message that started the change, including Telegram and Slack. This also covers bridged rooms and keeps a later turn in the app from carrying the earlier source.
-
-- When an agent's other chat hands a post to its chat in a room, that chat can now check how it went: still waiting and why, posted, or declined with the reason. Before, it heard nothing until the room chat answered, which could take an hour or never come.
-
-- The plain sign-in window now opens only the page you're signing in to. It no longer brings back and reloads the tabs an agent left open.
-
-- Review a schedule’s instructions and permissions before approving it from its row. Changed schedules need a fresh review (DOR-3758).
-
-- Read long schedule instructions in one scrolling column. Reviewing a package switch offers approval that turns it on.
-
-- A changed schedule stays blocked until you choose Review again. Background updates cannot silently replace an open review.
-
-- Keep review controls focused when a schedule changes. Review again returns to the heading.
-
-- Agents now get accurate guidance about text from outside your team. They were told that reading it always made a person approve their next send, but DorkOS mainly tracks that for messages sent over your Wi-Fi by someone other than you. Agents now know to treat chat apps, mail and web pages as untrusted and to ask before they send.
-
-- Schedules awaiting review stay off after restarting. Shape schedules also wait for review when their file is invalid (DOR-3860, DOR-3861).
-
-- Restarting preserves where a schedule’s words came from, so outside words still need your approval.
-
-- Block approval of package requests with shortened or hidden commands, including requests saved before a restart.
-
-- Replace unreadable package commands with a clear explanation and a Decline button.
-- Block hidden control characters in package requests while allowing line breaks in global package details.
-
-### Security
-
-- MCP server settings, headers and sign-in tokens no longer appear on the Claude Code command line, where other programs on your computer could list them. A local server's own settings can still be read by programs running as you, and anything typed into its arguments can be read by every account on your computer, so put secrets in its settings (DOR-3882).
-
-### Going back
-
-This upgrade only goes one way. DorkOS saves a backup first, in `~/.dork/backups/`.
-
-- To return to 0.131.0 after upgrading from it, use `dork-<date>-<time>-pre-20261104060919_package_approval_request.db`.
-- To return to 0.130.0, use `dork-<date>-<time>-pre-20261102213849_dor3088_todos.db`, saved before leaving 0.130.0.
-
-Quit DorkOS. Delete `dork.db-wal` and `dork.db-shm` from `~/.dork/`. Copy the matching backup over `~/.dork/dork.db`, then install that earlier version. You lose anything written since the backup. Going back without restoring can break agent promises and package approvals.
-
-Going back can undo things you changed since the upgrade. If you removed access or revoked a connection, do it again.
-
-Older releases (v0.1.0 – v0.131.0) are archived in [changelog/archive/CHANGELOG-v0.1.0-to-v0.131.0.md](changelog/archive/CHANGELOG-v0.1.0-to-v0.131.0.md).
-
-[Unreleased]: https://github.com/dork-labs/dorkos/compare/v0.135.5...HEAD
+[Unreleased]: https://github.com/dork-labs/dorkos/compare/v0.135.6...HEAD
+[0.135.6]: https://github.com/dork-labs/dorkos/compare/v0.135.5...v0.135.6
 [0.135.5]: https://github.com/dork-labs/dorkos/compare/v0.135.4...v0.135.5
 [0.135.4]: https://github.com/dork-labs/dorkos/compare/v0.135.3...v0.135.4
 [0.135.3]: https://github.com/dork-labs/dorkos/compare/v0.135.2...v0.135.3
@@ -455,4 +414,3 @@ Older releases (v0.1.0 – v0.131.0) are archived in [changelog/archive/CHANGELO
 [0.134.1]: https://github.com/dork-labs/dorkos/compare/v0.134.0...v0.134.1
 [0.134.0]: https://github.com/dork-labs/dorkos/compare/v0.133.0...v0.134.0
 [0.133.0]: https://github.com/dork-labs/dorkos/compare/v0.132.0...v0.133.0
-[0.132.0]: https://github.com/dork-labs/dorkos/compare/v0.131.0...v0.132.0

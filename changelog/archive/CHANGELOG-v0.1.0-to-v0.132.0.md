@@ -1,7 +1,80 @@
-# Changelog archive: v0.1.0 – v0.131.0
+# Changelog archive: v0.1.0 – v0.132.0
 
 Released versions aged out of the top-level [CHANGELOG.md](../../CHANGELOG.md).
 See [changelog/README.md](../README.md) for the fragment workflow.
+
+## [0.132.0] - 2026-11-04
+
+> DorkOS 0.132.0 fixes the desktop app failing to open a saved page. Chats with one agent now open as direct messages.
+
+### Note for people upgrading
+
+- This release replaces the withdrawn 0.131.0 desktop build. If you installed 0.131.0, update forward to this version.
+
+- This release changes the database, including when upgrading from 0.131.0. Read Going back below before downgrading.
+
+### Added
+
+- When an agent hands you the Agent browser, the Inbox shows the same card, so you can continue or stop it with the chat closed. On your phone, a note names the site and the agent and tells you to continue on your computer.
+
+- When a site needs a person, your agent stops and a card appears in the chat. It names the site and the agent, tells you what to do, and has Continue and Stop task. If the page asks for a password, the card opens a plain sign-in window that no agent can reach, and tells you when your sign-in is saved.
+
+### Changed
+
+- A chat with one agent now reads like a direct message: the agent's face and name, its replies, and a message box like a channel's. Every way to reach an agent opens this same chat. Upgrading turns it on once, unless you already switched it yourself. To go back, turn off **Chats with one agent read like a DM** in Settings → Advanced → Experiments.
+- The model, account and context move behind **Show sessions**, in the same place. If you opened a chat other than an agent's main one in the last 30 days, Show sessions is already on for you.
+
+- Use a newer browser engine for agent work and sign-ins (DOR-3884).
+
+### Fixed
+
+- Fix the desktop app failing to start when reopening a saved page after an update.
+
+- Other websites can no longer frame API replies or fallback pages. App pages already blocked framing. PDF previews and the pages you open in the canvas keep working (DOR-3615).
+
+- When an agent creates a schedule, its notice names the permissions it will use and explains command limits. Open the notice to review that schedule. Commands needing approval are refused on timer runs because nobody can answer. An agent creating a task without a separate mode grant gets at most Accept edits, even when the default is Full autonomy.
+
+- Schedules now say when a command was refused in their notices and run history. The notice opens its schedule; chat messages carry only the title.
+
+- A schedule’s permissions notice now names the message that started the change, including Telegram and Slack. This also covers bridged rooms and keeps a later turn in the app from carrying the earlier source.
+
+- When an agent's other chat hands a post to its chat in a room, that chat can now check how it went: still waiting and why, posted, or declined with the reason. Before, it heard nothing until the room chat answered, which could take an hour or never come.
+
+- The plain sign-in window now opens only the page you're signing in to. It no longer brings back and reloads the tabs an agent left open.
+
+- Review a schedule’s instructions and permissions before approving it from its row. Changed schedules need a fresh review (DOR-3758).
+
+- Read long schedule instructions in one scrolling column. Reviewing a package switch offers approval that turns it on.
+
+- A changed schedule stays blocked until you choose Review again. Background updates cannot silently replace an open review.
+
+- Keep review controls focused when a schedule changes. Review again returns to the heading.
+
+- Agents now get accurate guidance about text from outside your team. They were told that reading it always made a person approve their next send, but DorkOS mainly tracks that for messages sent over your Wi-Fi by someone other than you. Agents now know to treat chat apps, mail and web pages as untrusted and to ask before they send.
+
+- Schedules awaiting review stay off after restarting. Shape schedules also wait for review when their file is invalid (DOR-3860, DOR-3861).
+
+- Restarting preserves where a schedule’s words came from, so outside words still need your approval.
+
+- Block approval of package requests with shortened or hidden commands, including requests saved before a restart.
+
+- Replace unreadable package commands with a clear explanation and a Decline button.
+- Block hidden control characters in package requests while allowing line breaks in global package details.
+
+### Security
+
+- MCP server settings, headers and sign-in tokens no longer appear on the Claude Code command line, where other programs on your computer could list them. A local server's own settings can still be read by programs running as you, and anything typed into its arguments can be read by every account on your computer, so put secrets in its settings (DOR-3882).
+
+### Going back
+
+This upgrade only goes one way. DorkOS saves a backup first, in `~/.dork/backups/`.
+
+- To return to 0.131.0 after upgrading from it, use `dork-<date>-<time>-pre-20261104060919_package_approval_request.db`.
+- To return to 0.130.0, use `dork-<date>-<time>-pre-20261102213849_dor3088_todos.db`, saved before leaving 0.130.0.
+
+Quit DorkOS. Delete `dork.db-wal` and `dork.db-shm` from `~/.dork/`. Copy the matching backup over `~/.dork/dork.db`, then install that earlier version. You lose anything written since the backup. Going back without restoring can break agent promises and package approvals.
+
+Going back can undo things you changed since the upgrade. If you removed access or revoked a connection, do it again.
 
 ## [0.131.0] - 2026-11-03
 
@@ -8041,6 +8114,7 @@ save also made DorkOS reload that file. Now it writes only when something actual
 - Keyboard shortcuts for navigation
 - Directory picker for working directory selection
 
+[0.132.0]: https://github.com/dork-labs/dorkos/compare/v0.131.0...v0.132.0
 [0.131.0]: https://github.com/dork-labs/dorkos/compare/v0.130.0...v0.131.0
 [0.130.0]: https://github.com/dork-labs/dorkos/compare/v0.129.0...v0.130.0
 [0.129.0]: https://github.com/dork-labs/dorkos/compare/v0.128.0...v0.129.0
