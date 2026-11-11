@@ -11,6 +11,121 @@ import { isInertFillTarget } from './inert-target.js';
 /** Each durable journal wait has its own budget, separate from the action effect deadline. */
 export const AUDIT_WRITE_RESPONSE_TIMEOUT_MS = 2_000;
 const ACTION_TIMEOUT_MS = 750;
+/**
+ * How long a click or key press waits for a page load it started to commit or fail. Inside the
+ * action's whole budget (`ACTION_EFFECT_RESPONSE_TIMEOUT_MS`); a load still going after this is
+ * left to the agent's next read.
+ */
+export const LOAD_SETTLE_MS = 1_000;
+/** How long after a click or key press the browser has to start a page load at all. */
+export const LOAD_START_MS = 150;
+/** The address Chromium shows in place of a page that failed to load. */
+const BROWSER_ERROR_PAGE = /^chrome-error:/i;
+
+/** Wait for `promise`, or `ms`, whichever comes first. */
+async function within(promise: Promise<void>, ms: number): Promise<void> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  await Promise.race([
+    promise,
+    new Promise<void>((resolve) => {
+      timer = setTimeout(resolve, ms);
+    }),
+  ]);
+  clearTimeout(timer);
+}
+
+/** Chromium's fixed code for a load it refused, and nothing else of its error text. */
+function netErrorCode(reason: string | undefined): string | undefined {
+  return /net::(ERR_[A-Z0-9_]+)/.exec(reason ?? '')?.[1];
+}
+
+/**
+ * The error an agent gets when its action opened a page that didn't load. It names only the host
+ * of the request the browser made (never its path or query, which can hold a token) and
+ * Chromium's fixed `ERR_…` code: nothing from the page, the response or the error page.
+ *
+ * @param url - The address the browser requested.
+ * @param reason - Chromium's error text for the request, if any.
+ */
+export function loadFailedError(url: string | undefined, reason: string | undefined) {
+  let host: string | undefined;
+  try {
+    host = url ? new URL(url).host || undefined : undefined;
+  } catch {
+    host = undefined;
+  }
+  const code = netErrorCode(reason);
+  const why = code ? ` (${code})` : '';
+  return new LocalBrowserError(
+    'load_failed',
+    host
+      ? `${host} didn’t load${why}. Read the page again.`
+      : `The page didn’t load${why}. Read the page again.`
+  );
+}
+
+/**
+ * Watch the tab's main frame for a load an effect starts, from before the effect is sent. After
+ * it, `settle()` waits up to {@link LOAD_SETTLE_MS} for a started load to commit or fail, then
+ * throws {@link loadFailedError} when the tab ended on the browser's error page.
+ */
+function watchMainFrameLoad(page: Page): { settle: () => Promise<void>; stop: () => void } {
+  let started = false;
+  let failed: { url: string; reason?: string } | undefined;
+  let done!: () => void;
+  const finished = new Promise<void>((resolve) => {
+    done = resolve;
+  });
+  let begun!: () => void;
+  const starting = new Promise<void>((resolve) => {
+    begun = resolve;
+  });
+  const isMainLoad = (request: import('playwright-core').Request): boolean => {
+    try {
+      return request.isNavigationRequest() && request.frame() === page.mainFrame();
+    } catch {
+      return false;
+    }
+  };
+  const onRequest = (request: import('playwright-core').Request) => {
+    if (!isMainLoad(request)) return;
+    started = true;
+    begun();
+  };
+  const onFailed = (request: import('playwright-core').Request) => {
+    if (!isMainLoad(request)) return;
+    const reason = request.failure()?.errorText;
+    // A download, or a load the page replaced with another, ends as "aborted". Not a failure.
+    if (reason && /ERR_ABORTED/i.test(reason)) return;
+    failed = { url: request.url(), reason };
+    done();
+  };
+  const onNavigated = (frame: import('playwright-core').Frame) => {
+    if (frame === page.mainFrame()) done();
+  };
+  const stop = () => {
+    page.off('request', onRequest);
+    page.off('requestfailed', onFailed);
+    page.off('framenavigated', onNavigated);
+  };
+  page.on('request', onRequest);
+  page.on('requestfailed', onFailed);
+  page.on('framenavigated', onNavigated);
+  return {
+    stop,
+    settle: async () => {
+      try {
+        // The browser starts the load a moment after the input lands, so give it that moment.
+        if (!started) await within(starting, LOAD_START_MS);
+        if (started && !failed) await within(finished, LOAD_SETTLE_MS);
+      } finally {
+        stop();
+      }
+      if (failed || BROWSER_ERROR_PAGE.test(page.url()))
+        throw loadFailedError(failed?.url, failed?.reason);
+    },
+  };
+}
 
 /** Execute only on the observed DOM identity, with re-admission before every effect. */
 export async function performPageAction(
@@ -31,7 +146,15 @@ export async function performPageAction(
   if (input.kind === 'navigate') {
     // Admission ends at dispatch. A timed-out navigation is never replayed.
     dispatched();
-    await page.goto(input.url, { waitUntil: 'commit', timeout: ACTION_TIMEOUT_MS });
+    try {
+      await page.goto(input.url, { waitUntil: 'commit', timeout: ACTION_TIMEOUT_MS });
+    } catch (error) {
+      // A load the browser refused (`net::ERR_…`) says so; anything else stays uncertain.
+      const code = netErrorCode(error instanceof Error ? error.message : undefined);
+      if (code && code !== 'ERR_ABORTED') throw loadFailedError(input.url, `net::${code}`);
+      throw error;
+    }
+    if (BROWSER_ERROR_PAGE.test(page.url())) throw loadFailedError(input.url, undefined);
   } else if (input.kind === 'press' || input.kind === 'scroll') {
     const body = await page.locator('body').elementHandle({ timeout: ACTION_TIMEOUT_MS });
     if (!body) throw stale();
@@ -55,8 +178,17 @@ export async function performPageAction(
       }
       admit();
       dispatched();
-      if (input.kind === 'press') await page.keyboard.press(input.key);
-      else await page.mouse.wheel(input.deltaX, input.deltaY);
+      if (input.kind === 'press') {
+        // Enter on a link or a form starts a load, as a click does.
+        const load = watchMainFrameLoad(page);
+        try {
+          await page.keyboard.press(input.key);
+        } catch (error) {
+          load.stop();
+          throw error;
+        }
+        await load.settle();
+      } else await page.mouse.wheel(input.deltaX, input.deltaY);
     } finally {
       void body.dispose().catch(() => undefined);
     }
@@ -92,9 +224,18 @@ export async function performPageAction(
         );
       admit();
       dispatched();
-      if (input.kind === 'click')
-        await handle.click({ timeout: ACTION_TIMEOUT_MS, noWaitAfter: true });
-      else await handle.fill(input.text, { timeout: ACTION_TIMEOUT_MS });
+      if (input.kind === 'click') {
+        // `noWaitAfter` means the click is only sent; whatever load it starts is checked here
+        // (DOR-3897), so a click onto the browser's error page never reports success.
+        const load = watchMainFrameLoad(page);
+        try {
+          await handle.click({ timeout: ACTION_TIMEOUT_MS, noWaitAfter: true });
+        } catch (error) {
+          load.stop();
+          throw error;
+        }
+        await load.settle();
+      } else await handle.fill(input.text, { timeout: ACTION_TIMEOUT_MS });
     } finally {
       void handle.dispose().catch(() => undefined);
     }
@@ -159,7 +300,12 @@ export async function auditPageAction(
           audit({
             ...record,
             phase: 'finished',
-            outcome: dispatched ? 'unknown' : 'refused',
+            outcome:
+              error instanceof LocalBrowserError && error.code === 'load_failed'
+                ? 'failed'
+                : dispatched
+                  ? 'unknown'
+                  : 'refused',
           })
         ),
         AUDIT_WRITE_RESPONSE_TIMEOUT_MS,
