@@ -132,30 +132,6 @@
       "linearIssue": "DOR-2666"
     },
     {
-      "id": "261001-213235",
-      "slug": "relay-signed-json",
-      "title": "Preserve signed Relay JSON through the full application",
-      "created": "2026-10-01",
-      "status": "implemented",
-      "linearIssue": "DOR-2661"
-    },
-    {
-      "id": "261001-212400",
-      "slug": "relay-namespace-ownership",
-      "title": "Relay namespace ownership and boundary routing",
-      "created": "2026-10-01",
-      "status": "implemented",
-      "linearIssue": "DOR-2660"
-    },
-    {
-      "id": "261001-201851",
-      "slug": "served-document-isolation",
-      "title": "Isolate signed served documents in direct navigation",
-      "created": "2026-10-01",
-      "status": "implemented",
-      "linearIssue": "DOR-2663"
-    },
-    {
       "id": "261001-184500",
       "slug": "doc-channel",
       "title": "Two-way events between canvas documents and agents",
@@ -287,15 +263,6 @@
       "linearIssue": "DOR-2418"
     },
     {
-      "id": "260925-225543",
-      "slug": "disconnected-account-removal",
-      "title": "Remove disconnected accounts",
-      "created": "2026-09-12",
-      "status": "implemented",
-      "project": "DorkOS Connections",
-      "linearIssue": "DOR-1994"
-    },
-    {
       "id": "260925-192121",
       "slug": "obsidian-retirement",
       "title": "Retire the Obsidian plugin",
@@ -367,15 +334,6 @@
       "status": "specified",
       "project": "Community Self-Hosting",
       "linearIssue": "DOR-2238"
-    },
-    {
-      "id": "260923-235409",
-      "slug": "marketplace-installed-updates",
-      "title": "The Installed view says what is out of date and updates it",
-      "created": "2026-09-23",
-      "status": "implemented",
-      "project": "Marketplace Package Management",
-      "linearIssue": "DOR-2196"
     },
     {
       "id": "260924-002702",
@@ -506,13 +464,6 @@
       "project": "Canvas and Browser in Rooms"
     },
     {
-      "id": "260911-181432",
-      "slug": "claude-agent-sdk-upgrade-0.3.268",
-      "title": "Claude Agent SDK Upgrade to 0.3.268",
-      "created": "2026-09-11",
-      "status": "implemented"
-    },
-    {
       "id": "260911-191248",
       "slug": "ambient-background-tasks",
       "title": "Housekeeping tasks stay quiet",
@@ -523,20 +474,6 @@
       "id": "260911-191245",
       "slug": "auto-mode-classifier-context",
       "title": "Telling auto mode what it cannot see",
-      "created": "2026-09-11",
-      "status": "implemented"
-    },
-    {
-      "id": "260911-191243",
-      "slug": "unattended-session-permission-prompts",
-      "title": "Sessions with nobody to answer",
-      "created": "2026-09-11",
-      "status": "implemented"
-    },
-    {
-      "id": "260911-191240",
-      "slug": "plugin-reload-cache-cost",
-      "title": "Plugin reloads that respect the prompt cache",
       "created": "2026-09-11",
       "status": "implemented"
     },
@@ -638,15 +575,6 @@
       "title": "Routes that mount outside the session gate and the host guard: gate them, or pin the assumption",
       "created": "2026-09-06",
       "status": "ideation"
-    },
-    {
-      "id": "260906-000529",
-      "slug": "stable-http-test-listeners",
-      "title": "Stable HTTP listeners for server test fixtures",
-      "created": "2026-09-06",
-      "status": "implemented",
-      "linearIssue": "DOR-1804",
-      "project": "Green Main"
     },
     {
       "id": "260905-204014",
@@ -844,14 +772,6 @@
       "created": "2026-08-09",
       "status": "specified",
       "linearIssue": "DOR-1089"
-    },
-    {
-      "id": "260809-150251",
-      "slug": "page-width-consistency",
-      "title": "Page width consistency: PageContainer primitive + route migration",
-      "created": "2026-08-09",
-      "status": "implemented",
-      "linearIssue": "DOR-1047"
     },
     {
       "id": "260808-144053",
@@ -1166,13 +1086,6 @@
       "project": "Agents as First-Class Operators"
     },
     {
-      "id": "260725-112204",
-      "slug": "agents-list-attention-order",
-      "title": "Agents list, ordered by attention",
-      "created": "2026-07-25",
-      "status": "implemented"
-    },
-    {
       "id": "260725-014841",
       "slug": "multi-participant-message-list",
       "title": "Multi-participant message list — Slack-style identity, reactions, threads",
@@ -1218,24 +1131,9 @@
       "status": "implemented"
     },
     {
-      "id": "260722-172319",
-      "slug": "canvas-file-viewing-overhaul",
-      "title": "Canvas file viewing overhaul — per-tab error isolation, markdown editing, light-theme fix, expanded file/3D formats",
-      "created": "2026-07-22",
-      "status": "implemented"
-    },
-    {
       "id": "260722-120926",
       "slug": "dorkbot-living-tour",
       "title": "DorkBot living tour — guided first-run walkthrough of real surfaces",
-      "created": "2026-07-22",
-      "status": "implemented",
-      "project": "DorkBot Is the Onboarding"
-    },
-    {
-      "id": "260722-120505",
-      "slug": "dashboard-with-hands",
-      "title": "Dashboard with hands — composer, messageable agents, human status language",
       "created": "2026-07-22",
       "status": "implemented",
       "project": "DorkBot Is the Onboarding"
@@ -1368,14 +1266,6 @@
       "title": "Agent sidebar organization: user-defined groups, favorites, and recent sessions",
       "created": "2026-07-16",
       "status": "implemented"
-    },
-    {
-      "id": "260716-234343",
-      "slug": "universal-command-intents",
-      "title": "Universal command intents with cross-agent aliases (compact / clear / context)",
-      "created": "2026-07-16",
-      "status": "implemented",
-      "project": "Universal Command Interface"
     },
     {
       "id": "260713-014129",
@@ -1621,23 +1511,9 @@
       "linearIssue": "DOR-73"
     },
     {
-      "number": 253,
-      "slug": "auto-permission-mode",
-      "title": "Auto Mode: remove misplaced toggle, adopt auto as a permission mode",
-      "created": "2026-06-09",
-      "status": "implemented"
-    },
-    {
       "number": 252,
       "slug": "persist-per-session-settings",
       "title": "Persist Per-Session Settings in the API Core via a Narrow Port",
-      "created": "2026-06-08",
-      "status": "implemented"
-    },
-    {
-      "number": 251,
-      "slug": "subagent-text-streaming",
-      "title": "Subagent Text Streaming via forwardSubagentText",
       "created": "2026-06-08",
       "status": "implemented"
     },
@@ -1649,39 +1525,11 @@
       "status": "ideation"
     },
     {
-      "number": 249,
-      "slug": "status-aware-loading-affordance",
-      "title": "Status-Aware Loading Affordance for system_status.status",
-      "created": "2026-04-17",
-      "status": "implemented"
-    },
-    {
-      "number": 248,
-      "slug": "memory-recall-indicator",
-      "title": "Memory Recall Indicator",
-      "created": "2026-04-17",
-      "status": "implemented"
-    },
-    {
-      "number": 247,
-      "slug": "terminal-reason-chip",
-      "title": "Terminal Reason Chip for Non-Completed Session Terminations",
-      "created": "2026-04-17",
-      "status": "implemented"
-    },
-    {
       "number": 246,
       "slug": "claude-agent-sdk-warmup",
       "title": "Claude Agent SDK Warm-up via startup() / WarmQuery",
       "created": "2026-04-17",
       "status": "ideation"
-    },
-    {
-      "number": 245,
-      "slug": "claude-agent-sdk-upgrade-0.2.112",
-      "title": "Claude Agent SDK Upgrade to 0.2.112",
-      "created": "2026-04-17",
-      "status": "implemented"
     },
     {
       "number": 244,
@@ -1702,34 +1550,6 @@
       "slug": "session-rename-fork",
       "title": "Session Rename & Fork Actions",
       "created": "2026-04-13",
-      "status": "implemented"
-    },
-    {
-      "number": 241,
-      "slug": "marketplace-scoped-installs",
-      "title": "Marketplace Scoped Installs & Skills-First Agent Toolkit",
-      "created": "2026-04-13",
-      "status": "implemented"
-    },
-    {
-      "number": 240,
-      "slug": "agent-hub-ux-redesign",
-      "title": "Agent Hub UX Redesign — Personality Theater",
-      "created": "2026-04-12",
-      "status": "implemented"
-    },
-    {
-      "number": 239,
-      "slug": "deprecate-session-canvas-slot",
-      "title": "Deprecate session.canvas extension slot ideation",
-      "created": "2026-04-12",
-      "status": "implemented"
-    },
-    {
-      "number": 238,
-      "slug": "unified-agent-hub",
-      "title": "Unified Agent Hub — Agent Profile Panel",
-      "created": "2026-04-12",
       "status": "implemented"
     },
     {
@@ -1831,39 +1651,11 @@
       "status": "implemented"
     },
     {
-      "number": 223,
-      "slug": "settings-dialog-04-playground",
-      "title": "Dev Playground Settings Page",
-      "created": "2026-04-06",
-      "status": "implemented"
-    },
-    {
-      "number": 222,
-      "slug": "agent-channels-tab-03-functionality",
-      "title": "Agent Dialog → Channels Tab — New Functionality (Pause, Test, Activity)",
-      "created": "2026-04-06",
-      "status": "implemented"
-    },
-    {
       "number": 219,
       "slug": "dorkos-marketplace",
       "title": "DorkOS Marketplace",
       "created": "2026-04-06",
       "status": "ideation"
-    },
-    {
-      "number": 218,
-      "slug": "settings-dialog-02-tabbed-primitive",
-      "title": "Tabbed Dialog Primitive",
-      "created": "2026-04-06",
-      "status": "implemented"
-    },
-    {
-      "number": 216,
-      "slug": "settings-dialog-01-file-splits",
-      "title": "Settings Dialog File Splits",
-      "created": "2026-04-06",
-      "status": "implemented"
     },
     {
       "number": 215,
@@ -1877,13 +1669,6 @@
       "slug": "channels-and-agent-adapters",
       "title": "Channels & Agent Adapters — Connectivity UX Redesign",
       "created": "2026-04-04",
-      "status": "implemented"
-    },
-    {
-      "number": 213,
-      "slug": "upgrade-electron-vite",
-      "title": "Upgrade electron-vite from v3.1.0 to v5.0.0 (+ Electron ecosystem)",
-      "created": "2026-04-01",
       "status": "implemented"
     },
     {
@@ -1923,13 +1708,6 @@
       "status": "implemented"
     },
     {
-      "number": 206,
-      "slug": "subagent-lifecycle-visibility",
-      "title": "Subagent Lifecycle Visibility",
-      "created": "2026-03-29",
-      "status": "implemented"
-    },
-    {
       "number": 204,
       "slug": "result-error-distinction",
       "title": "Result Error/Success Distinction",
@@ -1940,13 +1718,6 @@
       "number": 203,
       "slug": "remote-passcode",
       "title": "Remote Access Passcode",
-      "created": "2026-03-29",
-      "status": "implemented"
-    },
-    {
-      "number": 200,
-      "slug": "mesh-topology-elevation",
-      "title": "Specification: Mesh Topology Chart Elevation",
       "created": "2026-03-29",
       "status": "implemented"
     },
@@ -1963,13 +1734,6 @@
       "title": "Linear Loop System",
       "created": "2026-03-29",
       "status": "specified"
-    },
-    {
-      "number": 197,
-      "slug": "fix-relay-sse-backpressure",
-      "title": "Fix Relay SSE Backpressure in Session Broadcaster",
-      "created": "2026-03-29",
-      "status": "implemented"
     },
     {
       "number": 196,
@@ -2356,13 +2120,6 @@
       "status": "implemented"
     },
     {
-      "number": 121,
-      "slug": "fix-chat-ui-reliability-bugs",
-      "title": "Fix Chat UI Reliability Bugs",
-      "created": "2026-03-11",
-      "status": "implemented"
-    },
-    {
       "number": 120,
       "slug": "adapter-binding-ux-overhaul",
       "title": "Adapter & Binding UX Overhaul",
@@ -2402,20 +2159,6 @@
       "number": 113,
       "slug": "fix-chat-streaming-and-model-selector-bugs",
       "title": "Fix Chat Streaming & Model Selector Bugs",
-      "created": "2026-03-10",
-      "status": "implemented"
-    },
-    {
-      "number": 112,
-      "slug": "update-top-nav",
-      "title": "Update Top Nav — Agent Identity, Command Palette Trigger, 10x Elevation",
-      "created": "2026-03-10",
-      "status": "implemented"
-    },
-    {
-      "number": 111,
-      "slug": "chat-input-always-editable",
-      "title": "Chat Input Always Editable + Message Queuing",
       "created": "2026-03-10",
       "status": "implemented"
     },
@@ -2486,20 +2229,6 @@
       "number": 97,
       "slug": "agent-runtime-abstraction",
       "title": "Agent Runtime Abstraction",
-      "created": "2026-03-06",
-      "status": "implemented"
-    },
-    {
-      "number": 96,
-      "slug": "fix-relay-history-sse-gaps",
-      "title": "Fix Relay History Rendering & Remaining SSE Delivery Gaps",
-      "created": "2026-03-06",
-      "status": "implemented"
-    },
-    {
-      "number": 95,
-      "slug": "fix-relay-sse-delivery-pipeline",
-      "title": "Fix Relay SSE Message Delivery Pipeline",
       "created": "2026-03-06",
       "status": "implemented"
     },
@@ -2588,20 +2317,6 @@
       "status": "implemented"
     },
     {
-      "number": 81,
-      "slug": "installation-experience",
-      "title": "Best-in-Class Installation Experience",
-      "created": "2026-03-01",
-      "status": "implemented"
-    },
-    {
-      "number": 80,
-      "slug": "tunnel-remote-access-overhaul",
-      "title": "Tunnel / Remote Access Overhaul",
-      "created": "2026-03-01",
-      "status": "implemented"
-    },
-    {
       "number": 79,
       "slug": "first-time-user-experience",
       "title": "First Time User Experience (FTUE)",
@@ -2642,14 +2357,6 @@
       "title": "Dynamic Model Options",
       "created": "2026-02-27",
       "status": "implemented"
-    },
-    {
-      "number": 68,
-      "slug": "relay-ux-elevation",
-      "title": "Relay UX Elevation — World-Class Relay Panel Experience",
-      "created": "2026-02-27",
-      "status": "superseded",
-      "supersededBy": 132
     },
     {
       "number": 67,
@@ -2701,13 +2408,6 @@
       "status": "specified"
     },
     {
-      "number": 60,
-      "slug": "relay-release-preparation",
-      "title": "Relay & Mesh Release Preparation",
-      "created": "2026-02-25",
-      "status": "implemented"
-    },
-    {
       "number": 59,
       "slug": "mesh-observability-lifecycle",
       "title": "Mesh Observability & Lifecycle Events",
@@ -2725,13 +2425,6 @@
       "number": 57,
       "slug": "relay-runtime-adapters",
       "title": "Unified Adapter System & Claude Code Runtime Adapter",
-      "created": "2026-02-25",
-      "status": "implemented"
-    },
-    {
-      "number": 56,
-      "slug": "mesh-server-client-integration",
-      "title": "Mesh Server & Client Integration",
       "created": "2026-02-25",
       "status": "implemented"
     },
@@ -2792,13 +2485,6 @@
       "status": "implemented"
     },
     {
-      "number": 45,
-      "slug": "roadmap-standalone-app",
-      "title": "Roadmap Standalone App",
-      "created": "2026-02-18",
-      "status": "implemented"
-    },
-    {
       "number": 44,
       "slug": "world-class-release-notes",
       "title": "World-Class Release Notes & Blog Infrastructure",
@@ -2809,13 +2495,6 @@
       "number": 43,
       "slug": "pulse-scheduler",
       "title": "DorkOS Pulse (Scheduler)",
-      "created": "2026-02-18",
-      "status": "implemented"
-    },
-    {
-      "number": 42,
-      "slug": "context-builder-agent-refactor",
-      "title": "Context Builder & agent-manager.ts Refactor",
       "created": "2026-02-18",
       "status": "implemented"
     },
@@ -2848,27 +2527,6 @@
       "status": "implemented"
     },
     {
-      "number": 34,
-      "slug": "directory-boundary-enforcement",
-      "title": "Centralized Directory Boundary Enforcement",
-      "created": "2026-02-16",
-      "status": "implemented"
-    },
-    {
-      "number": 33,
-      "slug": "versioning-release-system",
-      "title": "Versioning, Release & Update System",
-      "created": "2026-02-16",
-      "status": "implemented"
-    },
-    {
-      "number": 32,
-      "slug": "dorkos-config-file-system",
-      "title": "DorkOS Configuration File System",
-      "created": "2026-02-16",
-      "status": "implemented"
-    },
-    {
       "number": 31,
       "slug": "documentation-infrastructure",
       "title": "Documentation Infrastructure",
@@ -2880,13 +2538,6 @@
       "slug": "fsd-architecture",
       "title": "Feature-Sliced Design Architecture for DorkOS",
       "created": "2026-02-15",
-      "status": "implemented"
-    },
-    {
-      "number": 29,
-      "slug": "title-status-emoji-prefixes",
-      "title": "Title Status Emoji Prefixes",
-      "created": "2026-02-13",
       "status": "implemented"
     },
     {
@@ -2925,23 +2576,9 @@
       "status": "implemented"
     },
     {
-      "number": 14,
-      "slug": "cli-package",
-      "title": "CLI Package",
-      "created": "2026-02-12",
-      "status": "implemented"
-    },
-    {
       "number": 10,
       "slug": "smart-chat-scroll",
       "title": "Smart Chat Scroll Behavior",
-      "created": "2026-02-12",
-      "status": "implemented"
-    },
-    {
-      "number": 9,
-      "slug": "settings-screen",
-      "title": "Settings Screen",
       "created": "2026-02-12",
       "status": "implemented"
     },
@@ -2967,23 +2604,9 @@
       "status": "implemented"
     },
     {
-      "number": 4,
-      "slug": "gateway-interactive-tool-ui",
-      "title": "Gateway Interactive Tool UI Architecture",
-      "created": "2026-02-08",
-      "status": "implemented"
-    },
-    {
       "number": 3,
       "slug": "chat-ui-aesthetic-refinement",
       "title": "Chat UI Aesthetic Refinement",
-      "created": "2026-02-07",
-      "status": "implemented"
-    },
-    {
-      "number": 2,
-      "slug": "chat-markdown-rendering",
-      "title": "Chat Markdown Rendering",
       "created": "2026-02-07",
       "status": "implemented"
     },
@@ -3030,13 +2653,6 @@
       "status": "specified"
     },
     {
-      "id": "260818-110913",
-      "slug": "jordan-findings-202608",
-      "title": "Jordan Lyall findings (0.61.0, 2026-08-17): fix or improve all 16",
-      "created": "2026-08-18",
-      "status": "implemented"
-    },
-    {
       "id": "260819-234124",
       "slug": "notification-system",
       "title": "Unified notification system",
@@ -3059,15 +2675,6 @@
       "linearIssue": "DOR-1611"
     },
     {
-      "id": "260908-154500",
-      "slug": "codex-session-reliability",
-      "title": "Reliable Codex sessions",
-      "created": "2026-09-08",
-      "status": "implemented",
-      "project": "Sessions & Runtimes",
-      "linearIssue": "DOR-1925"
-    },
-    {
       "id": "260912-190726",
       "slug": "approval-expiry-notice",
       "title": "Telling an agent nobody ever answered",
@@ -3075,15 +2682,6 @@
       "status": "specified",
       "project": "Agents as First-Class Operators",
       "linearIssue": "DOR-1932"
-    },
-    {
-      "id": "260914-203800",
-      "slug": "blintz-editor-polish",
-      "title": "Blintz markdown polish",
-      "created": "2026-09-14",
-      "status": "implemented",
-      "project": "App Shell & Accessibility",
-      "linearIssue": "DOR-2038"
     },
     {
       "id": "260919-180529",
@@ -3120,14 +2718,6 @@
       "status": "implemented",
       "project": "Community Membership Journeys",
       "linearIssue": "DOR-2179"
-    },
-    {
-      "id": "260920-230219",
-      "slug": "evals-runtime-legs",
-      "title": "The eval harness runs a rooms case on the runtime you asked for",
-      "created": "2026-09-20",
-      "status": "implemented",
-      "linearIssue": "DOR-2207"
     },
     {
       "id": "260920-205153",
