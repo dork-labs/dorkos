@@ -417,8 +417,8 @@ jobs:
           pnpm --filter @dorkos/community test
           cd apps/server
           pnpm exec tsc -p tsconfig.spaces.json
-          # The archive cross-checks need unzip, bsdtar and python3, which only the
-          # test shards install; they test space code alone, which the shards run.
+          # The archive cross-checks need unzip, python3 and bsdtar or 7-Zip;
+          # the shards verify those tools and run the archive checks themselves.
           pnpm exec vitest run src/services/spaces --exclude '**/zip-cross-tools.test.ts'
       - name: Assert community HTTP paths against real Postgres
         env:
@@ -894,23 +894,25 @@ jobs:
       - run: pnpm install --frozen-lockfile
 
       # The community archive cross-checks (apps/server/src/services/spaces/archive/__tests__/
-      # zip-cross-tools.test.ts) read our ZIP64 exports with Info-ZIP unzip, bsdtar and
-      # Python's zipfile, and FAIL under CI when one is missing, so a skip can never
-      # quietly drop them. The runner image ships unzip and python3; bsdtar comes from
-      # libarchive-tools. apt runs only for what is missing.
-      - name: Install the unzip tools the archive cross-checks read with
+      # zip-cross-tools.test.ts) read our ZIP64 exports with Info-ZIP, Python's zipfile,
+      # and bsdtar or 7-Zip. Missing required readers FAIL in CI, rather than silently
+      # dropping a cross-check. The image ships unzip, python3 and 7-Zip. Verify them
+      # without apt: every Ubuntu mirror was unreachable on Nov 11 2026.
+      - name: Verify the unzip tools the archive cross-checks read with
+        timeout-minutes: 6
         run: |
-          missing=""
-          command -v unzip >/dev/null || missing="$missing unzip"
-          command -v bsdtar >/dev/null || missing="$missing libarchive-tools"
-          command -v python3 >/dev/null || missing="$missing python3"
-          if [ -n "$missing" ]; then
-            sudo apt-get update -qq
-            sudo apt-get install -y -qq --no-install-recommends $missing
-          fi
           unzip -v | head -1
-          bsdtar --version
           python3 --version
+          if command -v bsdtar >/dev/null; then
+            bsdtar --version
+          elif command -v 7z >/dev/null; then
+            7z i | sed -n '1,4p'
+          elif command -v 7zz >/dev/null; then
+            7zz i | sed -n '1,4p'
+          else
+            echo 'bsdtar, 7z or 7zz is required for archive cross-checks' >&2
+            exit 1
+          fi
 
       # --summarize writes a machine-readable record of the run to
       # .turbo/runs/<id>.json. The assert step is the only reason it is here.
