@@ -69,10 +69,14 @@ async function fixture() {
     },
   } as unknown as Page;
   // The body handle is the same observed DOM identity, not an inferred accessible match.
-  vi.spyOn(page, 'locator').mockReturnValue({
+  const bodyLocator = {
     ariaSnapshot: async () => snapshot,
     elementHandle: async () => body,
-  } as unknown as ReturnType<Page['locator']>);
+    count: async () => 1,
+    nth: () => bodyLocator,
+    first: () => bodyLocator,
+  };
+  vi.spyOn(page, 'locator').mockReturnValue(bodyLocator as unknown as ReturnType<Page['locator']>);
   Object.assign(body, { dispose: vi.fn(async () => undefined) });
   const handle = {
     evaluate: async (

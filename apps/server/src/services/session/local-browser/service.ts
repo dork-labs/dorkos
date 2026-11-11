@@ -17,7 +17,7 @@ import {
   PAGE_READ_RESPONSE_TIMEOUT_MS,
   closingError,
 } from './lifecycle.js';
-import { performPageAction, auditPageAction } from './page-action.js';
+import { actionFence, performPageAction, auditPageAction } from './page-action.js';
 import { observationNodes, type ObservedPageNodes } from './observation-nodes.js';
 import { boundedPageSnapshot, boundedPageScreenshot } from './observation-limits.js';
 import { BrowserPreparation } from './preparation.js';
@@ -338,13 +338,10 @@ export class LocalBrowserService {
       throw new LocalBrowserError('busy', 'A browser action is finishing. Read the page again.');
     const observed = this.observation;
     const observedNodes = this.observedNodes;
-    if (
-      !observed ||
-      !observedNodes ||
-      input.revision !== this.revision ||
-      observed.revision !== input.revision
-    )
-      throw this.stale();
+    // Leaving needs no current read (DOR-4192); the pause, handoff and address checks still hold.
+    const fence = actionFence(input, observed, Boolean(observedNodes), this.revision, () =>
+      this.stale()
+    );
     const page = this.page();
     this.refuseProtectedPage(page);
     if (input.kind === 'navigate')
@@ -359,7 +356,7 @@ export class LocalBrowserService {
     try {
       await this.actions.run(
         operation,
-        () => this.admit(input.revision),
+        () => this.admit(fence),
         dispatch,
         () => {
           if (this.lifecycle === lifecycle) this.invalidate();

@@ -40,6 +40,27 @@ function fixture() {
     fill,
     isEditable: vi.fn(async () => true),
   };
+  // `body` as Playwright reads it: strict, so one call on two bodies fails (DOR-4192).
+  let bodies = 1;
+  let secondBody = '- link "Made-up second body"';
+  const strict = () => new Error("strict mode violation: locator('body') resolved to 2 elements");
+  const nthBody = (index: number) => ({
+    ariaSnapshot: async () => (index === 0 ? locator.ariaSnapshot() : secondBody),
+    elementHandle: async () => locator.elementHandle(),
+  });
+  const body = {
+    count: vi.fn(async () => bodies),
+    nth: nthBody,
+    first: () => nthBody(0),
+    ariaSnapshot: vi.fn(async () => {
+      if (bodies > 1) throw strict();
+      return locator.ariaSnapshot();
+    }),
+    elementHandle: vi.fn(async () => {
+      if (bodies > 1) throw strict();
+      return locator.elementHandle();
+    }),
+  };
   let isOriginalNode = true;
   const observedNodeSets: {
     evaluate: ReturnType<typeof vi.fn>;
@@ -72,7 +93,7 @@ function fixture() {
       observedNodeSets.push(nodes);
       return nodes;
     }),
-    locator: () => locator,
+    locator: (selector: string) => (selector === 'body' ? body : locator),
     getByRole: vi.fn(() => locator),
     bringToFront: vi.fn(async () => undefined),
     goto: vi.fn(async (next: string) => {
@@ -127,6 +148,11 @@ function fixture() {
     },
     addFrame: (frameUrl: string) => {
       childFrames.push({ url: () => frameUrl });
+    },
+    /** Give the page a second `<body>`, with its own outline. */
+    addBody: (outline = secondBody) => {
+      bodies = 2;
+      secondBody = outline;
     },
   };
 }
@@ -1737,6 +1763,76 @@ describe('a page load an action starts', () => {
     const state = await f.service.state();
     const selected = state.tabs.find((tab) => tab.id === state.selectedTabId);
     expect(selected?.url).not.toBe('http://made-up.example/');
+    await f.service.disconnect();
+  });
+});
+
+// DOR-4192: a page with two <body> elements locked the agent out of its tab.
+describe('a page with two bodies, and leaving a page the agent can’t read', () => {
+  it('reads every body, in order, and acts on it', async () => {
+    const f = await create();
+    await f.service.open({ mode: 'new-window', sessionId: 'chat-one' });
+    f.addBody('- link "Made-up second body"');
+    const observed = await f.service.observe();
+    expect(observed.snapshot).toBe('- button "Save"\n- link "Made-up second body"');
+    await expect(
+      f.service.action({ kind: 'click', role: 'button', name: 'Save', revision: observed.revision })
+    ).resolves.toBeDefined();
+    const again = await f.service.observe();
+    await expect(
+      f.service.action({ kind: 'press', key: 'Enter', revision: again.revision })
+    ).resolves.toBeDefined();
+    await f.service.disconnect();
+  });
+
+  it('navigates away after a read fails, and still refuses a click on the old read', async () => {
+    const f = await create();
+    await f.service.open({ mode: 'new-window', sessionId: 'chat-one' });
+    const old = await f.service.observe();
+    f.locator.ariaSnapshot.mockRejectedValueOnce(new Error('made-up unreadable page'));
+    await expect(f.service.observe()).rejects.toThrow();
+    await f.service.action({
+      kind: 'navigate',
+      url: 'https://made-up.example/',
+      revision: old.revision,
+    });
+    expect(f.page.goto).toHaveBeenCalledWith('https://made-up.example/', expect.anything());
+    await expect(
+      f.service.action({ kind: 'click', role: 'button', name: 'Save', revision: old.revision })
+    ).rejects.toMatchObject({ code: 'stale_page' });
+    await f.service.disconnect();
+  });
+
+  it('still refuses leaving while the agent is paused', async () => {
+    const f = await create();
+    await f.service.open({ mode: 'new-window', sessionId: 'chat-one' });
+    const old = await f.service.observe();
+    await f.service.pause();
+    await expect(
+      f.service.action({
+        kind: 'navigate',
+        url: 'https://made-up.example/',
+        revision: old.revision,
+      })
+    ).rejects.toMatchObject({ code: 'paused' });
+    expect(f.page.goto).not.toHaveBeenCalled();
+    await f.service.disconnect();
+  });
+
+  it.each([
+    ['DorkOS itself', 'http://localhost:4242/connections', 'dorkos_origin'],
+    ['DorkOS Cloud', 'https://cloud.dorkos.ai/', 'cloud_origin'],
+    ['a local file', 'file:///etc/hosts', 'unsupported_address'],
+  ])('still checks where it goes: refuses %s', async (_where, url, code) => {
+    const f = await create(() => ['http://localhost:4242']);
+    await f.service.open({ mode: 'new-window', sessionId: 'chat-one' });
+    const old = await f.service.observe();
+    f.locator.ariaSnapshot.mockRejectedValueOnce(new Error('made-up unreadable page'));
+    await expect(f.service.observe()).rejects.toThrow();
+    await expect(
+      f.service.action({ kind: 'navigate', url, revision: old.revision })
+    ).rejects.toMatchObject({ code });
+    expect(f.page.goto).not.toHaveBeenCalled();
     await f.service.disconnect();
   });
 });
