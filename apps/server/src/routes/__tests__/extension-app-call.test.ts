@@ -267,6 +267,23 @@ describe('who the calling app is (Security 2026-11-10)', () => {
     expect(seen).toHaveLength(0);
   });
 
+  it('stops a call at once when an update drops the app from its list, token and all', async () => {
+    const token = await mint('reports');
+    const before = manifests.reports!;
+    // The update lands: the same app, now calling nothing.
+    manifests.reports = { ...before, capabilities: { http: true } };
+    try {
+      const res = await request(server)
+        .get('/api/ext/ledger/entries')
+        .set('X-DorkOS-Caller-Token', token);
+      expect(res.status).toBe(403);
+      expect(res.body.reason).toBe('not-declared');
+      expect(seen).toHaveLength(0);
+    } finally {
+      manifests.reports = before;
+    }
+  });
+
   it('refuses a made-up token', async () => {
     const res = await request(server)
       .get('/api/ext/ledger/entries')
