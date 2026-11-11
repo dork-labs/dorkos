@@ -1232,6 +1232,14 @@ export const canvasDocuments = sqliteTable(
      * buying anything with.
      */
     threadRootEntryId: text('thread_root_entry_id'),
+    /**
+     * The app that opened this document through its frame's bridge, or null
+     * (DOR-3293). Written only by the host when it opens a document for an
+     * app, never from content, never by an agent; any agent write to the
+     * document clears it. The tab and header name the app from DorkOS's own
+     * records, looked up by this id.
+     */
+    openedByExtensionId: text('opened_by_extension_id'),
   },
   // **Keyed on `scope`, not `room_id`** (spec `canvas-agent-seat` §1.1). Every
   // query in `CanvasDocumentStore` keys on the owner, and the owner is the

@@ -3,9 +3,12 @@
  * phase 1). Dedupe, retention and deletion are the store's, in
  * `apps/server/src/services/session/turn-context/turn-context-store.ts`.
  */
-import { readFileSync } from 'node:fs';
+import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { describe, it, expect, beforeEach } from 'vitest';
+import { migrate } from 'drizzle-orm/better-sqlite3/migrator';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { createDb, runMigrations, type Db } from '../index.js';
 import {
   turnContextBodies,
@@ -63,11 +66,37 @@ describe('turn_context down-migration', () => {
     new URL('../down/20261109151737_turn_context.down.sql', import.meta.url)
   );
   const TABLES = ['turn_context_bodies', 'turn_context_parts', 'turn_contexts'];
+  const TAG = '20261109151737_turn_context';
+  const MIGRATIONS = fileURLToPath(new URL('../../drizzle/', import.meta.url));
   let db: Db;
+  let directory: string;
+
+  /**
+   * Apply the migrations up to and including this one, never a later one: a
+   * down-migration refuses once a later one has run, which is the point of it,
+   * so the database it is tested on must stop here.
+   */
+  function migrateThroughThisOne(): void {
+    const data = JSON.parse(readFileSync(join(MIGRATIONS, 'meta/_journal.json'), 'utf8')) as {
+      entries: Array<{ idx: number; tag: string }>;
+    };
+    const last = data.entries.find((entry) => entry.tag === TAG)!.idx;
+    const entries = data.entries.filter((entry) => entry.idx <= last);
+    for (const entry of entries)
+      copyFileSync(join(MIGRATIONS, `${entry.tag}.sql`), join(directory, `${entry.tag}.sql`));
+    writeFileSync(join(directory, 'meta/_journal.json'), JSON.stringify({ ...data, entries }));
+    migrate(db, { migrationsFolder: directory });
+  }
 
   beforeEach(() => {
+    directory = mkdtempSync(join(tmpdir(), 'dorkos-turn-context-down-'));
+    mkdirSync(join(directory, 'meta'));
     db = createDb(':memory:');
-    runMigrations(db);
+    migrateThroughThisOne();
+  });
+
+  afterEach(() => {
+    rmSync(directory, { recursive: true, force: true });
   });
 
   /** Run the down file as the sqlite3 shell would, minus its dot-commands. */

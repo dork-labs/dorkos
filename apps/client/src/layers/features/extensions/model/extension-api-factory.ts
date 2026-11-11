@@ -40,7 +40,7 @@ import type {
   ExtensionPageContribution,
   StatusBarContribution,
 } from '@/layers/shared/model';
-import { executeUiCommand } from '@/layers/shared/lib/ui-action-dispatcher';
+import { executeUiCommand, revealForContent } from '@/layers/shared/lib/ui-action-dispatcher';
 import { internalRoutePath } from '@/layers/shared/lib/link-navigation';
 import {
   EXTENSION_PAGE_PATH_PATTERN,
@@ -309,15 +309,12 @@ export function createExtensionAPI(
     },
 
     openCanvas(content: UiCanvasContent): void {
-      // Origin 'agent': programmatic reveal, same reasoning as executeCommand.
-      executeUiCommand(
-        deps.dispatcherContext,
-        {
-          action: 'open_canvas',
-          content,
-        },
-        'agent'
-      );
+      // Opened here, for this app only: the store marks the document with this
+      // API's own id (DOR-3293), which no agent path and no content can set.
+      // Origin 'agent' for the reveal: programmatic, as with executeCommand.
+      const store = deps.dispatcherContext.getStore();
+      store.openCanvasDocument(content, { extensionId: extId });
+      revealForContent(store, 'agent', content);
     },
 
     navigate(path: string): void {

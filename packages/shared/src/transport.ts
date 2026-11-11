@@ -1171,7 +1171,7 @@ export interface Transport extends TransportSlices {
   openSessionCanvasDocument(
     sessionId: string,
     content: UiCanvasContent,
-    opts?: { pinned?: boolean }
+    opts?: { pinned?: boolean; openedBy?: { extensionId: string } }
   ): Promise<CanvasDocument>;
 
   /**

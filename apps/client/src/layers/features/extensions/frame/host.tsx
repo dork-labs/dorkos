@@ -246,16 +246,9 @@ export function isolatedExtensionModule(
             }
             if (method === 'openCanvas') {
               const [content] = args(FrameCanvasContentSchema).parse(input);
-              // A page an app opens says which app opened it, in the tab's title.
-              api.openCanvas(
-                content.type === 'browser'
-                  ? {
-                      type: 'browser',
-                      url: content.url,
-                      title: `${manifest.name}: ${content.title ?? content.url}`,
-                    }
-                  : content
-              );
+              // The host's own open stamps this app's id on the document's record;
+              // the tab says "Opened by" from DorkOS's records, never the page's title.
+              api.openCanvas(content);
               return null;
             }
             if (method === 'download') {

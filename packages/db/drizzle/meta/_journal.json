@@ -1352,6 +1352,13 @@
       "when": 1794237457722,
       "tag": "20261109151737_turn_context",
       "breakpoints": true
+    },
+    {
+      "idx": 193,
+      "version": "6",
+      "when": 1794358814627,
+      "tag": "20261111010014_canvas_opened_by",
+      "breakpoints": true
     }
   ]
 }

@@ -73,6 +73,11 @@ export interface CanvasDocumentRow extends CanvasDocumentInsert {
    * transaction as the entry it names.
    */
   threadRootEntryId: string | null;
+  /**
+   * The app that opened this through its frame's bridge, or `null` (DOR-3293).
+   * Host-written metadata, never content; any later write clears it.
+   */
+  openedByExtensionId: string | null;
 }
 
 /**
@@ -112,6 +117,7 @@ function project(row: {
   openedAt: string;
   lastActiveAt: string;
   threadRootEntryId: string | null;
+  openedByExtensionId: string | null;
 }): CanvasDocumentRow | null {
   const content = UiCanvasContentSchema.safeParse(row.content);
   if (!content.success) {
@@ -273,7 +279,13 @@ export class CanvasDocumentStore {
   ): void {
     this.db.transaction((tx) => {
       tx.insert(canvasDocuments)
-        .values({ ...input, editingBy: null, editingHeartbeatAt: null, threadRootEntryId: null })
+        .values({
+          openedByExtensionId: null,
+          ...input,
+          editingBy: null,
+          editingHeartbeatAt: null,
+          threadRootEntryId: null,
+        })
         .run();
       this.lifecycle.opened(tx, input, typeof channel === 'function' ? channel(tx) : channel);
     });
@@ -304,6 +316,7 @@ export class CanvasDocumentStore {
       editingBy: string | null;
       editingHeartbeatAt: string | null;
       lastActiveAt: string;
+      openedByExtensionId: string | null;
     }>
   ): void {
     this.db
@@ -595,5 +608,7 @@ export function toCanvasDocument(
     // renders exactly the shape it did before threads existed — and so a reader
     // asking "does this have a thread" asks one question rather than two.
     ...(row.threadRootEntryId !== null ? { threadRootEntryId: row.threadRootEntryId } : {}),
+    // Host-written, never read from content: which app's frame opened it.
+    ...(row.openedByExtensionId ? { openedBy: { extensionId: row.openedByExtensionId } } : {}),
   };
 }

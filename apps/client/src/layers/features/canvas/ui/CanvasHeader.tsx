@@ -19,7 +19,7 @@ import {
 import type { AuthorKind } from '@dorkos/shared/room-schemas';
 import type { UiCanvasContent } from '@dorkos/shared/types';
 import { cn, hashToHslColor, initialOf, type CanvasView } from '@/layers/shared/lib';
-import { IdentityAvatar, useRovingTabList } from '@/layers/shared/ui';
+import { ContributedIcon, IdentityAvatar, useRovingTabList } from '@/layers/shared/ui';
 
 const CONTENT_TYPE_ICONS = {
   url: Globe,
@@ -119,6 +119,11 @@ export interface CanvasHeaderDocument {
   author?: CanvasDocumentAuthor;
   /** Pinned documents sort first and are never dropped to make room. */
   pinned?: boolean;
+  /**
+   * The app that opened it (DOR-3293): its icon replaces the content icon, so
+   * the tab reads "app icon + page title". From DorkOS's records, never the page.
+   */
+  openedBy?: { name: string; icon: unknown };
   /** True when this document arrived and this viewer has not looked at it yet. */
   unread?: boolean;
   /**
@@ -294,7 +299,11 @@ export function CanvasHeader({
                   fallback={initialOf(author.displayName)}
                 />
               )}
-              <Icon className="size-3.5 shrink-0" />
+              {doc.openedBy ? (
+                <ContributedIcon icon={doc.openedBy.icon} className="size-3.5 shrink-0" />
+              ) : (
+                <Icon className="size-3.5 shrink-0" />
+              )}
               <span className="max-w-40 truncate font-medium">{doc.sourceLabel}</span>
               {doc.watchers && doc.watchers.length > 0 && (
                 <CanvasTabWatchers watchers={doc.watchers} />

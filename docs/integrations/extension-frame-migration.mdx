@@ -87,6 +87,17 @@ Type against `FrameExtensionAPI` from `@dorkos/extension-api` to get the version
 
 Props DorkOS passes your components still arrive as values and functions. A function crosses the frame as a message, so calling it works, but it returns nothing to your code. `when` and `visibleWhen` options on a component still work, and run inside your frame. An icon component cannot cross the frame, so a right-panel tab shows the default puzzle-piece icon; a command's `icon` stays a string, as before.
 
+## Putting things on the canvas
+
+`api.openCanvas` still puts a document beside the chat, but DorkOS checks what you send and opens it for you:
+
+```typescript
+await api.openCanvas({ type: 'browser', url: 'http://localhost:5173/', title: 'Preview' });
+await api.openCanvas({ type: 'markdown', content: '# Weekly report', title: 'Report' });
+```
+
+You may open Markdown, JSON, a widget, a picture (`data:` or `https:`) or a web page (`http:` or `https:`). Files, PDFs, diffs, local paths and MCP apps are refused. What you open is always a new tab, never one already showing. The tab shows the app icon and the title, and says "Opened by" with your app's name as DorkOS knows it. Nothing on the canvas sends messages back to your app.
+
 ## Saving a file
 
 A link with `download` does nothing inside the frame. Ask DorkOS instead:

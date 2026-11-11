@@ -25,7 +25,7 @@
  */
 import { Hono, type Context } from 'hono';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
-import type { ZodType } from 'zod';
+import { z, type ZodType } from 'zod';
 import {
   CanvasEditingRequestSchema,
   OpenCanvasDocumentRequestSchema,
@@ -149,6 +149,23 @@ function namesAKnownSession(sessionId: string): boolean {
   }
 }
 
+/**
+ * An open on a person's own canvas, which the host may mark as opened for an
+ * app (DOR-3293). Only this route takes the mark: a room's canvas and every
+ * agent path open documents without one, and every later write clears it.
+ */
+const OpenSessionCanvasDocumentRequestSchema = OpenCanvasDocumentRequestSchema.extend({
+  openedBy: z
+    .object({
+      extensionId: z
+        .string()
+        .regex(/^[a-z0-9][a-z0-9-]*$/)
+        .max(120),
+    })
+    .strict()
+    .optional(),
+});
+
 const NO_SUCH_DOCUMENT = errorBody('No such document on this canvas', 'CANVAS_DOCUMENT_NOT_FOUND');
 
 /**
@@ -178,7 +195,7 @@ export function createSessionCanvasRoutes(): Hono<ApiEnv> {
 
   /** POST / — put something on this session's canvas. */
   router.post('/', (c) => {
-    const body = parseCanvasBody(c, OpenCanvasDocumentRequestSchema);
+    const body = parseCanvasBody(c, OpenSessionCanvasDocumentRequestSchema);
     if (body instanceof Response) return body;
     const access = requireCanvasAccess(c);
     if (access instanceof Response) return access;
@@ -189,6 +206,7 @@ export function createSessionCanvasRoutes(): Hono<ApiEnv> {
       const document = access.canvas.open(access.scope, SESSION_OWNER_AUTHOR, body.content, {
         ...(body.pinned !== undefined ? { pinned: body.pinned } : {}),
         ...(body.channel ? { channel: body.channel } : {}),
+        ...(body.openedBy ? { openedByExtensionId: body.openedBy.extensionId } : {}),
       });
       return c.json(document, 201);
     } catch (err) {

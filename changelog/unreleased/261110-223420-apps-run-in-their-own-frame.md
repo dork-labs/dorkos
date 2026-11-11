@@ -6,6 +6,7 @@ covers:
   - "fix(extensions): the frame takes its runtime and setup only from DorkOS's exact origin (DOR-3293)"
   - 'fix(extensions): screen data has its own store; app requests fail with status and body; each path part is encoded (DOR-3293)'
   - "fix(extensions): an app saves a file through DorkOS's own dialog (DOR-3293)"
+  - "fix(extensions): a canvas tab an app opened says so, from DorkOS's own record (DOR-3293)"
 ---
 
 ### Security

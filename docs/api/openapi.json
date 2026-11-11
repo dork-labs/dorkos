@@ -9198,6 +9198,19 @@
           "threadRootEntryId": {
             "type": "string",
             "minLength": 1
+          },
+          "openedBy": {
+            "type": "object",
+            "properties": {
+              "extensionId": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "required": [
+              "extensionId"
+            ],
+            "additionalProperties": false
           }
         },
         "required": [
