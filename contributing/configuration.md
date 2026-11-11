@@ -410,7 +410,7 @@ Any change to `UserConfigSchema` (add / rename / remove / retype a field) that a
 
 Current releases accept config files last opened by **0.115.0 or newer**. Older or unstamped configs stop before Conf opens, so its defaults merge cannot rewrite them. The message says: "Upgrade to 0.115 first, then upgrade to this version." An unreadable file follows the existing read retries and stops without replacement.
 
-`config/upgrade-floor.ts` checks the stored `__internal__.migrations.version` before either Conf constructor. The 0.115 intermediate release and raw dev trees (`SERVER_VERSION = 0.0.0`) do not apply this current-release floor. Invalid JSON and malformed version markers retain the existing corruption-recovery path. This config check does not establish the database version. The 0.44–0.55 keys and their helpers have been retired; each key is recorded in `REMOVED_SHIPPED_KEYS`, and its old pin is removed. The remaining shipped bodies stay frozen.
+`config/upgrade-floor.ts` checks the stored `__internal__.migrations.version` before either Conf constructor. The 0.115 intermediate release and raw dev trees (`SERVER_VERSION = 0.0.0`) do not apply this current-release floor. Invalid JSON and malformed version markers retain the existing corruption-recovery path. This config check does not establish the database version. The 0.44–0.89 keys and their private helpers have been retired; each key is recorded in `REMOVED_SHIPPED_KEYS`, and its old pin is removed. The remaining shipped bodies stay frozen.
 
 ### Why migrations matter
 
@@ -480,7 +480,7 @@ To fix a migration that has already merged (whether or not it is tagged):
 
 The pins live in `apps/server/src/services/core/__tests__/merged-migration-hashes.ts`, one line per key. **Add a key's pin in the same pull request that adds the key** — the guard fails until you do, because a pin added later leaves a window where the body could be rewritten with nothing to show for it. Changing an existing pin is the only escape hatch, and it is a single changed line in a file that exists for nothing else, so it cannot pass review unseen: bump one only with a justification in the pull request that names the population which could have run the old body and says why it is empty. On this repository it never has been — the one bulk repin on record (DOR-1732, ten keys at once) changed no body at all; it widened what the pins cover, so each of the ten hashes strictly more source than before.
 
-**The import boundary is crossed by ten of the keys, and the pins now follow them across it** (DOR-1732). `0.55.0` reads `ONBOARDING_STEPS`, `0.57.0` calls `toSidebarItemRef`, `0.59.0` reads `ComposerPrefsSchema`, `0.64.0` reads `NotificationPrefsSchema`, `NOTIFICATION_PREFS_DEFAULTS` and `EscalationDelaySchema`, `0.65.0` calls `claudeAccountId`, and `0.69.0` through `0.73.0` seed from `USER_CONFIG_DEFAULTS` — ten keys. Until this landed, none of that was watched: editing `toSidebarItemRef` to lowercase every stored path — which changes what every upgrading install's sidebar members become — left all 382 guard tests green. It now moves the `0.57.0` pin, while rewording that function's docblock still moves nothing.
+**The pins follow selected imports into the shared schema** (DOR-1732). The original widening covered ten keys, now retired under the upgrade floor. Surviving migrations such as 0.105 still reach `USER_CONFIG_DEFAULTS`, and the real-repository guard checks that import hop. Synthetic closure fixtures retain coverage for helper calls, account-id generation and the schema-exclusion boundary.
 
 **What still is not watched, and it is one thing.** `UserConfigSchema` is excluded from the walk by name. It is the whole schema, so following it would move five shipped pins for every ordinary field addition, and a pin bumped in a batch is a pin nobody reads. The line that derives `USER_CONFIG_DEFAULTS` from it IS pinned, so swapping the derivation for a literal is seen — but **changing a default that a `0.69.0`-and-later key seeds wholesale is not.** If you change one, check those five keys yourself.
 
@@ -526,7 +526,7 @@ A field whose default is `false` because the feature is not finished being prove
 
 ### Reference example
 
-The migration chain lives in the module-level `CONFIG_MIGRATIONS` constant at `apps/server/src/services/core/config-migrations/index.ts` (extracted from the constructor for testability and to enforce the append-only rule by construction). The helpers its keys call sit beside it, grouped by the version range of the key that first calls them (`v0-57-to-v0-59.ts` through `v0-90-onward.ts`); a new helper goes at the bottom of `v0-90-onward.ts`. `config-manager.ts` hands the table to `conf` and re-exports all of it, so imports from `config-manager.js` keep working:
+The migration chain lives in the module-level `CONFIG_MIGRATIONS` constant at `apps/server/src/services/core/config-migrations/index.ts` (extracted from the constructor for testability and to enforce the append-only rule by construction). The surviving helpers sit beside it in `v0-90-onward.ts`; a new helper goes at the bottom of that file. The older helper modules have been removed. `config-manager.ts` hands the table to `conf` and re-exports all of it, so imports from `config-manager.js` keep working:
 
 ```typescript
 const CONFIG_MIGRATIONS = {
@@ -543,14 +543,14 @@ const CONFIG_MIGRATIONS = {
 
 Both the primary and corrupt-recovery `Conf` constructors share a single `confOptions` object that references `CONFIG_MIGRATIONS` and `SERVER_VERSION` as `projectVersion`. This ensures migrations run even after a corrupt-recovery path — previously the catch branch silently dropped `projectVersion` and `migrations`.
 
-A hypothetical migration for a future `0.35.0` release that renames `server.cwd` to `server.workingDirectory` would append to `CONFIG_MIGRATIONS`:
+A hypothetical migration for a future `0.136.0` release that renames `server.cwd` to `server.workingDirectory` would append to `CONFIG_MIGRATIONS`:
 
 ```typescript
 const CONFIG_MIGRATIONS = {
   '1.0.0': (store) => {
     /* ... existing ... */
   },
-  '0.35.0': (store) => {
+  '0.136.0': (store) => {
     // Rename server.cwd → server.workingDirectory.
     // Idempotent: guarded by store.has() so re-running is safe.
     if (store.has('server.cwd') && !store.has('server.workingDirectory')) {
@@ -563,23 +563,15 @@ const CONFIG_MIGRATIONS = {
 
 No manual `projectVersion` bump is needed — it resolves from `SERVER_VERSION` via `lib/version.ts`, which reflects the real app version at runtime. The new field would be updated in `UserConfigSchema` and this doc's Settings Reference table in the same PR.
 
-### Shipped migrations: accounts-and-auth
+### Retired account and auth seeds
 
-Three bodies landed with the local-login work (see `contributing/authentication.md`), all composed into the same `'0.45.0'` key. All are append-only and idempotent:
-
-| Version  | Body                                 | Effect                                                                                                         |
-| -------- | ------------------------------------ | -------------------------------------------------------------------------------------------------------------- |
-| `0.45.0` | `backfillAuthDefaults`               | Writes `auth: { enabled: false }` when absent.                                                                 |
-| `0.45.0` | `dropTunnelPasscodeAndSessionSecret` | **Removes** `tunnel.passcodeEnabled` / `tunnel.passcodeHash` / `tunnel.passcodeSalt` and root `sessionSecret`. |
-| `0.45.0` | `backfillCloudDefaults`              | Writes the all-`null` `cloud` section when absent (device-link, P2).                                           |
-
-The `dropTunnelPasscodeAndSessionSecret` body exists because the tunnel passcode auth path and the `cookie-session` signing secret were removed — Better Auth is now the one auth path and manages its own session signing. The `sessionSecret` root field and the three `tunnel.passcode*` fields no longer exist in `UserConfigSchema`; stale copies are deleted on upgrade (old passcode hashes are discarded, not migrated). `mcp.apiKey` is retained in the schema for the seeding compat window (folded into a per-user Better Auth key by `seedLegacyMcpApiKey`); its removal is a later cleanup.
+The 0.45 auth, cloud and passcode cleanup bodies are retired under the 0.115 upgrade floor. Older installs must pass through 0.115 first. Better Auth remains the login path and manages session signing. This retirement does not change the runtime handling of legacy MCP keys or account registries; those paths have separate cleanup and security review.
 
 ### Sidebar, shapes and composer settings
 
 The `0.57.0` and `0.59.0` migration keys and their private helpers are retired under the 0.115 upgrade floor. Older files must pass through 0.115 before this build opens them. The removal list and surviving migration hashes enforce that boundary; the real-manager refusal tests check that rejected files stay byte-identical.
 
-`ui.sidebar` stores pins, muted items, groups and section preferences. Membership lists use `SidebarItemRef` values (`{ kind: agent, path }` or `{ kind: room, roomId }`), compared with `sameSidebarItem`. Compare these values structurally rather than with `includes`, `indexOf` or `===`.
+`ui.sidebar` stores pins, muted items, groups and section preferences. Membership lists use `SidebarItemRef` values (`{ kind: 'agent', path }` or `{ kind: 'room', roomId }`), compared with `sameSidebarItem`. Compare these values structurally rather than with `includes`, `indexOf` or `===`.
 
 The runtime sidebar tolerance and the latched `ConfigManager.canonicalSidebar` conversion remain for the separate compatibility cleanup. Their real-file regression tests remain too: they cover preserved membership, valid writes and unknown section ids. Retiring a versioned migrator does not retire those runtime paths.
 
@@ -587,29 +579,13 @@ The runtime sidebar tolerance and the latched `ConfigManager.canonicalSidebar` c
 
 `ui.composer.richText` defaults to `true`. Its Settings switch lets a person keep plain text. Supported upgrades preserve an explicit `false` in the file, as well as the theme and status pins; the composer test checks those values across two real boots.
 
-The room helper still serves the `0.60.0` key and stays frozen. Later migration keys retain their bodies and hashes until their own retirement batch.
+The keys from 0.60 through 0.87 and their private helpers are retired too. Every retired key has its own removal-list entry; only its pin is removed. Keys from 0.90 onward retain their bodies and hashes.
 
-### Shipped migrations: notifications
+### Retired notification and permission seeds
 
-One body landed with the notification system (spec `notification-system`, DOR-1385), under a key of its own:
+The 0.64 notification seed and 0.83 permission-preset mapping are retired under the 0.115 upgrade floor. Fresh installs get current defaults from the schema. Supported upgrades retain their notification choices, permission preset and trust stops.
 
-| Version  | Body                           | Effect                                                                                                                                                                                                                            |
-| -------- | ------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `0.64.0` | `backfillNotificationDefaults` | Writes the whole `notifications` section from `NOTIFICATION_PREFS_DEFAULTS` when it is absent: knock and all-clear sounds on, the every-turn chime off, away notices on, escalation at 2 minutes, the permission card unanswered. |
-
-It seeds a **top-level** section, unlike every `ui.*` body in the table above, so there is nothing on disk to merge into. An install that predates it has no `notifications` key at any depth, and conf merges top-level defaults shallowly. It reads the shared defaults constant rather than a literal, so the seed cannot drift from the schema it is seeding, and it skips a section already present, so re-running can never overwrite a choice somebody made.
-
-**The per-browser chime it replaces is not migrated here.** `dorkos-enable-notification-sound` lives in a browser's `localStorage`, which the server cannot read, so the app imports it on first read instead. See [notifications](#notifications) above.
-
-### Shipped migrations: permissions
-
-One body landed with agent permissions (spec `agent-permissions`):
-
-| Version  | Body                           | Effect                                                                                                                                                                                                                                                                                      |
-| -------- | ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `0.83.0` | `seedPermissionPresetFromDoor` | Reads the Full-power door's answer (`ui.fullPowerChoice`) and writes the matching preset: `full` becomes `full`, `supervised` becomes `careful`. An install that never answered keeps `preset: null`, which `0.115.0` later moves to Trusted. A preset already chosen is never overwritten. |
-
-The per-agent half of the upgrade is not a config migration, because it lives in each agent's `.dork/agent.json`: the boot-time sweep (`services/core/permissions/permission-upgrade-sweep.ts`) folds the retired `enabledToolGroups.roomsManage` into `permissions.areas.rooms`, records one Activity event per agent it changed, and stamps `permissions.upgradeSweptVersion` so it runs once per server version.
+The boot-time permission sweep remains separate from config migrations. It records the changes it makes to agent manifests. Standing-permission capture still reads its settings after the config store opens, then asks the manager to retire those settings; real-file tests retain that ordering contract.
 
 ### Shipped migrations: trusted by default
 
@@ -1146,7 +1122,7 @@ All of these leaves are `operator-only`. A Claude config directory carries its o
 
 The persistent-session setting (spec `persistent-session-runtime`, P3). Off, every message launches its own SDK `query()`, resumes the transcript, answers and exits, which is what claude-code did for its first year. On — how it ships since `0.67.0` — the session's pump holds that process open between messages, so the next message reaches an agent that is already running.
 
-**It is no longer an experiment.** It graduated in spec `full-power-defaults` (D1): the registry entry was deleted in the same change that flipped the default, per the doctrine [above](#experimental-fields), and with it went the only switch the setting had. **Its control moved rather than vanishing:** the Control Center carries it as the **Warm agents** switch (#1209, `ControlCenterSwitches.tsx`), so the one failure mode of this doctrine — a graduation that removes the UI — was avoided by a hair rather than by design. There was a window between the two PRs when `PATCH /api/config`, `dorkos config set` or the file were the only way in; that window is closed. The `0.67.0` migration moves a stored `false` — which the `0.59.0` backfill wrote into every upgraded config — up to `true`, and cannot tell that seed from a person who tried it and turned it off. That caveat is recorded in the migration comment and named in the changelog.
+**It is no longer an experiment.** It graduated in spec `full-power-defaults` (D1): the registry entry was deleted in the same change that flipped the default, per the doctrine [above](#experimental-fields), and with it went the only switch the setting had. **Its control moved rather than vanishing:** the Control Center carries it as the **Warm agents** switch (#1209, `ControlCenterSwitches.tsx`), so the one failure mode of this doctrine — a graduation that removes the UI — was avoided by a hair rather than by design. There was a window between the two PRs when `PATCH /api/config`, `dorkos config set` or the file were the only way in; that window is closed. The retired 0.67 migration raised the earlier seeded value to `true`. Supported upgrades now keep an explicit `false`, including one equal to the former default.
 
 - **Read at LAUNCH, by one function.** `isPersistentSessionEnabled()` (`services/runtimes/claude-code/persistent-session-optin.ts`) is called when a session acquires its pump — the same moment the warm-session ceiling is read, and for the same reason. So the opt-in is per SESSION even though the setting is per machine: a chat already under way keeps the path it started on until its process is replaced, and two sessions on one host can be on different paths at once. That is what makes the two comparable on the same workload, and the resume path stays live underneath because it is also the recovery route a crashed pump falls back to.
 - **Nothing reads it as a boot value**, so it needs no `onChange` subscriber; a change governs the next process, not the running one.

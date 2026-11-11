@@ -4,8 +4,8 @@
  * Each one DECLARES a key an older build wrote, with its real type, so a file
  * still carrying it loads and the first write that goes through Zod drops it.
  * They live beside `config-manager.ts` rather than in it. The sidebar's is
- * handed the retired names it declares, because the migration bodies share
- * those constants and they stay where the append-only pins can see them.
+ * handed the retired names it declares. The versioned sidebar migrators are
+ * retired; the runtime tolerance remains for its separate compatibility cleanup.
  *
  * @module services/core/config/retired-key-tolerance
  */
@@ -16,6 +16,15 @@ import {
   SidebarItemRefSchema,
   SidebarPrefsSchema,
 } from '@dorkos/shared/config-schema';
+
+/** Retired sidebar flags still owned by the runtime tolerance. */
+export const RETIRED_SIDEBAR_COLLAPSE_KEYS = {
+  ungroupedCollapsed: 'agents',
+  channelsCollapsed: 'channels',
+  dmsCollapsed: 'dms',
+  threadsCollapsed: 'threads',
+  recentsCollapsed: 'recents',
+} as const;
 
 /**
  * Widen the generated JSON Schema so conf's Ajv ACCEPTS a Claude account

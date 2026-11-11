@@ -500,8 +500,7 @@ export function seedClaudeDismissedFolders(store: {
  * Seed `profile.timezone`, `profile.workingHours` and `profile.away` — a
  * person's zone, hours and away note (spec `heartbeats` §3.5).
  *
- * **The mechanism, not an anchor**, for the reason
- * {@link seedDisplayNameSourceDefault} gives: nested leaves inside a section
+ * **The mechanism, not an anchor**: nested leaves inside a section
  * every stored config already carries, and conf's pre-migration merge is
  * shallow, so nothing else writes them to disk for an upgraded install.
  *

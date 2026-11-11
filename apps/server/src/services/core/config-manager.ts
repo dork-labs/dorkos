@@ -143,10 +143,8 @@ import type { WidenedLeaf, WidenedLeafPolicy } from './config/widened-leaves.js'
 
 export { classifyConfigLoadFailure, type ConfigLoadFailureKind } from './config/load-failure.js';
 import { CONFIG_MIGRATIONS } from './config-migrations/index.js';
-import { RETIRED_SIDEBAR_COLLAPSE_KEYS } from './config-migrations/v0-57-to-v0-59.js';
+import { RETIRED_SIDEBAR_COLLAPSE_KEYS } from './config/retired-key-tolerance.js';
 export { CONFIG_MIGRATIONS } from './config-migrations/index.js';
-export * from './config-migrations/v0-57-to-v0-59.js';
-export * from './config-migrations/v0-60-to-v0-89.js';
 export * from './config-migrations/v0-90-onward.js';
 
 /**

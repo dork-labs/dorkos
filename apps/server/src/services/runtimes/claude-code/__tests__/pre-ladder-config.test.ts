@@ -1,13 +1,8 @@
 /**
- * What a config written BEFORE the account ladder does on an install the
- * `'0.65.0'` migration has not reached (spec `billing-account-ladder`).
- *
- * The migration is skipped far more often than it sounds — a dev tree resolves
- * `SERVER_VERSION` to `0.0.0` and runs none at all, and a release cut at
- * `0.63.0` or `0.64.0` would skip it for everyone on it. So every guarantee this
- * feature makes has to hold WITHOUT it, and this file asks that question at the
- * real seams rather than at a schema: the `GET /api/config` block, the launch
- * ladder, and the migration that eventually runs.
+ * Runtime account-reader regressions for the legacy registry shape.
+ * The 0.65 migrator is retired; the runtime compatibility paths remain until
+ * their separate cleanup. These tests exercise the config response, launch
+ * ladder, explicit writes and persistence across another boot.
  *
  * Two failures were found here by review, and both were silent — the reason
  * this file drives real objects end to end instead of parsing a fixture:
@@ -25,12 +20,7 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import { USER_CONFIG_DEFAULTS } from '@dorkos/shared/config-schema';
-import {
-  ConfigManager,
-  configManager,
-  initConfigManager,
-  migrateClaudeAccountRegistry,
-} from '../../../core/config-manager.js';
+import { ConfigManager, configManager, initConfigManager } from '../../../core/config-manager.js';
 import { applyConfigPatch } from '../../../core/operator/config-patch.js';
 import {
   describeClaudeCodeAccounts,
@@ -122,7 +112,7 @@ describe('a pre-ladder config, on an install the migration has not reached', () 
     const block = describeClaudeCodeAccounts(manager);
 
     expect(block.resolvedAccount).toBe(CHOSEN);
-    // `inherited: true` is what puts the cockpit's account field in the state
+    // `inherited: true` is what puts the app's account field in the state
     // that says "nothing chosen" over a choice that was made.
     expect(block.inherited).toBe(false);
   });
@@ -167,7 +157,7 @@ describe('a pre-ladder config, on an install the migration has not reached', () 
 });
 
 describe('clearing to Default on an install the migration has not reached', () => {
-  /** What the cockpit sends when somebody picks "Default" in the account field. */
+  /** What the app sends when somebody picks "Default" in the account field. */
   const CLEAR = { runtimes: { claudeCode: { defaultAccount: null } } };
 
   it('actually clears — the old spelling does not vote on this write', () => {
@@ -211,25 +201,6 @@ describe('clearing to Default on an install the migration has not reached', () =
     expect(resolveActiveClaudeRoot(new ConfigManager(dir))).toBe(SHELL_ACCOUNT);
   });
 
-  it('stays cleared through the migration that arrives later', () => {
-    const { dir, configPath } = seedPreLadder();
-    initConfigManager(dir);
-    applyConfigPatch(CLEAR);
-
-    const stored = JSON.parse(fs.readFileSync(configPath, 'utf-8')) as Record<string, unknown>;
-    const store = {
-      get: (key: string) => stored[key],
-      set: (key: string, value: unknown) => {
-        stored[key] = value;
-      },
-    };
-    migrateClaudeAccountRegistry(store);
-
-    expect(
-      (stored.runtimes as { claudeCode: Record<string, unknown> }).claudeCode.defaultAccount
-    ).toBeNull();
-  });
-
   it('sets a NEW account explicitly, and drops the old spelling with it', () => {
     // The other half of "the patch named this key": choosing a different
     // account must not leave the superseded one on disk either.
@@ -258,7 +229,7 @@ describe('clearing to Default on an install the migration has not reached', () =
 });
 
 describe('the two-step that used to destroy a billing choice', () => {
-  it('keeps the choice through an unrelated settings write and the migration', () => {
+  it('keeps the choice through an unrelated settings write and another boot', () => {
     // Step 1: somebody changes the theme. `applyConfigPatch` re-parses and
     // persists the whole config, which is how `defaultAccount` lands on disk
     // beside the old key.
@@ -266,66 +237,30 @@ describe('the two-step that used to destroy a billing choice', () => {
     initConfigManager(dir);
     expect(applyConfigPatch({ ui: { theme: 'light' } }).ok).toBe(true);
 
-    // Step 2: the release carrying `'0.65.0'` finally arrives and the migration
-    // runs over that file. It must not prefer a `null` the theme change wrote
-    // over the value the person actually chose.
-    const stored = JSON.parse(fs.readFileSync(configPath, 'utf-8')) as Record<string, unknown>;
-    const store = {
-      get: (key: string) => stored[key],
-      set: (key: string, value: unknown) => {
-        stored[key] = value;
-      },
-    };
-    migrateClaudeAccountRegistry(store);
-
-    const claudeCode = (stored.runtimes as { claudeCode: Record<string, unknown> }).claudeCode;
-    expect(claudeCode.defaultAccount).toBe(CHOSEN);
-    expect(claudeCode).not.toHaveProperty('activeAccount');
+    // A fresh reader after the unrelated write still resolves the chosen account.
+    const manager = new ConfigManager(dir);
+    expect(resolveActiveClaudeRoot(manager)).toBe(CHOSEN);
+    const stored = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+    expect(
+      stored.runtimes.claudeCode.defaultAccount ?? stored.runtimes.claudeCode.activeAccount
+    ).toBe(CHOSEN);
   });
 
   it('carries the old value even when nothing has healed the file first', () => {
-    // The migration's own half, in isolation: a file where a pre-fix build
-    // already wrote `defaultAccount: null` beside the old key. `null` is the
-    // absence of a choice, so the old key still speaks for the person.
-    const stored: Record<string, unknown> = {
-      runtimes: {
-        claudeCode: { activeAccount: CHOSEN, defaultAccount: null, accounts: [] },
-      },
-    };
-    const store = {
-      get: (key: string) => stored[key],
-      set: (key: string, value: unknown) => {
-        stored[key] = value;
-      },
-    };
-
-    migrateClaudeAccountRegistry(store);
-
-    expect((stored.runtimes as { claudeCode: Record<string, unknown> }).claudeCode).toEqual({
-      defaultAccount: CHOSEN,
-      accounts: [],
-    });
+    const { dir, configPath } = seedPreLadder();
+    const stored = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+    stored.runtimes.claudeCode.activeAccount = CHOSEN;
+    stored.runtimes.claudeCode.defaultAccount = null;
+    fs.writeFileSync(configPath, JSON.stringify(stored));
+    expect(resolveActiveClaudeRoot(new ConfigManager(dir))).toBe(CHOSEN);
   });
 
   it('leaves a real new-key choice alone when both keys carry a value', () => {
-    // Not a free-for-all: `defaultAccount` holding an actual path is a decision
-    // made under the new name and outranks the stale one.
-    const stored: Record<string, unknown> = {
-      runtimes: {
-        claudeCode: { activeAccount: OTHER, defaultAccount: CHOSEN, accounts: [] },
-      },
-    };
-    const store = {
-      get: (key: string) => stored[key],
-      set: (key: string, value: unknown) => {
-        stored[key] = value;
-      },
-    };
-
-    migrateClaudeAccountRegistry(store);
-
-    expect(
-      (stored.runtimes as { claudeCode: Record<string, unknown> }).claudeCode.defaultAccount
-    ).toBe(CHOSEN);
+    const { dir, configPath } = seedPreLadder();
+    const stored = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+    stored.runtimes.claudeCode.activeAccount = OTHER;
+    stored.runtimes.claudeCode.defaultAccount = CHOSEN;
+    fs.writeFileSync(configPath, JSON.stringify(stored));
+    expect(resolveActiveClaudeRoot(new ConfigManager(dir))).toBe(CHOSEN);
   });
 });
