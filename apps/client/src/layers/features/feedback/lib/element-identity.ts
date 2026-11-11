@@ -256,7 +256,7 @@ export function describeElement(element: Element): ElementIdentity {
  * for recognising the thing, and a chip's words fit well inside this; a card's
  * whole paragraph does not, and is not what anyone would call it.
  */
-export const MAX_LABEL_LEN = 40;
+const MAX_LABEL_LEN = 40;
 
 /**
  * What counts as a control: the thing a click on its icon or its inner text was

@@ -60,7 +60,7 @@ export const ICON_MAP: Record<string, React.ElementType> = {
 export const EASE_OUT = [0, 0, 0.2, 1] as const;
 
 /** Ease-in curve for exits (design system standard). */
-export const EASE_IN = [0.4, 0, 1, 1] as const;
+const EASE_IN = [0.4, 0, 1, 1] as const;
 
 /** Dialog entrance/exit animation variants. */
 export const dialogVariants = {

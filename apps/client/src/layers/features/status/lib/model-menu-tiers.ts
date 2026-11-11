@@ -19,7 +19,7 @@
 import type { ModelOption, ModelTier } from '@dorkos/shared/types';
 
 /** Fixed slug/label for each menu group, in display order. */
-export const TIER_GROUP_ORDER = [
+const TIER_GROUP_ORDER = [
   { slug: 'frontier', label: 'Frontier' },
   { slug: 'solid-coders', label: 'Solid coders' },
   { slug: 'quick-helpers', label: 'Quick helpers' },
@@ -32,7 +32,7 @@ export const TIER_GROUP_ORDER = [
 export type TierGroupSlug = (typeof TIER_GROUP_ORDER)[number]['slug'];
 
 /** Untiered list length above which the menu switches to the searchable, grouped layout. */
-export const SEARCHABLE_THRESHOLD = 10;
+const SEARCHABLE_THRESHOLD = 10;
 
 /**
  * Why a model in the "Can't do agent work" group is there — it cannot call
