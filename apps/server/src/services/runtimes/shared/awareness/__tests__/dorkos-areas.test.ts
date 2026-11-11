@@ -145,3 +145,37 @@ describe('no area line reads as ungoverned (Security, DOR-3219 diet)', () => {
     expect(bareUngatedLines(planted)).toEqual(['Planted area']);
   });
 });
+
+describe('one writing for the person and the agent (DOR-4116)', () => {
+  // Permissions rows an agent line does not name, each on purpose.
+  const NO_AGENT_LINE: Record<string, string> = {
+    extensions: 'an extension tool shows in the agent’s own tool list, by its own name',
+    reach: 'a person’s front-door setting; no agent tool reaches it',
+    files: 'a trust stop on file and command prompts, not something an agent does',
+  };
+
+  it('names every Permissions row in some agent line, or says why not', async () => {
+    const { PERMISSION_AREAS } = await import('@dorkos/shared/permissions');
+    const named = new Set<string>(DORKOS_AREAS.flatMap((line) => line.areas));
+    const missing = PERMISSION_AREAS.map((area) => area.id).filter(
+      (id) => !named.has(id) && !(id in NO_AGENT_LINE)
+    );
+    expect(missing).toEqual([]);
+    // The reasons list holds nothing a line now covers.
+    expect(Object.keys(NO_AGENT_LINE).filter((id) => named.has(id))).toEqual([]);
+  });
+
+  it('gives every line with no permission area one shared person sentence', async () => {
+    const { GATED_AREAS } = await import('@dorkos/shared/permissions');
+    const bare = DORKOS_AREAS.filter((line) => line.areas.length === 0);
+    expect(GATED_AREAS.map((area) => area.label).sort()).toEqual(
+      bare.map((line) => line.name).sort()
+    );
+    for (const area of GATED_AREAS) {
+      const line = bare.find((candidate) => candidate.name === area.label)!;
+      // The person reads the same gate the agent reads, in sentence case.
+      expect(area.gate.toLowerCase()).toBe(line.gate);
+      expect(area.description.length).toBeGreaterThan(0);
+    }
+  });
+});

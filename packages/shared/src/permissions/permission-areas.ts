@@ -150,3 +150,52 @@ export function getPermissionArea(id: string): PermissionArea | undefined {
 export function isFloorArea(id: string): boolean {
   return AREAS_BY_ID.get(id)?.floor === true;
 }
+
+/**
+ * Something an agent can do that no permission area governs: it is always on,
+ * read only, or waits on a person (DOR-4116). Shown beside the permission
+ * areas wherever a person reads what an agent can do, with its gate where a
+ * level would be.
+ */
+export interface GatedArea {
+  /** Stable id. */
+  readonly id: 'canvas' | 'agent-browser' | 'memory' | 'activity';
+  /** The row label; the same name the agent's own area line uses. */
+  readonly label: string;
+  /** One plain sentence saying what the agent can do there. */
+  readonly description: string;
+  /** What decides it instead of a level, as a short chip. */
+  readonly gate: string;
+}
+
+/**
+ * The gated areas, in display order. Each one's label and gate are pinned to
+ * the agent's area lines (`dorkos-areas.test.ts`), so the person and the agent
+ * read one writing.
+ */
+export const GATED_AREAS: readonly GatedArea[] = Object.freeze([
+  {
+    id: 'canvas',
+    label: 'Canvas',
+    description: 'Show you documents, files and pages beside the chat or in a room',
+    gate: 'Always on',
+  },
+  {
+    id: 'agent-browser',
+    label: 'Agent browser',
+    description: 'Use a website in a browser page you share with the chat',
+    gate: 'A person shares it',
+  },
+  {
+    id: 'memory',
+    label: 'Memory',
+    description: 'Keep notes its other chats can read',
+    gate: 'Always on',
+  },
+  {
+    id: 'activity',
+    label: 'Activity',
+    description: "Read what agents did, the audit log and this computer's health",
+    gate: 'Read only',
+  },
+] satisfies GatedArea[]);
