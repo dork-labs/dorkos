@@ -33,6 +33,21 @@ interface OpenReceipt {
   selectedIds: Set<string>;
 }
 
+/**
+ * Clear every close recorded for one document, whichever panel scope holds it.
+ * Document ids are unique, so the id alone names it.
+ */
+function reopenDocument(
+  preferences: AppState['panelViewPreferences'],
+  documentId: string
+): AppState['panelViewPreferences'] {
+  const suffix = `:resource/${documentId}`;
+  const keys = Object.values(preferences).flatMap((entry) =>
+    entry.closed.filter((id) => id.endsWith(suffix))
+  );
+  return keys.length ? reopenPanelResourcePreferences(preferences, keys) : preferences;
+}
+
 /** Local view identity follows outstanding writes independently of the visible canvas owner. */
 export function createCanvasDocumentViews({
   set,
@@ -85,6 +100,17 @@ export function createCanvasDocumentViews({
       const already = visibleOwner
         ? s.openDocuments.find((d) => d.id === row.id && d.id !== pendingId)
         : undefined;
+      // The server answers a file it already holds with the SAME row, and that row
+      // may still carry a close from earlier. A person opening it here is the newer
+      // choice, so that old close goes — or the tab settles hidden, the panel falls
+      // back to another tab, and the click looks like it opened nothing (DOR-4179).
+      // A close of this pending tab itself still carries over below.
+      const pendingKeys = scopes.map((scope) => `${scope}:resource/${pendingId}`);
+      const pendingClosed = Object.values(panelViewPreferences).some((entry) =>
+        entry.closed.some((id) => pendingKeys.includes(id))
+      );
+      if (previous?.openedHere && !pendingClosed)
+        panelViewPreferences = reopenDocument(panelViewPreferences, row.id);
       // Exact explicit selections survive departure; never infer ownership from content.
       panelViewPreferences =
         already?.openedHere || receipt?.selectedIds.has(row.id)
@@ -128,6 +154,16 @@ export function createCanvasDocumentViews({
           }
         : undefined;
     if (receipt && fresh) openReceipts.add(receipt);
+    // A person opening a document they closed earlier is the newer choice. Left
+    // closed, its tab stays hidden, the panel falls back to another tab, and the
+    // click looks like it opened nothing (DOR-4179).
+    if (!fresh)
+      set((s) => {
+        const panelViewPreferences = reopenDocument(s.panelViewPreferences, pendingId);
+        if (panelViewPreferences === s.panelViewPreferences) return {};
+        writePanelViewPreferences(panelViewPreferences);
+        return { panelViewPreferences };
+      });
     return receipt;
   }
   function finish(receipt: OpenReceipt) {

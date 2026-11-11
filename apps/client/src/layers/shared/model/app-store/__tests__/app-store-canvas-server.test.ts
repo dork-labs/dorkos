@@ -29,6 +29,7 @@ import type { CanvasDocument as ServerCanvasDocument } from '@dorkos/shared/room
 import { MAX_CANVAS_DOCUMENTS } from '@/layers/shared/lib/constants';
 import { useAppStore } from '../app-store';
 import { setSessionCanvasTransport, type SessionCanvasTransport } from '../app-store-canvas';
+import { documentPanelScope } from '../../panel-resources/preferences';
 
 vi.mock('sonner', () => ({ toast: { error: vi.fn(), success: vi.fn() } }));
 
@@ -581,6 +582,85 @@ describe('CanvasSlice — the server’s table, as this window holds it', () => 
       expect(transport.openSessionCanvasDocument).toHaveBeenCalledWith(SESSION, fileDoc('a.ts'));
       // And the view that was showing the pending row follows it.
       expect(useAppStore.getState().activeCanvasDocumentId).toBe('server-doc');
+    });
+
+    /**
+     * DOR-4179: clicking a file whose tab was closed earlier opened nothing.
+     *
+     * Closing a tab only records a close; the document stays in this window. A
+     * second click re-activated it with the close still recorded, so its tab
+     * stayed hidden, the panel fell back to Profile, and the click looked dead.
+     * The close has to go at the click, before the server answers: by then the
+     * panel has already moved on.
+     *
+     * Seeded defect: dropping the reopen in `beginOpen` reddens this.
+     */
+    it('a person reopening a file they closed clears that close at once', async () => {
+      setSessionCanvasTransport(fakeTransport());
+      useAppStore.getState().openCanvasDocument(fileDoc('a.ts'));
+      await vi.waitFor(() => {
+        expect(useAppStore.getState().activeCanvasDocumentId).toBe('server-doc');
+      });
+      const scope = documentPanelScope(SESSION, useAppStore.getState().selectedCwd);
+      const closedKey = `${scope}:resource/server-doc`;
+      useAppStore.getState().updatePanelViewPreference(`documents:${scope}`, (entry) => ({
+        ...entry,
+        closed: [closedKey],
+      }));
+
+      useAppStore.getState().openCanvasDocument(fileDoc('a.ts'));
+
+      const closed = Object.values(useAppStore.getState().panelViewPreferences).flatMap(
+        (entry) => entry.closed
+      );
+      expect(closed).not.toContain(closedKey);
+      expect(useAppStore.getState().activeCanvasDocumentId).toBe('server-doc');
+    });
+
+    it('a fresh open that lands on a row closed earlier clears that close', async () => {
+      setSessionCanvasTransport(fakeTransport());
+      const scope = documentPanelScope(SESSION, useAppStore.getState().selectedCwd);
+      const closedKey = `${scope}:resource/server-doc`;
+      useAppStore.getState().updatePanelViewPreference(`documents:${scope}`, (entry) => ({
+        ...entry,
+        closed: [closedKey],
+      }));
+
+      useAppStore.getState().openCanvasDocument(fileDoc('a.ts'));
+      await vi.waitFor(() => {
+        expect(useAppStore.getState().activeCanvasDocumentId).toBe('server-doc');
+      });
+      const closed = Object.values(useAppStore.getState().panelViewPreferences).flatMap(
+        (entry) => entry.closed
+      );
+      expect(closed).not.toContain(closedKey);
+    });
+
+    it('keeps the close when the person closed the pending tab before it settled', async () => {
+      let answer!: (row: ServerCanvasDocument) => void;
+      const open = vi.fn(
+        () =>
+          new Promise<ServerCanvasDocument>((resolve) => {
+            answer = resolve;
+          })
+      );
+      setSessionCanvasTransport(fakeTransport({ openSessionCanvasDocument: open }));
+      const scope = documentPanelScope(SESSION, useAppStore.getState().selectedCwd);
+
+      useAppStore.getState().openCanvasDocument(fileDoc('a.ts'));
+      const pendingId = useAppStore.getState().openDocuments[0]!.id;
+      useAppStore.getState().updatePanelViewPreference(`documents:${scope}`, (entry) => ({
+        ...entry,
+        closed: [`${scope}:resource/${pendingId}`],
+      }));
+      answer(serverDocument({ id: 'server-doc', content: fileDoc('a.ts') }));
+
+      await vi.waitFor(() => {
+        const closed = Object.values(useAppStore.getState().panelViewPreferences).flatMap(
+          (entry) => entry.closed
+        );
+        expect(closed).toContain(`${scope}:resource/server-doc`);
+      });
     });
 
     it('reverts the optimistic open and says so when the write fails', async () => {

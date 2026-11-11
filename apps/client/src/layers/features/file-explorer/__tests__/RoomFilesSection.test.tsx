@@ -100,6 +100,20 @@ function renderSection(transport: Transport, canChange = true) {
 }
 
 describe('RoomFilesSection', () => {
+  it('does not ask a room for folders expanded in the previous agent folder', async () => {
+    useFileExplorerStore.setState({
+      scopeKey: '/previous-agent',
+      expanded: { changelog: true, 'changelog/unreleased': true },
+    });
+    const transport = roomWithFiles([entry({ name: 'ROOM.md' })]);
+    renderSection(transport);
+    await screen.findByRole('treeitem', { name: 'ROOM.md' });
+    expect(transport.readRoomFiles).toHaveBeenCalledWith(ROOM_ID, undefined);
+    expect(vi.mocked(transport.readRoomFiles).mock.calls.map((call) => call[1])).toEqual([
+      undefined,
+    ]);
+  });
+
   it('shows nothing at all for a room with no files of its own', async () => {
     const transport = roomWithoutFiles();
     const { queryErrors } = renderSection(transport);
