@@ -1,26 +1,26 @@
 ---
 title: Uninstall
-description: Remove DorkOS and its data completely, in one command or by hand.
+description: Remove the app and server data, and review project folders and runtime history before deleting anything
 ---
 
 import { Callout } from 'fumadocs-ui/components/callout';
 
 # Uninstall
 
-Ready to remove DorkOS? One command handles almost everything.
+Remove the app and its server data separately. Keep any chat history or project files you may want later.
 
 ## Quick uninstall
 
-Run `dorkos cleanup`. It walks you through removing:
+Quit the desktop app and stop your DorkOS server first. Then run `dorkos cleanup` from the same environment you use to start DorkOS. It lists the server data before asking what to remove:
 
 ```bash
 dorkos cleanup
 ```
 
 1. **Global data** (`~/.dork/`): your configuration, database, logs, and relay state.
-2. **Per-project data** (`.dork/` directories): agent manifests and uploads.
+2. **Project data found through the database** (`.dork/` directories): agent manifests and uploads. You can keep these when removing global data.
 
-You'll see each item listed before you confirm, so nothing disappears by surprise.
+The command finds project folders from agent records in the database. It does not search your whole disk. A missing or unreadable database can leave project folders undiscovered. If you set `DORK_HOME`, cleanup uses that directory instead of `~/.dork/`.
 
 Once that's done, remove the CLI itself:
 
@@ -28,7 +28,7 @@ Once that's done, remove the CLI itself:
 npm uninstall -g dorkos
 ```
 
-Afterward, `dorkos` should no longer run, and `~/.dork` should be gone. DorkOS is fully off your machine.
+If you installed DorkOS another way, remove that installation too. Review any project folders you kept or cleanup did not find. Runtime-owned history and desktop browser data are separate from the server data.
 
 ## Docker
 
@@ -47,7 +47,9 @@ The Obsidian plugin is retired. Disable **DorkOS Copilot** in **Settings > Commu
 
 ## Desktop app
 
-The desktop app shares the same `~/.dork` data and CLI as everything else. It doesn't keep a separate data folder, so running `dorkos cleanup` (or the manual steps below) removes its data too. To remove the app itself, drag it out of your Applications folder (macOS) or uninstall it the way you would any other app on your system.
+The packaged desktop app uses `~/.dork` for server data. It also keeps window and tab state, browser storage, and caches in its own operating-system application data folder. `dorkos cleanup` removes the server data you approve, not that separate desktop data.
+
+Quit the app before removing it. On macOS, remove it from Applications; on Windows, use the app uninstaller. If you also want to remove its application data, review that folder separately after quitting. Keep any data you still need.
 
 ## Manual cleanup
 
@@ -69,7 +71,7 @@ Read the list, then delete only the folders that are actually DorkOS's. `.dork` 
 
 ## What DorkOS stores
 
-Curious exactly what gets removed? Here's the full inventory.
+These are common locations to review. Paths can differ when you change the data directory or use a different runtime.
 
 | Location              | Contents                                                           | Owned by    |
 | --------------------- | ------------------------------------------------------------------ | ----------- |
@@ -88,6 +90,7 @@ Curious exactly what gets removed? Here's the full inventory.
 </Callout>
 
 <Callout type="info">
-  DorkOS never modifies `~/.claude/`. That directory is managed by Claude Code and is unaffected by
-  uninstalling DorkOS.
+  `dorkos cleanup` leaves `~/.claude/` alone. Claude Code owns that history and configuration. Codex
+  and OpenCode also keep runtime-owned data outside DorkOS's server data directory. Review those
+  separately if you want to remove their history too.
 </Callout>
