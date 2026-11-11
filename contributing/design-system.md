@@ -1100,25 +1100,29 @@ Three primitives, one shape (full radius) and one tint (7% of the foreground). T
 
 ### 3-State Status Pattern
 
-Status indicators that depend on both per-entity configuration and global feature flags use a 3-state model driven by `useAgentToolStatus()`:
+The former `useAgentToolStatus()` model (`enabled`, `disabled-by-agent`, `disabled-by-server`) is retired with the tool-group toggles. Do not add a new consumer of that hook or infer permission from a dimmed feature icon. Permission controls use `PermissionRow` in `apps/client/src/layers/features/permissions/ui/PermissionRow.tsx` and the shared `PermissionStateSwitch`:
 
-| State                | Visual                                 | Meaning                                 |
-| -------------------- | -------------------------------------- | --------------------------------------- |
-| `enabled`            | Full color, normal opacity             | Feature is active for this agent        |
-| `disabled-by-agent`  | Muted/dimmed appearance (`opacity-50`) | Agent manifest has explicitly opted out |
-| `disabled-by-server` | Hidden (not rendered)                  | Feature is disabled server-wide         |
+| State     | Visual                     | Meaning                                                                                          |
+| --------- | -------------------------- | ------------------------------------------------------------------------------------------------ |
+| `blocked` | Labeled **Blocked** choice | The call is refused under the resolved permission                                                |
+| `ask`     | Labeled **Ask** choice     | A call that needs a decision must wait for approval; the call gate can refuse when it cannot ask |
+| `allowed` | Labeled **Allowed** choice | Permission permits the call, subject to the action's remaining checks                            |
+
+`apps/client/src/layers/shared/ui/permission-state-switch.tsx` uses a radio group with a labeled choice for each state and arrow-key navigation. Color is not the only signal. Server feature availability is separate from this permission state.
 
 ### Permission Override Pattern (`PermissionsPage`, `PermissionsTab`)
 
 The per-agent `enabledToolGroups` toggle this section used to describe is retired (spec `agent-permissions` D13); the reusable pattern lives on now as how the agent Permissions page (`apps/client/src/layers/features/profile/ui/pages/PermissionsPage.tsx`) and Settings → Permissions (`apps/client/src/layers/features/settings/ui/tabs/PermissionsTab.tsx`) display each area or action:
 
-| State                                               | Visual                                              | Meaning                                                 |
-| --------------------------------------------------- | --------------------------------------------------- | ------------------------------------------------------- |
-| Same as everyone                                    | "Same as everyone (Allowed)" label, no dot          | Agent inherits the install-wide default for this area   |
-| Set differently                                     | A dot beside the row, a **Reset to default** button | Agent has its own state for this area, set on this page |
-| Floor (Safety limits, Permissions, Reach & secrets) | Lock icon, Blocked/Ask only                         | The area can never resolve to Allowed at any layer      |
+| State                                  | Visual                                              | Meaning                                                 |
+| -------------------------------------- | --------------------------------------------------- | ------------------------------------------------------- |
+| Same as everyone                       | "Same as everyone (Allowed)" label, no dot          | Agent inherits the install-wide default for this area   |
+| Set differently                        | A dot beside the row, a **Reset to default** button | Agent has its own state for this area, set on this page |
+| Floor (Safety limits, Reach & secrets) | Lock icon, Blocked/Ask only                         | The area can never resolve to Allowed at any layer      |
 
-Reading it back is three states resolved by one function (`resolvePermission`) rather than a boolean per toggle: Blocked, Ask, or Allowed, each carrying WHERE it came from (`source`: agent, default, preset, or floor) so the row can say "Same as everyone" versus "set here." This pattern — one dial with a resolved value and a labelled source, reset by clearing the override rather than flipping a switch — is reusable for any per-entity override of a global setting; it is not specific to permissions.
+Permissions is not a floor area. Individual actions can still have `alwaysAsks` restrictions; `ActionOverrides` passes those to the same locked two-state control. Files & commands uses a separate trust-stop control (`FilesAndCommandsRow`), not this three-state switch.
+
+Reading it back is three states resolved by one function (`resolvePermission`) rather than a boolean per toggle: Blocked, Ask, or Allowed, each carrying WHERE it came from (`source`, such as `agent-action`, `agent-area`, `default-action`, `default-area`, `preset` or `floor`) so the row can say "Same as everyone" versus "set here." This pattern — one dial with a resolved value and a labelled source, reset by clearing the override rather than flipping a switch — is reusable for any per-entity override of a global setting; it is not specific to permissions.
 
 ---
 
