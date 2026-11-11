@@ -35,6 +35,22 @@ describe('PreviewRefusedNotice', () => {
     );
   });
 
+  it('names the package exactly as the surface’s title does, for an app that names another app badly', () => {
+    const error = Object.assign(new Error('Package failed validation'), {
+      status: 400,
+      body: {
+        error: 'Package failed validation',
+        errors: [
+          'report tools can’t be installed. It names another app in a way DorkOS doesn’t accept. Ask its maker for an update.',
+        ],
+        codes: ['EXTENSION_CALLED_APP_INVALID'],
+      },
+    });
+    render(<PreviewRefusedNotice error={error} packageName="Report Tools" />);
+    expect(screen.getByText('Report Tools can’t be installed.').tagName).toBe('STRONG');
+    expect(screen.queryByText(/report tools can’t/)).not.toBeInTheDocument();
+  });
+
   it('draws any other reason as plain text', () => {
     render(<PreviewRefusedNotice error={refusal(['It ships its own settings file.'])} />);
     expect(screen.getByText('It ships its own settings file.').tagName).toBe('LI');

@@ -54,6 +54,7 @@ import {
   useInstalledPackages,
   usePackageInstallations,
   PreviewRefusedNotice,
+  isPreviewRefusal,
 } from '@/layers/entities/marketplace';
 import { useConfig } from '@/layers/entities/config';
 import { useRequestInstall } from '../model/use-request-install';
@@ -408,6 +409,8 @@ export function PackageDetailSheet() {
   } = usePermissionPreview(packageName, {
     enabled: enabled && !isInstalled && !isInstalledListLoading,
   });
+  // DorkOS refuses this package outright: it offers no way to install it.
+  const refused = !isInstalled && previewError != null && isPreviewRefusal(previewError);
 
   // This sheet always previews the global scope (it passes no `projectPath`),
   // so the folder the install must stay inside is the DorkOS data directory.
@@ -541,7 +544,7 @@ export function PackageDetailSheet() {
                 // Never a preview (or "no special permissions") over a package
                 // the server refused to preview: it refuses to install it too,
                 // and the detail's own preview is the same check (DOR-2314).
-                <PreviewRefusedNotice error={previewError} />
+                <PreviewRefusedNotice error={previewError} packageName={packageDisplayLabel(pkg)} />
               ) : permissionPreview ? (
                 <section>
                   <h3 className="mb-3 text-sm font-semibold">What this can do</h3>
@@ -579,13 +582,18 @@ export function PackageDetailSheet() {
               )}
             </div>
 
-            {/* Sticky action footer */}
+            {/* Sticky action footer. A package DorkOS refuses offers no
+                Install at all, so Close is the one action (designer, DOR-3293). */}
             <SheetFooter className="flex-row gap-2 border-t pt-4">
-              <Button variant="ghost" onClick={closeDetail} className="flex-1">
+              <Button
+                variant={refused ? 'primary' : 'ghost'}
+                onClick={closeDetail}
+                className="flex-1"
+              >
                 Close
               </Button>
 
-              {isInstalled ? (
+              {refused ? null : isInstalled ? (
                 <Button
                   variant="outline"
                   disabled={uninstall.isPending}

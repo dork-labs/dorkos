@@ -1,7 +1,8 @@
 /**
  * What the package check says about a bundled extension manifest the schema
  * refused: one issue per schema problem, except that an app naming another
- * app by anything but its exact id gets a single refusal in the designer's
+ * app (one it calls, or one its exports admit) by anything but its exact id
+ * gets a single refusal in the designer's
  * words (DOR-3293), the same on install and update, naming no id the app
  * made up.
  *
@@ -15,9 +16,15 @@ interface SchemaIssue {
   message: string;
 }
 
-/** Whether a schema problem is about the other apps a manifest calls. */
+/**
+ * Whether a schema problem is about another app the manifest names: one it
+ * calls (`capabilities.http.apps`) or one an exported route admits
+ * (`exports.http[].callers`).
+ */
 function isCalledAppPath(issuePath: readonly PropertyKey[]): boolean {
-  return issuePath[0] === 'capabilities' && issuePath[1] === 'http' && issuePath[2] === 'apps';
+  const [a, b, c, d] = issuePath;
+  if (a === 'capabilities' && b === 'http' && c === 'apps') return true;
+  return a === 'exports' && b === 'http' && d === 'callers';
 }
 
 /** The app's own name from its manifest, else its folder name. */

@@ -18,8 +18,13 @@ export class InvalidPackageError extends Error {
    * Build an `InvalidPackageError` from a list of validator error messages.
    *
    * @param errors - Human-readable validation error messages.
+   * @param codes - Each message's validator code, in the same order, so a
+   *   client can word a known refusal itself (DOR-3293).
    */
-  constructor(public readonly errors: string[]) {
+  constructor(
+    public readonly errors: string[],
+    public readonly codes: string[] = []
+  ) {
     super(`Package failed validation:\n${errors.join('\n')}`);
     this.name = 'InvalidPackageError';
   }
