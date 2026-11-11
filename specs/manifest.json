@@ -835,7 +835,7 @@
       "slug": "engaged-response-gate",
       "title": "The engaged response gate: making silence nearly free",
       "created": "2026-08-14",
-      "status": "ideation"
+      "status": "specified"
     },
     {
       "id": "260810-003853",
@@ -1958,23 +1958,9 @@
       "status": "implemented"
     },
     {
-      "number": 204,
-      "slug": "result-error-distinction",
-      "title": "Result Error/Success Distinction",
-      "created": "2026-03-29",
-      "status": "implemented"
-    },
-    {
       "number": 203,
       "slug": "remote-passcode",
       "title": "Remote Access Passcode",
-      "created": "2026-03-29",
-      "status": "implemented"
-    },
-    {
-      "number": 202,
-      "slug": "relay-mesh-quality-improvements",
-      "title": "Relay & Mesh Quality Improvements",
       "created": "2026-03-29",
       "status": "implemented"
     },
@@ -2010,13 +1996,6 @@
       "number": 197,
       "slug": "fix-relay-sse-backpressure",
       "title": "Fix Relay SSE Backpressure in Session Broadcaster",
-      "created": "2026-03-29",
-      "status": "implemented"
-    },
-    {
-      "number": 196,
-      "slug": "extended-thinking-visibility",
-      "title": "Extended Thinking Visibility",
       "created": "2026-03-29",
       "status": "implemented"
     },
@@ -2328,13 +2307,6 @@
       "status": "implemented"
     },
     {
-      "number": 152,
-      "slug": "chat-streaming-motion",
-      "title": "Chat Streaming Motion — Premium Text & Scroll Animation",
-      "created": "2026-03-20",
-      "status": "implemented"
-    },
-    {
       "number": 151,
       "slug": "dev-playground-chat-simulator",
       "title": "Dev Playground Chat Simulator",
@@ -2349,13 +2321,6 @@
       "status": "implemented"
     },
     {
-      "number": 149,
-      "slug": "relay-adapter-code-quality",
-      "title": "Relay Adapter System Code Quality & DRY Remediation",
-      "created": "2026-03-18",
-      "status": "implemented"
-    },
-    {
       "number": 148,
       "slug": "sdk-error-observability",
       "title": "SDK Error Observability — Break Infinite Retry Loop, Surface Errors to Adapters",
@@ -2363,101 +2328,10 @@
       "status": "specified"
     },
     {
-      "number": 147,
-      "slug": "relay-adapter-event-whitelist",
-      "title": "Relay Adapter Event Whitelist Overhaul",
-      "created": "2026-03-17",
-      "status": "implemented"
-    },
-    {
-      "number": 146,
-      "slug": "data-path-debug-toggles",
-      "title": "Data Path Debug Toggles",
-      "created": "2026-03-17",
-      "status": "implemented"
-    },
-    {
-      "number": 145,
-      "slug": "interactive-card-focus-navigation",
-      "title": "Unified Input Zone for Interactive Cards",
-      "created": "2026-03-17",
-      "status": "implemented"
-    },
-    {
-      "number": 144,
-      "slug": "question-prompt-redesign",
-      "title": "QuestionPrompt Component Redesign",
-      "created": "2026-03-16",
-      "status": "implemented"
-    },
-    {
-      "number": 143,
-      "slug": "dev-playground-navigation-overhaul",
-      "title": "Dev Playground Navigation Overhaul",
-      "created": "2026-03-16",
-      "status": "implemented"
-    },
-    {
-      "number": 142,
-      "slug": "multi-client-session-indicator",
-      "title": "Multi-Client Session Indicator",
-      "created": "2026-03-16",
-      "status": "implemented"
-    },
-    {
-      "number": 141,
-      "slug": "hook-lifecycle-events",
-      "title": "Surface SDK Hook Lifecycle Events in Chat UI",
-      "created": "2026-03-16",
-      "status": "implemented"
-    },
-    {
-      "number": 140,
-      "slug": "prompt-suggestion-chips",
-      "title": "Prompt Suggestion Chips",
-      "created": "2026-03-16",
-      "status": "implemented"
-    },
-    {
-      "number": 139,
-      "slug": "error-categorization-retry",
-      "title": "Error Categorization & Retry Affordance",
-      "created": "2026-03-16",
-      "status": "implemented"
-    },
-    {
-      "number": 138,
-      "slug": "tool-approval-timeout-visibility",
-      "title": "Tool Approval Timeout Visibility",
-      "created": "2026-03-16",
-      "status": "implemented"
-    },
-    {
       "number": 137,
       "slug": "tool-result-truncation",
       "title": "Tool Result Truncation",
       "created": "2026-03-16",
-      "status": "implemented"
-    },
-    {
-      "number": 136,
-      "slug": "system-status-compact-boundary",
-      "title": "Surface SDK System Status Messages & Compact Boundary Events",
-      "created": "2026-03-16",
-      "status": "implemented"
-    },
-    {
-      "number": 135,
-      "slug": "agent-permission-mode",
-      "title": "Agent Permission Mode for Adapter Bindings",
-      "created": "2026-03-15",
-      "status": "implemented"
-    },
-    {
-      "number": 134,
-      "slug": "relay-panel-ux-fixes",
-      "title": "Relay Panel UX Fixes — Binding CRUD, Health Bar, Activity Feed",
-      "created": "2026-03-15",
       "status": "implemented"
     },
     {
@@ -2482,59 +2356,10 @@
       "status": "specified"
     },
     {
-      "number": 130,
-      "slug": "docker-image-publishing",
-      "title": "Docker Image Publishing to GHCR",
-      "created": "2026-03-14",
-      "status": "implemented"
-    },
-    {
-      "number": 129,
-      "slug": "relay-adapter-streaming-fixes",
-      "title": "Relay Adapter Streaming Fixes & Enhancements",
-      "created": "2026-03-14",
-      "status": "implemented"
-    },
-    {
-      "number": 128,
-      "slug": "adapter-setup-experience",
-      "title": "Adapter Setup Experience",
-      "created": "2026-03-14",
-      "status": "implemented"
-    },
-    {
       "number": 127,
       "slug": "slack-adapter",
       "title": "Slack Adapter for Relay",
       "created": "2026-03-13",
-      "status": "implemented"
-    },
-    {
-      "number": 126,
-      "slug": "fix-chat-stream-remap-bugs",
-      "title": "Fix Chat UI Streaming Bugs — Duplicate Messages & Stale Model Display",
-      "created": "2026-03-12",
-      "status": "implemented"
-    },
-    {
-      "number": 125,
-      "slug": "client-direct-sse",
-      "title": "Client Direct SSE — Remove Relay Message Path from Web Client",
-      "created": "2026-03-12",
-      "status": "implemented"
-    },
-    {
-      "number": 124,
-      "slug": "pulse-schedule-templates",
-      "title": "Pulse Schedule Preset Gallery",
-      "created": "2026-03-11",
-      "status": "implemented"
-    },
-    {
-      "number": 123,
-      "slug": "agent-sdk-simulation-testing",
-      "title": "Agent SDK Simulation & Testing Infrastructure",
-      "created": "2026-03-11",
       "status": "implemented"
     },
     {
@@ -2552,45 +2377,9 @@
       "status": "implemented"
     },
     {
-      "number": 120,
-      "slug": "adapter-binding-ux-overhaul",
-      "title": "Adapter & Binding UX Overhaul",
-      "created": "2026-03-11",
-      "status": "superseded",
-      "supersededBy": 132
-    },
-    {
-      "number": 119,
-      "slug": "relay-adapter-dx",
-      "title": "Relay Adapter DX Improvements",
-      "created": "2026-03-11",
-      "status": "implemented"
-    },
-    {
-      "number": 118,
-      "slug": "shortcut-discoverability",
-      "title": "Keyboard Shortcut Discoverability",
-      "created": "2026-03-11",
-      "status": "implemented"
-    },
-    {
       "number": 117,
       "slug": "sidebar-tabbed-views",
       "title": "Sidebar Tabbed Views — Sessions, Schedules, Connections",
-      "created": "2026-03-10",
-      "status": "implemented"
-    },
-    {
-      "number": 116,
-      "slug": "statusline-compound-component",
-      "title": "StatusLine Compound Component",
-      "created": "2026-03-10",
-      "status": "implemented"
-    },
-    {
-      "number": 115,
-      "slug": "switch-agent-via-identity-chip",
-      "title": "Switch Agent via Identity Chip Click",
       "created": "2026-03-10",
       "status": "implemented"
     },
@@ -2600,13 +2389,6 @@
       "title": "Hide Scrollbars When Idle",
       "created": "2026-03-10",
       "status": "ideation"
-    },
-    {
-      "number": 113,
-      "slug": "fix-chat-streaming-and-model-selector-bugs",
-      "title": "Fix Chat Streaming & Model Selector Bugs",
-      "created": "2026-03-10",
-      "status": "implemented"
     },
     {
       "number": 112,
@@ -2619,27 +2401,6 @@
       "number": 111,
       "slug": "chat-input-always-editable",
       "title": "Chat Input Always Editable + Message Queuing",
-      "created": "2026-03-10",
-      "status": "implemented"
-    },
-    {
-      "number": 110,
-      "slug": "dev-version-display-upgrade-ux",
-      "title": "Dev Version Display & Upgrade UX Overhaul",
-      "created": "2026-03-10",
-      "status": "implemented"
-    },
-    {
-      "number": 109,
-      "slug": "file-upload-chat-visibility",
-      "title": "File Upload Chat History Visibility",
-      "created": "2026-03-10",
-      "status": "implemented"
-    },
-    {
-      "number": 108,
-      "slug": "fix-relay-cwd-passthrough",
-      "title": "Fix Relay CWD Passthrough in handleAgentMessage",
       "created": "2026-03-10",
       "status": "implemented"
     },
@@ -2672,24 +2433,10 @@
       "status": "implemented"
     },
     {
-      "number": 103,
-      "slug": "fix-relay-ghost-messages",
-      "title": "Fix Relay-Mode SSE Subscriber Race Condition (Ghost Messages)",
-      "created": "2026-03-08",
-      "status": "implemented"
-    },
-    {
       "number": 102,
       "slug": "fix-chat-streaming-history-consistency",
       "title": "Fix Chat UI Streaming vs History Inconsistencies",
       "created": "2026-03-08",
-      "status": "implemented"
-    },
-    {
-      "number": 101,
-      "slug": "fix-streamdown-render-truncation",
-      "title": "Fix streamdown Render Truncation of []-Containing Inline Code",
-      "created": "2026-03-07",
       "status": "implemented"
     },
     {
@@ -2784,13 +2531,6 @@
       "status": "implemented"
     },
     {
-      "number": 87,
-      "slug": "command-palette-10x",
-      "title": "10x Command Palette UX",
-      "created": "2026-03-03",
-      "status": "implemented"
-    },
-    {
       "number": 86,
       "slug": "shadcn-sidebar-redesign",
       "title": "Shadcn Sidebar Redesign — Agent-Centric Sidebar with Glanceable Status",
@@ -2810,13 +2550,6 @@
       "title": "CLI Install Smoke Testing — Docker & GitHub Actions",
       "created": "2026-03-02",
       "status": "ideation"
-    },
-    {
-      "number": 83,
-      "slug": "marketing-faq-section",
-      "title": "Marketing FAQ Section",
-      "created": "2026-03-02",
-      "status": "implemented"
     },
     {
       "number": 82,
@@ -2854,41 +2587,6 @@
       "status": "implemented"
     },
     {
-      "number": 77,
-      "slug": "relay-mesh-review-remediation-r3",
-      "title": "Relay, Mesh & Telegram Adapter — Code Review Remediation Round 3",
-      "created": "2026-03-01",
-      "status": "implemented"
-    },
-    {
-      "number": 76,
-      "slug": "server-review-remediation-r3",
-      "title": "Server Code Review Remediation — Round 3",
-      "created": "2026-02-28",
-      "status": "implemented"
-    },
-    {
-      "number": 75,
-      "slug": "server-client-code-review-fixes",
-      "title": "Server & Client Code Review Fixes",
-      "created": "2026-02-28",
-      "status": "implemented"
-    },
-    {
-      "number": 74,
-      "slug": "relay-mesh-telegram-review-fixes-r2",
-      "title": "Relay, Mesh & Telegram Adapter — Code Review Remediation Round 2",
-      "created": "2026-02-28",
-      "status": "implemented"
-    },
-    {
-      "number": 73,
-      "slug": "relay-mesh-telegram-review-fixes",
-      "title": "Relay, Mesh & Telegram Adapter — Code Review Remediation",
-      "created": "2026-02-28",
-      "status": "implemented"
-    },
-    {
       "number": 72,
       "slug": "og-seo-ai-readability-overhaul",
       "title": "OG Tags, Share Cards, SEO & AI Readability Overhaul",
@@ -2900,20 +2598,6 @@
       "slug": "adapter-agent-routing",
       "title": "Adapter-Agent Routing & Visual Configuration",
       "created": "2026-02-28",
-      "status": "implemented"
-    },
-    {
-      "number": 70,
-      "slug": "relay-publish-pipeline-fix",
-      "title": "Relay Publish Pipeline Fix & Adapter System Improvements",
-      "created": "2026-02-27",
-      "status": "implemented"
-    },
-    {
-      "number": 69,
-      "slug": "dynamic-model-options",
-      "title": "Dynamic Model Options",
-      "created": "2026-02-27",
       "status": "implemented"
     },
     {
@@ -2937,13 +2621,6 @@
       "title": "Relay Initialization Failure & Feature Flag DX",
       "created": "2026-02-26",
       "status": "ideation"
-    },
-    {
-      "number": 65,
-      "slug": "mesh-registry-integrity",
-      "title": "Mesh Registry Integrity & Reconciliation",
-      "created": "2026-02-26",
-      "status": "implemented"
     },
     {
       "number": 64,
@@ -3051,13 +2728,6 @@
       "status": "implemented"
     },
     {
-      "number": 49,
-      "slug": "pulse-run-history-improvements",
-      "title": "Pulse RunHistoryPanel Improvements & RunRow Navigation Bug Fix",
-      "created": "2026-02-22",
-      "status": "implemented"
-    },
-    {
       "number": 48,
       "slug": "pulse-v2-enhancements",
       "title": "Pulse V2 Enhancements — Visual Cron Builder, DirectoryPicker, Calm Notifications",
@@ -3068,13 +2738,6 @@
       "number": 47,
       "slug": "pulse-ui-overhaul",
       "title": "Pulse UI/UX Overhaul — World-Class Scheduler Experience",
-      "created": "2026-02-21",
-      "status": "implemented"
-    },
-    {
-      "number": 46,
-      "slug": "pulse-completion-gaps",
-      "title": "Pulse Implementation Completion Gaps",
       "created": "2026-02-21",
       "status": "implemented"
     },
@@ -3142,13 +2805,6 @@
       "status": "implemented"
     },
     {
-      "number": 36,
-      "slug": "logging-infrastructure",
-      "title": "Logging Infrastructure",
-      "created": "2026-02-16",
-      "status": "implemented"
-    },
-    {
       "number": 35,
       "slug": "dorkos-website-publishing",
       "title": "DorkOS Website & Documentation Publishing",
@@ -3205,58 +2861,9 @@
       "status": "implemented"
     },
     {
-      "number": 27,
-      "slug": "notification-sound",
-      "title": "Notification Sound on AI Response Completion",
-      "created": "2026-02-13",
-      "status": "implemented"
-    },
-    {
-      "number": 26,
-      "slug": "task-celebrations",
-      "title": "Task Completion Celebrations",
-      "created": "2026-02-13",
-      "status": "implemented"
-    },
-    {
       "number": 25,
       "slug": "cross-client-session-sync",
       "title": "Cross-Client Session Synchronization",
-      "created": "2026-02-13",
-      "status": "implemented"
-    },
-    {
-      "number": 24,
-      "slug": "interactive-tool-ux",
-      "title": "Interactive Tool UX Improvements",
-      "created": "2026-02-13",
-      "status": "implemented"
-    },
-    {
-      "number": 23,
-      "slug": "font-settings",
-      "title": "Font Selection Settings",
-      "created": "2026-02-13",
-      "status": "implemented"
-    },
-    {
-      "number": 22,
-      "slug": "mobile-input-collapse-gesture",
-      "title": "Mobile Input Area Collapse Gesture",
-      "created": "2026-02-13",
-      "status": "implemented"
-    },
-    {
-      "number": 21,
-      "slug": "shortcut-chips",
-      "title": "Shortcut Chips",
-      "created": "2026-02-13",
-      "status": "implemented"
-    },
-    {
-      "number": 20,
-      "slug": "settings-tabs-status-bar",
-      "title": "Settings Tabs & Status Bar Configuration",
       "created": "2026-02-13",
       "status": "implemented"
     },
@@ -3268,65 +2875,9 @@
       "status": "specified"
     },
     {
-      "number": 18,
-      "slug": "git-status-bar",
-      "title": "Git Status in Status Bar",
-      "created": "2026-02-13",
-      "status": "implemented"
-    },
-    {
-      "number": 17,
-      "slug": "file-autocomplete",
-      "title": "File Autocomplete in Chat Input",
-      "created": "2026-02-13",
-      "status": "implemented"
-    },
-    {
-      "number": 16,
-      "slug": "chat-message-area-improvements",
-      "title": "Chat Message Area Improvements",
-      "created": "2026-02-13",
-      "status": "implemented"
-    },
-    {
-      "number": 15,
-      "slug": "question-prompt-tabs",
-      "title": "Question Prompt Tabs & Answer Summary",
-      "created": "2026-02-13",
-      "status": "implemented"
-    },
-    {
       "number": 14,
       "slug": "cli-package",
       "title": "CLI Package",
-      "created": "2026-02-12",
-      "status": "implemented"
-    },
-    {
-      "number": 13,
-      "slug": "auto-hide-tool-calls",
-      "title": "Auto-Hide Completed Tool Calls",
-      "created": "2026-02-12",
-      "status": "implemented"
-    },
-    {
-      "number": 12,
-      "slug": "ngrok-tunnel",
-      "title": "ngrok Tunnel Integration",
-      "created": "2026-02-12",
-      "status": "implemented"
-    },
-    {
-      "number": 11,
-      "slug": "smart-message-formatting",
-      "title": "Smart Message Formatting",
-      "created": "2026-02-12",
-      "status": "implemented"
-    },
-    {
-      "number": 10,
-      "slug": "smart-chat-scroll",
-      "title": "Smart Chat Scroll Behavior",
       "created": "2026-02-12",
       "status": "implemented"
     },
@@ -3335,20 +2886,6 @@
       "slug": "settings-screen",
       "title": "Settings Screen",
       "created": "2026-02-12",
-      "status": "implemented"
-    },
-    {
-      "number": 8,
-      "slug": "inference-status-indicator",
-      "title": "Inference Status Indicator",
-      "created": "2026-02-12",
-      "status": "implemented"
-    },
-    {
-      "number": 7,
-      "slug": "mobile-responsive-scale-system",
-      "title": "Mobile Responsive Scale System",
-      "created": "2026-02-11",
       "status": "implemented"
     },
     {
