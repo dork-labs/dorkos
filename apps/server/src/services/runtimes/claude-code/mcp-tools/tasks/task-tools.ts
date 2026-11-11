@@ -716,7 +716,7 @@ export function getTasksTools(
         prompt: z.string().describe('The prompt to send to the agent on each run'),
         cron: z.string().describe('Cron expression (e.g., "0 2 * * *" for daily at 2am)'),
         reason: z.string().describe(REASON_DESCRIPTION),
-        target: z.string().min(1).describe(TARGET_DESCRIPTION),
+        target: z.string().min(1).default('global').describe(TARGET_DESCRIPTION),
         description: z.string().optional().describe('Description of what this scheduled task does'),
         timezone: z.string().optional().describe('IANA timezone (e.g., "America/New_York")'),
         maxRuntime: DURATION_ARG.describe('Maximum run time (e.g., "5m", "1h")'),

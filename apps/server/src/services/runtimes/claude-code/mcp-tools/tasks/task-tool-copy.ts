@@ -120,21 +120,20 @@ export const PARKED_SCHEDULE_SURFACE_HINT =
 /**
  * The description `tasks_create` gives the `target` argument.
  *
- * Required, and that is the fix rather than an inconvenience (DOR-1568). The tool
- * never asked where a task should live, so it wrote no file and set no owner: the
- * row landed with `filePath: ''` and `agentId: null`, the reconciler skipped it
- * because there was nothing on disk to reconcile, and its runs happened in
- * whatever directory the server itself was started in. There is no safe default
- * to fall back on — `global` would quietly file an agent's own work where it does
- * not belong — so the caller says, or nothing is created.
+ * An agent's schedule runs in its own folder, never in home or the data folder
+ * (DOR-4067): an omitted or `global` target is filed under the verified caller,
+ * and nothing is created for a caller DorkOS cannot identify. Below Full, a
+ * caller whose own folder is home, the data folder or a protected folder is
+ * refused too; at Full it may file there, as a person can (the DOR-4136 rule).
+ * Global proposals keep their approval requirement after that placement change.
  */
 export const TARGET_DESCRIPTION =
-  'Where this scheduled task lives. Give your own agent id to file it under yourself — it then ' +
-  'runs in your folder, with your files — or "global" for a scheduled task that belongs to no ' +
-  'agent and runs in the DorkOS data folder. From a chat at Full autonomy whose turn ' +
+  'Where this scheduled task lives. Omit this, use "global", or give your own agent id to file ' +
+  'it under yourself, so it runs in your own folder. A global request still waits for a person ' +
+  'to approve it. DorkOS refuses if it cannot identify your agent, or, below Full autonomy, if ' +
+  'your folder is the home folder or the DorkOS data folder. From a chat at Full autonomy whose turn ' +
   `${unmarkedTurnClause()}, another agent's id files it under that agent, at that agent's own level at ` +
-  'most; anywhere else that is refused. Required: DorkOS will not guess, because a scheduled ' +
-  'task filed in the wrong place runs against the wrong files.';
+  'most; anywhere else that is refused.';
 
 /**
  * The description both tools give the `agentId` argument, which neither accepts.

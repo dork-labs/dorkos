@@ -77,9 +77,21 @@ describe('tasks_* operator-only field guard (in-session dorkos server)', () => {
     // A real directory, because a create now writes a real SKILL.md into the
     // global skills root before it touches the row (DOR-1568).
     dorkHome = await fs.mkdtemp(path.join(os.tmpdir(), 'dorkos-task-tools-'));
-    const deps = { taskStore: store, defaultCwd: '/tmp/test', dorkHome } as unknown as McpToolDeps;
+    const agentHome = path.join(dorkHome, 'agents', 'fixture');
+    await fs.mkdir(agentHome, { recursive: true });
+    const deps = {
+      taskStore: store,
+      defaultCwd: '/tmp/test',
+      dorkHome,
+      meshCore: {
+        getProjectPath: () => agentHome,
+        listWithPaths: () => [{ id: 'fixture-agent', projectPath: agentHome }],
+      },
+    } as unknown as McpToolDeps;
     tools = Object.fromEntries(
-      (getTasksTools(deps) as unknown as SessionTool[]).map((t) => [t.name, t])
+      (getTasksTools(deps, undefined, undefined, () => agentHome) as unknown as SessionTool[]).map(
+        (t) => [t.name, t]
+      )
     );
     existing = store.createTask({
       name: 'nightly',
@@ -553,6 +565,8 @@ describe('tasks_create records who is proposing and why (DOR-1394)', () => {
   let emit: ReturnType<typeof vi.fn>;
   let identity: AgentIdentityService;
   let dorkHome: string;
+  let nbHome: string;
+  let unknownHome: string;
 
   beforeEach(async () => {
     db = createTestDb();
@@ -560,11 +574,24 @@ describe('tasks_create records who is proposing and why (DOR-1394)', () => {
     identity = initAgentIdentityService(db);
     emit = vi.fn();
     dorkHome = await fs.mkdtemp(path.join(os.tmpdir(), 'dorkos-task-tools-'));
+    nbHome = path.join(dorkHome, 'agents', 'nb');
+    unknownHome = path.join(dorkHome, 'agents', 'unknown');
+    await fs.mkdir(nbHome, { recursive: true });
+    await fs.mkdir(unknownHome, { recursive: true });
+    const agents = [
+      { id: 'nb', projectPath: nbHome },
+      { id: 'unknown', projectPath: unknownHome },
+    ];
     deps = {
       taskStore: store,
       defaultCwd: '/tmp/test',
       dorkHome,
       activityService: { emit },
+      meshCore: {
+        getSubjectByPath: () => undefined,
+        listWithPaths: () => agents,
+        getProjectPath: (id: string) => agents.find((agent) => agent.id === id)?.projectPath,
+      },
     } as unknown as McpToolDeps;
   });
 
@@ -577,7 +604,9 @@ describe('tasks_create records who is proposing and why (DOR-1394)', () => {
   /** The tool set a session gets, with `resolveProvenance` wired as `index.ts` wires it. */
   function toolsWith(resolveProvenance?: () => { sessionId?: string; agentPath?: string }) {
     return Object.fromEntries(
-      (getTasksTools(deps, resolveProvenance) as unknown as SessionTool[]).map((t) => [t.name, t])
+      (
+        getTasksTools(deps, resolveProvenance, undefined, () => nbHome) as unknown as SessionTool[]
+      ).map((t) => [t.name, t])
     );
   }
 
@@ -626,12 +655,12 @@ describe('tasks_create records who is proposing and why (DOR-1394)', () => {
   });
 
   it('records the session and directory the proposal came from', async () => {
-    const tools = toolsWith(() => ({ sessionId: 'ses-canonical', agentPath: '/tmp/agents/nb' }));
+    const tools = toolsWith(() => ({ sessionId: 'ses-canonical', agentPath: nbHome }));
     await create(tools, GOOD_ARGS);
 
     const created = store.getTasks()[0]!;
     expect(created.proposedBySessionId).toBe('ses-canonical');
-    expect(created.proposedByAgentPath).toBe('/tmp/agents/nb');
+    expect(created.proposedByAgentPath).toBe(nbHome);
   });
 
   it('reads the session id at call time, not when the tools were built', async () => {
@@ -639,7 +668,7 @@ describe('tasks_create records who is proposing and why (DOR-1394)', () => {
     // read once at construction would record the trigger id — a session nothing
     // can open. Reading late is the whole point of the resolver being a function.
     let current = 'ses-trigger';
-    const tools = toolsWith(() => ({ sessionId: current, agentPath: '/tmp/agents/nb' }));
+    const tools = toolsWith(() => ({ sessionId: current, agentPath: nbHome }));
 
     current = 'ses-canonical';
     await create(tools, GOOD_ARGS);
@@ -648,8 +677,8 @@ describe('tasks_create records who is proposing and why (DOR-1394)', () => {
   });
 
   it('names the proposer in the activity feed, from the same answer the notification uses', async () => {
-    await identity.mint({ agentPath: '/tmp/agents/nb', displayName: 'Nightly Bot' });
-    const tools = toolsWith(() => ({ sessionId: 'ses-1', agentPath: '/tmp/agents/nb' }));
+    await identity.mint({ agentPath: nbHome, displayName: 'Nightly Bot' });
+    const tools = toolsWith(() => ({ sessionId: 'ses-1', agentPath: nbHome }));
 
     await create(tools, GOOD_ARGS);
 
@@ -657,13 +686,13 @@ describe('tasks_create records who is proposing and why (DOR-1394)', () => {
       expect.objectContaining({
         actorType: 'agent',
         actorLabel: 'Nightly Bot',
-        actorId: '/tmp/agents/nb',
+        actorId: nbHome,
       })
     );
   });
 
   it('says "An agent" in the feed when nothing resolves a name', async () => {
-    const tools = toolsWith(() => ({ sessionId: 'ses-1', agentPath: '/tmp/agents/unknown' }));
+    const tools = toolsWith(() => ({ sessionId: 'ses-1', agentPath: unknownHome }));
 
     await create(tools, GOOD_ARGS);
 
@@ -679,7 +708,7 @@ describe('tasks_create records who is proposing and why (DOR-1394)', () => {
     // for it (DOR-1394 review).
     const session = {
       eventQueue: [],
-      cwd: '/tmp/agents/nb',
+      cwd: nbHome,
       sdkSessionId: 'ses-canonical',
     };
 
@@ -692,7 +721,7 @@ describe('tasks_create records who is proposing and why (DOR-1394)', () => {
     await create(wired, GOOD_ARGS);
 
     const created = store.getTasks()[0]!;
-    expect(created.proposedByAgentPath).toBe('/tmp/agents/nb');
+    expect(created.proposedByAgentPath).toBe(nbHome);
     expect(created.proposedBySessionId).toBe('ses-canonical');
   });
 
@@ -727,7 +756,7 @@ describe('tasks_create records who is proposing and why (DOR-1394)', () => {
 
     it('offers the Schedules panel only where a session makes control_ui reachable', async () => {
       const inSession = await create(
-        toolsWith(() => ({ sessionId: 'ses-1', agentPath: '/tmp/agents/nb' })),
+        toolsWith(() => ({ sessionId: 'ses-1', agentPath: nbHome })),
         GOOD_ARGS
       );
       expect(String(inSession.payload.note)).toContain("panel: 'tasks'");
@@ -748,7 +777,7 @@ describe('tasks_create records who is proposing and why (DOR-1394)', () => {
       const wired = Object.fromEntries(
         (
           handRegisteredInSessionTools(deps, {
-            session: { eventQueue: [], cwd: '/tmp/agents/nb', sdkSessionId: 'ses-canonical' },
+            session: { eventQueue: [], cwd: nbHome, sdkSessionId: 'ses-canonical' },
           }) as unknown as SessionTool[]
         ).map((t) => [t.name, t])
       );

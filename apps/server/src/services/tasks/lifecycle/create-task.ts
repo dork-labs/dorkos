@@ -67,6 +67,7 @@ import {
 } from '../approvals/schedule-owner.js';
 import { scheduleAccountRefusal, scheduleRunFolder } from './schedule-account-eligibility.js';
 import { scheduleCreditsModelRefusal } from './schedule-credits-model.js';
+import { agentScheduleTarget } from './agent-schedule-target.js';
 import { marksHold, NO_MARKS, type TurnMarks } from '../../core/turn-power/turn-marks.js';
 import { auditCrossAgentTask, capModeAtAgentLevel } from '../approvals/cross-agent.js';
 
@@ -318,7 +319,10 @@ export async function createScheduledTask(
   deps: TaskLifecycleDeps,
   options: CreateScheduledTaskOptions
 ): Promise<CreateScheduledTaskOutcome> {
-  const parsed = CreateTaskRequestSchema.safeParse(options.input);
+  const input = options.input;
+  const parsed = CreateTaskRequestSchema.safeParse(
+    !options.trusted && input && input.target === undefined ? { ...input, target: 'global' } : input
+  );
   if (!parsed.success) {
     return {
       ok: false,
@@ -355,6 +359,12 @@ export async function createScheduledTask(
       options.parkForPerson === true ||
       (!forAnother && !runsAsItsCreator(data.target, callerId)) ||
       !agentSchedulesArmWithoutAsking(options.callerIsOurAgent === true));
+
+  if (!trusted) {
+    const placement = await agentScheduleTarget(data.target, callerId, deps);
+    if (!placement.ok) return placement;
+    data.target = placement.target;
+  }
 
   // Asked before ANY write, because the file is written first and never
   // withdrawn: a cron or timezone croner cannot read would otherwise leave a
@@ -644,7 +654,7 @@ export async function createScheduledTask(
     // The arrival goes out and the escalation clock starts here (DOR-1387,
     // DOR-1570). Parked schedules have no observer seam, so the hook lands at
     // the write that parks one. `raiseStanding` both announces the arrival to
-    // the periphery (a desktop banner has no cockpit query to derive it from)
+    // the periphery (a desktop banner has no app query to derive it from)
     // and arms the ladder. Still nothing STORED at this edge: `schedule.parked`
     // is a STANDING kind, which stores nothing while it stands (ADR
     // 260819-234828), and its resolution is recorded where the operator decides
