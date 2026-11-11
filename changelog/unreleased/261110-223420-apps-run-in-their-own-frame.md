@@ -15,6 +15,7 @@ covers:
   - "fix(extensions): a caller token is minted only for the DorkOS window's own page (DOR-3293)"
   - 'feat(extensions): the approval card lists the other apps an app uses, and a new one asks again (DOR-3293)'
   - "feat(extensions): the approval card says what an app's screens can change, in DorkOS's words (DOR-3293)"
+  - 'feat(extensions): a target that starts sharing more asks again, and "shares nothing" reads plainly (DOR-3293)'
 ---
 
 ### Security

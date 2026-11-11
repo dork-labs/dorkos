@@ -125,3 +125,54 @@ describe('what an app’s screens can change (Security item 8)', () => {
     ]);
   });
 });
+
+describe('a target that starts sharing more (designer, 2026-11-10)', () => {
+  it('asks again, naming that target as new, like a new target', async () => {
+    const { setCalledAppAccessLookup } = await import('../permission-coverage.js');
+    const shares = new Map<string, 'reads' | 'changes' | 'both'>();
+    setCalledAppAccessLookup((_caller, target) => shares.get(target) ?? null);
+    try {
+      // Approved while Ledger shared nothing with it.
+      const approved = declaredSet(caller(['ledger']));
+      expect(approved).not.toHaveProperty('appAccess');
+
+      // Ledger's update starts sharing a route: the app asks again.
+      shares.set('ledger', 'reads');
+      expect(isCovered(declaredSet(caller(['ledger'])), approved)).toBe(false);
+      expect(addedSince(declaredSet(caller(['ledger'])), approved)?.apps).toEqual(['ledger']);
+
+      // Approved again at reads; Ledger then lets it change things too.
+      const atReads = declaredSet(caller(['ledger']));
+      expect(atReads.appAccess).toEqual({ ledger: 'reads' });
+      shares.set('ledger', 'both');
+      expect(addedSince(declaredSet(caller(['ledger'])), atReads)?.apps).toEqual(['ledger']);
+
+      // Sharing less never asks.
+      const atBoth = declaredSet(caller(['ledger']));
+      shares.set('ledger', 'reads');
+      expect(isCovered(declaredSet(caller(['ledger'])), atBoth)).toBe(true);
+      shares.delete('ledger');
+      expect(isCovered(declaredSet(caller(['ledger'])), atBoth)).toBe(true);
+    } finally {
+      setCalledAppAccessLookup(() => null);
+    }
+  });
+
+  it('reads what a target shares only while it is on', async () => {
+    const { calledAppAccessLookupIn } = await import('../called-apps.js');
+    const ledger = {
+      manifest: {
+        id: 'ledger',
+        name: 'Ledger',
+        version: '1.0.0',
+        exports: { http: [{ path: '/entries', methods: ['GET' as const] }] },
+      },
+      status: 'active' as ExtensionRecord['status'],
+    };
+    const lookup = calledAppAccessLookupIn((id) => (id === 'ledger' ? ledger : undefined));
+    expect(lookup('reports', 'ledger')).toBe('reads');
+    ledger.status = 'disabled';
+    expect(lookup('reports', 'ledger')).toBeNull();
+    expect(lookup('reports', 'gone')).toBeNull();
+  });
+});

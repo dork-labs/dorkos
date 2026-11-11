@@ -104,6 +104,8 @@ export interface ExtensionPermissionSet {
   agents: boolean;
   /** The other apps it calls. */
   apps?: string[];
+  /** What each of those apps shares with it. */
+  appAccess?: Record<string, 'reads' | 'changes' | 'both'>;
 }
 
 /**
@@ -171,6 +173,17 @@ export function extensionPermissionLines(
   return [...reachLines(permissions, added), ...(writes ? [writes] : []), ...(apps ? [apps] : [])];
 }
 
+/** The apps a card showed and what each shared, as the yes echoes them. */
+function sharedOf(
+  apps: readonly ExtensionCalledApp[]
+): Pick<ExtensionPermissionSet, 'apps' | 'appAccess'> {
+  const shared = apps.flatMap((app) => (app.access ? [[app.id, app.access] as const] : []));
+  return {
+    apps: apps.map((app) => app.id),
+    ...(shared.length > 0 ? { appAccess: Object.fromEntries(shared) } : {}),
+  };
+}
+
 /** What each write means, in DorkOS's words (DOR-3293, Security item 8). */
 const WRITE_WORDS: Record<NonNullable<ExtensionPermissionView['writes']>[number], string> = {
   data: 'Its own saved data and project settings',
@@ -206,7 +219,7 @@ const ACCESS_WORDS = { reads: 'reads', changes: 'changes', both: 'reads and chan
 /**
  * "It uses other apps:", one row per app: DorkOS's name for it and what it
  * shares, from that app's own exports. An app that is not installed or not on
- * says this part won't work; one that shares nothing with it says the same.
+ * says this part won't work; one that shares nothing says the same.
  *
  * @param apps - The apps it calls.
  * @param added - The ids new since the last yes, marked New.
@@ -227,7 +240,7 @@ function calledAppsLine(
         app.name === null
           ? 'not installed, so this part won’t work'
           : app.access === null
-            ? 'shares nothing with it, so this part won’t work'
+            ? 'shares nothing, so this part won’t work'
             : ACCESS_WORDS[app.access],
       isNew: added?.includes(app.id) ?? false,
     })),
@@ -424,6 +437,6 @@ export function approvedSetOf(
     net: [...view.net],
     run: view.run.map((program) => program.name),
     agents: view.agents,
-    ...(view.apps && view.apps.length > 0 ? { apps: view.apps.map((app) => app.id) } : {}),
+    ...(view.apps && view.apps.length > 0 ? sharedOf(view.apps) : {}),
   };
 }

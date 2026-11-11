@@ -14238,6 +14238,17 @@
                   "type": "string"
                 },
                 "maxItems": 20
+              },
+              "appAccess": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "string",
+                  "enum": [
+                    "reads",
+                    "changes",
+                    "both"
+                  ]
+                }
               }
             },
             "required": [
@@ -20843,6 +20854,17 @@
                             "type": "string"
                           },
                           "maxItems": 20
+                        },
+                        "appAccess": {
+                          "type": "object",
+                          "additionalProperties": {
+                            "type": "string",
+                            "enum": [
+                              "reads",
+                              "changes",
+                              "both"
+                            ]
+                          }
                         }
                       },
                       "required": [
@@ -21000,6 +21022,17 @@
                         "type": "string"
                       },
                       "maxItems": 20
+                    },
+                    "appAccess": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "string",
+                        "enum": [
+                          "reads",
+                          "changes",
+                          "both"
+                        ]
+                      }
                     }
                   },
                   "required": [

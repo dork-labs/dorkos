@@ -301,6 +301,8 @@ export const ApproveExtensionRequestSchema = z
         agents: z.boolean(),
         /** The other apps the card said it calls (DOR-3293). */
         apps: z.array(z.string()).max(20).optional(),
+        /** What each of those apps shared with it, as the card said. */
+        appAccess: z.record(z.string(), z.enum(['reads', 'changes', 'both'])).optional(),
       })
       .optional(),
     /**
@@ -428,6 +430,8 @@ export const ApprovalSetPermissionsSchema = z.object({
   agents: z.boolean(),
   /** The other apps it calls (DOR-3293). */
   apps: z.array(z.string()).max(20).optional(),
+  /** What each of those apps shares with it. */
+  appAccess: z.record(z.string(), z.enum(['reads', 'changes', 'both'])).optional(),
 });
 
 /** The permission set one member was shown with. */
@@ -481,6 +485,7 @@ export async function approvalSetHash(
         run: [...permissions.run].sort(),
         agents: permissions.agents,
         apps: [...(permissions.apps ?? [])].sort(),
+        appAccess: Object.entries(permissions.appAccess ?? {}).sort(),
       });
       return `${id}:${version}:${expectedDigest}:${await sha256(canonical)}`;
     })

@@ -48,7 +48,7 @@ describe('It uses other apps', () => {
     const line = extensionPermissionLines(
       view([{ id: 'vault', name: 'Vault', access: null }])
     ).find((entry) => entry.key === 'apps');
-    expect(line?.apps?.[0]?.detail).toBe('shares nothing with it, so this part won’t work');
+    expect(line?.apps?.[0]?.detail).toBe('shares nothing, so this part won’t work');
   });
 
   it('draws nothing for an app that calls no other app', () => {
@@ -81,6 +81,8 @@ describe('It uses other apps', () => {
 
   it('echoes the apps it showed with a yes, so a list that grew since is refused as stale', () => {
     expect(approvedSetOf(THREE)?.apps).toEqual(['desk', 'mkt-core', 'ledger']);
+    // And what each shared, so a target that shares more since is refused too.
+    expect(approvedSetOf(THREE)?.appAccess).toEqual({ desk: 'reads', 'mkt-core': 'both' });
     expect(approvedSetOf(view(undefined))).not.toHaveProperty('apps');
   });
 

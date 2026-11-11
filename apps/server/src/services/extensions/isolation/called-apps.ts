@@ -34,3 +34,20 @@ export function calledAppsView(
     return { id, name: target.manifest.name, access: exportedAccess(target.manifest, record.id) };
   });
 }
+
+/**
+ * What each target shares with a caller now, read from DorkOS's records: the
+ * live answer approval coverage compares against what the person approved.
+ * A target that is not installed or not on shares nothing.
+ *
+ * @param get - DorkOS's record of an app, by id.
+ * @returns The lookup for `setCalledAppAccessLookup`.
+ */
+export function calledAppAccessLookupIn(
+  get: (id: string) => Pick<ExtensionRecord, 'manifest' | 'status'> | undefined
+): (callerId: string, targetId: string) => 'reads' | 'changes' | 'both' | null {
+  return (callerId, targetId) => {
+    const target = get(targetId);
+    return target && ON.has(target.status) ? exportedAccess(target.manifest, callerId) : null;
+  };
+}

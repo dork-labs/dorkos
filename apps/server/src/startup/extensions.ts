@@ -10,6 +10,8 @@ import { logger } from '../lib/logger.js';
 import { broadcastExtensionReloaded } from '../routes/extensions.js';
 import { startExtensionApprovalQueue } from '../services/extensions/extension-approval-queue.js';
 import { ExtensionManager } from '../services/extensions/extension-manager.js';
+import { calledAppAccessLookupIn } from '../services/extensions/isolation/called-apps.js';
+import { setCalledAppAccessLookup } from '../services/extensions/isolation/permission-coverage.js';
 import type { CoreExtensionInfo } from '../services/extensions/extension-enable-resolution.js';
 import { getExtensionInbox } from '../services/extensions/inbox/extension-inbox.js';
 import { knownProjectRootsForExtensions } from '../services/projects/extension-scan-roots.js';
@@ -34,6 +36,9 @@ export async function startExtensions(
 ): Promise<ExtensionManager | undefined> {
   try {
     const manager = new ExtensionManager(dorkHome, coreExtensions);
+    // An approval covers what each app it calls shared then; one that shares
+    // more now asks again (DOR-3293). Read live from this manager's records.
+    setCalledAppAccessLookup(calledAppAccessLookupIn((id) => manager.get(id)));
     // Scan every known project's extensions, not only this folder's, and
     // re-scan when a project is added, so which copy runs no longer depends on
     // where the server started (spec `flow-multiproject` §9.2). Only roots core
