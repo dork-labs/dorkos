@@ -153,6 +153,13 @@ function namesAKnownSession(sessionId: string): boolean {
  * An open on a person's own canvas, which the host may mark as opened for an
  * app (DOR-3293). Only this route takes the mark: a room's canvas and every
  * agent path open documents without one, and every later write clears it.
+ *
+ * **Who can set it.** Only a person's window: an agent caller is refused
+ * `PEOPLE_ONLY` before the body is used, like every route here, and the MCP
+ * tools never reach this route. The window's frame bridge names the app from
+ * its own record of which app it loaded, never from anything the app's frame
+ * says. And the id must be an app whose screens run right now
+ * ({@link SessionCanvasDeps.appScreenRuns}); anything else is refused.
  */
 const OpenSessionCanvasDocumentRequestSchema = OpenCanvasDocumentRequestSchema.extend({
   openedBy: z
@@ -166,15 +173,32 @@ const OpenSessionCanvasDocumentRequestSchema = OpenCanvasDocumentRequestSchema.e
     .optional(),
 });
 
+/** What the session canvas routes read from outside the canvas domain. */
+export interface SessionCanvasDeps {
+  /**
+   * Whether an app id names an installed app whose screens run right now, from
+   * the extension manager's records. Unset (no extensions on this server)
+   * refuses every "opened by" mark.
+   */
+  appScreenRuns?: (extensionId: string) => boolean;
+}
+
+const UNKNOWN_APP = errorBody(
+  'No app with that id is running here',
+  'CANVAS_OPENED_BY_UNKNOWN_APP'
+);
+
 const NO_SUCH_DOCUMENT = errorBody('No such document on this canvas', 'CANVAS_DOCUMENT_NOT_FOUND');
 
 /**
  * The six canvas routes, mounted by `routes/sessions.ts` at `/:id/canvas`, so
  * `:id` is the session.
  *
+ * @param deps - See {@link SessionCanvasDeps}. A test that builds the routes
+ *   bare passes none.
  * @returns The routes.
  */
-export function createSessionCanvasRoutes(): Hono<ApiEnv> {
+export function createSessionCanvasRoutes(deps: SessionCanvasDeps = {}): Hono<ApiEnv> {
   const router = new Hono<ApiEnv>();
 
   /** GET / — everything on this session's canvas, pinned first then most recent. */
@@ -201,6 +225,9 @@ export function createSessionCanvasRoutes(): Hono<ApiEnv> {
     if (access instanceof Response) return access;
     if (!namesAKnownSession(c.req.param('id')!)) {
       return c.json(errorBody('Session not found', 'SESSION_NOT_FOUND'), 404);
+    }
+    if (body.openedBy && !deps.appScreenRuns?.(body.openedBy.extensionId)) {
+      return c.json(UNKNOWN_APP, 400);
     }
     try {
       const document = access.canvas.open(access.scope, SESSION_OWNER_AUTHOR, body.content, {

@@ -89,7 +89,7 @@ import {
 import { mountWindowSignalRoutes, touchedSinceKeeper } from './session-touch-handler.js';
 import { sessionCommandIntentHandler } from './session-command-intent-handler.js';
 import { sessionDevtoolsActionHandler, sessionDevtoolsIngestHandler } from './session-devtools.js';
-import { createSessionCanvasRoutes } from './session-canvas.js';
+import { createSessionCanvasRoutes, type SessionCanvasDeps } from './session-canvas.js';
 import { sessionDevtoolsRecordingHandler } from './session-recording.js';
 import { sessionAttachmentHandler } from './session-attachments-handler.js';
 import { sessionMcpAppResourceHandler } from './session-mcp-app-resource-handler.js';
@@ -125,7 +125,7 @@ import { ControlRequestTimeoutError } from '../services/runtimes/claude-code/ses
  * Tasks whether it is a scheduled run, without importing either store. One
  * left unset is a safe no-op.
  */
-export interface SessionRouteDeps extends SessionOriginResolvers {
+export interface SessionRouteDeps extends SessionOriginResolvers, SessionCanvasDeps {
   /**
    * The agent registry: the project paths `/recent` and `/daily-counts` fan
    * out over (DOR-329), and what a message's launch and a handoff read.
@@ -958,7 +958,7 @@ export function createSessionRoutes(deps: SessionRouteDeps = {}): Hono<ApiEnv> {
   // file for the same reason the devtools sink is: this one stays under the size
   // rule. A person is the gate; an agent is refused `PEOPLE_ONLY` and reaches its
   // own canvas through `control_ui` and `read_canvas_document` instead.
-  router.route('/:id/canvas', createSessionCanvasRoutes());
+  router.route('/:id/canvas', createSessionCanvasRoutes(deps));
 
   // Out of usage: continue on another account or model, or wait for the reset
   // (spec claude-account-fleet D9). Handlers in `session-continue.ts`.
