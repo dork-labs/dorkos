@@ -22,7 +22,7 @@ const STEPS: Array<{
     step: 'sign-in',
     site: 'accounts.northwind-travel.example',
   },
-  { label: 'A password page in the Mac app’s panel', step: 'person' },
+  { label: 'A handoff in the Mac app’s panel', step: 'person' },
   { label: 'Sign-in window open', step: 'sign-in-open' },
   { label: 'Saving the sign-in', step: 'saving' },
   { label: 'Signed in', step: 'saved' },

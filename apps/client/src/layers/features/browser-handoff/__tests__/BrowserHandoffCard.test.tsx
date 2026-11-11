@@ -410,7 +410,9 @@ describe('BrowserHandoffCard', () => {
     it('keeps an embedded check in the same detached view', async () => {
       transport.getLocalBrowserState.mockResolvedValue(person({ mode: 'embedded' }));
       mount();
-      expect(await screen.findByText('Finish in the browser, then press Continue.')).toBeVisible();
+      expect(
+        await screen.findByText('Finish in Atlas’s window, then press Continue.')
+      ).toBeVisible();
       expect(screen.queryByText(/moves to its own window/)).toBeNull();
       expect(screen.getByRole('button', { name: 'Continue' })).toBeVisible();
     });
@@ -489,7 +491,9 @@ describe('BrowserHandoffCard', () => {
         person({ mode: 'embedded', handoff: { ...handoff, reason: 'password' } })
       );
       mount();
-      expect(await screen.findByText('Finish in the browser, then press Continue.')).toBeVisible();
+      expect(
+        await screen.findByText('Finish in Atlas’s window, then press Continue.')
+      ).toBeVisible();
       expect(screen.queryByRole('button', { name: 'Open sign-in window' })).toBeNull();
       expect(screen.getByRole('button', { name: 'Continue' })).toBeVisible();
     });
@@ -581,7 +585,7 @@ it('lets a person finish a password step in the detached embedded view', async (
     person({ mode: 'embedded', handoff: { ...handoff, reason: 'password' } })
   );
   mount();
-  expect(await screen.findByText('Finish in the browser, then press Continue.')).toBeVisible();
+  expect(await screen.findByText('Finish in Atlas’s window, then press Continue.')).toBeVisible();
   expect(screen.getByText('Atlas can’t see or use it until you hand it back.')).toBeVisible();
   expect(screen.getByRole('button', { name: 'Continue' })).toBeVisible();
   expect(screen.queryByRole('button', { name: 'Open sign-in window' })).toBeNull();

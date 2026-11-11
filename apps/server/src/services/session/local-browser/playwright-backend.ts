@@ -9,6 +9,7 @@ import {
   agentWindowNameArg,
   agentWindowThemeArgs,
   assertAgentFrame,
+  writeAgentChromeProfile,
   writeAgentWindowTheme,
 } from './agent-window/index.js';
 import { LocalBrowserError } from './errors.js';
@@ -141,6 +142,7 @@ export const productionBackend: LocalBrowserBackend = {
     // The profile is shared with the plain sign-in window, and with the basic
     // password store a saved password is readable on disk. Neither window saves one.
     await disablePasswordSaving(storagePath);
+    if (chrome) await writeAgentChromeProfile(storagePath, agentName);
     const theme = chrome ? undefined : await writeAgentWindowTheme(storagePath);
     // Playwright launch does not accept AbortSignal. The service retains setup ownership
     // and closes a context that arrives after cancellation; never race this result away.
@@ -166,7 +168,7 @@ export const productionBackend: LocalBrowserBackend = {
     });
     try {
       // Installed Chrome no longer supports the flags that load our code-free theme.
-      // Keep its native frame and native brands; only managed Chromium loads the theme.
+      // Use built-in profile colour/name/avatar prefs, keeping extensions disabled.
       if (!chrome) await assertAgentFrame(context);
     } catch (error) {
       await context.close().catch(() => undefined);

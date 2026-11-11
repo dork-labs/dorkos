@@ -14,6 +14,7 @@ import { productionBackend } from '../../../server/src/services/session/local-br
 import {
   FORBIDDEN_PLAIN_FLAGS,
   spawnPlainChromium,
+  profileLockPid,
   type PlainChromium,
 } from '../../../server/src/services/session/local-browser/plain-chromium.js';
 import { installedChromePath } from '../../../server/src/services/session/local-browser/connection/chrome-installation.js';
@@ -25,6 +26,7 @@ assert.equal(process.platform, 'darwin');
 assert(installedChromePath(), 'Install Google Chrome before the public-site proof');
 await mkdir(evidence, { recursive: true });
 let context: BrowserContext | undefined;
+let agentPid: number | undefined;
 let plain: PlainChromium | undefined;
 const signIns = new SignInWindow({
   spawner(executable, args) {
@@ -42,6 +44,8 @@ const backend = {
   ...productionBackend,
   async launch(...args: Parameters<typeof productionBackend.launch>) {
     context = await productionBackend.launch(...args);
+    agentPid = profileLockPid(args[0]);
+    assert(agentPid, 'The throwaway agent profile must name its own Chrome process');
     return context;
   },
 };
@@ -92,13 +96,17 @@ function assertIdentity(identity: Identity): void {
   if (identity.headers)
     assert(String(identity.headers['sec-ch-ua']).includes(`"Google Chrome";v="${chrome.version}"`));
 }
-async function pixels(name: string, ready: (text: string) => boolean): Promise<string> {
+async function pixels(
+  name: string,
+  ready: (text: string) => boolean,
+  pid = plain?.pid
+): Promise<string> {
   const file = path.join(evidence, `${name}.png`);
   const helper = fileURLToPath(new URL('./capture-window.swift', import.meta.url));
   return until(async () => {
-    if (!plain?.pid) return undefined;
+    if (!pid) return undefined;
     try {
-      const { stdout } = await run('/usr/bin/swift', [helper, String(plain.pid), file], {
+      const { stdout } = await run('/usr/bin/swift', [helper, String(pid), file], {
         timeout: 15000,
       });
       return ready(stdout) ? stdout : undefined;
@@ -145,6 +153,16 @@ try {
       JSON.stringify(identity, null, 2)
     );
     await page.screenshot({ path: path.join(evidence, `${name}-agent.png`) });
+    await pixels(
+      `${name}-agent-native`,
+      (text) =>
+        name === 'echo'
+          ? text.includes('Made-up browser check')
+          : name === 'godaddy'
+            ? /password/i.test(text) && /username|customer|email/i.test(text)
+            : /Test Results|Webdriver/i.test(text),
+      agentPid
+    );
     receipt = undefined;
     const { handoffId } = await handover.ask('made-up-ci-browser', 'wall');
     const text = await pixels(`${name}-person`, (text) =>

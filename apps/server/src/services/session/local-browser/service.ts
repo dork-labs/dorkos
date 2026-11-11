@@ -205,10 +205,9 @@ export class LocalBrowserService {
       if (input.url) await this.navigate(input.url);
       return await this.state();
     } catch (error) {
-      const cancelled = setupAbort.signal.aborted;
+      const failure = setupAbort.signal.aborted ? browserSetupCancelled() : error;
       await this.disconnect();
-      if (cancelled) throw browserSetupCancelled();
-      if (error instanceof LocalBrowserError) throw error;
+      if (failure instanceof LocalBrowserError) throw failure;
       throw new LocalBrowserError('connect_failed', 'Couldn’t open the browser. Try again.');
     } finally {
       this.preparation.clear();

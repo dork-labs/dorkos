@@ -91,7 +91,7 @@ export function BrowserHandoffCardView({
       </div>
       {step === 'person' && (
         <div className="space-y-1">
-          <p>Finish in the browser, then press Continue.</p>
+          <p>Finish in {name}’s window, then press Continue.</p>
           <p className="text-muted-foreground">
             {name} can’t see or use it until you hand it back.
           </p>
@@ -130,7 +130,6 @@ export function BrowserHandoffCardView({
       {asksPassword && (
         <div className="space-y-1">
           <p>Open a sign-in window. {name} can’t see or use it.</p>
-
           {step === 'sign-in' && sharedProfile && (
             <p className="text-muted-foreground">
               Every agent that uses the Agent browser can use this sign-in.
