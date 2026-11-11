@@ -11,21 +11,10 @@ import { TransportProvider, useAppStore } from '@/layers/shared/model';
 import { useProfileStore } from '@/layers/features/profile';
 import { ExecutionExceptionsStrip } from '../ui/runtimes/ExecutionExceptionsStrip';
 
-// No RouterProvider here — the strip only asks the deep-link hook to CLOSE the
-// dialog, which the close-then-open assertion below stands in for. URL behavior
-// is covered by `use-dialog-deep-link.test.tsx`.
-const mockCloseSettings = vi.fn();
-vi.mock('@/layers/shared/model/use-dialog-deep-link', () => ({
-  useSettingsDeepLink: () => ({
-    isOpen: true,
-    activeTab: 'runtimes',
-    section: null,
-    open: vi.fn(),
-    close: mockCloseSettings,
-    setTab: vi.fn(),
-    setSection: vi.fn(),
-  }),
-}));
+// No RouterProvider here, and no faked deep-link hook: the strip closes Settings
+// through the REAL hook's router-less branch, which clears the store flag, so
+// the close is checked by `settingsOpen` going false. URL behavior is covered by
+// `use-dialog-deep-link.test.tsx`.
 
 beforeAll(() => {
   Object.defineProperty(window, 'matchMedia', {
@@ -263,11 +252,12 @@ describe('ExecutionExceptionsStrip', () => {
   });
 
   it('opens the agent’s own profile, and gets the dialog out of the way first', async () => {
-    const openProfileDocked = vi.spyOn(useProfileStore.getState(), 'openProfileDocked');
+    useAppStore.getState().setSettingsOpen(true);
+    useProfileStore.setState({ dockedEntries: {} });
     renderStrip({ '/a': agent('alpha', { model: 'opus' }) });
     await userEvent.click(await screen.findByTestId('execution-exception'));
-    expect(mockCloseSettings).toHaveBeenCalled();
-    expect(openProfileDocked).toHaveBeenCalledWith('/a');
+    expect(useAppStore.getState().settingsOpen).toBe(false);
+    expect(Object.keys(useProfileStore.getState().dockedEntries)).toEqual(['/a']);
     // Naming the agent is not the same as showing it: without these the dialog
     // closes onto an unchanged dashboard.
     expect(useAppStore.getState().explicitAgentPath).toBe('/a');
