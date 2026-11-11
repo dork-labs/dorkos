@@ -20,7 +20,6 @@ import {
   SmartGroupRulesSchema,
   SidebarItemRefSchema,
   sameSidebarItem,
-  toSidebarItemRef,
 } from '../config-schema.js';
 import type { UserConfig, SidebarPrefs } from '../config-schema.js';
 
@@ -1669,21 +1668,6 @@ describe('SidebarItemRefSchema + sameSidebarItem (sidebar-groups, DOR-579)', () 
     expect(sameSidebarItem({ kind: 'agent', path: 'r1' }, { kind: 'room', roomId: 'r1' })).toBe(
       false
     );
-  });
-});
-
-describe('toSidebarItemRef — what a stored membership string means', () => {
-  const agent = (path: string) => ({ kind: 'agent' as const, path });
-
-  it('wraps a legacy path and passes a reference through', () => {
-    // The migration is the only caller left: the read-time conversion beside it
-    // was removed a release on (DOR-588). What this still pins is the mapping —
-    // every pre-DOR-579 string IS an agent path, and a reference is untouched.
-    expect(toSidebarItemRef('/projects/alpha')).toEqual(agent('/projects/alpha'));
-    const ref = agent('/projects/alpha');
-    expect(toSidebarItemRef(ref)).toBe(ref);
-    const room = { kind: 'room' as const, roomId: '01JROOM' };
-    expect(toSidebarItemRef(room)).toBe(room);
   });
 });
 

@@ -25,7 +25,7 @@
  * What stays here, and why: the migration append-only guard
  * (`apps/server/src/services/core/__tests__/migration-closure.ts`) reads THIS
  * file as text and pins every declaration a shipped config migration reaches.
- * `ONBOARDING_STEPS`, `toSidebarItemRef`, the composer and notification prefs,
+ * `ONBOARDING_STEPS`, the composer and notification prefs,
  * `slugifyAccountId`, `claudeAccountId` and `USER_CONFIG_DEFAULTS` are reached,
  * so moving one out of this file would silently drop it from the guard.
  * `config-schema/claude-accounts.ts` imports `claudeAccountId` back from here,
@@ -54,7 +54,6 @@ import { UserProfileSchema } from './config-schema/profile.js';
 import { RoomsConfigSchema } from './config-schema/rooms.js';
 import { RuntimesConfigSchema } from './config-schema/runtime-settings.js';
 import { SidebarPrefsSchema } from './config-schema/sidebar.js';
-import type { SidebarItemRef } from './config-schema/sidebar.js';
 import {
   DEFAULT_AGENTS_DIRECTORY,
   ExtensionsConfigSchema,
@@ -282,24 +281,6 @@ export const OnboardingStateSchema = z.object({
 });
 
 export type OnboardingState = z.infer<typeof OnboardingStateSchema>;
-/**
- * Convert one STORED membership entry into a {@link SidebarItemRef}.
- *
- * A `ui.sidebar` written before DOR-579 holds bare agent `projectPath` strings
- * in `pinned`, `muted` and each group's member list. Rooms did not exist in the
- * sidebar then, so every such string IS an agent path and the mapping is total —
- * there is no value that could be misread.
- *
- * This is the single statement of that rule, and the config migration that
- * rewrites the file is now its only caller: the read-time conversion beside it
- * was removed one release on (DOR-588).
- *
- * @param entry - A stored entry: either a reference already, or a legacy path.
- * @returns The entry as a reference; an existing reference passes through.
- */
-export function toSidebarItemRef(entry: SidebarItemRef | string): SidebarItemRef {
-  return typeof entry === 'string' ? { kind: 'agent', path: entry } : entry;
-}
 /**
  * Person-scoped message-box preferences (`ui.composer`, DOR-948).
  *

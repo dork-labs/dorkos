@@ -1,5 +1,6 @@
 ---
 covers:
+  - 'refactor(config): drop retired config flag tolerances'
   - 'refactor(config): retire legacy sidebar conversion'
   - 'refactor(config): retire v0.60-v0.89 migrators (DOR-4188)'
   - 'refactor(config): retire v0.57-v0.59 migrators (DOR-4188)'

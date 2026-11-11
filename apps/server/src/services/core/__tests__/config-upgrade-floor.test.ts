@@ -39,6 +39,7 @@ function seed(version?: string, sidebar?: unknown): { dir: string; file: string;
         extensions: { approvedToRun: ['fixture-extension'] },
         harness: { approvedHooks: ['fixture-hooks@digest'] },
         runtimes: {
+          dorkosTools: false,
           defaultTrustStop: 'ask',
           claudeCode: {
             defaultAccount: '/fixture/account',
@@ -52,7 +53,14 @@ function seed(version?: string, sidebar?: unknown): { dir: string; file: string;
             ],
           },
         },
-        ui: { theme: 'dark', ...(sidebar === undefined ? {} : { sidebar }) },
+        rooms: { toolOnlyReplies: true, maxPostsPerTurn: 0, maxCanvasOpsPerTurn: 0 },
+        ui: {
+          theme: 'dark',
+          fullPowerChoice: 'full',
+          fullPowerDecidedAt: '2026-01-01T00:00:00.000Z',
+          autonomyAcknowledgedAt: '2026-01-01T00:00:00.000Z',
+          ...(sidebar === undefined ? {} : { sidebar }),
+        },
         ...(version === undefined ? {} : { __internal__: { migrations: { version } } }),
       },
       null,

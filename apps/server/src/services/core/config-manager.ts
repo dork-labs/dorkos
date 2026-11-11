@@ -123,12 +123,7 @@ import { readStoredConfigForSalvage } from './config/salvage-read.js';
 import { loadConfigStore } from './config/load-store.js';
 import { classifyConfigLoadFailure } from './config/load-failure.js';
 import { assertSupportedConfigUpgrade } from './config/upgrade-floor.js';
-import {
-  tolerateLegacyClaudeAccountEncoding,
-  tolerateRetiredRoomKeys,
-  tolerateRetiredRuntimeKeys,
-  tolerateRetiredUiKeys,
-} from './config/retired-key-tolerance.js';
+import { tolerateLegacyClaudeAccountEncoding } from './config/retired-key-tolerance.js';
 import { preserveUnknownKeys, schemaNodeAt, tolerateUnknownKeys } from './config/version-skew.js';
 import {
   describeWidenedLeaf,
@@ -308,20 +303,6 @@ const jsonSchemaFull = z.toJSONSchema(UserConfigSchema, {
 // See `config/version-skew.ts` — this call is what keeps an unrecognized-key
 // violation from ever reaching the recovery path below.
 tolerateUnknownKeys(jsonSchemaFull);
-
-// The retired `runtimes.dorkosTools`, DECLARED. It runs after the generation
-// above rather than inside its `override` because `runtimes` is an inline object
-// with no schema symbol to match on; see the function for why that is the
-// smaller change.
-tolerateRetiredRuntimeKeys(jsonSchemaFull);
-
-// And the retired `rooms.toolOnlyReplies`, for the same reason and by the same
-// route. Two calls rather than one call doing both: they name two sections, and
-// a miss on either is a husk that never leaves.
-tolerateRetiredRoomKeys(jsonSchemaFull);
-
-// And the retired power-door and autonomy-acknowledgement leaves under `ui`.
-tolerateRetiredUiKeys(jsonSchemaFull);
 
 /**
  * The per-top-level-key JSON Schema conf validates against, tolerances included.
