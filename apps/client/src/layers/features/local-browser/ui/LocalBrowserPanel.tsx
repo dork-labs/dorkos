@@ -14,7 +14,7 @@ import { browserErrorMessage } from '../lib/browser-error-message';
 import { useActionFocusReturn } from '../model/use-action-focus-return';
 import { BrowserPreparation } from './BrowserPreparation';
 import { WaitingElsewhere } from './WaitingElsewhere';
-import { BrowserProfiles } from './BrowserProfiles';
+import { SavedSignIns } from './SavedSignIns';
 
 export interface LocalBrowserPanelProps {
   visible?: boolean;
@@ -422,7 +422,7 @@ export function LocalBrowserPanel({
         </>
       )}
       {!waitingElsewhere && (
-        <BrowserProfiles
+        <SavedSignIns
           enabled={!!state && !!capabilities && !query.isError && !capabilityQuery.isError}
           disabled={busy || cancelling}
         />
