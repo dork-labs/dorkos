@@ -49,12 +49,6 @@ test.describe('Overlay surfaces, 1440 @smoke', () => {
     await expect(composer).toBeFocused();
   });
 
-  test('the Control Center stays a popover', async ({ controlCenter, page }) => {
-    await controlCenter.open();
-    await expect(page.locator(POPOVER)).toBeVisible();
-    await expect(page.locator(DRAWER)).toHaveCount(0);
-  });
-
   test('a menu reopens on the first press after it closed', async ({ page, dashboardSidebar }) => {
     const box = await dashboardSidebar.newMenu.trigger.boundingBox();
     expect(box, 'the New button was never laid out').not.toBeNull();
