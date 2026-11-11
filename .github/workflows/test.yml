@@ -897,16 +897,17 @@ jobs:
       # zip-cross-tools.test.ts) read our ZIP64 exports with Info-ZIP unzip, bsdtar and
       # Python's zipfile, and FAIL under CI when one is missing, so a skip can never
       # quietly drop them. The runner image ships unzip and python3; bsdtar comes from
-      # libarchive-tools. apt runs only for what is missing.
+      # libarchive-tools. apt runs only for what is missing, using cached indexes
+      # first and scoped archive mirrors if a refresh/install is needed.
       - name: Install the unzip tools the archive cross-checks read with
+        timeout-minutes: 6
         run: |
           missing=""
           command -v unzip >/dev/null || missing="$missing unzip"
           command -v bsdtar >/dev/null || missing="$missing libarchive-tools"
           command -v python3 >/dev/null || missing="$missing python3"
           if [ -n "$missing" ]; then
-            sudo apt-get update -qq
-            sudo apt-get install -y -qq --no-install-recommends $missing
+            bash scripts/ci-install-apt.sh $missing
           fi
           unzip -v | head -1
           bsdtar --version
@@ -1303,10 +1304,10 @@ jobs:
           node-version: 24
       - run: pnpm install --frozen-lockfile
       - name: Install distro bubblewrap and load its scoped AppArmor profile
+        timeout-minutes: 6
         run: |
           set -euo pipefail
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends bubblewrap apparmor-profiles apparmor-utils
+          bash scripts/ci-install-apt.sh bubblewrap apparmor-profiles apparmor-utils
           sudo install -m 0644 /usr/share/apparmor/extra-profiles/bwrap-userns-restrict /etc/apparmor.d/bwrap-userns-restrict
           sudo apparmor_parser -r /etc/apparmor.d/bwrap-userns-restrict
           test "$(readlink -f /usr/bin/bwrap)" = /usr/bin/bwrap
