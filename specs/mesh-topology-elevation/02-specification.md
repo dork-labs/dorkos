@@ -859,7 +859,7 @@ Each agent in `namespaces[].agents[]` now includes:
 - [React Flow v12 — MiniMap](https://reactflow.dev/api-reference/components/minimap)
 - [React Flow v12 — Theming / Color Mode](https://reactflow.dev/learn/customization/theming)
 - [ELK.js — Layout API](https://github.com/kieler/elkjs)
-- [Spec #66 — Agents as First-Class Entity](../agents-first-class-entity/02-specification.md)
+- [Spec #66 — Agents as First-Class Entity](https://github.com/dork-labs/dorkos/blob/78baefc5ac7aeac33c67f5e697fbe2f36179a960/specs/agents-first-class-entity/02-specification.md)
 - [ADR-0035 — Use @xyflow/react for Mesh Topology](../../decisions/0035-use-xyflow-react-for-mesh-topology.md)
 - [Design System — Calm Tech](../../contributing/design-system.md)
 - [Animations Guide](../../contributing/animations.md)
