@@ -36,6 +36,7 @@ describe('browser sign-in stores under Claude Code (DOR-4136)', () => {
       expect(deny).toContain(`${tool}(~/.config/DorkOS/**)`);
       expect(deny).toContain(`${tool}(~/Library/Application Support/@dorkos/desktop/**)`);
       expect(deny).toContain(`${tool}(~/.dork/browser/storage-state.json)`);
+      expect(deny).toContain(`${tool}(~/.dork/browser/agent-browser-guard.json*)`);
     }
     expect(HOME_PERSON_ONLY_RULES.every((rule) => deny.includes(rule))).toBe(true);
   });
@@ -46,6 +47,8 @@ describe('browser sign-in stores under Claude Code (DOR-4136)', () => {
     const profile = rulePath(path.join(dorkHome, 'browser', 'profile'));
     expect(deny).toContain(`Write(${session})`);
     expect(deny).toContain(`Edit(${profile}/**)`);
+    const guard = rulePath(path.join(dorkHome, 'browser', 'agent-browser-guard.json'));
+    expect(deny).toContain(`Write(${guard}*)`);
   });
 
   it('keeps the deny when a person saved "Always allow" for the same paths', () => {

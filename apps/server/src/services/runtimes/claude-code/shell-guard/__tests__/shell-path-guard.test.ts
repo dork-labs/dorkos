@@ -763,6 +763,11 @@ describe('shell writes to a browser sign-in store', () => {
     ['it through a link', () => `ln -sfn /tmp/x app-data/Network/Cookies`],
     ['a python script', () => `python3 -c "open('${desktop()}/Network/Cookies','w').write('x')"`],
     ['the default data folder’s session', () => `cp /tmp/x ~/.dork/browser/storage-state.json`],
+    [
+      'the agent browser’s guard config',
+      () => `echo '{}' > $DORK_HOME/browser/agent-browser-guard.json`,
+    ],
+    ['its temp file', () => `cp /tmp/x $DORK_HOME/browser/agent-browser-guard.json.1.2.tmp`],
     // Only a person saves the shared session, with DorkOS's own CLI.
     ['dorkos browser login', () => 'dorkos browser login'],
     ['it through npx', () => 'npx -y dorkos@latest browser login --url https://made-up.example'],

@@ -159,6 +159,7 @@ describe('protected paths', () => {
       'browser/storage-state.json',
       'browser/.storage-state.json.*.tmp',
       'browser/profile/**',
+      'browser/agent-browser-guard.json*',
     ]);
     // DOR-4136: the browser sign-in stores no agent may plant a cookie in.
     expect(globs(HOME_PERSON_ONLY_PATHS)).toEqual([
@@ -171,6 +172,7 @@ describe('protected paths', () => {
       '.dork/browser/storage-state.json',
       '.dork/browser/.storage-state.json.*.tmp',
       '.dork/browser/profile/**',
+      '.dork/browser/agent-browser-guard.json*',
       '.dork/browser-profiles/**',
       '.dork/local-browser/saved-logins/**',
     ]);

@@ -133,6 +133,7 @@ describe('Claude Code protected-path adapter', () => {
       'dork*.db*',
       'browser/storage-state.json',
       'browser/.storage-state.json.*.tmp',
+      'browser/agent-browser-guard.json*',
     ]);
     expect(PROJECT_PLUGIN_DENY_RULES).toEqual([
       'Edit(//**/.dork/plugins/**)',

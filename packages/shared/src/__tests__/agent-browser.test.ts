@@ -154,6 +154,34 @@ describe('unguardableBrowserReason', () => {
       })
     ).toMatch(/PLAYWRIGHT_MCP_STORAGE_STATE/);
   });
+
+  // DorkOS's own guarded config is the only one a browser starts with (DOR-4136): a person's
+  // `--config` is refused whole, never parsed, in each spelling and any letter case.
+  it.each([
+    ['--config', '/mine.json'],
+    ['--config=/mine.json'],
+    ['--CONFIG', '/mine.json'],
+    ['--Config=/mine.json'],
+    ['--init-page', '/page.ts'],
+    ['--Init-Page=/page.ts'],
+    ['--SAVE-SESSION'],
+    ['--Output-Dir=/out'],
+  ])('refuses %s in any case and either spelling', (...extra) => {
+    expect(
+      unguardableBrowserReason({ transport: 'stdio', args: [...base, ...extra] })
+    ).toBeTruthy();
+  });
+
+  it.each([
+    ['PLAYWRIGHT_MCP_CONFIG'],
+    ['playwright_mcp_config'],
+    ['Playwright_Mcp_Config'],
+    ['playwright_mcp_init_page'],
+  ])('refuses the environment form %s, in any case', (name) => {
+    expect(
+      unguardableBrowserReason({ transport: 'stdio', args: base, env: { [name]: '/mine.json' } })
+    ).toMatch(new RegExp(name));
+  });
 });
 
 describe('agentBrowserStateFileOf', () => {

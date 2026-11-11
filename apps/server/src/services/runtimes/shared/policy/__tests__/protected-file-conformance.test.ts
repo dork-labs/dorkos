@@ -174,6 +174,10 @@ describe.each(adapters)('%s native file protection', (adapter) => {
     ['a development build’s cookie store', 'home', '.config/@dorkos/desktop/Cookies'],
     ['the cookie store in other case', 'home', 'library/application support/dorkos/cookies'],
     ['the default data folder’s saved session', 'home', '.dork/browser/storage-state.json'],
+    // The config every agent browser starts with, which keeps it off DorkOS Cloud.
+    ['the agent browser’s guard config', 'data', 'browser/agent-browser-guard.json'],
+    ['its temp file', 'data', 'browser/agent-browser-guard.json.123.456.tmp'],
+    ['the default data folder’s guard config', 'home', '.dork/browser/agent-browser-guard.json'],
   ] as const)('refuses writing %s', async (_what, root, file) => {
     const base = root === 'home' ? roots.home : roots.data;
     expect(await refused(adapter, path.join(base, file), 'write')).toBe(true);

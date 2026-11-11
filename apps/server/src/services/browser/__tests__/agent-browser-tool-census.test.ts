@@ -112,6 +112,22 @@ describe('the agent browser’s tool list', () => {
     }
   });
 
+  // DOR-4136: the tools that save the session's cookies to a file or set cookies and page storage
+  // come only with `--caps=storage`, which `unguardableBrowserReason` refuses, so none is offered.
+  it('offers none of the storage tools by name', () => {
+    const names = snapshot.tools.map((tool) => tool.name);
+    for (const tool of [
+      'browser_storage_state',
+      'browser_set_storage_state',
+      'browser_cookie_set',
+      'browser_cookie_delete',
+      'browser_cookie_clear',
+      'browser_localstorage_set',
+      'browser_sessionstorage_set',
+    ])
+      expect(names).not.toContain(tool);
+  });
+
   it('offers no tool that saves or sets browser state, in any tool set DorkOS allows', () => {
     const names = snapshot.tools.map((tool) => tool.name);
     expect(

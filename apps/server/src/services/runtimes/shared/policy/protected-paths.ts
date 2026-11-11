@@ -253,6 +253,10 @@ export const AGENT_FOLDER_SECRET_PATHS = group(
  *   `dorkos browser login` saves it from. An agent that could write either could
  *   start every later agent browser signed in to an account of its choosing
  *   (DOR-4136). Only a person saves them, with `dorkos browser login`.
+ * - `browser/agent-browser-guard.json` (and its temp files beside it) is the
+ *   config every agent browser starts with, which keeps it off DorkOS Cloud. The
+ *   server writes it before each start; an agent that changed it in between
+ *   could start a browser with options DorkOS refuses as flags (DOR-4136).
  */
 export const PERSON_ONLY_DATA_PATHS = group('data', 'write', [
   ['permissions', 'folder'],
@@ -271,6 +275,7 @@ export const PERSON_ONLY_DATA_PATHS = group('data', 'write', [
   ['browser/storage-state.json', 'file'],
   ['browser/.storage-state.json.*.tmp', 'file'],
   ['browser/profile', 'folder'],
+  ['browser/agent-browser-guard.json*', 'file'],
 ]);
 
 /**
@@ -290,6 +295,7 @@ export const HOME_PERSON_ONLY_PATHS: readonly ProtectedPath[] = [
     ['.dork/browser/storage-state.json', 'file'],
     ['.dork/browser/.storage-state.json.*.tmp', 'file'],
     ['.dork/browser/profile', 'folder'],
+    ['.dork/browser/agent-browser-guard.json*', 'file'],
     ['.dork/browser-profiles', 'folder'],
     ['.dork/local-browser/saved-logins', 'folder'],
   ]),

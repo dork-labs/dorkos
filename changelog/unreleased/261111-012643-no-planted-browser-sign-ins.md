@@ -2,6 +2,7 @@
 covers:
   - "fix(server): agents can't write a browser sign-in store, so no cookie they plant reaches a later agent browser (DOR-4136)"
   - 'fix(shared): an agent browser that can save its own state or write files is left out (DOR-4136)'
+  - 'fix(shared): an agent browser that brings its own config, in any spelling, is left out (DOR-4136)'
 ---
 
 ### Security
