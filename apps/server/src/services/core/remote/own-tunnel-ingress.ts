@@ -12,7 +12,9 @@
  * `own-tunnel` (`ingress-mark.ts`) before anything else runs, and the request
  * classifier and `isAtThisComputer` read the mark.
  *
- * It checks nothing else: an own tunnel has no edge proof, and its requests
+ * Before marking, it refuses what no remote listener serves, by the same
+ * normalise-then-match rule as managed access (`remotePathVerdict`). It checks
+ * nothing else: an own tunnel has no edge proof, and its requests
  * meet the same host guard, login gate and routes as any other. That is the
  * difference from the managed ingress (`managed-ingress.ts`), which runs the
  * edge-proof and host checks first.
@@ -28,6 +30,7 @@ import http, { type IncomingMessage, type RequestListener } from 'node:http';
 import type { AddressInfo, Socket } from 'node:net';
 import type { Duplex } from 'node:stream';
 import { markIngress } from './ingress-mark.js';
+import { isOriginForm, remotePathVerdict } from './managed-ingress.js';
 
 /** Where the own-tunnel ingress hands what it marks. */
 export interface OwnTunnelIngressOptions {
@@ -78,6 +81,18 @@ export function ownTunnelIngressFor(
 }
 
 /**
+ * Why a target is refused before it reaches the front door, or `null`: the
+ * same normalise-then-match rule managed access uses (`managed-ingress.ts`).
+ */
+function refusalFor(target: string): { status: number; message: string } | null {
+  if (!isOriginForm(target)) return { status: 400, message: 'Bad request.' };
+  const verdict = remotePathVerdict(target);
+  if (verdict === 'not-normal') return { status: 400, message: 'Bad request.' };
+  if (verdict === 'not-served') return { status: 404, message: 'Not found.' };
+  return null;
+}
+
+/**
  * Create the own-tunnel ingress. Nothing listens until {@link OwnTunnelIngress.open}.
  *
  * @param options - Where marked traffic goes, and which port it fronts.
@@ -89,10 +104,26 @@ export function createOwnTunnelIngress(options: OwnTunnelIngressOptions): OwnTun
 
   function listen(): Promise<string> {
     const next = http.createServer((req, res) => {
+      const refusal = refusalFor(req.url ?? '');
+      if (refusal) {
+        res.writeHead(refusal.status, { 'content-type': 'application/json; charset=utf-8' });
+        res.end(JSON.stringify({ error: refusal.message }));
+        return;
+      }
       markIngress(req, 'own-tunnel');
       options.handler(req, res);
     });
     next.on('upgrade', (req: IncomingMessage, socket: Duplex, head: Buffer) => {
+      const refusal = refusalFor(req.url ?? '');
+      if (refusal) {
+        if (!socket.destroyed) {
+          socket.write(
+            `HTTP/1.1 ${refusal.status} ${refusal.message}\r\nConnection: close\r\n\r\n`
+          );
+        }
+        socket.destroy();
+        return;
+      }
       markIngress(req, 'own-tunnel');
       options.forwardUpgrade(req, socket, head);
     });
