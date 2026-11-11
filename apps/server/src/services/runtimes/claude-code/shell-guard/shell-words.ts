@@ -289,9 +289,21 @@ export function expandVariables(
   return named === '~' || named.startsWith('~/') ? `${home}${named.slice(1)}` : named;
 }
 
+/** The longest name a path can have on the systems DorkOS runs on (macOS's `PATH_MAX`). */
+const MAX_PATH_NAME = 1_024;
+
+/** Whether a stretch of text could be one path, spaces and all: one line, and not too long. */
+function couldBePath(text: string): boolean {
+  return (
+    text.length > 0 && text.length <= MAX_PATH_NAME && !text.startsWith('-') && !/\n/.test(text)
+  );
+}
+
 /**
- * The pieces of a word that could each be a path: the whole word, and what is left when it is cut
- * at anything a path rarely holds. So `--file=/x` and a script's `open('/x')` both give `/x`.
+ * The pieces of a word that could each be a path: the whole word, each quoted string in it, and
+ * what is left when it is cut at anything a path rarely holds. So `--file=/x` and a script's
+ * `open('/x')` both give `/x`, and a path with a space in it (`~/Library/Application Support/…`,
+ * as an interpreter's argument or inside `open('…')`) is also tried whole (DOR-3613).
  *
  * @param word - A word, already opened.
  */
@@ -300,6 +312,9 @@ export function pathPieces(word: string): string[] {
     .split(/[\s'"`(),;:<>|&=]+|[{}]/)
     .map((piece) => piece.replace(/^-[A-Za-z]+(?=[/~.])/, ''))
     .filter((piece) => piece.length > 0 && !piece.startsWith('-'));
-  const whole = !word.startsWith('-') && !/[\s'"`(),;:<>|&={}]/.test(word);
-  return whole ? [word, ...pieces] : pieces;
+  const quoted = [...word.matchAll(/'([^'\n]*)'|"([^"\n]*)"|`([^`\n]*)`/g)]
+    .map((match) => match[1] ?? match[2] ?? match[3] ?? '')
+    .filter(couldBePath);
+  const whole = couldBePath(word) ? [word] : [];
+  return [...new Set([...whole, ...quoted, ...pieces])];
 }

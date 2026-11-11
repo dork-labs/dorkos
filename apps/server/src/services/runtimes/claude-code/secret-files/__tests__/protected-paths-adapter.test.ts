@@ -65,6 +65,12 @@ describe('Claude Code protected-path adapter', () => {
       '.claude.json*',
       '.claude/.credentials*',
       '.claude/backups/**',
+      'Library/Application Support/DorkOS/**',
+      'AppData/Roaming/DorkOS/**',
+      '.config/DorkOS/**',
+      'Library/Application Support/@dorkos/desktop/**',
+      'AppData/Roaming/@dorkos/desktop/**',
+      '.config/@dorkos/desktop/**',
       ...DATA.map((entry) => `.dork/${entry}`),
     ]);
     expect(AGENT_FOLDER_SECRETS).toEqual(

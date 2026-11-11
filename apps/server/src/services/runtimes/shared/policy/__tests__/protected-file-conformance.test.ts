@@ -94,6 +94,73 @@ describe.each(adapters)('%s native file protection', (adapter) => {
     expect(await refused(adapter, file, entry.deny)).toBe(true);
   });
 
+  // DOR-3613: an agent that reads the person's DorkOS sign-in, or the agent
+  // browser's cookies, can act as the person (and press Resume on a paused
+  // browser). Each of these is a real file those stores keep.
+  it.each([
+    [
+      'the desktop app’s cookie store (macOS)',
+      'home',
+      'Library/Application Support/DorkOS/Cookies',
+    ],
+    ['its newer cookie store', 'home', 'Library/Application Support/DorkOS/Network/Cookies'],
+    [
+      'its page storage, where the person proof lives',
+      'home',
+      'Library/Application Support/DorkOS/Local Storage/leveldb/000003.log',
+    ],
+    [
+      'its built-in browser’s sign-ins',
+      'home',
+      'Library/Application Support/DorkOS/Partitions/dorkos-local-browser/Cookies',
+    ],
+    ['the desktop app’s cookie store (Windows)', 'home', 'AppData/Roaming/DorkOS/Network/Cookies'],
+    ['the desktop app’s cookie store (Linux)', 'home', '.config/DorkOS/Cookies'],
+    [
+      'a development build’s cookie store',
+      'home',
+      'Library/Application Support/@dorkos/desktop/Network/Cookies',
+    ],
+    // macOS folders are case-insensitive: the same file under other letters.
+    ['the cookie store spelt in other case', 'home', 'library/application support/dorkos/Cookies'],
+    ['its page storage in capitals', 'home', 'LIBRARY/APPLICATION SUPPORT/DORKOS/Local Storage/x'],
+    ['the agent browser’s saved sign-in', 'data', 'browser/storage-state.json'],
+    ['the agent browser’s own cookies', 'data', 'browser/profile/Default/Cookies'],
+    ['a named profile’s cookies', 'data', 'browser-profiles/made-up-profile/Default/Cookies'],
+    ['the local browser’s saved logins', 'data', 'local-browser/saved-logins/Default/Cookies'],
+    ['the default data folder’s agent browser', 'home', '.dork/browser/profile/Default/Cookies'],
+  ] as const)('refuses reading %s', async (_what, root, file) => {
+    const base = root === 'home' ? roots.home : roots.data;
+    expect(await refused(adapter, path.join(base, file), 'read')).toBe(true);
+  });
+
+  it('follows a link to the desktop app’s folder, and a link to its cookie file', async () => {
+    const appData = path.join(roots.home, 'Library', 'Application Support', 'DorkOS');
+    mkdirSync(path.join(appData, 'Network'), { recursive: true });
+    writeFileSync(path.join(appData, 'Network', 'Cookies'), 'made-up');
+    symlinkSync(appData, path.join(roots.cwd, 'app-data'));
+    symlinkSync(path.join(appData, 'Network', 'Cookies'), path.join(roots.cwd, 'jar.db'));
+    expect(
+      await refused(adapter, path.join(roots.cwd, 'app-data', 'Network', 'Cookies'), 'read')
+    ).toBe(true);
+    expect(await refused(adapter, path.join(roots.cwd, 'jar.db'), 'read')).toBe(true);
+  });
+
+  it('follows a link to an agent browser profile', async () => {
+    const profile = path.join(roots.data, 'browser-profiles', 'made-up-profile');
+    mkdirSync(path.join(profile, 'Default'), { recursive: true });
+    writeFileSync(path.join(profile, 'Default', 'Cookies'), 'made-up');
+    symlinkSync(profile, path.join(roots.cwd, 'profile-link'));
+    expect(
+      await refused(adapter, path.join(roots.cwd, 'profile-link', 'Default', 'Cookies'), 'read')
+    ).toBe(true);
+  });
+
+  it('still reads ordinary files beside the desktop app’s folder', async () => {
+    const other = path.join(roots.home, 'Library/Application Support/Other App/Cookies');
+    expect(await refused(adapter, other, 'read')).toBe(false);
+  });
+
   it('keeps normal files and templates accessible', async () => {
     for (const file of ['notes.txt', '.env.example', 'id_rsa.pub', 'credentials/guide.md']) {
       expect(await refused(adapter, path.join(roots.cwd, file), 'read')).toBe(false);

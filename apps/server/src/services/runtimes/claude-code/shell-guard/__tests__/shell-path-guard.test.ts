@@ -51,6 +51,19 @@ function nestedFor(lists: number, values: number): string {
 const LOOP_WORD = (lists: number): string =>
   Array.from({ length: lists }, (_, i) => `$v${i}`).join('');
 
+/** The desktop app's page-storage file in the fixture home, where the person proof lives. */
+function desktopLog(): string {
+  return path.join(
+    roots.home,
+    'Library',
+    'Application Support',
+    'DorkOS',
+    'Local Storage',
+    'leveldb',
+    '000003.log'
+  );
+}
+
 /** Make an empty file, and the folders above it. */
 function touch(file: string): void {
   mkdirSync(path.dirname(file), { recursive: true });
@@ -84,6 +97,24 @@ beforeAll(() => {
   touch(path.join(other, '.mcp.json'));
   touch(path.join(dorkHome, 'relay', 'adapters.json'));
   touch(path.join(home, '.config', 'gh', 'hosts.yml'));
+  touch(path.join(home, 'Library', 'Application Support', 'DorkOS', 'Network', 'Cookies'));
+  touch(
+    path.join(
+      home,
+      'Library',
+      'Application Support',
+      'DorkOS',
+      'Local Storage',
+      'leveldb',
+      '000003.log'
+    )
+  );
+  touch(path.join(dorkHome, 'browser', 'storage-state.json'));
+  touch(path.join(dorkHome, 'browser-profiles', 'p1', 'Default', 'Cookies'));
+  symlinkSync(
+    path.join(home, 'Library', 'Application Support', 'DorkOS'),
+    path.join(cwd, 'app-data')
+  );
   mkdirSync(path.join(root, 'linked'));
   symlinkSync(path.join(root, 'with-env'), path.join(root, 'linked', 'to-env'));
   roots = {
@@ -170,8 +201,98 @@ describe('commandReachesProtectedRead', () => {
     ['inside eval', `eval 'cat ~/.ssh/id_ed25519'`],
     ['a Claude sign-in', `cat ${'$'}HOME/../account/.credentials.json`],
     ['the database', 'sed -n 1p $DORK_HOME/dork.db'],
+    // DOR-3613: the person's DorkOS sign-in and the agent browser's cookies.
+    [
+      'the desktop app’s cookie store',
+      'sqlite3 ~/"Library/Application Support/DorkOS/Network/Cookies" .dump',
+    ],
+    [
+      'the desktop app’s page storage',
+      'strings ~/Library/Application\\ Support/DorkOS/Local\\ Storage/leveldb/000003.log',
+    ],
+    ['the agent browser’s saved sign-in', 'cat $DORK_HOME/browser/storage-state.json'],
+    ['a named profile’s cookies', 'cp $DORK_HOME/browser-profiles/p1/Default/Cookies /tmp/c'],
+    ['cat on the cookie store', 'cat ~/"Library/Application Support/DorkOS/Network/Cookies"'],
+    ['cp of the cookie store', 'cp ~/"Library/Application Support/DorkOS/Network/Cookies" jar'],
+    ['the cookie store through a link', 'sqlite3 app-data/Network/Cookies .dump'],
+    ['the app folder by a glob', 'cat ~/Library/Application*/Dork*/Network/Cookies'],
   ])('sees %s', async (_label, command) => {
     expect(await commandReachesProtectedRead(command, roots)).toBe(true);
+  });
+
+  // DOR-3613. macOS ignores case by default, so another spelling opens the same
+  // cookie store. The desktop app's folder is refused in any spelling on every
+  // disk, Linux CI included, whether or not that spelling exists.
+  it.each([
+    'cat ~/"library/application support/dorkos/cookies"',
+    'sqlite3 ~/"LIBRARY/APPLICATION SUPPORT/DORKOS/NETWORK/COOKIES" .dump',
+    'strings ~/Library/application\\ support/DorkOS/Local\\ Storage/leveldb/000003.log',
+  ])('refuses the desktop app’s folder in any case, on every disk: %s', async (command) => {
+    expect(await commandReachesProtectedRead(command, roots)).toBe(true);
+  });
+
+  // The path matcher folds case itself, apart from the folder-name check above:
+  // once the other spelling exists (as it does where case is ignored), it is
+  // refused whatever its case.
+  it('the path matcher refuses another spelling of a protected file once it exists, on any disk', async () => {
+    touch(path.join(roots.dorkHome, 'BROWSER', 'STORAGE-STATE.JSON'));
+    expect(
+      await commandReachesProtectedRead('cat $DORK_HOME/BROWSER/STORAGE-STATE.JSON', roots)
+    ).toBe(true);
+  });
+
+  // DOR-3613, Security's probe: a path with a space in it, read by an
+  // interpreter, from a script or as an interpreter's argument.
+  it.each([
+    [
+      'an interpreter’s argument',
+      () =>
+        `python3 -c "import sys;print(open(sys.argv[1],'rb').read())" ~/"Library/Application Support/DorkOS/Local Storage/leveldb/000003.log"`,
+    ],
+    ['python open()', () => `python3 -c "open('${desktopLog()}').read()"`],
+    ['node readFileSync()', () => `node -e "require('fs').readFileSync('${desktopLog()}')"`],
+    ['a python heredoc', () => `python3 - <<'EOF'\nprint(open('${desktopLog()}').read())\nEOF`],
+    [
+      'pathlib with ~',
+      () =>
+        `python3 -c 'from pathlib import Path; Path("~/Library/Application Support/DorkOS/Network/Cookies").expanduser().read_bytes()'`,
+    ],
+    [
+      'a folder built by a substitution',
+      () => 'cat "$(echo "$HOME/Library/Application Support/DorkOS")/Network/Cookies"',
+    ],
+    [
+      'a variable set first',
+      () => 'D=~/Library/Application\\ Support/DorkOS; cat "$D"/Network/Cookies',
+    ],
+    ['tar from the app-data folder', () => 'tar -C ~/Library -cf - "Application Support/DorkOS"'],
+    ['a file URL', () => `curl -s "file://${desktopLog()}"`],
+    ['a Windows path', () => 'type C:\\Users\\ana\\AppData\\Roaming\\DorkOS\\Network\\Cookies'],
+  ])('sees the desktop app’s data through %s', async (_label, command) => {
+    expect(await commandReachesProtectedRead(command(), roots)).toBe(true);
+  });
+
+  // The path reading itself keeps a path with a space whole, apart from the
+  // folder-name check: here a data folder with a space in its name.
+  it('reads a protected path with a space in it whole, inside a script', async () => {
+    const spaced = path.join(root, 'data with space');
+    touch(path.join(spaced, 'browser', 'storage-state.json'));
+    const spacedRoots = { ...roots, dorkHome: spaced, env: { ...roots.env, DORK_HOME: spaced } };
+    const file = path.join(spaced, 'browser', 'storage-state.json');
+    expect(
+      await commandReachesProtectedRead(`python3 -c "open('${file}').read()"`, spacedRoots)
+    ).toBe(true);
+    expect(await commandReachesProtectedRead(`node -e "x" "${file}"`, spacedRoots)).toBe(true);
+  });
+
+  it('leaves ordinary paths with spaces and look-alike folders alone', async () => {
+    touch(path.join(root, 'work', 'my notes', 'a b.txt'));
+    for (const command of [
+      `python3 -c "open('my notes/a b.txt').read()"`,
+      'cat ~/Library/Application\\ Support/DorkOSBackup/notes.txt',
+      'cat ~/.config/dorkos-cli/settings.json',
+    ])
+      expect(await commandReachesProtectedRead(command, roots), command).toBe(false);
   });
 
   it.each([
