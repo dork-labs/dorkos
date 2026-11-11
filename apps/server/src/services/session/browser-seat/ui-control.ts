@@ -40,6 +40,7 @@ import type { UiState, UiStateReport, UiCommand } from '@dorkos/shared/types';
 import {
   CANVAS_VERBS,
   SESSION_AGENT_AUTHOR,
+  canvasOutsideFolderRefusal,
   canvasSourceRefusal,
   frontOfViewIds,
   peekCanvasService,
@@ -314,6 +315,20 @@ export async function controlUi(
       rev: applied.rev,
       viewers: applied.viewers,
     };
+  }
+
+  // **A session canvas shows only what the chat's folder serves** (DOR-3519).
+  // The app reads the file back through the folder-confined file routes, so a
+  // path outside the folder would answer success here and show nothing there.
+  // Say so now, naming the path, before any document or event exists.
+  const outsideFolder = await canvasOutsideFolderRefusal(command, caller.cwd);
+  if (outsideFolder !== null) {
+    throw new CapabilityToolError({
+      success: false,
+      action: command.action,
+      code: outsideFolder.code,
+      error: outsideFolder.message,
+    });
   }
 
   // **A canvas verb in a SESSION is a write too** (spec `canvas-agent-seat`

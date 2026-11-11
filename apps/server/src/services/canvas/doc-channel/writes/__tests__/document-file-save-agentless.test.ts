@@ -182,12 +182,27 @@ it('a chat with no agent cannot save a file outside the folder it recorded', asy
   const h = await setup(null, (dir) => dirname(dir));
   const recorded = join(h.dir, 'recorded');
   await fs.mkdir(recorded);
-  const doc = await openInChat(h, recorded);
+  // Opening a file outside the chat's folder is refused up front now (DOR-3519),
+  // so no such document is ever recorded for a save to start from.
+  const outside = join(h.dir, 'outside.md');
+  await fs.writeFile(outside, 'outside bytes', { flag: 'wx' });
+  await expect(
+    controlUi(
+      { action: 'open_canvas', content: { type: 'file', title: 'Out', sourcePath: outside } },
+      { sessionId: SESSION, cwd: recorded, principal: h.runtime.principal }
+    )
+  ).rejects.toMatchObject({ payload: { code: 'OUTSIDE_FOLDER' } });
+  // And a document recorded in the folder still cannot save to a path outside it.
+  const doc = await openInChat(h, recorded, 'notes.md', recorded);
   const input = doc.input();
   await expect(
-    saveOriginalDocumentFile(h.http.fileWrites, { ...input, cwd: h.dir }, { headers: {} })
+    saveOriginalDocumentFile(
+      h.http.fileWrites,
+      { ...input, cwd: h.dir, path: outside },
+      { headers: {} }
+    )
   ).rejects.toBeInstanceOf(DocChannelNotFoundError);
-  await request(docs.server).get(doc.endpoint).expect(404);
+  expect(await fs.readFile(outside, 'utf8')).toBe('outside bytes');
   expect(await fs.readFile(doc.path, 'utf8')).toBe(doc.content);
 });
 

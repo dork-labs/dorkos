@@ -15,7 +15,7 @@ import { GEN_UI_CONTEXT } from '../../shared/gen-ui-context.js';
 import { buildAgentContextAppend } from '../../shared/agent-context.js';
 import type { AgentHome } from '../../../core/agent-identity/index.js';
 import { buildRoomToolsBlock } from '../../shared/room-tools-context.js';
-import { buildCanvasContentCatalog, buildUiActionCatalog } from '../../shared/ui-tool-contract.js';
+import * as uiContract from '../../shared/ui-tool-contract.js';
 import { formatRoomContext } from '../../shared/room-context-block.js';
 import { formatProseContext, wrapContextTag as wrapTag } from '../../shared/prose/prose-context.js';
 import type { AgentRegistryPort } from '@dorkos/shared/agent-runtime';
@@ -347,10 +347,10 @@ Available tools:
   ${T}get_ui_state() -- query current UI state (panels, sidebar, canvas, active agent)
 
 Actions:
-${buildUiActionCatalog({ indent: '  ', sentences: false })}
+${uiContract.buildUiActionCatalog({ indent: '  ', sentences: false })}
 
 The <canvas> that open_canvas and update_canvas take is EXACTLY ONE of these shapes:
-${buildCanvasContentCatalog({ indent: '    ', sentences: false })}
+${uiContract.buildCanvasContentCatalog({ indent: '    ', sentences: false })}\n\n${uiContract.CANVAS_LOCAL_SRC_RULE}
 
 Each action's full description is on the ${T}control_ui tool itself — read it there before a first call.
 Use ${T}get_ui_state() before making layout decisions to avoid redundant commands. It reflects the state the client reported at turn start plus the commands you issued this turn — not a live read.

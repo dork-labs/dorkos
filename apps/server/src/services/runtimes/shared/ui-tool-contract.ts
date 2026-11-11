@@ -361,6 +361,14 @@ export function buildUiActionCatalog(options: UiCatalogOptions = {}): string {
 }
 
 /**
+ * What a local `src` may name, said the same way in the tool description and in
+ * `<ui_tools>` (DOR-3519): the session canvas reads it back through the
+ * folder-confined file routes, and `control_ui` refuses anything else up front.
+ */
+export const CANVAS_LOCAL_SRC_RULE =
+  'A local src must be inside your own folder. Anything else returns an error naming the path, so copy the file in first.';
+
+/**
  * Tool description for control_ui (shared between the Claude in-process tool and
  * the Codex scoped stub).
  *
@@ -378,6 +386,7 @@ The <canvas> that open_canvas and update_canvas take is EXACTLY ONE of these sha
 ${buildCanvasContentCatalog({ indent: '  ' })}
 
 Notes:
+- Local files: ${CANVAS_LOCAL_SRC_RULE}
 - Delivery: UI commands only take visible effect when an interactive client is attached to this session. In headless or scheduled runs (no client) the command is accepted and queued but has no on-screen effect. A success result means "accepted", not "displayed".
 - Canvas edits: while somebody is editing a canvas document, your pushes to it (open_canvas / update_canvas) are held rather than applied, and they are shown a banner offering your version or theirs (ADR-0292). A success result means the command was accepted, not that it replaced what they see.
 - Putting something on a room: the six canvas actions (open_canvas, update_canvas, close_canvas, open_file, open_diff, browser_navigate) take an optional target with a room id, which puts the document on that room's shared canvas instead of this window. You have to be a member of the room; a room you are not in answers "No such room", the same answer a room that does not exist gives. Everyone in the room sees it, and one line saying what you put there is posted when your turn ends — nobody's turn is started by it. You can do this three times per room per turn, and the other actions ignore a target. A picture, PDF, sound, video, 3D model or CSV named by a local path is copied into the room so every member can see it; it must be in your own folder or your own copy of the room's files, and anything else is refused with the reason.`;

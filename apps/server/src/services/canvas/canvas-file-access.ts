@@ -94,6 +94,50 @@ export function canvasContentRefusal(
   return base === undefined ? null : protectedSourceRefusal(source, base);
 }
 
+/** Why a session canvas cannot show a local file: it is outside the chat's folder. */
+export interface OutsideFolderRefusal {
+  /** Always `OUTSIDE_FOLDER`. */
+  code: 'OUTSIDE_FOLDER';
+  /** The sentence, naming the path as the agent gave it. */
+  message: string;
+}
+
+/**
+ * Why a SESSION canvas could never show the local file a command names, or
+ * `null` when it names none or can (DOR-3519).
+ *
+ * The app reads a session canvas's file through `/api/files/raw` and
+ * `/api/files/content`, both confined to the chat's folder by
+ * {@link resolveWithinCwd}. This asks that same question when the command
+ * arrives, so a file outside the folder (or a link inside it that points out)
+ * is an error the agent reads, not a success and an empty pane. It widens
+ * nothing: it only refuses what the routes would refuse anyway. A room canvas
+ * answers this through its own media copy instead.
+ *
+ * @param command - The validated `control_ui` command.
+ * @param cwd - The chat's folder, which the app reads the file against.
+ */
+export async function canvasOutsideFolderRefusal(
+  command: UiCommand,
+  cwd: string | undefined
+): Promise<OutsideFolderRefusal | null> {
+  const content = contentFor(command);
+  if (content === null || cwd === undefined) return null;
+  const source = canvasSourcePath(content) ?? localMediaSource(content);
+  if (source === null) return null;
+  try {
+    await resolveWithinCwd(cwd, source);
+    return null;
+  } catch (err) {
+    const code = (err as { code?: unknown }).code;
+    if (code !== 'OUTSIDE_BOUNDARY') return null;
+    return {
+      code: 'OUTSIDE_FOLDER',
+      message: `${source} is outside your folder, so the canvas can't show it. To show it, copy it into your folder first and open the copy.`,
+    };
+  }
+}
+
 /** What a read answers: the text, or `null` and the sentence saying why there is none. */
 export interface CanvasFileText {
   /** The file's text, or `null` when there is none to give. */
