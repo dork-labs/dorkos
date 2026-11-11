@@ -28,22 +28,117 @@ export const AGENT_BROWSER_SERVER_NAME = 'browser';
  * It runs through `npx` on the agent's machine, so `@latest` would let any new
  * upstream release change, unreviewed, what every agent's browser can do. It
  * has already moved in ways this feature depends on: which tools are always on
- * (there is no switch to turn off `browser_run_code_unsafe` or
- * `browser_network_request` in 0.0.82, which is why the docs spell out that an
- * agent with the browser can read the saved sign-ins), and whether
+ * (0.0.82 has no switch for `browser_run_code_unsafe` or `browser_network_request`,
+ * so each runtime withholds both itself: {@link AGENT_BROWSER_WITHHELD_TOOLS}), and whether
  * `--storage-state` tolerates a file (0.0.82 fails every browser tool when the
  * file is missing, which is why DorkOS keeps an empty one in place).
  *
  * To bump it: change this string, then run the real-Chrome smoke test
  * (`DORKOS_BROWSER_SMOKE=1`, `packages/cli/src/lib/agent-browser/__tests__/agent-browser-smoke.test.ts`),
  * re-read `npx @playwright/mcp@<new> --help` for the flags the connection below
- * passes, and re-check the always-on tool list the docs describe
- * (`docs/guides/agent-browser.mdx`, "The trade-off, honestly").
+ * passes, and re-check the always-on tool list for any new tool that runs code
+ * outside the page, which belongs in {@link AGENT_BROWSER_WITHHELD_TOOLS}, and
+ * any new argument that names a file, which {@link AGENT_BROWSER_FILE_ARGUMENT} must match.
  */
 export const AGENT_BROWSER_MCP_VERSION = '0.0.82';
 
 /** The Playwright MCP package spec agents run: {@link AGENT_BROWSER_MCP_VERSION}, pinned. */
 export const AGENT_BROWSER_MCP_PACKAGE = `@playwright/mcp@${AGENT_BROWSER_MCP_VERSION}`;
+
+/**
+ * Playwright MCP tools no agent is offered, on any server, in any letter case. The first two are
+ * always on in 0.0.82, with no switch:
+ *
+ * - `browser_run_code_unsafe` runs any JavaScript in the browser server's own process, outside the
+ *   page, so it reaches files and the network past every rule an agent's own tools follow.
+ * - `browser_network_request` shows a recorded request's full headers, its `Cookie` and
+ *   `Set-Cookie` among them, which hands an agent sign-in cookies the page itself could not read.
+ *   `browser_network_requests`, the list without headers, stays.
+ * - `browser_start_tracing` and `browser_stop_tracing` (the `devtools` tool set) write a live
+ *   trace of every request, full headers and all, into the chat's own folder, where an agent
+ *   reads the same cookies as a file.
+ *
+ * Each runtime withholds them: a deny rule and a hook on Claude Code, never registered on Doe, and
+ * on Codex and OpenCode, which cannot hold back one argument ({@link AGENT_BROWSER_FILE_ARGUMENT}),
+ * no agent browser at all. `browser_evaluate` stays: it runs inside the page.
+ */
+export const AGENT_BROWSER_WITHHELD_TOOLS: readonly string[] = [
+  'browser_run_code_unsafe',
+  'browser_network_request',
+  'browser_start_tracing',
+  'browser_stop_tracing',
+];
+
+/**
+ * An argument name that could make a Playwright MCP tool read or write a file on this computer,
+ * in any case: in 0.0.82, `filename` (a snapshot, screenshot, console log, network log or
+ * `browser_evaluate` result saved to a file of the caller's choosing) and `paths`
+ * (`browser_file_upload` and `browser_drop` sending local files to a page), and anything a later
+ * or person-added version calls `path`, `dir` or `output`. 0.0.82 bounds them only by the folder
+ * the MCP client reports as its root, which is the chat's own folder, so a call that carries one
+ * could change an agent's protected setup files or, in a chat that runs in the home or data
+ * folder, the saved sign-ins. A browser call with one is refused, at any depth; the same call
+ * without it returns its result as text.
+ */
+export const AGENT_BROWSER_FILE_ARGUMENT = /file|path|dir|output/i;
+
+/**
+ * Whether a tool, by its bare name, is one of {@link AGENT_BROWSER_WITHHELD_TOOLS}, in any case.
+ *
+ * @param tool - The tool's own name, without any server prefix.
+ */
+export function isWithheldBrowserTool(tool: string): boolean {
+  const name = tool.toLowerCase();
+  return AGENT_BROWSER_WITHHELD_TOOLS.includes(name);
+}
+
+/** How deep {@link browserCallNamesFile} looks; anything deeper counts as naming a file. */
+const FILE_ARGUMENT_DEPTH = 32;
+
+/**
+ * A `file:` address, or one shown as source (`view-source:file:` renders the file as text), in
+ * any case. Tested after {@link urlParserView}, so it matches what the browser would load.
+ */
+const FILE_URL = /^(?:view-source:)?file:/i;
+
+/**
+ * A string as the URL parser reads it: tabs and line breaks dropped wherever they are, and
+ * control characters and spaces dropped from the front, so `fi\tle:///x` and `\u0001file:///x`
+ * load as `file:` and must be read that way here too.
+ */
+function urlParserView(value: string): string {
+  // The control characters are the point: the URL parser drops them, so this must too.
+  // eslint-disable-next-line no-control-regex
+  return value.replace(/[\t\n\r]/g, '').replace(/^[\x00-\x20]+/, '');
+}
+
+/**
+ * Whether `value` reaches a file on this computer at any depth: a key matching
+ * {@link AGENT_BROWSER_FILE_ARGUMENT}, or a string that opens as a `file:` address.
+ */
+function reachesFile(value: unknown, depth: number): boolean {
+  if (typeof value === 'string') return FILE_URL.test(urlParserView(value));
+  if (!value || typeof value !== 'object') return false;
+  if (depth > FILE_ARGUMENT_DEPTH) return true;
+  if (Array.isArray(value)) return value.some((item) => reachesFile(item, depth + 1));
+  return Object.entries(value).some(
+    ([key, child]) => AGENT_BROWSER_FILE_ARGUMENT.test(key) || reachesFile(child, depth + 1)
+  );
+}
+
+/**
+ * Whether a browser tool call reaches a file on this computer: a tool whose bare name starts
+ * `browser_`, in any case, whose arguments, nested ones and objects in arrays included, hold a key
+ * matching {@link AGENT_BROWSER_FILE_ARGUMENT} whatever its value (`""` and `null` too), or a
+ * string that opens as a `file:` address (`browser_navigate` to one, or a new tab on one).
+ *
+ * @param tool - The tool's own name, without any server prefix.
+ * @param input - The call's arguments.
+ */
+export function browserCallNamesFile(tool: string, input: unknown): boolean {
+  if (!/^browser_/i.test(tool)) return false;
+  return reachesFile(input, 0);
+}
 
 /** What an empty saved session looks like: valid for Playwright, signed in to nothing. */
 export const EMPTY_STORAGE_STATE = { cookies: [], origins: [] } as const;
@@ -213,9 +308,10 @@ export function unguardableBrowserReason(connection: BrowserConnectionLike): str
  *   redirect and every request the page makes. The server writes that file
  *   (`services/browser/agent-browser-guard.ts`).
  *
- * Neither reaches a request an agent's own Playwright code sends from Node
- * (`browser_run_code_unsafe` and `page.request`); that is why the saved
- * session never holds a Cloud sign-in in the first place. Only call this on a
+ * Neither reaches a request sent from Node rather than the page (Playwright
+ * code run in the server, which {@link AGENT_BROWSER_WITHHELD_TOOLS} keeps from
+ * agents, and `page.request`); that is why the saved session never holds a
+ * Cloud sign-in in the first place. Only call this on a
  * connection {@link unguardableBrowserReason} accepts. An operator's own
  * `--blocked-origins` entries are kept beside the Cloud ones. A server that is
  * not a Playwright MCP browser is returned unchanged.

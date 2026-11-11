@@ -63,6 +63,22 @@ describe('toOpenCodeMcpServers', () => {
   });
 
   it('returns empty results for an empty input', () => {
-    expect(toOpenCodeMcpServers({})).toEqual({ servers: {}, skipped: [] });
+    expect(toOpenCodeMcpServers({})).toEqual({ servers: {}, skipped: [], withheld: [] });
+  });
+
+  // OpenCode can't hold back one tool, and the agent browser's always-on tools include one that
+  // runs code outside the page, so the whole browser stays out.
+  it('leaves the agent browser out, however it is named or started', () => {
+    const { servers, withheld } = toOpenCodeMcpServers({
+      browser: {
+        transport: 'stdio',
+        command: 'npx',
+        args: ['-y', '@playwright/mcp@0.0.82', '--isolated', '--headless'],
+      },
+      renamed: { transport: 'stdio', command: '/opt/bin/mcp-server-playwright', args: [] },
+      fs: { transport: 'stdio', command: 'fs' },
+    });
+    expect(withheld).toEqual(['browser', 'renamed']);
+    expect(Object.keys(servers)).toEqual(['fs']);
   });
 });

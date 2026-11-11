@@ -312,7 +312,13 @@ export class OpenCodeMcpManager {
     const managed =
       !held && this.resolver && agentCwd !== null
         ? toOpenCodeMcpServers(this.resolver.injectableServersForCwd(agentCwd))
-        : { servers: {}, skipped: [] };
+        : { servers: {}, skipped: [], withheld: [] };
+    if (managed.withheld.length > 0) {
+      logger.warn(
+        '[OpenCodeRuntime] left the agent browser out: OpenCode cannot hold back one of its tools',
+        { cwd, withheld: managed.withheld }
+      );
+    }
     if (managed.skipped.length > 0) {
       logger.debug(
         '[OpenCodeRuntime] skipped SSE managed MCP servers — OpenCode has no SSE transport',
