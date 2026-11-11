@@ -84,27 +84,32 @@ See `contributing/marketplace-installs.md` for the full install pipeline, transa
 
 ### POST /api/sessions/:id/messages
 
-Trigger-only (ADR-0264). The endpoint validates the request, acquires the session write-lock, starts the turn server-side, and returns immediately — it does NOT stream tokens in-band. The turn's events are delivered solely on `GET /api/sessions/:id/events`.
+Trigger-only and accept-only. The server validates the request, accepts the message into its session queue, and returns `202`; it does not stream the turn in this response. A busy session accepts the message behind its current turn rather than returning `SESSION_LOCKED`. Only `turn_start` on the durable event stream proves that this message's turn began.
 
 **Headers:**
 
-- `X-Client-Id` (optional) - Client identifier for session locking. If another client holds the lock, returns 409 `SESSION_LOCKED`.
+- `X-Client-Id` (optional) - Identifies the originating client; it does not reserve an exclusive session write-lock.
 
-**Request body:** `SendMessageRequest` (from `@dorkos/shared/schemas`)
+**Request body:** `SendMessageRequest` in `packages/shared/src/schemas.ts`. Important fields include:
 
-- `content` (string, required) - User message text
-- `uiState` (optional) - `UiState` object describing the current client UI state (canvas visibility, content, dimensions). Passed to the agent runtime so agents can reason about UI context.
+- `content` (string, required) - Message text.
+- `cwd` (optional) - Working directory.
+- `create` (optional) - Allows first-message creation under an unknown id; without it, an unknown session returns `404 SESSION_NOT_FOUND`.
+- `clientMessageId` (optional) - Client correlation for the submitted message.
+- `context` (optional) - Neutral client signals, including UI state.
+- `runtime`, `account`, `agentPath` (optional) - First-message launch/provenance hints; later messages do not rebind the session.
+- `disposition` (optional) - Requested treatment of a message sent while work is running; see `SendMessageRequestSchema` for the current choices and remaining fields.
 
 **Responses:**
 
-- `202` - `{ sessionId: string }` — the canonical session id (for a brand-new session this is the SDK-assigned id, which differs from the client-supplied UUID; clients re-target the event stream to it)
-- `409` - Session locked by another client. Response body: `{ error: 'Session locked', code: 'SESSION_LOCKED', lockedBy: string, lockedAt: string }`
+- `202` - `SendMessageResponse`: `{ sessionId, messageId, outcome, queuePosition }`. Re-target to the returned canonical id when it differs. `queuePosition: 1` can mean an immediate start or the only waiting message; it is not a start signal.
+- `404` - `SESSION_NOT_FOUND` when no session exists and `create` was not requested.
 
-The lock is bound to the turn's real duration (released on completion AND error, 5-minute TTL backstop), not the HTTP response.
+The session stream carries queue changes and the eventual turn. `apps/server/src/routes/sessions.ts`, `packages/shared/src/schemas.ts` and `Transport.postMessage` define the contract.
 
 ### GET /api/sessions/:id/events
 
-Durable per-session SSE stream — the single delivery path for session state (snapshot → replay → live). Also the cross-client sync mechanism: every subscriber sees the same events, including turns triggered by other clients or the CLI.
+Durable per-session stream (snapshot → replay → live). A normal `GET` serves SSE; the app uses a WebSocket upgrade on the same path, with JSON `{ event, data, id? }` frames and the full opaque cursor in `?resume=`. See `packages/shared/src/stream-socket.ts`. Also the cross-client sync mechanism: every subscriber sees the same events, including turns triggered by other clients or the CLI.
 
 **Query params:**
 
@@ -211,7 +216,7 @@ Stop a running background task (subagent or bash command). Delegates to the acti
 
 ### POST /api/sessions/:id/interrupt
 
-Interrupt the active query for a session. Attempts a graceful SDK interrupt, falling back to a forceful close. Best-effort — `ok: false` when the query already finished is expected (race between natural completion and the interrupt arriving), not an error.
+Stop the active turn and clear the session's waiting-message queue before asking the runtime to interrupt. Cleared messages are returned so the client can put the person's words back in the composer, including when the interrupt fails.
 
 **Path params:**
 
@@ -219,9 +224,10 @@ Interrupt the active query for a session. Attempts a graceful SDK interrupt, fal
 
 **Responses:**
 
-- `200` - `{ ok: true }` — query interrupted, or `{ ok: false }` — no active query (race)
-- `400` - Invalid session ID
-- `500` - Runtime error interrupting query
+- `200` - `{ receipt: InterruptReceipt, cancelledQueued: QueuedMessage[] }`. The receipt carries `runtime`, `outcome` (`acked`, `closed`, `not-running`, `unconfirmed` or `failed`) and an optional `reason`.
+- `400` - Invalid session ID.
+
+An unexpected exception from the runtime becomes a `failed` receipt with `reason: 'delivery-failed'`; it does not discard `cancelledQueued` in a `500` response. Use `turnEnded(receipt)` and `worthRetrying(receipt)` from `@dorkos/shared/schemas` rather than treating every `200` as a confirmed stop. The old `{ ok: boolean }` response is retired.
 
 ### POST /api/sessions/:id/approve
 
@@ -1345,34 +1351,11 @@ No feature flag required — always mounted.
 
 **Responses:**
 
-- `200` - Runtime capabilities map:
+- `200` - `{ capabilities: Record<string, RuntimeCapabilities>, defaultRuntime: string }`.
 
-```json
-{
-  "capabilities": {
-    "claude-code": {
-      "type": "claude-code",
-      "supportsPermissionModes": true,
-      "supportedPermissionModes": [
-        "default",
-        "plan",
-        "acceptEdits",
-        "dontAsk",
-        "bypassPermissions",
-        "auto"
-      ],
-      "supportsToolApproval": true,
-      "supportsCostTracking": true,
-      "supportsResume": true,
-      "supportsMcp": true,
-      "supportsQuestionPrompt": true
-    }
-  },
-  "defaultRuntime": "claude-code"
-}
-```
+`RuntimeCapabilities` is declared in `packages/shared/src/agent-runtime.ts`. It includes feature flags such as `supportsMcp`, `supportsManagedMcpServers`, `supportsToolApproval` and `supportsAccounts`, plus structured `permissionModes: { supported, values }`. The old top-level `supportsPermissionModes` and `supportedPermissionModes` fields are not the current shape.
 
-The `capabilities` object is keyed by runtime type string. Each value is a `RuntimeCapabilities` object (defined in `@dorkos/shared/agent-runtime`). The `defaultRuntime` field indicates which runtime is currently active.
+The map is keyed by registered runtime type; it is not a fixed Claude-only inventory. `defaultRuntime` names the server's default for an unbound selection, not the runtime of every active session. Resolve an existing session's runtime before selecting its capability profile. See [adding a runtime](adding-a-runtime.md#runtimecapabilities) and the generated [runtime capability matrix](capabilities/runtimes.md).
 
 ## Discovery Endpoint
 
@@ -1494,7 +1477,7 @@ The `details` field contains Zod's formatted error output, mapping field names t
 
 ## MCP Server
 
-The DorkOS server embeds a standards-compliant MCP server at `/mcp` using Streamable HTTP transport. External agents (Claude Code, Cursor, Windsurf, custom Agent SDK apps) can connect and use all DorkOS tools.
+The DorkOS server embeds a standards-compliant MCP server at `/mcp` using Streamable HTTP transport. External MCP clients can connect and use the tools this server exposes to their caller, subject to permissions and feature availability.
 
 The MCP endpoint is a protocol endpoint, not a REST API. It speaks JSON-RPC and is mounted at `/mcp` (not under `/api/`).
 
@@ -1543,7 +1526,7 @@ The app-wide `sessionGate` sits ahead of all five (one step in the Hono chain, `
 
 ### Available Tools
 
-All DorkOS tools are registered on the external MCP server: core tools (ping, server info, session count, agent identity), Pulse scheduling tools, Relay messaging tools, adapter management tools, binding tools, trace/metrics tools, Mesh discovery tools, UI control tools (`controlUI` — opens/updates/closes the canvas panel), and extension management tools. Feature-guarded tools return descriptive errors when their service is disabled rather than being omitted from the tool list.
+Use `tools/list` for the current tool names and schemas. The server includes core, scheduling, messaging, marketplace and extension tools, but it is not an unconditional copy of every internal tool. `resolveToolVisibilityFor` filters Blocked actions for the caller when the per-request server is built (`apps/server/src/startup/steps/mcp-tasks-skills.ts`). Feature-specific tools can also depend on their service. Tool visibility does not replace invocation-time permission enforcement.
 
 The `open_canvas` UI command accepts an optional `content` field. When `content` is omitted, the canvas opens with a splash screen. When provided, `content` is a `UiCanvasContent` object (markdown, code, etc.) displayed immediately. `preferredWidth` (20-80, percentage) is also optional.
 
