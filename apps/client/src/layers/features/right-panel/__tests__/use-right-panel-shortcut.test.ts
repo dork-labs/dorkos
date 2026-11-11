@@ -1,73 +1,64 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+/**
+ * @vitest-environment jsdom
+ */
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { renderHook, act, cleanup } from '@testing-library/react';
-
-const mockToggleRightPanel = vi.fn();
-vi.mock('@/layers/shared/model', () => ({
-  useAppStore: (selector?: (s: Record<string, unknown>) => unknown) => {
-    const state = {
-      toggleRightPanel: mockToggleRightPanel,
-    };
-    return selector ? selector(state) : state;
-  },
-}));
-
+import { useAppStore } from '@/layers/shared/model';
 import { useRightPanelShortcut } from '../model/use-right-panel-shortcut';
+
+// The shortcut runs against the REAL app store, so each case asserts where the
+// panel ended up. A faked store could only say the toggle was called, which
+// stays green when the toggle itself stops opening the panel.
+function press(init: KeyboardEventInit) {
+  act(() => {
+    document.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, ...init }));
+  });
+}
+
+function panelOpen(): boolean {
+  return useAppStore.getState().rightPanelOpen;
+}
 
 describe('useRightPanelShortcut', () => {
   beforeEach(() => {
-    mockToggleRightPanel.mockClear();
+    localStorage.clear();
+    useAppStore.setState({ rightPanelOpen: false, rightPanelLayoutKey: null });
   });
 
   afterEach(() => {
     cleanup();
   });
 
-  it('calls toggleRightPanel on Cmd+.', () => {
+  it('opens the panel on Cmd+. and closes it on the next press', () => {
     renderHook(() => useRightPanelShortcut());
-    act(() => {
-      document.dispatchEvent(
-        new KeyboardEvent('keydown', { key: '.', metaKey: true, bubbles: true })
-      );
-    });
-    expect(mockToggleRightPanel).toHaveBeenCalledTimes(1);
+    press({ key: '.', metaKey: true });
+    expect(panelOpen()).toBe(true);
+    press({ key: '.', metaKey: true });
+    expect(panelOpen()).toBe(false);
   });
 
-  it('calls toggleRightPanel on Ctrl+.', () => {
+  it('opens the panel on Ctrl+.', () => {
     renderHook(() => useRightPanelShortcut());
-    act(() => {
-      document.dispatchEvent(
-        new KeyboardEvent('keydown', { key: '.', ctrlKey: true, bubbles: true })
-      );
-    });
-    expect(mockToggleRightPanel).toHaveBeenCalledTimes(1);
+    press({ key: '.', ctrlKey: true });
+    expect(panelOpen()).toBe(true);
   });
 
-  it('does not call toggleRightPanel for unrelated keys', () => {
+  it('leaves the panel alone for unrelated keys', () => {
     renderHook(() => useRightPanelShortcut());
-    act(() => {
-      document.dispatchEvent(
-        new KeyboardEvent('keydown', { key: 'k', metaKey: true, bubbles: true })
-      );
-    });
-    expect(mockToggleRightPanel).not.toHaveBeenCalled();
+    press({ key: 'k', metaKey: true });
+    expect(panelOpen()).toBe(false);
   });
 
-  it('does not call toggleRightPanel when neither meta nor ctrl is held', () => {
+  it('leaves the panel alone when neither meta nor ctrl is held', () => {
     renderHook(() => useRightPanelShortcut());
-    act(() => {
-      document.dispatchEvent(new KeyboardEvent('keydown', { key: '.', bubbles: true }));
-    });
-    expect(mockToggleRightPanel).not.toHaveBeenCalled();
+    press({ key: '.' });
+    expect(panelOpen()).toBe(false);
   });
 
-  it('removes the listener on unmount', () => {
+  it('stops listening on unmount', () => {
     const { unmount } = renderHook(() => useRightPanelShortcut());
     unmount();
-    act(() => {
-      document.dispatchEvent(
-        new KeyboardEvent('keydown', { key: '.', metaKey: true, bubbles: true })
-      );
-    });
-    expect(mockToggleRightPanel).not.toHaveBeenCalled();
+    press({ key: '.', metaKey: true });
+    expect(panelOpen()).toBe(false);
   });
 });
