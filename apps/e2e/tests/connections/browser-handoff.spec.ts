@@ -88,6 +88,7 @@ async function chatWithHandoff(
 }
 
 const card = (page: Page) => page.locator('[data-slot="browser-handoff-card"]').first();
+const receipt = (page: Page) => page.locator('[data-slot="browser-handoff-receipt"]').first();
 
 test.describe('Agent browser handoff card', () => {
   // Every test uses the seeded agent's one chat, so they take turns.
@@ -110,27 +111,26 @@ test.describe('Agent browser handoff card', () => {
     ).toHaveCount(0);
   });
 
-  test('Continue hands back and sends the agent one line a person can read', async ({
+  test('Continue hands back and leaves a receipt; the card itself sends nothing', async ({
     page,
     chatPage,
   }) => {
     const { answers, sent } = await chatWithHandoff(page, chatPage, 'wall');
     await card(page).getByRole('button', { name: 'Continue' }).click();
     await expect(page.locator('[data-slot="browser-handoff-card"]')).toHaveCount(0);
+    await expect(receipt(page)).toHaveText('Atlas is carrying on.');
+    await expect(receipt(page).getByRole('button')).toHaveCount(0);
     expect(answers).toContain('/api/local-browser/handoff/hand-back');
-    await expect.poll(() => sent).toEqual(['I’m done in the browser. Please continue.']);
-    await expect(
-      page
-        .getByTestId('transcript-feed')
-        .getByText('I’m done in the browser. Please continue.')
-        .last()
-    ).toBeVisible();
+    // The server wakes the agent when a handoff is handed back (DOR-3112). The browser's
+    // routes are faked here, so no handoff really ends and nothing may be sent at all.
+    expect(sent).toEqual([]);
   });
 
-  test('Stop task stops it, and sends no message', async ({ page, chatPage }) => {
+  test('Stop task stops it, leaves a receipt, and sends no message', async ({ page, chatPage }) => {
     const { answers, sent } = await chatWithHandoff(page, chatPage, 'wall');
     await card(page).getByRole('button', { name: 'Stop task' }).click();
     await expect(page.locator('[data-slot="browser-handoff-card"]')).toHaveCount(0);
+    await expect(receipt(page)).toHaveText('Stopped. Atlas won’t carry on with this.');
     expect(answers).toContain('/api/local-browser/handoff/stop');
     expect(sent).toEqual([]);
   });
@@ -223,7 +223,10 @@ test.describe('Agent browser handoff card', () => {
     const inboxCard = page.locator('[data-slot="browser-handoff-inbox-item"]');
     await expect(inboxCard).toBeVisible();
     await inboxCard.getByRole('button', { name: 'Stop task' }).click();
-    await expect(inboxCard).toHaveCount(0);
+    // The Inbox item becomes the same one-line receipt, with nothing left to answer.
+    await expect(inboxCard.locator('[data-slot="browser-handoff-card"]')).toHaveCount(0);
+    await expect(inboxCard).toHaveText('Stopped. Atlas won’t carry on with this.');
+    await expect(inboxCard.getByRole('button')).toHaveCount(0);
     expect(answers).toContain('/api/local-browser/handoff/stop');
   });
 });

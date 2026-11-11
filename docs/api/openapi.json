@@ -31455,6 +31455,7 @@
                           "enum": [
                             "handed-back",
                             "stopped",
+                            "window-closed",
                             null
                           ]
                         }
@@ -31809,6 +31810,7 @@
                           "enum": [
                             "handed-back",
                             "stopped",
+                            "window-closed",
                             null
                           ]
                         }
@@ -32822,6 +32824,7 @@
                           "enum": [
                             "handed-back",
                             "stopped",
+                            "window-closed",
                             null
                           ]
                         }
@@ -33568,6 +33571,7 @@
                           "enum": [
                             "handed-back",
                             "stopped",
+                            "window-closed",
                             null
                           ]
                         }
@@ -33927,6 +33931,7 @@
                           "enum": [
                             "handed-back",
                             "stopped",
+                            "window-closed",
                             null
                           ]
                         }
@@ -34287,6 +34292,7 @@
                           "enum": [
                             "handed-back",
                             "stopped",
+                            "window-closed",
                             null
                           ]
                         }
@@ -34647,6 +34653,7 @@
                           "enum": [
                             "handed-back",
                             "stopped",
+                            "window-closed",
                             null
                           ]
                         }

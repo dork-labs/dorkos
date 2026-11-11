@@ -151,6 +151,10 @@ export type LocalBrowserSignIn = z.infer<typeof LocalBrowserSignInSchema>;
 export const LocalBrowserHandoffReasonSchema = z.enum(['wall', 'password']);
 export type LocalBrowserHandoffReason = z.infer<typeof LocalBrowserHandoffReasonSchema>;
 
+/** How a handoff ended (DOR-3112). */
+export const LocalBrowserHandoffOutcomeSchema = z.enum(['handed-back', 'stopped', 'window-closed']);
+export type LocalBrowserHandoffOutcome = z.infer<typeof LocalBrowserHandoffOutcomeSchema>;
+
 /**
  * An agent handed the browser to the person. While `outcome` is null the agent
  * can't read or use the browser. The record stays after it ends, so every place
@@ -171,7 +175,11 @@ export const LocalBrowserHandoffSchema = z.object({
   /** The host of the agent's page when it asked, from its URL. Never a name the agent gave. */
   site: z.string(),
   askedAt: z.string(),
-  outcome: z.enum(['handed-back', 'stopped']).nullable(),
+  /**
+   * How it ended, or null while it is open. `window-closed` is a person's Disconnect
+   * during the handoff: it ends the task as `stopped` does, and the card says why.
+   */
+  outcome: LocalBrowserHandoffOutcomeSchema.nullable(),
 });
 export type LocalBrowserHandoff = z.infer<typeof LocalBrowserHandoffSchema>;
 

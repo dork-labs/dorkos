@@ -1,6 +1,7 @@
 import { Hand, KeyRound, LogIn, Monitor, Play } from 'lucide-react';
 import { shortenHomePath } from '@/layers/shared/lib';
 import { Button } from '@/layers/shared/ui';
+import { cardAgentName } from '../lib/agent-name';
 import type { HandoffStep } from '../lib/handoff-step';
 
 /** Props for {@link BrowserHandoffCardView}. */
@@ -27,9 +28,6 @@ export interface BrowserHandoffCardViewProps {
   onShowWindow: () => void;
   onStop: () => void;
 }
-
-/** The most of an agent's name a card shows. An agent picks its own name. */
-const MAX_AGENT_NAME = 40;
 
 /** The status line for each step of the plain sign-in window. */
 function signInStatus(step: HandoffStep, site: string): string | null {
@@ -62,9 +60,7 @@ export function BrowserHandoffCardView({
   onShowWindow,
   onStop,
 }: BrowserHandoffCardViewProps) {
-  // An agent picks its own name, and control or direction characters could reorder the sentence.
-  const whole = agentName?.replace(/[\p{Cc}\p{Cf}]/gu, '') || 'The agent';
-  const name = whole.length > MAX_AGENT_NAME ? `${whole.slice(0, MAX_AGENT_NAME)}…` : whole;
+  const name = cardAgentName(agentName);
   const asksPassword = step === 'sign-in' || step === 'failed';
   const status = signInStatus(step, site);
   const canContinue = step === 'wall' || step === 'saved';

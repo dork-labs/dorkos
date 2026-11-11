@@ -6,6 +6,7 @@ import { loadProfileBindingKey } from '../../services/session/local-browser/prof
 import { createLocalBrowserProfileStore } from '../../services/session/local-browser/profile-store.js';
 import { liveOutsideTurnCheck } from '../../services/session/local-browser/outside-turn.js';
 import { agentWindowLabel } from '../../services/session/local-browser/agent-window/index.js';
+import { handBackWake } from '../../services/session/local-browser/hand-back-wake/index.js';
 import { eventFanOut } from '../../services/core/event-fan-out.js';
 import { notify } from '../../services/notifications/notification-service.js';
 import { localBrowserChangedAnnouncer } from '../../services/core/streams/live-change-broadcasts.js';
@@ -438,6 +439,12 @@ export async function wireMcpTasksAndSkills(refs: ServerRefs, built: WireMcpTask
       agentId: handoff.agentId,
     });
   });
+  localBrowserService.handover.useEndListener(
+    handBackWake({
+      meshCore: () => refs.meshCore,
+      roomSessionPlace: () => refs.roomSessionPlacePort,
+    })
+  );
   const deps: HonoApiDeps = {
     localBrowser: localBrowserService,
     localBrowserProfiles: {

@@ -183,7 +183,7 @@ describe('LocalBrowserPanel', () => {
       transport.interruptSession.mockResolvedValue(undefined);
       transport.disconnectLocalBrowser.mockResolvedValue({
         ...disconnected,
-        handoff: { ...handoff, outcome: 'stopped' },
+        handoff: { ...handoff, outcome: 'window-closed' },
         signIn: null,
       });
       const view = mount();
@@ -192,12 +192,13 @@ describe('LocalBrowserPanel', () => {
         expect(transport.interruptSession).toHaveBeenCalledExactlyOnceWith('chat-one')
       );
       expect(view.client.getQueryData(['local-browser', 'state'])).toMatchObject({
-        handoff: { outcome: 'stopped' },
+        handoff: { outcome: 'window-closed' },
       });
     });
     it.each([
       ['handed back before the answer', { ...handoff, outcome: 'handed-back' }],
-      ['replaced by another handoff', { ...handoff, id: 'h2', outcome: 'stopped' }],
+      ['stopped before the answer', { ...handoff, outcome: 'stopped' }],
+      ['replaced by another handoff', { ...handoff, id: 'h2', outcome: 'window-closed' }],
     ])('leaves the turn alone when the handoff was %s', async (_case, answered) => {
       transport.getLocalBrowserState.mockResolvedValue({ ...connected, handoff, signIn: null });
       transport.disconnectLocalBrowser.mockResolvedValue({

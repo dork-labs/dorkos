@@ -9,5 +9,7 @@ export type { BrowserHandoffCardProps } from './ui/BrowserHandoffCard';
 export { BrowserHandoffInboxItem } from './ui/BrowserHandoffInboxItem';
 export { BrowserHandoffCardView } from './ui/BrowserHandoffCardView';
 export type { BrowserHandoffCardViewProps } from './ui/BrowserHandoffCardView';
-export { useBrowserHandoff, HANDED_BACK_MESSAGE } from './model/use-browser-handoff';
+export { BrowserHandoffReceipt } from './ui/BrowserHandoffReceipt';
+export type { BrowserHandoffReceiptProps } from './ui/BrowserHandoffReceipt';
+export { useBrowserHandoff } from './model/use-browser-handoff';
 export type { HandoffStep } from './lib/handoff-step';
