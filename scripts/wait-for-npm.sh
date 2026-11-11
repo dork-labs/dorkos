@@ -44,13 +44,26 @@
 #   WAIT_FOR_NPM_TIMEOUT_SECONDS  timeout in seconds; overrides
 #                                 [timeout-minutes] entirely when set
 
-set -uo pipefail
+set -euo pipefail
 
 VERSION="${1:-}"
 TIMEOUT_MINUTES="${2:-30}"
 
 if [ -z "$VERSION" ]; then
   echo "usage: $0 <version> [timeout-minutes]" >&2
+  exit 1
+fi
+
+# Whole-string semver (major.minor.patch, optional dot-separated prerelease),
+# no leading zeros, checked before the version reaches a URL or `npm view`.
+# The same pattern as scripts/npm-tarball-sha256.sh (DOR-4161).
+semver='^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$'
+if ! [[ "$VERSION" =~ $semver ]]; then
+  echo "::error::version '${VERSION}' isn't a plain semver like 0.135.6; refusing it" >&2
+  exit 1
+fi
+if ! [[ "$TIMEOUT_MINUTES" =~ ^[0-9]+$ ]]; then
+  echo "::error::timeout '${TIMEOUT_MINUTES}' isn't a whole number of minutes" >&2
   exit 1
 fi
 

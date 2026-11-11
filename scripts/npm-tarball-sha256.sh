@@ -19,7 +19,9 @@
 # Usage:
 #   scripts/npm-tarball-sha256.sh <version>
 #
-#   <version>  Required. The bare semver, e.g. 0.135.6.
+#   <version>  Required. The bare semver, e.g. 0.135.6. Anything that isn't a
+#              whole, strict semver is refused before it reaches a URL or a
+#              command line.
 #
 # Exits 0 and prints the sha256 on success. Exits 1 with a `::error::` line on
 # stderr on any failure, printing nothing on stdout.
@@ -27,7 +29,7 @@
 # It never runs a package or installs anything. scripts/test-npm-tarball-sha256.sh
 # stubs `curl` and `npm` on PATH to exercise every refusal without the network.
 
-set -uo pipefail
+set -euo pipefail
 
 VERSION="${1:-}"
 if [ -z "$VERSION" ]; then
@@ -39,6 +41,13 @@ fail() {
   echo "::error::$1" >&2
   exit 1
 }
+
+# Whole-string semver (major.minor.patch, optional dot-separated prerelease),
+# no leading zeros. Bash's =~ anchors $ at the end of the string, not a line.
+semver='^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$'
+if ! [[ "$VERSION" =~ $semver ]]; then
+  fail "version '${VERSION}' isn't a plain semver like 0.135.6; refusing it"
+fi
 
 url="https://registry.npmjs.org/dorkos/-/dorkos-${VERSION}.tgz"
 work=$(mktemp -d)
@@ -56,14 +65,29 @@ if ! gzip -t "$file" 2>/dev/null; then
 fi
 
 # 3. It must be the tarball npm recorded for this version.
-expected=$(npm view "dorkos@${VERSION}" dist.integrity 2>/dev/null)
+# Both sides are compared as hex digests, and an empty side is a failure, never
+# a match: `npm view` failing, an empty or non-base64 integrity, and a hash
+# that printed nothing all stop here.
+if ! expected=$(npm view "dorkos@${VERSION}" dist.integrity 2>/dev/null); then
+  fail "npm view failed for dorkos@${VERSION}; refusing to hash"
+fi
 case "$expected" in
   sha512-*) ;;
   *) fail "npm has no sha512 integrity for dorkos@${VERSION}; refusing to hash" ;;
 esac
-actual="sha512-$(openssl dgst -sha512 -binary "$file" | openssl base64 -A)"
-if [ "$actual" != "$expected" ]; then
+if ! expected_hex=$(printf '%s' "${expected#sha512-}" | openssl base64 -d -A | od -An -v -tx1 | tr -d ' \n'); then
+  expected_hex=""
+fi
+if ! actual_hex=$(openssl dgst -sha512 -r "$file" | cut -d ' ' -f 1); then
+  actual_hex=""
+fi
+if [ -z "$expected_hex" ] || [ -z "$actual_hex" ]; then
+  fail "couldn't read a sha512 for dorkos@${VERSION} from npm or the download; refusing to hash"
+fi
+if [ "$actual_hex" != "$expected_hex" ]; then
   fail "the download from ${url} doesn't match npm's dist.integrity for dorkos@${VERSION}"
 fi
 
-shasum -a 256 "$file" | cut -d ' ' -f 1
+sha256=$(shasum -a 256 "$file" | cut -d ' ' -f 1)
+[ -n "$sha256" ] || fail "shasum printed nothing for ${url}"
+printf '%s\n' "$sha256"
