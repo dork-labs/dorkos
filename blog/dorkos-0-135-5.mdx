@@ -22,7 +22,7 @@ DorkOS 0.135.5 is a security release. The agent browser no longer offers a tool 
 ### Security
 
 - The agent browser no longer offers a tool that runs code outside the page (DOR-4156).
-- Agents' file tools can't read the desktop app's own data folder, where it keeps your DorkOS sign-in and its built-in browser's sign-ins, on every runtime. On Codex the shell can't read it either. On Claude Code below Full autonomy, a shell command that names it asks you first. On Claude Code at Full autonomy, and on OpenCode, DorkOS doesn't check the shell for it. Doe runs commands only at Full autonomy, and doesn't check them either (DOR-3613).
+- Agents' file tools can't read the desktop app's own data folder, where it keeps your DorkOS sign-in and its built-in browser's sign-ins, on every runtime. On Codex the shell is covered too, and on Claude Code below Full autonomy a shell command that names it asks you first. Other shells aren't checked for it yet (DOR-3613).
 - When Page previews opens DorkOS's own address, it now loads in a locked-down frame, so the page can't act as the app. Most DorkOS pages also tell older browsers they can't be shown inside another page (DOR-3370).
 - DorkOS's database now refuses a mini app approval that would let it change anything in a connected app. It also refuses approval records with hidden characters in their name or folder, or with blank checksums (DOR-3547).
 
