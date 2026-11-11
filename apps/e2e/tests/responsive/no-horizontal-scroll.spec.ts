@@ -336,8 +336,16 @@ async function forceBellCount(page: Page, count: number): Promise<void> {
   });
 }
 
-/** The bell counts each bell case is judged at: one, and the capped "9+". */
-const BELL_COUNTS = [1, 12] as const;
+/**
+ * The bell count each bell case is judged at: the capped "9+".
+ *
+ * One count is enough. Below `lg` (both widths here) the number rides the
+ * bell's corner out of flow, so the control is the same width whatever it
+ * reads (`InboxBellPill`), and "9+" is the widest badge it can draw. A "1"
+ * case measured the same bar with a narrower badge, so it could only pass
+ * where "9+" passed (DOR-4190).
+ */
+const BELL_COUNTS = [12] as const;
 
 /** The routes whose bars have the least slack, where a wider bell first shows. */
 const BELL_ROUTES = ['/', '/tasks', '/team'] as const;
