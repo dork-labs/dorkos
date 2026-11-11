@@ -291,6 +291,13 @@ describe('an agent browser session is never saved back (DOR-4136)', () => {
   it.each([
     ['a profile on disk', ['--user-data-dir', '/tmp/made-up-profile']],
     ['no isolation', ['--no-isolated']],
+    // `@playwright/mcp` 0.0.82's own options that write state or files.
+    ['a saved session', ['--save-session']],
+    ['its own output folder', ['--output-dir', '/tmp/made-up-out']],
+    ['its own output folder, as one word', ['--output-dir=/tmp/made-up-out']],
+    ['file access anywhere', ['--allow-unrestricted-file-access']],
+    ['the storage tools', ['--caps', 'storage']],
+    ['the storage tools among others', ['--caps=vision,Storage']],
   ])('leaves out a browser that would keep its session: %s', (_label, extra) => {
     const connection = agentBrowserConnection(stateFile);
     connection.args.push(...extra);
@@ -299,6 +306,13 @@ describe('an agent browser session is never saved back (DOR-4136)', () => {
       { dorkHome, entries, logger: { warn: vi.fn() } }
     );
     expect(guarded).toEqual({});
+  });
+
+  it('still runs a browser with tool sets that save nothing', () => {
+    const connection = agentBrowserConnection(stateFile);
+    connection.args.push('--caps', 'vision,pdf');
+    const guarded = guardAgentBrowsers({ browser: connection }, { dorkHome, entries });
+    expect(guarded.browser).toBeDefined();
   });
 
   it('a cookie set during one agent session is not in the next session’s saved state', () => {

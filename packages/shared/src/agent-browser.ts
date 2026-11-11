@@ -252,7 +252,19 @@ const UNGUARDABLE_FLAGS = [
   '--user-data-dir',
   '--proxy-server',
   CONFIG_FLAG,
+  // Each lets the browser write files of its own choosing (`@playwright/mcp` 0.0.82's options):
+  // a saved session in its output folder, an output folder anywhere, or any file on disk
+  // (DOR-4136). A browser that writes state could save a sign-in where a later one loads it.
+  '--save-session',
+  '--output-dir',
+  '--allow-unrestricted-file-access',
 ];
+
+/**
+ * The opt-in tool sets that write browser state: `storage` adds `browser_storage_state`, which
+ * saves the session's cookies to a file, and its cookie and page-storage setters (DOR-4136).
+ */
+const STATE_WRITING_CAPS = new Set(['storage']);
 
 /** The browsers the Cloud block works in: it relies on a Chrome launch flag. */
 const CHROMIUM_BROWSER = /^(chrome|chromium|msedge)(-[a-z]+)?$/;
@@ -271,6 +283,9 @@ const CHROMIUM_BROWSER = /^(chrome|chromium|msedge)(-[a-z]+)?$/;
  *   that stops redirects does not reach;
  * - runs a browser other than Chrome, Chromium or Edge, for the same reason;
  * - brings its own config file (`--config`), which can do any of the above;
+ * - can write files of its own or save browser state (`--save-session`, `--output-dir`,
+ *   `--allow-unrestricted-file-access`, `--caps` with `storage`), so a session could save a
+ *   sign-in a later browser loads (DOR-4136);
  * - names its saved session more than once (the last one wins in Playwright,
  *   so DorkOS could clean the wrong file);
  * - sets any `PLAYWRIGHT_MCP_*` variable, the environment form of every flag.
@@ -288,6 +303,11 @@ export function unguardableBrowserReason(connection: BrowserConnectionLike): str
     return 'it runs a browser other than Chrome';
   if (takeFlag(args, STORAGE_STATE_FLAG).values.length > 1)
     return 'it names more than one saved session';
+  const caps = takeFlag(args, '--caps').values.flatMap((value) => value.split(','));
+  const writing = caps
+    .map((cap) => cap.trim().toLowerCase())
+    .find((cap) => STATE_WRITING_CAPS.has(cap));
+  if (writing) return `it can save browser state (--caps=${writing})`;
   const variable = Object.keys(connection.env ?? {}).find((key) =>
     key.startsWith('PLAYWRIGHT_MCP_')
   );
