@@ -1,0 +1,156 @@
+{
+  "spec": "specs/codebase-cleanup/02-specification.md",
+  "slug": "codebase-cleanup",
+  "generatedAt": "2026-11-11T17:48:05.000Z",
+  "mode": "full",
+  "lastDecomposeDate": null,
+  "tasks": [
+    {
+      "id": "0.1",
+      "phase": 0,
+      "phaseName": "Measure and guardrails",
+      "subject": "[codebase-cleanup] [P0] Measure the baseline and establish cleanup rules",
+      "description": "Start November 11; complete by November 20, 2026. Execution needs a separate go-ahead.\n\nFirst PRs: (1) capture the knip baseline and add knip --production to CI as a can-only-go-down check; (2) produce per-test duration and flake reports, separating first-run failures, retry passes and skips; (3) add public-API testing rules to AGENTS.md and the test-driven-development skill, with reviewer questions: Would this fail if the behavior broke? Does it survive a refactor?\n\nRules: mock only at process edges (network, clock, filesystem, model calls); one regression test per bug that fails before the fix; no snapshots or copy-only checks; extend an existing test before adding a file. Keep protected security, permission, auth, migration, upgrade, regression, contract, boundary and real public-API behavior tests.\n\nRun a bounded Stryker per-test pilot on shared, relay and server core. Record exact scopes, settings, results, elapsed time and resource use. Do not prune suites in this phase. Every CI change follows the ledger protocol. All implementation PRs follow the specification's security review, WIP-eight, active-project and before/after evidence rules.",
+      "doneWhen": [
+        "Baseline commands and reports reproduce the measured test and product inventory and workflow timings.",
+        "Per-test duration and flake reports distinguish failures, retries and skips.",
+        "All three bounded mutation pilots have results and resource measurements.",
+        "AGENTS.md and the TDD skill contain the testing rules and reviewer questions.",
+        "Production knip rejects a new unexplained finding; existing findings are counted and every temporary ignore is dated and owned."
+      ],
+      "measures": {
+        "before": "Refresh the reported main 78baefc5ac baseline: about 29 minutes across six shards; 1.56M test lines, 5,318 test files, about 64k cases; 1.54M product lines; about 3,900 document files. Record knip findings by kind, current flakes and measurement gaps.",
+        "after": "Record the same inventory with commands, revisions, tool versions and runner conditions, plus per-test timings, retry-pass rate, Stryker results and pilot resource cost. Unknown data stays labeled unknown."
+      },
+      "activeForm": "Measuring the baseline and establishing cleanup rules",
+      "size": "large",
+      "priority": "high",
+      "dependencies": [],
+      "parallelWith": [],
+      "issue": null,
+      "parentIssue": null
+    },
+    {
+      "id": "1.1",
+      "phase": 1,
+      "phaseName": "Dead code",
+      "subject": "[codebase-cleanup] [P1] Remove confirmed unused code and root strays",
+      "description": "Start November 11 once Phase 0 measurements exist for the affected area; merge by November 20, 2026. Avoid every area touched by an active release PR.\n\nFirst PRs: (1) confirm no consumers and remove root dorkos-0.56.0.tgz, the malformed root file beginning hat-is-in-it), and stale root VERSION (reported as 0.127.1); resolve the malformed filename exactly before removal; (2) delete confirmed knip findings in small batches; (3) remove unused dependencies and run pnpm dedupe, reviewing lockfile changes separately.\n\nBefore deleting unfinished code, check open Linear projects and issues. If they cannot be checked, defer the candidate. Put in-progress work on a dated ignore list with path, reason, owner, tracking issue and review date per entry. A security reviewer signs off any security-path deletion. Keep PRs inside WIP eight; pure deletions get light review without waiving other gates. Include before/after numbers and affected check results on every PR.",
+      "doneWhen": [
+        "The three named root strays are resolved without removing a current consumer.",
+        "Confirmed unused code and dependencies are removed and dedupe is complete.",
+        "Production knip has zero unexplained issues; all remaining in-progress exceptions are narrow, dated and owned.",
+        "Affected checks pass, required security sign-offs are recorded, and active release work and protected behavior remain intact."
+      ],
+      "measures": {
+        "before": "Record root-stray count, product lines and files, knip findings and ignores, direct dependencies and duplicate dependency versions from the Phase 0 baseline.",
+        "after": "Report the same counts and deltas per batch, plus dedupe results, affected check outcomes and each deferred path's owner and review date."
+      },
+      "activeForm": "Removing confirmed unused code and root strays",
+      "size": "large",
+      "priority": "high",
+      "dependencies": ["0.1"],
+      "parallelWith": [],
+      "issue": null,
+      "parentIssue": null
+    },
+    {
+      "id": "2.1",
+      "phase": 2,
+      "phaseName": "Old-version support",
+      "subject": "[codebase-cleanup] [P2] Enforce the upgrade floor and verify a database baseline",
+      "description": "Wait for the Nov 17 cut; complete by November 27, 2026. Set minimum upgrade-from version 0.115. Inventory and remove config migrators for 0.44–0.89 and compatibility paths or flags for features older than 0.115, with their retired-path tests. Older installs must stop with a clear two-step upgrade message. Verify a bridge release before naming it.\n\nCompare a single Drizzle baseline with the full reported 172-migration history before deleting history. Preserve hand-written schema and data fixes. Verify fresh database creation, then run the real-data QA upgrade check from 0.115 and the latest version on protected temporary copies. Obtain security review. Keep all other protected tests; retired-path tests leave only after replacement floor and supported-upgrade checks pass.\n\nDocument the rolling 20-minor support policy. Require a removal version on @deprecated markers and lint expired markers. Apply the specification's project checks, dated owned ignores, WIP-eight limit and before/after evidence rules.",
+      "doneWhen": [
+        "The 0.115 floor rejects unsupported installs with a verified bridge route.",
+        "Fresh-database and full-history comparison preserves schema and hand-written data fixes.",
+        "Real-data upgrades from 0.115 and the latest version pass before migration history is deleted.",
+        "Security review is complete; unrelated protected tests stay.",
+        "The rolling support policy and deprecation expiry check are in place."
+      ],
+      "measures": {
+        "before": "Count config migrators, compatibility paths and flags, retired-path tests, database migrations (reported 172) and expired deprecations; record supported versions.",
+        "after": "Report the same counts, one baseline migration, schema/data comparison outcomes, supported-upgrade timings and outcomes, and below-floor refusal and bridge-route results."
+      },
+      "activeForm": "Enforcing the upgrade floor and verifying a database baseline",
+      "size": "large",
+      "priority": "high",
+      "dependencies": ["0.1", "1.1"],
+      "parallelWith": ["3.1"],
+      "issue": null,
+      "parentIssue": null
+    },
+    {
+      "id": "3.1",
+      "phase": 3,
+      "phaseName": "Docs",
+      "subject": "[codebase-cleanup] [P3] Keep current documents and generate reference pages",
+      "description": "Wait for the Nov 17 cut; complete by November 27, 2026. Run lychee on docs and add a check for references to removed files or symbols. Delete or merge stale pages, keep one document per topic, and generate API and CLI reference from source.\n\nReview specs, plans, research, audits and mockups. Remove shipped or abandoned work after checking open projects and repairing live references; history preserves the old files. Keep active work, current audit charters and live decisions. Remove superseded decisions only after repairing links. The meta north-star set stays authoritative.\n\nUse small PRs inside WIP eight, light review for pure deletions, security sign-off for any security-path deletion, and dated owned ignores for unfinished work. Defer uncertain candidates when tracker status cannot be checked. Include before/after measures on every PR.",
+      "doneWhen": [
+        "Current docs have valid links and no unresolved references to removed paths or symbols.",
+        "Each topic has one current home and source-generated API/CLI reference is reproducible.",
+        "Removed planning material is shipped or abandoned, with no live dependencies.",
+        "Live decisions, active work, audit charters and the north-star set remain available."
+      ],
+      "measures": {
+        "before": "Count files by directory, broken links, removed-path or symbol references, duplicate topics and hand-maintained reference pages against the Phase 0 inventory.",
+        "after": "Report the same counts and deltas, repaired inbound links, checker exclusions, generation commands and the disposition of every deferred candidate."
+      },
+      "activeForm": "Keeping current documents and generating reference pages",
+      "size": "large",
+      "priority": "high",
+      "dependencies": ["0.1", "1.1"],
+      "parallelWith": ["2.1"],
+      "issue": null,
+      "parentIssue": null
+    },
+    {
+      "id": "4.1",
+      "phase": 4,
+      "phaseName": "Tests",
+      "subject": "[codebase-cleanup] [P4] Cut low-value tests while preserving bug-catching checks",
+      "description": "Wait for the Nov 17 cut and Phase 0 calibration; complete by December 4, 2026. Remove duplicate Playwright tests first, then mock-only unit tests, then snapshots and trivial tests. Apply the specification's keep/drop rules. Protected security, permission, auth, upgrade, migration, real-bug regression, boundary, contract and public-API behavior tests take precedence. Record surviving behavior evidence for each deletion; coverage overlap or mutation scores alone cannot justify removal.\n\nVerify turbo --affected on PRs and the full suite on the merge queue. Reuse the existing split documented in the CI guide and fix only proven gaps. Add per-package runtime and file-count budgets that can only decrease, and lint against vi.mock of owned modules while preserving process-edge mocks. Pipeline changes need the CI ledger protocol. Each small PR stays inside WIP eight, carries before/after numbers and gets security sign-off for security-path deletions.",
+      "doneWhen": [
+        "Comparable merge workflow runs take at most 12 minutes with the full required suite executed.",
+        "Test lines fall 40% against the measured baseline; any shortfall needed to protect useful coverage is reported for review rather than hidden.",
+        "Protected behavior remains covered and every deletion batch names its surviving checks.",
+        "Expected 30–50% fewer cases is reported as an outcome, never a deletion quota.",
+        "Affected PR checks, full merge-queue checks, package budgets and the internal-mock lint rule enforce their contracts."
+      ],
+      "measures": {
+        "before": "Use Phase 0 workflow and shard times, test lines/files/cases, per-package runtimes, retry-pass rate, skips and bounded mutation samples.",
+        "after": "Report the same values under comparable runner conditions, with executed and failed counts, retained behavior evidence and deviations from the time or line targets."
+      },
+      "activeForm": "Cutting low-value tests while preserving bug-catching checks",
+      "size": "large",
+      "priority": "high",
+      "dependencies": ["0.1", "1.1", "2.1", "3.1"],
+      "parallelWith": [],
+      "issue": null,
+      "parentIssue": null
+    },
+    {
+      "id": "5.1",
+      "phase": 5,
+      "phaseName": "Keep it from growing back",
+      "subject": "[codebase-cleanup] [P5] Enforce cleanup limits and schedule monthly review",
+      "description": "Complete by December 4, 2026, using measured baselines from the earlier phases. Keep production knip and per-package test budgets in CI. Add size-limit checks for client and desktop bundles and dependency-cruiser checks for cycles and package boundaries. Reuse existing checks. Every pipeline change has a ledger entry naming a hypothesis, baseline, target and review date.\n\nSet limits from measured results, never an unmeasured allowance. Prove each check fails for a controlled violation and passes after the temporary probe is removed. Limits may rise only through an explicit reviewed change. Add a monthly cleanup check to grooming, with an owner and a checklist for expired ignores and deprecations. Keep the WIP-eight and before/after evidence rules.",
+      "doneWhen": [
+        "Knip, test budgets, bundle size checks and cycle/package-boundary checks run in CI.",
+        "Clean runs pass and controlled violations fail for every check family.",
+        "Limits cannot rise without an explicit reviewed change.",
+        "Monthly grooming has an owner and checks expired ignores and deprecations."
+      ],
+      "measures": {
+        "before": "Record which checks exist, findings, gate runtime, package budgets, client/desktop bundle bytes, cycles and boundary violations.",
+        "after": "Report final limits and findings, clean-run results, controlled-violation failures, added gate runtime and the monthly review owner/checklist."
+      },
+      "activeForm": "Enforcing cleanup limits and scheduling monthly review",
+      "size": "large",
+      "priority": "high",
+      "dependencies": ["0.1", "1.1", "2.1", "3.1", "4.1"],
+      "parallelWith": [],
+      "issue": null,
+      "parentIssue": null
+    }
+  ]
+}
