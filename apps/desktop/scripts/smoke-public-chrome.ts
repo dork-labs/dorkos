@@ -22,7 +22,9 @@ async function main(): Promise<void> {
       [
         '--import',
         require.resolve('tsx'),
-        fileURLToPath(new URL('./local-browser-ci/public-chrome.ts', import.meta.url)),
+        // `.mts`: it awaits at the top level, which needs an ES module, and this package's `.ts`
+        // files load as CommonJS (DOR-4178).
+        fileURLToPath(new URL('./local-browser-ci/public-chrome.mts', import.meta.url)),
       ],
       {
         timeout: 360000,

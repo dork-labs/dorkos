@@ -43,5 +43,5 @@
     // by a bundler that injects a per-file `__dirname`.
     "types": ["electron"]
   },
-  "include": ["scripts/**/*.ts", "*.ts"]
+  "include": ["scripts/**/*.ts", "scripts/**/*.mts", "*.ts"]
 }
