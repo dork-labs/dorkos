@@ -476,6 +476,14 @@ jobs:
       - name: npm-availability wait fixtures
         run: bash scripts/test-wait-for-npm.sh
 
+      # npm-tarball-sha256.sh is the Homebrew formula's checksum (DOR-4161):
+      # 0.135.5 shipped the sha256 of npm's cached HTML 404 page. The fixtures
+      # feed it a 404 status, a 404 page served as success, a valid gzip with
+      # the wrong contents and a missing integrity, and require each refused
+      # with nothing on stdout. Hermetic: stub `curl` and `npm` on PATH.
+      - name: npm tarball checksum fixtures
+        run: bash scripts/test-npm-tarball-sha256.sh
+
       # heavy-run-lock.sh (DOR-2160, host-wide since DOR-3274) is the cap on how
       # many heavy local runs go at once on one host: the commit lint and the
       # root build, typecheck, test and verify scripts. Several agents each
