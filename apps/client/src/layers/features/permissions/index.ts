@@ -3,7 +3,8 @@
  * list of areas with their three-way switches and individual actions, which
  * renders both the default layer and one agent's layer (with its exceptions chip
  * and apply-to-overrides dialog), the Files & commands rows, the history with
- * its Undo, and the "why?" behind every state.
+ * its Undo, the "why?" behind every state, and the read-only list of what one
+ * agent can do (DOR-4115).
  *
  * @module features/permissions
  */
@@ -16,6 +17,7 @@ export {
   type DefaultFilesAndCommandsRowProps,
 } from './ui/FilesAndCommandsRow';
 export { PermissionWhy } from './ui/PermissionWhy';
+export { AgentCanDo, type AgentCanDoProps } from './ui/AgentCanDo';
 export {
   BLOCKED_IS_NOT_A_SANDBOX,
   PRESET_LABEL,

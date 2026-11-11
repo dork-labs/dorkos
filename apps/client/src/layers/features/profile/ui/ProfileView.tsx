@@ -43,7 +43,7 @@ import { ProfileHeader } from './ProfileHeader';
 import { ProfilePage } from './ProfilePage';
 import { ProfileRows } from './ProfileRows';
 import { ProfileStack } from './ProfileStack';
-import { profilePage } from './pages/registry';
+import { profilePage, profilePageTitle } from './pages/registry';
 import { toSession } from '@/layers/shared/lib';
 
 export interface ProfileViewProps {
@@ -267,7 +267,11 @@ export function ProfileView({
       <ProfileScope home={home} memberId={member.id}>
         <ProfileStack frameKey={frameKey} depth={stack.entries.length}>
           {definition && PageContent ? (
-            <ProfilePage member={member} title={definition.title} onBack={onPop}>
+            <ProfilePage
+              member={member}
+              title={profilePageTitle(definition, member)}
+              onBack={onPop}
+            >
               <Suspense fallback={<Skeleton className="h-24 w-full" />}>
                 <PageContent member={member} roster={roster} onPush={onPush} />
               </Suspense>

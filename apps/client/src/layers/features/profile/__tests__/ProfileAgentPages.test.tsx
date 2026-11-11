@@ -651,7 +651,7 @@ describe('Instructions and Boundaries', () => {
     );
 
     expect(
-      await screen.findByRole('heading', { name: 'What this agent is told' })
+      await screen.findByRole('heading', { name: `What ${MANAGED.displayName} knows` })
     ).toBeInTheDocument();
   });
 

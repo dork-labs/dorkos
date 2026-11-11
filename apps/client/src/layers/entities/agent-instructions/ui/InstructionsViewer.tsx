@@ -4,7 +4,7 @@
  * runtime, place and level.
  *
  * One component for both views — Settings › Agent instructions (the
- * template) and the profile's "What this agent is told" (one agent) — so the
+ * template) and the profile's "What this agent knows" (one agent) — so the
  * two read the same way. The server writes every block with the real prompt
  * builders; this only lays them out.
  *

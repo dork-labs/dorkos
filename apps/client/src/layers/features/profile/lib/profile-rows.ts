@@ -650,7 +650,7 @@ function managedAgentRows(member: TeamMember, ctx: ProfileRowsContext): ProfileR
         { id: 'memory', kind: 'nav', label: 'Memory', value: 'MEMORY.md', page: 'memory' },
         // Where the three files above end up: everything the agent is told, in
         // the order the model reads it (spec `context-viewer` phase 3).
-        { id: 'told', kind: 'nav', label: 'What this agent is told', value: null, page: 'told' },
+        { id: 'told', kind: 'nav', label: 'What this agent knows', value: null, page: 'told' },
       ],
       'SOUL.md · NOPE.md · MEMORY.md'
     ),

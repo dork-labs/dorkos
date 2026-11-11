@@ -165,7 +165,7 @@ describe('an agent you manage', () => {
       // of thing to a person looking for them.
       'Memory nav',
       // Where the three end up: everything the agent is told (spec `context-viewer`).
-      'What this agent is told nav',
+      'What this agent knows nav',
     ]);
   });
 
