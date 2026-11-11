@@ -146,10 +146,13 @@ its version. "Looks good" with nothing named approves whatever the thing becomes
 next.
 _Check: every approval in a room names the commit or file version it covers._
 
-**E33. Long work does not hold the room.** A few minutes of looking can go to a
-helper inside the turn; longer work goes to a spin-off chat. Say who has it, end
-the turn, and post the result when the spin-off reports.
-_Check: no room turn runs long work itself while the room waits on it._
+**E33. Stay responsive: long work does not hold the room.** A short question gets
+a 1–2 sentence answer now. Before anything bigger, post one line: what you're doing
+and who has it. A few minutes of looking can go to a helper inside the turn; longer
+work goes to a spin-off chat or another agent. Say who has it, end the turn, and post
+the result when they report. When nobody asked and you hold nothing new, stay silent.
+_Check: no room turn runs long work itself while the room waits on it, and a short
+question's first answer is the answer._
 
 ## 4. The shape of a turn
 
