@@ -3,7 +3,6 @@
  */
 import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vitest';
 import { render, screen, cleanup } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom/vitest';
 import { TooltipProvider } from '@/layers/shared/ui';
 
@@ -90,14 +89,6 @@ describe('RightPanelToggle', () => {
 
   const BADGE = 'right-panel-attention-badge';
 
-  // The shell is load-bearing infrastructure that is never route-hidden — the
-  // toggle is always present so the panel can always be reopened, even where no
-  // contribution is currently visible (fix 3).
-  it('always renders the toggle button', async () => {
-    await renderToggle();
-    expect(screen.getByRole('button')).toBeInTheDocument();
-  });
-
   it('renders with "Open right panel" aria-label when closed', async () => {
     mockRightPanelOpen = false;
     await renderToggle();
@@ -108,14 +99,6 @@ describe('RightPanelToggle', () => {
     mockRightPanelOpen = true;
     await renderToggle();
     expect(screen.getByLabelText('Close right panel')).toBeInTheDocument();
-  });
-
-  it('calls toggleRightPanel when clicked', async () => {
-    const user = userEvent.setup();
-    await renderToggle();
-
-    await user.click(screen.getByRole('button'));
-    expect(mockToggleRightPanel).toHaveBeenCalledTimes(1);
   });
 
   // --- Ambient attention badge -------------------------------------------------

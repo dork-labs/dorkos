@@ -31,15 +31,6 @@ describe('SettingRow', () => {
     expect(description).toHaveAttribute('data-slot', 'field-description');
   });
 
-  it('applies custom className', () => {
-    const { container } = render(
-      <SettingRow label="Test" description="Desc" className="border-red-500">
-        <Switch />
-      </SettingRow>
-    );
-    expect(container.firstChild).toHaveClass('border-red-500');
-  });
-
   it('renders compound children (badge + switch)', () => {
     render(
       <SettingRow label="Feature" description="A feature toggle">

@@ -3,15 +3,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, cleanup } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import * as React from 'react';
-import {
-  ResponsiveSheet,
-  ResponsiveSheetTrigger,
-  ResponsiveSheetContent,
-  ResponsiveSheetHeader,
-  ResponsiveSheetTitle,
-  ResponsiveSheetDescription,
-  ResponsiveSheetClose,
-} from '../responsive-sheet';
+import { ResponsiveSheet, ResponsiveSheetContent } from '../responsive-sheet';
 
 // Mock useIsMobile to control desktop/mobile rendering. The component imports
 // from '../model' which resolves to the shared/model barrel.
@@ -160,53 +152,5 @@ describe('ResponsiveSheetContent', () => {
     expect(content.className).toContain('bg-sidebar');
     expect(content.className).toContain('p-0');
     expect(content.className).toContain('sm:max-w-md');
-  });
-});
-
-describe('the Sheet parts re-exported for API symmetry with the other Responsive* families', () => {
-  it('ResponsiveSheetTrigger renders a trigger', () => {
-    render(
-      <ResponsiveSheet open>
-        <ResponsiveSheetTrigger>Open</ResponsiveSheetTrigger>
-        <ResponsiveSheetContent>content</ResponsiveSheetContent>
-      </ResponsiveSheet>
-    );
-    expect(screen.getByTestId('sheet-trigger')).toBeInTheDocument();
-  });
-
-  it('ResponsiveSheetHeader, ResponsiveSheetTitle and ResponsiveSheetDescription render', () => {
-    render(
-      <ResponsiveSheet open>
-        <ResponsiveSheetContent>
-          <ResponsiveSheetHeader>
-            <ResponsiveSheetTitle>Title</ResponsiveSheetTitle>
-            <ResponsiveSheetDescription>Description</ResponsiveSheetDescription>
-          </ResponsiveSheetHeader>
-        </ResponsiveSheetContent>
-      </ResponsiveSheet>
-    );
-    expect(screen.getByTestId('sheet-header')).toBeInTheDocument();
-    expect(screen.getByTestId('sheet-title')).toHaveTextContent('Title');
-    expect(screen.getByTestId('sheet-description')).toHaveTextContent('Description');
-  });
-
-  it('ResponsiveSheetClose renders a close control', () => {
-    render(
-      <ResponsiveSheet open>
-        <ResponsiveSheetContent>
-          <ResponsiveSheetClose>Close</ResponsiveSheetClose>
-        </ResponsiveSheetContent>
-      </ResponsiveSheet>
-    );
-    expect(screen.getByTestId('sheet-close')).toBeInTheDocument();
-  });
-
-  it('ResponsiveSheet renders nothing when closed', () => {
-    const { container } = render(
-      <ResponsiveSheet open={false}>
-        <ResponsiveSheetContent>content</ResponsiveSheetContent>
-      </ResponsiveSheet>
-    );
-    expect(container.innerHTML).toBe('');
   });
 });

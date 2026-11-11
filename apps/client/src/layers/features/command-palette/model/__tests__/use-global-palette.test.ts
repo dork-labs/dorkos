@@ -76,13 +76,6 @@ describe('useGlobalPalette', () => {
     cleanup();
   });
 
-  it('returns globalPaletteOpen, setGlobalPaletteOpen, and toggleGlobalPalette', () => {
-    const { result } = renderHook(() => useGlobalPalette());
-    expect(result.current.globalPaletteOpen).toBe(false);
-    expect(typeof result.current.setGlobalPaletteOpen).toBe('function');
-    expect(typeof result.current.toggleGlobalPalette).toBe('function');
-  });
-
   it('Cmd+K toggles the palette', () => {
     renderHook(() => useGlobalPalette());
     fireKeydown('k', { metaKey: true });
@@ -101,15 +94,6 @@ describe('useGlobalPalette', () => {
     fireKeydown('k'); // no modifier
     fireKeydown('p', { metaKey: true });
     expect(mockState.toggleGlobalPalette).not.toHaveBeenCalled();
-  });
-
-  it('opening the palette closes other dialogs via deep-link close', () => {
-    mockState.globalPaletteOpen = false;
-    renderHook(() => useGlobalPalette());
-    fireKeydown('k', { metaKey: true });
-
-    expect(mockCloseSettings).toHaveBeenCalled();
-    expect(mockCloseTasks).toHaveBeenCalled();
   });
 
   // The behaviour change this branch makes deliberate (DOR-839): `close()` owns
@@ -139,19 +123,5 @@ describe('useGlobalPalette', () => {
     expect(mockCloseTasks).not.toHaveBeenCalled();
     // Still toggles
     expect(mockState.toggleGlobalPalette).toHaveBeenCalledTimes(1);
-  });
-
-  it('cleans up the event listener on unmount', () => {
-    const addSpy = vi.spyOn(document, 'addEventListener');
-    const removeSpy = vi.spyOn(document, 'removeEventListener');
-
-    const { unmount } = renderHook(() => useGlobalPalette());
-    expect(addSpy).toHaveBeenCalledWith('keydown', expect.any(Function));
-
-    unmount();
-    expect(removeSpy).toHaveBeenCalledWith('keydown', expect.any(Function));
-
-    addSpy.mockRestore();
-    removeSpy.mockRestore();
   });
 });

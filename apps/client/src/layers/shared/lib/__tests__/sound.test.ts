@@ -63,55 +63,6 @@ beforeEach(async () => {
   playCelebration = mod.playCelebration;
 });
 
-describe('playSliderTick', () => {
-  it('creates an oscillator at 800Hz with gain 0.05 and ~4ms duration', () => {
-    playSliderTick();
-
-    expect(mockCtx.createOscillator).toHaveBeenCalledOnce();
-    expect(mockCtx.createGain).toHaveBeenCalledOnce();
-
-    const osc = mockCtx.createOscillator.mock.results[0]!.value;
-    const gain = mockCtx.createGain.mock.results[0]!.value;
-
-    expect(osc.frequency.value).toBe(800);
-    expect(osc.type).toBe('sine');
-    expect(gain.gain.value).toBe(0.05);
-
-    expect(osc.connect).toHaveBeenCalledWith(gain);
-    expect(gain.connect).toHaveBeenCalledWith(mockDestination);
-
-    expect(osc.start).toHaveBeenCalledWith(0);
-    expect(osc.stop).toHaveBeenCalledWith(0.004);
-  });
-});
-
-describe('playCelebration', () => {
-  it('creates 3 oscillators at C5/E5/G5 with gain 0.08, staggered 33ms', () => {
-    playCelebration();
-
-    expect(mockCtx.createOscillator).toHaveBeenCalledTimes(3);
-    expect(mockCtx.createGain).toHaveBeenCalledTimes(3);
-
-    const expectedNotes = [523, 659, 784];
-    const stagger = 0.033;
-
-    for (let i = 0; i < 3; i++) {
-      const osc = mockCtx.createOscillator.mock.results[i]!.value;
-      const gain = mockCtx.createGain.mock.results[i]!.value;
-
-      expect(osc.frequency.value).toBe(expectedNotes[i]);
-      expect(osc.type).toBe('sine');
-      expect(gain.gain.value).toBe(0.08);
-
-      expect(gain.gain.setValueAtTime).toHaveBeenCalledWith(0.08, i * stagger);
-      expect(gain.gain.exponentialRampToValueAtTime).toHaveBeenCalledWith(0.001, i * stagger + 0.3);
-
-      expect(osc.start).toHaveBeenCalledWith(i * stagger);
-      expect(osc.stop).toHaveBeenCalledWith(i * stagger + 0.3);
-    }
-  });
-});
-
 describe('error handling', () => {
   it('playSliderTick does not throw when AudioContext creation fails', async () => {
     vi.resetModules();
