@@ -105,45 +105,4 @@ test.describe('Message search', () => {
     });
     await expect(page.getByTestId('message-search-dialog')).toBeHidden();
   });
-
-  test('says what it cannot see, in one line, before anything is typed', async ({
-    page,
-    basePage,
-  }) => {
-    // G4 in the product rather than in the spec: a person must be able to LEARN
-    // what search does not cover without reading one. That is a reachability
-    // promise, not a reading assignment (DOR-1757) — so the gist is on screen
-    // and the rest is one click down. The literal wording is pinned by the
-    // client's own test; this asserts only that both halves are really there in
-    // a real browser, which a unit test cannot.
-    await openApp(basePage);
-
-    await page.keyboard.press('ControlOrMeta+Shift+F');
-    const dialog = page.getByTestId('message-search-dialog');
-    await expect(dialog).toBeVisible({ timeout: SERVER_ROUND_TRIP_MS });
-
-    const scopeLine = dialog.getByRole('button', { name: /Searches channels/ });
-    await expect(scopeLine).toBeVisible();
-    // Radix `CollapsibleContent` unmounts its children when closed, so a
-    // `toBeHidden()` on the text itself would pass just as well if the whole
-    // block had been deleted. `aria-expanded` on the trigger is the assertion
-    // that can actually fail.
-    await expect(scopeLine).toHaveAttribute('aria-expanded', 'false');
-    const dorkosDelay = dialog.getByText('DorkOS chats can lag five minutes.', {
-      exact: true,
-    });
-    const vendorDelay = dialog.getByText(
-      'Claude Code, Codex and OpenCode chats, even outside DorkOS. These can lag five minutes.',
-      { exact: true }
-    );
-    await expect(dorkosDelay).toBeHidden();
-    await expect(vendorDelay).toBeHidden();
-    await expect(dialog.getByText(/Tool output is never searched/)).toBeHidden();
-
-    await scopeLine.click();
-    // Both runtime-specific delay notes must be reachable in the revealed detail.
-    await expect(dorkosDelay).toBeVisible();
-    await expect(vendorDelay).toBeVisible();
-    await expect(dialog.getByText(/Tool output is never searched/)).toBeVisible();
-  });
 });

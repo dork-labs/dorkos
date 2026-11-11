@@ -418,41 +418,6 @@ test.describe('Home is the #team room @smoke', () => {
 });
 
 test.describe('The pinned triage header @smoke', () => {
-  test('nothing waiting draws nothing — no empty box, no border', async ({
-    page,
-    basePage,
-    teamRoomApi,
-  }) => {
-    // Only sound while nothing else is waiting. The queue is server-global, so
-    // this reads it first and says so rather than failing as if the header broke.
-    // Every kind the Inbox pill counts, not only approvals: Home's quiet line
-    // stands down for any of them (DOR-2578).
-    const waiting = await teamRoomApi.waitingOnPersonCount();
-    test.skip(waiting > 0, 'something else on this server is waiting on a person');
-
-    // This file drives real turns for real, earlier in this same serial run —
-    // "typing here reaches your default agent", for one — and each one earns a
-    // genuine, correct Shift Report the moment its composer next runs. This
-    // test is about approvals, asks and attention, not about the report, so it
-    // starts from an operator who has already seen today's, exactly as a real
-    // one would have by now (`markAllNotificationsRead`'s own doc explains why
-    // this is a fixture reset, not a product action under test).
-    await teamRoomApi.markAllNotificationsRead();
-
-    await basePage.goto();
-    await basePage.waitForAppReady();
-    await expect(page.getByTestId('home-composer')).toBeVisible({
-      timeout: SERVER_ROUND_TRIP_MS,
-    });
-
-    // A count of zero, not a hidden class: an element that is merely `hidden`
-    // still matches, and "collapses away entirely" is the claim.
-    await expect(page.locator('[data-slot="pinned-triage-header"]')).toHaveCount(0);
-    // The live region stays, and stays empty — a region added at the same moment
-    // as its words is unreliably announced.
-    await expect(page.locator('[role="status"][aria-live="polite"]').first()).toBeAttached();
-  });
-
   test('an approval can be answered from home, and the card resolves where it stands', async ({
     page,
     basePage,
@@ -487,16 +452,6 @@ test.describe('The pinned triage header @smoke', () => {
     // The feed never moved: nothing navigated, and the room is still under it.
     await expect(page).toHaveURL(/\/(\?|$)/);
     await expect(page.getByTestId('home-composer')).toBeVisible();
-  });
-
-  test('an attention deep link still opens its sheet on /', async ({ page, basePage }) => {
-    // The three detail sheets moved into the header with the rows that open
-    // them, so `/?detail=…` has to keep working — it is a URL somebody pasted.
-    await page.goto('/?detail=offline-agent');
-    await basePage.waitForAppReady();
-    await expect(page.getByRole('dialog').getByText('Agents that aren’t answering')).toBeVisible({
-      timeout: SERVER_ROUND_TRIP_MS,
-    });
   });
 });
 

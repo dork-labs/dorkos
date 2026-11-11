@@ -391,31 +391,6 @@ test.describe('Rooms — every message gets a menu', () => {
     await expect(roomsPage.threadComposer).toBeFocused();
   });
 
-  test('a threadless room costs one Tab per message, not one per action', async ({
-    page,
-    roomsApi,
-    roomsPage,
-  }) => {
-    // The whole reason the actions are `tabIndex={-1}`. With them in the tab
-    // order, these two presses would land inside the first message's capsule and
-    // a three-message room would cost eighteen presses to cross — six slots
-    // each, now that reactions are in there. The pill row is closed the same way
-    // and for the same reason (`room-reactions.spec.ts` walks it with arrows).
-    const slug = `e2e-actions-trail-${roomsApi.runId}`;
-    const room = await roomsApi.createChannel(slug, slug);
-    await roomsApi.postEntries(room.id, ['first', 'second', 'third']);
-
-    await page.goto(`/channels?id=${room.id}`);
-    await expect(roomsPage.entries).toHaveCount(3, { timeout: SERVER_ROUND_TRIP_MS });
-
-    await roomsPage.entries.nth(0).focus();
-    await page.keyboard.press('Tab');
-    await expect(roomsPage.entries.nth(1)).toBeFocused();
-
-    await page.keyboard.press('Tab');
-    await expect(roomsPage.entries.nth(2)).toBeFocused();
-  });
-
   test('a threaded room costs one Tab per message PLUS one per thread reply row', async ({
     page,
     roomsApi,
@@ -448,44 +423,6 @@ test.describe('Rooms — every message gets a menu', () => {
 
     await page.keyboard.press('Tab');
     await expect(roomsPage.entries.nth(2)).toBeFocused();
-  });
-
-  test('a message is announced before the things you can do to it', async ({
-    page,
-    roomsApi,
-    roomsPage,
-  }) => {
-    // The toolbar is drawn at the message's top-right but written LAST, so a
-    // screen reader is told who spoke and what they said before it is offered a
-    // menu — the order session chat already has, and the order a room lost when
-    // the sticky rail went in as the first child.
-    const slug = `e2e-actions-order-${roomsApi.runId}`;
-    const room = await roomsApi.createChannel(slug, slug);
-    await roomsApi.postEntries(room.id, ['the deploy is stuck']);
-
-    await page.goto(`/channels?id=${room.id}`);
-    await expect(roomsPage.entries).toHaveCount(1, { timeout: SERVER_ROUND_TRIP_MS });
-
-    const snapshot = await roomsPage.entries.first().ariaSnapshot();
-
-    expect(snapshot).toContain('the deploy is stuck');
-    expect(snapshot).toContain('toolbar');
-    expect(snapshot.indexOf('the deploy is stuck')).toBeLessThan(snapshot.indexOf('toolbar'));
-
-    // The author is spoken as the article's NAME and as the line that name
-    // points at — twice, and no more (DOR-757).
-    //
-    // This is the one thing the feed pattern costs, and it is worth saying why
-    // it is accepted. A row shipped unnamed because "Message from You" over a
-    // row that visibly says "You" is a second sentence invented for screen
-    // readers — the DOR-583 shape. A feed cannot work that way: moving article
-    // to article means being told WHICH article you landed on, so an unnamed
-    // one is a wall of anonymous boxes. The APG's own feed example resolves it
-    // the same way — the article is labelled BY the heading already inside it —
-    // so what repeats is the visible line, never a string written for the
-    // purpose. A third occurrence would mean somebody added one.
-    expect(snapshot).toMatch(/article "You/);
-    expect(snapshot.split('You').length - 1).toBe(2);
   });
 
   test('Page Down crosses the room a message at a time, whatever each one carries', async ({

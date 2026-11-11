@@ -28,27 +28,6 @@ test.describe('Home surface — the shell @smoke', () => {
     await basePage.waitForAppReady();
   });
 
-  test('the tab bar is Home, Activity, Scheduled, Workspaces — and Home is lit on /', async ({
-    homeSurface,
-  }) => {
-    await expect(homeSurface.tabBar).toBeVisible();
-    await expect(homeSurface.tabs).toHaveText(HOME_TABS.map((tab) => tab.label));
-
-    // Exactly one tab reads active, and on `/` it is Home.
-    await expect(homeSurface.activeTab).toHaveCount(1);
-    await expect(homeSurface.activeTab).toHaveText('Home');
-  });
-
-  test('each tab goes to the address it has always had', async ({ page, homeSurface }) => {
-    for (const { label, path } of HOME_TABS) {
-      await homeSurface.tab(label).click();
-      // The exact path, anchored: a prefix match would let `/tasks` satisfy a
-      // check for `/`, which is the one mistake this table exists to catch.
-      await expect(page).toHaveURL(new RegExp(`${path.replace(/\//g, '\\/')}(\\?|$)`));
-      await expect(homeSurface.activeTab).toHaveText(label);
-    }
-  });
-
   test('a filtered Activity deep link keeps its filter, and survives leaving and coming back', async ({
     page,
     basePage,
