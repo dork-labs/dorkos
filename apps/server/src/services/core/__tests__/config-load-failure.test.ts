@@ -356,6 +356,53 @@ describe('a file that breaks the migration chain is recovered, not left to block
 });
 
 describe('a config the OS refused is left alone', () => {
+  it('reports an unreadable file if the final startup settings check cannot read it', () => {
+    const dir = makeDir('load-final-read');
+    const configPath = path.join(dir, 'config.json');
+    new ConfigManager(dir, FAST_RETRIES).setDot('ui.statusBar.pins', ['permission']);
+    const before = fs.readFileSync(configPath, 'utf8');
+
+    // Let conf finish opening, then fail the diagnostic read that follows it.
+    const injected = failReadsOf(configPath, 'EMFILE', {
+      when: () => new Error().stack?.includes('ConfigManager.unreadableSettings') ?? false,
+    });
+    expect(() => new ConfigManager(dir, FAST_RETRIES)).toThrow(ConfigUnreadableError);
+    vi.restoreAllMocks();
+
+    expect(injected.failed).toBeGreaterThan(0);
+    expect(fs.readFileSync(configPath, 'utf8')).toBe(before);
+    expect(backupsIn(dir)).toEqual([]);
+    expect(new ConfigManager(dir, FAST_RETRIES).getDot('ui.statusBar.pins')).toEqual([
+      'permission',
+    ]);
+  });
+
+  it('names the existing backup if the final read fails after corrupt-file recovery', () => {
+    const dir = makeDir('load-final-recovered-read');
+    const configPath = path.join(dir, 'config.json');
+    fs.writeFileSync(
+      configPath,
+      JSON.stringify({ version: 1, auth: { enabled: true }, mesh: { scanRoots: 'damaged' } })
+    );
+    failReadsOf(configPath, 'EMFILE', {
+      when: () => new Error().stack?.includes('ConfigManager.unreadableSettings') ?? false,
+    });
+    let thrown: unknown;
+    try {
+      new ConfigManager(dir, FAST_RETRIES);
+    } catch (error) {
+      thrown = error;
+    }
+    vi.restoreAllMocks();
+
+    expect(thrown).toBeInstanceOf(ConfigUnreadableError);
+    const backups = backupsIn(dir);
+    expect(backups).toHaveLength(1);
+    expect((thrown as ConfigUnreadableError).message).toContain(backups[0]);
+    expect(JSON.parse(fs.readFileSync(backups[0], 'utf8')).auth.enabled).toBe(true);
+    expect(new ConfigManager(dir, FAST_RETRIES).get('auth').enabled).toBe(true);
+  });
+
   it('preserves the file byte for byte when every read fails with EMFILE', () => {
     const dir = makeDir('load-emfile');
     const configPath = path.join(dir, 'config.json');

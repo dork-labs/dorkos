@@ -122,6 +122,7 @@ import { restoreProtectedState } from './safe-defaults/protected-state.js';
 import { backupConfigFile } from './config/backups.js';
 import { readStoredConfigForSalvage } from './config/salvage-read.js';
 import { loadConfigStore } from './config/load-store.js';
+import { classifyConfigLoadFailure } from './config/load-failure.js';
 import { assertSupportedConfigUpgrade } from './config/upgrade-floor.js';
 import {
   tolerateLegacyClaudeAccountEncoding,
@@ -487,6 +488,7 @@ export class ConfigManager {
     // permission that changed — is retried and then reported by
     // `loadConfigStore`, with the file untouched, however long it lasts. See
     // {@link classifyConfigLoadFailure}.
+    let backupPath: string | undefined;
     const opened = loadConfigStore(confOptions, configPath, retryDelaysMs);
     if ('store' in opened) {
       this.store = opened.store;
@@ -503,7 +505,6 @@ export class ConfigManager {
       // permission choices are sitting right there, perfectly readable, in the
       // file we are about to replace. Losing state must not lose a protection.
       let stored: unknown;
-      let backupPath: string | undefined;
       if (fs.existsSync(configPath)) {
         const salvage = readStoredConfigForSalvage(configPath, retryDelaysMs);
         if (!salvage.read) {
@@ -556,7 +557,16 @@ export class ConfigManager {
       this.store = recovered.store;
       restoreProtectedState(this.store, stored, 'Recovered a damaged config');
     }
-    this.announceUnreadableSettings();
+    try {
+      this.announceUnreadableSettings();
+    } catch (error) {
+      // This diagnostic reads the file again after Conf opens. A late I/O
+      // failure must keep the same typed refusal as an opening failure.
+      if (classifyConfigLoadFailure(error) === 'io') {
+        throw new ConfigUnreadableError(configPath, error, backupPath);
+      }
+      throw error;
+    }
   }
 
   /**

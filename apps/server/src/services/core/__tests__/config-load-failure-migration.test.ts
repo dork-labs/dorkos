@@ -31,7 +31,7 @@ import { describe, it, expect, afterEach, vi } from 'vitest';
 // Hoisted above the imports below: `SERVER_VERSION` is a module-level const,
 // so the override has to be in the environment before `lib/version.ts` loads.
 vi.hoisted(() => {
-  process.env.DORKOS_VERSION_OVERRIDE = '0.57.0';
+  process.env.DORKOS_VERSION_OVERRIDE = '0.90.0';
 });
 
 import fs from 'fs';
@@ -48,8 +48,8 @@ import { SERVER_VERSION } from '../../../lib/version.js';
 /** Reads that happen before `_migrate` enters its per-migration `try`. */
 const READS_BEFORE_THE_TRY = 3;
 
-/** A config from before the migration chain, so an upgrade boot has work to do. */
-const STORED_VERSION = '0.43.0';
+/** A fixture immediately before the surviving 0.90 key, so a migration body runs. */
+const STORED_VERSION = '0.89.0';
 
 /**
  * The retry staircase, with the waiting taken out.
@@ -84,6 +84,7 @@ function seedUpgradeBoot(extra: Record<string, unknown> = {}): {
     configPath,
     JSON.stringify({
       version: 1,
+      runtimes: { claudeCode: { defaultAccount: null, accounts: [] } },
       ...extra,
       __internal__: { migrations: { version: STORED_VERSION } },
     })
@@ -147,7 +148,7 @@ describe('an upgrade boot on a machine that is struggling', () => {
   it('really is running migrations, or none of the rest of this file means anything', () => {
     // The whole file is vacuous without the override, and a vacuous suite is
     // how the defect below survived its first review.
-    expect(SERVER_VERSION).toBe('0.57.0');
+    expect(SERVER_VERSION).toBe('0.90.0');
   });
 
   it('preserves the file when a storm hits the reads inside a migration body', () => {
@@ -218,7 +219,9 @@ describe('an upgrade boot on a machine that is struggling', () => {
             new ConfigManager(dir, FAST_RETRIES);
             booted++;
           } catch (error) {
-            expect(error).toBeInstanceOf(ConfigUnreadableError);
+            expect(error, error instanceof Error ? error.stack : String(error)).toBeInstanceOf(
+              ConfigUnreadableError
+            );
           }
           vi.restoreAllMocks();
 
@@ -243,6 +246,8 @@ describe('an upgrade boot on a machine that is struggling', () => {
 
     expect(backupsIn(dir)).toEqual([]);
     expect(manager.get('auth').enabled).toBe(true);
+    const stored = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+    expect(stored.runtimes.claudeCode).toHaveProperty('defaultAccountColor', null);
     expect(manager.validate()).toEqual({ valid: true });
   });
 });
