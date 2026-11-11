@@ -75,6 +75,11 @@ export const MCP_STATUS_META: Record<McpCardStatus, McpStatusMeta> = {
     tooltip: 'Hidden from the agent.',
     tone: 'calm',
   },
+  'not-used': {
+    label: 'Not used',
+    tooltip: 'DorkOS doesn’t run this browser.',
+    tone: 'calm',
+  },
 };
 
 /** The one action a card leads with, or `none` when there is nothing to do. */
@@ -92,6 +97,7 @@ const PRIMARY_ACTION: Record<McpCardStatus, McpPrimaryAction> = {
   connecting: 'none',
   'not-checked': 'test',
   off: 'none',
+  'not-used': 'none',
 };
 
 /**
@@ -164,6 +170,8 @@ export function cardSentence(status: McpCardStatus, context: McpSentenceContext)
       return 'Nothing has checked this server yet.';
     case 'off':
       return 'Turned off. The agent doesn’t see this server.';
+    case 'not-used':
+      return "DorkOS uses its own browser for agents. Custom browser paths aren't allowed.";
   }
 }
 

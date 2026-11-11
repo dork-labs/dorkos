@@ -76,6 +76,7 @@ const CHIP_COLOR: Record<McpCardStatus, 'success' | 'info' | 'warning' | 'error'
   connecting: 'neutral',
   'not-checked': 'neutral',
   off: 'neutral',
+  'not-used': 'neutral',
 };
 
 /**
@@ -187,7 +188,10 @@ export function McpServerCard({
   return (
     <div
       data-mcp-server={rawName}
-      className={cn(cardVariants({ managed, dimmed: status === 'off' }), 'mb-2 last:mb-0')}
+      className={cn(
+        cardVariants({ managed, dimmed: status === 'off' || status === 'not-used' }),
+        'mb-2 last:mb-0'
+      )}
     >
       <span className={accentVariants({ tone })} aria-hidden />
       <div className="flex items-center gap-2">

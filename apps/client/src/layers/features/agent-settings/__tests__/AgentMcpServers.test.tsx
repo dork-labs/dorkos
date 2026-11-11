@@ -599,7 +599,8 @@ describe('AgentMcpServers', () => {
         )
       ).toBeInTheDocument()
     );
-    expect(within(container).getByText('Off')).toBeInTheDocument();
+    expect(within(container).getByText('Not used')).toBeInTheDocument();
+    expect(within(container).queryByText('Off')).not.toBeInTheDocument();
     expect(within(container).queryByText('Failed')).not.toBeInTheDocument();
     expect(within(container).queryByText(/ENOENT/)).not.toBeInTheDocument();
     expect(within(container).queryByRole('button', { name: /^Sign in/ })).not.toBeInTheDocument();

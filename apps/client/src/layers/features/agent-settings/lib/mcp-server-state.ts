@@ -23,7 +23,9 @@ export type McpCardStatus =
   | 'setup-problem'
   | 'connecting'
   | 'not-checked'
-  | 'off';
+  | 'off'
+  /** A browser DorkOS leaves out of every session (DOR-3207): on, but never run. */
+  | 'not-used';
 
 /**
  * How a runtime's own status maps onto a card state, for the statuses that need
@@ -334,7 +336,7 @@ export const MCP_ORDER_BANDS = {
 
 /** Which band a managed card's status puts it in. */
 export function orderBandFor(status: McpCardStatus): number {
-  if (status === 'off') return MCP_ORDER_BANDS.off;
+  if (status === 'off' || status === 'not-used') return MCP_ORDER_BANDS.off;
   if (status === 'needs-sign-in' || status === 'cant-reach' || status === 'setup-problem') {
     return MCP_ORDER_BANDS.attention;
   }
