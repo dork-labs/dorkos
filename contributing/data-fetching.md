@@ -14,6 +14,7 @@ This guide covers data fetching patterns in DorkOS. The client uses TanStack Que
 | EventStreamProvider      | `apps/client/src/layers/shared/model/event-stream-context.tsx`   |
 | Session entity hooks     | `apps/client/src/layers/entities/session/`                       |
 | Command entity hooks     | `apps/client/src/layers/entities/command/`                       |
+| Permission entity hooks  | `apps/client/src/layers/entities/permissions/`                   |
 | Agent entity hooks       | `apps/client/src/layers/entities/agent/`                         |
 | Runtime entity hooks     | `apps/client/src/layers/entities/runtime/`                       |
 | Relay entity hooks       | `apps/client/src/layers/entities/relay/`                         |
@@ -26,14 +27,14 @@ This guide covers data fetching patterns in DorkOS. The client uses TanStack Que
 
 ## When to Use What
 
-| Scenario                                               | Approach                                                       | Why                                                                |
-| ------------------------------------------------------ | -------------------------------------------------------------- | ------------------------------------------------------------------ |
-| List/read server data (sessions, etc.)                 | TanStack Query + Transport method                              | Caching, deduplication, background refetch                         |
-| Send a chat message (streaming)                        | `useChatSession` hook (trigger + durable stream)               | Real-time streaming, handles all event types                       |
-| Mutate server data (create session)                    | `useMutation` + Transport method                               | Automatic cache invalidation, optimistic updates                   |
-| Subscribe to a session's real-time state               | Durable SSE via `GET /api/sessions/:id/events` (StreamManager) | Snapshot + gap-free replay + live; multi-client sync               |
-| Subscribe to system events (tunnel, relay, extensions) | `useEventSubscription` via `GET /api/events`                   | Single multiplexed connection, replaces per-resource SSE endpoints |
-| Static config/health check                             | Transport method (no TanStack Query)                           | One-shot, no caching needed                                        |
+| Scenario                                               | Approach                                                         | Why                                                                |
+| ------------------------------------------------------ | ---------------------------------------------------------------- | ------------------------------------------------------------------ |
+| List/read server data (sessions, etc.)                 | TanStack Query + Transport method                                | Caching, deduplication, background refetch                         |
+| Send a chat message (streaming)                        | `useChatSession` hook (trigger + durable stream)                 | Real-time streaming, handles all event types                       |
+| Mutate server data (create session)                    | `useMutation` + Transport method                                 | Automatic cache invalidation, optimistic updates                   |
+| Subscribe to a session's real-time state               | Durable WebSocket via `/api/sessions/:id/events` (StreamManager) | Snapshot + gap-free replay + live; multi-client sync               |
+| Subscribe to system events (tunnel, relay, extensions) | `useEventSubscription` via `GET /api/events`                     | Single multiplexed connection, replaces per-resource SSE endpoints |
+| Static config/health check                             | Transport method (no TanStack Query)                             | One-shot, no caching needed                                        |
 
 ## Core Patterns
 
@@ -41,61 +42,32 @@ This guide covers data fetching patterns in DorkOS. The client uses TanStack Que
 
 Entity hooks in `apps/client/src/layers/entities/` wrap TanStack Query with Transport calls:
 
-```typescript
-// apps/client/src/layers/entities/session/model/query/use-sessions.ts
-import { useQuery } from '@tanstack/react-query';
-import { useTransport } from '@/layers/shared/model';
+The session list is implemented in `apps/client/src/layers/entities/session/model/query/use-sessions.ts`. It calls the shared `sessionListQueryOptions` factory, reads the window's selected directory and returns `{ sessions, isLoading, isAnswered, activeSessionId, setActiveSession }`, rather than a raw query result. Its cold fetch seeds the cache; `useGlobalSessionStream` keeps that same cache current without a timer poll.
 
-export function useSessions(cwd?: string) {
-  const transport = useTransport();
+For an agent's sessions, use `useAgentSessions(projectPath)` from `@/layers/entities/session`. It uses the agent's own directory, including child directories, rather than filtering the window's list. A session without a directory belongs to no agent.
 
-  return useQuery({
-    queryKey: ['sessions', cwd],
-    queryFn: () => transport.listSessions(cwd),
-    // Cold-load only — NO timer poll. Live updates arrive via the global
-    // /api/events stream (session_upserted/session_removed/session_status),
-    // bridged into this cache by useGlobalSessionStream (ADR-0265).
-  });
-}
-```
-
-**Background-tab optimization:** All hooks that use `refetchInterval` should also set `refetchIntervalInBackground: false` to prevent unnecessary network requests when the browser tab is hidden. This convention is enforced across `useSessions`, `useRuns`, `useRelayAdapters`, `useTunnelStatus`, and other polling hooks.
+**Background-tab optimization:** Polling hooks should avoid refetching in a hidden tab unless their contract requires it. Do not add a poll to `useSessions`: it already has a durable stream.
 
 ### Sending Messages with SSE Streaming
 
-The `useChatSession` hook manages the full message lifecycle:
+The app uses WebSockets for durable delivery; SSE remains supported for external consumers. `useChatSession` composes `useSessionSubmit` in `apps/client/src/layers/features/chat/model/use-session-submit.ts`. Submission is a trigger-only `postMessage()` call; events arrive through the stream owned by `StreamManager`.
+
+The transport call for an existing session is:
 
 ```typescript
-// apps/client/src/layers/features/chat/model/use-chat-session.ts
-// Simplified — the real hook handles tool calls, approvals, questions, etc.
+import type { Transport } from '@dorkos/shared/transport';
 
-const handleSubmit = async (content: string) => {
-  const abortController = new AbortController();
-
-  await transport.sendMessage(
-    sessionId,
-    content,
-    (event: StreamEvent) => {
-      switch (event.type) {
-        case 'text_delta':
-          // Append text to current assistant message
-          break;
-        case 'tool_call_start':
-          // Track new tool invocation
-          break;
-        case 'approval_required':
-          // Show approval UI
-          break;
-        case 'done':
-          // Finalize message
-          break;
-      }
-    },
-    abortController.signal,
-    cwd
-  );
-};
+export function postToExistingSession(
+  transport: Transport,
+  sessionId: string,
+  content: string,
+  cwd?: string
+): Promise<{ sessionId: string }> {
+  return transport.postMessage(sessionId, content, cwd);
+}
 ```
+
+The submission hook attaches the stream before posting, then re-targets it if the `202` response names a different canonical session id. It also moves optimistic messages and route state across that rekey. Use the existing hook for that lifecycle; do not recreate the retired callback-based `transport.sendMessage()` API.
 
 ### Mutations with Cache Invalidation
 
@@ -157,7 +129,7 @@ This keeps React code independent of network details and lets tests supply a moc
 
 ### SSE Streaming Protocol
 
-`POST /api/sessions/:id/messages` is trigger-only (`202 { sessionId }`); the turn's events stream on the durable per-session SSE connection:
+`POST /api/sessions/:id/messages` is trigger-only (`202 { sessionId }`); the turn's events arrive on a separate durable per-session connection. The following is the SSE representation, still supported for external clients:
 
 ```
 POST /api/sessions/:id/messages
@@ -176,13 +148,13 @@ event: text_delta
 data: {"seq":43,"type":"text_delta","text":"Hello"}
 ```
 
-Client-side, `StreamManager` (`layers/shared/lib/transport/stream-manager.ts`) owns the connection, validates frames against `@dorkos/shared/session-stream`, and forwards them to the session stream store. On reconnect, `Last-Event-ID` resumes the stream gap-free. Send the whole id back: the `epoch` names the server process and the `generation` names the projector instance that owns the `seq` counter, and a cursor whose generation no longer matches is answered with a fresh snapshot rather than a replay off the wrong counter.
+Client-side, `StreamManager` (`layers/shared/lib/transport/stream-manager.ts`) owns the connection, validates frames against `@dorkos/shared/session-stream`, and forwards them to the session stream store. The app uses `WSConnection` on the same path, with JSON `{ event, data, id? }` frames defined in `packages/shared/src/stream-socket.ts`. On reconnect it echoes the full id as `?resume=`; external SSE clients use `Last-Event-ID`. Send the whole id back: the `epoch` names the server process and the `generation` names the projector instance that owns the `seq` counter, and a cursor whose generation no longer matches is answered with a fresh snapshot rather than a replay off the wrong counter.
 
 #### Message Parts
 
 Assistant messages are composed of ordered `MessagePart`s (a discriminated union defined in `packages/shared/src/schemas.ts` → `MessagePartSchema`). The stream-event handlers in `apps/client/src/layers/features/chat/model/stream/` upsert parts in place as events arrive, and renderers in `apps/client/src/layers/features/chat/ui/message/` dispatch on `part.type`.
 
-Top-of-bubble lifecycle parts (`thinking`, `memory_recall`) share a common contract: `isStreaming: true` while the SDK is emitting deltas, flipped `false` on completion to trigger auto-collapse in the renderer. See `ThinkingBlock.tsx` / `MemoryRecallBlock.tsx` and the upsert helpers (`upsertMemoryRecallPart` in `stream-event-helpers.ts`) for reference wiring.
+Top-of-bubble lifecycle parts (`thinking`, `memory_recall`) share a common contract: `isStreaming: true` while the SDK is emitting deltas, flipped `false` on completion to trigger auto-collapse in the renderer. See `ThinkingBlock.tsx` / `MemoryRecallBlock.tsx` and the projection in `apps/client/src/layers/features/chat/model/stream/project-session-turn.ts` for reference wiring.
 
 ### Session Sync (Multi-Client)
 
@@ -196,9 +168,9 @@ There is no separate sync mechanism: the durable `GET /api/sessions/:id/events` 
 
 ### Real-Time System Events (Unified SSE Stream)
 
-System-wide events (tunnel status changes, extension reloads, relay activity) are delivered through a single multiplexed SSE connection rather than per-resource streams.
+System-wide events (tunnel status changes, extension reloads, relay activity) use one multiplexed connection. The app uses a WebSocket; the SSE form remains available to external clients.
 
-**Endpoint**: `GET /api/events` — one SSE connection carries all system event types. The server multiplexes tunnel, extensions, and relay events onto this single stream.
+**Endpoint**: `/api/events` — a WebSocket upgrade in the app, or an SSE `GET` for an external consumer. The server multiplexes tunnel, extensions, and relay events onto this single stream.
 
 **Provider**: `EventStreamProvider` (in `layers/shared/model/event-stream-context.tsx`) delegates to the `StreamManager` singleton's `subscribeEvent` API — generic consumers share the same `/api/events` connection as the session-list stream instead of opening their own. It is mounted once in `main.tsx` and survives React StrictMode double-mounts and Vite HMR cycles.
 
@@ -274,105 +246,55 @@ The `GET /api/sessions/:id/messages` endpoint supports `If-None-Match` / `304` f
 
 ### Debouncing Fetches with useDeferredValue
 
-For high-frequency state changes (e.g., rapid arrow key navigation through a list), use `useDeferredValue` to prevent fetch thrashing:
+For rapid navigation, `useDeferredValue` lets the preview follow the selection without making its work block the input. It does not promise a fixed debounce interval:
 
 ```typescript
-// apps/client/src/layers/features/command-palette/model/use-preview-data.ts
+// Simplified from apps/client/src/layers/features/command-palette/model/use-preview-data.ts
 import { useDeferredValue, useMemo } from 'react';
+import { useAgentSessions } from '@/layers/entities/session';
+import { useMeshAgentHealth } from '@/layers/entities/mesh';
 
 export function usePreviewData(agentId: string, agentCwd: string) {
-  // Defers the agent ID — prevents preview fetches on every keystroke
   const deferredAgentId = useDeferredValue(agentId);
+  const { sessions } = useAgentSessions(agentCwd);
+  const { data: health } = useMeshAgentHealth(deferredAgentId || null);
+  const recentSessions = useMemo(() => sessions.slice(0, 3), [sessions]);
+  return { sessionCount: sessions.length, recentSessions, health: health ?? null };
+}
+```
 
-  const { data: sessions } = useSessions();
-  const { data: health } = useMeshAgentHealth(deferredAgentId);
+Use a separate timer-based debounce when a request must wait for a specified quiet interval.
 
-  // Derived data via useMemo — recomputes only when dependencies change
-  const agentSessions = useMemo(
-    () => sessions?.filter((s) => s.cwd === agentCwd) ?? [],
-    [sessions, agentCwd]
-  );
+### Data Aggregation Hooks
 
+The preview above composes domain hooks and derives its recent list with `useMemo`. Keep session membership in `useAgentSessions`; a preview must not duplicate that rule with `sessions.filter(s => s.cwd === agentCwd)`.
+
+### Multi-Source Derived Hooks (Feature Flags + Server State)
+
+Keep runtime support, server availability and permission resolution separate. `useAgentToolStatus()` is not a current hook; use the resolved permission response and runtime capability hooks instead. A view can combine their data without inventing another permission state:
+
+```typescript
+import { useAgentPermissions } from '@/layers/entities/permissions';
+import { useCapabilitiesForRuntime } from '@/layers/entities/runtime';
+
+export function usePermissionView(agentId: string | undefined, runtime: string) {
+  const permissions = useAgentPermissions(agentId);
+  const capabilities = useCapabilitiesForRuntime(runtime);
   return {
-    sessionCount: agentSessions.length,
-    recentSessions: agentSessions.slice(0, 3),
-    health: health ?? null,
+    permissions: permissions.data,
+    permissionsLoading: permissions.isLoading,
+    supportsDorkosTools: capabilities?.supportsMcp,
   };
 }
 ```
 
-**When to use**: Debouncing expensive effects (API calls, heavy computations) triggered by rapid input changes. The deferred value keeps UI responsive during typing/navigation but maintains correctness after input settles. Prefer over manual `setTimeout`/`useEffect` debounce patterns.
-
-### Data Aggregation Hooks
-
-When multiple TanStack Query hooks need to be composed into a single derived result, create a custom hook that combines them with `useMemo`:
-
-```typescript
-export function usePreviewData(agentId: string, agentCwd: string) {
-  const { data: sessions } = useSessions(); // TanStack Query
-  const { data: health } = useMeshAgentHealth(agentId); // TanStack Query
-
-  // Derive filtered + sliced data via useMemo
-  const agentSessions = useMemo(
-    () => sessions?.filter((s) => s.cwd === agentCwd) ?? [],
-    [sessions, agentCwd]
-  );
-
-  return { sessionCount: agentSessions.length, recentSessions: agentSessions.slice(0, 3), health };
-}
-```
-
-This pattern centralizes the aggregation logic, avoids scattered queries, and lets TanStack Query handle caching/refetching for each underlying data source independently.
-
-### Multi-Source Derived Hooks (Feature Flags + Server State)
-
-When a hook needs to combine TanStack Query data with non-query state (feature flags, config), use `useMemo` to produce a derived result:
-
-```typescript
-// apps/client/src/layers/entities/permissions/model/use-agent-permissions.ts
-export function useAgentToolStatus(agentId: string | null): AgentToolStatus {
-  const { data: permissions } = useAgentPermissions(agentId); // TanStack Query, GET /api/agents/:id/permissions
-  const relayEnabled = useRelayEnabled(); // Feature flag (config query)
-  const tasksEnabled = useTasksEnabled(); // Feature flag (config query)
-
-  return useMemo((): AgentToolStatus => {
-    const area = (id: PermissionAreaId) =>
-      permissions?.areas.find((a) => a.id === id)?.resolved.state;
-    return {
-      tasks: !tasksEnabled
-        ? 'disabled-by-server'
-        : area('tasks') === 'blocked'
-          ? 'disabled-by-agent'
-          : 'enabled',
-      messages: !relayEnabled
-        ? 'disabled-by-server'
-        : area('messages') === 'blocked'
-          ? 'disabled-by-agent'
-          : 'enabled',
-      agents: area('agents') === 'blocked' ? 'disabled-by-agent' : 'enabled',
-      connections: !relayEnabled
-        ? 'disabled-by-server'
-        : area('connections') === 'blocked'
-          ? 'disabled-by-agent'
-          : 'enabled',
-    };
-  }, [permissions, relayEnabled, tasksEnabled]);
-}
-```
-
-This pattern is useful when the derived state depends on multiple independent sources with different update frequencies. Each source updates independently (an agent's resolved permissions change infrequently, feature flags almost never), but the derived value recomputes correctly via `useMemo` dependency tracking.
+The response already includes each area's resolved state and its source. Preserve `undefined` while runtime support is loading; do not turn an unknown answer into an Allowed permission or a server-disabled feature. See [the permission control pattern](design-system.md#permission-override-pattern-permissionspage-permissionstab).
 
 ### Pre-loading Data with staleTime
 
-For UI elements that need data immediately on open (e.g., command palette), pre-load data via TanStack Query with explicit `staleTime` to avoid unnecessary refetches:
+Set `staleTime` on the query that owns the data. Do not assume every exported hook accepts query options: `useSessions()` has no options parameter, and `useRegisteredAgents(filters)` takes agent filters rather than a `staleTime` override.
 
-```typescript
-// Data is loaded before the palette opens; staleTime prevents refetch on mount
-const { data: agents } = useRegisteredAgents({ staleTime: 30_000 });
-const { data: sessions } = useSessions({ staleTime: 30_000 });
-```
-
-`staleTime: 30_000` means TanStack Query considers the data fresh for 30 seconds. If the user opens the palette within that window, it uses cached data without a network request. After 30 seconds, a background refetch occurs on next access.
+For example, `apps/client/src/layers/entities/runtime/model/use-runtime-capabilities.ts` sets `staleTime: Infinity` because the capability map lasts for the server process. Explicit invalidation still refreshes it. `apps/client/src/layers/entities/mesh/model/use-mesh-agents.ts` sets a 30-second stale time for its registry query. Reuse each domain's query key and options instead of starting an independent cache entry for the same data.
 
 ## Anti-Patterns
 
