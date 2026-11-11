@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { WidgetDocumentSchema } from '@dorkos/shared/ui-widget';
+import { APP_WIDGET_REFUSAL, appWidgetIsRefused } from '@dorkos/shared/app-widget-actions';
 
 /** Only host-owned placement slots cross the frame boundary. */
 export const FrameRegistrationSchema = z
@@ -95,12 +96,23 @@ const title = z.string().max(120).optional();
 /**
  * What an app may put on the canvas (Security, 2026-11-10): text, data, a
  * widget, a picture, or a web page. Files, PDFs, diffs, local paths and MCP
- * apps are refused, and nothing on the canvas talks back to the frame.
+ * apps are refused, and nothing on the canvas talks back to the frame. A
+ * widget's buttons may only link out: an `agent`, `ui` or `emit` action would
+ * act for the person (DOR-3293, Security).
  */
 export const FrameCanvasContentSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('markdown'), content: z.string().max(200_000), title }).strict(),
   z.object({ type: z.literal('json'), data: z.json(), title }).strict(),
-  z.object({ type: z.literal('widget'), definition: WidgetDocumentSchema, title }).strict(),
+  z
+    .object({
+      type: z.literal('widget'),
+      // Only links: a widget's other actions act for the person (Security).
+      definition: WidgetDocumentSchema.refine((document) => !appWidgetIsRefused(document), {
+        message: APP_WIDGET_REFUSAL,
+      }),
+      title,
+    })
+    .strict(),
   z
     .object({ type: z.literal('image'), src: imageSrc, alt: z.string().max(400).optional(), title })
     .strict(),

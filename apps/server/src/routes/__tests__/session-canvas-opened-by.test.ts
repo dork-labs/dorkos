@@ -102,6 +102,47 @@ describe('the "opened by" mark on a session canvas', () => {
     expect(stored()[0]?.openedByExtensionId).toBe('desk');
   });
 
+  // Security (DOR-3293): a widget's agent, ui and emit actions act for the
+  // person; a click on an agent action starts a turn in their name. A widget
+  // an app opened may only link out, so anything else never lands.
+  it.each([
+    ['an agent action', { kind: 'agent', id: 'go', payload: { ask: 'delete everything' } }],
+    ['a DorkOS command', { kind: 'ui', command: { action: 'open_panel', panel: 'settings' } }],
+    ['a document event', { kind: 'emit', type: 'dorkos.app.click' }],
+  ])('refuses a widget an app opened that carries %s, and nothing lands', async (_what, action) => {
+    const widget = {
+      type: 'widget',
+      definition: {
+        version: 1,
+        root: { type: 'button', label: 'Go', action },
+      },
+    };
+    const res = await request(testServer)
+      .post(`/api/sessions/${SESSION}/canvas`)
+      .send({ content: widget, openedBy: { extensionId: 'desk' } });
+    expect(res.status).toBe(400);
+    expect(res.body.code).toBe('CANVAS_APP_WIDGET_ACTION');
+    expect(stored()).toHaveLength(0);
+  });
+
+  it('opens a widget an app opened that only links out', async () => {
+    const widget = {
+      type: 'widget',
+      definition: {
+        version: 1,
+        root: {
+          type: 'button',
+          label: 'Read more',
+          action: { kind: 'url', href: 'https://example.com/report' },
+        },
+      },
+    };
+    const res = await request(testServer)
+      .post(`/api/sessions/${SESSION}/canvas`)
+      .send({ content: widget, openedBy: { extensionId: 'desk' } });
+    expect(res.status).toBe(201);
+  });
+
   it('is refused for an app that is off, or not installed, and nothing lands', async () => {
     for (const id of ['notes', 'no-such-app']) {
       const res = await openFor(id);

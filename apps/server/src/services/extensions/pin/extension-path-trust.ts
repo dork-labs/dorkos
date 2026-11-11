@@ -48,6 +48,7 @@ import { createHash } from 'crypto';
 import path from 'path';
 import type { ExtensionManifest, ExtensionRecord } from '@dorkos/extension-api';
 import type { ExtensionApprovedSource } from '@dorkos/shared/config-schema';
+import { BRIDGE_WRITES, declaresBridgeCapability } from '@dorkos/shared/extension-approval-schemas';
 
 /** The fields of a copy the path-trust rule reads. */
 export type PathTrustCopy = Pick<ExtensionRecord, 'manifest' | 'sourcePlugin'> &
@@ -57,8 +58,10 @@ export type PathTrustCopy = Pick<ExtensionRecord, 'manifest' | 'sourcePlugin'> &
  * A digest of what a manifest declares it may reach: where its server half
  * runs, its `allow` lists, its secrets, its data proxy, its server entry, and
  * the tier of each tool it gives agents (a tool moved to a lower tier would run
- * without the card its old tier asked for). Tool descriptions, skills and
- * display fields are left out, so editing them never asks.
+ * without the card its old tier asked for), and what its screens reach: the
+ * bridge writes it has to declare, the other apps it calls and the routes it
+ * lets other apps call (DOR-3293). Tool descriptions, skills and display
+ * fields are left out, so editing them never asks.
  *
  * @param manifest - The parsed `extension.json`.
  * @returns `sha256:<hex>`.
@@ -77,11 +80,34 @@ export function grantsDigestOf(manifest: ExtensionManifest): string {
     // an operation is a change of reach, so it waits for a person too. Only
     // present when declared, so every digest stored before it stays the same.
     ...(caps?.connections ? { connections: caps.connections } : {}),
+    // What its screens reach (DOR-3293, Security): each only when declared,
+    // for the same reason.
+    ...screenGrants(manifest),
     tools: (manifest.tools ?? [])
       .map((tool) => [tool.name, tool.tier])
       .sort(([a], [b]) => String(a).localeCompare(String(b))),
   };
   return `sha256:${createHash('sha256').update(JSON.stringify(grants)).digest('hex')}`;
+}
+
+/**
+ * What an app's screens reach beyond what every app's screens can do: the
+ * bridge writes a manifest has to declare, the other apps it calls and the
+ * routes it lets other apps call. Each is present only when declared.
+ *
+ * @param manifest - The parsed `extension.json`.
+ */
+function screenGrants(manifest: ExtensionManifest): Record<string, unknown> {
+  const writes = BRIDGE_WRITES.filter(
+    ({ capability }) => capability !== null && declaresBridgeCapability(manifest, capability)
+  ).map(({ key }) => key);
+  const http = manifest.capabilities?.http;
+  const apps = typeof http === 'object' ? [...http.apps].sort() : [];
+  return {
+    ...(writes.length > 0 ? { writes } : {}),
+    ...(apps.length > 0 ? { apps } : {}),
+    ...(manifest.exports ? { exports: manifest.exports } : {}),
+  };
 }
 
 /**

@@ -20,6 +20,7 @@ covers:
   - "fix(extensions): approvals never say screens run with your access, and an app page's canvas opens beside it (DOR-3293)"
   - "fix(extensions): an app that names another app by anything but its id can't be installed or updated (DOR-3293)"
   - 'fix(marketplace): a refused package names itself as its title does and offers only Close (DOR-3293)'
+  - "fix(extensions): an app's canvas widget may only link out, and a trusted app asks again when its screens reach further (DOR-3293)"
 ---
 
 ### Security

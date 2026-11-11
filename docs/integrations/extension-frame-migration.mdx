@@ -97,7 +97,7 @@ await api.openCanvas({ type: 'browser', url: 'http://localhost:5173/', title: 'P
 await api.openCanvas({ type: 'markdown', content: '# Weekly report', title: 'Report' });
 ```
 
-You may open Markdown, JSON, a widget, a picture (`data:` or `https:`) or a web page (`http:` or `https:`). Files, PDFs, diffs, local paths and MCP apps are refused. What you open is always a new tab, never one already showing. The tab shows the app icon and the title, and says "Opened by" with your app's name as DorkOS knows it. Nothing on the canvas sends messages back to your app.
+You may open Markdown, JSON, a widget, a picture (`data:` or `https:`) or a web page (`http:` or `https:`). Files, PDFs, diffs, local paths and MCP apps are refused. A widget's buttons may only link to a web page (`url`): a widget with an `agent`, `ui` or `emit` action is refused, because those act for the person. What you open is always a new tab, never one already showing. The tab shows the app icon and the title, and says "Opened by" with your app's name as DorkOS knows it. Nothing on the canvas sends messages back to your app.
 
 ## Calling another app
 

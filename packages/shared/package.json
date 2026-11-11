@@ -469,6 +469,10 @@
       "types": "./src/ui-widget.ts",
       "default": "./dist/ui-widget.js"
     },
+    "./app-widget-actions": {
+      "types": "./src/app-widget-actions.ts",
+      "default": "./dist/app-widget-actions.js"
+    },
     "./viewer-registry": {
       "types": "./src/viewer-registry.ts",
       "default": "./dist/viewer-registry.js"

@@ -26,6 +26,7 @@
 import { Hono, type Context } from 'hono';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import { z, type ZodType } from 'zod';
+import { APP_WIDGET_REFUSAL, appWidgetIsRefused } from '@dorkos/shared/app-widget-actions';
 import {
   CanvasEditingRequestSchema,
   OpenCanvasDocumentRequestSchema,
@@ -191,6 +192,8 @@ const UNKNOWN_APP = errorBody(
   'CANVAS_OPENED_BY_UNKNOWN_APP'
 );
 
+const APP_WIDGET_ACTION = errorBody(APP_WIDGET_REFUSAL, 'CANVAS_APP_WIDGET_ACTION');
+
 const NO_SUCH_DOCUMENT = errorBody('No such document on this canvas', 'CANVAS_DOCUMENT_NOT_FOUND');
 
 /**
@@ -231,6 +234,15 @@ export function createSessionCanvasRoutes(deps: SessionCanvasDeps = {}): Hono<Ap
     }
     if (body.openedBy && !deps.appScreenRuns?.(body.openedBy.extensionId)) {
       return c.json(UNKNOWN_APP, 400);
+    }
+    // A widget an app opened may only link out; its other actions act for
+    // the person. The window refuses it first; this is the second check.
+    if (
+      body.openedBy &&
+      body.content.type === 'widget' &&
+      appWidgetIsRefused(body.content.definition)
+    ) {
+      return c.json(APP_WIDGET_ACTION, 400);
     }
     try {
       const document = access.canvas.open(access.scope, SESSION_OWNER_AUTHOR, body.content, {
