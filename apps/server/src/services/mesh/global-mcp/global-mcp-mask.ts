@@ -3,10 +3,15 @@
  * everything a person is shown (DOR-3802). The store keeps the real values,
  * because the server needs them to run; this is only ever for display.
  *
- * It reads flag names, `name: value` shapes and URLs, so it misses a bare value (`-p value`), a
- * credential with no scheme (`user:pw@host`, `user:pw@tcp(host)/db`), a scheme it doesn't know
- * with no `//` (`postgres:user:pw@host`), and anything percent-encoded (`--t%6Fken=x`).
- * That is why the audited sentence leaves arguments out altogether.
+ * It reads flag names, `name: value` shapes, URLs, a credential with no scheme (`user:pw@host`,
+ * `user:pw@tcp(host)/db`) and keys in a shape a service uses (`ghp_…`, `sk-…`, a JWT). It still
+ * misses a bare value in no known shape (`-p value`), a scheme-less password holding a `/`, a
+ * scheme it doesn't know with no `//` (`postgres:user:pw@host`), and anything percent-encoded
+ * (`--t%6Fken=x`). That is why the audited sentence leaves arguments out altogether, and why
+ * Add's "looks like a secret" warning, not this mask, is the protection (DOR-3846).
+ *
+ * An argument longer than {@link MAX_READ_LENGTH} is hidden whole rather than read, since the
+ * patterns below are not linear on a long run with no separator, and they run on every list.
  *
  * {@link argsLookSecret} is the same reading, for warning a person as they type. It warns and never
  * refuses, and a plain URL path doesn't count, so a key in a webhook-style path goes unnoticed.
@@ -17,6 +22,44 @@ import { SECRET_NAME_PATTERN } from '@dorkos/shared/global-mcp-schemas';
 
 /** What stands in for a value. */
 export const MASK = '•••';
+
+/** The longest argument read for secrets; a longer one is hidden whole. */
+export const MAX_READ_LENGTH = 4096;
+
+/** One word of an argument: what a quote, a space or `,` separates. */
+const WORD = /[^\s'",]+/g;
+
+/** A `name=` before a word's value (`--db=`), kept as typed. */
+const NAME_BEFORE_VALUE = /^[^:@=]*=/;
+
+/** A URL a scheme starts, which {@link maskUrls} reads instead. */
+const STARTS_WITH_SCHEME = /^(?:[a-z][a-z0-9+.-]*:\/\/|(?:https?|wss?|ftp):)/i;
+
+/**
+ * Package specifiers shaped like `name:spec@version`, which name what runs and hold no key
+ * (`npm:pkg@1`, `jsr:@scope/pkg@1`).
+ */
+const SPECIFIER_PREFIXES = new Set([
+  'npm',
+  'jsr',
+  'github',
+  'gitlab',
+  'bitbucket',
+  'git',
+  'workspace',
+  'link',
+  'file',
+  'portal',
+  'patch',
+  'catalog',
+]);
+
+/**
+ * Keys in a shape a well-known service gives out, so one is hidden even as a bare argument. Each
+ * needs its whole length, so a package or a word that only starts the same way stays shown.
+ */
+const KNOWN_KEY =
+  /^(?:gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|sk-(?:ant-|proj-)[A-Za-z0-9_-]{20,}|sk-[A-Za-z0-9]{32,}|xox[abposr]-[A-Za-z0-9-]{10,}|glpat-[A-Za-z0-9_-]{20,}|AKIA[0-9A-Z]{16}|eyJ[A-Za-z0-9_-]+\.eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+)$/;
 
 /**
  * A URL inside a string: its scheme, then the rest. A browser and most programs read
@@ -40,12 +83,45 @@ export function maskUrls(text: string): string {
     if (isFileScheme(scheme)) return url;
     const at = rest.lastIndexOf('@');
     const after = at >= 0 ? rest.slice(at + 1) : rest;
-    const host = /^[^/?#]*/.exec(after)![0];
-    const tail = after.slice(host.length);
-    const path = /^\/[^?#]/.test(tail) ? `/${MASK}` : '';
-    const query = /[?#]./.test(tail) ? `?${MASK}` : '';
-    return `${scheme}${at >= 0 ? `${MASK}@` : ''}${host}${path}${query}`;
+    return `${scheme}${at >= 0 ? `${MASK}@` : ''}${hostOnly(after)}`;
   });
+}
+
+/** What follows a credential's `@`, down to its host: a path or a query can hold a key too. */
+function hostOnly(after: string): string {
+  const host = /^[^/?#]*/.exec(after)![0];
+  const tail = after.slice(host.length);
+  const path = /^\/[^?#]/.test(tail) ? `/${MASK}` : '';
+  const query = /[?#]./.test(tail) ? `?${MASK}` : '';
+  return `${host}${path}${query}`;
+}
+
+/**
+ * One word with its secret hidden, when it is a credential with no scheme (`user:pw@host`) or a
+ * key in a known shape; otherwise as it was. A URL is left to {@link maskUrls}. A scheme-less
+ * password with a `/` is not read as one, so `localhost:3000/pkg@v2` stays the path it is.
+ */
+function maskWord(word: string): string {
+  const name = NAME_BEFORE_VALUE.exec(word)?.[0] ?? '';
+  const value = word.slice(name.length);
+  if (KNOWN_KEY.test(value)) return `${name}${MASK}`;
+  if (STARTS_WITH_SCHEME.test(value)) return word;
+  const at = value.lastIndexOf('@');
+  const colon = value.indexOf(':');
+  if (colon <= 0 || at <= colon + 1) return word;
+  const user = value.slice(0, colon);
+  const password = value.slice(colon + 1, at);
+  const after = value.slice(at + 1);
+  if (/[/@]/.test(user) || SPECIFIER_PREFIXES.has(user.toLowerCase())) return word;
+  // A port, a path or a scoped package is not a password.
+  if (/^\d+$/.test(password) || password.includes('/') || password.startsWith('@')) return word;
+  if (!/^[A-Za-z0-9[(]/.test(after)) return word;
+  return `${name}${MASK}@${hostOnly(after)}`;
+}
+
+/** An argument with every scheme-less credential and known-shape key in it hidden. */
+function maskBareSecrets(arg: string): string {
+  return arg.replace(WORD, maskWord);
 }
 
 /**
@@ -101,6 +177,12 @@ function hideSecretValues(args: readonly string[], hideUrls: (arg: string) => st
   const out: string[] = [];
   let hideNext = false;
   for (const arg of args) {
+    // Too long to read in reasonable time; hidden whole, so it can't hide a key either.
+    if (arg.length > MAX_READ_LENGTH) {
+      out.push(MASK);
+      hideNext = false;
+      continue;
+    }
     if (hideNext) {
       out.push(MASK);
       // `Authorization: Bearer x`, typed: the scheme or a lone `:` isn't the value yet.
@@ -126,7 +208,7 @@ function hideSecretValues(args: readonly string[], hideUrls: (arg: string) => st
     if (/^bearer$/i.test(arg) || (trailing && SECRET_NAME_PATTERN.test(trailing[1]!))) {
       hideNext = true;
     }
-    out.push(hideUrls(maskSecretShapes(arg)));
+    out.push(hideUrls(maskBareSecrets(maskSecretShapes(arg))));
   }
   return out;
 }
