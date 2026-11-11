@@ -21,6 +21,7 @@ import { PipPanelShowcases } from '../showcases/PipPanelShowcases';
 import { ApprovalsShowcases } from '../showcases/ApprovalsShowcases';
 import { ScheduleApprovalShowcases } from '../showcases/ScheduleApprovalShowcases';
 import { BrowserHandoffShowcases } from '../showcases/BrowserHandoffShowcases';
+import { LocalBrowserPanelShowcases } from '../showcases/LocalBrowserPanelShowcases';
 import { TriageHeaderShowcases } from '../showcases/TriageHeaderShowcases';
 import { InboxShowcases } from '../showcases/InboxShowcases';
 import { AccessChangeShowcases } from '../showcases/AccessChangeShowcases';
@@ -100,6 +101,7 @@ export function HomeInboxPage() {
       <ApprovalsShowcases />
       <ScheduleApprovalShowcases />
       <BrowserHandoffShowcases />
+      <LocalBrowserPanelShowcases />
       <TriageHeaderShowcases />
       <InboxShowcases />
       <AccessChangeShowcases />

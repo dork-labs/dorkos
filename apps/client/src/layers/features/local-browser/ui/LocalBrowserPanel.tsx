@@ -62,6 +62,12 @@ export function LocalBrowserPanel({
   const [surfaceUnavailable, setSurfaceUnavailable] = useState(false);
   const surface = useRef<HTMLDivElement>(null);
   const connected = state?.status === 'connected';
+  // "Disconnected" before anything was ever opened reads as broken (DOR-4104).
+  const [hadConnection, setHadConnection] = useState(false);
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- remembering a fact the server forgets on Disconnect
+    if (connected) setHadConnection(true);
+  }, [connected]);
   const sharedElsewhere = !!state?.sessionId && state.sessionId !== sessionId;
   // Another chat's agent is waiting on a person. Nothing here may answer for that chat.
   const waitingElsewhere =
@@ -206,7 +212,9 @@ export function LocalBrowserPanel({
                     ? state.paused
                       ? 'Agent paused'
                       : 'Connected'
-                    : 'Disconnected'}
+                    : hadConnection
+                      ? 'Disconnected'
+                      : 'Not open yet'}
         </span>
       </div>
       {opening && (

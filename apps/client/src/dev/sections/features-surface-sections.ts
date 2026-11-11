@@ -130,6 +130,14 @@ export const FEATURE_SURFACE_SECTIONS: PlaygroundSection[] = [
     category: 'Home',
     keywords: ['browser', 'agent browser', 'handoff', 'sign in', 'password', 'paused', 'continue'],
   },
+  // LocalBrowserPanelShowcases
+  {
+    id: 'agent-browser-panel',
+    title: 'Agent browser panel',
+    page: 'home-inbox',
+    category: 'Home',
+    keywords: ['browser', 'agent browser', 'panel', 'not open yet', 'disconnected'],
+  },
   // ScheduleApprovalShowcases
   {
     id: 'schedule-approval-card',

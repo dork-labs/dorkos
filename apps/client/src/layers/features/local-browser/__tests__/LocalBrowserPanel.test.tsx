@@ -456,6 +456,21 @@ describe('LocalBrowserPanel', () => {
     await act(async () => opening.resolve(disconnected));
     await waitFor(() => expect(open).toHaveFocus());
   });
+  it('says "Not open yet" before the browser was ever opened (DOR-4104)', async () => {
+    mount();
+    expect(await screen.findByText('Not open yet')).toBeInTheDocument();
+    expect(screen.queryByText('Disconnected')).not.toBeInTheDocument();
+  });
+
+  it('says "Disconnected" only once a connection it saw has gone', async () => {
+    transport.getLocalBrowserState.mockResolvedValue(connected);
+    transport.disconnectLocalBrowser.mockResolvedValue(disconnected);
+    mount();
+    fireEvent.click(await screen.findByRole('button', { name: 'Disconnect' }));
+    expect(await screen.findByText('Disconnected')).toBeInTheDocument();
+    expect(screen.queryByText('Not open yet')).not.toBeInTheDocument();
+  });
+
   it('returns keyboard focus after disconnecting the browser', async () => {
     vi.spyOn(document, 'hasFocus').mockReturnValue(true);
     transport.getLocalBrowserState.mockResolvedValue(connected);
@@ -590,7 +605,7 @@ describe('LocalBrowserPanel', () => {
       await waitFor(() => expect(open).toBeEnabled());
       expect(screen.queryByText('Cancelling…')).not.toBeInTheDocument();
       expect(view.client.getQueryData(['local-browser', 'state'])).toEqual(disconnected);
-      expect(screen.getByText('Disconnected')).toBeInTheDocument();
+      expect(screen.getByText('Not open yet')).toBeInTheDocument();
       expect(screen.queryByRole('button', { name: 'Pause agent' })).not.toBeInTheDocument();
       expect(screen.queryByRole('alert')).not.toBeInTheDocument();
       expect(transport.openLocalBrowser).toHaveBeenCalledTimes(1);
