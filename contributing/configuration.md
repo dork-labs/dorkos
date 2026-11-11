@@ -406,6 +406,12 @@ DorkOS's user config (`~/.dork/config.json`) is owned by the [`conf`](https://gi
 
 Any change to `UserConfigSchema` (add / rename / remove / retype a field) that affects an existing user's stored data **requires a migration**. This section documents when and how.
 
+### Minimum upgrade version
+
+Current releases accept config files last opened by **0.115.0 or newer**. Older or unstamped configs stop before Conf opens, so its defaults merge cannot rewrite them. The message says: "Upgrade to 0.115 first, then upgrade to this version." An unreadable file follows the existing read retries and stops without replacement.
+
+`config/upgrade-floor.ts` checks the stored `__internal__.migrations.version` before either Conf constructor. The 0.115 intermediate release and raw dev trees (`SERVER_VERSION = 0.0.0`) do not apply this current-release floor. Invalid JSON and malformed version markers retain the existing corruption-recovery path. This config check does not establish the database version.
+
 ### Why migrations matter
 
 When a user upgrades DorkOS, their `config.json` was written by the previous version. The schema Zod now validates may differ from the shape on disk:
