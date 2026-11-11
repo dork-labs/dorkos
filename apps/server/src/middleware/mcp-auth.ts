@@ -189,6 +189,9 @@ export type McpAuthEnv = RequestBodyEnv & {
     mcpLocalToken?: boolean;
   };
 };
+/** A query parameter that looks like a credential: refused on /mcp and /a2a (DOR-3650). */
+const KEY_IN_QUERY = /key|token|secret|auth|password|bearer/i;
+
 
 /**
  * The credential check as Hono middleware, for `/mcp` and the A2A gateway. It
@@ -200,6 +203,12 @@ export type McpAuthEnv = RequestBodyEnv & {
  */
 export function honoMcpAuth(surface: McpAuthSurface): MiddlewareHandler<McpAuthEnv> {
   return async (c, next) => {
+    // A key goes in a header, never the address (Security on DOR-3650): an
+    // address lands in tunnel and proxy logs. A call carrying one is refused
+    // before any key is looked at.
+    if (Object.keys(c.req.queries()).some((name) => KEY_IN_QUERY.test(name))) {
+      return c.json(unauthorizedBody(surface, false), 401);
+    }
     const decision = await decideMcpAuth(surface, {
       method: c.req.method,
       headers: c.env.incoming.headers,

@@ -81,6 +81,8 @@ interface Request {
   body?: unknown;
   method: string;
   from?: Origin;
+  /** The request path and query; `/` by default. */
+  path?: string;
 }
 
 /** What the check decided, as a case reads it. */
@@ -125,7 +127,7 @@ function authFor(surface: McpAuthSurface) {
       socket: { remoteAddress: from.peerAddress },
     } as unknown as IncomingMessage;
     if (from.ingress) markIngress(incoming, from.ingress);
-    const answer = await app.request('/', { method: req.method, headers }, { incoming });
+    const answer = await app.request(req.path ?? '/', { method: req.method, headers }, { incoming });
     if (answer.status !== 204) {
       res.statusCode = answer.status;
       res.body = await answer.json();
@@ -775,6 +777,25 @@ describe('honoMcpAuth — another device needs a key even with the password off'
           expect.objectContaining({ ignoreSessionCookie: true })
         );
       }
+    }
+  );
+
+  it.each(['/?key=k', '/?api_key=k', '/?token=k', '/?x=1&Authorization=k'])(
+    'refuses a key in the address %s, so it never lands in a tunnel log (DOR-3650)',
+    async (path) => {
+      mockConfig({ authEnabled: false });
+      vi.mocked(verifyRequestAuth).mockResolvedValue({ userId: 'owner-1', credential: 'api-key' });
+      const next = vi.fn() as NextFunction;
+      const res = createMockRes();
+      for (const auth of [mcpAuth, a2aAuth]) {
+        await auth(
+          { ...createMockReq({ authHeader: 'Bearer user-key', from: OWN_TUNNEL }), path },
+          res,
+          next
+        );
+        expect(res.statusCode).toBe(401);
+      }
+      expect(next).not.toHaveBeenCalled();
     }
   );
 
