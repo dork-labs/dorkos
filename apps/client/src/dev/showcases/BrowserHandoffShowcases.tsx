@@ -1,9 +1,12 @@
+import { useState } from 'react';
 import type { LocalBrowserHandoffOutcome } from '@dorkos/shared/local-browser';
 import {
   BrowserHandoffCardView,
   BrowserHandoffReceipt,
+  BrowserHandoffSlot,
   type HandoffStep,
 } from '@/layers/features/browser-handoff';
+import { Button } from '@/layers/shared/ui';
 import { PlaygroundSection } from '../PlaygroundSection';
 import { ShowcaseDemo } from '../ShowcaseDemo';
 import { ShowcaseLabel } from '../ShowcaseLabel';
@@ -46,6 +49,57 @@ const ENDINGS: Array<{ label: string; outcome: LocalBrowserHandoffOutcome }> = [
 
 const ignore = () => undefined;
 
+/** The card settling into its receipt, replayable, as the chat's card does it (DOR-3112). */
+function SettleDemo() {
+  const [ended, setEnded] = useState(false);
+  return (
+    <div className="flex w-full max-w-lg flex-col gap-3">
+      <Button
+        size="sm"
+        variant="outline"
+        className="self-start"
+        data-slot="browser-handoff-settle-toggle"
+        onClick={() => setEnded((was) => !was)}
+      >
+        {ended ? 'Replay' : 'Continue'}
+      </Button>
+      <BrowserHandoffSlot
+        card={
+          ended
+            ? null
+            : {
+                key: 'demo-card',
+                node: (
+                  <BrowserHandoffCardView
+                    site="northwind.example"
+                    agentName="Atlas"
+                    agentFolder="/home/sam/agents/atlas"
+                    step="wall"
+                    canShowWindow
+                    busy={false}
+                    error={null}
+                    onContinue={() => setEnded(true)}
+                    onSignIn={ignore}
+                    onOpenWindow={ignore}
+                    onShowWindow={ignore}
+                    onStop={() => setEnded(true)}
+                  />
+                ),
+              }
+        }
+        receipt={
+          ended
+            ? {
+                key: 'demo-receipt',
+                node: <BrowserHandoffReceipt agentName="Atlas" outcome="handed-back" />,
+              }
+            : null
+        }
+      />
+    </div>
+  );
+}
+
 /** Each step of the Agent browser's handoff card, held still. A live one needs a real wall. */
 export function BrowserHandoffShowcases() {
   return (
@@ -78,6 +132,12 @@ export function BrowserHandoffShowcases() {
           </ShowcaseDemo>
         </div>
       ))}
+      <div>
+        <ShowcaseLabel>Settling into the receipt: press Continue, then Replay</ShowcaseLabel>
+        <ShowcaseDemo>
+          <SettleDemo />
+        </ShowcaseDemo>
+      </div>
       {ENDINGS.map(({ label, outcome }) => (
         <div key={label}>
           <ShowcaseLabel>{label}</ShowcaseLabel>
