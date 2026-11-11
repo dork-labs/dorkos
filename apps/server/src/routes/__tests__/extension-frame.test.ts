@@ -2,13 +2,14 @@
  * The document every app's screens run in (DOR-3293): DorkOS's own response
  * and policy, never a `srcdoc` that inherits the shell's `'unsafe-inline'`.
  */
+import vm from 'node:vm';
 import { describe, expect, it, vi } from 'vitest';
 
 vi.mock('../../lib/trusted-origins.js', () => ({
   resolveAuthTrustedOrigins: () => ['http://localhost:6241'],
 }));
 
-import { createExtensionFrameRoutes } from '../extension-frame.js';
+import { createExtensionFrameRoutes, frameBootstrap } from '../extension-frame.js';
 
 async function load() {
   const res = await createExtensionFrameRoutes().request('/');
@@ -63,5 +64,82 @@ describe('GET /api/extension-frame', () => {
     // The bootstrap takes the runtime from the parent window only, once.
     expect(html).toContain('event.source !== parent');
     expect(html).toContain("removeEventListener('message', boot)");
+  });
+});
+
+const DORKOS = 'http://localhost:4242';
+
+/** Run the bootstrap in a bare global the way the frame would, and drive its messages. */
+function runBootstrap() {
+  const listeners = new Set<(event: unknown) => void>();
+  const appended: { nonce: string; textContent: string }[] = [];
+  const parentWindow = {};
+  const frameGlobal: Record<string, unknown> = {
+    document: {
+      currentScript: { nonce: 'load-nonce' },
+      createElement: () => ({ nonce: '', textContent: '' }),
+      head: { append: (element: { nonce: string; textContent: string }) => appended.push(element) },
+    },
+    addEventListener: (_type: string, listener: (event: unknown) => void) =>
+      listeners.add(listener),
+    removeEventListener: (_type: string, listener: (event: unknown) => void) =>
+      listeners.delete(listener),
+    parent: parentWindow,
+  };
+  vm.createContext(frameGlobal);
+  vm.runInContext(frameBootstrap([DORKOS]), frameGlobal);
+  const send = (event: Record<string, unknown>) => {
+    for (const listener of [...listeners]) listener(event);
+  };
+  const runtimeMessage = (overrides: Record<string, unknown> = {}) => ({
+    source: parentWindow,
+    origin: DORKOS,
+    data: { type: 'dorkos-frame-runtime', runtime: 'runtime code' },
+    ...overrides,
+  });
+  return { frameGlobal, appended, listeners, send, runtimeMessage };
+}
+
+describe('the frame bootstrap', () => {
+  it('runs the runtime once, as a script carrying the load nonce, then stops listening', () => {
+    const frame = runBootstrap();
+    frame.send(frame.runtimeMessage());
+    expect(frame.appended).toEqual([{ nonce: 'load-nonce', textContent: 'runtime code' }]);
+    expect(frame.listeners.size).toBe(0);
+    expect(frame.frameGlobal.__dorkosFrameParentOrigin).toBe(DORKOS);
+    // A second runtime is ignored, even from the same window and origin.
+    frame.send(frame.runtimeMessage({ data: { type: 'dorkos-frame-runtime', runtime: 'second' } }));
+    expect(frame.appended).toHaveLength(1);
+  });
+
+  it('refuses code from any other window', () => {
+    const frame = runBootstrap();
+    frame.send(frame.runtimeMessage({ source: {} }));
+    expect(frame.appended).toEqual([]);
+    expect(frame.listeners.size).toBe(1);
+  });
+
+  it('refuses code from the parent window when it comes from an origin that is not DorkOS', () => {
+    const frame = runBootstrap();
+    frame.send(frame.runtimeMessage({ origin: 'https://evil.example' }));
+    frame.send(frame.runtimeMessage({ origin: 'null' }));
+    expect(frame.appended).toEqual([]);
+    expect(frame.frameGlobal.__dorkosFrameParentOrigin).toBeUndefined();
+  });
+
+  it('refuses a message that is not a runtime', () => {
+    const frame = runBootstrap();
+    frame.send(frame.runtimeMessage({ data: { type: 'dorkos-frame-runtime', runtime: 42 } }));
+    frame.send(frame.runtimeMessage({ data: { type: 'other', runtime: 'x' } }));
+    expect(frame.appended).toEqual([]);
+  });
+
+  it('never evaluates text: no eval or Function anywhere in the bootstrap', () => {
+    const source = frameBootstrap([DORKOS]);
+    expect(source).not.toMatch(/\beval\s*\(|\bFunction\s*\(/);
+  });
+
+  it('cannot be closed early by a hostile origin string', () => {
+    expect(frameBootstrap(['http://a</script><script>x'])).not.toContain('</script>');
   });
 });

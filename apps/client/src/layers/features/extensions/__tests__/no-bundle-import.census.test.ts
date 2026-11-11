@@ -48,4 +48,20 @@ describe('no app bundle is imported into the DorkOS page', () => {
     });
     expect(offenders.map((file) => path.relative(SRC, file))).toEqual([]);
   });
+
+  it('never evaluates text in the frame code: only nonce-carrying script elements run it', () => {
+    const frameFiles = files.filter((file) =>
+      file.includes(`${path.sep}extensions${path.sep}frame${path.sep}`)
+    );
+    expect(frameFiles.length).toBeGreaterThan(2);
+    const offenders = frameFiles.filter((file) =>
+      /\beval\s*\(|\bnew\s+Function\s*\(|\bFunction\s*\(/.test(readFileSync(file, 'utf-8'))
+    );
+    expect(offenders).toEqual([]);
+    const runtime = readFileSync(
+      frameFiles.find((file) => file.endsWith('runtime.tsx'))!,
+      'utf-8'
+    );
+    expect(runtime).toContain('script.nonce =');
+  });
 });

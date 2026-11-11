@@ -53,8 +53,12 @@ function evaluateBundle(code: string): { activate?: (api: ExtensionAPI) => unkno
 }
 
 window.addEventListener('message', function initialize(event: MessageEvent) {
-  if (event.source !== parent || event.data?.type !== 'initialize' || event.ports.length !== 1)
+  // Only the window, and the exact origin, that handed the bootstrap this runtime.
+  const parentOrigin = (globalThis as { __dorkosFrameParentOrigin?: string })
+    .__dorkosFrameParentOrigin;
+  if (event.source !== parent || parentOrigin === undefined || event.origin !== parentOrigin)
     return;
+  if (event.data?.type !== 'initialize' || event.ports.length !== 1) return;
   window.removeEventListener('message', initialize);
   void start(event.data.init as FrameInit, event.ports[0]);
 });

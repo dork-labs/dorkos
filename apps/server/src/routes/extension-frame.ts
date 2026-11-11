@@ -21,23 +21,35 @@ import type { ApiEnv } from '../http/api-chain.js';
 import { resolveAuthTrustedOrigins } from '../lib/trusted-origins.js';
 
 /**
- * Runs once in the frame: keeps the nonce for the runtime, then accepts one
- * runtime message from the parent window and runs it. Anything from another
- * window, or a second message, is ignored.
+ * The script that runs first in the frame. It keeps this load's nonce for the
+ * runtime, then accepts exactly one runtime message: from the window that
+ * framed it, sent from one of DorkOS's own origins. It stops listening after
+ * that message, so a second one is ignored, and it records which origin sent
+ * it so the runtime takes its setup from that origin only. The code runs as a
+ * script element carrying the nonce, never through `eval`.
+ *
+ * @param parentOrigins - The exact origins DorkOS serves the app from.
  */
-const BOOTSTRAP = `(() => {
+export function frameBootstrap(parentOrigins: readonly string[]): string {
+  // `<` escaped so an origin can never close the script element.
+  const origins = JSON.stringify(parentOrigins).replace(/</g, '\\u003c');
+  return `(() => {
   const nonce = document.currentScript.nonce;
+  const origins = ${origins};
   Object.defineProperty(globalThis, '__dorkosFrameNonce', { value: nonce });
   addEventListener('message', function boot(event) {
-    if (event.source !== parent || !event.data || event.data.type !== 'dorkos-frame-runtime') return;
+    if (event.source !== parent || !origins.includes(event.origin)) return;
+    if (!event.data || event.data.type !== 'dorkos-frame-runtime') return;
     if (typeof event.data.runtime !== 'string') return;
     removeEventListener('message', boot);
+    Object.defineProperty(globalThis, '__dorkosFrameParentOrigin', { value: event.origin });
     const script = document.createElement('script');
     script.nonce = nonce;
     script.textContent = event.data.runtime;
     document.head.append(script);
   });
 })();`;
+}
 
 /**
  * The frame document's policy, around one nonce.
@@ -73,12 +85,15 @@ export function createExtensionFrameRoutes(): Hono<ApiEnv> {
   const router = new Hono<ApiEnv>();
   router.get('/', (c) => {
     const nonce = randomBytes(18).toString('base64url');
+    // This listener's own origin, plus the others DorkOS is served from (Vite,
+    // the desktop shell, the tunnel): the only windows that may hand over code.
+    const origins = [...new Set([new URL(c.req.url).origin, ...resolveAuthTrustedOrigins()])];
     c.header('Content-Security-Policy', extensionFrameCsp(nonce));
     c.header('Cache-Control', 'no-store');
     c.header('X-Content-Type-Options', 'nosniff');
     c.header('Referrer-Policy', 'no-referrer');
     return c.html(
-      `<!doctype html><html><head><meta charset="utf-8"></head><body><div id="root"></div><script nonce="${nonce}">${BOOTSTRAP}</script></body></html>`
+      `<!doctype html><html><head><meta charset="utf-8"></head><body><div id="root"></div><script nonce="${nonce}">${frameBootstrap(origins)}</script></body></html>`
     );
   });
   return router;
