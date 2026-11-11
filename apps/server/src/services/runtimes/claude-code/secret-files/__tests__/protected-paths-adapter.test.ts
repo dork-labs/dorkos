@@ -130,6 +130,7 @@ describe('Claude Code protected-path adapter', () => {
       'config.json*',
       'config-*.json.bak',
       'marketplaces.json*',
+      'browser-profiles/.binding-key',
       'dork*.db*',
       'browser/storage-state.json',
       'browser/.storage-state.json.*.tmp',

@@ -258,7 +258,9 @@ export const AGENT_FOLDER_SECRET_PATHS = group(
  *   sources the person trusts.
  * - `browser-profiles/` and `local-browser/saved-logins/` hold live sign-ins and
  *   the key browser profile bindings are signed with, and `dork*.db*` holds those
- *   bindings and every other record (DOR-3218).
+ *   bindings and every other record (DOR-3218). The sign-ins are refused below
+ *   Full only, like the rest of DOR-4136's stores; the key
+ *   (`browser-profiles/.binding-key`) and the records at every level.
  * - `browser/storage-state.json` (and its temp file) is the signed-in session
  *   every agent browser starts from, and `browser/profile/` the profile
  *   `dorkos browser login` saves it from. An agent that could write either could
@@ -282,12 +284,13 @@ export const PERSON_ONLY_DATA_PATHS: readonly ProtectedPath[] = [
     ['config.json*', 'file'],
     ['config-*.json.bak', 'file'],
     ['marketplaces.json*', 'file'],
-    ['browser-profiles', 'folder'],
-    ['local-browser/saved-logins', 'folder'],
+    ['browser-profiles/.binding-key', 'file'],
     ['dork*.db*', 'file'],
   ]),
   ...belowFull(
     group('data', 'write', [
+      ['browser-profiles', 'folder'],
+      ['local-browser/saved-logins', 'folder'],
       ['browser/storage-state.json', 'file'],
       ['browser/.storage-state.json.*.tmp', 'file'],
       ['browser/profile', 'folder'],
@@ -319,7 +322,10 @@ export const HOME_PERSON_ONLY_PATHS: readonly ProtectedPath[] = [
       ['.dork/browser/profile', 'folder'],
     ])
   ),
-  ...group('home', 'write', [['.dork/browser/agent-browser-guard.json*', 'file']]),
+  ...group('home', 'write', [
+    ['.dork/browser/agent-browser-guard.json*', 'file'],
+    ['.dork/browser-profiles/.binding-key', 'file'],
+  ]),
   ...belowFull(
     group('home', 'write', [
       ['.dork/browser-profiles', 'folder'],

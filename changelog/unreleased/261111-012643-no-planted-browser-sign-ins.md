@@ -5,6 +5,7 @@ covers:
   - 'fix(shared): an agent browser that brings its own config, in any spelling, is left out (DOR-4136)'
   - 'fix(shared): every refused agent browser flag is refused in its environment form too (DOR-4136)'
   - 'fix(server): an agent set to Full can still save a browser sign-in; below Full it never can (DOR-4136)'
+  - "fix(server): a Full agent's browser sign-ins open on a default install too, never the profile binding key (DOR-4136)"
 ---
 
 ### Security

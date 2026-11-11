@@ -153,13 +153,22 @@ describe('protected paths', () => {
       'config.json*',
       'config-*.json.bak',
       'marketplaces.json*',
+      'browser-profiles/.binding-key',
+      'dork*.db*',
       'browser-profiles/**',
       'local-browser/saved-logins/**',
-      'dork*.db*',
       'browser/storage-state.json',
       'browser/.storage-state.json.*.tmp',
       'browser/profile/**',
       'browser/agent-browser-guard.json*',
+    ]);
+    // Below Full only: the sign-in stores, never the key, the records or the guard config.
+    expect(globs(PERSON_ONLY_DATA_PATHS.filter((entry) => entry.belowFull))).toEqual([
+      'browser-profiles/**',
+      'local-browser/saved-logins/**',
+      'browser/storage-state.json',
+      'browser/.storage-state.json.*.tmp',
+      'browser/profile/**',
     ]);
     // DOR-4136: the browser sign-in stores no agent may plant a cookie in.
     expect(globs(HOME_PERSON_ONLY_PATHS)).toEqual([
@@ -173,6 +182,7 @@ describe('protected paths', () => {
       '.dork/browser/.storage-state.json.*.tmp',
       '.dork/browser/profile/**',
       '.dork/browser/agent-browser-guard.json*',
+      '.dork/browser-profiles/.binding-key',
       '.dork/browser-profiles/**',
       '.dork/local-browser/saved-logins/**',
     ]);

@@ -228,9 +228,38 @@ describe.each(adapters)('%s native file protection', (adapter) => {
     ['the agent browser’s guard config', 'data', 'browser/agent-browser-guard.json'],
     ['its temp file', 'data', 'browser/agent-browser-guard.json.123.456.tmp'],
     ['the default data folder’s guard config', 'home', '.dork/browser/agent-browser-guard.json'],
+    ['the key profile bindings are signed with', 'data', 'browser-profiles/.binding-key'],
+    ['the default data folder’s binding key', 'home', '.dork/browser-profiles/.binding-key'],
   ] as const)('still refuses a Full agent writing %s', async (_what, root, file) => {
     const target = path.join(root === 'home' ? roots.home : roots.data, file);
     expect(await refused(adapter, target, 'write', true)).toBe(true);
+  });
+
+  // On a default install the data folder is `~/.dork`, so its own entries decide, not only the
+  // home spellings: a Full agent may write a profile's sign-ins there too.
+  describe('with the data folder at its default, ~/.dork', () => {
+    beforeEach(() => {
+      roots = { ...roots, data: path.join(roots.home, '.dork') };
+      mkdirSync(roots.data, { recursive: true });
+    });
+
+    it.each([
+      ['a named profile’s cookies', 'browser-profiles/made-up-profile/Default/Cookies'],
+      ['the local browser’s saved logins', 'local-browser/saved-logins/Default/Cookies'],
+      ['the saved session', 'browser/storage-state.json'],
+    ])('lets a Full agent write %s, and refuses one below Full', async (_what, file) => {
+      const target = path.join(roots.data, file);
+      expect(isProtectedPath(target, 'write', { ...roots, full: true })).toBe(false);
+      expect(await refused(adapter, target, 'write', true)).toBe(
+        adapter === 'opencode' && isProtectedPath(target, 'read', roots)
+      );
+      expect(await refused(adapter, target, 'write')).toBe(true);
+    });
+
+    it('still refuses a Full agent the binding key and the guard config', async () => {
+      for (const file of ['browser-profiles/.binding-key', 'browser/agent-browser-guard.json'])
+        expect(await refused(adapter, path.join(roots.data, file), 'write', true)).toBe(true);
+    });
   });
 
   it.each(

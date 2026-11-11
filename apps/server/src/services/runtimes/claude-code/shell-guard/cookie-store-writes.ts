@@ -20,7 +20,7 @@ import {
 
 /** The data folder's person-only entries that hold a browser sign-in. */
 const DATA_COOKIE_STORES: readonly ProtectedPath[] = PERSON_ONLY_DATA_PATHS.filter((entry) =>
-  /^(browser\/|browser-profiles$|local-browser\/saved-logins$)/.test(entry.path)
+  /^(browser\/|browser-profiles(\/\.binding-key)?$|local-browser\/saved-logins$)/.test(entry.path)
 );
 
 /** One cookie store, measured from a folder this launch knows. */

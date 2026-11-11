@@ -80,6 +80,10 @@ describe('browser sign-in stores under Claude Code (DOR-4136)', () => {
       expect(deny).toContain(`${tool}(${guard}*)`);
       expect(deny).toContain(`${tool}(~/.dork/browser/agent-browser-guard.json*)`);
     }
+    // A profile's sign-ins open at Full, but never the key its binding is signed with.
+    const profiles = rulePath(path.join(dorkHome, 'browser-profiles'));
+    expect(deny).not.toContain(`Write(${profiles}/**)`);
+    expect(deny).toContain(`Write(${profiles}/.binding-key)`);
     // Everything else a person alone may change stays denied at Full.
     expect(deny).toContain(`Write(${rulePath(path.join(dorkHome, 'config.json'))}*)`);
   });

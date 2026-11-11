@@ -819,8 +819,41 @@ describe('shell writes to a browser sign-in store', () => {
       'the default data folder’s guard config',
       () => `cp /tmp/x ~/.dork/browser/agent-browser-guard.json`,
     ],
+    ['the profile binding key', () => `cp /tmp/x $DORK_HOME/browser-profiles/.binding-key`],
+    ['the default binding key', () => `echo x > ~/.dork/browser-profiles/.binding-key`],
   ])('still refuses %s at Full', (_label, command) => {
     expect(shellWriteVerdict(command(), { ...roots, full: true })).toBe('writes');
+  });
+
+  // On a default install the data folder is `~/.dork`, and its own entries decide.
+  describe('with the data folder at its default, ~/.dork', () => {
+    const atDefault = () => {
+      const dorkHome = path.join(roots.home, '.dork');
+      return { ...roots, dorkHome, env: { ...roots.env, DORK_HOME: dorkHome } };
+    };
+
+    it.each([
+      ['a named profile’s cookies', `cp /tmp/x $DORK_HOME/browser-profiles/p1/Default/Cookies`],
+      [
+        'sqlite3 on them',
+        `sqlite3 $DORK_HOME/browser-profiles/p1/Default/Cookies "INSERT INTO cookies VALUES(1)"`,
+      ],
+      ['the saved logins', `cp /tmp/x $DORK_HOME/local-browser/saved-logins/Default/Cookies`],
+      ['removing one profile', `rm -rf $DORK_HOME/browser-profiles/p1`],
+    ])('lets a Full agent write %s, and refuses one below Full', (_label, command) => {
+      expect(shellWriteVerdict(command, { ...atDefault(), full: true })).toBe('none');
+      expect(shellWriteVerdict(command, atDefault())).toBe('writes');
+    });
+
+    it('still refuses a Full agent the binding key and the guard config', () => {
+      for (const command of [
+        `cp /tmp/x $DORK_HOME/browser-profiles/.binding-key`,
+        // Removing the whole folder takes the key with it.
+        `rm -rf $DORK_HOME/browser-profiles`,
+        `echo '{}' > $DORK_HOME/browser/agent-browser-guard.json`,
+      ])
+        expect(shellWriteVerdict(command, { ...atDefault(), full: true })).toBe('writes');
+    });
   });
 });
 
