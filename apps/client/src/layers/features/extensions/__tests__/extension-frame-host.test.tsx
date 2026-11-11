@@ -160,6 +160,27 @@ describe('isolated app host', () => {
     expect(reply).toMatchObject({ failure: { status: 423, body: { error: 'locked' } } });
     expect(JSON.stringify(reply)).not.toContain('secret');
   });
+  it('brings a picture from the app’s own route as a Blob, only with its declared capability', async () => {
+    await start();
+    expect(await call('media', ['/cover.png'])).toHaveProperty('error');
+    expect(fetch).not.toHaveBeenCalled();
+    stop?.();
+    await start({ capabilities: { http: true } });
+    vi.mocked(fetch).mockResolvedValueOnce(
+      new Response(new Uint8Array([1, 2]), { headers: { 'Content-Type': 'image/png' } })
+    );
+    const reply = (await call('media', ['/cover.png'])) as { value: Blob };
+    expect(reply.value).toBeInstanceOf(Blob);
+    expect(reply.value.type).toBe('image/png');
+    expect(fetch).toHaveBeenCalledWith(
+      '/api/ext/atlas/cover.png',
+      expect.objectContaining({
+        headers: expect.objectContaining({ 'X-DorkOS-Extension': 'atlas' }),
+      })
+    );
+    expect(await call('media', ['/../quill/cover.png'])).toHaveProperty('error');
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
   it('refuses prototype names as bridge operations', async () => {
     await start();
     for (const method of ['constructor', '__proto__', 'toString', 'hasOwnProperty']) {

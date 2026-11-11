@@ -33,6 +33,13 @@ export interface FrameExtensionAPI extends Omit<ExtensionAPI, 'executeCommand' |
       body?: unknown;
     }
   ): Promise<T>;
+  /**
+   * Fetch a picture or video from this app's own server router, to show with
+   * `URL.createObjectURL`. Requires capabilities.http. Allowed types: PNG,
+   * JPEG, WebP, GIF, AVIF, MP4 and WebM, up to 32 MB. SVG is refused.
+   * A failed reply rejects like {@link FrameExtensionAPI.request}.
+   */
+  media(path: string): Promise<Blob>;
   /** Read this app's non-secret manifest settings. */
   readonly settings: { get<T = unknown>(): Promise<T> };
   /**

@@ -277,6 +277,7 @@ async function start(init: FrameInit, port: MessagePort): Promise<void> {
     },
     settings: { get: () => call('settings.get') },
     request: (path: string, options?: unknown) => call('request', path, options ?? {}),
+    media: (path: string) => call('media', path),
   } as unknown as ExtensionAPI;
   for (const method of [
     'loadData',

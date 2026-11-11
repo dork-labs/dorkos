@@ -61,6 +61,8 @@ interface ExtensionAPI {
 
   // --- Own server routes, /api/ext/<id>/<path> (needs manifest capabilities.http) ---
   request<T>(path: string, options?: { method?: string; body?: unknown }): Promise<T>;
+  // A picture or video from your own routes, for URL.createObjectURL: PNG/JPEG/WebP/GIF/AVIF/MP4/WebM, 32 MB, no SVG
+  media(path: string): Promise<Blob>;
   settings: { get<T>(): Promise<T> };
   // Asks the person first; JSON/text/CSV/Markdown/PDF/PNG/JPEG/WebP, 10 MB, never opened
   download(name: string, mimeType: string, data: string | ArrayBuffer | Blob): Promise<'saved' | 'cancelled'>;

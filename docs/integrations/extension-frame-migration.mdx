@@ -61,6 +61,7 @@ To read your extension's settings, use `api.settings.get()` instead of fetching 
 
 - **`executeCommand`** is gone. Use `api.navigate` to move the person to a page.
 - **`openCanvas`** now goes through DorkOS, which checks what you send. See [Putting things on the canvas](#putting-things-on-the-canvas).
+- **`<img src>` and `<video src>` pointing at a web address** do not load in the frame. Fetch the file with `api.media`; see [Showing pictures and video](#showing-pictures-and-video).
 - **`<a download>`** does not work in the frame. Use `api.download`; see [Saving a file](#saving-a-file).
 - **`document.cookie`, `localStorage`, `sessionStorage` and `window.parent`** are not available. Keep data with `api.saveData` and `api.loadData`.
 - **`window.electronAPI`** is gone. Its only use was `getServerPort()`, to build an address for `fetch`; `api.request` replaces that, and works the same on the web, the desktop app and the phone.
@@ -97,6 +98,18 @@ await api.openCanvas({ type: 'markdown', content: '# Weekly report', title: 'Rep
 ```
 
 You may open Markdown, JSON, a widget, a picture (`data:` or `https:`) or a web page (`http:` or `https:`). Files, PDFs, diffs, local paths and MCP apps are refused. What you open is always a new tab, never one already showing. The tab shows the app icon and the title, and says "Opened by" with your app's name as DorkOS knows it. Nothing on the canvas sends messages back to your app.
+
+## Showing pictures and video
+
+The frame cannot reach the network, so a picture or video has to come through DorkOS. Serve it from your own server routes, then ask for it:
+
+```tsx
+const blob = await api.media('/covers/q3.png');
+const src = URL.createObjectURL(blob);
+// <img src={src} alt="Q3 cover" />. Call URL.revokeObjectURL(src) when it leaves the screen.
+```
+
+`api.media` needs `capabilities.http`, and follows the same path rule as `api.request`. It takes PNG, JPEG, WebP, GIF, AVIF, MP4 and WebM, up to 32 MB. Your route must send the right `Content-Type`; DorkOS types the file from it. SVG is refused, because an SVG file can carry script. A failed reply rejects with its status and body, like `api.request`.
 
 ## Saving a file
 

@@ -1,13 +1,12 @@
 import { createElement, useEffect, useRef, useState, type ReactElement } from 'react';
 import {
   EXTENSION_EVENT_KINDS as SDK_EVENT_KINDS,
-  type ExtensionAPI,
   type ExtensionManifest,
   type ExtensionModule,
-  type ExtensionPointId,
 } from '@dorkos/extension-api';
 import { z } from 'zod';
 import { extensionApiUrl } from '../model/extension-api-url';
+import { readAppMedia } from './app-media';
 import { extensionRequestPath, readAppResponse } from './app-request';
 import { offerAppDownload } from './download';
 import {
@@ -243,6 +242,15 @@ export function isolatedExtensionModule(
                 ...(options.body !== undefined ? { body: JSON.stringify(options.body) } : {}),
               });
               return readAppResponse(response);
+            }
+            if (method === 'media') {
+              if (!manifest.capabilities?.http)
+                throw new Error('This app has not declared server requests.');
+              const [path] = args(text).parse(input);
+              const response = await fetch(extensionApiUrl(extensionRequestPath(api.id, path)), {
+                headers: { 'X-DorkOS-Extension': api.id },
+              });
+              return readAppMedia(response);
             }
             if (method === 'openCanvas') {
               const [content] = args(FrameCanvasContentSchema).parse(input);
