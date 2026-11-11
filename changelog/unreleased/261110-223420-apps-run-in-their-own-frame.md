@@ -4,6 +4,7 @@ covers:
   - 'feat(extensions): old apps say they need an update; frames size to what they draw; download and canvas through the bridge (DOR-3293)'
   - "feat(extensions): app screens load from DorkOS's own frame page with its own policy (DOR-3293)"
   - "fix(extensions): the frame takes its runtime and setup only from DorkOS's exact origin (DOR-3293)"
+  - 'fix(extensions): screen data has its own store; app requests fail with status and body; each path part is encoded (DOR-3293)'
 ---
 
 ### Security
