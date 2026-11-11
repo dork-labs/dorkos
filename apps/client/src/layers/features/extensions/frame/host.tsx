@@ -22,7 +22,6 @@ import {
 import {
   args,
   FrameCanvasContentSchema,
-  FrameDownloadSchema,
   FrameRegistrationSchema,
   json,
   text,
@@ -260,8 +259,12 @@ export function isolatedExtensionModule(
               return null;
             }
             if (method === 'download') {
-              const [file] = args(FrameDownloadSchema).parse(input);
-              return offerAppDownload(manifest.name, file);
+              const [name, mimeType, data] = args(
+                z.string().min(1).max(400),
+                z.string().max(200),
+                z.union([z.string(), z.instanceof(ArrayBuffer), z.instanceof(Blob)])
+              ).parse(input);
+              return offerAppDownload(manifest.name, name, mimeType, data);
             }
             // Screen data lives in its own file, never the server half's ctx.storage (item 7).
             if (method === 'loadData') {

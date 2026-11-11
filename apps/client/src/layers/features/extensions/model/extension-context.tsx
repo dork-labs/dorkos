@@ -19,6 +19,7 @@ import { ExtensionLoader } from './extension-loader.js';
 import { useCwdExtensionSync } from './use-cwd-extension-sync.js';
 import { useReloadAfterSignIn } from './use-reload-after-sign-in.js';
 import { extensionKeys } from '../api/queries.js';
+import { AppDownloadPrompt } from '../ui/AppDownloadPrompt';
 
 /** Context value exposed to the app tree. */
 export interface ExtensionContextValue {
@@ -229,5 +230,11 @@ export function ExtensionProvider({ deps, children }: ExtensionProviderProps) {
     })();
   });
 
-  return <ExtensionContext.Provider value={state}>{children}</ExtensionContext.Provider>;
+  return (
+    <ExtensionContext.Provider value={state}>
+      {children}
+      {/* DorkOS's own save question for any app's api.download (DOR-3293). */}
+      <AppDownloadPrompt />
+    </ExtensionContext.Provider>
+  );
 }

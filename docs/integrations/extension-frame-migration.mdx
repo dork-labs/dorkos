@@ -87,6 +87,17 @@ Type against `FrameExtensionAPI` from `@dorkos/extension-api` to get the version
 
 Props DorkOS passes your components still arrive as values and functions. A function crosses the frame as a message, so calling it works, but it returns nothing to your code. `when` and `visibleWhen` options on a component still work, and run inside your frame. An icon component cannot cross the frame, so a right-panel tab shows the default puzzle-piece icon; a command's `icon` stays a string, as before.
 
+## Saving a file
+
+A link with `download` does nothing inside the frame. Ask DorkOS instead:
+
+```typescript
+const answer = await api.download('people-export.json', 'application/json', JSON.stringify(rows));
+// 'saved' or 'cancelled'
+```
+
+DorkOS shows its own dialog, "People wants to save a file", with the name and size, and saves the file only when the person chooses Save. The file is always saved as a plain download, never opened. You may save JSON, plain text, CSV, Markdown, PDF, PNG, JPEG and WebP, up to 10 MB, one at a time. DorkOS reduces the name to a bare filename, and refuses names that run or install when opened (`.sh`, `.exe`, `.app`, `.html`, `.svg` and the like). A refused file rejects the promise and shows the person nothing.
+
 ## Screen data is its own store
 
 `api.saveData` and `api.loadData` in your screens keep up to 512 KB of JSON in a store of their own. It is separate from `ctx.storage` in your server half, which your screens can no longer read or overwrite. Data your screens saved before version 2 shared a file with `ctx.storage`, so it does not carry over: read what you need in your server half and hand it to your screens through a route.

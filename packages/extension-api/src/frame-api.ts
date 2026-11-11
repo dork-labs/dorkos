@@ -42,13 +42,18 @@ export interface FrameExtensionAPI extends Omit<ExtensionAPI, 'executeCommand' |
    */
   openCanvas(content: FrameCanvasContent): Promise<void>;
   /**
-   * Offer to save a file. DorkOS asks the person ("<App> wants to save
-   * <name>"), then saves it as a plain download. Types that run or install
-   * when opened are refused, as is a file over 10 MB.
+   * Offer to save a file. DorkOS asks the person in its own dialog ("<App>
+   * wants to save a file"), then saves it as a plain download. Allowed types:
+   * JSON, plain text, CSV, Markdown, PDF, PNG, JPEG and WebP, up to 10 MB.
+   * Names that run or install when opened are refused, with no prompt.
    *
-   * @returns `saved` when the person chose Save, `dismissed` otherwise.
+   * @returns `saved` when the person chose Save, `cancelled` otherwise.
    */
-  download(file: { name: string; content: string }): Promise<'saved' | 'dismissed'>;
+  download(
+    name: string,
+    mimeType: string,
+    data: string | ArrayBuffer | Blob
+  ): Promise<'saved' | 'cancelled'>;
 }
 
 /** What {@link FrameExtensionAPI.openCanvas} accepts. */

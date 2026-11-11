@@ -62,6 +62,8 @@ interface ExtensionAPI {
   // --- Own server routes, /api/ext/<id>/<path> (needs manifest capabilities.http) ---
   request<T>(path: string, options?: { method?: string; body?: unknown }): Promise<T>;
   settings: { get<T>(): Promise<T> };
+  // Asks the person first; JSON/text/CSV/Markdown/PDF/PNG/JPEG/WebP, 10 MB, never opened
+  download(name: string, mimeType: string, data: string | ArrayBuffer | Blob): Promise<'saved' | 'cancelled'>;
   readonly context: 'registration' | 'view';
 
   // --- State ---

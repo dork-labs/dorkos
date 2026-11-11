@@ -249,7 +249,8 @@ function generateDashboardCardTemplate(name: string, description: string): strin
 //   api.registerComponent(slot, id, component, options?) — Register a React component in a UI slot
 //   api.registerCommand(id, label, callback, options?)   — Register a command palette item
 //   api.notify(message, options?)                        — Show a toast notification
-//   api.loadData<T>() / api.saveData<T>(data)            — Persistent storage scoped to this extension
+//   api.loadData<T>() / api.saveData<T>(data)            — This app's screen data (512 KB, apart from ctx.storage)
+//   api.download(name, mimeType, data)                   — Save a file; DorkOS asks the person first
 //   api.getState()                                       — Read-only host state (currentCwd, activeSessionId)
 //   api.subscribe(selector, callback)                    — Subscribe to state changes
 //
@@ -306,7 +307,8 @@ function generateRightPanelTabTemplate(name: string, description: string): strin
 //     ({ agents?, rooms?, pages? }; omit = everywhere)
 //   api.registerCommand(id, label, callback, options?)   — Register a command palette item
 //   api.notify(message, options?)                        — Show a toast notification
-//   api.loadData<T>() / api.saveData<T>(data)            — Persistent storage scoped to this extension
+//   api.loadData<T>() / api.saveData<T>(data)            — This app's screen data (512 KB, apart from ctx.storage)
+//   api.download(name, mimeType, data)                   — Save a file; DorkOS asks the person first
 //   api.getState()                                       — Read-only host state (currentCwd, activeSessionId)
 //   api.subscribe(selector, callback)                    — Subscribe to state changes
 //
@@ -363,7 +365,8 @@ function generateCommandTemplate(name: string, description: string): string {
 //   api.registerComponent(slot, id, component, options?) — Register a React component in a UI slot
 //   api.registerCommand(id, label, callback, options?)   — Register a command palette item
 //   api.notify(message, options?)                        — Show a toast notification
-//   api.loadData<T>() / api.saveData<T>(data)            — Persistent storage scoped to this extension
+//   api.loadData<T>() / api.saveData<T>(data)            — This app's screen data (512 KB, apart from ctx.storage)
+//   api.download(name, mimeType, data)                   — Save a file; DorkOS asks the person first
 //   api.getState()                                       — Read-only host state (currentCwd, activeSessionId)
 //
 // Available slots: dashboard.sections, command-palette.items, settings.tabs,
@@ -402,7 +405,8 @@ function generateSettingsPanelTemplate(name: string, description: string): strin
 //   api.registerCommand(id, label, callback, options?)   — Register a command palette item
 //   api.registerSettingsTab(id, label, component)        — Register a tab in the settings dialog
 //   api.notify(message, options?)                        — Show a toast notification
-//   api.loadData<T>() / api.saveData<T>(data)            — Persistent storage scoped to this extension
+//   api.loadData<T>() / api.saveData<T>(data)            — This app's screen data (512 KB, apart from ctx.storage)
+//   api.download(name, mimeType, data)                   — Save a file; DorkOS asks the person first
 //   api.getState()                                       — Read-only host state (currentCwd, activeSessionId)
 //
 // Available slots: dashboard.sections, command-palette.items, settings.tabs,
@@ -465,7 +469,8 @@ function generateDataProviderTemplate(name: string, description: string): string
 //   api.registerComponent(slot, id, component, options?) — Register a React component in a UI slot
 //   api.registerSettingsTab(id, label, component)        — Register a custom settings tab (optional)
 //   api.notify(message, options?)                        — Show a toast notification
-//   api.loadData<T>() / api.saveData<T>(data)            — Persistent storage scoped to this extension
+//   api.loadData<T>() / api.saveData<T>(data)            — This app's screen data (512 KB, apart from ctx.storage)
+//   api.download(name, mimeType, data)                   — Save a file; DorkOS asks the person first
 //   api.getState()                                       — Read-only host state (currentCwd, activeSessionId)
 //   api.subscribe(selector, callback)                    — Subscribe to state changes
 //

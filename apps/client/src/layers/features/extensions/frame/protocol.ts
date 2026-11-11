@@ -110,11 +110,6 @@ export const FrameCanvasContentSchema = z.discriminatedUnion('type', [
 /** A canvas document an app opened, after {@link FrameCanvasContentSchema} checked it. */
 export type FrameCanvasContent = z.infer<typeof FrameCanvasContentSchema>;
 
-/** A file an app asks DorkOS to offer for saving: a name and its text. */
-export const FrameDownloadSchema = z
-  .object({ name: z.string().min(1).max(400), content: z.string().max(10 * 1024 * 1024) })
-  .strict();
-
 // Zod overloads empty and nonempty tuples separately; this preserves the inferred tuple for both.
 /** A fixed-length argument list, each checked by its own schema. */
 export const args = <const T extends [] | [z.ZodType, ...z.ZodType[]]>(
