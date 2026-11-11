@@ -14,6 +14,7 @@ import { readdir } from 'node:fs/promises';
 import path from 'node:path';
 import {
   AGENT_HOME_SELF_GRANT_PATHS,
+  DESKTOP_APP_DATA_FOLDERS,
   PROTECTED_PATHS,
   type ProtectedPath,
 } from '../../shared/policy/protected-paths.js';
@@ -27,6 +28,32 @@ import {
   SHELLS,
 } from './shell-command.js';
 import type { ShellSegment } from './shell-words.js';
+
+/**
+ * The desktop app's data folders as a command's text names them, from the app-data folder down
+ * (`Application Support/DorkOS`), so a command that builds the rest some other way still matches.
+ */
+const DESKTOP_FOLDER_TEXT = new RegExp(
+  `(?:${[...new Set(DESKTOP_APP_DATA_FOLDERS.map((folder) => folder.replace(/^Library\//, '')))]
+    .map((name) => name.toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+    .join('|')})(?![a-z0-9_.-])`
+);
+
+/**
+ * Whether a command's text names one of the desktop app's data folders, in any case and with any
+ * quoting or escaped spaces (DOR-3613). It holds the person's sign-in and nothing an agent needs,
+ * so asking on a mere mention costs little, and it catches a command that reaches the folder in a
+ * way the path reading misses.
+ */
+function namesDesktopAppData(command: string): boolean {
+  const text = command
+    .replace(/\\ /g, ' ')
+    .replace(/['"`]/g, '')
+    .replace(/\\/g, '/')
+    .replace(/\/+/g, '/')
+    .toLowerCase();
+  return DESKTOP_FOLDER_TEXT.test(text);
+}
 
 /** A command this long is not read at all, and is refused. */
 const MAX_COMMAND = 256 * 1024;
@@ -272,6 +299,7 @@ export async function commandReachesProtectedRead(
   roots: ShellGuardRoots
 ): Promise<boolean> {
   if (command.length > MAX_COMMAND) return true;
+  if (namesDesktopAppData(command)) return true;
   // One allowance for the whole command, however many searches it chains.
   const deadline = Date.now() + MAX_TREE_MS;
   const rules = fixedReadRules(roots);
