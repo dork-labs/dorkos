@@ -21,11 +21,11 @@ Mesh finds the AI agents scattered across your projects and gathers them in one 
 
 When you run agents in several projects, they cannot see each other. A Claude Code agent working on your backend has no idea a Cursor agent is editing your frontend. So you become the go-between, copying context from one chat into the next.
 
-Mesh removes that step. It finds your agent projects, keeps a list of them, and connects them so they can message each other. Nothing gets added without your approval.
+Mesh removes that step. It finds your agent projects, keeps a list of them, and connects them so they can message each other. You can add candidates from the Team page. An agent can also register one when its Other agents permission allows it.
 
 ## Finding your agents
 
-When you run a scan, Mesh walks your folders and looks for the tell-tale signs of an agent project, like a `CLAUDE.md` file or a `.cursor/` folder. It knows the markers for ten popular agent tools. For anything it finds, it shows you the agent as a candidate and waits for your yes before adding it.
+When you run a scan, Mesh walks your folders and looks for the tell-tale signs of an agent project, like a `CLAUDE.md` file or a `.cursor/` folder. It knows the markers for ten popular agent tools. New projects appear as candidates you can choose to add. Folders that already contain a DorkOS agent file follow the import rule below.
 
 A few things happen on their own during a scan:
 
@@ -35,8 +35,8 @@ A few things happen on their own during a scan:
 Mesh scans a few folders deep by default (five levels) so a normal scan finishes quickly.
 
 <Callout type="info">
-  A scan only reads your folders. It never changes anything in your projects until you approve an
-  agent.
+  Scanning reads project markers. Registering an agent writes its setup file, and existing DorkOS
+  agent files can be imported automatically. An agent-driven registration follows its permissions.
 </Callout>
 
 ## Adding an agent
@@ -52,9 +52,9 @@ Mesh groups agents by where they live on disk. An agent in `projects/backend/api
 Groups do two jobs:
 
 - **They tidy the view.** The network map groups agents by their namespace.
-- **They keep messaging safe.** Agents in the same group can message each other freely. Messaging across groups is off until you allow it.
+- **They organize messaging rules.** Agents in the same group can message each other. Across groups, the rules you set decide. Trusted opens messaging between your agents once during setup; turning it off keeps your choice.
 
-To open a path between two groups, you add an allow rule. Rules go one way only: letting agent A message agent B does not let B message A.
+When messaging between all groups is off, add an allow rule to open a particular path. Rules go one way: letting agent A message agent B does not let B message A.
 
 ## Skipping folders you don't want
 
@@ -113,20 +113,20 @@ Any directory that already contains a `.dork/agent.json` manifest is **auto-impo
 
 Every registered agent has a manifest stored in `.dork/agent.json`:
 
-| Field              | Description                                                                                                                                                                                                                                                                                                                                                                                                      |
-| ------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **id**             | Time-ordered ID assigned at registration                                                                                                                                                                                                                                                                                                                                                                         |
-| **name**           | Human-readable name (e.g., "backend-api")                                                                                                                                                                                                                                                                                                                                                                        |
-| **description**    | What the agent does                                                                                                                                                                                                                                                                                                                                                                                              |
-| **runtime**        | Agent platform (e.g., `claude-code`, `cursor`, `codex`, `windsurf`, `gemini`, `cline`, `roo-code`, `copilot`, `amazon-q`, `continue`, `other`)                                                                                                                                                                                                                                                                   |
-| **capabilities**   | Capability tags (e.g., "typescript", "testing")                                                                                                                                                                                                                                                                                                                                                                  |
-| **behavior**       | Response mode: `always`, `direct-only`, `mention-only`, `engaged`, or `silent`. Only sets what a new direct message starts as. A channel always starts `engaged`, and a room someone already set up keeps what it has                                                                                                                                                                                            |
-| **namespace**      | Derived from project path relative to scan root                                                                                                                                                                                                                                                                                                                                                                  |
-| **persona**        | Optional system prompt text injected into Claude Code chats                                                                                                                                                                                                                                                                                                                                                      |
-| **personaEnabled** | Whether persona text is injected (default: true)                                                                                                                                                                                                                                                                                                                                                                 |
-| **color**          | CSS color override for visual identity                                                                                                                                                                                                                                                                                                                                                                           |
-| **icon**           | Emoji override for visual identity                                                                                                                                                                                                                                                                                                                                                                               |
-| **permissions**    | What this agent may do where it differs from everyone else — including which tools it is told about — set on its [Permissions](/docs/guides/permissions) page. DorkOS enforces it and only the permission pages write it; an edit made to the file directly takes effect and is recorded as changed outside DorkOS. An older file's `enabledToolGroups` and `tierCeiling` fields are read into this the same way |
+| Field              | Description                                                                                                                                                                                                                                                                                                                                      |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **id**             | Time-ordered ID assigned at registration                                                                                                                                                                                                                                                                                                         |
+| **name**           | Human-readable name (e.g., "backend-api")                                                                                                                                                                                                                                                                                                        |
+| **description**    | What the agent does                                                                                                                                                                                                                                                                                                                              |
+| **runtime**        | Agent platform (e.g., `claude-code`, `cursor`, `codex`, `windsurf`, `gemini`, `cline`, `roo-code`, `copilot`, `amazon-q`, `continue`, `other`)                                                                                                                                                                                                   |
+| **capabilities**   | Capability tags (e.g., "typescript", "testing")                                                                                                                                                                                                                                                                                                  |
+| **behavior**       | Response mode: `always`, `direct-only`, `mention-only`, `engaged`, or `silent`. Only sets what a new direct message starts as. A channel always starts `engaged`, and a room someone already set up keeps what it has                                                                                                                            |
+| **namespace**      | Derived from project path relative to scan root                                                                                                                                                                                                                                                                                                  |
+| **persona**        | Optional system prompt text injected into Claude Code chats                                                                                                                                                                                                                                                                                      |
+| **personaEnabled** | Whether persona text is injected (default: true)                                                                                                                                                                                                                                                                                                 |
+| **color**          | CSS color override for visual identity                                                                                                                                                                                                                                                                                                           |
+| **icon**           | Emoji override for visual identity                                                                                                                                                                                                                                                                                                               |
+| **permissions**    | What this agent may do where it differs from everyone else, set on its [Permissions](/docs/guides/permissions) page or through the permission tools. DorkOS enforces it; a direct file edit takes effect and is recorded as changed outside DorkOS. An older file's `enabledToolGroups` and `tierCeiling` fields are read into this the same way |
 
 ### Access rule priority
 
@@ -138,7 +138,7 @@ Under the hood, Mesh writes Relay access-control rules with a priority scheme. H
 | **50**   | Cross-namespace allow | Explicitly permitted cross-namespace communication |
 | **10**   | Cross-namespace deny  | Default deny for all other cross-namespace traffic |
 
-The **Let all my agents talk to each other** switch in Team → Access is one cross-namespace allow at priority 50, written with `*` on both sides. It outranks every namespace's catch-all deny, so while it is on, any agent can message any other agent on this machine. Turning it off removes that one rule and leaves the pairs you added untouched. It is on when you install DorkOS: the first start writes the rule once (`services/mesh/seed-open-mesh.ts`), and never again, so a switch you turned off stays off. `GET /api/mesh/topology` reports it as `openMesh`.
+The **Let all my agents talk to each other** switch in Team → Access is one cross-namespace allow at priority 50, written with `*` on both sides. It outranks every namespace's catch-all deny, so while it is on, any agent can message any other agent on this machine. Turning it off removes that one rule and leaves the pairs you added untouched. On Trusted, the first start writes the rule once (`services/mesh/seed-open-mesh.ts`), and never again, so a switch you turned off stays off. `GET /api/mesh/topology` reports it as `openMesh`.
 
 ### Storage tables and the Relay endpoint
 
