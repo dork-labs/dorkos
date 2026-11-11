@@ -109,11 +109,9 @@ vi.mock('@/layers/shared/model/extension-registry', () => ({
   ],
 }));
 
-const mockSetTheme = vi.fn();
-let mockTheme = 'light';
-vi.mock('@/layers/shared/model/use-theme', () => ({
-  useTheme: () => ({ theme: mockTheme, setTheme: mockSetTheme }),
-}));
+// The theme is the REAL shared store: a pick is checked by the preference it
+// leaves, the value saved for the next launch and the class on <html>, which
+// is what actually repaints the app. A faked hook could only say setTheme ran.
 
 const mockOpenSettings = vi.fn();
 vi.mock('@/layers/shared/model/use-dialog-deep-link', () => ({
@@ -146,8 +144,7 @@ vi.mock('@/layers/features/report-issue', () => ({
 
 import { TooltipProvider } from '@/layers/shared/ui';
 import { takeAskDorkBotOrigin } from '@/layers/shared/lib';
-import { buildSidebarModel } from '../model/build-sidebar-model';
-import { busyFixture } from '../model/fixtures';
+import { useThemeStore, type Theme } from '@/layers/shared/model';
 import { SidebarFooterStrip } from '../ui/SidebarFooterStrip';
 
 /** Mount the strip with the one provider its tooltips need. */
@@ -205,7 +202,7 @@ describe('SidebarFooterStrip', () => {
       { id: 'a2', name: 'tangerine', projectPath: '/projects/tangerine' },
     ];
     mockDesktop = { isDesktop: false, status: null };
-    mockTheme = 'light';
+    useThemeStore.setState({ theme: 'light' as Theme, systemDark: false });
     takeAskDorkBotOrigin();
   });
 
@@ -360,12 +357,15 @@ describe('SidebarFooterStrip', () => {
     ['dark', 'system'],
     ['system', 'light'],
   ])('cycles the theme from %s to %s', async (from, to) => {
-    mockTheme = from;
+    useThemeStore.setState({ theme: from as Theme, systemDark: false });
     renderStrip();
 
     await userEvent.click(screen.getByLabelText('More'));
     await userEvent.click(await screen.findByText('Theme'));
-    expect(mockSetTheme).toHaveBeenCalledWith(to);
+    expect(useThemeStore.getState().theme).toBe(to);
+    expect(localStorage.getItem('dorkos-theme')).toBe(to);
+    // `system` resolves to light here (systemDark is false), so only `dark` paints dark.
+    expect(document.documentElement.classList.contains('dark')).toBe(to === 'dark');
   });
 
   it('carries no logo block and no version line', () => {
@@ -583,7 +583,7 @@ describe('SidebarFooterStrip', () => {
 
     it('offers the theme as three choices in the sheet, and keeps the sheet up after one', async () => {
       const user = userEvent.setup();
-      mockTheme = 'light';
+      useThemeStore.setState({ theme: 'light' as Theme, systemDark: false });
       renderStrip();
       await user.click(screen.getByTestId('sidebar-footer-menu-trigger'));
       const sheet = await screen.findByRole('dialog', { name: 'Theme' });
@@ -596,7 +596,8 @@ describe('SidebarFooterStrip', () => {
       // `fireEvent`: the drawer's own drag handling asks for pointer capture,
       // which jsdom does not have.
       fireEvent.click(within(sheet).getByRole('radio', { name: 'Dark' }));
-      expect(mockSetTheme).toHaveBeenCalledWith('dark');
+      expect(useThemeStore.getState().theme).toBe('dark');
+      expect(document.documentElement.classList.contains('dark')).toBe(true);
       expect(sheet).toBeInTheDocument();
     });
 
