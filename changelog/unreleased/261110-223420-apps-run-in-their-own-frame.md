@@ -12,6 +12,7 @@ covers:
   - "feat(extensions): one app can call another's exported routes, when both manifests agree (DOR-3293)"
   - 'fix(server): session routes see their settings live again (DOR-3293)'
   - 'fix(extensions): the server knows the calling app from a per-frame caller token, never a header (DOR-3293)'
+  - "fix(extensions): a caller token is minted only for the DorkOS window's own page (DOR-3293)"
 ---
 
 ### Security

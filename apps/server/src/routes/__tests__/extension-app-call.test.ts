@@ -25,7 +25,8 @@ vi.mock('../../services/audit/audit-trail.js', async (importOriginal) => ({
 import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
 import { bridgeExpressRouter } from '../../services/extensions/http/express-bridge.js';
 import { createExtensionApiRoutes } from '../extension-api.js';
-import { resetCallerTokens } from '../extension-caller-token.js';
+import { MAX_CALLER_TOKENS, resetCallerTokens } from '../extension-caller-token.js';
+import type { AddressInfo } from 'node:net';
 import { createExtensionFrameRoutes } from '../extension-frame.js';
 
 const manifests: Record<string, ExtensionManifest> = {
@@ -117,8 +118,17 @@ beforeEach(() => {
 });
 
 /** Ask for a caller token for one frame load of `appId`, as the window does. */
+/** This server's own origin, as a DorkOS window's fetch names it. */
+const ownOrigin = () => `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+
+/** Ask to mint, as the window does, from `origin` (its own by default). */
+const mintRequest = (appId: string, origin: string | null = ownOrigin()) => {
+  const call = request(server).post('/api/extension-frame/caller-token');
+  return (origin === null ? call : call.set('Origin', origin)).send({ appId });
+};
+
 async function mint(appId: string): Promise<string> {
-  const res = await request(server).post('/api/extension-frame/caller-token').send({ appId });
+  const res = await mintRequest(appId);
   expect(res.status).toBe(201);
   return res.body.token as string;
 }
@@ -267,9 +277,7 @@ describe('who the calling app is (Security 2026-11-10)', () => {
   it('refuses an API key that mints, or sends a token or the header', async () => {
     const token = await mint('reports');
     user = { userId: 'u1', credential: 'api-key' };
-    const minted = await request(server)
-      .post('/api/extension-frame/caller-token')
-      .send({ appId: 'reports' });
+    const minted = await mintRequest('reports');
     expect(minted.status).toBe(403);
     const withToken = await request(server)
       .get('/api/ext/ledger/entries')
@@ -286,6 +294,7 @@ describe('who the calling app is (Security 2026-11-10)', () => {
     const token = await mint('reports');
     const minted = await request(server)
       .post('/api/extension-frame/caller-token')
+      .set('Origin', ownOrigin())
       .set('X-DorkOS-Agent', 'agent-token')
       .send({ appId: 'reports' });
     expect(minted.status).toBeGreaterThanOrEqual(401);
@@ -297,9 +306,31 @@ describe('who the calling app is (Security 2026-11-10)', () => {
     expect(seen).toHaveLength(0);
   });
 
+  it('never mints for a page elsewhere, an opaque page, or a request naming no page', async () => {
+    for (const origin of ['https://elsewhere.example', 'null', null]) {
+      const res = await mintRequest('reports', origin);
+      expect(res.status, String(origin)).toBe(403);
+      expect(res.body.token).toBeUndefined();
+    }
+  });
+
+  it('keeps no more than the cap of live tokens, letting the oldest go', async () => {
+    const first = await mint('reports');
+    for (let i = 0; i < MAX_CALLER_TOKENS; i++) await mint('reports');
+    const res = await request(server)
+      .get('/api/ext/ledger/entries')
+      .set('X-DorkOS-Caller-Token', first);
+    expect(res.body.code).toBe('caller_token_invalid');
+    const fresh = await mint('reports');
+    const ok = await request(server)
+      .get('/api/ext/ledger/entries')
+      .set('X-DorkOS-Caller-Token', fresh);
+    expect(ok.status).toBe(200);
+  }, 30_000);
+
   it('mints only for a running app that calls another', async () => {
     for (const appId of ['ledger', 'idle', 'no-such-app', '']) {
-      const res = await request(server).post('/api/extension-frame/caller-token').send({ appId });
+      const res = await mintRequest(appId);
       expect(res.status, appId).toBe(400);
     }
   });

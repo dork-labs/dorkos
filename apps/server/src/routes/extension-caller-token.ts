@@ -21,6 +21,7 @@ import type { ApiEnv } from '../http/api-chain.js';
 import { readJsonBody } from '../http/request-body.js';
 import { honoRequestFacts, type RequestFacts } from '../http/request-facts.js';
 import { clearsTheAgentBar } from '../lib/caller-authority.js';
+import { corsAllowsOrigin } from '../http/cors-policy.js';
 import { presentsAgentIdentity } from '../middleware/agent-identity.js';
 
 /** The header a call between apps carries its token in. */
@@ -32,12 +33,21 @@ export const CALLER_TOKEN_INVALID = 'caller_token_invalid';
 /** How long a token lasts without being used. */
 export const CALLER_TOKEN_IDLE_MS = 10 * 60 * 1000;
 
-/** The most tokens kept at once; the oldest goes first. */
-const MAX_TOKENS = 1000;
+/**
+ * The most tokens kept at once. Past it the oldest goes first, so a loop of
+ * mints holds memory flat; a window whose token was pushed out asks again.
+ */
+export const MAX_CALLER_TOKENS = 1000;
 
 interface TokenRecord {
   appId: string;
-  /** The session it was minted in: the cookie's session id, or `local` with sign-in off. */
+  /**
+   * The session it was minted in: the cookie's session id. With sign-in off
+   * there is no session, so it is `local`: the token is bound to its app and
+   * to this server process only, and any window at this computer could use it,
+   * the same trust sign-in off already gives every request (DOR-505). It never
+   * crosses into a session once sign-in is on, and a restart forgets it.
+   */
   session: string;
   expiresAt: number;
 }
@@ -112,6 +122,12 @@ function refuseMint(c: Context<ApiEnv>, status: 400 | 403, error: string): Respo
 export function registerCallerTokenRoute(router: Hono<ApiEnv>, deps: CallerTokenDeps): void {
   router.post('/caller-token', (c) => {
     const facts = honoRequestFacts(c);
+    // A window's own fetch always names its page; a page elsewhere, or an
+    // opaque (`null`) one, never mints with the person's cookie.
+    const origin = c.req.header('origin');
+    if (origin === undefined || origin === 'null' || !corsAllowsOrigin(facts)) {
+      return refuseMint(c, 403, 'Only a DorkOS window can ask for this.');
+    }
     if (isNotAWindow(facts) || !clearsTheAgentBar(facts)) {
       return refuseMint(c, 403, 'Only a person’s DorkOS window can ask for this.');
     }
@@ -121,7 +137,7 @@ export function registerCallerTokenRoute(router: Hono<ApiEnv>, deps: CallerToken
     if (!manifest || calledApps(manifest).length === 0) {
       return refuseMint(c, 400, 'That app is not running, or calls no other app.');
     }
-    if (tokens.size >= MAX_TOKENS) tokens.delete(tokens.keys().next().value!);
+    if (tokens.size >= MAX_CALLER_TOKENS) tokens.delete(tokens.keys().next().value!);
     const token = randomBytes(32).toString('base64url');
     tokens.set(token, {
       appId,
