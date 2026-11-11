@@ -66,24 +66,32 @@ jobs:
       # byte-for-byte as before. Shares scripts/wait-for-npm.sh with
       # publish-docker.yml's "Wait for npm package availability" step
       # (DOR-1606) rather than carrying its own copy of the loop.
-      - name: Checkout for the shared npm-wait script
-        if: github.event_name == 'push' || github.event_name == 'release'
+      # Every run needs scripts/npm-tarball-sha256.sh, so this checkout runs on
+      # manual runs too; only the wait below is skipped for them.
+      - name: Checkout for the shared npm scripts
         uses: actions/checkout@v7
         with:
           sparse-checkout: |
             scripts/wait-for-npm.sh
+            scripts/npm-tarball-sha256.sh
 
       - name: Wait for npm package availability
         if: github.event_name == 'push' || github.event_name == 'release'
-        run: bash scripts/wait-for-npm.sh "${{ steps.version.outputs.version }}"
+        env:
+          PKG_VERSION: ${{ steps.version.outputs.version }}
+        run: bash scripts/wait-for-npm.sh "$PKG_VERSION"
 
+      # The formula's checksum comes only from the real tarball: downloaded with
+      # curl -f, checked to be gzip, and matched against npm's dist.integrity
+      # sha512 before the sha256 is taken (DOR-4161: 0.135.5 shipped the
+      # checksum of a cached HTML 404 page). Any failure stops the job before
+      # the tap is touched.
       - name: Compute SHA256
         id: sha
         env:
           PKG_VERSION: ${{ steps.version.outputs.version }}
         run: |
-          TARBALL_URL="https://registry.npmjs.org/dorkos/-/dorkos-${PKG_VERSION}.tgz"
-          SHA256=$(curl -sL "$TARBALL_URL" | shasum -a 256 | cut -d ' ' -f 1)
+          SHA256=$(bash scripts/npm-tarball-sha256.sh "$PKG_VERSION")
           echo "sha256=$SHA256" >> "$GITHUB_OUTPUT"
           echo "SHA256: $SHA256"
 

@@ -26,8 +26,15 @@
 #                       `v`, no package name.
 #   [timeout-minutes]  Optional. Defaults to 30.
 #
-# Exits 0 the moment `npm view dorkos@<version> version` answers. Exits 1
-# with a clear error once the timeout elapses.
+# Exits 0 once BOTH `npm view dorkos@<version> version` answers AND the plain
+# tarball URL (https://registry.npmjs.org/dorkos/-/dorkos-<version>.tgz, no
+# cache-busting query) answers `curl -f`. Exits 1 with a clear error once the
+# timeout elapses.
+#
+# WHY THE TARBALL TOO (DOR-4161). In 0.135.5 the metadata answered while
+# npm's CDN still served a cached 404 for the plain tarball URL. Docker needed
+# three runs, and the Homebrew tap shipped a checksum of the 404 page. Every
+# consumer downloads that exact plain URL, so it is the one to wait on.
 #
 # Polls every 30 seconds by default. Two env vars override that for
 # scripts/test-wait-for-npm.sh, which stubs `npm` on PATH and needs both the
@@ -37,13 +44,26 @@
 #   WAIT_FOR_NPM_TIMEOUT_SECONDS  timeout in seconds; overrides
 #                                 [timeout-minutes] entirely when set
 
-set -uo pipefail
+set -euo pipefail
 
 VERSION="${1:-}"
 TIMEOUT_MINUTES="${2:-30}"
 
 if [ -z "$VERSION" ]; then
   echo "usage: $0 <version> [timeout-minutes]" >&2
+  exit 1
+fi
+
+# Whole-string semver (major.minor.patch, optional dot-separated prerelease),
+# no leading zeros, checked before the version reaches a URL or `npm view`.
+# The same pattern as scripts/npm-tarball-sha256.sh (DOR-4161).
+semver='^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$'
+if ! [[ "$VERSION" =~ $semver ]]; then
+  echo "::error::version '${VERSION}' isn't a plain semver like 0.135.6; refusing it" >&2
+  exit 1
+fi
+if ! [[ "$TIMEOUT_MINUTES" =~ ^[0-9]+$ ]]; then
+  echo "::error::timeout '${TIMEOUT_MINUTES}' isn't a whole number of minutes" >&2
   exit 1
 fi
 
@@ -55,14 +75,16 @@ else
 fi
 
 package="dorkos@${VERSION}"
-echo "Waiting for ${package} on npm (timeout ${TIMEOUT_MINUTES}m, polling every ${poll_seconds}s)..."
+tarball_url="https://registry.npmjs.org/dorkos/-/dorkos-${VERSION}.tgz"
+echo "Waiting for ${package} and its tarball on npm (timeout ${TIMEOUT_MINUTES}m, polling every ${poll_seconds}s)..."
 
 start=$(date +%s)
 attempt=0
 while true; do
   attempt=$((attempt + 1))
 
-  if npm view "$package" version >/dev/null 2>&1; then
+  if npm view "$package" version >/dev/null 2>&1 &&
+    curl -fsSIL --max-time 30 -o /dev/null "$tarball_url"; then
     elapsed=$(($(date +%s) - start))
     echo "Available after ${elapsed}s (attempt ${attempt}): ${package}"
     exit 0

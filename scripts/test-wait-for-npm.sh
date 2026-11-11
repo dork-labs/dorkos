@@ -72,6 +72,29 @@ echo "9.9.9"
 exit 0
 EOF
   chmod +x "$dir/npm"
+  # The plain tarball URL answers by default, so the npm-only cases above keep
+  # their meaning. make_curl_stub replaces it for the tarball cases (DOR-4161).
+  make_curl_stub "$dir" success
+}
+
+# Build a stub `curl` for the plain tarball URL check. "fail" answers like a
+# CDN's cached 404 (`curl -f` exits 22); "fail-then-succeed" does that FAIL
+# times first. It never reaches the network.
+make_curl_stub() {
+  local dir="$1" mode="$2" fail_count="${3:-0}"
+  cat >"$dir/curl" <<EOF
+#!/usr/bin/env bash
+mode="$mode"
+counter_file="$dir/.curl-calls"
+calls=0
+[ -f "\$counter_file" ] && calls=\$(cat "\$counter_file")
+calls=\$((calls + 1))
+echo "\$calls" > "\$counter_file"
+[ "\$mode" = "fail" ] && exit 22
+[ "\$mode" = "fail-then-succeed" ] && [ "\$calls" -le $fail_count ] && exit 22
+exit 0
+EOF
+  chmod +x "$dir/curl"
 }
 
 # Case 1: no version argument at all — must refuse before touching npm.
@@ -141,6 +164,62 @@ else
   bad "minutes argument: expected a 0-minute timeout to fail fast, got rc=$rc output=$out"
 fi
 rm -rf "$stub_dir"
+
+# Case 6 (DOR-4161): npm answers at once but the plain tarball URL is still a
+# cached 404 for two polls. The wait must hold until the tarball answers.
+stub_dir=$(mktemp -d)
+make_npm_stub "$stub_dir" success
+make_curl_stub "$stub_dir" fail-then-succeed 2
+out=$(PATH="$stub_dir:$PATH" WAIT_FOR_NPM_POLL_SECONDS=0 WAIT_FOR_NPM_TIMEOUT_SECONDS=5 \
+  "$CHECK" 1.2.3 2>&1)
+rc=$?
+if [ "$rc" -eq 0 ] && printf '%s' "$out" | grep -q 'attempt 3'; then
+  ok
+else
+  bad "tarball late: expected exit 0 on the 3rd attempt, got rc=$rc output=$out"
+fi
+rm -rf "$stub_dir"
+
+# Case 7 (DOR-4161): npm answers but the tarball never does. The wait must
+# time out, not report the version as available.
+stub_dir=$(mktemp -d)
+make_npm_stub "$stub_dir" success
+make_curl_stub "$stub_dir" fail
+out=$(PATH="$stub_dir:$PATH" WAIT_FOR_NPM_POLL_SECONDS=0 WAIT_FOR_NPM_TIMEOUT_SECONDS=1 \
+  "$CHECK" 1.2.3 2>&1)
+rc=$?
+if [ "$rc" -eq 1 ] && printf '%s' "$out" | grep -q '::error::'; then
+  ok
+else
+  bad "tarball never: expected exit 1 + ::error::, got rc=$rc output=$out"
+fi
+rm -rf "$stub_dir"
+
+# Case 8 (DOR-4161): a version that isn't a whole, strict semver is refused
+# before npm or curl runs, so it never reaches a URL or a command line.
+for v in 'v1.2.3' '1.2' '1.2.3.4' '01.2.3' '1.2.3/../x' '1.2.3 ' '1.2.3;id' '1.2.3-' $'1.2.3\nfoo'; do
+  stub_dir=$(mktemp -d)
+  make_npm_stub "$stub_dir" success
+  out=$(PATH="$stub_dir:$PATH" WAIT_FOR_NPM_POLL_SECONDS=0 WAIT_FOR_NPM_TIMEOUT_SECONDS=1 \
+    "$CHECK" "$v" 2>&1)
+  rc=$?
+  if [ "$rc" -eq 1 ] && printf '%s' "$out" | grep -q '::error::' &&
+    printf '%s' "$out" | grep -q 'semver' && [ ! -e "$stub_dir/.curl-calls" ]; then
+    ok
+  else
+    bad "bad version '$v': expected exit 1 + ::error:: before curl, got rc=$rc output=$out"
+  fi
+  rm -rf "$stub_dir"
+done
+
+# Case 9: a non-numeric timeout is refused rather than read as 0 minutes.
+out=$("$CHECK" 1.2.3 soon 2>&1)
+rc=$?
+if [ "$rc" -eq 1 ] && printf '%s' "$out" | grep -q '::error::'; then
+  ok
+else
+  bad "bad timeout: expected exit 1 + ::error::, got rc=$rc output=$out"
+fi
 
 echo
 echo "wait-for-npm fixtures: $pass passed, $fail failed"
