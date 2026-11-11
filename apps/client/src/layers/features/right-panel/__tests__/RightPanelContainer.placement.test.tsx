@@ -87,29 +87,19 @@ vi.mock('@/layers/shared/ui', async (importOriginal) => {
   };
 });
 
-const mockSetActiveRightPanelTab = vi.fn();
-const mockSetActiveRightPanelTabView = vi.fn();
 const mockSettingsOpen = vi.fn();
-let mockActiveRightPanelTab: string | null = null;
 let mockContributions: RightPanelContribution[] = [];
 
+// The app store is the REAL one. Which tab the panel shows is checked on the
+// store, and whether that choice was SAVED is checked in localStorage: the
+// container's own fallback pick is view-only and must never overwrite the
+// stored tab (DOR-227), while a tab you choose is saved. A faked store could
+// only say which setter was called. Settings stays faked: checking the tab it
+// opens on needs a router, which this suite does not mount.
 vi.mock('@/layers/shared/model', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/layers/shared/model')>();
   return {
     ...actual,
-    useAppStore: (selector: (s: Record<string, unknown>) => unknown) =>
-      selector({
-        rightPanelOpen: true,
-        setRightPanelOpen: vi.fn(),
-        activeRightPanelTab: mockActiveRightPanelTab,
-        setActiveRightPanelTab: mockSetActiveRightPanelTab,
-        setActiveRightPanelTabView: mockSetActiveRightPanelTabView,
-        currentAgentId: null,
-        selectedCwd: null,
-        explicitAgentPath: null,
-        roomCanvasLiveRoomId: null,
-        roomCanvasUnread: {},
-      }),
     useIsMobile: () => false,
     useIsBelowDesktop: () => false,
     useSlotContributions: () => mockContributions,
@@ -120,7 +110,26 @@ vi.mock('@/layers/shared/model', async (importOriginal) => {
   };
 });
 
+import { useAppStore } from '@/layers/shared/model';
 import { RightPanelContainer } from '../ui/RightPanelContainer';
+
+/** Show `tab` as the panel's current tab, the way a restored layout would. */
+function showTab(tab: string | null) {
+  useAppStore.setState({ activeRightPanelTab: tab });
+}
+
+/** The tab on screen right now. */
+function shownTab(): string | null {
+  return useAppStore.getState().activeRightPanelTab;
+}
+
+/** The tab the global layout has SAVED, or null when nothing was saved. */
+function savedTab(): string | null {
+  const raw = localStorage.getItem('dorkos-right-panel-state');
+  return raw === null
+    ? null
+    : ((JSON.parse(raw) as { activeTab?: string | null }).activeTab ?? null);
+}
 
 const MockIcon = () => null;
 const EMPTY = { agents: [], rooms: [], pages: [] };
@@ -167,7 +176,9 @@ beforeAll(() => {
 beforeEach(() => {
   mockHereState = { status: 'ready', here: R1 };
   mockSaved = [];
-  mockActiveRightPanelTab = 'pulse';
+  localStorage.clear();
+  useAppStore.setState({ rightPanelOpen: true, rightPanelLayoutKey: null });
+  showTab('pulse');
   mockContributions = [pulse, queue];
 });
 
@@ -207,32 +218,34 @@ describe('RightPanelContainer — mini-app placement', () => {
 
   it('auto-selects away from a mini-app tab hidden here once "here" is ready', () => {
     mockHereState = { status: 'ready', here: R2 };
-    mockActiveRightPanelTab = queue.id;
+    showTab(queue.id);
     renderPanel();
-    expect(mockSetActiveRightPanelTabView).toHaveBeenCalledWith('pulse');
+    expect(shownTab()).toBe('pulse');
+    // The fallback is a view, not a choice: nothing is saved over the stored tab.
+    expect(savedTab()).toBeNull();
   });
 
   it('keeps the open mini-app tab and re-picks nothing while "here" is pending', () => {
     mockHereState = { status: 'pending', last: R1 };
-    mockActiveRightPanelTab = queue.id;
+    showTab(queue.id);
     renderPanel();
     expect(screen.getByRole('tab', { name: 'Queue' })).toBeInTheDocument();
     expect(screen.getByTestId('tab-content-queue')).toBeInTheDocument();
-    expect(mockSetActiveRightPanelTabView).not.toHaveBeenCalled();
+    expect(shownTab()).toBe(queue.id);
   });
 
   it('offers no ⋯ menu while "here" is pending, so no choice is written for the place just left', () => {
     mockHereState = { status: 'pending', last: R1 };
-    mockActiveRightPanelTab = queue.id;
+    showTab(queue.id);
     renderPanel();
     expect(screen.queryByTestId('mini-app-tab-menu')).not.toBeInTheDocument();
   });
 
   it('re-picks nothing while pending even when the last answer hid the tab', () => {
     mockHereState = { status: 'pending', last: R2 };
-    mockActiveRightPanelTab = queue.id;
+    showTab(queue.id);
     renderPanel();
-    expect(mockSetActiveRightPanelTabView).not.toHaveBeenCalled();
+    expect(shownTab()).toBe(queue.id);
   });
 
   it('lists a tab hidden here under "Show here", and choosing it shows it here and opens it', async () => {
@@ -253,11 +266,15 @@ describe('RightPanelContainer — mini-app placement', () => {
     // Nothing broader changed: still shows in R1, still not in an unrelated room.
     expect(placementShows(placement, R1)).toBe(true);
     expect(placementShows(placement, { page: 'channels', roomId: 'R3' })).toBe(false);
-    expect(mockSetActiveRightPanelTab).toHaveBeenCalledWith(queue.id);
+    // Choosing it opens it, and that one IS a choice: it is saved. (What is on
+    // screen next is not asserted: the placement fake above never stores the new
+    // placement, so the tab stays hidden here and the fallback rightly moves off
+    // it. In the app the config write re-renders the panel with the tab shown.)
+    expect(savedTab()).toBe(queue.id);
   });
 
   it('"Hide here" on the open mini-app tab writes a placement that no longer shows here', async () => {
-    mockActiveRightPanelTab = queue.id;
+    showTab(queue.id);
     renderPanel();
 
     const menu = await openMenu();
@@ -271,7 +288,7 @@ describe('RightPanelContainer — mini-app placement', () => {
   });
 
   it('"Where it shows…" opens the mini app\'s settings', async () => {
-    mockActiveRightPanelTab = queue.id;
+    showTab(queue.id);
     renderPanel();
 
     const menu = await openMenu();
