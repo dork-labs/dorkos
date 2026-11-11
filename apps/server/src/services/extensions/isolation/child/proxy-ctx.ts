@@ -71,7 +71,13 @@ export interface ProxyCtxDeps {
   /** The host's `init`. */
   init: Pick<
     InitMessage,
-    'extensionId' | 'ctx' | 'displayName' | 'allowAgents' | 'personRefusal' | 'tools'
+    | 'extensionId'
+    | 'ctx'
+    | 'displayName'
+    | 'allowAgents'
+    | 'personRefusal'
+    | 'tools'
+    | 'connections'
   >;
   /** The extension API's error classes. */
   errors: ProxyErrorClasses;
@@ -443,6 +449,9 @@ export function createProxyCtx(deps: ProxyCtxDeps): ProxyCtx {
   };
 
   const ctx = build(CTX_PROTOCOL, '') as DataProviderContext;
+  // Only a copy the host gave connections to has them, so probing for the
+  // member tells the truth (DOR-3547). The host refuses the calls either way.
+  if (init.connections !== true) delete (ctx as { connections?: unknown }).connections;
 
   const answer = (id: number, ok: boolean, payload: unknown): void => {
     if (!running.delete(id)) return; // cancelled: the host no longer wants it

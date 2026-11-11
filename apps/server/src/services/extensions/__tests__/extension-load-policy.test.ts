@@ -432,7 +432,13 @@ describe('the load gate, at every path that runs extension code', () => {
 describe('the dev loop stays free after one approval, for the approved files', () => {
   /** The copy of `my-ext` every approval below is for, pinned to its files. */
   const MY_EXT_SOURCE = {
-    'my-ext': { path: '/fake/dork-home/extensions/my-ext', grants: expect.any(String), digest: D1 },
+    'my-ext': {
+      path: '/fake/dork-home/extensions/my-ext',
+      grants: expect.any(String),
+      digest: D1,
+      // A person gave this yes by hand (DOR-3547).
+      personApprovedDigest: D1,
+    },
   };
   /** The same approval, given before DOR-3068 and pinned on the first scan. */
   const MIGRATED_SOURCE = {
@@ -653,7 +659,13 @@ describe('an approval is for one copy of an extension (DOR-2383)', () => {
     const approved = await manager.approveToRun('flow');
 
     expect(stored.value.approvedSources).toEqual({
-      flow: { path: PLUGIN_COPY, plugin: 'flow', grants: expect.any(String), digest: D1 },
+      flow: {
+        path: PLUGIN_COPY,
+        plugin: 'flow',
+        grants: expect.any(String),
+        digest: D1,
+        personApprovedDigest: D1,
+      },
     });
     expect(approved).toMatchObject({ approvedToRun: true, sourcePlugin: 'flow' });
     expect(manager.getServerHandler('flow')).not.toBeNull();
@@ -690,6 +702,7 @@ describe('an approval is for one copy of an extension (DOR-2383)', () => {
         plugin: 'aaa-other',
         grants: expect.any(String),
         digest: D1,
+        personApprovedDigest: D1,
       },
     });
     expect(manager.getServerHandler('flow')).not.toBeNull();

@@ -100,7 +100,8 @@ export async function approveNewScaffold(
       : [...before.approvedToRun, id],
     approvedSources: {
       ...(before.approvedSources ?? {}),
-      [id]: source,
+      // No person said yes, so this never counts as one (DOR-3547 Q7).
+      [id]: { ...source, autoApprovedBy: 'create_extension' },
     },
     approvedPermissions: { ...(before.approvedPermissions ?? {}), [id]: permissions },
   });

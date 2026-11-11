@@ -73,6 +73,10 @@ export function grantsDigestOf(manifest: ExtensionManifest): string {
     secrets: caps?.secrets ?? [],
     serverEntry: caps ? caps.serverEntry : null,
     dataProxy: manifest.dataProxy ?? null,
+    // What it reads through DorkOS (DOR-3547, Security N1): adding a service or
+    // an operation is a change of reach, so it waits for a person too. Only
+    // present when declared, so every digest stored before it stays the same.
+    ...(caps?.connections ? { connections: caps.connections } : {}),
     tools: (manifest.tools ?? [])
       .map((tool) => [tool.name, tool.tier])
       .sort(([a], [b]) => String(a).localeCompare(String(b))),

@@ -40,7 +40,12 @@ const TOOLS: ToolHandleCheck[] = [
 ];
 
 function setup(
-  options: { allowAgents?: boolean; failSend?: boolean; tools?: ToolHandleCheck[] } = {}
+  options: {
+    allowAgents?: boolean;
+    failSend?: boolean;
+    tools?: ToolHandleCheck[];
+    connections?: boolean;
+  } = {}
 ) {
   const sent: ChildMessage[] = [];
   const logs: string[] = [];
@@ -53,6 +58,7 @@ function setup(
       extensionId: 'ext-a',
       displayName: 'Ext A',
       allowAgents: options.allowAgents ?? false,
+      ...(options.connections !== undefined ? { connections: options.connections } : {}),
       personRefusal: PERSON_REFUSAL,
       tools: options.tools ?? TOOLS,
       ctx: {
@@ -69,6 +75,29 @@ function setup(
 
 afterEach(() => {
   vi.useRealTimers();
+});
+
+describe('proxy ctx connections (DOR-3547)', () => {
+  // Purpose: a copy the host gave no connections has no such member, so
+  // probing for it tells the truth.
+  it('has no connections unless the host says it has them', () => {
+    expect('connections' in setup().ctx).toBe(false);
+    expect('connections' in setup({ connections: false }).ctx).toBe(false);
+  });
+
+  // Purpose: with them, a read is a plain call carrying only the operation
+  // and its params.
+  it('sends a read as a call naming only the operation and its params', () => {
+    const t = setup({ connections: true });
+    void t.ctx.connections!.read('LINEAR_LIST_LINEAR_PROJECTS', { first: 1 });
+    expect(t.sent).toEqual([
+      expect.objectContaining({
+        type: 'call',
+        path: 'connections.read',
+        args: ['LINEAR_LIST_LINEAR_PROJECTS', { first: 1 }],
+      }),
+    ]);
+  });
 });
 
 describe('proxy ctx members', () => {

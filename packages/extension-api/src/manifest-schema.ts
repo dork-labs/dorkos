@@ -11,6 +11,11 @@ import { validateSlug } from '@dorkos/skills/slug';
 import { EXTENSION_EVENT_DECLARATIONS } from './extension-events.js';
 import { formatNetEntry, isNetEntryError, parseNetEntry } from './net-allowlist.js';
 import { runEntryProblem } from './run-allowlist.js';
+import {
+  checkConnectionsDeclaration,
+  ConnectionDeclarationsSchema,
+  ExtensionLimitsSchema,
+} from './connections-declaration.js';
 
 /**
  * Declares which host events an extension may subscribe to via
@@ -117,8 +122,11 @@ export const ALLOW_NET_MAX = 64;
 /** The most `allow.run` entries a manifest may declare. */
 export const ALLOW_RUN_MAX = 16;
 
-/** The smallest, largest and default heap for an extension that runs separately, in MB. */
-export const ISOLATION_MEMORY_MB = { min: 64, max: 1024, default: 256 } as const;
+export { ISOLATION_MEMORY_MB } from './connections-declaration.js';
+export {
+  CONNECTIONS_NEED_SUBPROCESS,
+  type ConnectionDeclaration,
+} from './connections-declaration.js';
 
 /**
  * Where an extension's server half runs (DOR-2686):
@@ -171,19 +179,6 @@ const ExtensionAllowSchema = z
   })
   .strict();
 
-/** Limits for an extension that runs separately. */
-const ExtensionLimitsSchema = z
-  .object({
-    /** Its JavaScript heap, in MB (64 to 1024, default 256). */
-    memoryMb: z
-      .number()
-      .int()
-      .min(ISOLATION_MEMORY_MB.min)
-      .max(ISOLATION_MEMORY_MB.max)
-      .default(ISOLATION_MEMORY_MB.default),
-  })
-  .strict();
-
 /** Server-side capability declarations for data-provider extensions. */
 const ServerCapabilitiesSchema = z
   .object({
@@ -208,8 +203,11 @@ const ServerCapabilitiesSchema = z
     secrets: z.array(SecretDeclarationSchema).optional(),
     /** Non-secret configuration fields (drives auto-generated settings UI). */
     settings: z.array(SettingDeclarationSchema).optional(),
+    /** Apps it reads through DorkOS (DOR-3547). Only with `runtime: "subprocess"`. */
+    connections: ConnectionDeclarationsSchema.optional(),
   })
-  .superRefine(checkIsolationDeclarations);
+  .superRefine(checkIsolationDeclarations)
+  .superRefine(checkConnectionsDeclaration);
 
 /**
  * Check the rules for `runtime`, `allow` and `limits`: the lists only with
