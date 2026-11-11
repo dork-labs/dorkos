@@ -49,6 +49,7 @@ import { registerTrustedSourceRoutes } from './extensions-trusted-sources.js';
 import { registerExtensionInboxRoutes } from './extensions-inbox.js';
 import { registerExtensionStartWorkRoute } from './extensions-start-work.js';
 import { registerExtensionRoomRoutes } from './extensions-rooms.js';
+import { registerExtensionPrefsRoutes } from './extensions-prefs.js';
 import { liveForwardDeps, registerExtensionForwardRoutes } from './extensions-forward.js';
 import type { PersonForwardDeps } from '../services/extensions/forward/person-forward.js';
 import { refusedNotAPerson, type PersonBarCopy } from './extensions-person-bar.js';
@@ -651,6 +652,12 @@ export function createExtensionsRoutes(deps: ExtensionsRouterDeps): Hono<ApiEnv>
   registerExtensionInboxRoutes(router, extensionManager, dorkHome, SAFE_EXT_ID, activity);
   registerExtensionStartWorkRoute(router, extensionManager, SAFE_EXT_ID);
   registerExtensionRoomRoutes(router, extensionManager, SAFE_EXT_ID);
+  registerExtensionPrefsRoutes(router, {
+    manager: extensionManager,
+    dorkHome,
+    getCwd,
+    safeId: SAFE_EXT_ID,
+  });
   registerExtensionForwardRoutes(router, extensionManager, SAFE_EXT_ID, liveForwardDeps(deps.mesh));
 
   return router;

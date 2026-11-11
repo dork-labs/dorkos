@@ -111,9 +111,23 @@ describe('isolated app host', () => {
   it('refuses an identity change before executing a scoped write', async () => {
     await start();
     expect(await call('saveData', [{ value: 1 }], 'quill')).toHaveProperty('error');
-    expect(api.saveData).not.toHaveBeenCalled();
+    expect(fetch).not.toHaveBeenCalled();
     expect(await call('saveData', [{ value: 1 }])).toHaveProperty('value', null);
-    expect(api.saveData).toHaveBeenCalledWith({ value: 1 });
+    expect(fetch).toHaveBeenCalledWith(
+      '/api/extensions/atlas/prefs',
+      expect.objectContaining({ method: 'PUT', body: JSON.stringify({ value: 1 }) })
+    );
+  });
+  it('keeps screen data in its own store, never the server half’s ctx.storage (item 7)', async () => {
+    await start();
+    await call('saveData', [{ theme: 'compact' }]);
+    expect(await call('loadData', [])).toHaveProperty('value', { own: true });
+    const urls = vi.mocked(fetch).mock.calls.map(([url]) => String(url));
+    expect(urls).toEqual(['/api/extensions/atlas/prefs', '/api/extensions/atlas/prefs']);
+    // The /data blob is the server half's storage: the frame never reaches it.
+    expect(urls.some((url) => url.endsWith('/data'))).toBe(false);
+    expect(api.saveData).not.toHaveBeenCalled();
+    expect(api.loadData).not.toHaveBeenCalled();
   });
   it('refuses core commands and raw host fetch operations', async () => {
     await start();
@@ -133,6 +147,18 @@ describe('isolated app host', () => {
       theme: { className: 'dark', style: '' },
     });
     document.documentElement.className = '';
+  });
+  it('hands an app its own route’s failure as status and body, with no headers', async () => {
+    await start({ capabilities: { http: true } });
+    vi.mocked(fetch).mockResolvedValueOnce(
+      new Response(JSON.stringify({ error: 'locked' }), {
+        status: 423,
+        headers: { 'Set-Cookie': 'session=secret' },
+      })
+    );
+    const reply = await call('request', ['/loop', {}]);
+    expect(reply).toMatchObject({ failure: { status: 423, body: { error: 'locked' } } });
+    expect(JSON.stringify(reply)).not.toContain('secret');
   });
   it('refuses prototype names as bridge operations', async () => {
     await start();
@@ -209,10 +235,10 @@ describe('isolated app host', () => {
       args: [],
       extra: true,
     });
-    expect(api.loadData).not.toHaveBeenCalled();
+    expect(fetch).not.toHaveBeenCalled();
     stop?.();
     await call('saveData', [{}]);
-    expect(api.saveData).not.toHaveBeenCalled();
+    expect(fetch).not.toHaveBeenCalled();
   });
 });
 

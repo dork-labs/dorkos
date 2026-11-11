@@ -42,15 +42,28 @@ const status = await api.request<Status>('/status');
 await api.request('/items', { method: 'POST', body: { title: 'New item' } });
 ```
 
-The path is relative to your own routes (`/api/ext/my-extension/`). It must be a plain path inside them: `..`, encoded slashes and full URLs are refused. A response that is not OK rejects the promise.
+The path is relative to your own routes (`/api/ext/my-extension/`). DorkOS encodes each part of it for you. A part may contain `.` and `:` (`/reports/q3.v2:final`), but a part that is `.` or `..`, an empty part (`//`), a backslash, a raw `%` and a full address are refused. Put values that need encoding in the query (`/search?q=…`), which DorkOS re-encodes.
+
+The reply comes back as JSON, as text, or as `null` for no content. When your route answers with an error, the promise rejects with its `status` and `body`, so you can tell the cases apart. No reply headers reach your code.
+
+```typescript
+try {
+  await api.request('/items/42', { method: 'DELETE' });
+} catch (error) {
+  const { status, body } = error as { status?: number; body?: unknown };
+  if (status === 409) showConflict(body);
+}
+```
 
 To read your extension's settings, use `api.settings.get()` instead of fetching `/api/extensions/my-extension/settings`.
 
 ## 3. Drop what the frame no longer has
 
-- **`executeCommand` and `openCanvas`** are gone. Use `api.navigate` to move the person to a page.
+- **`executeCommand`** is gone. Use `api.navigate` to move the person to a page.
+- **`openCanvas`** now goes through DorkOS, which checks what you send. See [Putting things on the canvas](#putting-things-on-the-canvas).
+- **`<a download>`** does not work in the frame. Use `api.download`; see [Saving a file](#saving-a-file).
 - **`document.cookie`, `localStorage`, `sessionStorage` and `window.parent`** are not available. Keep data with `api.saveData` and `api.loadData`.
-- **`window.electronAPI`** is gone. `api.request` works the same on the web, the desktop app and the phone.
+- **`window.electronAPI`** is gone. Its only use was `getServerPort()`, to build an address for `fetch`; `api.request` replaces that, and works the same on the web, the desktop app and the phone.
 - **Imports** are limited to `react`, `react-dom`, `react-dom/client`, `react/jsx-runtime` and `@dorkos/extension-api`. Bundle anything else into your extension. `React` is still a global.
 
 ## 4. Expect `activate` to run more than once
@@ -73,6 +86,21 @@ Type against `FrameExtensionAPI` from `@dorkos/extension-api` to get the version
 ## 5. Check functions you receive
 
 Props DorkOS passes your components still arrive as values and functions. A function crosses the frame as a message, so calling it works, but it returns nothing to your code. `when` and `visibleWhen` options on a component still work, and run inside your frame. An icon component cannot cross the frame, so a right-panel tab shows the default puzzle-piece icon; a command's `icon` stays a string, as before.
+
+## Screen data is its own store
+
+`api.saveData` and `api.loadData` in your screens keep up to 512 KB of JSON in a store of their own. It is separate from `ctx.storage` in your server half, which your screens can no longer read or overwrite. Data your screens saved before version 2 shared a file with `ctx.storage`, so it does not carry over: read what you need in your server half and hand it to your screens through a route.
+
+## Shipping a pre-built `index.js`
+
+If your app ships `index.js` instead of `index.ts`, DorkOS serves that file as it is, as a plain script in the frame, not as a module. It must assign its exports to `__dorkosExtension`, and load React and the SDK with `require`. An ES-module bundle (`export function activate`) does not load. With esbuild:
+
+```bash
+esbuild index.tsx --bundle --format=iife --global-name=__dorkosExtension \
+  --external:react --external:react-dom --external:@dorkos/extension-api --outfile=index.js
+```
+
+An app that ships `index.ts` needs none of this: DorkOS builds it this way for you.
 
 ## What stays the same
 

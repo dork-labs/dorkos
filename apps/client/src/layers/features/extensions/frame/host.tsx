@@ -8,6 +8,7 @@ import {
 } from '@dorkos/extension-api';
 import { z } from 'zod';
 import { extensionApiUrl } from '../model/extension-api-url';
+import { extensionRequestPath, readAppResponse } from './app-request';
 import { offerAppDownload } from './download';
 import {
   EXTENSION_FRAME_PATH,
@@ -29,8 +30,6 @@ import {
 } from './protocol';
 
 const methodArgs: Record<string, z.ZodType> = {
-  loadData: args(),
-  saveData: args(json),
   notify: args(
     text,
     z
@@ -56,15 +55,6 @@ const methodArgs: Record<string, z.ZodType> = {
   'forward.replies': args(text),
   'forward.stamps': args(z.array(text).max(50)),
 };
-
-/** Validate a relative app route before constructing an authority-bearing host request. */
-export function extensionRequestPath(id: string, path: string): string {
-  const [pathname] = path.split('?');
-  if (!/^\/(?:[a-zA-Z0-9_-]+\/?)*$/.test(pathname) || path.includes('#') || path.length > 4000) {
-    throw new Error('Use a path inside this app.');
-  }
-  return `/ext/${encodeURIComponent(id)}${path}`;
-}
 
 /** Start one isolated module; only its data and trusted React wrappers reach the registry. */
 export function isolatedExtensionModule(
@@ -253,8 +243,7 @@ export function isolatedExtensionModule(
                 headers: { 'Content-Type': 'application/json', 'X-DorkOS-Extension': api.id },
                 ...(options.body !== undefined ? { body: JSON.stringify(options.body) } : {}),
               });
-              if (!response.ok) throw new Error(`The app request failed (${response.status}).`);
-              return response.status === 204 ? null : response.json();
+              return readAppResponse(response);
             }
             if (method === 'openCanvas') {
               const [content] = args(FrameCanvasContentSchema).parse(input);
@@ -273,6 +262,29 @@ export function isolatedExtensionModule(
             if (method === 'download') {
               const [file] = args(FrameDownloadSchema).parse(input);
               return offerAppDownload(manifest.name, file);
+            }
+            // Screen data lives in its own file, never the server half's ctx.storage (item 7).
+            if (method === 'loadData') {
+              args().parse(input);
+              const response = await fetch(
+                extensionApiUrl(`/extensions/${encodeURIComponent(api.id)}/prefs`)
+              );
+              if (response.status === 204) return null;
+              if (!response.ok) throw new Error('The app’s data could not be read.');
+              return response.json();
+            }
+            if (method === 'saveData') {
+              const [value] = args(json).parse(input);
+              const response = await fetch(
+                extensionApiUrl(`/extensions/${encodeURIComponent(api.id)}/prefs`),
+                {
+                  method: 'PUT',
+                  headers: { 'Content-Type': 'application/json', 'X-DorkOS-Extension': api.id },
+                  body: JSON.stringify(value),
+                }
+              );
+              if (!response.ok) throw new Error('The app’s data could not be saved.');
+              return null;
             }
             if (method === 'settings.get') {
               args().parse(input);
@@ -340,3 +352,4 @@ export function isolatedExtensionModule(
 }
 
 export { EXTENSION_FRAME_PATH, EXTENSION_FRAME_SANDBOX };
+export { extensionRequestPath };

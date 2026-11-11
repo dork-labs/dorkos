@@ -117,8 +117,16 @@ async function start(init: FrameInit, port: MessagePort): Promise<void> {
       const request = pending.get(data.requestId);
       if (!request) return;
       pending.delete(data.requestId);
-      if (data.error) request.reject(new Error(data.error));
-      else request.resolve(data.value);
+      if (data.error) {
+        // A failed route answer rejects with its status and body; anything else
+        // with a plain message.
+        const failure = data.failure as { status: number; body: unknown } | undefined;
+        request.reject(
+          failure
+            ? Object.assign(new Error(`The app request failed (${failure.status}).`), failure)
+            : new Error(data.error)
+        );
+      } else request.resolve(data.value);
     } else if (data.type === 'event') {
       callbacks.get(data.key)?.(...data.args);
     } else if (data.type === 'state') {

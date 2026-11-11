@@ -14,6 +14,7 @@ import {
   type FrameRegistration,
   type FrameTheme,
 } from './protocol';
+import { AppRequestFailure } from './app-request';
 
 /** The sandbox grants scripts only: no origin, popups, downloads, forms, or parent navigation. */
 export const EXTENSION_FRAME_SANDBOX = 'allow-scripts';
@@ -187,9 +188,18 @@ export function createFrameConnection(options: FrameOptions): FrameConnection {
             },
           });
         send({ type: 'reply', requestId, value: value ?? null });
-      } catch {
+      } catch (error) {
         // Errors from the host contain no paths or objects for a bundle to inspect.
-        send({ type: 'reply', requestId, error: 'This app request was refused or failed.' });
+        // Only the app's own route failing hands back what that route said:
+        // its status and body, never its reply headers.
+        send({
+          type: 'reply',
+          requestId,
+          error: 'This app request was refused or failed.',
+          ...(error instanceof AppRequestFailure
+            ? { failure: { status: error.status, body: error.body } }
+            : {}),
+        });
       } finally {
         inflight--;
       }
