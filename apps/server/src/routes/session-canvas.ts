@@ -156,7 +156,10 @@ function namesAKnownSession(sessionId: string): boolean {
  *
  * **Who can set it.** Only a person's window: an agent caller is refused
  * `PEOPLE_ONLY` before the body is used, like every route here, and the MCP
- * tools never reach this route. The window's frame bridge names the app from
+ * tools never reach this route. With sign-in on, the mark also needs a session
+ * cookie: the caller check refuses a write made with an API key
+ * (`PERSON_SESSION_REQUIRED`), so a program holding one, an app's own server
+ * half included, cannot set it. The window's frame bridge names the app from
  * its own record of which app it loaded, never from anything the app's frame
  * says. And the id must be an app whose screens run right now
  * ({@link SessionCanvasDeps.appScreenRuns}); anything else is refused.

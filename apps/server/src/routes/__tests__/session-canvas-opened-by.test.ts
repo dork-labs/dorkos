@@ -17,8 +17,21 @@ import { listeningServer } from '@dorkos/test-utils/listening-server';
 import { createTestDb } from '@dorkos/test-utils/db';
 import { agents, canvasDocuments, type Db } from '@dorkos/db';
 
+/** Whether sign-in is on, as the mocked config reports it. */
+const state = vi.hoisted(() => ({ authEnabled: false }));
+
 vi.mock('../../services/core/config-manager.js', () => ({
-  configManager: { get: vi.fn().mockReturnValue(null), set: vi.fn() },
+  configManager: {
+    get: vi.fn((key: string) => (key === 'auth' ? { enabled: state.authEnabled } : null)),
+    set: vi.fn(),
+  },
+}));
+
+// The session gate lets every request through; each case sets the user it
+// would have proved, below.
+vi.mock('../../services/core/auth/session-gate.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../services/core/auth/session-gate.js')>()),
+  decideSessionGate: vi.fn(async () => ({ allowed: true })),
 }));
 
 import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
@@ -36,11 +49,21 @@ const PAGE = { type: 'url', url: 'https://example.test/report' } as const;
 
 /** Desk runs; Notes is installed but turned off; nothing else exists. */
 const runs = new Set(['desk']);
+let signedInUser: { userId: string; credential: 'cookie' | 'api-key' } | undefined;
 const testServer = listeningServer(
-  honoGroupListener({
-    path: '/api/sessions/:id/canvas',
-    routes: createSessionCanvasRoutes({ appScreenRuns: (id) => runs.has(id) }),
-  })
+  honoGroupListener(
+    {
+      path: '/api/sessions/:id/canvas',
+      routes: createSessionCanvasRoutes({ appScreenRuns: (id) => runs.has(id) }),
+    },
+    {
+      // Stands in for what the session gate proved.
+      before: (c, next) => {
+        if (signedInUser) c.set('user', signedInUser);
+        return next();
+      },
+    }
+  )
 );
 
 /** A server with no apps at all: the check is unset. */
@@ -57,6 +80,8 @@ let db: Db;
 const stored = () => db.select().from(canvasDocuments).all();
 
 beforeEach(async () => {
+  state.authEnabled = false;
+  signedInUser = undefined;
   db = createTestDb();
   runtimeRegistry.setDb(db);
   const subsystem = createRoomSubsystem({ db });
@@ -113,6 +138,20 @@ describe('the "opened by" mark on a session canvas', () => {
     expect(res.status).toBe(403);
     expect(res.body.code).toBe('PEOPLE_ONLY');
     expect(stored()).toHaveLength(0);
+  });
+
+  it('with sign-in on, needs a session cookie: an API key is not a person', async () => {
+    state.authEnabled = true;
+    signedInUser = { userId: 'user_key', credential: 'api-key' };
+    const byKey = await openFor('desk');
+    expect(byKey.status).toBe(401);
+    expect(byKey.body.code).toBe('PERSON_SESSION_REQUIRED');
+    expect(stored()).toHaveLength(0);
+
+    signedInUser = { userId: 'user_window', credential: 'cookie' };
+    const byWindow = await openFor('desk');
+    expect(byWindow.status).toBe(201);
+    expect(byWindow.body.openedBy).toEqual({ extensionId: 'desk' });
   });
 
   it('is refused on a server with no apps at all', async () => {
