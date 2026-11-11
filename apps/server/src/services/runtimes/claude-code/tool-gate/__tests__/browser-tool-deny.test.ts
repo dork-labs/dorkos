@@ -142,6 +142,34 @@ describe('browserToolHookMatcher', () => {
     }
   });
 
+  it('refuses a file argument at any depth, under any name that reads like one', async () => {
+    for (const input of [
+      { options: { filename: 'x' } },
+      {
+        fields: [
+          { ref: 'e1', value: 'a' },
+          { ref: 'e2', outputFile: '/tmp/x' },
+        ],
+      },
+      { a: { b: { c: [{ d: { savePath: '' } }] } } },
+      { dir: '/tmp' },
+      { OUTPUT: null },
+    ]) {
+      expect(await hookAnswer('mcp__browser__browser_fill_form', input)).toEqual(
+        refused(BROWSER_FILE_MESSAGE)
+      );
+    }
+  });
+
+  it('lets a plain call with nested arguments run', async () => {
+    expect(
+      await hookAnswer('mcp__browser__browser_fill_form', {
+        fields: [{ name: 'Email', type: 'textbox', ref: 'e1', value: 'a@example.com' }],
+      })
+    ).toEqual({});
+    expect(await hookAnswer('mcp__browser__browser_snapshot', {})).toEqual({});
+  });
+
   it('answers nothing for every other browser call, browser_evaluate included', async () => {
     for (const name of [
       'mcp__browser__browser_evaluate',

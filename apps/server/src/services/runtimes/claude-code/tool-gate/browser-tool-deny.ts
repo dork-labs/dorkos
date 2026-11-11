@@ -10,7 +10,7 @@
  *   DorkOS never sees. A hook's deny is decided in every mode too.
  *
  * The same hook refuses any browser call that names a file on this computer
- * ({@link AGENT_BROWSER_FILE_ARGUMENTS}): a deny rule matches a tool, never its arguments.
+ * ({@link AGENT_BROWSER_FILE_ARGUMENT}): a deny rule matches a tool, never its arguments.
  *
  * Named on every server rather than only the ones shaped like the agent browser, so a Playwright
  * server started through a wrapper script is covered too; a deny on a tool a server lacks does

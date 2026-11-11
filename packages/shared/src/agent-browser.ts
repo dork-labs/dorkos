@@ -38,7 +38,7 @@ export const AGENT_BROWSER_SERVER_NAME = 'browser';
  * re-read `npx @playwright/mcp@<new> --help` for the flags the connection below
  * passes, and re-check the always-on tool list for any new tool that runs code
  * outside the page, which belongs in {@link AGENT_BROWSER_WITHHELD_TOOLS}, and
- * any new argument that names a file, which belongs in {@link AGENT_BROWSER_FILE_ARGUMENTS}.
+ * any new argument that names a file, which {@link AGENT_BROWSER_FILE_ARGUMENT} must match.
  */
 export const AGENT_BROWSER_MCP_VERSION = '0.0.82';
 
@@ -56,7 +56,7 @@ export const AGENT_BROWSER_MCP_PACKAGE = `@playwright/mcp@${AGENT_BROWSER_MCP_VE
  *   `browser_network_requests`, the list without headers, stays.
  *
  * Each runtime withholds them: a deny rule and a hook on Claude Code, never registered on Doe, and
- * on Codex and OpenCode, which cannot hold back one argument ({@link AGENT_BROWSER_FILE_ARGUMENTS}),
+ * on Codex and OpenCode, which cannot hold back one argument ({@link AGENT_BROWSER_FILE_ARGUMENT}),
  * no agent browser at all. `browser_evaluate` stays: it runs inside the page.
  */
 export const AGENT_BROWSER_WITHHELD_TOOLS: readonly string[] = [
@@ -65,15 +65,17 @@ export const AGENT_BROWSER_WITHHELD_TOOLS: readonly string[] = [
 ];
 
 /**
- * The arguments that make a Playwright MCP tool read or write a file on this computer: `filename`
- * (a snapshot, screenshot, console log, network log or `browser_evaluate` result saved to a file of
- * the caller's choosing) and `paths` (`browser_file_upload` and `browser_drop` sending local files
- * to a page). 0.0.82 bounds both only by the folder the MCP client reports as its root, which is
- * the chat's own folder, so a call that carries one could change an agent's protected setup files
- * or, in a chat that runs in the home or data folder, the saved sign-ins. A browser call with
- * either is refused; the same call without it returns its result as text.
+ * An argument name that could make a Playwright MCP tool read or write a file on this computer,
+ * in any case: in 0.0.82, `filename` (a snapshot, screenshot, console log, network log or
+ * `browser_evaluate` result saved to a file of the caller's choosing) and `paths`
+ * (`browser_file_upload` and `browser_drop` sending local files to a page), and anything a later
+ * or person-added version calls `path`, `dir` or `output`. 0.0.82 bounds them only by the folder
+ * the MCP client reports as its root, which is the chat's own folder, so a call that carries one
+ * could change an agent's protected setup files or, in a chat that runs in the home or data
+ * folder, the saved sign-ins. A browser call with one is refused, at any depth; the same call
+ * without it returns its result as text.
  */
-export const AGENT_BROWSER_FILE_ARGUMENTS: readonly string[] = ['filename', 'paths'];
+export const AGENT_BROWSER_FILE_ARGUMENT = /file|path|dir|output/i;
 
 /**
  * Whether a tool, by its bare name, is one of {@link AGENT_BROWSER_WITHHELD_TOOLS}, in any case.
@@ -85,19 +87,30 @@ export function isWithheldBrowserTool(tool: string): boolean {
   return AGENT_BROWSER_WITHHELD_TOOLS.includes(name);
 }
 
+/** How deep {@link browserCallNamesFile} looks; anything deeper counts as naming a file. */
+const FILE_ARGUMENT_DEPTH = 32;
+
+/** Whether `value` holds a key matching {@link AGENT_BROWSER_FILE_ARGUMENT} at any depth. */
+function holdsFileArgument(value: unknown, depth: number): boolean {
+  if (!value || typeof value !== 'object') return false;
+  if (depth > FILE_ARGUMENT_DEPTH) return true;
+  if (Array.isArray(value)) return value.some((item) => holdsFileArgument(item, depth + 1));
+  return Object.entries(value).some(
+    ([key, child]) => AGENT_BROWSER_FILE_ARGUMENT.test(key) || holdsFileArgument(child, depth + 1)
+  );
+}
+
 /**
- * Whether a browser tool call names a file ({@link AGENT_BROWSER_FILE_ARGUMENTS}): a tool whose
- * bare name starts `browser_`, in any case, with either argument present, in any case and with
- * any value, an empty one included.
+ * Whether a browser tool call names a file: a tool whose bare name starts `browser_`, in any
+ * case, with a key matching {@link AGENT_BROWSER_FILE_ARGUMENT} anywhere in its arguments,
+ * nested ones and objects in arrays included, whatever its value (`""` and `null` too).
  *
  * @param tool - The tool's own name, without any server prefix.
  * @param input - The call's arguments.
  */
 export function browserCallNamesFile(tool: string, input: unknown): boolean {
   if (!/^browser_/i.test(tool)) return false;
-  if (!input || typeof input !== 'object') return false;
-  // Present at all is enough, whatever its value (`""` and `null` too) and its letter case.
-  return Object.keys(input).some((key) => AGENT_BROWSER_FILE_ARGUMENTS.includes(key.toLowerCase()));
+  return holdsFileArgument(input, 0);
 }
 
 /** What an empty saved session looks like: valid for Playwright, signed in to nothing. */

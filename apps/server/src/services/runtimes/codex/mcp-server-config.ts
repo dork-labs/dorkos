@@ -225,7 +225,7 @@ export interface CodexMcpConversion {
   reserved: string[];
   /**
    * Agent browsers left out: Codex can turn off a tool but not one of its arguments, and the
-   * agent browser's always-on tools take file names (`AGENT_BROWSER_FILE_ARGUMENTS`), so the
+   * agent browser's always-on tools take file names (`AGENT_BROWSER_FILE_ARGUMENT`), so the
    * whole server stays out.
    */
   withheld: string[];

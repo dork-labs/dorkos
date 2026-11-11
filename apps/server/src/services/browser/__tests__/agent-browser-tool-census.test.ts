@@ -3,12 +3,13 @@
  *
  * The agent browser's real tool list, read from the pinned `@playwright/mcp` by
  * `scripts/snapshot-agent-browser-tools.mjs` with every tool set DorkOS lets it run: every
- * argument that could name a file on this computer is on the refused list, so a Playwright bump
- * that adds one (`path`, `outputFile`, `dir`) fails here instead of opening a way past the page.
+ * argument that could name a file on this computer sits at the top of its tool's arguments and is
+ * one the refusal matches, so a Playwright bump that adds one (`path`, `outputFile`, `dir`) the
+ * refusal misses, or nests one, fails here instead of opening a way past the page.
  */
 import { describe, expect, it } from 'vitest';
 import {
-  AGENT_BROWSER_FILE_ARGUMENTS,
+  AGENT_BROWSER_FILE_ARGUMENT,
   AGENT_BROWSER_MCP_PACKAGE,
   AGENT_BROWSER_WITHHELD_TOOLS,
   isWithheldBrowserTool,
@@ -40,19 +41,28 @@ function argumentNames(schema: Schema | undefined, prefix = ''): string[] {
   return [...own, ...argumentNames(schema.items, `${prefix}[].`)];
 }
 
-/** A name that reads like a file, a path, a folder or an output target. */
+/**
+ * A name that reads like a file, a path, a folder or an output target. Spelled here on its own,
+ * not taken from the refusal, so narrowing the refusal fails this census.
+ */
 const NAMES_A_FILE = /file|path|dir|output/i;
 
-/** Each argument of an offered tool that names a file and isn't on the refused list. */
-function unrefusedFileArguments(refused: readonly string[]): string[] {
+/** Every argument of an offered tool that names a file, as `tool > name`, nested ones too. */
+function fileArguments(): { tool: string; name: string }[] {
   return snapshot.tools
     .filter((tool) => !isWithheldBrowserTool(tool.name))
     .flatMap((tool) =>
       argumentNames(tool.inputSchema)
         .filter((name) => NAMES_A_FILE.test(name.split('.').pop()!))
-        .filter((name) => !refused.includes(name))
-        .map((name) => `${tool.name} > ${name}`)
+        .map((name) => ({ tool: tool.name, name }))
     );
+}
+
+/** Each file argument `refusal` would let through, as `tool > name`. */
+function unrefused(refusal: RegExp): string[] {
+  return fileArguments()
+    .filter(({ name }) => !refusal.test(name))
+    .map(({ tool, name }) => `${tool} > ${name}`);
 }
 
 describe('the agent browser’s tool list', () => {
@@ -63,16 +73,28 @@ describe('the agent browser’s tool list', () => {
     expect(snapshot.tools.length).toBeGreaterThan(40);
   });
 
-  it('refuses every argument of an offered tool that names a file', () => {
-    expect(unrefusedFileArguments(AGENT_BROWSER_FILE_ARGUMENTS)).toEqual([]);
+  it('finds the file arguments it should, so an empty census is not a pass', () => {
+    expect(fileArguments().map(({ name }) => name)).toEqual(
+      expect.arrayContaining(['filename', 'paths'])
+    );
   });
 
-  it('would fail if one were missing from the refused list', () => {
-    const withoutPaths = AGENT_BROWSER_FILE_ARGUMENTS.filter((name) => name !== 'paths');
-    expect(unrefusedFileArguments(withoutPaths)).toEqual([
-      'browser_drop > paths',
-      'browser_file_upload > paths',
-    ]);
+  it('keeps every file argument at the top of its tool’s arguments', () => {
+    // A nested one is refused too, but the census must never go green by listing one: a nested
+    // file argument is a shape the refusal was not built for, so it fails here first.
+    expect(
+      fileArguments()
+        .filter(({ name }) => name.includes('.'))
+        .map(({ tool, name }) => `${tool} > ${name}`)
+    ).toEqual([]);
+  });
+
+  it('refuses every argument of an offered tool that names a file', () => {
+    expect(unrefused(AGENT_BROWSER_FILE_ARGUMENT)).toEqual([]);
+  });
+
+  it('would fail if the refusal were narrower', () => {
+    expect(unrefused(/file/i)).toEqual(['browser_drop > paths', 'browser_file_upload > paths']);
   });
 
   it('still holds the withheld tools, so withholding them is not a dead rule', () => {
