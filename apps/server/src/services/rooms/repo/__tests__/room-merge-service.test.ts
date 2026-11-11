@@ -35,7 +35,11 @@ import { tmpdir } from 'node:os';
 import { createTestDb } from '@dorkos/test-utils/db';
 import { rooms, type Db } from '@dorkos/db';
 import type { Room, RoomEntry } from '@dorkos/shared/room-schemas';
-import { ROOM_REPO_CAP_DEFAULTS, type RoomRepoCaps } from '@dorkos/shared/room-repo';
+import {
+  MAX_REPORTED_ROOM_STRAYS,
+  ROOM_REPO_CAP_DEFAULTS,
+  type RoomRepoCaps,
+} from '@dorkos/shared/room-repo';
 import { RoomError } from '../../room-errors.js';
 import { RoomRepoStore } from '../room-repo-store.js';
 import { RoomRepoService } from '../room-repo-service.js';
@@ -748,6 +752,23 @@ describe('RoomMergeService', () => {
 
       expect(status.size.usedBytes).toBeGreaterThan(0);
       expect(status.size.maxRepoBytes).toBe(ROOM_REPO_CAP_DEFAULTS.maxRepoBytes);
+    });
+
+    it('lists at most the shared cap of stray changes, and still counts every one', async () => {
+      // The cap is a promise to the reader: the list is never longer than
+      // MAX_REPORTED_ROOM_STRAYS, and `strayCount` tells it how many there
+      // really are. One over the cap, plus a margin, in the room's own copy.
+      await enableRepo();
+      const strays = MAX_REPORTED_ROOM_STRAYS + 3;
+      for (let i = 0; i < strays; i += 1) {
+        await writeFile(path.join(store.repoPath(ROOM_ID), `stray-${i}.md`), 'x', 'utf-8');
+      }
+
+      const { main } = await merges.status(ROOM_ID, ANA);
+
+      expect(main.dirty).toBe(true);
+      expect(main.strays).toHaveLength(MAX_REPORTED_ROOM_STRAYS);
+      expect(main.strayCount).toBe(strays);
     });
 
     it('never puts an agent’s workspace path in front of the room', async () => {

@@ -31,11 +31,7 @@ import type {
   RoomRepoStatus,
   RoomStrayChange as WireStrayChange,
 } from '@dorkos/shared/room-repo';
-import {
-  MAX_REPORTED_ROOM_STRAYS,
-  RoomMainStatusSchema,
-  RoomRepoStatusSchema,
-} from '@dorkos/shared/room-repo';
+import { RoomMainStatusSchema, RoomRepoStatusSchema } from '@dorkos/shared/room-repo';
 import type { RoomMainRepairResult } from '../room-repo-service.js';
 import type { StrayChange } from '../room-repo-git.js';
 
@@ -90,13 +86,6 @@ describe('the repo status this server computes and the one the port promises', (
     // one optional field today (`renamedFrom`).
     expect(mutual<MutualIncludingOptional<StrayChange, WireStrayChange>>()).toBe(true);
     expect(mutual<MutualIncludingOptional<RoomMainRepairResult, WireRepairResult>>()).toBe(true);
-  });
-
-  it('agree on how many stray changes a status carries', () => {
-    // The cap is the server's decision and the client's expectation at once: a
-    // reader that trusted a longer list would draw rows the server will never
-    // send, and one that trusted a shorter one would hide changes it was given.
-    expect(MAX_REPORTED_ROOM_STRAYS).toBe(50);
   });
 
   it('parses a status the server would really answer', () => {
