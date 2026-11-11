@@ -90,27 +90,49 @@ export function isWithheldBrowserTool(tool: string): boolean {
 /** How deep {@link browserCallNamesFile} looks; anything deeper counts as naming a file. */
 const FILE_ARGUMENT_DEPTH = 32;
 
-/** Whether `value` holds a key matching {@link AGENT_BROWSER_FILE_ARGUMENT} at any depth. */
-function holdsFileArgument(value: unknown, depth: number): boolean {
+/**
+ * A `file:` address, or one shown as source (`view-source:file:` renders the file as text), in
+ * any case. Tested after {@link urlParserView}, so it matches what the browser would load.
+ */
+const FILE_URL = /^(?:view-source:)?file:/i;
+
+/**
+ * A string as the URL parser reads it: tabs and line breaks dropped wherever they are, and
+ * control characters and spaces dropped from the front, so `fi\tle:///x` and `\u0001file:///x`
+ * load as `file:` and must be read that way here too.
+ */
+function urlParserView(value: string): string {
+  // The control characters are the point: the URL parser drops them, so this must too.
+  // eslint-disable-next-line no-control-regex
+  return value.replace(/[\t\n\r]/g, '').replace(/^[\x00-\x20]+/, '');
+}
+
+/**
+ * Whether `value` reaches a file on this computer at any depth: a key matching
+ * {@link AGENT_BROWSER_FILE_ARGUMENT}, or a string that opens as a `file:` address.
+ */
+function reachesFile(value: unknown, depth: number): boolean {
+  if (typeof value === 'string') return FILE_URL.test(urlParserView(value));
   if (!value || typeof value !== 'object') return false;
   if (depth > FILE_ARGUMENT_DEPTH) return true;
-  if (Array.isArray(value)) return value.some((item) => holdsFileArgument(item, depth + 1));
+  if (Array.isArray(value)) return value.some((item) => reachesFile(item, depth + 1));
   return Object.entries(value).some(
-    ([key, child]) => AGENT_BROWSER_FILE_ARGUMENT.test(key) || holdsFileArgument(child, depth + 1)
+    ([key, child]) => AGENT_BROWSER_FILE_ARGUMENT.test(key) || reachesFile(child, depth + 1)
   );
 }
 
 /**
- * Whether a browser tool call names a file: a tool whose bare name starts `browser_`, in any
- * case, with a key matching {@link AGENT_BROWSER_FILE_ARGUMENT} anywhere in its arguments,
- * nested ones and objects in arrays included, whatever its value (`""` and `null` too).
+ * Whether a browser tool call reaches a file on this computer: a tool whose bare name starts
+ * `browser_`, in any case, whose arguments, nested ones and objects in arrays included, hold a key
+ * matching {@link AGENT_BROWSER_FILE_ARGUMENT} whatever its value (`""` and `null` too), or a
+ * string that opens as a `file:` address (`browser_navigate` to one, or a new tab on one).
  *
  * @param tool - The tool's own name, without any server prefix.
  * @param input - The call's arguments.
  */
 export function browserCallNamesFile(tool: string, input: unknown): boolean {
   if (!/^browser_/i.test(tool)) return false;
-  return holdsFileArgument(input, 0);
+  return reachesFile(input, 0);
 }
 
 /** What an empty saved session looks like: valid for Playwright, signed in to nothing. */

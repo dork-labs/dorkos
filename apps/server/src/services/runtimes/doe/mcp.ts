@@ -21,9 +21,8 @@ import {
 import { resolveDorkosMcpInjection } from '../shared/dorkos-mcp-injection.js';
 import { alwaysLoadedToolsFor, searchHintFrom } from '../shared/tools/tool-exposure-policy.js';
 
-/** What the agent is told when a browser call names a file. */
-const BROWSER_FILE_REFUSAL =
-  "Agents can't save or upload files with the browser. Leave out filename and paths.";
+/** What the agent is told when a browser call reaches a file on this computer. */
+const BROWSER_FILE_REFUSAL = "Agents can't reach files on this computer through the browser.";
 /** Inputs bound to one authenticated runtime turn; configured servers remain foreign. */
 export interface DoeMcpOptions {
   agentPath?: string;
@@ -115,7 +114,7 @@ export async function assembleDoeMcp(options: DoeMcpOptions): Promise<DoeMcpAsse
           ...tool,
           name,
           execute: async (args, context) => {
-            // Nor a browser call that reads or writes a file on this computer.
+            // Nor a browser call that reaches a file on this computer.
             if (!host && browserCallNamesFile(bare, args)) throw new Error(BROWSER_FILE_REFUSAL);
             return tool.execute(args, {
               ...context,

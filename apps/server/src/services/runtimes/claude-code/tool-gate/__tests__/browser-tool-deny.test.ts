@@ -161,6 +161,44 @@ describe('browserToolHookMatcher', () => {
     }
   });
 
+  // As the URL parser reads it: tabs and line breaks dropped anywhere, control characters and
+  // spaces dropped from the front, and `view-source:` showing the file as text.
+  it.each([
+    ['browser_navigate', { url: 'file:///Users/me/.dork/browser/storage-state.json' }],
+    ['browser_navigate', { url: 'FILE://x' }],
+    ['browser_navigate', { url: ' file:x' }],
+    ['browser_navigate', { url: 'fi\tle:///x' }],
+    ['browser_navigate', { url: 'f\ni\rle:///x' }],
+    ['browser_navigate', { url: '\u0001file:///x' }],
+    ['browser_navigate', { url: 'VIEW-SOURCE:file:///x' }],
+    ['browser_tabs', { action: 'new', url: 'file:///x' }],
+    [
+      'browser_fill_form',
+      {
+        fields: [
+          { ref: 'e1', value: 'a' },
+          { ref: 'e2', value: 'file:///x' },
+        ],
+      },
+    ],
+  ])('refuses %s opening a file: address (%j)', async (tool, input) => {
+    expect(await hookAnswer(`mcp__browser__${tool}`, input)).toEqual(refused(BROWSER_FILE_MESSAGE));
+  });
+
+  it('lets a web address and a mid-string "file:" through', async () => {
+    expect(
+      await hookAnswer('mcp__browser__browser_navigate', { url: 'https://example.com' })
+    ).toEqual({});
+    expect(
+      await hookAnswer('mcp__browser__browser_type', { ref: 'e1', text: 'see the file: notes.txt' })
+    ).toEqual({});
+    expect(
+      await hookAnswer('mcp__browser__browser_navigate', {
+        url: 'https://example.com/?u=file:///x',
+      })
+    ).toEqual({});
+  });
+
   it('lets a plain call with nested arguments run', async () => {
     expect(
       await hookAnswer('mcp__browser__browser_fill_form', {

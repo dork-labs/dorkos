@@ -29,9 +29,9 @@ import {
 export const WITHHELD_BROWSER_TOOL_MESSAGE =
   "Agents can't use this browser tool: it reaches past the page.";
 
-/** What the agent is told when a browser call names a file. */
+/** What the agent is told when a browser call reaches a file on this computer. */
 export const BROWSER_FILE_MESSAGE =
-  "Agents can't save or upload files with the browser. Leave out filename and paths.";
+  "Agents can't reach files on this computer through the browser.";
 
 /**
  * A server's name the way Claude Code spells it inside a tool name: anything but letters, digits,

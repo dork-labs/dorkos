@@ -139,24 +139,39 @@ describe('authenticated Doe MCP assembly', () => {
     const context = { signal: new AbortController().signal, emit: () => {} } as never;
     await expect(
       tool('browser_take_screenshot').execute({ filename: 'shot.png' }, context)
-    ).rejects.toThrow("can't save or upload files");
+    ).rejects.toThrow("can't reach files");
     await expect(
       tool('Browser_File_Upload').execute({ paths: ['/home/me/.dork/x'] }, context)
-    ).rejects.toThrow("can't save or upload files");
+    ).rejects.toThrow("can't reach files");
     for (const args of [
       { filename: '' },
       { filename: null },
       { Paths: [] },
       { options: { outputDir: '/tmp' } },
       { fields: [{ ref: 'e1' }, { path: '/x' }] },
+      { url: 'file:///x' },
+      { url: 'FILE://x' },
+      { url: ' file:x' },
+      { url: 'fi\tle:///x' },
+      { url: '\u0001file:///x' },
+      { url: 'VIEW-SOURCE:file:///x' },
+      { fields: [{ ref: 'e1', value: 'file:///x' }] },
     ]) {
       await expect(tool('browser_take_screenshot').execute(args as never, context)).rejects.toThrow(
-        "can't save or upload files"
+        "can't reach files"
       );
     }
-    await expect(
-      tool('browser_take_screenshot').execute({ fields: [{ ref: 'e1', value: 'a' }] }, context)
-    ).resolves.toEqual({ content: [{ type: 'text', text: 'managed:pw' }] });
+    for (const args of [
+      { fields: [{ ref: 'e1', value: 'a' }] },
+      { url: 'https://example.com' },
+      { text: 'see the file: notes.txt' },
+    ]) {
+      await expect(
+        tool('browser_take_screenshot').execute(args as never, context)
+      ).resolves.toEqual({
+        content: [{ type: 'text', text: 'managed:pw' }],
+      });
+    }
     await expect(tool('browser_take_screenshot').execute({}, context)).resolves.toEqual({
       content: [{ type: 'text', text: 'managed:pw' }],
     });
