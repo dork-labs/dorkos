@@ -62,6 +62,7 @@ function helper(name: string, body: string, doc = 'documented'): string {
   ].join('\n');
 }
 
+// Fixture histories have their own removals; the repository list belongs only to the real-tree guard.
 const SHIPPED = entry('0.57.0', 'backfillApprovals(store);', 'shipped in v0.57.0');
 /**
  * The oldest key, carried by every fixture whose working tree is meant to be
@@ -108,6 +109,7 @@ describe('extractMigrationBodies', () => {
 describe('checkMigrationSafety', () => {
   it('passes a new key above the latest release', () => {
     const res = checkMigrationSafety({
+      removedShippedKeys: {},
       workingSource: sourceWith([
         BASE,
         SHIPPED,
@@ -127,6 +129,7 @@ describe('checkMigrationSafety', () => {
     // is what a change whose SCHEMA also ships in 0.59.0 must do rather than
     // opening 0.60.0 and leaving the two a release apart.
     const res = checkMigrationSafety({
+      removedShippedKeys: {},
       workingSource: sourceWith([
         BASE,
         SHIPPED,
@@ -145,6 +148,7 @@ describe('checkMigrationSafety', () => {
 
   it('passes when every shipped key is byte-identical to the release', () => {
     const res = checkMigrationSafety({
+      removedShippedKeys: {},
       workingSource: RELEASED_SOURCE,
       tags: TAGS,
       readAtTag,
@@ -165,6 +169,7 @@ describe('checkMigrationSafety', () => {
     ].join('\n');
 
     const res = checkMigrationSafety({
+      removedShippedKeys: {},
       workingSource: sourceWith([entry('1.0.0', "store.set('version', 1);"), drifted]),
       tags: TAGS,
       readAtTag,
@@ -177,6 +182,7 @@ describe('checkMigrationSafety', () => {
   // The original DOR-339 case: a key authored at a version that already shipped.
   it('fails a new key that is not above the latest release', () => {
     const res = checkMigrationSafety({
+      removedShippedKeys: {},
       workingSource: sourceWith([BASE, SHIPPED, entry('0.58.0', 'backfillNewThing(store);')]),
       tags: TAGS,
       readAtTag,
@@ -190,6 +196,7 @@ describe('checkMigrationSafety', () => {
     // 0.57.0 is at or below the latest tag but absent from v0.58.0's file, so it
     // was authored after 0.57.0 shipped: nobody on 0.57.0 or later runs it.
     const res = checkMigrationSafety({
+      removedShippedKeys: {},
       workingSource: sourceWith([BASE, SHIPPED]),
       tags: TAGS,
       readAtTag: (v) => (v === '0.58.0' ? sourceWith([entry('1.0.0', 'noop();')]) : null),
@@ -255,6 +262,8 @@ describe('checkMigrationSafety', () => {
       '0.50.0',
       '0.52.0',
       '0.55.0',
+      '0.57.0',
+      '0.59.0',
       '0.71.0',
       '0.72.0',
     ]);
@@ -265,6 +274,7 @@ describe('checkMigrationSafety', () => {
 
   it('fails loudly, naming the cause, when the checkout has no tags', () => {
     const res = checkMigrationSafety({
+      removedShippedKeys: {},
       workingSource: RELEASED_SOURCE,
       tags: [],
       readAtTag,
@@ -281,6 +291,7 @@ describe('checkMigrationSafety', () => {
     // and fix a tag. Raising out of the parser here would report the author's own
     // file as broken for a restructure that happened releases ago.
     const res = checkMigrationSafety({
+      removedShippedKeys: {},
       workingSource: RELEASED_SOURCE,
       tags: TAGS,
       readAtTag: () => 'export const MIGRATIONS_UNDER_AN_OLDER_NAME = {\n} as const;',
@@ -294,6 +305,7 @@ describe('checkMigrationSafety', () => {
   it('still raises when the WORKING tree is the unparseable one', () => {
     expect(() =>
       checkMigrationSafety({
+        removedShippedKeys: {},
         workingSource: 'export const RENAMED_ON_THIS_BRANCH = {\n} as const;',
         tags: TAGS,
         readAtTag,
@@ -303,6 +315,7 @@ describe('checkMigrationSafety', () => {
 
   it('fails loudly when the newest tag exists but its content cannot be read', () => {
     const res = checkMigrationSafety({
+      removedShippedKeys: {},
       workingSource: RELEASED_SOURCE,
       tags: TAGS,
       readAtTag: () => null,
@@ -316,6 +329,7 @@ describe('checkMigrationSafety', () => {
     // A `v0.59.0-rc.1` tag must not make a plain `0.59.0` key look released: the
     // release everyone is upgrading from is still 0.58.0.
     const res = checkMigrationSafety({
+      removedShippedKeys: {},
       workingSource: sourceWith([BASE, SHIPPED, entry('0.59.0', 'backfillNewThing(store);')]),
       tags: [...TAGS, '0.59.0-rc.1', '0.60.0-beta.2'],
       readAtTag,
@@ -326,6 +340,7 @@ describe('checkMigrationSafety', () => {
 
   it('rejects a migration key that is not a version at all', () => {
     const res = checkMigrationSafety({
+      removedShippedKeys: {},
       workingSource: sourceWith([BASE, SHIPPED, entry('next', 'backfillNewThing(store);')]),
       tags: TAGS,
       readAtTag,
@@ -355,7 +370,12 @@ describe('checkMigrationSafety, for the code a shipped key calls', () => {
 
   /** Run the rule over a working tree, against the composite release above. */
   const check = (workingSource: string) =>
-    checkMigrationSafety({ workingSource, tags: TAGS, readAtTag: readComposite });
+    checkMigrationSafety({
+      removedShippedKeys: {},
+      workingSource,
+      tags: TAGS,
+      readAtTag: readComposite,
+    });
 
   it('fails when a helper the shipped key calls has been tampered with', () => {
     const tampered = helper(
@@ -394,6 +414,7 @@ describe('checkMigrationSafety, for the code a shipped key calls', () => {
 
     const releasedNested = sourceWith([COMPOSITE], [nested, seedBefore, LATER]);
     const res = checkMigrationSafety({
+      removedShippedKeys: {},
       workingSource: sourceWith([COMPOSITE], [nested, seedAfter, LATER]),
       tags: TAGS,
       readAtTag: (v) => (v === '0.58.0' ? releasedNested : null),
@@ -409,6 +430,7 @@ describe('checkMigrationSafety, for the code a shipped key calls', () => {
     // difference is the only thing that can report it.
     const releasedWithoutIt = sourceWith([COMPOSITE], [LATER]);
     const res = checkMigrationSafety({
+      removedShippedKeys: {},
       workingSource: sourceWith([COMPOSITE], [ACKNOWLEDGEMENT, LATER]),
       tags: TAGS,
       readAtTag: (v) => (v === '0.58.0' ? releasedWithoutIt : null),
