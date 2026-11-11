@@ -54,7 +54,7 @@ Identity → The interaction grammar, Anti-Patterns), `.claude/rules/components.
   (`specs/chat-touch-chips/design-decisions.md`, the message design record cited inline in
   `index.css`). Their overshoot curves are decided, not accidental.
 - `ScanLine` — its expressiveness is explicitly signed off in
-  `specs/background-agent-indicator/01-ideation.md:46`.
+  [historical spec](https://github.com/dork-labs/dorkos/blob/78baefc5ac7aeac33c67f5e697fbe2f36179a960/specs/background-agent-indicator/01-ideation.md#L46).
 - `HoverBorderGradient` — sanctioned by name in `design-system.md` as the one branded moment.
 - `NavigationLayoutContent`'s instant panel swap — a documented decision with a real a11y reason
   (`navigation-layout.tsx:434-449`). I propose only an enter-only fade that does not reintroduce

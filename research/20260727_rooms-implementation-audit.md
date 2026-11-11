@@ -299,7 +299,7 @@ top of rooms will likely want to change this:
   (`apps/client/src/layers/features/chat/ui/message/AssistantMessageContent.tsx`,
   `apps/client/src/layers/features/settings/ui/tabs/PreferencesTab.tsx`) are **session-chat**
   concepts, unrelated to rooms. The `auto-hide-tool-calls` spec
-  (`specs/auto-hide-tool-calls/`, manifest status `"implemented"`) is about that
+  ([historical spec](https://github.com/dork-labs/dorkos/tree/78baefc5ac7aeac33c67f5e697fbe2f36179a960/specs/auto-hide-tool-calls), manifest status `"implemented"`) is about that
   session-chat surface, confirmed by the code above being entirely under
   `layers/features/chat` and `layers/entities/session`, never touched by any
   `room-view`/`entities/room` file.
