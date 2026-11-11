@@ -79,7 +79,7 @@ function ungroupedSectionId(id: SidebarSectionModel['id']): UngroupedSectionId |
  *
  * @param id - The section's id.
  */
-export function sectionContainer(id: SidebarSectionModel['id']): SidebarContainer {
+function sectionContainer(id: SidebarSectionModel['id']): SidebarContainer {
   if (id.startsWith('group:')) return { kind: 'group', groupId: id.slice('group:'.length) };
   if (id === 'top') return { kind: 'computed', section: id };
   // Reached only after hand-made sections and the computed ones have been

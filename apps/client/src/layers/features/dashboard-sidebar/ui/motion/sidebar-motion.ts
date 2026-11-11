@@ -64,10 +64,10 @@ export const DRAG_LIFT_SCALE = 1.02;
 export const DRAG_LIFT_SECONDS = 0.1;
 
 /** Where a row starts when it arrives after boot. */
-export const ARRIVE_FROM = { opacity: 0, y: -ARRIVE_RISE_PX } as const;
+const ARRIVE_FROM = { opacity: 0, y: -ARRIVE_RISE_PX } as const;
 
 /** Where an arriving row lands — and where a row that was already there sits. */
-export const ARRIVE_TO = { opacity: 1, y: 0 } as const;
+const ARRIVE_TO = { opacity: 1, y: 0 } as const;
 
 /**
  * How a row leaves.
@@ -76,7 +76,7 @@ export const ARRIVE_TO = { opacity: 1, y: 0 } as const;
  * operator can aim at, and sliding it would move every row under it twice — once
  * for the exit and again for the `layout` collapse.
  */
-export const LEAVE_TO = { opacity: 0 } as const;
+const LEAVE_TO = { opacity: 0 } as const;
 
 /**
  * How a section's body opens and closes for this reader.
