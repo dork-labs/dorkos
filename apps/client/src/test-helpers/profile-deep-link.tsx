@@ -43,6 +43,8 @@ export interface ProfileDeepLinkHarness {
   Wrapper: ({ children }: { children: ReactNode }) => ReactNode;
   /** Whose profile the URL is holding open, or `null` while it holds none. */
   openProfileId: () => string | null;
+  /** Which Settings tab the URL is holding open, or `null` while Settings is shut. */
+  openSettingsTab: () => string | null;
   /** Settle the router's initial load before asserting on search params. */
   ready: () => Promise<void>;
 }
@@ -76,6 +78,7 @@ export function buildProfileDeepLinkHarness(initialUrl = '/'): ProfileDeepLinkHa
       </SlotContext.Provider>
     ),
     openProfileId: () => (router.state.location.search as { profile?: string }).profile ?? null,
+    openSettingsTab: () => (router.state.location.search as { settings?: string }).settings ?? null,
     ready: async () => {
       await waitFor(() => {
         if (router.state.status !== 'idle') throw new Error('router still loading');
