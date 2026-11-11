@@ -144,8 +144,6 @@ export { DEFAULT_AGENTS_DIRECTORY } from './config-schema/tooling.js';
 export {
   ProjectAccountsRuleSchema,
   ClaudeCodeAccountSchema,
-  healClaudeAccountRename,
-  settleLegacyAccountAlias,
   classifyClaudeAccountRows,
   readProjectRootList,
   readClaudeAccountSettings,

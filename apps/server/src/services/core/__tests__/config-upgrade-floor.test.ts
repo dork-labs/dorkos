@@ -160,6 +160,20 @@ describe('config upgrade floor through a real manager', () => {
   });
 
   it.each(['0.115.0', '0.135.5', '0.136.0'])(
+    'refuses the retired account alias in a supported %s file',
+    (version) => {
+      const { dir, file } = seed(version);
+      const stored = JSON.parse(fs.readFileSync(file, 'utf8'));
+      stored.runtimes.claudeCode.activeAccount = '/fixture/retired';
+      fs.writeFileSync(file, JSON.stringify(stored));
+      const before = fs.readFileSync(file);
+      expect(() => new ConfigManager(dir)).toThrow(ConfigUpgradeRequiredError);
+      expect(fs.readFileSync(file)).toEqual(before);
+      expect(fs.readdirSync(dir)).toEqual(['config.json']);
+    }
+  );
+
+  it.each(['0.115.0', '0.135.5', '0.136.0'])(
     'opens supported %s without losing choices',
     (version) => {
       const { dir, file } = seed(version);

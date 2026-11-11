@@ -105,7 +105,7 @@ describe('resolveRuntimeAccounts (contract §1.1a rev 6d)', () => {
     expect(accounts.map((a) => a.id)).toEqual(['default-2', 'default']);
   });
 
-  it('defaultAccount (with ~) and the legacy activeAccount name the default folder', () => {
+  it('uses defaultAccount with ~ and ignores the retired account alias', () => {
     const set = resolveRuntimeAccounts('claude-code', {
       config: config([], { defaultAccount: '~/.claude2' }),
       home: HOME,
@@ -117,7 +117,7 @@ describe('resolveRuntimeAccounts (contract §1.1a rev 6d)', () => {
       home: HOME,
       realpath,
     });
-    expect(legacy.accounts.at(-1)?.path).toBe('/legacy');
+    expect(legacy.accounts.at(-1)?.path).toBe('/home/op/.claude');
   });
 
   it('codex defaults to ~/.codex; opencode keeps a folder-less default only while unregistered', () => {

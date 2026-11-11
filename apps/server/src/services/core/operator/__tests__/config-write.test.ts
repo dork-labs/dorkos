@@ -234,23 +234,16 @@ describe('applyGuardedConfigWrite', () => {
       expect(storedDefault()).toBeNull();
     });
 
-    it('expands a pre-0.65.0 activeAccount the heal carries across on the next runtimes write', () => {
-      configManager.set('runtimes', {
-        ...configManager.get('runtimes'),
-        claudeCode: {
-          ...configManager.get('runtimes').claudeCode,
-          defaultAccount: null,
-          activeAccount: '~/.claude2',
-        } as never,
-      });
+    it('refuses the retired account alias in a write and keeps current settings', () => {
+      const before = configManager.getAll();
       const result = applyGuardedConfigWrite({
-        patch: { runtimes: { claudeCode: { persistentSession: true } } },
+        patch: { runtimes: { claudeCode: { activeAccount: '~/.claude2' } } },
         authority: LOCAL_OPERATOR_AUTHORITY,
         source: 'dorkos config set',
         writer: { kind: 'unattributed' },
       });
-      expect(result.ok).toBe(true);
-      expect(storedDefault()).toBe(path.join(os.homedir(), '.claude2'));
+      expect(result.ok).toBe(false);
+      expect(configManager.getAll()).toEqual(before);
     });
   });
 

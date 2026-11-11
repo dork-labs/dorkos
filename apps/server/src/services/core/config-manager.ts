@@ -123,7 +123,7 @@ import { readStoredConfigForSalvage } from './config/salvage-read.js';
 import { loadConfigStore } from './config/load-store.js';
 import { classifyConfigLoadFailure } from './config/load-failure.js';
 import { assertSupportedConfigUpgrade } from './config/upgrade-floor.js';
-import { tolerateLegacyClaudeAccountEncoding } from './config/retired-key-tolerance.js';
+import { tolerateClaudeAccountEdits } from './config/account-edit-tolerance.js';
 import { preserveUnknownKeys, schemaNodeAt, tolerateUnknownKeys } from './config/version-skew.js';
 import {
   describeWidenedLeaf,
@@ -294,7 +294,7 @@ export function retireAgentContextSettings(store: {
 
 const jsonSchemaFull = z.toJSONSchema(UserConfigSchema, {
   target: 'jsonSchema2019-09',
-  override: tolerateLegacyClaudeAccountEncoding,
+  override: tolerateClaudeAccountEdits,
 }) as { properties?: Record<string, unknown> };
 
 // A key this build does not declare is another build's key, not damage. Zod

@@ -1361,24 +1361,15 @@ describe('CONFIG_MIGRATIONS append-only pins (DOR-1222 regression guard)', () =>
   });
 });
 
-describe('a Claude account registry written before ids, through the real conf load path', () => {
-  // The expensive failure lives at the conf/Ajv seam, and the mock-store
-  // migration tests above cannot see it: `accounts[].id` is REQUIRED and did not
-  // exist before 0.65.0, so EVERY config file ever written is schema-invalid the
-  // moment the `'0.65.0'` migration is skipped — and ConfigManager's recovery
-  // path then backs up and replaces the WHOLE file, not just the accounts.
-  //
-  // `new ConfigManager(dir)` resolves SERVER_VERSION to `0.0.0` (the dev
-  // /package.json fallback), so NO migration runs. That is what every `pnpm dev`
-  // does, and what a release cut below 0.65.0 would do to every user on it.
+describe('the current shared account-row contract through Conf', () => {
   const dirs: string[] = [];
 
   afterEach(() => {
     for (const dir of dirs.splice(0)) fs.rmSync(dir, { recursive: true, force: true });
   });
 
-  /** A config file holding a pre-0.65.0 Claude account registry. */
-  function seedPreLadder(): { dir: string; configPath: string } {
+  /** A supported file with shared account rows that omit ids. */
+  function seedSharedRegistry(): { dir: string; configPath: string } {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dorkos-pre-account-ladder-'));
     dirs.push(dir);
     const configPath = path.join(dir, 'config.json');
@@ -1386,36 +1377,32 @@ describe('a Claude account registry written before ids, through the real conf lo
       configPath,
       JSON.stringify({
         version: 1,
-        // Unrelated sections carrying real choices, so a silent whole-file reset
-        // is visible rather than coincidentally identical to the defaults.
         mesh: { ...USER_CONFIG_DEFAULTS.mesh, scanRoots: ['/projects/alpha'] },
         telemetry: { userHasDecided: true, install: false, heartbeat: false },
         runtimes: {
           ...USER_CONFIG_DEFAULTS.runtimes,
           claudeCode: {
-            activeAccount: '/Users/me/.claude2',
+            defaultAccount: '/Users/me/.claude2',
             accounts: [
               { path: '/Users/me/.claude2', label: 'Acme Corp' },
               { path: '/Users/me/.claude3', label: null },
             ],
           },
         },
-        __internal__: { migrations: { version: '0.64.0' } },
+        __internal__: { migrations: { version: '0.115.0' } },
       })
     );
     return { dir, configPath };
   }
 
   it('is not condemned — no backup is written and the file is not replaced', () => {
-    const { dir } = seedPreLadder();
+    const { dir } = seedSharedRegistry();
     new ConfigManager(dir);
     expect(wasBackedUp(dir)).toBe(false);
   });
 
   it('keeps every unrelated section, including a telemetry opt-out and the scan roots', () => {
-    // The real cost of condemning the file, stated as an assertion: this is what
-    // a person loses when a required field lands without a schema tolerance.
-    const { dir } = seedPreLadder();
+    const { dir } = seedSharedRegistry();
     const manager = new ConfigManager(dir);
     expect(manager.get('mesh').scanRoots).toEqual(['/projects/alpha']);
     expect(manager.get('telemetry').userHasDecided).toBe(true);
@@ -1423,10 +1410,6 @@ describe('a Claude account registry written before ids, through the real conf lo
   });
 
   it('reads an id of the WRONG TYPE instead of condemning the file (DOR-2379)', () => {
-    // The registry is shared with flow and hand-editable, and its read rules
-    // skip or re-mint a bad row rather than refuse the file (contract
-    // `flow-cli-core` §1.1a). A number where a slug belongs is re-minted on
-    // read; resetting every setting over one account row is the worse answer.
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dorkos-bad-account-id-'));
     dirs.push(dir);
     fs.writeFileSync(
@@ -1440,7 +1423,7 @@ describe('a Claude account registry written before ids, through the real conf lo
             accounts: [{ id: 42, path: '/Users/me/.claude2', label: null }],
           },
         },
-        __internal__: { migrations: { version: '0.64.0' } },
+        __internal__: { migrations: { version: '0.115.0' } },
       })
     );
     const manager = new ConfigManager(dir);
@@ -1450,13 +1433,8 @@ describe('a Claude account registry written before ids, through the real conf lo
     ).toEqual(['claude2']);
   });
 
-  it('still accepts a settings write while the migration has not run', () => {
-    // `applyConfigPatch` re-parses the whole MERGED config with Zod, and Zod is
-    // the half that HEALS rather than tolerates. Without the backfill inside
-    // `ClaudeCodeAccountsSchema` that parse fails on the missing ids and EVERY
-    // settings write in the cockpit is refused — a theme change included —
-    // until the migration runs. Ajv tolerance alone does not cover this.
-    const { dir, configPath } = seedPreLadder();
+  it('accepts a settings write with shared rows that omit ids', () => {
+    const { dir, configPath } = seedSharedRegistry();
     initConfigManager(dir);
 
     expect(applyConfigPatch({ ui: { theme: 'light' } }).ok).toBe(true);
@@ -1465,9 +1443,6 @@ describe('a Claude account registry written before ids, through the real conf lo
       ui: { theme: string };
       runtimes: { claudeCode: { accounts: { path: string }[] } };
     };
-    // The write landed, and the registry it did not name is untouched — conf
-    // persists the sections a patch writes, so the ids are healed on every parse
-    // rather than rewritten here. The migration is what settles them on disk.
     expect(onDisk.ui.theme).toBe('light');
     expect(onDisk.runtimes.claudeCode.accounts.map((a) => a.path)).toEqual([
       '/Users/me/.claude2',
@@ -1475,17 +1450,8 @@ describe('a Claude account registry written before ids, through the real conf lo
     ]);
   });
 
-  it("keeps the stored registry readable as-is — the healing is the READER's job", () => {
-    // Deliberately NOT a claim about what a launch sees. This file's subject is
-    // the conf load path: the file is accepted, and what conf hands back is what
-    // is on disk, ids and all still absent until the migration writes them.
-    //
-    // Parsing it here with Zod would prove only that Zod heals, which is not the
-    // question a LAUNCH asks — nothing on the launch path consults Zod. That
-    // claim belongs to the seam the ladder actually reads, and it is made
-    // against `describeClaudeCodeAccounts` and `resolveLaunchAccountRoot` in
-    // `runtimes/claude-code/__tests__/pre-ladder-config.test.ts`.
-    const { dir } = seedPreLadder();
+  it('keeps stored rows intact while readers mint missing ids', () => {
+    const { dir } = seedSharedRegistry();
     const stored = new ConfigManager(dir).getAll();
     expect(stored.runtimes.claudeCode.accounts.map((a) => a.path)).toEqual([
       '/Users/me/.claude2',

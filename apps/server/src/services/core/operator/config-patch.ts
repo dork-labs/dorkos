@@ -15,7 +15,6 @@
 import {
   UserConfigSchema,
   SENSITIVE_CONFIG_KEYS,
-  settleLegacyAccountAlias,
   type UserConfig,
 } from '@dorkos/shared/config-schema';
 import { logger } from '../../../lib/logger.js';
@@ -455,6 +454,14 @@ export function applyConfigPatch(patch: unknown): ConfigPatchResult {
   const taken = takeAccountsSeen(patch as Record<string, unknown>);
   if (!taken.ok) return { ok: false, error: 'Validation failed', details: taken.details };
   const patchObj = taken.patch;
+  const accountPatch = (patchObj.runtimes as { claudeCode?: unknown } | undefined)?.claudeCode;
+  if (isPlainObject(accountPatch) && 'activeAccount' in accountPatch) {
+    return {
+      ok: false,
+      error: 'Validation failed',
+      details: ['runtimes.claudeCode.activeAccount: Unrecognized key'],
+    };
+  }
   const browserRefusal = browserSettingRefusal('browser', patchObj.browser);
   if (browserRefusal) return { ok: false, error: browserRefusal };
   const hubRefusal = hubSettingRefusal('auth', patchObj.auth);
@@ -466,15 +473,6 @@ export function applyConfigPatch(patch: unknown): ConfigPatchResult {
 
   const current = configManager.getAll();
   const merged = deepMerge(current as unknown as Record<string, unknown>, patchObj);
-  // A patch that NAMES the Claude default account settles the pre-0.65.0 spelling
-  // of it, before the schema's read-time heal can speak for the absent one.
-  // Without this, clearing the account to Default sends `defaultAccount: null` —
-  // indistinguishable, to a heal that only sees the stored block, from a key
-  // nobody has set — and the stored `activeAccount` is resurrected and WRITTEN
-  // BACK, turning "go back to inheriting" into "pin to the old account, for
-  // good". See `settleLegacyAccountAlias`.
-  settleLegacyAccountAlias(merged, patchObj);
-
   // The registry: validate only the rows a reader lists (merged with the patch
   // when it names them), and carry the rest across untouched.
   const patchedClaude = (patchObj.runtimes as { claudeCode?: unknown } | undefined)?.claudeCode;
@@ -527,8 +525,6 @@ export function applyConfigPatch(patch: unknown): ConfigPatchResult {
   // shared with the client, which has no home folder to expand against), and a
   // `~/.claude2` from `dorkos config set` or the `config_patch` tool would
   // otherwise reach `CLAUDE_CONFIG_DIR` literally, where no shell expands it.
-  // Normalized after the parse, not before, so a legacy `activeAccount` the
-  // schema's heal carries across is expanded too. Accepted, never refused.
   const claudeCode = validated.runtimes?.claudeCode;
   if (claudeCode && typeof claudeCode.defaultAccount === 'string') {
     claudeCode.defaultAccount = expandClaudeAccountHome(claudeCode.defaultAccount);

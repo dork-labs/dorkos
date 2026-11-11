@@ -6,8 +6,10 @@ import { readStoredConfigForSalvage } from './salvage-read.js';
 /** Oldest release from which a current build can upgrade directly. */
 export const MINIMUM_CONFIG_UPGRADE_VERSION = '0.115.0';
 
-/** Sidebar encodings retired before every supported release. Refuse, never convert. */
-function hasRetiredSidebarEncoding(value: object): boolean {
+/** Encodings retired before every supported release. Refuse, never convert. */
+function hasRetiredConfigEncoding(value: object): boolean {
+  const claudeCode = (value as { runtimes?: { claudeCode?: unknown } }).runtimes?.claudeCode;
+  if (claudeCode && typeof claudeCode === 'object' && 'activeAccount' in claudeCode) return true;
   const sidebar = (value as { ui?: { sidebar?: unknown } }).ui?.sidebar;
   if (!sidebar || typeof sidebar !== 'object' || Array.isArray(sidebar)) return false;
   const stored = sidebar as Record<string, unknown>;
@@ -60,13 +62,13 @@ export class ConfigUpgradeRequiredError extends ConfigBootError {
  *
  * The intermediate release itself must still accept earlier configs. Raw dev
  * trees use 0.0.0 rather than a release version and run no release migrations.
- * Raw dev still refuses retired sidebar encodings: removing their converters
- * must not silently empty membership lists. Other raw-dev files have no release
+ * Raw dev still refuses retired sidebar and account encodings: removing converters
+ * must not empty memberships or change the billing account. Other raw-dev files have no release
  * age that this check can establish.
  * Unstamped readable objects need the intermediate release too; their age
  * cannot safely be inferred from which optional fields they happen to carry.
  * Invalid JSON retains corruption recovery. Malformed markers do too unless
- * the file holds a retired sidebar encoding.
+ * the file holds a retired encoding.
  *
  * @param configPath - Existing config file to inspect, without changing it.
  * @param projectVersion - The version Conf will use for migration selection.
@@ -83,7 +85,7 @@ export function assertSupportedConfigUpgrade(
   if (!stored.read) throw new ConfigUnreadableError(configPath, stored.error);
   const value = stored.value;
   if (value === null || typeof value !== 'object' || Array.isArray(value)) return;
-  if (hasRetiredSidebarEncoding(value)) throw new ConfigUpgradeRequiredError(configPath);
+  if (hasRetiredConfigEncoding(value)) throw new ConfigUpgradeRequiredError(configPath);
   if (!releasedUpgrade) return;
   const internal = (value as { __internal__?: { migrations?: { version?: unknown } } })
     .__internal__;

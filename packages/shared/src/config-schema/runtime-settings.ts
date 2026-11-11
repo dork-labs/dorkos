@@ -15,7 +15,6 @@ import {
   ClaudeCodeAccountsSchema,
   TolerantProjectAccountsSchema,
   TolerantProjectRootListSchema,
-  healClaudeAccountRename,
 } from './claude-accounts.js';
 
 /**
@@ -119,13 +118,8 @@ export const DefaultAccountColorSchema = z
 /**
  * What a NEW Claude Code session starts with, and which account it bills.
  *
- * Named rather than left inline in {@link UserConfigSchema} so the JSON-schema
- * override in `config-manager.ts` can key on this node's identity, exactly as it
- * does for {@link ClaudeCodeAccountSchema}. That override has to DECLARE the
- * retired `activeAccount` spelling on this object — an undeclared key is one
- * `preserveUnknownKeys` carries forward forever, which would resurrect a billing
- * choice the operator had just cleared — and a node it cannot name is a node it
- * cannot widen.
+ * Named so the config store can tolerate hand-edited account colors and
+ * project rules without condemning unrelated settings.
  */
 export const ClaudeCodeSettingsSchema = z.object({
   /**
@@ -353,13 +347,7 @@ export const RuntimesConfigSchema = z
      * not queued. Read at each launch, so a change applies to the next one.
      */
     maxAgentChats: z.number().int().min(1).max(64).default(8),
-    // The rename heal runs BEFORE this object is parsed, so a config still
-    // spelling the default `activeAccount` parses with the operator's choice
-    // in the new key. What settles the FILE is a write that names `runtimes`,
-    // and only because `config-manager.ts` DECLARES the retired key — see
-    // {@link healClaudeAccountRename} for why declaring it is the mechanism
-    // and dropping it from the parse output is not.
-    claudeCode: z.preprocess(healClaudeAccountRename, ClaudeCodeSettingsSchema).default(() => ({
+    claudeCode: ClaudeCodeSettingsSchema.default(() => ({
       defaultAccount: null,
       accounts: [],
       defaultAccountColor: null,

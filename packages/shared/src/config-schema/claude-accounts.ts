@@ -1,5 +1,5 @@
 /**
- * Claude Code account registry: project roots, account rows, the id and rename heals, and the tolerant read.
+ * Claude Code account registry: project roots, account rows, shared id rules and tolerant reads.
  *
  * Split out of `config-schema.ts`, which composes `UserConfigSchema` and
  * re-exports every public name from here. Plain Zod, no OpenAPI.
@@ -150,33 +150,14 @@ export const ClaudeCodeAccountSchema = z.object({
 /** One known Claude Code account. See {@link ClaudeCodeAccountSchema}. */
 export type ClaudeCodeAccount = z.infer<typeof ClaudeCodeAccountSchema>;
 /**
- * The registered Claude accounts, healing a registry written before ids existed.
+ * Mint missing ids under the current shared Flow account-row contract (§1.1a).
  *
- * ## Why the heal is here rather than only in the migration
+ * Rows may be written by Flow or by hand. Reserve every existing id first,
+ * including later rows, then use the same minting rule in parsing and reading.
+ * This is current registry behavior, not an old-config conversion.
  *
- * `id` is REQUIRED, and it did not exist before 0.65.0 — so every config file
- * on every machine is missing it until the `'0.65.0'` migration runs. That
- * migration is skipped more often than it sounds: `conf` runs a key only when
- * `key > storedVersion && key <= projectVersion`, so a dev tree (`SERVER_VERSION`
- * resolves to `0.0.0`) runs NO migrations at all, and cutting a release below
- * `0.65.0` would skip it for every user on it.
- *
- * A missing REQUIRED field is not the same hazard as a leftover key, and this is
- * the distinction that makes this function necessary. `tolerateUnknownKeys`
- * (`config/version-skew.ts`) reopens objects, so an extra key is already
- * survivable; nothing reopens a `required` list. Left alone, an un-migrated
- * config fails Zod in `applyConfigPatch` — which parses the whole MERGED config
- * — so every settings write in the cockpit is refused until the migration runs.
- * Ajv is widened separately, in `config-manager.ts`, because
- * `z.toJSONSchema` emits a pipe's OUTPUT schema and would never see this.
- *
- * The heal is the migration's rule, not a second one: {@link claudeAccountId},
- * uniquified against the ids the registry already carries, so an id minted here
- * and an id the migration wrote agree. Rows keep their order and every other
- * field untouched.
- *
- * @param value - The stored `accounts` value, whatever shape it is in.
- * @returns The same rows with any missing id filled in.
+ * @param value - The stored accounts value, of any shape.
+ * @returns The rows with missing ids filled in; other fields stay unchanged.
  */
 function backfillMissingAccountIds(value: unknown): unknown {
   if (!Array.isArray(value)) return value;
@@ -202,108 +183,6 @@ function backfillMissingAccountIds(value: unknown): unknown {
     taken.add(id);
     return { ...account, id };
   });
-}
-
-/**
- * Read `activeAccount` as `defaultAccount` on a config the `'0.65.0'` migration
- * has not reached (spec `billing-account-ladder`).
- *
- * The rename half of the same hazard {@link backfillMissingAccountIds} covers,
- * and the more expensive half, because what is at stake is not a derived id but
- * a choice the operator made about **who gets billed**. Left unhealed, a stored
- * `activeAccount` is invisible: `defaultAccount` reads `null`, the cockpit
- * reports "inherited", and new sessions run on whatever `$CLAUDE_CONFIG_DIR` the
- * launching shell exported — a different paying client's subscription, silently.
- *
- * It also has to happen BEFORE anything writes. `applyConfigPatch` re-parses and
- * persists the whole config, so without this a single unrelated settings change
- * lands `defaultAccount: null` on disk beside the old key — and the migration,
- * finding the new key present, would then keep the `null` and destroy the choice
- * permanently. Healing here means that write persists the right value instead.
- *
- * ## What this cannot see, and who covers it
- *
- * `null` and absent are treated alike here, and that is a deliberate limitation
- * rather than a full answer. `null` IS the absence of a choice under the new
- * name — but it is ALSO exactly how the cockpit spells "go back to inheriting".
- * This function is handed a stored block with no idea which of the two it is
- * looking at, so on its own it would read a deliberate clear as "nothing chosen
- * yet" and resurrect the old account the person just dismissed.
- *
- * Intent is known one layer up, where the incoming patch is still in hand:
- * `applyConfigPatch` calls {@link settleLegacyAccountAlias} first, which removes
- * the legacy key whenever the patch NAMES `defaultAccount`. By the time this
- * runs there is nothing left to resurrect, so a clear clears. Neither half works
- * alone — this one silently undoes clears, and that one only sees writes.
- *
- * A `defaultAccount` holding an actual path is a decision made since the rename
- * and wins over the old key regardless.
- *
- * ## The legacy key is dropped from the OUTPUT
- *
- * A contract of this function, so its answer carries one spelling for any
- * caller. Be precise about what that does and does not buy: parsing through
- * {@link ClaudeCodeSettingsSchema} would strip an undeclared key anyway, so
- * dropping it here changes nothing an end-to-end test can see. It is
- * defense-in-depth and legibility, not the mechanism.
- *
- * The mechanism that actually settles the FILE is a schema declaration, made in
- * `config-manager.ts`: `preserveUnknownKeys` re-attaches every key the schema
- * does not declare after each write, so while `activeAccount` was undeclared it
- * came back forever — including after the write that cleared the account.
- *
- * With all of it in place, a write that names `runtimes` persists a settled
- * block. A write naming some OTHER section — a theme change — still rewrites the
- * stored object as it stands, legacy key included, because `applyConfigPatch`
- * only persists the sections a patch names. That file converges when the
- * migration reaches it, or on the next write that touches `runtimes`, whichever
- * comes first.
- *
- * @param value - The stored `runtimes.claudeCode` block, whatever shape it is in.
- * @returns The block with `defaultAccount` carrying the choice and the legacy
- *   key gone.
- */
-export function healClaudeAccountRename(value: unknown): unknown {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return value;
-  const block = value as Record<string, unknown>;
-  if (!('activeAccount' in block)) return value;
-  const { activeAccount: legacy, ...rest } = block;
-  // A real value under the new name is a decision made since the rename; `null`
-  // or absent means nobody has decided under it, so the old key still speaks.
-  const healed =
-    rest.defaultAccount == null && typeof legacy === 'string' && legacy.length > 0
-      ? legacy
-      : (rest.defaultAccount ?? null);
-  return { ...rest, defaultAccount: healed };
-}
-
-/**
- * Take the legacy account key out of a merged config when the incoming patch
- * NAMED the new one — so an explicit clear is not read as "never set".
- *
- * The piece {@link healClaudeAccountRename} cannot supply. The heal sees a
- * stored block; only the write path still holds the patch, and the patch is the
- * only place the difference between "this person chose the default" and "nobody
- * has chosen yet" exists. Both spellings of that difference arrive as `null`.
- *
- * Applies whenever `runtimes.claudeCode.defaultAccount` is present in the patch
- * at all, whatever its value. Clearing to `null` is the case that was broken;
- * naming a different account is the same act and must not leave the superseded
- * spelling on disk either.
- *
- * Mutates `merged` in place — it is a fresh deep-merge result owned by the
- * caller, never the stored config.
- *
- * @param merged - The patch already deep-merged onto the current config.
- * @param patch - The patch as the caller received it.
- */
-export function settleLegacyAccountAlias(merged: unknown, patch: unknown): void {
-  const named = (patch as { runtimes?: { claudeCode?: Record<string, unknown> } } | null)?.runtimes
-    ?.claudeCode;
-  if (!named || typeof named !== 'object' || !('defaultAccount' in named)) return;
-  const block = (merged as { runtimes?: { claudeCode?: Record<string, unknown> } } | null)?.runtimes
-    ?.claudeCode;
-  if (block && typeof block === 'object') delete block.activeAccount;
 }
 
 /**
@@ -448,14 +327,7 @@ export function readProjectRootList(raw: unknown): string[] | null {
 }
 
 /**
- * The Claude account settings as every READER should see them, healed.
- *
- * The launch ladder, the `GET /api/config` block and the root-set scan all read
- * `runtimes.claudeCode` straight off the `conf` store — raw stored JSON, never a
- * Zod parse — so none of them would otherwise see either heal. That is the
- * difference between a schema that is correct and a product that is: an id
- * healed only on parse leaves the ladder's top two rungs inert on every
- * un-migrated install, because a hint is matched by an id no stored row has.
+ * Read the current Claude account settings without interpreting retired aliases.
  *
  * The registry follows the contract's read rules (§1.1a, see
  * {@link classifyClaudeAccountRows}): ids minted over every row first, then a
@@ -468,10 +340,8 @@ export function readProjectRootList(raw: unknown): string[] | null {
  * flow's conformance fixture), so a minted id, a label that is not text and an
  * `accounts` that is not a list are each reported too.
  *
- * Read-time only, by design. Nothing here writes: the migration remains the sole
- * writer of the settled shape, and a reader that heals cannot corrupt a file it
- * never touches. Nothing here logs either (this module is pure): the caller logs
- * `warnings`.
+ * Read-time only: nothing here writes or logs. The caller logs `warnings`.
+ * Config startup refuses the retired default-account spelling before any write.
  *
  * @param raw - The stored `runtimes.claudeCode` block, or anything at all. Codex's
  *   and OpenCode's blocks read by the same rules.
@@ -487,9 +357,7 @@ export function readClaudeAccountSettings(
   accounts: ReadClaudeAccount[];
   warnings: ClaudeAccountReadWarning[];
 } {
-  const healed = healClaudeAccountRename(raw);
-  const block =
-    healed && typeof healed === 'object' ? (healed as Record<string, unknown>) : undefined;
+  const block = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : undefined;
   const defaultAccount = typeof block?.defaultAccount === 'string' ? block.defaultAccount : null;
   const storedRows = block?.accounts;
   const { rows, warnings } = classifyClaudeAccountRows(storedRows, noun);

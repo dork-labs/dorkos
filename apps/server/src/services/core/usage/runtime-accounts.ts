@@ -6,7 +6,7 @@
  * - **An account is its folder, not its id.** Two folders are one account when
  *   their comparable forms match ({@link canonicalAccountPath}).
  * - **`default` is machine-wide.** Claude Code's is `defaultAccount`, else the
- *   pre-0.65.0 `activeAccount`, else `<home>/.claude`; Codex's is
+ *   built-in `<home>/.claude`; Codex's is
  *   `<home>/.codex`; OpenCode keeps a folder-less ambient default only while it
  *   has no registered row. It is resolved from CONFIG and the OS home only, never
  *   from a process's environment: a server started with `CLAUDE_CONFIG_DIR=/x`
@@ -204,9 +204,7 @@ export function canonicalAccountPath(
  * from config and the OS home only:
  *
  * - Claude Code: `runtimes.claudeCode.defaultAccount` when it is a non-empty
- *   path (absolute, or starting with `~`); else `activeAccount` (its name
- *   before 0.65.0) when `defaultAccount` is null or absent; else
- *   `<home>/.claude`. Text that is not a path is ignored with
+ *   path (absolute, or starting with `~`); else `<home>/.claude`. Text that is not a path is ignored with
  *   `default-account-invalid`.
  * - Codex: `<home>/.codex`.
  * - OpenCode: `null` (its ambient default has no folder).
@@ -230,12 +228,6 @@ export function defaultAccountFolder(
     if (isObject(section)) {
       if (typeof section.defaultAccount === 'string' && section.defaultAccount !== '') {
         chosen = section.defaultAccount;
-      } else if (
-        section.defaultAccount == null &&
-        typeof section.activeAccount === 'string' &&
-        section.activeAccount !== ''
-      ) {
-        chosen = section.activeAccount;
       }
     }
     if (chosen !== undefined) {

@@ -1,5 +1,6 @@
 ---
 covers:
+  - 'refactor(config): retire the activeAccount alias'
   - 'refactor(config): drop retired config flag tolerances'
   - 'refactor(config): retire legacy sidebar conversion'
   - 'refactor(config): retire v0.60-v0.89 migrators (DOR-4188)'

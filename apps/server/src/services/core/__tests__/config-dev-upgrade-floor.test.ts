@@ -109,6 +109,26 @@ describe.each([undefined, '0.0.0', '0.58.0', '0.115.0'])(
   }
 );
 
+describe.each([undefined, '0.0.0', '0.64.0', '0.115.0'])(
+  'raw dev refuses the retired account alias with stored version %s',
+  (version) => {
+    it.each([null, '/fixture/current'])('preserves the file with defaultAccount %s', (chosen) => {
+      const { dir, file } = seed(currentSidebar, version);
+      const stored = JSON.parse(fs.readFileSync(file, 'utf8'));
+      stored.runtimes = {
+        claudeCode: { defaultAccount: chosen, activeAccount: '/fixture/retired', accounts: [] },
+      };
+      fs.writeFileSync(file, JSON.stringify(stored));
+      const before = fs.readFileSync(file);
+      const write = vi.spyOn(fs, 'writeFileSync');
+      expect(() => new ConfigManager(dir)).toThrow(ConfigUpgradeRequiredError);
+      expect(write).not.toHaveBeenCalled();
+      expect(fs.readFileSync(file)).toEqual(before);
+      expect(fs.readdirSync(dir)).toEqual(['config.json']);
+    });
+  }
+);
+
 describe('raw dev keeps current sidebar membership', () => {
   it('keeps pins, groups, approvals and privacy choices through a write and restart', () => {
     const { dir, file } = seed(currentSidebar, '0.115.0');
