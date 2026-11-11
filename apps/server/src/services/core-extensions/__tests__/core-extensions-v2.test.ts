@@ -71,6 +71,7 @@ async function activateCoreExtension(id: string) {
     manifest,
     status: 'enabled',
     scope: 'global',
+    origin: 'core',
     path: dir,
     bundleReady: false,
     hasServerEntry: false,
