@@ -198,6 +198,11 @@ export class ExtensionLoader {
     requestedAttempts?: ReadonlyMap<string, number>
   ): Promise<{ extensions: ExtensionRecordPublic[]; loaded: Map<string, LoadedExtension> }> {
     if (this.disposed || gen !== this.generation) return { extensions, loaded: this.loaded };
+    // DorkOS's own names for its apps, for surfaces that say which app did
+    // something, and the apps a frame may call: on the first load as well as
+    // every reload, and before anything activates (DOR-3293).
+    setExtensionNames(Object.fromEntries(extensions.map((ext) => [ext.id, ext.manifest.name])));
+    setRunningApps(extensions);
     // Retry uses exactly the same readiness and approval check as first load.
     // The server still verifies the exact bytes before serving any bundle.
     const ready = extensions.filter(
@@ -348,10 +353,6 @@ export class ExtensionLoader {
     if (this.disposed || gen !== this.generation) {
       return { extensions, loaded: this.loaded };
     }
-    // DorkOS's own names for its apps, for surfaces that say which app did something.
-    setExtensionNames(Object.fromEntries(extensions.map((ext) => [ext.id, ext.manifest.name])));
-    setRunningApps(extensions);
-
     this.teardownLoaded();
     return this.activateFrom(extensions, gen);
   }

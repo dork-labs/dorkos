@@ -51,6 +51,30 @@ describe('It uses other apps', () => {
     expect(line?.apps?.[0]?.detail).toBe('shares nothing, so this part won’t work');
   });
 
+  it('draws a missing app as an id in mono, never as a name in bold', () => {
+    render(<ExtensionPermissionLines permissions={THREE} />);
+    const id = document.querySelector('li[data-app="ledger"] bdi');
+    expect(id).toHaveTextContent('ledger');
+    expect(id).toHaveClass('font-mono');
+    expect(id).not.toHaveClass('font-semibold');
+    const name = document.querySelector('li[data-app="desk"] bdi');
+    expect(name).toHaveClass('font-semibold');
+    expect(name).not.toHaveClass('font-mono');
+  });
+
+  it('keeps only the characters an id allows, cut short, for an id the asking app chose', () => {
+    const line = extensionPermissionLines(
+      view([
+        { id: 'Google Drive (official)', name: null, access: null },
+        { id: `a${'b'.repeat(80)}`, name: null, access: null },
+      ])
+    ).find((entry) => entry.key === 'apps');
+    const [hostile, long] = line?.apps ?? [];
+    expect(hostile?.name).toBe('oogleriveofficial');
+    expect(hostile?.name).toMatch(/^[a-z0-9-]+$/);
+    expect(long?.name).toBe(`a${'b'.repeat(31)}…`);
+  });
+
   it('draws nothing for an app that calls no other app', () => {
     expect(extensionPermissionLines(view(undefined)).some((l) => l.key === 'apps')).toBe(false);
     expect(extensionPermissionLines(view([])).some((l) => l.key === 'apps')).toBe(false);
@@ -120,7 +144,6 @@ describe('It can change (Security item 8)', () => {
     const rows = [...document.querySelectorAll('li')].map((row) => row.textContent);
     expect(rows).toMatchInlineSnapshot(`
       [
-        "Its screens run in DorkOS with your access.",
         "It can change:Its own saved data and project settingsDocuments it opens on your canvasIts own items in your inboxWork for an agent, started only when you clickNew files on your computer, only when you choose SaveReplies in the room threads you pickMessages to an agent you pick, sent in your name",
         "Its own saved data and project settings",
         "Documents it opens on your canvas",
@@ -150,7 +173,6 @@ describe('It can change (Security item 8)', () => {
     const rows = [...document.querySelectorAll('li')].map((row) => row.textContent);
     expect(rows).toMatchInlineSnapshot(`
       [
-        "Its screens run in DorkOS with your access.",
         "It can change:It can’t change anything.",
         "It can’t change anything.",
       ]

@@ -56,8 +56,9 @@ describe('ExtensionPermissionLines', () => {
     expect(linesOf(container)).toEqual(['Runs inside DorkOS with full access to this computer.']);
   });
 
-  // Purpose: screens only never claims full access to the computer.
-  it('says only that its screens run with your access when it has no server half', () => {
+  // Purpose: screens only never claims full access, and never claims the
+  // screens run with your access: they run sealed off (DOR-3293).
+  it('says nothing about where it runs when it has only screens', () => {
     const { container } = render(
       <ExtensionPermissionLines
         permissions={{
@@ -70,7 +71,8 @@ describe('ExtensionPermissionLines', () => {
         }}
       />
     );
-    expect(linesOf(container)).toEqual(['Its screens run in DorkOS with your access.']);
+    expect(linesOf(container)).toEqual([]);
+    expect(container).not.toHaveTextContent(/your access/);
   });
 
   // Purpose: the narrowest isolated extension says it runs separately and
@@ -81,7 +83,7 @@ describe('ExtensionPermissionLines', () => {
   });
 
   // Purpose: each declared reach gets its line, and only then.
-  it('lists hosts, programs, agent access and screens when declared', () => {
+  it('lists hosts, programs and agent access when declared, and nothing about screens', () => {
     const { container } = render(
       <ExtensionPermissionLines
         permissions={{
@@ -98,7 +100,6 @@ describe('ExtensionPermissionLines', () => {
       'Can connect to: imap.fastmail.com, *.googleapis.com',
       'Can run: git',
       'Can message your agents and start chats.',
-      'Its screens run in DorkOS with your access.',
     ]);
   });
 
@@ -239,7 +240,12 @@ describe('permission-lines helpers', () => {
   // Purpose: a record's view tells a missing program from a refused one, and
   // a record with no isolation field (older server) yields no view at all.
   it('builds the card view from a record', () => {
-    const base = { bundleReady: true, hasServerEntry: false, hasDataProxy: false };
+    const base = {
+      bundleReady: true,
+      hasServerEntry: false,
+      hasDataProxy: false,
+      manifest: { id: 'a', name: 'A', version: '1.0.0' },
+    };
     expect(permissionViewFromRecord({ ...base, isolation: undefined })).toBeNull();
     expect(permissionViewFromRecord({ ...base, isolation: null })).toEqual({
       runtime: 'in-process',
@@ -247,7 +253,13 @@ describe('permission-lines helpers', () => {
       run: [],
       agents: false,
       hasServer: false,
+      // Screens: what they can change, from the bridge's own table.
+      writes: ['data', 'canvas', 'inbox', 'work', 'files'],
     });
+    // No screens and no server part: it can change nothing at all.
+    expect(
+      permissionViewFromRecord({ ...base, bundleReady: false, isolation: null })?.writes
+    ).toEqual([]);
     expect(
       permissionViewFromRecord({ ...base, hasDataProxy: true, isolation: null })?.hasServer
     ).toBe(true);

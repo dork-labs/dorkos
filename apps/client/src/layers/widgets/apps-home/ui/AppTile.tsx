@@ -63,7 +63,7 @@ function stateLine(app: AppEntry, trying: boolean): { text: string; tone: string
     return { text: 'Not working', tone: 'text-status-error-fg font-medium' };
   if (app.state === 'off') return { text: 'Off', tone: 'text-muted-foreground' };
   if (app.state === 'needs-update')
-    return { text: APP_NEEDS_UPDATE_COPY.tileLine, tone: 'text-muted-foreground' };
+    return { text: APP_NEEDS_UPDATE_COPY.chip, tone: 'text-muted-foreground' };
   return app.line ? { text: app.line, tone: 'text-muted-foreground' } : null;
 }
 

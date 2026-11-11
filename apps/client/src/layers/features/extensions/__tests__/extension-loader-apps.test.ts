@@ -10,7 +10,9 @@ import {
   getExtensionClientStates,
   setExtensionClientState,
 } from '@/layers/shared/lib/extension-client-state';
+import { getExtensionNames, setExtensionNames } from '@/layers/shared/lib/extension-names';
 import { importExtensionModule } from '../model/extension-bundle-import';
+import { runningAppManifest, setRunningApps } from '../frame/running-apps';
 import { ExtensionLoader, EXTENSION_IMPORT_TIMEOUT_MS } from '../model/extension-loader';
 import type { ExtensionAPIDeps } from '../model/types';
 
@@ -291,5 +293,31 @@ describe('independent app loads', () => {
         .sort()
     ).toEqual(['garden:settings', 'pond:load-error']);
     expect(getExtensionClientStates().pond).toBe('error');
+  });
+});
+
+// Purpose: "Opened by Ledger" on a canvas tab, and a frame's call to another
+// app, read DorkOS's listing; the first load fills it, not only a reload
+// (DOR-3293, where only a reload did).
+describe('the listing other surfaces read', () => {
+  afterEach(() => {
+    setExtensionNames({});
+    setRunningApps([]);
+  });
+
+  it('names every app and knows which ones run, from the first load', async () => {
+    const ledger = {
+      ...record('ledger'),
+      manifest: { ...record('ledger').manifest, name: 'Ledger' },
+    };
+    const off = { ...record('desk'), approvedToRun: false };
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => ({ ok: true, json: async () => [ledger, off] }))
+    );
+    await loader.initialize();
+    expect(getExtensionNames()).toEqual({ ledger: 'Ledger', desk: 'desk' });
+    expect(runningAppManifest('ledger')?.name).toBe('Ledger');
+    expect(runningAppManifest('desk')).toBeNull();
   });
 });

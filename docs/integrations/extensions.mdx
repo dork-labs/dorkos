@@ -64,7 +64,7 @@ A mini app can show a room thread on its own page and let you reply there, so yo
 - **You choose the rooms.** In Settings → Extensions, the mini app's card lists **Rooms it can use**. A well-behaved mini app reads and replies only there, and only where you can read yourself. Replacing a mini app with another copy clears its rooms.
 - **Replies are yours.** A reply sent from the mini app shows under your name, the same as one you typed in the room, and mentions wake agents as usual. The audit trail records each one with the mini app named.
 - **Agents can't reply as you through it.** An agent that names itself, another website and anything relayed are refused.
-- **It's not a sandbox.** A mini app's page runs in your window with your access, so it can reply without a click and change its own room list. Its server half, if it runs inside DorkOS, can do anything DorkOS can. With no password on this computer, a program on it can act as you too. Only turn on mini apps you trust, and turn on "Ask for a password on this computer too" to close the last gap.
+- **It's not a full sandbox.** A mini app's page runs sealed off in its own frame, but it can still reply without a click in the rooms you picked. Its server half, if it runs inside DorkOS, can do anything DorkOS can. With no password on this computer, a program on it can act as you too. Only turn on mini apps you trust, and turn on "Ask for a password on this computer too" to close the last gap.
 - **It keeps track of what you've read,** per thread, and shows new replies as they arrive.
 
 Authors: see `api.rooms` in `contributing/extension-authoring.md`.

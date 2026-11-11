@@ -18,14 +18,15 @@ import {
 import { Button } from '@/layers/shared/ui';
 import { cn, formatRelativeTime } from '@/layers/shared/lib';
 import {
+  ACCESS_FACT_LINE_KEYS,
   APP_NEEDS_UPDATE_COPY,
   AppNeedsUpdateNotice,
-  extensionPermissionLines,
-  permissionLineText,
+  ExtensionAccessFacts,
+  ExtensionPermissionLines,
+  permissionViewFromApproval,
   permissionViewFromRecord,
   approvedSetOf,
   useAddedSinceSeen,
-  type ExtensionPermissionView,
 } from '@/layers/entities/extension';
 import type { ExtensionRowNeed } from '../lib/extension-row-state';
 
@@ -68,40 +69,6 @@ const NEED_TONE: Record<ExtensionRowNeed, keyof typeof TONE_PANEL> = {
   'needs-newer': 'neutral',
 };
 
-/** Lines the three named facts already say, left out of the rest. */
-const NAMED_LINE_KEYS = new Set(['in-process', 'separate', 'net', 'page']);
-
-/**
- * Access, runs as, and network: one line each, as Security wrote them.
- *
- * @param permissions - What the extension declares.
- */
-function namedFacts(permissions: ExtensionPermissionView): Array<[string, string]> {
-  const facts: Array<[string, string]> = [];
-  if (permissions.runtime === 'in-process') {
-    facts.push([
-      'Access',
-      permissions.hasServer === false
-        ? 'Screens run inside DorkOS, with your access'
-        : 'Runs inside DorkOS, with full access to this computer',
-    ]);
-  } else {
-    facts.push(['Access', 'Runs on its own, apart from DorkOS']);
-  }
-  facts.push(['Runs as', 'Runs as you']);
-  if (permissions.runtime === 'subprocess') {
-    facts.push([
-      'Network',
-      permissions.net.length > 0
-        ? `Can reach ${permissions.net.join(', ')}`
-        : 'Reaches nothing on the internet',
-    ]);
-  } else if (permissions.hasServer !== false) {
-    facts.push(['Network', 'Can reach anything this computer can']);
-  }
-  return facts;
-}
-
 /** Why DorkOS can't vouch for an installed copy (spec flow-multiproject §9.1). */
 function originProblemCopy(problem: NonNullable<ExtensionRecordPublic['originProblem']>): string {
   if (problem === 'changed') {
@@ -129,7 +96,10 @@ export function ExtensionNeedPanel({
   primaryRef,
 }: ExtensionNeedPanelProps) {
   const name = extension.manifest.name;
-  const permissions = permissionViewFromRecord(extension);
+  // The queue's own view when it has one (the other apps it uses, by DorkOS's
+  // names), else the record's: the same card the inbox draws (DOR-3293).
+  const permissions =
+    (pending ? permissionViewFromApproval(pending) : null) ?? permissionViewFromRecord(extension);
   // After a stale refusal here, what the redrawn panel lists that the one the
   // person saw did not.
   const addedSinceSeen = useAddedSinceSeen(extension.id, approvedSetOf(permissions));
@@ -191,47 +161,24 @@ export function ExtensionNeedPanel({
   }
 
   if (need === 'needs-ok') {
-    const extra = permissions
-      ? extensionPermissionLines(permissions, addedSinceSeen).filter(
-          (line) => !NAMED_LINE_KEYS.has(line.key)
-        )
-      : [];
     return panel(
       `${name} wants to run on this computer.`,
       <>
         {permissions && (
-          <dl
-            className="grid grid-cols-[max-content_1fr] gap-x-4 gap-y-1 text-sm max-sm:grid-cols-1"
-            data-testid={`extension-permissions-${extension.id}`}
-          >
-            {namedFacts(permissions).map(([label, value]) => (
-              <div key={label} className="contents">
-                <dt className="text-muted-foreground">{label}</dt>
-                <dd className="min-w-0 break-words max-sm:mb-1">{value}</dd>
-              </div>
-            ))}
-          </dl>
-        )}
-        {extra.length > 0 && (
-          <ul
-            className="space-y-1 text-sm"
-            data-testid={`extension-permission-extras-${extension.id}`}
-          >
-            {extra.map((line) => (
-              <li
-                key={line.key}
-                data-tone={line.tone}
-                className={cn(
-                  'break-words',
-                  line.tone === 'new' && 'font-medium',
-                  line.tone === 'warning' && 'text-status-warning-fg',
-                  line.tone === 'plain' && 'text-muted-foreground'
-                )}
-              >
-                {permissionLineText(line)}
-              </li>
-            ))}
-          </ul>
+          <>
+            <ExtensionAccessFacts
+              permissions={permissions}
+              className="text-sm"
+              data-testid={`extension-permissions-${extension.id}`}
+            />
+            <ExtensionPermissionLines
+              permissions={permissions}
+              added={addedSinceSeen}
+              omit={ACCESS_FACT_LINE_KEYS}
+              className="text-sm"
+              data-testid={`extension-permission-extras-${extension.id}`}
+            />
+          </>
         )}
         {extension.originProblem && (
           <p

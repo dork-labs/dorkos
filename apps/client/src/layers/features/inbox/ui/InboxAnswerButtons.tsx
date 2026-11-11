@@ -38,7 +38,14 @@ export function InboxAnswerButtons({
   rejectExpanded,
 }: InboxAnswerButtonsProps) {
   return (
-    <div className="mt-2 flex flex-wrap items-center gap-2" data-slot="inbox-answer-buttons">
+    // On a phone the Inbox is a bottom sheet, and a long card would push its
+    // answer below the fold: the buttons stay pinned to the sheet's bottom
+    // while the card is on screen (designer, DOR-3293). The cover is the
+    // sheet's own composite fill (its dark-mode lift), else the plain fill.
+    <div
+      className="mt-2 flex flex-wrap items-center gap-2 max-md:sticky max-md:bottom-0 max-md:bg-[var(--dui-scroll-cover,var(--color-popover))] max-md:py-2"
+      data-slot="inbox-answer-buttons"
+    >
       <Button type="button" size="sm" onClick={onApprove} disabled={disabled}>
         {approveLabel}
       </Button>

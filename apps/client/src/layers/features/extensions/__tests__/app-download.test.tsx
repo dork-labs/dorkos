@@ -64,6 +64,28 @@ describe('a good download', () => {
     expect(clicked).toEqual(['people-export.json']);
   });
 
+  // Purpose: a browser saves a download with no Save panel, so the prompt
+  // says where it goes; the desktop app opens the system Save panel, which
+  // says so itself (designer, DOR-3293).
+  it('says where the file goes in a browser, and not in the desktop app', () => {
+    render(<AppDownloadPrompt />);
+    act(() => {
+      void offerAppDownload('People', 'people.json', 'application/json', '{}');
+    });
+    expect(screen.getByTestId('app-download-destination')).toHaveTextContent(
+      'It goes where your browser saves downloads.'
+    );
+    cleanup();
+    useAppDownloadPrompt.setState({ pending: null });
+    vi.stubGlobal('electronAPI', { getServerPort: () => 4242 });
+    render(<AppDownloadPrompt />);
+    act(() => {
+      void offerAppDownload('People', 'people.json', 'application/json', '{}');
+    });
+    expect(screen.getByText('People wants to save a file')).toBeInTheDocument();
+    expect(screen.queryByTestId('app-download-destination')).not.toBeInTheDocument();
+  });
+
   it('saves nothing on Cancel or Esc', async () => {
     render(<AppDownloadPrompt />);
     let first!: Promise<'saved' | 'cancelled'>;

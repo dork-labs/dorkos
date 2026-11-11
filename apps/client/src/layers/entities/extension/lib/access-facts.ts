@@ -30,24 +30,25 @@ export const ACCESS_FACT_LINE_KEYS: ReadonlySet<string> = new Set([
   'in-process',
   'separate',
   'net',
-  'page',
 ]);
 
 /**
- * The three facts for what an extension declares.
+ * The facts for what an extension declares: Access (unless it has only
+ * screens), Runs as, and Network where it has any.
  *
  * @param permissions - What the extension declares.
  */
 export function extensionAccessFacts(permissions: ExtensionPermissionView): ExtensionAccessFact[] {
   const facts: ExtensionAccessFact[] = [];
   if (permissions.runtime === 'in-process') {
-    facts.push({
-      label: 'Access',
-      value:
-        permissions.hasServer === false
-          ? 'Screens run inside DorkOS, with your access'
-          : 'Runs inside DorkOS, with full access to this computer',
-    });
+    // Screens alone have no access of their own (DOR-3293): "It can change:"
+    // says what they can do, so they get no Access line.
+    if (permissions.hasServer !== false) {
+      facts.push({
+        label: 'Access',
+        value: 'Runs inside DorkOS, with full access to this computer',
+      });
+    }
   } else {
     facts.push({ label: 'Access', value: 'Runs on its own, apart from DorkOS' });
   }

@@ -150,7 +150,7 @@ export const ExtensionApprovalPermissionsSchema = z
     ),
     /** Whether it may message agents and start agent sessions (`allow.agents`). */
     agents: z.boolean(),
-    /** Whether it has screens (a client bundle), which run in DorkOS with your access. */
+    /** Whether it has screens (a client bundle), which run sealed off in their own frame. */
     hasPage: z.boolean(),
     /**
      * What its screens can change through the bridge (DOR-3293), as DorkOS's

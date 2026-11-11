@@ -1036,7 +1036,7 @@ function stillMeaningful(
 const IN_PROCESS_LINE = 'runs inside DorkOS with full access to this computer';
 
 /** How a card line says an extension has only screens. */
-const SCREENS_ONLY_LINE = 'only screens, which run in DorkOS with your access';
+const SCREENS_ONLY_LINE = 'only screens';
 
 /** How a card line says an extension runs separately. */
 const SEPARATE_LINE = 'runs separately';

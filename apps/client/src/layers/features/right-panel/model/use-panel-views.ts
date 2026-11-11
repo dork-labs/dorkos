@@ -8,6 +8,7 @@ import { toast } from 'sonner';
 import type { AuthorRef } from '@dorkos/shared/room-schemas';
 import type { UiCanvasContent } from '@dorkos/shared/types';
 import { links } from '@dorkos/shared/links';
+import { parseExtensionPagePath } from '@/layers/shared/lib';
 import {
   documentPanelScope,
   legacyDocumentPanelScope,
@@ -75,7 +76,17 @@ export function usePanelViews(contributions: RightPanelContribution[], pathname:
     ? `resource/browser/${browserScope}/${encodeURIComponent(browserConnection.connectionId!)}`
     : 'local-browser';
   const roomId = useAppStore((s) => s.roomCanvasLiveRoomId);
-  const sessionDocuments = useAppStore((s) => s.openDocuments);
+  const allDocuments = useAppStore((s) => s.openDocuments);
+  // On an app's own page the canvas holds only what that app opened
+  // (DOR-3293): a chat's documents stay with the chat.
+  const appPageId = parseExtensionPagePath(pathname)?.extensionId ?? null;
+  const sessionDocuments = useMemo(
+    () =>
+      appPageId === null
+        ? allDocuments
+        : allDocuments?.filter((doc) => doc.openedBy?.extensionId === appPageId),
+    [allDocuments, appPageId]
+  );
   const roomDocuments = useAppStore((s) => (roomId ? s.roomCanvasDocuments[roomId] : undefined));
   const unread = useAppStore((s) => (roomId ? s.roomCanvasUnread[roomId] : undefined));
   const presence = useAppStore((s) => (roomId ? s.roomCanvasPresence[roomId] : undefined));

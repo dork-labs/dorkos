@@ -109,7 +109,8 @@ export function ExtensionPermissionLines({
 const APPS_SHOWN = 4;
 
 /**
- * One row per other app: its name in bold, then what it shares, and "New" on
+ * One row per other app: its name in bold (a missing one's id in mono), then
+ * what it shares, and "New" on
  * an app the last yes did not cover. Past four, "and N more" opens the rest
  * in place.
  *
@@ -123,7 +124,12 @@ function CalledAppRows({ apps }: { apps: readonly ExtensionCalledAppEntry[] }) {
     <ul className="mt-1 space-y-0.5 pl-3" data-slot="called-apps">
       {shown.map((app) => (
         <li key={app.id} data-app={app.id} data-new={app.isNew || undefined}>
-          <bdi className="text-foreground font-semibold">{app.name}</bdi> · {app.detail}
+          {/* A missing app's id is the asking app's string: drawn as an id,
+              never in the bold DorkOS gives a name it knows. */}
+          <bdi className={app.installed ? 'text-foreground font-semibold' : 'font-mono'}>
+            {app.name}
+          </bdi>{' '}
+          · {app.detail}
           {app.isNew && (
             <span className="text-foreground ml-1.5 rounded-sm border px-1 text-[10px] font-medium">
               New

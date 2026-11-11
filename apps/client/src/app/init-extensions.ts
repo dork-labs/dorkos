@@ -12,7 +12,7 @@ import {
   Users,
 } from 'lucide-react';
 import { useExtensionRegistry } from '@/layers/shared/model';
-import { WORK_PANEL_ID } from '@/layers/shared/lib';
+import { parseExtensionPagePath, WORK_PANEL_ID } from '@/layers/shared/lib';
 
 /** The extension registry's `register` action (idempotent per slot + id). */
 type RegisterFn = ReturnType<typeof useExtensionRegistry.getState>['register'];
@@ -239,6 +239,9 @@ export function registerRightPanelTabs(register: RegisterFn): void {
   // that is deliberate: a tab that selected itself when another member put
   // something on the table would be the pixel version of a turn that triggers
   // itself. An arrival lights the unread dot here and moves nothing.
+  //
+  // On an app's own page (`/x/<app>`) it holds what that app opened, so an
+  // app's `openCanvas` there opens a tab beside it (DOR-3293).
   register('right-panel', {
     id: 'canvas',
     title: 'Canvas',
@@ -246,7 +249,10 @@ export function registerRightPanelTabs(register: RegisterFn): void {
     component: lazy(() =>
       import('@/layers/features/canvas').then((m) => ({ default: m.CanvasContent }))
     ),
-    visibleWhen: ({ pathname }) => pathname === '/session' || routeShowsRoom(pathname),
+    visibleWhen: ({ pathname }) =>
+      pathname === '/session' ||
+      routeShowsRoom(pathname) ||
+      parseExtensionPagePath(pathname) !== null,
     priority: 20,
   });
 

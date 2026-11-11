@@ -19,9 +19,8 @@ describe('extensionAccessFacts', () => {
     ]);
   });
 
-  it('says screens only, and no network line, for one with no server half', () => {
+  it('says only Runs as for one with no server half, and nothing about its screens', () => {
     expect(extensionAccessFacts({ ...BASE, hasServer: false })).toEqual([
-      { label: 'Access', value: 'Screens run inside DorkOS, with your access' },
       { label: 'Runs as', value: 'You' },
     ]);
   });

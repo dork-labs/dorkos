@@ -17,6 +17,7 @@ covers:
   - "feat(extensions): the approval card says what an app's screens can change, in DorkOS's words (DOR-3293)"
   - 'feat(extensions): a target that starts sharing more asks again, and "shares nothing" reads plainly (DOR-3293)'
   - 'fix(extensions): "It can change:" reads the one table the bridge and the server enforce, and says when it can change nothing (DOR-3293)'
+  - "fix(extensions): approvals never say screens run with your access, and an app page's canvas opens beside it (DOR-3293)"
 ---
 
 ### Security
