@@ -44,7 +44,9 @@ async function shot(page: Page, testInfo: TestInfo, name: string) {
 
 test.describe.configure({ mode: 'serial', timeout: 120_000 });
 
-for (const theme of ['light', 'dark'] as const) {
+// Light only: the theme changes the screenshots and nothing this test asserts,
+// so a dark run repeated the same journey for pictures (DOR-4190).
+for (const theme of ['light'] as const) {
   test(`a new channel opens on its conversation, not its ROOM.md (${theme})`, async ({
     page,
     basePage,
