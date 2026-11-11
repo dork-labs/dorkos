@@ -176,27 +176,18 @@ export type RequestClass = 'read' | 'write';
 export type ClassOffer = 'level' | 'exact' | 'none';
 
 /**
- * Why one class the agent asked for is missing, and what the person can do
- * about it: they chose less, the app offers those actions only one at a
- * time, or the app has none (DOR-4193, DOR-3021).
+ * Why one class the agent asked for is missing: the person chose less, or the
+ * app has nothing a level can give for it yet. An app whose change actions are
+ * all destructive (`exact`) reads the same as one with none: no level covers
+ * them (DOR-4193, DOR-3021; wording from design, 2026-11-11).
  */
 export function missingClassNote(app: string, kind: RequestClass, offer: ClassOffer): string {
-  const doing = kind === 'write' ? `change anything in ${app}` : `read ${app}`;
-  switch (offer) {
-    case 'level':
-      return `The person didn't allow you to ${doing}.`;
-    case 'exact':
-      return (
-        `You can't ${doing} yet: no level covers ${app}'s actions that change things, so ` +
-        'the person allows them one at a time. Ask the person to choose the exact actions ' +
-        `you need under ${app} on the Connections page.`
-      );
-    case 'none':
-      return (
-        `You can't ${doing}: this ${app} account has no actions for that. If that seems ` +
-        `wrong, the person can connect ${app} again on the Connections page.`
-      );
+  if (offer === 'level') {
+    return `The person didn't allow you to ${kind === 'write' ? `change anything in ${app}` : `read ${app}`}.`;
   }
+  return kind === 'write'
+    ? `Approved for read only. Read and write isn't offered for ${app} yet.`
+    : `${app} can't be read from DorkOS yet.`;
 }
 
 /**

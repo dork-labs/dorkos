@@ -346,6 +346,13 @@ export const ConnectorConnectionSummarySchema = z
      * still shows. Absent from an older server.
      */
     everyAgentLevel: ConnectorAccessLevelSchema.nullable().optional(),
+    /**
+     * True when the app's recorded actions hold none a level can give for
+     * changing things, so "Read and write" gives Read (DOR-4193). False or
+     * absent when it has some, when its actions were never read, or from an
+     * older server.
+     */
+    canOnlyRead: z.boolean().optional(),
     subscriptionCount: z.number().int().nonnegative(),
     usage: ConnectorUsageCountsSchema,
     /**

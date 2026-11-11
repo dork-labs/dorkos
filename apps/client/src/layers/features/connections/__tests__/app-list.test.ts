@@ -126,6 +126,12 @@ describe('accountRow', () => {
       account: 'you@gmail.com',
       detail: 'you@gmail.com · 2 agents',
     });
+    expect(row).not.toHaveProperty('note');
+  });
+
+  it('says agents can only read an app with nothing a level gives for changing it (DOR-4193)', () => {
+    const row = accountRow({ ...connection({ label: 'gmail' }), canOnlyRead: true }, SERVICES);
+    expect(row.note).toBe('Read and write isn’t offered for Gmail yet.');
   });
 
   it.each([

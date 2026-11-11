@@ -66,7 +66,7 @@ import {
 } from '../execution/managed-agent-access.js';
 import { custodyDisclosure } from '../custody-disclosure.js';
 import { everyAgentGrantFor, liveEveryAgentAccess } from '../every-agent-grants.js';
-import { everyAgentLevel } from '../execution/access-levels.js';
+import { connectionLevelFacts } from './agent-request-classes.js';
 import type { ConnectorAgentOwnershipPort } from '../execution/authorization-service.js';
 import type { ConnectorOwnerAuthority } from '../principal/server-principal.js';
 import type { ConnectorRegistry } from '../registry.js';
@@ -1156,7 +1156,7 @@ export class ConnectorOperatorQueryService {
       payer: row.mode === 'managed' ? 'dorkos_managed' : 'operator_byo',
       agentCount: new Set(grants.flatMap((grant) => (grant.agentId ? [grant.agentId] : []))).size,
       everyAgent: liveEveryAgentAccess(this.db, row.connectionId),
-      everyAgentLevel: everyAgentLevel(this.db, row.connectionId),
+      ...connectionLevelFacts(this.db, row),
       subscriptionCount: subscriptions.length,
       usage,
       readiness: deriveConnectionReadiness({

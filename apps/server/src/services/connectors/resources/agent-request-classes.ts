@@ -17,6 +17,7 @@ import {
   type DbTransaction,
 } from '@dorkos/db';
 import type { ConnectorRequestAccess } from '@dorkos/shared/connector-schemas';
+import { everyAgentLevel } from '../execution/access-levels.js';
 import { parseResolvedEventSelection, parseStringArray } from './agent-request-rows.js';
 import type { ClassOffer, RequestClass } from './agent-request-messages.js';
 
@@ -37,6 +38,49 @@ export const NOTHING_HELD: GrantedClasses = {
   offers: { read: 'level', write: 'level' },
   noUpdates: false,
 };
+
+/**
+ * Whether an app's recorded actions hold some, and none a level can give for
+ * changing things: "Read and write" there gives Read (DOR-4193). An app whose
+ * actions were never read is not called read-only.
+ *
+ * @param db - The database to read from.
+ * @param providerInstanceId - The way the app is reached.
+ * @param toolkit - The app.
+ */
+export function appCanOnlyRead(db: Db, providerInstanceId: string, toolkit: string): boolean {
+  const classes = new Set(
+    db
+      .selectDistinct({ classification: connectorOperationRevisions.capabilityClassification })
+      .from(connectorOperationRevisions)
+      .where(
+        and(
+          eq(connectorOperationRevisions.providerInstanceId, providerInstanceId),
+          eq(connectorOperationRevisions.toolkit, toolkit)
+        )
+      )
+      .all()
+      .map((revision) => revision.classification)
+  );
+  return classes.size > 0 && !classes.has('write');
+}
+
+/**
+ * The level facts a connection summary carries: the level every agent was
+ * given, and whether the app can only be read for now.
+ *
+ * @param db - The database to read from.
+ * @param row - The connection and the way and app it is on.
+ */
+export function connectionLevelFacts(
+  db: Db,
+  row: { connectionId: string; providerInstanceId: string; toolkit: string }
+) {
+  return {
+    everyAgentLevel: everyAgentLevel(db, row.connectionId),
+    canOnlyRead: appCanOnlyRead(db, row.providerInstanceId, row.toolkit),
+  };
+}
 
 /** The classes a level covers: Read is `read`; Read and write adds `write`. */
 function classesFor(access: ConnectorRequestAccess): RequestClass[] {

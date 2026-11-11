@@ -57071,6 +57071,9 @@
                               null
                             ]
                           },
+                          "canOnlyRead": {
+                            "type": "boolean"
+                          },
                           "subscriptionCount": {
                             "type": "integer",
                             "minimum": 0
@@ -58251,6 +58254,9 @@
                             "read-write",
                             null
                           ]
+                        },
+                        "canOnlyRead": {
+                          "type": "boolean"
                         },
                         "subscriptionCount": {
                           "type": "integer",

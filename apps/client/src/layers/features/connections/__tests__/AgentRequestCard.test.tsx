@@ -642,7 +642,7 @@ describe('AgentRequestCard — an account exists', () => {
       };
     }
 
-    it('says before Allow that only Read is given, and how to let it change things', async () => {
+    it('says before Allow that only Read is given, and the button says so', async () => {
       // Linear's shape: every action that changes things is destructive.
       const transport = transportWith([account('connection-1')]);
       vi.mocked(transport.previewConnectorReconciliation).mockResolvedValue(
@@ -650,21 +650,34 @@ describe('AgentRequestCard — an account exists', () => {
       );
       renderWith(transport, <AgentRequestCard request={{ ...REQUEST, access: 'read-write' }} />);
 
-      const missing = await screen.findByTestId('requested-write-missing');
-      expect(missing).toHaveTextContent('Allow gives Read only. Gmail has no Read and write here.');
-      expect(missing).toHaveTextContent(
-        'To let it change things, choose exact actions on the Connections page.'
+      // Said once, under the level switch; the request box only says what was asked.
+      expect(await screen.findByTestId('level-write-off')).toHaveTextContent(
+        'Read and write isn’t offered for Gmail yet.'
       );
+      expect(screen.getAllByText(/isn’t offered for Gmail/)).toHaveLength(1);
+      expect(screen.getByTestId('requested-access')).toHaveTextContent(
+        'It wants to read and change things in Gmail.'
+      );
+      expect(screen.getByRole('button', { name: 'Allow read only' })).toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: 'Allow' })).not.toBeInTheDocument();
     });
 
-    it('says to connect again when the account has no actions that change things', async () => {
+    it('keeps Read and write in reach but unavailable, with the reason always shown', async () => {
+      const user = userEvent.setup();
       const transport = transportWith([account('connection-1')]);
       vi.mocked(transport.previewConnectorReconciliation).mockResolvedValue(previewOf(['read']));
       renderWith(transport, <AgentRequestCard request={{ ...REQUEST, access: 'read-write' }} />);
 
-      const missing = await screen.findByTestId('requested-write-missing');
-      expect(missing).toHaveTextContent('Allow gives Read only.');
-      expect(missing).toHaveTextContent('If that seems wrong, connect Gmail again.');
+      const readWrite = await screen.findByRole('radio', { name: 'Read and write' });
+      // aria-disabled, never disabled: keyboard and screen reader users still reach it.
+      expect(readWrite).toHaveAttribute('aria-disabled', 'true');
+      expect(readWrite).not.toBeDisabled();
+      expect(readWrite).toHaveAccessibleDescription('Read and write isn’t offered for Gmail yet.');
+      // It starts on Read, never on the level it can't give, and never says write needs you.
+      expect(screen.getByRole('radio', { name: 'Read' })).toBeChecked();
+      expect(screen.queryByTestId('agent-request-write-note')).not.toBeInTheDocument();
+      await user.click(readWrite);
+      expect(screen.getByRole('radio', { name: 'Read' })).toBeChecked();
     });
 
     it('says nothing of the kind when Read and write is on offer, or only Read was asked', async () => {
@@ -673,14 +686,19 @@ describe('AgentRequestCard — an account exists', () => {
         <AgentRequestCard request={{ ...REQUEST, access: 'read-write' }} />
       );
       await screen.findByTestId('requested-access');
-      expect(screen.queryByTestId('requested-write-missing')).not.toBeInTheDocument();
+      expect(screen.queryByTestId('level-write-off')).not.toBeInTheDocument();
+      expect(screen.getByRole('radio', { name: 'Read and write' })).not.toHaveAttribute(
+        'aria-disabled'
+      );
+      expect(screen.getByRole('button', { name: 'Allow' })).toBeInTheDocument();
       cleanup();
 
       const transport = transportWith([account('connection-1')]);
       vi.mocked(transport.previewConnectorReconciliation).mockResolvedValue(previewOf(['read']));
       renderWith(transport, <AgentRequestCard request={REQUEST} />);
+      // Only Read asked: the button stays "Allow", whatever the app offers.
       await screen.findByTestId('requested-access');
-      expect(screen.queryByTestId('requested-write-missing')).not.toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Allow' })).toBeInTheDocument();
     });
   });
 });

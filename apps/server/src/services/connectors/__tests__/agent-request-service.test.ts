@@ -1854,12 +1854,13 @@ describe('ConnectorAgentRequestService', () => {
 
         expect(resolved).toMatchObject({ status: 'granted', notGranted: ['write'] });
         expect(resolved.note).toContain('You can now read Gmail.');
-        expect(resolved.note).toContain("You can't change anything in Gmail");
-        expect(resolved.note).toContain('connect Gmail again on the Connections page');
+        expect(resolved.note).toContain(
+          "Approved for read only. Read and write isn't offered for Gmail yet."
+        );
         expect(resolved.note).not.toContain('Carry on');
       });
 
-      it('says the change actions are allowed one at a time when no level covers them', async () => {
+      it('says read only, not a refusal, when no level covers the change actions', async () => {
         // Linear's shape: every action that changes things is destructive.
         seedSecondAccount(db, [
           ['read-2', 'read'],
@@ -1868,8 +1869,9 @@ describe('ConnectorAgentRequestService', () => {
         const resolved = await answeredOnSecond(service(), ['read-2']);
 
         expect(resolved).toMatchObject({ status: 'granted', notGranted: ['write'] });
-        expect(resolved.note).toContain('the person allows them one at a time');
-        expect(resolved.note).toContain('choose the exact actions you need under Gmail');
+        expect(resolved.note).toContain(
+          "Approved for read only. Read and write isn't offered for Gmail yet."
+        );
         expect(resolved.note).not.toContain("The person didn't allow you");
         expect(resolved.note).not.toContain('Carry on');
       });

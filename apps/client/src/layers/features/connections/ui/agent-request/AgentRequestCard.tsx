@@ -373,7 +373,8 @@ export function AgentRequestCard({
           <Button
             variant="link"
             size="sm"
-            className="h-auto px-0"
+            // Wraps inside the card's width on a phone instead of running off the edge (DOR-4211).
+            className="h-auto px-0 text-left text-sm whitespace-normal"
             onClick={() => setConnectingNew(true)}
           >
             Connect another {serviceName} account

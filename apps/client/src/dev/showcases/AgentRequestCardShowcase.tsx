@@ -78,11 +78,24 @@ const GMAIL: ConnectorCatalogService = {
   ],
 };
 
-function account(connectionId: string, label: string): ConnectorConnectionSummary {
+/** Linear: an app whose actions that change things no level covers yet (DOR-4193). */
+const LINEAR: ConnectorCatalogService = {
+  ...GMAIL,
+  serviceSlug: 'linear',
+  displayName: 'Linear',
+  iconKey: 'linear',
+  signInName: 'Linear',
+};
+
+function account(
+  connectionId: string,
+  label: string,
+  toolkit = 'gmail'
+): ConnectorConnectionSummary {
   return {
     connectionId: connectionId as never,
     providerInstanceId: 'composio-1' as never,
-    toolkit: 'gmail',
+    toolkit,
     label,
     identityHint: `${label}@example.com`,
     lifecycle: 'connected',
@@ -100,8 +113,8 @@ function account(connectionId: string, label: string): ConnectorConnectionSummar
   };
 }
 
-function preview(connectionId: string): ConnectorReconciliationPreview {
-  const candidate = (id: string, classification: 'read' | 'write') => ({
+function preview(connectionId: string, readOnly = false): ConnectorReconciliationPreview {
+  const candidate = (id: string, classification: 'read' | 'write' | 'destructive') => ({
     operationRevisionId: id,
     toolkit: 'gmail',
     operationSlug: `gmail.${id}`,
@@ -115,13 +128,18 @@ function preview(connectionId: string): ConnectorReconciliationPreview {
     previewId: `preview-${connectionId}`,
     connection: {
       connectionId: connectionId as never,
-      toolkit: 'gmail',
-      label: 'work',
+      toolkit: readOnly ? 'linear' : 'gmail',
+      label: readOnly ? 'Acme team' : 'work',
       status: 'active',
       custody: 'managed',
       reconciliationStatus: 'ready',
     },
-    candidates: [candidate('list-messages', 'read'), candidate('send-message', 'write')],
+    // Read-only: every action that changes things is destructive, so no level
+    // covers it (Linear's shape, DOR-4193).
+    candidates: [
+      candidate('list-messages', 'read'),
+      candidate('send-message', readOnly ? 'destructive' : 'write'),
+    ],
     agents: [{ agentId: 'dorkbot', displayName: 'DorkBot' }],
     currentGrants: [],
     catalogComplete: true,
@@ -138,7 +156,8 @@ function preview(connectionId: string): ConnectorReconciliationPreview {
  */
 function requestTransport(
   accounts: ConnectorConnectionSummary[],
-  appConnections?: ConnectorAppConnections
+  appConnections?: ConnectorAppConnections,
+  readOnly = false
 ): Transport {
   const base = createPlaygroundTransport();
   const pendingFlow = {
@@ -158,7 +177,7 @@ function requestTransport(
             warnings: [],
             appConnections,
           }
-        : { services: [GMAIL], warnings: [] },
+        : { services: [GMAIL, LINEAR], warnings: [] },
     ...(appConnections && {
       getConnectorProviders: async () => ({
         providers: [
@@ -175,7 +194,7 @@ function requestTransport(
       }),
     }),
     previewConnectorReconciliation: async ({ connectionId }: { connectionId: string }) =>
-      preview(connectionId),
+      preview(connectionId, readOnly),
     applyConnectorReconciliation: async (request: ConnectorReconciliationApplyRequest) => ({
       connectionId: request.previewId.replace('preview-', ''),
       reconciliationStatus: 'ready',
@@ -197,13 +216,16 @@ function CardDemo({
   accounts,
   request = REQUEST,
   appConnections,
+  readOnly = false,
 }: {
   accounts: ConnectorConnectionSummary[];
   request?: ConnectorAgentRequestItem;
   /** Set to show the card while no way reaches the app. */
   appConnections?: ConnectorAppConnections;
+  /** The app has nothing a level gives for changing things. */
+  readOnly?: boolean;
 }) {
-  const [transport] = useState(() => requestTransport(accounts, appConnections));
+  const [transport] = useState(() => requestTransport(accounts, appConnections, readOnly));
   const [client] = useState(
     () =>
       new QueryClient({
@@ -279,6 +301,25 @@ export function AgentRequestCardShowcase() {
           accounts={[account('gmail-work', 'work')]}
           request={{ ...REQUEST, access: 'read-write' }}
         />
+      </ShowcaseDemo>
+
+      <ShowcaseLabel>
+        Write asked for, but the app has no Read and write level yet: Read and write is greyed, and
+        the button says “Allow read only”
+      </ShowcaseLabel>
+      <ShowcaseDemo responsive>
+        <div data-testid="showcase-read-only-request">
+          <CardDemo
+            accounts={[account('linear-team', 'Acme team', 'linear')]}
+            request={{
+              ...REQUEST,
+              serviceSlug: 'linear',
+              reason: 'File the bugs from today’s call',
+              access: 'read-write',
+            }}
+            readOnly
+          />
+        </div>
       </ShowcaseDemo>
 
       <ShowcaseLabel>Approved by another agent: who, Read only, and when</ShowcaseLabel>

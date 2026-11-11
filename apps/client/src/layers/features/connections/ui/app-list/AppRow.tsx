@@ -38,6 +38,7 @@ function RowBody({
   deprecated = false,
   wrapDetail = false,
   detailClassName,
+  note,
 }: {
   name: string;
   iconKey: string;
@@ -50,6 +51,8 @@ function RowBody({
   /** Let the line wrap to two lines (a description) instead of cutting it off. */
   wrapDetail?: boolean;
   detailClassName?: string;
+  /** A second quiet line under the detail, in plain muted text. */
+  note?: string;
 }) {
   return (
     <>
@@ -77,6 +80,7 @@ function RowBody({
             {detail}
           </span>
         </span>
+        {note && <span className="text-muted-foreground block text-xs">{note}</span>}
       </span>
     </>
   );
@@ -134,6 +138,7 @@ export function YourAppRowView({
             detail={row.detail}
             chat={row.kind === 'chat'}
             deprecated={row.deprecated}
+            note={row.note}
             // What broke, or what waits on you, is the one line worth reading in full.
             wrapDetail={row.tone === 'broken' || row.detailTone === 'warning'}
             detailClassName={

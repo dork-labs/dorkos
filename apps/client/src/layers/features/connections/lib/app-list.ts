@@ -70,6 +70,8 @@ export interface YourAppRow {
   deprecated?: boolean;
   /** Draw the detail amber: it waits on the person, though nothing broke. */
   detailTone?: 'warning';
+  /** A second quiet line: agents can only read this app for now (DOR-4193). */
+  note?: string;
 }
 
 /** A sign-in that has started and not finished, shown as a "Connecting" row. */
@@ -194,10 +196,12 @@ export function accountRow(
   // A disconnected account's fix (connect it again, finish removing it) is the
   // side panel's: the row only says what happened.
   const action = readiness.state === 'gone' || !fix ? null : (ROW_ACTION_BY_FIX[fix] ?? null);
+  const name = accountAppName(connection.toolkit, services);
   return {
     id: connection.connectionId,
     kind: 'account',
-    name: accountAppName(connection.toolkit, services),
+    name,
+    ...(connection.canOnlyRead && { note: `Read and write isn’t offered for ${name} yet.` }),
     iconKey: connection.toolkit,
     toolkit: connection.toolkit,
     ...logoOf(connection.toolkit, services),

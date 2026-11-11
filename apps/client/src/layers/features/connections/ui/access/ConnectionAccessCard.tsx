@@ -6,7 +6,7 @@ import {
 } from '@dorkos/shared/connector-schemas';
 import type { ServiceLogo } from '@/layers/entities/connectors';
 import { useRegisteredAgents } from '@/layers/entities/mesh';
-import { Button, SegmentedControl, SegmentedControlItem, Skeleton } from '@/layers/shared/ui';
+import { Button, Skeleton } from '@/layers/shared/ui';
 import {
   agentHeldAccess,
   cardDecision,
@@ -28,9 +28,15 @@ import { AccessCardFrame, type AccessCardVariant } from './AccessCardFrame';
 import { AccessOutcome } from './AccessOutcome';
 import { AccountChoice } from './AccountChoice';
 import { AgentChecklist } from './AgentChecklist';
-import { LEVEL_LABELS } from './access-labels';
 import { EveryAgentWarning } from './EveryAgentWarning';
-import { RequestedAccess, requestedWriteOffer } from './RequestedAccess';
+import { LevelPicker } from './LevelPicker';
+import {
+  allowLabel,
+  asksGrantableWrite,
+  RequestedAccess,
+  requestedWriteOffer,
+  startLevel,
+} from './RequestedAccess';
 import { savedSummary } from './saved-summary';
 import { StopSharingFallback } from './StopSharingFallback';
 import { WhoCanUseChoice } from './WhoCanUseChoice';
@@ -182,9 +188,9 @@ function AccessStep(
               initialCardLevel([agentHeldAccess(preview, props.agentId, Boolean(props.onAllowed))])
             : initialCardLevel(subjects.map((agentId) => heldAccess(current[agentId])));
       // A request starts on the level the agent asked for, and never below
-      // what it already holds.
+      // what it already holds; on an app with no Read and write, on Read.
       const asked = props.mode === 'agent' && props.request ? props.request.access : null;
-      setLevel(asked === 'read-write' || heldLevel === 'read-write' ? 'read-write' : heldLevel);
+      setLevel(startLevel(asked, heldLevel, preview.candidates));
       setLevelTouched(false);
     },
   });
@@ -225,6 +231,7 @@ function AccessStep(
       ? agentHeldAccess(preview, fixedAgentId, props.mode === 'agent' && Boolean(props.onAllowed))
       : 'none';
   const onAllowed = props.mode === 'agent' ? props.onAllowed : undefined;
+  const request = props.mode === 'agent' ? props.request : undefined;
   // Nothing to write, but the agent already holds access here: Allow answers
   // with it rather than sitting disabled over a question that needs an answer.
   const allowAsHeld =
@@ -345,7 +352,7 @@ function AccessStep(
 
       {/* Another agent can approve Read, never more, so a request for write access is always the
           person's to answer: said once, quietly, just above the buttons it is about (DOR-3959). */}
-      {props.mode === 'agent' && props.request?.access === 'read-write' && preview && !outcome && (
+      {props.mode === 'agent' && preview && !outcome && asksGrantableWrite(request, preview) && (
         <p data-testid="agent-request-write-note" className="text-muted-foreground text-xs">
           Write access needs you.
         </p>
@@ -397,7 +404,7 @@ function AccessStep(
                     access.isSaving)
                 }
               >
-                {access.isSaving ? 'Saving…' : props.mode === 'page' ? 'Save' : 'Allow'}
+                {access.isSaving ? 'Saving…' : allowLabel(props.mode, request, preview)}
               </Button>
             </>
           )
@@ -434,7 +441,6 @@ function AccessEditor({
   setShowAll: (next: boolean) => void;
   systemAgentIds: string[];
 }) {
-  const baseId = useId();
   const current = selectionsFromPreview(preview);
   const readIds = accessLevelRevisionIds(preview.candidates, 'read');
   const readWriteIds = accessLevelRevisionIds(preview.candidates, 'read-write');
@@ -447,6 +453,7 @@ function AccessEditor({
       ? offered.filter((option) => option === 'read-write')
       : offered;
   const nothingToGrant = readWriteIds.length === 0;
+  const writeOffer = requestedWriteOffer(preview.candidates);
 
   const exactActionsLink = props.onEditExactActions && (
     <ExactActionsLink onClick={() => props.onEditExactActions?.(props.connectionId)} />
@@ -518,7 +525,7 @@ function AccessEditor({
           serviceName={props.serviceName}
           request={props.request}
           level={level}
-          writeOffer={requestedWriteOffer(preview.candidates)}
+          writeOffer={writeOffer}
         />
       )}
       {whoView}
@@ -530,25 +537,14 @@ function AccessEditor({
         !agentMissing &&
         !agentCustom && (
           <div className="space-y-1.5">
-            <p id={`${baseId}-level`} className="text-muted-foreground text-xs font-medium">
-              {props.mode === 'page' ? 'They can' : 'It can'}
-            </p>
-            {levels.length > 1 ? (
-              <SegmentedControl
-                aria-labelledby={`${baseId}-level`}
-                // Mixed: no segment is selected until the person picks one for everyone.
-                value={level ?? ''}
-                onValueChange={(next) => setLevel(next as CardAccessLevel)}
-              >
-                {levels.map((option) => (
-                  <SegmentedControlItem key={option} value={option} className="min-h-9">
-                    {LEVEL_LABELS[option]}
-                  </SegmentedControlItem>
-                ))}
-              </SegmentedControl>
-            ) : (
-              <p className="text-sm">{LEVEL_LABELS[levels[0]]}</p>
-            )}
+            <LevelPicker
+              label={props.mode === 'page' ? 'They can' : 'It can'}
+              serviceName={props.serviceName}
+              levels={levels}
+              writeOffer={writeOffer}
+              level={level}
+              onChange={setLevel}
+            />
             {level === null && (
               <p className="text-muted-foreground text-xs">
                 {who === 'every'
