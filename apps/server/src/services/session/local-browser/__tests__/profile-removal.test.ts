@@ -128,7 +128,9 @@ describe('whole-profile disk removal (DOR-3887)', () => {
       const kept = path.join(theirs, '55555555-5555-4555-8555-555555555555');
       await writeFile(kept, 'made-up-person-file');
       await symlink(theirs, path.join(home, 'browser-profiles'));
-      await expect(removal().forgetAll([])).rejects.toMatchObject({ code: 'profile_busy' });
+      await expect(removal().forgetAll([])).rejects.toMatchObject({
+        code: 'profiles_folder_changed',
+      });
       expect(await readFile(kept, 'utf8')).toBe('made-up-person-file');
     } finally {
       await rm(theirs, { recursive: true, force: true });
@@ -240,7 +242,9 @@ describe('whole-profile disk removal (DOR-3887)', () => {
       path.join(home, 'browser-profiles'),
       process.platform === 'win32' ? 'junction' : 'dir'
     );
-    await expect(removal().forget(null)).rejects.toMatchObject({ code: 'profile_busy' });
+    await expect(removal().forget(null)).rejects.toMatchObject({
+      code: 'profiles_folder_changed',
+    });
     expect(await readFile(path.join(home, 'home/kept'), 'utf8')).toBe('kept');
   });
 
@@ -281,7 +285,9 @@ describe('whole-profile disk removal (DOR-3887)', () => {
         },
       }),
     });
-    await expect(clearing.forget(null)).rejects.toMatchObject({ code: 'profile_busy' });
+    await expect(clearing.forget(null)).rejects.toMatchObject({
+      code: 'profiles_folder_changed',
+    });
     expect(await readFile(path.join(outside, 'default/storage-state.json'), 'utf8')).toBe(
       'made-up-site-session'
     );
@@ -398,5 +404,129 @@ describe('whole-profile disk removal (DOR-3887)', () => {
     expect(await readFile(path.join(folder, 'storage-state.json'), 'utf8')).toBe(
       'made-up-site-session'
     );
+  });
+
+  describe('a folder changed outside DorkOS (DOR-4172)', () => {
+    const recorded = () => {
+      const findings: [string, string | null][] = [];
+      return {
+        findings,
+        removal: (extra: Partial<ConstructorParameters<typeof BrowserProfileRemoval>[0]> = {}) =>
+          new BrowserProfileRemoval({
+            dataDirectory: () => home,
+            busy: () => false,
+            tampered: (finding, id) => findings.push([finding, id]),
+            ...extra,
+          }),
+      };
+    };
+
+    it('records a swapped profiles folder once, by kind alone, never where it points', async () => {
+      const theirs = await mkdtemp(path.join(tmpdir(), 'dorkos-persons-own-'));
+      try {
+        await symlink(theirs, path.join(home, 'browser-profiles'));
+        const { findings, removal: tracked } = recorded();
+        await expect(tracked().forgetAll([])).rejects.toMatchObject({
+          code: 'profiles_folder_changed',
+        });
+        expect(findings).toEqual([['root_not_directory', null]]);
+        expect(JSON.stringify(findings)).not.toContain(theirs);
+      } finally {
+        await rm(theirs, { recursive: true, force: true });
+      }
+    });
+
+    it('records each planted link it removes, by profile id, never where it points', async () => {
+      const theirs = await mkdtemp(path.join(tmpdir(), 'dorkos-persons-own-'));
+      try {
+        const id = '33333333-3333-4333-8333-333333333333';
+        await mkdir(path.join(home, 'browser-profiles'), { recursive: true });
+        await symlink(theirs, path.join(home, 'browser-profiles', id));
+        const { findings, removal: tracked } = recorded();
+        await tracked().forgetAll([]);
+        expect(findings).toEqual([['planted_link', id]]);
+        expect(JSON.stringify(findings)).not.toContain(theirs);
+      } finally {
+        await rm(theirs, { recursive: true, force: true });
+      }
+    });
+
+    it('records a redirected parent on a single Forget as a planted link on that profile', async () => {
+      await symlink(
+        path.join(home, 'home'),
+        path.join(home, 'browser-profiles'),
+        process.platform === 'win32' ? 'junction' : 'dir'
+      );
+      const { findings, removal: tracked } = recorded();
+      await expect(tracked().forget(null)).rejects.toMatchObject({
+        code: 'profiles_folder_changed',
+      });
+      expect(findings).toEqual([['planted_link', 'default']]);
+    });
+
+    it('checks the profiles folder again right before each removal', async () => {
+      // The folder is swapped for a link to the person's own folder after the default is
+      // cleared. Without the re-check, the planted entry's removal would delete the
+      // person's file of the same name.
+      const theirs = await mkdtemp(path.join(tmpdir(), 'dorkos-persons-own-'));
+      try {
+        const id = '66666666-6666-4666-8666-666666666666';
+        const root = path.join(home, 'browser-profiles');
+        await seed(await prepareProfileFolder(home, null));
+        await symlink(theirs, path.join(root, id));
+        await writeFile(path.join(theirs, id), 'made-up-person-file');
+        let swapped = false;
+        const { findings, removal: tracked } = recorded();
+        const clearing = tracked({
+          remove: async (folder) => {
+            await rm(folder, { recursive: true, force: true });
+            if (swapped || folder !== path.join(root, 'default')) return;
+            swapped = true;
+            await rename(root, path.join(home, 'original-profiles'));
+            await symlink(theirs, root);
+          },
+        });
+        await expect(clearing.forgetAll([])).rejects.toMatchObject({
+          code: 'profiles_folder_changed',
+        });
+        expect(swapped).toBe(true);
+        expect(await readFile(path.join(theirs, id), 'utf8')).toBe('made-up-person-file');
+        expect(findings).toEqual([['root_not_directory', null]]);
+      } finally {
+        await rm(theirs, { recursive: true, force: true });
+      }
+    });
+
+    it('writes one audit event per finding with the profile id and no path or contents', async () => {
+      vi.resetModules();
+      const recordAudit = vi.fn();
+      vi.doMock('../../../audit/audit-trail.js', () => ({ recordAudit }));
+      try {
+        const { BrowserProfileRemoval: Audited } = await import('../profile-removal/index.js');
+        const theirs = await mkdtemp(path.join(tmpdir(), 'dorkos-persons-own-'));
+        try {
+          const id = '77777777-7777-4777-8777-777777777777';
+          await mkdir(path.join(home, 'browser-profiles'), { recursive: true });
+          await writeFile(path.join(theirs, 'keep.txt'), 'made-up-person-file');
+          await symlink(theirs, path.join(home, 'browser-profiles', id));
+          await new Audited({ dataDirectory: () => home, busy: () => false }).forgetAll([]);
+          expect(recordAudit).toHaveBeenCalledTimes(1);
+          expect(recordAudit.mock.calls[0]![0]).toMatchObject({
+            action: 'local_browser.profiles.planted_link',
+            outcome: 'ok',
+            target: { type: 'browser-profile', id },
+          });
+          const written = JSON.stringify(recordAudit.mock.calls);
+          expect(written).not.toContain(theirs);
+          expect(written).not.toContain(home);
+          expect(written).not.toContain('made-up-person-file');
+        } finally {
+          await rm(theirs, { recursive: true, force: true });
+        }
+      } finally {
+        vi.doUnmock('../../../audit/audit-trail.js');
+        vi.resetModules();
+      }
+    });
   });
 });

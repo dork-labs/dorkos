@@ -96,4 +96,21 @@ describe('Saved sign-ins (DOR-4105)', () => {
     expect(screen.queryByText('Sign-ins forgotten.')).toBeNull();
     expect(screen.queryByText(/signed out of every site/)).toBeNull();
   });
+
+  it('says a folder changed outside DorkOS was left alone, with no try again (DOR-4172)', async () => {
+    transport.forgetLocalBrowserSignIns.mockRejectedValue(
+      Object.assign(new Error('private path'), { code: 'profiles_folder_changed' })
+    );
+    mount();
+    fireEvent.click(screen.getByRole('button', { name: 'Forget…' }));
+    const dialog = await screen.findByRole('alertdialog');
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Forget sign-ins' }));
+    const alert = await within(dialog).findByRole('alert');
+    expect(alert).toHaveTextContent(
+      'Sign-ins weren’t forgotten. Their folder was changed outside DorkOS, so DorkOS left it alone.'
+    );
+    expect(alert).not.toHaveTextContent(/try again/i);
+    expect(screen.queryByText('private path')).toBeNull();
+    expect(screen.queryByText('Sign-ins forgotten.')).toBeNull();
+  });
 });
