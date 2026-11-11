@@ -93,6 +93,8 @@ Example: If `apps/client/src/layers/shared/ui/button.tsx` changes, it matches:
 
 ## Maintenance Tracking
 
+2026-11-11: Reconciled `managed-connections-operations.md` cancel-window eligibility with `holdRequesterFor`, `marksOf`, the explicit Full setting, and the release-time recheck. Deployment readiness records and coverage patterns are unchanged.
+
 2026-11-11: Clarified repository-root desktop build/smoke/native script paths in `desktop-app-development.md`, the PR watcher skill path in `ci.md`, and the moved permission-preview test in `capabilities/harness-sync.md`. Coverage patterns are unchanged.
 
 Browser guide coverage refreshed on 2026-10-15 for both owned browser modes and legacy CLI tools.
