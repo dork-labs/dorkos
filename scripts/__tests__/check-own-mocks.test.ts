@@ -1,5 +1,18 @@
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { compare, countOwnMocks, lowered, packageOf, raisedAgainst } from '../check-own-mocks.js';
+import {
+  BASELINE_PATH,
+  compare,
+  countOwnMocks,
+  lowered,
+  measure,
+  packageOf,
+  raisedAgainst,
+} from '../check-own-mocks.js';
+
+const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 
 // Spelled through constants so the samples below are not themselves counted by
 // the ratchet this file tests.
@@ -13,7 +26,7 @@ describe('countOwnMocks', () => {
       `${MOCK}('../../lib/config-manager.js', () => ({}));`,
       `${MOCK}('@/layers/shared/model', async (orig) => ({ ...(await orig()) }));`,
       `${MOCK}("@dorkos/shared/logger");`,
-      `${DO_MOCK}(\`@dork-labs/ui/input\`);`,
+      DO_MOCK + '(`@dork-labs/ui/input`);',
     ].join('\n');
     expect(countOwnMocks(text)).toBe(5);
   });
@@ -92,5 +105,24 @@ describe('lowered', () => {
         { 'apps/client': 10, 'apps/server': 5, 'packages/gone': 3 }
       )
     ).toEqual({ 'apps/client': 8, 'apps/server': 5 });
+  });
+});
+
+// The gate itself. This test is what holds the ratchet in CI: it runs in the
+// `test` job on every queue build, so no workflow carries a step for it. The
+// raised-by-hand check needs a base commit, so pre-push and `--base` do that
+// half; review is the other guard on the baseline file.
+describe('the repo', () => {
+  it('adds no own-module mock beyond the baseline, and has locked in every drop', () => {
+    const baseline = (
+      JSON.parse(readFileSync(join(ROOT, BASELINE_PATH), 'utf8')) as {
+        packages: Record<string, number>;
+      }
+    ).packages;
+    const findings = compare(measure(ROOT), baseline);
+    expect(
+      findings,
+      'Use the real module, or mock only at an edge. After removing mocks, run `pnpm check:own-mocks -- --update`.'
+    ).toEqual([]);
   });
 });

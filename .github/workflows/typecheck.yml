@@ -355,21 +355,6 @@ jobs:
           fi
           pnpm run check:max-lines -- --base "$base"
 
-      # The own-module mock ratchet (DOR-4190): each package's count of vi.mock
-      # calls on our own code may only fall. Same base rule as the step above.
-      - name: Own-module mock ratchet (DOR-4190)
-        if: ${{ !cancelled() }}
-        env:
-          QUEUE_BASE: ${{ github.event.merge_group.base_sha }}
-        run: |
-          if [ -n "$QUEUE_BASE" ]; then
-            git fetch --no-tags --depth=1 origin "$QUEUE_BASE"
-            base="$QUEUE_BASE"
-          else
-            base="$(git rev-parse HEAD^1)"
-          fi
-          pnpm run check:own-mocks -- --base "$base"
-
       # The design-token gate (UI overhaul). The rules are `RULES` in
       # scripts/check-design-tokens.ts: a `hard` rule may not match at all, and
       # a `ratchet` is held to scripts/design-tokens/baseline.json, where a

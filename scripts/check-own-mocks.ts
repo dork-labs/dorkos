@@ -102,7 +102,7 @@ export function packageOf(file: string): string {
   if ((parts[0] === 'apps' || parts[0] === 'packages') && parts.length > 2) {
     return `${parts[0]}/${parts[1]}`;
   }
-  return parts.length > 1 ? parts[0] : '.';
+  return parts.length > 1 ? (parts[0] ?? '.') : '.';
 }
 
 /**
@@ -115,7 +115,7 @@ export function countOwnMocks(text: string): number {
   for (const line of text.split('\n')) {
     if (COMMENT_LINE.test(line)) continue;
     for (const match of line.matchAll(MOCK_CALL)) {
-      if (OWN_MODULE.test(match[2])) n += 1;
+      if (OWN_MODULE.test(match[2] ?? '')) n += 1;
     }
   }
   return n;
