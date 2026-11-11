@@ -6,4 +6,4 @@ export {
   clearAgentWindowTheme,
   writeAgentWindowTheme,
 } from './theme.js';
-export { AgentWindowNames, agentWindowNameArg } from './window-name.js';
+export { AgentWindowNames, agentWindowLabel, agentWindowNameArg } from './window-name.js';

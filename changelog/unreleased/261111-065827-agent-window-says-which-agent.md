@@ -1,6 +1,7 @@
 ---
 covers:
   - "fix(browser): an agent's window says which agent is using it, and the card says the agent can't see it (DOR-3111)"
+  - "fix(browser): the agent's window uses the name its card shows (DOR-3111)"
 ---
 
 ### Fixed

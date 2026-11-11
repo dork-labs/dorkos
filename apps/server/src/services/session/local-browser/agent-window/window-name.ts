@@ -27,6 +27,16 @@ export function agentWindowName(agentName: string | null | undefined): string {
   return `${name} is using this window`;
 }
 
+/**
+ * The name a person knows an agent by: its display name, or its name without one.
+ * The same rule names the agent on the handoff card, so the window and card agree.
+ *
+ * @param agent - The agent's manifest.
+ */
+export function agentWindowLabel(agent: { name: string; displayName?: string }): string {
+  return agent.displayName?.trim() || agent.name;
+}
+
 /** The name of the agent a chat belongs to, for the title of the window it drives. */
 export class AgentWindowNames {
   // None until startup wires the mesh.

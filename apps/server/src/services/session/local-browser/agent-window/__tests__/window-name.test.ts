@@ -1,6 +1,11 @@
 /** The name on an agent's window (DOR-3111). */
 import { describe, expect, it } from 'vitest';
-import { agentWindowName, agentWindowNameArg, MAX_WINDOW_AGENT_NAME } from '../window-name.js';
+import {
+  agentWindowLabel,
+  agentWindowName,
+  agentWindowNameArg,
+  MAX_WINDOW_AGENT_NAME,
+} from '../window-name.js';
 
 describe('agentWindowName', () => {
   it('names the agent', () => {
@@ -34,6 +39,21 @@ describe('agentWindowName', () => {
     expect(agentWindowName(name)).toBe(
       `${'🦊'.repeat(MAX_WINDOW_AGENT_NAME)}… is using this window`
     );
+  });
+});
+
+describe('agentWindowLabel', () => {
+  it('uses the display name the card shows, not the folder-style name', () => {
+    const agent = { name: 'quarterly-planning-assistant', displayName: 'Quarterly Planning' };
+    expect(agentWindowLabel(agent)).toBe('Quarterly Planning');
+    expect(agentWindowName(agentWindowLabel(agent))).toBe(
+      'Quarterly Planning is using this window'
+    );
+  });
+
+  it('falls back to the name when there is no display name, or only spaces', () => {
+    expect(agentWindowLabel({ name: 'atlas' })).toBe('atlas');
+    expect(agentWindowLabel({ name: 'atlas', displayName: '  ' })).toBe('atlas');
   });
 });
 
