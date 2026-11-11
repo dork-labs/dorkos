@@ -627,11 +627,19 @@ describe('RuntimeCache', () => {
       expect(registry.getCommands).toHaveBeenCalledWith(undefined);
     });
 
-    it('passes forceRefresh to filesystem registry fallback', async () => {
-      const registry = createMockRegistryService(makeRegistry([]));
+    it('a forced refresh returns the filesystem registry rescan, not its cached list', async () => {
+      // The registry answers differently on a rescan, so the result says which
+      // one was asked for: a cache that dropped forceRefresh would return the
+      // cached entry both times.
+      const cached = makeFsCommandEntry('/cached', { namespace: 'project' });
+      const rescanned = makeFsCommandEntry('/rescanned', { namespace: 'project' });
+      const registry = {
+        getCommands: async (forceRefresh?: boolean) =>
+          makeRegistry([forceRefresh ? rescanned : cached]),
+      } as unknown as CommandRegistryService;
 
-      await cache.getCommands(registry, '/project', true);
-      expect(registry.getCommands).toHaveBeenCalledWith(true);
+      expect((await cache.getCommands(registry, '/project', true)).commands).toEqual([rescanned]);
+      expect((await cache.getCommands(registry, '/project')).commands).toEqual([cached]);
     });
 
     it('enriches SDK commands with filesystem metadata', async () => {
