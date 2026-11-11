@@ -128,6 +128,7 @@ describe('pinned managed browser preparation', () => {
           `${defaultFeatures},HttpsUpgrades,HttpsFirstBalancedModeAutoEnable`,
           `--disable-extensions-except=${path.join('.agent-window-theme')}`,
           `--load-extension=${path.join('.agent-window-theme')}`,
+          '--window-name=An agent is using this window',
         ],
         ignoreDefaultArgs: ['--enable-automation', defaultFeatures, '--disable-extensions'],
       });
@@ -144,6 +145,18 @@ describe('pinned managed browser preparation', () => {
       expect(mocks.writeFile.mock.invocationCallOrder.at(-1)).toBeLessThan(
         launch.mock.invocationCallOrder[0]!
       );
+    } finally {
+      launch.mockRestore();
+    }
+  });
+  it('names the window after the chat’s agent (DOR-3111)', async () => {
+    mocks.access.mockResolvedValue(undefined);
+    const launch = vi.spyOn(chromium, 'launchPersistentContext').mockResolvedValue(themedContext());
+    try {
+      await productionBackend.launch('test-only-storage', undefined, undefined, 'Atlas');
+      const [, options] = launch.mock.calls[0]!;
+      expect(options?.args).toContain('--window-name=Atlas is using this window');
+      expect(options?.args?.filter((arg) => arg.startsWith('--window-name='))).toHaveLength(1);
     } finally {
       launch.mockRestore();
     }

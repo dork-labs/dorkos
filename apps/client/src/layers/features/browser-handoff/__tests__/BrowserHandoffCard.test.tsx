@@ -119,6 +119,22 @@ describe('BrowserHandoffCard', () => {
     expect(screen.getByText('/work/atlas')).toBeTruthy();
   });
 
+  it('says the agent can’t see or use the window while the person has it (DOR-3111)', async () => {
+    transport.getLocalBrowserState.mockResolvedValue(person());
+    mount();
+    expect(await screen.findByText('Your turn: Atlas can’t see or use this window.')).toBeTruthy();
+  });
+
+  it('says it of "The agent" when the call carried no identity', async () => {
+    transport.getLocalBrowserState.mockResolvedValue(
+      person({ handoff: { ...handoff, agentName: null, agentFolder: null } })
+    );
+    mount();
+    expect(
+      await screen.findByText('Your turn: The agent can’t see or use this window.')
+    ).toBeTruthy();
+  });
+
   it('shows the home folder as ~', async () => {
     transport.getLocalBrowserState.mockResolvedValue(
       person({ handoff: { ...handoff, agentFolder: '/home/sam/agents/atlas' } })

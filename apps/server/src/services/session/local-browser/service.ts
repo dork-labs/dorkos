@@ -27,7 +27,7 @@ import {
   localBrowserHostFacts,
   type LocalBrowserHostFacts,
 } from './presentation.js';
-import { FullScreenGuard } from './agent-window/full-screen-guard.js';
+import { AgentWindowNames, FullScreenGuard } from './agent-window/index.js';
 import { productionBackend, type LocalBrowserBackend } from './playwright-backend.js';
 import { BrowserHandover } from './handover.js';
 import { SignInWindow } from './sign-in-window.js';
@@ -90,6 +90,8 @@ export class LocalBrowserService {
   private readonly preparation = new BrowserPreparation();
   private readonly metadata = new LocalBrowserTabMetadata();
   private readonly fullScreen = new FullScreenGuard();
+  /** The chat's agent name, for the title of the window it drives (DOR-3111). */
+  readonly windowNames = new AgentWindowNames();
   /** Handing the browser to the person and back, and the plain sign-in window. */
   readonly handover = new BrowserHandover(this, new SignInWindow(), () => this.dataDirectory);
 
@@ -163,7 +165,8 @@ export class LocalBrowserService {
           this.ownedContext = await this.backend.launch(
             storage,
             setupAbort.signal,
-            this.preparation.start()
+            this.preparation.start(),
+            await this.windowNames.of(input.sessionId)
           );
           this.ownedContext.on('close', () => this.closed(connectionId));
         } else {

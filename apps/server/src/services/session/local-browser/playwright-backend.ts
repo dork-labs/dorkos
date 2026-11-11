@@ -6,10 +6,11 @@ import { createRequire } from 'node:module';
 import { promisify } from 'node:util';
 import { chromium, type Browser, type BrowserContext } from 'playwright-core';
 import {
+  agentWindowNameArg,
   agentWindowThemeArgs,
   assertAgentFrame,
   writeAgentWindowTheme,
-} from './agent-window/theme.js';
+} from './agent-window/index.js';
 import { LocalBrowserError } from './errors.js';
 import { BrowserDownloadProgress, type BrowserPreparationListener } from './preparation.js';
 import { disablePasswordSaving } from './plain-chromium.js';
@@ -45,10 +46,19 @@ export function assertLocalPlaywrightVersion(): void {
 }
 
 export interface LocalBrowserBackend {
+  /**
+   * Open the agent's own window.
+   *
+   * @param storagePath - The profile's folder.
+   * @param signal - Cancels the browser download and setup.
+   * @param onPreparation - Told how the download and launch are going.
+   * @param agentName - The chat's agent, for the window's title; null when it isn't known.
+   */
   launch(
     storagePath: string,
     signal?: AbortSignal,
-    onPreparation?: BrowserPreparationListener
+    onPreparation?: BrowserPreparationListener,
+    agentName?: string | null
   ): Promise<BrowserContext>;
   connect(endpoint: string, headers?: Record<string, string>): Promise<Browser>;
 }
@@ -119,7 +129,7 @@ export async function managedChromiumPath(): Promise<string> {
 }
 
 export const productionBackend: LocalBrowserBackend = {
-  async launch(storagePath, signal, onPreparation) {
+  async launch(storagePath, signal, onPreparation, agentName) {
     await acquireLocalChromium(signal, onPreparation);
     signal?.throwIfAborted();
     onPreparation?.({ stage: 'launching', component: null, percent: null });
@@ -137,6 +147,7 @@ export const productionBackend: LocalBrowserBackend = {
       args: [
         `${PINNED_DISABLED_FEATURES_ARG},HttpsUpgrades,HttpsFirstBalancedModeAutoEnable`,
         ...agentWindowThemeArgs(theme),
+        agentWindowNameArg(agentName),
       ],
       // Without the automation flag the window looks like the person's Chrome;
       // password saving is off in the profile itself. The theme's own flag allows

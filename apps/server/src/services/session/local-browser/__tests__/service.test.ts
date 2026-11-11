@@ -166,6 +166,32 @@ it('refuses forgetting a profile until its window has fully closed', async () =>
   await expect(f.service.profileRemoval.forget(null)).resolves.toBeUndefined();
 });
 
+describe('the agent window’s name (DOR-3111)', () => {
+  it('names the window after the agent of the chat it opens for', async () => {
+    const f = await create();
+    const lookup = vi.fn(async (sessionId: string) =>
+      sessionId === 'chat-one' ? 'Atlas' : undefined
+    );
+    f.service.windowNames.use(lookup);
+    await f.service.open({ mode: 'new-window', sessionId: 'chat-one' });
+    expect(lookup).toHaveBeenCalledExactlyOnceWith('chat-one');
+    expect(vi.mocked(f.backend.launch).mock.calls[0]?.[3]).toBe('Atlas');
+    await f.service.disconnect();
+  });
+
+  it('opens an unnamed window with no chat, an unknown agent, or a failed lookup', async () => {
+    for (const lookup of [async () => undefined, async () => Promise.reject(new Error('mesh'))]) {
+      const f = await create();
+      f.service.windowNames.use(lookup);
+      await f.service.open({ mode: 'new-window', sessionId: 'chat-one' });
+      await f.service.disconnect();
+      await f.service.open({ mode: 'new-window' });
+      await f.service.disconnect();
+      for (const call of vi.mocked(f.backend.launch).mock.calls) expect(call[3]).toBeNull();
+    }
+  });
+});
+
 it('does not remove the profile while its final close is still flushing cookies', async () => {
   const f = await create();
   await f.service.open({ mode: 'new-window' });
@@ -730,13 +756,15 @@ describe('local browser ownership and observations', () => {
       1,
       path.join(dir, 'browser-profiles', 'default'),
       expect.any(AbortSignal),
-      expect.any(Function)
+      expect.any(Function),
+      null
     );
     expect(backend.launch).toHaveBeenNthCalledWith(
       2,
       path.join(dir, 'browser-profiles', 'default'),
       expect.any(AbortSignal),
-      expect.any(Function)
+      expect.any(Function),
+      null
     );
     expect(context.close).toHaveBeenCalledOnce();
   });
@@ -1101,7 +1129,8 @@ describe('named profiles (DOR-3218)', () => {
     expect(f.backend.launch).toHaveBeenLastCalledWith(
       path.join(f.dir, 'browser-profiles', profileId),
       expect.anything(),
-      expect.anything()
+      expect.anything(),
+      null
     );
     await f.service.disconnect();
   });
