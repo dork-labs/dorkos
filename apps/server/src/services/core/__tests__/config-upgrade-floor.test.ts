@@ -25,6 +25,17 @@ function seed(version?: string): { dir: string; file: string; before: Buffer } {
       {
         version: 1,
         auth: { enabled: true },
+        telemetry: {
+          userHasDecided: true,
+          install: false,
+          heartbeat: false,
+          usage: false,
+          errorReporting: false,
+          aiMetadata: false,
+          linkAnalyticsToAccount: false,
+        },
+        permissions: { preset: 'careful' },
+        runtimes: { defaultTrustStop: 'ask' },
         ui: { theme: 'dark' },
         ...(version === undefined ? {} : { __internal__: { migrations: { version } } }),
       },
@@ -37,23 +48,32 @@ function seed(version?: string): { dir: string; file: string; before: Buffer } {
 }
 
 describe('config upgrade floor through a real manager', () => {
-  it.each(['0.44.0', '0.89.0', '0.114.9', '0.115.0-beta.1', undefined])(
-    'refuses %s before defaults, migrations, or recovery can write',
-    (version) => {
-      const { dir, file, before } = seed(version);
-      let thrown: unknown;
-      try {
-        new ConfigManager(dir);
-      } catch (error) {
-        thrown = error;
-      }
-      expect(thrown).toBeInstanceOf(ConfigUpgradeRequiredError);
-      expect(thrown).toBeInstanceOf(ConfigBootError);
-      expect((thrown as ConfigUpgradeRequiredError).advice).toMatch(/0\.115 first/);
-      expect(fs.readFileSync(file)).toEqual(before);
-      expect(fs.readdirSync(dir)).toEqual(['config.json']);
+  it.each([
+    '0.44.0',
+    '0.45.0',
+    '0.46.0',
+    '0.48.0',
+    '0.50.0',
+    '0.52.0',
+    '0.55.0',
+    '0.89.0',
+    '0.114.9',
+    '0.115.0-beta.1',
+    undefined,
+  ])('refuses %s before defaults, migrations, or recovery can write', (version) => {
+    const { dir, file, before } = seed(version);
+    let thrown: unknown;
+    try {
+      new ConfigManager(dir);
+    } catch (error) {
+      thrown = error;
     }
-  );
+    expect(thrown).toBeInstanceOf(ConfigUpgradeRequiredError);
+    expect(thrown).toBeInstanceOf(ConfigBootError);
+    expect((thrown as ConfigUpgradeRequiredError).advice).toMatch(/0\.115 first/);
+    expect(fs.readFileSync(file)).toEqual(before);
+    expect(fs.readdirSync(dir)).toEqual(['config.json']);
+  });
 
   it.each(['0.115.0', '0.135.5', '0.136.0'])(
     'opens supported %s without losing choices',
@@ -65,6 +85,10 @@ describe('config upgrade floor through a real manager', () => {
       const stored = JSON.parse(fs.readFileSync(file, 'utf8'));
       expect(stored.auth.enabled).toBe(true);
       expect(stored.ui.theme).toBe('dark');
+      expect(stored.telemetry.install).toBe(false);
+      expect(stored.telemetry.usage).toBe(false);
+      expect(stored.permissions.preset).toBe('careful');
+      expect(stored.runtimes.defaultTrustStop).toBe('ask');
       expect(fs.readdirSync(dir)).toEqual(['config.json']);
     }
   );

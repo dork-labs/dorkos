@@ -410,7 +410,7 @@ Any change to `UserConfigSchema` (add / rename / remove / retype a field) that a
 
 Current releases accept config files last opened by **0.115.0 or newer**. Older or unstamped configs stop before Conf opens, so its defaults merge cannot rewrite them. The message says: "Upgrade to 0.115 first, then upgrade to this version." An unreadable file follows the existing read retries and stops without replacement.
 
-`config/upgrade-floor.ts` checks the stored `__internal__.migrations.version` before either Conf constructor. The 0.115 intermediate release and raw dev trees (`SERVER_VERSION = 0.0.0`) do not apply this current-release floor. Invalid JSON and malformed version markers retain the existing corruption-recovery path. This config check does not establish the database version.
+`config/upgrade-floor.ts` checks the stored `__internal__.migrations.version` before either Conf constructor. The 0.115 intermediate release and raw dev trees (`SERVER_VERSION = 0.0.0`) do not apply this current-release floor. Invalid JSON and malformed version markers retain the existing corruption-recovery path. This config check does not establish the database version. The 0.44–0.55 keys and their helpers have been retired; each key is recorded in `REMOVED_SHIPPED_KEYS`, and its old pin is removed. The remaining shipped bodies stay frozen.
 
 ### Why migrations matter
 
@@ -526,7 +526,7 @@ A field whose default is `false` because the feature is not finished being prove
 
 ### Reference example
 
-The migration chain lives in the module-level `CONFIG_MIGRATIONS` constant at `apps/server/src/services/core/config-migrations/index.ts` (extracted from the constructor for testability and to enforce the append-only rule by construction). The helpers its keys call sit beside it, grouped by the version range of the key that first calls them (`v0-44-to-v0-56.ts` through `v0-90-onward.ts`); a new helper goes at the bottom of `v0-90-onward.ts`. `config-manager.ts` hands the table to `conf` and re-exports all of it, so imports from `config-manager.js` keep working:
+The migration chain lives in the module-level `CONFIG_MIGRATIONS` constant at `apps/server/src/services/core/config-migrations/index.ts` (extracted from the constructor for testability and to enforce the append-only rule by construction). The helpers its keys call sit beside it, grouped by the version range of the key that first calls them (`v0-57-to-v0-59.ts` through `v0-90-onward.ts`); a new helper goes at the bottom of `v0-90-onward.ts`. `config-manager.ts` hands the table to `conf` and re-exports all of it, so imports from `config-manager.js` keep working:
 
 ```typescript
 const CONFIG_MIGRATIONS = {

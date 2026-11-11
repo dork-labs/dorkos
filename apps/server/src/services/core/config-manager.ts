@@ -145,10 +145,22 @@ export { classifyConfigLoadFailure, type ConfigLoadFailureKind } from './config/
 import { CONFIG_MIGRATIONS } from './config-migrations/index.js';
 import { RETIRED_SIDEBAR_COLLAPSE_KEYS } from './config-migrations/v0-57-to-v0-59.js';
 export { CONFIG_MIGRATIONS } from './config-migrations/index.js';
-export * from './config-migrations/v0-44-to-v0-56.js';
 export * from './config-migrations/v0-57-to-v0-59.js';
 export * from './config-migrations/v0-60-to-v0-89.js';
 export * from './config-migrations/v0-90-onward.js';
+
+/**
+ * One line describing a load failure, for a log or an error message.
+ *
+ * Node's `fs` errors already begin with their errno code
+ * (`EMFILE: too many open files, open '…'`), so the message alone is the whole
+ * story for the case this exists to report.
+ *
+ * @param error - Whatever was thrown.
+ */
+function describeLoadError(error: unknown): string {
+  return formatConfigLoadError(error);
+}
 
 /**
  * Backoff before each retry of a config read that failed for a reason other
@@ -485,7 +497,7 @@ export class ConfigManager {
       // The actual reason, logged before anything is moved. Without it, the
       // only record of WHY a config was replaced was the fact that it had been.
       logger.warn(
-        `[Config] ${configPath} could not be used: ${formatConfigLoadError(opened.corruptedBy)}`
+        `[Config] ${configPath} could not be used: ${describeLoadError(opened.corruptedBy)}`
       );
       // Read the doomed file BEFORE deleting it. The common failure is a file
       // that parses as JSON but holds a shape the schema does not describe (a

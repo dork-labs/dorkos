@@ -90,7 +90,9 @@ import {
  * ban. A shipped key owes an upgrading install one state change; when that state
  * change has become empty — the leaf it seeded no longer exists anywhere in the
  * product — the key owes nothing and keeping it costs something. That is a
- * judgement a person makes once, in review, and records here.
+ * judgement a person makes once, in review, and records here. A key below the
+ * supported upgrade floor also owes no supported install a change, provided
+ * the floor refuses older files before Conf can rewrite them.
  *
  * ## Adding an entry
  *
@@ -105,6 +107,20 @@ import {
  * into a standing excuse for a deletion nobody reviewed.
  */
 export const REMOVED_SHIPPED_KEYS: Readonly<Record<string, string>> = {
+  '0.44.0':
+    'DOR-4188: the 0.115 upgrade floor refuses older configs before Conf opens; no supported upgrade can reach this key.',
+  '0.45.0':
+    'DOR-4188: the 0.115 upgrade floor refuses older configs before Conf opens; no supported upgrade can reach this key.',
+  '0.46.0':
+    'DOR-4188: the 0.115 upgrade floor refuses older configs before Conf opens; no supported upgrade can reach this key.',
+  '0.48.0':
+    'DOR-4188: the 0.115 upgrade floor refuses older configs before Conf opens; no supported upgrade can reach this key.',
+  '0.50.0':
+    'DOR-4188: the 0.115 upgrade floor refuses older configs before Conf opens; no supported upgrade can reach this key.',
+  '0.52.0':
+    'DOR-4188: the 0.115 upgrade floor refuses older configs before Conf opens; no supported upgrade can reach this key.',
+  '0.55.0':
+    'DOR-4188: the 0.115 upgrade floor refuses older configs before Conf opens; no supported upgrade can reach this key.',
   '0.71.0':
     'seeded runtimes.dorkosTools; DOR-2099 graduated that experiment and deleted the leaf, so ' +
     'there is no behaviour left for a stored value to select and the state change it owed is ' +
