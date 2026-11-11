@@ -115,7 +115,7 @@ These are intake briefs, not frozen specifications. Acceptance below describes t
 
 **Outcome:** a source-backed matrix for local caller → saved connection → remote community → acting member → list/open/post/subscribe/attachment access/revocation. Include two owners, two tenants at one origin, independent origins, account switching, revoked membership and credential changes during a stream.
 
-**Start with:** [Community next-phase roadmap](community-next-phase.md), [tenancy specification](../specs/community-tenancy-contract/02-specification.md), [membership specification](../specs/community-membership-journeys/02-specification.md), the remote services and route tests, and DOR-2173 / DOR-2186 / DOR-2191. Re-read linked acceptance evidence before crediting an invariant as verified.
+**Start with:** [Community next-phase roadmap](community-next-phase.md), [tenancy specification](../specs/community-tenancy-contract/02-specification.md), [membership specification](https://github.com/dork-labs/dorkos/blob/78baefc5ac7aeac33c67f5e697fbe2f36179a960/specs/community-membership-journeys/02-specification.md), the remote services and route tests, and DOR-2173 / DOR-2186 / DOR-2191. Re-read linked acceptance evidence before crediting an invariant as verified.
 
 **First-chunk acceptance:** every operation has an authority owner and a concrete test/evidence pointer, or an explicit unknown and a linked existing/new issue. Reuse an existing issue when it already owns the gap. No unknown may be represented as a passing security check.
 

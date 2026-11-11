@@ -35,4 +35,4 @@ We preserve default document-level portals and provide an optional UiProvider ca
 - Hosts must mount a stable container within the intended theme boundary.
 - The package must test every portal path, including nested menus and explicit overrides.
 
-See [the specification](../specs/shared-ui-broader-adoption/02-specification.md).
+See [the specification](https://github.com/dork-labs/dorkos/blob/78baefc5ac7aeac33c67f5e697fbe2f36179a960/specs/shared-ui-broader-adoption/02-specification.md).

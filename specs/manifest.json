@@ -261,14 +261,6 @@
       "linearIssue": "DOR-2429"
     },
     {
-      "id": "260927-155808",
-      "slug": "connection-app-details",
-      "title": "Connections: app logos, descriptions, actions and a kept app list",
-      "created": "2026-09-27",
-      "status": "implemented",
-      "project": "DorkOS Connections"
-    },
-    {
       "id": "260926-193136",
       "slug": "local-workspace-lifecycle",
       "title": "Local workspace reconciler lifecycle pilot",
@@ -287,30 +279,12 @@
       "linearIssue": "DOR-2418"
     },
     {
-      "id": "260925-225543",
-      "slug": "disconnected-account-removal",
-      "title": "Remove disconnected accounts",
-      "created": "2026-09-12",
-      "status": "implemented",
-      "project": "DorkOS Connections",
-      "linearIssue": "DOR-1994"
-    },
-    {
       "id": "260925-192121",
       "slug": "obsidian-retirement",
       "title": "Retire the Obsidian plugin",
       "created": "2026-09-25",
       "status": "specified",
       "linearIssue": "DOR-2343"
-    },
-    {
-      "id": "260924-175336",
-      "slug": "marketplace-install-verification",
-      "title": "Say whether an installed package still matches what was installed",
-      "created": "2026-09-24",
-      "status": "implemented",
-      "project": "Marketplace Package Management",
-      "linearIssue": "DOR-2197"
     },
     {
       "id": "260925-004621",
@@ -327,13 +301,6 @@
       "created": "2026-09-24",
       "status": "specified",
       "project": "Marketplace Package Management"
-    },
-    {
-      "id": "260924-130508",
-      "slug": "shared-ui-broader-adoption",
-      "title": "Shared UI: broader primitive adoption and maintenance",
-      "created": "2026-09-24",
-      "status": "implemented"
     },
     {
       "id": "260924-114458",
@@ -367,67 +334,6 @@
       "status": "specified",
       "project": "Community Self-Hosting",
       "linearIssue": "DOR-2238"
-    },
-    {
-      "id": "260923-235409",
-      "slug": "marketplace-installed-updates",
-      "title": "The Installed view says what is out of date and updates it",
-      "created": "2026-09-23",
-      "status": "implemented",
-      "project": "Marketplace Package Management",
-      "linearIssue": "DOR-2196"
-    },
-    {
-      "id": "260924-002702",
-      "slug": "package-schedule-timing",
-      "title": "Let a person change when a package's schedule runs",
-      "created": "2026-09-24",
-      "status": "implemented",
-      "project": "Marketplace Package Management",
-      "linearIssue": "DOR-2302"
-    },
-    {
-      "id": "260923-193637",
-      "slug": "marketplace-cache-retention",
-      "title": "Keep the marketplace package cache small without losing what installs need",
-      "created": "2026-09-23",
-      "status": "implemented",
-      "project": "Marketplace Package Management"
-    },
-    {
-      "id": "260923-163012",
-      "slug": "marketplace-fetch-integrity",
-      "title": "A cached package holds exactly the commit its key names",
-      "created": "2026-09-23",
-      "status": "implemented",
-      "project": "Marketplace Package Management"
-    },
-    {
-      "id": "260923-162659",
-      "slug": "marketplace-update-all",
-      "title": "Check and apply updates across every installed package in one request",
-      "created": "2026-09-23",
-      "status": "implemented",
-      "project": "Marketplace Package Management",
-      "linearIssue": "DOR-2194"
-    },
-    {
-      "id": "260923-163619",
-      "slug": "marketplace-package-file-ownership",
-      "title": "Keep a package's settings when it is updated or reinstalled",
-      "created": "2026-09-23",
-      "status": "implemented",
-      "project": "Marketplace Package Management",
-      "linearIssue": "DOR-2245"
-    },
-    {
-      "id": "260923-122229",
-      "slug": "marketplace-version-truth",
-      "title": "Know when a marketplace package has a new version",
-      "created": "2026-09-23",
-      "status": "implemented",
-      "project": "Marketplace Package Management",
-      "linearIssue": "DOR-2244"
     },
     {
       "id": "260922-223212",
@@ -506,13 +412,6 @@
       "project": "Canvas and Browser in Rooms"
     },
     {
-      "id": "260911-181432",
-      "slug": "claude-agent-sdk-upgrade-0.3.268",
-      "title": "Claude Agent SDK Upgrade to 0.3.268",
-      "created": "2026-09-11",
-      "status": "implemented"
-    },
-    {
       "id": "260911-191248",
       "slug": "ambient-background-tasks",
       "title": "Housekeeping tasks stay quiet",
@@ -541,15 +440,6 @@
       "status": "implemented"
     },
     {
-      "id": "260910-001729",
-      "slug": "composio-managed-auth-defaults",
-      "title": "Make Composio services ready to connect with managed sign-in defaults",
-      "created": "2026-09-10",
-      "status": "implemented",
-      "linearIssue": "DOR-1958",
-      "project": "DorkOS Connections"
-    },
-    {
       "id": "260909-232320",
       "slug": "feedback-attachments",
       "title": "Feedback Attachments — screenshot capture and point-at-element delivered into Linear",
@@ -575,14 +465,6 @@
       "linearIssue": "DOR-1931"
     },
     {
-      "id": "260908-163711",
-      "slug": "hosted-notification-intake-bounds",
-      "title": "Bound hosted notification intake and backlog",
-      "created": "2026-09-08",
-      "status": "implemented",
-      "project": "connections"
-    },
-    {
       "id": "260908-151633",
       "slug": "runtime-subprocess-environment",
       "title": "Filter server secrets from runtime subprocess environments",
@@ -590,15 +472,6 @@
       "status": "specified",
       "linearIssue": "DOR-1904",
       "project": "DorkOS Connections"
-    },
-    {
-      "id": "260908-151620",
-      "slug": "connections-runtime-turn-renewal",
-      "title": "Connections runtime-turn lease renewal",
-      "created": "2026-09-08",
-      "status": "implemented",
-      "project": "DorkOS Connections",
-      "linearIssue": "DOR-1903"
     },
     {
       "id": "260908-102701",
@@ -640,15 +513,6 @@
       "status": "ideation"
     },
     {
-      "id": "260906-000529",
-      "slug": "stable-http-test-listeners",
-      "title": "Stable HTTP listeners for server test fixtures",
-      "created": "2026-09-06",
-      "status": "implemented",
-      "linearIssue": "DOR-1804",
-      "project": "Green Main"
-    },
-    {
       "id": "260905-204014",
       "slug": "white-label-connections",
       "title": "DorkOS Connections — managed and BYO accounts, scoped agent access, usage, and events",
@@ -673,33 +537,12 @@
       "linearIssue": "DOR-2099"
     },
     {
-      "id": "260828-002928",
-      "slug": "task-runtime-model",
-      "title": "Per-task runtime, model, and effort for scheduled tasks",
-      "created": "2026-08-28",
-      "status": "implemented"
-    },
-    {
-      "id": "260827-202452",
-      "slug": "project-rooms",
-      "title": "Project Rooms — rooms with their own repo, files, and collaboration",
-      "created": "2026-08-27",
-      "status": "implemented"
-    },
-    {
       "id": "260824-233720",
       "slug": "agent-memory",
       "title": "Agent memory — an agent-scoped memory layer across sessions, rooms and DMs",
       "created": "2026-08-24",
       "status": "implemented",
       "project": "Rooms, Channels & Threads"
-    },
-    {
-      "id": "260823-194809",
-      "slug": "universal-scheduled-tasks",
-      "title": "Universal scheduled tasks — any skill can be scheduled",
-      "created": "2026-08-23",
-      "status": "implemented"
     },
     {
       "id": "260823-174248",
@@ -733,65 +576,11 @@
       "project": "Full Power by Default"
     },
     {
-      "id": "260821-202452",
-      "slug": "one-bar-header",
-      "title": "One Bar: header consistency across the cockpit",
-      "created": "2026-08-21",
-      "status": "implemented"
-    },
-    {
-      "id": "260821-185930",
-      "slug": "schedule-approval-experience",
-      "title": "The schedule approval moment — informed consent, not a shrug",
-      "created": "2026-08-21",
-      "status": "implemented"
-    },
-    {
       "id": "260819-203828",
       "slug": "sidebar-simplification",
       "title": "Sidebar simplification: two levels, one door, sections, one bottom slot",
       "created": "2026-08-19",
       "status": "implemented"
-    },
-    {
-      "id": "260819-023728",
-      "slug": "ask-entitlement",
-      "title": "Per-person Ask entitlement: the fleet-wide list and the fan-out filter by who may answer",
-      "created": "2026-08-19",
-      "status": "implemented",
-      "project": "Unified Conversation Surfaces"
-    },
-    {
-      "id": "260819-023727",
-      "slug": "room-per-agent-stop",
-      "title": "Stop one agent without stopping the room",
-      "created": "2026-08-19",
-      "status": "implemented",
-      "project": "Unified Conversation Surfaces"
-    },
-    {
-      "id": "260819-023726",
-      "slug": "presence-verb-glimpse",
-      "title": "Presence tier 3: the live lane says what the agent is doing",
-      "created": "2026-08-19",
-      "status": "implemented",
-      "project": "Unified Conversation Surfaces"
-    },
-    {
-      "id": "260819-023725",
-      "slug": "ask-parks-on-timeout",
-      "title": "An Ask that times out parks the agent instead of refusing for it",
-      "created": "2026-08-19",
-      "status": "implemented",
-      "project": "Unified Conversation Surfaces"
-    },
-    {
-      "id": "260818-234135",
-      "slug": "room-hold-when-busy",
-      "title": "A room holds a message for a busy agent instead of asking you to resend",
-      "created": "2026-08-18",
-      "status": "implemented",
-      "project": "Unified Conversation Surfaces"
     },
     {
       "id": "260818-001825",
@@ -817,13 +606,6 @@
       "project": "Team, Identity & Profiles"
     },
     {
-      "id": "260814-025025",
-      "slug": "community-remote-trigger",
-      "title": "The remote trigger path — turning a mention in someone else's community into a turn on my machine",
-      "created": "2026-08-14",
-      "status": "superseded"
-    },
-    {
       "id": "260814-114442",
       "slug": "proactive-agent-dms",
       "title": "Proactive agent DMs: guardrails for messages nobody asked for",
@@ -844,14 +626,6 @@
       "created": "2026-08-09",
       "status": "specified",
       "linearIssue": "DOR-1089"
-    },
-    {
-      "id": "260809-150251",
-      "slug": "page-width-consistency",
-      "title": "Page width consistency: PageContainer primitive + route migration",
-      "created": "2026-08-09",
-      "status": "implemented",
-      "linearIssue": "DOR-1047"
     },
     {
       "id": "260808-144053",
@@ -911,13 +685,6 @@
       "status": "ideation"
     },
     {
-      "id": "260807-170131",
-      "slug": "team-room-home",
-      "title": "The home is a room: #team room home, tabs IA, jump back in",
-      "created": "2026-08-07",
-      "status": "implemented"
-    },
-    {
       "id": "260806-215029",
       "slug": "composer-rich-text",
       "title": "Rich text via markdown in the composer (Lexical)",
@@ -961,32 +728,11 @@
       "status": "specified"
     },
     {
-      "id": "260803-181550",
-      "slug": "runtimes-settings-redesign",
-      "title": "Runtimes settings redesign — per-runtime cards, default as a state, runtime-declared settings",
-      "created": "2026-08-03",
-      "status": "implemented"
-    },
-    {
-      "id": "260803-204801",
-      "slug": "feedback-pipeline",
-      "title": "Feedback pipeline — diagnostics, Linear intake, tracking",
-      "created": "2026-08-03",
-      "status": "implemented"
-    },
-    {
       "id": "260803-133357",
       "slug": "chats-as-channels",
       "title": "Chats as Channels — a bound external chat becomes a DorkOS channel",
       "created": "2026-08-03",
       "status": "specified"
-    },
-    {
-      "id": "260801-135340",
-      "slug": "chat-touch-chips",
-      "title": "Chat touch chips — files & URLs the agent handled, with a verb motion language",
-      "created": "2026-08-01",
-      "status": "implemented"
     },
     {
       "id": "260801-013351",
@@ -1017,13 +763,6 @@
       "status": "specified"
     },
     {
-      "id": "260730-112334",
-      "slug": "room-details-sheet",
-      "title": "The members dialog becomes the room sheet, and the response mode becomes readable",
-      "created": "2026-07-30",
-      "status": "implemented"
-    },
-    {
       "id": "260729-224559",
       "slug": "claude-code-accounts",
       "title": "Claude Code accounts — choose which account runs your work",
@@ -1037,29 +776,6 @@
       "created": "2026-07-30",
       "status": "specified",
       "project": "Connections Redesign — Direct First"
-    },
-    {
-      "id": "260730-001216",
-      "slug": "connections-redesign",
-      "title": "Connections redesign — catalog-first, honest custody, chat front door, try-it-now",
-      "created": "2026-07-30",
-      "status": "superseded",
-      "project": "Connections Redesign — Direct First"
-    },
-    {
-      "id": "260729-145341",
-      "slug": "room-presence",
-      "title": "Room presence — an honest working indicator, from claim to release",
-      "created": "2026-07-29",
-      "status": "implemented"
-    },
-    {
-      "id": "260729-134840",
-      "slug": "user-profile-onboarding",
-      "title": "User profile + onboarding role beat",
-      "created": "2026-07-29",
-      "status": "implemented",
-      "project": "Connector Gateway Completion"
     },
     {
       "id": "260729-134839",
@@ -1091,13 +807,6 @@
       "status": "specified"
     },
     {
-      "id": "260727-221432",
-      "slug": "community-adapter",
-      "title": "CommunityAdapter — one port for local rooms, Buzz, and apps/community",
-      "created": "2026-07-27",
-      "status": "implemented"
-    },
-    {
       "id": "260727-161438",
       "slug": "invites",
       "title": "Invites — a second person on one install",
@@ -1124,22 +833,6 @@
       "title": "Rooms — channels, DMs and threads",
       "created": "2026-07-26",
       "status": "specified"
-    },
-    {
-      "id": "260726-162747",
-      "slug": "channel-workspace",
-      "title": "Channel workspaces — a room's shared working context, distributed by git, layered by harness sync",
-      "created": "2026-07-26",
-      "status": "superseded",
-      "supersededBy": "260827-202452"
-    },
-    {
-      "id": "260726-162520",
-      "slug": "agent-workspace-binding",
-      "title": "Agent workspace binding — every agent knows where it works",
-      "created": "2026-07-26",
-      "status": "implemented",
-      "project": "Agents as First-Class Operators"
     },
     {
       "id": "260726-015631",
@@ -1173,23 +866,9 @@
       "project": "Agents as First-Class Operators"
     },
     {
-      "id": "260722-184734",
-      "slug": "opencode-connect-overhaul",
-      "title": "OpenCode connect overhaul — readiness root fix + power-source picker + tiered model menu",
-      "created": "2026-07-22",
-      "status": "implemented"
-    },
-    {
       "id": "260721-140257",
       "slug": "file-explorer-state-persistence",
       "title": "File explorer: persist state across refreshes and tab switches + holistic UX polish",
-      "created": "2026-07-21",
-      "status": "implemented"
-    },
-    {
-      "id": "260721-134155",
-      "slug": "smart-agent-groups",
-      "title": "Smart agent groups from mesh metadata (rule-based membership)",
       "created": "2026-07-21",
       "status": "implemented"
     },
@@ -1271,14 +950,6 @@
       "status": "specified"
     },
     {
-      "id": "260716-234343",
-      "slug": "universal-command-intents",
-      "title": "Universal command intents with cross-agent aliases (compact / clear / context)",
-      "created": "2026-07-16",
-      "status": "implemented",
-      "project": "Universal Command Interface"
-    },
-    {
       "id": "260713-014129",
       "slug": "desktop-windows-support",
       "title": "Windows desktop support — unsigned NSIS alpha on the unified release train",
@@ -1349,13 +1020,6 @@
       "status": "implemented"
     },
     {
-      "slug": "merge-conflict-prevention",
-      "title": "Prevent Multi-Agent Merge Conflicts in Shared Registries and Identifiers",
-      "created": "2026-07-03",
-      "status": "implemented",
-      "id": "260703-193514"
-    },
-    {
       "number": 267,
       "slug": "harness-sync",
       "title": "Harness Sync — project one canonical agent source to every harness",
@@ -1417,13 +1081,6 @@
       "linearIssue": "DOR-84"
     },
     {
-      "number": 257,
-      "slug": "unified-workflow-system",
-      "title": "Unified Workflow System — the /flow engine (PM-agnostic, dual-mode)",
-      "created": "2026-06-13",
-      "status": "implemented"
-    },
-    {
       "number": 256,
       "slug": "core-extensions",
       "title": "Core Extensions",
@@ -1436,13 +1093,6 @@
       "slug": "chat-stream-reconnection",
       "title": "Runtime-agnostic session hydration & resumable streaming",
       "created": "2026-06-10",
-      "status": "implemented"
-    },
-    {
-      "number": 253,
-      "slug": "auto-permission-mode",
-      "title": "Auto Mode: remove misplaced toggle, adopt auto as a permission mode",
-      "created": "2026-06-09",
       "status": "implemented"
     },
     {
@@ -1474,27 +1124,6 @@
       "status": "ideation"
     },
     {
-      "number": 231,
-      "slug": "agent-sidebar-redesign",
-      "title": "Agent Sidebar Redesign",
-      "created": "2026-04-11",
-      "status": "implemented"
-    },
-    {
-      "number": 228,
-      "slug": "marketplace-05-agent-installer",
-      "title": "Marketplace 05: Agent Installer (MCP Server)",
-      "created": "2026-04-06",
-      "status": "implemented"
-    },
-    {
-      "number": 224,
-      "slug": "marketplace-01-foundation",
-      "title": "Marketplace 01: Foundation",
-      "created": "2026-04-06",
-      "status": "implemented"
-    },
-    {
       "number": 223,
       "slug": "settings-dialog-04-playground",
       "title": "Dev Playground Settings Page",
@@ -1509,53 +1138,11 @@
       "status": "ideation"
     },
     {
-      "number": 216,
-      "slug": "settings-dialog-01-file-splits",
-      "title": "Settings Dialog File Splits",
-      "created": "2026-04-06",
-      "status": "implemented"
-    },
-    {
       "number": 215,
       "slug": "external-mcp-access",
       "title": "External MCP Access Controls",
       "created": "2026-04-05",
       "status": "specified"
-    },
-    {
-      "number": 214,
-      "slug": "channels-and-agent-adapters",
-      "title": "Channels & Agent Adapters — Connectivity UX Redesign",
-      "created": "2026-04-04",
-      "status": "implemented"
-    },
-    {
-      "number": 213,
-      "slug": "upgrade-electron-vite",
-      "title": "Upgrade electron-vite from v3.1.0 to v5.0.0 (+ Electron ecosystem)",
-      "created": "2026-04-01",
-      "status": "implemented"
-    },
-    {
-      "number": 212,
-      "slug": "skills-package",
-      "title": "Skills Package — SKILL.md Format Foundation",
-      "created": "2026-04-01",
-      "status": "implemented"
-    },
-    {
-      "number": 210,
-      "slug": "activity-feed",
-      "title": "Activity Feed",
-      "created": "2026-03-29",
-      "status": "implemented"
-    },
-    {
-      "number": 206,
-      "slug": "subagent-lifecycle-visibility",
-      "title": "Subagent Lifecycle Visibility",
-      "created": "2026-03-29",
-      "status": "implemented"
     },
     {
       "number": 203,
@@ -1656,13 +1243,6 @@
       "status": "ideation"
     },
     {
-      "number": 150,
-      "slug": "streaming-message-integrity",
-      "title": "Streaming Message Integrity — Eliminate Post-Stream Replace",
-      "created": "2026-03-19",
-      "status": "implemented"
-    },
-    {
       "number": 148,
       "slug": "sdk-error-observability",
       "title": "SDK Error Observability — Break Infinite Retry Loop, Surface Errors to Adapters",
@@ -1757,13 +1337,6 @@
       "number": 95,
       "slug": "fix-relay-sse-delivery-pipeline",
       "title": "Fix Relay SSE Message Delivery Pipeline",
-      "created": "2026-03-06",
-      "status": "implemented"
-    },
-    {
-      "number": 94,
-      "slug": "unify-discovery-system",
-      "title": "Unify Discovery System",
       "created": "2026-03-06",
       "status": "implemented"
     },
@@ -1950,13 +1523,6 @@
       "status": "implemented"
     },
     {
-      "number": 32,
-      "slug": "dorkos-config-file-system",
-      "title": "DorkOS Configuration File System",
-      "created": "2026-02-16",
-      "status": "implemented"
-    },
-    {
       "number": 31,
       "slug": "documentation-infrastructure",
       "title": "Documentation Infrastructure",
@@ -1976,13 +1542,6 @@
       "title": "Improve Slash Command System",
       "created": "2026-02-13",
       "status": "specified"
-    },
-    {
-      "number": 9,
-      "slug": "settings-screen",
-      "title": "Settings Screen",
-      "created": "2026-02-12",
-      "status": "implemented"
     },
     {
       "id": "260708-111226",
@@ -2020,42 +1579,12 @@
       "status": "specified"
     },
     {
-      "id": "260818-110913",
-      "slug": "jordan-findings-202608",
-      "title": "Jordan Lyall findings (0.61.0, 2026-08-17): fix or improve all 16",
-      "created": "2026-08-18",
-      "status": "implemented"
-    },
-    {
-      "id": "260819-234124",
-      "slug": "notification-system",
-      "title": "Unified notification system",
-      "created": "2026-08-19",
-      "status": "implemented"
-    },
-    {
-      "id": "260821-204928",
-      "slug": "billing-account-ladder",
-      "title": "Billing Account Ladder: default → per-agent → per-session",
-      "created": "2026-08-21",
-      "status": "implemented"
-    },
-    {
       "id": "260828-003023",
       "slug": "rooms-management-tools",
       "title": "Let agents manage rooms — five verbs behind the product's first hard tool toggle",
       "created": "2026-08-28",
       "status": "specified",
       "linearIssue": "DOR-1611"
-    },
-    {
-      "id": "260908-154500",
-      "slug": "codex-session-reliability",
-      "title": "Reliable Codex sessions",
-      "created": "2026-09-08",
-      "status": "implemented",
-      "project": "Sessions & Runtimes",
-      "linearIssue": "DOR-1925"
     },
     {
       "id": "260912-190726",
@@ -2065,15 +1594,6 @@
       "status": "specified",
       "project": "Agents as First-Class Operators",
       "linearIssue": "DOR-1932"
-    },
-    {
-      "id": "260914-203800",
-      "slug": "blintz-editor-polish",
-      "title": "Blintz markdown polish",
-      "created": "2026-09-14",
-      "status": "implemented",
-      "project": "App Shell & Accessibility",
-      "linearIssue": "DOR-2038"
     },
     {
       "id": "260919-180529",
@@ -2092,32 +1612,6 @@
       "status": "specified",
       "project": "Community Self-Hosting",
       "linearIssue": "DOR-2167"
-    },
-    {
-      "id": "260920-201100",
-      "slug": "community-administration-contract",
-      "title": "Community administration lifecycle contract",
-      "created": "2026-09-20",
-      "status": "implemented",
-      "project": "Community Administration",
-      "linearIssue": "DOR-2175"
-    },
-    {
-      "id": "260920-203200",
-      "slug": "community-membership-journeys",
-      "title": "Community membership journey and handoff contract",
-      "created": "2026-09-20",
-      "status": "implemented",
-      "project": "Community Membership Journeys",
-      "linearIssue": "DOR-2179"
-    },
-    {
-      "id": "260920-230219",
-      "slug": "evals-runtime-legs",
-      "title": "The eval harness runs a rooms case on the runtime you asked for",
-      "created": "2026-09-20",
-      "status": "implemented",
-      "linearIssue": "DOR-2207"
     },
     {
       "id": "260920-205153",

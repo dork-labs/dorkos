@@ -209,7 +209,7 @@ were the only thing bounding such a turn. Decide it by who started the turn, nev
   (`POST /api/rooms/:id/halt`) and the header button reach the runtimes; nothing
   pattern-matches a message for "stop", in this phase or any later one.
   **It comes in two scopes and the scope is a path segment, never a body
-  field** (`specs/room-per-agent-stop`, ADR `260819-023317`).
+  field** ([specs/room-per-agent-stop](https://github.com/dork-labs/dorkos/tree/78baefc5ac7aeac33c67f5e697fbe2f36179a960/specs/room-per-agent-stop), ADR `260819-023317`).
   `POST /api/rooms/:id/halt/:authorId` and the peek's per-row Stop are the same
   verb narrowed to one `(room, agent)` key: `RoomTriggerDispatcher.haltAgent`
   performs the same steps under the same constraints as `halt` — all three of
