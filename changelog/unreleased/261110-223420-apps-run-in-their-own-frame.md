@@ -8,6 +8,7 @@ covers:
   - "fix(extensions): an app saves a file through DorkOS's own dialog (DOR-3293)"
   - "fix(extensions): a canvas tab an app opened says so, from DorkOS's own record (DOR-3293)"
   - 'fix(server): a canvas "opened by" mark names only a running app, and never comes from an agent (DOR-3293)'
+  - 'feat(extensions): apps show pictures and video from their own routes with api.media (DOR-3293)'
 ---
 
 ### Security
