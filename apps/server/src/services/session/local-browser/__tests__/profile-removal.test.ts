@@ -65,6 +65,51 @@ describe('whole-profile disk removal (DOR-3887)', () => {
     });
   });
 
+  it('forgets every profile at once: the default and each named one (DOR-4105)', async () => {
+    const profiles = store();
+    const work = profiles.create('Example work');
+    const personal = profiles.create('Example personal');
+    const folders = [
+      await prepareProfileFolder(home, null),
+      await prepareProfileFolder(home, work.id),
+      await prepareProfileFolder(home, personal.id),
+    ];
+    for (const folder of folders) await seed(folder);
+    const forgotten: (string | null)[] = [];
+    await new BrowserProfileRemoval({
+      dataDirectory: () => home,
+      busy: () => false,
+      forgotten: (id) => forgotten.push(id),
+    }).forgetAll([work.id, personal.id]);
+    for (const folder of folders) {
+      await expect(readFile(path.join(folder, 'storage-state.json'))).rejects.toMatchObject({
+        code: 'ENOENT',
+      });
+      await expect(readFile(path.join(folder, 'Default/Network/Cookies'))).rejects.toMatchObject({
+        code: 'ENOENT',
+      });
+    }
+    // The named profiles stay on record, emptied; the panel just no longer lists them.
+    expect(profiles.get(work.id)).toBeDefined();
+    expect(forgotten.sort()).toEqual([null, work.id, personal.id].sort());
+  });
+
+  it('clears nothing when any named profile is busy', async () => {
+    const profiles = store();
+    const work = profiles.create('Example work');
+    const folder = await prepareProfileFolder(home, null);
+    await seed(folder);
+    await expect(
+      new BrowserProfileRemoval({
+        dataDirectory: () => home,
+        busy: (id) => id === work.id,
+      }).forgetAll([work.id])
+    ).rejects.toMatchObject({ code: 'profile_busy' });
+    expect(await readFile(path.join(folder, 'storage-state.json'), 'utf8')).toBe(
+      'made-up-site-session'
+    );
+  });
+
   it('deletes the named profile, its bindings and folder without touching another profile', async () => {
     const profiles = store();
     const target = profiles.create('Example work');

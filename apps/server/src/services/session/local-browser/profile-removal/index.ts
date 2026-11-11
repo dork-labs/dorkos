@@ -48,6 +48,29 @@ export class BrowserProfileRemoval {
     await this.idle(profileId, () => this.clear(profileId));
   }
 
+  /**
+   * Forget every saved sign-in: the default profile and each named one (DOR-4105). The
+   * panel shows one Saved sign-ins row, so its Forget has to leave no hidden sign-in behind.
+   * Every profile must be free first, so a busy one stops it before anything is cleared.
+   *
+   * @param namedIds - Every named profile on record.
+   */
+  async forgetAll(namedIds: readonly string[]): Promise<void> {
+    for (const id of namedIds) z.string().uuid().parse(id);
+    if (namedIds.some((id) => this.deps.busy(id)))
+      throw new LocalBrowserError(
+        'profile_busy',
+        'Close the browser using this profile, then try again.'
+      );
+    await this.idle(null, async () => {
+      await this.clear(null);
+      for (const id of namedIds) {
+        await this.clear(id);
+        this.deps.forgotten?.(id);
+      }
+    });
+  }
+
   async delete(profileId: string, profiles: LocalBrowserProfileStore): Promise<void> {
     z.string().uuid().parse(profileId);
     await this.idle(profileId, async () => {

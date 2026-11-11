@@ -21,10 +21,6 @@ export const LocalBrowserProfileSchema = z.object({
   agentIds: z.array(z.string()),
 });
 export type LocalBrowserProfile = z.infer<typeof LocalBrowserProfileSchema>;
-/** Name a new profile. It starts with no agents. */
-export const LocalBrowserProfileCreateSchema = z
-  .object({ label: z.string().trim().min(1).max(80) })
-  .strict();
 /** Let one agent use a profile. */
 export const LocalBrowserProfileBindSchema = z.object({ agentId: z.string().min(1) }).strict();
 export const LocalBrowserKeySchema = z.enum([

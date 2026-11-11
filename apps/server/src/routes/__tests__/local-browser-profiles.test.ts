@@ -128,9 +128,11 @@ describe('browser profile routes', () => {
     expect(t.profiles.isBound(profile.id, 'atlas', '/agents/atlas')).toBe(false);
   });
 
-  it('creates a profile with no agents', async () => {
+  it('refuses to create a profile, for everyone, and stores nothing (DOR-4105)', async () => {
+    const before = t.profiles.list().length;
     const res = await t.post('/profiles', { label: 'Work' });
-    expect(res.status).toBe(201);
-    expect(((await res.json()) as { agentIds: string[] }).agentIds).toEqual([]);
+    expect(res.status).toBe(403);
+    expect(await res.json()).toMatchObject({ code: 'profiles_closed' });
+    expect(t.profiles.list()).toHaveLength(before);
   });
 });
