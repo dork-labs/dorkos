@@ -101,6 +101,23 @@ function assertIdentity(identity: Identity, agentDriven: boolean): void {
   if (identity.headers)
     assert(String(identity.headers['sec-ch-ua']).includes(`"Google Chrome";v="${chrome.version}"`));
 }
+/**
+ * `webdriver === false` in the person's window counts only if nothing drives it (Security's
+ * condition, DOR-4178). Its launch flags are checked in the spawner above, against
+ * `FORBIDDEN_PLAIN_FLAGS` (both debugging flags among them). Here: it is its own Chrome process,
+ * the agent's Chrome did not start it, and the agent's Playwright connection gained no page.
+ *
+ * @param agentPages - The agent connection's pages just before the handoff.
+ */
+async function assertNothingDrivesPerson(agentPages: ReadonlySet<unknown>): Promise<void> {
+  assert(plain?.pid, 'The person’s window must be its own process');
+  assert(agentPid, 'The agent window’s process must be known');
+  assert.notEqual(plain.pid, agentPid, 'The person’s window must not be the agent’s Chrome');
+  const { stdout } = await run('/bin/ps', ['-o', 'ppid=', '-p', String(plain.pid)]);
+  assert.notEqual(Number(stdout.trim()), agentPid, 'The agent’s Chrome must not start it');
+  for (const page of context?.pages() ?? [])
+    assert(agentPages.has(page), 'The person’s window must not join the agent’s connection');
+}
 async function pixels(
   name: string,
   ready: (text: string) => boolean,
@@ -169,6 +186,7 @@ try {
       agentPid
     );
     receipt = undefined;
+    const agentPages = new Set(context?.pages() ?? []);
     const { handoffId } = await handover.ask('made-up-ci-browser', 'wall');
     const text = await pixels(`${name}-person`, (text) =>
       name === 'echo'
@@ -178,6 +196,7 @@ try {
           : /Test Results|Webdriver/i.test(text)
     );
     await writeFile(path.join(evidence, `${name}-person-ocr.txt`), text);
+    await assertNothingDrivesPerson(agentPages);
     if (name === 'echo') {
       const identity = await until(async () => receipt);
       assertIdentity(identity, false);
