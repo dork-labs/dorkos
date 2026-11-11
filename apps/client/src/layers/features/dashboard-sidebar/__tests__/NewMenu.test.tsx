@@ -10,6 +10,7 @@ import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vite
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { render, screen, fireEvent, cleanup, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
+import { useAgentCreationStore } from '@/layers/shared/model';
 import { enterDesktopShell, leaveDesktopShell } from '@/test-helpers/desktop-shell';
 import { useCreateFlowStore } from '../model/create-flow-store';
 import { buildNewMenuNodes, NewMenu, type NewMenuModel } from '../ui/NewMenu';
@@ -31,15 +32,6 @@ vi.mock('@/layers/entities/session', () => ({
   useStartNewSession: () => mockStartNewSession,
   useDirectoryState: () => [mockSelectedCwd, mockSetDirectory],
 }));
-
-const mockAgentCreationOpen = vi.fn();
-vi.mock('@/layers/shared/model', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('@/layers/shared/model')>();
-  return {
-    ...actual,
-    useAgentCreationStore: { getState: () => ({ open: mockAgentCreationOpen }) },
-  };
-});
 
 let mockPaths: string[] = ['/projects/alpha', '/projects/beta'];
 vi.mock('@/layers/entities/mesh', () => ({
@@ -341,10 +333,17 @@ describe('NewMenu', () => {
   });
 
   it('opens the agent-creation flow from Agent', async () => {
+    // The real creation store: the dialog host opens on `isOpen`, so that is
+    // the fact a click has to change, on a fresh "new agent" with no seed.
+    useAgentCreationStore.getState().close();
     renderMenu();
     await openMenu();
     fireEvent.click(screen.getByRole('menuitem', { name: 'Agent…' }));
-    expect(mockAgentCreationOpen).toHaveBeenCalledOnce();
+    expect(useAgentCreationStore.getState()).toMatchObject({
+      isOpen: true,
+      initialMode: 'new',
+      seed: null,
+    });
   });
 
   it('starts the inline section editor straight from Section… on a small fleet', () => {
