@@ -18,7 +18,7 @@ import type { ActivityRowItem } from '@/layers/entities/activity';
  * @param iso - ISO 8601 timestamp string.
  * @param now - Reference date (injectable for testing).
  */
-export function formatActivityTime(iso: string, now: Date = new Date()): string {
+function formatActivityTime(iso: string, now: Date = new Date()): string {
   const date = new Date(iso);
 
   const startOfToday = new Date(now);

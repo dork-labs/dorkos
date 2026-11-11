@@ -34,7 +34,7 @@ const NOOP = (): void => {};
  * Where a celebration erupts when the caller supplies no origin — slightly
  * above screen-center so gravity carries particles down through the viewport.
  */
-export const DEFAULT_CELEBRATION_ORIGIN: CelebrationOrigin = { x: 0.5, y: 0.62 };
+const DEFAULT_CELEBRATION_ORIGIN: CelebrationOrigin = { x: 0.5, y: 0.62 };
 
 /** The house gold — the DorkOS celebration identity, used by `burst`/`stars`/`rain`. */
 const GOLD = ['#FFD700', '#FFC107', '#F7B500', '#FFFFFF'];

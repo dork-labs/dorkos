@@ -32,7 +32,7 @@ export { useLastVisitedActivity } from './model/use-last-visited-activity';
 export { useActivityKeyboardNav } from './model/use-activity-keyboard-nav';
 
 // UI components
-export { ActivityRow, formatActivityTime } from './ui/ActivityRow';
+export { ActivityRow } from './ui/ActivityRow';
 export type { ActivityRowProps } from './ui/ActivityRow';
 export { ActivityGroupHeader } from './ui/ActivityGroupHeader';
 export type { ActivityGroupHeaderProps } from './ui/ActivityGroupHeader';

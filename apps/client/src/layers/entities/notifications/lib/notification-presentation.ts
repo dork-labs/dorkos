@@ -136,7 +136,7 @@ export type NotificationTone = 'error' | 'warning' | 'neutral';
  *
  * @param notification - The row.
  */
-export function notificationTone(notification: NotificationDTO): NotificationTone {
+function notificationTone(notification: NotificationDTO): NotificationTone {
   if (notification.tier === 'blocking') return 'error';
   if (notification.tier === 'notable') return 'warning';
   return 'neutral';

@@ -40,7 +40,6 @@ export {
 export type { NotificationLens, NotificationPages } from './model/notification-cache';
 export {
   NOTIFICATION_ICONS,
-  notificationTone,
   notificationRowTone,
   notificationBurstVerb,
   notificationLink,

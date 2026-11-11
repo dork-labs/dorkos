@@ -257,7 +257,6 @@ export { RADIAL_GLOW_STYLE, MINI_SPRING_CONFIG, SHIMMER_STYLE } from './celebrat
 export {
   fireCelebration,
   rectToCelebrationOrigin,
-  DEFAULT_CELEBRATION_ORIGIN,
   type CelebrationOrigin,
 } from './celebrations/celebration-effects';
 export {
@@ -282,7 +281,6 @@ export type { FileEntry } from './file-types';
 export { createChannel, type Channel } from './broadcast-channel';
 export {
   SHORTCUTS,
-  SHORTCUT_GROUP_LABELS,
   SHORTCUT_GROUP_ORDER,
   formatShortcutKey,
   getShortcutsGrouped,

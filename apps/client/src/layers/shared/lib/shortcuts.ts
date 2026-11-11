@@ -37,7 +37,7 @@ export interface ShortcutDef {
 export type ShortcutGroup = 'navigation' | 'chat' | 'global';
 
 /** Group display order and labels. */
-export const SHORTCUT_GROUP_LABELS: Record<ShortcutGroup, string> = {
+const SHORTCUT_GROUP_LABELS: Record<ShortcutGroup, string> = {
   navigation: 'Navigation',
   chat: 'Chat',
   global: 'Global',
