@@ -59,15 +59,22 @@ export class BrowserProfileRemoval {
     for (const id of namedIds) z.string().uuid().parse(id);
     // A profile folder made outside the API (an agent with a shell can make one) is
     // cleared too, so no sign-in survives Forget just because it's off the list.
-    const onDisk = await readdir(path.join(this.deps.dataDirectory(), 'browser-profiles')).catch(
-      () => [] as string[]
-    );
+    const root = path.join(this.deps.dataDirectory(), 'browser-profiles');
+    const onDisk = await readdir(root).catch(() => [] as string[]);
     const ids = [
       ...new Set([
         ...namedIds,
         ...onDisk.filter((name) => z.string().uuid().safeParse(name).success),
       ]),
     ];
+    // Only a real folder is cleared. Anything else under a profile's name (a link an agent
+    // planted to the person's own folder, say) is removed itself and never followed.
+    const folders: string[] = [];
+    const planted: string[] = [];
+    for (const id of ids) {
+      const info = await lstat(path.join(root, id)).catch(() => undefined);
+      (!info || info.isDirectory() ? folders : planted).push(id);
+    }
     if (ids.some((id) => this.deps.busy(id)))
       throw new LocalBrowserError(
         'profile_busy',
@@ -75,10 +82,9 @@ export class BrowserProfileRemoval {
       );
     await this.idle(null, async () => {
       await this.clear(null);
-      for (const id of ids) {
-        await this.clear(id);
-        this.deps.forgotten?.(id);
-      }
+      for (const id of planted) await rm(path.join(root, id), { force: true });
+      for (const id of folders) await this.clear(id);
+      for (const id of ids) this.deps.forgotten?.(id);
     });
   }
 
