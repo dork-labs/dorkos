@@ -4,6 +4,7 @@ vi.hoisted(() => {
   process.env.DORKOS_VERSION_OVERRIDE = '0.135.5';
 });
 
+import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -16,7 +17,7 @@ afterEach(() => {
   for (const dir of dirs.splice(0)) fs.rmSync(dir, { recursive: true, force: true });
 });
 
-function seed(version?: string): { dir: string; file: string; before: Buffer } {
+function seed(version?: string, sidebar?: unknown): { dir: string; file: string; before: Buffer } {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dorkos-config-floor-'));
   dirs.push(dir);
   const file = path.join(dir, 'config.json');
@@ -51,7 +52,7 @@ function seed(version?: string): { dir: string; file: string; before: Buffer } {
             ],
           },
         },
-        ui: { theme: 'dark' },
+        ui: { theme: 'dark', ...(sidebar === undefined ? {} : { sidebar }) },
         ...(version === undefined ? {} : { __internal__: { migrations: { version } } }),
       },
       null,
@@ -103,6 +104,9 @@ describe('config upgrade floor through a real manager', () => {
     undefined,
   ])('refuses %s before defaults, migrations, or recovery can write', (version) => {
     const { dir, file, before } = seed(version);
+    const write = vi.spyOn(fs, 'writeFileSync');
+    const open = vi.spyOn(fs, 'openSync');
+    const mkdir = vi.spyOn(fs, 'mkdirSync');
     let thrown: unknown;
     try {
       new ConfigManager(dir);
@@ -112,6 +116,37 @@ describe('config upgrade floor through a real manager', () => {
     expect(thrown).toBeInstanceOf(ConfigUpgradeRequiredError);
     expect(thrown).toBeInstanceOf(ConfigBootError);
     expect((thrown as ConfigUpgradeRequiredError).advice).toMatch(/0\.115 first/);
+    expect(write).not.toHaveBeenCalled();
+    expect(mkdir).not.toHaveBeenCalled();
+    expect(
+      open.mock.calls.filter(([, flags]) =>
+        typeof flags === 'string'
+          ? /[wa+]/.test(flags)
+          : (flags &
+              (fs.constants.O_WRONLY |
+                fs.constants.O_RDWR |
+                fs.constants.O_CREAT |
+                fs.constants.O_TRUNC |
+                fs.constants.O_APPEND)) !==
+            0
+      )
+    ).toEqual([]);
+    expect(fs.readFileSync(file)).toEqual(before);
+    expect(createHash('sha256').update(fs.readFileSync(file)).digest('hex')).toBe(
+      createHash('sha256').update(before).digest('hex')
+    );
+    expect(fs.readdirSync(dir)).toEqual(['config.json']);
+  });
+
+  it.each([
+    { pinned: ['/fixture/project'] },
+    { muted: ['/fixture/project'] },
+    { groups: [{ id: 'fixture-group', name: 'Projects', agentPaths: ['/fixture/project'] }] },
+    { groups: [{ id: 'fixture-group', name: 'Projects', items: ['/fixture/project'] }] },
+    { ungroupedCollapsed: true },
+  ])('refuses retired sidebar encodings even with a supported marker: %j', (sidebar) => {
+    const { dir, file, before } = seed('0.115.0', sidebar);
+    expect(() => new ConfigManager(dir)).toThrow(ConfigUpgradeRequiredError);
     expect(fs.readFileSync(file)).toEqual(before);
     expect(fs.readdirSync(dir)).toEqual(['config.json']);
   });

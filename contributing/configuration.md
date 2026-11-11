@@ -410,7 +410,7 @@ Any change to `UserConfigSchema` (add / rename / remove / retype a field) that a
 
 Current releases accept config files last opened by **0.115.0 or newer**. Older or unstamped configs stop before Conf opens, so its defaults merge cannot rewrite them. The message says: "Upgrade to 0.115 first, then upgrade to this version." An unreadable file follows the existing read retries and stops without replacement.
 
-`config/upgrade-floor.ts` checks the stored `__internal__.migrations.version` before either Conf constructor. The 0.115 intermediate release and raw dev trees (`SERVER_VERSION = 0.0.0`) do not apply this current-release floor. Invalid JSON and malformed version markers retain the existing corruption-recovery path. This config check does not establish the database version. The 0.44–0.89 keys and their private helpers have been retired; each key is recorded in `REMOVED_SHIPPED_KEYS`, and its old pin is removed. The remaining shipped bodies stay frozen.
+`config/upgrade-floor.ts` checks the stored `__internal__.migrations.version` before either Conf constructor. The 0.115 intermediate release and raw dev trees (`SERVER_VERSION = 0.0.0`) do not apply this current-release version floor. Current releases and raw dev trees also refuse retired sidebar encodings before Conf opens: old collapse/sort/filter flags, bare member paths and `groups[].agentPaths`. Refusal preserves the file and directs the person through 0.115; it does not convert or recover an old sidebar. Invalid JSON retains the existing corruption-recovery path. Malformed version markers do too unless the file holds a retired sidebar encoding. This config check does not establish the database version. The 0.44–0.89 keys and their private helpers have been retired; each key is recorded in `REMOVED_SHIPPED_KEYS`, and its old pin is removed. The remaining shipped bodies stay frozen.
 
 ### Why migrations matter
 
@@ -573,7 +573,7 @@ The `0.57.0` and `0.59.0` migration keys and their private helpers are retired u
 
 `ui.sidebar` stores pins, muted items, groups and section preferences. Membership lists use `SidebarItemRef` values (`{ kind: 'agent', path }` or `{ kind: 'room', roomId }`), compared with `sameSidebarItem`. Compare these values structurally rather than with `includes`, `indexOf` or `===`.
 
-The runtime sidebar tolerance and the latched `ConfigManager.canonicalSidebar` conversion remain for the separate compatibility cleanup. Their real-file regression tests remain too: they cover preserved membership, valid writes and unknown section ids. Retiring a versioned migrator does not retire those runtime paths.
+The runtime sidebar tolerance and read-time conversion are retired. `config-dev-upgrade-floor.test.ts` covers refusal of each retired encoding with unchanged file hashes and no writable opens, including DOR-588's group-only membership case. Current membership survives a settings patch and restart. Real-file tests for valid writes, invalid references and unknown section ids remain in `config-manager.test.ts`. The shared-schema compatibility helpers remain for the next cleanup batch.
 
 `ui.shapes` stores the active Shape, agent affinity hints and whether applying a Shape follows its default agent. `ui.statusBar.pins` is additive: each entry pins an item that would otherwise appear only when relevant. A config patch replaces each array as a whole.
 

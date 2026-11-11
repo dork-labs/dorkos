@@ -104,9 +104,8 @@ import {
   UserConfigSchema,
   USER_CONFIG_DEFAULTS,
   SENSITIVE_CONFIG_KEYS,
-  toSidebarItemRef,
 } from '@dorkos/shared/config-schema';
-import type { UserConfig, SidebarItemRef } from '@dorkos/shared/config-schema';
+import type { UserConfig } from '@dorkos/shared/config-schema';
 import type { PermissionAreaId } from '@dorkos/shared/permissions';
 import { logger, logError } from '../../lib/logger.js';
 import { SERVER_VERSION } from '../../lib/version.js';
@@ -126,7 +125,6 @@ import { classifyConfigLoadFailure } from './config/load-failure.js';
 import { assertSupportedConfigUpgrade } from './config/upgrade-floor.js';
 import {
   tolerateLegacyClaudeAccountEncoding,
-  tolerateRetiredSidebarKeys,
   tolerateRetiredRoomKeys,
   tolerateRetiredRuntimeKeys,
   tolerateRetiredUiKeys,
@@ -144,7 +142,6 @@ import type { WidenedLeaf, WidenedLeafPolicy } from './config/widened-leaves.js'
 
 export { classifyConfigLoadFailure, type ConfigLoadFailureKind } from './config/load-failure.js';
 import { CONFIG_MIGRATIONS } from './config-migrations/index.js';
-import { RETIRED_SIDEBAR_COLLAPSE_KEYS } from './config/retired-key-tolerance.js';
 export { CONFIG_MIGRATIONS } from './config-migrations/index.js';
 export * from './config-migrations/v0-90-onward.js';
 
@@ -173,15 +170,6 @@ function describeLoadError(error: unknown): string {
  * reported rather than guessed at.
  */
 export const CONFIG_LOAD_RETRY_DELAYS_MS = [50, 200, 500] as const;
-
-/**
- * The pre-DOR-579 name for a section's member list.
- *
- * Named here rather than spelled inline because two things read it: the shipped
- * `0.59.0` migration, and `ConfigManager.canonicalSidebar`, which catches the
- * installs that migration's version window misses.
- */
-const LEGACY_MEMBERS_KEY = 'agentPaths';
 
 /**
  * Retire the standing-permission settings (spec `agent-permissions` D13, phase
@@ -311,16 +299,7 @@ export function retireAgentContextSettings(store: {
 
 const jsonSchemaFull = z.toJSONSchema(UserConfigSchema, {
   target: 'jsonSchema2019-09',
-  // Two tolerances, composed. `z.toJSONSchema` takes ONE override, so a second
-  // one added later must join this function rather than replace the argument —
-  // silently dropping the other is a whole config file condemned.
-  override: (ctx) => {
-    tolerateRetiredSidebarKeys(ctx, {
-      collapseKeys: Object.keys(RETIRED_SIDEBAR_COLLAPSE_KEYS),
-      legacyMembersKey: LEGACY_MEMBERS_KEY,
-    });
-    tolerateLegacyClaudeAccountEncoding(ctx);
-  },
+  override: tolerateLegacyClaudeAccountEncoding,
 }) as { properties?: Record<string, unknown> };
 
 // A key this build does not declare is another build's key, not damage. Zod
@@ -450,8 +429,6 @@ export type ConfigChangeListener = (change: ConfigChange) => void;
 export class ConfigManager {
   private store: Conf<UserConfig>;
   private _isFirstRun = false;
-  /** Whether {@link ConfigManager.canonicalSidebar} has already had its one look. */
-  private sidebarConverted = false;
   private listeners = new Set<ConfigChangeListener>();
 
   /**
@@ -569,103 +546,6 @@ export class ConfigManager {
     }
   }
 
-  /**
-   * Bring a `ui.sidebar` written before DOR-579 into the shape this build
-   * stores — once, the first time anything reads `ui`.
-   *
-   * ## The case this exists for
-   *
-   * `migrateSidebarMembersToItemRefs` (the `0.59.0` body) moved almost
-   * everybody, and `conf` runs a migration key only when it lands in
-   * `(storedVersion, projectVersion]` — so it never runs at all in a tree whose
-   * version resolves to `0.0.0`, which is every `pnpm dev`, and it is skipped
-   * for anyone whose stored version has already passed it. For an additive
-   * backfill that is harmless. For a RENAME it is not, and the dangerous shape
-   * is the one that looks fine: a config whose `pinned` and `muted` are already
-   * references and whose only old part is `groups[].agentPaths`. That key is
-   * declared to Ajv (see `tolerateRetiredSidebarKeys`) so it survives the read,
-   * but nothing else knows it — the section loads with no members and is written
-   * back that way by the next config change of any kind. Nobody sees a warning;
-   * a person just finds the sections they built are empty.
-   *
-   * ## Why on first read, and not at boot
-   *
-   * At boot it would cost a read of a file the operating system may be refusing,
-   * on a machine already in trouble, for work that can wait — and this class
-   * promises that a boot it cannot complete leaves the settings exactly where
-   * they are. Here it costs nothing: the caller is already reading `ui`, this
-   * inspects the object they were handed, and the latch asks the question once
-   * per process rather than once per read. That last part is what separates it
-   * from the read-time conversion DOR-588 removed, which scanned three lists on
-   * every read for ever to answer "no".
-   *
-   * The write-through is best effort: a conversion that could not be persisted
-   * still returns the right value to this caller, and the next boot tries again.
-   *
-   * @param ui - The stored `ui` section, as `conf` handed it over.
-   */
-  private canonicalSidebar(ui: UserConfig['ui']): UserConfig['ui'] {
-    if (this.sidebarConverted) return ui;
-    this.sidebarConverted = true;
-    const sidebar = ui?.sidebar;
-    if (!sidebar) return ui;
-    const groups: unknown = sidebar.groups;
-    const legacy = (group: unknown): group is Record<string, unknown> =>
-      group !== null && typeof group === 'object' && LEGACY_MEMBERS_KEY in group;
-    /** A membership list still holding bare agent paths. */
-    const bare = (list: unknown): list is unknown[] =>
-      Array.isArray(list) && list.some((entry) => typeof entry === 'string');
-
-    const staleGroups = Array.isArray(groups) ? groups.filter(legacy).length : 0;
-    if (staleGroups === 0 && !bare(sidebar.pinned) && !bare(sidebar.muted)) return ui;
-
-    const converted = (Array.isArray(groups) ? groups : []).map((group) => {
-      if (!legacy(group)) return group;
-      const { [LEGACY_MEMBERS_KEY]: retired, ...rest } = group;
-      // An `items` that already holds something wins: only a file written before
-      // DOR-579 carries the retired key, so the two can never hold different
-      // truths, and preferring `items` keeps this from resurrecting a list the
-      // person has since edited.
-      const source = Array.isArray(rest.items) && rest.items.length > 0 ? rest.items : retired;
-      return {
-        ...rest,
-        items: (Array.isArray(source) ? source : []).map((entry) =>
-          toSidebarItemRef(entry as SidebarItemRef | string)
-        ),
-      };
-    });
-
-    /** One stored list, every bare path wrapped. */
-    const refs = (list: unknown) =>
-      Array.isArray(list)
-        ? list.map((entry) => toSidebarItemRef(entry as SidebarItemRef | string))
-        : list;
-
-    const next = {
-      ...ui,
-      sidebar: {
-        ...sidebar,
-        pinned: refs(sidebar.pinned),
-        muted: refs(sidebar.muted),
-        groups: converted,
-      },
-    } as unknown as UserConfig['ui'];
-    logger.warn(
-      `[Config] Converted a pre-0.59 sidebar in ${this.store.path}: ` +
-        `pins, mutes and ${staleGroups} section(s) now store their members as item references`
-    );
-    try {
-      this.store.set('ui', next);
-    } catch (error) {
-      // Never the reason a read fails. Every failure this class raises is a
-      // `ConfigBootError`, and a raw errno escaping from a tidy-up would reach
-      // the person as the stack trace that contract exists to prevent. The value
-      // returned below is already correct for this caller.
-      logger.warn(`[Config] Could not persist the converted sidebar`, logError(error));
-    }
-    return next;
-  }
-
   /** Whether this is the first time the config file has been created */
   get isFirstRun(): boolean {
     return this._isFirstRun;
@@ -728,20 +608,11 @@ export class ConfigManager {
 
   /** Get a top-level config section */
   get<K extends keyof UserConfig>(key: K): UserConfig[K] {
-    const stored = this.store.get(key);
-    // `ui` is the only section that can still carry the pre-DOR-579 encoding,
-    // and the conversion asks once per process rather than once per read.
-    const value =
-      key === 'ui' ? (this.canonicalSidebar(stored as UserConfig['ui']) as UserConfig[K]) : stored;
-    return this.readable(key, value);
+    return this.readable(key, this.store.get(key));
   }
 
   /**
    * Get a nested value via dot-path (e.g., 'server.port').
-   *
-   * Reads the store verbatim in one respect: a dot-path INTO `ui.sidebar` on a
-   * config that predates DOR-579 reports the stored encoding rather than the
-   * canonical one, and nothing derives behaviour from that.
    *
    * It does NOT report a leaf whose value belongs to a newer build. The CLI
    * decides real things through this accessor — `server.port`, `logging.level`,
@@ -879,19 +750,17 @@ export class ConfigManager {
   /** Get the full config object. */
   getAll(): UserConfig {
     const stored = this.store.store;
-    const ui = this.canonicalSidebar(stored.ui);
-    const canonical = ui === stored.ui ? stored : { ...stored, ui };
     let repaired: Record<string, unknown> | undefined;
-    for (const [key, value] of Object.entries(canonical)) {
+    for (const [key, value] of Object.entries(stored)) {
       const readable = hubPinnedRead(
         key,
         repairWidenedLeaves(key, value, WIDENED_LEAF_POLICY).value
       );
       if (readable === value) continue;
-      repaired ??= { ...canonical };
+      repaired ??= { ...stored };
       repaired[key] = readable;
     }
-    return (repaired ?? canonical) as UserConfig;
+    return (repaired ?? stored) as UserConfig;
   }
 
   /**
