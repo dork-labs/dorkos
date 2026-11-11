@@ -1,6 +1,6 @@
 import { spawnSync } from 'node:child_process';
 import { createHash, randomBytes } from 'node:crypto';
-import { mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, relative } from 'node:path';
 import { env } from 'node:process';
@@ -10,9 +10,9 @@ import { bufferReader, FIXED_TIME, readWithYauzl, writeArchive } from './archive
 
 /**
  * AC-2: the archive every common unzip tool must open. Locally, a tool that is not installed is
- * skipped with the reason logged. In CI (`CI` set) unzip, bsdtar and python3 are installed by the
- * workflow, so a missing one fails its test instead of skipping it: a skip there would quietly
- * drop the cross-check. `ditto` exists only on macOS and is never required.
+ * skipped with the reason logged. CI (`CI` set) requires unzip, python3 and a second independent
+ * reader: bsdtar, or the runner's preinstalled 7-Zip (7z/7zz). A missing reader fails instead of
+ * quietly dropping the cross-check. `ditto` exists only on macOS and is never required.
  */
 const inCi = Boolean(env.CI);
 
@@ -22,9 +22,10 @@ function available(tool: string): boolean {
   return found;
 }
 
+const independentTool = (['bsdtar', '7z', '7zz'] as const).find(available);
 const tools = {
   unzip: available('unzip'),
-  bsdtar: available('bsdtar'),
+  independent: Boolean(independentTool),
   python3: available('python3'),
   ditto: process.platform === 'darwin' && available('ditto'),
 };
@@ -33,19 +34,16 @@ if (process.platform !== 'darwin') {
 }
 
 /** Run `check` when `tool` is present; skip locally, fail in CI, when it is not. */
-function withTool(
-  tool: 'unzip' | 'bsdtar' | 'python3' | 'ditto',
-  title: string,
-  check: () => unknown
-) {
+function withTool(tool: keyof typeof tools, title: string, check: () => unknown) {
+  const label = tool === 'independent' ? 'bsdtar, 7z or 7zz' : tool;
   if (tools[tool]) {
     it(title, check);
   } else if (inCi && tool !== 'ditto') {
     it(title, () => {
-      throw new Error(`${tool} is required in CI; the workflow must install it`);
+      throw new Error(`${label} is required in CI; the runner image must provide it`);
     });
   } else {
-    it.skip(`${title} (skipped: ${tool} is not installed)`, check);
+    it.skip(`${title} (skipped: ${label} is not installed)`, check);
   }
 }
 
@@ -135,17 +133,28 @@ for (const forceZip64 of [false, true]) {
       expect(await filesUnder(out)).toEqual(digests);
     });
 
-    withTool('bsdtar', 'bsdtar lists and extracts every entry', async () => {
-      expect(
-        run('bsdtar', ['-tf', path])
-          .trim()
-          .split('\n')
-          .map((name) => name.normalize('NFC'))
-      ).toEqual([...expected.keys()]);
-      const out = join(directory, 'bsdtar');
-      run('sh', ['-c', `mkdir -p "$1" && bsdtar -xf "$2" -C "$1"`, 'sh', out, path]);
-      expect(await filesUnder(out)).toEqual(digests);
-    });
+    withTool(
+      'independent',
+      `${independentTool ?? 'bsdtar or 7-Zip'} tests and extracts every entry`,
+      async () => {
+        const out = join(directory, 'independent');
+        await mkdir(out);
+        if (independentTool === 'bsdtar') {
+          expect(
+            run('bsdtar', ['-tf', path])
+              .trim()
+              .split('\n')
+              .map((name) => name.normalize('NFC'))
+          ).toEqual([...expected.keys()]);
+          run('bsdtar', ['-xf', path, '-C', out]);
+        } else {
+          run(independentTool!, ['t', '-bd', path]);
+          run(independentTool!, ['x', '-bd', '-y', `-o${out}`, path]);
+        }
+        // Exact paths and digests prove all entries, Unicode names and bytes survived.
+        expect(await filesUnder(out)).toEqual(digests);
+      }
+    );
 
     withTool('python3', "Python's zipfile passes testzip() and reads every entry", () => {
       const script = [

@@ -6,72 +6,35 @@ import { spawnSync } from 'node:child_process';
 
 const repo = path.resolve(import.meta.dirname, '../..');
 const scratch: string[] = [];
-
 afterEach(() => {
   for (const dir of scratch.splice(0)) rmSync(dir, { recursive: true, force: true });
 });
 
-function step(workflow: string, name: string): string {
+function step(workflow: string, ...names: string[]): string {
   const text = readFileSync(path.join(repo, '.github/workflows', workflow), 'utf8');
-  const block = text.split(`      - name: ${name}\n`)[1]?.split(/\n {6}- /)[0];
-  const run = block?.split('        run: |\n')[1];
-  if (!run) throw new Error(`Missing run block: ${name}`);
-  return run.replace(/^ {10}/gm, '');
+  for (const name of names) {
+    const block = text.split(`      - name: ${name}\n`)[1]?.split(/\n {6}- /)[0];
+    const run = block?.split('        run: |\n')[1];
+    if (run) return run.replace(/^ {10}/gm, '');
+  }
+  throw new Error(`Missing run block: ${names.join(', ')}`);
 }
 
-/** Run real workflow shell/helper code; only sudo/apt and tool executables are fake. */
-function run(script: string, scenario = 'cached', preinstalled = false) {
-  const dir = mkdtempSync(path.join(tmpdir(), 'ci-apt-'));
+/** Run the workflow shell with fake tools and an apt command that always fails. */
+function run(script: string, missing: string[]) {
+  const dir = mkdtempSync(path.join(tmpdir(), 'ci-offline-tools-'));
   scratch.push(dir);
   const executable = (name: string, body: string) =>
     writeFileSync(path.join(dir, name), `#!/bin/bash\nset -eu\n${body}\n`, { mode: 0o755 });
   executable('lsb_release', 'echo noble');
   executable('timeout', 'shift 2; exec "$@"');
-  executable(
-    'sudo',
-    `
-[[ "$1" == apt-get ]] || { echo "unexpected sudo" >&2; exit 90; }
-shift
-source_file=''
-action=''
-for arg in "$@"; do
-  case "$arg" in
-    Dir::Etc::sourcelist=*) source_file="\${arg#*=}" ;;
-    update|install) action="$arg" ;;
-  esac
-done
-source_text=default-security.ubuntu.com
-if [[ -n "$source_file" ]]; then source_text=$(tr '\\n' ' ' < "$source_file"); fi
-echo "$action $* $source_text" >> "$FIXTURE_DIR/apt.log"
-if [[ "$action" == update ]]; then
-  if [[ "$SCENARIO" == archive-down && "$source_text" == *azure.archive.ubuntu.com* ]]; then exit 0; fi
-  echo "Temporary failure resolving mirror" >&2
-  exit 100
-fi
-[[ "$action" == install ]] || exit 91
-case "$SCENARIO" in
-  cached|missing-tool) ;;
-  stale) [[ -n "$source_file" ]] || exit 100 ;;
-  archive-down) [[ "$source_text" == *azure.archive.ubuntu.com* ]] || exit 100 ;;
-  all-down) exit 100 ;;
-  *) exit 92 ;;
-esac
-if [[ "$SCENARIO" != missing-tool ]]; then touch "$FIXTURE_DIR/installed"; fi
-`
-  );
-  for (const name of ['unzip', 'bsdtar', 'python3', 'gcc', 'g++', 'make']) {
+  executable('sudo', 'echo "apt unavailable" >&2; exit 100');
+  for (const name of ['unzip', 'bsdtar', '7z', '7zz', 'python3', 'gcc', 'g++', 'make']) {
     executable(
       name,
-      `
-if [[ "$0" == */bsdtar && ! -f "$FIXTURE_DIR/installed" ]]; then
-  echo 'bsdtar missing' >&2; exit 127
-fi
-if [[ "$MISSING_BUILD_TOOL" == "\${0##*/}" ]]; then exit 127; fi
-echo "\${0##*/} fixture 1.0"
-`
+      `case " $MISSING " in *" ${name} "*) echo "${name} missing" >&2; exit 127;; esac\necho "${name} fixture 1.0"`
     );
   }
-  if (preinstalled) writeFileSync(path.join(dir, 'installed'), '');
   const result = spawnSync(
     '/bin/bash',
     [
@@ -83,7 +46,9 @@ echo "\${0##*/} fixture 1.0"
       '-c',
       `
 command() {
-  if [[ "$1" == -v && "$2" == bsdtar && ! -f "$FIXTURE_DIR/installed" ]]; then return 1; fi
+  if [[ "$1" == -v ]]; then
+    case " $MISSING " in *" $2 "*) return 1;; esac
+  fi
   builtin command "$@"
 }
 ${script}`,
@@ -92,92 +57,60 @@ ${script}`,
       cwd: repo,
       encoding: 'utf8',
       timeout: 5000,
-      env: {
-        PATH: `${dir}:/usr/bin:/bin`,
-        TMPDIR: dir,
-        FIXTURE_DIR: dir,
-        SCENARIO: scenario,
-        MISSING_BUILD_TOOL: scenario === 'missing-build-tool' ? 'gcc' : '',
-      },
+      env: { PATH: `${dir}:/usr/bin:/bin`, MISSING: missing.join(' '), TMPDIR: dir },
     }
   );
   if (result.error) throw result.error;
-  let log = '';
-  try {
-    log = readFileSync(path.join(dir, 'apt.log'), 'utf8');
-  } catch {
-    /* No apt is a valid result. */
-  }
-  return { ...result, log };
+  return result;
 }
 
 const archiveStep = () =>
-  step('test.yml', 'Install the unzip tools the archive cross-checks read with');
+  step(
+    'test.yml',
+    'Verify the unzip tools the archive cross-checks read with',
+    'Install the unzip tools the archive cross-checks read with'
+  );
 
-describe('CI tool installs during a mirror outage', () => {
-  it('uses cached packages when refresh would fail on security.ubuntu.com', () => {
-    const result = run(archiveStep());
+describe('CI prerequisites without Ubuntu mirrors', () => {
+  it('uses preinstalled 7z when bsdtar is absent, with apt unavailable', () => {
+    const result = run(archiveStep(), ['bsdtar', '7zz']);
     expect(result.status, result.stderr).toBe(0);
-    expect(result.log).not.toMatch(/^update /m);
+    expect(result.stdout).toContain('7z fixture');
+    expect(result.stderr).not.toContain('apt unavailable');
+  });
+
+  it('accepts the upstream 7zz executable name', () => {
+    const result = run(archiveStep(), ['bsdtar', '7z']);
+    expect(result.status, result.stderr).toBe(0);
+    expect(result.stdout).toContain('7zz fixture');
+  });
+
+  it('keeps bsdtar when it is installed', () => {
+    const result = run(archiveStep(), ['7z', '7zz']);
+    expect(result.status, result.stderr).toBe(0);
     expect(result.stdout).toContain('bsdtar fixture');
   });
 
-  it('still tries installation when the scoped refresh fails', () => {
-    const result = run(archiveStep(), 'stale');
-    expect(result.status, result.stderr).toBe(0);
-    expect(result.log).toMatch(/^update .*archive\.ubuntu\.com/m);
-    expect(result.log).not.toContain('noble-security');
-    expect(result.log).toContain('Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg');
-  });
-
-  it('falls back when the first archive host is down', () => {
-    const result = run(archiveStep(), 'archive-down');
-    expect(result.status, result.stderr).toBe(0);
-    expect(result.log).toContain('azure.archive.ubuntu.com');
-    expect(result.log.match(/^update /gm)).toHaveLength(2);
-    expect(result.log).toContain('Acquire::https::Timeout=20');
-  });
-
-  it('fails loudly after the bounded attempts when no source can install', () => {
-    const result = run(archiveStep(), 'all-down');
+  it('fails loudly when no independent reader is installed', () => {
+    const result = run(archiveStep(), ['bsdtar', '7z', '7zz']);
     expect(result.status).not.toBe(0);
-    expect(result.log.match(/^update /gm)).toHaveLength(2);
-    expect(result.stderr).toContain('Unable to install CI packages');
+    expect(result.stderr).toContain('bsdtar, 7z or 7zz is required');
+    expect(result.stderr).not.toContain('apt unavailable');
   });
 
-  it('does not pass if apt claims success but the reader is missing', () => {
-    const result = run(archiveStep(), 'missing-tool');
+  it.each(['unzip', 'python3'])('fails if %s is missing', (tool) => {
+    const result = run(archiveStep(), [tool]);
     expect(result.status).not.toBe(0);
-    expect(result.stderr).toContain('bsdtar missing');
   });
 
-  it('does not call apt when the readers are already installed', () => {
-    const result = run(archiveStep(), 'all-down', true);
+  it('verifies the smoke build tools without apt', () => {
+    const result = run(step('cli-smoke-test.yml', 'Verify build tools'), []);
     expect(result.status, result.stderr).toBe(0);
-    expect(result.log).toBe('');
-  });
-
-  it('verifies runner build tools without contacting Ubuntu mirrors', () => {
-    const result = run(step('cli-smoke-test.yml', 'Verify build tools'));
-    expect(result.status, result.stderr).toBe(0);
-    expect(result.log).toBe('');
     for (const tool of ['python3', 'gcc', 'g++', 'make'])
       expect(result.stdout).toContain(`${tool} fixture`);
   });
 
-  it('fails when a runner build tool is missing', () => {
-    const result = run(step('cli-smoke-test.yml', 'Verify build tools'), 'missing-build-tool');
-    expect(result.status).not.toBe(0);
-  });
-
-  it('uses the same mirror fallback before loading the real sandbox profile', () => {
-    const script = step(
-      'test.yml',
-      'Install distro bubblewrap and load its scoped AppArmor profile'
-    );
-    const result = run(script.split('sudo install -m 0644')[0]!, 'archive-down');
-    expect(result.status, result.stderr).toBe(0);
-    expect(result.log).toContain('bubblewrap apparmor-profiles apparmor-utils');
-    expect(result.log).toContain('azure.archive.ubuntu.com');
+  it('fails when a smoke build tool is missing', () => {
+    expect(run(step('cli-smoke-test.yml', 'Verify build tools'), ['gcc']).status).not.toBe(0);
   });
 });
