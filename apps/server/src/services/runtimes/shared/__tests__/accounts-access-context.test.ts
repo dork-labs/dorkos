@@ -52,9 +52,9 @@ describe('Accounts turn awareness', () => {
       for (const id of CONNECTOR_RUNTIME_CAPABILITY_IDS) {
         const name =
           runtime === 'claude-code'
-            ? `mcp__dorkos__${id}`
+            ? `mcp__dorkos__${id.replaceAll('.', '_')}`
             : runtime === 'codex'
-              ? `mcp__dorkos_connections__${id}`
+              ? `mcp__dorkos_connections__${id.replaceAll('.', '_')}`
               : `dorkos_connections_${id.replaceAll('.', '_')}`;
         expect(text).toContain(name);
       }
