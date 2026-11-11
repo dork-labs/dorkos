@@ -9,6 +9,14 @@ import type { LocalBrowserState } from '@dorkos/shared/local-browser';
 import { createTestDb } from '@dorkos/test-utils/db';
 import { logger } from '../../../../lib/logger.js';
 import { BrowserHandover, assertSignInUrl, type HandoverBrowser } from '../handover.js';
+import { HANDED_BACK_MESSAGE, handBackWake } from '../hand-back-wake/index.js';
+
+// The wake's dispatcher, so a hand back here starts no real turn (DOR-3112).
+const dispatch = vi.hoisted(() => vi.fn(async () => ({ accepted: true })));
+vi.mock('../../launch/launch-session.js', () => ({
+  dispatchSessionMessage: dispatch,
+  isSessionLaunchRefusal: () => false,
+}));
 import { BrowserProfileRemoval } from '../profile-removal/index.js';
 import { prepareProfileFolder } from '../profile-folders.js';
 import { createLocalBrowserProfileStore } from '../profile-store.js';
@@ -158,6 +166,87 @@ describe('BrowserHandover.ask', () => {
     await handover.handBack(handoffId);
     await expect(handover.requireAgentMayUse('chat-1')).resolves.toBeUndefined();
     expect((await handover.state()).handoff?.outcome).toBe('handed-back');
+  });
+});
+
+describe('BrowserHandover end listener (DOR-3112)', () => {
+  const listening = () => {
+    const s = setup();
+    const ended = vi.fn();
+    s.handover.useEndListener(ended);
+    return { ...s, ended };
+  };
+
+  it('tells it once on Continue, with the outcome on the record it gets', async () => {
+    const { handover, ended } = listening();
+    const { handoffId } = await handover.ask('chat-1', 'wall');
+    await handover.handBack(handoffId);
+    await expect(handover.handBack(handoffId)).rejects.toMatchObject({ code: 'handoff_ended' });
+    expect(ended).toHaveBeenCalledOnce();
+    expect(ended.mock.calls[0]![0]).toMatchObject({
+      id: handoffId,
+      sessionId: 'chat-1',
+      outcome: 'handed-back',
+    });
+  });
+
+  it('tells it handed back when the person resumes the browser instead', async () => {
+    const { handover, ended } = listening();
+    const { handoffId } = await handover.ask('chat-1', 'wall');
+    await handover.resume();
+    expect(ended).toHaveBeenCalledOnce();
+    expect(ended.mock.calls[0]![0]).toMatchObject({ id: handoffId, outcome: 'handed-back' });
+  });
+
+  it('tells it stopped on Stop task, and window-closed on Disconnect', async () => {
+    const stopped = listening();
+    const { handoffId } = await stopped.handover.ask('chat-1', 'wall');
+    await stopped.handover.stop(handoffId);
+    expect(stopped.ended.mock.calls.map(([h]) => h.outcome)).toEqual(['stopped']);
+
+    const closed = listening();
+    await closed.handover.ask('chat-1', 'wall');
+    await closed.handover.disconnect();
+    expect(closed.ended.mock.calls.map(([h]) => h.outcome)).toEqual(['window-closed']);
+  });
+
+  it('wakes the chat with fixed text that carries nothing from the page', async () => {
+    const s = setup();
+    s.set({
+      ...connected('https://accounts.example.com/login?next=%2Fbilling&token=made-up'),
+      tabs: [
+        {
+          id: 't1',
+          url: 'https://accounts.example.com/login?next=%2Fbilling&token=made-up',
+          title: 'Made-up Shop: verify you are human',
+        },
+      ],
+    });
+    dispatch.mockClear();
+    s.handover.useEndListener(
+      handBackWake({ meshCore: () => undefined, roomSessionPlace: () => undefined })
+    );
+    const { handoffId } = await s.handover.ask('chat-1', 'wall');
+    await s.handover.handBack(handoffId);
+    await vi.waitFor(() => expect(dispatch).toHaveBeenCalledOnce());
+    const [opts] = dispatch.mock.calls[0] as unknown as [{ request: { content: string } }];
+    expect(opts.request.content).toBe(HANDED_BACK_MESSAGE);
+    const sent = JSON.stringify(opts);
+    for (const fromPage of ['accounts.example.com', '/login', 'made-up', 'verify you are human'])
+      expect(sent).not.toContain(fromPage);
+  });
+
+  it('says nothing when there is no handoff to end, or the window closes on its own', async () => {
+    const { handover, ended } = listening();
+    await handover.resume();
+    await handover.disconnect();
+    expect(ended).not.toHaveBeenCalled();
+    await handover.open({ mode: 'new-window', sessionId: 'chat-1' });
+    await handover.ask('chat-1', 'wall');
+    // A window that closes by itself leaves the handoff open, so the card can reopen it.
+    handover.windowClosed();
+    expect(ended).not.toHaveBeenCalled();
+    expect((await handover.state()).handoff?.outcome).toBeNull();
   });
 });
 
@@ -364,7 +453,8 @@ describe('a person’s own browser controls during a handoff', () => {
     await handover.ask('chat-1', 'wall');
     const state = await handover.disconnect();
     expect(browser.disconnect).toHaveBeenCalledOnce();
-    expect(state.handoff?.outcome).toBe('stopped');
+    // Its own outcome, so the card can say the window closed (DOR-3112).
+    expect(state.handoff?.outcome).toBe('window-closed');
     expect(state.status).toBe('disconnected');
     expect(() => handover.refuseStopped('chat-1')).toThrow(
       expect.objectContaining({ code: 'task_stopped' })

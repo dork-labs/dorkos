@@ -11,6 +11,7 @@ import { randomUUID } from 'node:crypto';
 import path from 'node:path';
 import type {
   LocalBrowserHandoff,
+  LocalBrowserHandoffOutcome,
   LocalBrowserHandoffReason,
   LocalBrowserOpen,
   LocalBrowserPersonState,
@@ -105,6 +106,7 @@ export class BrowserHandover {
   private agentIdAt: (agentFolder: string) => string | undefined = () => undefined;
   private changed: () => void = () => undefined;
   private handedOver: (handoff: LocalBrowserHandoff) => void = () => undefined;
+  private ended: (handoff: LocalBrowserHandoff) => void = () => undefined;
 
   constructor(
     private readonly browser: HandoverBrowser,
@@ -142,6 +144,15 @@ export class BrowserHandover {
    */
   useHandoffListener(listener: (handoff: LocalBrowserHandoff) => void): void {
     this.handedOver = listener;
+  }
+
+  /**
+   * Set once at startup: called once when a handoff ends, with its outcome (DOR-3112).
+   *
+   * @param listener - Given the ended handoff.
+   */
+  useEndListener(listener: (handoff: LocalBrowserHandoff) => void): void {
+    this.ended = listener;
   }
 
   /** What a person's controls see. */
@@ -389,7 +400,7 @@ export class BrowserHandover {
     await this.browser.disconnect();
     if (this.record?.outcome === null) {
       this.stoppedFor = this.record.sessionId;
-      this.end(this.record, 'stopped');
+      this.end(this.record, 'window-closed');
     }
     return this.state();
   }
@@ -422,12 +433,14 @@ export class BrowserHandover {
     return this.record;
   }
 
-  private end(handoff: LocalBrowserHandoff, outcome: 'handed-back' | 'stopped'): void {
+  private end(handoff: LocalBrowserHandoff, outcome: LocalBrowserHandoffOutcome): void {
     if (this.record?.id === handoff.id) this.record = { ...handoff, outcome };
     logger.info('[Browser] A browser handoff ended', { handoffId: handoff.id, outcome });
     this.reopenAt = undefined;
     this.askedUrl = undefined;
     this.changed();
+    // A handoff ends once (openHandoff refuses an ended one), so this fires once.
+    this.ended({ ...handoff, outcome });
   }
 
   private async signInOnAgentProfile(): Promise<boolean> {

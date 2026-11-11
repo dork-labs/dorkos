@@ -1,4 +1,9 @@
-import { BrowserHandoffCardView, type HandoffStep } from '@/layers/features/browser-handoff';
+import type { LocalBrowserHandoffOutcome } from '@dorkos/shared/local-browser';
+import {
+  BrowserHandoffCardView,
+  BrowserHandoffReceipt,
+  type HandoffStep,
+} from '@/layers/features/browser-handoff';
 import { PlaygroundSection } from '../PlaygroundSection';
 import { ShowcaseDemo } from '../ShowcaseDemo';
 import { ShowcaseLabel } from '../ShowcaseLabel';
@@ -32,6 +37,13 @@ const STEPS: Array<{
   },
 ];
 
+/** What the card becomes once the handoff ends (DOR-3112). */
+const ENDINGS: Array<{ label: string; outcome: LocalBrowserHandoffOutcome }> = [
+  { label: 'Ended: handed back (Continue, or the person resumed)', outcome: 'handed-back' },
+  { label: 'Ended: Stop task', outcome: 'stopped' },
+  { label: 'Ended: the person disconnected the window', outcome: 'window-closed' },
+];
+
 const ignore = () => undefined;
 
 /** Each step of the Agent browser's handoff card, held still. A live one needs a real wall. */
@@ -62,6 +74,16 @@ export function BrowserHandoffShowcases() {
                 onShowWindow={ignore}
                 onStop={ignore}
               />
+            </div>
+          </ShowcaseDemo>
+        </div>
+      ))}
+      {ENDINGS.map(({ label, outcome }) => (
+        <div key={label}>
+          <ShowcaseLabel>{label}</ShowcaseLabel>
+          <ShowcaseDemo>
+            <div className="w-full max-w-lg">
+              <BrowserHandoffReceipt agentName="Atlas" outcome={outcome} />
             </div>
           </ShowcaseDemo>
         </div>

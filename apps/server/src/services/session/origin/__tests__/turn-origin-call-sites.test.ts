@@ -55,6 +55,9 @@ const EXPECTED: Readonly<Record<string, readonly string[]>> = {
   'services/extensions/start-work.ts': ['extension-start'],
   // An extension sent one of the person's agents a message (`ctx.agent.send`).
   'services/extensions/agent-send/agent-send.ts': ['extension-message'],
+  // A person handed the Agent browser back, so the agent that waited on them carries
+  // on: both hand-back routes are person-only (DOR-3112).
+  'services/session/local-browser/hand-back-wake/index.ts': ['interactive'],
   // A limited session's work carried over to a new session on another account.
   'services/session/fleet/carry-over.ts': ['account-handoff'],
   // A person chose another model for their limited session and continued it:

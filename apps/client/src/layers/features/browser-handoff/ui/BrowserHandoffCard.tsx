@@ -1,6 +1,7 @@
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { useBrowserHandoff } from '../model/use-browser-handoff';
 import { BrowserHandoffCardView } from './BrowserHandoffCardView';
+import { BrowserHandoffReceipt } from './BrowserHandoffReceipt';
 
 /** Props for {@link BrowserHandoffCard}. */
 export interface BrowserHandoffCardProps {
@@ -8,10 +9,14 @@ export interface BrowserHandoffCardProps {
   sessionId: string | null;
 }
 
-/** The live handoff card for a chat. Draws nothing unless that chat's agent is waiting on a person. */
+/**
+ * The live handoff card for a chat. Draws nothing unless that chat's agent is waiting
+ * on a person, or a handoff it showed has just ended and leaves its one-line receipt.
+ */
 export function BrowserHandoffCard({ sessionId }: BrowserHandoffCardProps) {
   const {
     handoff,
+    ended,
     step,
     canShowWindow,
     movesToOwnWindow,
@@ -52,6 +57,17 @@ export function BrowserHandoffCard({ sessionId }: BrowserHandoffCardProps) {
             onShowWindow={showWindow}
             onStop={() => void stopTask()}
           />
+        </motion.div>
+      )}
+      {sessionId && !handoff && ended?.outcome && (
+        <motion.div
+          key={`${ended.id}-ended`}
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          transition={reducedMotion ? { duration: 0 } : { duration: 0.2 }}
+        >
+          <BrowserHandoffReceipt agentName={ended.agentName} outcome={ended.outcome} />
         </motion.div>
       )}
     </AnimatePresence>
