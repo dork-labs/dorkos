@@ -1,11 +1,21 @@
 import { test, expect } from '../../fixtures';
 
-for (const [name, width, height] of [
+// Every size and theme locally, one in CI. Locally this spec doubles as the
+// widget gallery (`playwright.widgets.config.ts`), whose screenshots a person
+// looks at for each size and theme. In CI no check reads those screenshots, and
+// the one assertion that depends on size is the last one (the fixture never
+// scrolls sideways), where the phone is the tightest width. So CI runs the
+// phone in light only, instead of the same journey six times (DOR-4190).
+const SIZES = [
   ['phone', 390, 844],
   ['tablet', 768, 1024],
   ['desktop', 1440, 1000],
-] as const) {
-  for (const theme of ['light', 'dark'] as const) {
+] as const;
+const THEMES = ['light', 'dark'] as const;
+const CI = !!process.env.CI;
+
+for (const [name, width, height] of CI ? SIZES.slice(0, 1) : SIZES) {
+  for (const theme of CI ? THEMES.slice(0, 1) : THEMES) {
     test(`${name} ${theme}: native task submission and durable status`, async ({ page }) => {
       await page.setViewportSize({ width, height });
       await page.addInitScript((value) => localStorage.setItem('dorkos-theme', value), theme);
