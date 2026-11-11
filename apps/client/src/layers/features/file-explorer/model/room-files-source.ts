@@ -21,7 +21,9 @@ import type { Transport } from '@dorkos/shared/transport';
 import {
   ROOM_FILE_CHANGED_CODE,
   ROOM_UPLOAD_MAX_FILES,
+  roomImageContentType,
   type RoomFileChangeResponse,
+  type RoomFileContentResponse,
   type RoomFileEntry,
 } from '@dorkos/shared/room-files';
 import { roomKeys } from '@/layers/entities/room';
@@ -33,11 +35,33 @@ import type {
   ExplorerChangeOutcome,
   ExplorerEntry,
   ExplorerFile,
+  ExplorerFileBody,
   ExplorerListing,
   ExplorerSaveInput,
   ExplorerSaveOutcome,
   FileExplorerSource,
 } from './source';
+
+/**
+ * A file's body as the pane shows it. A binary file the room serves as a
+ * picture opens as one (DOR-4179); every other binary stays a sentence. SVG is
+ * never a picture here: it can carry script, so it reads as the text it is.
+ *
+ * @param file - The file the room answered.
+ * @param imageSrc - Where the room would serve this file as a picture.
+ */
+function bodyOf(file: RoomFileContentResponse, imageSrc: string): ExplorerFileBody {
+  switch (file.body.kind) {
+    case 'text':
+      return { kind: 'text', text: file.body.text };
+    case 'binary':
+      return roomImageContentType(file.path) === null
+        ? { kind: 'binary' }
+        : { kind: 'image', src: imageSrc };
+    case 'too-large':
+      return { kind: 'too-large', maxBytes: file.body.maxBytes };
+  }
+}
 
 /** What {@link createRoomFilesSource} needs. */
 export interface RoomFilesSourceDeps {
@@ -180,12 +204,7 @@ export function createRoomFilesSource(deps: RoomFilesSourceDeps): FileExplorerSo
           // opened the file rather than read again at save time: the point of
           // the lock is that it names the version the PERSON saw.
           commit: file.commit,
-          body:
-            file.body.kind === 'text'
-              ? { kind: 'text', text: file.body.text }
-              : file.body.kind === 'binary'
-                ? { kind: 'binary' }
-                : { kind: 'too-large', maxBytes: file.body.maxBytes },
+          body: bodyOf(file, transport.roomFileImageUrl(roomId, file.path)),
         };
       } catch (error) {
         const reason = NOT_READABLE_COPY.get(errorCodeOf(error) ?? '');

@@ -67,6 +67,43 @@ test.describe('Opening files from the tree @smoke', () => {
     await expect(page.getByRole('heading', { name: 'Agent file preview' })).toBeVisible();
   });
 
+  test('a room tree shows a picture as a picture, and an SVG as text', async ({
+    page,
+    roomsApi,
+    request,
+  }) => {
+    const { roomId } = await seedRoom(roomsApi, 'file-picture');
+    const commit = await roomsApi.enableRepo(roomId, {
+      'mark.svg': '<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>\n',
+    });
+    const upload = await request.post(`/api/rooms/${roomId}/files/upload`, {
+      multipart: {
+        dir: '',
+        baseCommit: commit!,
+        files: { name: 'sample.png', mimeType: 'image/png', buffer: PNG },
+      },
+    });
+    expect(upload.ok(), await upload.text()).toBe(true);
+
+    await page.goto(`/channels?id=${roomId}`);
+    await page.getByTestId('bar-members-chip').click();
+    const files = page.getByRole('region', { name: 'Room files' });
+
+    await clickFileName(page, 'sample.png', files);
+    const pictureDialog = page.getByRole('dialog', { name: 'sample.png', exact: true });
+    const picture = pictureDialog.getByRole('img', { name: 'sample.png' });
+    await expect(picture).toBeVisible();
+    await expect
+      .poll(() => picture.evaluate((el) => (el as HTMLImageElement).naturalWidth))
+      .toBe(1);
+    await pictureDialog.getByRole('button', { name: 'Close', exact: true }).click();
+
+    await clickFileName(page, 'mark.svg', files);
+    const svgDialog = page.getByRole('dialog', { name: 'mark.svg', exact: true });
+    await expect(svgDialog.getByText('<script>alert(1)</script>', { exact: false })).toBeVisible();
+    await expect(svgDialog.getByRole('img')).toHaveCount(0);
+  });
+
   test('a room tree never asks for the folders open in the agent folder before it', async ({
     page,
     roomsApi,

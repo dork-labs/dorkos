@@ -233,6 +233,11 @@ export function createRoomMethods(baseUrl: string) {
       );
     },
 
+    /** Where one of a room's pictures is served, named the way its content is. */
+    roomFileImageUrl(id: string, path: string): string {
+      return `${baseUrl}/rooms/${encodeURIComponent(id)}/files/raw${buildQueryString({ path })}`;
+    },
+
     /** Where the room's files stand, and who is holding work it has not got. */
     readRoomRepoStatus(id: string): Promise<RoomRepoStatus> {
       return fetchJSON<RoomRepoStatus>(baseUrl, `/rooms/${encodeURIComponent(id)}/repo/status`);

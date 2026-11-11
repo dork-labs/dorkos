@@ -6831,6 +6831,38 @@ registry.registerPath({
 });
 
 registry.registerPath({
+  method: 'get',
+  path: '/api/rooms/{id}/files/raw',
+  tags: ['Rooms'],
+  summary: "One picture from a room's own files",
+  description:
+    "The picture's bytes, as of the commit `main` points at, for the room's file viewer. Named and gated exactly like `GET /api/rooms/{id}/files/content`: a caller who is not on the roster gets the same 404 an unknown room gets, and membership is asked before `ROOM_HAS_NO_REPO`. **Pictures only**: PNG, JPEG, GIF, WebP, AVIF, BMP and ICO, by extension. An SVG can carry script, so it is refused 400 `ROOM_FILE_NOT_READABLE`, as is any other type, a picture over the install's file ceiling, a folder, a link and another repository. Served with the type from the name, `X-Content-Type-Options: nosniff` and `Content-Security-Policy: default-src 'none'; sandbox`, so the bytes never act as a page.",
+  request: { params: RoomIdParams, query: RoomFileContentQuerySchema },
+  responses: {
+    200: {
+      description: 'The picture',
+      content: { 'image/*': { schema: { type: 'string', format: 'binary' } } },
+    },
+    400: {
+      description:
+        'The path could have meant somewhere else (`ROOM_FILE_PATH_INVALID`), or names something that is not a picture this route serves (`ROOM_FILE_NOT_READABLE`)',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    401: roomAgentUnverified,
+    404: {
+      description:
+        'No such room, or the caller is not a member of it (`ROOM_NOT_FOUND`) — the same answer for both — or no such file in the commit (`ROOM_FILE_NOT_FOUND`)',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    409: {
+      description:
+        'The room has no files of its own, or room files are switched off on this install (`ROOM_HAS_NO_REPO`); or this machine has no git (`ROOM_REPO_GIT_UNAVAILABLE`)',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+  },
+});
+
+registry.registerPath({
   method: 'put',
   path: '/api/rooms/{id}/files/content',
   tags: ['Rooms'],

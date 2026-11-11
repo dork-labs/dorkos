@@ -13,6 +13,7 @@ type RoomFileMethods = Pick<
   | 'readRoomFiles'
   | 'enableRoomRepo'
   | 'readRoomFileContent'
+  | 'roomFileImageUrl'
   | 'readRoomRepoStatus'
   | 'saveRoomFile'
   | 'uploadRoomFiles'
@@ -48,6 +49,10 @@ export function roomFileTransportMocks(): RoomFileMethods {
     enableRoomRepo: vi.fn().mockRejectedValue(mockRoomHasNoRepoError()),
     readRoomFiles: vi.fn().mockRejectedValue(mockRoomHasNoRepoError()),
     readRoomFileContent: vi.fn().mockRejectedValue(mockRoomHasNoRepoError()),
+    roomFileImageUrl: vi.fn(
+      (id: string, path: string) =>
+        `/api/rooms/${encodeURIComponent(id)}/files/raw?path=${encodeURIComponent(path)}`
+    ),
     readRoomRepoStatus: vi.fn().mockRejectedValue(mockRoomHasNoRepoError()),
     saveRoomFile: vi.fn().mockRejectedValue(mockRoomHasNoRepoError()),
     uploadRoomFiles: vi.fn().mockRejectedValue(mockRoomHasNoRepoError()),

@@ -195,6 +195,23 @@ describe('editing one of a room’s files', () => {
   it('offers no editing on a binary file, and says so', async () => {
     const transport = createMockTransport();
     transport.readRoomFileContent = vi.fn().mockResolvedValue({
+      path: 'bundle.zip',
+      commit: 'aaa1111',
+      size: 900,
+      lastCommit: null,
+      body: { kind: 'binary' },
+    });
+    renderDialog(transport, 'bundle.zip');
+
+    expect(
+      await screen.findByText('Only text files can be shown or edited here.')
+    ).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Edit' })).not.toBeInTheDocument();
+  });
+
+  it('shows a picture but offers no editing on it (DOR-4179)', async () => {
+    const transport = createMockTransport();
+    transport.readRoomFileContent = vi.fn().mockResolvedValue({
       path: 'logo.png',
       commit: 'aaa1111',
       size: 900,
@@ -203,9 +220,7 @@ describe('editing one of a room’s files', () => {
     });
     renderDialog(transport, 'logo.png');
 
-    expect(
-      await screen.findByText('Only text files can be shown or edited here.')
-    ).toBeInTheDocument();
+    expect(await screen.findByRole('img', { name: 'logo.png' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Edit' })).not.toBeInTheDocument();
   });
 

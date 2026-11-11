@@ -145,6 +145,35 @@ export const RoomFileContentQuerySchema = z.object({
 export type RoomFileContentQuery = z.infer<typeof RoomFileContentQuerySchema>;
 
 /**
+ * The pictures `GET /api/rooms/{id}/files/raw` serves, by extension (DOR-4179).
+ *
+ * Only types a browser shows and never runs. SVG is left out on purpose: it is a
+ * document that can carry script, so a room's viewer treats it as text.
+ */
+const ROOM_IMAGE_CONTENT_TYPES: Readonly<Record<string, string>> = {
+  png: 'image/png',
+  jpg: 'image/jpeg',
+  jpeg: 'image/jpeg',
+  gif: 'image/gif',
+  webp: 'image/webp',
+  avif: 'image/avif',
+  bmp: 'image/bmp',
+  ico: 'image/x-icon',
+};
+
+/**
+ * The content type a room file is served as a picture with, or `null` when it is
+ * not one of the pictures the room viewer shows.
+ *
+ * @param path - The file's path in the room.
+ */
+export function roomImageContentType(path: string): string | null {
+  const dot = path.lastIndexOf('.');
+  if (dot < 0 || dot < path.lastIndexOf('/')) return null;
+  return ROOM_IMAGE_CONTENT_TYPES[path.slice(dot + 1).toLowerCase()] ?? null;
+}
+
+/**
  * How a file was answered.
  *
  * Three outcomes rather than one plus two errors, because "too big to show" and

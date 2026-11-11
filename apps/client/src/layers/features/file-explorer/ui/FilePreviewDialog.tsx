@@ -639,6 +639,8 @@ function PreviewBody({ file }: { file: ExplorerFile }) {
       );
     case 'binary':
       return <PreviewNote>Only text files can be shown or edited here.</PreviewNote>;
+    case 'image':
+      return <PreviewImage src={file.body.src} name={file.path.split('/').pop() ?? file.path} />;
     case 'too-large':
       return (
         <PreviewNote>Files over {formatBytes(file.body.maxBytes)} aren’t shown here.</PreviewNote>
@@ -646,6 +648,25 @@ function PreviewBody({ file }: { file: ExplorerFile }) {
     case 'not-readable':
       return <PreviewNote>{file.body.reason}</PreviewNote>;
   }
+}
+
+/**
+ * A picture, at its own size or smaller, never stretched. One that fails to load
+ * says so in the same voice as every other "nothing to show" answer.
+ */
+function PreviewImage({ src, name }: { src: string; name: string }) {
+  const [failed, setFailed] = useState(false);
+  if (failed) return <PreviewNote>This picture couldn’t be shown.</PreviewNote>;
+  return (
+    <div className="flex justify-center px-4 py-2">
+      <img
+        src={src}
+        alt={name}
+        className="max-h-[70vh] max-w-full rounded-md object-contain"
+        onError={() => setFailed(true)}
+      />
+    </div>
+  );
 }
 
 /** A centred, muted sentence — the shape every "nothing to show" answer takes. */
