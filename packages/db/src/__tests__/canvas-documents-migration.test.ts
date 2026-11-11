@@ -148,7 +148,7 @@ describe('0096 — the room canvas table', () => {
       'last_active_at',
       // Added by 0097, in the same rebuild that made `room_id` nullable.
       'thread_root_entry_id',
-      // Added by 20261111010014: the app that opened it, host-written (DOR-3293).
+      // Added by 20261111015020: the app that opened it, host-written (DOR-3293).
       'opened_by_extension_id',
     ]);
     expect(columns.filter((c) => c.pk > 0).map((c) => c.name)).toEqual(['id']);

@@ -1,1 +1,0 @@
-ALTER TABLE `room_bridges` ADD `platform_title` text;

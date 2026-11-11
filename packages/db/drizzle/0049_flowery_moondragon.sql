@@ -1,1 +1,0 @@
-ALTER TABLE `unclaimed_chats` ADD `chat_title` text;

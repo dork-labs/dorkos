@@ -44,6 +44,7 @@ import {
 } from '../../services/runtimes/connector-tools.js';
 import { connectorThreadKeys } from '../../services/connectors/principal/thread-keys.js';
 import { agentRequestSubjectName } from '../../services/connectors/access/approval-requests.js';
+import { getExtensionConnectionServices } from '../../services/connectors/extensions/extension-connections-seam.js';
 import { isConnectorRuntimeCapabilityId } from '../../services/connectors/runtime-capability-scope.js';
 import { env } from '../../env.js';
 import { createDocFrameSdkProbe } from '../../services/runtimes/test-mode/doc-frame/doc-frame-sdk-probe.js';
@@ -272,8 +273,12 @@ export async function composeCapabilities(refs: ServerRefs, built: ComposeCapabi
   // permission settings through the one permission writer (DOR-2685).
   refs.extensionManager?.attachAgentTools({
     registry: refs.capabilityRegistry,
-    forgetToolPermissions: (extensionId, extensionName) =>
-      permissionService.forgetExtensionActions(extensionId, extensionName),
+    forgetToolPermissions: (extensionId, extensionName) => {
+      // A removed extension reads nothing more: every connection approval and
+      // grant it held is revoked with it (DOR-3547, Security M8/N3).
+      getExtensionConnectionServices()?.approvals.revoke(extensionId);
+      return permissionService.forgetExtensionActions(extensionId, extensionName);
+    },
   });
   // Arm tier enforcement (spec `agent-trust` §3.2) now that both the approval
   // primitive and the Activity feed exist. The gate runs INSIDE `registry.invoke`

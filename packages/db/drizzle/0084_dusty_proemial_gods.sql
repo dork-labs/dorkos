@@ -1,1 +1,0 @@
-ALTER TABLE `approvals` ADD `detail` text;

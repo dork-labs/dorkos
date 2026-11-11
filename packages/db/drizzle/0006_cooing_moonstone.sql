@@ -1,1 +1,0 @@
-ALTER TABLE `relay_index` ADD `sender` text;

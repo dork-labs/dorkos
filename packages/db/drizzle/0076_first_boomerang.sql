@@ -1,2 +1,0 @@
-CREATE INDEX `idx_pulse_runs_created_at` ON `pulse_runs` ("created_at" desc);--> statement-breakpoint
-CREATE INDEX `idx_pulse_runs_schedule_created_at` ON `pulse_runs` (`schedule_id`,"created_at" desc);

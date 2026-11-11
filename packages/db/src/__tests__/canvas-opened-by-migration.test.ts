@@ -8,9 +8,9 @@ import { fileURLToPath } from 'node:url';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { createDb, runMigrations, type Db } from '../index.js';
 
-const WHEN = 1794358814627;
+const WHEN = 1794361820581;
 const DOWN = fileURLToPath(
-  new URL('../down/20261111010014_canvas_opened_by.down.sql', import.meta.url)
+  new URL('../down/20261111015020_canvas_opened_by.down.sql', import.meta.url)
 );
 
 let db: Db;

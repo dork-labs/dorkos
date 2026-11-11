@@ -1,1 +1,0 @@
-CREATE INDEX `idx_room_bridge_messages_outbound_pending` ON `room_bridge_messages` (`created_at`) WHERE "direction" = 'outbound' AND "platform_message_id" IS NULL;

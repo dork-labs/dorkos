@@ -1,1 +1,0 @@
-ALTER TABLE `pulse_runs` ADD `refused_tools` text;

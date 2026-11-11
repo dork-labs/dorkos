@@ -1,1 +1,0 @@
-ALTER TABLE `approvals` ADD `decided_by_user_id` text;

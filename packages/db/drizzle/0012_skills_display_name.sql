@@ -1,1 +1,0 @@
-ALTER TABLE `pulse_schedules` ADD `display_name` text;

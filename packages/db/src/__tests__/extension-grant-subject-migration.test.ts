@@ -361,6 +361,9 @@ describe('the typed extension subject (M4)', () => {
         .all() as { name: string }[]
     ).map((t) => t.name);
     expect(triggers).toEqual([
+      // Added by 20261110152045_dor3547_extension_grant_guards (Security S-2).
+      'connection_operation_grants_extension_read_only_insert',
+      'connection_operation_grants_extension_read_only_update',
       'connection_operation_grants_extension_subject_insert',
       'connection_operation_grants_extension_subject_update',
     ]);
@@ -452,12 +455,16 @@ describe('extension connection approvals (N2)', () => {
       install_real_path: '/elsewhere/flow-owner',
     });
     for (const origin of ['path_trust', 'dev_link', 'create_extension', 'user', '']) {
+      // No source, so only the origin CHECK can refuse it (Security S-4: with a
+      // source set, the origin_source CHECK refused these rows instead, and
+      // the unanchored pattern matched its name as a prefix).
       expect(() =>
         insertApproval(`bad-${origin}`, {
           install_origin: origin,
+          origin_source: null,
           install_real_path: `/x/${origin}`,
         })
-      ).toThrow(/CHECK constraint failed: extension_connection_approvals_origin/);
+      ).toThrow(/CHECK constraint failed: extension_connection_approvals_origin$/);
     }
   });
 

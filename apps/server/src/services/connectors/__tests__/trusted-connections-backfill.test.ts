@@ -182,6 +182,45 @@ describe('sharing existing connections at the Trusted upgrade', () => {
     expect(config.permissions().sharedAtUpgrade).toEqual([]);
   });
 
+  // DOR-3547 (audit P4-4): a mini app's grant is not an agent's, so an app only
+  // an extension reads was never shared with agents, and still is shared.
+  it('still shares an app only a mini app holds a grant on', async () => {
+    const harness = levelHarness();
+    harness.db
+      .insert(connectorOperationRevisions)
+      .values({
+        id: 'revision-list',
+        providerInstanceId: harness.provider.instanceId,
+        toolkit: 'gmail',
+        operationSlug: 'gmail.list',
+        toolkitVersion: 'v1',
+        schemaHash: 'sha256:gmail.list',
+        capabilityClassification: 'read',
+        inputSchemaJson: '{}',
+        discoveredAt: NOW.toISOString(),
+      })
+      .run();
+    harness.db
+      .insert(connectionOperationGrants)
+      .values({
+        id: 'grant-extension',
+        subjectType: 'extension',
+        subjectId: 'flow-owner',
+        agentId: null,
+        extensionId: 'flow-owner',
+        connectionId: CONNECTION_ID,
+        operationRevisionId: 'revision-list',
+        createdBy: 'install-a',
+        createdAt: NOW.toISOString(),
+      })
+      .run();
+    const config = fakeConfig();
+
+    await runOnce(harness, config);
+
+    expect(config.permissions().sharedAtUpgrade).not.toEqual([]);
+  });
+
   it('keeps Read when the app offers nothing that writes', async () => {
     const harness = levelHarness();
     harness.catalog.splice(0, harness.catalog.length, {

@@ -57,6 +57,13 @@ describe('secretReadDenyRules', () => {
         '~/.claude.json*',
         '~/.claude/.credentials*',
         '~/.dork/host.key',
+        // DOR-3613: the desktop app's sign-in, page storage and built-in browser.
+        '~/Library/Application Support/DorkOS/**',
+        '~/AppData/Roaming/DorkOS/**',
+        '~/.config/DorkOS/**',
+        '//Users/ana/.dork/browser/profile/**',
+        '//Users/ana/.dork/browser-profiles/**',
+        '//Users/ana/.dork/local-browser/saved-logins/**',
       ]) {
         expect(rules).toContain(`${tool}(${target})`);
       }

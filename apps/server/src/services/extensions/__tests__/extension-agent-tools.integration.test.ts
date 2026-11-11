@@ -429,6 +429,8 @@ describe('create_extension on a Trusted install (ADR 261006-225605)', () => {
       path: path.join(dorkHome, 'extensions', NEW_ID),
       digest: expect.stringMatching(/^sha256:[0-9a-f]{64}$/),
       grants: expect.stringMatching(/^sha256:[0-9a-f]{64}$/),
+      // No person said yes, so it never stands for one (DOR-3547 C1).
+      autoApprovedBy: 'create_extension',
     });
     expect(stored.value.approvedPermissions?.[NEW_ID]).toEqual(declared);
   }, 30_000);

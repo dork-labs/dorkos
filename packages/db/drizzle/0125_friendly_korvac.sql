@@ -1,1 +1,0 @@
-ALTER TABLE `pulse_schedules` ADD `followed_agent_changes` text;

@@ -1,1 +1,0 @@
-CREATE INDEX `idx_room_entries_author_room` ON `room_entries` (`author_id`,`room_id`);

@@ -28,6 +28,7 @@ import {
 } from '../storage-state.js';
 import { forgetInProfile } from '../profile-cleanup.js';
 import { createFakeCdp } from './fake-cdp.js';
+import { PERSON_PROOF_STORAGE_KEY } from '@dorkos/shared/person-session';
 
 let root: string;
 beforeEach(() => {
@@ -316,6 +317,48 @@ describe('storage state file', () => {
     expect(raw).not.toContain('better-auth');
     expect(saved.cookies.map((c) => c.domain)).toEqual(['github.com']);
     expect(saved.origins.map((o) => o.origin)).toEqual(['https://github.com']);
+  });
+
+  // DOR-4099: a person who confirms inside the agent browser leaves both their
+  // session cookie (the production `__Secure-` name too) and the person proof in
+  // that browser. Neither may reach the file every agent's browser starts from.
+  it('never writes the person’s DorkOS session cookie or person proof (DOR-4099)', async () => {
+    const file = path.join(root, 'browser', 'storage-state.json');
+    const session = (name: string, domain: string) => ({
+      name,
+      value: 'made-up-session-token',
+      domain,
+      path: '/',
+      expires: 1_900_000_000,
+      httpOnly: true,
+      secure: name.startsWith('__Secure-'),
+    });
+    const cdp = createFakeCdp({
+      'Storage.getCookies': () => ({
+        cookies: [
+          session('better-auth.session_token', 'localhost'),
+          session('__Secure-better-auth.session_token', 'localhost'),
+          session('better-auth.session_data', '127.0.0.1'),
+        ],
+      }),
+      'Target.getTargets': () => ({
+        targetInfos: [{ targetId: 't1', type: 'page', url: 'http://127.0.0.1:4242/' }],
+      }),
+      'Target.attachToTarget': () => ({ sessionId: 's-t1' }),
+      'DOMStorage.getDOMStorageItems': () => ({
+        entries: [[PERSON_PROOF_STORAGE_KEY, 'made-up-person-proof']],
+      }),
+    });
+    await writeStorageState(file, await collectStorageState(cdp));
+    const raw = fs.readFileSync(file, 'utf8');
+    for (const secret of [
+      'made-up-session-token',
+      'made-up-person-proof',
+      'better-auth',
+      PERSON_PROOF_STORAGE_KEY,
+    ])
+      expect(raw, secret).not.toContain(secret);
+    expect(JSON.parse(raw)).toEqual({ cookies: [], origins: [] });
   });
 
   it('reads an older file without its DorkOS sign-in (DOR-3957)', () => {

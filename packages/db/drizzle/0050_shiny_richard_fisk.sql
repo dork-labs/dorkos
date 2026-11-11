@@ -1,1 +1,0 @@
-ALTER TABLE `room_entries` ADD `mention_spans` text DEFAULT '[]' NOT NULL;

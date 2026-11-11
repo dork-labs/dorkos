@@ -1,1 +1,0 @@
-ALTER TABLE `rooms` ADD `fallback_seat_author_id` text;

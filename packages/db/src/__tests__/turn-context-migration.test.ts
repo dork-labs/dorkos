@@ -62,40 +62,45 @@ describe('turn_context tables', () => {
 });
 
 describe('turn_context down-migration', () => {
+  const TAG = '20261109151737_turn_context';
+  const MIGRATIONS = fileURLToPath(new URL('../../drizzle/', import.meta.url));
   const DOWN = fileURLToPath(
     new URL('../down/20261109151737_turn_context.down.sql', import.meta.url)
   );
   const TABLES = ['turn_context_bodies', 'turn_context_parts', 'turn_contexts'];
-  const TAG = '20261109151737_turn_context';
-  const MIGRATIONS = fileURLToPath(new URL('../../drizzle/', import.meta.url));
-  let db: Db;
   let directory: string;
+  let db: Db;
 
-  /**
-   * Apply the migrations up to and including this one, never a later one: a
-   * down-migration refuses once a later one has run, which is the point of it,
-   * so the database it is tested on must stop here.
-   */
-  function migrateThroughThisOne(): void {
-    const data = JSON.parse(readFileSync(join(MIGRATIONS, 'meta/_journal.json'), 'utf8')) as {
-      entries: Array<{ idx: number; tag: string }>;
+  function journal() {
+    return JSON.parse(readFileSync(join(MIGRATIONS, 'meta/_journal.json'), 'utf8')) as {
+      entries: Array<{ idx: number; tag: string; when: number }>;
     };
-    const last = data.entries.find((entry) => entry.tag === TAG)!.idx;
-    const entries = data.entries.filter((entry) => entry.idx <= last);
-    for (const entry of entries)
-      copyFileSync(join(MIGRATIONS, `${entry.tag}.sql`), join(directory, `${entry.tag}.sql`));
+  }
+
+  function entry() {
+    const found = journal().entries.find((e) => e.tag === TAG);
+    expect(found).toBeDefined();
+    return found!;
+  }
+
+  function migrateThrough(lastIdx: number) {
+    const data = journal();
+    const entries = data.entries.filter((e) => e.idx <= lastIdx);
+    for (const e of entries)
+      copyFileSync(join(MIGRATIONS, `${e.tag}.sql`), join(directory, `${e.tag}.sql`));
     writeFileSync(join(directory, 'meta/_journal.json'), JSON.stringify({ ...data, entries }));
     migrate(db, { migrationsFolder: directory });
   }
 
   beforeEach(() => {
-    directory = mkdtempSync(join(tmpdir(), 'dorkos-turn-context-down-'));
+    directory = mkdtempSync(join(tmpdir(), 'turn-context-down-migration-'));
     mkdirSync(join(directory, 'meta'));
     db = createDb(':memory:');
-    migrateThroughThisOne();
+    migrateThrough(entry().idx);
   });
 
   afterEach(() => {
+    if (db.$client.open) db.$client.close();
     rmSync(directory, { recursive: true, force: true });
   });
 
@@ -140,7 +145,7 @@ describe('turn_context down-migration', () => {
 
     expect(tables()).toEqual([]);
     expect(ledger()).toBe(0);
-    runMigrations(db);
+    migrateThrough(entry().idx);
     expect(tables()).toEqual(TABLES);
     expect(db.select().from(turnContextBodies).all()).toEqual([]);
   });

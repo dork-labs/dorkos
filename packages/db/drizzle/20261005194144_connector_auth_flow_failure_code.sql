@@ -1,1 +1,0 @@
-ALTER TABLE `connector_authentication_flows` ADD `failure_code` text;

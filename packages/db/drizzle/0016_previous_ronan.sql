@@ -1,1 +1,0 @@
-ALTER TABLE `session_metadata` DROP COLUMN `auto_mode`;

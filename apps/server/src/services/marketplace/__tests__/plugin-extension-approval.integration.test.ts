@@ -28,7 +28,10 @@ interface StoredExtensions {
   enabled: string[];
   disabled: string[];
   approvedToRun: string[];
-  approvedSources?: Record<string, { path: string; plugin?: string }>;
+  approvedSources?: Record<
+    string,
+    { path: string; plugin?: string; digest?: string; personApprovedDigest?: string }
+  >;
 }
 const stored = vi.hoisted(() => ({
   value: { enabled: [], disabled: [], approvedToRun: [] } as StoredExtensions,
@@ -133,7 +136,10 @@ describe('a plugin-carried extension approval across the plugin lifecycle', () =
       plugin: PLUGIN,
       digest: expect.stringMatching(/^sha256:[0-9a-f]{64}$/),
       grants: expect.stringMatching(/^sha256:[0-9a-f]{64}$/),
+      personApprovedDigest: expect.stringMatching(/^sha256:[0-9a-f]{64}$/),
     });
+    // A person gave this yes by hand, so the files they approved are the pinned ones (DOR-3547).
+    expect(approvedSource?.personApprovedDigest).toBe(approvedSource?.digest);
 
     const result = await installer.update({ name: await writeVersion('2.0.0', ['flow']) });
 

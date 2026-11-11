@@ -1,1 +1,0 @@
-ALTER TABLE `session_metadata` ADD `launched_by` text;

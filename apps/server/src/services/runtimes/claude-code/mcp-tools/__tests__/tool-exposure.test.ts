@@ -581,8 +581,10 @@ describe('in-session tool exposure', () => {
     // only after a post of its own was handed off; no prompt block names it.
     // 144 -> 145 total, 132 -> 133 deferred: `agent_instructions` (spec `context-viewer`
     // phase 3), a read an agent makes when asked what it is told; no prompt block names it.
-    expect(tools).toHaveLength(145);
-    expect(deferred).toHaveLength(133);
+    // 145 -> 149 total, 133 -> 137 deferred: the four work-queue verbs an agent uses on
+    // another agent's queue (`work_queue_read_agent`, `_configure`, `_reorder`, `_requeue`).
+    expect(tools).toHaveLength(149);
+    expect(deferred).toHaveLength(137);
     for (const name of [
       'local_browser_ask_person',
       'local_browser_state',

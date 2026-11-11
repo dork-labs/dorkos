@@ -22,6 +22,7 @@ import { writeFileAtomic } from '@dorkos/shared/atomic-write';
 import { ExtensionSecretStore } from '@dorkos/shared/extension-secrets';
 import { ExtensionSettingsStore } from '@dorkos/shared/extension-settings';
 import { eventFanOut } from '../core/event-fan-out.js';
+import type { HostConnectionsApi } from './connections/extension-connections-ctx.js';
 import { registerAccountAdvisor, toExtensionAccountUsage } from '../core/usage/account-advisor.js';
 import { getAccountUsageStore } from '../core/usage/current-usage-store.js';
 import { recordContinuation } from '../core/usage/session-continuation.js';
@@ -238,6 +239,11 @@ interface CreateContextDeps {
    * means the extension declares none, and every `handle` call is refused.
    */
   toolChecks?: readonly ExtensionToolCheck[];
+  /**
+   * `ctx.connections`, which only the host of an isolated extension that
+   * declares connections passes (DOR-3547). Omitted means the ctx has none.
+   */
+  connections?: HostConnectionsApi;
 }
 
 /**
@@ -280,6 +286,8 @@ export function createDataProviderContext(deps: CreateContextDeps): {
   // whatever it still does afterwards must start nothing (see `dispose`).
   let disposed = false;
   let toldDisposed = false;
+  // Cancels any read still in flight once this instance is given up on (C2).
+  const stopReads = new AbortController();
   const inert = (what: string): (() => void) => {
     if (!toldDisposed) {
       toldDisposed = true;
@@ -422,6 +430,16 @@ export function createDataProviderContext(deps: CreateContextDeps): {
     },
     agent: guardedAgent,
     tools: tools.api,
+    // A given-up instance reads nothing: the read would outlive the extension.
+    ...(deps.connections && {
+      connections: {
+        read: (operation: string, params?: Record<string, unknown>) =>
+          disposed
+            ? Promise.reject(new Error('This extension was stopped, so it cannot read apps.'))
+            : deps.connections!.read(operation, params, stopReads.signal),
+        status: () => deps.connections!.status(),
+      },
+    }),
   };
 
   const releaseListeners = () => {
@@ -445,6 +463,7 @@ export function createDataProviderContext(deps: CreateContextDeps): {
      */
     dispose: () => {
       disposed = true;
+      stopReads.abort();
       // A given-up instance never offers tools, whatever it binds later.
       tools.close();
       for (const cancel of scheduledCleanups.splice(0)) {

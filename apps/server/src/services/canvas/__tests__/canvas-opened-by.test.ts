@@ -63,9 +63,9 @@ describe('a document an app opened', () => {
 describe('what an agent can never do (Security tests 1 and 2)', () => {
   it('cannot label a document by putting openedBy in content it opens', () => {
     const forged = { ...PAGE, openedBy: { extensionId: 'desk' } } as unknown as typeof PAGE;
-    const result = applyAsAgent({ action: 'open_canvas', content: forged });
-    const id = 'document' in result && result.document ? result.document.id : undefined;
-    const doc = id ? canvas.get(SCOPE, id) : canvas.list(SCOPE)[0];
+    applyAsAgent({ action: 'open_canvas', content: forged });
+    const doc = canvas.list(SCOPE)[0];
+    expect(doc).toBeDefined();
     expect(doc?.openedBy).toBeUndefined();
     expect(doc && storedOpenedBy(doc.id)).toBeNull();
   });

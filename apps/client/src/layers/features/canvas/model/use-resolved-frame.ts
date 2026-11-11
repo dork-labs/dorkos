@@ -21,6 +21,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useTransport } from '@/layers/shared/model';
 import {
   classifyBrowserTarget,
+  isThisAppsAddress,
   splicePreviewPath,
   type LoopbackStrategy,
   PREVIEW_HEALTH_PATH,
@@ -80,6 +81,26 @@ export interface UseResolvedFrame {
 }
 
 /**
+ * The frame as published, never with this app's own powers. The cascade grants
+ * {@link WORKBENCH_SANDBOX_EXTERNAL} on the grounds that its source is someone
+ * else's origin; when the source is in fact this app's own address (an agent
+ * opened `localhost:<our port>`, or the tunnel address the page came from),
+ * that premise fails, so the frame gets the opaque-origin sandbox and no bridge.
+ *
+ * @param frame - What the cascade settled on.
+ */
+function withoutThisAppsOrigin(frame: ResolvedFrame): ResolvedFrame {
+  if (frame.sandbox === WORKBENCH_SANDBOX_ISOLATED) return frame;
+  if (!isThisAppsAddress(frame.src, window.location)) return frame;
+  return {
+    src: frame.src,
+    sandbox: WORKBENCH_SANDBOX_ISOLATED,
+    previewOrigin: null,
+    bridgeEligibility: null,
+  };
+}
+
+/**
  * Resolve what to put in the browser frame. See the module doc for the cascade.
  *
  * @param params - The target and the facts the cascade needs — see {@link UseResolvedFrameParams}.
@@ -115,7 +136,7 @@ export function useResolvedFrame({
     let cancelled = false;
     const publishResolved = (frame: ResolvedFrame): void => {
       setResolvedFor(resolutionKey);
-      setResolved(frame);
+      setResolved(withoutThisAppsOrigin(frame));
     };
 
     async function resolveServe(path: string): Promise<void> {

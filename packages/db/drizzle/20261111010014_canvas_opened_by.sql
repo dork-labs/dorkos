@@ -1,1 +1,0 @@
-ALTER TABLE `canvas_documents` ADD `opened_by_extension_id` text;

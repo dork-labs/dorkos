@@ -954,7 +954,7 @@ export class ExtensionManager {
     const previous = extensions.approvedSources?.[id];
     const authorHome =
       previous && isSameStoredCopy(record, previous) ? previous.authorHome : undefined;
-    const source = approvalFor(record, { digest: live, authorHome });
+    const source = approvalFor(record, { digest: live, authorHome, byPerson: true });
     if (!source) {
       throw new ApprovalRefusedError('unpinnable', await whyUnpinnable(record));
     }

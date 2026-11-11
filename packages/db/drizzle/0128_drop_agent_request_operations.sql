@@ -1,1 +1,0 @@
-ALTER TABLE `connector_agent_requests` DROP COLUMN `requested_operations_json`;

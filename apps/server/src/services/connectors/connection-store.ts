@@ -259,9 +259,13 @@ export class ConnectionStore {
           .where(
             and(
               eq(connections.providerInstanceId, provider.instanceId),
+              // Agent access only (DOR-3547): reconciliation re-checks agents'
+              // grants and has no step for a mini app's, so an account only an
+              // extension reads would otherwise wait for a review that can't
+              // clear it. An extension grant names an exact revision either way.
               sql`EXISTS (SELECT 1 FROM ${connectionOperationGrants}
                 WHERE ${connectionOperationGrants.connectionId} = ${connections.id}
-                AND ${connectionOperationGrants.revokedAt} IS NULL)`,
+                AND ${connectionOperationGrants.revokedAt} IS NULL AND ${connectionOperationGrants.subjectType} <> 'extension')`,
               ...(kept.length > 0 ? [notInArray(connections.externalAccountRef, kept)] : [])
             )
           )

@@ -1,1 +1,0 @@
-ALTER TABLE `codex_threads` ADD `cwd` text;

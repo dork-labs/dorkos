@@ -29,6 +29,16 @@
         "Fast local proof: playwright test --config served-document-isolation.config.ts. The same file is also discovered by the normal chromium project."
       ]
     },
+    "app-framing": {
+      "relatedCode": [
+        "apps/server/src/http/frame-ancestors.ts",
+        "apps/server/src/http/front-door.ts"
+      ],
+      "explorationNotes": [
+        "Real front door on an OS-assigned port with a throwaway home. A frame refused by frame-ancestors settles at chrome-error://chromewebdata/; one that loads keeps its own URL.",
+        "Fast local proof: playwright test --config served-document-isolation.config.ts. The same file is also discovered by the normal chromium project."
+      ]
+    },
     "agent-reactions": {
       "relatedCode": [
         "apps/server/src/routes/rooms.ts",
