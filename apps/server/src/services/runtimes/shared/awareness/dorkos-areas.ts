@@ -60,19 +60,21 @@ export interface DorkosAreaLine {
 export const DORKOS_AREAS: readonly DorkosAreaLine[] = [
   {
     name: 'Chats',
-    can: 'start a spin-off chat for long work; message, read or stop another; summarize your own.',
+    can: 'spin off long work; message, read or stop chats; summarize yours.',
     covers: ['chat.', 'session_start', 'session.compact'],
     areas: ['agents', 'messages', 'own_chat'],
   },
   {
     name: 'Rooms',
-    can: "post, react, read and search rooms you're in; open rooms, change members, merge files.",
+    can: 'post, react, read and search; open rooms, set members, merge files.',
     covers: ['rooms.'],
     areas: ['rooms'],
   },
   {
+    // One line for both canvas surfaces (DOR-3219 diet): the document table and
+    // the browser tab are the same place to an agent.
     name: 'Canvas',
-    can: "open documents, files, diffs, widgets and pages beside the chat or on a room's canvas; a page can send you events.",
+    can: 'open documents, files, diffs, widgets and pages, here or in a room; drive DorkOS pages (not real sites), which can send you events.',
     covers: [
       'ui.control',
       'ui.state',
@@ -82,14 +84,6 @@ export const DORKOS_AREAS: readonly DorkosAreaLine[] = [
       'ui.configure_doc_channel',
       'ui.approve_doc_route',
       'ui.revoke_doc_route',
-    ],
-    areas: [],
-    gate: 'always on',
-  },
-  {
-    name: 'Canvas browser',
-    can: 'drive a page DorkOS serves in a canvas tab. A real website is only shown there.',
-    covers: [
       'ui.click',
       'ui.type',
       'ui.press',
@@ -107,57 +101,52 @@ export const DORKOS_AREAS: readonly DorkosAreaLine[] = [
   },
   {
     name: 'Agent browser',
-    can:
-      'drive a real website, signed in, in a browser page a person shares with this chat ' +
-      "(Browser, in the right panel's + menu). Ask them to share one; never send them to a terminal.",
+    can: 'drive a real website in a page a person shares (Browser, + menu); ask for one, never send them to a terminal.',
     covers: ['local_browser.', 'mcp.browser_preset'],
     areas: [],
     gate: 'a person shares it',
   },
   {
     name: 'Connected apps',
-    can: 'read and change things in connected apps, ask for one, or remove access.',
+    can: 'use connected apps, ask for one, or give access up.',
     covers: ['connector.', 'connectors.'],
     areas: ['permissions'],
-    gate: 'each app grant',
+    gate: 'per-app grant',
   },
   {
-    name: 'MCP servers',
-    can:
-      'add, test, sign in, switch and remove your own MCP servers, or import one on this ' +
-      'computer. A change reaches you next turn, in this chat: no restart. Only a person adds ' +
-      'one for every agent (Connections, MCP servers tab), picks its agents and turns it on or off.',
-    covers: ['mcp.'],
+    // MCP servers, packages and extensions share one permission area, so one line (DOR-3219 diet).
+    name: 'Tools',
+    can: 'add or remove your MCP servers and packages; build extensions a person approves. A change reaches you next turn, in this chat: no restart.',
+    covers: ['mcp.', 'marketplace.', 'create_extension', 'reload_extensions', 'test_extension'],
     areas: ['packages'],
-    gate: 'adding or changing one always asks',
+    gate: 'adding an MCP server asks',
   },
   {
-    name: 'Chat connections',
-    can: 'switch the Telegram and Slack connections, and choose which agent gets each chat.',
+    // Telegram and Slack, and reaching the person through them, on one line.
+    name: 'Chat apps',
+    can: "switch Telegram and Slack, pick each chat's agent, reach the person there.",
     covers: [
       'relay_list_adapters',
       'relay_enable_adapter',
       'relay_disable_adapter',
       'relay_reload_adapters',
       'binding_',
+      'relay_notify_user',
+      'relay_list_endpoints',
+      'relay_get_trace',
+      'relay_get_metrics',
     ],
-    areas: ['connections'],
-  },
-  {
-    name: 'Reaching the person',
-    can: "message them on their phone or chat app when they aren't here; trace a lost message.",
-    covers: ['relay_notify_user', 'relay_list_endpoints', 'relay_get_trace', 'relay_get_metrics'],
-    areas: ['messages'],
+    areas: ['messages', 'connections'],
   },
   {
     name: 'Tasks',
-    can: 'create, change and delete scheduled runs, read how they went, and end a heartbeat.',
+    can: 'create, change and delete schedules; read runs; end a heartbeat.',
     covers: ['tasks_', 'heartbeat.'],
     areas: ['tasks'],
   },
   {
     name: 'Agents',
-    can: 'find, register, create, change, pause and resume agents, sort the sidebar, and manage work queues.',
+    can: 'find, create, change, pause and resume agents and their work queues.',
     covers: [
       'work-queue.',
       'mesh_',
@@ -170,12 +159,6 @@ export const DORKOS_AREAS: readonly DorkosAreaLine[] = [
     areas: ['agents', 'safety'],
   },
   {
-    name: 'Marketplace and extensions',
-    can: 'install, update and remove packages; build and test extensions a person approves.',
-    covers: ['marketplace.', 'create_extension', 'reload_extensions', 'test_extension'],
-    areas: ['packages'],
-  },
-  {
     name: 'Memory',
     can: 'save notes your other sessions read.',
     covers: ['memory.'],
@@ -184,34 +167,18 @@ export const DORKOS_AREAS: readonly DorkosAreaLine[] = [
   },
   {
     name: 'To-dos',
-    can: 'record the promises you make, read the team list, and mark yours kept or dropped.',
+    can: "record promises, read the team's, mark yours kept or dropped.",
     covers: ['todo_promises.'],
     areas: ['todos'],
   },
   {
+    // What agents did and how this computer is doing, both read only, on one line.
     name: 'Activity',
-    can: "read what agents did, every chat running now, the audit log and agents' transcripts.",
-    covers: ['audit.', 'operator.activity_list', 'operator.agents_recent_activity'],
-    areas: [],
-    gate: 'read only',
-  },
-  {
-    name: 'Settings',
-    can: 'change everyday settings, see your permissions and instructions, and ask for one you lack.',
+    can: 'read agent activity, running chats, audit log, transcripts, server health, Claude usage.',
     covers: [
-      'operator.config_',
-      'operator.check_update',
-      'permissions.',
-      'instructions.',
-      'capabilities.list',
-      'operator.feedback_draft',
-    ],
-    areas: ['settings', 'permissions'],
-  },
-  {
-    name: 'This computer',
-    can: "see the server's health, open chats, extension errors and Claude account usage.",
-    covers: [
+      'audit.',
+      'operator.activity_list',
+      'operator.agents_recent_activity',
       'ping',
       'get_server_info',
       'get_session_count',
@@ -223,6 +190,19 @@ export const DORKOS_AREAS: readonly DorkosAreaLine[] = [
     areas: [],
     gate: 'read only',
   },
+  {
+    name: 'Settings',
+    can: 'change settings, see your permissions, ask for one you lack.',
+    covers: [
+      'operator.config_',
+      'operator.check_update',
+      'permissions.',
+      'instructions.',
+      'capabilities.list',
+      'operator.feedback_draft',
+    ],
+    areas: ['settings', 'permissions'],
+  },
 ];
 
 /** Whether a capability or tool id falls under one of a line's prefixes. */
@@ -230,25 +210,37 @@ export function areaLineCovers(line: DorkosAreaLine, id: string): boolean {
   return line.covers.some((prefix) => id === prefix || id.startsWith(prefix));
 }
 
-/** The permission phrase a line ends with. */
-function permissionOf(line: DorkosAreaLine): string {
+/** One area line: its name, what it does, and the permission areas that govern it. */
+function renderLine(line: DorkosAreaLine): string {
   const labels = line.areas.map((id) => getPermissionArea(id)?.label ?? id);
-  return [...labels, ...(line.gate ? [line.gate] : [])].join('; ');
+  return `- ${line.name}: ${line.can}${labels.length > 0 ? ` [${labels.join('; ')}]` : ''}`;
 }
 
 /**
- * The `<dorkos_areas>` block: every area line, plus the rule that sends an
- * agent to the catalog before it says DorkOS can't do something.
+ * Every other gate, once each, with the lines it governs (DOR-3219 diet). A
+ * gate repeated in a bracket on every line it touched cost a third of the block.
+ */
+function gatesLine(): string {
+  const byGate = new Map<string, string[]>();
+  for (const line of DORKOS_AREAS) {
+    if (line.gate) byGate.set(line.gate, [...(byGate.get(line.gate) ?? []), line.name]);
+  }
+  const groups = [...byGate].map(([gate, names]) => `${gate} (${names.join(', ')})`);
+  return `Gates: ${groups.join('; ')}.`;
+}
+
+/**
+ * The `<dorkos_areas>` block: every area line, what governs each, and the rule
+ * that sends an agent to the catalog before it says DorkOS can't do something.
  *
  * Static, so it stays in each runtime's cached prefix.
  */
 export function buildDorkosAreasBlock(): string {
-  const lines = DORKOS_AREAS.map((line) => `- ${line.name}: ${line.can} [${permissionOf(line)}]`);
   return `<dorkos_areas>
-What you can do in DorkOS. This is what exists, not what you may do now: [brackets] name the
-permission that governs each line; the tool whose name ends in \`list_my_permissions\` has your levels.
-${lines.join('\n')}
-Before you say DorkOS can't do something, or send anyone to an outside tool or a terminal, search
-the tool whose name ends in \`list_capabilities\` (with a \`query\`), and use what it finds.
+What exists, not what you may do now. [Brackets] name the permission; the tool whose
+name ends in \`list_my_permissions\` has your levels.
+${DORKOS_AREAS.map(renderLine).join('\n')}
+${gatesLine()}
+Before you say DorkOS can't do something, search the tool whose name ends in \`list_capabilities\`.
 </dorkos_areas>`;
 }
