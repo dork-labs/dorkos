@@ -54,6 +54,7 @@ import { auditActorForRequest } from '../middleware/audit-actor.js';
 import { auditFallbackFor } from '../middleware/audit-request-fallback.js';
 import { errorReply, logRequestError } from '../middleware/error-handler.js';
 import { refuseUntrustedHost } from '../middleware/host-guard.js';
+import { refuseForeignServiceWorkers } from '../middleware/service-worker-guard.js';
 import {
   bypassesManagedIngress,
   MANAGED_HOST_REFUSAL_BODY,
@@ -148,6 +149,8 @@ export function createApiApp(options: ApiChainOptions): Hono<ApiEnv> {
     if (bypassesManagedIngress(c.env.incoming)) return c.json(MANAGED_HOST_REFUSAL_BODY, 403);
     await next();
   });
+  // Only DorkOS's own service worker installs from this origin (DOR-3547 M-A).
+  app.use(refuseForeignServiceWorkers);
   const noteFirstApiRequest = createFirstContactMarker('[Client] first API request');
   app.use(async (c, next) => {
     if (underMount(c.req.path, '/api')) noteFirstApiRequest();

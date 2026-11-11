@@ -155,6 +155,8 @@ const REFUSED: readonly (readonly [reason: string, routes: readonly string[]])[]
       'POST /api/connectors/reconciliation/previews',
       'POST /api/connectors/reviews',
       'POST /api/connectors/reviews/:reviewRequestId/decision',
+      'POST /api/connectors/mini-app-access/:approvalId/revoke',
+      'POST /api/connectors/mini-app-access/decision',
       'POST /api/connectors/webhooks/:providerInstanceId',
       'POST /api/relay/adapters',
       'POST /api/relay/adapters/:id/confirm-references',

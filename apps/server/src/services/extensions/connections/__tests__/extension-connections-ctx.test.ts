@@ -118,6 +118,7 @@ describe('extension connections, extension side', () => {
       .run();
     approvals = new ExtensionConnectionApprovalStore(db, () => new Date(NOW));
     setExtensionConnectionServices({
+      db,
       approvals,
       reader: new ExtensionConnectionReader(db, registry, approvals, new ConnectorUsageStore(db)),
     });
@@ -318,6 +319,7 @@ describe('extension connections, extension side', () => {
   it('a stop signal reaches the reader through extensionConnectionsFor', async () => {
     const read = vi.fn(async () => ({ status: 'success' as const, data: null }));
     setExtensionConnectionServices({
+      db,
       approvals,
       reader: { read, status: () => [] } as unknown as ExtensionConnectionReader,
     });

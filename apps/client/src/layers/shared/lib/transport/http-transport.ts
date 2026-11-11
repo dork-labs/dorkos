@@ -57,6 +57,7 @@ import { createDeviceMethods } from './device-methods';
 import { createSignInLandingMethods } from './sign-in-landing-methods';
 import { createDocLinkMethods } from './doc-link-methods';
 import { createFrameBridgeMethods } from './frame-bridge-methods';
+import { createMiniAppAccessMethods } from './mini-app-access-methods';
 
 // ---------------------------------------------------------------------------
 // Declaration merging
@@ -116,7 +117,8 @@ export interface HttpTransport
     ReturnType<typeof createDeviceMethods>,
     ReturnType<typeof createSignInLandingMethods>,
     ReturnType<typeof createDocLinkMethods>,
-    ReturnType<typeof createFrameBridgeMethods> {}
+    ReturnType<typeof createFrameBridgeMethods>,
+    ReturnType<typeof createMiniAppAccessMethods> {}
 
 // ---------------------------------------------------------------------------
 // Class
@@ -179,7 +181,8 @@ export class HttpTransport implements Transport {
       createDeviceMethods(baseUrl),
       createSignInLandingMethods(baseUrl),
       createDocLinkMethods(baseUrl),
-      createFrameBridgeMethods(baseUrl)
+      createFrameBridgeMethods(baseUrl),
+      createMiniAppAccessMethods(baseUrl)
     );
   }
 }

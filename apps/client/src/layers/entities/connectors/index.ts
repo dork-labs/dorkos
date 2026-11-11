@@ -66,6 +66,11 @@ export {
 } from './model/use-connector-management';
 export { useConnectorAgentRequestsSync } from './model/use-connector-agent-requests-sync';
 export { accessChangeKey, useAccessChange, useUndoAccessChange } from './model/use-access-changes';
+export {
+  useMiniAppAccess,
+  useRevokeMiniAppAccess,
+  miniAppAccessPageUrl,
+} from './model/use-mini-app-access';
 
 // --- Shared DTO types, re-exported for feature layers ---
 export type {

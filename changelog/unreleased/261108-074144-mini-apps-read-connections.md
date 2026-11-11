@@ -6,6 +6,14 @@ covers:
   - "fix(connectors): a mini app reads only on a person's yes, and gets no answer if its access changed while the app replied"
   - 'fix(extensions): only files a person approved by hand let a mini app read a connected app'
   - 'feat(connectors): a mini app reads a connected app through DorkOS, with no token and only what a person approved (#3537)'
+  - 'feat(connectors): the Connections page lists what mini apps wait for and may read, and can take a yes back'
+  - 'feat(connections): a mini app waiting to read an app shows in Needs you as a link, and each account lists the mini apps that can read it'
+  - 'feat(connectors): a person lets a mini app read an app only on its own page, outside the app'
+  - "fix(connectors): agents can neither give nor take back a mini app's access, and over Wi-Fi only taking it back works"
+  - 'fix(connectors): the mini app decide page says it is DorkOS, and its labels, buttons and account read cleanly in both themes'
+  - 'docs(api): the mini app access list and revoke are in the API reference, and the route census knows the new routes'
+  - 'fix(connectors): a single account on the mini app decide page reads as a fact, not a field'
+  - 'fix(connectors): the mini app decide page buttons fade on in 150ms; the one-second gate is unchanged'
 ---
 
 ### Added

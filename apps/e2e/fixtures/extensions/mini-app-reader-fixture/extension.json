@@ -1,0 +1,12 @@
+{
+  "id": "mini-app-reader-fixture",
+  "name": "Reader Fixture",
+  "version": "1.0.0",
+  "author": "Made-up Author",
+  "description": "Browser-test fixture: a sandboxed mini app that asks to read Gmail, so the page where a person decides can be tested.",
+  "serverCapabilities": {
+    "serverEntry": "./server.ts",
+    "runtime": "subprocess",
+    "connections": [{ "service": "gmail", "access": "read", "operations": ["gmail.messages.list"] }]
+  }
+}

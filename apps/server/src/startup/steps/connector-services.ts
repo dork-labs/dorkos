@@ -188,6 +188,7 @@ export async function wireConnectorServices(refs: ServerRefs, built: WireConnect
   // Mini apps that read a connected app through DorkOS (DOR-3547).
   const extensionApprovals = new ExtensionConnectionApprovalStore(db);
   setExtensionConnectionServices({
+    db,
     approvals: extensionApprovals,
     reader: new ExtensionConnectionReader(
       db,

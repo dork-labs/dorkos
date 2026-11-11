@@ -335,4 +335,35 @@ describe('NeedsYou', () => {
     expect(await screen.findByTestId('needs-you-review-recent')).toBeInTheDocument();
     expect(screen.queryByTestId('needs-you-review-old')).not.toBeInTheDocument();
   });
+
+  it('a mini app asking to read only links to its own page, with no decision in the link', async () => {
+    const user = userEvent.setup();
+    const assign = vi.fn();
+    vi.stubGlobal('location', { ...window.location, assign });
+    const transport = createMockTransport({
+      getConnectorAgentRequests: vi.fn().mockResolvedValue([]),
+      getConnectorManagementReviews: vi.fn().mockResolvedValue([]),
+      getMiniAppAccess: vi.fn().mockResolvedValue({
+        waiting: [
+          {
+            extensionId: 'flow-owner',
+            extensionName: 'Flow',
+            service: 'gmail',
+            operations: ['GMAIL_LIST_MESSAGES'],
+            reason: 'new',
+          },
+        ],
+        allowed: [],
+      }),
+    });
+    renderStrip(transport);
+
+    const row = await screen.findByRole('button', { name: /Flow wants to read Gmail/ });
+    expect(screen.queryByRole('button', { name: /approve|allow/i })).not.toBeInTheDocument();
+    await user.click(row);
+    expect(assign).toHaveBeenCalledWith(
+      '/api/connectors/mini-app-access/page?extension=flow-owner&service=gmail'
+    );
+    vi.unstubAllGlobals();
+  });
 });

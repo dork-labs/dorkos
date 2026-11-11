@@ -7,11 +7,14 @@
  *
  * @module services/connectors/extensions/extension-connections-seam
  */
+import type { Db } from '@dorkos/db';
 import type { ExtensionConnectionApprovalStore } from './extension-connection-approvals.js';
 import type { ExtensionConnectionReader } from './extension-connection-reader.js';
 
 /** The extension connection services. */
 export interface ExtensionConnectionServices {
+  /** The canonical database, for the Connections page's account names. */
+  readonly db: Db;
   /** The approval store: approve, revoke, list. */
   readonly approvals: ExtensionConnectionApprovalStore;
   /** The host-side reader behind `ctx.connections`. */

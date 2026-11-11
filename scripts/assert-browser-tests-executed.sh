@@ -258,6 +258,10 @@ FILTERED_SPECS=(
 #     person adds a server, turns it off and on, and removes it (DOR-3213).
 #     Registered into connections.spec.ts on the same sequential worker, since
 #     it writes the one server list this computer's agents share.
+#   connections/mini-app-access.ts — the one page where a person lets a mini app
+#     read a connected app (DOR-3547). Registered into connections.spec.ts for
+#     the same reason: it needs the scripted provider's accounts, which that
+#     file resets before every test.
 REGISTERED_MODULES=(
   'chat/compaction.ts'
   'chat/composer-escape-and-ime.ts'
@@ -269,6 +273,7 @@ REGISTERED_MODULES=(
   'connections/chat-connect-card.ts'
   'connections/event-notifications.ts'
   'connections/mcp-servers.ts'
+  'connections/mini-app-access.ts'
   'connections/owner-management.ts'
   'connections/session-access.ts'
   'conversation/ask-anywhere.ts'
