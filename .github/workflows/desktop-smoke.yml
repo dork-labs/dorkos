@@ -175,5 +175,24 @@ jobs:
           cd apps/desktop
           CSC_IDENTITY_AUTO_DISCOVERY=false npx electron-builder --mac --arm64 --dir --config electron-builder.yml
 
+      - name: Ensure Google Chrome is installed for the isolated browser proof
+        run: |
+          if [[ ! -x '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome' ]]; then
+            brew install --cask google-chrome
+          fi
+
       - name: Smoke the packaged runtime
         run: pnpm --filter @dorkos/desktop exec tsx scripts/smoke-packaged.ts
+
+      - name: Prove installed Chrome before and during a person’s handoff
+        timeout-minutes: 8
+        run: pnpm --filter @dorkos/desktop exec tsx scripts/smoke-public-chrome.ts
+
+      - name: Upload browser proof screenshots and user agents
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: browser-proof-macos
+          path: apps/desktop/browser-proof-artifacts/
+          if-no-files-found: warn
+          retention-days: 14

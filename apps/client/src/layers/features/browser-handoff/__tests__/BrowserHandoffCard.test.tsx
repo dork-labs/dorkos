@@ -407,12 +407,12 @@ describe('BrowserHandoffCard', () => {
       expect((await button('Continue')).getAttribute('aria-disabled')).toBe('false');
     });
 
-    it('says the agent moves, in the Mac app’s panel', async () => {
+    it('keeps an embedded check in the same detached view', async () => {
       transport.getLocalBrowserState.mockResolvedValue(person({ mode: 'embedded' }));
       mount();
-      expect(
-        await screen.findByText('Atlas moves to its own window after you sign in.')
-      ).toBeTruthy();
+      expect(await screen.findByText('Finish in the browser, then press Continue.')).toBeVisible();
+      expect(screen.queryByText(/moves to its own window/)).toBeNull();
+      expect(screen.getByRole('button', { name: 'Continue' })).toBeVisible();
     });
   });
 
@@ -484,14 +484,14 @@ describe('BrowserHandoffCard', () => {
       expect(screen.queryByRole('button', { name: 'Continue' })).toBeNull();
     });
 
-    it('in the Mac app’s panel, offers the plain window and says the agent moves', async () => {
+    it('keeps an embedded password step in the same detached view', async () => {
       transport.getLocalBrowserState.mockResolvedValue(
-        person({ handoff: password, mode: 'embedded' })
+        person({ mode: 'embedded', handoff: { ...handoff, reason: 'password' } })
       );
       mount();
-      expect(await button('Open sign-in window')).toBeTruthy();
-      expect(screen.getByText('Atlas moves to its own window after you sign in.')).toBeTruthy();
-      expect(screen.queryByRole('button', { name: 'Show window' })).toBeNull();
+      expect(await screen.findByText('Finish in the browser, then press Continue.')).toBeVisible();
+      expect(screen.queryByRole('button', { name: 'Open sign-in window' })).toBeNull();
+      expect(screen.getByRole('button', { name: 'Continue' })).toBeVisible();
     });
 
     it('says nothing about moving in a new window', async () => {
@@ -574,4 +574,15 @@ describe('BrowserHandoffCard', () => {
     await button('Continue');
     expect(events.has('local_browser_changed')).toBe(true);
   });
+});
+
+it('lets a person finish a password step in the detached embedded view', async () => {
+  transport.getLocalBrowserState.mockResolvedValue(
+    person({ mode: 'embedded', handoff: { ...handoff, reason: 'password' } })
+  );
+  mount();
+  expect(await screen.findByText('Finish in the browser, then press Continue.')).toBeVisible();
+  expect(screen.getByText('Atlas can’t see or use it until you hand it back.')).toBeVisible();
+  expect(screen.getByRole('button', { name: 'Continue' })).toBeVisible();
+  expect(screen.queryByRole('button', { name: 'Open sign-in window' })).toBeNull();
 });

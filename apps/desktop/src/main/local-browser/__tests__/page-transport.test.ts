@@ -1,9 +1,10 @@
 import { EventEmitter } from 'node:events';
 import type { WebContents } from 'electron';
 import { describe, expect, it, vi } from 'vitest';
+import { chromeIdentity } from '../browser-identity';
 import { pageTransport } from '../page-transport';
 
-function fixture() {
+function fixture(identity?: ReturnType<typeof chromeIdentity>) {
   const debuggerApi = Object.assign(new EventEmitter(), {
     attach: vi.fn(),
     detach: vi.fn(),
@@ -15,7 +16,7 @@ function fixture() {
     debugger: debuggerApi,
     isDestroyed: () => false,
   }) as unknown as WebContents;
-  const transport = pageTransport(contents);
+  const transport = pageTransport(contents, identity);
   const received = vi.fn();
   transport.onmessage = received;
   const send = async (
@@ -165,4 +166,26 @@ describe('page-only Electron debugger transport', () => {
     expect(debuggerApi.listenerCount('detach')).toBe(0);
     expect(debuggerApi.sendCommand).not.toHaveBeenCalled();
   });
+});
+
+it('reapplies the guest engine UA and hints before exposing each freshly attached target', async () => {
+  const identity = chromeIdentity('155.0.8040.2', 'darwin', 'arm64', '26.1.0');
+  const { contents, debuggerApi, transport } = fixture(identity);
+  transport.send({ id: 2, method: 'Target.setAutoAttach', params: {} });
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  expect(debuggerApi.sendCommand.mock.calls[0]).toEqual([
+    'Emulation.setUserAgentOverride',
+    identity,
+  ]);
+  transport.close();
+  debuggerApi.sendCommand.mockClear();
+  const fresh = pageTransport(contents, identity);
+  fresh.send({ id: 3, method: 'Target.setAutoAttach', params: {} });
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  expect(debuggerApi.sendCommand.mock.calls[0]).toEqual([
+    'Emulation.setUserAgentOverride',
+    identity,
+  ]);
+  expect(debuggerApi.attach).toHaveBeenCalledTimes(2);
+  fresh.close();
 });

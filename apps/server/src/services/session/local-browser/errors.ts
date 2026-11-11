@@ -82,3 +82,8 @@ export function assertLocalBrowserUrl(
   if (who === 'agent' && isCloudOriginUrl(value, cloudOrigins)) throw cloudOriginRefusal();
   if (who === 'agent' && isLocalBrowserAppUrl(value, appOrigins)) throw appOriginRefusal();
 }
+
+/** One recovery message for setup cancelled before the browser is ready. */
+export function browserSetupCancelled(): LocalBrowserError {
+  return new LocalBrowserError('cancelled', 'Browser setup stopped. Open it again to continue.');
+}

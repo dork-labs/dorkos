@@ -278,9 +278,13 @@ export async function assertLaunchSwitchesRefused(appPath: string): Promise<stri
           `open. Instead: ${problems.join('; ')}.`
       );
     }
+    const native =
+      process.env.CI === 'true'
+        ? await (await import('./smoke-local-browser')).assertEmbeddedBrowserHandoff()
+        : '';
     return (
       `${PROBE_SWITCH} opens a port on stock Electron and is refused by the app ` +
-      `(exit ${observed.exitCode}, no ${DEVTOOLS_PORT_FILE}, nothing listening)`
+      `(exit ${observed.exitCode}, no ${DEVTOOLS_PORT_FILE}, nothing listening). ${native}`
     );
   } finally {
     rmSync(scratch, { recursive: true, force: true });

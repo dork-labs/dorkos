@@ -34,7 +34,7 @@ const lockOwnerHere: LockOwner = (folder) =>
 
 /** The machine pieces a sign-in window uses, swapped for fakes in tests. */
 export interface SignInWindowDeps {
-  /** The managed Chromium's path, downloading it first if needed. */
+  /** Installed Chrome, or the pinned Chromium downloaded if needed. */
   executable?: () => Promise<string>;
   spawner?: PlainChromiumSpawner;
   /** Whether a Chromium still holds the profile folder. */

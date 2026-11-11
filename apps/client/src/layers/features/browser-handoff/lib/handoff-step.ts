@@ -3,13 +3,14 @@ import type { LocalBrowserHandoff, LocalBrowserSignIn } from '@dorkos/shared/loc
 /**
  * What the card asks of the person right now.
  *
- * - `wall`: finish the check in the agent's window, then Continue.
+ * - `person`: finish in the detached native view, then Continue.
+ * - `wall`: finish the check in the window, then Continue.
  * - `sign-in`: the page asks for a password, so offer the plain window.
  * - `sign-in-open`, `saving`, `saved`, `failed`: where that plain window has got to.
  * - `window-closed`: the agent's window is gone, so there's nowhere to finish.
  */
 export type HandoffStep =
-  'wall' | 'sign-in' | 'sign-in-open' | 'saving' | 'saved' | 'failed' | 'window-closed';
+  'person' | 'wall' | 'sign-in' | 'sign-in-open' | 'saving' | 'saved' | 'failed' | 'window-closed';
 
 /**
  * Work out the card's step. A sign-in counts only if it's for this handoff's site
@@ -23,7 +24,8 @@ export type HandoffStep =
 export function handoffStep(
   handoff: LocalBrowserHandoff,
   signIn: LocalBrowserSignIn | null | undefined,
-  hasWindow = true
+  hasWindow = true,
+  embedded = false
 ): HandoffStep {
   const ours =
     signIn &&
@@ -31,6 +33,7 @@ export function handoffStep(
     Date.parse(signIn.startedAt) >= Date.parse(handoff.askedAt);
   if (ours && signIn.status !== 'failed')
     return signIn.status === 'open' ? 'sign-in-open' : signIn.status;
+  if (embedded && hasWindow) return 'person';
   if (!hasWindow) return 'window-closed';
   if (ours) return 'failed';
   return handoff.reason === 'wall' ? 'wall' : 'sign-in';

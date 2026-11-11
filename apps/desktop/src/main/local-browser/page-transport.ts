@@ -1,4 +1,5 @@
 import type { WebContents } from 'electron';
+import type { chromeIdentity } from './browser-identity';
 import type { ConnectOverCDPTransport } from 'playwright-core';
 
 interface Message {
@@ -9,7 +10,10 @@ interface Message {
 }
 
 /** Adapts one real guest debugger to Playwright, never the shell's target tree. */
-export function pageTransport(contents: WebContents): ConnectOverCDPTransport {
+export function pageTransport(
+  contents: WebContents,
+  identity?: ReturnType<typeof chromeIdentity>
+): ConnectOverCDPTransport {
   const debuggerApi = contents.debugger;
   debuggerApi.attach('1.3');
   const rootSession = `dorkos-page-${contents.id}`;
@@ -62,6 +66,8 @@ export function pageTransport(contents: WebContents): ConnectOverCDPTransport {
               case 'Target.setAutoAttach': {
                 if (!attached) {
                   attached = true;
+                  if (identity)
+                    await debuggerApi.sendCommand('Emulation.setUserAgentOverride', identity);
                   resetFocus();
                   await waitForFocus();
                   const { targetInfo } = await debuggerApi.sendCommand('Target.getTargetInfo');

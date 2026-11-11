@@ -6,6 +6,7 @@ import { PassThrough } from 'node:stream';
 import { chromium, type BrowserContext } from 'playwright-core';
 import { lexWithoutComments } from '../../../../../../../scripts/lib/code-only.mjs';
 const mocks = vi.hoisted(() => ({
+  chromePath: vi.fn((): string | undefined => undefined),
   access: vi.fn(),
   mkdir: vi.fn(async () => undefined),
   readFile: vi.fn(async () => '{}'),
@@ -19,6 +20,7 @@ const mocks = vi.hoisted(() => ({
     return { stdout: mocks.stdout };
   }),
 }));
+vi.mock('../connection/chrome-installation.js', () => ({ installedChromePath: mocks.chromePath }));
 vi.mock('node:fs/promises', () => ({
   access: mocks.access,
   mkdir: mocks.mkdir,
@@ -61,11 +63,25 @@ import {
 
 beforeEach(() => {
   mocks.execFile.mockClear();
+  mocks.chromePath.mockReturnValue(undefined);
   mocks.stdout = new PassThrough();
   mocks.access.mockRejectedValue(Object.assign(new Error('Missing browser'), { code: 'ENOENT' }));
   mocks.failure = undefined;
 });
 describe('pinned managed browser preparation', () => {
+  it('uses installed Chrome without downloading Chromium or requiring a theme extension', async () => {
+    mocks.chromePath.mockReturnValue('/installed/chrome');
+    const context = themedContext();
+    const launch = vi.spyOn(chromium, 'launchPersistentContext').mockResolvedValue(context);
+    try {
+      await productionBackend.launch('test-only-storage');
+      expect(launch.mock.calls[0]![1]).toMatchObject({ channel: 'chrome' });
+      expect(mocks.execFile).not.toHaveBeenCalled();
+      expect(context.newPage).not.toHaveBeenCalled();
+    } finally {
+      launch.mockRestore();
+    }
+  });
   it('reuses the installed executable without an installer process', async () => {
     mocks.access.mockResolvedValue(undefined);
     await acquireLocalChromium();

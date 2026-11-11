@@ -13,7 +13,6 @@ export function BrowserHandoffInboxItem() {
     ended,
     step,
     canShowWindow,
-    movesToOwnWindow,
     sharedProfile,
     busy,
     error,
@@ -38,7 +37,6 @@ export function BrowserHandoffInboxItem() {
         agentFolder={handoff.agentFolder}
         step={step}
         canShowWindow={canShowWindow}
-        movesToOwnWindow={movesToOwnWindow}
         sharedProfile={sharedProfile}
         busy={busy}
         error={error}

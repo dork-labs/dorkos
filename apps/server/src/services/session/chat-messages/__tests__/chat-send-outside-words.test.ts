@@ -144,7 +144,7 @@ function boAsksForTheBrowser() {
   const state: LocalBrowserState = {
     connectionId: 'c1',
     sessionId: bo,
-    mode: 'new-window',
+    mode: 'embedded',
     status: 'connected',
     paused: false,
     tabs: [{ id: 't1', url: 'https://accounts.example.com/login', title: 'Sign in' }],
@@ -161,6 +161,7 @@ function boAsksForTheBrowser() {
     selectTab: vi.fn(async () => state),
     navigate: vi.fn(async () => state),
     pause: vi.fn(async () => state),
+    handToPerson: vi.fn(async () => state),
     resume: vi.fn(async () => state),
     disconnect: vi.fn(async () => state),
   } satisfies HandoverBrowser;

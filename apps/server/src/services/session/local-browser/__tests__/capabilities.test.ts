@@ -296,7 +296,7 @@ describe('local browser scoped tool projection', () => {
   it('after Stop task, the chat can neither read nor see the page the person keeps using', async () => {
     const { domain, deps, context, service } = setup();
     const browser = {
-      state: async () => service.agentState(),
+      state: async () => ({ ...(await service.agentState()), mode: 'embedded' as const }),
       currentProfileId: () => null,
       profileExists: () => true,
       capabilities: () => ({ newWindow: true }),
@@ -304,6 +304,7 @@ describe('local browser scoped tool projection', () => {
       selectTab: vi.fn(async () => service.agentState()),
       navigate: vi.fn(async () => service.agentState()),
       pause: vi.fn(async () => service.agentState()),
+      handToPerson: vi.fn(async () => service.agentState()),
       resume: vi.fn(async () => service.agentState()),
       disconnect: vi.fn(async () => service.agentState()),
     };
@@ -330,7 +331,7 @@ describe('local browser scoped tool projection', () => {
     const seen: unknown[] = [];
     // The real browser unpauses as open finishes, so the refusal can't lean on the pause.
     const browser = {
-      state: async () => service.agentState(),
+      state: async () => ({ ...(await service.agentState()), mode: 'embedded' as const }),
       currentProfileId: () => null,
       profileExists: () => true,
       capabilities: () => ({ newWindow: true }),
@@ -347,6 +348,7 @@ describe('local browser scoped tool projection', () => {
       selectTab: vi.fn(async () => service.agentState()),
       navigate: vi.fn(async () => service.agentState()),
       pause: vi.fn(async () => service.agentState()),
+      handToPerson: vi.fn(async () => service.agentState()),
       resume: vi.fn(async () => service.agentState()),
       disconnect: vi.fn(async () => service.agentState()),
     };
@@ -358,18 +360,18 @@ describe('local browser scoped tool projection', () => {
     service.observe.mockClear();
     service.action.mockClear();
     service.screenshot.mockClear();
-    await handover.open({ mode: 'new-window', sessionId: 'chat-one' });
+    await handover.open({ mode: 'embedded', sessionId: 'chat-one' });
     expect(seen.length).toBe(domain.capabilities.length - 1);
     expect(new Set(seen)).toEqual(new Set(['handed_to_person']));
     expect(service.observe).not.toHaveBeenCalled();
     expect(service.action).not.toHaveBeenCalled();
     expect(service.screenshot).not.toHaveBeenCalled();
-    expect(browser.pause).toHaveBeenCalledTimes(2);
+    expect(browser.handToPerson).toHaveBeenCalledTimes(2);
   });
   it('after Disconnect during a handoff, the chat hears task_stopped, not not_shared', async () => {
     const { domain, deps, context, service } = setup();
     const browser = {
-      state: async () => service.agentState(),
+      state: async () => ({ ...(await service.agentState()), mode: 'embedded' as const }),
       currentProfileId: () => null,
       profileExists: () => true,
       capabilities: () => ({ newWindow: true }),
@@ -377,6 +379,7 @@ describe('local browser scoped tool projection', () => {
       selectTab: vi.fn(async () => service.agentState()),
       navigate: vi.fn(async () => service.agentState()),
       pause: vi.fn(async () => service.agentState()),
+      handToPerson: vi.fn(async () => service.agentState()),
       resume: vi.fn(async () => service.agentState()),
       // The real browser forgets its chat when it closes, as requireSharedSession then sees.
       disconnect: vi.fn(async () => {
