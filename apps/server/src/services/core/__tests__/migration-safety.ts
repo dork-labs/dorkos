@@ -121,6 +121,10 @@ export const REMOVED_SHIPPED_KEYS: Readonly<Record<string, string>> = {
     'DOR-4188: the 0.115 upgrade floor refuses older configs before Conf opens; no supported upgrade can reach this key.',
   '0.55.0':
     'DOR-4188: the 0.115 upgrade floor refuses older configs before Conf opens; no supported upgrade can reach this key.',
+  '0.57.0':
+    'DOR-4188: the 0.115 upgrade floor refuses older configs before Conf opens; no supported upgrade can reach this key.',
+  '0.59.0':
+    'DOR-4188: the 0.115 upgrade floor refuses older configs before Conf opens; no supported upgrade can reach this key.',
   '0.71.0':
     'seeded runtimes.dorkosTools; DOR-2099 graduated that experiment and deleted the leaf, so ' +
     'there is no behaviour left for a stored value to select and the state change it owed is ' +

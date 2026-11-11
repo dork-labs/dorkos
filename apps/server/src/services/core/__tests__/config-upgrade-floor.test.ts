@@ -35,6 +35,8 @@ function seed(version?: string): { dir: string; file: string; before: Buffer } {
           linkAnalyticsToAccount: false,
         },
         permissions: { preset: 'careful' },
+        extensions: { approvedToRun: ['fixture-extension'] },
+        harness: { approvedHooks: ['fixture-hooks@digest'] },
         runtimes: { defaultTrustStop: 'ask' },
         ui: { theme: 'dark' },
         ...(version === undefined ? {} : { __internal__: { migrations: { version } } }),
@@ -56,6 +58,8 @@ describe('config upgrade floor through a real manager', () => {
     '0.50.0',
     '0.52.0',
     '0.55.0',
+    '0.57.0',
+    '0.59.0',
     '0.89.0',
     '0.114.9',
     '0.115.0-beta.1',
@@ -88,6 +92,8 @@ describe('config upgrade floor through a real manager', () => {
       expect(stored.telemetry.install).toBe(false);
       expect(stored.telemetry.usage).toBe(false);
       expect(stored.permissions.preset).toBe('careful');
+      expect(stored.extensions.approvedToRun).toEqual(['fixture-extension']);
+      expect(stored.harness.approvedHooks).toEqual(['fixture-hooks@digest']);
       expect(stored.runtimes.defaultTrustStop).toBe('ask');
       expect(fs.readdirSync(dir)).toEqual(['config.json']);
     }

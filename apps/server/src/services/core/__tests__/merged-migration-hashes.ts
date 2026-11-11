@@ -75,8 +75,6 @@
  */
 export const MERGED_MIGRATION_HASHES: Readonly<Record<string, string>> = {
   '1.0.0': '9a591bc7ff1a3550',
-  '0.57.0': '5227f2654f34a354',
-  '0.59.0': '7539968961498e9c',
   '0.60.0': '45129eaa96cce263',
   '0.62.0': '622b3a68f4579a0c',
   '0.63.0': '3641c16254095166',
