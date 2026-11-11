@@ -122,7 +122,7 @@
     "packages/evals/src/suite/rooms-judgment.ts": 561,
     "packages/evals/src/suite/rooms-recall.ts": 520,
     "packages/evals/src/suite/rooms.ts": 503,
-    "packages/marketplace/src/package-validator.ts": 670,
+    "packages/marketplace/src/package-validator.ts": 664,
     "packages/relay/src/adapters/claude-code/agent-handler.ts": 560,
     "packages/relay/src/adapters/telegram/telegram-adapter.ts": 509,
     "packages/relay/src/relay-publish.ts": 649,

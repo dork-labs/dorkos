@@ -62,10 +62,7 @@ export type ExtensionCalledApp = NonNullable<ExtensionApprovalPermissions['apps'
 export interface ExtensionCalledAppEntry {
   /** The app's id, for the list key. */
   id: string;
-  /**
-   * DorkOS's name for it, or, when it is not installed, its id as the asking
-   * app wrote it: cut to the characters an id allows, and cut short.
-   */
+  /** DorkOS's name for it, or, when it is not installed, its declared id, cut short. */
   name: string;
   /** Whether `name` is DorkOS's name for it (`false`: an id, drawn as one). */
   installed: boolean;
@@ -221,15 +218,14 @@ function screenWritesLine(
 const SHOWN_ID_LENGTH = 32;
 
 /**
- * A missing app's id as the card draws it. The asking app chose this string,
- * so it keeps only the characters a manifest id allows and is cut short:
- * it can never pass for a name DorkOS vouches for.
+ * A missing app's id as the card draws it: as declared, cut short. The
+ * manifest is refused unless every id it lists is a valid id, so it can hold
+ * only id characters by the time it reaches the card (DOR-3293, Security).
  *
  * @param id - The id the asking app listed.
  */
 function shownAppId(id: string): string {
-  const kept = id.replace(/[^a-z0-9-]/g, '');
-  return kept.length > SHOWN_ID_LENGTH ? `${kept.slice(0, SHOWN_ID_LENGTH)}…` : kept;
+  return id.length > SHOWN_ID_LENGTH ? `${id.slice(0, SHOWN_ID_LENGTH)}…` : id;
 }
 
 /** What each app shares, in the designer's words (DOR-3293). */

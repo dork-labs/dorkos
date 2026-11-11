@@ -18,6 +18,7 @@ covers:
   - 'feat(extensions): a target that starts sharing more asks again, and "shares nothing" reads plainly (DOR-3293)'
   - 'fix(extensions): "It can change:" reads the one table the bridge and the server enforce, and says when it can change nothing (DOR-3293)'
   - "fix(extensions): approvals never say screens run with your access, and an app page's canvas opens beside it (DOR-3293)"
+  - "fix(extensions): an app that names another app by anything but its id can't be installed or updated (DOR-3293)"
 ---
 
 ### Security

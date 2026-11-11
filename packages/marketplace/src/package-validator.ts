@@ -53,6 +53,7 @@ import {
   userEditableReaches,
 } from './user-editable.js';
 import { findAgentWorkspaceConfig } from './agent-workspace-config.js';
+import { manifestSchemaIssues } from './extension-manifest-issues.js';
 
 /**
  * A single validation finding produced by {@link validatePackage}. Errors
@@ -604,14 +605,7 @@ async function checkBundledExtensions(
     }
     const parsed = ExtensionManifestSchema.safeParse(raw);
     if (!parsed.success) {
-      for (const issue of parsed.error.issues) {
-        issues.push({
-          level: 'error',
-          code: 'EXTENSION_MANIFEST_INVALID',
-          message: `${issue.path.join('.') || '<root>'}: ${issue.message}`,
-          path: relPath,
-        });
-      }
+      issues.push(...manifestSchemaIssues(parsed.error.issues, raw, entry.name, relPath));
       continue;
     }
     for (const check of checkDeclaredTools(parsed.data)) {

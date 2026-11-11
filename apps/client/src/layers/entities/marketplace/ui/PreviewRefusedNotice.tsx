@@ -28,6 +28,20 @@ function reasonsOf(error: unknown): { reasons: string[]; checked: boolean } {
   };
 }
 
+/** A reason that leads with a "{App} can’t be installed." headline (DOR-3293). */
+const HEADLINE = /^(.+? can’t be installed\.) (.+)$/;
+
+/** One reason, its headline sentence in bold when it has one. */
+function Reason({ text }: { text: string }) {
+  const match = HEADLINE.exec(text);
+  if (!match) return <>{text}</>;
+  return (
+    <>
+      <strong className="text-foreground font-medium">{match[1]}</strong> {match[2]}
+    </>
+  );
+}
+
 /**
  * Whether a preview error is the server REFUSING the package (its package
  * checks answered with reasons), as opposed to a preview that could not be
@@ -61,7 +75,9 @@ export function PreviewRefusedNotice({ error }: { error: unknown }) {
       {reasons.length > 0 && (
         <ul className="text-muted-foreground list-disc space-y-1 pl-5 text-xs [overflow-wrap:anywhere]">
           {reasons.map((reason) => (
-            <li key={reason}>{reason}</li>
+            <li key={reason}>
+              <Reason text={reason} />
+            </li>
           ))}
         </ul>
       )}

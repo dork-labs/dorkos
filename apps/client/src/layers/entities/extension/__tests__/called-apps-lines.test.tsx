@@ -62,17 +62,20 @@ describe('It uses other apps', () => {
     expect(name).not.toHaveClass('font-mono');
   });
 
-  it('keeps only the characters an id allows, cut short, for an id the asking app chose', () => {
+  // A manifest that names another app by anything but an id is refused when
+  // it is read (Security, DOR-3293), so the card shows the declared id as is,
+  // only cut short.
+  it('shows a missing app’s id exactly as declared, cut at 32 characters', () => {
+    const long = `a${'b'.repeat(80)}`;
     const line = extensionPermissionLines(
       view([
-        { id: 'Google Drive (official)', name: null, access: null },
-        { id: `a${'b'.repeat(80)}`, name: null, access: null },
+        { id: 'mkt-core', name: null, access: null },
+        { id: long, name: null, access: null },
       ])
-    ).find((entry) => entry.key === 'apps');
-    const [hostile, long] = line?.apps ?? [];
-    expect(hostile?.name).toBe('oogleriveofficial');
-    expect(hostile?.name).toMatch(/^[a-z0-9-]+$/);
-    expect(long?.name).toBe(`a${'b'.repeat(31)}…`);
+    ).find(({ key }) => key === 'apps');
+    const [plainId, longId] = line?.apps ?? [];
+    expect(plainId?.name).toBe('mkt-core');
+    expect(longId?.name).toBe(`${long.slice(0, 32)}…`);
   });
 
   it('draws nothing for an app that calls no other app', () => {

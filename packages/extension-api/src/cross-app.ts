@@ -37,7 +37,19 @@ export const MAX_CALLED_APPS = 20;
 const ROUTE_PATTERN_REGEX =
   /^\/(?:(?:(?!\.\.?(?:\/|$))[A-Za-z0-9._~-]+|:[A-Za-z][A-Za-z0-9]*)(?:\/|$))*$/;
 
-const AppIdSchema = z.string().min(1).max(120).regex(EXTENSION_ID_REGEX);
+/**
+ * Another app, named by its exact id. Anything else is refused when the
+ * manifest is read, at install and at update, so no surface ever shows a
+ * name the asking app made up (DOR-3293, Security).
+ */
+const AppIdSchema = z
+  .string()
+  .min(1)
+  .max(120)
+  .regex(
+    EXTENSION_ID_REGEX,
+    'Name each app by its id: lowercase letters, numbers and hyphens, like "mkt-core".'
+  );
 
 const RoutePatternSchema = z
   .string()
