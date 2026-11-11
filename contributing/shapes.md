@@ -223,6 +223,6 @@ Every seam has a co-located suite. The pure engines run against fakes; the flows
 
 ```bash
 pnpm vitest run apps/server/src/services/shapes                         # apply + schedule + re-bind
-pnpm vitest run apps/server/src/services/marketplace/__tests__/flows    # install-shape, uninstall, update
+pnpm vitest run apps/server/src/services/marketplace/flows    # install-shape, uninstall, update
 pnpm vitest run apps/client/src/layers/features/shapes                  # switcher
 ```

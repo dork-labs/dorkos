@@ -41,7 +41,7 @@ That is the only secret the telemetry pipeline reads. There are no Redis URLs, n
 - `apps/site/src/app/(marketing)/marketplace/page.tsx` calls `fetchInstallCounts().catch(() => ({}))` so a missing or unreachable database returns an empty counts map. Packages still render — they simply rank by `featured` weight only, with zero install counts.
 - `apps/site/src/app/(marketing)/marketplace/[slug]/page.tsx` does the same with `fetchInstallCount(slug).catch(() => 0)`.
 
-This means a contributor can run `pnpm dev --filter @dorkos/site`, hit `http://localhost:3000/marketplace`, and see the full UI without ever provisioning Neon. Only the install counts column will be empty (or zero).
+This means a contributor can run `pnpm --filter @dorkos/site dev`, hit `http://localhost:6244/marketplace` (or the port set by `SITE_PORT`), and see the full UI without ever provisioning Neon. Only the install counts column will be empty (or zero).
 
 When you do want a real DB locally — for telemetry endpoint development or schema work — provision a free Neon project, copy its connection string into `apps/site/.env.local` as `DATABASE_URL=...`, and run the migrations (next section).
 
@@ -54,11 +54,11 @@ The site schema is split in two halves over one database, each with its own conf
 The `apps/site/package.json` exposes these scripts:
 
 ```bash
-pnpm db:generate:public         # Regenerate after editing public-schema.ts
-pnpm db:generate:control-plane  # Regenerate after editing control-plane-schema.ts
-pnpm db:migrate                 # Baseline, then apply the PUBLIC history to DATABASE_URL (what every deploy runs)
-pnpm db:migrate:control-plane   # The control-plane history, for a local or test database only
-pnpm db:studio                  # Open drizzle-studio against DATABASE_URL
+pnpm --filter @dorkos/site db:generate:public         # Regenerate after editing public-schema.ts
+pnpm --filter @dorkos/site db:generate:control-plane  # Regenerate after editing control-plane-schema.ts
+pnpm --filter @dorkos/site db:migrate                 # Baseline, then apply the PUBLIC history to DATABASE_URL (what every deploy runs)
+pnpm --filter @dorkos/site db:migrate:control-plane   # The control-plane history, for a local or test database only
+pnpm --filter @dorkos/site db:studio                  # Open drizzle-studio against DATABASE_URL
 ```
 
 **Deploys apply only the public history.** The control-plane tables share their database with the DorkOS Cloud control plane, which owns their schema and migrates them itself. The site's control-plane history builds those tables in a local or test database and refuses to run inside a Vercel build. A change the site needs in those tables lands in the control plane first, through an issue labelled `cloud-contract`; only then does the site mirror it with a migration in `drizzle-control-plane/` (so local and test databases match) and an entry in the list `apps/site/scripts/__tests__/deploy-migrations.test.ts` pins. A fresh, empty database, including a brand-new preview database, gets those tables only from `db:migrate:control-plane` run by hand.
