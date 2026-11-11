@@ -92,6 +92,8 @@ export function BrowserHandoffCardView({
       </div>
       {step === 'wall' && (
         <div className="space-y-1">
+          {/* True because the server refuses every browser tool for that chat until hand-back. */}
+          <p className="font-medium">Your turn: {name} can’t see or use this window.</p>
           <p>The site asked for a check only a person can do.</p>
           <p className="text-muted-foreground">It isn’t anything you did.</p>
           <p className="text-muted-foreground">

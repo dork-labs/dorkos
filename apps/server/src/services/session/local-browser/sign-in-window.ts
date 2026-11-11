@@ -1,6 +1,6 @@
 /** One plain sign-in window at a time, and whether its sign-in reached the disk. */
 import type { LocalBrowserSignIn } from '@dorkos/shared/local-browser';
-import { clearAgentWindowTheme } from './agent-window/theme.js';
+import { clearAgentWindowTheme } from './agent-window/index.js';
 import { LocalBrowserError } from './errors.js';
 import { managedChromiumPath } from './playwright-backend.js';
 import {
