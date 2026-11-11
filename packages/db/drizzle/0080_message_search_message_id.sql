@@ -1,0 +1,39 @@
+ALTER TABLE `messages` ADD `message_id` text;--> statement-breakpoint
+-- EVERYTHING BELOW THIS LINE IS HAND-WRITTEN AND `db:generate` WILL NEVER
+-- REPRODUCE IT, exactly as in 0037_message_search.sql. It is the BACKFILL, and
+-- the backfill is a rebuild (DOR-1579).
+--
+-- The column above arrives empty on every row already in the index, and there is
+-- no statement that could fill it: the ids live in the stores this index is
+-- derived from — a JSONL record's `uuid`, a Codex `response_item`'s `item.id`,
+-- an OpenCode `message.id` row — and none of them is reachable from SQL here.
+-- Re-deriving them is exactly what a sweep does, so the honest backfill is to
+-- throw the derived copy away and let the next sweep write it again. Spec G2
+-- says so in one line: `DELETE FROM messages` plus a rebuild is a complete,
+-- supported recovery, and no runtime can tell this table exists.
+--
+-- OPERATIONAL CONSEQUENCE, stated rather than discovered: the first sweep after
+-- this migration re-indexes every container from scratch. It costs one full pass
+-- (seconds on a normal corpus) and search is short of older results until that
+-- pass finishes.
+--
+-- `search_sources` goes with it. It is the frontier — the record of what has
+-- already been read — so clearing it is what makes the next sweep start from
+-- byte zero rather than from where it left off.
+--
+-- It is belt-and-braces rather than the load-bearing half, which is worth
+-- stating so nobody later "fixes" the emptied index by restoring the frontier
+-- alone. Emptying `messages` is on its own enough: both frontiers already treat
+-- a container whose rows have vanished as one to re-read, precisely because
+-- `DELETE FROM messages` is a supported recovery
+-- (`services/search/jsonl-frontier.ts` `lost`/`rebuilt`, and the
+-- `indexedTo >= watermark` skip in `services/search/row-frontier.ts`). The two
+-- statements are still one decision, and neither is worth leaving to the other.
+--
+-- DELETE, never DROP or TRUNCATE. `messages_fts` is an external-content FTS5
+-- index with no copy of the text, and `messages_fts_ad` is what retracts a row's
+-- terms from it — a per-row AFTER DELETE trigger. A plain `DELETE FROM messages`
+-- fires it for every row; anything that removes the rows without firing it
+-- leaves the index returning hits for text that no longer exists anywhere.
+DELETE FROM messages;--> statement-breakpoint
+DELETE FROM search_sources;

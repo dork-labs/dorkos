@@ -1,0 +1,11 @@
+-- `cwd` was dead: nothing ever wrote it (neither `createTask` nor
+-- `upsertFromFile` set it), nothing ever read it (`mapTaskRow` skipped it and
+-- `TaskSchema` never carried it), and a run's real working directory is
+-- resolved from the task's agent at dispatch time instead
+-- (`TaskSchedulerService.resolveEffectiveCwd`). So there is no data to migrate.
+--
+-- Generated on its own, one migration after the columns 0070 adds. Asking
+-- drizzle-kit to add three columns and drop one in the SAME diff makes it
+-- ambiguous — it cannot tell "drop cwd, add reason" from "rename cwd to
+-- reason" — and it then stops on an interactive prompt it cannot ask in CI.
+ALTER TABLE `pulse_schedules` DROP COLUMN `cwd`;

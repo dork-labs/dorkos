@@ -1,0 +1,1 @@
+ALTER TABLE `authors` ADD `linked_owner_key` text;

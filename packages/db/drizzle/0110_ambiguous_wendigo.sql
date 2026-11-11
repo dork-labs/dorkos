@@ -1,0 +1,1 @@
+ALTER TABLE `pulse_schedules` ADD `previous_approval_key` text;

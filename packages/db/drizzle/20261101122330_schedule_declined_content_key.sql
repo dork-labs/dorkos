@@ -1,0 +1,1 @@
+ALTER TABLE `pulse_schedules` ADD `declined_content_key` text;

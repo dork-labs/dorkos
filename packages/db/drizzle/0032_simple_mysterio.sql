@@ -1,0 +1,1 @@
+ALTER TABLE `agent_identity_tokens` ADD `last_used_at` text;

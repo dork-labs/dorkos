@@ -1,0 +1,1 @@
+ALTER TABLE `pulse_schedules` ADD `project_only` integer DEFAULT false NOT NULL;

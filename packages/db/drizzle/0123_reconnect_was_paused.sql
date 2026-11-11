@@ -1,0 +1,1 @@
+ALTER TABLE `connector_authentication_flows` ADD `reconnect_was_paused` integer DEFAULT false NOT NULL;

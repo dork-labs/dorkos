@@ -1,0 +1,1 @@
+ALTER TABLE `session_metadata` ADD `last_auto_resume_for` text;

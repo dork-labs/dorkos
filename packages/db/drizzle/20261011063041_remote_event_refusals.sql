@@ -1,0 +1,1 @@
+ALTER TABLE `remote_event_outbox` ADD `refusals` integer DEFAULT 0 NOT NULL;

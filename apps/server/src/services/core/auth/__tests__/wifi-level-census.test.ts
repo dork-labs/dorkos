@@ -145,6 +145,8 @@ const ALLOWED_ON_WIFI: Readonly<Record<string, readonly string[]>> = {
     'POST /api/shapes/:name/fork',
     'POST /api/extensions/cwd-changed',
     'PUT /api/extensions/:id/data',
+    // An app's screen data, bound to the app like /data (DOR-3293).
+    'PUT /api/extensions/:id/prefs',
     'POST /api/cloud/credits/notices/dismiss',
     'POST /api/cloud/link/cancel',
     'POST /api/cloud/link/check',

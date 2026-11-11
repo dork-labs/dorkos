@@ -1,0 +1,1 @@
+ALTER TABLE `relay_traces` ADD `kind` text DEFAULT 'delivery' NOT NULL;
