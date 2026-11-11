@@ -1519,11 +1519,30 @@ export type UpdateQueuedMessageResponse = z.infer<typeof UpdateQueuedMessageResp
  */
 export const DENY_REASON_MAX_LENGTH = 1_000;
 
+/**
+ * Which tools an accepted "Always Allow" on an MCP tool's card covers (DOR-4101).
+ *
+ * - `tool` — the one tool on the card.
+ * - `server` — the runtime offered a bare `mcp__{server}` rule: every tool that
+ *   server has, including ones it adds later. The card then asks which the
+ *   person meant, and "Just {tool}" narrows the rule before it is written.
+ *
+ * Absent on a card that is not an MCP tool's, or offers no Always Allow.
+ */
+export const AlwaysAllowBreadthSchema = z.enum(['tool', 'server']).openapi('AlwaysAllowBreadth');
+
+export type AlwaysAllowBreadth = z.infer<typeof AlwaysAllowBreadthSchema>;
+
 export const ApprovalRequestSchema = z
   .object({
     toolCallId: z.string(),
     /** When true, resolves as "Always Allow" — forwards SDK permission suggestions. */
     alwaysAllow: z.boolean().optional(),
+    /**
+     * On a card whose Always Allow could cover a whole MCP server, the person's
+     * pick (DOR-4101). Anything but `server` writes the one tool's rule.
+     */
+    alwaysAllowBreadth: AlwaysAllowBreadthSchema.optional(),
     /**
      * Why the person refused, in their own words — delivered to the agent with
      * the denial so it can adjust instead of retrying the same call. Ignored on
@@ -1908,6 +1927,9 @@ export const ApprovalEventSchema = z
     alwaysAllowScope: AlwaysAllowScopeSchema.optional().describe(
       'How far an accepted "Always Allow" reaches — named on the card so the click is informed'
     ),
+    alwaysAllowBreadth: AlwaysAllowBreadthSchema.optional().describe(
+      'Whether "Always Allow" on an MCP tool covers that tool or every tool from its server'
+    ),
     remainingMs: z
       .number()
       .optional()
@@ -1980,6 +2002,8 @@ export const PendingInteractionDTOSchema = z
       hasSuggestions: z.boolean(),
       /** See {@link AlwaysAllowScopeSchema} — carried so a recovered card names its scope too. */
       alwaysAllowScope: AlwaysAllowScopeSchema.optional(),
+      /** See {@link AlwaysAllowBreadthSchema} — so a recovered card still asks which. */
+      alwaysAllowBreadth: AlwaysAllowBreadthSchema.optional(),
     }),
     z.object({
       type: z.literal('question'),
@@ -3302,6 +3326,10 @@ export const ToolCallPartSchema = z
      */
     approvalAlwaysAllowScope: AlwaysAllowScopeSchema.optional().describe(
       'Scope an accepted "Always Allow" grants — session, project, or the operator\'s global settings'
+    ),
+    /** See {@link AlwaysAllowBreadthSchema}; absent on a card that is not an MCP tool's. */
+    approvalAlwaysAllowBreadth: AlwaysAllowBreadthSchema.optional().describe(
+      'Whether "Always Allow" covers this MCP tool or every tool from its server'
     ),
     /**
      * How an approval interaction was ANSWERED, folded from the resolving

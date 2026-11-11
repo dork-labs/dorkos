@@ -1386,6 +1386,11 @@ export interface ToolDecisionOptions extends InteractionAnswerOptions {
    */
   alwaysAllow?: boolean;
   /**
+   * On a card that offered a whole MCP server, which the person meant
+   * (DOR-4101). Anything but `server` narrows the grant to the one tool.
+   */
+  alwaysAllowBreadth?: 'tool' | 'server';
+  /**
    * Why the person refused, in their own words, delivered to the agent with the
    * denial so it can adjust rather than retry. Ignored on an approval, and
    * absent whenever nobody said anything — the transcript receipt only claims

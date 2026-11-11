@@ -24,6 +24,7 @@ import { ChatMessageStampSchema, RoomMessageStampSchema } from './chat-messages.
 import { PendingApprovalSchema, CapabilityApprovalOutcomeSchema } from './approval-schemas.js';
 import {
   AlwaysAllowScopeSchema,
+  AlwaysAllowBreadthSchema,
   PermissionModeIdSchema,
   HistoryMessageSchema,
   PendingInteractionDTOSchema,
@@ -471,6 +472,7 @@ export const SessionEventSchema = z
       decisionReason: z.string().optional(),
       hasSuggestions: z.boolean(),
       alwaysAllowScope: AlwaysAllowScopeSchema.optional(),
+      alwaysAllowBreadth: AlwaysAllowBreadthSchema.optional(),
     }),
     // A structured question awaiting the operator (PendingInteractionDTO `question` shape).
     z.object({
