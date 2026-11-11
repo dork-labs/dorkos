@@ -831,8 +831,12 @@ describe('the dorkos tool server on a Codex turn', () => {
         makeRuntime({ managed, runtimeTools: false }).sendMessage('s1', 'hello', { cwd: agentDir })
       );
 
-      // Theirs, verbatim — same name, their command, and no URL of ours.
-      expect(lastMcpServers()['dorkos']).toEqual({ command: '/bin/their-server' });
+      // Theirs — same name, their command, and no URL of ours; only the browser tools no agent is
+      // offered are turned off, as on every server.
+      expect(lastMcpServers()['dorkos']).toEqual({
+        command: '/bin/their-server',
+        disabled_tools: ['browser_run_code_unsafe', 'browser_network_request'],
+      });
       const warned = loggerMocks.warn.mock.calls.map((call) => String(call[0]));
       expect(warned.some((line) => line.includes('reserve'))).toBe(false);
     });

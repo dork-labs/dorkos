@@ -5,9 +5,12 @@
  * - a deny rule per server DorkOS hands the turn, merged into the launch's settings beside the
  *   others. Claude Code checks deny before allow, at every permission level, so neither
  *   `bypassPermissions` nor a saved `mcp__<server>__*` allow reopens one; and
- * - a `PreToolUse` hook for any server's tool of that name, which also covers a server Claude
- *   Code loads from its own settings (the account's or the project's), whose name DorkOS never
- *   sees. A hook's deny is decided in every mode too.
+ * - a `PreToolUse` hook for any server's tool of that name, in any letter case, which also covers
+ *   a server Claude Code loads from its own settings (the account's or the project's), whose name
+ *   DorkOS never sees. A hook's deny is decided in every mode too.
+ *
+ * The same hook refuses any browser call that names a file on this computer
+ * ({@link AGENT_BROWSER_FILE_ARGUMENTS}): a deny rule matches a tool, never its arguments.
  *
  * Named on every server rather than only the ones shaped like the agent browser, so a Playwright
  * server started through a wrapper script is covered too; a deny on a tool a server lacks does
@@ -16,11 +19,19 @@
  * @module services/runtimes/claude-code/tool-gate/browser-tool-deny
  */
 import type { HookCallbackMatcher, Options } from '@anthropic-ai/claude-agent-sdk';
-import { AGENT_BROWSER_WITHHELD_TOOLS } from '@dorkos/shared/agent-browser';
+import {
+  AGENT_BROWSER_WITHHELD_TOOLS,
+  browserCallNamesFile,
+  isWithheldBrowserTool,
+} from '@dorkos/shared/agent-browser';
 
 /** What the agent is told when it calls one anyway. */
 export const WITHHELD_BROWSER_TOOL_MESSAGE =
-  "Agents can't use this browser tool: it runs code outside the page.";
+  "Agents can't use this browser tool: it reaches past the page.";
+
+/** What the agent is told when a browser call names a file. */
+export const BROWSER_FILE_MESSAGE =
+  "Agents can't save or upload files with the browser. Leave out filename and paths.";
 
 /**
  * A server's name the way Claude Code spells it inside a tool name: anything but letters, digits,
@@ -64,26 +75,41 @@ export function applyBrowserToolDeny(sdkOptions: Options): void {
   } as Options['settings'];
 }
 
-/** Any server's withheld tool, by its in-session name. */
-const WITHHELD_TOOL_NAME = new RegExp(`^mcp__.+__(?:${AGENT_BROWSER_WITHHELD_TOOLS.join('|')})$`);
+/** A pattern that matches `text` in any letter case, for a matcher the CLI reads case-sensitively. */
+function anyCase(text: string): string {
+  return [...text]
+    .map((char) => (/[a-z]/i.test(char) ? `[${char.toLowerCase()}${char.toUpperCase()}]` : char))
+    .join('');
+}
+
+/** Any server's `browser_*` tool, in any case: the server part, then the tool's own name. */
+const BROWSER_TOOL_NAME = /^mcp__.+__(browser_[^_].*)$/i;
 
 /**
- * The `PreToolUse` entry that refuses a withheld browser tool on any server. A pattern, never a
- * bare name list: the CLI reads a matcher of word characters alone as exact tool names, and the
- * anchor is what makes it a regex.
+ * The `PreToolUse` entry that refuses, on any server and in any case, a withheld browser tool and
+ * a browser call that names a file. A pattern, never a bare name list: the CLI reads a matcher of
+ * word characters alone as exact tool names, and the anchor is what makes it a regex. It matches
+ * every `browser_*` tool; the callback decides.
  */
 export function browserToolHookMatcher(): HookCallbackMatcher {
   return {
-    matcher: WITHHELD_TOOL_NAME.source,
+    matcher: `^${anyCase('mcp__')}.+__${anyCase('browser_')}`,
     hooks: [
       async (hookInput) => {
         if (hookInput.hook_event_name !== 'PreToolUse') return {};
-        if (!WITHHELD_TOOL_NAME.test(hookInput.tool_name)) return {};
+        const tool = BROWSER_TOOL_NAME.exec(hookInput.tool_name)?.[1];
+        if (tool === undefined) return {};
+        const reason = isWithheldBrowserTool(tool)
+          ? WITHHELD_BROWSER_TOOL_MESSAGE
+          : browserCallNamesFile(tool, hookInput.tool_input)
+            ? BROWSER_FILE_MESSAGE
+            : null;
+        if (reason === null) return {};
         return {
           hookSpecificOutput: {
             hookEventName: 'PreToolUse' as const,
             permissionDecision: 'deny' as const,
-            permissionDecisionReason: WITHHELD_BROWSER_TOOL_MESSAGE,
+            permissionDecisionReason: reason,
           },
         };
       },

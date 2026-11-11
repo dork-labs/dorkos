@@ -100,8 +100,13 @@ describe('authenticated Doe MCP assembly', () => {
   });
   // On any configured server, not only one shaped like the agent browser: a Playwright server
   // started through a wrapper script is covered too. `browser_evaluate` runs in the page and stays.
-  it('never offers a browser tool that runs code outside the page', async () => {
-    calls.names = ['browser_snapshot', 'browser_evaluate', 'browser_run_code_unsafe'];
+  it('never offers a browser tool that reaches past the page, in any case', async () => {
+    calls.names = [
+      'browser_snapshot',
+      'browser_evaluate',
+      'browser_run_code_unsafe',
+      'Browser_Network_Request',
+    ];
     const assembly = await assembleDoeMcp({
       agentPath: '/agent',
       servers: {
@@ -115,10 +120,32 @@ describe('authenticated Doe MCP assembly', () => {
       expect(names).toContain(mcpAlias(server, 'browser_snapshot'));
       expect(names).toContain(mcpAlias(server, 'browser_evaluate'));
       expect(names).not.toContain(mcpAlias(server, 'browser_run_code_unsafe'));
+      expect(names).not.toContain(mcpAlias(server, 'Browser_Network_Request'));
     }
-    expect([...assembly.names.keys()].some((key) => key.endsWith(':browser_run_code_unsafe'))).toBe(
-      false
-    );
+    expect(
+      [...assembly.names.keys()].some((key) => /run_code_unsafe|network_request$/i.test(key))
+    ).toBe(false);
+    await assembly.dispose();
+  });
+  it('refuses a browser call that names a file, and runs it without one', async () => {
+    calls.names = ['browser_take_screenshot', 'Browser_File_Upload'];
+    const assembly = await assembleDoeMcp({
+      agentPath: '/agent',
+      servers: { pw: { transport: 'stdio', command: 'node', args: ['start-browser.js'] } },
+      signal: new AbortController().signal,
+    });
+    const tool = (bare: string) =>
+      assembly.tools.find((entry) => entry.name === mcpAlias('managed:pw', bare))!;
+    const context = { signal: new AbortController().signal, emit: () => {} } as never;
+    await expect(
+      tool('browser_take_screenshot').execute({ filename: 'shot.png' }, context)
+    ).rejects.toThrow("can't save or upload files");
+    await expect(
+      tool('Browser_File_Upload').execute({ paths: ['/home/me/.dork/x'] }, context)
+    ).rejects.toThrow("can't save or upload files");
+    await expect(tool('browser_take_screenshot').execute({}, context)).resolves.toEqual({
+      content: [{ type: 'text', text: 'managed:pw' }],
+    });
     await assembly.dispose();
   });
   it('holds the eager schema budget constant as registry contributions grow', async () => {

@@ -3,8 +3,10 @@
  *
  * Against the real bundled Claude Code binary: an agent browser's tool that runs code outside the
  * page (`browser_run_code_unsafe`) is refused, by the deny rule alone and by the hook alone, under
- * `bypassPermissions` and under `default` with a saved `mcp__browser__*` allow. Its other tools
- * still run, and with neither in place the same call runs, so every refusal has a control.
+ * `bypassPermissions` and under `default` with a saved `mcp__browser__*` allow; the hook also
+ * refuses it on a server and tool named in mixed case, and refuses a browser call that names a
+ * file. Its other tools still run, and with neither in place the same call runs, so every refusal
+ * has a control.
  *
  * Nothing here can spend or reach the internet. A fake HTTP server on 127.0.0.1 plays the model:
  * its first reply calls one tool, its second ends the turn. A fake stdio MCP server plays the
@@ -35,6 +37,7 @@ const FAKE_BROWSER = `
 const fs = require('node:fs');
 const path = require('node:path');
 const markers = process.argv[2];
+const names = JSON.parse(process.argv[3]);
 let buffer = '';
 const send = (message) => process.stdout.write(JSON.stringify(message) + '\\n');
 process.stdin.on('data', (chunk) => {
@@ -53,10 +56,9 @@ process.stdin.on('data', (chunk) => {
         serverInfo: { name: 'fake-browser', version: '1.0.0' },
       } });
     } else if (message.method === 'tools/list') {
-      send({ jsonrpc: '2.0', id: message.id, result: { tools: [
-        { name: 'browser_snapshot', description: 'Snapshot the page', inputSchema: { type: 'object', properties: {} } },
-        { name: 'browser_run_code_unsafe', description: 'Run code', inputSchema: { type: 'object', properties: {} } },
-      ] } });
+      send({ jsonrpc: '2.0', id: message.id, result: { tools: names.map((name) => (
+        { name, description: 'A browser tool', inputSchema: { type: 'object', properties: { filename: { type: 'string' } } } }
+      )) } });
     } else if (message.method === 'tools/call') {
       fs.writeFileSync(path.join(markers, message.params.name), 'ran');
       send({ jsonrpc: '2.0', id: message.id, result: { content: [{ type: 'text', text: 'ok' }] } });
@@ -72,8 +74,8 @@ function sse(event: string, data: unknown): string {
   return `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
 }
 
-/** A streamed reply: a call to `tool` when `toolUse`, plain text otherwise. */
-function reply(toolUse: boolean, tool: string): string {
+/** A streamed reply: a call to `tool` with `input` when `toolUse`, plain text otherwise. */
+function reply(toolUse: boolean, tool: string, input: Record<string, unknown>): string {
   const message = {
     id: `msg_${toolUse ? 1 : 2}`,
     type: 'message',
@@ -88,7 +90,7 @@ function reply(toolUse: boolean, tool: string): string {
     ? { type: 'tool_use', id: 'toolu_probe', name: tool, input: {} }
     : { type: 'text', text: '' };
   const delta = toolUse
-    ? { type: 'input_json_delta', partial_json: '{}' }
+    ? { type: 'input_json_delta', partial_json: JSON.stringify(input) }
     : { type: 'text_delta', text: 'done' };
   return [
     sse('message_start', { type: 'message_start', message }),
@@ -109,8 +111,8 @@ interface FakeModel {
   close: () => Promise<void>;
 }
 
-/** The fake model: calls `tool` once, then ends the turn. */
-function fakeModel(tool: string): Promise<FakeModel> {
+/** The fake model: calls `tool` with `input` once, then ends the turn. */
+function fakeModel(tool: string, input: Record<string, unknown>): Promise<FakeModel> {
   return new Promise((resolve) => {
     const server = http.createServer((req, res) => {
       let body = '';
@@ -124,7 +126,7 @@ function fakeModel(tool: string): Promise<FakeModel> {
           return;
         }
         res.writeHead(200, { 'content-type': 'text/event-stream' });
-        res.end(reply(!body.includes('toolu_probe'), tool));
+        res.end(reply(!body.includes('toolu_probe'), tool, input));
       });
     });
     server.listen(0, '127.0.0.1', () => {
@@ -141,8 +143,12 @@ let root: string;
 let markers: string;
 
 interface Turn {
-  /** The browser tool the model calls. */
-  tool: 'browser_snapshot' | 'browser_run_code_unsafe';
+  /** The browser tool the model calls, as the server spells it. */
+  tool: string;
+  /** The server's name; `browser` when left out. */
+  server?: string;
+  /** The call's arguments; none when left out. */
+  input?: Record<string, unknown>;
   mode: 'bypassPermissions' | 'default';
   /** The deny rules `applyBrowserToolDeny` adds. */
   denyRule: boolean;
@@ -150,15 +156,19 @@ interface Turn {
   hook: boolean;
 }
 
-/** Run one turn whose model calls `tool` on the server named `browser`; say whether it ran. */
+/** Run one turn whose model calls `tool` on `server`; say whether it ran. */
 async function ran(turn: Turn): Promise<boolean> {
-  const model = await fakeModel(`mcp__browser__${turn.tool}`);
+  const server = turn.server ?? 'browser';
+  const model = await fakeModel(`mcp__${server}__${turn.tool}`, turn.input ?? {});
   const script = path.join(root, 'fake-browser.cjs');
   fs.writeFileSync(script, FAKE_BROWSER);
+  const names = JSON.stringify(['browser_snapshot', turn.tool]);
   const options: Options = {
-    mcpServers: { browser: { type: 'stdio', command: process.execPath, args: [script, markers] } },
+    mcpServers: {
+      [server]: { type: 'stdio', command: process.execPath, args: [script, markers, names] },
+    },
     // The saved "Always allow" a deny has to beat.
-    settings: { permissions: { allow: ['mcp__browser__*'] } },
+    settings: { permissions: { allow: [`mcp__${server}__*`] } },
   };
   if (turn.denyRule) applyBrowserToolDeny(options);
   const abort = new AbortController();
@@ -227,7 +237,7 @@ describe.skipIf(BINARY === null)('a browser tool that runs code outside the page
     fs.rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
   });
 
-  const unsafe = 'browser_run_code_unsafe' as const;
+  const unsafe = 'browser_run_code_unsafe';
 
   it('runs when neither the deny rule nor the hook rides the launch (the control)', async () => {
     expect(await ran({ tool: unsafe, mode: 'default', denyRule: false, hook: false })).toBe(true);
@@ -247,6 +257,29 @@ describe.skipIf(BINARY === null)('a browser tool that runs code outside the page
     expect(
       await ran({ tool: unsafe, mode: 'bypassPermissions', denyRule: false, hook: true })
     ).toBe(false);
+  }, 60_000);
+
+  // A server the person named themselves, re-exporting the tool in mixed case: no deny rule names
+  // it, and the hook still refuses it.
+  it('runs on an oddly named server in mixed case when nothing is in place (the control)', async () => {
+    const odd = { server: 'Personal-PW_2', tool: 'Browser_Run_Code_Unsafe' };
+    expect(await ran({ ...odd, mode: 'bypassPermissions', denyRule: false, hook: false })).toBe(
+      true
+    );
+  }, 60_000);
+
+  it('is refused on that server by the hook alone, in any case', async () => {
+    const odd = { server: 'Personal-PW_2', tool: 'Browser_Run_Code_Unsafe' };
+    expect(await ran({ ...odd, mode: 'bypassPermissions', denyRule: false, hook: true })).toBe(
+      false
+    );
+  }, 60_000);
+
+  it('refuses a browser call that names a file, under bypassPermissions', async () => {
+    const call = { tool: 'browser_snapshot', input: { filename: 'saved.md' } };
+    expect(await ran({ ...call, mode: 'bypassPermissions', denyRule: true, hook: true })).toBe(
+      false
+    );
   }, 60_000);
 
   it('leaves the browser’s other tools running with both in place', async () => {

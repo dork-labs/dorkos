@@ -29,7 +29,7 @@ export const AGENT_BROWSER_SERVER_NAME = 'browser';
  * upstream release change, unreviewed, what every agent's browser can do. It
  * has already moved in ways this feature depends on: which tools are always on
  * (0.0.82 has no switch for `browser_run_code_unsafe` or `browser_network_request`,
- * so each runtime withholds the first itself: {@link AGENT_BROWSER_WITHHELD_TOOLS}), and whether
+ * so each runtime withholds both itself: {@link AGENT_BROWSER_WITHHELD_TOOLS}), and whether
  * `--storage-state` tolerates a file (0.0.82 fails every browser tool when the
  * file is missing, which is why DorkOS keeps an empty one in place).
  *
@@ -37,7 +37,8 @@ export const AGENT_BROWSER_SERVER_NAME = 'browser';
  * (`DORKOS_BROWSER_SMOKE=1`, `packages/cli/src/lib/agent-browser/__tests__/agent-browser-smoke.test.ts`),
  * re-read `npx @playwright/mcp@<new> --help` for the flags the connection below
  * passes, and re-check the always-on tool list for any new tool that runs code
- * outside the page, which belongs in {@link AGENT_BROWSER_WITHHELD_TOOLS}.
+ * outside the page, which belongs in {@link AGENT_BROWSER_WITHHELD_TOOLS}, and
+ * any new argument that names a file, which belongs in {@link AGENT_BROWSER_FILE_ARGUMENTS}.
  */
 export const AGENT_BROWSER_MCP_VERSION = '0.0.82';
 
@@ -45,14 +46,60 @@ export const AGENT_BROWSER_MCP_VERSION = '0.0.82';
 export const AGENT_BROWSER_MCP_PACKAGE = `@playwright/mcp@${AGENT_BROWSER_MCP_VERSION}`;
 
 /**
- * Playwright MCP tools no agent is offered, on any server. `browser_run_code_unsafe` runs any
- * JavaScript in the browser server's own process, outside the page, so it reaches files and the
- * network past every rule an agent's own tools follow. It is always on in 0.0.82, so each runtime
- * withholds it: a deny rule on Claude Code, `disabled_tools` on Codex, never registered on Doe,
- * and on OpenCode, which cannot hold back one tool, no agent browser at all.
- * `browser_evaluate` stays: it runs inside the page.
+ * Playwright MCP tools no agent is offered, on any server, in any letter case. Both are always on
+ * in 0.0.82, with no switch:
+ *
+ * - `browser_run_code_unsafe` runs any JavaScript in the browser server's own process, outside the
+ *   page, so it reaches files and the network past every rule an agent's own tools follow.
+ * - `browser_network_request` shows a recorded request's full headers, its `Cookie` and
+ *   `Set-Cookie` among them, which hands an agent sign-in cookies the page itself could not read.
+ *   `browser_network_requests`, the list without headers, stays.
+ *
+ * Each runtime withholds them: a deny rule and a hook on Claude Code, never registered on Doe, and
+ * on Codex and OpenCode, which cannot hold back one argument ({@link AGENT_BROWSER_FILE_ARGUMENTS}),
+ * no agent browser at all. `browser_evaluate` stays: it runs inside the page.
  */
-export const AGENT_BROWSER_WITHHELD_TOOLS: readonly string[] = ['browser_run_code_unsafe'];
+export const AGENT_BROWSER_WITHHELD_TOOLS: readonly string[] = [
+  'browser_run_code_unsafe',
+  'browser_network_request',
+];
+
+/**
+ * The arguments that make a Playwright MCP tool read or write a file on this computer: `filename`
+ * (a snapshot, screenshot, console log, network log or `browser_evaluate` result saved to a file of
+ * the caller's choosing) and `paths` (`browser_file_upload` and `browser_drop` sending local files
+ * to a page). 0.0.82 bounds both only by the folder the MCP client reports as its root, which is
+ * the chat's own folder, so a call that carries one could change an agent's protected setup files
+ * or, in a chat that runs in the home or data folder, the saved sign-ins. A browser call with
+ * either is refused; the same call without it returns its result as text.
+ */
+export const AGENT_BROWSER_FILE_ARGUMENTS: readonly string[] = ['filename', 'paths'];
+
+/**
+ * Whether a tool, by its bare name, is one of {@link AGENT_BROWSER_WITHHELD_TOOLS}, in any case.
+ *
+ * @param tool - The tool's own name, without any server prefix.
+ */
+export function isWithheldBrowserTool(tool: string): boolean {
+  const name = tool.toLowerCase();
+  return AGENT_BROWSER_WITHHELD_TOOLS.includes(name);
+}
+
+/**
+ * Whether a browser tool call names a file ({@link AGENT_BROWSER_FILE_ARGUMENTS}): a tool whose
+ * bare name starts `browser_`, in any case, with either argument present.
+ *
+ * @param tool - The tool's own name, without any server prefix.
+ * @param input - The call's arguments.
+ */
+export function browserCallNamesFile(tool: string, input: unknown): boolean {
+  if (!/^browser_/i.test(tool)) return false;
+  if (!input || typeof input !== 'object') return false;
+  const args = input as Record<string, unknown>;
+  return AGENT_BROWSER_FILE_ARGUMENTS.some(
+    (name) => args[name] !== undefined && args[name] !== null
+  );
+}
 
 /** What an empty saved session looks like: valid for Playwright, signed in to nothing. */
 export const EMPTY_STORAGE_STATE = { cookies: [], origins: [] } as const;

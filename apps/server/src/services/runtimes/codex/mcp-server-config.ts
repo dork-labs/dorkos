@@ -35,7 +35,7 @@
  * @module services/runtimes/codex/mcp-server-config
  */
 import type { CodexOptions } from '@openai/codex-sdk';
-import { AGENT_BROWSER_WITHHELD_TOOLS } from '@dorkos/shared/agent-browser';
+import { AGENT_BROWSER_WITHHELD_TOOLS, isPlaywrightBrowser } from '@dorkos/shared/agent-browser';
 import type {
   McpAppServerConnection,
   ManagedMcpServerResolver,
@@ -98,7 +98,8 @@ export interface CodexMcpServerEntry {
  *
  * Every entry turns off the agent-browser tools no agent is offered
  * (`AGENT_BROWSER_WITHHELD_TOOLS`), on any server, so one started through a
- * wrapper is covered too; Codex ignores a name a server lacks.
+ * wrapper is covered too; a name a server lacks turns nothing off. The agent
+ * browser itself never gets here: {@link toCodexMcpServers} leaves it out.
  *
  * @param name - The server's name, which seeds readable variable names.
  * @param connection - The runtime-neutral managed-server connection.
@@ -222,6 +223,12 @@ export interface CodexMcpConversion {
    * (DOR-1613).
    */
   reserved: string[];
+  /**
+   * Agent browsers left out: Codex can turn off a tool but not one of its arguments, and the
+   * agent browser's always-on tools take file names (`AGENT_BROWSER_FILE_ARGUMENTS`), so the
+   * whole server stays out.
+   */
+  withheld: string[];
 }
 
 /**
@@ -237,6 +244,9 @@ export interface CodexMcpConversion {
  * for why silence was not good enough. `sse` servers land in
  * {@link CodexMcpConversion.skipped} rather than the output — absence withholds
  * (safe-default), never a silent mismap.
+ *
+ * An agent browser lands in {@link CodexMcpConversion.withheld}, for the reason
+ * that field gives.
  *
  * Header values are collected into {@link CodexMcpConversion.env} rather than
  * written into the entries, and the variable names are minted against ONE set
@@ -254,9 +264,14 @@ export function toCodexMcpServers(
   const takenEnvVars = new Set<string>();
   const skipped: string[] = [];
   const reserved: string[] = [];
+  const withheld: string[] = [];
   for (const [name, connection] of Object.entries(connections)) {
     if (reservedNames.has(name)) {
       reserved.push(name);
+      continue;
+    }
+    if (isPlaywrightBrowser(connection)) {
+      withheld.push(name);
       continue;
     }
     const entry = toCodexMcpServerConfig(name, connection, takenEnvVars);
@@ -267,7 +282,7 @@ export function toCodexMcpServers(
     servers[name] = entry.config;
     Object.assign(env, entry.env);
   }
-  return { servers, env, skipped, reserved };
+  return { servers, env, skipped, reserved, withheld };
 }
 
 /** The agent's managed servers for one turn: the config entries, and their header values. */
@@ -317,7 +332,13 @@ export function resolveManagedMcpServers(
   // same name, two runtimes: they have to answer this the same way.
   const reservedNames = new Set<string>();
   if (injectingDorkosTools) reservedNames.add(DORKOS_MCP_SERVER_NAME);
-  const { servers, env, skipped, reserved } = toCodexMcpServers(neutral, reservedNames);
+  const { servers, env, skipped, reserved, withheld } = toCodexMcpServers(neutral, reservedNames);
+  if (withheld.length > 0) {
+    logger.warn(
+      '[CodexRuntime] left the agent browser out: Codex cannot hold back its file arguments',
+      { cwd, withheld }
+    );
+  }
   if (skipped.length > 0) {
     logger.debug('[CodexRuntime] skipped SSE managed MCP servers — Codex has no SSE transport', {
       cwd,

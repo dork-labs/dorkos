@@ -10,7 +10,7 @@ import {
 } from '../mcp-server-config.js';
 
 /** Every entry turns off the browser tool that runs code outside the page. */
-const WITHHELD = { disabled_tools: ['browser_run_code_unsafe'] };
+const WITHHELD = { disabled_tools: ['browser_run_code_unsafe', 'browser_network_request'] };
 
 describe('toCodexMcpServerConfig', () => {
   it('maps a stdio connection to command/args/env', () => {
@@ -95,20 +95,24 @@ describe('toCodexMcpServerConfig', () => {
 
   // Any server, not only one shaped like the agent browser: a Playwright server started through
   // a wrapper script is turned off too, and a name a server lacks turns nothing off.
-  it('turns off the browser tool that runs code outside the page, on every server', () => {
-    const browser = toCodexMcpServerConfig(
-      'browser',
-      { transport: 'stdio', command: 'npx', args: ['-y', '@playwright/mcp@0.0.82', '--isolated'] },
-      new Set()
-    );
+  it('turns off the browser tools that reach past the page, on every server', () => {
     const wrapped = toCodexMcpServerConfig(
       'my-browser',
       { transport: 'stdio', command: 'node', args: ['start-browser.js'] },
       new Set()
     );
-    expect(browser?.config.disabled_tools).toEqual(['browser_run_code_unsafe']);
-    expect(wrapped?.config.disabled_tools).toEqual(['browser_run_code_unsafe']);
-    expect(browser?.config.disabled_tools).not.toContain('browser_evaluate');
+    const remote = toCodexMcpServerConfig(
+      'remote-browser',
+      { transport: 'http', url: 'https://example.com/mcp' },
+      new Set()
+    );
+    for (const entry of [wrapped, remote]) {
+      expect(entry?.config.disabled_tools).toEqual([
+        'browser_run_code_unsafe',
+        'browser_network_request',
+      ]);
+      expect(entry?.config.disabled_tools).not.toContain('browser_evaluate');
+    }
   });
 
   it('returns null for an sse connection — Codex has no SSE transport', () => {
@@ -220,7 +224,27 @@ describe('toCodexMcpServers', () => {
       env: {},
       skipped: [],
       reserved: [],
+      withheld: [],
     });
+  });
+
+  // Codex can turn off a tool but not one of its arguments, and the agent browser's always-on
+  // tools take file names, so the whole browser stays out, however it is named.
+  it('leaves the agent browser out, and keeps every other server', () => {
+    const { servers, withheld } = toCodexMcpServers(
+      {
+        browser: {
+          transport: 'stdio',
+          command: 'npx',
+          args: ['-y', '@playwright/mcp@0.0.82', '--isolated'],
+        },
+        renamed: { transport: 'stdio', command: '/opt/bin/mcp-server-playwright' },
+        files: stdio,
+      },
+      new Set()
+    );
+    expect(withheld).toEqual(['browser', 'renamed']);
+    expect(Object.keys(servers)).toEqual(['files']);
   });
 });
 

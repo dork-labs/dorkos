@@ -70,9 +70,10 @@ export interface OpenCodeMcpConversion {
   /** Names skipped because OpenCode has no matching transport (`sse`), for a one-line diagnostic. */
   skipped: string[];
   /**
-   * Agent browsers left out: OpenCode cannot hold back one of a server's tools, and the agent
-   * browser's always-on tools include one that runs code outside the page
-   * (`AGENT_BROWSER_WITHHELD_TOOLS`), so the whole server stays out.
+   * Agent browsers left out: OpenCode cannot hold back one of a server's tools or arguments, and
+   * the agent browser's always-on tools include ones that reach past the page
+   * (`AGENT_BROWSER_WITHHELD_TOOLS`) and take file names (`AGENT_BROWSER_FILE_ARGUMENTS`), so the
+   * whole server stays out.
    */
   withheld: string[];
 }

@@ -1313,7 +1313,11 @@ describe('CodexRuntime', () => {
 
       expect(injectableServersForCwd).toHaveBeenCalledWith('/projects/demo');
       expect(lastConstructedConfig()?.mcp_servers).toEqual({
-        files: { command: 'npx', args: ['-y', 'fs'] },
+        files: {
+          command: 'npx',
+          args: ['-y', 'fs'],
+          disabled_tools: ['browser_run_code_unsafe', 'browser_network_request'],
+        },
       });
     });
 

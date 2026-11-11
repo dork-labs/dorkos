@@ -11,7 +11,7 @@ import {
   type ToolRegistry,
   type McpTransportConfig,
 } from '@dorkos/doe';
-import { AGENT_BROWSER_WITHHELD_TOOLS } from '@dorkos/shared/agent-browser';
+import { browserCallNamesFile, isWithheldBrowserTool } from '@dorkos/shared/agent-browser';
 import type { McpServerEntry } from '@dorkos/shared/transport';
 import type { McpAppServerConnection } from '@dorkos/shared/agent-runtime';
 import {
@@ -21,6 +21,9 @@ import {
 import { resolveDorkosMcpInjection } from '../shared/dorkos-mcp-injection.js';
 import { alwaysLoadedToolsFor, searchHintFrom } from '../shared/tools/tool-exposure-policy.js';
 
+/** What the agent is told when a browser call names a file. */
+const BROWSER_FILE_REFUSAL =
+  "Agents can't save or upload files with the browser. Leave out filename and paths.";
 /** Inputs bound to one authenticated runtime turn; configured servers remain foreign. */
 export interface DoeMcpOptions {
   agentPath?: string;
@@ -103,16 +106,18 @@ export async function assembleDoeMcp(options: DoeMcpOptions): Promise<DoeMcpAsse
         // Recover names from the registry projection's search hint, not by stripping hashes.
         const bare = tool.searchHint?.slice(id.length + 1);
         if (!bare) throw new Error('MCP discovery omitted its registered name');
-        // No configured server offers a browser tool that runs code outside the page.
-        if (!host && AGENT_BROWSER_WITHHELD_TOOLS.includes(bare)) return;
+        // No configured server offers a browser tool that reaches past the page.
+        if (!host && isWithheldBrowserTool(bare)) return;
         const name = host ? bare : tool.name;
         names.set(`${id}:${bare}`, name);
         if (host || id === 'dorkos_connections') trustedHostToolNames.add(name);
         tools.push({
           ...tool,
           name,
-          execute: (args, context) =>
-            tool.execute(args, {
+          execute: async (args, context) => {
+            // Nor a browser call that reads or writes a file on this computer.
+            if (!host && browserCallNamesFile(bare, args)) throw new Error(BROWSER_FILE_REFUSAL);
+            return tool.execute(args, {
               ...context,
               signal: AbortSignal.any([options.signal, context.signal]),
               emit: (event) =>
@@ -121,7 +126,8 @@ export async function assembleDoeMcp(options: DoeMcpOptions): Promise<DoeMcpAsse
                     ? { ...event, name }
                     : event
                 ),
-            }),
+            });
+          },
           ...(host
             ? {
                 initialLoad: alwaysLoadedToolsFor(options.agentToAgent ?? false).has(bare),
