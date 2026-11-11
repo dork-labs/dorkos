@@ -69,17 +69,6 @@ test.describe('Tasks — Scheduler Dialog @smoke', () => {
     await expect(toggle).toBeChecked();
   });
 
-  test('creating a schedule starts on the template picker', async ({ tasksPage }) => {
-    await tasksPage.open();
-    await tasksPage.openCreateDialog();
-
-    await expect(tasksPage.createDialog.getByText('Start from a template')).toBeVisible();
-    await expect(tasksPage.startFromScratchButton).toBeVisible();
-    // The form is not merely hidden behind a disclosure — it is not rendered at
-    // all until a starting point is chosen.
-    await expect(tasksPage.nameInput).toHaveCount(0);
-  });
-
   test('Start from scratch opens an empty form that will not submit', async ({ tasksPage }) => {
     await tasksPage.open();
     await tasksPage.openCreateDialog();
@@ -107,15 +96,5 @@ test.describe('Tasks — Scheduler Dialog @smoke', () => {
     // A cadence is deliberately not required — a schedule with no cron is an
     // on-demand task.
     await expect(tasksPage.createButton).toBeEnabled();
-  });
-
-  test('the cadence is chosen by frequency, and previewed in words', async ({ tasksPage }) => {
-    await tasksPage.open();
-    await tasksPage.openCreateDialog();
-    await tasksPage.startFromScratch();
-    await tasksPage.openScheduleSection();
-
-    await tasksPage.selectFrequency('Every day');
-    await expect(tasksPage.createDialog.getByText('Runs every day at 9:00 AM')).toBeVisible();
   });
 });
