@@ -323,14 +323,13 @@ export class CanvasDocumentStore {
       openedByExtensionId: string | null;
     }>
   ): void {
-    // Keyed on the mark the row will carry, whichever write this is (DOR-3293).
-    if (patch.content) {
-      const mark =
-        'openedByExtensionId' in patch
-          ? patch.openedByExtensionId
-          : this.get(scope, documentId)?.openedByExtensionId;
-      assertAppOpenedContent(mark, patch.content);
-    }
+    // Checked on the row as it will end up, on every update (DOR-3293): the
+    // mark and the content it carries afterwards, whichever this patch sets.
+    const stored = this.get(scope, documentId);
+    assertAppOpenedContent(
+      'openedByExtensionId' in patch ? patch.openedByExtensionId : stored?.openedByExtensionId,
+      patch.content ?? stored?.content
+    );
     this.db
       .update(canvasDocuments)
       .set(patch)

@@ -117,6 +117,17 @@ describe('a widget an app opened (DOR-3293, Security M1)', () => {
     expect(storedOpenedBy(doc.id)).toBe('desk');
   });
 
+  it('refuses a patch that sets only the app’s mark onto a document with an agent button', () => {
+    const doc = canvas.open(SCOPE, SESSION_AGENT_AUTHOR, AGENT);
+    const store = new CanvasDocumentStore(db);
+    expect(() => store.update(SCOPE, doc.id, { openedByExtensionId: 'desk' })).toThrow(
+      expect.objectContaining({ code: 'CANVAS_APP_WIDGET_ACTION' })
+    );
+    // Nothing changed: still the agent's own widget, with no app's mark.
+    expect(storedOpenedBy(doc.id)).toBeNull();
+    expect(canvas.get(SCOPE, doc.id)?.content).toEqual(AGENT);
+  });
+
   it('lets a later writer replace it once the write drops the app’s mark', () => {
     const doc = canvas.open(SCOPE, SESSION_OWNER_AUTHOR, LINK, { openedByExtensionId: 'desk' });
     canvas.update(SCOPE, SESSION_AGENT_AUTHOR, doc.id, AGENT);
