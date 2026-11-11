@@ -1536,21 +1536,36 @@ describe('Sessions Routes', () => {
       expect(fakeRuntime.forkSession).toHaveBeenCalledWith(expect.any(String), S1, {});
     });
 
-    it('passes upToMessageId and title to runtime', async () => {
-      fakeRuntime.forkSession.mockResolvedValue({
-        id: '00000000-0000-4000-8000-000000000099',
-        title: 'Custom fork',
-        createdAt: '2024-01-01',
-        updatedAt: '2024-01-01',
-        permissionMode: 'default' as const,
-      });
+    it('a fork asked for a title and a cut-off point answers with that fork', async () => {
+      // The runtime builds the fork from what it is given, so the response says
+      // whether the route passed the request on: a route that dropped either
+      // field would answer with an untitled fork of the whole conversation.
+      fakeRuntime.forkSession.mockImplementation(
+        async (
+          _cwd: string,
+          _sessionId: string,
+          opts: { upToMessageId?: string; title?: string }
+        ) => ({
+          // A fork cut at msg-123 and a fork of the whole conversation are
+          // different sessions, so each gets its own id.
+          id:
+            opts.upToMessageId === 'msg-123'
+              ? '00000000-0000-4000-8000-000000000123'
+              : '00000000-0000-4000-8000-000000000999',
+          title: opts.title ?? 'Untitled fork',
+          createdAt: '2024-01-01',
+          updatedAt: '2024-01-01',
+          permissionMode: 'default' as const,
+        })
+      );
 
-      await request(server)
+      const res = await request(server)
         .post(`/api/sessions/${S1}/fork`)
         .send({ upToMessageId: 'msg-123', title: 'Custom fork' });
 
-      expect(fakeRuntime.forkSession).toHaveBeenCalledWith(expect.any(String), S1, {
-        upToMessageId: 'msg-123',
+      expect(res.status).toBe(201);
+      expect(res.body).toMatchObject({
+        id: '00000000-0000-4000-8000-000000000123',
         title: 'Custom fork',
       });
     });
