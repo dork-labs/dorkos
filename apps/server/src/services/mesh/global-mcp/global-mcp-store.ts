@@ -350,13 +350,20 @@ export class GlobalMcpStore {
    *
    * @param name - The server to replace.
    * @param input - Its new definition. The name may not change.
+   * @param guard - Checked in the write queue: `expect` refuses a server that
+   *   changed since it was read, so a held replace can't undo a narrowing.
    */
-  replace(name: string, input: GlobalMcpServerInput): Promise<GlobalMcpServerView> {
+  replace(
+    name: string,
+    input: GlobalMcpServerInput,
+    guard: Pick<GlobalMcpPatchGuard, 'expect'> = {}
+  ): Promise<GlobalMcpServerView> {
     return this.exclusive(async () => {
       // Every refusal before anything is deleted, so a refused edit leaves the
       // working server running with its secrets.
       this.refuseReplace(name, input);
       const existing = this.find(name);
+      this.refuseChanged(existing, guard.expect);
       await this.deleteSecrets(existing);
       this.servers = this.servers.filter((s) => s.name !== name);
       return this.put(input, existing.addedAt);
@@ -379,9 +386,7 @@ export class GlobalMcpStore {
   ): Promise<GlobalMcpServerView> {
     return this.exclusive(async () => {
       const existing = this.find(name);
-      if (guard.expect !== undefined && fingerprintOf(existing) !== guard.expect) {
-        throw new GlobalMcpStoreError('changed', `${name} changed. Check it and try again.`);
-      }
+      this.refuseChanged(existing, guard.expect);
       const next: StoredServer = {
         ...existing,
         ...(patch.enabled !== undefined ? { enabled: patch.enabled } : {}),
@@ -428,6 +433,13 @@ export class GlobalMcpStore {
     });
     this.writes = run.catch(() => undefined);
     return run;
+  }
+
+  /** Throw when a server no longer matches the fingerprint a held change was read at. */
+  private refuseChanged(existing: StoredServer, expect: string | undefined): void {
+    if (expect !== undefined && fingerprintOf(existing) !== expect) {
+      throw new GlobalMcpStoreError('changed', `${existing.name} changed. Check it and try again.`);
+    }
   }
 
   /** Throw when the file exists but could not be read. */

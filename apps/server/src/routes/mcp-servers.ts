@@ -169,18 +169,25 @@ export function createMcpServerRoutes(
     });
   };
 
-  /** Hold a POST or PUT, refusing first whatever a password could not change. */
+  /**
+   * Hold a POST or PUT, refusing first whatever a password could not change. A
+   * PUT's `expect` is bound too, so a resend after the server moved holds afresh.
+   */
   const holdInput = (
     c: Context<ApiEnv>,
     change: Extract<ServerChange, 'add' | 'change'>,
     input: GlobalMcpServerInput,
-    run: () => Promise<WriteResult>
+    run: () => Promise<WriteResult>,
+    expect?: string
   ): Promise<Response> =>
     runOrHold(
       c,
       {
         target: input.name,
-        input: boundServerInput(change, input),
+        input:
+          expect === undefined
+            ? boundServerInput(change, input)
+            : { ...(boundServerInput(change, input) as object), expect },
         reason: serverReason(change, input),
         notes: serverNotes(input, change === 'change'),
         warnings: serverWarnings(input),
@@ -263,16 +270,26 @@ export function createMcpServerRoutes(
     if (!parsed.success) return c.json({ error: 'That server is not complete.' }, 400);
     const input = parsed.data;
     const name = c.req.param('name');
+    let expect: string;
     try {
       store.refuseReplace(name, input);
+      // The server as the sheet is shown: a change made while it is up, such
+      // as keeping an agent from it, refuses the confirm rather than being undone.
+      expect = store.fingerprint(name);
     } catch (err) {
       return storeRefusal(c, err);
     }
-    return holdInput(c, 'change', input, async () => {
-      const server = await store.replace(name, input);
-      logger.info('[mcp-servers] replaced a server for every agent', { name: server.name });
-      return { status: 200, body: server };
-    });
+    return holdInput(
+      c,
+      'change',
+      input,
+      async () => {
+        const server = await store.replace(name, input, { expect });
+        logger.info('[mcp-servers] replaced a server for every agent', { name: server.name });
+        return { status: 200, body: server };
+      },
+      expect
+    );
   });
 
   /** PATCH /api/mcp-servers/:name — `{ enabled?, excludedAgents? }`. */
