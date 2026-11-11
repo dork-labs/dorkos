@@ -327,7 +327,7 @@ const RECORD_ENV_VAR = 'DORKOS_RECORD_DOM_BASELINE';
  * (`http://localhost:3000/...`), which is not a path any filesystem call can
  * take.
  */
-export function domBaselinePath(moduleUrl: string, name: string): string {
+function domBaselinePath(moduleUrl: string, name: string): string {
   return join(dirname(fileURLToPath(moduleUrl)), '__baselines__', `${name}.json`);
 }
 

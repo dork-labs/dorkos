@@ -32,7 +32,7 @@ export function setPlaygroundRemoteReport(report: RemoteAccessReport | null): vo
  * `/channels` header does ({@link roomDisplayTitle} in
  * `entities/room/lib/room-display.ts`).
  */
-export const PLAYGROUND_ROOM: RoomWithRoster = {
+const PLAYGROUND_ROOM: RoomWithRoster = {
   id: 'room-general',
   kind: 'channel',
   slug: 'general',

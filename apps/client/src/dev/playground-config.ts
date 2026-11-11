@@ -113,7 +113,7 @@ export const IDENTITY_CROSS_LISTED: readonly string[] = [
  * stays on Home, Inbox & Approvals; Conversation borrows it by rendering,
  * never by registering it a second time.
  */
-export const CONVERSATION_CROSS_LISTED: readonly string[] = ['approvalcard'];
+const CONVERSATION_CROSS_LISTED: readonly string[] = ['approvalcard'];
 
 /**
  * Look up borrowed sections by id, in the order given.
