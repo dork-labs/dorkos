@@ -201,25 +201,60 @@ describe('isolated app host', () => {
         },
       },
     };
-    beforeEach(() => setRunningApps([ledger] as never));
+    beforeEach(() => {
+      setRunningApps([ledger] as never);
+      // The caller token this frame load is given, then each route's answer.
+      vi.mocked(fetch).mockImplementation(async (url) =>
+        String(url).endsWith('/extension-frame/caller-token')
+          ? new Response(JSON.stringify({ token: `token-${++minted}` }), { status: 201 })
+          : new Response(JSON.stringify({ own: true }))
+      );
+    });
+    let minted = 0;
+    /** The calls that reached a route, leaving out asking for the token. */
+    const routeCalls = () =>
+      vi.mocked(fetch).mock.calls.filter(([url]) => !String(url).endsWith('/caller-token'));
     afterEach(() => setRunningApps([]));
     const callsLedger: Partial<ExtensionManifest> = {
       capabilities: { http: { apps: ['ledger'] } },
     };
 
-    it('reaches an exported route, and the host names the caller', async () => {
+    it('reaches an exported route with this frame load’s token, asked for once', async () => {
+      minted = 0;
       await start(callsLedger);
       expect(await call('request', ['/entries', { app: 'ledger' }])).toHaveProperty('value');
+      expect(await call('request', ['/entries/e-1', { app: 'ledger' }])).toHaveProperty('value');
       expect(fetch).toHaveBeenCalledWith(
-        '/api/ext/ledger/entries',
-        expect.objectContaining({
-          method: 'GET',
-          headers: expect.objectContaining({
-            'X-DorkOS-Extension': 'atlas',
-            'X-DorkOS-Caller-App': 'atlas',
-          }),
-        })
+        '/api/extension-frame/caller-token',
+        expect.objectContaining({ method: 'POST', body: JSON.stringify({ appId: 'atlas' }) })
       );
+      expect(routeCalls()).toHaveLength(2);
+      for (const [, init] of routeCalls()) {
+        expect(init?.headers).toMatchObject({
+          'X-DorkOS-Extension': 'atlas',
+          'X-DorkOS-Caller-App': 'atlas',
+          'X-DorkOS-Caller-Token': 'token-1',
+        });
+      }
+    });
+    it('asks for a new token once when the server has forgotten it', async () => {
+      minted = 0;
+      let forgotten = true;
+      vi.mocked(fetch).mockImplementation(async (url) => {
+        if (String(url).endsWith('/caller-token')) {
+          return new Response(JSON.stringify({ token: `token-${++minted}` }), { status: 201 });
+        }
+        if (forgotten) {
+          forgotten = false;
+          return new Response(JSON.stringify({ code: 'caller_token_invalid' }), { status: 403 });
+        }
+        return new Response(JSON.stringify({ own: true }));
+      });
+      await start(callsLedger);
+      expect(await call('request', ['/entries', { app: 'ledger' }])).toHaveProperty('value', {
+        own: true,
+      });
+      expect(minted).toBe(2);
     });
     it('refuses a target this app does not list', async () => {
       await start({ capabilities: { http: true } });
@@ -242,7 +277,7 @@ describe('isolated app host', () => {
       expect(
         await call('request', ['/entries/e-17', { app: 'ledger', method: 'PATCH', body: {} }])
       ).toHaveProperty('value');
-      expect(fetch).toHaveBeenCalledTimes(1);
+      expect(routeCalls()).toHaveLength(1);
     });
     it('refuses a target that is not running', async () => {
       setRunningApps([]);
@@ -259,6 +294,7 @@ describe('isolated app host', () => {
       await call('request', ['/loop', { app: 'atlas' }]);
       const [, init] = vi.mocked(fetch).mock.calls[0]!;
       expect(init?.headers).not.toHaveProperty('X-DorkOS-Caller-App');
+      expect(init?.headers).not.toHaveProperty('X-DorkOS-Caller-Token');
     });
   });
   it('refuses prototype names as bridge operations', async () => {

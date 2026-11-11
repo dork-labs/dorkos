@@ -8,7 +8,7 @@ import {
 import { z } from 'zod';
 import { extensionApiUrl } from '../model/extension-api-url';
 import { readAppMedia } from './app-media';
-import { assertAppCall } from './app-call';
+import { createAppCaller } from './app-call';
 import { extensionRequestPath, readAppResponse } from './app-request';
 import { offerAppDownload } from './download';
 import {
@@ -194,6 +194,8 @@ export function isolatedExtensionModule(
         fit: FrameFit = 'fill',
         onSize?: (size: FrameSize) => void
       ): FrameConnection {
+        // Calls to other apps, with this frame load's own caller token.
+        const callApp = createAppCaller(manifest);
         const frame = createFrameConnection({
           code,
           manifest,
@@ -240,18 +242,12 @@ export function isolatedExtensionModule(
                   })
                   .strict()
               ).parse(input);
-              const target =
-                options.app !== undefined && options.app !== api.id ? options.app : null;
-              const address = extensionRequestPath(target ?? api.id, path);
-              if (target !== null) assertAppCall(manifest, target, options.method, path);
-              const response = await fetch(extensionApiUrl(address), {
+              if (options.app !== undefined && options.app !== api.id) {
+                return callApp(options.app, options.method, path, options.body);
+              }
+              const response = await fetch(extensionApiUrl(extensionRequestPath(api.id, path)), {
                 method: options.method,
-                headers: {
-                  'Content-Type': 'application/json',
-                  'X-DorkOS-Extension': api.id,
-                  // Set by the host alone: the frame never builds a header.
-                  ...(target !== null ? { 'X-DorkOS-Caller-App': api.id } : {}),
-                },
+                headers: { 'Content-Type': 'application/json', 'X-DorkOS-Extension': api.id },
                 ...(options.body !== undefined ? { body: JSON.stringify(options.body) } : {}),
               });
               return readAppResponse(response);

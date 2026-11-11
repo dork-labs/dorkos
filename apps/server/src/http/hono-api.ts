@@ -496,15 +496,17 @@ export function createHonoApi(options: HonoApiOptions): Hono<ApiEnv> {
       })
     );
     const { manager } = deps.extensions;
+    const records = {
+      manifest: (id: string) => manager.get(id)?.manifest,
+      callerRuns: appScreenRunsIn(manager),
+    };
+    app.route('/api/ext', createExtensionApiRoutes(manager, records));
+    // The empty, sandboxed document every app's screens run in, and the token
+    // a frame's calls to another app carry (DOR-3293).
     app.route(
-      '/api/ext',
-      createExtensionApiRoutes(manager, {
-        manifest: (id) => manager.get(id)?.manifest,
-        callerRuns: appScreenRunsIn(manager),
-      })
+      '/api/extension-frame',
+      createExtensionFrameRoutes({ appScreenRuns: records.callerRuns, manifest: records.manifest })
     );
-    // The empty, sandboxed document every app's screens run in (DOR-3293).
-    app.route('/api/extension-frame', createExtensionFrameRoutes());
   }
   // These two are mounted on all of `/api`, because their paths span several
   // prefixes. Their groups register only their own concrete paths, so mounting them at `/api` claims

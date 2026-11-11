@@ -19,6 +19,7 @@ import { randomBytes } from 'node:crypto';
 import { Hono } from 'hono';
 import type { ApiEnv } from '../http/api-chain.js';
 import { resolveAuthTrustedOrigins } from '../lib/trusted-origins.js';
+import { registerCallerTokenRoute, type CallerTokenDeps } from './extension-caller-token.js';
 
 /**
  * The script that runs first in the frame. It keeps this load's nonce for the
@@ -80,9 +81,17 @@ export function extensionFrameCsp(nonce: string): string {
   ].join('; ');
 }
 
-/** The frame document's routes. */
-export function createExtensionFrameRoutes(): Hono<ApiEnv> {
+/**
+ * The frame document's routes, and the caller-token mint beside them.
+ *
+ * @param tokenDeps - DorkOS's records of each app, for the caller-token mint.
+ *   Unset mounts no mint, so no app can call another.
+ * @returns The routes, for `app.route('/api/extension-frame', …)`.
+ */
+export function createExtensionFrameRoutes(tokenDeps?: CallerTokenDeps): Hono<ApiEnv> {
   const router = new Hono<ApiEnv>();
+  // One app calling another: the token that says which app is calling (DOR-3293).
+  if (tokenDeps) registerCallerTokenRoute(router, tokenDeps);
   router.get('/', (c) => {
     const nonce = randomBytes(18).toString('base64url');
     // This listener's own origin, plus the others DorkOS is served from (Vite,

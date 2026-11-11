@@ -2,12 +2,14 @@
  * The server's half of one app calling another (DOR-3293, Security
  * 2026-11-10).
  *
- * The person's window makes the call for the calling app's frame and names
- * the caller in {@link CALLER_APP_HEADER}, a header the frame itself can never
- * set: a frame has no network, and the bridge builds every header. This
- * module checks that claim again against DorkOS's own records before the
- * target's routes see the request, with the same rule the bridge applies
- * ({@link decideAppCall}), and records every call with both ids.
+ * The person's window makes the call for the calling app's frame, carrying
+ * the caller token that frame load was given (`extension-caller-token.ts`).
+ * The server reads the calling app from its own record of that token; a
+ * header naming an app ({@link CALLER_APP_HEADER}, or the extension stamp
+ * naming another app) counts for nothing without one, and an agent or an API
+ * key that sends either is refused. The call is then checked against both
+ * manifests with the same rule the bridge applies ({@link decideAppCall}),
+ * and every call is recorded with both ids.
  *
  * @module routes/extension-app-call
  */
@@ -21,6 +23,13 @@ import {
 } from '@dorkos/extension-api';
 import { recordAudit } from '../services/audit/audit-trail.js';
 import type { ApiEnv } from '../http/api-chain.js';
+import { honoRequestFacts } from '../http/request-facts.js';
+import {
+  CALLER_TOKEN_HEADER,
+  CALLER_TOKEN_INVALID,
+  isNotAWindow,
+  resolveCallerToken,
+} from './extension-caller-token.js';
 import { EXTENSION_ID_HEADER } from './extension-write-binding.js';
 
 /** The header naming the app a call came from. Only the host sets it. */
@@ -37,8 +46,11 @@ export interface AppCallRecords {
   callerRuns(id: string): boolean;
 }
 
+/** Why a call was refused before the manifests were read. */
+type CallerRefusal = 'mismatch' | 'method' | 'no-token' | 'not-a-window';
+
 /** The sentence a refused call answers with, for the calling app's maker. */
-const REFUSAL_TEXT: Record<AppCallRefusal | 'mismatch' | 'method', string> = {
+const REFUSAL_TEXT: Record<AppCallRefusal | CallerRefusal, string> = {
   'not-declared': 'This app does not list that app in capabilities.http.apps.',
   self: 'An app calls its own routes without naming itself.',
   'target-unavailable': 'That app is not installed or not turned on.',
@@ -48,6 +60,8 @@ const REFUSAL_TEXT: Record<AppCallRefusal | 'mismatch' | 'method', string> = {
   'caller-not-listed': 'That route is exported to other apps only.',
   mismatch: 'The call named two different apps.',
   method: 'That method cannot be used between apps.',
+  'no-token': 'A call between apps must come from the app’s own frame.',
+  'not-a-window': 'Only a person’s DorkOS window calls between apps.',
 };
 
 /**
@@ -72,17 +86,28 @@ export function refusedAppCall(
   subPath: string,
   records: AppCallRecords
 ): Response | undefined {
+  const token = c.req.header(CALLER_TOKEN_HEADER);
   const named = c.req.header(CALLER_APP_HEADER);
   const stamp = c.req.header(EXTENSION_ID_HEADER);
-  // An app's own call may carry its stamp, and a caller header naming itself
-  // adds nothing; both go on as an own call.
-  const callerId = named ?? (stamp !== undefined && stamp !== targetId ? stamp : undefined);
-  if (callerId === undefined || callerId === targetId) {
-    return stamp !== undefined && named !== undefined && stamp !== named
-      ? refuse(c, targetId, named, 'mismatch')
-      : undefined;
+  const claimed = named ?? (stamp !== undefined && stamp !== targetId ? stamp : undefined);
+  // No token and no app named: an app's own call, or any other caller, as before.
+  if (token === undefined && (claimed === undefined || claimed === targetId)) return undefined;
+  const facts = honoRequestFacts(c);
+  if (isNotAWindow(facts)) return refuse(c, targetId, claimed ?? 'unknown', 'not-a-window');
+  // A header naming an app counts for nothing on its own.
+  if (token === undefined) return refuse(c, targetId, claimed!, 'no-token');
+  const callerId = resolveCallerToken(token, facts);
+  if (callerId === null) {
+    return c.json(
+      { error: 'Ask for a new caller token.', code: CALLER_TOKEN_INVALID, reason: 'token' },
+      403
+    );
   }
-  if (stamp !== undefined && stamp !== callerId) return refuse(c, targetId, callerId, 'mismatch');
+  if ((named !== undefined && named !== callerId) || (stamp !== undefined && stamp !== callerId)) {
+    return refuse(c, targetId, callerId, 'mismatch');
+  }
+  // A frame calling its own app's routes with its token is an own call.
+  if (callerId === targetId) return undefined;
   const method = c.req.method === 'HEAD' ? 'GET' : c.req.method;
   if (!(APP_ROUTE_METHODS as readonly string[]).includes(method)) {
     return refuse(c, targetId, callerId, 'method');
