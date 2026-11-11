@@ -147,8 +147,8 @@ before reaching DorkOS's own sign-in screen.
 
 Remote Access is for using the app from your phone or another computer. Some addresses other programs use are limited:
 
-- **Agent-to-agent (A2A).** The `/a2a` address and its agent cards aren't served over Remote Access.
-- **MCP.** An MCP client on another device can still use `/mcp`, with a personal API key. Signing in to the app on that device doesn't count.
+- **Agent-to-agent (A2A).** Closed. The `/a2a` address and its agent cards aren't served to another device, with or without a key. Use A2A from this computer only.
+- **MCP.** Key only. An MCP client on another device can use `/mcp` with a personal API key, sent in the `Authorization` header. A key put in the address itself (`?key=…`) is refused, because addresses end up in logs. Signing in to the app on that device doesn't count.
 - **Webhooks.** Webhooks from connected apps and from webhook connections stay reachable, because the tunnel is the only way an outside service can reach DorkOS on this computer. Each one is checked against its signature before anything happens. A request that fails the check gets one plain refusal, and it never counts as you.
 - **Agents.** Agents can't read the tunnel's public address.
 
