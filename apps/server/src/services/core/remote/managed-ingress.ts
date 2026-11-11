@@ -118,10 +118,13 @@ export interface ManagedIngress {
 
 /**
  * Whether a request target is plain origin-form (`/path?query`), the only shape
- * the managed edge forwards. Anything else — absolute-form
+ * a remote listener forwards. Anything else — absolute-form
  * (`http://host/path`), asterisk-form, or a target carrying a `#` — is refused,
  * because Express's router used to route it by a pathname this check never saw:
- * `parseurl` read `http://h/a2a` and `/a2a#x` both as `/a2a`.
+ * `parseurl` read `http://h/a2a` and `/a2a#x` both as `/a2a`. Shared with the
+ * own-tunnel ingress (DOR-3650).
+ *
+ * @param target - The raw request target.
  */
 export function isOriginForm(target: string): boolean {
   return target.startsWith('/') && !target.includes('#');
@@ -133,7 +136,7 @@ export type RemotePathVerdict = 'serve' | 'not-served' | 'not-normal';
 /**
  * Decide a target for a remote listener, managed access or the own tunnel:
  * normalise it once, then match the paths never served remotely (the A2A
- * gateway and its agent cards, until DOR-2085 decides otherwise).
+ * gateway and its agent cards, until DOR-2085 decides otherwise; DOR-3650).
  *
  * The router resolves dot segments (WHATWG, `@hono/node-server` builds the URL
  * with `new URL`), so `/x/../a2a` is routed as `/a2a`. Rather than guess how
@@ -165,10 +168,28 @@ export function remotePathVerdict(target: string): RemotePathVerdict {
     .replace(/\/\.(?=\/|$)/g, '')
     .replace(/\/{2,}/g, '/')
     .toLowerCase();
-  const refused =
-    path === '/a2a' || path.startsWith('/a2a/') || path.startsWith('/.well-known/agent');
+  const refused = REMOTE_REFUSED_PATHS.some((entry) =>
+    'exact' in entry ? path === entry.exact : path.startsWith(entry.prefix)
+  );
   return refused ? 'not-served' : 'serve';
 }
+
+/**
+ * The one list of what a remote listener refuses (DOR-3650), lower-case. Each
+ * entry is its own line, so refusing another surface is one line here.
+ *
+ * Deliberately NOT listed, pending Security's ruling: the webhook ingress
+ * (`/api/connectors/webhooks/`, signature-checked, and the only way an outside
+ * service reaches a DorkOS on this computer) and relay webhooks
+ * (`/api/relay/webhooks/`, behind the gate and HMAC); and `/mcp`, which the docs
+ * offer to a client on another device with an API key, and which takes no
+ * sign-in cookie remotely (`middleware/mcp-auth.ts`).
+ */
+const REMOTE_REFUSED_PATHS: readonly ({ exact: string } | { prefix: string })[] = [
+  { exact: '/a2a' },
+  { prefix: '/a2a/' },
+  { prefix: '/.well-known/agent' },
+];
 
 /** How many copies of a header (lower-case name) a request carries. */
 function countHeader(rawHeaders: readonly string[], name: string): number {

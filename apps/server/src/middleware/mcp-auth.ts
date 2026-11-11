@@ -142,11 +142,13 @@ export async function decideMcpAuth(
   // `seedLegacyMcpApiKey` stores that exact value AS a Better Auth key, so
   // there it is a real per-user credential acceptor 2 must still resolve.
   //
-  // On the Wi-Fi route only a bearer key counts (DOR-2969): a Wi-Fi sign-in's
-  // cookie never stands for an agent tool here, whatever bearer rides with it.
+  // From any other device only a bearer key counts: the Wi-Fi (DOR-2969), the
+  // own tunnel, managed access and a forwarding proxy (DOR-3650). A sign-in's
+  // cookie never stands for an agent tool there, whatever bearer rides with it;
+  // only a person at this computer's cookie does.
   const identity = await verifyRequestAuth(request, {
     ...(bearerIsLocalToken ? { bearerIsNotAnApiKey: true } : {}),
-    ...(requestSessionRoute(request) === 'wifi' ? { ignoreSessionCookie: true } : {}),
+    ...(requestSessionRoute(request) !== 'local' ? { ignoreSessionCookie: true } : {}),
   });
   // Recorded, not just accepted. A capability that acts on somebody's own
   // data has to know WHICH person is asking, and this is the only place on

@@ -64,7 +64,8 @@ const CATALOG = z.array(z.object({ manifest: z.object({ type: z.string() }).loos
 const BINDINGS = z.object({ bindings: z.array(z.unknown()) }).strict();
 const BINDING_NOT_FOUND = { error: 'Binding not found' };
 const CHAT_NOT_FOUND = { error: 'Unclaimed chat not found' };
-const WEBHOOK_NOT_FOUND = { error: 'Webhook adapter not found' };
+/** An unknown connection answers exactly like a bad signature (DOR-3650). */
+const WEBHOOK_NOT_FOUND = { error: 'INVALID_SIGNATURE' };
 const TRACING_ABSENT_OR_EMPTY = { error: 'Trace not found' };
 /** A well-formed relay message id no message has. */
 const UNKNOWN_MESSAGE_ID = '01ARZ3NDEKTSV4RRFFQ69G5FAV';
@@ -525,12 +526,12 @@ contractSuite('the Relay groups, login off, nothing set up', [
   },
   // --- the webhook receiver ---
   {
-    name: 'POST a webhook to a connection that does not exist is a 404',
+    name: 'POST a webhook to a connection that does not exist is the flat 401',
     method: 'POST',
     path: '/api/relay/webhooks/contract-nobody',
     body: '{}',
     headers: { 'content-type': 'application/json' },
-    expect: { status: 404, body: WEBHOOK_NOT_FOUND },
+    expect: { status: 401, body: WEBHOOK_NOT_FOUND },
   },
   {
     name: 'POST a webhook of any content type is still read as bytes',
@@ -538,7 +539,7 @@ contractSuite('the Relay groups, login off, nothing set up', [
     path: '/api/relay/webhooks/contract-nobody',
     body: 'not json at all',
     headers: { 'content-type': 'text/plain' },
-    expect: { status: 404, body: WEBHOOK_NOT_FOUND },
+    expect: { status: 401, body: WEBHOOK_NOT_FOUND },
   },
   {
     name: 'POST malformed JSON as a webhook is never parsed',
@@ -546,7 +547,7 @@ contractSuite('the Relay groups, login off, nothing set up', [
     path: '/api/relay/webhooks/contract-nobody',
     body: '{broken',
     headers: { 'content-type': 'application/json' },
-    expect: { status: 404, body: WEBHOOK_NOT_FOUND },
+    expect: { status: 401, body: WEBHOOK_NOT_FOUND },
   },
   {
     name: 'POST a webhook over 1 MB is refused before any connection is looked up',
@@ -906,14 +907,14 @@ describe('contract: the Relay groups, driven by hand (login off)', () => {
       path: url,
       headers,
       body,
-      expect: { status: 401, body: { error: 'Nonce already seen (replay)' } },
+      expect: { status: 401, body: { error: 'INVALID_SIGNATURE' } },
     });
     await check(server, {
       method: 'POST',
       path: url,
       headers: signed(body, randomUUID(), 'a-different-secret-sixteen'),
       body,
-      expect: { status: 401, body: { error: 'Invalid signature' } },
+      expect: { status: 401, body: { error: 'INVALID_SIGNATURE' } },
     });
     // A re-serialized body no longer matches what was signed.
     await check(server, {
@@ -921,14 +922,14 @@ describe('contract: the Relay groups, driven by hand (login off)', () => {
       path: url,
       headers: signed(body),
       body: JSON.stringify(JSON.parse(body)),
-      expect: { status: 401, body: { error: 'Invalid signature' } },
+      expect: { status: 401, body: { error: 'INVALID_SIGNATURE' } },
     });
     await check(server, {
       method: 'POST',
       path: url,
       headers: signed(body, randomUUID(), HOOK_SECRET, '1000'),
       body,
-      expect: { status: 401, body: { error: 'Timestamp expired or invalid' } },
+      expect: { status: 401, body: { error: 'INVALID_SIGNATURE' } },
     });
     const { 'x-nonce': _nonce, ...noNonce } = signed(body);
     await check(server, {
@@ -936,7 +937,7 @@ describe('contract: the Relay groups, driven by hand (login off)', () => {
       path: url,
       headers: noNonce,
       body,
-      expect: { status: 400, body: { error: 'Missing X-Nonce header' } },
+      expect: { status: 401, body: { error: 'INVALID_SIGNATURE' } },
     });
     // Signed, but not JSON: verified first, then refused.
     await check(server, {
@@ -944,7 +945,7 @@ describe('contract: the Relay groups, driven by hand (login off)', () => {
       path: url,
       headers: signed('{broken'),
       body: '{broken',
-      expect: { status: 401, body: { error: 'Publish failed' } },
+      expect: { status: 401, body: { error: 'INVALID_SIGNATURE' } },
     });
     // Any content type is read as bytes.
     const plain = 'plain text is still bytes';
@@ -953,7 +954,7 @@ describe('contract: the Relay groups, driven by hand (login off)', () => {
       path: url,
       headers: { ...signed(plain), 'content-type': 'text/plain' },
       body: plain,
-      expect: { status: 401, body: { error: 'Publish failed' } },
+      expect: { status: 401, body: { error: 'INVALID_SIGNATURE' } },
     });
     const { 'content-type': _type, ...untyped } = signed(body);
     await check(server, {
@@ -1001,7 +1002,7 @@ describe('contract: the Relay groups, driven by hand (login off)', () => {
     ).toBe('HTTP/1.1 413 Payload Too Large');
   });
 
-  it('answers a webhook for a connection that is not a webhook with a 404', async () => {
+  it('answers a webhook for a connection that is not a webhook with the flat 401', async () => {
     const adapters = await setup(server, 'GET', '/api/relay/adapters');
     const other = (adapters.json as unknown as { config: { id: string; type: string } }[]).find(
       (adapter) => adapter.config.type !== 'webhook'
@@ -1012,7 +1013,7 @@ describe('contract: the Relay groups, driven by hand (login off)', () => {
       path: `/api/relay/webhooks/${other.config.id}`,
       headers: { 'content-type': 'application/json' },
       body: '{}',
-      expect: { status: 404, body: WEBHOOK_NOT_FOUND },
+      expect: { status: 401, body: WEBHOOK_NOT_FOUND },
     });
   });
 
@@ -1224,7 +1225,7 @@ describe('contract: the Relay groups with login on', () => {
       path: '/api/relay/webhooks/any-hook',
       headers: { ...cookie, 'content-type': 'application/json' },
       body: '{}',
-      expect: { status: 404, body: WEBHOOK_NOT_FOUND },
+      expect: { status: 401, body: WEBHOOK_NOT_FOUND },
     });
     await check(server, {
       path: '/api/relay/unclaimed-chats',

@@ -589,6 +589,13 @@ describe('event source through real durable private acceptance', () => {
       expect.stringContaining('private message body'),
       expect.objectContaining({ cwd: agentPath })
     );
+    // An outside service's event starts the turn, so it carries the outsider
+    // mark, never a person's (DOR-3650, Security's condition 4).
+    expect(f.runtime.sendMessage).toHaveBeenCalledWith(
+      accepted.receipt.sessionId,
+      expect.anything(),
+      expect.objectContaining({ carriedMarks: { outsider: true } })
+    );
     expect(
       reopened
         .select()

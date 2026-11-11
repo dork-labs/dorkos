@@ -45,12 +45,12 @@ beforeEach(() => {
   state.login = false;
   vi.clearAllMocks();
 });
-function mount() {
+function mount(known = true) {
   const admission = new MainRequestAdmission();
   // Routed as the running server routes, with one ordinary route beside the
   // signed webhook.
   const app = composeFrontDoor(admission, {
-    connectorEventIngress: { verifier: () => verifier, accept },
+    connectorEventIngress: { verifier: () => (known ? verifier : undefined), accept },
   });
   app.get('/api/ordinary-event-test', (c) => c.json({ ordinary: true }));
   target.mount(frontDoorListener(app));
@@ -114,6 +114,60 @@ describe('signed events in the real composed middleware stack', () => {
     expect(response.status).toBe(413);
     expect(accept).not.toHaveBeenCalled();
   });
+  // Security's conditions for keeping this open over a tunnel (DOR-3650).
+  describe('open over a tunnel, on Security’s conditions (DOR-3650)', () => {
+    const flat = { error: 'INVALID_EVENT_SIGNATURE' };
+    const post = (path: string, headers: Record<string, string>) =>
+      request(target.server)
+        .post(path)
+        .set('content-type', 'application/json')
+        .set(headers)
+        .send(body);
+
+    it('refuses a stale timestamp with the flat 401 before anything is kept', async () => {
+      mount();
+      const stale = String(Math.floor(Date.now() / 1000) - 3600);
+      const old = { ...signed(), 'webhook-timestamp': stale };
+      const response = await post('/api/connectors/webhooks/provider-one', old);
+      expect(response.status).toBe(401);
+      expect(response.body).toEqual(flat);
+      expect(accept).not.toHaveBeenCalled();
+    });
+
+    it('answers an unknown id exactly like a bad signature, so ids cannot be probed', async () => {
+      mount(false);
+      const response = await post('/api/connectors/webhooks/no-such-provider', signed());
+      expect(response.status).toBe(401);
+      expect(response.body).toEqual(flat);
+      expect(accept).not.toHaveBeenCalled();
+    });
+
+    it('a sign-in cookie never stands in for the signature', async () => {
+      state.login = true;
+      mount();
+      const response = await post('/api/connectors/webhooks/provider-one', {
+        ...signed(),
+        'webhook-signature': 'v1,forged',
+        cookie: 'better-auth.session_token=made-up-session',
+      });
+      expect(response.status).toBe(401);
+      expect(accept).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      '/api/connectors/webhooks/..%2f..%2fmcp',
+      '/api/connectors/webhooks/..%2F..%2F..%2Fa2a',
+      '/API/Connectors/Webhooks/provider-one',
+      '/api/connectors/webhooks/provider-one/../../../mcp',
+    ])('%s never rides the webhook into another surface', async (path) => {
+      state.login = true;
+      mount();
+      const response = await post(path, signed());
+      expect([401, 404]).toContain(response.status);
+      expect(accept).not.toHaveBeenCalled();
+    });
+  });
+
   it('preserves host restrictions ahead of the signature exemption', async () => {
     mount();
     const response = await request(target.server)

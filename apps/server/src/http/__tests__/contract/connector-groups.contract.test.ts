@@ -134,7 +134,6 @@ const CATALOG = z
   .loose();
 const EVENT_SIGNATURE_REFUSED = { error: 'INVALID_EVENT_SIGNATURE' };
 const EVENT_ENCODING_REFUSED = { error: 'UNSUPPORTED_EVENT_ENCODING' };
-const EVENTS_UNAVAILABLE = { error: 'EVENTS_UNAVAILABLE' };
 const EVENT_REQUEST_INVALID = { error: 'INVALID_EVENT_REQUEST' };
 const EVENT_TOO_LARGE = { error: 'EVENT_TOO_LARGE' };
 
@@ -687,7 +686,7 @@ contractSuite('the connector groups, login off, nothing set up', [
     path: '/api/connectors/webhooks/any-instance',
     headers: { ...unknownSignature(), 'content-encoding': 'identity' },
     body: '{}',
-    expect: { status: 503, body: EVENTS_UNAVAILABLE },
+    expect: { status: 401, body: EVENT_SIGNATURE_REFUSED },
   },
   {
     name: 'a webhook with a JSON charset is read',
@@ -695,7 +694,7 @@ contractSuite('the connector groups, login off, nothing set up', [
     path: '/api/connectors/webhooks/any-instance',
     headers: { ...unknownSignature(), 'content-type': 'application/json; charset=utf-8' },
     body: '{}',
-    expect: { status: 503, body: EVENTS_UNAVAILABLE },
+    expect: { status: 401, body: EVENT_SIGNATURE_REFUSED },
   },
   {
     name: 'a webhook with no body at all is refused as not JSON',
@@ -705,12 +704,12 @@ contractSuite('the connector groups, login off, nothing set up', [
     expect: { status: 415, body: EVENT_ENCODING_REFUSED },
   },
   {
-    name: 'a signed webhook for an instance with no verifier is unavailable',
+    name: 'a signed webhook for an instance with no verifier answers like a bad signature (DOR-3650)',
     method: 'POST',
     path: '/api/connectors/webhooks/any-instance',
     headers: unknownSignature(),
     body: '{}',
-    expect: { status: 503, body: EVENTS_UNAVAILABLE },
+    expect: { status: 401, body: EVENT_SIGNATURE_REFUSED },
   },
   {
     name: 'a webhook body that is not even JSON is still read as bytes',
@@ -718,7 +717,7 @@ contractSuite('the connector groups, login off, nothing set up', [
     path: '/api/connectors/webhooks/any-instance',
     headers: unknownSignature(),
     body: '{not json',
-    expect: { status: 503, body: EVENTS_UNAVAILABLE },
+    expect: { status: 401, body: EVENT_SIGNATURE_REFUSED },
   },
   {
     name: 'a webhook whose instance id is too long is refused',
@@ -734,7 +733,7 @@ contractSuite('the connector groups, login off, nothing set up', [
     path: `/api/connectors/webhooks/${'a'.repeat(256)}`,
     headers: unknownSignature(),
     body: '{}',
-    expect: { status: 503, body: EVENTS_UNAVAILABLE },
+    expect: { status: 401, body: EVENT_SIGNATURE_REFUSED },
   },
   {
     name: 'a webhook one byte over the ceiling is refused',
@@ -750,7 +749,7 @@ contractSuite('the connector groups, login off, nothing set up', [
     path: '/api/connectors/webhooks/any-instance',
     headers: unknownSignature(),
     body: 'x'.repeat(MAX_EVENT_BYTES),
-    expect: { status: 503, body: EVENTS_UNAVAILABLE },
+    expect: { status: 401, body: EVENT_SIGNATURE_REFUSED },
   },
   {
     name: 'a webhook for a foreign Host is refused before the signature is looked at',
@@ -766,7 +765,7 @@ contractSuite('the connector groups, login off, nothing set up', [
     path: '/api/connectors/webhooks/any-instance',
     headers: { ...unknownSignature(), ...AGENT },
     body: '{}',
-    expect: { status: 503, body: EVENTS_UNAVAILABLE },
+    expect: { status: 401, body: EVENT_SIGNATURE_REFUSED },
   },
   {
     name: 'GET on the webhook path is no route: the /api 404',
@@ -1590,7 +1589,7 @@ describe('contract: the connector groups with login on', () => {
       path: '/api/connectors/webhooks/any-instance',
       headers: unknownSignature(),
       body: '{}',
-      expect: { status: 503, body: EVENTS_UNAVAILABLE },
+      expect: { status: 401, body: EVENT_SIGNATURE_REFUSED },
     });
   });
 

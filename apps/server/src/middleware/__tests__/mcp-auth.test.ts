@@ -754,6 +754,44 @@ describe('honoMcpAuth — another device needs a key even with the password off'
     expect(res.locals.user).toEqual({ userId: 'owner-1', credential: 'api-key' });
   });
 
+  it.each([
+    ['the own tunnel', OWN_TUNNEL],
+    ['managed remote access', { ...THIS_COMPUTER, ingress: 'managed' } as Origin],
+    ['a phone on the Wi-Fi', WIFI],
+    ['a forwarding proxy', FORWARDED],
+  ])(
+    'never takes a sign-in cookie from %s, on /mcp or /a2a: only a key (DOR-3650)',
+    async (_where, from) => {
+      mockConfig({ authEnabled: false });
+      for (const auth of [mcpAuth, a2aAuth]) {
+        vi.mocked(verifyRequestAuth).mockClear();
+        await auth(
+          createMockReq({ authHeader: 'Bearer user-key', body: rpc('tools/list'), from }),
+          createMockRes(),
+          vi.fn() as NextFunction
+        );
+        expect(verifyRequestAuth).toHaveBeenCalledWith(
+          expect.anything(),
+          expect.objectContaining({ ignoreSessionCookie: true })
+        );
+      }
+    }
+  );
+
+  it('still reads a sign-in cookie at this computer', async () => {
+    mockConfig({ authEnabled: true });
+    vi.mocked(verifyRequestAuth).mockClear();
+    await mcpAuth(
+      createMockReq({ body: rpc('tools/list') }),
+      createMockRes(),
+      vi.fn() as NextFunction
+    );
+    expect(verifyRequestAuth).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.not.objectContaining({ ignoreSessionCookie: true })
+    );
+  });
+
   it('names the personal key, not the local token file, in the 401 to another device', async () => {
     mockConfig({ authEnabled: false });
     const next = vi.fn() as NextFunction;
