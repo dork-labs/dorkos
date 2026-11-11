@@ -172,14 +172,16 @@ jobs:
       - name: Verify the attestation, and name the digest
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          IMAGE_DIGEST: ${{ steps.push.outputs.digest }}
+          PKG_VERSION: ${{ steps.version.outputs.version }}
         run: |
           set -euo pipefail
-          image="${REGISTRY}/${HUB_IMAGE_NAME}@${{ steps.push.outputs.digest }}"
+          image="${REGISTRY}/${HUB_IMAGE_NAME}@${IMAGE_DIGEST}"
           gh attestation verify "oci://${image}" \
             --repo "$GITHUB_REPOSITORY" \
             --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/publish-docker.yml" \
             --source-ref "$GITHUB_REF"
-          echo "Hub image ${{ steps.version.outputs.version }}: \`${image}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "Hub image ${PKG_VERSION}: \`${image}\`" >> "$GITHUB_STEP_SUMMARY"
 
   # Mirror the just-pushed GHCR multi-arch image to Docker Hub. GHCR is and
   # stays the canonical registry; this job is a best-effort mirror purely for
@@ -248,9 +250,11 @@ jobs:
             latest=auto
 
       - name: Mirror manifests from GHCR to Docker Hub
+        env:
+          PKG_VERSION: ${{ steps.version.outputs.version }}
         run: |
           set -euo pipefail
-          source="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.version.outputs.version }}"
+          source="${REGISTRY}/${IMAGE_NAME}:${PKG_VERSION}"
           echo "Mirroring ${source} to Docker Hub:"
           echo "${DOCKER_METADATA_OUTPUT_TAGS}"
           tag_args=()
