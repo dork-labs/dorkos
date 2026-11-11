@@ -9,9 +9,15 @@ const STEPS: Array<{
   canShowWindow?: boolean;
   error?: string;
   moves?: boolean;
+  site?: string;
 }> = [
   { label: 'A check only a person can do', step: 'wall', canShowWindow: true },
   { label: 'A password page', step: 'sign-in' },
+  {
+    label: 'A long site, which wraps in the title and never in a button',
+    step: 'sign-in',
+    site: 'accounts.northwind-travel.example',
+  },
   { label: 'A password page in the Mac app’s panel', step: 'sign-in', moves: true },
   { label: 'Sign-in window open', step: 'sign-in-open' },
   { label: 'Saving the sign-in', step: 'saving' },
@@ -35,13 +41,13 @@ export function BrowserHandoffShowcases() {
       title="Browser handoff card"
       description="An agent hands the Agent browser to a person and stops. The card sits above the composer, outside the transcript, because an agent can write a message that looks like a card but can't write into this slot."
     >
-      {STEPS.map(({ label, step, canShowWindow, error, moves }) => (
+      {STEPS.map(({ label, step, canShowWindow, error, moves, site }) => (
         <div key={label}>
           <ShowcaseLabel>{label}</ShowcaseLabel>
           <ShowcaseDemo>
             <div className="w-full max-w-lg">
               <BrowserHandoffCardView
-                site="northwind.example"
+                site={site ?? 'northwind.example'}
                 agentName="Atlas"
                 agentFolder="/home/sam/agents/atlas"
                 step={step}
