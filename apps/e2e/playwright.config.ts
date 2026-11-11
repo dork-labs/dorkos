@@ -266,6 +266,13 @@ const BUILD_OUTPUT: Record<string, string> = {
  * build of the same tree is pure cost, so CI skips it when the step's outputs
  * are on disk.
  *
+ * WHY THE OUTPUT IS THIS COMMIT'S. In CI the files can only come from the
+ * job's own build step, minutes earlier, on this tree: the runner is fresh per
+ * job, `dist/` is gitignored so checkout never brings one, the jobs cache only
+ * the pnpm store and the Playwright browsers (no turbo cache, no dist), and the
+ * build step runs before the suite in the same job. A future cache of `dist/`
+ * or a turbo remote cache would break that, and must re-check this.
+ *
  * Only under `CI`: locally there is no build step, and a dist left from an
  * older checkout would boot stale code, so a local run always builds. A CI job
  * that forgot its build step finds no outputs and builds as before.
