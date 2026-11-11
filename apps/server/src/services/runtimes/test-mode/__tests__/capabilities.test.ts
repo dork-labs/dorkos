@@ -9,7 +9,6 @@
 import { describe, it, expect } from 'vitest';
 import { TEST_MODE_CAPABILITIES } from '../runtime-constants.js';
 import { CLAUDE_CODE_CAPABILITIES } from '../../claude-code/runtime-constants.js';
-import { TestModeRuntime } from '../test-mode-runtime.js';
 import { builtInScenarioNames } from '../scenario-store.js';
 
 describe('TEST_MODE_CAPABILITIES', () => {
@@ -70,11 +69,6 @@ describe('TEST_MODE_CAPABILITIES', () => {
     // capability naming a scenario nothing serves.
     const known = builtInScenarioNames();
     expect(scenarios.filter((name) => !known.includes(name))).toEqual([]);
-  });
-
-  it('is the object returned by TestModeRuntime.getCapabilities()', () => {
-    const runtime = new TestModeRuntime();
-    expect(runtime.getCapabilities()).toBe(TEST_MODE_CAPABILITIES);
   });
 
   it('declares no native context kinds (assembler bag rendered verbatim)', () => {

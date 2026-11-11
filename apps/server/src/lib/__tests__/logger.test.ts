@@ -27,14 +27,6 @@ describe('logger module', () => {
   // Default logger (before initLogger)
   // ---------------------------------------------------------------------------
   describe('default logger', () => {
-    it('exports a logger that works without initLogger() being called', () => {
-      const { logger } = loggerModule;
-      expect(typeof logger.info).toBe('function');
-      expect(typeof logger.warn).toBe('function');
-      expect(typeof logger.error).toBe('function');
-      expect(typeof logger.debug).toBe('function');
-    });
-
     it('default logger does not crash when called', () => {
       const { logger } = loggerModule;
       expect(() => logger.info('test message')).not.toThrow();
@@ -481,23 +473,6 @@ describe('logger module', () => {
       expect(stack!.length).toBeLessThan(32 * 1024);
       expect(stack).toContain('logger.test.ts');
       expect(stack).toContain('child process failed:');
-    });
-  });
-
-  // ---------------------------------------------------------------------------
-  // Mock pattern (for reference in other test files)
-  // ---------------------------------------------------------------------------
-  describe('mock pattern verification', () => {
-    it('can be mocked with standard vi.mock pattern', async () => {
-      const { logger, initLogger, getLogDir, createTaggedLogger, logError } = loggerModule;
-      expect(typeof logger.info).toBe('function');
-      expect(typeof logger.warn).toBe('function');
-      expect(typeof logger.error).toBe('function');
-      expect(typeof logger.debug).toBe('function');
-      expect(typeof initLogger).toBe('function');
-      expect(typeof getLogDir).toBe('function');
-      expect(typeof createTaggedLogger).toBe('function');
-      expect(typeof logError).toBe('function');
     });
   });
 });

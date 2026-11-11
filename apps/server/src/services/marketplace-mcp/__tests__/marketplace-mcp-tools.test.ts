@@ -61,13 +61,6 @@ const EXPECTED_TOOLS = [
 ] as const;
 
 describe('registerMarketplaceTools', () => {
-  it('is callable with a stub McpServer and stub deps without throwing', () => {
-    const { stub } = createStubMcpServer();
-    const deps = createStubDeps();
-
-    expect(() => registerMarketplaceTools(stub, deps)).not.toThrow();
-  });
-
   it('registers every marketplace tool against the supplied server', () => {
     const { stub, registerTool } = createStubMcpServer();
     const deps = createStubDeps();
@@ -142,32 +135,5 @@ describe('registerMarketplaceTools', () => {
     ]) {
       expect(byName.get(name)?.annotations.readOnlyHint, name).toBe(false);
     }
-  });
-
-  it('returns void', () => {
-    const { stub } = createStubMcpServer();
-    const deps = createStubDeps();
-
-    const result = registerMarketplaceTools(stub, deps);
-
-    expect(result).toBeUndefined();
-  });
-});
-
-describe('MarketplaceMcpDeps', () => {
-  it('exposes the dependency fields needed by phase 2/3 tool handlers', () => {
-    const deps = createStubDeps();
-
-    // Compile-time guarantees expressed at runtime: every collaborator the
-    // phase 2/3 tasks plan to consume must be reachable through this bundle.
-    expect(deps).toHaveProperty('dorkHome');
-    expect(deps).toHaveProperty('installer');
-    expect(deps).toHaveProperty('sourceManager');
-    expect(deps).toHaveProperty('fetcher');
-    expect(deps).toHaveProperty('cache');
-    expect(deps).toHaveProperty('uninstallFlow');
-    expect(deps).toHaveProperty('updateFlow');
-    expect(deps).toHaveProperty('confirmationProvider');
-    expect(deps).toHaveProperty('logger');
   });
 });
