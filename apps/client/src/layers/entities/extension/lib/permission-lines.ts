@@ -8,10 +8,12 @@
  *
  * @module entities/extension/lib/permission-lines
  */
-import type {
-  ExtensionApprovalAdditions,
-  ExtensionApprovalPermissions,
-  PendingExtensionApproval,
+import {
+  BRIDGE_WRITES,
+  BRIDGE_WRITES_NONE,
+  type ExtensionApprovalAdditions,
+  type ExtensionApprovalPermissions,
+  type PendingExtensionApproval,
 } from '@dorkos/shared/extension-approval-schemas';
 import { RUN_PROGRAM_NOT_FOUND, type ExtensionRecordPublic } from '@dorkos/extension-api';
 
@@ -184,32 +186,29 @@ function sharedOf(
   };
 }
 
-/** What each write means, in DorkOS's words (DOR-3293, Security item 8). */
-const WRITE_WORDS: Record<NonNullable<ExtensionPermissionView['writes']>[number], string> = {
-  data: 'Its own saved data and project settings',
-  canvas: 'Documents it opens on your canvas',
-  inbox: 'Its own items in your inbox, which it can answer',
-  work: 'Work it starts for an agent when you click',
-  files: 'Files it offers to save, once you choose Save',
-  rooms: 'Replies in the room threads you pick',
-  forward: 'Messages to the agent you pick, sent as your words',
-};
+/** The card's words for one write, from `BRIDGE_WRITES`. */
+function wordsFor(write: (typeof BRIDGE_WRITES)[number]['key']): string {
+  return BRIDGE_WRITES.find(({ key }) => key === write)?.words ?? write;
+}
 
 /**
  * "It can change:", one row per thing its screens can change through the
- * bridge, in DorkOS's words: never the app's own description of itself.
+ * bridge, in DorkOS's words: never the app's own description of itself. An
+ * app that can change nothing says "It can't change anything." rather than
+ * dropping the block. Absent `writes` (unknown) draws no block.
  *
  * @param writes - What its screens can change.
  */
 function screenWritesLine(
   writes: ExtensionPermissionView['writes']
 ): ExtensionPermissionLine | null {
-  if (!writes || writes.length === 0) return null;
+  if (!writes) return null;
   return {
     key: 'writes',
     parts: ['It can change:'],
     tone: 'plain',
-    rows: writes.map((write) => WRITE_WORDS[write]),
+    // The words come from the same table the bridge gate enforces.
+    rows: writes.length > 0 ? writes.map(wordsFor) : [BRIDGE_WRITES_NONE],
   };
 }
 

@@ -7,6 +7,10 @@ import {
 } from '@dorkos/extension-api';
 import { z } from 'zod';
 import { extensionApiUrl } from '../model/extension-api-url';
+import {
+  bridgeWriteAllowed,
+  declaresBridgeCapability,
+} from '@dorkos/shared/extension-approval-schemas';
 import { readAppMedia } from './app-media';
 import { createAppCaller } from './app-call';
 import { extensionRequestPath, readAppResponse } from './app-request';
@@ -308,7 +312,7 @@ export function isolatedExtensionModule(
               return response.json();
             }
             if (method === 'rooms.subscribeThread') {
-              if (!manifest.capabilities?.rooms)
+              if (!declaresBridgeCapability(manifest, 'rooms'))
                 throw new Error('This app has not declared rooms.');
               const [roomId, rootId, key] = args(text, text, text).parse(input);
               return emit.subscribe(key, () =>
@@ -325,12 +329,15 @@ export function isolatedExtensionModule(
               const [key] = args(text).parse(input);
               return emit.unsubscribe(key);
             }
-            if (method.startsWith('forward.') && !manifest.capabilities?.forward)
+            if (method.startsWith('forward.') && !declaresBridgeCapability(manifest, 'forward'))
               throw new Error('This app has not declared forwarding.');
+            // Every write the card lists, gated by the same table (BRIDGE_WRITES).
+            if (!bridgeWriteAllowed(manifest, method))
+              throw new Error('This app has not declared that.');
             // Own keys only: `constructor` or `__proto__` must never resolve to a schema.
             const schema = Object.hasOwn(methodArgs, method) ? methodArgs[method] : undefined;
             if (!schema) throw new Error('This operation is not available to apps.');
-            if (method.startsWith('rooms.') && !manifest.capabilities?.rooms)
+            if (method.startsWith('rooms.') && !declaresBridgeCapability(manifest, 'rooms'))
               throw new Error('This app has not declared rooms.');
             const checked = schema.parse(input) as unknown[];
             const [group, leaf] = method.split('.');

@@ -121,14 +121,14 @@ describe('It can change (Security item 8)', () => {
     expect(rows).toMatchInlineSnapshot(`
       [
         "Its screens run in DorkOS with your access.",
-        "It can change:Its own saved data and project settingsDocuments it opens on your canvasIts own items in your inbox, which it can answerWork it starts for an agent when you clickFiles it offers to save, once you choose SaveReplies in the room threads you pickMessages to the agent you pick, sent as your words",
+        "It can change:Its own saved data and project settingsDocuments it opens on your canvasIts own items in your inboxWork for an agent, started only when you clickNew files on your computer, only when you choose SaveReplies in the room threads you pickMessages to an agent you pick, sent in your name",
         "Its own saved data and project settings",
         "Documents it opens on your canvas",
-        "Its own items in your inbox, which it can answer",
-        "Work it starts for an agent when you click",
-        "Files it offers to save, once you choose Save",
+        "Its own items in your inbox",
+        "Work for an agent, started only when you click",
+        "New files on your computer, only when you choose Save",
         "Replies in the room threads you pick",
-        "Messages to the agent you pick, sent as your words",
+        "Messages to an agent you pick, sent in your name",
         "It uses other apps:Desk · readsMarketing core · reads and changes",
         "Desk · reads",
         "Marketing core · reads and changes",
@@ -136,7 +136,28 @@ describe('It can change (Security item 8)', () => {
     `);
   });
 
-  it('draws nothing to change for an app with no screens', () => {
+  it('says a fixture app with no writes can’t change anything, keeping the block', () => {
+    const quiet: ExtensionPermissionView = {
+      runtime: 'in-process',
+      net: [],
+      run: [],
+      agents: false,
+      hasServer: false,
+      hasPage: false,
+      writes: [],
+    };
+    render(<ExtensionPermissionLines permissions={quiet} />);
+    const rows = [...document.querySelectorAll('li')].map((row) => row.textContent);
+    expect(rows).toMatchInlineSnapshot(`
+      [
+        "Its screens run in DorkOS with your access.",
+        "It can change:It can’t change anything.",
+        "It can’t change anything.",
+      ]
+    `);
+  });
+
+  it('draws no block where the server sent nothing to go on', () => {
     const keys = extensionPermissionLines(view(undefined)).map((entry) => entry.key);
     expect(keys).not.toContain('writes');
   });

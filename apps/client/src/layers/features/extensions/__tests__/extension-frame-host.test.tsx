@@ -297,6 +297,11 @@ describe('isolated app host', () => {
       expect(init?.headers).not.toHaveProperty('X-DorkOS-Caller-Token');
     });
   });
+  it('refuses a room reply or a forward to an app that does not declare them (BRIDGE_WRITES)', async () => {
+    await start();
+    expect(await call('rooms.reply', ['room-1', 'entry-1', 'hello'])).toHaveProperty('error');
+    expect(await call('forward.send', [{ text: 'hi', itemId: 'i' }])).toHaveProperty('error');
+  });
   it('refuses prototype names as bridge operations', async () => {
     await start();
     for (const method of ['constructor', '__proto__', 'toString', 'hasOwnProperty']) {

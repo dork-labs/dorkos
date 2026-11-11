@@ -521,7 +521,13 @@ export async function permissionsOf(
   const hasPage = await hasClientEntry(record.runPath ?? record.path);
   const called = calledAppsView(record, lookup);
   const apps = {
-    ...(hasPage ? { writes: screenWrites(record.manifest) } : {}),
+    // With neither screens nor a server part, it can change nothing at all,
+    // and the card says so; a server part's reach has its own lines above.
+    ...(hasPage
+      ? { writes: screenWrites(record.manifest) }
+      : !record.hasServerEntry && !record.hasDataProxy
+        ? { writes: [] }
+        : {}),
     ...(called.length > 0 ? { apps: called } : {}),
   };
   const isolation = record.isolation;
