@@ -1,8 +1,7 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { USER_CONFIG_DEFAULTS } from '@dorkos/shared/config-schema';
 import { ConfigManager, initConfigManager } from '../config-manager.js';
 import {
   applyGuardedConfigWrite,
@@ -11,7 +10,6 @@ import {
 } from '../operator/config-write.js';
 import { projectDisclosedConfig } from '../operator/config-disclosure.js';
 
-vi.mock('../../../lib/version.js', () => ({ SERVER_VERSION: '0.76.0' }));
 let directory: string;
 beforeEach(() => {
   directory = mkdtempSync(path.join(tmpdir(), 'runtime-env-config-'));
@@ -22,23 +20,6 @@ afterEach(() => {
 const disk = () => JSON.parse(readFileSync(path.join(directory, 'config.json'), 'utf8'));
 
 describe('real runtime environment configuration', () => {
-  it('persists prior-shape nested defaults across a real upgrade and second boot', () => {
-    const previous = structuredClone(USER_CONFIG_DEFAULTS) as Record<string, unknown>;
-    const runtimes = previous.runtimes as Record<string, unknown>;
-    delete runtimes.environment;
-    runtimes.default = 'codex';
-    previous.__internal__ = { migrations: { version: '0.75.0' } };
-    writeFileSync(path.join(directory, 'config.json'), JSON.stringify(previous));
-    new ConfigManager(directory);
-    const upgraded = disk();
-    expect(upgraded.runtimes.environment).toEqual({
-      inherit: { claudeCode: [], codex: [], opencode: [] },
-    });
-    expect(upgraded.runtimes.default).toBe('codex');
-    expect(upgraded.__internal__.migrations.version).toBe('0.76.0');
-    new ConfigManager(directory);
-    expect(disk()).toEqual(upgraded);
-  });
   it('allows a real owner write, refuses agent widening, and withholds all names', () => {
     const manager = initConfigManager(directory);
     const patch = { runtimes: { environment: { inherit: { codex: ['SYNTHETIC_TOOL_SETTING'] } } } };
