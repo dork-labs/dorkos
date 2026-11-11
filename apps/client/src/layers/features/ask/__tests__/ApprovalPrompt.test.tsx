@@ -43,7 +43,7 @@ describe('ApprovalPrompt', () => {
   it('renders tool name and approve/deny buttons', () => {
     render(<ApprovalPrompt {...baseProps} />);
     expect(screen.getByText('Write test.txt')).toBeDefined();
-    expect(screen.getByText('Your agent wants to use a tool')).toBeDefined();
+    expect(screen.getByText('Allow Write?')).toBeDefined();
     expect(screen.getByRole('button', { name: /^Allow/ })).toBeDefined();
     expect(screen.getByRole('button', { name: /^Don’t allow/ })).toBeDefined();
   });
@@ -430,16 +430,14 @@ describe('ApprovalPrompt', () => {
       expect(words.className).toContain('text-muted-foreground');
     });
 
-    it('shows text countdown at warning threshold (2 minutes remaining)', async () => {
+    it('stays neutral at two minutes and one minute left (DOR-4117)', async () => {
       await renderAsync({ ...baseProps, timeoutMs: 600_000 });
-      // Advance to 8 minutes elapsed (2 minutes remaining)
-      await act(async () => vi.advanceTimersByTime(480_000));
-      // Both the visible countdown span and the sr-only live region contain "remaining"
-      const elements = screen.getAllByText(/remaining/);
-      // The visible countdown element should be the non-sr-only span
-      const visibleCountdown = elements.find((el) => !el.className.includes('sr-only'));
-      expect(visibleCountdown).toBeDefined();
-      expect(visibleCountdown!.className).toContain('text-status-warning');
+      for (const elapsed of [480_000, 60_000]) {
+        await act(async () => vi.advanceTimersByTime(elapsed));
+        const elements = screen.getAllByText(/remaining/);
+        const visibleCountdown = elements.find((el) => !el.className.includes('sr-only'));
+        expect(visibleCountdown!.className).toContain('text-muted-foreground');
+      }
     });
 
     it('shows countdown with correct format at 1:30 remaining', async () => {
@@ -449,10 +447,10 @@ describe('ApprovalPrompt', () => {
       expect(screen.getByText('1:30 remaining')).toBeDefined();
     });
 
-    it('applies urgent styling at 1 minute remaining', async () => {
+    it('turns red for the last 30 seconds', async () => {
       await renderAsync({ ...baseProps, timeoutMs: 600_000 });
-      // Advance to 9 minutes elapsed (1 minute remaining)
-      await act(async () => vi.advanceTimersByTime(540_000));
+      // Advance to 9m30s elapsed (30 seconds remaining)
+      await act(async () => vi.advanceTimersByTime(570_000));
       const elements = screen.getAllByText(/remaining/);
       const countdownEl = elements.find((el) => !el.className.includes('sr-only'));
       expect(countdownEl).toBeDefined();
@@ -761,6 +759,74 @@ describe('Always allow on an MCP card that offers its whole server (DOR-4101)', 
     wifi.on = true;
     render(<ApprovalPrompt {...mcpProps} approvalAlwaysAllowBreadth="server" />);
     expect(screen.queryByRole('button', { name: /always allow/i })).toBeNull();
+  });
+});
+
+describe('a routine ask is calm and says who and what (DOR-4117)', () => {
+  const shield = () =>
+    document.querySelector('[data-testid="tool-approval"] svg.lucide-shield') as SVGElement;
+
+  it.each(['Bash', 'Write', 'WebFetch', 'mcp__made_up__create_issue'])(
+    'draws the %s shield in neutral ink, never red or amber',
+    (toolName) => {
+      render(<ApprovalPrompt {...baseProps} toolName={toolName} />);
+      const cls = shield().getAttribute('class') ?? '';
+      expect(cls).toContain('text-muted-foreground');
+      expect(cls).not.toMatch(/status-(error|warning)/);
+    }
+  );
+
+  it('titles the card with the agent and the tool when the name is known', () => {
+    render(
+      <ApprovalPrompt
+        {...baseProps}
+        toolName="mcp__made_up__create_issue"
+        agentName="Atlas"
+        approvalTitle="Claude wants to use a made-up tool"
+      />
+    );
+    expect(screen.getByText('Atlas wants to use create_issue')).toBeDefined();
+  });
+
+  it('a tool name from an outside server is plain text: no markdown, no HTML (Security)', () => {
+    const hostile = 'mcp__made_up__**bold**<img src=x onerror=alert(1)>[link](https://x.test)';
+    render(<ApprovalPrompt {...baseProps} toolName={hostile} agentName="Atlas" />);
+    const headline = document.querySelector('[data-slot="ask-headline"]')!;
+    expect(headline.textContent).toBe(
+      'Atlas wants to use **bold**<img src=x onerror=alert(1)>[link](https://x.test)'
+    );
+    expect(headline.children).toHaveLength(0);
+    expect(
+      document.querySelector(
+        '[data-slot="ask-headline"] img, [data-slot="ask-headline"] strong, [data-slot="ask-headline"] a'
+      )
+    ).toBeNull();
+  });
+
+  it('with no name it names the tool, never a stand-in for the agent', () => {
+    render(<ApprovalPrompt {...baseProps} />);
+    expect(screen.getByText('Allow Write?')).toBeDefined();
+    expect(screen.queryByText(/your agent|an agent/i)).toBeNull();
+  });
+
+  it('keeps the runtime’s own sentence when it sent one and no name is known', () => {
+    render(<ApprovalPrompt {...baseProps} approvalTitle="Claude wants to write test.txt" />);
+    expect(screen.getByText('Claude wants to write test.txt')).toBeDefined();
+  });
+
+  it('the countdown stays neutral until the last 30 seconds, then turns red', () => {
+    const now = Date.now();
+    const countdownClass = (msLeft: number) => {
+      cleanup();
+      render(<ApprovalPrompt {...baseProps} timeoutMs={600_000} approvalRemainingMs={msLeft} />);
+      return (
+        document.querySelector('[data-slot="ask-countdown"] span')?.getAttribute('class') ?? ''
+      );
+    };
+    expect(countdownClass(90_000)).toContain('text-muted-foreground');
+    expect(countdownClass(45_000)).not.toMatch(/status-(error|warning)/);
+    expect(countdownClass(20_000)).toContain('text-status-error');
+    expect(Date.now() - now).toBeLessThan(5_000);
   });
 });
 

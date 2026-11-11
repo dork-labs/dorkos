@@ -47,19 +47,23 @@ const ENTRANCE_REDUCED = {
 } as const;
 
 /** How urgent the countdown is. Drives colour, and nothing else. */
-type AskUrgency = 'neutral' | 'warning' | 'urgent' | 'parked';
+type AskUrgency = 'neutral' | 'urgent' | 'parked';
 
-/** Seconds left at which the countdown turns amber. */
+/** Seconds left at which a screen reader is told two minutes remain. */
 export const WARN_AT_S = 120;
 
-/** Seconds left at which it turns red. */
+/** Seconds left at which a screen reader is told one minute remains. */
 export const URGENT_AT_S = 60;
+
+/** Seconds left at which the countdown turns red; neutral before that (DOR-4117). */
+export const RED_AT_S = 30;
 
 /**
  * Which band a countdown is in.
  *
- * Thresholds from `research/20260316_tool_approval_timeout_visibility_ux.md`:
- * neutral above two minutes, warn at two minutes, urgent at one.
+ * Neutral for almost the whole wait, because a routine ask is not an alarm and
+ * red on every card teaches people to ignore red (DOR-4117). Red is kept for the
+ * last {@link RED_AT_S} seconds, when an answer is about to stop counting.
  *
  * Out of time is `parked`, which is drawn as calmly as `neutral`: the agent has
  * stopped counting down and is waiting for an answer, and a wait is not an alarm
@@ -70,8 +74,7 @@ export const URGENT_AT_S = 60;
  */
 function askUrgency(secondsLeft: number | null): AskUrgency {
   if (secondsLeft === null || secondsLeft <= 0) return 'parked';
-  if (secondsLeft <= URGENT_AT_S) return 'urgent';
-  if (secondsLeft <= WARN_AT_S) return 'warning';
+  if (secondsLeft <= RED_AT_S) return 'urgent';
   return 'neutral';
 }
 
@@ -281,7 +284,6 @@ function AskCardCountdown({ secondsLeft, timeoutMs, elapsedMs = 0, label }: AskC
             className={cn(
               'h-full rounded-full transition-colors duration-500',
               (urgency === 'neutral' || urgency === 'parked') && 'bg-muted-foreground/30',
-              urgency === 'warning' && 'bg-status-warning',
               urgency === 'urgent' && 'bg-status-error',
               'motion-safe:animate-drain'
             )}
@@ -302,7 +304,6 @@ function AskCardCountdown({ secondsLeft, timeoutMs, elapsedMs = 0, label }: AskC
         className={cn(
           'text-2xs shrink-0 tabular-nums',
           (urgency === 'neutral' || urgency === 'parked') && 'text-muted-foreground',
-          urgency === 'warning' && 'text-status-warning',
           urgency === 'urgent' && 'text-status-error'
         )}
       >

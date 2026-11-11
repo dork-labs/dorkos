@@ -665,6 +665,7 @@ export function SessionComposer({
             // reassures. The messages survive — say so.
             queueDepth={chatQueue.queue.length}
             allowsDenyReason={allowsDenyReason}
+            agentName={agentName}
           />
         ) : null
       }

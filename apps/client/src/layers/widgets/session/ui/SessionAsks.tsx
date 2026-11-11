@@ -47,6 +47,8 @@ interface SessionAsksProps {
    * why (DOR-825).
    */
   allowsDenyReason?: boolean;
+  /** The asking agent's name, when this session has one; the card's title names it (DOR-4117). */
+  agentName?: string;
 }
 
 /**
@@ -63,6 +65,7 @@ export function SessionAsks({
   onToolDecided,
   queueDepth = 0,
   allowsDenyReason = true,
+  agentName,
 }: SessionAsksProps) {
   // Forward submitted question answers so they're persisted onto the tool-call
   // part immediately — otherwise the inline answered row briefly shows the
@@ -150,6 +153,7 @@ export function SessionAsks({
               approvalHasSuggestions={activeInteraction.approvalHasSuggestions}
               approvalAlwaysAllowScope={activeInteraction.approvalAlwaysAllowScope}
               approvalAlwaysAllowBreadth={activeInteraction.approvalAlwaysAllowBreadth}
+              agentName={agentName}
               allowsDenyReason={allowsDenyReason}
             />
           ) : activeInteraction.interactiveType === 'question' && activeInteraction.questions ? (
