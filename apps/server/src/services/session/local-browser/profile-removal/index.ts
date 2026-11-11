@@ -1,5 +1,5 @@
 /** Remove a whole profile's saved data, only while every writer is excluded. */
-import { lstat, readlink, rm } from 'node:fs/promises';
+import { lstat, readdir, readlink, rm } from 'node:fs/promises';
 import path from 'node:path';
 import { z } from 'zod';
 import { LocalBrowserError } from '../errors.js';
@@ -57,14 +57,25 @@ export class BrowserProfileRemoval {
    */
   async forgetAll(namedIds: readonly string[]): Promise<void> {
     for (const id of namedIds) z.string().uuid().parse(id);
-    if (namedIds.some((id) => this.deps.busy(id)))
+    // A profile folder made outside the API (an agent with a shell can make one) is
+    // cleared too, so no sign-in survives Forget just because it's off the list.
+    const onDisk = await readdir(path.join(this.deps.dataDirectory(), 'browser-profiles')).catch(
+      () => [] as string[]
+    );
+    const ids = [
+      ...new Set([
+        ...namedIds,
+        ...onDisk.filter((name) => z.string().uuid().safeParse(name).success),
+      ]),
+    ];
+    if (ids.some((id) => this.deps.busy(id)))
       throw new LocalBrowserError(
         'profile_busy',
         'Close the browser using this profile, then try again.'
       );
     await this.idle(null, async () => {
       await this.clear(null);
-      for (const id of namedIds) {
+      for (const id of ids) {
         await this.clear(id);
         this.deps.forgotten?.(id);
       }

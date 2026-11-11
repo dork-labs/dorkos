@@ -51,7 +51,7 @@ describe('Saved sign-ins (DOR-4105)', () => {
     fireEvent.click(trigger);
     const dialog = await screen.findByRole('alertdialog', {
       name: 'Forget saved sign-ins?',
-      description: 'Every agent here is signed out of every site. This can’t be undone.',
+      description: 'This signs every agent here out of every site. It can’t be undone.',
     });
     expect(dialog.textContent?.toLowerCase()).not.toContain('profile');
     const cancel = within(dialog).getByRole('button', { name: 'Cancel' });
@@ -92,5 +92,8 @@ describe('Saved sign-ins (DOR-4105)', () => {
     );
     expect(within(dialog).getByRole('button', { name: 'Forget sign-ins' })).toBeEnabled();
     expect(screen.queryByText('private path')).toBeNull();
+    // Nothing was cleared, so nothing may say it was.
+    expect(screen.queryByText('Sign-ins forgotten.')).toBeNull();
+    expect(screen.queryByText(/signed out of every site/)).toBeNull();
   });
 });

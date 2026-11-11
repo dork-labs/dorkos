@@ -94,6 +94,18 @@ describe('whole-profile disk removal (DOR-3887)', () => {
     expect(forgotten.sort()).toEqual([null, work.id, personal.id].sort());
   });
 
+  it('also clears a profile folder made outside the list, as a shell could', async () => {
+    const stray = path.join(home, 'browser-profiles', '22222222-2222-4222-8222-222222222222');
+    await seed(stray);
+    await removal().forgetAll([]);
+    await expect(readFile(path.join(stray, 'storage-state.json'))).rejects.toMatchObject({
+      code: 'ENOENT',
+    });
+    await expect(readFile(path.join(stray, 'Default/Network/Cookies'))).rejects.toMatchObject({
+      code: 'ENOENT',
+    });
+  });
+
   it('clears nothing when any named profile is busy', async () => {
     const profiles = store();
     const work = profiles.create('Example work');
