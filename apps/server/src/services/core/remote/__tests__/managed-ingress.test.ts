@@ -257,6 +257,23 @@ describe('host and path checks', () => {
     expect(routeSpy).not.toHaveBeenCalled();
   });
 
+  // The six spellings that reached /a2a or an agent card (Security, Nov 11),
+  // and their cousins: not a normal path, so rejected rather than guessed.
+  it.each([
+    '/x/../a2a',
+    '/x/%2e%2e/a2a',
+    '/x/%2E%2E/A2A/agents',
+    '/api/connectors/webhooks/../../../a2a',
+    '/api/relay/webhooks/x/..%2f..%2f..%2f..%2fa2a',
+    '/x/./../.well-known/agent-card.json',
+    '/x/%252e%252e/a2a',
+    '/api/x%5c..%5ca2a',
+  ])('rejects %s on the managed listener with 400', async (path) => {
+    const res = await get(port, path, [hostHeader, proofHeader]);
+    expect(res.status).toBe(400);
+    expect(routeSpy).not.toHaveBeenCalled();
+  });
+
   // Express routes by `parseurl`, which reads all of these as an agent path.
   it.each([
     '/a2a#x',

@@ -48,6 +48,82 @@ function get(url: string, host: string): Promise<{ status: number; body: string 
   });
 }
 
+/** Send one raw request line and read back its status code. */
+function rawStatus(port: number, target: string, upgrade = false): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const socket = net.connect(port, '127.0.0.1', () => {
+      socket.write(
+        `GET ${target} HTTP/1.1\r\nHost: abc.ngrok.app\r\n` +
+          (upgrade ? 'Connection: Upgrade\r\nUpgrade: websocket\r\n' : 'Connection: close\r\n') +
+          '\r\n'
+      );
+    });
+    let head = '';
+    socket.on('data', (chunk) => {
+      head += chunk.toString();
+      const match = /^HTTP\/1\.1 (\d{3})/.exec(head);
+      if (match) {
+        resolve(Number(match[1]));
+        socket.destroy();
+      }
+    });
+    socket.on('error', reject);
+  });
+}
+
+/** The six spellings that reached /a2a or an agent card before (Security, Nov 11). */
+export const DOT_SEGMENT_SPELLINGS = [
+  '/x/../a2a',
+  '/x/%2e%2e/a2a',
+  '/x/%2E%2E/A2A/agents',
+  '/api/connectors/webhooks/../../../a2a',
+  '/api/relay/webhooks/x/..%2f..%2f..%2f..%2fa2a',
+  '/x/./../.well-known/agent-card.json',
+];
+
+describe('own-tunnel ingress: normalise, then match', () => {
+  it.each(['/a2a', '/A2A/rpc', '/%61%32%61', '/.well-known/agent-card.json', '//a2a', '/./a2a'])(
+    'refuses %s with 404 and never hands it on',
+    async (target) => {
+      const { ingress, requests } = recordingIngress();
+      const port = Number(new URL(await ingress.open()).port);
+      expect(await rawStatus(port, target)).toBe(404);
+      expect(requests).toHaveLength(0);
+    }
+  );
+
+  it.each([
+    ...DOT_SEGMENT_SPELLINGS,
+    '/x/%252e%252e/a2a',
+    '/x\\..\\a2a',
+    '/api/x%5c..%5ca2a',
+    '/%ZZ',
+  ])('rejects %s with 400: not a normal path, never guessed', async (target) => {
+    const { ingress, requests } = recordingIngress();
+    const port = Number(new URL(await ingress.open()).port);
+    expect(await rawStatus(port, target)).toBe(400);
+    expect(requests).toHaveLength(0);
+  });
+
+  it('refuses an upgrade the same way', async () => {
+    const { ingress, upgrades } = recordingIngress();
+    const port = Number(new URL(await ingress.open()).port);
+    expect(await rawStatus(port, '/x/../a2a', true)).toBe(400);
+    expect(await rawStatus(port, '/a2a', true)).toBe(404);
+    expect(upgrades).toHaveLength(0);
+  });
+
+  it.each(['/', '/api/health', '/sw.js', '/mcp', '/api/connectors/webhooks/cpi_abc'])(
+    'still hands %s to the front door',
+    async (target) => {
+      const { ingress, requests } = recordingIngress();
+      const port = Number(new URL(await ingress.open()).port);
+      expect(await rawStatus(port, target)).toBe(200);
+      expect(requests).toHaveLength(1);
+    }
+  );
+});
+
 describe('own-tunnel ingress', () => {
   // Purpose: the whole reason the listener exists. The ngrok agent connects
   // from loopback, so a request reaching the front door from here must carry
