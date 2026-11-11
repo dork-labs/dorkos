@@ -101,7 +101,7 @@ export async function proveInstalledPreparationFailure(
     });
     const ui = new LocalBrowserPage(page);
     await ui.open();
-    await ui.controls.getByRole('radio', { name: /^New browser window/ }).check();
+    await ui.controls.getByRole('radio', { name: /^In its own window/ }).check();
     await ui.controls.getByRole('button', { name: 'Open browser', exact: true }).click();
     const recovery = 'Couldn’t download the browser. Check your connection and try again.';
     await expect(ui.controls.getByRole('alert')).toHaveText(recovery, { timeout: 120_000 });
@@ -224,13 +224,13 @@ export async function proveInstalledLocalBrowserUi(
         const ui = new LocalBrowserPage(page);
         await ui.open();
         await expect(ui.controls.getByRole('radio')).toHaveCount(2);
-        await expect(ui.controls.getByRole('radio', { name: /^DorkOS browser/ })).toBeDisabled();
-        await expect(ui.controls.getByRole('radio', { name: /^New browser window/ })).toBeChecked();
+        await expect(ui.controls.getByRole('radio', { name: /^In DorkOS/ })).toBeDisabled();
+        await expect(ui.controls.getByRole('radio', { name: /^In its own window/ })).toBeChecked();
         await page.reload();
         await ui.open();
         await expect(ui.controls.getByRole('radio')).toHaveCount(2);
-        await expect(ui.controls.getByRole('radio', { name: /^DorkOS browser/ })).toBeDisabled();
-        await expect(ui.controls.getByRole('radio', { name: /^New browser window/ })).toBeChecked();
+        await expect(ui.controls.getByRole('radio', { name: /^In DorkOS/ })).toBeDisabled();
+        await expect(ui.controls.getByRole('radio', { name: /^In its own window/ })).toBeChecked();
         await page.screenshot({ path: path.join(output, `browser-choices-${viewport.width}.png`) });
         evidence[`choices-${viewport.width}`] = {
           twoModes: true,
@@ -261,7 +261,7 @@ export async function proveInstalledLocalBrowserUi(
       await chat.goto(sessionId, { dir: agentDir, draft: true, runtime: 'test-mode' });
       const ui = new LocalBrowserPage(page);
       await ui.open();
-      await ui.controls.getByRole('radio', { name: /^New browser window/ }).check();
+      await ui.controls.getByRole('radio', { name: /^In its own window/ }).check();
       const preparationText = ui.controls.getByText(
         /^Downloading (?:the browser|browser support|video support|browser files)…$/
       );

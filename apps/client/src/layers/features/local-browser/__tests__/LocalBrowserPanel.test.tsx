@@ -256,7 +256,7 @@ describe('LocalBrowserPanel', () => {
     expect(await screen.findByRole('button', { name: 'Open browser' })).toBeEnabled();
     first.unmount();
     mount();
-    expect(await screen.findByRole('radio', { name: /New browser window/ })).toBeChecked();
+    expect(await screen.findByRole('radio', { name: /^In its own window/ })).toBeChecked();
     expect(useAppStore.getState().localBrowserChoice).toEqual({ mode: 'new-window' });
     expect(transport.openLocalBrowser).toHaveBeenCalledTimes(1);
     expect(screen.queryByRole('checkbox')).not.toBeInTheDocument();
@@ -264,8 +264,8 @@ describe('LocalBrowserPanel', () => {
   it('keeps an unsupported saved mode instead of silently switching browsers', async () => {
     useAppStore.getState().setLocalBrowserChoice({ mode: 'embedded' });
     mount();
-    expect(await screen.findByRole('radio', { name: /DorkOS browser/ })).toBeChecked();
-    expect(screen.getByRole('radio', { name: /New browser window/ })).not.toBeChecked();
+    expect(await screen.findByRole('radio', { name: /^In DorkOS/ })).toBeChecked();
+    expect(screen.getByRole('radio', { name: /^In its own window/ })).not.toBeChecked();
     expect(screen.getByText('Requires the DorkOS desktop app.')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Open browser' })).toBeDisabled();
     expect(transport.openLocalBrowser).not.toHaveBeenCalled();
@@ -292,7 +292,7 @@ describe('LocalBrowserPanel', () => {
         localBrowserChoiceIssue: restored.issue,
       });
       mount();
-      const expected = desktop ? /DorkOS browser/ : /New browser window/;
+      const expected = desktop ? /^In DorkOS/ : /^In its own window/;
       await waitFor(() => expect(screen.getByRole('radio', { name: expected })).toBeChecked());
       expect(screen.getAllByRole('radio')).toHaveLength(2);
       expect(
@@ -312,7 +312,7 @@ describe('LocalBrowserPanel', () => {
       screen.getAllByRole('radio').every((radio) => !(radio as HTMLInputElement).checked)
     ).toBe(true);
     expect(screen.getByRole('button', { name: 'Open browser' })).toBeDisabled();
-    const choice = screen.getByRole('radio', { name: /New browser window/ });
+    const choice = screen.getByRole('radio', { name: /^In its own window/ });
     await waitFor(() => expect(choice).toBeEnabled());
     fireEvent.click(choice);
     expect(screen.getByRole('button', { name: 'Open browser' })).toBeEnabled();
@@ -428,7 +428,7 @@ describe('LocalBrowserPanel', () => {
       })
     );
     mount();
-    const mode = await screen.findByRole('radio', { name: /New browser window/ });
+    const mode = await screen.findByRole('radio', { name: /^In its own window/ });
     await waitFor(() => expect(mode).toBeEnabled());
     fireEvent.click(screen.getByRole('button', { name: 'Open browser' }));
     expect(mode).toBeDisabled();
@@ -651,8 +651,8 @@ describe('LocalBrowserPanel', () => {
     const button = await screen.findByRole('button', { name: 'Open browser' });
     await waitFor(() => expect(button).toBeEnabled());
     expect(screen.getAllByRole('radio')).toHaveLength(2);
-    expect(screen.getByRole('radio', { name: /DorkOS browser/ })).toBeDisabled();
-    expect(screen.getByRole('radio', { name: /New browser window/ })).toBeChecked();
+    expect(screen.getByRole('radio', { name: /^In DorkOS/ })).toBeDisabled();
+    expect(screen.getByRole('radio', { name: /^In its own window/ })).toBeChecked();
     fireEvent.click(button);
     await waitFor(() =>
       expect(transport.openLocalBrowser).toHaveBeenCalledWith({
@@ -753,7 +753,7 @@ describe('LocalBrowserPanel', () => {
       height: 300,
     } as DOMRect);
     const view = mount();
-    const radio = await screen.findByRole('radio', { name: /DorkOS browser/ });
+    const radio = await screen.findByRole('radio', { name: /^In DorkOS/ });
     await waitFor(() => expect(radio).toBeChecked());
     fireEvent.click(screen.getByRole('button', { name: 'Open browser' }));
     await waitFor(() =>

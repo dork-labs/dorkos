@@ -1,8 +1,8 @@
 import type { LocalBrowserCapabilities, LocalBrowserMode } from '@dorkos/shared/local-browser';
 
 const BROWSER_MODE_LABELS: Record<LocalBrowserMode, string> = {
-  embedded: 'DorkOS browser',
-  'new-window': 'New browser window',
+  embedded: 'In DorkOS',
+  'new-window': 'In its own window',
 };
 const HELP: Record<LocalBrowserMode, string> = {
   embedded: 'Browse here. Saved sign-ins stay separate from your usual browser.',
