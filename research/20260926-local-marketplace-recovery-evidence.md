@@ -73,6 +73,6 @@ DOR-2301 owns the route/installer split. Its old prerequisite DOR-2245 is shippe
 
 ## Verification receipt
 
-Fresh local verification passed 476 tests in 19 suites across two targeted runs (397 in 16 suites, then 79 in 3 suites). Exact commands and limits are in [the verification receipt](../specs/local-workspace-lifecycle/04-verification.md). The retained-copy diagnostic fixtures ran on the pinned source using synthetic files only; no paid inference, deployment or real package mutation was used.
+Fresh local verification passed 476 tests in 19 suites across two targeted runs (397 in 16 suites, then 79 in 3 suites). Exact commands and limits are in [the verification receipt](https://github.com/dork-labs/dorkos/blob/78baefc5ac7aeac33c67f5e697fbe2f36179a960/specs/local-workspace-lifecycle/04-verification.md). The retained-copy diagnostic fixtures ran on the pinned source using synthetic files only; no paid inference, deployment or real package mutation was used.
 
 The documentation corrections remove the old whole-root uninstall paragraph and replace the obsolete “no test workflow” statement in [the install guide](../contributing/marketplace-installs.md). No production, test, shared infrastructure or CI file changes are needed to establish this slice's conclusions.

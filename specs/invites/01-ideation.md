@@ -7,7 +7,7 @@ status: superseded
 
 # Ideation: Invitations (historical proposal)
 
-> **Superseded 2026-09-16.** Invitations now belong to the independently hosted community server. The local DorkOS install remains single-owner. Read the [current invitation contract](02-specification.md) and [community specification](../community-server/02-specification.md) before using this historical proposal. None of its instructions to reopen local registration remain active.
+> **Superseded 2026-09-16.** Invitations now belong to the independently hosted community server. The local DorkOS install remains single-owner. Read the [current invitation contract](02-specification.md) and [community specification](https://github.com/dork-labs/dorkos/blob/78baefc5ac7aeac33c67f5e697fbe2f36179a960/specs/community-server/02-specification.md) before using this historical proposal. None of its instructions to reopen local registration remain active.
 
 - **Slug:** invites
 - **Date:** 2026-07-27

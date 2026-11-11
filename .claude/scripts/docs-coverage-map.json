@@ -690,8 +690,7 @@
       "patterns": [
         "apps/client/src/layers/features/ask/",
         "apps/client/src/layers/features/conversation/ui/LiveLane.tsx",
-        "apps/server/src/services/session/pending-interactions",
-        "specs/unified-conversation"
+        "apps/server/src/services/session/pending-interactions"
       ]
     },
     {

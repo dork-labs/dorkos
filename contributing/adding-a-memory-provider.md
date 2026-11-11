@@ -6,7 +6,7 @@ This guide walks through adding a new backend behind the `MemoryProvider` port: 
 
 If you have read [adding-a-community-adapter.md](adding-a-community-adapter.md) or [adding-a-connector.md](adding-a-connector.md), this will feel familiar: one Zod-first contract, N backends, a server-side registry, capability flags, and a shared conformance suite that gates every implementation.
 
-Spec: [`specs/agent-memory/02-specification.md`](../specs/agent-memory/02-specification.md) §D7. Configuration reference: [configuration.md](configuration.md) → `memory.provider`.
+Spec: [`specs/agent-memory/02-specification.md`](https://github.com/dork-labs/dorkos/blob/78baefc5ac7aeac33c67f5e697fbe2f36179a960/specs/agent-memory/02-specification.md) §D7. Configuration reference: [configuration.md](configuration.md) → `memory.provider`.
 
 ## Key Files
 

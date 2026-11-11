@@ -36,4 +36,4 @@ We will maintain tokens and pure React primitives in one public `@dork-labs/ui` 
 - Cross-repository adoption needs a package release and explicit upgrade.
 - Moving primitive ownership requires broad consumer regression checks even when behavior is preserved.
 
-See [the specification](../specs/shared-design-system/02-specification.md) for acceptance and release gates.
+See [the specification](https://github.com/dork-labs/dorkos/blob/78baefc5ac7aeac33c67f5e697fbe2f36179a960/specs/shared-design-system/02-specification.md) for acceptance and release gates.

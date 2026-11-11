@@ -15,7 +15,7 @@ All files stay in the isolated `29c5` checkout, based on `5794f638160a6881138234
 
 ## Sources and discovery
 
-- [Existing class-local specification](../local-workspace-lifecycle/02-specification.md) and merged PR #2226.
+- [Existing class-local specification](https://github.com/dork-labs/dorkos/blob/78baefc5ac7aeac33c67f5e697fbe2f36179a960/specs/local-workspace-lifecycle/02-specification.md) and merged PR #2226.
 - [Current root ownership inventory](root-ownership.md), including admission, startup rollback, concurrent shutdown, subscriptions, error continuation, budget and database/lock order.
 - Root starts the reconciler at `apps/server/src/index.ts:1607` but loses its reference. Root teardown can stall before stopping later owners; startup's failure handler cleans only an offline fixture.
 - Startup awaits before workspace construction. Merely hoisting a nullable reference misses shutdown-before-acquisition: startup could later acquire a new timer.

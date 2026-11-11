@@ -14,7 +14,7 @@ to anchor the provenance chain; the real thinking is in
 
 ## Where this came from
 
-- **Parent ideation:** [`specs/right-panel-workbench/01-ideation.md`](../right-panel-workbench/01-ideation.md)
+- **Parent ideation:** [`specs/right-panel-workbench/01-ideation.md`](https://github.com/dork-labs/dorkos/blob/78baefc5ac7aeac33c67f5e697fbe2f36179a960/specs/right-panel-workbench/01-ideation.md)
   - **Decision D11** — "DevTools bridge deferred to v2 (tracked DOR-213), v1
     browser pre-architected for later attach."
   - **Decision round 2, item 2** — "The v1 browser ships as a plain preview; the
@@ -26,7 +26,7 @@ to anchor the provenance chain; the real thinking is in
   - **Research §4, "Not-thinking-of opportunities"** — "Chrome DevTools MCP-style
     bridge (browser pane exposes console/network/screenshot back to the agent —
     differentiated and on-thesis)." Modeled on Google's `chrome-devtools-mcp`.
-- **Parent spec:** [`specs/right-panel-workbench/02-specification.md`](../right-panel-workbench/02-specification.md)
+- **Parent spec:** [`specs/right-panel-workbench/02-specification.md`](https://github.com/dork-labs/dorkos/blob/78baefc5ac7aeac33c67f5e697fbe2f36179a960/specs/right-panel-workbench/02-specification.md)
   Non-Goals: "DevTools bridge (console/network/screenshot → agent) — **fast-follow
   DOR-213 (v2)**; v1 browser is pre-architected for it."
 - **Shipped v1 (the seam this attaches to):** PR #144 (DOR-216), the embedded

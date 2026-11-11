@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Accepted, implemented by [doe-engine](../specs/doe-engine/02-specification.md).
+Accepted, implemented by [doe-engine](https://github.com/dork-labs/dorkos/blob/78baefc5ac7aeac33c67f5e697fbe2f36179a960/specs/doe-engine/02-specification.md).
 
 ## Context
 

@@ -9,8 +9,8 @@ status: superseded
 
 - **Tracker:** DOR-594, delivered within the community server programme (DOR-595).
 - **Updated:** 2026-09-16.
-- **Authoritative specification:** [Community server](../community-server/02-specification.md), especially “Bootstrap, invites, and membership.”
-- **Acceptance tasks:** [Community server tasks](../community-server/03-tasks.json), tasks 2.1 and 2.2, with browser admission in 3.3.
+- **Authoritative specification:** [Community server](https://github.com/dork-labs/dorkos/blob/78baefc5ac7aeac33c67f5e697fbe2f36179a960/specs/community-server/02-specification.md), especially “Bootstrap, invites, and membership.”
+- **Acceptance tasks:** [Community server tasks](https://github.com/dork-labs/dorkos/blob/78baefc5ac7aeac33c67f5e697fbe2f36179a960/specs/community-server/03-tasks.json), tasks 2.1 and 2.2, with browser admission in 3.3.
 
 ## Current contract
 
@@ -27,7 +27,7 @@ Local connection approval and agent enrollment are separate from human invitatio
 - Community admission: `apps/community/src/routes/invites.ts`, `src/invites.ts`, `src/auth.ts` and the community browser under `src/client/`.
 - Token boundaries and admission races: `apps/community/src/__tests__/invites.test.ts` and `admission.integration.test.ts`.
 - Browser admission: `apps/community/browser-tests/community.spec.ts` and the combined `apps/community/acceptance/driver.spec.ts` journey.
-- Current completion evidence: [Community implementation record](../community-server/04-implementation.md). Test files alone do not establish completion.
+- Current completion evidence: [Community implementation record](https://github.com/dork-labs/dorkos/blob/78baefc5ac7aeac33c67f5e697fbe2f36179a960/specs/community-server/04-implementation.md). Test files alone do not establish completion.
 
 ## Historical proposal (superseded)
 

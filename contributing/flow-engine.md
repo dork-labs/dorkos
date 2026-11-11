@@ -19,7 +19,7 @@ the plugin itself.
 >   (stages, modes, gates, the adapter, the server dependency).
 > - `plugins/flow/SPEC.md`: the contract (stage model, the `PMClient` promotion
 >   surface, the `FlowRun` record, the typed engine, the config schema).
-> - [`specs/flow-plugin-extraction/02-specification.md`](../specs/flow-plugin-extraction/02-specification.md):
+> - [`specs/flow-plugin-extraction/02-specification.md`](https://github.com/dork-labs/dorkos/blob/78baefc5ac7aeac33c67f5e697fbe2f36179a960/specs/flow-plugin-extraction/02-specification.md):
 >   the extraction spec (why flow left dorkos and how dorkos consumes it).
 
 ## How dorkos consumes flow

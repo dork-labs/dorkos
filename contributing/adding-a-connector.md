@@ -11,7 +11,7 @@ Each configured provider has its own stable `instanceId`. Two instances may use 
 
 Never expose, log, or derive a public ID from a private provider reference.
 
-The current contract is defined by the [Connections specification](../specs/white-label-connections/02-specification.md). The original provider design remains useful background in the [Connector Gateway specification](../specs/connector-gateway/02-specification.md).
+The current contract is defined by the [Connections specification](../specs/white-label-connections/02-specification.md). The original provider design remains useful background in the [Connector Gateway specification](https://github.com/dork-labs/dorkos/blob/78baefc5ac7aeac33c67f5e697fbe2f36179a960/specs/connector-gateway/02-specification.md).
 
 ## Key files
 

@@ -118,7 +118,7 @@ ADR-0043 preserves file-canonical cache authority. No new ADR is warranted for a
 
 ## References
 
-- [Class-local pilot](../local-workspace-lifecycle/02-specification.md)
+- [Class-local pilot](https://github.com/dork-labs/dorkos/blob/78baefc5ac7aeac33c67f5e697fbe2f36179a960/specs/local-workspace-lifecycle/02-specification.md)
 - [Ownership inventory](root-ownership.md)
 - DOR-2429; DOR-2428 / PR #2226; architecture coordination DOR-2344.
 

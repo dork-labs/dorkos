@@ -18,22 +18,6 @@
       "linearIssue": "DOR-2932"
     },
     {
-      "id": "261014-190000",
-      "slug": "local-playwright-browser",
-      "title": "Local Playwright browser in two modes",
-      "created": "2026-10-14",
-      "status": "implemented",
-      "linearIssue": "DOR-2929"
-    },
-    {
-      "id": "261014-142234",
-      "slug": "computer-panel-resources",
-      "title": "Relevant panel resource tabs and computer PiP",
-      "created": "2026-10-14",
-      "status": "implemented",
-      "linearIssue": "DOR-2916"
-    },
-    {
       "id": "261013-000229",
       "slug": "server-merge",
       "title": "One DorkOS server: merge the local server and the space server",
@@ -81,30 +65,6 @@
       "linearIssue": "DOR-2787"
     },
     {
-      "id": "261007-225912",
-      "slug": "doe-engine",
-      "title": "Doe standalone business agent engine",
-      "created": "2026-10-07",
-      "status": "implemented",
-      "linearIssue": "DOR-2786"
-    },
-    {
-      "id": "261006-180000",
-      "slug": "session-routing-identity",
-      "title": "Private routes and reliable session identity",
-      "created": "2026-10-06",
-      "status": "implemented"
-    },
-    {
-      "id": "261003-204731",
-      "slug": "isolated-extension-backends",
-      "title": "Isolated extension backends: a subprocess runtime with declared network and run allowlists",
-      "created": "2026-10-03",
-      "status": "implemented",
-      "project": "extensibility-platform",
-      "linearIssue": "DOR-2686"
-    },
-    {
       "id": "261003-200014",
       "slug": "extension-agent-tools-and-skills",
       "title": "Extensions give agents tools and skills, registered at extension load",
@@ -130,30 +90,6 @@
       "status": "specified",
       "project": "Relay",
       "linearIssue": "DOR-2666"
-    },
-    {
-      "id": "261001-213235",
-      "slug": "relay-signed-json",
-      "title": "Preserve signed Relay JSON through the full application",
-      "created": "2026-10-01",
-      "status": "implemented",
-      "linearIssue": "DOR-2661"
-    },
-    {
-      "id": "261001-212400",
-      "slug": "relay-namespace-ownership",
-      "title": "Relay namespace ownership and boundary routing",
-      "created": "2026-10-01",
-      "status": "implemented",
-      "linearIssue": "DOR-2660"
-    },
-    {
-      "id": "261001-201851",
-      "slug": "served-document-isolation",
-      "title": "Isolate signed served documents in direct navigation",
-      "created": "2026-10-01",
-      "status": "implemented",
-      "linearIssue": "DOR-2663"
     },
     {
       "id": "261001-184500",
@@ -208,14 +144,6 @@
       "linearIssue": "DOR-2517"
     },
     {
-      "id": "260928-155529",
-      "slug": "connections-health",
-      "title": "Connections that never leave you stuck",
-      "created": "2026-09-28",
-      "status": "implemented",
-      "project": "DorkOS Connections"
-    },
-    {
       "id": "260928-130908",
       "slug": "terminal-request-admission",
       "title": "Terminal request admission and exclusive reset/restart ownership",
@@ -223,15 +151,6 @@
       "status": "specified",
       "project": "Maintenance",
       "linearIssue": "DOR-2481"
-    },
-    {
-      "id": "260925-100000",
-      "slug": "shared-ui-consumer-adoption",
-      "title": "Complete shared UI consumer adoption",
-      "created": "2026-09-25",
-      "status": "implemented",
-      "project": "Shared UI — Consumer Adoption",
-      "linearIssue": "DOR-2342"
     },
     {
       "id": "260928-005336",
@@ -259,15 +178,6 @@
       "status": "implemented",
       "project": "Maintenance",
       "linearIssue": "DOR-2429"
-    },
-    {
-      "id": "260926-193136",
-      "slug": "local-workspace-lifecycle",
-      "title": "Local workspace reconciler lifecycle pilot",
-      "created": "2026-09-26",
-      "status": "implemented",
-      "project": "Maintenance",
-      "linearIssue": "DOR-2428"
     },
     {
       "id": "260926-183346",
@@ -310,13 +220,6 @@
       "status": "specified",
       "project": "Marketplace Package Management",
       "linearIssue": "DOR-2306"
-    },
-    {
-      "id": "260923-144507",
-      "slug": "shared-design-system",
-      "title": "One design system across DorkOS surfaces",
-      "created": "2026-09-23",
-      "status": "implemented"
     },
     {
       "id": "260923-223844",
@@ -372,15 +275,6 @@
       "project": "Community Self-Hosting"
     },
     {
-      "id": "260920-192428",
-      "slug": "community-tenancy-contract",
-      "title": "Community tenant identity, authorization, and migration contracts",
-      "created": "2026-09-20",
-      "status": "implemented",
-      "linearIssue": "DOR-2171",
-      "project": "Multi-Community Hosting"
-    },
-    {
       "id": "260915-202248",
       "slug": "warm-process-lifecycle",
       "title": "A warm agent process keeps its background work",
@@ -410,34 +304,6 @@
       "created": "2026-09-11",
       "status": "implemented",
       "project": "Canvas and Browser in Rooms"
-    },
-    {
-      "id": "260911-191248",
-      "slug": "ambient-background-tasks",
-      "title": "Housekeeping tasks stay quiet",
-      "created": "2026-09-11",
-      "status": "implemented"
-    },
-    {
-      "id": "260911-191245",
-      "slug": "auto-mode-classifier-context",
-      "title": "Telling auto mode what it cannot see",
-      "created": "2026-09-11",
-      "status": "implemented"
-    },
-    {
-      "id": "260911-191243",
-      "slug": "unattended-session-permission-prompts",
-      "title": "Sessions with nobody to answer",
-      "created": "2026-09-11",
-      "status": "implemented"
-    },
-    {
-      "id": "260911-191240",
-      "slug": "plugin-reload-cache-cost",
-      "title": "Plugin reloads that respect the prompt cache",
-      "created": "2026-09-11",
-      "status": "implemented"
     },
     {
       "id": "260909-232320",
@@ -529,81 +395,11 @@
       "status": "ideation"
     },
     {
-      "id": "260828-010140",
-      "slug": "tool-only-room-replies",
-      "title": "Room replies go through tool calls only — silence, reactions and DMs become real choices",
-      "created": "2026-08-28",
-      "status": "implemented",
-      "linearIssue": "DOR-2099"
-    },
-    {
-      "id": "260824-233720",
-      "slug": "agent-memory",
-      "title": "Agent memory — an agent-scoped memory layer across sessions, rooms and DMs",
-      "created": "2026-08-24",
-      "status": "implemented",
-      "project": "Rooms, Channels & Threads"
-    },
-    {
       "id": "260823-174248",
       "slug": "comparison-pages",
       "title": "/compare — SEO comparison pages driven by the feature catalog",
       "created": "2026-08-23",
       "status": "implemented"
-    },
-    {
-      "id": "260823-163823",
-      "slug": "desktop-updater-overhaul",
-      "title": "Desktop updater overhaul: self-verifying installs, honest failure surfaces",
-      "created": "2026-08-23",
-      "status": "implemented",
-      "project": "Desktop Resilience"
-    },
-    {
-      "id": "260823-163822",
-      "slug": "desktop-renderer-supervision",
-      "title": "Desktop renderer supervision: heartbeat, recovery ladder, fallback page",
-      "created": "2026-08-23",
-      "status": "implemented",
-      "project": "Desktop Resilience"
-    },
-    {
-      "id": "260822-235213",
-      "slug": "full-power-defaults",
-      "title": "Full power by default: one-door consent, open mesh, Control Center, green-unlocked UI",
-      "created": "2026-08-22",
-      "status": "implemented",
-      "project": "Full Power by Default"
-    },
-    {
-      "id": "260819-203828",
-      "slug": "sidebar-simplification",
-      "title": "Sidebar simplification: two levels, one door, sections, one bottom slot",
-      "created": "2026-08-19",
-      "status": "implemented"
-    },
-    {
-      "id": "260818-001825",
-      "slug": "unified-conversation",
-      "title": "Unified conversation surfaces: one tree, approvals anywhere, a live lane",
-      "created": "2026-08-18",
-      "status": "implemented",
-      "project": "Unified Conversation Surfaces"
-    },
-    {
-      "id": "260816-155913",
-      "slug": "canvas-dev-server-preview",
-      "title": "Canvas dev-server preview: make localhost dev servers render in the embedded browser",
-      "created": "2026-08-16",
-      "status": "implemented"
-    },
-    {
-      "id": "260816-070451",
-      "slug": "profile-unification",
-      "title": "One Profile — fold the Agent Hub and the profile drawer into a single identity surface",
-      "created": "2026-08-16",
-      "status": "implemented",
-      "project": "Team, Identity & Profiles"
     },
     {
       "id": "260814-114442",
@@ -685,25 +481,11 @@
       "status": "ideation"
     },
     {
-      "id": "260806-215029",
-      "slug": "composer-rich-text",
-      "title": "Rich text via markdown in the composer (Lexical)",
-      "created": "2026-08-06",
-      "status": "implemented"
-    },
-    {
       "id": "260806-215028",
       "slug": "room-attachments",
       "title": "File attachments in rooms",
       "created": "2026-08-06",
       "status": "specified"
-    },
-    {
-      "id": "260806-215027",
-      "slug": "composer-parity",
-      "title": "Composer parity: unify the chat and room composers",
-      "created": "2026-08-06",
-      "status": "implemented"
     },
     {
       "id": "260806-214542",
@@ -778,24 +560,9 @@
       "project": "Connections Redesign — Direct First"
     },
     {
-      "id": "260729-134839",
-      "slug": "connector-completion",
-      "title": "Connector completion — the user-facing half of the connector gateway",
-      "created": "2026-07-29",
-      "status": "implemented",
-      "project": "Connector Gateway Completion"
-    },
-    {
       "id": "260728-225135",
       "slug": "handles",
       "title": "Handles — one addressable name for every author in a room",
-      "created": "2026-07-28",
-      "status": "implemented"
-    },
-    {
-      "id": "260728-213721",
-      "slug": "message-search",
-      "title": "Search every message you have ever sent or received",
       "created": "2026-07-28",
       "status": "implemented"
     },
@@ -812,13 +579,6 @@
       "title": "Invites — a second person on one install",
       "created": "2026-07-27",
       "status": "superseded"
-    },
-    {
-      "id": "260727-155419",
-      "slug": "community-server",
-      "title": "The community server — multi-user DorkOS",
-      "created": "2026-07-27",
-      "status": "implemented"
     },
     {
       "id": "260727-115434",
@@ -870,13 +630,6 @@
       "slug": "file-explorer-state-persistence",
       "title": "File explorer: persist state across refreshes and tab switches + holistic UX polish",
       "created": "2026-07-21",
-      "status": "implemented"
-    },
-    {
-      "id": "260718-050609",
-      "slug": "connector-gateway",
-      "title": "ConnectorProvider gateway — one port for many connector backends",
-      "created": "2026-07-18",
       "status": "implemented"
     },
     {
@@ -973,28 +726,12 @@
       "linearIssue": "DOR-213"
     },
     {
-      "id": "260711-031801",
-      "slug": "task-completion-notifications",
-      "title": "Automatic task-completion notifications (\"your agent finished\")",
-      "created": "2026-07-10",
-      "status": "implemented",
-      "adr": "260711-031624",
-      "linearIssue": "DOR-240"
-    },
-    {
       "id": "260709-205811",
       "slug": "desktop-macos-polish",
       "title": "Desktop app — native macOS polish & platform basics",
       "created": "2026-07-09",
       "status": "implemented",
       "project": "Desktop app — native macOS polish"
-    },
-    {
-      "id": "260708-144354",
-      "slug": "right-panel-workbench",
-      "title": "Right-Panel Workbench — File Explorer, Viewers, Browser, Terminal",
-      "created": "2026-07-08",
-      "status": "implemented"
     },
     {
       "id": "260707-031850",
@@ -1028,23 +765,6 @@
       "project": "Harness Sync"
     },
     {
-      "number": 266,
-      "slug": "flow-plugin-extraction",
-      "title": "Extract /flow into a self-contained external marketplace plugin",
-      "created": "2026-06-27",
-      "status": "implemented",
-      "linearIssue": "DOR-133"
-    },
-    {
-      "number": 264,
-      "slug": "flow-marketplace-package",
-      "title": "Ship /flow as a portable DorkOS Marketplace plugin",
-      "created": "2026-06-26",
-      "status": "superseded",
-      "linearIssue": "DOR-133",
-      "supersededBy": 266
-    },
-    {
       "number": 263,
       "slug": "canvas-markdown-editing",
       "title": "Editable Canvas Markdown via Blintz",
@@ -1071,14 +791,6 @@
       "title": "Connect Your Claude Code Account — runtime credential authentication",
       "created": "2026-06-25",
       "status": "ideation"
-    },
-    {
-      "number": 259,
-      "slug": "workspace-manager",
-      "title": "WorkspaceManager — server-managed isolated workspaces bound to sessions via cwd",
-      "created": "2026-06-16",
-      "status": "implemented",
-      "linearIssue": "DOR-84"
     },
     {
       "number": 256,
@@ -1110,25 +822,11 @@
       "status": "ideation"
     },
     {
-      "number": 244,
-      "slug": "codex-runtime-adapter-prework",
-      "title": "Codex Runtime & Adapter Pre-Work",
-      "created": "2026-04-15",
-      "status": "implemented"
-    },
-    {
       "number": 236,
       "slug": "settings-ui-ux-disambiguation",
       "title": "Settings UI/UX and Disambiguation — Unified Agent Hub",
       "created": "2026-04-12",
       "status": "ideation"
-    },
-    {
-      "number": 223,
-      "slug": "settings-dialog-04-playground",
-      "title": "Dev Playground Settings Page",
-      "created": "2026-04-06",
-      "status": "implemented"
     },
     {
       "number": 219,
@@ -1166,25 +864,11 @@
       "status": "specified"
     },
     {
-      "number": 197,
-      "slug": "fix-relay-sse-backpressure",
-      "title": "Fix Relay SSE Backpressure in Session Broadcaster",
-      "created": "2026-03-29",
-      "status": "implemented"
-    },
-    {
       "number": 195,
       "slug": "electron-desktop-app",
       "title": "Electron Desktop App — Native macOS Distribution for DorkOS",
       "created": "2026-03-29",
       "status": "specified"
-    },
-    {
-      "number": 189,
-      "slug": "canvas-persistence-and-toggle",
-      "title": "Canvas Persistence & Toggle",
-      "created": "2026-03-28",
-      "status": "implemented"
     },
     {
       "number": 186,
@@ -1222,20 +906,6 @@
       "status": "specified"
     },
     {
-      "number": 157,
-      "slug": "agents-page",
-      "title": "Agents Page — Dedicated Fleet Management",
-      "created": "2026-03-20",
-      "status": "implemented"
-    },
-    {
-      "number": 154,
-      "slug": "dashboard-home-route",
-      "title": "Dashboard Home Route & Navigation Restructure",
-      "created": "2026-03-20",
-      "status": "implemented"
-    },
-    {
       "number": 151,
       "slug": "dev-playground-chat-simulator",
       "title": "Dev Playground Chat Simulator",
@@ -1248,13 +918,6 @@
       "title": "SDK Error Observability — Break Infinite Retry Loop, Surface Errors to Adapters",
       "created": "2026-03-18",
       "status": "specified"
-    },
-    {
-      "number": 132,
-      "slug": "relay-panel-redesign",
-      "title": "Relay Panel Redesign — Jobs/Ive Design Overhaul",
-      "created": "2026-03-15",
-      "status": "implemented"
     },
     {
       "number": 131,
@@ -1271,39 +934,11 @@
       "status": "implemented"
     },
     {
-      "number": 121,
-      "slug": "fix-chat-ui-reliability-bugs",
-      "title": "Fix Chat UI Reliability Bugs",
-      "created": "2026-03-11",
-      "status": "implemented"
-    },
-    {
-      "number": 117,
-      "slug": "sidebar-tabbed-views",
-      "title": "Sidebar Tabbed Views — Sessions, Schedules, Connections",
-      "created": "2026-03-10",
-      "status": "implemented"
-    },
-    {
       "number": 114,
       "slug": "hide-scrollbars-when-idle",
       "title": "Hide Scrollbars When Idle",
       "created": "2026-03-10",
       "status": "ideation"
-    },
-    {
-      "number": 112,
-      "slug": "update-top-nav",
-      "title": "Update Top Nav — Agent Identity, Command Palette Trigger, 10x Elevation",
-      "created": "2026-03-10",
-      "status": "implemented"
-    },
-    {
-      "number": 111,
-      "slug": "chat-input-always-editable",
-      "title": "Chat Input Always Editable + Message Queuing",
-      "created": "2026-03-10",
-      "status": "implemented"
     },
     {
       "number": 107,
@@ -1313,46 +948,11 @@
       "status": "implemented"
     },
     {
-      "number": 104,
-      "slug": "chat-microinteractions-polish",
-      "title": "Chat Microinteractions & Animation Polish",
-      "created": "2026-03-09",
-      "status": "implemented"
-    },
-    {
       "number": 100,
       "slug": "fix-relay-streaming-bugs",
       "title": "Fix Two Relay-Mode Streaming Bugs",
       "created": "2026-03-07",
       "status": "specified"
-    },
-    {
-      "number": 96,
-      "slug": "fix-relay-history-sse-gaps",
-      "title": "Fix Relay History Rendering & Remaining SSE Delivery Gaps",
-      "created": "2026-03-06",
-      "status": "implemented"
-    },
-    {
-      "number": 95,
-      "slug": "fix-relay-sse-delivery-pipeline",
-      "title": "Fix Relay SSE Message Delivery Pipeline",
-      "created": "2026-03-06",
-      "status": "implemented"
-    },
-    {
-      "number": 93,
-      "slug": "chat-streaming-session-reliability",
-      "title": "Chat Streaming & Session Reliability Fixes",
-      "created": "2026-03-05",
-      "status": "implemented"
-    },
-    {
-      "number": 86,
-      "slug": "shadcn-sidebar-redesign",
-      "title": "Shadcn Sidebar Redesign — Agent-Centric Sidebar with Glanceable Status",
-      "created": "2026-03-03",
-      "status": "implemented"
     },
     {
       "number": 84,
@@ -1365,20 +965,6 @@
       "number": 82,
       "slug": "settings-reset-restart",
       "title": "Settings Reset & Server Restart",
-      "created": "2026-03-01",
-      "status": "implemented"
-    },
-    {
-      "number": 80,
-      "slug": "tunnel-remote-access-overhaul",
-      "title": "Tunnel / Remote Access Overhaul",
-      "created": "2026-03-01",
-      "status": "implemented"
-    },
-    {
-      "number": 79,
-      "slug": "first-time-user-experience",
-      "title": "First Time User Experience (FTUE)",
       "created": "2026-03-01",
       "status": "implemented"
     },
@@ -1397,13 +983,6 @@
       "status": "implemented"
     },
     {
-      "number": 71,
-      "slug": "adapter-agent-routing",
-      "title": "Adapter-Agent Routing & Visual Configuration",
-      "created": "2026-02-28",
-      "status": "implemented"
-    },
-    {
       "number": 66,
       "slug": "relay-env-var-investigation",
       "title": "Relay Initialization Failure & Feature Flag DX",
@@ -1411,53 +990,11 @@
       "status": "ideation"
     },
     {
-      "number": 62,
-      "slug": "mesh-panel-ux-overhaul",
-      "title": "Mesh Panel UI/UX Overhaul",
-      "created": "2026-02-25",
-      "status": "implemented"
-    },
-    {
       "number": 61,
       "slug": "browser-testing-system",
       "title": "Browser Testing System",
       "created": "2026-02-25",
       "status": "specified"
-    },
-    {
-      "number": 60,
-      "slug": "relay-release-preparation",
-      "title": "Relay & Mesh Release Preparation",
-      "created": "2026-02-25",
-      "status": "implemented"
-    },
-    {
-      "number": 59,
-      "slug": "mesh-observability-lifecycle",
-      "title": "Mesh Observability & Lifecycle Events",
-      "created": "2026-02-25",
-      "status": "implemented"
-    },
-    {
-      "number": 58,
-      "slug": "mesh-network-topology",
-      "title": "Mesh Network Topology",
-      "created": "2026-02-25",
-      "status": "implemented"
-    },
-    {
-      "number": 57,
-      "slug": "relay-runtime-adapters",
-      "title": "Unified Adapter System & Claude Code Runtime Adapter",
-      "created": "2026-02-25",
-      "status": "implemented"
-    },
-    {
-      "number": 55,
-      "slug": "relay-convergence",
-      "title": "Relay Convergence — Migrate Pulse & Console to Relay Transport",
-      "created": "2026-02-25",
-      "status": "implemented"
     },
     {
       "number": 54,
@@ -1470,20 +1007,6 @@
       "number": 53,
       "slug": "relay-external-adapters",
       "title": "Relay External Adapters",
-      "created": "2026-02-24",
-      "status": "implemented"
-    },
-    {
-      "number": 52,
-      "slug": "relay-advanced-reliability",
-      "title": "Relay Advanced Reliability",
-      "created": "2026-02-24",
-      "status": "implemented"
-    },
-    {
-      "number": 51,
-      "slug": "relay-server-client-integration",
-      "title": "Relay Server & Client Integration",
       "created": "2026-02-24",
       "status": "implemented"
     },

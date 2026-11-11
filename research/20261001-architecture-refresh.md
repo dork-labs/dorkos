@@ -33,7 +33,7 @@ These priorities are reflected in the [roadmap](../plans/architecture-improvemen
 
 ## Evidence limits
 
-Linear read on October 1: DOR-2345/2347 Done; DOR-2346 Triage; DOR-2344/2348/2349/2482/2483/2484/2086/1798/2623 In Progress; DOR-2442 Backlog. States do not establish execution or readiness; some descriptions retain historical capture wording. Shared UI's completion evidence remains [the consumer receipt](../specs/shared-ui-consumer-adoption/04-implementation.md).
+Linear read on October 1: DOR-2345/2347 Done; DOR-2346 Triage; DOR-2344/2348/2349/2482/2483/2484/2086/1798/2623 In Progress; DOR-2442 Backlog. States do not establish execution or readiness; some descriptions retain historical capture wording. Shared UI's completion evidence remains [the consumer receipt](https://github.com/dork-labs/dorkos/blob/78baefc5ac7aeac33c67f5e697fbe2f36179a960/specs/shared-ui-consumer-adoption/04-implementation.md).
 
 The managed remote consumer remains draft. Public contract support is not consumer wiring. Legacy self-revoke and website retirement limits remain in the [retirement inventory](20260928-cloud-retirement-readiness.md). Account retirement requires a full production release after handover without rollback. At this source, credits require the explicit flag, support Claude Code only and do not cancel existing turns. [Account-by-default](../specs/dorkos-account-by-default/01-ideation.md) is newer in-flight work.
 

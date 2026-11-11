@@ -16,7 +16,7 @@ re-ideation — the design context already exists upstream.
 
 ## Where it came from
 
-- **Parent ideation:** [`specs/right-panel-workbench/01-ideation.md`](../right-panel-workbench/01-ideation.md)
+- **Parent ideation:** [`specs/right-panel-workbench/01-ideation.md`](https://github.com/dork-labs/dorkos/blob/78baefc5ac7aeac33c67f5e697fbe2f36179a960/specs/right-panel-workbench/01-ideation.md)
   - §4 Research → "Not-thinking-of opportunities": _"first-class diff viewer"_ and
     _"'agent touched this' provenance badges in the explorer"_.
   - §4 Research → "Emerging agent-cockpit patterns": _"diff-centric review with
@@ -25,9 +25,9 @@ re-ideation — the design context already exists upstream.
   - **Decision round 2, item 1:** _"Diff viewer → fast-follow, confirmed. Tracked
     as DOR-212 in the Right-Panel Workbench project (Backlog); sequenced after
     workbench v1 ships and is verified working."_
-- **Parent spec Non-Goals** ([`02-specification.md`](../right-panel-workbench/02-specification.md)):
+- **Parent spec Non-Goals** ([`02-specification.md`](https://github.com/dork-labs/dorkos/blob/78baefc5ac7aeac33c67f5e697fbe2f36179a960/specs/right-panel-workbench/02-specification.md)):
   _"Diff viewer with per-hunk accept — fast-follow DOR-212, after v1 ships and verifies."_
-- **v1 shipped and verified** ([`04-implementation.md`](../right-panel-workbench/04-implementation.md)):
+- **v1 shipped and verified** ([`04-implementation.md`](https://github.com/dork-labs/dorkos/blob/78baefc5ac7aeac33c67f5e697fbe2f36179a960/specs/right-panel-workbench/04-implementation.md)):
   all six workbench chunks merged (#137–#145). The platform this builds on —
   multi-document canvas store, viewer registry, `GET /api/files/*` endpoints,
   CodeMirror 6 file viewer, `control_ui` 3-place recipe — is live on `main`.

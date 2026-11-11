@@ -156,7 +156,7 @@ Session storage is runtime-owned (ADR-0310): claude-code derives from SDK JSONL 
 
 ### Message search
 
-One derived, rebuildable FTS5 index over everything that was said, read by `GET /api/search` and by ⌘⇧F in the app (`apps/server/src/services/search/`, `features/command-palette/ui/MessageSearchDialog.tsx`, spec `specs/message-search/`). It indexes **rooms, Claude Code, Codex and OpenCode transcripts** (bare-CLI sessions included) — never tool output; the copy is pinned by a test so a coverage claim cannot drift out of date silently. Agents can search and read agent work sessions; DorkOS's agent tools and API keep a person's own chats from agents that identify themselves (an `X-DorkOS-Agent` caller), not from a caller that omits it or reads the transcript files directly (spec `audit-trail` §3.4). Deleting the index is a supported recovery.
+One derived, rebuildable FTS5 index over everything that was said, read by `GET /api/search` and by ⌘⇧F in the app (`apps/server/src/services/search/`, `features/command-palette/ui/MessageSearchDialog.tsx`, spec [specs/message-search/](https://github.com/dork-labs/dorkos/tree/78baefc5ac7aeac33c67f5e697fbe2f36179a960/specs/message-search)). It indexes **rooms, Claude Code, Codex and OpenCode transcripts** (bare-CLI sessions included) — never tool output; the copy is pinned by a test so a coverage claim cannot drift out of date silently. Agents can search and read agent work sessions; DorkOS's agent tools and API keep a person's own chats from agents that identify themselves (an `X-DorkOS-Agent` caller), not from a caller that omits it or reads the transcript files directly (spec `audit-trail` §3.4). Deleting the index is a supported recovery.
 
 ### Client (`apps/client/src/`)
 
