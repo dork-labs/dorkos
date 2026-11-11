@@ -1,6 +1,7 @@
 ---
 covers:
-  - "fix(browser): while a person has the Agent browser, its status shows each tab's site only (DOR-4163)"
+  - "fix(browser): while a person has the Agent browser, its status shows each tab's site only, with no title (DOR-4163)"
+  - "fix(browser): a person's Pause and tab choice show the same trimmed tabs during a handoff (DOR-4163)"
 ---
 
 ### Fixed

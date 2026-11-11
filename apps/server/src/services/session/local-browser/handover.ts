@@ -168,12 +168,20 @@ export class BrowserHandover {
    * than the person's own window (DOR-4163).
    */
   async state(): Promise<LocalBrowserPersonState> {
-    const state = await this.browser.state();
-    const tabs =
-      this.record?.outcome === null
-        ? state.tabs.map((tab) => ({ ...tab, url: siteOnly(tab.url), title: '' }))
-        : state.tabs;
-    return { ...state, tabs, handoff: this.record, signIn: this.signIns.current };
+    const state = this.trimmed(await this.browser.state());
+    return { ...state, handoff: this.record, signIn: this.signIns.current };
+  }
+
+  /** A person's Pause, answered with the same trimmed tabs as {@link state}. */
+  async pause(): Promise<LocalBrowserState> {
+    return this.trimmed(await this.browser.pause());
+  }
+
+  /** Every tab cut to its site, with no title, while a person has the browser. */
+  private trimmed(state: LocalBrowserState): LocalBrowserState {
+    if (this.record?.outcome !== null) return state;
+    const tabs = state.tabs.map((tab) => ({ ...tab, url: siteOnly(tab.url), title: '' }));
+    return { ...state, tabs };
   }
 
   /**
@@ -394,7 +402,7 @@ export class BrowserHandover {
   async selectTab(id: string): Promise<LocalBrowserState> {
     if (this.record?.outcome === null && id !== (await this.browser.state()).selectedTabId)
       this.refuseDuringHandoff();
-    return this.browser.selectTab(id);
+    return this.trimmed(await this.browser.selectTab(id));
   }
 
   /**

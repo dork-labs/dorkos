@@ -137,6 +137,16 @@ describe('the person’s state during a handoff (DOR-4163)', () => {
     });
   });
 
+  it('answers a person’s Pause and tab choice with the same trimmed tabs', async () => {
+    const { handover, set } = setup();
+    set({ ...connected(secret), tabs: [{ id: 't1', url: secret, title: 'Code 492810' }] });
+    await handover.ask('chat-1', 'wall');
+    for (const answer of [await handover.pause(), await handover.selectTab('t1')]) {
+      expect(answer.tabs).toEqual([{ id: 't1', url: 'https://accounts.example.com', title: '' }]);
+      expect(JSON.stringify(answer)).not.toMatch(/secret|token=|code=|492810/);
+    }
+  });
+
   it('shows the full address again once the person stops the task', async () => {
     const { handover, set } = setup();
     set(connected(secret));
