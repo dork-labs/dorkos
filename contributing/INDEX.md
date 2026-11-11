@@ -93,6 +93,8 @@ Example: If `apps/client/src/layers/shared/ui/button.tsx` changes, it matches:
 
 ## Maintenance Tracking
 
+2026-11-11: Reconciled `data-fetching.md` trigger-only submission, durable WebSocket/SSE distinction, current session hook return shapes, preview membership and permission/runtime hooks. Coverage patterns are unchanged.
+
 2026-11-11: Reconciled `architecture.md` tool visibility, identity and prompt gates, plus `design-system.md` permission controls, current floor areas and the retired status-hook pattern. Coverage patterns are unchanged.
 
 2026-11-11: Reconciled `sidebar-model.md` scroll troubleshooting with the first-settled-model latch, layout-effect dependencies and reduced-motion behavior. Coverage patterns are unchanged.
