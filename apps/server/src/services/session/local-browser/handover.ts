@@ -74,6 +74,23 @@ export function assertSignInUrl(value: string): URL {
   return url;
 }
 
+/**
+ * A page's address cut to its site: the origin, or for an address with none
+ * (`about:`, `data:`) its scheme alone.
+ *
+ * @param value - The tab's address.
+ */
+export function siteOnly(value: string): string {
+  try {
+    const url = new URL(value);
+    if (url.origin !== 'null') return url.origin;
+    // A blank tab carries nothing, and the panel names it "New tab".
+    return url.href === 'about:blank' ? url.href : url.protocol;
+  } catch {
+    return '';
+  }
+}
+
 /** One handoff at a time, and the plain sign-in window it can open. */
 export class BrowserHandover {
   private signingIn = 0;
@@ -144,9 +161,19 @@ export class BrowserHandover {
     this.handedOver = listener;
   }
 
-  /** What a person's controls see. */
+  /**
+   * What a person's controls see. While a person has the browser, each tab shows
+   * only its site, with no title: a sign-in page's path, query or fragment can carry
+   * a code or token, a title can carry private text, and this state is read by more
+   * than the person's own window (DOR-4163).
+   */
   async state(): Promise<LocalBrowserPersonState> {
-    return { ...(await this.browser.state()), handoff: this.record, signIn: this.signIns.current };
+    const state = await this.browser.state();
+    const tabs =
+      this.record?.outcome === null
+        ? state.tabs.map((tab) => ({ ...tab, url: siteOnly(tab.url), title: '' }))
+        : state.tabs;
+    return { ...state, tabs, handoff: this.record, signIn: this.signIns.current };
   }
 
   /**
