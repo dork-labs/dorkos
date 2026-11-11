@@ -10,6 +10,7 @@ covers:
   - 'fix(server): a canvas "opened by" mark names only a running app, and never comes from an agent (DOR-3293)'
   - 'feat(extensions): apps show pictures and video from their own routes with api.media (DOR-3293)'
   - "feat(extensions): one app can call another's exported routes, when both manifests agree (DOR-3293)"
+  - 'fix(server): session routes see their settings live again (DOR-3293)'
 ---
 
 ### Security
