@@ -1316,7 +1316,12 @@ describe('CodexRuntime', () => {
         files: {
           command: 'npx',
           args: ['-y', 'fs'],
-          disabled_tools: ['browser_run_code_unsafe', 'browser_network_request'],
+          disabled_tools: [
+            'browser_run_code_unsafe',
+            'browser_network_request',
+            'browser_start_tracing',
+            'browser_stop_tracing',
+          ],
         },
       });
     });

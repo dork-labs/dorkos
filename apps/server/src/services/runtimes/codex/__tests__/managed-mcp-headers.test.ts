@@ -182,11 +182,21 @@ describe('a managed MCP server carrying credentials on a Codex turn', () => {
     expect(mcpServers['files']).toEqual({
       command: 'npx',
       args: ['-y', 'server-filesystem'],
-      disabled_tools: ['browser_run_code_unsafe', 'browser_network_request'],
+      disabled_tools: [
+        'browser_run_code_unsafe',
+        'browser_network_request',
+        'browser_start_tracing',
+        'browser_stop_tracing',
+      ],
     });
     expect(mcpServers['plain']).toEqual({
       url: 'https://example.com/mcp',
-      disabled_tools: ['browser_run_code_unsafe', 'browser_network_request'],
+      disabled_tools: [
+        'browser_run_code_unsafe',
+        'browser_network_request',
+        'browser_start_tracing',
+        'browser_stop_tracing',
+      ],
     });
     expect(Object.keys(env ?? {}).filter((key) => key.startsWith('DORKOS_MCP_HDR_'))).toEqual([]);
   });

@@ -835,7 +835,12 @@ describe('the dorkos tool server on a Codex turn', () => {
       // offered are turned off, as on every server.
       expect(lastMcpServers()['dorkos']).toEqual({
         command: '/bin/their-server',
-        disabled_tools: ['browser_run_code_unsafe', 'browser_network_request'],
+        disabled_tools: [
+          'browser_run_code_unsafe',
+          'browser_network_request',
+          'browser_start_tracing',
+          'browser_stop_tracing',
+        ],
       });
       const warned = loggerMocks.warn.mock.calls.map((call) => String(call[0]));
       expect(warned.some((line) => line.includes('reserve'))).toBe(false);

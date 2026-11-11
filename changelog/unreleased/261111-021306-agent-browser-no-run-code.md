@@ -5,6 +5,7 @@ covers:
   - 'fix(server): the agent browser keeps to the page as its tool list changes (DOR-4156)'
   - 'fix(server): the agent browser keeps to the page however a call is shaped (DOR-4156)'
   - 'fix(server): the agent browser does not open files on this computer (DOR-4156)'
+  - 'fix(server): the agent browser does not record its own traffic to a file (DOR-4156)'
 ---
 
 ### Security

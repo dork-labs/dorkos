@@ -102,6 +102,16 @@ describe('the agent browser’s tool list', () => {
     for (const tool of AGENT_BROWSER_WITHHELD_TOOLS) expect(names).toContain(tool);
   });
 
+  // A trace records every request with full headers into the chat's own folder, with no file
+  // argument to refuse, so the tools that make one are withheld outright.
+  it('withholds the tools that write a trace of every request', () => {
+    const names = snapshot.tools.map((tool) => tool.name);
+    for (const tool of ['browser_start_tracing', 'browser_stop_tracing']) {
+      expect(names).toContain(tool);
+      expect(isWithheldBrowserTool(tool)).toBe(true);
+    }
+  });
+
   it('offers no tool that saves or sets browser state, in any tool set DorkOS allows', () => {
     const names = snapshot.tools.map((tool) => tool.name);
     expect(

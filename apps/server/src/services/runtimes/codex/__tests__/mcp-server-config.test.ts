@@ -10,7 +10,14 @@ import {
 } from '../mcp-server-config.js';
 
 /** Every entry turns off the browser tool that runs code outside the page. */
-const WITHHELD = { disabled_tools: ['browser_run_code_unsafe', 'browser_network_request'] };
+const WITHHELD = {
+  disabled_tools: [
+    'browser_run_code_unsafe',
+    'browser_network_request',
+    'browser_start_tracing',
+    'browser_stop_tracing',
+  ],
+};
 
 describe('toCodexMcpServerConfig', () => {
   it('maps a stdio connection to command/args/env', () => {
@@ -110,6 +117,8 @@ describe('toCodexMcpServerConfig', () => {
       expect(entry?.config.disabled_tools).toEqual([
         'browser_run_code_unsafe',
         'browser_network_request',
+        'browser_start_tracing',
+        'browser_stop_tracing',
       ]);
       expect(entry?.config.disabled_tools).not.toContain('browser_evaluate');
     }

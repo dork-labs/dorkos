@@ -46,14 +46,17 @@ export const AGENT_BROWSER_MCP_VERSION = '0.0.82';
 export const AGENT_BROWSER_MCP_PACKAGE = `@playwright/mcp@${AGENT_BROWSER_MCP_VERSION}`;
 
 /**
- * Playwright MCP tools no agent is offered, on any server, in any letter case. Both are always on
- * in 0.0.82, with no switch:
+ * Playwright MCP tools no agent is offered, on any server, in any letter case. The first two are
+ * always on in 0.0.82, with no switch:
  *
  * - `browser_run_code_unsafe` runs any JavaScript in the browser server's own process, outside the
  *   page, so it reaches files and the network past every rule an agent's own tools follow.
  * - `browser_network_request` shows a recorded request's full headers, its `Cookie` and
  *   `Set-Cookie` among them, which hands an agent sign-in cookies the page itself could not read.
  *   `browser_network_requests`, the list without headers, stays.
+ * - `browser_start_tracing` and `browser_stop_tracing` (the `devtools` tool set) write a live
+ *   trace of every request, full headers and all, into the chat's own folder, where an agent
+ *   reads the same cookies as a file.
  *
  * Each runtime withholds them: a deny rule and a hook on Claude Code, never registered on Doe, and
  * on Codex and OpenCode, which cannot hold back one argument ({@link AGENT_BROWSER_FILE_ARGUMENT}),
@@ -62,6 +65,8 @@ export const AGENT_BROWSER_MCP_PACKAGE = `@playwright/mcp@${AGENT_BROWSER_MCP_VE
 export const AGENT_BROWSER_WITHHELD_TOOLS: readonly string[] = [
   'browser_run_code_unsafe',
   'browser_network_request',
+  'browser_start_tracing',
+  'browser_stop_tracing',
 ];
 
 /**

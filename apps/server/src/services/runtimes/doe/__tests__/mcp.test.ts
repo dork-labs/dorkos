@@ -106,6 +106,8 @@ describe('authenticated Doe MCP assembly', () => {
       'browser_evaluate',
       'browser_run_code_unsafe',
       'Browser_Network_Request',
+      'browser_start_tracing',
+      'Browser_Stop_Tracing',
     ];
     const assembly = await assembleDoeMcp({
       agentPath: '/agent',
@@ -121,9 +123,13 @@ describe('authenticated Doe MCP assembly', () => {
       expect(names).toContain(mcpAlias(server, 'browser_evaluate'));
       expect(names).not.toContain(mcpAlias(server, 'browser_run_code_unsafe'));
       expect(names).not.toContain(mcpAlias(server, 'Browser_Network_Request'));
+      expect(names).not.toContain(mcpAlias(server, 'browser_start_tracing'));
+      expect(names).not.toContain(mcpAlias(server, 'Browser_Stop_Tracing'));
     }
     expect(
-      [...assembly.names.keys()].some((key) => /run_code_unsafe|network_request$/i.test(key))
+      [...assembly.names.keys()].some((key) =>
+        /run_code_unsafe|network_request|_tracing$/i.test(key)
+      )
     ).toBe(false);
     await assembly.dispose();
   });

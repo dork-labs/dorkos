@@ -34,8 +34,12 @@ describe('browserToolDenyRules', () => {
     expect(browserToolDenyRules(['browser', 'my.browser'])).toEqual([
       'mcp__browser__browser_run_code_unsafe',
       'mcp__browser__browser_network_request',
+      'mcp__browser__browser_start_tracing',
+      'mcp__browser__browser_stop_tracing',
       'mcp__my_browser__browser_run_code_unsafe',
       'mcp__my_browser__browser_network_request',
+      'mcp__my_browser__browser_start_tracing',
+      'mcp__my_browser__browser_stop_tracing',
     ]);
   });
 
@@ -57,8 +61,12 @@ describe('applyBrowserToolDeny', () => {
           'Read(/secret)',
           'mcp__browser__browser_run_code_unsafe',
           'mcp__browser__browser_network_request',
+          'mcp__browser__browser_start_tracing',
+          'mcp__browser__browser_stop_tracing',
           'mcp__dorkos__browser_run_code_unsafe',
           'mcp__dorkos__browser_network_request',
+          'mcp__dorkos__browser_start_tracing',
+          'mcp__dorkos__browser_stop_tracing',
         ],
         allow: ['mcp__browser__*'],
       },
@@ -102,6 +110,10 @@ describe('browserToolHookMatcher', () => {
       'mcp__PERSONAL__BROWSER_RUN_CODE_UNSAFE',
       'mcp__browser__browser_network_request',
       'mcp__Odd-Name_2__Browser_Network_Request',
+      'mcp__browser__browser_start_tracing',
+      'mcp__browser__browser_stop_tracing',
+      'mcp__My-PW_Server__Browser_Start_Tracing',
+      'mcp__PERSONAL__BROWSER_STOP_TRACING',
     ]) {
       expect(await hookAnswer(name)).toEqual(refused(WITHHELD_BROWSER_TOOL_MESSAGE));
     }
