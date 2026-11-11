@@ -938,16 +938,38 @@ describe('Agents Routes with MeshCore (ADR-0043)', () => {
     mockWriteManifest.mockResolvedValue(undefined);
   });
 
-  it('POST calls syncFromDisk after creating agent', async () => {
+  /**
+   * A disk and a mesh index that behave like the real pair: the index only
+   * knows what was on disk when it synced. So it holds the new manifest only if
+   * the route wrote the file first and synced after (ADR-0043), and holds
+   * nothing for a path the route never synced.
+   */
+  function diskAndIndex() {
+    const disk = new Map<string, unknown>();
+    const index = new Map<string, unknown>();
+    mockWriteManifest.mockImplementation(async (path: string, manifest: unknown) => {
+      disk.set(path, manifest);
+    });
+    mockSyncFromDisk.mockImplementation(async (path: string) => {
+      index.set(path, disk.get(path));
+      return true;
+    });
+    return index;
+  }
+
+  it('POST leaves the mesh index holding the agent it just wrote', async () => {
+    const index = diskAndIndex();
+
     const res = await request(meshTestServer)
       .post('/api/agents')
-      .send({ path: '/home/user/new-project' });
+      .send({ path: '/home/user/new-project', name: 'New Project' });
 
     expect(res.status).toBe(201);
-    expect(mockSyncFromDisk).toHaveBeenCalledWith('/home/user/new-project');
+    expect(index.get('/home/user/new-project')).toMatchObject({ displayName: 'New Project' });
   });
 
-  it('PATCH calls syncFromDisk after updating agent', async () => {
+  it('PATCH leaves the mesh index holding the updated manifest, not the old one', async () => {
+    const index = diskAndIndex();
     mockReadManifest.mockResolvedValue(mockManifest);
 
     const res = await request(meshTestServer)
@@ -956,7 +978,7 @@ describe('Agents Routes with MeshCore (ADR-0043)', () => {
       .send({ displayName: 'Synced Name' });
 
     expect(res.status).toBe(200);
-    expect(mockSyncFromDisk).toHaveBeenCalledWith('/home/user/project');
+    expect(index.get('/home/user/project')).toMatchObject({ displayName: 'Synced Name' });
   });
 
   it('POST succeeds even if syncFromDisk fails', async () => {
