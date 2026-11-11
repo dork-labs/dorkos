@@ -22,6 +22,7 @@ covers:
   - 'fix(marketplace): a refused package names itself as its title does and offers only Close (DOR-3293)'
   - "fix(extensions): an app's canvas widget may only link out, and a trusted app asks again when its screens reach further (DOR-3293)"
   - 'fix(canvas): a document an app opened can never hold a widget action other than a link, on any write (DOR-3293)'
+  - "fix(canvas): check the document as it will end up on every update, so a mark-only patch can't label an agent widget as an app's (DOR-3293)"
 ---
 
 ### Security
