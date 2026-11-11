@@ -65,6 +65,110 @@ describe('whole-profile disk removal (DOR-3887)', () => {
     });
   });
 
+  it('forgets every profile at once: the default and each named one (DOR-4105)', async () => {
+    const profiles = store();
+    const work = profiles.create('Example work');
+    const personal = profiles.create('Example personal');
+    const folders = [
+      await prepareProfileFolder(home, null),
+      await prepareProfileFolder(home, work.id),
+      await prepareProfileFolder(home, personal.id),
+    ];
+    for (const folder of folders) await seed(folder);
+    const forgotten: (string | null)[] = [];
+    await new BrowserProfileRemoval({
+      dataDirectory: () => home,
+      busy: () => false,
+      forgotten: (id) => forgotten.push(id),
+    }).forgetAll([work.id, personal.id]);
+    for (const folder of folders) {
+      await expect(readFile(path.join(folder, 'storage-state.json'))).rejects.toMatchObject({
+        code: 'ENOENT',
+      });
+      await expect(readFile(path.join(folder, 'Default/Network/Cookies'))).rejects.toMatchObject({
+        code: 'ENOENT',
+      });
+    }
+    // The named profiles stay on record, emptied; the panel just no longer lists them.
+    expect(profiles.get(work.id)).toBeDefined();
+    expect(forgotten.sort()).toEqual([null, work.id, personal.id].sort());
+  });
+
+  it('also clears a profile folder made outside the list, as a shell could', async () => {
+    const stray = path.join(home, 'browser-profiles', '22222222-2222-4222-8222-222222222222');
+    await seed(stray);
+    await removal().forgetAll([]);
+    await expect(readFile(path.join(stray, 'storage-state.json'))).rejects.toMatchObject({
+      code: 'ENOENT',
+    });
+    await expect(readFile(path.join(stray, 'Default/Network/Cookies'))).rejects.toMatchObject({
+      code: 'ENOENT',
+    });
+  });
+
+  it('removes a planted link under a profile name and never empties what it points to', async () => {
+    const theirs = await mkdtemp(path.join(tmpdir(), 'dorkos-persons-own-'));
+    try {
+      await writeFile(path.join(theirs, 'keep.txt'), 'made-up-person-file');
+      const root = path.join(home, 'browser-profiles');
+      await mkdir(root, { recursive: true });
+      const link = path.join(root, '33333333-3333-4333-8333-333333333333');
+      await symlink(theirs, link);
+      await removal().forgetAll([]);
+      await expect(stat(link)).rejects.toMatchObject({ code: 'ENOENT' });
+      expect(await readFile(path.join(theirs, 'keep.txt'), 'utf8')).toBe('made-up-person-file');
+    } finally {
+      await rm(theirs, { recursive: true, force: true });
+    }
+  });
+
+  it('refuses and clears nothing when the profiles folder itself is a link', async () => {
+    const theirs = await mkdtemp(path.join(tmpdir(), 'dorkos-persons-own-'));
+    try {
+      const kept = path.join(theirs, '55555555-5555-4555-8555-555555555555');
+      await writeFile(kept, 'made-up-person-file');
+      await symlink(theirs, path.join(home, 'browser-profiles'));
+      await expect(removal().forgetAll([])).rejects.toMatchObject({ code: 'profile_busy' });
+      expect(await readFile(kept, 'utf8')).toBe('made-up-person-file');
+    } finally {
+      await rm(theirs, { recursive: true, force: true });
+    }
+  });
+
+  it('removes a saved session file that is a link without touching its target', async () => {
+    const theirs = await mkdtemp(path.join(tmpdir(), 'dorkos-persons-own-'));
+    try {
+      const target = path.join(theirs, 'keep.json');
+      await writeFile(target, 'made-up-person-file');
+      const folder = path.join(home, 'browser-profiles', '44444444-4444-4444-8444-444444444444');
+      await mkdir(folder, { recursive: true });
+      await symlink(target, path.join(folder, 'storage-state.json'));
+      await removal().forgetAll([]);
+      await expect(stat(path.join(folder, 'storage-state.json'))).rejects.toMatchObject({
+        code: 'ENOENT',
+      });
+      expect(await readFile(target, 'utf8')).toBe('made-up-person-file');
+    } finally {
+      await rm(theirs, { recursive: true, force: true });
+    }
+  });
+
+  it('clears nothing when any named profile is busy', async () => {
+    const profiles = store();
+    const work = profiles.create('Example work');
+    const folder = await prepareProfileFolder(home, null);
+    await seed(folder);
+    await expect(
+      new BrowserProfileRemoval({
+        dataDirectory: () => home,
+        busy: (id) => id === work.id,
+      }).forgetAll([work.id])
+    ).rejects.toMatchObject({ code: 'profile_busy' });
+    expect(await readFile(path.join(folder, 'storage-state.json'), 'utf8')).toBe(
+      'made-up-site-session'
+    );
+  });
+
   it('deletes the named profile, its bindings and folder without touching another profile', async () => {
     const profiles = store();
     const target = profiles.create('Example work');

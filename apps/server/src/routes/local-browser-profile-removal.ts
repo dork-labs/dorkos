@@ -35,7 +35,11 @@ export function mountLocalBrowserProfileRemoval(
     z.object({}).strict().default({}).parse(readJsonBody(c));
     const id = z.union([z.literal('default'), z.string().uuid()]).parse(c.req.param('id'));
     if (id !== 'default' && !deps?.profiles.get(id)) return missing(c);
-    await service.profileRemoval.forget(id === 'default' ? null : id);
+    // The panel's one Saved sign-ins row says every site is signed out, so the default's
+    // Forget clears every named profile too, including ones the panel no longer lists.
+    if (id === 'default')
+      await service.profileRemoval.forgetAll(deps?.profiles.list().map((item) => item.id) ?? []);
+    else await service.profileRemoval.forget(id);
     audit(id, false);
     return c.json({ success: true });
   });

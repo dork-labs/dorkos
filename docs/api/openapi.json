@@ -33060,112 +33060,11 @@
         "tags": [
           "Local browser"
         ],
-        "summary": "Create a named browser profile",
-        "description": "Only the owner on this computer can call this route. A new profile has no agents and no sign-ins.",
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "properties": {
-                  "label": {
-                    "type": "string",
-                    "minLength": 1,
-                    "maxLength": 80
-                  }
-                },
-                "required": [
-                  "label"
-                ],
-                "additionalProperties": false
-              }
-            }
-          }
-        },
+        "summary": "Create a named browser profile (refused)",
+        "description": "Named profiles are cut for launch: the app can’t show one, so this always refuses with `profiles_closed`. Listing and deleting existing profiles still work.",
         "responses": {
-          "201": {
-            "description": "The browser profile",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "id": {
-                      "type": "string",
-                      "format": "uuid"
-                    },
-                    "label": {
-                      "type": "string",
-                      "minLength": 1,
-                      "maxLength": 80
-                    },
-                    "createdAt": {
-                      "type": "string"
-                    },
-                    "agentIds": {
-                      "type": "array",
-                      "items": {
-                        "type": "string"
-                      }
-                    }
-                  },
-                  "required": [
-                    "id",
-                    "label",
-                    "createdAt",
-                    "agentIds"
-                  ]
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "The name is invalid",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code"
-                  ]
-                }
-              }
-            }
-          },
           "403": {
-            "description": "The caller is not the owner on this computer",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code"
-                  ]
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "The browser operation failed",
+            "description": "New browser profiles aren’t available",
             "content": {
               "application/json": {
                 "schema": {

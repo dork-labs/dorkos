@@ -9,7 +9,6 @@ import { STORAGE_KEYS } from '@/layers/shared/lib/constants';
 import { readLocalBrowserChoice } from '@/layers/shared/model/app-store/local-browser-preference';
 
 const transport = vi.hoisted(() => ({
-  listLocalBrowserProfiles: vi.fn().mockResolvedValue({ profiles: [] }),
   getLocalBrowserState: vi.fn(),
   getLocalBrowserCapabilities: vi.fn(),
   openLocalBrowser: vi.fn(),
@@ -82,7 +81,6 @@ function mount(visible = true) {
 }
 beforeEach(() => {
   vi.resetAllMocks();
-  transport.listLocalBrowserProfiles.mockResolvedValue({ profiles: [] });
   delete window.electronAPI;
   localStorage.clear();
   useAppStore.setState({ localBrowserChoice: null, localBrowserChoiceIssue: null });
@@ -136,9 +134,9 @@ describe('LocalBrowserPanel', () => {
         expect(screen.queryByRole('button', { name })).toBeNull();
       expect(screen.queryByRole('combobox')).toBeNull();
       expect(screen.queryByLabelText('Web address')).toBeNull();
-      // Forget and Delete stay out of reach too: nothing here may change that chat's browser.
-      expect(screen.queryByLabelText('Browser profiles')).toBeNull();
-      expect(transport.listLocalBrowserProfiles).not.toHaveBeenCalled();
+      // Forget stays out of reach too: nothing here may change that chat's browser.
+      expect(screen.queryByLabelText('Saved sign-ins')).toBeNull();
+      expect(screen.queryByRole('button', { name: 'Forget…' })).toBeNull();
     });
     it('keeps the ordinary controls when that handoff has ended', async () => {
       transport.getLocalBrowserState.mockResolvedValue({
@@ -152,7 +150,7 @@ describe('LocalBrowserPanel', () => {
         await screen.findByText('Shared with another chat. Disconnect to use it here.')
       ).toBeInTheDocument();
       expect(screen.getByRole('button', { name: 'Disconnect' })).toBeInTheDocument();
-      expect(await screen.findByLabelText('Browser profiles')).toBeInTheDocument();
+      expect(await screen.findByLabelText('Saved sign-ins')).toBeInTheDocument();
     });
     it('keeps the controls in the waiting chat’s own panel', async () => {
       transport.getLocalBrowserState.mockResolvedValue({
@@ -456,6 +454,21 @@ describe('LocalBrowserPanel', () => {
     await act(async () => opening.resolve(disconnected));
     await waitFor(() => expect(open).toHaveFocus());
   });
+  it('says "Not open yet" before the browser was ever opened (DOR-4104)', async () => {
+    mount();
+    expect(await screen.findByText('Not open yet')).toBeInTheDocument();
+    expect(screen.queryByText('Disconnected')).not.toBeInTheDocument();
+  });
+
+  it('says "Disconnected" only once a connection it saw has gone', async () => {
+    transport.getLocalBrowserState.mockResolvedValue(connected);
+    transport.disconnectLocalBrowser.mockResolvedValue(disconnected);
+    mount();
+    fireEvent.click(await screen.findByRole('button', { name: 'Disconnect' }));
+    expect(await screen.findByText('Disconnected')).toBeInTheDocument();
+    expect(screen.queryByText('Not open yet')).not.toBeInTheDocument();
+  });
+
   it('returns keyboard focus after disconnecting the browser', async () => {
     vi.spyOn(document, 'hasFocus').mockReturnValue(true);
     transport.getLocalBrowserState.mockResolvedValue(connected);
@@ -590,7 +603,7 @@ describe('LocalBrowserPanel', () => {
       await waitFor(() => expect(open).toBeEnabled());
       expect(screen.queryByText('Cancelling…')).not.toBeInTheDocument();
       expect(view.client.getQueryData(['local-browser', 'state'])).toEqual(disconnected);
-      expect(screen.getByText('Disconnected')).toBeInTheDocument();
+      expect(screen.getByText('Not open yet')).toBeInTheDocument();
       expect(screen.queryByRole('button', { name: 'Pause agent' })).not.toBeInTheDocument();
       expect(screen.queryByRole('alert')).not.toBeInTheDocument();
       expect(transport.openLocalBrowser).toHaveBeenCalledTimes(1);

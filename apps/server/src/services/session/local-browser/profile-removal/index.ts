@@ -1,5 +1,5 @@
 /** Remove a whole profile's saved data, only while every writer is excluded. */
-import { lstat, readlink, rm } from 'node:fs/promises';
+import { lstat, readdir, readlink, rm } from 'node:fs/promises';
 import path from 'node:path';
 import { z } from 'zod';
 import { LocalBrowserError } from '../errors.js';
@@ -46,6 +46,54 @@ export class BrowserProfileRemoval {
   async forget(profileId: string | null): Promise<void> {
     if (profileId !== null) z.string().uuid().parse(profileId);
     await this.idle(profileId, () => this.clear(profileId));
+  }
+
+  /**
+   * Forget every saved sign-in: the default profile and each named one (DOR-4105). The
+   * panel shows one Saved sign-ins row, so its Forget has to leave no hidden sign-in behind.
+   * Every profile must be free first, so a busy one stops it before anything is cleared.
+   *
+   * @param namedIds - Every named profile on record.
+   */
+  async forgetAll(namedIds: readonly string[]): Promise<void> {
+    for (const id of namedIds) z.string().uuid().parse(id);
+    // A profile folder made outside the API (an agent with a shell can make one) is
+    // cleared too, so no sign-in survives Forget just because it's off the list.
+    const root = path.join(this.deps.dataDirectory(), 'browser-profiles');
+    // The profiles folder itself must be a real folder. If it was swapped for a link,
+    // Forget would walk somewhere else, so it refuses and clears nothing.
+    const rootInfo = await lstat(root).catch(() => undefined);
+    if (rootInfo && !rootInfo.isDirectory())
+      throw new LocalBrowserError(
+        'profile_busy',
+        'Check the browser profile folder, then try again.'
+      );
+    const onDisk = await readdir(root).catch(() => [] as string[]);
+    const ids = [
+      ...new Set([
+        ...namedIds,
+        ...onDisk.filter((name) => z.string().uuid().safeParse(name).success),
+      ]),
+    ];
+    // Only a real folder is cleared. Anything else under a profile's name (a link an agent
+    // planted to the person's own folder, say) is removed itself and never followed.
+    const folders: string[] = [];
+    const planted: string[] = [];
+    for (const id of ids) {
+      const info = await lstat(path.join(root, id)).catch(() => undefined);
+      (!info || info.isDirectory() ? folders : planted).push(id);
+    }
+    if (ids.some((id) => this.deps.busy(id)))
+      throw new LocalBrowserError(
+        'profile_busy',
+        'Close the browser using this profile, then try again.'
+      );
+    await this.idle(null, async () => {
+      await this.clear(null);
+      for (const id of planted) await rm(path.join(root, id), { force: true });
+      for (const id of folders) await this.clear(id);
+      for (const id of ids) this.deps.forgotten?.(id);
+    });
   }
 
   async delete(profileId: string, profiles: LocalBrowserProfileStore): Promise<void> {

@@ -3,10 +3,7 @@
  * check in `local-browser.ts`, and adding an agent also waits on "Confirm it's you".
  */
 import type { Hono } from 'hono';
-import {
-  LocalBrowserProfileBindSchema,
-  LocalBrowserProfileCreateSchema,
-} from '@dorkos/shared/local-browser';
+import { LocalBrowserProfileBindSchema } from '@dorkos/shared/local-browser';
 import type { ApiEnv } from '../http/api-chain.js';
 import { readJsonBody } from '../http/request-body.js';
 import { refuseUnlessAccountOwner } from '../lib/caller-authority.js';
@@ -40,10 +37,11 @@ export function mountLocalBrowserProfileRoutes(
 ): void {
   const { profiles } = deps;
   router.get('/profiles', (c) => c.json({ profiles: profiles.list() }));
-  router.post('/profiles', (c) => {
-    const { label } = LocalBrowserProfileCreateSchema.parse(readJsonBody(c));
-    return c.json(profiles.create(label), 201);
-  });
+  // Named profiles are cut for launch (DOR-4105): the panel can't show one, so no one may
+  // make one. A hidden sign-in store is access the person can't see or remove.
+  router.post('/profiles', (c) =>
+    c.json({ error: 'New browser profiles aren’t available.', code: 'profiles_closed' }, 403)
+  );
   router.post('/profiles/:id/agents', (c) => {
     const profileId = c.req.param('id');
     const { agentId } = LocalBrowserProfileBindSchema.parse(readJsonBody(c));
