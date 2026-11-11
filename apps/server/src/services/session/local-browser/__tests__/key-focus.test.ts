@@ -52,6 +52,10 @@ async function fixture() {
   const snapshot = '- textbox "First"\n- textbox "Second"';
   const page = {
     url: () => 'http://fixture.test/',
+    // A key press is watched for the page load it may start (DOR-3897); this one starts none.
+    on: () => page,
+    off: () => page,
+    mainFrame: () => ({}),
     locator: () => ({
       ariaSnapshot: async () => snapshot,
       elementHandle: async () => ({ dispose: async () => undefined }),

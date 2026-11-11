@@ -13,7 +13,8 @@ export interface LocalBrowserAuditRecord {
   tabId: string | null;
   startedAt: string;
   phase: 'started' | 'finished';
-  outcome: 'succeeded' | 'refused' | 'unknown';
+  /** `failed`: the effect was sent and the page it opened didn't load (DOR-3897). */
+  outcome: 'succeeded' | 'refused' | 'failed' | 'unknown';
 }
 export type LocalBrowserAuditWriter = (record: LocalBrowserAuditRecord) => Promise<void>;
 
