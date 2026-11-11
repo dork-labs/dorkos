@@ -252,6 +252,11 @@ describe('host and path checks', () => {
     '/.WELL-KNOWN/Agent.json',
     '/.well-known/agent.json/',
     '/.well-known/%61gent.json',
+    // Cloud's edge filter is tested on these too (Nov 11): they normalise to a refused path.
+    '//a2a',
+    '/%61%32%61',
+    '/./a2a',
+    '/.well-known/./agent',
   ])('refuses %s on the managed listener', async (path) => {
     const res = await get(port, path, [hostHeader, proofHeader]);
     expect(res.status).toBe(404);
@@ -269,6 +274,9 @@ describe('host and path checks', () => {
     '/x/./../.well-known/agent-card.json',
     '/x/%252e%252e/a2a',
     '/api/x%5c..%5ca2a',
+    // Cloud's edge spellings with an encoded `/` (Nov 11).
+    '/x/..%2fa2a',
+    '/.%2fa2a',
   ])('rejects %s on the managed listener with 400', async (path) => {
     const res = await get(port, path, [hostHeader, proofHeader]);
     expect(res.status).toBe(400);

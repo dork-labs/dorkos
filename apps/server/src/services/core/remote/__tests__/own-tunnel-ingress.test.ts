@@ -82,6 +82,14 @@ export const DOT_SEGMENT_SPELLINGS = [
   '/x/./../.well-known/agent-card.json',
 ];
 
+/**
+ * The spellings Cloud's edge filter is tested on (Nov 11), so both filters are
+ * held to the same set: these normalise to a refused path (404) ...
+ */
+const EDGE_SPELLINGS_NOT_SERVED = ['//a2a', '/%61%32%61', '/./a2a', '/.well-known/./agent'];
+/** ... and these carry an encoded `/`, so they are not a normal path (400). */
+const EDGE_SPELLINGS_NOT_NORMAL = ['/x/..%2fa2a', '/.%2fa2a'];
+
 describe('own-tunnel ingress: normalise, then match', () => {
   it.each([
     '/a2a',
@@ -90,8 +98,7 @@ describe('own-tunnel ingress: normalise, then match', () => {
     '/%61%32%61',
     '/.well-known/agent-card.json',
     '/.well-known/agent.json?x=1',
-    '//a2a',
-    '/./a2a',
+    ...EDGE_SPELLINGS_NOT_SERVED,
   ])('refuses %s with 404 and never hands it on', async (target) => {
     const { ingress, requests } = recordingIngress();
     const port = Number(new URL(await ingress.open()).port);
@@ -110,6 +117,7 @@ describe('own-tunnel ingress: normalise, then match', () => {
   it.each([
     ...DOT_SEGMENT_SPELLINGS,
     ...RETIRED_ENCODED_PATHS,
+    ...EDGE_SPELLINGS_NOT_NORMAL,
     '/x/%252e%252e/a2a',
     '/x\\..\\a2a',
     '/api/x%5c..%5ca2a',
