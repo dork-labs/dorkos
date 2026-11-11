@@ -93,6 +93,8 @@ Example: If `apps/client/src/layers/shared/ui/button.tsx` changes, it matches:
 
 ## Maintenance Tracking
 
+2026-11-11: Reconciled `external-agent-marketplace-access.md` endpoints, client configuration, permission-aware confirmation, content binding and browser-session approval requirements with source. Coverage patterns are unchanged.
+
 2026-11-11: Reconciled `agent-operator-surface.md` tier/permission resolution, dedicated permission writes, Full protected-setting decisions and handler authority names with current source. Removed frozen tool totals; coverage patterns are unchanged.
 
 2026-11-11: Reconciled `managed-connections-operations.md` cancel-window eligibility with `holdRequesterFor`, `marksOf`, the explicit Full setting, and the release-time recheck. Deployment readiness records and coverage patterns are unchanged.
