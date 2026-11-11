@@ -20,20 +20,11 @@ import type { AccountUsage } from '@dorkos/shared/account-usage';
 import { createMockAccountUsage, createMockTransport } from '@dorkos/test-utils';
 import { TransportProvider, seedAccountUsage, useExtensionRegistry } from '@/layers/shared/model';
 import { TooltipProvider } from '@/layers/shared/ui';
+import {
+  buildProfileDeepLinkHarness,
+  type ProfileDeepLinkHarness,
+} from '@/test-helpers/profile-deep-link';
 import { ClaudeAccountsSection } from '../sections/ClaudeAccountsSection';
-
-const mockSetTab = vi.fn();
-vi.mock('@/layers/shared/model/use-dialog-deep-link', () => ({
-  useSettingsDeepLink: () => ({
-    isOpen: true,
-    activeTab: 'runtimes',
-    section: null,
-    open: vi.fn(),
-    close: vi.fn(),
-    setTab: mockSetTab,
-    setSection: vi.fn(),
-  }),
-}));
 
 beforeAll(() => {
   Object.defineProperty(window, 'matchMedia', {
@@ -77,10 +68,13 @@ function renderSection(
   {
     usage = [],
     routeUsage = () => usage,
+    router,
   }: {
     usage?: AccountUsage[];
     /** What `GET /api/usage/:runtime` answers; by default the seeded records. */
     routeUsage?: () => AccountUsage[];
+    /** A real router to render inside, for a case that checks the URL a link leaves. */
+    router?: ProfileDeepLinkHarness;
   } = {}
 ) {
   const transport = createMockTransport({
@@ -95,7 +89,9 @@ function renderSection(
     wrapper: ({ children }: { children: React.ReactNode }) => (
       <QueryClientProvider client={queryClient}>
         <TransportProvider transport={transport}>
-          <TooltipProvider>{children}</TooltipProvider>
+          <TooltipProvider>
+            {router ? <router.Wrapper>{children}</router.Wrapper> : children}
+          </TooltipProvider>
         </TransportProvider>
       </QueryClientProvider>
     ),
@@ -1184,12 +1180,19 @@ describe('ClaudeAccountsSection: usage, colors and the Flow note', () => {
     it('links to the Flow tab with two accounts and the tab registered', async () => {
       const user = userEvent.setup();
       registerFlowTab();
-      renderSection({ resolvedAccount: HOME, inherited: true, accounts: [PERSONAL, ACME] });
+      // The real Settings link inside a real router, already open on this tab:
+      // the click is checked by the tab the address names afterwards.
+      const router = buildProfileDeepLinkHarness('/?settings=runtimes');
+      renderSection(
+        { resolvedAccount: HOME, inherited: true, accounts: [PERSONAL, ACME] },
+        { router }
+      );
+      await router.ready();
       expect(await screen.findByText(/Flow uses these accounts/)).toHaveTextContent(
         'Flow uses these accounts. Choose how in Settings → Flow.'
       );
       await user.click(screen.getByRole('button', { name: 'Settings → Flow' }));
-      expect(mockSetTab).toHaveBeenCalledWith('flow:fleet');
+      await waitFor(() => expect(router.openSettingsTab()).toBe('flow:fleet'));
     });
   });
 });
