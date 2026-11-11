@@ -72,7 +72,7 @@ dorkos/
 ├── ci/                   # CI Steward intent: gates, required checks, SLOs, ledger
 ├── meta/                 # Brand, personas, value architecture, litepaper
 ├── decisions/            # ADRs                          ├── plans/     # Implementation plans
-├── docs/                 # User-facing MDX (Fumadocs)    ├── research/  # 350+ research reports
+├── docs/                 # User-facing MDX (Fumadocs)    ├── research/  # Retained research reports
 ├── specs/                # Feature specs with manifest.json
 └── contributing/         # 48 internal dev guides + capabilities/ contracts (see contributing/INDEX.md)
 ```
@@ -222,7 +222,7 @@ Emit only fields you actually know (omitted is a fact; invented is a lie); the v
 
 ## Research
 
-350+ reports in `research/` (`YYYYMMDD_topic-slug.md`). **Always check `research/` before doing new research.**
+Reports in `research/` use `YYYYMMDD_topic-slug.md`. **Always check `research/` before doing new research.** See [research/README.md](research/README.md) for the retention rules and recovery from Git history.
 
 ## Artifacts
 
