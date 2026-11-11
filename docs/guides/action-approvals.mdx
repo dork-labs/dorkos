@@ -1,6 +1,6 @@
 ---
 title: Action Approvals
-description: DorkOS asks you first before an agent does something to DorkOS you cannot take back
+description: Understand when an agent needs your approval, what a card covers, and when DorkOS refuses a change
 ---
 
 import { Steps, Step } from 'fumadocs-ui/components/steps';
@@ -11,9 +11,9 @@ import { Cards, Card } from 'fumadocs-ui/components/card';
 
 Your agents can run DorkOS for you: make agents, schedule work, change settings, add and remove packages. On a **Trusted** install (the default), most of that runs on its own and lands in your activity feed, so you check it afterwards instead of approving it first.
 
-Six things an agent does cannot be taken back: removing an installed package, deleting a scheduled task, removing an agent, changing an agent's safety boundaries, changing what an agent runs on (its runtime, model or effort), and running a package from a folder. The last three always ask, on Trusted and on Careful alike, because they bring in code nobody has reviewed yet or they would move an agent in a way every one of its scheduled runs would also move. The first three run on Trusted like everything else, recorded in your activity feed and named to the agent that asked. If you chose **Careful** in [Permissions](/docs/guides/permissions), all six wait for your yes, the way DorkOS always used to work.
+Your [permissions](/docs/guides/permissions) decide when DorkOS asks first. An Allowed area covers ordinary removals as well as everyday changes. Ask holds changes for your answer. Blocked refuses them unless you approve an exception the agent requests.
 
-The card for changing what an agent runs on shows each change as it is now and as it would be, for example **Model: claude-sonnet-4 → claude-opus-4**. An agent does not get to do one of the always-ask things and then tell you about it afterwards.
+Some actions have extra checks. A change to what an agent runs on shows its old and new runtime, model or effort. A person-only change in a chat set to Full autonomy can be refused instead of opening a card. Full autonomy does not let an agent approve those changes for itself.
 
 <Callout type="info">
   This is not the same as [tool approval](/docs/guides/tool-approval). Tool approval covers what an
@@ -63,37 +63,25 @@ When one of an agent's rooms caused the request, the card also shows up inside t
 
 ## What needs your OK, and what doesn't
 
-Six things an agent can do have no undo. Three of them wait for you every time, whichever preset you are on, because each carries a risk nothing else on this page does. The other three run on a **Trusted** install like everything else and land in your activity feed, named to the agent that did them; on **Careful** they wait for you too:
+The action, your permissions, and the caller decide whether a card appears. There is no fixed list of actions that always need a card.
 
-- **Changing an agent's safety boundaries** (always asks), the list of things you told it never to do: the new text replaces the whole list, so whatever it said before is gone
-- **Changing what an agent runs on** (always asks): its runtime, model or effort. Every scheduled task that doesn't pick its own would move with it. The card shows each change, as it is now and as it would be
-- **Running a package from a folder** on your computer (always asks): whatever is in that folder runs in DorkOS, edits included, without another review. No setting can approve this ahead of time, so the card shows the folder's full path each time, and every command it runs and when. Approving covers those commands; anything new the folder adds later asks again
-- **Removing an installed package**, with or without its saved data (asks on Careful)
-- **Deleting a scheduled task**, which has no undo: the prompt, the schedule, and the timezone are gone (asks on Careful)
-- **Removing an agent**, which also deletes its setup file and turns off its scheduled tasks (asks on Careful)
+**Ordinary removals follow their area setting.** For example, deleting a scheduled task can proceed under Trusted and is recorded in Activity. On Careful, it waits for your answer unless you changed that action's permission.
 
-**Creating a new package** in your personal marketplace also always asks, because it is new code landing on your machine for the first time. **Installing or updating a package** asks too, on Trusted and on Careful: a package is code from outside your team. Its own hooks and any global plugins it carries ask separately as well — see [Marketplace package trust](/docs/self-hosting/threat-model#marketplace-package-trust).
+**Some changes need their own decision.** Changing what an agent runs on affects scheduled work that follows its settings. Its card shows each change before and after. It cannot be set to Allowed.
 
-Your [permissions](/docs/guides/permissions) can add more. Any area you set to **Ask**, like Rooms, puts a card in front of you before an agent makes a change there, even one you could take back. An area set to **Blocked** is off for that agent: see [When something is blocked](#when-something-is-blocked).
+**Code can have another confirmation step.** Installing or updating a package can still ask for confirmation when Tools & packages is Allowed. Creating a new package has a confirmation step too. An approval for that exact call, or an explicit permission for that action, can cover it. Running a package from a folder asks about the folder and its commands. New commands added later need another decision. See [Marketplace package trust](/docs/self-hosting/threat-model#marketplace-package-trust).
 
-Almost everything else an agent asks DorkOS for runs straight away. Reading your activity, listing your agents, editing an agent, changing a preference: those go through, and the ones that change something land in your activity feed so you can see them after the fact.
+**Person-only changes have stricter rules.** Changing an agent's safety boundaries needs your decision. At Full, DorkOS refuses that change and records the refusal instead of opening a card. See [Settings your agents cannot change](#settings-your-agents-cannot-change).
 
-The rule is about the action, not about which agent asked. On Careful, the one way to stop being asked is **Always allow**, which is a decision you make yourself, for one agent and one action. See [Always allow](#always-allow).
+Your [permissions](/docs/guides/permissions) can add more questions. Any area set to **Ask**, like Rooms, needs your approval before a change there. An area set to **Blocked** refuses the action. See [When something is blocked](#when-something-is-blocked).
 
-One set of settings is neither of those things. Agents are refused them outright, with no card and no way to say yes. See [Settings your agents cannot change](#settings-your-agents-cannot-change).
+Reading your activity or listing agents does not need a card unless that area is blocked. Everyday changes, such as editing an agent's description, follow the area's permission.
 
 <Callout type="warn">
-  **Waiting is for the things you cannot rebuild, and a few things you can are still gone in one
-  call.** An agent can overwrite a scheduled task's prompt and timing with no copy of the old one.
-  It can clear its own message inbox, which deletes the messages it just read. It can remove a
-  message endpoint along with anything undelivered in it, or delete a chat route. None of those stop
-  to ask, because they are the ordinary way an agent tidies up after itself, and a card on every
-  routine cleanup teaches people to click through cards without reading them. What you get instead
-  is a record: each one lands in your activity feed, named to the agent when DorkOS knows which one
-  asked. Extension tools work differently again: an agent can write and compile extension files
-  freely, but it cannot make DorkOS **run** an extension's code until you have allowed that
-  extension, once. That covers both places it would run, on your computer and on the DorkOS page in
-  your browser.
+  **A record is not an undo.** A permitted change can replace data you wanted to keep. Check the
+  details before approving it, and review Activity for work that ran under Allowed permissions. Mini
+  apps an agent builds follow its level: at Full they can start with a record in Activity; below
+  Full they wait for approval. Code from outside DorkOS can need a separate decision.
 </Callout>
 
 Every action carries a size label, and when a card shows at all, the label is on it, so you can tell at a glance what you are being asked:
@@ -104,7 +92,7 @@ Every action carries a size label, and when a card shows at all, the label is on
 | **Changes things**   | Changes something you can change back.                                                                                                                                                                                                                                                                                                     |
 | **Cannot be undone** | There is no undo, or the change reaches work you already approved. For example: removing an installed package, deleting a scheduled task, removing an agent, changing an agent's safety boundaries, changing what an agent runs on, running a package from a folder, or making a workspace that brings its own settings or setup commands. |
 
-On a Trusted install, the three with no undo that are not on the always-asks list above (removing a package, deleting a schedule, removing an agent) carry this label in your activity feed rather than on a card: nothing stopped to ask, but the record still says what kind of change it was.
+When an Allowed action proceeds, its label appears in Activity. A label describes the change; it does not decide whether approval is required.
 
 ## Settings your agents cannot change
 
@@ -136,7 +124,9 @@ The last group is different again. These are the dials you turn **down** to give
 
 The Control Center opens with `⌘⇧L` (`Ctrl+Shift+L` on Windows and Linux). The last three have no switch anywhere in the app, so the command line is the way to them — and once you set one there, it stays set.
 
-Agents are refused all of those, both from the tools they get inside DorkOS and from the settings screen itself. There is no card for them, because saying yes to one is not a decision anyone should be asked to make in the middle of somebody else's task, and there is no job that needs an agent to make it. An agent that tries gets a plain refusal telling it to ask you instead, and you change the setting yourself — in Settings, in the Control Center, or from the command line, as the lists above say. Three of these settings can still be reached by another route, which the second note below explains.
+These settings do not follow the ordinary preference rule. Through DorkOS's action tools, a change that needs your decision asks below Full. In a chat set to Full autonomy, or on the older Full power preset, it is refused instead. The refusal names the setting and records an Activity entry. You can change it yourself in Settings, the Control Center, or from the command line.
+
+A change that only tightens these settings can proceed at Full, with an Activity entry. For example, an agent can turn remote access off. It cannot use that exception to turn it on again. Other routes have their own checks and gaps, described below.
 
 <Callout type="warn">
   **How well this holds depends on "Ask for a password on this computer too", and it is worth knowing which half you have.**
@@ -179,7 +169,7 @@ One more thing works the same way, though it is not a setting: **where your pack
 
 ## What about an agent that does not say who it is?
 
-An agent can tell DorkOS who it is, and most do. One that doesn't is still stopped by the same question. The card simply says the request came in without an agent identity, so you know DorkOS cannot tell you who asked.
+An unidentified caller does not get the trust given to your own agents. A removal allowed only by an area setting still asks. Its card says the request came in without an agent identity. Reads and other calls still follow their applicable rules.
 
 This also holds for `dorkos call`, which is how an agent reaches any DorkOS action from a shell. Running an agent outside DorkOS does not get past the question.
 
@@ -250,7 +240,9 @@ Standing permissions, the old "Allow, and stop asking about this for 8 hours" bu
 
 An area set to **Blocked** for an agent is off for it: its tools are left out of what the agent is shown, and the agent is told the area is blocked. If it tries the action anyway, DorkOS refuses and no card appears.
 
-When an agent really needs something that is blocked, it can ask you on purpose with a tool called `request_permission`. It names the action, the exact details it would use, and why. You get a card that says the agent is blocked and quotes its reason. Allow lets that one request through with exactly those details. Always allow does the same and sets that one action to Allowed for the agent, which brings its tool back. Deny says no.
+For an ordinary permission block, the agent can ask you on purpose with a tool called `request_permission`. It names the action, the exact details it would use, and why. You get a card that says the agent is blocked and quotes its reason. Allow lets that one request through with exactly those details. Always allow does the same and sets that one action to Allowed for the agent, which brings its tool back. Deny says no.
+
+A person-only refusal at Full cannot be approved through that tool. An inactive identity or unreadable permissions also cannot be overridden with a card.
 
 So that asking never turns into nagging, DorkOS limits it:
 
@@ -279,7 +271,7 @@ The activity feed says which agent made each change, not just that something cha
 
 ## From the command line
 
-If you drive agents in a terminal, the same rule applies to `dorkos call`. A call that needs your OK comes back with `status: approval_required` and a token instead of doing the work:
+For a terminal client, `dorkos call` follows the same checks. For example, with Tools & packages set to Ask, this call comes back with `status: approval_required` and a token instead of doing the work:
 
 ```bash
 dorkos call marketplace.uninstall --input '{"name":"some-package"}'

@@ -68,9 +68,9 @@ Two areas are never Allowed: **Safety limits** and **Reach & secrets**. The most
 
 Each area is made of actions, like "Delete a schedule" inside Tasks & schedules. Under a row, **Show individual actions** lists them, each with its own switch. A single action you set on its own beats its area, and shows under the row even when the list is closed, for example **"Except Open a room: Allowed"**.
 
-A few actions always show you exactly what they would change, before and after, such as changing which model an agent runs on. Those always ask: their cards never offer **Always allow**, and they can't be set to Allowed.
+Some actions show the change before and after, such as changing which model an agent runs on. They cannot be set to Allowed, and their cards never offer **Always allow**. Some person-only changes are refused in a chat set to Full autonomy, rather than opening a card. See [Action Approvals](/docs/guides/action-approvals#settings-your-agents-cannot-change).
 
-An action that deletes or removes something asks even when its area is Allowed. Its line says **"Always asks unless you set it here"**: it runs without asking only if you set that one action to Allowed yourself.
+An Allowed area covers ordinary removals too. Some actions still need a separate decision, including actions that run code from an outside folder or arm unattended work. For those actions, an area-level Allowed is not enough. The **Why?** link explains which rule applies. A caller DorkOS cannot identify, or a turn that read outside words, can face extra checks too.
 
 An action that only reads, like listing schedules, says **"A read: Ask lets it through"**. Ask never stops a read. Only Blocked does.
 
@@ -84,13 +84,13 @@ An action that only reads, like listing schedules, says **"A read: Ask lets it t
 
 For Codex, the three positions are Codex's own levels. **Ask first** asks before any change. **Workspace write** changes the project freely and asks before going further or online. **Full access** never asks. A conversation can start another one only at its own level or a safer one, so a Claude Code conversation in Ask first can start a Codex conversation in Ask first, but not in Workspace write or Full access.
 
-DorkOS's own risky actions, like deleting a schedule or removing an agent, still stop for you whatever this is set to. The areas above decide those.
+The areas above decide DorkOS actions separately from file edits and shell commands. Full autonomy does not turn every area to Allowed. It also refuses some person-only changes instead of asking you to approve them.
 
 An agent's own Files & commands setting beats everything else for that agent: its conversations, its scheduled runs, and its turns in rooms. Without one, the agent follows the setting for its runtime in **Settings → Runtimes**, if you set one, and otherwise the setting everyone has.
 
 ## Presets
 
-A preset sets every area and Files & commands at once. You pick one when you first set up DorkOS, and you can change it any time in **Settings → Permissions** or in the Control Center (the ⚡ button in the top bar). There are two: **Trusted**, the default, and **Careful**, for anyone who would rather approve things by hand.
+A preset sets every area and Files & commands at once. DorkOS starts on Trusted, and you can change it any time in **Settings → Permissions** or in the Control Center (the ⚡ button in the top bar). There are two: **Trusted**, the default, and **Careful**, for anyone who would rather approve things by hand.
 
 | Area              | Trusted       | Careful   |
 | ----------------- | ------------- | --------- |
@@ -109,13 +109,15 @@ A preset sets every area and Files & commands at once. You pick one when you fir
 | Reach & secrets   | Ask           | Blocked   |
 | Files & commands  | Full autonomy | Ask first |
 
-On **Trusted**, your agents do routine work on their own and everything they do is recorded, so you can see it afterwards. Safety limits and Reach & secrets still ask, because those two can never be Allowed for anyone. On **Careful**, agents ask before touching anything in the areas above, the same way DorkOS always used to work.
+On **Trusted**, your agents do routine work on their own, with a record you can check afterwards. Safety limits and Reach & secrets cannot be Allowed. Some changes in those areas need a card; person-only changes at Full can be refused instead. On **Careful**, agents ask before making changes in areas set to Ask. Reads still go through unless blocked.
 
 A fresh install starts on Trusted. Anything you change on top of a preset counts as a change, so the picker reads, for example, **"Trusted, 2 changes"**. **Reset to Trusted** takes the changes away. Choosing a preset replaces those changes; agents you set differently keep their own settings unless you tick them in the question DorkOS asks.
 
 ## The request card
 
-When an agent does something set to **Ask**, or asks for something that is **Blocked**, a card appears. It shows in the top bar's inbox, at the top of Home, in the conversation the agent is having with you, and, when one of your rooms caused it, inside that room. It says what the agent wants to do, in DorkOS's own words, and has three answers:
+When an action needs approval, a card appears. An agent can also request a one-time exception to an ordinary **Blocked** permission. A person-only refusal at Full cannot be approved this way.
+
+The card shows in the top bar's inbox, at the top of Home, in the conversation the agent is having with you, and, when one of your rooms caused it, inside that room. It says what the agent wants to do, in DorkOS's own words, and has three answers:
 
 - **Allow**: this one time.
 - **Always allow**: this time, and from now on for this agent and this one action. It becomes that agent's own setting for that action, which you can see and reset on the agent's Permissions page.
@@ -142,7 +144,7 @@ A **"2 agents differ"** link under a row lists who is set differently. Each has 
 
 ## Why is it set this way?
 
-Next to every state there is a **Why?** link. Click or tap it to see where the state comes from, for example **"Allowed, from the default (Trusted)."**, and who last changed it, when, and where: **"Changed by someone on this computer on Sep 23 from a request card."** A locked area says it can never be Allowed. An action that deletes or removes something says it always asks unless you set it on its own. On a phone, the answer opens from the bottom of the screen.
+Next to every state there is a **Why?** link. Click or tap it to see where the state comes from, for example **"Allowed, from the default (Trusted)."**, and who last changed it, when, and where: **"Changed by someone on this computer on Sep 23 from a request card."** A locked area says it can never be Allowed. An action with an extra approval rule explains why the area setting alone does not allow it. On a phone, the answer opens from the bottom of the screen.
 
 The Control Center's list of agents set differently has the same link on each row, and the **"2 agents differ"** list shows who set each one and when.
 
