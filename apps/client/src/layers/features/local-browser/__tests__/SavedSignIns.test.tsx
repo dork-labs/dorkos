@@ -96,4 +96,47 @@ describe('Saved sign-ins (DOR-4105)', () => {
     expect(screen.queryByText('Sign-ins forgotten.')).toBeNull();
     expect(screen.queryByText(/signed out of every site/)).toBeNull();
   });
+
+  it('becomes the answer when the folder was changed outside DorkOS: only Close, focused (DOR-4172)', async () => {
+    transport.forgetLocalBrowserSignIns.mockRejectedValue(
+      Object.assign(new Error('private path'), { code: 'profiles_folder_changed' })
+    );
+    mount();
+    const trigger = screen.getByRole('button', { name: 'Forget…' });
+    fireEvent.click(trigger);
+    const dialog = await screen.findByRole('alertdialog');
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Forget sign-ins' }));
+    const close = await within(dialog).findByRole('button', { name: 'Close' });
+    expect(within(dialog).getAllByRole('button')).toEqual([close]);
+    await waitFor(() => expect(close).toHaveFocus());
+    expect(within(dialog).getByRole('heading')).toHaveTextContent('Sign-ins weren’t forgotten');
+    expect(dialog).toHaveTextContent(
+      'Their folder was changed outside DorkOS, so DorkOS left it alone.'
+    );
+    // No question, no old description, no retry, nothing raw, and never the success line.
+    expect(dialog).not.toHaveTextContent('Forget saved sign-ins?');
+    expect(dialog).not.toHaveTextContent('out of every site');
+    expect(dialog).not.toHaveTextContent(/try again/i);
+    expect(screen.queryByText('private path')).toBeNull();
+    expect(screen.queryByText('Sign-ins forgotten.')).toBeNull();
+    fireEvent.click(close);
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
+    await waitFor(() => expect(trigger).toHaveFocus());
+    expect(transport.forgetLocalBrowserSignIns).toHaveBeenCalledOnce();
+  });
+
+  it('opens as the question again after a folder-changed refusal was closed', async () => {
+    transport.forgetLocalBrowserSignIns.mockRejectedValueOnce(
+      Object.assign(new Error('private path'), { code: 'profiles_folder_changed' })
+    );
+    mount();
+    fireEvent.click(screen.getByRole('button', { name: 'Forget…' }));
+    let dialog = await screen.findByRole('alertdialog');
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Forget sign-ins' }));
+    fireEvent.click(await within(dialog).findByRole('button', { name: 'Close' }));
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
+    fireEvent.click(screen.getByRole('button', { name: 'Forget…' }));
+    dialog = await screen.findByRole('alertdialog');
+    expect(within(dialog).getByRole('button', { name: 'Forget sign-ins' })).toBeEnabled();
+  });
 });
