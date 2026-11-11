@@ -71,6 +71,70 @@ function seed(version?: string, sidebar?: unknown): { dir: string; file: string;
   return { dir, file, before };
 }
 
+describe('current auth settings', () => {
+  it.each([null, ''])('opens an unset MCP key %j with current tunnel settings', (apiKey) => {
+    const { dir, file } = seed('0.115.0');
+    const stored = JSON.parse(fs.readFileSync(file, 'utf8'));
+    stored.mcp = { apiKey };
+    stored.tunnel = {
+      enabled: false,
+      auth: 'fixture-user:fixture-pass',
+      authtoken: 'fixture-token',
+    };
+    fs.writeFileSync(file, JSON.stringify(stored));
+    const manager = new ConfigManager(dir);
+    expect(manager.get('auth').enabled).toBe(true);
+    expect(manager.get('tunnel').auth).toBe('fixture-user:fixture-pass');
+    expect(manager.get('tunnel').authtoken).toBe('fixture-token');
+    expect(manager.get('extensions').approvedToRun).toEqual(['fixture-extension']);
+    expect(manager.get('harness').approvedHooks).toEqual(['fixture-hooks@digest']);
+    const reopened = new ConfigManager(dir);
+    expect(reopened.get('auth').enabled).toBe(true);
+    expect(reopened.get('extensions').approvedToRun).toEqual(['fixture-extension']);
+    expect(reopened.get('harness').approvedHooks).toEqual(['fixture-hooks@digest']);
+  });
+});
+
+describe.each(['0.115.0', '0.135.5', '0.136.0'])(
+  'retired auth settings with supported marker %s',
+  (version) => {
+    it.each([
+      { sessionSecret: 'fixture-retired-secret' },
+      { tunnel: { passcodeEnabled: true } },
+      { tunnel: { passcodeHash: 'fixture-retired-hash' } },
+      { tunnel: { passcodeSalt: 'fixture-retired-salt' } },
+      { mcp: { apiKey: 'fixture-retired-key' } },
+    ])('refuses before opening Conf: %j', (leftover) => {
+      const { dir, file } = seed(version);
+      const stored = JSON.parse(fs.readFileSync(file, 'utf8'));
+      fs.writeFileSync(file, JSON.stringify({ ...stored, ...leftover }));
+      const before = fs.readFileSync(file);
+      const hash = (bytes: Buffer) => createHash('sha256').update(bytes).digest('hex');
+      const write = vi.spyOn(fs, 'writeFileSync');
+      const open = vi.spyOn(fs, 'openSync');
+      const mkdir = vi.spyOn(fs, 'mkdirSync');
+      expect(() => new ConfigManager(dir)).toThrow(ConfigUpgradeRequiredError);
+      expect(write).not.toHaveBeenCalled();
+      expect(mkdir).not.toHaveBeenCalled();
+      expect(
+        open.mock.calls.filter(([, flags]) =>
+          typeof flags === 'string'
+            ? /[wa+]/.test(flags)
+            : (flags &
+                (fs.constants.O_WRONLY |
+                  fs.constants.O_RDWR |
+                  fs.constants.O_CREAT |
+                  fs.constants.O_TRUNC |
+                  fs.constants.O_APPEND)) !==
+              0
+        )
+      ).toEqual([]);
+      expect(hash(fs.readFileSync(file))).toBe(hash(before));
+      expect(fs.readdirSync(dir)).toEqual(['config.json']);
+    });
+  }
+);
+
 describe('config upgrade floor through a real manager', () => {
   it.each([
     '0.44.0',

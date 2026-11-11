@@ -8,6 +8,18 @@ export const MINIMUM_CONFIG_UPGRADE_VERSION = '0.115.0';
 
 /** Encodings retired before every supported release. Refuse, never convert. */
 function hasRetiredConfigEncoding(value: object): boolean {
+  if ('sessionSecret' in value) return true;
+  const tunnel = (value as { tunnel?: unknown }).tunnel;
+  if (
+    tunnel &&
+    typeof tunnel === 'object' &&
+    ['passcodeEnabled', 'passcodeHash', 'passcodeSalt'].some((key) => key in tunnel)
+  )
+    return true;
+  const mcp = (value as { mcp?: { apiKey?: unknown } }).mcp;
+  // Null and empty are current unset defaults. Never let a surviving global
+  // key reach the legacy startup seeder or authenticate a request.
+  if (mcp?.apiKey !== undefined && mcp.apiKey !== null && mcp.apiKey !== '') return true;
   const claudeCode = (value as { runtimes?: { claudeCode?: unknown } }).runtimes?.claudeCode;
   if (claudeCode && typeof claudeCode === 'object' && 'activeAccount' in claudeCode) return true;
   const sidebar = (value as { ui?: { sidebar?: unknown } }).ui?.sidebar;
@@ -62,8 +74,9 @@ export class ConfigUpgradeRequiredError extends ConfigBootError {
  *
  * The intermediate release itself must still accept earlier configs. Raw dev
  * trees use 0.0.0 rather than a release version and run no release migrations.
- * Raw dev still refuses retired sidebar and account encodings: removing converters
- * must not empty memberships or change the billing account. Other raw-dev files have no release
+ * Raw dev still refuses retired sidebar, account and auth encodings: removing converters
+ * must not empty memberships, change the billing account or revive an old credential.
+ * Other raw-dev files have no release
  * age that this check can establish.
  * Unstamped readable objects need the intermediate release too; their age
  * cannot safely be inferred from which optional fields they happen to carry.

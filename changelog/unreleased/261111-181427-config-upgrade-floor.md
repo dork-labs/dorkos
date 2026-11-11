@@ -1,5 +1,6 @@
 ---
 covers:
+  - 'fix(config): refuse retired auth settings before opening'
   - 'refactor(config): retire the activeAccount alias'
   - 'refactor(config): drop retired config flag tolerances'
   - 'refactor(config): retire legacy sidebar conversion'

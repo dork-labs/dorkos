@@ -565,7 +565,7 @@ No manual `projectVersion` bump is needed — it resolves from `SERVER_VERSION` 
 
 ### Retired account and auth seeds
 
-The 0.45 auth, cloud and passcode cleanup bodies are retired under the 0.115 upgrade floor. Older installs must pass through 0.115 first. Better Auth remains the login path and manages session signing. This retirement does not change the runtime handling of legacy MCP keys or account registries; those paths have separate cleanup and security review.
+The 0.45 auth, cloud and passcode cleanup bodies are retired under the 0.115 upgrade floor. Older installs must pass through 0.115 first. Better Auth remains the login path and manages session signing. Even with a supported version marker, current and raw-dev builds refuse the retired root signing secret, tunnel passcode settings and a nonempty global MCP key before Conf opens. Real-file tests check unchanged SHA-256 hashes, no writes or directory creation, and no writable opens. Current account-row editing remains supported. The legacy MCP seeder and request fallback still await their own cleanup batch; this preflight prevents stored keys from reaching them during startup.
 
 ### Sidebar, shapes and composer settings
 
