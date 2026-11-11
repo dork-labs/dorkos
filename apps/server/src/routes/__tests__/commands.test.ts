@@ -173,12 +173,31 @@ describe('Commands Routes', () => {
       expect(mockGetCommands).toHaveBeenCalledWith(false, undefined);
     });
 
-    it('passes refresh=true to registry', async () => {
-      mockGetCommands.mockResolvedValue({ commands: [], lastScanned: '2024-01-01' });
+    it('answers ?refresh=true with a fresh scan, and a plain request with the cached one', async () => {
+      // The registry answers differently on a rescan, so the response says which
+      // one the route asked for: a route that dropped `refresh` would serve the
+      // cached list to both requests.
+      mockGetCommands.mockImplementation(async (refresh: boolean) => ({
+        commands: [
+          {
+            fullCommand: refresh ? '/fresh:scan' : '/cached:list',
+            description: refresh ? 'Found on a rescan' : 'From the cache',
+          },
+        ],
+        lastScanned: refresh ? '2024-01-02T00:00:00.000Z' : '2024-01-01T00:00:00.000Z',
+      }));
 
-      const res = await request(testServer).get('/api/commands?refresh=true');
-      expect(res.status).toBe(200);
-      expect(mockGetCommands).toHaveBeenCalledWith(true, undefined);
+      const refreshed = await request(testServer).get('/api/commands?refresh=true');
+      expect(refreshed.status).toBe(200);
+      expect(refreshed.body.commands.map((c: { fullCommand: string }) => c.fullCommand)).toEqual([
+        '/fresh:scan',
+      ]);
+
+      const cached = await request(testServer).get('/api/commands');
+      expect(cached.status).toBe(200);
+      expect(cached.body.commands.map((c: { fullCommand: string }) => c.fullCommand)).toEqual([
+        '/cached:list',
+      ]);
     });
 
     it('returns empty when no commands exist', async () => {
