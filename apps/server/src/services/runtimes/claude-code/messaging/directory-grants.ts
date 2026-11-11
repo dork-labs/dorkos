@@ -131,11 +131,20 @@ const ALL_WRITE_TOOLS = ['Edit', 'Write', 'MultiEdit', 'NotebookEdit'] as const;
  * Write-deny rules for {@link HOME_PERSON_ONLY_PATHS} in the home spelling Claude
  * Code expands itself: the desktop app's data folders and the default data
  * folder's browser sign-ins (DOR-4136). A deny rule holds over any allow rule a
- * person saved, so no "Always allow" opens them.
+ * person saved, so no "Always allow" opens them. These are a launch's below Full;
+ * {@link HOME_PERSON_ONLY_FULL_RULES} are a Full launch's.
  */
 export const HOME_PERSON_ONLY_RULES: readonly string[] = HOME_PERSON_ONLY_PATHS.flatMap((entry) =>
   ALL_WRITE_TOOLS.map((tool) => `${tool}(~/${protectedPathGlob(entry)})`)
 );
+
+/**
+ * The {@link HOME_PERSON_ONLY_RULES} a Full launch keeps: the agent browser's guard
+ * config, never the sign-in stores a Full agent may write (DOR-4136, left to DOR-4102).
+ */
+export const HOME_PERSON_ONLY_FULL_RULES: readonly string[] = HOME_PERSON_ONLY_PATHS.filter(
+  (entry) => !entry.belowFull
+).flatMap((entry) => ALL_WRITE_TOOLS.map((tool) => `${tool}(~/${protectedPathGlob(entry)})`));
 
 /**
  * Deny rules that stop every file tool writing `target`: the folder and all
@@ -248,6 +257,16 @@ export const PERSON_ONLY_DATA_FILES: readonly string[] = PERSON_ONLY_DATA_PATHS.
 ).map((entry) => entry.path);
 
 /**
+ * The {@link PERSON_ONLY_DATA_PATHS} names of one kind a launch denies at its level:
+ * all of them below Full, and all but the browser sign-in stores at Full (DOR-4136).
+ */
+function personOnlyDataNames(kind: 'file' | 'folder', full: boolean): readonly string[] {
+  return PERSON_ONLY_DATA_PATHS.filter(
+    (entry) => entry.kind === kind && !(full && entry.belowFull)
+  ).map((entry) => entry.path);
+}
+
+/**
  * The plugins installed into a project, at any depth (the shared
  * {@link PROJECT_PLUGIN_PATHS}, DOR-3068). Discovery reads every known
  * project's, not only the turn's own, so one absolute any-depth rule per write
@@ -312,7 +331,13 @@ function namesOf(dorkHome: string, name: string): string[] {
  * The rules are part of the launch fingerprint, so a chat whose answer changes
  * relaunches with the new set.
  *
- * @param sdkOptions - The launch options, mutated in place.
+ * The browser sign-in stores are denied below Full only (DOR-4136): a launch at
+ * Full leaves them out, so a Full agent may save a sign-in. The level is the
+ * mode the launch runs at (`sdkOptions.permissionMode`, set before this with the
+ * turn's ceiling applied), so a stranger's words in a chat set to Full never
+ * open them. A launch with no mode counts as below Full.
+ *
+ * @param sdkOptions - The launch options, its permission mode already set; mutated in place.
  * @param dorkHome - The data directory.
  * @param chat - The chat being launched, its agent, and whether its own folder is open.
  * @throws DirectoryGrantError when the data directory's path can't be named
@@ -323,7 +348,10 @@ export function applyPersonOnlyDataDeny(
   dorkHome: string,
   chat?: { sessionId: string; agentPath?: string | undefined; ownFolderOpen?: boolean }
 ): void {
-  const folders = [...new Set(PERSON_ONLY_DATA_FOLDERS.flatMap((name) => namesOf(dorkHome, name)))];
+  const full = sdkOptions.permissionMode === 'bypassPermissions';
+  const folders = [
+    ...new Set(personOnlyDataNames('folder', full).flatMap((name) => namesOf(dorkHome, name))),
+  ];
   if (!folders.every(ruleCanName)) {
     throw new DirectoryGrantError(
       `Claude Code can't keep DorkOS's own settings folder "${dorkHome}" safe from agents, because ` +
@@ -345,10 +373,10 @@ export function applyPersonOnlyDataDeny(
       deny: [
         ...(permissions.deny ?? []),
         ...folders.flatMap(readOnlyRules),
-        ...personOnlyFileRules(dorkHome),
+        ...personOnlyFileRules(dorkHome, full),
         ...agentHomesRulesFor(dorkHome, 'launch', chat?.ownFolderOpen ? chat.agentPath : undefined),
         ...PROJECT_PLUGIN_DENY_RULES,
-        ...HOME_PERSON_ONLY_RULES,
+        ...(full ? HOME_PERSON_ONLY_FULL_RULES : HOME_PERSON_ONLY_RULES),
       ],
     },
   } as Options['settings'];
@@ -377,11 +405,13 @@ export function agentHomesRulesFor(
 /**
  * Write-deny rules for {@link PERSON_ONLY_DATA_FILES}, through every spelling
  * of the data directory (as given, and its real path). The file name keeps
- * its `*` as a glob; only the folder part is escaped.
+ * its `*` as a glob; only the folder part is escaped. At Full the browser
+ * sign-in stores are left out (DOR-4136).
  *
  * @param dorkHome - The data directory.
+ * @param full - Whether the launch runs at Full. Absent counts as below Full.
  */
-export function personOnlyFileRules(dorkHome: string): string[] {
+export function personOnlyFileRules(dorkHome: string, full = false): string[] {
   const foreign = isForeignWindowsPath(dorkHome);
   const home = (foreign ? dorkHome : path.resolve(dorkHome)).replace(/[\\/]+$/, '');
   const real = foreign ? undefined : realpathOrUndefined(home);
@@ -389,7 +419,7 @@ export function personOnlyFileRules(dorkHome: string): string[] {
   for (const spelling of new Set([home, ...(real ? [real] : [])])) {
     const root = rulePath(spelling);
     if (root === undefined) continue;
-    for (const file of PERSON_ONLY_DATA_FILES) {
+    for (const file of personOnlyDataNames('file', full)) {
       for (const tool of ALL_WRITE_TOOLS) rules.add(`${tool}(${root}/${file})`);
     }
   }

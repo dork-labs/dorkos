@@ -58,6 +58,12 @@ export interface ProtectedPath {
    * changed.
    */
   readonly deny: 'read' | 'write';
+  /**
+   * Refused only on a turn below Full. A browser sign-in store is one (DOR-4136): a
+   * Full agent may save a sign-in, as a person can, and the PM and Security
+   * left that call to DOR-4102. Absent means refused at every level.
+   */
+  readonly belowFull?: true;
 }
 
 /** Build a group of entries that share a root and what they deny. */
@@ -67,6 +73,11 @@ function group(
   entries: readonly (readonly [path: string, kind: ProtectedPath['kind']])[]
 ): readonly ProtectedPath[] {
   return entries.map(([entryPath, kind]) => ({ root, path: entryPath, kind, deny }));
+}
+
+/** The same entries, refused only below Full ({@link ProtectedPath.belowFull}). */
+function belowFull(entries: readonly ProtectedPath[]): readonly ProtectedPath[] {
+  return entries.map((entry) => ({ ...entry, belowFull: true }));
 }
 
 /** DorkOS's own secrets, in its data folder. */
@@ -252,53 +263,69 @@ export const AGENT_FOLDER_SECRET_PATHS = group(
  *   every agent browser starts from, and `browser/profile/` the profile
  *   `dorkos browser login` saves it from. An agent that could write either could
  *   start every later agent browser signed in to an account of its choosing
- *   (DOR-4136). Only a person saves them, with `dorkos browser login`.
+ *   (DOR-4136). Refused below Full only: a Full agent may save a sign-in.
  * - `browser/agent-browser-guard.json` (and its temp files beside it) is the
  *   config every agent browser starts with, which keeps it off DorkOS Cloud. The
  *   server writes it before each start; an agent that changed it in between
  *   could start a browser with options DorkOS refuses as flags (DOR-4136).
+ *   Refused at every level, Full too.
  */
-export const PERSON_ONLY_DATA_PATHS = group('data', 'write', [
-  ['permissions', 'folder'],
-  ['session-relay', 'folder'],
-  ['extension-snapshots', 'folder'],
-  ['cache/extensions', 'folder'],
-  ['cache/shell-guard', 'folder'],
-  ['marketplace', 'folder'],
-  ['plugins', 'folder'],
-  ['config.json*', 'file'],
-  ['config-*.json.bak', 'file'],
-  ['marketplaces.json*', 'file'],
-  ['browser-profiles', 'folder'],
-  ['local-browser/saved-logins', 'folder'],
-  ['dork*.db*', 'file'],
-  ['browser/storage-state.json', 'file'],
-  ['browser/.storage-state.json.*.tmp', 'file'],
-  ['browser/profile', 'folder'],
-  ['browser/agent-browser-guard.json*', 'file'],
-]);
+export const PERSON_ONLY_DATA_PATHS: readonly ProtectedPath[] = [
+  ...group('data', 'write', [
+    ['permissions', 'folder'],
+    ['session-relay', 'folder'],
+    ['extension-snapshots', 'folder'],
+    ['cache/extensions', 'folder'],
+    ['cache/shell-guard', 'folder'],
+    ['marketplace', 'folder'],
+    ['plugins', 'folder'],
+    ['config.json*', 'file'],
+    ['config-*.json.bak', 'file'],
+    ['marketplaces.json*', 'file'],
+    ['browser-profiles', 'folder'],
+    ['local-browser/saved-logins', 'folder'],
+    ['dork*.db*', 'file'],
+  ]),
+  ...belowFull(
+    group('data', 'write', [
+      ['browser/storage-state.json', 'file'],
+      ['browser/.storage-state.json.*.tmp', 'file'],
+      ['browser/profile', 'folder'],
+    ])
+  ),
+  ...group('data', 'write', [['browser/agent-browser-guard.json*', 'file']]),
+];
 
 /**
  * What in the home folder only a person may change: the desktop app's own data
  * folders ({@link DESKTOP_APP_DATA_FOLDERS}), whose cookie store and page storage
  * an agent could plant a sign-in in or wipe (DOR-4136), and the default data
  * folder's copies of this change's {@link PERSON_ONLY_DATA_PATHS} browser entries,
- * whatever data folder a launch uses.
+ * whatever data folder a launch uses. The sign-in stores are refused below Full
+ * only; the agent browser's guard config at every level.
  */
 export const HOME_PERSON_ONLY_PATHS: readonly ProtectedPath[] = [
-  ...group(
-    'home',
-    'write',
-    DESKTOP_APP_DATA_FOLDERS.map((folder) => [folder, 'folder'] as const)
+  ...belowFull(
+    group(
+      'home',
+      'write',
+      DESKTOP_APP_DATA_FOLDERS.map((folder) => [folder, 'folder'] as const)
+    )
   ),
-  ...group('home', 'write', [
-    ['.dork/browser/storage-state.json', 'file'],
-    ['.dork/browser/.storage-state.json.*.tmp', 'file'],
-    ['.dork/browser/profile', 'folder'],
-    ['.dork/browser/agent-browser-guard.json*', 'file'],
-    ['.dork/browser-profiles', 'folder'],
-    ['.dork/local-browser/saved-logins', 'folder'],
-  ]),
+  ...belowFull(
+    group('home', 'write', [
+      ['.dork/browser/storage-state.json', 'file'],
+      ['.dork/browser/.storage-state.json.*.tmp', 'file'],
+      ['.dork/browser/profile', 'folder'],
+    ])
+  ),
+  ...group('home', 'write', [['.dork/browser/agent-browser-guard.json*', 'file']]),
+  ...belowFull(
+    group('home', 'write', [
+      ['.dork/browser-profiles', 'folder'],
+      ['.dork/local-browser/saved-logins', 'folder'],
+    ])
+  ),
 ];
 
 /**
@@ -372,6 +399,16 @@ export const PROTECTED_PATHS: readonly ProtectedPath[] = [
   ...HOME_SELF_GRANT_PATHS,
   ...HOME_PERSON_ONLY_PATHS,
 ];
+
+/**
+ * The protected paths a turn's file tools refuse at its level: every one below
+ * Full, and all but the {@link ProtectedPath.belowFull} ones at Full.
+ *
+ * @param full - Whether the turn runs at Full.
+ */
+export function protectedPathsAt(full: boolean): readonly ProtectedPath[] {
+  return full ? PROTECTED_PATHS.filter((entry) => !entry.belowFull) : PROTECTED_PATHS;
+}
 
 /**
  * An entry as a glob relative to its root: the path itself for a file, and

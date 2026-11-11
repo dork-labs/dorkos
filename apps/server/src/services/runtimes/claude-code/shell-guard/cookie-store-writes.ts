@@ -3,9 +3,11 @@
  * saved session every agent browser starts from, the profiles DorkOS's own
  * browsers keep, and the desktop app's data folders. A command that writes one
  * could plant a sign-in every later agent browser starts with, or wipe the
- * person's own, so the shell guard refuses it at every level, the way it
- * refuses a write to an agent's setup files: a refusal, never an ask a person
- * could save as "always".
+ * person's own, so the shell guard refuses it below Full, the way it refuses a
+ * write to an agent's setup files: a refusal, never an ask a person could save
+ * as "always". At Full only the entries refused at every level stay: a Full
+ * agent may save a sign-in (left to DOR-4102), but never rewrite the agent
+ * browser's guard config.
  *
  * @module services/runtimes/claude-code/shell-guard/cookie-store-writes
  */
@@ -45,16 +47,19 @@ function nameBody(entry: Pick<ProtectedPath, 'path' | 'kind'>): string {
  *
  * @param roots - The data folder and the home folder.
  * @param spellings - A folder's spellings: as given and where it really is.
+ * @param full - Whether the command runs at Full, which leaves out the entries refused below Full.
  */
 export function cookieStoreRules(
   roots: { dorkHome: string; home: string },
-  spellings: (folder: string) => string[]
+  spellings: (folder: string) => string[],
+  full = false
 ): CookieStoreRule[] {
   const measured: [ProtectedPath, string][] = [
     ...DATA_COOKIE_STORES.map((entry): [ProtectedPath, string] => [entry, roots.dorkHome]),
     ...HOME_PERSON_ONLY_PATHS.map((entry): [ProtectedPath, string] => [entry, roots.home]),
   ];
   return measured.flatMap(([entry, folder]) => {
+    if (full && entry.belowFull) return [];
     const literal = entry.path.split('/').filter((_, i, all) => {
       return !all.slice(0, i + 1).some((one) => one.includes('*'));
     });

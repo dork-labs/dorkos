@@ -146,6 +146,11 @@ export interface ShellGuardRoots {
   agentHomes: () => readonly string[];
   /** The agent home a person opened to its own agent, whose setup it may change. */
   openHome?: string;
+  /**
+   * Whether the command runs at Full, its ceilings applied. A Full agent may write a browser
+   * sign-in store and save a sign-in (DOR-4136, left to DOR-4102). Absent counts as below Full.
+   */
+  full?: boolean;
 }
 
 /** A shared path's name as a regex body: `*` stays inside one name. */
@@ -482,7 +487,8 @@ export function shellWriteVerdict(
   roots: ShellGuardRoots
 ): 'writes' | 'unreadable' | 'none' {
   if (command.length > MAX_COMMAND) return 'unreadable';
-  const cookieStores = cookieStoreRules(roots, spellings);
+  const full = roots.full === true;
+  const cookieStores = cookieStoreRules(roots, spellings, full);
   const open = roots.openHome ? spellings(roots.openHome) : [];
   const homes = roots.agentHomes().flatMap(spellings);
   const agentsFolders = spellings(path.join(roots.dorkHome, 'agents'));
@@ -505,16 +511,16 @@ export function shellWriteVerdict(
     });
   };
   const { segments, resolve } = readCommand(command, roots);
-  // A command that writes anything and names the desktop app's data folder in any spelling is
-  // refused outright: nothing an agent needs lives there (DOR-4136).
-  const namesDesktop = namesDesktopAppData(command);
+  // Below Full, a command that writes anything and names the desktop app's data folder in any
+  // spelling is refused outright: nothing an agent needs lives there (DOR-4136).
+  const namesDesktop = !full && namesDesktopAppData(command);
   const guarded = (name: string): boolean => namesSetup(name) || namesCookieStore(name);
   for (const [index, { segment, cwd }] of segments.entries()) {
     const written = writtenWords(segment, segments[index - 1]?.segment);
     if (namesDesktop && written.length > 0) return 'writes';
     // `dorkos browser login` saves the session every agent browser starts from, and `forget`
-    // rewrites it: a person's commands, never an agent's (DOR-4136).
-    if (savesBrowserSession(segment)) return 'writes';
+    // rewrites it: a person's commands, and a Full agent's, never one below Full (DOR-4136).
+    if (!full && savesBrowserSession(segment)) return 'writes';
     for (const { word, whole, pieces, sources } of written) {
       // Removing a whole folder can reach a home by any name, so nothing narrows that one.
       const options = { pieces, writingFrom: cwd, ...(whole ? {} : { keep: guarded }) };

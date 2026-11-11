@@ -1093,6 +1093,10 @@ describe("a stranger's turn on a warm process (official-community-space D10)", (
     optIn.persistentSession = true;
   });
 
+  /** A file tool's write-deny rule for the agent browser's saved session (DOR-4136). */
+  const WRITES_SAVED_SESSION =
+    /^(Edit|Write|MultiEdit|NotebookEdit)\(.*\/browser\/storage-state\.json\)$/;
+
   /** One turn held to a stranger's ceiling. */
   async function strangerTurn(sessionId: string, content = 'from a stranger'): Promise<void> {
     for await (const _event of runtime.sendMessage(sessionId, content, {
@@ -1114,18 +1118,22 @@ describe("a stranger's turn on a warm process (official-community-space D10)", (
     expect(cli.processes[0]!.liveSets).toContain('setPermissionMode:default');
   });
 
-  it('moves a Full process down live when its deny rules match the turn below Full (DOR-3483)', async () => {
-    // Other agents' files are denied at every level now, and this chat runs as no agent, so no
-    // own folder is open: Full and the stranger's turn launch with the same rules. (An open own
-    // folder changes the rules, and the launch fingerprint relaunches for it.)
+  it('relaunches a Full process for a turn below Full, which denies the browser sign-in stores (DOR-4136)', async () => {
+    // A Full launch may write the browser sign-in stores; a launch below Full denies them. So the
+    // two never launch with the same rules, and the launch fingerprint relaunches rather than
+    // moving the Full process down live (which `acceptEdits` above still does, DOR-3483).
     const sessionId = nextSession();
     await runtime.updateSession(sessionId, { permissionMode: 'bypassPermissions' });
     await turn(sessionId);
 
     await strangerTurn(sessionId);
 
-    expect(cli.launches).toBe(1);
-    expect(cli.processes[0]!.liveSets).toContain('setPermissionMode:default');
+    expect(cli.launches).toBe(2);
+    expect(cli.processes[0]!.ended).toBe(true);
+    const below = cli.processes[1]!.options;
+    expect(below.permissionMode).toBe('default');
+    const deny = (below.settings as { permissions: { deny: string[] } }).permissions.deny;
+    expect(deny.some((rule) => WRITES_SAVED_SESSION.test(rule))).toBe(true);
   });
 
   it('never runs the turn on a process that did not take the ceiling', async () => {
@@ -1273,7 +1281,7 @@ describe("a stranger's turn on a warm process (official-community-space D10)", (
     expect(cli.processes[0]!.liveSets.at(-1)).toBe('setPermissionMode:acceptEdits');
   });
 
-  it("moves back up to Full live after a stranger's turn when the deny rules match (DOR-3483)", async () => {
+  it("relaunches at Full after a stranger's turn, without the sign-in store rules (DOR-4136)", async () => {
     const sessionId = nextSession();
     await runtime.updateSession(sessionId, { permissionMode: 'bypassPermissions' });
     await turn(sessionId);
@@ -1281,8 +1289,13 @@ describe("a stranger's turn on a warm process (official-community-space D10)", (
 
     await turn(sessionId, 'the owner again');
 
-    expect(cli.launches).toBe(1);
-    expect(cli.processes[0]!.liveSets.at(-1)).toBe('setPermissionMode:bypassPermissions');
+    expect(cli.launches).toBe(3);
+    expect(cli.processes[1]!.liveSets).not.toContain('setPermissionMode:bypassPermissions');
+    const full = cli.processes[2]!.options;
+    expect(full.permissionMode).toBe('bypassPermissions');
+    const deny = (full.settings as { permissions: { deny: string[] } }).permissions.deny;
+    // Its read rules stay (DOR-3613); only the write refusal is gone.
+    expect(deny.some((rule) => WRITES_SAVED_SESSION.test(rule))).toBe(false);
   });
 });
 

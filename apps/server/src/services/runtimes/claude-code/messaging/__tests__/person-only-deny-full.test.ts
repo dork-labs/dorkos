@@ -58,9 +58,10 @@ describe('the agent-home rules on a launch', () => {
   );
 
   it('keeps config.json denied at Full', () => {
-    expect(denyAt('bypassPermissions')).toEqual(
-      expect.arrayContaining(personOnlyFileRules(dorkHome))
-    );
+    // The Full set: every person-only file but the browser sign-in stores (DOR-4136).
+    const rules = denyAt('bypassPermissions');
+    expect(rules).toEqual(expect.arrayContaining(personOnlyFileRules(dorkHome, true)));
+    expect(rules).toContain(`Write(/${dorkHome}/config.json*)`);
   });
 
   it("leaves the open home out, and names every other home's files on its own", () => {
@@ -72,7 +73,7 @@ describe('the agent-home rules on a launch', () => {
     expect(rules).toContain(`Edit(/${other}/.dork/agent.json)`);
     expect(rules).toContain(`Write(/${other}/.agents/**)`);
     expect(rules.some((rule) => rule.includes(`${scout}/`))).toBe(false);
-    expect(rules).toEqual(expect.arrayContaining(personOnlyFileRules(dorkHome)));
+    expect(rules).toEqual(expect.arrayContaining(personOnlyFileRules(dorkHome, true)));
   });
 
   it('keeps the one rule, and so the open home closed, when another home cannot be named', () => {

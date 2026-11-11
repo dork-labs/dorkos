@@ -785,6 +785,43 @@ describe('shell writes to a browser sign-in store', () => {
   ])('leaves %s alone', (_label, command) => {
     expect(shellWriteVerdict(command, roots)).toBe('none');
   });
+
+  // The PM and Security's ruling: a Full agent may save a sign-in, as a person
+  // can. The full-level refusal is DOR-4102's, for Dorian.
+  it.each([
+    ['cp onto the saved session', () => `cp /tmp/x ${roots.dorkHome}/browser/storage-state.json`],
+    ['a redirect into it', () => `echo '{}' > $DORK_HOME/browser/storage-state.json`],
+    ['the login profile', () => `cp /tmp/x $DORK_HOME/browser/profile/Default/Cookies`],
+    [
+      'the desktop app’s cookie store',
+      () =>
+        `sqlite3 ~/"Library/Application Support/DorkOS/Network/Cookies" "INSERT INTO cookies VALUES(1)"`,
+    ],
+    [
+      'wiping its page storage',
+      () => `rm -rf ~/Library/Application\\ Support/DorkOS/Local\\ Storage`,
+    ],
+    ['the default data folder’s session', () => `cp /tmp/x ~/.dork/browser/storage-state.json`],
+    ['dorkos browser login', () => 'dorkos browser login'],
+    ['it through npx', () => 'npx -y dorkos@latest browser login --url https://made-up.example'],
+    ['dorkos browser forget', () => 'dorkos browser forget --all'],
+  ])('lets a Full agent do %s', (_label, command) => {
+    expect(shellWriteVerdict(command(), { ...roots, full: true })).toBe('none');
+  });
+
+  it.each([
+    [
+      'the agent browser’s guard config',
+      () => `echo '{}' > $DORK_HOME/browser/agent-browser-guard.json`,
+    ],
+    ['its temp file', () => `cp /tmp/x $DORK_HOME/browser/agent-browser-guard.json.1.2.tmp`],
+    [
+      'the default data folder’s guard config',
+      () => `cp /tmp/x ~/.dork/browser/agent-browser-guard.json`,
+    ],
+  ])('still refuses %s at Full', (_label, command) => {
+    expect(shellWriteVerdict(command(), { ...roots, full: true })).toBe('writes');
+  });
 });
 
 describe('commandWritesAgentSetup', () => {
@@ -1029,9 +1066,9 @@ describe('createShellPathGuardHook', () => {
   );
 
   // DOR-4136: a planted cookie starts every later agent browser signed in, so a
-  // write to a browser sign-in store is refused at every level, Full included,
-  // the way a setup write is: never an ask a person could save as "always".
-  it.each(['default', 'bypassPermissions'])(
+  // write to a browser sign-in store is refused below Full, the way a setup
+  // write is: never an ask a person could save as "always".
+  it.each(['default', 'acceptEdits'])(
     'refuses and records a write to a browser sign-in store at %s',
     async (permissionMode) => {
       const recordRefusal = vi.fn();
@@ -1052,6 +1089,44 @@ describe('createShellPathGuardHook', () => {
       });
     }
   );
+
+  it.each([
+    [
+      'a write to the saved session',
+      () => `cp /tmp/x ${roots.dorkHome}/browser/storage-state.json`,
+    ],
+    ['dorkos browser login', () => 'dorkos browser login'],
+  ])('lets a Full agent through for %s', async (_label, command) => {
+    const recordRefusal = vi.fn();
+    const hook = createShellPathGuardHook({ permissionMode: 'bypassPermissions' } as never, {
+      check,
+      roots: () => roots,
+      recordRefusal,
+      log,
+    });
+    expect(await hook(call(command()), undefined, signal)).toEqual({});
+    expect(recordRefusal).not.toHaveBeenCalled();
+  });
+
+  it('refuses a chat set to Full whose turn is held below Full', async () => {
+    const hook = createShellPathGuardHook(
+      { permissionMode: 'bypassPermissions', turnPermissionCeiling: 'runtime-default' } as never,
+      { check, roots: () => roots, recordRefusal: vi.fn(), log }
+    );
+    const result = await hook(call('dorkos browser login'), undefined, signal);
+    expect(decisionOf(result)).toBe('deny');
+  });
+
+  it('still refuses a Full agent a write to the agent browser’s guard config', async () => {
+    const hook = createShellPathGuardHook({ permissionMode: 'bypassPermissions' } as never, {
+      check,
+      roots: () => roots,
+      recordRefusal: vi.fn(),
+      log,
+    });
+    const command = `echo '{}' > ${roots.dorkHome}/browser/agent-browser-guard.json`;
+    expect(decisionOf(await hook(call(command), undefined, signal))).toBe('deny');
+  });
 
   it.each(['Monitor', 'PowerShell'])(
     'guards %s, which also takes a shell command',

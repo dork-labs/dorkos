@@ -32,12 +32,15 @@ beforeEach(() => {
 afterEach(() => rmSync(root, { recursive: true, force: true }));
 
 const adapters = ['shared', 'opencode', 'doe'] as const;
+/** Whether `adapter` refuses `operation` on `file`, at Full or below it. */
 async function refused(
   adapter: (typeof adapters)[number],
   file: string,
-  operation: 'read' | 'write'
+  operation: 'read' | 'write',
+  full = false
 ) {
-  if (adapter === 'shared') return isProtectedPath(file, operation, roots);
+  const atLevel = { ...roots, full };
+  if (adapter === 'shared') return isProtectedPath(file, operation, atLevel);
   if (adapter === 'opencode')
     return (
       protectedFileVerdict(
@@ -45,7 +48,7 @@ async function refused(
           toolName: operation === 'write' ? 'edit' : 'read',
           input: JSON.stringify({ filepath: file }),
         },
-        roots
+        atLevel
       ) === 'deny'
     );
   const signal = new AbortController().signal;
@@ -63,8 +66,10 @@ async function refused(
     emit: () => {},
   };
   return (
+    // Doe reads the level from its mode, never from the roots: Accept edits is below Full and
+    // still answers an unprotected write without a card.
     (await new DoeApprovals().callback(
-      'bypassPermissions',
+      full ? 'bypassPermissions' : 'acceptEdits',
       () => {},
       signal,
       false,
@@ -193,6 +198,49 @@ describe.each(adapters)('%s native file protection', (adapter) => {
     expect(
       await refused(adapter, path.join(roots.cwd, 'profile', 'Default', 'Cookies'), 'write')
     ).toBe(true);
+  });
+
+  // The PM and Security's ruling: a Full agent may save a sign-in, as a person
+  // can (the full-level refusal is DOR-4102's). Never the guard config. These
+  // stores are read secrets too (DOR-3613), and OpenCode's edit tool reads the
+  // file it writes, so OpenCode still refuses them for that reason alone.
+  it.each([
+    ['the saved session', 'data', 'browser/storage-state.json'],
+    ['its temp file', 'data', 'browser/.storage-state.json.123.made-up.tmp'],
+    ['the login profile’s cookies', 'data', 'browser/profile/Default/Cookies'],
+    [
+      'the desktop app’s cookie store',
+      'home',
+      'Library/Application Support/DorkOS/Network/Cookies',
+    ],
+    ['a development build’s cookie store', 'home', '.config/@dorkos/desktop/Cookies'],
+    ['the default data folder’s saved session', 'home', '.dork/browser/storage-state.json'],
+    ['the default data folder’s profiles', 'home', '.dork/browser-profiles/p/Default/Cookies'],
+  ] as const)('lets a Full agent write %s', async (_what, root, file) => {
+    const target = path.join(root === 'home' ? roots.home : roots.data, file);
+    expect(isProtectedPath(target, 'write', { ...roots, full: true })).toBe(false);
+    expect(await refused(adapter, target, 'write', true)).toBe(
+      adapter === 'opencode' && isProtectedPath(target, 'read', roots)
+    );
+  });
+
+  it.each([
+    ['the agent browser’s guard config', 'data', 'browser/agent-browser-guard.json'],
+    ['its temp file', 'data', 'browser/agent-browser-guard.json.123.456.tmp'],
+    ['the default data folder’s guard config', 'home', '.dork/browser/agent-browser-guard.json'],
+  ] as const)('still refuses a Full agent writing %s', async (_what, root, file) => {
+    const target = path.join(root === 'home' ? roots.home : roots.data, file);
+    expect(await refused(adapter, target, 'write', true)).toBe(true);
+  });
+
+  it.each(
+    PROTECTED_PATHS.filter(
+      (entry) => !entry.belowFull && (entry.root === 'data' || entry.root === 'home')
+    )
+  )('still refuses $deny at $root/$path at Full', async (entry) => {
+    const base = entry.root === 'data' ? roots.data : roots.home;
+    const file = path.join(base, entry.path.replaceAll('*', 'sample'));
+    expect(await refused(adapter, file, entry.deny, true)).toBe(true);
   });
 
   it('still lets an agent write its own files beside the browser folders', async () => {
