@@ -24,7 +24,7 @@ This guide covers everything between an agent's edit and a change on `main`: the
 | Arming merges                            | `.github/workflows/merge-tail.yml`, decision in `scripts/should-arm-automerge.sh`                                         |
 | "Did the suite really run?"              | `scripts/assert-tests-executed.sh`, pinned by `scripts/test-assert-tests-executed.sh`                                     |
 | Admin-merge guard                        | `.claude/hooks/merge-guard.mjs`, fixtures `scripts/test-merge-guard.sh`                                                   |
-| The PR author's side                     | `.agents/skills/creating-pull-requests/SKILL.md` and `scripts/watch-prs.sh` there                                         |
+| The PR author's side                     | `.agents/skills/creating-pull-requests/SKILL.md` and `.agents/skills/creating-pull-requests/scripts/watch-prs.sh`         |
 | The method (PDCA, hypotheses, the fence) | `.agents/skills/stewarding-ci-pipeline/SKILL.md`                                                                          |
 | Path-triggered protocol                  | `.claude/rules/ci-pipeline.md`                                                                                            |
 | Decisions                                | ADR `260728-112203` (merge queue), ADR `260919-174348` (autonomous merges), ADR `260919-174349` (hypotheses and verdicts) |
