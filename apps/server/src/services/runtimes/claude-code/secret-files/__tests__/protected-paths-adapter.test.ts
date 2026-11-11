@@ -124,12 +124,15 @@ describe('Claude Code protected-path adapter', () => {
       'plugins',
       'browser-profiles',
       'local-browser/saved-logins',
+      'browser/profile',
     ]);
     expect([...PERSON_ONLY_DATA_FILES]).toEqual([
       'config.json*',
       'config-*.json.bak',
       'marketplaces.json*',
       'dork*.db*',
+      'browser/storage-state.json',
+      'browser/.storage-state.json.*.tmp',
     ]);
     expect(PROJECT_PLUGIN_DENY_RULES).toEqual([
       'Edit(//**/.dork/plugins/**)',

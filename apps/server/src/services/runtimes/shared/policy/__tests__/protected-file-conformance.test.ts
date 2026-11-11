@@ -156,6 +156,46 @@ describe.each(adapters)('%s native file protection', (adapter) => {
     ).toBe(true);
   });
 
+  // DOR-4136: an agent that writes a browser sign-in store can start every later
+  // agent browser signed in to an account it chose, or wipe the person's own.
+  it.each([
+    ['the saved session every agent browser starts from', 'data', 'browser/storage-state.json'],
+    ['the saved session’s temp file', 'data', 'browser/.storage-state.json.123.made-up.tmp'],
+    ['the login profile’s cookies', 'data', 'browser/profile/Default/Cookies'],
+    ['a named profile’s cookies', 'data', 'browser-profiles/made-up-profile/Default/Cookies'],
+    ['the local browser’s saved logins', 'data', 'local-browser/saved-logins/Default/Cookies'],
+    [
+      'the desktop app’s cookie store',
+      'home',
+      'Library/Application Support/DorkOS/Network/Cookies',
+    ],
+    ['its page storage', 'home', 'Library/Application Support/DorkOS/Local Storage/leveldb/1.log'],
+    ['its built-in browser', 'home', 'Library/Application Support/DorkOS/Partitions/x/Cookies'],
+    ['a development build’s cookie store', 'home', '.config/@dorkos/desktop/Cookies'],
+    ['the cookie store in other case', 'home', 'library/application support/dorkos/cookies'],
+    ['the default data folder’s saved session', 'home', '.dork/browser/storage-state.json'],
+  ] as const)('refuses writing %s', async (_what, root, file) => {
+    const base = root === 'home' ? roots.home : roots.data;
+    expect(await refused(adapter, path.join(base, file), 'write')).toBe(true);
+  });
+
+  it('refuses a write through a link to the saved session or a profile', async () => {
+    const browser = path.join(roots.data, 'browser');
+    mkdirSync(path.join(browser, 'profile', 'Default'), { recursive: true });
+    writeFileSync(path.join(browser, 'storage-state.json'), '{}');
+    symlinkSync(path.join(browser, 'storage-state.json'), path.join(roots.cwd, 'state.json'));
+    symlinkSync(path.join(browser, 'profile'), path.join(roots.cwd, 'profile'));
+    expect(await refused(adapter, path.join(roots.cwd, 'state.json'), 'write')).toBe(true);
+    expect(
+      await refused(adapter, path.join(roots.cwd, 'profile', 'Default', 'Cookies'), 'write')
+    ).toBe(true);
+  });
+
+  it('still lets an agent write its own files beside the browser folders', async () => {
+    expect(await refused(adapter, path.join(roots.cwd, 'storage-state.json'), 'write')).toBe(false);
+    expect(await refused(adapter, path.join(roots.data, 'browser-notes.txt'), 'write')).toBe(false);
+  });
+
   it('still reads ordinary files beside the desktop app’s folder', async () => {
     const other = path.join(roots.home, 'Library/Application Support/Other App/Cookies');
     expect(await refused(adapter, other, 'read')).toBe(false);

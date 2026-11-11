@@ -267,3 +267,59 @@ describe('guardAgentBrowsers', () => {
     expect(readState()).toEqual({ cookies: [], origins: [] });
   });
 });
+
+// DOR-4136: nothing an agent does in a browser is saved back to the session
+// every later agent browser starts from. The agent's browser runs isolated, in
+// memory, loading the saved session once; the server's only writes to that
+// file remove sign-ins or create an empty one, never add a cookie.
+describe('an agent browser session is never saved back (DOR-4136)', () => {
+  it('starts every agent browser isolated, from one saved session, with no profile on disk', () => {
+    const guarded = guardAgentBrowsers(
+      { browser: agentBrowserConnection(stateFile) },
+      { dorkHome, entries }
+    );
+    const args = guarded.browser!.args;
+    expect(args).toContain('--isolated');
+    expect(args.filter((arg) => arg.startsWith('--storage-state'))).toHaveLength(1);
+    for (const flag of ['--user-data-dir', '--no-isolated', '--cdp-endpoint', '--extension'])
+      expect(
+        args.some((arg) => arg === flag || arg.startsWith(`${flag}=`)),
+        flag
+      ).toBe(false);
+  });
+
+  it.each([
+    ['a profile on disk', ['--user-data-dir', '/tmp/made-up-profile']],
+    ['no isolation', ['--no-isolated']],
+  ])('leaves out a browser that would keep its session: %s', (_label, extra) => {
+    const connection = agentBrowserConnection(stateFile);
+    connection.args.push(...extra);
+    const guarded = guardAgentBrowsers(
+      { browser: connection },
+      { dorkHome, entries, logger: { warn: vi.fn() } }
+    );
+    expect(guarded).toEqual({});
+  });
+
+  it('a cookie set during one agent session is not in the next session’s saved state', () => {
+    seedOldState();
+    guardAgentBrowsers({ browser: agentBrowserConnection(stateFile) }, { dorkHome, entries });
+    const firstStart = fs.readFileSync(stateFile, 'utf8');
+    // The agent's browser sets a cookie in its in-memory context. Isolated, it
+    // writes nothing back, so the next start reads the same file.
+    const inMemory = [...readState().cookies, cookie('made-up-attacker.example', 'planted')];
+    expect(inMemory).toHaveLength(2);
+    guardAgentBrowsers({ browser: agentBrowserConnection(stateFile) }, { dorkHome, entries });
+    expect(fs.readFileSync(stateFile, 'utf8')).toBe(firstStart);
+    expect(readState().cookies.map((c) => c.domain)).toEqual(['github.com']);
+  });
+
+  it('the server’s own pass over the saved session only ever takes cookies away', () => {
+    seedOldState();
+    const before = readState().cookies.map((c) => c.domain);
+    scrubAgentBrowserState(stateFile, { entries, appHosts: ['localhost'], owned: true });
+    const after = readState().cookies.map((c) => c.domain);
+    expect(after.every((domain) => before.includes(domain))).toBe(true);
+    expect(after.length).toBeLessThan(before.length);
+  });
+});

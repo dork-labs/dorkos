@@ -19,6 +19,7 @@ import {
   type ProtectedPath,
 } from '../../shared/policy/protected-paths.js';
 import { realLocation } from '../tool-gate/held-turn-reads.js';
+import { cookieStoreRules, namesCookieStore, writesCookieStore } from './cookie-store-writes.js';
 import {
   commandOf,
   INTERPRETERS,
@@ -348,6 +349,19 @@ export async function commandReachesProtectedRead(
   return false;
 }
 
+/** Whether a command is DorkOS's own CLI saving or rewriting the agent browser's session. */
+function savesBrowserSession(segment: ShellSegment): boolean {
+  const { verb, args } = commandOf(segment);
+  const words =
+    verb === 'npx' || verb === 'pnpm' || verb === 'bunx'
+      ? args.filter((a) => !a.startsWith('-'))
+      : [verb, ...args];
+  const at = words.findIndex((word) => /^dorkos(@.*)?$/.test(path.basename(word)));
+  if (at === -1) return false;
+  const rest = words.slice(at + 1).filter((word) => !word.startsWith('-'));
+  return rest[0] === 'browser' && (rest[1] === 'login' || rest[1] === 'forget');
+}
+
 /** The setup paths below one agent home. */
 const SETUP = new RegExp(
   `^(?:${[...AGENT_HOME_SELF_GRANT_PATHS, { path: '.claude', kind: 'folder' as const }]
@@ -410,6 +424,9 @@ function writtenWords(segment: ShellSegment, previous?: ShellSegment): WrittenWo
     for (const arg of args) if (arg.startsWith('of=')) written.push(plain(arg.slice(3)));
   }
   if (verb === 'patch') written.push(...operands.map((word) => plain(word)));
+  // A database tool can write the file it opens, so its file counts as written: a cookie store
+  // takes a planted row as easily as a copied file (DOR-4136).
+  if (verb === 'sqlite3' && operands[0] !== undefined) written.push(plain(operands[0]));
   if (verb === 'git') {
     const rest = args[0] === '-C' ? args.slice(2) : args;
     const sub = rest.find((arg, i) => !arg.startsWith('-') && !/^-c$/.test(rest[i - 1] ?? ''));
@@ -465,6 +482,7 @@ export function shellWriteVerdict(
   roots: ShellGuardRoots
 ): 'writes' | 'unreadable' | 'none' {
   if (command.length > MAX_COMMAND) return 'unreadable';
+  const cookieStores = cookieStoreRules(roots, spellings);
   const open = roots.openHome ? spellings(roots.openHome) : [];
   const homes = roots.agentHomes().flatMap(spellings);
   const agentsFolders = spellings(path.join(roots.dorkHome, 'agents'));
@@ -477,6 +495,8 @@ export function shellWriteVerdict(
   };
   const reaches = (target: string, whole: boolean): boolean => {
     if (homes.some((home) => inHome(home, target, whole))) return true;
+    // A browser sign-in store: a planted cookie starts every later agent browser signed in.
+    if (writesCookieStore(target, whole, cookieStores)) return true;
     // A home the registry hasn't noticed yet is still a home.
     return agentsFolders.some((agents) => {
       if (!within(agents, target) || target === agents) return whole && within(target, agents);
@@ -485,13 +505,19 @@ export function shellWriteVerdict(
     });
   };
   const { segments, resolve } = readCommand(command, roots);
+  // A command that writes anything and names the desktop app's data folder in any spelling is
+  // refused outright: nothing an agent needs lives there (DOR-4136).
+  const namesDesktop = namesDesktopAppData(command);
+  const guarded = (name: string): boolean => namesSetup(name) || namesCookieStore(name);
   for (const [index, { segment, cwd }] of segments.entries()) {
-    for (const { word, whole, pieces, sources } of writtenWords(
-      segment,
-      segments[index - 1]?.segment
-    )) {
+    const written = writtenWords(segment, segments[index - 1]?.segment);
+    if (namesDesktop && written.length > 0) return 'writes';
+    // `dorkos browser login` saves the session every agent browser starts from, and `forget`
+    // rewrites it: a person's commands, never an agent's (DOR-4136).
+    if (savesBrowserSession(segment)) return 'writes';
+    for (const { word, whole, pieces, sources } of written) {
       // Removing a whole folder can reach a home by any name, so nothing narrows that one.
-      const options = { pieces, writingFrom: cwd, ...(whole ? {} : { keep: namesSetup }) };
+      const options = { pieces, writingFrom: cwd, ...(whole ? {} : { keep: guarded }) };
       const targets = resolve(word, options);
       if (targets === null) return 'unreadable';
       for (const target of targets) {

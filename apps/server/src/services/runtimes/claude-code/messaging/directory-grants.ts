@@ -42,6 +42,7 @@ import type { DirectoryGrant } from '@dorkos/shared/agent-runtime';
 import { assertValidDirectoryGrants, DirectoryGrantError } from '@dorkos/shared/directory-grants';
 import {
   AGENT_HOME_SELF_GRANT_PATHS,
+  HOME_PERSON_ONLY_PATHS,
   PERSON_ONLY_DATA_PATHS,
   PROJECT_PLUGIN_PATHS,
   protectedPathGlob,
@@ -125,6 +126,16 @@ function readOnlyRules(folder: string): string[] {
 
 /** Every file tool a write-deny rule must name: `MultiEdit` too, for older CLIs. */
 const ALL_WRITE_TOOLS = ['Edit', 'Write', 'MultiEdit', 'NotebookEdit'] as const;
+
+/**
+ * Write-deny rules for {@link HOME_PERSON_ONLY_PATHS} in the home spelling Claude
+ * Code expands itself: the desktop app's data folders and the default data
+ * folder's browser sign-ins (DOR-4136). A deny rule holds over any allow rule a
+ * person saved, so no "Always allow" opens them.
+ */
+export const HOME_PERSON_ONLY_RULES: readonly string[] = HOME_PERSON_ONLY_PATHS.flatMap((entry) =>
+  ALL_WRITE_TOOLS.map((tool) => `${tool}(~/${protectedPathGlob(entry)})`)
+);
 
 /**
  * Deny rules that stop every file tool writing `target`: the folder and all
@@ -337,6 +348,7 @@ export function applyPersonOnlyDataDeny(
         ...personOnlyFileRules(dorkHome),
         ...agentHomesRulesFor(dorkHome, 'launch', chat?.ownFolderOpen ? chat.agentPath : undefined),
         ...PROJECT_PLUGIN_DENY_RULES,
+        ...HOME_PERSON_ONLY_RULES,
       ],
     },
   } as Options['settings'];

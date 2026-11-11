@@ -735,6 +735,53 @@ describe('a command too big to read (Security, #3487)', () => {
   });
 });
 
+// DOR-4136: every way a shell command can plant a cookie, or wipe a sign-in.
+describe('shell writes to a browser sign-in store', () => {
+  const desktop = () => path.join(roots.home, 'Library', 'Application Support', 'DorkOS');
+  it.each([
+    ['cp onto the saved session', () => `cp /tmp/x ${roots.dorkHome}/browser/storage-state.json`],
+    ['mv onto it', () => `mv /tmp/x $DORK_HOME/browser/storage-state.json`],
+    ['a redirect into it', () => `echo '{}' > $DORK_HOME/browser/storage-state.json`],
+    [
+      'a profile’s cookie database',
+      () =>
+        `sqlite3 $DORK_HOME/browser-profiles/p1/Default/Cookies "INSERT INTO cookies VALUES(1)"`,
+    ],
+    ['the login profile', () => `cp /tmp/x $DORK_HOME/browser/profile/Default/Cookies`],
+    ['removing the profiles folder', () => `rm -rf $DORK_HOME/browser-profiles`],
+    ['removing the whole data folder', () => `rm -rf $DORK_HOME`],
+    [
+      'the desktop app’s cookie store',
+      () =>
+        `sqlite3 ~/"Library/Application Support/DorkOS/Network/Cookies" "INSERT INTO cookies VALUES(1)"`,
+    ],
+    [
+      'wiping its page storage',
+      () => `rm -rf ~/Library/Application\\ Support/DorkOS/Local\\ Storage`,
+    ],
+    ['it in other case', () => `echo x > ~/"library/application support/dorkos/Cookies"`],
+    ['it through a link', () => `ln -sfn /tmp/x app-data/Network/Cookies`],
+    ['a python script', () => `python3 -c "open('${desktop()}/Network/Cookies','w').write('x')"`],
+    ['the default data folder’s session', () => `cp /tmp/x ~/.dork/browser/storage-state.json`],
+    // Only a person saves the shared session, with DorkOS's own CLI.
+    ['dorkos browser login', () => 'dorkos browser login'],
+    ['it through npx', () => 'npx -y dorkos@latest browser login --url https://made-up.example'],
+    ['dorkos browser forget', () => 'dorkos browser forget --all'],
+  ])('refuses %s', (_label, command) => {
+    expect(shellWriteVerdict(command(), roots)).toBe('writes');
+  });
+
+  it.each([
+    ['reading the saved session', `cat $DORK_HOME/browser/storage-state.json`],
+    ['copying a file of the agent’s own', `cp notes.md notes.bak`],
+    ['a file named like it in the working folder', `echo '{}' > storage-state.json`],
+    ['asking the CLI what is saved', 'dorkos browser status'],
+    ['a note that mentions the command', 'echo "run dorkos browser login yourself"'],
+  ])('leaves %s alone', (_label, command) => {
+    expect(shellWriteVerdict(command, roots)).toBe('none');
+  });
+});
+
 describe('commandWritesAgentSetup', () => {
   it.each([
     ['a redirect', () => `echo '{}' > ${agent}/.claude/settings.json`],
@@ -965,6 +1012,31 @@ describe('createShellPathGuardHook', () => {
         log,
       });
       const command = `echo x > ${other}/.claude/settings.json`;
+      const result = await hook(call(command), undefined, signal);
+      expect(decisionOf(result)).toBe('deny');
+      expect(JSON.stringify(result)).toContain(SHELL_WRITE_DENY_REASON);
+      expect(recordRefusal).toHaveBeenCalledWith({
+        toolName: 'Bash',
+        toolUseId: 'toolu_1',
+        command,
+      });
+    }
+  );
+
+  // DOR-4136: a planted cookie starts every later agent browser signed in, so a
+  // write to a browser sign-in store is refused at every level, Full included,
+  // the way a setup write is: never an ask a person could save as "always".
+  it.each(['default', 'bypassPermissions'])(
+    'refuses and records a write to a browser sign-in store at %s',
+    async (permissionMode) => {
+      const recordRefusal = vi.fn();
+      const hook = createShellPathGuardHook({ permissionMode } as never, {
+        check,
+        roots: () => roots,
+        recordRefusal,
+        log,
+      });
+      const command = `cp /tmp/made-up-state.json ${roots.dorkHome}/browser/storage-state.json`;
       const result = await hook(call(command), undefined, signal);
       expect(decisionOf(result)).toBe('deny');
       expect(JSON.stringify(result)).toContain(SHELL_WRITE_DENY_REASON);

@@ -25,6 +25,7 @@ import { buildSystemPromptAppend, renderContextEntry } from '../context-builder.
 import { resolveLaunch } from '../launch-resolver.js';
 import {
   agentHomesSelfGrantRules,
+  HOME_PERSON_ONLY_RULES,
   PERSON_ONLY_DATA_FOLDERS,
   personOnlyFileRules,
 } from '../directory-grants.js';
@@ -598,6 +599,8 @@ describe('folder grants on the launch (spec `agent-home-desk` §4.2)', () => {
       ...agentHomesSelfGrantRules(resolveDorkHome(), 'launch'),
       // And every project's installed plugins (DOR-3068).
       ...['Edit', 'Write', 'NotebookEdit'].map((tool) => `${tool}(//**/.dork/plugins/**)`),
+      // And the browser sign-in stores in the home folder, on every launch (DOR-4136).
+      ...HOME_PERSON_ONLY_RULES,
     ];
     const settings = options.settings as {
       fastMode: boolean;

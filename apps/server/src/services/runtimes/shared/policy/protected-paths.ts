@@ -248,6 +248,11 @@ export const AGENT_FOLDER_SECRET_PATHS = group(
  * - `browser-profiles/` and `local-browser/saved-logins/` hold live sign-ins and
  *   the key browser profile bindings are signed with, and `dork*.db*` holds those
  *   bindings and every other record (DOR-3218).
+ * - `browser/storage-state.json` (and its temp file) is the signed-in session
+ *   every agent browser starts from, and `browser/profile/` the profile
+ *   `dorkos browser login` saves it from. An agent that could write either could
+ *   start every later agent browser signed in to an account of its choosing
+ *   (DOR-4136). Only a person saves them, with `dorkos browser login`.
  */
 export const PERSON_ONLY_DATA_PATHS = group('data', 'write', [
   ['permissions', 'folder'],
@@ -263,7 +268,32 @@ export const PERSON_ONLY_DATA_PATHS = group('data', 'write', [
   ['browser-profiles', 'folder'],
   ['local-browser/saved-logins', 'folder'],
   ['dork*.db*', 'file'],
+  ['browser/storage-state.json', 'file'],
+  ['browser/.storage-state.json.*.tmp', 'file'],
+  ['browser/profile', 'folder'],
 ]);
+
+/**
+ * What in the home folder only a person may change: the desktop app's own data
+ * folders ({@link DESKTOP_APP_DATA_FOLDERS}), whose cookie store and page storage
+ * an agent could plant a sign-in in or wipe (DOR-4136), and the default data
+ * folder's copies of this change's {@link PERSON_ONLY_DATA_PATHS} browser entries,
+ * whatever data folder a launch uses.
+ */
+export const HOME_PERSON_ONLY_PATHS: readonly ProtectedPath[] = [
+  ...group(
+    'home',
+    'write',
+    DESKTOP_APP_DATA_FOLDERS.map((folder) => [folder, 'folder'] as const)
+  ),
+  ...group('home', 'write', [
+    ['.dork/browser/storage-state.json', 'file'],
+    ['.dork/browser/.storage-state.json.*.tmp', 'file'],
+    ['.dork/browser/profile', 'folder'],
+    ['.dork/browser-profiles', 'folder'],
+    ['.dork/local-browser/saved-logins', 'folder'],
+  ]),
+];
 
 /**
  * The data folder's files that grant or prove something, kept from writes
@@ -334,6 +364,7 @@ export const PROTECTED_PATHS: readonly ProtectedPath[] = [
   ...PROJECT_PLUGIN_PATHS,
   ...AGENT_HOME_SELF_GRANT_PATHS,
   ...HOME_SELF_GRANT_PATHS,
+  ...HOME_PERSON_ONLY_PATHS,
 ];
 
 /**

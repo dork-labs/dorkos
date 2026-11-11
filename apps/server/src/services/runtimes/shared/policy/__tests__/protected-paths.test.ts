@@ -6,6 +6,7 @@ import {
   ANYWHERE_SECRET_PATHS,
   DATA_FOLDER_SECRET_PATHS,
   DATA_GRANT_FILE_PATHS,
+  HOME_PERSON_ONLY_PATHS,
   HOME_SECRET_PATHS,
   HOME_SELF_GRANT_PATHS,
   PERSON_ONLY_DATA_PATHS,
@@ -43,6 +44,7 @@ describe('protected paths', () => {
       PROJECT_PLUGIN_PATHS,
       AGENT_HOME_SELF_GRANT_PATHS,
       HOME_SELF_GRANT_PATHS,
+      HOME_PERSON_ONLY_PATHS,
     ].flat();
     expect(reads.every((e) => e.deny === 'read')).toBe(true);
     expect(writes.every((e) => e.deny === 'write')).toBe(true);
@@ -154,6 +156,23 @@ describe('protected paths', () => {
       'browser-profiles/**',
       'local-browser/saved-logins/**',
       'dork*.db*',
+      'browser/storage-state.json',
+      'browser/.storage-state.json.*.tmp',
+      'browser/profile/**',
+    ]);
+    // DOR-4136: the browser sign-in stores no agent may plant a cookie in.
+    expect(globs(HOME_PERSON_ONLY_PATHS)).toEqual([
+      'Library/Application Support/DorkOS/**',
+      'AppData/Roaming/DorkOS/**',
+      '.config/DorkOS/**',
+      'Library/Application Support/@dorkos/desktop/**',
+      'AppData/Roaming/@dorkos/desktop/**',
+      '.config/@dorkos/desktop/**',
+      '.dork/browser/storage-state.json',
+      '.dork/browser/.storage-state.json.*.tmp',
+      '.dork/browser/profile/**',
+      '.dork/browser-profiles/**',
+      '.dork/local-browser/saved-logins/**',
     ]);
     expect(globs(DATA_GRANT_FILE_PATHS)).toEqual([
       'config.json',
