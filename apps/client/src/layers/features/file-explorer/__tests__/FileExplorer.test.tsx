@@ -100,6 +100,20 @@ function renderExplorer(
 }
 
 describe('FileExplorer', () => {
+  it('does not fetch the previous room’s expanded folders in an agent folder', async () => {
+    useFileExplorerStore.setState({
+      scopeKey: 'room:previous-room',
+      expanded: { notes: true, 'notes/private': true },
+    });
+    const transport = createMockTransport();
+    transport.readFileTree = vi.fn(async () => ({ entries: [file('README.md')] }));
+    renderExplorer(transport);
+    await screen.findByRole('treeitem', { name: 'README.md' });
+    expect(vi.mocked(transport.readFileTree).mock.calls.map((call) => call[1]?.path)).toEqual([
+      undefined,
+    ]);
+  });
+
   // The toolbar (rendered in the shared header) drives the separately-mounted
   // tree through the file-explorer store — no prop drilling across the header
   // boundary. These assert that bridge end-to-end.

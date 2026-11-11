@@ -113,6 +113,7 @@ export function useFileExplorer(source: FileExplorerSource | null): FileExplorer
 
   const showHidden = useFileExplorerStore((s) => s.showHidden);
   const expanded = useFileExplorerStore((s) => s.expanded);
+  const loadedScopeKey = useFileExplorerStore((s) => s.scopeKey);
   const loadExplorerForCwd = useFileExplorerStore((s) => s.loadExplorerForCwd);
   const pruneMissing = useFileExplorerStore((s) => s.pruneMissing);
 
@@ -130,7 +131,12 @@ export function useFileExplorer(source: FileExplorerSource | null): FileExplorer
   // The directories to fetch: the root plus every *visible* expanded dir (one
   // whose full ancestor chain is expanded). Derived from expansion alone, not
   // per-row — virtualization must never affect what gets fetched.
-  const dirPaths = useMemo(() => [ROOT_KEY, ...visibleExpandedDirs(expanded)], [expanded]);
+  // A source can change one render before its saved navigation is loaded.
+  // Never ask the new source for the previous source's expanded folders.
+  const dirPaths = useMemo(
+    () => [ROOT_KEY, ...(loadedScopeKey === scopeKey ? visibleExpandedDirs(expanded) : [])],
+    [expanded, loadedScopeKey, scopeKey]
+  );
 
   const results = useQueries({
     queries: source
