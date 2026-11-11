@@ -46,9 +46,15 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
 
+      # A tag name is untrusted text: refuse anything but a plain release tag
+      # before the version reaches a command, a path or $GITHUB_OUTPUT
+      # (DOR-4175).
       - name: Extract version from tag
         id: version
-        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+        run: |
+          set -euo pipefail
+          version=$(bash scripts/release-version.sh "$GITHUB_REF_NAME")
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
 
       - name: Wait for npm package availability
         env:
@@ -125,9 +131,15 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
 
+      # A tag name is untrusted text: refuse anything but a plain release tag
+      # before the version reaches a command, a path or $GITHUB_OUTPUT
+      # (DOR-4175).
       - name: Extract version from tag
         id: version
-        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+        run: |
+          set -euo pipefail
+          version=$(bash scripts/release-version.sh "$GITHUB_REF_NAME")
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
 
       - name: Wait for npm package availability
         env:
@@ -233,9 +245,23 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
+      # This job has no other checkout: it only needs the tag check.
+      - name: Checkout for the release tag check
+        uses: actions/checkout@v7
+        with:
+          sparse-checkout: |
+            scripts/release-version.sh
+          persist-credentials: false
+
+      # A tag name is untrusted text: refuse anything but a plain release tag
+      # before the version reaches a command, a path or $GITHUB_OUTPUT
+      # (DOR-4175).
       - name: Extract version from tag
         id: version
-        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+        run: |
+          set -euo pipefail
+          version=$(bash scripts/release-version.sh "$GITHUB_REF_NAME")
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
 
       - name: Compute Docker Hub tags
         id: meta
