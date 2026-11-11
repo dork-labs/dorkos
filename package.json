@@ -37,6 +37,7 @@
     "check:banned-words": "bash scripts/check-banned-words.sh",
     "check:boundary": "tsx scripts/check-boundary.ts",
     "check:max-lines": "node scripts/check-max-lines.ts",
+    "check:own-mocks": "node scripts/check-own-mocks.ts",
     "check:design-tokens": "node scripts/check-design-tokens.ts",
     "check:dead-doc-paths": "bash scripts/check-dead-doc-paths.sh",
     "check:vocab-gate": "tsx scripts/check-vocab-gate.ts",

@@ -200,7 +200,7 @@ Non-negotiable, enforced by ESLint/CI/convention. Rules 1-4 are ESLint `error`s,
 
 ## Testing
 
-Vitest with `vi.mock()`; tests in `__tests__/` alongside source. Client tests: React Testing Library + jsdom with mock `Transport` via `TransportProvider`. Server session-route tests: `FakeAgentRuntime` + scenarios from `@dorkos/test-utils`; SSE integration via `collectDurableEvents`. Patterns and anti-patterns: `.claude/rules/testing.md`. Single file: `pnpm vitest run <path>`; full runs: `pnpm test -- --run` (see Commands for the bare-vitest gotcha). Local evidence, throwaway `DORK_HOME`s and Playwright output worth keeping go under `/Volumes/ext-ssd-1/dork-os/` when that drive is mounted (`contributing/browser-verification.md#where-local-output-goes`).
+Vitest with `vi.mock()`; tests in `__tests__/` alongside source. Client tests: React Testing Library + jsdom with mock `Transport` via `TransportProvider`. Server session-route tests: `FakeAgentRuntime` + scenarios from `@dorkos/test-utils`; SSE integration via `collectDurableEvents`. Patterns and anti-patterns: `.claude/rules/testing.md`. Mock only at the edges (network, clock, filesystem, a model, a runtime SDK): each package's count of `vi.mock` calls on our own modules is a ratchet that may only fall (`pnpm check:own-mocks`, in `typecheck` and pre-push; run `-- --update` after removing some, never raise `scripts/own-mocks/baseline.json` by hand). Single file: `pnpm vitest run <path>`; full runs: `pnpm test -- --run` (see Commands for the bare-vitest gotcha). Local evidence, throwaway `DORK_HOME`s and Playwright output worth keeping go under `/Volumes/ext-ssd-1/dork-os/` when that drive is mounted (`contributing/browser-verification.md#where-local-output-goes`).
 
 ## CI
 

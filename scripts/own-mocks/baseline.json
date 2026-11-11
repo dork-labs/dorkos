@@ -1,0 +1,16 @@
+{
+  "$comment": "The own-module mock ratchet (scripts/check-own-mocks.ts, DOR-4190). Each number is how many vi.mock calls in that package name our own code. It may only fall. Run `pnpm check:own-mocks -- --update` after removing some; never raise a number by hand.",
+  "packages": {
+    "apps/client": 1520,
+    "apps/desktop": 42,
+    "apps/server": 2612,
+    "apps/site": 109,
+    "packages/browser": 32,
+    "packages/cli": 52,
+    "packages/db": 1,
+    "packages/evals": 5,
+    "packages/harness": 1,
+    "packages/mesh": 1,
+    "packages/relay": 6
+  }
+}
