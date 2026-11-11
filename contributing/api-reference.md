@@ -597,7 +597,7 @@ Maximum 20 paths per request.
 
 ## Permissions Endpoints (`routes/permissions.ts`)
 
-What agents may do on their own, what waits for a person's yes, and what they cannot do at all (spec `agent-permissions` D10). Mounted at `/api`. Every mutating route requires a person: `resolveDecisionAuthority` refuses a caller presenting `X-DorkOS-Agent` (resolved or not) or holding an approval token, and `requireOperatorCookieUnderLogin` requires a browser session once login is on — see `contributing/agent-operator-surface.md`. The user guide is `docs/guides/permissions.mdx`; the schemas live in `@dorkos/shared/permissions`.
+What agents may do on their own, what waits for a person's yes, and what they cannot do at all (spec `agent-permissions` D10). Mounted at `/api`. Every mutating HTTP route in this group requires a person: `resolveDecisionAuthority` refuses a caller presenting `X-DorkOS-Agent` (resolved or not) or holding an approval token, and `requireOperatorCookieUnderLogin` requires a browser session wherever `personSessionRequired` applies, including local changes once an owner exists — see `contributing/agent-operator-surface.md`. The user guide is `docs/guides/permissions.mdx`; the schemas live in `@dorkos/shared/permissions`. On Wi-Fi, writes may lower permissions but cannot raise them, and Undo is refused. Agents use the separate `permissions.change` capability under its invocation-time permission and approval checks; HTTP person-only routes are not a statement that no agent-facing write exists.
 
 ### GET /api/permissions
 
@@ -1493,18 +1493,13 @@ The server operates in **stateless mode** — each POST request creates a fresh 
 
 ### Authentication
 
-`/mcp` is **fail-closed**, with or without `MCP_API_KEY`. `honoMcpAuth('mcp')` (`middleware/mcp-auth.ts`) tries four credentials in order and allows on the first match: the `MCP_API_KEY` env override, a per-user Better Auth API key or session cookie via `verifyRequestAuth`, the not-yet-seeded legacy `config.mcp.apiKey`, and — only while login is off — this instance's per-instance local MCP token. Each is sent the same way:
+`honoMcpAuth('mcp')` in `apps/server/src/middleware/mcp-auth.ts` uses `gateAccessFor` from `apps/server/src/services/core/auth/gate-policy.ts`. The caller's route and server role decide whether local-token or tokenless access is available; `auth.enabled` only controls the password requirement on this computer.
 
-```
-Authorization: Bearer <token>
-```
+The credential acceptors are the static `MCP_API_KEY` override, a per-user API key or browser session via `verifyRequestAuth`, the not-yet-seeded legacy config key, then the local MCP token where the request policy permits it. A refused request class cannot enter through any of them. On Wi-Fi, this verifier ignores session cookies for MCP and A2A and requires a bearer key.
 
-When none matches, the posture decides:
+Where the earlier app-wide session gate requires a credential on `/mcp`, a browser session or per-user API key must clear it before this middleware runs; a local token or static MCP override alone does not clear that gate. On an open local request, the parsed JSON-RPC body can use the closed read-only carve-out. Mutating or unknown calls still need a credential. Another device and a sealed agent computer get no tokenless carve-out.
 
-- **Login off** (the default): the read-only carve-out applies to the parsed JSON-RPC body. Tokenless access is a closed allowlist — exactly `initialize`, `ping`, `tools/list`, `resources/list`, `resources/templates/list`, `prompts/list`, any `notifications/*` method, and `tools/call`s naming a tool in `READ_ONLY_MCP_TOOL_NAMES`. Everything else — mutating tools, unknown tools, `resources/read`, unknown methods, a batch with any guarded element, an unparseable body — is a `401`. A tool is guarded until it is explicitly admitted to that set, so a newly added tool defaults to token-required.
-- **Login on**: no tokenless path. The app-wide `sessionGate` runs before the `/mcp` mount and answers first, so a session cookie or per-user API key is the only credential that reaches the router — the local token and the `MCP_API_KEY` override alone are both refused here (`middleware/__tests__/mcp-auth.integration.test.ts`). The `/a2a` gateway is not under `sessionGate`, so the override still works there.
-
-Which component answers decides the `401` shape. A refusal from this middleware — the login-off case — is a JSON-RPC 2.0 error envelope naming the local-token file path and the `Authorization: Bearer` header, never the token value. A refusal from `sessionGate` — the login-on case, which is reached first — is the app's REST shape, `{ error: 'Unauthorized', code: 'AUTH_REQUIRED' }`, and names no token path. Generate a static key with `openssl rand -hex 32`.
+A middleware refusal is a JSON-RPC error envelope. It names the local-token path only where that token would work, and never includes its value. A refusal from the earlier session gate uses `{ error: 'Unauthorized', code: 'AUTH_REQUIRED' }`. See [Authentication](authentication.md#mcp-4-tier-resolution--legacy-seeding) for the acceptor order and caller cases.
 
 ### Origin Validation
 
@@ -1518,11 +1513,11 @@ Requests to `/mcp` pass through this middleware chain in order:
 
 1. `validateMcpOrigin` — DNS rebinding protection (checks `Origin` header)
 2. `requireMcpEnabled` — clean `503` when the MCP surface is switched off
-3. `honoMcpAuth('mcp')` — credential resolution + the login-off carve-out (checks `Authorization` header, then the parsed body)
+3. `honoMcpAuth('mcp')` — credential resolution + the open-local read carve-out (checks credentials, then the parsed body)
 4. `mcpRateLimiter` — per-connection rate limiting
 5. `createMcpRouter(...)` — Streamable HTTP transport handler
 
-The app-wide `sessionGate` sits ahead of all five (one step in the Hono chain, `http/api-chain.ts`), which is why it, not `honoMcpAuth`, answers an uncredentialed request once login is on.
+The app-wide `sessionGate` sits ahead of all five (one step in the Hono chain, `http/api-chain.ts`), which is why it can answer an uncredentialed request before `honoMcpAuth` wherever the per-request policy requires a credential.
 
 ### Available Tools
 
