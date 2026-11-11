@@ -31,7 +31,7 @@ This guide covers data fetching patterns in DorkOS. The client uses TanStack Que
 | ------------------------------------------------------ | ---------------------------------------------------------------- | ------------------------------------------------------------------ |
 | List/read server data (sessions, etc.)                 | TanStack Query + Transport method                                | Caching, deduplication, background refetch                         |
 | Send a chat message (streaming)                        | `useChatSession` hook (trigger + durable stream)                 | Real-time streaming, handles all event types                       |
-| Mutate server data (create session)                    | `useMutation` + Transport method                                 | Automatic cache invalidation, optimistic updates                   |
+| Mutate server data (rename session)                    | `useMutation` + Transport method                                 | Automatic cache invalidation, optimistic updates                   |
 | Subscribe to a session's real-time state               | Durable WebSocket via `/api/sessions/:id/events` (StreamManager) | Snapshot + gap-free replay + live; multi-client sync               |
 | Subscribe to system events (tunnel, relay, extensions) | `useEventSubscription` via `GET /api/events`                     | Single multiplexed connection, replaces per-resource SSE endpoints |
 | Static config/health check                             | Transport method (no TanStack Query)                             | One-shot, no caching needed                                        |
@@ -75,12 +75,13 @@ The submission hook attaches the stream before posting, then re-targets it if th
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTransport } from '@/layers/shared/model';
 
-export function useCreateSession() {
+export function useRenameSession() {
   const transport = useTransport();
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (opts: { cwd?: string }) => transport.createSession(opts),
+    mutationFn: ({ id, title }: { id: string; title: string }) =>
+      transport.updateSession(id, { title }),
     onSuccess: () => {
       // Invalidate session list so it refetches
       queryClient.invalidateQueries({ queryKey: ['sessions'] });
@@ -823,18 +824,7 @@ export function useMarketplaceSources() {
 
 Mutation hooks for the install/uninstall pipeline. Each invalidates the installed-packages cache and the package query on success. An install also marks the update check stale (`refetchType: 'none'`), so the next view that mounts re-checks without an install setting off a sweep.
 
-```typescript
-export function useInstallPackage() {
-  const transport = useTransport();
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: (opts: InstallRequest) => transport.installPackage(opts),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: marketplaceKeys.installed() });
-    },
-  });
-}
-```
+`useInstallPackage` in `apps/client/src/layers/entities/marketplace/model/use-install-package.ts` accepts `{ name, options?: InstallOptions }` and calls `transport.installMarketplacePackage(name, options)`. Reuse this hook: it invalidates the installed list, package detail, browse list and commands, refreshes stale disclosure previews on refusal, and marks update checks stale without launching a sweep. The old `transport.installPackage(opts)` method is not part of the current Transport.
 
 ### useInstalledPackages
 
@@ -873,18 +863,7 @@ export function useApplyUpdates() {
 
 ### usePermissionPreview
 
-Fetches a `PermissionPreview` (filesystem writes, skills, extensions, adapters) for a package without installing it. Used by `InstallConfirmationDialog` to show users what a package will do before they confirm.
-
-```typescript
-export function usePermissionPreview(name: string | null) {
-  const transport = useTransport();
-  return useQuery({
-    queryKey: marketplaceKeys.preview(name ?? ''),
-    queryFn: () => transport.previewPackagePermissions(name!),
-    enabled: !!name,
-  });
-}
-```
+`usePermissionPreview(name, options?)` in `apps/client/src/layers/entities/marketplace/model/use-permission-preview.ts` calls `transport.previewMarketplacePackage(name, installOptions)` and returns a `MarketplacePackageDetail` query containing the preview. It accepts `{ enabled?, ...InstallOptions }`; the source, marketplace and project scope are included in the query key. The query is disabled for a null name or `enabled: false`, has a 30-second stale time and uses `networkMode: 'always'` so a lost internet connection does not pause a localhost consent check. `InstallConfirmationDialog` consumes this result before installation.
 
 ## Agent Entity: useMcpConfig
 
