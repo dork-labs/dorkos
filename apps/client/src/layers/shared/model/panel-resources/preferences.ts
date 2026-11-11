@@ -45,6 +45,22 @@ export function documentPanelScope(sessionId: string | null, cwd: string | null)
   return `session:${JSON.stringify([sessionId, cwd])}`;
 }
 
+/** The scope a room's canvas documents are opened and closed under in the panel. */
+export function roomDocumentPanelScope(roomId: string): string {
+  return `room:${roomId}`;
+}
+
+/**
+ * The key one room document's close is remembered under. A person who puts that
+ * document on the canvas again clears it, or its tab stays hidden (DOR-4179).
+ *
+ * @param roomId - The room.
+ * @param documentId - The room canvas document.
+ */
+export function roomDocumentClosedKey(roomId: string, documentId: string): string {
+  return `${roomDocumentPanelScope(roomId)}:resource/${documentId}`;
+}
+
 /** Exact historical scope retained while migrating existing local choices. */
 export function legacyDocumentPanelScope(sessionId: string | null, cwd: string | null): string {
   return `session:${sessionId ?? ''}:${cwd ?? ''}`;

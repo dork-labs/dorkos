@@ -16,7 +16,7 @@
  */
 import { useCallback, useEffect } from 'react';
 import type { UiCanvasContent } from '@dorkos/shared/types';
-import { useAppStore, useTransport } from '@/layers/shared/model';
+import { roomDocumentClosedKey, useAppStore, useTransport } from '@/layers/shared/model';
 
 /**
  * How often a person who is typing tells the server they are still there.
@@ -81,7 +81,13 @@ export function useRoomCanvasActions(roomId: string): RoomCanvasActions {
   return {
     open: useCallback(
       async (content) => {
-        await transport.openRoomCanvasDocument(roomId, content);
+        const document = await transport.openRoomCanvasDocument(roomId, content);
+        // An open of something already on the canvas answers with that same
+        // document, which this person may have closed. Opening it again is the
+        // newer choice, or its tab stays hidden (DOR-4179).
+        useAppStore
+          .getState()
+          .reopenPanelResourceView([roomDocumentClosedKey(roomId, document.id)]);
       },
       [transport, roomId]
     ),

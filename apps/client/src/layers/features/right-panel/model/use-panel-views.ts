@@ -11,6 +11,7 @@ import { links } from '@dorkos/shared/links';
 import {
   documentPanelScope,
   legacyDocumentPanelScope,
+  roomDocumentPanelScope,
   documentsInView,
   roomDocumentsInView,
   useAppStore,
@@ -100,8 +101,12 @@ export function usePanelViews(contributions: RightPanelContribution[], pathname:
   const ownerSession =
     canvasSessionCwd !== undefined ? canvasSessionId : (canvasSessionId ?? sessionId);
   const ownerCwd = canvasSessionCwd !== undefined ? canvasSessionCwd : cwd;
-  const resourceScope = roomId ? `room:${roomId}` : documentPanelScope(ownerSession, ownerCwd);
-  const legacyScope = roomId ? `room:${roomId}` : legacyDocumentPanelScope(ownerSession, ownerCwd);
+  const resourceScope = roomId
+    ? roomDocumentPanelScope(roomId)
+    : documentPanelScope(ownerSession, ownerCwd);
+  const legacyScope = roomId
+    ? roomDocumentPanelScope(roomId)
+    : legacyDocumentPanelScope(ownerSession, ownerCwd);
   const preferences = useAppStore((s) => s.panelViewPreferences) ?? EMPTY_PREFERENCES;
   const updatePreference = useAppStore((s) => s.updatePanelViewPreference);
   const reopenResource = useAppStore((s) => s.reopenPanelResourceView);

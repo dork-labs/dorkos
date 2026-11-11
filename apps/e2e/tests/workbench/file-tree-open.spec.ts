@@ -67,6 +67,39 @@ test.describe('Opening files from the tree @smoke', () => {
     await expect(page.getByRole('heading', { name: 'Agent file preview' })).toBeVisible();
   });
 
+  test('a room file put back on the canvas after its tab was closed opens its tab again', async ({
+    page,
+    roomsApi,
+    rightPanel,
+  }) => {
+    const { roomId } = await seedRoom(roomsApi, 'file-share');
+    await roomsApi.enableRepo(roomId, { 'brief.md': '# Room brief\n' });
+    await page.goto(`/channels?id=${roomId}`);
+    await page.getByTestId('bar-members-chip').click();
+    const files = page.getByRole('region', { name: 'Room files' });
+    const tab = rightPanel.header.getByRole('tab', { name: /brief\.md/ });
+
+    const putOnCanvas = async () => {
+      await clickFileName(page, 'brief.md', files);
+      const dialog = page.getByRole('dialog', { name: 'brief.md', exact: true });
+      await dialog.getByRole('button', { name: 'Put on the canvas' }).click();
+      await expect(dialog).toBeHidden();
+    };
+
+    await putOnCanvas();
+    await expect(tab).toBeVisible();
+    await tab.click();
+    await expect(tab).toHaveAttribute('aria-selected', 'true');
+    await page.getByRole('button', { name: 'Close brief.md view' }).click();
+    await expect(tab).toBeHidden();
+
+    // Back to the room's own tab, where the Files list lives, and share it again.
+    await rightPanel.header.getByRole('tab', { name: 'Room', exact: true }).click();
+    await putOnCanvas();
+    // The bug: the close was remembered, so the tab never came back.
+    await expect(tab).toBeVisible();
+  });
+
   test('a room tree shows a picture as a picture, and an SVG as text', async ({
     page,
     roomsApi,

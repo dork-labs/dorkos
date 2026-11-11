@@ -27,6 +27,7 @@ import {
   type RoomFileEntry,
 } from '@dorkos/shared/room-files';
 import { roomKeys } from '@/layers/entities/room';
+import { roomDocumentClosedKey, useAppStore } from '@/layers/shared/model';
 import { errorCodeOf, ROOM_HAS_NO_REPO_CODE } from '../lib/error-code';
 import { roomFileConflictOf, saveRefusalMessage } from '../lib/save-errors';
 import { roomChangeRefusalMessage, serverSentenceFirst } from '../lib/crud-errors';
@@ -155,7 +156,14 @@ export function createRoomFilesSource(deps: RoomFilesSourceDeps): FileExplorerSo
     // sees, so it is a control somebody presses rather than a side effect of
     // opening something (spec `room-canvas` §9.5).
     async showToEveryone(path: string): Promise<void> {
-      await transport.openRoomCanvasDocument(roomId, { type: 'file', sourcePath: path });
+      const document = await transport.openRoomCanvasDocument(roomId, {
+        type: 'file',
+        sourcePath: path,
+      });
+      // The room answers a file already on its canvas with the same document,
+      // and this person may have closed its tab before. Sharing it again is the
+      // newer choice, or the tab stays hidden (DOR-4179).
+      useAppStore.getState().reopenPanelResourceView([roomDocumentClosedKey(roomId, document.id)]);
     },
     // A person's own edits go through §3.10's door, one save to one commit
     // with their name on it — any text file, not only markdown.
