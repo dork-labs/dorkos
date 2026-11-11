@@ -1,60 +1,17 @@
 /**
  * @vitest-environment jsdom
  */
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import { renderHook, act, cleanup } from '@testing-library/react';
+import { useAppStore } from '@/layers/shared/model';
 
 import { useGlobalPalette } from '../use-global-palette';
 
-// Mock app store state — only the global palette fields are read directly.
-// Closing other dialogs flows through the deep-link `close()` actions.
-const mockState = {
-  globalPaletteOpen: false,
-  toggleGlobalPalette: vi.fn(),
-  setGlobalPaletteOpen: vi.fn(),
-};
-
-// Deep-link `close` spies — useGlobalPalette calls these to dismiss the feature
-// dialogs before opening the palette.
-const mockCloseSettings = vi.fn();
-const mockCloseTasks = vi.fn();
-
-// The palette fields are faked; the two deep-link hooks are the REAL ones,
-// wrapped so `close` is still observable. That matters because what `close`
-// does is the whole question here: it owns both halves of a dialog's open
-// signal now (URL param + store flag, DOR-839), so Cmd+K dismisses a
-// store-opened dialog too. A hand-written stub would answer that question by
-// assumption. Note the real hooks read the real app store (they import it
-// directly, not through this barrel), which is what the assertion below reads.
-vi.mock('@/layers/shared/model', async (importActual) => {
-  const actual = await importActual<typeof import('@/layers/shared/model')>();
-  return {
-    ...actual,
-    useAppStore: (selector?: (s: typeof mockState) => unknown) =>
-      selector ? selector(mockState) : mockState,
-    useSettingsDeepLink: () => {
-      const real = actual.useSettingsDeepLink();
-      return {
-        ...real,
-        close: () => {
-          mockCloseSettings();
-          real.close();
-        },
-      };
-    },
-    useTasksDeepLink: () => {
-      const real = actual.useTasksDeepLink();
-      return {
-        ...real,
-        close: () => {
-          mockCloseTasks();
-          real.close();
-        },
-      };
-    },
-  };
-});
-
+// Everything here runs on the REAL app store and the real deep-link hooks
+// (their embedded, router-less branch). Each case asserts where the palette
+// and the two dialogs ended up, so a toggle that stops toggling, or a `close()`
+// that stops clearing its store flag (DOR-839), turns a case red. A faked store
+// could only report that a function was called.
 function fireKeydown(key: string, modifiers: { metaKey?: boolean; ctrlKey?: boolean } = {}) {
   act(() => {
     document.dispatchEvent(
@@ -68,31 +25,40 @@ function fireKeydown(key: string, modifiers: { metaKey?: boolean; ctrlKey?: bool
   });
 }
 
+function state() {
+  return useAppStore.getState();
+}
+
 describe('useGlobalPalette', () => {
   beforeEach(() => {
-    vi.clearAllMocks();
-    mockState.globalPaletteOpen = false;
     // Ensure all previous hooks are unmounted so their event listeners are removed
     cleanup();
+    useAppStore.setState({ globalPaletteOpen: false, settingsOpen: false });
+    useAppStore.getState().setTasksOpen(false);
   });
 
-  it('returns globalPaletteOpen, setGlobalPaletteOpen, and toggleGlobalPalette', () => {
+  it('returns the store’s palette flag and its two actions', () => {
     const { result } = renderHook(() => useGlobalPalette());
     expect(result.current.globalPaletteOpen).toBe(false);
-    expect(typeof result.current.setGlobalPaletteOpen).toBe('function');
-    expect(typeof result.current.toggleGlobalPalette).toBe('function');
+
+    act(() => result.current.setGlobalPaletteOpen(true));
+    expect(result.current.globalPaletteOpen).toBe(true);
+    act(() => result.current.toggleGlobalPalette());
+    expect(result.current.globalPaletteOpen).toBe(false);
   });
 
-  it('Cmd+K toggles the palette', () => {
+  it('Cmd+K opens the palette and the next Cmd+K closes it', () => {
     renderHook(() => useGlobalPalette());
     fireKeydown('k', { metaKey: true });
-    expect(mockState.toggleGlobalPalette).toHaveBeenCalledTimes(1);
+    expect(state().globalPaletteOpen).toBe(true);
+    fireKeydown('k', { metaKey: true });
+    expect(state().globalPaletteOpen).toBe(false);
   });
 
-  it('Ctrl+K toggles the palette (non-Mac)', () => {
+  it('Ctrl+K opens the palette (non-Mac)', () => {
     renderHook(() => useGlobalPalette());
     fireKeydown('k', { ctrlKey: true });
-    expect(mockState.toggleGlobalPalette).toHaveBeenCalledTimes(1);
+    expect(state().globalPaletteOpen).toBe(true);
   });
 
   it('other key combos are ignored', () => {
@@ -100,58 +66,44 @@ describe('useGlobalPalette', () => {
     fireKeydown('j', { metaKey: true });
     fireKeydown('k'); // no modifier
     fireKeydown('p', { metaKey: true });
-    expect(mockState.toggleGlobalPalette).not.toHaveBeenCalled();
+    expect(state().globalPaletteOpen).toBe(false);
   });
 
-  it('opening the palette closes other dialogs via deep-link close', () => {
-    mockState.globalPaletteOpen = false;
-    renderHook(() => useGlobalPalette());
-    fireKeydown('k', { metaKey: true });
-
-    expect(mockCloseSettings).toHaveBeenCalled();
-    expect(mockCloseTasks).toHaveBeenCalled();
-  });
-
-  // The behaviour change this branch makes deliberate (DOR-839): `close()` owns
-  // the store flag as well as the URL, so Cmd+K now dismisses a Settings dialog
-  // opened from the sidebar, not only a deep-linked one. This harness runs the
-  // embedded (router-less) branch, so what it pins is that THAT branch clears
-  // the store flag; the router-present regression (a close() reverting to
-  // URL-only) is pinned by use-dialog-deep-link.test.tsx and the replay-setup
-  // test, which run against a real router.
-  it('opening the palette clears a Settings dialog the store flag opened', async () => {
-    const { useAppStore: realAppStore } =
-      await vi.importActual<typeof import('@/layers/shared/model')>('@/layers/shared/model');
-    realAppStore.getState().setSettingsOpen(true);
+  // The behaviour DOR-839 made deliberate: `close()` owns the store flag as well
+  // as the URL, so Cmd+K dismisses a Settings or Tasks dialog opened from the
+  // sidebar, not only a deep-linked one. The router-present branch (a close()
+  // reverting to URL-only) is pinned by use-dialog-deep-link.test.tsx and the
+  // replay-setup test, which run against a real router.
+  it('opening the palette closes a Settings and a Tasks dialog the store opened', () => {
+    state().setSettingsOpen(true);
+    state().setTasksOpen(true);
 
     renderHook(() => useGlobalPalette());
     fireKeydown('k', { metaKey: true });
 
-    expect(realAppStore.getState().settingsOpen).toBe(false);
+    expect(state().globalPaletteOpen).toBe(true);
+    expect(state().settingsOpen).toBe(false);
+    expect(state().tasksOpen).toBe(false);
   });
 
-  it('does not close other dialogs when palette is already open (closing it)', () => {
-    mockState.globalPaletteOpen = true;
+  it('closing the palette leaves the dialogs alone', () => {
+    useAppStore.setState({ globalPaletteOpen: true });
+    state().setSettingsOpen(true);
+    state().setTasksOpen(true);
+
     renderHook(() => useGlobalPalette());
     fireKeydown('k', { metaKey: true });
 
-    expect(mockCloseSettings).not.toHaveBeenCalled();
-    expect(mockCloseTasks).not.toHaveBeenCalled();
-    // Still toggles
-    expect(mockState.toggleGlobalPalette).toHaveBeenCalledTimes(1);
+    expect(state().globalPaletteOpen).toBe(false);
+    expect(state().settingsOpen).toBe(true);
+    expect(state().tasksOpen).toBe(true);
   });
 
-  it('cleans up the event listener on unmount', () => {
-    const addSpy = vi.spyOn(document, 'addEventListener');
-    const removeSpy = vi.spyOn(document, 'removeEventListener');
-
+  it('stops listening on unmount', () => {
     const { unmount } = renderHook(() => useGlobalPalette());
-    expect(addSpy).toHaveBeenCalledWith('keydown', expect.any(Function));
 
     unmount();
-    expect(removeSpy).toHaveBeenCalledWith('keydown', expect.any(Function));
-
-    addSpy.mockRestore();
-    removeSpy.mockRestore();
+    fireKeydown('k', { metaKey: true });
+    expect(state().globalPaletteOpen).toBe(false);
   });
 });
