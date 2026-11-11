@@ -102,6 +102,59 @@ describe('assertSignInUrl', () => {
   });
 });
 
+describe('the person’s state during a handoff (DOR-4163)', () => {
+  const secret = 'https://accounts.example.com/callback?code=secret#token=x';
+
+  it('shows each tab’s site only while a person has the browser', async () => {
+    const { handover, set } = setup();
+    set({
+      ...connected(secret),
+      tabs: [
+        { id: 't1', url: secret, title: 'Reset code 492810 for sam@example.com' },
+        { id: 't2', url: 'https://mail.example/inbox/42?q=x', title: 'Inbox' },
+        { id: 't3', url: 'about:blank', title: '' },
+        { id: 't4', url: 'data:text/html,secret', title: '' },
+      ],
+    });
+    expect((await handover.state()).tabs[0]!.url).toBe(secret);
+    const { handoffId } = await handover.ask('chat-1', 'wall');
+    const during = await handover.state();
+    expect(during.tabs.map((tab) => tab.url)).toEqual([
+      'https://accounts.example.com',
+      'https://mail.example',
+      'about:blank',
+      'data:',
+    ]);
+    expect(during.tabs.map((tab) => tab.title)).toEqual(['', '', '', '']);
+    expect(JSON.stringify(during)).not.toMatch(/secret|token=|code=|inbox\/42|492810|sam@|Inbox/);
+    // The card still names the site the agent asked on.
+    expect(during.handoff?.site).toBe('accounts.example.com');
+    await handover.handBack(handoffId);
+    const after = await handover.state();
+    expect(after.tabs[0]).toMatchObject({
+      url: secret,
+      title: 'Reset code 492810 for sam@example.com',
+    });
+  });
+
+  it('answers a person’s Pause and tab choice with the same trimmed tabs', async () => {
+    const { handover, set } = setup();
+    set({ ...connected(secret), tabs: [{ id: 't1', url: secret, title: 'Code 492810' }] });
+    await handover.ask('chat-1', 'wall');
+    for (const answer of [await handover.pause(), await handover.selectTab('t1')]) {
+      expect(answer.tabs).toEqual([{ id: 't1', url: 'https://accounts.example.com', title: '' }]);
+      expect(JSON.stringify(answer)).not.toMatch(/secret|token=|code=|492810/);
+    }
+  });
+
+  it('shows the full address again once the person stops the task', async () => {
+    const { handover, set } = setup();
+    set(connected(secret));
+    await handover.stop((await handover.ask('chat-1', 'wall')).handoffId);
+    expect((await handover.state()).tabs[0]!.url).toBe(secret);
+  });
+});
+
 describe('BrowserHandover.ask', () => {
   it('fails closed until startup says how to read a turn’s marks', async () => {
     const browser = fakeBrowser();

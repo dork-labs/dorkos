@@ -72,7 +72,7 @@ export function createLocalBrowserRoutes(
     const { url } = z.object({ url: z.string().url() }).strict().parse(readJsonBody(c));
     return c.json(await service.handover.navigate(url));
   });
-  router.post('/pause', async (c) => c.json(await service.pause()));
+  router.post('/pause', async (c) => c.json(await service.handover.pause()));
   router.post('/resume', personOnly, async (c) => c.json(await service.handover.resume()));
   // Signing in and answering a handoff take a person: no agent, API key or approval token.
   router.post('/sign-in', personOnly, async (c) =>

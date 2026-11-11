@@ -51,8 +51,8 @@ const service = {
     delete: spies.deleteProfile,
   },
   capabilities: spies.capabilities,
-  pause: spies.pause,
   handover: {
+    pause: spies.pause,
     state: spies.state,
     open: spies.open,
     selectTab: spies.selectTab,
