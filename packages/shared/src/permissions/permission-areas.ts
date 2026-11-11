@@ -183,7 +183,7 @@ export const GATED_AREAS: readonly GatedArea[] = Object.freeze([
   {
     id: 'agent-browser',
     label: 'Agent browser',
-    description: 'Use a website in a browser page you share with the chat',
+    description: 'Use a website in a browser page you share with it',
     gate: 'A person shares it',
   },
   {
@@ -195,7 +195,7 @@ export const GATED_AREAS: readonly GatedArea[] = Object.freeze([
   {
     id: 'activity',
     label: 'Activity',
-    description: "Read what agents did, the audit log and this computer's health",
+    description: "See what agents did, the audit log and this computer's health",
     gate: 'Read only',
   },
 ] satisfies GatedArea[]);
