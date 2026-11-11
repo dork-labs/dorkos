@@ -1,58 +1,19 @@
-/**
- * The `a2a.enabled` seed (DOR-1304) across the real `conf`/Ajv seam.
- *
- * ## Why this is a file of its own
- *
- * `conf` selects a migration only when its key is `<= projectVersion`, and
- * `SERVER_VERSION` resolves to `apps/server/package.json`'s version in a dev
- * tree, so a `0.62.0` body runs under NO default test environment.
- * `DORKOS_VERSION_OVERRIDE` has to be set before `lib/version.ts` is imported,
- * which means before this file's imports, which means a separate module registry
- * — the same reasoning `config-persistent-session-migration.test.ts` gives. A
- * test that skipped this would pass while exercising nothing.
- *
- * ## Why a real manager rather than a mock store
- *
- * `.claude/rules/safe-defaults.md`: mock stores never cross the `conf`/Ajv seam,
- * and `UserConfigSchema.parse` cannot substitute — Zod strips unknown keys where
- * Ajv rejects them. `a2a` is a whole new top-level SECTION, and a config file
- * written before it existed has no such key, so the only question worth asking is
- * whether a real `ConfigManager` reading a real file still validates once the
- * section lands. Nothing short of that answers it.
- *
- * ## What writes the section, and what this file therefore does not claim
- *
- * Not `seedA2aDisabled`. Suppress that body entirely and every case here still
- * passes, including the on-disk one — measured, in DOR-1496. `a2a` is a whole
- * TOP-LEVEL section, and before conf runs its first migration key it merges
- * `defaults` under the parsed file and WRITES the result whenever the two
- * differ, so a section the file has never carried arrives on disk either way.
- * That is a real file write, not the read-time Ajv fill that makes nested seeds
- * (`ui.composer`, `ui.promos`) depend on their migration bodies.
- *
- * So this file is an UPGRADE-BOOT test, not a test of the migration body: it
- * asks whether a person on 0.61.0 comes out of the launch with the gate closed
- * on their file and their config intact, and it would be worth keeping even if
- * the table were empty. The body is pinned separately, by the mock-store suite
- * in `config-manager.test.ts`. Do not "strengthen" any case here into a claim
- * about the migration; nothing readable from this seam can distinguish the two.
- */
+/** A2A defaults and explicit choices survive supported upgrades and real writes. */
 import { describe, it, expect, afterEach, vi } from 'vitest';
 
 // Hoisted above the imports below: `SERVER_VERSION` is a module-level const, so
 // the override has to be in the environment before `lib/version.ts` loads.
 vi.hoisted(() => {
-  process.env.DORKOS_VERSION_OVERRIDE = '0.62.0';
+  process.env.DORKOS_VERSION_OVERRIDE = '0.135.5';
 });
 
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
 import { ConfigManager } from '../config-manager.js';
-import { SERVER_VERSION } from '../../../lib/version.js';
 
-/** A config from before the `a2a` section existed. */
-const STORED_VERSION = '0.61.0';
+/** A supported config missing the optional A2A section. */
+const STORED_VERSION = '0.115.0';
 
 const dirs: string[] = [];
 
@@ -61,7 +22,7 @@ afterEach(() => {
 });
 
 /**
- * A temp data directory holding a valid config one upgrade behind this key.
+ * A temporary directory holding a config at the supported upgrade floor.
  *
  * @param extra - Extra top-level sections to write, e.g. an `a2a` block a person already has.
  */
@@ -81,10 +42,6 @@ function seedUpgradeBoot(extra: Record<string, unknown> = {}): string {
 }
 
 describe('a2a.enabled on an upgrade boot (real conf + Ajv)', () => {
-  it('really is running the 0.62.0 migration, or none of the rest of this file means anything', () => {
-    expect(SERVER_VERSION).toBe('0.62.0');
-  });
-
   it('leaves the gate CLOSED, on the file, for a config that predates the section', () => {
     const dir = seedUpgradeBoot();
 

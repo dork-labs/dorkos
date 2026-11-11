@@ -125,6 +125,54 @@ export const REMOVED_SHIPPED_KEYS: Readonly<Record<string, string>> = {
     'DOR-4188: the 0.115 upgrade floor refuses older configs before Conf opens; no supported upgrade can reach this key.',
   '0.59.0':
     'DOR-4188: the 0.115 upgrade floor refuses older configs before Conf opens; no supported upgrade can reach this key.',
+  '0.60.0':
+    'DOR-4188: the 0.115 upgrade floor refuses older configs before Conf opens; no supported upgrade can reach this key.',
+  '0.62.0':
+    'DOR-4188: the 0.115 upgrade floor refuses older configs before Conf opens; no supported upgrade can reach this key.',
+  '0.63.0':
+    'DOR-4188: the 0.115 upgrade floor refuses older configs before Conf opens; no supported upgrade can reach this key.',
+  '0.64.0':
+    'DOR-4188: the 0.115 upgrade floor refuses older configs before Conf opens; no supported upgrade can reach this key.',
+  '0.65.0':
+    'DOR-4188: the 0.115 upgrade floor refuses older configs before Conf opens; no supported upgrade can reach this key.',
+  '0.66.0':
+    'DOR-4188: the 0.115 upgrade floor refuses older configs before Conf opens; no supported upgrade can reach this key.',
+  '0.67.0':
+    'DOR-4188: the 0.115 upgrade floor refuses older configs before Conf opens; no supported upgrade can reach this key.',
+  '0.68.0':
+    'DOR-4188: the 0.115 upgrade floor refuses older configs before Conf opens; no supported upgrade can reach this key.',
+  '0.69.0':
+    'DOR-4188: the 0.115 upgrade floor refuses older configs before Conf opens; no supported upgrade can reach this key.',
+  '0.70.0':
+    'DOR-4188: the 0.115 upgrade floor refuses older configs before Conf opens; no supported upgrade can reach this key.',
+  '0.73.0':
+    'DOR-4188: the 0.115 upgrade floor refuses older configs before Conf opens; no supported upgrade can reach this key.',
+  '0.75.0':
+    'DOR-4188: the 0.115 upgrade floor refuses older configs before Conf opens; no supported upgrade can reach this key.',
+  '0.76.0':
+    'DOR-4188: the 0.115 upgrade floor refuses older configs before Conf opens; no supported upgrade can reach this key.',
+  '0.77.0':
+    'DOR-4188: the 0.115 upgrade floor refuses older configs before Conf opens; no supported upgrade can reach this key.',
+  '0.78.0':
+    'DOR-4188: the 0.115 upgrade floor refuses older configs before Conf opens; no supported upgrade can reach this key.',
+  '0.79.0':
+    'DOR-4188: the 0.115 upgrade floor refuses older configs before Conf opens; no supported upgrade can reach this key.',
+  '0.80.0':
+    'DOR-4188: the 0.115 upgrade floor refuses older configs before Conf opens; no supported upgrade can reach this key.',
+  '0.81.0':
+    'DOR-4188: the 0.115 upgrade floor refuses older configs before Conf opens; no supported upgrade can reach this key.',
+  '0.82.0':
+    'DOR-4188: the 0.115 upgrade floor refuses older configs before Conf opens; no supported upgrade can reach this key.',
+  '0.83.0':
+    'DOR-4188: the 0.115 upgrade floor refuses older configs before Conf opens; no supported upgrade can reach this key.',
+  '0.84.0':
+    'DOR-4188: the 0.115 upgrade floor refuses older configs before Conf opens; no supported upgrade can reach this key.',
+  '0.85.0':
+    'DOR-4188: the 0.115 upgrade floor refuses older configs before Conf opens; no supported upgrade can reach this key.',
+  '0.86.0':
+    'DOR-4188: the 0.115 upgrade floor refuses older configs before Conf opens; no supported upgrade can reach this key.',
+  '0.87.0':
+    'DOR-4188: the 0.115 upgrade floor refuses older configs before Conf opens; no supported upgrade can reach this key.',
   '0.71.0':
     'seeded runtimes.dorkosTools; DOR-2099 graduated that experiment and deleted the leaf, so ' +
     'there is no behaviour left for a stored value to select and the state change it owed is ' +

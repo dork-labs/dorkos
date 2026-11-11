@@ -37,7 +37,20 @@ function seed(version?: string): { dir: string; file: string; before: Buffer } {
         permissions: { preset: 'careful' },
         extensions: { approvedToRun: ['fixture-extension'] },
         harness: { approvedHooks: ['fixture-hooks@digest'] },
-        runtimes: { defaultTrustStop: 'ask' },
+        runtimes: {
+          defaultTrustStop: 'ask',
+          claudeCode: {
+            defaultAccount: '/fixture/account',
+            accounts: [
+              {
+                id: 'fixture-account',
+                path: '/fixture/account',
+                label: 'Fixture',
+                renamedFrom: 'default',
+              },
+            ],
+          },
+        },
         ui: { theme: 'dark' },
         ...(version === undefined ? {} : { __internal__: { migrations: { version } } }),
       },
@@ -60,6 +73,30 @@ describe('config upgrade floor through a real manager', () => {
     '0.55.0',
     '0.57.0',
     '0.59.0',
+    '0.60.0',
+    '0.62.0',
+    '0.63.0',
+    '0.64.0',
+    '0.65.0',
+    '0.66.0',
+    '0.67.0',
+    '0.68.0',
+    '0.69.0',
+    '0.70.0',
+    '0.73.0',
+    '0.75.0',
+    '0.76.0',
+    '0.77.0',
+    '0.78.0',
+    '0.79.0',
+    '0.80.0',
+    '0.81.0',
+    '0.82.0',
+    '0.83.0',
+    '0.84.0',
+    '0.85.0',
+    '0.86.0',
+    '0.87.0',
     '0.89.0',
     '0.114.9',
     '0.115.0-beta.1',
@@ -95,6 +132,15 @@ describe('config upgrade floor through a real manager', () => {
       expect(stored.extensions.approvedToRun).toEqual(['fixture-extension']);
       expect(stored.harness.approvedHooks).toEqual(['fixture-hooks@digest']);
       expect(stored.runtimes.defaultTrustStop).toBe('ask');
+      expect(stored.runtimes.claudeCode.defaultAccount).toBe('/fixture/account');
+      expect(stored.runtimes.claudeCode.accounts).toEqual([
+        {
+          id: 'fixture-account',
+          path: '/fixture/account',
+          label: 'Fixture',
+          renamedFrom: 'default',
+        },
+      ]);
       expect(fs.readdirSync(dir)).toEqual(['config.json']);
     }
   );
