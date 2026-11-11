@@ -14032,6 +14032,40 @@
           },
           "hasPage": {
             "type": "boolean"
+          },
+          "apps": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "access": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "enum": [
+                    "reads",
+                    "changes",
+                    "both",
+                    null
+                  ]
+                }
+              },
+              "required": [
+                "id",
+                "name",
+                "access"
+              ]
+            }
           }
         },
         "default": null,
@@ -14066,6 +14100,12 @@
           },
           "runtime": {
             "type": "boolean"
+          },
+          "apps": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           }
         },
         "default": null,

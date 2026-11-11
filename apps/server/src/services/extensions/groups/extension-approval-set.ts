@@ -182,13 +182,14 @@ async function readSet(
   const extensions = configManager.get('extensions');
   const waiting: WaitingMember[] = [];
   const views: ApprovalSetMemberView[] = [];
-  const members = source
-    .listRecords()
+  const records = source.listRecords();
+  const byId = new Map(records.map((record) => [record.id, record]));
+  const members = records
     .filter((record) => record.sourcePlugin === plugin)
     .sort((a, b) => a.manifest.name.localeCompare(b.manifest.name));
   for (const record of members) {
     if (!(await isInstalledBy(record, plugin, source.dorkHome))) continue;
-    const permissions = await permissionsOf(record);
+    const permissions = await permissionsOf(record, (id) => byId.get(id));
     const view = {
       id: record.id,
       name: record.manifest.name,

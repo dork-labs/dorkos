@@ -44,6 +44,20 @@ export const ExtensionApprovalPermissionsSchema = z
     agents: z.boolean(),
     /** Whether it has screens (a client bundle), which run in DorkOS with your access. */
     hasPage: z.boolean(),
+    /**
+     * The other apps it calls (DOR-3293), each with DorkOS's name for it and
+     * what that app shares with it, read from that app's own exports. `name`
+     * and `access` are `null` for an app that is not installed or not on.
+     */
+    apps: z
+      .array(
+        z.object({
+          id: z.string(),
+          name: z.string().nullable(),
+          access: z.enum(['reads', 'changes', 'both']).nullable(),
+        })
+      )
+      .optional(),
   })
   .openapi('ExtensionApprovalPermissions');
 
@@ -61,6 +75,8 @@ export const ExtensionApprovalAdditionsSchema = z
     agents: z.boolean(),
     /** Whether it now asks to run inside DorkOS, with full access. */
     runtime: z.boolean(),
+    /** Apps it now calls that its last approval did not name (DOR-3293). */
+    apps: z.array(z.string()).optional(),
   })
   .openapi('ExtensionApprovalAdditions');
 
@@ -276,6 +292,8 @@ export const ApproveExtensionRequestSchema = z
         net: z.array(z.string()).max(64),
         run: z.array(z.string()).max(16),
         agents: z.boolean(),
+        /** The other apps the card said it calls (DOR-3293). */
+        apps: z.array(z.string()).max(20).optional(),
       })
       .optional(),
     /**
@@ -401,6 +419,8 @@ export const ApprovalSetPermissionsSchema = z.object({
   net: z.array(z.string()).max(64),
   run: z.array(z.string()).max(16),
   agents: z.boolean(),
+  /** The other apps it calls (DOR-3293). */
+  apps: z.array(z.string()).max(20).optional(),
 });
 
 /** The permission set one member was shown with. */
@@ -453,6 +473,7 @@ export async function approvalSetHash(
         net: [...permissions.net].sort(),
         run: [...permissions.run].sort(),
         agents: permissions.agents,
+        apps: [...(permissions.apps ?? [])].sort(),
       });
       return `${id}:${version}:${expectedDigest}:${await sha256(canonical)}`;
     })

@@ -1,0 +1,100 @@
+/**
+ * "It uses other apps:" on an approval card (DOR-3293, the designer's spec):
+ * one row per app in DorkOS's words, a missing app says that part won't work,
+ * only an app new since the last yes is marked New, and past four the rest
+ * open in place.
+ *
+ * @vitest-environment jsdom
+ */
+import { afterEach, describe, expect, it } from 'vitest';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import '@testing-library/jest-dom/vitest';
+import { ExtensionPermissionLines } from '../ui/ExtensionPermissionLines';
+import {
+  approvedSetOf,
+  extensionPermissionLines,
+  permissionLineText,
+  permissionsAddedSince,
+  type ExtensionPermissionView,
+} from '../lib/permission-lines';
+
+afterEach(cleanup);
+
+const view = (apps: ExtensionPermissionView['apps']): ExtensionPermissionView => ({
+  runtime: 'in-process',
+  net: [],
+  run: [],
+  agents: false,
+  hasServer: false,
+  apps,
+});
+
+const THREE = view([
+  { id: 'desk', name: 'Desk', access: 'reads' },
+  { id: 'mkt-core', name: 'Marketing core', access: 'both' },
+  { id: 'ledger', name: null, access: null },
+]);
+
+describe('It uses other apps', () => {
+  it('reads one line per app, in the designer’s words', () => {
+    const line = extensionPermissionLines(THREE).find((entry) => entry.key === 'apps');
+    expect(line && permissionLineText(line)).toBe(
+      'It uses other apps: Desk · reads Marketing core · reads and changes ' +
+        'ledger · not installed, so this part won’t work'
+    );
+  });
+
+  it('says so when an installed app shares nothing with it', () => {
+    const line = extensionPermissionLines(
+      view([{ id: 'vault', name: 'Vault', access: null }])
+    ).find((entry) => entry.key === 'apps');
+    expect(line?.apps?.[0]?.detail).toBe('shares nothing with it, so this part won’t work');
+  });
+
+  it('draws nothing for an app that calls no other app', () => {
+    expect(extensionPermissionLines(view(undefined)).some((l) => l.key === 'apps')).toBe(false);
+    expect(extensionPermissionLines(view([])).some((l) => l.key === 'apps')).toBe(false);
+  });
+
+  it('marks only the app new since the last yes', () => {
+    render(
+      <ExtensionPermissionLines
+        permissions={THREE}
+        added={{ net: [], run: [], agents: false, runtime: false, apps: ['mkt-core'] }}
+      />
+    );
+    const rows = document.querySelectorAll('[data-slot="called-apps"] li[data-app]');
+    expect([...rows].map((row) => row.getAttribute('data-new'))).toEqual([null, 'true', null]);
+    expect(screen.getAllByText('New')).toHaveLength(1);
+  });
+
+  it('shows four, then “and N more”, which opens the rest in place', () => {
+    const six = view(
+      ['a', 'b', 'c', 'd', 'e', 'f'].map((id) => ({ id, name: id.toUpperCase(), access: 'reads' }))
+    );
+    render(<ExtensionPermissionLines permissions={six} />);
+    expect(document.querySelectorAll('li[data-app]')).toHaveLength(4);
+    fireEvent.click(screen.getByRole('button', { name: 'and 2 more' }));
+    expect(document.querySelectorAll('li[data-app]')).toHaveLength(6);
+    expect(screen.queryByRole('button', { name: /more/ })).not.toBeInTheDocument();
+  });
+
+  it('echoes the apps it showed with a yes, so a list that grew since is refused as stale', () => {
+    expect(approvedSetOf(THREE)?.apps).toEqual(['desk', 'mkt-core', 'ledger']);
+    expect(approvedSetOf(view(undefined))).not.toHaveProperty('apps');
+  });
+
+  it('finds a newly listed app between what was seen and what is declared now', () => {
+    const seen = {
+      runtime: 'in-process' as const,
+      net: [],
+      run: [],
+      agents: false,
+      apps: ['desk'],
+    };
+    expect(permissionsAddedSince(seen, { ...seen, apps: ['desk', 'ledger'] })?.apps).toEqual([
+      'ledger',
+    ]);
+    expect(permissionsAddedSince(seen, { ...seen, apps: [] })).toBeNull();
+  });
+});

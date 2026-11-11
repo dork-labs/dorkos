@@ -82,6 +82,7 @@ import {
   type ExtensionApprovals,
 } from './extension-load-policy.js';
 import { addedSince, declaredSet } from './isolation/permission-coverage.js';
+import { calledAppsView } from './isolation/called-apps.js';
 import { approvedVersionOf, changedFilesSince } from './pin/extension-content-pin.js';
 import { PROGRAM_NOT_FOUND } from './isolation/resolve-program.js';
 
@@ -438,7 +439,11 @@ function conditionKey(copy: {
  * @param record - The extension record.
  * @param dorkHome - DorkOS's data directory.
  */
-async function describeCopy(record: ExtensionRecord, dorkHome: string): Promise<ApprovalFacts> {
+async function describeCopy(
+  record: ExtensionRecord,
+  dorkHome: string,
+  lookup: AppLookup
+): Promise<ApprovalFacts> {
   const name = capped(record.manifest.name);
   const nouns = contributedNouns(name, record);
   const provenance = await provenanceOf(record, dorkHome);
@@ -464,7 +469,7 @@ async function describeCopy(record: ExtensionRecord, dorkHome: string): Promise<
     addedNouns: nouns.length > 0 ? `${joinPlainly(nouns)} added` : null,
     since,
     why: whyLine(record, name, nouns, provenance, change),
-    permissions: await permissionsOf(record),
+    permissions: await permissionsOf(record, lookup),
     added: addedSinceApproval(record, configManager.get('extensions')),
     ...agentGiftsOf(record),
     digest: record.currentDigest ?? null,
@@ -498,18 +503,27 @@ function agentGiftsOf(
   };
 }
 
+/** DorkOS's record of another app, by id. */
+export type AppLookup = (id: string) => ExtensionRecord | undefined;
+
 /**
  * Where a copy runs and what it may reach, for the card (DOR-2686). Read
  * from discovery's isolation view and the copy's own folder.
  *
  * @param record - The extension record.
+ * @param lookup - DorkOS's record of another app, for the apps it calls.
  */
 export async function permissionsOf(
-  record: ExtensionRecord
+  record: ExtensionRecord,
+  lookup: AppLookup
 ): Promise<ExtensionApprovalPermissions> {
   const hasPage = await hasClientEntry(record.runPath ?? record.path);
+  const called = calledAppsView(record, lookup);
+  const apps = called.length > 0 ? { apps: called } : {};
   const isolation = record.isolation;
-  if (!isolation) return { runtime: 'in-process', net: [], run: [], agents: false, hasPage };
+  if (!isolation) {
+    return { runtime: 'in-process', net: [], run: [], agents: false, hasPage, ...apps };
+  }
   return {
     runtime: 'subprocess',
     net: [...isolation.net],
@@ -524,6 +538,7 @@ export async function permissionsOf(
     })),
     agents: isolation.agents,
     hasPage,
+    ...apps,
   };
 }
 
@@ -576,16 +591,18 @@ async function readCopies(
 ): Promise<{ pending: ApprovalFacts[]; putOff: ApprovalFacts[] }> {
   const extensions = configManager.get('extensions');
   const records = source.listRecords();
+  const byId = new Map(records.map((record) => [record.id, record]));
+  const lookup: AppLookup = (id) => byId.get(id);
   const [pending, putOff] = await Promise.all([
     Promise.all(
       records
         .filter((record) => isPendingApproval(record, extensions))
-        .map((record) => describeCopy(record, source.dorkHome))
+        .map((record) => describeCopy(record, source.dorkHome, lookup))
     ),
     Promise.all(
       records
         .filter((record) => isPutOff(record, extensions))
-        .map((record) => describeCopy(record, source.dorkHome))
+        .map((record) => describeCopy(record, source.dorkHome, lookup))
     ),
   ]);
   // Only a copy still waiting needs its first sighting remembered.

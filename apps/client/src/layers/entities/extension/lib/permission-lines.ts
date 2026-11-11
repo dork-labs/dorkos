@@ -38,12 +38,32 @@ export interface ExtensionPermissionView {
   /** Whether it has screens. Absent where unknown. */
   hasPage?: boolean;
   /**
+   * The other apps it calls (DOR-3293), with DorkOS's name for each and what
+   * that app shares with it. Absent where unknown.
+   */
+  apps?: readonly ExtensionCalledApp[];
+  /**
    * Whether it has a server half (a server entry or a data proxy). `false`
    * means only screens, which act as you in DorkOS and nothing more, so the
    * card says that instead of "full access". Absent where unknown: treated
    * as having one, the wider claim.
    */
   hasServer?: boolean;
+}
+
+/** One other app an extension calls, as the server named it. */
+export type ExtensionCalledApp = NonNullable<ExtensionApprovalPermissions['apps']>[number];
+
+/** One app on the "It uses other apps:" line. */
+export interface ExtensionCalledAppEntry {
+  /** The app's id, for the list key. */
+  id: string;
+  /** DorkOS's name for it, or its id when it is not installed. */
+  name: string;
+  /** What it lets this app do, e.g. "reads and changes". */
+  detail: string;
+  /** Whether it is new since the last yes. */
+  isNew: boolean;
 }
 
 /** How a line reads: plain, what is new since the last yes, or a caution. */
@@ -63,6 +83,8 @@ export interface ExtensionPermissionLine {
   parts: readonly ExtensionPermissionPart[];
   /** Names listed after the label, in full. */
   items?: readonly string[];
+  /** Other apps it calls, one per row under the label. */
+  apps?: readonly ExtensionCalledAppEntry[];
   /** How it reads. */
   tone: ExtensionPermissionTone;
 }
@@ -76,6 +98,8 @@ export interface ExtensionPermissionSet {
   net: string[];
   run: string[];
   agents: boolean;
+  /** The other apps it calls. */
+  apps?: string[];
 }
 
 /**
@@ -115,6 +139,9 @@ export function runsAnyProgram(name: string): boolean {
  */
 export function permissionLineText(line: ExtensionPermissionLine): string {
   const body = line.parts.map((part) => (typeof part === 'string' ? part : part.name)).join('');
+  if (line.apps) {
+    return [body, ...line.apps.map((app) => `${app.name} · ${app.detail}`)].join(' ');
+  }
   return line.items ? `${body} ${line.items.join(', ')}` : body;
 }
 
@@ -131,6 +158,50 @@ function plain(key: string, text: string, tone: ExtensionPermissionTone = 'plain
  * @param added - What its last approval did not cover, or `null`.
  */
 export function extensionPermissionLines(
+  permissions: ExtensionPermissionView,
+  added?: ExtensionPermissionAdditions | null
+): ExtensionPermissionLine[] {
+  const apps = calledAppsLine(permissions.apps, added?.apps);
+  const lines = reachLines(permissions, added);
+  return apps ? [...lines, apps] : lines;
+}
+
+/** What each app shares, in the designer's words (DOR-3293). */
+const ACCESS_WORDS = { reads: 'reads', changes: 'changes', both: 'reads and changes' } as const;
+
+/**
+ * "It uses other apps:", one row per app: DorkOS's name for it and what it
+ * shares, from that app's own exports. An app that is not installed or not on
+ * says this part won't work; one that shares nothing with it says the same.
+ *
+ * @param apps - The apps it calls.
+ * @param added - The ids new since the last yes, marked New.
+ */
+function calledAppsLine(
+  apps: readonly ExtensionCalledApp[] | undefined,
+  added: readonly string[] | undefined
+): ExtensionPermissionLine | null {
+  if (!apps || apps.length === 0) return null;
+  return {
+    key: 'apps',
+    parts: ['It uses other apps:'],
+    tone: 'plain',
+    apps: apps.map((app) => ({
+      id: app.id,
+      name: app.name ?? app.id,
+      detail:
+        app.name === null
+          ? 'not installed, so this part won’t work'
+          : app.access === null
+            ? 'shares nothing with it, so this part won’t work'
+            : ACCESS_WORDS[app.access],
+      isNew: added?.includes(app.id) ?? false,
+    })),
+  };
+}
+
+/** The lines for where it runs and what it may reach. */
+function reachLines(
   permissions: ExtensionPermissionView,
   added?: ExtensionPermissionAdditions | null
 ): ExtensionPermissionLine[] {
@@ -243,6 +314,8 @@ export function permissionsAddedSince(
     agents: now.agents && !seen.agents,
     runtime: now.runtime === 'in-process' && seen.runtime === 'subprocess',
   };
+  const apps = (now.apps ?? []).filter((id) => !(seen.apps ?? []).includes(id));
+  if (apps.length > 0) return { ...added, apps };
   return added.net.length > 0 || added.run.length > 0 || added.agents || added.runtime
     ? added
     : null;
@@ -317,5 +390,6 @@ export function approvedSetOf(
     net: [...view.net],
     run: view.run.map((program) => program.name),
     agents: view.agents,
+    ...(view.apps && view.apps.length > 0 ? { apps: view.apps.map((app) => app.id) } : {}),
   };
 }

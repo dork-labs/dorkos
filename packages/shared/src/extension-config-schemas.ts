@@ -159,6 +159,8 @@ export const ApprovedPermissionSetSchema = z.object({
   run: z.array(z.string()),
   /** Whether agent access (`allow.agents`) was approved. */
   agents: z.boolean(),
+  /** The other apps it was approved to call (`capabilities.http.apps`, DOR-3293). Absent: none. */
+  apps: z.array(z.string()).optional(),
 });
 
 /** The permission set a person approved for one extension. */
