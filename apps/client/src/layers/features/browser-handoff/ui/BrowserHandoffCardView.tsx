@@ -68,9 +68,15 @@ export function BrowserHandoffCardView({
   const asksPassword = step === 'sign-in' || step === 'failed';
   const status = signInStatus(step, site);
   const canContinue = step === 'wall' || step === 'saved';
+  // The host goes in the wrapping title, never in a button, so a long one can't push a
+  // control out of the card on a phone.
+  const title = asksPassword
+    ? `${site} needs you to sign in`
+    : `${site} wants a person to continue`;
+  const showWindowFirst = canShowWindow && step === 'wall';
   return (
     <section
-      aria-label={`${site} wants a person to continue`}
+      aria-label={title}
       data-slot="browser-handoff-card"
       className="bg-card mb-2 flex flex-col gap-3 rounded-xl border p-3 text-sm"
     >
@@ -79,7 +85,7 @@ export function BrowserHandoffCardView({
           <Hand className="size-5" aria-hidden />
         </span>
         <div className="min-w-0">
-          <h3 className="font-medium break-words">{site} wants a person to continue</h3>
+          <h3 className="font-medium break-words">{title}</h3>
           <p className="text-muted-foreground text-xs">
             Agent browser · <span className="text-status-warning-fg">{name} is paused</span>
           </p>
@@ -92,11 +98,7 @@ export function BrowserHandoffCardView({
       </div>
       {step === 'wall' && (
         <div className="space-y-1">
-          <p>The site asked for a check only a person can do.</p>
-          <p className="text-muted-foreground">It isn’t anything you did.</p>
-          <p className="text-muted-foreground">
-            Finish it in the window, then come back and press Continue.
-          </p>
+          <p>The site wants a check only a person can do. It isn’t anything you did.</p>
         </div>
       )}
       {/* The agent chooses the reason, so a page it called a check could still ask for a
@@ -109,14 +111,15 @@ export function BrowserHandoffCardView({
             <p className="min-w-0 flex-1 basis-48">
               If it asks for a password, don’t type it in {name}’s window.
             </p>
+            {/* The one sign-in path on a wall: a quiet link, so it never competes with Continue. */}
             <Button
-              variant="ghost"
+              variant="link"
               size="sm"
               disabled={busy}
               onClick={onSignIn}
-              className="min-h-11 md:min-h-8"
+              className="min-h-11 px-0 md:min-h-8"
             >
-              Sign in to {site}
+              Sign in instead
             </Button>
             {movesToOwnWindow && (
               <p className="text-muted-foreground basis-full">
@@ -127,19 +130,18 @@ export function BrowserHandoffCardView({
         </div>
       )}
       {asksPassword && (
-        <div className="bg-muted/50 flex gap-2 rounded-md p-2">
-          <KeyRound className="mt-0.5 size-4 shrink-0" aria-hidden />
-          <div className="space-y-1">
-            <p>This page asks for a password. Sign in from a plain window instead.</p>
-            <p className="text-muted-foreground">Don’t type it in {name}’s window.</p>
-          </div>
-        </div>
-      )}
-      {step === 'sign-in' && (
-        <div className="text-muted-foreground space-y-1">
-          <p>The window opens for you only. Close it when you’re signed in.</p>
-          {movesToOwnWindow && <p>{name} moves to its own window after you sign in.</p>}
-          {sharedProfile && <p>Every agent that uses the Agent browser can use this sign-in.</p>}
+        <div className="space-y-1">
+          <p>Open a sign-in window. {name} can’t see or use it.</p>
+          {step === 'sign-in' && movesToOwnWindow && (
+            <p className="text-muted-foreground">
+              {name} moves to its own window after you sign in.
+            </p>
+          )}
+          {step === 'sign-in' && sharedProfile && (
+            <p className="text-muted-foreground">
+              Every agent that uses the Agent browser can use this sign-in.
+            </p>
+          )}
         </div>
       )}
       {step === 'window-closed' && (
@@ -166,11 +168,19 @@ export function BrowserHandoffCardView({
         {asksPassword && (
           <Button disabled={busy} onClick={onSignIn} className="min-h-11 md:min-h-9">
             <LogIn className="size-4" aria-hidden />
-            Sign in to {site}
+            Open sign-in window
+          </Button>
+        )}
+        {/* Show window leads on a wall: it's the next thing to do. */}
+        {showWindowFirst && (
+          <Button disabled={busy} onClick={onShowWindow} className="min-h-11 md:min-h-9">
+            <Monitor className="size-4" aria-hidden />
+            Show window
           </Button>
         )}
         {(canContinue || step === 'saving') && (
           <Button
+            variant={showWindowFirst ? 'secondary' : 'default'}
             // Inert while saving, but it stays put so the next step doesn't move the layout.
             aria-disabled={step === 'saving' || busy}
             onClick={() => {
@@ -180,17 +190,6 @@ export function BrowserHandoffCardView({
           >
             <Play className="size-4" aria-hidden />
             Continue
-          </Button>
-        )}
-        {canShowWindow && step === 'wall' && (
-          <Button
-            variant="secondary"
-            disabled={busy}
-            onClick={onShowWindow}
-            className="min-h-11 md:min-h-9"
-          >
-            <Monitor className="size-4" aria-hidden />
-            Show window
           </Button>
         )}
         <Button variant="ghost" disabled={busy} onClick={onStop} className="min-h-11 md:min-h-9">

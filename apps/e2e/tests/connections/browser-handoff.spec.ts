@@ -137,9 +137,7 @@ test.describe('Agent browser handoff card', () => {
 
   test('a password page offers the plain window and no Continue', async ({ page, chatPage }) => {
     await chatWithHandoff(page, chatPage, 'password');
-    await expect(
-      card(page).getByRole('button', { name: 'Sign in to northwind.example' })
-    ).toBeVisible();
+    await expect(card(page).getByRole('button', { name: 'Open sign-in window' })).toBeVisible();
     await expect(card(page).getByRole('button', { name: 'Continue' })).toHaveCount(0);
     await expect(card(page).getByRole('button', { name: 'Show window' })).toHaveCount(0);
   });
