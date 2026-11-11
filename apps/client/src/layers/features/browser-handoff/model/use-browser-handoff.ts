@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import type { LocalBrowserPersonState } from '@dorkos/shared/local-browser';
 import {
@@ -29,10 +29,9 @@ export function useBrowserHandoff(sessionId?: string | null) {
   const ours = record && (sessionId == null || record.sessionId === sessionId) ? record : null;
   const handoff = ours?.outcome === null ? ours : null;
   const ended = ours && ours.outcome !== null && ours.id === shownId ? ours : null;
-  const openId = handoff?.id ?? null;
-  useEffect(() => {
-    if (openId) setShownId(openId);
-  }, [openId]);
+  // Remembered while rendering, React's pattern for state that follows a prop, so the
+  // receipt can show on the very render the handoff ends.
+  if (handoff && handoff.id !== shownId) setShownId(handoff.id);
 
   const run = async (call: () => Promise<LocalBrowserPersonState | void>) => {
     setBusy(true);

@@ -2,6 +2,7 @@
 covers:
   - 'fix(browser): the handoff card offers one sign-in path, and its buttons fit on a phone (DOR-3112)'
   - 'fix(browser): the agent carries on after a person hands the browser back, and the card says how it ended (DOR-3112)'
+  - 'fix(browser): the handoff card settles into its receipt instead of jumping (DOR-3112)'
 ---
 
 ### Fixed

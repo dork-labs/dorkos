@@ -1,4 +1,5 @@
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
+import { receiptSwapTransition } from '../lib/receipt-swap';
 import { useBrowserHandoff } from '../model/use-browser-handoff';
 import { BrowserHandoffCardView } from './BrowserHandoffCardView';
 import { BrowserHandoffReceipt } from './BrowserHandoffReceipt';
@@ -30,16 +31,19 @@ export function BrowserHandoffCard({ sessionId }: BrowserHandoffCardProps) {
     stopTask,
   } = useBrowserHandoff(sessionId);
   const reducedMotion = useReducedMotion();
+  const swap = receiptSwapTransition(reducedMotion);
   return (
     <AnimatePresence>
       {sessionId && handoff && step && (
-        // The same entrance and exit as the composer's background task bar.
+        // The same entrance as the composer's background task bar. On the way out its
+        // height collapses as the receipt fades in, so the composer settles, not jumps.
         <motion.div
           key={handoff.id}
           initial={{ opacity: 0, y: 6 }}
           animate={{ opacity: 1, y: 0 }}
-          exit={{ opacity: 0 }}
+          exit={{ opacity: 0, height: 0, transition: swap }}
           transition={reducedMotion ? { duration: 0 } : { duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
+          className="overflow-hidden"
         >
           <BrowserHandoffCardView
             site={handoff.site}
@@ -62,10 +66,11 @@ export function BrowserHandoffCard({ sessionId }: BrowserHandoffCardProps) {
       {sessionId && !handoff && ended?.outcome && (
         <motion.div
           key={`${ended.id}-ended`}
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          transition={reducedMotion ? { duration: 0 } : { duration: 0.2 }}
+          initial={{ opacity: 0, height: 0 }}
+          animate={{ opacity: 1, height: 'auto' }}
+          exit={{ opacity: 0, height: 0 }}
+          transition={swap}
+          className="overflow-hidden"
         >
           <BrowserHandoffReceipt agentName={ended.agentName} outcome={ended.outcome} />
         </motion.div>
