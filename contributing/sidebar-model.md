@@ -302,8 +302,10 @@ Note that `FIXTURE_NOW` is a **local** instant (09:15 on 9 August 2026), not a f
 
 ### The panel scrolled when nothing was opened
 
-**Cause**: `useScrollToActive` gained a dependency beyond the anchor's key. It has exactly one on purpose: a verb, an unread change or a whole model rebuild must move nothing (BC-36).
-**Fix**: keep the effect keyed on `anchorKey` alone, and keep the mount-time latch that stops arriving on a page from counting as a switch.
+**Cause**: the scroll hook treats loading the initial model as a conversation switch, or loses the same-anchor guard. A verb, an unread change or a model rebuild must not scroll the panel (BC-36).
+**Fix**: preserve `useScrollToActive`'s first-settled-model latch and its comparison with the previous `anchorKey`. Its layout effect depends on `anchorKey`, `containerRef` and `settled`: it does nothing before settle, then positions the drawn active row with `behavior: 'auto'` before paint. Later anchor changes use `smooth`, except under reduced motion. A stable anchor or a new `null` anchor does not scroll again; folded sections stay folded. Do not replace the settled latch with a mount-time latch: rooms can arrive after mount.
+
+The implementation is `apps/client/src/layers/features/dashboard-sidebar/model/use-scroll-to-active.ts`; `apps/client/src/layers/features/dashboard-sidebar/model/__tests__/use-scroll-to-active.test.tsx` covers boot, a late room list, first positioning, actual switches, reduced motion and same-anchor rebuilds.
 
 ### The build-budget test fails
 
