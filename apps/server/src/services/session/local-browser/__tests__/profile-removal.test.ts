@@ -122,6 +122,19 @@ describe('whole-profile disk removal (DOR-3887)', () => {
     }
   });
 
+  it('refuses and clears nothing when the profiles folder itself is a link', async () => {
+    const theirs = await mkdtemp(path.join(tmpdir(), 'dorkos-persons-own-'));
+    try {
+      const kept = path.join(theirs, '55555555-5555-4555-8555-555555555555');
+      await writeFile(kept, 'made-up-person-file');
+      await symlink(theirs, path.join(home, 'browser-profiles'));
+      await expect(removal().forgetAll([])).rejects.toMatchObject({ code: 'profile_busy' });
+      expect(await readFile(kept, 'utf8')).toBe('made-up-person-file');
+    } finally {
+      await rm(theirs, { recursive: true, force: true });
+    }
+  });
+
   it('removes a saved session file that is a link without touching its target', async () => {
     const theirs = await mkdtemp(path.join(tmpdir(), 'dorkos-persons-own-'));
     try {

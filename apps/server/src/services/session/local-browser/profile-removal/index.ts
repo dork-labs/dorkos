@@ -60,6 +60,14 @@ export class BrowserProfileRemoval {
     // A profile folder made outside the API (an agent with a shell can make one) is
     // cleared too, so no sign-in survives Forget just because it's off the list.
     const root = path.join(this.deps.dataDirectory(), 'browser-profiles');
+    // The profiles folder itself must be a real folder. If it was swapped for a link,
+    // Forget would walk somewhere else, so it refuses and clears nothing.
+    const rootInfo = await lstat(root).catch(() => undefined);
+    if (rootInfo && !rootInfo.isDirectory())
+      throw new LocalBrowserError(
+        'profile_busy',
+        'Check the browser profile folder, then try again.'
+      );
     const onDisk = await readdir(root).catch(() => [] as string[]);
     const ids = [
       ...new Set([
