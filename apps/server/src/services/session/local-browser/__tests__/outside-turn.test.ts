@@ -46,6 +46,7 @@ function handover(launchOrigin: string | null) {
   const browser = {
     state: vi.fn(async () => state),
     currentProfileId: () => null,
+    profileExists: () => true,
     capabilities: () => ({ newWindow: true }),
     open: vi.fn(async () => state),
     selectTab: vi.fn(async () => state),

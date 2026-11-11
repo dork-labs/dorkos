@@ -156,6 +156,7 @@ function boAsksForTheBrowser() {
     state: vi.fn(async () => state),
     capabilities: vi.fn(() => ({ newWindow: true })),
     currentProfileId: vi.fn(() => 'p1'),
+    profileExists: vi.fn(() => true),
     open: vi.fn(async () => state),
     selectTab: vi.fn(async () => state),
     navigate: vi.fn(async () => state),

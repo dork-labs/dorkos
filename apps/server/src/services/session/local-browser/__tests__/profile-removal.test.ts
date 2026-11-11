@@ -344,6 +344,36 @@ describe('whole-profile disk removal (DOR-3887)', () => {
     await expect(signingIn).rejects.toThrow('fixture cancelled');
   });
 
+  // DOR-4180: through the real service, a deleted profile stays deleted.
+  it('refuses a sign-in on a profile it just deleted, and makes no folder', async () => {
+    const service = new LocalBrowserService(home);
+    const profiles = store();
+    service.useProfileAccess(
+      async () => undefined,
+      (candidate) => profiles.get(candidate) !== undefined
+    );
+    const { id } = profiles.create('Example work');
+    await prepareProfileFolder(home, id);
+    await service.profileRemoval.delete(id, profiles);
+    const folder = path.join(home, 'browser-profiles', id);
+    await expect(stat(folder)).rejects.toMatchObject({ code: 'ENOENT' });
+    await expect(
+      service.handover.signIn({ url: 'https://example.test/', profileId: id })
+    ).rejects.toMatchObject({ code: 'profile_not_found' });
+    await expect(stat(folder)).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+
+  it('refuses a named profile’s sign-in before startup wires the profile list', async () => {
+    const service = new LocalBrowserService(home);
+    const id = '00000000-0000-4000-8000-00000000abcd';
+    await expect(
+      service.handover.signIn({ url: 'https://example.test/', profileId: id })
+    ).rejects.toMatchObject({ code: 'profile_not_found' });
+    await expect(stat(path.join(home, 'browser-profiles', id))).rejects.toMatchObject({
+      code: 'ENOENT',
+    });
+  });
+
   it('refuses while the older CLI window holds its source profile, preserving its exported state', async () => {
     if (process.platform === 'win32') return;
     const cli = path.join(home, 'browser');
