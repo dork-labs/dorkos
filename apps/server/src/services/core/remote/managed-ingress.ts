@@ -30,7 +30,7 @@
 import http, { type IncomingMessage, type ServerResponse } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import type { Duplex } from 'node:stream';
-import type { RemoteEdgeProof } from '@dork-labs/cloud-api';
+import { REMOTE_REFUSED_PATHS, type RemoteEdgeProof } from '@dork-labs/cloud-api';
 import { parseHostname } from '../../../lib/trusted-origins.js';
 import { logger } from '../../../lib/logger.js';
 import {
@@ -146,6 +146,13 @@ export type RemotePathVerdict = 'serve' | 'not-served' | 'not-normal';
  * (`/./` dropped, `//` joined) and lower-cased, since the old Express router
  * matched without regard to case, and only then compared.
  *
+ * The list is `REMOTE_REFUSED_PATHS` from `@dork-labs/cloud-api`, so any edge in
+ * front of this server refuses the same paths. Deliberately not on it: the
+ * webhook ingress (`/api/connectors/webhooks/`, signature-checked, the only way
+ * an outside service reaches a DorkOS on this computer), relay webhooks
+ * (`/api/relay/webhooks/`, behind the gate and HMAC), and `/mcp`, which takes an
+ * API key from another device and never a sign-in cookie (`middleware/mcp-auth.ts`).
+ *
  * @param target - An origin-form request target (see {@link isOriginForm}).
  */
 export function remotePathVerdict(target: string): RemotePathVerdict {
@@ -173,23 +180,6 @@ export function remotePathVerdict(target: string): RemotePathVerdict {
   );
   return refused ? 'not-served' : 'serve';
 }
-
-/**
- * The one list of what a remote listener refuses (DOR-3650), lower-case. Each
- * entry is its own line, so refusing another surface is one line here.
- *
- * Deliberately NOT listed, pending Security's ruling: the webhook ingress
- * (`/api/connectors/webhooks/`, signature-checked, and the only way an outside
- * service reaches a DorkOS on this computer) and relay webhooks
- * (`/api/relay/webhooks/`, behind the gate and HMAC); and `/mcp`, which the docs
- * offer to a client on another device with an API key, and which takes no
- * sign-in cookie remotely (`middleware/mcp-auth.ts`).
- */
-const REMOTE_REFUSED_PATHS: readonly ({ exact: string } | { prefix: string })[] = [
-  { exact: '/a2a' },
-  { prefix: '/a2a/' },
-  { prefix: '/.well-known/agent' },
-];
 
 /** How many copies of a header (lower-case name) a request carries. */
 function countHeader(rawHeaders: readonly string[], name: string): number {
