@@ -2,6 +2,7 @@
 covers:
   - "feat(extensions): each app's screens run in their own sandboxed frame (DOR-3293)"
   - 'feat(extensions): old apps say they need an update; frames size to what they draw; download and canvas through the bridge (DOR-3293)'
+  - "feat(extensions): app screens load from DorkOS's own frame page with its own policy (DOR-3293)"
 ---
 
 ### Security
