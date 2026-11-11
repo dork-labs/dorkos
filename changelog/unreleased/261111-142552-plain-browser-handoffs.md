@@ -3,6 +3,7 @@ covers:
   - 'fix(browser): label installed Chrome with native profile prefs (DOR-4178)'
   - 'fix(browser): use native Chrome identity and detach person handoffs (DOR-4178)'
   - 'fix(desktop): the public Chrome proof loads as an ES module, so its CI step can run (DOR-4178)'
+  - "fix(desktop): the Chrome proof expects webdriver=true where the agent drives, false in the person's window (DOR-4178)"
 ---
 
 ### Fixed

@@ -87,9 +87,14 @@ async function until<T>(read: () => Promise<T | undefined>, timeout = 30000): Pr
   } while (Date.now() < deadline);
   throw new Error('The browser proof did not reach its expected page');
 }
-function assertIdentity(identity: Identity): void {
+/**
+ * The window is plain Chrome by every identity check. `webdriver` is the honest answer for who
+ * drives it: `true` in the agent's own window, which the agent drives, and `false` in the person's
+ * handoff window, which nothing drives (the PM's ruling, DOR-4178: never hide that an agent drives).
+ */
+function assertIdentity(identity: Identity, agentDriven: boolean): void {
   assert.doesNotMatch(identity.ua, /electron|dorkos/i);
-  assert.equal(identity.webdriver, false);
+  assert.equal(identity.webdriver, agentDriven);
   const chrome = identity.brands.find((item) => item.brand === 'Google Chrome');
   assert(chrome);
   assert.equal(chrome.version, /Chrome\/(\d+)/.exec(identity.ua)?.[1]);
@@ -139,10 +144,10 @@ try {
       ).userAgentData.brands,
       webdriver: navigator.webdriver,
     }));
-    assertIdentity(identity);
+    assertIdentity(identity, true);
     if (name === 'echo') {
       const echoed = await until(async () => receipt);
-      assertIdentity(echoed);
+      assertIdentity(echoed, true);
       await writeFile(
         path.join(evidence, 'agent-ua-and-client-hints.json'),
         JSON.stringify(echoed, null, 2)
@@ -175,7 +180,7 @@ try {
     await writeFile(path.join(evidence, `${name}-person-ocr.txt`), text);
     if (name === 'echo') {
       const identity = await until(async () => receipt);
-      assertIdentity(identity);
+      assertIdentity(identity, false);
       await writeFile(
         path.join(evidence, 'person-ua-and-client-hints.json'),
         JSON.stringify(identity, null, 2)
