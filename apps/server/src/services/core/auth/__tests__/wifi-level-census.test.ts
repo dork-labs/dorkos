@@ -147,6 +147,9 @@ const ALLOWED_ON_WIFI: Readonly<Record<string, readonly string[]>> = {
     'PUT /api/extensions/:id/data',
     // An app's screen data, bound to the app like /data (DOR-3293).
     'PUT /api/extensions/:id/prefs',
+    // A frame's caller token: names which app is calling, grants nothing the
+    // app's own routes, which Wi-Fi keeps, do not (DOR-3293).
+    'POST /api/extension-frame/caller-token',
     'POST /api/cloud/credits/notices/dismiss',
     'POST /api/cloud/link/cancel',
     'POST /api/cloud/link/check',

@@ -238,6 +238,8 @@ const REFUSED: readonly (readonly [reason: string, routes: readonly string[]])[]
       'DELETE /api/extensions/trusted-sources',
       'POST /api/extension-decisions/:id/action',
       'POST /api/extension-decisions/:id/offer',
+      // A frame's caller token, for one app calling another (DOR-3293).
+      'POST /api/extension-frame/caller-token',
       'POST /api/extensions/:id/approve',
       'POST /api/extensions/:id/decisions/:decisionId/action',
       'POST /api/extensions/:id/disable',
