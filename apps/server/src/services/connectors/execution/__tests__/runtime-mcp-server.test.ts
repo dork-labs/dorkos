@@ -189,6 +189,9 @@ describe('createConnectorRuntimeMcpServer', () => {
     expect(requestTool?.description).toContain(
       'notGranted lists what is missing and the note says why'
     );
+    expect(requestTool?.description).toContain(
+      '`granted` can mean only part of what you asked for. Always check `notGranted` before you rely on write.'
+    );
 
     const result = payload(
       await client.callTool({

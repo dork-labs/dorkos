@@ -1,6 +1,7 @@
 ---
 covers:
   - 'fix(connections): an agent that asks to change things in an app hears plainly when it can only read (DOR-4193)'
+  - 'fix(connections): request_connection tells agents a granted answer can leave write out (DOR-4193)'
 ---
 
 ### Fixed
