@@ -420,7 +420,7 @@ onDecided?.(); // Optimistically update indicator (see below)
 
 // Always Allow (Shift+Enter keyboard shortcut)
 // Only shown when hasSuggestions is true (SDK provided permission suggestions)
-await transport.approveTool(sessionId, toolCallId, { alwaysAllow: true });
+await transport.approveTool(sessionId, toolCallId, true);
 onDecided?.();
 
 // Deny — "Add a reason" reveals an optional one-line field on the card, and
@@ -430,14 +430,14 @@ await transport.denyTool(sessionId, toolCallId, reason);
 onDecided?.();
 ```
 
-When several tool approvals are pending at once, they collapse into one **burst card** (`AskStack`, `features/ask`) whose Allow all / Deny all answer the lot in a single call. It replaced `BatchApprovalBar` in DOR-1330; the two transport calls are unchanged:
+When several tool approvals are pending at once, they collapse into one **burst card** (`AskStack`, `features/ask`) whose Allow all / Deny all answer the lot in a single call. It replaced `BatchApprovalBar` in DOR-1330; the transport methods are `batchApprove` and `batchDeny`:
 
 ```typescript
 // Batch approve all pending
-await transport.batchApproveTool(sessionId, toolCallIds);
+await transport.batchApprove(sessionId, toolCallIds);
 
 // Batch deny all pending
-await transport.batchDenyTool(sessionId, toolCallIds);
+await transport.batchDeny(sessionId, toolCallIds);
 ```
 
 **6. Optimistic indicator update via `markToolCallResponded`**
@@ -855,17 +855,19 @@ The `UiActionDispatcher` is a pure function with no React dependencies. It is ca
 
 ### UI State Awareness
 
-The client can send a `uiState` snapshot with each `sendMessage()` request. This is an optional `uiState` field on `SendMessageRequest` (validated against `UiStateSchema`), which the server injects into the agent's system prompt as context. This gives agents situational awareness of what the user is currently viewing:
+The client can send neutral UI signals as `context.uiState` on a `postMessage()` request. `SendMessageRequestSchema` validates the context through `ClientContextSchema` (`packages/shared/src/additional-context.ts`) and `UiStateSchema` (`packages/shared/src/schemas.ts`). The client-supplied shape is:
 
 ```typescript
-// UiState shape (packages/shared/src/schemas.ts)
-{
-  canvas: { open: boolean, contentType: string | null },
-  panels: { settings: boolean, tasks: boolean, relay: boolean },
-  sidebar: { open: boolean, activeTab: 'sessions' | 'agents' | null },
-  agent: { id: string | null, cwd: string | null },
-}
+import type { UiState } from '@dorkos/shared/schemas';
+
+const uiState: UiState = {
+  panels: { settings: false, tasks: false, relay: false, picker: false },
+  sidebar: { open: true },
+  agent: { id: null, cwd: null },
+};
 ```
+
+Canvas documents and viewers are server-owned state returned by `get_ui_state`; they are not a client `canvas` field on this input. The old top-level message `uiState` and sidebar `activeTab` examples are retired.
 
 This two-way channel -- `uiState` in (client tells agent what is visible) and `ui_command` out (agent tells client what to change) -- enables agents to make contextual UI decisions rather than issuing commands blindly.
 
