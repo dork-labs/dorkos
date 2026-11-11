@@ -144,6 +144,45 @@ describe('AgentMcpServerService — CRUD write-through', () => {
   });
 });
 
+// DOR-3207: a browser the agent-browser guard refuses says so on its row, and nothing else does.
+describe('AgentMcpServerService — a browser DorkOS leaves out', () => {
+  const browser = (...extra: string[]): McpServerTransport => ({
+    transport: 'stdio',
+    command: 'npx',
+    args: ['-y', '@playwright/mcp@0.0.82', '--isolated', '--headless', ...extra],
+    env: {},
+  });
+
+  it('marks a browser with a custom browser path or a shared profile as left out', async () => {
+    const { service, agentId } = await setup();
+    await service.add({
+      agentId,
+      name: 'custom',
+      connection: browser('--executable-path', '/opt/my-chrome'),
+      addedBy: 'x',
+    });
+    await service.add({
+      agentId,
+      name: 'shared',
+      connection: browser('--user-data-dir', '/tmp/made-up-profile'),
+      addedBy: 'x',
+    });
+    const list = await service.list(agentId);
+    expect(list.map((s) => [s.name, s.leftOut])).toEqual([
+      ['custom', 'own-browser-only'],
+      ['shared', 'own-browser-only'],
+    ]);
+  });
+
+  it('leaves the field off a browser DorkOS runs and off every other server', async () => {
+    const { service, agentId } = await setup();
+    await service.add({ agentId, name: 'plain', connection: browser(), addedBy: 'x' });
+    await service.add({ agentId, name: 'fs', connection: stdioConn, addedBy: 'x' });
+    const list = await service.list(agentId);
+    for (const server of list) expect(server).not.toHaveProperty('leftOut');
+  });
+});
+
 describe('AgentMcpServerService — name rules', () => {
   it('rejects the reserved name "dorkos" (case-insensitive)', async () => {
     const { service, agentId } = await setup();

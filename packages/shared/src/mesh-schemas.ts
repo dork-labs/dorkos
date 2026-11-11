@@ -251,6 +251,12 @@ export type McpClientOrigin = z.infer<typeof McpClientOriginSchema>;
 export const ManagedMcpServerViewSchema = ManagedMcpServerSchema.extend({
   authStatus: McpServerAuthStatusSchema.optional(),
   authClientOrigin: McpClientOriginSchema.optional(),
+  /**
+   * Set when DorkOS leaves this server out of every session: `'own-browser-only'` is a browser
+   * started with options the agent-browser guard refuses (a custom browser path, a shared
+   * profile, its own config). Absent for every server that runs.
+   */
+  leftOut: z.enum(['own-browser-only']).optional(),
 }).openapi('ManagedMcpServerView');
 
 /** See {@link ManagedMcpServerViewSchema}. */

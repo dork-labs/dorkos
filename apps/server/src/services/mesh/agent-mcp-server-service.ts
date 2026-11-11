@@ -29,6 +29,7 @@ import type {
 } from '@dorkos/shared/mesh-schemas';
 import type { McpAppServerConnection } from '@dorkos/shared/agent-runtime';
 import type { Logger } from '@dorkos/shared/logger';
+import { isPlaywrightBrowser, unguardableBrowserReason } from '@dorkos/shared/agent-browser';
 
 import { readMcpJsonServers, resolveMcpJsonConnection } from './mcp-json.js';
 import { runProbe, settledWithin, ADD_PROBE_BUDGET_MS } from './agent-mcp-probe.js';
@@ -227,7 +228,9 @@ export class AgentMcpServerService {
 
   /**
    * List every managed server declared on an agent's manifest, each decorated
-   * with its derived {@link ManagedMcpServerView.authStatus}.
+   * with its derived {@link ManagedMcpServerView.authStatus}, and with
+   * {@link ManagedMcpServerView.leftOut} when the agent-browser guard keeps it
+   * out of every session.
    *
    * The decoration is what lets a freshly-started server answer "does this need
    * signing in?" at all: the runtimes' own MCP status caches are written during
@@ -244,10 +247,16 @@ export class AgentMcpServerService {
       manifest.mcpServers.map(async (server) => {
         const authStatus = this.deriveAuthStatus(agentId, server);
         const authClientOrigin = await this.readClientOrigin(agentId, server);
+        // The guard leaves this browser out of every session (DOR-3207); say so on its row.
+        const leftOut =
+          isPlaywrightBrowser(server.connection) && unguardableBrowserReason(server.connection)
+            ? ('own-browser-only' as const)
+            : undefined;
         return {
           ...server,
           ...(authStatus ? { authStatus } : {}),
           ...(authClientOrigin ? { authClientOrigin } : {}),
+          ...(leftOut ? { leftOut } : {}),
         };
       })
     );
