@@ -111,49 +111,52 @@ Cursor and Windsurf use the same `url` + `headers` shape under their own config 
 
 ### What it exposes
 
-Connecting gives a client DorkOS's full external tool surface: 78 tools in total, covering sessions, account usage, scheduled tasks, Relay delivery and tracing, agent bindings, Mesh discovery, agent/extension management, the operator surface, agent memory, agent promises, agent work queues, agent heartbeats, agent permissions, what agents are told, document events and live state, and the marketplace. Seven read-only resources round it out, for browsing sessions, agents, skills, and the capability catalog without a tool round-trip.
+Connecting lets a client work with DorkOS sessions, agents, scheduled tasks, messages, settings, and installed packages. The available tools depend on this server's configured features and the caller's permissions. Use your MCP client's tool list for the current names, descriptions, and input schemas.
 
-| Domain              | Tools | Examples                                                                                                                                              |
-| ------------------- | ----- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Core                | 4     | `ping`, `get_server_info`, `get_session_count`, `get_agent`                                                                                           |
-| Accounts            | 2     | `accounts_usage`, `accounts_probe`                                                                                                                    |
-| Sessions            | 1     | `session_start`                                                                                                                                       |
-| Scheduled tasks     | 5     | `tasks_list`, `tasks_create`, `tasks_update`, `tasks_delete`, `tasks_get_run_history`                                                                 |
-| Relay               | 7     | `relay_list_endpoints`, `relay_list_adapters`, `relay_get_trace`, `relay_get_metrics`                                                                 |
-| Bindings            | 3     | `binding_list`, `binding_create`, `binding_delete`                                                                                                    |
-| Mesh (discovery)    | 8     | `mesh_discover`, `mesh_register`, `mesh_list`, `mesh_status`, `mesh_query_topology`                                                                   |
-| Agents & extensions | 7     | `create_agent`, `list_extensions`, `create_extension`, `test_extension`                                                                               |
-| Operator            | 11    | `activity_list`, `config_get`, `config_patch`, `check_update`, `feedback_draft`                                                                       |
-| Memory              | 2     | `memory_write`, `memory_read`                                                                                                                         |
-| To-dos              | 3     | `todo_promise_add`, `todo_promise_update`, `todo_promises_list`                                                                                       |
-| Work queue          | 7     | `work_queue_add`, `work_queue_list`, `work_queue_remove`, `work_queue_read_agent`, `work_queue_configure`, `work_queue_reorder`, `work_queue_requeue` |
-| Heartbeats          | 1     | `heartbeat_status`                                                                                                                                    |
-| Permissions         | 3     | `request_permission`, `list_my_permissions`, `change_permission`                                                                                      |
-| Self-description    | 1     | `list_capabilities`                                                                                                                                   |
-| Instructions        | 1     | `agent_instructions`                                                                                                                                  |
-| Document events     | 2     | `canvas_send`, `canvas_patch_state`                                                                                                                   |
-| Marketplace         | 10    | `marketplace_search`, `marketplace_install`, `marketplace_update`, `marketplace_link`                                                                 |
+The table below gives examples, not a complete inventory. Read-only resources also let clients browse sessions, agents, skills, and the capability catalog.
 
-The last ten rows (operator, memory, to-dos, work queue, heartbeats, permissions, self-description, instructions, document events, marketplace: 41 tools) are generated from the Capability Registry, so they are reachable by id through `dorkos call`. The other 37 are registered directly on this server and are not. `list_capabilities` says which is which, so a client never has to infer it.
+| Domain              | Examples                                                                                                                                              |
+| ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Core                | `ping`, `get_server_info`, `get_session_count`, `get_agent`                                                                                           |
+| Accounts            | `accounts_usage`, `accounts_probe`                                                                                                                    |
+| Sessions            | `session_start`                                                                                                                                       |
+| Scheduled tasks     | `tasks_list`, `tasks_create`, `tasks_update`, `tasks_delete`, `tasks_get_run_history`                                                                 |
+| Relay               | `relay_list_endpoints`, `relay_list_adapters`, `relay_get_trace`, `relay_get_metrics`                                                                 |
+| Bindings            | `binding_list`, `binding_create`, `binding_delete`                                                                                                    |
+| Mesh (discovery)    | `mesh_discover`, `mesh_register`, `mesh_list`, `mesh_status`, `mesh_query_topology`                                                                   |
+| Agents & extensions | `create_agent`, `list_extensions`, `create_extension`, `test_extension`                                                                               |
+| Operator            | `activity_list`, `config_get`, `config_patch`, `check_update`, `feedback_draft`                                                                       |
+| Memory              | `memory_write`, `memory_read`                                                                                                                         |
+| To-dos              | `todo_promise_add`, `todo_promise_update`, `todo_promises_list`                                                                                       |
+| Work queue          | `work_queue_add`, `work_queue_list`, `work_queue_remove`, `work_queue_read_agent`, `work_queue_configure`, `work_queue_reorder`, `work_queue_requeue` |
+| Heartbeats          | `heartbeat_status`                                                                                                                                    |
+| Permissions         | `request_permission`, `list_my_permissions`, `change_permission`                                                                                      |
+| Self-description    | `list_capabilities`                                                                                                                                   |
+| Instructions        | `agent_instructions`                                                                                                                                  |
+| Document events     | `canvas_send`, `canvas_patch_state`                                                                                                                   |
+| Marketplace         | `marketplace_search`, `marketplace_install`, `marketplace_update`, `marketplace_link`                                                                 |
 
-Being off the registry does not mean running unchecked. All 37 of them carry a permission tier too, and the same approval gate reads it: `tasks_delete` and `mesh_unregister` are `destructive`. On a **Trusted** install (the default), a registered agent's own token runs them and DorkOS records it, the same as any other in-circle destructive action with an Allowed area; on **Careful**, or from a caller DorkOS cannot verify as one of its own agents, each answers with a pending approval instead of doing the work. A destructive tool advertises an `approvalToken` argument, so a client can tell one from its own schema without asking.
+Some tools come from the Capability Registry and can also be called by capability id through `dorkos call`. Others are registered directly on the external server. Use `list_capabilities` to discover registry actions and their supported surfaces. It does not enumerate every MCP tool.
+
+Both groups pass through DorkOS's permission checks. For example, `tasks_delete` and `mesh_unregister` carry the `destructive` tier. A verified agent with an Allowed area can perform these removals under Trusted, with an Activity record. Ask holds the change for approval; Blocked refuses it. A caller DorkOS cannot verify can face additional approval checks. Tools that can raise an approval advertise an `approvalToken` retry argument in their input schema.
 
 The tools agents use to message each other's chats (`chat_send`, `chat_read`, `chat_stop`) are not on this server. Each one acts as the chat that calls it, and a client connected from outside has no chat to act as.
 
 Inside a DorkOS session, Claude Code is also told which tier a tool sits at and that the call already passed this check, so its auto mode stops asking about things DorkOS has already decided. This server gets no equivalent: it has no session, so there is nothing to tell. Your client makes its own decisions about when to ask you, exactly as it does today.
 
 <Callout type="info">
-  The 10 `marketplace_*` tools only appear when Relay is enabled and extensions have initialized
-  successfully. Without that, the marketplace branch is silently skipped and the server still boots
-  with the other 55. On a **Trusted** install, `marketplace_install`, `marketplace_uninstall`, and
-  `marketplace_update` with `apply: true` run straight through from a source you have already
-  configured, recorded rather than approved; on **Careful**, each returns a pending approval with a
-  token instead, and a person decides it in the DorkOS UI before the client retries with the token.
-  Without `apply`, `marketplace_update` only says which packages have a newer version.
-  `marketplace_create_package` always returns a pending approval, on either preset, since it puts
-  new code on your machine for the first time. `marketplace_link`, which runs a package from a
-  folder on your computer, is `destructive`-tier with no setting that can approve it ahead of time:
-  every call waits for you.
+  Marketplace tools require the marketplace services to be available. If those services are absent,
+  the server still starts with its other tools. Check the live tool list before calling one.
+
+Removing a package follows its permission setting. Installing, updating, or creating a package
+also passes through the marketplace's confirmation step. An Allowed area alone does not skip
+that step for new code. An exact approval or an explicit permission for that action can cover it.
+Without `apply: true`, `marketplace_update` only reports available updates.
+
+`marketplace_link` asks about the folder and the commands it will run. Retry with the approval
+token after approval. The approval covers the described commands; a later change can need a new
+decision. See [Action Approvals](/docs/guides/action-approvals).
+
 </Callout>
 
 Every tool's full name, description, and input schema is visible from any connected MCP client's tool list. This table is a map of the territory, not the source of truth.
@@ -192,7 +195,7 @@ Alongside tools, the server registers seven read-only `dorkos://` resources: fou
 | `dorkos://skills/{name}` | Template | Full `SKILL.md` frontmatter and body for one skill, by name.                                                                                                                                           |
 | `dorkos://capabilities`  | List     | The live capability catalog: id, title, description, permission tier, input/output schema, and surfaces for every capability on the registry.                                                          |
 
-Session and skill resources are scoped to the server's default working directory; the external surface has no per-request `cwd` parameter to key on. The session and agent lists are the complete enumeration for their kind, so the item templates aren't re-listed separately; a client reads those once it already has an id or name. The skill list has one deliberate gap: a skill whose author wrote `disable-model-invocation: true` meant "do not reach for this on your own", so it is not advertised there. Asking for it by name still works — `dorkos://skills/{name}` serves every skill, because naming one is your choice, not the model's. `dorkos://capabilities` is the exception: it enumerates the capability registry, not the tool list, so the 43 tools registered directly on this server are absent from it. The resource's own description says so, so a client reading the list does not have to infer the gap.
+Session and skill resources are scoped to the server's default working directory; the external surface has no per-request `cwd` parameter to key on. The session and agent lists are the complete enumeration for their kind, so the item templates aren't re-listed separately; a client reads those once it already has an id or name. The skill list has one deliberate gap: a skill whose author wrote `disable-model-invocation: true` meant "do not reach for this on your own", so it is not advertised there. Asking for it by name still works — `dorkos://skills/{name}` serves every skill, because naming one is your choice, not the model's. `dorkos://capabilities` is the exception: it enumerates the capability registry, not the tool list, so tools registered directly on this server are absent from it. The resource's own description says so, so a client reading the list does not have to infer the gap.
 
 <Callout type="info">
   The server is stateless per request (a fresh instance is built for every `/mcp` call), so it never
