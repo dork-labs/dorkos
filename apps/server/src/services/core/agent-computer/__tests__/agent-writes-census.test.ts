@@ -390,6 +390,7 @@ const REFUSED: readonly (readonly [reason: string, routes: readonly string[]])[]
     'what is installed is the hub’s',
     [
       'DELETE /api/marketplace/cache',
+      'DELETE /api/marketplace/sources',
       'DELETE /api/marketplace/sources/:name',
       'DELETE /api/templates/:id',
       'POST /api/harness/adopt',
@@ -408,6 +409,7 @@ const REFUSED: readonly (readonly [reason: string, routes: readonly string[]])[]
       'POST /api/marketplace/packages/:name/update',
       'POST /api/marketplace/sources',
       'POST /api/marketplace/sources/:name/refresh',
+      'POST /api/marketplace/sources/refresh',
       'POST /api/marketplace/updates',
       'DELETE /api/mcp-servers/:name',
       'PATCH /api/mcp-servers/:name',
@@ -424,7 +426,7 @@ const REFUSED: readonly (readonly [reason: string, routes: readonly string[]])[]
     [
       'DELETE /api/mesh/agents/:id',
       'DELETE /api/mesh/agents/:id/data',
-      'DELETE /api/mesh/denied/:encodedPath',
+      'DELETE /api/mesh/denied',
       'PATCH /api/agents/:id/permissions',
       'PATCH /api/agents/current',
       // Pausing stays open (anyone may stop any agent); resuming one a person

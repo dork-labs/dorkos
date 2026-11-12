@@ -686,11 +686,14 @@ export function createMeshRoutes(deps: MeshRouterDeps): Hono<ApiEnv> {
     return c.json({ denied });
   });
 
-  // DELETE /denied/:encodedPath — Clear a denial by URL-encoded path
-  router.delete('/denied/:encodedPath', async (c) => {
-    // The parameter arrives decoded once, as on Express, and is decoded again:
-    // the client encodes the whole path into one segment.
-    const filePath = decodeURIComponent(c.req.param('encodedPath'));
+  // DELETE /denied?path= — Clear a denial. The folder rides in the query string,
+  // never a path segment: an encoded `/` or `\` in a path is refused over Remote
+  // Access (`remotePathVerdict`), and every folder path holds one (DOR-4212).
+  router.delete('/denied', async (c) => {
+    const filePath = readQuery(c).path;
+    if (typeof filePath !== 'string' || filePath === '') {
+      return c.json({ error: 'Missing required parameter: path' }, 400);
+    }
     // Reject paths with traversal segments
     if (filePath.includes('..') || filePath.includes('\0')) {
       return c.json({ error: 'Invalid path' }, 400);

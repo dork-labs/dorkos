@@ -2874,11 +2874,14 @@ registry.registerPath({
 
 registry.registerPath({
   method: 'delete',
-  path: '/api/mesh/denied/{encodedPath}',
+  path: '/api/mesh/denied',
   tags: ['Mesh'],
   summary: 'Clear mesh denial',
+  description:
+    'The folder goes in the `path` query parameter. Remote Access refuses an encoded `/` or ' +
+    '`\\` in a URL path, and every folder path holds one.',
   request: {
-    params: z.object({ encodedPath: z.string() }),
+    query: z.object({ path: z.string().describe('The denied folder, absolute') }),
   },
   responses: {
     200: {
@@ -3168,6 +3171,31 @@ registry.registerPath({
 });
 
 registry.registerPath({
+  method: 'delete',
+  path: '/api/marketplace/sources',
+  tags: ['Marketplace'],
+  summary: 'Remove a marketplace source (operator only)',
+  description:
+    'From the app, the name goes in the `name` query parameter: a name saved by an older ' +
+    'DorkOS may hold a `/`, and Remote Access refuses an encoded `/` in a URL path. ' +
+    'Only the person running DorkOS may remove a package source. Any caller that could not ' +
+    'decide an approval is refused with 403, which includes one presenting an agent identity, ' +
+    'one presenting an approval token, and (with local login on) one with no signed-in ' +
+    "identity. There is no approval that unlocks it. The source's cached listing is removed " +
+    'with it, so a later source given the same name starts clean.',
+  request: {
+    query: z.object({ name: z.string().describe('The source name') }),
+  },
+  responses: {
+    204: { description: 'Source removed' },
+    403: {
+      description: 'Caller is not the operator',
+      content: { 'application/json': { schema: MarketplaceSourceRefusalSchema } },
+    },
+  },
+});
+
+registry.registerPath({
   method: 'post',
   path: '/api/marketplace/sources/{name}/refresh',
   tags: ['Marketplace'],
@@ -3178,6 +3206,48 @@ registry.registerPath({
     'With nothing cached, answers 502.',
   request: {
     params: z.object({ name: z.string() }),
+  },
+  responses: {
+    200: {
+      description: 'The listing, fetched now or (when `stale`) the last cached copy',
+      content: {
+        'application/json': {
+          schema: z.object({
+            marketplace: LocalMarketplaceJsonSchema,
+            fetchedAt: z.string().describe('When this copy of the listing was fetched'),
+            stale: z.boolean().describe('True when the source could not be reached'),
+            reason: z
+              .string()
+              .optional()
+              .describe('Why the source could not be reached; present only when `stale`'),
+          }),
+        },
+      },
+    },
+    404: {
+      description: 'Source not found',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    502: {
+      description: 'Upstream fetch failure',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+  },
+});
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/marketplace/sources/refresh',
+  tags: ['Marketplace'],
+  summary: 'Force refetch of a source marketplace.json',
+  description:
+    'From the app, the name goes in the `name` query parameter: a name saved by an older ' +
+    'DorkOS may hold a `/`, and Remote Access refuses an encoded `/` in a URL path. ' +
+    'Checks the source now. When it cannot be reached but a copy is cached, answers 200 with ' +
+    'that copy, `stale: true`, the `reason`, and `fetchedAt` set to when the copy was fetched. ' +
+    'With nothing cached, answers 502.',
+  request: {
+    query: z.object({ name: z.string().describe('The source name') }),
   },
   responses: {
     200: {

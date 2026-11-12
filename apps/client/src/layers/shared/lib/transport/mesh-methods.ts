@@ -97,8 +97,12 @@ export function createMeshMethods(baseUrl: string) {
       return fetchJSON(baseUrl, '/mesh/denied');
     },
 
+    /**
+     * The folder goes in the query string: Remote Access refuses an encoded `/`
+     * or `\` in a URL path, and every folder path holds one (DOR-4212).
+     */
     clearMeshDenial(path: string): Promise<{ success: boolean }> {
-      return fetchJSON(baseUrl, `/mesh/denied/${encodeURIComponent(path)}`, {
+      return fetchJSON(baseUrl, `/mesh/denied?path=${encodeURIComponent(path)}`, {
         method: 'DELETE',
       });
     },

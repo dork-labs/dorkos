@@ -41,6 +41,23 @@ describe('FileAttachmentList', () => {
     expect(img).toHaveAttribute('alt', 'photo.png');
   });
 
+  it('asks for the bare name when a Windows server wrote the path (DOR-4212)', () => {
+    // Purpose: an encoded `\` in a URL path is refused over Remote Access, so
+    // the thumbnail must name the file alone, never its folders.
+    const files: ParsedFile[] = [
+      {
+        path: '.dork\\.temp\\uploads\\8a3b2c1d-shot.png',
+        displayName: 'shot.png',
+        isImage: true,
+      },
+    ];
+
+    render(<FileAttachmentList files={files} />);
+
+    const src = screen.getByRole('img', { name: 'shot.png' }).getAttribute('src')!;
+    expect(src.split('?')[0]).toBe('/api/uploads/8a3b2c1d-shot.png');
+  });
+
   it('renders a file chip with icon and display name for non-image files', () => {
     const files: ParsedFile[] = [
       {
