@@ -193,8 +193,11 @@ describe('the person’s state during a handoff (DOR-4163)', () => {
 
   it('shows each tab’s site only while a person has the browser', async () => {
     const { handover, set } = setup();
+    // Embedded keeps the agent's own page through the handoff; a separate window would
+    // close it for the person's plain window, and hand-back would wait for that window.
     set({
       ...connected(secret),
+      mode: 'embedded',
       tabs: [
         { id: 't1', url: secret, title: 'Reset code 492810 for sam@example.com' },
         { id: 't2', url: 'https://mail.example/inbox/42?q=x', title: 'Inbox' },
