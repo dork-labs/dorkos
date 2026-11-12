@@ -27,6 +27,7 @@ covers:
   - "feat(extensions): an app can open a page of an app it lists, by the item's path alone, and hears why when it can't (DOR-3293)"
   - "fix(extensions): another app's page opens only right after a click in the calling app, and input waits half a second as it fades in (DOR-3293)"
   - "fix(extensions): the approval card says when an app can open another app's pages (DOR-3293)"
+  - "fix(extensions): an app opens another app's pages only when it lists that app with navigate: true (DOR-3293)"
 ---
 
 ### Security

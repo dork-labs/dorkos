@@ -512,7 +512,7 @@ describe('createExtensionAPI', () => {
   });
 
   describe('navigate to another app’s page (DOR-3293)', () => {
-    const caller = { capabilities: { http: { apps: ['ledger'] } } };
+    const caller = { capabilities: { http: { apps: [{ id: 'ledger', navigate: true }, 'desk'] } } };
     beforeEach(() =>
       setRunningApps([
         {
@@ -537,6 +537,7 @@ describe('createExtensionAPI', () => {
       ['a hash', '/x/ledger/item/entry/e-17#approve'],
       ['an encoded segment', '/x/ledger/item/entry/e%2F17'],
       ['a page of an app it does not list', '/x/quill/item/entry/e-17'],
+      ['a page of an app it lists only to call', '/x/desk/item/entry/e-17'],
       ['a dot-dot that resolves to another app', '/x/my-ext/../ledger/item'],
     ])('refuses %s', (_name, path) => {
       const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
@@ -856,7 +857,7 @@ describe('createExtensionAPI', () => {
         },
       ] as never);
       const { api } = createExtensionAPI('my-ext', deps, [], {
-        capabilities: { http: { apps: ['other-ext'] } },
+        capabilities: { http: { apps: [{ id: 'other-ext', navigate: true }] } },
       });
       await api.answerDecision(decision.id, { action: 'approve' });
       expect(deps.navigate).not.toHaveBeenCalled();

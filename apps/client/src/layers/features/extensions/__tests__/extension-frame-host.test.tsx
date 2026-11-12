@@ -324,7 +324,7 @@ describe('isolated app host', () => {
       Reflect.deleteProperty(navigator, 'userActivation');
     });
     const callsLedger: Partial<ExtensionManifest> = {
-      capabilities: { http: { apps: ['ledger'] } },
+      capabilities: { http: { apps: [{ id: 'ledger', navigate: true }] } },
     };
     /** The browser's own record of a real click, which no frame can set. */
     const activation = (isActive: boolean) =>
@@ -347,6 +347,17 @@ describe('isolated app host', () => {
       expect(api.navigate).toHaveBeenCalledWith('/x/ledger/item/entry/e-17');
       // Input waits out the arrival pause, which started with the navigation.
       expect(document.body.hasAttribute('inert')).toBe(true);
+    });
+
+    it('answers not-declared for an app listed only to call, even after a click', async () => {
+      await start({ capabilities: { http: { apps: ['ledger'] } } });
+      clickInCallingFrame();
+      const reply = (await call('navigate', ['/x/ledger/item/entry/e-17'])) as {
+        value: { ok: boolean; reason: string; message: string };
+      };
+      expect(reply.value).toMatchObject({ ok: false, reason: 'not-declared' });
+      expect(reply.value.message).toContain('"navigate": true');
+      expect(api.navigate).not.toHaveBeenCalled();
     });
 
     it('answers no-gesture with no click, and goes nowhere', async () => {

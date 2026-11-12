@@ -1,7 +1,7 @@
 /**
  * Where an app may send the person (DOR-3293): core routes, its own pages,
- * and a page of an app it lists in `capabilities.http.apps`, by the item's
- * path alone.
+ * and a page of an app it lists in `capabilities.http.apps` with
+ * `navigate: true`, by the item's path alone.
  *
  * One answer for both the API's `navigate` and the frame bridge, which hands
  * the refusal back to the app instead of failing silently. The other app's
@@ -23,7 +23,8 @@ import { runningAppManifest } from '../frame/running-apps';
 
 /** What the app's maker reads when a navigation is refused. */
 const REFUSAL_TEXT: Record<AppNavigateResultRefusal, string> = {
-  'not-declared': 'List that app in capabilities.http.apps first.',
+  'not-declared':
+    'List that app in capabilities.http.apps as { "id": …, "navigate": true } to open its pages.',
   self: 'Open your own pages without naming another app.',
   'target-unavailable': 'That app is not installed or not turned on.',
   'not-an-item-path':

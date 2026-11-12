@@ -17,8 +17,9 @@
  * the person's window and the server in front of the target's routes, so the
  * two can never disagree about what is allowed.
  *
- * Listing an app also lets the caller send the person to one of its pages
- * ({@link decideAppNavigate}): by the item's path alone, with no query, hash
+ * Listing an app as `{ "id": …, "navigate": true }` also lets the caller send
+ * the person to one of its pages ({@link decideAppNavigate}): by the item's
+ * path alone, with no query, hash
  * or encoded character, so a link can say which item and nothing about what
  * to do with it. The page the person lands on decides what happens there.
  *
@@ -111,16 +112,35 @@ export const ExtensionExportsSchema = z
   })
   .strict();
 
-/** `capabilities.http`: `true` for this app's own routes, or the apps it also calls. */
+/**
+ * One app this one uses: its exact id, to call its exported routes, or
+ * `{ id, navigate: true }` to also open its pages.
+ */
+export const CalledAppEntrySchema = z.union([
+  AppIdSchema,
+  z
+    .object({
+      /** The app's exact id. */
+      id: AppIdSchema,
+      /** Whether this app may also send the person to that app's pages. */
+      navigate: z.boolean().optional(),
+    })
+    .strict(),
+]);
+
+/** `capabilities.http`: `true` for this app's own routes, or the apps it also uses. */
 export const HttpCapabilitySchema = z.union([
   z.boolean(),
   z
     .object({
-      /** Exact ids of the apps this one calls. */
-      apps: z.array(AppIdSchema).max(MAX_CALLED_APPS),
+      /** The apps this one uses, each once. */
+      apps: z.array(CalledAppEntrySchema).max(MAX_CALLED_APPS),
     })
     .strict(),
 ]);
+
+/** One app this one uses. */
+export type CalledAppEntry = z.infer<typeof CalledAppEntrySchema>;
 
 /** One route a target lets other apps call. */
 export type AppExportRoute = z.infer<typeof AppExportRouteSchema>;
@@ -145,18 +165,45 @@ function personOnlyRules(exports: ExtensionExports | undefined): PersonOnlyMetho
 /** The parts of a manifest a cross-app decision reads. */
 export interface CrossAppManifest {
   id: string;
-  capabilities?: { http?: boolean | { apps: string[] } };
+  capabilities?: { http?: boolean | { apps: CalledAppEntry[] } };
   exports?: ExtensionExports;
 }
 
+/** The entries of `capabilities.http.apps`, each as `{ id, navigate }`. */
+function appEntries(
+  manifest: Pick<CrossAppManifest, 'capabilities'>
+): { id: string; navigate: boolean }[] {
+  const http = manifest.capabilities?.http;
+  if (typeof http !== 'object') return [];
+  return http.apps.map((entry) =>
+    typeof entry === 'string'
+      ? { id: entry, navigate: false }
+      : { id: entry.id, navigate: entry.navigate === true }
+  );
+}
+
 /**
- * The apps a manifest says it calls, in the order it lists them.
+ * The apps a manifest says it uses, in the order it lists them.
  *
  * @param manifest - The caller's manifest.
  */
 export function calledApps(manifest: Pick<CrossAppManifest, 'capabilities'>): string[] {
-  const http = manifest.capabilities?.http;
-  return typeof http === 'object' ? [...new Set(http.apps)] : [];
+  return [...new Set(appEntries(manifest).map((entry) => entry.id))];
+}
+
+/**
+ * The apps whose pages a manifest says it opens (`navigate: true`), in order.
+ *
+ * @param manifest - The caller's manifest.
+ */
+export function openableApps(manifest: Pick<CrossAppManifest, 'capabilities'>): string[] {
+  return [
+    ...new Set(
+      appEntries(manifest)
+        .filter((entry) => entry.navigate)
+        .map((entry) => entry.id)
+    ),
+  ];
 }
 
 /** Split a path into its segments, without the query. */
@@ -297,8 +344,8 @@ export type AppNavigateDecision = { ok: true } | { ok: false; reason: AppNavigat
  * Decide one app sending the person to another app's page, at
  * `/x/<targetId><itemPath>`.
  *
- * The caller must list the target in `capabilities.http.apps`; the target
- * needs no export, because a page only shows what the person can already
+ * The caller must list the target in `capabilities.http.apps` with
+ * `navigate: true`; the target needs no export, because a page only shows what the person can already
  * open. The link carries the item's path and nothing else (see
  * {@link ITEM_PATH_REGEX}). Both manifests come from DorkOS's own records; a
  * target that is not installed, or not running, is passed as `null`.
@@ -314,7 +361,7 @@ export function decideAppNavigate(input: {
 }): AppNavigateDecision {
   const { caller, target, targetId, itemPath } = input;
   if (targetId === caller.id) return { ok: false, reason: 'self' };
-  if (!calledApps(caller).includes(targetId)) return { ok: false, reason: 'not-declared' };
+  if (!openableApps(caller).includes(targetId)) return { ok: false, reason: 'not-declared' };
   if (!target || target.id !== targetId) return { ok: false, reason: 'target-unavailable' };
   if (
     itemPath.length > MAX_ITEM_PATH_LENGTH ||
@@ -335,14 +382,22 @@ export function decideAppNavigate(input: {
  * @param ctx - Where each issue is added.
  */
 export function checkCrossAppDeclarations(manifest: CrossAppManifest, ctx: z.RefinementCtx): void {
-  calledApps(manifest).forEach((id) => {
+  const seen = new Set<string>();
+  appEntries(manifest).forEach(({ id }, index) => {
     if (id === manifest.id) {
       ctx.addIssue({
         code: 'custom',
-        path: ['capabilities', 'http', 'apps'],
+        path: ['capabilities', 'http', 'apps', index],
         message: 'An app does not list itself; its own routes need only `http: true`',
       });
+    } else if (seen.has(id)) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['capabilities', 'http', 'apps', index],
+        message: `"${id}" is listed twice; list each app once`,
+      });
     }
+    seen.add(id);
   });
   const personOnly = personOnlyRules(manifest.exports);
   (manifest.exports?.http ?? []).forEach((route, index) => {
