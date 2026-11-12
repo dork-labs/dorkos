@@ -167,7 +167,7 @@ export interface StagedManagedAgentAccessRemoval {
 }
 
 /** Safe refusal for a managed command whose local binding is no longer current. */
-export class ManagedAuthoritySyncError extends Error {
+class ManagedAuthoritySyncError extends Error {
   /** Construct one local managed-authority refusal. */
   constructor(
     readonly code: 'connection_unavailable',

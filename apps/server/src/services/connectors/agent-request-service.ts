@@ -97,7 +97,7 @@ const DEFAULT_REQUEST_TTL_MS = 2 * 60 * 60_000;
  */
 export const CONNECTOR_REQUEST_RATE_LIMIT = 10;
 /** The sliding window {@link CONNECTOR_REQUEST_RATE_LIMIT} counts over. */
-export const CONNECTOR_REQUEST_RATE_WINDOW_MS = 10 * 60_000;
+const CONNECTOR_REQUEST_RATE_WINDOW_MS = 10 * 60_000;
 /** The same ceiling the agent-facing catalog tool gives one catalog read. */
 const SERVICE_DIRECTORY_TIMEOUT_MS = 30_000;
 

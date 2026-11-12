@@ -35,7 +35,7 @@ export const SIGN_IN_REFRESH_MIN_GAP_MS = 60_000;
  * The longest a page read waits for the refresh it asked for before answering
  * with what is recorded; the refresh still finishes and the next read shows it.
  */
-export const SIGN_IN_REFRESH_WAIT_MS = 1_500;
+const SIGN_IN_REFRESH_WAIT_MS = 1_500;
 
 /** Construction options for {@link SignInRefresher}. */
 export interface SignInRefresherOptions {

@@ -43,7 +43,7 @@ function requireHolds(deps: CapabilityDeps): DestructiveHoldService {
  * @param context - The handler context.
  * @returns The canceller.
  */
-export function cancellerOf(context: CapabilityHandlerContext): HoldCanceller {
+function cancellerOf(context: CapabilityHandlerContext): HoldCanceller {
   if (context.trusted) return { kind: 'person' };
   if (context.identity) {
     return {
@@ -64,7 +64,7 @@ export const CANCEL_REFUSALS: Record<Exclude<CancelHoldResult, { ok: true }>['co
 };
 
 /** Cancel a held connected-app action before it runs. */
-export const cancelHeldAction = defineCapability({
+const cancelHeldAction = defineCapability({
   id: 'connectors.cancel_held_action',
   title: 'Cancel an action waiting to run in a connected app',
   description:

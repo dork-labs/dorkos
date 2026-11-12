@@ -76,7 +76,7 @@ export type OverrideDecision =
  * @param override - The session's override for the account, if it has one.
  * @param agentId - The agent asked about.
  */
-export function overrideDecision(
+function overrideDecision(
   override: SessionGrantOverride | undefined,
   agentId: string
 ): OverrideDecision {

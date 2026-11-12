@@ -6,9 +6,6 @@
  */
 export {
   AgentPauseService,
-  AgentPausedError,
-  CannotResumeSelfError,
-  PauseAgentNotFoundError,
   agentPause,
   initAgentPause,
   resetAgentPause,

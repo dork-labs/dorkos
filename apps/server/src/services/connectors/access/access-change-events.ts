@@ -24,7 +24,7 @@ import type { GrantChangeKind } from '@dorkos/db';
 import type { AccessState } from './access-state.js';
 
 /** Event type for an agent-made access change, and for its undo. */
-export const ACCESS_CHANGE_EVENT = 'connectors.access_changed';
+const ACCESS_CHANGE_EVENT = 'connectors.access_changed';
 
 /** One applied change, in the words the person reads. */
 export interface DescribedAccessChange {

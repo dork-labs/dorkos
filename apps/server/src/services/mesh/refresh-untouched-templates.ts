@@ -153,7 +153,7 @@ export const PREVIOUS_SOUL_PROSE: readonly string[] = [
  * @param prose - Everything after the trait fence's end marker, untrimmed.
  * @param names - The agent's current names: its display name and its slug.
  */
-export function matchPreviousSoulProse(prose: string, names: readonly string[]): string | null {
+function matchPreviousSoulProse(prose: string, names: readonly string[]): string | null {
   for (const template of PREVIOUS_SOUL_PROSE) {
     const parts = template.split(NAME_SLOT);
     if (parts.length !== 2) continue;
@@ -196,7 +196,7 @@ export function refreshSoulContent(content: string, names: readonly string[]): s
  *
  * @param content - The whole `AGENTS.md`.
  */
-export function refreshDorkbotAgentsMd(content: string): string | null {
+function refreshDorkbotAgentsMd(content: string): string | null {
   return PREVIOUS_DORKBOT_AGENTS_MD.includes(content) ? dorkbotClaudeMdTemplate() : null;
 }
 

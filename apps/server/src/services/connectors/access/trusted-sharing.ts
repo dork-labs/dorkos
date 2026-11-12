@@ -295,7 +295,7 @@ function unsharedConnections(
  * @param connectionId - The shared connection.
  * @param now - Timestamp of the change.
  */
-export function fitSharedLevel(db: Db, connectionId: string, now: string): void {
+function fitSharedLevel(db: Db, connectionId: string, now: string): void {
   db.transaction((tx) => {
     const newest = tx
       .select({ id: connectorReconciliationPreviews.id })

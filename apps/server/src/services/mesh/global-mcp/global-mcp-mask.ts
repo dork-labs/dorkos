@@ -16,7 +16,7 @@
 import { SECRET_NAME_PATTERN } from '@dorkos/shared/global-mcp-schemas';
 
 /** What stands in for a value. */
-export const MASK = '•••';
+const MASK = '•••';
 
 /**
  * A URL inside a string: its scheme, then the rest. A browser and most programs read

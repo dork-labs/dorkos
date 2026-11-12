@@ -34,10 +34,10 @@ export const LEVEL_FOLLOW_INTERVAL_MS = 12 * 60 * 60_000;
 export const LEVEL_FOLLOW_TICK_MS = 60 * 60_000;
 
 /** The longest one app's catalog read may take before the pass moves on. */
-export const LEVEL_FOLLOW_TIMEOUT_MS = 60_000;
+const LEVEL_FOLLOW_TIMEOUT_MS = 60_000;
 
 /** The most connections one pass reads; the rest wait for the next pass. */
-export const LEVEL_FOLLOW_MAX_CONNECTIONS = 200;
+const LEVEL_FOLLOW_MAX_CONNECTIONS = 200;
 
 /** Construction options for {@link LevelFollower}. */
 export interface LevelFollowerOptions {

@@ -56,7 +56,7 @@ import {
 export const TEST_CONNECTOR_PROVIDER_TYPE = 'test-connector';
 
 /** Raised when connector identity migration failed and mixed-store writes are blocked. */
-export class ConnectorMigrationUnavailableError extends Error {
+class ConnectorMigrationUnavailableError extends Error {
   /** Stable machine-readable health state. */
   readonly code = 'migration_failed';
 

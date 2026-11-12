@@ -19,7 +19,7 @@
  */
 
 /** The app routes a connection may send a person back to. */
-export const CONNECT_RETURN_ROUTES = ['connections'] as const;
+const CONNECT_RETURN_ROUTES = ['connections'] as const;
 
 const KNOWN_ROUTES: ReadonlySet<string> = new Set(CONNECT_RETURN_ROUTES);
 

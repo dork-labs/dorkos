@@ -30,7 +30,7 @@ export interface SessionConnectorOverride {
 }
 
 /** Raised when a new session override cannot be tied to an existing agent. */
-export class SessionConnectorOwnerUnavailableError extends Error {
+class SessionConnectorOwnerUnavailableError extends Error {
   /** Construct the ownership failure for one session. */
   constructor(sessionId: string) {
     super(`Connector access cannot be changed because session '${sessionId}' has no agent owner.`);
