@@ -59,10 +59,15 @@ export {
   APP_ROUTE_METHODS,
   calledApps,
   decideAppCall,
+  decideAppNavigate,
   exportedAccess,
   routeMatches,
+  MAX_ITEM_PATH_LENGTH,
+  MAX_ITEM_PATH_SEGMENTS,
   type AppCallDecision,
   type AppCallRefusal,
+  type AppNavigateDecision,
+  type AppNavigateRefusal,
   type AppExportRoute,
   type AppRouteMethod,
   type CrossAppManifest,
@@ -196,4 +201,9 @@ export {
   EXTENSION_CLIENT_API_VERSION,
   needsClientUpdate,
 } from './frame-api.js';
-export type { FrameCanvasContent, FrameExtensionAPI } from './frame-api.js';
+export type {
+  AppNavigateResult,
+  AppNavigateResultRefusal,
+  FrameCanvasContent,
+  FrameExtensionAPI,
+} from './frame-api.js';

@@ -17,6 +17,11 @@
  * the person's window and the server in front of the target's routes, so the
  * two can never disagree about what is allowed.
  *
+ * Listing an app also lets the caller send the person to one of its pages
+ * ({@link decideAppNavigate}): by the item's path alone, with no query, hash
+ * or encoded character, so a link can say which item and nothing about what
+ * to do with it. The page the person lands on decides what happens there.
+ *
  * @module extension-api/cross-app
  */
 import { z } from 'zod';
@@ -266,6 +271,59 @@ export function exportedAccess(
   if (reads && changes) return 'both';
   if (reads) return 'reads';
   return changes ? 'changes' : null;
+}
+
+/** The most segments an item path may have. */
+export const MAX_ITEM_PATH_SEGMENTS = 8;
+
+/** The longest an item path may be. */
+export const MAX_ITEM_PATH_LENGTH = 400;
+
+/**
+ * An item path: `''` for the app's home, or `/` then segments of plain
+ * letters, digits and `-._~`, never `.` or `..`, and nothing else: no query,
+ * no hash, no `%`, no empty segment.
+ */
+const ITEM_PATH_REGEX = /^(?:\/(?!\.\.?(?:\/|$))[A-Za-z0-9._~-]+)*$/;
+
+/** Why opening another app's page was refused. */
+export type AppNavigateRefusal =
+  'not-declared' | 'self' | 'target-unavailable' | 'not-an-item-path';
+
+/** The answer to opening another app's page: allowed, or refused and why. */
+export type AppNavigateDecision = { ok: true } | { ok: false; reason: AppNavigateRefusal };
+
+/**
+ * Decide one app sending the person to another app's page, at
+ * `/x/<targetId><itemPath>`.
+ *
+ * The caller must list the target in `capabilities.http.apps`; the target
+ * needs no export, because a page only shows what the person can already
+ * open. The link carries the item's path and nothing else (see
+ * {@link ITEM_PATH_REGEX}). Both manifests come from DorkOS's own records; a
+ * target that is not installed, or not running, is passed as `null`.
+ *
+ * @param input - The caller, the target, and the page's path below the target.
+ * @returns Allowed, or the reason it was refused.
+ */
+export function decideAppNavigate(input: {
+  caller: CrossAppManifest;
+  target: CrossAppManifest | null;
+  targetId: string;
+  itemPath: string;
+}): AppNavigateDecision {
+  const { caller, target, targetId, itemPath } = input;
+  if (targetId === caller.id) return { ok: false, reason: 'self' };
+  if (!calledApps(caller).includes(targetId)) return { ok: false, reason: 'not-declared' };
+  if (!target || target.id !== targetId) return { ok: false, reason: 'target-unavailable' };
+  if (
+    itemPath.length > MAX_ITEM_PATH_LENGTH ||
+    !ITEM_PATH_REGEX.test(itemPath) ||
+    itemPath.split('/').length - 1 > MAX_ITEM_PATH_SEGMENTS
+  ) {
+    return { ok: false, reason: 'not-an-item-path' };
+  }
+  return { ok: true };
 }
 
 /**

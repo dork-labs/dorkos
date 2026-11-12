@@ -136,6 +136,28 @@ The card that asks a person to allow your app lists each app it uses, by DorkOS'
 
 `:id` stands for exactly one path segment. Listing an app works one way only: it gives that app nothing back. DorkOS checks both manifests in the window and again on the server, tells the other app which app called in the `X-DorkOS-Caller-App` header, and records every call in the audit log. A refused call rejects before anything is sent.
 
+## Opening another app's page
+
+An app you list in `capabilities.http.apps` is also one whose pages you can send the person to. The other app does not need to export anything: a page only shows what the person can already open.
+
+```tsx
+const result = await api.navigate('/x/ledger/item/entry/e-17');
+if (!result.ok) api.notify(result.message, { type: 'error' });
+```
+
+The address names the item and nothing else: no query, no `#`, no encoded characters like `%2F`, and at most 8 parts after the app's id. So a link can say which item, never what to do with it. The page the person lands on decides what happens, and should change nothing until the person clicks.
+
+`navigate` never throws for an address it refuses. It answers `{ ok: false, reason, message }`, where `reason` is one of:
+
+| `reason`             | What it means                                                               |
+| -------------------- | --------------------------------------------------------------------------- |
+| `not-declared`       | Your app does not list that app in `capabilities.http.apps`.                |
+| `target-unavailable` | That app is not installed or not turned on.                                 |
+| `not-an-item-path`   | The address carries a query, a `#`, an encoded character or too many parts. |
+| `unknown-route`      | DorkOS has no page at that address.                                         |
+
+Your own pages and DorkOS's own pages work as before, query included.
+
 ## Showing pictures and video
 
 The frame cannot reach the network, so a picture or video has to come through DorkOS. Serve it from your own server routes, then ask for it:

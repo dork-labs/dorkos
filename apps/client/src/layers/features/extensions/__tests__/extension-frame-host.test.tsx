@@ -306,6 +306,70 @@ describe('isolated app host', () => {
       expect(init?.headers).not.toHaveProperty('X-DorkOS-Caller-Token');
     });
   });
+  describe('opening another app’s page (DOR-3293)', () => {
+    beforeEach(() =>
+      setRunningApps([
+        {
+          id: 'ledger',
+          status: 'compiled',
+          approvedToRun: true,
+          manifest: { id: 'ledger', name: 'Ledger', version: '1.0.0' },
+        },
+      ] as never)
+    );
+    afterEach(() => setRunningApps([]));
+    const callsLedger: Partial<ExtensionManifest> = {
+      capabilities: { http: { apps: ['ledger'] } },
+    };
+
+    it('opens a listed app’s item page and answers ok', async () => {
+      await start(callsLedger);
+      expect(await call('navigate', ['/x/ledger/item/entry/e-17'])).toHaveProperty('value', {
+        ok: true,
+      });
+      expect(api.navigate).toHaveBeenCalledWith('/x/ledger/item/entry/e-17');
+    });
+
+    it('still opens its own pages and core routes, with their query', async () => {
+      await start();
+      expect(await call('navigate', ['/x/atlas/p/one?tab=2'])).toHaveProperty('value', {
+        ok: true,
+      });
+      expect(await call('navigate', ['/team'])).toHaveProperty('value', { ok: true });
+      expect(api.navigate).toHaveBeenCalledTimes(2);
+    });
+
+    it.each([
+      ['not-declared', '/x/quill/item/entry/e-17', {}],
+      ['not-declared', '/x/ledger/item/entry/e-17', { capabilities: { http: true } }],
+      ['not-an-item-path', '/x/ledger/item/entry/e-17?approve=1', undefined],
+      ['not-an-item-path', '/x/ledger/item/entry/e-17#approve', undefined],
+      ['not-an-item-path', '/x/ledger/item/entry/e%2F17', undefined],
+      ['unknown-route', 'https://evil.example/x/ledger', undefined],
+      ['unknown-route', 'javascript:alert(1)', undefined],
+    ] as const)(
+      'answers a refusal the app can show (%s) for %s, and goes nowhere',
+      async (reason, path, extra) => {
+        await start(extra ?? callsLedger);
+        const reply = (await call('navigate', [path])) as {
+          value: { ok: boolean; reason: string; message: string };
+        };
+        expect(reply.value).toMatchObject({ ok: false, reason });
+        expect(reply.value.message).toEqual(expect.any(String));
+        expect(api.navigate).not.toHaveBeenCalled();
+      }
+    );
+
+    it('answers target-unavailable for an app that is not running', async () => {
+      setRunningApps([]);
+      await start(callsLedger);
+      expect(await call('navigate', ['/x/ledger/item/entry/e-17'])).toHaveProperty(
+        'value',
+        expect.objectContaining({ ok: false, reason: 'target-unavailable' })
+      );
+      expect(api.navigate).not.toHaveBeenCalled();
+    });
+  });
   it('refuses a room reply or a forward to an app that does not declare them (BRIDGE_WRITES)', async () => {
     await start();
     expect(await call('rooms.reply', ['room-1', 'entry-1', 'hello'])).toHaveProperty('error');

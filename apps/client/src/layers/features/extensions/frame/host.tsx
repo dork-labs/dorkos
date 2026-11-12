@@ -7,6 +7,7 @@ import {
 } from '@dorkos/extension-api';
 import { z } from 'zod';
 import { extensionApiUrl } from '../model/extension-api-url';
+import { resolveAppNavigation } from '../model/app-navigation';
 import {
   bridgeWriteAllowed,
   declaresBridgeCapability,
@@ -41,7 +42,6 @@ const methodArgs: Record<string, z.ZodType> = {
       .strict()
       .optional()
   ),
-  navigate: args(text),
   setPageBadge: args(text, json),
   setTabMarker: args(text, z.enum(['attention']).nullable()),
   listDecisions: args(),
@@ -264,6 +264,16 @@ export function isolatedExtensionModule(
                 headers: { 'X-DorkOS-Extension': api.id },
               });
               return readAppMedia(response);
+            }
+            if (method === 'navigate') {
+              const [path] = args(text).parse(input);
+              // Answered, never thrown, so the app can say why nothing happened.
+              const target = resolveAppNavigation(manifest, path, { otherApps: true });
+              if (!target.ok) {
+                return { ok: false, reason: target.reason, message: target.message };
+              }
+              api.navigate(path);
+              return { ok: true };
             }
             if (method === 'openCanvas') {
               const [content] = args(FrameCanvasContentSchema).parse(input);

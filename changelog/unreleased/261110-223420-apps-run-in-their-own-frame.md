@@ -24,6 +24,7 @@ covers:
   - 'fix(canvas): a document an app opened can never hold a widget action other than a link, on any write (DOR-3293)'
   - "fix(canvas): check the document as it will end up on every update, so a mark-only patch can't label an agent widget as an app's (DOR-3293)"
   - 'feat(extensions): a personOnly rule can name its methods, so a read stays shared while a write on the same path does not (DOR-3293)'
+  - "feat(extensions): an app can open a page of an app it lists, by the item's path alone, and hears why when it can't (DOR-3293)"
 ---
 
 ### Security

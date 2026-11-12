@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   decideAppCall,
+  decideAppNavigate,
   exportedAccess,
   routeMatches,
   type AppExportRoute,
@@ -151,6 +152,67 @@ describe('one app calling another (DOR-3293)', () => {
       'reads'
     );
     expect(exportedAccess({}, 'reports')).toBeNull();
+  });
+});
+
+describe('one app opening another app’s page (DOR-3293)', () => {
+  const open = (
+    overrides: Partial<Parameters<typeof decideAppNavigate>[0]> = {}
+  ): ReturnType<typeof decideAppNavigate> =>
+    decideAppNavigate({
+      caller: reports,
+      target: ledger,
+      targetId: 'ledger',
+      itemPath: '/item/entry/e-17',
+      ...overrides,
+    });
+
+  it('opens a page of an app the caller lists, by its item path alone', () => {
+    expect(open()).toEqual({ ok: true });
+    expect(open({ itemPath: '' })).toEqual({ ok: true });
+    expect(open({ itemPath: '/entries' })).toEqual({ ok: true });
+  });
+
+  it('needs no export: listing the app is what lets the caller open its pages', () => {
+    expect(open({ target: { id: 'ledger' } })).toEqual({ ok: true });
+  });
+
+  it('refuses an app the caller does not list, works one way only, and never itself', () => {
+    expect(open({ caller: { id: 'reports', capabilities: { http: true } } })).toEqual({
+      ok: false,
+      reason: 'not-declared',
+    });
+    expect(
+      decideAppNavigate({
+        caller: { id: 'ledger' },
+        target: { id: 'reports' },
+        targetId: 'reports',
+        itemPath: '',
+      })
+    ).toEqual({ ok: false, reason: 'not-declared' });
+    expect(open({ targetId: 'reports' })).toEqual({ ok: false, reason: 'self' });
+  });
+
+  it('refuses an app that is not installed or not running', () => {
+    expect(open({ target: null })).toEqual({ ok: false, reason: 'target-unavailable' });
+  });
+
+  it.each([
+    ['a query', '/item/entry/e-17?approve=1'],
+    ['an empty query', '/item/entry/e-17?'],
+    ['a hash', '/item/entry/e-17#approve'],
+    ['an encoded character', '/item/entry/e%2F17'],
+    ['a dot-dot segment', '/item/../settings'],
+    ['a dot segment', '/item/./entry'],
+    ['an empty segment', '/item//entry'],
+    ['a trailing slash', '/item/entry/'],
+    ['a backslash', '/item\\entry'],
+    ['a space', '/item/entry one'],
+    ['no leading slash', 'item/entry/e-17'],
+    ['too many segments', '/a/b/c/d/e/f/g/h/i'],
+    ['a very long path', `/${'a'.repeat(401)}`],
+  ])('refuses %s: the link carries only the item', (_name, itemPath) => {
+    expect(open({ itemPath })).toEqual({ ok: false, reason: 'not-an-item-path' });
   });
 });
 
