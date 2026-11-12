@@ -5,38 +5,16 @@ import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vite
 import { act, render, screen, cleanup, fireEvent } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import { TooltipProvider } from '@/layers/shared/ui';
-import { useExtensionRegistry, type RightPanelContribution } from '@/layers/shared/model';
+import {
+  useAppStore,
+  useExtensionRegistry,
+  type RightPanelContribution,
+} from '@/layers/shared/model';
 
-// Mutable mock state — mutate per-test
-const mockSetRightPanelOpen = vi.fn();
-const mockSetActiveRightPanelTab = vi.fn();
-let mockActiveRightPanelTab: string | null = null;
-
-// The header reads only the active tab and the open/close setters from the
-// store now — the container owns contribution filtering and passes the visible
-// list in as a prop.
-// Only the store is stubbed. `useScrollOverflow` and `revealInScroller` come
-// from the real module on purpose: the fade and reveal assertions below stub
-// layout metrics and then check what the strip did with them, so replacing the
-// thing that reads those metrics would leave nothing under test.
-vi.mock('@/layers/shared/model', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('@/layers/shared/model')>();
-  return {
-    ...actual,
-    useAppStore: (selector: (s: Record<string, unknown>) => unknown) =>
-      selector({
-        setRightPanelOpen: mockSetRightPanelOpen,
-        activeRightPanelTab: mockActiveRightPanelTab,
-        setActiveRightPanelTab: mockSetActiveRightPanelTab,
-        // The unread dot on a document tab reads these. They are part of the
-        // real store, so a stub that omits them is a stub that lies — and the
-        // strip renders OUTSIDE the panel error boundary, so a throw in here
-        // takes the whole header down rather than one tab.
-        roomCanvasLiveRoomId: null,
-        roomCanvasUnread: {},
-      }),
-  };
-});
+// The app store is REAL. `useScrollOverflow` and `revealInScroller` are real
+// too: the fade and reveal assertions below stub layout metrics and then check
+// what the strip did with them, so replacing the thing that reads those metrics
+// would leave nothing under test.
 
 beforeAll(() => {
   Object.defineProperty(window, 'matchMedia', {
@@ -94,7 +72,7 @@ describe('RightPanelHeader', () => {
   });
 
   beforeEach(() => {
-    mockActiveRightPanelTab = 'agent';
+    useAppStore.setState({ activeRightPanelTab: 'agent' });
   });
 
   it('offers no close control on a permanent tab, and keeps it on the others (FB-60)', () => {
@@ -110,7 +88,7 @@ describe('RightPanelHeader', () => {
     fireEvent.keyDown(screen.getByRole('tab', { name: 'Profile' }), { key: 'Delete' });
     expect(onCloseView).not.toHaveBeenCalled();
 
-    mockActiveRightPanelTab = 'canvas';
+    useAppStore.setState({ activeRightPanelTab: 'canvas' });
     rerender(
       <TooltipProvider>
         <RightPanelHeader contributions={[profile, canvas]} onCloseView={onCloseView} />
@@ -128,6 +106,21 @@ describe('RightPanelHeader', () => {
     expect(screen.getByRole('tablist', { name: 'Right panel tabs' })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: 'Profile' })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: 'Canvas' })).toBeInTheDocument();
+  });
+
+  it('selects the tab you click, in the store and on screen', () => {
+    // Radix activates a tab on mouse-down. With the real store behind it, the
+    // pick has to land in `activeRightPanelTab` for the strip to show it.
+    renderHeader([
+      makeContribution('agent', { title: 'Profile' }),
+      makeContribution('canvas', { title: 'Canvas' }),
+    ]);
+
+    fireEvent.mouseDown(screen.getByRole('tab', { name: 'Canvas' }));
+
+    expect(useAppStore.getState().activeRightPanelTab).toBe('canvas');
+    expect(screen.getByRole('tab', { name: 'Canvas' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByRole('tab', { name: 'Profile' })).toHaveAttribute('aria-selected', 'false');
   });
 
   it('visually distinguishes the selected tab from the rest, not just via aria-selected', () => {
@@ -381,7 +374,7 @@ describe('RightPanelHeader — the selected tab is never left behind an edge', (
   afterEach(() => {
     cleanup();
     vi.restoreAllMocks();
-    mockActiveRightPanelTab = null;
+    useAppStore.setState({ activeRightPanelTab: null });
   });
 
   /** The scroll container the tablist sits inside. */
@@ -427,7 +420,7 @@ describe('RightPanelHeader — the selected tab is never left behind an edge', (
     // the bug only ever showed on the paths that do not click: a server
     // `ui_command` opening the canvas, a restored per-agent layout, or the panel
     // being dragged narrower. The active tab stayed cut off at the edge (DOR-471).
-    mockActiveRightPanelTab = 'terminal';
+    useAppStore.setState({ activeRightPanelTab: 'terminal' });
     layOutSelectedTabPastTheEnd();
     renderHeader(
       ['agent', 'files', 'canvas', 'terminal', 'session', 'pulse'].map((id) => makeContribution(id))
@@ -438,7 +431,7 @@ describe('RightPanelHeader — the selected tab is never left behind an edge', (
   });
 
   it('leaves the scroll position alone when the selected tab already fits', () => {
-    mockActiveRightPanelTab = 'agent';
+    useAppStore.setState({ activeRightPanelTab: 'agent' });
     vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(function (
       this: Element
     ) {
@@ -493,7 +486,7 @@ describe('RightPanelHeader — the selected tab is never left behind an edge', (
     // scroll box. So it is the case that catches a reveal which quietly stopped
     // watching the scroller and leant on the fades' observer instead: measured
     // that way, this stayed at 0 with the label half-drawn.
-    mockActiveRightPanelTab = 'terminal';
+    useAppStore.setState({ activeRightPanelTab: 'terminal' });
     let boxRight = 340;
     vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(function (
       this: Element
@@ -543,7 +536,7 @@ describe('RightPanelHeader — the selected tab is never left behind an edge', (
     // Found by "one instance that watches the scroller AND the selected tab",
     // which is the reveal's alone: the fades' observer watches the scroller and
     // its child, and the tab is a grandchild.
-    mockActiveRightPanelTab = 'agent';
+    useAppStore.setState({ activeRightPanelTab: 'agent' });
     const observers = captureResizeObservers();
 
     try {
