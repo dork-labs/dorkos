@@ -43,5 +43,9 @@ before #3545 fails its pnpm-store pin on `browser-test.yml`.
 Metric caveat: harness failure_rate also counts real `scripts/` defects on PRs,
 so read the push leg beside it; target there is 0 red pushes. Also watch
 `gate.wf.typecheck.typecheck.duration_p90`: the step should add about a minute.
+On the first CI run it took 41 s with one worker per core, and two whole-repo
+scans timed out (26.6 s and 34 s against 20 s and 30 s limits; 3.7 s and 5.6 s
+locally). The config now runs two workers with a 120 s test limit, and those
+two scans raised their own in-file limits to 120 s. Cost stays about a minute.
 Revert if typecheck's p90 grows by more than 2 minutes, or if a repo-wide suite
 proves flaky in the queue (fix it or move it to harness, do not retry).

@@ -5,8 +5,10 @@ import { describe, expect, it, vi } from 'vitest';
 
 // A whole-repo scan that parses every file it reads, sized like its sibling
 // composio-sdk-import-boundary.test.ts (see that file for how the budget was
-// measured); parsing costs more than a regex, so the budget is doubled.
-vi.setConfig({ testTimeout: 30_000 });
+// measured); parsing costs more than a regex, so the budget is doubled. Then
+// raised to 120s: in typecheck's queue step it shares the runner with the other
+// repo-wide suites and took 34s (DOR-4222; local 5.6s).
+vi.setConfig({ testTimeout: 120_000 });
 
 /**
  * Every link into a conversation is built by one of two helpers (DOR-2077):

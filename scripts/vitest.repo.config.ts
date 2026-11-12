@@ -104,6 +104,13 @@ export default defineConfig({
     root: import.meta.dirname,
     environment: 'node',
     include: [...REPO_WIDE_SUITES],
+    // The whole-repo scans are CPU-bound. On a 4-core runner, one worker per
+    // core made two of them take 26-34s and time out (DOR-4222). Two workers
+    // leave each scan more of the machine; the step still takes under a minute.
+    maxWorkers: 2,
+    // Room for a slow runner. A test that sets its own timeout keeps it, so
+    // the two slowest scans also raised theirs in-file.
+    testTimeout: 120_000,
     // Same idiom as scripts/vitest.config.ts; CI passes no VITEST_RETRY, so 0.
     retry: process.env.VITEST_RETRY ? Number(process.env.VITEST_RETRY) : 0,
   },
