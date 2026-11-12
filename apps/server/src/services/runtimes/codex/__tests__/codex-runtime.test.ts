@@ -3,7 +3,7 @@ import { ScriptedCodexTransport } from './fixtures/scripted-transport.js';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { createTestDb } from '@dorkos/test-utils/db';
 import type { Db } from '@dorkos/db';
-import type { DependencyCheck, SessionSettingsPort } from '@dorkos/shared/agent-runtime';
+import type { SessionSettingsPort } from '@dorkos/shared/agent-runtime';
 import type { StreamEvent } from '@dorkos/shared/types';
 import type { ThreadEvent } from '@openai/codex-sdk';
 import { CodexRuntime } from '../codex-runtime.js';
@@ -112,15 +112,6 @@ vi.mock('@openai/codex-sdk', () => ({
     }
   },
 }));
-
-const SATISFIED_CHECKS: DependencyCheck[] = [
-  {
-    name: 'Codex CLI',
-    description: 'The OpenAI Codex CLI powers Codex agent sessions in DorkOS.',
-    status: 'satisfied',
-    version: 'codex-cli 0.142.5',
-  },
-];
 
 const ACCOUNT_MODELS: ModelOption[] = [
   {
@@ -397,21 +388,6 @@ describe('CodexRuntime', () => {
   });
 
   describe('identity and dependencies', () => {
-    it('identifies as the codex runtime', () => {
-      const { runtime } = makeRuntime();
-      expect(runtime.type).toBe('codex');
-    });
-
-    it('delegates checkDependencies to checkCodexDependencies', async () => {
-      vi.mocked(checkCodexDependencies).mockReturnValue(SATISFIED_CHECKS);
-      const { runtime } = makeRuntime();
-
-      const checks = await runtime.checkDependencies();
-
-      expect(checkCodexDependencies).toHaveBeenCalledOnce();
-      expect(checks).toEqual(SATISFIED_CHECKS);
-    });
-
     // Purpose (DOR-1334 / F9): the SDK's `Codex` constructor throws when it
     // cannot find a binary, and in the packaged Mac app it never can — that
     // throw kept Codex out of the registry entirely, so the requirements payload

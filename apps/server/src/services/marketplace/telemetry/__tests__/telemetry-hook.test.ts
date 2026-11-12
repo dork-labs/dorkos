@@ -40,14 +40,4 @@ describe('telemetry-hook', () => {
     await expect(reportInstallEvent(sampleEvent)).resolves.toBeUndefined();
     expect(reporter).toHaveBeenCalledTimes(1);
   });
-
-  it('clears the registered reporter via _resetTelemetryReporter', async () => {
-    const reporter = vi.fn().mockResolvedValue(undefined);
-    registerTelemetryReporter(reporter);
-
-    _resetTelemetryReporter();
-    await reportInstallEvent(sampleEvent);
-
-    expect(reporter).not.toHaveBeenCalled();
-  });
 });

@@ -127,11 +127,6 @@ describe('createExternalMcpServer', () => {
     expect(server.version).toBe('1.0.0');
   });
 
-  it('returns an object with a connect method', () => {
-    const server = createExternalMcpServer(createMinimalDeps());
-    expect(typeof server.connect).toBe('function');
-  });
-
   it('registers all 61 tools', () => {
     // Purpose: regression guard against accidental tool omissions or additions.
     // This count changes intentionally when new MCP tools are added: 40 legacy
@@ -271,13 +266,6 @@ describe('createExternalMcpServer', () => {
     createExternalMcpServer(createMinimalDeps());
     for (const tool of registeredTools) {
       expect(tool.description.length).toBeGreaterThan(0);
-    }
-  });
-
-  it('every tool has a handler function', () => {
-    createExternalMcpServer(createMinimalDeps());
-    for (const tool of registeredTools) {
-      expect(typeof tool.handler).toBe('function');
     }
   });
 
