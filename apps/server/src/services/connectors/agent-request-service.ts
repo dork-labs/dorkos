@@ -8,7 +8,6 @@ import {
   connectorAgentRequests,
   connectorManagedAuthorityOutbox,
   connectorManagedAuthorityScopes,
-  connectorOperationRevisions,
   connectorProviderInstances,
   connectorReviewRequests,
   connections,
@@ -68,9 +67,15 @@ import {
 import {
   elsewhereMessage,
   grantedVerb,
+  missingClassNote,
   setupRequestNote,
   unavailableServiceMessage,
 } from './resources/agent-request-messages.js';
+import {
+  grantedClasses,
+  NOTHING_HELD,
+  type GrantedClasses,
+} from './resources/agent-request-classes.js';
 import { dorkosToolNameFor } from '../runtimes/shared/dorkos-tool-names.js';
 import { SERVICE_CATALOG_TOOL_NAME } from './connector-capabilities.js';
 import type { ConnectorAuthenticationFlowService } from './resources/authentication-flow-service.js';
@@ -2055,82 +2060,13 @@ function requestStatus(request: ConnectorAgentRequest): RequestStatusName {
   return request.outcome ?? 'awaiting_owner';
 }
 
-/** The action classes a request's answer holds, and what it asked for that the answer leaves out. */
-interface GrantedClasses {
-  readonly held: ReadonlySet<string>;
-  readonly notGranted: Array<'read' | 'write'>;
-  /** It asked to hear about new activity and no updates were set up for it. */
-  readonly noUpdates: boolean;
-}
-
-/** The classes a level covers: Read is `read`; Read and write adds `write`. */
-function classesFor(access: ConnectorRequestAccess): Array<'read' | 'write'> {
-  return access === 'read' ? ['read'] : ['read', 'write'];
-}
-
-/**
- * Compare what an agent asked for with what its answer gave it, by class
- * (read, write), never by action name (DOR-2503). A class the answer holds no
- * action of is not granted, unless the account offers no action of that class
- * at all: nobody can grant what an app does not have, so that is never
- * reported as a refusal. `asked` defaults to what the request itself asked;
- * a new ask is measured against the level it names.
- */
-function grantedClasses(
-  db: Db | DbTransaction,
-  request: ConnectorAgentRequest,
-  asked: ConnectorRequestAccess = request.requestedAccess
-): GrantedClasses {
-  const ids = parseStringArray(request.resolvedOperationRevisionIdsJson);
-  const held = new Set(
-    ids.length === 0
-      ? []
-      : db
-          .select({ classification: connectorOperationRevisions.capabilityClassification })
-          .from(connectorOperationRevisions)
-          .where(inArray(connectorOperationRevisions.id, ids))
-          .all()
-          .map((revision) => revision.classification)
-  );
-  const account = request.resolvedConnectionId
-    ? db
-        .select({
-          providerInstanceId: connections.providerInstanceId,
-          toolkit: connections.toolkit,
-        })
-        .from(connections)
-        .where(eq(connections.id, request.resolvedConnectionId))
-        .get()
-    : undefined;
-  const offered = new Set(
-    account
-      ? db
-          .selectDistinct({ classification: connectorOperationRevisions.capabilityClassification })
-          .from(connectorOperationRevisions)
-          .where(
-            and(
-              eq(connectorOperationRevisions.providerInstanceId, account.providerInstanceId),
-              eq(connectorOperationRevisions.toolkit, account.toolkit)
-            )
-          )
-          .all()
-          .map((revision) => revision.classification)
-      : []
-  );
-  return {
-    held,
-    notGranted: classesFor(asked).filter((kind) => !held.has(kind) && offered.has(kind)),
-    noUpdates:
-      parseStringArray(request.requestedEventsJson).length > 0 &&
-      !parseResolvedEventSelection(request.resolvedEventsJson).appliedEventScopeHash,
-  };
-}
-
 /**
  * Whether a request's answer leaves out a level the agent asks for now: it
- * was allowed, and holds no action of a class the account offers and the new
- * ask needs (Read and write after only Read was given). Unanswered requests
- * never lack anything; they are raised in place instead.
+ * was allowed, and holds no action of a class the new ask needs (Read and
+ * write after only Read was given). That holds even when the account offers
+ * no such action in a level: the new card tells the person so, and the person
+ * decides (DOR-4193). Unanswered requests never lack anything; they are
+ * raised in place instead.
  */
 function answerLacks(
   tx: Db | DbTransaction,
@@ -2162,20 +2098,17 @@ function requestNote(request: ConnectorAgentRequest, answer?: GrantedClasses): s
         "hear here when it's ready, so don't ask again or promise the person a time."
       );
     case 'granted': {
-      const classes = answer ?? { held: new Set<string>(), notGranted: [], noUpdates: false };
-      const missing = classes.notGranted.map((kind) =>
-        kind === 'write' ? `change anything in ${app}` : `read ${app}`
-      );
+      const classes = answer ?? NOTHING_HELD;
       return [
         `You can now ${grantedVerb(classes.held)} ${app}.`,
         ...(classes.noUpdates
           ? [`You won't get updates when something new happens in ${app}.`]
           : []),
-        ...(missing.length > 0
+        ...(classes.notGranted.length > 0
           ? [
-              `The person didn't allow you to ${missing.join(' or ')}. Do what you can with ` +
-                "what you have, tell the person what you couldn't do, and ask again only if " +
-                'you still need it.',
+              ...classes.notGranted.map((k) => missingClassNote(app, k, classes.offers[k])),
+              "Don't say you can do what you can't. Do what you can with what you have, tell " +
+                "the person what you couldn't do, and ask again only if you still need it.",
             ]
           : ['Carry on with what you were doing.']),
       ].join(' ');

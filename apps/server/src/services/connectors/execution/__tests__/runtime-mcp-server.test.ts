@@ -184,6 +184,14 @@ describe('createConnectorRuntimeMcpServer', () => {
     expect(requestTool?.description).toContain(
       "If the person chose a lower level, don't ask again unless the work changed or they tell you to."
     );
+    // A "granted" answer can still leave a level out; the agent reads what is missing (DOR-4193).
+    expect(requestTool?.description).toContain('opens a new card for the person');
+    expect(requestTool?.description).toContain(
+      'notGranted lists what is missing and the note says why'
+    );
+    expect(requestTool?.description).toContain(
+      '`granted` can mean only part of what you asked for. Always check `notGranted` before you rely on write.'
+    );
 
     const result = payload(
       await client.callTool({

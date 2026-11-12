@@ -631,6 +631,58 @@ describe('AgentRequestCard — an account exists', () => {
     await screen.findByTestId('requested-access');
     expect(screen.queryByTestId('agent-request-write-note')).not.toBeInTheDocument();
   });
+
+  describe('an account that cannot give Read and write (DOR-3616, DOR-4193)', () => {
+    /** The same preview, keeping only the candidates of these classes. */
+    function previewOf(classes: ReadonlyArray<'read' | 'write' | 'destructive'>) {
+      const base = preview();
+      return {
+        ...base,
+        candidates: base.candidates.filter((c) => classes.includes(c.capabilityClassification)),
+      };
+    }
+
+    it('says before Allow that only Read is given, and how to let it change things', async () => {
+      // Linear's shape: every action that changes things is destructive.
+      const transport = transportWith([account('connection-1')]);
+      vi.mocked(transport.previewConnectorReconciliation).mockResolvedValue(
+        previewOf(['read', 'destructive'])
+      );
+      renderWith(transport, <AgentRequestCard request={{ ...REQUEST, access: 'read-write' }} />);
+
+      const missing = await screen.findByTestId('requested-write-missing');
+      expect(missing).toHaveTextContent('Allow gives Read only. Gmail has no Read and write here.');
+      expect(missing).toHaveTextContent(
+        'To let it change things, choose exact actions on the Connections page.'
+      );
+    });
+
+    it('says to connect again when the account has no actions that change things', async () => {
+      const transport = transportWith([account('connection-1')]);
+      vi.mocked(transport.previewConnectorReconciliation).mockResolvedValue(previewOf(['read']));
+      renderWith(transport, <AgentRequestCard request={{ ...REQUEST, access: 'read-write' }} />);
+
+      const missing = await screen.findByTestId('requested-write-missing');
+      expect(missing).toHaveTextContent('Allow gives Read only.');
+      expect(missing).toHaveTextContent('If that seems wrong, connect Gmail again.');
+    });
+
+    it('says nothing of the kind when Read and write is on offer, or only Read was asked', async () => {
+      renderWith(
+        transportWith([account('connection-1')]),
+        <AgentRequestCard request={{ ...REQUEST, access: 'read-write' }} />
+      );
+      await screen.findByTestId('requested-access');
+      expect(screen.queryByTestId('requested-write-missing')).not.toBeInTheDocument();
+      cleanup();
+
+      const transport = transportWith([account('connection-1')]);
+      vi.mocked(transport.previewConnectorReconciliation).mockResolvedValue(previewOf(['read']));
+      renderWith(transport, <AgentRequestCard request={REQUEST} />);
+      await screen.findByTestId('requested-access');
+      expect(screen.queryByTestId('requested-write-missing')).not.toBeInTheDocument();
+    });
+  });
 });
 
 describe('AgentRequestCard — approved by another agent (DOR-3959)', () => {
