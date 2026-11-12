@@ -1,24 +1,11 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { TransportProvider } from '@/layers/shared/model';
+import { TransportProvider, useAppStore } from '@/layers/shared/model';
 import { createMockTransport } from '@dorkos/test-utils';
 import { renderHook, act } from '@testing-library/react';
 
-let mockStoreDir: string | null = null;
-const mockSetStoreDir = vi.fn();
-
-vi.mock('@/layers/shared/model/app-store', () => ({
-  useAppStore: (selector?: (s: Record<string, unknown>) => unknown) => {
-    const state = {
-      selectedCwd: mockStoreDir,
-      setSelectedCwd: mockSetStoreDir,
-      setSessionId: mockSetSessionId,
-    };
-    return selector ? selector(state) : state;
-  },
-}));
-
-const mockSetSessionId = vi.fn();
+// The active agent comes from the REAL app store's `selectedCwd`, so a hook
+// that read the wrong field, or the store losing it, turns the fallback red.
 vi.mock('@/layers/entities/session/model/navigation/use-session-search', () => ({
   useSessionSearch: () => ({}),
 }));
@@ -41,16 +28,17 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 describe('useStartNewSession', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockStoreDir = null;
+    useAppStore.setState({ selectedCwd: null });
   });
 
-  it('opens a brand-new conversation on the named agent', async () => {
+  it('opens a brand-new conversation on the named agent, over the active one', async () => {
+    useAppStore.setState({ selectedCwd: '/projects/current' });
     const { result } = renderHook(() => useStartNewSession(), { wrapper });
     await act(async () => {
       await result.current('/projects/beta');
     });
 
-    expect(transport.createSessionLocation).toHaveBeenCalledWith(mockStoreDir ?? '/projects/beta');
+    expect(transport.createSessionLocation).toHaveBeenCalledWith('/projects/beta');
     expect(mockNavigate).toHaveBeenCalledWith({
       to: '/session',
       search: expect.objectContaining({
@@ -75,13 +63,13 @@ describe('useStartNewSession', () => {
   });
 
   it('falls back to the active agent when none is named', async () => {
-    mockStoreDir = '/projects/current';
+    useAppStore.setState({ selectedCwd: '/projects/current' });
     const { result } = renderHook(() => useStartNewSession(), { wrapper });
     await act(async () => {
       await result.current();
     });
 
-    expect(transport.createSessionLocation).toHaveBeenCalledWith(mockStoreDir ?? '/projects/beta');
+    expect(transport.createSessionLocation).toHaveBeenCalledWith('/projects/current');
     expect(mockNavigate).toHaveBeenCalledWith({
       to: '/session',
       search: expect.objectContaining({
