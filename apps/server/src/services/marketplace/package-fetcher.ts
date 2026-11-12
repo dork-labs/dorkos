@@ -859,7 +859,7 @@ function describeNetworkFailure(err: unknown): unknown {
  *
  * @param source - Raw marketplace source string from a `MarketplaceSource`.
  */
-export function isFileUrl(source: string): boolean {
+function isFileUrl(source: string): boolean {
   return source.startsWith('file://');
 }
 

@@ -138,7 +138,7 @@ export async function verifyInstall(root: string): Promise<InstallIntegrity> {
 }
 
 /** How many installs {@link withIntegrity} verifies at once, like update checks. */
-export const VERIFY_CONCURRENCY = 4;
+const VERIFY_CONCURRENCY = 4;
 
 /**
  * Each installation with its {@link InstallIntegrity} added, verified at most

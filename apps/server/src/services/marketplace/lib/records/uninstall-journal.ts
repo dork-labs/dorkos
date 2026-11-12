@@ -39,7 +39,7 @@ import {
 import { freeSavedFileName, freeSavedFolderName, makeInert } from '../saved-copies/saved-copies.js';
 
 /** The journal's file name, inside the uninstall sibling. */
-export const UNINSTALL_JOURNAL_FILE = '.dorkos-journal.json';
+const UNINSTALL_JOURNAL_FILE = '.dorkos-journal.json';
 
 /** One journaled move: a root-relative POSIX path, the same inside the sibling. */
 const JournalMoveSchema = z.object({
@@ -49,7 +49,7 @@ const JournalMoveSchema = z.object({
 });
 
 /** The journal (`.dorkos-journal.json`). */
-export const UninstallJournalSchema = z.object({
+const UninstallJournalSchema = z.object({
   version: z.literal(1),
   /** The install root, absolute. */
   root: z.string().min(1),

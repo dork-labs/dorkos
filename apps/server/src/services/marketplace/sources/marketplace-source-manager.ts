@@ -31,7 +31,7 @@ import type { MarketplaceSource } from '../types.js';
 const SOURCE_NAME_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 
 /** What a person is told when a new source's name is refused. */
-export const INVALID_SOURCE_NAME_MESSAGE =
+const INVALID_SOURCE_NAME_MESSAGE =
   'A marketplace name can use letters, numbers, dots, dashes and underscores, and must start ' +
   'with a letter or number (up to 128 characters).';
 

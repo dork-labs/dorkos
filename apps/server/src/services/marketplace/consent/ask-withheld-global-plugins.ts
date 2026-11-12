@@ -61,7 +61,7 @@ import { readInstallMetadata } from '../installed-metadata.js';
 export const GLOBAL_ACTIVATION_CAPABILITY_ID = 'marketplace.activate_global_plugin';
 
 /** The card's title. */
-export const GLOBAL_ACTIVATION_CAPABILITY_TITLE =
+const GLOBAL_ACTIVATION_CAPABILITY_TITLE =
   'Let a globally installed package run programs in every chat';
 
 /** At most one card per package per this long, unless a person asks for one. */
@@ -138,7 +138,7 @@ export function summariseGlobalActivation(name: string, effects: DisclosedEffect
  * @param origin - Its recorded version and source.
  * @returns The detail text.
  */
-export function describeGlobalActivationInFull(
+function describeGlobalActivationInFull(
   plugin: Pick<WithheldGlobalPlugin, 'changedSinceApproval' | 'reason' | 'subject'> & {
     effects: DisclosedEffects;
   },

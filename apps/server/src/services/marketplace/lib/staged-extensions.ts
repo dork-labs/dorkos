@@ -190,9 +190,7 @@ export function buildCompilerRecord(ext: StagedExtension, plugin?: string): Exte
  * @param manifestPath - Absolute path to an `extension.json` file.
  * @returns The parsed manifest, or `null` when it cannot be read or validated.
  */
-export async function readExtensionManifest(
-  manifestPath: string
-): Promise<ExtensionManifest | null> {
+async function readExtensionManifest(manifestPath: string): Promise<ExtensionManifest | null> {
   try {
     const raw = await readTextFileWithin(
       manifestPath,

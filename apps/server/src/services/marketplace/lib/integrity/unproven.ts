@@ -13,7 +13,7 @@ import type { InstalledFiles, UnprovenFiles } from '../records/installed-files.j
 import { addedEffectFiles } from './strict-differences.js';
 
 /** Most kept files one {@link describeUnproven} sentence names. */
-export const UNPROVEN_NAMED_LIMIT = 10;
+const UNPROVEN_NAMED_LIMIT = 10;
 
 /**
  * The kept files that sit where a package keeps what it runs (a skill, a

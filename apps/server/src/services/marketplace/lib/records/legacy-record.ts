@@ -59,10 +59,10 @@ import { materializePackageSchedules } from '../schedules/materialize-schedules.
 import { stagePackageContents } from '../stage-package.js';
 
 /** Share of present recorded files that may differ before a rebuild is rejected. */
-export const LEGACY_MISMATCH_SHARE = 0.1;
+const LEGACY_MISMATCH_SHARE = 0.1;
 
 /** Fewest differing files that can reject a rebuild (a small package edited in two places is fine). */
-export const LEGACY_MISMATCH_MIN = 3;
+const LEGACY_MISMATCH_MIN = 3;
 
 /** What {@link rebuildInstalledFiles} needs. */
 export interface LegacyRecordDeps {

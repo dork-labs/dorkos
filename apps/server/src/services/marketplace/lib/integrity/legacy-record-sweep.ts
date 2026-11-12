@@ -149,7 +149,7 @@ export async function rebuildLegacyRecords(
 const RECORD_TEMP_PREFIXES = [STRICT_RECORD_TEMP_PREFIX, 'dorkos-legacy-record-'];
 
 /** How old a leftover scratch folder must be before boot removes it. */
-export const RECORD_TEMP_STALE_MS = 60 * 60 * 1000;
+const RECORD_TEMP_STALE_MS = 60 * 60 * 1000;
 
 /**
  * Remove scratch folders a record rebuild left behind when DorkOS crashed or

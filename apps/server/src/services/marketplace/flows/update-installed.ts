@@ -126,7 +126,7 @@ export function scanUpdateView(
  * @param requested - The project the request named, in both spellings.
  * @returns The path to authorize and notify with.
  */
-export function callerSpelling(
+function callerSpelling(
   agentPath: string | undefined,
   requested: RequestedProject
 ): string | undefined {

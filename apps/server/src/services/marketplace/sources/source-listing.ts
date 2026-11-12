@@ -44,7 +44,7 @@ export interface NewSourceListingDeps {
 }
 
 /** The reason given for a source added turned off. */
-export const DISABLED_SOURCE_LISTING_REASON =
+const DISABLED_SOURCE_LISTING_REASON =
   "it was added turned off, so DorkOS didn't fetch its listing";
 
 /**

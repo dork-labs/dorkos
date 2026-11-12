@@ -65,7 +65,7 @@ import { isSafeGitUrl } from '@dorkos/marketplace';
  * that does not is just a dead end — and names only the forms that genuinely
  * work, which is why `git@`/`ssh://` are absent (see the module comment).
  */
-export const UNSUPPORTED_SOURCE_URL_MESSAGE =
+const UNSUPPORTED_SOURCE_URL_MESSAGE =
   "That address isn't one DorkOS can fetch a marketplace from. Use an https:// address for a " +
   'git repository, or a file:// path to a folder on this machine.';
 
@@ -202,7 +202,7 @@ function isLocalMarketplaceUrl(url: string): boolean {
  *   wants to register.
  * @returns `true` when the address may be stored as a marketplace source.
  */
-export function isSupportedMarketplaceSourceUrl(url: string): boolean {
+function isSupportedMarketplaceSourceUrl(url: string): boolean {
   if (isLocalMarketplaceUrl(url)) {
     return true;
   }

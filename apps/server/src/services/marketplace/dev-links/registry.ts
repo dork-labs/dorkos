@@ -141,7 +141,7 @@ export async function canonicalSlotPath(slot: string): Promise<string> {
  *
  * @param slot - The slot path.
  */
-export async function readSlot(slot: string): Promise<DevLinkSlotReading> {
+async function readSlot(slot: string): Promise<DevLinkSlotReading> {
   const lstatIsLink = await lstat(slot)
     .then((stats) => stats.isSymbolicLink())
     .catch(() => false);

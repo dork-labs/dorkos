@@ -46,7 +46,7 @@ import {
 import { EFFECT_BEARING_PATHS } from '@dorkos/marketplace';
 
 /** Package-relative path of the default Claude-plugin hooks declaration. */
-export const HOOKS_FILE = EFFECT_BEARING_PATHS.hooksFile;
+const HOOKS_FILE = EFFECT_BEARING_PATHS.hooksFile;
 
 /** What {@link readPackageHooks} found. */
 export interface PackageHooks {

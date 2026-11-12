@@ -107,7 +107,7 @@ const FULL_SHA_RE = /^[0-9a-f]{40}$/i;
 export const LINKED_INSTALL_NOTE = 'linked install — update its source instead';
 
 /** The note on a check of a dev link (DOR-2696), which is never reinstalled. */
-export const DEV_LINK_NOTE = 'Dev link — runs from your folder';
+const DEV_LINK_NOTE = 'Dev link — runs from your folder';
 
 /** One check, plus the request that would apply it. */
 interface PlannedCheck {

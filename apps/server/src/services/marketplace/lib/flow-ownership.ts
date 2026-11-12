@@ -16,7 +16,7 @@ import type { TransactionOwnership } from '../transaction.js';
 import type { InstallRequest, InstallResult } from '../types.js';
 
 /** How many notices are listed one sentence each before they collapse into one. */
-export const NOTICE_SENTENCE_LIMIT = 4;
+const NOTICE_SENTENCE_LIMIT = 4;
 
 /**
  * One plain sentence per notice, or a single summary when there are more than
@@ -24,7 +24,7 @@ export const NOTICE_SENTENCE_LIMIT = 4;
  *
  * @param notices - What the install did with files the person may have changed.
  */
-export function describeFileNotices(notices: readonly PackageFileNotice[]): string[] {
+function describeFileNotices(notices: readonly PackageFileNotice[]): string[] {
   // Files kept because nothing proved whose they were get one sentence of
   // their own from the transaction, which knows why (DOR-2322).
   notices = notices.filter((n) => n.outcome !== 'kept-unproven');

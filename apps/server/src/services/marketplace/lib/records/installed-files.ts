@@ -52,7 +52,7 @@ import type { Logger } from '@dorkos/shared/logger';
 import { hashFile, isAtOrUnder, lstatChain, scanTree, toFsPath } from './tree-scan.js';
 
 /** The record format this module reads and writes. */
-export const INSTALLED_FILES_RECORD_VERSION = 1;
+const INSTALLED_FILES_RECORD_VERSION = 1;
 
 /** Installer-generated paths that are the package's wholesale, when present. */
 const OWNED_PATH_CANDIDATES = ['node_modules', 'package-lock.json'] as const;
@@ -87,7 +87,7 @@ export const RecordPathSchema = z
  * Where the package came from. Compared by {@link sameSource}, which ignores
  * the ref, so moving from `@main` to a release is the same package.
  */
-export const RecordSourceSchema = z.union([
+const RecordSourceSchema = z.union([
   z.object({ cloneUrl: z.string().min(1), subpath: z.string(), ref: z.string() }).strict(),
   z.object({ localPath: z.string().min(1) }).strict(),
 ]);
@@ -96,7 +96,7 @@ export const RecordSourceSchema = z.union([
 export type RecordSource = z.infer<typeof RecordSourceSchema>;
 
 /** Who put the recorded files here. */
-export const RecordIdentitySchema = z.object({
+const RecordIdentitySchema = z.object({
   name: z.string().min(1),
   type: PackageTypeSchema,
   source: RecordSourceSchema.optional(),
@@ -110,7 +110,7 @@ export type RecordIdentity = z.infer<typeof RecordIdentitySchema>;
  * (DOR-2322): the version it came from could not be fetched, it came from a
  * folder on this computer, or the fetched version did not match what was there.
  */
-export const UnprovenWhySchema = z.enum(['fetch-failed', 'no-source', 'mismatch']);
+const UnprovenWhySchema = z.enum(['fetch-failed', 'no-source', 'mismatch']);
 
 /** Why a rebuilt record could not prove ownership; see {@link UnprovenWhySchema}. */
 export type UnprovenWhy = z.infer<typeof UnprovenWhySchema>;
@@ -119,7 +119,7 @@ export type UnprovenWhy = z.infer<typeof UnprovenWhySchema>;
  * Files kept as the person's only because nothing proved otherwise (DOR-2322),
  * and what to compare them with once something can.
  */
-export const UnprovenFilesSchema = z.object({
+const UnprovenFilesSchema = z.object({
   why: UnprovenWhySchema,
   /** The exact version the files came with: fetched by Check files to sort them. */
   from: z
@@ -139,7 +139,7 @@ export const UnprovenFilesSchema = z.object({
 export type UnprovenFiles = z.infer<typeof UnprovenFilesSchema>;
 
 /** The installed-files record (`.dork/installed-files.json`). */
-export const InstalledFilesSchema = z.object({
+const InstalledFilesSchema = z.object({
   version: z.literal(INSTALLED_FILES_RECORD_VERSION),
   package: RecordIdentitySchema,
   /** Installer-generated paths the package owns wholesale. */

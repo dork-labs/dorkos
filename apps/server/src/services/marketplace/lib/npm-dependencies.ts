@@ -69,7 +69,7 @@ import type { Logger } from '@dorkos/shared/logger';
 import { EFFECT_BEARING_PATHS } from '@dorkos/marketplace';
 
 /** How long one dependency install may run before it is killed. */
-export const NPM_INSTALL_TIMEOUT_MS = 120_000;
+const NPM_INSTALL_TIMEOUT_MS = 120_000;
 
 /**
  * npm's project-level config file. Deleted from every staged package root — see

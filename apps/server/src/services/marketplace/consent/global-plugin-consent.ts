@@ -585,7 +585,7 @@ export async function recordHeldBackDecision(
  *
  * @param name - The package's directory name.
  */
-export function forgetGlobalActivationApprovals(name: string): void {
+function forgetGlobalActivationApprovals(name: string): void {
   forgetApprovedEntries(
     isGlobalActivationEntryFor(name),
     'a global package was replaced or removed'

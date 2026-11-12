@@ -26,7 +26,6 @@ export {
   devLinkStateOf,
   devLinksFilePath,
   readDevLinks,
-  readSlot,
   updateDevLinks,
   type DevLinksReading,
 } from './registry.js';

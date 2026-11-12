@@ -20,7 +20,7 @@ import { lstat } from 'node:fs/promises';
 import { hashFile } from '../records/tree-scan.js';
 
 /** Most file hashes kept at once. */
-export const HASH_CACHE_LIMIT = 20_000;
+const HASH_CACHE_LIMIT = 20_000;
 
 interface CachedHash {
   size: number;

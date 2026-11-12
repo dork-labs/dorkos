@@ -24,7 +24,7 @@ import { normalize } from 'node:path';
 import { PACKAGE_TEXT_MAX_BYTES, readPackageFileWithin } from '@dorkos/shared/bounded-read';
 
 /** Where a Claude Code plugin's own manifest lives, package-relative. */
-export const PLUGIN_JSON = '.claude-plugin/plugin.json';
+const PLUGIN_JSON = '.claude-plugin/plugin.json';
 
 /** What reading one declaration file found. */
 export type DeclarationRead =
