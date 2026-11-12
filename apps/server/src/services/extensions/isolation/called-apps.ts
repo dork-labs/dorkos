@@ -7,7 +7,12 @@
  *
  * @module services/extensions/isolation/called-apps
  */
-import { calledApps, exportedAccess, type ExtensionRecord } from '@dorkos/extension-api';
+import {
+  calledApps,
+  exportedAccess,
+  openableApps,
+  type ExtensionRecord,
+} from '@dorkos/extension-api';
 import type { ExtensionApprovalPermissions } from '@dorkos/shared/extension-approval-schemas';
 
 /** One called app on the card. */
@@ -22,16 +27,24 @@ const ON = new Set(['enabled', 'compiled', 'active']);
  * @param record - The app being approved.
  * @param lookup - DorkOS's record of another app, by id.
  * @returns One entry per app it lists, in its order; an app that is not
- *   installed or not on has no name and no access.
+ *   installed or not on has no name and no access. `opens` is the caller's own
+ *   `navigate: true` for that app.
  */
 export function calledAppsView(
   record: Pick<ExtensionRecord, 'id' | 'manifest'>,
   lookup: (id: string) => Pick<ExtensionRecord, 'manifest' | 'status'> | undefined
 ): CalledAppView[] {
+  const opened = openableApps(record.manifest);
   return calledApps(record.manifest).map((id) => {
+    const opens = opened.includes(id);
     const target = lookup(id);
-    if (!target || !ON.has(target.status)) return { id, name: null, access: null };
-    return { id, name: target.manifest.name, access: exportedAccess(target.manifest, record.id) };
+    if (!target || !ON.has(target.status)) return { id, name: null, access: null, opens };
+    return {
+      id,
+      name: target.manifest.name,
+      access: exportedAccess(target.manifest, record.id),
+      opens,
+    };
   });
 }
 

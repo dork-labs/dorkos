@@ -39,7 +39,8 @@
  * whose target now shares more with it than when the person said yes
  * (`appAccess`): a target that starts sharing a route, or starts letting it
  * change things, is treated like a new target. The targets' sharing is read
- * live from DorkOS's records through {@link setCalledAppAccessLookup}.
+ * live from DorkOS's records through {@link setCalledAppAccessLookup}. And so
+ * does an app it starts opening the pages of (`appOpens`, `navigate: true`).
  *
  * `limits.memoryMb` is not part of the set: it bounds the extension rather
  * than granting it anything.
@@ -48,7 +49,12 @@
  *
  * @module services/extensions/isolation/permission-coverage
  */
-import { calledApps, isNetEntryCovered, type ExtensionManifest } from '@dorkos/extension-api';
+import {
+  calledApps,
+  isNetEntryCovered,
+  openableApps,
+  type ExtensionManifest,
+} from '@dorkos/extension-api';
 
 /** What a target shares with a caller: `reads`, `changes`, `both`, or nothing. */
 export type CalledAppAccess = 'reads' | 'changes' | 'both';
@@ -109,8 +115,15 @@ export function declaredSet(manifest: ExtensionManifest): ApprovedPermissionSet 
       return access ? [[id, access] as const] : [];
     })
   );
+  const appOpens = openableApps(manifest);
   const withApps =
-    apps.length > 0 ? { apps, ...(Object.keys(appAccess).length > 0 ? { appAccess } : {}) } : {};
+    apps.length > 0
+      ? {
+          apps,
+          ...(Object.keys(appAccess).length > 0 ? { appAccess } : {}),
+          ...(appOpens.length > 0 ? { appOpens } : {}),
+        }
+      : {};
   if (caps?.runtime !== 'subprocess') {
     return { runtime: 'in-process', net: [], run: [], agents: false, ...withApps };
   }
@@ -151,11 +164,13 @@ export function addedSince(
   approved: ApprovedPermissionSet | undefined
 ): PermissionSetAdditions | null {
   const approvedApps = approved?.apps ?? [];
-  // New to the list, or sharing more with it than when the person said yes.
+  // New to the list, sharing more with it than when the person said yes, or
+  // newly opened.
   const newApps = (declared.apps ?? []).filter(
     (id) =>
       !approvedApps.includes(id) ||
-      !accessCovered(approved?.appAccess?.[id], declared.appAccess?.[id])
+      !accessCovered(approved?.appAccess?.[id], declared.appAccess?.[id]) ||
+      ((declared.appOpens ?? []).includes(id) && !(approved?.appOpens ?? []).includes(id))
   );
   const apps = newApps.length > 0 ? { apps: newApps } : {};
   if (!approved || approved.runtime === 'in-process') {
@@ -191,6 +206,7 @@ export function isSamePermissionSet(
     sameList(a.net, b.net) &&
     sameList(a.run, b.run) &&
     sameList(a.apps ?? [], b.apps ?? []) &&
+    sameList(a.appOpens ?? [], b.appOpens ?? []) &&
     JSON.stringify(Object.entries(a.appAccess ?? {}).sort()) ===
       JSON.stringify(Object.entries(b.appAccess ?? {}).sort())
   );

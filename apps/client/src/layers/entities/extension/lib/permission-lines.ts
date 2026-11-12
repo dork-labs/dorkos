@@ -110,6 +110,8 @@ export interface ExtensionPermissionSet {
   apps?: string[];
   /** What each of those apps shares with it. */
   appAccess?: Record<string, 'reads' | 'changes' | 'both'>;
+  /** The apps whose pages it opens. */
+  appOpens?: string[];
 }
 
 /**
@@ -177,14 +179,20 @@ export function extensionPermissionLines(
   return [...reachLines(permissions, added), ...(writes ? [writes] : []), ...(apps ? [apps] : [])];
 }
 
-/** The apps a card showed and what each shared, as the yes echoes them. */
+/**
+ * The apps a card showed, what each shared and which it opens, as the yes
+ * echoes them. Every listed app, even one the card leaves off for giving no
+ * power, so a target that starts sharing later still asks again.
+ */
 function sharedOf(
   apps: readonly ExtensionCalledApp[]
-): Pick<ExtensionPermissionSet, 'apps' | 'appAccess'> {
+): Pick<ExtensionPermissionSet, 'apps' | 'appAccess' | 'appOpens'> {
   const shared = apps.flatMap((app) => (app.access ? [[app.id, app.access] as const] : []));
+  const opens = apps.filter((app) => app.opens === true).map((app) => app.id);
   return {
     apps: apps.map((app) => app.id),
     ...(shared.length > 0 ? { appAccess: Object.fromEntries(shared) } : {}),
+    ...(opens.length > 0 ? { appOpens: opens } : {}),
   };
 }
 
@@ -234,6 +242,7 @@ const ACCESS_WORDS = { reads: 'reads', changes: 'changes', both: 'reads and chan
 /**
  * What one row says after the app's name, in the designer's words (DOR-3293,
  * Nov 11): what it shares, then "can open its pages" only when that applies.
+ * `null` for an installed app that gives it no power at all: no row.
  *
  * @param app.installed - Whether DorkOS has the app.
  * @param app.access - What it shares with this one, from its own exports.
@@ -243,19 +252,19 @@ export function calledAppDetail(app: {
   installed: boolean;
   access: ExtensionCalledApp['access'];
   opensPages: boolean;
-}): string {
+}): string | null {
   if (!app.installed) return 'not installed, so this part won’t work';
-  if (app.access === null) {
-    return app.opensPages ? 'can only open its pages' : 'shares nothing, so this part won’t work';
-  }
+  if (app.access === null) return app.opensPages ? 'can only open its pages' : null;
   const shared = ACCESS_WORDS[app.access];
   return app.opensPages ? `${shared} · can open its pages` : shared;
 }
 
 /**
- * "It uses other apps:", one row per app: DorkOS's name for it and what it
- * shares, from that app's own exports. An app that is not installed or not on
- * says this part won't work; one that shares nothing says the same.
+ * "It uses other apps:", one row per app: DorkOS's name for it, what it
+ * shares, from that app's own exports, and whether this app opens its pages,
+ * from this app's own `navigate: true`. An app that is not installed or not
+ * on says this part won't work. One that gives no power is left off, and with
+ * no rows left there is no line (designer, Nov 11).
  *
  * @param apps - The apps it calls.
  * @param added - The ids new since the last yes, marked New.
@@ -264,24 +273,25 @@ function calledAppsLine(
   apps: readonly ExtensionCalledApp[] | undefined,
   added: readonly string[] | undefined
 ): ExtensionPermissionLine | null {
-  if (!apps || apps.length === 0) return null;
-  return {
-    key: 'apps',
-    parts: ['It uses other apps:'],
-    tone: 'plain',
-    apps: apps.map((app) => ({
-      id: app.id,
-      name: app.name ?? shownAppId(app.id),
+  const rows = (apps ?? []).flatMap((app) => {
+    const detail = calledAppDetail({
       installed: app.name !== null,
-      // Every app it lists is one whose pages it can open (`api.navigate`).
-      detail: calledAppDetail({
+      access: app.access,
+      opensPages: app.opens === true,
+    });
+    if (detail === null) return [];
+    return [
+      {
+        id: app.id,
+        name: app.name ?? shownAppId(app.id),
         installed: app.name !== null,
-        access: app.access,
-        opensPages: true,
-      }),
-      isNew: added?.includes(app.id) ?? false,
-    })),
-  };
+        detail,
+        isNew: added?.includes(app.id) ?? false,
+      },
+    ];
+  });
+  if (rows.length === 0) return null;
+  return { key: 'apps', parts: ['It uses other apps:'], tone: 'plain', apps: rows };
 }
 
 /** The lines for where it runs and what it may reach. */
@@ -394,7 +404,11 @@ export function permissionsAddedSince(
     agents: now.agents && !seen.agents,
     runtime: now.runtime === 'in-process' && seen.runtime === 'subprocess',
   };
-  const apps = (now.apps ?? []).filter((id) => !(seen.apps ?? []).includes(id));
+  const apps = (now.apps ?? []).filter(
+    (id) =>
+      !(seen.apps ?? []).includes(id) ||
+      ((now.appOpens ?? []).includes(id) && !(seen.appOpens ?? []).includes(id))
+  );
   if (apps.length > 0) return { ...added, apps };
   return added.net.length > 0 || added.run.length > 0 || added.agents || added.runtime
     ? added

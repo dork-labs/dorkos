@@ -166,6 +166,11 @@ export const ApprovedPermissionSetSchema = z.object({
    * (DOR-3293). A target that now shares more asks again. Absent: none shared.
    */
   appAccess: z.record(z.string(), z.enum(['reads', 'changes', 'both'])).optional(),
+  /**
+   * The apps whose pages it was approved to open (`navigate: true`, DOR-3293).
+   * One it starts opening asks again. Absent: none.
+   */
+  appOpens: z.array(z.string()).optional(),
 });
 
 /** The permission set a person approved for one extension. */
