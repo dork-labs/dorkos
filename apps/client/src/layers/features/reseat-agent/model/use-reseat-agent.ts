@@ -8,7 +8,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTransport } from '@/layers/shared/model';
 
 /** The query key for a seat's move options. */
-export function reseatOptionsKey(roomId: string, authorId: string) {
+function reseatOptionsKey(roomId: string, authorId: string) {
   return ['rooms', roomId, 'reseat-options', authorId] as const;
 }
 

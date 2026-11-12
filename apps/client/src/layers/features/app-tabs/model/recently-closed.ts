@@ -24,7 +24,7 @@ function bridge() {
 }
 
 /** Recently closed as this window last heard it, newest first. */
-export const useRecentlyClosedStore = create<{ entries: DesktopClosedTab[] }>(() => ({
+const useRecentlyClosedStore = create<{ entries: DesktopClosedTab[] }>(() => ({
   entries: [],
 }));
 

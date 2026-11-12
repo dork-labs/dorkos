@@ -18,7 +18,7 @@ import {
  * conversation whose peer dropped has a problem, an adapter you never started
  * does not.
  */
-export const RELAY_STATUS_TONE = {
+const RELAY_STATUS_TONE = {
   healthy: 'success',
   delivered: 'success',
   connected: 'success',

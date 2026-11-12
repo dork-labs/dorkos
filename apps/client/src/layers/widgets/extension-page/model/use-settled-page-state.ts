@@ -12,7 +12,7 @@ import type { ExtensionPageState } from './extension-page-state';
  * change, a hot reload), short enough that a page that really is missing says
  * so without a wait anyone notices.
  */
-export const EMPTY_STATE_SETTLE_MS = 400;
+const EMPTY_STATE_SETTLE_MS = 400;
 
 /**
  * The state to draw: the same as `state`, except that a "not available" answer

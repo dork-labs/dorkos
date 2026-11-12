@@ -11,4 +11,4 @@
  *
  * @module widgets/credits-offer
  */
-export { CreditsOfferCard, renderCreditsOffer } from './ui/CreditsOfferCard';
+export { renderCreditsOffer } from './ui/CreditsOfferCard';

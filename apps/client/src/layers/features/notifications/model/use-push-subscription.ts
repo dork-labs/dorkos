@@ -31,7 +31,7 @@ import { useTransport } from '@/layers/shared/model';
 const SERVICE_WORKER_URL = '/sw.js';
 
 /** Cache key for this install's subscribed browsers. */
-export const PUSH_DEVICES_QUERY_KEY = ['push', 'subscriptions'] as const;
+const PUSH_DEVICES_QUERY_KEY = ['push', 'subscriptions'] as const;
 
 /** Cache key for the VAPID public key. */
 const PUSH_VAPID_QUERY_KEY = ['push', 'vapid-public-key'] as const;

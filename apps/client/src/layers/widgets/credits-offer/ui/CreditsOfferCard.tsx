@@ -70,7 +70,7 @@ function reasonOf(err: unknown, fallback: string): string {
  * Supplied to features through `CreditsOfferProvider` (`shared/model`); a
  * surface decides whether to draw it with `useRuntimeCreditsOffer`.
  */
-export function CreditsOfferCard({
+function CreditsOfferCard({
   runtime,
   origin,
   intent = 'start',

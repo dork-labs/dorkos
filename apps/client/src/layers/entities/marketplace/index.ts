@@ -21,7 +21,7 @@ export { PreviewRefusedNotice, isPreviewRefusal } from './ui/PreviewRefusedNotic
 export { useInstalledPackages } from './model/use-installed-packages';
 export { usePackageInstallations } from './model/use-package-installations';
 export { useInstalledIntegrity } from './model/use-installed-integrity';
-export { useInstalledUpdates, UPDATE_CHECK_STALE_MS } from './model/use-installed-updates';
+export { useInstalledUpdates } from './model/use-installed-updates';
 export type { UseInstalledUpdatesOptions } from './model/use-installed-updates';
 export { useMarketplaceSources } from './model/use-marketplace-sources';
 

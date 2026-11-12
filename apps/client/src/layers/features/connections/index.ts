@@ -15,7 +15,7 @@ export type { AppListProps } from './ui/app-list/AppList';
 export { YourAppRowView, CatalogAppRowView } from './ui/app-list/AppRow';
 export { useAppList } from './model/use-app-list';
 export type { AppListData } from './model/use-app-list';
-export { appUses, chatAppAccount, remainingUses } from './lib/app-list';
+export { appUses, remainingUses } from './lib/app-list';
 export { accountChangeError } from './lib/account-change-error';
 export type {
   AppRowAction,

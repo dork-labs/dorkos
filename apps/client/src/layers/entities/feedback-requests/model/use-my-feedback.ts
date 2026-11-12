@@ -3,7 +3,7 @@ import { useTransport } from '@/layers/shared/model';
 import type { FeedbackListItem } from '@dorkos/shared/telemetry-events';
 
 /** Query-key prefix for the "Your reports" tracking list. */
-export const MY_FEEDBACK_KEY = ['feedback', 'mine'] as const;
+const MY_FEEDBACK_KEY = ['feedback', 'mine'] as const;
 
 /**
  * Fetch this install's own feedback submissions for the "Your reports"

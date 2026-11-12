@@ -39,7 +39,7 @@ export function hasUsageToShow(
  * @param spend - The account's spend reading, or nothing.
  * @param now - The moment to read from.
  */
-export function isThisMonthsSpend(
+function isThisMonthsSpend(
   spend: AccountUsage['spend'] | undefined,
   now: Date = new Date()
 ): spend is NonNullable<AccountUsage['spend']> {
@@ -54,7 +54,7 @@ export function isThisMonthsSpend(
  * "$4.20 spent this month". For a runtime billed per turn (OpenCode), which
  * has no windows to draw.
  */
-export function SpendLine({ spend }: { spend: NonNullable<AccountUsage['spend']> }) {
+function SpendLine({ spend }: { spend: NonNullable<AccountUsage['spend']> }) {
   return (
     <p className="text-muted-foreground text-xs tabular-nums" data-slot="spend-line">
       {formatCost(spend.costUsd)} spent this month

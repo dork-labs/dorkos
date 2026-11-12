@@ -5,7 +5,7 @@
  */
 export type { SimStep, SimScenario } from './sim-types';
 export { buildStreamingTextSteps } from './sim-helpers';
-export { useSimulator, SPEED_PRESETS } from './use-simulator';
+export { useSimulator } from './use-simulator';
 export type { SimulatorResult } from './use-simulator';
 
 import {

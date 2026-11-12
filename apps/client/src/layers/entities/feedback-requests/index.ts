@@ -4,4 +4,4 @@
  *
  * @module entities/feedback-requests
  */
-export { useMyFeedback, MY_FEEDBACK_KEY } from './model/use-my-feedback';
+export { useMyFeedback } from './model/use-my-feedback';

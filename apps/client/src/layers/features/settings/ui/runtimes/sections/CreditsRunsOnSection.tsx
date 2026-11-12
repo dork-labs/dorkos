@@ -29,7 +29,7 @@ type RunsOn = 'own-sign-in' | 'credits';
  * @param report - `GET /api/cloud/credits`, or `undefined` while it loads.
  * @param type - The runtime.
  */
-export function creditsReachable(report: CloudCreditsStatus | undefined, type: string): boolean {
+function creditsReachable(report: CloudCreditsStatus | undefined, type: string): boolean {
   return (
     report?.enabled === true && report.runtimes[type as keyof typeof report.runtimes] === 'wired'
   );

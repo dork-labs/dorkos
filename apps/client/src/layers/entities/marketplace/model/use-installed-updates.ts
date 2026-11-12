@@ -8,7 +8,7 @@ import { marketplaceKeys } from '../api/query-keys';
  * package's source for its newest version, so it runs once per visit rather
  * than on every mount, and "Check again" is how a person asks sooner.
  */
-export const UPDATE_CHECK_STALE_MS = 10 * 60_000;
+const UPDATE_CHECK_STALE_MS = 10 * 60_000;
 
 /** Options for {@link useInstalledUpdates}. */
 export interface UseInstalledUpdatesOptions {
