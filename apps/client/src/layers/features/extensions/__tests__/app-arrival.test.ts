@@ -173,6 +173,29 @@ describe('a fresh gesture in the calling frame', () => {
     expect(frameHasGesture(atlas)).toBe(false);
   });
 
+  // Security Should 1 (Nov 12): one cross-app open per gesture.
+  it('spends the gesture on one open: a second in the same activation is refused', () => {
+    const atlas = document.createElement('iframe');
+    document.body.append(atlas);
+    activation(true);
+    atlas.focus();
+    expect(frameHasGesture(atlas)).toBe(true);
+
+    arriveAtAppPage(() => {});
+    // The app puts focus back on its own frame, still inside the same activation.
+    atlas.focus();
+    expect(frameHasGesture(atlas)).toBe(false);
+    vi.advanceTimersByTime(ARRIVAL_PAUSE_MS * 4);
+    expect(frameHasGesture(atlas)).toBe(false);
+
+    // Only once that activation has run out does a new click count again.
+    activation(false);
+    vi.advanceTimersByTime(250);
+    activation(true);
+    atlas.focus();
+    expect(frameHasGesture(atlas)).toBe(true);
+  });
+
   it('fails closed where the browser cannot say', () => {
     const atlas = document.createElement('iframe');
     document.body.append(atlas);

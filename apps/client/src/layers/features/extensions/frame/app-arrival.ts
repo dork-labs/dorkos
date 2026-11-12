@@ -8,8 +8,14 @@
  *   transient user activation, which a real click or key press in a child
  *   frame raises in its ancestors and no script can set, and which element
  *   has focus, which must be the calling app's own `<iframe>`. Together they
- *   mean the person just acted inside THAT app; activation alone would let one
- *   app ride a click made in another.
+ *   mean the person acted inside THAT app; activation alone would let one app
+ *   ride a click made in another. "Fresh" is the browser's own transient
+ *   activation window, which it sets (a few seconds in current browsers), not
+ *   a timer of ours: the host cannot time a click it cannot see.
+ * - **One open per gesture.** An honoured open spends that activation: no
+ *   other cross-app open is honoured until the browser reports the activation
+ *   over and a new click raises it again. Without this, an app could put focus
+ *   back on its own frame and open a second page on the same click.
  * - **A pause on arrival** ({@link arriveAtAppPage}). For 500 ms from the start
  *   of the navigation, pointer and key input to the whole window is dropped,
  *   so a click timed for the old page can't land on the new one. The new page
@@ -46,7 +52,12 @@ const DROPPED_INPUT = [
   'keyup',
 ] as const;
 
+/** How often a spent activation is checked for having run out. */
+const SPENT_POLL_MS = 100;
+
 let paused = false;
+let spent = false;
+let spentWatch: ReturnType<typeof setInterval> | undefined;
 let release: ReturnType<typeof setTimeout> | undefined;
 let madeInert = false;
 let listening = false;
@@ -75,17 +86,33 @@ function endPause(): void {
  * @param iframe - The calling app's frame, as the host created it.
  */
 export function frameHasGesture(iframe: HTMLIFrameElement | null): boolean {
-  if (iframe === null || !('userActivation' in navigator)) return false;
+  if (iframe === null || spent || !('userActivation' in navigator)) return false;
   return navigator.userActivation.isActive && document.activeElement === iframe;
 }
 
 /**
- * Open another app's page behind the arrival guard: the pause starts first,
- * then `go` moves the page, then the page fades in.
+ * Spend the current activation on one open. It stays spent until the browser
+ * reports the activation over, so only a new click counts again.
+ */
+function spendGesture(): void {
+  spent = true;
+  if (spentWatch !== undefined) clearInterval(spentWatch);
+  spentWatch = setInterval(() => {
+    if ('userActivation' in navigator && navigator.userActivation.isActive) return;
+    spent = false;
+    clearInterval(spentWatch);
+    spentWatch = undefined;
+  }, SPENT_POLL_MS);
+}
+
+/**
+ * Open another app's page behind the arrival guard: the gesture is spent and
+ * the pause starts first, then `go` moves the page, then the page fades in.
  *
  * @param go - Moves the router to the new page.
  */
 export function arriveAtAppPage(go: () => void): void {
+  spendGesture();
   if (!listening) {
     for (const type of DROPPED_INPUT) window.addEventListener(type, drop, { capture: true });
     listening = true;
@@ -115,8 +142,11 @@ function fadeIn(): void {
   });
 }
 
-/** End any pause now. Test seam; nothing in the app calls it. */
+/** End any pause, and any spent gesture, now. Test seam; nothing in the app calls it. */
 export function resetArrivalPause(): void {
   if (release !== undefined) clearTimeout(release);
   endPause();
+  if (spentWatch !== undefined) clearInterval(spentWatch);
+  spentWatch = undefined;
+  spent = false;
 }

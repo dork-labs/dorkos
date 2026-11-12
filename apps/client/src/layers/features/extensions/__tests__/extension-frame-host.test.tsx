@@ -373,6 +373,21 @@ describe('isolated app host', () => {
       expect(api.navigate).not.toHaveBeenCalled();
     });
 
+    it('opens once per click: a second navigate in the same activation is no-gesture', async () => {
+      await start(callsLedger);
+      clickInCallingFrame();
+      expect(await call('navigate', ['/x/ledger/item/entry/e-17'])).toHaveProperty('value', {
+        ok: true,
+      });
+      // The app focuses its own frame again, with no new click.
+      document.querySelector('iframe')!.focus();
+      expect(await call('navigate', ['/x/ledger/item/entry/e-18'])).toHaveProperty(
+        'value',
+        expect.objectContaining({ ok: false, reason: 'no-gesture' })
+      );
+      expect(api.navigate).toHaveBeenCalledTimes(1);
+    });
+
     it('answers no-gesture when the click was in a sibling app’s frame', async () => {
       await start(callsLedger);
       const sibling = document.createElement('iframe');

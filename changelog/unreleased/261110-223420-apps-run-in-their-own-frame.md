@@ -31,6 +31,7 @@ covers:
   - 'fix(extensions): the approval card names only the powers an app really has over each other app, and asks again when it starts opening one (DOR-3293)'
   - "fix(extensions): a dot on the approval card's app rows never starts a line on a phone (DOR-3293)"
   - 'fix(server): a call between apps whose path part hides a slash is refused, never read as two parts (DOR-3293)'
+  - 'fix(extensions): one click in an app opens at most one other app’s page (DOR-3293)'
 ---
 
 ### Security

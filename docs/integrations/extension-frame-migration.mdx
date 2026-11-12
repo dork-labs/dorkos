@@ -153,7 +153,7 @@ if (!result.ok) api.notify(result.message, { type: 'error' });
 
 The address names the item and nothing else: no query, no `#`, no encoded characters like `%2F`, and at most 8 parts after the app's id. So a link can say which item, never what to do with it. The page the person lands on decides what happens, and should change nothing until the person clicks.
 
-Call it from a click or key press in your app, such as a button's `onClick`. DorkOS opens the page only when the person just clicked or typed inside your app's own frame. A click in another app, or a call from a timer or on load, is refused with `no-gesture`. For half a second after the page opens, DorkOS ignores clicks and keys while the new page fades in, so a click meant for your app can't land on the other one.
+Call it from a click or key press in your app, such as a button's `onClick`. DorkOS opens the page only when the person just clicked or typed inside your app's own frame. A click in another app, or a call from a timer or on load, is refused with `no-gesture`. One click opens one page: a second `navigate` on the same click is refused too. For half a second after the page opens, DorkOS ignores clicks and keys while the new page fades in, so a click meant for your app can't land on the other one.
 
 `navigate` never throws for an address it refuses. It answers `{ ok: false, reason, message }`, where `reason` is one of:
 
