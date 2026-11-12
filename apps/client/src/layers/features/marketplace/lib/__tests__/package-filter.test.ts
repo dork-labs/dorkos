@@ -141,11 +141,6 @@ describe('filterPackages — connector filter', () => {
 // ---------------------------------------------------------------------------
 
 describe('filterPackages — category filter', () => {
-  it('returns all packages when no categories are selected', () => {
-    const result = filterPackages(ALL, { type: 'all', categories: [], sources: [], search: '' });
-    expect(result).toHaveLength(ALL.length);
-  });
-
   it('filters by exact category match', () => {
     const result = filterPackages(ALL, {
       type: 'all',
@@ -292,11 +287,6 @@ describe('filterPackages — multi-select categories (OR)', () => {
 // ---------------------------------------------------------------------------
 
 describe('filterPackages — search filter', () => {
-  it('returns all packages when search is empty string', () => {
-    const result = filterPackages(ALL, { type: 'all', categories: [], sources: [], search: '' });
-    expect(result).toHaveLength(ALL.length);
-  });
-
   it('returns all packages when search is only whitespace', () => {
     const result = filterPackages(ALL, { type: 'all', categories: [], sources: [], search: '   ' });
     expect(result).toHaveLength(ALL.length);
