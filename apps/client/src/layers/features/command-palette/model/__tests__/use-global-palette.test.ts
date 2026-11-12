@@ -76,11 +76,15 @@ describe('useGlobalPalette', () => {
     cleanup();
   });
 
-  it('returns globalPaletteOpen, setGlobalPaletteOpen, and toggleGlobalPalette', () => {
+  it("hands back the store's open flag, and setters that reach the store", () => {
+    mockState.globalPaletteOpen = true;
     const { result } = renderHook(() => useGlobalPalette());
-    expect(result.current.globalPaletteOpen).toBe(false);
-    expect(typeof result.current.setGlobalPaletteOpen).toBe('function');
-    expect(typeof result.current.toggleGlobalPalette).toBe('function');
+    expect(result.current.globalPaletteOpen).toBe(true);
+
+    result.current.setGlobalPaletteOpen(false);
+    expect(mockState.setGlobalPaletteOpen).toHaveBeenCalledWith(false);
+    result.current.toggleGlobalPalette();
+    expect(mockState.toggleGlobalPalette).toHaveBeenCalledTimes(1);
   });
 
   it('Cmd+K toggles the palette', () => {
