@@ -4,18 +4,14 @@ import { renderHook, act, waitFor } from '@testing-library/react';
 
 vi.mock('sonner', () => ({ toast: { error: vi.fn(), success: vi.fn() } }));
 
-let mockStoreDir: string | null = null;
-const mockSetStoreDir = vi.fn();
+// The REAL app store: a committed directory is checked by `selectedCwd` itself,
+// and "moves nothing" by it still being empty, rather than by a setter spy.
+import { useAppStore } from '@/layers/shared/model/app-store';
 
-vi.mock('@/layers/shared/model/app-store', () => ({
-  useAppStore: (selector?: (s: Record<string, unknown>) => unknown) => {
-    const state = {
-      selectedCwd: mockStoreDir,
-      setSelectedCwd: mockSetStoreDir,
-    };
-    return selector ? selector(state) : state;
-  },
-}));
+/** The directory the store holds right now. */
+function cwd(): string | null {
+  return useAppStore.getState().selectedCwd;
+}
 
 // Mock useSessionId
 const mockSetSessionId = vi.fn();
@@ -86,7 +82,7 @@ import { useDirectoryState } from '../model/navigation/use-directory-state';
 describe('useDirectoryState', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockStoreDir = null;
+    useAppStore.setState({ selectedCwd: null });
     mockSearchDir = undefined;
     queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     mockLocation = { pathname: '/session', search: {} };
@@ -112,7 +108,7 @@ describe('useDirectoryState', () => {
         })
       )
     );
-    expect(mockSetStoreDir).toHaveBeenCalledWith('/new/path');
+    expect(cwd()).toBe('/new/path');
   });
 
   it('setter includes session param in navigate on directory change', async () => {
@@ -170,14 +166,12 @@ describe('useDirectoryState', () => {
 
     renderHook(() => useDirectoryState());
 
-    await waitFor(() =>
-      expect(mockSetStoreDir).toHaveBeenCalledWith('/Users/me/project/apps/desktop')
-    );
+    await waitFor(() => expect(cwd()).toBe('/Users/me/project/apps/desktop'));
   });
 
   it('falls back to Zustand when URL has no ?dir= param', () => {
     mockSearchDir = undefined;
-    mockStoreDir = '/default/path';
+    useAppStore.setState({ selectedCwd: '/default/path' });
     const { result } = renderHook(() => useDirectoryState());
     expect(result.current[0]).toBe('/default/path');
   });
@@ -188,7 +182,7 @@ describe('useDirectoryState', () => {
       result.current[1]('/new/path', { preserveSession: true });
     });
     expect(mockNavigate).not.toHaveBeenCalled();
-    expect(mockSetStoreDir).toHaveBeenCalledWith('/new/path');
+    expect(cwd()).toBe('/new/path');
     expect(mockSetSessionId).not.toHaveBeenCalled();
   });
 
@@ -227,7 +221,7 @@ describe('useDirectoryState', () => {
     expect(onOpened).not.toHaveBeenCalled();
     expect(toast.error).toHaveBeenCalled();
     expect(mockNavigate).not.toHaveBeenCalled();
-    expect(mockSetStoreDir).not.toHaveBeenCalled();
+    expect(cwd()).toBeNull();
   });
 
   it('commits the directory only once it knows which conversation to open', async () => {
@@ -245,14 +239,14 @@ describe('useDirectoryState', () => {
     act(() => {
       result.current[1]('/never/opened');
     });
-    expect(mockSetStoreDir).not.toHaveBeenCalled();
+    expect(cwd()).toBeNull();
 
     await act(async () => {
       answer({ sessions: [{ id: 'sess-1' }] });
       await Promise.resolve();
       await Promise.resolve();
     });
-    expect(mockSetStoreDir).toHaveBeenCalledWith('/never/opened');
+    expect(cwd()).toBe('/never/opened');
   });
 
   it('stays quiet and still when something else navigated while it waited', async () => {
@@ -281,7 +275,7 @@ describe('useDirectoryState', () => {
 
     expect(onOpened).not.toHaveBeenCalled();
     expect(mockNavigate).not.toHaveBeenCalled();
-    expect(mockSetStoreDir).not.toHaveBeenCalled();
+    expect(cwd()).toBeNull();
     expect(toast.error).not.toHaveBeenCalled();
   });
 
