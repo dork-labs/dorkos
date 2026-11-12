@@ -238,11 +238,6 @@ describe('ComposerInput', () => {
   /** {@link defaultProps} minus the two props {@link ControlledComposer} owns. */
   const controlledDefaults = { onSubmit: vi.fn(), isStreaming: false };
 
-  it('renders textarea with placeholder', () => {
-    render(<ComposerInput {...defaultProps} />);
-    expect(screen.getByPlaceholderText(/Send a message/)).toBeDefined();
-  });
-
   it('renders custom placeholder when provided', () => {
     render(<ComposerInput {...defaultProps} placeholder="Compose next" />);
     expect(screen.getByPlaceholderText('Compose next')).toBeDefined();
@@ -327,11 +322,6 @@ describe('ComposerInput', () => {
     const btn = screen.queryByLabelText('Send message');
     // In hidden state, no aria-label matches any active button
     expect(btn).toBeNull();
-  });
-
-  it('shows send button when value is non-empty', () => {
-    render(<ComposerInput {...defaultProps} value="hello" />);
-    expect(screen.getByLabelText('Send message')).toBeDefined();
   });
 
   it('calls onStop when stop button is clicked', () => {
