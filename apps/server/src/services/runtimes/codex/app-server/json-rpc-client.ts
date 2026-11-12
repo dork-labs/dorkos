@@ -40,7 +40,7 @@ import { NOTIFICATION_SCHEMAS, OUTBOUND_PARAMS } from './protocol/schemas.js';
 import { CodexProcessExitedError, CodexRpcError, CodexRpcTimeoutError } from './protocol/errors.js';
 
 /** The default longest line accepted (an `aggregatedOutput` alone can reach 1 MiB). */
-export const DEFAULT_MAX_LINE_BYTES = 16 * 1024 * 1024;
+const DEFAULT_MAX_LINE_BYTES = 16 * 1024 * 1024;
 
 /** How much of stderr is kept for a crash report. */
 const STDERR_RING_BYTES = 64 * 1024;

@@ -36,7 +36,7 @@ export const CONTEXT_WINDOW_TTL_MS = 10 * 60_000;
 export const CONTEXT_WINDOW_RETRY_MS = 60_000;
 
 /** The longest a reply's reading waits for the catalog before going without a window. */
-export const CONTEXT_WINDOW_READ_TIMEOUT_MS = 1_500;
+const CONTEXT_WINDOW_READ_TIMEOUT_MS = 1_500;
 
 /** `provider/model` → window, from one catalog read. */
 type WindowTable = ReadonlyMap<string, number>;

@@ -19,7 +19,7 @@ import { existsSync } from 'node:fs';
 import { logger } from '../../../lib/logger.js';
 
 /** A probe that did not answer before its hard bound; never evidence of signing out. */
-export class ProbeTimeoutError extends Error {
+class ProbeTimeoutError extends Error {
   constructor(binary: string, timeoutMs: number) {
     super(`probe timed out after ${timeoutMs}ms: ${binary}`);
     this.name = 'ProbeTimeoutError';

@@ -28,7 +28,7 @@ import type { OpenCodeClientProvider } from '../sessions/session-mapper.js';
  * backoff ladder already paces genuine crash-restarts inside `getClient()`).
  * A connection that WAS delivering events reconnects immediately.
  */
-export const HUB_RECONNECT_DELAY_MS = 250;
+const HUB_RECONNECT_DELAY_MS = 250;
 
 /** One registered hub consumer (a turn's demux tap). */
 export interface HubListener {

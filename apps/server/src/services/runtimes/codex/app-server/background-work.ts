@@ -63,7 +63,7 @@ export const SEGMENT_PENDING_BOUND_MS = 5_000;
 export const BACKGROUND_CEILING_MS = SESSIONS.BACKGROUND_WORK_PARK_CEILING_MS;
 
 /** How much of a finished command's output its report carries. */
-export const OUTPUT_TAIL_CHARS = 2_048;
+const OUTPUT_TAIL_CHARS = 2_048;
 
 /** Reconciliations a tracked terminal may be missing from before it is dropped. */
 const MISSING_LIMIT = 2;

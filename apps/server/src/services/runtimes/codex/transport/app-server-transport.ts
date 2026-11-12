@@ -85,7 +85,7 @@ import { acquireCodexProcess } from './acquire-codex-process.js';
 import { failedCompaction, failedSetup, failedStart } from './app-server-turn-failures.js';
 
 /** The shared bound on a stop's acknowledgement (claude-code's `STOP_ACK_TIMEOUT_MS`). */
-export const APP_SERVER_STOP_ACK_MS = 3_000;
+const APP_SERVER_STOP_ACK_MS = 3_000;
 
 /**
  * How long a compaction may take to open its turn once Codex accepted it.
@@ -93,7 +93,7 @@ export const APP_SERVER_STOP_ACK_MS = 3_000;
  * milliseconds (verified on 0.154); this only bounds a binary that never sends
  * one, so the person is told rather than left watching a bar.
  */
-export const APP_SERVER_COMPACTION_START_MS = 10_000;
+const APP_SERVER_COMPACTION_START_MS = 10_000;
 
 /**
  * How long a compaction that never opened its turn is watched for. Codex
@@ -101,7 +101,7 @@ export const APP_SERVER_COMPACTION_START_MS = 10_000;
  * this window is stopped (it would otherwise run unseen, and on credits be
  * billed unseen) rather than left for the next prompt to collide with.
  */
-export const STRAY_COMPACTION_WATCH_MS = 5 * 60_000;
+const STRAY_COMPACTION_WATCH_MS = 5 * 60_000;
 
 /** The copy when there is no conversation for a compaction to summarize. */
 export const NOTHING_TO_SUMMARIZE_COPY = 'There is nothing to summarize yet.';

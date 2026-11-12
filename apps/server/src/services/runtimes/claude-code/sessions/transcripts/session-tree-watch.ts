@@ -60,7 +60,7 @@ export interface TreeWatch {
 export type TreeWatcher = (root: string, on: TreeWatchEvents) => TreeWatch;
 
 /** How long a native watch on a root that is not there yet waits before trying again. */
-export const NATIVE_WATCH_RETRY_MS = 5_000;
+const NATIVE_WATCH_RETRY_MS = 5_000;
 
 /**
  * chokidar, at depth 1: the root's slug directories and the transcripts directly

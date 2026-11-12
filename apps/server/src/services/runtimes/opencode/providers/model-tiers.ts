@@ -64,7 +64,7 @@ export function parseParamsB(text: string): number | undefined {
  *
  * @param text - The model id and/or name to classify.
  */
-export function frontierRank(text: string): number {
+function frontierRank(text: string): number {
   const index = FRONTIER_PATTERNS.findIndex((pattern) => pattern.test(text));
   return index === -1 ? Number.POSITIVE_INFINITY : index;
 }

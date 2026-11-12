@@ -34,7 +34,7 @@ import { CodexJsonRpcClient, lastLine, type CodexClientClose } from './json-rpc-
 import { initializeCodexClient } from './handshake.js';
 
 /** Consecutive failed liveness probes after which a process counts as idle. */
-export const PROBE_FAILURE_LIMIT = 3;
+const PROBE_FAILURE_LIMIT = 3;
 
 /** The argv every app-server is spawned with. Nothing else, ever. */
 export const APP_SERVER_ARGS = ['app-server', '--listen', 'stdio://'] as const;
@@ -97,7 +97,7 @@ export interface CodexPoolTiming {
 }
 
 /** The defaults the spec names. */
-export const CODEX_POOL_TIMING: CodexPoolTiming = {
+const CODEX_POOL_TIMING: CodexPoolTiming = {
   idleMs: 10 * 60_000,
   reapIntervalMs: 60_000,
   crashWindowMs: 60_000,

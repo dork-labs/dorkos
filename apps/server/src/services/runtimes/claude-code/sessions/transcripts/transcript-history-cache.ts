@@ -44,11 +44,11 @@ export const CHUNK_BYTES = 1024 * 1024;
 /** How many trailing bytes of the parsed range are re-checked before an append. */
 const TAIL_CHECK_BYTES = 64;
 /** Default memory budget, in estimated bytes of parsed history across entries. */
-export const DEFAULT_MAX_BYTES = 128 * 1024 * 1024;
+const DEFAULT_MAX_BYTES = 128 * 1024 * 1024;
 /** Default cap on how many transcripts are kept. */
-export const DEFAULT_MAX_ENTRIES = 16;
+const DEFAULT_MAX_ENTRIES = 16;
 /** A kept parse older than this is redone, see the module notes on images. */
-export const MAX_ENTRY_AGE_MS = 6 * 60 * 60 * 1000;
+const MAX_ENTRY_AGE_MS = 6 * 60 * 60 * 1000;
 
 /**
  * Places the images newly parsed lines carried onto their tool calls. Runs on
@@ -107,7 +107,7 @@ interface Entry {
  * small charge per object. Only used to decide what to evict, so close is
  * enough; it never needs to match a heap snapshot.
  */
-export function estimateHistoryBytes(value: unknown): number {
+function estimateHistoryBytes(value: unknown): number {
   let total = 0;
   const stack: unknown[] = [value];
   while (stack.length > 0) {

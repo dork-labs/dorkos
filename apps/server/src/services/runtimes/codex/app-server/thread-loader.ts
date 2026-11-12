@@ -54,7 +54,7 @@ export const THREAD_STARTS_FRESH_NOTICE = 'Codex no longer has this chat, so it 
  * How long the pre-resume `thread/read` may take. A local metadata read; on a
  * timeout the resume that follows has the final word.
  */
-export const THREAD_READ_TIMEOUT_MS = 5_000;
+const THREAD_READ_TIMEOUT_MS = 5_000;
 
 /** The copy a person reads when they archived the conversation in Codex (§6). */
 export const THREAD_ARCHIVED_NOTICE = 'This chat is archived in Codex, so it starts fresh.';

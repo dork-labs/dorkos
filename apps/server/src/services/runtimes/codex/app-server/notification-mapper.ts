@@ -43,7 +43,7 @@ export const CODEX_STOPPED_COPY =
 export const CODEX_COMPACTION_STOPPED_COPY = 'The summary was stopped before it finished.';
 
 /** A turn that completed with a compaction it never reported finished. */
-export const CODEX_COMPACTION_UNFINISHED_COPY = 'Codex did not finish the summary.';
+const CODEX_COMPACTION_UNFINISHED_COPY = 'Codex did not finish the summary.';
 
 type Item = Record<string, unknown> & { type: string; id?: string };
 type Phase = 'started' | 'completed';
@@ -68,7 +68,7 @@ export interface TurnMapperOptions {
 }
 
 /** The progress label a compaction opens with (the Claude Code adapter's words). */
-export const CODEX_COMPACTING_COPY = 'Compacting context…';
+const CODEX_COMPACTING_COPY = 'Compacting context…';
 
 /** One `contextCompaction` item still running. */
 interface OpenCompaction {

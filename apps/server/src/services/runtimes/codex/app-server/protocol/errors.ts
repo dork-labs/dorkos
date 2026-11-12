@@ -26,7 +26,7 @@ export type CodexRpcErrorKind =
   | 'other';
 
 /** The JSON-RPC code Codex answers `Server overloaded; retry later.` with. */
-export const OVERLOADED_CODE = -32001;
+const OVERLOADED_CODE = -32001;
 
 /**
  * Message patterns, in the order they are tried. Each was observed against the
