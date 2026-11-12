@@ -55,14 +55,18 @@ describe('GitStatusItem', () => {
     expect(screen.getByText(/1 change$/)).toBeDefined();
   });
 
-  it('renders ahead indicator', () => {
+  it('shows commits ahead next to an up arrow', () => {
     render(<GitStatusItem data={{ ...cleanStatus, ahead: 5 }} />);
-    expect(screen.getByText('5')).toBeDefined();
+    const ahead = screen.getByText('5');
+    expect(ahead.querySelector('.lucide-arrow-up')).not.toBeNull();
+    expect(ahead.querySelector('.lucide-arrow-down')).toBeNull();
   });
 
-  it('renders behind indicator', () => {
+  it('shows commits behind next to a down arrow', () => {
     render(<GitStatusItem data={{ ...cleanStatus, behind: 3 }} />);
-    expect(screen.getByText('3')).toBeDefined();
+    const behind = screen.getByText('3');
+    expect(behind.querySelector('.lucide-arrow-down')).not.toBeNull();
+    expect(behind.querySelector('.lucide-arrow-up')).toBeNull();
   });
 
   it('renders both ahead and behind', () => {
