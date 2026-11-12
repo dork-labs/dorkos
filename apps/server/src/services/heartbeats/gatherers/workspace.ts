@@ -19,7 +19,7 @@ import { mayRunGitHere } from '../../core/agent-identity/index.js';
 import type { Change, GatherContext, Gatherer } from './types.js';
 
 /** How often `gh pr checks` may run per checkout. */
-export const PR_CHECKS_TTL_MS = 30 * 60 * 1000;
+const PR_CHECKS_TTL_MS = 30 * 60 * 1000;
 
 /** Runs a command, resolving its stdout, or rejecting. */
 export type RunCommand = (

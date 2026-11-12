@@ -60,7 +60,7 @@ const MINUTE = 60_000;
 export const LAUNCH_CAP_RETRY_MS = [1 * MINUTE, 2 * MINUTE, 5 * MINUTE] as const;
 
 /** How soon a beat owed by `wake_again` runs. */
-export const WAKE_AGAIN_DELAY_MS = 5 * MINUTE;
+const WAKE_AGAIN_DELAY_MS = 5 * MINUTE;
 
 /** How often `HEARTBEAT.md` edits on disk and new agents are looked for. */
 export const FILE_SCAN_MS = 5 * MINUTE;

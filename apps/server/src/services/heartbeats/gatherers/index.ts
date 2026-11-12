@@ -18,10 +18,10 @@ export { createAddressedGatherer } from './addressed.js';
 export { createTodosGatherer, type TodoReader } from './todo-promises.js';
 export { createSchedulesGatherer, type OwnRun, type OwnRunReader } from './schedules.js';
 export { createHealthGatherer } from './health.js';
-export { createWorkspaceGatherer, runCommand, type RunCommand } from './workspace.js';
+export { createWorkspaceGatherer, type RunCommand } from './workspace.js';
 
 /** How long one gatherer may take. */
-export const GATHER_TIMEOUT_MS = 2000;
+const GATHER_TIMEOUT_MS = 2000;
 
 /** The most changes one beat carries. */
 export const GATHER_MAX_CHANGES = 50;

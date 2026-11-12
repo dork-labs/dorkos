@@ -24,8 +24,8 @@ import {
 import { defineCapability } from '../../core/capabilities/index.js';
 import { MEASURE_WINDOW_DAYS, MEASURE_WINDOW_MAX_DAYS } from './measures.js';
 
-/** The MCP tool name, exported so prose that names it reads it from here. */
-export const HEARTBEAT_STATUS_TOOL = 'heartbeat_status';
+/** The MCP tool name used by this capability. */
+const HEARTBEAT_STATUS_TOOL = 'heartbeat_status';
 
 /** How many past beats it lists when the caller names no number. */
 const BEATS_DEFAULT = 10;

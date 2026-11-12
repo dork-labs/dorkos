@@ -37,7 +37,7 @@ export const BEAT_INTERVALS = {
 } as const;
 
 /** How long without a change before the beat backs off. */
-export const IDLE_AFTER_MS = 24 * HOUR;
+const IDLE_AFTER_MS = 24 * HOUR;
 
 /** Beat turns failing in a row before the agent slows down (§7.5). */
 export const FAILURE_STORM_AT = 3;
@@ -86,7 +86,7 @@ export function withJitter(intervalMs: number, random: () => number = Math.rando
 }
 
 /** The shortest and longest startup stagger. */
-export const STARTUP_STAGGER_MS = { min: 1 * MINUTE, max: 5 * MINUTE } as const;
+const STARTUP_STAGGER_MS = { min: 1 * MINUTE, max: 5 * MINUTE } as const;
 
 /**
  * When an agent's first beat after a start is due (spec §3.2).

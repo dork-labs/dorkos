@@ -36,7 +36,7 @@ export const LANE_STALL_MS = 2 * 60 * 60 * 1000;
 export const IDLE_WITH_PROMISE_MS = 30 * 60 * 1000;
 
 /** How many times one stall may wake the agent before it only shows. */
-export const MAX_NUDGES = 2;
+const MAX_NUDGES = 2;
 
 /** One spin-off chat the agent started. */
 export interface OpenLane {

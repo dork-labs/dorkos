@@ -65,7 +65,7 @@ const PAUSE_WINDOW_MS = HOUR_MS;
 const THUMBS_DOWN = '👎';
 
 /** Canon §6.1 and §6.2's starting targets, in words. */
-export const MEASURE_TARGETS = {
+const MEASURE_TARGETS = {
   kept: '95% or more',
   useful: '60% or more',
   interruptions: '1 or less',
@@ -75,7 +75,7 @@ export const MEASURE_TARGETS = {
 } as const;
 
 /** Where each number comes from, in one plain line. */
-export const MEASURE_SOURCES = {
+const MEASURE_SOURCES = {
   kept: 'Messages, file edits and DorkOS actions. Undone if paused within an hour or 👎.',
   useful: 'Messages in the app that got a reply or a reaction other than 👎 within 48h.',
   interruptions: 'Messages and reports that reached a person, per kept action or useful message.',
@@ -356,7 +356,7 @@ export function computeMeasures(
  *
  * @param days - The days asked for, if any.
  */
-export function measureWindowDays(days: number | undefined): number {
+function measureWindowDays(days: number | undefined): number {
   if (days === undefined || !Number.isFinite(days)) return MEASURE_WINDOW_DAYS;
   return Math.min(MEASURE_WINDOW_MAX_DAYS, Math.max(1, Math.floor(days)));
 }

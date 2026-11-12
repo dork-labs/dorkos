@@ -33,7 +33,7 @@ import { reportMaterial } from './raises/report-material.js';
 import { readHeartbeatFile } from './heartbeat-file.js';
 
 /** How many past beats the page lists (spec §10 PR 6). */
-export const STATUS_BEATS = 50;
+const STATUS_BEATS = 50;
 
 /** What the status reads. */
 export interface HeartbeatStatusInput {

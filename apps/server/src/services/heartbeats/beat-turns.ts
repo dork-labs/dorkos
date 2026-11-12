@@ -24,7 +24,7 @@ import type { BeatKind, EndBeatInput } from '@dorkos/shared/heartbeat-schemas';
 import { primaryOf } from '../session/resolution/session-key-registry.js';
 
 /** How long a settled beat turn is remembered, for the status change racing its settle. */
-export const BEAT_TURN_LINGER_MS = 10_000;
+const BEAT_TURN_LINGER_MS = 10_000;
 
 /** One beat turn, as the registry holds it. */
 export interface BeatTurn {

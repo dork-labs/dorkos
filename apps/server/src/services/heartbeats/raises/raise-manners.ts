@@ -28,7 +28,7 @@ import type { PriorRaise, RaiseStore } from './raise-store.js';
 import { recordHeartbeatEvent } from '../record.js';
 
 /** How far back de-duplication looks: seven days. */
-export const DEDUP_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
+const DEDUP_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
 
 /** Which way a raise went when its reader was away. */
 export type AwayRoute = 'stepped-up' | 'urgent-now' | 'waits';

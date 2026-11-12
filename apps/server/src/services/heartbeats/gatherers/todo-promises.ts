@@ -9,7 +9,7 @@ import type { Change, GatherContext, Gatherer } from './types.js';
 import { openWorkChanges, type OpenWorkReader } from './open-work.js';
 
 /** How soon a promise has to be due to count. */
-export const TODO_SOON_MS = 24 * 60 * 60 * 1000;
+const TODO_SOON_MS = 24 * 60 * 60 * 1000;
 
 /** The slice of the to-do service this reads. */
 export interface TodoReader {

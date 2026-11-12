@@ -40,7 +40,7 @@ const AUDIT_LIMIT = 20;
 const AUDIT_READ_LIMIT = 100;
 
 /** How often the same tool call failing since the last beat counts as trouble. */
-export const REPEATED_TOOL_FAILURES = 3;
+const REPEATED_TOOL_FAILURES = 3;
 
 /** Errors that mean the computer itself is in trouble, whatever tool met them. */
 const MACHINE_TROUBLE =
@@ -62,7 +62,7 @@ const ACCESS_TROUBLE = /EACCES|EPERM|permission denied|operation not permitted/i
  * @param failure.error - Its recorded error, when there is one.
  * @param failure.repeats - How many times the same call failed since the last beat.
  */
-export function isTroubleToolFailure(failure: {
+function isTroubleToolFailure(failure: {
   tool: string;
   error: string | null;
   repeats: number;
@@ -89,7 +89,7 @@ function toolCallOf(summary: string): { tool: string; call: string } {
 const TURN_OUTCOMES: readonly string[] = ['worked', 'no-end-beat', 'failed'];
 
 /** A day well above usual: twice the seven-day daily average. */
-export const USAGE_HIGH_FACTOR = 2;
+const USAGE_HIGH_FACTOR = 2;
 
 /**
  * The agent's own failed or refused actions since the last beat, its beats'

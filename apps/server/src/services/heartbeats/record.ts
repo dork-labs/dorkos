@@ -15,7 +15,7 @@ import { recordAudit } from '../audit/audit-trail.js';
 import type { HeartbeatStore } from './heartbeat-store.js';
 
 /** How long a beat row is kept. Its audit row stays forever. */
-export const BEAT_RETENTION_MS = 90 * 24 * 60 * 60 * 1000;
+const BEAT_RETENTION_MS = 90 * 24 * 60 * 60 * 1000;
 
 /** The longest record line, matching `end_beat`'s summary cap. */
 const SUMMARY_MAX = 200;

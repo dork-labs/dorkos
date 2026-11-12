@@ -56,7 +56,7 @@ export const REPORT_KEY_PREFIX = 'report:';
 export const OPEN_RAISE_MAX_MS = 14 * 24 * 60 * 60 * 1000;
 
 /** The most open raises one beat prompt lists. */
-export const OPEN_RAISES_MAX = 20;
+const OPEN_RAISES_MAX = 20;
 
 /** An outbox row that is a raise to a person: not a report, not a message to an agent. */
 const IS_RAISE = and(
@@ -102,7 +102,7 @@ export interface BeatTurnSummary {
  *
  * @param raw - The stored JSON.
  */
-export function parseAbout(raw: string | null | undefined): string[] {
+function parseAbout(raw: string | null | undefined): string[] {
   if (!raw) return [];
   try {
     const parsed: unknown = JSON.parse(raw);

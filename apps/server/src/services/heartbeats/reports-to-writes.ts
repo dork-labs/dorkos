@@ -17,14 +17,14 @@ import { createReportsToChain, type ReportsToMesh } from './reports-to.js';
 export type { ReportsToMesh } from './reports-to.js';
 
 /** The error code every write surface refuses a loop with. */
-export const REPORTS_TO_CYCLE_CODE = 'REPORTS_TO_CYCLE';
+const REPORTS_TO_CYCLE_CODE = 'REPORTS_TO_CYCLE';
 
 /** Plain words for a refused loop, shared by every surface that refuses one. */
-export const REPORTS_TO_CYCLE_MESSAGE =
+const REPORTS_TO_CYCLE_MESSAGE =
   'That would make a loop: an agent can’t report to someone who reports to it.';
 
 /** Plain words for a manager nobody can find. */
-export const REPORTS_TO_UNKNOWN_MESSAGE = 'No agent or person has that id.';
+const REPORTS_TO_UNKNOWN_MESSAGE = 'No agent or person has that id.';
 
 /** Why a reports-to write was refused. */
 export interface ReportsToRefusal {

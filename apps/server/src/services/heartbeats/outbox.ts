@@ -71,7 +71,7 @@ export { deliveryTime, raiseKey, type PersonPresence };
 export { URGENT_PER_PERSON_PER_HOUR };
 
 /** How often held raises are checked. */
-export const OUTBOX_TICK_MS = 60_000;
+const OUTBOX_TICK_MS = 60_000;
 
 /** What separates batched raises in one message. */
 const BATCH_SEPARATOR = '\n\n';

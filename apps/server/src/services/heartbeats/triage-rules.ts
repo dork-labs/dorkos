@@ -44,7 +44,7 @@ const QUIET_SIGNALS: ReadonlySet<Change['signal']> = new Set(['info', 'usage-hig
  * Standing conditions: true until something changes, so seen every beat. One
  * counts as work only the first time its key (with its signal) appears.
  */
-export const STANDING_SIGNALS: ReadonlySet<Change['signal']> = new Set([
+const STANDING_SIGNALS: ReadonlySet<Change['signal']> = new Set([
   'connection-lost',
   'check-failed',
   'commitment-due',

@@ -4,7 +4,7 @@
  *
  * @module services/heartbeats
  */
-export { heartbeatDomain, withBeatBypassCount, END_BEAT_TOOL } from './heartbeat-capabilities.js';
+export { withBeatBypassCount } from './heartbeat-capabilities.js';
 export { isBeatTurn } from './beat-turns.js';
 export {
   startHeartbeats,

@@ -90,7 +90,7 @@ export const FILE_WRITING_TOOLS: ReadonlySet<string> = new Set(
  * @param action - The row's action.
  * @param summary - The row's summary.
  */
-export function isRealAction(action: string, summary: string): boolean {
+function isRealAction(action: string, summary: string): boolean {
   if (action === 'runtime.tool_used') {
     const tool = /^Used (\S+?)(?: \(in a helper\))?(?::|$)/.exec(summary)?.[1];
     return tool !== undefined && FILE_WRITING_TOOLS.has(tool.toLowerCase());

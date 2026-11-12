@@ -27,7 +27,7 @@ export interface ReportSettleDeps {
  * @param row - The row.
  * @param row.key - Its key.
  */
-export function isReportRow(row: Pick<HeartbeatOutboxRow, 'key'>): boolean {
+function isReportRow(row: Pick<HeartbeatOutboxRow, 'key'>): boolean {
   return row.key.startsWith(REPORT_KEY_PREFIX);
 }
 
@@ -67,7 +67,7 @@ export function settleReports(
  * @param beatId - Its report beat.
  * @param at - When it arrived (ISO 8601), the fallback when the beat row is gone.
  */
-export function noteReported(
+function noteReported(
   deps: Pick<ReportSettleDeps, 'store'>,
   agentId: string,
   beatId: string,
