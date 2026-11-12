@@ -666,6 +666,13 @@ jobs:
   # would cost a pnpm install, a turbo build and ~4 minutes of runner per build.
   # The push leg still watches main for it. If a harness red does reach main,
   # requiring it is the next experiment, not a line added here.
+  #
+  # One part of it did (ledger 261112-185148): the suites that read the whole
+  # repo went red on main three times in one week, each time after a PR this
+  # job's scope never saw. Those suites, listed in
+  # scripts/vitest.repo.config.ts, now ALSO run in the required `typecheck`
+  # job on every PR and queue build. The unit-test step below still runs the
+  # whole project, them included.
   harness:
     needs: fixtures
     if: ${{ !cancelled() && needs.fixtures.outputs.harness == 'true' }}

@@ -63,6 +63,10 @@ SCOPE_PATTERNS=(
   '^\.github/dependabot\.yml$'
   '^\.github/workflows/publish-community\.yml$'
   '^ci/space-server\.env$'
+  # typecheck.yml runs the repo-wide suites in the queue, and
+  # scripts/__tests__/repo-wide-suites.test.ts pins that step. A PR that drops
+  # the step must run the pin (ledger 261112-185148).
+  '^\.github/workflows/typecheck\.yml$'
 )
 
 pattern=$(
