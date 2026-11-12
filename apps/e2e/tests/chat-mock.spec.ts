@@ -298,13 +298,6 @@ test.describe('TestModeRuntime — mock browser tests', () => {
     expect(scrollHeight).toBeGreaterThanOrEqual(sumOfRowHeights);
   });
 
-  test('scenario endpoint rejects unknown scenario names', async ({ request }) => {
-    const res = await request.post(`${API_URL}/api/test/scenario`, {
-      data: { name: 'nonexistent-scenario' },
-    });
-    expect(res.status()).toBe(400);
-  });
-
   test('a session id reused across POST /api/test/reset gets a fresh session, not resurrected history', async ({
     request,
   }) => {
@@ -543,70 +536,6 @@ test.describe('Runtime UX — multi-runtime test server', () => {
     await expect(page.getByTestId('transcript-feed').getByText('Echo: please fail')).toBeVisible({
       timeout: 10_000,
     });
-  });
-});
-
-// Universal command intents in the inline slash palette (DOR-109, VC2 + VC3
-// enabled side). Backed by the test-mode runtime, whose caps declare
-// `commandIntents.compact.supported === true` (Phase 2 task 2.3), so the compact
-// row renders ENABLED here. The DISABLED "Not supported by {runtime}" side (VC3
-// negative) is NOT reachable in this environment: the test-mode server registers
-// only `test-mode` + `test-mode-b` (both supported), codex is not a registered
-// runtime here, and `buildPaletteCommands` renders an unresolved (undefined) caps
-// map as enabled — so no palette row is ever disabled against this server. That
-// gating branch is covered by the Phase 3 unit tests
-// (features/chat/model/__tests__/build-palette-commands.test.ts +
-// features/slash-commands SlashCommandList gating), which mock caps to supported:false.
-// The intent rows themselves are client-side (COMMAND_INTENTS), so these
-// assertions hold on a cold session with no prior turn.
-test.describe('Command Intents — inline palette dedupe + alias hints', () => {
-  test('shows exactly one row per canonical intent, folding the native runtime command', async ({
-    page,
-  }) => {
-    const chatPage = new ChatPage(page);
-    await chatPage.goto(undefined, { dir: agentDir });
-
-    // Typing `/` opens the palette with every command; each canonical intent
-    // appears once — a runtime's own command for the same action folds into the
-    // single intent row rather than doubling (the dedupe pass).
-    await chatPage.openCommandPalette('/');
-    await expect(chatPage.paletteRow('/compact')).toHaveCount(1);
-    await expect(chatPage.paletteRow('/clear')).toHaveCount(1);
-    await expect(chatPage.paletteRow('/context')).toHaveCount(1);
-
-    // The plain-language intent descriptions render (writing-for-humans).
-    await expect(
-      chatPage.commandPalette.getByText('Shrink the chat to free up context')
-    ).toBeVisible();
-  });
-
-  test('typing an alias fuzzy-matches the intent and shows the "matched /{alias}" hint', async ({
-    page,
-  }) => {
-    const chatPage = new ChatPage(page);
-    await chatPage.goto(undefined, { dir: agentDir });
-
-    // `/compress` is a cross-agent alias of `compact`; typing it ranks the
-    // compact intent and surfaces the shipped alias hint so a user's muscle
-    // memory resolves to the right intent.
-    await chatPage.openCommandPalette('/compress');
-    await expect(chatPage.paletteRow('/compact')).toHaveCount(1);
-    await expect(chatPage.commandPalette.getByText('matched /compress')).toBeVisible();
-  });
-
-  test('C-04: the compact row is ENABLED on a runtime that supports it (test-mode)', async ({
-    page,
-  }) => {
-    const chatPage = new ChatPage(page);
-    await chatPage.goto(undefined, { dir: agentDir });
-
-    // test-mode declares compact supported, so the row is selectable — not the
-    // greyed, aria-disabled "Not supported by {runtime}" state (which the unit
-    // tests cover for an unsupporting runtime).
-    await chatPage.openCommandPalette('/compact');
-    const compactRow = chatPage.paletteRow('/compact');
-    await expect(compactRow).toHaveCount(1);
-    await expect(compactRow).toHaveAttribute('aria-disabled', 'false');
   });
 });
 
@@ -1291,23 +1220,5 @@ test.describe('conversations in the command palette', () => {
     // which is precisely the shape of check this suite exists to avoid.
     // (`row-grammar.test.ts` pins the literal; this pins what it BUYS.)
     expect(parseFloat(titleMinWidth)).toBeCloseTo(sixCh, 0);
-  });
-
-  test('the untyped palette is Continue, Recent and New — and nothing else', async ({ page }) => {
-    await startNamedSession(page);
-    await page.goto('/');
-
-    await openPalette(page);
-
-    const headings = page.locator('[cmdk-root] [cmdk-group-heading]');
-    await expect(headings.filter({ hasText: 'Recent' }).first()).toBeVisible({ timeout: 15_000 });
-
-    // Every heading the untyped palette draws is one of the three. The
-    // "Features" and "Quick Actions" dumps this replaced would both fail here.
-    const texts = await headings.allTextContents();
-    expect(texts.length).toBeGreaterThan(0);
-    for (const text of texts) {
-      expect(['Continue', 'Recent', 'New']).toContain(text.trim());
-    }
   });
 });

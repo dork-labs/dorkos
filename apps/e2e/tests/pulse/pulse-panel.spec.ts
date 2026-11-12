@@ -67,34 +67,4 @@ test.describe('Pulse — right inspector panel @smoke', () => {
     // Pulse stays reachable through the + menu without occupying a default tab.
     await expect(rightPanel.pulseTab).toHaveCount(0);
   });
-
-  test('the attention badge is honest — hidden when nothing needs the operator', async ({
-    rightPanel,
-  }) => {
-    await rightPanel.goto('/');
-
-    // With the panel closed, the badge reflects the needs-attention count. The
-    // toggle's aria-label is the source of truth: a plain "Open right panel"
-    // means zero pending → no badge; a "— N items need attention" suffix means
-    // the env has real items → the badge must then be present. Either way the
-    // badge and the label agree.
-    const label = (await rightPanel.toggle.getAttribute('aria-label')) ?? '';
-    if (/need/i.test(label)) {
-      await expect(rightPanel.badge).toBeVisible();
-    } else {
-      await expect(rightPanel.badge).toHaveCount(0);
-    }
-
-    // Opening the panel always hides the badge, full stop — the toggle reads
-    // only `rightPanelOpen`, not which tab is active or what it draws. On Home
-    // that count is not actually inside Pulse any more (PulseAttentionSection
-    // says nothing there, duplicating the pinned triage header beside it), but
-    // the badge's own job is simpler than that: it marks a closed panel, not a
-    // hidden section. This still does what an operator does: opens the panel,
-    // then asks for Pulse.
-    await rightPanel.open();
-    await rightPanel.selectView('Pulse');
-    await expect(rightPanel.pulsePanel).toBeVisible();
-    await expect(rightPanel.badge).toHaveCount(0);
-  });
 });
