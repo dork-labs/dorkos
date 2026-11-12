@@ -232,6 +232,27 @@ function shownAppId(id: string): string {
 const ACCESS_WORDS = { reads: 'reads', changes: 'changes', both: 'reads and changes' } as const;
 
 /**
+ * What one row says after the app's name, in the designer's words (DOR-3293,
+ * Nov 11): what it shares, then "can open its pages" only when that applies.
+ *
+ * @param app.installed - Whether DorkOS has the app.
+ * @param app.access - What it shares with this one, from its own exports.
+ * @param app.opensPages - Whether this app can open its pages.
+ */
+export function calledAppDetail(app: {
+  installed: boolean;
+  access: ExtensionCalledApp['access'];
+  opensPages: boolean;
+}): string {
+  if (!app.installed) return 'not installed, so this part won’t work';
+  if (app.access === null) {
+    return app.opensPages ? 'can only open its pages' : 'shares nothing, so this part won’t work';
+  }
+  const shared = ACCESS_WORDS[app.access];
+  return app.opensPages ? `${shared} · can open its pages` : shared;
+}
+
+/**
  * "It uses other apps:", one row per app: DorkOS's name for it and what it
  * shares, from that app's own exports. An app that is not installed or not on
  * says this part won't work; one that shares nothing says the same.
@@ -252,12 +273,12 @@ function calledAppsLine(
       id: app.id,
       name: app.name ?? shownAppId(app.id),
       installed: app.name !== null,
-      detail:
-        app.name === null
-          ? 'not installed, so this part won’t work'
-          : app.access === null
-            ? 'shares nothing, so this part won’t work'
-            : ACCESS_WORDS[app.access],
+      // Every app it lists is one whose pages it can open (`api.navigate`).
+      detail: calledAppDetail({
+        installed: app.name !== null,
+        access: app.access,
+        opensPages: true,
+      }),
       isNew: added?.includes(app.id) ?? false,
     })),
   };

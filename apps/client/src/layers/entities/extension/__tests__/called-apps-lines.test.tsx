@@ -12,6 +12,7 @@ import '@testing-library/jest-dom/vitest';
 import { ExtensionPermissionLines } from '../ui/ExtensionPermissionLines';
 import {
   approvedSetOf,
+  calledAppDetail,
   extensionPermissionLines,
   permissionLineText,
   permissionsAddedSince,
@@ -39,16 +40,39 @@ describe('It uses other apps', () => {
   it('reads one line per app, in the designer’s words', () => {
     const line = extensionPermissionLines(THREE).find((entry) => entry.key === 'apps');
     expect(line && permissionLineText(line)).toBe(
-      'It uses other apps: Desk · reads Marketing core · reads and changes ' +
+      'It uses other apps: Desk · reads · can open its pages ' +
+        'Marketing core · reads and changes · can open its pages ' +
         'ledger · not installed, so this part won’t work'
     );
   });
 
-  it('says so when an installed app shares nothing with it', () => {
+  it('says an installed app that shares nothing can only have its pages opened', () => {
     const line = extensionPermissionLines(
       view([{ id: 'vault', name: 'Vault', access: null }])
     ).find((entry) => entry.key === 'apps');
-    expect(line?.apps?.[0]?.detail).toBe('shares nothing, so this part won’t work');
+    expect(line?.apps?.[0]?.detail).toBe('can only open its pages');
+  });
+
+  it('names the extra power after the app only when it applies (designer, Nov 11)', () => {
+    // Calls only: unchanged.
+    expect(calledAppDetail({ installed: true, access: 'both', opensPages: false })).toBe(
+      'reads and changes'
+    );
+    // Calls and opens.
+    expect(calledAppDetail({ installed: true, access: 'both', opensPages: true })).toBe(
+      'reads and changes · can open its pages'
+    );
+    // Opens only.
+    expect(calledAppDetail({ installed: true, access: null, opensPages: true })).toBe(
+      'can only open its pages'
+    );
+    // Neither, and an app that is not installed: as before.
+    expect(calledAppDetail({ installed: true, access: null, opensPages: false })).toBe(
+      'shares nothing, so this part won’t work'
+    );
+    expect(calledAppDetail({ installed: false, access: null, opensPages: true })).toBe(
+      'not installed, so this part won’t work'
+    );
   });
 
   it('draws a missing app as an id in mono, never as a name in bold', () => {
@@ -155,9 +179,9 @@ describe('It can change (Security item 8)', () => {
         "New files on your computer, only when you choose Save",
         "Replies in the room threads you pick",
         "Messages to an agent you pick, sent in your name",
-        "It uses other apps:Desk · readsMarketing core · reads and changes",
-        "Desk · reads",
-        "Marketing core · reads and changes",
+        "It uses other apps:Desk · reads · can open its pagesMarketing core · reads and changes · can open its pages",
+        "Desk · reads · can open its pages",
+        "Marketing core · reads and changes · can open its pages",
       ]
     `);
   });
