@@ -86,6 +86,7 @@ describe('TaskTemplateCard', () => {
     it('renders the preset name and description', () => {
       render(<TaskTemplateCard preset={PRESET} variant="selectable" onSelect={vi.fn()} />);
       expect(screen.getByText('Health Check')).toBeTruthy();
+      expect(screen.getByText('Run lint, tests, and type-check.')).toBeTruthy();
     });
 
     it('calls onSelect with the preset when clicked', () => {
