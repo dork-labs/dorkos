@@ -1431,6 +1431,21 @@ describe('GET /api/config', () => {
     });
   });
 
+  it('names this server’s own tunnel address, so the canvas browser knows it (DOR-4132)', async () => {
+    const none = await request(server).get('/api/config').expect(200);
+    expect(none.body.ownOrigins).toEqual([]);
+
+    const { tunnelManager } = await import('../../services/core/tunnel-manager.js');
+    const status = tunnelManager.status as { url: string | null };
+    status.url = 'https://box.tail.ts.net/';
+    try {
+      const res = await request(server).get('/api/config').expect(200);
+      expect(res.body.ownOrigins).toEqual(['https://box.tail.ts.net']);
+    } finally {
+      status.url = null;
+    }
+  });
+
   it('includes boundary field in response', async () => {
     const res = await request(server).get('/api/config');
 

@@ -10,7 +10,7 @@ import {
 } from '../services/core/auth/sessions/wifi-raise-guard.js';
 import { tunnelManager } from '../services/core/tunnel-manager.js';
 import { resolveTunnelSettings } from '../services/core/config/tunnel-settings.js';
-import { getLocalCockpitPort } from '../lib/trusted-origins.js';
+import { getLocalCockpitPort, getOwnServingOrigins } from '../lib/trusted-origins.js';
 import { resolveClaudeCliPath } from '../services/runtimes/claude-code/sdk/sdk-utils.js';
 import { describeClaudeCodeAccounts } from '../services/runtimes/claude-code/claude-config-dir.js';
 import { creditsCanBeHad } from '../services/core/cloud/credits-availability.js';
@@ -167,6 +167,9 @@ router.get('/', async (c) => {
     // browser-notification code reads three of them on the same render.
     notifications: configManager.get('notifications') ?? NOTIFICATION_PREFS_DEFAULTS,
     port: env.DORKOS_PORT,
+    // The canvas browser reads these so a page that names this server by its
+    // tunnel, Wi-Fi or hub address is framed as this server, never as a stranger.
+    ownOrigins: getOwnServingOrigins(),
     uptime: process.uptime(),
     // The resolved default working directory (lib/resolve-root.js) — the same
     // value `GET /api/directory/default` reports, and for the same reason: a

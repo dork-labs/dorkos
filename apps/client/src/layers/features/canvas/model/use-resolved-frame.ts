@@ -17,8 +17,9 @@
  *
  * @module features/canvas/model/use-resolved-frame
  */
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTransport } from '@/layers/shared/model';
+import { useConfig } from '@/layers/entities/config';
 import {
   classifyBrowserTarget,
   isThisAppsAddress,
@@ -84,14 +85,16 @@ export interface UseResolvedFrame {
  * The frame as published, never with this app's own powers. The cascade grants
  * {@link WORKBENCH_SANDBOX_EXTERNAL} on the grounds that its source is someone
  * else's origin; when the source is in fact this app's own address (an agent
- * opened `localhost:<our port>`, or the tunnel address the page came from),
- * that premise fails, so the frame gets the opaque-origin sandbox and no bridge.
+ * opened `localhost:<our port>`, the tunnel address the page came from, or this
+ * server's own tunnel, Wi-Fi or hub address from a local page), that premise
+ * fails, so the frame gets the opaque-origin sandbox and no bridge.
  *
  * @param frame - What the cascade settled on.
+ * @param ownOrigins - The server's own other origins, from its config.
  */
-function withoutThisAppsOrigin(frame: ResolvedFrame): ResolvedFrame {
+function withoutThisAppsOrigin(frame: ResolvedFrame, ownOrigins: readonly string[]): ResolvedFrame {
   if (frame.sandbox === WORKBENCH_SANDBOX_ISOLATED) return frame;
-  if (!isThisAppsAddress(frame.src, window.location)) return frame;
+  if (!isThisAppsAddress(frame.src, window.location, ownOrigins)) return frame;
   return {
     src: frame.src,
     sandbox: WORKBENCH_SANDBOX_ISOLATED,
@@ -136,7 +139,7 @@ export function useResolvedFrame({
     let cancelled = false;
     const publishResolved = (frame: ResolvedFrame): void => {
       setResolvedFor(resolutionKey);
-      setResolved(withoutThisAppsOrigin(frame));
+      setResolved(frame);
     };
 
     async function resolveServe(path: string): Promise<void> {
@@ -274,5 +277,16 @@ export function useResolvedFrame({
     };
   }, [target, currentUrl, strategy, cwd, reloadNonce, resolutionKey]);
 
-  return { resolved: resolvedFor === resolutionKey ? resolved : null, resolveError };
+  // Checked as the frame is read, not when the cascade publishes it, so a config
+  // that arrives (or a tunnel that opens) after the cascade settled still counts,
+  // and neither one re-runs the cascade and re-mints a preview. Keyed by value,
+  // because every config refetch hands back a new array with the same origins.
+  const ownOriginsKey = JSON.stringify(useConfig().data?.ownOrigins ?? []);
+  const published = useMemo(
+    () =>
+      resolved ? withoutThisAppsOrigin(resolved, JSON.parse(ownOriginsKey) as string[]) : null,
+    [resolved, ownOriginsKey]
+  );
+
+  return { resolved: resolvedFor === resolutionKey ? published : null, resolveError };
 }

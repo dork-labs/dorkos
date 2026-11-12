@@ -82,6 +82,9 @@ function setActiveDoc(content: MockContent): void {
   }
 }
 
+// The browser frame reads the server's own addresses from config; none here (DOR-4132).
+vi.mock('@/layers/entities/config', () => ({ useConfig: () => ({ data: undefined }) }));
+
 vi.mock('@/layers/shared/model', async () => {
   // The real split rule, not a copy of it: one definition of which tab renders
   // a document, so a component test can never pass while the app disagrees.

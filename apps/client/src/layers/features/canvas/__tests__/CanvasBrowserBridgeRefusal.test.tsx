@@ -28,6 +28,9 @@ const getFrameBridgeStatus = vi.fn(
   })
 );
 
+// The frame reads the server's own addresses from config; none here (DOR-4132).
+vi.mock('@/layers/entities/config', () => ({ useConfig: () => ({ data: undefined }) }));
+
 vi.mock('@/layers/shared/model', () => {
   const useAppStore = (selector: (s: typeof mockState) => unknown) => selector(mockState);
   (useAppStore as unknown as { getState: () => typeof mockState }).getState = () => mockState;

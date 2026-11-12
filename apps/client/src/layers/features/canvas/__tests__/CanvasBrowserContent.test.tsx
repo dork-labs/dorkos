@@ -55,6 +55,10 @@ const probeLoopbackPort = vi.fn(async () => ({ listening: true }) as { listening
 /** The room write the address bar makes on a room route. */
 const openRoomCanvasDocument = vi.fn(async () => ({}));
 
+/** The server's own other origins, as its config reports them (DOR-4132). */
+const mockConfig = { ownOrigins: [] as string[] };
+vi.mock('@/layers/entities/config', () => ({ useConfig: () => ({ data: mockConfig }) }));
+
 vi.mock('@/layers/shared/model', () => {
   const useAppStore = (selector: (s: typeof mockState) => unknown) => selector(mockState);
   (useAppStore as unknown as { getState: () => typeof mockState }).getState = () => mockState;
@@ -115,6 +119,7 @@ beforeEach(() => {
   probeLoopbackPort.mockResolvedValue({ listening: true });
   probeDirect.mockClear();
   probeDirect.mockResolvedValue(true);
+  mockConfig.ownOrigins = [];
 });
 afterEach(() => {
   cleanup();
@@ -391,6 +396,41 @@ describe('CanvasBrowserContent — a dev server on this machine', () => {
     const sandbox = document.querySelector('iframe')?.getAttribute('sandbox');
     expect(sandbox).toBe(WORKBENCH_SANDBOX_ISOLATED);
     expect(sandbox).not.toContain('allow-same-origin');
+  });
+
+  // DOR-4132. From a local page, this server's tunnel, Wi-Fi and hub addresses
+  // are external targets, but they are still this server. Made-up addresses.
+  it.each([
+    ['its tunnel address', 'https://box.tail.ts.net/'],
+    ['its Wi-Fi address', 'http://192.168.1.20:4242/'],
+    ['its hub address', 'https://hub.example.com/'],
+  ])('frames this server by %s without same-origin powers', async (_what, url) => {
+    mockConfig.ownOrigins = [
+      'https://box.tail.ts.net',
+      'http://192.168.1.20:4242',
+      'https://hub.example.com',
+    ];
+    render(<CanvasBrowserContent documentId="doc" content={{ type: 'browser', url }} />);
+
+    await waitFor(() => expect(iframeSrc()).toBe(url));
+    const sandbox = document.querySelector('iframe')?.getAttribute('sandbox');
+    expect(sandbox).toBe(WORKBENCH_SANDBOX_ISOLATED);
+    expect(sandbox).not.toContain('allow-same-origin');
+  });
+
+  it('still frames a site that is not this server with its own origin', async () => {
+    mockConfig.ownOrigins = ['https://box.tail.ts.net'];
+    render(
+      <CanvasBrowserContent
+        documentId="doc"
+        content={{ type: 'browser', url: 'https://example.com/' }}
+      />
+    );
+
+    await waitFor(() => expect(iframeSrc()).toBe('https://example.com/'));
+    expect(document.querySelector('iframe')?.getAttribute('sandbox')).toBe(
+      WORKBENCH_SANDBOX_EXTERNAL
+    );
   });
 
   it('still frames a dev server on another port with its own origin', async () => {

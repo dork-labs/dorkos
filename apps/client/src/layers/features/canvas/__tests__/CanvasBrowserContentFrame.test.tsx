@@ -15,6 +15,9 @@ const state = {
   browserHistories: {},
   writeBrowserHistory: vi.fn(),
 };
+// The frame reads the server's own addresses from config; none here (DOR-4132).
+vi.mock('@/layers/entities/config', () => ({ useConfig: () => ({ data: undefined }) }));
+
 vi.mock('@/layers/shared/model', () => {
   const useAppStore = (select: (value: typeof state) => unknown) => select(state);
   useAppStore.getState = () => state;

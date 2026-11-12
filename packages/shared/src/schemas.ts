@@ -4829,6 +4829,10 @@ export const ServerConfigSchema = z
     // rather than `.openapi()`-annotated here.
     notifications: NotificationPrefsSchema,
     port: z.number().int(),
+    ownOrigins: z.array(z.string()).optional().openapi({
+      description:
+        'This server`s own addresses beyond loopback, right now: its live tunnel origins, its Wi-Fi origins while Wi-Fi access is open, and a serving hub`s own address. The canvas browser reads them so a frame naming this server by one of them gets no same-origin powers. Absent from an older server',
+    }),
     uptime: z.number(),
     workingDirectory: z.string(),
     nodeVersion: z.string(),
