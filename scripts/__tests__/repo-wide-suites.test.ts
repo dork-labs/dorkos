@@ -59,6 +59,13 @@ describe('the scripts suites split between the queue and harness', () => {
     expect([...repoWide, ...hermetic].filter((file) => !all.includes(file))).toEqual([]);
   });
 
+  it('runs this guard in the queue, on the repo-wide list', () => {
+    // On the hermetic list it ran only in `harness`, which the queue skips, so
+    // PRs outside scripts/ merged unlisted suites and main went red (DOR-4224).
+    // Moving it back edits scripts/, which runs `harness`, so this goes red there.
+    expect(repoWide).toContain('__tests__/repo-wide-suites.test.ts');
+  });
+
   it('has the queue config collect the repo-wide list and nothing else', () => {
     expect(repoConfig.test?.include).toEqual(repoWide);
   });

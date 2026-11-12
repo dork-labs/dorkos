@@ -21,7 +21,9 @@ import { defineConfig } from 'vitest/config';
  * Every file in the `scripts` project must be in exactly one of
  * {@link REPO_WIDE_SUITES} or {@link HERMETIC_SUITES}, pinned by
  * `scripts/__tests__/repo-wide-suites.test.ts`, so a new suite has to be
- * classified by whoever adds it. When unsure, it is repo-wide.
+ * classified by whoever adds it. When unsure, it is repo-wide. That pin is on
+ * the repo-wide list itself: on the hermetic one it ran only in `harness`, so
+ * #3640 and #3660 merged unlisted suites and main went red (DOR-4224).
  */
 
 /** Suites with at least one test that reads files outside `scripts/`'s harness scope. */
@@ -48,6 +50,9 @@ export const REPO_WIDE_SUITES = [
   '__tests__/merge-group-runner-label.test.ts',
   '__tests__/one-shot-routes.test.ts',
   '__tests__/playwright-apt-debs.test.ts',
+  // The guard over these two lists. It reads only scripts/, but a new suite
+  // can land from any PR, so it must run in the queue too (DOR-4224).
+  '__tests__/repo-wide-suites.test.ts',
   '__tests__/root-eslint-output-scope.test.ts',
   '__tests__/session-link-boundary.test.ts',
   '__tests__/space-page-versions.test.ts',
@@ -83,7 +88,6 @@ export const HERMETIC_SUITES = [
   '__tests__/origin-branch-janitor.test.ts',
   '__tests__/pr-test-plan.test.ts',
   '__tests__/pre-push-format-gate.test.ts',
-  '__tests__/repo-wide-suites.test.ts',
   '__tests__/scripts-block-not-versions.test.ts',
   '__tests__/shell-suite-parity.test.ts',
   '__tests__/space-runtime-packages.test.ts',
