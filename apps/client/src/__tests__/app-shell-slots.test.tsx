@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { useEffect } from 'react';
 import { describe, it, expect, vi, beforeEach, beforeAll, afterEach } from 'vitest';
+import { useAppStore } from '@/layers/shared/model/app-store';
 import { act, render, renderHook, screen, cleanup, within, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -526,30 +527,13 @@ vi.mock('@/layers/entities/config', async (importOriginal) => ({
 
 // ── Mock shared model hooks ──
 
-const mockMarkMomentShown = vi.fn();
-vi.mock('@/layers/shared/model/app-store', () => ({
-  useAppStore: (selector?: (s: Record<string, unknown>) => unknown) => {
-    const state: Record<string, unknown> = {
-      sidebarOpen: true,
-      setSidebarOpen: vi.fn(),
-      isStreaming: false,
-      isWaitingForUser: false,
-      onboardingHiddenForSession: false,
-      setOnboardingHiddenForSession: vi.fn(),
-      // The moments rail's launch latch. Stable references, because the real
-      // host takes `markMomentShown` as an effect dependency.
-      momentShownThisLaunch: false,
-      markMomentShown: mockMarkMomentShown,
-      loadRightPanelState: vi.fn(),
-      toggleRightPanel: vi.fn(),
-      pipContent: null,
-      pipGeometry: null,
-      closePip: vi.fn(),
-      setPipGeometry: vi.fn(),
-    };
-    return selector ? selector(state) : state;
-  },
-}));
+// The app store is REAL. One field it holds decides a case here: the moments
+// rail's launch latch. The old stub pinned it false on every read; the real
+// store remembers, so it is reset per case rather than left to test order.
+// (Flipping every other field the stub pinned turned nothing red.)
+beforeEach(() => {
+  useAppStore.setState({ momentShownThisLaunch: false });
+});
 
 vi.mock('react-resizable-panels', () => ({
   Panel: ({ children }: React.PropsWithChildren) => <div>{children}</div>,
