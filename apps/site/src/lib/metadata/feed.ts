@@ -20,7 +20,7 @@
 import type { Metadata } from 'next';
 
 /** The blog RSS feed, served by `app/blog/feed.xml/route.ts`. */
-export const RSS_FEED_PATH = '/blog/feed.xml';
+const RSS_FEED_PATH = '/blog/feed.xml';
 
 /**
  * The `alternates.types` value that advertises the blog RSS feed for

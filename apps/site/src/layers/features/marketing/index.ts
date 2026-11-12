@@ -3,7 +3,7 @@ export { InstallMoment } from './ui/InstallMoment';
 export { FAQSection } from './ui/FAQSection';
 
 // Data — the one list of site destinations, shared by every marketing surface
-export { NAV_LINKS, isNavLinkActive } from './lib/nav-links';
+export { NAV_LINKS } from './lib/nav-links';
 export { FOOTER_SOCIAL_LINKS } from './lib/footer-social-links';
 
 // UI components — chrome. `MarketingNav` is deliberately absent: the pill is
@@ -33,16 +33,7 @@ export { ProductShot } from './ui/ProductShot';
 export { ProductBadge } from './ui/ProductBadge';
 
 // Data — feature catalog
-export {
-  features,
-  PRODUCT_LABELS,
-  PRODUCT_ACCENT,
-  CATEGORY_LABELS,
-  LOOP_SURFACES,
-  FLAGSHIP_SLUG,
-  BENTO_SPAN_CLASS,
-  deriveFeatureSpan,
-} from './lib/features';
+export { features, PRODUCT_LABELS, CATEGORY_LABELS } from './lib/features';
 export type {
   Feature,
   FeatureStatus,
@@ -72,7 +63,7 @@ export { comparisons, COMPARISON_FRAMING_COPY } from './lib/comparisons';
 export type { Competitor, ComparisonFraming } from './lib/comparisons';
 
 // Data — product-media shot registry (published in manifest.json)
-export { PRODUCT_SHOTS, PRODUCT_SHOT_IDS, getProductShot, shotHasLoop } from './lib/shots';
+export { shotHasLoop } from './lib/shots';
 export type { ProductShotMeta, ShotConsumer, ShotKind, ShotFrame } from './lib/shots';
 
 // Data
@@ -81,24 +72,16 @@ export { subsystems } from './lib/subsystems';
 export { faqItems } from './lib/faq-items';
 
 // Data — story page
-export { bootCards, evolutionSteps, equationItems, futureCards } from './lib/story-data';
+export { futureCards } from './lib/story-data';
 export type { BootCard, EvolutionStep, EquationItem, FutureCard } from './lib/story-data';
 
 // Motion
-export {
-  SPRING,
-  VIEWPORT,
-  VIEWPORT_REPEAT,
-  REVEAL,
-  STAGGER,
-  SCALE_IN,
-  DRAW_PATH,
-} from './lib/motion-variants';
+export { VIEWPORT, REVEAL, STAGGER } from './lib/motion-variants';
 
 // Hooks
 export { usePresentationMode } from './lib/use-presentation-mode';
 export { usePresentationContext } from './lib/presentation-context';
-export { usePlatform, detectPlatform } from './lib/use-platform';
+export { detectPlatform } from './lib/use-platform';
 export type { Platform } from './lib/use-platform';
 
 // Types

@@ -9,7 +9,7 @@ export const SPRING: Transition = {
 };
 
 /** Fast tween for content reveals — keeps every reveal ≤300ms so nothing lingers blank. */
-export const REVEAL_TRANSITION: Transition = { duration: 0.3, ease: 'easeOut' };
+const REVEAL_TRANSITION: Transition = { duration: 0.3, ease: 'easeOut' };
 
 /**
  * Standard viewport trigger config. Fires once, and the bottom `margin`

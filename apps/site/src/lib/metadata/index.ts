@@ -6,7 +6,7 @@
  * post-page label chips, and looking up a source file's real git commit date.
  */
 export { twitterFromOpenGraph, type TwitterSource } from './twitter';
-export { estimateReadingMinutes, readingTimeLabel } from './reading-time';
+export { readingTimeLabel } from './reading-time';
 export { gitLastModified } from './git-dates';
 export { docsSectionTrail, type DocsSection, type DocsPageRef } from './docs-breadcrumb';
-export { RSS_FEED_PATH, rssFeedAlternateTypes } from './feed';
+export { rssFeedAlternateTypes } from './feed';
