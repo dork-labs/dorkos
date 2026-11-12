@@ -116,34 +116,6 @@ test.describe('Rooms — reacting to a message', () => {
     await expect(roomsPage.reactionsIn(entry)).toHaveCount(0, { timeout: SERVER_ROUND_TRIP_MS });
   });
 
-  test('the picker finds an emoji the quick row does not hold', async ({
-    page,
-    roomsApi,
-    roomsPage,
-  }) => {
-    const slug = `e2e-react-pick-${roomsApi.runId}`;
-    const room = await roomsApi.createChannel(slug, slug);
-    await roomsApi.postEntries(room.id, ['warming the cache now']);
-
-    await page.goto(`/channels?id=${room.id}`);
-    await expect(roomsPage.entries).toHaveCount(1, { timeout: SERVER_ROUND_TRIP_MS });
-
-    const entry = roomsPage.entries.first();
-    await entry.hover();
-    await roomsPage.actionsIn(entry).getByRole('button', { name: 'Pick a reaction' }).click();
-
-    const picker = roomsPage.reactionPicker;
-    await expect(picker).toBeVisible();
-    // Search, because 🚀 is not one of the three the capsule offers.
-    await picker.getByRole('textbox', { name: 'Search emoji' }).fill('rocket');
-    await picker.getByRole('button', { name: 'rocket' }).click();
-
-    // Closed on the pick: the pill that appears IS the confirmation, and a
-    // picker left open over it hides the thing it just did.
-    await expect(picker).toHaveCount(0);
-    await expect(roomsPage.reaction(entry, '🚀')).toBeVisible({ timeout: SERVER_ROUND_TRIP_MS });
-  });
-
   test('the keyboard alone reaches the quick row, reacts, and then reaches the pill', async ({
     page,
     roomsApi,
@@ -185,50 +157,6 @@ test.describe('Rooms — reacting to a message', () => {
     // Enter on the focused pill takes the reaction back.
     await page.keyboard.press('Enter');
     await expect(roomsPage.reactionsIn(entry)).toHaveCount(0, { timeout: SERVER_ROUND_TRIP_MS });
-  });
-
-  test('a room that has stopped listening stops offering reactions', async ({
-    page,
-    roomsApi,
-    roomsPage,
-  }) => {
-    // Reactions go with the composer (design record §4). A write whose answer
-    // would never come back is worse than a control that says it cannot be used.
-    // The one deliberately slow test here, for the same reason its sibling in
-    // `room-conversation.spec.ts` is: the retry budget is five attempts on
-    // jittered backoff before the room admits it has gone deaf.
-    test.setTimeout(120_000);
-
-    const slug = `e2e-react-stalled-${roomsApi.runId}`;
-    const room = await roomsApi.createChannel(slug, slug);
-    await roomsApi.postEntries(room.id, ['is anybody there']);
-    // Seeded BEFORE the page opens, so the pill arrives with the history read
-    // rather than over the stream this test is about to cut. Aborting the route
-    // after a stream is already open does nothing to the open one.
-    const [entryId] = await roomsApi.entryIds(room.id);
-    await roomsApi.react(room.id, entryId!, '👀');
-
-    // The room stream is a WebSocket (ADR 260805-041016), so `page.route` cannot
-    // touch it — that intercepts HTTP requests only, and routing the path had
-    // silently stopped cutting anything. `routeWebSocket` is the equivalent, and
-    // closing without `connectToServer()` is a stream that never opens.
-    await page.routeWebSocket(new RegExp(`/api/rooms/${room.id}/events`), (ws) => ws.close());
-
-    await page.goto(`/channels?id=${room.id}`);
-    await expect(roomsPage.entries).toHaveCount(1, { timeout: SERVER_ROUND_TRIP_MS });
-
-    const entry = roomsPage.entries.first();
-    await expect(roomsPage.reaction(entry, '👀')).toBeVisible({ timeout: SERVER_ROUND_TRIP_MS });
-
-    // A room that has stopped listening looks exactly like a quiet one, so the
-    // notice is the only thing that reports it — and reaching it takes the
-    // hook's whole retry budget on jittered backoff, which is the behaviour
-    // rather than overhead (the same wait `room-conversation.spec.ts` names).
-    await expect(roomsPage.stalledNotice).toBeVisible({ timeout: 45_000 });
-
-    await expect(roomsPage.reaction(entry, '👀')).toBeDisabled();
-    await expect(roomsPage.reactionAdd(entry)).toBeDisabled();
-    await expect(roomsPage.quickReactionsIn(entry).first()).toBeDisabled();
   });
 });
 

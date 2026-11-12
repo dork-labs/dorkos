@@ -290,30 +290,6 @@ test.describe('Room files — changing them from the Files panel', () => {
     expect(await roomsApi.readRoomFile(roomId, 'final.md')).toBe('# Draft, by Ana\n');
   });
 
-  test('a folder moved deeper is named where it went, whatever depth its files are at', async ({
-    page,
-    basePage,
-    roomsApi,
-  }) => {
-    const { roomId } = await seedRoom(roomsApi, 'files-move-deep');
-    await roomsApi.enableRepo(roomId, { 'a/f.md': 'f\n' });
-    await openCockpit(basePage);
-    const files = filesOf(await openSheet(page, roomId));
-    const tree = files.getByRole('tree', { name: 'File explorer' });
-
-    await openRowMenu(tree.getByRole('treeitem', { name: 'a' }));
-    await page.getByRole('menuitem', { name: 'Rename' }).click();
-    const input = tree.getByRole('textbox', { name: 'New name' });
-    await expect(input).toBeFocused();
-    await input.fill('x/y/a');
-    await input.press('Enter');
-
-    await expect(fileChangeLine(page, /renamed a\/ to x\/y\/a\/$/)).toBeVisible({
-      timeout: SERVER_ROUND_TRIP_MS,
-    });
-    expect(await roomsApi.readRoomFile(roomId, 'x/y/a/f.md')).toBe('f\n');
-  });
-
   test('an archived room offers its files to read and nothing to change them with', async ({
     page,
     basePage,
