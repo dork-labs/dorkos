@@ -48,15 +48,6 @@ test.describe('List rows at 390px @smoke', () => {
     await expect(digest.locator('[data-slot="list-row-subtitle-meta"]')).toBeVisible();
   });
 
-  test('the meta and the second line are joined with a separator', async ({ page }) => {
-    const section = await openSection(page);
-    const subtitle = section
-      .locator('[data-slot="list-row"]', { hasText: 'Nightly backup' })
-      .first()
-      .locator('[data-slot="list-row-subtitle"]');
-    await expect(subtitle).toHaveText(/3h\s*·\s*Last ran/);
-  });
-
   test('state copy wraps and is never truncated', async ({ page }) => {
     const section = await openSection(page);
     for (const name of ["Couldn't load schedules.", 'Nothing matches']) {

@@ -296,10 +296,6 @@
       "seconds": 6.7,
       "tests": 1
     },
-    "chromium|dev-playground/pulse-attention.spec.ts": {
-      "seconds": 3.4,
-      "tests": 1
-    },
     "chromium|dev-playground/timeline-capture.spec.ts": {
       "seconds": 15.2,
       "tests": 2
@@ -327,10 +323,6 @@
     "chromium|features.spec.ts": {
       "seconds": 11.8,
       "tests": 3
-    },
-    "chromium|flow/verify-proof-pipeline.spec.ts": {
-      "seconds": 0.3,
-      "tests": 2
     },
     "chromium|gen-ui/channel-widgets.spec.ts": {
       "seconds": 34.8,

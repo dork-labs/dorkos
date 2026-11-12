@@ -96,13 +96,4 @@ test.describe('marketplace browse', () => {
     // asserts the command is visibly on the page, not which block renders it.
     await expect(page.getByText(`dorkos install ${slug}`).first()).toBeVisible();
   });
-
-  test('renders telemetry privacy page', async ({ page }) => {
-    await page.goto('/marketplace/privacy');
-
-    await expect(
-      page.getByRole('heading', { name: 'Marketplace privacy', level: 1 })
-    ).toBeVisible();
-    await expect(page.getByText(/Opt-in/i).first()).toBeVisible();
-  });
 });

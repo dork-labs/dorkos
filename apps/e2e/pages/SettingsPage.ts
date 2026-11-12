@@ -35,7 +35,7 @@ export class SettingsPage {
    * genuinely held **two** `role="tabpanel"` elements with the same `id`: the
    * panel host crossfaded with `AnimatePresence mode="popLayout"`, and the
    * exiting wrapper re-rendered against the new tab, so both wrappers drew the
-   * incoming panel. That is why `switches.count()` once answered 16 for a tab
+   * incoming panel. That is why a switch `count()` once answered 16 for a tab
    * that has 8 — `count()` does not retry, so it could sample mid-animation and
    * see both copies. DOR-693 removed the crossfade, so the window is gone and
    * {@link SettingsPage.activePanel} is unambiguous at every instant.
@@ -110,26 +110,6 @@ export class SettingsPage {
     return this.page.getByTestId('settings-dialog').locator('[data-slot="select-trigger"]').first();
   }
 
-  /** Get all toggle switches in the current tab panel. */
-  get switches() {
-    return this.activePanel.getByRole('switch');
-  }
-
-  /**
-   * Server tab: the address DorkOS is answering on.
-   *
-   * There is no "Port" row any more — DOR-539 replaced it with a copyable
-   * address, and the port survives only as digits inside this URL.
-   */
-  get addressInfo() {
-    return this.activePanel.locator('code').first();
-  }
-
-  /** Server tab: Node.js display. */
-  get nodeInfo() {
-    return this.activePanel.getByRole('button', { name: /^node\.js/i });
-  }
-
   // ---------------------------------------------------------------------------
   // Runtimes tab
   //
@@ -195,15 +175,5 @@ export class SettingsPage {
   /** Runtimes tab: the Model row's select, inside an expanded card. */
   runtimeModelSelect(type: string) {
     return this.activePanel.getByTestId(`runtime-model-select-${type}`);
-  }
-
-  /** Runtimes tab: re-run every runtime's connection checks. */
-  get runtimesRecheck() {
-    return this.activePanel.getByTestId('runtimes-recheck');
-  }
-
-  /** Runtimes tab: the fleet-wide trust row that sits beneath every card. */
-  get globalTrustRow() {
-    return this.activePanel.getByTestId('global-trust-row');
   }
 }

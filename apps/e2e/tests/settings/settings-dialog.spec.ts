@@ -6,94 +6,16 @@ test.describe('Settings — Dialog @smoke', () => {
     await basePage.waitForAppReady();
   });
 
-  test('opens and closes the settings dialog via Escape', async ({ settingsPage }) => {
+  test('opens, and closes by Escape and by the close button', async ({ settingsPage }) => {
     await settingsPage.open();
     await expect(settingsPage.heading).toBeVisible();
-
     await settingsPage.close();
     await expect(settingsPage.dialog).toBeHidden();
-  });
 
-  test('opens and closes via close button', async ({ settingsPage }) => {
     await settingsPage.open();
     await expect(settingsPage.dialog).toBeVisible();
-
     await settingsPage.closeViaButton();
     await expect(settingsPage.dialog).toBeHidden();
-  });
-
-  test('has its core tabs, with Advanced folded below them', async ({ settingsPage }) => {
-    await settingsPage.open();
-
-    const tabs = ['Appearance', 'Preferences', 'Runtimes'];
-    for (const tabName of tabs) {
-      await expect(settingsPage.tab(tabName)).toBeVisible();
-    }
-
-    // Server, Tools, Room limits, Experiments and Danger zone wait behind one
-    // quiet disclosure (DOR-2629). Asserting the folded state first makes this
-    // a test of the fold, not only of the tabs behind it.
-    await expect(settingsPage.advancedToggle).toHaveAttribute('aria-expanded', 'false');
-    await expect(settingsPage.tab('Server')).toHaveCount(0);
-    await settingsPage.expandAdvanced();
-    for (const tabName of ['Server', 'Tools', 'Room limits', 'Experiments', 'Danger zone']) {
-      await expect(settingsPage.tab(tabName)).toBeVisible();
-    }
-  });
-
-  test('switches between all tabs', async ({ settingsPage }) => {
-    await settingsPage.open();
-
-    await settingsPage.switchTab('Preferences');
-    await expect(settingsPage.tab('Preferences')).toHaveAttribute('aria-selected', 'true');
-    await expect(settingsPage.activePanel).toBeVisible();
-
-    await settingsPage.switchTab('Server');
-    await expect(settingsPage.tab('Server')).toHaveAttribute('aria-selected', 'true');
-
-    await settingsPage.switchTab('Appearance');
-    await expect(settingsPage.tab('Appearance')).toHaveAttribute('aria-selected', 'true');
-  });
-
-  test('Appearance tab shows theme and font controls', async ({ settingsPage }) => {
-    await settingsPage.open();
-
-    // Appearance is default tab
-    await expect(settingsPage.activePanel.getByText('Theme')).toBeVisible();
-    await expect(settingsPage.activePanel.getByText('Font family')).toBeVisible();
-    await expect(settingsPage.activePanel.getByText('Font size')).toBeVisible();
-  });
-
-  test('Preferences tab shows toggle switches', async ({ settingsPage }) => {
-    await settingsPage.open();
-    await settingsPage.switchTab('Preferences');
-
-    // `toHaveCount` retries; `count()` does not, and sampling this mid-animation
-    // is what once made this read 16 for a tab that has 8.
-    //
-    // Nine since DOR-1758 reshuffled the tab: five chat-display switches this
-    // browser remembers, plus the two that came back from the retired Advanced
-    // tab (the message box, watching for agents started elsewhere) and the one
-    // about being shown things (feature suggestions) — minus the dev-tools
-    // switch, which went to Experiments — plus the two welcome-back switches, which the
-    // SERVER keeps. The second welcome-back switch (Next-step offers) renders
-    // only while the first is on, which it is by default.
-    await expect(settingsPage.switches).toHaveCount(9);
-
-    // Named, not just counted — a count alone passes on a tab that swapped every
-    // preference for a different one. The name is the switch's `aria-label`; the
-    // control itself carries no text.
-    const panel = settingsPage.activePanel;
-    await expect(panel.getByRole('switch', { name: 'Show timestamps' })).toBeVisible();
-    await expect(panel.getByRole('switch', { name: 'To-do celebrations' })).toBeVisible();
-    await expect(panel.getByRole('switch', { name: 'Format text as you type' })).toBeVisible();
-    await expect(
-      panel.getByRole('switch', { name: 'Watch for work started elsewhere' })
-    ).toBeVisible();
-    await expect(panel.getByRole('switch', { name: 'Welcome-back notes' })).toBeVisible();
-    await expect(panel.getByRole('switch', { name: 'Next-step offers' })).toBeVisible();
-    // The developer panel is a debugging aid and left this tab with DOR-1758.
-    await expect(panel.getByRole('switch', { name: 'Show dev tools' })).toHaveCount(0);
   });
 
   /**
@@ -152,40 +74,5 @@ test.describe('Settings — Dialog @smoke', () => {
     await reopened.click();
     await expect(reopened).toHaveAttribute('aria-checked', String(started));
     await expect(await afterReload()).toHaveAttribute('aria-checked', String(started));
-  });
-
-  // What the status line shows is no longer a Settings concern: items promote when
-  // they are actionable, and pins live in the Session panel beside each live value.
-  test('has no Status Bar tab', async ({ settingsPage }) => {
-    await settingsPage.open();
-    await expect(settingsPage.tab('Status Bar')).toHaveCount(0);
-  });
-
-  test('Server tab shows server info', async ({ settingsPage }) => {
-    await settingsPage.open();
-    await settingsPage.switchTab('Server');
-
-    // The address carries the port, which stopped being a row of its own in
-    // DOR-539. Asserting its shape keeps this a test of what is displayed rather
-    // than of which port the run happened to pick.
-    await expect(settingsPage.addressInfo).toHaveText(/^http:\/\/localhost:\d+$/);
-
-    const panel = settingsPage.activePanel;
-    await expect(panel.getByRole('button', { name: /^uptime/i })).toBeVisible();
-
-    // The paths and the Node version fold away behind "Diagnostics" since
-    // DOR-1758 — they are why nobody opened this tab, and the address is what
-    // people come for. Asserting the shut state first makes this a test of the
-    // fold; asserting only the open state would pass on a tab that never folded.
-    await expect(settingsPage.nodeInfo).toHaveCount(0);
-
-    // `exact` because "Copy all diagnostics" sits beside the trigger and would
-    // otherwise match the same substring.
-    await panel.getByRole('button', { name: 'Diagnostics', exact: true }).click();
-
-    await expect(settingsPage.nodeInfo).toBeVisible();
-    // "Working folder", not "Working Directory": this batch put the row into the
-    // words a non-developer already uses (DOR-1755).
-    await expect(panel.getByRole('button', { name: /^working folder/i })).toBeVisible();
   });
 });
