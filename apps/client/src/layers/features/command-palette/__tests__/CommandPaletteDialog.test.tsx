@@ -10,6 +10,7 @@ import type { Session } from '@dorkos/shared/types';
 import '@testing-library/jest-dom/vitest';
 import { createMockTransport } from '@dorkos/test-utils';
 import { useInteractionStore } from '@/layers/entities/interactions';
+import { useAppStore, useImportProjectsStore } from '@/layers/shared/model';
 import { CommandPaletteDialog } from '../ui/CommandPaletteDialog';
 import { registerTabOpener } from '@/layers/shared/lib';
 import { enterDesktopShell, leaveDesktopShell } from '@/test-helpers/desktop-shell';
@@ -102,34 +103,14 @@ vi.mock('@tanstack/react-router', async (importOriginal) => ({
   useNavigate: () => mockNavigate,
 }));
 
-// --- Shared mock fns ---
-
-const mockSetGlobalPaletteOpen = vi.fn();
-const mockSetSettingsOpen = vi.fn();
-const mockSetTasksOpen = vi.fn();
 const mockOpenConnections = vi.fn();
-const mockImportOpen = vi.fn();
-const mockSetPickerOpen = vi.fn();
-const mockSetRightPanelOpen = vi.fn();
-const mockSetActiveRightPanelTab = vi.fn();
 
-let mockGlobalPaletteOpen = true;
-
-const mockClearGlobalPaletteInitialSearch = vi.fn();
-
-vi.mock('@/layers/shared/model', () => ({
-  useAppStore: (selector?: (s: Record<string, unknown>) => unknown) => {
-    const state = {
-      setSettingsOpen: mockSetSettingsOpen,
-      setTasksOpen: mockSetTasksOpen,
-      setPickerOpen: mockSetPickerOpen,
-      setRightPanelOpen: mockSetRightPanelOpen,
-      setActiveRightPanelTab: mockSetActiveRightPanelTab,
-      globalPaletteInitialSearch: null,
-      clearGlobalPaletteInitialSearch: mockClearGlobalPaletteInitialSearch,
-    };
-    return selector ? selector(state) : state;
-  },
+// The real barrel, with only the hooks that need a host replaced. The app store,
+// the dialog stores and the Settings / Tasks deep links are REAL: with no router
+// a deep link's `open` sets the store flag the dialog host renders on, so every
+// "opens X" case below reads that flag rather than a setter spy.
+vi.mock('@/layers/shared/model', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/layers/shared/model')>()),
   useTheme: () => ({ theme: 'light', setTheme: vi.fn() }),
   // `usePaletteActions` resolves which conversation a slash command runs in,
   // and that resolver asks the server when nothing is cached.
@@ -138,42 +119,9 @@ vi.mock('@/layers/shared/model', () => ({
   // the pick opens the agent's latest chat as it always has.
   readDmViewEnabled: () => false,
   useReportIssue: () => vi.fn(),
-  // `usePaletteActions` reads the feedback dialog's store, so the palette does
-  // not render at all without it (DOR-902).
-  useFeedbackDialogStore: (selector?: (s: Record<string, unknown>) => unknown) => {
-    const state = { openFeedback: vi.fn() };
-    return selector ? selector(state) : state;
-  },
   useIsMobile: () => false,
   useNow: () => Date.now(),
-  // URL deep-link hooks — during the dual-signal era we forward open/close
-  // to the existing store-setter mocks so legacy assertions still hold while
-  // the palette migrates to router-first dialog opens (task 2.7).
-  useSettingsDeepLink: () => ({
-    isOpen: false,
-    activeTab: null,
-    section: null,
-    open: () => mockSetSettingsOpen(true),
-    close: () => mockSetSettingsOpen(false),
-    setTab: () => {},
-    setSection: () => {},
-  }),
-  useTasksDeepLink: () => ({
-    isOpen: false,
-    activeTab: null,
-    section: null,
-    open: () => mockSetTasksOpen(true),
-    close: () => mockSetTasksOpen(false),
-    setTab: () => {},
-    setSection: () => {},
-  }),
   useOpenConnections: () => mockOpenConnections,
-  useAgentCreationStore: Object.assign(() => ({ open: vi.fn() }), {
-    getState: () => ({ open: vi.fn() }),
-  }),
-  useImportProjectsStore: Object.assign(() => ({ open: mockImportOpen }), {
-    getState: () => ({ open: mockImportOpen }),
-  }),
 }));
 
 // A successful open: `setDir` runs `onOpened` once the agent is really on
@@ -263,6 +211,9 @@ const unranked = {
   demoted: false,
 } as const;
 
+// The corpus stays a fixture on purpose: this file's claims are what a query
+// REACHES and what a row DOES, and how the corpus is assembled from the real
+// entity reads is `use-palette-items.test.ts`'s claim.
 vi.mock('../model/use-palette-items', () => ({
   usePaletteItems: () => ({
     rooms: noRooms,
@@ -351,18 +302,17 @@ vi.mock('../model/use-palette-items', () => ({
   }),
 }));
 
-vi.mock('../model/use-global-palette', () => ({
-  useGlobalPalette: () => ({
-    globalPaletteOpen: mockGlobalPaletteOpen,
-    setGlobalPaletteOpen: mockSetGlobalPaletteOpen,
-    toggleGlobalPalette: vi.fn(),
-  }),
-}));
-
 describe('CommandPaletteDialog', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockGlobalPaletteOpen = true;
+    useAppStore.setState({
+      globalPaletteOpen: true,
+      globalPaletteInitialSearch: null,
+      settingsOpen: false,
+      tasksOpen: false,
+      pickerOpen: false,
+    });
+    useImportProjectsStore.setState({ isOpen: false });
   });
 
   // --- Rendering when open ---
@@ -425,7 +375,7 @@ describe('CommandPaletteDialog', () => {
   // --- Not rendered when closed ---
 
   it('does not render dialog content when globalPaletteOpen is false', () => {
-    mockGlobalPaletteOpen = false;
+    useAppStore.setState({ globalPaletteOpen: false });
     render(<CommandPaletteDialog />);
     expect(
       screen.queryByPlaceholderText('Search rooms, agents, commands…')
@@ -632,7 +582,7 @@ describe('CommandPaletteDialog', () => {
     if (item) fireEvent.click(item as Element);
     const openHereItem = screen.getByText('Open here').closest('[data-slot="command-item"]');
     if (openHereItem) fireEvent.click(openHereItem as Element);
-    expect(mockSetGlobalPaletteOpen).toHaveBeenCalledWith(false);
+    expect(useAppStore.getState().globalPaletteOpen).toBe(false);
   });
 
   it('opens the agent’s profile in the right panel from the sub-menu', () => {
@@ -644,7 +594,7 @@ describe('CommandPaletteDialog', () => {
     // One call now, not three: naming the agent, selecting the tab and opening
     // the panel are all "open the profile", and the store does them together.
     expect(mockOpenProfileDocked).toHaveBeenCalledWith('/projects/current');
-    expect(mockSetGlobalPaletteOpen).toHaveBeenCalledWith(false);
+    expect(useAppStore.getState().globalPaletteOpen).toBe(false);
   });
 
   // --- Feature action dispatching ---
@@ -667,8 +617,8 @@ describe('CommandPaletteDialog', () => {
     searchThen('Scheduled tasks');
     const item = screen.getByText('Scheduled tasks').closest('[data-slot="command-item"]');
     if (item) fireEvent.click(item as Element);
-    expect(mockSetTasksOpen).toHaveBeenCalledWith(true);
-    expect(mockSetGlobalPaletteOpen).toHaveBeenCalledWith(false);
+    expect(useAppStore.getState().tasksOpen).toBe(true);
+    expect(useAppStore.getState().globalPaletteOpen).toBe(false);
   });
 
   it('goes to the Connections page when Connections is selected', () => {
@@ -689,7 +639,7 @@ describe('CommandPaletteDialog', () => {
     searchThen('Settings');
     const item = screen.getByText('Settings').closest('[data-slot="command-item"]');
     if (item) fireEvent.click(item as Element);
-    expect(mockSetSettingsOpen).toHaveBeenCalledWith(true);
+    expect(useAppStore.getState().settingsOpen).toBe(true);
   });
 
   // --- Quick action dispatching ---
@@ -700,14 +650,14 @@ describe('CommandPaletteDialog', () => {
       .getByText('Bring in existing projects')
       .closest('[data-slot="command-item"]');
     if (item) fireEvent.click(item as Element);
-    expect(mockImportOpen).toHaveBeenCalledTimes(1);
+    expect(useImportProjectsStore.getState().isOpen).toBe(true);
   });
 
   it('opens directory picker when Browse filesystem quick action is selected', () => {
     searchThen('Browse filesystem');
     const item = screen.getByText('Browse filesystem').closest('[data-slot="command-item"]');
     if (item) fireEvent.click(item as Element);
-    expect(mockSetPickerOpen).toHaveBeenCalledWith(true);
+    expect(useAppStore.getState().pickerOpen).toBe(true);
   });
 
   // --- @ prefix (agent-only) mode ---
