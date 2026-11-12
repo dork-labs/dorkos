@@ -28,10 +28,6 @@ vi.mock('@/layers/shared/model', async (importOriginal) => {
   const original = await importOriginal<typeof import('@/layers/shared/model')>();
   return {
     ...original,
-    useAppStore: (selector?: (s: Record<string, unknown>) => unknown) => {
-      const state = { selectedCwd: '/test/cwd', enableMessagePolling: false };
-      return selector ? selector(state) : state;
-    },
     // The session's own reads take their directory from the URL, not the store
     // (DOR-1444).
     useSafeSearch: () => ({ dir: '/test/cwd' }),

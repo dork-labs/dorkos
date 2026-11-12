@@ -10,17 +10,6 @@ import { createMockTransport } from '@dorkos/test-utils';
 import type { TaskUpdateEvent } from '@dorkos/shared/types';
 import { useTaskState } from '../use-task-state';
 
-vi.mock('@/layers/shared/model', async (importOriginal) => {
-  const original = await importOriginal<typeof import('@/layers/shared/model')>();
-  return {
-    ...original,
-    useAppStore: (selector?: (s: Record<string, unknown>) => unknown) => {
-      const state = { selectedCwd: '/test/cwd' };
-      return selector ? selector(state) : state;
-    },
-  };
-});
-
 function createWrapper(transport: ReturnType<typeof createMockTransport>) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false, gcTime: 0 } },

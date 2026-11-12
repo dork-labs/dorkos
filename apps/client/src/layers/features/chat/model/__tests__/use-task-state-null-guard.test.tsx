@@ -9,15 +9,10 @@ import { TransportProvider } from '@/layers/shared/model';
 import { createMockTransport } from '@dorkos/test-utils';
 import { useTaskState } from '../use-task-state';
 
-// Suppress useAppStore selectedCwd selector
 vi.mock('@/layers/shared/model', async (importOriginal) => {
   const original = await importOriginal<typeof import('@/layers/shared/model')>();
   return {
     ...original,
-    useAppStore: (selector?: (s: Record<string, unknown>) => unknown) => {
-      const state = { selectedCwd: '/test/cwd' };
-      return selector ? selector(state) : state;
-    },
     // The session's own reads take their directory from the URL, not the
     // store (DOR-1444); mirrored here so this harness keeps meaning what it
     // did when both came from `selectedCwd`.

@@ -22,10 +22,6 @@ vi.mock('@/layers/shared/model', async (importOriginal) => {
   return {
     ...original,
     useSafeSearch: () => ({ dir: selectedCwd }),
-    useAppStore: (selector?: (s: Record<string, unknown>) => unknown) => {
-      const state = { selectedCwd };
-      return selector ? selector(state) : state;
-    },
   };
 });
 
