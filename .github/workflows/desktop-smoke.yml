@@ -107,11 +107,11 @@ jobs:
     # timeout is to bound a hung launch, not to police the happy path.
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: pnpm/action-setup@v6
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
 
-      - uses: actions/setup-node@v7.1.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 24
           cache: pnpm
@@ -155,6 +155,46 @@ jobs:
       - name: Rebuild native modules for Electron
         run: pnpm --filter @dorkos/desktop exec tsx scripts/rebuild-natives.ts
 
+      # electron-builder fetches its icon toolset from a GitHub release
+      # download URL while packaging, and that URL answered 504 here on
+      # 2026-11-08 (6 packaged-runtime failures, 4 on main) the same day it
+      # failed Desktop Release v0.135.0. This is desktop-release.yml's "Fetch
+      # the icons toolset" step (#3582), copied as is: `gh release download`
+      # reaches the same asset through the API, the hash is checked BEFORE
+      # extracting, and electron-builder is pointed at the result through the
+      # variable it reads first (ELECTRON_BUILDER_ICONS_TOOLSET_DIR). The pin
+      # must match the one in the installed electron-builder, so a version
+      # bump that moves it fails here instead of packaging with the wrong
+      # toolset. desktop-release.yml has the same step in build-macos and
+      # build-windows; change all three together.
+      - name: Fetch the icons toolset
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ICONS_RELEASE: icons@1.2.3
+          ICONS_SHA256: 4e5bb546c9d3ab0c2bbacc22857467bf415f742a34c2be9dd138779d2fc066f9
+        run: |
+          set -euo pipefail
+          icons_js="$(cd apps/desktop && node -p "require.resolve('app-builder-lib/out/toolsets/icons.js', { paths: [require.resolve('electron-builder/package.json')] })")"
+          if ! grep -qF "\"${ICONS_RELEASE}\"" "$icons_js" || ! grep -qF "\"${ICONS_SHA256}\"" "$icons_js"; then
+            echo "::error::electron-builder no longer pins ${ICONS_RELEASE} with this hash (${icons_js}). Update ICONS_RELEASE and ICONS_SHA256 here and in desktop-release.yml (build-macos, build-windows)." >&2
+            exit 1
+          fi
+          dir="${RUNNER_TEMP}/icons-toolset"
+          rm -rf "$dir"
+          mkdir -p "$dir"
+          gh release download "$ICONS_RELEASE" --repo electron-userland/electron-builder-binaries --pattern icons-bundle.tar.gz --dir "$dir"
+          cd "$dir"
+          if ! echo "${ICONS_SHA256}  icons-bundle.tar.gz" | shasum -a 256 -c; then
+            echo "::error::icons-bundle.tar.gz does not match the pinned SHA-256." >&2
+            exit 1
+          fi
+          tar -xzf icons-bundle.tar.gz
+          if [ ! -f icons-bundle/icon-tool.js ]; then
+            echo "::error::icons-bundle.tar.gz has no icons-bundle/icon-tool.js." >&2
+            exit 1
+          fi
+          echo "ELECTRON_BUILDER_ICONS_TOOLSET_DIR=${dir}/icons-bundle" >> "$GITHUB_ENV"
+
       # `--dir` (an unpacked .app, no dmg/zip) and CSC_IDENTITY_AUTO_DISCOVERY=false:
       # this smoke must run on every eligible push, so it cannot depend on the
       # Apple signing credentials that desktop-release.yml gates behind
@@ -190,7 +230,7 @@ jobs:
 
       - name: Upload browser proof screenshots and user agents
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: browser-proof-macos
           path: apps/desktop/browser-proof-artifacts/
