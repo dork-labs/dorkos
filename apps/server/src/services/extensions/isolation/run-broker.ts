@@ -70,7 +70,7 @@ const LOADER_VARIABLE = /^(LD_|DYLD_)|^(NODE_OPTIONS|BASH_ENV|ENV)$/i;
  *
  * @param name - The program asked for.
  */
-export function runNotAllowed(name: string): string {
+function runNotAllowed(name: string): string {
   return `${name} isn't in this extension's allow.run list.`;
 }
 

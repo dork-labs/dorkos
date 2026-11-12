@@ -71,8 +71,7 @@ export const PROGRAM_INSIDE_EXTENSION =
   'It sits in extension files, which could change without asking.';
 
 /** Why a Windows script was refused. Shown on the record. */
-export const PROGRAM_IS_WINDOWS_SCRIPT =
-  'Windows scripts (.cmd, .bat) need a shell, so they can’t run.';
+const PROGRAM_IS_WINDOWS_SCRIPT = 'Windows scripts (.cmd, .bat) need a shell, so they can’t run.';
 
 /** What {@link resolveProgram} needs to know about the computer. */
 export interface ResolveProgramOptions {

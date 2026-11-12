@@ -142,7 +142,7 @@ export type AdvisorMethodName = (typeof ADVISOR_METHODS)[number];
  * (`agent-tools/tool-binding.ts`), which aborts the call; the abort reaches
  * the child as a `cancel` (spec §8).
  */
-export const TOOL_BOUND_MS = 0;
+const TOOL_BOUND_MS = 0;
 
 const konst = { kind: 'const' } as const;
 const call = { kind: 'call' } as const;

@@ -345,7 +345,7 @@ const NULL_BODY_STATUSES = new Set([101, 204, 205, 304]);
  * @param answer - What the forwarder answered.
  * @param extra - Headers to add (the rate limit's).
  */
-export function proxyResponse(answer: ProxyAnswer, extra: Record<string, string> = {}): Response {
+function proxyResponse(answer: ProxyAnswer, extra: Record<string, string> = {}): Response {
   const headers = new Headers({ ...extra, ...answer.headers, ...OUTBOUND_FORCED });
   let body: string;
   if (answer.json !== undefined) {

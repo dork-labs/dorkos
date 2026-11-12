@@ -13,10 +13,10 @@ import { sanitizeIdentity } from '@dorkos/shared/untrusted-text';
 import { fenceUntrustedBlock, mintFenceNonce } from '../../runtimes/shared/untrusted-fence.js';
 
 /** The longest message, and the longest context, an extension may send. */
-export const AGENT_SEND_TEXT_MAX = 20_000;
+const AGENT_SEND_TEXT_MAX = 20_000;
 
 /** The longest idempotency key. */
-export const AGENT_SEND_KEY_MAX = 200;
+const AGENT_SEND_KEY_MAX = 200;
 
 /**
  * The launch origins (`TurnOrigin.kind`, as `session_metadata.launch_origin`

@@ -113,10 +113,10 @@ import { extensionClientId } from './extension-client-id.js';
 export type { SessionFacts } from './agent-send-defaults.js';
 
 /** How often held messages are tried again. */
-export const HELD_RETRY_MS = 5_000;
+const HELD_RETRY_MS = 5_000;
 
 /** How many delivery events are kept for an extension nobody is listening for. */
-export const UNHEARD_EVENTS_MAX = 200;
+const UNHEARD_EVENTS_MAX = 200;
 
 /** What the agent-send seam needs. Everything after `store` has a production default. */
 export interface AgentSendDeps {

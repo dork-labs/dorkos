@@ -10,7 +10,7 @@
  */
 
 /** The prefix of every extension lock identity. */
-export const EXTENSION_CLIENT_PREFIX = 'extension:';
+const EXTENSION_CLIENT_PREFIX = 'extension:';
 
 /**
  * The lock identity for the messages one extension sends.

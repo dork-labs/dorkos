@@ -57,7 +57,7 @@ import {
 import { logger } from '../../../lib/logger.js';
 
 /** Where snapshots live under `{dorkHome}`. */
-export const SNAPSHOTS_DIR = 'extension-snapshots';
+const SNAPSHOTS_DIR = 'extension-snapshots';
 
 /** A half-written copy older than this is a crash's leftover. */
 const STALE_TEMP_MS = 60 * 60_000;

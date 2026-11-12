@@ -32,13 +32,13 @@ export interface RestartPolicyOptions {
 }
 
 /** The delays the spec sets: 1 s, 5 s, 30 s. */
-export const RESTART_DELAYS_MS = [1_000, 5_000, 30_000] as const;
+const RESTART_DELAYS_MS = [1_000, 5_000, 30_000] as const;
 
 /** Unexpected exits within the window that end the attempts. */
-export const RESTART_BUDGET = 3;
+const RESTART_BUDGET = 3;
 
 /** The window those exits are counted in: 10 minutes. */
-export const RESTART_WINDOW_MS = 10 * 60_000;
+const RESTART_WINDOW_MS = 10 * 60_000;
 
 /**
  * Backoff and crash budget for one isolated extension.

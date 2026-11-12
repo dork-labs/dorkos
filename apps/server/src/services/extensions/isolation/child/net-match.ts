@@ -73,7 +73,7 @@ function parseDecimal(text: string, start: number, end: number, maxDigits: numbe
  * @param text - The candidate.
  * @returns The four octets, or `null`.
  */
-export function parseIpv4(text: string): Uint8Array | null {
+function parseIpv4(text: string): Uint8Array | null {
   const out = new Uint8Array(4);
   let part = 0;
   let start = 0;
@@ -184,7 +184,7 @@ export function parseIpv6(text: string): Uint16Array | null {
  *
  * @param v4 - The octets.
  */
-export function isLoopbackV4(v4: Uint8Array): boolean {
+function isLoopbackV4(v4: Uint8Array): boolean {
   return v4[0] === 127 || v4[0] === 0;
 }
 
@@ -194,7 +194,7 @@ export function isLoopbackV4(v4: Uint8Array): boolean {
  *
  * @param v4 - The octets.
  */
-export function isLocalV4(v4: Uint8Array): boolean {
+function isLocalV4(v4: Uint8Array): boolean {
   const a = v4[0]!;
   const b = v4[1]!;
   return (
@@ -235,7 +235,7 @@ function embeddedV4(g: Uint16Array): Uint8Array | null {
  *
  * @param g - The groups.
  */
-export function isLoopbackV6(g: Uint16Array): boolean {
+function isLoopbackV6(g: Uint16Array): boolean {
   let zero = true;
   for (let i = 0; i < 7; i++) if (g[i] !== 0) zero = false;
   if (zero && (g[7] === 0 || g[7] === 1)) return true;
@@ -249,7 +249,7 @@ export function isLoopbackV6(g: Uint16Array): boolean {
  *
  * @param g - The groups.
  */
-export function isLocalV6(g: Uint16Array): boolean {
+function isLocalV6(g: Uint16Array): boolean {
   if (isLoopbackV6(g)) return true;
   if ((g[0]! & 0xfe00) === 0xfc00) return true;
   if ((g[0]! & 0xffc0) === 0xfe80) return true;

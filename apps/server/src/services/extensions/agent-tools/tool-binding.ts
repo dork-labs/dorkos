@@ -52,7 +52,7 @@ export const EXTENSION_TOOL_RESULT_MAX_BYTES = 256 * 1024;
 const MAX_ERROR_MESSAGE = 500;
 
 /** Machine-readable codes on the errors this module builds. */
-export const EXTENSION_TOOL_ERROR_CODES = {
+const EXTENSION_TOOL_ERROR_CODES = {
   /** The handler threw or rejected. */
   failed: 'EXTENSION_TOOL_FAILED',
   /** The call ran past its `timeoutSeconds`. */

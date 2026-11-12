@@ -62,10 +62,7 @@ export const OUTBOUND_FORCED: Readonly<Record<string, string>> = {
  * @param mount - The extension's mount, `/api/ext/<id>`.
  * @returns The header to send, or `null` to drop it.
  */
-export function sameMountLocation(
-  value: string | string[] | undefined,
-  mount: string
-): string | null {
+function sameMountLocation(value: string | string[] | undefined, mount: string): string | null {
   if (typeof value !== 'string' || value.includes('\\')) return null;
   const base = new URL(`http://dorkos.invalid${mount}/`);
   let target: URL;

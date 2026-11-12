@@ -98,7 +98,7 @@ export function bindUnsourcedApprovals(
  *
  * @param records - The records this discovery pass produced.
  */
-export function ratchetFullAccessApprovals(records: readonly ExtensionRecord[]): void {
+function ratchetFullAccessApprovals(records: readonly ExtensionRecord[]): void {
   const before = configManager.get('extensions');
   const permissions = before.approvedPermissions ?? {};
   const additions: Record<string, ApprovedPermissionSet> = {};

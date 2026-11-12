@@ -143,10 +143,7 @@ function readBody(incoming: IncomingMessage): Promise<Buffer | null | typeof OVE
  * @param subPath - The path below the mount.
  * @returns The request, or `null` when its body is over the limit.
  */
-export async function extensionRequest(
-  c: Context<ApiEnv>,
-  subPath: string
-): Promise<Request | null> {
+async function extensionRequest(c: Context<ApiEnv>, subPath: string): Promise<Request | null> {
   // Read from the raw Node pair and Hono's request, never `c.req.raw.body` or
   // `.signal`: either builds the platform `Request` from the incoming stream,
   // which the chain's JSON parser may already have read to the end.

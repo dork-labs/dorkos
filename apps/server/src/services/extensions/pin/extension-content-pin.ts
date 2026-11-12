@@ -36,7 +36,7 @@ import {
 } from '../extension-load-policy.js';
 
 /** The most changed files a "changed since you approved" row names. */
-export const CHANGED_FILES_MAX = 20;
+const CHANGED_FILES_MAX = 20;
 
 /** The fields of a copy that say where its digested files are. */
 type DigestedCopy = Pick<ExtensionRecord, 'path' | 'sourcePlugin'>;

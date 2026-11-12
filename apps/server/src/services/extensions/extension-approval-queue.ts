@@ -94,7 +94,7 @@ export const APPROVAL_WHY_MAX_LENGTH = 300;
  * wrote the extension, so the title and the fixed parts of the why line cap
  * them rather than trust them.
  */
-export const APPROVAL_NAME_MAX_LENGTH = 60;
+const APPROVAL_NAME_MAX_LENGTH = 60;
 
 /** The one sentence every why line ends with. Never cut. */
 const RUNS_AS_YOU = 'It runs as you.';

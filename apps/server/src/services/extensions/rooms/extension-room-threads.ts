@@ -40,7 +40,7 @@ import { allowedRoomIds, isRoomAllowed } from './extension-room-access.js';
 export const MINI_APP_REPLY_MARKS: TurnMarks = { outsider: true };
 
 /** Most replies a thread read returns: the newest ones. */
-export const THREAD_REPLIES_MAX = 200;
+const THREAD_REPLIES_MAX = 200;
 
 /** Most threads one unread-count call takes. */
 export const UNREAD_THREADS_MAX = 100;
@@ -77,7 +77,7 @@ function fromRoomError(err: unknown): never {
 }
 
 /** The read-cursor id of one thread: `<roomId>/<rootEntryId>`. */
-export function threadCursorId(roomId: string, rootEntryId: string): string {
+function threadCursorId(roomId: string, rootEntryId: string): string {
   return `${roomId}/${rootEntryId}`;
 }
 

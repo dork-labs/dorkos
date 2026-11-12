@@ -23,7 +23,7 @@ import {
 } from '@dorkos/db';
 
 /** How long a finished message's key keeps answering with its first receipt. */
-export const AGENT_SEND_KEY_TTL_MS = 24 * 60 * 60 * 1000;
+const AGENT_SEND_KEY_TTL_MS = 24 * 60 * 60 * 1000;
 
 /** The statuses a message can still leave. */
 const UNFINISHED: readonly ExtensionAgentSendStatus[] = ['held', 'queued', 'started'];

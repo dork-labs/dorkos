@@ -26,7 +26,7 @@ import {
 } from '../extension-inbox.js';
 
 /** Two projects: `/repos/dorkos` and `/repos/blintz`. Anything else is in no repo. */
-export const PROJECTS: Record<string, ProjectRef> = {
+const PROJECTS: Record<string, ProjectRef> = {
   '/repos/dorkos': { root: '/repos/dorkos', name: 'dorkos' },
   '/repos/blintz': { root: '/repos/blintz', name: 'blintz' },
 };

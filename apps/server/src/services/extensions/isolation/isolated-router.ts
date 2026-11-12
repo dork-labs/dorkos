@@ -110,7 +110,7 @@ function connectionListed(value: string | string[] | undefined): Set<string> {
  *
  * @param headers - The incoming request's headers (lower-case names).
  */
-export function inboundHeaders(headers: http.IncomingHttpHeaders): http.OutgoingHttpHeaders {
+function inboundHeaders(headers: http.IncomingHttpHeaders): http.OutgoingHttpHeaders {
   const listed = connectionListed(headers.connection);
   const out: http.OutgoingHttpHeaders = {};
   for (const [name, value] of Object.entries(headers)) {

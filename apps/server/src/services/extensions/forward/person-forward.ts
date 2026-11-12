@@ -56,7 +56,7 @@ import type { AuthorRecord } from '../../rooms/index.js';
 import type { PersonPostBound } from '../../rooms/messages/room-entry-writer.js';
 
 /** Most answers {@link PersonForwards.replies} returns for one forward. */
-export const FORWARD_REPLIES_MAX = 20;
+const FORWARD_REPLIES_MAX = 20;
 
 /** Most agents one mini app may forward to. Mirrors the config schema. */
 export const FORWARD_AGENTS_MAX = 20;
