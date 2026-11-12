@@ -252,7 +252,21 @@ const UNGUARDABLE_FLAGS = [
   '--user-data-dir',
   '--proxy-server',
   CONFIG_FLAG,
+  // Each lets the browser write files of its own choosing (`@playwright/mcp` 0.0.82's options):
+  // a saved session in its output folder, an output folder anywhere, or any file on disk
+  // (DOR-4136). A browser that writes state could save a sign-in where a later one loads it.
+  '--save-session',
+  '--output-dir',
+  '--allow-unrestricted-file-access',
+  // Runs a file's code in the browser server's own process, outside the page, at every start.
+  '--init-page',
 ];
+
+/**
+ * The opt-in tool sets that write browser state: `storage` adds `browser_storage_state`, which
+ * saves the session's cookies to a file, and its cookie and page-storage setters (DOR-4136).
+ */
+const STATE_WRITING_CAPS = new Set(['storage']);
 
 /** The browsers the Cloud block works in: it relies on a Chrome launch flag. */
 const CHROMIUM_BROWSER = /^(chrome|chromium|msedge)(-[a-z]+)?$/;
@@ -270,16 +284,26 @@ const CHROMIUM_BROWSER = /^(chrome|chromium|msedge)(-[a-z]+)?$/;
  * - sends traffic through a proxy (`--proxy-server`), which the Chrome flag
  *   that stops redirects does not reach;
  * - runs a browser other than Chrome, Chromium or Edge, for the same reason;
- * - brings its own config file (`--config`), which can do any of the above;
+ * - brings its own config file (`--config`, or `PLAYWRIGHT_MCP_CONFIG`, in any case), which can
+ *   do any of the above; DorkOS's own guarded config is the only one a browser starts with;
+ * - can write files of its own or save browser state (`--save-session`, `--output-dir`,
+ *   `--allow-unrestricted-file-access`, `--caps` with `storage`), so a session could save a
+ *   sign-in a later browser loads (DOR-4136); or runs a file's code outside the page at start
+ *   (`--init-page`);
  * - names its saved session more than once (the last one wins in Playwright,
  *   so DorkOS could clean the wrong file);
- * - sets any `PLAYWRIGHT_MCP_*` variable, the environment form of every flag.
+ * - sets any `PLAYWRIGHT_MCP_*` variable, in any case, the environment form of every flag.
+ *
+ * Every flag is matched in any letter case, as `--flag value` or `--flag=value`.
  *
  * @param connection - A Playwright MCP browser connection.
  */
 export function unguardableBrowserReason(connection: BrowserConnectionLike): string | undefined {
   const args = connection.args ?? [];
-  const named = (flag: string) => args.some((arg) => arg === flag || arg.startsWith(`${flag}=`));
+  // In any letter case, as `--flag value` or `--flag=value`: a spelling the browser would turn
+  // down is refused all the same, so no spelling of a refused flag ever gets through.
+  const lower = args.map((arg) => arg.toLowerCase());
+  const named = (flag: string) => lower.some((arg) => arg === flag || arg.startsWith(`${flag}=`));
   const flag = UNGUARDABLE_FLAGS.find(named);
   if (flag) return `it uses ${flag}`;
   if (!args.includes('--isolated')) return 'it keeps a browser profile on disk (no --isolated)';
@@ -288,8 +312,15 @@ export function unguardableBrowserReason(connection: BrowserConnectionLike): str
     return 'it runs a browser other than Chrome';
   if (takeFlag(args, STORAGE_STATE_FLAG).values.length > 1)
     return 'it names more than one saved session';
+  const caps = takeFlag(args, '--caps').values.flatMap((value) => value.split(','));
+  const writing = caps
+    .map((cap) => cap.trim().toLowerCase())
+    .find((cap) => STATE_WRITING_CAPS.has(cap));
+  if (writing) return `it can save browser state (--caps=${writing})`;
+  // In any case: Windows reads environment names case-blind, so `playwright_mcp_config` is
+  // `PLAYWRIGHT_MCP_CONFIG` there.
   const variable = Object.keys(connection.env ?? {}).find((key) =>
-    key.startsWith('PLAYWRIGHT_MCP_')
+    key.toUpperCase().startsWith('PLAYWRIGHT_MCP_')
   );
   if (variable) return `it sets ${variable}`;
   return undefined;

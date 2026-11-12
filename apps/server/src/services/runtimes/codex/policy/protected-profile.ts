@@ -174,6 +174,8 @@ function protectedEntries(
 /**
  * All three modes carry the same refusals. Full grants broad access around
  * those refusals; it never switches to danger-full-access, which drops them.
+ * The browser sign-in stores Full may write elsewhere (DOR-4136) stay shut here:
+ * each is a read secret too, and Codex has no write-only access to give one.
  * Profile globs have the upstream process-start snapshot limits on Linux and Windows.
  * Anywhere rules are bounded to the captured roots: other volumes or temporary
  * folders outside every prefix are not covered by those native shell denies.

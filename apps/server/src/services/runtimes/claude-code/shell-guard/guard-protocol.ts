@@ -14,6 +14,7 @@ export interface WireRoots {
   env: Readonly<Record<string, string | undefined>>;
   agentHomes: readonly string[];
   openHome?: string;
+  full?: boolean;
 }
 
 /** The server asks the child about one command. */

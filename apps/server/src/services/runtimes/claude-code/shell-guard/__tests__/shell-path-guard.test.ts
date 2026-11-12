@@ -735,6 +735,128 @@ describe('a command too big to read (Security, #3487)', () => {
   });
 });
 
+// DOR-4136: every way a shell command can plant a cookie, or wipe a sign-in.
+describe('shell writes to a browser sign-in store', () => {
+  const desktop = () => path.join(roots.home, 'Library', 'Application Support', 'DorkOS');
+  it.each([
+    ['cp onto the saved session', () => `cp /tmp/x ${roots.dorkHome}/browser/storage-state.json`],
+    ['mv onto it', () => `mv /tmp/x $DORK_HOME/browser/storage-state.json`],
+    ['a redirect into it', () => `echo '{}' > $DORK_HOME/browser/storage-state.json`],
+    [
+      'a profile’s cookie database',
+      () =>
+        `sqlite3 $DORK_HOME/browser-profiles/p1/Default/Cookies "INSERT INTO cookies VALUES(1)"`,
+    ],
+    ['the login profile', () => `cp /tmp/x $DORK_HOME/browser/profile/Default/Cookies`],
+    ['removing the profiles folder', () => `rm -rf $DORK_HOME/browser-profiles`],
+    ['removing the whole data folder', () => `rm -rf $DORK_HOME`],
+    [
+      'the desktop app’s cookie store',
+      () =>
+        `sqlite3 ~/"Library/Application Support/DorkOS/Network/Cookies" "INSERT INTO cookies VALUES(1)"`,
+    ],
+    [
+      'wiping its page storage',
+      () => `rm -rf ~/Library/Application\\ Support/DorkOS/Local\\ Storage`,
+    ],
+    ['it in other case', () => `echo x > ~/"library/application support/dorkos/Cookies"`],
+    ['it through a link', () => `ln -sfn /tmp/x app-data/Network/Cookies`],
+    ['a python script', () => `python3 -c "open('${desktop()}/Network/Cookies','w').write('x')"`],
+    ['the default data folder’s session', () => `cp /tmp/x ~/.dork/browser/storage-state.json`],
+    [
+      'the agent browser’s guard config',
+      () => `echo '{}' > $DORK_HOME/browser/agent-browser-guard.json`,
+    ],
+    ['its temp file', () => `cp /tmp/x $DORK_HOME/browser/agent-browser-guard.json.1.2.tmp`],
+    // Only a person saves the shared session, with DorkOS's own CLI.
+    ['dorkos browser login', () => 'dorkos browser login'],
+    ['it through npx', () => 'npx -y dorkos@latest browser login --url https://made-up.example'],
+    ['dorkos browser forget', () => 'dorkos browser forget --all'],
+  ])('refuses %s', (_label, command) => {
+    expect(shellWriteVerdict(command(), roots)).toBe('writes');
+  });
+
+  it.each([
+    ['reading the saved session', `cat $DORK_HOME/browser/storage-state.json`],
+    ['copying a file of the agent’s own', `cp notes.md notes.bak`],
+    ['a file named like it in the working folder', `echo '{}' > storage-state.json`],
+    ['asking the CLI what is saved', 'dorkos browser status'],
+    ['a note that mentions the command', 'echo "run dorkos browser login yourself"'],
+  ])('leaves %s alone', (_label, command) => {
+    expect(shellWriteVerdict(command, roots)).toBe('none');
+  });
+
+  // The PM and Security's ruling: a Full agent may save a sign-in, as a person
+  // can. The full-level refusal is DOR-4102's, for Dorian.
+  it.each([
+    ['cp onto the saved session', () => `cp /tmp/x ${roots.dorkHome}/browser/storage-state.json`],
+    ['a redirect into it', () => `echo '{}' > $DORK_HOME/browser/storage-state.json`],
+    ['the login profile', () => `cp /tmp/x $DORK_HOME/browser/profile/Default/Cookies`],
+    [
+      'the desktop app’s cookie store',
+      () =>
+        `sqlite3 ~/"Library/Application Support/DorkOS/Network/Cookies" "INSERT INTO cookies VALUES(1)"`,
+    ],
+    [
+      'wiping its page storage',
+      () => `rm -rf ~/Library/Application\\ Support/DorkOS/Local\\ Storage`,
+    ],
+    ['the default data folder’s session', () => `cp /tmp/x ~/.dork/browser/storage-state.json`],
+    ['dorkos browser login', () => 'dorkos browser login'],
+    ['it through npx', () => 'npx -y dorkos@latest browser login --url https://made-up.example'],
+    ['dorkos browser forget', () => 'dorkos browser forget --all'],
+  ])('lets a Full agent do %s', (_label, command) => {
+    expect(shellWriteVerdict(command(), { ...roots, full: true })).toBe('none');
+  });
+
+  it.each([
+    [
+      'the agent browser’s guard config',
+      () => `echo '{}' > $DORK_HOME/browser/agent-browser-guard.json`,
+    ],
+    ['its temp file', () => `cp /tmp/x $DORK_HOME/browser/agent-browser-guard.json.1.2.tmp`],
+    [
+      'the default data folder’s guard config',
+      () => `cp /tmp/x ~/.dork/browser/agent-browser-guard.json`,
+    ],
+    ['the profile binding key', () => `cp /tmp/x $DORK_HOME/browser-profiles/.binding-key`],
+    ['the default binding key', () => `echo x > ~/.dork/browser-profiles/.binding-key`],
+  ])('still refuses %s at Full', (_label, command) => {
+    expect(shellWriteVerdict(command(), { ...roots, full: true })).toBe('writes');
+  });
+
+  // On a default install the data folder is `~/.dork`, and its own entries decide.
+  describe('with the data folder at its default, ~/.dork', () => {
+    const atDefault = () => {
+      const dorkHome = path.join(roots.home, '.dork');
+      return { ...roots, dorkHome, env: { ...roots.env, DORK_HOME: dorkHome } };
+    };
+
+    it.each([
+      ['a named profile’s cookies', `cp /tmp/x $DORK_HOME/browser-profiles/p1/Default/Cookies`],
+      [
+        'sqlite3 on them',
+        `sqlite3 $DORK_HOME/browser-profiles/p1/Default/Cookies "INSERT INTO cookies VALUES(1)"`,
+      ],
+      ['the saved logins', `cp /tmp/x $DORK_HOME/local-browser/saved-logins/Default/Cookies`],
+      ['removing one profile', `rm -rf $DORK_HOME/browser-profiles/p1`],
+    ])('lets a Full agent write %s, and refuses one below Full', (_label, command) => {
+      expect(shellWriteVerdict(command, { ...atDefault(), full: true })).toBe('none');
+      expect(shellWriteVerdict(command, atDefault())).toBe('writes');
+    });
+
+    it('still refuses a Full agent the binding key and the guard config', () => {
+      for (const command of [
+        `cp /tmp/x $DORK_HOME/browser-profiles/.binding-key`,
+        // Removing the whole folder takes the key with it.
+        `rm -rf $DORK_HOME/browser-profiles`,
+        `echo '{}' > $DORK_HOME/browser/agent-browser-guard.json`,
+      ])
+        expect(shellWriteVerdict(command, { ...atDefault(), full: true })).toBe('writes');
+    });
+  });
+});
+
 describe('commandWritesAgentSetup', () => {
   it.each([
     ['a redirect', () => `echo '{}' > ${agent}/.claude/settings.json`],
@@ -975,6 +1097,69 @@ describe('createShellPathGuardHook', () => {
       });
     }
   );
+
+  // DOR-4136: a planted cookie starts every later agent browser signed in, so a
+  // write to a browser sign-in store is refused below Full, the way a setup
+  // write is: never an ask a person could save as "always".
+  it.each(['default', 'acceptEdits'])(
+    'refuses and records a write to a browser sign-in store at %s',
+    async (permissionMode) => {
+      const recordRefusal = vi.fn();
+      const hook = createShellPathGuardHook({ permissionMode } as never, {
+        check,
+        roots: () => roots,
+        recordRefusal,
+        log,
+      });
+      const command = `cp /tmp/made-up-state.json ${roots.dorkHome}/browser/storage-state.json`;
+      const result = await hook(call(command), undefined, signal);
+      expect(decisionOf(result)).toBe('deny');
+      expect(JSON.stringify(result)).toContain(SHELL_WRITE_DENY_REASON);
+      expect(recordRefusal).toHaveBeenCalledWith({
+        toolName: 'Bash',
+        toolUseId: 'toolu_1',
+        command,
+      });
+    }
+  );
+
+  it.each([
+    [
+      'a write to the saved session',
+      () => `cp /tmp/x ${roots.dorkHome}/browser/storage-state.json`,
+    ],
+    ['dorkos browser login', () => 'dorkos browser login'],
+  ])('lets a Full agent through for %s', async (_label, command) => {
+    const recordRefusal = vi.fn();
+    const hook = createShellPathGuardHook({ permissionMode: 'bypassPermissions' } as never, {
+      check,
+      roots: () => roots,
+      recordRefusal,
+      log,
+    });
+    expect(await hook(call(command()), undefined, signal)).toEqual({});
+    expect(recordRefusal).not.toHaveBeenCalled();
+  });
+
+  it('refuses a chat set to Full whose turn is held below Full', async () => {
+    const hook = createShellPathGuardHook(
+      { permissionMode: 'bypassPermissions', turnPermissionCeiling: 'runtime-default' } as never,
+      { check, roots: () => roots, recordRefusal: vi.fn(), log }
+    );
+    const result = await hook(call('dorkos browser login'), undefined, signal);
+    expect(decisionOf(result)).toBe('deny');
+  });
+
+  it('still refuses a Full agent a write to the agent browser’s guard config', async () => {
+    const hook = createShellPathGuardHook({ permissionMode: 'bypassPermissions' } as never, {
+      check,
+      roots: () => roots,
+      recordRefusal: vi.fn(),
+      log,
+    });
+    const command = `echo '{}' > ${roots.dorkHome}/browser/agent-browser-guard.json`;
+    expect(decisionOf(await hook(call(command), undefined, signal))).toBe('deny');
+  });
 
   it.each(['Monitor', 'PowerShell'])(
     'guards %s, which also takes a shell command',

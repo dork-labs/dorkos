@@ -32,12 +32,15 @@ beforeEach(() => {
 afterEach(() => rmSync(root, { recursive: true, force: true }));
 
 const adapters = ['shared', 'opencode', 'doe'] as const;
+/** Whether `adapter` refuses `operation` on `file`, at Full or below it. */
 async function refused(
   adapter: (typeof adapters)[number],
   file: string,
-  operation: 'read' | 'write'
+  operation: 'read' | 'write',
+  full = false
 ) {
-  if (adapter === 'shared') return isProtectedPath(file, operation, roots);
+  const atLevel = { ...roots, full };
+  if (adapter === 'shared') return isProtectedPath(file, operation, atLevel);
   if (adapter === 'opencode')
     return (
       protectedFileVerdict(
@@ -45,7 +48,7 @@ async function refused(
           toolName: operation === 'write' ? 'edit' : 'read',
           input: JSON.stringify({ filepath: file }),
         },
-        roots
+        atLevel
       ) === 'deny'
     );
   const signal = new AbortController().signal;
@@ -63,8 +66,10 @@ async function refused(
     emit: () => {},
   };
   return (
+    // Doe reads the level from its mode, never from the roots: Accept edits is below Full and
+    // still answers an unprotected write without a card.
     (await new DoeApprovals().callback(
-      'bypassPermissions',
+      full ? 'bypassPermissions' : 'acceptEdits',
       () => {},
       signal,
       false,
@@ -154,6 +159,122 @@ describe.each(adapters)('%s native file protection', (adapter) => {
     expect(
       await refused(adapter, path.join(roots.cwd, 'profile-link', 'Default', 'Cookies'), 'read')
     ).toBe(true);
+  });
+
+  // DOR-4136: an agent that writes a browser sign-in store can start every later
+  // agent browser signed in to an account it chose, or wipe the person's own.
+  it.each([
+    ['the saved session every agent browser starts from', 'data', 'browser/storage-state.json'],
+    ['the saved session’s temp file', 'data', 'browser/.storage-state.json.123.made-up.tmp'],
+    ['the login profile’s cookies', 'data', 'browser/profile/Default/Cookies'],
+    ['a named profile’s cookies', 'data', 'browser-profiles/made-up-profile/Default/Cookies'],
+    ['the local browser’s saved logins', 'data', 'local-browser/saved-logins/Default/Cookies'],
+    [
+      'the desktop app’s cookie store',
+      'home',
+      'Library/Application Support/DorkOS/Network/Cookies',
+    ],
+    ['its page storage', 'home', 'Library/Application Support/DorkOS/Local Storage/leveldb/1.log'],
+    ['its built-in browser', 'home', 'Library/Application Support/DorkOS/Partitions/x/Cookies'],
+    ['a development build’s cookie store', 'home', '.config/@dorkos/desktop/Cookies'],
+    ['the cookie store in other case', 'home', 'library/application support/dorkos/cookies'],
+    ['the default data folder’s saved session', 'home', '.dork/browser/storage-state.json'],
+    // The config every agent browser starts with, which keeps it off DorkOS Cloud.
+    ['the agent browser’s guard config', 'data', 'browser/agent-browser-guard.json'],
+    ['its temp file', 'data', 'browser/agent-browser-guard.json.123.456.tmp'],
+    ['the default data folder’s guard config', 'home', '.dork/browser/agent-browser-guard.json'],
+  ] as const)('refuses writing %s', async (_what, root, file) => {
+    const base = root === 'home' ? roots.home : roots.data;
+    expect(await refused(adapter, path.join(base, file), 'write')).toBe(true);
+  });
+
+  it('refuses a write through a link to the saved session or a profile', async () => {
+    const browser = path.join(roots.data, 'browser');
+    mkdirSync(path.join(browser, 'profile', 'Default'), { recursive: true });
+    writeFileSync(path.join(browser, 'storage-state.json'), '{}');
+    symlinkSync(path.join(browser, 'storage-state.json'), path.join(roots.cwd, 'state.json'));
+    symlinkSync(path.join(browser, 'profile'), path.join(roots.cwd, 'profile'));
+    expect(await refused(adapter, path.join(roots.cwd, 'state.json'), 'write')).toBe(true);
+    expect(
+      await refused(adapter, path.join(roots.cwd, 'profile', 'Default', 'Cookies'), 'write')
+    ).toBe(true);
+  });
+
+  // The PM and Security's ruling: a Full agent may save a sign-in, as a person
+  // can (the full-level refusal is DOR-4102's). Never the guard config. These
+  // stores are read secrets too (DOR-3613), and OpenCode's edit tool reads the
+  // file it writes, so OpenCode still refuses them for that reason alone.
+  it.each([
+    ['the saved session', 'data', 'browser/storage-state.json'],
+    ['its temp file', 'data', 'browser/.storage-state.json.123.made-up.tmp'],
+    ['the login profile’s cookies', 'data', 'browser/profile/Default/Cookies'],
+    [
+      'the desktop app’s cookie store',
+      'home',
+      'Library/Application Support/DorkOS/Network/Cookies',
+    ],
+    ['a development build’s cookie store', 'home', '.config/@dorkos/desktop/Cookies'],
+    ['the default data folder’s saved session', 'home', '.dork/browser/storage-state.json'],
+    ['the default data folder’s profiles', 'home', '.dork/browser-profiles/p/Default/Cookies'],
+  ] as const)('lets a Full agent write %s', async (_what, root, file) => {
+    const target = path.join(root === 'home' ? roots.home : roots.data, file);
+    expect(isProtectedPath(target, 'write', { ...roots, full: true })).toBe(false);
+    expect(await refused(adapter, target, 'write', true)).toBe(
+      adapter === 'opencode' && isProtectedPath(target, 'read', roots)
+    );
+  });
+
+  it.each([
+    ['the agent browser’s guard config', 'data', 'browser/agent-browser-guard.json'],
+    ['its temp file', 'data', 'browser/agent-browser-guard.json.123.456.tmp'],
+    ['the default data folder’s guard config', 'home', '.dork/browser/agent-browser-guard.json'],
+    ['the key profile bindings are signed with', 'data', 'browser-profiles/.binding-key'],
+    ['the default data folder’s binding key', 'home', '.dork/browser-profiles/.binding-key'],
+  ] as const)('still refuses a Full agent writing %s', async (_what, root, file) => {
+    const target = path.join(root === 'home' ? roots.home : roots.data, file);
+    expect(await refused(adapter, target, 'write', true)).toBe(true);
+  });
+
+  // On a default install the data folder is `~/.dork`, so its own entries decide, not only the
+  // home spellings: a Full agent may write a profile's sign-ins there too.
+  describe('with the data folder at its default, ~/.dork', () => {
+    beforeEach(() => {
+      roots = { ...roots, data: path.join(roots.home, '.dork') };
+      mkdirSync(roots.data, { recursive: true });
+    });
+
+    it.each([
+      ['a named profile’s cookies', 'browser-profiles/made-up-profile/Default/Cookies'],
+      ['the local browser’s saved logins', 'local-browser/saved-logins/Default/Cookies'],
+      ['the saved session', 'browser/storage-state.json'],
+    ])('lets a Full agent write %s, and refuses one below Full', async (_what, file) => {
+      const target = path.join(roots.data, file);
+      expect(isProtectedPath(target, 'write', { ...roots, full: true })).toBe(false);
+      expect(await refused(adapter, target, 'write', true)).toBe(
+        adapter === 'opencode' && isProtectedPath(target, 'read', roots)
+      );
+      expect(await refused(adapter, target, 'write')).toBe(true);
+    });
+
+    it('still refuses a Full agent the binding key and the guard config', async () => {
+      for (const file of ['browser-profiles/.binding-key', 'browser/agent-browser-guard.json'])
+        expect(await refused(adapter, path.join(roots.data, file), 'write', true)).toBe(true);
+    });
+  });
+
+  it.each(
+    PROTECTED_PATHS.filter(
+      (entry) => !entry.belowFull && (entry.root === 'data' || entry.root === 'home')
+    )
+  )('still refuses $deny at $root/$path at Full', async (entry) => {
+    const base = entry.root === 'data' ? roots.data : roots.home;
+    const file = path.join(base, entry.path.replaceAll('*', 'sample'));
+    expect(await refused(adapter, file, entry.deny, true)).toBe(true);
+  });
+
+  it('still lets an agent write its own files beside the browser folders', async () => {
+    expect(await refused(adapter, path.join(roots.cwd, 'storage-state.json'), 'write')).toBe(false);
+    expect(await refused(adapter, path.join(roots.data, 'browser-notes.txt'), 'write')).toBe(false);
   });
 
   it('still reads ordinary files beside the desktop app’s folder', async () => {

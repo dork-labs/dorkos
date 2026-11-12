@@ -6,6 +6,7 @@ import {
   ANYWHERE_SECRET_PATHS,
   DATA_FOLDER_SECRET_PATHS,
   DATA_GRANT_FILE_PATHS,
+  HOME_PERSON_ONLY_PATHS,
   HOME_SECRET_PATHS,
   HOME_SELF_GRANT_PATHS,
   PERSON_ONLY_DATA_PATHS,
@@ -43,6 +44,7 @@ describe('protected paths', () => {
       PROJECT_PLUGIN_PATHS,
       AGENT_HOME_SELF_GRANT_PATHS,
       HOME_SELF_GRANT_PATHS,
+      HOME_PERSON_ONLY_PATHS,
     ].flat();
     expect(reads.every((e) => e.deny === 'read')).toBe(true);
     expect(writes.every((e) => e.deny === 'write')).toBe(true);
@@ -151,9 +153,38 @@ describe('protected paths', () => {
       'config.json*',
       'config-*.json.bak',
       'marketplaces.json*',
+      'browser-profiles/.binding-key',
+      'dork*.db*',
       'browser-profiles/**',
       'local-browser/saved-logins/**',
-      'dork*.db*',
+      'browser/storage-state.json',
+      'browser/.storage-state.json.*.tmp',
+      'browser/profile/**',
+      'browser/agent-browser-guard.json*',
+    ]);
+    // Below Full only: the sign-in stores, never the key, the records or the guard config.
+    expect(globs(PERSON_ONLY_DATA_PATHS.filter((entry) => entry.belowFull))).toEqual([
+      'browser-profiles/**',
+      'local-browser/saved-logins/**',
+      'browser/storage-state.json',
+      'browser/.storage-state.json.*.tmp',
+      'browser/profile/**',
+    ]);
+    // DOR-4136: the browser sign-in stores no agent may plant a cookie in.
+    expect(globs(HOME_PERSON_ONLY_PATHS)).toEqual([
+      'Library/Application Support/DorkOS/**',
+      'AppData/Roaming/DorkOS/**',
+      '.config/DorkOS/**',
+      'Library/Application Support/@dorkos/desktop/**',
+      'AppData/Roaming/@dorkos/desktop/**',
+      '.config/@dorkos/desktop/**',
+      '.dork/browser/storage-state.json',
+      '.dork/browser/.storage-state.json.*.tmp',
+      '.dork/browser/profile/**',
+      '.dork/browser/agent-browser-guard.json*',
+      '.dork/browser-profiles/.binding-key',
+      '.dork/browser-profiles/**',
+      '.dork/local-browser/saved-logins/**',
     ]);
     expect(globs(DATA_GRANT_FILE_PATHS)).toEqual([
       'config.json',
