@@ -297,24 +297,43 @@ describe.each(adapters)('%s native file protection', (adapter) => {
     expect(await refused(adapter, alias, 'read')).toBe(true);
   });
 
-  it('refuses a native read through a hard link with an ordinary name', async () => {
+  it('refuses a native write through a hard link with an ordinary name', async () => {
     const secret = path.join(roots.data, 'host.key');
     const alias = path.join(roots.cwd, 'notes.txt');
     writeFileSync(secret, 'made-up');
     linkSync(secret, alias);
-    // The shared path matcher only recognizes names. OpenCode and Doe also inspect the inode.
-    expect(await refused(adapter, alias, 'read', true)).toBe(adapter !== 'shared');
+    // The shared path matcher only recognizes names. OpenCode and Doe also inspect the inode
+    // before a write, where a hard link would carry the edit into the protected file.
+    expect(await refused(adapter, alias, 'write', true)).toBe(adapter !== 'shared');
   });
 
-  it('refuses a multiply linked ordinary file too, and follows a symlink to it', async () => {
+  it('refuses a write to a multiply linked ordinary file, and follows a symlink to it', async () => {
     const original = path.join(roots.cwd, 'original.txt');
     const alias = path.join(roots.cwd, 'alias.txt');
     writeFileSync(original, 'ordinary text');
-    expect(await refused(adapter, original, 'read')).toBe(false);
+    expect(await refused(adapter, original, 'write', true)).toBe(false);
     linkSync(original, alias);
     symlinkSync(alias, path.join(roots.cwd, 'link.txt'));
     for (const file of [original, alias, path.join(roots.cwd, 'link.txt')])
-      expect(await refused(adapter, file, 'read')).toBe(adapter !== 'shared');
+      expect(await refused(adapter, file, 'write', true)).toBe(adapter !== 'shared');
+  });
+
+  // DOR-4138, Security's steer: pnpm on Linux hard-links every installed file from its store,
+  // so a read refused on link count alone would block the owner's agents from package source.
+  it('reads a pnpm-style hard-linked file outside the secret paths', async () => {
+    const stored = path.join(roots.home, '.local/share/pnpm/store/v10/files/ab/cdef-index.js');
+    const installed = path.join(
+      roots.cwd,
+      'node_modules/.pnpm/made-up-pkg@1.0.0/node_modules/made-up-pkg/index.js'
+    );
+    mkdirSync(path.dirname(stored), { recursive: true });
+    mkdirSync(path.dirname(installed), { recursive: true });
+    writeFileSync(stored, 'module.exports = 1;');
+    linkSync(stored, installed);
+    for (const full of [false, true]) {
+      expect(await refused(adapter, installed, 'read', full)).toBe(false);
+      expect(await refused(adapter, stored, 'read', full)).toBe(false);
+    }
   });
 
   it('resolves a link before a parent segment', async () => {
@@ -399,19 +418,21 @@ it('checks aliased descendants before allowing a folder search', () => {
   expect(searchTouchesProtectedPath(clean, roots)).toBe(true);
 });
 
-it('refuses a folder search containing a hard-linked file with an ordinary name', () => {
-  const clean = path.join(roots.cwd, 'clean');
-  mkdirSync(clean);
-  const original = path.join(roots.data, 'host.key');
-  writeFileSync(original, 'made-up');
-  linkSync(original, path.join(clean, 'notes.txt'));
-  expect(searchTouchesProtectedPath(clean, roots)).toBe(true);
+it('lets an OpenCode search walk a pnpm-style hard-linked node_modules (DOR-4138)', () => {
+  const stored = path.join(roots.home, '.local/share/pnpm/store/v10/files/ab/cdef-index.js');
+  const modules = path.join(roots.cwd, 'node_modules');
+  const installed = path.join(modules, '.pnpm/made-up-pkg@1.0.0/node_modules/made-up-pkg/index.js');
+  mkdirSync(path.dirname(stored), { recursive: true });
+  mkdirSync(path.dirname(installed), { recursive: true });
+  writeFileSync(stored, 'module.exports = 1;');
+  linkSync(stored, installed);
+  expect(searchTouchesProtectedPath(modules, roots)).toBe(false);
   expect(
     protectedFileVerdict(
-      { toolName: 'grep', input: JSON.stringify({ dorkosSearchRoot: clean }) },
+      { toolName: 'grep', input: JSON.stringify({ dorkosSearchRoot: modules }) },
       roots
     )
-  ).toBe('deny');
+  ).toBe('allow');
 });
 
 it('refuses an OpenCode edit that would read a multiply linked file into its diff', () => {

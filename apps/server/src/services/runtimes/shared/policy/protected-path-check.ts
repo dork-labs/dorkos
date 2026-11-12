@@ -137,17 +137,22 @@ export function isProtectedPath(
 }
 
 /**
- * Refuse native reads of multiply linked files as well as protected names. A hard link may give
- * a secret an ordinary name, so no path list can distinguish it. This is a call-time check, not
- * a descriptor lock: the native runtime still owns the eventual open.
+ * Refuse a native write to a protected name, or to any file with more than one hard link: a
+ * hard link may give a protected file an ordinary name, and a write through it changes the
+ * protected file too. Reads keep the name check alone (Security, DOR-4138): pnpm hard-links
+ * every installed file on Linux, so refusing reads on link count would block package source.
+ * This is a check at approve time, not a descriptor lock: the native runtime still owns the open.
+ *
+ * @param input - The path the native tool will write.
+ * @param roots - The roots and level the protected paths are measured from.
  */
-export function isProtectedNativeRead(input: string, roots: ProtectedPathRoots): boolean {
+export function isProtectedNativeWrite(input: string, roots: ProtectedPathRoots): boolean {
   try {
-    if (isProtectedPath(input, 'read', roots)) return true;
+    if (isProtectedPath(input, 'write', roots)) return true;
     const stat = statSync(canonical(input, roots.cwd));
     return stat.isFile() && stat.nlink > 1;
   } catch (error) {
-    // Missing files carry no readable contents. Other metadata failures must not permit a read.
+    // A missing file is a new one, linked to nothing. Other metadata failures must not permit it.
     return (error as NodeJS.ErrnoException).code !== 'ENOENT';
   }
 }
@@ -170,9 +175,7 @@ export function searchTouchesProtectedPath(input: string, roots: ProtectedPathRo
       if (seen.has(current)) continue;
       seen.add(current);
       if (++entries > 50_000) return true;
-      const stat = statSync(current);
-      if (stat.isFile() && stat.nlink > 1) return true;
-      if (stat.isDirectory()) {
+      if (statSync(current).isDirectory()) {
         for (const entry of readdirSync(current)) pending.push(path.join(current, entry));
       }
     }

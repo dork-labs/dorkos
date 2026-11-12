@@ -1,9 +1,6 @@
 /** Fresh canonical resources for a single turn; no vendor projection or retained grants. */
 import path from 'node:path';
-import {
-  isProtectedNativeRead,
-  type ProtectedPathRoots,
-} from '../shared/policy/protected-path-check.js';
+import { isProtectedPath, type ProtectedPathRoots } from '../shared/policy/protected-path-check.js';
 import { logger } from '../../../lib/logger.js';
 import { protectedPathRoots } from '../shared/policy/protected-path-roots.js';
 import { readdir, stat } from 'node:fs/promises';
@@ -46,7 +43,7 @@ export async function assembleDoeResources(
   const cwd = await canonicalPath(options.cwd, options.cwd);
   const protectedRoots = options.protectedRoots ?? protectedPathRoots(cwd, options.agentPath);
   const assertReadable = (file: string): void => {
-    if (!isProtectedNativeRead(file, protectedRoots)) return;
+    if (!isProtectedPath(file, 'read', protectedRoots)) return;
     logger.warn('[ProtectedFiles] Refused a Doe resource read');
     throw new Error('This file is protected.');
   };
