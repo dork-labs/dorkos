@@ -113,10 +113,11 @@ describe('executeUiCommand — panel commands', () => {
     expect(ctx.getStore().setPickerOpen).toHaveBeenCalledWith(true);
   });
 
-  it('close_panel settings calls setSettingsOpen with false', () => {
+  it('close_panel tasks closes Tasks and leaves Settings alone', () => {
     const ctx = makeMockCtx();
-    executeUiCommand(ctx, { action: 'close_panel', panel: 'settings' }, 'agent');
-    expect(ctx.getStore().setSettingsOpen).toHaveBeenCalledWith(false);
+    executeUiCommand(ctx, { action: 'close_panel', panel: 'tasks' }, 'agent');
+    expect(ctx.getStore().setTasksOpen).toHaveBeenCalledWith(false);
+    expect(ctx.getStore().setSettingsOpen).not.toHaveBeenCalled();
   });
 });
 
