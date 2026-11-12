@@ -18,6 +18,9 @@ const { mockHandleRequest, mockTransportConstructor } = vi.hoisted(() => {
 vi.mock('@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js', () => ({
   WebStandardStreamableHTTPServerTransport: mockTransportConstructor,
 }));
+vi.mock('../../services/core/auth/remote-mcp-audit.js', () => ({
+  recordRemoteMcpSession: vi.fn(),
+}));
 
 // Mock logger
 vi.mock('../../lib/logger.js', () => ({
@@ -34,6 +37,7 @@ import type { ApiEnv } from '../../http/api-chain.js';
 import { parseRequestBody } from '../../http/request-body.js';
 import { MCP_MAX_REQUEST_BODY_BYTES } from '../../services/core/capabilities/mcp-input/limits.js';
 import { createMcpEndpoint } from '../mcp.js';
+import { recordRemoteMcpSession } from '../../services/core/auth/remote-mcp-audit.js';
 
 /**
  * ONE listener for the whole file, with the app behind it swapped per test
@@ -147,6 +151,17 @@ describe('MCP Route Handler', () => {
     await request(server).post('/mcp').send({ jsonrpc: '2.0', method: 'initialize', id: 1 });
 
     expect(mockConnect).toHaveBeenCalled();
+  });
+
+  it('audits each fresh stateless POST session, including discovery', async () => {
+    mockHandleRequest.mockImplementation(() => jsonResponse({ result: {} }));
+    const server = createTestApp(createMockServer);
+    await request(server).post('/mcp').send({ jsonrpc: '2.0', method: 'tools/list', id: 1 });
+    await request(server).post('/mcp').send({ jsonrpc: '2.0', method: 'initialize', id: 2 });
+    expect(recordRemoteMcpSession).toHaveBeenCalledTimes(2);
+    expect(recordRemoteMcpSession).toHaveBeenCalledWith(expect.objectContaining({
+      peerAddress: expect.any(String), ingress: 'direct',
+    }));
   });
 
   it('POST /mcp passes request body to transport.handleRequest', async () => {

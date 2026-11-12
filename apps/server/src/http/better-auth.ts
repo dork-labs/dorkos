@@ -45,6 +45,7 @@ import { ingressOf } from '../services/core/remote/ingress-mark.js';
 import { publicComputerSessionExpired } from '../services/core/hub/public-computer.js';
 import { isLoopbackHostHeader } from '../lib/trusted-origins.js';
 import { SETUP_CODE_HEADER, withSetupCodeAttempt } from '../services/core/auth/setup-code.js';
+import { annotateRemoteMcpKeyList } from '../services/core/auth/remote-mcp-audit.js';
 
 /** Options for {@link mountBetterAuth}. */
 export interface BetterAuthOptions {
@@ -98,9 +99,11 @@ export function mountBetterAuth(app: Hono<ApiEnv>, options: BetterAuthOptions): 
         () => options.auth.handler(forHandler)
       )
     );
+    const keyList = new URL(forHandler.url).pathname.replace(/\/$/, '') === '/api/auth/api-key/list';
+    const decorated = keyList ? await annotateRemoteMcpKeyList(response) : response;
     const secure = options.secureCookies ?? AUTH_COOKIES_SECURE;
     return (
-      (secure && explainDroppedSignIn(c, response, new URL(forHandler.url).pathname)) || response
+      (secure && explainDroppedSignIn(c, decorated, new URL(forHandler.url).pathname)) || decorated
     );
   });
 }
