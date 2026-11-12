@@ -4,7 +4,11 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, cleanup, fireEvent } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
-import { useTerminalResourceChrome, type RightPanelContribution } from '@/layers/shared/model';
+import {
+  useAppStore,
+  useTerminalResourceChrome,
+  type RightPanelContribution,
+} from '@/layers/shared/model';
 // The held-back mini app line reads live extension state; these tests do not draw it.
 vi.mock('@/layers/entities/extension', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/layers/entities/extension')>()),
@@ -145,15 +149,25 @@ vi.mock('@/layers/shared/ui', async (importOriginal) => {
   };
 });
 
-// Mutable mock state — mutate per-test
-const mockSetRightPanelOpen = vi.fn();
-const mockSetActiveRightPanelTab = vi.fn();
-// View-only setter used by the container's auto-select fallback (DOR-227). It
-// must NOT be the persisting `setActiveRightPanelTab`.
-const mockSetActiveRightPanelTabView = vi.fn();
+// The app store is REAL. What the container SHOWS is the store's
+// `activeRightPanelTab`; what it SAVES is the stored panel layout. The
+// auto-select fallback must change the first and never the second (DOR-227).
+const RIGHT_PANEL_STATE_KEY = 'dorkos-right-panel-state';
+/** The tab the store holds, which is the tab on screen. */
+const shownTab = () => useAppStore.getState().activeRightPanelTab;
+/** The tab the stored layout remembers, or `null` while nothing was saved. */
+const savedTab = (): string | null => {
+  const raw = localStorage.getItem(RIGHT_PANEL_STATE_KEY);
+  return raw ? ((JSON.parse(raw) as { activeTab?: string | null }).activeTab ?? null) : null;
+};
+/** The tab a case starts on, so "left it alone" has something to compare to. */
+let startTab: string | null = null;
+/** Put a tab on screen without saving it, the way a restored layout arrives. */
+const showTab = (tab: string | null) => {
+  startTab = tab;
+  useAppStore.setState({ activeRightPanelTab: tab });
+};
 
-let mockRightPanelOpen = false;
-let mockActiveRightPanelTab: string | null = null;
 let mockIsMobile = false;
 // Whether the window is too narrow for three panes (< 1024px). A phone is
 // always below desktop; a tablet is below desktop WITHOUT being a phone, which
@@ -168,11 +182,8 @@ let mockTransport: { supportsTerminal: boolean } = { supportsTerminal: true };
 let mockPathname = '/session';
 // The active agent id + selected working directory feed agent/folder-scoped
 // visibility predicates; mutate per-test to exercise those paths.
-let mockCurrentAgentId: string | null = null;
-let mockSelectedCwd: string | null = null;
 // The explicitly-opened agent path (the profile) — the click-driven selection
 // signal the container threads into every visibleWhen predicate.
-let mockExplicitAgentPath: string | null = null;
 
 // Spread over the real module rather than replacing it: the header inside the
 // container reads its scroll cues from `useScrollOverflow`, which is shared and
@@ -181,23 +192,6 @@ vi.mock('@/layers/shared/model', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/layers/shared/model')>();
   return {
     ...actual,
-    useAppStore: (selector: (s: Record<string, unknown>) => unknown) =>
-      selector({
-        rightPanelOpen: mockRightPanelOpen,
-        setRightPanelOpen: mockSetRightPanelOpen,
-        activeRightPanelTab: mockActiveRightPanelTab,
-        setActiveRightPanelTab: mockSetActiveRightPanelTab,
-        setActiveRightPanelTabView: mockSetActiveRightPanelTabView,
-        currentAgentId: mockCurrentAgentId,
-        selectedCwd: mockSelectedCwd,
-        explicitAgentPath: mockExplicitAgentPath,
-        // The unread dot on a document tab reads these. They are part of the
-        // real store, so a stub without them is a stub that lies — and the strip
-        // renders outside the panel's error boundary, where a throw takes the
-        // whole header rather than one tab.
-        roomCanvasLiveRoomId: null,
-        roomCanvasUnread: {},
-      }),
     useIsMobile: () => mockIsMobile,
     useIsBelowDesktop: () => mockIsBelowDesktop,
     useSlotContributions: () => mockContributions,
@@ -233,16 +227,21 @@ function makeContribution(
 describe('RightPanelContainer', () => {
   beforeEach(() => {
     useTerminalResourceChrome.setState({ chrome: null });
-    mockRightPanelOpen = false;
-    mockActiveRightPanelTab = null;
+    // Every case starts on the global layout with nothing saved and no tab.
+    localStorage.removeItem(RIGHT_PANEL_STATE_KEY);
+    useAppStore.setState({
+      rightPanelLayoutKey: null,
+      rightPanelOpen: false,
+      currentAgentId: null,
+      selectedCwd: null,
+      explicitAgentPath: null,
+    });
+    showTab(null);
     mockIsMobile = false;
     mockIsBelowDesktop = false;
     mockContributions = [];
     mockTransport = { supportsTerminal: true };
     mockPathname = '/session';
-    mockCurrentAgentId = null;
-    mockSelectedCwd = null;
-    mockExplicitAgentPath = null;
   });
 
   describe('while the chat may yet be a DM', () => {
@@ -252,7 +251,7 @@ describe('RightPanelContainer', () => {
     };
 
     beforeEach(() => {
-      mockRightPanelOpen = true;
+      useAppStore.setState({ rightPanelOpen: true });
       mockDmPanel = { kind: 'pending', showSessions: false };
       mockContributions = [makeContribution('files'), makeContribution('session', SESSION_TAB)];
     });
@@ -262,22 +261,22 @@ describe('RightPanelContainer', () => {
     });
 
     it('keeps the body of a tab the strip holds back, and does not pick another', () => {
-      mockActiveRightPanelTab = 'session';
+      showTab('session');
       render(<RightPanelContainer pathname={mockPathname} />);
 
       expect(screen.getByTestId('tab-content-session')).toBeVisible();
       expect(screen.queryByRole('tab', { name: 'Tab session' })).not.toBeInTheDocument();
-      expect(mockSetActiveRightPanelTabView).not.toHaveBeenCalled();
+      expect(shownTab()).toBe(startTab);
     });
 
     it('keeps an ordinary tab’s body too', () => {
-      mockActiveRightPanelTab = 'files';
+      showTab('files');
       render(<RightPanelContainer pathname={mockPathname} />);
       expect(screen.getByTestId('tab-content-files')).toBeVisible();
     });
 
     it('drops the held tab’s body once the answer says it does not belong', () => {
-      mockActiveRightPanelTab = 'session';
+      showTab('session');
       const { rerender } = render(<RightPanelContainer pathname={mockPathname} />);
       mockDmPanel = null;
       mockContributions = [
@@ -290,8 +289,8 @@ describe('RightPanelContainer', () => {
   });
 
   it('contains a retained terminal failure without replacing the active document view', () => {
-    mockRightPanelOpen = true;
-    mockActiveRightPanelTab = 'canvas';
+    useAppStore.setState({ rightPanelOpen: true });
+    showTab('canvas');
     useTerminalResourceChrome.setState({
       chrome: {
         scope: ':null',
@@ -323,7 +322,7 @@ describe('RightPanelContainer', () => {
   });
 
   it('renders collapsed panel in DOM when rightPanelOpen is false but contributions exist', () => {
-    mockRightPanelOpen = false;
+    useAppStore.setState({ rightPanelOpen: false });
     mockContributions = [makeContribution('a')];
 
     render(<RightPanelContainer pathname={mockPathname} />);
@@ -340,8 +339,8 @@ describe('RightPanelContainer', () => {
     // Off contextual routes only Pulse (a global tab) is visible. The shell shows
     // its body, not the Wave-1 "nothing to inspect" empty state, which the
     // always-present Pulse makes permanently unreachable (so it was removed).
-    mockRightPanelOpen = true;
-    mockActiveRightPanelTab = 'pulse';
+    useAppStore.setState({ rightPanelOpen: true });
+    showTab('pulse');
     mockContributions = [makeContribution('pulse', { isGlobal: true })];
 
     render(<RightPanelContainer pathname={mockPathname} />);
@@ -354,8 +353,8 @@ describe('RightPanelContainer', () => {
   });
 
   it('renders desktop Panel and resize handle when open with visible contributions', () => {
-    mockRightPanelOpen = true;
-    mockActiveRightPanelTab = 'a';
+    useAppStore.setState({ rightPanelOpen: true });
+    showTab('a');
     mockContributions = [makeContribution('a')];
 
     render(<RightPanelContainer pathname={mockPathname} />);
@@ -366,8 +365,8 @@ describe('RightPanelContainer', () => {
   });
 
   it('expands with the default size as a floor when opening (DOR-388)', () => {
-    mockRightPanelOpen = true;
-    mockActiveRightPanelTab = 'a';
+    useAppStore.setState({ rightPanelOpen: true });
+    showTab('a');
     mockContributions = [makeContribution('a')];
 
     render(<RightPanelContainer pathname={mockPathname} />);
@@ -379,8 +378,8 @@ describe('RightPanelContainer', () => {
   });
 
   it('renders the active tab component content', () => {
-    mockRightPanelOpen = true;
-    mockActiveRightPanelTab = 'a';
+    useAppStore.setState({ rightPanelOpen: true });
+    showTab('a');
     mockContributions = [makeContribution('a')];
 
     render(<RightPanelContainer pathname={mockPathname} />);
@@ -394,8 +393,8 @@ describe('RightPanelContainer', () => {
   it.each(['profile', 'canvas', 'files', 'terminal'])(
     'renders the shared tab strip and close button when %s is the active tab',
     (activeId) => {
-      mockRightPanelOpen = true;
-      mockActiveRightPanelTab = activeId;
+      useAppStore.setState({ rightPanelOpen: true });
+      showTab(activeId);
       mockContributions = [
         makeContribution('profile'),
         makeContribution('canvas'),
@@ -411,8 +410,8 @@ describe('RightPanelContainer', () => {
   );
 
   it('renders the active tab’s headerActions in the shared header', () => {
-    mockRightPanelOpen = true;
-    mockActiveRightPanelTab = 'files';
+    useAppStore.setState({ rightPanelOpen: true });
+    showTab('files');
     mockContributions = [
       makeContribution('profile'),
       makeContribution('files', {
@@ -428,8 +427,8 @@ describe('RightPanelContainer', () => {
   it('hides a transport-gated tab when the active transport lacks the capability', () => {
     // PR #149 regression: transport gating now lives in the container, which
     // forwards `transport` to each `visibleWhen`.
-    mockRightPanelOpen = true;
-    mockActiveRightPanelTab = 'profile';
+    useAppStore.setState({ rightPanelOpen: true });
+    showTab('profile');
     mockTransport = { supportsTerminal: false };
     mockContributions = [
       makeContribution('profile', { title: 'Profile' }),
@@ -450,8 +449,8 @@ describe('RightPanelContainer', () => {
   });
 
   it('shows a transport-gated tab when the active transport has the capability', () => {
-    mockRightPanelOpen = true;
-    mockActiveRightPanelTab = 'profile';
+    useAppStore.setState({ rightPanelOpen: true });
+    showTab('profile');
     mockTransport = { supportsTerminal: true };
     mockContributions = [
       makeContribution('profile', { title: 'Profile' }),
@@ -473,9 +472,9 @@ describe('RightPanelContainer', () => {
   // specific agent or folder.
   describe('agent + folder context', () => {
     it('hides an agent-scoped tab when the active agent id does not match', () => {
-      mockRightPanelOpen = true;
-      mockActiveRightPanelTab = 'profile';
-      mockCurrentAgentId = 'agent-other';
+      useAppStore.setState({ rightPanelOpen: true });
+      showTab('profile');
+      useAppStore.setState({ currentAgentId: 'agent-other' });
       mockContributions = [
         makeContribution('profile', { title: 'Profile' }),
         makeContribution('canvas', { title: 'Canvas' }),
@@ -492,9 +491,9 @@ describe('RightPanelContainer', () => {
     });
 
     it('shows an agent-scoped tab when the active agent id matches', () => {
-      mockRightPanelOpen = true;
-      mockActiveRightPanelTab = 'profile';
-      mockCurrentAgentId = 'agent-x';
+      useAppStore.setState({ rightPanelOpen: true });
+      showTab('profile');
+      useAppStore.setState({ currentAgentId: 'agent-x' });
       mockContributions = [
         makeContribution('profile', { title: 'Profile' }),
         makeContribution('scoped', {
@@ -509,9 +508,9 @@ describe('RightPanelContainer', () => {
     });
 
     it('hides a folder-scoped tab when the selected cwd does not match', () => {
-      mockRightPanelOpen = true;
-      mockActiveRightPanelTab = 'profile';
-      mockSelectedCwd = '/repo/other';
+      useAppStore.setState({ rightPanelOpen: true });
+      showTab('profile');
+      useAppStore.setState({ selectedCwd: '/repo/other' });
       mockContributions = [
         makeContribution('profile', { title: 'Profile' }),
         makeContribution('canvas', { title: 'Canvas' }),
@@ -527,9 +526,9 @@ describe('RightPanelContainer', () => {
     });
 
     it('shows a folder-scoped tab when the selected cwd matches', () => {
-      mockRightPanelOpen = true;
-      mockActiveRightPanelTab = 'profile';
-      mockSelectedCwd = '/repo/a';
+      useAppStore.setState({ rightPanelOpen: true });
+      showTab('profile');
+      useAppStore.setState({ selectedCwd: '/repo/a' });
       mockContributions = [
         makeContribution('profile', { title: 'Profile' }),
         makeContribution('scoped', {
@@ -547,12 +546,12 @@ describe('RightPanelContainer', () => {
     // must pass the real agentId + cwd (not undefined) alongside pathname +
     // transport to every predicate.
     it('passes the full agent context (agentId + cwd) to visibleWhen', () => {
-      mockRightPanelOpen = true;
-      mockActiveRightPanelTab = 'a';
+      useAppStore.setState({ rightPanelOpen: true });
+      showTab('a');
       mockPathname = '/session';
-      mockCurrentAgentId = 'agent-x';
-      mockSelectedCwd = '/repo/a';
-      mockExplicitAgentPath = '/repo/explicit';
+      useAppStore.setState({ currentAgentId: 'agent-x' });
+      useAppStore.setState({ selectedCwd: '/repo/a' });
+      useAppStore.setState({ explicitAgentPath: '/repo/explicit' });
       const predicate = vi.fn(() => true);
       mockContributions = [makeContribution('a', { visibleWhen: predicate })];
 
@@ -571,11 +570,11 @@ describe('RightPanelContainer', () => {
 
     // Existing pathname-only predicates are unaffected by the added fields.
     it('leaves a pathname-only predicate unaffected by the agent context', () => {
-      mockRightPanelOpen = true;
-      mockActiveRightPanelTab = 'profile';
+      useAppStore.setState({ rightPanelOpen: true });
+      showTab('profile');
       mockPathname = '/session';
-      mockCurrentAgentId = 'agent-x';
-      mockSelectedCwd = '/repo/a';
+      useAppStore.setState({ currentAgentId: 'agent-x' });
+      useAppStore.setState({ selectedCwd: '/repo/a' });
       mockContributions = [
         makeContribution('profile', { title: 'Profile' }),
         makeContribution('session-only', {
@@ -593,11 +592,11 @@ describe('RightPanelContainer', () => {
     // real Profile rule off /session — stays hidden until the operator
     // opens one, then appears. Proves the container threads `explicitAgentPath`.
     it('hides a selection-gated tab off /session when no agent is explicitly opened', () => {
-      mockRightPanelOpen = true;
-      mockActiveRightPanelTab = 'other';
+      useAppStore.setState({ rightPanelOpen: true });
+      showTab('other');
       mockPathname = '/';
-      mockSelectedCwd = '/repo/ambient';
-      mockExplicitAgentPath = null;
+      useAppStore.setState({ selectedCwd: '/repo/ambient' });
+      useAppStore.setState({ explicitAgentPath: null });
       mockContributions = [
         makeContribution('other', { title: 'Other' }),
         makeContribution('selection', {
@@ -612,10 +611,10 @@ describe('RightPanelContainer', () => {
     });
 
     it('shows a selection-gated tab once an agent is explicitly opened', () => {
-      mockRightPanelOpen = true;
-      mockActiveRightPanelTab = 'other';
+      useAppStore.setState({ rightPanelOpen: true });
+      showTab('other');
       mockPathname = '/';
-      mockExplicitAgentPath = '/repo/picked';
+      useAppStore.setState({ explicitAgentPath: '/repo/picked' });
       mockContributions = [
         makeContribution('other', { title: 'Other' }),
         makeContribution('selection', {
@@ -631,28 +630,28 @@ describe('RightPanelContainer', () => {
   });
 
   it('auto-selects first visible tab (view-only) when active tab is not visible', () => {
-    mockRightPanelOpen = true;
+    useAppStore.setState({ rightPanelOpen: true });
     // Active tab 'missing' is not in contributions
-    mockActiveRightPanelTab = 'missing';
+    showTab('missing');
     mockContributions = [makeContribution('a'), makeContribution('b')];
 
     render(<RightPanelContainer pathname={mockPathname} />);
 
     // Auto-select uses the view-only setter so it never overwrites the per-agent
     // stored preference (DOR-227) — the persisting setter must stay untouched.
-    expect(mockSetActiveRightPanelTabView).toHaveBeenCalledWith('a');
-    expect(mockSetActiveRightPanelTab).not.toHaveBeenCalled();
+    expect(shownTab()).toBe('a');
+    expect(savedTab()).toBeNull();
   });
 
   it('does not auto-select when active tab is already visible', () => {
-    mockRightPanelOpen = true;
-    mockActiveRightPanelTab = 'b';
+    useAppStore.setState({ rightPanelOpen: true });
+    showTab('b');
     mockContributions = [makeContribution('a'), makeContribution('b')];
 
     render(<RightPanelContainer pathname={mockPathname} />);
 
-    expect(mockSetActiveRightPanelTabView).not.toHaveBeenCalled();
-    expect(mockSetActiveRightPanelTab).not.toHaveBeenCalled();
+    expect(shownTab()).toBe(startTab);
+    expect(savedTab()).toBeNull();
   });
 
   // Default-tab rule (the Chrome sidePanel rule): contextual wins when present,
@@ -662,8 +661,8 @@ describe('RightPanelContainer', () => {
     it('prefers the first contextual tab over the global tab when auto-selecting', () => {
       // /session with no persisted tab: Pulse is present and sorts first, but the
       // first CONTEXTUAL tab (Profile) must be the default.
-      mockRightPanelOpen = true;
-      mockActiveRightPanelTab = null;
+      useAppStore.setState({ rightPanelOpen: true });
+      showTab(null);
       mockContributions = [
         makeContribution('pulse', { isGlobal: true }),
         makeContribution('profile'),
@@ -672,26 +671,28 @@ describe('RightPanelContainer', () => {
 
       render(<RightPanelContainer pathname={mockPathname} />);
 
-      expect(mockSetActiveRightPanelTabView).toHaveBeenCalledWith('profile');
+      expect(shownTab()).toBe('profile');
+      expect(savedTab()).toBeNull();
     });
 
     it('falls back to the global tab when no contextual tab is visible', () => {
       // Dashboard/activity/tasks/…: only the global Pulse tab is visible, so it
       // becomes the default.
-      mockRightPanelOpen = true;
-      mockActiveRightPanelTab = null;
+      useAppStore.setState({ rightPanelOpen: true });
+      showTab(null);
       mockContributions = [makeContribution('pulse', { isGlobal: true })];
 
       render(<RightPanelContainer pathname={mockPathname} />);
 
-      expect(mockSetActiveRightPanelTabView).toHaveBeenCalledWith('pulse');
+      expect(shownTab()).toBe('pulse');
+      expect(savedTab()).toBeNull();
     });
 
     it('leaves a persisted, still-visible contextual tab untouched (DOR-227)', () => {
       // The per-agent persisted tab keeps winning on /session — the global tab
       // must not override it.
-      mockRightPanelOpen = true;
-      mockActiveRightPanelTab = 'canvas';
+      useAppStore.setState({ rightPanelOpen: true });
+      showTab('canvas');
       mockContributions = [
         makeContribution('pulse', { isGlobal: true }),
         makeContribution('profile'),
@@ -700,29 +701,29 @@ describe('RightPanelContainer', () => {
 
       render(<RightPanelContainer pathname={mockPathname} />);
 
-      expect(mockSetActiveRightPanelTabView).not.toHaveBeenCalled();
-      expect(mockSetActiveRightPanelTab).not.toHaveBeenCalled();
+      expect(shownTab()).toBe(startTab);
+      expect(savedTab()).toBeNull();
     });
   });
 
   it('an explicit tab click persists via setActiveRightPanelTab (not the view-only setter)', async () => {
     const { default: userEvent } = await import('@testing-library/user-event');
     const user = userEvent.setup();
-    mockRightPanelOpen = true;
-    mockActiveRightPanelTab = 'a';
+    useAppStore.setState({ rightPanelOpen: true });
+    showTab('a');
     mockContributions = [makeContribution('a'), makeContribution('b')];
 
     render(<RightPanelContainer pathname={mockPathname} />);
 
     await user.click(screen.getByRole('tab', { name: 'Tab b' }));
     // The user's explicit pick DOES update the stored preference.
-    expect(mockSetActiveRightPanelTab).toHaveBeenCalledWith('b');
-    expect(mockSetActiveRightPanelTabView).not.toHaveBeenCalled();
+    expect(savedTab()).toBe('b');
+    expect(shownTab()).toBe('b');
   });
 
   it('filters out contributions where visibleWhen returns false', () => {
-    mockRightPanelOpen = true;
-    mockActiveRightPanelTab = 'a';
+    useAppStore.setState({ rightPanelOpen: true });
+    showTab('a');
     mockContributions = [
       makeContribution('a'),
       makeContribution('b', { visibleWhen: () => false }),
@@ -737,8 +738,8 @@ describe('RightPanelContainer', () => {
   });
 
   it('falls back when a qualified community room hides the local Room tab', () => {
-    mockRightPanelOpen = true;
-    mockActiveRightPanelTab = 'room';
+    useAppStore.setState({ rightPanelOpen: true });
+    showTab('room');
     mockContributions = [
       makeContribution('pulse', { isGlobal: true }),
       makeContribution('room', {
@@ -750,14 +751,15 @@ describe('RightPanelContainer', () => {
 
     expect(screen.queryByRole('tab', { name: 'Tab room' })).not.toBeInTheDocument();
     expect(screen.getByText('Tab pulse')).toBeInTheDocument();
-    expect(mockSetActiveRightPanelTabView).toHaveBeenCalledWith('pulse');
+    expect(shownTab()).toBe('pulse');
+    expect(savedTab()).toBeNull();
   });
 
   it('renders no empty-state copy when every contribution is filtered out', () => {
     // The Wave-1 empty state is gone (Pulse makes it unreachable): a route that
     // filters out its only contribution renders an empty body, never stale copy.
-    mockRightPanelOpen = true;
-    mockActiveRightPanelTab = 'a';
+    useAppStore.setState({ rightPanelOpen: true });
+    showTab('a');
     mockContributions = [makeContribution('a', { visibleWhen: () => false })];
 
     render(<RightPanelContainer pathname={mockPathname} />);
@@ -767,8 +769,8 @@ describe('RightPanelContainer', () => {
   it('renders Sheet instead of Panel on mobile', () => {
     mockIsMobile = true;
     mockIsBelowDesktop = true;
-    mockRightPanelOpen = true;
-    mockActiveRightPanelTab = 'a';
+    useAppStore.setState({ rightPanelOpen: true });
+    showTab('a');
     mockContributions = [makeContribution('a')];
 
     render(<RightPanelContainer pathname={mockPathname} />);
@@ -783,8 +785,8 @@ describe('RightPanelContainer', () => {
   it('mobile Sheet renders active content', () => {
     mockIsMobile = true;
     mockIsBelowDesktop = true;
-    mockRightPanelOpen = true;
-    mockActiveRightPanelTab = 'a';
+    useAppStore.setState({ rightPanelOpen: true });
+    showTab('a');
     mockContributions = [makeContribution('a')];
 
     render(<RightPanelContainer pathname={mockPathname} />);
@@ -795,7 +797,7 @@ describe('RightPanelContainer', () => {
   it('mobile returns null when rightPanelOpen is false', () => {
     mockIsMobile = true;
     mockIsBelowDesktop = true;
-    mockRightPanelOpen = false;
+    useAppStore.setState({ rightPanelOpen: false });
     mockContributions = [makeContribution('a')];
 
     const { container } = render(<RightPanelContainer pathname={mockPathname} />);
@@ -805,8 +807,8 @@ describe('RightPanelContainer', () => {
   it('mobile Sheet also renders the shared header (tab strip + close)', () => {
     mockIsMobile = true;
     mockIsBelowDesktop = true;
-    mockRightPanelOpen = true;
-    mockActiveRightPanelTab = 'a';
+    useAppStore.setState({ rightPanelOpen: true });
+    showTab('a');
     mockContributions = [makeContribution('a'), makeContribution('b')];
 
     render(<RightPanelContainer pathname={mockPathname} />);
@@ -824,8 +826,8 @@ describe('RightPanelContainer', () => {
     it('puts focus on the panel body, not on a tab', () => {
       mockIsMobile = true;
       mockIsBelowDesktop = true;
-      mockRightPanelOpen = true;
-      mockActiveRightPanelTab = 'work';
+      useAppStore.setState({ rightPanelOpen: true });
+      showTab('work');
       mockContributions = [makeContribution('profile'), makeContribution('work')];
 
       render(<RightPanelContainer pathname={mockPathname} />);
@@ -837,8 +839,8 @@ describe('RightPanelContainer', () => {
     it('leaves every other tab opening as before', () => {
       mockIsMobile = true;
       mockIsBelowDesktop = true;
-      mockRightPanelOpen = true;
-      mockActiveRightPanelTab = 'profile';
+      useAppStore.setState({ rightPanelOpen: true });
+      showTab('profile');
       mockContributions = [makeContribution('profile'), makeContribution('work')];
 
       render(<RightPanelContainer pathname={mockPathname} />);
@@ -854,8 +856,8 @@ describe('RightPanelContainer', () => {
     it('overlays the panel instead of docking it', () => {
       mockIsMobile = false;
       mockIsBelowDesktop = true;
-      mockRightPanelOpen = true;
-      mockActiveRightPanelTab = 'a';
+      useAppStore.setState({ rightPanelOpen: true });
+      showTab('a');
       mockContributions = [makeContribution('a')];
 
       render(<RightPanelContainer pathname={mockPathname} />);
@@ -868,8 +870,8 @@ describe('RightPanelContainer', () => {
     it('keeps the sheet at reading width rather than full bleed', () => {
       mockIsMobile = false;
       mockIsBelowDesktop = true;
-      mockRightPanelOpen = true;
-      mockActiveRightPanelTab = 'a';
+      useAppStore.setState({ rightPanelOpen: true });
+      showTab('a');
       mockContributions = [makeContribution('a')];
 
       render(<RightPanelContainer pathname={mockPathname} />);
@@ -880,8 +882,8 @@ describe('RightPanelContainer', () => {
     it('leaves a measured-short tab at full height — 390×844 is not a tablet', () => {
       mockIsMobile = false;
       mockIsBelowDesktop = true;
-      mockRightPanelOpen = true;
-      mockActiveRightPanelTab = 'pulse';
+      useAppStore.setState({ rightPanelOpen: true });
+      showTab('pulse');
       mockContributions = [makeContribution('pulse')];
 
       render(<RightPanelContainer pathname={mockPathname} />);
@@ -899,8 +901,8 @@ describe('RightPanelContainer', () => {
     it('caps the sheet to its content on the Pulse tab', () => {
       mockIsMobile = true;
       mockIsBelowDesktop = true;
-      mockRightPanelOpen = true;
-      mockActiveRightPanelTab = 'pulse';
+      useAppStore.setState({ rightPanelOpen: true });
+      showTab('pulse');
       mockContributions = [makeContribution('pulse')];
 
       render(<RightPanelContainer pathname={mockPathname} />);
@@ -914,8 +916,8 @@ describe('RightPanelContainer', () => {
     it('caps the sheet to its content on the Files tab', () => {
       mockIsMobile = true;
       mockIsBelowDesktop = true;
-      mockRightPanelOpen = true;
-      mockActiveRightPanelTab = 'files';
+      useAppStore.setState({ rightPanelOpen: true });
+      showTab('files');
       mockContributions = [makeContribution('files')];
 
       render(<RightPanelContainer pathname={mockPathname} />);
@@ -926,8 +928,8 @@ describe('RightPanelContainer', () => {
     it('leaves every other tab at full height, Terminal included', () => {
       mockIsMobile = true;
       mockIsBelowDesktop = true;
-      mockRightPanelOpen = true;
-      mockActiveRightPanelTab = 'terminal';
+      useAppStore.setState({ rightPanelOpen: true });
+      showTab('terminal');
       mockContributions = [makeContribution('terminal')];
 
       render(<RightPanelContainer pathname={mockPathname} />);
