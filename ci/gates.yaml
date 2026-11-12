@@ -269,6 +269,9 @@ gates:
   - id: lefthook.pre-push.max-lines
     source: lefthook.yml
     purpose: Refuses file-size ratchet growth before pushing.
+  - id: lefthook.pre-push.own-mocks
+    source: lefthook.yml
+    purpose: Refuses new vi.mock calls on our own modules before pushing.
   - id: lefthook.pre-push.ledger-coverage
     source: lefthook.yml
     purpose: Requires a ledger entry for changed pipeline paths before pushing.
