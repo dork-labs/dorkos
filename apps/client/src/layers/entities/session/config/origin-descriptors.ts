@@ -22,7 +22,7 @@ export interface OriginDescriptor {
  * Descriptors for every non-user session origin. `user` is deliberately
  * absent — {@link getOriginDescriptor} returns `undefined` for it.
  */
-export const ORIGIN_DESCRIPTORS: Partial<Record<SessionOrigin, OriginDescriptor>> = {
+const ORIGIN_DESCRIPTORS: Partial<Record<SessionOrigin, OriginDescriptor>> = {
   // Every glyph comes from the shared `ORIGIN_GLYPH` registry, never from
   // `lucide-react` directly. Today's rows, the session switcher, "+N automated",
   // ⌘K and Activity all draw origins, and the marks used to be chosen here for

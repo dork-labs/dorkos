@@ -3,9 +3,8 @@
  * reading (`Session.contextTokens` ÷ the model catalog window) and the live
  * `session_status` reading (retained in the store) are reconciled into ONE
  * row-level reading with **live-wins** precedence (spec §6). The pure core
- * ({@link resolveSessionContextHealth}) is shared by both the per-row gauge
- * (via {@link useSessionContextHealth}) and the fleet rollup, so there is
- * exactly one resolution rule — never a second copy that can drift.
+ * ({@link resolveSessionContextHealth}) stays local to
+ * {@link useSessionContextHealth}, keeping its resolution rule in one place.
  *
  * @module entities/session/model/context/use-session-context-health
  */
@@ -56,7 +55,7 @@ export interface SessionContextHealth {
  * @param opts.reading - The retained live reading for this session, or `null`.
  * @param opts.window - The model's context window from the catalog, or nullish.
  */
-export function resolveSessionContextHealth(
+function resolveSessionContextHealth(
   session: Session,
   opts: { reading: SessionContextReading | null; window: number | null | undefined }
 ): SessionContextHealth {

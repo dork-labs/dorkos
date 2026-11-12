@@ -10,7 +10,7 @@
  */
 export { useJumpBackIn } from './model/use-jump-back-in';
 export type { UseJumpBackIn, UseJumpBackInOptions } from './model/use-jump-back-in';
-export { mergeJumpBackIn, MAX_JUMP_BACK_IN } from './lib/jump-back-in';
+export { mergeJumpBackIn } from './lib/jump-back-in';
 export type {
   JumpBackInItem,
   JumpBackInKind,

@@ -14,7 +14,6 @@ export {
   useInteractionStore,
   useInteractionTimestamps,
   useInteractionCounts,
-  useLastOpenedAt,
   interactionKey,
   MAX_INTERACTION_RECORDS,
 } from './model/interaction-store';

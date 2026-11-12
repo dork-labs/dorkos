@@ -20,12 +20,9 @@ export type { AppLocation } from './lib/session-navigation-intent';
 export type { SwitchAgentCwdStore, SwitchAgentCwdDeps } from './lib/switch-agent-cwd';
 // Context-health — the one client source for context percent, thresholds, and severity.
 export {
-  CONTEXT_WARNING_PERCENT,
-  CONTEXT_CRITICAL_PERCENT,
   CONTEXT_PROMOTE_PERCENT,
   CONTEXT_ACTION_PERCENT,
   contextSeverity,
-  deriveContextPercent,
   resolveDisplayContextPercent,
 } from './lib/context-health';
 export type { ContextSeverity } from './lib/context-health';
@@ -41,9 +38,8 @@ export { useSessionRuntime } from './model/query/use-session-runtime';
 export { useSessionId, useStartNewSession } from './model/navigation/use-session-id';
 export type { SetSessionIdOptions } from './model/navigation/use-session-id';
 export { useRecordChatOpened } from './model/navigation/use-record-chat-opened';
-// Two hooks, two questions. This one is the session's SETTINGS — its model,
-// permission mode, effort, and any change still in flight. `useSessionChatStatus`
-// below is whether the chat is idle, streaming or waiting.
+// Session settings: model, permission mode, effort, and changes in flight.
+// Chat status lives in the stream store.
 export { useSessionStatus } from './model/settings/use-session-status';
 export type { SessionStatusData } from './model/settings/use-session-status';
 // Query-key factory — the one place a session cache key is built, so a reader
@@ -69,13 +65,10 @@ export type { SessionScopedCwd } from './model/navigation/use-session-scoped-cwd
 export {
   useSessionChatStore,
   useSessionChatState,
-  useSessionMessages,
-  useSessionChatStatus,
   useHasConfirmedAuto,
   useHasDismissedDefaultStopOffer,
   useReadOnlyHintProgress,
   useModeBeforePlan,
-  DEFAULT_SESSION_STATE,
 } from './model/stream/session-chat-store';
 export type { SessionState } from './model/stream/session-chat-store';
 // Session-stream infrastructure (spec chat-stream-reconnection, Phase 3).
@@ -101,20 +94,12 @@ export {
 export type { SessionStreamState } from './model/stream/session-stream-store';
 export { useSessionWorkLeft, workLeftLineId } from './model/stream/use-session-work-left';
 export type { SessionWorkLeft } from './model/stream/use-session-work-left';
-export {
-  useHistoryWindowStore,
-  useHistoryWindow,
-  EMPTY_HISTORY_WINDOW,
-} from './model/stream/history-window-store';
+export { useHistoryWindowStore, useHistoryWindow } from './model/stream/history-window-store';
 export type { HistoryWindowState } from './model/stream/history-window-store';
 export {
   useSessionListStore,
-  useSessionListSessions,
-  useSessionListStatus,
   useSessionListLimit,
   useSessionToolActivity,
-  selectSessionActivity,
-  useSessionContextReading,
   useSessionRekeyTarget,
 } from './model/stream/session-list-store';
 export type { SessionContextReading } from './model/stream/session-list-store';
@@ -132,23 +117,16 @@ export type {
   SessionStatusSignals,
 } from './model/status/use-session-status-signals';
 export { useAgentHottestStatus } from './model/status/use-agent-hottest-status';
-// Context-health merge resolver (list vs live, live wins) + its pure core.
-export {
-  useSessionContextHealth,
-  resolveSessionContextHealth,
-} from './model/context/use-session-context-health';
+// Context-health merge resolver (list vs live, live wins).
+export { useSessionContextHealth } from './model/context/use-session-context-health';
 export type { SessionContextHealth } from './model/context/use-session-context-health';
 export { useAgentsAggregateStatus } from './model/status/use-agents-aggregate-status';
 export type { UseAgentsAggregateStatusOptions } from './model/status/use-agents-aggregate-status';
-export { usePulseMotion, shouldPulse } from './model/status/use-pulse-motion';
+export { shouldPulse } from './model/status/use-pulse-motion';
 export type { PulseMotion } from './model/status/use-pulse-motion';
 // Attention-signal model (DOR-339) — single source of per-agent "does this
 // need my eyes?" truth for filters, reveal rows, rollup dots, and mute.
-export {
-  deriveAttention,
-  useAgentAttentionMap,
-  ATTENTION_THRESHOLDS,
-} from './model/status/agent-attention';
+export { useAgentAttentionMap } from './model/status/agent-attention';
 export type { AttentionState, LiveBorderKind } from './model/status/agent-attention';
 export { useRenameSession } from './model/rename/use-rename-session';
 // Rename in place: the chat list's rows open it from their menu.
@@ -159,7 +137,7 @@ export { SessionVerbLine } from './ui/SessionVerbLine';
 export type { SessionVerbLineProps } from './ui/SessionVerbLine';
 
 // Origin — session-origin-legibility: descriptor registry, the row glyph. Ownership — whose a chat is (spec `your-activity-first` D7).
-export { ORIGIN_DESCRIPTORS, getOriginDescriptor } from './config/origin-descriptors';
+export { getOriginDescriptor } from './config/origin-descriptors';
 export type { OriginDescriptor } from './config/origin-descriptors';
 export { SessionOriginMark } from './ui/SessionOriginMark';
 export {
