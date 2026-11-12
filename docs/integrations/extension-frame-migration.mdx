@@ -132,7 +132,7 @@ Then call it with `app`:
 const entries = await api.request('/entries', { app: 'ledger' });
 ```
 
-The card that asks a person to allow your app lists each app it uses, by DorkOS's name for it, and what that app shares with yours ("reads", or "reads and changes"). An update that lists a new app asks the person again; one that drops an app does not.
+The card that asks a person to allow your app lists each app it uses, by DorkOS's name for it, what that app shares with yours ("reads", or "reads and changes"), and that your app can open its pages ("can open its pages", or "can only open its pages" when it shares nothing). An update that lists a new app asks the person again; one that drops an app does not.
 
 `:id` stands for exactly one path segment. Listing an app works one way only: it gives that app nothing back. DorkOS checks both manifests in the window and again on the server, tells the other app which app called in the `X-DorkOS-Caller-App` header, and records every call in the audit log. A refused call rejects before anything is sent.
 
