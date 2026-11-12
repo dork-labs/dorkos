@@ -1,7 +1,8 @@
 /**
  * The approval card for apps that run in their own frame (DOR-3293), drawn
  * without a server, with made-up apps: one that changes things and uses other
- * apps, and one that can change nothing at all.
+ * apps, one that also opens other apps' pages (every row kind, plus a long
+ * name that wraps on a phone), and one that can change nothing at all.
  *
  * Built from the same `InboxDecisionRow` and `ExtensionPermissionLines` the
  * inbox renders, so these cannot drift into a replica.
@@ -31,6 +32,31 @@ const WRITER: ExtensionPermissionView = {
     { id: 'ledger', name: 'Ledger', access: 'reads' },
     { id: 'desk', name: 'Desk', access: 'both' },
     { id: 'orbit', name: null, access: null },
+  ],
+};
+
+/**
+ * A made-up app that opens other apps' pages: each row kind the card draws
+ * (designer, 2026-11-11), and a long name to show wrapping at 390 px.
+ */
+const OPENER: ExtensionPermissionView = {
+  runtime: 'in-process',
+  net: [],
+  run: [],
+  agents: false,
+  hasServer: false,
+  hasPage: true,
+  writes: ['data', 'canvas'],
+  apps: [
+    { id: 'tally', name: 'Tally', access: 'both', opens: true },
+    { id: 'desk', name: 'Desk', access: 'reads' },
+    { id: 'orbit-mail', name: 'Orbit Mail', access: null, opens: true },
+    {
+      id: 'archive-insights',
+      name: 'Marketing Newsletter Archive and Subscriber Insights',
+      access: 'reads',
+      opens: true,
+    },
   ],
 };
 
@@ -89,6 +115,15 @@ export function AppApprovalCardShowcases() {
           title="Quarterly report wants to run on this computer."
           why="Quarterly report was added to DorkOS. It builds a report from your books and notes."
           permissions={WRITER}
+        />
+      </ShowcaseDemo>
+
+      <ShowcaseLabel>An app that also opens other apps’ pages</ShowcaseLabel>
+      <ShowcaseDemo>
+        <Card
+          title="Campaign desk wants to run on this computer."
+          why="Campaign desk was added to DorkOS. It plans posts and hands approvals to other apps."
+          permissions={OPENER}
         />
       </ShowcaseDemo>
 
