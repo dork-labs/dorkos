@@ -19,7 +19,7 @@ import type { ChatMessage } from '../chat-types';
 import { projectSessionMessages } from './project-session-turn';
 
 /** Whether the stream store holds hydrated server state for this session. */
-export function hasStreamState(stream: SessionStreamState): boolean {
+function hasStreamState(stream: SessionStreamState): boolean {
   return (
     stream.streamReadyCursor !== null ||
     stream.messages.length > 0 ||

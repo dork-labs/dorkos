@@ -48,7 +48,7 @@ import { baseName, isAtOrUnder, joinPath, parentOf, sortEntries } from './tree';
  * everything under the folder whatever this says — so past this many a
  * number is not worth another round trip per folder.
  */
-export const DELETE_COUNT_LIMIT = 1000;
+const DELETE_COUNT_LIMIT = 1000;
 
 /** What {@link useSourceChanges} needs. */
 export interface SourceChangesDeps {

@@ -135,7 +135,7 @@ const UNKNOWN_PARENT = 'another chat';
  *
  * @param session - The chat.
  */
-export function lastUsedAt(session: Session): string | null {
+function lastUsedAt(session: Session): string | null {
   return session.lastTouchedByYouAt ?? session.userLastMessageAt ?? null;
 }
 

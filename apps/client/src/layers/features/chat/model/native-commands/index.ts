@@ -7,7 +7,7 @@
  */
 export { useNativeCommands, isNativeCommandContent } from './use-native-commands';
 export type { NativeCommandResult } from './use-native-commands';
-export { NATIVE_COMMANDS, parseNativeCommand, NATIVE_COMMAND_ENTRIES } from './registry';
+export { NATIVE_COMMAND_ENTRIES } from './registry';
 export type { NativeCommand, NativeCommandContext } from './registry';
 // Shared with the compaction chip (DOR-112) — see dispatch-compact-intent.ts
 // for why it lives here rather than loose in `chat/model/`.

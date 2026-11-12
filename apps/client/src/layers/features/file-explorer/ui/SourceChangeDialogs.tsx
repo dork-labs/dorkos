@@ -67,7 +67,7 @@ const STOPPED: Record<ChangeKind, string> = {
  *
  * @param pending - The delete waiting to be confirmed.
  */
-export function deleteSentence(pending: PendingDelete): string {
+function deleteSentence(pending: PendingDelete): string {
   const { entry, fileCount, moreThan } = pending;
   if (entry.type !== 'dir') return `“${entry.name}” leaves the room’s files.`;
   const what =
@@ -82,7 +82,7 @@ export function deleteSentence(pending: PendingDelete): string {
 }
 
 /** What a delete confirmation adds about getting it back: the room keeps history. */
-export const DELETE_KEEPS_SENTENCE = 'The room’s history keeps a copy. An agent can restore it.';
+const DELETE_KEEPS_SENTENCE = 'The room’s history keeps a copy. An agent can restore it.';
 
 /**
  * The confirmations and choices for a source's tree changes.

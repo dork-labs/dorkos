@@ -14,11 +14,11 @@ import {
 } from '@dorkos/shared/doc-links';
 
 /** Shown on a `[[#heading]]` link, which points into the open doc. */
-export const SELF_LINK_TITLE = 'Links within this doc don’t open.';
+const SELF_LINK_TITLE = 'Links within this doc don’t open.';
 /** Shown when even the whole-space look stopped before finding the doc. */
-export const TOO_BIG_TITLE = 'This folder is too big to check this link.';
+const TOO_BIG_TITLE = 'This folder is too big to check this link.';
 /** Shown when the whole-space look failed. */
-export const UNCHECKED_TITLE = 'Couldn’t check this link.';
+const UNCHECKED_TITLE = 'Couldn’t check this link.';
 
 /** What {@link createWikiLinkOptions} builds on. */
 export interface WikiLinkOptionsInput {

@@ -27,7 +27,7 @@ export { BirthCertificate } from './ui/BirthCertificate';
 export { StartedByLine, StartedPrompt } from './ui/StartedByLine';
 // Chats messaging chats (spec `spin-off-chats` §6): the received message's
 // author mark, the Sent card and the "Stopped by" line, and the reads behind them.
-export { ChatFromMark, ReceivedChatMessages } from './ui/messaging/ReceivedChatMessage';
+export { ChatFromMark } from './ui/messaging/ReceivedChatMessage';
 export { RoomPostMark } from './ui/messaging/RoomPostMark';
 export { ForwardViaLine } from './ui/messaging/ForwardViaLine';
 export { SentChatCard } from './ui/messaging/SentChatCard';
@@ -54,7 +54,7 @@ export {
 } from './ui/message';
 export type { InteractiveToolHandle, AssistantContentShow } from './ui/message';
 // What counts as a reply's work, for the line a DM folds it into (DOR-3075).
-export { countWorkSteps, hasWork, isWorkPart } from './lib/work-parts';
+export { countWorkSteps, hasWork } from './lib/work-parts';
 export { TaskListPanel } from './ui/tasks/TaskListPanel';
 export { BackgroundTaskBar } from './ui/tasks/BackgroundTaskBar';
 export { QueuePanel } from './ui/input/QueuePanel';

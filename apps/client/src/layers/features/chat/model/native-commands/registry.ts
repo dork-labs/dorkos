@@ -74,7 +74,7 @@ const MAX_RENAME_TITLE_LENGTH = 200;
  * {@link parseNativeCommand}. Each command's `name` matches its
  * {@link CommandIntentId}, so the alias resolver maps directly to the executor.
  */
-export const NATIVE_COMMANDS: NativeCommand[] = [
+const NATIVE_COMMANDS: NativeCommand[] = [
   {
     name: 'rename',
     description: 'Rename the current chat',

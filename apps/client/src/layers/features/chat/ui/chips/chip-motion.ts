@@ -27,13 +27,13 @@ export const LIVE_WINDOW = 4;
 const EASE: [number, number, number, number] = [0.4, 0, 0.2, 1];
 
 /** Arrival: a spring with just enough overshoot to read as a landing. */
-export const CHIP_POP_IN: Transition = SPRING.glide;
+const CHIP_POP_IN: Transition = SPRING.glide;
 
 /** Absorption: the chip shrinks leftward toward the pile, and is gone. */
-export const CHIP_ABSORB: Transition = { duration: 0.25, ease: EASE };
+const CHIP_ABSORB: Transition = { duration: 0.25, ease: EASE };
 
 /** Where an absorbed chip goes — toward the pile on the left, small and gone. */
-export const CHIP_ABSORB_TO = { x: -16, scale: 0.45, opacity: 0 };
+const CHIP_ABSORB_TO = { x: -16, scale: 0.45, opacity: 0 };
 
 /** The plain fade that replaces every chip movement when a reader asks for less motion. */
 export const CHIP_FADE: Transition = { duration: 0.15, ease: EASE };

@@ -15,7 +15,7 @@ import { StreamingText } from '../message/StreamingText';
 import { stampTags } from '../../lib/chat-messaging';
 
 /** The small tags a received message carries, in one quiet run. */
-export function ChatMessageTags({ stamp }: { stamp: Pick<ChatMessageStamp, 'kind' | 'delivery'> }) {
+function ChatMessageTags({ stamp }: { stamp: Pick<ChatMessageStamp, 'kind' | 'delivery'> }) {
   const tags = stampTags(stamp);
   if (tags.length === 0) return null;
   return (
