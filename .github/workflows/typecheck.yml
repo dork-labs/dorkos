@@ -403,6 +403,23 @@ jobs:
         if: ${{ !cancelled() }}
         run: bash scripts/check-dead-doc-paths.sh
 
+      # The `scripts/` suites that read the whole repository: censuses,
+      # allowlists, baselines, workflow pins, `git ls-files` sweeps. The full
+      # `scripts` project runs only in scripts-test.yml's `harness` job, which
+      # is scoped to scripts/** and friends and does not run in the queue, so a
+      # PR outside that scope could break one of these, merge, and leave every
+      # later scripts/ PR red until a follow-up landed (three times in the week
+      # of Nov 5, 2026: #3528, #3568, #3564/#3569; ledger 261112-185148). Rides
+      # THIS job for the vocab gate's reason: `typecheck` is required,
+      # unfiltered and reports on `merge_group`, so a break now ejects the PR
+      # that caused it. The list and its hermetic complement live in
+      # scripts/vitest.repo.config.ts; scripts/__tests__/repo-wide-suites.test.ts
+      # makes every new suite pick a side. No build needed: none of these
+      # suites imports a workspace dist.
+      - name: Repo-wide scripts suites
+        if: ${{ !cancelled() }}
+        run: pnpm exec vitest run --config scripts/vitest.repo.config.ts
+
       # CI Steward census (plans/ci-steward-plan.md §4.2). Proves that ci/, the
       # pipeline's stated intent, matches the workflows, lefthook commands and
       # Claude hooks that actually run: every gate has a stated purpose in

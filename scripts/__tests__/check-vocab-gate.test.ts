@@ -1209,11 +1209,13 @@ describe('the shipped banned-terms.json and allowlist.json', () => {
     // Walking four full workspaces (client, site, server, community) through the real
     // TypeScript parser is genuinely slower than vitest's 5s default,
     // especially on a machine busy with other agents — this failed on CI
-    // timing out, not on finding a violation. 20s leaves headroom without
-    // masking an actual hang.
+    // timing out, not on finding a violation. 20s was enough alone, but in
+    // typecheck's queue step it shares the runner with the other repo-wide
+    // suites and took 26.6s (DOR-4222; local 3.7s), so 120s. Still bounded,
+    // so a real hang still fails.
     const repoRoot = join(import.meta.dirname, '../..');
     expect(runVocabGate(repoRoot)).toEqual([]);
-  }, 20_000);
+  }, 120_000);
 
   it('checks literal API errors and owner-refusal messages in connector management', () => {
     const repoRoot = join(import.meta.dirname, '../..');
