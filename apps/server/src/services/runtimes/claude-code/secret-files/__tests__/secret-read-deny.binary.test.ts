@@ -197,6 +197,33 @@ describe.skipIf(BINARY === null)('the model’s read tools and secret files (DOR
   });
 
   const SECRETS: [string, () => string][] = [
+    // DOR-4140: native path matching must cover spaces and another case spelling.
+    [
+      'desktop page storage with spaces',
+      () =>
+        path.join(
+          home,
+          'Library',
+          'Application Support',
+          'DorkOS',
+          'Local Storage',
+          'leveldb',
+          '000003-space.log'
+        ),
+    ],
+    [
+      'lowercase desktop page storage',
+      () =>
+        path.join(
+          home,
+          'library',
+          'application support',
+          'dorkos',
+          'local storage',
+          'leveldb',
+          '000004-lowercase.log'
+        ),
+    ],
     ['host.key', () => path.join(dorkHome, 'host.key')],
     ['an extension secret', () => path.join(dorkHome, 'extension-secrets', 'x.json')],
     ['the CLI api key', () => path.join(dorkHome, 'api-key')],

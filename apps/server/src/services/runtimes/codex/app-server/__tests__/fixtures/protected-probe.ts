@@ -49,11 +49,33 @@ export function protectedProbe(
   const sibling = path.join(home, 'sibling-project');
   const plugins = path.join(sibling, '.dork', 'plugins', 'existing');
   const large = path.join(home, 'large-tree');
+  // Distinct leaf names keep these canaries distinct on case-insensitive disks too.
+  const desktopFiles = [
+    path.join(
+      home,
+      'Library',
+      'Application Support',
+      'DorkOS',
+      'Local Storage',
+      'leveldb',
+      '000003-space.log'
+    ),
+    path.join(
+      home,
+      'library',
+      'application support',
+      'dorkos',
+      'local storage',
+      'leveldb',
+      '000004-lowercase.log'
+    ),
+  ];
   const secrets = [
     path.join(project, '.credentials-cwd'),
     path.join(home, '.claude.json'),
     path.join(root, 'data', 'config.json'),
     path.join(sibling, '.credentials-sibling'),
+    ...desktopFiles,
   ];
   const lateSecret = path.join(sibling, '.credentials-midturn');
   const plugin = path.join(plugins, 'plugin.js');
@@ -98,6 +120,7 @@ export function protectedProbe(
   );
   const attemptMarkers = grantHomes.map((_, index) => `PUBLIC-self-grant-attempt-${index}`);
   return {
+    desktopCases: desktopFiles.map((file) => ({ file, canary: canaries[secrets.indexOf(file)]! })),
     grantTargets,
     attemptMarkers,
     canaries: [...canaries, lateCanary],
