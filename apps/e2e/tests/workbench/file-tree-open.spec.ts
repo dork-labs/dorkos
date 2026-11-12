@@ -67,6 +67,76 @@ test.describe('Opening files from the tree @smoke', () => {
     await expect(page.getByRole('heading', { name: 'Agent file preview' })).toBeVisible();
   });
 
+  test('a room file put back on the canvas after its tab was closed opens its tab again', async ({
+    page,
+    roomsApi,
+    rightPanel,
+  }) => {
+    const { roomId } = await seedRoom(roomsApi, 'file-share');
+    await roomsApi.enableRepo(roomId, { 'brief.md': '# Room brief\n' });
+    await page.goto(`/channels?id=${roomId}`);
+    await page.getByTestId('bar-members-chip').click();
+    const files = page.getByRole('region', { name: 'Room files' });
+    const tab = rightPanel.header.getByRole('tab', { name: /brief\.md/ });
+
+    const putOnCanvas = async () => {
+      await clickFileName(page, 'brief.md', files);
+      const dialog = page.getByRole('dialog', { name: 'brief.md', exact: true });
+      await dialog.getByRole('button', { name: 'Put on the canvas' }).click();
+      await expect(dialog).toBeHidden();
+    };
+
+    await putOnCanvas();
+    await expect(tab).toBeVisible();
+    await tab.click();
+    await expect(tab).toHaveAttribute('aria-selected', 'true');
+    await page.getByRole('button', { name: 'Close brief.md view' }).click();
+    await expect(tab).toBeHidden();
+
+    // Back to the room's own tab, where the Files list lives, and share it again.
+    await rightPanel.header.getByRole('tab', { name: 'Room', exact: true }).click();
+    await putOnCanvas();
+    // The bug: the close was remembered, so the tab never came back.
+    await expect(tab).toBeVisible();
+  });
+
+  test('a room tree shows a picture as a picture, and an SVG as text', async ({
+    page,
+    roomsApi,
+    request,
+  }) => {
+    const { roomId } = await seedRoom(roomsApi, 'file-picture');
+    const commit = await roomsApi.enableRepo(roomId, {
+      'mark.svg': '<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>\n',
+    });
+    const upload = await request.post(`/api/rooms/${roomId}/files/upload`, {
+      multipart: {
+        dir: '',
+        baseCommit: commit!,
+        files: { name: 'sample.png', mimeType: 'image/png', buffer: PNG },
+      },
+    });
+    expect(upload.ok(), await upload.text()).toBe(true);
+
+    await page.goto(`/channels?id=${roomId}`);
+    await page.getByTestId('bar-members-chip').click();
+    const files = page.getByRole('region', { name: 'Room files' });
+
+    await clickFileName(page, 'sample.png', files);
+    const pictureDialog = page.getByRole('dialog', { name: 'sample.png', exact: true });
+    const picture = pictureDialog.getByRole('img', { name: 'sample.png' });
+    await expect(picture).toBeVisible();
+    await expect
+      .poll(() => picture.evaluate((el) => (el as HTMLImageElement).naturalWidth))
+      .toBe(1);
+    await pictureDialog.getByRole('button', { name: 'Close', exact: true }).click();
+
+    await clickFileName(page, 'mark.svg', files);
+    const svgDialog = page.getByRole('dialog', { name: 'mark.svg', exact: true });
+    await expect(svgDialog.getByText('<script>alert(1)</script>', { exact: false })).toBeVisible();
+    await expect(svgDialog.getByRole('img')).toHaveCount(0);
+  });
+
   test('a room tree never asks for the folders open in the agent folder before it', async ({
     page,
     roomsApi,

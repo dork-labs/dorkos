@@ -282,5 +282,7 @@ export {
   documentPanelScope,
   legacyDocumentPanelScope,
   readPanelViewPreferences,
+  roomDocumentClosedKey,
+  roomDocumentPanelScope,
 } from './panel-resources/preferences';
 export type { PanelViewPreference, PanelViewPreferences } from './panel-resources/preferences';

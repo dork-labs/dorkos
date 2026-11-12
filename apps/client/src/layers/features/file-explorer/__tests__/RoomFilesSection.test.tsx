@@ -559,6 +559,24 @@ describe('RoomFilesSection previews', () => {
   });
 
   it('says what a binary file is instead of decoding it', async () => {
+    const transport = roomWithFiles([entry({ name: 'bundle.zip' })]);
+    transport.readRoomFileContent = vi.fn().mockResolvedValue({
+      path: 'bundle.zip',
+      commit: 'head',
+      size: 900,
+      lastCommit: null,
+      body: { kind: 'binary' },
+    });
+    renderSection(transport);
+
+    fireEvent.click(await screen.findByRole('treeitem', { name: 'bundle.zip' }));
+    expect(
+      await screen.findByText('Only text files can be shown or edited here.')
+    ).toBeInTheDocument();
+    expect(screen.queryByRole('img')).not.toBeInTheDocument();
+  });
+
+  it('shows a picture from the room’s own picture address (DOR-4179)', async () => {
     const transport = roomWithFiles([entry({ name: 'logo.png' })]);
     transport.readRoomFileContent = vi.fn().mockResolvedValue({
       path: 'logo.png',
@@ -570,9 +588,14 @@ describe('RoomFilesSection previews', () => {
     renderSection(transport);
 
     fireEvent.click(await screen.findByRole('treeitem', { name: 'logo.png' }));
-    expect(
-      await screen.findByText('Only text files can be shown or edited here.')
-    ).toBeInTheDocument();
+    const picture = await screen.findByRole('img', { name: 'logo.png' });
+    expect(picture).toHaveAttribute('src', `/api/rooms/${ROOM_ID}/files/raw?path=logo.png`);
+    expect(transport.roomFileImageUrl).toHaveBeenCalledWith(ROOM_ID, 'logo.png');
+    expect(screen.queryByText('Only text files can be shown or edited here.')).toBeNull();
+
+    // A picture that will not load says so rather than leaving a broken frame.
+    fireEvent.error(picture);
+    expect(await screen.findByText('This picture couldn’t be shown.')).toBeInTheDocument();
   });
 
   it('says how big is too big, with the ceiling that was applied', async () => {

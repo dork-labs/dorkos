@@ -70,6 +70,7 @@ import type {
   RoomFileKind,
   RoomFileListResponse,
 } from '@dorkos/shared/room-files';
+import { roomImageContentType } from '@dorkos/shared/room-files';
 import { RoomError } from '../room-errors.js';
 import { logger } from '../../../lib/logger.js';
 import type { RoomRepoStore } from './room-repo-store.js';
@@ -402,23 +403,7 @@ export class RoomFilesService {
     }
 
     return this.translatingGitAbsence(async () => {
-      const commit = await this.resolveCommit(roomId);
-      if (!commit) throw new RoomError('ROOM_FILE_NOT_FOUND', 'No such file in this room');
-
-      const entry = await this.statPath(roomId, commit, filePath);
-      if (!entry) throw new RoomError('ROOM_FILE_NOT_FOUND', 'No such file in this room');
-
-      const kind = kindOf(entry);
-      if (kind !== 'file') {
-        throw new RoomError(
-          'ROOM_FILE_NOT_READABLE',
-          kind === 'symlink'
-            ? 'That is a link, not a file. DorkOS does not follow links out of a room.'
-            : kind === 'submodule'
-              ? 'That is another repository inside this one, not a file.'
-              : 'That is a folder, not a file.'
-        );
-      }
+      const { commit, entry } = await this.fileAtMain(roomId, filePath);
 
       const lastCommit =
         (await this.provenanceFor(roomId, commit, parentOf(filePath), [entry])).get(
@@ -519,6 +504,84 @@ export class RoomFilesService {
    * @param roomId - The room.
    * @throws {RoomError} `ROOM_HAS_NO_REPO`.
    */
+  /**
+   * Read one picture out of `main`'s tip as its bytes, for the room's file
+   * viewer (DOR-4179).
+   *
+   * Only the types {@link roomImageContentType} names: pictures a browser shows
+   * and never runs. An SVG can carry script, so it is refused here and stays
+   * text in the viewer. Everything else is refused exactly as {@link read}
+   * refuses it, and a picture over the install's ceiling is not read at all.
+   *
+   * Membership is the caller's to check, exactly as in
+   * {@link RoomFilesService.list}.
+   *
+   * @param roomId - The room.
+   * @param rawPath - The picture, relative to the repo root.
+   * @returns The picture's path, the type to serve it as, and its bytes.
+   * @throws {RoomError} `ROOM_HAS_NO_REPO`, `ROOM_FILE_PATH_INVALID`,
+   *   `ROOM_FILE_NOT_FOUND`, `ROOM_FILE_NOT_READABLE`, or
+   *   `ROOM_REPO_GIT_UNAVAILABLE`.
+   */
+  async readImage(
+    roomId: string,
+    rawPath: string
+  ): Promise<{ path: string; contentType: string; bytes: Buffer }> {
+    await this.requireRepo(roomId);
+    const filePath = normalizeRoomFilePath(rawPath);
+    const contentType = roomImageContentType(filePath);
+    if (contentType === null) {
+      throw new RoomError('ROOM_FILE_NOT_READABLE', 'Only pictures can be shown this way.');
+    }
+
+    return this.translatingGitAbsence(async () => {
+      const { commit, entry } = await this.fileAtMain(roomId, filePath);
+      const maxBytes = this.deps.maxFileBytes();
+      if (entry.size > maxBytes) {
+        throw new RoomError('ROOM_FILE_NOT_READABLE', 'That picture is too large to show here.');
+      }
+      const bytes = await this.gitBytes(
+        ['cat-file', 'blob', `${commit}:${filePath}`],
+        this.repoDir(roomId),
+        this.ceiling(roomId),
+        // The same backstop `read` keeps against a blob that grew in between.
+        { maxBuffer: maxBytes + 1024 }
+      );
+      return { path: filePath, contentType, bytes };
+    });
+  }
+
+  /**
+   * `main`'s tip and the plain file at a path in it, or the refusal a reader
+   * gets: missing, or a folder, a link or another repository.
+   *
+   * @param roomId - The room.
+   * @param filePath - A path {@link normalizeRoomFilePath} already accepted.
+   */
+  private async fileAtMain(
+    roomId: string,
+    filePath: string
+  ): Promise<{ commit: string; entry: TreeEntry }> {
+    const commit = await this.resolveCommit(roomId);
+    if (!commit) throw new RoomError('ROOM_FILE_NOT_FOUND', 'No such file in this room');
+
+    const entry = await this.statPath(roomId, commit, filePath);
+    if (!entry) throw new RoomError('ROOM_FILE_NOT_FOUND', 'No such file in this room');
+
+    const kind = kindOf(entry);
+    if (kind !== 'file') {
+      throw new RoomError(
+        'ROOM_FILE_NOT_READABLE',
+        kind === 'symlink'
+          ? 'That is a link, not a file. DorkOS does not follow links out of a room.'
+          : kind === 'submodule'
+            ? 'That is another repository inside this one, not a file.'
+            : 'That is a folder, not a file.'
+      );
+    }
+    return { commit, entry };
+  }
+
   private async requireRepo(roomId: string): Promise<void> {
     const missing = (): never => {
       throw new RoomError('ROOM_HAS_NO_REPO', 'This room does not have files of its own.');

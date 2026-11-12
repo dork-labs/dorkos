@@ -204,6 +204,16 @@ export interface RoomTransport {
    */
   readRoomFileContent(id: string, path: string): Promise<RoomFileContentResponse>;
   /**
+   * The address of one picture in a room's files, for an `<img>` (DOR-4179).
+   *
+   * The route serves only pictures a browser shows and never runs, gated like
+   * {@link readRoomFileContent}. Building the address fetches nothing.
+   *
+   * @param id - The room id.
+   * @param path - The picture, relative to the repo root.
+   */
+  roomFileImageUrl(id: string, path: string): string;
+  /**
    * What a room's files hold right now (spec `project-rooms` §3.6).
    *
    * The room's own commit, and for every agent member how far its working copy

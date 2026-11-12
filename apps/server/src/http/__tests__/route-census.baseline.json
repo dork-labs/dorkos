@@ -304,6 +304,7 @@
     "GET /api/rooms/:id/export",
     "GET /api/rooms/:id/files",
     "GET /api/rooms/:id/files/content",
+    "GET /api/rooms/:id/files/raw",
     "GET /api/rooms/:id/members/:authorId/reseat-options",
     "GET /api/rooms/:id/repo/status",
     "GET /api/rooms/:id/sessions",
