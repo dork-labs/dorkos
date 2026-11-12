@@ -15,15 +15,7 @@
  */
 export { ScheduleApprovalCard } from './ui/ScheduleApprovalCard';
 export type { ScheduleApprovalCardProps } from './ui/ScheduleApprovalCard';
-export {
-  REJECTION_UNDO_MS,
-  cancelRejection,
-  discardPendingRejections,
-  flushRejections,
-  isRejectionPending,
-  rejectAfterUndoWindow,
-  useRejectionPending,
-} from './model/deferred-rejection';
+export { REJECTION_UNDO_MS, discardPendingRejections } from './model/deferred-rejection';
 // Every surface that lists proposals composes this, so a decided card holds its
 // receipt for the same beat on all three — see the module for the disappearance
 // it closes.
@@ -35,7 +27,7 @@ export {
 export { useScheduleTestRun } from './model/use-schedule-test-run';
 export { useScheduleApprovalPower } from './model/use-schedule-approval-power';
 export type { ScheduleTestRunPhase, ScheduleTestRunState } from './model/use-schedule-test-run';
-export { formatCadence, formatFirstRuns, formatRunMoment } from './lib/format-schedule-times';
+export { formatRunMoment } from './lib/format-schedule-times';
 export type { FirstRuns } from './lib/format-schedule-times';
 
 export { ScheduleRunPermissions } from './ui/ScheduleRunPermissions';
