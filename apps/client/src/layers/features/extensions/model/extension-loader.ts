@@ -237,7 +237,8 @@ export class ExtensionLoader {
         const { api, cleanups } = createExtensionAPI(
           rec.id,
           this.deps,
-          rec.manifest.capabilities?.events ?? []
+          rec.manifest.capabilities?.events ?? [],
+          rec.manifest
         );
         try {
           const deactivate = await module.activate(api);

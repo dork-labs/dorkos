@@ -27,6 +27,7 @@ covers:
   - 'fix(extensions): an app page taller than its slot scrolls inside its frame (DOR-3293)'
   - 'fix(extensions): a dev-linked app page shows one scrollbar, its frame taking only the height under the strip (DOR-3293)'
   - 'feat(extensions): a personOnly rule can name its methods, so a read stays shared while a write on the same path does not (DOR-3293)'
+  - "feat(extensions): an app can open a page of an app it lists, by the item's path alone, and hears why when it can't (DOR-3293)"
 ---
 
 ### Security
