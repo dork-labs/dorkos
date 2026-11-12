@@ -313,33 +313,29 @@ contractSuite('mesh, agent and discovery groups', [
     expect: { status: 403, body: { error: 'Path outside boundary: /' } },
   },
   {
-    name: 'DELETE /api/mesh/denied/:encodedPath refuses an encoded dot-dot walk',
+    name: 'DELETE /api/mesh/denied?path= refuses a dot-dot walk',
     method: 'DELETE',
-    path: `/api/mesh/denied/${encodeURIComponent(`${REPO_ROOT}/../outside`)}`,
+    path: `/api/mesh/denied?path=${encodeURIComponent(`${REPO_ROOT}/../outside`)}`,
     expect: { status: 400, body: { error: 'Invalid path' } },
   },
   {
-    name: 'DELETE /api/mesh/denied/:encodedPath refuses an encoded path outside the boundary',
+    name: 'DELETE /api/mesh/denied?path= refuses a path outside the boundary',
+    method: 'DELETE',
+    path: `/api/mesh/denied?path=${encodeURIComponent('/')}`,
+    expect: { status: 403, body: { error: 'Path outside boundary: /' } },
+  },
+  {
+    name: 'DELETE /api/mesh/denied with no path is a 400',
+    method: 'DELETE',
+    path: '/api/mesh/denied',
+    expect: { status: 400, body: { error: 'Missing required parameter: path' } },
+  },
+  {
+    // The folder never rides in the path (DOR-4212): Remote Access refuses the
+    // encoded `/` every folder path holds, so the old shape is gone.
+    name: 'DELETE /api/mesh/denied/<encoded folder> is the /api 404',
     method: 'DELETE',
     path: `/api/mesh/denied/${encodeURIComponent('/')}`,
-    expect: { status: 403, body: { error: 'Path outside boundary: /' } },
-  },
-  {
-    name: 'DELETE /api/mesh/denied/:encodedPath decodes a twice-encoded path',
-    method: 'DELETE',
-    path: `/api/mesh/denied/${encodeURIComponent(encodeURIComponent('/'))}`,
-    expect: { status: 403, body: { error: 'Path outside boundary: /' } },
-  },
-  {
-    name: 'DELETE /api/mesh/denied/ with no path is the /api 404',
-    method: 'DELETE',
-    path: '/api/mesh/denied/',
-    expect: { status: 404, body: NOT_FOUND },
-  },
-  {
-    name: 'DELETE /api/mesh/denied/a/b is the /api 404: the path is one segment',
-    method: 'DELETE',
-    path: '/api/mesh/denied/a/b',
     expect: { status: 404, body: NOT_FOUND },
   },
 
@@ -982,7 +978,7 @@ describe('contract: mesh, agents and discovery, driven by hand (login off)', () 
     });
   });
 
-  it('denies a folder and clears it through its encoded path', async () => {
+  it('denies a folder and clears it by the folder in the query string', async () => {
     const dir = freshDir('denied');
     await check(server, {
       method: 'POST',
@@ -1003,7 +999,7 @@ describe('contract: mesh, agents and discovery, driven by hand (login off)', () 
     });
     await check(server, {
       method: 'DELETE',
-      path: `/api/mesh/denied/${encodeURIComponent(dir)}`,
+      path: `/api/mesh/denied?path=${encodeURIComponent(dir)}`,
       expect: { status: 200, body: { success: true } },
     });
     await check(server, {

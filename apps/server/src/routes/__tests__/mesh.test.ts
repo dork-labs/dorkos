@@ -1465,39 +1465,61 @@ describe('Mesh routes', () => {
     });
   });
 
-  // --- DELETE /denied/:encodedPath ---
+  // --- DELETE /denied?path= ---
 
-  describe('DELETE /api/mesh/denied/:encodedPath', () => {
-    it('clears a denial by encoded path', async () => {
-      const encodedPath = encodeURIComponent('/home/user/bad-project');
+  describe('DELETE /api/mesh/denied?path=', () => {
+    const clear = (folder: string) =>
+      request(fixtureServer).delete(`/api/mesh/denied?path=${encodeURIComponent(folder)}`);
 
-      const res = await request(fixtureServer).delete(`/api/mesh/denied/${encodedPath}`);
+    it('clears a denial by the folder in the query string', async () => {
+      const res = await clear('/home/user/bad-project');
 
       expect(res.status).toBe(200);
       expect(res.body.success).toBe(true);
       expect(meshCore.undeny).toHaveBeenCalledWith('/home/user/bad-project');
     });
 
-    it('decodes special characters in path', async () => {
-      const path = '/home/user/my project (2)/agent';
-      const encodedPath = encodeURIComponent(path);
-
-      const res = await request(fixtureServer).delete(`/api/mesh/denied/${encodedPath}`);
-
-      expect(res.status).toBe(200);
-      expect(meshCore.undeny).toHaveBeenCalledWith(path);
+    it('reads special characters and a Windows path as written', async () => {
+      for (const folder of ['/home/user/my project (2)/agent', 'C:\\Users\\qa\\agent']) {
+        const res = await clear(folder);
+        expect(res.status).toBe(200);
+        expect(meshCore.undeny).toHaveBeenLastCalledWith(folder);
+      }
     });
+
+    // The folder arrives decoded, so the route's own checks are the only ones
+    // between it and the denial list: they run exactly as they did on the path.
+    it.each(['/home/user/../../etc', '/home/user/agent\0'])(
+      'refuses %s with 400 before the boundary check',
+      async (folder) => {
+        const res = await clear(folder);
+        expect(res.status).toBe(400);
+        expect(validateBoundary).not.toHaveBeenCalled();
+        expect(meshCore.undeny).not.toHaveBeenCalled();
+      }
+    );
 
     it('returns 403 for out-of-boundary paths', async () => {
       vi.mocked(validateBoundary).mockRejectedValueOnce(
         new BoundaryError('Access denied: path outside directory boundary', 'OUTSIDE_BOUNDARY')
       );
 
-      const encodedPath = encodeURIComponent('/etc/shadow');
-      const res = await request(fixtureServer).delete(`/api/mesh/denied/${encodedPath}`);
+      const res = await clear('/etc/shadow');
 
       expect(res.status).toBe(403);
       expect(res.body.error).toContain('Path outside boundary');
+      expect(meshCore.undeny).not.toHaveBeenCalled();
+    });
+
+    it('refuses a missing or repeated path with 400', async () => {
+      for (const target of [
+        '/api/mesh/denied',
+        '/api/mesh/denied?path=',
+        '/api/mesh/denied?path=%2Fa&path=%2Fb',
+      ]) {
+        const res = await request(fixtureServer).delete(target);
+        expect(res.status).toBe(400);
+      }
       expect(meshCore.undeny).not.toHaveBeenCalled();
     });
   });

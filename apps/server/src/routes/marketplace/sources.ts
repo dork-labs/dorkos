@@ -14,8 +14,9 @@ import {
 } from '../../services/marketplace/sources/source-listing.js';
 import type { MarketplaceSource } from '../../services/marketplace/types.js';
 import { readJsonBody } from '../../http/request-body.js';
+import { readQuery } from '../../http/request-query.js';
 import type { MarketplaceRouteDeps, MarketplaceRoutes } from '../marketplace.js';
-import type { MarketplaceRouteContext } from './context.js';
+import type { MarketplaceContext, MarketplaceRouteContext } from './context.js';
 import { validationFailed } from './shared.js';
 
 /** Body schema for `POST /api/marketplace/sources`. */
@@ -113,18 +114,34 @@ export function mountSourceRoutes(
     return c.json({ ...created, listing }, 201);
   });
 
-  // DELETE /sources/:name -- remove a marketplace source (operator-only, DOR-502)
-  app.delete('/sources/:name', async (c) => {
+  // A source name rides in the path or, from the app, in `?name=`. The query form
+  // exists because a name saved by an older DorkOS may hold a `/`, and Remote
+  // Access refuses an encoded `/` in a URL path (DOR-4212). Both forms run the
+  // same handler; the path form stays for the CLI and every name made today.
+  const sourceNameFromQuery = (c: MarketplaceContext): string | null => {
+    const name = readQuery(c).name;
+    return typeof name === 'string' && name !== '' ? name : null;
+  };
+
+  // DELETE /sources/:name, DELETE /sources?name= -- remove a marketplace source
+  // (operator-only, DOR-502)
+  const removeSource = async (c: MarketplaceContext, name: string | null) => {
     const refused = refuseUntrustedSourceWrite(c, 'remove');
     if (refused) return refused;
-    const name = c.req.param('name');
+    if (name === null) return c.json({ error: 'Missing required parameter: name' }, 400);
 
+    let existed: boolean;
     try {
+      existed = (await sourceManager.get(name)) !== null;
       await sourceManager.remove(name);
     } catch (err) {
       logger.error(`[Marketplace] Failed to remove source ${name}`, err);
       return c.json({ error: 'Failed to remove marketplace source' }, 500);
     }
+    // Removing a name that was never a source changes nothing, and never names
+    // a cache folder: the name is the caller's text, so `.` would otherwise be
+    // the whole listings folder.
+    if (!existed) return c.body(null, 204);
     // Its listing goes with it: listings are cached by name, and one left
     // behind would pass for the listing of the next source given that name
     // (DOR-2304). The source is already gone, so a failure here is logged
@@ -136,11 +153,14 @@ export function mountSourceRoutes(
       logger.warn(`[Marketplace] Removed source ${name} but kept its listing`, err);
     }
     return c.body(null, 204);
-  });
+  };
+  app.delete('/sources', (c) => removeSource(c, sourceNameFromQuery(c)));
+  app.delete('/sources/:name', (c) => removeSource(c, c.req.param('name')));
 
-  // POST /sources/:name/refresh -- force refetch of a source's marketplace.json
-  app.post('/sources/:name/refresh', async (c) => {
-    const name = c.req.param('name');
+  // POST /sources/:name/refresh, POST /sources/refresh?name= -- force refetch of
+  // a source's marketplace.json
+  const refreshSource = async (c: MarketplaceContext, name: string | null) => {
+    if (name === null) return c.json({ error: 'Missing required parameter: name' }, 400);
     try {
       const source = await sourceManager.get(name);
       if (!source) {
@@ -159,5 +179,7 @@ export function mountSourceRoutes(
       const message = err instanceof Error ? err.message : 'Failed to refresh marketplace source';
       return c.json({ error: message }, 502);
     }
-  });
+  };
+  app.post('/sources/refresh', (c) => refreshSource(c, sourceNameFromQuery(c)));
+  app.post('/sources/:name/refresh', (c) => refreshSource(c, c.req.param('name')));
 }

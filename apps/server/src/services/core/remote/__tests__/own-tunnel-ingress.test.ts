@@ -3,6 +3,7 @@ import http, { type IncomingMessage } from 'node:http';
 import net from 'node:net';
 import { createOwnTunnelIngress, type OwnTunnelIngress } from '../own-tunnel-ingress.js';
 import { ingressOf } from '../ingress-mark.js';
+import { APP_OWN_ROUTES, RETIRED_ENCODED_PATHS } from './app-own-routes.js';
 
 const opened: OwnTunnelIngress[] = [];
 
@@ -49,11 +50,11 @@ function get(url: string, host: string): Promise<{ status: number; body: string 
 }
 
 /** Send one raw request line and read back its status code. */
-function rawStatus(port: number, target: string, upgrade = false): Promise<number> {
+function rawStatus(port: number, target: string, upgrade = false, method = 'GET'): Promise<number> {
   return new Promise((resolve, reject) => {
     const socket = net.connect(port, '127.0.0.1', () => {
       socket.write(
-        `GET ${target} HTTP/1.1\r\nHost: abc.ngrok.app\r\n` +
+        `${method} ${target} HTTP/1.1\r\nHost: abc.ngrok.app\r\n` +
           (upgrade ? 'Connection: Upgrade\r\nUpgrade: websocket\r\n' : 'Connection: close\r\n') +
           '\r\n'
       );
@@ -94,6 +95,7 @@ describe('own-tunnel ingress: normalise, then match', () => {
 
   it.each([
     ...DOT_SEGMENT_SPELLINGS,
+    ...RETIRED_ENCODED_PATHS,
     '/x/%252e%252e/a2a',
     '/x\\..\\a2a',
     '/api/x%5c..%5ca2a',
@@ -122,6 +124,15 @@ describe('own-tunnel ingress: normalise, then match', () => {
       expect(requests).toHaveLength(1);
     }
   );
+});
+
+describe('own-tunnel ingress: the app’s own routes (DOR-4212)', () => {
+  it.each(APP_OWN_ROUTES)('hands $method $target to the front door', async (route) => {
+    const { ingress, requests } = recordingIngress();
+    const port = Number(new URL(await ingress.open()).port);
+    expect(await rawStatus(port, route.target, false, route.method)).toBe(200);
+    expect(requests).toHaveLength(1);
+  });
 });
 
 describe('own-tunnel ingress', () => {

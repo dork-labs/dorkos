@@ -51,7 +51,9 @@ export function FileAttachmentList({ files }: FileAttachmentListProps) {
   return (
     <div className="flex flex-wrap gap-1.5 pb-1.5">
       {files.map((file) => {
-        const filename = file.path.split('/').pop() ?? file.path;
+        // Split on both separators: a path a Windows server wrote keeps its `\`,
+        // and an encoded `\` in a URL path is refused over Remote Access (DOR-4212).
+        const filename = file.path.split(/[\\/]/).pop() ?? file.path;
 
         if (file.isImage) {
           const imgSrc = `/api/uploads/${encodeURIComponent(filename)}?cwd=${encodeURIComponent(selectedCwd ?? '')}`;

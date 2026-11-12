@@ -1258,14 +1258,15 @@ List all denied agents.
 
 - `200` - `{ denied: DenialRecord[] }`
 
-### DELETE /api/mesh/denied/:agentId
+### DELETE /api/mesh/denied?path=
 
-Remove an agent from the deny list.
+Clear the denial on a folder. The folder rides in the `path` query parameter, never a path segment: Remote Access refuses an encoded `/` or `\` in a URL path (DOR-4212).
 
 **Responses:**
 
-- `200` - `{ ok: true }`
-- `404` - Agent not in deny list
+- `200` - `{ success: true }`
+- `400` - Missing path, or one holding `..` or a NUL
+- `403` - Path outside the boundary
 
 ### GET /api/mesh/status
 

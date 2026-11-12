@@ -308,7 +308,7 @@ View the denial list and remove entries if you change your mind:
 curl http://localhost:4242/api/mesh/denied
 
 # Remove a denial (re-enables discovery for that path, path is URL-encoded)
-curl -X DELETE "http://localhost:4242/api/mesh/denied/%2Fhome%2Fuser%2Fprojects%2Flegacy-bot"
+curl -X DELETE "http://localhost:4242/api/mesh/denied?path=%2Fhome%2Fuser%2Fprojects%2Flegacy-bot"
 ```
 
 ### Configuration
