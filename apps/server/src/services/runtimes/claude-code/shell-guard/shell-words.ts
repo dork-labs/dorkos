@@ -28,6 +28,23 @@ const MAX_VARIABLE_GROWTH = 64 * 1_024;
 /** The longest path any platform here opens (Linux); a longer piece names nothing that exists. */
 export const MAX_PATH_PIECE = 4_096;
 
+/** Decode one ANSI-C escape without running a shell or evaluating script text. */
+function ansiEscape(text: string, at: number): { value: string; length: number } {
+  const rest = text.slice(at + 1, at + 10);
+  const numeric = /^(?:[0-7]{1,3}|x[\da-fA-F]{1,2}|u[\da-fA-F]{1,4}|U[\da-fA-F]{1,8})/.exec(rest)?.[0];
+  if (numeric) {
+    const octal = /^[0-7]/.test(numeric);
+    const code = Number.parseInt(octal ? numeric : numeric.slice(1), octal ? 8 : 16);
+    if (code <= 0x10ffff) return { value: String.fromCodePoint(code), length: numeric.length + 1 };
+  }
+  const char = text[at + 1] ?? '';
+  const simple: Readonly<Record<string, string>> = {
+    a: '\x07', b: '\b', e: '\x1b', E: '\x1b', f: '\f', n: '\n', r: '\r', t: '\t', v: '\v',
+    '\\': '\\', "'": "'", '"': '"', '?': '?',
+  };
+  return { value: simple[char] ?? `\\${char}`, length: char ? 2 : 1 };
+}
+
 /**
  * Split a command line into its commands. Never throws: an unclosed quote just ends the word.
  *
@@ -68,14 +85,18 @@ export function parseShell(command: string): ShellSegment[] {
       inWord = true;
       i += 2;
     } else if (char === '$' && command[i + 1] === "'") {
-      // `$'it\'s'` has its own quoting: read as plain quotes, its `\'` ends the word early, and all
-      // that follows looks quoted. Its other escapes aren't decoded: a path spelled in them is the
-      // stated limit.
+      // ANSI-C quoting can spell a protected name entirely with numeric escapes. Decode only
+      // inside this quote form; an ordinary script or single-quoted string keeps its escapes.
       i += 2;
       while (i < command.length && command[i] !== "'") {
-        if (command[i] === '\\') i += 1;
-        word += command[i] ?? '';
-        i += 1;
+        if (command[i] === '\\') {
+          const escape = ansiEscape(command, i);
+          word += escape.value;
+          i += escape.length;
+        } else {
+          word += command[i] ?? '';
+          i += 1;
+        }
       }
       inWord = true;
       i += 1;

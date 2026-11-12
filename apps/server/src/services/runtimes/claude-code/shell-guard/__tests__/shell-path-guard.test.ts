@@ -162,6 +162,16 @@ describe('parseShell', () => {
 
 describe('commandReachesProtectedRead', () => {
   it.each([
+    String.raw`cat ~/$'\x2essh'/id_ed25519`,
+    String.raw`cat ~/$'\056ssh'/id_ed25519`,
+    String.raw`cat ~/$'\u002essh'/id_ed25519`,
+    String.raw`cat ~/$'\U0000002essh'/id_ed25519`,
+    String.raw`cat ~/$'\x2e'ssh/id_ed25519`,
+  ])('sees an ANSI-C quoted protected path: %s', async (command) => {
+    expect(await commandReachesProtectedRead(command, roots)).toBe(true);
+  });
+
+  it.each([
     ['~', 'cat ~/.ssh/id_ed25519'],
     ['$HOME', 'cat $HOME/.ssh/id_ed25519'],
     ['${HOME}', 'cat "${HOME}/.ssh/id_ed25519"'],
