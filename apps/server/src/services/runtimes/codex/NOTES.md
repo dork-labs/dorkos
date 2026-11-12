@@ -375,8 +375,8 @@ The runtime reads only the exact UUIDv7 thread’s bounded rollout tail, with di
 
 ## App-server transport — spike verdicts, 2026-10-05 at codex-cli 0.154.0 (DOR-2719, ADR 261005-113107)
 
-Verdicts 1 and 3 above describe the **exec** transport only. Behind `runtimes.codex.transport`
-DorkOS can now run Codex on one long-lived `codex app-server` per Codex home
+Verdicts 1 and 3 above describe the retired **exec** transport only.
+DorkOS runs Codex on one long-lived `codex app-server` per Codex home
 (`transport/app-server-transport.ts`). The spikes that decided its design are in
 `research/20261005_codex-app-server-spikes.md`; the verdicts DorkOS builds on:
 
@@ -459,9 +459,10 @@ Pinned by `__tests__/start-permission-ceiling.test.ts`.
 
 ### P3 — work that outlives the turn, reconciliation, and the default (2026-10-05, codex-cli 0.154.0)
 
-`runtimes.codex.transport: auto` resolves to **app-server** from P3 (`resolveCodexTransport`
-only; no migration; an explicit `exec` is honoured). ADR 261005-113107 is accepted; ADR-0309 is
-superseded. Verdicts 1 and 3 above now describe the `exec` fallback only.
+App-server became the default in P3. The persisted selector and the exec fallback are now
+retired under the 0.115 upgrade floor: every production launch uses protected app-server,
+including installs whose stored config still has an old selector. ADR 261005-113107 is
+accepted; ADR-0309 is superseded. Verdicts 1 and 3 above describe historical exec behavior.
 
 Verified on the vendored binary with a throwaway `CODEX_HOME` and a scripted local provider
 (`app-server/__tests__/app-server.binary.test.ts`, free; the probes behind them are recorded

@@ -83,7 +83,6 @@ const RUNTIMES_DEFAULTS = {
     defaultModel: null,
     defaultEffort: null,
     defaultTrustStop: null,
-    transport: 'auto',
   },
 };
 

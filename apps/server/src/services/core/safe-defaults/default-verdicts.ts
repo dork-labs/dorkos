@@ -334,7 +334,6 @@ export const NO_RISK_DEFAULTS: readonly string[] = [
   'runtimes.codex.binaryPath',
   // `auto` follows DorkOS's own default, which is app-server since
   // DOR-2719 phase 3; `exec` stays available (ADR 261005-113107).
-  'runtimes.codex.transport',
 ];
 
 /**

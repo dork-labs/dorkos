@@ -41,6 +41,7 @@ function seed(version?: string, sidebar?: unknown): { dir: string; file: string;
         runtimes: {
           dorkosTools: false,
           defaultTrustStop: 'ask',
+          codex: { enabled: true, transport: 'exec' },
           claudeCode: {
             defaultAccount: '/fixture/account',
             accounts: [
@@ -253,6 +254,7 @@ describe('config upgrade floor through a real manager', () => {
       expect(stored.extensions.approvedToRun).toEqual(['fixture-extension']);
       expect(stored.harness.approvedHooks).toEqual(['fixture-hooks@digest']);
       expect(stored.runtimes.defaultTrustStop).toBe('ask');
+      expect(stored.runtimes.codex.transport).toBe('exec');
       expect(stored.runtimes.claudeCode.defaultAccount).toBe('/fixture/account');
       expect(stored.runtimes.claudeCode.accounts).toEqual([
         {

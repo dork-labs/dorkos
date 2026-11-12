@@ -36,7 +36,7 @@ describe('CodexRuntime.readContextUsage', () => {
     onCredits.value = false;
     threadMap = new CodexThreadMap(createTestDb());
     runtime = new CodexRuntime({
-      transport: 'exec',
+      transport: 'app-server',
       threadMap,
       resolveBinary: async () => '/bin/codex',
     });

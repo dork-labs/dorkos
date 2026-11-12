@@ -80,18 +80,6 @@ const DefaultEffortSchema = z.enum(EFFORT_LEVELS).nullable().default(null);
  */
 const RuntimeTrustStopSchema = z.enum(['ask', 'act', 'autonomy']).nullable().default(null);
 
-/** Accepted persisted values; all now resolve to protected app-server. */
-export const CODEX_TRANSPORTS = ['auto', 'app-server', 'exec'] as const;
-
-/** A `runtimes.codex.transport` value. */
-export type CodexTransportSetting = (typeof CODEX_TRANSPORTS)[number];
-
-/**
- * `exec` remains accepted for existing configuration files, but resolves to
- * app-server: the pinned exec CLI cannot select a protected permission profile.
- */
-const CodexTransportSchema = z.enum(CODEX_TRANSPORTS).default('auto');
-
 /**
  * The color a STANDALONE default Claude account is drawn in
  * (`runtimes.claudeCode.defaultAccountColor`, DOR-2492): lowercase `#rrggbb`,
@@ -425,11 +413,6 @@ export const RuntimesConfigSchema = z
          * `runtimes.defaultTrustStop`. See {@link RuntimeTrustStopSchema}.
          */
         defaultTrustStop: RuntimeTrustStopSchema,
-        /**
-         * Accepted legacy transport setting. Every value now runs protected
-         * app-server; exec is retained only so existing config files still load.
-         */
-        transport: CodexTransportSchema,
       })
       .default(() => ({
         enabled: true,
@@ -438,7 +421,6 @@ export const RuntimesConfigSchema = z
         defaultModel: null,
         defaultEffort: null,
         defaultTrustStop: null,
-        transport: 'auto' as const,
       })),
   })
   .default(() => ({
@@ -476,6 +458,5 @@ export const RuntimesConfigSchema = z
       defaultModel: null,
       defaultEffort: null,
       defaultTrustStop: null,
-      transport: 'auto' as const,
     },
   }));

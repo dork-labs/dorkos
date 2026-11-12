@@ -27,6 +27,7 @@
  * Skipped by name where no vendored binary is installed for this platform.
  */
 import http from 'node:http';
+import { UserConfigSchema } from '@dorkos/shared/config-schema';
 import { createHash } from 'node:crypto';
 import { assertProtectionStarts } from './fixtures/protection-starts.js';
 import { completeHostFixture, FIXTURE_BACKUP_NAME } from './fixtures/complete-protected-home.js';
@@ -42,7 +43,7 @@ import type { StreamEvent } from '@dorkos/shared/types';
 import { resolveCodexVendoredBinary } from '../../check-dependencies.js';
 import { CodexAppServerPool, type SpawnAppServer } from '../process-pool.js';
 import type { AppServerCodexTransport } from '../../transport/app-server-transport.js';
-import { createCodexTransport, type CodexTransportKind } from '../../transport/index.js';
+import { createCodexTransport } from '../../transport/index.js';
 import * as runtimeEnv from '../../../shared/runtime-environment-config.js';
 import type { BackgroundWake } from '../background-work.js';
 import { createCodexEventContext } from '../../event-mapper.js';
@@ -304,7 +305,7 @@ function handle(req: http.IncomingMessage, res: http.ServerResponse, body: strin
 
 function makeTransport(
   backgroundWork?: AppServerTransportOptions['backgroundWork'],
-  setting: CodexTransportKind = 'app-server',
+  setting: 'exec' | 'app-server' = 'app-server',
   onSpawn?: (child: ReturnType<typeof nodeSpawn>) => void
 ): AppServerCodexTransport {
   const spawn: SpawnAppServer = (binary, args, options) => {
@@ -329,7 +330,12 @@ function makeTransport(
     agentToolsUrl: `${base}/mcp`,
     isConnectorCapabilityId: () => false,
   } satisfies ConnectorRuntimeTools;
-  return createCodexTransport(setting, {
+  const config = UserConfigSchema.parse({
+    version: 1,
+    runtimes: { codex: { transport: setting } },
+  });
+  expect(config.runtimes.codex).not.toHaveProperty('transport');
+  return createCodexTransport({
     pool,
     ...(backgroundWork ? { backgroundWork } : {}),
     connectorTools: () => tools,

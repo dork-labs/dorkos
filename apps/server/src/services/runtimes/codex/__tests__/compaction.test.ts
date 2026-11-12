@@ -7,7 +7,10 @@
  *
  * @vitest-environment node
  */
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
 import type { StreamEvent } from '@dorkos/shared/types';
 import { createTestDb } from '@dorkos/test-utils/db';
 
@@ -47,9 +50,21 @@ import { AppServerCodexTransport } from '../transport/app-server-transport.js';
 import { FakeAppServerHost, parkedCompactionTurn } from './fake-app-server.js';
 
 const HOME = '/fake/compaction/person';
+let fixtureRoot: string;
+beforeEach(() => {
+  fixtureRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'dorkos-compaction-home-'));
+  for (const dir of ['home', 'data', 'claude', 'codex']) fs.mkdirSync(path.join(fixtureRoot, dir));
+  vi.stubEnv('HOME', path.join(fixtureRoot, 'home'));
+  vi.stubEnv('DORK_HOME', path.join(fixtureRoot, 'data'));
+  vi.stubEnv('CLAUDE_CONFIG_DIR', path.join(fixtureRoot, 'claude'));
+  vi.stubEnv('CODEX_HOME', path.join(fixtureRoot, 'codex'));
+});
+
 const pools: CodexAppServerPool[] = [];
 afterEach(async () => {
   await Promise.all(pools.splice(0).map((pool) => pool.shutdown()));
+  vi.unstubAllEnvs();
+  fs.rmSync(fixtureRoot, { recursive: true, force: true });
 });
 
 function appServerRuntime() {
@@ -102,15 +117,15 @@ describe('which Codex can summarize', () => {
     expect(runtime.getCapabilities().commandIntents.compact).toEqual({ supported: false });
   });
 
-  it('declares compact on app-server, including the legacy exec setting', () => {
+  it('declares compact on the protected production transport', () => {
     const { runtime } = appServerRuntime();
     expect(runtime.getCapabilities().commandIntents.compact.supported).toBe(true);
 
-    const exec = new CodexRuntime({
+    const production = new CodexRuntime({
       threadMap: new CodexThreadMap(createTestDb()),
-      transport: 'exec',
+      transport: 'app-server',
     });
-    expect(exec.getCapabilities().commandIntents.compact.supported).toBe(true);
+    expect(production.getCapabilities().commandIntents.compact.supported).toBe(true);
   });
 });
 

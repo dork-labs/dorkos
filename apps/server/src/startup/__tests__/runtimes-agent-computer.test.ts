@@ -10,6 +10,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 type Role = 'computer' | 'hub' | 'agent-computer';
 const role = vi.hoisted(() => ({ value: 'agent-computer' as Role }));
+const stored = vi.hoisted(() => ({ transport: 'exec' as unknown }));
 vi.mock('../../lib/server-role.js', () => ({ currentServerRole: () => role.value }));
 vi.mock('../../env.js', () => ({ env: {} }));
 vi.mock('../../lib/logger.js', () => ({
@@ -20,7 +21,7 @@ vi.mock('../../services/core/config-manager.js', () => ({
   configManager: {
     // Every optional runtime switched on, so only the role can leave one out.
     get: () => ({
-      codex: { enabled: true, transport: 'sdk' },
+      codex: { enabled: true, transport: stored.transport },
       opencode: { enabled: true },
       doe: { enabled: true },
       default: 'claude-code',
@@ -28,7 +29,11 @@ vi.mock('../../services/core/config-manager.js', () => ({
     onChange: () => () => {},
   },
 }));
-const registered = vi.hoisted(() => ({ types: [] as string[], defaultType: '' }));
+const registered = vi.hoisted(() => ({
+  types: [] as string[],
+  defaultType: '',
+  codexOptions: undefined as unknown,
+}));
 vi.mock('../../services/core/runtime-registry.js', () => ({
   runtimeRegistry: {
     register: (runtime: { type: string }) => registered.types.push(runtime.type),
@@ -51,6 +56,9 @@ vi.mock('../../services/session/attachments/index.js', () => ({
 function stubRuntime(type: string) {
   return class {
     readonly type = type;
+    constructor(options?: unknown) {
+      if (type === 'codex') registered.codexOptions = options;
+    }
     setSessionSettings(): void {}
     warmup = async () => undefined;
     refreshActivatedPlugins = async () => undefined;
@@ -63,9 +71,6 @@ vi.mock('../../services/runtimes/claude-code/claude-code-runtime.js', () => ({
 vi.mock('../../services/runtimes/codex/index.js', () => ({
   CodexRuntime: stubRuntime('codex'),
   CodexThreadMap: class {},
-}));
-vi.mock('../../services/runtimes/codex/transport/index.js', () => ({
-  resolveCodexTransport: () => 'sdk',
 }));
 vi.mock('../../services/runtimes/doe/index.js', () => ({ DoeRuntime: stubRuntime('doe') }));
 vi.mock('../../services/runtimes/opencode/index.js', () => ({
@@ -83,6 +88,9 @@ const DEPS = { db: {} as never, dorkHome: '/tmp/dork', currentCreditsRelay: () =
 beforeEach(() => {
   registered.types = [];
   registered.defaultType = '';
+  registered.codexOptions = undefined;
+  role.value = 'agent-computer';
+  stored.transport = 'exec';
 });
 
 describe('registering runtimes on an agent computer', () => {
@@ -104,4 +112,16 @@ describe('registering runtimes on an agent computer', () => {
     expect(registered.types).toEqual(expect.arrayContaining(['claude-code', 'codex', 'opencode']));
     role.value = 'agent-computer';
   });
+});
+
+describe('Codex startup ignores retired persisted selectors', () => {
+  it.each([undefined, 'auto', 'exec', 'app-server', 'sdk'])(
+    'always registers protected app-server for %s',
+    async (transport) => {
+      role.value = 'computer';
+      stored.transport = transport;
+      await registerRuntimes(DEPS);
+      expect(registered.codexOptions).toMatchObject({ transport: 'app-server' });
+    }
+  );
 });

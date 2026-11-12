@@ -702,8 +702,8 @@ runtimeConformance(
 
 // --- The app-server transport (ADR 261005-113107) ---------------------------
 //
-// The same gate, on the transport `runtimes.codex.transport: 'app-server'`
-// selects: a long-lived `codex app-server` per home. Mocked mode runs it over
+// The same gate, on the production transport: a long-lived `codex app-server`
+// per home. Mocked mode runs it over
 // the fake app-server (`fake-app-server.ts`), which enforces the joining trap
 // and loaded-config immutability, with a real loopback credits relay. The
 // live arm (DORKOS_CODEX_LIVE=1) runs it against the real vendored binary on

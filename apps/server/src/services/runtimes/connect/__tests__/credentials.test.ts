@@ -71,7 +71,6 @@ function fakeConfig(): ConfigReadWrite & { state: Partial<UserConfig> } {
         defaultModel: null,
         defaultEffort: null,
         defaultTrustStop: null,
-        transport: 'auto',
       },
     },
   };

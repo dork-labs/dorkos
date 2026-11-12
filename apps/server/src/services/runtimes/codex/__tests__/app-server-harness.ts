@@ -2,12 +2,13 @@
  * Wiring for app-server transport tests: a real pool and transport over the
  * fake app-server host, with real thread keys and a recorded binding.
  */
+import { UserConfigSchema } from '@dorkos/shared/config-schema';
 import type { StreamEvent } from '@dorkos/shared/types';
 import { ConnectorThreadKeyRegistry } from '../../../connectors/principal/thread-keys.js';
 import type { ConnectorRuntimeTools } from '../../connector-tools.js';
 import type { CreditsRelay } from '../../../core/cloud/credits-relay.js';
 import { CodexAppServerPool } from '../app-server/process-pool.js';
-import { createCodexTransport, type CodexTransportKind } from '../transport/index.js';
+import { createCodexTransport } from '../transport/index.js';
 import type { CodexCompactRequest, CodexTurnRequest } from '../transport/codex-transport.js';
 import { createCodexEventContext } from '../event-mapper.js';
 import { FakeAppServerHost } from './fake-app-server.js';
@@ -20,7 +21,7 @@ export const CREDITS_ENV_HOME = '/fake/credits';
 /** Options for {@link makeAppServerHarness}. */
 export interface AppServerHarnessOptions {
   /** A persisted setting, including the legacy exec value. */
-  setting?: CodexTransportKind;
+  setting?: 'exec' | 'app-server';
   /** Wire connector tools (and thread keys). */
   withConnectorTools?: boolean;
   /** Provide a credits relay. */
@@ -53,7 +54,13 @@ export function makeAppServerHarness(options: AppServerHarnessOptions = {}) {
         isConnectorCapabilityId: () => false,
       } satisfies ConnectorRuntimeTools)
     : undefined;
-  const transport = createCodexTransport(options.setting ?? 'app-server', {
+  const config = UserConfigSchema.parse({
+    version: 1,
+    runtimes: { codex: { transport: options.setting } },
+  });
+  if ('transport' in config.runtimes.codex)
+    throw new Error('Retired transport selector survived parsing');
+  const transport = createCodexTransport({
     pool,
     mountTargets: false,
     connectorTools: () => tools,

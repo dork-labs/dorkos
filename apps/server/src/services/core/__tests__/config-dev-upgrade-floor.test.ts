@@ -34,6 +34,7 @@ function seed(sidebar: unknown, version?: string) {
     JSON.stringify({
       version: 1,
       auth: { enabled: true },
+      runtimes: { codex: { enabled: true, transport: 'exec' } },
       telemetry: { userHasDecided: true, install: false, heartbeat: false },
       extensions: { approvedToRun: ['fixture-extension'] },
       harness: { approvedHooks: ['fixture-hooks@digest'] },
@@ -205,6 +206,7 @@ describe('raw dev keeps current sidebar membership', () => {
     const stored = JSON.parse(fs.readFileSync(file, 'utf8'));
     expect(stored.ui.theme).toBe('light');
     expect(stored.auth.enabled).toBe(true);
+    expect(stored.runtimes.codex.transport).toBe('exec');
     expect(stored.telemetry.install).toBe(false);
     expect(stored.telemetry.heartbeat).toBe(false);
     expect(stored.extensions.approvedToRun).toEqual(['fixture-extension']);

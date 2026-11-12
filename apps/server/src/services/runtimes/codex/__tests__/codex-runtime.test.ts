@@ -8,7 +8,7 @@ import type { StreamEvent } from '@dorkos/shared/types';
 import type { ThreadEvent } from '@openai/codex-sdk';
 import { CodexRuntime } from '../codex-runtime.js';
 import { MAX_CONSECUTIVE_WAKES, WAKE_BUDGET_SPENT_COPY } from '../app-server/background-wake.js';
-import { resolveCodexTransport, type CodexTransport } from '../transport/index.js';
+import { type CodexTransport } from '../transport/index.js';
 import type { BackgroundCompletion, BackgroundWake } from '../app-server/background-work.js';
 import { buildCodexOptions } from './fixtures/sdk-options.js';
 import * as logHistory from '../../../session/log-backed-history.js';
@@ -1805,15 +1805,6 @@ describe('CodexRuntime', () => {
 
       nowSpy.mockRestore();
     });
-  });
-});
-
-describe('resolveCodexTransport (spec §15)', () => {
-  it('routes every persisted setting through protected app-server', () => {
-    expect(resolveCodexTransport(undefined)).toBe('app-server');
-    expect(resolveCodexTransport('auto')).toBe('app-server');
-    expect(resolveCodexTransport('app-server')).toBe('app-server');
-    expect(resolveCodexTransport('exec')).toBe('app-server');
   });
 });
 

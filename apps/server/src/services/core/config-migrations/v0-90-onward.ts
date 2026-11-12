@@ -71,8 +71,9 @@ export function seedExtensionsApprovedPermissions(store: {
  *
  * `auto` is the only honest seed: it means "whatever DorkOS runs by default",
  * which is exactly what a config that predates the choice was getting. The
- * value is resolved by the server (`resolveCodexTransport`), never here, so a
- * later change of default reaches this config without another migration.
+ * value was resolved by the server, never here, so a later default reached
+ * this config without another migration. Since the 0.115 floor cleanup, the
+ * selector is inert; this historical body remains frozen.
  * Additive and idempotent: writes only when `transport` is not already one of
  * the known values, and never touches the other `runtimes.codex` members. A
  * config with no `runtimes.codex` object is skipped (the schema default

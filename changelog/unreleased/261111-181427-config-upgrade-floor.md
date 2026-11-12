@@ -1,5 +1,6 @@
 ---
 covers:
+  - 'refactor(codex): retire the persisted transport selector'
   - 'refactor(config): remove the retired global MCP key setting'
   - 'refactor(auth): retire global MCP key compatibility'
   - 'fix(config): refuse retired auth settings before opening'

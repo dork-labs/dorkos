@@ -161,16 +161,12 @@ export type {
   ReadClaudeAccount,
 } from './config-schema/claude-accounts.js';
 export {
-  CODEX_TRANSPORTS,
   DefaultAccountColorSchema,
   ClaudeCodeSettingsSchema,
   DoeInferenceConfigSchema,
   DoeRuntimeSettingsSchema,
 } from './config-schema/runtime-settings.js';
-export type {
-  CodexTransportSetting,
-  DoeInferenceConfig,
-} from './config-schema/runtime-settings.js';
+export type { DoeInferenceConfig } from './config-schema/runtime-settings.js';
 export {
   RawMcpServerConfigSchema,
   CloudCreditsDefaultSchema,

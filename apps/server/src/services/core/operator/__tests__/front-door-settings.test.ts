@@ -46,7 +46,6 @@ describe('the front-door settings', () => {
     'runtimes.claudeCode.defaultAccount',
     'runtimes.codex.binaryPath',
     'runtimes.opencode.binaryPath',
-    'runtimes.codex.transport',
     'connectors.rawMcpServers[].url',
     'extensions.approvedToRun',
     'extensions.trustedSources[].source',

@@ -720,7 +720,7 @@ export const RUNTIME_CAPABILITIES: readonly RuntimeCapability[] = [
     cells: {
       'claude-code': yes,
       // On app-server, the default transport: `thread/compact/start`. On exec
-      // (`runtimes.codex.transport: exec`) Codex only runs prompts, and the
+      // (the historical exec transport) Codex only runs prompts, and the
       // flag is false there.
       codex: yes,
       opencode: yes,

@@ -200,8 +200,7 @@ export interface CodexRuntimeOptions {
    */
   attachments?: SessionAttachmentStore;
   /**
-   * How this runtime talks to Codex (`runtimes.codex.transport`, already
-   * resolved — `resolveCodexTransport`), or a ready transport (tests). Fixed
+   * The protected app-server transport, or a ready transport (tests). Fixed
    * for the runtime's life: capabilities are cached by clients, so a change
    * takes effect at the next server start. Required, so no caller can fall
    * back to a transport the product does not default to.
@@ -449,7 +448,7 @@ export class CodexRuntime implements AgentRuntime {
     creditsRelay: (() => CreditsRelay | undefined) | undefined
   ): CodexTransport {
     if (typeof choice !== 'string') return choice;
-    return createCodexTransport(choice, {
+    return createCodexTransport({
       connectorTools: () => this.connectorRuntimeTools,
       ...(creditsRelay ? { creditsRelay } : {}),
     });

@@ -881,7 +881,6 @@ export const CONFIG_WRITE_POLICY = {
   'runtimes.codex.binaryPath': 'operator-only',
   // Which Codex process the server spawns, and whether Codex can stop to ask
   // a person at all. An agent must not choose how it is supervised.
-  'runtimes.codex.transport': 'operator-only',
   // A credential reference (ADR-0315).
   'runtimes.codex.credentialRef': 'operator-only',
 

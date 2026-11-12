@@ -467,6 +467,22 @@ describe('applyGuardedConfigWrite', () => {
     }
   );
 
+  it.each([null, 'auto', 'exec', 'app-server'])(
+    'refuses the retired Codex transport setting %j without writing',
+    async (transport) => {
+      const { applyConfigPatch } = await import('../config-patch.js');
+      const before = configManager.getAll();
+      expect(
+        applyConfigPatch({ ui: { theme: 'light' }, runtimes: { codex: { transport } } })
+      ).toMatchObject({
+        ok: false,
+        error: 'Validation failed',
+        details: ['runtimes.codex.transport: Unrecognized key'],
+      });
+      expect(configManager.getAll()).toEqual(before);
+    }
+  );
+
   describe('logConfigWrite, for the writers that have their own gate', () => {
     it('names the fully-qualified path and never the value', async () => {
       // A current secret writer logs paths without putting values in the log.

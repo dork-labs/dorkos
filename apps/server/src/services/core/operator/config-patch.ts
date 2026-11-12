@@ -457,6 +457,14 @@ export function applyConfigPatch(patch: unknown): ConfigPatchResult {
   if (isPlainObject(patchObj.mcp) && 'apiKey' in patchObj.mcp) {
     return { ok: false, error: 'Validation failed', details: ['mcp.apiKey: Unrecognized key'] };
   }
+  const codexPatch = (patchObj.runtimes as { codex?: unknown } | undefined)?.codex;
+  if (isPlainObject(codexPatch) && 'transport' in codexPatch) {
+    return {
+      ok: false,
+      error: 'Validation failed',
+      details: ['runtimes.codex.transport: Unrecognized key'],
+    };
+  }
   const accountPatch = (patchObj.runtimes as { claudeCode?: unknown } | undefined)?.claudeCode;
   if (isPlainObject(accountPatch) && 'activeAccount' in accountPatch) {
     return {

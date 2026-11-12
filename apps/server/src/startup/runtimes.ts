@@ -25,7 +25,6 @@ import {
 } from '../services/core/runtime-registry.js';
 import { ClaudeCodeRuntime } from '../services/runtimes/claude-code/claude-code-runtime.js';
 import { CodexRuntime, CodexThreadMap } from '../services/runtimes/codex/index.js';
-import { resolveCodexTransport } from '../services/runtimes/codex/transport/index.js';
 import { DoeRuntime } from '../services/runtimes/doe/index.js';
 import {
   OpenCodeRuntime,
@@ -202,9 +201,8 @@ export async function registerRuntimes(deps: RuntimeStartupDeps): Promise<Regist
             // the composition root owns the deployment decision, and the adapter
             // reports what it was actually given (ADR 260901-135657).
             attachments: sessionAttachmentStore,
-            // How turns reach Codex (ADR 261005-113107). Read once: a change
-            // takes effect at the next start, because clients cache capabilities.
-            transport: resolveCodexTransport(codexConfig.transport),
+            // Every turn uses protected app-server; no persisted selector remains.
+            transport: 'app-server',
             creditsRelay: () => deps.currentCreditsRelay() ?? undefined,
           });
           // Durable per-session settings hydrate/write-through (ADR-0260), same

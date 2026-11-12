@@ -4,7 +4,6 @@
  *
  * @module services/runtimes/codex/transport
  */
-import type { CodexTransportSetting } from '@dorkos/shared/config-schema';
 
 export type {
   CodexTransport,
@@ -24,22 +23,9 @@ export {
 } from './app-server-transport.js';
 
 /** A concrete transport. */
-export type CodexTransportKind = 'exec' | 'app-server';
+export type CodexTransportKind = 'app-server';
 
-/**
- * The legacy exec setting now selects app-server too: the pinned CLI cannot
- * explicitly select a protected permission profile on exec. Never fall back
- * to exec when app-server startup fails.
- */
-export function resolveCodexTransport(_setting: CodexTransportSetting | undefined): 'app-server' {
-  return 'app-server';
-}
-
-/** The only production launch path, including callers with a legacy exec value. */
-export function createCodexTransport(
-  choice: CodexTransportKind,
-  options: AppServerTransportOptions
-) {
-  resolveCodexTransport(choice);
+/** Build the only production transport. */
+export function createCodexTransport(options: AppServerTransportOptions) {
   return createAppServerTransport(options);
 }

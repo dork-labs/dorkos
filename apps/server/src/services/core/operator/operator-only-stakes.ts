@@ -233,7 +233,6 @@ export const OPERATOR_ONLY_STAKES: readonly OperatorOnlyStakeGroup[] = [
       'harness.repoBaselinesPinned',
       'runtimes.opencode.binaryPath',
       'runtimes.codex.binaryPath',
-      'runtimes.codex.transport',
       'connectors.rawMcpServers[].slug',
       'connectors.rawMcpServers[].displayName',
       'connectors.rawMcpServers[].url',
