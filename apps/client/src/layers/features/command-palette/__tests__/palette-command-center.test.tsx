@@ -22,6 +22,7 @@ import type { Session } from '@dorkos/shared/types';
 import { ROW_TITLE_CLASS, ROW_WHO_CLASS } from '@/layers/shared/lib/row-grammar';
 import { TooltipProvider } from '@/layers/shared/ui';
 import { useSessionListStore } from '@/layers/entities/session';
+import { useAppStore } from '@/layers/shared/model';
 import { CommandPaletteDialog } from '../ui/CommandPaletteDialog';
 
 // --- Fixtures ---
@@ -84,44 +85,22 @@ const room: RoomSummary = {
 const mockTransport = createMockTransport();
 const mockNavigate = vi.fn();
 const mockStartNewSession = vi.fn();
-const mockSetGlobalPaletteOpen = vi.fn();
 
 vi.mock('@tanstack/react-router', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@tanstack/react-router')>()),
   useNavigate: () => mockNavigate,
 }));
 
+// The app store and the dialog stores are REAL; only the hooks that need a
+// router or a host are replaced.
 vi.mock('@/layers/shared/model', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/layers/shared/model')>()),
   useTransport: () => mockTransport,
-  useAppStore: (selector?: (s: Record<string, unknown>) => unknown) => {
-    const state = {
-      globalPaletteOpen: true,
-      setGlobalPaletteOpen: mockSetGlobalPaletteOpen,
-      setPickerOpen: vi.fn(),
-      setCanvasOpen: vi.fn(),
-      setRightPanelOpen: vi.fn(),
-      setActiveRightPanelTab: vi.fn(),
-      globalPaletteInitialSearch: null,
-      clearGlobalPaletteInitialSearch: vi.fn(),
-    };
-    return selector ? selector(state) : state;
-  },
   useTheme: () => ({ theme: 'light', setTheme: vi.fn() }),
   useIsMobile: () => false,
   useSettingsDeepLink: () => ({ open: vi.fn(), close: vi.fn() }),
   useTasksDeepLink: () => ({ open: vi.fn(), close: vi.fn() }),
   useOpenConnections: () => vi.fn(),
-  useFeedbackDialogStore: (selector?: (s: Record<string, unknown>) => unknown) => {
-    const state = { openFeedback: vi.fn() };
-    return selector ? selector(state) : state;
-  },
-  useAgentCreationStore: Object.assign(() => ({ open: vi.fn() }), {
-    getState: () => ({ open: vi.fn() }),
-  }),
-  useImportProjectsStore: Object.assign(() => ({ open: vi.fn() }), {
-    getState: () => ({ open: vi.fn() }),
-  }),
   // The cockpit's own creation actions, so the "New" group has its two rows.
   useSlotContributions: () => [
     {
@@ -241,6 +220,8 @@ const headings = () =>
 const rowFor = (text: string) => screen.getByText(text).closest('[role="option"]') as HTMLElement;
 
 beforeEach(() => {
+  // The palette renders only while the real store says it is open.
+  useAppStore.setState({ globalPaletteOpen: true, globalPaletteInitialSearch: null });
   vi.clearAllMocks();
   useSessionListStore.setState({ statuses: {}, sessions: {} });
   Object.defineProperty(window, 'matchMedia', {
@@ -498,7 +479,7 @@ describe('acting on the row under the highlight', () => {
     expect(mockStartNewSession).toHaveBeenCalledWith('/projects/warden');
     // And it did NOT open the existing one.
     expect(mockNavigate).not.toHaveBeenCalled();
-    expect(mockSetGlobalPaletteOpen).toHaveBeenCalledWith(false);
+    expect(useAppStore.getState().globalPaletteOpen).toBe(false);
   });
 
   it('shows both shortcuts on the highlighted row, and on no other', async () => {
