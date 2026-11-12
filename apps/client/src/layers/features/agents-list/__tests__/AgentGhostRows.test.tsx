@@ -9,18 +9,8 @@ import '@testing-library/jest-dom/vitest';
 // Mocks
 // ---------------------------------------------------------------------------
 
-const mockImportOpen = vi.fn();
-const mockCreateOpen = vi.fn();
-vi.mock('@/layers/shared/model', () => ({
-  useImportProjectsStore: (selector?: (s: { open: () => void }) => unknown) => {
-    const state = { open: mockImportOpen };
-    return selector ? selector(state) : state;
-  },
-  useAgentCreationStore: (selector?: (s: { open: () => void }) => unknown) => {
-    const state = { open: mockCreateOpen };
-    return selector ? selector(state) : state;
-  },
-}));
+// The import and agent-creation stores are the REAL ones: each dialog host
+// opens on its store's `isOpen`, so a click is checked by which one opened.
 const hub = vi.hoisted(() => ({ value: false }));
 vi.mock('@/layers/entities/config', () => ({ useIsHub: () => hub.value }));
 
@@ -48,6 +38,7 @@ beforeAll(() => {
 // Import component after mocks
 // ---------------------------------------------------------------------------
 
+import { useAgentCreationStore, useImportProjectsStore } from '@/layers/shared/model';
 import { AgentGhostRows } from '../ui/AgentGhostRows';
 
 // ---------------------------------------------------------------------------
@@ -55,8 +46,8 @@ import { AgentGhostRows } from '../ui/AgentGhostRows';
 // ---------------------------------------------------------------------------
 
 beforeEach(() => {
-  mockImportOpen.mockReset();
-  mockCreateOpen.mockReset();
+  useImportProjectsStore.getState().close();
+  useAgentCreationStore.getState().close();
   hub.value = false;
 });
 
@@ -87,7 +78,8 @@ describe('AgentGhostRows', () => {
 
     fireEvent.click(screen.getByRole('button', { name: /search for projects/i }));
 
-    expect(mockImportOpen).toHaveBeenCalledTimes(1);
+    expect(useImportProjectsStore.getState().isOpen).toBe(true);
+    expect(useAgentCreationStore.getState().isOpen).toBe(false);
   });
 
   it('on a hub, offers to create an agent instead of searching for projects', () => {
@@ -96,7 +88,7 @@ describe('AgentGhostRows', () => {
 
     expect(screen.queryByText('Bring in existing projects')).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Create agent' }));
-    expect(mockCreateOpen).toHaveBeenCalledTimes(1);
-    expect(mockImportOpen).not.toHaveBeenCalled();
+    expect(useAgentCreationStore.getState()).toMatchObject({ isOpen: true, initialMode: 'new' });
+    expect(useImportProjectsStore.getState().isOpen).toBe(false);
   });
 });
