@@ -255,7 +255,7 @@ const BUILDERS: Record<InstructionsRuntime, (input: BuildInput) => Promise<Built
 };
 
 /** A rough token count: characters over four, rounded up. */
-export function estimateTokens(text: string): number {
+function estimateTokens(text: string): number {
   return Math.ceil(text.length / 4);
 }
 

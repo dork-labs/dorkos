@@ -36,7 +36,7 @@ import { DEMO_MODEL, DEMO_SESSION_ID, delay, streamText } from './demo-scenario-
 import type { ScenarioFn } from './scenario-store.js';
 
 /** The mini app's id. `apps/e2e/capture/demo/config.ts` pins the same one. */
-export const DEMO_MINI_APP_ID = 'launch-checklist';
+const DEMO_MINI_APP_ID = 'launch-checklist';
 
 /** Pause between tool-call steps, the same beat the other demo turns use. */
 const STEP_DELAY_MS = 650;

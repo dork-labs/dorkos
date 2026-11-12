@@ -72,10 +72,10 @@ export const CONTEXT_TRIM_ORDER = [
 export type TrimmableBlock = (typeof CONTEXT_TRIM_ORDER)[number];
 
 /** The most of a model's readable window DorkOS's own share may take. */
-export const DORKOS_WINDOW_SHARE = 0.25;
+const DORKOS_WINDOW_SHARE = 0.25;
 
 /** Characters per token for every estimate here, matching Doe's compaction. */
-export const CHARS_PER_TOKEN = 4;
+const CHARS_PER_TOKEN = 4;
 
 /** Plain-language names for the note an agent gets when something was left out. */
 const BLOCK_LABELS: Record<TrimmableBlock, string> = {
@@ -169,7 +169,7 @@ export function chooseTrims(
  *
  * @param dropped - What {@link chooseTrims} left out.
  */
-export function smallWindowNote(dropped: readonly TrimmableBlock[]): string {
+function smallWindowNote(dropped: readonly TrimmableBlock[]): string {
   if (dropped.length === 0) return '';
   const labels = dropped.map((block) => BLOCK_LABELS[block]).join('; ');
   return `<small_window>\nThis model's context window is small, so DorkOS left out: ${labels}.\n</small_window>`;

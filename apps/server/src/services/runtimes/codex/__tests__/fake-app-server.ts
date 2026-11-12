@@ -207,7 +207,7 @@ export const COMPACTED_TOKENS = 5_690;
  * post-summary size, the item's completion, `turn/completed`. No
  * `thread/compacted` (deprecated; the binary did not send it).
  */
-export const compactionTurn: FakeTurnScript = (ctx) => {
+const compactionTurn: FakeTurnScript = (ctx) => {
   const item = { type: 'contextCompaction', id: `compact-${randomUUID().slice(0, 8)}` };
   ctx.emit('item/started', { item, startedAtMs: 1_000 });
   ctx.tokenUsage(COMPACTED_TOKENS, 200_000);

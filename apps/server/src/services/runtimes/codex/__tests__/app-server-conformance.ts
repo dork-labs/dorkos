@@ -56,7 +56,7 @@ const wirings = new WeakMap<AgentRuntime, Wiring>();
 const pools: CodexAppServerPool[] = [];
 let relay: CreditsRelay | undefined;
 /** Every request the shared relay forwarded upstream. */
-export const upstreamRequests: UpstreamRequest[] = [];
+const upstreamRequests: UpstreamRequest[] = [];
 
 /**
  * The fake's default turn: on a credits thread, first send one request to the

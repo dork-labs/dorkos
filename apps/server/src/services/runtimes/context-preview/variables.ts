@@ -104,7 +104,7 @@ export const TEMPLATE_HOME = '{{agent.home}}' as AgentHome;
 export const TEMPLATE_CWD = token('env.cwd');
 
 /** The fence code a preview prints: a chip, because a turn mints its own. */
-export const PREVIEW_NONCE = token('turn.nonce');
+const PREVIEW_NONCE = token('turn.nonce');
 
 /** The memory facts a preview shows: chips, read each turn. */
 const TEMPLATE_MEMORY: MemorySnapshot = {

@@ -3,12 +3,10 @@
  *
  * @module services/todos
  */
-export { TodoPromiseStore, TODO_LIST_LIMIT, type TodoPromiseFilter } from './todo-promise-store.js';
+export { TodoPromiseStore, type TodoPromiseFilter } from './todo-promise-store.js';
 export {
   TodoPromiseError,
   TodoPromiseService,
-  isOverdue,
-  toTodoPromise,
   type TodoPromiseActor,
   type TodoPromiseChange,
   type TodoPromiseDueEvent,

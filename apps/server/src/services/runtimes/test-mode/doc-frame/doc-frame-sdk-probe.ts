@@ -6,7 +6,7 @@ import type { DocChannelStore } from '../../../canvas/doc-channel/store.js';
 import type { ConnectorRuntimeTools } from '../../connector-tools.js';
 import { openConnectorTurn } from '../../connectors/open-connector-turn.js';
 
-export const DOC_FRAME_FIXTURE_EVENT = 'fixture.changed';
+const DOC_FRAME_FIXTURE_EVENT = 'fixture.changed';
 const ROUTE_ID = 'fixture-log';
 const openedSchema = z.object({ success: z.literal(true), documentId: z.string().min(1) });
 const configuredSchema = z.object({ configured: z.literal(true) });

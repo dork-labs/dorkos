@@ -18,7 +18,7 @@ export const DEMO_SESSION_ID = 'test-mode';
 export const DEMO_MODEL = 'claude-sonnet-4-5';
 
 /** Delay between fine-grained text chunks — fast enough to read as live typing. */
-export const TEXT_CHUNK_DELAY_MS = 55;
+const TEXT_CHUNK_DELAY_MS = 55;
 
 /** Resolve after `ms` milliseconds. */
 export function delay(ms: number): Promise<void> {

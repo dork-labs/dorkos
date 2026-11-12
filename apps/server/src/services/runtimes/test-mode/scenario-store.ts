@@ -209,10 +209,10 @@ const SLOW_CLOSE_SCENARIO = 'long-turn-slow-close';
 const COMPACT_HOLD_TICKS = 60;
 
 /** Tokens in context the `context-reading` scenario reports: 85% of its window. */
-export const CONTEXT_READING_TOKENS = 170_000;
+const CONTEXT_READING_TOKENS = 170_000;
 
 /** The window the `context-reading` scenario reports. */
-export const CONTEXT_READING_WINDOW = 200_000;
+const CONTEXT_READING_WINDOW = 200_000;
 
 /**
  * A turn that compacts instead of answering — an AUTO compaction, the kind

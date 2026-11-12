@@ -119,7 +119,7 @@ export function buildCodexOptions(
  * second layer" rather than a failed turn. It applies to Codex clients built
  * after the setting changes; the DorkOS hold covers every turn either way.
  */
-export function codexKeepAwakeConfig(): { features?: { prevent_idle_sleep: true } } {
+function codexKeepAwakeConfig(): { features?: { prevent_idle_sleep: true } } {
   return keepAwakeService.preventsIdleSleep() ? { features: { prevent_idle_sleep: true } } : {};
 }
 

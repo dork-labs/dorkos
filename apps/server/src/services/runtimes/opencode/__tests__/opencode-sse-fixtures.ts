@@ -52,7 +52,7 @@ export const CREATED_AT = 1_720_000_000_000;
 export const COMPLETED_AT = 1_720_000_009_000;
 
 /** Default assistant token usage for completed-message fixtures. */
-export const DEFAULT_TOKENS: AssistantMessage['tokens'] = {
+const DEFAULT_TOKENS: AssistantMessage['tokens'] = {
   input: 120,
   output: 45,
   reasoning: 10,

@@ -348,7 +348,7 @@ export function createDoeSource(resolveDirectory: () => string): SnapshotSource 
     open: () => Promise.resolve(openDoeSnapshot(resolveDirectory())),
   };
 }
-export const doeSource = createDoeSource(() => path.join(resolveDorkHome(), 'runtimes', 'doe'));
+const doeSource = createDoeSource(() => path.join(resolveDorkHome(), 'runtimes', 'doe'));
 
 export const SEARCH_SOURCES: readonly SearchSource[] = [
   roomsSource,

@@ -226,7 +226,7 @@ export function isOverdue(row: Pick<AgentTodoRow, 'state' | 'dueAt'>, now: numbe
  * @param row - The stored row.
  * @param now - The moment to judge overdue at, in epoch ms.
  */
-export function toTodoPromise(row: AgentTodoRow, now: number): TodoPromise {
+function toTodoPromise(row: AgentTodoRow, now: number): TodoPromise {
   return {
     id: row.id,
     agentId: row.agentId,
