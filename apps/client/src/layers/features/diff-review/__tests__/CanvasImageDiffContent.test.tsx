@@ -15,23 +15,13 @@ const transport = {
   advanceDiffBaseline: vi.fn().mockResolvedValue(undefined),
 };
 
-vi.mock('@/layers/shared/model', () => ({
-  useAppStore: (selector: (s: Record<string, unknown>) => unknown) =>
-    selector({ selectedCwd: '/work', sessionId: 'sess-1' }),
-  useTransport: () => transport,
-}));
-
 type SessionEventHandler = (sessionId: string, event: Record<string, unknown>) => void;
 const streamMocks = vi.hoisted(() => ({
   handler: { current: null as SessionEventHandler | null },
 }));
 
-// Two mocks because the two live in two places (DOR-1809): the tree pulls `cn`
-// off the lib barrel, and `streamManager` — via useAgentEditRefresh — off the
-// transport subpath. Stubbing the second is what lets tests fire session events.
-vi.mock('@/layers/shared/lib', () => ({
-  cn: (...inputs: unknown[]) => inputs.flat(Infinity).filter(Boolean).join(' '),
-}));
+// `streamManager` (via useAgentEditRefresh) lives on the transport subpath, not
+// the lib barrel (DOR-1809). Stubbing it is what lets tests fire session events.
 vi.mock('@/layers/shared/lib/transport', () => ({
   streamManager: {
     subscribeSessionEvent: (handler: SessionEventHandler) => {
@@ -43,14 +33,29 @@ vi.mock('@/layers/shared/lib/transport', () => ({
   },
 }));
 
+import type { Transport } from '@dorkos/shared/transport';
+import { TransportProvider, useAppStore } from '@/layers/shared/model';
 import { CanvasImageDiffContent } from '../ui/CanvasImageDiffContent';
 
 afterEach(cleanup);
+
+// The app store is REAL: the folder and session the diff acts on come from the
+// same state the rest of the app writes, not from a selector stub.
+function Wrapper({ children }: { children: React.ReactNode }) {
+  return (
+    <TransportProvider transport={transport as unknown as Transport}>{children}</TransportProvider>
+  );
+}
+
+function renderDiff() {
+  return render(<CanvasImageDiffContent content={CONTENT} />, { wrapper: Wrapper });
+}
 
 const CONTENT = { type: 'diff' as const, sourcePath: 'assets/logo.png' };
 
 describe('CanvasImageDiffContent', () => {
   beforeEach(() => {
+    useAppStore.setState({ selectedCwd: '/work', sessionId: 'sess-1' });
     transport.diffBaselineMediaUrl.mockClear();
     transport.mediaUrl.mockClear();
     transport.revertDiffBaseline.mockClear().mockResolvedValue(undefined);
@@ -62,7 +67,7 @@ describe('CanvasImageDiffContent', () => {
   });
 
   it('renders both layers side by side in 2-up (the default)', () => {
-    render(<CanvasImageDiffContent content={CONTENT} />);
+    renderDiff();
     expect(screen.getByAltText('Previous version')).toBeInTheDocument();
     expect(screen.getByAltText('Current version')).toBeInTheDocument();
     expect(screen.getByText('Before')).toBeInTheDocument();
@@ -70,7 +75,7 @@ describe('CanvasImageDiffContent', () => {
   });
 
   it('swipe mode overlays both layers with a draggable divider slider', () => {
-    render(<CanvasImageDiffContent content={CONTENT} />);
+    renderDiff();
     fireEvent.click(screen.getByRole('button', { name: 'Swipe' }));
 
     expect(screen.getByAltText('Previous version')).toBeInTheDocument();
@@ -79,7 +84,7 @@ describe('CanvasImageDiffContent', () => {
   });
 
   it('onion-skin mode overlays both layers with a blend slider', () => {
-    render(<CanvasImageDiffContent content={CONTENT} />);
+    renderDiff();
     fireEvent.click(screen.getByRole('button', { name: 'Onion skin' }));
 
     expect(screen.getByAltText('Previous version')).toBeInTheDocument();
@@ -89,13 +94,13 @@ describe('CanvasImageDiffContent', () => {
 
   it('shows a calm web-only message when the transport cannot serve baseline bytes', () => {
     transport.diffBaselineMediaUrl.mockReturnValue(null);
-    render(<CanvasImageDiffContent content={CONTENT} />);
+    renderDiff();
     expect(screen.getByText(/available here/)).toBeInTheDocument();
     expect(screen.queryByAltText('Previous version')).not.toBeInTheDocument();
   });
 
   it('confirm-gates restore: the first click arms, only the second reverts', async () => {
-    render(<CanvasImageDiffContent content={CONTENT} />);
+    renderDiff();
 
     const restore = screen.getByRole('button', {
       name: 'Restore the previous version of this image',
@@ -110,7 +115,7 @@ describe('CanvasImageDiffContent', () => {
   });
 
   it('degrades honestly when the baseline 404s: new-image disclosure, no restore', () => {
-    render(<CanvasImageDiffContent content={CONTENT} />);
+    renderDiff();
 
     // Simulate the baseline layer failing to load (404 NO_BASELINE).
     fireEvent.error(screen.getByAltText('Previous version'));
@@ -125,7 +130,7 @@ describe('CanvasImageDiffContent', () => {
   });
 
   it('mark reviewed advances the baseline', () => {
-    render(<CanvasImageDiffContent content={CONTENT} />);
+    renderDiff();
     fireEvent.click(screen.getByRole('button', { name: /Mark reviewed/ }));
     expect(transport.advanceDiffBaseline).toHaveBeenCalledWith(
       '/work',
@@ -136,7 +141,7 @@ describe('CanvasImageDiffContent', () => {
   it('cache-busts both layers when the agent edits the image again while open', () => {
     vi.useFakeTimers();
     try {
-      render(<CanvasImageDiffContent content={CONTENT} />);
+      renderDiff();
       const current = screen.getByAltText('Current version') as HTMLImageElement;
       expect(current.src).toContain('v=0');
 
