@@ -106,6 +106,39 @@ describe('whole-profile disk removal (DOR-3887)', () => {
     });
   });
 
+  it('removes orphan profile folders whole while preserving the binding key (DOR-4219)', async () => {
+    const profiles = store();
+    const known = profiles.create('Example work');
+    const orphan = '88888888-8888-4888-8888-888888888888';
+    const root = path.join(home, 'browser-profiles');
+    const folders = [
+      await prepareProfileFolder(home, null),
+      await prepareProfileFolder(home, known.id),
+      await prepareProfileFolder(home, orphan),
+    ];
+    for (const folder of folders) await seed(folder);
+    const key = path.join(root, '.binding-key');
+    await writeFile(key, 'made-up-binding-key');
+    const forgotten = vi.fn();
+
+    await new BrowserProfileRemoval({
+      dataDirectory: () => home,
+      busy: () => false,
+      forgotten,
+    }).forgetAll([known.id]);
+
+    for (const folder of folders)
+      await expect(stat(folder)).rejects.toMatchObject({ code: 'ENOENT' });
+    expect(await readFile(key, 'utf8')).toBe('made-up-binding-key');
+    expect(profiles.get(known.id)).toBeDefined();
+    expect(profiles.get(orphan)).toBeUndefined();
+    expect(forgotten).toHaveBeenCalledWith(orphan);
+    // A later open cannot recover cookies or another storage type from the orphan.
+    const reopened = await prepareProfileFolder(home, orphan);
+    for (const file of ['storage-state.json', 'Default/IndexedDB/site/data'])
+      await expect(readFile(path.join(reopened, file))).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+
   it('removes a planted link under a profile name and never empties what it points to', async () => {
     const theirs = await mkdtemp(path.join(tmpdir(), 'dorkos-persons-own-'));
     try {

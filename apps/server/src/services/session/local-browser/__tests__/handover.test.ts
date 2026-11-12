@@ -245,6 +245,37 @@ describe('the person’s state during a handoff (DOR-4163)', () => {
 });
 
 describe('BrowserHandover.ask', () => {
+  it('keeps a pending handoff pending when Pause is pressed (DOR-4135)', async () => {
+    const { handover, browser, signIns } = setup();
+    const ended = vi.fn();
+    handover.useEndListener(ended);
+    const { handoffId } = await handover.ask('chat-1', 'password');
+    const pending = structuredClone((await handover.state()).handoff);
+    expect(pending).toMatchObject({ id: handoffId, outcome: null });
+    browser.resume.mockClear();
+    browser.disconnect.mockClear();
+    dispatch.mockClear();
+
+    const paused = await handover.pause();
+
+    expect(paused.paused).toBe(true);
+    expect((await handover.state()).handoff).toEqual(pending);
+    await expect(handover.requireAgentMayUse('chat-1')).rejects.toMatchObject({
+      code: 'handed_to_person',
+    });
+    expect(browser.resume).not.toHaveBeenCalled();
+    expect(browser.disconnect).not.toHaveBeenCalled();
+    expect(signIns.close).not.toHaveBeenCalled();
+    expect(ended).not.toHaveBeenCalled();
+    expect(dispatch).not.toHaveBeenCalled();
+
+    // Only the person's answer ends this same handoff.
+    const returned = await handover.handBack(handoffId);
+    expect(returned.handoff).toMatchObject({ id: handoffId, outcome: 'handed-back' });
+    expect(ended).toHaveBeenCalledOnce();
+    expect(browser.resume).toHaveBeenCalledOnce();
+  });
+
   it('fails closed until startup says how to read a turn’s marks', async () => {
     const browser = fakeBrowser();
     const handover = new BrowserHandover(
