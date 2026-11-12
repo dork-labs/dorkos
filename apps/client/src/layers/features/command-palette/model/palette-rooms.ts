@@ -33,7 +33,7 @@ import { hasUnread, type RoomSummary } from '@/layers/entities/room';
  * compares the instants. The id breaks the tie in the same descending
  * direction, so rooms that tie never swap places between renders.
  */
-export function compareRoomsForPalette(a: RoomSummary, b: RoomSummary): number {
+function compareRoomsForPalette(a: RoomSummary, b: RoomSummary): number {
   const liveFirst = Number(a.archived) - Number(b.archived);
   if (liveFirst !== 0) return liveFirst;
   const unreadFirst = Number(hasUnread(b)) - Number(hasUnread(a));

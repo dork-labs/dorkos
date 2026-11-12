@@ -30,14 +30,7 @@ export type {
 } from './model/target';
 export type { BodyRenderContext, ConversationBodyRenderer } from './model/body-renderer';
 export type { ConversationRow } from './lib/row-kinds';
-export {
-  deriveLaneState,
-  laneElapsed,
-  LANE_TIMER_FLOOR_MS,
-  NO_ASKS,
-  NO_PRESENCE,
-  NO_HELD,
-} from './model/lane-state';
+export { deriveLaneState, NO_ASKS, NO_PRESENCE } from './model/lane-state';
 export type {
   LaneAsk,
   LaneOperationProgress,

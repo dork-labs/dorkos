@@ -51,12 +51,8 @@ export type { PaletteRecentEntry } from './model/palette-recent';
 export type { PaletteContinueRow } from './model/use-palette-command-center';
 export { usePaletteRooms } from './model/use-palette-rooms';
 export type { PaletteRooms } from './model/use-palette-rooms';
-export {
-  compareRoomsForPalette,
-  sortRoomsForPalette,
-  paletteRoomKeywords,
-} from './model/palette-rooms';
-export { usePaletteSearch, parsePrefix } from './model/use-palette-search';
+export { sortRoomsForPalette, paletteRoomKeywords } from './model/palette-rooms';
+export { usePaletteSearch } from './model/use-palette-search';
 export type { SearchableItem, SearchResult } from './model/use-palette-search';
 // The blended ranking (design-decisions §15) and the row it draws. Exported for
 // ONE caller: the Dev Playground's ranked-results showcase, which runs the real

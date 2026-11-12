@@ -13,4 +13,4 @@ export { TaskTemplateGallery } from './ui/TaskTemplateGallery';
 export { formatCron } from './ui/format-cron';
 export { TasksList } from './ui/TasksList';
 export { TasksDialog } from './ui/TasksDialog';
-export { taskFilterSchema, taskSortOptions } from './lib/task-filter-schema';
+export { taskFilterSchema } from './lib/task-filter-schema';

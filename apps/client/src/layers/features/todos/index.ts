@@ -10,15 +10,10 @@ export { TodoRow, type TodoRowProps } from './ui/TodoRow';
 export { NewTodoDialog, type NewTodoDialogProps } from './ui/NewTodoDialog';
 export { titleFromMessage, type TodoMessageSource } from './ui/NewTodoDialog';
 export { MakeTodoDialog, type MakeTodoDialogProps } from './ui/MakeTodoDialog';
-export {
-  makeTodoDialogState,
-  openMakeTodo,
-  openNewTodo,
-  useMakeTodoAction,
-} from './model/make-todo';
+export { makeTodoDialogState, openNewTodo, useMakeTodoAction } from './model/make-todo';
 export { NewTodoButton } from './ui/NewTodoButton';
 export { TodoCard, type TodoCardProps } from './ui/TodoCard';
 export { TodoPromiseList, type TodoPromiseListProps } from './ui/TodoPromiseList';
 export { TodoPromiseRow, type TodoPromiseRowProps } from './ui/TodoPromiseRow';
 export { AddTodoForm, type AddTodoFormProps } from './ui/AddTodoForm';
-export { dueLabel, rosterNameLookup, splitTodos, toLabel } from './lib/todo-promise-labels';
+export { rosterNameLookup } from './lib/todo-promise-labels';

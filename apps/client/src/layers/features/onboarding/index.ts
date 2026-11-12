@@ -7,12 +7,7 @@
 export { useOnboarding } from './model/use-onboarding';
 export { useOnboardingOverlayVisible } from './model/use-onboarding-overlay';
 export { useOnboardingStage, useClearOnboardingStageWhenDone } from './model/use-onboarding-stage';
-export {
-  ONBOARDING_STAGES,
-  onboardingStageSearchSchema,
-  isOnboardingStage,
-  type OnboardingStage,
-} from './model/onboarding-stage';
+export { onboardingStageSearchSchema, type OnboardingStage } from './model/onboarding-stage';
 export type {
   FirstRunAccountLink,
   FirstRunAccountLinkSlot,

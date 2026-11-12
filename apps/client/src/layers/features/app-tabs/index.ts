@@ -22,9 +22,9 @@ export { useAppTabShortcuts } from './model/use-app-tab-shortcuts';
 // The strip's background work in one hook, for the app shell to mount once.
 export { useAppTabsShell } from './model/use-app-tabs-shell';
 export { useTabHistoryShortcuts } from './model/use-tab-history-shortcuts';
-export { useAppTabActions, NEW_TAB_HREF, type AppTabActions } from './model/use-app-tab-actions';
-export { openTabAt, goToActiveTab, type TabRouter } from './model/tab-navigation';
-export { parseTabHref, projectName, type TabTarget } from './lib/tab-target';
+export { useAppTabActions, type AppTabActions } from './model/use-app-tab-actions';
+export { openTabAt, type TabRouter } from './model/tab-navigation';
+export { parseTabHref, type TabTarget } from './lib/tab-target';
 // One identity per page, read by the strip, the History menu and the window
 // title alike (DOR-2820). The builders are exported for the Dev Playground,
 // which lays out every route and status with the real component.
