@@ -1,0 +1,13 @@
+{
+  "id": "261111-174805",
+  "slug": "codebase-cleanup",
+  "title": "Codebase cleanup: smaller, simpler, faster",
+  "created": "2026-11-11",
+  "status": "specified",
+  "artifacts": {
+    "specification": "02-specification.md",
+    "tasks": "03-tasks.json"
+  },
+  "linearIssue": "DOR-4185",
+  "project": "Codebase cleanup: smaller, simpler, faster"
+}
