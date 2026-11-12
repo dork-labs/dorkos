@@ -11,7 +11,8 @@ import { env } from '../../env.js';
 import { initLogger, logger } from '../../lib/logger.js';
 import path from 'path';
 import fs from 'node:fs/promises';
-import { acquireInstanceLock, isInstanceLockEnabled } from '../../lib/instance-lock.js';
+import { isInstanceLockEnabled } from '../../lib/instance-lock.js';
+import { claimSupportedDataDirectory } from '../../lib/database-startup/claim-supported-data-directory.js';
 import { SERVER_VERSION } from '../../lib/version.js';
 import {
   PREDECESSOR_EXIT_WAIT_MS,
@@ -39,16 +40,14 @@ export async function claimDataDirectory(refs: ServerRefs, built: ClaimDataDirec
   const dorkHome = resolveDorkHome();
   // eslint-disable-next-line no-restricted-syntax -- write (not read): broadcasts resolved dorkHome to services loaded after this point
   process.env.DORK_HOME = dorkHome;
-  console.log(`[DorkOS] Data directory: ${dorkHome}`);
 
   const logLevel = env.DORKOS_LOG_LEVEL;
-  initLogger({ level: logLevel, logDir: path.join(dorkHome, 'logs') });
 
   // One server per data directory (DOR-532). Claimed here, before the database
   // opens and before any reconciler starts, because a second instance sharing
   // this directory would corrupt both. The port check further down catches only
   // the case where both listen on the same port; this catches the rest.
-  const lock = acquireInstanceLock({ dorkHome, port: PORT, version: SERVER_VERSION });
+  const lock = claimSupportedDataDirectory({ dorkHome, port: PORT, version: SERVER_VERSION });
   if (!lock.acquired) {
     logger.error(lock.reason);
     // Also to stderr: an operator starting from a terminal must see this even
@@ -57,6 +56,8 @@ export async function claimDataDirectory(refs: ServerRefs, built: ClaimDataDirec
     process.exit(1);
   }
   refs.releaseInstanceLock = lock.release;
+  console.log(`[DorkOS] Data directory: ${dorkHome}`);
+  initLogger({ level: logLevel, logDir: path.join(dorkHome, 'logs') });
 
   // Packaged builds need this protected target too, before any runtime launches.
   // Never trust an existing link or another user's folder for executable guard state.

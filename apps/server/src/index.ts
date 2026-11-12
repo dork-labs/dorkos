@@ -27,7 +27,14 @@ import { managedRemoteCommands } from './services/core/remote/managed-command-se
 import { currentRemoteBootPlan } from './services/core/remote/remote-boot.js';
 import { installSweepLogger } from './services/marketplace/recovery/install-sweep-log.js';
 import { setRemoteCommunitySubscriptionProbe } from './routes/test-control.js';
-import { runMigrations, DatabaseOpenError, SnapshotFailedError, agents } from '@dorkos/db';
+import {
+  runMigrations,
+  DatabaseOpenError,
+  DatabasePreflightError,
+  DatabaseUpgradeRequiredError,
+  SnapshotFailedError,
+  agents,
+} from '@dorkos/db';
 import { ownerNoticeSweep } from './services/notifications/emitters/community-owner-notice-sweep.js';
 import { SERVER_VERSION } from './lib/version.js';
 import {
@@ -629,7 +636,13 @@ start().catch(async (err) => {
   // be written. Both carry instructions in their message and both are resolved
   // by doing something to the filesystem, so they print as that message and
   // nothing else — a stack trace above it only buries the sentence that matters.
-  if (err instanceof DatabaseOpenError || err instanceof SnapshotFailedError) {
+  if (
+    err instanceof DatabaseOpenError ||
+    err instanceof DatabasePreflightError ||
+    err instanceof DatabaseUpgradeRequiredError ||
+    err instanceof SnapshotFailedError
+  ) {
+    console.error(`\n${err.message}\n`);
     logger.error(`[DorkOS] Cannot start.\n\n${err.message}\n`);
     process.exit(1);
   }

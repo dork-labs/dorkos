@@ -245,3 +245,10 @@ export type { SQL } from 'drizzle-orm';
 // Self-joins need a second name for the same table — the cross-room thread
 // aggregation joins `room_entries` to itself to reach each reply's root.
 export { alias } from 'drizzle-orm/sqlite-core';
+
+export {
+  assertSupportedDatabaseUpgrade,
+  DatabaseUpgradeRequiredError,
+  DatabasePreflightError,
+  MINIMUM_DATABASE_UPGRADE_TIMESTAMP,
+} from './upgrade-floor.js';

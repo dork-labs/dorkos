@@ -485,7 +485,9 @@ if (positionals[0] && !['cleanup', 'config', 'init'].includes(positionals[0])) {
 // Record it once, locally, before any early exit so `install.sh` can hand it
 // over with `--version`. Recording sends nothing: only the usage channel, once
 // a person has turned it on, ever reads it back (`services/core/install-funnel`).
-if (values.ref) recordInstallRef(DORK_HOME, values.ref);
+if (values.ref && (values.help || values.version || values['post-install-check'])) {
+  recordInstallRef(DORK_HOME, values.ref);
+}
 
 if (values.help) {
   console.log(`
@@ -641,6 +643,8 @@ try {
 }
 process.env.DORK_HOME = DORK_HOME;
 
+let releaseBootstrapLock: (() => void) | undefined;
+
 /**
  * Open the config store, or stop with a message a person can act on.
  *
@@ -654,6 +658,25 @@ process.env.DORK_HOME = DORK_HOME;
  * @returns The initialized config manager.
  */
 async function openConfigStore() {
+  const { claimSupportedDataDirectory } =
+    await import('../server/lib/database-startup/claim-supported-data-directory.js');
+  try {
+    const lock = claimSupportedDataDirectory({
+      dorkHome: DORK_HOME,
+      port: Number(values.port || process.env.DORKOS_PORT || DEFAULT_PORT),
+      version: __CLI_VERSION__,
+    });
+    if (!lock.acquired) {
+      console.error(`\n${lock.reason}\n`);
+      process.exit(1);
+    }
+    releaseBootstrapLock = lock.release;
+    process.once('exit', releaseBootstrapLock);
+    if (values.ref) recordInstallRef(DORK_HOME, values.ref);
+  } catch (error) {
+    console.error(`\n${error instanceof Error ? error.message : String(error)}\n`);
+    process.exit(1);
+  }
   const { initConfigManager, ConfigBootError } =
     await import('../server/services/core/config-manager.js');
   try {
@@ -695,11 +718,11 @@ if (subcommand === 'init') {
   process.exit(0);
 }
 
-// Check for Claude CLI (only needed for server startup)
-checkClaude();
-
 // Initialize config manager for precedence merge
 const cfgMgr = await openConfigStore();
+
+// External startup work runs only after the database preflight and config open.
+checkClaude();
 
 if (cfgMgr.isFirstRun) {
   console.log(`Created config at ${cfgMgr.path}`);
@@ -844,6 +867,13 @@ uninstallCliErrorHandlers?.();
 // Only this bootstrap establishes the current distribution for agent CLI fallback.
 // It also says which kind of DorkOS this is, so agents' update steps fit it.
 stampCliLaunch(process.env, fileURLToPath(import.meta.url), __CLI_VERSION__);
+// The server takes its own lock and repeats preflight before opening anything.
+// Keep our claim through all CLI config writes, then hand off without sharing module state.
+if (releaseBootstrapLock) {
+  process.removeListener('exit', releaseBootstrapLock);
+  releaseBootstrapLock();
+  releaseBootstrapLock = undefined;
+}
 let server: typeof import('../server/index.js');
 try {
   server = await import('../server/index.js');

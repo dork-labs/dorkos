@@ -1,0 +1,31 @@
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import Database from 'better-sqlite3';
+import { afterEach, expect, it, vi } from 'vitest';
+import { DatabaseUpgradeRequiredError } from '@dorkos/db';
+import * as config from '../../../services/core/config-manager.js';
+import * as instance from '../../instance-lock.js';
+import { bootInProcessTestServer } from '../../../harness-boot.js';
+let home: string;
+afterEach(() => {
+  vi.restoreAllMocks();
+  if (home) fs.rmSync(home, { recursive: true, force: true });
+});
+it('real harness boot refuses an old DB after claiming and before Conf or any startup file', async () => {
+  home = fs.mkdtempSync(path.join(os.tmpdir(), 'dorkos-harness-db-floor-'));
+  const file = path.join(home, 'dork.db');
+  const db = new Database(file);
+  db.exec('CREATE TABLE fixture(value TEXT)');
+  db.close();
+  const before = fs.readFileSync(file);
+  const init = vi.spyOn(config, 'initConfigManager');
+  const release = vi.fn();
+  vi.spyOn(instance, 'acquireInstanceLock').mockReturnValue({ acquired: true, release });
+  await expect(bootInProcessTestServer(home)).rejects.toThrow(DatabaseUpgradeRequiredError);
+  expect(instance.acquireInstanceLock).toHaveBeenCalledOnce();
+  expect(release).toHaveBeenCalledOnce();
+  expect(init).not.toHaveBeenCalled();
+  expect(fs.readFileSync(file)).toEqual(before);
+  expect(fs.readdirSync(home)).toEqual(['dork.db']);
+});

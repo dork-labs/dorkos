@@ -1,5 +1,6 @@
 ---
 covers:
+  - 'fix(db): refuse unsupported databases before startup'
   - 'refactor(codex): retire the persisted transport selector'
   - 'refactor(config): remove the retired global MCP key setting'
   - 'refactor(auth): retire global MCP key compatibility'
@@ -16,3 +17,5 @@ covers:
 ### Note for people upgrading
 
 - Upgrade settings last used before 0.115 through version 0.115 first. DorkOS stops before changing older settings and explains the two steps (DOR-4188).
+
+- DorkOS checks older databases before opening settings. Upgrade through 0.115 first (DOR-4188).

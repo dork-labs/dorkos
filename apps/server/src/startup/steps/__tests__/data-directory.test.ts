@@ -1,4 +1,9 @@
 import fs from 'node:fs/promises';
+import Database from 'better-sqlite3';
+import { DatabaseUpgradeRequiredError } from '@dorkos/db';
+import { initLogger } from '../../../lib/logger.js';
+import { acquireInstanceLock } from '../../../lib/instance-lock.js';
+import { reapOrphanedWarmProcesses } from '../../../services/runtimes/claude-code/sessions/warm-process-ledger.js';
 import fsSync from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -130,5 +135,23 @@ describe('shell-check folder at startup', () => {
       return stat;
     });
     await expect(boot()).rejects.toThrow('Could not secure shell-check folder');
+  });
+});
+
+describe('database refusal before startup side effects', () => {
+  it('claims first, then refuses an old database before logs, cache or sweeps', async () => {
+    const file = path.join(home, 'dork.db');
+    const db = new Database(file);
+    db.exec('CREATE TABLE fixture(value TEXT)');
+    db.close();
+    const before = fsSync.readFileSync(file);
+    vi.clearAllMocks();
+    await expect(boot()).rejects.toThrow(DatabaseUpgradeRequiredError);
+    expect(acquireInstanceLock).toHaveBeenCalledOnce();
+    expect(initLogger).not.toHaveBeenCalled();
+    expect(reapOrphanedWarmProcesses).not.toHaveBeenCalled();
+    expect(fsSync.existsSync(target)).toBe(false);
+    expect(fsSync.readFileSync(file)).toEqual(before);
+    expect(fsSync.readdirSync(home)).toEqual(['dork.db']);
   });
 });
