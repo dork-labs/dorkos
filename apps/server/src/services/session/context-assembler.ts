@@ -253,7 +253,7 @@ export function setDirectNotesSource(next: DirectNotesSource | undefined): void 
  *
  * @param sessionIds - The ids this turn answers to, most canonical first.
  */
-export function takeDirectNotes(sessionIds: readonly string[]): DirectNotesData | undefined {
+function takeDirectNotes(sessionIds: readonly string[]): DirectNotesData | undefined {
   if (!source) return undefined;
   const ids = [...new Set(sessionIds)];
   try {

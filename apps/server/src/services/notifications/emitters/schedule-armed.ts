@@ -27,7 +27,7 @@ import { runsAsOf, UNNAMED_PROPOSER } from './schedule-park.js';
  *
  * @param task - The schedule.
  */
-export function scheduleCadence(task: Pick<Task, 'cron' | 'timezone'>): string {
+function scheduleCadence(task: Pick<Task, 'cron' | 'timezone'>): string {
   const cron = task.cron?.trim();
   if (!cron) return 'only when someone starts it';
   const described = describeCronSchedule(cron);

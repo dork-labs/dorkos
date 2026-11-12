@@ -47,7 +47,7 @@ export function newestHistoryWindow(
  * @param limit - The page size.
  * @returns The page, or `null` when no message has that id.
  */
-export function historyPageBefore(
+function historyPageBefore(
   messages: HistoryMessage[],
   before: string,
   limit: number = HISTORY_PAGE_LIMIT

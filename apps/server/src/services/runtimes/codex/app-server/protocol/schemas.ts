@@ -134,7 +134,7 @@ const TurnSchema = z.looseObject({
 });
 
 /** A `ThreadItem`: its type and id are required, the rest is per type. */
-export const ThreadItemSchema = z.looseObject({ type: z.string(), id: z.string().optional() });
+const ThreadItemSchema = z.looseObject({ type: z.string(), id: z.string().optional() });
 
 const TokenBreakdownSchema = z.looseObject({
   totalTokens: z.number(),

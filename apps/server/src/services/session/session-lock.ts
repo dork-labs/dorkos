@@ -10,7 +10,7 @@ import { logger } from '../../lib/logger.js';
  * refuses it to every caller, so a lock reading `runtime:…` was minted by
  * {@link SessionLockManager.acquireRuntimeLock} and by nothing else.
  */
-export const RUNTIME_LOCK_PREFIX = 'runtime:';
+const RUNTIME_LOCK_PREFIX = 'runtime:';
 
 /**
  * The reserved holder id for one session's agent-initiated turns.

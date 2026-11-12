@@ -42,10 +42,4 @@ export {
 } from './runtime-signin-watch.js';
 export { traceRelay } from './trace-relay.js';
 export { SPAN, ATTR } from './attributes.js';
-export {
-  setAiMetadataBridge,
-  isAiBridgeEnabled,
-  isAiObservabilityActive,
-  observeRuntimeTurn,
-  type AiTurnMetadata,
-} from './ai-metadata.js';
+export { setAiMetadataBridge, type AiTurnMetadata } from './ai-metadata.js';

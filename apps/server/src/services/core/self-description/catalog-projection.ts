@@ -114,7 +114,7 @@ const capabilitySourceSchema = z.object({
 });
 
 /** One FULL serialized capability entry, mirroring `SerializedCapability`. */
-export const serializedCapabilitySchema = z.object({
+const serializedCapabilitySchema = z.object({
   id: z.string(),
   title: z.string(),
   description: z.string(),
@@ -156,7 +156,7 @@ export const capabilityCatalogSchema = z.object({
  * capability is the one it wants, and then fetch its schemas by narrowing. Drops
  * the two JSON Schemas and the full description that make the catalog large.
  */
-export const compactCapabilitySchema = z.object({
+const compactCapabilitySchema = z.object({
   /** Stable `${domain}.${verb}` id, e.g. `mcp.add`. Run it with `dorkos call`. */
   id: z.string(),
   /** Human-facing title. */

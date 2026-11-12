@@ -10,7 +10,7 @@ import type { AuthorRegistry } from '../author-registry.js';
 import { resolveOperatorAuthor } from '../operator-author.js';
 import { DirectChats, type DirectChatRooms, type DirectChatsDeps } from './direct-chats.js';
 
-export { DirectChats, DIRECT_NOTES_LIMIT } from './direct-chats.js';
+export { DirectChats } from './direct-chats.js';
 export type { DirectChat, DirectChatRooms, DirectChatsDeps } from './direct-chats.js';
 
 let active: DirectChats | null = null;

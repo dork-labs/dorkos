@@ -4,7 +4,7 @@
  *
  * @module services/diff
  */
-export { editBaselineStore, EditBaselineStore } from './edit-baseline.js';
+export { editBaselineStore } from './edit-baseline.js';
 export type { Baseline, BaselineOrigin } from './edit-baseline.js';
 export { gitShowHead } from './git-baseline.js';
 export { reconstructPreImage } from './reconstruct.js';

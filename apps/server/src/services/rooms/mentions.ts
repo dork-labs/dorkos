@@ -77,7 +77,7 @@ export const MENTION_PATTERN = /@([A-Za-z0-9][A-Za-z0-9_.-]*)/g;
  * derive "is this name its own token" from the rule itself rather than spelling
  * it a second time.
  */
-export const TRAILING_PUNCTUATION = /[.\-_]+$/;
+const TRAILING_PUNCTUATION = /[.\-_]+$/;
 
 /**
  * Who owns each name in a roster: lowercased name to author id, first claimant

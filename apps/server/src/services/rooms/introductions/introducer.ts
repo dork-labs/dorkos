@@ -92,7 +92,7 @@ export interface RoomIntroductionDeps {
  *
  * @param roomId - The room to post into.
  */
-export function introductionPrompt(roomId: string): string {
+function introductionPrompt(roomId: string): string {
   return [
     'You have just been added to this channel. The other members do not know yet who you are or what you do.',
     'Introduce yourself in one or two short sentences, in your own words: who you are and what you can help with here. ' +
@@ -110,7 +110,7 @@ export function introductionPrompt(roomId: string): string {
  * the turn runs at the runtime's default level, never the agent's own, and is
  * never treated as answering a stranger: nothing a stranger wrote asked for it.
  */
-export const INTRODUCTION_CARRY: AsideCarry = {
+const INTRODUCTION_CARRY: AsideCarry = {
   externalAuthor: false,
   permissionCeiling: 'runtime-default',
 };

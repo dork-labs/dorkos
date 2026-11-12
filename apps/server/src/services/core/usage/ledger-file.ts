@@ -47,9 +47,9 @@ import {
 import { logger } from '../../../lib/logger.js';
 
 /** A lock whose mtime is older than this is stale (contract step 2). */
-export const LOCK_STALE_MS = 10_000;
+const LOCK_STALE_MS = 10_000;
 /** How long a writer keeps trying for the lock before it gives up (contract step 3). */
-export const LOCK_GIVE_UP_MS = 2_000;
+const LOCK_GIVE_UP_MS = 2_000;
 const RETRY_MIN_MS = 25;
 const RETRY_SPREAD_MS = 75;
 
@@ -122,7 +122,7 @@ function assertAccountId(accountId: string): void {
  * (`<dorkHome>/runtimes/<runtime>/usage`). The contract says readers trust the
  * path, so the writer does too.
  */
-export function runtimeOfLedgerDir(dir: string): LedgerRuntime {
+function runtimeOfLedgerDir(dir: string): LedgerRuntime {
   const runtime = path.basename(path.dirname(dir));
   if (!(LEDGER_RUNTIMES as readonly string[]).includes(runtime)) {
     throw new Error(`Refused ledger folder "${dir}": it is not under runtimes/<runtime>/usage.`);

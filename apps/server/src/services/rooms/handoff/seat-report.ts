@@ -38,7 +38,7 @@ import type { RoomCore } from '../service/room-core.js';
 import { carryFrom, withRoomMarks } from './seat-carry.js';
 
 /** The longest a report waits for a busy seat before it gives up. */
-export const SEAT_REPORT_WAIT_MAX_MS = 60 * 60_000;
+const SEAT_REPORT_WAIT_MAX_MS = 60 * 60_000;
 
 /** How often a waiting report looks again even when no turn ended. */
 const SEAT_REPORT_RECHECK_MS = 30_000;
@@ -193,7 +193,7 @@ export class RoomSeatReports {
  *
  * @param report - The report.
  */
-export function seatReportPrompt(report: SeatReport): string {
+function seatReportPrompt(report: SeatReport): string {
   // The title sits outside the fence, and anybody who can rename the chat writes it: reduced to
   // one plain line and kept from reading as a fence marker, as a chat message's sender is.
   const title = report.fromTitle ? defuseMarkers(sanitizeIdentity(report.fromTitle) ?? '') : '';
