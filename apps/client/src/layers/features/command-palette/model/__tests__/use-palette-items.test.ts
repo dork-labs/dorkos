@@ -46,7 +46,6 @@ const mockUseSessions = vi.fn();
 const mockUseRecentSessions = vi.fn();
 const mockSessionListState = vi.fn();
 const mockUseRooms = vi.fn();
-const mockUseAppStore = vi.fn();
 
 const DEFAULT_PALETTE_CONTRIBUTIONS: CommandPaletteContribution[] = [
   {
@@ -172,10 +171,6 @@ vi.mock('@/layers/entities/room', async (importOriginal) => ({
 }));
 
 vi.mock('@/layers/shared/model', () => ({
-  useAppStore: (selector?: (s: Record<string, unknown>) => unknown) => {
-    const state = mockUseAppStore();
-    return selector ? selector(state) : state;
-  },
   useNow: () => Date.now(),
   useSlotContributions: () => mockUseSlotContributions(),
   useMenuExtensionPages: () => mockUseMenuExtensionPages(),
