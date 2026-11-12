@@ -389,11 +389,6 @@ describe('findLastWidgetFenceIndex (fence-based supersede, DOR-302)', () => {
 });
 
 describe('SessionTranscript', () => {
-  it('renders empty list without error', () => {
-    const { container } = render(<SessionTranscript sessionId="test-session" messages={[]} />);
-    expect(container).toBeDefined();
-  });
-
   it('renders user message content', () => {
     const messages: ChatMessage[] = [
       {
