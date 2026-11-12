@@ -1,3 +1,5 @@
+import { existsSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { defineConfig, devices } from '@playwright/test';
 import { BOOT_CACHE_DISABLED_KEY } from './boot-cache-flag';
 import { unitKey } from './reporters/balanced-shard';
@@ -242,6 +244,50 @@ function resetThrowawayHome(dorkHome: string): string {
 }
 
 /**
+ * A file each package's build leaves behind, relative to this config. Only the
+ * packages a leg builds are listed; a package missing here always builds.
+ */
+const BUILD_OUTPUT: Record<string, string> = {
+  '@dorkos/server': '../server/dist/index.js',
+  '@dorkos/client': '../client/dist/index.html',
+};
+
+/**
+ * True when CI's own build step has already built every one of `packages`, so a
+ * leg may skip its `turbo run build`.
+ *
+ * WHY. In CI the workflow builds everything the legs boot from in a step of its
+ * own ("Build what the webServer legs boot from" / "… the smoke projects boot
+ * from"), and the legs then ran `turbo run build` again on the expectation of a
+ * cache replay. They missed the cache on every shard: run 43007007159 shard 3
+ * spent 96 s and 110 s rebuilding on the two API legs and about 150 s on the
+ * production leg's client, all before the first test, because Playwright starts
+ * the legs one after another (DOR-4190, ledger `261111-193622`). A second
+ * build of the same tree is pure cost, so CI skips it when the step's outputs
+ * are on disk.
+ *
+ * WHY THE OUTPUT IS THIS COMMIT'S. In CI the files can only come from the
+ * job's own build step, minutes earlier, on this tree: the runner is fresh per
+ * job, `dist/` is gitignored so checkout never brings one, the jobs cache only
+ * the pnpm store and the Playwright browsers (no turbo cache, no dist), and the
+ * build step runs before the suite in the same job. A future cache of `dist/`
+ * or a turbo remote cache would break that, and must re-check this.
+ *
+ * Only under `CI`: locally there is no build step, and a dist left from an
+ * older checkout would boot stale code, so a local run always builds. A CI job
+ * that forgot its build step finds no outputs and builds as before.
+ *
+ * @param packages - The workspace packages the leg would build.
+ */
+function builtByCiStep(packages: string[]): boolean {
+  if (!CI) return false;
+  return packages.every((pkg) => {
+    const output = BUILD_OUTPUT[pkg];
+    return output !== undefined && existsSync(fileURLToPath(new URL(output, import.meta.url)));
+  });
+}
+
+/**
  * The command that boots an Express API leg, for every leg that needs one.
  *
  * Deliberately NOT `turbo dev` (`tsx watch`). On boot the server compiles each
@@ -257,8 +303,9 @@ function resetThrowawayHome(dorkHome: string): string {
  * back. So no e2e leg may watch. Tests never edit source, so nothing is lost.
  *
  * `turbo run build` supplies the workspace-dependency dists that `turbo dev`
- * used to provide via `^build`. Both legs run it concurrently and turbo
- * deduplicates them, so the second is free.
+ * used to provide via `^build`. Locally the first leg builds and the others
+ * replay its cache. In CI the workflow's build step has already built them, so
+ * the legs skip it ({@link builtByCiStep}): there the replay missed every time.
  *
  * The server itself runs on a throwaway `HOME` inside the leg's `DORK_HOME`
  * (DOR-3587, `throwaway-home.ts`); the build before it keeps the real one. That
@@ -281,8 +328,12 @@ function apiLegCommand(
   const prefix = Object.entries(env)
     .map(([key, value]) => `${key}=${value}`)
     .join(' ');
-  const filters = ['@dorkos/server', ...alsoBuild].map((pkg) => `--filter=${pkg}`).join(' ');
-  const boot = `turbo run build ${filters} --output-logs=new-only && ${bootServerOnThrowawayHome(env.DORK_HOME)}`;
+  const packages = ['@dorkos/server', ...alsoBuild];
+  const filters = packages.map((pkg) => `--filter=${pkg}`).join(' ');
+  const build = builtByCiStep(packages)
+    ? ''
+    : `turbo run build ${filters} --output-logs=new-only && `;
+  const boot = `${build}${bootServerOnThrowawayHome(env.DORK_HOME)}`;
   const script = preBoot ? `${preBoot} && ${boot}` : boot;
   return `${prefix ? `${prefix} ` : ''}dotenv -- sh -c '${script}'`;
 }
@@ -770,8 +821,8 @@ export default defineConfig({
             // The same ≈240s family as every other Express leg, +3s so this
             // array's timeout VALUES stay distinct (see the cockpit Express
             // leg's comment for why that matters). It builds the client on top
-            // of the server, which is a cache replay whenever the workflow's
-            // build step ran first.
+            // of the server, except in CI after the workflow's build step,
+            // where it boots from that step's output (`builtByCiStep`).
             timeout: 243_000,
             reuseExistingServer: REUSE_EXISTING_SERVER,
             stdout: 'pipe' as const,
