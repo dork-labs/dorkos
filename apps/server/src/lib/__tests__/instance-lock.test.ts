@@ -127,6 +127,8 @@ describe('instance-lock', () => {
       expect(result.reason).toContain(String(LIVE_PID));
       expect(result.reason).toContain('6242');
       expect(result.reason).toContain(dorkHome);
+      expect(result.reason).toContain('Another DorkOS instance');
+      expect(result.reason).toContain('It is running');
       expect(result.reason).toContain('DORKOS_SKIP_INSTANCE_LOCK');
     });
 

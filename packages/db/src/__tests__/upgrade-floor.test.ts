@@ -65,8 +65,13 @@ function inventory(dir: string): Record<string, string> {
   );
 }
 
-function receipt(name: string, before: Record<string, string>, after: Record<string, string>) {
-  console.info(JSON.stringify({ case: name, before, after }));
+function receipt(
+  name: string,
+  before: Record<string, string>,
+  after: Record<string, string>,
+  sizes?: Record<string, number>
+) {
+  console.info(JSON.stringify({ case: name, before, after, sizes }));
 }
 
 function unchangedData(before: Record<string, string>, after: Record<string, string>) {
@@ -134,6 +139,33 @@ describe('database upgrade floor, after the instance lock', () => {
       const after = inventory(source);
       receipt(`4-${wal}`, before, after);
       unchangedData(before, after);
+    }
+  );
+
+  it.each([FLOOR - 1, FLOOR])(
+    'case 4: without WAL, keeps empty WAL and SHM after watermark %s is checked',
+    (main) => {
+      const { source, file } = fixture(main);
+      const before = inventory(source);
+      expect(Object.keys(before)).toEqual(['dork.db']);
+      vi.spyOn(DatabaseSync.prototype, 'prepare').mockImplementationOnce(() => {
+        throw new Error('fixture checkpoint race without WAL');
+      });
+      if (main >= FLOOR) expect(() => assertSupportedDatabaseUpgrade(file)).not.toThrow();
+      else expect(() => assertSupportedDatabaseUpgrade(file)).toThrow(DatabaseUpgradeRequiredError);
+
+      // Inspect AFTER the return/refusal: neither outcome may clean up SQLite metadata.
+      expect(fs.existsSync(`${file}-wal`)).toBe(true);
+      expect(fs.existsSync(`${file}-shm`)).toBe(true);
+      const after = inventory(source);
+      const sizes = Object.fromEntries(
+        Object.keys(after).map((name) => [name, fs.statSync(path.join(source, name)).size])
+      );
+      receipt(`4-no-wal-${main >= FLOOR ? 'proceed' : 'refuse'}`, before, after, sizes);
+      expect(after['dork.db']).toBe(before['dork.db']);
+      expect(Object.keys(after)).toEqual(['dork.db', 'dork.db-shm', 'dork.db-wal']);
+      expect(sizes['dork.db-wal']).toBe(0);
+      expect(sizes['dork.db-shm']).toBeGreaterThan(0);
     }
   );
 

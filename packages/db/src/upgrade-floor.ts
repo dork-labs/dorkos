@@ -90,6 +90,8 @@ export function assertSupportedDatabaseUpgrade(dbPath: string): void {
     }
   } catch {
     // A checkpoint can race the immutable read: use SQLite's WAL-aware view.
+    // Case 4 alone may create an empty WAL plus SHM when no WAL existed.
+    // Keep that metadata even on refusal; never delete SQLite sidecars here.
     current = readNormally(dbPath);
     if (current < MINIMUM_DATABASE_UPGRADE_TIMESTAMP)
       throw new DatabaseUpgradeRequiredError(dbPath);
