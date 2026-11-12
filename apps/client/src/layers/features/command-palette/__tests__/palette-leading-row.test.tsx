@@ -18,6 +18,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import '@testing-library/jest-dom/vitest';
 import { createMockTransport } from '@dorkos/test-utils';
 import type { RoomSummary } from '@dorkos/shared/room-schemas';
+import { useAppStore } from '@/layers/shared/model';
 import { CommandPaletteDialog } from '../ui/CommandPaletteDialog';
 import { useLeadingRowPin } from '../model/use-leading-row-pin';
 
@@ -82,6 +83,8 @@ globalThis.ResizeObserver = vi.fn().mockImplementation(function () {
 Element.prototype.scrollIntoView = vi.fn();
 
 beforeEach(() => {
+  // The palette renders only while the real store says it is open.
+  useAppStore.setState({ globalPaletteOpen: true, globalPaletteInitialSearch: null });
   Object.defineProperty(window, 'matchMedia', {
     writable: true,
     value: vi.fn().mockImplementation((query: string) => ({
@@ -117,28 +120,13 @@ vi.mock('@tanstack/react-router', async (importOriginal) => ({
   useNavigate: () => vi.fn(),
 }));
 
-vi.mock('@/layers/shared/model', () => ({
+// The real barrel, with only the hooks that need a router or a host replaced.
+// The app store and the dialog stores are REAL.
+vi.mock('@/layers/shared/model', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/layers/shared/model')>()),
   useTransport: () => mockTransport,
-  useAppStore: (selector?: (s: Record<string, unknown>) => unknown) => {
-    const state = {
-      globalPaletteOpen: true,
-      setGlobalPaletteOpen: vi.fn(),
-      toggleGlobalPalette: vi.fn(),
-      setPickerOpen: vi.fn(),
-      setCanvasOpen: vi.fn(),
-      setRightPanelOpen: vi.fn(),
-      setActiveRightPanelTab: vi.fn(),
-      globalPaletteInitialSearch: null,
-      clearGlobalPaletteInitialSearch: vi.fn(),
-    };
-    return selector ? selector(state) : state;
-  },
   useTheme: () => ({ theme: 'light', setTheme: vi.fn() }),
   useReportIssue: () => vi.fn(),
-  useFeedbackDialogStore: (selector?: (s: Record<string, unknown>) => unknown) => {
-    const state = { openFeedback: vi.fn() };
-    return selector ? selector(state) : state;
-  },
   useIsMobile: () => false,
   useNow: () => Date.now(),
   // Rows below the agent, so "the highlight moved down" and "the highlight came
@@ -165,12 +153,6 @@ vi.mock('@/layers/shared/model', () => ({
   useSettingsDeepLink: () => ({ open: vi.fn(), close: vi.fn() }),
   useTasksDeepLink: () => ({ open: vi.fn(), close: vi.fn() }),
   useOpenConnections: () => vi.fn(),
-  useAgentCreationStore: Object.assign(() => ({ open: vi.fn() }), {
-    getState: () => ({ open: vi.fn() }),
-  }),
-  useImportProjectsStore: Object.assign(() => ({ open: vi.fn() }), {
-    getState: () => ({ open: vi.fn() }),
-  }),
 }));
 
 vi.mock('@/layers/entities/mesh', () => ({
