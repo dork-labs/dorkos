@@ -16,7 +16,7 @@ import { logger } from '../../../lib/logger.js';
 import type { HubComputerConnection } from './computer-connection.js';
 
 /** Most unproved dials one computer may have waiting at once. */
-export const HUB_RELAY_MAX_PENDING_DIALS = 3;
+const HUB_RELAY_MAX_PENDING_DIALS = 3;
 
 const live = new Map<string, HubComputerConnection>();
 /** Each computer's unproved dials, oldest first. */

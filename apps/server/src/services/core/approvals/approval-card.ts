@@ -25,7 +25,7 @@ export type ApprovalRow = typeof approvals.$inferSelect;
  *
  * @param area - The stored area, or `null`.
  */
-export function recordedArea(area: string | null): PermissionAreaId | null {
+function recordedArea(area: string | null): PermissionAreaId | null {
   return area === null ? null : (area as PermissionAreaId);
 }
 

@@ -60,7 +60,7 @@ const HttpsOriginSchema = z
 export const APPROVAL_KEY_ALGS = [-7, -8, -257] as const;
 
 /** One pinned approvals passkey. */
-export const ApprovalKeySchema = z.strictObject({
+const ApprovalKeySchema = z.strictObject({
   /** The WebAuthn credential id, base64url. */
   credentialId: base64url(1_400),
   /** The COSE public key, base64url. */
@@ -84,7 +84,7 @@ export const ApprovalKeySchema = z.strictObject({
 export type ApprovalKey = z.infer<typeof ApprovalKeySchema>;
 
 /** The whole file: the relying party the keys belong to, and the keys. */
-export const ApprovalKeysSchema = z
+const ApprovalKeysSchema = z
   .strictObject({
     /** The file's own format. */
     v: z.literal(1),
@@ -184,7 +184,7 @@ export function approvalKeysUnreadable(dorkHome: string = resolveDorkHome()): bo
 export const KEYS_READ_ERROR = 'Couldn’t read the passkeys file here. Try again.';
 
 /** The refusal for adding a key to a link that is gone or changed. */
-export const LINK_CHANGED_REFUSAL = 'This computer’s link changed. Start again in Settings.';
+const LINK_CHANGED_REFUSAL = 'This computer’s link changed. Start again in Settings.';
 
 /** The refusal for adding a key over a file that cannot be read. */
 export const UNREADABLE_KEYS_REFUSAL =

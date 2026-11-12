@@ -57,13 +57,13 @@ import type { LinkedComputer } from './computer-store.js';
 export const HUB_RELAY_HANDSHAKE_TIMEOUT_MS = 15_000;
 
 /** How often the hub sends a heartbeat; the computer hangs up after three missed. */
-export const HUB_RELAY_HEARTBEAT_MS = 30_000;
+const HUB_RELAY_HEARTBEAT_MS = 30_000;
 
 /** How long the hub waits for any frame from the computer before hanging up. */
 export const HUB_RELAY_SILENCE_TIMEOUT_MS = 90_000;
 
 /** How long one request waits for its answer. */
-export const HUB_RELAY_REQUEST_TIMEOUT_MS = 30_000;
+const HUB_RELAY_REQUEST_TIMEOUT_MS = 30_000;
 
 /**
  * The hub's long-lived signing key and its origin, injected so this module
@@ -107,7 +107,7 @@ export const RELAY_HUB_BUSY: RelayError = {
 };
 
 /** The request was too large to relay. */
-export const RELAY_REQUEST_TOO_LARGE: RelayError = {
+const RELAY_REQUEST_TOO_LARGE: RelayError = {
   status: 413,
   code: 'invalid',
   message: 'That request is too large to relay.',

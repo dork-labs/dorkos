@@ -45,7 +45,7 @@ export const HUB_SIGNING_KEY_FILE = 'hub-signing-key.pem';
  * The first line of every session relay transcript (`dorkos-session-relay/v1`
  * in `@dorkos/shared`): the only thing this key signs.
  */
-export const HUB_KEY_SIGNS_ONLY = 'dorkos-session-relay/v1\n';
+const HUB_KEY_SIGNS_ONLY = 'dorkos-session-relay/v1\n';
 
 /** The loaded key: its private half, and its public half as Cloud and a Mac see it. */
 let loaded: { privateKey: KeyObject; publicKey: string } | null = null;

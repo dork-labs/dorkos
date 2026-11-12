@@ -61,10 +61,10 @@ import type { z } from 'zod';
 import { APPROVAL_KEY_ALGS, type ApprovalKey, type ApprovalKeys } from '../approval-key-store.js';
 
 /** DorkOS's own approve page: the relying party every dorkos.ai account uses. */
-export const DEFAULT_APPROVE_ORIGIN = links.approve;
+const DEFAULT_APPROVE_ORIGIN = links.approve;
 
 /** How long an enrol statement lives. */
-export const ENROL_STATEMENT_TTL_MS = 2 * 60 * 1000;
+const ENROL_STATEMENT_TTL_MS = 2 * 60 * 1000;
 
 /** The loopback page the approve page sends the browser back to. */
 export const RELAY_PASSKEY_RETURN_PATH = '/relay-passkey';

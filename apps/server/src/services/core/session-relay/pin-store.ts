@@ -55,7 +55,7 @@ const FILE_MODE = 0o600;
  * owner's account; format 1 was never written by a released build, so a pin in
  * it reads as no pin at all and the owner links again.
  */
-export const RelayPinSchema = z.strictObject({
+const RelayPinSchema = z.strictObject({
   /** The store's own format, so a later release can read an older pin. */
   v: z.literal(2),
   /** This computer's id as its hub knows it. */

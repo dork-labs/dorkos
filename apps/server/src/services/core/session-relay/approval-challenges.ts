@@ -31,10 +31,10 @@ import { hashApprovalInput } from '../approvals/approval-input-hash.js';
 import type { ApprovalKeys } from './approval-key-store.js';
 
 /** How long a challenge may be signed and answered. */
-export const APPROVAL_CHALLENGE_TTL_MS = 120_000;
+const APPROVAL_CHALLENGE_TTL_MS = 120_000;
 
 /** Most challenges one connection may hold live at once. */
-export const MAX_LIVE_APPROVAL_CHALLENGES = 8;
+const MAX_LIVE_APPROVAL_CHALLENGES = 8;
 
 /** The decision a challenge is bound to. */
 export type ApprovalDecision = StepUpStatementV1['decision'];

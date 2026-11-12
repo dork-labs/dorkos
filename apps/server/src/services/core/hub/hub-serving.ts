@@ -167,7 +167,7 @@ export function hubServingOrigins(): string[] {
 }
 
 /** The body a hub answers with while it does not serve. */
-export const HUB_NOT_SERVING_BODY = {
+const HUB_NOT_SERVING_BODY = {
   error: 'This DorkOS is not ready yet.',
   code: 'HUB_NOT_SERVING',
 } as const;

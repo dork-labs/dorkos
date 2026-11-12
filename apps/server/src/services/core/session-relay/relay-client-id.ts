@@ -5,7 +5,7 @@
  */
 
 /** The prefix of every relayed lock identity. */
-export const RELAY_CLIENT_PREFIX = 'relay:';
+const RELAY_CLIENT_PREFIX = 'relay:';
 
 /**
  * The lock identity for the messages one relay connection sends.

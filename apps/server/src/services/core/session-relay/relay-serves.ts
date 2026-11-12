@@ -57,7 +57,7 @@ export interface RelaySessionFacts {
  *
  * @param kind - The stored launch origin.
  */
-export function relayServesLaunchOrigin(kind: TurnOrigin['kind']): boolean {
+function relayServesLaunchOrigin(kind: TurnOrigin['kind']): boolean {
   switch (kind) {
     // A person's own chat, here or from the web, and the chats that carry one
     // on: one an agent or an extension started for them (spin-offs, outcome
@@ -125,7 +125,7 @@ function isKnownLaunchOrigin(kind: string): kind is TurnOrigin['kind'] {
  * @param agents - Every registered agent.
  * @param cwd - The folder.
  */
-export function agentOwningFolder(agents: readonly RelayAgent[], cwd: string): RelayAgent | null {
+function agentOwningFolder(agents: readonly RelayAgent[], cwd: string): RelayAgent | null {
   const folder = path.resolve(cwd);
   let best: RelayAgent | null = null;
   for (const agent of agents) {

@@ -48,7 +48,7 @@ export const HUB_SIGN_IN_PROVIDER_ID = 'dorkos';
 export const HUB_SIGN_IN_CALLBACK_PATH = `/api/auth/callback/${HUB_SIGN_IN_PROVIDER_ID}`;
 
 /** The only scopes a hub asks for. */
-export const HUB_SIGN_IN_SCOPES = ['openid', 'email', 'profile'];
+const HUB_SIGN_IN_SCOPES = ['openid', 'email', 'profile'];
 
 /** How long one discovery request may take before sign-in answers "unavailable". */
 const DISCOVERY_TIMEOUT_MS = 10_000;
@@ -70,7 +70,7 @@ export interface HubSignInClient {
  * a hub, not serving, no client in the assignment, or a redirect address that
  * is not exactly the callback on the hub's own address.
  */
-export function currentHubSignInClient(): HubSignInClient | null {
+function currentHubSignInClient(): HubSignInClient | null {
   if (currentServerRole() !== 'hub') return null;
   const state = hubServingState();
   if (state.state !== 'serving') return null;
@@ -100,7 +100,7 @@ export function currentHubSignInClient(): HubSignInClient | null {
  * @param issuer - The assignment's issuer, no trailing slash.
  * @param document - The parsed discovery document.
  */
-export function hubDiscoveryProblem(issuer: string, document: unknown): string | null {
+function hubDiscoveryProblem(issuer: string, document: unknown): string | null {
   if (!document || typeof document !== 'object') return 'not a discovery document';
   const doc = document as Record<string, unknown>;
   if (typeof doc.issuer !== 'string' || doc.issuer.replace(/\/+$/u, '') !== issuer) {

@@ -34,7 +34,6 @@ export {
   RELAY_BAD_ANSWER,
   RELAY_COMPUTER_OFFLINE,
   RELAY_HUB_BUSY,
-  RELAY_REQUEST_TOO_LARGE,
   RELAY_TIMED_OUT,
   type HubComputerConnection,
   type HubRelaySigner,

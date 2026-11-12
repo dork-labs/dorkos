@@ -162,7 +162,7 @@ export function writeHubOwnerPin(dorkHome: string, pin: PinnedHubOwner): void {
  *
  * @param assignment - The assignment being taken.
  */
-export function hubOwnerEmail(assignment: LiveHubAssignment): string {
+function hubOwnerEmail(assignment: LiveHubAssignment): string {
   return `owner@${new URL(assignment.address).hostname}`;
 }
 

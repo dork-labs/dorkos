@@ -52,7 +52,7 @@ import { signRelayLinkRequest, verifyRelayLinkResponse } from './link-signature.
 import { computerSigningKey, readRelayPin, writeRelayPin, type RelayPin } from './pin-store.js';
 
 /** How long the hub has to answer. */
-export const RELAY_LINK_TIMEOUT_MS = 15_000;
+const RELAY_LINK_TIMEOUT_MS = 15_000;
 
 /** The largest answer read from a hub; a real one is a few hundred bytes. */
 export const RELAY_LINK_MAX_RESPONSE_BYTES = 16 * 1024;

@@ -43,7 +43,7 @@ const Base64url32Schema = z
   .regex(/^[A-Za-z0-9_-]+$/);
 
 /** One linked computer, as stored. */
-export const LinkedComputerSchema = z.strictObject({
+const LinkedComputerSchema = z.strictObject({
   /** The record's own format, so a later release can read an older one. */
   v: z.literal(1),
   /** The computer's id, as its `hello` names it. */

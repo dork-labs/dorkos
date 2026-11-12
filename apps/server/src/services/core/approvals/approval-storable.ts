@@ -114,7 +114,7 @@ export function storableServiceAction(action: ApprovalServiceAction): string | n
 }
 
 /** The one capability a person's own, card-free yes may record (DOR-2665). */
-export const OWN_ANSWER_CAPABILITY = 'ui.approve_doc_route';
+const OWN_ANSWER_CAPABILITY = 'ui.approve_doc_route';
 
 /**
  * Pass through a person's own answer only for {@link OWN_ANSWER_CAPABILITY}, so a
