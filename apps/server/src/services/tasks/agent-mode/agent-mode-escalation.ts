@@ -50,7 +50,7 @@ const STATE_RANK = { allowed: 0, ask: 1, blocked: 2 } as const;
  *
  * @param context - What the gate knows about the call.
  */
-export function gateCallerOf(context: ToolCallContext): AgentModeCaller {
+function gateCallerOf(context: ToolCallContext): AgentModeCaller {
   const identity = context.identity && !context.identity.inactive ? context.identity : undefined;
   const resolved = !identity
     ? 'unidentified'

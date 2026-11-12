@@ -43,7 +43,7 @@ import type { UpsertFromFileOptions } from './task-file-sync.js';
  * @param projectPath - The project's root folder.
  * @param relative - The block's `projectFile`.
  */
-export async function projectHoldsFile(projectPath: string, relative: string): Promise<boolean> {
+async function projectHoldsFile(projectPath: string, relative: string): Promise<boolean> {
   try {
     const rootReal = await fs.realpath(projectPath);
     const fileReal = await fs.realpath(path.join(rootReal, relative));

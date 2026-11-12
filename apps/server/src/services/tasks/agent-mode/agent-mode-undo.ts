@@ -54,7 +54,7 @@ type UndoDeps = {
  * @param task - The task as it stands.
  * @param modeLabel - What its mode is called on its runtime.
  */
-export function nothingToUndo(task: Task, modeLabel: string): Record<string, unknown> {
+function nothingToUndo(task: Task, modeLabel: string): Record<string, unknown> {
   return {
     error: 'Nothing to undo',
     code: 'nothing_to_undo',

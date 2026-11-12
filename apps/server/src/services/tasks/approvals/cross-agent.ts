@@ -72,7 +72,7 @@ export const CROSS_AGENT_NEEDS_FULL_MESSAGE =
   'Use your own agent id as the target, or "global", or ask a person.';
 
 /** The refusal for a Full turn that carries the outsider mark. */
-export const CROSS_AGENT_MARKED_MESSAGE =
+const CROSS_AGENT_MARKED_MESSAGE =
   'This chat read messages from outside your team, so in this turn it cannot schedule or ' +
   'change a task for another agent. A person can, or you can schedule it for yourself.';
 

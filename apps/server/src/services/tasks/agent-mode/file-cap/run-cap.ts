@@ -73,7 +73,7 @@ export function cappedModeOf(task: Pick<Task, 'permissionMode' | 'runtime'>): Pe
  *
  * @param task - The task as it would run.
  */
-export function cappedLabelOf(task: Pick<Task, 'permissionMode' | 'runtime'>): string {
+function cappedLabelOf(task: Pick<Task, 'permissionMode' | 'runtime'>): string {
   const mode = cappedModeOf(task);
   const declared = liveAgentModeSources(undefined).declaredModes(task.runtime);
   return declared?.values.find((m) => m.id === mode)?.label ?? mode;

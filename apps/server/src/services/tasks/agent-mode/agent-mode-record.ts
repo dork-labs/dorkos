@@ -51,7 +51,7 @@ function runFolderOf(task: Task, meshCore: Pick<MeshCore, 'getProjectPath'> | un
 }
 
 /** Where the Activity line and the task's own row point: the task in the Tasks list. */
-export function taskLinkOf(task: Pick<Task, 'name'>): string {
+function taskLinkOf(task: Pick<Task, 'name'>): string {
   return `/tasks?search=${encodeURIComponent(task.name)}`;
 }
 
@@ -424,11 +424,7 @@ export async function parkIfAgentApprovalStale(
  * @param data - What the person sent.
  * @param updated - The task after it.
  */
-export function personEditApproves(
-  existing: Task,
-  data: UpdateTaskRequest,
-  updated: Task
-): boolean {
+function personEditApproves(existing: Task, data: UpdateTaskRequest, updated: Task): boolean {
   if (updated.status !== 'active') return false;
   const armed = existing.status === 'pending_approval';
   return armed || data.permissionMode !== undefined || changesApprovedWork(data, existing);
@@ -444,7 +440,7 @@ export function personEditApproves(
  * @param updated - The task after it.
  * @param sources - Where the runtime's modes are read.
  */
-export function settlePersonMode(
+function settlePersonMode(
   store: Pick<TaskStore, 'approvals'>,
   existing: Task,
   updated: Task,

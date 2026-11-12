@@ -44,7 +44,7 @@ export function taskReviewRevision(task: Task): string {
 }
 
 /** Hash the exact file bytes, or distinguish a failed read from every readable file. */
-export function taskReviewFileRevision(filePath: string): string {
+function taskReviewFileRevision(filePath: string): string {
   try {
     return createHash('sha256').update(readFileSync(filePath)).digest('hex');
   } catch (error) {

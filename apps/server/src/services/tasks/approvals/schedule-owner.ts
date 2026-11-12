@@ -27,7 +27,7 @@ export const NOT_YOUR_AGENT_MESSAGE =
   'Use your own agent id as the target, or "global".';
 
 /** The refusal for a change to another agent's schedule. */
-export const NOT_YOUR_SCHEDULE_MESSAGE =
+const NOT_YOUR_SCHEDULE_MESSAGE =
   'That scheduled task belongs to another agent. Only that agent, a person, or a chat at Full ' +
   'autonomy can change it.';
 
@@ -91,7 +91,7 @@ export function runsAsItsCreator(target: string | null, callerId: string | undef
  * @param callerPath - The calling agent's verified home.
  * @param callerId - Its Mesh id, when Mesh names it.
  */
-export function ownsSchedule(
+function ownsSchedule(
   task: Pick<Task, 'agentId' | 'proposedByAgentPath'>,
   callerPath: string,
   callerId: string | undefined
@@ -137,7 +137,7 @@ const AUDITED_FIELDS = [
  * @param before - The schedule before the update.
  * @param after - The schedule after it.
  */
-export function scheduleChanges(before: Task, after: Task): AuditChange[] {
+function scheduleChanges(before: Task, after: Task): AuditChange[] {
   return AUDITED_FIELDS.filter((field) => before[field] !== after[field]).map((field) =>
     field === 'prompt'
       ? { field, before: promptHashOf(before.prompt), after: promptHashOf(after.prompt) }
@@ -187,7 +187,7 @@ export type ScheduleEditor =
   | { readonly kind: 'unidentified' };
 
 /** The refusal for a caller DorkOS cannot name, changing an agent's schedule. */
-export const UNIDENTIFIED_EDITOR_MESSAGE =
+const UNIDENTIFIED_EDITOR_MESSAGE =
   "DorkOS can't tell which agent is asking, so it can't change an agent's scheduled task.";
 
 /**

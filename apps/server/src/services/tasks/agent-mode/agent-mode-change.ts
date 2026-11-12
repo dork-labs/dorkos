@@ -24,7 +24,7 @@ import type { AgentModeCall, AgentModeDecided } from './agent-mode-decision.js';
 const PROMPT_HEAD = 600;
 
 /** What the card says about the part of a prompt it does not show. */
-export const FULL_PROMPT_LINE =
+const FULL_PROMPT_LINE =
   'Full prompt: bound to this approval by the version below, and shown in full on the task.';
 
 /** A prompt's first line or so, flattened, for the card. */

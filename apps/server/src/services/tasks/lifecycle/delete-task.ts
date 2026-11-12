@@ -27,7 +27,7 @@ export const PROJECT_COPY_DELETE_REFUSAL =
  * Why an agent cannot delete a schedule an installed package owns (DOR-2097):
  * the file is part of the package, and its next update would bring it back.
  */
-export const PACKAGE_SCHEDULE_DELETE_REFUSAL =
+const PACKAGE_SCHEDULE_DELETE_REFUSAL =
   "This schedule came with an installed package, so it can't be deleted. " +
   'Switch it off here instead.';
 

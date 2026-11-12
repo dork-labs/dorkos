@@ -20,7 +20,7 @@ import { TASK_CANCEL_SUBJECT_PREFIX, TASK_SCHEDULER_PRINCIPAL } from '@dorkos/sh
  * replays it to the next subscriber, and a stop replayed minutes later names a
  * run that has long since ended.
  */
-export const CANCEL_SIGNAL_TTL_MS = 30_000;
+const CANCEL_SIGNAL_TTL_MS = 30_000;
 
 /**
  * What can honestly be said about a stop request.

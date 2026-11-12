@@ -16,7 +16,7 @@ import { createTaggedLogger, logError } from '../../lib/logger.js';
 const logger = createTaggedLogger('Tasks');
 
 /** Retention window for the dispatch-dedup log — generous; a tick only needs seconds. */
-export const DISPATCH_LOG_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+const DISPATCH_LOG_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
 /**
  * How often retention runs. Far more often than retention needs, and still

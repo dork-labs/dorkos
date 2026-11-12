@@ -89,7 +89,7 @@ export interface AgentModeDoorCall {
  *
  * @param caller - The caller as the surface verified it.
  */
-export function credentialKindOf(caller: AgentModeCaller): AgentModeCredential {
+function credentialKindOf(caller: AgentModeCaller): AgentModeCredential {
   if (caller.structural) return 'in-session';
   const scoped = currentAuditActor()?.credential?.kind;
   if (caller.agentPath || scoped === 'agent-token') return 'token';

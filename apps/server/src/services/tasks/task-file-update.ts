@@ -368,7 +368,7 @@ export function packageOwnershipContext(
  * @param root - The skills root the file was discovered in.
  * @returns The roots to search and the directory to probe.
  */
-export function rootPackageOwnershipContext(root: TaskRoot): PackageOwnershipContext {
+function rootPackageOwnershipContext(root: TaskRoot): PackageOwnershipContext {
   if (root.scope === 'global') return packageOwnershipContext(path.dirname(root.dir));
   // A project root that does not say which project it belongs to can answer
   // nothing, and `packageOwnershipContext` with no scope of its own would

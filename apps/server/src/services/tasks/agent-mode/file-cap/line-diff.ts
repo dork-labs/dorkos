@@ -10,8 +10,8 @@
 const MAX_LINES = 400;
 
 /** The most lines, and characters, the diff hands back; the rest is counted, not shown. */
-export const MAX_DIFF_LINES = 200;
-export const MAX_DIFF_CHARS = 8_000;
+const MAX_DIFF_LINES = 200;
+const MAX_DIFF_CHARS = 8_000;
 
 /** The diff cut to {@link MAX_DIFF_LINES} lines and {@link MAX_DIFF_CHARS} characters. */
 function bounded(lines: string[]): string {

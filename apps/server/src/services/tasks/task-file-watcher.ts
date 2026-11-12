@@ -115,7 +115,7 @@ const TASK_WRITE_POLL_MS = 25;
  * whole latency of the FIRST schedule in a project, and because the alternative
  * measured on this code was "never".
  */
-export const TASK_WATCH_REARM_MS = 1_000;
+const TASK_WATCH_REARM_MS = 1_000;
 
 /**
  * How long after chokidar reports `ready` a watch is treated as live.
@@ -126,7 +126,7 @@ export const TASK_WATCH_REARM_MS = 1_000;
  * this window, so what the wait buys is that the scan sees a directory the watch
  * is already reporting on rather than one it is not.
  */
-export const TASK_WATCH_SETTLE_MS = 100;
+const TASK_WATCH_SETTLE_MS = 100;
 
 /**
  * The tightened cadence, in seconds, purely so the watcher's error line can say

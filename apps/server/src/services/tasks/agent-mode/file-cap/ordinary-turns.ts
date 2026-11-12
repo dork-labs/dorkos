@@ -22,7 +22,7 @@ import { beatSessionsOf } from '../agent-mode-beats.js';
 export { setBeatSessionSource } from '../agent-mode-beats.js';
 
 /** How far back an ordinary chat counts. */
-export const ORDINARY_TURN_WINDOW_DAYS = 7;
+const ORDINARY_TURN_WINDOW_DAYS = 7;
 
 /** How many of the agent's newest chats are looked at. */
 const CHATS_READ = 50;

@@ -55,7 +55,7 @@ export interface AgentExecutionValues {
 export const AGENT_EXECUTION_CHANGED_OUTSIDE_EVENT = 'agent.execution_changed_outside';
 
 /** The Activity event said once when the last-seen record cannot be read. */
-export const AGENT_EXECUTION_CHECK_UNAVAILABLE_EVENT = 'agent.execution_check_unavailable';
+const AGENT_EXECUTION_CHECK_UNAVAILABLE_EVENT = 'agent.execution_check_unavailable';
 
 /** How the record names each field. */
 const LABEL: Record<FollowedAgentField, string> = {
