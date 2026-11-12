@@ -14,7 +14,7 @@ import {
 import { resolveServerBrowserRuntimePackage } from './installed-package.js';
 
 /** Closed private diagnostics; no arbitrary producer text reaches product status. */
-export class ProductionRuntimeRefusal extends Error {
+class ProductionRuntimeRefusal extends Error {
   constructor(
     readonly code:
       'CLOSED' | 'BUSY' | 'UNSUPPORTED' | 'VERIFICATION_UNAVAILABLE' | 'CUSTODY_UNCERTAIN'

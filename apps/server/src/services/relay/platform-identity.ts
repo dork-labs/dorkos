@@ -111,7 +111,7 @@ export function extractPlatformChatType(payload: unknown): PlatformChatType | un
  *
  * @param payload - The relay envelope payload as it arrived.
  */
-export function extractSenderName(payload: unknown): string | undefined {
+function extractSenderName(payload: unknown): string | undefined {
   if (payload === null || typeof payload !== 'object') return undefined;
   const parsed = SenderNameSchema.safeParse(payload);
   return parsed.success ? parsed.data.senderName : undefined;

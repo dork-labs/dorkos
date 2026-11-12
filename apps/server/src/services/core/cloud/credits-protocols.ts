@@ -149,7 +149,7 @@ function creditsRefusalSentence(reason: CreditsUnavailableReason, runtimeLabel: 
  * project's `opencode.json`, so a remote MCP server's header could carry it
  * off the machine. A project cannot guess a name it never sees.
  */
-export const CREDITS_TOKEN_ENV_PREFIX = 'DORKOS_CREDITS_TOKEN_';
+const CREDITS_TOKEN_ENV_PREFIX = 'DORKOS_CREDITS_TOKEN_';
 
 /** A fresh, unguessable variable name for one launch's credits token. */
 export function mintCreditsTokenVar(): string {

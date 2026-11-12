@@ -87,7 +87,7 @@ export function browserServerRisks(entry: unknown): string[] {
  * @param source - Where the map came from, for the warning.
  * @param servers - The map, as a config file holds it.
  */
-export function riskyBrowserServers(source: string, servers: unknown): RiskyBrowserServer[] {
+function riskyBrowserServers(source: string, servers: unknown): RiskyBrowserServer[] {
   if (!servers || typeof servers !== 'object') return [];
   return Object.entries(servers as Record<string, unknown>).flatMap(([server, entry]) => {
     const risks = browserServerRisks(entry);

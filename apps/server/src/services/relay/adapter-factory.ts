@@ -131,7 +131,7 @@ function defaultRuntimeFor(
 }
 
 /** Default status for adapters that are not currently running. */
-export function defaultAdapterStatus(): AdapterStatus {
+function defaultAdapterStatus(): AdapterStatus {
   return {
     state: 'disconnected',
     messageCount: { inbound: 0, outbound: 0 },
@@ -435,7 +435,7 @@ const CONNECTION_TEST_TIMEOUT_MS = 15_000;
  * @param adapter - The adapter instance to test
  * @returns Result indicating success or failure with an error message
  */
-export async function testAdapterConnection(
+async function testAdapterConnection(
   adapter: RelayAdapter
 ): Promise<{ ok: boolean; error?: string; botUsername?: string }> {
   try {

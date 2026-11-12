@@ -30,7 +30,7 @@ import { creditsFormatOf, creditsProtocolServed } from './credits-protocols.js';
 import { isCloudLinked, readCloudInstanceToken, readOrNull } from './v1-client.js';
 
 /** Every request format the DorkOS runtime can speak to the credits endpoint. */
-export const DOE_CREDITS_PROTOCOLS: readonly RuntimeCreditsProtocol[] = [
+const DOE_CREDITS_PROTOCOLS: readonly RuntimeCreditsProtocol[] = [
   'anthropic-messages',
   'openai-responses',
   'openai-chat-completions',

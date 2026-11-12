@@ -165,7 +165,7 @@ const DEFAULT_RETRY_BACKOFF_MS: readonly number[] = [2_000, 30_000];
  * margin on top of it. A ref this old was never going to settle; the process
  * that owned it is gone.
  */
-export const STRANDED_OUTBOUND_REF_THRESHOLD_MS = 10 * 60_000;
+const STRANDED_OUTBOUND_REF_THRESHOLD_MS = 10 * 60_000;
 
 /**
  * The wire label an operator-authored post is prefixed with (spec §6.7) when

@@ -520,7 +520,7 @@ export interface ConfirmationSummary {
  *
  * @param url - A configured `url` field value.
  */
-export function asciiHost(url: string): string | undefined {
+function asciiHost(url: string): string | undefined {
   try {
     const host = domainToASCII(new URL(url).hostname);
     return host.length > 0 ? host : undefined;

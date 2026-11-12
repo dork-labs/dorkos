@@ -58,7 +58,7 @@ export interface PartedOptions {
 }
 
 /** How long a request may go without a byte sent or received before it is given up. */
-export const REQUEST_IDLE_MS = 2 * 60_000;
+const REQUEST_IDLE_MS = 2 * 60_000;
 
 /** Waits for real, as long as the server asked. */
 export const REAL_WAIT: PartedOptions['wait'] = (seconds, signal) =>
@@ -77,7 +77,7 @@ export const REAL_WAIT: PartedOptions['wait'] = (seconds, signal) =>
 /** The longest one wait lasts, whatever `Retry-After` asks: never a timer that overflows. */
 export const MAX_WAIT_SECONDS = 60;
 /** The most one attempt waits in all before it stops and may be sent again. */
-export const MAX_TOTAL_WAIT_SECONDS = 30 * 60;
+const MAX_TOTAL_WAIT_SECONDS = 30 * 60;
 /** How many conflicts on one part are waited out before the attempt stops. */
 const MAX_CONFLICTS = 3;
 /**

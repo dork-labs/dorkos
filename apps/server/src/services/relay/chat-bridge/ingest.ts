@@ -63,7 +63,7 @@ import type { LifecycleBinding } from './lifecycle.js';
 export const INGEST_RATE_CEILING = 60;
 
 /** The rolling window {@link INGEST_RATE_CEILING} is counted over. */
-export const INGEST_RATE_WINDOW_MS = 60_000;
+const INGEST_RATE_WINDOW_MS = 60_000;
 
 /**
  * How long a `bridge_rate_limited` room notice stays quiet in one room after it

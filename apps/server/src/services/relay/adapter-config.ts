@@ -762,7 +762,7 @@ export function setNestedValue(
  * this bound only exists so one hung write cannot stall every later save and
  * the adapter queue behind it forever.
  */
-export const CONFIG_SAVE_WAIT_MS = 30_000;
+const CONFIG_SAVE_WAIT_MS = 30_000;
 
 /**
  * Orders this process's saves of `adapters.json`, so a hot-reload never

@@ -10,7 +10,6 @@
 export {
   ChatBridge,
   INGEST_RATE_CEILING,
-  INGEST_RATE_WINDOW_MS,
   type ChatBridgeDeps,
   type ChatBridgeIngest,
   type IngestContext,
@@ -49,7 +48,6 @@ export {
 } from './bridge-store.js';
 export {
   ChatBridgeDelivery,
-  STRANDED_OUTBOUND_REF_THRESHOLD_MS,
   type ChatBridgeDeliveryDeps,
   type DeliverOutcome,
   type DeliverEntryReader,
@@ -61,8 +59,6 @@ export {
 export { BridgeCatchUp, type BridgeCatchUpDeps, type CatchUpDelivery } from './catch-up.js';
 export { BridgedAskDelivery, type AskRoomBindings, type AskRosterReader } from './ask-card.js';
 export {
-  bridgedRoomFraming,
-  topicNamesForEntries,
   reportsVisibility,
   type BridgedRoomFraming,
   type VisibilityReportingAdapter,

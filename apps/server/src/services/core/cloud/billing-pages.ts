@@ -179,7 +179,7 @@ function isLoopbackHttp(url: URL): boolean {
  *
  * @param url - The address the service answered with.
  */
-export function safePageUrl(url: string): string | null {
+function safePageUrl(url: string): string | null {
   let parsed: URL;
   try {
     parsed = new URL(url);

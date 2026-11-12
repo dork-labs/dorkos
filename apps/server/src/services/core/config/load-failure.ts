@@ -130,7 +130,7 @@ export function classifyConfigLoadFailure(error: unknown): ConfigLoadFailureKind
  * rethrows it as a plain `Error`, appending the original message and keeping
  * neither `code` nor `cause`.
  */
-export const CONF_MIGRATION_WRAPPER = 'Something went wrong during the migration!';
+const CONF_MIGRATION_WRAPPER = 'Something went wrong during the migration!';
 
 /**
  * Whether an error is the operating system refusing a file operation.

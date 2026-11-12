@@ -49,7 +49,7 @@ import {
 } from '../mesh/agent-browser-preset.js';
 
 /** Path segments, under the DorkOS data directory, of the guarded Playwright MCP config. */
-export const AGENT_BROWSER_CONFIG_SEGMENTS = ['browser', 'agent-browser-guard.json'] as const;
+const AGENT_BROWSER_CONFIG_SEGMENTS = ['browser', 'agent-browser-guard.json'] as const;
 
 const RESOLVER_FLAG = '--host-resolver-rules=';
 
