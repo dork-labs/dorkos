@@ -8,6 +8,7 @@
 import { useState } from 'react';
 import { cn } from '@/layers/shared/lib';
 import {
+  APP_ROW_SEPARATOR,
   extensionPermissionLines,
   type ExtensionCalledAppEntry,
   type ExtensionPermissionAdditions,
@@ -128,8 +129,9 @@ function CalledAppRows({ apps }: { apps: readonly ExtensionCalledAppEntry[] }) {
               never in the bold DorkOS gives a name it knows. */}
           <bdi className={app.installed ? 'text-foreground font-semibold' : 'font-mono'}>
             {app.name}
-          </bdi>{' '}
-          · {app.detail}
+          </bdi>
+          {APP_ROW_SEPARATOR}
+          {app.detail}
           {app.isNew && (
             <span className="text-foreground ml-1.5 rounded-sm border px-1 text-[10px] font-medium">
               New

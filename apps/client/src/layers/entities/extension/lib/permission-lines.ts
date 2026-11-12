@@ -152,7 +152,9 @@ export function runsAnyProgram(name: string): boolean {
 export function permissionLineText(line: ExtensionPermissionLine): string {
   const body = line.parts.map((part) => (typeof part === 'string' ? part : part.name)).join('');
   if (line.apps) {
-    return [body, ...line.apps.map((app) => `${app.name} · ${app.detail}`)].join(' ');
+    return [body, ...line.apps.map((app) => `${app.name}${APP_ROW_SEPARATOR}${app.detail}`)].join(
+      ' '
+    );
   }
   if (line.rows) return [body, ...line.rows].join(' ');
   return line.items ? `${body} ${line.items.join(', ')}` : body;
@@ -236,6 +238,13 @@ function shownAppId(id: string): string {
   return id.length > SHOWN_ID_LENGTH ? `${id.slice(0, SHOWN_ID_LENGTH)}…` : id;
 }
 
+/**
+ * The dot between the parts of one "It uses other apps:" row. The space
+ * before it does not break (U+00A0), so the dot stays with the word before it
+ * and never starts a line on a phone (designer, 2026-11-12).
+ */
+export const APP_ROW_SEPARATOR = '\u00a0· ';
+
 /** What each app shares, in the designer's words (DOR-3293). */
 const ACCESS_WORDS = { reads: 'reads', changes: 'changes', both: 'reads and changes' } as const;
 
@@ -256,7 +265,7 @@ export function calledAppDetail(app: {
   if (!app.installed) return 'not installed, so this part won’t work';
   if (app.access === null) return app.opensPages ? 'can only open its pages' : null;
   const shared = ACCESS_WORDS[app.access];
-  return app.opensPages ? `${shared} · can open its pages` : shared;
+  return app.opensPages ? `${shared}${APP_ROW_SEPARATOR}can open its pages` : shared;
 }
 
 /**

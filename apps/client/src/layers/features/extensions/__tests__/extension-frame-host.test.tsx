@@ -488,7 +488,7 @@ describe('isolated app host', () => {
       expect(added?.apps).toEqual(['mkt-newsletter']);
       const line = extensionPermissionLines(card(true), added).find(({ key }) => key === 'apps');
       expect(line && permissionLineText(line)).toBe(
-        'It uses other apps: Mkt Newsletter · can only open its pages'
+        'It uses other apps: Mkt Newsletter\u00a0· can only open its pages'
       );
       expect(line?.apps?.[0]?.isNew).toBe(true);
 

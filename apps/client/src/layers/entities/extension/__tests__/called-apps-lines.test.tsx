@@ -40,15 +40,36 @@ const THREE = view([
 const rowsOf = (apps: ExtensionPermissionView['apps']): string[] | undefined =>
   extensionPermissionLines(view(apps))
     .find((line) => line.key === 'apps')
-    ?.apps?.map((app) => `${app.name} · ${app.detail}`);
+    ?.apps?.map((app) => `${app.name}\u00a0· ${app.detail}`);
 
 describe('It uses other apps', () => {
+  // Designer, Nov 12: a no-break space before each "·" keeps the dot with the
+  // word before it, so it never starts a line at 390 px.
+  it('never lets a separator dot start a line', () => {
+    const apps: ExtensionPermissionView['apps'] = [
+      { id: 'tally', name: 'Tally', access: 'both', opens: true },
+      { id: 'desk', name: 'Desk', access: 'reads' },
+      { id: 'orbit', name: 'Orbit Mail', access: null, opens: true },
+      { id: 'gone', name: null, access: null },
+    ];
+    render(<ExtensionPermissionLines permissions={view(apps)} />);
+    const rows = [...document.querySelectorAll('[data-slot="called-apps"] li[data-app]')].map(
+      (row) => row.textContent ?? ''
+    );
+    const line = extensionPermissionLines(view(apps)).find((entry) => entry.key === 'apps');
+    for (const text of [...rows, ...(line?.apps ?? []).map((app) => app.detail)]) {
+      expect(text).not.toMatch(/[^\u00a0]·/u);
+    }
+    expect(rows[0]).toBe('Tally\u00a0· reads and changes\u00a0· can open its pages');
+    expect(line && permissionLineText(line)).toContain('Tally\u00a0· reads and changes');
+  });
+
   it('reads one line per app, in the designer’s words', () => {
     const line = extensionPermissionLines(THREE).find((entry) => entry.key === 'apps');
     expect(line && permissionLineText(line)).toBe(
-      'It uses other apps: Desk · reads ' +
-        'Marketing core · reads and changes · can open its pages ' +
-        'ledger · not installed, so this part won’t work'
+      'It uses other apps: Desk\u00a0· reads ' +
+        'Marketing core\u00a0· reads and changes\u00a0· can open its pages ' +
+        'ledger\u00a0· not installed, so this part won’t work'
     );
   });
 
@@ -57,19 +78,23 @@ describe('It uses other apps', () => {
     [
       'writes it may use, and opens',
       { access: 'both', opens: true },
-      'Mkt Newsletter · reads and changes · can open its pages',
+      'Mkt Newsletter\u00a0· reads and changes\u00a0· can open its pages',
     ],
-    ['writes it may use, no opening', { access: 'both' }, 'Mkt Newsletter · reads and changes'],
-    ['only reads', { access: 'reads' }, 'Mkt Newsletter · reads'],
+    [
+      'writes it may use, no opening',
+      { access: 'both' },
+      'Mkt Newsletter\u00a0· reads and changes',
+    ],
+    ['only reads', { access: 'reads' }, 'Mkt Newsletter\u00a0· reads'],
     [
       'only reads, and opens',
       { access: 'reads', opens: true },
-      'Mkt Newsletter · reads · can open its pages',
+      'Mkt Newsletter\u00a0· reads\u00a0· can open its pages',
     ],
     [
       'nothing shared, but opens',
       { access: null, opens: true },
-      'Mkt Newsletter · can only open its pages',
+      'Mkt Newsletter\u00a0· can only open its pages',
     ],
   ] as const)('%s', (_name, power, row) => {
     expect(rowsOf([{ id: 'mkt-newsletter', name: 'Mkt Newsletter', ...power }])).toEqual([row]);
@@ -78,7 +103,7 @@ describe('It uses other apps', () => {
   it('mkt-core → mkt-newsletter, which exports nothing to it: opens only', () => {
     expect(
       rowsOf([{ id: 'mkt-newsletter', name: 'Mkt Newsletter', access: null, opens: true }])
-    ).toEqual(['Mkt Newsletter · can only open its pages']);
+    ).toEqual(['Mkt Newsletter\u00a0· can only open its pages']);
   });
 
   it('leaves off an app that gives it no power, and the whole line when none do', () => {
@@ -88,7 +113,7 @@ describe('It uses other apps', () => {
         { id: 'vault', name: 'Vault', access: null },
         { id: 'quiet', name: 'Quiet', access: null, opens: false },
       ])
-    ).toEqual(['Desk · reads']);
+    ).toEqual(['Desk\u00a0· reads']);
     expect(rowsOf([{ id: 'vault', name: 'Vault', access: null }])).toBeUndefined();
     // But the yes still echoes it, so a target that starts sharing asks again.
     expect(approvedSetOf(view([{ id: 'vault', name: 'Vault', access: null }]))?.apps).toEqual([
@@ -101,7 +126,7 @@ describe('It uses other apps', () => {
       'reads and changes'
     );
     expect(calledAppDetail({ installed: true, access: 'both', opensPages: true })).toBe(
-      'reads and changes · can open its pages'
+      'reads and changes\u00a0· can open its pages'
     );
     expect(calledAppDetail({ installed: true, access: null, opensPages: true })).toBe(
       'can only open its pages'
@@ -234,9 +259,9 @@ describe('It can change (Security item 8)', () => {
         "New files on your computer, only when you choose Save",
         "Replies in the room threads you pick",
         "Messages to an agent you pick, sent in your name",
-        "It uses other apps:Desk · readsMarketing core · reads and changes",
-        "Desk · reads",
-        "Marketing core · reads and changes",
+        "It uses other apps:Desk\u00a0· readsMarketing core\u00a0· reads and changes",
+        "Desk\u00a0· reads",
+        "Marketing core\u00a0· reads and changes",
       ]
     `);
   });
