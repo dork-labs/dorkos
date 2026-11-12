@@ -162,6 +162,18 @@ describe('a call from one app to another', () => {
     expect(seen).toHaveLength(1);
   });
 
+  // Security Should 2 (Nov 12): the target's routes see the raw path, so a
+  // part that decodes to hold a slash must never be judged as two parts.
+  it.each(['/entries%2Fapprove', '/entries%2fapprove', '/entries%5Capprove', '/a%2F..%2Fapprove'])(
+    'refuses %s: a path part that decodes to hold a slash',
+    async (path) => {
+      const res = await asReports('get', path);
+      expect(res.status).toBe(403);
+      expect(res.body).toMatchObject({ code: 'app_call_refused', reason: 'not-exported' });
+      expect(seen).toHaveLength(0);
+    }
+  );
+
   it('refuses a route the target does not export, and a personOnly one', async () => {
     expect((await asReports('get', '/secrets')).body.reason).toBe('not-exported');
     expect((await asReports('post', '/approve')).body.reason).toBe('person-only');

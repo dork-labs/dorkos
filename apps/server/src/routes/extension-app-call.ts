@@ -128,13 +128,17 @@ export function refusedAppCall(
   return decision.ok ? undefined : refuse(c, targetId, callerId, decision.reason, false);
 }
 
-/** The path below the mount with each segment decoded, or `null` when one will not decode. */
+/**
+ * The path below the mount with each segment decoded, or `null` when one will
+ * not decode, or decodes to hold a `/` or `\`. The target's routes see the raw
+ * path, so `a%2Fb` must never be judged as the two segments `a` and `b`: it
+ * could match a deeper exported route while reaching another (Security, Nov 12).
+ */
 function decodedPath(subPath: string): string | null {
   try {
-    return subPath
-      .split('/')
-      .map((segment) => decodeURIComponent(segment))
-      .join('/');
+    const segments = subPath.split('/').map((segment) => decodeURIComponent(segment));
+    if (segments.some((segment) => segment.includes('/') || segment.includes('\\'))) return null;
+    return segments.join('/');
   } catch {
     return null;
   }
