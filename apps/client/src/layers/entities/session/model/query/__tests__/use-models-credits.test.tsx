@@ -10,23 +10,14 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderHook, waitFor } from '@testing-library/react';
 import React from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { TransportProvider } from '@/layers/shared/model';
+import { TransportProvider, useAppStore } from '@/layers/shared/model';
 import { createMockTransport } from '@dorkos/test-utils';
 import { useModels } from '../use-models';
 
-const store = vi.hoisted(() => ({
-  pendingAccount: null as { id: string; sessionId: string } | null,
-}));
-vi.mock('@/layers/shared/model', async (importOriginal) => {
-  const original = await importOriginal<typeof import('@/layers/shared/model')>();
-  return {
-    ...original,
-    useAppStore: (selector?: (s: Record<string, unknown>) => unknown) => {
-      const state = { selectedCwd: '/work/project', pendingAccount: store.pendingAccount };
-      return selector ? selector(state) : state;
-    },
-  };
-});
+// The app store is REAL. The folder is seeded; the account pick goes in
+// through `setPendingAccount`, the setter the Runs-on picker calls.
+const pickAccount = (pick: { id: string; sessionId: string } | null) =>
+  useAppStore.getState().setPendingAccount(pick);
 
 const SESSION = '11111111-1111-4111-8111-111111111111';
 const OTHER = '22222222-2222-4222-8222-222222222222';
@@ -44,12 +35,13 @@ describe('useModels — who pays decides the menu', () => {
   let transport: ReturnType<typeof createMockTransport>;
 
   beforeEach(() => {
-    store.pendingAccount = null;
+    useAppStore.setState({ selectedCwd: '/work/project' });
+    pickAccount(null);
     transport = createMockTransport();
   });
 
   it('carries this session’s pick of DorkOS credits, and the folder it runs in', async () => {
-    store.pendingAccount = { id: 'dorkos-credits', sessionId: SESSION };
+    pickAccount({ id: 'dorkos-credits', sessionId: SESSION });
     renderHook(() => useModels({ sessionId: SESSION, runtime: 'claude-code' }), {
       wrapper: wrapper(transport),
     });
@@ -64,7 +56,7 @@ describe('useModels — who pays decides the menu', () => {
   });
 
   it('never carries a pick made for another session', async () => {
-    store.pendingAccount = { id: 'dorkos-credits', sessionId: OTHER };
+    pickAccount({ id: 'dorkos-credits', sessionId: OTHER });
     renderHook(() => useModels({ sessionId: SESSION, runtime: 'claude-code' }), {
       wrapper: wrapper(transport),
     });
@@ -73,7 +65,7 @@ describe('useModels — who pays decides the menu', () => {
   });
 
   it('asks about credits with no session only when the caller says so', async () => {
-    store.pendingAccount = { id: 'dorkos-credits', sessionId: SESSION };
+    pickAccount({ id: 'dorkos-credits', sessionId: SESSION });
     renderHook(() => useModels({ runtime: 'claude-code', account: 'dorkos-credits' }), {
       wrapper: wrapper(transport),
     });
