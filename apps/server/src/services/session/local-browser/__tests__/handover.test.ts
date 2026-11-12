@@ -800,6 +800,24 @@ describe('a sign-in on a profile that no longer exists (DOR-4180)', () => {
     expect(browser.disconnect).not.toHaveBeenCalled();
   });
 
+  it('refuses reopening a handoff’s saved page on a profile deleted since it asked', async () => {
+    const run = setup(false, 'new-window');
+    const { handoffId } = await run.handover.ask('chat-1', 'password');
+    // The person's first window ended; Sign in again opens a new one at the saved page.
+    run.finish('failed');
+    run.signIns.start.mockClear();
+    // The agent's window is gone, so only the saved page still names the profile.
+    run.setProfile(null);
+    run.browser.profileExists.mockReturnValue(false);
+    const folder = path.join(dataDirectory, 'browser-profiles', 'p1');
+    rmSync(folder, { recursive: true, force: true });
+    await expect(run.handover.signIn({ handoffId })).rejects.toMatchObject({
+      code: 'profile_not_found',
+    });
+    expect(run.signIns.start).not.toHaveBeenCalled();
+    expect(existsSync(folder)).toBe(false);
+  });
+
   it('still signs in on the default profile, which has no id', async () => {
     const { handover, signIns } = await deletedProfile();
     await handover.signIn({ url: 'https://linear.app/' });
