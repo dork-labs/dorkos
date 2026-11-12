@@ -1,6 +1,6 @@
 /** Handing the browser to a person and back, with a fake browser and a fake sign-in window. */
 import { randomBytes } from 'node:crypto';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, rmSync } from 'node:fs';
 import { readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -49,6 +49,7 @@ function fakeBrowser(initial = connected()) {
     state: vi.fn(async () => state),
     capabilities: vi.fn(() => ({ newWindow: true })),
     currentProfileId: vi.fn(() => profileId),
+    profileExists: vi.fn((_id: string) => true),
     open: vi.fn(async () => (state = connected())),
     selectTab: vi.fn(async () => state),
     navigate: vi.fn(async () => state),
@@ -770,6 +771,63 @@ describe('signing in from the Mac app’s built-in browser', () => {
     const { handoffId } = await handover.ask('chat-1', 'password');
     await expect(handover.signIn({ handoffId })).rejects.toMatchObject({ code: 'unsupported' });
     expect(browser.disconnect).not.toHaveBeenCalled();
+  });
+});
+
+// DOR-4180: a sign-in on a profile that's gone would make its folder again, and the
+// sign-in would land in a profile nobody can see or delete.
+describe('a sign-in on a profile that no longer exists (DOR-4180)', () => {
+  async function deletedProfile() {
+    const run = setup();
+    const key = randomBytes(32);
+    const profiles = createLocalBrowserProfileStore(createTestDb(), () => key);
+    run.browser.profileExists.mockImplementation((id) => profiles.get(id) !== undefined);
+    const { id } = profiles.create('Example work');
+    await prepareProfileFolder(dataDirectory, id);
+    const removal = new BrowserProfileRemoval({
+      dataDirectory: () => dataDirectory,
+      busy: (profileId) => run.handover.holdsProfile(profileId),
+    });
+    await removal.delete(id, profiles);
+    return { ...run, id, folder: path.join(dataDirectory, 'browser-profiles', id) };
+  }
+
+  it('refuses a person’s sign-in on a deleted profile, and makes no folder', async () => {
+    const { handover, signIns, id, folder } = await deletedProfile();
+    expect(existsSync(folder)).toBe(false);
+    await expect(
+      handover.signIn({ url: 'https://linear.app/', profileId: id })
+    ).rejects.toMatchObject({ code: 'profile_not_found' });
+    expect(existsSync(folder)).toBe(false);
+    expect(signIns.start).not.toHaveBeenCalled();
+  });
+
+  it('refuses a profile id it never knew', async () => {
+    const { handover, signIns } = await deletedProfile();
+    const unknown = '00000000-0000-4000-8000-00000000abcd';
+    await expect(
+      handover.signIn({ url: 'https://linear.app/', profileId: unknown })
+    ).rejects.toMatchObject({ code: 'profile_not_found' });
+    expect(existsSync(path.join(dataDirectory, 'browser-profiles', unknown))).toBe(false);
+    expect(signIns.start).not.toHaveBeenCalled();
+  });
+
+  it('refuses a handoff’s sign-in when the agent’s profile is gone', async () => {
+    const { handover, browser, signIns, setProfile, id, folder } = await deletedProfile();
+    setProfile(id);
+    const { handoffId } = await handover.ask('chat-1', 'password');
+    await expect(handover.signIn({ handoffId })).rejects.toMatchObject({
+      code: 'profile_not_found',
+    });
+    expect(existsSync(folder)).toBe(false);
+    expect(signIns.start).not.toHaveBeenCalled();
+    expect(browser.disconnect).not.toHaveBeenCalled();
+  });
+
+  it('still signs in on the default profile, which has no id', async () => {
+    const { handover, signIns } = await deletedProfile();
+    await handover.signIn({ url: 'https://linear.app/' });
+    expect(signIns.start).toHaveBeenCalledOnce();
   });
 });
 

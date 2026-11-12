@@ -226,6 +226,9 @@ export class LocalBrowserService {
     return this.profileId;
   }
 
+  /** Whether a named profile exists. False until startup wires the profile list, as for open. */
+  readonly profileExists = (id: string): boolean => this.profileAuthorization.exists?.(id) ?? false;
+
   /** Set once at startup. Until then, no agent can use a named profile. */
   useProfileAccess(access: LocalBrowserProfileAccess, exists: (id: string) => boolean): void {
     this.profileAuthorization.use(access, exists);

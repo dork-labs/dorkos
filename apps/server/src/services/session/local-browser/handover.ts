@@ -29,6 +29,8 @@ export interface HandoverBrowser {
   state(): Promise<LocalBrowserState>;
   capabilities(): { newWindow: boolean };
   currentProfileId(): string | null;
+  /** Whether a named profile exists. False until startup wires the profile list. */
+  profileExists(id: string): boolean;
   open(input: LocalBrowserOpen): Promise<LocalBrowserState>;
   selectTab(id: string): Promise<LocalBrowserState>;
   navigate(url: string): Promise<LocalBrowserState>;
@@ -294,6 +296,7 @@ export class BrowserHandover {
     let profileId: string | null;
     if ('handoffId' in input) {
       const handoff = this.openHandoff(input.handoffId);
+      this.assertProfileExists(this.browser.currentProfileId());
       if (state.mode === 'embedded' && !this.browser.capabilities().newWindow)
         throw new LocalBrowserError('unsupported', 'Open the browser in a new window to sign in.');
       // The origin the agent's browser is on now, never one the agent named.
@@ -316,6 +319,7 @@ export class BrowserHandover {
     } else {
       url = assertSignInUrl(input.url);
       profileId = input.profileId ?? null;
+      this.assertProfileExists(profileId);
     }
     const folder = await prepareProfileFolder(this.dataDirectory(), profileId);
     // Only one Chromium can hold a profile, so the agent's window on it closes first.
@@ -327,6 +331,18 @@ export class BrowserHandover {
       await this.browser.disconnect();
     await this.signIns.start(folder, profileId, url.href);
     return this.state();
+  }
+
+  /**
+   * Refuse a sign-in on a named profile that's gone, before any folder is made: making
+   * one would bring a deleted profile back, with no entry to see or delete it (DOR-4180).
+   * The default profile has no id and always exists.
+   *
+   * @param profileId - The profile the sign-in would land in.
+   */
+  private assertProfileExists(profileId: string | null): void {
+    if (profileId !== null && !this.browser.profileExists(profileId))
+      throw new LocalBrowserError('profile_not_found', 'That browser profile no longer exists.');
   }
 
   /**
