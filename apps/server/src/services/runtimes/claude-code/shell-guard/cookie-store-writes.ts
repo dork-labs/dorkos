@@ -14,6 +14,7 @@
 import path from 'node:path';
 import {
   HOME_PERSON_ONLY_PATHS,
+  CONFIG_PERSON_ONLY_PATHS,
   PERSON_ONLY_DATA_PATHS,
   type ProtectedPath,
 } from '../../shared/policy/protected-paths.js';
@@ -50,13 +51,17 @@ function nameBody(entry: Pick<ProtectedPath, 'path' | 'kind'>): string {
  * @param full - Whether the command runs at Full, which leaves out the entries refused below Full.
  */
 export function cookieStoreRules(
-  roots: { dorkHome: string; home: string },
+  roots: { dorkHome: string; home: string; config?: string },
   spellings: (folder: string) => string[],
   full = false
 ): CookieStoreRule[] {
   const measured: [ProtectedPath, string][] = [
     ...DATA_COOKIE_STORES.map((entry): [ProtectedPath, string] => [entry, roots.dorkHome]),
     ...HOME_PERSON_ONLY_PATHS.map((entry): [ProtectedPath, string] => [entry, roots.home]),
+    ...CONFIG_PERSON_ONLY_PATHS.map((entry): [ProtectedPath, string] => [
+      entry,
+      roots.config ?? path.join(roots.home, '.config'),
+    ]),
   ];
   return measured.flatMap(([entry, folder]) => {
     if (full && entry.belowFull) return [];

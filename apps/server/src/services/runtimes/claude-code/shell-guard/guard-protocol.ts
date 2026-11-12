@@ -10,6 +10,7 @@ export interface WireRoots {
   cwd: string;
   dorkHome: string;
   home: string;
+  config?: string;
   accounts: readonly string[];
   env: Readonly<Record<string, string | undefined>>;
   agentHomes: readonly string[];

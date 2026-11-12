@@ -4,6 +4,7 @@ import { expandTilde } from '../../../../lib/boundary.js';
 import { resolveDorkHome } from '../../../../lib/dork-home.js';
 import { resolveClaudeRootSet } from '../../claude-code/claude-config-dir.js';
 import type { ProtectedPathRoots } from './protected-path-check.js';
+import { desktopConfigHome } from './desktop-config-home.js';
 
 /** Resolve the machine and agent roots used by one turn's native file policy. */
 export function protectedPathRoots(
@@ -15,6 +16,7 @@ export function protectedPathRoots(
     cwd,
     data: resolveDorkHome(),
     home: expandTilde('~'),
+    config: desktopConfigHome(expandTilde('~')),
     accounts: resolveClaudeRootSet(),
     agentFolders: [...new Set([cwd, ...(agentHome ? [agentHome] : [])])],
     agentHomes: [

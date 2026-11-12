@@ -14,6 +14,7 @@ import { resolveClaudeRootSet } from '../claude-config-dir.js';
 import type { CeilingedMode } from '../turn-permission.js';
 import { goingOnWithoutCheck, guardHost } from './guard-service.js';
 import { createShellPathGuardHook } from './shell-path-guard.js';
+import { desktopConfigHome } from '../../shared/policy/desktop-config-home.js';
 
 /** What a launch knows that the guard needs. */
 export interface ShellGuardLaunch {
@@ -51,6 +52,7 @@ export function shellGuardMatcher(
           cwd,
           dorkHome: resolveDorkHome(),
           home: expandTilde('~'),
+          config: desktopConfigHome(expandTilde('~')),
           accounts: [...new Set([accountRoot, ...resolveClaudeRootSet()])],
           env,
           agentHomes: () => registry?.listWithPaths?.().map((agent) => agent.projectPath) ?? [],

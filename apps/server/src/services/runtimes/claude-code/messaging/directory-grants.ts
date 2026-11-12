@@ -43,10 +43,12 @@ import { assertValidDirectoryGrants, DirectoryGrantError } from '@dorkos/shared/
 import {
   AGENT_HOME_SELF_GRANT_PATHS,
   HOME_PERSON_ONLY_PATHS,
+  CONFIG_PERSON_ONLY_PATHS,
   PERSON_ONLY_DATA_PATHS,
   PROJECT_PLUGIN_PATHS,
   protectedPathGlob,
 } from '../../shared/policy/protected-paths.js';
+import { movedDesktopConfigHome } from '../../shared/policy/desktop-config-home.js';
 
 /**
  * Makes `--add-dir` folders load their `CLAUDE.md`. Never passed to a turn: a
@@ -349,8 +351,16 @@ export function applyPersonOnlyDataDeny(
   chat?: { sessionId: string; agentPath?: string | undefined; ownFolderOpen?: boolean }
 ): void {
   const full = sdkOptions.permissionMode === 'bypassPermissions';
+  // Only a moved Linux root needs its own rules: under `~/.config` the home rules cover it.
+  const movedConfig = movedDesktopConfigHome();
+  const configFolders = movedConfig
+    ? CONFIG_PERSON_ONLY_PATHS.filter((entry) => !(full && entry.belowFull)).flatMap((entry) =>
+        namesOf(movedConfig, entry.path)
+      )
+    : [];
   const folders = [
     ...new Set(personOnlyDataNames('folder', full).flatMap((name) => namesOf(dorkHome, name))),
+    ...configFolders,
   ];
   if (!folders.every(ruleCanName)) {
     throw new DirectoryGrantError(
@@ -372,7 +382,9 @@ export function applyPersonOnlyDataDeny(
       ...permissions,
       deny: [
         ...(permissions.deny ?? []),
-        ...folders.flatMap(readOnlyRules),
+        ...folders.flatMap((folder) =>
+          configFolders.includes(folder) ? writeDenyRules(folder, 'folder')! : readOnlyRules(folder)
+        ),
         ...personOnlyFileRules(dorkHome, full),
         ...agentHomesRulesFor(dorkHome, 'launch', chat?.ownFolderOpen ? chat.agentPath : undefined),
         ...PROJECT_PLUGIN_DENY_RULES,

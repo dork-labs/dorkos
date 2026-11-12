@@ -161,6 +161,16 @@ describe('parseShell', () => {
 });
 
 describe('commandReachesProtectedRead', () => {
+  it('protects a moved desktop config root captured by the server', async () => {
+    const config = path.join(root, 'moved-config');
+    const file = path.join(config, 'DorkOS', 'Network', 'Cookies');
+    touch(file);
+    const moved = { ...roots, config };
+    expect(await commandReachesProtectedRead(`cat ${file}`, moved)).toBe(true);
+    expect(shellWriteVerdict(`cp /tmp/x ${file}`, moved)).toBe('writes');
+    expect(shellWriteVerdict(`cp /tmp/x ${file}`, { ...moved, full: true })).toBe('none');
+  });
+
   it.each([
     ['~', 'cat ~/.ssh/id_ed25519'],
     ['$HOME', 'cat $HOME/.ssh/id_ed25519'],

@@ -28,13 +28,15 @@ export function completeHostFixture(
     const bases =
       entry.root === 'data'
         ? [policy.roots.data]
-        : entry.root === 'home'
-          ? [policy.roots.home]
-          : entry.root === 'account'
-            ? policy.roots.accounts
-            : entry.root === 'agent-home'
-              ? policy.roots.agentHomes
-              : allBases;
+        : entry.root === 'config'
+          ? [policy.roots.config ?? path.join(policy.roots.home, '.config')]
+          : entry.root === 'home'
+            ? [policy.roots.home]
+            : entry.root === 'account'
+              ? policy.roots.accounts
+              : entry.root === 'agent-home'
+                ? policy.roots.agentHomes
+                : allBases;
     for (const base of bases) {
       const target = path.join(base, entry.path);
       if (entry.kind === 'folder') {

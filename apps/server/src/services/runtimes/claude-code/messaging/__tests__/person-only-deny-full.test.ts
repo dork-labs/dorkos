@@ -57,6 +57,25 @@ describe('the agent-home rules on a launch', () => {
     }
   );
 
+  it.runIf(process.platform === 'linux')(
+    'protects moved desktop stores below Full, including MultiEdit',
+    () => {
+      const config = path.join(dorkHome, 'moved config');
+      vi.stubEnv('XDG_CONFIG_HOME', config);
+      try {
+        for (const tool of ['Write', 'Edit', 'MultiEdit', 'NotebookEdit']) {
+          for (const name of ['DorkOS', '@dorkos/desktop']) {
+            const rule = `${tool}(/${config}/${name}/**)`;
+            expect(denyAt('default')).toContain(rule);
+            expect(denyAt('bypassPermissions')).not.toContain(rule);
+          }
+        }
+      } finally {
+        vi.unstubAllEnvs();
+      }
+    }
+  );
+
   it('keeps config.json denied at Full', () => {
     // The Full set: every person-only file but the browser sign-in stores (DOR-4136).
     const rules = denyAt('bypassPermissions');

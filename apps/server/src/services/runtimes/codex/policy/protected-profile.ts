@@ -70,6 +70,7 @@ function protectedEntries(
 
   const collapseBases = [
     roots.home,
+    roots.config ?? path.join(roots.home, '.config'),
     roots.data,
     roots.cwd,
     ...writable,
@@ -104,23 +105,25 @@ function protectedEntries(
     const bases =
       entry.root === 'data'
         ? [roots.data]
-        : entry.root === 'home'
-          ? [roots.home]
-          : entry.root === 'account'
-            ? roots.accounts
-            : entry.root === 'agent-folder'
-              ? roots.agentFolders
-              : entry.root === 'agent-home'
-                ? agentHomes
-                : [
-                    roots.home,
-                    roots.data,
-                    roots.cwd,
-                    ...writable,
-                    ...roots.agentFolders,
-                    ...roots.agentHomes,
-                    ...roots.accounts,
-                  ];
+        : entry.root === 'config'
+          ? [roots.config ?? path.join(roots.home, '.config')]
+          : entry.root === 'home'
+            ? [roots.home]
+            : entry.root === 'account'
+              ? roots.accounts
+              : entry.root === 'agent-folder'
+                ? roots.agentFolders
+                : entry.root === 'agent-home'
+                  ? agentHomes
+                  : [
+                      roots.home,
+                      roots.data,
+                      roots.cwd,
+                      ...writable,
+                      ...roots.agentFolders,
+                      ...roots.agentHomes,
+                      ...roots.accounts,
+                    ];
     for (const base of bases)
       for (const spelling of new Set([path.resolve(base), realPathOf(base)])) {
         // Bubblewrap refuses globs without a non-root directory prefix.

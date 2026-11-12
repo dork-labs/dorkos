@@ -38,9 +38,11 @@ import {
   ANYWHERE_SECRET_PATHS,
   DATA_FOLDER_SECRET_PATHS,
   HOME_SECRET_PATHS,
+  CONFIG_SECRET_PATHS,
   protectedPathGlob,
   type ProtectedPath,
 } from '../../shared/policy/protected-paths.js';
+import { movedDesktopConfigHome } from '../../shared/policy/desktop-config-home.js';
 
 /** The file-reading tools a secret-read rule names. */
 const READ_TOOLS = ['Read', 'Grep', 'Glob'] as const;
@@ -95,6 +97,8 @@ export const AGENT_FOLDER_SECRETS = globs(AGENT_FOLDER_SECRET_PATHS).map((glob) 
 
 /** Where this launch's secrets live. */
 export interface SecretFolders {
+  /** Desktop config root, captured by a caller with a synthetic home in tests. */
+  configHome?: string;
   /** DorkOS's data folder. */
   dorkHome: string;
   /** The launch's own Claude Code account folder. */
@@ -145,6 +149,9 @@ export function secretReadDenyRules(folders: SecretFolders): string[] {
     }
   };
   named(folders.dorkHome, DATA_FOLDER_SECRETS, true);
+  // Only a moved Linux root needs its own rules: under `~/.config` the home rules cover it.
+  const configHome = folders.configHome ?? movedDesktopConfigHome();
+  if (configHome) named(configHome, globs(CONFIG_SECRET_PATHS), true);
   named(folders.accountRoot, ACCOUNT_FOLDER_SECRETS, true);
   for (const account of folders.otherAccountRoots) named(account, ACCOUNT_FOLDER_SECRETS, false);
   // Not required: an agent folder with an odd name was never covered, and

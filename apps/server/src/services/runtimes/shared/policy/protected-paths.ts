@@ -36,13 +36,14 @@
  * - `account`: a Claude Code account folder (`CLAUDE_CONFIG_DIR`), the launch's
  *   own and every other one DorkOS knows of.
  * - `home`: the person's home folder.
+ * - `config`: Electron's Linux config root, including an absolute XDG_CONFIG_HOME.
  * - `anywhere`: at any depth, wherever it sits on the machine.
  * - `agent-folder`: at any depth inside the agent's own folder and the turn's
  *   working folder.
  * - `agent-home`: inside each agent home in the data folder's `agents/`.
  */
 export type ProtectedRoot =
-  'data' | 'account' | 'home' | 'anywhere' | 'agent-folder' | 'agent-home';
+  'data' | 'account' | 'home' | 'config' | 'anywhere' | 'agent-folder' | 'agent-home';
 
 /** One path an agent's file tools are kept off. */
 export interface ProtectedPath {
@@ -152,6 +153,21 @@ export const DESKTOP_APP_DATA_FOLDERS = ['DorkOS', '@dorkos/desktop'].flatMap((n
   `AppData/Roaming/${name}`,
   `.config/${name}`,
 ]);
+
+/** Desktop data below the Linux config root, which can sit outside the person's home. */
+export const CONFIG_SECRET_PATHS = group('config', 'read', [
+  ['DorkOS', 'folder'],
+  ['@dorkos/desktop', 'folder'],
+]);
+
+/** Like the default desktop data folders, writes here are refused below Full only. */
+export const CONFIG_PERSON_ONLY_PATHS: readonly ProtectedPath[] = CONFIG_SECRET_PATHS.map(
+  (entry) => ({
+    ...entry,
+    deny: 'write',
+    belowFull: true,
+  })
+);
 
 /**
  * The person's own keys and tokens in their home folder: only well-known spots
@@ -393,6 +409,8 @@ export const HOME_SELF_GRANT_PATHS: readonly ProtectedPath[] = [
 
 /** Every protected path, for a runtime that reads them all. */
 export const PROTECTED_PATHS: readonly ProtectedPath[] = [
+  ...CONFIG_SECRET_PATHS,
+  ...CONFIG_PERSON_ONLY_PATHS,
   ...DATA_FOLDER_SECRET_PATHS,
   ...ACCOUNT_FOLDER_SECRET_PATHS,
   ...ANYWHERE_SECRET_PATHS,

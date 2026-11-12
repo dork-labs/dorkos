@@ -8,6 +8,8 @@ export interface ProtectedPathRoots {
   cwd: string;
   data: string;
   home: string;
+  /** Server-captured desktop config root; absent fixtures keep the default home spelling. */
+  config?: string;
   accounts: readonly string[];
   agentFolders: readonly string[];
   agentHomes: readonly string[];
@@ -90,15 +92,17 @@ function checker(
       const bases =
         entry.root === 'data'
           ? [roots.data]
-          : entry.root === 'home'
-            ? [roots.home]
-            : entry.root === 'account'
-              ? roots.accounts
-              : entry.root === 'agent-folder'
-                ? roots.agentFolders
-                : entry.root === 'agent-home'
-                  ? roots.agentHomes
-                  : [path.parse(roots.cwd).root];
+          : entry.root === 'config'
+            ? [roots.config ?? path.join(roots.home, '.config')]
+            : entry.root === 'home'
+              ? [roots.home]
+              : entry.root === 'account'
+                ? roots.accounts
+                : entry.root === 'agent-folder'
+                  ? roots.agentFolders
+                  : entry.root === 'agent-home'
+                    ? roots.agentHomes
+                    : [path.parse(roots.cwd).root];
       const regex = expression(entry, entry.root === 'anywhere' || entry.root === 'agent-folder');
       const rules = bases.flatMap((base) => expanded(base).map((base) => ({ base, regex })));
       if (entry.root === 'agent-home') {

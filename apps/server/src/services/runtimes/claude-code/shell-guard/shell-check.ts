@@ -138,6 +138,8 @@ export interface ShellGuardRoots {
   dorkHome: string;
   /** The person's home folder. */
   home: string;
+  /** Desktop config root captured by the server before reducing the child's environment. */
+  config?: string;
   /** Every Claude Code account folder DorkOS knows of. */
   accounts: readonly string[];
   /** The variables the command's shell starts with. */
@@ -190,11 +192,13 @@ function fixedReadRules(roots: ShellGuardRoots): RootRule[] {
     const bases =
       entry.root === 'data'
         ? [roots.dorkHome]
-        : entry.root === 'home'
-          ? [roots.home]
-          : entry.root === 'account'
-            ? roots.accounts
-            : [];
+        : entry.root === 'config'
+          ? [roots.config ?? path.join(roots.home, '.config')]
+          : entry.root === 'home'
+            ? [roots.home]
+            : entry.root === 'account'
+              ? roots.accounts
+              : [];
     const literal = entry.path.split('/').filter((part, i, all) => {
       return !all.slice(0, i + 1).some((one) => one.includes('*'));
     });

@@ -80,17 +80,41 @@ async function refused(
 }
 
 describe.each(adapters)('%s native file protection', (adapter) => {
+  it('protects desktop data under a moved Linux config root', async () => {
+    roots = { ...roots, config: path.join(root, 'moved config') };
+    for (const name of ['DorkOS', '@dorkos/desktop']) {
+      const file = path.join(roots.config!, name, 'Network', 'Cookies');
+      expect(await refused(adapter, file, 'read', true)).toBe(true);
+      expect(await refused(adapter, file, 'write')).toBe(true);
+      expect(await refused(adapter, file, 'write', true)).toBe(adapter === 'opencode');
+    }
+    expect(await refused(adapter, path.join(roots.config!, 'Other App', 'Cookies'), 'read')).toBe(
+      false
+    );
+  });
+
+  it('protects the real location of a moved config root', async () => {
+    const actual = path.join(root, 'actual-config');
+    const configured = path.join(root, 'config-link');
+    mkdirSync(actual);
+    symlinkSync(actual, configured);
+    roots = { ...roots, config: configured };
+    expect(await refused(adapter, path.join(actual, 'DorkOS', 'Cookies'), 'read')).toBe(true);
+  });
+
   it.each(PROTECTED_PATHS)('refuses $deny at $root/$path', async (entry) => {
     const base =
       entry.root === 'data'
         ? roots.data
-        : entry.root === 'home'
-          ? roots.home
-          : entry.root === 'account'
-            ? roots.accounts[0]!
-            : entry.root === 'agent-home'
-              ? roots.agentHomes[0]!
-              : roots.cwd;
+        : entry.root === 'config'
+          ? (roots.config ?? path.join(roots.home, '.config'))
+          : entry.root === 'home'
+            ? roots.home
+            : entry.root === 'account'
+              ? roots.accounts[0]!
+              : entry.root === 'agent-home'
+                ? roots.agentHomes[0]!
+                : roots.cwd;
     const file = path.join(
       base,
       ...(entry.root === 'anywhere' || entry.root === 'agent-folder' ? ['nested'] : []),

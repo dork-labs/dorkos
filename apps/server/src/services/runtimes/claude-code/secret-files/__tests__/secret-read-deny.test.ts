@@ -27,6 +27,12 @@ const FOLDERS = {
 };
 
 describe('secretReadDenyRules', () => {
+  it('names desktop data at a moved config root', () => {
+    const rules = secretReadDenyRules({ ...FOLDERS, configHome: '/probe/moved config' });
+    expect(rules).toContain('Read(//probe/moved config/DorkOS/**)');
+    expect(rules).toContain('Read(//probe/moved config/@dorkos/desktop/**)');
+  });
+
   it('names every secret for Read, Grep and Glob', () => {
     const rules = secretReadDenyRules(FOLDERS);
     for (const tool of ['Read', 'Grep', 'Glob']) {

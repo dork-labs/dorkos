@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import {
   ACCOUNT_FOLDER_SECRET_PATHS,
+  CONFIG_SECRET_PATHS,
+  CONFIG_PERSON_ONLY_PATHS,
   AGENT_FOLDER_SECRET_PATHS,
   AGENT_HOME_SELF_GRANT_PATHS,
   ANYWHERE_SECRET_PATHS,
@@ -32,6 +34,7 @@ describe('protected paths', () => {
 
   it('keeps secrets from reads and grant files from writes', () => {
     const reads = [
+      CONFIG_SECRET_PATHS,
       DATA_FOLDER_SECRET_PATHS,
       ACCOUNT_FOLDER_SECRET_PATHS,
       ANYWHERE_SECRET_PATHS,
@@ -39,6 +42,7 @@ describe('protected paths', () => {
       AGENT_FOLDER_SECRET_PATHS,
     ].flat();
     const writes = [
+      CONFIG_PERSON_ONLY_PATHS,
       PERSON_ONLY_DATA_PATHS,
       DATA_GRANT_FILE_PATHS,
       PROJECT_PLUGIN_PATHS,

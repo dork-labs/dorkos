@@ -35,6 +35,15 @@ const tools = {
 describe.each(['default', 'acceptEdits', 'bypassPermissions'])(
   'Codex protected files at %s',
   (permissionMode) => {
+    it('renders the moved desktop config root as a read deny at every level', () => {
+      const moved = { ...filePolicy, roots: { ...roots, config: '/probe/moved config' } };
+      const config = codexProtectedConfig(roots.cwd, moved, { permissionMode });
+      const profiles = config.permissions as Record<string, { filesystem: Record<string, string> }>;
+      const files = profiles[codexPermissionProfile({ permissionMode })]!.filesystem;
+      expect(files['/probe/moved config/DorkOS']).toBe('deny');
+      expect(files['/probe/moved config/@dorkos/desktop']).toBe('deny');
+    });
+
     it('selects the same profile on start/resume without a legacy sandbox option', () => {
       const settings = { permissionMode };
       const load = buildLoadOverrides(
@@ -174,7 +183,13 @@ describe('browser sign-in stores in the Codex profile', () => {
       const profiles = config.permissions as Record<string, { filesystem: Record<string, string> }>;
       const files = profiles[codexPermissionProfile({ permissionMode })]!.filesystem;
       for (const entry of PROTECTED_PATHS.filter((one) => one.belowFull)) {
-        const store = `${entry.root === 'home' ? roots.home : roots.data}/${entry.path}`;
+        const base =
+          entry.root === 'home'
+            ? roots.home
+            : entry.root === 'config'
+              ? path.join(roots.home, '.config')
+              : roots.data;
+        const store = `${base}/${entry.path}`;
         expect(files[store], store).toBe('deny');
       }
     }
