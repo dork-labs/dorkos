@@ -13,23 +13,14 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderHook, waitFor } from '@testing-library/react';
 import React from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { TransportProvider } from '@/layers/shared/model';
+import { TransportProvider, useAppStore } from '@/layers/shared/model';
 import { createMockSession, createMockTransport } from '@dorkos/test-utils';
 import { useSessionStatus } from '../use-session-status';
 
-const store = vi.hoisted(() => ({
-  pendingAccount: null as { id: string; sessionId: string } | null,
-}));
-vi.mock('@/layers/shared/model', async (importOriginal) => {
-  const original = await importOriginal<typeof import('@/layers/shared/model')>();
-  return {
-    ...original,
-    useAppStore: (selector?: (s: Record<string, unknown>) => unknown) => {
-      const state = { selectedCwd: '/test/cwd', pendingAccount: store.pendingAccount };
-      return selector ? selector(state) : state;
-    },
-  };
-});
+// The app store is REAL. The folder is seeded; the account pick goes in
+// through `setPendingAccount`, the setter the Runs-on picker calls.
+const pickAccount = (pick: { id: string; sessionId: string } | null) =>
+  useAppStore.getState().setPendingAccount(pick);
 
 const SESSION_ID = '11111111-1111-4111-8111-111111111111';
 
@@ -49,12 +40,13 @@ describe('useSessionStatus — the runtime hint on a settings write', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    store.pendingAccount = null;
+    useAppStore.setState({ selectedCwd: '/test/cwd' });
+    pickAccount(null);
     mockTransport = createMockTransport();
   });
 
   it('says which account the person picked for this session, so the model is judged by who pays', async () => {
-    store.pendingAccount = { id: 'dorkos-credits', sessionId: SESSION_ID };
+    pickAccount({ id: 'dorkos-credits', sessionId: SESSION_ID });
     const { result } = renderHook(() => useSessionStatus(SESSION_ID, null, false, 'claude-code'), {
       wrapper: createWrapper(mockTransport),
     });
@@ -69,7 +61,7 @@ describe('useSessionStatus — the runtime hint on a settings write', () => {
   });
 
   it('never sends a pick made for another session', async () => {
-    store.pendingAccount = { id: 'dorkos-credits', sessionId: 'another-session' };
+    pickAccount({ id: 'dorkos-credits', sessionId: 'another-session' });
     const { result } = renderHook(() => useSessionStatus(SESSION_ID, null, false, 'claude-code'), {
       wrapper: createWrapper(mockTransport),
     });
