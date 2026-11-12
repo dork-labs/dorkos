@@ -12,7 +12,7 @@ import {
 } from '@tanstack/react-router';
 import { zodValidator } from '@tanstack/zod-adapter';
 import { z } from 'zod';
-import { mergeDialogSearch } from '@/layers/shared/model';
+import { mergeDialogSearch, useAppStore } from '@/layers/shared/model';
 
 import { TourHost } from '../ui/TourHost';
 import { TOUR_DEFINITIONS, type TourDefinition } from '../model/tour-definitions';
@@ -31,19 +31,12 @@ vi.mock('../model/use-tours', () => ({
   }),
 }));
 
-// Only the app store is stubbed. `useSettingsDeepLink` stays real, so a
-// settings-tab tour is judged by the tab it actually lands on rather than by
-// the fact that some action fired (DOR-484).
-const clearRequestedTour = vi.fn();
-let mockRequestedTour: string | null = null;
-vi.mock('@/layers/shared/model', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('@/layers/shared/model')>();
-  return {
-    ...actual,
-    useAppStore: (selector: (s: Record<string, unknown>) => unknown) =>
-      selector({ requestedTour: mockRequestedTour, clearRequestedTour }),
-  };
-});
+// The app store is REAL: the request is seeded with `setState` and judged by
+// what is left in the store afterwards, so a host that clears too early (or
+// never) is caught by the state it leaves, not by a spy. `useSettingsDeepLink`
+// stays real too, so a settings-tab tour is judged by the tab it actually lands
+// on (DOR-484).
+const requestedTour = () => useAppStore.getState().requestedTour;
 
 vi.mock('@/layers/shared/ui', () => ({
   TourSpotlight: (props: { activeIndex: number }) => (
@@ -114,7 +107,7 @@ async function renderHost(initialUrl = '/') {
 beforeEach(() => {
   vi.clearAllMocks();
   mockRunningDefinition = null;
-  mockRequestedTour = null;
+  useAppStore.setState({ requestedTour: null });
 });
 
 afterEach(() => cleanup());
@@ -127,42 +120,42 @@ describe('TourHost', () => {
 
   it('starts a requested tour but HOLDS the request until it is running (deferred, never dropped)', async () => {
     // The request is set, but the engine has not started the tour yet.
-    mockRequestedTour = 'general';
+    useAppStore.setState({ requestedTour: 'general' });
     mockRunningDefinition = null;
     await renderHost();
 
     // It starts the tour, but does NOT clear the request — so a settling
     // re-render that interrupts before the start commits cannot drop it.
     expect(runTour).toHaveBeenCalledWith('general');
-    expect(clearRequestedTour).not.toHaveBeenCalled();
+    expect(requestedTour()).toBe('general');
   });
 
   it('clears the request once the tour is actually running', async () => {
-    mockRequestedTour = 'general';
+    useAppStore.setState({ requestedTour: 'general' });
     mockRunningDefinition = TOUR_DEFINITIONS.general; // running now reflects the request
     await renderHost();
 
-    expect(clearRequestedTour).toHaveBeenCalled();
+    expect(requestedTour()).toBeNull();
   });
 
   it('a re-render while the request is still pending never clears it', async () => {
-    mockRequestedTour = 'general';
+    useAppStore.setState({ requestedTour: 'general' });
     mockRunningDefinition = null;
     const { rerender, router } = await renderHost();
     expect(runTour).toHaveBeenCalledTimes(1);
-    expect(clearRequestedTour).not.toHaveBeenCalled();
+    expect(requestedTour()).toBe('general');
 
     // A settling re-render lands while the tour has not started yet — the request
     // must survive it (this is the case that used to drop the launch).
     rerender(<RouterProvider router={router} />);
-    expect(clearRequestedTour).not.toHaveBeenCalled();
+    expect(requestedTour()).toBe('general');
   });
 
   it('ignores an unknown requested tour id but still clears it', async () => {
-    mockRequestedTour = 'nope';
+    useAppStore.setState({ requestedTour: 'nope' });
     await renderHost();
     expect(runTour).not.toHaveBeenCalled();
-    expect(clearRequestedTour).toHaveBeenCalled();
+    expect(requestedTour()).toBeNull();
   });
 
   it('deep-links a route tour (when not already there) and renders the spotlight', async () => {
