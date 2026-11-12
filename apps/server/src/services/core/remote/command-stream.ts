@@ -43,19 +43,19 @@ export const COMMAND_LEASE_MS = 900_000;
 /** How long before the lease ends the stream is renewed, at least. */
 export const LEASE_MARGIN_MS = 60_000;
 /** Extra random lead on the proactive reconnect, so many computers do not renew together. */
-export const LEASE_JITTER_MS = 30_000;
+const LEASE_JITTER_MS = 30_000;
 /** How often Cloud sends a keepalive. */
-export const KEEPALIVE_INTERVAL_MS = 20_000;
+const KEEPALIVE_INTERVAL_MS = 20_000;
 /** Silence this long ends the connection: two missed keepalives. */
 export const KEEPALIVE_WATCHDOG_MS = 2 * KEEPALIVE_INTERVAL_MS;
 /** The wait before reconnecting when the server named none. */
 export const DEFAULT_RETRY_MS = 5_000;
 /** The shortest reconnect wait a server may ask for. */
-export const MIN_RETRY_MS = 1_000;
+const MIN_RETRY_MS = 1_000;
 /** The longest reconnect wait a server may ask for. */
 export const MAX_RETRY_MS = 60_000;
 /** The ceiling of the failure backoff. */
-export const MAX_BACKOFF_MS = 5 * 60_000;
+const MAX_BACKOFF_MS = 5 * 60_000;
 /** The floor under a jittered failure wait, so a zero draw never hammers. */
 export const MIN_BACKOFF_MS = 500;
 

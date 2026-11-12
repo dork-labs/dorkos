@@ -19,7 +19,7 @@ import type { HubRelayWake } from '../hub-relay/computer-waker.js';
  * How long one wake may wait on Cloud. A wake is retried by the next page
  * that asks, so a hung call ends rather than piling up behind the debounce.
  */
-export const HUB_RELAY_WAKE_TIMEOUT_MS = 10_000;
+const HUB_RELAY_WAKE_TIMEOUT_MS = 10_000;
 
 /** The one Cloud call a wake needs, injectable for tests. */
 export interface HubRelayWakeClient {

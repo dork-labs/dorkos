@@ -30,11 +30,11 @@ import { logger } from '../../../lib/logger.js';
 import { isAbsent, type CloudV1Context } from '../cloud/v1-client.js';
 
 /** The first retry waits up to this long, before full jitter. */
-export const CLEANUP_BASE_DELAY_MS = 5_000;
+const CLEANUP_BASE_DELAY_MS = 5_000;
 /** No retry waits longer than this. */
-export const CLEANUP_MAX_DELAY_MS = 10 * 60_000;
+const CLEANUP_MAX_DELAY_MS = 10 * 60_000;
 /** How many times a withdrawal asks Cloud again before leaving the note in place. */
-export const CLEANUP_MAX_ATTEMPTS = 12;
+const CLEANUP_MAX_ATTEMPTS = 12;
 
 /** What Cloud still owes after a withdrawal. Ids only: never a bearer. */
 export interface OwedCleanup {

@@ -113,7 +113,7 @@ export interface ManagedCommandServiceDeps {
 }
 
 /** How often, on average, the service re-checks whether the stream may run. */
-export const RECONCILE_INTERVAL_MS = 60_000;
+const RECONCILE_INTERVAL_MS = 60_000;
 
 interface Session {
   link: CommandLink;

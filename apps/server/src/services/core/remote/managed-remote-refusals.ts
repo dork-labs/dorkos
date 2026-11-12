@@ -30,7 +30,7 @@ export const MANAGED_REMOTE_ALREADY_SET_UP = 'MANAGED_REMOTE_ALREADY_SET_UP';
 /** Refusal code: managed mode needs a finished setup under this link. */
 export const MANAGED_REMOTE_NOT_SET_UP = 'MANAGED_REMOTE_NOT_SET_UP';
 /** Refusal code: Cloud could not start setup. */
-export const MANAGED_REMOTE_SETUP_FAILED = 'MANAGED_REMOTE_SETUP_FAILED';
+const MANAGED_REMOTE_SETUP_FAILED = 'MANAGED_REMOTE_SETUP_FAILED';
 
 /** The note shown once a withdrawal could not reach Cloud. */
 export const CLOUD_MAY_REMAIN_NOTE =

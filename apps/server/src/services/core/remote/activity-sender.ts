@@ -35,15 +35,15 @@ import type { CommandLink } from './command-dispatcher.js';
 import { errorName } from './managed-remote-support.js';
 
 /** How long one send may take before it counts as lost. */
-export const EVENTS_TIMEOUT_MS = 15_000;
+const EVENTS_TIMEOUT_MS = 15_000;
 /** The first retry wait after a failed send, before jitter. */
-export const EVENTS_RETRY_BASE_MS = 5_000;
+const EVENTS_RETRY_BASE_MS = 5_000;
 /** The ceiling of the retry wait. */
-export const EVENTS_RETRY_MAX_MS = 10 * 60_000;
+const EVENTS_RETRY_MAX_MS = 10 * 60_000;
 /** How many refusals a batch gets before it is dropped. */
 export const EVENTS_MAX_REFUSALS = 5;
 /** Failures in a row after which the backlog is reported as not getting through. */
-export const EVENTS_STUCK_AFTER = 5;
+const EVENTS_STUCK_AFTER = 5;
 
 /** Statuses that say "try again later", never "this batch is refused". */
 const TRANSIENT_STATUSES = new Set([401, 403, 408, 425, 429]);

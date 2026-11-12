@@ -18,7 +18,7 @@ import type { CommandJournal, PendingAck } from './command-journal.js';
 import { errorName } from './managed-remote-support.js';
 
 /** How many times one outcome is written before it is held in memory. */
-export const SETTLE_ATTEMPTS = 3;
+const SETTLE_ATTEMPTS = 3;
 
 interface Held {
   leaseToken: string;

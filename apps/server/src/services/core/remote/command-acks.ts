@@ -32,11 +32,11 @@ import type { CommandLink } from './command-dispatcher.js';
 import { errorName } from './managed-remote-support.js';
 
 /** The ack route takes at most this many items at once. */
-export const ACK_BATCH_MAX = 100;
+const ACK_BATCH_MAX = 100;
 /** The first retry wait after a failed send, before jitter. */
-export const ACK_RETRY_BASE_MS = 2_000;
+const ACK_RETRY_BASE_MS = 2_000;
 /** The ceiling of the retry wait. */
-export const ACK_RETRY_MAX_MS = 5 * 60_000;
+const ACK_RETRY_MAX_MS = 5 * 60_000;
 
 /** Statuses that say "try again later", never "this lease is refused". */
 const TRANSIENT_STATUSES = new Set([401, 403, 408, 425, 429]);

@@ -98,7 +98,7 @@ export interface RemoteAccessFacts {
 export const SETUP_UNFINISHED_REASON = 'Setup did not finish. Start it again.';
 
 /** The reason shown when Cloud holds the address closed for a reason of its own. */
-export const CLOUD_BLOCKED_REASON = 'DorkOS Cloud is not opening this address right now.';
+const CLOUD_BLOCKED_REASON = 'DorkOS Cloud is not opening this address right now.';
 
 /** The reason shown when Cloud reports the address open and this computer is not serving it. */
 export const NOT_SERVING_REASON =

@@ -32,7 +32,7 @@ export type RemoteEventBatch = z.infer<typeof RemoteEventBatchSchema>;
 export const OUTBOX_MAX_ROWS = 200;
 
 /** How long a batch may wait before it is dropped unsent. */
-export const OUTBOX_RETENTION_MS = 7 * 24 * 60 * 60_000;
+const OUTBOX_RETENTION_MS = 7 * 24 * 60 * 60_000;
 
 /** One batch waiting to be sent. */
 export interface OutboxBatch {
