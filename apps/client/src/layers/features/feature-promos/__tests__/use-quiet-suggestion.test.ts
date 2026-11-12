@@ -8,7 +8,7 @@
  * would say out loud.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { renderHook } from '@testing-library/react';
+import { act, renderHook } from '@testing-library/react';
 import { forwardRef } from 'react';
 import type { LucideIcon } from 'lucide-react';
 import type { PromoDefinition, PromoContext, PromoContent } from '../model/promo-types';
@@ -40,11 +40,9 @@ vi.mock('../model/use-promo-context', () => ({
   usePromoContext: () => mockContext,
 }));
 
-let mockPromoEnabled = true;
-vi.mock('@/layers/shared/model', () => ({
-  useAppStore: (selector: (s: Record<string, unknown>) => unknown) =>
-    selector({ promoEnabled: mockPromoEnabled }),
-}));
+// The settings switch is the REAL app store: the off case flips it through
+// `setPromoEnabled`, the same setter the Settings toggle calls, so a setter
+// that stops writing is caught here rather than hidden behind a selector stub.
 
 // Dismissals moved to config (spec `sidebar-simplification` D4).
 let mockDismissedIds: string[] = [];
@@ -52,6 +50,7 @@ vi.mock('@/layers/entities/config', () => ({
   usePromoDismissals: () => ({ dismissedIds: mockDismissedIds, dismissPromo: () => {} }),
 }));
 
+import { useAppStore } from '@/layers/shared/model';
 import { useQuietSuggestion } from '../model/use-quiet-suggestion';
 
 function makePromo(
@@ -82,7 +81,9 @@ describe('useQuietSuggestion', () => {
   beforeEach(() => {
     mockRegistry.length = 0;
     mockDismissedIds = [];
-    mockPromoEnabled = true;
+    // The real setter persists the switch; start each case with it unset.
+    localStorage.removeItem('dorkos-promo-enabled');
+    useAppStore.setState({ promoEnabled: true });
     mockContext = {
       hasAdapter: () => false,
       isTasksEnabled: false,
@@ -146,8 +147,10 @@ describe('useQuietSuggestion', () => {
 
   it('says nothing at all when suggestions are switched off in settings', () => {
     mockRegistry.push(makePromo({ id: 'schedules' }));
-    mockPromoEnabled = false;
     const { result } = renderHook(() => useQuietSuggestion());
+    expect(result.current?.id).toBe('schedules');
+
+    act(() => useAppStore.getState().setPromoEnabled(false));
     expect(result.current).toBeNull();
   });
 });
