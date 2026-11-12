@@ -181,10 +181,7 @@ export function sweepEvictedSessions(port: SessionEndingPort): void {
 }
 
 /** Release the same resources after idle-time or capacity eviction. */
-export function releaseEvictedSessions(
-  port: SessionEndingPort,
-  evictedIds: readonly string[]
-): void {
+function releaseEvictedSessions(port: SessionEndingPort, evictedIds: readonly string[]): void {
   for (const sessionId of evictedIds) {
     // No subprocess may outlive the session record it belongs to. Eviction
     // ALWAYS implies a reap; the idle timer's reap never implies an eviction

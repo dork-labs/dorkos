@@ -10,7 +10,7 @@ import { deriveSessionTitle } from '../shared/derive-title.js';
 import { DoeEventQueue } from './event-queue.js';
 
 /** The engine's independent data directory, outside vendor-owned session stores. */
-export function doeSessionsDirectory(): string {
+function doeSessionsDirectory(): string {
   return path.join(resolveDorkHome(), 'runtimes', 'doe');
 }
 

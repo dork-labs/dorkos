@@ -833,7 +833,6 @@ async function settle<T>(work: Promise<T>, fallback: T): Promise<T> {
 /** @internal Exported for testing only. */
 export {
   buildAgentBlock as _buildAgentBlock,
-  buildEnvBlock as _buildEnvBlock,
   buildSessionModelBlock as _buildSessionModelBlock,
   buildDorkosContextBlock as _buildDorkosContextBlock,
   buildUserProfileBlock as _buildUserProfileBlock,

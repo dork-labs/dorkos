@@ -34,7 +34,7 @@ import type { TurnWindow } from '../session-turn-windows.js';
 export const SLOT_WAIT_MESSAGE = 'Waiting to start: every agent on this computer is busy.';
 
 /** The `system_status` a turn yields while it waits for a slot. */
-export function slotWaitEvent(): StreamEvent {
+function slotWaitEvent(): StreamEvent {
   return {
     type: 'system_status',
     data: { message: SLOT_WAIT_MESSAGE, status: SLOT_WAIT_STATUS },
@@ -73,7 +73,7 @@ async function raceBeat(opened: Promise<TurnWindow>): Promise<TurnWindow | 'beat
  *
  * @param err - What the dispatch threw
  */
-export function isSpentPump(err: unknown): boolean {
+function isSpentPump(err: unknown): boolean {
   return err instanceof IllegalPumpTransitionError && err.from === 'reaped';
 }
 

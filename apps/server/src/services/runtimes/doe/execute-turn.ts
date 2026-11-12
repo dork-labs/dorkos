@@ -42,7 +42,7 @@ import { chooseDoeCreditsInference } from './auto-model.js';
 import type { DoeRuntimeOptions } from './doe-runtime.js';
 import type { DoeSessionStore } from './session-store.js';
 /** What a chat with no AI to run on says (credits not chosen, nothing configured). */
-export const DOE_NOT_CONNECTED = 'Connect AI to use this agent.';
+const DOE_NOT_CONNECTED = 'Connect AI to use this agent.';
 /** The notice a chat gets when DorkOS's pick stands in for a model credits do not serve. */
 function substitutionNotice(
   replaced: { from: string; fromName: string; toName: string },

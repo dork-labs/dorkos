@@ -4,12 +4,12 @@ import { DoeInferenceConfigSchema, type DoeInferenceConfig } from '@dorkos/share
 import type { ModelOption } from '@dorkos/shared/types';
 
 /** Deliberate translation between platform and engine protocol names. */
-export function doeProtocol(protocol: DoeInferenceConfig['protocol']): ModelDescriptor['protocol'] {
+function doeProtocol(protocol: DoeInferenceConfig['protocol']): ModelDescriptor['protocol'] {
   return protocol === 'openai-chat-completions' ? 'openai-completions' : protocol;
 }
 
 /** Stable model-history family; request format changes cannot reinterpret old messages. */
-export function doeHistoryFamily(config: DoeInferenceConfig): string {
+function doeHistoryFamily(config: DoeInferenceConfig): string {
   return `${config.protocol}:${new URL(config.endpoint).origin}`;
 }
 

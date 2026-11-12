@@ -33,7 +33,7 @@ const TOOL_NAME = 'mcp__dorkos__connectors.request_connection';
  * and the only one no other Connections case signs in to or removes, so this
  * turn's card starts from a state the test controls.
  */
-export const CONNECTION_REQUEST_SCENARIO_INPUT = {
+const CONNECTION_REQUEST_SCENARIO_INPUT = {
   version: 1,
   serviceSlug: 'slack',
   reason: 'Summarise today’s messages',

@@ -30,7 +30,7 @@ export interface DoeResourceOptions {
   protectedRoots?: ProtectedPathRoots;
 }
 /** Enumerate ancestry root-first without granting unrestricted ancestor file access. */
-export function doeAncestors(cwd: string): string[] {
+function doeAncestors(cwd: string): string[] {
   const ancestors = [cwd];
   while (path.dirname(ancestors[0]!) !== ancestors[0])
     ancestors.unshift(path.dirname(ancestors[0]!));

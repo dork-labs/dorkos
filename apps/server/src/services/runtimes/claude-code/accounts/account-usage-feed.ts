@@ -56,7 +56,7 @@ export function recordSessionUsage(
  *
  * @param session - The session whose account is wanted.
  */
-export function peekSessionAccountUsage(
+function peekSessionAccountUsage(
   session: Pick<AgentSession, 'launchedAccountRoot' | 'accountRoot'>
 ): AccountUsage | undefined {
   const store = getAccountUsageStore();
@@ -99,7 +99,7 @@ export function sessionSubscriptionUsage(
  *
  * @param session - The session.
  */
-export function isSubscriptionSession(
+function isSubscriptionSession(
   session: Pick<AgentSession, 'launchedPerToken' | 'lastSubscriptionUsage'>
 ): boolean {
   if (session.lastSubscriptionUsage?.kind === 'subscription') return true;

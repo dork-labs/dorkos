@@ -72,7 +72,7 @@ export async function resolveAgentRuntimeType(agentPath: string): Promise<string
  * @param agentPath - The agent's project directory.
  * @param declared - The runtime its manifest names, if any.
  */
-export function agentRuntimeTypeFrom(agentPath: string, declared: string | undefined): string {
+function agentRuntimeTypeFrom(agentPath: string, declared: string | undefined): string {
   const placed = runtimeRegistry.computerRuntimeForAgentPath(agentPath);
   if (placed) return placed;
   if (declared && runtimeRegistry.has(declared)) return declared;

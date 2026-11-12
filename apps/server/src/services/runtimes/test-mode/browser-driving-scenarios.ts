@@ -38,10 +38,10 @@ import type { RawSessionEvent } from '../../session/session-state-projector.js';
 import type { ScenarioFn } from './scenario-store.js';
 
 /** The button this scenario clicks, and the text the fixture page shows after. */
-export const DRIVING_FIXTURE_BUTTON = 'Mark as done';
+const DRIVING_FIXTURE_BUTTON = 'Mark as done';
 
 /** What the driven page shows once the button has been clicked. */
-export const DRIVING_FIXTURE_DONE_TEXT = 'Done — 1 item';
+const DRIVING_FIXTURE_DONE_TEXT = 'Done — 1 item';
 
 /** One line of the turn's answer, so a spec can read the outcome off the message. */
 function line(label: string, answer: DrivingAnswer): string {

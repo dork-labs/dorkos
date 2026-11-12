@@ -112,7 +112,7 @@ export const parkedTurn: FakeTurnScript = async (ctx) => {
 };
 
 /** The command the approval turn asks to run. */
-export const APPROVAL_COMMAND = 'touch made.txt';
+const APPROVAL_COMMAND = 'touch made.txt';
 
 /**
  * A turn that asks before running a command, the way 0.154 does (verified on

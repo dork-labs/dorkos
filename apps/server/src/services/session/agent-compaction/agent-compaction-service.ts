@@ -58,7 +58,7 @@ import { isCompactionBlocked } from './compaction-permission.js';
  * never shares a per-client wait chain with the person's window or the agent's
  * turn, and a lock-holder report names what is running.
  */
-export const AGENT_COMPACTION_CLIENT_ID = 'dorkos:agent-compaction';
+const AGENT_COMPACTION_CLIENT_ID = 'dorkos:agent-compaction';
 
 /** Why a request was refused. */
 export type CompactionRefusalCode =

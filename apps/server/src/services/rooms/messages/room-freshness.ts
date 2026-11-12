@@ -92,7 +92,7 @@ export function noteHistoryRead(
  * @param authorId - The agent.
  * @returns The unseen posts; empty when the agent is up to date.
  */
-export function unseenPosts(rooms: RoomService, roomId: string, authorId: string): RoomEntry[] {
+function unseenPosts(rooms: RoomService, roomId: string, authorId: string): RoomEntry[] {
   const floor = Math.max(
     rooms.readCursorFor(roomId, authorId) ?? -1,
     seenThrough.get(agentKey(roomId, authorId)) ?? -1
@@ -110,7 +110,7 @@ export function unseenPosts(rooms: RoomService, roomId: string, authorId: string
  * @param roomId - The room the posts are in.
  * @param entries - The posts handed back.
  */
-export function marksOfUnseen(
+function marksOfUnseen(
   rooms: RoomService,
   roomId: string,
   entries: readonly RoomEntry[]

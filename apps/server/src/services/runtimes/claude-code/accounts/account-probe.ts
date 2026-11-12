@@ -111,7 +111,7 @@ export interface AccountProbeDeps {
 export const PROBE_FLOOR_MS = 60_000;
 
 /** How long the usage call may take before the probe gives up. */
-export const PROBE_TIMEOUT_MS = 15_000;
+const PROBE_TIMEOUT_MS = 15_000;
 
 /** Probes running now, by account, so concurrent callers share one. */
 const inFlight = new Map<string, Promise<AccountProbeResult>>();
