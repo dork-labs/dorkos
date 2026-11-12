@@ -1,9 +1,8 @@
 ---
 covers:
-  - "fix: decode ANSI-C quoted paths in shell guard (DOR-4137)"
+  - 'fix: decode ANSI-C quoted paths in shell guard (DOR-4137)'
 ---
 
-### Fixed
+### Security
 
-<!-- dorkos-changelog:seeded — rewrite this bullet for a human, then delete this comment. If the change needs no changelog entry, delete the whole fragment instead. See changelog/README.md#seeded-fragments. -->
-- Decode ANSI-C quoted paths in shell guard (DOR-4137)
+- Below Full, an agent's shell command now asks first when it names a private file with escape codes, like `$'\x2essh'` for `.ssh`.

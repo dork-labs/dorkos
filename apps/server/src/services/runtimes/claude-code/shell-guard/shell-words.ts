@@ -31,7 +31,9 @@ export const MAX_PATH_PIECE = 4_096;
 /** Decode one ANSI-C escape without running a shell or evaluating script text. */
 function ansiEscape(text: string, at: number): { value: string; length: number } {
   const rest = text.slice(at + 1, at + 10);
-  const numeric = /^(?:[0-7]{1,3}|x[\da-fA-F]{1,2}|u[\da-fA-F]{1,4}|U[\da-fA-F]{1,8})/.exec(rest)?.[0];
+  const numeric = /^(?:[0-7]{1,3}|x[\da-fA-F]{1,2}|u[\da-fA-F]{1,4}|U[\da-fA-F]{1,8})/.exec(
+    rest
+  )?.[0];
   if (numeric) {
     const octal = /^[0-7]/.test(numeric);
     const code = Number.parseInt(octal ? numeric : numeric.slice(1), octal ? 8 : 16);
@@ -39,8 +41,19 @@ function ansiEscape(text: string, at: number): { value: string; length: number }
   }
   const char = text[at + 1] ?? '';
   const simple: Readonly<Record<string, string>> = {
-    a: '\x07', b: '\b', e: '\x1b', E: '\x1b', f: '\f', n: '\n', r: '\r', t: '\t', v: '\v',
-    '\\': '\\', "'": "'", '"': '"', '?': '?',
+    a: '\x07',
+    b: '\b',
+    e: '\x1b',
+    E: '\x1b',
+    f: '\f',
+    n: '\n',
+    r: '\r',
+    t: '\t',
+    v: '\v',
+    '\\': '\\',
+    "'": "'",
+    '"': '"',
+    '?': '?',
   };
   return { value: simple[char] ?? `\\${char}`, length: char ? 2 : 1 };
 }
