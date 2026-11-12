@@ -3,11 +3,19 @@
  */
 import React from 'react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render as rtlRender, screen, fireEvent, cleanup, waitFor } from '@testing-library/react';
+import {
+  act,
+  render as rtlRender,
+  screen,
+  fireEvent,
+  cleanup,
+  waitFor,
+} from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import '@testing-library/jest-dom/vitest';
 import { createMockTransport } from '@dorkos/test-utils';
 import { useInteractionStore } from '@/layers/entities/interactions';
+import { useAppStore, useImportProjectsStore, useThemeStore } from '@/layers/shared/model';
 import { CommandPaletteDialog } from '../ui/CommandPaletteDialog';
 import type { AgentPathEntry } from '@dorkos/shared/mesh-schemas';
 
@@ -64,28 +72,17 @@ vi.mock('@tanstack/react-router', async (importOriginal) => ({
 
 // --- Shared mock fns ---
 
-const mockSetGlobalPaletteOpen = vi.fn();
+// The Settings and Tasks deep links stay faked: this file mocks the router
+// module, and the Settings-tab case needs the tab, which a real deep link with
+// no router drops. They are the router seam, like `useNavigate` above.
+// Returned as ONE stable object each, like the real hooks: a fresh literal per
+// call re-creates every consuming `useCallback`, which hides stale-closure bugs
+// that are real in production (DOR-928). The app store, the theme store and the
+// dialog stores are REAL, so their actions have the stable identity that
+// guards the same bug for free.
 const mockSetSettingsOpen = vi.fn();
 const mockSetTasksOpen = vi.fn();
 const mockOpenConnections = vi.fn();
-const mockSetPickerOpen = vi.fn();
-const mockImportOpen = vi.fn();
-const mockSetTheme = vi.fn();
-
-let mockGlobalPaletteOpen = true;
-let mockTheme = 'light';
-
-// Hoisted, NOT built inside the selector. A zustand action has a stable
-// identity for the app's lifetime, and a mock that mints a fresh `vi.fn()` per
-// selector call does not: it makes every consuming `useCallback` re-create on
-// every render, which quietly repairs stale-closure bugs that are real in
-// production. That is what hid the palette's New session reading a
-// boot-time `selectedCwd` (DOR-928).
-const mockToggleGlobalPalette = vi.fn();
-const mockSetSelectedCwd = vi.fn();
-const mockSetStoreSessionId = vi.fn();
-const mockClearGlobalPaletteInitialSearch = vi.fn();
-const mockOpenFeedback = vi.fn();
 const mockOpenSettingsTab = vi.fn();
 const mockSettingsDeepLink = {
   isOpen: false,
@@ -106,26 +103,8 @@ const mockTasksDeepLink = {
   setSection: () => {},
 };
 
-vi.mock('@/layers/shared/model', () => ({
-  useAppStore: (selector?: (s: Record<string, unknown>) => unknown) => {
-    const state = {
-      globalPaletteOpen: mockGlobalPaletteOpen,
-      setGlobalPaletteOpen: mockSetGlobalPaletteOpen,
-      toggleGlobalPalette: mockToggleGlobalPalette,
-      setSettingsOpen: mockSetSettingsOpen,
-      setTasksOpen: mockSetTasksOpen,
-      setPickerOpen: mockSetPickerOpen,
-      // The real store carries these; "New session" reads the active agent from
-      // here and mints an id into it (DOR-928).
-      selectedCwd: mockSelectedCwd,
-      setSelectedCwd: mockSetSelectedCwd,
-      setSessionId: mockSetStoreSessionId,
-      globalPaletteInitialSearch: null,
-      clearGlobalPaletteInitialSearch: mockClearGlobalPaletteInitialSearch,
-    };
-    return selector ? selector(state) : state;
-  },
-  useTheme: () => ({ theme: mockTheme, setTheme: mockSetTheme }),
+vi.mock('@/layers/shared/model', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/layers/shared/model')>()),
   // `usePaletteActions` resolves which conversation a slash command runs in,
   // and that resolver asks the server when nothing is cached.
   useTransport: () => mockTransport,
@@ -133,29 +112,11 @@ vi.mock('@/layers/shared/model', () => ({
   // the pick opens the agent's latest chat as it always has.
   readDmViewEnabled: () => false,
   useReportIssue: () => vi.fn(),
-  // `usePaletteActions` reads the feedback dialog's store, so the palette does
-  // not render at all without it (DOR-902).
-  useFeedbackDialogStore: (selector?: (s: Record<string, unknown>) => unknown) => {
-    const state = { openFeedback: mockOpenFeedback };
-    return selector ? selector(state) : state;
-  },
   useIsMobile: () => false,
   useNow: () => Date.now(),
-  // URL deep-link hooks — during the dual-signal era we forward open/close
-  // to the existing store-setter mocks so legacy assertions still hold while
-  // the palette migrates to router-first dialog opens (task 2.7).
-  // Returned as ONE stable object, like the real hooks: a fresh literal per
-  // call re-creates every consuming `useCallback`, which hides stale-closure
-  // bugs that are real in production (DOR-928).
   useSettingsDeepLink: () => mockSettingsDeepLink,
   useTasksDeepLink: () => mockTasksDeepLink,
   useOpenConnections: () => mockOpenConnections,
-  useAgentCreationStore: Object.assign(() => ({ open: vi.fn() }), {
-    getState: () => ({ open: vi.fn() }),
-  }),
-  useImportProjectsStore: Object.assign(() => ({ open: mockImportOpen }), {
-    getState: () => ({ open: mockImportOpen }),
-  }),
 }));
 
 // A successful open: `setDir` runs `onOpened` once the agent is really on
@@ -165,6 +126,12 @@ const mockSetDir = vi.fn((_dir: string | null, opts?: { onOpened?: () => void })
   opts?.onOpened?.();
 });
 let mockSelectedCwd: string | null = '/projects/current';
+
+/** Switch the active folder: the store the palette reads, and the directory state beside it. */
+function pickFolder(cwd: string) {
+  mockSelectedCwd = cwd;
+  act(() => useAppStore.setState({ selectedCwd: cwd }));
+}
 
 vi.mock('@/layers/entities/session', async (importOriginal) => ({
   // Keep the real session resolver — the palette builds its hrefs with it.
@@ -202,6 +169,9 @@ const unranked = {
   demoted: false,
 } as const;
 
+// The corpus stays a fixture on purpose: this file's claims are what pressing a
+// row does end to end, and how the corpus is assembled from the real entity
+// reads is `use-palette-items.test.ts`'s claim.
 vi.mock('../model/use-palette-items', () => ({
   usePaletteItems: () => {
     const features = [
@@ -291,14 +261,6 @@ vi.mock('../model/use-palette-items', () => ({
   },
 }));
 
-vi.mock('../model/use-global-palette', () => ({
-  useGlobalPalette: () => ({
-    globalPaletteOpen: mockGlobalPaletteOpen,
-    setGlobalPaletteOpen: mockSetGlobalPaletteOpen,
-    toggleGlobalPalette: vi.fn(),
-  }),
-}));
-
 // Mock usePreviewData so AgentPreviewPanel doesn't call real entity hooks
 vi.mock('../model/use-preview-data', () => ({
   usePreviewData: () => ({
@@ -346,9 +308,14 @@ describe('Command Palette Integration', () => {
     vi.clearAllMocks();
     localStorage.clear();
     useInteractionStore.getState().reset();
-    mockGlobalPaletteOpen = true;
-    mockSelectedCwd = '/projects/current';
-    mockTheme = 'light';
+    useAppStore.setState({
+      globalPaletteOpen: true,
+      globalPaletteInitialSearch: null,
+      pickerOpen: false,
+    });
+    useImportProjectsStore.setState({ isOpen: false });
+    useThemeStore.setState({ theme: 'light' });
+    pickFolder('/projects/current');
     mockPaletteRecentAgents = [mockAgents[2], mockAgents[0]];
     mockPaletteAllAgents = mockAgents;
   });
@@ -361,7 +328,7 @@ describe('Command Palette Integration', () => {
     // entry is created ONCE, at boot, and keeps whatever `selectedCwd` was then
     // — usually none. Switch agents, hit New session, and the conversation
     // opens somewhere you are not (DOR-928).
-    mockSelectedCwd = '/projects/first';
+    pickFolder('/projects/first');
     // Wrapper-based so `rerender` re-applies the providers — the point of this
     // case is a SECOND render of the SAME mounted component.
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -370,7 +337,7 @@ describe('Command Palette Integration', () => {
     );
     const { rerender } = rtlRender(<CommandPaletteDialog />, { wrapper: Wrapper });
 
-    mockSelectedCwd = '/projects/second'; // you switch agents
+    pickFolder('/projects/second'); // you switch agents
     rerender(<CommandPaletteDialog />);
 
     const row = screen.getAllByText('New session')[0].closest('[data-slot="command-item"]');
@@ -439,7 +406,7 @@ describe('Command Palette Integration', () => {
     expect(mockSetDir).toHaveBeenCalledWith('/projects/auth', expect.anything());
 
     // Should close the palette
-    expect(mockSetGlobalPaletteOpen).toHaveBeenCalledWith(false);
+    expect(useAppStore.getState().globalPaletteOpen).toBe(false);
 
     // And record the open in the durable store, keyed by DIRECTORY.
     // Frecency lands only after the agent actually opens (DOR-928), so this
@@ -478,7 +445,7 @@ describe('Command Palette Integration', () => {
     unmount();
 
     // Re-render and select again
-    mockGlobalPaletteOpen = true;
+    useAppStore.setState({ globalPaletteOpen: true });
     const { unmount: unmount2 } = render(<CommandPaletteDialog />);
     const item2 = screen.getByText('Auth Service').closest('[data-slot="command-item"]');
     fireEvent.click(item2 as Element);
@@ -536,7 +503,7 @@ describe('Command Palette Integration', () => {
     fireEvent.click(openHereItem as Element);
 
     expect(mockSetDir).toHaveBeenCalledWith('/projects/gateway', expect.anything());
-    expect(mockSetGlobalPaletteOpen).toHaveBeenCalledWith(false);
+    expect(useAppStore.getState().globalPaletteOpen).toBe(false);
 
     // Frecency lands only after the agent actually opens (DOR-928), so this
     // waits for the write rather than reading straight after the click.
@@ -565,7 +532,7 @@ describe('Command Palette Integration', () => {
     fireEvent.click(item as Element);
 
     expect(mockSetTasksOpen).toHaveBeenCalledWith(true);
-    expect(mockSetGlobalPaletteOpen).toHaveBeenCalledWith(false);
+    expect(useAppStore.getState().globalPaletteOpen).toBe(false);
   });
 
   it('selecting Connections goes to the page and closes the palette', () => {
@@ -574,7 +541,7 @@ describe('Command Palette Integration', () => {
     fireEvent.click(item as Element);
 
     expect(mockOpenConnections).toHaveBeenCalledWith();
-    expect(mockSetGlobalPaletteOpen).toHaveBeenCalledWith(false);
+    expect(useAppStore.getState().globalPaletteOpen).toBe(false);
   });
 
   it('selecting Mesh Network navigates to /agents and closes palette', () => {
@@ -583,7 +550,7 @@ describe('Command Palette Integration', () => {
     fireEvent.click(item as Element);
 
     expect(mockNavigate).toHaveBeenCalledWith({ to: '/team' });
-    expect(mockSetGlobalPaletteOpen).toHaveBeenCalledWith(false);
+    expect(useAppStore.getState().globalPaletteOpen).toBe(false);
   });
 
   it('selecting Settings opens settings dialog and closes palette', () => {
@@ -592,7 +559,7 @@ describe('Command Palette Integration', () => {
     fireEvent.click(item as Element);
 
     expect(mockSetSettingsOpen).toHaveBeenCalledWith(true);
-    expect(mockSetGlobalPaletteOpen).toHaveBeenCalledWith(false);
+    expect(useAppStore.getState().globalPaletteOpen).toBe(false);
   });
 
   // DOR-2629: a tab behind the Advanced fold is one search away, opened by
@@ -604,7 +571,7 @@ describe('Command Palette Integration', () => {
 
     expect(mockOpenSettingsTab).toHaveBeenCalledWith('danger');
     expect(mockSetSettingsOpen).not.toHaveBeenCalled();
-    expect(mockSetGlobalPaletteOpen).toHaveBeenCalledWith(false);
+    expect(useAppStore.getState().globalPaletteOpen).toBe(false);
   });
 
   // --- Quick actions ---
@@ -616,7 +583,7 @@ describe('Command Palette Integration', () => {
       .closest('[data-slot="command-item"]');
     fireEvent.click(item as Element);
 
-    expect(mockImportOpen).toHaveBeenCalledTimes(1);
+    expect(useImportProjectsStore.getState().isOpen).toBe(true);
   });
 
   it('Browse filesystem opens directory picker', () => {
@@ -624,16 +591,16 @@ describe('Command Palette Integration', () => {
     const item = screen.getByText('Browse filesystem').closest('[data-slot="command-item"]');
     fireEvent.click(item as Element);
 
-    expect(mockSetPickerOpen).toHaveBeenCalledWith(true);
+    expect(useAppStore.getState().pickerOpen).toBe(true);
   });
 
   it('Toggle theme calls setTheme with opposite theme', () => {
-    mockTheme = 'dark';
+    useThemeStore.setState({ theme: 'dark' });
     searchThen('Toggle theme');
     const item = screen.getByText('Toggle theme').closest('[data-slot="command-item"]');
     fireEvent.click(item as Element);
 
-    expect(mockSetTheme).toHaveBeenCalledWith('light');
+    expect(useThemeStore.getState().theme).toBe('light');
   });
 
   // --- Search behavior ---
@@ -692,7 +659,7 @@ describe('Command Palette Integration', () => {
   // --- Dialog closed state ---
 
   it('does not render any content when palette is closed', () => {
-    mockGlobalPaletteOpen = false;
+    useAppStore.setState({ globalPaletteOpen: false });
     render(<CommandPaletteDialog />);
 
     expect(
@@ -718,7 +685,7 @@ describe('Command Palette Integration', () => {
     expect(storedBefore).toContain('agent:/projects/auth');
 
     // Second render: data should still be in localStorage
-    mockGlobalPaletteOpen = true;
+    useAppStore.setState({ globalPaletteOpen: true });
     render(<CommandPaletteDialog />);
 
     const storedAfter = localStorage.getItem('dorkos:interactions-v1');
