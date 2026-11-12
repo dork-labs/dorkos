@@ -234,16 +234,34 @@ describe('saying which settings it could not read', () => {
     expect(warnings.filter((line) => line.includes('cannot read'))).toHaveLength(1);
   });
 
+  it.each(['not-a-color', { future: '#abcdef' }])(
+    'uses a tolerant scalar fallback for %j without losing the stored choice',
+    (color) => {
+      const { dir, configPath } = seed({
+        version: 1,
+        runtimes: { claudeCode: { defaultAccountColor: color } },
+      });
+      const manager = new ConfigManager(dir, FAST_RETRIES);
+      expect(manager.get('runtimes').claudeCode.defaultAccountColor).toBeNull();
+      expect(manager.getAll().runtimes.claudeCode.defaultAccountColor).toBeNull();
+      manager.set('ui', { ...manager.get('ui'), theme: 'light' });
+      expect(
+        JSON.parse(fs.readFileSync(configPath, 'utf8')).runtimes.claudeCode.defaultAccountColor
+      ).toEqual(color);
+      expect(fs.readdirSync(dir)).toEqual(['config.json']);
+    }
+  );
+
   it('never prints a credential, only the path that holds one', () => {
     // The SENSITIVE_CONFIG_KEYS are nullable strings with defaults, so they
     // are all relaxed — a newer build changing how a token is encoded would
     // otherwise put that token in a log file the moment an older build read it.
-    const { dir } = seed({ version: 1, mcp: { apiKey: { v2: 'sk-live-do-not-log' } } });
+    const { dir } = seed({ version: 1, tunnel: { authtoken: { v2: 'sk-live-do-not-log' } } });
 
     const manager = new ConfigManager(dir, FAST_RETRIES);
 
     const printed = [...warnings, ...(manager.validate().warnings ?? [])].join('\n');
-    expect(printed).toContain('mcp.apiKey');
+    expect(printed).toContain('tunnel.authtoken');
     expect(printed).toContain('<hidden>');
     expect(printed).not.toContain('sk-live-do-not-log');
   });
@@ -437,6 +455,11 @@ describe('the leaves the schema hands to Zod', () => {
     expect(WIDENED_LEAF_POLICY.paths.has('mesh.scanRoots')).toBe(false);
     expect(WIDENED_LEAF_POLICY.paths.has('ui.statusBar.pins')).toBe(false);
     expect(WIDENED_LEAF_POLICY.paths.has('workbench.defaultViewers')).toBe(false);
+    // These are current tolerant containers, not scalar version-skew leaves.
+    expect(WIDENED_LEAF_POLICY.paths.has('runtimes.claudeCode.projectAccounts')).toBe(false);
+    expect(WIDENED_LEAF_POLICY.paths.has('runtimes.claudeCode.defaultAccountOnlyProjects')).toBe(
+      false
+    );
     expect(WIDENED_LEAF_POLICY.paths.has('version')).toBe(false);
     for (const leaf of WIDENED_LEAF_POLICY.paths) expect(leaf).not.toMatch(/\.\d/);
   });

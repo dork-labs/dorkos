@@ -133,6 +133,16 @@ function isScalarNode(node: Record<string, unknown>): boolean {
   if (node.items !== undefined || node.prefixItems !== undefined) return false;
   if (isPlainObject(node.additionalProperties)) return false;
   if (node.$ref !== undefined) return false;
+  // Current hand-edit readers also use unconstrained stubs for containers.
+  // An absent type proves nothing: never classify `{ default: {} }` (or a
+  // nullable list's stub) as a scalar merely because its constraints are gone.
+  if (
+    node.type === undefined &&
+    !['anyOf', 'oneOf', 'allOf'].some((key) => Array.isArray(node[key])) &&
+    !Array.isArray(node.enum) &&
+    !('const' in node)
+  )
+    return false;
   for (const key of ['anyOf', 'oneOf', 'allOf'] as const) {
     const branches = node[key];
     if (branches === undefined) continue;
@@ -395,7 +405,11 @@ export function repairWidenedLeaves(
     // be one another build widened, and skipping Zod there is what keeps this
     // off the cost of a read. Sound because both sides are scalars.
     if (stored === leaf.fallback) continue;
-    if (leaf.schema.safeParse(stored).success) continue;
+    const parsed = leaf.schema.safeParse(stored);
+    // A tolerant scalar can use `.catch(default)`: success then means it
+    // already substituted the fallback, not that the stored value was valid.
+    // Honor that substitution without changing accepted non-default values.
+    if (parsed.success && parsed.data !== leaf.fallback) continue;
     skewed ??= [];
     skewed.push({ path: leaf.path, stored, used: leaf.fallback });
     repaired = relative.length === 0 ? leaf.fallback : withPath(repaired, relative, leaf.fallback);
