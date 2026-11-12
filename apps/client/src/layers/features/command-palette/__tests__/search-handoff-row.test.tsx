@@ -23,10 +23,10 @@ import '@testing-library/jest-dom/vitest';
 import { createMockTransport } from '@dorkos/test-utils';
 import type { Session } from '@dorkos/shared/types';
 import { useInteractionStore } from '@/layers/entities/interactions';
+import { useAppStore } from '@/layers/shared/model';
 import { CommandPaletteDialog } from '../ui/CommandPaletteDialog';
 
 /** The one effect the row has: it opens the other box, holding these words. */
-const openMessageSearch = vi.hoisted(() => vi.fn());
 
 // --- Fixtures ---
 
@@ -62,29 +62,14 @@ vi.mock('@tanstack/react-router', async (importOriginal) => ({
   useNavigate: () => mockNavigate,
 }));
 
-vi.mock('@/layers/shared/model', () => ({
+// The real barrel, with only the hooks that need a router or a host replaced.
+// The app store and the dialog stores are REAL: what a row does is read off the
+// state it leaves, not off a setter spy.
+vi.mock('@/layers/shared/model', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/layers/shared/model')>()),
   useTransport: () => mockTransport,
-  useAppStore: (selector?: (s: Record<string, unknown>) => unknown) => {
-    const state = {
-      globalPaletteOpen: true,
-      setGlobalPaletteOpen: vi.fn(),
-      toggleGlobalPalette: vi.fn(),
-      setPickerOpen: vi.fn(),
-      setCanvasOpen: vi.fn(),
-      setRightPanelOpen: vi.fn(),
-      setActiveRightPanelTab: vi.fn(),
-      globalPaletteInitialSearch: null,
-      clearGlobalPaletteInitialSearch: vi.fn(),
-      openMessageSearch,
-    };
-    return selector ? selector(state) : state;
-  },
   useTheme: () => ({ theme: 'light', setTheme: vi.fn() }),
   useReportIssue: () => vi.fn(),
-  useFeedbackDialogStore: (selector?: (s: Record<string, unknown>) => unknown) => {
-    const state = { openFeedback: vi.fn() };
-    return selector ? selector(state) : state;
-  },
   useIsMobile: () => false,
   useNow: () => Date.now(),
   useMenuExtensionPages: () => [],
@@ -92,12 +77,6 @@ vi.mock('@/layers/shared/model', () => ({
   useSettingsDeepLink: () => ({ open: vi.fn(), close: vi.fn() }),
   useTasksDeepLink: () => ({ open: vi.fn(), close: vi.fn() }),
   useOpenConnections: () => vi.fn(),
-  useAgentCreationStore: Object.assign(() => ({ open: vi.fn() }), {
-    getState: () => ({ open: vi.fn() }),
-  }),
-  useImportProjectsStore: Object.assign(() => ({ open: vi.fn() }), {
-    getState: () => ({ open: vi.fn() }),
-  }),
 }));
 
 vi.mock('@/layers/entities/mesh', () => ({
@@ -150,7 +129,12 @@ vi.mock('motion/react', () => ({
 }));
 
 beforeEach(() => {
-  openMessageSearch.mockClear();
+  useAppStore.setState({
+    globalPaletteOpen: true,
+    globalPaletteInitialSearch: null,
+    messageSearchOpen: false,
+    messageSearchQuery: '',
+  });
   Object.defineProperty(window, 'matchMedia', {
     writable: true,
     value: vi.fn().mockImplementation((query: string) => ({
@@ -176,6 +160,12 @@ beforeEach(() => {
 });
 
 afterEach(cleanup);
+
+/** What the message-search box was opened with, read off the real store. */
+const messageSearch = () => {
+  const { messageSearchOpen, messageSearchQuery } = useAppStore.getState();
+  return { open: messageSearchOpen, query: messageSearchQuery };
+};
 
 const searchInput = () => screen.getByTestId('command-palette-input');
 const type = (value: string) => fireEvent.change(searchInput(), { target: { value } });
@@ -231,7 +221,7 @@ describe('the message-search hand-off row', () => {
     // the wrong question, and only the second assertion caught it.
     expect(handoffRow()).toHaveTextContent('Search messages for “dash”…');
     fireEvent.click(handoffRow() as HTMLElement);
-    expect(openMessageSearch).toHaveBeenCalledWith('dash');
+    expect(messageSearch()).toEqual({ open: true, query: 'dash' });
   });
 
   it('opens the search box when chosen', async () => {
@@ -241,7 +231,7 @@ describe('the message-search hand-off row', () => {
     await waitFor(() => expect(handoffRow()).not.toBeNull());
     fireEvent.click(handoffRow() as HTMLElement);
 
-    expect(openMessageSearch).toHaveBeenCalledWith('dash');
+    expect(messageSearch()).toEqual({ open: true, query: 'dash' });
   });
 
   it('says “all messages” under a chip, and hands off globally', async () => {
@@ -278,7 +268,7 @@ describe('the message-search hand-off row', () => {
     // Exactly these words, and note what is NOT with them: the chip. Asserted
     // as the whole call so a scope argument smuggled in later has to come past
     // this line.
-    expect(openMessageSearch).toHaveBeenCalledWith('#dash');
+    expect(messageSearch()).toEqual({ open: true, query: '#dash' });
   });
 
   it('draws it last, below every row the ranking produced', async () => {
