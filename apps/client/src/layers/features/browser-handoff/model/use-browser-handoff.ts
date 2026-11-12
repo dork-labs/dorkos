@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import type { LocalBrowserPersonState } from '@dorkos/shared/local-browser';
 import {
@@ -8,12 +8,10 @@ import {
 import { useTransport } from '@/layers/shared/model';
 import { handoffErrorMessage, handoffStep } from '../lib/handoff-step';
 
-/** The one message the agent gets after Hand back. The server's tool told it to wait for this. */
-export const HANDED_BACK_MESSAGE = 'I’m done in the browser. Please continue.';
-
 /**
  * The open handoff for one chat, and what its card's buttons do. With no chat
- * named, it follows whichever handoff is open.
+ * named, it follows whichever handoff is open. Once one this window showed ends,
+ * `ended` says how, for the card's one-line receipt (DOR-3112).
  *
  * @param sessionId - The chat showing the card.
  */
@@ -23,9 +21,18 @@ export function useBrowserHandoff(sessionId?: string | null) {
   const { data: state } = useLocalBrowserPersonState();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // The handoff this card showed open. Only that one gets a receipt, so a chat opened
+  // later never shows one for a handoff that ended before it was looked at.
+  const [shownId, setShownId] = useState<string | null>(null);
 
-  const open = state?.handoff?.outcome === null ? state.handoff : null;
-  const handoff = open && (sessionId == null || open.sessionId === sessionId) ? open : null;
+  const record = state?.handoff ?? null;
+  const ours = record && (sessionId == null || record.sessionId === sessionId) ? record : null;
+  const handoff = ours?.outcome === null ? ours : null;
+  const ended = ours && ours.outcome !== null && ours.id === shownId ? ours : null;
+  const openId = handoff?.id ?? null;
+  useEffect(() => {
+    if (openId) setShownId(openId);
+  }, [openId]);
 
   const run = async (call: () => Promise<LocalBrowserPersonState | void>) => {
     setBusy(true);
@@ -47,20 +54,17 @@ export function useBrowserHandoff(sessionId?: string | null) {
   const selectedTabId = state?.selectedTabId ?? null;
   return {
     handoff,
+    ended,
     step: handoff ? handoffStep(handoff, state?.signIn, state?.status === 'connected') : null,
     canShowWindow: state?.mode === 'new-window' && state.status === 'connected' && !!selectedTabId,
     movesToOwnWindow: state?.mode === 'embedded',
     sharedProfile: handoff?.profileId === null,
     busy,
     error,
-    continueAgent: async () => {
-      if (!handoff) return;
-      if (!(await run(() => transport.handBackLocalBrowser(handoff.id)))) return;
-      // The agent ended its turn to wait, so nothing wakes it but a message.
-      await transport.postMessage(handoff.sessionId, HANDED_BACK_MESSAGE).catch(() => {
-        setError('It has the browser back, but missed the message. Tell it in the chat.');
-      });
-    },
+    // The server wakes the agent once the handoff ends, whichever way the person hands
+    // it back, so Continue only hands it back (DOR-3112).
+    continueAgent: () =>
+      handoff ? run(() => transport.handBackLocalBrowser(handoff.id)) : Promise.resolve(false),
     signIn: () => {
       if (handoff) void run(() => transport.signInLocalBrowser({ handoffId: handoff.id }));
     },

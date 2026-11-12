@@ -316,10 +316,11 @@ export function LocalBrowserPanel({
                 let answer: LocalBrowserPersonState | undefined;
                 void action(async () => (answer = await transport.disconnectLocalBrowser())).then(
                   (closed) => {
-                    // Disconnect ends a handoff as Stop task does, and that ends the agent's turn.
-                    // Only this one: a handoff that ended first must not cost that chat its next turn.
+                    // Disconnect ends a handoff as Stop task does (outcome `window-closed`), and
+                    // that ends the agent's turn. Only this one: a handoff that ended first must
+                    // not cost that chat its next turn.
                     const ended = answer?.handoff;
-                    if (closed && ended?.id === asked && ended?.outcome === 'stopped')
+                    if (closed && ended?.id === asked && ended?.outcome === 'window-closed')
                       void transport.interruptSession(ended.sessionId).catch(() => {});
                   }
                 );
