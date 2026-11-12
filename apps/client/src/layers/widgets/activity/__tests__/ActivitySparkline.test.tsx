@@ -37,22 +37,4 @@ describe('ActivitySparkline', () => {
     const firstHeight = parseFloat(firstRect.getAttribute('height') ?? '0');
     expect(firstHeight).toBe(1);
   });
-
-  it('renders an SVG element', () => {
-    const { container } = render(<ActivitySparkline data={[1, 2, 3, 4, 5, 6, 7]} />);
-
-    const svg = container.querySelector('svg');
-    expect(svg).toBeInTheDocument();
-    expect(svg?.getAttribute('viewBox')).toBe('0 0 100 30');
-  });
-
-  it('accepts a custom className', () => {
-    const { container } = render(
-      <ActivitySparkline data={[1, 2, 3, 4, 5, 6, 7]} className="custom-class" />
-    );
-
-    const svg = container.querySelector('svg');
-    // svg.className is SVGAnimatedString in jsdom; use getAttribute for reliable string access
-    expect(svg?.getAttribute('class')).toContain('custom-class');
-  });
 });

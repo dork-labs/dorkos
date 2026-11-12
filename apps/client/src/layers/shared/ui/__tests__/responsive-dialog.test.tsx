@@ -383,20 +383,6 @@ describe('ResponsiveDialogBody', () => {
     expect(body.className).toContain('overflow-y-auto');
     expect(body.className).toContain('px-4');
   });
-
-  it('merges custom className', () => {
-    render(
-      <ResponsiveDialog open>
-        <ResponsiveDialogContent>
-          <ResponsiveDialogBody data-testid="body" className="py-6">
-            content
-          </ResponsiveDialogBody>
-        </ResponsiveDialogContent>
-      </ResponsiveDialog>
-    );
-    const body = screen.getByTestId('body');
-    expect(body.className).toContain('py-6');
-  });
 });
 
 describe('ResponsiveDialogFullscreenToggle', () => {

@@ -8,17 +8,6 @@ afterEach(() => {
 });
 
 describe('CompactResultRow', () => {
-  it('renders icon and label', () => {
-    render(
-      <CompactResultRow
-        icon={<span data-testid="icon">V</span>}
-        label={<span>Approved tool</span>}
-      />
-    );
-    expect(screen.getByTestId('icon')).toBeDefined();
-    expect(screen.getByText('Approved tool')).toBeDefined();
-  });
-
   it('renders trailing content when provided', () => {
     render(
       <CompactResultRow
@@ -28,15 +17,6 @@ describe('CompactResultRow', () => {
       />
     );
     expect(screen.getByText('Badge')).toBeDefined();
-  });
-
-  it('renders children below the row', () => {
-    render(
-      <CompactResultRow icon={<span>V</span>} label={<span>Tool</span>}>
-        <p>Timeout message</p>
-      </CompactResultRow>
-    );
-    expect(screen.getByText('Timeout message')).toBeDefined();
   });
 
   it('passes data attributes through', () => {

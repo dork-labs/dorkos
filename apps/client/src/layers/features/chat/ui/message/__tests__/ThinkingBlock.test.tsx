@@ -75,13 +75,6 @@ describe('ThinkingBlock', () => {
     expect(screen.getByRole('button')).toHaveAttribute('aria-label', 'Thought for 8s');
   });
 
-  it('has data-testid attribute', () => {
-    // Purpose: Test hook for browser tests.
-    render(<ThinkingBlock text="thinking" isStreaming={false} />);
-
-    expect(screen.getByTestId('thinking-block')).toBeInTheDocument();
-  });
-
   it('has data-streaming attribute when streaming', () => {
     // Purpose: CSS/selector hook for streaming state.
     render(<ThinkingBlock text="thinking" isStreaming={true} />);

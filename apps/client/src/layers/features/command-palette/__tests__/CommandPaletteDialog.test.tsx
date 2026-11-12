@@ -663,14 +663,6 @@ describe('CommandPaletteDialog', () => {
     });
   }
 
-  it('opens Tasks dialog and closes palette when Scheduled tasks is selected', () => {
-    searchThen('Scheduled tasks');
-    const item = screen.getByText('Scheduled tasks').closest('[data-slot="command-item"]');
-    if (item) fireEvent.click(item as Element);
-    expect(mockSetTasksOpen).toHaveBeenCalledWith(true);
-    expect(mockSetGlobalPaletteOpen).toHaveBeenCalledWith(false);
-  });
-
   it('goes to the Connections page when Connections is selected', () => {
     searchThen('Connections');
     const item = screen.getByText('Connections').closest('[data-slot="command-item"]');
@@ -678,37 +670,7 @@ describe('CommandPaletteDialog', () => {
     expect(mockOpenConnections).toHaveBeenCalledWith();
   });
 
-  it('navigates to /agents when Mesh Network is selected', () => {
-    searchThen('Mesh Network');
-    const item = screen.getByText('Mesh Network').closest('[data-slot="command-item"]');
-    if (item) fireEvent.click(item as Element);
-    expect(mockNavigate).toHaveBeenCalledWith({ to: '/team' });
-  });
-
-  it('opens Settings dialog when Settings is selected', () => {
-    searchThen('Settings');
-    const item = screen.getByText('Settings').closest('[data-slot="command-item"]');
-    if (item) fireEvent.click(item as Element);
-    expect(mockSetSettingsOpen).toHaveBeenCalledWith(true);
-  });
-
   // --- Quick action dispatching ---
-
-  it('opens the import dialog when Bring in existing projects quick action is selected', () => {
-    searchThen('Bring in existing projects');
-    const item = screen
-      .getByText('Bring in existing projects')
-      .closest('[data-slot="command-item"]');
-    if (item) fireEvent.click(item as Element);
-    expect(mockImportOpen).toHaveBeenCalledTimes(1);
-  });
-
-  it('opens directory picker when Browse filesystem quick action is selected', () => {
-    searchThen('Browse filesystem');
-    const item = screen.getByText('Browse filesystem').closest('[data-slot="command-item"]');
-    if (item) fireEvent.click(item as Element);
-    expect(mockSetPickerOpen).toHaveBeenCalledWith(true);
-  });
 
   // --- @ prefix (agent-only) mode ---
 

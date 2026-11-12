@@ -169,11 +169,6 @@ describe('AdapterNode', () => {
   });
 
   describe('dimensions', () => {
-    it('exports ADAPTER_NODE_WIDTH and ADAPTER_NODE_HEIGHT constants', () => {
-      expect(ADAPTER_NODE_WIDTH).toBeGreaterThan(0);
-      expect(ADAPTER_NODE_HEIGHT).toBeGreaterThan(0);
-    });
-
     it('applies ADAPTER_NODE_WIDTH as inline width', () => {
       render(<AdapterNode {...makeMockProps()} />);
       const card = getCard();

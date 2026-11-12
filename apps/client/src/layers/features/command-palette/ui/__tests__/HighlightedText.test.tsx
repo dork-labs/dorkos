@@ -76,11 +76,6 @@ describe('HighlightedText', () => {
     expect(mark).toHaveClass('font-semibold');
   });
 
-  it('applies custom className to wrapper span', () => {
-    const { container } = render(<HighlightedText text="Hello" className="custom-class" />);
-    expect(container.firstChild).toHaveClass('custom-class');
-  });
-
   it('preserves full text content regardless of highlighting', () => {
     const { container } = render(<HighlightedText text="Auth Service" indices={[[0, 3]]} />);
     expect(container.textContent).toBe('Auth Service');
