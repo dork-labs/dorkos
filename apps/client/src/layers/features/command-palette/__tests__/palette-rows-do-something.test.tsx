@@ -17,6 +17,7 @@ import '@testing-library/jest-dom/vitest';
 import { createMockTransport } from '@dorkos/test-utils';
 import { sessionKeys, useSessionChatStore } from '@/layers/entities/session';
 import { useInteractionStore } from '@/layers/entities/interactions';
+import { useAppStore } from '@/layers/shared/model';
 // Reaching into another feature, as only a test may: the claim is an agreement
 // between the palette and the chat send funnel, and an agreement asserted
 // against a re-typed copy of the rule is not asserted at all.
@@ -84,50 +85,26 @@ vi.mock('@tanstack/react-router', async (importOriginal) => ({
   useNavigate: () => mockNavigate,
 }));
 
-const mockSetGlobalPaletteOpen = vi.fn();
 const mockSetDir = vi.fn((_dir: string | null, opts?: { onOpened?: () => void }) => {
   opts?.onOpened?.();
 });
 
-vi.mock('@/layers/shared/model', () => ({
+// The real barrel, with only the hooks that need a router or a host replaced.
+// The app store and the dialog stores are REAL: "closes the palette" is read
+// off `globalPaletteOpen` itself.
+vi.mock('@/layers/shared/model', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/layers/shared/model')>()),
   useTransport: () => mockTransport,
   // The DM view switch, read when an agent is picked (DOR-3074). Off here, so
   // the pick opens the agent's latest chat as it always has.
   readDmViewEnabled: () => false,
-  useAppStore: (selector?: (s: Record<string, unknown>) => unknown) => {
-    const state = {
-      globalPaletteOpen: true,
-      setGlobalPaletteOpen: mockSetGlobalPaletteOpen,
-      toggleGlobalPalette: vi.fn(),
-      setPickerOpen: vi.fn(),
-      setCanvasOpen: vi.fn(),
-      setRightPanelOpen: vi.fn(),
-      setActiveRightPanelTab: vi.fn(),
-      selectedCwd: ACTIVE_CWD,
-      setSelectedCwd: vi.fn(),
-      setSessionId: vi.fn(),
-      globalPaletteInitialSearch: null,
-      clearGlobalPaletteInitialSearch: vi.fn(),
-    };
-    return selector ? selector(state) : state;
-  },
   useTheme: () => ({ theme: 'light', setTheme: vi.fn() }),
   useReportIssue: () => vi.fn(),
-  useFeedbackDialogStore: (selector?: (s: Record<string, unknown>) => unknown) => {
-    const state = { openFeedback: vi.fn() };
-    return selector ? selector(state) : state;
-  },
   useIsMobile: () => false,
   useNow: () => Date.now(),
   useSettingsDeepLink: () => ({ open: vi.fn(), close: vi.fn() }),
   useTasksDeepLink: () => ({ open: vi.fn(), close: vi.fn() }),
   useOpenConnections: () => vi.fn(),
-  useAgentCreationStore: Object.assign(() => ({ open: vi.fn() }), {
-    getState: () => ({ open: vi.fn() }),
-  }),
-  useImportProjectsStore: Object.assign(() => ({ open: vi.fn() }), {
-    getState: () => ({ open: vi.fn() }),
-  }),
 }));
 
 vi.mock('@/layers/entities/session', async (importOriginal) => ({
@@ -137,7 +114,14 @@ vi.mock('@/layers/entities/session', async (importOriginal) => ({
   useDirectoryState: () => [ACTIVE_CWD, mockSetDir],
 }));
 
-/** One slash command, one suggestion, one extension-contributed quick action. */
+/**
+ * One slash command, one suggestion, one extension-contributed quick action.
+ *
+ * Kept as a fixture on purpose: this is the corpus the palette is handed, and
+ * this file's claim is what a row DOES once pressed. Building the same corpus
+ * from the real hook would mean seeding a live, streaming conversation to get a
+ * Continue row; how the corpus is built is `use-palette-items.test.ts`'s claim.
+ */
 vi.mock('../model/use-palette-items', () => ({
   usePaletteItems: () => ({
     rooms: { channels: [], dms: [], unread: [], isLoading: false, isError: false },
@@ -226,14 +210,6 @@ vi.mock('../model/use-palette-items', () => ({
   }),
 }));
 
-vi.mock('../model/use-global-palette', () => ({
-  useGlobalPalette: () => ({
-    globalPaletteOpen: true,
-    setGlobalPaletteOpen: mockSetGlobalPaletteOpen,
-    toggleGlobalPalette: vi.fn(),
-  }),
-}));
-
 /** Two conversations under the agent, so the sub-menu has rows to press. */
 vi.mock('../model/use-preview-data', () => ({
   usePreviewData: () => ({
@@ -277,6 +253,13 @@ vi.mock('motion/react', () => ({
 
 beforeEach(() => {
   vi.clearAllMocks();
+  // The palette renders only while the real store says it is open, and the
+  // folder the stub used to pin is the store's own `selectedCwd`.
+  useAppStore.setState({
+    globalPaletteOpen: true,
+    globalPaletteInitialSearch: null,
+    selectedCwd: ACTIVE_CWD,
+  });
   Object.defineProperty(window, 'matchMedia', {
     writable: true,
     value: vi.fn().mockImplementation((query: string) => ({
@@ -376,7 +359,7 @@ describe('a slash command row', () => {
 
     fireEvent.click(rowFor('/deploy'));
 
-    expect(mockSetGlobalPaletteOpen).toHaveBeenCalledWith(false);
+    expect(useAppStore.getState().globalPaletteOpen).toBe(false);
   });
 });
 
@@ -428,7 +411,7 @@ describe('an action an extension contributed', () => {
       fireEvent.click(rowFor('Ping the demo'));
 
       expect(handler).toHaveBeenCalledTimes(1);
-      expect(mockSetGlobalPaletteOpen).toHaveBeenCalledWith(false);
+      expect(useAppStore.getState().globalPaletteOpen).toBe(false);
     } finally {
       unregisterPaletteCommandHandler('ext:demo:ping');
     }
