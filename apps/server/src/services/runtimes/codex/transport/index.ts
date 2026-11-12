@@ -18,7 +18,6 @@ import {
   type AppServerTransportOptions,
 } from './app-server-transport.js';
 export {
-  AppServerCodexTransport,
   createAppServerTransport,
   type AppServerTransportOptions,
 } from './app-server-transport.js';

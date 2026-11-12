@@ -145,7 +145,7 @@ export function isHeartbeatDue(lastSentMs: number | null, nowMs: number): boolea
  * @param payload - The anonymous payload to send.
  * @param debug - When true, print the payload to stderr instead of sending it.
  */
-export async function sendHeartbeat(payload: HeartbeatPayload, debug = false): Promise<void> {
+async function sendHeartbeat(payload: HeartbeatPayload, debug = false): Promise<void> {
   if (debug) {
     process.stderr.write(
       `[Telemetry] DORKOS_TELEMETRY_DEBUG: heartbeat NOT sent. Would POST to ${HEARTBEAT_ENDPOINT}:\n` +

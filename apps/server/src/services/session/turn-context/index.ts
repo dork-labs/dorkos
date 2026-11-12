@@ -18,16 +18,8 @@ import {
 import { secretValuesFromEnv } from './turn-context-redaction.js';
 import { TurnContextStore } from './turn-context-store.js';
 
+export { turnPlaceOf } from './record-turn-context.js';
 export {
-  deleteTurnContextForSessions,
-  getTurnContextStore,
-  recordTurnContext,
-  setTurnContextStore,
-  sweepExpiredTurnContext,
-  turnPlaceOf,
-} from './record-turn-context.js';
-export {
-  TURN_CONTEXT_RETENTION_MS,
   TurnContextStore,
   type RecordedTurnContext,
   type RecordedTurnContextPart,

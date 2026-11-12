@@ -94,7 +94,7 @@ export async function historyHoldsNote(
  *
  * @param db - The database, read for a chat's stored mode.
  */
-export function sessionSettingsChatModePort(db: Db): ChatModePort {
+function sessionSettingsChatModePort(db: Db): ChatModePort {
   return {
     modeOf: (sessionId) => {
       const row = db

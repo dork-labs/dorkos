@@ -22,7 +22,7 @@ import { logger } from '../../lib/logger.js';
  * Per-community listing budget: a cold or slow community must not stall the
  * list. Matches `LIST_SESSIONS_TIMEOUT_MS`.
  */
-export const LIST_ROOMS_TIMEOUT_MS = 2_000;
+const LIST_ROOMS_TIMEOUT_MS = 2_000;
 
 /**
  * The disclosure shown when a `'not-admitted'` community declared none — the

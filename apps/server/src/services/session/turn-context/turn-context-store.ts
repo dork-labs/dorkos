@@ -37,7 +37,7 @@ import { estimateTokens } from '../../runtimes/shared/window/context-fit.js';
 import { sweepContextBody } from './turn-context-redaction.js';
 
 /** How long a body's full text is kept: 30 days (Security, Nov 8). */
-export const TURN_CONTEXT_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
+const TURN_CONTEXT_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
 
 /** Where a turn happened. */
 export type TurnContextPlace = 'chat' | 'room' | 'dm' | 'task' | 'heartbeat';

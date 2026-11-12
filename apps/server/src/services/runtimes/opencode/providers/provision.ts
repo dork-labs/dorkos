@@ -32,7 +32,7 @@ import { logger, logError } from '../../../../lib/logger.js';
 export const OPENCODE_PACKAGE_VERSION = '1.19.3';
 
 /** Dork-home-scoped directory the provisioned `opencode-ai` package is installed into. */
-export function resolveOpenCodeProvisionDir(): string {
+function resolveOpenCodeProvisionDir(): string {
   return path.join(resolveDorkHome(), 'runtimes', 'opencode');
 }
 
@@ -51,7 +51,7 @@ export function resolveProvisionedOpenCodePath(): string {
  * the source of truth for which version is actually installed, read to detect
  * drift from {@link OPENCODE_PACKAGE_VERSION} after a pin bump ships.
  */
-export function resolveProvisionedOpenCodePackageJsonPath(): string {
+function resolveProvisionedOpenCodePackageJsonPath(): string {
   return path.join(resolveOpenCodeProvisionDir(), 'node_modules', 'opencode-ai', 'package.json');
 }
 

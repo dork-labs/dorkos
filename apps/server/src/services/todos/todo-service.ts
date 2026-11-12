@@ -222,7 +222,7 @@ function readChain(stored: string): string[] {
  * @param row - The stored row.
  * @param now - The moment to judge overdue at, in epoch ms.
  */
-export function toTodo(row: TodoRow, now: number): Todo {
+function toTodo(row: TodoRow, now: number): Todo {
   return {
     id: row.id,
     what: row.what,

@@ -28,7 +28,6 @@
  */
 export {
   aggregateCommunityRooms,
-  LIST_ROOMS_TIMEOUT_MS,
   type CommunityListingSource,
 } from './aggregate-community-rooms.js';
 export {

@@ -19,7 +19,6 @@
 import type { SessionAttachmentStore } from './session-attachment-store.js';
 
 export {
-  InvalidSessionAttachmentIdError,
   UnsupportedSessionMediaError,
   type PutSessionAttachment,
   type SessionAttachmentStore,
@@ -27,13 +26,8 @@ export {
 } from './session-attachment-store.js';
 export { LocalSessionAttachmentStore } from './local-session-attachment-store.js';
 export { deriveSessionAttachmentId } from './session-attachment-id.js';
+export { MAX_SESSION_ATTACHMENT_BYTES, storableImageExtension } from './session-media-types.js';
 export {
-  MAX_SESSION_ATTACHMENT_BYTES,
-  imageMediaTypeForExtension,
-  storableImageExtension,
-} from './session-media-types.js';
-export {
-  SESSION_ATTACHMENT_RETENTION_MS,
   SESSION_ATTACHMENT_SWEEP_INTERVAL_MS,
   sweepSessionAttachments,
   type SessionAttachmentSweepResult,

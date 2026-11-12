@@ -20,7 +20,7 @@ import type { RankedAccount } from '../../core/usage/account-ranking.js';
 import { mayAutoPickClaudeRoot } from '../../runtimes/claude-code/accounts/account-login-metadata.js';
 
 /** The share of the 5-hour or weekly window at which an account counts as nearly out. */
-export const NEARLY_OUT_PCT = 95;
+const NEARLY_OUT_PCT = 95;
 
 /** The windows {@link NEARLY_OUT_PCT} is read against. */
 const WATCHED_WINDOWS = ['five_hour', 'seven_day'] as const;

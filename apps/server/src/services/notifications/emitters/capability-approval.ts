@@ -56,7 +56,7 @@ import { broadcastStandingResolved, raiseStanding } from '../standing-events.js'
  * irreversible action should read the same thing on a lock screen as in the
  * app: DorkOS does not know who asked.
  */
-export const UNNAMED_REQUESTER = 'An unidentified caller';
+const UNNAMED_REQUESTER = 'An unidentified caller';
 
 /**
  * Describe a pending approval to the pipeline.

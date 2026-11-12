@@ -34,7 +34,7 @@ import { logger, logError } from '../../../lib/logger.js';
 export const CODEX_PACKAGE_VERSION = '0.163.0';
 
 /** Dork-home-scoped directory the provisioned `@openai/codex` package is installed into. */
-export function resolveCodexProvisionDir(): string {
+function resolveCodexProvisionDir(): string {
   return path.join(resolveDorkHome(), 'runtimes', 'codex');
 }
 
