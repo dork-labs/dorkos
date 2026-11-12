@@ -1,8 +1,8 @@
 ---
 covers:
-  - "fix(mcp): throttle remote credential guesses before verification (DOR-4205)"
+  - 'fix(mcp): throttle remote credential guesses before verification (DOR-4205)'
 ---
 
 ### Security
 
-- Slow repeated wrong API-key attempts from other devices before checking more keys (DOR-4205).
+- After ten wrong tool keys from one device in 15 minutes, DorkOS stops checking keys from that device until the window passes. Other devices and this computer are not affected.

@@ -13,10 +13,11 @@ vi.mock('../../lib/logger.js', () => ({
 }));
 vi.mock('../../services/core/auth/session-gate.js', async (original) => ({
   ...(await original<object>()),
-  decideSessionGate: vi.fn(async (_method: string, _path: string, facts: { headers: IncomingHttpHeaders }) =>
-    facts.headers.authorization === 'Bearer valid-test-key'
-      ? { allowed: true }
-      : { allowed: false }
+  decideSessionGate: vi.fn(
+    async (_method: string, _path: string, facts: { headers: IncomingHttpHeaders }) =>
+      facts.headers.authorization === 'Bearer valid-test-key'
+        ? { allowed: true }
+        : { allowed: false }
   ),
 }));
 
@@ -35,24 +36,30 @@ function fixture() {
   const app = createApiApp({ admission: new MainRequestAdmission() });
   app.all('/mcp', (c) => c.json({ ok: true }));
   app.all('/api/test', (c) => c.json({ ok: true }));
-  return (options: {
-    key?: string;
-    peer?: string;
-    forwarded?: string;
-    path?: string;
-  } = {}) => {
+  return (
+    options: {
+      key?: string;
+      peer?: string;
+      forwarded?: string;
+      path?: string;
+    } = {}
+  ) => {
     const headers: Record<string, string> = { host: 'localhost:4242' };
     if (options.key) headers.authorization = `Bearer ${options.key}`;
     if (options.forwarded) headers['x-forwarded-for'] = options.forwarded;
     const outgoing = Object.assign(new EventEmitter(), { setHeader: vi.fn() });
-    return app.request(options.path ?? '/mcp', { method: 'POST', headers }, {
-      incoming: {
-        headers,
-        socket: { remoteAddress: options.peer ?? '198.51.100.5' },
-        url: options.path ?? '/mcp',
-      },
-      outgoing,
-    });
+    return app.request(
+      options.path ?? '/mcp',
+      { method: 'POST', headers },
+      {
+        incoming: {
+          headers,
+          socket: { remoteAddress: options.peer ?? '198.51.100.5' },
+          url: options.path ?? '/mcp',
+        },
+        outgoing,
+      }
+    );
   };
 }
 
