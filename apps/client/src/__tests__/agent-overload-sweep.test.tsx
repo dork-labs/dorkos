@@ -42,16 +42,6 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createMockTransport } from '@dorkos/test-utils';
 import { mergeDialogSearch, TransportProvider } from '@/layers/shared/model';
 
-vi.mock('@/layers/shared/model', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('@/layers/shared/model')>();
-  return {
-    ...actual,
-    useAgentCreationStore: { getState: () => ({ open: vi.fn() }) },
-    useAppStore: (selector: (s: Record<string, unknown>) => unknown) =>
-      selector({ requestTour: vi.fn() }),
-  };
-});
-
 // Everything else stays real: `configKeys` is the one `/config` cache key (spec
 // `sidebar-simplification` D6), and the card's community offer reads the config too.
 vi.mock('@/layers/entities/config', async (importOriginal) => ({
