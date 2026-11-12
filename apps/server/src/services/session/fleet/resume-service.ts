@@ -66,7 +66,7 @@ import { getSessionLimitStore, type StoredSessionLimit } from './session-limit-s
 import { ceilingForContinuation } from '../../core/turn-power/continuation-hold.js';
 
 /** The soonest a newly written wait may fire, so an advisor's past time never fires at once. */
-export const RESUME_MIN_DELAY_MS = 60_000;
+const RESUME_MIN_DELAY_MS = 60_000;
 
 /** How long to wait before checking an unconfirmed account that can be probed again. */
 export const RESET_RECHECK_MS = 10 * 60_000;

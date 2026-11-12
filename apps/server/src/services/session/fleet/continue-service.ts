@@ -613,7 +613,7 @@ async function writeAfterDeciding(
  * @throws {Error} When the plan is already `continued`, or the session is not
  *   one this extension claimed.
  */
-export function recordMarkContinued(
+function recordMarkContinued(
   ownerId: string,
   sourceSessionId: string,
   to: ContinuationTarget

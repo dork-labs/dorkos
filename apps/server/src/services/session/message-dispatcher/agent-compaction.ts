@@ -13,7 +13,7 @@ import { hasHeldMessage, schedulePump } from './pump.js';
 import type { PendingAgentCompaction } from './types.js';
 
 /** Why a waiting summary that hit its ceiling was dropped, for the log line. */
-export const TOO_LONG = 'it waited too long for the session to come free';
+const TOO_LONG = 'it waited too long for the session to come free';
 
 /** Inputs for {@link scheduleAgentCompaction}. */
 export interface ScheduleAgentCompactionOpts {
@@ -136,7 +136,7 @@ export function dropCompaction(
  *
  * @param entry - The waiting compaction.
  */
-export function runtimeTurnOpen(entry: PendingAgentCompaction): boolean {
+function runtimeTurnOpen(entry: PendingAgentCompaction): boolean {
   const { runtime } = entry;
   if (runtime.isTurnOpen === undefined) return false;
   const lockKey = runtime.getInternalSessionId(entry.sessionId) ?? entry.sessionId;
@@ -152,7 +152,7 @@ export function runtimeTurnOpen(entry: PendingAgentCompaction): boolean {
  *
  * @param entry - The waiting compaction.
  */
-export function compactionLockHeld(entry: PendingAgentCompaction): boolean {
+function compactionLockHeld(entry: PendingAgentCompaction): boolean {
   const lockKey = entry.runtime.getInternalSessionId(entry.sessionId) ?? entry.sessionId;
   return (
     entry.runtime.isLocked(lockKey) ||

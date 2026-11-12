@@ -185,7 +185,7 @@ export const dispatchMutex = new Map<string, Promise<void>>();
 export const orphanedSessions = new Set<string>();
 
 /** Everyone listening through {@link onDispatchLifecycle}. */
-export const lifecycleListeners = new Set<(event: DispatchLifecycleEvent) => void>();
+const lifecycleListeners = new Set<(event: DispatchLifecycleEvent) => void>();
 /**
  * Messages whose rows the orphan sweep deleted while their launch was under
  * way. If that launch then starts no turn, the drop is the session's going,

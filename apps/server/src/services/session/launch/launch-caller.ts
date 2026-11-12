@@ -61,11 +61,11 @@ export const OTHER_AGENTS_HOME_MESSAGE =
   "That folder belongs to another agent. Start the session in a folder that is not another agent's.";
 
 /** The refusal for a message into a chat another agent runs. */
-export const OTHER_AGENTS_CHAT_MESSAGE =
+const OTHER_AGENTS_CHAT_MESSAGE =
   'That chat belongs to another agent. To reach it, send it a message with chat_send instead.';
 
 /** The refusal for a caller DorkOS cannot name, asking for an agent's folder or chat. */
-export const UNIDENTIFIED_LAUNCHER_MESSAGE =
+const UNIDENTIFIED_LAUNCHER_MESSAGE =
   "DorkOS can't tell which agent is asking, so it can't start work in an agent's folder or chat.";
 
 /** The refusal for a new chat in DorkOS's data folder, the home folder, or above either. */
@@ -132,7 +132,7 @@ function owningHome(meshCore: Pick<MeshCore, 'listWithPaths'> | undefined, cwd: 
  * @param cwd - The folder the session would work in.
  * @param callerPath - The calling agent's own home.
  */
-export function isOtherAgentsFolder(
+function isOtherAgentsFolder(
   meshCore: Pick<MeshCore, 'listWithPaths'> | undefined,
   cwd: string,
   callerPath: string
@@ -149,7 +149,7 @@ export function isOtherAgentsFolder(
  * @param meshCore - Mesh, which lists the registered homes.
  * @param cwd - The folder the session would work in.
  */
-export function isAnyAgentsFolder(
+function isAnyAgentsFolder(
   meshCore: Pick<MeshCore, 'listWithPaths'> | undefined,
   cwd: string
 ): boolean {

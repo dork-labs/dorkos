@@ -202,7 +202,7 @@ export function holdInQueue(plan: DispatchPlan, waitingOn: QueuedWaitingOn): voi
  * @param plan - The transient plan being dropped
  * @param why - What stopped it, for the log line
  */
-export function dropTransient(plan: DispatchPlan, why: string): void {
+function dropTransient(plan: DispatchPlan, why: string): void {
   pending.delete(plan.messageId);
   logger.warn('[MessageDispatcher] a refusing caller’s trigger was dropped rather than run late', {
     sessionId: plan.sessionKey,

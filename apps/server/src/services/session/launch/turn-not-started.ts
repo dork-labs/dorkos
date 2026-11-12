@@ -56,7 +56,7 @@ export function* turnNotStarted(
  *
  * @param event - One event from a turn's stream.
  */
-export function notStartedReason(event: StreamEvent): TurnRefusal | undefined {
+function notStartedReason(event: StreamEvent): TurnRefusal | undefined {
   if (event.type !== 'error') return undefined;
   const data = event.data as { code?: unknown; reason?: unknown };
   return data.code === TURN_NOT_STARTED_CODE && typeof data.reason === 'string'

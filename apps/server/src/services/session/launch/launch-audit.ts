@@ -15,7 +15,7 @@ import { recordAudit } from '../../audit/audit-trail.js';
 import type { LaunchPlace, LaunchPlaceRefusal } from './launch-caller.js';
 
 /** The action every launch row is recorded under. */
-export const SESSION_LAUNCH_ACTION = 'session.launch';
+const SESSION_LAUNCH_ACTION = 'session.launch';
 
 /**
  * Record a launch (or a fork, or a queued message's edit) the place rule

@@ -25,13 +25,13 @@ import { mayRunGitHere } from '../../core/agent-identity/index.js';
 import { projectSlug } from '../../runtimes/claude-code/sessions/project-slug.js';
 
 /** How many recent user and assistant messages the summary keeps. */
-export const RECENT_MESSAGE_COUNT = 6;
+const RECENT_MESSAGE_COUNT = 6;
 
 /** The longest a kept message may be, in characters. */
 export const MESSAGE_MAX_CHARS = 800;
 
 /** The longest one git section may be, in characters. */
-export const GIT_SECTION_MAX_CHARS = 2_000;
+const GIT_SECTION_MAX_CHARS = 2_000;
 
 /** How many trailing transcript messages are scanned for edited files. */
 const TOUCHED_FILES_SCAN = 200;

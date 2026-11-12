@@ -26,7 +26,7 @@ import {
 } from '@dorkos/shared/permission-semantics';
 
 /** The highest stop a cross-runtime carry-over may start at. */
-export const CROSS_RUNTIME_STOP_CAP: PermissionStop = 'act';
+const CROSS_RUNTIME_STOP_CAP: PermissionStop = 'act';
 
 /**
  * The trust stop a source mode stands at, capped for a cross-runtime move.

@@ -48,7 +48,7 @@ function rememberTitle(session: Session): void {
  * @param nameOf - An extension's name.
  * @param titleOf - A chat's title, or null.
  */
-export function toStartedBy(
+function toStartedBy(
   record: StartedByRecord,
   nameOf: ExtensionNameOf,
   titleOf: (sessionId: string) => string | null

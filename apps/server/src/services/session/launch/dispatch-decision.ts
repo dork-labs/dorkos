@@ -13,7 +13,7 @@ import type { QueuedWaitingOn, StreamEvent } from '@dorkos/shared/types';
  * starts anyway. Far past the settle interval and a launch resolution; reached
  * only if a runtime forgets to answer, and then the turn simply starts late.
  */
-export const DISPATCH_DECISION_TIMEOUT_MS = 30_000;
+const DISPATCH_DECISION_TIMEOUT_MS = 30_000;
 
 /**
  * Start a runtime's stream and wait for its answer to the dispatch handshake

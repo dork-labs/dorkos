@@ -42,7 +42,7 @@ import { dropCompaction } from './agent-compaction.js';
  * some of it. 500 is far below the ceiling and still one statement per 500
  * sessions.
  */
-export const SWEEP_CHUNK_SIZE = 500;
+const SWEEP_CHUNK_SIZE = 500;
 
 /**
  * Record that the fleet has reported a session gone, so the sweep can reclaim

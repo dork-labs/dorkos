@@ -77,7 +77,7 @@ export function launchDispatch(
  * @param plan - The message, its session, and the turn's passthroughs
  * @param opts.budgetExhausted - See {@link launchDispatch}
  */
-export function launchDispatchInner(
+function launchDispatchInner(
   plan: DispatchPlan,
   opts: { budgetExhausted: boolean }
 ): Promise<TriggerTurnResult> {

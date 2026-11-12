@@ -22,7 +22,7 @@ import { logError, logger } from '../../../lib/logger.js';
 export const REASON_TITLE_MAX = 60;
 
 /** When to try the rename again after the first try fails, in ms from then. */
-export const RENAME_RETRY_DELAYS_MS = [1_000, 3_000, 10_000, 30_000] as const;
+const RENAME_RETRY_DELAYS_MS = [1_000, 3_000, 10_000, 30_000] as const;
 
 /**
  * A short, plain title from the reason an agent gave for starting a chat: its

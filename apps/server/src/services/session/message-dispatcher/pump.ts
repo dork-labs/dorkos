@@ -50,7 +50,7 @@ export function schedulePump(sessionId: string): void {
  *
  * Must be called with the dispatch mutex held.
  */
-export function pumpLocked(sessionKey: string): void {
+function pumpLocked(sessionKey: string): void {
   // Firing into an open approval, question or elicitation is the failure this
   // gate exists for: the agent is parked on a person, and a queued prompt
   // arriving now is answered by nobody and read as the person's reply by the
@@ -174,7 +174,7 @@ export function hasHeldMessage(sessionKey: string): boolean {
  * order, which is the same answer for a queue nobody can reorder. `sort` is
  * stable, so the two groups interleave predictably rather than by accident.
  */
-export function orderedWaiting(sessionKey: string): PendingDispatch[] {
+function orderedWaiting(sessionKey: string): PendingDispatch[] {
   const rows = getMessageQueueStore()?.list(queueKeyOf(sessionKey)) ?? [];
   const rank = new Map(rows.map((row, index) => [row.id, index]));
   return [...pending.values()]

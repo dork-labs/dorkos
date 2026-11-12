@@ -80,7 +80,7 @@ let now: () => Date = () => new Date();
  *
  * @param sessionId - The session id a caller named.
  */
-export function limitRowId(sessionId: string): string {
+function limitRowId(sessionId: string): string {
   return peekProjector(sessionId)?.sessionId ?? sessionId;
 }
 
@@ -275,7 +275,7 @@ export function isRegisteredAccount(accountId: string): boolean {
  * Whether a session may move to this account with nobody choosing it: a
  * registered account whose sign-in DorkOS may pick on its own (DOR-3245).
  */
-export function mayAutoMoveTo(accountId: string): boolean {
+function mayAutoMoveTo(accountId: string): boolean {
   const store = getAccountUsageStore();
   if (!store) return false;
   return store
@@ -658,7 +658,7 @@ export function planNewLimit(sessionId: string, since: string): Promise<void> {
  *
  * @param ownerId - The advisor's extension id.
  */
-export async function reclaimForAdvisor(ownerId: string): Promise<void> {
+async function reclaimForAdvisor(ownerId: string): Promise<void> {
   const store = getSessionLimitStore();
   if (!store) return;
   for (const stored of store.list()) {

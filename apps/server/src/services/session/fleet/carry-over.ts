@@ -230,7 +230,7 @@ export function recordCarryOverActivity(
 }
 
 /** How long to wait before each retry of a pointer write that failed. */
-export const POINTER_RETRY_DELAYS_MS = [1_000, 5_000] as const;
+const POINTER_RETRY_DELAYS_MS = [1_000, 5_000] as const;
 
 /**
  * New sessions already started for a limit episode whose source plan does not
