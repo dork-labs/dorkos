@@ -99,7 +99,8 @@ export function mountBetterAuth(app: Hono<ApiEnv>, options: BetterAuthOptions): 
         () => options.auth.handler(forHandler)
       )
     );
-    const keyList = new URL(forHandler.url).pathname.replace(/\/$/, '') === '/api/auth/api-key/list';
+    const keyList =
+      new URL(forHandler.url).pathname.replace(/\/$/, '') === '/api/auth/api-key/list';
     const decorated = keyList ? await annotateRemoteMcpKeyList(response) : response;
     const secure = options.secureCookies ?? AUTH_COOKIES_SECURE;
     return (

@@ -24,10 +24,12 @@ export function recordRemoteMcpSession(request: RequestFacts): void {
       ...(request.peerAddress ? { ip: request.peerAddress } : {}),
       ...(userAgent ? { userAgent } : {}),
     },
-    ...(credential ? {
-      credential,
-      target: { type: 'api-key-reference', id: credential.idHash },
-    } : {}),
+    ...(credential
+      ? {
+          credential,
+          target: { type: 'api-key-reference', id: credential.idHash },
+        }
+      : {}),
     action: REMOTE_SESSION_ACTION,
     operation: 'access',
     outcome: 'ok',
@@ -50,16 +52,22 @@ function isRecord(value: unknown): value is Record<string, unknown> {
  */
 export async function annotateRemoteMcpKeyList(response: Response): Promise<Response> {
   if (!response.ok) return response;
-  const body: unknown = await response.clone().json().catch(() => null);
+  const body: unknown = await response
+    .clone()
+    .json()
+    .catch(() => null);
   if (!isRecord(body) || !Array.isArray(body.apiKeys)) return response;
   const trail = auditTrail();
   const apiKeys = body.apiKeys.map((key: unknown) => {
     if (!isRecord(key) || typeof key.id !== 'string') return key;
-    const last = trail?.log.query({
-      targetId: credentialRef('api-key', key.id).idHash,
-      action: REMOTE_SESSION_ACTION,
-      limit: 1,
-    }, OWNER_READER).events[0];
+    const last = trail?.log.query(
+      {
+        targetId: credentialRef('api-key', key.id).idHash,
+        action: REMOTE_SESSION_ACTION,
+        limit: 1,
+      },
+      OWNER_READER
+    ).events[0];
     return { ...key, lastUsedRemotelyAt: last?.at ?? null };
   });
   const headers = new Headers(response.headers);

@@ -159,9 +159,30 @@ describe('MCP Route Handler', () => {
     await request(server).post('/mcp').send({ jsonrpc: '2.0', method: 'tools/list', id: 1 });
     await request(server).post('/mcp').send({ jsonrpc: '2.0', method: 'initialize', id: 2 });
     expect(recordRemoteMcpSession).toHaveBeenCalledTimes(2);
-    expect(recordRemoteMcpSession).toHaveBeenCalledWith(expect.objectContaining({
-      peerAddress: expect.any(String), ingress: 'direct',
-    }));
+    expect(recordRemoteMcpSession).toHaveBeenCalledWith(
+      expect.objectContaining({
+        peerAddress: expect.any(String),
+        ingress: 'direct',
+      })
+    );
+  });
+
+  it('hands the audit only the request facts, never the tool call or its arguments (DOR-4206)', async () => {
+    mockHandleRequest.mockImplementation(() => jsonResponse({ result: {} }));
+    const server = createTestApp(createMockServer);
+    await request(server)
+      .post('/mcp')
+      .set('Authorization', 'Bearer bearer-test-value')
+      .send({
+        jsonrpc: '2.0',
+        method: 'tools/call',
+        id: 3,
+        params: { name: 'made_up_tool', arguments: { note: 'tool-argument-test-value' } },
+      });
+    expect(recordRemoteMcpSession).toHaveBeenCalledTimes(1);
+    const handed = JSON.stringify(vi.mocked(recordRemoteMcpSession).mock.calls);
+    expect(handed).not.toContain('tool-argument-test-value');
+    expect(handed).not.toContain('made_up_tool');
   });
 
   it('POST /mcp passes request body to transport.handleRequest', async () => {

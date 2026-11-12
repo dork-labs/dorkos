@@ -43,11 +43,36 @@ describe('remote MCP audit and key-list projection', () => {
     const rows = db.select().from(auditEvents).all();
     expect(rows).toHaveLength(2);
     expect(rows[0]).toMatchObject({
-      action: 'mcp.remote_session', actorId: 'person-test', visibility: 'admins',
+      action: 'mcp.remote_session',
+      actorId: 'person-test',
+      visibility: 'admins',
       targetId: credentialRef('api-key', 'key-test').idHash,
     });
     expect(JSON.stringify(rows)).not.toContain('secret-test-value');
     expect(JSON.parse(rows[0]!.source)).toMatchObject({ surface: 'mcp', ip: '198.51.100.4' });
+  });
+
+  it('never writes a credential header into the row (DOR-4206)', () => {
+    const { db, record, request } = fixture();
+    record({
+      ...request,
+      headers: {
+        ...request.headers,
+        cookie: 'better-auth.session_token=cookie-test-value',
+        'x-api-key': 'header-key-test-value',
+        'x-dorkos-agent-token': 'agent-token-test-value',
+        'proxy-authorization': 'Basic proxy-test-value',
+      },
+    });
+    const raw = JSON.stringify(db.select().from(auditEvents).all());
+    for (const secret of [
+      'secret-test-value',
+      'cookie-test-value',
+      'header-key-test-value',
+      'agent-token-test-value',
+      'proxy-test-value',
+    ])
+      expect(raw, secret).not.toContain(secret);
   });
 
   it('does not count a local session as remote use', async () => {
@@ -72,14 +97,21 @@ describe('remote MCP audit and key-list projection', () => {
       log: new AuditLog(db),
       accounts: new AccountIds({ db, installId: 'test-install', readOwnerAccount: () => null }),
     });
-    const response = await annotateRemoteMcpKeyList(Response.json({
-      apiKeys: [{ id: 'key-test', name: 'Test' }, { id: 'unused-test', name: 'Unused' }], total: 2,
-    }));
+    const response = await annotateRemoteMcpKeyList(
+      Response.json({
+        apiKeys: [
+          { id: 'key-test', name: 'Test' },
+          { id: 'unused-test', name: 'Unused' },
+        ],
+        total: 2,
+      })
+    );
     expect(await response.json()).toEqual({
       apiKeys: [
         { id: 'key-test', name: 'Test', lastUsedRemotelyAt: at },
         { id: 'unused-test', name: 'Unused', lastUsedRemotelyAt: null },
-      ], total: 2,
+      ],
+      total: 2,
     });
   });
 
@@ -87,8 +119,12 @@ describe('remote MCP audit and key-list projection', () => {
     const { db, record, request } = fixture();
     record({ ...request, user: { userId: 'person-test', credential: 'cookie' } });
     expect(db.select().from(auditEvents).get()!.targetId).toBeNull();
-    const response = await annotateRemoteMcpKeyList(Response.json({ apiKeys: [{ id: 'key-test' }] }));
-    expect(await response.json()).toEqual({ apiKeys: [{ id: 'key-test', lastUsedRemotelyAt: null }] });
+    const response = await annotateRemoteMcpKeyList(
+      Response.json({ apiKeys: [{ id: 'key-test' }] })
+    );
+    expect(await response.json()).toEqual({
+      apiKeys: [{ id: 'key-test', lastUsedRemotelyAt: null }],
+    });
   });
 
   it('preserves refusals and responses that are not key lists', async () => {

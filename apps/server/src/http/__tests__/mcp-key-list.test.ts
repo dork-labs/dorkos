@@ -23,9 +23,13 @@ describe('key list remote-use projection at the HTTP boundary', () => {
     mountBetterAuth(app, { auth: { handler } as unknown as Auth });
     async function get(path: string) {
       const headers = { host: 'localhost:4242' };
-      return app.request(path, { headers }, {
-        incoming: { headers, socket: { remoteAddress: '127.0.0.1' }, url: path, method: 'GET' },
-      });
+      return app.request(
+        path,
+        { headers },
+        {
+          incoming: { headers, socket: { remoteAddress: '127.0.0.1' }, url: path, method: 'GET' },
+        }
+      );
     }
     const list = await get('/api/auth/api-key/list');
     expect(list.status).toBe(200);

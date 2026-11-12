@@ -1,8 +1,8 @@
 ---
 covers:
-  - "feat(mcp): audit remote sessions and expose key last use (DOR-4206)"
+  - 'feat(mcp): audit remote sessions and expose key last use (DOR-4206)'
 ---
 
 ### Added
 
-- Record remote tool sessions in the audit log so admins can review access from other devices (DOR-4206).
+- Every tool session from another device now goes in the audit log, with which key it used. The log never keeps the key itself or what the tool was asked to do.
