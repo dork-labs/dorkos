@@ -7,9 +7,9 @@
  */
 
 /** Load at or past this is amber. */
-export const LOAD_LIMIT = 16;
+const LOAD_LIMIT = 16;
 /** Free disk under this is amber. */
-export const FREE_DISK_LIMIT_BYTES = 20 * 1024 ** 3;
+const FREE_DISK_LIMIT_BYTES = 20 * 1024 ** 3;
 
 /** One chat that is running or waiting on a person. */
 export interface TeamBoardChat {

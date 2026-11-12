@@ -20,7 +20,7 @@ import { Button } from '@/layers/shared/ui';
 export type ModifiedIntegrity = Extract<InstallIntegrity, { status: 'modified' }>;
 
 /** What the note beside the "Check files" button says it does. */
-export const CHECK_FILES_EXPLANATION = 'Check files so updates keep your edits.';
+const CHECK_FILES_EXPLANATION = 'Check files so updates keep your edits.';
 
 /** "the file you edited" / "the 3 files you edited". */
 function theFiles(count: number, verb: string): string {
@@ -121,7 +121,7 @@ type Unproven = NonNullable<Extract<InstallIntegrity, { status: 'clean' }>['unpr
  *
  * @param unproven - The kept files, as the row lists them.
  */
-export function canKeepFiles(unproven: Pick<Unproven, 'check'>): boolean {
+function canKeepFiles(unproven: Pick<Unproven, 'check'>): boolean {
   return unproven.check.source === 'local' || unproven.check.last?.outcome === 'fetch-failed';
 }
 

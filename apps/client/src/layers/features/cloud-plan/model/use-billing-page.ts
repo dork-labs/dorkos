@@ -31,7 +31,7 @@ export const BILLING_UNREACHABLE: BillingNotice = {
 };
 
 /** Said when the browser refused to open the window. */
-export const BILLING_POPUP_BLOCKED: BillingNotice = {
+const BILLING_POPUP_BLOCKED: BillingNotice = {
   message: 'Your browser blocked the new window. Allow pop-ups for DorkOS, then try again.',
 };
 

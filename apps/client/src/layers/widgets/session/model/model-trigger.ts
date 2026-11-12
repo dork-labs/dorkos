@@ -18,7 +18,7 @@ const SESSION_VIEW_WAIT_MS = 3000;
  *
  * @param panel - The chat panel, or null before it mounts.
  */
-export function clickModelTrigger(panel: HTMLElement | null): void {
+function clickModelTrigger(panel: HTMLElement | null): void {
   panel?.querySelector<HTMLButtonElement>(MODEL_TRIGGER)?.click();
 }
 
@@ -29,7 +29,7 @@ export function clickModelTrigger(panel: HTMLElement | null): void {
  * @param getPanel - Reads the chat panel at each try.
  * @param timeoutMs - How long to keep looking.
  */
-export function clickModelTriggerWhenDrawn(
+function clickModelTriggerWhenDrawn(
   getPanel: () => HTMLElement | null,
   timeoutMs: number = SESSION_VIEW_WAIT_MS
 ): void {

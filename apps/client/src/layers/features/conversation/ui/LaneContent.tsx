@@ -30,7 +30,7 @@ import { useLaneElapsed } from '../model/use-lane-elapsed';
  *
  * @param unavailable - Whether the room itself is gone rather than unreachable.
  */
-export function stalledSentence(unavailable: boolean): string {
+function stalledSentence(unavailable: boolean): string {
   return unavailable
     ? 'This room is gone, or you no longer have access to it.'
     : 'New messages aren’t arriving. You can still send; anything unsent will say so.';
@@ -48,7 +48,7 @@ export function stalledSentence(unavailable: boolean): string {
  *
  * @param unavailable - Whether the room itself is gone rather than unreachable.
  */
-export function shortStalledSentence(unavailable: boolean): string {
+function shortStalledSentence(unavailable: boolean): string {
   return unavailable ? 'This room is no longer available' : 'Reconnecting. You can still send';
 }
 

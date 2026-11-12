@@ -39,7 +39,7 @@ const LEGACY_ITEMS = new WeakMap<
  *
  * @param row - The session row.
  */
-export function trackerItemsOf(
+function trackerItemsOf(
   row: Pick<Session, 'trackerItems' | 'trackerItem'>
 ): readonly SessionTrackerItem[] {
   if (row.trackerItems) return row.trackerItems;

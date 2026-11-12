@@ -145,7 +145,7 @@ export function buildFormValues(
  * @param value - The form's values.
  * @returns Every field the form can change, as the update would carry it.
  */
-export function toUpdateRequest(value: ScheduleFormValues): UpdateTaskRequest {
+function toUpdateRequest(value: ScheduleFormValues): UpdateTaskRequest {
   const cron = value.cron.trim();
   return {
     name: value.name.trim(),

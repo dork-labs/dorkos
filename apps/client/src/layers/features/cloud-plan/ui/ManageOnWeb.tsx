@@ -78,7 +78,7 @@ export interface BillingPageButtonProps {
  *
  * @param props - The opener, the page and the words.
  */
-export function BillingPageButton({ billing, page, children }: BillingPageButtonProps) {
+function BillingPageButton({ billing, page, children }: BillingPageButtonProps) {
   const opening = billing.pending?.page === page;
   return (
     <Button
@@ -121,7 +121,7 @@ export interface PlanOffersProps {
  *
  * @param props - The opener and the current plan.
  */
-export function PlanOffers({ billing, currentPlanId }: PlanOffersProps) {
+function PlanOffers({ billing, currentPlanId }: PlanOffersProps) {
   const { data } = useCloudOffers();
   if (!data?.available || data.offers.offers.length === 0) return null;
   const { offers, denomination } = data.offers;

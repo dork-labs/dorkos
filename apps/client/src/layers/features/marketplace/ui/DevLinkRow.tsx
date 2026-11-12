@@ -25,7 +25,7 @@ import {
  *
  * @param installation - An installed row with `devLink` set.
  */
-export function useDevLinkRowStatus(installation: InstalledPackage): DevLinkRowStatus | null {
+function useDevLinkRowStatus(installation: InstalledPackage): DevLinkRowStatus | null {
   const { data: listing } = useDevLinks();
   const entry = findDevLinkStatus(listing?.links, installation);
   const key = devLinkKey(devLinkIdentityOf(installation, entry));

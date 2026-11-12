@@ -28,7 +28,7 @@ type ChatAppsOffReason = 'env' | 'failed' | 'restart' | 'off';
  *
  * @param relay - The server's report on the message system.
  */
-export function chatAppsOffReason(
+function chatAppsOffReason(
   relay: ReturnType<typeof useRelayEnabledState>
 ): ChatAppsOffReason | null {
   if (relay.isLoading || relay.isError || relay.enabled) return null;

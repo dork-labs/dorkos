@@ -35,7 +35,7 @@ function pathsByRef(entries: readonly AgentPathEntry[]): Map<string, string> {
  *
  * @param agentRef - The roster's handle for the agent.
  */
-export function useAgentPathForRef(agentRef: string | undefined): string | undefined {
+function useAgentPathForRef(agentRef: string | undefined): string | undefined {
   const mesh = useMeshAgentPaths();
   const entries = mesh.data?.agents;
   return useMemo(

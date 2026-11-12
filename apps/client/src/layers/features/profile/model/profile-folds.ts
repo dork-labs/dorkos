@@ -19,7 +19,7 @@ export type ProfileFoldState = Record<ProfileFoldId, boolean>;
 const ALL_CLOSED: ProfileFoldState = { work: false, setup: false, files: false };
 
 /** Where one viewer's folds are kept. */
-export function profileFoldsKey(viewerId: string): string {
+function profileFoldsKey(viewerId: string): string {
   return `dorkos.profile.groups.${viewerId}`;
 }
 

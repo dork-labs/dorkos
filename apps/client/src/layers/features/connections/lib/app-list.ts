@@ -118,7 +118,7 @@ function agentCountLine(count: number): string {
 }
 
 /** "DorkBot", "DorkBot and mailroom", "DorkBot and 2 more". */
-export function namesLine(names: readonly string[]): string {
+function namesLine(names: readonly string[]): string {
   if (names.length <= 1) return names[0] ?? '';
   if (names.length === 2) return `${names[0]} and ${names[1]}`;
   return `${names[0]} and ${names.length - 1} more`;
@@ -131,7 +131,7 @@ export function namesLine(names: readonly string[]): string {
  *
  * @param connection - The connection summary.
  */
-export function accountNames(connection: ConnectorConnectionSummary): {
+function accountNames(connection: ConnectorConnectionSummary): {
   account: string;
   identity: string | null;
 } {
@@ -318,7 +318,7 @@ const TONE_ORDER: Record<AppRowTone, number> = {
  *
  * @param entry - A chat app catalog entry.
  */
-export function isPlumbing(entry: CatalogEntry): boolean {
+function isPlumbing(entry: CatalogEntry): boolean {
   return entry.manifest.category === 'internal';
 }
 

@@ -22,7 +22,7 @@ import { useCloudPlan } from './use-cloud-plan';
  * credits are low enough to say so in the menu. A fraction of what the service
  * granted, so it holds on any plan without knowing what any plan includes.
  */
-export const LOW_CREDIT_FRACTION = 0.1;
+const LOW_CREDIT_FRACTION = 0.1;
 
 /** What the account row knows. */
 export type DorkosAccountLine =

@@ -76,7 +76,7 @@ function handleLabel(children: ReactNode): string {
  * it was before this: hover-only, with the card's footer still reading
  * **soon** — an inert affordance is honest, a click that opens nothing is not.
  */
-export function MentionPillRenderer({ authorId, children, cc, ccWord }: MentionPillRendererProps) {
+function MentionPillRenderer({ authorId, children, cc, ccWord }: MentionPillRendererProps) {
   // Who this mention names, as of right now. Read from a context rather than
   // from the component map that decided to draw this pill at all, because that
   // map cannot deliver an update: Streamdown's top-level memo comparator

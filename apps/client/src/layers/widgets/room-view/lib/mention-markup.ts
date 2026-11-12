@@ -13,7 +13,7 @@
 import type { MentionSpan } from '@dorkos/shared/room-schemas';
 
 /** The tag name spliced in for a resolved mention. */
-export const MENTION_TAG = 'mention';
+const MENTION_TAG = 'mention';
 
 /** The attribute the mentioned author's id rides in. */
 export const MENTION_AUTHOR_ATTR = 'author_id';

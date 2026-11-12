@@ -85,7 +85,7 @@ function bareVersion(version: string): string {
  * @param pkg - The row.
  * @param checks - The check's answer, indexed by {@link indexChecks}.
  */
-export function currentCheckFor(
+function currentCheckFor(
   pkg: InstalledPackage,
   checks: ReadonlyMap<string, InstallationUpdateCheck>
 ): InstallationUpdateCheck | undefined {

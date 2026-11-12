@@ -36,7 +36,7 @@ export interface AccountLimitMarkerLineProps {
  * episode reads "Codex ran out · …". A model switch is only claimed when the
  * new model is known; otherwise it reads as continuing here.
  */
-export function AccountLimitMarkerLine({ entry, now: fixedNow }: AccountLimitMarkerLineProps) {
+function AccountLimitMarkerLine({ entry, now: fixedNow }: AccountLimitMarkerLineProps) {
   const tick = useNow();
   const now = fixedNow ?? new Date(tick);
   const nameOf = useAccountNamer();

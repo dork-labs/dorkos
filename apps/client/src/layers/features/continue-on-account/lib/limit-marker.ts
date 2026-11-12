@@ -9,7 +9,7 @@ import type { LimitHistoryEntry } from '@dorkos/shared/account-usage';
 import { modelBucketName } from '@/layers/shared/lib';
 
 /** How far after the error's message a limit may start and still be its episode. */
-export const EPISODE_MATCH_MS = 5 * 60 * 1000;
+const EPISODE_MATCH_MS = 5 * 60 * 1000;
 
 /** A model as the runtime's model list serves it. */
 export interface ModelName {

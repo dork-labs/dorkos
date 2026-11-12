@@ -83,7 +83,7 @@ const noteMessages = new WeakMap<RoomEntry, ChatMessage>();
  *   ({@link DirectChatLog.rosterAuthorIds}); a to-do card is drawn only from an
  *   entry by nobody on it, which is DorkOS's own voice. Undefined draws none.
  */
-export function directNotesFor(
+function directNotesFor(
   entries: readonly RoomEntry[],
   sessionIds: readonly string[],
   transcript: readonly ChatMessage[],
@@ -197,7 +197,7 @@ function earliestTimestamp(transcript: readonly ChatMessage[]): number | null {
  * @param transcript - The session's messages, oldest first.
  * @param notes - The notes, oldest first.
  */
-export function interleaveDirectNotes(
+function interleaveDirectNotes(
   transcript: readonly ChatMessage[],
   notes: readonly ChatMessage[]
 ): ChatMessage[] {

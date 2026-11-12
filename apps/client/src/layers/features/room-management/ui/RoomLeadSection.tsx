@@ -23,10 +23,10 @@ import { leadCandidates, roomLead, useSetRoomLead } from '@/layers/entities/room
 const NO_LEAD = '__no-lead__';
 
 /** What the section says the lead does, under its label. */
-export const LEAD_HELP = 'Answers messages nobody else is answering.';
+const LEAD_HELP = 'Answers messages nobody else is answering.';
 
 /** What #team says instead of offering a choice. */
-export const TEAM_LEAD_NOTE = 'Your default agent. Change it from an agent’s profile.';
+const TEAM_LEAD_NOTE = 'Your default agent. Change it from an agent’s profile.';
 
 export interface RoomLeadSectionProps {
   /** The room, as freshly as it has been read. */
