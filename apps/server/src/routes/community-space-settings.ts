@@ -48,7 +48,7 @@ const PERSON_BAR: PersonBarCopy = {
  * @param c - The request's context.
  * @returns The refusal to answer with, or `null` when the person at the app is asking.
  */
-export function refuseNonPerson(c: Context<ApiEnv>): PersonRefusal | null {
+function refuseNonPerson(c: Context<ApiEnv>): PersonRefusal | null {
   const facts = honoRequestFacts(c);
   const refusal = assessPerson(facts, PERSON_BAR);
   if (refusal) return refusal;

@@ -187,7 +187,7 @@ function listedAccounts(): {
  *
  * @param project - The project, or null for a folder in no project.
  */
-export function eligibilityFor(project: ProjectRef | null): AccountEligibilityResponse {
+function eligibilityFor(project: ProjectRef | null): AccountEligibilityResponse {
   const rules = readEligibilityRules(configManager.get('runtimes')?.claudeCode);
   const root = project?.root ?? null;
   const allow = root === null ? null : (rules.projectAllow.get(root) ?? null);

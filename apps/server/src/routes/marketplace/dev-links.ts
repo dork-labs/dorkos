@@ -45,7 +45,7 @@ function scopeIsConsistent(body: { scope: 'global' | 'project'; projectPath?: st
 }
 
 /** Body schema for `POST /api/marketplace/dev-links/preview`. */
-export const DevLinkPreviewBodySchema = z
+const DevLinkPreviewBodySchema = z
   .object({
     path: PathField,
     ...ScopeFields,
@@ -58,7 +58,7 @@ export const DevLinkPreviewBodySchema = z
   });
 
 /** Body schema for `POST /api/marketplace/dev-links`. */
-export const DevLinkCreateBodySchema = z
+const DevLinkCreateBodySchema = z
   .object({
     path: PathField,
     ...ScopeFields,
@@ -78,7 +78,7 @@ export const DevLinkCreateBodySchema = z
   });
 
 /** Body schema for `POST /api/marketplace/dev-links/:name/unlink`. */
-export const DevLinkUnlinkBodySchema = z.object(ScopeFields).strict().refine(scopeIsConsistent, {
+const DevLinkUnlinkBodySchema = z.object(ScopeFields).strict().refine(scopeIsConsistent, {
   message: 'projectPath is required for, and only for, scope project',
 });
 

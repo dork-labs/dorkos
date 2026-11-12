@@ -31,7 +31,7 @@ import { sessionRelayEnabled } from '../services/core/session-relay/index.js';
 import { RELAY_PASSKEY_RETURN_PATH } from '../services/core/session-relay/passkeys/passkey-enrolment.js';
 
 /** The page's own script, at a path beside it. */
-export const RELAY_PASSKEY_SCRIPT_PATH = `${RELAY_PASSKEY_RETURN_PATH}.js`;
+const RELAY_PASSKEY_SCRIPT_PATH = `${RELAY_PASSKEY_RETURN_PATH}.js`;
 
 /**
  * Nothing loads but the page's own script, and it may only call back to this

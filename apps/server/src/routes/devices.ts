@@ -53,7 +53,7 @@ import {
 } from '../services/core/auth/sessions/signed-in-devices.js';
 
 /** Refusal code for an agent, an API key or the relay. */
-export const DEVICES_PEOPLE_ONLY = 'DEVICES_PEOPLE_ONLY';
+const DEVICES_PEOPLE_ONLY = 'DEVICES_PEOPLE_ONLY';
 
 /** Who is asking, once they are known to be a person. */
 interface DevicesCaller {

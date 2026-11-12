@@ -151,7 +151,7 @@ const NOT_HERE = 'Add the passkey on the computer DorkOS runs on.';
 const WRONG_PAGE = 'Add the passkey from the page this computer opened. Start again in Settings.';
 
 /** Code for every refusal on these routes but the two bars'. */
-export const SESSION_RELAY_PASSKEY_CODE = 'SESSION_RELAY_PASSKEY';
+const SESSION_RELAY_PASSKEY_CODE = 'SESSION_RELAY_PASSKEY';
 
 const START_REFUSALS: Record<EnrolStartRefusal, { status: 400 | 409 | 500; error: string }> = {
   'bad-origin': { status: 400, error: 'That approve page isn’t a valid https address.' },

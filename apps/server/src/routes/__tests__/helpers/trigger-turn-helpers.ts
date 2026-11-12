@@ -16,7 +16,7 @@ export interface SseFrame {
 }
 
 /** Parse SSE wire text into frames, attaching the most recent `id:` to each. */
-export function parseFrames(raw: string): SseFrame[] {
+function parseFrames(raw: string): SseFrame[] {
   const frames: SseFrame[] = [];
   let id: string | undefined;
   let event = '';

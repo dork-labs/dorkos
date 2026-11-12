@@ -111,7 +111,7 @@ const liveDeps: HubComputerRoutesDeps = {
 };
 
 /** How long a page should wait before asking again while a computer wakes. */
-export const HUB_COMPUTER_RETRY_AFTER_SECONDS = 5;
+const HUB_COMPUTER_RETRY_AFTER_SECONDS = 5;
 
 /** The wording for a feature a computer did not advertise. */
 const NEEDS_UPDATE_MESSAGE = 'This computer needs an update for that.';

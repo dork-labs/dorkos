@@ -35,7 +35,7 @@ import { sessionStreamHealthHandler } from './session-stream-health-handler.js';
  *
  * @param c - The request context; `:id` is the chat
  */
-export async function sessionOpenedHandler(c: Context<ApiEnv>): Promise<Response> {
+async function sessionOpenedHandler(c: Context<ApiEnv>): Promise<Response> {
   const sessionId = parseSessionId(c.req.param('id'));
   if (!sessionId) return c.json(errorBody('Invalid session ID', 'INVALID_SESSION_ID'), 400);
   if (isPersonAtTheApp(honoRequestFacts(c))) {

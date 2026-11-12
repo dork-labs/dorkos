@@ -180,7 +180,7 @@ export function refuseForward(
  * @param facts - The request's facts.
  * @returns `undefined` when the signed-in owner is reading from their own window.
  */
-export function refuseForwardRead(facts: RequestFacts): ForwardRefusal | undefined {
+function refuseForwardRead(facts: RequestFacts): ForwardRefusal | undefined {
   if (facts.ingress === 'relay') return 'relayed';
   if (presentsAgentIdentity(facts)) return 'agent';
   if (facts.headers[APPROVAL_TOKEN_HEADER] !== undefined) return 'agent';

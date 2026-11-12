@@ -35,7 +35,7 @@ import {
  *
  * @param facts - The request's facts.
  */
-export function sessionLauncherOf(facts: RequestFacts): SessionLauncher {
+function sessionLauncherOf(facts: RequestFacts): SessionLauncher {
   if (isPersonTurn(facts)) return { kind: 'person' };
   const identity = facts.agentIdentity;
   if (identity && !identity.inactive) return { kind: 'agent', agentPath: identity.agentPath };

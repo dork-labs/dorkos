@@ -31,7 +31,7 @@ import { honoRequestFacts, type RequestFactsEnv } from '../http/request-facts.js
 import { requireOperatorCookieUnderLogin } from '../lib/caller-authority.js';
 
 /** The header the extension API stamps on every write it makes for an extension. */
-export const EXTENSION_ID_HEADER = 'x-dorkos-extension';
+const EXTENSION_ID_HEADER = 'x-dorkos-extension';
 
 /** The code a refused write answers with. */
 export const EXTENSION_WRITE_REFUSED = 'extension_write_refused';

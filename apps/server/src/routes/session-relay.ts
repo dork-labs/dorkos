@@ -148,7 +148,7 @@ const liveDeps: SessionRelayRouteDeps = {
 };
 
 /** Code for every refusal of the password step-up. */
-export const SESSION_RELAY_PASSWORD_CODE = 'SESSION_RELAY_PASSWORD';
+const SESSION_RELAY_PASSWORD_CODE = 'SESSION_RELAY_PASSWORD';
 
 /** The status and sentence for each way the password step-up can refuse. */
 const PASSWORD_REFUSALS: Record<

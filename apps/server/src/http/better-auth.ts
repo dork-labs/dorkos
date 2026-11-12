@@ -291,7 +291,7 @@ function requestScheme(
  *
  * @param value - The raw header.
  */
-export function forwardedScheme(value: string | string[] | undefined): 'http' | 'https' | null {
+function forwardedScheme(value: string | string[] | undefined): 'http' | 'https' | null {
   const named = (Array.isArray(value) ? value[0] : value)?.split(',')[0]?.trim().toLowerCase();
   return named === 'http' || named === 'https' ? named : null;
 }
@@ -325,7 +325,7 @@ const AUTHORITY = /^(?:[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?|\[[0-9A-Fa-f:.]
  * @returns The request to hand `auth.handler`, or `null` when the `Host` or
  *   the request target cannot form a plain address.
  */
-export function requestForBetterAuth(
+function requestForBetterAuth(
   c: Context<ApiEnv>,
   headers: IncomingHttpHeaders = c.env.incoming.headers
 ): Request | null {

@@ -34,7 +34,7 @@ const REPO_ROOT = path.resolve(SERVER_DIR, '../..');
 const TSX_CLI = path.join(SERVER_DIR, 'node_modules/tsx/dist/cli.mjs');
 
 /** How long a cold boot may take before the harness gives up. */
-export const BOOT_TIMEOUT_MS = 180_000;
+const BOOT_TIMEOUT_MS = 180_000;
 
 /**
  * The `beforeAll` budget for a boot: longer than {@link BOOT_TIMEOUT_MS}, so the

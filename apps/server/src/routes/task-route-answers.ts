@@ -79,7 +79,7 @@ export async function describeTaskPermissionLevel(
 }
 
 /** Modes declared by the runtime that will actually execute this task. */
-export async function taskPermissionModes(
+async function taskPermissionModes(
   task: Pick<Task, 'runtime' | 'agentId'>,
   meshCore?: MeshCore
 ): Promise<readonly PermissionModeDescriptor[]> {

@@ -33,7 +33,7 @@ const OrganizationSchema = z
 const FolderSchema = z.object({ accountId: z.string().min(1) }).strict();
 
 /** Refusal code when only the person, in the app, may change a sign-in. */
-export const SIGNIN_NEEDS_PERSON = 'SIGNIN_NEEDS_PERSON';
+const SIGNIN_NEEDS_PERSON = 'SIGNIN_NEEDS_PERSON';
 
 /**
  * The person bar for Claude sign-ins: the refusal to answer with, or
@@ -41,7 +41,7 @@ export const SIGNIN_NEEDS_PERSON = 'SIGNIN_NEEDS_PERSON';
  *
  * @param c - The request's context.
  */
-export function refuseSigninPolicyChange(c: Context<ApiEnv>): Response | undefined {
+function refuseSigninPolicyChange(c: Context<ApiEnv>): Response | undefined {
   if (!refuseUnlessAccountOwner(honoRequestFacts(c))) return undefined;
   return c.json(
     { error: 'Only you can change Claude sign-ins, in the app.', code: SIGNIN_NEEDS_PERSON },

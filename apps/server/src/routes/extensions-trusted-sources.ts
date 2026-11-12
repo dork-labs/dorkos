@@ -29,7 +29,7 @@ import { refusedNotAPerson, type PersonBarCopy } from './extensions-person-bar.j
 import { refuseFrontDoorChange } from '../lib/caller-authority.js';
 
 /** The code every refusal to change trusted sources carries. */
-export const TRUSTED_SOURCE_PERSON_ONLY_CODE = 'trusted_source_person_only';
+const TRUSTED_SOURCE_PERSON_ONLY_CODE = 'trusted_source_person_only';
 
 /** What the trusted-source routes say when the bar refuses them. */
 const TRUST_BAR: PersonBarCopy = {
