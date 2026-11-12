@@ -36,9 +36,12 @@ first-run):
 
 - Plan, no network: `playwright install-deps --dry-run chromium` (Playwright 1.65 simulates
   `apt-get install -s` against the image's own apt lists) names the missing packages, and
-  `apt-get install --print-uris` gives each one's exact file (name_version_arch.deb), size and
-  hash. The cache key is `playwright-apt-v1-<ImageOS>-<arch>-<sha256 of that manifest>`, so a
-  new package version or a new image is a new key.
+  `apt-cache show` gives each one's exact version, size and SHA256 from the signed index.
+  `apt-get install --print-uris` must agree on the file names and sizes; its own hash is an
+  MD5 on Ubuntu 24.04 (seen on this PR's first CI run, where the script rightly refused it and
+  fell back), so the manifest never uses it. The cache key is
+  `playwright-apt-v1-<ImageOS>-<arch>-<sha256 of that manifest>`, so a new package version or a
+  new image is a new key.
 - Cache hit: each .deb is checked against the manifest's hash, then installed with
   `apt-get install --no-download -o Dir::Cache::archives=<cache>`, which checks it again
   against the image's signed index and fetches nothing. No `apt-get update`, never `dpkg -i`.

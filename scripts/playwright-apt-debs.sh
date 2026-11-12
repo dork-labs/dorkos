@@ -15,9 +15,10 @@
 # when the image was built. From them, with no network:
 #   plan     `playwright install-deps --dry-run` names the missing packages
 #            (it simulates `apt-get install -s` against those lists), and
-#            `apt-get install --print-uris` gives each one's exact file
-#            (name_version_arch.deb), size and hash. The cache key is a hash of
-#            that manifest, so a new package version is a new key.
+#            `apt-cache show` gives each one's exact version, size and SHA256
+#            from the signed index. `apt-get install --print-uris` must agree
+#            on the file names and sizes. The cache key is a hash of that
+#            manifest, so a new package version is a new key.
 #   install  On a cache hit, every .deb is checked against the manifest's hash
 #            and then installed by `apt-get install --no-download`, which
 #            checks each one again against the image's signed index and
@@ -44,7 +45,7 @@
 #       Appends debs-ready=true to $GITHUB_OUTPUT when <work-dir>/debs holds
 #       a checked copy of every file in the manifest (what the save step saves).
 #
-# Pinned by scripts/__tests__/ci-apt-resilience.test.ts.
+# Pinned by scripts/__tests__/playwright-apt-debs.test.ts.
 
 set -euo pipefail
 
@@ -87,9 +88,35 @@ plan() {
   fi
   printf '%s\n' "$packages" >"$work/packages.txt"
 
-  # --print-uris resolves against the image's lists only: no network. Each line
-  # is: 'URI' name_version_arch.deb size HASHTYPE:hex. The URI is dropped (it
-  # names whichever mirror the image lists), the rest is the manifest.
+  # The manifest: one line per package, "name_version_arch.deb size SHA256:hex",
+  # from `apt-cache show`, which reads the image's lists (no network) and gives
+  # the strong hash the signed index carries. The file name is the one apt
+  # stores in its archive dir, the version's epoch colon written as %3a.
+  : >"$work/manifest.txt"
+  local pkg record version arch size sha
+  while read -r pkg; do
+    if ! record=$(apt-cache show --no-all-versions "$pkg" 2>/dev/null); then
+      echo "::warning::apt-cache has no record of $pkg in the image's lists; installing the OS packages the old way." >&2
+      output mode=fallback
+      return 0
+    fi
+    version=$(awk '/^Version: /{print $2; exit}' <<<"$record")
+    arch=$(awk '/^Architecture: /{print $2; exit}' <<<"$record")
+    size=$(awk '/^Size: /{print $2; exit}' <<<"$record")
+    sha=$(awk '/^SHA256: /{print $2; exit}' <<<"$record")
+    if [ -z "$version" ] || [ -z "$arch" ] || [ -z "$size" ] || ! [[ "$sha" =~ ^[0-9a-f]{64}$ ]]; then
+      echo "::warning::The image's lists give $pkg no version, size or SHA256; installing the OS packages the old way." >&2
+      output mode=fallback
+      return 0
+    fi
+    echo "${pkg}_${version//:/%3a}_${arch}.deb ${size} SHA256:${sha}" >>"$work/manifest.txt"
+  done <"$work/packages.txt"
+  LC_ALL=C sort -o "$work/manifest.txt" "$work/manifest.txt"
+
+  # Cross-check: what apt would actually fetch, from the same lists, is exactly
+  # these files at these sizes. Each --print-uris line is
+  # 'URI' name_version_arch.deb size HASHTYPE:hex; on Ubuntu 24.04 that hash is
+  # an MD5, which is why the manifest takes its hash from apt-cache instead.
   local scratch uris
   scratch=$(mktemp -d)
   sudo mkdir -p "$scratch/partial"
@@ -102,16 +129,16 @@ plan() {
     return 0
   fi
   sudo rm -rf "$scratch"
-  grep -E "^'[^']+' [^ ]+\.deb [0-9]+ [A-Za-z0-9]+:[0-9a-f]+$" <<<"$uris" \
-    | awk '{print $2, $3, $4}' | LC_ALL=C sort >"$work/manifest.txt" || true
-  local want got
-  want=$(grep -c . "$work/packages.txt")
-  got=$(grep -c . "$work/manifest.txt" || true)
-  if [ "$want" != "$got" ]; then
-    echo "::warning::Playwright named $want missing packages but apt listed $got files to fetch; installing them the old way." >&2
+  local fetch want
+  fetch=$(grep -E "^'[^']+' [^ ]+\.deb [0-9]+ [A-Za-z0-9]+:[0-9a-f]+$" <<<"$uris" \
+    | awk '{print $2, $3}' | LC_ALL=C sort || true)
+  if [ "$fetch" != "$(awk '{print $1, $2}' "$work/manifest.txt")" ]; then
+    echo "::warning::apt would fetch different files than the image's lists name for Chromium's packages; installing them the old way." >&2
+    printf '  apt would fetch: %s\n' "$fetch" >&2
     output mode=fallback
     return 0
   fi
+  want=$(grep -c . "$work/manifest.txt")
   local digest
   digest=$(sha256sum "$work/manifest.txt" | cut -c1-64)
   echo "Chromium needs $want OS packages; manifest:"

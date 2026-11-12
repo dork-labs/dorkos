@@ -26,10 +26,17 @@ afterEach(() => {
 });
 
 const PACKAGES = ['fonts-freefont-ttf', 'fonts-ipafont-gothic', 'xfonts-utils'];
+// The file names apt stores in its archive dir: an epoch's colon is %3a.
+const POOL_FILES = [
+  'fonts-freefont-ttf_1.0-1_all.deb',
+  'fonts-ipafont-gothic_1.0-1_all.deb',
+  'xfonts-utils_1%3a7.7-1_amd64.deb',
+];
 
 // `apt-get` reads its archive dir from `-o Dir::Cache::archives=…`, answers
-// --print-uris from the fixture pool, copies the pool for --download-only
-// (unless APT_NET=down), and for --no-download insists every file is there.
+// --print-uris from the fixture pool (with an MD5, as apt on Ubuntu 24.04
+// does), copies the pool for --download-only (unless APT_NET=down), and for
+// --no-download insists every file is there.
 const FAKE_APT = `
 log "apt-get $*"
 archives=""; mode=install; pkgs=()
@@ -50,7 +57,7 @@ case "$mode" in
     for p in "\${pkgs[@]}"; do
       f=$(cd "$POOL" && ls "\${p}"_*.deb)
       [ "$p" = "\${APT_DROP:-}" ] && continue
-      echo "'https://archive.ubuntu.com/ubuntu/pool/$f' $f $(wc -c <"$POOL/$f" | tr -d ' ') SHA256:$(sha256sum "$POOL/$f" | cut -d' ' -f1)"
+      echo "'https://archive.ubuntu.com/ubuntu/pool/$f' $f $(wc -c <"$POOL/$f" | tr -d ' ') MD5Sum:0123456789abcdef0123456789abcdef"
     done ;;
   download)
     [ "\${APT_NET:-up}" = up ] || { echo "E: Failed to fetch" >&2; exit 100; }
@@ -58,6 +65,20 @@ case "$mode" in
   local)
     for p in "\${pkgs[@]}"; do ls "$archives\${p}"_*.deb >/dev/null || exit 100; done ;;
 esac
+`;
+
+// `apt-cache show --no-all-versions <pkg>` prints the candidate's record from
+// the signed index, with its SHA256 (APT_CACHE_NO_SHA leaves that out).
+const FAKE_APT_CACHE = `
+log "apt-cache $*"
+p="\${@: -1}"
+f=$(cd "$POOL" && ls "\${p}"_*.deb) || exit 100
+rest="\${f#"\${p}"_}"; arch="\${rest##*_}"; ver="\${rest%_*}"
+echo "Package: $p"
+echo "Version: \${ver//%3a/:}"
+echo "Architecture: \${arch%.deb}"
+echo "Size: $(wc -c <"$POOL/$f" | tr -d ' ')"
+[ -n "\${APT_CACHE_NO_SHA:-}" ] || echo "SHA256: $(sha256sum "$POOL/$f" | cut -d' ' -f1)"
 `;
 
 // `pnpm … playwright install chromium` downloads the browser; `install-deps`
@@ -88,11 +109,11 @@ function sandbox() {
     );
   tool('sudo', 'log "sudo $1"\nexec "$@"');
   tool('apt-get', FAKE_APT);
+  tool('apt-cache', FAKE_APT_CACHE);
   tool('pnpm', FAKE_PNPM);
   tool('dpkg', 'log "dpkg $*"');
   tool('sleep', ':');
-  for (const name of PACKAGES)
-    writeFileSync(path.join(pool, `${name}_1.0-1_all.deb`), `deb bytes of ${name}\n`);
+  for (const file of POOL_FILES) writeFileSync(path.join(pool, file), `deb bytes of ${file}\n`);
   const work = path.join(dir, 'work');
   const files = {
     log: path.join(dir, 'calls.log'),
@@ -144,10 +165,8 @@ function sandbox() {
     expect(run(['plan', missing(), work]).status).toBe(0);
     const debs = path.join(work, 'debs');
     mkdirSync(debs, { recursive: true });
-    for (const name of PACKAGES) {
-      const file = `${name}_1.0-1_all.deb`;
+    for (const file of POOL_FILES)
       writeFileSync(path.join(debs, file), readFileSync(path.join(pool, file)));
-    }
     resetLog();
     return debs;
   };
@@ -160,8 +179,14 @@ describe('plan: exact package files from the image lists, no network', () => {
     const result = box.run(['plan', box.missing(), box.work]);
     expect(result.status, result.stderr).toBe(0);
     const manifest = readFileSync(path.join(box.work, 'manifest.txt'), 'utf8');
-    expect(manifest).toContain('fonts-freefont-ttf_1.0-1_all.deb');
     expect(manifest.trim().split('\n')).toHaveLength(3);
+    // The strong hash from the signed index (apt-cache), never print-uris' MD5,
+    // and the epoch written the way apt names the file.
+    const bytes = readFileSync(path.join(box.pool, 'xfonts-utils_1%3a7.7-1_amd64.deb'));
+    expect(manifest).toContain(
+      `xfonts-utils_1%3a7.7-1_amd64.deb ${bytes.length} SHA256:${createHash('sha256').update(bytes).digest('hex')}`
+    );
+    expect(manifest).not.toContain('MD5Sum');
     const out = box.outputs();
     expect(out.mode).toBe('cache');
     const digest = createHash('sha256').update(manifest).digest('hex');
@@ -175,8 +200,8 @@ describe('plan: exact package files from the image lists, no network', () => {
     const box = sandbox();
     box.run(['plan', box.missing(), box.work]);
     const first = box.outputs().key;
-    rmSync(path.join(box.pool, 'xfonts-utils_1.0-1_all.deb'));
-    writeFileSync(path.join(box.pool, 'xfonts-utils_1.0-2_all.deb'), 'deb bytes of xfonts-utils\n');
+    rmSync(path.join(box.pool, 'xfonts-utils_1%3a7.7-1_amd64.deb'));
+    writeFileSync(path.join(box.pool, 'xfonts-utils_1%3a7.7-2_amd64.deb'), 'deb bytes\n');
     box.resetLog();
     box.run(['plan', box.missing(), box.work]);
     expect(box.outputs().key).not.toBe(first);
@@ -199,12 +224,13 @@ describe('plan: exact package files from the image lists, no network', () => {
     expect(box.outputs().mode).toBe('fallback');
   });
 
-  it('falls back when apt cannot read the lists, or lists fewer files', () => {
+  it.each([
+    ['apt cannot read the lists', { APT_LISTS_BROKEN: '1' }],
+    ['apt would fetch other files than the lists name', { APT_DROP: 'xfonts-utils' }],
+    ['the lists carry no SHA256', { APT_CACHE_NO_SHA: '1' }],
+  ])('falls back when %s', (_label, env) => {
     const box = sandbox();
-    box.run(['plan', box.missing(), box.work], { APT_LISTS_BROKEN: '1' });
-    expect(box.outputs().mode).toBe('fallback');
-    box.resetLog();
-    box.run(['plan', box.missing(), box.work], { APT_DROP: 'xfonts-utils' });
+    expect(box.run(['plan', box.missing(), box.work], env).status).toBe(0);
     expect(box.outputs().mode).toBe('fallback');
   });
 });
@@ -232,7 +258,7 @@ describe('install', () => {
     expect(result.stderr).toContain('fonts-ipafont-gothic_1.0-1_all.deb does not match');
     expect(box.calls()).toMatch(/--download-only/);
     expect(readFileSync(path.join(debs, 'fonts-ipafont-gothic_1.0-1_all.deb'), 'utf8')).toBe(
-      'deb bytes of fonts-ipafont-gothic\n'
+      'deb bytes of fonts-ipafont-gothic_1.0-1_all.deb\n'
     );
     expect(box.outputs()['debs-ready']).toBe('true');
   });
