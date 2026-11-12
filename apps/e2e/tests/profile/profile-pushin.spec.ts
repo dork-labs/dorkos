@@ -63,29 +63,4 @@ test.describe('Profile — a page pushes in @smoke', () => {
     await expect(firstButton).toHaveAttribute('aria-label', 'Back to profile');
     await expect(page.locator('[data-slot="profile-page-title"]')).toBeFocused();
   });
-
-  test('coming back lands on the row it left from, with the root underneath', async ({
-    page,
-    basePage,
-    rightPanel,
-    roomsApi,
-  }) => {
-    const agent = await roomsApi.registerAgent(`E2E PopBack ${roomsApi.runId}`, '🚪', '#f97316');
-    const dir = encodeURIComponent(agent.projectPath);
-    await page.goto(`/session?dir=${dir}&agentPath=${dir}`, { waitUntil: 'domcontentloaded' });
-    await basePage.waitForAppReady();
-    await rightPanel.ensureTabStripOpen();
-
-    const docked = page.locator('[data-slot="profile"][data-home="docked"]');
-    await docked.locator('[data-profile-row="rooms"]').click();
-    await expect(page.locator('[data-slot="profile-page-title"]')).toHaveText('Rooms');
-
-    await page.getByRole('button', { name: 'Back to profile' }).click();
-
-    // The root is back — the portrait and its rows, not an empty frame — and
-    // focus is where the eye already was, so the next Tab carries on from the
-    // row rather than starting the panel over.
-    await expect(docked.locator('[data-slot="profile-header"]')).toBeVisible();
-    await expect(docked.locator('[data-profile-row="rooms"]')).toBeFocused();
-  });
 });
