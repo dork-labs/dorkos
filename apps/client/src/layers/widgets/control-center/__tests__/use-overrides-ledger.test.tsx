@@ -19,7 +19,6 @@ const useBindings = vi.fn();
 const navigate = vi.fn();
 const openSettings = vi.fn();
 const openConnections = vi.fn();
-const setControlCenterOpen = vi.fn();
 const openProfile = vi.fn();
 /** An overview with nobody set differently: the ledger's permissions half, answered. */
 const NO_EXCEPTIONS = { areas: [], exceptions: [], filesAndCommands: { exceptions: [] } };
@@ -51,16 +50,35 @@ vi.mock('@/layers/features/permissions', () => ({
   filesWhy: (stop: string, source: string, agentName?: string) =>
     `${stop} from ${source} for ${agentName}`,
 }));
-vi.mock('@/layers/shared/model', () => ({
+// Only the navigation seams are replaced. The app store is REAL, so "the flyout
+// closes" is read off `controlCenterOpen` itself rather than off a setter spy.
+vi.mock('@/layers/shared/model', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/layers/shared/model')>()),
   useSafeNavigate: () => navigate,
   useOpenConnections: () => openConnections,
   useSettingsDeepLink: () => ({ open: openSettings }),
   useProfileDeepLink: () => ({ open: openProfile }),
-  useAppStore: (selector: (s: { setControlCenterOpen: typeof setControlCenterOpen }) => unknown) =>
-    selector({ setControlCenterOpen }),
 }));
 
+import { useAppStore } from '@/layers/shared/model';
 import { useOverridesLedger } from '../model/use-overrides-ledger';
+
+/**
+ * Open the flyout, follow one row's link, and report whether the flyout was
+ * already shut at the moment the link fired (and is shut afterwards).
+ */
+function followWithFlyoutOpen(
+  onOpen: (() => void) | null | undefined,
+  link: ReturnType<typeof vi.fn>
+): { closedWhenLinkFired: boolean; closedAfter: boolean } {
+  useAppStore.setState({ controlCenterOpen: true });
+  let closedWhenLinkFired = false;
+  link.mockImplementationOnce(() => {
+    closedWhenLinkFired = !useAppStore.getState().controlCenterOpen;
+  });
+  onOpen?.();
+  return { closedWhenLinkFired, closedAfter: !useAppStore.getState().controlCenterOpen };
+}
 
 const DESCRIPTORS: PermissionModeDescriptor[] = [
   { id: 'default', label: 'Ask', stop: 'ask', asks: 'always', reach: 'edit', promise: 'Asks.' },
@@ -98,6 +116,7 @@ function seedCaps() {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  useAppStore.setState({ controlCenterOpen: false });
   useTasksEnabled.mockReturnValue(true);
   // Empty everything by default; each test seeds what it needs.
   useConfig.mockReturnValue({
@@ -161,24 +180,24 @@ describe('useOverridesLedger', () => {
     expect(kinds).toEqual(['runtime', 'session', 'task', 'binding']);
     expect(result.current.isEmpty).toBe(false);
 
-    // Each row deep-links to its owning surface.
-    result.current.rows.find((r) => r.kind === 'runtime')?.onOpen?.();
+    // Each row deep-links to its owning surface, and closes the modal flyout
+    // BEFORE it navigates — a link that left it open lands the person on a page
+    // still locked behind `body { pointer-events: none }` (or stacks a second
+    // modal over it).
+    const row = (kind: string) => result.current.rows.find((r) => r.kind === kind)?.onOpen;
+    const shutFirst = { closedWhenLinkFired: true, closedAfter: true };
+
+    expect(followWithFlyoutOpen(row('runtime'), openSettings)).toEqual(shutFirst);
     expect(openSettings).toHaveBeenCalledWith('runtimes');
-    result.current.rows.find((r) => r.kind === 'session')?.onOpen?.();
+    expect(followWithFlyoutOpen(row('session'), navigate)).toEqual(shutFirst);
     expect(navigate).toHaveBeenCalledWith({
       to: '/session',
       search: { session: 's1', dir: undefined },
     });
-    result.current.rows.find((r) => r.kind === 'task')?.onOpen?.();
+    expect(followWithFlyoutOpen(row('task'), navigate)).toEqual(shutFirst);
     expect(navigate).toHaveBeenCalledWith({ to: '/tasks' });
-    result.current.rows.find((r) => r.kind === 'binding')?.onOpen?.();
+    expect(followWithFlyoutOpen(row('binding'), openConnections)).toEqual(shutFirst);
     expect(openConnections).toHaveBeenCalledWith({ app: 'slack' });
-
-    // Every deep link closes the modal flyout BEFORE it navigates — a link that
-    // left it open lands the person on a page still locked behind
-    // `body { pointer-events: none }` (or stacks a second modal over it).
-    expect(setControlCenterOpen).toHaveBeenCalledTimes(4);
-    expect(setControlCenterOpen).toHaveBeenCalledWith(false);
   });
 
   it('does NOT list a runtime, session, task or binding that sits at the global stop', () => {
