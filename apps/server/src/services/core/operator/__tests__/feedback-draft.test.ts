@@ -244,10 +244,13 @@ describe('the feedback_draft capability', () => {
       enabled: true,
       authtoken: 'ngrok-secret-token-value',
     });
-    configManager.set('mcp', { ...configManager.get('mcp'), apiKey: 'sk-live-0123456789' });
+    configManager.set('cloud', {
+      ...configManager.get('cloud'),
+      instanceToken: 'sk-live-0123456789',
+    });
     configManager.set('server', {
       ...configManager.get('server'),
-      boundary: '/Users/dorian/private-clients',
+      boundary: '/fixture/private-client-projects',
     });
 
     const { payload } = await call({});

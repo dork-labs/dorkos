@@ -262,7 +262,7 @@ describe('config_get', () => {
 
     // Presence is still legible without the values.
     expect(payload.tunnel.authtokenConfigured).toBe(true);
-    expect(payload.mcp.apiKeyConfigured).toBe(true);
+    expect(payload.mcp.apiKeyConfigured).toBeUndefined();
     expect(payload.runtimes.codex.credentialRefConfigured).toBe(true);
     expect(payload.providersConfigured).toEqual(['anthropic']);
 
@@ -488,7 +488,6 @@ describe('config_patch posture guard', () => {
   it('refuses every other posture-bearing area too', async () => {
     const cases: { patch: Record<string, unknown>; expected: string[] }[] = [
       { patch: { tunnel: { enabled: true } }, expected: ['tunnel.enabled'] },
-      { patch: { mcp: { apiKey: 'agent-chosen' } }, expected: ['mcp.apiKey'] },
       { patch: { server: { boundary: '/' } }, expected: ['server.boundary'] },
       { patch: { providers: { anthropic: 'file:/tmp/key' } }, expected: ['providers'] },
       {

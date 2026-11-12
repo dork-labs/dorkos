@@ -35,7 +35,6 @@ describe('the front-door settings', () => {
     'auth.enabled',
     'tunnel.authtoken',
     'server.lanAccess',
-    'mcp.apiKey',
     'mcp.rateLimit.enabled',
     'mcp.rateLimit.maxPerWindow',
     'mcp.rateLimit.windowSecs',

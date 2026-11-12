@@ -69,14 +69,14 @@ describe('config changes in the audit log', () => {
 
   it('keeps a secret setting’s name and none of its values', () => {
     write.applyGuardedConfigWrite({
-      patch: { mcp: { apiKey: 'supersecret-key-value' } },
+      patch: { tunnel: { authtoken: 'supersecret-key-value' } },
       authority: write.LOCAL_OPERATOR_AUTHORITY,
       source: 'settings',
       writer: { kind: 'unattributed' },
     });
     const all = JSON.stringify(rows());
     expect(all).not.toContain('supersecret-key-value');
-    expect(JSON.parse(rows()[0]!.change!)).toEqual([{ field: 'mcp.apiKey', redacted: true }]);
+    expect(JSON.parse(rows()[0]!.change!)).toEqual([{ field: 'tunnel.authtoken', redacted: true }]);
   });
 
   it('records a purpose-built writer’s change, naming the writer', () => {

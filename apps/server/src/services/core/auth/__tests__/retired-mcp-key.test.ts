@@ -23,11 +23,12 @@ const requestTarget = swappableServer();
 
 /** Store a legacy global key at `config.mcp.apiKey`, preserving the rest of the block. */
 function setLegacyKey(value: string | null): void {
-  configManager.set('mcp', {
+  const leftover = {
     enabled: true,
     apiKey: value,
     rateLimit: { enabled: true, maxPerWindow: 60, windowSecs: 60 },
-  });
+  };
+  configManager.set('mcp', leftover);
 }
 
 /** Mount the Better Auth handler as `app.ts` does, so HTTP sign-up fires its hooks. */
@@ -73,7 +74,9 @@ describe('retired global MCP keys', () => {
     setLegacyKey(LEGACY_KEY);
     await createOwner();
     expect(db.select().from(apikey).all()).toEqual([]);
-    expect(configManager.get('mcp')?.apiKey).toBe(LEGACY_KEY);
+    expect(JSON.parse(fs.readFileSync(path.join(tmpDir, 'config.json'), 'utf8')).mcp.apiKey).toBe(
+      LEGACY_KEY
+    );
     const verified = await getAuth()!.api.verifyApiKey({ body: { key: LEGACY_KEY } });
     expect(verified.valid).toBe(false);
   });

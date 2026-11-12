@@ -71,7 +71,7 @@
  * local program that simply omits its agent header can write EVERY
  * `operator-only` setting through that route, this leaf included. Reproduced
  * during review: the write returns 200 and is stored. Nothing about this leaf is
- * special there; it is the same residual `auth.enabled` and `mcp.apiKey` carry,
+ * special there; it is the same residual `auth.enabled` and `tunnel.authtoken` carry,
  * for the same reason (in the default posture the app presents nothing such a
  * program cannot also present, and refusing it would lock a person out of their
  * own settings). Turning on Require login closes it.

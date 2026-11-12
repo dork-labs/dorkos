@@ -495,7 +495,6 @@ export const SAFE_DEFAULTS: Readonly<Record<string, unknown>> = {
   // list IS off, so the empty default is the closed door.
   'harness.global.harnesses': [],
   // No static shared secret; the per-instance local token gates /mcp instead.
-  'mcp.apiKey': null,
   'mcp.rateLimit.enabled': true,
   'mcp.rateLimit.maxPerWindow': 60,
   'mcp.rateLimit.windowSecs': 60,

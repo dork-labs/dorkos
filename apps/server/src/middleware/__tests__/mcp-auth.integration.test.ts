@@ -105,11 +105,12 @@ function setAuthEnabled(enabled: boolean): void {
 }
 
 function setLegacyKey(value: string | null): void {
-  configManager.set('mcp', {
+  const leftover = {
     enabled: true,
     apiKey: value,
     rateLimit: { enabled: true, maxPerWindow: 60, windowSecs: 60 },
-  });
+  };
+  configManager.set('mcp', leftover);
 }
 
 describe('honoMcpAuth — /mcp end-to-end (integration)', () => {

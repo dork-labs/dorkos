@@ -178,7 +178,6 @@ export const ExtensionsConfigSchema = z
 export const McpConfigSchema = z
   .object({
     enabled: z.boolean().default(true),
-    apiKey: z.string().nullable().default(null),
     rateLimit: z
       .object({
         enabled: z.boolean().default(true),
@@ -189,7 +188,6 @@ export const McpConfigSchema = z
   })
   .default(() => ({
     enabled: true,
-    apiKey: null,
     rateLimit: { enabled: true, maxPerWindow: 60, windowSecs: 60 },
   }));
 

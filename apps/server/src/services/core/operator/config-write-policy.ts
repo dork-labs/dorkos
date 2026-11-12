@@ -675,7 +675,6 @@ export const CONFIG_WRITE_POLICY = {
   // Whether the external tool endpoint answers, the bearer that gates it, and the
   // rate limits that bound abuse of it.
   'mcp.enabled': 'operator-only',
-  'mcp.apiKey': 'operator-only',
   'mcp.rateLimit.enabled': 'operator-only',
   'mcp.rateLimit.maxPerWindow': 'operator-only',
   'mcp.rateLimit.windowSecs': 'operator-only',

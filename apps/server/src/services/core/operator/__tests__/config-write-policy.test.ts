@@ -135,7 +135,6 @@ describe('CONFIG_WRITE_POLICY drift guard', () => {
       // (spec `keep-awake`).
       'keepAwake.wakeForScheduledTasks',
       'keepAwake.whileAgentsWork',
-      'mcp.apiKey',
       'mcp.enabled',
       'mcp.rateLimit.enabled',
       'mcp.rateLimit.maxPerWindow',
@@ -321,7 +320,6 @@ describe('CONFIG_WRITE_POLICY drift guard', () => {
     const secretsAndReferences = [
       'tunnel.authtoken',
       'tunnel.auth',
-      'mcp.apiKey',
       'cloud.instanceToken',
       'cloud.linkedAccountLabel',
       'cloud.previousLinkProof',

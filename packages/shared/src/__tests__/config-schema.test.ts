@@ -190,7 +190,6 @@ describe('UserConfigSchema', () => {
       },
       mcp: {
         enabled: true,
-        apiKey: null,
         rateLimit: { enabled: true, maxPerWindow: 60, windowSecs: 60 },
       },
       telemetry: {
@@ -470,18 +469,26 @@ describe('UserConfigSchema', () => {
   });
 });
 
+describe('retired MCP key settings', () => {
+  it('has no global-key setting or default', () => {
+    expect(USER_CONFIG_DEFAULTS.mcp).not.toHaveProperty('apiKey');
+    expect(
+      UserConfigSchema.parse({ version: 1, mcp: { apiKey: 'fixture-retired-key' } }).mcp
+    ).not.toHaveProperty('apiKey');
+  });
+});
+
 describe('SENSITIVE_CONFIG_KEYS', () => {
   it('contains expected sensitive keys', () => {
     expect(SENSITIVE_CONFIG_KEYS).toContain('tunnel.authtoken');
     expect(SENSITIVE_CONFIG_KEYS).toContain('tunnel.auth');
-    expect(SENSITIVE_CONFIG_KEYS).toContain('mcp.apiKey');
     expect(SENSITIVE_CONFIG_KEYS).toContain('cloud.instanceToken');
     // The relink proof continues a link with the account's approval (DOR-2521).
     expect(SENSITIVE_CONFIG_KEYS).toContain('cloud.previousLinkProof');
   });
 
-  it('has exactly 5 sensitive keys', () => {
-    expect(SENSITIVE_CONFIG_KEYS).toHaveLength(5);
+  it('has exactly 4 sensitive keys', () => {
+    expect(SENSITIVE_CONFIG_KEYS).toHaveLength(4);
   });
 
   it('is readonly array', () => {
@@ -627,7 +634,6 @@ describe('USER_CONFIG_DEFAULTS', () => {
       },
       mcp: {
         enabled: true,
-        apiKey: null,
         rateLimit: { enabled: true, maxPerWindow: 60, windowSecs: 60 },
       },
       telemetry: {

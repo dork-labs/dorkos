@@ -690,7 +690,7 @@ router.patch('/', async (c) => {
       // This used to be `result.config` — everything on disk — so saving an ngrok
       // token got that token straight back in the response body, and after that
       // EVERY unrelated patch carried it too, along with `tunnel.auth`,
-      // `mcp.apiKey` and `cloud.instanceToken`.
+      // `tunnel.auth` and `cloud.instanceToken`.
       //
       // A response body is not a private channel. It is logged by whatever sits
       // in front of the server, it lands in caches and devtools history, and when

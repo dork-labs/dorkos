@@ -387,7 +387,6 @@ export const CONFIG_DISCLOSURE = {
   'extensions.forwardAgents': 'withhold',
 
   'mcp.enabled': 'expose',
-  'mcp.apiKey': 'withhold',
   'mcp.rateLimit.enabled': 'expose',
   'mcp.rateLimit.maxPerWindow': 'expose',
   'mcp.rateLimit.windowSecs': 'expose',
@@ -624,7 +623,6 @@ export const CONFIG_DISCLOSURE = {
 export const PRESENCE_FLAG_PATHS: readonly string[] = [
   'tunnel.authtoken',
   'tunnel.auth',
-  'mcp.apiKey',
   'cloud.instanceToken',
   'cloud.previousLinkProof',
   'runtimes.codex.credentialRef',

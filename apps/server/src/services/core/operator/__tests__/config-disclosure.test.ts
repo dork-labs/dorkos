@@ -373,7 +373,6 @@ describe('CONFIG_DISCLOSURE drift guard', () => {
       'harness.approvedFolderConfigParts',
       // Not a secret: the commit each repo was last compared against (DOR-3298).
       'harness.repoBaselines',
-      'mcp.apiKey',
       // The file whose certificates every connection of the desktop app trusts (DOR-3361).
       'network.extraCaCertsPath',
       // Not a secret: the rules behind each folder allow list yes, which no agent needs (DOR-3039).
@@ -598,7 +597,7 @@ describe('projectDisclosedConfig', () => {
     const projected = projectDisclosedConfig(fullyPopulatedConfig());
     expect(at(projected, 'tunnel.authtokenConfigured')).toBe(true);
     expect(at(projected, 'tunnel.authConfigured')).toBe(true);
-    expect(at(projected, 'mcp.apiKeyConfigured')).toBe(true);
+    expect(at(projected, 'mcp.apiKeyConfigured')).toBeUndefined();
     expect(at(projected, 'cloud.instanceTokenConfigured')).toBe(true);
     expect(at(projected, 'runtimes.codex.credentialRefConfigured')).toBe(true);
     expect(projected.providersConfigured).toEqual(['anthropic', 'openrouter']);
@@ -609,7 +608,7 @@ describe('projectDisclosedConfig', () => {
       UserConfigSchema.parse({ version: 1 }) as unknown as Record<string, unknown>
     );
     expect(at(projected, 'tunnel.authtokenConfigured')).toBe(false);
-    expect(at(projected, 'mcp.apiKeyConfigured')).toBe(false);
+    expect(at(projected, 'mcp.apiKeyConfigured')).toBeUndefined();
     expect(at(projected, 'cloud.instanceTokenConfigured')).toBe(false);
     expect(at(projected, 'runtimes.codex.credentialRefConfigured')).toBe(false);
     expect(projected.providersConfigured).toEqual([]);

@@ -36,7 +36,7 @@ vi.mock('../../lib/boundary.js', () => ({
 }));
 
 // The cockpit's user owns this install, so it may change front-door settings
-// such as `mcp.apiKey` at this computer (DOR-2969).
+// such as `tunnel.authtoken` at this computer (DOR-2969).
 vi.mock('../../services/core/auth/install-owner.js', () => ({
   isInstallOwner: (user?: { userId: string }) => user?.userId === 'user_cockpit',
 }));
@@ -383,16 +383,16 @@ describe('a standing Full-autonomy default, end to end', () => {
 
     it('never writes a value — a path names a setting, a value can be a token', async () => {
       // Logs get read by people, attached to bug reports and pasted into
-      // issues. `mcp.apiKey` is declared sensitive by the schema, and the write
+      // issues. `tunnel.authtoken` is declared sensitive by the schema, and the write
       // is allowed; what must never happen is the key landing in the log.
       const lines = await infoLines(() =>
         request(fixtureServer)
           .patch('/api/config')
-          .send({ mcp: { apiKey: 'sk-do-not-log-me-4242' } })
+          .send({ tunnel: { authtoken: 'sk-do-not-log-me-4242' } })
           .expect(200)
       );
 
-      expect(patchedLine(lines)).toBe('[Config] Patched by PATCH /api/config: mcp.apiKey');
+      expect(patchedLine(lines)).toBe('[Config] Patched by PATCH /api/config: tunnel.authtoken');
       expect(lines.join('\n')).not.toContain('sk-do-not-log-me-4242');
     });
 

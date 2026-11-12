@@ -452,20 +452,33 @@ describe('applyGuardedConfigWrite', () => {
     });
   });
 
+  it.each([null, '', 'fixture-retired-key'])(
+    'refuses the retired MCP key field %j without writing',
+    async (apiKey) => {
+      const { applyConfigPatch } = await import('../config-patch.js');
+      const before = configManager.getAll();
+      const result = applyConfigPatch({ ui: { theme: 'light' }, mcp: { apiKey } });
+      expect(result).toMatchObject({
+        ok: false,
+        error: 'Validation failed',
+        details: ['mcp.apiKey: Unrecognized key'],
+      });
+      expect(configManager.getAll()).toEqual(before);
+    }
+  );
+
   describe('logConfigWrite, for the writers that have their own gate', () => {
     it('names the fully-qualified path and never the value', async () => {
-      // `mcp.apiKey` is a secret the schema declares as one. The migration that
-      // clears it logs through here, which is only safe because the line carries
-      // paths and nothing else.
-      const before = configManager.get('mcp');
-      configManager.set('mcp', { ...before, apiKey: 'dork_mcp_do-not-log-me' });
+      // A current secret writer logs paths without putting values in the log.
+      const before = configManager.get('tunnel');
+      configManager.set('tunnel', { ...before, authtoken: 'fixture-do-not-log-me' });
 
       const lines = await infoLines(() => {
-        logConfigWrite('the MCP key migration', 'mcp', before, configManager.get('mcp'));
+        logConfigWrite('the tunnel settings', 'tunnel', before, configManager.get('tunnel'));
       });
 
-      expect(lines).toContain('[Config] Set by the MCP key migration: mcp.apiKey');
-      expect(lines.join('\n')).not.toContain('dork_mcp_do-not-log-me');
+      expect(lines).toContain('[Config] Set by the tunnel settings: tunnel.authtoken');
+      expect(lines.join('\n')).not.toContain('fixture-do-not-log-me');
     });
 
     it('says nothing when the writer changed nothing', async () => {

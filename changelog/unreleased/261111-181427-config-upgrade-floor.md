@@ -1,5 +1,6 @@
 ---
 covers:
+  - 'refactor(config): remove the retired global MCP key setting'
   - 'refactor(auth): retire global MCP key compatibility'
   - 'fix(config): refuse retired auth settings before opening'
   - 'refactor(config): retire the activeAccount alias'

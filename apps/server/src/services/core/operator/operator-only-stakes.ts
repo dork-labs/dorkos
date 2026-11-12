@@ -119,7 +119,6 @@ export const OPERATOR_ONLY_STAKES: readonly OperatorOnlyStakeGroup[] = [
       'spaces.enabled',
       'spaces.official.url',
       'a2a.enabled',
-      'mcp.apiKey',
       'mcp.rateLimit.enabled',
       'mcp.rateLimit.maxPerWindow',
       'mcp.rateLimit.windowSecs',

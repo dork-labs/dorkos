@@ -301,7 +301,7 @@ function isOperatorOnlyPath(path: string): boolean {
  *
  * ## Why paths and not values
  *
- * Config carries real secrets — `tunnel.authtoken`, `mcp.apiKey`,
+ * Config carries real secrets — `tunnel.authtoken`, `tunnel.auth`,
  * `cloud.instanceToken` — and logs are read by people, shipped in bug reports,
  * and pasted into issues. So the value side is never touched. Arrays are leaves,
  * so an array's CONTENTS never reach the line either.
@@ -454,6 +454,9 @@ export function applyConfigPatch(patch: unknown): ConfigPatchResult {
   const taken = takeAccountsSeen(patch as Record<string, unknown>);
   if (!taken.ok) return { ok: false, error: 'Validation failed', details: taken.details };
   const patchObj = taken.patch;
+  if (isPlainObject(patchObj.mcp) && 'apiKey' in patchObj.mcp) {
+    return { ok: false, error: 'Validation failed', details: ['mcp.apiKey: Unrecognized key'] };
+  }
   const accountPatch = (patchObj.runtimes as { claudeCode?: unknown } | undefined)?.claudeCode;
   if (isPlainObject(accountPatch) && 'activeAccount' in accountPatch) {
     return {

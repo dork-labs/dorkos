@@ -86,7 +86,6 @@ const PERIMETER: ReadonlyArray<readonly [string, Record<string, unknown>]> = [
   ['tunnel.auth', { tunnel: { auth: null } }],
   // The external tool endpoint's own gate.
   ['mcp.enabled', { mcp: { enabled: true } }],
-  ['mcp.apiKey', { mcp: { apiKey: 'known-key' } }],
   ['mcp.rateLimit.enabled', { mcp: { rateLimit: { enabled: false } } }],
   ['mcp.rateLimit.maxPerWindow', { mcp: { rateLimit: { maxPerWindow: 1_000_000 } } }],
   ['mcp.rateLimit.windowSecs', { mcp: { rateLimit: { windowSecs: 1 } } }],

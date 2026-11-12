@@ -197,7 +197,6 @@ export { RELAY_TURN_CEILING_BOUNDS, RELAY_TURN_CEILING_DEFAULTS } from './config
 export const SENSITIVE_CONFIG_KEYS = [
   'tunnel.authtoken',
   'tunnel.auth',
-  'mcp.apiKey',
   'cloud.instanceToken',
   'cloud.previousLinkProof',
 ] as const;

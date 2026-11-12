@@ -1029,7 +1029,7 @@ describe('PATCH /api/config', () => {
 
       for (const patch of [
         { tunnel: { authtoken: 'attacker-ngrok-token' } },
-        { mcp: { apiKey: 'attacker-bearer' } },
+        { mcp: { enabled: false } },
         { server: { boundary: '/' } },
         { runtimes: { codex: { binaryPath: '/tmp/evil' } } },
       ]) {
@@ -1039,7 +1039,7 @@ describe('PATCH /api/config', () => {
 
       const { configManager } = await import('../../services/core/config-manager.js');
       expect(configManager.getDot('tunnel.authtoken')).toBeNull();
-      expect(configManager.getDot('mcp.apiKey')).toBeNull();
+      expect(configManager.getDot('mcp.enabled')).toBe(true);
     });
 
     it('leaves ordinary settings alone, so the bar is not a blanket refusal', async () => {
@@ -1112,17 +1112,17 @@ describe('PATCH /api/config', () => {
     // A program hears the route's refusal; the app is asked to step up.
     await request(server)
       .patch('/api/config')
-      .send({ tunnel: { authtoken: 'planted' }, mcp: { apiKey: 'planted' } })
+      .send({ tunnel: { authtoken: 'planted' }, mcp: { enabled: false } })
       .expect(403);
     await request(server)
       .patch('/api/config')
       .set('x-dorkos-app', '1')
-      .send({ tunnel: { authtoken: 'planted' }, mcp: { apiKey: 'planted' } })
+      .send({ tunnel: { authtoken: 'planted' }, mcp: { enabled: false } })
       .expect(401);
 
     const { configManager } = await import('../../services/core/config-manager.js');
     expect(configManager.getDot('tunnel.authtoken')).not.toBe('planted');
-    expect(configManager.getDot('mcp.apiKey')).not.toBe('planted');
+    expect(configManager.getDot('mcp.enabled')).toBe(true);
   });
 
   it('still lets the person write them before anyone owns this install', async () => {
@@ -1155,12 +1155,12 @@ describe('PATCH /api/config', () => {
 
   it('lets a person change the other operator-only settings too', async () => {
     // The rest of the write allowlist, proven not to have leaked onto the human
-    // path: exposure, the MCP endpoint's key, telemetry consent, and the boundary.
+    // path: exposure, the MCP endpoint's switch, telemetry consent, and the boundary.
     const response = await request(server)
       .patch('/api/config')
       .send({
         tunnel: { enabled: true },
-        mcp: { apiKey: 'chosen-by-a-person' },
+        mcp: { enabled: false },
         telemetry: { usage: false },
         server: { boundary: '/Users/test-user' },
       })
@@ -1168,6 +1168,7 @@ describe('PATCH /api/config', () => {
 
     expect(response.body.success).toBe(true);
     expect(response.body.config.tunnel.enabled).toBe(true);
+    expect(response.body.config.mcp.enabled).toBe(false);
     expect(response.body.config.telemetry.usage).toBe(false);
     expect(response.body.config.server.boundary).toBe('/Users/test-user');
   });

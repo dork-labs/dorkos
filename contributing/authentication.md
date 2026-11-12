@@ -169,7 +169,7 @@ The client auth slice (`features/auth`) exposes Better Auth only through hooks (
 
 The old `0.45.0` auth, tunnel-passcode and Cloud config migrations have been retired. Current releases require an upgrade through 0.115 before opening older settings; see [Minimum upgrade version](configuration.md#minimum-upgrade-version). Fresh installs use the schema defaults.
 
-`mcp.apiKey` temporarily remains a reserved sensitive schema field until its schema cleanup. It has no credential acceptor, startup seeder, auth-status meaning or A2A exposure role. Its disclosure and write protections remain in place during that cleanup.
+`mcp.apiKey` is no longer a schema field or a configurable credential. Settings patches naming it are refused as an unrecognized key, with no partial write. Old unknown values remain excluded from disclosed snapshots and do not produce a configured-auth flag.
 
 ## CLI recovery
 
