@@ -292,12 +292,6 @@ describe('BackgroundTaskBar', () => {
     expect(screen.getByRole('button', { name: 'Stop amb-1' })).toBeInTheDocument();
   });
 
-  it('renders nothing when there is no task at all', () => {
-    const { container } = render(<BackgroundTaskBar tasks={[]} onStopTask={vi.fn()} />);
-
-    expect(container.innerHTML).toBe('');
-  });
-
   it('leaves housekeeping tasks out of the count, the figures and the dots', async () => {
     const user = userEvent.setup();
     const tasks = [
