@@ -35,6 +35,10 @@ export interface FrameExtensionAPI extends Omit<
    * `capabilities.http.apps`, by its item path alone (`/x/<app>/item/<id>`:
    * no query, hash or encoded characters, at most 8 segments).
    *
+   * Another app's page opens only from a fresh click or key press inside
+   * this app's own frame; otherwise it answers `no-gesture`. For the next
+   * half second DorkOS ignores clicks and keys, while the new page fades in.
+   *
    * Never throws for a refused address: it answers `{ ok: false }` with why,
    * so the app can say so.
    */
@@ -85,7 +89,7 @@ export interface FrameExtensionAPI extends Omit<
 }
 
 /** Why {@link FrameExtensionAPI.navigate} went nowhere. */
-export type AppNavigateResultRefusal = AppNavigateRefusal | 'unknown-route';
+export type AppNavigateResultRefusal = AppNavigateRefusal | 'unknown-route' | 'no-gesture';
 
 /** What {@link FrameExtensionAPI.navigate} answers. */
 export type AppNavigateResult =

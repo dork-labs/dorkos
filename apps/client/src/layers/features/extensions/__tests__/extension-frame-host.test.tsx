@@ -8,6 +8,7 @@ import {
 } from '../frame/host';
 
 import { setRunningApps } from '../frame/running-apps';
+import { resetArrivalPause } from '../frame/app-arrival';
 
 vi.mock('virtual:dorkos-extension-frame', () => ({ default: '' }));
 vi.mock('../model/extension-api-url', () => ({ extensionApiUrl: (path: string) => `/api${path}` }));
@@ -317,20 +318,71 @@ describe('isolated app host', () => {
         },
       ] as never)
     );
-    afterEach(() => setRunningApps([]));
+    afterEach(() => {
+      setRunningApps([]);
+      resetArrivalPause();
+      Reflect.deleteProperty(navigator, 'userActivation');
+    });
     const callsLedger: Partial<ExtensionManifest> = {
       capabilities: { http: { apps: ['ledger'] } },
     };
+    /** The browser's own record of a real click, which no frame can set. */
+    const activation = (isActive: boolean) =>
+      Object.defineProperty(navigator, 'userActivation', {
+        configurable: true,
+        value: { isActive, hasBeenActive: isActive },
+      });
+    /** The person clicked inside the calling app's own frame just now. */
+    const clickInCallingFrame = () => {
+      activation(true);
+      document.querySelector('iframe')!.focus();
+    };
 
-    it('opens a listed app’s item page and answers ok', async () => {
+    it('opens a listed app’s item page after a click in this app, and answers ok', async () => {
       await start(callsLedger);
+      clickInCallingFrame();
       expect(await call('navigate', ['/x/ledger/item/entry/e-17'])).toHaveProperty('value', {
         ok: true,
       });
       expect(api.navigate).toHaveBeenCalledWith('/x/ledger/item/entry/e-17');
+      // Input waits out the arrival pause, which started with the navigation.
+      expect(document.body.hasAttribute('inert')).toBe(true);
     });
 
-    it('still opens its own pages and core routes, with their query', async () => {
+    it('answers no-gesture with no click, and goes nowhere', async () => {
+      await start(callsLedger);
+      activation(false);
+      document.querySelector('iframe')!.focus();
+      const reply = (await call('navigate', ['/x/ledger/item/entry/e-17'])) as {
+        value: { ok: boolean; reason: string; message: string };
+      };
+      expect(reply.value).toMatchObject({ ok: false, reason: 'no-gesture' });
+      expect(reply.value.message).toEqual(expect.any(String));
+      expect(api.navigate).not.toHaveBeenCalled();
+    });
+
+    it('answers no-gesture when the click was in a sibling app’s frame', async () => {
+      await start(callsLedger);
+      const sibling = document.createElement('iframe');
+      document.body.append(sibling);
+      activation(true);
+      sibling.focus();
+      expect(await call('navigate', ['/x/ledger/item/entry/e-17'])).toHaveProperty(
+        'value',
+        expect.objectContaining({ ok: false, reason: 'no-gesture' })
+      );
+      expect(api.navigate).not.toHaveBeenCalled();
+    });
+
+    it('a frame cannot claim a gesture: an argument saying so changes nothing', async () => {
+      await start(callsLedger);
+      expect(
+        await call('navigate', ['/x/ledger/item/entry/e-17', { userActivation: true }])
+      ).toHaveProperty('error');
+      expect(api.navigate).not.toHaveBeenCalled();
+    });
+
+    it('still opens its own pages and core routes, with their query and no click', async () => {
       await start();
       expect(await call('navigate', ['/x/atlas/p/one?tab=2'])).toHaveProperty('value', {
         ok: true,

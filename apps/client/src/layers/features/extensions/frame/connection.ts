@@ -68,6 +68,8 @@ export function frameFit(reg: FrameRegistration): FrameFit {
 
 export interface FrameConnection {
   ready: Promise<void>;
+  /** The `<iframe>` this connection created: where the app's own input lands. */
+  element: HTMLIFrameElement;
   send(message: unknown): void;
   setProps(props: unknown): void;
   close(): void;
@@ -258,6 +260,7 @@ export function createFrameConnection(options: FrameOptions): FrameConnection {
   };
   const connection: FrameConnection = {
     ready,
+    element: iframe,
     send,
     setProps(props) {
       callbacks = new Map();
