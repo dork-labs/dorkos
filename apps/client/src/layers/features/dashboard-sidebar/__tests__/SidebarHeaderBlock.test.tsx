@@ -49,13 +49,13 @@ let mockSelf: { id: string; displayName: string; isSelf: boolean } | null = {
 /** Whether the roster read has answered yet — the header's one gate (D6). */
 let mockRosterPending = false;
 let mockIsMobile = false;
-vi.mock('@/layers/entities/team', async (importOriginal) => ({
-  teamMemberFace: (await importOriginal<typeof import('@/layers/entities/team')>()).teamMemberFace,
-  useTeamRoster: () => ({
-    data: mockRosterPending ? undefined : { members: mockSelf === null ? [] : [mockSelf] },
-    isPending: mockRosterPending,
-  }),
-}));
+// The roster hook is REAL: the transport below answers its read, so a pending
+// roster is a read that has not answered yet and an empty one is an answer.
+/** What the roster read answers with, or a read that never answers while pending. */
+const answerRoster = () =>
+  mockRosterPending
+    ? new Promise<never>(() => {})
+    : Promise.resolve({ members: mockSelf === null ? [] : [mockSelf] });
 
 const mockOpenSettings = vi.fn();
 const mockOpenProfile = vi.fn();
@@ -65,7 +65,6 @@ const mockResolveCommunityNavigation = vi.fn();
 const mockGetCommunityNavigation = vi.fn();
 const mockListRemoteCommunityRooms = vi.fn();
 const mockMoveCommunityNavigation = vi.fn();
-const mockSetGlobalPaletteOpen = vi.fn();
 let mockCloudLinked = false;
 let mockCloudAccountLabel: string | null = null;
 const mockGetCloudStatus = vi.fn(() =>
@@ -141,6 +140,7 @@ vi.mock('@/layers/shared/model', async (importOriginal) => {
     ...actual,
     useTransport: () => ({
       getConfig: mockGetConfig,
+      getTeamRoster: answerRoster,
       getCommunityNavigation: mockGetCommunityNavigation,
       resolveCommunityNavigation: mockResolveCommunityNavigation,
       listRemoteCommunityRooms: mockListRemoteCommunityRooms,
@@ -155,8 +155,6 @@ vi.mock('@/layers/shared/model', async (importOriginal) => {
     useProfileDeepLink: () => ({ open: mockOpenProfile }),
     useOpenConnections: () => mockOpenConnections,
     useIsMobile: () => mockIsMobile,
-    useAppStore: (selector: (s: Record<string, unknown>) => unknown) =>
-      selector({ setGlobalPaletteOpen: mockSetGlobalPaletteOpen }),
   };
 });
 vi.mock('@tanstack/react-router', async (importOriginal) => {
