@@ -87,7 +87,11 @@ describe('inert fill admission', () => {
       });
     const page = {
       url: () => 'http://fixture.test/',
-      locator: () => ({ ariaSnapshot: snapshot }),
+      locator: () => ({
+        ariaSnapshot: snapshot,
+        count: async () => 1,
+        nth: () => ({ ariaSnapshot: snapshot }),
+      }),
       getByRole: () => ({ count: async () => 1, elementHandle: async () => handle }),
     } as unknown as Page;
     const dispatched = vi.fn();

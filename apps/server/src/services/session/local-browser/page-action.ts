@@ -127,20 +127,52 @@ function watchMainFrameLoad(page: Page): { settle: () => Promise<void>; stop: ()
   };
 }
 
+/**
+ * The acts an agent may take without a current page read: the ways to leave a page, so a page it
+ * can't read never locks it in (DOR-4192, Security's ruling). Every other act needs the revision
+ * from the read it acts on. A close-tab act, when agents get one, belongs here too.
+ */
+export const LEAVE_ACTIONS: ReadonlySet<LocalBrowserAction['kind']> = new Set(['navigate']);
+
+/**
+ * The revision an act is fenced at, or a stale refusal. An act on the page needs the read it
+ * names to be the current one. A leave needs no read: it is fenced at the current revision, so a
+ * pause or a closing browser while it runs still stops it.
+ *
+ * @param input - The agent's act.
+ * @param observed - The current read, if any.
+ * @param hasNodes - Whether that read's node identities are held.
+ * @param revision - The browser's current revision.
+ * @param stale - Builds the stale-page refusal.
+ */
+export function actionFence(
+  input: LocalBrowserAction,
+  observed: LocalBrowserObservation | undefined,
+  hasNodes: boolean,
+  revision: number,
+  stale: () => LocalBrowserError
+): number {
+  if (LEAVE_ACTIONS.has(input.kind)) return revision;
+  if (!observed || !hasNodes || input.revision !== revision || observed.revision !== revision)
+    throw stale();
+  return input.revision;
+}
+
 /** Execute only on the observed DOM identity, with re-admission before every effect. */
 export async function performPageAction(
   page: Page,
-  observed: LocalBrowserObservation,
-  observedNodes: JSHandle<ObservedPageNodes>,
+  observed: LocalBrowserObservation | undefined,
+  observedNodes: JSHandle<ObservedPageNodes> | undefined,
   input: LocalBrowserAction,
   admit: () => void,
   dispatched: () => void,
   stale: () => LocalBrowserError
 ): Promise<void> {
   admit();
-  const snapshot = await boundedPageSnapshot(page, ACTION_TIMEOUT_MS);
-  if (snapshot !== observed.snapshot || page.url() !== observed.url) {
-    throw stale();
+  if (!LEAVE_ACTIONS.has(input.kind)) {
+    if (!observed || !observedNodes) throw stale();
+    const snapshot = await boundedPageSnapshot(page, ACTION_TIMEOUT_MS);
+    if (snapshot !== observed.snapshot || page.url() !== observed.url) throw stale();
   }
   admit();
   if (input.kind === 'navigate') {
@@ -155,8 +187,11 @@ export async function performPageAction(
       throw error;
     }
     if (BROWSER_ERROR_PAGE.test(page.url())) throw loadFailedError(input.url, undefined);
+  } else if (!observed || !observedNodes) {
+    throw stale();
   } else if (input.kind === 'press' || input.kind === 'scroll') {
-    const body = await page.locator('body').elementHandle({ timeout: ACTION_TIMEOUT_MS });
+    // The first body stands for the document; a page can carry more than one (DOR-4192).
+    const body = await page.locator('body').first().elementHandle({ timeout: ACTION_TIMEOUT_MS });
     if (!body) throw stale();
     try {
       admit();
