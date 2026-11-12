@@ -959,3 +959,56 @@ describe('honoMcpAuth — the Hono adapter', () => {
     });
   });
 });
+
+describe('retired global key through both remote ingresses', () => {
+  for (const ingress of ['managed', 'own-tunnel'] as const) {
+    for (const surface of ['mcp', 'a2a'] as const) {
+      it.each([false, true])(
+        `keeps per-user ${surface} keys working through ${ingress} with local password %s`,
+        async (authEnabled) => {
+          mockConfig({ mcpApiKey: 'dork_mcp_legacy', authEnabled });
+          vi.mocked(verifyRequestAuth).mockResolvedValue({
+            userId: 'fixture-user',
+            credential: 'api-key',
+          });
+          const next = vi.fn();
+          const res = createMockRes();
+          await authFor(surface)(
+            createMockReq({
+              method: 'POST',
+              from: { ...THIS_COMPUTER, ingress },
+              authHeader: 'Bearer fixture-current-key',
+              body: surface === 'mcp' ? rpc('tools/call', 'create_extension') : rpc('message/send'),
+            }),
+            res,
+            next
+          );
+          expect(next).toHaveBeenCalledOnce();
+          expect(res.locals.user).toEqual({ userId: 'fixture-user', credential: 'api-key' });
+        }
+      );
+      it.each([false, true])(
+        `refuses ${surface} through ${ingress} with local password %s`,
+        async (authEnabled) => {
+          mockConfig({ mcpApiKey: 'dork_mcp_legacy', authEnabled });
+          const next = vi.fn();
+          const res = createMockRes();
+          await authFor(surface)(
+            createMockReq({
+              method: 'POST',
+              from: { ...THIS_COMPUTER, ingress },
+              authHeader: 'Bearer dork_mcp_legacy',
+              body: surface === 'mcp' ? rpc('tools/call', 'create_extension') : rpc('message/send'),
+            }),
+            res,
+            next
+          );
+          expect(next).not.toHaveBeenCalled();
+          expect(res.statusCode).toBe(401);
+          expect(res.locals.user).toBeUndefined();
+          expect(res.locals.mcpLocalToken).toBeUndefined();
+        }
+      );
+    }
+  }
+});
