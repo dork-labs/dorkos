@@ -112,7 +112,17 @@ export const FEATURE_SURFACE_SECTIONS: PlaygroundSection[] = [
     title: 'App approval card',
     page: 'home-inbox',
     category: 'Inbox',
-    keywords: ['app', 'extension', 'approval', 'can change', 'other apps', 'frame', 'writes'],
+    keywords: [
+      'app',
+      'extension',
+      'approval',
+      'can change',
+      'other apps',
+      'frame',
+      'writes',
+      'open its pages',
+      'navigate',
+    ],
   },
   {
     id: 'inbox-decision-row',
