@@ -309,7 +309,7 @@ describe('Better Auth — local identity core (integration)', () => {
     });
 
     it('accepts a key that predates the fix, so no migration or backfill is owed', async () => {
-      // The shape `seedLegacyMcpApiKey` inserts and the shape every key created
+      // The stored shape of previously migrated keys and every key created
       // before this change already has on disk: the schema's rate-limit defaults,
       // which say "10 per 24h". The plugin option is checked before those columns
       // are read, so the row is exempt without being rewritten.

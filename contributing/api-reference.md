@@ -1510,7 +1510,7 @@ The server operates in **stateless mode** — each POST request creates a fresh 
 
 ### Authentication
 
-`/mcp` is **fail-closed**, with or without `MCP_API_KEY`. `honoMcpAuth('mcp')` (`middleware/mcp-auth.ts`) tries four credentials in order and allows on the first match: the `MCP_API_KEY` env override, a per-user Better Auth API key or session cookie via `verifyRequestAuth`, the not-yet-seeded legacy `config.mcp.apiKey`, and — only while login is off — this instance's per-instance local MCP token. Each is sent the same way:
+`/mcp` is **fail-closed**, with or without `MCP_API_KEY`. `honoMcpAuth('mcp')` (`middleware/mcp-auth.ts`) tries three credentials in order and allows on the first match: the `MCP_API_KEY` env override, a per-user Better Auth API key or session cookie via `verifyRequestAuth`, and — only while login is off — this instance's per-instance local MCP token. Each is sent the same way:
 
 ```
 Authorization: Bearer <token>
@@ -1696,7 +1696,7 @@ Like the MCP endpoint, A2A is a protocol endpoint — it speaks JSON-RPC, not RE
 
 ### Authentication
 
-A2A rides the same middleware as `/mcp` — `honoMcpAuth('a2a')` — so the four credential acceptors are identical (the `MCP_API_KEY` override, a per-user Better Auth key or session, the legacy compat key, and the per-instance local token while login is off), all sent as `Authorization: Bearer <token>`. Only the no-match fallback differs, because A2A has no read/write annotation to carve on:
+A2A rides the same middleware as `/mcp` — `honoMcpAuth('a2a')` — so the three credential acceptors are identical (the `MCP_API_KEY` override, a per-user Better Auth key or session, and the per-instance local token while login is off), all sent as `Authorization: Bearer <token>`. Only the no-match fallback differs, because A2A has no read/write annotation to carve on:
 
 - **Login off:** an Agent Card `GET` passes tokenless — public discovery metadata, the `tools/list` analogue. Every JSON-RPC `POST` is `401` without a credential; **execution is always gated**, and has been since DOR-278 (`middleware/__tests__/mcp-auth.test.ts`).
 - **Login on:** both are `401` without a credential — card discovery closes too. Unlike `/mcp`, `/a2a` is not an `isGatedPath` prefix, so `sessionGate` never runs on it and the `MCP_API_KEY` override does reach this surface.
@@ -1707,7 +1707,7 @@ A card carrying that requirement does not claim the card endpoint is closed. A2A
 
 ### Deployment security
 
-- **Exposure guard.** On a non-loopback `DORKOS_HOST` with no auth configured (no `MCP_API_KEY`, no legacy compat key, login disabled), the server refuses to mount the A2A gateway and its well-known card routes, logging the fix: set `MCP_API_KEY` or enable login. `DORKOS_ALLOW_INSECURE_BIND=true` overrides for containers that own their network boundary.
+- **Exposure guard.** On a non-loopback `DORKOS_HOST` with no auth configured (no `MCP_API_KEY`, login disabled), the server refuses to mount the A2A gateway and its well-known card routes, logging the fix: set `MCP_API_KEY` or enable login. `DORKOS_ALLOW_INSECURE_BIND=true` overrides for containers that own their network boundary.
 - **Rate limiting counts per connection, not per forwarded header.** JSON-RPC endpoints are limited to ~60 req/min and card endpoints to ~300 (`DORKOS_A2A_RPC_RATE_LIMIT` / `DORKOS_A2A_CARD_RATE_LIMIT` override). Every limiter keys on the TCP peer address through `middleware/rate-limit-key.ts` (DOR-1711); it used to key on `req.ip`, which the app's `trust proxy, 1` derives from `X-Forwarded-For`, so a caller on a direct bind could rotate spoofed values across unlimited buckets. Requests arriving through DorkOS's own tunnel share one bucket, because the ngrok agent runs in-process and forwards to the local port. Set `DORKOS_TRUST_PROXY=true` to get per-client buckets behind a proxy you control — and only then, since it means whoever reaches that proxy's upstream writes the key.
 - **`contextId` is a caller-supplied partition key, not a per-principal boundary.** A2A-originated agent sessions are keyed on `agentId + contextId`: callers using distinct `contextId`s get distinct sessions, but under a shared credential (one static `MCP_API_KEY`) a caller who learns another caller's `contextId` can deliberately join that session. Treat `contextId` as a shared secret between a caller and the gateway (use unguessable values, e.g. UUIDs). Per-principal isolation is future work.
 - **Advertised URLs.** Set `DORKOS_PUBLIC_URL` when DorkOS sits behind a proxy or tunnel so Agent Cards advertise a routable URL instead of the bind address (e.g. `http://0.0.0.0:4242`).

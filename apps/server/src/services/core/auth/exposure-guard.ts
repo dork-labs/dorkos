@@ -172,7 +172,7 @@ export interface A2aExposureInput {
   host: string;
   /**
    * Whether a network-reachable credential gates the A2A surface: `MCP_API_KEY`,
-   * the legacy `config.mcp.apiKey` compat key, or an owner account (every
+   * or an owner account (every
    * request from another device then needs that account's key). The local
    * token (DOR-278) gates JSON-RPC execution too, but it is loopback-only
    * (a `0600` file a remote caller cannot read), so it does not count here — this

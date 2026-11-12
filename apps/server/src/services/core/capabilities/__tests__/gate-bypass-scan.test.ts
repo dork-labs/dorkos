@@ -159,8 +159,6 @@ const PROTECTED_EFFECTS: ProtectedEffect[] = [
         'records the agent it just created as the default (logConfigWrite: "the agent creator")',
       'services/core/auth/cloud-link.ts':
         'stores the token this instance was linked with, behind the link flow; an unlink, and a new key replacing a held one, also narrow `cloud.remote` with `withdrawnRemoteState` (logConfigWrite: "the account link" / "unlinking this instance")',
-      'services/core/auth/seed-legacy-mcp-key.ts':
-        'a boot migration that CLEARS a legacy key — narrowing only, and no request reaches it (logConfigWrite: "the MCP key migration")',
       'services/core/remote/remote-state.ts':
         'the one writer of `cloud.remote` (DOR-2086), behind `updateRemoteState(`, whose callers are pinned in their own entry below. It spreads the stored `cloud` section and replaces only `remote`, validates the whole record (a raw secret fails the reference pattern; `managed` needs an active enrolment), and never reads or writes `tunnel` (logConfigWrite: the caller-named subsystem)',
       'services/shapes/shape-services.ts':

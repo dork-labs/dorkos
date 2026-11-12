@@ -67,7 +67,6 @@ import {
 } from './registration-policy.js';
 import { currentServerRole } from '../../../lib/server-role.js';
 import { isPersonalComputer } from '../server-role/role-checks.js';
-import { seedLegacyMcpApiKey } from './seed-legacy-mcp-key.js';
 import { refuseWithoutSetupCode } from './setup-code-gate.js';
 import { stampSessionRoute } from './sessions/session-route.js';
 import { endSession } from './sessions/live-connections.js';
@@ -257,8 +256,7 @@ function buildAuthOptions(db: Db, dorkHome: string, port: number): AuthOptions {
     // Turning it off at the PLUGIN level (rather than per key at creation) is
     // also what makes the fix retroactive: `evaluateRateLimit` checks this
     // option before it reads the row's `rateLimitEnabled` / `rateLimitMax`
-    // columns, so keys minted before this change — including the row
-    // `seedLegacyMcpApiKey` inserts — stop being throttled with no migration or
+    // columns, so keys minted before this change stop being throttled with no migration or
     // backfill. The columns in `packages/db/src/schema/auth.ts` keep their
     // now-inert defaults on purpose: rewriting a SQLite column default means
     // rebuilding the table for zero behavior change.
@@ -339,12 +337,6 @@ function buildAuthOptions(db: Db, dorkHome: string, port: number): AuthOptions {
             // The account in the audit log, linked to the install id the log
             // named its owner by until now (spec `audit-trail` §3.2).
             recordAccountCreated(created);
-            // Owner-creation seam for the legacy MCP key migration (task 1.4):
-            // when the owner is created (the enable-login flow), fold any lingering
-            // `config.mcp.apiKey` into an owner-owned Better Auth key so existing
-            // MCP clients keep working without a restart. Idempotent + non-throwing,
-            // so it can never fail the sign-up it runs inside.
-            await seedLegacyMcpApiKey(db);
           },
         },
       },
@@ -581,12 +573,8 @@ export {
  */
 export const REGISTRATION_PROVISIONED = 'REGISTRATION_PROVISIONED';
 
-// The legacy MCP key migration (task 1.4). Re-exported so `index.ts` can run the
-// startup seed on a clean seam right after `initAuth`.
-export { seedLegacyMcpApiKey } from './seed-legacy-mcp-key.js';
-
 // The per-instance local MCP token (DOR-278). Re-exported so `index.ts` resolves
-// it at boot on the same auth seam as `initAuth`/`seedLegacyMcpApiKey`. The
+// it at boot on the same auth seam as `initAuth`. The
 // middleware and the config DTO import the cached getter / rotate helper directly
 // from `./mcp-local-token.js`.
 export { resolveMcpLocalToken } from './mcp-local-token.js';

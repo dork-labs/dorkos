@@ -18,7 +18,7 @@ function hasRetiredConfigEncoding(value: object): boolean {
     return true;
   const mcp = (value as { mcp?: { apiKey?: unknown } }).mcp;
   // Null and empty are current unset defaults. Never let a surviving global
-  // key reach the legacy startup seeder or authenticate a request.
+  // key be silently discarded while removing its retired credential path.
   if (mcp?.apiKey !== undefined && mcp.apiKey !== null && mcp.apiKey !== '') return true;
   const claudeCode = (value as { runtimes?: { claudeCode?: unknown } }).runtimes?.claudeCode;
   if (claudeCode && typeof claudeCode === 'object' && 'activeAccount' in claudeCode) return true;

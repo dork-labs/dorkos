@@ -196,7 +196,7 @@ describe('Config MCP endpoints', () => {
       expect(res.body.mcp).not.toHaveProperty('localToken');
     });
 
-    it('returns authSource "user-keys" while a not-yet-seeded legacy apiKey lingers', async () => {
+    it('does not report retired config keys as configured auth', async () => {
       vi.mocked(configManager.get).mockImplementation((key: string) => {
         if (key === 'mcp')
           return {
@@ -207,8 +207,8 @@ describe('Config MCP endpoints', () => {
         return undefined;
       });
       const res = await request(fixtureServer).get('/api/config').expect(200);
-      expect(res.body.mcp.authConfigured).toBe(true);
-      expect(res.body.mcp.authSource).toBe('user-keys');
+      expect(res.body.mcp.authConfigured).toBe(false);
+      expect(res.body.mcp.authSource).toBe('none');
     });
 
     it('prefers authSource "env" over user keys when MCP_API_KEY is set', async () => {

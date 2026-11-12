@@ -19,7 +19,7 @@
  * 3. **`/mcp` and A2A** (`/a2a`, its agent cards) pass to their own
  *    authorizer, `middleware/mcp-auth.ts`, which runs on every one of those
  *    routes and alone decides them: the local MCP token, `MCP_API_KEY` and the
- *    legacy config key, exactly as it accepts them, and nothing tokenless. The
+ *    current per-user key, exactly as it accepts them, and nothing tokenless. The
  *    gate does not check a credential there, so the two can never disagree.
  * 4. **Everything else**, all of `/api` included, needs a live agent
  *    identity: an `X-DorkOS-Agent` token that resolves to an agent still

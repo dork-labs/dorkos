@@ -1,6 +1,6 @@
 /**
- * Contract for the external MCP endpoint (`/mcp`), which moves to Hono in
- * DOR-2808. That PR must pass this file unchanged.
+ * Contract for the external MCP endpoint (`/mcp`), including retired-key refusal
+ * under the 0.115 upgrade floor (DOR-4188).
  *
  * `/mcp` is not under `/api`, so it skips the API host guard and has gates of
  * its own, in this order: the browser `Origin` check, the on/off switch, the
@@ -22,9 +22,9 @@
  * 2. Login off, then on, driven by hand: a person's API key and session cookie
  *    are let in with login off; once login is on the session gate answers
  *    first, and the local token stops counting.
- * 3. `MCP_API_KEY` set, a legacy `config.mcp.apiKey` not yet folded into an
- *    account, and a limit of three calls a minute: both keys are let in, the
- *    401 names no token file, and the fourth call is refused.
+ * 3. `MCP_API_KEY` set and a limit of three calls a minute: the current key
+ *    is let in, a retired global key is refused without counting, the 401 names
+ *    no token file, and the fourth admitted call is refused.
  */
 import { randomUUID } from 'node:crypto';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
@@ -613,22 +613,22 @@ describe('contract: the /mcp endpoint with a person’s credentials, login off t
   });
 });
 
-describe('contract: the /mcp endpoint with MCP_API_KEY, a legacy key and a tight limit', () => {
+describe('contract: the /mcp endpoint with MCP_API_KEY, retired-key refusal and a tight limit', () => {
   const ENV_KEY = `contract-env-key-${randomUUID()}`;
   const LEGACY_KEY = `dork_mcp_${randomUUID().replaceAll('-', '')}`;
   let server: ComposedServer | undefined;
   let dorkHome = '';
 
   beforeAll(async () => {
-    // A data directory written before the first boot, as an upgraded install's
-    // is: the legacy key stays in `config.json` until an owner exists.
+    // A supported install with current auth settings and a tight request limit.
     dorkHome = await mkdtemp(path.join(tmpdir(), 'dorkos-contract-mcp-'));
     await writeFile(
       path.join(dorkHome, 'config.json'),
       JSON.stringify({
+        __internal__: { migrations: { version: '0.115.0' } },
         mcp: {
           enabled: true,
-          apiKey: LEGACY_KEY,
+          apiKey: null,
           rateLimit: { enabled: true, maxPerWindow: 3, windowSecs: 60 },
         },
       })
@@ -671,11 +671,19 @@ describe('contract: the /mcp endpoint with MCP_API_KEY, a legacy key and a tight
       body: MUTATING_CALL,
       expect: { status: 401, headers: NOT_COUNTED, body: NEEDS_CREDENTIAL },
     });
-    // (2) The legacy key, while no owner account exists to fold it into.
+    // A retired global key is refused before rate limiting.
     await check(server, {
       method: 'POST',
       path: '/mcp',
       headers: { ...MCP_CLIENT, authorization: `Bearer ${LEGACY_KEY}` },
+      body: MUTATING_CALL,
+      expect: { status: 401, headers: NOT_COUNTED, body: NEEDS_CREDENTIAL },
+    });
+    // (2) The current env key still authorizes the second admitted call.
+    await check(server, {
+      method: 'POST',
+      path: '/mcp',
+      headers: { ...MCP_CLIENT, authorization: `Bearer ${ENV_KEY}` },
       body: MUTATING_CALL,
       expect: { status: 500, headers: { ...TIGHT, 'ratelimit-remaining': '1' }, body: LET_IN },
     });

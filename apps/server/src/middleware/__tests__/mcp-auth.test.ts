@@ -442,20 +442,21 @@ describe('honoMcpAuth — surface "mcp", login off, each acceptor authorizes a m
     expect(res.locals?.user).toBeUndefined();
   });
 
-  it('accepts the legacy config mcp.apiKey on a mutating call', async () => {
-    // Acceptor 3: not-yet-seeded legacy compat key.
+  it.each(['mcp', 'a2a'] as const)('refuses a retired config key on %s', async (surface) => {
     mockConfig({ mcpApiKey: 'dork_mcp_legacy', authEnabled: false });
     const next = vi.fn() as NextFunction;
     const res = createMockRes();
-    await mcpAuth(
+    await authFor(surface)(
       createMockReq({
         authHeader: 'Bearer dork_mcp_legacy',
         body: rpc('tools/call', 'create_extension'),
-      }) as Request,
-      res as Response,
+      }),
+      res,
       next
     );
-    expect(next).toHaveBeenCalled();
+    expect(next).not.toHaveBeenCalled();
+    expect(res.statusCode).toBe(401);
+    expect(res.locals.user).toBeUndefined();
   });
 
   it('accepts the local token on a mutating call', async () => {
@@ -540,10 +541,10 @@ describe('honoMcpAuth — the API-key lookup is skipped only for the local token
     expect(verifyRequestAuth).toHaveBeenCalledWith(expect.anything(), {});
   });
 
-  it('does NOT skip it for the legacy config key, which seeding stores AS a Better Auth key', async () => {
-    // `seedLegacyMcpApiKey` inserts that exact value into the `apikey` table, so
-    // the legacy bearer really can resolve to a person. Skipping the lookup here
-    // would silently drop `res.locals.user` for them.
+  it('retains identity lookup for a previously migrated per-user key', async () => {
+    // Keys migrated by supported earlier releases are ordinary per-user keys.
+    // They still resolve to their person through the current verifier.
+    vi.mocked(verifyRequestAuth).mockResolvedValue({ userId: 'owner-1', credential: 'api-key' });
     mockConfig({ mcpApiKey: 'dork_mcp_legacy', authEnabled: false });
     const next = vi.fn() as NextFunction;
     const res = createMockRes();
@@ -556,6 +557,7 @@ describe('honoMcpAuth — the API-key lookup is skipped only for the local token
       next
     );
     expect(next).toHaveBeenCalled();
+    expect(res.locals.user).toEqual({ userId: 'owner-1', credential: 'api-key' });
     expect(verifyRequestAuth).toHaveBeenCalledWith(expect.anything(), {});
   });
 
@@ -855,20 +857,24 @@ describe('honoMcpAuth — login ON (both surfaces)', () => {
     expect(next).toHaveBeenCalled();
   });
 
-  it('accepts the legacy key when login is on', async () => {
-    mockConfig({ mcpApiKey: 'dork_mcp_legacy', authEnabled: true });
-    const next = vi.fn() as NextFunction;
-    const res = createMockRes();
-    await mcpAuth(
-      createMockReq({
-        authHeader: 'Bearer dork_mcp_legacy',
-        body: rpc('tools/call', 'create_extension'),
-      }) as Request,
-      res as Response,
-      next
-    );
-    expect(next).toHaveBeenCalled();
-  });
+  it.each(['mcp', 'a2a'] as const)(
+    'refuses a retired global key with login on for %s',
+    async (surface) => {
+      mockConfig({ mcpApiKey: 'dork_mcp_legacy', authEnabled: true });
+      const next = vi.fn() as NextFunction;
+      const res = createMockRes();
+      await authFor(surface)(
+        createMockReq({
+          authHeader: 'Bearer dork_mcp_legacy',
+          body: rpc('tools/call', 'create_extension'),
+        }) as Request,
+        res as Response,
+        next
+      );
+      expect(next).not.toHaveBeenCalled();
+      expect(res.statusCode).toBe(401);
+    }
+  );
 
   it('accepts a per-user identity on an a2a POST when login is on', async () => {
     vi.mocked(verifyRequestAuth).mockResolvedValue({ userId: 'owner-1', credential: 'api-key' });

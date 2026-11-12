@@ -246,14 +246,13 @@ export async function mountLateRoutes(refs: ServerRefs, built: MountLateRoutesIn
     // that token is a loopback-trust mechanism (a 0600 file only a local operator
     // can read) — it does not make the surface safe on a non-loopback bind. So the
     // exposure guard still keys off a network-reachable credential (an env key,
-    // the legacy compat key, or an owner account, whose key every other device
+    // or an owner account, whose key every other device
     // must present) to decide whether A2A may mount off loopback.
     //
     // This answers "may A2A face the network?" and nothing else. It is NOT what
     // Agent Cards advertise: execution is gated in every posture, so cards state
     // the bearer requirement unconditionally (DOR-1824, agent-card-generator.ts).
-    const authConfigured =
-      !!env.MCP_API_KEY?.trim() || !!configManager.get('mcp')?.apiKey || hasAnyUser();
+    const authConfigured = !!env.MCP_API_KEY?.trim() || hasAnyUser();
 
     // Exposure guard: refuse to mount the external A2A surface (JSON-RPC plus
     // the agent-card discovery endpoints) on a non-loopback host when nothing
@@ -294,7 +293,7 @@ export async function mountLateRoutes(refs: ServerRefs, built: MountLateRoutesIn
 
       // Names the credential a caller must send. "none" was never true here —
       // execution is gated in every posture; only WHICH credential changes.
-      // With login OFF but an env/legacy key set, acceptor 4 in mcp-auth.ts is
+      // With login OFF but an env key set, acceptor 3 in mcp-auth.ts is
       // gated on `!authEnabled` — not on the key — so the local token still
       // passes there too. Name every credential that works, or the line trades
       // one lie for a smaller one.

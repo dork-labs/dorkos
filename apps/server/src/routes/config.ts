@@ -282,7 +282,7 @@ router.get('/', async (c) => {
     // Who the user is, in their own words (spec user-profile-onboarding).
     // Local-only; the fallback covers the pre-migration read window.
     profile: configManager.get('profile') ?? USER_PROFILE_DEFAULTS,
-    // `defaultDirectory` goes out RESOLVED: the cockpit shows a person where a
+    // `defaultDirectory` goes out RESOLVED: the app shows a person where a
     // new agent will live and probes that path for a `.dork` conflict, so it has
     // to be the directory the server will actually use. The stored value is the
     // portable `~/.dork/agents` spelling, which is not the data directory once
@@ -296,12 +296,10 @@ router.get('/', async (c) => {
       // Trim-for-presence: a whitespace-only MCP_API_KEY counts as unset,
       // matching the boot wiring, the token module, and the auth middleware.
       const envKey = env.MCP_API_KEY?.trim() || null;
-      const legacyKey = mcpConfig?.apiKey ?? null;
       const localToken = getMcpLocalToken();
       // authSource reports how MCP access is secured:
       //   'env'         — the static MCP_API_KEY override (headless deployments).
-      //   'user-keys'   — per-user Better Auth API keys (the current model), or a
-      //                   not-yet-seeded legacy config key on its way to becoming one.
+      //   'user-keys'   — per-user Better Auth API keys.
       //   'local-token' — login off, no MCP_API_KEY: the per-instance local token
       //                   gates the mutating surface (DOR-278). The surface is
       //                   still gated, so authConfigured is true.
@@ -309,7 +307,7 @@ router.get('/', async (c) => {
       //                   in a normal login-off boot).
       const authSource: 'env' | 'user-keys' | 'none' | 'local-token' = envKey
         ? 'env'
-        : legacyKey || hasAnyApiKey()
+        : hasAnyApiKey()
           ? 'user-keys'
           : localToken
             ? 'local-token'

@@ -51,7 +51,6 @@ import { DEFAULT_CWD } from '../../lib/resolve-root.js';
 import { onSessionAccountLaunched } from '../../services/runtimes/claude-code/accounts/account-usage-feed.js';
 import {
   initAuth,
-  seedLegacyMcpApiKey,
   resolveMcpLocalToken,
   readOwnerAccount,
 } from '../../services/core/auth/index.js';
@@ -251,13 +250,6 @@ export async function wireCoreStores(refs: ServerRefs, built: WireCoreStoresInpu
     asksOnThisComputer: () => readGatePosture().askOnThisComputer,
   });
   setRemoteCommunityDb(db);
-
-  // One-time migration: fold a pre-auth global `mcp.apiKey` into an owner-owned
-  // Better Auth API key so existing MCP clients keep working after the rewrite to
-  // per-user keys (task 1.4). No-op when there is no legacy key or no owner yet
-  // (the owner-creation hook in createAuth handles the enable-login-mid-upgrade
-  // case). Idempotent and non-throwing.
-  void seedLegacyMcpApiKey(db);
 
   // Resolve the per-instance local MCP token once (DOR-278) — but only in
   // login-off mode with no MCP_API_KEY override. In that mode this generates and

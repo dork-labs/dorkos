@@ -356,7 +356,7 @@ export async function wireMcpTasksAndSkills(refs: ServerRefs, built: WireMcpTask
   // a clean 503. The routes, their gates and the transport are on the Hono
   // chain (`routes/mcp.ts`); this is the tool server behind them, built per
   // request. Auth is resolved per request by `decideMcpAuth` (env override →
-  // per-user Better Auth key / session → legacy compat key → per-instance local
+  // per-user Better Auth key / session → per-instance local
   // token, with the read-only carve-out in login-off mode). This is only a
   // startup log hint.
   const mcpAuthMode = env.MCP_API_KEY?.trim()

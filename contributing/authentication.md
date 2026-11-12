@@ -6,24 +6,23 @@ DorkOS has one identity core — [Better Auth](https://better-auth.com) — embe
 
 ## Key Files
 
-| Concept                                    | Location                                                    |
-| ------------------------------------------ | ----------------------------------------------------------- |
-| Local Better Auth instance                 | `apps/server/src/services/core/auth/index.ts`               |
-| Session gate (the request gate)            | `apps/server/src/services/core/auth/session-gate.ts`        |
-| Who the owner is                           | `apps/server/src/services/core/auth/accounts.ts`            |
-| Which author id the owner IS               | `apps/server/src/routes/room-caller.ts`                     |
-| Exposure guard (tunnel / bind)             | `apps/server/src/services/core/auth/exposure-guard.ts`      |
-| Legacy MCP key seeding                     | `apps/server/src/services/core/auth/seed-legacy-mcp-key.ts` |
-| One-time reset token (DOR-1707)            | `apps/server/src/services/core/auth/reset-token.ts`         |
-| MCP auth middleware (4-tier)               | `apps/server/src/middleware/mcp-auth.ts`                    |
-| Trusted-origin resolver (CSRF)             | `apps/server/src/lib/trusted-origins.ts`                    |
-| Auth SQLite schema                         | `packages/db/src/schema/auth.ts`                            |
-| `auth.enabled` + `cloud.*` config          | `packages/shared/src/config-schema.ts`                      |
-| Config migrations (0.49–0.51)              | `apps/server/src/services/core/config-manager.ts`           |
-| CLI `dorkos auth <enable\|reset-password>` | `packages/cli/src/commands/auth-dispatcher.ts`              |
-| Client auth slice                          | `apps/client/src/layers/features/auth/`                     |
-| Cloud Better Auth instance (P2)            | `apps/site/src/lib/auth.ts`                                 |
-| Cloud device-link client (P2)              | `apps/server/src/services/core/auth/cloud-link.ts`          |
+| Concept                                    | Location                                               |
+| ------------------------------------------ | ------------------------------------------------------ |
+| Local Better Auth instance                 | `apps/server/src/services/core/auth/index.ts`          |
+| Session gate (the request gate)            | `apps/server/src/services/core/auth/session-gate.ts`   |
+| Who the owner is                           | `apps/server/src/services/core/auth/accounts.ts`       |
+| Which author id the owner IS               | `apps/server/src/routes/room-caller.ts`                |
+| Exposure guard (tunnel / bind)             | `apps/server/src/services/core/auth/exposure-guard.ts` |
+| One-time reset token (DOR-1707)            | `apps/server/src/services/core/auth/reset-token.ts`    |
+| MCP auth middleware (4-tier)               | `apps/server/src/middleware/mcp-auth.ts`               |
+| Trusted-origin resolver (CSRF)             | `apps/server/src/lib/trusted-origins.ts`               |
+| Auth SQLite schema                         | `packages/db/src/schema/auth.ts`                       |
+| `auth.enabled` + `cloud.*` config          | `packages/shared/src/config-schema.ts`                 |
+| Config migrations (0.49–0.51)              | `apps/server/src/services/core/config-manager.ts`      |
+| CLI `dorkos auth <enable\|reset-password>` | `packages/cli/src/commands/auth-dispatcher.ts`         |
+| Client auth slice                          | `apps/client/src/layers/features/auth/`                |
+| Cloud Better Auth instance (P2)            | `apps/site/src/lib/auth.ts`                            |
+| Cloud device-link client (P2)              | `apps/server/src/services/core/auth/cloud-link.ts`     |
 
 ## When to Use What
 
@@ -134,14 +133,13 @@ So "the API is behind a `Host` guard" is true only of a login-off, non-container
 
 Do not confuse it with a locality check. `Host` says which name the caller asked for; only the raw TCP peer address says where the caller is. The runtime-provisioning routes need both and use `isLocalRequest` (`lib/trusted-origins.ts`) — **ADR `260726-232222`**, which also records why trusting a forwarded header for either question is a trap.
 
-### MCP: 4-tier resolution + legacy seeding
+### MCP credential resolution
 
 `honoMcpAuth(surface)` (`middleware/mcp-auth.ts`, over the framework-free `decideMcpAuth`) guards both `/mcp` and `/a2a`. It keeps the JSON-RPC 401 shape those clients expect and resolves credentials in priority order, allowing on the first match:
 
 1. `env.MCP_API_KEY` — static override for headless deployments (exact match, constant-time, un-revocable from the UI).
 2. A per-user Better Auth API key (or session cookie) via `verifyRequestAuth`.
-3. Legacy compat: a not-yet-seeded `config.mcp.apiKey`, accepted until seeding retires it.
-4. The per-instance local MCP token (`getMcpLocalToken()`), **only while login is off** — the replacement for the deleted zero-config pass-through (`specs/mcp-local-auth-posture`). It yields to per-user keys once login is on, per ADR-0320.
+3. The per-instance local MCP token (`getMcpLocalToken()`), **only while login is off** — the replacement for the deleted zero-config pass-through (`specs/mcp-local-auth-posture`). It yields to per-user keys once login is on, per ADR-0320.
 
 **When nothing matches it fails closed** — there is no unauthenticated path left:
 
@@ -149,7 +147,7 @@ Do not confuse it with a locality check. `Host` says which name the caller asked
 - **Login off, `/a2a`:** `GET` (agent-card discovery) passes; `POST` (JSON-RPC execution) is `401` without a credential.
 - **Login on:** no tokenless path on either surface. On `/mcp` the app-wide `sessionGate` answers before this middleware ever runs, so a session cookie or per-user API key is the only credential that gets through — **the local token and the `MCP_API_KEY` override alone are both refused there** (pinned by `middleware/__tests__/mcp-auth.integration.test.ts`). `/a2a` is not a gated path, so the override still works on it.
 
-The old global `dork_mcp_*` key is folded into a per-user key by `seedLegacyMcpApiKey(db)`, run on the owner-creation seam and at startup. It inserts the exact key value as an owner-owned Better Auth key (via the plugin's `defaultKeyHasher`) and clears `config.mcp.apiKey` in the same operation — idempotent, so existing MCP clients keep working without a restart. The removed `POST /api/config/mcp/generate-key` and `DELETE /api/config/mcp/api-key` endpoints are replaced by the Better Auth `/api/auth/*` API-key endpoints (client UI in `features/auth`). `GET /api/config` reports the MCP `authSource` as `'env' | 'user-keys' | 'local-token' | 'none'` — `'local-token'` being the normal login-off answer, and `'none'` only the degenerate case where no token could be generated. `authConfigured` is `authSource !== 'none'`, so a default install reports the surface as gated, because it is.
+The legacy global-key seeder and request fallback are retired under the 0.115 upgrade floor. A nonempty `config.mcp.apiKey` is refused before Conf opens, even beside a supported marker. Creating an owner never turns a leftover value into a credential. Keys already migrated by a supported release remain ordinary per-user API keys, verified with their identity and revocation checks. The removed `POST /api/config/mcp/generate-key` and `DELETE /api/config/mcp/api-key` endpoints are replaced by the Better Auth `/api/auth/*` API-key endpoints (client UI in `features/auth`). `GET /api/config` reports the MCP `authSource` as `'env' | 'user-keys' | 'local-token' | 'none'` — `'local-token'` being the normal login-off answer, and `'none'` only the degenerate case where no token could be generated. `authConfigured` is `authSource !== 'none'`, so a default install reports the surface as gated, because it is.
 
 ### Cookies, CSRF, and the tunnel hop
 
@@ -171,7 +169,7 @@ The client auth slice (`features/auth`) exposes Better Auth only through hooks (
 
 The old `0.45.0` auth, tunnel-passcode and Cloud config migrations have been retired. Current releases require an upgrade through 0.115 before opening older settings; see [Minimum upgrade version](configuration.md#minimum-upgrade-version). Fresh installs use the schema defaults.
 
-`mcp.apiKey` remains in the schema (and in `SENSITIVE_CONFIG_KEYS`) for the seeding compat window; removing it is deferred to a later config-schema cleanup once seeding has shipped in a release.
+`mcp.apiKey` temporarily remains a reserved sensitive schema field until its schema cleanup. It has no credential acceptor, startup seeder, auth-status meaning or A2A exposure role. Its disclosure and write protections remain in place during that cleanup.
 
 ## CLI recovery
 

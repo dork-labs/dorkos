@@ -6,7 +6,7 @@
  * and session gate (task 1.2), then `honoMcpAuth('mcp')`. Covers both
  * `config.auth.enabled` modes, the login-off read-only carve-out, the helpful
  * 401 body, and every credential acceptor (env override, per-user key, revoked
- * key, legacy compat key, and the per-instance local token).
+ * key and the per-instance local token), plus retired-key refusal.
  *
  * The local-token module is mocked to a known value/path so the acceptor and the
  * 401 body are deterministic; everything else (auth, session gate, the middleware
@@ -244,12 +244,13 @@ describe('honoMcpAuth — /mcp end-to-end (integration)', () => {
       expect((res.body as { error: { code: number } }).error.code).toBe(-32001);
     });
 
-    it('accepts a not-yet-seeded legacy config key on a mutating call (compat window)', async () => {
+    it('refuses a retired global config key on a mutating call', async () => {
       setLegacyKey('dork_mcp_legacy_compat');
       const res = await postMcp(server, { auth: 'Bearer dork_mcp_legacy_compat' }).send(
         MUTATING_CALL
       );
-      expect(res.status).toBe(200);
+      expect(res.status).toBe(401);
+      expect((res.body as { error: { code: number } }).error.code).toBe(-32001);
     });
 
     it('logs no API-key failure for a local-token request, but still does for a real one', async () => {
