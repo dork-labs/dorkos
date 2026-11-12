@@ -23,12 +23,7 @@
  * script in it, so it earns inline rendering on exactly the grounds the other
  * three do.
  */
-export const PREVIEWABLE_IMAGE_TYPES = [
-  'image/png',
-  'image/jpeg',
-  'image/webp',
-  'image/gif',
-] as const;
+const PREVIEWABLE_IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/webp', 'image/gif'] as const;
 
 /** One of {@link PREVIEWABLE_IMAGE_TYPES}. */
 export type PreviewableImageType = (typeof PREVIEWABLE_IMAGE_TYPES)[number];

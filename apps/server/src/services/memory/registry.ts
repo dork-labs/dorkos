@@ -198,7 +198,7 @@ export function registerMemoryProvider(id: string, factory: MemoryProviderFactor
 }
 
 /** Every registered backend id, for a log line or a settings surface. */
-export function registeredMemoryProviderIds(): string[] {
+function registeredMemoryProviderIds(): string[] {
   return [...factories.keys()];
 }
 

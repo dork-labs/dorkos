@@ -6,12 +6,9 @@
  */
 export {
   AgentIdentityService,
-  agentTokenDigestPrefix,
   initAgentIdentityService,
   getAgentIdentityService,
   resetAgentIdentityService,
-  TOKEN_ABSOLUTE_TTL_MS,
-  TOKEN_IDLE_TTL_MS,
   type AgentIdentity,
   type MintAgentTokenInput,
 } from './agent-identity-service.js';
@@ -29,7 +26,6 @@ export {
   readHomeManifest,
   setAgentHomeRegistry,
   assertOwnDesk,
-  assertNobodysDesk,
   isInsideRoomsDir,
   deskBindingFor,
   DeskNotOwnError,

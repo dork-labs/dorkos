@@ -133,7 +133,7 @@ function json(value: unknown): string | null {
  *
  * @param row - The row as stored.
  */
-export function hashInput(row: Omit<AuditRow, 'hash'>): Record<string, unknown> {
+function hashInput(row: Omit<AuditRow, 'hash'>): Record<string, unknown> {
   return {
     seq: row.seq,
     id: row.id,

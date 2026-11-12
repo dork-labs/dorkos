@@ -26,10 +26,7 @@ import {
  * @param db - The server database.
  * @param sessionIds - The sessions.
  */
-export function readSessionLaunchOrigins(
-  db: Db,
-  sessionIds: readonly string[]
-): Map<string, string> {
+function readSessionLaunchOrigins(db: Db, sessionIds: readonly string[]): Map<string, string> {
   const origins = new Map<string, string>();
   if (sessionIds.length === 0) return origins;
   const rows = db

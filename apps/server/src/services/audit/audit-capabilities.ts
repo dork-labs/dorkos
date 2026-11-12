@@ -105,7 +105,7 @@ function requireAuditDeps(deps: CapabilityDeps): AuditDeps {
  * @param audit - The audit deps, for naming the agent.
  * @param context - The invocation context.
  */
-export function readerFor(
+function readerFor(
   audit: AuditDeps,
   context: CapabilityInvocationContext | undefined
 ): AuditReader {

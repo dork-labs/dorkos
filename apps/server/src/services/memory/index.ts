@@ -14,4 +14,4 @@
  *
  * @module server/services/memory
  */
-export { getMemoryProvider, registerMemoryProvider, resetMemoryProvider } from './registry.js';
+export { getMemoryProvider, resetMemoryProvider } from './registry.js';

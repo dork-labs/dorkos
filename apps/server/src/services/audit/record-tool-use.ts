@@ -108,7 +108,7 @@ const DORKOS_PREFIX: Record<string, string> = {
  * @param runtime - The runtime's type.
  * @param name - The tool's name as that runtime reported it.
  */
-export function isDorkosTool(runtime: string, name: string): boolean {
+function isDorkosTool(runtime: string, name: string): boolean {
   // Doe hands the model DorkOS's tools under their bare registered names.
   if (runtime === 'doe') return Object.hasOwn(MCP_TOOL_TIERS, name);
   const prefix = DORKOS_PREFIX[runtime];

@@ -28,7 +28,7 @@ const HOOK_TIMEOUT_MS = 60_000;
 const HOOK_LOG_CAP = 2048;
 
 /** Zod schema for the repo-owned `.dork/workspace.json`. */
-export const WorkspaceHookConfigSchema = z
+const WorkspaceHookConfigSchema = z
   .object({
     provider: z.enum(['worktree', 'clone']).optional(),
     copy: z.array(z.string()).optional(),

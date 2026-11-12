@@ -32,7 +32,7 @@ import { agents, eq, type Db } from '@dorkos/db';
 import type { AuditActor } from '@dorkos/shared/audit-schemas';
 
 /** The account id DorkOS itself acts under. */
-export const SYSTEM_ACCOUNT_ID = 'system';
+const SYSTEM_ACCOUNT_ID = 'system';
 
 /** The account id of a caller that presented an agent token nobody could resolve. */
 export const UNIDENTIFIED_ACCOUNT_ID = 'unidentified';

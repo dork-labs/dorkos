@@ -198,7 +198,7 @@ export async function inspectWorkspace(opts: {
  *
  * @param inspection - The workspace's inspection.
  */
-export function workspaceBringsAnything(inspection: WorkspaceInspection): boolean {
+function workspaceBringsAnything(inspection: WorkspaceInspection): boolean {
   return (
     inspection.hooks.after_create.length > 0 ||
     inspection.hooks.before_remove.length > 0 ||
@@ -308,7 +308,7 @@ export interface WorktreeHookMemory {
  *
  * @param inspection - The workspace's inspection.
  */
-export function worktreeHooksEntry(inspection: WorkspaceInspection): string | undefined {
+function worktreeHooksEntry(inspection: WorkspaceInspection): string | undefined {
   if (inspection.provider !== 'worktree' || inspection.tree !== null) return undefined;
   if (inspection.links.length > 0) return undefined;
   const digest = createHash('sha256')

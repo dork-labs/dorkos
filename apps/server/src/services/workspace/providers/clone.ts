@@ -35,7 +35,7 @@ import {
  * @param source - The source as the request names it.
  * @param cwd - Where the clone runs.
  */
-export function localSourcePath(source: string, cwd: string): string | null {
+function localSourcePath(source: string, cwd: string): string | null {
   const trimmed = source.trim();
   const scheme = /^([A-Za-z][A-Za-z0-9+.-]*):\/\//.exec(trimmed)?.[1];
   if (scheme !== undefined) {

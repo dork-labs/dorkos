@@ -72,13 +72,13 @@ import {
  * the next one (a remote community backend, §W2.6) will be, and a source added
  * later must not be able to stall the whole roster by being slow.
  */
-export const TEAM_SOURCE_TIMEOUT_MS = 2_000;
+const TEAM_SOURCE_TIMEOUT_MS = 2_000;
 
 /** The `authors` source, named as it appears in a warning. */
-export const AUTHORS_SOURCE = 'authors';
+const AUTHORS_SOURCE = 'authors';
 
 /** The mesh source, named as it appears in a warning. */
-export const AGENTS_SOURCE = 'agents';
+const AGENTS_SOURCE = 'agents';
 
 /**
  * The owner-account read, named as it appears in a warning.
@@ -88,7 +88,7 @@ export const AGENTS_SOURCE = 'agents';
  * while the account lookup is not, and what you lose then is your NAME on your
  * own row — not the roster.
  */
-export const OPERATOR_SOURCE = 'operator';
+const OPERATOR_SOURCE = 'operator';
 
 /**
  * The `~/.dork/config.json` reads, named as they appear in a warning.
@@ -97,7 +97,7 @@ export const OPERATOR_SOURCE = 'operator';
  * file through one manager, so one name covers both: a corrupt or locked config
  * loses the preferred name and the default-agent mark, and nothing else.
  */
-export const CONFIG_SOURCE = 'config';
+const CONFIG_SOURCE = 'config';
 
 /**
  * The live claim map, named as it appears in a warning.
@@ -106,7 +106,7 @@ export const CONFIG_SOURCE = 'config';
  * being able to say an agent is working RIGHT NOW. Everything else — who is on
  * this install, when each agent last did anything — is still answered.
  */
-export const CLAIMS_SOURCE = 'claims';
+const CLAIMS_SOURCE = 'claims';
 
 /**
  * The room read that names the room a claim is held in, named as it appears in
@@ -116,7 +116,7 @@ export const CLAIMS_SOURCE = 'claims';
  * sentences: without the claims there is no "working" at all, while without the
  * rooms the agent is still reported as working, just without a room label.
  */
-export const ROOMS_SOURCE = 'rooms';
+const ROOMS_SOURCE = 'rooms';
 
 /**
  * The cross-agent session fan-out, named as it appears in a warning.
@@ -126,7 +126,7 @@ export const ROOMS_SOURCE = 'rooms';
  * costs `lastActiveAt` for agents whose last run was a session rather than a
  * room turn, and nothing else.
  */
-export const SESSIONS_SOURCE = 'sessions';
+const SESSIONS_SOURCE = 'sessions';
 
 /**
  * One agent as the roster reads it — structurally what `meshCore.listWithHealth()`
