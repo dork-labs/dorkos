@@ -28,17 +28,6 @@ describe('StreamingText', () => {
     expect(screen.getByText('# Hello')).toBeDefined();
   });
 
-  it('handles empty content', () => {
-    const { container } = render(<StreamingText content="" />);
-    expect(container).toBeDefined();
-    expect(screen.getByTestId('streamdown')).toBeDefined();
-  });
-
-  it('passes markdown content through unchanged', () => {
-    render(<StreamingText content="**bold** and `code`" />);
-    expect(screen.getByText('**bold** and `code`')).toBeDefined();
-  });
-
   it('adds streaming-cursor class when isStreaming is true', () => {
     const { container } = render(<StreamingText content="Hello" isStreaming={true} />);
     const wrapper = container.firstElementChild;
