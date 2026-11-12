@@ -7,6 +7,7 @@
  *
  * @module startup/steps/after-listen
  */
+import { isReplayIsolated } from '../../lib/replay/isolation.js';
 import { sweepOrphanedCanvases } from '../../services/canvas/sweep-orphaned-canvases.js';
 import { peekCanvasService } from '../../services/canvas/index.js';
 import { aggregateSessionList } from '../../services/session/catalog/aggregate-session-list.js';
@@ -293,6 +294,8 @@ export async function startAfterListen(refs: ServerRefs, built: StartAfterListen
 
   // Dispatch retained document work only after every runtime and capability is ready.
   docDeliveryRunner.start();
+
+  if (isReplayIsolated()) return;
 
   // Cloud link (accounts-and-auth P2): if this instance is device-linked to a
   // DorkOS account, heartbeat now and every 15 minutes. Non-blocking and

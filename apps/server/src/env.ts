@@ -341,6 +341,8 @@ export const serverEnvSchema = z.object({
     .string()
     .optional()
     .transform((v) => v === 'true'),
+  // Recorded-demo JSON, relative to the marked DORK_HOME. Never enables test mode itself.
+  DORKOS_REPLAY_RECORDING: z.string().min(1).optional(),
   // Test mode only — registers a SECOND TestModeRuntime instance under the
   // 'test-mode-b' type so multi-runtime UI (runtime picker, ?runtime= launch
   // binding, session-list marks) is e2e-testable with zero real agent

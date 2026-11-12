@@ -1,3 +1,4 @@
+import { isReplayIsolated } from '../../../lib/replay/isolation.js';
 /**
  * When the managed remote access command stream runs (DOR-2086), and the
  * pieces it runs with: the stream (`command-stream.ts`), the dispatcher
@@ -350,6 +351,7 @@ export class ManagedCommandService {
   }
 
   private async eligibleLink(): Promise<CommandLink | null> {
+    if (isReplayIsolated()) return null;
     const dispatcher = this.dispatcher;
     if (!dispatcher || !this.deps.availability.enabled) return null;
     const snapshot = await this.deps.availability.read();

@@ -1,3 +1,4 @@
+import { refuseReplayOutbound } from '../../lib/replay/isolation.js';
 /**
  * Opt-in ngrok tunnel lifecycle manager (singleton).
  *
@@ -211,6 +212,7 @@ export class TunnelManager extends EventEmitter {
    *   returns a listener with no URL — see below.
    */
   start(config: TunnelConfig): Promise<string> {
+    refuseReplayOutbound();
     // The same queue as managed opens, so the two can never both be opening
     // and both end up open. The close count is read NOW: a stop() issued while
     // this waits in the queue still wins.
@@ -429,6 +431,7 @@ export class TunnelManager extends EventEmitter {
    * @param input - The credential, its hostnames and edge proof, and the generation.
    */
   startManaged(input: ManagedStartInput): Promise<ManagedStartResult> {
+    refuseReplayOutbound();
     // Read NOW, so a closeManaged() issued while this waits in the queue wins.
     const closes = this.managedForwarding.closeCount;
     return this.enqueue(() => this.managedForwarding.open(input, closes));
@@ -442,6 +445,7 @@ export class TunnelManager extends EventEmitter {
    * @param hosts - The complete hostname set; compared without regard to case.
    */
   applyHosts(hosts: string[]): Promise<ManagedHostsResult> {
+    refuseReplayOutbound();
     return this.enqueue(() => this.managedForwarding.applyHosts(hosts));
   }
 

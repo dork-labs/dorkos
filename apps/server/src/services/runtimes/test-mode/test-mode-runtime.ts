@@ -54,6 +54,8 @@ import { forcedLimitScenario } from '../../rooms/reseat/forced-limit-turn.js';
 import { setTestAccountWorld } from '../../rooms/reseat/test-account-world.js';
 import { TestModeSessionRegistry } from './session-registry.js';
 import { TEST_MODE_CAPABILITIES } from './runtime-constants.js';
+import type { ReplaySource } from './replay/source.js';
+import { isReplayIsolated } from '../../../lib/replay/isolation.js';
 
 /**
  * Canonical ids a test has declared for a first turn, keyed by the id the client
@@ -106,11 +108,18 @@ export class TestModeRuntime implements AgentRuntime {
    *   multi-runtime UI — the status-bar picker, `?runtime=` launch binding,
    *   session-list runtime marks — is testable with zero real agent binaries.
    */
-  constructor(type = 'test-mode') {
+  constructor(
+    type = 'test-mode',
+    private readonly replay?: ReplaySource
+  ) {
+    if (isReplayIsolated() && !replay) throw new Error('Recorded demo needs a recording.');
     this.type = type;
     // Sessions must carry their owning instance's type, not a hardcoded
     // 'test-mode', so session-list marks distinguish the two instances.
-    this.registry = new TestModeSessionRegistry(type);
+    this.registry = new TestModeSessionRegistry(
+      type,
+      replay ? (title) => replay.title(title || undefined) : undefined
+    );
     // Capabilities are identical across instances except the identity field;
     // the default instance returns the shared constant BY REFERENCE (the
     // capabilities contract test pins that).
@@ -158,6 +167,7 @@ export class TestModeRuntime implements AgentRuntime {
    * could take — or its rename.
    */
   resetTrackedSessions(): void {
+    this.replay?.reset();
     // And the forced-limit seam's world (DOR-3143), so no test inherits one.
     setTestAccountWorld(null, true);
     heldProcesses.reset();
@@ -208,6 +218,17 @@ export class TestModeRuntime implements AgentRuntime {
     content: string,
     opts?: MessageOpts
   ): AsyncGenerator<StreamEvent> {
+    if (this.replay) {
+      this.replay.assertCurrent();
+      this.registry.recordMessage(sessionId, content, { cwd: opts?.cwd });
+      this.openTurns.set(sessionId, 1);
+      try {
+        yield* this.replay.play(sessionId);
+      } finally {
+        this.openTurns.delete(sessionId);
+      }
+      return;
+    }
     // Settings may have been saved through another inferred test instance
     // before the first turn establishes this instance's ownership.
     const stored = await this.settingsPort?.getSessionSettings(sessionId);
@@ -294,6 +315,7 @@ export class TestModeRuntime implements AgentRuntime {
     _intent: RuntimeCommandIntentId,
     _opts?: CommandIntentOpts
   ): AsyncGenerator<StreamEvent> {
+    this.replay?.assertCurrent();
     this.openTurns.set(sessionId, (this.openTurns.get(sessionId) ?? 0) + 1);
     try {
       yield* this.syntheticCompaction();

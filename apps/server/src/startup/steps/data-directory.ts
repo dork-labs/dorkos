@@ -6,6 +6,8 @@
  *
  * @module startup/steps/data-directory
  */
+import { claimReplayIsolation } from '../../lib/replay/isolation.js';
+import { ReplayHome } from '../../services/runtimes/test-mode/replay/home.js';
 import { resolveDorkHome } from '../../lib/dork-home.js';
 import { env } from '../../env.js';
 import { initLogger, logger } from '../../lib/logger.js';
@@ -37,6 +39,10 @@ export async function claimDataDirectory(refs: ServerRefs, built: ClaimDataDirec
   // Resolve data directory once and make it available to all downstream services.
   // Priority: DORK_HOME env var > .temp/.dork (dev) > ~/.dork (production)
   const dorkHome = resolveDorkHome();
+  if (claimReplayIsolation(dorkHome)) {
+    if (!env.DORKOS_REPLAY_RECORDING) throw new Error('Recorded demo needs a recording.');
+    new ReplayHome(dorkHome);
+  }
   // eslint-disable-next-line no-restricted-syntax -- write (not read): broadcasts resolved dorkHome to services loaded after this point
   process.env.DORK_HOME = dorkHome;
   console.log(`[DorkOS] Data directory: ${dorkHome}`);

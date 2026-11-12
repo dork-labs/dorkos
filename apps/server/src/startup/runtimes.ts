@@ -9,6 +9,7 @@
  *
  * @module startup/runtimes
  */
+import { claimReplayIsolation } from '../lib/replay/isolation.js';
 import { reconcileMountTargets } from '../services/runtimes/codex/policy/reconcile-mount-targets.js';
 import { registerComputerRuntime } from './computers.js';
 import type { AgentRuntimeLike } from '@dorkos/relay';
@@ -72,6 +73,10 @@ export interface RegisteredRuntimes {
  * @returns See {@link RegisteredRuntimes}.
  */
 export async function registerRuntimes(deps: RuntimeStartupDeps): Promise<RegisteredRuntimes> {
+  if (claimReplayIsolation(deps.dorkHome)) {
+    const { registerReplayRuntimes } = await import('./replay-runtimes.js');
+    return registerReplayRuntimes(deps);
+  }
   // A hub runs no agents (ADR 261015-042933): its agents work on agent
   // computers it asks Cloud to start. It registers nothing, so nothing on it
   // can start a turn, and a route that needs a runtime refuses as it does for

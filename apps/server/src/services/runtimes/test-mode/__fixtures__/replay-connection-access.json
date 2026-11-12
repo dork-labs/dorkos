@@ -1,0 +1,60 @@
+{
+  "version": 1,
+  "title": "Sample connection access",
+  "turns": [
+    {
+      "events": [
+        {
+          "type": "tool_call_start",
+          "data": {
+            "toolCallId": "sample-exclusion",
+            "toolName": "narrow_agent_access",
+            "status": "running"
+          }
+        },
+        {
+          "type": "tool_result",
+          "data": {
+            "toolCallId": "sample-exclusion",
+            "toolName": "narrow_agent_access",
+            "status": "complete",
+            "result": "Sample Books is hidden from Robin. Undo is available in Activity."
+          }
+        },
+        {
+          "type": "text_delta",
+          "data": {
+            "text": "Robin can no longer use Sample Books. The change can be undone in Activity."
+          }
+        }
+      ]
+    },
+    {
+      "events": [
+        {
+          "type": "tool_call_start",
+          "data": {
+            "toolCallId": "sample-undo",
+            "toolName": "undo_access_change",
+            "status": "running"
+          }
+        },
+        {
+          "type": "tool_result",
+          "data": {
+            "toolCallId": "sample-undo",
+            "toolName": "undo_access_change",
+            "status": "complete",
+            "result": "Robin can use Sample Books again."
+          }
+        },
+        {
+          "type": "text_delta",
+          "data": {
+            "text": "Robin can use Sample Books again."
+          }
+        }
+      ]
+    }
+  ]
+}
