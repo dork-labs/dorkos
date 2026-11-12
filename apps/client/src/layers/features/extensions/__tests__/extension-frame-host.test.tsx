@@ -9,6 +9,7 @@ import {
 
 import { setRunningApps } from '../frame/running-apps';
 import { resetArrivalPause } from '../frame/app-arrival';
+import type { ExtensionPermissionView } from '@/layers/entities/extension';
 
 vi.mock('virtual:dorkos-extension-frame', () => ({ default: '' }));
 vi.mock('../model/extension-api-url', () => ({ extensionApiUrl: (path: string) => `/api${path}` }));
@@ -431,6 +432,82 @@ describe('isolated app host', () => {
         expect.objectContaining({ ok: false, reason: 'target-unavailable' })
       );
       expect(api.navigate).not.toHaveBeenCalled();
+    });
+  });
+  describe('approve, add navigate: true, ask again, then allow (Security, Nov 11)', () => {
+    // The window half; the server half (the update does not run until the new
+    // yes) is the server's `isolation/__tests__/navigate-opt-in-chain.test.ts`.
+    beforeEach(() =>
+      setRunningApps([
+        {
+          id: 'mkt-newsletter',
+          status: 'compiled',
+          approvedToRun: true,
+          manifest: { id: 'mkt-newsletter', name: 'Mkt Newsletter', version: '1.0.0' },
+        },
+      ] as never)
+    );
+    afterEach(() => {
+      setRunningApps([]);
+      resetArrivalPause();
+      Reflect.deleteProperty(navigator, 'userActivation');
+    });
+    const clickInCallingFrame = () => {
+      Object.defineProperty(navigator, 'userActivation', {
+        configurable: true,
+        value: { isActive: true, hasBeenActive: true },
+      });
+      document.querySelector('iframe')!.focus();
+    };
+    const card = (opens: boolean): ExtensionPermissionView => ({
+      runtime: 'in-process',
+      net: [],
+      run: [],
+      agents: false,
+      hasServer: false,
+      apps: [{ id: 'mkt-newsletter', name: 'Mkt Newsletter', access: null, opens }],
+    });
+
+    it('refuses before the new yes, even after a click, and allows after it', async () => {
+      // Loaded here: the barrel touches the root element's style, which the theme test reads.
+      const { approvedSetOf, extensionPermissionLines, permissionLineText, permissionsAddedSince } =
+        await import('@/layers/entities/extension');
+      // 1. Approved while it listed the target as a plain id.
+      const seen = approvedSetOf(card(false))!;
+      await start({ capabilities: { http: { apps: ['mkt-newsletter'] } } });
+      clickInCallingFrame();
+      expect(await call('navigate', ['/x/mkt-newsletter/issue/v-1'])).toHaveProperty(
+        'value',
+        expect.objectContaining({ ok: false, reason: 'not-declared' })
+      );
+      expect(api.navigate).not.toHaveBeenCalled();
+
+      // 2. The update lists it with navigate: true; the card comes back, the target marked new.
+      const now = approvedSetOf(card(true))!;
+      const added = permissionsAddedSince(seen, now);
+      expect(added?.apps).toEqual(['mkt-newsletter']);
+      const line = extensionPermissionLines(card(true), added).find(({ key }) => key === 'apps');
+      expect(line && permissionLineText(line)).toBe(
+        'It uses other apps: Mkt Newsletter · can only open its pages'
+      );
+      expect(line?.apps?.[0]?.isNew).toBe(true);
+
+      // 3. Until that yes, the frame still runs the approved manifest: still not-declared.
+      expect(await call('navigate', ['/x/mkt-newsletter/issue/v-1'])).toHaveProperty(
+        'value',
+        expect.objectContaining({ ok: false, reason: 'not-declared' })
+      );
+
+      // 4. After the yes, the app starts again on the new manifest; with a click it opens.
+      stop?.();
+      stop = undefined;
+      document.body.innerHTML = '';
+      await start({ capabilities: { http: { apps: [{ id: 'mkt-newsletter', navigate: true }] } } });
+      clickInCallingFrame();
+      expect(await call('navigate', ['/x/mkt-newsletter/issue/v-1'])).toHaveProperty('value', {
+        ok: true,
+      });
+      expect(api.navigate).toHaveBeenCalledWith('/x/mkt-newsletter/issue/v-1');
     });
   });
   it('refuses a room reply or a forward to an app that does not declare them (BRIDGE_WRITES)', async () => {
