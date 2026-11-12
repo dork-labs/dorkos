@@ -145,13 +145,16 @@ describe('MemoryRecallPartSchema', () => {
     expect(result.success).toBe(true);
   });
 
-  it('treats isStreaming as optional', () => {
-    const result = MemoryRecallPartSchema.safeParse({
+  it('keeps a boolean isStreaming and rejects any other kind', () => {
+    // Leaving isStreaming out is already the payload of the case above.
+    const base = {
       type: 'memory_recall',
       mode: 'select',
       memories: [{ path: '~/foo', scope: 'personal' }],
-    });
-    expect(result.success).toBe(true);
+    };
+    const kept = MemoryRecallPartSchema.safeParse({ ...base, isStreaming: true });
+    expect(kept.success && kept.data.isStreaming).toBe(true);
+    expect(MemoryRecallPartSchema.safeParse({ ...base, isStreaming: 'yes' }).success).toBe(false);
   });
 
   it('accepts an empty memories array at the schema level (defense-in-depth tolerates it)', () => {
