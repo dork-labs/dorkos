@@ -29,14 +29,16 @@ const REFUSAL_TEXT: Record<AppNavigateResultRefusal, string> = {
   'not-an-item-path':
     'Link to the item’s page only: no query, hash or encoded characters, at most 8 parts.',
   'unknown-route': 'DorkOS has no page at that address.',
+  'no-gesture': 'Open another app’s page only right after a click or key press in your app.',
 };
 
-/** Where to go, or why not. */
+/** Where to go, and whether it is another app's page, or why not. */
 export type AppNavigation =
-  { ok: true; to: string } | { ok: false; reason: AppNavigateResultRefusal; message: string };
+  | { ok: true; to: string; otherApp: boolean }
+  | { ok: false; reason: AppNavigateResultRefusal; message: string };
 
 /** A refusal with its sentence. */
-const refuse = (reason: AppNavigateResultRefusal): AppNavigation => ({
+export const refuseNavigation = (reason: AppNavigateResultRefusal): AppNavigation => ({
   ok: false,
   reason,
   message: REFUSAL_TEXT[reason],
@@ -57,23 +59,23 @@ export function resolveAppNavigation(
   opts: { otherApps: boolean }
 ): AppNavigation {
   const to = internalRoutePath(path);
-  if (to === null) return refuse('unknown-route');
+  if (to === null) return refuseNavigation('unknown-route');
   const pathname = new URL(to, 'http://x.invalid').pathname;
-  if (!pathname.startsWith(EXTENSION_PAGE_PREFIX)) return { ok: true, to };
+  if (!pathname.startsWith(EXTENSION_PAGE_PREFIX)) return { ok: true, to, otherApp: false };
   const page = parseExtensionPagePath(pathname);
-  if (page === null) return refuse('unknown-route');
-  if (page.extensionId === caller.id) return { ok: true, to };
+  if (page === null) return refuseNavigation('unknown-route');
+  if (page.extensionId === caller.id) return { ok: true, to, otherApp: false };
   // Another app's page (spec `flow-multiproject` invariant 11, widened only here).
-  if (!opts.otherApps) return refuse('not-declared');
+  if (!opts.otherApps) return refuseNavigation('not-declared');
   const prefix = `${EXTENSION_PAGE_PREFIX}${page.extensionId}`;
   // The string as written, so nothing the URL parser tidies away (a `..`, a
   // stray `?`) decides where the person lands.
-  if (to !== path || !path.startsWith(prefix)) return refuse('not-an-item-path');
+  if (to !== path || !path.startsWith(prefix)) return refuseNavigation('not-an-item-path');
   const decision = decideAppNavigate({
     caller,
     target: runningAppManifest(page.extensionId),
     targetId: page.extensionId,
     itemPath: path.slice(prefix.length),
   });
-  return decision.ok ? { ok: true, to } : refuse(decision.reason);
+  return decision.ok ? { ok: true, to, otherApp: true } : refuseNavigation(decision.reason);
 }

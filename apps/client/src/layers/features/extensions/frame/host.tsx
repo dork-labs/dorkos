@@ -7,7 +7,8 @@ import {
 } from '@dorkos/extension-api';
 import { z } from 'zod';
 import { extensionApiUrl } from '../model/extension-api-url';
-import { resolveAppNavigation } from '../model/app-navigation';
+import { refuseNavigation, resolveAppNavigation } from '../model/app-navigation';
+import { arriveAtAppPage, frameHasGesture } from './app-arrival';
 import {
   bridgeWriteAllowed,
   declaresBridgeCapability,
@@ -268,11 +269,16 @@ export function isolatedExtensionModule(
             if (method === 'navigate') {
               const [path] = args(text).parse(input);
               // Answered, never thrown, so the app can say why nothing happened.
-              const target = resolveAppNavigation(manifest, path, { otherApps: true });
+              let target = resolveAppNavigation(manifest, path, { otherApps: true });
+              // Another app's page needs the person's own click in THIS frame (Security).
+              if (target.ok && target.otherApp && !frameHasGesture(frame.element)) {
+                target = refuseNavigation('no-gesture');
+              }
               if (!target.ok) {
                 return { ok: false, reason: target.reason, message: target.message };
               }
-              api.navigate(path);
+              if (target.otherApp) arriveAtAppPage(() => api.navigate(path));
+              else api.navigate(path);
               return { ok: true };
             }
             if (method === 'openCanvas') {
