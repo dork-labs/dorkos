@@ -23,8 +23,6 @@ export { quietFixture } from './quiet';
 export { busyFixture } from './busy';
 export { powerFixture } from './power';
 export {
-  FIXTURE_NOW,
-  HOUR,
   MINUTE,
   appsState,
   pinnedApp,

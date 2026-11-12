@@ -25,7 +25,7 @@ import { useAppStore, useTransport } from '@/layers/shared/model';
  * so three missed beats is what it takes — a browser that crashed mid-edit stops
  * being a lock rather than wedging the document forever.
  */
-export const CANVAS_EDIT_HEARTBEAT_MS = 15_000;
+const CANVAS_EDIT_HEARTBEAT_MS = 15_000;
 
 /** What a person can do to a room's table. Each REJECTS when the room refused. */
 export interface RoomCanvasActions {
@@ -157,7 +157,7 @@ export function useRoomCanvasEditLock(roomId: string, documentId: string | null)
  * Arrow-keying along a strip of eight tabs is one decision, not eight. Short
  * enough that a deliberate switch feels immediate.
  */
-export const CANVAS_VIEWING_DEBOUNCE_MS = 400;
+const CANVAS_VIEWING_DEBOUNCE_MS = 400;
 
 /**
  * Tell the room which of its canvas documents this viewer is looking at.

@@ -127,7 +127,7 @@ export function routesSummary(routes: readonly CanvasDocRoute[]): { on: number; 
 
 const CHANGED = 'This route changed. Review it again.';
 /** Refusals that mean the reviewed details are stale, so the review is read again. */
-export const ROUTE_CHANGED_CODES: ReadonlySet<string> = new Set([
+const ROUTE_CHANGED_CODES: ReadonlySet<string> = new Set([
   'ROUTE_CHANGED',
   'GRANT_BINDING_CHANGED',
   'DECLARATION_HASH_MISMATCH',

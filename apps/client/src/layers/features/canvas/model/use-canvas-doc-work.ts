@@ -9,7 +9,7 @@ import type { CanvasDocWork } from '@dorkos/shared/canvas-doc-routes';
 import { useTransport } from '@/layers/shared/model';
 
 /** The cache key for one document's unfinished work. */
-export const canvasDocWorkKey = (documentId: string) => ['canvas-doc-work', documentId] as const;
+const canvasDocWorkKey = (documentId: string) => ['canvas-doc-work', documentId] as const;
 
 /**
  * Work on a document that expired or ended in doubt.

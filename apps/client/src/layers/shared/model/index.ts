@@ -59,7 +59,6 @@ export {
   SPACES_EXPERIMENT,
   DOCS_EXPERIMENT,
   isExperimentEnabled,
-  readExperimentEnabled,
   readDmViewEnabled,
   officialSpaceLink,
   readAnySpaceReachable,
@@ -67,7 +66,6 @@ export {
 export {
   useAccountUsage,
   useAccountUsageRecord,
-  mergeAccountUsage,
   seedAccountUsage,
   type AccountUsageView,
   type UseAccountUsageOptions,
@@ -75,7 +73,6 @@ export {
 export { useAccountUsageSync } from './server-config/use-account-usage-sync';
 export {
   useAccountEligibility,
-  notAllowedLine,
   NOT_USED_IN_ANY_PROJECT,
   type AccountEligibilityView,
 } from './server-config/use-account-eligibility';
@@ -115,7 +112,6 @@ export {
 } from './credits-offer/credits-offer-slot';
 export {
   LinkChipProvider,
-  useLinkChipSlot,
   type LinkChipAnchorProps,
   type LinkChipRenderProps,
   type LinkChipSlot,
@@ -218,7 +214,7 @@ export {
   useExtensionPageAtPath,
   type ExtensionPageAtPath,
 } from './extension-registry';
-export { dialogSearchSchema, mergeDialogSearch, type DialogSearch } from './dialog-search-schema';
+export { mergeDialogSearch, type DialogSearch } from './dialog-search-schema';
 export {
   useSettingsDeepLink,
   useTasksDeepLink,

@@ -344,7 +344,7 @@ export const MOCK_ENDPOINTS: MockEndpoint[] = [
 // Style maps
 // ---------------------------------------------------------------------------
 
-export const STATUS_STYLES: Record<string, string> = {
+const STATUS_STYLES: Record<string, string> = {
   online: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400',
   offline: 'bg-neutral-500/10 text-neutral-500',
   busy: 'bg-amber-500/10 text-amber-600 dark:text-amber-400',
@@ -397,7 +397,7 @@ export function StatusBadge({ status }: { status: string }) {
 }
 
 /** Sortable column header with directional icon. */
-export function SortableHeader({
+function SortableHeader({
   column,
   children,
 }: {

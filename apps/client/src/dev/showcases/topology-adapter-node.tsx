@@ -18,7 +18,7 @@ export interface AdapterDemoData {
  * Constants
  * --------------------------------------------------------------------------- */
 
-export const ADAPTER_STATUS_COLORS: Record<string, string> = {
+const ADAPTER_STATUS_COLORS: Record<string, string> = {
   running: 'bg-green-500',
   stopped: 'bg-zinc-400',
   error: 'bg-red-500',

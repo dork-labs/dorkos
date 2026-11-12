@@ -64,7 +64,7 @@ const SQUEEZED_FRAME_WIDTH = 236;
  * unit suite could only ever assert that the class is on the element, which is
  * true of a build where the floor does nothing.
  */
-export const SQUEEZED_STRIP_TEST_ID = 'playground-squeezed-tabs';
+const SQUEEZED_STRIP_TEST_ID = 'playground-squeezed-tabs';
 
 const LONG_ROOM_NAME = 'Priya, Kai, Ikechi and 47 others about the quarterly migration plan';
 

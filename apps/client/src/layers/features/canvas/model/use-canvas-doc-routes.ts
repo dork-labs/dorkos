@@ -10,8 +10,7 @@ import type { CanvasDocRouteChange, CanvasDocRoutes } from '@dorkos/shared/canva
 import { useTransport } from '@/layers/shared/model';
 
 /** The cache key for one document's routes. */
-export const canvasDocRoutesKey = (documentId: string) =>
-  ['canvas-doc-routes', documentId] as const;
+const canvasDocRoutesKey = (documentId: string) => ['canvas-doc-routes', documentId] as const;
 
 /**
  * Every declared route on a document.

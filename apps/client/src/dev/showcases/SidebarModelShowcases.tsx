@@ -320,7 +320,7 @@ function JourneyPanel({
  * needs to differ belongs in a fifth fixture, so this page and CI can never
  * drift into showing different things.
  */
-export function SidebarModelJourneysShowcase() {
+function SidebarModelJourneysShowcase() {
   const [showReasons, setShowReasons] = useState(true);
 
   return (

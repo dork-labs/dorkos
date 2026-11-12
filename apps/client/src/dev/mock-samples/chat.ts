@@ -110,7 +110,7 @@ Let me start by updating the auth service.`,
 ];
 
 /** Three questions the {@link SAMPLE_MESSAGE_MULTI_QUESTION} fixture asks at once. */
-export const SAMPLE_QUESTIONS: QuestionItem[] = [
+const SAMPLE_QUESTIONS: QuestionItem[] = [
   {
     header: 'Framework',
     question: 'Which testing framework should we use?',

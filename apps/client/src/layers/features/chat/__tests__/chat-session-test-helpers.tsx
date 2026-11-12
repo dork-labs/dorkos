@@ -17,8 +17,8 @@ import { vi } from 'vitest';
 // Mock crypto.randomUUID
 // ---------------------------------------------------------------------------
 
-export const mockUUID = vi.fn<() => string>();
-export let uuidCounter = 0;
+const mockUUID = vi.fn<() => string>();
+let uuidCounter = 0;
 
 export function resetUuidCounter() {
   uuidCounter = 0;

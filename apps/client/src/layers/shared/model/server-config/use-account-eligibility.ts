@@ -47,7 +47,7 @@ export interface AccountEligibilityView {
  * @param row - The account as the project's rules see it.
  * @param projectName - The project, or null for a folder in no project.
  */
-export function notAllowedLine(row: AccountEligibilityRow, projectName: string | null): string {
+function notAllowedLine(row: AccountEligibilityRow, projectName: string | null): string {
   if (!row.allowedByAccount) {
     const names = row.onlyProjects?.map((p) => p.name) ?? [];
     if (names.length === 0) return NOT_USED_IN_ANY_PROJECT;

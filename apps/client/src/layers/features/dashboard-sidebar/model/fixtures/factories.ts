@@ -19,10 +19,10 @@ import type {
  * Local rather than a fixed epoch so a timestamp in a fixture reads the same
  * on every machine that runs it.
  */
-export const FIXTURE_NOW = new Date(2026, 7, 9, 9, 15, 0, 0).getTime();
+const FIXTURE_NOW = new Date(2026, 7, 9, 9, 15, 0, 0).getTime();
 
 /** One hour, in milliseconds. Fixture timestamps are all offsets from now. */
-export const HOUR = 60 * 60 * 1000;
+const HOUR = 60 * 60 * 1000;
 
 /** One minute, in milliseconds. */
 export const MINUTE = 60 * 1000;
