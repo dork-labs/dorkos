@@ -48,14 +48,18 @@ describe('ToolCallCard', () => {
     expect(screen.queryByText(/File path/)).toBeNull();
   });
 
-  it('renders pending status', () => {
+  it('shows a spinner, not a check, while the call is pending', () => {
     render(<ToolCallCard toolCall={{ ...baseToolCall, status: 'pending' }} />);
-    expect(screen.getByText('Read test.ts')).toBeDefined();
+    const card = screen.getByTestId('tool-call-card');
+    expect(card.querySelector('[data-slot="spinner"]')).not.toBeNull();
+    expect(card.querySelector('.lucide-check')).toBeNull();
   });
 
-  it('renders error status', () => {
+  it('shows a cross, not a check, when the call failed', () => {
     render(<ToolCallCard toolCall={{ ...baseToolCall, status: 'error' }} />);
-    expect(screen.getByText('Read test.ts')).toBeDefined();
+    const card = screen.getByTestId('tool-call-card');
+    expect(card.querySelector('.lucide-x')).not.toBeNull();
+    expect(card.querySelector('.lucide-check')).toBeNull();
   });
 
   it('handles non-JSON input gracefully', () => {
