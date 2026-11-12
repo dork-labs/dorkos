@@ -149,17 +149,17 @@ jobs:
       E2E_SHARD_INDEX: ${{ matrix.shard }}
       E2E_SHARD_TOTAL: ${{ strategy.job-total }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: pnpm/action-setup@v6
-      - uses: actions/setup-node@v7.1.0
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 24
       - name: Find the pnpm store
         id: pnpm-store
         run: echo "image=${ImageOS:?ImageOS is not set on this runner}" >> "$GITHUB_OUTPUT" && echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
-      - uses: actions/cache@v6
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ steps.pnpm-store.outputs.path }}
           key: pnpm-store-${{ runner.os }}-${{ steps.pnpm-store.outputs.image }}-${{ runner.arch }}-${{ hashFiles('pnpm-lock.yaml') }}
@@ -167,19 +167,42 @@ jobs:
       - name: Resolve the Playwright version
         id: pw
         run: echo "version=$(pnpm --filter @dorkos/e2e exec playwright --version | awk '{print $2}')" >> "$GITHUB_OUTPUT"
-      - uses: actions/cache@v6
+      - name: Restore the Chromium browser Playwright drives
+        id: pw-cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/ms-playwright
           key: playwright-chromium-${{ runner.os }}-${{ steps.pw.outputs.version }}
+      # The same browser and OS-package install as browser-shard, which says
+      # why for each step: a 10-minute cap, two attempts, the browser download
+      # only on a cache miss, and the OS packages from a cache this job may
+      # restore but never saves (ledger 261112-190000).
+      - name: Plan the OS packages Chromium needs, from the image's apt lists
+        id: apt-plan
+        run: |
+          pnpm --filter @dorkos/e2e exec playwright install-deps --dry-run chromium >"$RUNNER_TEMP/playwright-deps.txt" 2>&1 || true
+          bash scripts/playwright-apt-debs.sh plan "$RUNNER_TEMP/playwright-deps.txt" "$RUNNER_TEMP/playwright-apt"
+      - name: Restore the OS packages Chromium needs
+        id: apt-cache
+        if: ${{ steps.apt-plan.outputs.mode == 'cache' }}
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/playwright-apt/debs
+          key: ${{ steps.apt-plan.outputs.key }}
       - name: Install Chromium
-        timeout-minutes: 5
+        id: install
+        timeout-minutes: 10
+        env:
+          BROWSER_CACHE_HIT: ${{ steps.pw-cache.outputs.cache-hit }}
+          APT_MODE: ${{ steps.apt-plan.outputs.mode }}
+          APT_CACHE_HIT: ${{ steps.apt-cache.outputs.cache-hit }}
         run: |
           printf 'Acquire::http::Timeout "20";\nAcquire::https::Timeout "20";\nAcquire::Retries "2";\n' \
             | sudo tee /etc/apt/apt.conf.d/99-ci-acquire-timeouts >/dev/null
           if [ -f /etc/apt/apt-mirrors.txt ]; then
             sudo sed -i '/azure\.archive\.ubuntu\.com/d' /etc/apt/apt-mirrors.txt
           fi
-          pnpm --filter @dorkos/e2e exec playwright install --with-deps chromium
+          bash scripts/playwright-apt-debs.sh install "$RUNNER_TEMP/playwright-apt"
       - name: Build what the smoke projects boot from
         run: pnpm exec turbo run build --filter=@dorkos/server --filter=@dorkos/client
       # An inner deadline flushes reports before the step/job backstops.
@@ -198,7 +221,7 @@ jobs:
           '
       - name: Upload PR smoke reports
         if: ${{ always() }}
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: browser-smoke-results-${{ matrix.shard }}
           path: |
@@ -444,13 +467,13 @@ jobs:
       # git runner reads every settings file above one, refusing an include,
       # which is how the checkout saves its credential (DOR-3343, ledger
       # 261030-062000).
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
-      - uses: pnpm/action-setup@v6
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
 
-      - uses: actions/setup-node@v7.1.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 24
       # THIS FILE'S OWN PNPM STORE, KEYED ON THE RUNNER IMAGE (ledger
@@ -474,7 +497,7 @@ jobs:
         id: pnpm-store
         run: echo "image=${ImageOS:?ImageOS is not set on this runner}" >> "$GITHUB_OUTPUT" && echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
       - name: Restore the pnpm store built on this runner image
-        uses: actions/cache@v6
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ steps.pnpm-store.outputs.path }}
           key: pnpm-store-${{ runner.os }}-${{ steps.pnpm-store.outputs.image }}-${{ runner.arch }}-${{ hashFiles('pnpm-lock.yaml') }}
@@ -494,8 +517,7 @@ jobs:
       # cached between runs keyed on the Playwright version (so a healthy run
       # downloads nothing), and the install itself gets a short deadline so a
       # slow CDN fails THIS step, visibly, in minutes rather than an hour.
-      # `--with-deps` still runs on a cache hit because the OS packages are
-      # not part of the cache; it is apt, and fast when the mirrors are up.
+      # The OS packages have their own cache, below (ledger 261112-190000).
       # VERIFIED WARM on 2026-08-19 (run 32281755292): the restore step logged
       # `Cache hit for: playwright-chromium-Linux-1.59.1`, restored ~253 MB, and
       # the post step logged `Cache hit occurred on the primary key ... not
@@ -506,10 +528,38 @@ jobs:
         run: echo "version=$(pnpm --filter @dorkos/e2e exec playwright --version | awk '{print $2}')" >> "$GITHUB_OUTPUT"
       - name: Restore the Chromium browser Playwright drives
         id: pw-cache
-        uses: actions/cache@v6
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/ms-playwright
           key: playwright-chromium-${{ runner.os }}-${{ steps.pw.outputs.version }}
+      # THE OS PACKAGES CHROMIUM NEEDS, WITHOUT AN UBUNTU SERVER (ledger
+      # 261112-190000). `--with-deps` / `install-deps` is `apt-get update` plus
+      # `apt-get install`, and on 2026-11-09 and 11-11 archive.ubuntu.com and
+      # security.ubuntu.com timed out or crawled: 45 browser jobs failed in
+      # this step without reaching a test. The plan step reads the image's own
+      # apt lists (no network) for the exact files Chromium is missing, and
+      # keys a cache on them. On a hit the install step checks every .deb's
+      # hash and installs through `apt-get install --no-download`: no
+      # `apt-get update`, no download, never `dpkg -i`. On a miss it downloads
+      # exactly those files, still without `apt-get update`, and only if that
+      # fails does it fall back to `playwright install-deps`.
+      # scripts/playwright-apt-debs.sh has the whole of it.
+      #
+      # Only a scheduled run on main saves the cache (the save step after the
+      # install). Pull requests and queue builds restore it and never save it,
+      # so a fork cannot plant a package that main then installs.
+      - name: Plan the OS packages Chromium needs, from the image's apt lists
+        id: apt-plan
+        run: |
+          pnpm --filter @dorkos/e2e exec playwright install-deps --dry-run chromium >"$RUNNER_TEMP/playwright-deps.txt" 2>&1 || true
+          bash scripts/playwright-apt-debs.sh plan "$RUNNER_TEMP/playwright-deps.txt" "$RUNNER_TEMP/playwright-apt"
+      - name: Restore the OS packages Chromium needs
+        id: apt-cache
+        if: ${{ steps.apt-plan.outputs.mode == 'cache' }}
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/playwright-apt/debs
+          key: ${{ steps.apt-plan.outputs.key }}
       # The part that actually hung on 2026-08-19 was apt inside `--with-deps`:
       # the runner image's first mirror (azure.archive.ubuntu.com) stopped
       # answering and apt's default per-connection timeout is 120 s, retried
@@ -517,7 +567,12 @@ jobs:
       # timeouts make apt fall through the image's mirror list in seconds; the
       # retry covers a mirror that flaps rather than dies.
       - name: Install the Chromium browser Playwright drives
+        id: install
         timeout-minutes: 10
+        env:
+          BROWSER_CACHE_HIT: ${{ steps.pw-cache.outputs.cache-hit }}
+          APT_MODE: ${{ steps.apt-plan.outputs.mode }}
+          APT_CACHE_HIT: ${{ steps.apt-cache.outputs.cache-hit }}
         run: |
           printf 'Acquire::http::Timeout "20";\nAcquire::https::Timeout "20";\nAcquire::Retries "2";\n' \
             | sudo tee /etc/apt/apt.conf.d/99-ci-acquire-timeouts >/dev/null
@@ -532,16 +587,17 @@ jobs:
           if [ -f /etc/apt/apt-mirrors.txt ]; then
             sudo sed -i '/azure\.archive\.ubuntu\.com/d' /etc/apt/apt-mirrors.txt
           fi
-          for attempt in 1 2; do
-            if [ "${{ steps.pw-cache.outputs.cache-hit }}" = "true" ]; then
-              pnpm --filter @dorkos/e2e exec playwright install-deps chromium && exit 0
-            else
-              pnpm --filter @dorkos/e2e exec playwright install --with-deps chromium && exit 0
-            fi
-            echo "playwright install attempt $attempt failed; retrying once" >&2
-            sleep 15
-          done
-          exit 1
+          bash scripts/playwright-apt-debs.sh install "$RUNNER_TEMP/playwright-apt"
+      # The ONLY step that saves the OS-package cache: a scheduled run on main,
+      # shard 1 alone (the other shards would race to save the same key), after
+      # a miss, and only once the install step has checked every file against
+      # the image's apt lists. `restore` above never saves, on any event.
+      - name: Save the OS packages Chromium needs (scheduled runs on main only)
+        if: ${{ github.event_name == 'schedule' && github.ref == 'refs/heads/main' && matrix.shard == 1 && steps.apt-plan.outputs.mode == 'cache' && steps.apt-cache.outputs.cache-hit != 'true' && steps.install.outputs.debs-ready == 'true' }}
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/playwright-apt/debs
+          key: ${{ steps.apt-plan.outputs.key }}
 
       # Warm the turbo cache with everything the webServer legs need, OUTSIDE
       # their readiness timeouts. The three Express legs each run
@@ -695,7 +751,7 @@ jobs:
       # second path on the report upload, so `if-no-files-found: error` there
       # keeps meaning "results.json is missing".
       - name: Hand this shard's quarantine lane to the fan-in
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: quarantine-lane-shard-${{ matrix.shard }}
           path: |
@@ -708,7 +764,7 @@ jobs:
       - name: Upload this shard's JSON report
         id: upload-json-report
         continue-on-error: true
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: browser-results-shard-${{ matrix.shard }}
           path: apps/e2e/test-results/results.json
@@ -718,7 +774,7 @@ jobs:
 
       - name: Upload this shard's JSON report (retry)
         if: ${{ steps.upload-json-report.outcome == 'failure' }}
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: browser-results-shard-${{ matrix.shard }}
           path: apps/e2e/test-results/results.json
@@ -752,7 +808,7 @@ jobs:
         id: upload-playwright-report
         if: ${{ failure() || cancelled() }}
         continue-on-error: true
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: playwright-report-shard-${{ matrix.shard }}
           path: apps/e2e/playwright-report/
@@ -761,7 +817,7 @@ jobs:
 
       - name: Upload the Playwright report (retry)
         if: ${{ (failure() || cancelled()) && steps.upload-playwright-report.outcome == 'failure' }}
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: playwright-report-shard-${{ matrix.shard }}
           path: apps/e2e/playwright-report/
@@ -803,11 +859,11 @@ jobs:
             exit 1
           fi
           echo "canary $EVENT run against $REF."
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: pnpm/action-setup@v6
-      - uses: actions/setup-node@v7.1.0
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 24
       # Image-keyed pnpm store: browser-shard's setup says why (ledger 261030-001500).
@@ -815,7 +871,7 @@ jobs:
         id: pnpm-store
         run: echo "image=${ImageOS:?ImageOS is not set on this runner}" >> "$GITHUB_OUTPUT" && echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
       - name: Restore the pnpm store built on this runner image
-        uses: actions/cache@v6
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ steps.pnpm-store.outputs.path }}
           key: pnpm-store-${{ runner.os }}-${{ steps.pnpm-store.outputs.image }}-${{ runner.arch }}-${{ hashFiles('pnpm-lock.yaml') }}
@@ -825,28 +881,36 @@ jobs:
         run: echo "version=$(pnpm --filter @dorkos/e2e exec playwright --version | awk '{print $2}')" >> "$GITHUB_OUTPUT"
       - name: Restore the Chromium browser Playwright drives
         id: pw-cache
-        uses: actions/cache@v6
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/ms-playwright
           key: playwright-chromium-${{ runner.os }}-${{ steps.pw.outputs.version }}
+      - name: Plan the OS packages Chromium needs, from the image's apt lists
+        id: apt-plan
+        run: |
+          pnpm --filter @dorkos/e2e exec playwright install-deps --dry-run chromium >"$RUNNER_TEMP/playwright-deps.txt" 2>&1 || true
+          bash scripts/playwright-apt-debs.sh plan "$RUNNER_TEMP/playwright-deps.txt" "$RUNNER_TEMP/playwright-apt"
+      - name: Restore the OS packages Chromium needs
+        id: apt-cache
+        if: ${{ steps.apt-plan.outputs.mode == 'cache' }}
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/playwright-apt/debs
+          key: ${{ steps.apt-plan.outputs.key }}
       - name: Install the Chromium browser Playwright drives
+        id: install
         timeout-minutes: 10
+        env:
+          BROWSER_CACHE_HIT: ${{ steps.pw-cache.outputs.cache-hit }}
+          APT_MODE: ${{ steps.apt-plan.outputs.mode }}
+          APT_CACHE_HIT: ${{ steps.apt-cache.outputs.cache-hit }}
         run: |
           printf 'Acquire::http::Timeout "20";\nAcquire::https::Timeout "20";\nAcquire::Retries "2";\n' \
             | sudo tee /etc/apt/apt.conf.d/99-ci-acquire-timeouts >/dev/null
           if [ -f /etc/apt/apt-mirrors.txt ]; then
             sudo sed -i '/azure\.archive\.ubuntu\.com/d' /etc/apt/apt-mirrors.txt
           fi
-          for attempt in 1 2; do
-            if [ "${{ steps.pw-cache.outputs.cache-hit }}" = "true" ]; then
-              pnpm --filter @dorkos/e2e exec playwright install-deps chromium && exit 0
-            else
-              pnpm --filter @dorkos/e2e exec playwright install --with-deps chromium && exit 0
-            fi
-            echo "playwright install attempt $attempt failed; retrying once" >&2
-            sleep 15
-          done
-          exit 1
+          bash scripts/playwright-apt-debs.sh install "$RUNNER_TEMP/playwright-apt"
       - name: Build what the webServer legs boot from
         run: pnpm exec turbo run build --filter=@dorkos/server --filter=@dorkos/client
       # Both paths must have reached DorkBot's reply. Each leg is picked by a
@@ -866,7 +930,7 @@ jobs:
           done
       - name: Upload the first-run traces
         if: ${{ failure() || cancelled() }}
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: first-run-results
           path: apps/e2e/test-results/
@@ -967,7 +1031,7 @@ jobs:
         run: |
           echo "::error::the one-minute first run did not pass — the first-run job reported '${{ needs.first-run.result }}'. Open it above for the failing path, and the first-run-results artifact for its trace."
           exit 1
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         if: ${{ github.event_name != 'pull_request' }}
 
       # The fan-in has no `pnpm install` — it is a jq-and-bash job that costs
@@ -988,7 +1052,7 @@ jobs:
       # duplicated or stale one is refused by name.
       - name: Collect every shard's quarantine lane
         if: ${{ github.event_name != 'pull_request' }}
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           pattern: quarantine-lane-shard-*
           path: lane
@@ -1037,7 +1101,7 @@ jobs:
 
       - name: Collect every shard's JSON report
         if: ${{ github.event_name != 'pull_request' }}
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           pattern: browser-results-shard-*
           path: shard-reports
@@ -1127,13 +1191,13 @@ jobs:
     steps:
       # `fetch-depth: 0` because the gate diffs against the base commit, and the
       # default shallow fetch of a merge ref does not contain it.
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
 
-      - uses: pnpm/action-setup@v6
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
 
-      - uses: actions/setup-node@v7.1.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 24
       # Image-keyed pnpm store: browser-shard's setup says why (ledger 261030-001500).
@@ -1141,7 +1205,7 @@ jobs:
         id: pnpm-store
         run: echo "image=${ImageOS:?ImageOS is not set on this runner}" >> "$GITHUB_OUTPUT" && echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
       - name: Restore the pnpm store built on this runner image
-        uses: actions/cache@v6
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ steps.pnpm-store.outputs.path }}
           key: pnpm-store-${{ runner.os }}-${{ steps.pnpm-store.outputs.image }}-${{ runner.arch }}-${{ hashFiles('pnpm-lock.yaml') }}
