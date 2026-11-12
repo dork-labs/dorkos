@@ -2,6 +2,7 @@
 import type { ApprovalEvent } from '@dorkos/shared/types';
 import {
   isProtectedPath,
+  isProtectedNativeRead,
   searchTouchesProtectedPath,
   type ProtectedPathRoots,
 } from '../../shared/policy/protected-path-check.js';
@@ -51,8 +52,7 @@ export function protectedFileVerdict(
   if (paths.length === 0) return 'deny';
   const denied = paths.some(
     (file) =>
-      isProtectedPath(file, write ? 'write' : 'read', roots) ||
-      (write && isProtectedPath(file, 'read', roots))
+      (write && isProtectedPath(file, 'write', roots)) || isProtectedNativeRead(file, roots)
   );
   return denied ? 'deny' : read ? 'allow' : undefined;
 }

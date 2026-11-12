@@ -1,5 +1,5 @@
 import { afterEach, expect, it } from 'vitest';
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync, symlinkSync } from 'node:fs';
+import { linkSync, mkdtempSync, mkdirSync, writeFileSync, rmSync, symlinkSync } from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import { createLocalTools } from '@dorkos/doe';
@@ -10,7 +10,7 @@ afterEach(() => {
   for (const root of made.splice(0)) rmSync(root, { recursive: true, force: true });
 });
 
-it('does not load a skill whose file is an alias of a secret', async () => {
+it.each([symlinkSync, linkSync])('does not load a skill whose file is an alias of a secret (%#)', async (alias) => {
   const cwd = mkdtempSync(path.join(os.tmpdir(), 'doe-protected-skill-'));
   made.push(cwd);
   const folder = path.join(cwd, '.agents', 'skills', 'probe');
@@ -20,7 +20,7 @@ it('does not load a skill whose file is an alias of a secret', async () => {
     secret,
     '---\nname: probe\ndescription: A harmless probe\n---\nMADE-UP-PRIVATE-CANARY'
   );
-  symlinkSync(secret, path.join(folder, 'SKILL.md'));
+  alias(secret, path.join(folder, 'SKILL.md'));
   const { resources } = await assembleDoeResources({
     cwd,
     userSkillsDir: path.join(cwd, 'user-skills'),
@@ -40,14 +40,15 @@ it('does not load a skill whose file is an alias of a secret', async () => {
   );
 });
 
-it('the builder search cannot send a secret file through Resources even without a parent approval', async () => {
+it.each([symlinkSync, linkSync])('the builder search refuses an aliased secret without a parent approval (%#)', async (alias) => {
   const cwd = mkdtempSync(path.join(os.tmpdir(), 'doe-protected-'));
   made.push(cwd);
   const folder = path.join(cwd, 'keys');
   mkdirSync(folder);
-  const secret = path.join(folder, 'fixture.key');
+  const secret = path.join(cwd, 'fixture.key');
   const canary = 'MADE-UP-PRIVATE-CANARY';
   writeFileSync(secret, canary);
+  alias(secret, path.join(folder, 'notes.txt'));
   const { resources, pathPolicy } = await assembleDoeResources({
     cwd,
     userSkillsDir: path.join(cwd, 'user-skills'),
@@ -81,7 +82,7 @@ it('the builder search cannot send a secret file through Resources even without 
   expect(JSON.stringify(result)).not.toContain(canary);
 });
 
-it('does not load a protected alias as initial or nested instructions', async () => {
+it.each([symlinkSync, linkSync])('does not load a protected alias as initial or nested instructions (%#)', async (alias) => {
   const cwd = mkdtempSync(path.join(os.tmpdir(), 'doe-protected-instructions-'));
   made.push(cwd);
   const nested = path.join(cwd, 'nested');
@@ -101,10 +102,10 @@ it('does not load a protected alias as initial or nested instructions', async ()
       agentHomes: [],
     },
   };
-  symlinkSync(secret, path.join(cwd, 'AGENTS.md'));
+  alias(secret, path.join(cwd, 'AGENTS.md'));
   await expect((await assembleDoeResources(options)).resources.load()).rejects.toThrow('protected');
   rmSync(path.join(cwd, 'AGENTS.md'));
-  symlinkSync(secret, path.join(nested, 'AGENTS.md'));
+  alias(secret, path.join(nested, 'AGENTS.md'));
   await expect(
     (await assembleDoeResources(options)).resources.beforeFile(
       path.join(nested, 'ordinary.txt'),

@@ -3,7 +3,11 @@ import type { ApprovalCallback } from '@dorkos/doe';
 import type { StreamEvent } from '@dorkos/shared/types';
 import type { ToolDecisionOptions } from '@dorkos/shared/agent-runtime';
 
-import { isProtectedPath, type ProtectedPathRoots } from '../shared/policy/protected-path-check.js';
+import {
+  isProtectedNativeRead,
+  isProtectedPath,
+  type ProtectedPathRoots,
+} from '../shared/policy/protected-path-check.js';
 import { protectedPathRoots } from '../shared/policy/protected-path-roots.js';
 import { logger } from '../../../lib/logger.js';
 import { SESSIONS } from '../../../config/constants.js';
@@ -41,8 +45,9 @@ export class DoeApprovals {
           full: mode === 'bypassPermissions',
         };
         const denied =
-          isProtectedPath(args.path, EDIT_TOOLS.has(tool.name) ? 'write' : 'read', roots) ||
-          (tool.name === 'edit' && isProtectedPath(args.path, 'read', roots));
+          (EDIT_TOOLS.has(tool.name) && isProtectedPath(args.path, 'write', roots)) ||
+          ((!EDIT_TOOLS.has(tool.name) || tool.name === 'edit') &&
+            isProtectedNativeRead(args.path, roots));
         if (denied) {
           logger.warn('[ProtectedFiles] Refused a Doe native file operation', {
             sessionId: context.sessionId,

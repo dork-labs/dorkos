@@ -1,6 +1,6 @@
 /** The same protected paths reach each native file approval seam. */
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { mkdtempSync, mkdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { linkSync, mkdtempSync, mkdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { PROTECTED_PATHS } from '../protected-paths.js';
@@ -297,6 +297,26 @@ describe.each(adapters)('%s native file protection', (adapter) => {
     expect(await refused(adapter, alias, 'read')).toBe(true);
   });
 
+  it('refuses a native read through a hard link with an ordinary name', async () => {
+    const secret = path.join(roots.data, 'host.key');
+    const alias = path.join(roots.cwd, 'notes.txt');
+    writeFileSync(secret, 'made-up');
+    linkSync(secret, alias);
+    // The shared path matcher only recognizes names. OpenCode and Doe also inspect the inode.
+    expect(await refused(adapter, alias, 'read', true)).toBe(adapter !== 'shared');
+  });
+
+  it('refuses a multiply linked ordinary file too, and follows a symlink to it', async () => {
+    const original = path.join(roots.cwd, 'original.txt');
+    const alias = path.join(roots.cwd, 'alias.txt');
+    writeFileSync(original, 'ordinary text');
+    expect(await refused(adapter, original, 'read')).toBe(false);
+    linkSync(original, alias);
+    symlinkSync(alias, path.join(roots.cwd, 'link.txt'));
+    for (const file of [original, alias, path.join(roots.cwd, 'link.txt')])
+      expect(await refused(adapter, file, 'read')).toBe(adapter !== 'shared');
+  });
+
   it('resolves a link before a parent segment', async () => {
     mkdirSync(path.join(roots.data, 'child'));
     symlinkSync(path.join(roots.data, 'child'), path.join(roots.cwd, 'link'));
@@ -377,6 +397,28 @@ it('checks aliased descendants before allowing a folder search', () => {
   writeFileSync(path.join(roots.data, 'host.key'), 'made-up');
   symlinkSync(path.join(roots.data, 'host.key'), path.join(clean, 'notes.txt'));
   expect(searchTouchesProtectedPath(clean, roots)).toBe(true);
+});
+
+it('refuses a folder search containing a hard-linked file with an ordinary name', () => {
+  const clean = path.join(roots.cwd, 'clean');
+  mkdirSync(clean);
+  const original = path.join(roots.data, 'host.key');
+  writeFileSync(original, 'made-up');
+  linkSync(original, path.join(clean, 'notes.txt'));
+  expect(searchTouchesProtectedPath(clean, roots)).toBe(true);
+  expect(
+    protectedFileVerdict({ toolName: 'grep', input: JSON.stringify({ dorkosSearchRoot: clean }) }, roots)
+  ).toBe('deny');
+});
+
+it('refuses an OpenCode edit that would read a multiply linked file into its diff', () => {
+  const original = path.join(roots.cwd, 'original.txt');
+  const alias = path.join(roots.cwd, 'alias.txt');
+  writeFileSync(original, 'ordinary text');
+  linkSync(original, alias);
+  expect(
+    protectedFileVerdict({ toolName: 'edit', input: JSON.stringify({ filepath: alias }) }, roots)
+  ).toBe('deny');
 });
 
 it('keeps a protected name refused when its link points to an ordinary file', () => {

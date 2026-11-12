@@ -137,6 +137,22 @@ export function isProtectedPath(
 }
 
 /**
+ * Refuse native reads of multiply linked files as well as protected names. A hard link may give
+ * a secret an ordinary name, so no path list can distinguish it. This is a call-time check, not
+ * a descriptor lock: the native runtime still owns the eventual open.
+ */
+export function isProtectedNativeRead(input: string, roots: ProtectedPathRoots): boolean {
+  try {
+    if (isProtectedPath(input, 'read', roots)) return true;
+    const stat = statSync(canonical(input, roots.cwd));
+    return stat.isFile() && stat.nlink > 1;
+  } catch (error) {
+    // Missing files carry no readable contents. Other metadata failures must not permit a read.
+    return (error as NodeJS.ErrnoException).code !== 'ENOENT';
+  }
+}
+
+/**
  * Refuse a native folder search only when its tree contains a protected read,
  * or cannot be checked completely. No file contents are opened. A bounded,
  * cycle-aware walk prevents a symlink loop or a huge tree from blocking a turn.
@@ -154,7 +170,9 @@ export function searchTouchesProtectedPath(input: string, roots: ProtectedPathRo
       if (seen.has(current)) continue;
       seen.add(current);
       if (++entries > 50_000) return true;
-      if (statSync(current).isDirectory()) {
+      const stat = statSync(current);
+      if (stat.isFile() && stat.nlink > 1) return true;
+      if (stat.isDirectory()) {
         for (const entry of readdirSync(current)) pending.push(path.join(current, entry));
       }
     }
