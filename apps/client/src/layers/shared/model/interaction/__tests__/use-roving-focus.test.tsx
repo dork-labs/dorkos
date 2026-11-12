@@ -410,8 +410,10 @@ describe('useRovingFocus — the stop survives', () => {
     await waitFor(() => expect(tabStops()).toEqual(['two']));
   });
 
-  it('survives a section with no rows at all', () => {
-    expect(() => render(<Section rows={[]} />)).not.toThrow();
+  it('keeps the header as the one Tab stop when the section has no rows at all', () => {
+    // The header's ⋮ is still there, so an unstamped section would be two stops.
+    render(<Section rows={[]} />);
+    expect(tabStops()).toEqual(['Channels']);
   });
 
   it('stands its arrows down while a row is off the ground (DOR-1746)', () => {
