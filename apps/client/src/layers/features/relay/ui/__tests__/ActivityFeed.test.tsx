@@ -2,7 +2,7 @@
  * @vitest-environment jsdom
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, fireEvent, cleanup, act } from '@testing-library/react';
+import { render, screen, fireEvent, cleanup, act, within } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 
 // ---------------------------------------------------------------------------
@@ -132,7 +132,9 @@ describe('ActivityFeed', () => {
       fireEvent.click(sourceCombobox);
       fireEvent.click(screen.getByRole('option', { name: 'Chat messages' }));
 
-      expect(screen.getAllByText('Clear filters').length).toBeGreaterThanOrEqual(1);
+      // The filter bar has its own button, so look inside the empty state only.
+      const emptyState = screen.getByText('Try different filters.').parentElement!.parentElement!;
+      expect(within(emptyState).getByRole('button', { name: 'Clear filters' })).toBeInTheDocument();
     });
 
     it('clears filters when "Clear filters" in the empty state is clicked', () => {
@@ -165,14 +167,6 @@ describe('ActivityFeed', () => {
       render(<ActivityFeed enabled={true} />);
 
       expect(screen.getAllByTestId('conversation-row')).toHaveLength(3);
-    });
-
-    it('renders history conversations without crashing', () => {
-      const conversations = [makeConversation('conv-a'), makeConversation('conv-b')];
-      mockUseRelayConversations.mockReturnValue({ data: { conversations }, isLoading: false });
-
-      expect(() => render(<ActivityFeed enabled={true} />)).not.toThrow();
-      expect(screen.getAllByTestId('conversation-row')).toHaveLength(2);
     });
 
     it('renders new conversations that appear after initial load', async () => {
@@ -403,7 +397,9 @@ describe('ActivityFeed', () => {
       fireEvent.click(sourceCombobox);
       fireEvent.click(screen.getByRole('option', { name: 'Chat messages' }));
 
-      expect(screen.getAllByText('Clear filters').length).toBeGreaterThanOrEqual(1);
+      // The empty state has its own button, so look inside the filter bar only.
+      const filterBar = screen.getByRole('textbox', { name: 'Search chats' }).parentElement!;
+      expect(within(filterBar).getByRole('button', { name: 'Clear filters' })).toBeInTheDocument();
     });
 
     it('shows "Clear filters" button in filter bar when search filter is active', () => {
@@ -414,7 +410,8 @@ describe('ActivityFeed', () => {
         target: { value: 'test' },
       });
 
-      expect(screen.getAllByText('Clear filters').length).toBeGreaterThanOrEqual(1);
+      const filterBar = screen.getByRole('textbox', { name: 'Search chats' }).parentElement!;
+      expect(within(filterBar).getByRole('button', { name: 'Clear filters' })).toBeInTheDocument();
     });
 
     it('resets all filters when "Clear filters" is clicked', () => {
@@ -585,11 +582,6 @@ describe('ActivityFeed', () => {
   });
 
   describe('deadLetterRef prop', () => {
-    it('does not crash when deadLetterRef is not provided', () => {
-      mockUseRelayConversations.mockReturnValue({ data: { conversations: [] }, isLoading: false });
-      expect(() => render(<ActivityFeed enabled={true} />)).not.toThrow();
-    });
-
     it('renders the dead-letter wrapper div containing DeadLetterSection when toggle is active', () => {
       mockUseRelayConversations.mockReturnValue({ data: { conversations: [] }, isLoading: false });
 
