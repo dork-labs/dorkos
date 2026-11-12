@@ -51,8 +51,7 @@ export function protectedFileVerdict(
   }
   if (paths.length === 0) return 'deny';
   const denied = paths.some(
-    (file) =>
-      (write && isProtectedPath(file, 'write', roots)) || isProtectedNativeRead(file, roots)
+    (file) => (write && isProtectedPath(file, 'write', roots)) || isProtectedNativeRead(file, roots)
   );
   return denied ? 'deny' : read ? 'allow' : undefined;
 }

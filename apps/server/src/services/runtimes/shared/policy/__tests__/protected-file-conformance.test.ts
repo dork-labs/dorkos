@@ -407,7 +407,10 @@ it('refuses a folder search containing a hard-linked file with an ordinary name'
   linkSync(original, path.join(clean, 'notes.txt'));
   expect(searchTouchesProtectedPath(clean, roots)).toBe(true);
   expect(
-    protectedFileVerdict({ toolName: 'grep', input: JSON.stringify({ dorkosSearchRoot: clean }) }, roots)
+    protectedFileVerdict(
+      { toolName: 'grep', input: JSON.stringify({ dorkosSearchRoot: clean }) },
+      roots
+    )
   ).toBe('deny');
 });
 
