@@ -136,7 +136,6 @@ export { isDynamicImportError } from './dynamic-import-error';
 export { LAUNCH_STARTED_AT } from './launch-started-at';
 export {
   accountWindow,
-  barTone,
   chipState,
   claudeAccountName,
   claudeAccountOptions,
@@ -215,18 +214,9 @@ export {
 // so that one turn cannot be described two ways (BC-37). Withdrawing it from
 // the barrel is what makes that a structural fact rather than a convention: the
 // only importable path to it is a relative one inside `shared/lib`.
-export { getToolLabel, getMcpServerBadge, parseMcpToolName } from './tool-labels';
+export { getToolLabel, getMcpServerBadge } from './tool-labels';
 export { ToolArgumentsDisplay } from './tool-arguments-formatter';
-export {
-  AGENT_EMOJI_SET,
-  AGENT_COLOR_PRESETS,
-  fnv1aHash,
-  hashToHslColor,
-  hashToEmoji,
-  generateCircleFavicon,
-  generateTasksFrames,
-  setFavicon,
-} from './favicon-utils';
+export { AGENT_EMOJI_SET, AGENT_COLOR_PRESETS, fnv1aHash, hashToHslColor } from './favicon-utils';
 export { playNotificationCue, type NotificationCue } from './notification-sound';
 export { playSliderTick, playCelebration } from './sound';
 export { formatCompactAge } from './format-compact-age';
@@ -238,14 +228,7 @@ export { listWaitingKinds } from './waiting-kinds';
 // directly). Putting them on the barrel would be three exports where one is used.
 export { askExitTransition } from './ask-exit-transition';
 export { shortenHomePath, formatRelativeTime } from './session-utils';
-export {
-  type FontFamilyKey,
-  type FontConfig,
-  DEFAULT_FONT,
-  getFontConfig,
-  isValidFontKey,
-  FONT_CONFIGS,
-} from './font-config';
+export { type FontFamilyKey, type FontConfig, DEFAULT_FONT, FONT_CONFIGS } from './font-config';
 export { loadGoogleFont, removeGoogleFont, applyFontCSS, removeFontCSS } from './font-loader';
 export {
   CelebrationEngine,
@@ -253,7 +236,7 @@ export {
   type CelebrationEvent,
   type CelebrationEngineConfig,
 } from './celebrations/celebration-engine';
-export { RADIAL_GLOW_STYLE, MINI_SPRING_CONFIG, SHIMMER_STYLE } from './celebrations/effects';
+export { RADIAL_GLOW_STYLE } from './celebrations/effects';
 export {
   fireCelebration,
   rectToCelebrationOrigin,
@@ -261,15 +244,9 @@ export {
 } from './celebrations/celebration-effects';
 export {
   STORAGE_KEYS,
-  FONT_SCALE_MAP,
-  MAX_RECENT_CWDS,
-  MAX_CANVAS_DOCUMENTS,
-  MAX_RIGHT_PANEL_LAYOUTS,
   TIMING,
-  LONG_PRESS_DRIFT_PX,
   QUERY_TIMING,
   CELEBRATIONS,
-  TIME_UNITS,
   SSE_RESILIENCE,
   SETTINGS_TAB_DIRECTORY,
   settingsTabsFor,
@@ -281,17 +258,12 @@ export type { FileEntry } from './file-types';
 export { createChannel, type Channel } from './broadcast-channel';
 export {
   SHORTCUTS,
-  SHORTCUT_GROUP_ORDER,
   formatShortcutKey,
   getShortcutsGrouped,
   type ShortcutDef,
   type ShortcutGroup,
 } from './shortcuts';
-export {
-  DEFAULT_TEXT_EFFECT,
-  resolveStreamdownAnimation,
-  useTextEffectConfig,
-} from './text-effects';
+export { DEFAULT_TEXT_EFFECT, resolveStreamdownAnimation } from './text-effects';
 export type { TextEffectMode, TextEffectConfig } from './text-effects';
 export { DURATION, EASE, SPRING, STAGGER, installReducedMotion } from './motion';
 export { useAppForm, withForm, formOptions, useFieldContext, useFormContext } from './form';
@@ -377,18 +349,15 @@ export {
   textFilter,
   enumFilter,
   dateRangeFilter,
-  booleanFilter,
-  numericRangeFilter,
   createFilterSchema,
   createSortOptions,
   applySortAndFilter,
-  isEnumFilter,
   type FilterDefinition,
   type EnumFilterDefinition,
   type FilterSchema,
   type FilterValues,
 } from './filter-engine';
-export { getAgentDisplayName, slugifyAgentName } from '@dorkos/shared/validation';
+export { getAgentDisplayName } from '@dorkos/shared/validation';
 export { AGENT_IDENTITY_LIMIT_MS, useGaveUpWaiting, useWaitedPast } from './use-waited-past';
 export {
   buildTimelineRows,
@@ -419,12 +388,7 @@ export type {
   KnownAccount,
 } from './execution-config';
 
-export {
-  activityClause,
-  activitySentence,
-  activityVerb,
-  WAITING_ON_YOU_VERB,
-} from './activity-verb';
+export { activityClause, activitySentence, activityVerb } from './activity-verb';
 
 export { setAskDorkBotOrigin, takeAskDorkBotOrigin } from './ask-dorkbot-origin';
 // `overnightBoundary` is deliberately NOT re-exported here, for the same reason
