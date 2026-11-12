@@ -165,24 +165,6 @@ vi.mock('@/layers/entities/session/model/navigation/use-directory-state', () => 
   useDirectoryState: () => ['/test/dir', vi.fn()],
 }));
 
-// Mock useAppStore — supports both selector call and no-selector (destructure) call patterns
-vi.mock('@/layers/shared/model/app-store', () => ({
-  useAppStore: (selector?: (s: Record<string, unknown>) => unknown) => {
-    const state = {
-      pendingRuntime: null,
-      setPendingRuntime: vi.fn(),
-      pendingAccount: null,
-      setPendingAccount: vi.fn(),
-      setIsStreaming: vi.fn(),
-      setIsTextStreaming: vi.fn(),
-      setIsWaitingForUser: vi.fn(),
-      enableMessagePolling: false,
-      setEnableMessagePolling: vi.fn(),
-    };
-    return selector ? selector(state) : state;
-  },
-}));
-
 // Mock child components. The composer forwards a real handle so the tests can
 // see WHICH focus entry point the panel reaches for.
 const chatInputFocus = vi.fn();
