@@ -7,6 +7,8 @@ import {
 } from '@dorkos/extension-api';
 import { z } from 'zod';
 import { extensionApiUrl } from '../model/extension-api-url';
+import { refuseNavigation, resolveAppNavigation } from '../model/app-navigation';
+import { arriveAtAppPage, frameHasGesture } from './app-arrival';
 import {
   bridgeWriteAllowed,
   declaresBridgeCapability,
@@ -41,7 +43,6 @@ const methodArgs: Record<string, z.ZodType> = {
       .strict()
       .optional()
   ),
-  navigate: args(text),
   setPageBadge: args(text, json),
   setTabMarker: args(text, z.enum(['attention']).nullable()),
   listDecisions: args(),
@@ -264,6 +265,21 @@ export function isolatedExtensionModule(
                 headers: { 'X-DorkOS-Extension': api.id },
               });
               return readAppMedia(response);
+            }
+            if (method === 'navigate') {
+              const [path] = args(text).parse(input);
+              // Answered, never thrown, so the app can say why nothing happened.
+              let target = resolveAppNavigation(manifest, path, { otherApps: true });
+              // Another app's page needs the person's own click in THIS frame (Security).
+              if (target.ok && target.otherApp && !frameHasGesture(frame.element)) {
+                target = refuseNavigation('no-gesture');
+              }
+              if (!target.ok) {
+                return { ok: false, reason: target.reason, message: target.message };
+              }
+              if (target.otherApp) arriveAtAppPage(() => api.navigate(path));
+              else api.navigate(path);
+              return { ok: true };
             }
             if (method === 'openCanvas') {
               const [content] = args(FrameCanvasContentSchema).parse(input);

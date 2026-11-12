@@ -116,12 +116,15 @@ The app it calls lists each route other apps may use. Nothing is shared unless i
   "exports": {
     "http": [
       { "path": "/entries", "methods": ["GET"] },
-      { "path": "/entries/:id", "methods": ["GET", "PATCH"], "callers": ["reports"] }
+      { "path": "/entries/:id", "methods": ["GET", "PATCH"], "callers": ["reports"] },
+      { "path": "/approvals", "methods": ["GET"] }
     ],
-    "personOnly": ["/approve"]
+    "personOnly": ["/approve", { "path": "/approvals", "methods": ["POST"] }]
   }
 }
 ```
+
+A plain path in `personOnly` covers every method there. A path with `methods` covers only those, so other apps can read `/approvals` while only your own screens can post to it. An export and a `personOnly` rule may not name the same method on paths that can match the same address; DorkOS refuses that manifest when you install it.
 
 Then call it with `app`:
 
@@ -129,9 +132,40 @@ Then call it with `app`:
 const entries = await api.request('/entries', { app: 'ledger' });
 ```
 
-The card that asks a person to allow your app lists each app it uses, by DorkOS's name for it, and what that app shares with yours ("reads", or "reads and changes"). An update that lists a new app asks the person again; one that drops an app does not.
+The card that asks a person to allow your app lists each app it uses, by DorkOS's name for it, what that app shares with yours ("reads", or "reads and changes"), and, for an app you list with `"navigate": true`, "can open its pages" ("can only open its pages" when it shares nothing). An app that shares nothing with yours and that you don't open is left off the card, since it gives your app no power. An update that lists a new app asks the person again; one that drops an app does not.
 
 `:id` stands for exactly one path segment. Listing an app works one way only: it gives that app nothing back. DorkOS checks both manifests in the window and again on the server, tells the other app which app called in the `X-DorkOS-Caller-App` header, and records every call in the audit log. A refused call rejects before anything is sent.
+
+## Opening another app's page
+
+To send the person to another app's pages, list that app as an entry with `"navigate": true`. A plain id only lets you call its routes. You can mix both kinds in one list, and each app goes in once:
+
+```json
+{ "capabilities": { "http": { "apps": ["ledger", { "id": "mkt-newsletter", "navigate": true }] } } }
+```
+
+The other app does not need to export anything: a page only shows what the person can already open.
+
+```tsx
+const result = await api.navigate('/x/ledger/item/entry/e-17');
+if (!result.ok) api.notify(result.message, { type: 'error' });
+```
+
+The address names the item and nothing else: no query, no `#`, no encoded characters like `%2F`, and at most 8 parts after the app's id. So a link can say which item, never what to do with it. The page the person lands on decides what happens, and should change nothing until the person clicks.
+
+Call it from a click or key press in your app, such as a button's `onClick`. DorkOS opens the page only when the person just clicked or typed inside your app's own frame. A click in another app, or a call from a timer or on load, is refused with `no-gesture`. One click opens one page: a second `navigate` on the same click is refused too. For half a second after the page opens, DorkOS ignores clicks and keys while the new page fades in, so a click meant for your app can't land on the other one.
+
+`navigate` never throws for an address it refuses. It answers `{ ok: false, reason, message }`, where `reason` is one of:
+
+| `reason`             | What it means                                                               |
+| -------------------- | --------------------------------------------------------------------------- |
+| `not-declared`       | Your app does not list that app with `"navigate": true`.                    |
+| `target-unavailable` | That app is not installed or not turned on.                                 |
+| `not-an-item-path`   | The address carries a query, a `#`, an encoded character or too many parts. |
+| `unknown-route`      | DorkOS has no page at that address.                                         |
+| `no-gesture`         | It was not called right after a click or key press in your app.             |
+
+Your own pages and DorkOS's own pages work as before, query included.
 
 ## Showing pictures and video
 

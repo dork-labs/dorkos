@@ -45,8 +45,9 @@ const manifests: Record<string, ExtensionManifest> = {
       http: [
         { path: '/entries', methods: ['GET'] },
         { path: '/entries/:id', methods: ['GET', 'PATCH'] },
+        { path: '/approvals', methods: ['GET'] },
       ],
-      personOnly: ['/approve'],
+      personOnly: ['/approve', { path: '/approvals', methods: ['POST'] }],
     },
   },
   idle: {
@@ -161,10 +162,32 @@ describe('a call from one app to another', () => {
     expect(seen).toHaveLength(1);
   });
 
+  // Security Should 2 (Nov 12): the target's routes see the raw path, so a
+  // part that decodes to hold a slash must never be judged as two parts.
+  it.each(['/entries%2Fapprove', '/entries%2fapprove', '/entries%5Capprove', '/a%2F..%2Fapprove'])(
+    'refuses %s: a path part that decodes to hold a slash',
+    async (path) => {
+      const res = await asReports('get', path);
+      expect(res.status).toBe(403);
+      expect(res.body).toMatchObject({ code: 'app_call_refused', reason: 'not-exported' });
+      expect(seen).toHaveLength(0);
+    }
+  );
+
   it('refuses a route the target does not export, and a personOnly one', async () => {
     expect((await asReports('get', '/secrets')).body.reason).toBe('not-exported');
     expect((await asReports('post', '/approve')).body.reason).toBe('person-only');
     expect(seen).toHaveLength(0);
+  });
+
+  it('reaches a read on a path whose write is personOnly, never the write', async () => {
+    expect((await asReports('get', '/approvals')).status).toBe(200);
+    const refused = await asReports('post', '/approvals', { yes: true });
+    expect(refused.status).toBe(403);
+    expect(refused.body).toMatchObject({ code: 'app_call_refused', reason: 'person-only' });
+    expect(seen).toEqual([
+      { method: 'GET', path: '/approvals', caller: 'reports', token: undefined },
+    ]);
   });
 
   it('refuses a target that is not running', async () => {

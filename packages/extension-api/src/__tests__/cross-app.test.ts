@@ -1,9 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import {
   decideAppCall,
+  decideAppNavigate,
   exportedAccess,
+  openableApps,
   routeMatches,
+  type AppExportRoute,
   type CrossAppManifest,
+  type PersonOnlyRule,
 } from '../cross-app.js';
 import { ExtensionManifestSchema } from '../manifest-schema.js';
 
@@ -81,6 +85,52 @@ describe('one app calling another (DOR-3293)', () => {
     expect(call({ path: '/approve' })).toEqual({ ok: false, reason: 'person-only' });
   });
 
+  it('marks one method person-only and leaves the others on that path exported', () => {
+    const core: CrossAppManifest = {
+      id: 'ledger',
+      exports: {
+        http: [{ path: '/approvals', methods: ['GET'] }],
+        personOnly: [{ path: '/approvals', methods: ['POST'] }],
+      },
+    };
+    expect(call({ target: core, path: '/approvals' })).toEqual({ ok: true });
+    expect(call({ target: core, method: 'POST', path: '/approvals' })).toEqual({
+      ok: false,
+      reason: 'person-only',
+    });
+    // A method neither exported nor person-only is simply not exported.
+    expect(call({ target: core, method: 'PUT', path: '/approvals' })).toEqual({
+      ok: false,
+      reason: 'method-not-exported',
+    });
+  });
+
+  it('a person-only rule with a placeholder covers every path it matches, for its methods only', () => {
+    const core: CrossAppManifest = {
+      id: 'ledger',
+      exports: {
+        http: [{ path: '/variants/:id', methods: ['GET'] }],
+        personOnly: [{ path: '/variants/:id', methods: ['PATCH', 'DELETE'] }],
+      },
+    };
+    expect(call({ target: core, path: '/variants/v-1' })).toEqual({ ok: true });
+    expect(call({ target: core, method: 'DELETE', path: '/variants/v-1' })).toEqual({
+      ok: false,
+      reason: 'person-only',
+    });
+  });
+
+  it('counts only the methods a person-only rule leaves exported', () => {
+    // Read off a stored record, which the install check never saw.
+    const http: AppExportRoute[] = [{ path: '/approvals', methods: ['GET', 'POST'] }];
+    const access = (personOnly: PersonOnlyRule[]) =>
+      exportedAccess({ exports: { http, personOnly } }, 'reports');
+    expect(access([{ path: '/approvals', methods: ['POST'] }])).toBe('reads');
+    expect(access([{ path: '/approvals', methods: ['GET'] }])).toBe('changes');
+    expect(access(['/approvals'])).toBeNull();
+    expect(access([{ path: '/other', methods: ['POST'] }])).toBe('both');
+  });
+
   it('refuses a route narrowed to other callers', () => {
     expect(call({ path: '/totals' })).toEqual({ ok: false, reason: 'caller-not-listed' });
   });
@@ -106,6 +156,111 @@ describe('one app calling another (DOR-3293)', () => {
   });
 });
 
+describe('one app opening another app’s page (DOR-3293)', () => {
+  // Opening pages is its own opt-in, beside calling (designer + Security, Nov 11).
+  const opener: CrossAppManifest = {
+    id: 'reports',
+    capabilities: { http: { apps: [{ id: 'ledger', navigate: true }] } },
+  };
+  const open = (
+    overrides: Partial<Parameters<typeof decideAppNavigate>[0]> = {}
+  ): ReturnType<typeof decideAppNavigate> =>
+    decideAppNavigate({
+      caller: opener,
+      target: ledger,
+      targetId: 'ledger',
+      itemPath: '/item/entry/e-17',
+      ...overrides,
+    });
+
+  it('opens a page of an app the caller lists, by its item path alone', () => {
+    expect(open()).toEqual({ ok: true });
+    expect(open({ itemPath: '' })).toEqual({ ok: true });
+    expect(open({ itemPath: '/entries' })).toEqual({ ok: true });
+  });
+
+  it('needs no export: listing the app is what lets the caller open its pages', () => {
+    expect(open({ target: { id: 'ledger' } })).toEqual({ ok: true });
+  });
+
+  it('refuses an app the caller lists only to call, not to open', () => {
+    expect(open({ caller: reports })).toEqual({ ok: false, reason: 'not-declared' });
+    expect(
+      open({
+        caller: { id: 'reports', capabilities: { http: { apps: [{ id: 'ledger' }] } } },
+      })
+    ).toEqual({ ok: false, reason: 'not-declared' });
+    expect(
+      open({
+        caller: {
+          id: 'reports',
+          capabilities: { http: { apps: [{ id: 'ledger', navigate: false }] } },
+        },
+      })
+    ).toEqual({ ok: false, reason: 'not-declared' });
+  });
+
+  it('a navigate entry also lets the caller call, under the target’s exports', () => {
+    expect(
+      decideAppCall({
+        caller: opener,
+        target: ledger,
+        targetId: 'ledger',
+        method: 'GET',
+        path: '/entries',
+      })
+    ).toEqual({ ok: true });
+    expect(openableApps(opener)).toEqual(['ledger']);
+    expect(openableApps(reports)).toEqual([]);
+  });
+
+  it('refuses an app the caller does not list, works one way only, and never itself', () => {
+    expect(open({ caller: { id: 'reports', capabilities: { http: true } } })).toEqual({
+      ok: false,
+      reason: 'not-declared',
+    });
+    expect(
+      decideAppNavigate({
+        caller: { id: 'ledger' },
+        target: { id: 'reports' },
+        targetId: 'reports',
+        itemPath: '',
+      })
+    ).toEqual({ ok: false, reason: 'not-declared' });
+    expect(
+      open({
+        targetId: 'reports',
+        caller: {
+          id: 'reports',
+          capabilities: { http: { apps: [{ id: 'reports', navigate: true }] } },
+        },
+      })
+    ).toEqual({ ok: false, reason: 'self' });
+  });
+
+  it('refuses an app that is not installed or not running', () => {
+    expect(open({ target: null })).toEqual({ ok: false, reason: 'target-unavailable' });
+  });
+
+  it.each([
+    ['a query', '/item/entry/e-17?approve=1'],
+    ['an empty query', '/item/entry/e-17?'],
+    ['a hash', '/item/entry/e-17#approve'],
+    ['an encoded character', '/item/entry/e%2F17'],
+    ['a dot-dot segment', '/item/../settings'],
+    ['a dot segment', '/item/./entry'],
+    ['an empty segment', '/item//entry'],
+    ['a trailing slash', '/item/entry/'],
+    ['a backslash', '/item\\entry'],
+    ['a space', '/item/entry one'],
+    ['no leading slash', 'item/entry/e-17'],
+    ['too many segments', '/a/b/c/d/e/f/g/h/i'],
+    ['a very long path', `/${'a'.repeat(401)}`],
+  ])('refuses %s: the link carries only the item', (_name, itemPath) => {
+    expect(open({ itemPath })).toEqual({ ok: false, reason: 'not-an-item-path' });
+  });
+});
+
 describe('the manifest fields for it', () => {
   const base = { id: 'ledger', name: 'Ledger', version: '1.0.0' };
 
@@ -114,6 +269,34 @@ describe('the manifest fields for it', () => {
       ...base,
       capabilities: { http: { apps: ['reports'] } },
       exports: { http: [{ path: '/entries/:id', methods: ['GET'] }], personOnly: ['/approve'] },
+    });
+    expect(parsed.success).toBe(true);
+  });
+
+  it('takes a person-only rule for some methods beside an export of others on the same path', () => {
+    const parsed = ExtensionManifestSchema.safeParse({
+      ...base,
+      exports: {
+        http: [
+          { path: '/approvals', methods: ['GET'] },
+          { path: '/dial', methods: ['GET'] },
+        ],
+        personOnly: [
+          { path: '/approvals', methods: ['POST'] },
+          { path: '/dial', methods: ['PUT'] },
+          '/approve',
+        ],
+      },
+    });
+    expect(parsed.success).toBe(true);
+  });
+
+  it('takes apps listed as ids, and as { id, navigate } to open their pages too', () => {
+    const parsed = ExtensionManifestSchema.safeParse({
+      ...base,
+      capabilities: {
+        http: { apps: ['reports', { id: 'mkt-newsletter', navigate: true }, { id: 'desk' }] },
+      },
     });
     expect(parsed.success).toBe(true);
   });
@@ -133,7 +316,54 @@ describe('the manifest fields for it', () => {
       'a placeholder export over a personOnly route',
       { exports: { http: [{ path: '/:any', methods: ['GET'] }], personOnly: ['/approve'] } },
     ],
+    [
+      'an export whose method a person-only rule on the same path names',
+      {
+        exports: {
+          http: [{ path: '/approvals', methods: ['GET', 'POST'] }],
+          personOnly: [{ path: '/approvals', methods: ['POST'] }],
+        },
+      },
+    ],
+    [
+      'a placeholder export whose method an overlapping person-only rule names',
+      {
+        exports: {
+          http: [{ path: '/:kind/:id', methods: ['PATCH'] }],
+          personOnly: [{ path: '/variants/:id', methods: ['PATCH'] }],
+        },
+      },
+    ],
+    [
+      'a person-only rule with no methods',
+      { exports: { personOnly: [{ path: '/approvals', methods: [] }] } },
+    ],
+    [
+      'a person-only rule naming a method twice',
+      { exports: { personOnly: [{ path: '/approvals', methods: ['POST', 'POST'] }] } },
+    ],
+    [
+      'a person-only rule with an unknown field',
+      { exports: { personOnly: [{ path: '/approvals', methods: ['POST'], all: true }] } },
+    ],
     ['an app listing itself', { capabilities: { http: { apps: ['ledger'] } } }],
+    [
+      'an app listing itself to open',
+      { capabilities: { http: { apps: [{ id: 'ledger', navigate: true }] } } },
+    ],
+    [
+      'an app listed twice',
+      { capabilities: { http: { apps: ['reports', { id: 'reports', navigate: true }] } } },
+    ],
+    [
+      'an app entry with an unknown field',
+      { capabilities: { http: { apps: [{ id: 'reports', open: true }] } } },
+    ],
+    [
+      'a navigate that is not true or false',
+      { capabilities: { http: { apps: [{ id: 'reports', navigate: 'yes' }] } } },
+    ],
+    ['a bad app id in an entry', { capabilities: { http: { apps: [{ id: 'Not An Id' }] } } }],
     ['an export with no methods', { exports: { http: [{ path: '/a', methods: [] }] } }],
     ['a wildcard path', { exports: { http: [{ path: '/a/*', methods: ['GET'] }] } }],
     ['a path with dot-dot', { exports: { http: [{ path: '/a/../b', methods: ['GET'] }] } }],

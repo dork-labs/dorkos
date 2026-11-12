@@ -1,3 +1,4 @@
+import type { AppNavigateRefusal } from './cross-app.js';
 import type { ExtensionAPI } from './extension-api.js';
 
 /**
@@ -22,9 +23,26 @@ export function needsClientUpdate(manifest: { clientApiVersion?: number }): bool
 }
 
 /** Version 2 browser API, available only inside an app's isolated frame. */
-export interface FrameExtensionAPI extends Omit<ExtensionAPI, 'executeCommand' | 'openCanvas'> {
+export interface FrameExtensionAPI extends Omit<
+  ExtensionAPI,
+  'executeCommand' | 'openCanvas' | 'navigate'
+> {
   /** Activation runs once for registrations and once per mounted view. Keep startup work in registration. */
   readonly context: 'registration' | 'view';
+  /**
+   * Move the person to a page in DorkOS: a core route, one of this app's own
+   * `/x/<id>/…` pages (with any query), or a page of an app this app lists in
+   * `capabilities.http.apps`, by its item path alone (`/x/<app>/item/<id>`:
+   * no query, hash or encoded characters, at most 8 segments).
+   *
+   * Another app's page opens only from a fresh click or key press inside
+   * this app's own frame; otherwise it answers `no-gesture`. For the next
+   * half second DorkOS ignores clicks and keys, while the new page fades in.
+   *
+   * Never throws for a refused address: it answers `{ ok: false }` with why,
+   * so the app can say so.
+   */
+  navigate(path: string): Promise<AppNavigateResult>;
   /**
    * Request JSON from this app's own server router. Requires capabilities.http.
    *
@@ -69,6 +87,19 @@ export interface FrameExtensionAPI extends Omit<ExtensionAPI, 'executeCommand' |
     data: string | ArrayBuffer | Blob
   ): Promise<'saved' | 'cancelled'>;
 }
+
+/** Why {@link FrameExtensionAPI.navigate} went nowhere. */
+export type AppNavigateResultRefusal = AppNavigateRefusal | 'unknown-route' | 'no-gesture';
+
+/** What {@link FrameExtensionAPI.navigate} answers. */
+export type AppNavigateResult =
+  | { ok: true }
+  | {
+      ok: false;
+      reason: AppNavigateResultRefusal;
+      /** One sentence for the app's maker, saying what to change. */
+      message: string;
+    };
 
 /** What {@link FrameExtensionAPI.openCanvas} accepts. */
 export type FrameCanvasContent =

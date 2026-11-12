@@ -12,6 +12,7 @@ import '@testing-library/jest-dom/vitest';
 import { ExtensionPermissionLines } from '../ui/ExtensionPermissionLines';
 import {
   approvedSetOf,
+  calledAppDetail,
   extensionPermissionLines,
   permissionLineText,
   permissionsAddedSince,
@@ -31,24 +32,110 @@ const view = (apps: ExtensionPermissionView['apps']): ExtensionPermissionView =>
 
 const THREE = view([
   { id: 'desk', name: 'Desk', access: 'reads' },
-  { id: 'mkt-core', name: 'Marketing core', access: 'both' },
+  { id: 'mkt-core', name: 'Marketing core', access: 'both', opens: true },
   { id: 'ledger', name: null, access: null },
 ]);
 
+/** The words after each app's name, as the card draws them. */
+const rowsOf = (apps: ExtensionPermissionView['apps']): string[] | undefined =>
+  extensionPermissionLines(view(apps))
+    .find((line) => line.key === 'apps')
+    ?.apps?.map((app) => `${app.name}\u00a0· ${app.detail}`);
+
 describe('It uses other apps', () => {
+  // Designer, Nov 12: a no-break space before each "·" keeps the dot with the
+  // word before it, so it never starts a line at 390 px.
+  it('never lets a separator dot start a line', () => {
+    const apps: ExtensionPermissionView['apps'] = [
+      { id: 'tally', name: 'Tally', access: 'both', opens: true },
+      { id: 'desk', name: 'Desk', access: 'reads' },
+      { id: 'orbit', name: 'Orbit Mail', access: null, opens: true },
+      { id: 'gone', name: null, access: null },
+    ];
+    render(<ExtensionPermissionLines permissions={view(apps)} />);
+    const rows = [...document.querySelectorAll('[data-slot="called-apps"] li[data-app]')].map(
+      (row) => row.textContent ?? ''
+    );
+    const line = extensionPermissionLines(view(apps)).find((entry) => entry.key === 'apps');
+    for (const text of [...rows, ...(line?.apps ?? []).map((app) => app.detail)]) {
+      expect(text).not.toMatch(/[^\u00a0]·/u);
+    }
+    expect(rows[0]).toBe('Tally\u00a0· reads and changes\u00a0· can open its pages');
+    expect(line && permissionLineText(line)).toContain('Tally\u00a0· reads and changes');
+  });
+
   it('reads one line per app, in the designer’s words', () => {
     const line = extensionPermissionLines(THREE).find((entry) => entry.key === 'apps');
     expect(line && permissionLineText(line)).toBe(
-      'It uses other apps: Desk · reads Marketing core · reads and changes ' +
-        'ledger · not installed, so this part won’t work'
+      'It uses other apps: Desk\u00a0· reads ' +
+        'Marketing core\u00a0· reads and changes\u00a0· can open its pages ' +
+        'ledger\u00a0· not installed, so this part won’t work'
     );
   });
 
-  it('says so when an installed app shares nothing with it', () => {
-    const line = extensionPermissionLines(
-      view([{ id: 'vault', name: 'Vault', access: null }])
-    ).find((entry) => entry.key === 'apps');
-    expect(line?.apps?.[0]?.detail).toBe('shares nothing, so this part won’t work');
+  // Only real powers: what the target exports to this app, and its own navigate (Nov 11).
+  it.each([
+    [
+      'writes it may use, and opens',
+      { access: 'both', opens: true },
+      'Mkt Newsletter\u00a0· reads and changes\u00a0· can open its pages',
+    ],
+    [
+      'writes it may use, no opening',
+      { access: 'both' },
+      'Mkt Newsletter\u00a0· reads and changes',
+    ],
+    ['only reads', { access: 'reads' }, 'Mkt Newsletter\u00a0· reads'],
+    [
+      'only reads, and opens',
+      { access: 'reads', opens: true },
+      'Mkt Newsletter\u00a0· reads\u00a0· can open its pages',
+    ],
+    [
+      'nothing shared, but opens',
+      { access: null, opens: true },
+      'Mkt Newsletter\u00a0· can only open its pages',
+    ],
+  ] as const)('%s', (_name, power, row) => {
+    expect(rowsOf([{ id: 'mkt-newsletter', name: 'Mkt Newsletter', ...power }])).toEqual([row]);
+  });
+
+  it('mkt-core → mkt-newsletter, which exports nothing to it: opens only', () => {
+    expect(
+      rowsOf([{ id: 'mkt-newsletter', name: 'Mkt Newsletter', access: null, opens: true }])
+    ).toEqual(['Mkt Newsletter\u00a0· can only open its pages']);
+  });
+
+  it('leaves off an app that gives it no power, and the whole line when none do', () => {
+    expect(
+      rowsOf([
+        { id: 'desk', name: 'Desk', access: 'reads' },
+        { id: 'vault', name: 'Vault', access: null },
+        { id: 'quiet', name: 'Quiet', access: null, opens: false },
+      ])
+    ).toEqual(['Desk\u00a0· reads']);
+    expect(rowsOf([{ id: 'vault', name: 'Vault', access: null }])).toBeUndefined();
+    // But the yes still echoes it, so a target that starts sharing asks again.
+    expect(approvedSetOf(view([{ id: 'vault', name: 'Vault', access: null }]))?.apps).toEqual([
+      'vault',
+    ]);
+  });
+
+  it('names the extra power after the app only when it applies (designer, Nov 11)', () => {
+    expect(calledAppDetail({ installed: true, access: 'both', opensPages: false })).toBe(
+      'reads and changes'
+    );
+    expect(calledAppDetail({ installed: true, access: 'both', opensPages: true })).toBe(
+      'reads and changes\u00a0· can open its pages'
+    );
+    expect(calledAppDetail({ installed: true, access: null, opensPages: true })).toBe(
+      'can only open its pages'
+    );
+    // No power at all: no row.
+    expect(calledAppDetail({ installed: true, access: null, opensPages: false })).toBeNull();
+    expect(calledAppDetail({ installed: false, access: null, opensPages: true })).toBe(
+      'not installed, so this part won’t work'
+    );
   });
 
   it('draws a missing app as an id in mono, never as a name in bold', () => {
@@ -110,7 +197,24 @@ describe('It uses other apps', () => {
     expect(approvedSetOf(THREE)?.apps).toEqual(['desk', 'mkt-core', 'ledger']);
     // And what each shared, so a target that shares more since is refused too.
     expect(approvedSetOf(THREE)?.appAccess).toEqual({ desk: 'reads', 'mkt-core': 'both' });
+    // And which it opens, so an update that starts opening one is refused too.
+    expect(approvedSetOf(THREE)?.appOpens).toEqual(['mkt-core']);
+    expect(approvedSetOf(view([{ id: 'desk', name: 'Desk', access: 'reads' }]))).not.toHaveProperty(
+      'appOpens'
+    );
     expect(approvedSetOf(view(undefined))).not.toHaveProperty('apps');
+  });
+
+  it('finds an app newly opened between what was seen and what is declared now', () => {
+    const seen = {
+      runtime: 'in-process' as const,
+      net: [],
+      run: [],
+      agents: false,
+      apps: ['desk'],
+    };
+    expect(permissionsAddedSince(seen, { ...seen, appOpens: ['desk'] })?.apps).toEqual(['desk']);
+    expect(permissionsAddedSince({ ...seen, appOpens: ['desk'] }, seen)).toBeNull();
   });
 
   it('finds a newly listed app between what was seen and what is declared now', () => {
@@ -155,9 +259,9 @@ describe('It can change (Security item 8)', () => {
         "New files on your computer, only when you choose Save",
         "Replies in the room threads you pick",
         "Messages to an agent you pick, sent in your name",
-        "It uses other apps:Desk · readsMarketing core · reads and changes",
-        "Desk · reads",
-        "Marketing core · reads and changes",
+        "It uses other apps:Desk\u00a0· readsMarketing core\u00a0· reads and changes",
+        "Desk\u00a0· reads",
+        "Marketing core\u00a0· reads and changes",
       ]
     `);
   });

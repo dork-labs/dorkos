@@ -172,6 +172,8 @@ export const ExtensionApprovalPermissionsSchema = z
           id: z.string(),
           name: z.string().nullable(),
           access: z.enum(['reads', 'changes', 'both']).nullable(),
+          /** Whether it may open that app's pages (its own `navigate: true`). */
+          opens: z.boolean().optional(),
         })
       )
       .optional(),
@@ -413,6 +415,8 @@ export const ApproveExtensionRequestSchema = z
         apps: z.array(z.string()).max(20).optional(),
         /** What each of those apps shared with it, as the card said. */
         appAccess: z.record(z.string(), z.enum(['reads', 'changes', 'both'])).optional(),
+        /** The apps whose pages the card said it opens. */
+        appOpens: z.array(z.string()).max(20).optional(),
       })
       .optional(),
     /**
@@ -542,6 +546,8 @@ export const ApprovalSetPermissionsSchema = z.object({
   apps: z.array(z.string()).max(20).optional(),
   /** What each of those apps shares with it. */
   appAccess: z.record(z.string(), z.enum(['reads', 'changes', 'both'])).optional(),
+  /** The apps whose pages it opens. */
+  appOpens: z.array(z.string()).max(20).optional(),
 });
 
 /** The permission set one member was shown with. */
@@ -596,6 +602,7 @@ export async function approvalSetHash(
         agents: permissions.agents,
         apps: [...(permissions.apps ?? [])].sort(),
         appAccess: Object.entries(permissions.appAccess ?? {}).sort(),
+        appOpens: [...(permissions.appOpens ?? [])].sort(),
       });
       return `${id}:${version}:${expectedDigest}:${await sha256(canonical)}`;
     })

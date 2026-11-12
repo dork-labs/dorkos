@@ -20,6 +20,7 @@ import type {
   StatusBarSlotContext,
   StartWorkInput,
 } from '@dorkos/extension-api';
+import type { CrossAppManifest } from '@dorkos/extension-api';
 import { isExtensionEventDeclared, StartWorkError } from '@dorkos/extension-api';
 import type { UiCommand, UiCanvasContent } from '@dorkos/shared/types';
 import { placementFromInput } from '@dorkos/shared/mini-app-placement';
@@ -41,11 +42,7 @@ import type {
   StatusBarContribution,
 } from '@/layers/shared/model';
 import { executeUiCommand, revealForContent } from '@/layers/shared/lib/ui-action-dispatcher';
-import { internalRoutePath } from '@/layers/shared/lib/link-navigation';
-import {
-  EXTENSION_PAGE_PATH_PATTERN,
-  parseExtensionPagePath,
-} from '@/layers/shared/lib/extension-page-path';
+import { EXTENSION_PAGE_PATH_PATTERN } from '@/layers/shared/lib/extension-page-path';
 import { toast } from 'sonner';
 import type { ExtensionAPIDeps } from './types';
 import { extensionApiUrl } from './extension-api-url';
@@ -53,6 +50,7 @@ import { applyPageBadge } from './page-badge';
 import { createExtensionRoomsApi } from './extension-rooms-api';
 import { createExtensionForwardApi } from './extension-forward-api';
 import { requestError } from './request-error';
+import { resolveAppNavigation } from './app-navigation';
 
 /** Default priority for extension contributions (mid-range, after built-ins). */
 const DEFAULT_PRIORITY = 50;
@@ -84,14 +82,33 @@ function closeOtherDialogs(keep: DialogOpenState): void {
  * @param declaredEvents - The manifest's `capabilities.events` entries. Gates
  *   `api.events.subscribe`: a subscribe request for a kind not covered here (by
  *   kind name or category) is rejected. Defaults to none.
+ * @param caller - The manifest's `capabilities`, from DorkOS's records: the
+ *   apps it lists are the ones whose pages `navigate` may open. Defaults to none.
  * @returns The API object and collected cleanup functions
  */
 export function createExtensionAPI(
   extId: string,
   deps: ExtensionAPIDeps,
-  declaredEvents: readonly ExtensionEventDeclaration[] = []
+  declaredEvents: readonly ExtensionEventDeclaration[] = [],
+  caller: Pick<CrossAppManifest, 'capabilities'> = {}
 ): { api: ExtensionAPI; cleanups: Array<() => void> } {
   const cleanups: Array<() => void> = [];
+
+  /**
+   * Follow a path an extension wrote, once it is checked against the routes
+   * the app serves (DOR-924) and the pages it may open (DOR-3293). A refused
+   * path is a no-op that says so rather than a navigation to nowhere.
+   */
+  const go = (path: string, otherApps: boolean): void => {
+    const target = resolveAppNavigation({ id: extId, capabilities: caller.capabilities }, path, {
+      otherApps,
+    });
+    if (!target.ok) {
+      console.warn(`[extensions] ${extId} could not navigate to ${path}: ${target.message}`);
+      return;
+    }
+    deps.navigate({ to: target.to });
+  };
   let markersQueuedForCleanup = false;
   let badgesQueuedForCleanup = false;
 
@@ -318,23 +335,8 @@ export function createExtensionAPI(
     },
 
     navigate(path: string): void {
-      // An extension wrote this string, so it is checked against the routes the
-      // app actually serves before the router is handed it (DOR-924). An
-      // unknown path, another origin, or a scheme the link seam refuses is a
-      // no-op that says so rather than a navigation to nowhere.
-      const target = internalRoutePath(path);
-      if (target === null) {
-        console.warn(`[extensions] ${extId} asked to navigate to an unknown route:`, path);
-        return;
-      }
-      // Pages under `/x/` are scoped: an extension may send you to its own,
-      // never to another extension's (spec `flow-multiproject` invariant 11).
-      const page = parseExtensionPagePath(new URL(target, 'http://x.invalid').pathname);
-      if (page !== null && page.extensionId !== extId) {
-        console.warn(`[extensions] ${extId} asked to navigate to another extension's page:`, path);
-        return;
-      }
-      deps.navigate({ to: target });
+      // Core routes, its own pages, and a listed app's item page.
+      go(path, true);
     },
 
     getState(): ExtensionReadableState {
@@ -427,10 +429,10 @@ export function createExtensionAPI(
       );
       if (!res.ok) throw await requestError(res, 'answerDecision');
       const body = DecisionActionResponseSchema.parse(await res.json());
-      // The server checked it is an in-app path. Follow it the way the
-      // extension's own `navigate` would: core routes, and this extension's
-      // own `/x/<id>/…` pages.
-      if (body.navigate) api.navigate(body.navigate);
+      // The server checked it is an in-app path. Follow it to core routes and
+      // this extension's own `/x/<id>/…` pages only: another app's page is
+      // opened by this app's own screens, never by its server's answer.
+      if (body.navigate) go(body.navigate, false);
       return {
         resolved: body.resolved,
         message: body.message,

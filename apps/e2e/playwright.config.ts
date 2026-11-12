@@ -879,6 +879,9 @@ export default defineConfig({
         // Runs against the test-mode leg in `chromium-extension-seams` too: it
         // turns `hello-world` on and off around a held bundle.
         '**/extensions/extension-page-state.spec.ts',
+        // Runs against the test-mode leg in `chromium-extension-seams` too: it
+        // turns `hello-world` on and off as the page another app opens.
+        '**/extensions/app-navigate-gesture.spec.ts',
         // Runs against the production leg in `chromium-production` below, and
         // only there. On this leg its every assertion would be vacuous: Vite's
         // shell carries no Content-Security-Policy, so a spec written to prove
@@ -1096,13 +1099,15 @@ export default defineConfig({
       // project, which the balanced-shard reporter's `TestRun.exclude()` refuses.
       // `mini-app-tab-placement.spec.ts` (spec `mini-app-placement`) is the
       // third file on that worker for the same reason, and
-      // `extension-page-state.spec.ts` the fourth.
+      // `extension-page-state.spec.ts` the fourth, and
+      // `app-navigate-gesture.spec.ts` (DOR-3293) the fifth.
       workers: 1,
       testMatch: [
         '**/extensions/extension-seams.spec.ts',
         '**/extensions/start-work.spec.ts',
         '**/extensions/mini-app-tab-placement.spec.ts',
         '**/extensions/extension-page-state.spec.ts',
+        '**/extensions/app-navigate-gesture.spec.ts',
       ],
     },
     // The only project whose `baseURL` is an EXPRESS port rather than a Vite

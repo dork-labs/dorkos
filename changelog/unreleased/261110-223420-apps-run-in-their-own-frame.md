@@ -23,6 +23,15 @@ covers:
   - "fix(extensions): an app's canvas widget may only link out, and a trusted app asks again when its screens reach further (DOR-3293)"
   - 'fix(canvas): a document an app opened can never hold a widget action other than a link, on any write (DOR-3293)'
   - "fix(canvas): check the document as it will end up on every update, so a mark-only patch can't label an agent widget as an app's (DOR-3293)"
+  - 'feat(extensions): a personOnly rule can name its methods, so a read stays shared while a write on the same path does not (DOR-3293)'
+  - "feat(extensions): an app can open a page of an app it lists, by the item's path alone, and hears why when it can't (DOR-3293)"
+  - "fix(extensions): another app's page opens only right after a click in the calling app, and input waits half a second as it fades in (DOR-3293)"
+  - "fix(extensions): the approval card says when an app can open another app's pages (DOR-3293)"
+  - "fix(extensions): an app opens another app's pages only when it lists that app with navigate: true (DOR-3293)"
+  - 'fix(extensions): the approval card names only the powers an app really has over each other app, and asks again when it starts opening one (DOR-3293)'
+  - "fix(extensions): a dot on the approval card's app rows never starts a line on a phone (DOR-3293)"
+  - 'fix(server): a call between apps whose path part hides a slash is refused, never read as two parts (DOR-3293)'
+  - 'fix(extensions): one click in an app opens at most one other app’s page (DOR-3293)'
 ---
 
 ### Security

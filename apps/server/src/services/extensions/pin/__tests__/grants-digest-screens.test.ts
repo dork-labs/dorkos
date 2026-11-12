@@ -78,6 +78,30 @@ describe('grantsDigestOf and what screens reach', () => {
     expect(write).not.toBe(read);
   });
 
+  it('changes when an app it calls becomes one whose pages it opens, and not for spelling', () => {
+    const calls = grantsDigestOf(withFields({ capabilities: { http: { apps: ['ledger'] } } }));
+    // The same power, written as an entry: no new yes owed.
+    expect(
+      grantsDigestOf(withFields({ capabilities: { http: { apps: [{ id: 'ledger' }] } } }))
+    ).toBe(calls);
+    const opens = grantsDigestOf(
+      withFields({ capabilities: { http: { apps: [{ id: 'ledger', navigate: true }] } } })
+    );
+    expect(opens).not.toBe(calls);
+    // Two different apps it opens never hash alike.
+    const other = grantsDigestOf(
+      withFields({
+        capabilities: { http: { apps: ['ledger', { id: 'mkt-core', navigate: true }] } },
+      })
+    );
+    const swapped = grantsDigestOf(
+      withFields({
+        capabilities: { http: { apps: [{ id: 'ledger', navigate: true }, 'mkt-core'] } },
+      })
+    );
+    expect(other).not.toBe(swapped);
+  });
+
   it('makes a path-trusted app ask again when it adds a write', () => {
     const copy = {
       manifest: base,

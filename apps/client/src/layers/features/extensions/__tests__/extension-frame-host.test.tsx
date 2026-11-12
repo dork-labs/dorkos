@@ -8,6 +8,8 @@ import {
 } from '../frame/host';
 
 import { setRunningApps } from '../frame/running-apps';
+import { resetArrivalPause } from '../frame/app-arrival';
+import type { ExtensionPermissionView } from '@/layers/entities/extension';
 
 vi.mock('virtual:dorkos-extension-frame', () => ({ default: '' }));
 vi.mock('../model/extension-api-url', () => ({ extensionApiUrl: (path: string) => `/api${path}` }));
@@ -196,8 +198,9 @@ describe('isolated app host', () => {
           http: [
             { path: '/entries', methods: ['GET'] },
             { path: '/entries/:id', methods: ['GET', 'PATCH'] },
+            { path: '/approvals', methods: ['GET'] },
           ],
-          personOnly: ['/approve'],
+          personOnly: ['/approve', { path: '/approvals', methods: ['POST'] }],
         },
       },
     };
@@ -269,6 +272,14 @@ describe('isolated app host', () => {
       );
       expect(fetch).not.toHaveBeenCalled();
     });
+    it('sends a read on a path whose write is personOnly, and never the write', async () => {
+      await start(callsLedger);
+      expect(await call('request', ['/approvals', { app: 'ledger' }])).toHaveProperty('value');
+      expect(
+        await call('request', ['/approvals', { app: 'ledger', method: 'POST', body: {} }])
+      ).toHaveProperty('error');
+      expect(routeCalls()).toHaveLength(1);
+    });
     it('refuses a write the export does not list', async () => {
       await start(callsLedger);
       expect(
@@ -295,6 +306,223 @@ describe('isolated app host', () => {
       const [, init] = vi.mocked(fetch).mock.calls[0]!;
       expect(init?.headers).not.toHaveProperty('X-DorkOS-Caller-App');
       expect(init?.headers).not.toHaveProperty('X-DorkOS-Caller-Token');
+    });
+  });
+  describe('opening another app’s page (DOR-3293)', () => {
+    beforeEach(() =>
+      setRunningApps([
+        {
+          id: 'ledger',
+          status: 'compiled',
+          approvedToRun: true,
+          manifest: { id: 'ledger', name: 'Ledger', version: '1.0.0' },
+        },
+      ] as never)
+    );
+    afterEach(() => {
+      setRunningApps([]);
+      resetArrivalPause();
+      Reflect.deleteProperty(navigator, 'userActivation');
+    });
+    const callsLedger: Partial<ExtensionManifest> = {
+      capabilities: { http: { apps: [{ id: 'ledger', navigate: true }] } },
+    };
+    /** The browser's own record of a real click, which no frame can set. */
+    const activation = (isActive: boolean) =>
+      Object.defineProperty(navigator, 'userActivation', {
+        configurable: true,
+        value: { isActive, hasBeenActive: isActive },
+      });
+    /** The person clicked inside the calling app's own frame just now. */
+    const clickInCallingFrame = () => {
+      activation(true);
+      document.querySelector('iframe')!.focus();
+    };
+
+    it('opens a listed app’s item page after a click in this app, and answers ok', async () => {
+      await start(callsLedger);
+      clickInCallingFrame();
+      expect(await call('navigate', ['/x/ledger/item/entry/e-17'])).toHaveProperty('value', {
+        ok: true,
+      });
+      expect(api.navigate).toHaveBeenCalledWith('/x/ledger/item/entry/e-17');
+      // Input waits out the arrival pause, which started with the navigation.
+      expect(document.body.hasAttribute('inert')).toBe(true);
+    });
+
+    it('answers not-declared for an app listed only to call, even after a click', async () => {
+      await start({ capabilities: { http: { apps: ['ledger'] } } });
+      clickInCallingFrame();
+      const reply = (await call('navigate', ['/x/ledger/item/entry/e-17'])) as {
+        value: { ok: boolean; reason: string; message: string };
+      };
+      expect(reply.value).toMatchObject({ ok: false, reason: 'not-declared' });
+      expect(reply.value.message).toContain('"navigate": true');
+      expect(api.navigate).not.toHaveBeenCalled();
+    });
+
+    it('answers no-gesture with no click, and goes nowhere', async () => {
+      await start(callsLedger);
+      activation(false);
+      document.querySelector('iframe')!.focus();
+      const reply = (await call('navigate', ['/x/ledger/item/entry/e-17'])) as {
+        value: { ok: boolean; reason: string; message: string };
+      };
+      expect(reply.value).toMatchObject({ ok: false, reason: 'no-gesture' });
+      expect(reply.value.message).toEqual(expect.any(String));
+      expect(api.navigate).not.toHaveBeenCalled();
+    });
+
+    it('opens once per click: a second navigate in the same activation is no-gesture', async () => {
+      await start(callsLedger);
+      clickInCallingFrame();
+      expect(await call('navigate', ['/x/ledger/item/entry/e-17'])).toHaveProperty('value', {
+        ok: true,
+      });
+      // The app focuses its own frame again, with no new click.
+      document.querySelector('iframe')!.focus();
+      expect(await call('navigate', ['/x/ledger/item/entry/e-18'])).toHaveProperty(
+        'value',
+        expect.objectContaining({ ok: false, reason: 'no-gesture' })
+      );
+      expect(api.navigate).toHaveBeenCalledTimes(1);
+    });
+
+    it('answers no-gesture when the click was in a sibling app’s frame', async () => {
+      await start(callsLedger);
+      const sibling = document.createElement('iframe');
+      document.body.append(sibling);
+      activation(true);
+      sibling.focus();
+      expect(await call('navigate', ['/x/ledger/item/entry/e-17'])).toHaveProperty(
+        'value',
+        expect.objectContaining({ ok: false, reason: 'no-gesture' })
+      );
+      expect(api.navigate).not.toHaveBeenCalled();
+    });
+
+    it('a frame cannot claim a gesture: an argument saying so changes nothing', async () => {
+      await start(callsLedger);
+      expect(
+        await call('navigate', ['/x/ledger/item/entry/e-17', { userActivation: true }])
+      ).toHaveProperty('error');
+      expect(api.navigate).not.toHaveBeenCalled();
+    });
+
+    it('still opens its own pages and core routes, with their query and no click', async () => {
+      await start();
+      expect(await call('navigate', ['/x/atlas/p/one?tab=2'])).toHaveProperty('value', {
+        ok: true,
+      });
+      expect(await call('navigate', ['/team'])).toHaveProperty('value', { ok: true });
+      expect(api.navigate).toHaveBeenCalledTimes(2);
+    });
+
+    it.each([
+      ['not-declared', '/x/quill/item/entry/e-17', {}],
+      ['not-declared', '/x/ledger/item/entry/e-17', { capabilities: { http: true } }],
+      ['not-an-item-path', '/x/ledger/item/entry/e-17?approve=1', undefined],
+      ['not-an-item-path', '/x/ledger/item/entry/e-17#approve', undefined],
+      ['not-an-item-path', '/x/ledger/item/entry/e%2F17', undefined],
+      ['unknown-route', 'https://evil.example/x/ledger', undefined],
+      ['unknown-route', 'javascript:alert(1)', undefined],
+    ] as const)(
+      'answers a refusal the app can show (%s) for %s, and goes nowhere',
+      async (reason, path, extra) => {
+        await start(extra ?? callsLedger);
+        const reply = (await call('navigate', [path])) as {
+          value: { ok: boolean; reason: string; message: string };
+        };
+        expect(reply.value).toMatchObject({ ok: false, reason });
+        expect(reply.value.message).toEqual(expect.any(String));
+        expect(api.navigate).not.toHaveBeenCalled();
+      }
+    );
+
+    it('answers target-unavailable for an app that is not running', async () => {
+      setRunningApps([]);
+      await start(callsLedger);
+      expect(await call('navigate', ['/x/ledger/item/entry/e-17'])).toHaveProperty(
+        'value',
+        expect.objectContaining({ ok: false, reason: 'target-unavailable' })
+      );
+      expect(api.navigate).not.toHaveBeenCalled();
+    });
+  });
+  describe('approve, add navigate: true, ask again, then allow (Security, Nov 11)', () => {
+    // The window half; the server half (the update does not run until the new
+    // yes) is the server's `isolation/__tests__/navigate-opt-in-chain.test.ts`.
+    beforeEach(() =>
+      setRunningApps([
+        {
+          id: 'mkt-newsletter',
+          status: 'compiled',
+          approvedToRun: true,
+          manifest: { id: 'mkt-newsletter', name: 'Mkt Newsletter', version: '1.0.0' },
+        },
+      ] as never)
+    );
+    afterEach(() => {
+      setRunningApps([]);
+      resetArrivalPause();
+      Reflect.deleteProperty(navigator, 'userActivation');
+    });
+    const clickInCallingFrame = () => {
+      Object.defineProperty(navigator, 'userActivation', {
+        configurable: true,
+        value: { isActive: true, hasBeenActive: true },
+      });
+      document.querySelector('iframe')!.focus();
+    };
+    const card = (opens: boolean): ExtensionPermissionView => ({
+      runtime: 'in-process',
+      net: [],
+      run: [],
+      agents: false,
+      hasServer: false,
+      apps: [{ id: 'mkt-newsletter', name: 'Mkt Newsletter', access: null, opens }],
+    });
+
+    it('refuses before the new yes, even after a click, and allows after it', async () => {
+      // Loaded here: the barrel touches the root element's style, which the theme test reads.
+      const { approvedSetOf, extensionPermissionLines, permissionLineText, permissionsAddedSince } =
+        await import('@/layers/entities/extension');
+      // 1. Approved while it listed the target as a plain id.
+      const seen = approvedSetOf(card(false))!;
+      await start({ capabilities: { http: { apps: ['mkt-newsletter'] } } });
+      clickInCallingFrame();
+      expect(await call('navigate', ['/x/mkt-newsletter/issue/v-1'])).toHaveProperty(
+        'value',
+        expect.objectContaining({ ok: false, reason: 'not-declared' })
+      );
+      expect(api.navigate).not.toHaveBeenCalled();
+
+      // 2. The update lists it with navigate: true; the card comes back, the target marked new.
+      const now = approvedSetOf(card(true))!;
+      const added = permissionsAddedSince(seen, now);
+      expect(added?.apps).toEqual(['mkt-newsletter']);
+      const line = extensionPermissionLines(card(true), added).find(({ key }) => key === 'apps');
+      expect(line && permissionLineText(line)).toBe(
+        'It uses other apps: Mkt Newsletter\u00a0· can only open its pages'
+      );
+      expect(line?.apps?.[0]?.isNew).toBe(true);
+
+      // 3. Until that yes, the frame still runs the approved manifest: still not-declared.
+      expect(await call('navigate', ['/x/mkt-newsletter/issue/v-1'])).toHaveProperty(
+        'value',
+        expect.objectContaining({ ok: false, reason: 'not-declared' })
+      );
+
+      // 4. After the yes, the app starts again on the new manifest; with a click it opens.
+      stop?.();
+      stop = undefined;
+      document.body.innerHTML = '';
+      await start({ capabilities: { http: { apps: [{ id: 'mkt-newsletter', navigate: true }] } } });
+      clickInCallingFrame();
+      expect(await call('navigate', ['/x/mkt-newsletter/issue/v-1'])).toHaveProperty('value', {
+        ok: true,
+      });
+      expect(api.navigate).toHaveBeenCalledWith('/x/mkt-newsletter/issue/v-1');
     });
   });
   it('refuses a room reply or a forward to an app that does not declare them (BRIDGE_WRITES)', async () => {

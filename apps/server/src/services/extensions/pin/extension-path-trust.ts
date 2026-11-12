@@ -46,6 +46,7 @@
  */
 import { createHash } from 'crypto';
 import path from 'path';
+import { calledApps, openableApps } from '@dorkos/extension-api';
 import type { ExtensionManifest, ExtensionRecord } from '@dorkos/extension-api';
 import type { ExtensionApprovedSource } from '@dorkos/shared/config-schema';
 import { BRIDGE_WRITES, declaresBridgeCapability } from '@dorkos/shared/extension-approval-schemas';
@@ -101,11 +102,13 @@ function screenGrants(manifest: ExtensionManifest): Record<string, unknown> {
   const writes = BRIDGE_WRITES.filter(
     ({ capability }) => capability !== null && declaresBridgeCapability(manifest, capability)
   ).map(({ key }) => key);
-  const http = manifest.capabilities?.http;
-  const apps = typeof http === 'object' ? [...http.apps].sort() : [];
+  // By id, so an entry and a bare id for the same power hash alike.
+  const apps = calledApps(manifest).sort();
+  const opens = openableApps(manifest).sort();
   return {
     ...(writes.length > 0 ? { writes } : {}),
     ...(apps.length > 0 ? { apps } : {}),
+    ...(opens.length > 0 ? { opens } : {}),
     ...(manifest.exports ? { exports: manifest.exports } : {}),
   };
 }
