@@ -12,6 +12,7 @@ import {
   type AnyRouter,
 } from '@tanstack/react-router';
 import type { TeamViewMode } from '@/layers/shared/lib';
+import { useAgentCreationStore } from '@/layers/shared/model';
 import { TeamHeader } from '../ui/TeamHeader';
 import { BarHarness } from './bar-harness';
 
@@ -44,15 +45,12 @@ vi.mock('@/layers/shared/ui', async (importOriginal) => {
   };
 });
 
-const mockOpenCreateDialog = vi.fn();
-// Only the two the bar reads are replaced. The rest of the barrel stays REAL —
-// the strip's overflow and reveal machinery lives there, and stubbing it would
-// mean testing a tab strip this file invented rather than the one that ships.
+// Only the viewport question is replaced. The rest of the barrel stays REAL —
+// the strip's overflow and reveal machinery lives there, and so does the
+// agent-creation store, which a New Agent click is checked against.
 vi.mock('@/layers/shared/model', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/layers/shared/model')>()),
   useIsMobile: () => mockIsMobile,
-  useAgentCreationStore: (selector: (s: { open: () => void }) => unknown) =>
-    selector({ open: mockOpenCreateDialog }),
 }));
 
 vi.mock('@/layers/features/top-nav', () => ({
@@ -148,11 +146,16 @@ describe('TeamHeader', () => {
     expect(screen.getByText('Team', { selector: 'span' })).toBeInTheDocument();
   });
 
-  it('clicking New Agent calls useAgentCreationStore.open()', async () => {
+  it('clicking New Agent opens a fresh agent-creation flow', async () => {
+    useAgentCreationStore.getState().close();
     renderTeamBar();
     await screen.findByTestId('page');
     fireEvent.click(screen.getByRole('button', { name: /new agent/i }));
-    expect(mockOpenCreateDialog).toHaveBeenCalledTimes(1);
+    expect(useAgentCreationStore.getState()).toMatchObject({
+      isOpen: true,
+      initialMode: 'new',
+      seed: null,
+    });
   });
 
   describe('view switcher', () => {
