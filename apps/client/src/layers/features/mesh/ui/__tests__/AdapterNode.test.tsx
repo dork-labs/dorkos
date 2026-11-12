@@ -169,9 +169,10 @@ describe('AdapterNode', () => {
   });
 
   describe('dimensions', () => {
-    it('exports ADAPTER_NODE_WIDTH and ADAPTER_NODE_HEIGHT constants', () => {
-      expect(ADAPTER_NODE_WIDTH).toBeGreaterThan(0);
-      expect(ADAPTER_NODE_HEIGHT).toBeGreaterThan(0);
+    it('applies ADAPTER_NODE_HEIGHT as the minimum height the graph layout reserves', () => {
+      render(<AdapterNode {...makeMockProps()} />);
+      const card = getCard();
+      expect(card.style.minHeight).toBe(`${ADAPTER_NODE_HEIGHT}px`);
     });
 
     it('applies ADAPTER_NODE_WIDTH as inline width', () => {
