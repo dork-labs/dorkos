@@ -138,7 +138,13 @@ The card that asks a person to allow your app lists each app it uses, by DorkOS'
 
 ## Opening another app's page
 
-An app you list in `capabilities.http.apps` is also one whose pages you can send the person to. The other app does not need to export anything: a page only shows what the person can already open.
+To send the person to another app's pages, list that app as an entry with `"navigate": true`. A plain id only lets you call its routes. You can mix both kinds in one list, and each app goes in once:
+
+```json
+{ "capabilities": { "http": { "apps": ["ledger", { "id": "mkt-newsletter", "navigate": true }] } } }
+```
+
+The other app does not need to export anything: a page only shows what the person can already open.
 
 ```tsx
 const result = await api.navigate('/x/ledger/item/entry/e-17');
@@ -153,7 +159,7 @@ Call it from a click or key press in your app, such as a button's `onClick`. Dor
 
 | `reason`             | What it means                                                               |
 | -------------------- | --------------------------------------------------------------------------- |
-| `not-declared`       | Your app does not list that app in `capabilities.http.apps`.                |
+| `not-declared`       | Your app does not list that app with `"navigate": true`.                    |
 | `target-unavailable` | That app is not installed or not turned on.                                 |
 | `not-an-item-path`   | The address carries a query, a `#`, an encoded character or too many parts. |
 | `unknown-route`      | DorkOS has no page at that address.                                         |

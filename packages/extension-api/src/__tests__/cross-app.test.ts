@@ -3,6 +3,7 @@ import {
   decideAppCall,
   decideAppNavigate,
   exportedAccess,
+  openableApps,
   routeMatches,
   type AppExportRoute,
   type CrossAppManifest,
@@ -156,11 +157,16 @@ describe('one app calling another (DOR-3293)', () => {
 });
 
 describe('one app opening another app’s page (DOR-3293)', () => {
+  // Opening pages is its own opt-in, beside calling (designer + Security, Nov 11).
+  const opener: CrossAppManifest = {
+    id: 'reports',
+    capabilities: { http: { apps: [{ id: 'ledger', navigate: true }] } },
+  };
   const open = (
     overrides: Partial<Parameters<typeof decideAppNavigate>[0]> = {}
   ): ReturnType<typeof decideAppNavigate> =>
     decideAppNavigate({
-      caller: reports,
+      caller: opener,
       target: ledger,
       targetId: 'ledger',
       itemPath: '/item/entry/e-17',
@@ -177,6 +183,37 @@ describe('one app opening another app’s page (DOR-3293)', () => {
     expect(open({ target: { id: 'ledger' } })).toEqual({ ok: true });
   });
 
+  it('refuses an app the caller lists only to call, not to open', () => {
+    expect(open({ caller: reports })).toEqual({ ok: false, reason: 'not-declared' });
+    expect(
+      open({
+        caller: { id: 'reports', capabilities: { http: { apps: [{ id: 'ledger' }] } } },
+      })
+    ).toEqual({ ok: false, reason: 'not-declared' });
+    expect(
+      open({
+        caller: {
+          id: 'reports',
+          capabilities: { http: { apps: [{ id: 'ledger', navigate: false }] } },
+        },
+      })
+    ).toEqual({ ok: false, reason: 'not-declared' });
+  });
+
+  it('a navigate entry also lets the caller call, under the target’s exports', () => {
+    expect(
+      decideAppCall({
+        caller: opener,
+        target: ledger,
+        targetId: 'ledger',
+        method: 'GET',
+        path: '/entries',
+      })
+    ).toEqual({ ok: true });
+    expect(openableApps(opener)).toEqual(['ledger']);
+    expect(openableApps(reports)).toEqual([]);
+  });
+
   it('refuses an app the caller does not list, works one way only, and never itself', () => {
     expect(open({ caller: { id: 'reports', capabilities: { http: true } } })).toEqual({
       ok: false,
@@ -190,7 +227,15 @@ describe('one app opening another app’s page (DOR-3293)', () => {
         itemPath: '',
       })
     ).toEqual({ ok: false, reason: 'not-declared' });
-    expect(open({ targetId: 'reports' })).toEqual({ ok: false, reason: 'self' });
+    expect(
+      open({
+        targetId: 'reports',
+        caller: {
+          id: 'reports',
+          capabilities: { http: { apps: [{ id: 'reports', navigate: true }] } },
+        },
+      })
+    ).toEqual({ ok: false, reason: 'self' });
   });
 
   it('refuses an app that is not installed or not running', () => {
@@ -246,6 +291,16 @@ describe('the manifest fields for it', () => {
     expect(parsed.success).toBe(true);
   });
 
+  it('takes apps listed as ids, and as { id, navigate } to open their pages too', () => {
+    const parsed = ExtensionManifestSchema.safeParse({
+      ...base,
+      capabilities: {
+        http: { apps: ['reports', { id: 'mkt-newsletter', navigate: true }, { id: 'desk' }] },
+      },
+    });
+    expect(parsed.success).toBe(true);
+  });
+
   it('still takes http: true', () => {
     expect(
       ExtensionManifestSchema.safeParse({ ...base, capabilities: { http: true } }).success
@@ -292,6 +347,23 @@ describe('the manifest fields for it', () => {
       { exports: { personOnly: [{ path: '/approvals', methods: ['POST'], all: true }] } },
     ],
     ['an app listing itself', { capabilities: { http: { apps: ['ledger'] } } }],
+    [
+      'an app listing itself to open',
+      { capabilities: { http: { apps: [{ id: 'ledger', navigate: true }] } } },
+    ],
+    [
+      'an app listed twice',
+      { capabilities: { http: { apps: ['reports', { id: 'reports', navigate: true }] } } },
+    ],
+    [
+      'an app entry with an unknown field',
+      { capabilities: { http: { apps: [{ id: 'reports', open: true }] } } },
+    ],
+    [
+      'a navigate that is not true or false',
+      { capabilities: { http: { apps: [{ id: 'reports', navigate: 'yes' }] } } },
+    ],
+    ['a bad app id in an entry', { capabilities: { http: { apps: [{ id: 'Not An Id' }] } } }],
     ['an export with no methods', { exports: { http: [{ path: '/a', methods: [] }] } }],
     ['a wildcard path', { exports: { http: [{ path: '/a/*', methods: ['GET'] }] } }],
     ['a path with dot-dot', { exports: { http: [{ path: '/a/../b', methods: ['GET'] }] } }],
