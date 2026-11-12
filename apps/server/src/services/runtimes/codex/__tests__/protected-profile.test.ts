@@ -162,6 +162,25 @@ describe.each(['default', 'acceptEdits', 'bypassPermissions'])(
   }
 );
 
+// DOR-4136: other runtimes let a Full agent write a browser sign-in store. Codex
+// can't: each store is a read secret too (DOR-3613), and Codex has no
+// write-only access. This pins that, so a store that stops being a read secret
+// shows up here before Codex's Full profile quietly differs from the rest.
+describe('browser sign-in stores in the Codex profile', () => {
+  it.each(['default', 'acceptEdits', 'bypassPermissions'])(
+    'keeps every one shut at %s',
+    (permissionMode) => {
+      const config = codexProtectedConfig(roots.cwd, filePolicy, { permissionMode });
+      const profiles = config.permissions as Record<string, { filesystem: Record<string, string> }>;
+      const files = profiles[codexPermissionProfile({ permissionMode })]!.filesystem;
+      for (const entry of PROTECTED_PATHS.filter((one) => one.belowFull)) {
+        const store = `${entry.root === 'home' ? roots.home : roots.data}/${entry.path}`;
+        expect(files[store], store).toBe('deny');
+      }
+    }
+  );
+});
+
 describe('capturing agent homes', () => {
   it.each(['default', 'acceptEdits', 'bypassPermissions'])(
     'adds real unregistered folders as literal read-only homes at %s, without following links',

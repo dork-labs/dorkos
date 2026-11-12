@@ -6,6 +6,7 @@ import { registerOwnerManagementTests } from './owner-management.js';
 import { registerEventNotificationTests } from './event-notifications.js';
 import { registerMcpServerTests } from './mcp-servers.js';
 import { registerSessionAccessTests } from './session-access.js';
+import { registerMiniAppAccessTests } from './mini-app-access.js';
 import {
   registerChatConnectCardTests,
   registerChatConnectFirstStepTests,
@@ -395,6 +396,7 @@ test.describe('Connections — save key, connect, multi-account', () => {
 });
 
 registerOwnerManagementTests({ apiUrl: API_URL, connectWorkAccountViaApi, gotoConnections });
+registerMiniAppAccessTests({ apiUrl: API_URL, connectWorkAccountViaApi, gotoConnections });
 registerEventNotificationTests({ apiUrl: API_URL, gotoConnections });
 registerMcpServerTests({ apiUrl: API_URL });
 const chatConnectHarness = {

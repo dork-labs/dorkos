@@ -211,6 +211,22 @@ describe('local browser scoped tool projection', () => {
     expect(service.action).not.toHaveBeenCalled();
     expect(service.agentState).not.toHaveBeenCalled();
   });
+  // DOR-4192: navigate needs no current read, but a person holding the window still stops it.
+  it('refuses leaving by navigate while a person has the browser', async () => {
+    const { domain, deps, context, service } = setup();
+    service.handover.requireAgentMayUse.mockRejectedValue(
+      new LocalBrowserError('handed_to_person', 'A person has the browser.')
+    );
+    const act = domain.capabilities.find((item) => item.id === 'local_browser.act')!;
+    await expect(
+      act.invoke(
+        deps,
+        { action: { kind: 'navigate', revision: 0, url: 'https://made-up.example/' } },
+        context('chat-one')
+      )
+    ).rejects.toMatchObject({ payload: { code: 'handed_to_person' } });
+    expect(service.action).not.toHaveBeenCalled();
+  });
   it('refuses every read and action while a page is in full screen, before reading', async () => {
     const { domain, deps, context, service } = setup();
     service.requireNotFullScreen.mockRejectedValue(

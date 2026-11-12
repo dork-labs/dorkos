@@ -35,7 +35,11 @@ export class DoeApprovals {
         !Array.isArray(args) &&
         typeof args.path === 'string'
       ) {
-        const roots = protectedRoots ?? protectedPathRoots(context.workingDirectory);
+        // A browser sign-in store opens at Full only, read from this turn's clamped mode (DOR-4136).
+        const roots = {
+          ...(protectedRoots ?? protectedPathRoots(context.workingDirectory)),
+          full: mode === 'bypassPermissions',
+        };
         const denied =
           isProtectedPath(args.path, EDIT_TOOLS.has(tool.name) ? 'write' : 'read', roots) ||
           (tool.name === 'edit' && isProtectedPath(args.path, 'read', roots));

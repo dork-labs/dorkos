@@ -45,10 +45,14 @@ const spies = {
 };
 // Everything a person does that can move, close or open the browser goes through the handoff.
 const service = {
-  profileRemoval: { forget: spies.forgetProfile, delete: spies.deleteProfile },
+  profileRemoval: {
+    forget: spies.forgetProfile,
+    forgetAll: spies.forgetProfile,
+    delete: spies.deleteProfile,
+  },
   capabilities: spies.capabilities,
-  pause: spies.pause,
   handover: {
+    pause: spies.pause,
     state: spies.state,
     open: spies.open,
     selectTab: spies.selectTab,

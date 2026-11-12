@@ -29,6 +29,7 @@ import type { OnboardingTransport } from './transport-onboarding.js';
 import type { HistoryTransport } from './transport-history.js';
 import type { ConnectorHoldTransport } from './transport-connector-holds.js';
 import type { ConnectorAccessChangeTransport } from './transport-connector-access-changes.js';
+import type { MiniAppAccessTransport } from './transport-mini-app-access.js';
 import type { HubComputersTransport, SessionRelayTransport } from './transport-hub.js';
 import type { SignInLandingTransport } from './transport-sign-in-landing.js';
 import type { CanvasDocRouteTransport } from './transport-canvas-doc-routes.js';
@@ -66,6 +67,7 @@ export interface TransportSlices
     HistoryTransport,
     ConnectorHoldTransport,
     ConnectorAccessChangeTransport,
+    MiniAppAccessTransport,
     HubComputersTransport,
     SessionRelayTransport,
     SignInLandingTransport,

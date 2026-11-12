@@ -86,33 +86,15 @@ jobs:
         with:
           node-version: ${{ matrix.node-version }}
 
-      # apt hung for a full 10 minutes on four runs on 2026-08-19 while the
-      # Ubuntu mirrors were unreachable (DOR-1363). A short deadline plus one
-      # retry turns that into a fast, named failure instead of a job that sits
-      # on a stalled mirror. ubuntu-latest already ships python3 and
-      # build-essential, so on a healthy runner this is a no-op either way.
-      - name: Install build tools
+      # The hosted image already ships these tools. Check them directly instead
+      # of depending on Ubuntu mirrors for an otherwise offline prerequisite.
+      - name: Verify build tools
         timeout-minutes: 6
         run: |
-          printf 'Acquire::http::Timeout "20";\nAcquire::https::Timeout "20";\nAcquire::Retries "2";\n' \
-            | sudo tee /etc/apt/apt.conf.d/99-ci-acquire-timeouts >/dev/null
-          # The image's mirror list puts azure.archive.ubuntu.com first. On
-          # 2026-08-19 it was dead for hours and then TRICKLED: it answered the
-          # InRelease probe in time and then stalled mid-package (fonts-wqy-zenhei,
-          # 7 MB, never finished), which neither an acquire timeout nor a
-          # liveness probe catches. The upstream archive.ubuntu.com answered
-          # every time. So for CI the Azure mirror is simply dropped from the
-          # list and apt goes straight upstream (DOR-1363). Revisit if upstream
-          # ever becomes the slow one.
-          if [ -f /etc/apt/apt-mirrors.txt ]; then
-            sudo sed -i '/azure\.archive\.ubuntu\.com/d' /etc/apt/apt-mirrors.txt
-          fi
-          for attempt in 1 2; do
-            if sudo apt-get update && sudo apt-get install -y python3 build-essential; then exit 0; fi
-            echo "apt attempt $attempt failed; retrying once" >&2
-            sleep 15
-          done
-          exit 1
+          python3 --version
+          gcc --version
+          g++ --version
+          make --version
 
       - uses: actions/download-artifact@v8
         with:

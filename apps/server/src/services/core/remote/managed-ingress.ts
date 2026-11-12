@@ -123,30 +123,51 @@ export interface ManagedIngress {
  * because Express's router used to route it by a pathname this check never saw:
  * `parseurl` read `http://h/a2a` and `/a2a#x` both as `/a2a`.
  */
-function isOriginForm(target: string): boolean {
+export function isOriginForm(target: string): boolean {
   return target.startsWith('/') && !target.includes('#');
 }
 
+/** What a remote listener does with an origin-form target. */
+export type RemotePathVerdict = 'serve' | 'not-served' | 'not-normal';
+
 /**
- * Paths never served over managed access until DOR-2085 decides otherwise.
+ * Decide a target for a remote listener, managed access or the own tunnel:
+ * normalise it once, then match the paths never served remotely (the A2A
+ * gateway and its agent cards, until DOR-2085 decides otherwise).
  *
- * Takes an origin-form target only (see {@link isOriginForm}), whose pathname
- * is exactly what `parseurl` handed the Express router: everything before the
- * first `?`. The router matches that raw pathname without regard to case, so
- * this does too, and it also refuses the decoded form, which is stricter than
- * the router and never looser.
+ * The router resolves dot segments (WHATWG, `@hono/node-server` builds the URL
+ * with `new URL`), so `/x/../a2a` is routed as `/a2a`. Rather than guess how
+ * each spelling resolves, a target that still holds a `..` segment, an encoded
+ * dot, an encoded `/` or `\`, or a raw `\` after one decode is refused as
+ * `not-normal`; so is one that does not decode. What remains is collapsed
+ * (`/./` dropped, `//` joined) and lower-cased, since the old Express router
+ * matched without regard to case, and only then compared.
+ *
+ * @param target - An origin-form request target (see {@link isOriginForm}).
  */
-function isRefusedPath(target: string): boolean {
-  const raw = target.split('?')[0]!.toLowerCase();
+export function remotePathVerdict(target: string): RemotePathVerdict {
+  const raw = target.split('?')[0]!;
   let decoded: string;
   try {
-    decoded = decodeURIComponent(raw).toLowerCase();
+    decoded = decodeURIComponent(raw);
   } catch {
-    return true; // A path that does not decode is not one this listener serves.
+    return 'not-normal';
   }
-  return [raw, decoded].some(
-    (path) => path === '/a2a' || path.startsWith('/a2a/') || path.startsWith('/.well-known/agent')
-  );
+  if (
+    /%2f|%5c/i.test(raw) ||
+    /%2e/i.test(decoded) ||
+    decoded.includes('\\') ||
+    /(^|\/)\.\.(\/|$)/.test(decoded)
+  ) {
+    return 'not-normal';
+  }
+  const path = decoded
+    .replace(/\/\.(?=\/|$)/g, '')
+    .replace(/\/{2,}/g, '/')
+    .toLowerCase();
+  const refused =
+    path === '/a2a' || path.startsWith('/a2a/') || path.startsWith('/.well-known/agent');
+  return refused ? 'not-served' : 'serve';
 }
 
 /** How many copies of a header (lower-case name) a request carries. */
@@ -217,7 +238,11 @@ export function createManagedIngress(options: ManagedIngressOptions): ManagedIng
     if (!isOriginForm(target)) {
       return { status: 400, message: 'Bad request.', reason: 'target_not_origin_form' };
     }
-    if (isRefusedPath(target)) {
+    const verdict = remotePathVerdict(target);
+    if (verdict === 'not-normal') {
+      return { status: 400, message: 'Bad request.', reason: 'target_not_normal' };
+    }
+    if (verdict === 'not-served') {
       return { status: 404, message: 'Not found.', reason: 'path_not_served' };
     }
     return null;

@@ -1,7 +1,7 @@
 /** Runtime-neutral refusal checks for native file tools, before mode or grants. */
 import path from 'node:path';
 import { lstatSync, readlinkSync, readdirSync, statSync } from 'node:fs';
-import { PROTECTED_PATHS, type ProtectedPath } from './protected-paths.js';
+import { protectedPathsAt, type ProtectedPath } from './protected-paths.js';
 
 /** Roots captured for one turn; discovery never widens file access. */
 export interface ProtectedPathRoots {
@@ -11,6 +11,11 @@ export interface ProtectedPathRoots {
   accounts: readonly string[];
   agentFolders: readonly string[];
   agentHomes: readonly string[];
+  /**
+   * Whether the call runs at Full, which leaves out the paths refused below Full only
+   * (`ProtectedPath.belowFull`, DOR-4136). Absent counts as below Full.
+   */
+  full?: boolean;
 }
 
 /** Match a shared path glob: a star spans one name, never a separator. */
@@ -78,30 +83,33 @@ function checker(
     }
     return found;
   };
-  const rules = PROTECTED_PATHS.filter((entry) => entry.deny === operation).flatMap((entry) => {
-    const bases =
-      entry.root === 'data'
-        ? [roots.data]
-        : entry.root === 'home'
-          ? [roots.home]
-          : entry.root === 'account'
-            ? roots.accounts
-            : entry.root === 'agent-folder'
-              ? roots.agentFolders
-              : entry.root === 'agent-home'
-                ? roots.agentHomes
-                : [path.parse(roots.cwd).root];
-    const regex = expression(entry, entry.root === 'anywhere' || entry.root === 'agent-folder');
-    const rules = bases.flatMap((base) => expanded(base).map((base) => ({ base, regex })));
-    if (entry.root === 'agent-home') {
-      // New homes are protected before the registry notices them.
-      const future = expression({ ...entry, path: `*/${entry.path}` }, false);
-      rules.push(
-        ...expanded(path.join(roots.data, 'agents')).map((base) => ({ base, regex: future }))
-      );
-    }
-    return rules;
-  });
+  const entries = protectedPathsAt(roots.full === true);
+  const rules = entries
+    .filter((entry) => entry.deny === operation)
+    .flatMap((entry) => {
+      const bases =
+        entry.root === 'data'
+          ? [roots.data]
+          : entry.root === 'home'
+            ? [roots.home]
+            : entry.root === 'account'
+              ? roots.accounts
+              : entry.root === 'agent-folder'
+                ? roots.agentFolders
+                : entry.root === 'agent-home'
+                  ? roots.agentHomes
+                  : [path.parse(roots.cwd).root];
+      const regex = expression(entry, entry.root === 'anywhere' || entry.root === 'agent-folder');
+      const rules = bases.flatMap((base) => expanded(base).map((base) => ({ base, regex })));
+      if (entry.root === 'agent-home') {
+        // New homes are protected before the registry notices them.
+        const future = expression({ ...entry, path: `*/${entry.path}` }, false);
+        rules.push(
+          ...expanded(path.join(roots.data, 'agents')).map((base) => ({ base, regex: future }))
+        );
+      }
+      return rules;
+    });
   return (input) => {
     const targets = spellings(input, roots.cwd);
     return rules.some(({ base, regex }) =>

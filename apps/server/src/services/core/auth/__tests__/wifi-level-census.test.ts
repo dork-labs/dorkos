@@ -237,6 +237,9 @@ const ALLOWED_ON_WIFI: Readonly<Record<string, readonly string[]>> = {
       'POST /api/canvas/docs/:id/routes/:routeId/approve',
       'POST /api/canvas/docs/:id/routes/:routeId/revoke',
     ],
+  'Mini app access: taking a yes back only narrows, and a person can approve it again': [
+    'POST /api/connectors/mini-app-access/:approvalId/revoke',
+  ],
   'Document work review: one run under a route that is already allowed, or clearing it, which only narrows':
     [
       'POST /api/canvas/docs/:id/work/:batchId/replay',

@@ -20,7 +20,8 @@ function image(width: number, height: number, length = 24): Buffer {
 describe('local browser observation payload limits', () => {
   it('accepts the exact UTF-8 byte limit and refuses multibyte overflow without truncation', async () => {
     const read = vi.fn(async () => 'x'.repeat(MAX_BROWSER_SNAPSHOT_BYTES));
-    const page = { locator: () => ({ ariaSnapshot: read }) } as unknown as Page;
+    const body = { ariaSnapshot: read, count: async () => 1, nth: () => body };
+    const page = { locator: () => body } as unknown as Page;
     expect((await boundedPageSnapshot(page, 750)).length).toBe(MAX_BROWSER_SNAPSHOT_BYTES);
     read.mockResolvedValueOnce('界'.repeat(Math.ceil(MAX_BROWSER_SNAPSHOT_BYTES / 3)));
     await expect(boundedPageSnapshot(page, 750)).rejects.toMatchObject({ code: 'page_too_large' });

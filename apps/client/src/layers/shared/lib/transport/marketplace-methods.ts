@@ -241,10 +241,15 @@ export function createMarketplaceMethods(baseUrl: string) {
       });
     },
 
+    /**
+     * The name goes in the query string, never the path: a name saved by an
+     * older DorkOS may hold a `/`, and Remote Access refuses an encoded `/` in a
+     * URL path (DOR-4212). The same holds for {@link removeMarketplaceSource}.
+     */
     refreshMarketplaceSource(name: string): Promise<RefreshedMarketplaceSource> {
       return fetchJSON<RefreshedMarketplaceSource>(
         baseUrl,
-        `/marketplace/sources/${encodeURIComponent(name)}/refresh`,
+        `/marketplace/sources/refresh?name=${encodeURIComponent(name)}`,
         { method: 'POST' }
       );
     },
@@ -254,7 +259,7 @@ export function createMarketplaceMethods(baseUrl: string) {
      * would reject a request that in fact succeeded with a JSON parse error.
      */
     removeMarketplaceSource(name: string): Promise<void> {
-      return fetchNoContent(baseUrl, `/marketplace/sources/${encodeURIComponent(name)}`, {
+      return fetchNoContent(baseUrl, `/marketplace/sources?name=${encodeURIComponent(name)}`, {
         method: 'DELETE',
       });
     },

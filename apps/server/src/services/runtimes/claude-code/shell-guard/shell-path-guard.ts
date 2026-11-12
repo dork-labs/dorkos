@@ -110,10 +110,13 @@ export function createShellPathGuardHook(
       return decision('deny', reason);
     };
     // At Full the shell reads what it names: the stated limit of that level.
-    const full = chosenFullAutonomy(session) || gatePermissionMode(session) === 'bypassPermissions';
+    const runsAtFull = gatePermissionMode(session) === 'bypassPermissions';
+    const full = chosenFullAutonomy(session) || runsAtFull;
     let result: Awaited<ReturnType<ShellChecker>>;
     try {
-      result = await check(command, roots(), !full);
+      // A browser sign-in store opens only at the level the command really runs at: a chat set to
+      // Full whose turn a stranger's words started stays below Full for it (DOR-4136).
+      result = await check(command, { ...roots(), full: runsAtFull }, !full);
     } catch (err) {
       // This is the only stop at Full, so a check that can't answer refuses (Security, #3487). Only
       // the error's name in the log: its message could carry a path from the command.

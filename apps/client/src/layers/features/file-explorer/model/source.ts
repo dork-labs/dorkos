@@ -117,6 +117,8 @@ export interface ExplorerListing {
 export type ExplorerFileBody =
   | { kind: 'text'; text: string }
   | { kind: 'binary' }
+  /** A picture, shown from where the source serves it rather than as bytes. */
+  | { kind: 'image'; src: string }
   | { kind: 'too-large'; maxBytes: number }
   | { kind: 'not-readable'; reason: string };
 

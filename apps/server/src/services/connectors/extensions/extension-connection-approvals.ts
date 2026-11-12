@@ -350,6 +350,16 @@ export class ExtensionConnectionApprovalStore {
       .all();
   }
 
+  /** Every live approval, any extension, newest first. */
+  liveApprovals(): ExtensionConnectionApprovalRow[] {
+    return this.db
+      .select()
+      .from(extensionConnectionApprovals)
+      .where(isNull(extensionConnectionApprovals.revokedAt))
+      .orderBy(desc(extensionConnectionApprovals.approvedAt))
+      .all();
+  }
+
   /**
    * Revoke matching live approvals, then the extension's grants on each
    * account no other live approval of it still covers.

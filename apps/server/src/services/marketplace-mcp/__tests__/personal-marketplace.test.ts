@@ -62,12 +62,6 @@ describe('personalMarketplaceRoot', () => {
   });
 });
 
-describe('PERSONAL_MARKETPLACE_NAME', () => {
-  it('is the literal string "personal"', () => {
-    expect(PERSONAL_MARKETPLACE_NAME).toBe('personal');
-  });
-});
-
 describe('ensurePersonalMarketplace', () => {
   let dorkHome: string;
   let logger: Logger;

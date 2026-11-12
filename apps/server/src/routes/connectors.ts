@@ -1,7 +1,7 @@
 /**
  * Every `/api/connectors` group, in the one order they answer in.
  *
- * Seven groups share the prefix, and the order is part of what they answer:
+ * Eight groups share the prefix, and the order is part of what they answer:
  *
  * 1. **Provider keys** (`/providers`), behind their own migration gate.
  * 2. **Notifications** (`/connections/:id/events/*`): any path under one
@@ -16,6 +16,9 @@
  *    a connected app while it waits out its cancel window.
  * 7. **Access changes** (`/access-changes`): the person's list of what agents
  *    took away, and Undo.
+ * 8. **Mini app access** (`/mini-app-access`): what mini apps wait for and
+ *    may read, revoking a yes, and the one page outside the app where a
+ *    person gives one (`routes/mini-app-access-page.ts`).
  *
  * No route in one group shares a method and path with a route in another, so
  * a `:param` in one never claims a literal path another group answers. The
@@ -48,6 +51,11 @@ import {
   createConnectorAccessChangeRoutes,
   type ConnectorAccessChangeRouterDeps,
 } from './connector-access-changes.js';
+import {
+  createConnectorMiniAppAccessRoutes,
+  type ConnectorMiniAppAccessRouterDeps,
+} from './connector-mini-app-access.js';
+import { createMiniAppAccessPageRoutes } from './mini-app-access-page.js';
 
 /** What the connector groups read, one entry per group. */
 export interface ConnectorRoutesDeps {
@@ -65,6 +73,8 @@ export interface ConnectorRoutesDeps {
   holds?: ConnectorHoldRouterDeps;
   /** Agent-made access changes: the person's list and Undo (`/access-changes`). */
   accessChanges?: ConnectorAccessChangeRouterDeps;
+  /** Mini apps' access to connected apps (`/mini-app-access`). */
+  miniAppAccess?: ConnectorMiniAppAccessRouterDeps;
 }
 
 /**
@@ -82,5 +92,9 @@ export function createConnectorRoutes(deps: ConnectorRoutesDeps): Hono<ApiEnv> {
   if (deps.execution) app.route('/', createConnectorExecutionRoutes(deps.execution));
   if (deps.holds) app.route('/', createConnectorHoldRoutes(deps.holds));
   if (deps.accessChanges) app.route('/', createConnectorAccessChangeRoutes(deps.accessChanges));
+  if (deps.miniAppAccess) {
+    app.route('/', createConnectorMiniAppAccessRoutes(deps.miniAppAccess));
+    app.route('/', createMiniAppAccessPageRoutes(deps.miniAppAccess));
+  }
   return app;
 }

@@ -15,6 +15,7 @@ import { REMOTE_EDGE_PROOF_OVERLAP_SECONDS } from '@dork-labs/cloud-api';
 import { isAtThisComputer } from '../../auth/gate-policy.js';
 import { createManagedIngress, type ManagedIngress } from '../managed-ingress.js';
 import { ingressOf, isManagedIngress } from '../ingress-mark.js';
+import { APP_OWN_ROUTES, RETIRED_ENCODED_PATHS } from './app-own-routes.js';
 
 const PROOF = { header: 'x-dorkos-edge', secret: 's'.repeat(48) };
 const HOST = 'abc.remote.example';
@@ -254,6 +255,41 @@ describe('host and path checks', () => {
   ])('refuses %s on the managed listener', async (path) => {
     const res = await get(port, path, [hostHeader, proofHeader]);
     expect(res.status).toBe(404);
+    expect(routeSpy).not.toHaveBeenCalled();
+  });
+
+  // The six spellings that reached /a2a or an agent card (Security, Nov 11),
+  // and their cousins: not a normal path, so rejected rather than guessed.
+  it.each([
+    '/x/../a2a',
+    '/x/%2e%2e/a2a',
+    '/x/%2E%2E/A2A/agents',
+    '/api/connectors/webhooks/../../../a2a',
+    '/api/relay/webhooks/x/..%2f..%2f..%2f..%2fa2a',
+    '/x/./../.well-known/agent-card.json',
+    '/x/%252e%252e/a2a',
+    '/api/x%5c..%5ca2a',
+  ])('rejects %s on the managed listener with 400', async (path) => {
+    const res = await get(port, path, [hostHeader, proofHeader]);
+    expect(res.status).toBe(400);
+    expect(routeSpy).not.toHaveBeenCalled();
+  });
+
+  // Not only attack spellings: the app's own requests that carry a folder or a
+  // name must still reach the app (DOR-4212).
+  it.each(APP_OWN_ROUTES)('hands the app’s own $method $target to the app', async (route) => {
+    const res = await rawRequest(port, [
+      `${route.method} ${route.target} HTTP/1.1`,
+      hostHeader,
+      proofHeader,
+    ]);
+    expect(res.status).toBe(200);
+    expect(routeSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(RETIRED_ENCODED_PATHS)('still rejects the retired shape %s with 400', async (path) => {
+    const res = await get(port, path, [hostHeader, proofHeader]);
+    expect(res.status).toBe(400);
     expect(routeSpy).not.toHaveBeenCalled();
   });
 

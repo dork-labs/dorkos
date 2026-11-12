@@ -1,13 +1,13 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type {
   LocalBrowserHandoff,
   LocalBrowserPersonState,
   LocalBrowserSignIn,
 } from '@dorkos/shared/local-browser';
-import { BrowserHandoffCard, BrowserHandoffInboxItem, HANDED_BACK_MESSAGE } from '../index';
+import { BrowserHandoffCard, BrowserHandoffInboxItem } from '../index';
 
 const transport = vi.hoisted(() => ({
   getLocalBrowserState: vi.fn(),
@@ -63,11 +63,12 @@ const signIn = (
 
 function mount(sessionId: string | null = 'chat-one') {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
-  return render(
+  const view = render(
     <QueryClientProvider client={client}>
       <BrowserHandoffCard sessionId={sessionId} />
     </QueryClientProvider>
   );
+  return { ...view, client };
 }
 const button = (name: string) => screen.findByRole('button', { name });
 
@@ -119,6 +120,22 @@ describe('BrowserHandoffCard', () => {
     expect(screen.getByText('/work/atlas')).toBeTruthy();
   });
 
+  it('says the agent can’t see or use the window while the person has it (DOR-3111)', async () => {
+    transport.getLocalBrowserState.mockResolvedValue(person());
+    mount();
+    expect(await screen.findByText('Your turn: Atlas can’t see or use this window.')).toBeTruthy();
+  });
+
+  it('says it of "The agent" when the call carried no identity', async () => {
+    transport.getLocalBrowserState.mockResolvedValue(
+      person({ handoff: { ...handoff, agentName: null, agentFolder: null } })
+    );
+    mount();
+    expect(
+      await screen.findByText('Your turn: The agent can’t see or use this window.')
+    ).toBeTruthy();
+  });
+
   it('shows the home folder as ~', async () => {
     transport.getLocalBrowserState.mockResolvedValue(
       person({ handoff: { ...handoff, agentFolder: '/home/sam/agents/atlas' } })
@@ -153,23 +170,62 @@ describe('BrowserHandoffCard', () => {
     expect(screen.getByText(folder)).toBeTruthy();
   });
 
-  it('Continue hands back first, then sends the agent its one message', async () => {
+  it('Continue only hands back: the server wakes the agent, and the card leaves a receipt', async () => {
     transport.getLocalBrowserState.mockResolvedValue(person());
     transport.handBackLocalBrowser.mockResolvedValue(
       person({ handoff: { ...handoff, outcome: 'handed-back' }, paused: false })
     );
     const { container } = mount();
     fireEvent.click(await button('Continue'));
-    await waitFor(() =>
-      expect(transport.postMessage).toHaveBeenCalledWith('chat-one', HANDED_BACK_MESSAGE)
-    );
+    expect((await screen.findByRole('status')).textContent).toBe('Atlas is carrying on.');
     expect(transport.handBackLocalBrowser).toHaveBeenCalledWith('h1');
-    expect(transport.handBackLocalBrowser.mock.invocationCallOrder[0]).toBeLessThan(
-      transport.postMessage.mock.invocationCallOrder[0]
-    );
-    await waitFor(() =>
-      expect(container.querySelector('[data-slot="browser-handoff-card"]')).toBeNull()
-    );
+    // The client sends nothing into the chat; the server's wake does (DOR-3112).
+    expect(transport.postMessage).not.toHaveBeenCalled();
+    expect(container.querySelector('[data-slot="browser-handoff-card"]')).toBeNull();
+    expect(container.querySelectorAll('button')).toHaveLength(0);
+  });
+
+  describe('receipts once a handoff it showed ends (DOR-3112)', () => {
+    /** Show the open card, then let the state read come back ended. */
+    async function endsAs(outcome: 'handed-back' | 'stopped' | 'window-closed') {
+      transport.getLocalBrowserState.mockResolvedValue(person());
+      const view = mount();
+      await button('Continue');
+      // The next state read says it ended, however that happened.
+      act(() => {
+        view.client.setQueryData(
+          ['local-browser', 'state'],
+          person({ handoff: { ...handoff, outcome } })
+        );
+      });
+      return view;
+    }
+
+    it.each([
+      ['handed-back', 'Atlas is carrying on.'],
+      ['stopped', 'Stopped. Atlas won’t carry on with this.'],
+      ['window-closed', 'The window closed. Atlas stopped here.'],
+    ] as const)('%s: one quiet line, with no buttons left', async (outcome, line) => {
+      const { container } = await endsAs(outcome);
+      expect((await screen.findByRole('status')).textContent).toBe(line);
+      expect(container.querySelector('[data-slot="browser-handoff-card"]')).toBeNull();
+      expect(container.querySelectorAll('button')).toHaveLength(0);
+    });
+
+    it('is the same line when the person resumes the browser some other way', async () => {
+      // Resume answers an open handoff as handed back; the card only sees the ending.
+      await endsAs('handed-back');
+      expect((await screen.findByRole('status')).textContent).toBe('Atlas is carrying on.');
+    });
+
+    it('never shows for a handoff this card didn’t show open', async () => {
+      transport.getLocalBrowserState.mockResolvedValue(
+        person({ handoff: { ...handoff, outcome: 'handed-back' } })
+      );
+      const { container } = mount();
+      await waitFor(() => expect(transport.getLocalBrowserState).toHaveBeenCalled());
+      expect(container.querySelector('[data-slot="browser-handoff-receipt"]')).toBeNull();
+    });
   });
 
   it('sends no message when Hand back is refused, and says why', async () => {
@@ -290,6 +346,40 @@ describe('BrowserHandoffCard', () => {
     });
   });
 
+  describe('wording and order (DOR-3112)', () => {
+    it('a wall leads with Show window, then Continue, and offers one sign-in path', async () => {
+      transport.getLocalBrowserState.mockResolvedValue(person());
+      mount();
+      await screen.findByRole('heading', { name: 'northwind.example wants a person to continue' });
+      const labels = screen.getAllByRole('button').map((item) => item.textContent?.trim());
+      expect(labels).toEqual(['Sign in instead', 'Show window', 'Continue', 'Stop task']);
+    });
+
+    it('a password page says the site needs you to sign in, and its button names no host', async () => {
+      transport.getLocalBrowserState.mockResolvedValue(
+        person({ handoff: { ...handoff, reason: 'password' } })
+      );
+      mount();
+      expect(
+        await screen.findByRole('heading', { name: 'northwind.example needs you to sign in' })
+      ).toBeTruthy();
+      expect(screen.getByText('Open a sign-in window. Atlas can’t see or use it.')).toBeTruthy();
+    });
+
+    it('never puts the host in a button, so a long one stays in the wrapping title', async () => {
+      for (const reason of ['wall', 'password'] as const) {
+        transport.getLocalBrowserState.mockResolvedValue(
+          person({ handoff: { ...handoff, reason } })
+        );
+        const view = mount();
+        await screen.findByRole('heading', { name: /northwind\.example/ });
+        for (const item of screen.getAllByRole('button'))
+          expect(item.textContent, reason).not.toContain('northwind.example');
+        view.unmount();
+      }
+    });
+  });
+
   describe('on a check', () => {
     it('warns about a password and offers the plain window, because the agent chose the reason', async () => {
       transport.getLocalBrowserState.mockResolvedValue(person());
@@ -299,7 +389,7 @@ describe('BrowserHandoffCard', () => {
         await screen.findByText('If it asks for a password, don’t type it in Atlas’s window.')
       ).toBeTruthy();
       expect(screen.getByRole('button', { name: 'Continue' })).toBeTruthy();
-      fireEvent.click(screen.getByRole('button', { name: 'Sign in to northwind.example' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Sign in instead' }));
       await waitFor(() =>
         expect(transport.signInLocalBrowser).toHaveBeenCalledWith({ handoffId: 'h1' })
       );
@@ -335,7 +425,7 @@ describe('BrowserHandoffCard', () => {
         person({ handoff: password, signIn: signIn('open'), status: 'disconnected' })
       );
       mount();
-      fireEvent.click(await button('Sign in to northwind.example'));
+      fireEvent.click(await button('Open sign-in window'));
       expect(screen.queryByRole('button', { name: 'Continue' })).toBeNull();
       expect(screen.queryByRole('button', { name: 'Show window' })).toBeNull();
       await waitFor(() =>
@@ -373,7 +463,7 @@ describe('BrowserHandoffCard', () => {
         person({ handoff: password, signIn: signIn('failed') })
       );
       mount();
-      expect(await button('Sign in to northwind.example')).toBeTruthy();
+      expect(await button('Open sign-in window')).toBeTruthy();
       expect(screen.getByRole('status').textContent).toMatch(/Couldn’t save/);
       expect(screen.getByRole('button', { name: 'Stop task' })).toBeTruthy();
     });
@@ -383,14 +473,14 @@ describe('BrowserHandoffCard', () => {
         person({ handoff: password, signIn: signIn('saved', '2026-11-03T14:00:00.000Z') })
       );
       const early = mount();
-      expect(await button('Sign in to northwind.example')).toBeTruthy();
+      expect(await button('Open sign-in window')).toBeTruthy();
       early.unmount();
 
       transport.getLocalBrowserState.mockResolvedValue(
         person({ handoff: password, signIn: { ...signIn('saved'), site: 'other.example' } })
       );
       mount();
-      expect(await button('Sign in to northwind.example')).toBeTruthy();
+      expect(await button('Open sign-in window')).toBeTruthy();
       expect(screen.queryByRole('button', { name: 'Continue' })).toBeNull();
     });
 
@@ -399,7 +489,7 @@ describe('BrowserHandoffCard', () => {
         person({ handoff: password, mode: 'embedded' })
       );
       mount();
-      expect(await button('Sign in to northwind.example')).toBeTruthy();
+      expect(await button('Open sign-in window')).toBeTruthy();
       expect(screen.getByText('Atlas moves to its own window after you sign in.')).toBeTruthy();
       expect(screen.queryByRole('button', { name: 'Show window' })).toBeNull();
     });
@@ -407,7 +497,7 @@ describe('BrowserHandoffCard', () => {
     it('says nothing about moving in a new window', async () => {
       transport.getLocalBrowserState.mockResolvedValue(person({ handoff: password }));
       mount();
-      await button('Sign in to northwind.example');
+      await button('Open sign-in window');
       expect(screen.queryByText(/moves to its own window/)).toBeNull();
     });
 
@@ -422,7 +512,7 @@ describe('BrowserHandoffCard', () => {
         person({ handoff: { ...password, profileId: 'p1' } })
       );
       mount();
-      await button('Sign in to northwind.example');
+      await button('Open sign-in window');
       expect(screen.queryByText(/Every agent that uses the Agent browser/)).toBeNull();
     });
 
@@ -448,21 +538,26 @@ describe('BrowserHandoffCard', () => {
       transport.handBackLocalBrowser.mockResolvedValue(
         person({ handoff: { ...handoff, outcome: 'handed-back' } })
       );
-      mountItem();
+      const { container } = mountItem();
       fireEvent.click(await button('Continue'));
-      await waitFor(() =>
-        expect(transport.postMessage).toHaveBeenCalledWith('chat-one', HANDED_BACK_MESSAGE)
-      );
+      expect((await screen.findByRole('status')).textContent).toBe('Atlas is carrying on.');
+      expect(transport.handBackLocalBrowser).toHaveBeenCalledWith('h1');
+      expect(transport.postMessage).not.toHaveBeenCalled();
+      expect(container.querySelectorAll('button')).toHaveLength(0);
     });
 
-    it('carries Stop task', async () => {
+    it('carries Stop task, and leaves the stopped receipt', async () => {
       transport.getLocalBrowserState.mockResolvedValue(person());
       transport.stopLocalBrowserHandoff.mockResolvedValue(
         person({ handoff: { ...handoff, outcome: 'stopped' } })
       );
-      mountItem();
+      const { container } = mountItem();
       fireEvent.click(await button('Stop task'));
       await waitFor(() => expect(transport.interruptSession).toHaveBeenCalledWith('chat-one'));
+      expect((await screen.findByRole('status')).textContent).toBe(
+        'Stopped. Atlas won’t carry on with this.'
+      );
+      expect(container.querySelectorAll('button')).toHaveLength(0);
     });
 
     it('draws nothing when no handoff is open', async () => {

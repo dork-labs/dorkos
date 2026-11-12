@@ -21,10 +21,13 @@ import type { Transport } from '@dorkos/shared/transport';
 import {
   ROOM_FILE_CHANGED_CODE,
   ROOM_UPLOAD_MAX_FILES,
+  roomImageContentType,
   type RoomFileChangeResponse,
+  type RoomFileContentResponse,
   type RoomFileEntry,
 } from '@dorkos/shared/room-files';
 import { roomKeys } from '@/layers/entities/room';
+import { roomDocumentClosedKey, useAppStore } from '@/layers/shared/model';
 import { errorCodeOf, ROOM_HAS_NO_REPO_CODE } from '../lib/error-code';
 import { roomFileConflictOf, saveRefusalMessage } from '../lib/save-errors';
 import { roomChangeRefusalMessage, serverSentenceFirst } from '../lib/crud-errors';
@@ -33,11 +36,33 @@ import type {
   ExplorerChangeOutcome,
   ExplorerEntry,
   ExplorerFile,
+  ExplorerFileBody,
   ExplorerListing,
   ExplorerSaveInput,
   ExplorerSaveOutcome,
   FileExplorerSource,
 } from './source';
+
+/**
+ * A file's body as the pane shows it. A binary file the room serves as a
+ * picture opens as one (DOR-4179); every other binary stays a sentence. SVG is
+ * never a picture here: it can carry script, so it reads as the text it is.
+ *
+ * @param file - The file the room answered.
+ * @param imageSrc - Where the room would serve this file as a picture.
+ */
+function bodyOf(file: RoomFileContentResponse, imageSrc: string): ExplorerFileBody {
+  switch (file.body.kind) {
+    case 'text':
+      return { kind: 'text', text: file.body.text };
+    case 'binary':
+      return roomImageContentType(file.path) === null
+        ? { kind: 'binary' }
+        : { kind: 'image', src: imageSrc };
+    case 'too-large':
+      return { kind: 'too-large', maxBytes: file.body.maxBytes };
+  }
+}
 
 /** What {@link createRoomFilesSource} needs. */
 export interface RoomFilesSourceDeps {
@@ -131,7 +156,14 @@ export function createRoomFilesSource(deps: RoomFilesSourceDeps): FileExplorerSo
     // sees, so it is a control somebody presses rather than a side effect of
     // opening something (spec `room-canvas` §9.5).
     async showToEveryone(path: string): Promise<void> {
-      await transport.openRoomCanvasDocument(roomId, { type: 'file', sourcePath: path });
+      const document = await transport.openRoomCanvasDocument(roomId, {
+        type: 'file',
+        sourcePath: path,
+      });
+      // The room answers a file already on its canvas with the same document,
+      // and this person may have closed its tab before. Sharing it again is the
+      // newer choice, or the tab stays hidden (DOR-4179).
+      useAppStore.getState().reopenPanelResourceView([roomDocumentClosedKey(roomId, document.id)]);
     },
     // A person's own edits go through §3.10's door, one save to one commit
     // with their name on it — any text file, not only markdown.
@@ -180,12 +212,7 @@ export function createRoomFilesSource(deps: RoomFilesSourceDeps): FileExplorerSo
           // opened the file rather than read again at save time: the point of
           // the lock is that it names the version the PERSON saw.
           commit: file.commit,
-          body:
-            file.body.kind === 'text'
-              ? { kind: 'text', text: file.body.text }
-              : file.body.kind === 'binary'
-                ? { kind: 'binary' }
-                : { kind: 'too-large', maxBytes: file.body.maxBytes },
+          body: bodyOf(file, transport.roomFileImageUrl(roomId, file.path)),
         };
       } catch (error) {
         const reason = NOT_READABLE_COPY.get(errorCodeOf(error) ?? '');

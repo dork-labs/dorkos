@@ -2991,6 +2991,118 @@
         ],
         "additionalProperties": false
       },
+      "MiniAppAccessList": {
+        "type": "object",
+        "properties": {
+          "waiting": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MiniAppAccessWaiting"
+            }
+          },
+          "allowed": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MiniAppAccessAllowed"
+            }
+          }
+        },
+        "required": [
+          "waiting",
+          "allowed"
+        ]
+      },
+      "MiniAppAccessWaiting": {
+        "type": "object",
+        "properties": {
+          "extensionId": {
+            "type": "string"
+          },
+          "extensionName": {
+            "type": "string"
+          },
+          "service": {
+            "type": "string"
+          },
+          "operations": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "reason": {
+            "$ref": "#/components/schemas/MiniAppAccessWaitReason"
+          }
+        },
+        "required": [
+          "extensionId",
+          "extensionName",
+          "service",
+          "operations",
+          "reason"
+        ]
+      },
+      "MiniAppAccessWaitReason": {
+        "type": "string",
+        "enum": [
+          "new",
+          "files_changed",
+          "operations_changed"
+        ]
+      },
+      "MiniAppAccessAllowed": {
+        "type": "object",
+        "properties": {
+          "approvalId": {
+            "type": "string"
+          },
+          "extensionId": {
+            "type": "string"
+          },
+          "extensionName": {
+            "type": "string"
+          },
+          "service": {
+            "type": "string"
+          },
+          "connectionId": {
+            "type": "string"
+          },
+          "connectionLabel": {
+            "type": "string"
+          },
+          "approvedAt": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "approvalId",
+          "extensionId",
+          "extensionName",
+          "service",
+          "connectionId",
+          "connectionLabel",
+          "approvedAt"
+        ]
+      },
+      "MiniAppAccessRevokeResponse": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "revoked"
+            ]
+          },
+          "approvalId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "approvalId"
+        ]
+      },
       "MessageDisposition": {
         "type": "string",
         "enum": [
@@ -19718,6 +19830,12 @@
                   "dcr",
                   "manual"
                 ]
+              },
+              "leftOut": {
+                "type": "string",
+                "enum": [
+                  "own-browser-only"
+                ]
               }
             }
           }
@@ -30792,6 +30910,68 @@
         }
       }
     },
+    "/api/connectors/mini-app-access": {
+      "get": {
+        "tags": [
+          "Connectors"
+        ],
+        "summary": "What mini apps wait to read, and what each may read now",
+        "description": "Each connected app a mini app declares and may not read yet (new, files changed or reads changed), and each yes a person gave, with the account. Only the owner at the app. A yes is given on its own page outside the app, never through the API.",
+        "responses": {
+          "200": {
+            "description": "Waiting reads and live yeses.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MiniAppAccessList"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not the owner at the app: an agent, a program or another site."
+          }
+        }
+      }
+    },
+    "/api/connectors/mini-app-access/{approvalId}/revoke": {
+      "post": {
+        "tags": [
+          "Connectors"
+        ],
+        "summary": "Take back a mini app's access to a connected app",
+        "description": "Revokes one yes and its grants, unless another live yes of the same mini app still covers that account. The mini app's next read is refused. Only the owner at the app.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": true,
+            "name": "approvalId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Revoked.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MiniAppAccessRevokeResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not the owner at the app."
+          },
+          "404": {
+            "description": "No live yes under that id (`MINI_APP_ACCESS_NOT_FOUND`)."
+          }
+        }
+      }
+    },
     "/api/local-browser/profiles/{id}/forget-sign-ins": {
       "post": {
         "tags": [
@@ -31397,6 +31577,7 @@
                           "enum": [
                             "handed-back",
                             "stopped",
+                            "window-closed",
                             null
                           ]
                         }
@@ -31751,6 +31932,7 @@
                           "enum": [
                             "handed-back",
                             "stopped",
+                            "window-closed",
                             null
                           ]
                         }
@@ -32764,6 +32946,7 @@
                           "enum": [
                             "handed-back",
                             "stopped",
+                            "window-closed",
                             null
                           ]
                         }
@@ -33008,112 +33191,11 @@
         "tags": [
           "Local browser"
         ],
-        "summary": "Create a named browser profile",
-        "description": "Only the owner on this computer can call this route. A new profile has no agents and no sign-ins.",
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "properties": {
-                  "label": {
-                    "type": "string",
-                    "minLength": 1,
-                    "maxLength": 80
-                  }
-                },
-                "required": [
-                  "label"
-                ],
-                "additionalProperties": false
-              }
-            }
-          }
-        },
+        "summary": "Create a named browser profile (refused)",
+        "description": "Named profiles are cut for launch: the app can’t show one, so this always refuses with `profiles_closed`. Listing and deleting existing profiles still work.",
         "responses": {
-          "201": {
-            "description": "The browser profile",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "id": {
-                      "type": "string",
-                      "format": "uuid"
-                    },
-                    "label": {
-                      "type": "string",
-                      "minLength": 1,
-                      "maxLength": 80
-                    },
-                    "createdAt": {
-                      "type": "string"
-                    },
-                    "agentIds": {
-                      "type": "array",
-                      "items": {
-                        "type": "string"
-                      }
-                    }
-                  },
-                  "required": [
-                    "id",
-                    "label",
-                    "createdAt",
-                    "agentIds"
-                  ]
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "The name is invalid",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code"
-                  ]
-                }
-              }
-            }
-          },
           "403": {
-            "description": "The caller is not the owner on this computer",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code"
-                  ]
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "The browser operation failed",
+            "description": "New browser profiles aren’t available",
             "content": {
               "application/json": {
                 "schema": {
@@ -33611,6 +33693,7 @@
                           "enum": [
                             "handed-back",
                             "stopped",
+                            "window-closed",
                             null
                           ]
                         }
@@ -33970,6 +34053,7 @@
                           "enum": [
                             "handed-back",
                             "stopped",
+                            "window-closed",
                             null
                           ]
                         }
@@ -34330,6 +34414,7 @@
                           "enum": [
                             "handed-back",
                             "stopped",
+                            "window-closed",
                             null
                           ]
                         }
@@ -34690,6 +34775,7 @@
                           "enum": [
                             "handed-back",
                             "stopped",
+                            "window-closed",
                             null
                           ]
                         }
@@ -46596,22 +46682,23 @@
             }
           }
         }
-      }
-    },
-    "/api/mesh/denied/{encodedPath}": {
+      },
       "delete": {
         "tags": [
           "Mesh"
         ],
         "summary": "Clear mesh denial",
+        "description": "The folder goes in the `path` query parameter. Remote Access refuses an encoded `/` or `\\` in a URL path, and every folder path holds one.",
         "parameters": [
           {
             "schema": {
-              "type": "string"
+              "type": "string",
+              "description": "The denied folder, absolute"
             },
             "required": true,
-            "name": "encodedPath",
-            "in": "path"
+            "description": "The denied folder, absolute",
+            "name": "path",
+            "in": "query"
           }
         ],
         "responses": {
@@ -46951,6 +47038,59 @@
             }
           }
         }
+      },
+      "delete": {
+        "tags": [
+          "Marketplace"
+        ],
+        "summary": "Remove a marketplace source (operator only)",
+        "description": "From the app, the name goes in the `name` query parameter: a name saved by an older DorkOS may hold a `/`, and Remote Access refuses an encoded `/` in a URL path. Only the person running DorkOS may remove a package source. Any caller that could not decide an approval is refused with 403, which includes one presenting an agent identity, one presenting an approval token, and (with local login on) one with no signed-in identity. There is no approval that unlocks it. The source's cached listing is removed with it, so a later source given the same name starts clean.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "description": "The source name"
+            },
+            "required": true,
+            "description": "The source name",
+            "name": "name",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Source removed"
+          },
+          "403": {
+            "description": "Caller is not the operator",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "operator_only_marketplace_source"
+                      ]
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code",
+                    "message"
+                  ]
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/api/marketplace/sources/{name}": {
@@ -47021,6 +47161,116 @@
             "required": true,
             "name": "name",
             "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The listing, fetched now or (when `stale`) the last cached copy",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "marketplace": {
+                      "type": "object",
+                      "properties": {
+                        "name": {
+                          "type": "string"
+                        },
+                        "plugins": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "name": {
+                                "type": "string"
+                              },
+                              "source": {
+                                "type": "string"
+                              },
+                              "description": {
+                                "type": "string"
+                              },
+                              "version": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "name",
+                              "source"
+                            ],
+                            "additionalProperties": {}
+                          }
+                        }
+                      },
+                      "required": [
+                        "name",
+                        "plugins"
+                      ],
+                      "additionalProperties": {}
+                    },
+                    "fetchedAt": {
+                      "type": "string",
+                      "description": "When this copy of the listing was fetched"
+                    },
+                    "stale": {
+                      "type": "boolean",
+                      "description": "True when the source could not be reached"
+                    },
+                    "reason": {
+                      "type": "string",
+                      "description": "Why the source could not be reached; present only when `stale`"
+                    }
+                  },
+                  "required": [
+                    "marketplace",
+                    "fetchedAt",
+                    "stale"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Source not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Upstream fetch failure",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/marketplace/sources/refresh": {
+      "post": {
+        "tags": [
+          "Marketplace"
+        ],
+        "summary": "Force refetch of a source marketplace.json",
+        "description": "From the app, the name goes in the `name` query parameter: a name saved by an older DorkOS may hold a `/`, and Remote Access refuses an encoded `/` in a URL path. Checks the source now. When it cannot be reached but a copy is cached, answers 200 with that copy, `stale: true`, the `reason`, and `fetchedAt` set to when the copy was fetched. With nothing cached, answers 502.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "description": "The source name"
+            },
+            "required": true,
+            "description": "The source name",
+            "name": "name",
+            "in": "query"
           }
         ],
         "responses": {
@@ -91391,6 +91641,88 @@
           },
           "404": {
             "description": "No such room, or the caller is not a member of it (`ROOM_NOT_FOUND`) — the same answer for both — or no such directory in the commit (`ROOM_FILE_NOT_FOUND`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The room has no files of its own, or room files are switched off on this install (`ROOM_HAS_NO_REPO`); or this machine has no git (`ROOM_REPO_GIT_UNAVAILABLE`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/rooms/{id}/files/raw": {
+      "get": {
+        "tags": [
+          "Rooms"
+        ],
+        "summary": "One picture from a room's own files",
+        "description": "The picture's bytes, as of the commit `main` points at, for the room's file viewer. Named and gated exactly like `GET /api/rooms/{id}/files/content`: a caller who is not on the roster gets the same 404 an unknown room gets, and membership is asked before `ROOM_HAS_NO_REPO`. **Pictures only**: PNG, JPEG, GIF, WebP, AVIF, BMP and ICO, by extension. An SVG can carry script, so it is refused 400 `ROOM_FILE_NOT_READABLE`, as is any other type, a picture over the install's file ceiling, a folder, a link and another repository. Served with the type from the name, `X-Content-Type-Options: nosniff` and `Content-Security-Policy: default-src 'none'; sandbox`, so the bytes never act as a page.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": true,
+            "name": "path",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The picture",
+            "content": {
+              "image/*": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The path could have meant somewhere else (`ROOM_FILE_PATH_INVALID`), or names something that is not a picture this route serves (`ROOM_FILE_NOT_READABLE`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "The caller presented an `X-DorkOS-Agent` token this machine could not verify — revoked, expired, or never minted here (`AGENT_IDENTITY_UNVERIFIED`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such room, or the caller is not a member of it (`ROOM_NOT_FOUND`) — the same answer for both — or no such file in the commit (`ROOM_FILE_NOT_FOUND`)",
             "content": {
               "application/json": {
                 "schema": {

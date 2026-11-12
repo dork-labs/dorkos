@@ -194,6 +194,38 @@ router.get('/:id/files/content', (c) =>
 );
 
 /**
+ * GET /:id/files/raw — one picture out of this room's `main`, as its bytes, for
+ * the room's file viewer (DOR-4179).
+ *
+ * Gated identically to `GET /:id/files/content`, and named the same way. Only
+ * pictures a browser shows and never runs (`roomImageContentType`): an SVG can
+ * carry script, so it is refused 400 `ROOM_FILE_NOT_READABLE` and stays text.
+ * Served the way `GET /api/files/raw` serves media: the type from the name,
+ * `nosniff` so the bytes are never read as anything else, and a sandbox that
+ * keeps them from ever acting as a page.
+ */
+router.get('/:id/files/raw', (c) =>
+  roomRoute(c, 'GET /:id/files/raw', async (caller) => {
+    // Caller first, for the reason `GET /:id/files` above writes down.
+    const viewer = caller();
+    const query = parseOrRefuse(c, RoomFileContentQuerySchema, readQuery(c));
+    if (query instanceof Response) return query;
+    getRoomService().assertCanReadFiles(c.req.param('id'), viewer.id);
+    const image = await getRoomFilesService().readImage(c.req.param('id'), query.path);
+    return c.body(new Uint8Array(image.bytes), 200, {
+      'Content-Type': image.contentType,
+      'Content-Length': String(image.bytes.length),
+      'X-Content-Type-Options': 'nosniff',
+      'Content-Disposition': 'inline',
+      'Content-Security-Policy': "default-src 'none'; sandbox",
+      // The same path holds another picture after the next merge, so a cached
+      // copy is checked every time rather than trusted.
+      'Cache-Control': 'private, no-cache',
+    });
+  })
+);
+
+/**
  * PUT /:id/files/content — a person saving one file (spec §3.10).
  *
  * **The write twin of the read above, and it names its file the same way**: the

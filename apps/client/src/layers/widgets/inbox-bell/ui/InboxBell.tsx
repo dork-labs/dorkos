@@ -33,7 +33,7 @@ import {
 import { useAskShortcut, useAskTrayRequest } from '@/layers/features/ask';
 import { useScheduleApprovalCards } from '@/layers/features/schedule-approval';
 import { InboxList } from '@/layers/features/inbox';
-import { BrowserHandoffInboxItem } from '@/layers/features/browser-handoff';
+import { BrowserHandoffInboxItem, useBrowserHandoff } from '@/layers/features/browser-handoff';
 import {
   ApprovalsUnavailable,
   useApprovalCards,
@@ -136,6 +136,9 @@ export function InboxBell() {
   // `AnimatePresence` down with it, so the exit never ran. Not counted — the
   // badge and the sentences below still read the live lists.
   const shownApprovals = useApprovalCards(approvals);
+  // …and for the Agent browser handoff (DOR-3112): once answered it no longer
+  // counts, but its one-line receipt lives in this section and must stay readable.
+  const { ended: endedHandoff } = useBrowserHandoff();
   // What to call each asking agent. The wire carries ids only, so the roster is
   // joined here — the same join the sidebar's rows make.
   const agentNames = useAskAgentNames(asks);
@@ -244,6 +247,7 @@ export function InboxBell() {
     settling.length > 0 ||
     shownSchedules.length > 0 ||
     shownApprovals.length > 0 ||
+    !!endedHandoff ||
     isError;
 
   const pill = resolvePill({

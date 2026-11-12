@@ -25,6 +25,10 @@
       "types": "./src/connector-exclusion-schemas.ts",
       "default": "./dist/connector-exclusion-schemas.js"
     },
+    "./mini-app-access-schemas": {
+      "types": "./src/mini-app-access-schemas.ts",
+      "default": "./dist/mini-app-access-schemas.js"
+    },
     "./approval-schemas": {
       "types": "./src/approval-schemas.ts",
       "default": "./dist/approval-schemas.js"

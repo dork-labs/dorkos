@@ -11,6 +11,7 @@ import {
 import { PlaygroundSection } from '../PlaygroundSection';
 import { ShowcaseDemo } from '../ShowcaseDemo';
 import { ShowcaseLabel } from '../ShowcaseLabel';
+import { McpLeftOutBrowserShowcase } from './McpLeftOutBrowserShowcase';
 
 /**
  * The width the cards actually get in the docked profile's right panel. Every state
@@ -367,6 +368,8 @@ function WorkingStatesSection() {
           />
         </AtPanelWidth>
       </ShowcaseDemo>
+
+      <McpLeftOutBrowserShowcase />
     </PlaygroundSection>
   );
 }

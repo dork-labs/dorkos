@@ -25,6 +25,8 @@ import { buildSystemPromptAppend, renderContextEntry } from '../context-builder.
 import { resolveLaunch } from '../launch-resolver.js';
 import {
   agentHomesSelfGrantRules,
+  HOME_PERSON_ONLY_FULL_RULES,
+  HOME_PERSON_ONLY_RULES,
   PERSON_ONLY_DATA_FOLDERS,
   personOnlyFileRules,
 } from '../directory-grants.js';
@@ -598,6 +600,8 @@ describe('folder grants on the launch (spec `agent-home-desk` §4.2)', () => {
       ...agentHomesSelfGrantRules(resolveDorkHome(), 'launch'),
       // And every project's installed plugins (DOR-3068).
       ...['Edit', 'Write', 'NotebookEdit'].map((tool) => `${tool}(//**/.dork/plugins/**)`),
+      // And the browser sign-in stores in the home folder, on every launch (DOR-4136).
+      ...HOME_PERSON_ONLY_RULES,
     ];
     const settings = options.settings as {
       fastMode: boolean;
@@ -615,6 +619,45 @@ describe('folder grants on the launch (spec `agent-home-desk` §4.2)', () => {
     expect(rest.every((rule) => /^(Read|Grep|Glob)\(/.test(rule))).toBe(true);
     // The SDK option is `--add-dir`, which loads the folder's skills (I11).
     expect(options.additionalDirectories).toBeUndefined();
+  });
+
+  // DOR-4136: the browser sign-in stores are denied below Full only, at the level the launch
+  // really runs at. The agent browser's guard config stays denied at Full.
+  describe('browser sign-in stores by level', () => {
+    const denyOf = (options: Options) =>
+      (options.settings as { permissions: { deny: string[] } }).permissions.deny;
+    const session = `Write(/${resolveDorkHome()}/browser/storage-state.json)`;
+    const guard = `Write(/${resolveDorkHome()}/browser/agent-browser-guard.json*)`;
+
+    it('denies them below Full', async () => {
+      const deny = denyOf(await captureSdkOptions({}, makeSession()));
+      expect(deny).toContain(session);
+      expect(deny).toEqual(expect.arrayContaining([...HOME_PERSON_ONLY_RULES]));
+    });
+
+    it('leaves them out at Full, and keeps the guard config', async () => {
+      const deny = denyOf(
+        await captureSdkOptions({}, { ...makeSession(), permissionMode: 'bypassPermissions' })
+      );
+      expect(deny).not.toContain(session);
+      expect(deny).not.toContain('Write(~/Library/Application Support/DorkOS/**)');
+      expect(deny).toContain(guard);
+      expect(deny).toEqual(expect.arrayContaining([...HOME_PERSON_ONLY_FULL_RULES]));
+    });
+
+    it('denies them to a chat set to Full whose turn is held below Full', async () => {
+      const deny = denyOf(
+        await captureSdkOptions(
+          {},
+          {
+            ...makeSession(),
+            permissionMode: 'bypassPermissions',
+            turnPermissionCeiling: 'runtime-default',
+          }
+        )
+      );
+      expect(deny).toContain(session);
+    });
   });
 
   it('refuses an invalid set before anything launches', async () => {

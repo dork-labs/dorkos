@@ -14,7 +14,7 @@ import { browserErrorMessage } from '../lib/browser-error-message';
 import { useActionFocusReturn } from '../model/use-action-focus-return';
 import { BrowserPreparation } from './BrowserPreparation';
 import { WaitingElsewhere } from './WaitingElsewhere';
-import { BrowserProfiles } from './BrowserProfiles';
+import { SavedSignIns } from './SavedSignIns';
 
 export interface LocalBrowserPanelProps {
   visible?: boolean;
@@ -62,6 +62,12 @@ export function LocalBrowserPanel({
   const [surfaceUnavailable, setSurfaceUnavailable] = useState(false);
   const surface = useRef<HTMLDivElement>(null);
   const connected = state?.status === 'connected';
+  // "Disconnected" before anything was ever opened reads as broken (DOR-4104).
+  const [hadConnection, setHadConnection] = useState(false);
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- remembering a fact the server forgets on Disconnect
+    if (connected) setHadConnection(true);
+  }, [connected]);
   const sharedElsewhere = !!state?.sessionId && state.sessionId !== sessionId;
   // Another chat's agent is waiting on a person. Nothing here may answer for that chat.
   const waitingElsewhere =
@@ -206,7 +212,9 @@ export function LocalBrowserPanel({
                     ? state.paused
                       ? 'Agent paused'
                       : 'Connected'
-                    : 'Disconnected'}
+                    : hadConnection
+                      ? 'Disconnected'
+                      : 'Not open yet'}
         </span>
       </div>
       {opening && (
@@ -308,10 +316,11 @@ export function LocalBrowserPanel({
                 let answer: LocalBrowserPersonState | undefined;
                 void action(async () => (answer = await transport.disconnectLocalBrowser())).then(
                   (closed) => {
-                    // Disconnect ends a handoff as Stop task does, and that ends the agent's turn.
-                    // Only this one: a handoff that ended first must not cost that chat its next turn.
+                    // Disconnect ends a handoff as Stop task does (outcome `window-closed`), and
+                    // that ends the agent's turn. Only this one: a handoff that ended first must
+                    // not cost that chat its next turn.
                     const ended = answer?.handoff;
-                    if (closed && ended?.id === asked && ended?.outcome === 'stopped')
+                    if (closed && ended?.id === asked && ended?.outcome === 'window-closed')
                       void transport.interruptSession(ended.sessionId).catch(() => {});
                   }
                 );
@@ -414,7 +423,7 @@ export function LocalBrowserPanel({
         </>
       )}
       {!waitingElsewhere && (
-        <BrowserProfiles
+        <SavedSignIns
           enabled={!!state && !!capabilities && !query.isError && !capabilityQuery.isError}
           disabled={busy || cancelling}
         />

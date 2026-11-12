@@ -7,7 +7,6 @@ import {
   LocalBrowserOpenSchema,
   LocalBrowserPersonStateSchema,
   LocalBrowserProfileBindSchema,
-  LocalBrowserProfileCreateSchema,
   LocalBrowserProfileSchema,
   LocalBrowserSignInRequestSchema,
   LocalBrowserStateSchema,
@@ -254,19 +253,11 @@ export function registerLocalBrowserOpenApi(registry: OpenAPIRegistry): void {
     method: 'post',
     path: '/api/local-browser/profiles',
     tags: ['Local browser'],
-    summary: 'Create a named browser profile',
-    description: authority + 'A new profile has no agents and no sign-ins.',
-    request: {
-      body: {
-        required: true,
-        content: { 'application/json': { schema: LocalBrowserProfileCreateSchema } },
-      },
-    },
+    summary: 'Create a named browser profile (refused)',
+    description:
+      'Named profiles are cut for launch: the app can’t show one, so this always refuses with `profiles_closed`. Listing and deleting existing profiles still work.',
     responses: {
-      201: profileResponse,
-      400: refusal('The name is invalid'),
-      403: stateResponses[403],
-      500: stateResponses[500],
+      403: refusal('New browser profiles aren’t available'),
     },
   });
   registry.registerPath({

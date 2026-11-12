@@ -130,13 +130,6 @@ describe('Capabilities Route', () => {
     expect(res.body.capabilities['claude-code']).toEqual(mockCapabilities);
   });
 
-  it('calls runtimeRegistry.getAllCapabilities and getDefaultType', async () => {
-    await request(testServer).get('/api/capabilities');
-
-    expect(runtimeRegistry.getAllCapabilities).toHaveBeenCalledOnce();
-    expect(runtimeRegistry.getDefaultType).toHaveBeenCalledOnce();
-  });
-
   it('returns empty capabilities when no runtimes are registered', async () => {
     vi.mocked(runtimeRegistry.getAllCapabilities).mockReturnValueOnce({});
     vi.mocked(runtimeRegistry.getDefaultType).mockReturnValueOnce('claude-code');

@@ -453,6 +453,73 @@ describe('room files routes', () => {
       expect(res.body.code).toBe('ROOM_FILE_NOT_FOUND');
     });
 
+    describe('a picture, as its bytes (DOR-4179)', () => {
+      it('serves a member the picture with its type and nothing that runs', async () => {
+        const roomId = await roomWithFiles();
+        const token = await anaToken();
+
+        const res = await request(testServer)
+          .get(`/api/rooms/${roomId}/files/raw`)
+          .query({ path: 'logo.png' })
+          .set('X-DorkOS-Agent', token)
+          .buffer(true)
+          .parse((r, done) => {
+            const chunks: Buffer[] = [];
+            r.on('data', (chunk: Buffer) => chunks.push(chunk));
+            r.on('end', () => done(null, Buffer.concat(chunks)));
+          });
+
+        expect(res.status).toBe(200);
+        expect(res.headers['content-type']).toBe('image/png');
+        expect(res.headers['x-content-type-options']).toBe('nosniff');
+        expect(res.headers['content-security-policy']).toContain("default-src 'none'; sandbox");
+        expect([...(res.body as Buffer)]).toEqual([0x89, 0x50, 0x00, 0x01]);
+      });
+
+      it('refuses an SVG, text and anything that is not a plain file', async () => {
+        const roomId = await roomWithFiles();
+        const repoDir = store.repoPath(roomId);
+        const ceiling = store.homeDir(roomId);
+        await writeFile(path.join(repoDir, 'mark.svg'), '<svg><script>alert(1)</script></svg>');
+        await runGit(['add', '--all'], repoDir, ceiling);
+        await runGit(
+          ['-c', 'user.name=Ana', '-c', 'user.email=ana@dorkos.local', 'commit', '-q', '-m', 'svg'],
+          repoDir,
+          ceiling
+        );
+
+        for (const filePath of ['mark.svg', 'docs/plan.md', 'secrets', 'docs']) {
+          const res = await request(testServer)
+            .get(`/api/rooms/${roomId}/files/raw`)
+            .query({ path: filePath });
+          expect(res.status, filePath).toBe(400);
+          expect(res.body.code, filePath).toBe('ROOM_FILE_NOT_READABLE');
+          expect(JSON.stringify(res.body), filePath).not.toContain('script');
+        }
+      });
+
+      it('answers an outsider the same 404 an unknown room gets, and refuses a big picture', async () => {
+        const roomId = await roomWithFiles();
+        const outsider = await initAgentIdentityService(db).mint({
+          agentPath: '/agents/outsider',
+          displayName: 'Outsider',
+        });
+        const hidden = await request(testServer)
+          .get(`/api/rooms/${roomId}/files/raw`)
+          .query({ path: 'logo.png' })
+          .set('X-DorkOS-Agent', outsider);
+        expect(hidden.status).toBe(404);
+        expect(hidden.body.code).toBe('ROOM_NOT_FOUND');
+
+        maxFileBytes = 3;
+        const big = await request(testServer)
+          .get(`/api/rooms/${roomId}/files/raw`)
+          .query({ path: 'logo.png' });
+        expect(big.status).toBe(400);
+        expect(big.body.code).toBe('ROOM_FILE_NOT_READABLE');
+      });
+    });
+
     it('leaves every other room path behaving exactly as it does today', async () => {
       const roomId = await roomWithFiles();
       const posted = await request(testServer)

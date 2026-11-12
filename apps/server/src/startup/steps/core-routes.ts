@@ -17,6 +17,7 @@ import { useStepUpRiskLedgerFile } from '../../services/extensions/step-up/step-
 import type { ConnectorRoutesDeps } from '../../routes/connectors.js';
 import { credentialStore } from '../../services/core/credential-provider.js';
 import { ConnectorSessionAccessService } from '../../services/connectors/resources/session-access-service.js';
+import { miniAppAccessFor } from '../../services/extensions/connections/extension-connections-ctx.js';
 import { setRelayEnabled } from '../../services/relay/relay-state.js';
 import { eventFanOut } from '../../services/core/event-fan-out.js';
 import type { SessionOriginResolvers } from '../../services/session/index.js';
@@ -212,6 +213,11 @@ export function mountCoreRoutes(refs: ServerRefs, built: MountCoreRoutesInput) {
     },
     holds: { holds: connectorHolds },
     accessChanges: { ...connectorOwnerBoundary, narrowing: connectorAccessNarrowing, db },
+    // Read at request time: the extension manager starts after these routes.
+    miniAppAccess: {
+      access: () => miniAppAccessFor(() => refs.extensionManager?.listRecords() ?? []),
+      ...connectorOwnerBoundary,
+    },
   };
   deps.connectors = connectorRoutes;
   mountedRouters.push('connectors');

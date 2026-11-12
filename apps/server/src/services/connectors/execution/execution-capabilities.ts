@@ -310,7 +310,10 @@ const requestConnection = defineCapability({
     'there, or "read-write" to also change things there; ask for the lowest level the work ' +
     'needs, and say why in reason. Name events only to hear when something new happens there. ' +
     'Asking again for the same service reuses your open request; once it is answered, asking ' +
-    'for a level the answer left out opens a new one. If the person chose a lower level, ' +
+    'for a level the answer left out opens a new card for the person. `granted` can mean only ' +
+    'part of what you asked for. Always check `notGranted` before you rely on write. notGranted ' +
+    'lists what is missing and the note says why, so read both before you say what you can do ' +
+    'there. If the person chose a lower level, ' +
     "don't ask again unless the work changed or they tell you to. The owner chooses the account; " +
     'this call never lists accounts or grants access by itself. It waits up to ' +
     `${CONNECTOR_REQUEST_LIVE_HOLD_MS / 60_000} minutes for their answer, except when DorkOS ` +

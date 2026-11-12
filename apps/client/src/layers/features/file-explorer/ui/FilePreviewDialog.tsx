@@ -392,7 +392,7 @@ export function FilePreviewDialog({
             {path === null ? '' : baseName(path)}
           </ResponsiveDialogTitle>
           <ResponsiveDialogDescription className="truncate text-xs">
-            {isNew && path !== null ? `${path} · New file` : describe(file, path)}
+            {isNew && path !== null ? `${folderOf(path)} · New file` : describe(file, path)}
           </ResponsiveDialogDescription>
         </ResponsiveDialogHeader>
 
@@ -613,11 +613,20 @@ function ConflictNotice({
   );
 }
 
+/**
+ * The folder a file sits in. The title above already names the file, so the
+ * line under it names where it is rather than saying the name twice.
+ */
+function folderOf(path: string): string {
+  const slash = path.lastIndexOf('/');
+  return slash < 0 ? 'Top folder' : path.slice(0, slash);
+}
+
 /** The line under the filename: where it sits, and who last touched it. */
 function describe(file: ExplorerFile | undefined, path: string | null): string {
   if (path === null) return '';
   const line = file === undefined ? null : provenanceLine(file.lastCommit);
-  return line === null ? path : `${path} · ${line.label}`;
+  return line === null ? folderOf(path) : `${folderOf(path)} · ${line.label}`;
 }
 
 /** The file itself, or the honest reason it is not here. */
@@ -639,6 +648,8 @@ function PreviewBody({ file }: { file: ExplorerFile }) {
       );
     case 'binary':
       return <PreviewNote>Only text files can be shown or edited here.</PreviewNote>;
+    case 'image':
+      return <PreviewImage src={file.body.src} name={file.path.split('/').pop() ?? file.path} />;
     case 'too-large':
       return (
         <PreviewNote>Files over {formatBytes(file.body.maxBytes)} aren’t shown here.</PreviewNote>
@@ -646,6 +657,29 @@ function PreviewBody({ file }: { file: ExplorerFile }) {
     case 'not-readable':
       return <PreviewNote>{file.body.reason}</PreviewNote>;
   }
+}
+
+/**
+ * A picture, at its own size or smaller, never stretched. One that fails to load
+ * says so in the same voice as every other "nothing to show" answer.
+ */
+function PreviewImage({ src, name }: { src: string; name: string }) {
+  const [failed, setFailed] = useState(false);
+  if (failed) return <PreviewNote>This picture couldn’t be shown.</PreviewNote>;
+  // A quiet tile, so a dark picture with a clear background still has an edge
+  // in dark mode. Its height is the dialog's cap (80vh) less the header and
+  // the action row above it, so the whole picture shows without scrolling,
+  // in the phone sheet as much as in the dialog.
+  return (
+    <div className="bg-muted flex justify-center rounded-xl p-3">
+      <img
+        src={src}
+        alt={name}
+        className="max-h-[calc(80dvh-12rem)] max-w-full object-contain"
+        onError={() => setFailed(true)}
+      />
+    </div>
+  );
 }
 
 /** A centred, muted sentence — the shape every "nothing to show" answer takes. */

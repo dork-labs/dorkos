@@ -11,11 +11,22 @@ export const MAX_BROWSER_SCREENSHOT_EDGE = 8192;
 export const MAX_BROWSER_SCREENSHOT_PIXELS = 16 * 1024 * 1024;
 const PNG_SIGNATURE = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
 
-/** Read a bounded UTF-8 snapshot without truncating away controls or granting a partial revision. */
+/**
+ * Read a bounded UTF-8 snapshot without truncating away controls or granting a partial revision.
+ * A page can carry more than one `<body>` (DOR-4192), and a strict locator would fail on it and
+ * lock the agent out, so every body is read, in document order. One body reads as it always did.
+ */
 export async function boundedPageSnapshot(page: Page, timeout: number): Promise<string> {
-  const snapshot = await page.locator('body').ariaSnapshot({ timeout });
-  if (Buffer.byteLength(snapshot, 'utf8') > MAX_BROWSER_SNAPSHOT_BYTES)
-    throw new LocalBrowserError('page_too_large', 'This page is too large. Open a simpler page.');
+  const bodies = page.locator('body');
+  const count = await bodies.count();
+  let snapshot = '';
+  // With no body yet, read the first one: it waits for one, and times out as it always did.
+  for (let index = 0; index < Math.max(count, 1); index++) {
+    const part = await bodies.nth(index).ariaSnapshot({ timeout });
+    snapshot = index === 0 ? part : `${snapshot}\n${part}`;
+    if (Buffer.byteLength(snapshot, 'utf8') > MAX_BROWSER_SNAPSHOT_BYTES)
+      throw new LocalBrowserError('page_too_large', 'This page is too large. Open a simpler page.');
+  }
   return snapshot;
 }
 

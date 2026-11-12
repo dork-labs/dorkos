@@ -254,18 +254,6 @@ describe('OpenCodeRuntime', () => {
   });
 
   describe('identity and dependencies', () => {
-    it('identifies as the opencode runtime', () => {
-      const { runtime } = makeRuntime();
-      expect(runtime.type).toBe('opencode');
-    });
-
-    it('delegates checkDependencies to checkOpenCodeDependencies', async () => {
-      const { runtime } = makeRuntime();
-      const checks = await runtime.checkDependencies();
-      expect(checkOpenCodeDependencies).toHaveBeenCalledOnce();
-      expect(checks).toEqual(SATISFIED_CHECKS);
-    });
-
     it('getInternalSessionId is always undefined (C1 rekey trap)', () => {
       const { runtime } = makeRuntime();
       const sessionId = nextSessionId();

@@ -11,6 +11,7 @@ import { randomUUID } from 'node:crypto';
 import path from 'node:path';
 import type {
   LocalBrowserHandoff,
+  LocalBrowserHandoffOutcome,
   LocalBrowserHandoffReason,
   LocalBrowserOpen,
   LocalBrowserPersonState,
@@ -74,6 +75,23 @@ export function assertSignInUrl(value: string): URL {
   return url;
 }
 
+/**
+ * A page's address cut to its site: the origin, or for an address with none
+ * (`about:`, `data:`) its scheme alone.
+ *
+ * @param value - The tab's address.
+ */
+export function siteOnly(value: string): string {
+  try {
+    const url = new URL(value);
+    if (url.origin !== 'null') return url.origin;
+    // A blank tab carries nothing, and the panel names it "New tab".
+    return url.href === 'about:blank' ? url.href : url.protocol;
+  } catch {
+    return '';
+  }
+}
+
 /** One handoff at a time, and the plain sign-in window it can open. */
 export class BrowserHandover {
   private signingIn = 0;
@@ -105,6 +123,7 @@ export class BrowserHandover {
   private agentIdAt: (agentFolder: string) => string | undefined = () => undefined;
   private changed: () => void = () => undefined;
   private handedOver: (handoff: LocalBrowserHandoff) => void = () => undefined;
+  private ended: (handoff: LocalBrowserHandoff) => void = () => undefined;
 
   constructor(
     private readonly browser: HandoverBrowser,
@@ -144,9 +163,36 @@ export class BrowserHandover {
     this.handedOver = listener;
   }
 
-  /** What a person's controls see. */
+  /**
+   * Set once at startup: called once when a handoff ends, with its outcome (DOR-3112).
+   *
+   * @param listener - Given the ended handoff.
+   */
+  useEndListener(listener: (handoff: LocalBrowserHandoff) => void): void {
+    this.ended = listener;
+  }
+
+  /**
+   * What a person's controls see. While a person has the browser, each tab shows
+   * only its site, with no title: a sign-in page's path, query or fragment can carry
+   * a code or token, a title can carry private text, and this state is read by more
+   * than the person's own window (DOR-4163).
+   */
   async state(): Promise<LocalBrowserPersonState> {
-    return { ...(await this.browser.state()), handoff: this.record, signIn: this.signIns.current };
+    const state = this.trimmed(await this.browser.state());
+    return { ...state, handoff: this.record, signIn: this.signIns.current };
+  }
+
+  /** A person's Pause, answered with the same trimmed tabs as {@link state}. */
+  async pause(): Promise<LocalBrowserState> {
+    return this.trimmed(await this.browser.pause());
+  }
+
+  /** Every tab cut to its site, with no title, while a person has the browser. */
+  private trimmed(state: LocalBrowserState): LocalBrowserState {
+    if (this.record?.outcome !== null) return state;
+    const tabs = state.tabs.map((tab) => ({ ...tab, url: siteOnly(tab.url), title: '' }));
+    return { ...state, tabs };
   }
 
   /**
@@ -367,7 +413,7 @@ export class BrowserHandover {
   async selectTab(id: string): Promise<LocalBrowserState> {
     if (this.record?.outcome === null && id !== (await this.browser.state()).selectedTabId)
       this.refuseDuringHandoff();
-    return this.browser.selectTab(id);
+    return this.trimmed(await this.browser.selectTab(id));
   }
 
   /**
@@ -389,7 +435,7 @@ export class BrowserHandover {
     await this.browser.disconnect();
     if (this.record?.outcome === null) {
       this.stoppedFor = this.record.sessionId;
-      this.end(this.record, 'stopped');
+      this.end(this.record, 'window-closed');
     }
     return this.state();
   }
@@ -422,12 +468,14 @@ export class BrowserHandover {
     return this.record;
   }
 
-  private end(handoff: LocalBrowserHandoff, outcome: 'handed-back' | 'stopped'): void {
+  private end(handoff: LocalBrowserHandoff, outcome: LocalBrowserHandoffOutcome): void {
     if (this.record?.id === handoff.id) this.record = { ...handoff, outcome };
     logger.info('[Browser] A browser handoff ended', { handoffId: handoff.id, outcome });
     this.reopenAt = undefined;
     this.askedUrl = undefined;
     this.changed();
+    // A handoff ends once (openHandoff refuses an ended one), so this fires once.
+    this.ended({ ...handoff, outcome });
   }
 
   private async signInOnAgentProfile(): Promise<boolean> {

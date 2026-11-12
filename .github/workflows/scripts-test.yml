@@ -465,6 +465,14 @@ jobs:
       - name: Dead-path guard fixtures
         run: bash scripts/test-check-dead-doc-paths.sh
 
+      # release-version.sh turns a pushed tag into the version the Docker jobs
+      # use (DOR-4175). The fixtures feed it tags like v1$(id), backticks, `;`
+      # and a second line, and require each refused before the command inside
+      # runs. They also check publish-docker.yml: every job takes its version
+      # from the script, and no run: block expands ${{ }} into the shell.
+      - name: Release tag check fixtures
+        run: bash scripts/test-release-version.sh
+
       # wait-for-npm.sh is the shared npm-availability wait used by
       # publish-docker.yml and update-homebrew.yml (DOR-1606) — a script that
       # gives up too early does not crash, it exits 1 on a release that would
@@ -475,6 +483,14 @@ jobs:
       # it never touches the real registry and runs in well under a second.
       - name: npm-availability wait fixtures
         run: bash scripts/test-wait-for-npm.sh
+
+      # npm-tarball-sha256.sh is the Homebrew formula's checksum (DOR-4161):
+      # 0.135.5 shipped the sha256 of npm's cached HTML 404 page. The fixtures
+      # feed it a 404 status, a 404 page served as success, a valid gzip with
+      # the wrong contents and a missing integrity, and require each refused
+      # with nothing on stdout. Hermetic: stub `curl` and `npm` on PATH.
+      - name: npm tarball checksum fixtures
+        run: bash scripts/test-npm-tarball-sha256.sh
 
       # heavy-run-lock.sh (DOR-2160, host-wide since DOR-3274) is the cap on how
       # many heavy local runs go at once on one host: the commit lint and the

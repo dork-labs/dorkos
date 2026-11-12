@@ -170,16 +170,34 @@ describe('a managed MCP server carrying credentials on a Codex turn', () => {
     expect(env?.[names?.['X-Api-Key'] as string]).toBe('sk-static-operator-key');
   });
 
-  it('leaves a headerless server byte-identical, and adds no env for it', async () => {
+  it('leaves a headerless server as it was, and adds no env for it', async () => {
     // The discriminator: the redirection must not reshape servers that carry
-    // nothing to protect, nor cost the turn its shared-client path.
+    // nothing to protect, nor cost the turn its shared-client path. The only
+    // addition is the browser tools no agent is offered, turned off on every server.
     const { mcpServers, env } = await turnWith({
       files: { transport: 'stdio', command: 'npx', args: ['-y', 'server-filesystem'] },
       plain: { transport: 'http', url: 'https://example.com/mcp' },
     });
 
-    expect(mcpServers['files']).toEqual({ command: 'npx', args: ['-y', 'server-filesystem'] });
-    expect(mcpServers['plain']).toEqual({ url: 'https://example.com/mcp' });
+    expect(mcpServers['files']).toEqual({
+      command: 'npx',
+      args: ['-y', 'server-filesystem'],
+      disabled_tools: [
+        'browser_run_code_unsafe',
+        'browser_network_request',
+        'browser_start_tracing',
+        'browser_stop_tracing',
+      ],
+    });
+    expect(mcpServers['plain']).toEqual({
+      url: 'https://example.com/mcp',
+      disabled_tools: [
+        'browser_run_code_unsafe',
+        'browser_network_request',
+        'browser_start_tracing',
+        'browser_stop_tracing',
+      ],
+    });
     expect(Object.keys(env ?? {}).filter((key) => key.startsWith('DORKOS_MCP_HDR_'))).toEqual([]);
   });
 

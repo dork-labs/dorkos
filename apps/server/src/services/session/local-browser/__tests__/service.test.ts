@@ -9,7 +9,7 @@ import {
   PAGE_READ_RESPONSE_TIMEOUT_MS,
   CLOSE_RESPONSE_TIMEOUT_MS,
 } from '../lifecycle.js';
-import { AUDIT_WRITE_RESPONSE_TIMEOUT_MS } from '../page-action.js';
+import { AUDIT_WRITE_RESPONSE_TIMEOUT_MS, LOAD_START_MS } from '../page-action.js';
 import { LocalBrowserService } from '../service.js';
 import { CLOUD_ORIGIN_REFUSAL } from '@dorkos/shared/cloud-origin';
 import { MAX_BROWSER_SNAPSHOT_BYTES, MAX_BROWSER_SCREENSHOT_EDGE } from '../observation-limits.js';
@@ -39,6 +39,27 @@ function fixture() {
     click,
     fill,
     isEditable: vi.fn(async () => true),
+  };
+  // `body` as Playwright reads it: strict, so one call on two bodies fails (DOR-4192).
+  let bodies = 1;
+  let secondBody = '- link "Made-up second body"';
+  const strict = () => new Error("strict mode violation: locator('body') resolved to 2 elements");
+  const nthBody = (index: number) => ({
+    ariaSnapshot: async () => (index === 0 ? locator.ariaSnapshot() : secondBody),
+    elementHandle: async () => locator.elementHandle(),
+  });
+  const body = {
+    count: vi.fn(async () => bodies),
+    nth: nthBody,
+    first: () => nthBody(0),
+    ariaSnapshot: vi.fn(async () => {
+      if (bodies > 1) throw strict();
+      return locator.ariaSnapshot();
+    }),
+    elementHandle: vi.fn(async () => {
+      if (bodies > 1) throw strict();
+      return locator.elementHandle();
+    }),
   };
   let isOriginalNode = true;
   const observedNodeSets: {
@@ -72,7 +93,7 @@ function fixture() {
       observedNodeSets.push(nodes);
       return nodes;
     }),
-    locator: () => locator,
+    locator: (selector: string) => (selector === 'body' ? body : locator),
     getByRole: vi.fn(() => locator),
     bringToFront: vi.fn(async () => undefined),
     goto: vi.fn(async (next: string) => {
@@ -128,6 +149,11 @@ function fixture() {
     addFrame: (frameUrl: string) => {
       childFrames.push({ url: () => frameUrl });
     },
+    /** Give the page a second `<body>`, with its own outline. */
+    addBody: (outline = secondBody) => {
+      bodies = 2;
+      secondBody = outline;
+    },
   };
 }
 const directories: string[] = [];
@@ -164,6 +190,32 @@ it('refuses forgetting a profile until its window has fully closed', async () =>
   });
   await f.service.disconnect();
   await expect(f.service.profileRemoval.forget(null)).resolves.toBeUndefined();
+});
+
+describe('the agent window’s name (DOR-3111)', () => {
+  it('names the window after the agent of the chat it opens for', async () => {
+    const f = await create();
+    const lookup = vi.fn(async (sessionId: string) =>
+      sessionId === 'chat-one' ? 'Atlas' : undefined
+    );
+    f.service.windowNames.use(lookup);
+    await f.service.open({ mode: 'new-window', sessionId: 'chat-one' });
+    expect(lookup).toHaveBeenCalledExactlyOnceWith('chat-one');
+    expect(vi.mocked(f.backend.launch).mock.calls[0]?.[3]).toBe('Atlas');
+    await f.service.disconnect();
+  });
+
+  it('opens an unnamed window with no chat, an unknown agent, or a failed lookup', async () => {
+    for (const lookup of [async () => undefined, async () => Promise.reject(new Error('mesh'))]) {
+      const f = await create();
+      f.service.windowNames.use(lookup);
+      await f.service.open({ mode: 'new-window', sessionId: 'chat-one' });
+      await f.service.disconnect();
+      await f.service.open({ mode: 'new-window' });
+      await f.service.disconnect();
+      for (const call of vi.mocked(f.backend.launch).mock.calls) expect(call[3]).toBeNull();
+    }
+  });
 });
 
 it('does not remove the profile while its final close is still flushing cookies', async () => {
@@ -730,13 +782,15 @@ describe('local browser ownership and observations', () => {
       1,
       path.join(dir, 'browser-profiles', 'default'),
       expect.any(AbortSignal),
-      expect.any(Function)
+      expect.any(Function),
+      null
     );
     expect(backend.launch).toHaveBeenNthCalledWith(
       2,
       path.join(dir, 'browser-profiles', 'default'),
       expect.any(AbortSignal),
-      expect.any(Function)
+      expect.any(Function),
+      null
     );
     expect(context.close).toHaveBeenCalledOnce();
   });
@@ -919,6 +973,37 @@ describe('bounded browser lifecycle ownership', () => {
     expect(backend.launch).toHaveBeenCalledTimes(2);
   });
 
+  // DOR-4181: once a person closes the window, Forget and Delete work without a Disconnect,
+  // but only after the close settles, so Chromium is done with the profile first.
+  it('releases a profile the person closed its window on, once that close settles', async () => {
+    const { service, context, contextEvents } = await lifecycleFixture();
+    const profiles = createLocalBrowserProfileStore(createTestDb(), () => Buffer.alloc(32, 1));
+    const { id } = profiles.create('Example work');
+    service.useProfileAccess(
+      async () => undefined,
+      (candidate) => candidate === id
+    );
+    await service.open({ mode: 'new-window', profileId: id });
+    const closing = deferred<void>();
+    vi.mocked(context.close).mockReturnValueOnce(closing.promise);
+    contextEvents.emit('close');
+    await Promise.resolve();
+    expect((await service.state()).status).toBe('closed');
+    // Chromium may still be flushing cookies until the close request settles.
+    await expect(service.profileRemoval.delete(id, profiles)).rejects.toMatchObject({
+      code: 'profile_busy',
+    });
+    closing.resolve();
+    await vi.waitFor(async () => {
+      await expect(service.profileRemoval.delete(id, profiles)).resolves.toBeUndefined();
+    });
+    expect(profiles.get(id)).toBeUndefined();
+    // The panel still says the browser closed, and offers to reconnect.
+    const after = await service.state();
+    expect(after.status).toBe('closed');
+    expect(after.mode).toBe('new-window');
+  });
+
   it('retains a failed owned close despite a later protocol-close event', async () => {
     const { service, context, contextEvents, backend } = await lifecycleFixture();
     await service.open({ mode: 'new-window' });
@@ -1066,7 +1151,8 @@ describe('bounded browser lifecycle ownership', () => {
       revision: observed.revision,
     });
     const uncertain = expect(action).rejects.toMatchObject({ code: 'uncertain' });
-    await vi.advanceTimersByTimeAsync(0);
+    // A click waits briefly for any page load it starts before the action finishes (DOR-3897).
+    await vi.advanceTimersByTimeAsync(LOAD_START_MS);
     expect(click).toHaveBeenCalledTimes(2);
     expect(audit).toHaveBeenCalledTimes(2);
     await vi.advanceTimersByTimeAsync(AUDIT_WRITE_RESPONSE_TIMEOUT_MS * 2);
@@ -1100,7 +1186,8 @@ describe('named profiles (DOR-3218)', () => {
     expect(f.backend.launch).toHaveBeenLastCalledWith(
       path.join(f.dir, 'browser-profiles', profileId),
       expect.anything(),
-      expect.anything()
+      expect.anything(),
+      null
     );
     await f.service.disconnect();
   });
@@ -1495,5 +1582,317 @@ describe('the Cloud origin (DOR-3196)', () => {
     });
     await service.observe();
     await service.disconnect();
+  });
+});
+
+// DOR-3897: a click or key press is only sent (`noWaitAfter`), so the load it
+// starts is checked before the action reports. A load the browser refused, or a
+// tab left on the browser's error page, must never read as success.
+describe('a page load an action starts', () => {
+  type Fixture = Awaited<ReturnType<typeof create>>;
+  const ERROR_PAGE = 'chrome-error://chromewebdata/';
+
+  /** A main-frame page request as Playwright reports it. */
+  function navigationRequest(f: Fixture, url: string, errorText?: string) {
+    return {
+      isNavigationRequest: () => true,
+      frame: () => f.page.mainFrame(),
+      url: () => url,
+      failure: () => (errorText ? { errorText } : null),
+    };
+  }
+
+  /** The real click (not the trial) starts a load that ends as `outcome` says. */
+  function clickLoads(f: Fixture, url: string, outcome: { failed?: string; landsOn?: string }) {
+    f.click.mockImplementation(async (options?: { trial?: boolean }) => {
+      if (options?.trial) return;
+      setTimeout(() => {
+        const request = navigationRequest(f, url, outcome.failed);
+        f.events.emit('request', request);
+        if (outcome.failed) f.events.emit('requestfailed', request);
+        f.navigate(outcome.landsOn ?? url);
+      }, 10);
+    });
+  }
+
+  async function journal(f: Fixture): Promise<{ phase: string; outcome: string }[]> {
+    const raw = await readFile(path.join(f.dir, 'local-browser', 'actions.jsonl'), 'utf8');
+    return raw
+      .trim()
+      .split('\n')
+      .map((line) => JSON.parse(line));
+  }
+
+  it.each([
+    ['a refused port', 'http://127.0.0.1:9/', 'net::ERR_CONNECTION_REFUSED', '127.0.0.1:9'],
+    [
+      'an unknown host',
+      'http://made-up-host.invalid/',
+      'net::ERR_NAME_NOT_RESOLVED',
+      'made-up-host.invalid',
+    ],
+  ])(
+    'a click onto %s reports that it didn’t load, and is journaled as failed',
+    async (_what, url, error, host) => {
+      const f = await create();
+      await selectOwned(f.service);
+      const { revision } = await f.service.observe();
+      clickLoads(f, url, { failed: error, landsOn: ERROR_PAGE });
+      await expect(
+        f.service.action({ kind: 'click', role: 'button', name: 'Save', revision })
+      ).rejects.toMatchObject({
+        code: 'load_failed',
+        message: `${host} didn’t load (${error.replace('net::', '')}). Read the page again.`,
+      });
+      expect((await journal(f)).map((record) => record.outcome)).toEqual(['unknown', 'failed']);
+      await f.service.disconnect();
+    }
+  );
+
+  it('a click that leaves the tab on the error page with no failed request still says so', async () => {
+    const f = await create();
+    await selectOwned(f.service);
+    const { revision } = await f.service.observe();
+    f.click.mockImplementation(async (options?: { trial?: boolean }) => {
+      if (!options?.trial) f.navigate(ERROR_PAGE);
+    });
+    await expect(
+      f.service.action({ kind: 'click', role: 'button', name: 'Save', revision })
+    ).rejects.toMatchObject({
+      code: 'load_failed',
+      message: 'The page didn’t load. Read the page again.',
+    });
+    await f.service.disconnect();
+  });
+
+  it('a click onto a good page reports success, with the page it opened', async () => {
+    const f = await create();
+    await selectOwned(f.service);
+    const { revision } = await f.service.observe();
+    clickLoads(f, 'http://fixture.test/good', {});
+    const state = await f.service.action({ kind: 'click', role: 'button', name: 'Save', revision });
+    const selected = state.tabs.find((tab) => tab.id === state.selectedTabId);
+    expect(selected?.url).toBe('http://fixture.test/good');
+    expect((await journal(f)).map((record) => record.outcome)).toEqual(['unknown', 'succeeded']);
+    await f.service.disconnect();
+  });
+
+  it('a click that opens nothing, or only a download, still reports success', async () => {
+    const f = await create();
+    await selectOwned(f.service);
+    const first = await f.service.observe();
+    await f.service.action({
+      kind: 'click',
+      role: 'button',
+      name: 'Save',
+      revision: first.revision,
+    });
+    const second = await f.service.observe();
+    clickLoads(f, 'http://fixture.test/report.pdf', {
+      failed: 'net::ERR_ABORTED',
+      landsOn: 'http://fixture.test/',
+    });
+    await f.service.action({
+      kind: 'click',
+      role: 'button',
+      name: 'Save',
+      revision: second.revision,
+    });
+    expect((await journal(f)).map((record) => record.outcome)).toEqual([
+      'unknown',
+      'succeeded',
+      'unknown',
+      'succeeded',
+    ]);
+    await f.service.disconnect();
+  });
+
+  it('Enter that starts a refused load reports it too', async () => {
+    const f = await create();
+    await selectOwned(f.service);
+    const { revision } = await f.service.observe();
+    vi.mocked(f.page.keyboard.press).mockImplementation(async () => {
+      const request = navigationRequest(f, 'http://127.0.0.1:9/', 'net::ERR_CONNECTION_REFUSED');
+      f.events.emit('request', request);
+      f.events.emit('requestfailed', request);
+      f.navigate(ERROR_PAGE);
+    });
+    await expect(f.service.action({ kind: 'press', key: 'Enter', revision })).rejects.toMatchObject(
+      { code: 'load_failed' }
+    );
+    await f.service.disconnect();
+  });
+
+  it('a navigation the browser refuses says so, rather than that the page changed', async () => {
+    const f = await create();
+    await selectOwned(f.service);
+    const { revision } = await f.service.observe();
+    vi.mocked(f.page.goto).mockRejectedValueOnce(
+      new Error('page.goto: net::ERR_CONNECTION_REFUSED at http://127.0.0.1:9/')
+    );
+    await expect(
+      f.service.action({ kind: 'navigate', url: 'http://127.0.0.1:9/', revision })
+    ).rejects.toMatchObject({
+      code: 'load_failed',
+      message: '127.0.0.1:9 didn’t load (ERR_CONNECTION_REFUSED). Read the page again.',
+    });
+    expect((await journal(f)).map((record) => record.outcome)).toEqual(['unknown', 'failed']);
+    await f.service.disconnect();
+  });
+
+  it('stops watching the page once the action is over', async () => {
+    const f = await create();
+    await selectOwned(f.service);
+    const { revision } = await f.service.observe();
+    const before = f.events.listenerCount('requestfailed');
+    await f.service.action({ kind: 'click', role: 'button', name: 'Save', revision });
+    expect(f.events.listenerCount('requestfailed')).toBe(before);
+    expect(f.events.listenerCount('request')).toBe(0);
+    await f.service.disconnect();
+  });
+
+  // Security's checks: the refusal carries only the requested host and Chromium's
+  // fixed code. A path or query can hold a token, and the error text, the page
+  // and the response are the page's own words.
+  it('names only the host and the fixed code, never the path, query or any page text', async () => {
+    const f = await create();
+    await selectOwned(f.service);
+    const { revision } = await f.service.observe();
+    vi.spyOn(f.page, 'title').mockResolvedValue('made-up page secret');
+    clickLoads(f, 'https://made-up.example:8443/reset?token=made-up-token#frag', {
+      failed: 'net::ERR_CONNECTION_REFUSED <b>made-up injected text</b>',
+      landsOn: ERROR_PAGE,
+    });
+    const refusal = f.service.action({ kind: 'click', role: 'button', name: 'Save', revision });
+    await expect(refusal).rejects.toMatchObject({
+      code: 'load_failed',
+      message: 'made-up.example:8443 didn’t load (ERR_CONNECTION_REFUSED). Read the page again.',
+    });
+    const message = await refusal.catch((error: Error) => error.message);
+    for (const leak of ['token', '/reset', 'frag', 'injected', 'secret', '<b>'])
+      expect(message, leak).not.toContain(leak);
+  });
+
+  it('leaves the reason out when the browser gave no fixed code', async () => {
+    const f = await create();
+    await selectOwned(f.service);
+    const { revision } = await f.service.observe();
+    clickLoads(f, 'http://made-up.example/', { failed: 'made-up free text', landsOn: ERROR_PAGE });
+    await expect(
+      f.service.action({ kind: 'click', role: 'button', name: 'Save', revision })
+    ).rejects.toMatchObject({ message: 'made-up.example didn’t load. Read the page again.' });
+  });
+
+  it('journals a failed action with the same minimal fields as any other', async () => {
+    const f = await create();
+    await selectOwned(f.service);
+    const { revision } = await f.service.observe();
+    clickLoads(f, 'https://made-up.example/reset?token=made-up-token', {
+      failed: 'net::ERR_NAME_NOT_RESOLVED',
+      landsOn: ERROR_PAGE,
+    });
+    await f.service
+      .action({ kind: 'click', role: 'button', name: 'Save', revision })
+      .catch(() => undefined);
+    const raw = await readFile(path.join(f.dir, 'local-browser', 'actions.jsonl'), 'utf8');
+    for (const leak of ['made-up.example', 'token', 'reset', 'ERR_', 'chrome-error'])
+      expect(raw, leak).not.toContain(leak);
+    const [started, finished] = raw
+      .trim()
+      .split('\n')
+      .map((line) => JSON.parse(line) as Record<string, unknown>);
+    expect(finished?.outcome).toBe('failed');
+    expect(Object.keys(finished ?? {}).sort()).toEqual(Object.keys(started ?? {}).sort());
+    expect(finished?.origin).toBe('http://fixture.test');
+  });
+
+  it('after a refused load, the agent’s last read no longer counts and the tab isn’t the page it asked for', async () => {
+    const f = await create();
+    await selectOwned(f.service);
+    const { revision } = await f.service.observe();
+    vi.mocked(f.page.goto).mockRejectedValueOnce(
+      new Error('page.goto: net::ERR_CONNECTION_REFUSED at http://made-up.example/')
+    );
+    await expect(
+      f.service.action({ kind: 'navigate', url: 'http://made-up.example/', revision })
+    ).rejects.toMatchObject({ code: 'load_failed' });
+    // The read from before is spent: acting on it again is refused, not replayed.
+    await expect(
+      f.service.action({ kind: 'click', role: 'button', name: 'Save', revision })
+    ).rejects.toMatchObject({ code: 'stale_page' });
+    const state = await f.service.state();
+    const selected = state.tabs.find((tab) => tab.id === state.selectedTabId);
+    expect(selected?.url).not.toBe('http://made-up.example/');
+    await f.service.disconnect();
+  });
+});
+
+// DOR-4192: a page with two <body> elements locked the agent out of its tab.
+describe('a page with two bodies, and leaving a page the agent can’t read', () => {
+  it('reads every body, in order, and acts on it', async () => {
+    const f = await create();
+    await f.service.open({ mode: 'new-window', sessionId: 'chat-one' });
+    f.addBody('- link "Made-up second body"');
+    const observed = await f.service.observe();
+    expect(observed.snapshot).toBe('- button "Save"\n- link "Made-up second body"');
+    await expect(
+      f.service.action({ kind: 'click', role: 'button', name: 'Save', revision: observed.revision })
+    ).resolves.toBeDefined();
+    const again = await f.service.observe();
+    await expect(
+      f.service.action({ kind: 'press', key: 'Enter', revision: again.revision })
+    ).resolves.toBeDefined();
+    await f.service.disconnect();
+  });
+
+  it('navigates away after a read fails, and still refuses a click on the old read', async () => {
+    const f = await create();
+    await f.service.open({ mode: 'new-window', sessionId: 'chat-one' });
+    const old = await f.service.observe();
+    f.locator.ariaSnapshot.mockRejectedValueOnce(new Error('made-up unreadable page'));
+    await expect(f.service.observe()).rejects.toThrow();
+    await f.service.action({
+      kind: 'navigate',
+      url: 'https://made-up.example/',
+      revision: old.revision,
+    });
+    expect(f.page.goto).toHaveBeenCalledWith('https://made-up.example/', expect.anything());
+    await expect(
+      f.service.action({ kind: 'click', role: 'button', name: 'Save', revision: old.revision })
+    ).rejects.toMatchObject({ code: 'stale_page' });
+    await f.service.disconnect();
+  });
+
+  it('still refuses leaving while the agent is paused', async () => {
+    const f = await create();
+    await f.service.open({ mode: 'new-window', sessionId: 'chat-one' });
+    const old = await f.service.observe();
+    await f.service.pause();
+    await expect(
+      f.service.action({
+        kind: 'navigate',
+        url: 'https://made-up.example/',
+        revision: old.revision,
+      })
+    ).rejects.toMatchObject({ code: 'paused' });
+    expect(f.page.goto).not.toHaveBeenCalled();
+    await f.service.disconnect();
+  });
+
+  it.each([
+    ['DorkOS itself', 'http://localhost:4242/connections', 'dorkos_origin'],
+    ['DorkOS Cloud', 'https://cloud.dorkos.ai/', 'cloud_origin'],
+    ['a local file', 'file:///etc/hosts', 'unsupported_address'],
+  ])('still checks where it goes: refuses %s', async (_where, url, code) => {
+    const f = await create(() => ['http://localhost:4242']);
+    await f.service.open({ mode: 'new-window', sessionId: 'chat-one' });
+    const old = await f.service.observe();
+    f.locator.ariaSnapshot.mockRejectedValueOnce(new Error('made-up unreadable page'));
+    await expect(f.service.observe()).rejects.toThrow();
+    await expect(
+      f.service.action({ kind: 'navigate', url, revision: old.revision })
+    ).rejects.toMatchObject({ code });
+    expect(f.page.goto).not.toHaveBeenCalled();
+    await f.service.disconnect();
   });
 });

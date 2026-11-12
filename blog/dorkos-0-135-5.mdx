@@ -1,0 +1,43 @@
+---
+title: DorkOS 0.135.5
+description: The agent browser no longer offers a tool that runs code outside the page, and agents now ask before they add work to a queue.
+date: 2026-11-11
+author: DorkOS Team
+category: release
+tags: [release, security, browser, agents]
+---
+
+DorkOS 0.135.5 is a security release. The agent browser no longer offers a tool that runs code outside the page, and agents now ask before they add work to a queue. This release changes the database, so read Going back before downgrading.
+
+## All Changes
+
+### Note for people upgrading
+
+- This release changes the database. Read Going back below before downgrading.
+- On Linux, Codex at Full access doesn't start if Claude Code has run on the same machine, and that includes the Docker image. Use Ask first or Workspace write there for now. We're fixing it (DOR-3965).
+- **An agent now asks you before it adds work to any queue, its own included, even at Full autonomy.** These cards have no Always allow. When nobody is there to answer, the agent is refused instead.
+- Work an agent queued before this update that hasn't started yet will run read-only. If it needs to change files, remove it and add it again yourself from the agent's Work queue page. You'll need to type its first message again.
+- Removing a global MCP server stops new chats from using it. Chats that are already running keep it until they end or you restart them. If you remove a server because you no longer trust it, restart DorkOS so no chat can still reach it. The Connections guide now says so (DOR-3872).
+
+### Security
+
+- The agent browser no longer offers a tool that runs code outside the page (DOR-4156).
+- Agents' file tools can't read the desktop app's own data folder, where it keeps your DorkOS sign-in and its built-in browser's sign-ins, on every runtime. On Codex the shell is covered too, and on Claude Code below Full autonomy a shell command that names it asks you first. Other shells aren't checked for it yet (DOR-3613).
+- When Page previews opens DorkOS's own address, it now loads in a locked-down frame, so the page can't act as the app. Most DorkOS pages also tell older browsers they can't be shown inside another page (DOR-3370).
+- DorkOS's database now refuses a mini app approval that would let it change anything in a connected app. It also refuses approval records with hidden characters in their name or folder, or with blank checksums (DOR-3547).
+
+### Added
+
+- **Agents can ask to change work queues and to queue work for another agent.** Anything that adds work asks you first: adding or re-queueing work, turning on "Start the next item on its own", and raising Chats at once or Starts per day. Reading another agent's queue asks too. Work one agent passes to another runs at the lower of their two levels, even when it's queued again. Agents can turn a queue off, lower its limits, remove waiting work and reorder it without asking. An agent can't raise Starts per day past the number you last set. A scheduled, heartbeat or agent-started chat, or one that read outside messages, can't change another agent's queue.
+- **A mini app can read an app you connected, once you allow it.** This works only for a mini app that runs in its own sandbox and lists the apps it reads. It can only read, and it never sees your password or sign-in. DorkOS keeps a record of each read. When a mini app asks, a "wants to read" row shows under Needs you on the Connections page. It opens a DorkOS page outside the app, where you choose Allow or Not now. You can't allow it from a device signed in over Wi-Fi. To take access back, open the account and click Revoke under "Mini apps that can read this". Apps you connected through your DorkOS account can't be read by mini apps yet. (DOR-3547)
+- For MCP clients: new tools `work_queue_read_agent`, `work_queue_configure`, `work_queue_reorder` and `work_queue_requeue`. `work_queue_add` and `work_queue_remove` can now name another agent.
+
+### Fixed
+
+- When your agent clicks a link or presses Enter in the browser and the page it opens won't load, the agent is now told the page didn't load, and usually which site, instead of being told it worked. Opening an address that won't load says so too (DOR-3897).
+
+### Going back
+
+0.135.5 adds a table and a column for work queues, and rebuilds the table of mini app approvals with stricter checks. 0.135.4 starts on it as it is: in a test it started, its pages loaded, schedules ran and no rows were lost. To go back, install 0.135.4.
+
+DorkOS still saves a backup before it changes the database, in `~/.dork/backups/`. If you came from 0.135.4, it's named `dork-<date>-<time>-pre-20261110044508_work_queue_permissions.db` (the time is UTC). To restore it, quit DorkOS, delete `dork.db-wal` and `dork.db-shm` from `~/.dork/`, copy the backup over `~/.dork/dork.db`, then install 0.135.4. You lose anything written since the upgrade, so if you removed access, revoked a connection or revoked a mini app's access since then, do it again.

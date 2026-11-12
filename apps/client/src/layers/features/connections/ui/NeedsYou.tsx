@@ -4,13 +4,20 @@ import type { ConnectorCatalogService } from '@dorkos/shared/connector-resource-
 import type { ConnectorAgentRequestItem } from '@dorkos/shared/connector-schemas';
 import { CONNECTOR_AUTHENTICATION_FLOW_TTL_MS } from '@dorkos/shared/connector-schemas';
 import {
+  miniAppAccessPageUrl,
   useConnectorAgentRequests,
   useConnectorManagementReviews,
+  useMiniAppAccess,
 } from '@/layers/entities/connectors';
 import { Button } from '@/layers/shared/ui';
 import { AgentApprovalLine } from './agent-request/AgentApprovalLine';
 import { accountAppName } from '../lib/app-list';
-import { pendingReviewLine, unsettledReviewLine, type NeedsYouLine } from '../lib/needs-you-copy';
+import {
+  miniAppWaitingLine,
+  pendingReviewLine,
+  unsettledReviewLine,
+  type NeedsYouLine,
+} from '../lib/needs-you-copy';
 
 /**
  * How long a decided review whose result is unknown keeps asking to be
@@ -47,11 +54,14 @@ interface NeedsYouProps {
 
 /**
  * Decisions waiting on the owner, at the top of the page: agents asking to use
- * an app, tools or programs asking to change a connection, and two decided
+ * an app, tools or programs asking to change a connection, mini apps asking
+ * to read an app, and two decided
  * requests that still need the person (an approved connect whose sign-in
  * may still be open, and an approved change DorkOS could not confirm). Each opens its
- * own dialog. Below them, for a day, requests another agent approved: done
- * items with nothing to press, so an agent's answer is seen, not silent.
+ * own dialog, except a mini app's: that one only leaves for its own page
+ * outside the app, where no mini app code runs (DOR-3547). Below them, for
+ * a day, requests another agent approved: done items with nothing to press,
+ * so an agent's answer is seen, not silent.
  *
  * Renders nothing when nothing waits, so the page's first line is only ever
  * spent on something the person has to do. A read that failed says so in one
@@ -62,6 +72,7 @@ export function NeedsYou({ services, onOpenRequest, onOpenReview }: NeedsYouProp
   const answered = useConnectorAgentRequests('resolved');
   const pending = useConnectorManagementReviews('pending');
   const resolved = useConnectorManagementReviews('resolved');
+  const miniApps = useMiniAppAccess();
 
   const now = useMinuteClock();
   // A request another agent approved stays here for a day as a done item, so
@@ -91,10 +102,16 @@ export function NeedsYou({ services, onOpenRequest, onOpenReview }: NeedsYouProp
         (review.resolution.kind === 'outcome_unknown' &&
           now - Date.parse(review.resolvedAt) < UNKNOWN_OUTCOME_WINDOW_MS))
   );
-  const failed = [requests, pending, resolved].filter((query) => query.isError);
+  const failed = [requests, pending, resolved, miniApps].filter((query) => query.isError);
+  const waitingMiniApps = miniApps.data?.waiting ?? [];
 
   const hasItems =
-    waiting.length + (pending.data?.length ?? 0) + unsettled.length + approvedByAgents.length > 0;
+    waiting.length +
+      (pending.data?.length ?? 0) +
+      unsettled.length +
+      approvedByAgents.length +
+      waitingMiniApps.length >
+    0;
   // Answered requests are where agents' approvals show: a failed read says so, never a gap.
   const approvalsFailed = answered.isError;
   if (!hasItems && failed.length === 0 && !approvalsFailed) return null;
@@ -129,6 +146,16 @@ export function NeedsYou({ services, onOpenRequest, onOpenReview }: NeedsYouProp
             testId={`needs-you-review-${review.reviewRequestId}`}
             line={pendingReviewLine(review, services)}
             onOpen={() => onOpenReview(review.reviewRequestId)}
+          />
+        ))}
+        {waitingMiniApps.map((item) => (
+          <NeedsYouRow
+            key={`mini-app-${item.extensionId}-${item.service}`}
+            testId={`needs-you-mini-app-${item.extensionId}-${item.service}`}
+            line={miniAppWaitingLine(item, services)}
+            onOpen={() =>
+              window.location.assign(miniAppAccessPageUrl(item.extensionId, item.service))
+            }
           />
         ))}
         {unsettled.map((review) => {

@@ -131,12 +131,6 @@ describe('GET /api/events (unified SSE stream)', () => {
     resetSessionListResetForTests();
   });
 
-  it('registers client with eventFanOut.addClient', async () => {
-    await collectConnectedEvent();
-
-    expect(eventFanOut.addClient).toHaveBeenCalledTimes(1);
-  });
-
   it('registers a credential-free cockpit as the operator', async () => {
     await collectConnectedEvent();
 

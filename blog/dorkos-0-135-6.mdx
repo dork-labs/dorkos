@@ -1,0 +1,39 @@
+---
+title: DorkOS 0.135.6
+description: A file you closed opens again when you click it, Remote Access refuses tricky addresses, and the Agent browser gets several fixes.
+date: 2026-11-11
+author: DorkOS Team
+category: release
+tags: [release, files, remote-access, browser]
+---
+
+DorkOS 0.135.6 makes a file you closed open again when you click it, refuses tricky addresses over Remote Access, and smooths several rough edges in the Agent browser.
+
+## All Changes
+
+### Note for people upgrading
+
+- On Linux, Codex at Full access doesn't start if Claude Code has run on the same machine, and that includes the Docker image. Use Ask first or Workspace write there for now. We're fixing it (DOR-3965).
+- Removing a global MCP server stops new chats from using it. Chats that are already running keep it until they end or you restart them. If you remove a server because you no longer trust it, restart DorkOS so no chat can still reach it. The Connections guide says so (DOR-3872).
+- Over Remote Access, **Unblock agent** on an agent's profile doesn't work for now. Unblock it on the computer running DorkOS.
+- Over your own ngrok tunnel, the agent-to-agent address (`/a2a`) and its agent cards now answer "Not found" from another device, the same as over DorkOS's remote access. On this computer nothing changes.
+- The Agent browser no longer has named profiles. Profiles made before stay on disk until you choose **Forget…**, which now clears them along with the shared sign-ins. Scripts that call `POST /api/local-browser/profiles` now get a 403 `profiles_closed` error. (DOR-4105)
+
+### Security
+
+- **Addresses with tricks like `..` in them are now refused from another device,** over both your own ngrok tunnel and DorkOS's remote access. The agent-to-agent pages were never open to another device without a key, so this is defence in depth, not an open door.
+
+### Fixed
+
+- **Clicking a file in the Files tab opens it again after you closed its tab.** Before, the click seemed to do nothing. (DOR-4179)
+- A room's Files list no longer asks for folders from the agent you browsed before. (DOR-4179)
+- In **New browser window** mode, the window your agent drives now shows which agent is using it, for example "Atlas is using this window". When a site asks for a check only a person can do, the card in the chat also says "Your turn: Atlas can’t see or use this window." While you have the browser, your agent can't read the page, take a picture of it, or act on it, whichever AI app it runs on. (DOR-3111)
+- While you have the Agent browser after your agent hands it to you, its panel lists each tab by its site only, such as `https://accounts.example.com`, without the rest of the address or the page title. A sign-in page's address or title can carry a one-time code, and both stay out of view until the handoff ends. (DOR-4163)
+- The Agent browser panel now shows one **Saved sign-ins** row: "Kept apart from your own browser. Every agent here shares them." **Forget…** asks before it signs every agent out of every site, including sign-ins kept for any older named profile. It replaces the old list of profiles. (DOR-4105)
+- If the folder holding the Agent browser's saved sign-ins was changed outside DorkOS, **Forget…** now answers "Sign-ins weren’t forgotten" and "Their folder was changed outside DorkOS, so DorkOS left it alone." with a single **Close** button. It used to tell you to close the browser's windows and try again, which could never work. What was found is also recorded in the audit log. (DOR-4172)
+- When the Agent browser isn't open, its panel now says "Not open yet" instead of "Disconnected", which made it look broken. It says "Disconnected" when a browser it was showing as open disconnects. (DOR-4104)
+- An agent browser set up with a custom browser path or a shared profile no longer looks like it should work. Its card in the agent's MCP servers list now says **Not used** and reads "DorkOS uses its own browser for agents. Custom browser paths aren't allowed." (DOR-3207)
+
+### Going back
+
+0.135.6 doesn't change the database or your settings. To go back, install 0.135.5. On 0.135.5, any older named browser profiles show in the Agent browser panel again, signed out if you used **Forget…**.

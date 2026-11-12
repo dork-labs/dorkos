@@ -897,6 +897,89 @@ describe('Marketplace Routes', () => {
     });
   });
 
+  // The app sends the name in the query string (DOR-4212): a name saved by an
+  // older DorkOS may hold a `/`, and Remote Access refuses an encoded `/` in a
+  // URL path. The path form stays for the CLI and every name made today.
+  describe('the ?name= forms', () => {
+    const LEGACY = 'acme/plugins';
+
+    /** A source saved before names were checked, written the way it sits on disk. */
+    async function seedLegacySource(): Promise<void> {
+      await sourceManager.list();
+      const file = join(dorkHome, 'marketplaces.json');
+      const json = JSON.parse(readFileSync(file, 'utf8'));
+      json.sources.push({ ...json.sources[0], name: LEGACY, source: 'https://example.com/legacy' });
+      writeFileSync(file, JSON.stringify(json));
+    }
+
+    it('DELETE /sources?name= removes a legacy name holding a / and its listing', async () => {
+      await seedLegacySource();
+      await cache.writeMarketplace(LEGACY, {
+        name: 'cached',
+        owner: { name: 'Owner' },
+        plugins: [{ name: 'a', source: './plugins/a' }],
+      });
+
+      const res = await request(fixtureServer).delete(
+        `/api/marketplace/sources?name=${encodeURIComponent(LEGACY)}`
+      );
+
+      expect(res.status).toBe(204);
+      expect(await sourceManager.get(LEGACY)).toBeNull();
+      expect(await cache.readMarketplace(LEGACY)).toBeNull();
+    });
+
+    it('POST /sources/refresh?name= refreshes a legacy name holding a /', async () => {
+      await seedLegacySource();
+      fetcher.fetchMarketplaceJson.mockClear();
+
+      const res = await request(fixtureServer).post(
+        `/api/marketplace/sources/refresh?name=${encodeURIComponent(LEGACY)}`
+      );
+
+      expect(res.status).toBe(200);
+      expect(fetcher.fetchMarketplaceJson.mock.calls[0][0].name).toBe(LEGACY);
+    });
+
+    it('a name that was never a source removes nothing, not even a cache folder', async () => {
+      // Purpose: the name is the caller's text, and `.` names the folder that
+      // holds every listing. Only a source that existed has a listing to drop.
+      const listing = { name: 'kept', owner: { name: 'Owner' }, plugins: [] };
+      await cache.writeMarketplace('bystander', listing);
+
+      const res = await request(fixtureServer).delete('/api/marketplace/sources?name=.');
+
+      expect(res.status).toBe(204);
+      expect(await cache.readMarketplace('bystander')).not.toBeNull();
+    });
+
+    it.each([
+      ['DELETE', '/api/marketplace/sources'],
+      ['DELETE', '/api/marketplace/sources?name='],
+      ['POST', '/api/marketplace/sources/refresh'],
+      ['POST', '/api/marketplace/sources/refresh?name=a&name=b'],
+    ])('%s %s with no single name is a 400', async (method, target) => {
+      const res =
+        method === 'DELETE'
+          ? await request(fixtureServer).delete(target)
+          : await request(fixtureServer).post(target);
+      expect(res.status).toBe(400);
+    });
+
+    it('DELETE /sources?name= refuses an agent, as the path form does', async () => {
+      await request(fixtureServer)
+        .post('/api/marketplace/sources')
+        .send({ name: 'removable', source: 'https://example.com/r' });
+
+      agentHeader = 'agent-token';
+
+      const res = await request(fixtureServer).delete('/api/marketplace/sources?name=removable');
+
+      expect(res.status).toBe(403);
+      expect(await sourceManager.get('removable')).not.toBeNull();
+    });
+  });
+
   describe('GET /installed', () => {
     it('walks plugins and agents dirs and returns installed packages', async () => {
       const pluginDir = join(dorkHome, 'plugins', 'my-plugin');

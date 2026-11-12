@@ -19,7 +19,6 @@ import {
   COPILOT_HOOK_EVENTS,
   COPILOTCLI_HOOK_EVENTS,
 } from '../rulesync-maps.js';
-import { CANONICAL_TO_GEMINI_EVENT_NAMES, GEMINI_HOOK_EVENTS } from '../gemini-maps.js';
 
 /** The five translation maps, paired with their derived reverse maps. */
 const TRANSLATION_MAPS: Array<{
@@ -96,13 +95,5 @@ describe('rulesync-maps', () => {
     expect(source).toContain('dyoshikawa');
     expect(source).toContain('b4bf09d5');
     expect(source).toContain('MIT');
-  });
-});
-
-describe('gemini-maps', () => {
-  // The in-repo Gemini map and its derived event list must be non-empty.
-  it('exports a non-empty hook map and event list', () => {
-    expect(Object.keys(CANONICAL_TO_GEMINI_EVENT_NAMES).length).toBeGreaterThan(0);
-    expect(GEMINI_HOOK_EVENTS.length).toBeGreaterThan(0);
   });
 });

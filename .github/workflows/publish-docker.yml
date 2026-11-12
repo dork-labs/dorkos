@@ -46,12 +46,20 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
 
+      # A tag name is untrusted text: refuse anything but a plain release tag
+      # before the version reaches a command, a path or $GITHUB_OUTPUT
+      # (DOR-4175).
       - name: Extract version from tag
         id: version
-        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+        run: |
+          set -euo pipefail
+          version=$(bash scripts/release-version.sh "$GITHUB_REF_NAME")
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
 
       - name: Wait for npm package availability
-        run: bash scripts/wait-for-npm.sh "${{ steps.version.outputs.version }}"
+        env:
+          PKG_VERSION: ${{ steps.version.outputs.version }}
+        run: bash scripts/wait-for-npm.sh "$PKG_VERSION"
 
       - name: Extract Docker metadata
         id: meta
@@ -123,12 +131,20 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
 
+      # A tag name is untrusted text: refuse anything but a plain release tag
+      # before the version reaches a command, a path or $GITHUB_OUTPUT
+      # (DOR-4175).
       - name: Extract version from tag
         id: version
-        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+        run: |
+          set -euo pipefail
+          version=$(bash scripts/release-version.sh "$GITHUB_REF_NAME")
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
 
       - name: Wait for npm package availability
-        run: bash scripts/wait-for-npm.sh "${{ steps.version.outputs.version }}"
+        env:
+          PKG_VERSION: ${{ steps.version.outputs.version }}
+        run: bash scripts/wait-for-npm.sh "$PKG_VERSION"
 
       - name: Extract Docker metadata
         id: meta
@@ -168,14 +184,16 @@ jobs:
       - name: Verify the attestation, and name the digest
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          IMAGE_DIGEST: ${{ steps.push.outputs.digest }}
+          PKG_VERSION: ${{ steps.version.outputs.version }}
         run: |
           set -euo pipefail
-          image="${REGISTRY}/${HUB_IMAGE_NAME}@${{ steps.push.outputs.digest }}"
+          image="${REGISTRY}/${HUB_IMAGE_NAME}@${IMAGE_DIGEST}"
           gh attestation verify "oci://${image}" \
             --repo "$GITHUB_REPOSITORY" \
             --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/publish-docker.yml" \
             --source-ref "$GITHUB_REF"
-          echo "Hub image ${{ steps.version.outputs.version }}: \`${image}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "Hub image ${PKG_VERSION}: \`${image}\`" >> "$GITHUB_STEP_SUMMARY"
 
   # Mirror the just-pushed GHCR multi-arch image to Docker Hub. GHCR is and
   # stays the canonical registry; this job is a best-effort mirror purely for
@@ -227,9 +245,23 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
+      # This job has no other checkout: it only needs the tag check.
+      - name: Checkout for the release tag check
+        uses: actions/checkout@v7
+        with:
+          sparse-checkout: |
+            scripts/release-version.sh
+          persist-credentials: false
+
+      # A tag name is untrusted text: refuse anything but a plain release tag
+      # before the version reaches a command, a path or $GITHUB_OUTPUT
+      # (DOR-4175).
       - name: Extract version from tag
         id: version
-        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+        run: |
+          set -euo pipefail
+          version=$(bash scripts/release-version.sh "$GITHUB_REF_NAME")
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
 
       - name: Compute Docker Hub tags
         id: meta
@@ -244,9 +276,11 @@ jobs:
             latest=auto
 
       - name: Mirror manifests from GHCR to Docker Hub
+        env:
+          PKG_VERSION: ${{ steps.version.outputs.version }}
         run: |
           set -euo pipefail
-          source="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.version.outputs.version }}"
+          source="${REGISTRY}/${IMAGE_NAME}:${PKG_VERSION}"
           echo "Mirroring ${source} to Docker Hub:"
           echo "${DOCKER_METADATA_OUTPUT_TAGS}"
           tag_args=()

@@ -20,6 +20,7 @@ import { registerBrowserScanOpenApi } from '../../browser/profile-scan-openapi.j
 import { registerLocalBrowserOpenApi } from '../../session/local-browser/openapi.js';
 import { registerConnectorHoldsOpenApi } from '../../connectors/execution/holds-openapi.js';
 import { registerConnectorExclusionsOpenApi } from '../../connectors/access/exclusions-openapi.js';
+import { registerMiniAppAccessOpenApi } from '../../connectors/extensions/mini-app-access-openapi.js';
 import { registerHubComputersOpenApi } from '../hub-relay/hub-computers-openapi.js';
 import { registerHubLinkOpenApi } from '../hub-relay/hub-link-openapi.js';
 import { registerSessionRelayOpenApi } from '../session-relay/session-relay-openapi.js';
@@ -46,6 +47,7 @@ export function registerDomainOpenApi(registry: OpenAPIRegistry): void {
   registerDocRouteControlsOpenApi(registry);
   registerConnectorHoldsOpenApi(registry);
   registerConnectorExclusionsOpenApi(registry);
+  registerMiniAppAccessOpenApi(registry);
   registerLocalBrowserOpenApi(registry);
   registerBrowserScanOpenApi(registry);
   registerHubComputersOpenApi(registry);

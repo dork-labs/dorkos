@@ -57,6 +57,10 @@ const REVIEWED: Record<string, { why: Why; note: string }> = {
     why: 'fixed-server-text',
     note: "The passkey page: a constant, with its own CSP and frame-ancestors 'none'.",
   },
+  'routes/mini-app-access-page.ts': {
+    why: 'fixed-server-text',
+    note: "The mini app decide page: a server template that shows values a mini app controls (its name, author, source, operations), so its escaping is load-bearing; script-src 'self' and frame-ancestors 'none'.",
+  },
   'routes/mcp-oauth.ts': {
     why: 'fixed-server-text',
     note: 'A constant refusal sentence; no request or agent text in it.',

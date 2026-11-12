@@ -322,6 +322,57 @@ describe('InboxBell', () => {
     expect(screen.queryByTestId('inbox-bell')).not.toBeInTheDocument();
   });
 
+  it('keeps the browser handoff receipt on screen after Stop task (DOR-3112)', async () => {
+    const handoff = {
+      id: 'h1',
+      sessionId: 'chat-one',
+      agentName: 'Atlas',
+      agentId: null,
+      agentFolder: '/work/atlas',
+      profileId: null,
+      reason: 'wall' as const,
+      site: 'northwind.example',
+      askedAt: '2026-11-03T14:30:00.000Z',
+      outcome: null,
+    };
+    const state = {
+      connectionId: 'c1',
+      sessionId: 'chat-one',
+      mode: 'new-window' as const,
+      status: 'connected' as const,
+      paused: true,
+      tabs: [{ id: 't1', url: 'https://northwind.example/fares', title: 'Fares' }],
+      selectedTabId: 't1',
+      revision: 1,
+      preparation: null,
+      signIn: null,
+      handoff,
+    };
+    const stopped = { ...state, handoff: { ...handoff, outcome: 'stopped' as const } };
+    const getLocalBrowserState = vi.fn().mockResolvedValue(state);
+    const stopLocalBrowserHandoff = vi.fn().mockImplementation(async () => {
+      getLocalBrowserState.mockResolvedValue(stopped);
+      return stopped;
+    });
+    renderIndicator({
+      listPendingApprovals: vi.fn().mockResolvedValue({ approvals: [] }),
+      getLocalBrowserState,
+      stopLocalBrowserHandoff,
+      interruptSession: vi.fn().mockResolvedValue({ receipt: 'none', cancelledQueued: [] }),
+    });
+    await userEvent.click(await screen.findByTestId('inbox-bell'));
+    await userEvent.click(await screen.findByRole('button', { name: 'Stop task' }));
+
+    expect(stopLocalBrowserHandoff).toHaveBeenCalledWith('h1');
+    // Nothing is waiting any more, but the answer must not look like a disappearance.
+    await waitFor(() =>
+      expect(document.querySelector('[data-slot="browser-handoff-inbox-item"]')).toHaveTextContent(
+        'Stopped. Atlas won’t carry on with this.'
+      )
+    );
+    expect(document.querySelector('[data-slot="browser-handoff-card"]')).toBeNull();
+  });
+
   it('is reachable from the keyboard and opens the cards in place', async () => {
     renderIndicator({
       listPendingApprovals: vi.fn().mockResolvedValue({ approvals: [buildApproval()] }),

@@ -17,7 +17,7 @@ import {
   PAGE_READ_RESPONSE_TIMEOUT_MS,
   closingError,
 } from './lifecycle.js';
-import { performPageAction, auditPageAction } from './page-action.js';
+import { actionFence, performPageAction, auditPageAction } from './page-action.js';
 import { observationNodes, type ObservedPageNodes } from './observation-nodes.js';
 import { boundedPageSnapshot, boundedPageScreenshot } from './observation-limits.js';
 import { BrowserPreparation } from './preparation.js';
@@ -27,7 +27,7 @@ import {
   localBrowserHostFacts,
   type LocalBrowserHostFacts,
 } from './presentation.js';
-import { FullScreenGuard } from './agent-window/full-screen-guard.js';
+import { AgentWindowNames, FullScreenGuard } from './agent-window/index.js';
 import { productionBackend, type LocalBrowserBackend } from './playwright-backend.js';
 import { BrowserHandover } from './handover.js';
 import { SignInWindow } from './sign-in-window.js';
@@ -90,6 +90,8 @@ export class LocalBrowserService {
   private readonly preparation = new BrowserPreparation();
   private readonly metadata = new LocalBrowserTabMetadata();
   private readonly fullScreen = new FullScreenGuard();
+  /** The chat's agent name, for the title of the window it drives (DOR-3111). */
+  readonly windowNames = new AgentWindowNames();
   /** Handing the browser to the person and back, and the plain sign-in window. */
   readonly handover = new BrowserHandover(this, new SignInWindow(), () => this.dataDirectory);
 
@@ -163,7 +165,8 @@ export class LocalBrowserService {
           this.ownedContext = await this.backend.launch(
             storage,
             setupAbort.signal,
-            this.preparation.start()
+            this.preparation.start(),
+            await this.windowNames.of(input.sessionId)
           );
           this.ownedContext.on('close', () => this.closed(connectionId));
         } else {
@@ -338,13 +341,10 @@ export class LocalBrowserService {
       throw new LocalBrowserError('busy', 'A browser action is finishing. Read the page again.');
     const observed = this.observation;
     const observedNodes = this.observedNodes;
-    if (
-      !observed ||
-      !observedNodes ||
-      input.revision !== this.revision ||
-      observed.revision !== input.revision
-    )
-      throw this.stale();
+    // Leaving needs no current read (DOR-4192); the pause, handoff and address checks still hold.
+    const fence = actionFence(input, observed, Boolean(observedNodes), this.revision, () =>
+      this.stale()
+    );
     const page = this.page();
     this.refuseProtectedPage(page);
     if (input.kind === 'navigate')
@@ -359,7 +359,7 @@ export class LocalBrowserService {
     try {
       await this.actions.run(
         operation,
-        () => this.admit(input.revision),
+        () => this.admit(fence),
         dispatch,
         () => {
           if (this.lifecycle === lifecycle) this.invalidate();
@@ -413,7 +413,11 @@ export class LocalBrowserService {
     return this.closeConnection(true);
   }
 
-  private async closeConnection(abortSetup: boolean): Promise<LocalBrowserState> {
+  /**
+   * Close the connection and release what it holds. `closed` is the person closing
+   * the window: the same release, but the panel keeps saying it closed.
+   */
+  private async closeConnection(abortSetup: boolean, closed = false): Promise<LocalBrowserState> {
     if (abortSetup) this.openingAbort?.abort();
     if (!this.closing) {
       this.metadata.clear();
@@ -438,8 +442,8 @@ export class LocalBrowserService {
         this.ownedContext = undefined;
         this.browser = undefined;
         this.embeddedClose = undefined;
-        this.connectionId = this.sessionId = this.mode = null;
-        this.status = 'disconnected';
+        if (!closed) this.connectionId = this.sessionId = this.mode = null;
+        if (!closed) this.status = 'disconnected';
         this.tabs.clear();
         this.selectedTabId = null;
       });
@@ -514,6 +518,9 @@ export class LocalBrowserService {
     this.selectedTabId = null;
     this.invalidate();
     this.handover.windowClosed();
+    // Release the profile as Disconnect does, once the close settles (DOR-4181). Its own errors
+    // keep it held, as a failed Disconnect does.
+    void this.closeConnection(false, true).catch(() => undefined);
   }
   private invalidate(): void {
     this.revision += 1;

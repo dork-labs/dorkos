@@ -2874,11 +2874,14 @@ registry.registerPath({
 
 registry.registerPath({
   method: 'delete',
-  path: '/api/mesh/denied/{encodedPath}',
+  path: '/api/mesh/denied',
   tags: ['Mesh'],
   summary: 'Clear mesh denial',
+  description:
+    'The folder goes in the `path` query parameter. Remote Access refuses an encoded `/` or ' +
+    '`\\` in a URL path, and every folder path holds one.',
   request: {
-    params: z.object({ encodedPath: z.string() }),
+    query: z.object({ path: z.string().describe('The denied folder, absolute') }),
   },
   responses: {
     200: {
@@ -3168,6 +3171,31 @@ registry.registerPath({
 });
 
 registry.registerPath({
+  method: 'delete',
+  path: '/api/marketplace/sources',
+  tags: ['Marketplace'],
+  summary: 'Remove a marketplace source (operator only)',
+  description:
+    'From the app, the name goes in the `name` query parameter: a name saved by an older ' +
+    'DorkOS may hold a `/`, and Remote Access refuses an encoded `/` in a URL path. ' +
+    'Only the person running DorkOS may remove a package source. Any caller that could not ' +
+    'decide an approval is refused with 403, which includes one presenting an agent identity, ' +
+    'one presenting an approval token, and (with local login on) one with no signed-in ' +
+    "identity. There is no approval that unlocks it. The source's cached listing is removed " +
+    'with it, so a later source given the same name starts clean.',
+  request: {
+    query: z.object({ name: z.string().describe('The source name') }),
+  },
+  responses: {
+    204: { description: 'Source removed' },
+    403: {
+      description: 'Caller is not the operator',
+      content: { 'application/json': { schema: MarketplaceSourceRefusalSchema } },
+    },
+  },
+});
+
+registry.registerPath({
   method: 'post',
   path: '/api/marketplace/sources/{name}/refresh',
   tags: ['Marketplace'],
@@ -3178,6 +3206,48 @@ registry.registerPath({
     'With nothing cached, answers 502.',
   request: {
     params: z.object({ name: z.string() }),
+  },
+  responses: {
+    200: {
+      description: 'The listing, fetched now or (when `stale`) the last cached copy',
+      content: {
+        'application/json': {
+          schema: z.object({
+            marketplace: LocalMarketplaceJsonSchema,
+            fetchedAt: z.string().describe('When this copy of the listing was fetched'),
+            stale: z.boolean().describe('True when the source could not be reached'),
+            reason: z
+              .string()
+              .optional()
+              .describe('Why the source could not be reached; present only when `stale`'),
+          }),
+        },
+      },
+    },
+    404: {
+      description: 'Source not found',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    502: {
+      description: 'Upstream fetch failure',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+  },
+});
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/marketplace/sources/refresh',
+  tags: ['Marketplace'],
+  summary: 'Force refetch of a source marketplace.json',
+  description:
+    'From the app, the name goes in the `name` query parameter: a name saved by an older ' +
+    'DorkOS may hold a `/`, and Remote Access refuses an encoded `/` in a URL path. ' +
+    'Checks the source now. When it cannot be reached but a copy is cached, answers 200 with ' +
+    'that copy, `stale: true`, the `reason`, and `fetchedAt` set to when the copy was fetched. ' +
+    'With nothing cached, answers 502.',
+  request: {
+    query: z.object({ name: z.string().describe('The source name') }),
   },
   responses: {
     200: {
@@ -6820,6 +6890,38 @@ registry.registerPath({
     404: {
       description:
         'No such room, or the caller is not a member of it (`ROOM_NOT_FOUND`) — the same answer for both — or no such directory in the commit (`ROOM_FILE_NOT_FOUND`)',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    409: {
+      description:
+        'The room has no files of its own, or room files are switched off on this install (`ROOM_HAS_NO_REPO`); or this machine has no git (`ROOM_REPO_GIT_UNAVAILABLE`)',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+  },
+});
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/rooms/{id}/files/raw',
+  tags: ['Rooms'],
+  summary: "One picture from a room's own files",
+  description:
+    "The picture's bytes, as of the commit `main` points at, for the room's file viewer. Named and gated exactly like `GET /api/rooms/{id}/files/content`: a caller who is not on the roster gets the same 404 an unknown room gets, and membership is asked before `ROOM_HAS_NO_REPO`. **Pictures only**: PNG, JPEG, GIF, WebP, AVIF, BMP and ICO, by extension. An SVG can carry script, so it is refused 400 `ROOM_FILE_NOT_READABLE`, as is any other type, a picture over the install's file ceiling, a folder, a link and another repository. Served with the type from the name, `X-Content-Type-Options: nosniff` and `Content-Security-Policy: default-src 'none'; sandbox`, so the bytes never act as a page.",
+  request: { params: RoomIdParams, query: RoomFileContentQuerySchema },
+  responses: {
+    200: {
+      description: 'The picture',
+      content: { 'image/*': { schema: { type: 'string', format: 'binary' } } },
+    },
+    400: {
+      description:
+        'The path could have meant somewhere else (`ROOM_FILE_PATH_INVALID`), or names something that is not a picture this route serves (`ROOM_FILE_NOT_READABLE`)',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    401: roomAgentUnverified,
+    404: {
+      description:
+        'No such room, or the caller is not a member of it (`ROOM_NOT_FOUND`) — the same answer for both — or no such file in the commit (`ROOM_FILE_NOT_FOUND`)',
       content: { 'application/json': { schema: ErrorResponseSchema } },
     },
     409: {
