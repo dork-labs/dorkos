@@ -17,3 +17,5 @@ Follow-up to `261112-185148`. Two suites landed just after it and were on neithe
 Both suites now go on `REPO_WIDE_SUITES` (each reads files outside `scripts/`: the whole tree, `.github/workflows/browser-test.yml`), so required `typecheck` runs them on `merge_group`. The baseline matches the tree (client 1519, server 2617), and the pre-push test pins five commands. Nothing measurable should move beyond `typecheck`'s scripts step taking a second or two longer.
 
 Revert the list change if it pushes `typecheck` over its timeout; the baseline raise is a one-off for mocks that merged before the ratchet ever ran in CI, not a precedent.
+
+One-time raise, PM-approved Nov 12, mocks from #3623/#3624/#3652 merged before the ratchet ran.
