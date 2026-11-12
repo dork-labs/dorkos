@@ -73,22 +73,6 @@ vi.mock('@/layers/shared/model/TransportContext', () => ({
   useTransport: vi.fn(() => ({})),
 }));
 
-vi.mock('@/layers/shared/model/app-store', () => ({
-  useAppStore: (selector?: (s: Record<string, unknown>) => unknown) => {
-    const state: Record<string, unknown> = {
-      pendingRuntime: null,
-      setPendingRuntime: vi.fn(),
-      pendingAccount: null,
-      setPendingAccount: vi.fn(),
-      // A healthy cost and a 20%-full window are quiet by design; pin them so this
-      // suite still asserts what it is about — snapshot hydration on cold mount.
-      enableMessagePolling: false,
-      setEnableMessagePolling: vi.fn(),
-    };
-    return selector ? selector(state) : state;
-  },
-}));
-
 // Stub the heavy ContextMenu/Tooltip primitives so the REAL UsageStatusItem/
 // ContextItem render inline (we assert their snapshot-derived output).
 vi.mock('@/layers/shared/ui', async (importOriginal) => {

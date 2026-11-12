@@ -88,21 +88,6 @@ vi.mock('@/layers/shared/model/TransportContext', () => ({
   useTransport: vi.fn(() => ({})),
 }));
 
-vi.mock('@/layers/shared/model/app-store', () => ({
-  useAppStore: (selector?: (s: Record<string, unknown>) => unknown) => {
-    const state: Record<string, unknown> = {
-      selectedCwd: '/test/dir',
-      pendingRuntime: null,
-      setPendingRuntime: vi.fn(),
-      pendingAccount: null,
-      setPendingAccount: vi.fn(),
-      enableMessagePolling: false,
-      setEnableMessagePolling: vi.fn(),
-    };
-    return selector ? selector(state) : state;
-  },
-}));
-
 // The identity chip needs a router; it is not part of what this suite asserts.
 vi.mock('../ui/status/AgentIdentityChip', () => ({ AgentIdentityChip: () => null }));
 

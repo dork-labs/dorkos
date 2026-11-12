@@ -98,20 +98,6 @@ vi.mock('@tanstack/react-query', async (importOriginal) => {
   };
 });
 
-vi.mock('@/layers/shared/model/app-store', () => ({
-  useAppStore: (selector?: (s: Record<string, unknown>) => unknown) => {
-    const state: Record<string, unknown> = {
-      pendingRuntime: null,
-      setPendingRuntime: vi.fn(),
-      pendingAccount: null,
-      setPendingAccount: vi.fn(),
-      enableMessagePolling: false,
-      setEnableMessagePolling: vi.fn(),
-    };
-    return selector ? selector(state) : state;
-  },
-}));
-
 // Mock PermissionModeItem so we can drive its onChangeMode directly without
 // the dropdown internals. Render a button that selects 'auto'.
 // The identity chip needs a router; it is not part of the status line under test.
