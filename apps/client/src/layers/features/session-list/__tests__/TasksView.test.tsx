@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach, afterEach, beforeAll } from 'vite
 import { render, screen, fireEvent, cleanup } from '@testing-library/react';
 import type { TaskTemplate, TaskRun, Task } from '@dorkos/shared/types';
 import { SidebarProvider } from '@/layers/shared/ui';
+import { useAppStore } from '@/layers/shared/model';
 import { TasksView } from '../ui/TasksView';
 
 // All entities/tasks hooks mocked via barrel to avoid export conflicts
@@ -32,34 +33,9 @@ vi.mock('@/layers/features/tasks', async (importOriginal) => {
   };
 });
 
-// Mock app store — TasksView reads `setTasksAgentFilter` and `setTasksEditScheduleId`
-// from the store. Open intent now flows through the URL deep-link hook below.
-const mockSetTasksAgentFilter = vi.fn();
-const mockSetTasksEditScheduleId = vi.fn();
-vi.mock('@/layers/shared/model/app-store', () => ({
-  useAppStore: (selector?: (s: Record<string, unknown>) => unknown) => {
-    const state = {
-      setTasksAgentFilter: mockSetTasksAgentFilter,
-      setTasksEditScheduleId: mockSetTasksEditScheduleId,
-    };
-    return selector ? selector(state) : state;
-  },
-}));
-
-// Mock URL deep-link hook — TasksView now opens the dialog via
-// `useTasksDeepLink().open()` instead of `setTasksOpen(true)`.
-const mockOpenTasksDeepLink = vi.fn();
-vi.mock('@/layers/shared/model/use-dialog-deep-link', () => ({
-  useTasksDeepLink: () => ({
-    isOpen: false,
-    activeTab: null,
-    section: null,
-    open: mockOpenTasksDeepLink,
-    close: vi.fn(),
-    setTab: vi.fn(),
-    setSection: vi.fn(),
-  }),
-}));
+// The app store and the Tasks deep-link hook are the REAL ones. With no router
+// mounted the hook opens the dialog through the store's `tasksOpen`, so an open
+// is checked by that flag, and the agent filter by `tasksAgentFilter`.
 
 // Mock formatRelativeTime to return a predictable string
 vi.mock('@/layers/shared/lib/session-utils', () => ({
@@ -153,6 +129,7 @@ function makeRun(overrides: Partial<TaskRun> & { id: string; scheduleId: string 
 describe('TasksView', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    useAppStore.getState().setTasksOpen(false);
     mockSchedules.mockReturnValue({ data: [] });
     mockActiveRunCount.mockReturnValue({ data: 0 });
     mockRuns.mockReturnValue({ data: [] });
@@ -290,7 +267,20 @@ describe('TasksView', () => {
     render(<TasksView available agentId={null} />, { wrapper: Wrapper });
     const btn = screen.getByText(/Open schedules/);
     fireEvent.click(btn);
-    expect(mockOpenTasksDeepLink).toHaveBeenCalled();
+    expect(useAppStore.getState().tasksOpen).toBe(true);
+    // No agent in scope, so no filter is set.
+    expect(useAppStore.getState().tasksAgentFilter).toBeNull();
+  });
+
+  it('Open Schedules opens filtered to the agent in scope', () => {
+    useAppStore.setState({ tasksEditScheduleId: 's-old' });
+    render(<TasksView available agentId="/projects/alpha" />, { wrapper: Wrapper });
+    fireEvent.click(screen.getByText(/Open schedules/));
+    expect(useAppStore.getState()).toMatchObject({
+      tasksOpen: true,
+      tasksAgentFilter: '/projects/alpha',
+      tasksEditScheduleId: null,
+    });
   });
 
   it('renders both Running and Upcoming sections when applicable', () => {
@@ -365,7 +355,7 @@ describe('TasksView', () => {
     expect(mockOpenWithPreset).toHaveBeenCalledWith(
       expect.objectContaining({ id: 'health-check' })
     );
-    expect(mockOpenTasksDeepLink).toHaveBeenCalled();
+    expect(useAppStore.getState().tasksOpen).toBe(true);
   });
 
   it('does not show preset cards when schedules exist', () => {
