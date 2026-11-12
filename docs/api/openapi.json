@@ -14185,6 +14185,9 @@
                     "both",
                     null
                   ]
+                },
+                "opens": {
+                  "type": "boolean"
                 }
               },
               "required": [
@@ -14361,6 +14364,13 @@
                     "both"
                   ]
                 }
+              },
+              "appOpens": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 20
               }
             },
             "required": [
@@ -20983,6 +20993,13 @@
                               "both"
                             ]
                           }
+                        },
+                        "appOpens": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          },
+                          "maxItems": 20
                         }
                       },
                       "required": [
@@ -21151,6 +21168,13 @@
                           "both"
                         ]
                       }
+                    },
+                    "appOpens": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      },
+                      "maxItems": 20
                     }
                   },
                   "required": [
