@@ -153,10 +153,7 @@ const mockMeshPaths = vi.fn<() => string[]>(() => [
   '/projects/alpha',
   '/projects/beta',
 ]);
-const mockSetGlobalPaletteOpen = vi.fn();
 const mockUpdateSidebar = vi.fn<(updater: (prev: unknown) => unknown) => void>();
-const mockSetRightPanelOpen = vi.fn();
-const mockSetActiveRightPanelTab = vi.fn();
 // `id` is required on a real `AgentManifest` and is what the agent's face is
 // hashed from, so a fixture without one is not a manifest the app could ever
 // receive — and leaving it out crashes the hash rather than failing an
@@ -164,7 +161,6 @@ const mockSetActiveRightPanelTab = vi.fn();
 const mockResolvedAgents = vi.fn<
   () => Record<string, { id: string; name: string; displayName?: string } | null>
 >(() => ({}));
-let mockSelectedCwd: string | null = null;
 
 function makePrefs(overrides: Partial<SidebarPrefs> = {}): SidebarPrefs {
   return {
@@ -227,13 +223,6 @@ vi.mock('@/layers/shared/model', async (importOriginal) => {
     // app-level EventStreamProvider. Nothing here is about that stream, so it
     // is stubbed rather than dragging the provider into every sidebar test.
     useEventSubscription: () => {},
-    useAppStore: (selector: (s: Record<string, unknown>) => unknown) =>
-      selector({
-        setGlobalPaletteOpen: mockSetGlobalPaletteOpen,
-        selectedCwd: mockSelectedCwd,
-        setRightPanelOpen: mockSetRightPanelOpen,
-        setActiveRightPanelTab: mockSetActiveRightPanelTab,
-      }),
   };
 });
 
@@ -669,7 +658,6 @@ describe('DashboardSidebar', () => {
     mockAttentionMap.mockImplementation((paths: string[]) =>
       Object.fromEntries(paths.map((p) => [p, 'active']))
     );
-    mockSelectedCwd = null;
     mockPathname = '/';
     mockLocation = { pathname: '/', search: {} };
     mockUnmappedPaths.mockReset();
