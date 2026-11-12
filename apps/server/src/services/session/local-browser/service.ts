@@ -441,8 +441,7 @@ export class LocalBrowserService {
         this.ownedContext = undefined;
         this.browser = undefined;
         this.embeddedClose = undefined;
-        this.embeddedAttachment = undefined;
-        this.detachedState = undefined;
+        this.embeddedAttachment = this.detachedState = undefined;
         if (!closed) this.connectionId = this.sessionId = this.mode = null;
         if (!closed) this.status = 'disconnected';
         this.tabs.clear();
