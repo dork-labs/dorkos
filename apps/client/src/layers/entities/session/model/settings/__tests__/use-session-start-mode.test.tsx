@@ -19,31 +19,20 @@
  * `apps/server/src/services/session/origin/__tests__/configured-stop-on-screen.test.ts`.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { renderHook, waitFor } from '@testing-library/react';
+import { act, renderHook, waitFor } from '@testing-library/react';
 import { onlineManager } from '@tanstack/react-query';
 import React from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { ExecutionDefaults, SessionSettings } from '@dorkos/shared/schemas';
 import type { RuntimeCapabilities } from '@dorkos/shared/agent-runtime';
-import { TransportProvider } from '@/layers/shared/model';
+import { TransportProvider, useAppStore } from '@/layers/shared/model';
 import { createMockSession, createMockTransport } from '@dorkos/test-utils';
 import { useSessionStatus } from '../use-session-status';
 
-/**
- * The working directory, mutable so one case can let it LAND mid-render. Every
- * session read is scoped by it, so `null` is the app's boot state rather than
- * an absence — see the pre-directory case below.
- */
-const appState: { selectedCwd: string | null } = { selectedCwd: '/test/cwd' };
-
-vi.mock('@/layers/shared/model', async (importOriginal) => {
-  const original = await importOriginal<typeof import('@/layers/shared/model')>();
-  return {
-    ...original,
-    useAppStore: (selector?: (s: Record<string, unknown>) => unknown) =>
-      selector ? selector(appState) : appState,
-  };
-});
+// The working directory is the REAL app store's `selectedCwd`. Every session
+// read is scoped by it, so `null` is the app's boot state rather than an
+// absence — see the pre-directory case below, which lets it LAND through the
+// same setter the directory picker calls.
 
 const SESSION_ID = '11111111-1111-4111-8111-111111111111';
 
@@ -166,7 +155,7 @@ function createWrapper(transport: ReturnType<typeof createMockTransport>) {
 describe('the trust dial on a conversation nobody has written to yet', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    appState.selectedCwd = '/test/cwd';
+    useAppStore.setState({ selectedCwd: '/test/cwd' });
   });
 
   afterEach(() => {
@@ -412,7 +401,7 @@ describe('the trust dial on a conversation nobody has written to yet', () => {
     // confident "Default" for the whole of boot and then flipped to Full
     // autonomy, which is the reported defect compressed into the pre-directory
     // round trip.
-    appState.selectedCwd = null;
+    useAppStore.setState({ selectedCwd: null });
     const transport = transportWith({ defaults: executionDefaults('autonomy') });
 
     const { result, rerender } = renderHook(
@@ -427,9 +416,9 @@ describe('the trust dial on a conversation nobody has written to yet', () => {
     rerender();
     expect(result.current.permissionModeKnown).toBe(false);
 
-    // The directory lands.
-    appState.selectedCwd = '/test/cwd';
-    rerender();
+    // The directory lands. No manual rerender: the hook has to be subscribed
+    // to the store to see it.
+    act(() => useAppStore.getState().setSelectedCwd('/test/cwd'));
 
     await waitFor(() => expect(result.current.permissionModeKnown).toBe(true));
     // Straight to the real stop; there was never a settled 'default' frame,
