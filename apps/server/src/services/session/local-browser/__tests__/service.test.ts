@@ -973,6 +973,37 @@ describe('bounded browser lifecycle ownership', () => {
     expect(backend.launch).toHaveBeenCalledTimes(2);
   });
 
+  // DOR-4181: once a person closes the window, Forget and Delete work without a Disconnect,
+  // but only after the close settles, so Chromium is done with the profile first.
+  it('releases a profile the person closed its window on, once that close settles', async () => {
+    const { service, context, contextEvents } = await lifecycleFixture();
+    const profiles = createLocalBrowserProfileStore(createTestDb(), () => Buffer.alloc(32, 1));
+    const { id } = profiles.create('Example work');
+    service.useProfileAccess(
+      async () => undefined,
+      (candidate) => candidate === id
+    );
+    await service.open({ mode: 'new-window', profileId: id });
+    const closing = deferred<void>();
+    vi.mocked(context.close).mockReturnValueOnce(closing.promise);
+    contextEvents.emit('close');
+    await Promise.resolve();
+    expect((await service.state()).status).toBe('closed');
+    // Chromium may still be flushing cookies until the close request settles.
+    await expect(service.profileRemoval.delete(id, profiles)).rejects.toMatchObject({
+      code: 'profile_busy',
+    });
+    closing.resolve();
+    await vi.waitFor(async () => {
+      await expect(service.profileRemoval.delete(id, profiles)).resolves.toBeUndefined();
+    });
+    expect(profiles.get(id)).toBeUndefined();
+    // The panel still says the browser closed, and offers to reconnect.
+    const after = await service.state();
+    expect(after.status).toBe('closed');
+    expect(after.mode).toBe('new-window');
+  });
+
   it('retains a failed owned close despite a later protocol-close event', async () => {
     const { service, context, contextEvents, backend } = await lifecycleFixture();
     await service.open({ mode: 'new-window' });

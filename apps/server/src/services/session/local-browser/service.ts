@@ -413,7 +413,11 @@ export class LocalBrowserService {
     return this.closeConnection(true);
   }
 
-  private async closeConnection(abortSetup: boolean): Promise<LocalBrowserState> {
+  /**
+   * Close the connection and release what it holds. `closed` is the person closing
+   * the window: the same release, but the panel keeps saying it closed.
+   */
+  private async closeConnection(abortSetup: boolean, closed = false): Promise<LocalBrowserState> {
     if (abortSetup) this.openingAbort?.abort();
     if (!this.closing) {
       this.metadata.clear();
@@ -438,8 +442,8 @@ export class LocalBrowserService {
         this.ownedContext = undefined;
         this.browser = undefined;
         this.embeddedClose = undefined;
-        this.connectionId = this.sessionId = this.mode = null;
-        this.status = 'disconnected';
+        if (!closed) this.connectionId = this.sessionId = this.mode = null;
+        if (!closed) this.status = 'disconnected';
         this.tabs.clear();
         this.selectedTabId = null;
       });
@@ -514,6 +518,9 @@ export class LocalBrowserService {
     this.selectedTabId = null;
     this.invalidate();
     this.handover.windowClosed();
+    // Release the profile as Disconnect does, once the close settles (DOR-4181). Its own errors
+    // keep it held, as a failed Disconnect does.
+    void this.closeConnection(false, true).catch(() => undefined);
   }
   private invalidate(): void {
     this.revision += 1;
