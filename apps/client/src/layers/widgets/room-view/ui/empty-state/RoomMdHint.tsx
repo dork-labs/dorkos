@@ -20,7 +20,7 @@ const ROOM_MD = 'ROOM.md';
  *
  * @param documents - The room's canvas table.
  */
-export function pinnedRoomMd(
+function pinnedRoomMd(
   documents: readonly CanvasDocument[] | undefined
 ): CanvasDocument | undefined {
   return documents?.find(

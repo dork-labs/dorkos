@@ -18,7 +18,7 @@ import { threadRootIdOf, useRoomEntries } from '@/layers/entities/room';
  * Two: enough to see where the conversation is, few enough that a page of
  * busy threads still reads as a list of threads rather than a wall of replies.
  */
-export const THREAD_CARD_LATEST_REPLIES = 2;
+const THREAD_CARD_LATEST_REPLIES = 2;
 
 /** What a card has of its thread. */
 export interface ThreadCardEntries {

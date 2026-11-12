@@ -25,7 +25,7 @@ export interface NoAgentHintProps {
  *
  * @param room - The room on screen.
  */
-export function showsNoAgentHint(room: RoomWithRoster): boolean {
+function showsNoAgentHint(room: RoomWithRoster): boolean {
   if (room.kind !== 'channel') return false;
   if (room.bridge != null) return false;
   if (room.archived) return false;

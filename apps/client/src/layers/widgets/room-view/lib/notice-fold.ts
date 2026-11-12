@@ -20,7 +20,7 @@ import type { RoomEntry } from '@/layers/entities/room';
 import { isWarmNotice } from '@/layers/features/conversation';
 
 /** How many notices in a row it takes before the earlier ones fold. */
-export const NOTICE_FOLD_MIN_RUN = 3;
+const NOTICE_FOLD_MIN_RUN = 3;
 
 /** One folded run, as the button above it describes it. */
 export interface NoticeFold {

@@ -50,7 +50,7 @@ export const PENDING_SLOW_MS = 15_000;
  * try again when there was no need). A browser running more than five minutes
  * fast simply falls back to re-sending, which is where this started.
  */
-export const PENDING_ECHO_WINDOW_MS = 5 * 60_000;
+const PENDING_ECHO_WINDOW_MS = 5 * 60_000;
 
 /** Where a message that has been sent has got to. */
 export type PendingPostStatus = 'sending' | 'failed';

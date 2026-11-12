@@ -10,7 +10,7 @@
  */
 export { roomKeys } from './api/query-keys';
 export { useRoomSessions } from './api/use-room-sessions';
-export { useRooms, useRoomsByKind } from './model/use-rooms';
+export { useRooms } from './model/use-rooms';
 export { routeShowsRoom, useRouteRoom } from './model/use-route-room';
 export type { RouteRoom } from './model/use-route-room';
 export {
@@ -33,7 +33,7 @@ export type { TeamRoomState } from './model/use-team-room';
 export { useThreads } from './model/use-threads';
 export type { RoomsByKind } from './model/use-rooms';
 export { useRoom, useRoomEntries, useLoadedRoomEntries } from './model/use-room';
-export { useRoomStream, mergeRoomEntry } from './model/use-room-stream';
+export { useRoomStream } from './model/use-room-stream';
 export type { RoomStreamState } from './model/use-room-stream';
 export {
   useRoomFinished,
@@ -44,7 +44,6 @@ export {
   useRoomSilentFinish,
   useRoomPresenceEverywhere,
   useRoomPresenceStore,
-  PRESENCE_TICK_MS,
   PRESENCE_TTL_MS,
   SILENT_FINISH_DISPLAY_MS,
 } from './model/live/use-room-presence';
@@ -57,15 +56,9 @@ export type {
   RoomSilentFinish,
 } from './model/live/use-room-presence';
 export {
-  isFollowSignal,
   useFollowedMember,
   useFollowedView,
-  useIsFollowed,
   useRoomFollowStore,
-  ROOM_FOLLOW_PUBLISH_MS,
-  ROOM_FOLLOW_REFRESH_MS,
-  ROOM_FOLLOW_SWEEP_MS,
-  ROOM_FOLLOW_TTL_MS,
 } from './model/live/use-room-follow';
 export type { FollowClaim, FollowIntent, FollowPosition } from './model/live/use-room-follow';
 export { useForgetRoomFollowOnLeave, useRoomFollowClaim } from './model/live/use-room-follow-claim';
@@ -89,29 +82,14 @@ export {
   usePendingPosts,
   usePendingPostStore,
   newPendingId,
-  findLandedEcho,
   PENDING_SLOW_MS,
-  PENDING_ECHO_WINDOW_MS,
 } from './model/pending-posts';
 export type { PendingPost, PendingPostFailure, PendingPostStatus } from './model/pending-posts';
-export {
-  discardPendingPost,
-  failPendingPost,
-  retireFailedTwin,
-  retryPendingPost,
-  sendFailureOf,
-} from './model/send/send-failure';
+export { discardPendingPost, retireFailedTwin, retryPendingPost } from './model/send/send-failure';
 export { useReplyInThread } from './model/use-reply-in-thread';
 export { useToggleReaction } from './model/use-toggle-reaction';
 export type { ToggleReactionInput } from './model/use-toggle-reaction';
-export {
-  REACTION_ROW_LIMIT,
-  applyReactionToggle,
-  hasReacted,
-  mergeRoomReactions,
-  reactionSummary,
-  splitReactionRow,
-} from './lib/reactions';
+export { hasReacted, reactionSummary, splitReactionRow } from './lib/reactions';
 export { useRoomDraft, useRoomDraftStore, threadDraftKey } from './model/room-drafts';
 export { useRoomOpenThread, useRoomOpenThreadStore } from './model/open-thread';
 export type { OpenThread } from './model/open-thread';

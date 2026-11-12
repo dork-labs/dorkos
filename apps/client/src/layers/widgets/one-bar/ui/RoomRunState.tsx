@@ -29,7 +29,7 @@ interface RoomWorkingChipProps {
  * make the row inch sideways as the count changed: `tabular-nums` for
  * equal-width digits, and a `2ch` floor so one digit reserves room for two.
  */
-export function RoomWorkingChip({ count, roomName }: RoomWorkingChipProps) {
+function RoomWorkingChip({ count, roomName }: RoomWorkingChipProps) {
   const label = count === 1 ? '1 agent working' : `${count} agents working`;
 
   return (
@@ -100,7 +100,7 @@ interface RoomHaltButtonProps {
  *   room can still be stopped, and the bar keeps the width for the room's name
  *   and the controls that are always there.
  */
-export function RoomHaltButton({ roomId, roomName }: RoomHaltButtonProps) {
+function RoomHaltButton({ roomId, roomName }: RoomHaltButtonProps) {
   const halt = useHaltRoom();
 
   return (
