@@ -15,23 +15,19 @@ import { z } from 'zod';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createMockTransport } from '@dorkos/test-utils';
 import { DORKBOT_ONBOARDING_LINES } from '@dorkos/shared/dorkbot-templates';
-import { mergeDialogSearch, TransportProvider } from '@/layers/shared/model';
+import {
+  mergeDialogSearch,
+  TransportProvider,
+  useAgentCreationStore,
+  useAppStore,
+} from '@/layers/shared/model';
 import { resetLegacyPromoImportForTests } from '@/layers/entities/config';
 
-// Only the two stores are stubbed. `useSettingsDeepLink` stays real, because the
-// thing under test is which Settings tab the card actually lands on — a stub
-// would only prove the card called something (DOR-484).
-const mockAgentCreationOpen = vi.fn();
-const mockRequestTour = vi.fn();
-vi.mock('@/layers/shared/model', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('@/layers/shared/model')>();
-  return {
-    ...actual,
-    useAgentCreationStore: { getState: () => ({ open: mockAgentCreationOpen }) },
-    useAppStore: (selector: (s: Record<string, unknown>) => unknown) =>
-      selector({ requestTour: mockRequestTour }),
-  };
-});
+// Nothing in `shared/model` is stubbed. `useSettingsDeepLink` is real because
+// the thing under test is which Settings tab the card actually lands on — a
+// stub would only prove the card called something (DOR-484). The app store and
+// the agent-creation store are real for the same reason: a tour is checked by
+// the `requestedTour` the tour host reads, creation by the dialog's `isOpen`.
 
 const mockStartSession = vi.fn();
 // Everything else stays real: `configKeys` is the one `/config` cache key, and a
@@ -214,11 +210,12 @@ describe('ProgressCard', () => {
   });
 
   it('"Create an agent" opens the agent creation dialog and does not navigate', async () => {
+    useAgentCreationStore.getState().close();
     const harness = await renderCard();
 
     fireEvent.click(screen.getByText('Create an agent'));
 
-    expect(mockAgentCreationOpen).toHaveBeenCalledWith('new');
+    expect(useAgentCreationStore.getState()).toMatchObject({ isOpen: true, initialMode: 'new' });
     expect(harness.router.state.location.pathname).toBe('/');
   });
 
@@ -232,11 +229,12 @@ describe('ProgressCard', () => {
   });
 
   it('"Show me around" requests the general tour', async () => {
+    useAppStore.getState().clearRequestedTour();
     await renderCard();
 
     fireEvent.click(screen.getByText('Show me around'));
 
-    expect(mockRequestTour).toHaveBeenCalledWith('general');
+    expect(useAppStore.getState().requestedTour).toBe('general');
   });
 
   it('"Connect more runtimes" opens Settings on the Runtimes tab', async () => {
