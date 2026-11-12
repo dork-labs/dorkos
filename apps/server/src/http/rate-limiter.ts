@@ -134,7 +134,7 @@ export function createRateLimiter(policy: RateLimitPolicy): RateLimiter {
 }
 
 /** Which headers a limiter answers with. */
-export type RateLimitHeaders = 'standard' | 'legacy';
+export type RateLimitHeaders = 'standard' | 'legacy' | 'none';
 
 /** Seconds until `resetAt`, never negative. */
 function secondsUntil(resetAt: number, now: number): number {
@@ -157,6 +157,7 @@ export function rateLimitHeaders(
   style: RateLimitHeaders,
   now = Date.now()
 ): Record<string, string> {
+  if (style === 'none') return {};
   const reset = secondsUntil(decision.resetAt, now);
   const headers: Record<string, string> =
     style === 'standard'
