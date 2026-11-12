@@ -41,7 +41,7 @@ const DEVICE_ID_KEY = randomBytes(32);
  *
  * @param sessionId - The Better Auth session id.
  */
-export function deviceIdOf(sessionId: string): string {
+function deviceIdOf(sessionId: string): string {
   return createHmac('sha256', DEVICE_ID_KEY).update(sessionId).digest('base64url').slice(0, 22);
 }
 

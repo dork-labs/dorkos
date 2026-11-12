@@ -25,7 +25,7 @@
 import { onSessionEnded } from './live-connections.js';
 
 /** Most chats remembered per sign-in; past it the oldest is forgotten. */
-export const MAX_CHATS_PER_SIGN_IN = 256;
+const MAX_CHATS_PER_SIGN_IN = 256;
 
 /** Most messages remembered per chat per sign-in; past it the oldest is forgotten. */
 const MAX_MESSAGES_PER_CHAT = 64;

@@ -228,7 +228,7 @@ export interface CapabilityPreflightResult {
  * that stands in for an approval card (spec `trusted-by-default-flip` §5.6).
  * `composeRegistry` refuses any other, so a new one is a reviewed edit here.
  */
-export const CANCEL_WINDOW_CAPABILITY_IDS: ReadonlySet<string> = new Set([
+const CANCEL_WINDOW_CAPABILITY_IDS: ReadonlySet<string> = new Set([
   'connectors.execute_destructive',
 ]);
 

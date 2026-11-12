@@ -47,7 +47,7 @@
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
 
 /** The execution defaults this module gates, in the order a card lists them. */
-export const AGENT_EXECUTION_FIELDS = ['runtime', 'model', 'effort'] as const;
+const AGENT_EXECUTION_FIELDS = ['runtime', 'model', 'effort'] as const;
 
 /** One of {@link AGENT_EXECUTION_FIELDS}. */
 export type AgentExecutionField = (typeof AGENT_EXECUTION_FIELDS)[number];

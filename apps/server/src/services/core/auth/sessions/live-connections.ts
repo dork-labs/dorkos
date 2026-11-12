@@ -49,7 +49,7 @@ import { logger } from '../../../../lib/logger.js';
 export const MAX_LIVE_PER_SESSION = 128;
 
 /** How often registered sessions are checked against the store. */
-export const LIVE_CONNECTION_SWEEP_MS = 30_000;
+const LIVE_CONNECTION_SWEEP_MS = 30_000;
 
 /** How long an ended session is remembered: Better Auth's cookie cache age. */
 export const ENDED_SESSION_MEMORY_MS = 5 * 60 * 1000;

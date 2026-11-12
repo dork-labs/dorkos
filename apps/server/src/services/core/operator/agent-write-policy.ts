@@ -229,7 +229,7 @@ export const AGENT_WRITE_POLICY = {
  * Kept out of {@link AGENT_WRITE_POLICY} because that table mirrors the wire
  * exactly and its drift guard asserts it.
  */
-export const REFUSED_OFF_WIRE_AGENT_PATHS: readonly string[] = [
+const REFUSED_OFF_WIRE_AGENT_PATHS: readonly string[] = [
   'permissions',
   'enabledToolGroups',
   'tierCeiling',

@@ -155,7 +155,7 @@ export function deepMerge(
  * @param prefix - Internal accumulator for the current path; omit at call sites.
  * @returns Every leaf key as a dot-path string.
  */
-export function flattenConfigKeys(obj: Record<string, unknown>, prefix = ''): string[] {
+function flattenConfigKeys(obj: Record<string, unknown>, prefix = ''): string[] {
   const keys: string[] = [];
 
   for (const [key, value] of Object.entries(obj)) {

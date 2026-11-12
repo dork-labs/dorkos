@@ -71,10 +71,10 @@ export interface LevelReachDeps {
 }
 
 /** How many chats that rose the line names before "+N more" (PM, 2026-10-20). */
-export const NAMED_RISE_LIMIT = 10;
+const NAMED_RISE_LIMIT = 10;
 
 /** The longest a chat's title runs in the line before it is cut. */
-export const TITLE_MAX = 60;
+const TITLE_MAX = 60;
 
 /** What a level change adds to its history entry. */
 export interface LevelReach {
@@ -145,7 +145,7 @@ function looser(declared: DeclaredModes, a: string, b: string): boolean {
  * @param fell - How many chats' next turn now runs lower.
  * @param heldByHand - How many chats set by hand a raise leaves lower.
  */
-export function levelReachSentence(
+function levelReachSentence(
   rose: readonly string[],
   fell: number,
   heldByHand: number

@@ -98,7 +98,7 @@ import type { PermissionAgentRef } from './permission-service.js';
  * The launch origins whose chats may be raised; see the module doc. `chat-message`
  * and `room` are further read by {@link ExistingChatsRaiseDeps.launchMarked}.
  */
-export const RAISED_LAUNCH_ORIGINS: ReadonlySet<string> = new Set([
+const RAISED_LAUNCH_ORIGINS: ReadonlySet<string> = new Set([
   'interactive',
   'agent-launch',
   'heartbeat',
@@ -112,7 +112,7 @@ export const RAISED_LAUNCH_ORIGINS: ReadonlySet<string> = new Set([
  * Agents whose chats stay as they are (the PM's standing rule, 2026-10-19), by
  * folder name or by name.
  */
-export const KEPT_AS_THEY_ARE: ReadonlySet<string> = new Set(['dorkos-cloud', 'dorkos-marketing']);
+const KEPT_AS_THEY_ARE: ReadonlySet<string> = new Set(['dorkos-cloud', 'dorkos-marketing']);
 
 /**
  * Whether a launch origin is one of our own (or unknown), whose chat may follow

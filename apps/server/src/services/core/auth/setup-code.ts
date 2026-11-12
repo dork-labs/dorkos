@@ -38,7 +38,7 @@ import { logger } from '../../../lib/logger.js';
 export const SETUP_CODE_HEADER = 'x-dorkos-setup-code';
 
 /** File the current code is written to, inside the DorkOS data folder. */
-export const SETUP_CODE_FILE_NAME = 'setup-code';
+const SETUP_CODE_FILE_NAME = 'setup-code';
 
 /** How long a code is good for. */
 export const SETUP_CODE_TTL_MS = 60 * 60 * 1000;

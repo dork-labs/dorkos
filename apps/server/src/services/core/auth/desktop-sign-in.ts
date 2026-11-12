@@ -36,7 +36,7 @@ import { z } from 'zod';
 import { env } from '../../../env.js';
 
 /** How long a minted code may wait to be redeemed. */
-export const DESKTOP_SIGN_IN_TTL_MS = 60_000;
+const DESKTOP_SIGN_IN_TTL_MS = 60_000;
 
 /** How many wrong codes the waiting code survives. */
 export const DESKTOP_SIGN_IN_MAX_MISSES = 5;

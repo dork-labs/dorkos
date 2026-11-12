@@ -39,7 +39,7 @@ import {
 } from './permission-history.js';
 
 /** The writer an out-of-band change is recorded under. */
-export const OUTSIDE_WRITER: PermissionWriter = {
+const OUTSIDE_WRITER: PermissionWriter = {
   attribution: 'outside',
   actorType: 'system',
   actorLabel: 'Changed outside DorkOS',
@@ -124,7 +124,7 @@ function diff(
 }
 
 /** What that event says, after the agent's name. */
-export const UNCHECKABLE_SUMMARY =
+const UNCHECKABLE_SUMMARY =
   "DorkOS can't check this agent's settings for outside changes right now";
 
 /** Records permission changes made to an agent's file outside DorkOS. */

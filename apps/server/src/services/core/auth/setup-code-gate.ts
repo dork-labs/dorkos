@@ -13,13 +13,13 @@ import type { RegistrationCaller } from './registration-policy.js';
 import { checkSetupCode, currentSetupCodeAttempt, type SetupCodeRefusal } from './setup-code.js';
 
 /** Refusal code when an owner-less sign-up from another device needs the setup code. */
-export const SETUP_CODE_REQUIRED = 'SETUP_CODE_REQUIRED';
+const SETUP_CODE_REQUIRED = 'SETUP_CODE_REQUIRED';
 
 /** Refusal code when the setup code was wrong or has expired. */
-export const SETUP_CODE_INVALID = 'SETUP_CODE_INVALID';
+const SETUP_CODE_INVALID = 'SETUP_CODE_INVALID';
 
 /** Refusal code when this address has tried too many wrong setup codes. */
-export const SETUP_CODE_TOO_MANY_ATTEMPTS = 'SETUP_CODE_TOO_MANY_ATTEMPTS';
+const SETUP_CODE_TOO_MANY_ATTEMPTS = 'SETUP_CODE_TOO_MANY_ATTEMPTS';
 
 const REFUSALS: Record<SetupCodeRefusal, { code: string; message: string }> = {
   required: {

@@ -65,7 +65,7 @@
  */
 import { isAlwaysAskingExtensionTool } from './extension-contribution.js';
 import { fullPersonSettingRefusal } from './person-setting-refusal.js';
-export { fullPersonSettingRefusal, FULL_PERSON_SETTING_REFUSAL } from './person-setting-refusal.js';
+export { fullPersonSettingRefusal } from './person-setting-refusal.js';
 import type { CapabilitySource } from '@dorkos/shared/capabilities';
 import fs from 'node:fs/promises';
 import path from 'node:path';
@@ -325,7 +325,7 @@ const PERMISSION_RAISING_AREAS: ReadonlySet<PermissionAreaId> = new Set([
  * package (code that runs), a new agent, an MCP server switched on. The direct
  * routes for each already refuse Wi-Fi; their cards do too (DOR-3037).
  */
-export const POWER_GRANTING_ACTION_IDS: ReadonlySet<string> = new Set([
+const POWER_GRANTING_ACTION_IDS: ReadonlySet<string> = new Set([
   'marketplace.install',
   'create_agent',
   'mcp.enable',

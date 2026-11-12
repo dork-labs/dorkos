@@ -188,7 +188,7 @@ export function checkExtensionContribution(contribution: unknown): Checked<Exten
  *
  * @param context - The handler context the gate produced.
  */
-export function narrowExtensionContext(context: CapabilityHandlerContext): ExtensionToolContext {
+function narrowExtensionContext(context: CapabilityHandlerContext): ExtensionToolContext {
   return Object.freeze({
     ...(context.identity
       ? {

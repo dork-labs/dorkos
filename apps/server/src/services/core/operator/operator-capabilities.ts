@@ -66,7 +66,7 @@ import { CONFIG_PATCH_PERSON_SETTINGS } from './operator-only-tightening.js';
  *
  * @param patch - The patch the call carries.
  */
-export function describePatchForCard(patch: unknown): string {
+function describePatchForCard(patch: unknown): string {
   const parts: string[] = [];
   const walk = (value: unknown, prefix: string): void => {
     if (value !== null && typeof value === 'object' && !Array.isArray(value)) {

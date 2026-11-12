@@ -67,7 +67,7 @@ export function sessionMaxSeconds(route: SessionRoute): number | null {
 }
 
 /** Refusal code when a session would be made on a route that never makes one. */
-export const SESSION_ROUTE_REFUSED = 'SESSION_ROUTE_REFUSED';
+const SESSION_ROUTE_REFUSED = 'SESSION_ROUTE_REFUSED';
 
 /**
  * The session route for a classifier route, or `null` for the relay, which

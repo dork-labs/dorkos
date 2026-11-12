@@ -83,10 +83,10 @@ declare module '../capabilities/capability-definition.js' {
 }
 
 /** The capability id an agent asks to change a permission with. */
-export const CHANGE_PERMISSION_ID = 'permissions.change';
+const CHANGE_PERMISSION_ID = 'permissions.change';
 
 /** The request tool's own capability id, which it may never be asked to run. */
-export const REQUEST_ACCESS_ID = 'permissions.request_access';
+const REQUEST_ACCESS_ID = 'permissions.request_access';
 
 /**
  * The composed registry, back-written onto the deps bag after composition

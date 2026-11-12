@@ -608,7 +608,7 @@ function permissionKeyOf(change: PermissionChange): string {
 }
 
 /** How many recent permission events the "why?" lines look through. */
-export const LAST_CHANGE_DEPTH = 200;
+const LAST_CHANGE_DEPTH = 200;
 
 /**
  * The most recent change to every setting in the recent history, keyed by
