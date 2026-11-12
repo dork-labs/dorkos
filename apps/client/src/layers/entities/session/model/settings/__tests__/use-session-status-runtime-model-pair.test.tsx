@@ -18,17 +18,6 @@ import { createMockSession, createMockTransport } from '@dorkos/test-utils';
 import { useSessionStatus } from '../use-session-status';
 import { sessionKeys } from '../../../api/query-keys';
 
-vi.mock('@/layers/shared/model', async (importOriginal) => {
-  const original = await importOriginal<typeof import('@/layers/shared/model')>();
-  return {
-    ...original,
-    useAppStore: (selector?: (s: Record<string, unknown>) => unknown) => {
-      const state = { selectedCwd: '/test/cwd', pendingAccount: null };
-      return selector ? selector(state) : state;
-    },
-  };
-});
-
 const SESSION_ID = '22222222-2222-4222-8222-222222222712';
 
 const CODEX_MODELS = [

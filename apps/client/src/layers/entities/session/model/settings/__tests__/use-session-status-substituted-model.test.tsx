@@ -17,17 +17,6 @@ import {
   DEFAULT_SESSION_STREAM_STATE,
 } from '../../stream/session-stream-store';
 
-vi.mock('@/layers/shared/model', async (importOriginal) => {
-  const original = await importOriginal<typeof import('@/layers/shared/model')>();
-  return {
-    ...original,
-    useAppStore: (selector?: (s: Record<string, unknown>) => unknown) => {
-      const state = { selectedCwd: '/test/cwd', pendingAccount: null };
-      return selector ? selector(state) : state;
-    },
-  };
-});
-
 const SESSION_ID = '11111111-1111-4111-8111-111111111111';
 
 function wrapper(transport: ReturnType<typeof createMockTransport>) {
