@@ -34,6 +34,14 @@ describe('plainChromiumArgs', () => {
     expect(args.some((arg) => /remote-debugging|automation|headless/.test(arg))).toBe(false);
   });
 
+  // DOR-4178, Security: the person's window reports webdriver=false only because nothing drives
+  // it, so both ways to drive Chrome stay on the list every plain launch is checked against.
+  it('keeps both debugging channels on the forbidden list', () => {
+    expect(FORBIDDEN_PLAIN_FLAGS).toEqual(
+      expect.arrayContaining(['--remote-debugging-pipe', '--remote-debugging-port'])
+    );
+  });
+
   it('never touches the macOS Keychain and reads the same cookies as the agent window', () => {
     expect(args).toContain('--use-mock-keychain');
     expect(args).toContain('--password-store=basic');

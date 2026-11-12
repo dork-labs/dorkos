@@ -35,7 +35,7 @@ function handover(launchOrigin: string | null) {
   const state: LocalBrowserState = {
     connectionId: 'c1',
     sessionId: 'chat-1',
-    mode: 'new-window',
+    mode: 'embedded',
     status: 'connected',
     paused: false,
     tabs: [{ id: 't1', url: 'https://accounts.example.com/', title: 'Sign in' }],
@@ -52,6 +52,7 @@ function handover(launchOrigin: string | null) {
     selectTab: vi.fn(async () => state),
     navigate: vi.fn(async () => state),
     pause: vi.fn(async () => state),
+    handToPerson: vi.fn(async () => state),
     resume: vi.fn(async () => state),
     disconnect: vi.fn(async () => state),
   };
@@ -65,7 +66,7 @@ describe('liveOutsideTurnCheck', () => {
   it('refuses a handoff in a chat an outside agent started, before anything pauses', async () => {
     const { subject, browser } = handover('outside-sender');
     await expect(subject.ask('chat-1', 'password')).rejects.toMatchObject({ code: 'outside_turn' });
-    expect(browser.pause).not.toHaveBeenCalled();
+    expect(browser.handToPerson).not.toHaveBeenCalled();
     expect(browser.selectTab).not.toHaveBeenCalled();
   });
 
@@ -87,7 +88,7 @@ describe('liveOutsideTurnCheck', () => {
     await expect(subject.ask('chat-1', 'wall')).resolves.toMatchObject({
       site: 'accounts.example.com',
     });
-    expect(browser.pause).toHaveBeenCalledOnce();
+    expect(browser.handToPerson).toHaveBeenCalledOnce();
   });
 
   it('treats an unreadable launch origin as unknown, not as a stranger', async () => {

@@ -57,9 +57,9 @@ function registerHandoverOpenApi(registry: OpenAPIRegistry): void {
     description:
       authority +
       inPerson +
-      'Opens DorkOS’s Chromium on a profile with no debugging channel, so no agent can see or use it. ' +
-      'Takes a page the person typed, or a handoff, which opens the agent page’s own origin ' +
-      'and is refused if that page has left the site the handoff names. ' +
+      'Opens installed Chrome, or managed Chromium, without a debugging channel on the chosen profile. ' +
+      'An embedded handoff keeps its native view detached; a separate window uses the handoff’s saved page. ' +
+      'Otherwise takes a page the person typed. ' +
       'Accepts https, or http on this computer only. Password saving is off in that window.',
     request: {
       body: {

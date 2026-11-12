@@ -6,6 +6,7 @@ import { WebSocketServer, WebSocket } from 'ws';
 import type { ConnectOverCDPTransport } from 'playwright-core';
 import { isCockpitSender as isAppSender, isWebLink } from '../window-manager';
 import { forgetGuestSignIns } from './forget-sign-ins';
+import { chromeIdentity } from './browser-identity';
 import { pageTransport } from './page-transport';
 
 export const LOCAL_BROWSER_BOUNDS_CHANNEL = 'local-browser:set-bounds';
@@ -19,6 +20,7 @@ export interface BrowserBounds {
 }
 interface Guest {
   view: WebContentsView;
+  detached?: boolean;
   parent?: BrowserWindow;
   onParentClosed?: () => void;
   transport?: ConnectOverCDPTransport;
@@ -36,6 +38,13 @@ export async function startLocalBrowserBridge(
   let forgetting = false;
   const guests = new Map<string, Guest>();
   const guestSession = session.fromPartition('persist:dorkos-local-browser');
+  const identity = chromeIdentity(
+    process.versions.chrome,
+    process.platform,
+    process.arch,
+    process.getSystemVersion()
+  );
+  guestSession.setUserAgent(identity.userAgent);
   guestSession.setPermissionRequestHandler((_contents, _permission, callback) => callback(false));
   guestSession.setPermissionCheckHandler(() => false);
   const authorized = (value: string | string[] | undefined): boolean => {
@@ -67,7 +76,7 @@ export async function startLocalBrowserBridge(
       }
       if (
         request.method !== 'POST' ||
-        !['/open', '/close', '/forget-sign-ins'].includes(request.url ?? '')
+        !['/open', '/close', '/detach', '/reattach', '/forget-sign-ins'].includes(request.url ?? '')
       ) {
         response.writeHead(404).end();
         return;
@@ -87,6 +96,27 @@ export async function startLocalBrowserBridge(
       }
       if (request.url === '/close') {
         closeGuest(connectionId);
+        response.writeHead(200).end('{}');
+        return;
+      }
+      if (request.url === '/detach' || request.url === '/reattach') {
+        const guest = guests.get(connectionId);
+        if (!guest) {
+          response.writeHead(404).end();
+          return;
+        }
+        if (request.url === '/detach') {
+          // Close the debugger synchronously before acknowledging the handoff. A
+          // saved endpoint cannot attach again until the server answers Hand back.
+          guest.detached = true;
+          clearTimeout(guest.attachTimer);
+          guest.transport?.close();
+          guest.transport = undefined;
+          guest.socket?.terminate();
+          guest.socket = undefined;
+        } else {
+          guest.detached = false;
+        }
         response.writeHead(200).end('{}');
         return;
       }
@@ -222,7 +252,7 @@ export async function startLocalBrowserBridge(
   server.on('upgrade', (request, socket, head) => {
     const id = /^\/page\/([a-zA-Z0-9-]{1,64})$/.exec(request.url ?? '')?.[1];
     const guest = id ? guests.get(id) : undefined;
-    if (!authorized(request.headers.authorization) || !guest || guest.socket) {
+    if (!authorized(request.headers.authorization) || !guest || guest.detached || guest.socket) {
       socket.destroy();
       return;
     }
@@ -230,30 +260,33 @@ export async function startLocalBrowserBridge(
       clearTimeout(guest.attachTimer);
       guest.socket = ws;
       try {
-        guest.transport = pageTransport(guest.view.webContents);
+        guest.transport = pageTransport(guest.view.webContents, identity);
       } catch {
         ws.close(1011);
         guest.socket = undefined;
         return;
       }
-      guest.transport.onmessage = (message) => {
+      const transport = guest.transport;
+      transport.onmessage = (message) => {
         if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(message));
       };
-      guest.transport.onclose = () => ws.close();
+      transport.onclose = () => ws.close();
       ws.on('message', (bytes) => {
         try {
           const message = JSON.parse(bytes.toString());
           if (!Number.isInteger(message.id) || typeof message.method !== 'string')
             throw new Error('Unsupported command');
-          guest.transport?.send(message);
+          transport.send(message);
         } catch {
           ws.close(1008);
         }
       });
       ws.once('close', () => {
-        guest.transport?.close();
-        guest.transport = undefined;
-        guest.socket = undefined;
+        transport.close();
+        if (guest.socket === ws) {
+          guest.transport = undefined;
+          guest.socket = undefined;
+        }
       });
     });
   });

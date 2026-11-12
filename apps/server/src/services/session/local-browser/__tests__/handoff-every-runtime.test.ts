@@ -32,7 +32,9 @@ async function handedOver() {
   const state: LocalBrowserState = {
     connectionId: 'live',
     sessionId: CHAT,
-    mode: 'new-window',
+    // Embedded keeps the agent's page open through the handoff, so a refusal here is
+    // the gate's alone. A separate window closes for the person's plain window instead.
+    mode: 'embedded',
     status: 'connected',
     paused: false,
     selectedTabId: 'selected',
@@ -59,6 +61,7 @@ async function handedOver() {
     selectTab: vi.fn(async () => state),
     navigate: vi.fn(async () => state),
     pause: vi.fn(async () => state),
+    handToPerson: vi.fn(async () => state),
     resume: vi.fn(async () => state),
     disconnect: vi.fn(async () => state),
   };

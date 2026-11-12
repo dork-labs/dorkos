@@ -1896,3 +1896,79 @@ describe('a page with two bodies, and leaving a page the agent can’t read', ()
     await f.service.disconnect();
   });
 });
+
+it('detaches the embedded guest during a handoff and makes a fresh connection on hand-back', async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), 'embedded-handoff-'));
+  directories.push(dir);
+  const f = fixture();
+  const bridge = {
+    endpoint: 'ws://127.0.0.1:9876/page/guest',
+    headers: {},
+    close: vi.fn(async () => undefined),
+    detach: vi.fn(async () => {
+      f.browserEvents.emit('disconnected');
+    }),
+    reattach: vi.fn(async () => undefined),
+  };
+  const service = new LocalBrowserService(dir, { open: async () => bridge }, f.backend);
+  await service.open({ mode: 'embedded', sessionId: 'chat-1' });
+  service.handover.useOutsideTurnCheck(async () => false);
+  const { handoffId } = await service.handover.ask('chat-1', 'wall');
+  expect(bridge.detach).toHaveBeenCalledOnce();
+  expect(bridge.close).not.toHaveBeenCalled();
+  expect(await service.state()).toMatchObject({ status: 'connected', paused: true });
+  f.page.title = vi.fn(async () => 'A private title');
+  await service.state();
+  expect(f.page.title).not.toHaveBeenCalled();
+  await service.handover.handBack(handoffId);
+  expect(bridge.reattach).toHaveBeenCalledOnce();
+  expect(f.backend.connect).toHaveBeenCalledTimes(2);
+  expect((await service.state()).paused).toBe(false);
+  await service.disconnect();
+});
+
+it('leaves the embedded guest detached after Stop', async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), 'embedded-stop-'));
+  directories.push(dir);
+  const f = fixture();
+  const bridge = {
+    endpoint: 'ws://127.0.0.1:9876/page/guest',
+    headers: {},
+    close: vi.fn(async () => undefined),
+    detach: vi.fn(async () => undefined),
+    reattach: vi.fn(async () => undefined),
+  };
+  const service = new LocalBrowserService(dir, { open: async () => bridge }, f.backend);
+  await service.open({ mode: 'embedded', sessionId: 'chat-1' });
+  service.handover.useOutsideTurnCheck(async () => false);
+  const { handoffId } = await service.handover.ask('chat-1', 'password');
+  await service.handover.stop(handoffId);
+  expect(bridge.detach).toHaveBeenCalledOnce();
+  expect(bridge.reattach).not.toHaveBeenCalled();
+  expect(f.backend.connect).toHaveBeenCalledTimes(1);
+  expect((await service.state()).paused).toBe(true);
+  await service.disconnect();
+});
+
+it('retries a failed native detach before publishing a handoff', async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), 'embedded-retry-'));
+  directories.push(dir);
+  const f = fixture();
+  const bridge = {
+    endpoint: 'ws://127.0.0.1:9876/page/guest',
+    headers: {},
+    close: vi.fn(async () => undefined),
+    detach: vi
+      .fn(async () => undefined)
+      .mockRejectedValueOnce(new Error('host did not acknowledge')),
+    reattach: vi.fn(async () => undefined),
+  };
+  const service = new LocalBrowserService(dir, { open: async () => bridge }, f.backend);
+  await service.open({ mode: 'embedded', sessionId: 'chat-1' });
+  service.handover.useOutsideTurnCheck(async () => false);
+  await expect(service.handover.ask('chat-1', 'wall')).rejects.toThrow('host did not acknowledge');
+  expect((await service.handover.state()).handoff).toBeNull();
+  await service.handover.ask('chat-1', 'wall');
+  expect(bridge.detach).toHaveBeenCalledTimes(2);
+  await service.disconnect();
+});

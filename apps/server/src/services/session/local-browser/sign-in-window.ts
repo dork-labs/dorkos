@@ -1,6 +1,6 @@
 /** One plain sign-in window at a time, and whether its sign-in reached the disk. */
 import type { LocalBrowserSignIn } from '@dorkos/shared/local-browser';
-import { clearAgentWindowTheme } from './agent-window/index.js';
+import { clearAgentChromeProfile, clearAgentWindowTheme } from './agent-window/index.js';
 import { LocalBrowserError } from './errors.js';
 import { managedChromiumPath } from './playwright-backend.js';
 import {
@@ -24,6 +24,7 @@ export const SIGN_IN_LOCK_TIMEOUT_MS = 5_000;
 async function preparePlainProfile(profileFolder: string): Promise<void> {
   await disablePasswordSaving(profileFolder);
   await clearAgentWindowTheme(profileFolder);
+  await clearAgentChromeProfile(profileFolder);
   await forgetOpenTabs(profileFolder);
 }
 
@@ -34,7 +35,7 @@ const lockOwnerHere: LockOwner = (folder) =>
 
 /** The machine pieces a sign-in window uses, swapped for fakes in tests. */
 export interface SignInWindowDeps {
-  /** The managed Chromium's path, downloading it first if needed. */
+  /** Installed Chrome, or the pinned Chromium downloaded if needed. */
   executable?: () => Promise<string>;
   spawner?: PlainChromiumSpawner;
   /** Whether a Chromium still holds the profile folder. */

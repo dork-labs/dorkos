@@ -15,8 +15,6 @@ export interface BrowserHandoffCardViewProps {
   step: HandoffStep;
   /** Whether the agent's own window can be raised. */
   canShowWindow: boolean;
-  /** Signing in closes the Mac app's panel, which would look like a crash unless said. */
-  movesToOwnWindow?: boolean;
   /** The sign-in lands in the default profile, which every agent shares. */
   sharedProfile?: boolean;
   /** A button's call is running. */
@@ -50,7 +48,6 @@ export function BrowserHandoffCardView({
   agentFolder,
   step,
   canShowWindow,
-  movesToOwnWindow = false,
   sharedProfile = false,
   busy,
   error,
@@ -63,7 +60,7 @@ export function BrowserHandoffCardView({
   const name = cardAgentName(agentName);
   const asksPassword = step === 'sign-in' || step === 'failed';
   const status = signInStatus(step, site);
-  const canContinue = step === 'wall' || step === 'saved';
+  const canContinue = step === 'person' || step === 'wall' || step === 'saved';
   // The host goes in the wrapping title, never in a button, so a long one can't push a
   // control out of the card on a phone.
   const title = asksPassword
@@ -92,6 +89,14 @@ export function BrowserHandoffCardView({
           )}
         </div>
       </div>
+      {step === 'person' && (
+        <div className="space-y-1">
+          <p>Finish in {name}’s window, then press Continue.</p>
+          <p className="text-muted-foreground">
+            {name} can’t see or use it until you hand it back.
+          </p>
+        </div>
+      )}
       {step === 'wall' && (
         <div className="space-y-1">
           {/* True because the server refuses every browser tool for that chat until hand-back. */}
@@ -119,22 +124,12 @@ export function BrowserHandoffCardView({
             >
               Sign in instead
             </Button>
-            {movesToOwnWindow && (
-              <p className="text-muted-foreground basis-full">
-                {name} moves to its own window after you sign in.
-              </p>
-            )}
           </div>
         </div>
       )}
       {asksPassword && (
         <div className="space-y-1">
           <p>Open a sign-in window. {name} can’t see or use it.</p>
-          {step === 'sign-in' && movesToOwnWindow && (
-            <p className="text-muted-foreground">
-              {name} moves to its own window after you sign in.
-            </p>
-          )}
           {step === 'sign-in' && sharedProfile && (
             <p className="text-muted-foreground">
               Every agent that uses the Agent browser can use this sign-in.
