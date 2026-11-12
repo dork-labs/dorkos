@@ -196,8 +196,9 @@ describe('isolated app host', () => {
           http: [
             { path: '/entries', methods: ['GET'] },
             { path: '/entries/:id', methods: ['GET', 'PATCH'] },
+            { path: '/approvals', methods: ['GET'] },
           ],
-          personOnly: ['/approve'],
+          personOnly: ['/approve', { path: '/approvals', methods: ['POST'] }],
         },
       },
     };
@@ -268,6 +269,14 @@ describe('isolated app host', () => {
         'error'
       );
       expect(fetch).not.toHaveBeenCalled();
+    });
+    it('sends a read on a path whose write is personOnly, and never the write', async () => {
+      await start(callsLedger);
+      expect(await call('request', ['/approvals', { app: 'ledger' }])).toHaveProperty('value');
+      expect(
+        await call('request', ['/approvals', { app: 'ledger', method: 'POST', body: {} }])
+      ).toHaveProperty('error');
+      expect(routeCalls()).toHaveLength(1);
     });
     it('refuses a write the export does not list', async () => {
       await start(callsLedger);

@@ -45,8 +45,9 @@ const manifests: Record<string, ExtensionManifest> = {
       http: [
         { path: '/entries', methods: ['GET'] },
         { path: '/entries/:id', methods: ['GET', 'PATCH'] },
+        { path: '/approvals', methods: ['GET'] },
       ],
-      personOnly: ['/approve'],
+      personOnly: ['/approve', { path: '/approvals', methods: ['POST'] }],
     },
   },
   idle: {
@@ -165,6 +166,16 @@ describe('a call from one app to another', () => {
     expect((await asReports('get', '/secrets')).body.reason).toBe('not-exported');
     expect((await asReports('post', '/approve')).body.reason).toBe('person-only');
     expect(seen).toHaveLength(0);
+  });
+
+  it('reaches a read on a path whose write is personOnly, never the write', async () => {
+    expect((await asReports('get', '/approvals')).status).toBe(200);
+    const refused = await asReports('post', '/approvals', { yes: true });
+    expect(refused.status).toBe(403);
+    expect(refused.body).toMatchObject({ code: 'app_call_refused', reason: 'person-only' });
+    expect(seen).toEqual([
+      { method: 'GET', path: '/approvals', caller: 'reports', token: undefined },
+    ]);
   });
 
   it('refuses a target that is not running', async () => {

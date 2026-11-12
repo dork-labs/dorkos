@@ -3,7 +3,9 @@ import {
   decideAppCall,
   exportedAccess,
   routeMatches,
+  type AppExportRoute,
   type CrossAppManifest,
+  type PersonOnlyRule,
 } from '../cross-app.js';
 import { ExtensionManifestSchema } from '../manifest-schema.js';
 
@@ -81,6 +83,52 @@ describe('one app calling another (DOR-3293)', () => {
     expect(call({ path: '/approve' })).toEqual({ ok: false, reason: 'person-only' });
   });
 
+  it('marks one method person-only and leaves the others on that path exported', () => {
+    const core: CrossAppManifest = {
+      id: 'ledger',
+      exports: {
+        http: [{ path: '/approvals', methods: ['GET'] }],
+        personOnly: [{ path: '/approvals', methods: ['POST'] }],
+      },
+    };
+    expect(call({ target: core, path: '/approvals' })).toEqual({ ok: true });
+    expect(call({ target: core, method: 'POST', path: '/approvals' })).toEqual({
+      ok: false,
+      reason: 'person-only',
+    });
+    // A method neither exported nor person-only is simply not exported.
+    expect(call({ target: core, method: 'PUT', path: '/approvals' })).toEqual({
+      ok: false,
+      reason: 'method-not-exported',
+    });
+  });
+
+  it('a person-only rule with a placeholder covers every path it matches, for its methods only', () => {
+    const core: CrossAppManifest = {
+      id: 'ledger',
+      exports: {
+        http: [{ path: '/variants/:id', methods: ['GET'] }],
+        personOnly: [{ path: '/variants/:id', methods: ['PATCH', 'DELETE'] }],
+      },
+    };
+    expect(call({ target: core, path: '/variants/v-1' })).toEqual({ ok: true });
+    expect(call({ target: core, method: 'DELETE', path: '/variants/v-1' })).toEqual({
+      ok: false,
+      reason: 'person-only',
+    });
+  });
+
+  it('counts only the methods a person-only rule leaves exported', () => {
+    // Read off a stored record, which the install check never saw.
+    const http: AppExportRoute[] = [{ path: '/approvals', methods: ['GET', 'POST'] }];
+    const access = (personOnly: PersonOnlyRule[]) =>
+      exportedAccess({ exports: { http, personOnly } }, 'reports');
+    expect(access([{ path: '/approvals', methods: ['POST'] }])).toBe('reads');
+    expect(access([{ path: '/approvals', methods: ['GET'] }])).toBe('changes');
+    expect(access(['/approvals'])).toBeNull();
+    expect(access([{ path: '/other', methods: ['POST'] }])).toBe('both');
+  });
+
   it('refuses a route narrowed to other callers', () => {
     expect(call({ path: '/totals' })).toEqual({ ok: false, reason: 'caller-not-listed' });
   });
@@ -118,6 +166,24 @@ describe('the manifest fields for it', () => {
     expect(parsed.success).toBe(true);
   });
 
+  it('takes a person-only rule for some methods beside an export of others on the same path', () => {
+    const parsed = ExtensionManifestSchema.safeParse({
+      ...base,
+      exports: {
+        http: [
+          { path: '/approvals', methods: ['GET'] },
+          { path: '/dial', methods: ['GET'] },
+        ],
+        personOnly: [
+          { path: '/approvals', methods: ['POST'] },
+          { path: '/dial', methods: ['PUT'] },
+          '/approve',
+        ],
+      },
+    });
+    expect(parsed.success).toBe(true);
+  });
+
   it('still takes http: true', () => {
     expect(
       ExtensionManifestSchema.safeParse({ ...base, capabilities: { http: true } }).success
@@ -132,6 +198,36 @@ describe('the manifest fields for it', () => {
     [
       'a placeholder export over a personOnly route',
       { exports: { http: [{ path: '/:any', methods: ['GET'] }], personOnly: ['/approve'] } },
+    ],
+    [
+      'an export whose method a person-only rule on the same path names',
+      {
+        exports: {
+          http: [{ path: '/approvals', methods: ['GET', 'POST'] }],
+          personOnly: [{ path: '/approvals', methods: ['POST'] }],
+        },
+      },
+    ],
+    [
+      'a placeholder export whose method an overlapping person-only rule names',
+      {
+        exports: {
+          http: [{ path: '/:kind/:id', methods: ['PATCH'] }],
+          personOnly: [{ path: '/variants/:id', methods: ['PATCH'] }],
+        },
+      },
+    ],
+    [
+      'a person-only rule with no methods',
+      { exports: { personOnly: [{ path: '/approvals', methods: [] }] } },
+    ],
+    [
+      'a person-only rule naming a method twice',
+      { exports: { personOnly: [{ path: '/approvals', methods: ['POST', 'POST'] }] } },
+    ],
+    [
+      'a person-only rule with an unknown field',
+      { exports: { personOnly: [{ path: '/approvals', methods: ['POST'], all: true }] } },
     ],
     ['an app listing itself', { capabilities: { http: { apps: ['ledger'] } } }],
     ['an export with no methods', { exports: { http: [{ path: '/a', methods: [] }] } }],

@@ -67,6 +67,7 @@ export {
   type AppRouteMethod,
   type CrossAppManifest,
   type ExtensionExports,
+  type PersonOnlyRule,
 } from './cross-app.js';
 export type {
   ExtensionAPI,

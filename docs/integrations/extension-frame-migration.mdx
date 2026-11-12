@@ -116,12 +116,15 @@ The app it calls lists each route other apps may use. Nothing is shared unless i
   "exports": {
     "http": [
       { "path": "/entries", "methods": ["GET"] },
-      { "path": "/entries/:id", "methods": ["GET", "PATCH"], "callers": ["reports"] }
+      { "path": "/entries/:id", "methods": ["GET", "PATCH"], "callers": ["reports"] },
+      { "path": "/approvals", "methods": ["GET"] }
     ],
-    "personOnly": ["/approve"]
+    "personOnly": ["/approve", { "path": "/approvals", "methods": ["POST"] }]
   }
 }
 ```
+
+A plain path in `personOnly` covers every method there. A path with `methods` covers only those, so other apps can read `/approvals` while only your own screens can post to it. An export and a `personOnly` rule may not name the same method on paths that can match the same address; DorkOS refuses that manifest when you install it.
 
 Then call it with `app`:
 

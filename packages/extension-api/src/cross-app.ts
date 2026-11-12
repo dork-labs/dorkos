@@ -9,7 +9,9 @@
  *   `exports.http`. Nothing is exported by default. A `GET` is the normal case;
  *   a write needs its own entry in `methods`, and `callers` can narrow a route
  *   to named apps. A route the target marks `personOnly` is never exported:
- *   it only answers the target's own screens.
+ *   it only answers the target's own screens. A `personOnly` rule is a path
+ *   (every method there) or a path and its methods, so a read can be exported
+ *   while a write on the same path stays the target's own.
  *
  * One pure decision ({@link decideAppCall}), used by both the host bridge in
  * the person's window and the server in front of the target's routes, so the
@@ -56,20 +58,39 @@ const RoutePatternSchema = z
   .max(400)
   .regex(ROUTE_PATTERN_REGEX, 'Use a path like /items or /items/:id');
 
+/** The methods one route entry names, each once. */
+const MethodsSchema = z
+  .array(z.enum(APP_ROUTE_METHODS))
+  .min(1)
+  .refine((methods) => new Set(methods).size === methods.length, 'List each method once');
+
 /** One route a target lets other apps call. */
 export const AppExportRouteSchema = z
   .object({
     /** The route, e.g. `/briefs` or `/briefs/:id`. */
     path: RoutePatternSchema,
     /** What other apps may do there. A write needs its own entry. */
-    methods: z
-      .array(z.enum(APP_ROUTE_METHODS))
-      .min(1)
-      .refine((methods) => new Set(methods).size === methods.length, 'List each method once'),
+    methods: MethodsSchema,
     /** Only these apps may call it. Leave it out to let any app that lists this one call it. */
     callers: z.array(AppIdSchema).min(1).optional(),
   })
   .strict();
+
+/**
+ * A route only the target's own screens may call: a path, for every method
+ * there, or a path and the methods it covers.
+ */
+export const PersonOnlyRuleSchema = z.union([
+  RoutePatternSchema,
+  z
+    .object({
+      /** The route, e.g. `/approvals` or `/variants/:id`. */
+      path: RoutePatternSchema,
+      /** The methods only this app's screens may use there. */
+      methods: MethodsSchema,
+    })
+    .strict(),
+]);
 
 /** What a target lets other apps reach. */
 export const ExtensionExportsSchema = z
@@ -77,10 +98,11 @@ export const ExtensionExportsSchema = z
     /** Routes other apps may call. Nothing is exported unless it is listed here. */
     http: z.array(AppExportRouteSchema).max(100).optional(),
     /**
-     * Routes only this app's own screens may call, e.g. `/approve`. Never
-     * exported, whatever `http` says.
+     * Routes only this app's own screens may call, e.g. `/approve`, or
+     * `{ "path": "/approvals", "methods": ["POST"] }` for some methods only.
+     * Never exported, whatever `http` says.
      */
-    personOnly: z.array(RoutePatternSchema).max(100).optional(),
+    personOnly: z.array(PersonOnlyRuleSchema).max(100).optional(),
   })
   .strict();
 
@@ -99,6 +121,21 @@ export const HttpCapabilitySchema = z.union([
 export type AppExportRoute = z.infer<typeof AppExportRouteSchema>;
 /** What a target lets other apps reach. */
 export type ExtensionExports = z.infer<typeof ExtensionExportsSchema>;
+/** A route only the target's own screens may call. */
+export type PersonOnlyRule = z.infer<typeof PersonOnlyRuleSchema>;
+
+/** A `personOnly` rule read as a path and the methods it covers. */
+interface PersonOnlyMethods {
+  path: string;
+  methods: readonly AppRouteMethod[];
+}
+
+/** Every `personOnly` rule as a path and methods; a bare path covers every method. */
+function personOnlyRules(exports: ExtensionExports | undefined): PersonOnlyMethods[] {
+  return (exports?.personOnly ?? []).map((rule) =>
+    typeof rule === 'string' ? { path: rule, methods: APP_ROUTE_METHODS } : rule
+  );
+}
 
 /** The parts of a manifest a cross-app decision reads. */
 export interface CrossAppManifest {
@@ -183,7 +220,11 @@ export function decideAppCall(input: {
   if (!calledApps(caller).includes(targetId)) return { ok: false, reason: 'not-declared' };
   if (!target || target.id !== targetId) return { ok: false, reason: 'target-unavailable' };
   const exports = target.exports;
-  if ((exports?.personOnly ?? []).some((pattern) => routeMatches(pattern, path))) {
+  if (
+    personOnlyRules(exports).some(
+      (rule) => rule.methods.includes(method) && routeMatches(rule.path, path)
+    )
+  ) {
     return { ok: false, reason: 'person-only' };
   }
   const routes = (exports?.http ?? []).filter((route) => routeMatches(route.path, path));
@@ -208,14 +249,20 @@ export function exportedAccess(
   target: Pick<CrossAppManifest, 'exports'>,
   callerId: string
 ): 'reads' | 'changes' | 'both' | null {
-  const personOnly = target.exports?.personOnly ?? [];
-  const routes = (target.exports?.http ?? []).filter(
-    (route) =>
-      (!route.callers || route.callers.includes(callerId)) &&
-      !personOnly.some((pattern) => routesOverlap(pattern, route.path))
-  );
-  const reads = routes.some((route) => route.methods.includes('GET'));
-  const changes = routes.some((route) => route.methods.some((method) => method !== 'GET'));
+  const personOnly = personOnlyRules(target.exports);
+  // Only the methods no overlapping person-only rule takes back.
+  const methods = (target.exports?.http ?? [])
+    .filter((route) => !route.callers || route.callers.includes(callerId))
+    .flatMap((route) =>
+      route.methods.filter(
+        (method) =>
+          !personOnly.some(
+            (rule) => rule.methods.includes(method) && routesOverlap(rule.path, route.path)
+          )
+      )
+    );
+  const reads = methods.includes('GET');
+  const changes = methods.some((method) => method !== 'GET');
   if (reads && changes) return 'both';
   if (reads) return 'reads';
   return changes ? 'changes' : null;
@@ -223,7 +270,8 @@ export function exportedAccess(
 
 /**
  * The manifest checks that span fields: an export never overlaps a
- * `personOnly` route, and an app never lists itself as an app it calls.
+ * `personOnly` rule on a method both name, and an app never lists itself as
+ * an app it calls.
  *
  * @param manifest - The manifest's parsed fields.
  * @param ctx - Where each issue is added.
@@ -238,15 +286,17 @@ export function checkCrossAppDeclarations(manifest: CrossAppManifest, ctx: z.Ref
       });
     }
   });
-  const personOnly = manifest.exports?.personOnly ?? [];
+  const personOnly = personOnlyRules(manifest.exports);
   (manifest.exports?.http ?? []).forEach((route, index) => {
-    const clash = personOnly.find((pattern) => routesOverlap(pattern, route.path));
-    if (clash) {
+    for (const rule of personOnly) {
+      const shared = route.methods.filter((method) => rule.methods.includes(method));
+      if (shared.length === 0 || !routesOverlap(rule.path, route.path)) continue;
       ctx.addIssue({
         code: 'custom',
         path: ['exports', 'http', index, 'path'],
-        message: `"${route.path}" overlaps the personOnly route "${clash}", which is never exported`,
+        message: `${shared.join(', ')} "${route.path}" overlaps the personOnly route "${rule.path}", which is never exported`,
       });
+      return;
     }
   });
 }
