@@ -11,7 +11,7 @@
 import type { ElementName } from './element-identity';
 
 /** What an element with no name of its own is called in its caption. */
-export const UNNAMED_ELEMENT = 'This part';
+const UNNAMED_ELEMENT = 'This part';
 
 /**
  * The caption under the element's thumbnail.

@@ -58,7 +58,7 @@ import type {
  * section's "active in the last N days". A finer clock would rebuild the whole
  * tree for an answer that did not change.
  */
-export const SIDEBAR_CLOCK_TICK_MS = 60_000;
+const SIDEBAR_CLOCK_TICK_MS = 60_000;
 
 /**
  * No fleet, as one identity.

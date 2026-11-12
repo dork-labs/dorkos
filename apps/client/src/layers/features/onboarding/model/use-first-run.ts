@@ -14,7 +14,7 @@ import { MODELS_KEY } from '@/layers/shared/lib';
 import { cloudCreditsKeys, useTransport } from '@/layers/shared/model';
 
 /** How often Connecting asks whether credits are ready (the link poll's beat). */
-export const READINESS_POLL_MS = 2500;
+const READINESS_POLL_MS = 2500;
 
 /** Said when a first-run call failed and the server sent no sentence of its own. */
 const FIRST_RUN_FAILED = 'Couldn’t finish setup. Try again.';

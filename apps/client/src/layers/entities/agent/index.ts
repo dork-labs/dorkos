@@ -46,7 +46,7 @@ export type { AgentPickerCandidate, AgentRoster } from './lib/agent-choices';
 // UI — reusable agent display primitives
 export { AgentAvatar } from './ui/AgentAvatar';
 export type { AgentAvatarProps } from './ui/AgentAvatar';
-export { AgentIdentity, agentIdentityVariants } from './ui/AgentIdentity';
+export { AgentIdentity } from './ui/AgentIdentity';
 export type { AgentIdentityProps } from './ui/AgentIdentity';
 export { AgentOptionRow } from './ui/AgentOptionRow';
 export { AvatarColorGrid, AvatarEmojiGrid } from './ui/AvatarPickerGrid';
@@ -56,11 +56,7 @@ export { AgentExecutionRows } from './ui/AgentExecutionRows';
 // slice-private: it is the picker's own drawing, not a thing a surface composes.
 export { PersonalityPicker } from './ui/PersonalityPicker';
 export type { PersonalityPickerLayout } from './ui/PersonalityPicker';
-export {
-  PERSONALITY_PRESETS,
-  DEFAULT_PRESET_COLORS,
-  findMatchingPreset,
-} from './lib/personality-presets';
+export { PERSONALITY_PRESETS, findMatchingPreset } from './lib/personality-presets';
 export { PresetPill } from './ui/PresetPill';
 export type { PresetPillProps, PresetPillColors } from './ui/PresetPill';
 export { TraitSliders } from './ui/TraitSliders';

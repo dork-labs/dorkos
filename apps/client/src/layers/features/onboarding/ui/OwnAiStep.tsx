@@ -65,13 +65,7 @@ export interface OwnAiListProps {
  * Names are allowed here because the person asked for them. "Runtime" never
  * appears: the vendor apps are "AI apps".
  */
-export function OwnAiList({
-  onSaved,
-  beforePick,
-  slots,
-  initialRow,
-  simulatedApps,
-}: OwnAiListProps) {
+function OwnAiList({ onSaved, beforePick, slots, initialRow, simulatedApps }: OwnAiListProps) {
   const [open, setOpen] = useState<OwnAiRow | null>(initialRow ?? null);
   const choose = useChooseFirstRunPath();
   const [error, setError] = useState<string | null>(null);

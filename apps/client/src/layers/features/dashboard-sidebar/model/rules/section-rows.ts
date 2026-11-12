@@ -28,7 +28,7 @@ import { rowKey } from './targets';
  * could have disagreed about when to draw it; now the model decides, and the
  * row draws whatever `liveCount` it is handed.
  */
-export const LIVE_CHIP_MIN = 2;
+const LIVE_CHIP_MIN = 2;
 
 /**
  * Everything a row needs beyond its own subject and the snapshot.

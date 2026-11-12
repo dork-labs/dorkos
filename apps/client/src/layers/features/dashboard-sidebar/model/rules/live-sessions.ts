@@ -29,7 +29,7 @@ import type { SidebarState } from '../sidebar-state';
  *
  * @param state - The snapshot.
  */
-export function liveSessionIds(state: SidebarState): readonly string[] {
+function liveSessionIds(state: SidebarState): readonly string[] {
   return nonAutomatedSessionIds(state.workingSessionIds, state.sessions);
 }
 

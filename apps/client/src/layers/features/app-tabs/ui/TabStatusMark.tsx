@@ -7,7 +7,7 @@ import type { TabIdentity, TabStatus } from '../lib/tab-identity';
  * shared token map, so a tab cannot drift from the sidebar row saying the same
  * thing one pane away. Only `working` moves.
  */
-export const TAB_STATUS_SIGNAL: Record<TabStatus, StatusSignal> = {
+const TAB_STATUS_SIGNAL: Record<TabStatus, StatusSignal> = {
   'needs-you': 'needs-you',
   failed: 'error',
   paused: 'paused',

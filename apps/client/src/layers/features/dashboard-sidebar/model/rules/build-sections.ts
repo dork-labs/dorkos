@@ -44,7 +44,7 @@ import { rowKey } from './targets';
  * runtime presets, and somebody running Claude Code beside Codex already has a
  * reason to.
  */
-export const GROUP_AFFORDANCE_MIN_AGENTS = 8;
+const GROUP_AFFORDANCE_MIN_AGENTS = 8;
 
 /**
  * Whether a fleet is offered SMART sections — rule-based membership and the

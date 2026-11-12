@@ -3,7 +3,7 @@ import { useWidgetActions } from '../model/widget-context';
 import type { WidgetChannelSubmission } from '../model/widget-channel';
 
 /** Describe acceptance separately from runtime completion and claimed application handling. */
-export function widgetChannelStatus(row: WidgetChannelSubmission, destination: string): string {
+function widgetChannelStatus(row: WidgetChannelSubmission, destination: string): string {
   if (row.phase === 'sending') return 'Saving…';
   if (row.phase !== 'accepted') return row.message ?? 'This action could not be saved.';
   const deliveries = row.receipt?.deliveries ?? [];

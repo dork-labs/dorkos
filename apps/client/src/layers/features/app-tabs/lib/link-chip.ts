@@ -61,7 +61,7 @@ export interface LinkChipFace {
 }
 
 /** What a chip for a page that is gone says. */
-export const LINK_CHIP_MISSING: Record<LinkChipKind, string> = {
+const LINK_CHIP_MISSING: Record<LinkChipKind, string> = {
   chat: 'Chat not found',
   room: 'Channel not found',
 };

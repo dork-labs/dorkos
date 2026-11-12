@@ -24,7 +24,7 @@ import { AgentAvatar } from './AgentAvatar';
  *
  * Slots: root, label, name, detail. Stacking lives with the sizes that stack.
  */
-export const agentIdentityVariants = tv({
+const agentIdentityVariants = tv({
   slots: {
     root: 'inline-flex min-w-0 items-center',
     label: 'flex min-w-0',
