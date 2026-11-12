@@ -3,7 +3,7 @@
  *
  * @module entities/workspace
  */
-export { useWorktreeScan, worktreeScanQueryKey } from './model/use-worktree-scan';
+export { useWorktreeScan } from './model/use-worktree-scan';
 export { useWorkspaceForSession } from './model/use-workspace-for-session';
 export { derivePorts } from '@dorkos/shared/workspace';
 export type {

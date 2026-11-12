@@ -48,8 +48,6 @@ export {
 } from './model/use-community-navigation';
 export {
   communityDraftKey,
-  EMPTY_COMMUNITY_DRAFT,
-  MAX_COMMUNITY_DRAFTS,
   useCommunityDraft,
   useCommunityDraftStore,
   useUnsentCommunityDrafts,
@@ -96,7 +94,6 @@ export {
   useRemoteCommunityStream,
   applyRemoteCommunityRevisions,
   mergeRemoteCommunityEntries,
-  reviseRemoteCommunityEntry,
 } from './model/use-remote-community-stream';
 export {
   accountSignInKeys,

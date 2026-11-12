@@ -45,7 +45,7 @@ const NO_REVISIONS: ReadonlyMap<string, RemoteCommunityEntry> = new Map();
  * @param revised - The same entry as it stands now.
  * @returns `held` itself when the change is not about it or changes nothing.
  */
-export function reviseRemoteCommunityEntry(
+function reviseRemoteCommunityEntry(
   held: RemoteCommunityEntry,
   revised: RemoteCommunityEntry
 ): RemoteCommunityEntry {

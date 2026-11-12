@@ -3,7 +3,7 @@ import { useTransport } from '@/layers/shared/model';
 import type { WorktreeScanEntry, WorktreeScanWarning } from '@dorkos/shared/workspace';
 
 /** Query key for the worktree adoption scan. */
-export const worktreeScanQueryKey = ['workspaces', 'scan'] as const;
+const worktreeScanQueryKey = ['workspaces', 'scan'] as const;
 
 /**
  * How long a scan stays fresh. Each scan shells out to git once per checkout, so

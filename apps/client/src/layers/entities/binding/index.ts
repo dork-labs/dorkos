@@ -26,7 +26,6 @@ export {
   useBlockUnclaimedChat,
   useLeaveUnclaimedChat,
   UNCLAIMED_CHATS_QUERY_KEY,
-  unclaimedChatsKey,
 } from './model/use-unclaimed-chats';
 
 export { BindingDialog, type BindingDialogProps } from './ui/BindingDialog';
@@ -36,13 +35,6 @@ export {
   type BindingDefaultsOptions,
   toCreateBindingRequest,
   toUpdateBindingRequest,
-  buildDefaultValues,
-  hasNonDefaultAdvanced,
 } from './model/binding-form';
-export {
-  buildPreviewSentence,
-  chatTypeLabel,
-  CHAT_TYPE_OPTIONS,
-  SELECT_ANY,
-} from './lib/build-preview-sentence';
-export { SESSION_STRATEGY_LABELS, sessionStrategyLabel } from './lib/session-strategy-labels';
+export { buildPreviewSentence, chatTypeLabel } from './lib/build-preview-sentence';
+export { sessionStrategyLabel } from './lib/session-strategy-labels';

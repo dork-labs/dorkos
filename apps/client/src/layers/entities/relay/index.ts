@@ -4,7 +4,7 @@
  * @module entities/relay
  */
 export { useRelayEnabled, useRelayEnabledState } from './model/use-relay-config';
-export { useRelayMessages, useSendRelayMessage } from './model/use-relay-messages';
+export { useSendRelayMessage } from './model/use-relay-messages';
 export { useRelayEndpoints } from './model/use-relay-endpoints';
 export { useRelayMetrics } from './model/use-relay-metrics';
 
@@ -22,16 +22,11 @@ export {
   useConfirmAdapterReferences,
   useUpdateAdapterConfig,
   useTestAdapterConnection,
-  CATALOG_KEY,
 } from './model/use-adapter-catalog';
-export {
-  useExternalAdapterCatalog,
-  ADAPTER_CATEGORY_INTERNAL,
-} from './model/use-external-adapter-catalog';
+export { useExternalAdapterCatalog } from './model/use-external-adapter-catalog';
 export { useMessageTrace } from './model/use-message-trace';
 export { useDeliveryMetrics } from './model/use-delivery-metrics';
 export {
-  useDeadLetters,
   useAggregatedDeadLetters,
   useDismissDeadLetterGroup,
   DEAD_LETTERS_KEY,

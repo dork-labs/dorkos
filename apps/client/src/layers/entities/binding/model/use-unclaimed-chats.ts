@@ -7,7 +7,7 @@ import { BINDINGS_QUERY_KEY } from './use-bindings';
 export const UNCLAIMED_CHATS_QUERY_KEY = ['relay', 'unclaimed-chats'] as const;
 
 /** Query key for one slice of the claim feed. */
-export function unclaimedChatsKey(status: UnclaimedChatStatus) {
+function unclaimedChatsKey(status: UnclaimedChatStatus) {
   return [...UNCLAIMED_CHATS_QUERY_KEY, status] as const;
 }
 

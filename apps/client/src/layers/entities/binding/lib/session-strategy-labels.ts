@@ -13,7 +13,7 @@ import type { SessionStrategy } from '@dorkos/shared/relay-schemas';
  * picker labels in `BindingAdvancedSection` ("One conversation per chat"),
  * so the badge and the setting read as one idea.
  */
-export const SESSION_STRATEGY_LABELS: Record<SessionStrategy, string> = {
+const SESSION_STRATEGY_LABELS: Record<SessionStrategy, string> = {
   'per-chat': 'One per chat',
   'per-user': 'One per person',
   stateless: 'Fresh each message',
