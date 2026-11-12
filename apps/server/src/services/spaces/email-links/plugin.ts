@@ -43,7 +43,7 @@ export interface EmailLinkPluginDeps {
 type EndpointContext = Parameters<typeof setSessionCookie>[0];
 
 /** The plugin's id, which the route census and auth.ts name. */
-export const EMAIL_LINKS_PLUGIN_ID = 'community-email-links';
+const EMAIL_LINKS_PLUGIN_ID = 'community-email-links';
 
 const EXPIRED = 'This link expired or was already used. Ask for a new one.';
 const ELSEWHERE =

@@ -1,5 +1,5 @@
 /** How long open connections, such as live channel streams, get to finish before they are cut. */
-export const STOP_GRACE_MS = 5_000;
+const STOP_GRACE_MS = 5_000;
 
 /** What {@link createStop} closes: the HTTP listener, the database pool and any repeating timers. */
 export interface StoppableResources {

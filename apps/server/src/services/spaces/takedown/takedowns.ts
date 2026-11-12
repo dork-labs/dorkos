@@ -33,7 +33,7 @@ export type EvidenceState = z.infer<typeof CommunityAdminTakedownEvidenceStateSc
 type Takedown = z.infer<typeof CommunityAdminTakedownSchema>;
 
 /** Evidence states that keep a community from being deleted: the copy has not settled yet. */
-export const UNSETTLED_EVIDENCE: readonly EvidenceState[] = [
+const UNSETTLED_EVIDENCE: readonly EvidenceState[] = [
   'pending',
   'retrying',
   'failed',

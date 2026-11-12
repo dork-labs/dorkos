@@ -27,7 +27,7 @@ export const MAX_REBUILD_PASSES = 5;
 /** Claims that ended in an unexpected error before the job fails as a storage failure. */
 export const MAX_EXPORT_FAILURES = 5;
 /** The `export_segment` put kind's ceiling; every segment stays below it. */
-export const SEGMENT_CEILING = 1024 * 1024 * 1024;
+const SEGMENT_CEILING = 1024 * 1024 * 1024;
 /** Room kept under the ceiling for the estimate's error and the unit that crosses a target. */
 const SEGMENT_HEADROOM = 64 * 1024 * 1024;
 

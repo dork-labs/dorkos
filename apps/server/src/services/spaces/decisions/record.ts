@@ -12,7 +12,7 @@ import type { CommunityDecisionRecord } from '@dorkos/shared/community-wire';
 import { checkLabel, findingOf, type Finding } from './findings.js';
 
 /** A record's rung name in the audit `action`: `decision.rung0`, `decision.rung1`. */
-export const decisionAction = (rung: number) => `decision.rung${rung}`;
+const decisionAction = (rung: number) => `decision.rung${rung}`;
 
 /** Why a built-in rule fired, in a moderator's words. */
 const RULE_NOTES: Readonly<Record<string, (n: number) => string>> = {
@@ -124,7 +124,7 @@ export async function writeRecord(
 }
 
 /** The moderator's note for a flagged record. Never quotes the message. */
-export function noteFor(record: CommunityDecisionRecord, found: Finding, counts?: RuleCounts) {
+function noteFor(record: CommunityDecisionRecord, found: Finding, counts?: RuleCounts) {
   const reason = record.answers.spam?.reason;
   if (record.check === 'rules' && reason && Object.hasOwn(RULE_NOTES, reason) && counts)
     return `${RULE_NOTES[reason]!(counts[reason as keyof RuleCounts])} Nothing was hidden.`;
@@ -144,7 +144,7 @@ export function noteFor(record: CommunityDecisionRecord, found: Finding, counts?
  * check still records its verdict, and files nothing more until a moderator clears one, so a
  * flood from one account cannot bury every member's report in the queue.
  */
-export const OPEN_CHECK_REPORTS_PER_PERSON = 5;
+const OPEN_CHECK_REPORTS_PER_PERSON = 5;
 
 /**
  * File a flagged record as a report in the queue, once per message and check, only while the

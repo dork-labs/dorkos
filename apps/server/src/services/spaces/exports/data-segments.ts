@@ -8,7 +8,7 @@ import { BlobStoreError, type BlobStore } from '../storage/index.js';
 type Queryable = Pick<Pool | PoolClient, 'query'>;
 
 /** Messages read per query. */
-export const PAGE_ROWS = 1_000;
+const PAGE_ROWS = 1_000;
 
 /** A position in `(channel_id, seq)` order. */
 export interface EntryCursor {
@@ -248,7 +248,7 @@ async function attachmentsOf(
 }
 
 /** Where a file's bytes live in the archive: one folder per file, the display name inside it. */
-export function attachmentArchivePath(id: string, displayName: string): string {
+function attachmentArchivePath(id: string, displayName: string): string {
   return `files/${id}/${toArchiveSegment(sanitizeDisplayName(displayName))}`;
 }
 

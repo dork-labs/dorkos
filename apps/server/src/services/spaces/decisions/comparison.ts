@@ -23,7 +23,7 @@ import { transaction } from '../data.js';
 import { json } from '../http.js';
 
 /** The window `/metrics` reports, and the route's default. */
-export const COMPARISON_DAYS = 30;
+const COMPARISON_DAYS = 30;
 
 /** How long `/metrics` reuses one reading, so a fast scraper never runs the query each time. */
 const METRICS_CACHE_MS = 60_000;
@@ -51,7 +51,7 @@ interface FiguresRow {
  * Read the figures for every check since `since`. Only rows this host wrote count: an imported
  * row is another host's history.
  */
-export async function readComparison(
+async function readComparison(
   pool: Pool,
   since: Date
 ): Promise<CommunityWireDecisionModelFigures[]> {
@@ -112,7 +112,7 @@ function label(value: string): string {
 }
 
 /** The comparison as Prometheus gauges, one family per figure, labelled by check and model. */
-export function renderComparison(figures: readonly CommunityWireDecisionModelFigures[]): string {
+function renderComparison(figures: readonly CommunityWireDecisionModelFigures[]): string {
   const families: Array<[string, string, (f: CommunityWireDecisionModelFigures) => number | null]> =
     [
       ['decisions', 'Checks recorded', (f) => f.decisions],

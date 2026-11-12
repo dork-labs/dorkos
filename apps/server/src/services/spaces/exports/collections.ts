@@ -3,7 +3,7 @@ import type { ExportJobScope } from './authority.js';
 import { fileNumber, type ExportFormat } from './data-segments.js';
 
 /** Most rows in one collection file. */
-export const COLLECTION_FILE_ROWS = 100_000;
+const COLLECTION_FILE_ROWS = 100_000;
 /** Rows read per query. */
 const PAGE_ROWS = 1_000;
 

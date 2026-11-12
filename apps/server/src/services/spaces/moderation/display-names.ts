@@ -3,7 +3,7 @@ import { mintHandle } from '../handles.js';
 import { ApiError } from '../http.js';
 
 /** The name a newcomer gets when the name on their account is one nobody may take here. */
-export const PLACEHOLDER_DISPLAY_NAME = 'Member';
+const PLACEHOLDER_DISPLAY_NAME = 'Member';
 
 /**
  * The form a display name is compared in: case, width, accents, spacing, dashes, invisible

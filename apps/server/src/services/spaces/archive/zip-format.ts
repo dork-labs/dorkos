@@ -8,7 +8,7 @@
 /** `PK\x03\x04`: local file header. */
 export const LOCAL_FILE_HEADER_SIGNATURE = 0x04034b50;
 /** `PK\x07\x08`: data descriptor. */
-export const DATA_DESCRIPTOR_SIGNATURE = 0x08074b50;
+const DATA_DESCRIPTOR_SIGNATURE = 0x08074b50;
 /** `PK\x01\x02`: central directory file header. */
 export const CENTRAL_DIRECTORY_SIGNATURE = 0x02014b50;
 /** `PK\x06\x06`: ZIP64 end of central directory record. */
@@ -35,11 +35,11 @@ export const FLAG_STRONG_ENCRYPTION = 1 << 6;
 export const FLAG_UTF8 = 1 << 11;
 
 /** Version needed to extract: 4.5, the first version with ZIP64. */
-export const VERSION_NEEDED = 45;
+const VERSION_NEEDED = 45;
 /** Version made by: host 3 (Unix) in the high byte, so external attributes carry a file mode. */
-export const VERSION_MADE_BY = (3 << 8) | VERSION_NEEDED;
+const VERSION_MADE_BY = (3 << 8) | VERSION_NEEDED;
 /** External attributes of a regular file with mode 0644 (`S_IFREG | 0644` in the high 16 bits). */
-export const REGULAR_FILE_ATTRIBUTES = (0o100644 << 16) >>> 0;
+const REGULAR_FILE_ATTRIBUTES = (0o100644 << 16) >>> 0;
 
 /** Fixed part of a local file header. */
 export const LOCAL_HEADER_BYTES = 30;

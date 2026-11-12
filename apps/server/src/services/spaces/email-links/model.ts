@@ -101,7 +101,7 @@ export function emailLinksUnavailable(): ApiError {
 }
 
 /** What a reset or a confirmation ends on any account: every derived way in. */
-export const ACCESS_CLEARS = [
+const ACCESS_CLEARS = [
   'sessions',
   'connections',
   'agent_credentials',
@@ -110,7 +110,7 @@ export const ACCESS_CLEARS = [
   'host_api_keys',
 ] as const;
 /** What mailbox proof ends on an account whose email was never confirmed: everything. */
-export const EVERYTHING_CLEARS = [...ACCESS_CLEARS, 'password', 'sign_in_links'] as const;
+const EVERYTHING_CLEARS = [...ACCESS_CLEARS, 'password', 'sign_in_links'] as const;
 
 /**
  * What using a link ends, by key, so the page can list it before the person submits. A reset
