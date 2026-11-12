@@ -33,7 +33,7 @@ export interface RunCompletedPayload {
 }
 
 /** Refusals open the schedule; other outcomes retain their run details. */
-export function runCompletedLocation(p: RunCompletedPayload) {
+function runCompletedLocation(p: RunCompletedPayload) {
   return p.status === 'needs_attention'
     ? { subjectType: 'task' as const, subjectId: p.taskId, agentId: p.agentId }
     : { subjectId: p.runId, agentId: p.agentId };
@@ -118,7 +118,7 @@ export function runFailureReason(p: RunCompletedPayload): string {
  *
  * @param p - The run's payload.
  */
-export function runCompletedBody(p: RunCompletedPayload): string | undefined {
+function runCompletedBody(p: RunCompletedPayload): string | undefined {
   if (p.status !== 'completed') {
     return [
       runFailureReason(p),
@@ -144,7 +144,7 @@ export function runCompletedBody(p: RunCompletedPayload): string | undefined {
  *
  * @param p - The run's payload.
  */
-export function runCompletedRelay(p: RunCompletedPayload): 'opt-in' | 'always' {
+function runCompletedRelay(p: RunCompletedPayload): 'opt-in' | 'always' {
   return p.status === 'completed' ? 'opt-in' : 'always';
 }
 
@@ -161,7 +161,7 @@ const OPEN_SCHEDULE_ACTION: NotificationActionDTO[] = [
  *
  * @param p - The run's payload.
  */
-export function runCompletedActions(p: RunCompletedPayload): NotificationActionDTO[] {
+function runCompletedActions(p: RunCompletedPayload): NotificationActionDTO[] {
   return p.status === 'completed' ? [] : OPEN_SCHEDULE_ACTION;
 }
 

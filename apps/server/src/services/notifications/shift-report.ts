@@ -68,7 +68,7 @@ export const SHIFT_REPORT_WINDOW_MS = 24 * 60 * 60 * 1000;
  * install at 03:40 belongs to the same night the boundary closes, and the
  * person is still at the keyboard.
  */
-export const SHIFT_REPORT_SETTLE_MS = 4 * 60 * 60 * 1000;
+const SHIFT_REPORT_SETTLE_MS = 4 * 60 * 60 * 1000;
 
 /**
  * The first-run timestamps the install-age gate reads, as config stores them

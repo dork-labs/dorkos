@@ -33,7 +33,7 @@ import {
  * Gap between sweeps (ms). A projector is dropped after it looks idle and
  * unchanged on two sweeps in a row, so between one and two of these.
  */
-export const PROJECTOR_IDLE_SWEEP_MS = 10 * 60_000;
+const PROJECTOR_IDLE_SWEEP_MS = 10 * 60_000;
 
 /**
  * What each disposable projector looked like at the sweep that first saw it

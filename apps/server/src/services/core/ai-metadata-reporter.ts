@@ -47,17 +47,17 @@ import { logger } from '../../lib/logger.js';
 export const AI_METADATA_ENDPOINT = siteUrl('/api/telemetry/events');
 
 /** Default gap between automatic flushes (60s), matching the usage reporter. */
-export const AI_METADATA_FLUSH_INTERVAL_MS = 60_000;
+const AI_METADATA_FLUSH_INTERVAL_MS = 60_000;
 
 /**
  * Hard cap on the in-memory queue. If the endpoint is unreachable and events
  * pile up, the oldest are dropped past this bound so a wedged network can never
  * grow memory without limit. Metadata is best-effort; losing the tail is fine.
  */
-export const AI_METADATA_QUEUE_MAX = 500;
+const AI_METADATA_QUEUE_MAX = 500;
 
 /** Max events sent in a single batch POST (matches the ingest's batch bound). */
-export const AI_METADATA_BATCH_MAX = 100;
+const AI_METADATA_BATCH_MAX = 100;
 
 /** A queued turn: the harvested metadata plus the capture timestamp. */
 interface QueuedTurn {

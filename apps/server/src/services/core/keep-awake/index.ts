@@ -6,8 +6,6 @@
 export {
   keepAwakeService,
   KeepAwakeService,
-  BACKGROUND_ONLY_CEILING_MS,
-  TURN_IDLE_CEILING_MS,
   type KeepAwakeStartDeps,
   type TaskAwakeHold,
   type TaskAwakeHolds,

@@ -47,7 +47,7 @@ import { isUsageReporterActive, reportUsageEvent } from '../usage-reporter.js';
 export const FUNNEL_STATE_FILENAME = 'telemetry-funnel.json';
 
 /** How often a long-running server checks whether a new UTC day has begun. */
-export const INSTANCE_ACTIVE_CHECK_MS = 60 * 60 * 1000;
+const INSTANCE_ACTIVE_CHECK_MS = 60 * 60 * 1000;
 
 /**
  * How long ago a first run can have ended and still be reported when no funnel
@@ -55,7 +55,7 @@ export const INSTANCE_ACTIVE_CHECK_MS = 60 * 60 * 1000;
  * opted in long after setup): its first run is recorded, not sent. Matches the
  * default 14-day window a funnel query would use.
  */
-export const FIRST_RUN_REPORT_WINDOW_MS = 14 * 24 * 60 * 60 * 1000;
+const FIRST_RUN_REPORT_WINDOW_MS = 14 * 24 * 60 * 60 * 1000;
 
 const FunnelStateSchema = z.object({
   firstRunReportedAt: z.string().nullable().default(null),

@@ -229,7 +229,7 @@ const TERMINAL_REASON_ERROR = 'error';
  * inside this; past it the snapshot goes out without the cached figures rather
  * than making a reader wait on a slow disk.
  */
-export const PROJECTOR_HYDRATION_WAIT_MS = 1_500;
+const PROJECTOR_HYDRATION_WAIT_MS = 1_500;
 
 /**
  * What a hydrator may fill into a held status without an event: cached figures

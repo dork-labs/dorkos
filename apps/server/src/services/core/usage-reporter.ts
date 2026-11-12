@@ -41,7 +41,7 @@ import { logger } from '../../lib/logger.js';
 export const USAGE_ENDPOINT = siteUrl('/api/telemetry/events');
 
 /** Default gap between automatic flushes (60s). */
-export const USAGE_FLUSH_INTERVAL_MS = 60_000;
+const USAGE_FLUSH_INTERVAL_MS = 60_000;
 
 /**
  * Hard cap on the in-memory queue. If the endpoint is unreachable and events
@@ -49,10 +49,10 @@ export const USAGE_FLUSH_INTERVAL_MS = 60_000;
  * grow memory without limit. Usage events are best-effort; losing the tail of a
  * backlog is acceptable.
  */
-export const USAGE_QUEUE_MAX = 500;
+const USAGE_QUEUE_MAX = 500;
 
 /** Max events sent in a single batch POST (matches the ingest's batch bound). */
-export const USAGE_BATCH_MAX = 100;
+const USAGE_BATCH_MAX = 100;
 
 /** A queued event: the caller-supplied half plus the capture timestamp. */
 interface QueuedEvent {

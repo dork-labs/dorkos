@@ -62,7 +62,7 @@ import { logger, logError } from '../../lib/logger.js';
 import { getUserById } from './auth/index.js';
 
 /** Where the metrics-continuity feedback event is delivered (the one owned PostHog ingest). */
-export const FEEDBACK_ENDPOINT = siteUrl('/api/telemetry/events');
+const FEEDBACK_ENDPOINT = siteUrl('/api/telemetry/events');
 
 /** Path of the durable feedback route on the site, appended to `env.DORKOS_CLOUD_URL` / `cloudUrl`. */
 const DURABLE_FEEDBACK_PATH = '/api/feedback';

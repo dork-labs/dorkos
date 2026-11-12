@@ -115,7 +115,7 @@ export function setAgentSessionSources(next: AgentSessionSources | null): void {
  * open one filesystem/SDK read per agent at once. A simple promise-pool caps
  * concurrent {@link aggregateSessionList} calls at this width.
  */
-export const AGENT_SESSION_FANOUT_CONCURRENCY = 5;
+const AGENT_SESSION_FANOUT_CONCURRENCY = 5;
 
 /**
  * How long a finished fan-out keeps answering callers who ask the same

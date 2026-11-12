@@ -70,7 +70,7 @@ export const NOTIFICATION_MAX_ROWS = 1000;
  * while it stands, so a row with that kind is by construction an Ask that has
  * already ended.
  */
-export const HIGH_CHURN_KINDS: readonly NotificationKind[] = ['turn.completed', 'ask.pending'];
+const HIGH_CHURN_KINDS: readonly NotificationKind[] = ['turn.completed', 'ask.pending'];
 
 /** Everything a row needs that the registry did not already decide. */
 export interface NotificationInsert {
