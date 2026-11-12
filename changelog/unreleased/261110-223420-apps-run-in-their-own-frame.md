@@ -28,6 +28,7 @@ covers:
   - "fix(extensions): another app's page opens only right after a click in the calling app, and input waits half a second as it fades in (DOR-3293)"
   - "fix(extensions): the approval card says when an app can open another app's pages (DOR-3293)"
   - "fix(extensions): an app opens another app's pages only when it lists that app with navigate: true (DOR-3293)"
+  - 'fix(extensions): the approval card names only the powers an app really has over each other app, and asks again when it starts opening one (DOR-3293)'
 ---
 
 ### Security

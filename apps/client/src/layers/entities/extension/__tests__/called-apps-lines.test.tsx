@@ -32,44 +32,82 @@ const view = (apps: ExtensionPermissionView['apps']): ExtensionPermissionView =>
 
 const THREE = view([
   { id: 'desk', name: 'Desk', access: 'reads' },
-  { id: 'mkt-core', name: 'Marketing core', access: 'both' },
+  { id: 'mkt-core', name: 'Marketing core', access: 'both', opens: true },
   { id: 'ledger', name: null, access: null },
 ]);
+
+/** The words after each app's name, as the card draws them. */
+const rowsOf = (apps: ExtensionPermissionView['apps']): string[] | undefined =>
+  extensionPermissionLines(view(apps))
+    .find((line) => line.key === 'apps')
+    ?.apps?.map((app) => `${app.name} · ${app.detail}`);
 
 describe('It uses other apps', () => {
   it('reads one line per app, in the designer’s words', () => {
     const line = extensionPermissionLines(THREE).find((entry) => entry.key === 'apps');
     expect(line && permissionLineText(line)).toBe(
-      'It uses other apps: Desk · reads · can open its pages ' +
+      'It uses other apps: Desk · reads ' +
         'Marketing core · reads and changes · can open its pages ' +
         'ledger · not installed, so this part won’t work'
     );
   });
 
-  it('says an installed app that shares nothing can only have its pages opened', () => {
-    const line = extensionPermissionLines(
-      view([{ id: 'vault', name: 'Vault', access: null }])
-    ).find((entry) => entry.key === 'apps');
-    expect(line?.apps?.[0]?.detail).toBe('can only open its pages');
+  // Only real powers: what the target exports to this app, and its own navigate (Nov 11).
+  it.each([
+    [
+      'writes it may use, and opens',
+      { access: 'both', opens: true },
+      'Mkt Newsletter · reads and changes · can open its pages',
+    ],
+    ['writes it may use, no opening', { access: 'both' }, 'Mkt Newsletter · reads and changes'],
+    ['only reads', { access: 'reads' }, 'Mkt Newsletter · reads'],
+    [
+      'only reads, and opens',
+      { access: 'reads', opens: true },
+      'Mkt Newsletter · reads · can open its pages',
+    ],
+    [
+      'nothing shared, but opens',
+      { access: null, opens: true },
+      'Mkt Newsletter · can only open its pages',
+    ],
+  ] as const)('%s', (_name, power, row) => {
+    expect(rowsOf([{ id: 'mkt-newsletter', name: 'Mkt Newsletter', ...power }])).toEqual([row]);
+  });
+
+  it('mkt-core → mkt-newsletter, which exports nothing to it: opens only', () => {
+    expect(
+      rowsOf([{ id: 'mkt-newsletter', name: 'Mkt Newsletter', access: null, opens: true }])
+    ).toEqual(['Mkt Newsletter · can only open its pages']);
+  });
+
+  it('leaves off an app that gives it no power, and the whole line when none do', () => {
+    expect(
+      rowsOf([
+        { id: 'desk', name: 'Desk', access: 'reads' },
+        { id: 'vault', name: 'Vault', access: null },
+        { id: 'quiet', name: 'Quiet', access: null, opens: false },
+      ])
+    ).toEqual(['Desk · reads']);
+    expect(rowsOf([{ id: 'vault', name: 'Vault', access: null }])).toBeUndefined();
+    // But the yes still echoes it, so a target that starts sharing asks again.
+    expect(approvedSetOf(view([{ id: 'vault', name: 'Vault', access: null }]))?.apps).toEqual([
+      'vault',
+    ]);
   });
 
   it('names the extra power after the app only when it applies (designer, Nov 11)', () => {
-    // Calls only: unchanged.
     expect(calledAppDetail({ installed: true, access: 'both', opensPages: false })).toBe(
       'reads and changes'
     );
-    // Calls and opens.
     expect(calledAppDetail({ installed: true, access: 'both', opensPages: true })).toBe(
       'reads and changes · can open its pages'
     );
-    // Opens only.
     expect(calledAppDetail({ installed: true, access: null, opensPages: true })).toBe(
       'can only open its pages'
     );
-    // Neither, and an app that is not installed: as before.
-    expect(calledAppDetail({ installed: true, access: null, opensPages: false })).toBe(
-      'shares nothing, so this part won’t work'
-    );
+    // No power at all: no row.
+    expect(calledAppDetail({ installed: true, access: null, opensPages: false })).toBeNull();
     expect(calledAppDetail({ installed: false, access: null, opensPages: true })).toBe(
       'not installed, so this part won’t work'
     );
@@ -134,7 +172,24 @@ describe('It uses other apps', () => {
     expect(approvedSetOf(THREE)?.apps).toEqual(['desk', 'mkt-core', 'ledger']);
     // And what each shared, so a target that shares more since is refused too.
     expect(approvedSetOf(THREE)?.appAccess).toEqual({ desk: 'reads', 'mkt-core': 'both' });
+    // And which it opens, so an update that starts opening one is refused too.
+    expect(approvedSetOf(THREE)?.appOpens).toEqual(['mkt-core']);
+    expect(approvedSetOf(view([{ id: 'desk', name: 'Desk', access: 'reads' }]))).not.toHaveProperty(
+      'appOpens'
+    );
     expect(approvedSetOf(view(undefined))).not.toHaveProperty('apps');
+  });
+
+  it('finds an app newly opened between what was seen and what is declared now', () => {
+    const seen = {
+      runtime: 'in-process' as const,
+      net: [],
+      run: [],
+      agents: false,
+      apps: ['desk'],
+    };
+    expect(permissionsAddedSince(seen, { ...seen, appOpens: ['desk'] })?.apps).toEqual(['desk']);
+    expect(permissionsAddedSince({ ...seen, appOpens: ['desk'] }, seen)).toBeNull();
   });
 
   it('finds a newly listed app between what was seen and what is declared now', () => {
@@ -179,9 +234,9 @@ describe('It can change (Security item 8)', () => {
         "New files on your computer, only when you choose Save",
         "Replies in the room threads you pick",
         "Messages to an agent you pick, sent in your name",
-        "It uses other apps:Desk · reads · can open its pagesMarketing core · reads and changes · can open its pages",
-        "Desk · reads · can open its pages",
-        "Marketing core · reads and changes · can open its pages",
+        "It uses other apps:Desk · readsMarketing core · reads and changes",
+        "Desk · reads",
+        "Marketing core · reads and changes",
       ]
     `);
   });

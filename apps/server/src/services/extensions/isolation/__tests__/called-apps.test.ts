@@ -4,11 +4,11 @@
  * each with DorkOS's words and what that app's own exports share.
  */
 import { describe, expect, it } from 'vitest';
-import type { ExtensionManifest, ExtensionRecord } from '@dorkos/extension-api';
+import type { CalledAppEntry, ExtensionManifest, ExtensionRecord } from '@dorkos/extension-api';
 import { addedSince, declaredSet, isCovered, isSamePermissionSet } from '../permission-coverage.js';
 import { calledAppsView } from '../called-apps.js';
 
-const caller = (apps: string[], runtime?: 'subprocess'): ExtensionManifest =>
+const caller = (apps: CalledAppEntry[], runtime?: 'subprocess'): ExtensionManifest =>
   ({
     id: 'reports',
     name: 'Reports',
@@ -57,6 +57,18 @@ describe('asking again for a new app to call', () => {
     expect(isCovered(declaredSet(caller(['ledger'])), approved)).toBe(true);
   });
 
+  it('asks again when an update starts opening an app’s pages, naming that app', () => {
+    const approved = declaredSet(caller(['ledger', 'desk']));
+    expect(approved).not.toHaveProperty('appOpens');
+    const next = declaredSet(caller(['ledger', { id: 'desk', navigate: true }]));
+    expect(next.appOpens).toEqual(['desk']);
+    expect(addedSince(next, approved)?.apps).toEqual(['desk']);
+    // Approved with it, and later dropping it, asks nothing.
+    expect(isCovered(next, next)).toBe(true);
+    expect(isCovered(approved, next)).toBe(true);
+    expect(isSamePermissionSet(next, approved)).toBe(false);
+  });
+
   it('counts a different app list as a different set to record', () => {
     expect(
       isSamePermissionSet(declaredSet(caller(['ledger'])), declaredSet(caller(['desk'])))
@@ -99,13 +111,57 @@ describe('the card’s apps, in DorkOS’s words', () => {
       (id) => others.get(id)
     );
     expect(view).toEqual([
-      { id: 'ledger', name: 'Ledger', access: 'reads' },
-      { id: 'desk', name: 'Desk', access: 'both' },
+      { id: 'ledger', name: 'Ledger', access: 'reads', opens: false },
+      { id: 'desk', name: 'Desk', access: 'both', opens: false },
       // Turned off, or not installed at all: no name, nothing shared.
-      { id: 'quill', name: null, access: null },
-      { id: 'gone', name: null, access: null },
+      { id: 'quill', name: null, access: null, opens: false },
+      { id: 'gone', name: null, access: null, opens: false },
       // Installed, but shares nothing with it.
-      { id: 'vault', name: 'Vault', access: null },
+      { id: 'vault', name: 'Vault', access: null, opens: false },
+    ]);
+  });
+
+  it('says which apps it opens, from its own navigate entries', () => {
+    const view = calledAppsView(
+      { id: 'reports', manifest: caller([{ id: 'ledger', navigate: true }, 'desk']) },
+      (id) => others.get(id)
+    );
+    expect(view).toEqual([
+      { id: 'ledger', name: 'Ledger', access: 'reads', opens: true },
+      { id: 'desk', name: 'Desk', access: 'both', opens: false },
+    ]);
+  });
+
+  it('mkt-core opening mkt-newsletter, which exports nothing: opens only', () => {
+    const newsletter = record({ id: 'mkt-newsletter', name: 'Mkt Newsletter', version: '1.0.0' });
+    const view = calledAppsView(
+      {
+        id: 'mkt-core',
+        manifest: {
+          ...caller([{ id: 'mkt-newsletter', navigate: true }]),
+          id: 'mkt-core',
+        } as ExtensionManifest,
+      },
+      (id) => (id === 'mkt-newsletter' ? newsletter : undefined)
+    );
+    expect(view).toEqual([
+      { id: 'mkt-newsletter', name: 'Mkt Newsletter', access: null, opens: true },
+    ]);
+  });
+
+  it('says reads only when every write the target exports is personOnly for that method', () => {
+    const core = record({
+      id: 'mkt-core',
+      name: 'Marketing core',
+      version: '1.0.0',
+      exports: {
+        http: [{ path: '/approvals', methods: ['GET', 'POST'] }],
+        personOnly: [{ path: '/approvals', methods: ['POST'] }],
+      },
+    } as ExtensionManifest);
+    const view = calledAppsView({ id: 'reports', manifest: caller(['mkt-core']) }, () => core);
+    expect(view).toEqual([
+      { id: 'mkt-core', name: 'Marketing core', access: 'reads', opens: false },
     ]);
   });
 });
