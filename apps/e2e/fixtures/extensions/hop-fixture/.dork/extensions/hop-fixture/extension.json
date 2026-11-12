@@ -1,0 +1,9 @@
+{
+  "id": "hop-fixture",
+  "name": "Hop",
+  "version": "1.0.0",
+  "description": "Browser-test fixture: an app that tries to open Hello World's page.",
+  "purpose": "tries to open another app's page for the browser tests",
+  "clientApiVersion": 2,
+  "capabilities": { "http": { "apps": [{ "id": "hello-world", "navigate": true }] } }
+}
