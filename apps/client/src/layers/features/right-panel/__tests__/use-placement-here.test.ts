@@ -2,14 +2,13 @@
  * @vitest-environment jsdom
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { renderHook } from '@testing-library/react';
+import { act, renderHook } from '@testing-library/react';
 
 type RouteRoom = { status: 'none' } | { status: 'loading' } | { status: 'ready'; roomId: string };
 type AgentQuery = { data: { id: string } | null | undefined; isPending: boolean };
 
 let mockRoom: RouteRoom = { status: 'none' };
 let mockAgent: AgentQuery = { data: undefined, isPending: true };
-let mockSelectedCwd: string | null = null;
 const mockUseCurrentAgent = vi.fn((_cwd: string | null) => mockAgent);
 
 vi.mock('@/layers/entities/room', () => ({
@@ -18,23 +17,22 @@ vi.mock('@/layers/entities/room', () => ({
 vi.mock('@/layers/entities/agent', () => ({
   useCurrentAgent: (cwd: string | null) => mockUseCurrentAgent(cwd),
 }));
-vi.mock('@/layers/shared/model', () => ({
-  useAppStore: (selector: (s: Record<string, unknown>) => unknown) =>
-    selector({ selectedCwd: mockSelectedCwd }),
-}));
-
+// The chat folder comes from the REAL app store, seeded per case.
+import { useAppStore } from '@/layers/shared/model';
 import { usePlacementHere } from '../model/use-placement-here';
+
+const selectFolder = (cwd: string | null) => act(() => useAppStore.setState({ selectedCwd: cwd }));
 
 beforeEach(() => {
   mockRoom = { status: 'none' };
   mockAgent = { data: undefined, isPending: true };
-  mockSelectedCwd = null;
+  selectFolder(null);
   mockUseCurrentAgent.mockClear();
 });
 
 describe('usePlacementHere', () => {
   it('in a chat, names the session page and the agent at the chat folder', () => {
-    mockSelectedCwd = '/projects/alpha';
+    selectFolder('/projects/alpha');
     mockAgent = { data: { id: 'agent-1' }, isPending: false };
 
     const { result } = renderHook(() => usePlacementHere('/session', false));
@@ -47,7 +45,7 @@ describe('usePlacementHere', () => {
   });
 
   it('in a chat with no registered agent, is ready with a null agent', () => {
-    mockSelectedCwd = '/projects/alpha';
+    selectFolder('/projects/alpha');
     mockAgent = { data: null, isPending: false };
 
     const { result } = renderHook(() => usePlacementHere('/session', false));
@@ -56,7 +54,7 @@ describe('usePlacementHere', () => {
   });
 
   it('is pending while the chat agent resolves, handing back the last answer', () => {
-    mockSelectedCwd = '/projects/alpha';
+    selectFolder('/projects/alpha');
     mockAgent = { data: { id: 'agent-1' }, isPending: false };
     const { result, rerender } = renderHook(
       ({ pathname }: { pathname: string }) => usePlacementHere(pathname, false),
@@ -66,9 +64,13 @@ describe('usePlacementHere', () => {
     expect(result.current).toEqual({ status: 'ready', here: settled });
 
     // The person switches to another project: its agent has not loaded yet.
-    mockSelectedCwd = '/projects/beta';
+    // The agent query goes pending first, so the store write's own re-render
+    // already sees the new folder with nothing loaded for it.
     mockAgent = { data: undefined, isPending: true };
+    selectFolder('/projects/beta');
     rerender({ pathname: '/session' });
+
+    expect(mockUseCurrentAgent).toHaveBeenLastCalledWith('/projects/beta');
 
     expect(result.current).toEqual({ status: 'pending', last: settled });
 
@@ -82,7 +84,7 @@ describe('usePlacementHere', () => {
   });
 
   it('is pending with no last answer when the first render is still resolving', () => {
-    mockSelectedCwd = '/projects/alpha';
+    selectFolder('/projects/alpha');
     mockAgent = { data: undefined, isPending: true };
 
     const { result } = renderHook(() => usePlacementHere('/session', false));
@@ -91,7 +93,7 @@ describe('usePlacementHere', () => {
   });
 
   it('in a chat with no folder selected, is ready rather than waiting on a disabled query', () => {
-    mockSelectedCwd = null;
+    selectFolder(null);
     // A disabled query reports `isPending: true` forever.
     mockAgent = { data: undefined, isPending: true };
 
@@ -137,7 +139,7 @@ describe('usePlacementHere', () => {
   });
 
   it('elsewhere, names only the page and never asks for the agent', () => {
-    mockSelectedCwd = '/projects/alpha';
+    selectFolder('/projects/alpha');
     mockAgent = { data: { id: 'agent-1' }, isPending: false };
 
     const { result } = renderHook(() => usePlacementHere('/activity', false));
