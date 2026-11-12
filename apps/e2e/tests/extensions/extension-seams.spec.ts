@@ -3,6 +3,7 @@ import { BasePage } from '../../pages/BasePage.js';
 import { ChatPage } from '../../pages/ChatPage.js';
 import { RightPanelPage } from '../../pages/RightPanelPage.js';
 import { openFromCommandPalette } from '../../pages/command-palette.js';
+import { appFrame, appPage } from '../../pages/app-frame.js';
 import { PHONE } from '../rooms/room-sheet-helpers.js';
 
 /**
@@ -29,6 +30,8 @@ const API_URL = `http://localhost:${MOCK_PORT}`;
 
 /** The id the core extension ships under. */
 const HELLO = 'hello-world';
+/** Its name, which titles the sandboxed frame each of its views runs in. */
+const HELLO_NAME = 'Hello World';
 
 /** Turn a core extension on or off through the same route Settings uses. */
 async function setEnabled(request: APIRequestContext, id: string, enabled: boolean) {
@@ -61,10 +64,12 @@ test.describe('Extension seams — hello-world’s page, status item and tab dot
     // ⌘K lists the app by its name (DOR-3970), not its page's title.
     await openFromCommandPalette(page, 'Hello World');
     await expect(page).toHaveURL(/\/x\/hello-world$/);
-    await expect(page.getByRole('heading', { name: 'Hello, there' })).toBeVisible();
+    // The app draws its page inside its own sandboxed frame (DOR-3293).
+    const app = appFrame(appPage(page), HELLO_NAME);
+    await expect(app.getByRole('heading', { name: 'Hello, there' })).toBeVisible();
 
     // Something bookmarkable in the page's own query survives the reload too.
-    await page.getByLabel('Your name').fill('Kai');
+    await app.getByLabel('Your name').fill('Kai');
     await expect(page).toHaveURL(/\/x\/hello-world\?name=Kai$/);
 
     // Reload: the address arrives before the extension has loaded, so the
@@ -105,7 +110,7 @@ test.describe('Extension seams — hello-world’s page, status item and tab dot
       await completed;
       await page.unroute(bundle, handler);
     }
-    await expect(page.getByRole('heading', { name: 'Hello, Kai' })).toBeVisible();
+    await expect(app.getByRole('heading', { name: 'Hello, Kai' })).toBeVisible();
     const seen = (await page.evaluate(
       () =>
         (
@@ -131,7 +136,8 @@ test.describe('Extension seams — hello-world’s page, status item and tab dot
     const statusLine = page.getByTestId('status-line');
     const item = statusLine.getByRole('group', { name: 'Hello World' });
     await expect(item).toBeVisible();
-    await expect(item).toHaveText(/^Hello/);
+    // What it says is drawn inside the app's own frame (DOR-3293).
+    await expect(appFrame(item, HELLO_NAME).getByText(/^Hello/)).toBeVisible();
   });
 
   test('marks its right-panel tab with a dot, and clears it', async ({ page }) => {
@@ -181,7 +187,9 @@ test.describe('Extension seams — hello-world’s page, status item and tab dot
 
     await pinned.click();
     await expect(page).toHaveURL(/\/x\/hello-world/);
-    await expect(page.getByRole('heading', { name: 'Hello, there' })).toBeVisible();
+    await expect(
+      appFrame(appPage(page), HELLO_NAME).getByRole('heading', { name: 'Hello, there' })
+    ).toBeVisible();
     await expect(pinned).toHaveAttribute('aria-current', 'page');
   });
 
@@ -198,7 +206,9 @@ test.describe('Extension seams — hello-world’s page, status item and tab dot
 
       await page.getByTestId(`apps-tile-${HELLO}`).click();
       await expect(page).toHaveURL(/\/x\/hello-world/);
-      await expect(page.getByRole('heading', { name: 'Hello, there' })).toBeVisible();
+      await expect(
+        appFrame(appPage(page), HELLO_NAME).getByRole('heading', { name: 'Hello, there' })
+      ).toBeVisible();
     });
   });
 });

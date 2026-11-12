@@ -1,6 +1,7 @@
 import { test, expect, type APIRequestContext } from '@playwright/test';
 import { ChatPage } from '../../pages/ChatPage.js';
 import { openFromCommandPalette } from '../../pages/command-palette.js';
+import { appFrame, appPage } from '../../pages/app-frame.js';
 
 /**
  * Starting work in a new chat, seen in a real browser (spec `flow-multiproject`
@@ -66,15 +67,17 @@ test.describe('Starting work in a new chat — hello-world’s “Start a chat�
     // ⌘K lists the app by its name (DOR-3970), not its page's title.
     await openFromCommandPalette(page, 'Hello World');
     await expect(page).toHaveURL(/\/x\/hello-world$/);
-    const start = page.getByRole('button', { name: 'Start a chat' });
+    // The app's page runs inside its own sandboxed frame (DOR-3293).
+    const app = appFrame(appPage(page), 'Hello World');
+    const start = app.getByRole('button', { name: 'Start a chat' });
     await expect(start).toBeEnabled();
     await start.click();
 
     // The click is the only confirmation, and it goes nowhere: the page stays,
     // and the button turns into the outcome with a way to watch it.
-    await expect(page.getByText('Saying hello…')).toBeVisible();
+    await expect(app.getByText('Saying hello…')).toBeVisible();
     await expect(page).toHaveURL(/\/x\/hello-world$/);
-    const watch = page.getByRole('button', { name: 'Watch' });
+    const watch = app.getByRole('button', { name: 'Watch' });
     await expect(watch).toBeVisible();
 
     await watch.click();
