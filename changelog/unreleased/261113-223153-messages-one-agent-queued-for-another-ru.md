@@ -5,6 +5,5 @@ covers:
 
 ### Fixed
 
-<!-- dorkos-changelog:seeded — rewrite this bullet for a human, then delete this comment. If the change needs no changelog entry, delete the whole fragment instead. See changelog/README.md#seeded-fragments. -->
-
-- Messages one agent queued for another run after a restart, and never join a stuck queue (DOR-3287, DOR-3348)
+- A message one agent sent another no longer waits for days after DorkOS restarts. It runs as soon as DorkOS is back.
+- A message sent to an agent that only looked busy no longer gets stuck behind an older message that would never run.
