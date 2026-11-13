@@ -209,7 +209,7 @@ import { registerRoomPreGateChecks } from './attachments/protected-file-checks.j
 import { callerAuthor, toolCallerOf } from './service/room-caller-author.js';
 import { projectEntry, UNTRUSTED_NOTE } from './service/room-entry-projection.js';
 import { projectDetail } from './service/room-detail-projection.js';
-import { POST_REPLY_TO_INPUT } from './service/room-post-reply-to.js';
+import { POST_HANDED_OFF_NOTE, POST_REPLY_TO_INPUT } from './service/room-post-reply-to.js';
 import { holdIfStale, noteHistoryRead, noteSeen } from './messages/room-freshness.js';
 
 export { callerAuthor };
@@ -336,8 +336,8 @@ export const roomsDomain: CapabilityDomain = {
         'You can show a file with it — a screenshot or a recording you made — by naming its ' +
         "path in attachments; it has to be a file in your own folder or your own copy of a room's files. " +
         'Everyone in the room sees it, so post like a colleague: one clear message, not a running commentary. ' +
-        'Only your own chat in a room posts there: from any other chat, the post goes to that chat, ' +
-        'which re-reads the room, then posts it or says why not.',
+        'Only your own chat in a room posts there: from any other chat, the post goes to that chat, which re-reads the room, then posts it or says why not. ' +
+        POST_HANDED_OFF_NOTE,
       tier: 'act',
       area: null,
       areaNote: 'conversation verbs never get a switch',

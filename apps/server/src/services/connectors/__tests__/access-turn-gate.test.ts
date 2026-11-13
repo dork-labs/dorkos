@@ -167,3 +167,19 @@ describe('the live gate source', () => {
     expect(LIVE_TURN_GATE_SOURCES.marked('session-live', undefined)).toBe(false);
   });
 });
+
+// DOR-4049: an agent learns up front, not only from the refusal, that a
+// person's Undo of an approval can't be redone by an agent.
+describe('what an agent is told about a person’s Undo', () => {
+  it.each(['connectors.approve_request', 'connectors.undo_access_change'])(
+    '%s says a person’s Undo is final',
+    async (id) => {
+      const { ACCESS_CHANGE_CAPABILITIES } =
+        await import('../access/access-change-capabilities.js');
+      const capability = ACCESS_CHANGE_CAPABILITIES.find((entry) => entry.id === id);
+      expect(capability?.description).toContain(
+        'If the person undoes an approval, it’s final: you can’t approve that request again.'
+      );
+    }
+  );
+});

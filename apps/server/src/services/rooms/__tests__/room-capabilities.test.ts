@@ -740,6 +740,16 @@ describe('the rooms capability domain', () => {
     });
   });
 
+  describe('post_to_room’s description', () => {
+    it('says handedOff:true means passed on, not refused, so an agent never retries (DOR-3449)', () => {
+      const post = roomsDomain.capabilities.find((c) => c.id === 'rooms.post');
+      expect(post?.description).toContain(
+        'posted:false with handedOff:true means it was passed to your seat in that room, not ' +
+          "refused. Don't retry; check how it went with the check-a-hand-off tool, by its handoffId."
+      );
+    });
+  });
+
   describe('react_to_room_entry', () => {
     it('tells the model to react instead of a filler word for an ack-only message (DOR-1234)', () => {
       const react = roomsDomain.capabilities.find((c) => c.id === 'rooms.react');
