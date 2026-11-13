@@ -1,7 +1,7 @@
 /**
  * Undo one standing yes for a global MCP server (DOR-4118).
  *
- * Removes one exact `mcp__{server}` or `mcp__{server}__{tool}` string from an
+ * Removes one exact `mcp__{server}`, `mcp__{server}__*` or `mcp__{server}__{tool}` string from an
  * agent's `.claude/settings.local.json`, the file `keepAlwaysAllowToAgent`
  * writes. Agents are kept from writing that file, so this writer is held to
  * Security's conditions (Nov 12):
@@ -25,8 +25,11 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 
-/** The only rules Undo may take: a bare server, or one tool on it. */
-export const UNDOABLE_RULE = /^mcp__[A-Za-z0-9_-]+(__[A-Za-z0-9_-]+)?$/;
+/**
+ * The only rules Undo may take: a bare server, `mcp__{server}__*` (the same
+ * reach, DOR-4240), or one tool on it.
+ */
+export const UNDOABLE_RULE = /^mcp__[A-Za-z0-9_-]+(__([A-Za-z0-9_-]+|\*))?$/;
 
 /** Why an Undo was refused before anything was written. */
 export class StandingAllowUndoError extends Error {

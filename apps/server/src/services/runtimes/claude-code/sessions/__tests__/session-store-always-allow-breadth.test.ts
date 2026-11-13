@@ -26,7 +26,7 @@ const SERVER_RULE: PermissionUpdate = {
 
 const TOOL_RULE: PermissionUpdate = { ...SERVER_RULE, rules: [{ toolName: TOOL }] };
 
-function storeWithPendingApproval(suggestions: PermissionUpdate[]) {
+function storeWithPendingApproval(suggestions: PermissionUpdate[], toolName = TOOL) {
   const resolved: Array<boolean | PermissionUpdate[]> = [];
   const store = new SessionStore();
   store.ensureSession(SESSION_ID, { permissionMode: 'default' });
@@ -41,7 +41,7 @@ function storeWithPendingApproval(suggestions: PermissionUpdate[]) {
     timeout: setTimeout(() => {}, 0),
     startedAt: Date.now(),
     suggestions,
-    snapshot: { toolName: TOOL, input: '{}', hasSuggestions: true },
+    snapshot: { toolName, input: '{}', hasSuggestions: true },
   });
   clearTimeout(session.pendingInteractions.get(TOOL_CALL_ID)!.timeout);
   return { store, resolved };
@@ -102,5 +102,66 @@ describe('approveTool on an MCP card (DOR-4101)', () => {
       alwaysAllowBreadth: 'server',
     });
     expect(resolved).toEqual([[SERVER_RULE]]);
+  });
+});
+
+describe('server rules in other shapes (DOR-4240)', () => {
+  /** A server whose own name holds `__`: `made__up`, tool `create_issue`. */
+  const DUNDER_TOOL = 'mcp__made__up__create_issue';
+  const DUNDER_SERVER: PermissionUpdate = {
+    ...SERVER_RULE,
+    rules: [{ toolName: 'mcp__made__up' }],
+  };
+  const DUNDER_TOOL_RULE: PermissionUpdate = { ...SERVER_RULE, rules: [{ toolName: DUNDER_TOOL }] };
+  const WILDCARD: PermissionUpdate = { ...SERVER_RULE, rules: [{ toolName: 'mcp__made-up__*' }] };
+
+  const EVERY_MCP: PermissionUpdate = { ...SERVER_RULE, rules: [{ toolName: 'mcp__*' }] };
+
+  it.each<[string, string, PermissionUpdate]>([
+    ['a server whose name holds __', DUNDER_TOOL, DUNDER_SERVER],
+    ['mcp__{server}__*', TOOL, WILDCARD],
+    ['every MCP tool, mcp__*', TOOL, EVERY_MCP],
+  ])('reads %s as the whole server', (_label, tool, rule) => {
+    expect(alwaysAllowBreadthOf(tool, [rule])).toBe('server');
+  });
+
+  it('still reads the tool’s own rule, another server’s, or a narrowed one as not wide', () => {
+    const sibling = { ...SERVER_RULE, rules: [{ toolName: 'mcp__made__upx' }] };
+    const otherWildcard = { ...SERVER_RULE, rules: [{ toolName: 'mcp__other__*' }] };
+    const narrowed = { ...SERVER_RULE, rules: [{ toolName: 'mcp__made__up', ruleContent: 'x' }] };
+    expect(alwaysAllowBreadthOf(DUNDER_TOOL, [DUNDER_TOOL_RULE])).toBe('tool');
+    expect(alwaysAllowBreadthOf(DUNDER_TOOL, [sibling])).toBe('tool');
+    expect(alwaysAllowBreadthOf(TOOL, [otherWildcard])).toBe('tool');
+    expect(alwaysAllowBreadthOf(DUNDER_TOOL, [narrowed])).toBe('tool');
+  });
+
+  it('an answer with no pick writes only the tool, for a server whose name holds __', () => {
+    const { store, resolved } = storeWithPendingApproval([DUNDER_SERVER], DUNDER_TOOL);
+    store.approveTool(SESSION_ID, TOOL_CALL_ID, true, { alwaysAllow: true });
+    expect(resolved).toEqual([[DUNDER_TOOL_RULE]]);
+  });
+
+  it('"Just {tool}" writes only the tool when the CLI offered mcp__{server}__*', () => {
+    const { store, resolved } = storeWithPendingApproval([WILDCARD]);
+    store.approveTool(SESSION_ID, TOOL_CALL_ID, true, {
+      alwaysAllow: true,
+      alwaysAllowBreadth: 'tool',
+    });
+    expect(resolved).toEqual([[TOOL_RULE]]);
+  });
+
+  it('"Every tool from {server}" still writes either shape as offered', () => {
+    const dunder = storeWithPendingApproval([DUNDER_SERVER], DUNDER_TOOL);
+    dunder.store.approveTool(SESSION_ID, TOOL_CALL_ID, true, {
+      alwaysAllow: true,
+      alwaysAllowBreadth: 'server',
+    });
+    expect(dunder.resolved).toEqual([[DUNDER_SERVER]]);
+    const wildcard = storeWithPendingApproval([WILDCARD]);
+    wildcard.store.approveTool(SESSION_ID, TOOL_CALL_ID, true, {
+      alwaysAllow: true,
+      alwaysAllowBreadth: 'server',
+    });
+    expect(wildcard.resolved).toEqual([[WILDCARD]]);
   });
 });

@@ -485,6 +485,46 @@ describe('the server sheet (DOR-4118)', () => {
     expect(added).toEqual([['github', ['tool_0', 'tool_1', 'tool_2'], ['Quill']]]);
   });
 
+  it("keeps a server whose name holds __ on its own sheet, not github's (DOR-4240)", async () => {
+    await store.add({
+      ...SERVER,
+      name: 'github__eu',
+      secretNames: [],
+      excludedAgents: [],
+    } as never);
+    writeFileSync(
+      localFile(),
+      JSON.stringify({ permissions: { allow: ['mcp__github__create_issue', 'mcp__github__eu'] } })
+    );
+
+    const github = await request(sheetApp()).get('/api/mcp-servers/github/allows');
+    expect(github.body.allows.map((a: { rule: string }) => a.rule)).toEqual([
+      'mcp__github__create_issue',
+    ]);
+    const eu = await request(sheetApp()).get('/api/mcp-servers/github__eu/allows');
+    expect(eu.body.allows).toMatchObject([{ rule: 'mcp__github__eu', breadth: 'server' }]);
+    const wrongSheet = await request(sheetApp())
+      .delete('/api/mcp-servers/github/allows')
+      .send({ agentId: 'agent-quill', rule: 'mcp__github__eu' });
+    expect(wrongSheet.status).toBe(400);
+  });
+
+  it('reads mcp__{server}__* as every tool, says a new tool once, and undoes it (DOR-4240)', async () => {
+    writeFileSync(localFile(), JSON.stringify({ permissions: { allow: ['mcp__github__*'] } }));
+
+    const allows = await request(sheetApp()).get('/api/mcp-servers/github/allows');
+    expect(allows.body.allows).toMatchObject([{ rule: 'mcp__github__*', breadth: 'server' }]);
+    await request(sheetApp()).post('/api/mcp-servers/github/tools');
+    toolsListed = ['create_issue', 'export_all'];
+    await request(sheetApp()).post('/api/mcp-servers/github/tools');
+    expect(added).toEqual([['github', ['export_all'], ['Quill']]]);
+    const undo = await request(sheetApp())
+      .delete('/api/mcp-servers/github/allows')
+      .send({ agentId: 'agent-quill', rule: 'mcp__github__*' });
+    expect(undo.status).toBe(204);
+    expect(JSON.parse(readFileSync(localFile(), 'utf8')).permissions.allow).toEqual([]);
+  });
+
   it('answers 404 for a server that does not exist', async () => {
     const res = await request(sheetApp()).get('/api/mcp-servers/nope/allows');
     expect(res.status).toBe(404);

@@ -98,6 +98,9 @@ export function addMcpServerSheetRoutes(
 ): void {
   const unknown = (c: Context<ApiEnv>) =>
     c.json({ error: 'There is no MCP server by that name.', code: 'not_found' }, 404);
+  // Every server's name, so a server whose name holds `__` stays off a shorter one's sheet.
+  const serverNames = () => store.list().map((server) => server.name);
+  const allowsFor = (name: string) => readStandingAllows(name, deps.agents(), serverNames());
 
   /** POST /api/mcp-servers/:name/tools — what it can do, checked now. */
   router.post('/:name/tools', async (c) => {
@@ -108,7 +111,7 @@ export function addMcpServerSheetRoutes(
     const check = deps.check ?? checkServerTools;
     const result: ServerToolsCheck = await check(store.connectionToCheck(name), name, deps.ledger);
     if (result.status === 'ok' && result.added.length > 0) {
-      const wide = (await readStandingAllows(name, deps.agents()))
+      const wide = (await allowsFor(name))
         .filter((allow) => allow.breadth === 'server')
         .map((allow) => allow.agentName);
       if (wide.length > 0) {
@@ -125,7 +128,7 @@ export function addMcpServerSheetRoutes(
     if (refusal) return refusal;
     const name = c.req.param('name');
     if (!store.has(name)) return unknown(c);
-    return c.json({ allows: await readStandingAllows(name, deps.agents()) });
+    return c.json({ allows: await allowsFor(name) });
   });
 
   /** DELETE /api/mcp-servers/:name/allows — `{ agentId, rule }`: undo one standing yes. */
@@ -135,7 +138,7 @@ export function addMcpServerSheetRoutes(
     const name = c.req.param('name');
     if (!store.has(name)) return unknown(c);
     const parsed = UndoSchema.safeParse(readJsonBody(c));
-    if (!parsed.success || standingAllowBreadth(parsed.data.rule, name) === null) {
+    if (!parsed.success || standingAllowBreadth(parsed.data.rule, name, serverNames()) === null) {
       return c.json(
         { error: `Send an agent and one ${name} rule to undo.`, code: 'bad_rule' },
         400

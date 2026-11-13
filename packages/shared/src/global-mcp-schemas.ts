@@ -319,7 +319,7 @@ export type GlobalMcpToolsCheck = z.infer<typeof GlobalMcpToolsCheckSchema>;
 export const GlobalMcpStandingAllowSchema = z.object({
   agentId: z.string(),
   agentName: z.string(),
-  /** The exact rule, `mcp__{server}` or `mcp__{server}__{tool}`. */
+  /** The exact rule, `mcp__{server}`, `mcp__{server}__*` or `mcp__{server}__{tool}`. */
   rule: z.string(),
   /** Every tool on the server, new ones included, or the one tool. */
   breadth: z.enum(['server', 'tool']),
