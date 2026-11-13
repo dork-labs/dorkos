@@ -1,6 +1,7 @@
 ---
 covers:
   - "fix(ask): a third-party tool's title names its server (DOR-4117)"
+  - "fix(ask): the approval card's shield keeps its size beside a long title (DOR-4247)"
 ---
 
 ### Fixed

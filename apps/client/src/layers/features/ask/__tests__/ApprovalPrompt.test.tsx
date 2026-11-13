@@ -966,3 +966,17 @@ describe('long tool and server names wrap inside the card (DOR-4247)', () => {
     }
   });
 });
+
+describe('the title row on a narrow card (DOR-4247)', () => {
+  it('the shield keeps its size beside a title that wraps', () => {
+    const server = 'notion_demo_workspace_for_the_design_ops';
+    render(
+      <ApprovalPrompt
+        {...baseProps}
+        toolName={`mcp__${server}__search_pages_across_every_shared_space_x`}
+      />
+    );
+    const shield = document.querySelector('[data-testid="tool-approval"] svg.lucide-shield')!;
+    expect(shield.getAttribute('class')!.split(' ')).toContain('shrink-0');
+  });
+});

@@ -486,7 +486,8 @@ export function ApprovalPrompt({
         <div className="mb-1 flex items-center gap-2">
           {/* Neutral on every routine ask: red on each card teaches people to
               ignore red (DOR-4117). The countdown keeps red for its last seconds. */}
-          <Shield className="text-muted-foreground size-(--size-icon-md)" />
+          {/* shrink-0: a title that wraps on a phone squeezed the shield to a dot (DOR-4247). */}
+          <Shield className="text-muted-foreground size-(--size-icon-md) shrink-0" />
           {/* Wraps rather than truncates: a long server name is the part that matters. */}
           <AskCard.Headline className="min-w-0 font-semibold break-words">
             {headline}
