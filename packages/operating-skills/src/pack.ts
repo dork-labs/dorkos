@@ -403,8 +403,12 @@ export interface OperatingSkill {
  *   to add one for every agent itself.
  * - 53: working-with-spin-off-chats names never-started and the five-minute startup
  *   report (DOR-3351). Agents seeded at 52 would treat a failed startup as idle.
+ * - 54: `using-the-agent-browser` warns off a saved browser folder without calling
+ *   it a profile (DOR-3219; Security's no-named-profiles condition), and says
+ *   "the person" where it said "the operator", as the browser tools do. An agent
+ *   seeded at 53 could still tell a person it has browser "profiles".
  */
-export const OPERATING_SKILLS_VERSION = 53;
+export const OPERATING_SKILLS_VERSION = 54;
 
 /**
  * The canonical pack, umbrella skill first. Every entry is validated against the
