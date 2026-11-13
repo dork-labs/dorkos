@@ -72,7 +72,7 @@ export class BrowserProfileAccessGate {
 
   /**
    * Not opened and opened for another chat are different asks of the person (DOR-4265),
-   * so the agent hears which one. The other chat is named by its title only.
+   * so the agent hears which one, with the other chat in its own fields.
    */
   requireShared(selected: string | null, sessionId: string): void {
     if (selected === sessionId) return;
@@ -81,13 +81,14 @@ export class BrowserProfileAccessGate {
         'not_opened',
         'The Agent browser isn’t open yet. Ask the person to open it. In a room, they open it from a direct chat with you.'
       );
-    const title = this.holder?.sessionId === selected ? this.holder.title : null;
-    const where = title ? `“${title}”` : 'another chat';
+    // The title is text a person or agent wrote, so it rides in its own field.
+    const chatTitle = this.holder?.sessionId === selected ? this.holder.title : null;
     throw new LocalBrowserError(
       'shared_elsewhere',
       this.movedFrom === sessionId
-        ? `The person moved the Agent browser to ${where}. Ask them to move it back if you still need it.`
-        : `The Agent browser is in use in ${where}. Ask the person to move it here.`
+        ? 'The person moved the Agent browser to another chat, named in chatTitle. Ask them to move it back if you still need it.'
+        : 'The Agent browser is in use in another chat, named in chatTitle. Ask the person to move it here.',
+      { chatId: selected, chatTitle }
     );
   }
 

@@ -371,7 +371,7 @@ and not only look at it -- click it, type into it, and read it back:
 Read the page first: the names it prints are the names the other five take. This drives only a preview DorkOS
 serves or proxies; a real website is shown here, not driven, so drive it in the Agent browser
 (${T}local_browser_observe, ${T}local_browser_act) once the person shares one from a direct chat with you:
-Open browser in its right panel, or Use it here if another chat has it. With more than one tab open, leave
+Open browser in its right panel, or Take it here if another chat has it. With more than one tab open, leave
 documentId out to act in the tab whose window last brought a preview to the front. Every one of these six
 answers with the tab it acted on and that tab's id, so to stay on one tab, pass back the id the last answer gave
 you. In a room, ${T}get_ui_state lists the open tabs with their ids as well; in a one-on-one session it does not.

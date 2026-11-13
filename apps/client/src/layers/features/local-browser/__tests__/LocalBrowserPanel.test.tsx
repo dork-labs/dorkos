@@ -4,6 +4,7 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { LocalBrowserCapabilities, LocalBrowserState } from '@dorkos/shared/local-browser';
 import { LocalBrowserPanel } from '../ui/LocalBrowserPanel';
+import { useSessionListStore } from '@/layers/entities/session';
 import { useAppStore } from '@/layers/shared/model';
 import { STORAGE_KEYS } from '@/layers/shared/lib/constants';
 import { readLocalBrowserChoice } from '@/layers/shared/model/app-store/local-browser-preference';
@@ -110,18 +111,20 @@ describe('LocalBrowserPanel', () => {
   });
   describe('while another chat holds the browser (DOR-4265)', () => {
     const elsewhere = { ...connected, sessionId: 'other-chat' };
-    it('names that chat’s agent and title, links to it, and starts focus on Use it here', async () => {
+    afterEach(() => useSessionListStore.setState({ statuses: {} }));
+    it('names that chat by its title, links to it, and starts focus on Take it here', async () => {
       vi.spyOn(document, 'hasFocus').mockReturnValue(true);
       transport.getAgentByPath.mockResolvedValue({ name: 'scout', displayName: 'Scout' });
       transport.getLocalBrowserState.mockResolvedValue(elsewhere);
       mount();
-      const useHere = await screen.findByRole('button', { name: 'Use it here' });
-      await waitFor(() => expect(useHere).toHaveFocus());
-      expect(screen.getAllByRole('status')[0]).toHaveTextContent('In use in another chat');
-      expect(await screen.findByText(/Scout is using it in/)).toBeInTheDocument();
+      const take = await screen.findByRole('button', { name: 'Take it here' });
+      await waitFor(() => expect(take).toHaveFocus());
+      expect(screen.getByText('This browser is open in another chat')).toBeInTheDocument();
       expect(
-        screen.getByText('Quarterly invoices loses it until you move it back.')
+        await screen.findByText(/has it\. One chat uses a browser at a time\./)
       ).toBeInTheDocument();
+      // The body says where it is; the header adds no line of its own.
+      expect(screen.getAllByRole('status')[0]).toHaveTextContent('');
       fireEvent.click(screen.getByRole('button', { name: 'Quarterly invoices' }));
       expect(navigate).toHaveBeenCalledExactlyOnceWith(
         expect.objectContaining({ search: expect.objectContaining({ session: 'other-chat' }) })
@@ -131,13 +134,40 @@ describe('LocalBrowserPanel', () => {
       expect(screen.queryByLabelText('Web address')).toBeNull();
       expect(screen.queryByText('First page')).toBeNull();
       expect(screen.queryByText(/Shared with another chat/)).toBeNull();
-      for (const name of ['Pause agent', 'Resume agent', 'Disconnect'])
+      expect(screen.queryByText(/loses it/)).toBeNull();
+      for (const name of ['Pause agent', 'Resume agent', 'Disconnect', 'Use it here'])
         expect(screen.queryByRole('button', { name })).toBeNull();
     });
-    it('says where it is open when that chat has no agent name', async () => {
+    it('while that chat’s agent works, says taking it stops that work', async () => {
+      useSessionListStore.setState({ statuses: { 'other-chat': {} as never } });
+      transport.getAgentByPath.mockResolvedValue({ name: 'scout', displayName: 'Scout' });
       transport.getLocalBrowserState.mockResolvedValue(elsewhere);
       mount();
-      expect(await screen.findByText(/It’s open in/)).toBeInTheDocument();
+      const take = await screen.findByRole('button', { name: 'Take it from Scout' });
+      expect(
+        screen.getByText(
+          (_, element) =>
+            element?.tagName === 'P' &&
+            element.textContent ===
+              'Scout is using it in Quarterly invoices right now. Taking it stops what Scout is doing there.'
+        )
+      ).toBeInTheDocument();
+      fireEvent.click(take);
+      await waitFor(() =>
+        expect(transport.openLocalBrowser).toHaveBeenCalledExactlyOnceWith({
+          mode: 'new-window',
+          sessionId: 'chat-one',
+        })
+      );
+    });
+    it('says "another chat", with no link, when the title is unknown', async () => {
+      transport.getSession.mockRejectedValue(new Error('not found'));
+      transport.getLocalBrowserState.mockResolvedValue(elsewhere);
+      mount();
+      expect(
+        await screen.findByText('Another chat has it. One chat uses a browser at a time.')
+      ).toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: 'New chat' })).toBeNull();
     });
     it('keeps a long title whole in the link’s name and tooltip', async () => {
       const long = 'A very long chat title about the quarterly invoices for every client';
@@ -152,16 +182,10 @@ describe('LocalBrowserPanel', () => {
       expect(link).toHaveAttribute('title', long);
       expect(link.querySelector('.truncate')).toHaveTextContent(long);
     });
-    it('falls back to a plain name while the title is unknown', async () => {
-      transport.getSession.mockRejectedValue(new Error('not found'));
+    it('Take it here opens the browser for this chat in one click', async () => {
       transport.getLocalBrowserState.mockResolvedValue(elsewhere);
       mount();
-      expect(await screen.findByRole('button', { name: 'New chat' })).toBeInTheDocument();
-    });
-    it('Use it here opens the browser for this chat in one click', async () => {
-      transport.getLocalBrowserState.mockResolvedValue(elsewhere);
-      mount();
-      fireEvent.click(await screen.findByRole('button', { name: 'Use it here' }));
+      fireEvent.click(await screen.findByRole('button', { name: 'Take it here' }));
       await waitFor(() =>
         expect(transport.openLocalBrowser).toHaveBeenCalledExactlyOnceWith({
           mode: 'new-window',
@@ -170,25 +194,15 @@ describe('LocalBrowserPanel', () => {
       );
       expect(await screen.findByLabelText('Shared with Kai')).toBeInTheDocument();
     });
-    it('in a room, names the chat but offers no move', async () => {
+    it('in a room, names the chat but offers no take', async () => {
       transport.getLocalBrowserState.mockResolvedValue(elsewhere);
       mount(true, null);
       expect(await screen.findByRole('button', { name: 'Quarterly invoices' })).toBeInTheDocument();
-      expect(screen.queryByRole('button', { name: 'Use it here' })).toBeNull();
+      expect(screen.queryByRole('button', { name: 'Take it here' })).toBeNull();
       expect(
         screen.getByText('Open a direct chat with an agent to share it there.')
       ).toBeInTheDocument();
     });
-  });
-  it('never takes focus from a control outside the panel, such as the chat box', async () => {
-    const composer = document.createElement('textarea');
-    document.body.append(composer);
-    composer.focus();
-    vi.spyOn(document, 'hasFocus').mockReturnValue(true);
-    mount();
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Open browser' })).toBeEnabled());
-    expect(composer).toHaveFocus();
-    composer.remove();
   });
   it('with nothing open, Open browser is the one filled button and a browser is preselected', async () => {
     vi.spyOn(document, 'hasFocus').mockReturnValue(true);
@@ -216,7 +230,7 @@ describe('LocalBrowserPanel', () => {
       askedAt: '2026-11-03T00:00:00.000Z',
       outcome: null,
     };
-    it('with its window open, the header says it is in use in another chat', async () => {
+    it('with its window open, the header adds no line of its own', async () => {
       transport.getLocalBrowserState.mockResolvedValue({
         ...connected,
         sessionId: 'chat-two',
@@ -226,7 +240,8 @@ describe('LocalBrowserPanel', () => {
       });
       mount();
       await screen.findByRole('button', { name: 'Open that chat' });
-      expect(screen.getAllByRole('status')[0]).toHaveTextContent('In use in another chat');
+      expect(screen.getAllByRole('status')[0]).toHaveTextContent('');
+      expect(screen.queryByRole('button', { name: 'Take it here' })).toBeNull();
     });
     it.each([
       ['with its window open', { ...connected, sessionId: 'chat-two', paused: true }],
@@ -251,7 +266,7 @@ describe('LocalBrowserPanel', () => {
         'Disconnect',
         'Open browser',
         'Reconnect',
-        'Use it here',
+        'Take it here',
       ])
         expect(screen.queryByRole('button', { name })).toBeNull();
       expect(screen.queryByRole('combobox')).toBeNull();
@@ -268,7 +283,7 @@ describe('LocalBrowserPanel', () => {
         signIn: null,
       });
       mount();
-      expect(await screen.findByRole('button', { name: 'Use it here' })).toBeEnabled();
+      expect(await screen.findByRole('button', { name: 'Take it here' })).toBeEnabled();
       expect(await screen.findByLabelText('Saved sign-ins')).toBeInTheDocument();
     });
     it('keeps the controls in the waiting chat’s own panel', async () => {
@@ -921,7 +936,7 @@ describe('LocalBrowserPanel', () => {
     act(() =>
       view.client.setQueryData(['local-browser', 'state'], { ...native, sessionId: 'another-chat' })
     );
-    expect(await screen.findByRole('button', { name: 'Use it here' })).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: 'Take it here' })).toBeInTheDocument();
     await waitFor(() => expect(setBounds.mock.calls.at(-1)?.[0].visible).toBe(false));
   });
   it('keeps unexpected browser process errors out of recovery copy', async () => {

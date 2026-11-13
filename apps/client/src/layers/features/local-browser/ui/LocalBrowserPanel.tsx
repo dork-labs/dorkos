@@ -225,7 +225,8 @@ export function LocalBrowserPanel({
                 : state?.status === 'closed'
                   ? 'Browser closed'
                   : connected && sharedElsewhere
-                    ? 'In use in another chat'
+                    ? // The body says where the browser is; the header adds nothing.
+                      ''
                     : connected
                       ? state.paused
                         ? 'Agent paused'
@@ -304,10 +305,10 @@ export function LocalBrowserPanel({
           <motion.div key="elsewhere" {...swap}>
             <SharedElsewhere
               holderSessionId={state.sessionId!}
-              canMoveHere={!!sessionId}
+              canTakeHere={!!sessionId}
               disabled={busy || cancelling || !supported}
               visible={visible}
-              onUseHere={open}
+              onTakeHere={open}
             />
           </motion.div>
         )}

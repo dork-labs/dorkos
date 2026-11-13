@@ -1,7 +1,9 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { Transport } from '@dorkos/shared/transport';
 import type { LocalBrowserPersonState } from '@dorkos/shared/local-browser';
+import type { SessionStatus } from '@dorkos/shared/session-stream';
+import { useSessionListStore } from '@/layers/entities/session';
 import { TransportProvider } from '@/layers/shared/model';
 import { LocalBrowserPanel } from '@/layers/features/local-browser';
 import { createPlaygroundTransport } from '../playground-transport';
@@ -33,6 +35,18 @@ const IN_USE_ELSEWHERE: LocalBrowserPersonState = {
   status: 'connected',
   tabs: [{ id: 'demo-tab', title: 'Release notes draft', url: 'https://example.com/notes' }],
   selectedTabId: 'demo-tab',
+};
+
+/** A browser held by a chat whose agent is working right now, with a long made-up title. */
+const IN_USE_WORKING: LocalBrowserPersonState = {
+  ...IN_USE_ELSEWHERE,
+  sessionId: 'chat-scout-busy',
+};
+
+/** Made-up holder chat titles, one long enough to cut off. */
+const HOLDER_TITLES: Record<string, string> = {
+  'chat-scout': 'Fix the release notes',
+  'chat-scout-busy': 'Fix the release notes and the changelog for the November launch',
 };
 
 /** The same browser while Scout waits for a person to finish a sign-in. */
@@ -68,7 +82,7 @@ function browserTransport(
     get: (target, prop, receiver) => {
       if (prop === 'getLocalBrowserState') return async () => state;
       if (prop === 'getSession')
-        return async (id: string) => ({ id, title: 'Fix the release notes', cwd: '/agents/scout' });
+        return async (id: string) => ({ id, title: HOLDER_TITLES[id] ?? '', cwd: '/agents/scout' });
       if (prop === 'getAgentByPath') return async () => ({ name: 'scout', displayName: 'Scout' });
       if (prop === 'getLocalBrowserCapabilities')
         return async () => ({ embedded: false, newWindow: true });
@@ -87,6 +101,13 @@ function browserTransport(
  */
 function PanelDemo({ state }: { state: LocalBrowserPersonState }) {
   const [transport] = useState<Transport>(() => browserTransport(state));
+  useEffect(() => {
+    if (state.sessionId !== IN_USE_WORKING.sessionId) return;
+    // A live status is how the app knows a chat's agent is working right now.
+    useSessionListStore.setState((store) => ({
+      statuses: { ...store.statuses, [IN_USE_WORKING.sessionId!]: {} as SessionStatus },
+    }));
+  }, [state.sessionId]);
   const [queryClient] = useState(
     () => new QueryClient({ defaultOptions: { queries: { retry: false } } })
   );
@@ -136,9 +157,13 @@ export function LocalBrowserPanelShowcases() {
       <ShowcaseDemo>
         <PanelDemo state={NOT_OPEN} />
       </ShowcaseDemo>
-      <ShowcaseLabel>In use in another chat: Use it here moves it</ShowcaseLabel>
+      <ShowcaseLabel>In use in another chat: Take it here moves it</ShowcaseLabel>
       <ShowcaseDemo>
         <PanelDemo state={IN_USE_ELSEWHERE} />
+      </ShowcaseDemo>
+      <ShowcaseLabel>In use by an agent working right now, with a long title</ShowcaseLabel>
+      <ShowcaseDemo>
+        <PanelDemo state={IN_USE_WORKING} />
       </ShowcaseDemo>
       <ShowcaseLabel>In use in another chat whose agent waits on a person</ShowcaseLabel>
       <ShowcaseDemo>

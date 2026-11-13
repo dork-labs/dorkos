@@ -709,7 +709,7 @@ describe('local browser ownership and observations', () => {
     expect(() => service.requireSharedSession('chat-two')).toThrow(
       expect.objectContaining({
         code: 'shared_elsewhere',
-        message: expect.stringContaining('“Quarterly invoices”'),
+        fields: { chatId: 'chat-one', chatTitle: 'Quarterly invoices' },
       })
     );
     // Use it here is the same person-clicked open, from the second chat.
@@ -719,7 +719,8 @@ describe('local browser ownership and observations', () => {
       expect.objectContaining({
         code: 'shared_elsewhere',
         message:
-          'The person moved the Agent browser to “Trip plans”. Ask them to move it back if you still need it.',
+          'The person moved the Agent browser to another chat, named in chatTitle. Ask them to move it back if you still need it.',
+        fields: { chatId: 'chat-two', chatTitle: 'Trip plans' },
       })
     );
     await service.disconnect();
@@ -731,7 +732,8 @@ describe('local browser ownership and observations', () => {
     expect(() => service.requireSharedSession('chat-two')).toThrow(
       expect.objectContaining({
         message:
-          'The Agent browser is in use in “Quarterly invoices”. Ask the person to move it here.',
+          'The Agent browser is in use in another chat, named in chatTitle. Ask the person to move it here.',
+        fields: { chatId: 'chat-one', chatTitle: 'Quarterly invoices' },
       })
     );
   });
