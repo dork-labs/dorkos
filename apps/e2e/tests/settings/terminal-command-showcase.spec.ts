@@ -72,7 +72,7 @@ test.describe('Terminal command showcase @smoke', () => {
         // Design rules at 390: a thumb-sized target for every button, and no control
         // or line running out of its card.
         const measured = await section.evaluate((root) => {
-          const buttons = [...root.querySelectorAll('button')].map((b) => {
+          const buttons = [...root.querySelectorAll('[data-slot="field-card"] button')].map((b) => {
             const r = b.getBoundingClientRect();
             return { text: b.textContent ?? '', height: r.height };
           });
@@ -85,6 +85,9 @@ test.describe('Terminal command showcase @smoke', () => {
           });
           return { buttons, overflow };
         });
+        // Only the row's own buttons (Install, Remove, Try again, Copy), never the
+        // playground's chrome around each demo; and there must be some to measure.
+        expect(measured.buttons.length).toBeGreaterThan(4);
         expect(measured.buttons.filter((b) => b.height < 44)).toEqual([]);
         expect(measured.overflow).toEqual([]);
       });
