@@ -4,6 +4,7 @@ covers:
   - 'feat(desktop): the Mac app can add dorkos to your Terminal (DOR-3105)'
   - 'fix(desktop): a fresh Terminal command install never replaces a file that appeared after its check (DOR-3105)'
   - 'fix(desktop): the Terminal command copies one line in every shell, and its row stacks on a phone (DOR-3105)'
+  - 'fix(desktop): the Terminal command tab asks the app once when it opens, instead of on every redraw (DOR-3105)'
 ---
 
 ### Added

@@ -136,6 +136,24 @@ describe('TerminalCommandTab', () => {
     expect(fake.status).toHaveBeenCalledTimes(2);
   });
 
+  // Settings renders the tab with no bridge, so it finds the app's own. CI, Nov 13: it
+  // built a new bridge on every render, and each one asked again, so the tab never settled.
+  it('in the Mac app with no bridge handed in, asks the app once and settles', async () => {
+    const status = vi.fn(async () => ({ ok: true, status: { state: 'not-installed' } }));
+    window.electronAPI = {
+      getServerPort: () => 4242,
+      terminalCommand: { status, install: vi.fn(), remove: vi.fn() },
+    } as unknown as ElectronAPI;
+    try {
+      render(<TerminalCommandTab />);
+      await screen.findByRole('button', { name: /^Install/ });
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      expect(status).toHaveBeenCalledTimes(1);
+    } finally {
+      delete window.electronAPI;
+    }
+  });
+
   it('outside the Mac app, offers nothing to press', async () => {
     render(<TerminalCommandTab bridge={null} />);
     await screen.findByText('The Terminal command comes with the Mac app.');

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   getTerminalCommandBridge,
   type TerminalCommandBridge,
@@ -139,11 +139,14 @@ function Action({
  * write the script.
  */
 export function TerminalCommandTab({
-  bridge = getTerminalCommandBridge(),
+  bridge: given,
 }: {
-  /** The desktop bridge; tests pass a fake. */
+  /** The desktop bridge; tests pass a fake. Left out, the app's own is found once. */
   bridge?: TerminalCommandBridge | null;
 }) {
+  // Once per opening, never per render: each lookup is a new object, and the status
+  // read below runs again whenever the bridge changes.
+  const bridge = useMemo(() => (given === undefined ? getTerminalCommandBridge() : given), [given]);
   const [view, setView] = useState<View>(() =>
     bridge ? { kind: 'checking' } : { kind: 'status', status: { state: 'unavailable' } }
   );
