@@ -43,6 +43,28 @@ function instance(over: Partial<CatalogInstance> = {}): CatalogInstance {
   };
 }
 
+/** The two access fields the Telegram manifest declares, enough to see the list appear. */
+const ACCESS_FIELDS: CatalogEntry['manifest']['configFields'] = [
+  {
+    key: 'dmPolicy',
+    label: 'DM Access',
+    type: 'select',
+    required: true,
+    default: 'allowlist',
+    options: [
+      { label: 'Open (anyone)', value: 'open' },
+      { label: 'Allowlist only', value: 'allowlist' },
+    ],
+  },
+  {
+    key: 'dmAllowlist',
+    label: 'DM Allowlist',
+    type: 'textarea',
+    required: false,
+    showWhen: { field: 'dmPolicy', equals: 'allowlist' },
+  },
+];
+
 function entry(bot: CatalogInstance, multiInstance = true): CatalogEntry {
   return {
     manifest: {
@@ -52,7 +74,7 @@ function entry(bot: CatalogInstance, multiInstance = true): CatalogEntry {
       category: 'messaging',
       builtin: true,
       multiInstance,
-      configFields: [],
+      configFields: ACCESS_FIELDS,
     },
     instances: [bot],
   };
@@ -65,6 +87,7 @@ function renderPanel(bot: CatalogInstance, multiInstance = true) {
     getAdapterEvents: vi.fn().mockResolvedValue({ events: [] }),
     listUnclaimedChats: vi.fn().mockResolvedValue([]),
     toggleRelayAdapter: vi.fn().mockResolvedValue({ ok: true }),
+    updateRelayAdapterConfig: vi.fn().mockResolvedValue({ ok: true }),
     removeRelayAdapter: vi.fn().mockResolvedValue({ ok: true }),
   });
   const onClose = vi.fn();
@@ -109,6 +132,43 @@ describe('ChatAppPanel', () => {
     await waitFor(() =>
       expect(transport.toggleRelayAdapter).toHaveBeenCalledWith('telegram-1', true)
     );
+  });
+
+  it('warns when anyone can message the bot and limits it in one click', async () => {
+    const user = userEvent.setup();
+    const { transport } = renderPanel(
+      instance({ config: { dmPolicy: 'open', dmAllowlist: ['42'] } })
+    );
+
+    const fix = screen.getByTestId('app-panel-fix');
+    expect(fix).toHaveTextContent('Anyone who finds this chat can message your agents.');
+    await user.click(within(fix).getByRole('button', { name: 'Only people I list' }));
+
+    await waitFor(() =>
+      expect(transport.updateRelayAdapterConfig).toHaveBeenCalledWith('telegram-1', {
+        dmPolicy: 'allowlist',
+      })
+    );
+  });
+
+  it('does not warn for an allowlisted bot', () => {
+    renderPanel(instance({ config: { dmPolicy: 'allowlist', dmAllowlist: ['42'] } }));
+
+    expect(
+      screen.queryByText('Anyone who finds this chat can message your agents.')
+    ).not.toBeInTheDocument();
+  });
+
+  it('opens the edit wizard with the allowlist fields from Add people', async () => {
+    const user = userEvent.setup();
+    renderPanel(instance({ config: { dmPolicy: 'open' } }));
+
+    await user.click(screen.getByRole('button', { name: 'Add people' }));
+
+    const dialog = await screen.findByRole('dialog', { name: /Edit Telegram/ });
+    // The list stays hidden while the chat is open; Add people pre-sets the
+    // policy so the field is there to fill in, and Save commits both.
+    expect(within(dialog).getByLabelText(/DM Allowlist/)).toBeInTheDocument();
   });
 
   it('shows what a paused bot sends and where, in ASCII, and confirms exactly that', async () => {

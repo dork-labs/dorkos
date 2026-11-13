@@ -23,12 +23,8 @@ import {
   describeError,
   TRACE_PRUNE_BATCH,
 } from '@dorkos/relay';
-import type {
-  AgentRuntimeLike,
-  TraceStoreLike,
-  TasksStoreLike,
-  RefusedAskReporter,
-} from '@dorkos/relay';
+import type { AgentRuntimeLike, RefusedAskReporter } from '@dorkos/relay';
+import type { TasksStoreLike, TraceStoreLike } from '@dorkos/relay';
 import type { AdapterManifest, CatalogEntry } from '@dorkos/shared/relay-schemas';
 import type { AdapterStatus } from '@dorkos/relay';
 import { runtimeRegistry } from '../core/runtime-registry.js';
@@ -87,6 +83,7 @@ import {
   type CredentialProvider,
   type CredentialStore,
 } from '../core/credential-provider.js';
+import { closeDmPolicyOnEnable } from './safe-defaults.js';
 
 // Re-export for consumers that import AdapterError from this module
 export { AdapterError } from './adapter-error.js';
@@ -639,6 +636,9 @@ export class AdapterManager {
     const config = this.configs.find((c) => c.id === id);
     if (!config) throw new Error(`Adapter not found: ${id}`);
 
+    if (closeDmPolicyOnEnable(config)) {
+      logger.info(`[Relay] '${id}' turned back on with a DM allowlist (DOR-3859).`);
+    }
     config.enabled = true;
     await this.persistConfigs();
 

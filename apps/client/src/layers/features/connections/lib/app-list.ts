@@ -21,6 +21,7 @@ import type {
 import { serviceNameFromToolkit } from '@dorkos/shared/connector-schemas';
 import { serviceLogo, type ServiceLogo } from '@/layers/entities/connectors';
 import type { AdapterBinding, CatalogEntry, CatalogInstance } from '@dorkos/shared/relay-schemas';
+import { isOpenToAnyone } from './open-dm-policy';
 
 /**
  * How a row reads at a glance.
@@ -278,6 +279,15 @@ export function chatAppRow(
   }
   if (instance.status.state !== 'connected') {
     return { ...base, tone: 'busy', action: null, detail: withBot('Connecting…') };
+  }
+  if (isOpenToAnyone(entry, instance)) {
+    return {
+      ...base,
+      tone: 'attention',
+      action: 'review',
+      detailTone: 'warning',
+      detail: withBot('Anyone can message it'),
+    };
   }
   const answerers = [
     ...new Set(

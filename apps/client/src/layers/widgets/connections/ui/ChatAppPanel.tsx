@@ -7,9 +7,16 @@ import {
   useConfirmAdapterReferences,
   useRemoveAdapter,
   useToggleAdapter,
+  useUpdateAdapterConfig,
 } from '@/layers/entities/relay';
 import { PausedConfirm } from './PausedConfirm';
-import { ClaimFeed, PanelFix, PanelMoreRow, PanelSection } from '@/layers/features/connections';
+import {
+  ClaimFeed,
+  isOpenToAnyone,
+  PanelFix,
+  PanelMoreRow,
+  PanelSection,
+} from '@/layers/features/connections';
 import { AdapterSetupWizard, ChatAppAnswerers, ChatAppRecent } from '@/layers/features/relay';
 import {
   AlertDialog,
@@ -23,6 +30,7 @@ import {
   Collapsible,
   CollapsibleContent,
   CollapsibleTrigger,
+  Button,
 } from '@/layers/shared/ui';
 
 interface ChatAppPanelProps {
@@ -38,16 +46,18 @@ interface ChatAppPanelProps {
  * A chat app's side panel (design record §5, §9). It asks a different
  * question from an account: who answers when someone messages the bot. People
  * who reached the bot and wait for an OK sit right under it, then what
- * happened lately. Who may message the bot, group chats, the token and the
- * rest of its setup are under "More", in the setup wizard.
+ * happened lately. An open chat gets a lasting notice and quick fix. Who may
+ * message the bot, group chats, the token and the rest of its setup are under
+ * "More", in the setup wizard.
  */
 export function ChatAppPanel({ entry, instance, onClose }: ChatAppPanelProps) {
   const { manifest } = entry;
   const toggle = useToggleAdapter();
+  const updateConfig = useUpdateAdapterConfig();
   const remove = useRemoveAdapter();
   const confirm = useConfirmAdapterReferences();
   const queryClient = useQueryClient();
-  const [wizard, setWizard] = useState<'edit' | 'add' | null>(null);
+  const [wizard, setWizard] = useState<'edit' | 'add' | 'people' | null>(null);
   const [confirmRemove, setConfirmRemove] = useState(false);
   const broken = instance.status.state === 'error' || instance.status.state === 'disconnected';
   const setEnabled = (enabled: boolean) => toggle.mutate({ id: instance.id, enabled });
@@ -78,6 +88,25 @@ export function ChatAppPanel({ entry, instance, onClose }: ChatAppPanelProps) {
           technicalDetail={instance.status.lastError}
           action="Check its settings"
           onAction={() => setWizard('edit')}
+        />
+      ) : isOpenToAnyone(entry, instance) ? (
+        <PanelFix
+          message="Anyone who finds this chat can message your agents."
+          action="Only people I list"
+          onAction={() =>
+            updateConfig.mutate({ id: instance.id, config: { dmPolicy: 'allowlist' } })
+          }
+          pending={updateConfig.isPending}
+          secondary={
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-auto min-h-8 max-w-full whitespace-normal max-md:min-h-11"
+              onClick={() => setWizard('people')}
+            >
+              Add people
+            </Button>
+          }
         />
       ) : null}
 
@@ -140,7 +169,16 @@ export function ChatAppPanel({ entry, instance, onClose }: ChatAppPanelProps) {
             if (!open) setWizard(null);
           }}
           manifest={manifest}
-          existingInstance={wizard === 'edit' ? instance : undefined}
+          existingInstance={
+            wizard === 'add'
+              ? undefined
+              : wizard === 'people'
+                ? {
+                    ...instance,
+                    config: { ...instance.config, dmPolicy: 'allowlist' },
+                  }
+                : instance
+          }
           existingAdapterIds={entry.instances.map((candidate) => candidate.id)}
         />
       )}
