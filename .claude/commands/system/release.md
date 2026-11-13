@@ -202,6 +202,16 @@ Belt-and-braces, seconds, deterministic. CI's `db-check` workflow (a required ch
 
 **If it fails, STOP**: run `pnpm --filter @dorkos/db db:generate` on a real terminal (a column rename needs an interactive answer drizzle-kit refuses to guess), review and land the migration through a PR, then re-run the release. Unlike Check 6, nothing here is release-versioned — Drizzle migrations are numbered and apply at server boot — so there is no per-version key to verify and nothing to scaffold; the migration just has to exist on `main`.
 
+### Check 8: The Agent browser's fallback Chromium is within 30 days of stable
+
+```bash
+pnpm check:chromium-age
+```
+
+When a person has no Google Chrome, the Agent browser and its plain sign-in window run the Chromium build pinned in `apps/server/src/services/session/local-browser/playwright-backend.ts` (`LOCAL_MANAGED_CHROMIUM_VERSION`), and a person may type a password there. That pin moves only when a release bumps Playwright. The check counts the days since the next Chromium milestone first reached stable (Chromium Dash's schedule) and fails past 30: Security's condition for the sign-in window hiding Chromium's "only for automated testing" bar (DOR-3876).
+
+**If it fails (exit 1), STOP**: land a Playwright bump that moves the pin, then re-run the release. **Exit 2** means it could not read the pin or Chromium Dash; re-run it, and never treat a check that could not measure as a pass.
+
 ---
 
 ## Phase 3: Version Analysis
