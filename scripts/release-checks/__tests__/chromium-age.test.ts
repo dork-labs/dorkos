@@ -7,6 +7,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import {
+  dashSchedule,
   MAX_DAYS_BEHIND,
   measureChromiumAge,
   readPinnedVersion,
@@ -73,15 +74,76 @@ describe('measureChromiumAge', () => {
     });
   });
 
-  it('treats a stable date still in the future as 0 days behind', async () => {
+  it('refuses a stable milestone whose schedule says it reaches stable later', async () => {
     const canned = sources('157.0.1.1', 158, { 158: '2026-12-25T00:00:00Z' });
-    expect(await measureChromiumAge(canned, NOW)).toMatchObject({ daysBehind: 0, ok: true });
+    await expect(measureChromiumAge(canned, NOW)).rejects.toThrow(/reaches stable later/);
   });
 
   it('fails closed when the schedule cannot be read', async () => {
     await expect(measureChromiumAge(sources('157.0.1.1', 158), NOW)).rejects.toThrow(
       /no date for 158/
     );
+  });
+});
+
+/** A schedule reader whose Chromium Dash answers are canned by URL path. */
+function dash(releases: unknown, schedules: Record<number, unknown> = {}) {
+  return dashSchedule(async (url) => {
+    if (url.includes('/fetch_releases')) return releases;
+    const milestone = Number(new URL(url).searchParams.get('mstone'));
+    return schedules[milestone];
+  });
+}
+
+// Every way the feed could be wrong must throw (exit 2), never read as fewer days behind.
+describe('dashSchedule', () => {
+  it('reads the newest stable milestone', async () => {
+    expect(await dash([{ milestone: 157 }, { milestone: 158 }]).stableMilestone()).toBe(158);
+  });
+
+  it.each([
+    ['not a list', { milestone: 158 }],
+    ['an empty list', []],
+    ['an entry with no milestone', [{ milestone: 158 }, {}]],
+    ['a milestone given as text', [{ milestone: '159' }, { milestone: 158 }]],
+    ['a null entry', [null, { milestone: 158 }]],
+  ])('refuses a release feed that is %s', async (_label, releases) => {
+    await expect(dash(releases).stableMilestone()).rejects.toThrow();
+  });
+
+  it('counts from the earlier of early stable and stable', async () => {
+    const schedule = {
+      mstones: [
+        { mstone: 158, early_stable: '2026-11-04T00:00:00', stable_date: '2026-11-17T00:00:00' },
+      ],
+    };
+    expect(await dash([], { 158: schedule }).firstStableDate(158)).toEqual(
+      new Date('2026-11-04T00:00:00Z')
+    );
+  });
+
+  it('uses the stable date when there is no early stable', async () => {
+    const schedule = { mstones: [{ mstone: 158, stable_date: '2026-11-17T00:00:00' }] };
+    expect(await dash([], { 158: schedule }).firstStableDate(158)).toEqual(
+      new Date('2026-11-17T00:00:00Z')
+    );
+  });
+
+  it.each([
+    ['missing', undefined],
+    ['empty', { mstones: [] }],
+    ['for another milestone', { mstones: [{ mstone: 159, stable_date: '2026-12-15T00:00:00' }] }],
+    ['without dates', { mstones: [{ mstone: 158 }] }],
+    [
+      'with an unreadable early stable date',
+      { mstones: [{ mstone: 158, early_stable: 'soon', stable_date: '2026-11-17T00:00:00' }] },
+    ],
+    [
+      'with a date in another format',
+      { mstones: [{ mstone: 158, stable_date: '2026-11-17T00:00:00+05:00' }] },
+    ],
+  ])('refuses a schedule that is %s', async (_label, schedule) => {
+    await expect(dash([], { 158: schedule }).firstStableDate(158)).rejects.toThrow();
   });
 });
 

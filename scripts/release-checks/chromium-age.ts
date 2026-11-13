@@ -87,39 +87,83 @@ export async function measureChromiumAge(
   let daysBehind = 0;
   if (stableMilestone > pinnedMilestone) {
     const since = await sources.firstStableDate(pinnedMilestone + 1);
-    daysBehind = Math.max(0, Math.floor((now.getTime() - since.getTime()) / DAY_MS));
+    // A milestone already on stable can't reach stable in the future. Sources that disagree
+    // can't be measured from, and counting 0 days would pass a stale pin.
+    if (since.getTime() > now.getTime())
+      throw new Error(
+        `Milestone ${pinnedMilestone + 1} is listed as stable, but its schedule says it reaches stable later`
+      );
+    daysBehind = Math.floor((now.getTime() - since.getTime()) / DAY_MS);
   }
   return { pinned, stableMilestone, daysBehind, ok: daysBehind <= MAX_DAYS_BEHIND };
 }
 
-async function getJson(url: string): Promise<unknown> {
+async function fetchJson(url: string): Promise<unknown> {
   const response = await fetch(url, { signal: AbortSignal.timeout(20_000) });
   if (!response.ok) throw new Error(`Chromium Dash answered ${response.status} for ${url}`);
   return response.json();
 }
 
+/** Chromium Dash writes its schedule dates as `YYYY-MM-DDTHH:MM:SS`, in UTC, with no zone. */
+const DASH_DATE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$/;
+
+function dashDate(value: unknown, what: string): Date | undefined {
+  if (value === undefined || value === null) return undefined;
+  const date = typeof value === 'string' && DASH_DATE.test(value) ? new Date(`${value}Z`) : null;
+  if (!date || Number.isNaN(date.getTime()))
+    throw new Error(`Chromium Dash gave an unreadable ${what}: ${JSON.stringify(value)}`);
+  return date;
+}
+
+/**
+ * Chromium Dash as the schedule. Every answer is read strictly: anything malformed throws, so
+ * the check exits 2 rather than measuring from a guess. Skipping a bad entry could hide the
+ * newest milestone, and a schedule for the wrong milestone could start the count late; both
+ * would read as fewer days behind, so neither is ever tolerated.
+ *
+ * @param getJson - Fetches a URL and returns its parsed JSON body.
+ * @returns The two schedule reads.
+ */
+export function dashSchedule(
+  getJson: (url: string) => Promise<unknown>
+): Pick<ChromiumAgeSources, 'stableMilestone' | 'firstStableDate'> {
+  return {
+    async stableMilestone() {
+      const releases = await getJson(`${DASH}/fetch_releases?channel=Stable&platform=Mac&num=10`);
+      if (!Array.isArray(releases) || releases.length === 0)
+        throw new Error('Chromium Dash listed no stable Mac releases');
+      const milestones = releases.map((release: { milestone?: unknown } | null) => {
+        const milestone = release?.milestone;
+        if (!Number.isInteger(milestone) || (milestone as number) < 1)
+          throw new Error(`Chromium Dash listed a release with no milestone`);
+        return milestone as number;
+      });
+      return Math.max(...milestones);
+    },
+    async firstStableDate(milestone) {
+      const body = (await getJson(`${DASH}/fetch_milestone_schedule?mstone=${milestone}`)) as {
+        mstones?: unknown;
+      } | null;
+      const entries = Array.isArray(body?.mstones) ? body.mstones : [];
+      const entry = entries[0] as
+        { mstone?: unknown; early_stable?: unknown; stable_date?: unknown } | undefined;
+      if (entries.length !== 1 || entry?.mstone !== milestone)
+        throw new Error(`Chromium Dash has no schedule for milestone ${milestone}`);
+      const dates = [
+        dashDate(entry.early_stable, 'early stable date'),
+        dashDate(entry.stable_date, 'stable date'),
+      ].filter((date): date is Date => date !== undefined);
+      if (dates.length === 0)
+        throw new Error(`Chromium Dash has no stable date for milestone ${milestone}`);
+      return new Date(Math.min(...dates.map((date) => date.getTime())));
+    },
+  };
+}
+
 /** The live sources: the pin from this checkout, the schedule from Chromium Dash. */
 export const liveSources: ChromiumAgeSources = {
   pinned: () => readPinnedVersion(readFileSync(PIN_FILE, 'utf8')),
-  async stableMilestone() {
-    const releases = (await getJson(
-      `${DASH}/fetch_releases?channel=Stable&platform=Mac&num=10`
-    )) as { milestone?: unknown }[];
-    const milestones = releases.map((r) => Number(r.milestone)).filter(Number.isInteger);
-    if (milestones.length === 0) throw new Error('Chromium Dash listed no stable Mac releases');
-    return Math.max(...milestones);
-  },
-  async firstStableDate(milestone) {
-    const body = (await getJson(`${DASH}/fetch_milestone_schedule?mstone=${milestone}`)) as {
-      mstones?: { early_stable?: string; stable_date?: string }[];
-    };
-    const entry = body.mstones?.[0];
-    const first = entry?.early_stable ?? entry?.stable_date;
-    const date = first ? new Date(`${first}Z`) : undefined;
-    if (!date || Number.isNaN(date.getTime()))
-      throw new Error(`Chromium Dash has no stable date for milestone ${milestone}`);
-    return date;
-  },
+  ...dashSchedule(fetchJson),
 };
 
 async function main(): Promise<void> {
