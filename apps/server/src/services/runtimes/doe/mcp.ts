@@ -23,11 +23,19 @@ import { alwaysLoadedToolsFor, searchHintFrom } from '../shared/tools/tool-expos
 
 /** What the agent is told when a browser call reaches a file on this computer. */
 const BROWSER_FILE_REFUSAL = "Agents can't reach files on this computer through the browser.";
+/** What the agent is told when it calls a server it no longer gets (DOR-3872). */
+const REMOVED_SERVER_REFUSAL =
+  'This MCP server was removed or turned off for you, so its tools no longer run.';
 /** Inputs bound to one authenticated runtime turn; configured servers remain foreign. */
 export interface DoeMcpOptions {
   agentPath?: string;
   connectorInjection?: ConnectorRuntimeMcpInjection | null;
   servers?: Record<string, McpAppServerConnection>;
+  /**
+   * Whether the agent still gets a managed server, read at each call: one a
+   * person removed, turned off or kept from it mid-turn is refused (DOR-3872).
+   */
+  stillManaged?: (name: string) => boolean;
   signal: AbortSignal;
   agentToAgent?: boolean;
 }
@@ -116,6 +124,10 @@ export async function assembleDoeMcp(options: DoeMcpOptions): Promise<DoeMcpAsse
           execute: async (args, context) => {
             // Nor a browser call that reaches a file on this computer.
             if (!host && browserCallNamesFile(bare, args)) throw new Error(BROWSER_FILE_REFUSAL);
+            // Nor a server the agent stopped getting since this turn began.
+            const managed = id.startsWith('managed:') ? id.slice('managed:'.length) : undefined;
+            if (managed !== undefined && options.stillManaged && !options.stillManaged(managed))
+              throw new Error(REMOVED_SERVER_REFUSAL);
             return tool.execute(args, {
               ...context,
               signal: AbortSignal.any([options.signal, context.signal]),

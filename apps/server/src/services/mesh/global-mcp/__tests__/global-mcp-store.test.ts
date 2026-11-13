@@ -50,6 +50,29 @@ beforeEach(() => {
 afterEach(() => rmSync(home, { recursive: true, force: true }));
 
 describe('GlobalMcpStore', () => {
+  it('tells its listeners once each write is saved, so running chats can drop a server (DOR-3872)', async () => {
+    const store = new GlobalMcpStore(home, secrets);
+    const changed = vi.fn();
+    store.onChange(changed);
+    await store.add(GITHUB);
+    expect(changed).toHaveBeenCalledTimes(1);
+    await store.patch('github', { enabled: false });
+    await store.replace('github', GITHUB);
+    await store.remove('github');
+    expect(changed).toHaveBeenCalledTimes(4);
+    // A refused write changed nothing, so it tells nobody.
+    await expect(store.remove('github')).rejects.toThrow();
+    expect(changed).toHaveBeenCalledTimes(4);
+  });
+
+  it('a listener that throws never fails the write', async () => {
+    const store = new GlobalMcpStore(home, secrets, { logger: { warn: vi.fn() } });
+    store.onChange(() => {
+      throw new Error('made-up listener failure');
+    });
+    await expect(store.add(GITHUB)).resolves.toBeDefined();
+  });
+
   it('keeps a secret value out of the file and out of every answer', async () => {
     const store = new GlobalMcpStore(home, secrets);
     const view = await store.add(GITHUB);

@@ -151,6 +151,8 @@ export interface AgentMcpServerServiceDeps {
 export interface GlobalMcpServerSource {
   /** The enabled global servers this agent gets, with secrets resolved. */
   injectableFor(agentId: string): Record<string, McpAppServerConnection>;
+  /** Call `listener` after each saved change (DOR-3872). */
+  onChange?(listener: () => void): void;
 }
 
 /** Arguments for {@link AgentMcpServerService.add}. */
@@ -636,6 +638,16 @@ export class AgentMcpServerService {
     const globals = this.globalServers?.injectableFor(entry.agentId) ?? {};
     const servers = Object.keys(globals).length > 0 ? { ...globals, ...own } : own;
     return guardAgentBrowsers(servers, { logger: this.logger });
+  }
+
+  /**
+   * Call `listener` after each saved change to the servers for every agent, so
+   * a runtime can drop a removed one from chats already running (DOR-3872).
+   *
+   * @param listener - Called with no arguments.
+   */
+  onChange(listener: () => void): void {
+    this.globalServers?.onChange?.(listener);
   }
 
   /**

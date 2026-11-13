@@ -103,6 +103,8 @@ interface InjectedRecord {
    * retried on the next turn instead of being stranded for the session.
    */
   complete: boolean;
+  /** Whose managed servers this directory got, so a removal can reach it between turns. */
+  agentCwd: string | null;
 }
 
 /**
@@ -145,6 +147,12 @@ export class OpenCodeMcpManager {
   /** Inject the managed-server resolver (the DOR-892 seam). */
   setResolver(resolver: ManagedMcpServerResolver): void {
     this.resolver = resolver;
+    // A server a person removed leaves chats already running at once (DOR-3872).
+    resolver.onChange?.(() => {
+      this.retireRemoved().catch((err: unknown) => {
+        logger.warn('[OpenCodeRuntime] could not drop a removed MCP server', logError(err));
+      });
+    });
   }
 
   /**
@@ -391,16 +399,20 @@ export class OpenCodeMcpManager {
     // desired — never a user's server. OpenCode retains disconnected dynamic
     // config as `disabled`, so ownership persists for this client instance even
     // though the name leaves `appliedNames` below.
+    // A disconnect that fails leaves the server connected, so it stays applied
+    // and the record incomplete: the next turn tries again (DOR-3872).
+    const stillConnected = new Set<string>();
     if (sameInstance) {
       for (const name of prev.appliedNames) {
-        if (!desiredNames.has(name)) await this.disconnect(client, cwd, name);
+        if (!desiredNames.has(name) && !(await this.disconnect(client, cwd, name)))
+          stillConnected.add(name);
       }
     }
 
     const ownedNames = new Set(previouslyOwnedNames);
-    const appliedNames = new Set<string>();
+    const appliedNames = new Set<string>(stillConnected);
     const conflicts: McpServerEntry[] = [];
-    let complete = true;
+    let complete = stillConnected.size === 0;
     for (const [name, config] of Object.entries(servers)) {
       // A name already on the sidecar that we did NOT inject belongs to the
       // user — skip it rather than overwrite their server (and it stays out of
@@ -448,7 +460,14 @@ export class OpenCodeMcpManager {
         );
       }
     }
-    this.injectedByCwd.set(cwd, { client, names: ownedNames, appliedNames, signature, complete });
+    this.injectedByCwd.set(cwd, {
+      client,
+      names: ownedNames,
+      appliedNames,
+      signature,
+      complete,
+      agentCwd,
+    });
     if (conflicts.length > 0) this.conflictsByCwd.set(cwd, conflicts);
     else this.conflictsByCwd.delete(cwd);
     // Only a name whose add reported `connected` is in `appliedNames`, so a
@@ -481,16 +500,43 @@ export class OpenCodeMcpManager {
     }
   }
 
-  /** Disconnect one previously-injected managed server from the live sidecar (best-effort). */
-  private async disconnect(client: OpencodeClient, cwd: string, name: string): Promise<void> {
+  /**
+   * Disconnect, in every directory, the managed servers an agent no longer gets,
+   * without waiting for that directory's next turn: a person who removed, turned
+   * off or narrowed a server sees it go from chats already running (DOR-3872).
+   * DorkOS's own servers are never touched. A failed disconnect stays applied, so
+   * the directory's next turn tries again.
+   */
+  async retireRemoved(): Promise<void> {
+    const resolver = this.resolver;
+    if (!resolver) return;
+    for (const [cwd, record] of this.injectedByCwd) {
+      if (record.agentCwd === null) continue;
+      const now = new Set(Object.keys(resolver.injectableServersForCwd(record.agentCwd)));
+      for (const name of [...record.appliedNames]) {
+        if (name === DORKOS_MCP_SERVER_NAME || name === CONNECTOR_RUNTIME_MCP_SERVER_NAME) continue;
+        if (now.has(name)) continue;
+        if (await this.disconnect(record.client, cwd, name)) record.appliedNames.delete(name);
+        else record.complete = false;
+      }
+    }
+  }
+
+  /**
+   * Disconnect one previously-injected managed server from the live sidecar
+   * (best-effort). `true` once the sidecar took it.
+   */
+  private async disconnect(client: OpencodeClient, cwd: string, name: string): Promise<boolean> {
     try {
       // Raw `cwd`, deliberately — see this module's DOR-695 note.
       await client.mcp.disconnect({ path: { name }, query: { directory: cwd } });
+      return true;
     } catch (err) {
       logger.warn(
         `[OpenCodeRuntime] failed to disconnect managed MCP server "${name}"`,
         logError(err)
       );
+      return false;
     }
   }
 }

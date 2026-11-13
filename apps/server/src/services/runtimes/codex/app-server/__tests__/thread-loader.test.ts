@@ -441,6 +441,23 @@ describe('review fixes: fingerprint and identity', () => {
     expect(first.needsBinding).toBe(true);
   });
 
+  it('reloads the thread without a managed server removed between turns (DOR-3872)', async () => {
+    const { host, process, loader, fake, input } = await setup();
+    const tools = (managed: CodexTurnTools['managed']) => ({ ...NO_TOOLS, managed });
+    const first = await loader.ensureLoaded(
+      input({ tools: tools(managedWith('Authorization', 'Bearer x')) })
+    );
+    host.home(HOME).threads.get(first.threadId)!.hasRollout = true;
+    loader.markBound(process, first.threadId);
+    const next = await loader.ensureLoaded(
+      input({ tools: tools({ servers: {}, env: {} }), boundThreadId: first.threadId })
+    );
+    expect(next.threadId).not.toBe(first.threadId);
+    const forks = fake.requestsOf('thread/fork');
+    expect(forks).toHaveLength(1);
+    expect((forks[0]!.config as LoadConfig).mcp_servers).toBeUndefined();
+  });
+
   it('mints the identity token only when a thread loads, never per turn', async () => {
     const { loader, fake, input } = await setup();
     let mints = 0;

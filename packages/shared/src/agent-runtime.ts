@@ -320,6 +320,12 @@ export interface RelayPort {
 export interface ManagedMcpServerResolver {
   /** Enabled managed servers for a session cwd, by name; `{}` when none apply. */
   injectableServersForCwd(cwd: string): Record<string, McpAppServerConnection>;
+  /**
+   * Call `listener` when the answer above may have changed for chats already
+   * running, so a runtime can drop a removed server without waiting for a turn
+   * (DOR-3872). Optional: a resolver with nothing to watch omits it.
+   */
+  onChange?(listener: () => void): void;
 }
 
 /**

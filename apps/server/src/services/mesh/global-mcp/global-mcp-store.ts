@@ -24,10 +24,11 @@
  * Runtimes ask for their servers synchronously (`injectableServersForCwd`), and
  * the credential store is async. So the store resolves every reference once at
  * {@link GlobalMcpStore.load} and again after each write, and answers
- * {@link GlobalMcpStore.injectableFor} from memory. A change reaches the next
- * process a chat launches, with no server restart. A chat whose process launched
- * with a server keeps its tools after off, keep-from or Remove until that process
- * ends, and a turn in flight keeps them too.
+ * {@link GlobalMcpStore.injectableFor} from memory. A change reaches every chat
+ * on its next message, with no restart (DOR-3872): Claude Code and Doe refuse a
+ * removed server's tools at the next call, OpenCode disconnects it when
+ * {@link GlobalMcpStore.onChange} fires, and Codex reloads its thread on the next
+ * turn, so only a Codex reply already running can finish with it.
  *
  * ## What it may run
  *
@@ -205,6 +206,31 @@ export class GlobalMcpStore {
    * saving a new server can never overwrite the servers that file still holds.
    */
   private unreadable = false;
+  /** Told after each saved write, so running chats can drop a server (DOR-3872). */
+  private readonly listeners = new Set<() => void>();
+
+  /**
+   * Call `listener` after every write that saved, so a runtime can act on chats
+   * already running. A listener that throws is reported and never fails the write.
+   *
+   * @param listener - Called with no arguments; it reads the store itself.
+   */
+  onChange(listener: () => void): void {
+    this.listeners.add(listener);
+  }
+
+  /** Tell every listener that the saved servers changed. */
+  private notifyChanged(): void {
+    for (const listener of this.listeners) {
+      try {
+        listener();
+      } catch (err) {
+        this.logger.warn('[mcp-servers] a change listener failed', {
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
+  }
 
   /**
    * Build a store over the data directory. Call {@link GlobalMcpStore.load} before use.
@@ -417,6 +443,8 @@ export class GlobalMcpStore {
       try {
         await this.deleteSecrets(existing);
       } catch {
+        // The server is gone even though its key is not, so running chats are told.
+        this.notifyChanged();
         throw new GlobalMcpStoreError(
           'secret_left',
           `${name} is removed, but its saved key couldn't be deleted.`
@@ -427,10 +455,15 @@ export class GlobalMcpStore {
 
   /** Run one write after every write before it, refusing all of them on an unreadable file. */
   private exclusive<T>(work: () => Promise<T>): Promise<T> {
-    const run = this.writes.then(() => {
-      this.refuseUnreadable();
-      return work();
-    });
+    const run = this.writes
+      .then(() => {
+        this.refuseUnreadable();
+        return work();
+      })
+      .then((result) => {
+        this.notifyChanged();
+        return result;
+      });
     this.writes = run.catch(() => undefined);
     return run;
   }
