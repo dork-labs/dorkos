@@ -61,6 +61,8 @@ A card is required for DorkOS's own AI; there are no free starter credits. There
 - Tasks (schedules), Telegram and Slack connections, and services through Composio and Nango (Gmail and others). Connections to outside apps are labelled beta.
 - The marketplace install path.
 - Agents running on Claude Code, Codex or OpenCode. A docs fact, not a headline.
+- Ask an agent how to do something in DorkOS, and it answers from DorkOS's own live docs (ADR `260729-134044`).
+- Approvals wait in **Needs you** at the top of the Inbox: Allow, Don't allow, and Always allow where it's offered. Never say every request offers Always allow.
 - **Trusted by default** (DOR-2738, DOR-2739). Our own agents act without asking, with no posting, notification or reaction caps. A connected app is shared with every agent, and an agent's irreversible action in an outside account waits 60 seconds so anyone else can cancel it. Strangers still need a yes. Claim the last two only once the release after v0.116.0 is out.
 - The Activity page, a record of what agents did. Never call it a complete audit trail.
 - DorkOS Cloud today: accounts, remote access and credits. Never name prices or plans.
