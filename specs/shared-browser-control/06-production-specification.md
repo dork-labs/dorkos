@@ -7,6 +7,8 @@ status: specified
 
 # One shared browser: production contract
 
+> **Status (2026-11-13): retired.** The PM chose to keep the live Agent browser and borrow patterns from other projects, not to ship this managed engine. DOR-4284 deletes `packages/browser`, `apps/server/src/services/browser` and the prototype scripts after launch. One part stays: the prototype viewer (`scripts/browser-control-prototype/viewer*.mjs`) is kept for DOR-2667, which will stream the live Agent browser page for remote and cloud viewing. The Shared browser experiment (DOR-2671, DOR-2672) is canceled. Why: [Agent browser: keep building, adopt, or package?](../../research/20261113_agent-browser-build-vs-adopt.md).
+
 **Status:** Frozen implementation contract after two distinct independent reviews of `17d7c579c0a52211521a2ce50de29b47f8142a1d` against `041afeaaaf3eb8960b77018ffafa42fb51f878db`, each with zero Important findings or Nits (journals44/45). Full-scope delivery is already authorized. Contract freeze establishes design acceptance, not production implementation, identity-mode availability or native acceptance.
 **Rollout addendum:** The user-requested default-off experiment below is a new plan amendment pending fresh independent review. Earlier freeze receipts do not accept this addendum or establish implementation readiness.
 **Author:** Codex

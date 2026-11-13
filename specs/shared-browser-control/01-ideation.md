@@ -7,6 +7,8 @@ status: ideation
 
 # One visible browser for people and agents
 
+> **Status (2026-11-13): retired.** The PM chose to keep the live Agent browser and borrow patterns from other projects, not to ship this managed engine. DOR-4284 deletes `packages/browser`, `apps/server/src/services/browser` and the prototype scripts after launch. One part stays: the prototype viewer (`scripts/browser-control-prototype/viewer*.mjs`) is kept for DOR-2667, which will stream the live Agent browser page for remote and cloud viewing. The Shared browser experiment (DOR-2671, DOR-2672) is canceled. Why: [Agent browser: keep building, adopt, or package?](../../research/20261113_agent-browser-build-vs-adopt.md).
+
 **Author:** Codex, with an independent browser architecture debate requested by the operator.
 **Flow stage:** IDEATE. **Project:** Canvas and Browser in Rooms. **Tracker:** DOR-2667, captured and claimed by the assigned browser lane.
 

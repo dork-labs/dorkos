@@ -2,6 +2,15 @@
   "version": 1,
   "specs": [
     {
+      "id": "261113-214252",
+      "slug": "agent-browser-tab-per-chat",
+      "title": "Agent browser: a tab per chat, with shared sign-ins",
+      "created": "2026-11-13",
+      "status": "draft",
+      "project": "After launch: agent browser profiles and global MCP polish",
+      "linearIssue": "DOR-4273"
+    },
+    {
       "id": "261015-144648",
       "slug": "request-classifier",
       "title": "One request classifier and the registration-policy seam (F0)",

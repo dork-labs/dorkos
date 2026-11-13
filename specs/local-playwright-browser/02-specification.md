@@ -10,6 +10,17 @@ status: specified
 **Author:** Codex
 **Date:** 2026-10-14
 
+## Decision note (2026-11-13)
+
+The PM asked whether to keep building this Agent browser, switch to an outside tool, or package ours. The answer, from [Agent browser: keep building, adopt, or package?](../../research/20261113_agent-browser-build-vs-adopt.md):
+
+- **Keep ours and borrow patterns.** This layer already runs on playwright-core, the same engine most outside tools use. What sets it apart is the safety layer in `apps/server/src/services/session/local-browser/` (stale-page revisions, refusing DorkOS and Cloud pages, person handoff, audit, outsider holds, profile grants). No outside tool can sit under those rules, so switching would mean rebuilding all of them. We copy patterns instead (report §5).
+- **A tab per chat (DOR-4273).** One signed-in browser per install, with one tab owned by each chat. Today one chat holds the whole browser. The design is [`specs/agent-browser-tab-per-chat/`](../agent-browser-tab-per-chat/02-specification.md).
+- **Local-first.** The browser runs wherever DorkOS runs, as part of DorkOS. There is no VM or container per browser. In the cloud, the agent's own computer runs DorkOS, and DorkOS runs this same Agent browser there.
+- **A "tab broker" boundary, for later.** DOR-4273 keeps ownership, the takeover lease, the per-tab queue, audit events and URL policy in one directory with no server imports. That keeps a later package possible (report §8). We publish nothing until its API holds for two releases.
+
+The managed engine from `specs/shared-browser-control/` is retired (DOR-4284).
+
 ## Overview
 
 Build two local browser modes around pinned Playwright. People and agents operate the same live page. The embedded desktop browser is the default where supported; the npm installation defaults to a separate visible browser window. This document records the superseding human scope of 2026-10-15. Existing-browser support is follow-up DOR-2972, preserved on `codex/existing-browser-follow-up` at recovery commit `70ff4d6250c0e32fa43ad24d7d20c4c4e737b312`. It is not first-shipment acceptance.
