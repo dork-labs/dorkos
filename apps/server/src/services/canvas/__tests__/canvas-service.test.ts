@@ -62,6 +62,10 @@ const agents = agentLookupFor({
 /** A document with no natural identity, so nothing dedupes a double write away. */
 const jsonContent = (label: string) => ({ type: 'json', data: { label }, title: label }) as const;
 
+/** Markdown whose text travels with its room row while its source tree is still recorded. */
+const markdownContent = (sourcePath: string) =>
+  ({ type: 'markdown', content: `# ${sourcePath}`, sourcePath }) as const;
+
 describe('RoomCanvasService.apply', () => {
   let service: RoomService;
   let canvas: RoomCanvasService;
@@ -511,7 +515,7 @@ describe('RoomCanvasService.apply', () => {
       const opened = applyAs(
         ana,
         'turn-1',
-        { action: 'open_file', sourcePath: 'src/router.ts' },
+        { action: 'open_canvas', content: markdownContent('src/router.ts') },
         '/work/ana'
       );
       const id = opened.applied ? opened.documentId : '';
@@ -524,7 +528,7 @@ describe('RoomCanvasService.apply', () => {
       const opened = applyAs(
         ana,
         'turn-1',
-        { action: 'open_file', sourcePath: 'src/router.ts' },
+        { action: 'open_canvas', content: markdownContent('src/router.ts') },
         '/work/ana'
       );
       const document = canvas.get(room.id, opened.applied ? opened.documentId : '');
@@ -583,12 +587,24 @@ describe('RoomCanvasService.apply', () => {
         harness.human
       );
       const author = harness.authors.resolveAgent(ANA, 'Ana').id;
-      const open = (sourcePath: string, aheadOfMain: number | null = 2) => {
+      const open = (
+        sourcePath: string,
+        kind: 'file' | 'diff' | 'markdown' = 'file',
+        aheadOfMain: number | null = 2
+      ) => {
+        let command: UiCommand;
+        if (kind === 'markdown') {
+          command = { action: 'open_canvas', content: markdownContent(sourcePath) };
+        } else if (kind === 'diff') {
+          command = { action: 'open_diff', sourcePath };
+        } else {
+          command = { action: 'open_file', sourcePath };
+        }
         const opened = harness.service.canvas.apply({
           roomId: project.id,
           authorId: author,
           turnId: `t-${sourcePath}`,
-          command: { action: 'open_file', sourcePath },
+          command,
           // The turn stands at home and names room files by full path.
           cwd: ANA,
           worktree: '/rooms/general/worktrees/ana-1a2b3c4d',
@@ -601,7 +617,7 @@ describe('RoomCanvasService.apply', () => {
 
     it('labels an absolute path inside the agent`s copy as its copy, with the ahead count', () => {
       const { open, canvas, roomId } = projectRoom();
-      const document = open('/rooms/general/worktrees/ana-1a2b3c4d/PLAN.md');
+      const document = open('/rooms/general/worktrees/ana-1a2b3c4d/PLAN.md', 'diff');
 
       expect(document.treeKind).toBe('worktree');
       expect(document.aheadOfMain).toBe(2);
@@ -625,7 +641,7 @@ describe('RoomCanvasService.apply', () => {
     it('labels anything else — a relative path, or a path elsewhere — as the agent`s project', () => {
       const { open, canvas, roomId } = projectRoom();
       for (const sourcePath of ['src/router.ts', `${ANA}/notes.md`]) {
-        const document = open(sourcePath);
+        const document = open(sourcePath, 'markdown');
         expect(document.treeKind).toBe('agent-cwd');
         expect(document.sourceLabel).toContain('project');
         expect(document.aheadOfMain).toBeNull();

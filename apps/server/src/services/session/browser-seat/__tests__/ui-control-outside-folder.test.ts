@@ -238,12 +238,15 @@ describe("a room's own folders, on that room's canvas (DOR-3519, Security)", () 
   });
 
   it.each([
-    ["a file in the agent's own copy of the room's files", () => path.join(copy, 'notes.md')],
-    ["a file in the room's shared repo/", () => path.join(repo, 'notes.md')],
-    ["a file inside the agent's own folder", () => 'notes.md'],
+    ["markdown from the agent's own copy of the room's files", () => path.join(copy, 'notes.md')],
+    ["markdown from the room's shared repo/", () => path.join(repo, 'notes.md')],
+    ["markdown from the agent's own folder", () => 'notes.md'],
   ])('%s opens in a room turn', async (_name, sourcePath) => {
     inRoomWithFiles();
-    const { payload, isError } = await control({ action: 'open_file', sourcePath: sourcePath() });
+    const { payload, isError } = await control({
+      action: 'open_canvas',
+      content: { type: 'markdown', content: 'made-up room notes', sourcePath: sourcePath() },
+    });
     expect(payload.code).toBeUndefined();
     expect(isError).toBe(false);
     expect(payload).toMatchObject({ success: true, target: 'room', roomId: ROOM });

@@ -69,6 +69,12 @@ const agents = agentLookupFor({
   [BEN]: { name: 'ben', displayName: 'Ben', responseMode: 'always' },
 });
 
+/** File-backed markdown whose text travels with the room row. */
+const markdownCommand = (sourcePath: string) => ({
+  action: 'open_canvas' as const,
+  content: { type: 'markdown' as const, content: 'Source text', sourcePath },
+});
+
 /** A room context with nothing in it but the fields every render needs. */
 function contextWith(canvas: RoomContextData['canvas']): RoomContextData {
   return {
@@ -284,7 +290,7 @@ describe('read_canvas', () => {
       roomId,
       authorId: ana,
       turnId: 'turn-1',
-      command: { action: 'open_file', sourcePath: 'src/router.ts' },
+      command: markdownCommand('src/router.ts'),
       cwd: tree,
     });
     const [document] = harness.service.canvas.list(roomId);
@@ -303,7 +309,7 @@ describe('read_canvas', () => {
       roomId,
       authorId: ana,
       turnId: 'turn-1',
-      command: { action: 'open_file', sourcePath: 'src/gone.ts' },
+      command: markdownCommand('src/gone.ts'),
       cwd: tree,
     });
     const [document] = harness.service.canvas.list(roomId);
@@ -316,12 +322,12 @@ describe('read_canvas', () => {
     expect(result.reason).toContain('not there any more');
   });
 
-  it('records WHICH tree a file document belongs to, and how far ahead it is', async () => {
+  it('records WHICH tree a file-backed document belongs to, and how far ahead it is', async () => {
     harness.service.canvas.apply({
       roomId,
       authorId: ana,
       turnId: 'turn-1',
-      command: { action: 'open_file', sourcePath: 'src/router.ts' },
+      command: markdownCommand('src/router.ts'),
       cwd: tree,
       aheadOfMain: 3,
     });
@@ -342,7 +348,7 @@ describe('read_canvas', () => {
       roomId,
       authorId: ana,
       turnId: 'turn-1',
-      command: { action: 'open_file', sourcePath: 'src/router.ts' },
+      command: markdownCommand('src/router.ts'),
       cwd: tree,
     });
     const [document] = harness.service.canvas.list(roomId);
@@ -363,7 +369,7 @@ describe('read_canvas', () => {
       roomId,
       authorId: ana,
       turnId: 'turn-1',
-      command: { action: 'open_file', sourcePath: 'src/router.ts' },
+      command: markdownCommand('src/router.ts'),
       cwd: tree,
     });
     const [document] = harness.service.canvas.list(roomId);
@@ -532,6 +538,16 @@ describe('a room canvas and protected files (DOR-4060)', () => {
       cwd,
     });
 
+  /** Open file-backed markdown so its text is shareable while the source path remains testable. */
+  const openMarkdown = (sourcePath: string, cwd: string) =>
+    harness.service.canvas.apply({
+      roomId,
+      authorId: ana,
+      turnId: 'turn-4060',
+      command: markdownCommand(sourcePath),
+      cwd,
+    });
+
   /** Ana's `read_canvas` of the one document on the table. */
   async function readOnly(): Promise<{ content: unknown; reason?: string }> {
     const [document] = harness.service.canvas.list(roomId);
@@ -574,7 +590,7 @@ describe('a room canvas and protected files (DOR-4060)', () => {
   });
 
   it('row C: read_canvas refuses a file swapped for a hard link after it was opened', async () => {
-    expect(open('open_file', 'notes.md', tree)).toMatchObject({ applied: true });
+    expect(openMarkdown('notes.md', tree)).toMatchObject({ applied: true });
     rmSync(path.join(tree, 'notes.md'));
     linkSync(path.join(dork, 'host.key'), path.join(tree, 'notes.md'));
     const result = await readOnly();
@@ -584,7 +600,7 @@ describe('a room canvas and protected files (DOR-4060)', () => {
   });
 
   it('read_canvas refuses a file swapped for a symlink to host.key after it was opened', async () => {
-    expect(open('open_file', 'notes.md', tree)).toMatchObject({ applied: true });
+    expect(openMarkdown('notes.md', tree)).toMatchObject({ applied: true });
     rmSync(path.join(tree, 'notes.md'));
     symlinkSync(path.join(dork, 'host.key'), path.join(tree, 'notes.md'));
     const result = await readOnly();
@@ -592,8 +608,8 @@ describe('a room canvas and protected files (DOR-4060)', () => {
     expect(JSON.stringify(result)).not.toContain(CANARY);
   });
 
-  it('control: a plain file in the agent’s own folder opens and reads', async () => {
-    expect(open('open_file', 'notes.md', tree)).toMatchObject({ applied: true });
+  it('control: shareable markdown in the agent’s own folder opens and reads', async () => {
+    expect(openMarkdown('notes.md', tree)).toMatchObject({ applied: true });
     expect((await readOnly()).content).toBe('notes ok');
   });
 });
