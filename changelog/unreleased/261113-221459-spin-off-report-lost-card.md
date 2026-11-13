@@ -1,6 +1,7 @@
 ---
 covers:
   - 'fix(server): a spin-off report that never lands raises an Inbox card (DOR-3561)'
+  - 'fix(inbox): the lost-report card names its chat in full and opens it (DOR-3561)'
 ---
 
 ### Fixed
