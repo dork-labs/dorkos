@@ -57,6 +57,24 @@ describe('rewriteManifestEntry', () => {
     expect(out.releaseDate).toBe('2026-01-01T00:00:00.000Z');
   });
 
+  it('leaves every byte but the DMG’s two lines exactly as they were', () => {
+    // Text, not parsed values: the .zip entry and the top-level path/sha512/size
+    // are what the updater reads, so a re-quote or reorder there must fail too.
+    const manifest = MANIFEST.replace(
+      'sha512: ZIPHASH==\nreleaseDate',
+      'sha512: ZIPHASH==\nsize: 100\nreleaseDate'
+    );
+    const out = rewriteManifestEntry(manifest, 'DorkOS-9.9.9-arm64.dmg', {
+      sha512: 'NEW==',
+      size: 201,
+    });
+    const expected = manifest
+      .replace('    sha512: OLDDMGHASH==\n', '    sha512: NEW==\n')
+      .replace('    size: 200\n', '    size: 201\n');
+    expect(expected).not.toBe(manifest);
+    expect(out).toBe(expected);
+  });
+
   it('refuses a manifest that does not list the file', () => {
     expect(() =>
       rewriteManifestEntry(MANIFEST, 'DorkOS-1.0.0-arm64.dmg', { sha512: 'X', size: 1 })
