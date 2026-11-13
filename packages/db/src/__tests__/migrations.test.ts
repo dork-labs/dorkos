@@ -391,6 +391,8 @@ describe('Database Migrations', () => {
       'unclaimed_chats',
       'user',
       'verification',
+      // Work one agent's chats have claimed, so two never take the same job (DOR-4019).
+      'work_claims',
       'work_queue_control',
       // Who queued a work item, at what level, and its first-run ceiling (VR-A).
       'work_queue_item_authority',

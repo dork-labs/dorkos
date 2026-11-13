@@ -85,6 +85,7 @@ export interface ComposeCapabilitiesInput {
   chatMessaging: WireSessionServicesResult['chatMessaging'];
   todoPromises: WireSessionServicesResult['todoPromises'];
   workQueue: WireSessionServicesResult['workQueue'];
+  workClaims: WireSessionServicesResult['workClaims'];
   activityService: WireCoreStoresResult['activityService'];
   roomStore: WireRoomsResult['roomStore'];
   approvalService: WireConnectorEventsAndApprovalsResult['approvalService'];
@@ -128,6 +129,7 @@ export async function composeCapabilities(refs: ServerRefs, built: ComposeCapabi
     chatMessaging,
     todoPromises,
     workQueue,
+    workClaims,
     activityService,
     roomStore,
     approvalService,
@@ -255,6 +257,7 @@ export async function composeCapabilities(refs: ServerRefs, built: ComposeCapabi
       // To-dos (DOR-3088), behind their flag until v1 is complete.
       ...(env.DORKOS_TODOS_ENABLED ? { todoDeps: todoPromises.todoCapabilityDeps } : {}),
       workQueueDeps: workQueue.capabilityDeps,
+      workClaimDeps: workClaims.capabilityDeps,
       sessionCompactionDeps: {
         compaction: new AgentCompactionService({
           resolveRuntime: (sessionId: string) => runtimeRegistry.resolveForSession(sessionId),

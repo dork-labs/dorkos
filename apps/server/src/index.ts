@@ -553,6 +553,7 @@ async function shutdownServices(reason: 'authority' | 'shutdown' = 'shutdown') {
   refs.searchIndexer?.stop();
   refs.todoWiring?.stop();
   refs.workQueueWiring?.stop();
+  refs.workClaimWiring?.stop();
   heartbeats.stopHeartbeats();
   if (refs.meshCore) {
     refs.meshCore.stopPeriodicReconciliation();

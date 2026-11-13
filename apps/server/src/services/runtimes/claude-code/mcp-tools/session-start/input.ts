@@ -14,6 +14,7 @@ import {
 import { START_WORK_LIMITS } from '@dorkos/shared/extension-decision-schemas';
 import type { EffortLevel } from '@dorkos/shared/types';
 import type { SessionStartPermission } from '../session-start-permission.js';
+import { CLAIM_KEY_MAX_LENGTH } from '../../../../session/claims/work-claim-service.js';
 
 /** The input `session_start` accepts. */
 export const SessionStartInputShape = {
@@ -87,6 +88,22 @@ export const SessionStartInputShape = {
         'message (from a room, it wakes your chat there with a turn only you see). `off`: it ' +
         'never reports back on its own.'
     ),
+  claim: z
+    .string()
+    .trim()
+    .min(1)
+    .max(CLAIM_KEY_MAX_LENGTH)
+    .optional()
+    .describe(
+      'The work the new chat takes on, e.g. a ticket id (DOR-1234), "PR #42" or a branch. The ' +
+        'new chat claims it, so your other chats see it is taken. When another live chat of ' +
+        'yours already holds it, the start is refused and names that chat: leave the work to ' +
+        'it, or set `startAnyway` to start a second chat without the claim.'
+    ),
+  startAnyway: z
+    .boolean()
+    .optional()
+    .describe('Start even though another chat of yours holds `claim`. That chat keeps the claim.'),
 };
 
 /** Parsed `session_start` arguments. */
@@ -103,6 +120,8 @@ export interface SessionStartArgs {
   agentPath?: string;
   reason?: string;
   reportBack?: 'auto' | 'off';
+  claim?: string;
+  startAnyway?: boolean;
 }
 
 /** The result of a started session. */
