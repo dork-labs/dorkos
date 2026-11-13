@@ -1,18 +1,12 @@
 /**
  * Work claims (DOR-4019): two chats of one agent can never both hold one job.
  */
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createTestDb } from '@dorkos/test-utils/db';
-import type { Db } from '@dorkos/db';
-
-const audits: { action: string; outcome: string; target: { id: string } }[] = [];
-vi.mock('../../../audit/audit-trail.js', () => ({
-  recordAudit: (input: { action: string; outcome: string; target: { id: string } }) => {
-    audits.push(input);
-    return undefined;
-  },
-}));
-
+import { auditEvents, type Db } from '@dorkos/db';
+import { initAuditTrail, resetAuditTrail } from '../../../audit/audit-trail.js';
+import { AuditLog } from '../../../audit/audit-log.js';
+import { AccountIds } from '../../../audit/account-ids.js';
 import { CLAIM_IDLE_LIMIT_MS, WorkClaimService, normaliseClaimKey } from '../work-claim-service.js';
 
 const AGENT = 'agent-1';
@@ -22,12 +16,26 @@ let db: Db;
 let now: number;
 let claims: WorkClaimService;
 
+/** What the real audit log holds, oldest first. */
+function audits() {
+  return db
+    .select()
+    .from(auditEvents)
+    .all()
+    .map((row) => ({ action: row.action, outcome: row.outcome, reason: row.reason }));
+}
+
 beforeEach(() => {
-  audits.length = 0;
   db = createTestDb();
+  initAuditTrail({
+    log: new AuditLog(db),
+    accounts: new AccountIds({ db, installId: 'inst-1', readOwnerAccount: () => null }),
+  });
   now = Date.parse('2026-11-13T12:00:00Z');
   claims = new WorkClaimService({ db, now: () => now });
 });
+
+afterEach(() => resetAuditTrail());
 
 describe('normaliseClaimKey', () => {
   it('writes one key one way', () => {
@@ -58,10 +66,12 @@ describe('WorkClaimService', () => {
       code: 'CLAIMED',
       holder: { sessionId: 'chat-a', claimedAt: '2026-11-13T12:00:00.000Z' },
     });
-    expect(audits.map((a) => [a.action, a.outcome])).toEqual([
+    expect(audits().map((a) => [a.action, a.outcome])).toEqual([
       ['work_claim.claimed', 'ok'],
       ['work_claim.claimed', 'refused'],
     ]);
+    // The audit trail is widely readable: a refusal never names the holding chat.
+    expect(JSON.stringify(audits())).not.toContain('chat-a');
   });
 
   it('lets only one of several chats hold a key, by its primary key', () => {
@@ -106,7 +116,7 @@ describe('WorkClaimService', () => {
     now += CLAIM_IDLE_LIMIT_MS + 1;
     expect(claims.check(AGENT)).toEqual([]);
     expect(claims.claim(AGENT, 'chat-b', 'DOR-1')).toMatchObject({ ok: true });
-    expect(audits.map((a) => a.action)).toContain('work_claim.expired');
+    expect(audits().map((a) => a.action)).toContain('work_claim.expired');
   });
 
   it('keeps a claim alive while its chat keeps working', () => {

@@ -383,7 +383,7 @@ export function createSessionStartHandler(
     });
     if (!claimed.ok) return refuse(claimed.message, 'START_LIMIT');
     const reservation = claimed.reservation;
-    // The work it takes on, claimed before launch; held by another chat, it asks first (DOR-4019).
+    // The work it takes on, claimed before launch; held by another chat, it is refused (DOR-4019).
     const held = await claimForStart({
       claim: args.claim,
       startAnyway: args.startAnyway,

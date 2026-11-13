@@ -28,15 +28,21 @@ export interface WorkClaimWiring {
 /**
  * Build the claim service and hook it to session lifecycle.
  *
- * @param deps - The database and Mesh, read at call time.
+ * @param deps - The database and Mesh, read at call time. The reader rule, the
+ *   title lookup and the lifecycle feed default to the live ones; tests pass their own.
  */
 export function wireWorkClaims(deps: {
   db: Db;
   meshCore: () => MeshCore | undefined;
+  maySeeChat?: typeof maySeeChat;
+  chatTitleOf?: typeof chatTitleOf;
+  onStatusChange?: typeof onProjectorStatusChange;
 }): WorkClaimWiring {
+  const maySee = deps.maySeeChat ?? maySeeChat;
+  const titleOf = deps.chatTitleOf ?? chatTitleOf;
   const service = new WorkClaimService({ db: deps.db });
   setWorkClaims(service);
-  const unsubscribe = onProjectorStatusChange((update) => {
+  const unsubscribe = (deps.onStatusChange ?? onProjectorStatusChange)((update) => {
     if (update.retiredSessionId) service.rekey(update.retiredSessionId, update.sessionId);
     service.touch(update.sessionId);
   });
@@ -48,8 +54,8 @@ export function wireWorkClaims(deps: {
       // The reader rule decides what the asking chat may learn of the holder: a
       // chat it may not read is named only as private (DOR-3133 Security Must 2).
       describeChat: async (caller, sessionId) => {
-        if (!maySeeChat(caller, sessionId)) return { title: null, link: null, private: true };
-        const raw = await chatTitleOf(sessionId);
+        if (!maySee(caller, sessionId)) return { title: null, link: null, private: true };
+        const raw = await titleOf(sessionId);
         const title = raw ? (sanitizeIdentity(raw) ?? null) : null;
         return { title, link: chatMarkdownLink(sessionId, title), private: false };
       },
