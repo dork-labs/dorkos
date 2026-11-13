@@ -41,7 +41,7 @@ run() {
 # Case 1: no tag.
 out=$("$CHECK" 2>&1)
 rc=$?
-if [ "$rc" -eq 1 ] && printf '%s' "$out" | grep -q '^usage:'; then ok; else bad "missing tag: rc=$rc out=$out"; fi
+if [ "$rc" -eq 1 ] && grep <<<"$out" -q '^usage:'; then ok; else bad "missing tag: rc=$rc out=$out"; fi
 
 # Case 2: plain release tags give the bare version.
 for pair in 'v0.135.6=0.135.6' 'v1.2.3-rc.1=1.2.3-rc.1' '0.1.0=0.1.0'; do
@@ -55,20 +55,20 @@ done
 for tag in 'v1$(touch '"$marker"')' 'v1.2.3$(touch '"$marker"')' 'v1.2.3`touch '"$marker"'`' 'v1.2.3;touch '"$marker"; do
   rm -f "$marker"
   run "$tag"
-  if [ "$rc" -eq 1 ] && [ -z "$out" ] && printf '%s' "$err" | grep -q '::error::'; then ok; else bad "tag '$tag': rc=$rc out=$out err=$err"; fi
+  if [ "$rc" -eq 1 ] && [ -z "$out" ] && grep <<<"$err" -q '::error::'; then ok; else bad "tag '$tag': rc=$rc out=$out err=$err"; fi
   if [ -e "$marker" ]; then bad "tag '$tag': the command inside it ran"; else ok; fi
 done
 
 # Case 4: other tags that aren't a plain release.
 for tag in 'main' 'v1.2' 'v1.2.3.4' 'v01.2.3' 'vv1.2.3' 'v1.2.3/../x' 'v1.2.3 ' 'v1.2.3-' 'v1.2.3+build' $'v1.2.3\n::warning::x'; do
   run "$tag"
-  if [ "$rc" -eq 1 ] && [ -z "$out" ] && printf '%s' "$err" | grep -q '::error::'; then ok; else bad "tag '$tag': rc=$rc out=$out err=$err"; fi
+  if [ "$rc" -eq 1 ] && [ -z "$out" ] && grep <<<"$err" -q '::error::'; then ok; else bad "tag '$tag': rc=$rc out=$out err=$err"; fi
 done
 
 # Case 5: the refusal never echoes the tag, so a second line can't become a
 # workflow command of its own.
 run $'v1.2.3\n::warning::injected'
-if printf '%s' "$err" | grep -q 'injected'; then bad "refusal echoed the tag: $err"; else ok; fi
+if grep <<<"$err" -q 'injected'; then bad "refusal echoed the tag: $err"; else ok; fi
 
 # Case 6: in the workflow, every "Extract version from tag" step gets its
 # version from release-version.sh.
@@ -153,7 +153,7 @@ for bad_case in \
 done
 run_step "$HOMEBREW" "Get version" GITHUB_EVENT_NAME=workflow_dispatch $'INPUT_VERSION=1.2.3\nversion=6.6.6'
 if [ "$rc" -ne 0 ] && [ -z "$out" ]; then ok; else bad "homebrew step, input with a newline: rc=$rc out=$out err=$err"; fi
-if printf '%s\n' "$err" | grep -q '6.6.6'; then bad "homebrew step echoed the bad input: $err"; else ok; fi
+if grep <<<"$err" -q '6.6.6'; then bad "homebrew step echoed the bad input: $err"; else ok; fi
 
 echo
 echo "release-version fixtures: $pass passed, $fail failed"
