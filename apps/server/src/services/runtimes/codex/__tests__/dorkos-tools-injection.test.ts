@@ -814,14 +814,10 @@ describe('the dorkos tool server on a Codex turn', () => {
       expect(prompt).not.toContain('post_to_room');
     });
 
-    it('lets a user server called dorkos through untouched, and warns about nothing', async () => {
-      // The name is reserved only on the turns DorkOS actually injects it. With
-      // nothing of ours to protect, dropping this person's own server of that
-      // name would take something and give nothing back.
-      //
-      // OpenCode already behaved this way (its desired set simply has no
-      // `dorkos` entry when nothing was resolved), so this is also what keeps
-      // the two runtimes answering the same question the same way.
+    it('leaves out a server called dorkos even on a turn without DorkOS’s tools, and says so (DOR-3600)', async () => {
+      // One rule on every runtime and every turn: no server may take one of
+      // DorkOS's own names. Both stores refuse them, so only a file saved before
+      // that could still hold one; it never reaches Codex.
       const managed: ManagedMcpServerResolver = {
         injectableServersForCwd: () => ({
           dorkos: { transport: 'stdio', command: '/bin/their-server' },
@@ -831,19 +827,9 @@ describe('the dorkos tool server on a Codex turn', () => {
         makeRuntime({ managed, runtimeTools: false }).sendMessage('s1', 'hello', { cwd: agentDir })
       );
 
-      // Theirs — same name, their command, and no URL of ours; only the browser tools no agent is
-      // offered are turned off, as on every server.
-      expect(lastMcpServers()['dorkos']).toEqual({
-        command: '/bin/their-server',
-        disabled_tools: [
-          'browser_run_code_unsafe',
-          'browser_network_request',
-          'browser_start_tracing',
-          'browser_stop_tracing',
-        ],
-      });
+      expect(lastMcpServers()['dorkos']).toBeUndefined();
       const warned = loggerMocks.warn.mock.calls.map((call) => String(call[0]));
-      expect(warned.some((line) => line.includes('reserve'))).toBe(false);
+      expect(warned.some((line) => line.includes('reserve'))).toBe(true);
     });
   });
 

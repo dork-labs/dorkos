@@ -4,6 +4,7 @@
 import { describe, it, expect } from 'vitest';
 import type { McpAppServerConnection } from '@dorkos/shared/agent-runtime';
 import {
+  resolveManagedMcpServers,
   toCodexMcpServerConfig,
   toCodexMcpServers,
   withLiteralHeaders,
@@ -170,6 +171,15 @@ describe('toCodexMcpServers', () => {
     );
     expect(reserved.sort()).toEqual(['dorkos', 'notes']);
     expect(servers).toEqual({ files: expect.anything() });
+  });
+
+  it('leaves out DorkOS’s own names on every turn, in any case (DOR-3600)', () => {
+    const resolver = {
+      injectableServersForCwd: () => ({ DorkOS: stdio, dorkos_connections: stdio, files: stdio }),
+    };
+    expect(Object.keys(resolveManagedMcpServers(resolver, '/made-up/agent').servers)).toEqual([
+      'files',
+    ]);
   });
 
   it('reports no collision when nothing was reserved', () => {

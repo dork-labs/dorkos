@@ -16,6 +16,8 @@ import {
 } from '@/layers/shared/ui';
 import {
   EMPTY_SERVER_FORM,
+  nameProblem,
+  reservedNameProblem,
   serverFormProblem,
   serverInputFrom,
   type FormProblem,
@@ -58,6 +60,13 @@ export function AddServerDialog({ onClose }: { onClose: () => void }) {
     add.mutate(serverInputFrom(form), { onSuccess: onClose });
   }
 
+  /** On leaving Name: one of DorkOS's own names is said at once, and a fixed name clears its line. */
+  function checkName() {
+    const reserved = reservedNameProblem(form.name);
+    if (reserved) setProblem(reserved);
+    else if (problem?.field === 'name' && !nameProblem(form.name)) setProblem(null);
+  }
+
   /** On leaving Arguments. It warns and Add stays on; a failed check just means no warning. */
   function warnAboutArgs() {
     const args = splitArgs(form.args);
@@ -97,6 +106,7 @@ export function AddServerDialog({ onClose }: { onClose: () => void }) {
                 autoFocus
                 value={form.name}
                 onChange={(event) => set({ name: event.target.value })}
+                onBlur={checkName}
                 aria-invalid={problem?.field === 'name' || undefined}
                 aria-describedby={describedBy('name')}
                 autoCapitalize="off"

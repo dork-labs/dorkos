@@ -10,7 +10,9 @@ import {
   GlobalMcpServerNameSchema,
   globalMcpArgsFit,
   splitArgs,
+  isReservedMcpServerName,
   isSecretName,
+  reservedMcpServerNameMessage,
   type GlobalMcpServerInput,
 } from '@dorkos/shared/global-mcp-schemas';
 import { z } from 'zod';
@@ -73,14 +75,38 @@ function liveRows(form: ServerForm): FieldRow[] {
 }
 
 /**
+ * The problem when the Name is one of DorkOS's own, whatever its case, or `null`. Shown on
+ * leaving the field, before anything else is typed (DOR-3600); the server refuses it too.
+ *
+ * @param name - The name as typed.
+ */
+export function reservedNameProblem(name: string): FormProblem | null {
+  const trimmed = name.trim();
+  return isReservedMcpServerName(trimmed)
+    ? { field: 'name', message: reservedMcpServerNameMessage(trimmed) }
+    : null;
+}
+
+/**
+ * What is wrong with the Name alone, or `null`.
+ *
+ * @param name - The name as typed.
+ */
+export function nameProblem(name: string): FormProblem | null {
+  if (!GlobalMcpServerNameSchema.safeParse(name.trim()).success) {
+    return { field: 'name', message: 'Name it with letters, numbers, dashes and underscores.' };
+  }
+  return reservedNameProblem(name);
+}
+
+/**
  * The first thing to fix, top to bottom, or `null` when the form can go.
  *
  * @param form - The form.
  */
 export function serverFormProblem(form: ServerForm): FormProblem | null {
-  if (!GlobalMcpServerNameSchema.safeParse(form.name.trim()).success) {
-    return { field: 'name', message: 'Name it with letters, numbers, dashes and underscores.' };
-  }
+  const named = nameProblem(form.name);
+  if (named) return named;
   if (form.kind === 'command' && form.command.trim() === '') {
     return { field: 'command', message: 'Type the program to run.' };
   }

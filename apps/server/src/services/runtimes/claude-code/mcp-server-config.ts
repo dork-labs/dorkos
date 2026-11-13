@@ -13,6 +13,7 @@
  */
 import type { McpServerConfig } from '@anthropic-ai/claude-agent-sdk';
 import type { McpAppServerConnection } from '@dorkos/shared/agent-runtime';
+import { partitionReservedMcpServers } from '@dorkos/shared/global-mcp-schemas';
 
 /**
  * Map one neutral connection to the SDK's serializable server config. Only the
@@ -40,7 +41,8 @@ export function toSdkMcpServerConfig(connection: McpAppServerConnection): McpSer
 /**
  * Convert a name → neutral-connection record from the agent manifest into a
  * name → SDK-config record ready for `setMcpServerFactory`. Server names are
- * preserved verbatim.
+ * preserved verbatim, except that one of DorkOS's own names, in any case, is
+ * left out (DOR-3600).
  *
  * @param connections - The agent's enabled managed MCP servers, keyed by name.
  */
@@ -48,7 +50,7 @@ export function toSdkMcpServers(
   connections: Record<string, McpAppServerConnection>
 ): Record<string, McpServerConfig> {
   const out: Record<string, McpServerConfig> = {};
-  for (const [name, connection] of Object.entries(connections)) {
+  for (const [name, connection] of Object.entries(partitionReservedMcpServers(connections).kept)) {
     out[name] = toSdkMcpServerConfig(connection);
   }
   return out;

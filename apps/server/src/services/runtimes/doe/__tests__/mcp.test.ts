@@ -83,11 +83,11 @@ describe('authenticated Doe MCP assembly', () => {
     const assembly = await assembleDoeMcp({
       agentPath: '/agent',
       connectorInjection: injection,
-      servers: { dorkos: { transport: 'http', url: 'http://127.0.0.1:5555/mcp' } },
+      servers: { tracker: { transport: 'http', url: 'http://127.0.0.1:5555/mcp' } },
       signal: new AbortController().signal,
     });
     expect(
-      assembly.tools.find((tool) => tool.name === mcpAlias('managed:dorkos', 'post_to_room'))
+      assembly.tools.find((tool) => tool.name === mcpAlias('managed:tracker', 'post_to_room'))
         ?.initialLoad
     ).toBeUndefined();
     expect(assembly.tools.filter((tool) => tool.name === 'post_to_room')).toHaveLength(1);
@@ -96,6 +96,22 @@ describe('authenticated Doe MCP assembly', () => {
       CONNECTOR_RUNTIME_TOOL_TIMEOUT_MS,
       10000,
     ]);
+    await assembly.dispose();
+  });
+  it('never loads a managed server named like DorkOS’s own, in any case (DOR-3600)', async () => {
+    const assembly = await assembleDoeMcp({
+      agentPath: '/agent',
+      connectorInjection: injection,
+      servers: {
+        dorkos: { transport: 'http', url: 'http://127.0.0.1:5555/mcp' },
+        DorkOS_Connections: { transport: 'http', url: 'http://127.0.0.1:5556/mcp' },
+      },
+      signal: new AbortController().signal,
+    });
+    // Only DorkOS's own two servers connected; neither managed one was dialled.
+    expect(calls.limits).toHaveLength(2);
+    expect(assembly.statuses.map((entry) => entry.scope)).toEqual(['runtime']);
+    expect(assembly.serverConfigs).toEqual({});
     await assembly.dispose();
   });
   // On any configured server, not only one shaped like the agent browser: a Playwright server

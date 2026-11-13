@@ -635,18 +635,16 @@ describe('managed-server launches on the other engines', () => {
         files: { transport: 'stdio' as const, command: 'fake-server' },
       })),
     };
-    expect(
-      (await resolvePinnedCodexMcp(resolver, home, home, false, false, mesh)).servers
-    ).toHaveProperty('files');
+    expect((await resolvePinnedCodexMcp(resolver, home, home, false, mesh)).servers).toHaveProperty(
+      'files'
+    );
     resolver.injectableServersForCwd.mockClear();
     write('.dork/agent.json', {
       id: AGENT.id,
       runtime: 'codex',
       mcpServers: [{ name: 'changed' }],
     });
-    expect((await resolvePinnedCodexMcp(resolver, home, home, false, false, mesh)).servers).toEqual(
-      {}
-    );
+    expect((await resolvePinnedCodexMcp(resolver, home, home, false, mesh)).servers).toEqual({});
     expect(resolver.injectableServersForCwd).not.toHaveBeenCalled();
   });
 

@@ -53,6 +53,14 @@ afterEach(async () => {
   for (const dir of tempDirs.splice(0)) await fs.rm(dir, { recursive: true, force: true });
 });
 
+describe('toSdkMcpServers — DorkOS’s own names (DOR-3600)', () => {
+  it('leaves out a server named like DorkOS’s own, in any case, and keeps the rest', () => {
+    const stdio = { transport: 'stdio' as const, command: 'm', args: [], env: {} };
+    const out = toSdkMcpServers({ DorkOS: stdio, Dorkos_Connections: stdio, notes: stdio });
+    expect(Object.keys(out)).toEqual(['notes']);
+  });
+});
+
 describe('mergeSessionMcpServers — ordering guarantee', () => {
   it('spreads managed first and dorkos last', () => {
     const merged = mergeSessionMcpServers({

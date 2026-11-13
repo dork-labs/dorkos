@@ -220,9 +220,12 @@ describe('GlobalMcpStore', () => {
     const store = new GlobalMcpStore(home, secrets);
     await store.add(GITHUB);
     await expect(store.add(GITHUB)).rejects.toMatchObject({ code: 'name_taken' });
-    await expect(store.add({ ...GITHUB, name: 'dorkos' })).rejects.toMatchObject({
-      code: 'reserved_name',
-    });
+    for (const name of ['dorkos', 'DorkOS', 'dorkos_connections', 'DORKOS_CONNECTIONS']) {
+      await expect(store.add({ ...GITHUB, name })).rejects.toMatchObject({
+        code: 'reserved_name',
+        message: `${name} is one of DorkOS's own names. Pick another.`,
+      });
+    }
     await expect(
       store.add({
         ...GITHUB,
