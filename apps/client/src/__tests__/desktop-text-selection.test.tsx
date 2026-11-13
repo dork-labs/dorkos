@@ -25,7 +25,7 @@ import { Button, MarkdownContent, MentionPill, SidebarMenuButton } from '@/layer
 const indexCss = readFileSync(
   resolve(dirname(fileURLToPath(import.meta.url)), '../index.css'),
   'utf8'
-).replace(/\/\*[\s\S]*?\*\//g, '');
+);
 
 /** Cascade tier: unlayered beats `@layer utilities` beats `@layer base`. */
 type Tier = 1 | 2 | 3;
@@ -37,14 +37,24 @@ interface SelectRule {
   order: number;
 }
 
-/** Every rule in `index.css` that sets `user-select`, with its layer tier. */
+/**
+ * Every rule in `index.css` that sets `user-select`, with its layer tier.
+ *
+ * A small brace scanner, not a parser: CSS comments are skipped as it walks
+ * (they hold braces and selectors in prose), and nothing else in this file
+ * nests deeper than `@layer` or `@media`.
+ */
 function stylesheetRules(): SelectRule[] {
   const rules: SelectRule[] = [];
   const preludes: string[] = [];
   let buffer = '';
   let hadChildBlock = false;
-  for (const ch of indexCss) {
-    if (ch === '{') {
+  for (let i = 0; i < indexCss.length; i++) {
+    const ch = indexCss[i];
+    if (ch === '/' && indexCss[i + 1] === '*') {
+      const end = indexCss.indexOf('*/', i + 2);
+      i = end === -1 ? indexCss.length : end + 1;
+    } else if (ch === '{') {
       preludes.push(buffer.trim().replace(/\s+/g, ' '));
       buffer = '';
       hadChildBlock = false;
