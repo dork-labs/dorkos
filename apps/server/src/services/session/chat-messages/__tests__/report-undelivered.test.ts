@@ -10,6 +10,7 @@ vi.mock('../../../mesh/agent-path-lookup.js', () => ({ resolveAgentIdForPath: vi
 import { resolveAgentIdForPath } from '../../../mesh/agent-path-lookup.js';
 import { notify } from '../../../notifications/notification-service.js';
 import { runtimeRegistry } from '../../../core/runtime-registry.js';
+import { REPORT_UNDELIVERED_ENTRIES } from '../report-undelivered-notice.js';
 import { notifyUndeliveredReport } from '../report-undelivered.js';
 
 const chatTitleOf = vi.fn<(id: string) => Promise<string | null>>();
@@ -71,4 +72,23 @@ describe('notifyUndeliveredReport', () => {
     expect(notify).toHaveBeenCalledOnce();
     expect(vi.mocked(notify).mock.calls[0]![1]).not.toHaveProperty('agentId');
   });
+});
+
+it('writes the undelivered report card with its exact copy and action', () => {
+  const entry = REPORT_UNDELIVERED_ENTRIES['report.undelivered'];
+  const payload = {
+    ...REPORT,
+    sessionLabel: 'Weekly invoice cleanup for the north region',
+    at: '2026-11-13T17:00:00.000Z',
+  };
+
+  expect(entry.title(payload)).toBe(
+    "A report from Weekly invoice cleanup for the north region didn't arrive"
+  );
+  expect(entry.body?.(payload)).toBe(
+    'It never reached the chat that started it. Open the chat to read it.'
+  );
+  expect(entry.actions?.(payload)).toEqual([
+    { id: 'open-chat', label: 'Open chat', style: 'primary' },
+  ]);
 });

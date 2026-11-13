@@ -7,7 +7,7 @@
     "apps/client/src/dev/showcases/ConnectionsShowcases.tsx": 608,
     "apps/client/src/dev/showcases/DataDisplayShowcases.tsx": 593,
     "apps/client/src/dev/showcases/GenUiShowcases.tsx": 515,
-    "apps/client/src/dev/showcases/InboxShowcases.tsx": 590,
+    "apps/client/src/dev/showcases/InboxShowcases.tsx": 523,
     "apps/client/src/dev/showcases/LiveLaneShowcases.tsx": 610,
     "apps/client/src/dev/showcases/marketplace-mocks.ts": 759,
     "apps/client/src/dev/showcases/OneBarShowcases.tsx": 646,

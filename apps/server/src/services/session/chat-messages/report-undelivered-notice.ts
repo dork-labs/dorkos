@@ -10,6 +10,7 @@
  *
  * @module services/session/chat-messages/report-undelivered-notice
  */
+import type { NotificationActionDTO } from '@dorkos/shared/notification-schemas';
 import type { NotificationRegistryEntry } from '../../notifications/notification-registry.js';
 
 /** The payload of the undelivered-report kind, joined into `NotificationPayloads`. */
@@ -31,6 +32,11 @@ export interface ReportUndeliveredPayloads {
   };
 }
 
+/** The one place to read a report that did not reach its parent chat. */
+const OPEN_CHAT_ACTION: NotificationActionDTO[] = [
+  { id: 'open-chat', label: 'Open chat', style: 'primary' },
+];
+
 /** The undelivered-report entry, spread into the registry's `ENTRIES`. */
 export const REPORT_UNDELIVERED_ENTRIES: {
   [K in keyof ReportUndeliveredPayloads]: NotificationRegistryEntry<K>;
@@ -45,8 +51,9 @@ export const REPORT_UNDELIVERED_ENTRIES: {
       sessionId: p.sessionId,
       ...(p.agentId ? { agentId: p.agentId } : {}),
     }),
-    title: (p) => `${p.sessionLabel}'s report didn't reach the chat that started it`,
-    body: () => 'Open the chat to read it.',
+    title: (p) => `A report from ${p.sessionLabel} didn't arrive`,
+    body: () => 'It never reached the chat that started it. Open the chat to read it.',
+    actions: () => OPEN_CHAT_ACTION,
     dedupeKey: (p) => `report-undelivered:${p.sessionId}:${p.at}`,
     relay: 'never',
   },
