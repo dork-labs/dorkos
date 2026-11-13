@@ -509,6 +509,14 @@ jobs:
       - name: Heavy-run lock fixtures
         run: bash scripts/test-heavy-run-lock.sh
 
+      # Under pipefail, `… | grep -q` is a coin toss: grep exits at its first
+      # match, the writer dies of SIGPIPE, and the pipeline reads as a miss on
+      # input that matched (76 in 5,000 on a loaded runner, dorkos-cloud #463).
+      # Under `if !` that miss fails OPEN. This lint keeps the shape out of
+      # scripts, hooks and workflows. A grep over files, a few milliseconds.
+      - name: No pipe into grep -q
+        run: bash scripts/test-no-early-exit-grep.sh
+
       # sweep-ephemeral-docker.sh reclaims the containers, volumes and networks a
       # SIGKILLed run leaves behind, and it is the one gate script whose failure
       # mode is DELETING something rather than missing something. Its fixtures

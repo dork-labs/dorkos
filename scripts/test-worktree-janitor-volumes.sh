@@ -77,7 +77,7 @@ if [[ -d "$TMP/ext/.git/worktrees/ext-a" ]]; then ok; else bad "record of a work
 line="ALERT: $MISSING_VOL is not mounted: git worktree prune skipped"
 if [[ $(grep -cF "$line" <<<"$out") -eq 1 ]]; then ok; else bad "expected exactly one line naming $MISSING_VOL" "$out"; fi
 # The daily wrapper keeps only lines matching this, so the line must survive it.
-if grep -E "removed|ERROR|error" <<<"$out" | grep -qF "$MISSING_VOL"; then ok; else bad "missing-disk line would not reach the LaunchAgent log" "$out"; fi
+if grep -E "removed|ERROR|error" <<<"$out" | grep -F "$MISSING_VOL" >/dev/null; then ok; else bad "missing-disk line would not reach the LaunchAgent log" "$out"; fi
 
 # --- the same, with an internal-disk worktree gone too: still nothing pruned -
 

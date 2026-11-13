@@ -88,7 +88,7 @@ remedy_has() { # $1 name, $2 token, $3 fixed string that must appear
   esac
 }
 remedy_lacks() { # $1 name, $2 token, $3 extended regex that must NOT match
-  if remedy_of "$2" | grep -Eqi -- "$3"; then
+  if remedy_of "$2" | grep -Ei -- "$3" >/dev/null; then
     echo "FAIL $1: remedy for '$2' matches /$3/: $(remedy_of "$2")" >&2
     fail=1
   fi

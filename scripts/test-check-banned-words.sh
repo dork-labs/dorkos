@@ -56,10 +56,10 @@ run_case() {
   # variable under `set -u`, a bash 3.2 quirk, as DOR-2068 hit on an empty file
   # list) also exits non-zero, and would pass every red case while checking
   # nothing.
-  if [ "$want" -eq 1 ] && [ "$got" -eq 1 ] && ! printf '%s' "$out" | grep -qF "  $path:"; then
+  if [ "$want" -eq 1 ] && [ "$got" -eq 1 ] && ! grep <<<"$out" -qF "  $path:"; then
     got="1, without naming $path"
   fi
-  if [ -n "$must_say" ] && ! printf '%s' "$out" | grep -qF "$must_say"; then
+  if [ -n "$must_say" ] && ! grep <<<"$out" -qF "$must_say"; then
     got="$got, without saying \"$must_say\""
   fi
 
