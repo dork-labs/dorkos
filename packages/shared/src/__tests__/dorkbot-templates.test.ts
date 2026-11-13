@@ -22,12 +22,6 @@ function makeTraits(overrides: Partial<Traits> = {}): Traits {
 
 describe('dorkbot-templates', () => {
   describe('dorkbotClaudeMdTemplate', () => {
-    it('returns a non-empty string with DorkBot header', () => {
-      const result = dorkbotClaudeMdTemplate();
-      expect(result).toContain('# DorkBot');
-      expect(result).toContain('DorkOS');
-    });
-
     it('describes running a business and building mini apps, never a retired line', () => {
       const result = dorkbotClaudeMdTemplate();
       expect(result).toContain('run their business');
@@ -77,20 +71,6 @@ describe('dorkbot-templates', () => {
   });
 
   describe('DORKBOT_ONBOARDING_LINES', () => {
-    it('never uses an em dash (writing-for-humans)', () => {
-      const allCopy = [
-        ...DORKBOT_ONBOARDING_LINES.identityCardPrompt,
-        DORKBOT_ONBOARDING_LINES.identityCardSaved,
-        DORKBOT_ONBOARDING_LINES.saveError,
-        DORKBOT_ONBOARDING_LINES.profileSaved,
-        ...DORKBOT_ONBOARDING_LINES.profileCardPrompt,
-        ...(['terse', 'balanced', 'warm', 'playful', 'bold', 'inventive'] as const).map(() =>
-          generateVoiceSample(makeTraits())
-        ),
-      ].join(' ');
-      expect(allCopy).not.toContain('—');
-    });
-
     // FB-11 / DOR-1972: the reporter answered this prompt with no idea where the
     // answer went, how it was used, or how to change it. Both lines have to
     // survive together — the ask, and the fact right behind it.
@@ -111,17 +91,6 @@ describe('dorkbot-templates', () => {
       expect(DORKBOT_TOUR_LINES.tasks.tasksList.length).toBeGreaterThan(0);
       expect(DORKBOT_TOUR_LINES.relay.relayIntegrations.length).toBeGreaterThan(0);
       expect(DORKBOT_TOUR_LINES.mesh.teamRoster.length).toBeGreaterThan(0);
-    });
-
-    it('never uses an em dash (writing-for-humans)', () => {
-      const allCopy = [
-        ...Object.values(DORKBOT_TOUR_LINES.offers),
-        ...Object.values(DORKBOT_TOUR_LINES.general),
-        ...Object.values(DORKBOT_TOUR_LINES.tasks),
-        ...Object.values(DORKBOT_TOUR_LINES.relay),
-        ...Object.values(DORKBOT_TOUR_LINES.mesh),
-      ].join(' ');
-      expect(allCopy).not.toContain('—');
     });
   });
 

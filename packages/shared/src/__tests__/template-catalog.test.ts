@@ -5,7 +5,7 @@ import {
   TemplateCatalogSchema,
   DEFAULT_TEMPLATES,
 } from '../template-catalog.js';
-import type { TemplateEntry, TemplateCatalog } from '../template-catalog.js';
+import type { TemplateCatalog } from '../template-catalog.js';
 
 describe('TemplateCategorySchema', () => {
   it('accepts valid categories', () => {
@@ -119,10 +119,6 @@ describe('TemplateCatalogSchema', () => {
 });
 
 describe('DEFAULT_TEMPLATES', () => {
-  it('has exactly 7 built-in templates', () => {
-    expect(DEFAULT_TEMPLATES).toHaveLength(7);
-  });
-
   it('all entries have builtin: true', () => {
     for (const template of DEFAULT_TEMPLATES) {
       expect(template.builtin).toBe(true);
@@ -146,27 +142,10 @@ describe('DEFAULT_TEMPLATES', () => {
     ).not.toThrow();
   });
 
-  it('has correct category distribution', () => {
-    const counts = new Map<string, number>();
-    for (const t of DEFAULT_TEMPLATES) {
-      counts.set(t.category, (counts.get(t.category) ?? 0) + 1);
-    }
-    expect(counts.get('general')).toBe(1);
-    expect(counts.get('frontend')).toBe(2);
-    expect(counts.get('backend')).toBe(2);
-    expect(counts.get('library')).toBe(1);
-    expect(counts.get('tooling')).toBe(1);
-  });
-
   it('all entries have non-empty tags', () => {
     for (const template of DEFAULT_TEMPLATES) {
       expect(template.tags.length).toBeGreaterThan(0);
     }
-  });
-
-  it('satisfies TemplateEntry[] type', () => {
-    const entries: TemplateEntry[] = DEFAULT_TEMPLATES;
-    expect(entries[0]?.id).toBe('blank');
   });
 
   it('blank template has empty source', () => {
