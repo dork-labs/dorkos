@@ -1,6 +1,7 @@
 ---
 covers:
   - 'fix(remote): a TUNNEL_PORT that Remote Access cannot use answers 409, and a refused /mcp call says what to do (DOR-4263, DOR-4264)'
+  - 'fix(remote): the app says a TUNNEL_PORT refusal instead of showing Remote Access as reconnecting (DOR-4263)'
 ---
 
 ### Fixed

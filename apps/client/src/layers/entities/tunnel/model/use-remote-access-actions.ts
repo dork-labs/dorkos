@@ -137,6 +137,15 @@ export function useRemoteAccessActions(): RemoteAccessActionHandlers {
         return;
       }
 
+      // A TUNNEL_PORT that Remote Access can't reach is a setting to fix, not a
+      // tunnel that is up: say the server's sentence (DOR-4263).
+      if (refusal.code === 'TUNNEL_PORT_MISMATCH') {
+        useRemoteAccessStore
+          .getState()
+          .failStart(err instanceof Error ? err.message : 'Couldn’t open your link. Try again.');
+        return;
+      }
+
       // The route's OTHER 409 is "Tunnel is already running", and it is not a
       // failure — it is the answer converging on a tunnel that is up. Painting
       // an error over a live tunnel is how a person ends up turning off working
