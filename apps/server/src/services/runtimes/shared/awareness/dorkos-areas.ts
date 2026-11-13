@@ -66,7 +66,7 @@ export const DORKOS_AREAS: readonly DorkosAreaLine[] = [
   },
   {
     name: 'Rooms',
-    can: 'post, react, read and search; open rooms, set members, merge files.',
+    can: 'post, react, read, search; open rooms, set members, merge files.',
     covers: ['rooms.'],
     areas: ['rooms'],
   },
@@ -74,7 +74,7 @@ export const DORKOS_AREAS: readonly DorkosAreaLine[] = [
     // One line for both canvas surfaces (DOR-3219 diet): the document table and
     // the browser tab are the same place to an agent.
     name: 'Canvas',
-    can: 'open documents, files, diffs, widgets and pages, here or in a room; drive DorkOS pages (not real sites), which can send you events.',
+    can: 'open files, diffs, widgets and pages, here or in a room; drive DorkOS pages (not real sites) that send you events.',
     covers: [
       'ui.control',
       'ui.state',
@@ -119,12 +119,12 @@ export const DORKOS_AREAS: readonly DorkosAreaLine[] = [
     can: 'add or remove your MCP servers and packages; build extensions a person approves. A change reaches you next turn, in this chat: no restart.',
     covers: ['mcp.', 'marketplace.', 'create_extension', 'reload_extensions', 'test_extension'],
     areas: ['packages'],
-    gate: 'adding an MCP server asks',
+    gate: 'adding or changing an MCP server asks, and only a person adds one for all agents',
   },
   {
     // Telegram and Slack, and reaching the person through them, on one line.
     name: 'Chat apps',
-    can: "switch Telegram and Slack, pick each chat's agent, reach the person there.",
+    can: "switch Telegram and Slack, pick each chat's agent, reach the person.",
     covers: [
       'relay_list_adapters',
       'relay_enable_adapter',
@@ -140,13 +140,13 @@ export const DORKOS_AREAS: readonly DorkosAreaLine[] = [
   },
   {
     name: 'Tasks',
-    can: 'create, change and delete schedules; read runs; end a heartbeat.',
+    can: 'create, change, delete schedules; read runs; end a heartbeat.',
     covers: ['tasks_', 'heartbeat.'],
     areas: ['tasks'],
   },
   {
     name: 'Agents',
-    can: 'find, create, change, pause and resume agents and their work queues.',
+    can: 'find, create, change, pause and resume agents and work queues.',
     covers: [
       'work-queue.',
       'mesh_',
@@ -174,7 +174,7 @@ export const DORKOS_AREAS: readonly DorkosAreaLine[] = [
   {
     // What agents did and how this computer is doing, both read only, on one line.
     name: 'Activity',
-    can: 'read agent activity, running chats, audit log, transcripts, server health, Claude usage.',
+    can: 'read activity, running chats, audit log, transcripts, health, Claude usage.',
     covers: [
       'audit.',
       'operator.activity_list',
