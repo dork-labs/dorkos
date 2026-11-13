@@ -3,6 +3,7 @@ covers:
   - 'fix(local-browser): the Agent browser panel names the chat that has it, and moves it here in one click (DOR-4265)'
   - "fix(local-browser): the shared-elsewhere view and agent refusals follow the designer's spec (DOR-4265)"
   - 'fix(local-browser): Open browser and Use it here take first focus, and the playground shows each state (DOR-4265)'
+  - "fix(local-browser): the in-use title sits on the sentence's line, and the warning wraps whole (DOR-4265)"
 ---
 
 ### Fixed
