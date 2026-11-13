@@ -26,6 +26,10 @@ import { AskCard, WARN_AT_S, URGENT_AT_S } from './AskCard';
 import { AlwaysAllowChoice } from './AlwaysAllowChoice';
 import { ASK_PARKED_LABEL } from '../lib/format-time-left';
 import { alwaysAllowScopeLabel } from '../lib/always-allow-scope-label';
+import { WRAPPING_ACTION_CLASS } from '../lib/wrapping-action';
+
+/** Every answer button on the card: it wraps a long tool name rather than overflow (DOR-4247). */
+const ACTION_CLASS = cn('transition-opacity duration-150', WRAPPING_ACTION_CLASS);
 
 /** What a card on Wi-Fi says in place of Always allow (DOR-2969). */
 export const WIFI_ALWAYS_ALLOW_LINE = 'Always allow is only available at this computer.';
@@ -174,11 +178,14 @@ export function ApprovalPrompt({
   const asksBreadth = approvalAlwaysAllowBreadth === 'server' && mcp !== null && !onWifi;
   // Who and what (DOR-4117): the agent and the tool when the name is known, else
   // the runtime's own sentence, else the tool alone.
-  const toolWord = mcp?.tool ?? toolName;
+  // An MCP tool reads by the friendly names the badge and the choice use, both
+  // parsed from its `mcp__<server>__<tool>` key, never from the tool's own text
+  // (DOR-4247). Raw snake_case in a sentence read like a bug.
+  const toolWord = mcp?.toolLabel ?? toolName;
   // A third-party server can name its tool `Bash`, so its title says where the
   // tool comes from, by the server's name in Connections rather than anything
-  // the tool says about itself. Built-ins keep the short title.
-  const fromServer = badge !== null && mcp ? ` from ${mcp.server}` : '';
+  // the tool says about itself: the badge's own label. Built-ins keep the short title.
+  const fromServer = badge !== null && mcp ? ` from ${badge}` : '';
   const headline = agentName
     ? `${agentName} wants to use ${toolWord}${fromServer}`
     : fromServer
@@ -482,7 +489,8 @@ export function ApprovalPrompt({
         <div className="mb-1 flex items-center gap-2">
           {/* Neutral on every routine ask: red on each card teaches people to
               ignore red (DOR-4117). The countdown keeps red for its last seconds. */}
-          <Shield className="text-muted-foreground size-(--size-icon-md)" />
+          {/* shrink-0: a title that wraps on a phone squeezed the shield to a dot (DOR-4247). */}
+          <Shield className="text-muted-foreground size-(--size-icon-md) shrink-0" />
           {/* Wraps rather than truncates: a long server name is the part that matters. */}
           <AskCard.Headline className="min-w-0 font-semibold break-words">
             {headline}
@@ -590,7 +598,7 @@ export function ApprovalPrompt({
             variant={onWifi ? 'outline' : 'default'}
             onClick={handleApprove}
             disabled={responding}
-            className="transition-opacity duration-150"
+            className={ACTION_CLASS}
           >
             <Check className="size-(--size-icon-xs)" /> {onWifi ? 'Allow once' : 'Allow'}
             {showKeyHints && <Kbd className="ml-1.5">Enter</Kbd>}
@@ -617,7 +625,7 @@ export function ApprovalPrompt({
                     ? 'Always allow'
                     : `Always allow, ${scopeLabel}`
               }
-              className="transition-opacity duration-150"
+              className={ACTION_CLASS}
             >
               <ShieldCheck className="size-(--size-icon-xs)" />{' '}
               {asksBreadth ? 'Always allow…' : 'Always allow'}
@@ -637,7 +645,7 @@ export function ApprovalPrompt({
             variant="outline"
             onClick={handleDeny}
             disabled={responding}
-            className="transition-opacity duration-150"
+            className={ACTION_CLASS}
           >
             <X className="size-(--size-icon-xs)" /> {onWifi ? 'Deny' : 'Don’t allow'}
             {isActive && <Kbd className="ml-1.5">Esc</Kbd>}

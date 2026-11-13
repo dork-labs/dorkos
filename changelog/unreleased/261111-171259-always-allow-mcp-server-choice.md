@@ -1,6 +1,7 @@
 ---
 covers:
   - 'fix(ask): Always allow on an MCP tool asks whether you mean that tool or every tool from its server (DOR-4101)'
+  - 'fix(ask): long tool and server names wrap on the approval card instead of running off a phone screen (DOR-4247)'
 ---
 
 ### Fixed

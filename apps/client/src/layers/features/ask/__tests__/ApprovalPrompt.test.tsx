@@ -719,13 +719,13 @@ describe('Always allow on an MCP card that offers its whole server (DOR-4101)', 
     expect(screen.getByText('It still asks before other Made Up tools.')).toBeDefined();
   });
 
-  it('"Just {tool}" sends the tool pick; the server pick names itself and sends server', async () => {
+  it('"Just {tool}" sends the tool pick; the server pick sends server', async () => {
     render(<ApprovalPrompt {...mcpProps} approvalAlwaysAllowBreadth="server" />);
     fireEvent.click(screen.getByRole('button', { name: 'Always allow…' }));
     fireEvent.click(
       screen.getByRole('radio', { name: /^Every tool from Made Up, including ones it adds later$/ })
     );
-    fireEvent.click(screen.getByRole('button', { name: /^Always allow every Made Up tool/ }));
+    fireEvent.click(screen.getByRole('button', { name: /^Always allow every tool$/ }));
     await waitFor(() =>
       expect(mockApproveTool).toHaveBeenCalledWith('session-1', 'tc-1', 'server')
     );
@@ -785,13 +785,13 @@ describe('a routine ask is calm and says who and what (DOR-4117)', () => {
         approvalTitle="Claude wants to use a made-up tool"
       />
     );
-    expect(screen.getByText('Atlas wants to use create_issue from made_up')).toBeDefined();
+    expect(screen.getByText('Atlas wants to use Create Issue from Made Up')).toBeDefined();
   });
 
   it('names the server when an outside tool borrows a built-in name (Security)', () => {
     render(<ApprovalPrompt {...baseProps} toolName="mcp__evil__Bash" agentName="Atlas" />);
     const headline = document.querySelector('[data-slot="ask-headline"]')!;
-    expect(headline.textContent).toBe('Atlas wants to use Bash from evil');
+    expect(headline.textContent).toBe('Atlas wants to use Bash from Evil');
     // The badge line below stays as it was.
     expect(screen.getByText('Evil')).toBeDefined();
   });
@@ -805,25 +805,28 @@ describe('a routine ask is calm and says who and what (DOR-4117)', () => {
       />
     );
     expect(document.querySelector('[data-slot="ask-headline"]')!.textContent).toBe(
-      'Allow Bash from evil?'
+      'Allow Bash from Evil?'
     );
   });
 
-  it.each(['Bash', 'mcp__dorkos__post_to_room', 'dorkos_post_to_room'])(
-    'a built-in %s keeps the short title, with no "from"',
-    (toolName) => {
-      render(<ApprovalPrompt {...baseProps} toolName={toolName} agentName="Atlas" />);
-      const text = document.querySelector('[data-slot="ask-headline"]')!.textContent ?? '';
-      expect(text).toMatch(/^Atlas wants to use \S+$/);
-      expect(text).not.toContain(' from ');
-    }
-  );
+  it.each([
+    ['Bash', 'Atlas wants to use Bash'],
+    ['mcp__dorkos__post_to_room', 'Atlas wants to use Post To Room'],
+    ['dorkos_post_to_room', 'Atlas wants to use Post To Room'],
+  ])('a built-in %s keeps the short title, with no "from"', (toolName, title) => {
+    render(<ApprovalPrompt {...baseProps} toolName={toolName} agentName="Atlas" />);
+    const text = document.querySelector('[data-slot="ask-headline"]')!.textContent ?? '';
+    expect(text).toBe(title);
+    expect(text).not.toContain(' from ');
+  });
 
   it('a long server name wraps and is never cut off', () => {
     const server = 'a_very_long_server_name_that_someone_typed_into_connections_without_spaces';
     render(<ApprovalPrompt {...baseProps} toolName={`mcp__${server}__Bash`} agentName="Atlas" />);
     const headline = document.querySelector('[data-slot="ask-headline"]')!;
-    expect(headline.textContent).toBe(`Atlas wants to use Bash from ${server}`);
+    expect(headline.textContent).toBe(
+      'Atlas wants to use Bash from A Very Long Server Name That Someone Typed Into Connections Without Spaces'
+    );
     const cls = headline.getAttribute('class') ?? '';
     expect(cls).toContain('break-words');
     expect(cls).toContain('min-w-0');
@@ -835,7 +838,7 @@ describe('a routine ask is calm and says who and what (DOR-4117)', () => {
     render(<ApprovalPrompt {...baseProps} toolName={hostile} agentName="Atlas" />);
     const headline = document.querySelector('[data-slot="ask-headline"]')!;
     expect(headline.textContent).toBe(
-      'Atlas wants to use **bold**<img src=x onerror=alert(1)>[link](https://x.test) from made_up'
+      'Atlas wants to use **bold**<img src=x onerror=alert(1)>[link](https://x.test) from Made Up'
     );
     expect(headline.children).toHaveLength(0);
     expect(
@@ -899,5 +902,126 @@ describe('ApprovalPrompt on Wi-Fi (DOR-2969)', () => {
     render(<ApprovalPrompt {...baseProps} ref={ref} />);
     act(() => ref.current!.deny());
     await waitFor(() => expect(mockDenyTool).toHaveBeenCalled());
+  });
+});
+
+describe('long tool and server names wrap inside the card (DOR-4247)', () => {
+  // 40 characters each, the length that pushed the button off a phone screen.
+  const server = 'notion_demo_workspace_for_the_design_ops';
+  const tool = 'search_pages_across_every_shared_space_x';
+  const longProps = {
+    ...baseProps,
+    toolName: `mcp__${server}__${tool}`,
+    input: '{}',
+    approvalHasSuggestions: true,
+    approvalAlwaysAllowScope: 'project' as const,
+    approvalAlwaysAllowBreadth: 'server' as const,
+  };
+
+  /** What every answer button on the card must carry so its words can wrap. */
+  function expectWraps(button: HTMLElement) {
+    const cls = button.getAttribute('class') ?? '';
+    for (const token of ['whitespace-normal', 'h-auto', 'md:h-auto', 'max-w-full']) {
+      expect(cls.split(' ')).toContain(token);
+    }
+    expect(cls).not.toMatch(/(^|\s)whitespace-nowrap(\s|$)/);
+    expect(cls).not.toMatch(/(^|\s)(md:)?h-(8|11)(\s|$)/);
+    expect(cls).not.toMatch(/truncate|line-clamp|text-ellipsis/);
+  }
+
+  it('the every-tool button names no server, since the radio above does', () => {
+    render(<ApprovalPrompt {...longProps} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Always allow…' }));
+    fireEvent.click(screen.getByRole('radio', { name: /^Every tool from / }));
+    const button = screen.getByRole('button', { name: /^Always allow every/ });
+    expect(button.textContent).toBe('Always allow every tool');
+    expect(screen.queryByText(/Allow all from/)).toBeNull();
+  });
+
+  it('the one-tool button still names the tool', () => {
+    render(<ApprovalPrompt {...longProps} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Always allow…' }));
+    const button = screen.getByRole('button', { name: /^Always allow Search/ });
+    expect(button.textContent).toBe('Always allow Search Pages Across Every Shared Space X');
+  });
+
+  it('every answer button on the card can wrap', () => {
+    render(<ApprovalPrompt {...longProps} />);
+    expectWraps(screen.getByRole('button', { name: /^Allow/ }));
+    expectWraps(screen.getByRole('button', { name: 'Always allow…' }));
+    expectWraps(screen.getByRole('button', { name: /^Don’t allow/ }));
+  });
+
+  it('the choice’s buttons can wrap, and the choice never widens the card', () => {
+    render(<ApprovalPrompt {...longProps} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Always allow…' }));
+    expectWraps(screen.getByRole('button', { name: /^Always allow Search/ }));
+    expectWraps(screen.getByRole('button', { name: 'Back' }));
+    fireEvent.click(screen.getByRole('radio', { name: /^Every tool from / }));
+    expectWraps(screen.getByRole('button', { name: 'Always allow every tool' }));
+
+    const fieldset = document.querySelector('[data-slot="always-allow-choice"]')!;
+    expect(fieldset.getAttribute('class')!.split(' ')).toContain('min-w-0');
+    const columns = document.querySelectorAll('[data-slot="always-allow-choice-text"]');
+    expect(columns).toHaveLength(2);
+    for (const column of columns) {
+      expect(column.getAttribute('class')!.split(' ')).toContain('min-w-0');
+    }
+  });
+});
+
+describe('the title row on a narrow card (DOR-4247)', () => {
+  it('the shield keeps its size beside a title that wraps', () => {
+    const server = 'notion_demo_workspace_for_the_design_ops';
+    render(
+      <ApprovalPrompt
+        {...baseProps}
+        toolName={`mcp__${server}__search_pages_across_every_shared_space_x`}
+      />
+    );
+    const shield = document.querySelector('[data-testid="tool-approval"] svg.lucide-shield')!;
+    expect(shield.getAttribute('class')!.split(' ')).toContain('shrink-0');
+  });
+});
+
+describe('the title names an MCP tool by its friendly names (DOR-4247)', () => {
+  const headline = () => document.querySelector('[data-slot="ask-headline"]')!.textContent;
+  const badge = () =>
+    document.querySelector('[data-testid="tool-approval"] .bg-muted.text-muted-foreground')!
+      .textContent;
+
+  it('reads as words, not snake_case', () => {
+    render(
+      <ApprovalPrompt
+        {...baseProps}
+        toolName="mcp__notion_demo_workspace_for_the_design_ops__search_pages_across_every_shared_space_x"
+      />
+    );
+    expect(headline()).toBe(
+      'Allow Search Pages Across Every Shared Space X from Notion Demo Workspace For The Design Ops?'
+    );
+    expect(headline()).not.toContain('_');
+  });
+
+  it.each([
+    ['mcp__evil__Bash', 'Evil'],
+    ['mcp__made_up__create_issue', 'Made Up'],
+    ['mcp__github__create_issue', 'GitHub'],
+  ])('%s: the title and the badge name the same server (Security)', (toolName, server) => {
+    render(<ApprovalPrompt {...baseProps} toolName={toolName} agentName="Atlas" />);
+    expect(badge()).toBe(server);
+    expect(headline()).toMatch(new RegExp(` from ${server}$`));
+  });
+
+  it('the server name comes from the tool key, never from what the runtime says about it', () => {
+    render(
+      <ApprovalPrompt
+        {...baseProps}
+        toolName="mcp__evil__Bash"
+        approvalTitle="Claude wants to use Bash from DorkOS"
+        approvalDisplayName="Bash from DorkOS"
+      />
+    );
+    expect(headline()).toBe('Allow Bash from Evil?');
   });
 });

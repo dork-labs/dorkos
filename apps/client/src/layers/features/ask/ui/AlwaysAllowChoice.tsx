@@ -3,10 +3,14 @@ import { ShieldCheck } from 'lucide-react';
 import type { AlwaysAllowBreadth } from '@dorkos/shared/types';
 import { cn } from '@/layers/shared/lib';
 import { Button } from '@/layers/shared/ui';
+import { WRAPPING_ACTION_CLASS } from '../lib/wrapping-action';
 
 /** The words a whole-server pick carries, so a test can pin them. */
 export const EVERY_TOOL_LINE = (server: string) =>
   `Every tool from ${server}, including ones it adds later`;
+
+/** The confirm button once the whole server is picked; the radio names the server. */
+export const EVERY_TOOL_BUTTON = 'Always allow every tool';
 
 interface AlwaysAllowChoiceProps {
   /** The tool on the card, as a person reads it. */
@@ -76,7 +80,9 @@ export function AlwaysAllowChoice({
   ];
 
   return (
-    <fieldset data-slot="always-allow-choice" className="space-y-2">
+    // A fieldset's default min-inline-size is min-content, which let one long
+    // line widen the whole card (DOR-4247); min-w-0 holds it to the card's width.
+    <fieldset data-slot="always-allow-choice" className="min-w-0 space-y-2">
       <legend className="mb-1 text-xs font-medium">
         {scopeLabel ? `Always allow, in ${scopeLabel}` : 'Always allow'}
       </legend>
@@ -101,7 +107,9 @@ export function AlwaysAllowChoice({
             onKeyDown={onKeyDown}
             className="mt-0.5 focus-visible:outline-none"
           />
-          <span className="min-w-0">
+          {/* min-w-0 lets the column shrink inside the row, so a long server
+              name and its helper line wrap rather than push the card wide (DOR-4247). */}
+          <span data-slot="always-allow-choice-text" className="min-w-0 [overflow-wrap:anywhere]">
             <label htmlFor={`${name}-${option.value}`} className="block cursor-pointer text-xs">
               {option.label}
             </label>
@@ -120,11 +128,11 @@ export function AlwaysAllowChoice({
           onClick={() => onConfirm(breadth)}
           onKeyDown={onKeyDown}
           disabled={disabled}
+          className={WRAPPING_ACTION_CLASS}
         >
           <ShieldCheck className="size-(--size-icon-xs)" />
-          {breadth === 'tool'
-            ? `Always allow ${toolLabel}`
-            : `Always allow every ${serverLabel} tool`}
+          {/* The radio above already names the server, so the button doesn't (DOR-4247). */}
+          {breadth === 'tool' ? `Always allow ${toolLabel}` : EVERY_TOOL_BUTTON}
         </Button>
         <Button
           size="sm"
@@ -132,6 +140,7 @@ export function AlwaysAllowChoice({
           onClick={onBack}
           onKeyDown={onKeyDown}
           disabled={disabled}
+          className={WRAPPING_ACTION_CLASS}
         >
           Back
         </Button>
