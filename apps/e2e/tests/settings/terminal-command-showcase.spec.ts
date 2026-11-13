@@ -111,7 +111,7 @@ test.describe('Terminal command showcase @smoke', () => {
         for (const state of ['not-found', 'shadowed', 'shadowed-long']) {
           const row = section.getByTestId(`terminal-command-state-${state}`);
           await page.evaluate(() => navigator.clipboard.writeText(''));
-          await row.getByRole('button', { name: 'Copy' }).click();
+          await row.getByRole('button', { name: 'Copy', exact: true }).click();
           await expect
             .poll(() => page.evaluate(() => navigator.clipboard.readText()))
             .toBe(ALIAS_LINE);
@@ -119,12 +119,12 @@ test.describe('Terminal command showcase @smoke', () => {
 
         // State 5: Install fails, so the shot shows the reason and Try again.
         const failed = section.getByTestId('terminal-command-state-failed');
-        await failed.getByRole('button', { name: 'Install' }).click();
+        await failed.getByRole('button', { name: 'Install', exact: true }).click();
         await expect(failed.getByText('Couldn’t install:', { exact: false })).toBeVisible();
-        await expect(failed.getByRole('button', { name: 'Try again' })).toBeVisible();
+        await expect(failed.getByRole('button', { name: 'Try again', exact: true })).toBeVisible();
 
         // "Copied" reads for a moment after Copy; the shot shows the resting row.
-        await expect(section.getByRole('button', { name: 'Copied' })).toHaveCount(0);
+        await expect(section.getByRole('button', { name: 'Copied', exact: true })).toHaveCount(0);
 
         await testInfo.attach(`terminal-command-${label}-${theme}.png`, {
           body: await section.screenshot(),
@@ -166,7 +166,11 @@ test.describe('Terminal command showcase @smoke', () => {
       };
     }, ALIAS_LINE);
     await page.goto('/?settings=terminal-command');
-    const dialog = page.getByTestId('settings-dialog');
+    const dialog = page.getByRole('dialog', { name: 'Settings' });
+    // On a phone, Settings opens on its list of sections; the person taps one to open it.
+    await dialog
+      .getByRole('button', { name: 'Terminal command', exact: true })
+      .click({ timeout: PLAYGROUND_COLD_START_MS });
     await expect(
       dialog.getByText('Installed, but Terminal can’t find it yet.', { exact: false })
     ).toBeVisible({ timeout: PLAYGROUND_COLD_START_MS });
