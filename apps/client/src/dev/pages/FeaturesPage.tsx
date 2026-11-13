@@ -33,6 +33,7 @@ import { WorkLeftShowcases } from '../showcases/WorkLeftShowcases';
 import { TodosShowcases } from '../showcases/TodosShowcases';
 import { CommunityHostingShowcases } from '../showcases/CommunityHostingShowcases';
 import { McpServerCardShowcases } from '../showcases/McpServerCardShowcases';
+import { McpServerSheetShowcases } from '../showcases/McpServerSheetShowcases';
 
 /**
  * Agent & Relay showcase page for the dev playground.
@@ -113,6 +114,7 @@ export function HomeInboxPage() {
       <PausedConnectionShowcases />
       <CommunityHostingShowcases />
       <McpServerCardShowcases />
+      <McpServerSheetShowcases />
     </PlaygroundPageLayout>
   );
 }
