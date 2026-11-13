@@ -20,3 +20,11 @@ export const POST_REPLY_TO_INPUT = z
       'Leave it out to answer where you were asked: in a thread when a thread ' +
       'message started your turn here, at the top level otherwise.'
   );
+
+/**
+ * The end of `post_to_room`'s description (DOR-3449): it names the field, so an
+ * agent never reads `posted: false` alone as a refusal and retries.
+ */
+export const POST_HANDED_OFF_NOTE =
+  'posted:false with handedOff:true means it was passed to your seat in that room, not ' +
+  "refused. Don't retry; read how it went with the tool ending in room_handoff_status.";

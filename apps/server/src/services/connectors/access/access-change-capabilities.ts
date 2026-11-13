@@ -279,6 +279,13 @@ const listAccessChanges = defineCapability({
   },
 });
 
+/**
+ * Said up front in both descriptions, so an agent learns it before trying
+ * (DOR-4049): a person's Undo of an agent's approval can't be redone by an agent.
+ */
+export const UNDO_IS_FINAL =
+  'If the person undoes an approval, it’s final: you can’t approve that request again.';
+
 const approveRequest = defineCapability({
   id: 'connectors.approve_request',
   title: "Approve another agent's request for Read on an app",
@@ -290,7 +297,8 @@ const approveRequest = defineCapability({
     'scheduled run or a heartbeat counts), and for an agent a person left out of the app. ' +
     'connectionId is needed only when you can use more than one account for that service. ' +
     'DorkOS doesn’t yet notice when a turn reads an email or web page through a connected app, ' +
-    'so these limits don’t cover that case. The person sees it and can undo it.',
+    'so these limits don’t cover that case. The person sees it and can undo it. ' +
+    UNDO_IS_FINAL,
   tier: 'act',
   area: 'permissions',
   approvalDisplayFields: ['requestId', 'connectionId'],
@@ -346,7 +354,8 @@ const undoAccessChange = defineCapability({
     `reason: one line, at most ${REASON_MAX_WORDS} words, shown to the person and not sent to the ` +
     'other agent. Only a person can let an agent back into a share. Refused when access changed ' +
     'since. DorkOS doesn’t yet notice when a turn reads an email or web page through a connected ' +
-    'app, so these limits don’t cover that case.',
+    'app, so these limits don’t cover that case. ' +
+    UNDO_IS_FINAL,
   tier: 'act',
   area: 'permissions',
   approvalDisplayFields: ['changeId', 'reason'],
