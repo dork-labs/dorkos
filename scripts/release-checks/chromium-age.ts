@@ -166,22 +166,35 @@ export const liveSources: ChromiumAgeSources = {
   ...dashSchedule(fetchJson),
 };
 
-async function main(): Promise<void> {
+/**
+ * Run the check and decide its exit code: 0 within the limit, 1 over it, 2 when anything
+ * could not be read or measured. Every failure to measure is 2, never 0.
+ *
+ * @param sources - Where the pin and the schedule come from.
+ * @param now - Today.
+ * @param out - Where the one-line verdict goes.
+ * @returns The exit code.
+ */
+export async function runChromiumAge(
+  sources: ChromiumAgeSources,
+  now: Date,
+  out: { log: (text: string) => void; error: (text: string) => void } = console
+): Promise<0 | 1 | 2> {
   let age: ChromiumAge;
   try {
-    age = await measureChromiumAge(liveSources, new Date());
+    age = await measureChromiumAge(sources, now);
   } catch (error) {
-    console.error(`Could not measure the fallback Chromium's age: ${(error as Error).message}`);
-    process.exitCode = 2;
-    return;
+    out.error(`Could not measure the fallback Chromium's age: ${(error as Error).message}`);
+    return 2;
   }
   const line = `Fallback Chromium ${age.pinned}, stable is ${age.stableMilestone}: ${age.daysBehind} days behind (limit ${MAX_DAYS_BEHIND}).`;
   if (age.ok) {
-    console.log(`OK. ${line}`);
-    return;
+    out.log(`OK. ${line}`);
+    return 0;
   }
-  console.error(`STOP. ${line} Bump Playwright so the pin moves before releasing (DOR-3876).`);
-  process.exitCode = 1;
+  out.error(`STOP. ${line} Bump Playwright so the pin moves before releasing (DOR-3876).`);
+  return 1;
 }
 
-if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) await main();
+if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1])
+  process.exitCode = await runChromiumAge(liveSources, new Date());

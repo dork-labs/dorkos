@@ -67,7 +67,7 @@ describe('the theme', () => {
   });
 
   it('never reaches the plain sign-in window', () => {
-    const args = plainChromiumArgs(profile, 'https://example.com/', 'example.com');
+    const args = plainChromiumArgs(profile, 'https://example.com/', 'example.com', true);
     expect(args).toContain('--disable-extensions');
     expect(args.join(' ')).not.toMatch(/load-extension|disable-extensions-except/);
   });

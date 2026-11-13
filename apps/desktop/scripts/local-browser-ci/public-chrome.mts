@@ -2,17 +2,21 @@
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import { execFile } from 'node:child_process';
-import { mkdir, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
-import type { BrowserContext } from 'playwright-core';
+import { chromium, type BrowserContext } from 'playwright-core';
 import { LocalBrowserService } from '../../../server/src/services/session/local-browser/service.js';
 import { BrowserHandover } from '../../../server/src/services/session/local-browser/handover.js';
 import { SignInWindow } from '../../../server/src/services/session/local-browser/sign-in-window.js';
-import { productionBackend } from '../../../server/src/services/session/local-browser/playwright-backend.js';
+import {
+  acquireLocalChromium,
+  productionBackend,
+} from '../../../server/src/services/session/local-browser/playwright-backend.js';
 import {
   FORBIDDEN_PLAIN_FLAGS,
+  plainChromiumArgs,
   spawnPlainChromium,
   profileLockPid,
   type PlainChromium,
@@ -137,6 +141,44 @@ async function pixels(
     }
   }, 60000);
 }
+/** The title macOS gave a captured window (DOR-3111's real-Mac check), recorded for the run. */
+const titles: Record<string, string> = {};
+async function recordTitle(shot: string): Promise<void> {
+  titles[shot] = await readFile(path.join(evidence, `${shot}.png.title.txt`), 'utf8').catch(
+    () => ''
+  );
+}
+/**
+ * DOR-3876, on the pinned test build a person gets when Google Chrome isn't installed. The same
+ * sign-in launch, first without `--disable-infobars` (the control: the testing bar must show, or
+ * this proof can't see it), then as shipped (the bar must be gone). Pictures are kept for the
+ * designer and Security.
+ */
+async function fallbackProof(url: string): Promise<void> {
+  await acquireLocalChromium();
+  const executable = chromium.executablePath();
+  assert.notEqual(executable, installedChromePath(), 'The fallback must be the pinned test build');
+  for (const [shot, testBuild] of [
+    ['fallback-control', false],
+    ['fallback-person', true],
+  ] as const) {
+    const folder = path.join(process.env.DORK_HOME!, `fallback-${shot}`);
+    await mkdir(folder, { recursive: true, mode: 0o700 });
+    const args = plainChromiumArgs(folder, url, '127.0.0.1', testBuild);
+    assert(!args.some((arg) => FORBIDDEN_PLAIN_FLAGS.some((flag) => arg.startsWith(flag))));
+    const window = spawnPlainChromium(executable, args);
+    try {
+      const text = await pixels(shot, (seen) => seen.includes('Made-up browser check'), window.pid);
+      await writeFile(path.join(evidence, `${shot}-ocr.txt`), text);
+      await recordTitle(shot);
+      if (testBuild) assert.doesNotMatch(text, /automated testing/i, 'The testing bar still shows');
+      else assert.match(text, /automated testing/i, 'The control should show the testing bar');
+    } finally {
+      window.quit();
+      await window.exited;
+    }
+  }
+}
 try {
   await new Promise<void>((resolve) => echo.listen(0, '127.0.0.1', resolve));
   const address = echo.address();
@@ -185,6 +227,7 @@ try {
             : /Test Results|Webdriver/i.test(text),
       agentPid
     );
+    await recordTitle(`${name}-agent-native`);
     receipt = undefined;
     const agentPages = new Set(context?.pages() ?? []);
     const { handoffId } = await handover.ask('made-up-ci-browser', 'wall');
@@ -196,6 +239,7 @@ try {
           : /Test Results|Webdriver/i.test(text)
     );
     await writeFile(path.join(evidence, `${name}-person-ocr.txt`), text);
+    await recordTitle(`${name}-person`);
     await assertNothingDrivesPerson(agentPages);
     if (name === 'echo') {
       const identity = await until(async () => receipt);
@@ -218,6 +262,8 @@ try {
     await until(async () => (signIns.current?.status === 'saved' ? true : undefined));
     if (name !== 'godaddy') await handover.handBack(handoffId);
   }
+  await fallbackProof(pages[0][1]);
+  await writeFile(path.join(evidence, 'window-titles.json'), JSON.stringify(titles, null, 2));
   await writeFile(
     path.join(evidence, 'result.json'),
     JSON.stringify(

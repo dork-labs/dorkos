@@ -16,12 +16,15 @@ function window(
     held?: () => boolean;
     prepare?: () => Promise<void>;
     lockOwner?: () => number | undefined | 'unchecked';
+    executable?: string;
+    installedChrome?: string;
   } = {}
 ) {
   const chromium = fakeChromium();
   let clock = 0;
   const signIns = new SignInWindow({
-    executable: async () => '/managed/Chromium',
+    executable: async () => overrides.executable ?? '/managed/Chromium',
+    installedChrome: () => overrides.installedChrome,
     spawner: chromium.spawner,
     held: overrides.held ?? (() => false),
     // The window the fake spawned holds the profile.
@@ -64,6 +67,25 @@ describe('SignInWindow', () => {
     await settle();
     expect(signIns.current?.status).toBe('saved');
     expect(signIns.active).toBe(false);
+  });
+
+  // DOR-3876: only DorkOS's pinned test build says "only for automated testing" above the
+  // password field, so only it hides info bars. The person's own Chrome keeps every bar.
+  it('hides info bars on the pinned test build, never on installed Chrome', async () => {
+    const chrome = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
+    const pinned = window({ installedChrome: chrome });
+    await pinned.signIns.start('/profiles/p1', 'p1', 'https://linear.app/');
+    expect(pinned.chromium.spawner.mock.calls[0]![1]).toContain('--disable-infobars');
+
+    const none = window({ installedChrome: undefined });
+    await none.signIns.start('/profiles/p1', 'p1', 'https://linear.app/');
+    expect(none.chromium.spawner.mock.calls[0]![1]).toContain('--disable-infobars');
+
+    const installed = window({ executable: chrome, installedChrome: chrome });
+    await installed.signIns.start('/profiles/p1', 'p1', 'https://linear.app/');
+    const [executable, args] = installed.chromium.spawner.mock.calls[0]!;
+    expect(executable).toBe(chrome);
+    expect(args).not.toContain('--disable-infobars');
   });
 
   it('turns password saving off before the window opens', async () => {

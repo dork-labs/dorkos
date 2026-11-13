@@ -16,6 +16,9 @@ capture.arguments = ["-x", "-o", "-l", String(id), output]
 try capture.run()
 capture.waitUntilExit()
 guard capture.terminationStatus == 0 else { exit(3) }
+// The title macOS shows for the window (Mission Control, the Window menu), beside the picture.
+let title = window[kCGWindowName as String] as? String ?? ""
+try title.write(toFile: output + ".title.txt", atomically: true, encoding: .utf8)
 let request = VNRecognizeTextRequest()
 request.recognitionLevel = .accurate
 try VNImageRequestHandler(url: URL(fileURLWithPath: output)).perform([request])
