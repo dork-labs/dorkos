@@ -4,23 +4,40 @@
  * personOnly route is never reached, and every call is recorded with both ids.
  * The calling app comes only from the caller token its frame load was given.
  */
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
 import { Router } from 'express';
 import type { ExtensionManifest } from '@dorkos/extension-api';
+import { initConfigManager } from '../../services/core/config-manager.js';
+import { initAuditTrail, resetAuditTrail } from '../../services/audit/audit-trail.js';
+import { AccountIds } from '../../services/audit/account-ids.js';
 
-vi.mock('../../services/core/config-manager.js', () => ({
-  configManager: { get: vi.fn().mockReturnValue(null), set: vi.fn() },
-}));
-vi.mock('../../lib/logger.js', () => ({
-  logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
-}));
-const recordAudit = vi.hoisted(() => vi.fn());
-vi.mock('../../services/audit/audit-trail.js', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('../../services/audit/audit-trail.js')>()),
-  recordAudit,
-}));
+/** What the real audit trail handed its log, one entry per recorded event. */
+const recordAudit = vi.fn((event: Record<string, unknown>) => event);
+/** The app-to-app calls the trail recorded, leaving out its other events (token mints). */
+const appCalls = () =>
+  recordAudit.mock.calls.map(([event]) => event).filter((e) => e.action === 'extension.app_call');
+const configDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dorkos-app-call-'));
+beforeAll(() => {
+  initConfigManager(configDir);
+  initAuditTrail({
+    log: { record: recordAudit } as never,
+    // These calls name a person or an app, never an agent's home, so no database is read.
+    accounts: new AccountIds({
+      db: {} as never,
+      installId: 'inst-1',
+      readOwnerAccount: () => null,
+    }),
+  });
+});
+afterAll(() => {
+  resetAuditTrail();
+  fs.rmSync(configDir, { recursive: true, force: true });
+});
 
 import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
 import { bridgeExpressRouter } from '../../services/extensions/http/express-bridge.js';
@@ -184,15 +201,12 @@ describe('a call from one app to another', () => {
   it('records each call with both ids, allowed or refused', async () => {
     await asReports('get', '/entries');
     await asReports('get', '/secrets');
-    expect(recordAudit).toHaveBeenCalledTimes(2);
-    for (const [event] of recordAudit.mock.calls) {
-      expect(event).toMatchObject({
-        action: 'extension.app_call',
-        target: { type: 'extension', id: 'ledger' },
-      });
+    expect(appCalls()).toHaveLength(2);
+    for (const event of appCalls()) {
+      expect(event).toMatchObject({ target: { type: 'extension', id: 'ledger' } });
       expect(event.change).toContainEqual({ field: 'callerApp', after: 'reports' });
     }
-    expect(recordAudit.mock.calls.map(([event]) => event.outcome)).toEqual(['ok', 'refused']);
+    expect(appCalls().map((event) => event.outcome)).toEqual(['ok', 'refused']);
   });
 
   it('leaves an app’s own call alone', async () => {
@@ -200,7 +214,7 @@ describe('a call from one app to another', () => {
       .get('/api/ext/ledger/approve')
       .set('X-DorkOS-Extension', 'ledger');
     expect(res.status).toBe(200);
-    expect(recordAudit).not.toHaveBeenCalled();
+    expect(appCalls()).toHaveLength(0);
   });
 });
 
@@ -240,7 +254,7 @@ describe('who the calling app is (Security 2026-11-10)', () => {
       expect(res.body.reason).toBe('mismatch');
       // With no header at all, the call is Quill's, never Reports'.
       await request(server).get('/api/ext/ledger/entries').set('X-DorkOS-Caller-Token', forQuill);
-      expect(recordAudit.mock.calls.at(-1)?.[0].change).toContainEqual({
+      expect(appCalls().at(-1)?.change).toContainEqual({
         field: 'callerApp',
         after: 'quill',
       });

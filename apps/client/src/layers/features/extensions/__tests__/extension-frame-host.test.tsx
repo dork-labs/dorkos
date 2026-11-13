@@ -10,7 +10,6 @@ import {
 import { setRunningApps } from '../frame/running-apps';
 
 vi.mock('virtual:dorkos-extension-frame', () => ({ default: '' }));
-vi.mock('../model/extension-api-url', () => ({ extensionApiUrl: (path: string) => `/api${path}` }));
 
 class FakePort {
   onmessage?: (event: { data: unknown }) => unknown;

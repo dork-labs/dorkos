@@ -13,10 +13,6 @@ import { ExtensionManifestSchema, type ExtensionRecord } from '@dorkos/extension
 import { ExtensionCompiler } from '../../extensions/extension-compiler.js';
 import { clientBundleExports } from '../../extensions/client-bundle-exports.js';
 
-vi.mock('../../../lib/logger.js', () => ({
-  logger: { info: vi.fn(), debug: vi.fn(), warn: vi.fn(), error: vi.fn() },
-}));
-
 /** The folder the CLI and desktop builds copy into every install. */
 const CORE_DIR = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),

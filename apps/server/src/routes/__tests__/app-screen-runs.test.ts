@@ -2,11 +2,20 @@
  * Whether an app's screens run, by the extension manager's records (DOR-3293).
  * The question an "opened by" mark asks before it is written.
  */
-import { describe, expect, it, vi } from 'vitest';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { initConfigManager } from '../../services/core/config-manager.js';
 
-vi.mock('../../services/core/config-manager.js', () => ({
-  configManager: { get: vi.fn().mockReturnValue({ approvedToRun: [], approvedSources: {} }) },
-}));
+// A fresh config: nothing approved to run, so only core apps pass the approval bar.
+const configDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dorkos-app-screen-runs-'));
+beforeAll(() => {
+  initConfigManager(configDir);
+});
+afterAll(() => {
+  fs.rmSync(configDir, { recursive: true, force: true });
+});
 
 import type { ExtensionManager } from '../../services/extensions/extension-manager.js';
 import type { ExtensionRecord } from '@dorkos/extension-api';

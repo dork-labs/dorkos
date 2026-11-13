@@ -9,19 +9,13 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 
-vi.mock('../../services/core/config-manager.js', () => ({
-  configManager: { get: vi.fn().mockReturnValue(null), set: vi.fn() },
-}));
-vi.mock('../../lib/logger.js', () => ({
-  logger: { error: vi.fn(), warn: vi.fn(), info: vi.fn(), debug: vi.fn() },
-}));
-
 import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
 import type { ExtensionRecord } from '@dorkos/extension-api';
 import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
 import { createExtensionsRoutes } from '../extensions.js';
 import { PREFS_MAX_BYTES } from '../extensions-prefs.js';
+import { initConfigManager } from '../../services/core/config-manager.js';
 
 const target = swappableServer();
 let dorkHome: string;
@@ -42,6 +36,7 @@ function record(id: string): ExtensionRecord {
 
 beforeEach(async () => {
   dorkHome = await fs.mkdtemp(path.join(os.tmpdir(), 'dorkos-prefs-'));
+  initConfigManager(dorkHome);
   const manager = {
     get: vi.fn((id: string) => (id === 'alpha' || id === 'beta' ? record(id) : undefined)),
     listPublic: vi.fn().mockReturnValue([]),

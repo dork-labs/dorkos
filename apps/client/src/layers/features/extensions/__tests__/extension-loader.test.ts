@@ -13,14 +13,6 @@ vi.mock('@/layers/shared/lib/ui-action-dispatcher', () => ({
   executeUiCommand: vi.fn(),
 }));
 
-// A bundle cannot start in jsdom (it needs a real sandboxed frame), so every
-// import here fails the way an unreachable bundle does.
-vi.mock('../model/extension-bundle-import', () => ({
-  importExtensionModule: vi.fn(async () => {
-    throw new Error('The app bundle could not be read.');
-  }),
-}));
-
 import { ExtensionLoader } from '../model/extension-loader';
 import type { ExtensionAPIDeps } from '../model/types';
 import type { ExtensionRecordPublic } from '@dorkos/extension-api';
@@ -87,6 +79,11 @@ function mockFetch(records: ExtensionRecordPublic[]) {
     ok: true,
     json: () => Promise.resolve(records),
   });
+}
+
+/** The URLs `fetch` was asked for, in order. */
+function fetchedUrls(): string[] {
+  return vi.mocked(global.fetch).mock.calls.map(([url]) => String(url));
 }
 
 // --- Tests ---
@@ -441,14 +438,9 @@ describe('ExtensionLoader server lifecycle coordination', () => {
     const loader = new ExtensionLoader(makeDeps());
     await loader.initialize();
 
-    // The bundle import fails in jsdom, so activation won't happen and
-    // init-server won't be called. However, we can test the init-server
-    // path by seeding the loader and calling initialize with a successful
-    // module load. Since we can't mock dynamic import() in jsdom, we test
-    // the initServerExtension logic indirectly through the fetch calls.
-    // The first call is GET /api/extensions, the second would be POST init-server
-    // only if activation succeeded. Since dynamic import fails, only one call.
-    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    // The second answer has no bundle text, so the real import fails, activation
+    // never happens, and init-server is never asked: the list, then the bundle.
+    expect(fetchedUrls()).toEqual(['/api/extensions', '/api/extensions/server-ext/bundle']);
   });
 
   // 15. No server init for browser-only extension
@@ -468,9 +460,8 @@ describe('ExtensionLoader server lifecycle coordination', () => {
     const loader = new ExtensionLoader(makeDeps());
     await loader.initialize();
 
-    // Only the initial GET /api/extensions call should have been made
-    expect(global.fetch).toHaveBeenCalledTimes(1);
-    expect(global.fetch).toHaveBeenCalledWith('/api/extensions');
+    // The list, then the bundle, and never init-server.
+    expect(fetchedUrls()).toEqual(['/api/extensions', '/api/extensions/browser-ext/bundle']);
   });
 
   // 15b. Desktop origin resolution (DOR-243): when the renderer runs under
@@ -546,9 +537,9 @@ describe('ExtensionLoader server lifecycle coordination', () => {
     const loader = new ExtensionLoader(makeDeps());
     await loader.initialize();
 
-    // Dynamic import fails in jsdom so init-server won't be triggered via
-    // the normal flow. We verify the fetch was only called once (list endpoint).
-    expect(global.fetch).toHaveBeenCalledTimes(1);
+    // The bundle answer has no text, so the real import fails and init-server
+    // is never asked: the list, then the bundle.
+    expect(fetchedUrls()).toEqual(['/api/extensions', '/api/extensions/proxy-ext/bundle']);
   });
 
   // 17. Server init failure is non-blocking — test via direct invocation pattern

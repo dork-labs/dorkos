@@ -3,12 +3,9 @@
  * and policy, never a `srcdoc` that inherits the shell's `'unsafe-inline'`.
  */
 import vm from 'node:vm';
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 
-vi.mock('../../lib/trusted-origins.js', () => ({
-  resolveAuthTrustedOrigins: () => ['http://localhost:6241'],
-}));
-
+import { resolveAuthTrustedOrigins } from '../../lib/trusted-origins.js';
 import { createExtensionFrameRoutes, frameBootstrap } from '../extension-frame.js';
 
 async function load() {
@@ -48,7 +45,14 @@ describe('GET /api/extension-frame', () => {
     expect(csp).toContain("connect-src 'none'");
     expect(csp).toContain("default-src 'none'");
     expect(csp).toContain("form-action 'none'");
-    expect(csp).toContain("frame-ancestors 'self' http://localhost:6241");
+    // Framed only by this page and the origins DorkOS already trusts, never a wildcard.
+    const ancestors = csp
+      .split(';')
+      .map((part) => part.trim())
+      .find((part) => part.startsWith('frame-ancestors '));
+    expect(ancestors).toBe(`frame-ancestors 'self' ${resolveAuthTrustedOrigins().join(' ')}`);
+    expect(resolveAuthTrustedOrigins().length).toBeGreaterThan(0);
+    expect(ancestors).not.toContain('*');
   });
 
   it('allows blob: pictures and media, and nothing else new', async () => {

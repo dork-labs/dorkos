@@ -11,28 +11,25 @@
  *
  * @vitest-environment node
  */
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { afterAll, afterEach, beforeEach, describe, expect, it } from 'vitest';
 import request from '@dorkos/test-utils/supertest';
 import { listeningServer } from '@dorkos/test-utils/listening-server';
 import { createTestDb } from '@dorkos/test-utils/db';
 import { agents, canvasDocuments, type Db } from '@dorkos/db';
 
-/** Whether sign-in is on, as the mocked config reports it. */
-const state = vi.hoisted(() => ({ authEnabled: false }));
+import { initConfigManager } from '../../services/core/config-manager.js';
 
-vi.mock('../../services/core/config-manager.js', () => ({
-  configManager: {
-    get: vi.fn((key: string) => (key === 'auth' ? { enabled: state.authEnabled } : null)),
-    set: vi.fn(),
-  },
-}));
-
-// The session gate lets every request through; each case sets the user it
-// would have proved, below.
-vi.mock('../../services/core/auth/session-gate.js', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('../../services/core/auth/session-gate.js')>()),
-  decideSessionGate: vi.fn(async () => ({ allowed: true })),
-}));
+// The real config and the real session gate. Sign-in is off, so a request from
+// this computer passes the gate; each case sets the user the gate would have
+// proved, below.
+const configDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dorkos-canvas-opened-by-'));
+initConfigManager(configDir);
+afterAll(() => {
+  fs.rmSync(configDir, { recursive: true, force: true });
+});
 
 import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
 import { createRoomSubsystem, setRoomService } from '../../services/rooms/index.js';
@@ -80,7 +77,6 @@ let db: Db;
 const stored = () => db.select().from(canvasDocuments).all();
 
 beforeEach(async () => {
-  state.authEnabled = false;
   signedInUser = undefined;
   db = createTestDb();
   runtimeRegistry.setDb(db);
@@ -181,8 +177,7 @@ describe('the "opened by" mark on a session canvas', () => {
     expect(stored()).toHaveLength(0);
   });
 
-  it('with sign-in on, needs a session cookie: an API key is not a person', async () => {
-    state.authEnabled = true;
+  it('needs a session cookie: an API key is not a person', async () => {
     signedInUser = { userId: 'user_key', credential: 'api-key' };
     const byKey = await openFor('desk');
     expect(byKey.status).toBe(401);
