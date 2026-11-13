@@ -35,7 +35,7 @@ import type { Config as NgrokForwardOpts } from '@ngrok/ngrok';
 import type { TunnelStatus } from '@dorkos/shared/types';
 import type { RemoteAccessMode } from '@dorkos/shared/config-schema';
 import type { ManagedIngress } from './remote/managed-ingress.js';
-import type { OwnTunnelIngress } from './remote/own-tunnel-ingress.js';
+import { TunnelPortMismatchError, type OwnTunnelIngress } from './remote/own-tunnel-ingress.js';
 import type { TunnelIngresses } from './remote/tunnel-ingresses.js';
 import {
   ManagedForwarding,
@@ -254,10 +254,7 @@ export class TunnelManager extends EventEmitter {
     // so it is refused rather than opened unguarded (DOR-3650).
     const own = this.ownTunnelIngress;
     if (own && !own.fronts(config.port)) {
-      throw new Error(
-        `Remote Access only reaches DorkOS on port ${own.frontedPort}, not ${config.port}. ` +
-          'Unset TUNNEL_PORT, or point it at that port.'
-      );
+      throw new TunnelPortMismatchError(own.frontedPort, config.port);
     }
     const ngrok = await import('@ngrok/ngrok');
     const ingress = own?.fronts(config.port) ? own : null;

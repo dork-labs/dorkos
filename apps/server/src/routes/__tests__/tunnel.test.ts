@@ -83,6 +83,7 @@ import { env } from '../../env.js';
 import { logger } from '../../lib/logger.js';
 import tunnelRouter from '../tunnel.js';
 import { tunnelManager } from '../../services/core/tunnel-manager.js';
+import { TunnelPortMismatchError } from '../../services/core/remote/own-tunnel-ingress.js';
 import { configManager } from '../../services/core/config-manager.js';
 import { canExpose } from '../../services/core/auth/exposure-guard.js';
 import type { RequestUser } from '../../services/core/auth/session-gate.js';
@@ -365,6 +366,26 @@ describe('Tunnel Route', () => {
 
       expect(res.status).toBe(500);
       expect(res.body.error).toBe('Connection failed');
+    });
+
+    it('answers a TUNNEL_PORT it cannot use with 409 and a stable code, never 500 (DOR-4263)', async () => {
+      mutableEnv.NGROK_AUTHTOKEN = 'test-token-123';
+      setConfig(undefined);
+      mockTunnelStart.mockRejectedValue(new TunnelPortMismatchError(4242, 6241));
+
+      const res = await request(server).post('/api/tunnel/start');
+
+      expect(res.status).toBe(409);
+      expect(res.body).toEqual({
+        error:
+          'Remote Access only reaches DorkOS on port 4242, not 6241. Unset TUNNEL_PORT, or point it at that port.',
+        code: 'TUNNEL_PORT_MISMATCH',
+      });
+      // A refusal to fix, not a fault: nothing is saved as on.
+      expect(configManager.set).not.toHaveBeenCalledWith(
+        'tunnel',
+        expect.objectContaining({ enabled: true })
+      );
     });
 
     it('writes the failure to the log, with its stack (DOR-1738)', async () => {

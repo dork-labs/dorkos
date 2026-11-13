@@ -302,11 +302,17 @@ function buildUnauthorizedMessage(surface: McpAuthSurface, localTokenWorks: bool
   // A caller asked for a key (another device, or this computer when it asks
   // for a password), or an MCP_API_KEY override is the bearer: point at the
   // credential that applies here rather than a local-token file that does not.
-  return (
-    'Unauthorized. Provide a valid credential as "Authorization: Bearer <token>". ' +
-    'Use your personal API key from Settings → Advanced → Tools → Connect other apps to DorkOS.'
-  );
+  return MCP_KEY_REFUSAL_MESSAGE;
 }
+
+/**
+ * What a caller asked for a key is told: how to send one and where to get it.
+ * No token, no file path. `/a2a` says it in its JSON-RPC refusal, and `/mcp`'s
+ * flat remote refusal carries the same words (DOR-4264).
+ */
+export const MCP_KEY_REFUSAL_MESSAGE =
+  'Unauthorized. Provide a valid credential as "Authorization: Bearer <token>". ' +
+  'Use your personal API key from Settings → Advanced → Tools → Connect other apps to DorkOS.';
 
 /**
  * Compare two secrets in constant time so a wrong key cannot be recovered by

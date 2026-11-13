@@ -62,6 +62,33 @@ export interface OwnTunnelIngress {
   close(): Promise<void>;
 }
 
+/** The stable code a tunnel aimed past this ingress is refused with (DOR-4263). */
+export const TUNNEL_PORT_MISMATCH = 'TUNNEL_PORT_MISMATCH';
+
+/**
+ * A tunnel aimed at a port this ingress doesn't front (DOR-3650): a setting to
+ * fix, not a server fault, so the start route answers it with 409 and
+ * {@link TUNNEL_PORT_MISMATCH} rather than 500 (DOR-4263). It names ports, never
+ * a token or a path.
+ */
+export class TunnelPortMismatchError extends Error {
+  readonly code = TUNNEL_PORT_MISMATCH;
+
+  /**
+   * Name both ports and the setting to change.
+   *
+   * @param frontedPort - The one port Remote Access reaches.
+   * @param asked - The port the tunnel was aimed at.
+   */
+  constructor(frontedPort: number, asked: number) {
+    super(
+      `Remote Access only reaches DorkOS on port ${frontedPort}, not ${asked}. ` +
+        'Unset TUNNEL_PORT, or point it at that port.'
+    );
+    this.name = 'TunnelPortMismatchError';
+  }
+}
+
 /**
  * The production own-tunnel ingress, in front of the main server.
  *

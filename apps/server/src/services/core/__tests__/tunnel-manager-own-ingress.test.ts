@@ -59,6 +59,11 @@ describe('TunnelManager and the own-tunnel ingress', () => {
     await expect(manager.start({ port: 6241 })).rejects.toThrow(
       'Remote Access only reaches DorkOS on port 4242, not 6241'
     );
+    // A typed refusal, so the route answers 409 TUNNEL_PORT_MISMATCH (DOR-4263).
+    await expect(manager.start({ port: 6241 })).rejects.toMatchObject({
+      name: 'TunnelPortMismatchError',
+      code: 'TUNNEL_PORT_MISMATCH',
+    });
     expect(ingress.open).not.toHaveBeenCalled();
     expect(forward).not.toHaveBeenCalled();
     expect(manager.isRunning).toBe(false);
