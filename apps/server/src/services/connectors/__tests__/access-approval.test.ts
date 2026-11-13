@@ -576,6 +576,19 @@ describe('agents approving read requests', () => {
       });
     });
 
+    it('a person’s Undo is final: no agent approves that request again (DOR-4049)', async () => {
+      const approved = await approval.approve(caller('pm'), { requestId: 'request-newbie' });
+      await narrowing.undo(OWNER, approved.changeId!);
+      expect(readAccessState(db, 'newbie', CONNECTION_ID).level).toBeNull();
+      // The fake keeps saying the request waits; the undone approval still counts.
+      for (const agent of ['pm', 'agent-b']) {
+        expect(await code(approval.approve(caller(agent), { requestId: 'request-newbie' }))).toBe(
+          'APPROVE_NOT_FOUND'
+        );
+      }
+      expect(readAccessState(db, 'newbie', CONNECTION_ID).level).toBeNull();
+    });
+
     it('P2: two approvals racing on one request apply once', async () => {
       const results = await Promise.allSettled([
         approval.approve(caller('pm'), { requestId: 'request-newbie' }),
