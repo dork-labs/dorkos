@@ -289,8 +289,11 @@ describe('dependabot lockstep families', () => {
     // The block runs from `packages:` to the next top-level key.
     const workspace = readFileSync(path.join(repoRoot, 'pnpm-workspace.yaml'), 'utf8');
     const block = workspace.match(/^packages:\s*\n((?:(?:[ \t].*|#.*)?\n)*)/m);
-    expect(block, 'pnpm-workspace.yaml has no top-level packages: key').not.toBeNull();
-    const globs = [...block![1].matchAll(/^\s*-\s*'([^']+)'\s*$/gm)].map((m) => m[1]);
+    const items = block?.[1];
+    if (items === undefined) {
+      throw new Error('pnpm-workspace.yaml has no top-level packages: key');
+    }
+    const globs = [...items.matchAll(/^\s*-\s*'([^']+)'\s*$/gm)].map((m) => m[1]);
     expect(globs).toEqual(['apps/*', 'packages/*']);
   });
 
