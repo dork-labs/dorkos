@@ -1,19 +1,7 @@
-/** The undelivered-report helper raises a content-free Inbox card. */
+/** The undelivered-report helper raises a content-free Inbox card (DOR-3561). */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-
-vi.mock('../../../notifications/notification-service.js', () => ({ notify: vi.fn() }));
-vi.mock('../../../core/runtime-registry.js', () => ({
-  runtimeRegistry: { getSessionAgentPath: vi.fn() },
-}));
-vi.mock('../../../mesh/agent-path-lookup.js', () => ({ resolveAgentIdForPath: vi.fn() }));
-
-import { resolveAgentIdForPath } from '../../../mesh/agent-path-lookup.js';
-import { notify } from '../../../notifications/notification-service.js';
-import { runtimeRegistry } from '../../../core/runtime-registry.js';
 import { REPORT_UNDELIVERED_ENTRIES } from '../report-undelivered-notice.js';
-import { notifyUndeliveredReport } from '../report-undelivered.js';
-
-const chatTitleOf = vi.fn<(id: string) => Promise<string | null>>();
+import { notifyUndeliveredReport, type UndeliveredReportDeps } from '../report-undelivered.js';
 
 const REPORT = {
   sessionId: 'spin-off-1',
@@ -21,23 +9,32 @@ const REPORT = {
   reason: 'finished',
 } as const;
 
+/** Fakes for every lookup, each test overriding what it is about. */
+function deps(over: Partial<UndeliveredReportDeps> = {}) {
+  const notify = vi.fn().mockResolvedValue({ notification: null, deduped: false });
+  const all: UndeliveredReportDeps = {
+    titleOf: async () => 'Research follow-up',
+    agentPathOf: async () => '/agents/research',
+    agentIdOf: () => 'agent-1',
+    notify: notify as unknown as UndeliveredReportDeps['notify'],
+    ...over,
+  };
+  return { all, notify };
+}
+
 describe('notifyUndeliveredReport', () => {
   beforeEach(() => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-11-13T17:00:00.000Z'));
-    chatTitleOf.mockResolvedValue('Research follow-up');
-    vi.mocked(runtimeRegistry.getSessionAgentPath).mockResolvedValue('/agents/research');
-    vi.mocked(resolveAgentIdForPath).mockReturnValue('agent-1');
-    vi.mocked(notify).mockResolvedValue({ notification: null, deduped: false });
   });
 
   afterEach(() => {
     vi.useRealTimers();
-    vi.resetAllMocks();
   });
 
   it('raises one card with the chat title and no report text', async () => {
-    await notifyUndeliveredReport(REPORT, chatTitleOf);
+    const { all, notify } = deps();
+    await notifyUndeliveredReport(REPORT, all);
 
     expect(notify).toHaveBeenCalledOnce();
     expect(notify).toHaveBeenCalledWith('report.undelivered', {
@@ -48,13 +45,12 @@ describe('notifyUndeliveredReport', () => {
       reason: 'finished',
       at: '2026-11-13T17:00:00.000Z',
     });
-    expect(vi.mocked(notify).mock.calls[0]![1]).not.toHaveProperty('text');
+    expect(notify.mock.calls[0]![1]).not.toHaveProperty('text');
   });
 
   it('uses the spin-off fallback when the chat has no title', async () => {
-    chatTitleOf.mockResolvedValue(null);
-
-    await notifyUndeliveredReport(REPORT, chatTitleOf);
+    const { all, notify } = deps({ titleOf: async () => null });
+    await notifyUndeliveredReport(REPORT, all);
 
     expect(notify).toHaveBeenCalledWith(
       'report.undelivered',
@@ -63,14 +59,15 @@ describe('notifyUndeliveredReport', () => {
   });
 
   it('still raises the card without an agent when lookup fails', async () => {
-    vi.mocked(resolveAgentIdForPath).mockImplementation(() => {
-      throw new Error('lookup unavailable');
+    const { all, notify } = deps({
+      agentIdOf: () => {
+        throw new Error('lookup unavailable');
+      },
     });
-
-    await notifyUndeliveredReport(REPORT, chatTitleOf);
+    await notifyUndeliveredReport(REPORT, all);
 
     expect(notify).toHaveBeenCalledOnce();
-    expect(vi.mocked(notify).mock.calls[0]![1]).not.toHaveProperty('agentId');
+    expect(notify.mock.calls[0]![1]).not.toHaveProperty('agentId');
   });
 });
 

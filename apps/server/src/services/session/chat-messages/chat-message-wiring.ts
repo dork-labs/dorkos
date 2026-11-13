@@ -57,6 +57,8 @@ import { stampHistory } from './chat-message-stamps.js';
 import { ChatReportBack, type RoomSeatReport } from './chat-report-back.js';
 import type { ChatReadDeps } from './chat-read.js';
 import { notifyUndeliveredReport } from './report-undelivered.js';
+import { resolveAgentIdForPath } from '../../mesh/agent-path-lookup.js';
+import { notify } from '../../notifications/notification-service.js';
 import { getSpinOffStartup } from './startup/spin-off-startup.js';
 import { wireSpinOffStartup } from './startup/wire-spin-off-startup.js';
 
@@ -446,7 +448,12 @@ export function wireChatReportBack(
     history: chatHistoryOf,
     toRoomSeat: (parentSessionId, report) => deliverToRoomSeat(parentSessionId, report),
     onUndelivered: (report) => {
-      void notifyUndeliveredReport(report, chatTitleOf).catch((err: unknown) =>
+      void notifyUndeliveredReport(report, {
+        titleOf: chatTitleOf,
+        agentPathOf: (id) => runtimeRegistry.getSessionAgentPath(id),
+        agentIdOf: resolveAgentIdForPath,
+        notify,
+      }).catch((err: unknown) =>
         logger.warn('[chat report-back] the undelivered report card could not be raised', {
           sessionId: report.sessionId,
           ...logError(err),
