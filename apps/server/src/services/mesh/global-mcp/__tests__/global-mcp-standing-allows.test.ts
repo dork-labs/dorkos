@@ -101,14 +101,57 @@ describe('standing yeses for a global server (DOR-4118)', () => {
   });
 });
 
+describe('server rules in other shapes (DOR-4240)', () => {
+  it('lists mcp__{server}__* as every tool, not one tool named *', async () => {
+    allow(atlas, 'settings.local.json', ['mcp__tracker__*']);
+
+    expect(await readStandingAllows('tracker', [atlas])).toEqual([
+      {
+        agentId: 'agent-atlas',
+        agentName: 'Atlas',
+        rule: 'mcp__tracker__*',
+        breadth: 'server',
+        file: 'settings.local.json',
+      },
+    ]);
+  });
+
+  it("keeps a server whose name holds __ off another server's sheet", async () => {
+    allow(atlas, 'settings.local.json', ['mcp__tracker__eu', 'mcp__tracker__eu__export']);
+    const servers = ['tracker', 'tracker__eu'];
+
+    expect(await readStandingAllows('tracker', [atlas], servers)).toEqual([]);
+    const own = await readStandingAllows('tracker__eu', [atlas], servers);
+    expect(own.map((a) => [a.rule, a.breadth, a.tool])).toEqual([
+      ['mcp__tracker__eu', 'server', undefined],
+      ['mcp__tracker__eu__export', 'tool', 'export'],
+    ]);
+  });
+});
+
 describe('standingAllowBreadth', () => {
   it.each([
     ['mcp__docs-search', { breadth: 'server' }],
+    ['mcp__docs-search__*', { breadth: 'server' }],
     ['mcp__docs-search__find', { breadth: 'tool', tool: 'find' }],
     ['mcp__docs-search__', null],
+    ['mcp__docs-search*', null],
     ['mcp__docs', null],
     ['Read(./docs/**)', null],
   ])('%s', (rule, expected) => {
     expect(standingAllowBreadth(rule, 'docs-search')).toEqual(expected);
+  });
+
+  it("leaves a rule for a longer server's name to that server", () => {
+    const servers = ['docs', 'docs__eu'];
+    expect(standingAllowBreadth('mcp__docs__eu', 'docs', servers)).toBeNull();
+    expect(standingAllowBreadth('mcp__docs__eu__*', 'docs', servers)).toBeNull();
+    expect(standingAllowBreadth('mcp__docs__find', 'docs', servers)).toEqual({
+      breadth: 'tool',
+      tool: 'find',
+    });
+    expect(standingAllowBreadth('mcp__docs__eu', 'docs__eu', servers)).toEqual({
+      breadth: 'server',
+    });
   });
 });

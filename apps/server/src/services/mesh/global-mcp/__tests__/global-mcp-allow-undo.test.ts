@@ -62,6 +62,15 @@ describe('removing one standing yes (DOR-4118)', () => {
     ]);
   });
 
+  it('removes mcp__{server}__*, the other whole-server shape (DOR-4240)', async () => {
+    const allow = ['mcp__tracker__*', 'mcp__tracker__create_issue'];
+    fs.writeFileSync(file, JSON.stringify({ permissions: { allow } }, null, 2) + '\n');
+    expect(await removeStandingAllow(home, 'mcp__tracker__*')).toBe('removed');
+    expect(JSON.parse(fs.readFileSync(file, 'utf8')).permissions.allow).toEqual([
+      'mcp__tracker__create_issue',
+    ]);
+  });
+
   it('answers not-found, writing nothing, when the rule or the file is not there', async () => {
     const before = fs.readFileSync(file, 'utf8');
     expect(await removeStandingAllow(home, 'mcp__weather')).toBe('not-found');
@@ -75,6 +84,8 @@ describe('removing one standing yes (DOR-4118)', () => {
     'Bash(npm test)',
     'mcp__tracker*',
     'mcp__*',
+    'mcp__tracker__*__x',
+    'mcp__tracker__x*',
     'mcp__tracker__create_issue(x)',
     ' mcp__tracker',
     'mcp__tracker\n',

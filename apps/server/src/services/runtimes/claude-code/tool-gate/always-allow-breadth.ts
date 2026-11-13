@@ -12,18 +12,26 @@
 import type { PermissionUpdate } from '@anthropic-ai/claude-agent-sdk';
 import type { AlwaysAllowBreadth } from '@dorkos/shared/types';
 
-/** `mcp__{server}` for an MCP tool named `mcp__{server}__{tool}`, else `undefined`. */
-function serverRuleOf(toolName: string): string | undefined {
-  const match = /^(mcp__.+?)__.+$/.exec(toolName);
-  return match?.[1];
+/** Whether `toolName` is an MCP tool's, `mcp__{server}__{tool}`. */
+function isMcpTool(toolName: string): boolean {
+  return /^mcp__.+?__.+$/.test(toolName);
 }
 
-/** Whether one rule names the tool's whole server, with nothing narrowing it. */
-function isServerRule(
-  rule: { toolName: string; ruleContent?: string },
-  serverRule: string
-): boolean {
-  return rule.toolName === serverRule && !rule.ruleContent;
+/**
+ * Whether one rule allows more than this tool, with nothing narrowing it.
+ *
+ * Read from the tool's own name rather than by parsing out a server, because a
+ * server's name may itself hold `__` (DOR-4240): `mcp__a__b` and `mcp__a` both
+ * reach past `mcp__a__b__c`. A rule ending in `*` (`mcp__{server}__*`, or
+ * `mcp__*`) reaches every tool its prefix starts.
+ */
+function isWiderRule(rule: { toolName: string; ruleContent?: string }, toolName: string): boolean {
+  if (rule.ruleContent || rule.toolName === toolName) return false;
+  if (rule.toolName.endsWith('*')) {
+    const prefix = rule.toolName.slice(0, -1);
+    return prefix.startsWith('mcp__') && toolName.startsWith(prefix);
+  }
+  return /^mcp__.+$/.test(rule.toolName) && toolName.startsWith(`${rule.toolName}__`);
 }
 
 /**
@@ -31,29 +39,28 @@ function isServerRule(
  *
  * @param toolName - The tool the card is for.
  * @param suggestions - The SDK permission updates the card would forward.
- * @returns `server` when an allow rule names the bare server, `tool` for any
- *   other MCP tool card with suggestions, and `undefined` for a card that is not
- *   an MCP tool's or offers no Always Allow.
+ * @returns `server` when an allow rule reaches past the tool to its server,
+ *   `tool` for any other MCP tool card with suggestions, and `undefined` for a
+ *   card that is not an MCP tool's or offers no Always Allow.
  */
 export function alwaysAllowBreadthOf(
   toolName: string,
   suggestions: readonly PermissionUpdate[] | undefined
 ): AlwaysAllowBreadth | undefined {
-  const serverRule = serverRuleOf(toolName);
-  if (!serverRule || !suggestions?.length) return undefined;
+  if (!isMcpTool(toolName) || !suggestions?.length) return undefined;
   const wide = suggestions.some(
     (update) =>
       update.type === 'addRules' &&
       update.behavior === 'allow' &&
-      update.rules.some((rule) => isServerRule(rule, serverRule))
+      update.rules.some((rule) => isWiderRule(rule, toolName))
   );
   return wide ? 'server' : 'tool';
 }
 
 /**
- * The same suggestions with every bare-server allow rule swapped for the one
- * tool's rule, so "Just {tool}" writes `mcp__{server}__{tool}`. A suggestion
- * that names no bare server is passed on as it was.
+ * The same suggestions with every allow rule wider than the tool swapped for
+ * the one tool's rule, so "Just {tool}" writes `mcp__{server}__{tool}`. A
+ * suggestion with no wider rule is passed on as it was.
  *
  * @param toolName - The tool the card is for.
  * @param suggestions - The SDK permission updates the card would forward.
@@ -62,15 +69,12 @@ export function narrowToTool(
   toolName: string,
   suggestions: readonly PermissionUpdate[]
 ): PermissionUpdate[] {
-  const serverRule = serverRuleOf(toolName);
-  if (!serverRule) return [...suggestions];
+  if (!isMcpTool(toolName)) return [...suggestions];
   return suggestions.map((update) => {
     if (update.type !== 'addRules' || update.behavior !== 'allow') return update;
-    if (!update.rules.some((rule) => isServerRule(rule, serverRule))) return update;
-    const rules = update.rules.map((rule) =>
-      isServerRule(rule, serverRule) ? { toolName } : rule
-    );
-    // One rule per tool: the bare rule and the tool's own may both have been offered.
+    if (!update.rules.some((rule) => isWiderRule(rule, toolName))) return update;
+    const rules = update.rules.map((rule) => (isWiderRule(rule, toolName) ? { toolName } : rule));
+    // One rule per tool: the wide rule and the tool's own may both have been offered.
     const unique = rules.filter(
       (rule, index) =>
         rules.findIndex(

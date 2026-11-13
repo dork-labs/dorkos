@@ -7,7 +7,7 @@
  * server has, including ones it adds later; `mcp__{server}__{tool}` covers one.
  * This reads those rules back for one server, across every registered agent, so
  * the server's sheet can list them. It is not a new store, and it reads only
- * what the launch would pass (`judgeAllowRule`).
+ * what the launch would pass (`judgeAllowRule`), plus `mcp__{server}__*`.
  *
  * @module services/mesh/global-mcp/global-mcp-standing-allows
  */
@@ -51,20 +51,45 @@ const FILES: readonly StandingAllowFile[] = ['settings.json', 'settings.local.js
 /**
  * What one rule allows on `server`, or `null` when it is not about that server.
  *
+ * `mcp__{server}__*` is the whole server too, the same as the bare rule
+ * (DOR-4240). A server's name may hold `__`, so `mcp__a__b` can be server
+ * `a__b`'s whole-server rule rather than tool `b` on `a`: when another known
+ * server's name starts `{server}__`, a rule that names it is left to it.
+ *
  * @param rule - A rule the launch would keep.
  * @param server - The global server's name.
+ * @param servers - Every global server's name, to tell those apart.
  */
 export function standingAllowBreadth(
   rule: string,
-  server: string
+  server: string,
+  servers: readonly string[] = []
 ): { breadth: 'server' } | { breadth: 'tool'; tool: string } | null {
   const bare = `mcp__${server}`;
-  if (rule === bare) return { breadth: 'server' };
+  if (rule === bare || rule === `${bare}__*`) return { breadth: 'server' };
   if (!rule.startsWith(`${bare}__`)) return null;
+  const longer = servers.some(
+    (other) =>
+      other.startsWith(`${server}__`) &&
+      (rule === `mcp__${other}` || rule.startsWith(`mcp__${other}__`))
+  );
+  if (longer) return null;
   const tool = rule.slice(bare.length + 2);
   // A tool name never holds `__` or a pattern; anything else names another server's tool.
-  if (!tool || tool.includes('__') || tool.includes('(')) return null;
+  if (!tool || tool.includes('__') || tool.includes('(') || tool.includes('*')) return null;
   return { breadth: 'tool', tool };
+}
+
+/**
+ * The rule an entry holds, if the launch keeps it, or if it is exactly
+ * `mcp__{server}__*`: the launch's own list drops a wildcard, but Claude Code
+ * reads the settings file itself and honours that one (DOR-4240).
+ */
+function ruleOf(entry: unknown, server: string): string | undefined {
+  const verdict = judgeAllowRule(entry);
+  if (verdict.ok) return verdict.rule;
+  const wildcard = `mcp__${server}__*`;
+  return typeof entry === 'string' && entry.trim() === wildcard ? wildcard : undefined;
 }
 
 /**
@@ -72,10 +97,13 @@ export function standingAllowBreadth(
  *
  * @param server - The global server's name.
  * @param agents - The registered agents to look in.
+ * @param servers - Every global server's name, so a server whose name holds
+ *   `__` stays off a shorter server's sheet.
  */
 export async function readStandingAllows(
   server: string,
-  agents: readonly StandingAllowAgent[]
+  agents: readonly StandingAllowAgent[],
+  servers: readonly string[] = []
 ): Promise<StandingAllow[]> {
   const found: StandingAllow[] = [];
   for (const agent of agents) {
@@ -83,18 +111,12 @@ export async function readStandingAllows(
     for (const file of FILES) {
       const entries = (await readFolderAllowEntries(agent.home, file)) ?? [];
       for (const entry of entries) {
-        const verdict = judgeAllowRule(entry);
-        if (!verdict.ok || seen.has(verdict.rule)) continue;
-        const reach = standingAllowBreadth(verdict.rule, server);
+        const rule = ruleOf(entry, server);
+        if (rule === undefined || seen.has(rule)) continue;
+        const reach = standingAllowBreadth(rule, server, servers);
         if (reach === null) continue;
-        seen.add(verdict.rule);
-        found.push({
-          agentId: agent.id,
-          agentName: agent.name,
-          rule: verdict.rule,
-          file,
-          ...reach,
-        });
+        seen.add(rule);
+        found.push({ agentId: agent.id, agentName: agent.name, rule, file, ...reach });
       }
     }
   }
