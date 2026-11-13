@@ -17,7 +17,11 @@ import { DEFAULT_CWD } from '../../lib/resolve-root.js';
 import { logger, logError } from '../../lib/logger.js';
 import { sharedBackgroundWorkLedger } from '../../services/runtimes/claude-code/messaging/background-work-ledger.js';
 import { wakeChatsCutShort } from '../../services/session/runtime-turns/wake-cut-short-work.js';
-import { sweepOrphanedMessageQueues } from '../../services/session/index.js';
+import { rearmChatQueues, sweepOrphanedMessageQueues } from '../../services/session/index.js';
+import {
+  liveSessionCwd,
+  resumeChatQueue,
+} from '../../services/extensions/agent-send/agent-send-defaults.js';
 import { sweepExpiredTurnContext } from '../../services/session/turn-context/record-turn-context.js';
 import { INTERVALS } from '../../config/constants.js';
 import { takeDailySnapshot } from '@dorkos/db';
@@ -169,12 +173,25 @@ export async function startAfterListen(refs: ServerRefs, built: StartAfterListen
     });
   }
 
+  // Messages other chats queued survive a restart, but nothing ran them until a
+  // newer message reached the same chat, sometimes days later (DOR-3287). Resume
+  // those chats now, and on the health tick for any row left with nothing to run it.
+  const resumeChatQueues = (): void => {
+    void rearmChatQueues({
+      resume: async (id) => resumeChatQueue(id, await liveSessionCwd(id)),
+    }).catch((err: unknown) => {
+      logger.warn('[DorkOS] could not resume chats’ queued messages', logError(err));
+    });
+  };
+  resumeChatQueues();
+
   // Run session health check periodically. Only ClaudeCodeRuntime needs the
   // eviction half, but the queue sweep is runtime-neutral and rides the same
   // cadence rather than adding a second timer, so it runs either way.
   refs.healthCheckInterval = setInterval(() => {
     refs.claudeRuntime?.checkSessionHealth();
     sweepOrphanedMessageQueues();
+    resumeChatQueues();
     void sweepCanvases();
     void refs.connectorAgentRequests?.reconcile().catch((error: unknown) => {
       logger.warn('[Connections] Agent request recovery failed', logError(error));
