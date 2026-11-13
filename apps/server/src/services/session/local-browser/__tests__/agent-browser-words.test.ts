@@ -78,4 +78,14 @@ describe('opening the Agent browser refuses in the designer’s words (DOR-3219)
       'Opening the Agent browser in DorkOS needs the desktop app.'
     );
   });
+
+  it('sends a browser profile to its own window, in the panel’s words', () => {
+    let message = '';
+    try {
+      assertOpenable({ mode: 'embedded', profileId: 'made-up' }, true, capable);
+    } catch (error) {
+      message = (error as Error).message;
+    }
+    expect(message).toBe('Open a browser profile in its own window.');
+  });
 });
