@@ -94,6 +94,109 @@ export function canvasContentRefusal(
   return base === undefined ? null : protectedSourceRefusal(source, base);
 }
 
+/** Why a room canvas will not show a local file: it is outside the agent's folder. */
+export interface OutsideFolderRefusal {
+  /** Always `OUTSIDE_FOLDER`. */
+  code: 'OUTSIDE_FOLDER';
+  /** The sentence, naming the path as the agent gave it. */
+  message: string;
+}
+
+/** The folders a room canvas may show a local file from (DOR-3519). */
+export interface RoomCanvasFolders {
+  /** The chat's folder. A relative path resolves against it, as every canvas writer resolves it. */
+  cwd: string | undefined;
+  /**
+   * The destination room's own folders, as the server placed them: the agent's
+   * copy of THAT room's files and the room's shared `repo/`. Only an absolute
+   * path reaches them.
+   */
+  roomFolders: readonly string[];
+  /**
+   * The rooms directory. Inside it only `roomFolders` count, even when `cwd`
+   * contains it (a DorkOS dev checkout keeps its data under the repo), so
+   * another room's files never pass as the agent's own.
+   */
+  roomsDir?: string;
+}
+
+/**
+ * Where `source` really is, when it is inside `folder`: `null` when it is not,
+ * `undefined` when the path could not be judged at all (a NUL byte, a folder
+ * outside the boundary), which the opener answers in its own words.
+ */
+async function resolvedWithin(folder: string, source: string): Promise<string | null | undefined> {
+  try {
+    return (await resolveWithinCwd(folder, source)).resolved;
+  } catch (err) {
+    return (err as { code?: unknown }).code === 'OUTSIDE_BOUNDARY' ? null : undefined;
+  }
+}
+
+/** Whether `target` is `root` or inside it. */
+function isInside(root: string, target: string): boolean {
+  const rel = path.relative(root, target);
+  return rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel));
+}
+
+/** The real path of a folder, or `null` when it is not on disk. */
+async function realFolder(folder: string): Promise<string | null> {
+  return fs.realpath(folder).catch(() => null);
+}
+
+/**
+ * Why a ROOM canvas will not show the local file a command names, or `null`
+ * when it names none or may (DOR-3519).
+ *
+ * A room copies what its canvas shows to every other member, so a file outside
+ * the agent's folder and that room's own folders (or a link inside one that
+ * points out) is an error the agent reads, asked with the file routes' own
+ * {@link resolveWithinCwd}. Only the room paths call this: the person's own
+ * one-on-one window is not asked.
+ *
+ * @param command - The validated `control_ui` command.
+ * @param folders - The chat's folder, the destination room's folders, and the rooms directory.
+ */
+export async function canvasOutsideFolderRefusal(
+  command: UiCommand,
+  folders: RoomCanvasFolders
+): Promise<OutsideFolderRefusal | null> {
+  const content = contentFor(command);
+  const { cwd } = folders;
+  if (content === null || cwd === undefined) return null;
+  const source =
+    canvasSourcePath(content) ?? localMediaSource(content) ?? localBrowserSource(content);
+  if (source === null) return null;
+
+  let resolved = await resolvedWithin(cwd, source);
+  if (resolved === undefined) return null;
+  const roomFolders = (await Promise.all(folders.roomFolders.map(realFolder))).filter(
+    (folder): folder is string => folder !== null
+  );
+  if (resolved === null && path.isAbsolute(source)) {
+    for (const folder of roomFolders) {
+      const inRoom = await resolvedWithin(folder, source);
+      if (inRoom === undefined) return null;
+      if (inRoom !== null) {
+        resolved = inRoom;
+        break;
+      }
+    }
+  }
+  const where = resolved;
+  const rooms = folders.roomsDir === undefined ? null : await realFolder(folders.roomsDir);
+  const anotherRoomsFile =
+    where !== null &&
+    rooms !== null &&
+    isInside(rooms, where) &&
+    !roomFolders.some((folder) => isInside(folder, where));
+  if (where !== null && !anotherRoomsFile) return null;
+  return {
+    code: 'OUTSIDE_FOLDER',
+    message: `${source} is outside your folder and this room's files, so the canvas can't show it. To show it, copy it into your folder first and open the copy.`,
+  };
+}
+
 /** What a read answers: the text, or `null` and the sentence saying why there is none. */
 export interface CanvasFileText {
   /** The file's text, or `null` when there is none to give. */

@@ -149,8 +149,10 @@ describe('control_ui putting a local file on a room', () => {
       content: { type: 'image', src: path.join(benPath, 'private.png') },
       target: { roomId: backend },
     });
-    expect(answer).toMatchObject({ success: false, target: 'room', roomId: backend });
-    expect(String(answer.reason)).toContain('your own folder');
+    // Refused before the copy step even runs (DOR-3519): the error names the path.
+    expect(answer).toMatchObject({ success: false, code: 'OUTSIDE_FOLDER' });
+    expect(String(answer.error)).toContain(path.join(benPath, 'private.png'));
+    expect(String(answer.error)).toContain('outside your folder');
     expect(harness.service.canvas.list(backend)).toHaveLength(0);
   });
 

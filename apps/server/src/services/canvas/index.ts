@@ -47,9 +47,12 @@ export {
 export { publishSessionCanvas, sessionCanvasViewers } from './session-channel.js';
 export {
   canvasContentRefusal,
+  canvasOutsideFolderRefusal,
   canvasSourceRefusal,
   readCanvasFileText,
   type CanvasFileText,
+  type OutsideFolderRefusal,
+  type RoomCanvasFolders,
 } from './canvas-file-access.js';
 export {
   CANVAS_EDIT_HEARTBEAT_MS,
