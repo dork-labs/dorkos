@@ -55,6 +55,7 @@ import {
   type AgentNames,
   type ServerChange,
 } from './mcp-server-step-up.js';
+import { addMcpServerSheetRoutes, type McpServerSheetDeps } from './mcp-server-sheet.js';
 import { noOwnerRefusal } from './relay-adapter-http.js';
 import { holdForStepUp } from './step-up-guard.js';
 
@@ -134,11 +135,13 @@ async function writeResult(run: () => Promise<WriteResult>): Promise<WriteResult
  * @param store - The person's global MCP servers.
  * @param agentNames - What an agent is called, for the sheet; nothing by default.
  * @param ownerExists - Whether this install has an owner yet; the owner account by default.
+ * @param sheet - What the server sheet's tools and standing-yes routes need; without it they are not mounted.
  */
 export function createMcpServerRoutes(
   store: GlobalMcpStore,
   agentNames: (agentId: string) => AgentNames | undefined = () => undefined,
-  ownerExists: () => boolean = () => readOwnerAccount() !== null
+  ownerExists: () => boolean = () => readOwnerAccount() !== null,
+  sheet?: McpServerSheetDeps
 ): Hono<ApiEnv> {
   const router = new Hono<ApiEnv>();
 
@@ -322,6 +325,9 @@ export function createMcpServerRoutes(
       return storeRefusal(c, err);
     }
   });
+
+  if (sheet)
+    addMcpServerSheetRoutes(router, store, { read: refuseRead, write: refuseWrite }, sheet);
 
   return router;
 }

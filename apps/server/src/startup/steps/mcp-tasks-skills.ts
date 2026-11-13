@@ -65,6 +65,7 @@ import type { WireTeamRoomAndRelayAdaptersResult } from './team-room-relay-adapt
 import type { StartSearchRelayAndMeshResult } from './search-relay-mesh.js';
 import type { ServerRefs } from '../server-refs.js';
 import { GlobalMcpStore } from '../../services/mesh/global-mcp/global-mcp-store.js';
+import { GlobalMcpToolLedger } from '../../services/mesh/global-mcp/global-mcp-tools.js';
 import { setGlobalMcpServerLookup } from '../../services/runtimes/claude-code/tool-gate/global-server-always-allow.js';
 import { setManagedServerNames } from '../../services/runtimes/claude-code/tool-gate/managed-server-deny.js';
 import { credentialStore } from '../../services/core/credential-provider.js';
@@ -462,6 +463,7 @@ export async function wireMcpTasksAndSkills(refs: ServerRefs, built: WireMcpTask
       },
     },
     mcpServers: globalMcpServers,
+    mcpServerTools: new GlobalMcpToolLedger(dorkHome),
     connectorEventIngress: connectorSignedIngress,
     mcp: mcpServerFactory,
     docChannel: { ...docChannelHttp, metrics: docChannelMetrics, workReview: docWorkReview },

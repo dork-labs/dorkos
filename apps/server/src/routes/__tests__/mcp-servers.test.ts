@@ -2,7 +2,7 @@
  * `/api/mcp-servers` is person-only (DOR-3213): an agent can neither read nor
  * change the servers every agent gets, and no answer carries a secret value.
  */
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -45,6 +45,10 @@ import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
 import { NEEDS_PERSON_AT_THIS_COMPUTER } from '../../lib/caller-authority.js';
 import type { CredentialStore } from '../../services/core/credential-provider.js';
 import { GlobalMcpStore } from '../../services/mesh/global-mcp/global-mcp-store.js';
+import {
+  checkServerTools,
+  GlobalMcpToolLedger,
+} from '../../services/mesh/global-mcp/global-mcp-tools.js';
 import { createMcpServerRoutes, MCP_SERVERS_PERSON_ONLY } from '../mcp-servers.js';
 
 const target = swappableServer();
@@ -299,5 +303,145 @@ describe('/api/mcp-servers', () => {
     await request(app()).post('/api/mcp-servers').send(SERVER);
     expect((await request(app()).post('/api/mcp-servers').send(SERVER)).status).toBe(409);
     expect((await request(app()).post('/api/mcp-servers').send({ name: 'x' })).status).toBe(400);
+  });
+});
+
+// DOR-4118: the server sheet's "Who uses it without asking". Real agent folders,
+// a real ledger, and the check's probe swapped for a made-up listing, so no
+// server process ever starts here.
+describe('the server sheet (DOR-4118)', () => {
+  let agentHome: string;
+  let checked: unknown[];
+  let added: Array<[string, readonly string[]]>;
+  let toolsListed: string[];
+
+  const localFile = () => path.join(agentHome, '.claude', 'settings.local.json');
+
+  function sheetApp() {
+    return target.mount(
+      honoGroupListener(
+        {
+          path: '/api/mcp-servers',
+          routes: createMcpServerRoutes(store, undefined, undefined, {
+            agents: () => [{ id: 'agent-quill', name: 'Quill', home: agentHome }],
+            ledger: new GlobalMcpToolLedger(home),
+            onToolsAdded: (server, names) => added.push([server, names]),
+            check: (connection, name, ledger) => {
+              checked.push(connection);
+              return checkServerTools(connection, name, ledger, async () => ({
+                kind: 'ok',
+                toolCount: toolsListed.length,
+                tools: toolsListed.map((tool) => ({ name: tool, description: `Does ${tool}.` })),
+              }));
+            },
+          }),
+        },
+        {
+          before: async (c, next) => {
+            if (state.user) c.set('user', state.user);
+            await next();
+          },
+        }
+      )
+    );
+  }
+
+  beforeEach(async () => {
+    checked = [];
+    added = [];
+    toolsListed = ['create_issue'];
+    agentHome = path.join(home, 'agents', 'quill');
+    mkdirSync(path.join(agentHome, '.claude'), { recursive: true });
+    writeFileSync(
+      localFile(),
+      JSON.stringify({ permissions: { allow: ['mcp__github', 'Bash(npm test)'] } }, null, 2)
+    );
+    await store.add({ ...SERVER, secretNames: [], excludedAgents: [] } as never);
+  });
+
+  it('checks the tools of a server that is on, and names a tool it adds later once', async () => {
+    const first = await request(sheetApp()).get('/api/mcp-servers/github/tools');
+    expect(first.status).toBe(200);
+    expect(first.body).toEqual({
+      status: 'ok',
+      tools: [{ name: 'create_issue', description: 'Does create_issue.', isNew: false }],
+      added: [],
+    });
+    toolsListed = ['create_issue', 'export_all'];
+    const later = await request(sheetApp()).get('/api/mcp-servers/github/tools');
+    expect(later.body.tools[1]).toMatchObject({ name: 'export_all', isNew: true });
+    expect(added).toEqual([['github', ['export_all']]]);
+  });
+
+  it('never starts a server that is off', async () => {
+    await store.patch('github', { enabled: false });
+    const res = await request(sheetApp()).get('/api/mcp-servers/github/tools');
+    expect(res.body).toEqual({ status: 'not-checked' });
+    expect(checked).toEqual([null]);
+  });
+
+  it('lists who may use it without asking', async () => {
+    const res = await request(sheetApp()).get('/api/mcp-servers/github/allows');
+    expect(res.status).toBe(200);
+    expect(res.body.allows).toEqual([
+      {
+        agentId: 'agent-quill',
+        agentName: 'Quill',
+        rule: 'mcp__github',
+        breadth: 'server',
+        file: 'settings.local.json',
+      },
+    ]);
+  });
+
+  it('undoes one standing yes in the folder the registry names', async () => {
+    const res = await request(sheetApp())
+      .delete('/api/mcp-servers/github/allows')
+      .send({ agentId: 'agent-quill', rule: 'mcp__github', home: '/somewhere/else' });
+    expect(res.status).toBe(204);
+    expect(JSON.parse(readFileSync(localFile(), 'utf8')).permissions.allow).toEqual([
+      'Bash(npm test)',
+    ]);
+    const again = await request(sheetApp())
+      .delete('/api/mcp-servers/github/allows')
+      .send({ agentId: 'agent-quill', rule: 'mcp__github' });
+    expect(again.status).toBe(404);
+  });
+
+  it.each([
+    ['a rule for another server', { agentId: 'agent-quill', rule: 'mcp__weather' }, 400],
+    ['a rule that is not an MCP rule', { agentId: 'agent-quill', rule: 'Bash(npm test)' }, 400],
+    ['an agent the registry does not know', { agentId: 'agent-nobody', rule: 'mcp__github' }, 404],
+  ])('refuses %s, writing nothing', async (_name, body, status) => {
+    const before = readFileSync(localFile(), 'utf8');
+    const res = await request(sheetApp()).delete('/api/mcp-servers/github/allows').send(body);
+    expect(res.status).toBe(status);
+    expect(readFileSync(localFile(), 'utf8')).toBe(before);
+  });
+
+  it('refuses an agent on all three, and an Undo from another device', async () => {
+    const before = readFileSync(localFile(), 'utf8');
+    for (const path of ['/api/mcp-servers/github/tools', '/api/mcp-servers/github/allows']) {
+      const res = await request(sheetApp()).get(path).set('x-dorkos-agent', 'agent-token');
+      expect(res.status).toBe(403);
+    }
+    const asAgent = await request(sheetApp())
+      .delete('/api/mcp-servers/github/allows')
+      .set('x-dorkos-agent', 'agent-token')
+      .send({ agentId: 'agent-quill', rule: 'mcp__github' });
+    expect(asAgent.status).toBe(403);
+    const remote = await request(sheetApp())
+      .delete('/api/mcp-servers/github/allows')
+      .set('Host', 'box.ngrok.app')
+      .send({ agentId: 'agent-quill', rule: 'mcp__github' });
+    expect(remote.status).toBe(403);
+    expect(remote.body.code).toBe(NEEDS_PERSON_AT_THIS_COMPUTER);
+    expect(checked).toEqual([]);
+    expect(readFileSync(localFile(), 'utf8')).toBe(before);
+  });
+
+  it('answers 404 for a server that does not exist', async () => {
+    const res = await request(sheetApp()).get('/api/mcp-servers/nope/allows');
+    expect(res.status).toBe(404);
   });
 });

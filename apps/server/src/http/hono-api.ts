@@ -149,6 +149,7 @@ import tunnelRoutes from '../routes/tunnel.js';
 import { createLanAccessRoutes } from '../routes/lan-access.js';
 import { createMcpServerRoutes } from '../routes/mcp-servers.js';
 import type { GlobalMcpStore } from '../services/mesh/global-mcp/global-mcp-store.js';
+import type { GlobalMcpToolLedger } from '../services/mesh/global-mcp/global-mcp-tools.js';
 import eventsRoutes from '../routes/events.js';
 import uploadRoutes from '../routes/uploads.js';
 import workbenchServeRoutes from '../routes/workbench-serve.js';
@@ -235,6 +236,8 @@ export interface ComposedGroupDeps {
   localBrowserProfiles?: LocalBrowserProfileRouteDeps;
   /** The MCP servers a person added for every agent (`/api/mcp-servers`, DOR-3213). */
   mcpServers?: GlobalMcpStore;
+  /** First-seen tools for those servers' sheets (DOR-4118). */
+  mcpServerTools?: GlobalMcpToolLedger;
   /** Agent identity, by folder (`/api/agents`). */
   agents?: AgentsRouterDeps;
   /** The discovery scan stream (`/api/discovery`). Only handed over when the mesh started. */
@@ -570,7 +573,20 @@ export function createHonoApi(options: HonoApiOptions): Hono<ApiEnv> {
   if (deps.mcpServers) {
     app.route(
       '/api/mcp-servers',
-      createMcpServerRoutes(deps.mcpServers, (id) => deps.mesh?.meshCore.get(id))
+      createMcpServerRoutes(
+        deps.mcpServers,
+        (id) => deps.mesh?.meshCore.get(id),
+        undefined,
+        deps.mcpServerTools && {
+          agents: () =>
+            (deps.mesh?.meshCore.listWithPaths() ?? []).map((agent) => ({
+              id: agent.id,
+              name: agent.displayName ?? agent.name,
+              home: agent.projectPath,
+            })),
+          ledger: deps.mcpServerTools,
+        }
+      )
     );
   }
   mountComputerRoutes(app, deps.computers, deps.mesh?.meshCore);
