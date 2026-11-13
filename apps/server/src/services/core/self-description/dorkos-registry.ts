@@ -43,6 +43,7 @@ import { todoPromisesDomain } from '../../todos/todo-promise-capabilities.js';
 import { env } from '../../../env.js';
 import { todosDomain } from '../../todos/todo-capabilities.js';
 import { workQueueDomain } from '../../work-queue/work-queue-capabilities.js';
+import { workClaimDomain } from '../../session/claims/work-claim-capabilities.js';
 import { heartbeatDomain } from '../../heartbeats/heartbeat-capabilities.js';
 import { uiDomain } from '../../session/browser-seat/ui-capabilities.js';
 import { capabilitiesDomain } from './capabilities-domain.js';
@@ -83,6 +84,7 @@ export function composeDorkOsCapabilityRegistry(
   // Behind the flag here as well as at boot, so the docs composer below can match it (DOR-3088).
   if (deps.todoDeps && env.DORKOS_TODOS_ENABLED) domains.push(todosDomain);
   if (deps.workQueueDeps) domains.push(workQueueDomain);
+  if (deps.workClaimDeps) domains.push(workClaimDomain);
   if (deps.auditDeps) domains.push(auditDomain);
   if (deps.agentPauseDeps) domains.push(agentPauseDomain);
   if (deps.localBrowserDeps) domains.push(createLocalBrowserDomain(deps.localBrowserDeps));
@@ -161,6 +163,7 @@ export function composeCapabilityRegistryForDocs(): CapabilityRegistry {
     // not describe tools nobody can call.
     ...(env.DORKOS_TODOS_ENABLED ? [todosDomain] : []),
     workQueueDomain,
+    workClaimDomain,
     auditDomain,
     agentPauseDomain,
     createLocalBrowserDomain({} as NonNullable<CapabilityDeps['localBrowserDeps']>),
@@ -184,6 +187,7 @@ export function composeCapabilityRegistryForDocs(): CapabilityRegistry {
     todoPromiseDeps: {} as CapabilityDeps['todoPromiseDeps'],
     todoDeps: {} as CapabilityDeps['todoDeps'],
     workQueueDeps: {} as CapabilityDeps['workQueueDeps'],
+    workClaimDeps: {} as CapabilityDeps['workClaimDeps'],
     auditDeps: {} as CapabilityDeps['auditDeps'],
     agentPauseDeps: {} as CapabilityDeps['agentPauseDeps'],
   };

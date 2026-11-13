@@ -583,8 +583,10 @@ describe('in-session tool exposure', () => {
     // phase 3), a read an agent makes when asked what it is told; no prompt block names it.
     // 145 -> 149 total, 133 -> 137 deferred: the four work-queue verbs an agent uses on
     // another agent's queue (`work_queue_read_agent`, `_configure`, `_reorder`, `_requeue`).
-    expect(tools).toHaveLength(149);
-    expect(deferred).toHaveLength(137);
+    // 149 -> 152 total, 137 -> 140 deferred: `work_claim`, `work_claim_check` and
+    // `work_claim_release` (DOR-4019), reached when a chat is about to take on a job.
+    expect(tools).toHaveLength(152);
+    expect(deferred).toHaveLength(140);
     for (const name of [
       'local_browser_ask_person',
       'local_browser_state',
