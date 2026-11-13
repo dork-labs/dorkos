@@ -1,15 +1,12 @@
 /** The server wakes the waiting agent after a hand back, with fixed text only (DOR-3112). */
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { LocalBrowserHandoff } from '@dorkos/shared/local-browser';
-
-const dispatch = vi.hoisted(() => vi.fn());
-vi.mock('../../launch/launch-session.js', () => ({
-  dispatchSessionMessage: dispatch,
-  isSessionLaunchRefusal: (result: { refused?: string }) => typeof result?.refused === 'string',
-}));
-
-const { HAND_BACK_CLIENT_ID, HANDED_BACK_MESSAGE, handBackWake } =
-  await import('../hand-back-wake/index.js');
+import { logger } from '../../../../lib/logger.js';
+import { HAND_BACK_CLIENT_ID, HANDED_BACK_MESSAGE, handBackWake } from '../hand-back-wake/index.js';
+import { handBackWakeHarness } from './hand-back-wake-harness.js';
 
 const handoff = (outcome: LocalBrowserHandoff['outcome']): LocalBrowserHandoff => ({
   id: 'h1',
@@ -24,36 +21,58 @@ const handoff = (outcome: LocalBrowserHandoff['outcome']): LocalBrowserHandoff =
   outcome,
 });
 
-const meshCore = { fake: 'mesh' } as never;
-const roomSessionPlace = { fake: 'rooms' } as never;
-const wake = () =>
-  handBackWake({ meshCore: () => meshCore, roomSessionPlace: () => roomSessionPlace });
+let home: string;
+let harness: Awaited<ReturnType<typeof handBackWakeHarness>>;
+const roomSessionPlace = {
+  roomFor: vi.fn(() => null as { roomId: string; agentName: string; agentPath: string } | null),
+  placeTurn: vi.fn(async () => ({
+    cwd: home,
+    additionalDirectories: [],
+    worktree: null,
+    standsInCopy: false,
+  })),
+};
+const meshCore = vi.fn(() => undefined);
+const roomPlace = vi.fn(() => roomSessionPlace);
+const wake = () => handBackWake({ meshCore, roomSessionPlace: roomPlace });
 
-beforeEach(() => {
-  dispatch.mockReset();
-  dispatch.mockResolvedValue({ accepted: true });
+beforeEach(async () => {
+  home = await mkdtemp(path.join(tmpdir(), 'hand-back-wake-'));
+  harness = await handBackWakeHarness(home, 'chat-1');
+  meshCore.mockClear();
+  roomPlace.mockClear();
+  roomSessionPlace.roomFor.mockReset().mockReturnValue(null);
+  roomSessionPlace.placeTurn.mockClear();
+});
+afterEach(async () => {
+  await harness.dispose();
+  await rm(home, { recursive: true, force: true });
 });
 
 describe('handBackWake', () => {
   it('sends the fixed message into the handed-back chat as the person’s turn', async () => {
     wake()(handoff('handed-back'));
-    await vi.waitFor(() => expect(dispatch).toHaveBeenCalledOnce());
-    expect(dispatch).toHaveBeenCalledWith({
-      origin: { kind: 'interactive' },
-      sessionId: 'chat-1',
-      request: { content: HANDED_BACK_MESSAGE },
-      clientId: HAND_BACK_CLIENT_ID,
-      meshCore,
-      roomSessionPlace,
-    });
+    await vi.waitFor(() => expect(harness.runtime.sendMessage).toHaveBeenCalledOnce());
+    expect(harness.runtime.sendMessage).toHaveBeenCalledWith(
+      'chat-1',
+      HANDED_BACK_MESSAGE,
+      expect.objectContaining({ turnStarter: 'person', cwd: home })
+    );
+    expect(harness.runtime.acquireLock.mock.calls[0]?.slice(0, 2)).toEqual([
+      'chat-1',
+      HAND_BACK_CLIENT_ID,
+    ]);
+    expect(meshCore).toHaveBeenCalledOnce();
+    expect(roomPlace).toHaveBeenCalledOnce();
+    expect(roomSessionPlace.roomFor).toHaveBeenCalledWith('chat-1');
   });
 
   it('carries nothing from the handoff but its chat: no site, agent or address', async () => {
     wake()(handoff('handed-back'));
-    await vi.waitFor(() => expect(dispatch).toHaveBeenCalledOnce());
-    const [opts] = dispatch.mock.calls[0] as [{ request: { content: string } }];
-    expect(opts.request.content).toBe('I’m done in the browser. Please continue.');
-    const sent = JSON.stringify(opts);
+    await vi.waitFor(() => expect(harness.runtime.sendMessage).toHaveBeenCalledOnce());
+    const [, content, opts] = harness.runtime.sendMessage.mock.calls[0]!;
+    expect(content).toBe('I’m done in the browser. Please continue.');
+    const sent = JSON.stringify({ content, opts });
     for (const fromPage of ['made-up-shop', 'http', 'Ana', '/agents/ana'])
       expect(sent).not.toContain(fromPage);
   });
@@ -63,16 +82,41 @@ describe('handBackWake', () => {
     listener(handoff('stopped'));
     listener(handoff('window-closed'));
     listener(handoff(null));
-    expect(dispatch).not.toHaveBeenCalled();
+    expect(meshCore).not.toHaveBeenCalled();
+    expect(roomPlace).not.toHaveBeenCalled();
+    expect(harness.runtime.sendMessage).not.toHaveBeenCalled();
   });
 
   it('never throws when the chat refuses or the send fails', async () => {
-    dispatch
-      .mockResolvedValueOnce({ refused: 'SESSION_NOT_FOUND', message: 'gone' })
+    const warning = vi.spyOn(logger, 'warn');
+    roomSessionPlace.roomFor.mockReturnValue({ roomId: 'r1', agentName: 'Test', agentPath: home });
+    roomSessionPlace.placeTurn
+      .mockResolvedValueOnce({
+        cwd: home,
+        additionalDirectories: [],
+        worktree: null,
+        standsInCopy: true,
+      })
       .mockRejectedValueOnce(new Error('disk full'));
-    const listener = wake();
-    expect(() => listener(handoff('handed-back'))).not.toThrow();
-    expect(() => listener(handoff('handed-back'))).not.toThrow();
-    await vi.waitFor(() => expect(dispatch).toHaveBeenCalledTimes(2));
+    try {
+      const listener = wake();
+      expect(() => listener(handoff('handed-back'))).not.toThrow();
+      await vi.waitFor(() =>
+        expect(warning).toHaveBeenCalledWith(
+          '[Browser] Couldn’t wake the agent after a hand back',
+          { handoffId: 'h1', refused: 'ROOM_SESSION_MOVED' }
+        )
+      );
+      expect(() => listener(handoff('handed-back'))).not.toThrow();
+      await vi.waitFor(() =>
+        expect(warning).toHaveBeenCalledWith(
+          '[Browser] Couldn’t wake the agent after a hand back',
+          { handoffId: 'h1', error: 'disk full' }
+        )
+      );
+      expect(harness.runtime.sendMessage).not.toHaveBeenCalled();
+    } finally {
+      warning.mockRestore();
+    }
   });
 });

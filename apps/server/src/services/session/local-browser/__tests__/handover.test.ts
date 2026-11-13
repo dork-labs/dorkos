@@ -11,12 +11,7 @@ import { logger } from '../../../../lib/logger.js';
 import { BrowserHandover, assertSignInUrl, type HandoverBrowser } from '../handover.js';
 import { HANDED_BACK_MESSAGE, handBackWake } from '../hand-back-wake/index.js';
 
-// The wake's dispatcher, so a hand back here starts no real turn (DOR-3112).
-const dispatch = vi.hoisted(() => vi.fn(async () => ({ accepted: true })));
-vi.mock('../../launch/launch-session.js', () => ({
-  dispatchSessionMessage: dispatch,
-  isSessionLaunchRefusal: () => false,
-}));
+import { handBackWakeHarness } from './hand-back-wake-harness.js';
 import { BrowserProfileRemoval } from '../profile-removal/index.js';
 import { prepareProfileFolder } from '../profile-folders.js';
 import { createLocalBrowserProfileStore } from '../profile-store.js';
@@ -254,7 +249,6 @@ describe('BrowserHandover.ask', () => {
     expect(pending).toMatchObject({ id: handoffId, outcome: null });
     browser.resume.mockClear();
     browser.disconnect.mockClear();
-    dispatch.mockClear();
 
     const paused = await handover.pause();
 
@@ -267,7 +261,6 @@ describe('BrowserHandover.ask', () => {
     expect(browser.disconnect).not.toHaveBeenCalled();
     expect(signIns.close).not.toHaveBeenCalled();
     expect(ended).not.toHaveBeenCalled();
-    expect(dispatch).not.toHaveBeenCalled();
 
     // Only the person's answer ends this same handoff.
     const returned = await handover.handBack(handoffId);
@@ -388,18 +381,24 @@ describe('BrowserHandover end listener (DOR-3112)', () => {
         },
       ],
     });
-    dispatch.mockClear();
-    s.handover.useEndListener(
-      handBackWake({ meshCore: () => undefined, roomSessionPlace: () => undefined })
-    );
-    const { handoffId } = await s.handover.ask('chat-1', 'wall');
-    await s.handover.handBack(handoffId);
-    await vi.waitFor(() => expect(dispatch).toHaveBeenCalledOnce());
-    const [opts] = dispatch.mock.calls[0] as unknown as [{ request: { content: string } }];
-    expect(opts.request.content).toBe(HANDED_BACK_MESSAGE);
-    const sent = JSON.stringify(opts);
-    for (const fromPage of ['accounts.example.com', '/login', 'made-up', 'verify you are human'])
-      expect(sent).not.toContain(fromPage);
+    const harness = await handBackWakeHarness(dataDirectory, 'chat-1');
+    try {
+      s.handover.useEndListener(
+        handBackWake({ meshCore: () => undefined, roomSessionPlace: () => undefined })
+      );
+      const { handoffId } = await s.handover.ask('chat-1', 'wall');
+      await s.handover.handBack(handoffId);
+      await vi.waitFor(() => expect(harness.runtime.sendMessage).toHaveBeenCalledOnce());
+      const [sessionId, content, opts] = harness.runtime.sendMessage.mock.calls[0]!;
+      expect(sessionId).toBe('chat-1');
+      expect(content).toBe(HANDED_BACK_MESSAGE);
+      expect(opts?.turnStarter).toBe('person');
+      const sent = JSON.stringify({ content, opts });
+      for (const fromPage of ['accounts.example.com', '/login', 'made-up', 'verify you are human'])
+        expect(sent).not.toContain(fromPage);
+    } finally {
+      await harness.dispose();
+    }
   });
 
   it('says nothing when there is no handoff to end, or the window closes on its own', async () => {
