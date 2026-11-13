@@ -1,3 +1,4 @@
+/* global console, process */
 // Prints a Markdown summary of one Mutation Pilot run for the job summary:
 // mutant counts by status, the score, elapsed time and peak memory.
 // Usage: node summary.mjs <report dir>. Missing data prints as "unknown",
