@@ -15,6 +15,8 @@
  *   (DOR-3218).
  * - `shell-check-notifications.ts`: the check on agents' shell commands can't
  *   start (DOR-3300).
+ * - `session/chat-messages/report-undelivered-notice.ts`: a spin-off report
+ *   never reached its parent chat (DOR-3561).
  *
  * @module services/notifications/declared-entries
  */
@@ -34,6 +36,10 @@ import {
   type AccountSigninPayloads,
 } from './account-signin-notifications.js';
 import { SHELL_CHECK_ENTRIES, type ShellCheckPayloads } from './shell-check-notifications.js';
+import {
+  REPORT_UNDELIVERED_ENTRIES,
+  type ReportUndeliveredPayloads,
+} from '../session/chat-messages/report-undelivered-notice.js';
 
 import {
   BROWSER_HANDOFF_ENTRIES,
@@ -59,6 +65,7 @@ export interface DeclaredPayloads
     AccountSigninPayloads,
     BrowserHandoffPayloads,
     ShellCheckPayloads,
+    ReportUndeliveredPayloads,
     AccessChangePayloads,
     McpToolAddedPayloads,
     McpReservedNamePayloads {}
@@ -72,6 +79,7 @@ export const DECLARED_ENTRIES = {
   ...ACCOUNT_SIGNIN_ENTRIES,
   ...BROWSER_HANDOFF_ENTRIES,
   ...SHELL_CHECK_ENTRIES,
+  ...REPORT_UNDELIVERED_ENTRIES,
   ...ACCESS_CHANGE_ENTRIES,
   ...MCP_TOOL_ADDED_ENTRIES,
   ...MCP_RESERVED_NAME_ENTRIES,
@@ -90,6 +98,7 @@ export const DECLARED_WIRED_KINDS = [
   'account.signin_review',
   'browser.handoff',
   'shell.check_down',
+  'report.undelivered',
   'connector.access_narrowed',
   'mcp-server.tool_added',
   'mcp-server.reserved_name',

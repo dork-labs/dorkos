@@ -185,6 +185,8 @@ export const NOTIFICATION_KINDS = [
    * end it by restarting.
    */
   'shell.check_down',
+  /** A spin-off report never reached the chat that started it (DOR-3561). */
+  'report.undelivered',
 ] as const;
 
 /** What the app shows about DorkOS's check on agents' shell commands (DOR-3300). */

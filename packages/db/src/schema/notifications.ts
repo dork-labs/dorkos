@@ -75,6 +75,7 @@ export const notifications = sqliteTable(
         'agent.secret_files',
         'account.signin_review',
         'shell.check_down',
+        'report.undelivered',
       ],
     }).notNull(),
 

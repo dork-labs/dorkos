@@ -56,6 +56,7 @@ import { setChatMessageStore, type ChatMessageStore } from './chat-message-store
 import { stampHistory } from './chat-message-stamps.js';
 import { ChatReportBack, type RoomSeatReport } from './chat-report-back.js';
 import type { ChatReadDeps } from './chat-read.js';
+import { notifyUndeliveredReport } from './report-undelivered.js';
 import { getSpinOffStartup } from './startup/spin-off-startup.js';
 import { wireSpinOffStartup } from './startup/wire-spin-off-startup.js';
 
@@ -444,6 +445,14 @@ export function wireChatReportBack(
     statusOf: (sessionId) => peekProjector(sessionId)?.getStatus() ?? null,
     history: chatHistoryOf,
     toRoomSeat: (parentSessionId, report) => deliverToRoomSeat(parentSessionId, report),
+    onUndelivered: (report) => {
+      void notifyUndeliveredReport(report, chatTitleOf).catch((err: unknown) =>
+        logger.warn('[chat report-back] the undelivered report card could not be raised', {
+          sessionId: report.sessionId,
+          ...logError(err),
+        })
+      );
+    },
   });
   const stopStartup = wireSpinOffStartup(reportBack);
   // What each chat's open ask is about, kept from the interaction events so the
