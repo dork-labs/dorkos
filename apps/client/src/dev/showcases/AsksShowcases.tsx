@@ -426,6 +426,20 @@ function InlineApprovalPrompt() {
           />
         ))}
       </ShowcaseDemo>
+      {/* "Always allow…" opens a choice in place: the one tool, or every tool
+          from the server, including ones it adds later (DOR-4101). */}
+      <ShowcaseLabel>Always Allow — an MCP server that offers every tool</ShowcaseLabel>
+      <ShowcaseDemo>
+        <ApprovalPrompt
+          sessionId={MOCK_SESSION_ID}
+          toolCallId={`${TOOL_CALL_APPROVAL.toolCallId}-breadth-server`}
+          toolName="mcp__github__create_issue"
+          input='{"title":"Made-up issue"}'
+          approvalHasSuggestions
+          approvalAlwaysAllowScope="project"
+          approvalAlwaysAllowBreadth="server"
+        />
+      </ShowcaseDemo>
     </TransportProvider>
   );
 }

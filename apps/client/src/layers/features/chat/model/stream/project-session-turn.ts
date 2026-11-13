@@ -30,6 +30,7 @@ import {
   type SessionEvent,
 } from '@dorkos/shared/session-stream';
 import type { ChatMessage } from '../chat-types';
+import { approvalFieldsOf } from './approval-fields';
 import { deriveFromParts } from './stream-event-helpers';
 import { mapHistoryMessages } from './stream-history-helpers';
 import { foldCapabilityApproval, foldCapabilityApprovalResolved } from './capability-approval-fold';
@@ -256,24 +257,7 @@ function foldApproval(
   parts: MessagePart[],
   event: Extract<SessionEvent, { type: 'approval_required' }>
 ) {
-  const approvalFields = {
-    interactiveType: 'approval' as const,
-    input: event.input,
-    status: 'pending' as const,
-    // The countdown and its draining bar are both gated on `timeoutMs`: the
-    // card renders without a deadline anywhere on it when the emission omits
-    // one, which is exactly what production did before DOR-810.
-    timeoutMs: event.timeoutMs,
-    approvalStartedAt: event.startedAt,
-    approvalRemainingMs: event.remainingMs,
-    approvalTitle: event.title,
-    approvalDisplayName: event.displayName,
-    approvalDescription: event.description,
-    approvalBlockedPath: event.blockedPath,
-    approvalDecisionReason: event.decisionReason,
-    approvalHasSuggestions: event.hasSuggestions,
-    approvalAlwaysAllowScope: event.alwaysAllowScope,
-  };
+  const approvalFields = approvalFieldsOf(event);
   const existing = findToolCallPart(parts, event.id);
   if (existing) {
     Object.assign(existing, approvalFields);

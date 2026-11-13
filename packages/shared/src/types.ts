@@ -46,6 +46,7 @@ export type {
   ToolProgressEvent,
   ApprovalEvent,
   AlwaysAllowScope,
+  AlwaysAllowBreadth,
   QuestionOption,
   QuestionItem,
   QuestionPromptEvent,

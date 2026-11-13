@@ -3991,6 +3991,9 @@
               },
               "alwaysAllowScope": {
                 "$ref": "#/components/schemas/AlwaysAllowScope"
+              },
+              "alwaysAllowBreadth": {
+                "$ref": "#/components/schemas/AlwaysAllowBreadth"
               }
             },
             "required": [
@@ -4103,6 +4106,13 @@
           "session",
           "project",
           "user"
+        ]
+      },
+      "AlwaysAllowBreadth": {
+        "type": "string",
+        "enum": [
+          "tool",
+          "server"
         ]
       },
       "QuestionItem": {
@@ -4600,6 +4610,16 @@
               },
               {
                 "description": "Scope an accepted \"Always Allow\" grants — session, project, or the operator's global settings"
+              }
+            ]
+          },
+          "approvalAlwaysAllowBreadth": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AlwaysAllowBreadth"
+              },
+              {
+                "description": "Whether \"Always Allow\" covers this MCP tool or every tool from its server"
               }
             ]
           },
@@ -6205,6 +6225,9 @@
               },
               "alwaysAllowScope": {
                 "$ref": "#/components/schemas/AlwaysAllowScope"
+              },
+              "alwaysAllowBreadth": {
+                "$ref": "#/components/schemas/AlwaysAllowBreadth"
               }
             },
             "required": [
@@ -10132,6 +10155,9 @@
           },
           "alwaysAllow": {
             "type": "boolean"
+          },
+          "alwaysAllowBreadth": {
+            "$ref": "#/components/schemas/AlwaysAllowBreadth"
           },
           "reason": {
             "type": "string",
@@ -41155,6 +41181,9 @@
                         },
                         "alwaysAllowScope": {
                           "$ref": "#/components/schemas/AlwaysAllowScope"
+                        },
+                        "alwaysAllowBreadth": {
+                          "$ref": "#/components/schemas/AlwaysAllowBreadth"
                         }
                       },
                       "required": [

@@ -38,7 +38,12 @@ import type {
   ElicitationResult,
   PermissionUpdate,
 } from '@anthropic-ai/claude-agent-sdk';
-import type { AlwaysAllowScope, StreamEvent, QuestionItem } from '@dorkos/shared/types';
+import type {
+  AlwaysAllowBreadth,
+  AlwaysAllowScope,
+  StreamEvent,
+  QuestionItem,
+} from '@dorkos/shared/types';
 import { logRefusal } from '../../../observability/refusals.js';
 import { logger } from '../../../../lib/logger.js';
 import { SESSIONS } from '../../../../config/constants.js';
@@ -69,6 +74,8 @@ export interface ApprovalSnapshot {
    * carried no suggestions — there is no button to describe.
    */
   alwaysAllowScope?: AlwaysAllowScope;
+  /** Whether that Always Allow could cover a whole MCP server (DOR-4101). */
+  alwaysAllowBreadth?: AlwaysAllowBreadth;
 }
 
 /**

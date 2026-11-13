@@ -698,6 +698,72 @@ describe('what "Always Allow" says it grants (DOR-1462)', () => {
   });
 });
 
+describe('Always allow on an MCP card that offers its whole server (DOR-4101)', () => {
+  const mcpProps = {
+    ...baseProps,
+    toolName: 'mcp__made_up__create_issue',
+    input: '{}',
+    approvalHasSuggestions: true,
+    approvalAlwaysAllowScope: 'project' as const,
+  };
+
+  it('asks which first, with the one tool checked, and says what the server rule covers', () => {
+    render(<ApprovalPrompt {...mcpProps} approvalAlwaysAllowBreadth="server" />);
+    fireEvent.click(screen.getByRole('button', { name: 'Always allow…' }));
+    expect(mockApproveTool).not.toHaveBeenCalled();
+    expect(screen.getByText('Always allow, in this project')).toBeDefined();
+    const just = screen.getByRole('radio', { name: /^Just Create Issue$/ });
+    expect((just as HTMLInputElement).checked).toBe(true);
+    expect(document.activeElement).toBe(just);
+    expect(screen.getByText('Every tool from Made Up, including ones it adds later')).toBeDefined();
+    expect(screen.getByRole('button', { name: /^Always allow Create Issue$/ })).toBeDefined();
+    // No stand-in for a name the card doesn't know (DOR-4117).
+    expect(screen.getByText('It still asks before other Made Up tools.')).toBeDefined();
+  });
+
+  it('"Just {tool}" sends the tool pick; the server pick names itself and sends server', async () => {
+    render(<ApprovalPrompt {...mcpProps} approvalAlwaysAllowBreadth="server" />);
+    fireEvent.click(screen.getByRole('button', { name: 'Always allow…' }));
+    fireEvent.click(
+      screen.getByRole('radio', { name: /^Every tool from Made Up, including ones it adds later$/ })
+    );
+    fireEvent.click(screen.getByRole('button', { name: /^Always allow every Made Up tool/ }));
+    await waitFor(() =>
+      expect(mockApproveTool).toHaveBeenCalledWith('session-1', 'tc-1', 'server')
+    );
+  });
+
+  it('Back puts the action row back, and Esc there never denies', () => {
+    render(<ApprovalPrompt {...mcpProps} approvalAlwaysAllowBreadth="server" />);
+    fireEvent.click(screen.getByRole('button', { name: 'Always allow…' }));
+    fireEvent.keyDown(screen.getByRole('radio', { name: /^Just/ }), { key: 'Escape' });
+    expect(mockDenyTool).not.toHaveBeenCalled();
+    expect(screen.queryByRole('radio')).toBeNull();
+    expect(screen.getByRole('button', { name: 'Always allow…' })).toBeDefined();
+  });
+
+  it('Enter in the choice sends the checked pick', async () => {
+    render(<ApprovalPrompt {...mcpProps} approvalAlwaysAllowBreadth="server" />);
+    fireEvent.click(screen.getByRole('button', { name: 'Always allow…' }));
+    fireEvent.keyDown(screen.getByRole('radio', { name: /^Just/ }), { key: 'Enter' });
+    await waitFor(() => expect(mockApproveTool).toHaveBeenCalledWith('session-1', 'tc-1', 'tool'));
+  });
+
+  it('a card for one tool’s rule has no step and no server line', async () => {
+    render(<ApprovalPrompt {...mcpProps} approvalAlwaysAllowBreadth="tool" />);
+    expect(screen.queryByText(/including ones it adds later/)).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Always allow, this project' }));
+    await waitFor(() => expect(mockApproveTool).toHaveBeenCalledWith('session-1', 'tc-1', true));
+    expect(screen.queryByRole('radio')).toBeNull();
+  });
+
+  it('on Wi-Fi there is no Always allow, so no step', () => {
+    wifi.on = true;
+    render(<ApprovalPrompt {...mcpProps} approvalAlwaysAllowBreadth="server" />);
+    expect(screen.queryByRole('button', { name: /always allow/i })).toBeNull();
+  });
+});
+
 describe('ApprovalPrompt on Wi-Fi (DOR-2969)', () => {
   it('shows Allow once and Deny, never Always allow, and says why once', () => {
     wifi.on = true;

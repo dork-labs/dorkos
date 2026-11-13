@@ -374,6 +374,7 @@ export function AssistantMessageContent({
           approvalDecisionReason={toolPart.approvalDecisionReason}
           approvalHasSuggestions={toolPart.approvalHasSuggestions}
           approvalAlwaysAllowScope={toolPart.approvalAlwaysAllowScope}
+          approvalAlwaysAllowBreadth={toolPart.approvalAlwaysAllowBreadth}
           isActive={isActive}
           onDecided={onToolDecided ? () => onToolDecided(toolPart.toolCallId) : undefined}
           allowsDenyReason={allowsDenyReason}

@@ -149,6 +149,7 @@ export function SessionAsks({
               approvalDecisionReason={activeInteraction.approvalDecisionReason}
               approvalHasSuggestions={activeInteraction.approvalHasSuggestions}
               approvalAlwaysAllowScope={activeInteraction.approvalAlwaysAllowScope}
+              approvalAlwaysAllowBreadth={activeInteraction.approvalAlwaysAllowBreadth}
               allowsDenyReason={allowsDenyReason}
             />
           ) : activeInteraction.interactiveType === 'question' && activeInteraction.questions ? (

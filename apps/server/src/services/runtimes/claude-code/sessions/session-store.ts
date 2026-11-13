@@ -40,6 +40,7 @@ import {
   sessionScopedMode,
   setChosenMode,
 } from '../turn-permission.js';
+import { narrowToTool } from '../tool-gate/always-allow-breadth.js';
 import type { TranscriptReader } from './transcript-reader.js';
 import type { SessionLockManager } from '../../../session/session-lock.js';
 import {
@@ -740,9 +741,15 @@ export class SessionStore {
 
     if (approved && options?.alwaysAllow && pending.suggestions?.length) {
       // "Always Allow" — pass the SDK permission suggestions array, and keep
-      // DorkOS's own copy of the mode in step with what that array does.
-      this.adoptSuggestedMode(session, pending.suggestions);
-      pending.resolve(pending.suggestions);
+      // DorkOS's own copy of the mode in step with what that array does. A bare
+      // MCP server rule is written only when the person picked the whole server;
+      // otherwise it becomes the one tool's rule (DOR-4101).
+      const suggestions =
+        options.alwaysAllowBreadth === 'server'
+          ? pending.suggestions
+          : narrowToTool(pending.snapshot.toolName, pending.suggestions);
+      this.adoptSuggestedMode(session, suggestions);
+      pending.resolve(suggestions);
     } else {
       pending.resolve(approved, approved ? undefined : options?.denyReason);
     }
