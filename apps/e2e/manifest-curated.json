@@ -292,6 +292,12 @@
         "apps/client/src/layers/features/dashboard-sidebar/model/build-sidebar-model.ts"
       ]
     },
+    "terminal-command-showcase": {
+      "relatedCode": [
+        "apps/client/src/dev/showcases/TerminalCommandShowcases.tsx",
+        "apps/client/src/layers/features/settings/ui/terminal-command/TerminalCommandTab.tsx"
+      ]
+    },
     "team-page": {
       "relatedCode": [
         "apps/client/src/router.tsx",

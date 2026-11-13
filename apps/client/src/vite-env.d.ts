@@ -65,6 +65,28 @@ declare global {
   /** What the desktop file dialog answers: the picked path (`null` when cancelled), or why not. */
   type DesktopFilePickResult = { ok: true; path: string | null } | { ok: false; message: string };
 
+  /**
+   * The Terminal command row's state (DOR-3105). Mirrors `TerminalCommandStatus` in the desktop
+   * shell's `main/terminal-command/state.ts`.
+   */
+  type DesktopTerminalCommandStatus =
+    | { state: 'unavailable' }
+    | { state: 'not-installed' }
+    | { state: 'installed'; path: string }
+    | { state: 'not-found'; path: string; shellFile: string; line: string }
+    | {
+        state: 'shadowed';
+        path: string;
+        shellFile: string;
+        line: string;
+        otherPath: string;
+        otherVersion: string | null;
+      };
+
+  /** What reading, installing or removing the Terminal command answers. */
+  type DesktopTerminalCommandResult =
+    { ok: true; status: DesktopTerminalCommandStatus } | { ok: false; message: string };
+
   /** One remembered tab, as the desktop shell keeps it (`AppTab` in the tab store). */
   interface DesktopSavedTab {
     id: string;
@@ -173,6 +195,15 @@ declare global {
      * the desktop preload's `chooseCertificateFile`.
      */
     chooseCertificateFile?(): Promise<DesktopFilePickResult>;
+    /**
+     * Settings → This computer → Terminal command (DOR-3105): `dorkos` in the
+     * person's Terminal. Mirrors the desktop preload's `terminalCommand`.
+     */
+    terminalCommand?: {
+      status(): Promise<DesktopTerminalCommandResult>;
+      install(): Promise<DesktopTerminalCommandResult>;
+      remove(): Promise<DesktopTerminalCommandResult>;
+    };
     /**
      * A scrubbed, bounded tail of the desktop shell's OWN log, for a bug report
      * (DOR-2045). Mirrors the desktop preload's `getShellLogExcerpt`.

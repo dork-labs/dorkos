@@ -183,9 +183,17 @@ describe('protected paths', () => {
       '.dork/browser/profile/**',
       '.dork/browser/agent-browser-guard.json*',
       '.dork/browser-profiles/.binding-key',
+      // DOR-3105: the Terminal command the person runs as themselves, at every level.
+      '.local/bin/dorkos',
       '.dork/browser-profiles/**',
       '.dork/local-browser/saved-logins/**',
     ]);
+    expect(
+      HOME_PERSON_ONLY_PATHS.find((entry) => entry.path === '.local/bin/dorkos')
+    ).toMatchObject({ root: 'home', kind: 'file', deny: 'write' });
+    expect(
+      HOME_PERSON_ONLY_PATHS.find((entry) => entry.path === '.local/bin/dorkos')?.belowFull
+    ).toBeFalsy();
     expect(globs(DATA_GRANT_FILE_PATHS)).toEqual([
       'config.json',
       'host.key',

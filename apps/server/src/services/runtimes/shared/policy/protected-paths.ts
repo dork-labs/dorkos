@@ -306,6 +306,11 @@ export const PERSON_ONLY_DATA_PATHS: readonly ProtectedPath[] = [
  * folder's copies of this change's {@link PERSON_ONLY_DATA_PATHS} browser entries,
  * whatever data folder a launch uses. The sign-in stores are refused below Full
  * only; the agent browser's guard config at every level.
+ *
+ * `.local/bin/dorkos` is the Terminal command the desktop app installs (DOR-3105).
+ * The person runs it as themselves, outside DorkOS, so an agent that could
+ * rewrite it could run anything as the person the next time they type `dorkos`.
+ * Refused at every level, Full too.
  */
 export const HOME_PERSON_ONLY_PATHS: readonly ProtectedPath[] = [
   ...belowFull(
@@ -325,6 +330,7 @@ export const HOME_PERSON_ONLY_PATHS: readonly ProtectedPath[] = [
   ...group('home', 'write', [
     ['.dork/browser/agent-browser-guard.json*', 'file'],
     ['.dork/browser-profiles/.binding-key', 'file'],
+    ['.local/bin/dorkos', 'file'],
   ]),
   ...belowFull(
     group('home', 'write', [

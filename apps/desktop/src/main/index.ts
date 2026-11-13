@@ -28,6 +28,7 @@ import { setupCloseTab } from './close-tab';
 import { setupAdminActions } from './admin';
 import { setupAppViewCapture } from './capture';
 import { setupCertificateFilePicker } from './certificate-file-picker';
+import { setupTerminalCommand } from './terminal-command';
 import { registerShellLogExcerptHandler } from './shell-log-excerpt';
 import { clearHttpCacheOnVersionChange } from './cache-hygiene';
 import { describeLogLocation } from './log-location';
@@ -341,6 +342,8 @@ if (refusedSwitch !== null) {
   setupAppViewCapture({ getRendererUrl });
   // Settings' "Choose…" for company certificates: the native file dialog.
   setupCertificateFilePicker({ getRendererUrl });
+  // Settings' Terminal command: `dorkos` in the person's Terminal (DOR-3105).
+  setupTerminalCommand({ getRendererUrl });
 
   // The shell's own recent log, for a bug report filed from the desktop app.
   // The server child cannot see `main.log`, so nothing but the shell can answer

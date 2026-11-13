@@ -296,6 +296,14 @@ export const SETTINGS_SECTIONS: PlaygroundSection[] = [
     category: 'Control Center',
     keywords: ['network', 'certificates', 'tls', 'proxy', 'company', 'ca', 'NODE_EXTRA_CA_CERTS'],
   },
+  // Terminal command — `dorkos` in the person's Terminal, from the Mac app (DOR-3105).
+  {
+    id: 'terminal-command',
+    title: 'Terminal Command',
+    page: 'settings',
+    category: 'Control Center',
+    keywords: ['terminal', 'command line', 'cli', 'dorkos', 'path', 'alias', 'install'],
+  },
   // Control Center
   {
     id: 'control-center',
