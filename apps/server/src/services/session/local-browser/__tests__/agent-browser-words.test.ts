@@ -10,8 +10,10 @@
  * @vitest-environment node
  */
 import { describe, expect, it } from 'vitest';
+import type { LocalBrowserCapabilities } from '@dorkos/shared/local-browser';
 import { agentBrowserNotice } from '../../../mesh/agent-browser-preset.js';
 import { createLocalBrowserDomain } from '../capabilities.js';
+import { assertOpenable } from '../open-input.js';
 import type { LocalBrowserService } from '../service.js';
 
 const OLD_WORDS = /DorkOS browser|shared browser|live browser|live tab|operator/i;
@@ -43,4 +45,37 @@ describe('the Agent browser is named one way to agents (DOR-3219)', () => {
       expect(notice.replace(/ends in `relay_notify_user`/g, '')).not.toContain('relay_notify_user');
     }
   );
+});
+
+describe('opening the Agent browser refuses in the designer’s words (DOR-3219)', () => {
+  const capable: LocalBrowserCapabilities = {
+    platform: 'darwin',
+    managedChromiumVersion: '1.0.0',
+    unavailableReasons: {},
+    embedded: true,
+    newWindow: true,
+    playwrightVersion: '1.0.0',
+    defaultMode: 'new-window',
+  };
+
+  function refusal(mode: string, hasEmbedded: boolean): string {
+    try {
+      assertOpenable({ mode }, hasEmbedded, capable);
+    } catch (error) {
+      return (error as Error).message;
+    }
+    throw new Error('expected a refusal');
+  }
+
+  it('asks where to open it when the mode is unknown', () => {
+    expect(refusal('tab', true)).toBe(
+      'Choose where the Agent browser opens: in DorkOS or in its own window.'
+    );
+  });
+
+  it('names the desktop app when DorkOS cannot hold the browser', () => {
+    expect(refusal('embedded', false)).toBe(
+      'Opening the Agent browser in DorkOS needs the desktop app.'
+    );
+  });
 });
