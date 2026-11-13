@@ -44,12 +44,11 @@ export function SharedElsewhere({
   const chat = title ? (
     <Button
       variant="link"
-      title={title}
-      // The button keeps the sentence's line height, so the title sits on its baseline.
-      className="h-auto max-w-full p-0 align-bottom text-sm leading-[inherit] md:h-auto"
+      // Inline with the sentence and wrapping in full: titles are capped at 60 characters.
+      className="inline h-auto p-0 text-left text-sm leading-[inherit] break-words whitespace-normal md:h-auto"
       onClick={() => void navigate(toSession({ session: holderSessionId }))}
     >
-      <span className="truncate">{title}</span>
+      {title}
     </Button>
   ) : (
     'another chat'

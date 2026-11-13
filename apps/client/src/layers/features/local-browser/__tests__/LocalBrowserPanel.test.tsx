@@ -169,7 +169,7 @@ describe('LocalBrowserPanel', () => {
       ).toBeInTheDocument();
       expect(screen.queryByRole('button', { name: 'New chat' })).toBeNull();
     });
-    it('keeps a long title whole in the link’s name and tooltip', async () => {
+    it('shows a long title in full, wrapping rather than cutting off', async () => {
       const long = 'A very long chat title about the quarterly invoices for every client';
       transport.getSession.mockResolvedValue({
         id: 'other-chat',
@@ -179,8 +179,9 @@ describe('LocalBrowserPanel', () => {
       transport.getLocalBrowserState.mockResolvedValue(elsewhere);
       mount();
       const link = await screen.findByRole('button', { name: long });
-      expect(link).toHaveAttribute('title', long);
-      expect(link.querySelector('.truncate')).toHaveTextContent(long);
+      expect(link).toHaveTextContent(long);
+      expect(link).toHaveClass('whitespace-normal');
+      expect(link.querySelector('.truncate')).toBeNull();
     });
     it('Take it here opens the browser for this chat in one click', async () => {
       transport.getLocalBrowserState.mockResolvedValue(elsewhere);
@@ -254,7 +255,12 @@ describe('LocalBrowserPanel', () => {
       });
       mount();
       expect(
-        await screen.findByText('Another agent is waiting for a person in this window.')
+        await screen.findByText(
+          (_, element) =>
+            element?.tagName === 'P' &&
+            element.textContent ===
+              'Atlas in another chat is waiting for you to finish signing in here.'
+        )
       ).toBeInTheDocument();
       fireEvent.click(screen.getByRole('button', { name: 'Open that chat' }));
       expect(navigate).toHaveBeenCalledExactlyOnceWith(
@@ -275,6 +281,30 @@ describe('LocalBrowserPanel', () => {
       expect(screen.queryByLabelText('Saved sign-ins')).toBeNull();
       expect(screen.queryByRole('button', { name: 'Forget…' })).toBeNull();
     });
+    it('names the waiting agent and links its chat by title', async () => {
+      transport.getSession.mockResolvedValue({
+        id: 'chat-two',
+        title: 'Book the venue',
+        cwd: '/agents/atlas',
+      });
+      transport.getLocalBrowserState.mockResolvedValue({
+        ...connected,
+        sessionId: 'chat-two',
+        paused: true,
+        handoff: elsewhere,
+        signIn: null,
+      });
+      mount();
+      const link = await screen.findByRole('button', { name: 'Book the venue' });
+      expect(link.closest('p')).toHaveTextContent(
+        'Atlas in Book the venue is waiting for you to finish signing in here.'
+      );
+      expect(screen.getByText('Atlas').tagName).toBe('STRONG');
+      fireEvent.click(link);
+      expect(navigate).toHaveBeenCalledExactlyOnceWith(
+        expect.objectContaining({ search: expect.objectContaining({ session: 'chat-two' }) })
+      );
+    });
     it('keeps the ordinary controls when that handoff has ended', async () => {
       transport.getLocalBrowserState.mockResolvedValue({
         ...connected,
@@ -294,9 +324,7 @@ describe('LocalBrowserPanel', () => {
       });
       mount();
       expect(await screen.findByRole('button', { name: 'Disconnect' })).toBeInTheDocument();
-      expect(
-        screen.queryByText('Another agent is waiting for a person in this window.')
-      ).toBeNull();
+      expect(screen.queryByText(/is waiting for you to finish signing in here/)).toBeNull();
     });
   });
   describe('Disconnect during a handoff', () => {
