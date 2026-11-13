@@ -1,0 +1,16 @@
+---
+covers:
+  - 'fix(local-browser): the Agent browser panel names the chat that has it, and moves it here in one click (DOR-4265)'
+  - "fix(local-browser): the shared-elsewhere view and agent refusals follow the designer's spec (DOR-4265)"
+  - 'fix(local-browser): Open browser and Use it here take first focus, and the playground shows each state (DOR-4265)'
+  - "fix(local-browser): the in-use title sits on the sentence's line, and the warning wraps whole (DOR-4265)"
+  - 'fix(local-browser): the panel says Take it here, and agents get the holding chat in its own field (DOR-4265)'
+  - 'fix(local-browser): the panel header stacks in a narrow panel, the waiting notice names the agent and chat, and titles wrap in full (DOR-4265)'
+---
+
+### Fixed
+
+- When another chat has the Agent browser, the browser panel now names that chat, with a link to it, and a **Take it here** button. If that chat's agent is working, the panel says taking it stops that work. Before, the panel showed no page and no way to take it. (DOR-4265)
+- When no chat has the browser yet, the panel leads with **Open browser**. (DOR-4265)
+- When another chat's agent is waiting for you to finish signing in, the panel names that agent and chat. (DOR-4265)
+- An agent that can't use the browser now hears why: it isn't open yet, another chat has it (named by that chat's title), or you moved it to another chat. So it can tell you what to do. (DOR-4265)

@@ -12,9 +12,11 @@ import { BrowserModeChoice } from './BrowserModeChoice';
 import { useNativeBrowserSurface } from '../model/use-native-browser-surface';
 import { browserErrorMessage } from '../lib/browser-error-message';
 import { useActionFocusReturn } from '../model/use-action-focus-return';
+import { useFirstFocus } from '../model/use-first-focus';
 import { BrowserPreparation } from './BrowserPreparation';
 import { WaitingElsewhere } from './WaitingElsewhere';
 import { SavedSignIns } from './SavedSignIns';
+import { SharedElsewhere } from './SharedElsewhere';
 
 export interface LocalBrowserPanelProps {
   visible?: boolean;
@@ -177,6 +179,11 @@ export function LocalBrowserPanel({
   const { openButton, rememberFocus } = useActionFocusReturn(
     busy || cancelling || connected || needsChoice || !supported
   );
+  // Open browser is the one main action while nothing is open, so focus starts there.
+  useFirstFocus(
+    openButton,
+    visible && !connected && !waitingElsewhere && !needsChoice && !!supported
+  );
   const preparation =
     opening &&
     !cancelling &&
@@ -195,9 +202,10 @@ export function LocalBrowserPanel({
     <section
       aria-label="Agent browser"
       data-slot="local-browser-panel"
-      className="flex h-full min-h-0 flex-col gap-3 overflow-y-auto p-3"
+      className="@container/browser-panel flex h-full min-h-0 flex-col gap-3 overflow-y-auto p-3"
     >
-      <div className="flex items-center justify-between gap-2">
+      {/* Below 480px of panel the state sits under the title, so neither wraps (DOR-4265). */}
+      <div className="flex flex-col items-start gap-0.5 @min-[480px]/browser-panel:flex-row @min-[480px]/browser-panel:items-center @min-[480px]/browser-panel:justify-between @min-[480px]/browser-panel:gap-2">
         <h3 className="text-sm font-medium">Agent browser</h3>
         <span role="status" className="text-muted-foreground text-xs">
           {cancelling
@@ -208,13 +216,16 @@ export function LocalBrowserPanel({
                 ? 'Updating…'
                 : state?.status === 'closed'
                   ? 'Browser closed'
-                  : connected
-                    ? state.paused
-                      ? 'Agent paused'
-                      : 'Connected'
-                    : hadConnection
-                      ? 'Disconnected'
-                      : 'Not open yet'}
+                  : connected && sharedElsewhere
+                    ? // The body says where the browser is; the header adds nothing.
+                      ''
+                    : connected
+                      ? state.paused
+                        ? 'Agent paused'
+                        : 'Connected'
+                      : hadConnection
+                        ? 'Disconnected'
+                        : 'Not open yet'}
         </span>
       </div>
       {opening && (
@@ -249,7 +260,12 @@ export function LocalBrowserPanel({
             Reconnect
           </Button>
         )}
-      {waitingElsewhere && <WaitingElsewhere sessionId={waitingElsewhere.sessionId} />}
+      {waitingElsewhere && (
+        <WaitingElsewhere
+          sessionId={waitingElsewhere.sessionId}
+          agentName={waitingElsewhere.agentName}
+        />
+      )}
       {!connected && !waitingElsewhere && (
         <div className="min-h-0 space-y-3 overflow-y-auto">
           {choiceIssue && (
@@ -281,13 +297,17 @@ export function LocalBrowserPanel({
           </Button>
         </div>
       )}
-      {connected && !waitingElsewhere && (
+      {connected && !waitingElsewhere && sharedElsewhere && (
+        <SharedElsewhere
+          holderSessionId={state.sessionId!}
+          canTakeHere={!!sessionId}
+          disabled={busy || cancelling || !supported}
+          visible={visible}
+          onTakeHere={open}
+        />
+      )}
+      {connected && !waitingElsewhere && !sharedElsewhere && (
         <>
-          {sharedElsewhere && (
-            <p className="text-muted-foreground text-xs">
-              Shared with another chat. Disconnect to use it here.
-            </p>
-          )}
           {!state.sessionId && (
             <p className="text-muted-foreground text-xs">
               Only you can use this page. Open from an agent chat to share it.
@@ -330,11 +350,7 @@ export function LocalBrowserPanel({
             </Button>
           </div>
           <label className="text-sm">
-            {state.sessionId
-              ? sharedElsewhere
-                ? 'Shared with another chat'
-                : `Shared with ${agentName || 'this chat’s agent'}`
-              : 'Browser tab'}
+            {state.sessionId ? `Shared with ${agentName || 'this chat’s agent'}` : 'Browser tab'}
             <select
               className="bg-muted/40 mt-1 block w-full rounded-md p-2"
               value={state.selectedTabId ?? ''}
@@ -395,7 +411,7 @@ export function LocalBrowserPanel({
           {mode === 'embedded' && (
             <p className="text-muted-foreground text-xs">This page stays in the right panel.</p>
           )}
-          {mode === 'embedded' && !sharedElsewhere && (
+          {mode === 'embedded' && (
             <p className="text-muted-foreground text-xs">
               {state.sessionId
                 ? 'Extra windows are for you. Your agent stays on this page.'

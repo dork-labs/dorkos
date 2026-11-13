@@ -698,6 +698,45 @@ describe('local browser ownership and observations', () => {
     await service.disconnect();
     expect(() => service.requireSharedSession('chat-one')).toThrow();
   });
+  it('moving the browser to another chat takes it from the first chat’s agent (DOR-4265)', async () => {
+    const { service } = await create();
+    service.useProfileAccess(
+      async () => undefined,
+      () => true,
+      async (id) => (id === 'chat-one' ? 'Quarterly invoices' : 'Trip plans')
+    );
+    await service.open({ mode: 'new-window', sessionId: 'chat-one' });
+    expect(() => service.requireSharedSession('chat-two')).toThrow(
+      expect.objectContaining({
+        code: 'shared_elsewhere',
+        fields: { chatId: 'chat-one', chatTitle: 'Quarterly invoices' },
+      })
+    );
+    // Use it here is the same person-clicked open, from the second chat.
+    await service.open({ mode: 'new-window', sessionId: 'chat-two' });
+    expect(() => service.requireSharedSession('chat-two')).not.toThrow();
+    expect(() => service.requireSharedSession('chat-one')).toThrow(
+      expect.objectContaining({
+        code: 'shared_elsewhere',
+        message:
+          'The person moved the Agent browser to another chat, named in chatTitle. Ask them to move it back if you still need it.',
+        fields: { chatId: 'chat-two', chatTitle: 'Trip plans' },
+      })
+    );
+    await service.disconnect();
+    expect(() => service.requireSharedSession('chat-two')).toThrow(
+      expect.objectContaining({ code: 'not_opened' })
+    );
+    // Opened again after a Disconnect, nothing was moved away from chat-two.
+    await service.open({ mode: 'new-window', sessionId: 'chat-one' });
+    expect(() => service.requireSharedSession('chat-two')).toThrow(
+      expect.objectContaining({
+        message:
+          'The Agent browser is in use in another chat, named in chatTitle. Ask the person to move it here.',
+        fields: { chatId: 'chat-one', chatTitle: 'Quarterly invoices' },
+      })
+    );
+  });
 
   it('closes the embedded bridge transport and guest without closing an owned context', async () => {
     const f = await create();

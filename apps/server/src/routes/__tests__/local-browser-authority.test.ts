@@ -236,6 +236,19 @@ it.each(['forget', 'delete'] as const)(
   }
 );
 
+// Taking the browser from another chat is the person's open, aimed at their chat
+// (DOR-4265). An agent may never take it, for itself or for any other chat.
+it('refuses an agent that tries to take the browser for a chat', async () => {
+  const response = await request(server)
+    .post('/api/local-browser/open')
+    .set('Host', 'localhost')
+    .set('X-DorkOS-Agent', '')
+    .send({ mode: 'new-window', sessionId: 'chat-agent-wants' });
+  expect(response.status).toBe(403);
+  expect(response.body.code).toBe('owner_only');
+  for (const spy of Object.values(spies)) expect(spy).not.toHaveBeenCalled();
+});
+
 // DOR-3207: `/pause` skips the person check on purpose, because a stop should be
 // easy to press. That is safe only while it stays a stop: it may never end or
 // answer a handoff, move the page or tab, open or close anything, or lift a pause.

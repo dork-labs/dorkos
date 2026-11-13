@@ -11,7 +11,7 @@ import {
 import { assertOpenable } from './open-input.js';
 import { localBrowserAppOrigins } from './app-origins.js';
 import { prepareProfileFolder } from './profile-folders.js';
-import { BrowserProfileAccessGate, type LocalBrowserProfileAccess } from './profile-access.js';
+import { BrowserProfileAccessGate } from './profile-access.js';
 import type { CloudOriginEntry } from '@dorkos/shared/cloud-origin';
 import { cloudOriginsForThisServer } from '../../core/cloud/cloud-api-origin.js';
 import {
@@ -157,12 +157,15 @@ export class LocalBrowserService {
     const setupAbort = new AbortController();
     this.openingAbort = setupAbort;
     try {
+      const previous = this.status === 'connected' ? this.sessionId : null;
       await this.closeConnection(false);
       setupAbort.signal.throwIfAborted();
       const lifecycle = this.lifecycle;
       const connectionId = randomUUID();
       this.connectionId = connectionId;
+      // Moving it here from another chat is this same open: the old chat's agent loses it now.
       this.sessionId = input.sessionId ?? null;
+      await this.profileAuthorization.rememberHolder(this.sessionId, previous);
       this.profileId = input.profileId ?? null;
       this.mode = input.mode;
       const acquisition = (async () => {
@@ -229,9 +232,12 @@ export class LocalBrowserService {
   /** Whether a named profile exists. False until startup wires the profile list, as for open. */
   readonly profileExists = (id: string): boolean => this.profileAuthorization.exists?.(id) ?? false;
 
-  /** Set once at startup. Until then, no agent can use a named profile. */
-  useProfileAccess(access: LocalBrowserProfileAccess, exists: (id: string) => boolean): void {
-    this.profileAuthorization.use(access, exists);
+  /**
+   * Set once at startup. Until then, no agent can use a named profile, and a chat
+   * refused the browser hears "another chat" rather than the holding chat's title.
+   */
+  useProfileAccess(...wiring: Parameters<BrowserProfileAccessGate['use']>): void {
+    this.profileAuthorization.use(...wiring);
   }
 
   /** On a named profile, the chat's agent must be one a person added, on every call. */

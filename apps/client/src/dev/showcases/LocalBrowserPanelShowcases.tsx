@@ -1,6 +1,9 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { Transport } from '@dorkos/shared/transport';
 import type { LocalBrowserPersonState } from '@dorkos/shared/local-browser';
+import type { SessionStatus } from '@dorkos/shared/session-stream';
+import { useSessionListStore } from '@/layers/entities/session';
 import { TransportProvider } from '@/layers/shared/model';
 import { LocalBrowserPanel } from '@/layers/features/local-browser';
 import { createPlaygroundTransport } from '../playground-transport';
@@ -23,16 +26,64 @@ const NOT_OPEN: LocalBrowserPersonState = {
   signIn: null,
 };
 
+/** A browser another chat holds, in a separate window (DOR-4265). Made-up chat and agent. */
+const IN_USE_ELSEWHERE: LocalBrowserPersonState = {
+  ...NOT_OPEN,
+  connectionId: 'demo-connection',
+  sessionId: 'chat-scout',
+  mode: 'new-window',
+  status: 'connected',
+  tabs: [{ id: 'demo-tab', title: 'Release notes draft', url: 'https://example.com/notes' }],
+  selectedTabId: 'demo-tab',
+};
+
+/** A browser held by a chat whose agent is working right now, with a long made-up title. */
+const IN_USE_WORKING: LocalBrowserPersonState = {
+  ...IN_USE_ELSEWHERE,
+  sessionId: 'chat-scout-busy',
+};
+
+/** Made-up holder chat titles, one long enough to cut off. */
+const HOLDER_TITLES: Record<string, string> = {
+  'chat-scout': 'Fix the release notes',
+  'chat-scout-busy': 'Fix the release notes and the changelog for the November launch',
+};
+
+/** The same browser while Scout waits for a person to finish a sign-in. */
+const HOLDER_WAITING: LocalBrowserPersonState = {
+  ...IN_USE_ELSEWHERE,
+  paused: true,
+  handoff: {
+    id: 'demo-handoff',
+    sessionId: 'chat-scout',
+    agentName: 'Scout',
+    agentId: null,
+    agentFolder: null,
+    profileId: null,
+    reason: 'password',
+    site: 'example.com',
+    askedAt: '2026-11-13T12:00:00.000Z',
+    outcome: null,
+  },
+};
+
 /**
- * A scoped transport for a browser that was never opened.
+ * A scoped transport for one browser state, with a made-up holder chat.
  *
+ * @param state - What the browser reports.
  * @param forget - What Forget does; the playground's own by default.
  */
-function notOpenTransport(forget?: () => Promise<never>): Transport {
+function browserTransport(
+  state: LocalBrowserPersonState,
+  forget?: () => Promise<never>
+): Transport {
   const base = createPlaygroundTransport();
   return new Proxy(base, {
     get: (target, prop, receiver) => {
-      if (prop === 'getLocalBrowserState') return async () => NOT_OPEN;
+      if (prop === 'getLocalBrowserState') return async () => state;
+      if (prop === 'getSession')
+        return async (id: string) => ({ id, title: HOLDER_TITLES[id] ?? '', cwd: '/agents/scout' });
+      if (prop === 'getAgentByPath') return async () => ({ name: 'scout', displayName: 'Scout' });
       if (prop === 'getLocalBrowserCapabilities')
         return async () => ({ embedded: false, newWindow: true });
       if (prop === 'listLocalBrowserProfiles') return async () => ({ profiles: [] });
@@ -42,15 +93,32 @@ function notOpenTransport(forget?: () => Promise<never>): Transport {
   });
 }
 
-/** The panel reading a browser that was never opened, from a scoped transport. */
-function NotOpenDemo() {
-  const [transport] = useState<Transport>(() => notOpenTransport());
+/**
+ * The panel in Atlas's chat reading one browser state, from a scoped transport and
+ * its own query cache: the browser's state is one app-wide query, so demos sharing
+ * the Playground's cache would all show whichever state loaded first.
+ * `visible` stays off so several demos on one page don't pull focus and scroll.
+ */
+function PanelDemo({ state }: { state: LocalBrowserPersonState }) {
+  const [transport] = useState<Transport>(() => browserTransport(state));
+  useEffect(() => {
+    if (state.sessionId !== IN_USE_WORKING.sessionId) return;
+    // A live status is how the app knows a chat's agent is working right now.
+    useSessionListStore.setState((store) => ({
+      statuses: { ...store.statuses, [IN_USE_WORKING.sessionId!]: {} as SessionStatus },
+    }));
+  }, [state.sessionId]);
+  const [queryClient] = useState(
+    () => new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  );
   return (
-    <TransportProvider transport={transport}>
-      <div className="bg-background h-[36rem] w-full max-w-sm rounded-lg border">
-        <LocalBrowserPanel sessionId="chat-atlas" agentName="Atlas" />
-      </div>
-    </TransportProvider>
+    <QueryClientProvider client={queryClient}>
+      <TransportProvider transport={transport}>
+        <div className="bg-background h-[36rem] w-full max-w-sm rounded-lg border">
+          <LocalBrowserPanel visible={false} sessionId="chat-atlas" agentName="Atlas" />
+        </div>
+      </TransportProvider>
+    </QueryClientProvider>
   );
 }
 
@@ -60,7 +128,7 @@ function NotOpenDemo() {
  */
 function FolderChangedDemo() {
   const [transport] = useState<Transport>(() =>
-    notOpenTransport(async () => {
+    browserTransport(NOT_OPEN, async () => {
       throw Object.assign(new Error('Sign-ins weren’t forgotten.'), {
         code: 'profiles_folder_changed',
       });
@@ -69,7 +137,7 @@ function FolderChangedDemo() {
   return (
     <TransportProvider transport={transport}>
       <div className="bg-background h-[36rem] w-full max-w-sm rounded-lg border">
-        <LocalBrowserPanel sessionId="chat-atlas" agentName="Atlas" />
+        <LocalBrowserPanel visible={false} sessionId="chat-atlas" agentName="Atlas" />
       </div>
     </TransportProvider>
   );
@@ -87,7 +155,19 @@ export function LocalBrowserPanelShowcases() {
     >
       <ShowcaseLabel>Before the browser was ever opened</ShowcaseLabel>
       <ShowcaseDemo>
-        <NotOpenDemo />
+        <PanelDemo state={NOT_OPEN} />
+      </ShowcaseDemo>
+      <ShowcaseLabel>In use in another chat: Take it here moves it</ShowcaseLabel>
+      <ShowcaseDemo>
+        <PanelDemo state={IN_USE_ELSEWHERE} />
+      </ShowcaseDemo>
+      <ShowcaseLabel>In use by an agent working right now, with a long title</ShowcaseLabel>
+      <ShowcaseDemo>
+        <PanelDemo state={IN_USE_WORKING} />
+      </ShowcaseDemo>
+      <ShowcaseLabel>In use in another chat whose agent waits on a person</ShowcaseLabel>
+      <ShowcaseDemo>
+        <PanelDemo state={HOLDER_WAITING} />
       </ShowcaseDemo>
       <ShowcaseLabel>Forget refused: the sign-ins folder was changed outside DorkOS</ShowcaseLabel>
       <ShowcaseDemo>
