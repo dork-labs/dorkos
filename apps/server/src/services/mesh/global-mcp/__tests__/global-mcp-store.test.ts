@@ -367,3 +367,22 @@ describe('GlobalMcpStore', () => {
     expect(view.headers).toEqual([{ name: 'Authorization', secret: true }]);
   });
 });
+
+describe('connectionToCheck (DOR-4118)', () => {
+  it('hands a person’s sheet the resolved connection of a server that is on', async () => {
+    const store = new GlobalMcpStore(home, secrets);
+    await store.add(GITHUB);
+    expect(store.connectionToCheck('github')).toMatchObject({
+      transport: 'stdio',
+      command: 'npx',
+    });
+  });
+
+  it('never hands out a server that is off, or one that does not exist', async () => {
+    const store = new GlobalMcpStore(home, secrets);
+    await store.add(GITHUB);
+    await store.patch('github', { enabled: false });
+    expect(store.connectionToCheck('github')).toBeNull();
+    expect(store.connectionToCheck('nope')).toBeNull();
+  });
+});

@@ -51,7 +51,8 @@ function fixtureUrl(): string {
 }
 
 /** Successful probe used where a test is about the connector contract rather than MCP I/O. */
-const successfulProbe = (): Promise<ProbeOutcome> => Promise.resolve({ kind: 'ok', toolCount: 1 });
+const successfulProbe = (): Promise<ProbeOutcome> =>
+  Promise.resolve({ kind: 'ok', toolCount: 1, tools: [] });
 
 const NOTION: { slug: string; displayName: string; connection: RemoteMcpConnection } = {
   slug: 'notion',
@@ -236,12 +237,12 @@ describe('RawMcpConnectorProvider — baseline semantics', () => {
     const firstPoll = provider.pollConnect(firstFlow.flowId);
     const secondPoll = provider.pollConnect(secondFlow.flowId);
 
-    pending[0]!({ kind: 'ok', toolCount: 1 });
+    pending[0]!({ kind: 'ok', toolCount: 1, tools: [] });
     const connected = await firstPoll;
     expect(connected.status).toBe('connected');
     await provider.disconnect(connected.account!.externalAccountRef);
 
-    pending[1]!({ kind: 'ok', toolCount: 1 });
+    pending[1]!({ kind: 'ok', toolCount: 1, tools: [] });
     await expect(secondPoll).resolves.toEqual({
       status: 'failed',
       error: 'This connection check is no longer active. Start again to retry.',
