@@ -1,24 +1,28 @@
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { Hono } from 'hono';
-import { describe, expect, it, vi } from 'vitest';
-
-vi.mock('../../services/core/config-manager.js', () => ({
-  configManager: { get: vi.fn(() => undefined) },
-}));
-vi.mock('../../services/core/auth/remote-mcp-audit.js', () => ({
-  annotateRemoteMcpKeyList: vi.fn(async (response: Response) => {
-    const body = await response.json();
-    return Response.json({ ...body, annotated: true });
-  }),
-}));
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import { mountBetterAuth } from '../better-auth.js';
 import type { ApiEnv } from '../api-chain.js';
 import type { Auth } from '../../services/core/auth/index.js';
-import { annotateRemoteMcpKeyList } from '../../services/core/auth/remote-mcp-audit.js';
+import { initConfigManager } from '../../services/core/config-manager.js';
+
+// The real config and the real key-list projection: only Better Auth's handler is a stand-in,
+// answering one made-up key, so the test can see what the HTTP boundary adds to it (DOR-4206).
+let tmpDir: string;
+beforeAll(() => {
+  tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dorkos-key-list-'));
+  initConfigManager(tmpDir);
+});
+afterAll(() => fs.rmSync(tmpDir, { recursive: true, force: true }));
 
 describe('key list remote-use projection at the HTTP boundary', () => {
   it('decorates the key list after the auth handler answers, leaving other endpoints alone', async () => {
-    const handler = vi.fn(async () => Response.json({ apiKeys: [], total: 0 }));
+    const handler = vi.fn(async () =>
+      Response.json({ apiKeys: [{ id: 'key-test', name: 'Test' }], total: 1 })
+    );
     const app = new Hono<ApiEnv>();
     mountBetterAuth(app, { auth: { handler } as unknown as Auth });
     async function get(path: string) {
@@ -33,11 +37,13 @@ describe('key list remote-use projection at the HTTP boundary', () => {
     }
     const list = await get('/api/auth/api-key/list');
     expect(list.status).toBe(200);
-    expect(await list.json()).toEqual({ apiKeys: [], total: 0, annotated: true });
+    // No remote use recorded for this key, so the projection says so.
+    expect(await list.json()).toEqual({
+      apiKeys: [{ id: 'key-test', name: 'Test', lastUsedRemotelyAt: null }],
+      total: 1,
+    });
     expect(handler).toHaveBeenCalledTimes(1);
-    expect(annotateRemoteMcpKeyList).toHaveBeenCalledTimes(1);
     const other = await get('/api/auth/get-session');
-    expect(await other.json()).toEqual({ apiKeys: [], total: 0 });
-    expect(annotateRemoteMcpKeyList).toHaveBeenCalledTimes(1);
+    expect(await other.json()).toEqual({ apiKeys: [{ id: 'key-test', name: 'Test' }], total: 1 });
   });
 });

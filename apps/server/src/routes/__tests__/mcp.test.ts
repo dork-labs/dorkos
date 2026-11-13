@@ -18,9 +18,6 @@ const { mockHandleRequest, mockTransportConstructor } = vi.hoisted(() => {
 vi.mock('@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js', () => ({
   WebStandardStreamableHTTPServerTransport: mockTransportConstructor,
 }));
-vi.mock('../../services/core/auth/remote-mcp-audit.js', () => ({
-  recordRemoteMcpSession: vi.fn(),
-}));
 
 // Mock logger
 vi.mock('../../lib/logger.js', () => ({
@@ -37,7 +34,25 @@ import type { ApiEnv } from '../../http/api-chain.js';
 import { parseRequestBody } from '../../http/request-body.js';
 import { MCP_MAX_REQUEST_BODY_BYTES } from '../../services/core/capabilities/mcp-input/limits.js';
 import { createMcpEndpoint } from '../mcp.js';
-import { recordRemoteMcpSession } from '../../services/core/auth/remote-mcp-audit.js';
+import { createTestDb } from '@dorkos/test-utils/db';
+import { auditEvents } from '@dorkos/db';
+import { AuditLog } from '../../services/audit/audit-log.js';
+import { AccountIds } from '../../services/audit/account-ids.js';
+import { initAuditTrail, resetAuditTrail } from '../../services/audit/audit-trail.js';
+import { markIngress } from '../../services/core/remote/ingress-mark.js';
+
+/**
+ * A real audit trail on a test database, so the remote-session rows the route writes can be read
+ * back (DOR-4206): the real recorder runs, nothing stands in for it.
+ */
+function auditRows() {
+  const db = createTestDb();
+  initAuditTrail({
+    log: new AuditLog(db),
+    accounts: new AccountIds({ db, installId: 'test-install', readOwnerAccount: () => null }),
+  });
+  return () => db.select().from(auditEvents).all();
+}
 
 /**
  * ONE listener for the whole file, with the app behind it swapped per test
@@ -48,8 +63,14 @@ import { recordRemoteMcpSession } from '../../services/core/auth/remote-mcp-audi
  */
 const target = swappableServer();
 
-function createTestApp(mockServerFactory: () => unknown): Server {
+function createTestApp(mockServerFactory: () => unknown, ingress?: 'own-tunnel'): Server {
   const app = new Hono<ApiEnv>();
+  // A request through the own tunnel, marked the way its listener marks it: remote use.
+  if (ingress)
+    app.use(async (c, next) => {
+      markIngress(c.env.incoming, ingress);
+      await next();
+    });
   app.use(parseRequestBody());
   app.route(
     '/mcp',
@@ -155,34 +176,53 @@ describe('MCP Route Handler', () => {
 
   it('audits each fresh stateless POST session, including discovery', async () => {
     mockHandleRequest.mockImplementation(() => jsonResponse({ result: {} }));
-    const server = createTestApp(createMockServer);
-    await request(server).post('/mcp').send({ jsonrpc: '2.0', method: 'tools/list', id: 1 });
-    await request(server).post('/mcp').send({ jsonrpc: '2.0', method: 'initialize', id: 2 });
-    expect(recordRemoteMcpSession).toHaveBeenCalledTimes(2);
-    expect(recordRemoteMcpSession).toHaveBeenCalledWith(
-      expect.objectContaining({
-        peerAddress: expect.any(String),
-        ingress: 'direct',
-      })
-    );
+    const rows = auditRows();
+    try {
+      const server = createTestApp(createMockServer, 'own-tunnel');
+      await request(server).post('/mcp').send({ jsonrpc: '2.0', method: 'tools/list', id: 1 });
+      await request(server).post('/mcp').send({ jsonrpc: '2.0', method: 'initialize', id: 2 });
+      const written = rows().filter((row) => row.action === 'mcp.remote_session');
+      expect(written).toHaveLength(2);
+      expect(JSON.parse(written[0]!.source)).toMatchObject({ surface: 'mcp' });
+    } finally {
+      resetAuditTrail();
+    }
   });
 
-  it('hands the audit only the request facts, never the tool call or its arguments (DOR-4206)', async () => {
+  it('writes no remote-session row for a request at this computer', async () => {
     mockHandleRequest.mockImplementation(() => jsonResponse({ result: {} }));
-    const server = createTestApp(createMockServer);
-    await request(server)
-      .post('/mcp')
-      .set('Authorization', 'Bearer bearer-test-value')
-      .send({
-        jsonrpc: '2.0',
-        method: 'tools/call',
-        id: 3,
-        params: { name: 'made_up_tool', arguments: { note: 'tool-argument-test-value' } },
-      });
-    expect(recordRemoteMcpSession).toHaveBeenCalledTimes(1);
-    const handed = JSON.stringify(vi.mocked(recordRemoteMcpSession).mock.calls);
-    expect(handed).not.toContain('tool-argument-test-value');
-    expect(handed).not.toContain('made_up_tool');
+    const rows = auditRows();
+    try {
+      const server = createTestApp(createMockServer);
+      await request(server).post('/mcp').send({ jsonrpc: '2.0', method: 'tools/list', id: 1 });
+      expect(rows().filter((row) => row.action === 'mcp.remote_session')).toHaveLength(0);
+    } finally {
+      resetAuditTrail();
+    }
+  });
+
+  it('writes no tool call, tool argument or bearer into the remote-session row (DOR-4206)', async () => {
+    mockHandleRequest.mockImplementation(() => jsonResponse({ result: {} }));
+    const rows = auditRows();
+    try {
+      const server = createTestApp(createMockServer, 'own-tunnel');
+      await request(server)
+        .post('/mcp')
+        .set('Authorization', 'Bearer bearer-test-value')
+        .send({
+          jsonrpc: '2.0',
+          method: 'tools/call',
+          id: 3,
+          params: { name: 'made_up_tool', arguments: { note: 'tool-argument-test-value' } },
+        });
+      const written = rows().filter((row) => row.action === 'mcp.remote_session');
+      expect(written).toHaveLength(1);
+      const raw = JSON.stringify(written);
+      for (const secret of ['tool-argument-test-value', 'made_up_tool', 'bearer-test-value'])
+        expect(raw, secret).not.toContain(secret);
+    } finally {
+      resetAuditTrail();
+    }
   });
 
   it('POST /mcp passes request body to transport.handleRequest', async () => {
