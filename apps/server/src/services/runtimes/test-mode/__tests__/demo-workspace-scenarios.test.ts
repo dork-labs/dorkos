@@ -7,7 +7,7 @@
  * allow end differently. A turn that streamed its ending regardless would
  * film fine and lie.
  */
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { SessionEvent } from '@dorkos/shared/session-stream';
 import {
   disposeProjector,
@@ -50,23 +50,48 @@ function streamedText(projector: ReturnType<typeof getOrCreateProjector>): strin
     .join('');
 }
 
+/** Fake time one drive step moves on: a few of the turns' own word beats. */
+const CLOCK_STEP_MS = 100;
+
+/** Fake time a drive may spend before it gives up: far past any turn here. */
+const CLOCK_BUDGET_MS = 60_000;
+
+/**
+ * Move the fake clock on until `reached` holds. The turns pace themselves with
+ * real-world beats (a word every 55 ms, a tool step every 650 ms, so they film
+ * well); on the fake clock those beats still happen in order, without the wait.
+ */
+async function driveClockUntil(reached: () => boolean, what: string): Promise<void> {
+  for (let spent = 0; !reached(); spent += CLOCK_STEP_MS) {
+    if (spent >= CLOCK_BUDGET_MS) throw new Error(`the turn never reached: ${what}`);
+    await vi.advanceTimersByTimeAsync(CLOCK_STEP_MS);
+  }
+}
+
 /** Wait until the turn is parked on its approval. */
 async function waitForApproval(projector: ReturnType<typeof getOrCreateProjector>): Promise<void> {
-  await vi.waitFor(
-    () => {
-      expect([...projector.replayFrom(0)].some((e) => e.type === 'approval_required')).toBe(true);
-      // The text before the card streams word by word, a beat per word.
-    },
-    { timeout: 10_000 }
+  // The text before the card streams word by word, a beat per word.
+  await driveClockUntil(
+    () => [...projector.replayFrom(0)].some((e) => e.type === 'approval_required'),
+    'its approval card'
   );
 }
 
 /** Wait until the turn has ended. */
 async function waitForIdle(projector: ReturnType<typeof getOrCreateProjector>): Promise<void> {
-  await vi.waitFor(() => expect(projector.getStatus().lifecycle).toBe('idle'), { timeout: 10_000 });
+  await driveClockUntil(() => projector.getStatus().lifecycle === 'idle', 'idle');
 }
 
-afterEach(() => {
+beforeEach(() => {
+  // Only the timers the turns pace themselves with; Date stays real.
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+});
+
+afterEach(async () => {
+  // A case that failed mid-turn leaves that turn parked on a fake beat. Run its
+  // clock out so it ends here and cannot hold the session for the next case.
+  await vi.runAllTimersAsync();
+  vi.useRealTimers();
   scenarioStore.reset();
   disposeProjector(SESSION);
 });
@@ -79,6 +104,8 @@ describe('demo-phone-approval', () => {
     expect((await accepted).accepted).toBe(true);
 
     await waitForApproval(projector);
+    // Still parked after a long wait: it waits for the person, not for a clock.
+    await vi.advanceTimersByTimeAsync(30_000);
     expect(projector.getStatus().lifecycle).toBe('blocked');
     expect(streamedText(projector)).not.toContain('live');
 
