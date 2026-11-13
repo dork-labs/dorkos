@@ -8,26 +8,7 @@
  * Each kind is now written once, and this test renders it through all four
  * real adapters and holds them to the Claude block, byte for byte.
  */
-import { describe, it, expect, vi } from 'vitest';
-
-// The Claude context-builder pulls app-wide collaborators at module load.
-vi.mock('../../../core/git-status.js', () => ({ getGitStatus: vi.fn() }));
-vi.mock('@dorkos/shared/manifest', () => ({ readManifest: vi.fn() }));
-vi.mock('../../../../lib/logger.js', () => ({
-  logger: {
-    info: vi.fn(),
-    warn: vi.fn(),
-    error: vi.fn(),
-    debug: vi.fn(),
-    trace: vi.fn(),
-    fatal: vi.fn(),
-    withTag: vi.fn().mockReturnThis(),
-  },
-}));
-vi.mock('../../../../lib/version.js', () => ({ SERVER_VERSION: '1.2.3', IS_DEV_BUILD: false }));
-vi.mock('../../../relay/relay-state.js', () => ({ isRelayEnabled: vi.fn(() => true) }));
-vi.mock('../../../tasks/task-state.js', () => ({ isTasksEnabled: vi.fn(() => true) }));
-
+import { describe, it, expect } from 'vitest';
 import type { AdditionalContextEntry } from '@dorkos/shared/additional-context';
 import { renderContextEntry } from '../../claude-code/messaging/context-builder.js';
 import { buildSteerText } from '../../codex/turn-input.js';
