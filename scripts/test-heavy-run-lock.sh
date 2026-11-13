@@ -83,12 +83,12 @@ check_eq() {
 
 check_contains() {
   local name="$1" needle="$2" hay="$3"
-  if printf '%s' "$hay" | grep -qF -- "$needle"; then ok "$name"; else not_ok "$name — '$needle' not in: $hay"; fi
+  if grep <<<"$hay" -qF -- "$needle"; then ok "$name"; else not_ok "$name — '$needle' not in: $hay"; fi
 }
 
 check_lacks() {
   local name="$1" needle="$2" hay="$3"
-  if printf '%s' "$hay" | grep -qF -- "$needle"; then not_ok "$name — '$needle' found in: $hay"; else ok "$name"; fi
+  if grep <<<"$hay" -qF -- "$needle"; then not_ok "$name — '$needle' found in: $hay"; else ok "$name"; fi
 }
 
 check_le() {
