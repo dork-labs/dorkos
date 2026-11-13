@@ -108,6 +108,12 @@ function refuseRateLimited(c: Context): Response {
  * every time, which is to say no brake at all on the one surface where a brake
  * is the whole point.
  *
+ * The one exception is the own tunnel and managed access (`edgeClientRateLimitKey`,
+ * DOR-4227). Both forward from loopback, so by peer every caller through them
+ * shared one bucket and a stranger's ten failures refused the owner too. Those
+ * requests are keyed by the client ngrok's edge saw: the rightmost
+ * `X-Forwarded-For` entry, which a caller's own header can only sit left of.
+ *
  * @param options - Per-limiter overrides (default: 10 attempts per window).
  * @returns Hono middleware returning a clean JSON `429`.
  */
@@ -118,6 +124,9 @@ export function buildAuthRateLimiter(
     windowMs: WINDOW_MS,
     limit: options.maxAttempts ?? DEFAULT_MAX_ATTEMPTS,
     headers: 'standard',
+    // Through the own tunnel or managed access every caller has the loopback peer, so key those
+    // by the client ngrok's edge saw, or a stranger's failures lock the owner out (DOR-4227).
+    key: 'edge-client',
     // Count only sign-in/sign-up POSTs; benign session-check GETs and every
     // non-auth route pass through without consuming the budget.
     skip: (c) => !isCredentialAttempt(c.req.method, c.req.path),
