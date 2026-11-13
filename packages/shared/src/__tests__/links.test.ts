@@ -1,7 +1,15 @@
 import { describe, expect, it } from 'vitest';
-import { docsUrl, repoUrl, siteUrl } from '../links.js';
+import { docsUrl, links, repoUrl, siteUrl } from '../links.js';
 
 describe('links', () => {
+  it('pins the Cloud API, repository and docs to their exact addresses', () => {
+    expect(links).toMatchObject({
+      cloudApi: 'https://cloud.dorkos.ai',
+      repo: 'https://github.com/dork-labs/dorkos',
+      docs: 'https://dorkos.ai/docs',
+    });
+  });
+
   it('joins paths with exactly one slash', () => {
     expect(siteUrl()).toBe('https://dorkos.ai');
     expect(siteUrl('/telemetry')).toBe('https://dorkos.ai/telemetry');
