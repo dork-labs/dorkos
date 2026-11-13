@@ -7,7 +7,7 @@ actor: agent
 gates:
   - wf.typecheck.typecheck
   - wf.scripts-test.harness
-prs: []
+prs: [3668]
 hypothesis:
   metric: gate.wf.scripts-test.harness.failure_rate
   slo: main-green
