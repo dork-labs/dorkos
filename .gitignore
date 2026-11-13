@@ -28,6 +28,9 @@ dist-server/
 
 # Test & coverage
 coverage/
+# Mutation Pilot (Stryker, CI only): sandbox copies and reports
+.stryker-tmp/
+packages/shared/reports/
 test-results/
 # Agent fixtures the e2e seed routes write under the boundary root
 # (`tmp/dorkos-e2e-agent`, `tmp/dorkos-e2e-oauth-agent` in routes/test-control.ts)
