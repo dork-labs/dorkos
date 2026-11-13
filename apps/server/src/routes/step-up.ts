@@ -188,7 +188,9 @@ export function createStepUpRoutes(deps: StepUpRouteDeps = liveDeps): Hono<ApiEn
       summary:
         outcome === 'ok'
           ? `Confirmed it was them: ${entry.reason}`
-          : `A step-up was refused (${reason}): ${entry.reason}`,
+          : reason.startsWith('not-applied-')
+            ? `It was them, but nothing changed (${reason}): ${entry.reason}`
+            : `A step-up was refused (${reason}): ${entry.reason}`,
       source: { surface: 'app' },
     });
   }
@@ -314,7 +316,10 @@ export function createStepUpRoutes(deps: StepUpRouteDeps = liveDeps): Hono<ApiEn
     if (!taken) return refuse(c, 'expired');
     try {
       const { status, body } = await taken.commit(honoRequestFacts(c));
-      audit(taken, 'ok', 'confirmed');
+      // The password matched, but a commit that answers 4xx or 5xx wrote nothing,
+      // so the row says so rather than "Confirmed" (DOR-3836).
+      if (status >= 400) audit(taken, 'refused', `not-applied-${status}`);
+      else audit(taken, 'ok', 'confirmed');
       const answer: StepUpConfirmedBody = { ok: true, status, result: body };
       return c.json(answer);
     } catch (error) {
