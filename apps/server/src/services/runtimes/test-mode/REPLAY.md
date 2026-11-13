@@ -45,4 +45,40 @@ displays carry `Recorded demo`; tracked chat titles retain that prefix across re
 
 `__fixtures__/replay-connection-access.json` shows a fictional exclusion and reversal in two turns.
 It changes no actual app access. `replay-codex-chat.json` shows a two-turn fictional Codex chat.
-Copy the selected fixture into the marked home before launch. Demo-boot itself is separate work.
+
+## Minimal demo boot
+
+From a checkout with dependencies installed and workspace packages built:
+
+```sh
+pnpm --filter @dorkos/e2e demo:replay
+pnpm --filter @dorkos/e2e demo:replay --recording connection-access
+```
+
+This e2e script starts the source server and Vite client, following the capture harness's
+isolated-home pattern. It creates a fresh private folder under the mounted external drive's
+`dork-os/test-homes/<date>-demo-*`, or the system temp directory when that drive is absent.
+It never reuses or deletes an existing home. The regular marker is written last.
+
+The fictional Harbor & Pine cast is Scout, Pixel, Atlas, Quill and Penny. Their fixed IDs
+produce stable Block Buddy faces. Scout is the default; Atlas uses the test-mode Codex alias.
+Maya Okafor is the fictional operator. Seeded fixture text uses this cast too.
+
+The script inherits no model keys or sign-in overrides. Both children get a private account
+home inside `DORK_HOME`. Heartbeats, schedules, room introductions, external history, update
+checks and telemetry are off. Hello World and Linear Issues stay off. Startup still forces
+DorkBot and the non-disableable Marketplace to exist; no extra system-agent work is seeded.
+The five replay conditions and outbound guards are unchanged.
+
+Two free loopback ports are chosen automatically. To choose an unused pair explicitly:
+
+```sh
+pnpm --filter @dorkos/e2e demo:replay --server-port 4644 --client-port 4643
+```
+
+The protected ports 4242, 6242 and 6241 are refused before binding. An occupied port fails;
+no existing process is stopped. The printed URL opens the client. Both processes write logs
+inside the demo home. Ctrl-C stops only their process groups; the home remains for inspection.
+`--check` waits for server and client readiness, then stops them. This checks boot, not a
+rendered browser capture. `--home` may name a new direct child of the selected demo-home root;
+existing folders, symlinks and the real account's `.dork` (including descendants) are refused.

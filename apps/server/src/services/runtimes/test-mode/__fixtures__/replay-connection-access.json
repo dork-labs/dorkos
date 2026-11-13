@@ -18,13 +18,13 @@
             "toolCallId": "sample-exclusion",
             "toolName": "narrow_agent_access",
             "status": "complete",
-            "result": "Sample Books is hidden from Robin. Undo is available in Activity."
+            "result": "Harbor Files is hidden from Pixel. Undo is available in Activity."
           }
         },
         {
           "type": "text_delta",
           "data": {
-            "text": "Robin can no longer use Sample Books. The change can be undone in Activity."
+            "text": "Pixel can no longer use Harbor Files. The change can be undone in Activity."
           }
         }
       ]
@@ -45,13 +45,13 @@
             "toolCallId": "sample-undo",
             "toolName": "undo_access_change",
             "status": "complete",
-            "result": "Robin can use Sample Books again."
+            "result": "Pixel can use Harbor Files again."
           }
         },
         {
           "type": "text_delta",
           "data": {
-            "text": "Robin can use Sample Books again."
+            "text": "Pixel can use Harbor Files again."
           }
         }
       ]
