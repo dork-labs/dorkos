@@ -1290,6 +1290,71 @@ nativeSuite('the app-server transport against the real Codex binary', NATIVE_LIM
     expect(JSON.parse(fs.readFileSync(report, 'utf8'))).toEqual({ sawToken: false });
   });
 
+  // DOR-3837: a managed server's key reaches the server, and no file Codex
+  // writes in its home (config, rollouts, logs, state) holds it afterwards.
+  it('keeps a managed server’s key out of every file Codex writes (DOR-3837)', async () => {
+    const envCanary = 'CANARY-dor3837-stdio-env';
+    const headerCanary = 'CANARY-dor3837-http-header';
+    const report = path.join(root, 'stdio-env-3837.json');
+    const script = path.join(root, 'stdio-mcp-3837.cjs');
+    fs.writeFileSync(
+      script,
+      [
+        "const fs = require('fs');",
+        // A yes or no only, so the report itself never holds the value.
+        `fs.writeFileSync(${JSON.stringify(report)}, JSON.stringify({ got: process.env.MADE_UP_TOKEN === ${JSON.stringify(envCanary)} }));`,
+        "let buf = '';",
+        "process.stdin.on('data', (c) => { buf += c; let i; while ((i = buf.indexOf('\\n')) >= 0) { const line = buf.slice(0, i); buf = buf.slice(i + 1);",
+        '  let m; try { m = JSON.parse(line); } catch { continue; } if (m.id === undefined) continue;',
+        "  const result = m.method === 'initialize' ? { protocolVersion: '2025-06-18', capabilities: { tools: {} }, serverInfo: { name: 's', version: '0' } } : m.method === 'tools/list' ? { tools: [] } : {};",
+        "  process.stdout.write(JSON.stringify({ jsonrpc: '2.0', id: m.id, result }) + '\\n'); } });",
+      ].join('\n')
+    );
+    const transport = makeTransport();
+    const turn = request('s3837', undefined, {
+      tools: {
+        agentTokenEnv: {},
+        managed: {
+          servers: {
+            probe: { command: process.execPath, args: [script], env: { MADE_UP_TOKEN: envCanary } },
+            remote: { url: `${base}/mcp`, env_http_headers: { Authorization: 'H3837' } },
+          },
+          env: { H3837: `Bearer ${headerCanary}` },
+        },
+        dorkosTools: null,
+        connectorTools: null,
+      },
+    });
+    const events: StreamEvent[] = [];
+    for await (const event of transport.runTurn(turn)) events.push(event);
+    expect(events.filter((e) => e.type === 'done')).toHaveLength(1);
+
+    // The control: both values really reached their servers, so their absence
+    // below means Codex did not keep them, not that they never arrived.
+    expect(JSON.parse(fs.readFileSync(report, 'utf8'))).toEqual({ got: true });
+    expect(seen.mcpAuthorizations).toContain(`Bearer ${headerCanary}`);
+
+    const files: string[] = [];
+    const walk = (dir: string): void => {
+      for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+        const full = path.join(dir, entry.name);
+        if (entry.isDirectory()) walk(full);
+        else if (entry.isFile()) files.push(full);
+      }
+    };
+    walk(codexHome);
+    walk(path.join(root, 'home'));
+    // The thread's own record (its rollout) is among what was read.
+    expect(files.some((file) => file.includes(`${path.sep}sessions${path.sep}`))).toBe(true);
+    const holding = files.filter((file) => {
+      const text = fs.readFileSync(file).toString('latin1');
+      return text.includes(envCanary) || text.includes(headerCanary);
+    });
+    expect(holding).toEqual([]);
+    // Nor on the command line or in the process environment.
+    expect(JSON.stringify(spawned)).not.toMatch(/CANARY-dor3837/);
+  });
+
   // A refreshed OAuth header on a managed server reaches a loaded thread by
   // reloading just that thread as a fork (a loaded resume ignores config).
   it('reloads a thread whose managed header value changed, and its MCP server sees the new one', async () => {
