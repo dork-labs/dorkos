@@ -41,6 +41,6 @@ export async function handBackWakeHarness(cwd: string, sessionId: string) {
   };
 
   function expectSettled() {
-    if (isTurnInFlight(sessionId)) throw new Error('Hand-back turn is still running');
+    if (isTurnInFlight(sessionId, runtime)) throw new Error('Hand-back turn is still running');
   }
 }
