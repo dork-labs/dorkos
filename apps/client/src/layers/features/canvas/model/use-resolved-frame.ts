@@ -19,7 +19,7 @@
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTransport } from '@/layers/shared/model';
-import { useConfig } from '@/layers/entities/config';
+import { useOwnOrigins } from './use-own-origins';
 import {
   classifyBrowserTarget,
   isThisAppsAddress,
@@ -279,13 +279,12 @@ export function useResolvedFrame({
 
   // Checked as the frame is read, not when the cascade publishes it, so a config
   // that arrives (or a tunnel that opens) after the cascade settled still counts,
-  // and neither one re-runs the cascade and re-mints a preview. Keyed by value,
-  // because every config refetch hands back a new array with the same origins.
-  const ownOriginsKey = JSON.stringify(useConfig().data?.ownOrigins ?? []);
+  // and neither one re-runs the cascade and re-mints a preview. A refetch with the
+  // same origins keeps the same array (TanStack's structural sharing), so this holds.
+  const ownOrigins = useOwnOrigins();
   const published = useMemo(
-    () =>
-      resolved ? withoutThisAppsOrigin(resolved, JSON.parse(ownOriginsKey) as string[]) : null,
-    [resolved, ownOriginsKey]
+    () => (resolved ? withoutThisAppsOrigin(resolved, ownOrigins) : null),
+    [resolved, ownOrigins]
   );
 
   return { resolved: resolvedFor === resolutionKey ? published : null, resolveError };

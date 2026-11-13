@@ -2,8 +2,38 @@
  * @vitest-environment jsdom
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, fireEvent, cleanup, waitFor, act } from '@testing-library/react';
+import {
+  render as renderBare,
+  screen,
+  fireEvent,
+  cleanup,
+  waitFor,
+  act,
+} from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { configKeys } from '@/layers/shared/model/server-config/query-keys';
+
+/**
+ * A real query client per test. The frame reads the server's own addresses from the config the
+ * app shell caches (DOR-4132), so a test seeds that cache the way the shell's read would. It keeps
+ * what it is given, as the app's does while the shell watches the config; the shared test client's
+ * `gcTime: 0` would drop a seed no observer holds.
+ */
+function newQueryClient(): QueryClient {
+  return new QueryClient({ defaultOptions: { queries: { retry: false } } });
+}
+let queryClient = newQueryClient();
+const render = (ui: React.ReactElement) =>
+  renderBare(ui, {
+    wrapper: ({ children }) => (
+      <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+    ),
+  });
+/** Seed the cached config with this server's own other origins. */
+function seedOwnOrigins(ownOrigins: string[]): void {
+  queryClient.setQueryData(configKeys.current(), { ownOrigins });
+}
 import { WORKBENCH_SANDBOX_EXTERNAL, WORKBENCH_SANDBOX_ISOLATED } from '../lib/browser-url';
 // This suite rebuilds the transport on every render to test URL resolution;
 // the document channel keys on transport identity, so the page channel is
@@ -55,11 +85,8 @@ const probeLoopbackPort = vi.fn(async () => ({ listening: true }) as { listening
 /** The room write the address bar makes on a room route. */
 const openRoomCanvasDocument = vi.fn(async () => ({}));
 
-/** The server's own other origins, as its config reports them (DOR-4132). */
-const mockConfig = { ownOrigins: [] as string[] };
-vi.mock('@/layers/entities/config', () => ({ useConfig: () => ({ data: mockConfig }) }));
-
-vi.mock('@/layers/shared/model', () => {
+vi.mock('@/layers/shared/model', async () => {
+  const { configKeys } = await import('@/layers/shared/model/server-config/query-keys');
   const useAppStore = (selector: (s: typeof mockState) => unknown) => selector(mockState);
   (useAppStore as unknown as { getState: () => typeof mockState }).getState = () => mockState;
   // A FRESH transport object on every render, deliberately. Which transport is
@@ -69,6 +96,8 @@ vi.mock('@/layers/shared/model', () => {
   // asserting a single mint below are what catch it).
   return {
     useAppStore,
+    // The real key: the frame reads the server's own addresses from the cached config (DOR-4132).
+    configKeys,
     useTransport: () => ({
       createServeUrl,
       createProxyUrl,
@@ -119,7 +148,8 @@ beforeEach(() => {
   probeLoopbackPort.mockResolvedValue({ listening: true });
   probeDirect.mockClear();
   probeDirect.mockResolvedValue(true);
-  mockConfig.ownOrigins = [];
+  queryClient.clear();
+  queryClient = newQueryClient();
 });
 afterEach(() => {
   cleanup();
@@ -405,11 +435,11 @@ describe('CanvasBrowserContent — a dev server on this machine', () => {
     ['its Wi-Fi address', 'http://192.168.1.20:4242/'],
     ['its hub address', 'https://hub.example.com/'],
   ])('frames this server by %s without same-origin powers', async (_what, url) => {
-    mockConfig.ownOrigins = [
+    seedOwnOrigins([
       'https://box.tail.ts.net',
       'http://192.168.1.20:4242',
       'https://hub.example.com',
-    ];
+    ]);
     render(<CanvasBrowserContent documentId="doc" content={{ type: 'browser', url }} />);
 
     await waitFor(() => expect(iframeSrc()).toBe(url));
@@ -419,7 +449,7 @@ describe('CanvasBrowserContent — a dev server on this machine', () => {
   });
 
   it('still frames a site that is not this server with its own origin', async () => {
-    mockConfig.ownOrigins = ['https://box.tail.ts.net'];
+    seedOwnOrigins(['https://box.tail.ts.net']);
     render(
       <CanvasBrowserContent
         documentId="doc"

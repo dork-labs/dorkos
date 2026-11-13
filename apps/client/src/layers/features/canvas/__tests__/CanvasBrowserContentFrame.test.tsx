@@ -1,7 +1,19 @@
 /** @vitest-environment jsdom */
 // Genuine host-hook composition; mock HTTP replay is unit input, never server acceptance.
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
-import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render as renderBare,
+  screen,
+  waitFor,
+  within,
+} from '@testing-library/react';
+import { TestProviders } from '@dorkos/test-utils/react-helpers';
+
+/** Each render sits in a real query client: the frame reads cached config (DOR-4132). */
+const render = (ui: React.ReactElement) => renderBare(ui, { wrapper: TestProviders });
 import { createMockTransport } from '@dorkos/test-utils';
 import type { CanvasChannelReplayResponse } from '@dorkos/shared/canvas-channel-schemas';
 import { DocFrameHandshake, FrameLifetimeController } from '@/layers/shared/lib/canvas-doc-frame';
@@ -15,13 +27,17 @@ const state = {
   browserHistories: {},
   writeBrowserHistory: vi.fn(),
 };
-// The frame reads the server's own addresses from config; none here (DOR-4132).
-vi.mock('@/layers/entities/config', () => ({ useConfig: () => ({ data: undefined }) }));
 
-vi.mock('@/layers/shared/model', () => {
+vi.mock('@/layers/shared/model', async () => {
   const useAppStore = (select: (value: typeof state) => unknown) => select(state);
   useAppStore.getState = () => state;
-  return { useAppStore, useTransport: () => currentTransport, useSafeSearch: () => ({}) };
+  return {
+    useAppStore,
+    useTransport: () => currentTransport,
+    useSafeSearch: () => ({}),
+    // The real key: the frame reads the server's own addresses from the cached config (DOR-4132).
+    configKeys: (await import('@/layers/shared/model/server-config/query-keys')).configKeys,
+  };
 });
 vi.mock('../lib/probe-direct', () => ({ probeDirect: async () => true }));
 import { CanvasBrowserContent } from '../ui/CanvasBrowserContent';
