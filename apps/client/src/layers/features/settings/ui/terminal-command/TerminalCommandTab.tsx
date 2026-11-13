@@ -15,7 +15,8 @@ type View =
 
 /** A path or command in the row's text, in mono. */
 function Mono({ children }: { children: string }) {
-  return <code className="font-mono text-xs">{children}</code>;
+  // A path can be one long word; it wraps rather than running out of the card at 390.
+  return <code className="font-mono text-xs break-all">{children}</code>;
 }
 
 /** The line to add, with Copy that reads "Copied" for a moment. */
