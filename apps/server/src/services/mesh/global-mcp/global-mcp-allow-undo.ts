@@ -12,7 +12,8 @@
  * - **The folder comes from the registry.** The caller resolves the agent's
  *   home by id; the request never names a path. The settings file, and the
  *   `.claude` folder holding it, must be real (no symlink) and inside that home.
- * - **Temp file, then rename**, so a reader never sees half a file.
+ * - **Temp file, then rename**, so a reader finds the old file or the new one,
+ *   not half of either.
  * - **Person-only.** Only the `/api/mcp-servers` routes call this: it is no
  *   MCP tool and no capability, and the route audits every removal.
  *
