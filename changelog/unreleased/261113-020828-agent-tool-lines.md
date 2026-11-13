@@ -1,6 +1,7 @@
 ---
 covers:
   - 'fix(server): agents are told up front that your Undo of an approval is final, and that a handed-off room post was passed on, not refused (DOR-4049, DOR-3449)'
+  - 'fix(server): post_to_room describes the hand-off check by what it does, not by a raw tool name (DOR-3449)'
 ---
 
 ### Fixed

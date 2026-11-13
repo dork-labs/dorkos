@@ -27,4 +27,4 @@ export const POST_REPLY_TO_INPUT = z
  */
 export const POST_HANDED_OFF_NOTE =
   'posted:false with handedOff:true means it was passed to your seat in that room, not ' +
-  "refused. Don't retry; read how it went with the tool ending in room_handoff_status.";
+  "refused. Don't retry; check how it went with the check-a-hand-off tool, by its handoffId.";

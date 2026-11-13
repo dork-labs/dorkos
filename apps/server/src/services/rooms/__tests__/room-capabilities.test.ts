@@ -745,7 +745,7 @@ describe('the rooms capability domain', () => {
       const post = roomsDomain.capabilities.find((c) => c.id === 'rooms.post');
       expect(post?.description).toContain(
         'posted:false with handedOff:true means it was passed to your seat in that room, not ' +
-          "refused. Don't retry; read how it went with the tool ending in room_handoff_status."
+          "refused. Don't retry; check how it went with the check-a-hand-off tool, by its handoffId."
       );
     });
   });
