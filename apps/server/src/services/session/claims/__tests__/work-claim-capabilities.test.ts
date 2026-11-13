@@ -3,12 +3,10 @@
  * turn, a second chat is refused naming the holder, a holder the caller may not
  * read is named only as private, and only the holder releases.
  */
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
 import { noopLogger } from '@dorkos/shared/logger';
 import { createTestDb } from '@dorkos/test-utils/db';
 import type { CapabilityDeps, CapabilityHandlerContext } from '../../../core/capabilities/index.js';
-
-vi.mock('../../../audit/audit-trail.js', () => ({ recordAudit: () => undefined }));
 
 import { workClaimDomain, type ClaimHolderChat } from '../work-claim-capabilities.js';
 import { WorkClaimService } from '../work-claim-service.js';
@@ -107,6 +105,36 @@ describe('the work-claim tools', () => {
     });
     expect(second.error).toContain('a private chat of yours');
     expect(second.error).not.toContain('ana-dm-with-person');
+  });
+
+  // Security Must 1 (review of 4a29990e5f): a private chat's key is itself private text.
+  it('never reveals a private chat’s key to a sibling that lists claims without naming it', async () => {
+    await call(
+      'work-claims.claim',
+      { key: 'Offer letter for Sam - 180k' },
+      as('/agents/ana', 'ana-dm-with-person')
+    );
+    await call('work-claims.claim', { key: 'DOR-11' }, as('/agents/ana', 'chat-a'));
+    const listed = await call('work-claims.check', {}, as('/agents/ana', 'room-seat'));
+    expect(JSON.stringify(listed)).not.toMatch(/OFFER LETTER|SAM|180K/i);
+    expect(listed.claims).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ key: null, chat: expect.objectContaining({ private: true }) }),
+        expect.objectContaining({ key: 'DOR-11' }),
+      ])
+    );
+    // A caller that names the key already knows it, so it hears back about that key.
+    const named = await call(
+      'work-claims.check',
+      { keys: ['offer letter for sam - 180k'] },
+      as('/agents/ana', 'room-seat')
+    );
+    expect(named.claims).toEqual([
+      expect.objectContaining({
+        key: 'OFFER LETTER FOR SAM - 180K',
+        chat: expect.objectContaining({ private: true }),
+      }),
+    ]);
   });
 
   it('never lets one agent see or touch another agent’s claims', async () => {

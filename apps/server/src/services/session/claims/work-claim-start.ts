@@ -1,8 +1,8 @@
 /**
  * `session_start`'s claim step (DOR-4019): a chat started on a key claims it for
  * the new chat, and a start on a key another live chat of the same agent holds
- * asks first. The ask is the refusal: it names the holder, and the caller
- * either leaves the work to it or calls again with `startAnyway`.
+ * is refused, naming the holder. The caller either leaves the work to it or
+ * calls again with `startAnyway`.
  *
  * The claim is taken under the new chat's minted id before anything launches,
  * so two racing starts on one key cannot both get it; a start that is refused

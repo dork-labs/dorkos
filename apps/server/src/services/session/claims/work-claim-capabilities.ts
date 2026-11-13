@@ -53,7 +53,8 @@ declare module '../../core/capabilities/capability-definition.js' {
 }
 
 const HolderSchema = z.object({
-  key: z.string(),
+  /** `null` for a private holder's claim the caller did not name: the key is private text too. */
+  key: z.string().nullable(),
   chat: z.object({
     sessionId: z.string().nullable(),
     title: z.string().nullable(),
@@ -113,17 +114,23 @@ function keyOf(raw: string): string {
   return key;
 }
 
+/**
+ * How one claim reads to the calling chat. A holder it may not read is named only as private,
+ * and its key is withheld too unless the caller named that key itself (DOR-4019 Security Must 1):
+ * a key like "Offer letter for Sam" is as private as the chat that wrote it.
+ */
 async function describe(
   claims: ReturnType<typeof requireDeps>,
   caller: { sessionId: string; agentPath: string },
-  claim: WorkClaim
+  claim: WorkClaim,
+  named: boolean
 ): Promise<z.infer<typeof HolderSchema>> {
   const you = claim.sessionId === caller.sessionId;
   const chat = you
     ? { title: null, link: null, private: false }
     : await claims.describeChat(caller, claim.sessionId);
   return {
-    key: claim.key,
+    key: chat.private && !named ? null : claim.key,
     chat: { sessionId: chat.private ? null : claim.sessionId, ...chat, you },
     note: chat.private ? null : claim.note,
     claimedAt: claim.claimedAt,
@@ -135,7 +142,7 @@ function heldBy(holder: z.infer<typeof HolderSchema>): string {
   const who = holder.chat.private
     ? 'a private chat of yours'
     : (holder.chat.link ?? holder.chat.title ?? 'another chat of yours');
-  return `${holder.key} is already claimed by ${who} since ${holder.claimedAt}. Leave it, or ask that chat to release it.`;
+  return `${holder.key ?? 'That work'} is already claimed by ${who} since ${holder.claimedAt}. Leave it, or ask that chat to release it.`;
 }
 
 // In-session only: a claim belongs to a chat, and the external server has none. Codex and
@@ -186,9 +193,9 @@ export const workClaimDomain: CapabilityDomain = {
           return {
             ok: true as const,
             renewed: result.renewed,
-            claim: await describe(claims, caller, result.claim),
+            claim: await describe(claims, caller, result.claim, true),
           };
-        const holder = await describe(claims, caller, result.holder);
+        const holder = await describe(claims, caller, result.holder, true);
         return { ok: false as const, code: result.code, error: heldBy(holder), holder };
       },
     }),
@@ -211,7 +218,9 @@ export const workClaimDomain: CapabilityDomain = {
         const live = claims.service.check(agentId, keys);
         return {
           ok: true as const,
-          claims: await Promise.all(live.map((claim) => describe(claims, caller, claim))),
+          claims: await Promise.all(
+            live.map((claim) => describe(claims, caller, claim, keys !== undefined))
+          ),
         };
       },
     }),
@@ -233,7 +242,7 @@ export const workClaimDomain: CapabilityDomain = {
         if (result.ok) return { ok: true as const };
         if (result.code === 'NOT_CLAIMED')
           return { ok: false as const, code: result.code, error: `Nothing holds ${key}.` };
-        const holder = await describe(claims, caller, result.holder!);
+        const holder = await describe(claims, caller, result.holder!, true);
         return {
           ok: false as const,
           code: result.code,
