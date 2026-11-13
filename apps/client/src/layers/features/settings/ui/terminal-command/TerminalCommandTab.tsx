@@ -28,7 +28,8 @@ function Mono({ children, path = false }: { children: string; path?: boolean }) 
 function CopyLine({ line }: { line: string }) {
   const { copied, copy } = useCopyFeedback({ timeoutMs: 1500 });
   return (
-    <div className="bg-muted flex items-center justify-between gap-2 rounded-lg px-3 py-2">
+    // Below 480px Copy sits under the line, so the line keeps one row.
+    <div className="bg-muted flex items-center justify-between gap-2 rounded-lg px-3 py-2 max-[480px]:flex-col max-[480px]:items-start">
       <code className="min-w-0 font-mono text-xs break-words">{line}</code>
       <Button variant="secondary" size="sm" className="shrink-0" onClick={() => void copy(line)}>
         {copied ? 'Copied' : 'Copy'}

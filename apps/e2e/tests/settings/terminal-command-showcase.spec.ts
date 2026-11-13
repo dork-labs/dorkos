@@ -166,15 +166,25 @@ test.describe('Terminal command showcase @smoke', () => {
       };
     }, ALIAS_LINE);
     await page.goto('/?settings=terminal-command');
-    const dialog = page.getByRole('dialog', { name: 'Settings' });
     // On a phone, Settings opens on its list of sections; the person taps one to open it.
-    await dialog
+    // The open section's sheet is named for the section, not "Settings", so it is found
+    // as the one dialog on the page.
+    await page
+      .getByRole('dialog', { name: 'Settings' })
       .getByRole('button', { name: 'Terminal command', exact: true })
       .click({ timeout: PLAYGROUND_COLD_START_MS });
+    const dialog = page.getByRole('dialog');
     await expect(
       dialog.getByText('Installed, but Terminal can’t find it yet.', { exact: false })
     ).toBeVisible({ timeout: PLAYGROUND_COLD_START_MS });
-    await expect(dialog.locator('code', { hasText: ALIAS_LINE })).toHaveText(ALIAS_LINE);
+    const aliasLine = dialog.locator('code', { hasText: ALIAS_LINE });
+    await expect(aliasLine).toHaveText(ALIAS_LINE);
+    // With Copy under it, the line keeps one row on a phone.
+    // It is a flex item, so it draws as one box however it wraps: measure its height.
+    const rows = await aliasLine.evaluate(
+      (code) => code.getBoundingClientRect().height / parseFloat(getComputedStyle(code).lineHeight)
+    );
+    expect(rows).toBeLessThan(1.5);
 
     await testInfo.attach('terminal-command-settings-390-light.png', {
       body: await page.screenshot(),
