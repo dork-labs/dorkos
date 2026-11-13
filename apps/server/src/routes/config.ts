@@ -23,6 +23,7 @@ import { describeExecutionDefaults } from '../services/session/resolution/resolv
 // cannot reach the registry itself — the registry imports IT — so the caller
 // hands over the capability map instead of the module reaching for it.
 import { runtimeRegistry } from '../services/core/runtime-registry.js';
+import { localDialHost } from '@dorkos/shared/local-dial-host';
 import { env } from '../env.js';
 import { DEFAULT_CWD } from '../lib/resolve-root.js';
 import {
@@ -324,7 +325,9 @@ router.get('/', async (c) => {
         // The token value itself deliberately does NOT ride this GET: it is
         // revealed only via POST /api/config/mcp/reveal-token so it never lands
         // in GET caches or logs and never leaks through a generic config dump.
-        endpoint: `http://localhost:${env.DORKOS_PORT}/mcp`,
+        // The host the server bound, so a client that copies it lands on a
+        // listener (DOR-4294).
+        endpoint: `http://${localDialHost(env.DORKOS_HOST)}:${env.DORKOS_PORT}/mcp`,
         rateLimit: mcpConfig?.rateLimit ?? { enabled: true, maxPerWindow: 60, windowSecs: 60 },
       };
     })(),

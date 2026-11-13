@@ -1,5 +1,6 @@
 import log from 'electron-log';
 import type { GetServerPort } from '../event-stream';
+import { serverOrigin } from '../../shared/server-address';
 
 /**
  * Act on an Ask from the Electron shell — the same three routes the cockpit's
@@ -45,7 +46,7 @@ async function postAnswer(
 
   let response: Response;
   try {
-    response = await fetch(`http://127.0.0.1:${port}${path}`, {
+    response = await fetch(`${serverOrigin(port)}${path}`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify(body),

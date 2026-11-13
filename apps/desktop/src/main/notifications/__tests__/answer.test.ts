@@ -1,3 +1,5 @@
+import http from 'node:http';
+import type { AddressInfo } from 'node:net';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 vi.mock('electron-log', () => import('../../__tests__/electron-log-mock'));
@@ -11,6 +13,7 @@ import {
   type AnswerOutcome,
 } from '../answer';
 import { resetLogMock } from '../../__tests__/electron-log-mock';
+import { canStageIpv6OnlyLocalhost } from '../../__tests__/ipv6-loopback';
 
 const fetchMock = vi.fn();
 
@@ -34,7 +37,7 @@ describe('approveTool', () => {
     fetchMock.mockResolvedValue(jsonResponse(200));
     await approveTool(() => 4242, 'session-1', 'tool-1');
 
-    expect(fetchMock).toHaveBeenCalledWith('http://127.0.0.1:4242/api/sessions/session-1/approve', {
+    expect(fetchMock).toHaveBeenCalledWith('http://localhost:4242/api/sessions/session-1/approve', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ toolCallId: 'tool-1' }),
@@ -45,7 +48,7 @@ describe('approveTool', () => {
     fetchMock.mockResolvedValue(jsonResponse(200));
     await approveTool(() => 4242, 'a session/1', 'tool-1');
     const [url] = fetchMock.mock.calls[0] as [string];
-    expect(url).toBe('http://127.0.0.1:4242/api/sessions/a%20session%2F1/approve');
+    expect(url).toBe('http://localhost:4242/api/sessions/a%20session%2F1/approve');
   });
 });
 
@@ -54,7 +57,7 @@ describe('denyTool', () => {
     fetchMock.mockResolvedValue(jsonResponse(200));
     await denyTool(() => 4242, 'session-1', 'tool-1');
 
-    expect(fetchMock).toHaveBeenCalledWith('http://127.0.0.1:4242/api/sessions/session-1/deny', {
+    expect(fetchMock).toHaveBeenCalledWith('http://localhost:4242/api/sessions/session-1/deny', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ toolCallId: 'tool-1' }),
@@ -68,7 +71,7 @@ describe('submitReplyAnswer', () => {
     await submitReplyAnswer(() => 4242, 'session-1', 'question-1', 'Blue, please');
 
     expect(fetchMock).toHaveBeenCalledWith(
-      'http://127.0.0.1:4242/api/sessions/session-1/submit-answers',
+      'http://localhost:4242/api/sessions/session-1/submit-answers',
       {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
@@ -130,5 +133,48 @@ describe('outcomes', () => {
     fetchMock.mockResolvedValueOnce(jsonResponse(401));
     await approveTool(() => 4242, 'session-1', 'tool-1');
     expect(log.warn).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe.skipIf(!(await canStageIpv6OnlyLocalhost()))('the host it dials (DOR-4294)', () => {
+  // The server binds `localhost`, which on macOS is routinely `::1` alone. The
+  // shell used to post to `127.0.0.1` and was refused, so Allow on a desktop
+  // notification quietly did nothing. This stages that server on a real socket,
+  // with the real `fetch`.
+  let server: http.Server;
+  let port = 0;
+  const received: { method?: string; url?: string; body: string }[] = [];
+
+  beforeEach(async () => {
+    vi.unstubAllGlobals();
+    received.length = 0;
+    server = http.createServer((req, res) => {
+      let body = '';
+      req.setEncoding('utf8');
+      req.on('data', (chunk: string) => (body += chunk));
+      req.on('end', () => {
+        received.push({ method: req.method, url: req.url, body });
+        res.writeHead(200).end();
+      });
+    });
+    await new Promise<void>((resolve) => server.listen(0, '::1', resolve));
+    port = (server.address() as AddressInfo).port;
+  });
+
+  afterEach(async () => {
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  });
+
+  it('answers through a server that listens only on IPv6 loopback', async () => {
+    const outcome = await approveTool(() => port, 'session-1', 'tool-1');
+
+    expect(outcome).toEqual({ ok: true });
+    expect(received).toEqual([
+      {
+        method: 'POST',
+        url: '/api/sessions/session-1/approve',
+        body: JSON.stringify({ toolCallId: 'tool-1' }),
+      },
+    ]);
   });
 });

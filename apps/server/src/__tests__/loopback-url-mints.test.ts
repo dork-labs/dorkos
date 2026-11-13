@@ -13,7 +13,7 @@
  * - The shipped Docker image binds the wildcard `0.0.0.0`, which is not an
  *   address at all; Windows refuses to connect to it outright.
  *
- * `lib/local-dial-host.ts` is the answer, and three sites in `index.ts` already
+ * `@dorkos/shared/local-dial-host` is the answer, and three sites in `index.ts` already
  * used it. The `dorkos_ui` bridge did not, and shipped `http://127.0.0.1:PORT`
  * for a year. DOR-1613 fixed it while adding a second mint site beside it —
  * shipping the same bug twice is what this file exists to stop.

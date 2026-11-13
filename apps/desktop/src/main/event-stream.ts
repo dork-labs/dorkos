@@ -1,6 +1,7 @@
 import http from 'node:http';
 import type { IncomingMessage } from 'node:http';
 import log from 'electron-log';
+import { serverDialHost } from '../shared/server-address';
 
 /**
  * The one connection to the server's global event stream (`GET /api/events`),
@@ -234,12 +235,13 @@ function connect(): void {
     return;
   }
 
-  // 127.0.0.1 rather than `localhost` so this never depends on how the
-  // machine resolves that name; the server's Host guard (DOR-532) allows
-  // both, and Node sets the Host header from the URL for us.
+  // The host the server actually bound, never a fixed literal: on macOS the
+  // server's `localhost` is routinely `::1` alone, and `127.0.0.1` was refused
+  // forever (DOR-4294). The server's Host guard (DOR-532) allows it, and Node
+  // sets the Host header from it for us.
   const attempt = http.get(
     {
-      host: '127.0.0.1',
+      host: serverDialHost(),
       port,
       path: '/api/events',
       headers: { accept: 'text/event-stream' },

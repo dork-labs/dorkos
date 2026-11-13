@@ -12,6 +12,7 @@ import { applyContextMenu } from './context-menu';
 import { forwardFullscreenState } from './fullscreen';
 import { applyPermissionPolicy } from './permissions';
 import { forwardFocusState } from './window-focus';
+import { serverOrigin } from '../shared/server-address';
 import { bindTabSession, frontTabUrl, type WindowTabs } from './tab-session';
 import {
   attachWindowStatePersistence,
@@ -401,7 +402,7 @@ export function makeRendererUrlAccessor(
   let lastServed: string | undefined;
   return () => {
     const port = getServerPort();
-    if (port) lastServed = `http://localhost:${port}`;
+    if (port) lastServed = serverOrigin(port);
     return lastServed;
   };
 }

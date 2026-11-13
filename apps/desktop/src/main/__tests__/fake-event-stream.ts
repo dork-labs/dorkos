@@ -40,8 +40,15 @@ export class FakeEventStream {
     });
   }
 
-  async listen(): Promise<void> {
-    await new Promise<void>((resolve) => this.server.listen(0, '127.0.0.1', resolve));
+  /**
+   * Start listening on a free port.
+   *
+   * @param host - The one address to bind. `::1` stands in for a server whose
+   *   `localhost` resolved to IPv6 loopback only, as it routinely does on macOS
+   *   (DOR-4294).
+   */
+  async listen(host = '127.0.0.1'): Promise<void> {
+    await new Promise<void>((resolve) => this.server.listen(0, host, resolve));
     this.port = (this.server.address() as AddressInfo).port;
   }
 

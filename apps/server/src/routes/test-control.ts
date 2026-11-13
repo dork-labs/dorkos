@@ -19,7 +19,7 @@ import {
 } from '@dorkos/shared/connector-schemas';
 import type { AgentManifest, McpServerTransport } from '@dorkos/shared/mesh-schemas';
 import { getBoundary, validateBoundary } from '../lib/boundary.js';
-import { localDialHost } from '../lib/local-dial-host.js';
+import { localDialHost } from '@dorkos/shared/local-dial-host';
 import { env } from '../env.js';
 import { heldProcesses } from '../services/runtimes/test-mode/held-process.js';
 import { interactionGate } from '../services/runtimes/test-mode/interaction-gate.js';

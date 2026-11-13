@@ -20,6 +20,7 @@ import type {
   NotificationHost,
 } from '../notifications/wrapper';
 import { deferred, FakeEventStream } from './fake-event-stream';
+import { canStageIpv6OnlyLocalhost } from './ipv6-loopback';
 
 /**
  * A `NotificationHost` double — this test only cares that a shown count moves,
@@ -388,5 +389,46 @@ describe('event-stream throw isolation (DOR-1386 review)', () => {
 
     await survivorNotified.promise;
     expect(notifiedCount).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe.skipIf(!(await canStageIpv6OnlyLocalhost()))('the host it dials (DOR-4294)', () => {
+  // The server binds `localhost`; on macOS that is routinely `::1` and nothing
+  // else. A shell that dialled `127.0.0.1` was refused forever, so the tray
+  // count cleared and notifications stopped without a word. These stage that
+  // server literally: one listener, on IPv6 loopback only.
+  let v6: FakeEventStream;
+
+  beforeEach(async () => {
+    v6 = new FakeEventStream();
+    await v6.listen('::1');
+  });
+
+  afterEach(async () => {
+    for (const subscription of subscriptions.splice(0)) subscription.unsubscribe();
+    await v6.close();
+  });
+
+  it('reaches a server that listens only on IPv6 loopback', async () => {
+    const log = new FrameLog();
+    subscribe(() => v6.port, { onFrame: log.record });
+
+    await log.arrives('connected');
+    v6.sendStatus('session-a', 'streaming');
+    await log.arrives('session_status');
+  });
+
+  it('reconnects to that same server after the stream drops', async () => {
+    const log = new FrameLog();
+    const lost = deferred();
+    subscribe(() => v6.port, { onFrame: log.record, onConnectionLost: () => lost.resolve() });
+    await log.arrives('connected');
+
+    v6.dropClients();
+    await lost.promise;
+    await v6.connectionsReach(2);
+
+    v6.sendStatus('session-a', 'streaming');
+    await log.arrives('session_status');
   });
 });

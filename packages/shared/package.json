@@ -97,6 +97,10 @@
       "types": "./src/links.ts",
       "default": "./dist/links.js"
     },
+    "./local-dial-host": {
+      "types": "./src/local-dial-host.ts",
+      "default": "./dist/local-dial-host.js"
+    },
     "./bounded-read": {
       "types": "./src/bounded-read.ts",
       "default": "./dist/bounded-read.js"
