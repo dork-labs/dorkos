@@ -576,6 +576,7 @@ export class GlobalMcpStore {
       addedAt: server.addedAt,
       skippedOn: connection.transport === 'sse' ? ['codex', 'opencode'] : [],
       warnings: this.warningsFor(server),
+      reservedName: isReservedMcpServerName(server.name),
     };
   }
 

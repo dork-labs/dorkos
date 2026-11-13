@@ -214,11 +214,13 @@ export function InboxRow({ notification, agent, onOpen, index }: InboxRowProps) 
   // and who started the turn). An agent taking another's access away is the
   // same: which agent, which app and whose access, never cut at any width. So is
   // a server adding a tool some agent uses without asking: which server, and who.
+  // And a server that stopped reaching agents: its name is the whole point (DOR-4262).
   const readsInFull =
     notification.mark === 'refused' ||
     notification.kind === 'schedule.armed_by_agent' ||
     notification.kind === 'connector.access_narrowed' ||
-    notification.kind === 'mcp-server.tool_added';
+    notification.kind === 'mcp-server.tool_added' ||
+    notification.kind === 'mcp-server.reserved_name';
   const isScheduleCreation =
     readsInFull && notification.actions?.some((action) => action.id === 'pause') === true;
   const refusalTitle =

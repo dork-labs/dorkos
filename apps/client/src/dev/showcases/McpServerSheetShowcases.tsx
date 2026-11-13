@@ -36,6 +36,7 @@ function server(name: string, enabled = true): GlobalMcpServerView {
     addedAt: new Date(Date.UTC(2026, 9, 22)).toISOString(),
     skippedOn: [],
     warnings: [],
+    reservedName: false,
   };
 }
 
@@ -173,6 +174,35 @@ const UNDO_REFUSED: SheetScenario = {
   undoRefusal: "This agent's settings file isn't a plain file in its folder, so it was left alone.",
 };
 
+/**
+ * A server saved before its name was reserved (DOR-3600): no agent gets it, and it says why
+ * (DOR-4262). The longest reserved name, in the case a person might have typed it.
+ */
+const RESERVED_SERVER = 'DorkOS_Connections';
+
+const RESERVED: SheetScenario = {
+  server: {
+    ...server(RESERVED_SERVER),
+    args: ['-y', 'notion-demo-mcp@1.4.0', '--workspace', 'Design team'],
+    env: [{ name: 'NOTION_DEMO_TOKEN', secret: true }],
+    reservedName: true,
+  },
+  tools: { ...TOOLS, status: 'reserved-name', added: [] },
+  allows: [],
+};
+
+/** The Inbox line, once per server, when startup finds one with a reserved name. */
+const RESERVED_NAME: NotificationDTO = {
+  id: '01JZS00000000000000000002',
+  kind: 'mcp-server.reserved_name',
+  tier: 'notable',
+  subject: { type: 'system', id: `mcp-server:${RESERVED_SERVER}` },
+  title: `${RESERVED_SERVER} stopped reaching your agents.`,
+  body: 'Its name is now reserved for DorkOS. Rename it to fix this.',
+  actions: [{ id: 'open', label: 'Review', style: 'primary' }],
+  createdAt: new Date(Date.UTC(2026, 10, 13, 14, 0)).toISOString(),
+};
+
 /** The Inbox line a check leaves when a server everyone-allowed adds a tool. */
 const TOOL_ADDED: NotificationDTO = {
   id: '01JZS00000000000000000001',
@@ -207,6 +237,22 @@ export function McpServerSheetShowcases() {
           Make it ask refused: the agent&apos;s settings file is left alone
         </ShowcaseLabel>
         <SheetDemo testId="mcp-sheet-undo-refused" scenario={UNDO_REFUSED} />
+      </PlaygroundSection>
+      <PlaygroundSection
+        title="MCP server sheet: reserved name"
+        description="A server saved under one of DorkOS's own names. No agent gets it: the row, the sheet and the tool check say so, and Remove and add again… opens Add with its command."
+      >
+        <ShowcaseLabel>Its name is reserved: open the row</ShowcaseLabel>
+        <SheetDemo testId="mcp-sheet-reserved-name" scenario={RESERVED} />
+        <ShowcaseLabel>The Inbox line, once per server</ShowcaseLabel>
+        <ShowcaseDemo>
+          <div
+            data-testid="mcp-reserved-name-row"
+            className="border-border/60 bg-background/60 w-[min(30rem,100%)] rounded-lg border p-2"
+          >
+            <InboxRow notification={RESERVED_NAME} onOpen={() => {}} />
+          </div>
+        </ShowcaseDemo>
       </PlaygroundSection>
       <PlaygroundSection
         title="MCP server sheet: new tool notice"

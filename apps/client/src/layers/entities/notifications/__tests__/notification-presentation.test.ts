@@ -79,6 +79,22 @@ describe('notification presentation', () => {
     });
   });
 
+  // DOR-4262: a server named like DorkOS opens its sheet, where the rename is.
+  it("opens the server's sheet when a saved server's name is reserved", () => {
+    const row: NotificationDTO = {
+      id: '01JZG0000000000000000014',
+      kind: 'mcp-server.reserved_name',
+      tier: 'notable',
+      subject: { type: 'system', id: 'mcp-server:DorkOS_Connections' },
+      title: 'DorkOS_Connections stopped reaching your agents.',
+      createdAt: '2026-11-13T12:00:00.000Z',
+    };
+    expect(notificationLink(row)).toEqual({
+      to: '/connections',
+      search: { tab: 'mcp', mcpServer: 'DorkOS_Connections' },
+    });
+  });
+
   // Spec trusted-by-default-flip §5.6: the waiting row opens where Cancel is;
   // the row saying how it ended opens the chat the agent asked from.
   it('takes a held action to the Inbox while it waits, and to its chat once it ended', () => {

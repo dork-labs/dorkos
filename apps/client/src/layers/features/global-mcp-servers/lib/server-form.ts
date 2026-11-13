@@ -14,6 +14,7 @@ import {
   isSecretName,
   reservedMcpServerNameMessage,
   type GlobalMcpServerInput,
+  type GlobalMcpServerView,
 } from '@dorkos/shared/global-mcp-schemas';
 import { z } from 'zod';
 
@@ -99,12 +100,52 @@ export function nameProblem(name: string): FormProblem | null {
   return reservedNameProblem(name);
 }
 
+/** One argument as a person would type it, quoted when splitting would change it. */
+function typedArg(arg: string): string {
+  if (arg !== '' && !/[\s"']/.test(arg)) return arg;
+  return arg.includes('"') ? `'${arg}'` : `"${arg}"`;
+}
+
+/**
+ * A form holding a saved server's command or address, arguments, values' names and which agents
+ * it skips, with no name: "Remove and add again…" (DOR-4262). A saved value is never shown again,
+ * so each row comes back empty, and an argument still hidden is refused until it is typed.
+ *
+ * @param server - The server, as the list reads it.
+ */
+export function formFromServer(server: GlobalMcpServerView): ServerForm {
+  const rows = (fields: GlobalMcpServerView['env']): FieldRow[] =>
+    fields.map((field, index) => ({
+      id: `kept-${index}`,
+      name: field.name,
+      value: '',
+      marked: field.secret,
+    }));
+  return {
+    ...EMPTY_SERVER_FORM,
+    kind: server.transport === 'stdio' ? 'command' : 'url',
+    command: server.command ?? '',
+    args: (server.args ?? []).map(typedArg).join(' '),
+    url: server.url ?? '',
+    env: rows(server.env),
+    headers: rows(server.headers),
+    excludedAgents: server.excludedAgents,
+  };
+}
+
+/** How strict {@link serverFormProblem} is. */
+export interface FormRules {
+  /** Every row needs a value, not only a secret one: a re-added server's rows come back empty. */
+  everyValue?: boolean;
+}
+
 /**
  * The first thing to fix, top to bottom, or `null` when the form can go.
  *
  * @param form - The form.
+ * @param rules - What else must hold.
  */
-export function serverFormProblem(form: ServerForm): FormProblem | null {
+export function serverFormProblem(form: ServerForm, rules: FormRules = {}): FormProblem | null {
   const named = nameProblem(form.name);
   if (named) return named;
   if (form.kind === 'command' && form.command.trim() === '') {
@@ -126,7 +167,7 @@ export function serverFormProblem(form: ServerForm): FormProblem | null {
     if (name === '') return { field: 'rows', message: 'Name each value.' };
     if (seen.has(name)) return { field: 'rows', message: `${name} is there twice.` };
     seen.add(name);
-    if (row.value === '' && rowIsSecret(row)) {
+    if (row.value === '' && (rules.everyValue || rowIsSecret(row))) {
       return { field: 'rows', message: `Type a value for ${name}.` };
     }
   }

@@ -18,6 +18,7 @@
  */
 import type { Context, Hono } from 'hono';
 import { z } from 'zod';
+import { isReservedMcpServerName } from '@dorkos/shared/global-mcp-schemas';
 import type { ApiEnv } from '../http/api-chain.js';
 import { readJsonBody } from '../http/request-body.js';
 import { logger } from '../lib/logger.js';
@@ -109,7 +110,13 @@ export function addMcpServerSheetRoutes(
     const name = c.req.param('name');
     if (!store.has(name)) return unknown(c);
     const check = deps.check ?? checkServerTools;
-    const result: ServerToolsCheck = await check(store.connectionToCheck(name), name, deps.ledger);
+    const checked: ServerToolsCheck = await check(store.connectionToCheck(name), name, deps.ledger);
+    // A name that is one of DorkOS's own never reaches an agent (DOR-3600), so
+    // its check is never `ok`, and no agent is told about a tool it can't get.
+    const result: ServerToolsCheck =
+      checked.status === 'ok' && isReservedMcpServerName(name)
+        ? { ...checked, status: 'reserved-name' }
+        : checked;
     if (result.status === 'ok' && result.added.length > 0) {
       const wide = (await allowsFor(name))
         .filter((allow) => allow.breadth === 'server')

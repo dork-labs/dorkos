@@ -82,11 +82,17 @@ function DetailLine({
 }) {
   const [first, ...rest] = server.warnings;
   // Only a line with nothing to warn about may cut off: a notice or a warning always reads whole.
-  const mayClamp = !outcome && !first && server.skippedOn.length === 0;
+  const mayClamp = !outcome && !first && server.skippedOn.length === 0 && !server.reservedName;
   return (
     <span className={cn('text-muted-foreground text-xs', mayClamp ? 'line-clamp-2' : 'block')}>
       {outcome}
       {!server.enabled && <span className="opacity-55">Off · </span>}
+      {/* Its name is one of DorkOS's own, so no agent gets it (DOR-4262). */}
+      {server.reservedName && (
+        <span className="text-status-warning-fg">
+          Agents can’t use it · its name is reserved{' · '}
+        </span>
+      )}
       {first && (
         <span className="text-status-warning-fg">
           {first.note}

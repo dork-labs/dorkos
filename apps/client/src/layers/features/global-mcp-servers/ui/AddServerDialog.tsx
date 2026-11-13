@@ -29,12 +29,24 @@ import { useConfirmWaiting } from '../model/use-confirm-waiting';
 import { FieldRows } from './FieldRows';
 import { WhichAgents } from './WhichAgents';
 
+interface AddServerDialogProps {
+  onClose: () => void;
+  /**
+   * What the form starts with: a saved server's command and arguments, for "Remove and add
+   * again…" (DOR-4262). It is the same add, refused and confirmed the same way; every value is
+   * typed again, since a saved one is never shown.
+   */
+  initial?: ServerForm;
+  /** Called with the new name once the server is added, before the dialog closes. */
+  onAdded?: (name: string) => void;
+}
+
 /**
  * Add a server for every agent. Add keeps its label and runs "Confirm it's you" on press; a
  * cancel or a refusal keeps everything typed, secrets too, until the dialog closes. The form is
  * mounted only while it is open, so nothing typed outlives it.
  */
-export function AddServerDialog({ onClose }: { onClose: () => void }) {
+export function AddServerDialog({ onClose, initial, onAdded }: AddServerDialogProps) {
   const problemId = useId();
   const nameId = useId();
   const commandId = useId();
@@ -42,7 +54,7 @@ export function AddServerDialog({ onClose }: { onClose: () => void }) {
   const argsWarningId = useId();
   const urlId = useId();
   const kindLabelId = useId();
-  const [form, setForm] = useState<ServerForm>(EMPTY_SERVER_FORM);
+  const [form, setForm] = useState<ServerForm>(initial ?? EMPTY_SERVER_FORM);
   const [problem, setProblem] = useState<FormProblem | null>(null);
   const [argsLookSecret, setArgsLookSecret] = useState(false);
   const add = useAddGlobalMcpServer();
@@ -54,10 +66,16 @@ export function AddServerDialog({ onClose }: { onClose: () => void }) {
   function submit(event: FormEvent) {
     event.preventDefault();
     if (busy) return;
-    const found = serverFormProblem(form);
+    const found = serverFormProblem(form, { everyValue: initial !== undefined });
     setProblem(found);
     if (found) return;
-    add.mutate(serverInputFrom(form), { onSuccess: onClose });
+    const input = serverInputFrom(form);
+    add.mutate(input, {
+      onSuccess: () => {
+        onAdded?.(input.name);
+        onClose();
+      },
+    });
   }
 
   /** On leaving Name: one of DorkOS's own names is said at once, and a fixed name clears its line. */

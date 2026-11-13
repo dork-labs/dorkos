@@ -385,6 +385,58 @@ describe('the server sheet (DOR-4118)', () => {
     expect(added).toEqual([]);
   });
 
+  it('never answers ok for a server named like DorkOS, and lists its tools anyway (DOR-4262)', async () => {
+    // Saved before the name was reserved (DOR-3600): the store loads it, and no
+    // agent gets it. Written by hand, since adding one now is refused.
+    const file = path.join(home, 'mcp', 'global-servers.json');
+    const saved = JSON.parse(readFileSync(file, 'utf8'));
+    saved.servers.push({
+      ...saved.servers[0],
+      name: 'DorkOS',
+      connection: { ...saved.servers[0].connection, env: {} },
+      secretNames: [],
+    });
+    writeFileSync(file, JSON.stringify(saved));
+    await store.load();
+    writeFileSync(localFile(), JSON.stringify({ permissions: { allow: ['mcp__DorkOS'] } }));
+
+    expect(store.list().map((server) => [server.name, server.reservedName])).toEqual([
+      ['github', false],
+      ['DorkOS', true],
+    ]);
+    const first = await request(sheetApp()).post('/api/mcp-servers/DorkOS/tools');
+    expect(first.status).toBe(200);
+    expect(first.body).toEqual({
+      status: 'reserved-name',
+      tools: [{ name: 'create_issue', description: 'Does create_issue.', isNew: false }],
+      added: [],
+      omitted: 0,
+    });
+    // No agent gets these tools, so none is told about a new one.
+    toolsListed = ['create_issue', 'export_all'];
+    const later = await request(sheetApp()).post('/api/mcp-servers/DorkOS/tools');
+    expect(later.body).toMatchObject({ status: 'reserved-name', added: ['export_all'] });
+    expect(added).toEqual([]);
+
+    // Remove and add again (Security): the same command under a new name is a
+    // new server. It goes through the person's add, and no agent's standing yes
+    // for the old name carries over to it.
+    const readded = await request(sheetApp())
+      .post('/api/mcp-servers')
+      .send({
+        name: 'notion-demo',
+        enabled: true,
+        connection: { ...saved.servers[0].connection, env: {} },
+        secretNames: [],
+        excludedAgents: [],
+      });
+    expect(readded.status).toBe(201);
+    const allows = await request(sheetApp()).get('/api/mcp-servers/notion-demo/allows');
+    expect(allows.body).toEqual({ allows: [] });
+    const old = await request(sheetApp()).get('/api/mcp-servers/DorkOS/allows');
+    expect(old.body.allows).toHaveLength(1);
+  });
+
   it('never starts a server that is off', async () => {
     await store.patch('github', { enabled: false });
     const res = await request(sheetApp()).post('/api/mcp-servers/github/tools');

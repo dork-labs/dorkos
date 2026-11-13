@@ -767,3 +767,154 @@ describe('removing a server', () => {
     expect(screen.getByRole('alertdialog')).toBeInTheDocument();
   });
 });
+
+describe('a server whose name is reserved (DOR-4262)', () => {
+  const RESERVED = createMockGlobalMcpServer({
+    name: 'DorkOS_Connections',
+    args: ['-y', 'made-up-mcp@1.2.3', '--workspace', 'Design team'],
+    env: [
+      { name: 'MADE_UP_KEY', secret: true },
+      { name: 'REGION', secret: false },
+    ],
+    excludedAgents: ['b'],
+    reservedName: true,
+  });
+
+  /** The transport for one reserved server, its check and its standing yeses. */
+  function reservedTransport(over: Partial<Transport> = {}) {
+    return transportWith([RESERVED], {
+      checkGlobalMcpServerTools: vi.fn().mockResolvedValue({
+        status: 'reserved-name',
+        tools: [{ name: 'search_pages', description: 'Find pages.', isNew: false }],
+        added: [],
+        omitted: 0,
+      }),
+      listGlobalMcpStandingAllows: vi.fn().mockResolvedValue({ allows: [] }),
+      ...over,
+    });
+  }
+
+  async function openSheet(user: ReturnType<typeof userEvent.setup>) {
+    await user.click(await screen.findByRole('button', { name: /DorkOS_Connections/ }));
+    return within(await screen.findByRole('dialog'));
+  }
+
+  it('the row says agents can’t use it, in warning ink, and only for that server', async () => {
+    renderTab(transportWith([RESERVED, createMockGlobalMcpServer({ name: 'notion-demo' })]));
+    const line = await screen.findByText(/Agents can’t use it · its name is reserved/);
+    expect(line).toHaveClass('text-status-warning-fg');
+    const other = within(await screen.findByTestId('mcp-server-row-notion-demo'));
+    expect(other.queryByText(/its name is reserved/)).toBeNull();
+  });
+
+  it('the sheet says why above Which agents get it, and the check is never ok', async () => {
+    const user = userEvent.setup();
+    renderTab(reservedTransport());
+    const sheet = await openSheet(user);
+    const notice = sheet.getByText('Agents can’t use this server.').parentElement!;
+    expect(notice).toHaveAttribute('data-slot', 'reserved-name-notice');
+    expect(
+      within(notice).getByText(
+        '“DorkOS_Connections” is reserved for DorkOS’s own tools, so agents don’t get its tools.'
+      )
+    ).toBeInTheDocument();
+    expect(within(notice).getByText('Rename it to give them back.')).toBeInTheDocument();
+    // Above Which agents get it.
+    const which = sheet.getByText('Which agents get it');
+    expect(notice.compareDocumentPosition(which) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(
+      await sheet.findByText('It works, but agents can’t use it until it’s renamed.')
+    ).toBeInTheDocument();
+    expect(sheet.getByText('search_pages')).toBeInTheDocument();
+    expect(sheet.getByText('What it can do · 1 tools')).toBeInTheDocument();
+  });
+
+  it('a server not reserved shows no notice (Security: nothing offers a way past the block)', async () => {
+    const user = userEvent.setup();
+    renderTab(transportWith([createMockGlobalMcpServer()]));
+    await user.click(await screen.findByRole('button', { name: /made-up-server/ }));
+    const sheet = within(await screen.findByRole('dialog'));
+    expect(sheet.queryByText('Agents can’t use this server.')).toBeNull();
+    expect(sheet.queryByRole('button', { name: 'Remove and add again…' })).toBeNull();
+  });
+
+  it('a name is plain text in the notice, whatever it holds (Security)', async () => {
+    const user = userEvent.setup();
+    const hostile = '**bold**<img src=x onerror=alert(1)>[link](https://x.test)';
+    renderTab(
+      transportWith([createMockGlobalMcpServer({ name: hostile, reservedName: true })], {
+        checkGlobalMcpServerTools: vi.fn().mockResolvedValue({ status: 'not-checked' }),
+        listGlobalMcpStandingAllows: vi.fn().mockResolvedValue({ allows: [] }),
+      })
+    );
+    await user.click(await screen.findByRole('button', { name: /bold/ }));
+    const sheet = within(await screen.findByRole('dialog'));
+    const line = sheet.getByText(`“${hostile}” is reserved for DorkOS’s own tools`, {
+      exact: false,
+    });
+    expect(line.children).toHaveLength(0);
+    const notice = '[data-slot="reserved-name-notice"]';
+    expect(
+      document.querySelector(`${notice} img, ${notice} a, ${notice} strong, ${notice} b`)
+    ).toBeNull();
+  });
+
+  it('Remove and add again… opens the same Add with its command, then asks to remove the old one', async () => {
+    const user = userEvent.setup();
+    const addGlobalMcpServer = vi.fn().mockResolvedValue(createMockGlobalMcpServer());
+    const removeGlobalMcpServer = vi.fn().mockResolvedValue(undefined);
+    renderTab(reservedTransport({ addGlobalMcpServer, removeGlobalMcpServer }));
+    const sheet = await openSheet(user);
+    await user.click(sheet.getByRole('button', { name: 'Remove and add again…' }));
+
+    expect(await screen.findByText('Add a server')).toBeInTheDocument();
+    expect(screen.getByLabelText('Name')).toHaveValue('');
+    expect(screen.getByLabelText('Command')).toHaveValue('npx');
+    expect(screen.getByLabelText('Arguments')).toHaveValue(
+      '-y made-up-mcp@1.2.3 --workspace "Design team"'
+    );
+    // A saved value is never shown again, so every one is typed, not only the secret.
+    await user.type(screen.getByLabelText('Name'), 'notion-demo');
+    await user.type(screen.getByLabelText('Value of MADE_UP_KEY'), 'typed-key');
+    await user.click(screen.getByRole('button', { name: 'Add' }));
+    expect(await screen.findByText('Type a value for REGION.')).toBeInTheDocument();
+    expect(addGlobalMcpServer).not.toHaveBeenCalled();
+
+    await user.type(screen.getByLabelText('Value of REGION'), 'eu');
+    await user.click(screen.getByRole('button', { name: 'Add' }));
+    await waitFor(() =>
+      expect(addGlobalMcpServer).toHaveBeenCalledWith({
+        name: 'notion-demo',
+        enabled: true,
+        excludedAgents: ['b'],
+        secretNames: ['MADE_UP_KEY'],
+        connection: {
+          transport: 'stdio',
+          command: 'npx',
+          args: ['-y', 'made-up-mcp@1.2.3', '--workspace', 'Design team'],
+          env: { MADE_UP_KEY: 'typed-key', REGION: 'eu' },
+        },
+      })
+    );
+    // Then the old one's own Remove, which the person still answers.
+    const ask = within(await screen.findByRole('alertdialog'));
+    expect(ask.getByRole('heading')).toHaveTextContent('Remove DorkOS_Connections?');
+    expect(removeGlobalMcpServer).not.toHaveBeenCalled();
+    await user.click(ask.getByRole('button', { name: 'Remove' }));
+    await waitFor(() => expect(removeGlobalMcpServer).toHaveBeenCalledWith('DorkOS_Connections'));
+  });
+
+  it('a cancelled re-add adds nothing and removes nothing', async () => {
+    const user = userEvent.setup();
+    const addGlobalMcpServer = vi.fn();
+    const removeGlobalMcpServer = vi.fn();
+    renderTab(reservedTransport({ addGlobalMcpServer, removeGlobalMcpServer }));
+    const sheet = await openSheet(user);
+    await user.click(sheet.getByRole('button', { name: 'Remove and add again…' }));
+    await user.click(await screen.findByRole('button', { name: 'Cancel' }));
+    await waitFor(() => expect(screen.queryByText('Add a server')).toBeNull());
+    expect(screen.queryByRole('alertdialog')).toBeNull();
+    expect(addGlobalMcpServer).not.toHaveBeenCalled();
+    expect(removeGlobalMcpServer).not.toHaveBeenCalled();
+  });
+});

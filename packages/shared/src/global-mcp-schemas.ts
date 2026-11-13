@@ -259,6 +259,12 @@ export const GlobalMcpServerViewSchema = z.object({
   skippedOn: z.array(z.enum(['codex', 'opencode'])),
   /** What to look at twice, and why a saved server is not started. */
   warnings: z.array(GlobalMcpServerWarningSchema),
+  /**
+   * Its name is one of DorkOS's own (DOR-3600), so no agent gets its tools.
+   * Decided by the server from the saved name (DOR-4262); a server saved before
+   * the rule keeps running for the person's checks, never for an agent.
+   */
+  reservedName: z.boolean(),
 });
 
 export type GlobalMcpServerView = z.infer<typeof GlobalMcpServerViewSchema>;
@@ -311,6 +317,16 @@ export const GlobalMcpToolsCheckSchema = z.discriminatedUnion('status', [
   }),
   z.object({ status: z.literal('needs-sign-in') }),
   z.object({ status: z.literal('unreachable'), error: z.string() }),
+  /**
+   * It answered, but its name is one of DorkOS's own, so no agent gets these
+   * tools (DOR-4262). Never `ok`: the sheet says why and still lists them.
+   */
+  z.object({
+    status: z.literal('reserved-name'),
+    tools: z.array(GlobalMcpCheckedToolSchema),
+    added: z.array(z.string()),
+    omitted: z.number().int().nonnegative(),
+  }),
 ]);
 
 export type GlobalMcpToolsCheck = z.infer<typeof GlobalMcpToolsCheckSchema>;

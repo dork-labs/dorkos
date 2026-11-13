@@ -52,7 +52,14 @@ export type ServerToolsCheck =
       omitted: number;
     }
   | { status: 'needs-sign-in' }
-  | { status: 'unreachable'; error: string };
+  | { status: 'unreachable'; error: string }
+  | {
+      /** It answered, but its name is one of DorkOS's own, so no agent gets these (DOR-4262). */
+      status: 'reserved-name';
+      tools: CheckedTool[];
+      added: string[];
+      omitted: number;
+    };
 
 const LedgerSchema = z.object({
   version: z.literal(1),

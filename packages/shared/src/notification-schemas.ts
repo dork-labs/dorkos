@@ -158,6 +158,11 @@ export const NOTIFICATION_KINDS = [
    */
   'mcp-server.tool_added',
   /**
+   * A saved global MCP server's name is one of DorkOS's own, so no agent gets
+   * its tools (DOR-4262). Once per server, said at startup.
+   */
+  'mcp-server.reserved_name',
+  /**
    * A browser this computer had never seen used chat from the web here, over
    * the owner's hub (spec `everything-is-a-space` step B3). Once per browser.
    */

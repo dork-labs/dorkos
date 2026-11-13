@@ -117,6 +117,8 @@ export const NOTIFICATION_ICONS: Record<NotificationKind, LucideIcon> = {
   'connector.access_narrowed': Bell,
   // A global MCP server added a tool an agent already allows wholesale (DOR-4118).
   'mcp-server.tool_added': Bell,
+  // A saved MCP server's name is one of DorkOS's own, so no agent gets it (DOR-4262).
+  'mcp-server.reserved_name': ShieldAlert,
   // A browser this computer had never seen used chat from the web (DOR-2946).
   'web.new_device': MonitorSmartphone,
   // Files in an agent's folder whose names say they are secrets (DOR-3292).
@@ -370,9 +372,10 @@ export function notificationLink(notification: NotificationDTO): NotificationLin
     // files in its folder sit, rather than the whole Team (DOR-3292).
     return { ...appRoutes.team(), search: { profile: subject.id, profilePage: 'permissions' } };
   }
-  if (kind === 'mcp-server.tool_added') {
+  if (kind === 'mcp-server.tool_added' || kind === 'mcp-server.reserved_name') {
     // The server's sheet, where the new tool and who uses it without asking
-    // show, with Undo (DOR-4118). The subject is `mcp-server:{name}`.
+    // show, with Undo (DOR-4118), or why no agent gets it, with the way to
+    // rename it (DOR-4262). The subject is `mcp-server:{name}`.
     const server = subject.id.replace(/^mcp-server:/, '');
     return { ...appRoutes.connections(), search: { tab: 'mcp', mcpServer: server } };
   }

@@ -449,6 +449,13 @@ export const FEATURE_SURFACE_SECTIONS: PlaygroundSection[] = [
     ],
   },
   {
+    id: 'mcp-server-sheet-reserved-name',
+    title: 'MCP server sheet: reserved name',
+    page: 'home-inbox',
+    category: 'MCP servers',
+    keywords: ['mcp', 'server', 'reserved', 'name', 'rename', 'remove and add again', 'inbox'],
+  },
+  {
     id: 'mcp-server-sheet-new-tool-notice',
     title: 'MCP server sheet: new tool notice',
     page: 'home-inbox',

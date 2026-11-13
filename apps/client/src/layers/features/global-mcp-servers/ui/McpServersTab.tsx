@@ -3,13 +3,21 @@ import { Plus } from 'lucide-react';
 import { useGlobalMcpServers } from '@/layers/entities/global-mcp';
 import { useRegisteredAgents } from '@/layers/entities/mesh';
 import { Button, focusPageHeading, Skeleton } from '@/layers/shared/ui';
+import { formFromServer } from '../lib/server-form';
 import { AddServerDialog } from './AddServerDialog';
 import { McpServerRow } from './McpServerRow';
 import { RemoveServerDialog } from './RemoveServerDialog';
 import { ServerSheet } from './ServerSheet';
 
-/** What sits over the list: the sheet for a server, or the question about removing it. */
-type Open = { kind: 'sheet'; name: string } | { kind: 'remove'; name: string } | null;
+/**
+ * What sits over the list: the sheet for a server, the question about removing it, or the Add
+ * form holding it again under a new name (DOR-4262).
+ */
+type Open =
+  | { kind: 'sheet'; name: string }
+  | { kind: 'remove'; name: string }
+  | { kind: 're-add'; name: string }
+  | null;
 
 /** A server that went but left a saved key behind: how many it held decides the wording. */
 interface KeyLeft {
@@ -155,7 +163,18 @@ export function McpServersTab({ openServer, onServerOpened }: McpServersTabProps
           server={current}
           onClose={() => setOpen(null)}
           onRemove={() => setOpen({ kind: 'remove', name: current.name })}
+          onReAdd={() => setOpen({ kind: 're-add', name: current.name })}
           onCloseAutoFocus={returnFocus}
+        />
+      )}
+
+      {/* The same Add, refused and confirmed the same way: added first, so nothing is lost if
+          it is cancelled, and only then the old one's own Remove (DOR-4262). */}
+      {open?.kind === 're-add' && current && (
+        <AddServerDialog
+          initial={formFromServer(current)}
+          onClose={() => setOpen((now) => (now?.kind === 're-add' ? null : now))}
+          onAdded={() => setOpen({ kind: 'remove', name: current.name })}
         />
       )}
 
