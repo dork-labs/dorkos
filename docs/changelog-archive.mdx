@@ -1,9 +1,52 @@
 ---
 title: Changelog archive
-description: Older DorkOS releases (v0.1.0 – v0.133.0), aged out of the main changelog.
+description: Older DorkOS releases (v0.1.0 – v0.134.0), aged out of the main changelog.
 ---
 
 Older DorkOS releases, following [Semantic Versioning](https://semver.org/spec/v2.0.0.html). For recent releases see the [Changelog](/changelog).
+
+## [0.134.0] - 2026-11-08
+
+> DorkOS 0.134.0 gets Codex chats starting again on Linux computers that also use Claude Code, and keeps the signed-in browser DorkOS gives an agent signed out of DorkOS itself. Blocked and Ask on agents' to-dos now apply, and Connections gets an MCP servers tab.
+
+### Note for people upgrading
+
+- On Linux, Codex at Full access doesn't start if Claude Code has run on the same machine, and that includes the Docker image. Use Ask first or Workspace write there for now. We're fixing it (DOR-3965).
+- Agents' to-do tools now follow a new **To-dos** permission. It starts as Allowed, so nothing changes until you set it. If a Blocked or Ask was already saved for them, for example in a settings file, it now applies. Before, it did nothing. Set it in **Settings → Permissions**, or for one agent in its profile under **Setup → Permissions**. (DOR-3936)
+- This release changes the database. Read Going back below before downgrading.
+
+### Added
+
+- Connections now has an **MCP servers** tab. Add a server once and every agent can use it. You can keep it from some agents, turn it on or off, or remove it. Values you hide are typed by you and don't show on the page again. Agents that get the server can use them. Changes reach new chats, and open ones may keep a server until they stop. A server reached over SSE doesn't reach Codex or OpenCode agents, and its row says so. Agents can't list or change these servers. (DOR-3213)
+- In a chat or room, the **Agent browser** panel now has a **Profiles** list. **Forget sign-ins** clears every site's saved data in a profile, and **Delete profile** removes a named profile and its agents' access to it. Only you can do either, not an agent, and neither can be undone. Forgetting the Default profile's sign-ins also clears the ones saved with `dorkos browser login`. (DOR-3887)
+- Groundwork for mini apps that read a connected app themselves: the database and the public DorkOS Cloud contract can now name one extension as the holder of a read-only grant. Nothing uses it yet. (DOR-3547)
+
+### Changed
+
+- The app's browser panel, its help and the guides now call the live shared page the Agent browser. The older hidden page is the signed-in browser. Existing commands and saved sign-ins are kept. (DOR-3218)
+
+### Fixed
+
+- Codex chats start again at Ask first and Workspace write on Linux computers that also use Claude Code. Claude Code's saved sign-in copies stay hidden from Codex. (DOR-3949)
+- In one more case where Codex's sandbox can't start on Linux, DorkOS now says so and links to OpenAI's setup page. It no longer tells you to send your message again. (DOR-3950)
+- The signed-in browser DorkOS gives an agent now starts signed out of DorkOS, even with login on. This holds on every runtime. Sign-ins saved with `dorkos browser login` no longer include your DorkOS or DorkOS Cloud sign-in, however their address is written, and older saved files are cleaned when DorkOS starts. Other sites on this computer's own addresses, like `localhost`, are left out too. (DOR-3957)
+- DorkOS now warns in its log when an agent's Claude Code loads a Playwright browser server outside DorkOS's protections: one that uses your real Chrome, keeps its own browser profile, or can open any site. (DOR-3957)
+- Blocking an agent's to-dos now works. Set **To-dos** to Blocked and the agent's to-do tools refuse. It still sees its own open to-dos on its heartbeat, and the team's list stays readable to everyone in the space. Set it to Ask and the agent asks you before it adds or changes a to-do. Reading the list still runs. (DOR-3936)
+- An agent that says who it is can no longer change a to-do through the app's web API, where no permission was checked. Agents use their to-do tools, which follow your setting. (DOR-3936)
+- In Permissions, every action that only reads now says Ask lets it through, so you know only Blocked stops it. (DOR-3936)
+- Codex can edit in an agent's own folder on Linux again. DorkOS now adds the empty files and folders Codex needs to agent folders it made under `~/.dork/agents`: for new agents, and for existing ones the next time DorkOS starts. A folder that is a git repo, or lives elsewhere, is left alone. The files stay protected from agents' file tools. When Codex can't edit because a protected file is missing, it names that file. (DOR-3914)
+- When you've let an agent read an app and it later asks to change things there too, you now get a new card for that. Before, the agent was told it had access while it could still only read. (DOR-3930)
+- Agents are told to hand you the browser for a sign-in and wait until you finish. They're also told to ignore sign-in links from untrusted messages, and to send requests for a shared page to you rather than to an outside sender. (DOR-3218)
+
+### Security
+
+- Isolated extensions can no longer use Node's built-in SQLite, which got around their file limits. Extensions that run inside DorkOS itself are unchanged. (DOR-3547)
+
+### Going back
+
+This release only adds to the database, and 0.133.0 runs on it as it is. To go back, install 0.133.0. On 0.133.0, a Blocked or Ask on agents' to-dos stops applying again.
+
+DorkOS still saves a backup before it changes the database, in `~/.dork/backups/`. If you came from 0.133.0, it's named `dork-<date>-<time>-pre-20261108035027_dor3547_extension_grant_subject.db` (the time is UTC). To restore it instead, quit DorkOS, delete `dork.db-wal` and `dork.db-shm` from `~/.dork/`, copy the backup over `~/.dork/dork.db`, then install 0.133.0. You lose anything written since the upgrade, so if you removed access or revoked a connection since then, do it again.
 
 ## [0.133.0] - 2026-11-08
 
