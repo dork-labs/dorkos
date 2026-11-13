@@ -65,6 +65,34 @@ function shardTotal(): number {
   return Number(value);
 }
 
+/**
+ * How many tests the cockpit project (`chromium`) may run at once in CI: 1, or 2
+ * for the two-worker trial (DOR-4190, ledger 261113-012626). Unset is 1, which
+ * is what every queue build and PR run uses.
+ *
+ * Only `browser-test.yml`'s `workflow_dispatch` sets it, from its
+ * `chromium_workers` input, so the trial runs as the main canary and never as a
+ * gate. Every other project keeps its own `workers: 1`, so at 2 the extra worker
+ * can only ever hold a cockpit test. What config cannot stop: Playwright has no
+ * cap for a GROUP of projects, so at 2 a cockpit test and a test-mode test, or
+ * two test-mode projects, can run side by side. Local runs already do that; the
+ * trial is what measures it in CI.
+ */
+function chromiumWorkers(): number {
+  const value = process.env.E2E_CHROMIUM_WORKERS;
+  if (value === undefined || value === '') return 1;
+  if (value !== '1' && value !== '2') {
+    throw new Error(`E2E_CHROMIUM_WORKERS must be 1 or 2, got: ${JSON.stringify(value)}`);
+  }
+  return Number(value);
+}
+
+/** Workers for the whole CI run: the cockpit project's count; locally Playwright's default. */
+const CI_WORKERS = CI ? chromiumWorkers() : undefined;
+
+/** One worker in CI, Playwright's default locally: every project but the cockpit. */
+const ONE_IN_CI = CI ? 1 : undefined;
+
 const SHARD_TOTAL = shardTotal();
 
 // The two measured numbers `globalTimeout` is derived from, and its multiplier.
@@ -353,7 +381,8 @@ export default defineConfig({
   // every pass-on-retry is named in the CI log by the assert step's flaky
   // warning, so nothing is absorbed silently.
   retries: CI ? 1 : 0,
-  workers: CI ? 1 : undefined,
+  // One in CI unless the two-worker trial raises it — see `chromiumWorkers`.
+  workers: CI_WORKERS,
   timeout: 30_000,
 
   // STOP AFTER FIVE FAILURES IN CI — fail fast, report loudly (DOR-1110).
@@ -990,6 +1019,8 @@ export default defineConfig({
       // state, not runtime state). Verified empirically 2026-07-29: both
       // projects run concurrently against one test-mode server, 18/18 passed.
       name: 'chromium-connections',
+      // One worker in CI whatever the cockpit gets: see `chromiumWorkers`.
+      workers: ONE_IN_CI,
       use: {
         ...devices['Desktop Chrome'],
         baseURL: `http://localhost:${MOCK_VITE_PORT}`,
@@ -1009,6 +1040,8 @@ export default defineConfig({
       // chat-mock's scenario/reset choreography — it asserts only on its own
       // pages' sockets, so it runs beside the other test-mode projects.
       name: 'chromium-streams',
+      // One worker in CI whatever the cockpit gets: see `chromiumWorkers`.
+      workers: ONE_IN_CI,
       use: {
         ...devices['Desktop Chrome'],
         baseURL: `http://localhost:${MOCK_VITE_PORT}`,
@@ -1067,6 +1100,8 @@ export default defineConfig({
       // test archives the shared #team, which changes what `/` renders for every
       // page on this server until it is restored.
       name: 'chromium-team-room',
+      // One worker in CI whatever the cockpit gets: see `chromiumWorkers`.
+      workers: ONE_IN_CI,
       use: {
         ...devices['Desktop Chrome'],
         baseURL: `http://localhost:${MOCK_VITE_PORT}`,
@@ -1091,6 +1126,8 @@ export default defineConfig({
       // assert only on rooms they seeded, so they run beside each other and
       // beside the other test-mode projects.
       name: 'chromium-rooms-agents',
+      // One worker in CI whatever the cockpit gets: see `chromiumWorkers`.
+      workers: ONE_IN_CI,
       use: {
         ...devices['Desktop Chrome'],
         baseURL: `http://localhost:${MOCK_VITE_PORT}`,
@@ -1119,6 +1156,8 @@ export default defineConfig({
       // room and asserts only on that room, so it runs beside the other
       // test-mode projects without racing them.
       name: 'chromium-bridge',
+      // One worker in CI whatever the cockpit gets: see `chromiumWorkers`.
+      workers: ONE_IN_CI,
       use: {
         ...devices['Desktop Chrome'],
         baseURL: `http://localhost:${MOCK_VITE_PORT}`,
@@ -1176,6 +1215,8 @@ export default defineConfig({
       ? [
           {
             name: 'chromium-production',
+            // One worker in CI whatever the cockpit gets: see `chromiumWorkers`.
+            workers: ONE_IN_CI,
             use: {
               ...devices['Desktop Chrome'],
               baseURL: `http://localhost:${PROD_PORT}`,
