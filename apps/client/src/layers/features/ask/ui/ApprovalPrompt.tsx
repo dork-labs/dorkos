@@ -38,26 +38,6 @@ const confirmTransition = { duration: 0.12, ease: 'easeOut' as const } as const;
 /** Reduced motion gets the end state with no travel and no time. */
 const instantTransition = { duration: 0 } as const;
 
-// --- Risk classification for visual differentiation ---
-
-type RiskLevel = 'high' | 'medium' | 'low';
-
-/** Tools that can modify the filesystem, execute commands, or have side effects. */
-const HIGH_RISK_TOOLS = new Set(['Bash', 'Write', 'Edit', 'NotebookEdit']);
-
-/** Tools that modify state but with more constrained scope. */
-const MEDIUM_RISK_TOOLS = new Set(['WebFetch', 'WebSearch']);
-
-function classifyToolRisk(toolName: string): RiskLevel {
-  // Strip MCP prefix for classification — mcp__server__tool → tool
-  const baseName = toolName.includes('__') ? toolName.split('__').pop()! : toolName;
-  if (HIGH_RISK_TOOLS.has(baseName) || HIGH_RISK_TOOLS.has(toolName)) return 'high';
-  if (MEDIUM_RISK_TOOLS.has(baseName) || MEDIUM_RISK_TOOLS.has(toolName)) return 'medium';
-  // MCP tools from unknown servers are medium risk by default
-  if (toolName.startsWith('mcp__')) return 'medium';
-  return 'low';
-}
-
 /** Format seconds as m:ss or Ns for the visible countdown. */
 function formatCountdown(seconds: number): string {
   const m = Math.floor(seconds / 60);
@@ -131,6 +111,12 @@ interface ApprovalPromptProps {
    * (DOR-825).
    */
   allowsDenyReason?: boolean;
+  /**
+   * The asking agent's name, when the host knows it. The title then names the
+   * agent and the tool; without it the title names the tool only, never a
+   * stand-in like "Your agent" (DOR-4117).
+   */
+  agentName?: string;
 }
 
 export interface ApprovalPromptHandle {
@@ -143,7 +129,7 @@ export interface ApprovalPromptHandle {
  * Tool approval card rendered when the agent requests permission to use a tool.
  *
  * Supports imperative control via `ref` (approve/deny) for keyboard shortcut integration.
- * Shows a countdown timer when `timeoutMs` is provided, with warning phases at 2 min and 1 min.
+ * Shows a countdown timer when `timeoutMs` is provided: neutral, red only for its last 30 seconds.
  * Once that countdown runs out the card PARKS: the words say the agent is waiting, the bar
  * goes, and both answers stay live until the server withdraws the card (spec
  * `ask-parks-on-timeout`).
@@ -169,10 +155,10 @@ export function ApprovalPrompt({
   approvalAlwaysAllowScope,
   approvalAlwaysAllowBreadth,
   allowsDenyReason = true,
+  agentName,
 }: ApprovalPromptProps) {
   const transport = useTransport();
   const reducedMotion = useReducedMotion();
-  const riskLevel = useMemo(() => classifyToolRisk(toolName), [toolName]);
   const badge = getMcpServerBadge(toolName);
   const rawLabel = getToolLabel(toolName, input);
   // Prefer SDK-provided display name, fall back to our own label
@@ -186,6 +172,18 @@ export function ApprovalPrompt({
   // A whole-server rule on offer: "Always allow…" asks which first (DOR-4101).
   const mcp = parseMcpToolName(toolName);
   const asksBreadth = approvalAlwaysAllowBreadth === 'server' && mcp !== null && !onWifi;
+  // Who and what (DOR-4117): the agent and the tool when the name is known, else
+  // the runtime's own sentence, else the tool alone.
+  const toolWord = mcp?.tool ?? toolName;
+  // A third-party server can name its tool `Bash`, so its title says where the
+  // tool comes from, by the server's name in Connections rather than anything
+  // the tool says about itself. Built-ins keep the short title.
+  const fromServer = badge !== null && mcp ? ` from ${mcp.server}` : '';
+  const headline = agentName
+    ? `${agentName} wants to use ${toolWord}${fromServer}`
+    : fromServer
+      ? `Allow ${toolWord}${fromServer}?`
+      : approvalTitle || `Allow ${toolWord}?`;
   const [choosing, setChoosing] = useState(false);
   const [responding, setResponding] = useState(false);
   const [decided, setDecided] = useState<'approved' | 'denied' | null>(null);
@@ -482,16 +480,12 @@ export function ApprovalPrompt({
         data-testid="tool-approval"
       >
         <div className="mb-1 flex items-center gap-2">
-          <Shield
-            className={cn(
-              'size-(--size-icon-md)',
-              riskLevel === 'high' && 'text-status-error',
-              riskLevel === 'medium' && 'text-status-warning',
-              riskLevel === 'low' && 'text-muted-foreground'
-            )}
-          />
-          <AskCard.Headline className="font-semibold">
-            {approvalTitle || 'Your agent wants to use a tool'}
+          {/* Neutral on every routine ask: red on each card teaches people to
+              ignore red (DOR-4117). The countdown keeps red for its last seconds. */}
+          <Shield className="text-muted-foreground size-(--size-icon-md)" />
+          {/* Wraps rather than truncates: a long server name is the part that matters. */}
+          <AskCard.Headline className="min-w-0 font-semibold break-words">
+            {headline}
           </AskCard.Headline>
         </div>
 
@@ -548,6 +542,7 @@ export function ApprovalPrompt({
             toolLabel={mcp.toolLabel}
             serverLabel={mcp.serverLabel}
             scopeLabel={scopeLabel}
+            agentLabel={agentName}
             disabled={responding}
             onConfirm={(breadth) => void handleAlwaysAllow(breadth)}
             onBack={() => setChoosing(false)}
