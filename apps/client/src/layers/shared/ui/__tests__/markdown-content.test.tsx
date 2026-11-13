@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { MarkdownContent } from '../markdown-content';
 
 describe('MarkdownContent', () => {
@@ -53,6 +53,33 @@ describe('MarkdownContent', () => {
   it('renders code blocks in markdown', () => {
     render(<MarkdownContent content="Run `npm install`" />);
     expect(screen.getByText('npm install')).toBeTruthy();
+  });
+
+  it('a code block has a Copy code button that copies its text (DOR-2871)', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', {
+      value: { writeText },
+      configurable: true,
+    });
+    render(<MarkdownContent content={'```sh\necho hello\n```'} />);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Copy code' }));
+
+    // No closing newline: pasted into a terminal, it must not run on its own.
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith('echo hello'));
+  });
+
+  it('Copy code keeps a multi-line block whole, blank lines inside included', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', {
+      value: { writeText },
+      configurable: true,
+    });
+    render(<MarkdownContent content={'```sh\ncd app\n\npnpm build\n```'} />);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Copy code' }));
+
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith('cd app\n\npnpm build'));
   });
 
   it('degrades to the error fallback when the markdown render throws', async () => {

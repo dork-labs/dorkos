@@ -68,13 +68,6 @@ export const messageItem = tv({
      */
     actions:
       'bg-popover shadow-elevated pointer-events-none z-10 flex items-center gap-0.5 rounded-md p-0.5 opacity-0 group-hover:pointer-events-auto group-hover:opacity-100 focus-within:pointer-events-auto focus-within:opacity-100',
-    // desktop:select-text: the desktop shell defaults chrome to non-selectable
-    // on every platform (index.css, DOR-562), but message bodies — text, code
-    // blocks, command output — are exactly what a user copies out of a chat,
-    // so this single container re-enables selection for everything a message
-    // renders rather than scattering the re-enable across each content type
-    // (DOR-253).
-    //
     // No width cap here: this slot also holds code, tables and tool cards, which
     // keep the whole column. The reading measure sits on the text itself
     // (`.msg-prose` in `index.css`, and a person's own words in
@@ -82,7 +75,7 @@ export const messageItem = tv({
     // all: `text-sm` otherwise brings its own 20px. It has to follow `text-sm`
     // here, and `compact`'s `text-xs` below drops it through tailwind-merge, so a
     // compact row keeps the line height of its smaller type.
-    content: 'min-w-0 text-sm leading-[var(--msg-prose-line-height)] desktop:select-text',
+    content: 'min-w-0 text-sm leading-[var(--msg-prose-line-height)]',
   },
   variants: {
     // Role no longer changes layout — only the weight the two voices read at.

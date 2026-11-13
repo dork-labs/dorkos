@@ -1,6 +1,5 @@
 import { MarkdownEditor, type MarkdownEditorProps } from 'blintz';
 import './blintz.css';
-import { cn } from '@/layers/shared/lib';
 import { useResolvedTheme } from '@/layers/shared/model';
 import { MERMAID_SETTINGS } from './mermaid-settings';
 
@@ -59,11 +58,6 @@ export function BlintzCanvas({
   return (
     // The ancestor supplies inherited theme tokens without adding another inset.
     <div data-theme={resolvedTheme} className="dorkos-markdown contents">
-      {/* desktop:select-text — the desktop shell defaults chrome to
-          non-selectable on every platform (index.css). Canvas documents are
-          content, and in view mode (`editable={false}`) the ProseMirror surface
-          is NOT contenteditable, so without this the body-level
-          user-select:none would make the document unselectable (DOR-253). */}
       <MarkdownEditor
         value={value}
         theme={resolvedTheme}
@@ -75,7 +69,7 @@ export function BlintzCanvas({
         onTaskToggleRequest={onTaskToggleRequest}
         wikiLinks={wikiLinks}
         mermaid={loadMermaid}
-        className={cn('desktop:select-text', className)}
+        className={className}
       />
     </div>
   );
