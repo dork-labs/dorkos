@@ -21,6 +21,9 @@ import { findLatestExeDownloadUrl } from '@/lib/desktop-download';
 import { countDownload } from '@/lib/telemetry/download-count';
 
 export const runtime = 'nodejs';
+// Runs on every visit, and the redirect is never cached (DOR-4300); see
+// download/mac/route.ts.
+export const dynamic = 'force-dynamic';
 
 /** Redirect to the newest `.exe` release asset, or 503 when none exists; count the request either way. */
 export async function GET(request: Request): Promise<Response> {
@@ -32,5 +35,8 @@ export async function GET(request: Request): Promise<Response> {
       headers: { 'Content-Type': 'text/plain; charset=utf-8' },
     });
   }
-  return Response.redirect(url, 302);
+  return new Response(null, {
+    status: 302,
+    headers: { Location: url, 'Cache-Control': 'no-store' },
+  });
 }

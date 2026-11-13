@@ -17,6 +17,10 @@ import { findLatestDmgDownloadUrl } from '@/lib/desktop-download';
 import { countDownload } from '@/lib/telemetry/download-count';
 
 export const runtime = 'nodejs';
+// Runs on every visit, and the redirect is never cached anywhere: the first
+// visit after a release must get the new version (DOR-4300). The release
+// lookup keeps its own one-minute copy to stay under GitHub's rate limit.
+export const dynamic = 'force-dynamic';
 
 /** Redirect to the newest `.dmg` release asset, or 503 when none exists; count the request either way. */
 export async function GET(request: Request): Promise<Response> {
@@ -28,5 +32,8 @@ export async function GET(request: Request): Promise<Response> {
       headers: { 'Content-Type': 'text/plain; charset=utf-8' },
     });
   }
-  return Response.redirect(url, 302);
+  return new Response(null, {
+    status: 302,
+    headers: { Location: url, 'Cache-Control': 'no-store' },
+  });
 }
