@@ -53,3 +53,7 @@ Run the changed test files in the verifier, then the package checks and protecte
 Final static verification: node --check exited 0 for every changed test file; git diff --check HEAD exited 0 in both worktrees. Reconstruction from the pinned base matches exactly the recorded case deletions and listed import/blank cleanup. Every retained duplicate body is unchanged. Fresh bytes-based counts match the totals above, and all changed paths are outside the supplied exclusions. These checks do not execute Vitest or prove coverage.
 
 Coordinator update, November 12: dependencies are installed in both worktrees. The initial hook/dependency blocker below is historical; retrying the normal commit with all hooks enabled. Fresh host load was 11.28, below the revised ceiling of 24.
+
+## Verifier change (Nov 13)
+
+Restored the two `never uses an em dash (writing-for-humans)` guards in `dorkbot-templates.test.ts` (onboarding and tour lines). Their ledger reason, "trivial", was wrong: they enforce the writing-for-humans no-em-dash rule on shipped DorkBot copy, and no other test checks it. Net lines removed from tests is now 44 (70 minus the 26 restored).
