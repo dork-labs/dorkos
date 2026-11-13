@@ -7,6 +7,7 @@ import { createLocalBrowserProfileStore } from '../../services/session/local-bro
 import { liveOutsideTurnCheck } from '../../services/session/local-browser/outside-turn.js';
 import { agentWindowLabel } from '../../services/session/local-browser/agent-window/index.js';
 import { handBackWake } from '../../services/session/local-browser/hand-back-wake/index.js';
+import { chatTitleOf } from '../../services/session/chat-messages/chat-message-wiring.js';
 import { eventFanOut } from '../../services/core/event-fan-out.js';
 import { notify } from '../../services/notifications/notification-service.js';
 import { localBrowserChangedAnnouncer } from '../../services/core/streams/live-change-broadcasts.js';
@@ -425,7 +426,8 @@ export async function wireMcpTasksAndSkills(refs: ServerRefs, built: WireMcpTask
       agentIdAtPath: (agentPath) => refs.meshCore?.getByPath(agentPath)?.id,
       realFolder,
     }),
-    (id) => localBrowserProfiles.get(id) !== undefined
+    (id) => localBrowserProfiles.get(id) !== undefined,
+    chatTitleOf
   );
   localBrowserService.windowNames.use(async (sessionId) => {
     const agentPath = await runtimeRegistry.getSessionAgentPath(sessionId);

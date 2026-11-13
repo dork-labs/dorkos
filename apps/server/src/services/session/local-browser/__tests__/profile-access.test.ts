@@ -5,7 +5,12 @@ import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { agentBrowserProfileAgents, eq, type Db } from '@dorkos/db';
 import { createTestDb } from '@dorkos/test-utils/db';
-import { createLocalBrowserProfileAccess } from '../profile-access.js';
+import {
+  BrowserProfileAccessGate,
+  MAX_HOLDER_TITLE,
+  createLocalBrowserProfileAccess,
+  holderTitle,
+} from '../profile-access.js';
 import { loadProfileBindingKey, prepareProfileFolder } from '../profile-folders.js';
 import { createLocalBrowserProfileStore } from '../profile-store.js';
 
@@ -219,5 +224,77 @@ describe('profile folders', () => {
     const key = loadProfileBindingKey(home);
     await writeFile(path.join(home, 'browser-profiles', '.binding-key'), 'short');
     expect(loadProfileBindingKey(home).equals(key)).toBe(false);
+  });
+});
+
+describe('why a chat may not use the Agent browser (DOR-4265)', () => {
+  const refusal = (gate: BrowserProfileAccessGate, selected: string | null, chat: string) => {
+    try {
+      gate.requireShared(selected, chat);
+    } catch (error) {
+      return error as { code: string; message: string };
+    }
+    return null;
+  };
+
+  it('lets the chat it is shared with through', () => {
+    expect(refusal(new BrowserProfileAccessGate(), 'chat-one', 'chat-one')).toBeNull();
+  });
+
+  it('says not_opened, with what to press, when no chat has it', () => {
+    const answer = refusal(new BrowserProfileAccessGate(), null, 'chat-one');
+    expect(answer?.code).toBe('not_opened');
+    expect(answer?.message).toContain('Open browser in this chat’s right panel');
+    // Honest for room chats: only a direct chat can share it.
+    expect(answer?.message).toContain('direct chat');
+  });
+
+  it('says shared_elsewhere and names the other chat by its title, never its id', async () => {
+    const gate = new BrowserProfileAccessGate();
+    gate.use(
+      async () => undefined,
+      () => true,
+      async () => 'Quarterly invoices'
+    );
+    await gate.rememberHolder('chat-secret-id');
+    const answer = refusal(gate, 'chat-secret-id', 'chat-two');
+    expect(answer?.code).toBe('shared_elsewhere');
+    expect(answer?.message).toContain('“Quarterly invoices”');
+    expect(answer?.message).toContain('Move browser here');
+    expect(answer?.message).not.toContain('chat-secret-id');
+  });
+
+  it('says "another chat" when the title is unknown or its lookup fails', async () => {
+    const gate = new BrowserProfileAccessGate();
+    gate.use(
+      async () => undefined,
+      () => true,
+      async () => {
+        throw new Error('runtime down');
+      }
+    );
+    await gate.rememberHolder('chat-one');
+    const answer = refusal(gate, 'chat-one', 'chat-two');
+    expect(answer?.code).toBe('shared_elsewhere');
+    expect(answer?.message).toMatch(/in another chat\. Ask/);
+  });
+
+  it('never names a stale holder after the browser moved', async () => {
+    const gate = new BrowserProfileAccessGate();
+    gate.use(
+      async () => undefined,
+      () => true,
+      async (id) => (id === 'chat-one' ? 'Old title' : null)
+    );
+    await gate.rememberHolder('chat-one');
+    expect(refusal(gate, 'chat-three', 'chat-two')?.message).not.toContain('Old title');
+  });
+
+  it('strips control and direction characters from a title and caps its length', () => {
+    expect(holderTitle('Plans\u202e\nfor\u0007 May')).toBe('Plans for May');
+    expect(holderTitle('   ')).toBeNull();
+    const long = holderTitle('x'.repeat(MAX_HOLDER_TITLE + 10));
+    expect(Array.from(long!)).toHaveLength(MAX_HOLDER_TITLE + 1);
+    expect(long!.endsWith('…')).toBe(true);
   });
 });

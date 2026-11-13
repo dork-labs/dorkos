@@ -698,6 +698,34 @@ describe('local browser ownership and observations', () => {
     await service.disconnect();
     expect(() => service.requireSharedSession('chat-one')).toThrow();
   });
+  it('moving the browser to another chat takes it from the first chat’s agent (DOR-4265)', async () => {
+    const { service } = await create();
+    service.useProfileAccess(
+      async () => undefined,
+      () => true,
+      async (id) => (id === 'chat-one' ? 'Quarterly invoices' : 'Trip plans')
+    );
+    await service.open({ mode: 'new-window', sessionId: 'chat-one' });
+    expect(() => service.requireSharedSession('chat-two')).toThrow(
+      expect.objectContaining({
+        code: 'shared_elsewhere',
+        message: expect.stringContaining('“Quarterly invoices”'),
+      })
+    );
+    // Move browser here is the same person-clicked open, from the second chat.
+    await service.open({ mode: 'new-window', sessionId: 'chat-two' });
+    expect(() => service.requireSharedSession('chat-two')).not.toThrow();
+    expect(() => service.requireSharedSession('chat-one')).toThrow(
+      expect.objectContaining({
+        code: 'shared_elsewhere',
+        message: expect.stringContaining('“Trip plans”'),
+      })
+    );
+    await service.disconnect();
+    expect(() => service.requireSharedSession('chat-two')).toThrow(
+      expect.objectContaining({ code: 'not_opened' })
+    );
+  });
 
   it('closes the embedded bridge transport and guest without closing an owned context', async () => {
     const f = await create();

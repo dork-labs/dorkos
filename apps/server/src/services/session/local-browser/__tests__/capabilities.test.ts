@@ -13,6 +13,7 @@ import { createLocalBrowserDomain } from '../capabilities.js';
 import { BrowserHandover } from '../handover.js';
 import type { SignInWindow } from '../sign-in-window.js';
 import { LocalBrowserError, type LocalBrowserService } from '../service.js';
+import { _UI_TOOLS_CONTEXT } from '../../../runtimes/claude-code/messaging/context-builder.js';
 
 function setup() {
   const state: LocalBrowserState = {
@@ -32,7 +33,7 @@ function setup() {
     requireSharedSession: vi.fn((id: string) => {
       if (id !== 'chat-one')
         throw new LocalBrowserError(
-          'not_shared',
+          'shared_elsewhere',
           'Open this chat’s browser to share it with your agent.'
         );
     }),
@@ -172,7 +173,7 @@ describe('local browser scoped tool projection', () => {
     const result = read.invoke(deps, {}, context('chat-one'));
     service.requireSharedSession.mockImplementation(() => {
       throw new LocalBrowserError(
-        'not_shared',
+        'shared_elsewhere',
         'Open this chat’s browser to share it with your agent.'
       );
     });
@@ -258,7 +259,7 @@ describe('local browser scoped tool projection', () => {
     for (const capability of domain.capabilities)
       await expect(
         (async () => capability.invoke(deps, inputFor(capability.id), context('chat-two')))()
-      ).rejects.toMatchObject({ payload: { code: 'not_shared' } });
+      ).rejects.toMatchObject({ payload: { code: 'shared_elsewhere' } });
     expect(service.observe).not.toHaveBeenCalled();
     expect(service.screenshot).not.toHaveBeenCalled();
     expect(service.action).not.toHaveBeenCalled();
@@ -384,7 +385,7 @@ describe('local browser scoped tool projection', () => {
       // The real browser forgets its chat when it closes, as requireSharedSession then sees.
       disconnect: vi.fn(async () => {
         service.requireSharedSession.mockImplementation(() => {
-          throw new LocalBrowserError('not_shared', 'Open this chat’s browser.');
+          throw new LocalBrowserError('not_opened', 'Open this chat’s browser.');
         });
         return service.agentState();
       }),
@@ -400,10 +401,23 @@ describe('local browser scoped tool projection', () => {
       await expect(
         (async () => capability.invoke(deps, inputFor(capability.id), context('chat-one')))()
       ).rejects.toMatchObject({ payload: { code: 'task_stopped' } });
-    // Any other chat still only hears that the browser isn't shared with it.
+    // Any other chat still only hears that the browser isn't open.
     await expect(
       (async () => tool('local_browser.state').invoke(deps, {}, context('chat-two')))()
-    ).rejects.toMatchObject({ payload: { code: 'not_shared' } });
+    ).rejects.toMatchObject({ payload: { code: 'not_opened' } });
+  });
+  it('tells agents what each refusal asks of the person (DOR-4265)', () => {
+    const { domain } = setup();
+    const state = domain.capabilities.find((item) => item.id === 'local_browser.state')!;
+    expect(state.description).toContain('not_opened');
+    expect(state.description).toContain('Open browser in this chat’s right panel');
+    expect(state.description).toContain('direct chat');
+    expect(state.description).toContain('shared_elsewhere');
+    expect(state.description).toContain('Move browser here');
+    expect(state.description).not.toContain('not_shared');
+    // The always-on instructions say the same: a direct chat opens it, and how to move it.
+    expect(_UI_TOOLS_CONTEXT).toContain('direct chat with you:\nOpen browser in its right panel');
+    expect(_UI_TOOLS_CONTEXT).toContain('Move browser here if another chat has it');
   });
   it('lets no agent name the site it hands over', () => {
     const { domain } = setup();

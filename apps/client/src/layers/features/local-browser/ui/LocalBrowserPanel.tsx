@@ -15,6 +15,7 @@ import { useActionFocusReturn } from '../model/use-action-focus-return';
 import { BrowserPreparation } from './BrowserPreparation';
 import { WaitingElsewhere } from './WaitingElsewhere';
 import { SavedSignIns } from './SavedSignIns';
+import { SharedElsewhere } from './SharedElsewhere';
 
 export interface LocalBrowserPanelProps {
   visible?: boolean;
@@ -252,6 +253,9 @@ export function LocalBrowserPanel({
       {waitingElsewhere && <WaitingElsewhere sessionId={waitingElsewhere.sessionId} />}
       {!connected && !waitingElsewhere && (
         <div className="min-h-0 space-y-3 overflow-y-auto">
+          {sessionId && !state?.mode && (
+            <p className="text-sm">Open a browser {agentName || 'this chat’s agent'} can use.</p>
+          )}
           {choiceIssue && (
             <p className="text-muted-foreground text-xs">
               {needsChoice
@@ -281,13 +285,16 @@ export function LocalBrowserPanel({
           </Button>
         </div>
       )}
-      {connected && !waitingElsewhere && (
+      {connected && !waitingElsewhere && sharedElsewhere && (
+        <SharedElsewhere
+          holderSessionId={state.sessionId!}
+          canMoveHere={!!sessionId}
+          disabled={busy || cancelling || !supported}
+          onMoveHere={open}
+        />
+      )}
+      {connected && !waitingElsewhere && !sharedElsewhere && (
         <>
-          {sharedElsewhere && (
-            <p className="text-muted-foreground text-xs">
-              Shared with another chat. Disconnect to use it here.
-            </p>
-          )}
           {!state.sessionId && (
             <p className="text-muted-foreground text-xs">
               Only you can use this page. Open from an agent chat to share it.
@@ -330,11 +337,7 @@ export function LocalBrowserPanel({
             </Button>
           </div>
           <label className="text-sm">
-            {state.sessionId
-              ? sharedElsewhere
-                ? 'Shared with another chat'
-                : `Shared with ${agentName || 'this chat’s agent'}`
-              : 'Browser tab'}
+            {state.sessionId ? `Shared with ${agentName || 'this chat’s agent'}` : 'Browser tab'}
             <select
               className="bg-muted/40 mt-1 block w-full rounded-md p-2"
               value={state.selectedTabId ?? ''}
@@ -395,7 +398,7 @@ export function LocalBrowserPanel({
           {mode === 'embedded' && (
             <p className="text-muted-foreground text-xs">This page stays in the right panel.</p>
           )}
-          {mode === 'embedded' && !sharedElsewhere && (
+          {mode === 'embedded' && (
             <p className="text-muted-foreground text-xs">
               {state.sessionId
                 ? 'Extra windows are for you. Your agent stays on this page.'

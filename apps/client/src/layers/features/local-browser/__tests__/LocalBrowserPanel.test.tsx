@@ -24,6 +24,11 @@ vi.mock('@tanstack/react-router', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@tanstack/react-router')>()),
   useNavigate: () => navigate,
 }));
+const sessionRow = vi.hoisted(() => vi.fn());
+vi.mock('@/layers/entities/session', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/layers/entities/session')>()),
+  useSessionRow: sessionRow,
+}));
 vi.mock('@/layers/shared/model', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/layers/shared/model')>()),
   useTransport: () => transport,
@@ -70,11 +75,11 @@ function holdOpening() {
   transport.openLocalBrowser.mockReturnValue(promise);
   return { resolve, reject };
 }
-function mount(visible = true) {
+function mount(visible = true, sessionId: string | null = 'chat-one') {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
   const view = render(
     <QueryClientProvider client={client}>
-      <LocalBrowserPanel visible={visible} sessionId="chat-one" agentName="Kai" />
+      <LocalBrowserPanel visible={visible} sessionId={sessionId} agentName="Kai" />
     </QueryClientProvider>
   );
   return { ...view, client };
@@ -87,6 +92,9 @@ beforeEach(() => {
   transport.getLocalBrowserState.mockResolvedValue(disconnected);
   transport.getLocalBrowserCapabilities.mockResolvedValue(capabilities);
   transport.openLocalBrowser.mockResolvedValue(connected);
+  sessionRow.mockImplementation((id: string | null) => ({
+    data: id === 'other-chat' ? { id, title: 'Quarterly invoices' } : undefined,
+  }));
 });
 afterEach(() => {
   delete window.electronAPI;
@@ -97,8 +105,58 @@ describe('LocalBrowserPanel', () => {
   it('never labels another chat’s browser with the current agent name', async () => {
     transport.getLocalBrowserState.mockResolvedValue({ ...connected, sessionId: 'other-chat' });
     mount();
-    expect(await screen.findByLabelText('Shared with another chat')).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: 'Quarterly invoices' })).toBeInTheDocument();
     expect(screen.queryByLabelText('Shared with Kai')).not.toBeInTheDocument();
+  });
+  describe('while another chat holds the browser (DOR-4265)', () => {
+    const elsewhere = { ...connected, sessionId: 'other-chat' };
+    it('names that chat by its title and links to it', async () => {
+      transport.getLocalBrowserState.mockResolvedValue(elsewhere);
+      mount();
+      expect(await screen.findByText(/In use in/)).toBeInTheDocument();
+      fireEvent.click(screen.getByRole('button', { name: 'Quarterly invoices' }));
+      expect(navigate).toHaveBeenCalledExactlyOnceWith(
+        expect.objectContaining({ search: expect.objectContaining({ session: 'other-chat' }) })
+      );
+      // Nothing of that chat but its title: no tabs, address, or controls for its page.
+      expect(screen.queryByRole('combobox')).toBeNull();
+      expect(screen.queryByLabelText('Web address')).toBeNull();
+      expect(screen.queryByText('First page')).toBeNull();
+      for (const name of ['Pause agent', 'Resume agent', 'Disconnect'])
+        expect(screen.queryByRole('button', { name })).toBeNull();
+    });
+    it('falls back to a plain name while the title is unknown', async () => {
+      sessionRow.mockReturnValue({ data: undefined });
+      transport.getLocalBrowserState.mockResolvedValue(elsewhere);
+      mount();
+      expect(await screen.findByRole('button', { name: 'New chat' })).toBeInTheDocument();
+    });
+    it('moves the browser here with one click, opening it for this chat', async () => {
+      transport.getLocalBrowserState.mockResolvedValue(elsewhere);
+      mount();
+      fireEvent.click(await screen.findByRole('button', { name: 'Move browser here' }));
+      await waitFor(() =>
+        expect(transport.openLocalBrowser).toHaveBeenCalledExactlyOnceWith({
+          mode: 'new-window',
+          sessionId: 'chat-one',
+        })
+      );
+      expect(await screen.findByLabelText('Shared with Kai')).toBeInTheDocument();
+    });
+    it('in a room, names the chat but offers no move', async () => {
+      transport.getLocalBrowserState.mockResolvedValue(elsewhere);
+      mount(true, null);
+      expect(await screen.findByRole('button', { name: 'Quarterly invoices' })).toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: 'Move browser here' })).toBeNull();
+      expect(
+        screen.getByText('Open a direct chat with an agent to share it there.')
+      ).toBeInTheDocument();
+    });
+  });
+  it('with nothing shared, leads with Open browser for this chat’s agent', async () => {
+    mount();
+    expect(await screen.findByText('Open a browser Kai can use.')).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: 'Open browser' })).toBeEnabled();
   });
   describe('while another chat’s agent waits on a person', () => {
     const elsewhere = {
@@ -146,10 +204,7 @@ describe('LocalBrowserPanel', () => {
         signIn: null,
       });
       mount();
-      expect(
-        await screen.findByText('Shared with another chat. Disconnect to use it here.')
-      ).toBeInTheDocument();
-      expect(screen.getByRole('button', { name: 'Disconnect' })).toBeInTheDocument();
+      expect(await screen.findByRole('button', { name: 'Move browser here' })).toBeEnabled();
       expect(await screen.findByLabelText('Saved sign-ins')).toBeInTheDocument();
     });
     it('keeps the controls in the waiting chat’s own panel', async () => {
@@ -802,9 +857,7 @@ describe('LocalBrowserPanel', () => {
     act(() =>
       view.client.setQueryData(['local-browser', 'state'], { ...native, sessionId: 'another-chat' })
     );
-    expect(
-      await screen.findByText('Shared with another chat. Disconnect to use it here.')
-    ).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: 'Move browser here' })).toBeInTheDocument();
     await waitFor(() => expect(setBounds.mock.calls.at(-1)?.[0].visible).toBe(false));
   });
   it('keeps unexpected browser process errors out of recovery copy', async () => {

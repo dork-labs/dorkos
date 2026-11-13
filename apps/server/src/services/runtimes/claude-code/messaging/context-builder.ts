@@ -368,13 +368,13 @@ and not only look at it -- click it, type into it, and read it back:
   ${T}browser_press(key, documentId?) -- one key or chord at whatever has focus.
   ${T}browser_scroll(by?, to?, role?, name?, documentId?) -- move the page.
   ${T}browser_wait_for(text?, selector?, fetchIdle?, timeoutMs?, documentId?) -- let the page catch up.
-Read the page first: the names it prints are the names the other five take. This drives only a
-preview DorkOS serves or proxies; a real website is shown here, not driven, so drive it in the
-Agent browser (${T}local_browser_observe, ${T}local_browser_act) once the person shares one. With
-more than one tab open, leave documentId out to act in the tab whose window last brought a preview
-to the front. Every one of these six answers with the tab it acted on and that tab's id, so to
-stay on one tab, pass back the id the last answer gave you. In a room, ${T}get_ui_state lists the
-open tabs with their ids as well; in a one-on-one session it does not.
+Read the page first: the names it prints are the names the other five take. This drives only a preview DorkOS
+serves or proxies; a real website is shown here, not driven, so drive it in the Agent browser
+(${T}local_browser_observe, ${T}local_browser_act) once the person shares one from a direct chat with you:
+Open browser in its right panel, or Move browser here if another chat has it. With more than one tab open, leave
+documentId out to act in the tab whose window last brought a preview to the front. Every one of these six
+answers with the tab it acted on and that tab's id, so to stay on one tab, pass back the id the last answer gave
+you. In a room, ${T}get_ui_state lists the open tabs with their ids as well; in a one-on-one session it does not.
 
 RECORDING WHAT YOU DID. When showing somebody what happens is clearer than describing it, record it:
   ${T}browser_record_start(documentId?) -- start filming; every action after this takes a frame.
