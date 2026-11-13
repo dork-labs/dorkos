@@ -1,7 +1,12 @@
 {
  "schema": 1,
- "updated_at": "2026-11-12T13:39:08.122Z",
+ "updated_at": "2026-11-13T12:57:32.874Z",
  "days": [
+  {
+   "date": "2026-11-12",
+   "light": "red",
+   "headline": "2 machines running the hooks is saturated — RAM: 375 MB free p10."
+  },
   {
    "date": "2026-11-11",
    "light": "red",
