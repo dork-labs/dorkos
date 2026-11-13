@@ -62,19 +62,19 @@ BrowserOS removed enforced tab ownership on purpose (`page_ownership_notice.rs`)
 
 All permissive licences (MIT, Apache-2.0 with NOTICE, ISC). Copied code keeps its licence header and attribution. AGPL projects are design only, never code.
 
-| Borrow                                                                                                    | From                | Licence             | For                                                                                                                                                                               |
-| --------------------------------------------------------------------------------------------------------- | ------------------- | ------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `session-tab-{registry,store,tracking,identity,cleanup-claim}.ts`, the tab filter in `browser-request.ts` | OpenClaw            | MIT                 | Ownership by owner key + target id, kept across restarts, filtered tab lists, close-only-if-owner, a per-owner tab cap, idle cleanup. Our owner key is the server-stamped chat id |
-| `operator-control.ts`                                                                                     | OpenClaw            | MIT                 | The person-holds-the-page lock: refuses agent input at one boundary, keeps observation for the person, releases on idle or disconnect (Must 2)                                    |
-| `bindings.ts`, `core/lock.ts`                                                                             | nanobrowser         | Apache-2.0          | Tab-to-chat binding, moving a tab only with the person's OK, popups join the opener, a per-tab lock                                                                               |
-| `tab_locked` / `tab_gone` errors                                                                          | agent-browser       | Apache-2.0 (design) | Clear agent-facing errors for "someone else's tab" and "your tab closed"                                                                                                          |
-| Per-page task queue (`ToolHandler.ts`, `McpContext.ts`)                                                   | Chrome DevTools MCP | Apache-2.0          | Actions on one page never interleave                                                                                                                                              |
-| `navigation-guard.ts`                                                                                     | OpenClaw            | MIT                 | Per-page allow and block lists, private-network and redirect-chain checks (Must 4)                                                                                                |
-| `LEASE_HELD` / `LEASE_REQUIRED`, popups follow the opener                                                 | Skyvern             | AGPL (design only)  | Confirms the error model above                                                                                                                                                    |
+| Borrow                                                                                                    | From                | Licence             | For                                                                                                                                                                                                                                                                        |
+| --------------------------------------------------------------------------------------------------------- | ------------------- | ------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `session-tab-{registry,store,tracking,identity,cleanup-claim}.ts`, the tab filter in `browser-request.ts` | OpenClaw            | MIT                 | Ownership by owner key + target id, kept across restarts, filtered tab lists, close-only-if-owner, a per-owner tab cap, idle cleanup. Our owner key is the server-stamped chat id                                                                                          |
+| `operator-control.ts`                                                                                     | OpenClaw            | MIT                 | The person-holds-the-page lock: refuses agent input at one boundary, keeps observation for the person (Must 2). OpenClaw releases the lock on idle or disconnect; ours differs: **on idle or disconnect, the page goes back to the person (unowned), never to the agent.** |
+| `bindings.ts`, `core/lock.ts`                                                                             | nanobrowser         | Apache-2.0          | Tab-to-chat binding, moving a tab only with the person's OK, popups join the opener, a per-tab lock                                                                                                                                                                        |
+| `tab_locked` / `tab_gone` errors                                                                          | agent-browser       | Apache-2.0 (design) | Clear agent-facing errors for "someone else's tab" and "your tab closed"                                                                                                                                                                                                   |
+| Per-page task queue (`ToolHandler.ts`, `McpContext.ts`)                                                   | Chrome DevTools MCP | Apache-2.0          | Actions on one page never interleave                                                                                                                                                                                                                                       |
+| `navigation-guard.ts`                                                                                     | OpenClaw            | MIT                 | Per-page allow and block lists, private-network and redirect-chain checks (Must 4)                                                                                                                                                                                         |
+| `LEASE_HELD` / `LEASE_REQUIRED`, popups follow the opener                                                 | Skyvern             | AGPL (design only)  | Confirms the error model above                                                                                                                                                                                                                                             |
 
 ## The tab broker boundary
 
-Put the broker in one directory with **no server imports**, so it can become a package later (report §8). It holds:
+Put the broker in one directory with **no server imports**, so it can become a package later (report §8; API and publishing criteria in [`specs/agent-browser-tab-broker/`](../agent-browser-tab-broker/02-specification.md)). It holds:
 
 - owner ids, bind, adopt and release, popups following the opener, idle cleanup and the tab cap, with persistence through an injected store;
 - the takeover lease: hold, release, idle timeout, refusing agent input;
@@ -93,10 +93,16 @@ These stay in DorkOS, outside the broker: chat, room and agent identity; permiss
 - The agent-facing instruction block ships in the same release (release gate).
 - Security's deep read of the design before build and of the PR before arming.
 
-## Out of scope
+## Out of scope, and where each one lives
 
-- Parallel pages in the embedded DorkOS-browser panel: DOR-4289.
+- Parallel pages in the embedded DorkOS-browser panel: DOR-4289, [`specs/agent-browser-panel-parallel-pages/`](../agent-browser-panel-parallel-pages/02-specification.md).
+- Streaming the page for remote and cloud viewing: DOR-2667, [`specs/agent-browser-page-stream/`](../agent-browser-page-stream/02-specification.md).
+- Deleting the managed engine: DOR-4284, [`specs/managed-browser-engine-removal/`](../managed-browser-engine-removal/02-specification.md).
+- Home-network routing for cloud browsers: DOR-4290, [`specs/cloud-browser-home-route/`](../cloud-browser-home-route/02-specification.md).
+- "Use my own Chrome": DOR-3214, [`specs/agent-browser-own-chrome/`](../agent-browser-own-chrome/01-ideation.md).
+- Publishing the broker as a package: [`specs/agent-browser-tab-broker/`](../agent-browser-tab-broker/02-specification.md).
 - Named profiles: DOR-3218.
-- Streaming the page for remote and cloud viewing: DOR-2667.
-- "Use my own Chrome": DOR-3214.
-- Publishing the broker as a package.
+
+## Order and date
+
+Build Wed Nov 18 to Tue Nov 24. Target: **Wed Nov 25, 2026.**

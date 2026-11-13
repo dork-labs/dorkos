@@ -1,0 +1,9 @@
+{
+  "id": "261113-215632",
+  "slug": "agent-browser-panel-parallel-pages",
+  "title": "Agent browser: a page per chat in the DorkOS-browser panel",
+  "created": "2026-11-13",
+  "status": "draft",
+  "project": "After launch: agent browser profiles and global MCP polish",
+  "linearIssue": "DOR-4289"
+}

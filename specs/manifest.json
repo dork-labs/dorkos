@@ -11,6 +11,60 @@
       "linearIssue": "DOR-4273"
     },
     {
+      "id": "261113-215632",
+      "slug": "agent-browser-panel-parallel-pages",
+      "title": "Agent browser: a page per chat in the DorkOS-browser panel",
+      "created": "2026-11-13",
+      "status": "draft",
+      "project": "After launch: agent browser profiles and global MCP polish",
+      "linearIssue": "DOR-4289"
+    },
+    {
+      "id": "261113-215633",
+      "slug": "agent-browser-page-stream",
+      "title": "Agent browser: watch and take over the live page from anywhere",
+      "created": "2026-11-13",
+      "status": "draft",
+      "project": "After launch: agent browser profiles and global MCP polish",
+      "linearIssue": "DOR-2667"
+    },
+    {
+      "id": "261113-215635",
+      "slug": "managed-browser-engine-removal",
+      "title": "Delete the parked managed browser engine",
+      "created": "2026-11-13",
+      "status": "draft",
+      "project": "After launch: agent browser profiles and global MCP polish",
+      "linearIssue": "DOR-4284"
+    },
+    {
+      "id": "261113-215634",
+      "slug": "cloud-browser-home-route",
+      "title": "A cloud agent's browser can go out through your home connection (opt-in)",
+      "created": "2026-11-13",
+      "status": "draft",
+      "project": "After launch: agent browser profiles and global MCP polish",
+      "linearIssue": "DOR-4290"
+    },
+    {
+      "id": "261113-215636",
+      "slug": "agent-browser-tab-broker",
+      "title": "The tab broker: a boundary we can package later",
+      "created": "2026-11-13",
+      "status": "draft",
+      "project": "After launch: agent browser profiles and global MCP polish",
+      "linearIssue": "DOR-4273"
+    },
+    {
+      "id": "261113-215637",
+      "slug": "agent-browser-own-chrome",
+      "title": "Use my own Chrome: problem statement",
+      "created": "2026-11-13",
+      "status": "ideation",
+      "project": "After launch: agent browser profiles and global MCP polish",
+      "linearIssue": "DOR-3214"
+    },
+    {
       "id": "261015-144648",
       "slug": "request-classifier",
       "title": "One request classifier and the registration-policy seam (F0)",
