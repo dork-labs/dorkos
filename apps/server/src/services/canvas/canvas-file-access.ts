@@ -94,7 +94,7 @@ export function canvasContentRefusal(
   return base === undefined ? null : protectedSourceRefusal(source, base);
 }
 
-/** Why a session canvas cannot show a local file: it is outside the chat's folder. */
+/** Why a room canvas will not show a local file: it is outside the agent's folder. */
 export interface OutsideFolderRefusal {
   /** Always `OUTSIDE_FOLDER`. */
   code: 'OUTSIDE_FOLDER';
@@ -103,16 +103,13 @@ export interface OutsideFolderRefusal {
 }
 
 /**
- * Why a SESSION canvas could never show the local file a command names, or
- * `null` when it names none or can (DOR-3519).
+ * Why a ROOM canvas will not show the local file a command names, or `null`
+ * when it names none or may (DOR-3519).
  *
- * The app reads a session canvas's file through `/api/files/raw` and
- * `/api/files/content`, both confined to the chat's folder by
- * {@link resolveWithinCwd}. This asks that same question when the command
- * arrives, so a file outside the folder (or a link inside it that points out)
- * is an error the agent reads, not a success and an empty pane. It widens
- * nothing: it only refuses what the routes would refuse anyway. A room canvas
- * answers this through its own media copy instead.
+ * A room copies what its canvas shows to every other member, so a file outside
+ * the agent's folder (or a link inside it that points out) is an error the
+ * agent reads, asked with the file routes' own {@link resolveWithinCwd}. Only
+ * the room paths call this: the person's own one-on-one window is not asked.
  *
  * @param command - The validated `control_ui` command.
  * @param cwd - The chat's folder, which the app reads the file against.

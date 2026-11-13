@@ -254,6 +254,24 @@ export async function controlUi(
   // for the same turn in the same place.
   const target = 'target' in command ? command.target : undefined;
   const targetsAnotherRoom = target !== undefined && target.roomId !== roomTurn?.roomId;
+
+  // **A room canvas shows only files from the agent's folder** (DOR-3519).
+  // A room copies what it shows to every other member, so a path outside the
+  // folder is an error naming it, before any document or event exists. The
+  // person's own one-on-one window is not asked this: it opens what it always did.
+  const toRoom = roomTurn !== undefined || (targetsAnotherRoom && CANVAS_VERBS.has(command.action));
+  const outsideFolder = toRoom
+    ? await canvasOutsideFolderRefusal(command, roomTurn?.cwd ?? caller.cwd)
+    : null;
+  if (outsideFolder !== null) {
+    throw new CapabilityToolError({
+      success: false,
+      action: command.action,
+      code: outsideFolder.code,
+      error: outsideFolder.message,
+    });
+  }
+
   if (targetsAnotherRoom && CANVAS_VERBS.has(command.action)) {
     return applyToTargetedRoom({
       sessionId,
@@ -315,20 +333,6 @@ export async function controlUi(
       rev: applied.rev,
       viewers: applied.viewers,
     };
-  }
-
-  // **A session canvas shows only what the chat's folder serves** (DOR-3519).
-  // The app reads the file back through the folder-confined file routes, so a
-  // path outside the folder would answer success here and show nothing there.
-  // Say so now, naming the path, before any document or event exists.
-  const outsideFolder = await canvasOutsideFolderRefusal(command, caller.cwd);
-  if (outsideFolder !== null) {
-    throw new CapabilityToolError({
-      success: false,
-      action: command.action,
-      code: outsideFolder.code,
-      error: outsideFolder.message,
-    });
   }
 
   // **A canvas verb in a SESSION is a write too** (spec `canvas-agent-seat`

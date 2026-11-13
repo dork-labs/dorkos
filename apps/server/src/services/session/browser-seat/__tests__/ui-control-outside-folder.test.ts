@@ -1,12 +1,10 @@
 /**
- * A session canvas opened on a local file outside the agent's folder answers
- * with an error naming the path, instead of success and an empty pane (DOR-3519).
+ * A room canvas opened on a local file outside the agent's folder answers with
+ * an error naming the path (DOR-3519). A room copies what its canvas shows to
+ * every other member, so the call has to refuse when it is made.
  *
- * The app reads a session canvas's local file through `/api/files/raw` and
- * `/api/files/content`, both confined to the chat's folder by `resolveWithinCwd`.
- * So a `src` or `sourcePath` outside it, or a link inside it that points out,
- * can never show; the call has to say so when it is made. Nothing here widens
- * what the canvas serves: the same file copied into the folder still opens.
+ * The person's own one-on-one window is not asked this (Security's ruling): it
+ * opens an outside-folder file exactly as it did before.
  *
  * Real files in a temp tree, a real boundary at its root, a real canvas writer
  * over an in-memory database.
@@ -28,6 +26,7 @@ import { controlUi } from '../ui-control.js';
 import { uiTurnFacts } from '../ui-turn-facts.js';
 
 const SESSION = 'sess-3519';
+const ROOM = 'room-3519';
 
 let root: string;
 let agent: string;
@@ -47,6 +46,13 @@ async function control(
     }
     throw err;
   }
+}
+
+/** Make this session's turn a room turn, placed in the agent's folder. */
+function inRoom(): void {
+  uiTurnFacts.bindTurn(SESSION, {
+    roomTurn: { roomId: ROOM, authorId: 'agent-media', turnId: 'turn-1', cwd: agent },
+  });
 }
 
 beforeEach(async () => {
@@ -76,28 +82,31 @@ beforeEach(async () => {
 
 afterEach(() => {
   vi.unstubAllEnvs();
+  uiTurnFacts.clear();
   db.$client.close();
   fs.rmSync(root, { recursive: true, force: true });
 });
 
 const MEDIA = ['image', 'pdf', 'audio', 'video', 'model3d', 'csv'] as const;
 
-describe('a local file outside the agent folder (DOR-3519)', () => {
+describe("a local file outside the agent folder, on a room's canvas (DOR-3519)", () => {
   it.each(MEDIA)('open_canvas %s with an outside src is an error naming the path', async (type) => {
+    inRoom();
     const src = path.join(outside, 'clip.mp4');
     const { payload, isError } = await control({ action: 'open_canvas', content: { type, src } });
     expect(isError).toBe(true);
     expect(payload.code).toBe('OUTSIDE_FOLDER');
     expect(String(payload.error)).toContain(src);
     expect(String(payload.error)).toContain('copy it into your folder');
-    // Refused before anything is written: no document exists to send a window.
-    expect(canvas.list(sessionScope(SESSION))).toEqual([]);
+    // Refused before anything is written: no document exists in the room.
+    expect(canvas.list(ROOM)).toEqual([]);
   });
 
   it.each([
     ['a file:// src', { type: 'video', src: '' }],
     ['a link inside the folder that points out', { type: 'video', src: 'link/clip.mp4' }],
   ])('refuses %s too', async (_name, content) => {
+    inRoom();
     const src = content.src === '' ? `file://${path.join(outside, 'clip.mp4')}` : content.src;
     const { payload, isError } = await control({
       action: 'open_canvas',
@@ -119,25 +128,58 @@ describe('a local file outside the agent folder (DOR-3519)', () => {
       }),
     ],
   ])('%s outside the folder is an error too', async (_name, args) => {
+    inRoom();
     const { payload, isError } = await control(args());
     expect(isError).toBe(true);
     expect(payload.code).toBe('OUTSIDE_FOLDER');
   });
 
+  it('a canvas verb targeted at a room from a one-on-one chat is refused the same way', async () => {
+    const src = path.join(outside, 'clip.mp4');
+    const { payload, isError } = await control({
+      action: 'open_canvas',
+      content: { type: 'video', src },
+      target: { roomId: ROOM },
+    });
+    expect(isError).toBe(true);
+    expect(payload.code).toBe('OUTSIDE_FOLDER');
+  });
+});
+
+describe('the person’s own one-on-one window opens what it did before (Security, DOR-3519)', () => {
+  it.each(MEDIA)('open_canvas %s with an outside src still opens', async (type) => {
+    const src = path.join(outside, 'clip.mp4');
+    const { payload, isError } = await control({ action: 'open_canvas', content: { type, src } });
+    expect(isError).toBe(false);
+    expect(payload.success).toBe(true);
+    expect(canvas.list(sessionScope(SESSION))).toHaveLength(1);
+  });
+
+  it.each([
+    ['open_file', { action: 'open_file', sourcePath: 'OUTSIDE/notes.md' }],
+    [
+      'open_canvas file',
+      { action: 'open_canvas', content: { type: 'file', sourcePath: 'OUTSIDE/notes.md' } },
+    ],
+    [
+      'a link that points out',
+      { action: 'open_canvas', content: { type: 'video', src: 'link/clip.mp4' } },
+    ],
+  ])('%s outside the folder still opens', async (_name, args) => {
+    const resolved = JSON.parse(JSON.stringify(args).replace('OUTSIDE/', `${outside}/`));
+    const { isError } = await control(resolved);
+    expect(isError).toBe(false);
+  });
+
   it.each([
     ['a relative src', { action: 'open_canvas', content: { type: 'video', src: 'clip.mp4' } }],
-    [
-      'an absolute src inside',
-      { action: 'open_canvas', content: { type: 'video', src: 'AGENT/clip.mp4' } },
-    ],
     ['open_file inside', { action: 'open_file', sourcePath: 'notes.md' }],
     [
       'a web src',
       { action: 'open_canvas', content: { type: 'image', src: 'https://example.com/a.png' } },
     ],
   ])('still opens %s', async (_name, args) => {
-    const resolved = JSON.parse(JSON.stringify(args).replace('AGENT/', `${agent}/`));
-    const { isError } = await control(resolved);
+    const { isError } = await control(args);
     expect(isError).toBe(false);
   });
 });

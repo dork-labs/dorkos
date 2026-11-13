@@ -362,11 +362,11 @@ export function buildUiActionCatalog(options: UiCatalogOptions = {}): string {
 
 /**
  * What a local `src` may name, said the same way in the tool description and in
- * `<ui_tools>` (DOR-3519): the session canvas reads it back through the
- * folder-confined file routes, and `control_ui` refuses anything else up front.
+ * `<ui_tools>` (DOR-3519): a room copies what its canvas shows to every member, so
+ * `control_ui` refuses a file outside the folder up front. A one-on-one window is not asked.
  */
 export const CANVAS_LOCAL_SRC_RULE =
-  'A local src must be inside your own folder. Anything else returns an error naming the path, so copy the file in first.';
+  "On a room's canvas, a local src must be inside your own folder. Anything else returns an error naming the path, so copy the file in first.";
 
 /**
  * Tool description for control_ui (shared between the Claude in-process tool and
