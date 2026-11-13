@@ -11,9 +11,6 @@ import { SessionStore } from '../session-store.js';
 import { alwaysAllowBreadthOf, narrowToTool } from '../../tool-gate/always-allow-breadth.js';
 
 vi.mock('@anthropic-ai/claude-agent-sdk', () => ({ forkSession: vi.fn() }));
-vi.mock('../../../../../lib/logger.js', () => ({
-  logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
-}));
 
 const SESSION_ID = 'session-answering-an-mcp-card';
 const TOOL_CALL_ID = 'tool-mcp-1';
