@@ -56,6 +56,34 @@ export const OPENCODE_DORKOS_TOOL_PREFIX = `${DORKOS_MCP_SERVER_NAME}_`;
 export const CLAUDE_CODE_DORKOS_TOOL_PREFIX = `mcp__${DORKOS_MCP_SERVER_NAME}__` as const;
 
 /**
+ * Spell any MCP tool the way one runtime's model has to call it.
+ *
+ * A registered name may carry a character a model-facing tool name may not, and
+ * every runtime rewrites it to `_` before the model sees it: the connection
+ * tools register as `connectors.list_granted_connections` and are called
+ * `…connectors_list_granted_connections` everywhere (DOR-4112). Claude Code and
+ * OpenCode keep `-`; Codex's Responses API rewrites that too. No DorkOS server or
+ * tool name carries a `-`, so the difference never shows, but it is kept exact.
+ *
+ * @param runtime - The runtime whose qualifying rule applies.
+ * @param server - The MCP server the tool is registered on.
+ * @param tool - The tool's registered name on that server.
+ */
+export function mcpToolNameFor(
+  runtime: 'claude-code' | 'codex' | 'opencode',
+  server: string,
+  tool: string
+): string {
+  if (runtime === 'opencode') {
+    const clean = (part: string) => part.replace(/[^a-zA-Z0-9_-]/g, '_');
+    return `${clean(server)}_${clean(tool)}`;
+  }
+  const clean = (part: string) =>
+    part.replace(runtime === 'codex' ? /[^a-zA-Z0-9_]/g : /[^a-zA-Z0-9_-]/g, '_');
+  return `mcp__${clean(server)}__${clean(tool)}`;
+}
+
+/**
  * Spell a `dorkos` server tool the way one runtime's model has to call it; a
  * bare name in prose is a name the model cannot call (DOR-1292).
  *

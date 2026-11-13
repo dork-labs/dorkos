@@ -454,7 +454,7 @@ describe('the dorkos tool server on a Codex turn', () => {
         runtime.sendMessage('s-awareness', 'what connections do you have?', { cwd: agentDir })
       );
       expect(sdkMocks.prompts.at(-1)).toContain(
-        'mcp__dorkos_connections__connectors.list_granted_connections'
+        'mcp__dorkos_connections__connectors_list_granted_connections'
       );
       expect(sdkMocks.prompts.at(-1)).not.toContain('Access changed');
       revision = 'different-operation-same-count';
