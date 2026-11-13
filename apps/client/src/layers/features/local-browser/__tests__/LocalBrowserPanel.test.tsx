@@ -18,21 +18,13 @@ const transport = vi.hoisted(() => ({
   selectLocalBrowserTab: vi.fn(),
   navigateLocalBrowser: vi.fn(),
   interruptSession: vi.fn(),
+  getSession: vi.fn(),
+  getAgentByPath: vi.fn(),
 }));
 const navigate = vi.hoisted(() => vi.fn());
 vi.mock('@tanstack/react-router', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@tanstack/react-router')>()),
   useNavigate: () => navigate,
-}));
-const sessionRow = vi.hoisted(() => vi.fn());
-const currentAgent = vi.hoisted(() => vi.fn());
-vi.mock('@/layers/entities/agent', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('@/layers/entities/agent')>()),
-  useCurrentAgent: currentAgent,
-}));
-vi.mock('@/layers/entities/session', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('@/layers/entities/session')>()),
-  useSessionRow: sessionRow,
 }));
 vi.mock('@/layers/shared/model', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/layers/shared/model')>()),
@@ -97,11 +89,12 @@ beforeEach(() => {
   transport.getLocalBrowserState.mockResolvedValue(disconnected);
   transport.getLocalBrowserCapabilities.mockResolvedValue(capabilities);
   transport.openLocalBrowser.mockResolvedValue(connected);
-  sessionRow.mockImplementation((id: string | null) => ({
-    data:
-      id === 'other-chat' ? { id, title: 'Quarterly invoices', cwd: '/agents/scout' } : undefined,
-  }));
-  currentAgent.mockReturnValue({ data: null });
+  // The holder chat's title and folder, and no agent there, unless a test says otherwise.
+  transport.getSession.mockImplementation(async (id: string) => {
+    if (id !== 'other-chat') throw new Error('not found');
+    return { id, title: 'Quarterly invoices', cwd: '/agents/scout' };
+  });
+  transport.getAgentByPath.mockResolvedValue(null);
 });
 afterEach(() => {
   delete window.electronAPI;
@@ -118,13 +111,14 @@ describe('LocalBrowserPanel', () => {
   describe('while another chat holds the browser (DOR-4265)', () => {
     const elsewhere = { ...connected, sessionId: 'other-chat' };
     it('names that chat’s agent and title, links to it, and starts focus on Use it here', async () => {
-      currentAgent.mockReturnValue({ data: { name: 'scout', displayName: 'Scout' } });
+      vi.spyOn(document, 'hasFocus').mockReturnValue(true);
+      transport.getAgentByPath.mockResolvedValue({ name: 'scout', displayName: 'Scout' });
       transport.getLocalBrowserState.mockResolvedValue(elsewhere);
       mount();
       const useHere = await screen.findByRole('button', { name: 'Use it here' });
       await waitFor(() => expect(useHere).toHaveFocus());
       expect(screen.getAllByRole('status')[0]).toHaveTextContent('In use in another chat');
-      expect(screen.getByText(/Scout is using it in/)).toBeInTheDocument();
+      expect(await screen.findByText(/Scout is using it in/)).toBeInTheDocument();
       expect(
         screen.getByText('Quarterly invoices loses it until you move it back.')
       ).toBeInTheDocument();
@@ -147,7 +141,11 @@ describe('LocalBrowserPanel', () => {
     });
     it('keeps a long title whole in the link’s name and tooltip', async () => {
       const long = 'A very long chat title about the quarterly invoices for every client';
-      sessionRow.mockReturnValue({ data: { id: 'other-chat', title: long } });
+      transport.getSession.mockResolvedValue({
+        id: 'other-chat',
+        title: long,
+        cwd: '/agents/scout',
+      });
       transport.getLocalBrowserState.mockResolvedValue(elsewhere);
       mount();
       const link = await screen.findByRole('button', { name: long });
@@ -155,7 +153,7 @@ describe('LocalBrowserPanel', () => {
       expect(link).toHaveClass('truncate');
     });
     it('falls back to a plain name while the title is unknown', async () => {
-      sessionRow.mockReturnValue({ data: undefined });
+      transport.getSession.mockRejectedValue(new Error('not found'));
       transport.getLocalBrowserState.mockResolvedValue(elsewhere);
       mount();
       expect(await screen.findByRole('button', { name: 'New chat' })).toBeInTheDocument();
@@ -182,10 +180,22 @@ describe('LocalBrowserPanel', () => {
       ).toBeInTheDocument();
     });
   });
+  it('never takes focus from a control outside the panel, such as the chat box', async () => {
+    const composer = document.createElement('textarea');
+    document.body.append(composer);
+    composer.focus();
+    vi.spyOn(document, 'hasFocus').mockReturnValue(true);
+    mount();
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Open browser' })).toBeEnabled());
+    expect(composer).toHaveFocus();
+    composer.remove();
+  });
   it('with nothing open, Open browser is the one filled button and a browser is preselected', async () => {
+    vi.spyOn(document, 'hasFocus').mockReturnValue(true);
     mount();
     const openButton = await screen.findByRole('button', { name: 'Open browser' });
     await waitFor(() => expect(openButton).toBeEnabled());
+    await waitFor(() => expect(openButton).toHaveFocus());
     expect(screen.getAllByRole('status')[0]).toHaveTextContent('Not open yet');
     expect(screen.getByRole('radio', { checked: true })).toBeInTheDocument();
     const filled = screen

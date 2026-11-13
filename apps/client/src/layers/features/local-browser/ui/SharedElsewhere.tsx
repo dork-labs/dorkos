@@ -1,9 +1,10 @@
-import { useEffect, useRef } from 'react';
+import { useRef } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { useCurrentAgent } from '@/layers/entities/agent';
 import { sessionDisplayTitle, useSessionRow } from '@/layers/entities/session';
 import { toSession } from '@/layers/shared/lib';
 import { Button } from '@/layers/shared/ui';
+import { useFirstFocus } from '../model/use-first-focus';
 
 /** Props for {@link SharedElsewhere}. */
 export interface SharedElsewhereProps {
@@ -36,10 +37,8 @@ export function SharedElsewhere({
   const agentName = agent?.displayName?.trim() || agent?.name;
   const title = sessionDisplayTitle(holder?.title);
   const useHere = useRef<HTMLButtonElement>(null);
-  useEffect(() => {
-    // The move is the one thing this view offers, so focus starts there.
-    if (visible) useHere.current?.focus();
-  }, [visible]);
+  // The move is the one thing this view offers, so focus starts there.
+  useFirstFocus(useHere, visible && canMoveHere);
   const link = (
     <Button
       variant="link"

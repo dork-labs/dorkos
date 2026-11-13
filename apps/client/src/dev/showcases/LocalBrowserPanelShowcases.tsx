@@ -23,16 +23,52 @@ const NOT_OPEN: LocalBrowserPersonState = {
   signIn: null,
 };
 
+/** A browser another chat holds, in a separate window (DOR-4265). Made-up chat and agent. */
+const IN_USE_ELSEWHERE: LocalBrowserPersonState = {
+  ...NOT_OPEN,
+  connectionId: 'demo-connection',
+  sessionId: 'chat-scout',
+  mode: 'new-window',
+  status: 'connected',
+  tabs: [{ id: 'demo-tab', title: 'Release notes draft', url: 'https://example.com/notes' }],
+  selectedTabId: 'demo-tab',
+};
+
+/** The same browser while Scout waits for a person to finish a sign-in. */
+const HOLDER_WAITING: LocalBrowserPersonState = {
+  ...IN_USE_ELSEWHERE,
+  paused: true,
+  handoff: {
+    id: 'demo-handoff',
+    sessionId: 'chat-scout',
+    agentName: 'Scout',
+    agentId: null,
+    agentFolder: null,
+    profileId: null,
+    reason: 'password',
+    site: 'example.com',
+    askedAt: '2026-11-13T12:00:00.000Z',
+    outcome: null,
+  },
+};
+
 /**
- * A scoped transport for a browser that was never opened.
+ * A scoped transport for one browser state, with a made-up holder chat.
  *
+ * @param state - What the browser reports.
  * @param forget - What Forget does; the playground's own by default.
  */
-function notOpenTransport(forget?: () => Promise<never>): Transport {
+function browserTransport(
+  state: LocalBrowserPersonState,
+  forget?: () => Promise<never>
+): Transport {
   const base = createPlaygroundTransport();
   return new Proxy(base, {
     get: (target, prop, receiver) => {
-      if (prop === 'getLocalBrowserState') return async () => NOT_OPEN;
+      if (prop === 'getLocalBrowserState') return async () => state;
+      if (prop === 'getSession')
+        return async (id: string) => ({ id, title: 'Fix the release notes', cwd: '/agents/scout' });
+      if (prop === 'getAgentByPath') return async () => ({ name: 'scout', displayName: 'Scout' });
       if (prop === 'getLocalBrowserCapabilities')
         return async () => ({ embedded: false, newWindow: true });
       if (prop === 'listLocalBrowserProfiles') return async () => ({ profiles: [] });
@@ -42,13 +78,16 @@ function notOpenTransport(forget?: () => Promise<never>): Transport {
   });
 }
 
-/** The panel reading a browser that was never opened, from a scoped transport. */
-function NotOpenDemo() {
-  const [transport] = useState<Transport>(() => notOpenTransport());
+/**
+ * The panel in Atlas's chat reading one browser state, from a scoped transport.
+ * `visible` stays off so several demos on one page don't pull focus and scroll.
+ */
+function PanelDemo({ state }: { state: LocalBrowserPersonState }) {
+  const [transport] = useState<Transport>(() => browserTransport(state));
   return (
     <TransportProvider transport={transport}>
       <div className="bg-background h-[36rem] w-full max-w-sm rounded-lg border">
-        <LocalBrowserPanel sessionId="chat-atlas" agentName="Atlas" />
+        <LocalBrowserPanel visible={false} sessionId="chat-atlas" agentName="Atlas" />
       </div>
     </TransportProvider>
   );
@@ -60,7 +99,7 @@ function NotOpenDemo() {
  */
 function FolderChangedDemo() {
   const [transport] = useState<Transport>(() =>
-    notOpenTransport(async () => {
+    browserTransport(NOT_OPEN, async () => {
       throw Object.assign(new Error('Sign-ins weren’t forgotten.'), {
         code: 'profiles_folder_changed',
       });
@@ -69,7 +108,7 @@ function FolderChangedDemo() {
   return (
     <TransportProvider transport={transport}>
       <div className="bg-background h-[36rem] w-full max-w-sm rounded-lg border">
-        <LocalBrowserPanel sessionId="chat-atlas" agentName="Atlas" />
+        <LocalBrowserPanel visible={false} sessionId="chat-atlas" agentName="Atlas" />
       </div>
     </TransportProvider>
   );
@@ -87,7 +126,15 @@ export function LocalBrowserPanelShowcases() {
     >
       <ShowcaseLabel>Before the browser was ever opened</ShowcaseLabel>
       <ShowcaseDemo>
-        <NotOpenDemo />
+        <PanelDemo state={NOT_OPEN} />
+      </ShowcaseDemo>
+      <ShowcaseLabel>In use in another chat: Use it here moves it</ShowcaseLabel>
+      <ShowcaseDemo>
+        <PanelDemo state={IN_USE_ELSEWHERE} />
+      </ShowcaseDemo>
+      <ShowcaseLabel>In use in another chat whose agent waits on a person</ShowcaseLabel>
+      <ShowcaseDemo>
+        <PanelDemo state={HOLDER_WAITING} />
       </ShowcaseDemo>
       <ShowcaseLabel>Forget refused: the sign-ins folder was changed outside DorkOS</ShowcaseLabel>
       <ShowcaseDemo>
