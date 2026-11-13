@@ -134,6 +134,32 @@ export function allowListHash(rules: readonly string[]): string {
 }
 
 /**
+ * One settings file's raw `permissions.allow` array, unjudged, or `null` when
+ * the file is missing, unreadable, not a regular file of a sane size, or holds
+ * no array.
+ *
+ * @param home - The registered agent home.
+ * @param name - Which of the folder's settings files to read.
+ */
+export async function readFolderAllowEntries(
+  home: string,
+  name: (typeof FOLDER_SETTINGS_FILES)[number]
+): Promise<unknown[] | null> {
+  try {
+    const file = path.join(home, '.claude', name);
+    // A regular file of a sane size only: a FIFO or a device would hang or
+    // flood every launch in this folder.
+    const stat = await fs.lstat(file);
+    if (!stat.isFile() || stat.size > MAX_SETTINGS_FILE_BYTES) return null;
+    const parsed: unknown = JSON.parse(await fs.readFile(file, 'utf8'));
+    const allow = (parsed as { permissions?: { allow?: unknown } } | null)?.permissions?.allow;
+    return Array.isArray(allow) ? allow : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Read a registered agent home's allow list. Only `permissions.allow` is read
  * from each file; a missing or unreadable file contributes nothing.
  *
@@ -143,19 +169,8 @@ export async function readFolderAllowList(home: string): Promise<FolderAllowList
   const rules: string[] = [];
   const dropped: FolderAllowList['dropped'] = [];
   for (const name of FOLDER_SETTINGS_FILES) {
-    let allow: unknown;
-    try {
-      const file = path.join(home, '.claude', name);
-      // A regular file of a sane size only: a FIFO or a device would hang or
-      // flood every launch in this folder.
-      const stat = await fs.lstat(file);
-      if (!stat.isFile() || stat.size > MAX_SETTINGS_FILE_BYTES) continue;
-      const parsed: unknown = JSON.parse(await fs.readFile(file, 'utf8'));
-      allow = (parsed as { permissions?: { allow?: unknown } } | null)?.permissions?.allow;
-    } catch {
-      continue;
-    }
-    if (!Array.isArray(allow)) continue;
+    const allow = await readFolderAllowEntries(home, name);
+    if (allow === null) continue;
     for (const entry of allow) {
       const verdict = judgeAllowRule(entry);
       if (verdict.ok) {
