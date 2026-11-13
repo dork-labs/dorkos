@@ -174,7 +174,8 @@ function findLoopbackDials(path: string, source: string): string[] {
       (LOOPBACK_URL.test(node.text) || (LOOPBACK_HOST.test(node.text) && isHostOption(node, file)))
     ) {
       const { line } = file.getLineAndCharacterOfPosition(node.getStart(file));
-      found.push(`${path}:${line + 1}: ${node.getText(file).split('\n')[0].slice(0, 80)}`);
+      const firstLine = node.getText(file).split('\n')[0] ?? '';
+      found.push(`${path}:${line + 1}: ${firstLine.slice(0, 80)}`);
     }
     ts.forEachChild(node, visit);
   };
