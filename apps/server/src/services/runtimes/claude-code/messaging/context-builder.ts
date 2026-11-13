@@ -1,12 +1,7 @@
 import { renderDocEvents } from '../../../canvas/doc-channel/prompt.js';
 import { formatAccountsAccess } from '../../shared/accounts-access-context.js';
 import { formatContextWarning } from '../../../session/agent-compaction/context-warning-block.js';
-import type {
-  AdditionalContextEntry,
-  GitStatusData,
-  EnvData,
-  RelayContextData,
-} from '@dorkos/shared/additional-context';
+import type { AdditionalContextEntry } from '@dorkos/shared/additional-context';
 import { CONTEXT_TAG } from '@dorkos/shared/additional-context';
 import { isRelayEnabled } from '../../../relay/relay-state.js';
 import { isTasksEnabled } from '../../../tasks/task-state.js';
@@ -17,7 +12,10 @@ import type { AgentHome } from '../../../core/agent-identity/index.js';
 import { buildRoomToolsBlock } from '../../shared/room-tools-context.js';
 import * as uiContract from '../../shared/ui-tool-contract.js';
 import { formatRoomContext } from '../../shared/room-context-block.js';
-import { formatProseContext, wrapContextTag as wrapTag } from '../../shared/prose/prose-context.js';
+import {
+  renderProseContextBlock,
+  wrapContextTag as wrapTag,
+} from '../../shared/prose/prose-context.js';
 import type { AgentRegistryPort } from '@dorkos/shared/agent-runtime';
 import { IN_SESSION_TOOL_PREFIX } from '../mcp-tools/tool-exposure.js';
 import { WORKBENCH } from '../../../../config/constants.js';
@@ -736,15 +734,19 @@ export function renderContextEntry(entry: AdditionalContextEntry): string {
     case 'doc_events':
       return renderDocEvents(entry.data);
     case 'git_status':
-      return wrapTag(tag, formatGitStatus(entry.data));
+    case 'queue_note':
+    case 'env':
+    case 'relay_context':
+    case 'staged_context':
+    case 'seed_context':
+    case 'approval_verdict':
+    case 'direct_notes':
+    case 'turn_cutoff':
+    case 'new_since_last_run':
+      // Prose written once for every runtime; several carry a security seam.
+      return renderProseContextBlock(entry);
     case 'ui_state':
       return wrapTag(tag, JSON.stringify(entry.data, null, 2));
-    case 'queue_note':
-      return `<${tag}>composed while the agent was responding to the previous message</${tag}>`;
-    case 'env':
-      return wrapTag(tag, formatEnv(entry.data));
-    case 'relay_context':
-      return wrapTag(tag, formatRelayContext(entry.data));
     case 'room_context':
       // Shared with the Codex and OpenCode adapters on purpose: the body carries
       // an untrusted-input fence, and a security surface written three times is
@@ -756,104 +758,10 @@ export function renderContextEntry(entry: AdditionalContextEntry): string {
       return wrapTag(tag, formatRoomContext(entry.data, { toolPrefix: IN_SESSION_TOOL_PREFIX }));
     case 'accounts_access':
       return wrapTag(tag, formatAccountsAccess(entry.data, 'claude-code'));
-    case 'staged_context':
-    case 'seed_context':
-    case 'approval_verdict':
-    case 'direct_notes':
-    case 'turn_cutoff':
-    case 'new_since_last_run':
-      // Prose with a security seam, written once for every runtime.
-      return wrapTag(tag, formatProseContext(entry));
     case 'context_warning':
       // Shared so the note names tools each runtime can actually call.
       return wrapTag(tag, formatContextWarning(entry.data, 'claude-code'));
   }
-}
-
-/**
- * Format structured {@link GitStatusData} into the `<git_status>` body lines
- * (the formatting that moved out of the old `buildGitBlock`).
- */
-function formatGitStatus(data: GitStatusData): string {
-  if (!data.isRepo) return 'Is git repo: false';
-
-  const lines: string[] = [
-    'Is git repo: true',
-    `Current branch: ${data.branch}`,
-    'Main branch (use for PRs): main',
-  ];
-
-  if ((data.ahead ?? 0) > 0) lines.push(`Ahead of origin: ${data.ahead} commits`);
-  if ((data.behind ?? 0) > 0) lines.push(`Behind origin: ${data.behind} commits`);
-  if (data.detached) lines.push('Detached HEAD: true');
-
-  if (data.clean) {
-    lines.push('Working tree: clean');
-  } else {
-    const parts: string[] = [];
-    if ((data.modified ?? 0) > 0) parts.push(`${data.modified} modified`);
-    if ((data.staged ?? 0) > 0) parts.push(`${data.staged} staged`);
-    if ((data.untracked ?? 0) > 0) parts.push(`${data.untracked} untracked`);
-    if ((data.conflicted ?? 0) > 0) parts.push(`${data.conflicted} conflicted`);
-    // `deriveGitStatus` always sets `clean` to match the counts, so this branch
-    // implies at least one dirty part. Guard the empty case anyway so a partial
-    // hand-built `GitStatusData` never renders a bare `dirty ()`.
-    lines.push(
-      parts.length > 0 ? `Working tree: dirty (${parts.join(', ')})` : 'Working tree: clean'
-    );
-  }
-
-  return lines.join('\n');
-}
-
-/** Format structured {@link EnvData} into the `<env>` body lines. */
-function formatEnv(data: EnvData): string {
-  return [
-    `Working directory: ${data.workingDirectory}`,
-    `Product: ${data.product}`,
-    `Version: ${data.version}`,
-    `Port: ${data.port}`,
-    `Platform: ${data.platform}`,
-    `OS Version: ${data.osVersion}`,
-    `Node.js: ${data.nodeVersion}`,
-    `Hostname: ${data.hostname}`,
-  ].join('\n');
-}
-
-/** Format structured {@link RelayContextData} into the `<relay_context>` body lines. */
-function formatRelayContext(data: RelayContextData): string {
-  const lines: string[] = [
-    `Agent-ID: ${data.agentId}`,
-    `Session-ID: ${data.sessionId}`,
-    `From: ${data.from}`,
-    `Message-ID: ${data.messageId}`,
-    `Subject: ${data.subject}`,
-    `Sent: ${data.sent}`,
-  ];
-  if (
-    data.hopsUsed !== undefined ||
-    data.ttlSecondsRemaining !== undefined ||
-    data.callBudgetRemaining !== undefined
-  ) {
-    lines.push('', 'Budget remaining:');
-    if (data.hopsUsed !== undefined && data.hopsMax !== undefined) {
-      lines.push(`- Hops: ${data.hopsUsed} of ${data.hopsMax} used`);
-    }
-    if (data.ttlSecondsRemaining !== undefined) {
-      lines.push(`- TTL: ${data.ttlSecondsRemaining} seconds remaining`);
-    }
-    if (data.callBudgetRemaining !== undefined) {
-      lines.push(`- Max turns: ${data.callBudgetRemaining}`);
-    }
-  }
-  if (data.replyTo) {
-    lines.push(
-      '',
-      `Reply to: ${data.replyTo}`,
-      "If you cannot complete the task within the budget, summarize what you've done and stop."
-    );
-  }
-  return lines.join('\n');
 }
 
 /** @internal Exported for testing only. */

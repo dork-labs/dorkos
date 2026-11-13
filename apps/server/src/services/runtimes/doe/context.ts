@@ -1,5 +1,4 @@
 /** Runtime-neutral context delivered on the system channel with actual callable names. */
-import { formatNewSince } from '../shared/prose/new-since-block.js';
 import type { AdditionalContextEntry } from '@dorkos/shared/additional-context';
 import { CONTEXT_TAG } from '@dorkos/shared/additional-context';
 import type { MessageOpts } from '@dorkos/shared/agent-runtime';
@@ -9,14 +8,11 @@ import type { AgentContextSource } from '../shared/source/agent-context-source.j
 import { buildRoomToolsBlock } from '../shared/room-tools-context.js';
 import { formatAccountsAccess } from '../shared/accounts-access-context.js';
 import { formatContextWarning } from '../../session/agent-compaction/context-warning-block.js';
-import { formatTurnCutoff } from '../../session/turn-cutoff/turn-cutoff.js';
 import { formatRoomContext } from '../shared/room-context-block.js';
-import { formatApprovalVerdict } from '../shared/approval-verdict-block.js';
-import { formatDirectNotes } from '../shared/prose/direct-notes-block.js';
-import { formatSeedContext } from '../shared/seed-context-block.js';
-import { formatStagedContext } from '../shared/staged-context-block.js';
+import { renderProseContextBlock, type ProseContextEntry } from '../shared/prose/prose-context.js';
 import { renderDocEvents } from '../../canvas/doc-channel/prompt.js';
 import { GEN_UI_CONTEXT } from '../shared/gen-ui-context.js';
+import { dorkosToolNameFor } from '../shared/dorkos-tool-names.js';
 import {
   renderBlockedAreaLines,
   resolveToolVisibilityFor,
@@ -25,44 +21,51 @@ import { connectionToolName } from './mcp.js';
 import { joinFitted, type ContextPart } from '../shared/window/context-fit.js';
 /** Render all additional context kinds without inserting opaque roomTurn routing metadata. */
 export function renderDoeContextEntry(entry: AdditionalContextEntry): string {
-  if (entry.kind === 'doc_events') return renderDocEvents(entry.data);
-  let body: string;
+  switch (entry.kind) {
+    case 'doc_events':
+      return renderDocEvents(entry.data);
+    case 'git_status':
+    case 'env':
+    case 'relay_context':
+    case 'queue_note':
+    case 'staged_context':
+    case 'seed_context':
+    case 'approval_verdict':
+    case 'direct_notes':
+    case 'turn_cutoff':
+    case 'new_since_last_run':
+      return renderProseContextBlock(entry);
+    case 'accounts_access':
+    case 'context_warning':
+    case 'room_context':
+    case 'ui_state': {
+      const tag = CONTEXT_TAG[entry.kind];
+      return `<${tag}>\n${renderDoeContextBody(entry)}\n</${tag}>`;
+    }
+  }
+  const exhaustiveEntry: never = entry;
+  return exhaustiveEntry;
+}
+
+/** Render a Doe-specific body for a context kind outside the shared prose dispatch. */
+function renderDoeContextBody(
+  entry: Exclude<AdditionalContextEntry, ProseContextEntry | { kind: 'doc_events' }>
+): string {
   switch (entry.kind) {
     case 'accounts_access':
-      body = formatAccountsAccess(entry.data, 'claude-code', {
-        dorkos: (name) => name,
+      return formatAccountsAccess(entry.data, 'claude-code', {
+        dorkos: (name) => dorkosToolNameFor('doe', name),
         connector: connectionToolName,
       });
-      break;
     case 'context_warning':
-      body = formatContextWarning(entry.data, 'claude-code', (name) => name);
-      break;
-    case 'new_since_last_run':
-      body = formatNewSince(entry.data);
-      break;
-    case 'turn_cutoff':
-      body = formatTurnCutoff(entry.data);
-      break;
+      return formatContextWarning(entry.data, 'claude-code', (name) =>
+        dorkosToolNameFor('doe', name)
+      );
     case 'room_context':
-      body = formatRoomContext(entry.data, { toolPrefix: '' });
-      break;
-    case 'approval_verdict':
-      body = formatApprovalVerdict(entry.data);
-      break;
-    case 'direct_notes':
-      body = formatDirectNotes(entry.data);
-      break;
-    case 'seed_context':
-      body = formatSeedContext(entry.data);
-      break;
-    case 'staged_context':
-      body = formatStagedContext(entry.data);
-      break;
-    default:
-      body = JSON.stringify(entry.data, null, 2);
+      return formatRoomContext(entry.data, { toolPrefix: dorkosToolNameFor('doe', '') });
+    case 'ui_state':
+      return JSON.stringify(entry.data, null, 2);
   }
-  const tag = CONTEXT_TAG[entry.kind];
-  return `<${tag}>\n${body}\n</${tag}>`;
 }
 /**
  * The sentence naming the chat tools Doe really has loaded, or `''`.
