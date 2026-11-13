@@ -141,3 +141,37 @@ describe('what the block says about the early signal (DOR-1975)', () => {
     );
   });
 });
+
+describe('what the block says about a page that talks back (DOR-3159)', () => {
+  const words = buildRoomToolsBlock(PREFIX).replace(/\s+/g, ' ');
+
+  it('names every doc-channel tool, so a new one without a line fails here', async () => {
+    // Read off the real capability builders, never a list kept here: a sixth
+    // doc-channel tool registered tomorrow is red until the block teaches it.
+    const { createDocChannelGrantCapabilities } =
+      await import('../../../canvas/doc-channel/grant-capabilities.js');
+    const { createDocChannelDownstreamCapabilities } =
+      await import('../../../canvas/doc-channel/downstream/capabilities.js');
+    const tools = [
+      ...createDocChannelGrantCapabilities(),
+      ...createDocChannelDownstreamCapabilities(),
+    ].flatMap((capability) => capability.surfaces.mcp?.toolName ?? []);
+    expect(tools.length).toBeGreaterThanOrEqual(5);
+    const missing = tools.filter((tool) => !words.includes(`${PREFIX}${tool}`));
+    expect(missing, 'doc-channel tools the agent is never told about').toEqual([]);
+  });
+
+  it('teaches routes, approval, the widget events, bind and the room limit', () => {
+    expect(words).toContain('A PAGE THAT TALKS BACK.');
+    expect(words).toContain('channel: { routes }');
+    expect(words).toContain('"log" | "agent:owner" | "room:self" | "agent:<id>"');
+    expect(words).toContain('A person allows routes from the Routes button');
+    expect(words).toContain('Change a route and it needs allowing again.');
+    expect(words).toContain('arrives as widget.action with payload.actionId');
+    expect(words).toContain('{ kind: "emit", type } sends a type of your own');
+    expect(words).toContain('bind: { path }');
+    expect(words).toContain("On a ROOM canvas, routed events don't start your turn yet.");
+    expect(words).toContain('Only a person can pin a document');
+    expect(words).toContain('only when the Docs experiment is on');
+  });
+});

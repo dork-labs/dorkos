@@ -631,7 +631,10 @@ describe('the claude-code prompt names tools the way the runtime exposes them', 
     //
     // 73 -> 74 for the room working agreement (DOR-3400): `<room_tools>` names
     // `read_room_history` once more, as the tool to re-read the room before posting.
-    expect(prefixed.length).toBe(74);
+    //
+    // 74 -> 79 for the doc channel (DOR-3159): `<room_tools>` names each of the five
+    // doc-channel tools once, prefixed. All five stay deferred: one ToolSearch hop.
+    expect(prefixed.length).toBe(79);
   });
 
   it('names only advertised tools in the agent-session variant of the prompt too', async () => {
