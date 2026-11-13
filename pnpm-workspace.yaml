@@ -1,3 +1,11 @@
 packages:
   - 'apps/*'
   - 'packages/*'
+
+# The site's Fumadocs packages are hoisted to the root node_modules, as they
+# have been since the npm-to-pnpm move. This lives here, not in a root
+# `.npmrc`: agent sandboxes refuse to read any `.npmrc` (it can hold a token),
+# so pnpm there would drop the setting, and the next install outside the
+# sandbox would stop to ask before wiping node_modules.
+publicHoistPattern:
+  - 'fumadocs-*'
