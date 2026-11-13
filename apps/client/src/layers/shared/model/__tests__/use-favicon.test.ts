@@ -94,6 +94,68 @@ describe('useFavicon', () => {
     vi.useRealTimers();
   });
 
+  // DOR-3312: the pulse rewrites the icon ten times a second. Nobody can see it
+  // in a hidden tab or in the Mac app's window, which has no favicon, so it must
+  // not run there for the hours a turn can stream.
+  it('stops pulsing while the page is hidden, and picks up again when shown', async () => {
+    vi.useFakeTimers();
+    const setHidden = (hidden: boolean) => {
+      Object.defineProperty(document, 'visibilityState', {
+        value: hidden ? 'hidden' : 'visible',
+        configurable: true,
+      });
+      document.dispatchEvent(new Event('visibilitychange'));
+    };
+    setHidden(false);
+    renderHook(() => useFavicon({ cwd: '/test', isStreaming: true }));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+
+    act(() => setHidden(true));
+    vi.mocked(setFavicon).mockClear();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5_000);
+    });
+    const framesWhileHidden = vi
+      .mocked(setFavicon)
+      .mock.calls.filter(([url]) => url.startsWith('data:frame'));
+    expect(framesWhileHidden).toHaveLength(0);
+
+    act(() => setHidden(false));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(400);
+    });
+    const framesWhenShown = vi
+      .mocked(setFavicon)
+      .mock.calls.filter(([url]) => url.startsWith('data:frame'));
+    expect(framesWhenShown.length).toBeGreaterThan(0);
+
+    setHidden(false);
+    vi.useRealTimers();
+  });
+
+  it('never pulses in the Mac app, which shows no favicon', async () => {
+    vi.useFakeTimers();
+    (window as unknown as { electronAPI: unknown }).electronAPI = {
+      getServerPort: () => Promise.resolve(4242),
+    };
+    try {
+      renderHook(() => useFavicon({ cwd: '/test', isStreaming: true }));
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(5_000);
+      });
+      const frames = vi
+        .mocked(setFavicon)
+        .mock.calls.filter(([url]) => url.startsWith('data:frame'));
+      expect(frames).toHaveLength(0);
+      expect(generateTasksFrames).not.toHaveBeenCalled();
+    } finally {
+      delete (window as unknown as { electronAPI?: unknown }).electronAPI;
+      vi.useRealTimers();
+    }
+  });
+
   it('restores solid favicon when streaming stops', async () => {
     vi.useFakeTimers();
     const { rerender } = renderHook(
