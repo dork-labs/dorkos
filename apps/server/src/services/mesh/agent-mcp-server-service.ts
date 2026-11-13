@@ -30,14 +30,16 @@ import type {
 import type { McpAppServerConnection } from '@dorkos/shared/agent-runtime';
 import type { Logger } from '@dorkos/shared/logger';
 import { isPlaywrightBrowser, unguardableBrowserReason } from '@dorkos/shared/agent-browser';
+import {
+  isReservedMcpServerName,
+  partitionReservedMcpServers,
+  reservedMcpServerNameMessage,
+} from '@dorkos/shared/global-mcp-schemas';
 
 import { readMcpJsonServers, resolveMcpJsonConnection } from './mcp-json.js';
 import { runProbe, settledWithin, ADD_PROBE_BUDGET_MS } from './agent-mcp-probe.js';
 import { ensureAgentBrowserStateFile } from './agent-browser-preset.js';
 import { guardAgentBrowsers } from '../browser/agent-browser-guard.js';
-
-/** The DorkOS tool server's own name — reserved so a managed server can never shadow it. */
-export const RESERVED_MCP_SERVER_NAME = 'dorkos';
 
 /** The HTTP header a managed-MCP OAuth access token is injected under. */
 const AUTHORIZATION_HEADER = 'Authorization';
@@ -363,8 +365,8 @@ export class AgentMcpServerService {
   /**
    * Add a managed server to an agent and persist the manifest.
    *
-   * Rejects the reserved name `dorkos` (which the injection order reserves for
-   * the DorkOS tool server) and any name already present on the agent. Enables
+   * Rejects DorkOS's own names (`RESERVED_MCP_SERVER_NAMES`, in any case) and any
+   * name already present on the agent. Enables
    * the server by default — an add is an explicit, gated action (spec §4).
    *
    * ## The advisory sign-in probe (DOR-1003)
@@ -636,8 +638,14 @@ export class AgentMcpServerService {
     // two reads by identity still sees an unchanged one.
     const own = this.mergeOAuthHeaders(entry.agentId, entry.servers);
     const globals = this.globalServers?.injectableFor(entry.agentId) ?? {};
-    const servers = Object.keys(globals).length > 0 ? { ...globals, ...own } : own;
-    return guardAgentBrowsers(servers, { logger: this.logger });
+    const merged = Object.keys(globals).length > 0 ? { ...globals, ...own } : own;
+    // No server reaches a runtime under one of DorkOS's own names, whatever its
+    // case, even from a file saved before the stores refused them (DOR-3600).
+    const { kept, reserved } = partitionReservedMcpServers(merged);
+    if (reserved.length > 0) {
+      this.logger.warn("[mcp-servers] left out servers named like DorkOS's own", { reserved });
+    }
+    return guardAgentBrowsers(reserved.length > 0 ? kept : merged, { logger: this.logger });
   }
 
   /**
@@ -937,13 +945,10 @@ export class AgentMcpServerService {
     return parsed.success ? parsed.data : null;
   }
 
-  /** Reject the reserved name (case-insensitive) and any duplicate within the agent. */
+  /** Reject DorkOS's own names (case-insensitive) and any duplicate within the agent. */
   private assertNameAvailable(existing: ManagedMcpServer[], name: string): void {
-    if (name.toLowerCase() === RESERVED_MCP_SERVER_NAME) {
-      throw new AgentMcpServerError(
-        'RESERVED_NAME',
-        `"${RESERVED_MCP_SERVER_NAME}" is reserved for the DorkOS tool server`
-      );
+    if (isReservedMcpServerName(name)) {
+      throw new AgentMcpServerError('RESERVED_NAME', reservedMcpServerNameMessage(name));
     }
     if (existing.some((s) => s.name === name)) {
       throw new AgentMcpServerError(

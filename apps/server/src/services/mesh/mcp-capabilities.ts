@@ -123,8 +123,9 @@ export const mcpDomain: CapabilityDomain = {
       description:
         'Add an MCP server to an agent and enable it. This introduces a command (stdio) or ' +
         'remote endpoint (http/sse) that will run in the agent’s environment, so a person ' +
-        'approves it first at a card showing the exact command/args/url. Rejects the reserved ' +
-        'name "dorkos" and any name the agent already uses. If the added entry comes back with ' +
+        'approves it first at a card showing the exact command/args/url. Rejects DorkOS’s own ' +
+        'names ("dorkos", "dorkos_connections", in any case) and any name the agent already uses. ' +
+        'If the added entry comes back with ' +
         'connection.authKind "oauth2", the server needs a sign-in: call the MCP sign-in tool ' +
         'for it ' +
         'immediately, in the same turn, rather than asking permission first — the person ' +
@@ -176,7 +177,7 @@ export const mcpDomain: CapabilityDomain = {
         'Bring a server DorkOS discovered in a project’s .mcp.json under DorkOS management: ' +
         'resolve its transport, then add it as an enabled, editable managed server. It asks ' +
         'a person first only when the agent’s permissions say so: the entry already runs in ' +
-        'the agent’s environment from the project’s own .mcp.json. Rejects the reserved name "dorkos" and any name already managed; ' +
+        'the agent’s environment from the project’s own .mcp.json. Rejects DorkOS’s own names ("dorkos", "dorkos_connections", in any case) and any name already managed; ' +
         'reports a clear error when no such discovered server can be resolved.',
       tier: 'destructive',
       area: 'packages',

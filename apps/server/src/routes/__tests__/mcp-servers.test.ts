@@ -280,6 +280,21 @@ describe('/api/mcp-servers', () => {
     });
   });
 
+  it.each(['DorkOS', 'dorkos_connections', 'DORKOS_CONNECTIONS'])(
+    'refuses %s as one of DorkOS’s own names, with the sentence the Name field uses (DOR-3600)',
+    async (name) => {
+      const res = await request(app())
+        .post('/api/mcp-servers')
+        .send({ ...SERVER, name });
+      expect(res.status).toBe(409);
+      expect(res.body).toEqual({
+        error: `${name} is one of DorkOS's own names. Pick another.`,
+        code: 'reserved_name',
+      });
+      expect(store.list()).toEqual([]);
+    }
+  );
+
   it('answers a clash and an incomplete server plainly', async () => {
     await request(app()).post('/api/mcp-servers').send(SERVER);
     expect((await request(app()).post('/api/mcp-servers').send(SERVER)).status).toBe(409);

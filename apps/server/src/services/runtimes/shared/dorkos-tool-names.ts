@@ -2,7 +2,9 @@
  * How the DorkOS MCP server and its tools are NAMED, on every runtime that
  * reaches them.
  *
- * A leaf module with no imports, and deliberately so. These names are needed by
+ * A leaf module that imports only the shared package, and deliberately so. The
+ * server's name itself lives in `@dorkos/shared/global-mcp-schemas`, beside the
+ * reserved list the app's Name field reads too. These names are needed by
  * three places that must not depend on each other: the claude-code in-session
  * server that registers under the name, the codex/opencode injection that dials
  * it over HTTP, and the shared prompt block that has to spell a tool the way the
@@ -13,16 +15,17 @@
  *
  * @module services/runtimes/shared/dorkos-tool-names
  */
+import { DORKOS_TOOL_SERVER_NAME } from '@dorkos/shared/global-mcp-schemas';
 
 /**
  * The name the DorkOS MCP server is registered under, on every runtime.
  *
  * Load-bearing three times over: it is what `createSdkMcpServer` is given
  * in-session, it is the key the codex/opencode injection writes, and it is the
- * middle of every tool name the model sees. Both injecting runtimes reserve it,
- * so a user's own server cannot occupy it.
+ * middle of every tool name the model sees. It is on the one reserved list
+ * (`RESERVED_MCP_SERVER_NAMES`), so no other server can occupy it (DOR-3600).
  */
-export const DORKOS_MCP_SERVER_NAME = 'dorkos';
+export const DORKOS_MCP_SERVER_NAME = DORKOS_TOOL_SERVER_NAME;
 
 /**
  * What Codex puts in front of a `dorkos` MCP tool name.

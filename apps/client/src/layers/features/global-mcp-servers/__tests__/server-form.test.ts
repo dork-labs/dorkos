@@ -2,6 +2,7 @@ import { splitArgs } from '@dorkos/shared/global-mcp-schemas';
 import { describe, expect, it } from 'vitest';
 import {
   EMPTY_SERVER_FORM,
+  reservedNameProblem,
   rowIsSecret,
   serverFormProblem,
   serverInputFrom,
@@ -88,6 +89,22 @@ describe('serverFormProblem', () => {
 
   it('a row with nothing in it is ignored', () => {
     expect(serverFormProblem(commandForm({ env: [row('', '')] }))).toBeNull();
+  });
+});
+
+describe('one of DorkOS’s own names (DOR-3600)', () => {
+  it.each(['dorkos', 'DorkOS', 'dorkos_connections', ' Dorkos_Connections '])(
+    '%j is refused with the sentence the server uses',
+    (name) => {
+      const said = `${name.trim()} is one of DorkOS's own names. Pick another.`;
+      expect(reservedNameProblem(name)).toEqual({ field: 'name', message: said });
+      expect(serverFormProblem(commandForm({ name }))).toEqual({ field: 'name', message: said });
+    }
+  );
+
+  it('leaves a name that only starts the same way alone', () => {
+    expect(reservedNameProblem('dorkos-notes')).toBeNull();
+    expect(serverFormProblem(commandForm({ name: 'dorkos-notes' }))).toBeNull();
   });
 });
 

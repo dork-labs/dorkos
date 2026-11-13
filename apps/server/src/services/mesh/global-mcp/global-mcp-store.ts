@@ -50,7 +50,9 @@ import type { McpAppServerConnection } from '@dorkos/shared/agent-runtime';
 import { stableStringify } from '@dorkos/shared/capabilities';
 import {
   GlobalMcpServerNameSchema,
+  isReservedMcpServerName,
   isSecretName,
+  reservedMcpServerNameMessage,
   type GlobalMcpServerInput,
   type GlobalMcpServerPatch,
   type GlobalMcpServerView,
@@ -58,7 +60,6 @@ import {
 import type { Logger } from '@dorkos/shared/logger';
 import { McpServerTransportSchema, type McpServerTransport } from '@dorkos/shared/mesh-schemas';
 import type { CredentialStore } from '../../core/credential-provider.js';
-import { RESERVED_MCP_SERVER_NAME } from '../agent-mcp-server-service.js';
 import {
   flaggedEnvNames,
   refuseGlobalServer,
@@ -487,8 +488,8 @@ export class GlobalMcpStore {
 
   /** Throw why a server may not be saved, if it may not. Changes nothing. */
   private refuseInput(input: GlobalMcpServerInput): void {
-    if (input.name === RESERVED_MCP_SERVER_NAME) {
-      throw new GlobalMcpStoreError('reserved_name', `${input.name} is DorkOS's own server.`);
+    if (isReservedMcpServerName(input.name)) {
+      throw new GlobalMcpStoreError('reserved_name', reservedMcpServerNameMessage(input.name));
     }
     if (input.connection.transport !== 'stdio' && input.connection.authKind === 'oauth2') {
       throw new GlobalMcpStoreError(

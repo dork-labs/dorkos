@@ -242,6 +242,30 @@ describe('adding a server', () => {
     });
   });
 
+  it('says on leaving Name that one of DorkOS’s own names is taken, and Add sends nothing (DOR-3600)', async () => {
+    const user = userEvent.setup();
+    const addGlobalMcpServer = vi.fn();
+    renderTab(transportWith([], { addGlobalMcpServer }));
+    await user.click(await screen.findByRole('button', { name: 'Add server' }));
+    const name = screen.getByLabelText('Name');
+    await user.type(name, 'DorkOS');
+    await user.tab();
+    const said = "DorkOS is one of DorkOS's own names. Pick another.";
+    expect(screen.getByRole('alert')).toHaveTextContent(said);
+    expect(name).toHaveAttribute('aria-invalid', 'true');
+
+    await user.type(screen.getByLabelText('Command'), 'npx');
+    await user.click(screen.getByRole('button', { name: 'Add' }));
+    expect(screen.getByRole('alert')).toHaveTextContent(said);
+    expect(addGlobalMcpServer).not.toHaveBeenCalled();
+
+    // A fixed name clears the line as soon as the field is left.
+    await user.clear(name);
+    await user.type(name, 'made-up');
+    await user.tab();
+    expect(screen.queryByRole('alert')).toBeNull();
+  });
+
   it('a cancel adds nothing, stays open and keeps what was typed', async () => {
     const user = userEvent.setup();
     renderTab(

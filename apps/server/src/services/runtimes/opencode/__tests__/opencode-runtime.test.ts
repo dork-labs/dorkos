@@ -2334,6 +2334,16 @@ describe('OpenCodeRuntime', () => {
       expect(sharedEntry?.error).toContain('already configured in OpenCode');
     });
 
+    it('never adds a managed server named like DorkOS’s own, in any case (DOR-3600)', async () => {
+      const harness = makeRuntime();
+      harness.runtime.setManagedMcpServers(
+        resolverReturning({ DorkOS: STDIO_CONN, Dorkos_Connections: STDIO_CONN, fs: STDIO_CONN })
+      );
+      await driveTurn(harness, nextSessionId(), 1);
+      const addNames = harness.client.mcp.add.mock.calls.map((c) => c[0]!.body!.name);
+      expect(addNames).toEqual(['fs']);
+    });
+
     it('retries a failed add on the next turn instead of stranding it for the session', async () => {
       const harness = makeRuntime();
       const { runtime, client } = harness;

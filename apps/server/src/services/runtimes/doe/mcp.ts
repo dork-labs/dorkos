@@ -14,11 +14,16 @@ import {
 import { browserCallNamesFile, isWithheldBrowserTool } from '@dorkos/shared/agent-browser';
 import type { McpServerEntry } from '@dorkos/shared/transport';
 import type { McpAppServerConnection } from '@dorkos/shared/agent-runtime';
+import { partitionReservedMcpServers } from '@dorkos/shared/global-mcp-schemas';
 import {
+  CONNECTOR_RUNTIME_MCP_SERVER_NAME,
   CONNECTOR_RUNTIME_TOOL_TIMEOUT_MS,
   type ConnectorRuntimeMcpInjection,
 } from '../connector-tools.js';
-import { resolveDorkosMcpInjection } from '../shared/dorkos-mcp-injection.js';
+import {
+  DORKOS_MCP_SERVER_NAME,
+  resolveDorkosMcpInjection,
+} from '../shared/dorkos-mcp-injection.js';
 import { alwaysLoadedToolsFor, searchHintFrom } from '../shared/tools/tool-exposure-policy.js';
 
 /** What the agent is told when a browser call reaches a file on this computer. */
@@ -100,7 +105,9 @@ export async function assembleDoeMcp(options: DoeMcpOptions): Promise<DoeMcpAsse
         : new McpConnection(id, config, {
             connectTimeoutMs: 5000,
             callTimeoutMs:
-              host || id === 'dorkos_connections' ? CONNECTOR_RUNTIME_TOOL_TIMEOUT_MS : 10000,
+              host || id === CONNECTOR_RUNTIME_MCP_SERVER_NAME
+                ? CONNECTOR_RUNTIME_TOOL_TIMEOUT_MS
+                : 10000,
             maxTools: 10000,
             maxMessageBytes: 16777216,
             maxDiscoveryBytes: 33554432,
@@ -117,7 +124,7 @@ export async function assembleDoeMcp(options: DoeMcpOptions): Promise<DoeMcpAsse
         if (!host && isWithheldBrowserTool(bare)) return;
         const name = host ? bare : tool.name;
         names.set(`${id}:${bare}`, name);
-        if (host || id === 'dorkos_connections') trustedHostToolNames.add(name);
+        if (host || id === CONNECTOR_RUNTIME_MCP_SERVER_NAME) trustedHostToolNames.add(name);
         tools.push({
           ...tool,
           name,
@@ -173,17 +180,24 @@ export async function assembleDoeMcp(options: DoeMcpOptions): Promise<DoeMcpAsse
       options.connectorInjection
     );
     if (injection) {
-      await load('dorkos', { kind: 'http', ...injection }, true);
-      statuses.push({ name: 'dorkos', type: 'http', scope: 'runtime', status: 'connected' });
+      await load(DORKOS_MCP_SERVER_NAME, { kind: 'http', ...injection }, true);
+      statuses.push({
+        name: DORKOS_MCP_SERVER_NAME,
+        type: 'http',
+        scope: 'runtime',
+        status: 'connected',
+      });
       if (options.connectorInjection)
-        await load('dorkos_connections', {
+        await load(CONNECTOR_RUNTIME_MCP_SERVER_NAME, {
           kind: 'http',
           url: options.connectorInjection.url,
           headers: options.connectorInjection.headers,
         });
     }
-    for (const [name, config] of Object.entries(options.servers ?? {})) {
-      // A configured server called dorkos remains foreign and cannot gain host names.
+    // DorkOS's own names never load as a managed server, whatever their case (DOR-3600).
+    const managed = partitionReservedMcpServers(options.servers ?? {}).kept;
+    for (const [name, config] of Object.entries(managed)) {
+      // Prefixed `managed:`, so even a server's own name can never gain host names.
       await load(`managed:${name}`, config.transport === 'sse' ? config : doeMcpTransport(config));
       statuses.push({ name, type: config.transport, scope: 'managed', status: 'connected' });
     }
@@ -195,7 +209,7 @@ export async function assembleDoeMcp(options: DoeMcpOptions): Promise<DoeMcpAsse
       dispose,
       trustedHostToolNames,
       statuses,
-      serverConfigs: { ...options.servers },
+      serverConfigs: { ...managed },
     };
   } catch (error) {
     await dispose().catch(() => {});
@@ -204,7 +218,7 @@ export async function assembleDoeMcp(options: DoeMcpOptions): Promise<DoeMcpAsse
 }
 /** Exact alias for one privately routed connection tool. */
 export function connectionToolName(bare: string): string {
-  return mcpAlias('dorkos_connections', bare);
+  return mcpAlias(CONNECTOR_RUNTIME_MCP_SERVER_NAME, bare);
 }
 
 /** Legacy managed-server transport bridge; the engine registry and execution loop stay shared. */

@@ -67,6 +67,61 @@ export function isUnpinnedPackage(command: string, args: readonly string[]): boo
   return spec === undefined || !PINNED_SPEC.test(spec);
 }
 
+/** The name of DorkOS's own tool server, on every runtime. */
+export const DORKOS_TOOL_SERVER_NAME = 'dorkos';
+
+/** The name of the server DorkOS's connected-app tools ride, on every runtime. */
+export const DORKOS_CONNECTIONS_SERVER_NAME = 'dorkos_connections';
+
+/**
+ * The MCP server names DorkOS's own servers use (DOR-3600). No server a person
+ * or an agent adds may take one, whatever its case, so nothing can stand in for
+ * DorkOS's tools on any runtime.
+ */
+export const RESERVED_MCP_SERVER_NAMES: readonly string[] = [
+  DORKOS_TOOL_SERVER_NAME,
+  DORKOS_CONNECTIONS_SERVER_NAME,
+];
+
+/**
+ * Whether `name` is one of {@link RESERVED_MCP_SERVER_NAMES}, compared without case.
+ *
+ * @param name - A server name.
+ */
+export function isReservedMcpServerName(name: string): boolean {
+  return RESERVED_MCP_SERVER_NAMES.includes(name.toLowerCase());
+}
+
+/**
+ * Leave out every server whose name is one of DorkOS's own, whatever its case:
+ * the one rule every runtime and the managed-server service apply (DOR-3600).
+ *
+ * @param servers - Servers by name.
+ * @returns The servers that may run, and the names left out (for a warning).
+ */
+export function partitionReservedMcpServers<T>(servers: Record<string, T>): {
+  kept: Record<string, T>;
+  reserved: string[];
+} {
+  const kept: Record<string, T> = {};
+  const reserved: string[] = [];
+  for (const [name, server] of Object.entries(servers)) {
+    if (isReservedMcpServerName(name)) reserved.push(name);
+    else kept[name] = server;
+  }
+  return { kept, reserved };
+}
+
+/**
+ * What a person is told when a name is one of DorkOS's own: by the Name field,
+ * and by the server's refusal.
+ *
+ * @param name - The name as typed.
+ */
+export function reservedMcpServerNameMessage(name: string): string {
+  return `${name} is one of DorkOS's own names. Pick another.`;
+}
+
 /** A global server's name: the same rule an agent's managed server follows. */
 export const GlobalMcpServerNameSchema = z
   .string()
