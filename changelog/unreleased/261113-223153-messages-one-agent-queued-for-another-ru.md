@@ -1,6 +1,7 @@
 ---
 covers:
   - 'fix(session): messages one agent queued for another run after a restart, and never join a stuck queue (DOR-3287, DOR-3348)'
+  - 'fix(session): give up on a recovered message after three failed starts, and pin the chain it carries'
 ---
 
 ### Fixed
