@@ -67,11 +67,18 @@ describe('shellLineFor', () => {
   it.each([
     ['/bin/zsh', '~/.zshrc', "alias dorkos='~/.local/bin/dorkos'"],
     ['/bin/bash', '~/.bashrc', "alias dorkos='~/.local/bin/dorkos'"],
-    ['/opt/homebrew/bin/fish', '~/.config/fish/config.fish', 'alias dorkos ~/.local/bin/dorkos'],
+    ['/opt/homebrew/bin/fish', '~/.config/fish/config.fish', "alias dorkos='~/.local/bin/dorkos'"],
     ['/bin/tcsh', '~/.zshrc', "alias dorkos='~/.local/bin/dorkos'"],
     [undefined, '~/.zshrc', "alias dorkos='~/.local/bin/dorkos'"],
   ])('for %s names %s', (shell, file, line) => {
     expect(shellLineFor(shell)).toMatchObject({ file, line });
+  });
+
+  // Designer, Nov 13: fish's own `alias dorkos ~/…` form is a line zsh rejects, so a
+  // person who copied it into the wrong file got an error. Every shell copies one line.
+  it('copies the same line in every shell', () => {
+    for (const shell of ['/bin/zsh', '/bin/bash', '/usr/bin/fish', '/bin/tcsh', undefined])
+      expect(shellLineFor(shell).line).toBe("alias dorkos='~/.local/bin/dorkos'");
   });
 
   // Security, Nov 11: an alias for dorkos alone. A PATH line would let anything an agent

@@ -48,6 +48,26 @@ describe('TerminalCommandTab', () => {
     expect(text()).toContain("alias dorkos='~/.local/bin/dorkos'");
   });
 
+  // Designer, Nov 13: at 390 only a path may break mid-word; `dorkos` in a sentence never splits.
+  it('lets a path break anywhere, but never the word dorkos', async () => {
+    render(
+      <TerminalCommandTab
+        bridge={bridge({
+          state: 'shadowed',
+          ...ADVICE,
+          otherPath: '/opt/made-up/bin/dorkos',
+          otherVersion: null,
+        })}
+      />
+    );
+    await screen.findByRole('button', { name: 'Copy' });
+    const code = (words: string) =>
+      [...document.querySelectorAll('code')].find((el) => el.textContent === words)!;
+    expect(code('dorkos').className).toContain('whitespace-nowrap');
+    expect(code('dorkos').className).not.toContain('break-all');
+    expect(code('/opt/made-up/bin/dorkos').className).toContain('break-all');
+  });
+
   it('state 4: names the other dorkos and its version, with the same line', async () => {
     render(
       <TerminalCommandTab

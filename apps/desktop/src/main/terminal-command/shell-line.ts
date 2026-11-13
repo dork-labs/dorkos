@@ -7,9 +7,15 @@
  * `dorkos` the shell would find, so one line covers both "not found" and "another
  * one first". It works in the person's own Terminal, not in scripts.
  *
+ * The line is the same in every shell: zsh and bash need the `=` form, and fish
+ * accepts it too, so a person never copies a line their shell rejects.
+ *
  * @module main/terminal-command/shell-line
  */
 import path from 'node:path';
+
+/** The exact line to copy, in every shell. */
+export const ALIAS_LINE = "alias dorkos='~/.local/bin/dorkos'";
 
 /** The line to add and the file it goes in, named for the person's shell. */
 export interface ShellLine {
@@ -17,7 +23,7 @@ export interface ShellLine {
   shell: 'zsh' | 'bash' | 'fish';
   /** The startup file, in `~` form for display. */
   file: string;
-  /** The exact line to copy. */
+  /** The exact line to copy: always {@link ALIAS_LINE}. */
   line: string;
 }
 
@@ -29,13 +35,8 @@ export interface ShellLine {
  */
 export function shellLineFor(loginShell: string | undefined): ShellLine {
   const name = path.basename(loginShell ?? '');
-  if (name === 'bash')
-    return { shell: 'bash', file: '~/.bashrc', line: "alias dorkos='~/.local/bin/dorkos'" };
+  if (name === 'bash') return { shell: 'bash', file: '~/.bashrc', line: ALIAS_LINE };
   if (name === 'fish')
-    return {
-      shell: 'fish',
-      file: '~/.config/fish/config.fish',
-      line: 'alias dorkos ~/.local/bin/dorkos',
-    };
-  return { shell: 'zsh', file: '~/.zshrc', line: "alias dorkos='~/.local/bin/dorkos'" };
+    return { shell: 'fish', file: '~/.config/fish/config.fish', line: ALIAS_LINE };
+  return { shell: 'zsh', file: '~/.zshrc', line: ALIAS_LINE };
 }

@@ -14,9 +14,14 @@ type View =
   | { kind: 'failed'; action: 'install' | 'remove'; reason: string; status: TerminalCommandStatus };
 
 /** A path or command in the row's text, in mono. */
-function Mono({ children }: { children: string }) {
-  // A path can be one long word; it wraps rather than running out of the card at 390.
-  return <code className="font-mono text-xs break-all">{children}</code>;
+function Mono({ children, path = false }: { children: string; path?: boolean }) {
+  // A path can be one long word, so it may break anywhere rather than run out of the
+  // card at 390. A word in a sentence, like `dorkos`, never splits.
+  return (
+    <code className={path ? 'font-mono text-xs break-all' : 'font-mono text-xs whitespace-nowrap'}>
+      {children}
+    </code>
+  );
 }
 
 /** The line to add, with Copy that reads "Copied" for a moment. */
@@ -24,7 +29,7 @@ function CopyLine({ line }: { line: string }) {
   const { copied, copy } = useCopyFeedback({ timeoutMs: 1500 });
   return (
     <div className="bg-muted flex items-center justify-between gap-2 rounded-lg px-3 py-2">
-      <code className="min-w-0 font-mono text-xs break-all">{line}</code>
+      <code className="min-w-0 font-mono text-xs break-words">{line}</code>
       <Button variant="secondary" size="sm" className="shrink-0" onClick={() => void copy(line)}>
         {copied ? 'Copied' : 'Copy'}
       </Button>
@@ -53,7 +58,7 @@ function Description({ view }: { view: Exclude<View, { kind: 'checking' }> }) {
     case 'installed':
       return (
         <>
-          Installed at <Mono>{status.path}</Mono>.
+          Installed at <Mono path>{status.path}</Mono>.
         </>
       );
     case 'not-found':
@@ -61,14 +66,14 @@ function Description({ view }: { view: Exclude<View, { kind: 'checking' }> }) {
         <>
           <span className="block">Installed, but Terminal can’t find it yet.</span>
           <span className="block">
-            Add this line to <Mono>{status.shellFile}</Mono>, then open a new Terminal window.
+            Add this line to <Mono path>{status.shellFile}</Mono>, then open a new Terminal window.
           </span>
         </>
       );
     case 'shadowed':
       return (
         <>
-          Terminal finds another <Mono>dorkos</Mono> first, at <Mono>{status.otherPath}</Mono>
+          Terminal finds another <Mono>dorkos</Mono> first, at <Mono path>{status.otherPath}</Mono>
           {status.otherVersion ? ` (${status.otherVersion})` : ''}.
         </>
       );
@@ -182,6 +187,9 @@ export function TerminalCommandTab({
         <FieldCardContent>
           <SettingRow
             label="Terminal command"
+            // Below 480px the action sits under the words, left-aligned, so the
+            // words keep the card's full width.
+            className="max-[480px]:flex-col max-[480px]:items-start max-[480px]:gap-3"
             description={view.kind === 'checking' ? 'Checking…' : <Description view={view} />}
           >
             <Action
