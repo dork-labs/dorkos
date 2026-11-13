@@ -88,6 +88,12 @@ describe('InstructionsViewer', () => {
     expect(screen.getByText(/Sent once at start/)).toBeInTheDocument();
   });
 
+  it('names the built-in runtime by its public name on the narrow tab (DOR-4114)', () => {
+    render(<Harness />);
+    expect(screen.getByText('DorkOS')).toBeInTheDocument();
+    expect(screen.queryByText('Doe')).not.toBeInTheDocument();
+  });
+
   it('draws variables as chips and says how many agents override a block', async () => {
     render(<Harness />);
     await userEvent.click(screen.getByRole('button', { name: /Who the agent is/ }));

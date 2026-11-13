@@ -104,7 +104,7 @@ function resolveAgentPath(deps: McpToolDeps, args: { agent_id?: string; cwd?: st
   }
   if (args.cwd) return args.cwd;
   if (!deps.meshCore) {
-    throw new Error('Mesh is not enabled. Cannot resolve agent_id without Mesh.');
+    throw new Error('The agent directory is off, so agent_id cannot be resolved.');
   }
   const projectPath = deps.meshCore.getProjectPath(args.agent_id!);
   if (!projectPath) {

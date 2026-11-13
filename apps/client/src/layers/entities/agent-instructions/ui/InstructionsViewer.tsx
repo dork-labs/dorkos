@@ -46,7 +46,7 @@ const RUNTIMES: { value: InstructionsRuntime; label: string }[] = [
   { value: 'claude-code', label: 'Claude Code' },
   { value: 'codex', label: 'Codex' },
   { value: 'opencode', label: 'OpenCode' },
-  { value: 'doe', label: 'Doe' },
+  { value: 'doe', label: 'DorkOS' },
 ];
 
 const PLACES: { value: InstructionsPlace; label: string }[] = [

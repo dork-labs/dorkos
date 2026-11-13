@@ -40,7 +40,7 @@ const AgentListResourceSchema = z.object({
 /** Guard that returns the injected `MeshCore` or throws a clear "not available" error. */
 function requireMeshCore(deps: McpToolDeps): NonNullable<McpToolDeps['meshCore']> {
   if (!deps.meshCore) {
-    resourceUnavailable('Mesh is not enabled, so agent resources are unavailable.');
+    resourceUnavailable('The agent directory is off, so agent resources are unavailable.');
   }
   return deps.meshCore;
 }
@@ -58,7 +58,7 @@ export function registerAgentResources(server: McpServer, deps: McpToolDeps): vo
     {
       title: 'Agents',
       description:
-        'Every agent registered with Mesh — the same manifests the mesh_list tool returns.',
+        'Every agent in the agent directory — the same manifests the mesh_list tool returns.',
       mimeType: 'application/json',
     },
     async () => {

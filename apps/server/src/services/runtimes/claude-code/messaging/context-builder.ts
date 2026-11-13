@@ -226,7 +226,7 @@ function meshToolsContext(agentSession: boolean): string {
     ? `\n- Message another agent: ${T}chat_send(to=<their agent id from ${T}mesh_list>, message="…")`
     : '';
   return `<mesh_tools>
-DorkOS Mesh is a local agent registry for discovering and communicating with AI agents on this machine.
+The agent directory lists the AI agents on this machine, so you can find them and message them.
 
 Agent lifecycle:
 1. ${T}mesh_discover(roots=["/path"]) — scan directories for agent candidates (looks for AGENTS.md, .dork/agent.json)
@@ -252,7 +252,7 @@ Runtimes: claude-code | cursor | codex | other
 }
 
 const ADAPTER_TOOLS_CONTEXT = `<adapter_tools>
-Relay adapters bridge external platforms (Telegram, webhooks) to the agent message bus.
+Chat connections link outside chat apps (Telegram, Slack, webhooks) to agents here.
 
 To message a human on an external channel, use ${T}relay_notify_user(message="…",
 channel="{adapter type or ID}") — never publish a relay.human.* subject directly. The bus
