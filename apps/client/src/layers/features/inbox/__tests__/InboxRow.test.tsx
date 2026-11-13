@@ -351,3 +351,27 @@ it('reads a new-tool notice in full: which server added a tool, and who uses it 
   expect(content).toHaveTextContent(body);
   expect(content).not.toHaveClass('truncate');
 });
+
+it('reads a reserved-name notice in full, with the name as plain text (DOR-4262)', () => {
+  const name = '**bold**<img src=x onerror=alert(1)>';
+  const title = `${name} stopped reaching your agents.`;
+  const body = 'Its name is now reserved for DorkOS. Rename it to fix this.';
+  render(
+    <InboxRow
+      notification={build({
+        kind: 'mcp-server.reserved_name',
+        subject: { type: 'system', id: `mcp-server:${name}` },
+        title,
+        body,
+        actions: [{ id: 'open', label: 'Review', style: 'primary' }],
+      })}
+      onOpen={() => {}}
+    />
+  );
+  const shown = document.querySelector('[data-slot="inbox-row-title"]');
+  expect(shown).toHaveTextContent(title);
+  expect(shown).not.toHaveClass('truncate');
+  expect(shown).not.toHaveClass('line-clamp-2');
+  expect(shown!.querySelector('img, strong, b, a')).toBeNull();
+  expect(document.querySelector('[data-slot="inbox-row-body"]')).toHaveTextContent(body);
+});

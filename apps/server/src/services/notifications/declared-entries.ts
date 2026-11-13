@@ -44,6 +44,10 @@ import {
   MCP_TOOL_ADDED_ENTRIES,
   type McpToolAddedPayloads,
 } from '../mesh/global-mcp/global-mcp-tool-added-notice.js';
+import {
+  MCP_RESERVED_NAME_ENTRIES,
+  type McpReservedNamePayloads,
+} from '../mesh/global-mcp/global-mcp-reserved-name-notice.js';
 
 /** The payloads of every declared kind, joined into `NotificationPayloads`. */
 export interface DeclaredPayloads
@@ -56,7 +60,8 @@ export interface DeclaredPayloads
     BrowserHandoffPayloads,
     ShellCheckPayloads,
     AccessChangePayloads,
-    McpToolAddedPayloads {}
+    McpToolAddedPayloads,
+    McpReservedNamePayloads {}
 
 /** Every declared entry, spread into the registry's `ENTRIES`. */
 export const DECLARED_ENTRIES = {
@@ -69,6 +74,7 @@ export const DECLARED_ENTRIES = {
   ...SHELL_CHECK_ENTRIES,
   ...ACCESS_CHANGE_ENTRIES,
   ...MCP_TOOL_ADDED_ENTRIES,
+  ...MCP_RESERVED_NAME_ENTRIES,
 };
 
 /**
@@ -86,4 +92,5 @@ export const DECLARED_WIRED_KINDS = [
   'shell.check_down',
   'connector.access_narrowed',
   'mcp-server.tool_added',
+  'mcp-server.reserved_name',
 ] as const;

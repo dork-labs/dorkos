@@ -182,7 +182,7 @@ export function WhoUsesIt({ server }: WhoUsesItProps) {
 
       <section aria-labelledby="what-it-can-do" className="space-y-2">
         <h3 id="what-it-can-do" className="text-sm font-medium">
-          {tools.data?.status === 'ok'
+          {tools.data?.status === 'ok' || tools.data?.status === 'reserved-name'
             ? `What it can do · ${tools.data.tools.length + tools.data.omitted} tools`
             : 'What it can do'}
         </h3>
@@ -269,11 +269,24 @@ function ToolList({ check, pending, failed, allows }: ToolListProps) {
   if (check.status === 'unreachable') {
     return <p className="text-muted-foreground text-sm">Couldn’t reach the server.</p>;
   }
+  // It answered, but no agent gets these tools until it is renamed (DOR-4262). Never "ok".
+  const held =
+    check.status === 'reserved-name' ? (
+      <p data-slot="reserved-name-check" className="text-status-warning-fg text-sm">
+        It works, but agents can’t use it until it’s renamed.
+      </p>
+    ) : null;
   if (check.tools.length === 0) {
-    return <p className="text-muted-foreground text-sm">It lists no tools.</p>;
+    return (
+      <>
+        {held}
+        <p className="text-muted-foreground text-sm">It lists no tools.</p>
+      </>
+    );
   }
   return (
     <>
+      {held}
       <ul className="divide-border divide-y rounded-lg border text-sm">
         {check.tools.map((tool) => (
           <ToolRow key={tool.name} tool={tool} users={usersOf(tool.name, allows)} />

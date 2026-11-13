@@ -191,6 +191,7 @@ const PAYLOADS: { [K in NotificationKind]: NotificationPayloads[K] } = {
     title: 'Scout took Gmail (Work) access away from Bea',
   },
   'mcp-server.tool_added': { server: 'tracker', tool: 'export_all', agentNames: ['Quill'] },
+  'mcp-server.reserved_name': { server: 'dorkos' },
   'web.new_device': { deviceRef: 'ref-1', label: 'Safari on iPhone' },
   'agent.secret_files': {
     agentId: 'agent-1',
@@ -264,6 +265,8 @@ const EXPECTED_TIERS: Record<NotificationKind, string> = {
   'connector.access_narrowed': 'blocking',
   // A server added a tool an agent already allows wholesale: worth seeing, not urgent.
   'mcp-server.tool_added': 'notable',
+  // A saved server stopped reaching agents: worth fixing, nothing waits on it (DOR-4262).
+  'mcp-server.reserved_name': 'notable',
   'web.new_device': 'notable',
   'agent.secret_files': 'notable',
   // A notice with a way to act, never a hold: nothing waits on it (DOR-3245).
@@ -366,6 +369,7 @@ describe('notification registry', () => {
       'extension.approval',
       'extension.decision',
       'heartbeat.credits-offer',
+      'mcp-server.reserved_name',
       'mcp-server.tool_added',
       'mention.received',
       'report.daily',

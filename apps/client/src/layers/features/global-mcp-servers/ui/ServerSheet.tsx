@@ -34,6 +34,8 @@ interface ServerSheetProps {
   onClose: () => void;
   /** Ask to remove the server. */
   onRemove: () => void;
+  /** Add it again under a new name, then remove this one: the only way to rename (DOR-4262). */
+  onReAdd: () => void;
   /** Where focus goes when the sheet closes. */
   onCloseAutoFocus: (event: Event) => void;
 }
@@ -49,7 +51,13 @@ function addedOn(iso: string): string {
  * purpose: to change a server, remove it and add it again, which types its secret again. Switches
  * apply as they are pressed, so "Confirm it's you" runs at the switch and Done only closes.
  */
-export function ServerSheet({ server, onClose, onRemove, onCloseAutoFocus }: ServerSheetProps) {
+export function ServerSheet({
+  server,
+  onClose,
+  onRemove,
+  onReAdd,
+  onCloseAutoFocus,
+}: ServerSheetProps) {
   const patch = usePatchGlobalMcpServer();
   const unpinned =
     server.command !== undefined && isUnpinnedPackage(server.command, server.args ?? []);
@@ -81,6 +89,10 @@ export function ServerSheet({ server, onClose, onRemove, onCloseAutoFocus }: Ser
           </div>
         </ResponsiveDialogHeader>
         <ResponsiveDialogBody alignWithHeader className="space-y-4 py-1">
+          {/* First, under the title: on a phone, anything lower is below the fold (DOR-4262). */}
+          {server.reservedName && (
+            <ReservedNameNotice name={server.name} disabled={patch.isPending} onReAdd={onReAdd} />
+          )}
           <dl className="bg-muted grid gap-x-4 gap-y-1.5 rounded-lg p-3 text-sm sm:grid-cols-[auto_minmax(0,1fr)]">
             {server.command !== undefined && <Line term="Command">{server.command}</Line>}
             {server.args !== undefined && server.args.length > 0 && (
@@ -173,6 +185,44 @@ export function ServerSheet({ server, onClose, onRemove, onCloseAutoFocus }: Ser
         </ResponsiveDialogFooter>
       </ResponsiveDialogContent>
     </ResponsiveDialog>
+  );
+}
+
+/**
+ * Why no agent gets this server: its name is one of DorkOS's own (DOR-3600), in the designer's
+ * words (DOR-4262). There is no Rename, so its one action adds it again under a new name; the
+ * block itself stays. The name is plain text.
+ */
+function ReservedNameNotice({
+  name,
+  disabled,
+  onReAdd,
+}: {
+  name: string;
+  disabled: boolean;
+  onReAdd: () => void;
+}) {
+  return (
+    <div
+      data-slot="reserved-name-notice"
+      className="bg-status-warning-bg space-y-2 rounded-lg p-3 text-sm"
+    >
+      <p className="font-semibold">Agents can’t use this server.</p>
+      <p className="[overflow-wrap:anywhere]">
+        “{name}” is reserved for DorkOS’s own tools, so agents don’t get its tools.
+      </p>
+      <p>Rename it to give them back.</p>
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        className="max-sm:h-11"
+        disabled={disabled}
+        onClick={onReAdd}
+      >
+        Remove and add again…
+      </Button>
+    </div>
   );
 }
 

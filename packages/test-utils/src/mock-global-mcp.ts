@@ -40,6 +40,7 @@ export function createMockGlobalMcpServer(
     addedAt: new Date(0).toISOString(),
     skippedOn: [],
     warnings: [],
+    reservedName: false,
     ...overrides,
   };
 }
