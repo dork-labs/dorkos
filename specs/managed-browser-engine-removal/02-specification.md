@@ -83,4 +83,6 @@ Keep the older `dorkos browser login` and `dorkos browser status` commands (`bro
 
 ## Order and date
 
-After the Nov 17 launch, in parallel with DOR-4273 (no shared files). About 1.5 days with the guard move. Target: **Fri Nov 20, 2026.**
+**Gate (PM, Nov 13): start the deletion only after 0.135.9 ships.** The move of the 5 live files rides in the same PR, and its tests must prove the guards and the profile scan still run at their new paths.
+
+After the Nov 17 launch, in parallel with DOR-4273 (no shared files). About 1.5 days with the guard move. Target: **Fri Nov 20, 2026**, provided 0.135.9 has shipped by then.

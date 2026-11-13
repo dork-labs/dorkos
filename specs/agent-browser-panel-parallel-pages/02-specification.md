@@ -22,7 +22,7 @@ DOR-4273 gives each chat its own tab in the agent's own Chrome window. This spec
 
 - The desktop bridge (`apps/desktop/src/main/local-browser/index.ts`) already keeps a map of guest pages, one per connection. Each is a `WebContentsView` in one shared session, `persist:dorkos-local-browser`.
 - Each guest has its own debugger transport (`page-transport.ts`). It is scoped to that one page and refuses browser-wide and storage commands.
-- The limit is above the bridge: the server's `LocalBrowserService` allows one holder per install, and the panel shows "in use in another chat" to everyone else.
+- The limit is above the bridge: the server's `LocalBrowserService` allows one holder per install, and the panel tells every other chat "Shared with another chat. Disconnect to use it here." (main). DOR-4265 (#3713) changes that to "This browser is open in another chat" with a **Take it here** button.
 
 So the bridge is close to ready. The work is mostly on the server and in the panel.
 

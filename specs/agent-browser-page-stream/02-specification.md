@@ -51,7 +51,7 @@ Properties we keep:
 2. **Fan-out.** One screencast per page. Each viewer has its own one-frame slot. A slow viewer never slows a fast one.
 3. **Transport.** Plain HTTP routes in the server's normal request chain: a frame request with a receipt, and an input post. They go through the same session gate and tunnel as every other route. No new port.
 4. **Who can watch.** Only people allowed to see that chat. Agents never get the stream; they keep the existing observe tools for their own page.
-5. **Taking over.** Input from a viewer is accepted only while the person holds the page (DOR-4273's takeover lease). Pressing Take over starts a handoff; the agent stops; Give it back returns it. While the person holds it, Security Must 2 applies: no agent reads or screenshots that page.
+5. **Taking over.** Input from a viewer is accepted only while the person holds the page (DOR-4273's takeover lease). Pressing Take over starts a handoff; the agent stops; **Hand back to {Agent}** returns it. (These are the planned names from the "who's driving" strip, DOR-4107, not buttons on main today. On main, the handoff card's buttons are **Continue** and **Stop task**.) While the person holds it, Security Must 2 applies: no agent reads or screenshots that page.
 6. **Sign-in.** While the person is typing in a password field, page reads and screenshots for agents are denied (the dsh pattern), and the audit line records only that a sign-in happened.
 7. **Audit.** One line per viewer session: person, chat, page id, origin, start, end, and whether they took over.
 
@@ -63,7 +63,7 @@ Properties we keep:
     The prototype passed both (163 ms and 543 ms p95, `specs/shared-browser-control/05-prototype-evidence.md`), but on the managed engine and with injected delay, not a real tunnel. Re-measure on the live service, and once through a real tunnel.
 - **Many viewers:** three viewers on one page. One stalled viewer does not raise the others' p95 above 250 ms locally. The stalled viewer holds at most one pending frame.
 - **No viewers, no screencast:** the screencast stops within 5 seconds of the last viewer leaving.
-- Take over and Give it back work from the web app at 390 px wide, by touch and by keyboard.
+- Take over and **Hand back to {Agent}** work from the web app at 390 px wide, by touch and by keyboard.
 - An agent cannot read or screenshot a page the person holds through the stream (Must 2), tested.
 - A viewer for chat A cannot get frames from chat B's page (Must 1), tested.
 - Runs in CI against made-up local pages. No real sites, and no Chrome launched on a developer Mac.

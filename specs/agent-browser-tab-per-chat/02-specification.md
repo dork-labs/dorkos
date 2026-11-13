@@ -36,7 +36,7 @@ Keep our Agent browser and borrow patterns from others (research report, path A)
 6. **Popups join the opener's chat.** A tab opened by a chat's page belongs to that chat.
 7. **Unowned tabs belong to the person.** A tab the person opened is no chat's. The person can give a tab to a chat. Moving a tab to another chat needs the person's OK.
 8. **Adopt after a restart.** A chat that restarts can adopt its own orphaned tab, matched on the server-stamped chat id.
-9. **Panel.** The panel shows the current chat's page and status. In own-window mode, the "in use in another chat" state goes away. The embedded DorkOS browser stays one holder here; the desktop bridge hands out one guest page per connection (DOR-4289 lifts that).
+9. **Panel.** The panel shows the current chat's page and status. In own-window mode, the "held by another chat" state goes away. On main that state reads "Shared with another chat. Disconnect to use it here."; DOR-4265 (#3713) replaces it with "This browser is open in another chat" and a **Take it here** button. The embedded DorkOS browser stays one holder here; the desktop bridge hands out one guest page per connection (DOR-4289 lifts that).
 
 ### Answering BrowserOS's two objections
 
