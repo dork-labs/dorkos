@@ -35,7 +35,7 @@ for i in $(seq 0 $((SPEC_COUNT - 1))); do
   fi
 
   # Check if already has normalized frontmatter (has number: field)
-  if head -10 "$IDEATION" | grep -q "^number:"; then
+  if head -10 "$IDEATION" | grep "^number:" >/dev/null; then
     echo "  SKIP: $SLUG (already normalized)"
     SKIPPED=$((SKIPPED + 1))
     continue

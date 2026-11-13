@@ -318,7 +318,7 @@ fi
 
 is_quarantined() {
   [ -n "$quarantined" ] || return 1
-  printf '%s\n' "$quarantined" | grep -Fxq -- "$1"
+  grep <<<"$quarantined" -Fxq -- "$1"
 }
 
 # One path per shard, or none for the single default report. See SHARDING above.
@@ -689,7 +689,7 @@ if [ -n "$quarantined" ]; then
   absent=''
   while IFS= read -r q; do
     [ -n "$q" ] || continue
-    printf '%s\n' "$all_ids" | grep -Fxq -- "$q" || absent="$absent  $q"$'\n'
+    grep <<<"$all_ids" -Fxq -- "$q" || absent="$absent  $q"$'\n'
   done <<<"$quarantined"
   if [ -n "$absent" ]; then
     fail "these tests are QUARANTINED but did not RUN in this suite:
