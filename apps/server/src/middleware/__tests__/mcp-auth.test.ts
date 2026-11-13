@@ -127,7 +127,11 @@ function authFor(surface: McpAuthSurface) {
       socket: { remoteAddress: from.peerAddress },
     } as unknown as IncomingMessage;
     if (from.ingress) markIngress(incoming, from.ingress);
-    const answer = await app.request(req.path ?? '/', { method: req.method, headers }, { incoming });
+    const answer = await app.request(
+      req.path ?? '/',
+      { method: req.method, headers },
+      { incoming }
+    );
     if (answer.status !== 204) {
       res.statusCode = answer.status;
       res.body = await answer.json();

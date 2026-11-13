@@ -192,7 +192,6 @@ export type McpAuthEnv = RequestBodyEnv & {
 /** A query parameter that looks like a credential: refused on /mcp and /a2a (DOR-3650). */
 const KEY_IN_QUERY = /key|token|secret|auth|password|bearer/i;
 
-
 /**
  * The credential check as Hono middleware, for `/mcp` and the A2A gateway. It
  * reads the body the chain already parsed (`readJsonBody`), the one the route
