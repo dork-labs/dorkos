@@ -155,6 +155,62 @@ describe('useNativeBrowserSurface', () => {
     expect(setBounds).toHaveBeenLastCalledWith(expect.objectContaining({ x: 50 }));
   });
 
+  it('keeps following a slide whose first frames do not move yet', async () => {
+    render(<Surface onUnavailable={() => {}} />);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(FRAME_MS * 30);
+    });
+    setBounds.mockClear();
+
+    // A delayed or ease-in transition: it starts, sits still for two frames,
+    // then moves with no further event.
+    await act(async () => {
+      document.body.dispatchEvent(new Event('transitionrun', { bubbles: true }));
+      await vi.advanceTimersByTimeAsync(FRAME_MS * 2);
+    });
+    rect = { ...rect, x: 90 };
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(FRAME_MS * 2);
+    });
+
+    expect(setBounds).toHaveBeenLastCalledWith(expect.objectContaining({ x: 90 }));
+  });
+
+  it('follows while a finite animation runs, but an endless one never keeps it busy', async () => {
+    const running: { playState: string; effect: { getTiming: () => { iterations: number } } }[] = [
+      { playState: 'running', effect: { getTiming: () => ({ iterations: Infinity }) } },
+    ];
+    (document as unknown as { getAnimations: () => unknown[] }).getAnimations = () => running;
+    try {
+      render(<Surface onUnavailable={() => {}} />);
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(FRAME_MS * 30);
+      });
+      const measure = vi.mocked(HTMLElement.prototype.getBoundingClientRect);
+      const settled = measure.mock.calls.length;
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(FRAME_MS * 300);
+      });
+      // A spinner somewhere on the page: still idle.
+      expect(measure.mock.calls.length).toBe(settled);
+
+      // A one-shot slide with no events of its own.
+      running.push({ playState: 'running', effect: { getTiming: () => ({ iterations: 1 }) } });
+      setBounds.mockClear();
+      await act(async () => {
+        window.dispatchEvent(new Event('resize'));
+        await vi.advanceTimersByTimeAsync(FRAME_MS * 20);
+      });
+      rect = { ...rect, x: 120 };
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(FRAME_MS * 2);
+      });
+      expect(setBounds).toHaveBeenLastCalledWith(expect.objectContaining({ x: 120 }));
+    } finally {
+      delete (document as unknown as { getAnimations?: unknown }).getAnimations;
+    }
+  });
+
   it('checks for covering overlays at most once a frame, however busy the page is', async () => {
     render(<Surface onUnavailable={() => {}} />);
     await act(async () => {
