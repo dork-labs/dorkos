@@ -284,8 +284,13 @@ describe('dependabot lockstep families', () => {
   it('assumes the workspace globs this scanner was written for', () => {
     // manifestPaths() hard-codes apps/* + packages/*. If a third glob is added,
     // fail here rather than silently checking a subset of the workspace.
+    // Only the `packages:` block: the file holds other settings too (a
+    // `publicHoistPattern` list, for one), whose items are not workspace globs.
+    // The block runs from `packages:` to the next top-level key.
     const workspace = readFileSync(path.join(repoRoot, 'pnpm-workspace.yaml'), 'utf8');
-    const globs = [...workspace.matchAll(/^\s*-\s*'([^']+)'\s*$/gm)].map((m) => m[1]);
+    const block = workspace.match(/^packages:\s*\n((?:(?:[ \t].*|#.*)?\n)*)/m);
+    expect(block, 'pnpm-workspace.yaml has no top-level packages: key').not.toBeNull();
+    const globs = [...block![1].matchAll(/^\s*-\s*'([^']+)'\s*$/gm)].map((m) => m[1]);
     expect(globs).toEqual(['apps/*', 'packages/*']);
   });
 
