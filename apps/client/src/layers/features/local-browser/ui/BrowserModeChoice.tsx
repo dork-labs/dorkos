@@ -1,3 +1,4 @@
+import { useId } from 'react';
 import type { LocalBrowserCapabilities, LocalBrowserMode } from '@dorkos/shared/local-browser';
 
 const BROWSER_MODE_LABELS: Record<LocalBrowserMode, string> = {
@@ -21,6 +22,8 @@ export function BrowserModeChoice({
   capabilities?: LocalBrowserCapabilities;
   disabled: boolean;
 }) {
+  // Each panel's choice is its own radio group, even with two panels on one page.
+  const group = useId();
   const supported = {
     embedded: !!capabilities?.embedded && !!window.electronAPI?.localBrowser,
     'new-window': !!capabilities?.newWindow,
@@ -32,7 +35,7 @@ export function BrowserModeChoice({
         <label key={mode} className="bg-muted/40 flex items-start gap-2 rounded-lg p-3">
           <input
             type="radio"
-            name="local-browser-mode"
+            name={`local-browser-mode-${group}`}
             value={mode}
             checked={value === mode}
             disabled={!supported[mode]}

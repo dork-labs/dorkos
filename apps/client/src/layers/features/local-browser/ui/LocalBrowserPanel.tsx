@@ -224,7 +224,7 @@ export function LocalBrowserPanel({
                 ? 'Updating…'
                 : state?.status === 'closed'
                   ? 'Browser closed'
-                  : connected && sharedElsewhere && !waitingElsewhere
+                  : connected && sharedElsewhere
                     ? 'In use in another chat'
                     : connected
                       ? state.paused

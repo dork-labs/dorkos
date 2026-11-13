@@ -43,10 +43,11 @@ export function SharedElsewhere({
     <Button
       variant="link"
       title={title}
-      className="inline-block h-auto max-w-[16rem] truncate p-0 align-bottom text-sm"
+      // The button keeps the sentence's line height, so the title sits on its baseline.
+      className="h-auto max-w-[16rem] p-0 align-bottom text-sm leading-[inherit] md:h-auto"
       onClick={() => void navigate(toSession({ session: holderSessionId }))}
     >
-      {title}
+      <span className="truncate">{title}</span>
     </Button>
   );
   return (
@@ -65,7 +66,7 @@ export function SharedElsewhere({
           <Button ref={useHere} disabled={disabled} onClick={onUseHere}>
             Use it here
           </Button>
-          <p className="text-muted-foreground truncate text-xs" title={title}>
+          <p className="text-muted-foreground text-xs break-words">
             {title} loses it until you move it back.
           </p>
         </div>

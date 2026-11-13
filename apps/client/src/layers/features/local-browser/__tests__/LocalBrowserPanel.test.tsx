@@ -150,7 +150,7 @@ describe('LocalBrowserPanel', () => {
       mount();
       const link = await screen.findByRole('button', { name: long });
       expect(link).toHaveAttribute('title', long);
-      expect(link).toHaveClass('truncate');
+      expect(link.querySelector('.truncate')).toHaveTextContent(long);
     });
     it('falls back to a plain name while the title is unknown', async () => {
       transport.getSession.mockRejectedValue(new Error('not found'));
@@ -216,6 +216,18 @@ describe('LocalBrowserPanel', () => {
       askedAt: '2026-11-03T00:00:00.000Z',
       outcome: null,
     };
+    it('with its window open, the header says it is in use in another chat', async () => {
+      transport.getLocalBrowserState.mockResolvedValue({
+        ...connected,
+        sessionId: 'chat-two',
+        paused: true,
+        handoff: elsewhere,
+        signIn: null,
+      });
+      mount();
+      await screen.findByRole('button', { name: 'Open that chat' });
+      expect(screen.getAllByRole('status')[0]).toHaveTextContent('In use in another chat');
+    });
     it.each([
       ['with its window open', { ...connected, sessionId: 'chat-two', paused: true }],
       ['with its window closed', { ...disconnected, sessionId: 'chat-two' }],

@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { Transport } from '@dorkos/shared/transport';
 import type { LocalBrowserPersonState } from '@dorkos/shared/local-browser';
 import { TransportProvider } from '@/layers/shared/model';
@@ -79,17 +80,24 @@ function browserTransport(
 }
 
 /**
- * The panel in Atlas's chat reading one browser state, from a scoped transport.
+ * The panel in Atlas's chat reading one browser state, from a scoped transport and
+ * its own query cache: the browser's state is one app-wide query, so demos sharing
+ * the Playground's cache would all show whichever state loaded first.
  * `visible` stays off so several demos on one page don't pull focus and scroll.
  */
 function PanelDemo({ state }: { state: LocalBrowserPersonState }) {
   const [transport] = useState<Transport>(() => browserTransport(state));
+  const [queryClient] = useState(
+    () => new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  );
   return (
-    <TransportProvider transport={transport}>
-      <div className="bg-background h-[36rem] w-full max-w-sm rounded-lg border">
-        <LocalBrowserPanel visible={false} sessionId="chat-atlas" agentName="Atlas" />
-      </div>
-    </TransportProvider>
+    <QueryClientProvider client={queryClient}>
+      <TransportProvider transport={transport}>
+        <div className="bg-background h-[36rem] w-full max-w-sm rounded-lg border">
+          <LocalBrowserPanel visible={false} sessionId="chat-atlas" agentName="Atlas" />
+        </div>
+      </TransportProvider>
+    </QueryClientProvider>
   );
 }
 
