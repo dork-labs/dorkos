@@ -6,7 +6,7 @@ import { PassThrough } from 'node:stream';
 import { chromium, type BrowserContext } from 'playwright-core';
 import { lexWithoutComments } from '../../../../../../../scripts/lib/code-only.mjs';
 const mocks = vi.hoisted(() => ({
-  chromePath: vi.fn((): string | undefined => undefined),
+  existsSync: vi.fn(() => false),
   access: vi.fn(),
   mkdir: vi.fn(async () => undefined),
   readFile: vi.fn(async () => '{}'),
@@ -20,7 +20,10 @@ const mocks = vi.hoisted(() => ({
     return { stdout: mocks.stdout };
   }),
 }));
-vi.mock('../connection/chrome-installation.js', () => ({ installedChromePath: mocks.chromePath }));
+vi.mock('node:fs', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('node:fs')>()),
+  existsSync: mocks.existsSync,
+}));
 vi.mock('node:fs/promises', () => ({
   access: mocks.access,
   mkdir: mocks.mkdir,
@@ -64,14 +67,14 @@ import {
 beforeEach(() => {
   mocks.execFile.mockClear();
   mocks.writeFile.mockClear();
-  mocks.chromePath.mockReturnValue(undefined);
+  mocks.existsSync.mockReturnValue(false);
   mocks.stdout = new PassThrough();
   mocks.access.mockRejectedValue(Object.assign(new Error('Missing browser'), { code: 'ENOENT' }));
   mocks.failure = undefined;
 });
 describe('pinned managed browser preparation', () => {
   it('uses installed Chrome without downloading Chromium or requiring a theme extension', async () => {
-    mocks.chromePath.mockReturnValue('/installed/chrome');
+    mocks.existsSync.mockReturnValue(true);
     const context = themedContext();
     const launch = vi.spyOn(chromium, 'launchPersistentContext').mockResolvedValue(context);
     try {
@@ -84,7 +87,7 @@ describe('pinned managed browser preparation', () => {
     }
   });
   it('writes the installed Chrome orange, agent name and avatar before launch with extensions disabled', async () => {
-    mocks.chromePath.mockReturnValue('/installed/chrome');
+    mocks.existsSync.mockReturnValue(true);
     const launch = vi
       .spyOn(chromium, 'launchPersistentContext')
       .mockImplementation(async (_folder, options) => {
