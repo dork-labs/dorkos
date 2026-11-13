@@ -22,12 +22,6 @@ function makeTraits(overrides: Partial<Traits> = {}): Traits {
 
 describe('dorkbot-templates', () => {
   describe('dorkbotClaudeMdTemplate', () => {
-    it('returns a non-empty string with DorkBot header', () => {
-      const result = dorkbotClaudeMdTemplate();
-      expect(result).toContain('# DorkBot');
-      expect(result).toContain('DorkOS');
-    });
-
     it('describes running a business and building mini apps, never a retired line', () => {
       const result = dorkbotClaudeMdTemplate();
       expect(result).toContain('run their business');

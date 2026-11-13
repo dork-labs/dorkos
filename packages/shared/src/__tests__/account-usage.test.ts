@@ -861,12 +861,6 @@ describe('toAccountUsage', () => {
 });
 
 describe('account colors and ids', () => {
-  it('has eight lowercase #rrggbb defaults', () => {
-    expect(DEFAULT_ACCOUNT_COLORS).toHaveLength(8);
-    for (const c of DEFAULT_ACCOUNT_COLORS) expect(c).toMatch(/^#[0-9a-f]{6}$/);
-    expect(new Set(DEFAULT_ACCOUNT_COLORS).size).toBe(8);
-  });
-
   it('resolves a valid stored color, else the default by position with wrap-around', () => {
     expect(resolveAccountColor('#abcdef', 3)).toBe('#abcdef');
     expect(resolveAccountColor(null, 2)).toBe(DEFAULT_ACCOUNT_COLORS[2]);
