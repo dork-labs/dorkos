@@ -5,6 +5,4 @@ covers:
 
 ### Fixed
 
-<!-- dorkos-changelog:seeded — rewrite this bullet for a human, then delete this comment. If the change needs no changelog entry, delete the whole fragment instead. See changelog/README.md#seeded-fragments. -->
-
-- Log every stream retry failure, rate-limited, and prove both address families reconnect (DOR-4294)
+- When the Mac app can't reach its own server, its log now says so every 30 seconds with a count of tries, and says when it reconnects. Before, it went quiet after the first try. (DOR-4294)
