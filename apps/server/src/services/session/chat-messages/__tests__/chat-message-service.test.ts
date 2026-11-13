@@ -14,11 +14,16 @@ import { chatMessageFenceNonces } from '@dorkos/shared/chat-messages';
 import type { TurnPermissionLevel } from '@dorkos/shared/agent-runtime';
 
 vi.mock('../../../audit/audit-trail.js', () => ({ recordAudit: vi.fn() }));
-// One seam on the real dispatcher module: whether a queue row is being read
-// into a turn this tick, which only a real launch can make true.
+// Two seams on the real dispatcher module: whether a queue row is being read
+// into a turn this tick, which only a real launch can make true, and whether a
+// row has a live entry to run it, which the fake dispatch below never creates.
 vi.mock('../../message-dispatcher.js', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../message-dispatcher.js')>();
-  return { ...actual, isQueuedMessageLaunching: vi.fn(() => false) };
+  return {
+    ...actual,
+    isQueuedMessageLaunching: vi.fn(() => false),
+    isQueuedMessageArmed: vi.fn(() => true),
+  };
 });
 // Which chats' turns hold a Wi-Fi mark, as `marksOf` reads them. In production the levels a chat
 // hands on (`passedOnLevelOf`) never carry the hold, so this is the only place it shows.
@@ -37,7 +42,11 @@ vi.mock('../../../core/turn-power/turn-levels.js', async (importOriginal) => {
 import { recordAudit } from '../../../audit/audit-trail.js';
 import { ceilingOnlyRecords, marksOfCeiling } from '../../../core/turn-power/turn-marks.js';
 import { rowsCarryHold } from '../chat-message-ceiling.js';
-import { isQueuedMessageLaunching, type DispatchLifecycleEvent } from '../../message-dispatcher.js';
+import {
+  isQueuedMessageArmed,
+  isQueuedMessageLaunching,
+  type DispatchLifecycleEvent,
+} from '../../message-dispatcher.js';
 import { MessageQueueStore, setMessageQueueStore } from '../../message-queue-store.js';
 import type {
   DispatchSessionMessageOpts,
@@ -211,6 +220,7 @@ beforeEach(() => {
   nonceCounter = 0xa0;
   openedCounter = 0;
   vi.mocked(isQueuedMessageLaunching).mockReturnValue(false);
+  vi.mocked(isQueuedMessageArmed).mockReturnValue(true);
   vi.mocked(recordAudit).mockClear();
   chat(ANA.sessionId, { agentPath: ANA.agentPath });
   service = build();

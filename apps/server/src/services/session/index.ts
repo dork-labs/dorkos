@@ -148,6 +148,7 @@ export {
   listQueuedMessages,
   noteSessionOrphaned,
   noteTurnBoundary,
+  rearmChatQueues,
   sweepOrphanedMessageQueues,
   withDispatchMutex,
 } from './message-dispatcher.js';

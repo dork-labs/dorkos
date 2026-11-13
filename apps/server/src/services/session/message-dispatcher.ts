@@ -215,6 +215,7 @@ import type {
 // The dispatcher's public surface is this module; its parts live in
 // `./message-dispatcher/` and are re-exported here so no caller changes.
 export {
+  isQueuedMessageArmed,
   isQueuedMessageLaunching,
   onDispatchLifecycle,
   setQueuedChatCeilingResolver,
@@ -242,6 +243,7 @@ export {
   cancelPendingDispatch,
   listQueuedMessages,
   noteSessionOrphaned,
+  rearmChatQueues,
   suspendPrivateDispatches,
   sweepOrphanedMessageQueues,
 } from './message-dispatcher/queue-upkeep.js';
