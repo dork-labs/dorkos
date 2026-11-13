@@ -46,6 +46,17 @@ describe('browser sign-in stores under Claude Code (DOR-4136)', () => {
     expect(HOME_PERSON_ONLY_RULES.every((rule) => deny.includes(rule))).toBe(true);
   });
 
+  // DOR-3105: the person runs `~/.local/bin/dorkos` as themselves. An agent that rewrote it
+  // would run its own code as the person, so every file tool is denied it, at Full too, and a
+  // saved "Always allow" can't open it.
+  it('denies every file tool the Terminal command, at every level', () => {
+    for (const full of [false, true]) {
+      const { deny } = launch(['Write(~/.local/bin/dorkos)', 'Edit(~/.local/bin/**)'], full);
+      for (const tool of ['Edit', 'Write', 'MultiEdit', 'NotebookEdit'])
+        expect(deny).toContain(`${tool}(~/.local/bin/dorkos)`);
+    }
+  });
+
   it('denies writes to this data folder’s saved session and login profile', () => {
     const { deny, dorkHome } = launch([]);
     const session = rulePath(path.join(dorkHome, 'browser', 'storage-state.json'));
