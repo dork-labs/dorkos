@@ -22,6 +22,7 @@ import { requestFactsFor } from '../../../../http/__tests__/described-request.js
 
 const fixtureTarget = swappableServer();
 const fixtureServer = fixtureTarget.server;
+const writes = vi.fn();
 
 /**
  * The real chain (`http/api-chain.ts`) with Better Auth mounted before body
@@ -37,13 +38,22 @@ function buildApp(): RequestListener {
   });
   // Gated API route (echoes the attached identity).
   app.get('/api/sessions', (c) => c.json({ ok: true, user: c.get('user') ?? null }));
-  app.post('/api/sessions', (c) => c.json({ changed: true, user: c.get('user') ?? null }));
+  app.post('/api/sessions', (c) => {
+    writes(c.req.path);
+    return c.json({ changed: true, user: c.get('user') ?? null });
+  });
   // Exempt: health probe.
   app.get('/api/health', (c) => c.json({ status: 'ok' }));
   // Gated despite the /api/health prefix: the deep report is operator-only.
   app.get('/api/health/deep', (c) => c.json({ checks: [] }));
   // Gated: stands in for the `/mcp` mount.
   app.get('/mcp', (c) => c.json({ ok: true }));
+  // A write outside /api must still pass the app-wide Origin check. This spy
+  // stands in for the MCP side effect; the real chain and credential gate run.
+  app.post('/mcp', (c) => {
+    writes(c.req.path);
+    return c.json({ changed: true, user: c.get('user') ?? null });
+  });
   // Gated with no carve-out of its own: the diagnostic read surface is always
   // mounted, so the gate is the only thing standing between it and an
   // unauthenticated caller. It is registered with a trailing wildcard the way a
@@ -116,11 +126,47 @@ describe('the session gate — /api/* and /mcp credential gate (integration)', (
   afterEach(() => {
     // Default each test back to disabled so an accidental leak is obvious.
     setAuthEnabled(false);
+    writes.mockClear();
   });
 
   afterAll(() => {
     fs.rmSync(tmpDir, { recursive: true, force: true });
   });
+
+  it.each([false, true])(
+    'refuses other-port writes with a real cookie, inside and outside /api, login=%s (DOR-4134)',
+    async (enabled) => {
+      setAuthEnabled(enabled);
+      const cookie = cookies.map((value) => value.split(';')[0]).join('; ');
+      for (const route of ['/api/sessions', '/mcp']) {
+        writes.mockClear();
+        // Same cookie and host, same write: the page's Origin is the only change.
+        const control = await request(fixtureServer)
+          .post(route)
+          .set('Host', `localhost:${env.DORKOS_PORT}`)
+          .set('Origin', ORIGIN)
+          .set('Cookie', cookie)
+          .send({});
+        expect(control.status).toBe(200);
+        expect(control.body.changed).toBe(true);
+        if (enabled)
+          expect(control.body.user).toMatchObject({ userId: ownerId, credential: 'cookie' });
+        expect(writes).toHaveBeenCalledExactlyOnceWith(route);
+        writes.mockClear();
+
+        const refused = await request(fixtureServer)
+          .post(route)
+          .set('Host', `localhost:${env.DORKOS_PORT}`)
+          .set('Origin', `http://localhost:${env.DORKOS_PORT + 1357}`)
+          .set('Cookie', cookie)
+          .send({});
+        expect(refused.status).toBe(403);
+        expect(refused.body.code).toBe('ORIGIN_NOT_ALLOWED');
+        expect(refused.headers['access-control-allow-origin']).toBeUndefined();
+        expect(writes).not.toHaveBeenCalled();
+      }
+    }
+  );
 
   describe('auth.enabled = false (zero-overhead pass-through)', () => {
     it('lets every route through with no credentials', async () => {

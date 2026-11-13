@@ -207,4 +207,30 @@ describe('isThisAppsAddress', () => {
     // From a tunnel, localhost:443 is the viewer's own machine, not this app.
     expect(isThisAppsAddress('https://localhost/', tunnel)).toBe(false);
   });
+
+  // DOR-4132: the server answers to more names than the page's own. Made-up addresses.
+  const own = ['https://box.tail.ts.net', 'http://192.168.1.20:4242', 'https://hub.example.com'];
+
+  it('knows a trailing-dot loopback name for the page’s own port', () => {
+    expect(isThisAppsAddress('http://localhost.:4242/', local)).toBe(true);
+    expect(isThisAppsAddress('http://app.localhost.:4242/', local)).toBe(true);
+    expect(isThisAppsAddress('http://localhost.:5173/', local)).toBe(false);
+  });
+
+  it('knows this server’s own tunnel, Wi-Fi and hub addresses from a local page', () => {
+    for (const src of [
+      'https://box.tail.ts.net/api/health',
+      'http://192.168.1.20:4242/',
+      'https://hub.example.com/x',
+      'https://BOX.tail.ts.net./x',
+    ]) {
+      expect(isThisAppsAddress(src, local, own)).toBe(true);
+    }
+  });
+
+  it('leaves other ports and sites alone when it knows the server’s own addresses', () => {
+    expect(isThisAppsAddress('http://192.168.1.20:5173/', local, own)).toBe(false);
+    expect(isThisAppsAddress('http://box.tail.ts.net/', local, own)).toBe(false);
+    expect(isThisAppsAddress('https://example.com/', local, own)).toBe(false);
+  });
 });

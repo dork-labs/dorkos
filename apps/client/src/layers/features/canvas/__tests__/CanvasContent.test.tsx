@@ -2,7 +2,11 @@
  * @vitest-environment jsdom
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, cleanup, waitFor } from '@testing-library/react';
+import { render as renderBare, screen, cleanup, waitFor } from '@testing-library/react';
+import { TestProviders } from '@dorkos/test-utils/react-helpers';
+
+/** Each render sits in a real query client: the browser frame reads cached config (DOR-4132). */
+const render = (ui: React.ReactElement) => renderBare(ui, { wrapper: TestProviders });
 import '@testing-library/jest-dom/vitest';
 import type { UiCanvasContent } from '@dorkos/shared/types';
 import { canvasViewForContent } from '@dorkos/shared/canvas-view';
@@ -100,6 +104,8 @@ vi.mock('@/layers/shared/model', async () => {
     // which conversation is open — and that reads the route's search params. No
     // conversation is open in these tests, which is what an empty search means.
     useSafeSearch: () => ({}),
+    // The real key: the browser frame reads the server's own addresses from the cached config.
+    configKeys: (await import('@/layers/shared/model/server-config/query-keys')).configKeys,
   };
 });
 

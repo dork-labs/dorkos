@@ -6,7 +6,18 @@
  * frame, and a page it could says nothing (DOR-3131).
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, fireEvent, cleanup, waitFor, act } from '@testing-library/react';
+import {
+  render as renderBare,
+  screen,
+  fireEvent,
+  cleanup,
+  waitFor,
+  act,
+} from '@testing-library/react';
+import { TestProviders } from '@dorkos/test-utils/react-helpers';
+
+/** Each render sits in a real query client: the frame reads cached config (DOR-4132). */
+const render = (ui: React.ReactElement) => renderBare(ui, { wrapper: TestProviders });
 import '@testing-library/jest-dom/vitest';
 import type {
   FrameBridgeRefusal,
@@ -28,10 +39,12 @@ const getFrameBridgeStatus = vi.fn(
   })
 );
 
-vi.mock('@/layers/shared/model', () => {
+vi.mock('@/layers/shared/model', async () => {
   const useAppStore = (selector: (s: typeof mockState) => unknown) => selector(mockState);
   (useAppStore as unknown as { getState: () => typeof mockState }).getState = () => mockState;
   return {
+    // The real key: the frame reads the server's own addresses from the cached config (DOR-4132).
+    configKeys: (await import('@/layers/shared/model/server-config/query-keys')).configKeys,
     useAppStore,
     useTransport: () => ({
       createServeUrl: async () => '/api/workbench/serve/tok/page.html',

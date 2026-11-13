@@ -18,9 +18,15 @@ import {
   isLoopbackPeer,
   parseConfiguredOrigins,
   parseHostname,
+  getOwnServingOrigins,
   resolveAuthTrustedOrigins,
   resolveTrustedOrigins,
 } from '../trusted-origins.js';
+import { setLanTrust } from '../../services/core/lan-access/lan-trust.js';
+import {
+  resetHubServingStateForTests,
+  setHubServingState,
+} from '../../services/core/hub/hub-serving.js';
 
 describe('parseHostname', () => {
   it.each([
@@ -569,5 +575,53 @@ describe('getTunnelOrigins / getTunnelHosts', () => {
     setManagedHosts(['b.example.dev']);
     expect(resolveTrustedOrigins()).not.toContain('https://a.example.dev');
     expect(resolveTrustedOrigins()).toContain('https://b.example.dev');
+  });
+});
+
+// DOR-4132: the canvas browser reads this list to know this server by every name it answers to,
+// so it must be exactly the non-loopback half of the trust list. Real Wi-Fi and hub state, set the
+// way their controllers set it; made-up names and addresses.
+describe('getOwnServingOrigins', () => {
+  const mutable = env as { DORKOS_SERVER_ROLE?: string };
+
+  beforeEach(() => {
+    (tunnelManager as unknown as { status: { url: string | null } }).status = {
+      url: 'https://box.tail.ts.net/',
+    };
+    setLanTrust({ port: 4242, names: ['studio.local'], secureCookies: false });
+    mutable.DORKOS_SERVER_ROLE = 'hub';
+    setHubServingState({
+      state: 'serving',
+      assignment: {
+        state: 'assigned',
+        assignmentId: 'asg_1',
+        assignedAt: '2026-11-03T09:00:00Z',
+        ownerAccountId: 'acct_1',
+        issuer: 'https://accounts.example.invalid',
+        address: 'https://hub.example.invalid',
+        frontDoorProof: { header: 'x-example-proof', secret: 'a'.repeat(40) },
+      },
+    });
+  });
+
+  afterEach(() => {
+    (tunnelManager as unknown as { status: { url: string | null } }).status = { url: null };
+    setLanTrust(null);
+    delete mutable.DORKOS_SERVER_ROLE;
+    resetHubServingStateForTests();
+  });
+
+  it('names this server’s tunnel, Wi-Fi and hub addresses', () => {
+    const own = getOwnServingOrigins();
+    expect(own[0]).toBe('https://box.tail.ts.net');
+    expect(own).toContain('http://studio.local:4242');
+    expect(own.at(-1)).toBe('https://hub.example.invalid');
+  });
+
+  it('is the trust list without its loopback origins', () => {
+    expect(resolveTrustedOrigins()).toEqual([
+      ...getStaticLocalOrigins(),
+      ...getOwnServingOrigins(),
+    ]);
   });
 });

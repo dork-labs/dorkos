@@ -305,12 +305,17 @@ export function getTunnelHosts(): string[] {
  * already refused any other address and any other site's page.
  */
 export function resolveTrustedOrigins(): string[] {
-  return [
-    ...getStaticLocalOrigins(),
-    ...getTunnelOrigins(),
-    ...getLanAccessOrigins(),
-    ...hubServingOrigins(),
-  ];
+  return [...getStaticLocalOrigins(), ...getOwnServingOrigins()];
+}
+
+/**
+ * This server's own addresses beyond loopback, right now: every live tunnel
+ * origin, its Wi-Fi origins while Wi-Fi access is open, and a serving hub's own
+ * address. The same three {@link resolveTrustedOrigins} trusts, so the app can
+ * tell its own server when a page names it by one of them (DOR-4132).
+ */
+export function getOwnServingOrigins(): string[] {
+  return [...getTunnelOrigins(), ...getLanAccessOrigins(), ...hubServingOrigins()];
 }
 
 /**
