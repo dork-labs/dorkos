@@ -9,7 +9,8 @@ import { AUTH_REQUIRED_BODY } from '../services/core/auth/session-gate.js';
  * Throttle remote MCP credential guesses before either credential verifier runs.
  * Ten failures from one source spend a fifteen-minute sliding window; successful
  * requests return their reservation. The bounded shared limiter normalizes
- * addresses and trusts forwarding headers only when explicitly configured.
+ * addresses. A source is the TCP peer, except through the own tunnel or managed
+ * access, where it is the client ngrok's edge saw (`edgeClientRateLimitKey`).
  *
  * The same flat 401 answers a bad, missing or throttled credential, with no
  * quota headers revealing which refusal occurred. Local tool traffic and other
@@ -26,6 +27,9 @@ export function buildMcpAuthThrottle(): MiddlewareHandler<RequestFactsEnv> {
     windowMs: 15 * 60_000,
     limit: 10,
     headers: 'none',
+    // Through the tunnel every caller has the loopback peer: key by the edge-observed client,
+    // or one stranger's ten junk keys would lock the owner out too (DOR-4205).
+    key: 'edge-client',
     message: AUTH_REQUIRED_BODY,
     skip,
     countsWhen: (c) => c.res.status === 401,

@@ -33,7 +33,7 @@
  */
 import type { Context, MiddlewareHandler } from 'hono';
 import { honoRequestFacts, type RequestFacts, type RequestFactsEnv } from './request-facts.js';
-import { rateLimitKey } from '../middleware/rate-limit-key.js';
+import { edgeClientRateLimitKey, rateLimitKey } from '../middleware/rate-limit-key.js';
 
 /** How much a limiter allows. */
 export interface RateLimitPolicy {
@@ -196,6 +196,12 @@ export interface HonoRateLimitOptions extends RateLimitAnswer {
    * client that hangs up mid-response is not given back.
    */
   readonly countsWhen?: (c: Context<RequestFactsEnv>) => boolean;
+  /**
+   * Which caller a bucket belongs to: `peer` ({@link rateLimitKey}, the default) or
+   * `edge-client` ({@link edgeClientRateLimitKey}), for a limiter that refuses before a
+   * credential is checked, where one shared tunnel bucket would let a stranger lock out the owner.
+   */
+  readonly key?: 'peer' | 'edge-client';
 }
 
 /**
@@ -212,7 +218,9 @@ export function honoRateLimit(options: HonoRateLimitOptions): MiddlewareHandler<
       return;
     }
     const now = Date.now();
-    const decision = limiter.hit(rateLimitKey(honoRequestFacts(c)), now);
+    const facts = honoRequestFacts(c);
+    const key = options.key === 'edge-client' ? edgeClientRateLimitKey(facts) : rateLimitKey(facts);
+    const decision = limiter.hit(key, now);
     const headers = rateLimitHeaders(decision, limiter.policy, options.headers, now);
     for (const [name, value] of Object.entries(headers)) c.header(name, value);
     if (!decision.allowed) {

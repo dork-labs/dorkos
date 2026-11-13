@@ -72,7 +72,39 @@ export function forwardedForIsTrusted(): boolean {
 export function rateLimitKey(
   request: Pick<RequestFacts, 'peerAddress' | 'forwardedAddress'>
 ): string {
-  const address = forwardedForIsTrusted() ? request.forwardedAddress : request.peerAddress;
+  return addressKey(forwardedForIsTrusted() ? request.forwardedAddress : request.peerAddress);
+}
+
+/**
+ * The bucket key for a limiter that one caller must never be able to fill for
+ * everybody else: the `/mcp` bad-key throttle (DOR-4205).
+ *
+ * {@link rateLimitKey}'s shared loopback bucket is the strict direction for a
+ * limiter that only slows a caller down. It is the wrong one for a limiter that
+ * refuses before the key is checked: through the own tunnel or managed access
+ * every caller has the loopback peer, so a stranger's ten junk keys would lock
+ * the owner's valid key out too. Requests marked `own-tunnel` or `managed`
+ * (`ingress-mark.ts`) are therefore keyed by the rightmost `X-Forwarded-For`
+ * entry. Only the in-process ngrok agent reaches those listeners, and ngrok's
+ * edge adds the address it saw last, so that entry is the edge-observed client
+ * and a caller's own `X-Forwarded-For` only ever lands to its left. Every other
+ * request (the main listener, Wi-Fi) keeps {@link rateLimitKey}, so no new
+ * header is trusted on a direct connection.
+ *
+ * @param request - The facts of the request being counted (`honoRequestFacts`).
+ * @returns The bucket key.
+ */
+export function edgeClientRateLimitKey(
+  request: Pick<RequestFacts, 'peerAddress' | 'forwardedAddress' | 'ingress'>
+): string {
+  if (request.ingress === 'own-tunnel' || request.ingress === 'managed') {
+    return addressKey(request.forwardedAddress);
+  }
+  return rateLimitKey(request);
+}
+
+/** One address as a bucket key, or the shared unknown bucket when there is none. */
+function addressKey(address: string | undefined): string {
   if (!address) return UNKNOWN_CLIENT_KEY;
   // A `%zone` suffix (link-local IPv6) is part of the route, not the identity,
   // and the address parser cannot read it.
