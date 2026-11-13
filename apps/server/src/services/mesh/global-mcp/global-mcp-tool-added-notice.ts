@@ -1,12 +1,14 @@
 /**
  * The Inbox line when a global MCP server adds a tool that an agent may already
  * use without asking, because it allows every tool on that server (DOR-4118).
- * Said once per server and tool, with Review (opens the server's sheet) and OK.
+ * Said once per server and tool, with Review: the house `open` action. The row
+ * opens the server's sheet (`notificationLink` in the client).
  *
  * The line never names the tool. A tool's name comes from the server, so it is
- * untrusted text, and notifications are read by agents too: the person reads
- * the name on the sheet, where it is plain text (Security, Nov 12). The row
- * carries the tool only in its dedupe key.
+ * untrusted text, and a line travels further than the sheet (a phone push, a
+ * desktop banner): the person reads the name on the sheet, where it is plain
+ * text (Security, Nov 12). No agent reads the Inbox (an agent caller gets an
+ * empty list), and `relay: 'never'` keeps it off chat apps.
  *
  * The emitter is the sheet's tools route (`routes/mcp-server-sheet.ts`).
  *
@@ -14,12 +16,6 @@
  */
 import type { NotificationActionDTO } from '@dorkos/shared/notification-schemas';
 import type { NotificationRegistryEntry } from '../../notifications/notification-registry.js';
-
-/** The intent behind Review: open the server's sheet. */
-export const REVIEW_MCP_SERVER_ACTION_ID = 'review-mcp-server';
-
-/** The intent behind OK: mark the row read. */
-export const OK_MCP_TOOL_ADDED_ACTION_ID = 'ok-mcp-tool-added';
 
 /** The payload of `mcp-server.tool_added`. */
 export interface McpToolAddedPayloads {
@@ -33,10 +29,7 @@ export interface McpToolAddedPayloads {
   };
 }
 
-const ACTIONS: NotificationActionDTO[] = [
-  { id: REVIEW_MCP_SERVER_ACTION_ID, label: 'Review', style: 'neutral' },
-  { id: OK_MCP_TOOL_ADDED_ACTION_ID, label: 'OK', style: 'primary' },
-];
+const ACTIONS: NotificationActionDTO[] = [{ id: 'open', label: 'Review', style: 'primary' }];
 
 /** "Quill", "Quill and Atlas", "Quill, Atlas and 2 more". */
 function namesOf(names: readonly string[]): string {

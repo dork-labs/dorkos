@@ -63,6 +63,22 @@ describe('notification presentation', () => {
     });
   });
 
+  // DOR-4118: a global server that added a tool opens that server's sheet.
+  it("opens the server's sheet when a global MCP server adds a tool", () => {
+    const row: NotificationDTO = {
+      id: '01JZG0000000000000000013',
+      kind: 'mcp-server.tool_added',
+      tier: 'notable',
+      subject: { type: 'system', id: 'mcp-server:tracker' },
+      title: 'tracker added a tool. Quill can use it without asking.',
+      createdAt: '2026-11-12T12:00:00.000Z',
+    };
+    expect(notificationLink(row)).toEqual({
+      to: '/connections',
+      search: { tab: 'mcp', mcpServer: 'tracker' },
+    });
+  });
+
   // Spec trusted-by-default-flip §5.6: the waiting row opens where Cancel is;
   // the row saying how it ended opens the chat the agent asked from.
   it('takes a held action to the Inbox while it waits, and to its chat once it ended', () => {

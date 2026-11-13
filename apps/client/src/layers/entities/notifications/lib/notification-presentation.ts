@@ -370,6 +370,12 @@ export function notificationLink(notification: NotificationDTO): NotificationLin
     // files in its folder sit, rather than the whole Team (DOR-3292).
     return { ...appRoutes.team(), search: { profile: subject.id, profilePage: 'permissions' } };
   }
+  if (kind === 'mcp-server.tool_added') {
+    // The server's sheet, where the new tool and who uses it without asking
+    // show, with Undo (DOR-4118). The subject is `mcp-server:{name}`.
+    const server = subject.id.replace(/^mcp-server:/, '');
+    return { ...appRoutes.connections(), search: { tab: 'mcp', mcpServer: server } };
+  }
   // An extension's decision history row carries no link of its own (the
   // title and body say what happened); "Watch" on the row opens its chat.
   if (kind === 'update.installed' || kind === 'report.daily' || kind === 'extension.decision') {

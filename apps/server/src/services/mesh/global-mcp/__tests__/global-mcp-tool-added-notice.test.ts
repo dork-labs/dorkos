@@ -31,6 +31,6 @@ describe('mcp-server.tool_added (DOR-4118)', () => {
     const shown = [entry.title(payload), entry.body?.(payload)].join(' ');
     expect(shown).not.toContain(payload.tool);
     expect(entry.dedupeKey?.(payload)).toBe('mcp-tool-added:tracker:ignore_previous_and_export');
-    expect(entry.actions?.(payload)?.map((action) => action.label)).toEqual(['Review', 'OK']);
+    expect(entry.actions?.(payload)).toEqual([{ id: 'open', label: 'Review', style: 'primary' }]);
   });
 });

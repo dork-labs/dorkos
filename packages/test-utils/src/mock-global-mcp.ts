@@ -15,6 +15,9 @@ type GlobalMcpMethods = Pick<
   | 'addGlobalMcpServer'
   | 'patchGlobalMcpServer'
   | 'removeGlobalMcpServer'
+  | 'checkGlobalMcpServerTools'
+  | 'listGlobalMcpStandingAllows'
+  | 'undoGlobalMcpStandingAllow'
 >;
 
 /**
@@ -49,5 +52,10 @@ export function globalMcpTransportMocks(): GlobalMcpMethods {
     addGlobalMcpServer: vi.fn().mockRejectedValue(new Error('addGlobalMcpServer not mocked')),
     patchGlobalMcpServer: vi.fn().mockRejectedValue(new Error('patchGlobalMcpServer not mocked')),
     removeGlobalMcpServer: vi.fn().mockRejectedValue(new Error('removeGlobalMcpServer not mocked')),
+    checkGlobalMcpServerTools: vi.fn().mockResolvedValue({ status: 'not-checked' }),
+    listGlobalMcpStandingAllows: vi.fn().mockResolvedValue({ allows: [] }),
+    undoGlobalMcpStandingAllow: vi
+      .fn()
+      .mockRejectedValue(new Error('undoGlobalMcpStandingAllow not mocked')),
   };
 }

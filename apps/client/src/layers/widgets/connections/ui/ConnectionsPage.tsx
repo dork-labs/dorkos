@@ -47,6 +47,7 @@ type ConnectionsSearch = {
   flow?: string;
   request?: string;
   tab?: 'mcp';
+  mcpServer?: string;
 };
 
 /**
@@ -277,7 +278,12 @@ export function ConnectionsPage() {
         </ConnectionsBrowserTabs>
       </div>
 
-      {search.tab === 'mcp' && <McpServersTab />}
+      {search.tab === 'mcp' && (
+        <McpServersTab
+          openServer={search.mcpServer}
+          onServerOpened={() => setSearch({ mcpServer: undefined })}
+        />
+      )}
 
       <AppPanel
         row={panelRow}

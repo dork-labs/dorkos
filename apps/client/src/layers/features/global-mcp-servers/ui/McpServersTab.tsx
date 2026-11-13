@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Plus } from 'lucide-react';
 import { useGlobalMcpServers } from '@/layers/entities/global-mcp';
 import { useRegisteredAgents } from '@/layers/entities/mesh';
@@ -17,20 +17,41 @@ interface KeyLeft {
   several: boolean;
 }
 
+interface McpServersTabProps {
+  /** A server whose sheet should open once the list has it, from a link such as the Inbox's. */
+  openServer?: string;
+  /** Called once that link is used, found or not, so the address can drop it. */
+  onServerOpened?: () => void;
+}
+
 /**
  * Connections → MCP servers: the servers a person adds once for every agent. Every change here is
  * a person's, and the server decides which of them need "Confirm it's you".
  */
-export function McpServersTab() {
+export function McpServersTab({ openServer, onServerOpened }: McpServersTabProps = {}) {
   const servers = useGlobalMcpServers();
   const agents = useRegisteredAgents();
   const [adding, setAdding] = useState(false);
-  const [open, setOpen] = useState<Open>(null);
+  const [open, setOpen] = useState<Open>(
+    openServer === undefined ? null : { kind: 'sheet', name: openServer }
+  );
+  // A link opens its server's sheet as it arrives, even with the tab already showing. A server
+  // the list lacks opens nothing, like a sheet whose server was just removed.
+  const [linked, setLinked] = useState(openServer);
+  if (openServer !== linked) {
+    setLinked(openServer);
+    if (openServer !== undefined) setOpen({ kind: 'sheet', name: openServer });
+  }
   const [keyLeft, setKeyLeft] = useState<KeyLeft | null>(null);
   // The row that opened the sheet, to hand focus back to, or the heading once it is gone.
   const opener = useRef<HTMLElement | null>(null);
   const list = servers.data ?? [];
   const current = open ? list.find((server) => server.name === open.name) : undefined;
+
+  // Once the list is in, the link has done its job, and the address can drop it.
+  useEffect(() => {
+    if (openServer !== undefined && servers.isSuccess) onServerOpened?.();
+  }, [openServer, servers.isSuccess, onServerOpened]);
 
   const nameOf = (agentId: string) => {
     const agent = agents.data?.agents.find((candidate) => candidate.id === agentId);
