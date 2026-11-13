@@ -5,9 +5,11 @@
  * Person-only, like every `/api/mcp-servers` route; none is a capability, so no
  * agent tool reaches them and nothing they return enters an agent's context.
  *
- * - `GET /:name/tools` checks the server's tools when a person opens the sheet.
+ * - `POST /:name/tools` checks the server's tools when a person opens the sheet.
  *   A server that is off, or that the store would not hand an agent, is never
- *   started (`not-checked`).
+ *   started (`not-checked`). A POST, not a GET, because it starts the server:
+ *   a page on another site can fire a GET with no Origin, but a POST always
+ *   carries one, and the chain's CORS check refuses a foreign one.
  * - `GET /:name/allows` lists the standing yeses agents' folders hold for it.
  * - `DELETE /:name/allows` (`{ agentId, rule }`) removes one, from the folder
  *   the registry names for that agent. Owner at this computer only, and audited.
@@ -72,6 +74,9 @@ const UNDO_STATUS: Record<StandingAllowUndoError['code'], 400 | 409> = {
   unreadable: 409,
 };
 
+/** The most Inbox lines one check says; the sheet lists the rest as new. */
+export const MAX_TOOL_NOTICES_PER_CHECK = 3;
+
 /** One Inbox line per added tool; the dedupe key makes each one say it once. */
 function sayToolsAdded(server: string, added: readonly string[], agentNames: string[]): void {
   for (const tool of added) void notify('mcp-server.tool_added', { server, tool, agentNames });
@@ -94,8 +99,8 @@ export function addMcpServerSheetRoutes(
   const unknown = (c: Context<ApiEnv>) =>
     c.json({ error: 'There is no MCP server by that name.', code: 'not_found' }, 404);
 
-  /** GET /api/mcp-servers/:name/tools — what it can do, checked now. */
-  router.get('/:name/tools', async (c) => {
+  /** POST /api/mcp-servers/:name/tools — what it can do, checked now. */
+  router.post('/:name/tools', async (c) => {
     const refusal = bars.read(c);
     if (refusal) return refusal;
     const name = c.req.param('name');
@@ -106,7 +111,10 @@ export function addMcpServerSheetRoutes(
       const wide = (await readStandingAllows(name, deps.agents()))
         .filter((allow) => allow.breadth === 'server')
         .map((allow) => allow.agentName);
-      if (wide.length > 0) (deps.onToolsAdded ?? sayToolsAdded)(name, result.added, wide);
+      if (wide.length > 0) {
+        const said = result.added.slice(0, MAX_TOOL_NOTICES_PER_CHECK);
+        (deps.onToolsAdded ?? sayToolsAdded)(name, said, wide);
+      }
     }
     return c.json(result);
   });

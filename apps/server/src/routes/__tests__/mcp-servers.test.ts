@@ -360,15 +360,16 @@ describe('the server sheet (DOR-4118)', () => {
   });
 
   it('checks the tools of a server that is on, and names a tool it adds later once', async () => {
-    const first = await request(sheetApp()).get('/api/mcp-servers/github/tools');
+    const first = await request(sheetApp()).post('/api/mcp-servers/github/tools');
     expect(first.status).toBe(200);
     expect(first.body).toEqual({
       status: 'ok',
       tools: [{ name: 'create_issue', description: 'Does create_issue.', isNew: false }],
       added: [],
+      omitted: 0,
     });
     toolsListed = ['create_issue', 'export_all'];
-    const later = await request(sheetApp()).get('/api/mcp-servers/github/tools');
+    const later = await request(sheetApp()).post('/api/mcp-servers/github/tools');
     expect(later.body.tools[1]).toMatchObject({ name: 'export_all', isNew: true });
     expect(added).toEqual([['github', ['export_all'], ['Quill']]]);
   });
@@ -378,15 +379,15 @@ describe('the server sheet (DOR-4118)', () => {
       localFile(),
       JSON.stringify({ permissions: { allow: ['mcp__github__create_issue'] } })
     );
-    await request(sheetApp()).get('/api/mcp-servers/github/tools');
+    await request(sheetApp()).post('/api/mcp-servers/github/tools');
     toolsListed = ['create_issue', 'export_all'];
-    await request(sheetApp()).get('/api/mcp-servers/github/tools');
+    await request(sheetApp()).post('/api/mcp-servers/github/tools');
     expect(added).toEqual([]);
   });
 
   it('never starts a server that is off', async () => {
     await store.patch('github', { enabled: false });
-    const res = await request(sheetApp()).get('/api/mcp-servers/github/tools');
+    const res = await request(sheetApp()).post('/api/mcp-servers/github/tools');
     expect(res.body).toEqual({ status: 'not-checked' });
     expect(checked).toEqual([null]);
   });
@@ -432,10 +433,14 @@ describe('the server sheet (DOR-4118)', () => {
 
   it('refuses an agent on all three, and an Undo from another device', async () => {
     const before = readFileSync(localFile(), 'utf8');
-    for (const path of ['/api/mcp-servers/github/tools', '/api/mcp-servers/github/allows']) {
-      const res = await request(sheetApp()).get(path).set('x-dorkos-agent', 'agent-token');
-      expect(res.status).toBe(403);
-    }
+    const tools = await request(sheetApp())
+      .post('/api/mcp-servers/github/tools')
+      .set('x-dorkos-agent', 'agent-token');
+    expect(tools.status).toBe(403);
+    const allows = await request(sheetApp())
+      .get('/api/mcp-servers/github/allows')
+      .set('x-dorkos-agent', 'agent-token');
+    expect(allows.status).toBe(403);
     const asAgent = await request(sheetApp())
       .delete('/api/mcp-servers/github/allows')
       .set('x-dorkos-agent', 'agent-token')
@@ -449,6 +454,35 @@ describe('the server sheet (DOR-4118)', () => {
     expect(remote.body.code).toBe(NEEDS_PERSON_AT_THIS_COMPUTER);
     expect(checked).toEqual([]);
     expect(readFileSync(localFile(), 'utf8')).toBe(before);
+  });
+
+  it('never starts a server for a page on another site', async () => {
+    // A GET is what an <img> or a link can fire with no Origin; no GET starts it.
+    const get = await request(sheetApp())
+      .get('/api/mcp-servers/github/tools')
+      .set('Sec-Fetch-Site', 'cross-site');
+    expect(get.ok).toBe(false);
+    // A cross-site POST carries its Origin, and the chain's CORS check refuses it.
+    const post = await request(sheetApp())
+      .post('/api/mcp-servers/github/tools')
+      .set('Origin', 'https://evil.example')
+      .set('Sec-Fetch-Site', 'cross-site');
+    expect(post.ok).toBe(false);
+    expect(checked).toEqual([]);
+  });
+
+  it('keeps at most so many tools from a server, and says at most three new ones', async () => {
+    await request(sheetApp()).post('/api/mcp-servers/github/tools');
+    toolsListed = [
+      'create_issue',
+      'x'.repeat(129),
+      ...Array.from({ length: 400 }, (_, i) => `tool_${i}`),
+    ];
+    const res = await request(sheetApp()).post('/api/mcp-servers/github/tools');
+    expect(res.body.tools).toHaveLength(200);
+    expect(res.body.omitted).toBe(202);
+    expect(res.body.tools.some((t: { name: string }) => t.name.length > 128)).toBe(false);
+    expect(added).toEqual([['github', ['tool_0', 'tool_1', 'tool_2'], ['Quill']]]);
   });
 
   it('answers 404 for a server that does not exist', async () => {

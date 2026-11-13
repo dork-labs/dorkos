@@ -9,6 +9,8 @@
  *   `not-checked` (Security, Nov 12).
  * - **Untrusted text.** Tool names and descriptions come from the server. They
  *   are shown to the person as plain text and never put in an agent's context.
+ *   The server also picks how many and how long, so both are capped before
+ *   anything is kept or said ({@link MAX_CHECKED_TOOLS} and the two lengths).
  * - **Its own file.** First-seen times live in `{dorkHome}/mcp/global-server-tools.json`,
  *   beside the servers file and never inside it, so a check cannot move the
  *   store's fingerprint or a held change's step-up hash.
@@ -24,6 +26,15 @@ import type { McpServerTransport } from '@dorkos/shared/mesh-schemas';
 /** How long a tool the server added after its first check reads as new. */
 export const NEW_TOOL_WINDOW_MS = 24 * 60 * 60 * 1000;
 
+/** The most tools one check keeps; the rest are counted, not kept. */
+export const MAX_CHECKED_TOOLS = 200;
+
+/** A tool whose name is longer than this is counted, not kept. */
+export const MAX_TOOL_NAME_LENGTH = 128;
+
+/** A description is cut to this many characters. */
+export const MAX_TOOL_DESCRIPTION_LENGTH = 500;
+
 /** One tool as the sheet shows it. */
 export interface CheckedTool extends ProbedTool {
   /** The server added it since an earlier check, within {@link NEW_TOOL_WINDOW_MS}. */
@@ -33,7 +44,13 @@ export interface CheckedTool extends ProbedTool {
 /** What opening a server's sheet found. */
 export type ServerToolsCheck =
   | { status: 'not-checked' }
-  | { status: 'ok'; tools: CheckedTool[]; added: string[] }
+  | {
+      status: 'ok';
+      tools: CheckedTool[];
+      added: string[];
+      /** Tools the server listed past the caps, which were not kept. */
+      omitted: number;
+    }
   | { status: 'needs-sign-in' }
   | { status: 'unreachable'; error: string };
 
@@ -131,6 +148,30 @@ export class GlobalMcpToolLedger {
 }
 
 /**
+ * The tools a check may keep: at most {@link MAX_CHECKED_TOOLS}, none with an
+ * overlong name, each description cut to {@link MAX_TOOL_DESCRIPTION_LENGTH}.
+ *
+ * @param tools - What the server listed.
+ * @returns The kept tools, and how many were left out.
+ */
+export function capProbedTools(tools: readonly ProbedTool[]): {
+  kept: ProbedTool[];
+  omitted: number;
+} {
+  const named = tools.filter(
+    (tool) => tool.name.length > 0 && tool.name.length <= MAX_TOOL_NAME_LENGTH
+  );
+  const kept = named.slice(0, MAX_CHECKED_TOOLS).map((tool) => ({
+    name: tool.name,
+    description:
+      tool.description.length > MAX_TOOL_DESCRIPTION_LENGTH
+        ? `${tool.description.slice(0, MAX_TOOL_DESCRIPTION_LENGTH - 1)}…`
+        : tool.description,
+  }));
+  return { kept, omitted: tools.length - kept.length };
+}
+
+/**
  * Check one global server's tools for a person opening its sheet.
  *
  * @param connection - What the store would hand an agent, or `null` when the
@@ -149,5 +190,6 @@ export async function checkServerTools(
   const outcome = await probe(connection);
   if (outcome.kind === 'unauthorized') return { status: 'needs-sign-in' };
   if (outcome.kind === 'failed') return { status: 'unreachable', error: outcome.error };
-  return { status: 'ok', ...(await ledger.record(server, outcome.tools)) };
+  const { kept, omitted } = capProbedTools(outcome.tools);
+  return { status: 'ok', ...(await ledger.record(server, kept)), omitted };
 }

@@ -16,6 +16,7 @@ import { runProbe, type ProbeOutcome } from '../../agent-mcp-probe.js';
 import {
   checkServerTools,
   GlobalMcpToolLedger,
+  MAX_TOOL_DESCRIPTION_LENGTH,
   NEW_TOOL_WINDOW_MS,
   toolLedgerPath,
 } from '../global-mcp-tools.js';
@@ -68,7 +69,26 @@ describe('checking a global server’s tools (DOR-4118)', () => {
         { name: 'list_issues', description: 'Does list_issues.', isNew: false },
       ],
       added: [],
+      omitted: 0,
     });
+  });
+
+  it('caps what the server controls before anything is kept', async () => {
+    const check = await checkServerTools(TRACKER, 'tracker', ledger, async () => ({
+      kind: 'ok',
+      toolCount: 3,
+      tools: [
+        { name: 'create_issue', description: 'y'.repeat(5000) },
+        { name: 'z'.repeat(129), description: 'Too long a name.' },
+        { name: '', description: 'No name.' },
+      ],
+    }));
+    expect(check).toMatchObject({ status: 'ok', omitted: 2 });
+    const tools = check.status === 'ok' ? check.tools : [];
+    expect(tools.map((tool) => tool.name)).toEqual(['create_issue']);
+    expect(tools[0]!.description).toHaveLength(MAX_TOOL_DESCRIPTION_LENGTH);
+    const kept = fs.readFileSync(toolLedgerPath(home), 'utf8');
+    expect(kept).not.toContain('z'.repeat(129));
   });
 
   it('marks a tool the server added since, for a day, and names it once', async () => {
