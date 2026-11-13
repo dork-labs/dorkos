@@ -15,6 +15,7 @@ vi.mock('streamdown/styles.css', () => ({}));
 
 import { StreamingText } from '../ui/message/StreamingText';
 import type { TextEffectConfig } from '@/layers/shared/lib';
+import { MarkdownCodePre } from '@/layers/shared/ui';
 
 afterEach(() => {
   cleanup();
@@ -26,6 +27,18 @@ describe('StreamingText', () => {
     render(<StreamingText content="# Hello" />);
     expect(screen.getByTestId('streamdown')).toBeDefined();
     expect(screen.getByText('# Hello')).toBeDefined();
+  });
+
+  it('labels the code block copy button "Copy code" (DOR-2871)', () => {
+    render(<StreamingText content={'```sh\necho hello\n```'} />);
+    const props = MockStreamdown.mock.calls.at(-1)![0];
+    expect(props.translations?.copyCode).toBe('Copy code');
+  });
+
+  it('drops a code block’s closing newline, so a copied command never runs on paste (DOR-2871)', () => {
+    render(<StreamingText content={'```sh\necho hello\n```'} />);
+    const props = MockStreamdown.mock.calls.at(-1)![0];
+    expect(props.components?.pre).toBe(MarkdownCodePre);
   });
 
   it('handles empty content', () => {
