@@ -49,7 +49,7 @@ export function McpServerRow({ server, nameOf, onOpen }: McpServerRowProps) {
               !server.enabled && 'opacity-55'
             )}
           >
-            {server.name}
+            {server.reservedName ? <BreakableName name={server.name} /> : server.name}
           </span>
           <DetailLine
             server={server}
@@ -132,6 +132,21 @@ function DetailLine({
       ))}
     </span>
   );
+}
+
+/**
+ * A name that may break after each `_` and `-`, so "DorkOS_Connections" wraps whole words, not
+ * mid-word. Each piece is text and each break a `<wbr>` element: the name stays plain text.
+ * Overflow-wrap still breaks a name with neither.
+ */
+function BreakableName({ name }: { name: string }) {
+  const pieces = name.split(/(?<=[_-])/);
+  return pieces.map((piece, index) => (
+    <Fragment key={index}>
+      {piece}
+      {index < pieces.length - 1 && <wbr />}
+    </Fragment>
+  ));
 }
 
 /** What pressing the switch came to: waiting, not confirmed, or the server's refusal. */

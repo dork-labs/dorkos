@@ -111,7 +111,7 @@ export function FieldRows({ noun, rows, onChange, disabled, describedBy, retype 
                 id={hintId}
                 className="text-muted-foreground col-span-3 text-xs [overflow-wrap:anywhere] sm:col-span-4"
               >
-                Type {row.name.trim()} again. Hidden values aren’t kept.
+                Type the value of {row.name.trim()} again. Hidden values aren’t kept.
               </p>
             )}
           </div>

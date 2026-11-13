@@ -810,7 +810,12 @@ describe('a server whose name is reserved (DOR-4262)', () => {
   it('the row’s name wraps and it says no “All agents”, which would contradict it', async () => {
     renderTab(transportWith([RESERVED, createMockGlobalMcpServer({ name: 'notion-demo' })]));
     const row = await screen.findByTestId('mcp-server-row-DorkOS_Connections');
-    expect(within(row).getByText('DorkOS_Connections')).not.toHaveClass('truncate');
+    const name = within(row).getByText(
+      (_, element) => element?.textContent === 'DorkOS_Connections' && element.tagName === 'SPAN'
+    );
+    expect(name).not.toHaveClass('truncate');
+    // It may break after the underscore, not mid-word.
+    expect(name.innerHTML).toBe('DorkOS_<wbr>Connections');
     expect(row).not.toHaveTextContent(/All agents/);
     expect(row).not.toHaveTextContent(/reserved ·/);
     // An ordinary row still cuts its name and says who gets it.
@@ -852,6 +857,18 @@ describe('a server whose name is reserved (DOR-4262)', () => {
     expect(sheet.queryByRole('button', { name: 'Remove and add again…' })).toBeNull();
   });
 
+  it('a reserved row’s name breaks after _ and -, and stays plain text (Security)', async () => {
+    const hostile = 'a_b-<img src=x onerror=alert(1)>_[link](https://x.test)';
+    renderTab(transportWith([createMockGlobalMcpServer({ name: hostile, reservedName: true })]));
+    const row = await screen.findByTestId(`mcp-server-row-${hostile}`);
+    const name = within(row).getByText(
+      (_, element) => element?.textContent === hostile && element.tagName === 'SPAN'
+    );
+    expect([...name.children].map((child) => child.tagName)).toEqual(['WBR', 'WBR', 'WBR']);
+    expect(name.textContent).toBe(hostile);
+    expect(row.querySelector('img, a')).toBeNull();
+  });
+
   it('a name is plain text in the notice, whatever it holds (Security)', async () => {
     const user = userEvent.setup();
     const hostile = '**bold**<img src=x onerror=alert(1)>[link](https://x.test)';
@@ -889,9 +906,9 @@ describe('a server whose name is reserved (DOR-4262)', () => {
     );
     // Each hidden value says to type it again; a plain one says nothing.
     expect(screen.getByLabelText('Value of MADE_UP_KEY')).toHaveAccessibleDescription(
-      'Type MADE_UP_KEY again. Hidden values aren’t kept.'
+      'Type the value of MADE_UP_KEY again. Hidden values aren’t kept.'
     );
-    expect(screen.queryByText(/Type REGION again/)).toBeNull();
+    expect(screen.queryByText(/value of REGION/)).toBeNull();
     expect(screen.getByLabelText('Command')).toHaveValue('npx');
     expect(screen.getByLabelText('Arguments')).toHaveValue(
       '-y made-up-mcp@1.2.3 --workspace "Design team"'
@@ -900,7 +917,7 @@ describe('a server whose name is reserved (DOR-4262)', () => {
     await user.type(screen.getByLabelText('Name'), 'notion-demo');
     expect(screen.queryByText(/Use any name except/)).toBeNull();
     await user.type(screen.getByLabelText('Value of MADE_UP_KEY'), 'typed-key');
-    expect(screen.queryByText(/Type MADE_UP_KEY again/)).toBeNull();
+    expect(screen.queryByText(/value of MADE_UP_KEY/)).toBeNull();
     await user.click(screen.getByRole('button', { name: 'Add' }));
     expect(await screen.findByText('Type a value for REGION.')).toBeInTheDocument();
     expect(addGlobalMcpServer).not.toHaveBeenCalled();
