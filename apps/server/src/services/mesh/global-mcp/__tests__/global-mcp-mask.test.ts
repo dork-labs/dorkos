@@ -163,6 +163,90 @@ describe('what a person types in Arguments, split as the form sends it', () => {
   });
 });
 
+describe('a credential with no scheme (DOR-3846)', () => {
+  it.each([
+    [['u:CANARY@db.example.test:5432/app'], ['•••@db.example.test:5432/•••']],
+    [['--db=u:CANARY@db.example.test/app'], ['--db=•••@db.example.test/•••']],
+    // A password can hold an @; none of it may survive.
+    [['u:p@ss@CANARY@db.example.test'], ['•••@db.example.test']],
+    [['u:CANARY@tcp(db.example.test:3306)/app'], ['•••@tcp(db.example.test:3306)/•••']],
+    [['u:CANARY@db.example.test?sslmode=require'], ['•••@db.example.test?•••']],
+    [['u:pw@db.example.test?password=CANARY&x=1'], ['•••@db.example.test?•••']],
+    [['--db=u:pw@db.example.test?key=CANARY'], ['--db=•••@db.example.test?•••']],
+    [
+      ['-c', 'psql u:CANARY@db.example.test/app'],
+      ['-c', 'psql •••@db.example.test/•••'],
+    ],
+  ])('%j', (args, shown) => {
+    expect(maskedArgs(args)).toEqual(shown);
+    expect(JSON.stringify(maskedArgs(args))).not.toContain('CANARY');
+    expect(argsLookSecret(args)).toBe(true);
+  });
+
+  it.each([
+    [['git@example.test:org/repo']],
+    [['npm:made-up@1.0.0']],
+    [['npm:@made-up/server@1.0.0']],
+    [['jsr:@made-up/server@1.0.0']],
+    [['localhost:3000/made-up@v2']],
+    [['user@host.example.test']],
+    [['made-up@1.0.0', 'host:5432']],
+    [['made-up:8080@host.example.test']],
+  ])('leaves what only looks close: %j', (args) => {
+    expect(maskedArgs(args)).toEqual(args);
+    expect(argsLookSecret(args)).toBe(false);
+  });
+});
+
+describe('a bare key in a shape a service uses (DOR-3846)', () => {
+  const KEYS = [
+    `ghp_${'A1'.repeat(18)}`,
+    `github_pat_${'a1B2'.repeat(6)}`,
+    `sk-ant-${'x9'.repeat(12)}`,
+    `sk-${'Q7'.repeat(16)}`,
+    `xoxb-${'1234-'.repeat(3)}made`,
+    `glpat-${'z8'.repeat(10)}`,
+    `AKIA${'Z9'.repeat(8)}`,
+    'eyJhbGciOiJub25lIn0.eyJzdWIiOiJtYWRlLXVwIn0.c2ln',
+  ];
+
+  it.each(KEYS)('%s alone, after a short flag, or after = is hidden', (key) => {
+    expect(maskedArgs([key])).toEqual(['•••']);
+    expect(maskedArgs(['-p', key, 'next'])).toEqual(['-p', '•••', 'next']);
+    expect(maskedArgs([`--x=${key}`])).toEqual(['--x=•••']);
+    expect(argsLookSecret(['-p', key])).toBe(true);
+  });
+
+  it('leaves names that only start the same way', () => {
+    // A package keeps its name on the sheet, since the sheet says what runs.
+    const plain = [
+      'sk-made-up',
+      'sk-made-up-server-with-a-long-name',
+      'ghp_short',
+      '@made-up/sk-server',
+      'AKIA',
+      'eyJ.notone',
+    ];
+    expect(maskedArgs(plain)).toEqual(plain);
+    expect(argsLookSecret(plain)).toBe(false);
+  });
+});
+
+describe('an argument too long to read (DOR-3846)', () => {
+  it('is hidden whole and warned on, without reading it character by character', () => {
+    const long = `--a${'-'.repeat(200_000)}`;
+    const started = performance.now();
+    expect(maskedArgs([long, 'next'])).toEqual(['•••', 'next']);
+    expect(argsLookSecret([long])).toBe(true);
+    expect(performance.now() - started).toBeLessThan(500);
+  });
+
+  it('a long argument within the limit is still shown', () => {
+    const fine = `--note=${'x'.repeat(1000)}`;
+    expect(maskedArgs([fine])).toEqual([fine]);
+  });
+});
+
 describe('a scheme that only ends in file', () => {
   it.each(['profile://user:CANARY@host.example.test', 'myfile://user:CANARY@host.example.test'])(
     '%s is masked and warned',
