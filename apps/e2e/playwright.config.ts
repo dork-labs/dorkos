@@ -846,7 +846,9 @@ export default defineConfig({
       // `test-connector` provider exists only under DORKOS_TEST_RUNTIME), so it
       // runs in chromium-connections below, never against the real cockpit leg.
       testIgnore: [
-        '**/chat-mock.spec.ts',
+        // Every mock-server file, by glob: one missed here would run its turns
+        // against this leg, each a real, billable claude-code turn.
+        '**/chat-mock*.spec.ts',
         '**/connections/**',
         // Runs against the test-mode leg in `chromium-team-room` below. It must
         // NEVER run here: posting in #team on this leg starts a real
@@ -893,14 +895,14 @@ export default defineConfig({
         // in `chromium-bridge` below, never against the real cockpit leg.
         '**/relay/bridged-channel.spec.ts',
         // Belt and braces. `tests/chat/session-read-state*` is a MODULE, not a
-        // spec — it is registered into `chat-mock.spec.ts` and runs on the
+        // spec — it is registered into `chat-mock-session.spec.ts` and runs on the
         // test-mode leg (see its header), so the default `**/*.spec.ts` match
         // already cannot reach it. Named anyway because `tests/chat/` is
         // otherwise a cockpit-leg directory, and this suite drives real turns:
         // one rename to `.spec.ts` would put four billable sessions on the
         // machine's own `claude` sign-in, and nothing else here would object.
         '**/chat/session-read-state*',
-        // Same shape, same lock: a module registered into `chat-mock.spec.ts`,
+        // Same shape, same lock: a module registered into `chat-mock-session.spec.ts`,
         // living under `tests/chat/` because that is the feature it belongs to.
         // It drives a send and flips a server-global preference, so it must
         // never reach this leg (DOR-948).
@@ -943,29 +945,34 @@ export default defineConfig({
       ...(INCLUDE_INTEGRATION ? {} : { grepInvert: /@integration/ }),
     },
     {
-      // Mock-browser project — runs chat-mock.spec.ts against the test-mode server.
-      // No real Claude API calls; responses are controlled via /api/test/scenario.
+      // Mock-browser project — runs the chat-mock*.spec.ts files against the
+      // test-mode server. No real Claude API calls; responses are controlled via
+      // /api/test/scenario.
       //
-      // Deliberately a SINGLE spec file: the mock server is global mutable
-      // state (POST /api/test/reset wipes scenarios, sessions, and projectors
-      // for everyone), and fullyParallel schedules separate files onto
-      // concurrent workers — a second mock spec file would race the first's
-      // beforeEach resets.
+      // ONE WORKER, so its files run one after another: the mock server is
+      // global mutable state (POST /api/test/reset wipes scenarios, sessions,
+      // and projectors for everyone), and fullyParallel would otherwise put two
+      // mock files on concurrent workers, racing each other's resets. Every file
+      // calls `useMockServer()` (`tests/chat/mock-server.ts`) for the shared
+      // reset-and-seed hooks. CI already runs one worker everywhere; this keeps
+      // local runs the same.
       //
-      // So a new mock-server suite takes one of two shapes, never a second spec
-      // file. Write it into chat-mock.spec.ts when it is a handful of tests. Put
-      // it in a MODULE that exports a register function when it is a coherent
-      // feature suite worth finding by name — `tests/chat/session-read-state.ts`
-      // is the worked example. Playwright groups workers by the file it LOADED
-      // (`_requireFile`), so a registered module runs on this file's worker, in
-      // its order, and is as safe from the resets as a suite written inline.
-      // What it must not be is its own `*.spec.ts`.
+      // SEVERAL FILES, not one, so the browser shards can share the suite out:
+      // as one file it was a single ~9-minute unit the balancer could never split
+      // (`reporters/balanced-shard.ts`). A new mock-server suite goes in a MODULE
+      // that exports a register function (`tests/chat/session-read-state.ts` is
+      // the worked example), registered from one of the `chat-mock*.spec.ts`
+      // files, or in a new `chat-mock-*.spec.ts` when it is big enough to balance
+      // on its own. Never a `*.spec.ts` with another name: the cockpit project
+      // above ignores this suite by that glob, and a mock suite that reached the
+      // cockpit leg would bill real turns.
       name: 'chromium-mock',
+      workers: 1,
       use: {
         ...devices['Desktop Chrome'],
         baseURL: `http://localhost:${MOCK_VITE_PORT}`,
       },
-      testMatch: ['**/chat-mock.spec.ts'],
+      testMatch: ['**/chat-mock*.spec.ts'],
     },
     {
       // Connector-gateway specs — also against the test-mode server, whose

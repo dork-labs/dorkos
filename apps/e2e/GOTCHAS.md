@@ -243,8 +243,8 @@ Worth knowing before you assume a behaviour is tested.
   and every held process server-wide**, exactly as it clears scenarios and
   projectors — so a neighbouring project's reset landing mid-test would cool
   your session and un-offer its Steer row. That is why these controls are only
-  safe from `chat-mock.spec.ts`'s own sequential worker, the same lock the
-  scenario controls ride. What is still NOT drivable here: the real
+  safe from the `chat-mock*.spec.ts` files, which run one at a time on one
+  sequential worker: the same lock the scenario controls ride. What is still NOT drivable here: the real
   claude-code pump (a spec that flips `runtimes.claudeCode.persistentSession`
   spends model tokens per run and cannot go in CI), so timing, crash recovery and
   the twelve-slot ceiling stay unit- and self-test territory.

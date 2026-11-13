@@ -9,7 +9,7 @@
  * rule that has to move on one screen because somebody read on the other.
  *
  * **Why this is a module and not a spec file.** These tests belong to
- * `chat-mock.spec.ts`, which registers them ({@link registerSessionReadStateTests}).
+ * `chat-mock-session.spec.ts`, which registers them ({@link registerSessionReadStateTests}).
  * The test-mode server is shared mutable state: `POST /api/test/reset` disposes
  * every tracked session AND deletes its durable rows, and that file calls it
  * before every one of its tests. Playwright schedules separate spec FILES onto

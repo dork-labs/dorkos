@@ -18,7 +18,7 @@
  *
  * **Why this is a module and not a spec file.** Same lock as
  * `session-read-state.ts` (read its header): these belong to
- * `chat-mock.spec.ts`, which registers them
+ * `chat-mock-session.spec.ts`, which registers them
  * ({@link registerCompactionTests}). The test-mode server is shared mutable
  * state and that file's `POST /api/test/reset` runs before each of its tests,
  * so a suite living in its own spec file would be reset out from under itself
@@ -76,7 +76,7 @@ async function runCompact(page: Page, chatPage: ChatPage): Promise<void> {
   expect(response.status(), 'POST /command-intents/compact must be accepted').toBe(202);
 }
 
-/** Register the compaction suite onto `chat-mock.spec.ts`'s worker. */
+/** Register the compaction suite into `chat-mock-session.spec.ts`. */
 export function registerCompactionTests(ctx: { apiUrl: string; agentDir: () => string }): void {
   test.describe('Compaction — the boundary a person can see (L-04)', () => {
     test('running /compact draws the boundary, keeps the history above it, and the next turn still answers', async ({

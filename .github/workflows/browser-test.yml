@@ -471,6 +471,13 @@ jobs:
         with:
           persist-credentials: false
 
+      # The unit shards log this too (test.yml). The same tests take up to 1.65x
+      # longer on one hosted CPU than another, so this line is what tells a slow
+      # runner from a badly balanced shard.
+      - name: Name this runner's CPU
+        run: |
+          echo "cpu:$(grep -m1 'model name' /proc/cpuinfo | cut -d: -f2-), $(nproc) cores"
+
       - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
 
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0

@@ -407,6 +407,38 @@ PY
 check 'a non-spec file in the report that nobody registered is refused' \
   "$tmp/unlistedModule" 1 'chat/rogue-module.ts'
 
+# A spec file made ONLY of register calls, in the shape real reports have: the
+# module's suite nested under the spec that loaded it, every test reporting the
+# module's file. The spec ran those tests, so it passes — without crediting the
+# loading file, it would read as a spec that collected nothing.
+make_hosted() {
+  local root=$1 status=$2
+  make_workspace "$root"
+  : >"$root/apps/e2e/tests/chat-mock-host.spec.ts"
+  python3 - "$root/apps/e2e/test-results/results.json" "$status" <<'PY'
+import json, sys
+p, status = sys.argv[1], sys.argv[2]
+d = json.load(open(p))
+module = next(s for s in d['suites'] if s['file'] == 'chat/session-read-state.ts')
+d['suites'].remove(module)
+module['specs'][0]['tests'][0]['status'] = status
+d['suites'].append({"title": "chat-mock-host.spec.ts", "file": "chat-mock-host.spec.ts",
+                    "specs": [], "suites": [module]})
+d['stats']['expected'] -= status == 'skipped'
+d['stats']['skipped'] += status == 'skipped'
+json.dump(d, open(p, 'w'))
+PY
+}
+make_hosted "$tmp/hostedOnly" expected
+check 'a spec made only of register calls counts its modules'"'"' tests' \
+  "$tmp/hostedOnly" 0 '21 test(s) executed'
+
+# The same spec with every registered test skipped: both the module and the spec
+# that loaded it ran nothing, and the spec is not excused by the module's name.
+make_hosted "$tmp/hostedSkipped" skipped
+check 'a spec whose registered tests all skipped is named' \
+  "$tmp/hostedSkipped" 1 'chat-mock-host.spec.ts'
+
 # A failing test must not be certified as a healthy run.
 make_workspace "$tmp/red"
 python3 - "$tmp/red/apps/e2e/test-results/results.json" <<'PY'

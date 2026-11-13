@@ -8,11 +8,11 @@ environment (a worktree, or any machine whose default ports are busy).
 
 ## Projects
 
-- `chromium` — the cockpit suite. Runs every spec except `chat-mock.spec.ts`
+- `chromium` — the cockpit suite. Runs every spec except the `chat-mock*.spec.ts` files
   (and the site specs — `marketplace.spec.ts`, `features.spec.ts` — unless the
   site leg is enabled; see below).
-- `chromium-mock` — `chat-mock.spec.ts` only, against a `TestModeRuntime` server
-  (no real Claude API calls).
+- `chromium-mock` — the `chat-mock*.spec.ts` files only, one at a time, against a
+  `TestModeRuntime` server (no real Claude API calls).
 - `chromium-connections` — `tests/connections/`, also against the test-mode
   server: its `DORKOS_TEST_RUNTIME` gate is what makes the scripted
   `test-connector` provider exist, so these specs can walk the real save-key →
@@ -224,26 +224,29 @@ named exemption fails it.
 
 ## Adding a mock-server suite
 
-`chromium-mock` matches exactly one file, `chat-mock.spec.ts`, and that is a
-safety property rather than tidiness. The test-mode server is global mutable
-state — `POST /api/test/reset` wipes scenarios and **deletes every tracked
-session's transcript**, and that file calls it before each of its tests — while
-`fullyParallel` schedules separate spec **files** onto concurrent workers. A
-second mock spec file would have its transcript deleted mid-run by a neighbour.
+`chromium-mock` matches the `chat-mock*.spec.ts` files and runs them on ONE worker,
+and both are safety properties rather than tidiness. The test-mode server is
+global mutable state — `POST /api/test/reset` wipes scenarios and **deletes every
+tracked session's transcript**, and each of those files calls it before each of
+its tests — while `fullyParallel` would otherwise schedule separate spec
+**files** onto concurrent workers, and a neighbour would delete a transcript
+mid-run. Every one of them starts with `useMockServer()`
+(`tests/chat/mock-server.ts`): the shared reset, onboarding dismissal and agent
+seed. There are several files rather than one so the browser shards can share the
+suite out: one file is one unit the shard balancer never splits.
 
-So a new mock-server suite takes one of two shapes, never a second spec file:
+So a new mock-server suite takes one of these shapes:
 
-- **Write it into `chat-mock.spec.ts`.** The default, for a handful of tests
-  that share the file's `beforeEach` (reset, dismiss onboarding, seed agent).
-- **Put it in a module that exports a register function**, and call that from
-  `chat-mock.spec.ts`. For a coherent feature suite worth finding by name, or one
-  big enough to push the spec file past `max-lines`.
-  `tests/chat/session-read-state.ts` is the worked example. Playwright groups
-  workers by the file it **loaded**, so the registered tests run on
-  `chat-mock.spec.ts`'s worker in its order — as safe from the resets as if they
-  were written inline — while living under the feature they test. Name the module
-  `*.ts`, never `*.spec.ts`: the extension is the whole thing keeping it off the
-  cockpit leg.
+- **Write it into one of the `chat-mock*.spec.ts` files.** The default, for a
+  handful of tests.
+- **Put it in a module that exports a register function**, and call that from one
+  of those files. For a coherent feature suite worth finding by name.
+  `tests/chat/session-read-state.ts` is the worked example. Name the module
+  `*.ts`, never `*.spec.ts`: the extension keeps it off the cockpit leg.
+- **A new `chat-mock-<topic>.spec.ts`**, when the suite is big enough to be worth
+  balancing on its own (a minute or more of CI time). Never a mock spec with any
+  other name: the cockpit project ignores this suite by the `chat-mock*.spec.ts`
+  glob, and a mock suite that reached the cockpit leg would bill real turns.
 
 Either way the suite needs no new project and no new server leg.
 

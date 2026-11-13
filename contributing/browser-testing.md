@@ -447,6 +447,6 @@ The reads a linked computer makes on its own are scripted too, as empty, schema-
 
 ### Writing Mock Browser Tests
 
-Mock tests live in `tests/chat-mock.spec.ts` and are matched by the `chromium-mock` project via `testMatch: ['**/chat-mock.spec.ts']`. They import from `@playwright/test` directly (not fixtures) and use `ChatPage` from `pages/ChatPage.ts`.
+Mock tests live in the `tests/chat-mock*.spec.ts` files and are matched by the `chromium-mock` project via `testMatch: ['**/chat-mock*.spec.ts']`, which runs them on one worker, one file at a time. Each file starts with `useMockServer()` from `tests/chat/mock-server.ts` for the shared reset and agent seed. They import from `@playwright/test` directly (not fixtures) and use `ChatPage` from `pages/ChatPage.ts`.
 
-The `chromium` project ignores mock test files via `testIgnore: ['**/chat-mock.spec.ts']`, and vice versa — the two projects are fully isolated.
+The `chromium` project ignores mock test files via `testIgnore: ['**/chat-mock*.spec.ts']`, and vice versa — the two projects are fully isolated. A mock spec with any other name would run on the cockpit leg and bill real turns.
