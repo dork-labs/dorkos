@@ -26,12 +26,23 @@ beforeEach(() => {
 afterEach(() => rmSync(folder, { recursive: true, force: true }));
 
 describe('plainChromiumArgs', () => {
-  const args = plainChromiumArgs('/profiles/default', 'https://linear.app/', 'linear.app');
+  const args = plainChromiumArgs('/profiles/default', 'https://linear.app/', 'linear.app', true);
+  const chrome = plainChromiumArgs('/profiles/default', 'https://linear.app/', 'linear.app', false);
 
-  it('opens no debugging or automation channel', () => {
-    for (const flag of FORBIDDEN_PLAIN_FLAGS)
-      expect(args.some((arg) => arg.startsWith(flag))).toBe(false);
-    expect(args.some((arg) => /remote-debugging|automation|headless/.test(arg))).toBe(false);
+  it('opens no debugging or automation channel, on either browser', () => {
+    for (const launch of [args, chrome]) {
+      for (const flag of FORBIDDEN_PLAIN_FLAGS)
+        expect(launch.some((arg) => arg.startsWith(flag))).toBe(false);
+      expect(launch.some((arg) => /remote-debugging|automation|headless/.test(arg))).toBe(false);
+    }
+  });
+
+  // DOR-3876: the pinned test build says it is "only for automated testing" above the password
+  // field. Only that build hides info bars, and only while the release check holds it near stable.
+  it('hides info bars on the pinned test build only', () => {
+    expect(args.filter((arg) => arg === '--disable-infobars')).toEqual(['--disable-infobars']);
+    expect(chrome).not.toContain('--disable-infobars');
+    expect(chrome).toEqual(args.filter((arg) => arg !== '--disable-infobars'));
   });
 
   // DOR-4178, Security: the person's window reports webdriver=false only because nothing drives
