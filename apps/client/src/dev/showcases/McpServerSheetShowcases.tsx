@@ -91,7 +91,7 @@ interface SheetScenario {
   server: GlobalMcpServerView;
   tools: GlobalMcpToolsCheck;
   allows: GlobalMcpStandingAllow[];
-  /** Undo's refusal, if it is refused; otherwise Undo removes the rule. */
+  /** Make it ask's refusal, if it is refused; otherwise it removes the rule. */
   undoRefusal?: string;
 }
 
@@ -106,7 +106,10 @@ function sheetTransport(scenario: SheetScenario): Transport {
       if (prop === 'listGlobalMcpStandingAllows') return async () => ({ allows });
       if (prop === 'undoGlobalMcpStandingAllow') {
         return async (_name: string, agentId: string, rule: string) => {
-          if (scenario.undoRefusal !== undefined) throw new Error(scenario.undoRefusal);
+          if (scenario.undoRefusal !== undefined) {
+            // The server's own words and code; the sheet names the agent from its row.
+            throw Object.assign(new Error(scenario.undoRefusal), { code: 'not-a-real-file' });
+          }
           allows = allows.filter((held) => !(held.agentId === agentId && held.rule === rule));
         };
       }
@@ -188,7 +191,7 @@ export function McpServerSheetShowcases() {
     <>
       <PlaygroundSection
         title="MCP server sheet: who uses it"
-        description="Open a row. Each agent's standing yes for the server, with Undo, and the tools the server lists, checked when the sheet opens."
+        description="Open a row. Each agent's standing yes for the server, with Make it ask, and the tools the server lists, checked when the sheet opens."
       >
         <ShowcaseLabel>Long names: a 40-character server, agent and tool</ShowcaseLabel>
         <SheetDemo testId="mcp-sheet-long-names" scenario={LONG_NAMES} />
@@ -198,9 +201,11 @@ export function McpServerSheetShowcases() {
         <SheetDemo testId="mcp-sheet-mixed" scenario={MIXED} />
         <ShowcaseLabel>Off: its tools are not checked, and nothing starts</ShowcaseLabel>
         <SheetDemo testId="mcp-sheet-off" scenario={OFF} />
-        <ShowcaseLabel>Undo: press it on a row and the rule goes</ShowcaseLabel>
+        <ShowcaseLabel>Make it ask: press it and the rule goes</ShowcaseLabel>
         <SheetDemo testId="mcp-sheet-undo" scenario={UNDO} />
-        <ShowcaseLabel>Undo refused: the agent&apos;s settings file is left alone</ShowcaseLabel>
+        <ShowcaseLabel>
+          Make it ask refused: the agent&apos;s settings file is left alone
+        </ShowcaseLabel>
         <SheetDemo testId="mcp-sheet-undo-refused" scenario={UNDO_REFUSED} />
       </PlaygroundSection>
       <PlaygroundSection
