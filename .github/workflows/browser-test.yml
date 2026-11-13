@@ -106,6 +106,17 @@ on:
   schedule:
     - cron: '41 0,5,10,21 * * *'
   workflow_dispatch:
+    inputs:
+      chromium_workers:
+        # The two-worker trial (DOR-4190). A dispatch runs on main only (the
+        # canary guard below), so a trial never posts on a PR or a queue build.
+        description: Tests the cockpit project runs at once per shard (1 or 2)
+        required: false
+        type: choice
+        default: '1'
+        options:
+          - '1'
+          - '2'
 
 # Opt into Node 24 for every JavaScript-based action ahead of GitHub's Sept 2026
 # hard cutoff for the Node 20 runtime (matches the other workflows here).
@@ -704,6 +715,11 @@ jobs:
       - name: Run the browser suite
         id: suite
         timeout-minutes: 45
+        env:
+          # The two-worker trial (DOR-4190, ledger 261113-012626): only a hand
+          # dispatch on main can raise it, and every other event runs 1, as
+          # before. playwright.config.ts accepts only 1 or 2.
+          E2E_CHROMIUM_WORKERS: ${{ github.event_name == 'workflow_dispatch' && inputs.chromium_workers || '1' }}
         run: |
           set +e
           pnpm --filter @dorkos/e2e run e2e --shard=${{ matrix.shard }}/${{ strategy.job-total }}
