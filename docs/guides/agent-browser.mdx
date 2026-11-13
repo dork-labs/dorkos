@@ -9,7 +9,7 @@ This is the Agent browser. The older signed-in browser uses a separate hidden pa
 
 ## Choose a browser
 
-**DorkOS browser** opens the page inside the desktop app’s right panel.
+**In DorkOS** opens the page inside the desktop app’s right panel.
 It is the desktop default. Its saved sign-ins are separate from your usual browser.
 Chrome extensions do not run inside this view. It stays in the right panel;
 it cannot pop out into a floating view.
@@ -23,14 +23,14 @@ and your agent continues in its own window. Every agent that uses the Agent brow
 Only sign in to accounts you're happy for all of those agents to use.
 This hasn't been tested on an installed Mac app yet.
 
-**New browser window** opens a visible Chromium window with separate saved sign-ins.
+**In its own window** opens a visible Chromium window with separate saved sign-ins.
 A window your agent is driving has an orange frame. The sign-in window a card opens for you keeps your normal colours.
 DorkOS keeps those sign-ins when you close and reopen it. Your usual tabs stay separate.
 This is the default when you use the local npm-installed web app.
 
 These choices open pages on the computer running DorkOS and need a graphical desktop.
 The npm web app cannot put a native browser inside its page.
-Choose **New browser window**, or use the desktop app for **DorkOS browser**.
+Choose **In its own window**, or use the desktop app for **In DorkOS**.
 
 Only the selected page is shared with the agent in your current direct chat.
 A browser opened from Rooms stays human-only.
@@ -62,11 +62,11 @@ A browser tool DorkOS can't keep off these sites is left out of the chat.
 ## What DorkOS installs
 
 DorkOS includes the Playwright library. You do not install Playwright separately.
-**New browser window** downloads the matching Chromium browser on first use.
+**In its own window** downloads the matching Chromium browser on first use.
 The library and browser are separate downloads, and DorkOS keeps their versions paired.
 
 The desktop view uses Electron’s built-in browser instead.
-Some websites restrict sign-ins from embedded browsers. Use **New browser window** for those sites.
+Some websites restrict sign-ins from embedded browsers. Use **In its own window** for those sites.
 
 This release pins Playwright to 1.63.0 and its managed Chromium to version 153.
 Local browser behavior has been verified on macOS. Windows desktop remains an early alpha;

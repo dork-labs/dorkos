@@ -160,15 +160,14 @@ export function usePanelViews(contributions: RightPanelContribution[], pathname:
       const selected = browserConnection.tabs.find(
         (tab) => tab.id === browserConnection.selectedTabId
       );
-      const browserName =
-        browserConnection.mode === 'embedded' ? 'DorkOS browser' : 'New browser window';
       return [
         {
           ...contribution,
           category,
           resource: 'browser',
           id: localBrowserViewId,
-          title: selected?.title || browserName,
+          // One name for the browser either way it opens (DOR-3219).
+          title: selected?.title || 'Agent browser',
           icon: Globe,
         },
       ];
