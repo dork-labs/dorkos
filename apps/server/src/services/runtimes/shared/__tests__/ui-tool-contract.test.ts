@@ -231,7 +231,7 @@ describe('a local src outside the folder (DOR-3519)', () => {
   // Design pass v1 row 6: the agent is told before it calls, on every runtime,
   // that a local file on a room's canvas has to be in its own folder and what comes back if not.
   const LINE =
-    "On a room's canvas, a local src must be inside your own folder. Anything else returns an error naming the path, so copy the file in first.";
+    "On a room's canvas, a local src must be inside your own folder or your own copy of the room's files. Anything else returns an error naming the path, so copy the file in first.";
 
   it.each([
     ['the control_ui description (every runtime)', CONTROL_UI_DESCRIPTION],

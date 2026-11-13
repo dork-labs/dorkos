@@ -366,7 +366,7 @@ export function buildUiActionCatalog(options: UiCatalogOptions = {}): string {
  * `control_ui` refuses a file outside the folder up front. A one-on-one window is not asked.
  */
 export const CANVAS_LOCAL_SRC_RULE =
-  "On a room's canvas, a local src must be inside your own folder. Anything else returns an error naming the path, so copy the file in first.";
+  "On a room's canvas, a local src must be inside your own folder or your own copy of the room's files. Anything else returns an error naming the path, so copy the file in first.";
 
 /**
  * Tool description for control_ui (shared between the Claude in-process tool and

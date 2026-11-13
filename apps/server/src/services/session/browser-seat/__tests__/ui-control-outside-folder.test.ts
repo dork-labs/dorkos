@@ -22,6 +22,7 @@ import {
 } from '../../../canvas/index.js';
 import { CapabilityToolError } from '../../../core/capabilities/index.js';
 import { initBoundary } from '../../../../lib/boundary.js';
+import { setRoomRepoService, setRoomService } from '../../../rooms/index.js';
 import { controlUi } from '../ui-control.js';
 import { uiTurnFacts } from '../ui-turn-facts.js';
 
@@ -182,4 +183,139 @@ describe('the person’s own one-on-one window opens what it did before (Securit
     const { isError } = await control(args);
     expect(isError).toBe(false);
   });
+});
+
+describe("a room's own folders, on that room's canvas (DOR-3519, Security)", () => {
+  const OTHER = 'room-other';
+  let rooms: string;
+  let copy: string;
+  let repo: string;
+  let applied: unknown[];
+
+  /** A room turn in ROOM, placed in the agent's folder with its copy of the room's files. */
+  function inRoomWithFiles(): void {
+    uiTurnFacts.bindTurn(SESSION, {
+      roomTurn: {
+        roomId: ROOM,
+        authorId: 'agent-media',
+        turnId: 'turn-1',
+        cwd: agent,
+        worktree: copy,
+      },
+    });
+  }
+
+  beforeEach(() => {
+    rooms = path.join(root, 'home', '.dork', 'rooms');
+    copy = path.join(rooms, ROOM, 'worktrees', 'media-0123abcd');
+    repo = path.join(rooms, ROOM, 'repo');
+    for (const dir of [
+      copy,
+      repo,
+      path.join(rooms, OTHER, 'repo'),
+      path.join(rooms, OTHER, 'worktrees', 'media-0123abcd'),
+    ]) {
+      fs.mkdirSync(dir, { recursive: true });
+      fs.writeFileSync(path.join(dir, 'notes.md'), 'made-up room notes');
+    }
+    fs.symlinkSync(outside, path.join(copy, 'link'));
+    applied = [];
+    // Only the two seams this path reads: where a room's shared files are, and
+    // the room canvas writer, which records what reached it.
+    setRoomRepoService({
+      repoPathFor: (roomId: string) => path.join(rooms, roomId, 'repo'),
+    } as never);
+    setRoomService({
+      handoffs: { reports: undefined },
+      canvas: {
+        apply: (input: unknown) => {
+          applied.push(input);
+          return { applied: true, documentId: 'doc-1', rev: 1, viewers: 0 };
+        },
+        list: () => [],
+      },
+    } as never);
+  });
+
+  it.each([
+    ["a file in the agent's own copy of the room's files", () => path.join(copy, 'notes.md')],
+    ["a file in the room's shared repo/", () => path.join(repo, 'notes.md')],
+    ["a file inside the agent's own folder", () => 'notes.md'],
+  ])('%s opens in a room turn', async (_name, sourcePath) => {
+    inRoomWithFiles();
+    const { payload, isError } = await control({ action: 'open_file', sourcePath: sourcePath() });
+    expect(payload.code).toBeUndefined();
+    expect(isError).toBe(false);
+    expect(payload).toMatchObject({ success: true, target: 'room', roomId: ROOM });
+    expect(applied).toHaveLength(1);
+  });
+
+  it.each([
+    ["another room's shared repo/", () => path.join(rooms, OTHER, 'repo', 'notes.md')],
+    [
+      "the agent's copy of another room's files",
+      () => path.join(rooms, OTHER, 'worktrees', 'media-0123abcd', 'notes.md'),
+    ],
+    ['a link in the own copy that points out', () => path.join(copy, 'link', 'notes.md')],
+    [
+      'up and out of the own copy',
+      () => path.join(copy, '..', '..', '..', OTHER, 'repo', 'notes.md'),
+    ],
+  ])('%s is refused', async (_name, sourcePath) => {
+    inRoomWithFiles();
+    const { payload, isError } = await control({ action: 'open_file', sourcePath: sourcePath() });
+    expect(isError).toBe(true);
+    expect(payload.code).toBe('OUTSIDE_FOLDER');
+    expect(applied).toEqual([]);
+  });
+
+  it("another room's files are refused even when the agent's folder contains the rooms folder", async () => {
+    uiTurnFacts.bindTurn(SESSION, {
+      roomTurn: {
+        roomId: ROOM,
+        authorId: 'agent-media',
+        turnId: 'turn-1',
+        cwd: root,
+        worktree: copy,
+      },
+    });
+    const { payload, isError } = await control({
+      action: 'open_file',
+      sourcePath: path.join(rooms, OTHER, 'repo', 'notes.md'),
+    });
+    expect(isError).toBe(true);
+    expect(payload.code).toBe('OUTSIDE_FOLDER');
+  });
+
+  it("a write targeted at another room does not carry this room's copy along", async () => {
+    inRoomWithFiles();
+    const { payload, isError } = await control({
+      action: 'open_file',
+      sourcePath: path.join(copy, 'notes.md'),
+      target: { roomId: OTHER },
+    });
+    expect(isError).toBe(true);
+    expect(payload.code).toBe('OUTSIDE_FOLDER');
+  });
+
+  it.each([
+    ['a url document', () => ({ action: 'open_canvas', content: { type: 'url', url: fileUrl() } })],
+    [
+      'a browser document',
+      () => ({ action: 'open_canvas', content: { type: 'browser', url: fileUrl() } }),
+    ],
+    ['browser_navigate', () => ({ action: 'browser_navigate', url: fileUrl() })],
+  ])('%s naming a file:// address outside is refused the same way', async (_name, args) => {
+    inRoomWithFiles();
+    const { payload, isError } = await control(args());
+    expect(isError).toBe(true);
+    expect(payload.code).toBe('OUTSIDE_FOLDER');
+    expect(String(payload.error)).toContain(path.join(outside, 'notes.md'));
+    expect(applied).toEqual([]);
+  });
+
+  /** A file:// address for the outside file. */
+  function fileUrl(): string {
+    return `file://${path.join(outside, 'notes.md')}`;
+  }
 });
