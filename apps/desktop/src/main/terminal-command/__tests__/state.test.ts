@@ -14,6 +14,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { terminalCommandScript } from '../script';
 import {
   installTerminalCommand,
+  placeNew,
   readTerminalCommand,
   removeTerminalCommand,
   type TerminalCommandDeps,
@@ -201,5 +202,31 @@ describe('removeTerminalCommand', () => {
 
   it('is fine when nothing is there', async () => {
     expect((await removeTerminalCommand(deps())).ok).toBe(true);
+  });
+});
+
+// Security (#3679): a file that appears between Install's check and its write must never be
+// replaced. A fresh install goes through placeNew, which fails rather than replace anything.
+describe('placeNew', () => {
+  function temp(text: string): string {
+    mkdirSync(path.dirname(file), { recursive: true });
+    const made = path.join(path.dirname(file), 'made-up.tmp');
+    writeFileSync(made, text, { mode: 0o755 });
+    return made;
+  }
+
+  it('puts a new script in place', async () => {
+    await placeNew(temp('new'), file);
+    expect(readFileSync(file, 'utf8')).toBe('new');
+  });
+
+  it.each([
+    ['a file of the person’s own', () => writeFileSync(file, '#!/bin/sh\necho mine\n')],
+    ['a link to another program', () => symlinkSync('/usr/bin/true', file)],
+  ])('refuses, and leaves alone, %s that appeared after the check', async (_label, plant) => {
+    const made = temp('ours');
+    plant();
+    await expect(placeNew(made, file)).rejects.toMatchObject({ code: 'EEXIST' });
+    expect(readFileSync(file, 'utf8')).not.toBe('ours');
   });
 });

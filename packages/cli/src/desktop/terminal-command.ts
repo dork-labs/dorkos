@@ -41,7 +41,17 @@ export async function runTerminalCommand(
   browser: typeof runBrowserDispatcher = runBrowserDispatcher
 ): Promise<number> {
   const [command, ...rest] = argv;
-  if (command === 'browser') return browser(rest[0], rest.slice(1));
+  if (command === 'browser') {
+    // The browser engine's files belong to the full command line's own install; the app
+    // ships its own browser and has none of them to manage.
+    const [sub, ...subArgs] = rest;
+    if (sub === 'install' || (sub === 'status' && subArgs.includes('--runtime'))) {
+      out.error("The DorkOS app's dorkos doesn't manage browser engine files.");
+      out.error('For that, install the full command line: npm install -g dorkos');
+      return 1;
+    }
+    return browser(sub, subArgs);
+  }
   if (command === '--version' || command === '-v' || command === 'version') {
     out.log(__CLI_VERSION__);
     return 0;

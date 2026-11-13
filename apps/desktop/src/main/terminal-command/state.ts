@@ -9,7 +9,7 @@
  * @module main/terminal-command/state
  */
 import { constants } from 'node:fs';
-import { lstat, mkdir, readFile, realpath, rename, rm, writeFile } from 'node:fs/promises';
+import { link, lstat, mkdir, readFile, realpath, rename, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { isDorkosScript, runsThisApp, terminalCommandScript, type ScriptTarget } from './script';
 import { shellLineFor, type ShellLine } from './shell-line';
@@ -159,26 +159,47 @@ export async function installTerminalCommand(
 ): Promise<TerminalCommandResult> {
   if (!deps.target) return { ok: false, message: 'the Terminal command comes with the Mac app.' };
   const file = scriptFile(deps.home);
+  const taken = {
+    ok: false,
+    message: `another file is already at ${SCRIPT_DISPLAY_PATH}.`,
+  } as const;
   try {
-    if ((await readScript(file)) === 'foreign')
-      return { ok: false, message: `another file is already at ${SCRIPT_DISPLAY_PATH}.` };
+    const existing = await readScript(file);
+    if (existing === 'foreign') return taken;
     await mkdir(path.dirname(file), { recursive: true, mode: 0o755 });
-    // Written beside it and renamed over it, so Terminal never runs half a file.
+    // Written beside it first, so Terminal never runs half a file.
     const temp = `${file}.${process.pid}.${Date.now()}.tmp`;
     await writeFile(temp, terminalCommandScript(deps.target), {
       mode: 0o755,
       flag: constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY,
     });
     try {
-      await rename(temp, file);
+      // Only our own script is renamed over. A fresh install links instead, which fails
+      // rather than replace a file someone put there after the check above.
+      if (existing === 'absent') await placeNew(temp, file);
+      else await rename(temp, file);
     } catch (err) {
-      await rm(temp, { force: true });
+      if ((err as NodeJS.ErrnoException).code === 'EEXIST') return taken;
       throw err;
+    } finally {
+      await rm(temp, { force: true });
     }
   } catch (err) {
     return { ok: false, message: reasonFor(err) };
   }
   return { ok: true, status: await readTerminalCommand(deps) };
+}
+
+/**
+ * Put a new script in place without ever replacing what is there: a hard link fails with
+ * `EEXIST` when the name is taken, where a rename would silently replace it. The temp
+ * file is the caller's to remove.
+ *
+ * @param temp - The finished script, beside its final name.
+ * @param file - Where it goes.
+ */
+export async function placeNew(temp: string, file: string): Promise<void> {
+  await link(temp, file);
 }
 
 /**

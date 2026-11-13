@@ -18,9 +18,10 @@ const PLAYGROUND_COLD_START_MS = 90_000;
 async function openShowcase(page: Page) {
   await page.goto(SHOWCASE_PATH);
   const section = page.locator('section#terminal-command');
-  await expect(section.getByText('Use dorkos from Terminal.', { exact: false })).toBeVisible({
-    timeout: PLAYGROUND_COLD_START_MS,
-  });
+  // States 1 and 5 both start "not installed", so this line shows twice: wait for the first.
+  await expect(
+    section.getByText('Use dorkos from Terminal.', { exact: false }).first()
+  ).toBeVisible({ timeout: PLAYGROUND_COLD_START_MS });
   await section.scrollIntoViewIfNeeded();
   return section;
 }

@@ -26,6 +26,24 @@ describe('the Mac app’s Terminal command', () => {
     expect(browser).toHaveBeenCalledWith('login', ['made-up.example']);
   });
 
+  // These two read the full CLI's own browser-engine files, which the app doesn't ship.
+  it.each([['install'], ['status', '--runtime']])(
+    'answers browser %s plainly instead of failing deep inside',
+    async (...args) => {
+      const { out, errors } = capture();
+      expect(await runTerminalCommand(['browser', ...args], out, browser)).toBe(1);
+      expect(errors.join('\n')).toContain("doesn't manage browser engine files");
+      expect(errors.join('\n')).toContain('npm install -g dorkos');
+      expect(browser).not.toHaveBeenCalled();
+    }
+  );
+
+  it('still hands plain browser status to the dispatcher', async () => {
+    const { out } = capture();
+    expect(await runTerminalCommand(['browser', 'status'], out, browser)).toBe(0);
+    expect(browser).toHaveBeenCalledWith('status', []);
+  });
+
   it('prints the app’s version', async () => {
     const { out, lines } = capture();
     expect(await runTerminalCommand(['--version'], out, browser)).toBe(0);
