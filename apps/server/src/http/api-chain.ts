@@ -76,6 +76,7 @@ import { parseRequestBody, underMount, type BodyRule } from './request-body.js';
 import { answerUnclaimed } from './unclaimed.js';
 import { wifiLevelMiddleware } from '../services/core/auth/sessions/wifi-level.js';
 import { personSessionRefusal } from './person-session-refusal.js';
+import { buildMcpAuthThrottle } from '../middleware/mcp-auth-throttle.js';
 
 /** What the chain puts on `c.var` for the routes behind it. */
 export interface ApiVariables extends RequestFactsVariables {
@@ -198,6 +199,8 @@ export function createApiApp(options: ApiChainOptions): Hono<ApiEnv> {
     );
     await next();
   });
+  // Before the session gate: bad remote MCP keys never reach the route limiter.
+  app.use(buildMcpAuthThrottle());
   app.use(async (c, next) => {
     // An OAuth callback is judged without the provider page it came from.
     const facts = gateFactsFor(c.req.method, c.req.path, honoRequestFacts(c));
