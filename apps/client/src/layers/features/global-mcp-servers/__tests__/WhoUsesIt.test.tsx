@@ -92,41 +92,121 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe('who uses it without asking', () => {
-  it('lists each standing yes, with Undo only where Undo can reach', async () => {
+  it('lists each standing yes, with Make it ask only where it can reach', async () => {
     const user = userEvent.setup();
     renderTab(transportWith());
     const sheet = await openSheet(user);
     expect(await sheet.findByText('Every tool, including new ones · in its project')).toBeVisible();
     expect(sheet.getByText('create_issue only · in its project')).toBeVisible();
     expect(
-      sheet.getByRole('button', { name: 'Undo Every tool, including new ones for Quill' })
-    ).toBeVisible();
-    // Atlas's rule is in the shared settings.json, which Undo never writes.
-    expect(sheet.queryByRole('button', { name: /for Atlas/ })).toBeNull();
-    expect(
-      sheet.getByText('Everyone else asks first. These may not apply to untrusted folders.')
-    ).toBeVisible();
+      sheet.getByRole('button', { name: 'Make Quill ask first: Every tool, including new ones' })
+    ).toHaveTextContent('Make it ask');
+    // Atlas's rule is in the shared settings.json, which Make it ask never writes, and says so.
+    expect(sheet.queryByRole('button', { name: /Atlas/ })).toBeNull();
+    const atlasRow = sheet.getByText('Atlas').closest('li')!;
+    expect(within(atlasRow).getByText('Set in settings.json')).toBeVisible();
+    expect(sheet.getByText('These may not apply to untrusted folders.')).toBeVisible();
+    expect(sheet.queryByText(/Everyone else asks first/)).toBeNull();
   });
 
-  it('Undo sends the agent and the exact rule, and reads the list again', async () => {
+  it('says only "No one" when nobody has a standing yes', async () => {
     const user = userEvent.setup();
+    renderTab(
+      transportWith({ listGlobalMcpStandingAllows: vi.fn().mockResolvedValue({ allows: [] }) })
+    );
+    const sheet = await openSheet(user);
+    expect(await sheet.findByText('No one. Every agent asks first.')).toBeVisible();
+    expect(sheet.queryByText(/untrusted folders/)).toBeNull();
+    expect(sheet.queryByText(/Everyone else asks first/)).toBeNull();
+  });
+
+  it('truncates nothing: the title, names and rules all wrap', async () => {
+    const user = userEvent.setup();
+    renderTab(transportWith());
+    const sheet = await openSheet(user);
+    await sheet.findByText('What it can do · 2 tools');
+    expect(document.querySelector('[role="dialog"] .truncate')).toBeNull();
+  });
+});
+
+describe('make it ask', () => {
+  beforeEach(() => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('sends one removal, says so in place for 4 seconds, then the line goes', async () => {
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
     const undo = vi.fn().mockResolvedValue(undefined);
     const allows = vi
       .fn()
       .mockResolvedValueOnce({ allows: [QUILL_ALL] })
       .mockResolvedValue({ allows: [] });
-    renderTab(
-      transportWith({ undoGlobalMcpStandingAllow: undo, listGlobalMcpStandingAllows: allows })
-    );
+    const check = vi.fn().mockResolvedValue(CHECKED);
+    const transport = transportWith({
+      undoGlobalMcpStandingAllow: undo,
+      listGlobalMcpStandingAllows: allows,
+      checkGlobalMcpServerTools: check,
+    });
+    renderTab(transport);
     const sheet = await openSheet(user);
-    await user.click(await sheet.findByRole('button', { name: /^Undo .* for Quill$/ }));
+    await sheet.findByText('What it can do · 2 tools');
+    const checks = check.mock.calls.length;
+    await user.click(await sheet.findByRole('button', { name: /^Make Quill ask first/ }));
+
+    expect(undo).toHaveBeenCalledTimes(1);
     expect(undo).toHaveBeenCalledWith('tracker', 'agent-quill', 'mcp__tracker');
+    const madeToAsk = () => document.querySelector('[data-slot="made-to-ask"]');
+    await waitFor(() => expect(madeToAsk()).toHaveTextContent('Quill now asks first.'));
+    expect(document.querySelector('[aria-live="polite"]')).toHaveTextContent(
+      'Quill now asks first.'
+    );
+    // The tools Quill used without asking no longer say so.
+    expect(sheet.queryByText(/Used without asking by Quill/)).toBeNull();
+
+    await vi.advanceTimersByTimeAsync(3900);
+    expect(madeToAsk()).toHaveTextContent('Quill now asks first.');
+    await vi.advanceTimersByTimeAsync(400);
+    await waitFor(() => expect(madeToAsk()).toBeNull());
     expect(await sheet.findByText('No one. Every agent asks first.')).toBeVisible();
+
+    // A removal only: one DELETE, nothing added back, nothing retried or re-checked.
+    expect(undo).toHaveBeenCalledTimes(1);
+    expect(transport.addGlobalMcpServer).not.toHaveBeenCalled();
+    expect(transport.patchGlobalMcpServer).not.toHaveBeenCalled();
+    expect(check).toHaveBeenCalledTimes(checks);
+  });
+
+  it('names the agent under its own row when refused, from the server’s record', async () => {
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    // The server's words name nobody; the row's own record names Quill.
+    const refused = Object.assign(
+      new Error(
+        "This agent's settings file isn't a plain file in its folder, so it was left alone."
+      ),
+      { code: 'not-a-real-file' }
+    );
+    const undo = vi.fn().mockRejectedValue(refused);
+    renderTab(transportWith({ undoGlobalMcpStandingAllow: undo }));
+    const sheet = await openSheet(user);
+    await user.click(await sheet.findByRole('button', { name: /^Make Quill ask first/ }));
+
+    const alert = await sheet.findByRole('alert');
+    expect(alert).toHaveTextContent(
+      'Quill’s settings file isn’t a plain file in its folder, so it was left alone.'
+    );
+    const quillRow = sheet.getByText('Quill').closest('li')!;
+    expect(within(quillRow).getByRole('alert')).toBe(alert);
+    expect(undo).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(undo).toHaveBeenCalledTimes(1);
   });
 });
 
 describe('what it can do', () => {
-  it('shows the tools as plain text, marks a new one, and names who uses each', async () => {
+  it('stacks each tool: name and New today, its description as plain text, then who uses it', async () => {
     const user = userEvent.setup();
     const check = vi.fn().mockResolvedValue(CHECKED);
     renderTab(transportWith({ checkGlobalMcpServerTools: check }));
@@ -138,9 +218,33 @@ describe('what it can do', () => {
     expect(document.querySelector('[role="dialog"] b')).toBeNull();
     expect(sheet.getByText('New today')).toBeVisible();
     const createRow = sheet.getByText('create_issue', { selector: 'span' }).closest('li')!;
-    expect(within(createRow).getByText('Quill, Atlas')).toBeVisible();
+    expect(within(createRow).getByText('Used without asking by Quill, Atlas')).toBeVisible();
     const exportRow = sheet.getByText('export_all').closest('li')!;
-    expect(within(exportRow).getByText('Quill')).toBeVisible();
+    expect(within(exportRow).getByText('Used without asking by Quill')).toBeVisible();
+    expect(sheet.queryByText('Asks first')).toBeNull();
+  });
+
+  it('a tool nobody uses without asking has no third line', async () => {
+    const user = userEvent.setup();
+    renderTab(
+      transportWith({ listGlobalMcpStandingAllows: vi.fn().mockResolvedValue({ allows: [] }) })
+    );
+    const sheet = await openSheet(user);
+    const createRow = (await sheet.findByText('create_issue', { selector: 'span' })).closest('li')!;
+    expect(within(createRow).queryByText(/Used without asking/)).toBeNull();
+    expect(within(createRow).queryByText('Asks first')).toBeNull();
+  });
+
+  it('says nothing about reading the server while it is not checked', async () => {
+    const user = userEvent.setup();
+    renderTab(
+      transportWith({
+        checkGlobalMcpServerTools: vi.fn().mockResolvedValue({ status: 'not-checked' }),
+      })
+    );
+    const sheet = await openSheet(user);
+    expect(await sheet.findByText('Not checked yet. It’s checked once it’s on.')).toBeVisible();
+    expect(sheet.queryByText(/Read from the server when this opens/)).toBeNull();
   });
 
   it.each([

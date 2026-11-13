@@ -71,7 +71,9 @@ export function ServerSheet({ server, onClose, onRemove, onCloseAutoFocus }: Ser
           <div className="flex items-center gap-3">
             <ServerMark />
             <div className="min-w-0 text-left">
-              <ResponsiveDialogTitle className="truncate">{server.name}</ResponsiveDialogTitle>
+              <ResponsiveDialogTitle className="[overflow-wrap:anywhere]">
+                {server.name}
+              </ResponsiveDialogTitle>
               <ResponsiveDialogDescription>
                 Added {addedOn(server.addedAt)}
               </ResponsiveDialogDescription>

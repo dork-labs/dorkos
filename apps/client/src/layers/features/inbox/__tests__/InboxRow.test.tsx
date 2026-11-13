@@ -326,3 +326,28 @@ describe('InboxRow: a failing schedule’s Open schedule (DOR-3123)', () => {
     expect(screen.queryByRole('button', { name: 'Open schedule' })).toBeNull();
   });
 });
+
+it('reads a new-tool notice in full: which server added a tool, and who uses it (DOR-4118)', () => {
+  const title =
+    'notion-demo-shared-workspaces-for-a-team added a tool. Atlas, the quarterly planning researcher can use it without asking.';
+  const body = 'It allows every notion-demo-shared-workspaces-for-a-team tool, including new ones.';
+  render(
+    <InboxRow
+      notification={build({
+        kind: 'mcp-server.tool_added',
+        subject: { type: 'system', id: 'mcp-server:notion-demo-shared-workspaces-for-a-team' },
+        title,
+        body,
+        actions: [{ id: 'open', label: 'Review', style: 'primary' }],
+      })}
+      onOpen={() => {}}
+    />
+  );
+  const shown = document.querySelector('[data-slot="inbox-row-title"]');
+  expect(shown).toHaveTextContent(title);
+  expect(shown).not.toHaveClass('truncate');
+  expect(shown).not.toHaveClass('line-clamp-2');
+  const content = document.querySelector('[data-slot="inbox-row-body"]');
+  expect(content).toHaveTextContent(body);
+  expect(content).not.toHaveClass('truncate');
+});
