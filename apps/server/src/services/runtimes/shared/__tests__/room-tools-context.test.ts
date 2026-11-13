@@ -59,10 +59,27 @@ describe('the room tools block', () => {
     // The chat tools block says what a helper and a spin-off are; this is the one line
     // that tells a room turn to use them, so the room is not left waiting on it.
     const words = block.replace(/\s+/g, ' ');
-    expect(words).toContain('Long work does not hold the room.');
+    expect(words).toContain('Long work does not hold the room');
     expect(words).toContain('A few minutes of looking can go to a helper');
-    expect(words).toContain('longer work goes to a spin-off chat');
-    expect(words).toContain('end your turn, and post when it reports');
+    expect(words).toContain('hand anything longer to a spin-off chat or another agent');
+    expect(words).toContain('end the turn, and post again when they report');
+  });
+
+  it('tells every seat to stay responsive (DOR-4081)', () => {
+    // Responsive rooms, slice 1: a person waited minutes for a seat that was busy doing the
+    // work inside its room turn. One line per behaviour the spec names, folded into the
+    // long-work rule rather than added as a heading of its own (design pass v1, row 11).
+    const words = block.replace(/\s+/g, ' ');
+    expect(words).toContain('STAY RESPONSIVE.');
+    expect(words).toContain('A short question gets a 1–2 sentence answer now.');
+    expect(words).toContain(
+      "Before anything bigger, post one line: what you're doing and who has it."
+    );
+    expect(words).toContain('never do it inside a room turn');
+    expect(words).toContain('say who has it, end the turn, and post again when they report');
+    expect(words).toContain('When nobody asked you and you hold nothing new, stay silent.');
+    // Folded in, not duplicated: the old bullet is gone rather than left beside the new one.
+    expect(words.match(/Long work does not hold the room/g)).toHaveLength(1);
   });
 
   it('rules a reaction out as a way of delivering an answer it has', () => {
