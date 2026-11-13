@@ -175,9 +175,15 @@ export function ApprovalPrompt({
   // Who and what (DOR-4117): the agent and the tool when the name is known, else
   // the runtime's own sentence, else the tool alone.
   const toolWord = mcp?.tool ?? toolName;
+  // A third-party server can name its tool `Bash`, so its title says where the
+  // tool comes from, by the server's name in Connections rather than anything
+  // the tool says about itself. Built-ins keep the short title.
+  const fromServer = badge !== null && mcp ? ` from ${mcp.server}` : '';
   const headline = agentName
-    ? `${agentName} wants to use ${toolWord}`
-    : approvalTitle || `Allow ${toolWord}?`;
+    ? `${agentName} wants to use ${toolWord}${fromServer}`
+    : fromServer
+      ? `Allow ${toolWord}${fromServer}?`
+      : approvalTitle || `Allow ${toolWord}?`;
   const [choosing, setChoosing] = useState(false);
   const [responding, setResponding] = useState(false);
   const [decided, setDecided] = useState<'approved' | 'denied' | null>(null);
@@ -477,7 +483,10 @@ export function ApprovalPrompt({
           {/* Neutral on every routine ask: red on each card teaches people to
               ignore red (DOR-4117). The countdown keeps red for its last seconds. */}
           <Shield className="text-muted-foreground size-(--size-icon-md)" />
-          <AskCard.Headline className="font-semibold">{headline}</AskCard.Headline>
+          {/* Wraps rather than truncates: a long server name is the part that matters. */}
+          <AskCard.Headline className="min-w-0 font-semibold break-words">
+            {headline}
+          </AskCard.Headline>
         </div>
 
         {/* SDK-provided context: description, decision reason, blocked path */}

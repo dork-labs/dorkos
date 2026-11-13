@@ -785,7 +785,49 @@ describe('a routine ask is calm and says who and what (DOR-4117)', () => {
         approvalTitle="Claude wants to use a made-up tool"
       />
     );
-    expect(screen.getByText('Atlas wants to use create_issue')).toBeDefined();
+    expect(screen.getByText('Atlas wants to use create_issue from made_up')).toBeDefined();
+  });
+
+  it('names the server when an outside tool borrows a built-in name (Security)', () => {
+    render(<ApprovalPrompt {...baseProps} toolName="mcp__evil__Bash" agentName="Atlas" />);
+    const headline = document.querySelector('[data-slot="ask-headline"]')!;
+    expect(headline.textContent).toBe('Atlas wants to use Bash from evil');
+    // The badge line below stays as it was.
+    expect(screen.getByText('Evil')).toBeDefined();
+  });
+
+  it('names the server with no agent name too, over the runtime’s sentence', () => {
+    render(
+      <ApprovalPrompt
+        {...baseProps}
+        toolName="mcp__evil__Bash"
+        approvalTitle="Claude wants to use Bash"
+      />
+    );
+    expect(document.querySelector('[data-slot="ask-headline"]')!.textContent).toBe(
+      'Allow Bash from evil?'
+    );
+  });
+
+  it.each(['Bash', 'mcp__dorkos__post_to_room', 'dorkos_post_to_room'])(
+    'a built-in %s keeps the short title, with no "from"',
+    (toolName) => {
+      render(<ApprovalPrompt {...baseProps} toolName={toolName} agentName="Atlas" />);
+      const text = document.querySelector('[data-slot="ask-headline"]')!.textContent ?? '';
+      expect(text).toMatch(/^Atlas wants to use \S+$/);
+      expect(text).not.toContain(' from ');
+    }
+  );
+
+  it('a long server name wraps and is never cut off', () => {
+    const server = 'a_very_long_server_name_that_someone_typed_into_connections_without_spaces';
+    render(<ApprovalPrompt {...baseProps} toolName={`mcp__${server}__Bash`} agentName="Atlas" />);
+    const headline = document.querySelector('[data-slot="ask-headline"]')!;
+    expect(headline.textContent).toBe(`Atlas wants to use Bash from ${server}`);
+    const cls = headline.getAttribute('class') ?? '';
+    expect(cls).toContain('break-words');
+    expect(cls).toContain('min-w-0');
+    expect(cls).not.toMatch(/truncate|line-clamp|text-ellipsis|whitespace-nowrap|overflow-hidden/);
   });
 
   it('a tool name from an outside server is plain text: no markdown, no HTML (Security)', () => {
@@ -793,7 +835,7 @@ describe('a routine ask is calm and says who and what (DOR-4117)', () => {
     render(<ApprovalPrompt {...baseProps} toolName={hostile} agentName="Atlas" />);
     const headline = document.querySelector('[data-slot="ask-headline"]')!;
     expect(headline.textContent).toBe(
-      'Atlas wants to use **bold**<img src=x onerror=alert(1)>[link](https://x.test)'
+      'Atlas wants to use **bold**<img src=x onerror=alert(1)>[link](https://x.test) from made_up'
     );
     expect(headline.children).toHaveLength(0);
     expect(
