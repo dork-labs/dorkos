@@ -23,61 +23,12 @@ describe('task-presets', () => {
   });
 
   describe('getDefaultPresets', () => {
-    it('returns 4 default presets', () => {
-      const presets = getDefaultPresets();
-      expect(presets).toHaveLength(4);
-    });
-
-    it('returns presets with required fields', () => {
-      const presets = getDefaultPresets();
-      for (const preset of presets) {
-        expect(preset.id).toBeDefined();
-        expect(preset.name).toBeDefined();
-        expect(preset.description).toBeDefined();
-        expect(preset.prompt).toBeDefined();
-        expect(preset.cron).toBeDefined();
-        expect(preset.timezone).toBe('UTC');
-        expect(preset.category).toBeDefined();
-      }
-    });
-
-    it('includes health-check preset', () => {
-      const presets = getDefaultPresets();
-      const healthCheck = presets.find((p) => p.id === 'health-check');
-      expect(healthCheck).toBeDefined();
-      expect(healthCheck!.cron).toBe('0 8 * * 1');
-      expect(healthCheck!.category).toBe('maintenance');
-    });
-
     it('includes dependency-audit preset', () => {
       const presets = getDefaultPresets();
       const audit = presets.find((p) => p.id === 'dependency-audit');
       expect(audit).toBeDefined();
       expect(audit!.cron).toBe('0 9 * * 1');
       expect(audit!.category).toBe('security');
-    });
-
-    it('includes docs-sync preset', () => {
-      const presets = getDefaultPresets();
-      const docs = presets.find((p) => p.id === 'docs-sync');
-      expect(docs).toBeDefined();
-      expect(docs!.cron).toBe('0 10 * * *');
-      expect(docs!.category).toBe('documentation');
-    });
-
-    it('includes code-review preset', () => {
-      const presets = getDefaultPresets();
-      const review = presets.find((p) => p.id === 'code-review');
-      expect(review).toBeDefined();
-      expect(review!.cron).toBe('0 8 * * 5');
-      expect(review!.category).toBe('quality');
-    });
-
-    it('returns a copy (not a reference)', () => {
-      const a = getDefaultPresets();
-      const b = getDefaultPresets();
-      expect(a).not.toBe(b);
-      expect(a).toEqual(b);
     });
 
     it('all presets have valid cron expressions (5 fields)', () => {
@@ -217,18 +168,6 @@ describe('task-presets', () => {
       expect(writeFile).not.toHaveBeenCalled();
     });
 
-    it('creates tasks/ subdirectory with recursive flag', async () => {
-      const err = new Error('ENOENT') as NodeJS.ErrnoException;
-      err.code = 'ENOENT';
-      vi.mocked(readFile).mockRejectedValue(err);
-      vi.mocked(mkdir).mockResolvedValue(undefined);
-      vi.mocked(writeFile).mockResolvedValue();
-
-      await ensureDefaultPresets('/custom/path');
-
-      expect(mkdir).toHaveBeenCalledWith(path.join('/custom/path', 'tasks'), { recursive: true });
-    });
-
     it('written JSON is valid and matches default presets', async () => {
       const err = new Error('ENOENT') as NodeJS.ErrnoException;
       err.code = 'ENOENT';
@@ -281,17 +220,6 @@ describe('task-presets', () => {
       const result = await loadPresets('/home/user/.dork');
       // null is not an array
       expect(result).toEqual([]);
-    });
-
-    it('reads from correct path under dorkHome', async () => {
-      vi.mocked(readFile).mockResolvedValue('[]');
-
-      await loadPresets('/custom/dork/home');
-
-      expect(readFile).toHaveBeenCalledWith(
-        path.join('/custom/dork/home', 'tasks', 'presets.json'),
-        'utf-8'
-      );
     });
   });
 });

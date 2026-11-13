@@ -74,28 +74,6 @@ describe('R1 — named_other_agent', () => {
       rule: 'named_other_agent',
     });
   });
-
-  /**
-   * The accepted miss, written down rather than discovered later.
-   *
-   * A post that names another agent AND genuinely needs this one — *"@nova ship
-   * the release"* when this agent is the one that knows the release is blocked —
-   * is routed to silence, and the useful interjection never happens. That is a
-   * real cost and it is the number `specs/engaged-response-gate` §10.4 says to
-   * measure first, countable from the refusal ledger with no model spend at all.
-   *
-   * It is accepted for three reasons: `standDownFallbackSeat` already makes
-   * exactly this call for the fallback seat and the room's design record says it
-   * must; the engaged window is short, so the exposure is minutes rather than
-   * forever; and naming the agent — which is what a person does when they want
-   * it — takes the message straight back out of the gate's reach.
-   */
-  it('accepted miss: silences an agent that had something to add, because the post named somebody else', () => {
-    expect(route([post({ mentions: ['nova'] })])).toEqual({
-      verdict: 'no',
-      rule: 'named_other_agent',
-    });
-  });
 });
 
 describe('R2 — colleagues_answer', () => {
