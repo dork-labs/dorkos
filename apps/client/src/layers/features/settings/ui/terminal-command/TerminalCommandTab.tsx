@@ -30,7 +30,8 @@ function CopyLine({ line }: { line: string }) {
   return (
     // Below 480px Copy sits under the line, so the line keeps one row.
     <div className="bg-muted flex items-center justify-between gap-2 rounded-lg px-3 py-2 max-[480px]:flex-col max-[480px]:items-start">
-      <code className="min-w-0 font-mono text-xs break-words">{line}</code>
+      {/* One row where it fits; in a frame too narrow for it, it breaks rather than run out. */}
+      <code className="max-w-full min-w-0 font-mono text-xs [overflow-wrap:anywhere]">{line}</code>
       <Button variant="secondary" size="sm" className="shrink-0" onClick={() => void copy(line)}>
         {copied ? 'Copied' : 'Copy'}
       </Button>
