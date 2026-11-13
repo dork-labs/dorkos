@@ -679,7 +679,7 @@ curl -sS -o /dev/null -w '%{http_code} %{redirect_url}\n' https://dorkos.ai/down
 curl -sS -o /dev/null -w '%{http_code} %{redirect_url}\n' https://dorkos.ai/download/windows
 ```
 
-Each must print `302` and a URL under `/releases/download/vX.Y.Z/` for the version just released. The site keeps the GitHub release list for at most one minute (`RELEASE_LIST_TTL_MS` in `apps/site/src/lib/desktop-download.ts`), so if a link still shows the previous version, wait a minute and check again. Still old after three tries is a bug: stop and file it (DOR-4300 was this failure: 0.135.8 served as 0.135.7 for two hours). The one allowed exception: when the Windows alpha build failed (non-gating), the release has no `.exe`, so `/download/windows` correctly keeps the previous version; say so in the report.
+Each must print `302` and a URL under `/releases/download/vX.Y.Z/` for the version just released. The site keeps the GitHub release list for at most one minute (`RELEASE_LIST_TTL_MS` in `apps/site/src/lib/desktop-download.ts`), so if a link still shows the previous version, wait a minute and check again. A redirect to `/releases/latest` instead means GitHub refused the site's lookup (rate limit) and the link fell back to the release page; that is safe for people but not a pass, so check again a minute later. Still old after three tries is a bug: stop and file it (DOR-4300 was this failure: 0.135.8 served as 0.135.7 for two hours). The one allowed exception: when the Windows alpha build failed (non-gating), the release has no `.exe`, so `/download/windows` correctly keeps the previous version; say so in the report.
 
 ---
 

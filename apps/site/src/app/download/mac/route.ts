@@ -7,9 +7,10 @@
  * {@link findLatestDmgDownloadUrl} for why this can't just link at
  * `/releases/latest` directly.
  *
- * Returns a 503 with a short plain-text body when no such release exists
- * yet (nothing shipped, or the GitHub lookup failed) — live day-one
- * behavior before the first desktop release with a `.dmg` asset ships.
+ * When GitHub can't be asked and nothing earlier is remembered, it redirects
+ * to the latest release page instead. Returns a 503 with a short plain-text
+ * body only when GitHub answered and no release ships a `.dmg` yet — day-one
+ * behavior before the first desktop release.
  *
  * @module app/download/mac
  */

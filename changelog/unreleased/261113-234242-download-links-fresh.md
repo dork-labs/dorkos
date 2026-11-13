@@ -1,6 +1,7 @@
 ---
 covers:
   - 'fix(site): the download links serve a new release within a minute of it shipping (DOR-4300)'
+  - 'fix(site): a download link GitHub refuses on a cold start goes to the release page, not a 503 (DOR-4300)'
 ---
 
 ### Fixed

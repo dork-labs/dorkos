@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
   RELEASE_LIST_TTL_MS,
+  RELEASES_PAGE_URL,
   findLatestDmgDownloadUrl,
   findLatestExeDownloadUrl,
   resetDesktopReleaseCache,
@@ -35,13 +36,17 @@ function desktopRelease(version: string, publishedAt: string): unknown {
   };
 }
 
+let warn: ReturnType<typeof vi.spyOn>;
+
 beforeEach(() => {
   vi.clearAllMocks();
   resetDesktopReleaseCache();
+  warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
 });
 afterEach(() => {
   vi.clearAllMocks();
   vi.useRealTimers();
+  warn.mockRestore();
 });
 
 // DOR-4300: with a 5-minute stale-while-revalidate data cache, the first visit
@@ -103,6 +108,19 @@ describe('release list freshness', () => {
     mockFetch.mockResolvedValueOnce({ ok: false, status: 403 });
 
     expect(await findLatestDmgDownloadUrl()).toBe('https://example.com/0.1.0.dmg');
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  // Vercel's outbound IPs are shared, so a cold instance can meet a 403 with
+  // nothing remembered. The download button must still go somewhere useful.
+  it('sends a cold instance refused by GitHub to the releases page, and logs it', async () => {
+    mockFetch.mockResolvedValue({ ok: false, status: 403 });
+
+    expect(await findLatestDmgDownloadUrl()).toBe(RELEASES_PAGE_URL);
+    expect(await findLatestExeDownloadUrl()).toBe(RELEASES_PAGE_URL);
+    expect(RELEASES_PAGE_URL).toBe('https://github.com/dork-labs/dorkos/releases/latest');
+    expect(warn).toHaveBeenCalledTimes(2);
+    expect(String(warn.mock.calls[0]?.[0])).toContain('[lib/desktop-download]');
   });
 });
 
@@ -222,22 +240,22 @@ describe('findLatestDmgDownloadUrl', () => {
     expect(await findLatestDmgDownloadUrl()).toBe('https://example.com/published.dmg');
   });
 
-  it('returns null when the GitHub API responds non-ok', async () => {
+  it('returns the releases page when the GitHub API responds non-ok', async () => {
     mockFetch.mockResolvedValue({ ok: false });
-    expect(await findLatestDmgDownloadUrl()).toBeNull();
+    expect(await findLatestDmgDownloadUrl()).toBe(RELEASES_PAGE_URL);
   });
 
-  it('returns null when the fetch call throws', async () => {
+  it('returns the releases page when the fetch call throws', async () => {
     mockFetch.mockRejectedValue(new Error('network error'));
-    expect(await findLatestDmgDownloadUrl()).toBeNull();
+    expect(await findLatestDmgDownloadUrl()).toBe(RELEASES_PAGE_URL);
   });
 
-  it('returns null when the response body is not valid JSON', async () => {
+  it('returns the releases page when the response body is not valid JSON', async () => {
     mockFetch.mockResolvedValue({
       ok: true,
       json: () => Promise.reject(new Error('invalid json')),
     });
-    expect(await findLatestDmgDownloadUrl()).toBeNull();
+    expect(await findLatestDmgDownloadUrl()).toBe(RELEASES_PAGE_URL);
   });
 
   it('ignores a release that only ships a non-dmg (e.g. .exe) asset', async () => {
@@ -357,8 +375,8 @@ describe('findLatestExeDownloadUrl', () => {
     expect(await findLatestExeDownloadUrl()).toBe('https://example.com/published.exe');
   });
 
-  it('returns null when the fetch call throws', async () => {
+  it('returns the releases page when the fetch call throws', async () => {
     mockFetch.mockRejectedValue(new Error('network error'));
-    expect(await findLatestExeDownloadUrl()).toBeNull();
+    expect(await findLatestExeDownloadUrl()).toBe(RELEASES_PAGE_URL);
   });
 });
