@@ -178,3 +178,28 @@ describe.skipIf(!(await canStageIpv6OnlyLocalhost()))('the host it dials (DOR-42
     ]);
   });
 });
+
+describe('the host it dials, on IPv4 loopback (DOR-4294)', () => {
+  // The other half: a server whose `localhost` came out as `127.0.0.1` only.
+  // Where `::1` is listed first, the real `fetch` has to fall through to it.
+  let server: http.Server;
+  let port = 0;
+
+  beforeEach(async () => {
+    vi.unstubAllGlobals();
+    server = http.createServer((req, res) => {
+      req.resume();
+      req.on('end', () => res.writeHead(200).end());
+    });
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    port = (server.address() as AddressInfo).port;
+  });
+
+  afterEach(async () => {
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  });
+
+  it('answers through a server that listens only on IPv4 loopback', async () => {
+    expect(await denyTool(() => port, 'session-1', 'tool-1')).toEqual({ ok: true });
+  });
+});

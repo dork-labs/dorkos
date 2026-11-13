@@ -115,8 +115,68 @@ let request: ConnectionAttempt | null = null;
 let retryTimer: ReturnType<typeof setTimeout> | null = null;
 let retryDelayMs = RECONNECT_BASE_MS;
 
-/** Whether the last connection attempt already logged its failure — one line per outage, not per retry. */
-let outageLogged = false;
+/** At most one "still failing" line per this long, however fast the retries come. */
+export const OUTAGE_LOG_INTERVAL_MS = 30_000;
+
+/**
+ * The log of one outage: every failed attempt counted, at most one line per
+ * {@link OUTAGE_LOG_INTERVAL_MS}, and one line when the stream comes back.
+ *
+ * It used to log the first failure and then nothing, so a loop refused forever
+ * looked, in the log, exactly like one that had failed once and recovered. That
+ * is how the DOR-4294 outage stayed invisible. A line every thirty seconds with
+ * a running count keeps a dead loop visible without a line per retry.
+ */
+export class OutageLog {
+  private failures = 0;
+  private lastLoggedAt: number | null = null;
+
+  /**
+   * Start with no outage.
+   *
+   * @param now - The clock, injectable so a test can walk the interval exactly.
+   */
+  constructor(private readonly now: () => number = Date.now) {}
+
+  /**
+   * Count one failed attempt, and log it unless a line went out too recently.
+   *
+   * @param detail - What went wrong this time, for the line.
+   */
+  failed(detail: string): void {
+    this.failures += 1;
+    const at = this.now();
+    if (this.lastLoggedAt !== null && at - this.lastLoggedAt < OUTAGE_LOG_INTERVAL_MS) return;
+    this.lastLoggedAt = at;
+    log.warn(
+      `[event-stream] Cannot reach the server event stream ` +
+        `(${countAttempts(this.failures)} so far). ${detail}`
+    );
+  }
+
+  /** The stream is back: log how long the outage was, if there was one, and start over. */
+  recovered(): void {
+    if (this.failures > 0) {
+      log.info(
+        `[event-stream] Reconnected to the server event stream after ${countAttempts(this.failures)}.`
+      );
+    }
+    this.reset();
+  }
+
+  /** Forget the outage without a line, for when nobody is listening any more. */
+  reset(): void {
+    this.failures = 0;
+    this.lastLoggedAt = null;
+  }
+}
+
+function countAttempts(count: number): string {
+  return `${count} failed ${count === 1 ? 'attempt' : 'attempts'}`;
+}
+
+/** The current outage, if any. */
+const outage = new OutageLog();
 
 /** Subscribe to the shared server event stream.
  *
@@ -173,7 +233,7 @@ function teardown(): void {
   request = null;
   activeGetPort = null;
   retryDelayMs = RECONNECT_BASE_MS;
-  outageLogged = false;
+  outage.reset();
 }
 
 /**
@@ -239,6 +299,11 @@ function connect(): void {
   // server's `localhost` is routinely `::1` alone, and `127.0.0.1` was refused
   // forever (DOR-4294). The server's Host guard (DOR-532) allows it, and Node
   // sets the Host header from it for us.
+  //
+  // The name is looked up again on every attempt (Node keeps no DNS cache), and
+  // Node's default `autoSelectFamily` tries each address it resolves to, so a
+  // server that came back on the other family is found on the next retry. The
+  // IPv4-only, IPv6-only and late-server tests are what pin that default.
   const attempt = http.get(
     {
       host: serverDialHost(),
@@ -263,15 +328,13 @@ function connect(): void {
     if (!isCurrent(attempt)) return;
     // A stream that has gone quiet past the server's heartbeat is a stream
     // that is not coming back; drop it so the reconnect loop can take over.
+    outage.failed('The stream went quiet past the server heartbeat.');
     dropConnection();
     scheduleReconnect();
   });
   attempt.on('error', (err: Error) => {
     if (!isCurrent(attempt)) return;
-    if (!outageLogged) {
-      outageLogged = true;
-      log.warn('[event-stream] Lost the connection to the server event stream.', err.message);
-    }
+    outage.failed(err.message);
     dropConnection();
     scheduleReconnect();
   });
@@ -287,23 +350,19 @@ function connect(): void {
  */
 function handleResponse(response: IncomingMessage, attempt: ConnectionAttempt): void {
   if (response.statusCode !== 200) {
-    if (!outageLogged) {
-      outageLogged = true;
-      // The one real case: the person turned sign-in on, so `/api` now wants
-      // credentials the shell does not hold. Every subscriber degrades
-      // together — there is one stream, so one outage.
-      log.warn(
-        `[event-stream] The server event stream answered ${response.statusCode}; ` +
-          'agent activity and notifications will not be shown.'
-      );
-    }
+    // The one real case: the person turned sign-in on, so `/api` now wants
+    // credentials the shell does not hold. Every subscriber degrades
+    // together — there is one stream, so one outage.
+    outage.failed(
+      `It answered ${response.statusCode}; agent activity and notifications will not be shown.`
+    );
     response.resume();
     dropConnection();
     scheduleReconnect();
     return;
   }
 
-  outageLogged = false;
+  outage.recovered();
   retryDelayMs = RECONNECT_BASE_MS;
   response.setEncoding('utf-8');
 
