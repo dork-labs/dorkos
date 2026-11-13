@@ -25,7 +25,7 @@
  * `apps/server/src/services/runtimes/test-mode/interactive-scenarios.ts`.
  *
  * **Why this is a module and not a spec file.** Same lock as
- * `session-read-state.ts`: these tests belong to `chat-mock.spec.ts`, which
+ * `session-read-state.ts`: these tests belong to `chat-mock-prompts.spec.ts`, which
  * registers them. The test-mode server is shared mutable state — every
  * `POST /api/test/reset` there wipes scenarios, sessions and projectors
  * globally — and Playwright schedules separate spec FILES onto concurrent

@@ -14,7 +14,7 @@
  * while the client watched it happen, then reload and prove it is still there.
  *
  * **Why this is a module and not a spec file.** It belongs to
- * `chat-mock.spec.ts`, which registers it: the `error` scenario is only
+ * `chat-mock-session.spec.ts`, which registers it: the `error` scenario is only
  * available on the test-mode leg, and that server is shared mutable state whose
  * `POST /api/test/reset` runs before every one of that file's tests. See
  * `tests/chat/session-read-state.ts` for the same reasoning at length. The `.ts`
@@ -47,7 +47,7 @@ export interface DorkBotSeedSurvivesReloadDeps {
 }
 
 /**
- * Register the reload tests on `chat-mock.spec.ts`'s worker.
+ * Register the reload tests into `chat-mock-session.spec.ts`.
  *
  * @param deps - The host spec's server URL and seeded agent directory.
  */

@@ -13,7 +13,7 @@
 #
 #   * A spec silently dropped from the run. `projects[].testIgnore` /
 #     `testMatch` / `grepInvert` are hand-edited filters, and apps/e2e's are
-#     non-trivial — chat-mock.spec.ts is ignored by one project and matched by
+#     non-trivial — the chat-mock*.spec.ts files are ignored by one project and matched by
 #     the other, the two site specs are ignored unless the marketing-site leg is
 #     booted, and every test in send-message.spec.ts is grep-filtered by its
 #     @integration tag. Widen one of those by accident and a file stops running
@@ -73,7 +73,8 @@
 # and calls. The mock-server projects need it — `POST /api/test/reset` deletes
 # every tracked session's transcript and `fullyParallel` puts separate spec FILES
 # on concurrent workers, so a suite needing a transcript to survive cannot be its
-# own spec; registering it into chat-mock.spec.ts puts it on that file's worker.
+# own spec; registering it into a chat-mock*.spec.ts file puts it on that
+# project's one sequential worker.
 # Playwright reports such tests against the file that DECLARED them, so they
 # arrive in the report under a name `find -name '*.spec.ts'` will never produce.
 #
@@ -207,19 +208,19 @@ FILTERED_SPECS=(
 # the name keeps the two facts from drifting apart.
 #
 #   chat/compaction.ts — compaction end to end: the boundary a person can see,
-#     live and after a reload (DOR-1215). Registered into chat-mock.spec.ts for
-#     both of that file's reasons: it drives `/compact` and the `compacting-hold`
+#     live and after a reload (DOR-1215). Registered into chat-mock-session.spec.ts for
+#     both of that suite's reasons: it drives `/compact` and the `compacting-hold`
 #     scenario, which exist only behind DORKOS_TEST_RUNTIME, and it reloads the
 #     page mid-test, so its transcript has to outlive that file's
 #     `POST /api/test/reset`. Its neighbours in tests/chat/ are cockpit specs
 #     driving a real runtime, so the extension is what keeps three turns per run
 #     off the machine's own `claude` sign-in.
 #   chat/session-read-state.ts — cross-device read state for chat sessions
-#     (DOR-1040). Registered into chat-mock.spec.ts, which is what puts it on
-#     that file's worker and out of reach of its own beforeEach resets.
+#     (DOR-1040). Registered into chat-mock-session.spec.ts, which is what puts it on
+#     the mock project's one worker and out of reach of a concurrent reset.
 #   dashboard-sidebar/dorkbot-seed-survives-reload.ts — the Ask DorkBot seed
 #     still naming an errored session after a page load (DOR-1136). Registered
-#     into chat-mock.spec.ts for both reasons at once: it drives the `error`
+#     into chat-mock-session.spec.ts for both reasons at once: it drives the `error`
 #     scenario, which exists only behind DORKOS_TEST_RUNTIME, and it needs a
 #     session to outlive that file's `POST /api/test/reset`. Its neighbours in
 #     tests/dashboard-sidebar/ are ordinary cockpit specs, which is exactly why
@@ -231,19 +232,19 @@ FILTERED_SPECS=(
 #     browser-driving.spec.ts, whose served pages and preview proxy they drive.
 #   chat/interactive-prompts.ts — the prompts a turn STOPS on: tool approvals,
 #     the batch bar, AskUserQuestion, MCP elicitation (capability rows
-#     I-01…I-04, DOR-1214). Registered into chat-mock.spec.ts because every one
+#     I-01…I-04, DOR-1214). Registered into chat-mock-prompts.spec.ts because every one
 #     of its turns PARKS waiting for an answer, and that file's `POST
 #     /api/test/reset` tears down every tracked session — a parked turn on a
 #     concurrent worker would be disposed mid-click. Its scenarios exist only
 #     behind DORKOS_TEST_RUNTIME, and tests/chat/ is a cockpit-leg directory, so
 #     the extension is doing the same job it does for session-read-state.ts.
 #   chat/live-turn-visibility.ts — what a live turn shows while it runs and how
-#     Stop settles it (C-10, R-05, R-06, R-07, DOR-1214). Same registration and
-#     the same extension rule: it holds a turn open across several assertions
-#     using step barriers, which only survives on that file's sequential worker.
+#     Stop settles it (C-10, R-05, R-06, R-07, DOR-1214). Registered into
+#     chat-mock-turns.spec.ts, with the same extension rule: it holds a turn open across several assertions
+#     using step barriers, which only survives on the mock project's sequential worker.
 #   chat/runtime-capability-parity.ts — the cockpit reading a runtime's DECLARED
 #     capability descriptors rather than Claude-shaped ones (L-10, ADR-0256).
-#     Registered into chat-mock.spec.ts because this leg is the only place a
+#     Registered into chat-mock-turns.spec.ts because this leg is the only place a
 #     browser can see a runtime that is not Claude Code at all: real Codex and
 #     OpenCode need model credentials a PR runner must not have, so
 #     TestModeRuntime's deliberately divergent permission-mode ids and its
@@ -480,21 +481,31 @@ disk_specs=$(cd "$tests_dir" && find . -name '*.spec.ts' | sed 's|^\./||' | sort
 # more than one shard (`--shard` splits by test group, and a file with several
 # groups can straddle a boundary), and a file counted twice at zero would read as
 # a suite that ran when it did not.
+#
+# A test counts for the file that DECLARED it (`.specs[].file`) and, when that
+# is a registered module, for the spec file that LOADED it too (the top-level
+# suite's `.file`). That second credit is what lets a spec file consist only of
+# register calls, as the `chat-mock-*.spec.ts` files do: its tests all report
+# under their modules' names, yet it is the file that ran them. Each test is
+# credited to a given file once. The third column counts only the declaring
+# credit, so the run's total counts each test once.
 raw_rows=''
 for report in "${reports[@]}"; do
   rows=$(jq -r '
-    [ .suites[] | recurse(.suites[]?) | .specs[]? ] as $specs
-    | ($specs | map(.file) | unique) as $files
-    | $files[]
-    | . as $f
-    | ($specs | map(select(.file == $f) | .tests[]? | select(.status != "skipped")) | length) as $ran
-    | "\($f)\t\($ran)"
+    [ .suites[] as $top | $top | recurse(.suites[]?) | .specs[]?
+      | { file, top: $top.file,
+          ran: ([ .tests[]? | select(.status != "skipped") ] | length) } ] as $specs
+    | ( [ $specs[] | { f: .file, ran, own: .ran } ]
+        + [ $specs[] | select(.top != null and .top != .file) | { f: .top, ran, own: 0 } ] )
+    | group_by(.f)[]
+    | "\(.[0].f)\t\(map(.ran) | add)\t\(map(.own) | add)"
   ' "$report" 2>/dev/null) || fail "could not read $report — unexpected JSON shape."
   raw_rows="$raw_rows$rows"$'\n'
 done
 
 report_rows=$(printf '%s' "$raw_rows" |
-  awk -F'\t' 'NF == 2 { ran[$1] += $2 } END { for (f in ran) printf "%s\t%s\n", f, ran[f] }' |
+  awk -F'\t' 'NF == 3 { ran[$1] += $2; own[$1] += $3 }
+    END { for (f in ran) printf "%s\t%s\t%s\n", f, ran[f], own[f] }' |
   sort)
 
 report_specs=$(printf '%s\n' "$report_rows" | cut -f1 | sort)
@@ -586,9 +597,9 @@ is_opt_in() {
 silent=''
 stale_exemption=''
 total_ran=0
-while IFS=$'\t' read -r file ran; do
+while IFS=$'\t' read -r file ran own; do
   [ -n "$file" ] || continue
-  total_ran=$((total_ran + ran))
+  total_ran=$((total_ran + own))
   if is_opt_in "$file"; then
     [ "$ran" -gt 0 ] && stale_exemption="$stale_exemption  $file ($ran executed)"$'\n'
   else

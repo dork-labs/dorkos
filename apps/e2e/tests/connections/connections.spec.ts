@@ -19,7 +19,7 @@ import {
  * effective session access.
  *
  * Runs in the `chromium-connections` project (baseURL = the test-mode Vite
- * client). ONE spec file on purpose, exactly like `chat-mock.spec.ts`: the
+ * client). ONE spec file on purpose, for the reason the `chat-mock*.spec.ts` files run one at a time: the
  * provider's credential and its accounts are server-global state, and the
  * "provider shows unconfigured" opening assertion is only true while no other
  * worker has saved the key — so this file opts back into sequential same-worker
