@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import {
   dashSchedule,
+  runChromiumAge,
   MAX_DAYS_BEHIND,
   measureChromiumAge,
   readPinnedVersion,
@@ -161,4 +162,67 @@ describe('readPinnedVersion', () => {
   it('refuses a source with no pin rather than guessing', () => {
     expect(() => readPinnedVersion('export const OTHER = 1;')).toThrow(/No LOCAL_MANAGED/);
   });
+});
+
+// Security's read (#dorkos, Nov 12): no Chromium Dash answer may make the release check pass.
+// Each case runs the whole check and must exit 2 (couldn't measure), never 0.
+describe('runChromiumAge exit codes', () => {
+  const quiet = { log: () => undefined, error: () => undefined };
+  const RELEASES = [{ milestone: 158 }];
+  const SCHEDULE = { mstones: [{ mstone: 158, early_stable: '2026-11-04T00:00:00' }] };
+
+  /** The whole check, with the pin and each Chromium Dash answer canned. */
+  function run(pin: string, releases: () => unknown, schedule: () => unknown) {
+    const getJson = async (url: string) =>
+      url.includes('/fetch_releases') ? releases() : schedule();
+    return runChromiumAge({ pinned: () => pin, ...dashSchedule(getJson) }, NOW, quiet);
+  }
+
+  it('exits 0 when the pin is within the limit', async () => {
+    expect(
+      await run(
+        '158.0.1.1',
+        () => RELEASES,
+        () => SCHEDULE
+      )
+    ).toBe(0);
+  });
+
+  it('exits 1 when the pin is over the limit', async () => {
+    expect(
+      await run(
+        '157.0.1.1',
+        () => RELEASES,
+        () => SCHEDULE
+      )
+    ).toBe(1);
+  });
+
+  it.each([
+    ['bad JSON from the release feed', () => JSON.parse('<html>busy</html>'), () => SCHEDULE],
+    ['bad JSON from the schedule', () => RELEASES, () => JSON.parse('{"mstones": [')],
+    ['an empty release feed', () => [], () => SCHEDULE],
+    ['an empty schedule', () => RELEASES, () => ({ mstones: [] })],
+    ['a schedule with no stable entry', () => RELEASES, () => ({ mstones: [{ mstone: 158 }] })],
+    [
+      'a schedule for another milestone',
+      () => RELEASES,
+      () => ({ mstones: [{ mstone: 157, stable_date: '2026-12-15T00:00:00' }] }),
+    ],
+  ])('exits 2, never 0, on %s', async (_label, releases, schedule) => {
+    expect(await run('157.0.1.1', releases, schedule)).toBe(2);
+  });
+
+  it.each(['157', '157.0-beta', 'latest', ''])(
+    'exits 2, never 0, on a pinned version it cannot parse (%j)',
+    async (pin) => {
+      const sources = {
+        pinned: () => readPinnedVersion(`export const LOCAL_MANAGED_CHROMIUM_VERSION = '${pin}';`),
+        ...dashSchedule(async (url: string) =>
+          url.includes('/fetch_releases') ? RELEASES : SCHEDULE
+        ),
+      };
+      expect(await runChromiumAge(sources, NOW, quiet)).toBe(2);
+    }
+  );
 });
