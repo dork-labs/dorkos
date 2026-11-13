@@ -10,10 +10,6 @@ import { createTestDb } from '@dorkos/test-utils/db';
 import { FakeAgentRuntime } from '@dorkos/test-utils';
 import type { StreamEvent } from '@dorkos/shared/types';
 
-vi.mock('../context-assembler.js', () => ({
-  assembleAdditionalContext: vi.fn(async () => []),
-}));
-
 import {
   adoptQueuedMessages,
   dispatchMessage,
