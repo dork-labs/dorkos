@@ -241,12 +241,13 @@ describe('why a chat may not use the Agent browser (DOR-4265)', () => {
     expect(refusal(new BrowserProfileAccessGate(), 'chat-one', 'chat-one')).toBeNull();
   });
 
-  it('says not_opened, with what to press, when no chat has it', () => {
+  it('says not_opened, in the designer’s words, when no chat has it', () => {
     const answer = refusal(new BrowserProfileAccessGate(), null, 'chat-one');
     expect(answer?.code).toBe('not_opened');
-    expect(answer?.message).toContain('Open browser in this chat’s right panel');
-    // Honest for room chats: only a direct chat can share it.
-    expect(answer?.message).toContain('direct chat');
+    // Honest for room chats too: only a direct chat can share it.
+    expect(answer?.message).toBe(
+      'The Agent browser isn’t open yet. Ask the person to open it. In a room, they open it from a direct chat with you.'
+    );
   });
 
   it('says shared_elsewhere and names the other chat by its title, never its id', async () => {
@@ -256,12 +257,12 @@ describe('why a chat may not use the Agent browser (DOR-4265)', () => {
       () => true,
       async () => 'Quarterly invoices'
     );
-    await gate.rememberHolder('chat-secret-id');
+    await gate.rememberHolder('chat-secret-id', null);
     const answer = refusal(gate, 'chat-secret-id', 'chat-two');
     expect(answer?.code).toBe('shared_elsewhere');
-    expect(answer?.message).toContain('“Quarterly invoices”');
-    expect(answer?.message).toContain('Move browser here');
-    expect(answer?.message).not.toContain('chat-secret-id');
+    expect(answer?.message).toBe(
+      'The Agent browser is in use in “Quarterly invoices”. Ask the person to move it here.'
+    );
   });
 
   it('says "another chat" when the title is unknown or its lookup fails', async () => {
@@ -273,10 +274,12 @@ describe('why a chat may not use the Agent browser (DOR-4265)', () => {
         throw new Error('runtime down');
       }
     );
-    await gate.rememberHolder('chat-one');
+    await gate.rememberHolder('chat-one', null);
     const answer = refusal(gate, 'chat-one', 'chat-two');
     expect(answer?.code).toBe('shared_elsewhere');
-    expect(answer?.message).toMatch(/in another chat\. Ask/);
+    expect(answer?.message).toBe(
+      'The Agent browser is in use in another chat. Ask the person to move it here.'
+    );
   });
 
   it('never names a stale holder after the browser moved', async () => {
@@ -286,8 +289,32 @@ describe('why a chat may not use the Agent browser (DOR-4265)', () => {
       () => true,
       async (id) => (id === 'chat-one' ? 'Old title' : null)
     );
-    await gate.rememberHolder('chat-one');
+    await gate.rememberHolder('chat-one', null);
     expect(refusal(gate, 'chat-three', 'chat-two')?.message).not.toContain('Old title');
+  });
+
+  it('tells the chat it was moved from, and only that chat, that the person moved it', async () => {
+    const gate = new BrowserProfileAccessGate();
+    gate.use(
+      async () => undefined,
+      () => true,
+      async (id) => (id === 'chat-two' ? 'Trip plans' : 'Quarterly invoices')
+    );
+    await gate.rememberHolder('chat-one', null);
+    await gate.rememberHolder('chat-two', 'chat-one');
+    expect(refusal(gate, 'chat-two', 'chat-one')).toMatchObject({
+      code: 'shared_elsewhere',
+      message:
+        'The person moved the Agent browser to “Trip plans”. Ask them to move it back if you still need it.',
+    });
+    expect(refusal(gate, 'chat-two', 'chat-three')?.message).toBe(
+      'The Agent browser is in use in “Trip plans”. Ask the person to move it here.'
+    );
+    // A later open that moves nothing clears it.
+    await gate.rememberHolder('chat-two', null);
+    expect(refusal(gate, 'chat-two', 'chat-one')?.message).toContain(
+      'Ask the person to move it here'
+    );
   });
 
   it('strips control and direction characters from a title and caps its length', () => {

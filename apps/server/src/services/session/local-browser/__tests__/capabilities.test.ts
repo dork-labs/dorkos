@@ -413,11 +413,12 @@ describe('local browser scoped tool projection', () => {
     expect(state.description).toContain('Open browser in this chat’s right panel');
     expect(state.description).toContain('direct chat');
     expect(state.description).toContain('shared_elsewhere');
-    expect(state.description).toContain('Move browser here');
+    expect(state.description).toContain('Use it here');
+    expect(state.description).toContain('Never try to move it yourself');
     expect(state.description).not.toContain('not_shared');
     // The always-on instructions say the same: a direct chat opens it, and how to move it.
     expect(_UI_TOOLS_CONTEXT).toContain('direct chat with you:\nOpen browser in its right panel');
-    expect(_UI_TOOLS_CONTEXT).toContain('Move browser here if another chat has it');
+    expect(_UI_TOOLS_CONTEXT).toContain('Use it here if another chat has it');
   });
   it('lets no agent name the site it hands over', () => {
     const { domain } = setup();

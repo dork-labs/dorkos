@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
+import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import type {
   LocalBrowserMode,
   LocalBrowserPersonState,
@@ -81,6 +82,14 @@ export function LocalBrowserPanel({
       : (choice?.mode ??
         (capabilities?.embedded && window.electronAPI?.localBrowser ? 'embedded' : 'new-window'));
   const selected = state?.tabs.find((tab) => tab.id === state.selectedTabId);
+  // Moving the browser here swaps views with the 150ms crossfade; reduced motion swaps at once.
+  const reducedMotion = useReducedMotion();
+  const swap = {
+    initial: { opacity: 0 },
+    animate: { opacity: 1 },
+    exit: { opacity: 0 },
+    transition: { duration: reducedMotion ? 0 : 0.15 },
+  };
   const unavailable = useCallback(() => setSurfaceUnavailable(true), []);
   useEffect(
     () => () => {
@@ -209,13 +218,15 @@ export function LocalBrowserPanel({
                 ? 'Updating…'
                 : state?.status === 'closed'
                   ? 'Browser closed'
-                  : connected
-                    ? state.paused
-                      ? 'Agent paused'
-                      : 'Connected'
-                    : hadConnection
-                      ? 'Disconnected'
-                      : 'Not open yet'}
+                  : connected && sharedElsewhere && !waitingElsewhere
+                    ? 'In use in another chat'
+                    : connected
+                      ? state.paused
+                        ? 'Agent paused'
+                        : 'Connected'
+                      : hadConnection
+                        ? 'Disconnected'
+                        : 'Not open yet'}
         </span>
       </div>
       {opening && (
@@ -253,9 +264,6 @@ export function LocalBrowserPanel({
       {waitingElsewhere && <WaitingElsewhere sessionId={waitingElsewhere.sessionId} />}
       {!connected && !waitingElsewhere && (
         <div className="min-h-0 space-y-3 overflow-y-auto">
-          {sessionId && !state?.mode && (
-            <p className="text-sm">Open a browser {agentName || 'this chat’s agent'} can use.</p>
-          )}
           {choiceIssue && (
             <p className="text-muted-foreground text-xs">
               {needsChoice
@@ -285,146 +293,151 @@ export function LocalBrowserPanel({
           </Button>
         </div>
       )}
-      {connected && !waitingElsewhere && sharedElsewhere && (
-        <SharedElsewhere
-          holderSessionId={state.sessionId!}
-          canMoveHere={!!sessionId}
-          disabled={busy || cancelling || !supported}
-          onMoveHere={open}
-        />
-      )}
-      {connected && !waitingElsewhere && !sharedElsewhere && (
-        <>
-          {!state.sessionId && (
-            <p className="text-muted-foreground text-xs">
-              Only you can use this page. Open from an agent chat to share it.
-            </p>
-          )}
-          <div className="flex flex-wrap items-center gap-2">
-            <Button
-              size="sm"
-              variant="outline"
-              disabled={busy}
-              onClick={() =>
-                void action(() =>
-                  state.paused ? transport.resumeLocalBrowser() : transport.pauseLocalBrowser()
-                )
-              }
-            >
-              {state.paused ? 'Resume agent' : 'Pause agent'}
-            </Button>
-            <Button
-              size="sm"
-              variant="ghost"
-              disabled={busy}
-              onClick={(event) => {
-                rememberFocus(event.currentTarget);
-                const asked = state.handoff?.outcome === null ? state.handoff.id : null;
-                let answer: LocalBrowserPersonState | undefined;
-                void action(async () => (answer = await transport.disconnectLocalBrowser())).then(
-                  (closed) => {
-                    // Disconnect ends a handoff as Stop task does (outcome `window-closed`), and
-                    // that ends the agent's turn. Only this one: a handoff that ended first must
-                    // not cost that chat its next turn.
-                    const ended = answer?.handoff;
-                    if (closed && ended?.id === asked && ended?.outcome === 'window-closed')
-                      void transport.interruptSession(ended.sessionId).catch(() => {});
-                  }
-                );
-              }}
-            >
-              Disconnect
-            </Button>
-          </div>
-          <label className="text-sm">
-            {state.sessionId ? `Shared with ${agentName || 'this chat’s agent'}` : 'Browser tab'}
-            <select
-              className="bg-muted/40 mt-1 block w-full rounded-md p-2"
-              value={state.selectedTabId ?? ''}
-              disabled={busy}
-              onChange={(event) => {
-                setAddress(null);
-                void action(() => transport.selectLocalBrowserTab(event.target.value));
-              }}
-            >
-              {!state.selectedTabId && <option value="">Choose a tab</option>}
-              {state.tabs.map((tab) => (
-                <option key={tab.id} value={tab.id}>
-                  {tab.title || (tab.url === 'about:blank' ? 'New tab' : tab.url)}
-                </option>
-              ))}
-            </select>
-          </label>
-          {selected && (
-            <form
-              className="flex gap-2"
-              onSubmit={(event) => {
-                event.preventDefault();
-                const url = address ?? selected.url;
-                try {
-                  const parsed = new URL(url);
-                  if (!['http:', 'https:'].includes(parsed.protocol))
-                    throw new Error('unsupported');
-                  void action(() => transport.navigateLocalBrowser(parsed.href)).then((ok) => {
-                    if (ok) setAddress(null);
-                  });
-                } catch {
-                  setError('Enter a full web address, starting with https:// or http://.');
+      <AnimatePresence initial={false} mode="wait">
+        {connected && !waitingElsewhere && sharedElsewhere && (
+          <motion.div key="elsewhere" {...swap}>
+            <SharedElsewhere
+              holderSessionId={state.sessionId!}
+              canMoveHere={!!sessionId}
+              disabled={busy || cancelling || !supported}
+              visible={visible}
+              onUseHere={open}
+            />
+          </motion.div>
+        )}
+        {connected && !waitingElsewhere && !sharedElsewhere && (
+          <motion.div key="here" {...swap} className="flex min-h-0 flex-1 flex-col gap-3">
+            {!state.sessionId && (
+              <p className="text-muted-foreground text-xs">
+                Only you can use this page. Open from an agent chat to share it.
+              </p>
+            )}
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={busy}
+                onClick={() =>
+                  void action(() =>
+                    state.paused ? transport.resumeLocalBrowser() : transport.pauseLocalBrowser()
+                  )
                 }
-              }}
-            >
-              <Input
-                aria-label="Web address"
-                value={address ?? selected.url}
-                onChange={(event) => setAddress(event.target.value)}
-                className="min-w-0"
-              />
-              <Button size="sm" variant="outline" type="submit" disabled={busy}>
-                Go
+              >
+                {state.paused ? 'Resume agent' : 'Pause agent'}
               </Button>
-            </form>
-          )}
-          {state.paused && (
-            <div className="text-muted-foreground space-y-1 text-xs">
-              <p>Pause stops new actions. An action already started may finish.</p>
-              <p>Your mouse and keyboard still work.</p>
+              <Button
+                size="sm"
+                variant="ghost"
+                disabled={busy}
+                onClick={(event) => {
+                  rememberFocus(event.currentTarget);
+                  const asked = state.handoff?.outcome === null ? state.handoff.id : null;
+                  let answer: LocalBrowserPersonState | undefined;
+                  void action(async () => (answer = await transport.disconnectLocalBrowser())).then(
+                    (closed) => {
+                      // Disconnect ends a handoff as Stop task does (outcome `window-closed`), and
+                      // that ends the agent's turn. Only this one: a handoff that ended first must
+                      // not cost that chat its next turn.
+                      const ended = answer?.handoff;
+                      if (closed && ended?.id === asked && ended?.outcome === 'window-closed')
+                        void transport.interruptSession(ended.sessionId).catch(() => {});
+                    }
+                  );
+                }}
+              >
+                Disconnect
+              </Button>
             </div>
-          )}
-          {mode !== 'embedded' && (
-            <p className="text-muted-foreground text-sm">
-              This page is in the separate browser window.
-            </p>
-          )}
-          {mode === 'embedded' && (
-            <p className="text-muted-foreground text-xs">This page stays in the right panel.</p>
-          )}
-          {mode === 'embedded' && (
-            <p className="text-muted-foreground text-xs">
-              {state.sessionId
-                ? 'Extra windows are for you. Your agent stays on this page.'
-                : 'Extra windows are for you.'}
-            </p>
-          )}
-          {mode === 'embedded' && (
-            <div
-              ref={surface}
-              data-slot="native-browser-surface"
-              className="bg-muted/20 relative min-h-48 flex-1 rounded-lg"
-            >
-              {surfaceUnavailable && (
-                <div className="space-y-2 p-3">
-                  <p role="alert" className="text-sm">
-                    Couldn’t show the page. Reconnect to try again.
-                  </p>
-                  <Button size="sm" variant="outline" onClick={open} disabled={busy}>
-                    Reconnect
-                  </Button>
-                </div>
-              )}
-            </div>
-          )}
-        </>
-      )}
+            <label className="text-sm">
+              {state.sessionId ? `Shared with ${agentName || 'this chat’s agent'}` : 'Browser tab'}
+              <select
+                className="bg-muted/40 mt-1 block w-full rounded-md p-2"
+                value={state.selectedTabId ?? ''}
+                disabled={busy}
+                onChange={(event) => {
+                  setAddress(null);
+                  void action(() => transport.selectLocalBrowserTab(event.target.value));
+                }}
+              >
+                {!state.selectedTabId && <option value="">Choose a tab</option>}
+                {state.tabs.map((tab) => (
+                  <option key={tab.id} value={tab.id}>
+                    {tab.title || (tab.url === 'about:blank' ? 'New tab' : tab.url)}
+                  </option>
+                ))}
+              </select>
+            </label>
+            {selected && (
+              <form
+                className="flex gap-2"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  const url = address ?? selected.url;
+                  try {
+                    const parsed = new URL(url);
+                    if (!['http:', 'https:'].includes(parsed.protocol))
+                      throw new Error('unsupported');
+                    void action(() => transport.navigateLocalBrowser(parsed.href)).then((ok) => {
+                      if (ok) setAddress(null);
+                    });
+                  } catch {
+                    setError('Enter a full web address, starting with https:// or http://.');
+                  }
+                }}
+              >
+                <Input
+                  aria-label="Web address"
+                  value={address ?? selected.url}
+                  onChange={(event) => setAddress(event.target.value)}
+                  className="min-w-0"
+                />
+                <Button size="sm" variant="outline" type="submit" disabled={busy}>
+                  Go
+                </Button>
+              </form>
+            )}
+            {state.paused && (
+              <div className="text-muted-foreground space-y-1 text-xs">
+                <p>Pause stops new actions. An action already started may finish.</p>
+                <p>Your mouse and keyboard still work.</p>
+              </div>
+            )}
+            {mode !== 'embedded' && (
+              <p className="text-muted-foreground text-sm">
+                This page is in the separate browser window.
+              </p>
+            )}
+            {mode === 'embedded' && (
+              <p className="text-muted-foreground text-xs">This page stays in the right panel.</p>
+            )}
+            {mode === 'embedded' && (
+              <p className="text-muted-foreground text-xs">
+                {state.sessionId
+                  ? 'Extra windows are for you. Your agent stays on this page.'
+                  : 'Extra windows are for you.'}
+              </p>
+            )}
+            {mode === 'embedded' && (
+              <div
+                ref={surface}
+                data-slot="native-browser-surface"
+                className="bg-muted/20 relative min-h-48 flex-1 rounded-lg"
+              >
+                {surfaceUnavailable && (
+                  <div className="space-y-2 p-3">
+                    <p role="alert" className="text-sm">
+                      Couldn’t show the page. Reconnect to try again.
+                    </p>
+                    <Button size="sm" variant="outline" onClick={open} disabled={busy}>
+                      Reconnect
+                    </Button>
+                  </div>
+                )}
+              </div>
+            )}
+          </motion.div>
+        )}
+      </AnimatePresence>
       {!waitingElsewhere && (
         <SavedSignIns
           enabled={!!state && !!capabilities && !query.isError && !capabilityQuery.isError}

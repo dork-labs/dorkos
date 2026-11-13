@@ -25,6 +25,11 @@ vi.mock('@tanstack/react-router', async (importOriginal) => ({
   useNavigate: () => navigate,
 }));
 const sessionRow = vi.hoisted(() => vi.fn());
+const currentAgent = vi.hoisted(() => vi.fn());
+vi.mock('@/layers/entities/agent', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/layers/entities/agent')>()),
+  useCurrentAgent: currentAgent,
+}));
 vi.mock('@/layers/entities/session', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/layers/entities/session')>()),
   useSessionRow: sessionRow,
@@ -93,8 +98,10 @@ beforeEach(() => {
   transport.getLocalBrowserCapabilities.mockResolvedValue(capabilities);
   transport.openLocalBrowser.mockResolvedValue(connected);
   sessionRow.mockImplementation((id: string | null) => ({
-    data: id === 'other-chat' ? { id, title: 'Quarterly invoices' } : undefined,
+    data:
+      id === 'other-chat' ? { id, title: 'Quarterly invoices', cwd: '/agents/scout' } : undefined,
   }));
+  currentAgent.mockReturnValue({ data: null });
 });
 afterEach(() => {
   delete window.electronAPI;
@@ -110,10 +117,17 @@ describe('LocalBrowserPanel', () => {
   });
   describe('while another chat holds the browser (DOR-4265)', () => {
     const elsewhere = { ...connected, sessionId: 'other-chat' };
-    it('names that chat by its title and links to it', async () => {
+    it('names that chat’s agent and title, links to it, and starts focus on Use it here', async () => {
+      currentAgent.mockReturnValue({ data: { name: 'scout', displayName: 'Scout' } });
       transport.getLocalBrowserState.mockResolvedValue(elsewhere);
       mount();
-      expect(await screen.findByText(/In use in/)).toBeInTheDocument();
+      const useHere = await screen.findByRole('button', { name: 'Use it here' });
+      await waitFor(() => expect(useHere).toHaveFocus());
+      expect(screen.getAllByRole('status')[0]).toHaveTextContent('In use in another chat');
+      expect(screen.getByText(/Scout is using it in/)).toBeInTheDocument();
+      expect(
+        screen.getByText('Quarterly invoices loses it until you move it back.')
+      ).toBeInTheDocument();
       fireEvent.click(screen.getByRole('button', { name: 'Quarterly invoices' }));
       expect(navigate).toHaveBeenCalledExactlyOnceWith(
         expect.objectContaining({ search: expect.objectContaining({ session: 'other-chat' }) })
@@ -122,8 +136,23 @@ describe('LocalBrowserPanel', () => {
       expect(screen.queryByRole('combobox')).toBeNull();
       expect(screen.queryByLabelText('Web address')).toBeNull();
       expect(screen.queryByText('First page')).toBeNull();
+      expect(screen.queryByText(/Shared with another chat/)).toBeNull();
       for (const name of ['Pause agent', 'Resume agent', 'Disconnect'])
         expect(screen.queryByRole('button', { name })).toBeNull();
+    });
+    it('says where it is open when that chat has no agent name', async () => {
+      transport.getLocalBrowserState.mockResolvedValue(elsewhere);
+      mount();
+      expect(await screen.findByText(/It’s open in/)).toBeInTheDocument();
+    });
+    it('keeps a long title whole in the link’s name and tooltip', async () => {
+      const long = 'A very long chat title about the quarterly invoices for every client';
+      sessionRow.mockReturnValue({ data: { id: 'other-chat', title: long } });
+      transport.getLocalBrowserState.mockResolvedValue(elsewhere);
+      mount();
+      const link = await screen.findByRole('button', { name: long });
+      expect(link).toHaveAttribute('title', long);
+      expect(link).toHaveClass('truncate');
     });
     it('falls back to a plain name while the title is unknown', async () => {
       sessionRow.mockReturnValue({ data: undefined });
@@ -131,10 +160,10 @@ describe('LocalBrowserPanel', () => {
       mount();
       expect(await screen.findByRole('button', { name: 'New chat' })).toBeInTheDocument();
     });
-    it('moves the browser here with one click, opening it for this chat', async () => {
+    it('Use it here opens the browser for this chat in one click', async () => {
       transport.getLocalBrowserState.mockResolvedValue(elsewhere);
       mount();
-      fireEvent.click(await screen.findByRole('button', { name: 'Move browser here' }));
+      fireEvent.click(await screen.findByRole('button', { name: 'Use it here' }));
       await waitFor(() =>
         expect(transport.openLocalBrowser).toHaveBeenCalledExactlyOnceWith({
           mode: 'new-window',
@@ -147,16 +176,22 @@ describe('LocalBrowserPanel', () => {
       transport.getLocalBrowserState.mockResolvedValue(elsewhere);
       mount(true, null);
       expect(await screen.findByRole('button', { name: 'Quarterly invoices' })).toBeInTheDocument();
-      expect(screen.queryByRole('button', { name: 'Move browser here' })).toBeNull();
+      expect(screen.queryByRole('button', { name: 'Use it here' })).toBeNull();
       expect(
         screen.getByText('Open a direct chat with an agent to share it there.')
       ).toBeInTheDocument();
     });
   });
-  it('with nothing shared, leads with Open browser for this chat’s agent', async () => {
+  it('with nothing open, Open browser is the one filled button and a browser is preselected', async () => {
     mount();
-    expect(await screen.findByText('Open a browser Kai can use.')).toBeInTheDocument();
-    expect(await screen.findByRole('button', { name: 'Open browser' })).toBeEnabled();
+    const openButton = await screen.findByRole('button', { name: 'Open browser' });
+    await waitFor(() => expect(openButton).toBeEnabled());
+    expect(screen.getAllByRole('status')[0]).toHaveTextContent('Not open yet');
+    expect(screen.getByRole('radio', { checked: true })).toBeInTheDocument();
+    const filled = screen
+      .getAllByRole('button')
+      .filter((button) => button.getAttribute('data-variant') === 'primary');
+    expect(filled).toEqual([openButton]);
   });
   describe('while another chat’s agent waits on a person', () => {
     const elsewhere = {
@@ -188,7 +223,14 @@ describe('LocalBrowserPanel', () => {
       expect(navigate).toHaveBeenCalledExactlyOnceWith(
         expect.objectContaining({ search: expect.objectContaining({ session: 'chat-two' }) })
       );
-      for (const name of ['Resume agent', 'Pause agent', 'Disconnect', 'Open browser', 'Reconnect'])
+      for (const name of [
+        'Resume agent',
+        'Pause agent',
+        'Disconnect',
+        'Open browser',
+        'Reconnect',
+        'Use it here',
+      ])
         expect(screen.queryByRole('button', { name })).toBeNull();
       expect(screen.queryByRole('combobox')).toBeNull();
       expect(screen.queryByLabelText('Web address')).toBeNull();
@@ -204,7 +246,7 @@ describe('LocalBrowserPanel', () => {
         signIn: null,
       });
       mount();
-      expect(await screen.findByRole('button', { name: 'Move browser here' })).toBeEnabled();
+      expect(await screen.findByRole('button', { name: 'Use it here' })).toBeEnabled();
       expect(await screen.findByLabelText('Saved sign-ins')).toBeInTheDocument();
     });
     it('keeps the controls in the waiting chat’s own panel', async () => {
@@ -857,7 +899,7 @@ describe('LocalBrowserPanel', () => {
     act(() =>
       view.client.setQueryData(['local-browser', 'state'], { ...native, sessionId: 'another-chat' })
     );
-    expect(await screen.findByRole('button', { name: 'Move browser here' })).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: 'Use it here' })).toBeInTheDocument();
     await waitFor(() => expect(setBounds.mock.calls.at(-1)?.[0].visible).toBe(false));
   });
   it('keeps unexpected browser process errors out of recovery copy', async () => {

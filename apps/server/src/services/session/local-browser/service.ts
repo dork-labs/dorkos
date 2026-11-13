@@ -157,6 +157,7 @@ export class LocalBrowserService {
     const setupAbort = new AbortController();
     this.openingAbort = setupAbort;
     try {
+      const previous = this.status === 'connected' ? this.sessionId : null;
       await this.closeConnection(false);
       setupAbort.signal.throwIfAborted();
       const lifecycle = this.lifecycle;
@@ -164,7 +165,7 @@ export class LocalBrowserService {
       this.connectionId = connectionId;
       // Moving it here from another chat is this same open: the old chat's agent loses it now.
       this.sessionId = input.sessionId ?? null;
-      await this.profileAuthorization.rememberHolder(this.sessionId);
+      await this.profileAuthorization.rememberHolder(this.sessionId, previous);
       this.profileId = input.profileId ?? null;
       this.mode = input.mode;
       const acquisition = (async () => {

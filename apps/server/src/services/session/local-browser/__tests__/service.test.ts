@@ -712,18 +712,27 @@ describe('local browser ownership and observations', () => {
         message: expect.stringContaining('“Quarterly invoices”'),
       })
     );
-    // Move browser here is the same person-clicked open, from the second chat.
+    // Use it here is the same person-clicked open, from the second chat.
     await service.open({ mode: 'new-window', sessionId: 'chat-two' });
     expect(() => service.requireSharedSession('chat-two')).not.toThrow();
     expect(() => service.requireSharedSession('chat-one')).toThrow(
       expect.objectContaining({
         code: 'shared_elsewhere',
-        message: expect.stringContaining('“Trip plans”'),
+        message:
+          'The person moved the Agent browser to “Trip plans”. Ask them to move it back if you still need it.',
       })
     );
     await service.disconnect();
     expect(() => service.requireSharedSession('chat-two')).toThrow(
       expect.objectContaining({ code: 'not_opened' })
+    );
+    // Opened again after a Disconnect, nothing was moved away from chat-two.
+    await service.open({ mode: 'new-window', sessionId: 'chat-one' });
+    expect(() => service.requireSharedSession('chat-two')).toThrow(
+      expect.objectContaining({
+        message:
+          'The Agent browser is in use in “Quarterly invoices”. Ask the person to move it here.',
+      })
     );
   });
 

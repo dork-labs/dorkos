@@ -43,6 +43,8 @@ export class BrowserProfileAccessGate {
   // None until startup wires chat titles; a refusal elsewhere then says "another chat".
   private titleOf: (sessionId: string) => Promise<string | null> = async () => null;
   private holder: { sessionId: string; title: string | null } | null = null;
+  // The chat a person last moved the browser away from, told so rather than just refused.
+  private movedFrom: string | null = null;
 
   use(
     access: LocalBrowserProfileAccess,
@@ -54,8 +56,15 @@ export class BrowserProfileAccessGate {
     if (titleOf) this.titleOf = titleOf;
   }
 
-  /** Remember the opening chat's title, so a refusal elsewhere can name it without a wait. */
-  async rememberHolder(sessionId: string | null): Promise<void> {
+  /**
+   * Remember the opening chat's title, so a refusal elsewhere can name it without a
+   * wait, and which chat it moved from, so that chat's agent hears it was moved.
+   *
+   * @param sessionId - The chat it opens for, or null for the person alone.
+   * @param previous - The chat that held it, still open, until this open.
+   */
+  async rememberHolder(sessionId: string | null, previous: string | null): Promise<void> {
+    this.movedFrom = sessionId && previous && previous !== sessionId ? previous : null;
     if (!sessionId) return void (this.holder = null);
     const title = holderTitle(await this.titleOf(sessionId).catch(() => null));
     this.holder = { sessionId, title };
@@ -70,12 +79,15 @@ export class BrowserProfileAccessGate {
     if (selected === null)
       throw new LocalBrowserError(
         'not_opened',
-        'The Agent browser isn’t open for this chat. Ask the person to press Open browser in this chat’s right panel. In a room, they open it from a direct chat with you.'
+        'The Agent browser isn’t open yet. Ask the person to open it. In a room, they open it from a direct chat with you.'
       );
     const title = this.holder?.sessionId === selected ? this.holder.title : null;
+    const where = title ? `“${title}”` : 'another chat';
     throw new LocalBrowserError(
       'shared_elsewhere',
-      `The Agent browser is in use in another chat${title ? `, “${title}”` : ''}. Ask the person to press Move browser here in this chat’s right panel.`
+      this.movedFrom === sessionId
+        ? `The person moved the Agent browser to ${where}. Ask them to move it back if you still need it.`
+        : `The Agent browser is in use in ${where}. Ask the person to move it here.`
     );
   }
 
