@@ -158,6 +158,23 @@ describe('relevant panel views', () => {
       });
     }
   );
+  it.each(['embedded', 'new-window'] as const)(
+    'names an untitled %s page the Agent browser, never by how it opens (DOR-3219)',
+    (mode) => {
+      routeSession.id = 'current';
+      localBrowser.data = {
+        ...liveBrowser('connection-current', 'current'),
+        mode,
+        selectedTabId: null,
+        tabs: [],
+      };
+      const { result } = renderHook(() => usePanelViews(contributions, '/session'));
+      expect(result.current.allViews.find((view) => view.category === 'local-browser')?.title).toBe(
+        'Agent browser'
+      );
+    }
+  );
+
   it('never exposes a legacy chat connection when the route has no chat', () => {
     routeSession.id = null;
     localBrowser.data = liveBrowser('legacy-connection', 'one');
