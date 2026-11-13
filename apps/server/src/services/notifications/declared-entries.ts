@@ -40,6 +40,10 @@ import {
   type BrowserHandoffPayloads,
 } from './browser-handoff-notifications.js';
 import { ACCESS_CHANGE_ENTRIES, type AccessChangePayloads } from './access-change-notifications.js';
+import {
+  MCP_TOOL_ADDED_ENTRIES,
+  type McpToolAddedPayloads,
+} from '../mesh/global-mcp/global-mcp-tool-added-notice.js';
 
 /** The payloads of every declared kind, joined into `NotificationPayloads`. */
 export interface DeclaredPayloads
@@ -51,7 +55,8 @@ export interface DeclaredPayloads
     AccountSigninPayloads,
     BrowserHandoffPayloads,
     ShellCheckPayloads,
-    AccessChangePayloads {}
+    AccessChangePayloads,
+    McpToolAddedPayloads {}
 
 /** Every declared entry, spread into the registry's `ENTRIES`. */
 export const DECLARED_ENTRIES = {
@@ -63,6 +68,7 @@ export const DECLARED_ENTRIES = {
   ...BROWSER_HANDOFF_ENTRIES,
   ...SHELL_CHECK_ENTRIES,
   ...ACCESS_CHANGE_ENTRIES,
+  ...MCP_TOOL_ADDED_ENTRIES,
 };
 
 /**
@@ -79,4 +85,5 @@ export const DECLARED_WIRED_KINDS = [
   'browser.handoff',
   'shell.check_down',
   'connector.access_narrowed',
+  'mcp-server.tool_added',
 ] as const;

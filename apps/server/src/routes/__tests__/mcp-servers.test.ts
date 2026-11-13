@@ -312,7 +312,7 @@ describe('/api/mcp-servers', () => {
 describe('the server sheet (DOR-4118)', () => {
   let agentHome: string;
   let checked: unknown[];
-  let added: Array<[string, readonly string[]]>;
+  let added: Array<[string, readonly string[], string[]]>;
   let toolsListed: string[];
 
   const localFile = () => path.join(agentHome, '.claude', 'settings.local.json');
@@ -325,7 +325,7 @@ describe('the server sheet (DOR-4118)', () => {
           routes: createMcpServerRoutes(store, undefined, undefined, {
             agents: () => [{ id: 'agent-quill', name: 'Quill', home: agentHome }],
             ledger: new GlobalMcpToolLedger(home),
-            onToolsAdded: (server, names) => added.push([server, names]),
+            onToolsAdded: (server, names, agents) => added.push([server, names, agents]),
             check: (connection, name, ledger) => {
               checked.push(connection);
               return checkServerTools(connection, name, ledger, async () => ({
@@ -370,7 +370,18 @@ describe('the server sheet (DOR-4118)', () => {
     toolsListed = ['create_issue', 'export_all'];
     const later = await request(sheetApp()).get('/api/mcp-servers/github/tools');
     expect(later.body.tools[1]).toMatchObject({ name: 'export_all', isNew: true });
-    expect(added).toEqual([['github', ['export_all']]]);
+    expect(added).toEqual([['github', ['export_all'], ['Quill']]]);
+  });
+
+  it('says nothing about a new tool when no agent allows the whole server', async () => {
+    writeFileSync(
+      localFile(),
+      JSON.stringify({ permissions: { allow: ['mcp__github__create_issue'] } })
+    );
+    await request(sheetApp()).get('/api/mcp-servers/github/tools');
+    toolsListed = ['create_issue', 'export_all'];
+    await request(sheetApp()).get('/api/mcp-servers/github/tools');
+    expect(added).toEqual([]);
   });
 
   it('never starts a server that is off', async () => {

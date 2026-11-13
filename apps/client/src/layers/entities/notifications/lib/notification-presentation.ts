@@ -115,6 +115,8 @@ export const NOTIFICATION_ICONS: Record<NotificationKind, LucideIcon> = {
   'connector.destructive_executed': CheckCircle2,
   // One agent took another agent's access to an app away (agent-grant-autonomy).
   'connector.access_narrowed': Bell,
+  // A global MCP server added a tool an agent already allows wholesale (DOR-4118).
+  'mcp-server.tool_added': Bell,
   // A browser this computer had never seen used chat from the web (DOR-2946).
   'web.new_device': MonitorSmartphone,
   // Files in an agent's folder whose names say they are secrets (DOR-3292).

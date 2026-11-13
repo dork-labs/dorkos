@@ -20,6 +20,7 @@ import type { ApiEnv } from '../http/api-chain.js';
 import { readJsonBody } from '../http/request-body.js';
 import { logger } from '../lib/logger.js';
 import { recordAudit } from '../services/audit/audit-trail.js';
+import { notify } from '../services/notifications/notification-service.js';
 import {
   removeStandingAllow,
   StandingAllowUndoError,
@@ -43,8 +44,11 @@ export interface McpServerSheetDeps {
   agents: () => readonly StandingAllowAgent[];
   /** Where a server's first-seen tools are kept. */
   ledger: GlobalMcpToolLedger;
-  /** Told about tools a server added since its last check. */
-  onToolsAdded?: (server: string, added: readonly string[]) => void;
+  /**
+   * Told about tools a server added since its last check, when some agent
+   * allows every tool on it. The Inbox line by default.
+   */
+  onToolsAdded?: (server: string, added: readonly string[], agentNames: string[]) => void;
   /** The check; the real probe by default. A seam for tests. */
   check?: typeof checkServerTools;
 }
@@ -67,6 +71,11 @@ const UNDO_STATUS: Record<StandingAllowUndoError['code'], 400 | 409> = {
   'not-a-real-file': 409,
   unreadable: 409,
 };
+
+/** One Inbox line per added tool; the dedupe key makes each one say it once. */
+function sayToolsAdded(server: string, added: readonly string[], agentNames: string[]): void {
+  for (const tool of added) void notify('mcp-server.tool_added', { server, tool, agentNames });
+}
 
 /**
  * Add the sheet's routes to the `/api/mcp-servers` router.
@@ -93,7 +102,12 @@ export function addMcpServerSheetRoutes(
     if (!store.has(name)) return unknown(c);
     const check = deps.check ?? checkServerTools;
     const result: ServerToolsCheck = await check(store.connectionToCheck(name), name, deps.ledger);
-    if (result.status === 'ok' && result.added.length > 0) deps.onToolsAdded?.(name, result.added);
+    if (result.status === 'ok' && result.added.length > 0) {
+      const wide = (await readStandingAllows(name, deps.agents()))
+        .filter((allow) => allow.breadth === 'server')
+        .map((allow) => allow.agentName);
+      if (wide.length > 0) (deps.onToolsAdded ?? sayToolsAdded)(name, result.added, wide);
+    }
     return c.json(result);
   });
 

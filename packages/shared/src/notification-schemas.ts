@@ -153,6 +153,11 @@ export const NOTIFICATION_KINDS = [
    */
   'connector.access_narrowed',
   /**
+   * A global MCP server added a tool that an agent may use without asking,
+   * because it allows every tool on that server (DOR-4118). Once per tool.
+   */
+  'mcp-server.tool_added',
+  /**
    * A browser this computer had never seen used chat from the web here, over
    * the owner's hub (spec `everything-is-a-space` step B3). Once per browser.
    */

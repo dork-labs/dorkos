@@ -190,6 +190,7 @@ const PAYLOADS: { [K in NotificationKind]: NotificationPayloads[K] } = {
     targetAgentId: 'agent-2',
     title: 'Scout took Gmail (Work) access away from Bea',
   },
+  'mcp-server.tool_added': { server: 'tracker', tool: 'export_all', agentNames: ['Quill'] },
   'web.new_device': { deviceRef: 'ref-1', label: 'Safari on iPhone' },
   'agent.secret_files': {
     agentId: 'agent-1',
@@ -261,6 +262,8 @@ const EXPECTED_TIERS: Record<NotificationKind, string> = {
   'connector.destructive_executed': 'quiet',
   // One agent took another's access away: the person sees it now (Security G2).
   'connector.access_narrowed': 'blocking',
+  // A server added a tool an agent already allows wholesale: worth seeing, not urgent.
+  'mcp-server.tool_added': 'notable',
   'web.new_device': 'notable',
   'agent.secret_files': 'notable',
   // A notice with a way to act, never a hold: nothing waits on it (DOR-3245).
@@ -363,6 +366,7 @@ describe('notification registry', () => {
       'extension.approval',
       'extension.decision',
       'heartbeat.credits-offer',
+      'mcp-server.tool_added',
       'mention.received',
       'report.daily',
       'run.completed',
