@@ -26,6 +26,10 @@ import { AskCard, WARN_AT_S, URGENT_AT_S } from './AskCard';
 import { AlwaysAllowChoice } from './AlwaysAllowChoice';
 import { ASK_PARKED_LABEL } from '../lib/format-time-left';
 import { alwaysAllowScopeLabel } from '../lib/always-allow-scope-label';
+import { WRAPPING_ACTION_CLASS } from '../lib/wrapping-action';
+
+/** Every answer button on the card: it wraps a long tool name rather than overflow (DOR-4247). */
+const ACTION_CLASS = cn('transition-opacity duration-150', WRAPPING_ACTION_CLASS);
 
 /** What a card on Wi-Fi says in place of Always allow (DOR-2969). */
 export const WIFI_ALWAYS_ALLOW_LINE = 'Always allow is only available at this computer.';
@@ -590,7 +594,7 @@ export function ApprovalPrompt({
             variant={onWifi ? 'outline' : 'default'}
             onClick={handleApprove}
             disabled={responding}
-            className="transition-opacity duration-150"
+            className={ACTION_CLASS}
           >
             <Check className="size-(--size-icon-xs)" /> {onWifi ? 'Allow once' : 'Allow'}
             {showKeyHints && <Kbd className="ml-1.5">Enter</Kbd>}
@@ -617,7 +621,7 @@ export function ApprovalPrompt({
                     ? 'Always allow'
                     : `Always allow, ${scopeLabel}`
               }
-              className="transition-opacity duration-150"
+              className={ACTION_CLASS}
             >
               <ShieldCheck className="size-(--size-icon-xs)" />{' '}
               {asksBreadth ? 'Always allow…' : 'Always allow'}
@@ -637,7 +641,7 @@ export function ApprovalPrompt({
             variant="outline"
             onClick={handleDeny}
             disabled={responding}
-            className="transition-opacity duration-150"
+            className={ACTION_CLASS}
           >
             <X className="size-(--size-icon-xs)" /> {onWifi ? 'Deny' : 'Don’t allow'}
             {isActive && <Kbd className="ml-1.5">Esc</Kbd>}

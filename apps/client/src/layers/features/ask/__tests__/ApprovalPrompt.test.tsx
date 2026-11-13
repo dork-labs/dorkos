@@ -719,13 +719,13 @@ describe('Always allow on an MCP card that offers its whole server (DOR-4101)', 
     expect(screen.getByText('It still asks before other Made Up tools.')).toBeDefined();
   });
 
-  it('"Just {tool}" sends the tool pick; the server pick names itself and sends server', async () => {
+  it('"Just {tool}" sends the tool pick; the server pick sends server', async () => {
     render(<ApprovalPrompt {...mcpProps} approvalAlwaysAllowBreadth="server" />);
     fireEvent.click(screen.getByRole('button', { name: 'Always allow…' }));
     fireEvent.click(
       screen.getByRole('radio', { name: /^Every tool from Made Up, including ones it adds later$/ })
     );
-    fireEvent.click(screen.getByRole('button', { name: /^Always allow every Made Up tool/ }));
+    fireEvent.click(screen.getByRole('button', { name: /^Always allow every tool$/ }));
     await waitFor(() =>
       expect(mockApproveTool).toHaveBeenCalledWith('session-1', 'tc-1', 'server')
     );
@@ -899,5 +899,70 @@ describe('ApprovalPrompt on Wi-Fi (DOR-2969)', () => {
     render(<ApprovalPrompt {...baseProps} ref={ref} />);
     act(() => ref.current!.deny());
     await waitFor(() => expect(mockDenyTool).toHaveBeenCalled());
+  });
+});
+
+describe('long tool and server names wrap inside the card (DOR-4247)', () => {
+  // 40 characters each, the length that pushed the button off a phone screen.
+  const server = 'notion_demo_workspace_for_the_design_ops';
+  const tool = 'search_pages_across_every_shared_space_x';
+  const longProps = {
+    ...baseProps,
+    toolName: `mcp__${server}__${tool}`,
+    input: '{}',
+    approvalHasSuggestions: true,
+    approvalAlwaysAllowScope: 'project' as const,
+    approvalAlwaysAllowBreadth: 'server' as const,
+  };
+
+  /** What every answer button on the card must carry so its words can wrap. */
+  function expectWraps(button: HTMLElement) {
+    const cls = button.getAttribute('class') ?? '';
+    for (const token of ['whitespace-normal', 'h-auto', 'md:h-auto', 'max-w-full']) {
+      expect(cls.split(' ')).toContain(token);
+    }
+    expect(cls).not.toMatch(/(^|\s)whitespace-nowrap(\s|$)/);
+    expect(cls).not.toMatch(/(^|\s)(md:)?h-(8|11)(\s|$)/);
+    expect(cls).not.toMatch(/truncate|line-clamp|text-ellipsis/);
+  }
+
+  it('the every-tool button names no server, since the radio above does', () => {
+    render(<ApprovalPrompt {...longProps} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Always allow…' }));
+    fireEvent.click(screen.getByRole('radio', { name: /^Every tool from / }));
+    const button = screen.getByRole('button', { name: /^Always allow every/ });
+    expect(button.textContent).toBe('Always allow every tool');
+    expect(screen.queryByText(/Allow all from/)).toBeNull();
+  });
+
+  it('the one-tool button still names the tool', () => {
+    render(<ApprovalPrompt {...longProps} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Always allow…' }));
+    const button = screen.getByRole('button', { name: /^Always allow Search/ });
+    expect(button.textContent).toBe('Always allow Search Pages Across Every Shared Space X');
+  });
+
+  it('every answer button on the card can wrap', () => {
+    render(<ApprovalPrompt {...longProps} />);
+    expectWraps(screen.getByRole('button', { name: /^Allow/ }));
+    expectWraps(screen.getByRole('button', { name: 'Always allow…' }));
+    expectWraps(screen.getByRole('button', { name: /^Don’t allow/ }));
+  });
+
+  it('the choice’s buttons can wrap, and the choice never widens the card', () => {
+    render(<ApprovalPrompt {...longProps} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Always allow…' }));
+    expectWraps(screen.getByRole('button', { name: /^Always allow Search/ }));
+    expectWraps(screen.getByRole('button', { name: 'Back' }));
+    fireEvent.click(screen.getByRole('radio', { name: /^Every tool from / }));
+    expectWraps(screen.getByRole('button', { name: 'Always allow every tool' }));
+
+    const fieldset = document.querySelector('[data-slot="always-allow-choice"]')!;
+    expect(fieldset.getAttribute('class')!.split(' ')).toContain('min-w-0');
+    const columns = document.querySelectorAll('[data-slot="always-allow-choice-text"]');
+    expect(columns).toHaveLength(2);
+    for (const column of columns) {
+      expect(column.getAttribute('class')!.split(' ')).toContain('min-w-0');
+    }
   });
 });
