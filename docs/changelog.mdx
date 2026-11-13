@@ -12,8 +12,8 @@ All notable changes to DorkOS are documented here. This project follows [Semanti
 ### Note for people upgrading
 
 - On Linux, Codex at Full access doesn't start if Claude Code has run on the same machine, and that includes the Docker image. Use Ask first or Workspace write there for now. We're fixing it (DOR-3965).
-- `/mcp` and `/a2a` now refuse an address with a key or token written into it, from any device. Send the key in the request's header instead. From another device, `/mcp` and `/a2a` no longer accept a sign-in from the app: they need an API key. Settings says so under the MCP address. (DOR-3650)
-- If you set `TUNNEL_PORT` to a port other than DorkOS's own, remote access no longer opens. Unset it, or set it to DorkOS's port. (DOR-3650)
+- `/mcp` and `/a2a` now refuse an address with a key-like name in it, from any device: any name containing key, token, secret, auth, password or bearer, so even `?author=` is refused. Send the key in the request's header instead. From another device, `/mcp` and `/a2a` no longer accept a sign-in from the app: they need an API key. Settings says so under the MCP address. (DOR-3650)
+- If you use your own ngrok tunnel and set `TUNNEL_PORT` to a port other than DorkOS's own, that tunnel no longer opens. Unset it, or set it to DorkOS's port. DorkOS's own remote access doesn't read `TUNNEL_PORT`. (DOR-3650)
 - An MCP server you added in DorkOS under one of DorkOS's own names, like `DorkOS` or `dorkos_connections` in any mix of capitals, no longer reaches any agent. It still shows in the list. Remove it and add it again under another name. (DOR-3600)
 - Agents can no longer change a file at `~/.local/bin/dorkos` with their file tools, even at Full access. Claude Code and Codex also refuse it from a shell; other shells aren't checked for it yet. If your own `dorkos` command lives there, update it yourself. (DOR-3105)
 - On a room's canvas, an agent can no longer show a file from outside its own folder and that room's files. It gets an error that says to copy the file into its folder first. Your own one-on-one window opens files as before. (DOR-3519)
