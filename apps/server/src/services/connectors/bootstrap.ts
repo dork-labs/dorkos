@@ -47,8 +47,9 @@
  *
  * @module services/connectors/bootstrap
  */
+import { isReplayIsolated } from '../../lib/replay/isolation.js';
+import type { ManagedProviderSpec } from './bootstrap/spec.js';
 import type {
-  ConnectorCustody,
   ConnectorKeyKind,
   ConnectorProvider,
   ConnectorProviderStatus,
@@ -174,26 +175,6 @@ export interface ConnectorProviderBootstrapperOpts {
   composioBaseUrl?: string;
   /** See {@link makeComposioClient} — the Nango counterpart. */
   makeNangoClient?: MaybeCreateNangoProviderDeps['makeClient'];
-}
-
-/** One credential-gated provider the bootstrapper owns end to end. */
-interface ManagedProviderSpec {
-  /** The backend type (= the `:provider` route segment). */
-  type: string;
-  /** Exact default instance owned by this legacy type-scoped configuration. */
-  defaultInstanceId: ConnectorProvider['instanceId'];
-  /** The log label boot/reload messages use, e.g. `'Composio managed backend'`. */
-  logLabel: string;
-  /** Custody stance echoed onto the status DTO. */
-  custody: ConnectorCustody;
-  /** The credential-store NAME (not the `file:` ref) the routes write/delete. */
-  credentialName: string;
-  /** Whether the provider counts as configured (credential + any required env). */
-  configured(): Promise<boolean>;
-  /** Run the provider factory; `null` = unconfigured, may throw a refusal. */
-  create(): Promise<ConnectorProvider | null>;
-  /** Whether a thrown factory error is a log-and-skip refusal (vs a genuine bug). */
-  isRefusal(err: unknown): boolean;
 }
 
 /**
@@ -382,10 +363,11 @@ export class ConnectorProviderBootstrapper {
     this._registry = opts.registry;
     this._rawMcpServers = opts.rawMcpServers;
     this._rawMcpPendingConnect = opts.rawMcpPendingConnect;
-    this._managedCloud = opts.managedCloud;
+    this._managedCloud = isReplayIsolated() ? undefined : opts.managedCloud;
     this._onClosedByNewLink = opts.onClosedByNewLink;
     this._onRelinked = opts.onRelinked;
 
+    if (isReplayIsolated()) return;
     const { credentials, nangoEnv } = opts;
     const specs: ManagedProviderSpec[] = [
       {
@@ -468,6 +450,7 @@ export class ConnectorProviderBootstrapper {
    * configured. Same semantics as the old inline `index.ts` block, moved here.
    */
   async registerBootProviders(): Promise<void> {
+    if (isReplayIsolated()) return;
     // The raw-MCP baseline registers unconditionally — with the empty list too,
     // so the seam is live before anyone configures a server (gap 3).
     const rawMcpServers = this._rawMcpServers();

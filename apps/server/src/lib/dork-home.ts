@@ -21,6 +21,11 @@ export function resolveDorkHome(): string {
   return path.join(os.homedir(), '.dork');
 }
 
+/** The real account's production directory, even when a demo supplies a fake HOME. */
+export function realAccountDorkHome(): string {
+  return path.join(os.userInfo().homedir, '.dork');
+}
+
 /**
  * Whether a folder really sits inside the data directory. Compares real paths,
  * so a symlink inside it that leads back out does not count, and neither does

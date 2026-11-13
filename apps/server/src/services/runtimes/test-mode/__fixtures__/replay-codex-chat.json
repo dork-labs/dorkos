@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "title": "Sample Codex chat",
+  "turns": [
+    {
+      "events": [
+        {
+          "type": "text_delta",
+          "data": {
+            "text": "The sample launch checklist has three steps: draft, review, and publish."
+          }
+        }
+      ]
+    },
+    {
+      "events": [
+        {
+          "type": "text_delta",
+          "data": {
+            "text": "Draft ready. Jonas Lindqvist can review the sample checklist next."
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -14,6 +14,7 @@
     "capture:process": "tsx capture/process.ts",
     "capture:archive": "tsx capture/archive.ts",
     "demo": "CAPTURE_SHARD=20 tsx capture/demo/run.ts",
+    "demo:replay": "tsx replay-demo/run.ts",
     "shard-timings": "tsx reporters/refresh-shard-timings.ts",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
