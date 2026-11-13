@@ -785,13 +785,13 @@ describe('a routine ask is calm and says who and what (DOR-4117)', () => {
         approvalTitle="Claude wants to use a made-up tool"
       />
     );
-    expect(screen.getByText('Atlas wants to use create_issue from made_up')).toBeDefined();
+    expect(screen.getByText('Atlas wants to use Create Issue from Made Up')).toBeDefined();
   });
 
   it('names the server when an outside tool borrows a built-in name (Security)', () => {
     render(<ApprovalPrompt {...baseProps} toolName="mcp__evil__Bash" agentName="Atlas" />);
     const headline = document.querySelector('[data-slot="ask-headline"]')!;
-    expect(headline.textContent).toBe('Atlas wants to use Bash from evil');
+    expect(headline.textContent).toBe('Atlas wants to use Bash from Evil');
     // The badge line below stays as it was.
     expect(screen.getByText('Evil')).toBeDefined();
   });
@@ -805,25 +805,28 @@ describe('a routine ask is calm and says who and what (DOR-4117)', () => {
       />
     );
     expect(document.querySelector('[data-slot="ask-headline"]')!.textContent).toBe(
-      'Allow Bash from evil?'
+      'Allow Bash from Evil?'
     );
   });
 
-  it.each(['Bash', 'mcp__dorkos__post_to_room', 'dorkos_post_to_room'])(
-    'a built-in %s keeps the short title, with no "from"',
-    (toolName) => {
-      render(<ApprovalPrompt {...baseProps} toolName={toolName} agentName="Atlas" />);
-      const text = document.querySelector('[data-slot="ask-headline"]')!.textContent ?? '';
-      expect(text).toMatch(/^Atlas wants to use \S+$/);
-      expect(text).not.toContain(' from ');
-    }
-  );
+  it.each([
+    ['Bash', 'Atlas wants to use Bash'],
+    ['mcp__dorkos__post_to_room', 'Atlas wants to use Post To Room'],
+    ['dorkos_post_to_room', 'Atlas wants to use Post To Room'],
+  ])('a built-in %s keeps the short title, with no "from"', (toolName, title) => {
+    render(<ApprovalPrompt {...baseProps} toolName={toolName} agentName="Atlas" />);
+    const text = document.querySelector('[data-slot="ask-headline"]')!.textContent ?? '';
+    expect(text).toBe(title);
+    expect(text).not.toContain(' from ');
+  });
 
   it('a long server name wraps and is never cut off', () => {
     const server = 'a_very_long_server_name_that_someone_typed_into_connections_without_spaces';
     render(<ApprovalPrompt {...baseProps} toolName={`mcp__${server}__Bash`} agentName="Atlas" />);
     const headline = document.querySelector('[data-slot="ask-headline"]')!;
-    expect(headline.textContent).toBe(`Atlas wants to use Bash from ${server}`);
+    expect(headline.textContent).toBe(
+      'Atlas wants to use Bash from A Very Long Server Name That Someone Typed Into Connections Without Spaces'
+    );
     const cls = headline.getAttribute('class') ?? '';
     expect(cls).toContain('break-words');
     expect(cls).toContain('min-w-0');
@@ -835,7 +838,7 @@ describe('a routine ask is calm and says who and what (DOR-4117)', () => {
     render(<ApprovalPrompt {...baseProps} toolName={hostile} agentName="Atlas" />);
     const headline = document.querySelector('[data-slot="ask-headline"]')!;
     expect(headline.textContent).toBe(
-      'Atlas wants to use **bold**<img src=x onerror=alert(1)>[link](https://x.test) from made_up'
+      'Atlas wants to use **bold**<img src=x onerror=alert(1)>[link](https://x.test) from Made Up'
     );
     expect(headline.children).toHaveLength(0);
     expect(
@@ -978,5 +981,47 @@ describe('the title row on a narrow card (DOR-4247)', () => {
     );
     const shield = document.querySelector('[data-testid="tool-approval"] svg.lucide-shield')!;
     expect(shield.getAttribute('class')!.split(' ')).toContain('shrink-0');
+  });
+});
+
+describe('the title names an MCP tool by its friendly names (DOR-4247)', () => {
+  const headline = () => document.querySelector('[data-slot="ask-headline"]')!.textContent;
+  const badge = () =>
+    document.querySelector('[data-testid="tool-approval"] .bg-muted.text-muted-foreground')!
+      .textContent;
+
+  it('reads as words, not snake_case', () => {
+    render(
+      <ApprovalPrompt
+        {...baseProps}
+        toolName="mcp__notion_demo_workspace_for_the_design_ops__search_pages_across_every_shared_space_x"
+      />
+    );
+    expect(headline()).toBe(
+      'Allow Search Pages Across Every Shared Space X from Notion Demo Workspace For The Design Ops?'
+    );
+    expect(headline()).not.toContain('_');
+  });
+
+  it.each([
+    ['mcp__evil__Bash', 'Evil'],
+    ['mcp__made_up__create_issue', 'Made Up'],
+    ['mcp__github__create_issue', 'GitHub'],
+  ])('%s: the title and the badge name the same server (Security)', (toolName, server) => {
+    render(<ApprovalPrompt {...baseProps} toolName={toolName} agentName="Atlas" />);
+    expect(badge()).toBe(server);
+    expect(headline()).toMatch(new RegExp(` from ${server}$`));
+  });
+
+  it('the server name comes from the tool key, never from what the runtime says about it', () => {
+    render(
+      <ApprovalPrompt
+        {...baseProps}
+        toolName="mcp__evil__Bash"
+        approvalTitle="Claude wants to use Bash from DorkOS"
+        approvalDisplayName="Bash from DorkOS"
+      />
+    );
+    expect(headline()).toBe('Allow Bash from Evil?');
   });
 });

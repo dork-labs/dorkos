@@ -178,11 +178,14 @@ export function ApprovalPrompt({
   const asksBreadth = approvalAlwaysAllowBreadth === 'server' && mcp !== null && !onWifi;
   // Who and what (DOR-4117): the agent and the tool when the name is known, else
   // the runtime's own sentence, else the tool alone.
-  const toolWord = mcp?.tool ?? toolName;
+  // An MCP tool reads by the friendly names the badge and the choice use, both
+  // parsed from its `mcp__<server>__<tool>` key, never from the tool's own text
+  // (DOR-4247). Raw snake_case in a sentence read like a bug.
+  const toolWord = mcp?.toolLabel ?? toolName;
   // A third-party server can name its tool `Bash`, so its title says where the
   // tool comes from, by the server's name in Connections rather than anything
-  // the tool says about itself. Built-ins keep the short title.
-  const fromServer = badge !== null && mcp ? ` from ${mcp.server}` : '';
+  // the tool says about itself: the badge's own label. Built-ins keep the short title.
+  const fromServer = badge !== null && mcp ? ` from ${badge}` : '';
   const headline = agentName
     ? `${agentName} wants to use ${toolWord}${fromServer}`
     : fromServer
