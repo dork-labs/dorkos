@@ -1776,6 +1776,53 @@ describe('ConnectorProviderBootstrapper', () => {
       expect(probes).toBe(3);
     });
 
+    it('keeps checking the DorkOS account way every 15 minutes through a long outage, and recovers with no Retry (DOR-4229)', async () => {
+      vi.useFakeTimers();
+      const instanceId = 'managed-provider' as ConnectorProviderInstanceId;
+      let outage = true;
+      let probes = 0;
+      const managed = new FakeConnectorProvider({
+        instanceId,
+        type: 'dorkos-managed',
+        custody: 'managed',
+      });
+      managed.listAccounts = () => {
+        probes += 1;
+        return outage ? Promise.reject(new Error('hosted outage')) : Promise.resolve([]);
+      };
+      const bootstrapper = makeBootstrapper({
+        managedCloud: {
+          instanceId,
+          configured: () => true,
+          executionConfigDigest: () => 'linked-material',
+          create: () => managed,
+        },
+      });
+      await bootstrapper.registerBootProviders();
+
+      // The whole backoff runs out, then four hours more, as on Nov 12.
+      for (const delay of WAY_RECHECK_DELAYS_MS) await vi.advanceTimersByTimeAsync(delay);
+      const afterBackoff = probes;
+      const lastDelay = WAY_RECHECK_DELAYS_MS.at(-1)!;
+      await vi.advanceTimersByTimeAsync(4 * 60 * 60 * 1000);
+      expect(registry.resolveProviderInstance(instanceId)).toBeUndefined();
+      // Still checking, once every 15 minutes, never faster.
+      expect(probes - afterBackoff).toBe((4 * 60 * 60 * 1000) / lastDelay);
+      // So the person still sees DorkOS retrying, with a time, not "press Retry".
+      expect(bootstrapper.nextWayCheckAt(instanceId)).toBeDefined();
+
+      // The service answers again: the next check brings the way back on its own.
+      outage = false;
+      await vi.advanceTimersByTimeAsync(lastDelay);
+      expect(registry.resolveProviderInstance(instanceId)).toBe(managed);
+      expect(bootstrapper.nextWayCheckAt(instanceId)).toBeUndefined();
+
+      // Answered: nothing else is scheduled.
+      const recoveredAt = probes;
+      await vi.advanceTimersByTimeAsync(lastDelay * 4);
+      expect(probes).toBe(recoveredAt);
+    });
+
     it('stops checking a way that never answers, and settles on the person’s one fix', async () => {
       vi.useFakeTimers();
       secrets.set(COMPOSIO_API_KEY_REF, 'ck-live');
