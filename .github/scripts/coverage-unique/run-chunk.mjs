@@ -1,3 +1,4 @@
+/* global console, process */
 // One chunk of the Coverage Unique pilot: run each of this chunk's test files
 // ON ITS OWN with v8 coverage, and record which source lines it reached.
 //

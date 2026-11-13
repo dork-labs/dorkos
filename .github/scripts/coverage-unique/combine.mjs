@@ -1,3 +1,4 @@
+/* global console, process */
 // Combine the Coverage Unique pilot's chunks into one report.
 //
 // Usage: node combine.mjs <dir of chunk *.jsonl> <package> <out dir>
