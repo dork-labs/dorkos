@@ -1,6 +1,6 @@
 ---
 covers:
-  - 'fix(runtimes): queued notes, git status and other context reach Codex, OpenCode and DorkOS (built-in) agents as plain text, not raw JSON (DOR-3604)'
+  - 'fix(runtimes): queued notes and other context read the same on every runtime (DOR-3604)'
 ---
 
 ### Fixed
