@@ -133,6 +133,7 @@ export function adoptQueuedMessages(opts: AdoptQueuedMessagesOpts): number {
       // A recovered row is a row by definition, and somebody's words: it waits
       // as long as the queue waits.
       transient: false,
+      recovered: true,
       turn: {
         ...(opts.cwd !== undefined ? { cwd: opts.cwd } : {}),
         ...(row.context !== null ? { context: row.context } : {}),

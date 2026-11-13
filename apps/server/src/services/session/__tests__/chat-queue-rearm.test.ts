@@ -19,14 +19,17 @@ import {
   dispatchMessage,
   isQueuedMessageArmed,
   listQueuedMessages,
-  rearmChatQueues,
   resetMessageDispatcher,
+  setQueuedChatCeilingResolver,
 } from '../message-dispatcher.js';
+import { rearmChatQueues } from '../message-dispatcher/queue-upkeep.js';
+import { RECOVERED_START_TRIES } from '../message-dispatcher/launch.js';
 import { ChatMessageService } from '../chat-messages/chat-message-service.js';
 import { ChatMessageStore } from '../chat-messages/chat-message-store.js';
 import { chatClientId } from '../chat-messages/chat-client-id.js';
 import { passedOnLevelOf } from '../../core/turn-power/turn-levels.js';
 import { MessageQueueStore, setMessageQueueStore } from '../message-queue-store.js';
+import { SESSIONS } from '../../../config/constants.js';
 import { disposeProjector, getOrCreateProjector } from '../session-state-projector.js';
 
 let session: string;
@@ -35,6 +38,9 @@ let queue: MessageQueueStore;
 let chats: ChatMessageStore;
 let service: ChatMessageService;
 let busy: boolean;
+
+/** A made-up room member whose message started the sending turn. */
+const TEAMMATE = { roomId: 'room-demo', authorId: 'member-demo' };
 
 const quick = async function* (): AsyncGenerator<StreamEvent> {
   yield { type: 'text_delta', data: { text: 'reply' } };
@@ -79,10 +85,13 @@ beforeEach(() => {
     turnLevelOf: passedOnLevelOf,
     emitActivity: () => undefined,
   });
+  // As the server wires it: a chat-sent row launches under its senders' ceiling.
+  setQueuedChatCeilingResolver((id) => service.ceilingForQueuedMessage(id));
 });
 
 afterEach(async () => {
   await vi.waitFor(() => expect(runtime.isTurnOpen(session)).toBe(false));
+  setQueuedChatCeilingResolver(undefined);
   service.stop();
   resetMessageDispatcher();
   setMessageQueueStore(undefined);
@@ -99,7 +108,11 @@ function resume(sessionId: string): void {
  * message riding on it. Written straight to the stores, then the dispatcher's
  * memory is dropped, which is what a restart leaves.
  */
-function leftoverChatRow(text: string, fromChat = crypto.randomUUID()) {
+function leftoverChatRow(
+  text: string,
+  fromChat = crypto.randomUUID(),
+  ceilingJson = JSON.stringify('runtime-default')
+) {
   const row = queue.enqueue({
     sessionId: session,
     content: text,
@@ -122,7 +135,7 @@ function leftoverChatRow(text: string, fromChat = crypto.randomUUID()) {
     delivery: 'queue',
     status: 'queued',
     queueMessageId: row.id,
-    ceilingJson: JSON.stringify('runtime-default'),
+    ceilingJson,
     replyToId: null,
   });
   resetMessageDispatcher();
@@ -136,7 +149,14 @@ async function settle(): Promise<void> {
 
 describe('a restart leaves another chat’s message queued for an idle chat', () => {
   it('starts it from the queue sweep, without waiting for a newer message', async () => {
-    const { row, sent } = leftoverChatRow('census, due tonight');
+    // Sent from a turn a teammate's room message started: the one power a chat
+    // message carries, which must survive the restart with it.
+    const chain = { asks: 'never', reach: 'everything', teammate: [TEAMMATE] };
+    const { row, sent } = leftoverChatRow(
+      'census, due tonight',
+      crypto.randomUUID(),
+      JSON.stringify(chain)
+    );
     await settle();
     // The row alone starts nothing: this is the gap.
     expect(runtime.sendMessage).not.toHaveBeenCalled();
@@ -146,10 +166,13 @@ describe('a restart leaves another chat’s message queued for an idle chat', ()
 
     await vi.waitFor(
       () => {
+        // Recovered, it still runs under its sender's teammate chain.
         expect(runtime.sendMessage).toHaveBeenCalledWith(
           session,
           'census, due tonight',
-          expect.anything()
+          expect.objectContaining({
+            permissionCeiling: expect.objectContaining({ teammate: [TEAMMATE] }),
+          })
         );
         expect(listQueuedMessages(session)).toEqual([]);
         expect(chats.get(sent.id)?.status).toBe('delivered');
@@ -201,6 +224,35 @@ describe('a restart leaves another chat’s message queued for an idle chat', ()
       })
     ).resolves.toBe(1);
     await vi.waitFor(() => expect(listQueuedMessages(session)).toEqual([]), { timeout: 2000 });
+  });
+});
+
+describe('a leftover message whose chat is gone', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it(`is given up after ${RECOVERED_START_TRIES} failed starts, not retried forever`, async () => {
+    // The chat was deleted while the server was down: every start fails.
+    runtime.sendMessage.mockImplementation(() => {
+      throw new Error('No conversation found with that id');
+    });
+    vi.useFakeTimers({ shouldAdvanceTime: true, toFake: ['setTimeout', 'clearTimeout'] });
+    const { sent } = leftoverChatRow('to a chat nobody can open');
+
+    // Health ticks, each long enough for a re-parked attempt's wait to run out.
+    for (let tick = 0; tick < RECOVERED_START_TRIES + 3; tick += 1) {
+      await rearmChatQueues({ resume });
+      await vi.advanceTimersByTimeAsync(SESSIONS.LOCK_TTL_MS + 1000);
+    }
+
+    expect(runtime.sendMessage).toHaveBeenCalledTimes(RECOVERED_START_TRIES);
+    expect(listQueuedMessages(session)).toEqual([]);
+    expect(chats.get(sent.id)).toMatchObject({
+      status: 'failed',
+      failureReason: 'The chat it was waiting in no longer exists.',
+    });
+    expect(isQueuedMessageArmed(sent.queueMessageId!)).toBe(false);
   });
 });
 

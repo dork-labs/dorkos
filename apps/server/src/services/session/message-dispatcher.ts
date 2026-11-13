@@ -190,7 +190,7 @@ import {
   isStillProducing,
   refusesOpenTurn,
 } from './message-dispatcher/turn-probes.js';
-import { launchDispatch } from './message-dispatcher/launch.js';
+import { forgetRecoveryFailures, launchDispatch } from './message-dispatcher/launch.js';
 import {
   carriedHoldMayJoin,
   ceilingHoldsToDefault,
@@ -243,7 +243,6 @@ export {
   cancelPendingDispatch,
   listQueuedMessages,
   noteSessionOrphaned,
-  rearmChatQueues,
   suspendPrivateDispatches,
   sweepOrphanedMessageQueues,
 } from './message-dispatcher/queue-upkeep.js';
@@ -1029,6 +1028,7 @@ export function resetMessageDispatcher(): void {
   dispatchMutex.clear();
   orphanedSessions.clear();
   sweptWhileLaunching.clear();
+  forgetRecoveryFailures();
 }
 
 // Wired on import rather than from the composition root, deliberately. The
