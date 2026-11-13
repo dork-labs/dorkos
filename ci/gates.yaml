@@ -48,6 +48,14 @@ gates:
     source: .github/workflows/mutation-pilot.yml
     purpose: On request, mutation-tests packages/shared with Stryker on CI and keeps the report, to calibrate which tests catch real changes.
 
+  # --- coverage-unique.yml ---
+  - id: wf.coverage-unique.cover
+    source: .github/workflows/coverage-unique.yml
+    purpose: On request, runs one sixteenth of a package's test files one at a time with coverage and records the lines each reaches.
+  - id: wf.coverage-unique.combine
+    source: .github/workflows/coverage-unique.yml
+    purpose: On request, lists the package's test files that reach no source line another test file does not.
+
   # --- browser-test.yml ---
   - id: wf.browser-test.browser-smoke
     source: .github/workflows/browser-test.yml
