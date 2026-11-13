@@ -32,14 +32,16 @@ command line: npm install -g dorkos
  *
  * @param argv - The arguments after `dorkos`.
  * @param out - Where to print: the console, or a test's capture.
+ * @param browser - The CLI's own `dorkos browser` dispatcher; a test passes a fake.
  * @returns The exit code.
  */
 export async function runTerminalCommand(
   argv: readonly string[],
-  out: { log: (text: string) => void; error: (text: string) => void } = console
+  out: { log: (text: string) => void; error: (text: string) => void } = console,
+  browser: typeof runBrowserDispatcher = runBrowserDispatcher
 ): Promise<number> {
   const [command, ...rest] = argv;
-  if (command === 'browser') return runBrowserDispatcher(rest[0], rest.slice(1));
+  if (command === 'browser') return browser(rest[0], rest.slice(1));
   if (command === '--version' || command === '-v' || command === 'version') {
     out.log(__CLI_VERSION__);
     return 0;
