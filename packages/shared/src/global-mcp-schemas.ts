@@ -281,3 +281,58 @@ export const GlobalMcpServerListSchema = z.object({
 });
 
 export type GlobalMcpServerList = z.infer<typeof GlobalMcpServerListSchema>;
+
+/**
+ * One tool a global server listed when its sheet opened (DOR-4118). Its name and description come
+ * from the server: untrusted text, shown as plain text and never put in an agent's context.
+ */
+export const GlobalMcpCheckedToolSchema = z.object({
+  name: z.string(),
+  description: z.string(),
+  /** The server added it since an earlier check, within the last day. */
+  isNew: z.boolean(),
+});
+
+export type GlobalMcpCheckedTool = z.infer<typeof GlobalMcpCheckedToolSchema>;
+
+/**
+ * `POST /api/mcp-servers/:name/tools`. A server that is off, or not approved, is never started and
+ * answers `not-checked`.
+ */
+export const GlobalMcpToolsCheckSchema = z.discriminatedUnion('status', [
+  z.object({ status: z.literal('not-checked') }),
+  z.object({
+    status: z.literal('ok'),
+    tools: z.array(GlobalMcpCheckedToolSchema),
+    /** Tools the server added since its last check. */
+    added: z.array(z.string()),
+    /** Tools listed past the caps, which were not kept. */
+    omitted: z.number().int().nonnegative(),
+  }),
+  z.object({ status: z.literal('needs-sign-in') }),
+  z.object({ status: z.literal('unreachable'), error: z.string() }),
+]);
+
+export type GlobalMcpToolsCheck = z.infer<typeof GlobalMcpToolsCheckSchema>;
+
+/** One agent's standing yes for a global server: it uses it, or one tool on it, without asking. */
+export const GlobalMcpStandingAllowSchema = z.object({
+  agentId: z.string(),
+  agentName: z.string(),
+  /** The exact rule, `mcp__{server}` or `mcp__{server}__{tool}`. */
+  rule: z.string(),
+  /** Every tool on the server, new ones included, or the one tool. */
+  breadth: z.enum(['server', 'tool']),
+  tool: z.string().optional(),
+  /** Which settings file holds it. Undo reaches only `settings.local.json`. */
+  file: z.enum(['settings.json', 'settings.local.json']),
+});
+
+export type GlobalMcpStandingAllow = z.infer<typeof GlobalMcpStandingAllowSchema>;
+
+/** `GET /api/mcp-servers/:name/allows`. */
+export const GlobalMcpStandingAllowListSchema = z.object({
+  allows: z.array(GlobalMcpStandingAllowSchema),
+});
+
+export type GlobalMcpStandingAllowList = z.infer<typeof GlobalMcpStandingAllowListSchema>;

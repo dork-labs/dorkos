@@ -25,6 +25,7 @@ import {
 } from '../lib/server-lines';
 import { ServerMark } from './ServerMark';
 import { WhichAgents } from './WhichAgents';
+import { WhoUsesIt } from './WhoUsesIt';
 
 interface ServerSheetProps {
   /** The server, as the list last read it. */
@@ -43,7 +44,8 @@ function addedOn(iso: string): string {
 }
 
 /**
- * One server: what runs, secrets masked; who gets it; Remove server. There is no Edit, on
+ * One server: what runs, secrets masked; who gets it; who uses it without asking and what it can
+ * do (DOR-4118); Remove server. There is no Edit, on
  * purpose: to change a server, remove it and add it again, which types its secret again. Switches
  * apply as they are pressed, so "Confirm it's you" runs at the switch and Done only closes.
  */
@@ -69,7 +71,9 @@ export function ServerSheet({ server, onClose, onRemove, onCloseAutoFocus }: Ser
           <div className="flex items-center gap-3">
             <ServerMark />
             <div className="min-w-0 text-left">
-              <ResponsiveDialogTitle className="truncate">{server.name}</ResponsiveDialogTitle>
+              <ResponsiveDialogTitle className="[overflow-wrap:anywhere]">
+                {server.name}
+              </ResponsiveDialogTitle>
               <ResponsiveDialogDescription>
                 Added {addedOn(server.addedAt)}
               </ResponsiveDialogDescription>
@@ -150,6 +154,8 @@ export function ServerSheet({ server, onClose, onRemove, onCloseAutoFocus }: Ser
                 {changeError(patch.error)}
               </p>
             ))}
+
+          <WhoUsesIt server={server.name} />
         </ResponsiveDialogBody>
         <ResponsiveDialogFooter className="shrink-0 sm:justify-between">
           <Button

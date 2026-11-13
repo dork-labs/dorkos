@@ -313,6 +313,21 @@ export class GlobalMcpStore {
   }
 
   /**
+   * The connection a person's sheet may check a server's tools over, with
+   * secrets resolved, or `null` (DOR-4118). Only a server that is on and that
+   * this store would hand an agent: anything else is never started.
+   *
+   * @param name - The server's name.
+   */
+  connectionToCheck(name: string): McpServerTransport | null {
+    const server = this.servers.find((candidate) => candidate.name === name);
+    if (!server?.enabled) return null;
+    const connection = this.resolved.get(name);
+    if (!connection) return null;
+    return refuseGlobalServer(connection, this.guardContext()) ? null : connection;
+  }
+
+  /**
    * Add a server for every agent.
    *
    * @param input - The server, with its secret values typed by a person.

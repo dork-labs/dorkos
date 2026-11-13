@@ -415,6 +415,8 @@ const REFUSED: readonly (readonly [reason: string, routes: readonly string[]])[]
       'PATCH /api/mcp-servers/:name',
       'POST /api/mcp-servers',
       'POST /api/mcp-servers/check-args',
+      // Starts the server to read its tools, so it stays the hub's (DOR-4118).
+      'POST /api/mcp-servers/:name/tools',
       'PUT /api/mcp-servers/:name',
       'POST /api/shapes/:name/apply',
       'POST /api/shapes/:name/fork',
@@ -506,6 +508,8 @@ const REFUSED: readonly (readonly [reason: string, routes: readonly string[]])[]
       'POST /api/approvals/:id/dismiss-suggestion',
       'POST /api/approvals/:id/grant',
       'POST /api/permissions/history/:eventId/undo',
+      // Undo of an agent's standing yes on a global MCP server (DOR-4118).
+      'DELETE /api/mcp-servers/:name/allows',
       'PUT /api/permissions/preset',
       'POST /api/canvas/docs/:id/routes/:routeId/approve',
       'POST /api/canvas/docs/:id/routes/:routeId/review',

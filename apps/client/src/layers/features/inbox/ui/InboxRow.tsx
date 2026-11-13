@@ -212,11 +212,13 @@ export function InboxRow({ notification, agent, onOpen, index }: InboxRowProps) 
   // An agent's change to a schedule is the person's only signal of it, so its
   // title and body read in full, never cut (DOR-3703, M6: the mode, the hashes
   // and who started the turn). An agent taking another's access away is the
-  // same: which agent, which app and whose access, never cut at any width.
+  // same: which agent, which app and whose access, never cut at any width. So is
+  // a server adding a tool some agent uses without asking: which server, and who.
   const readsInFull =
     notification.mark === 'refused' ||
     notification.kind === 'schedule.armed_by_agent' ||
-    notification.kind === 'connector.access_narrowed';
+    notification.kind === 'connector.access_narrowed' ||
+    notification.kind === 'mcp-server.tool_added';
   const isScheduleCreation =
     readsInFull && notification.actions?.some((action) => action.id === 'pause') === true;
   const refusalTitle =
