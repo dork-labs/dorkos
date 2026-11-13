@@ -1,7 +1,7 @@
 /**
  * The Inbox line for a tool a global server added (DOR-4118) names who can use
  * it without asking, and never the tool: a tool name is the server's own text,
- * and notifications are read by agents too.
+ * and a line travels further than the sheet (a phone push, a desktop banner).
  *
  * @vitest-environment node
  */
