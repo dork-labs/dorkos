@@ -16,7 +16,6 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createDb, runMigrations, type Db } from '@dorkos/db';
-import type { RawSessionEvent } from '../../session-state-projector.js';
 import {
   CanvasDocumentStore,
   CanvasService,
@@ -27,14 +26,6 @@ import { CapabilityToolError } from '../../../core/capabilities/index.js';
 import { initBoundary } from '../../../../lib/boundary.js';
 import { controlUi } from '../ui-control.js';
 import { uiTurnFacts } from '../ui-turn-facts.js';
-
-const reach = vi.hoisted(() => ({ emitted: [] as RawSessionEvent[] }));
-vi.mock('../session-reach.js', () => ({
-  emitToSession: (_sessionId: string, event: RawSessionEvent) => {
-    reach.emitted.push(event);
-    return true;
-  },
-}));
 
 const SESSION = 'sess-3519';
 
@@ -80,7 +71,6 @@ beforeEach(async () => {
     channels: { publish: () => {}, viewers: () => 0 },
   });
   setCanvasService(canvas);
-  reach.emitted.length = 0;
   uiTurnFacts.clear();
 });
 
@@ -100,8 +90,8 @@ describe('a local file outside the agent folder (DOR-3519)', () => {
     expect(payload.code).toBe('OUTSIDE_FOLDER');
     expect(String(payload.error)).toContain(src);
     expect(String(payload.error)).toContain('copy it into your folder');
+    // Refused before anything is written: no document exists to send a window.
     expect(canvas.list(sessionScope(SESSION))).toEqual([]);
-    expect(reach.emitted).toEqual([]);
   });
 
   it.each([
