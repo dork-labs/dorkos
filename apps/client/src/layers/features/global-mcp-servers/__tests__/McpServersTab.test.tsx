@@ -807,11 +807,25 @@ describe('a server whose name is reserved (DOR-4262)', () => {
     expect(other.queryByText(/its name is reserved/)).toBeNull();
   });
 
-  it('the sheet says why above Which agents get it, and the check is never ok', async () => {
+  it('the row’s name wraps and it says no “All agents”, which would contradict it', async () => {
+    renderTab(transportWith([RESERVED, createMockGlobalMcpServer({ name: 'notion-demo' })]));
+    const row = await screen.findByTestId('mcp-server-row-DorkOS_Connections');
+    expect(within(row).getByText('DorkOS_Connections')).not.toHaveClass('truncate');
+    expect(row).not.toHaveTextContent(/All agents/);
+    expect(row).not.toHaveTextContent(/reserved ·/);
+    // An ordinary row still cuts its name and says who gets it.
+    const other = await screen.findByTestId('mcp-server-row-notion-demo');
+    expect(within(other).getByText('notion-demo')).toHaveClass('truncate');
+    expect(other).toHaveTextContent('All agents');
+  });
+
+  it('the sheet says why first, above the command, and the check is never ok', async () => {
     const user = userEvent.setup();
     renderTab(reservedTransport());
     const sheet = await openSheet(user);
-    const notice = sheet.getByText('Agents can’t use this server.').parentElement!;
+    const first = sheet.getByText('Agents can’t use this server.');
+    expect(first).toHaveClass('font-semibold');
+    const notice = first.parentElement!;
     expect(notice).toHaveAttribute('data-slot', 'reserved-name-notice');
     expect(
       within(notice).getByText(
@@ -819,9 +833,9 @@ describe('a server whose name is reserved (DOR-4262)', () => {
       )
     ).toBeInTheDocument();
     expect(within(notice).getByText('Rename it to give them back.')).toBeInTheDocument();
-    // Above Which agents get it.
-    const which = sheet.getByText('Which agents get it');
-    expect(notice.compareDocumentPosition(which) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    // First in the sheet: above the Command block, so a phone shows it without scrolling.
+    const command = sheet.getByText('Command');
+    expect(notice.compareDocumentPosition(command) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(
       await sheet.findByText('It works, but agents can’t use it until it’s renamed.')
     ).toBeInTheDocument();
@@ -867,15 +881,26 @@ describe('a server whose name is reserved (DOR-4262)', () => {
     const sheet = await openSheet(user);
     await user.click(sheet.getByRole('button', { name: 'Remove and add again…' }));
 
-    expect(await screen.findByText('Add a server')).toBeInTheDocument();
+    expect(await screen.findByText('Add it again under a new name')).toBeInTheDocument();
+    expect(screen.queryByText('Add a server')).toBeNull();
     expect(screen.getByLabelText('Name')).toHaveValue('');
+    expect(screen.getByLabelText('Name')).toHaveAccessibleDescription(
+      'Use any name except “DorkOS_Connections”.'
+    );
+    // Each hidden value says to type it again; a plain one says nothing.
+    expect(screen.getByLabelText('Value of MADE_UP_KEY')).toHaveAccessibleDescription(
+      'Type MADE_UP_KEY again. Hidden values aren’t kept.'
+    );
+    expect(screen.queryByText(/Type REGION again/)).toBeNull();
     expect(screen.getByLabelText('Command')).toHaveValue('npx');
     expect(screen.getByLabelText('Arguments')).toHaveValue(
       '-y made-up-mcp@1.2.3 --workspace "Design team"'
     );
     // A saved value is never shown again, so every one is typed, not only the secret.
     await user.type(screen.getByLabelText('Name'), 'notion-demo');
+    expect(screen.queryByText(/Use any name except/)).toBeNull();
     await user.type(screen.getByLabelText('Value of MADE_UP_KEY'), 'typed-key');
+    expect(screen.queryByText(/Type MADE_UP_KEY again/)).toBeNull();
     await user.click(screen.getByRole('button', { name: 'Add' }));
     expect(await screen.findByText('Type a value for REGION.')).toBeInTheDocument();
     expect(addGlobalMcpServer).not.toHaveBeenCalled();
@@ -912,7 +937,7 @@ describe('a server whose name is reserved (DOR-4262)', () => {
     const sheet = await openSheet(user);
     await user.click(sheet.getByRole('button', { name: 'Remove and add again…' }));
     await user.click(await screen.findByRole('button', { name: 'Cancel' }));
-    await waitFor(() => expect(screen.queryByText('Add a server')).toBeNull());
+    await waitFor(() => expect(screen.queryByText('Add it again under a new name')).toBeNull());
     expect(screen.queryByRole('alertdialog')).toBeNull();
     expect(addGlobalMcpServer).not.toHaveBeenCalled();
     expect(removeGlobalMcpServer).not.toHaveBeenCalled();

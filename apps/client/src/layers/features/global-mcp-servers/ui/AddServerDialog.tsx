@@ -18,6 +18,7 @@ import {
   EMPTY_SERVER_FORM,
   nameProblem,
   reservedNameProblem,
+  rowIsSecret,
   serverFormProblem,
   serverInputFrom,
   type FormProblem,
@@ -37,6 +38,8 @@ interface AddServerDialogProps {
    * typed again, since a saved one is never shown.
    */
   initial?: ServerForm;
+  /** The name it replaces, when it is added again under a new one (DOR-4262). */
+  replacing?: string;
   /** Called with the new name once the server is added, before the dialog closes. */
   onAdded?: (name: string) => void;
 }
@@ -46,7 +49,7 @@ interface AddServerDialogProps {
  * cancel or a refusal keeps everything typed, secrets too, until the dialog closes. The form is
  * mounted only while it is open, so nothing typed outlives it.
  */
-export function AddServerDialog({ onClose, initial, onAdded }: AddServerDialogProps) {
+export function AddServerDialog({ onClose, initial, replacing, onAdded }: AddServerDialogProps) {
   const problemId = useId();
   const nameId = useId();
   const commandId = useId();
@@ -54,6 +57,7 @@ export function AddServerDialog({ onClose, initial, onAdded }: AddServerDialogPr
   const argsWarningId = useId();
   const urlId = useId();
   const kindLabelId = useId();
+  const nameHintId = useId();
   const [form, setForm] = useState<ServerForm>(initial ?? EMPTY_SERVER_FORM);
   const [problem, setProblem] = useState<FormProblem | null>(null);
   const [argsLookSecret, setArgsLookSecret] = useState(false);
@@ -62,6 +66,8 @@ export function AddServerDialog({ onClose, initial, onAdded }: AddServerDialogPr
   const waiting = useConfirmWaiting(add.isPending);
   const busy = add.isPending;
   const set = (patch: Partial<ServerForm>) => setForm((current) => ({ ...current, ...patch }));
+  // The hidden values the old server had: each must be typed again, and its row says so.
+  const [retype] = useState(() => keptSecretIds(initial));
 
   function submit(event: FormEvent) {
     event.preventDefault();
@@ -113,7 +119,9 @@ export function AddServerDialog({ onClose, initial, onAdded }: AddServerDialogPr
     >
       <ResponsiveDialogContent className="max-h-[85vh]" desktopProps={{ className: 'sm:max-w-xl' }}>
         <ResponsiveDialogHeader>
-          <ResponsiveDialogTitle>Add a server</ResponsiveDialogTitle>
+          <ResponsiveDialogTitle>
+            {replacing === undefined ? 'Add a server' : 'Add it again under a new name'}
+          </ResponsiveDialogTitle>
         </ResponsiveDialogHeader>
         <form onSubmit={submit} noValidate className="flex min-h-0 flex-1 flex-col">
           <ResponsiveDialogBody alignWithHeader className="space-y-4 py-1 [&_input]:scroll-my-6">
@@ -126,7 +134,11 @@ export function AddServerDialog({ onClose, initial, onAdded }: AddServerDialogPr
                 onChange={(event) => set({ name: event.target.value })}
                 onBlur={checkName}
                 aria-invalid={problem?.field === 'name' || undefined}
-                aria-describedby={describedBy('name')}
+                aria-describedby={
+                  [describedBy('name'), replacing === undefined ? undefined : nameHintId]
+                    .filter(Boolean)
+                    .join(' ') || undefined
+                }
                 autoCapitalize="off"
                 autoComplete="off"
                 spellCheck={false}
@@ -134,6 +146,14 @@ export function AddServerDialog({ onClose, initial, onAdded }: AddServerDialogPr
                 className="font-mono"
               />
               {problemLine('name')}
+              {replacing !== undefined && form.name === '' && (
+                <p
+                  id={nameHintId}
+                  className="text-muted-foreground text-xs [overflow-wrap:anywhere]"
+                >
+                  Use any name except “{replacing}”.
+                </p>
+              )}
             </div>
 
             <div className="space-y-1.5">
@@ -206,6 +226,7 @@ export function AddServerDialog({ onClose, initial, onAdded }: AddServerDialogPr
                   <FieldRows
                     noun="variable"
                     rows={form.env}
+                    retype={retype}
                     onChange={(env) => set({ env })}
                     disabled={busy}
                     describedBy={describedBy('rows')}
@@ -238,6 +259,7 @@ export function AddServerDialog({ onClose, initial, onAdded }: AddServerDialogPr
                   <FieldRows
                     noun="header"
                     rows={form.headers}
+                    retype={retype}
                     onChange={(headers) => set({ headers })}
                     disabled={busy}
                     describedBy={describedBy('rows')}
@@ -282,4 +304,11 @@ export function AddServerDialog({ onClose, initial, onAdded }: AddServerDialogPr
       </ResponsiveDialogContent>
     </ResponsiveDialog>
   );
+}
+
+/** The ids of the hidden rows a re-added server starts with, which come back empty. */
+function keptSecretIds(initial: ServerForm | undefined): ReadonlySet<string> {
+  if (!initial) return new Set();
+  const rows = initial.kind === 'command' ? initial.env : initial.headers;
+  return new Set(rows.filter(rowIsSecret).map((row) => row.id));
 }

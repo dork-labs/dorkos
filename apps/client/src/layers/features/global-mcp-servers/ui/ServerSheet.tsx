@@ -89,6 +89,10 @@ export function ServerSheet({
           </div>
         </ResponsiveDialogHeader>
         <ResponsiveDialogBody alignWithHeader className="space-y-4 py-1">
+          {/* First, under the title: on a phone, anything lower is below the fold (DOR-4262). */}
+          {server.reservedName && (
+            <ReservedNameNotice name={server.name} disabled={patch.isPending} onReAdd={onReAdd} />
+          )}
           <dl className="bg-muted grid gap-x-4 gap-y-1.5 rounded-lg p-3 text-sm sm:grid-cols-[auto_minmax(0,1fr)]">
             {server.command !== undefined && <Line term="Command">{server.command}</Line>}
             {server.args !== undefined && server.args.length > 0 && (
@@ -144,10 +148,6 @@ export function ServerSheet({
               {warning.note}
             </p>
           ))}
-
-          {server.reservedName && (
-            <ReservedNameNotice name={server.name} disabled={patch.isPending} onReAdd={onReAdd} />
-          )}
 
           <WhichAgents
             excluded={server.excludedAgents}
@@ -207,7 +207,7 @@ function ReservedNameNotice({
       data-slot="reserved-name-notice"
       className="bg-status-warning-bg space-y-2 rounded-lg p-3 text-sm"
     >
-      <p className="font-medium">Agents can’t use this server.</p>
+      <p className="font-semibold">Agents can’t use this server.</p>
       <p className="[overflow-wrap:anywhere]">
         “{name}” is reserved for DorkOS’s own tools, so agents don’t get its tools.
       </p>

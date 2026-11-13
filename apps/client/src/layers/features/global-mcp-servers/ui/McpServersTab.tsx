@@ -173,6 +173,7 @@ export function McpServersTab({ openServer, onServerOpened }: McpServersTabProps
       {open?.kind === 're-add' && current && (
         <AddServerDialog
           initial={formFromServer(current)}
+          replacing={current.name}
           onClose={() => setOpen((now) => (now?.kind === 're-add' ? null : now))}
           onAdded={() => setOpen({ kind: 'remove', name: current.name })}
         />

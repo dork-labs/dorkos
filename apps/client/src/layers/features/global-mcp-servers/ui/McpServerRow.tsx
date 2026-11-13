@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import { Fragment, type ReactNode } from 'react';
 import type { GlobalMcpServerView } from '@dorkos/shared/global-mcp-schemas';
 import { usePatchGlobalMcpServer } from '@/layers/entities/global-mcp';
 import { cn } from '@/layers/shared/lib';
@@ -41,8 +41,13 @@ export function McpServerRow({ server, nameOf, onOpen }: McpServerRowProps) {
           <ServerMark />
         </span>
         <span className="min-w-0 flex-1">
+          {/* A reserved name wraps: it is the one thing to fix on this row (DOR-4262). */}
           <span
-            className={cn('block truncate text-sm font-medium', !server.enabled && 'opacity-55')}
+            className={cn(
+              'block text-sm font-medium',
+              server.reservedName ? '[overflow-wrap:anywhere]' : 'truncate',
+              !server.enabled && 'opacity-55'
+            )}
           >
             {server.name}
           </span>
@@ -69,7 +74,8 @@ export function McpServerRow({ server, nameOf, onOpen }: McpServerRowProps) {
 
 /**
  * The row's second line: what the switch just came to, what's in the way, then who gets it. A
- * warning keeps its full ink on an off server: only the name and "Off" dim.
+ * warning keeps its full ink on an off server: only the name and "Off" dim. A reserved name drops
+ * who gets it, since no agent does (DOR-4262).
  */
 function DetailLine({
   server,
@@ -83,30 +89,47 @@ function DetailLine({
   const [first, ...rest] = server.warnings;
   // Only a line with nothing to warn about may cut off: a notice or a warning always reads whole.
   const mayClamp = !outcome && !first && server.skippedOn.length === 0 && !server.reservedName;
+  const parts: { key: string; node: ReactNode }[] = [];
+  if (server.reservedName) {
+    parts.push({
+      key: 'reserved',
+      node: (
+        <span className="text-status-warning-fg">Agents can’t use it · its name is reserved</span>
+      ),
+    });
+  }
+  if (first) {
+    parts.push({
+      key: 'warning',
+      node: (
+        <span className="text-status-warning-fg">
+          {first.note}
+          {rest.length > 0 && ` +${rest.length} more`}
+        </span>
+      ),
+    });
+  }
+  if (server.skippedOn.length > 0) {
+    parts.push({
+      key: 'skipped',
+      node: (
+        <span className="text-status-warning-fg">Not available to Codex or OpenCode agents</span>
+      ),
+    });
+  }
+  if (!server.reservedName) {
+    parts.push({ key: 'scope', node: scopeLine(server.excludedAgents, nameOf) });
+  }
   return (
     <span className={cn('text-muted-foreground text-xs', mayClamp ? 'line-clamp-2' : 'block')}>
       {outcome}
       {!server.enabled && <span className="opacity-55">Off · </span>}
-      {/* Its name is one of DorkOS's own, so no agent gets it (DOR-4262). */}
-      {server.reservedName && (
-        <span className="text-status-warning-fg">
-          Agents can’t use it · its name is reserved{' · '}
-        </span>
-      )}
-      {first && (
-        <span className="text-status-warning-fg">
-          {first.note}
-          {rest.length > 0 && ` +${rest.length} more`}
-          {' · '}
-        </span>
-      )}
-      {server.skippedOn.length > 0 && (
-        <>
-          <span className="text-status-warning-fg">Not available to Codex or OpenCode agents</span>
-          {' · '}
-        </>
-      )}
-      {scopeLine(server.excludedAgents, nameOf)}
+      {parts.map(({ key, node }, index) => (
+        <Fragment key={key}>
+          {index > 0 && ' · '}
+          {node}
+        </Fragment>
+      ))}
     </span>
   );
 }

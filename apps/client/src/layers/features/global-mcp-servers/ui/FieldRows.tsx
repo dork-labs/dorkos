@@ -23,13 +23,15 @@ interface FieldRowsProps {
   disabled?: boolean;
   /** Describes the first control when the form has a problem here. */
   describedBy?: string;
+  /** Rows whose hidden value was not kept and must be typed again, said under each (DOR-4262). */
+  retype?: ReadonlySet<string>;
 }
 
 /**
  * Name and value rows for a server's environment or headers. A name matching the secret rule, or
  * one the person locked, takes its value in a hidden field that only a person ever fills.
  */
-export function FieldRows({ noun, rows, onChange, disabled, describedBy }: FieldRowsProps) {
+export function FieldRows({ noun, rows, onChange, disabled, describedBy, retype }: FieldRowsProps) {
   const baseId = useId();
   const update = (id: string, patch: Partial<FieldRow>) =>
     onChange(rows.map((row) => (row.id === id ? { ...row, ...patch } : row)));
@@ -39,6 +41,9 @@ export function FieldRows({ noun, rows, onChange, disabled, describedBy }: Field
       {rows.map((row, index) => {
         const secret = rowIsSecret(row);
         const label = row.name.trim() || `this ${noun}`;
+        const hintId = `${baseId}-${row.id}-retype`;
+        const askAgain =
+          secret && row.value === '' && row.name.trim() !== '' && retype?.has(row.id);
         return (
           <div
             key={row.id}
@@ -64,6 +69,7 @@ export function FieldRows({ noun, rows, onChange, disabled, describedBy }: Field
                   value={row.value}
                   onChange={(event) => update(row.id, { value: event.target.value })}
                   aria-label={`Value of ${label}`}
+                  aria-describedby={askAgain ? hintId : undefined}
                   // A browser ignores "off" on a password field and offers to save it.
                   autoComplete="new-password"
                   spellCheck={false}
@@ -100,6 +106,14 @@ export function FieldRows({ noun, rows, onChange, disabled, describedBy }: Field
             >
               <X className="size-(--size-icon-sm)" aria-hidden />
             </Button>
+            {askAgain && (
+              <p
+                id={hintId}
+                className="text-muted-foreground col-span-3 text-xs [overflow-wrap:anywhere] sm:col-span-4"
+              >
+                Type {row.name.trim()} again. Hidden values aren’t kept.
+              </p>
+            )}
           </div>
         );
       })}
