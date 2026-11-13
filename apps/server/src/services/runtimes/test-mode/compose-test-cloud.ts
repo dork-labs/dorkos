@@ -36,6 +36,17 @@ import { createFakeInferenceRoutes } from './fake-inference.js';
 export const TEST_MODE_DOE_REFUSAL =
   'In test mode, the DorkOS runtime runs only on DorkOS credits.';
 
+/** Block both Cloud transports for recorded demos without constructing a model client. */
+export function composeReplayCloud(): void {
+  if (!env.DORKOS_TEST_RUNTIME) throw new Error('Recorded demo needs the test runtime.');
+  // Every Cloud method uses this transport, including explicit clicks after boot.
+  const blockedFetch = async (): Promise<never> => {
+    throw new Error('Recorded demo: Cloud is off.');
+  };
+  initCloudLinkManager({ fetchImpl: blockedFetch });
+  setCloudV1Fetch(blockedFetch);
+}
+
 /**
  * The DorkOS runtime's options in test mode: a turn resolves its model only
  * when DorkOS credits pay for it, whose token the fake Cloud mints against the

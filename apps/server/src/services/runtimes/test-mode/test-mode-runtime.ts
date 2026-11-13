@@ -98,6 +98,7 @@ export class TestModeRuntime implements AgentRuntime {
   private managedMcp: ManagedMcpServerResolver | undefined;
   /** Turns running right now, per session; drives {@link isTurnOpen}. */
   private readonly openTurns = new Map<string, number>();
+  private readonly replay?: ReplaySource;
 
   /**
    * Create a test-mode runtime instance registered under `type`.
@@ -108,12 +109,10 @@ export class TestModeRuntime implements AgentRuntime {
    *   multi-runtime UI — the status-bar picker, `?runtime=` launch binding,
    *   session-list runtime marks — is testable with zero real agent binaries.
    */
-  constructor(
-    type = 'test-mode',
-    private readonly replay?: ReplaySource
-  ) {
+  constructor(type = 'test-mode', replay?: ReplaySource) {
     if (isReplayIsolated() && !replay) throw new Error('Recorded demo needs a recording.');
     this.type = type;
+    this.replay = replay;
     // Sessions must carry their owning instance's type, not a hardcoded
     // 'test-mode', so session-list marks distinguish the two instances.
     this.registry = new TestModeSessionRegistry(
