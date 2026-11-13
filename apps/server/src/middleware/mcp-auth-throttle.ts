@@ -4,6 +4,18 @@ import { honoRequestFacts, type RequestFactsEnv } from '../http/request-facts.js
 import { classifyRequest } from '../lib/request-classifier.js';
 import { currentServerRole } from '../lib/server-role.js';
 import { AUTH_REQUIRED_BODY } from '../services/core/auth/session-gate.js';
+import { MCP_KEY_REFUSAL_MESSAGE } from './mcp-auth.js';
+
+/**
+ * The one 401 a remote `/mcp` caller gets: the session gate's code, plus the
+ * next step `/a2a` names (DOR-4264). The same body for a missing, bad or
+ * throttled credential, so it still says nothing about which it was, and it
+ * names no token and no path.
+ */
+export const MCP_REMOTE_AUTH_REQUIRED_BODY = {
+  ...AUTH_REQUIRED_BODY,
+  message: MCP_KEY_REFUSAL_MESSAGE,
+} as const;
 
 /**
  * Throttle remote MCP credential guesses before either credential verifier runs.
@@ -30,16 +42,16 @@ export function buildMcpAuthThrottle(): MiddlewareHandler<RequestFactsEnv> {
     // Through the tunnel every caller has the loopback peer: key by the edge-observed client,
     // or one stranger's ten junk keys would lock the owner out too (DOR-4205).
     key: 'edge-client',
-    message: AUTH_REQUIRED_BODY,
+    message: MCP_REMOTE_AUTH_REQUIRED_BODY,
     skip,
     countsWhen: (c) => c.res.status === 401,
-    onLimited: (c) => c.json(AUTH_REQUIRED_BODY, 401),
+    onLimited: (c) => c.json(MCP_REMOTE_AUTH_REQUIRED_BODY, 401),
   });
   return async (c, next) => {
     if (skip(c)) return next();
     const response = await limiter(c, next);
     if (response) c.res = response;
     // The session gate and the MCP gate otherwise send different 401 bodies.
-    if (c.res.status === 401) c.res = c.json(AUTH_REQUIRED_BODY, 401);
+    if (c.res.status === 401) c.res = c.json(MCP_REMOTE_AUTH_REQUIRED_BODY, 401);
   };
 }

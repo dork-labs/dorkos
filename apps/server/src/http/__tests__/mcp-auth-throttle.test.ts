@@ -131,6 +131,27 @@ describe('remote /mcp bad-key throttle on the real API chain', () => {
     expect((await send({ key: VALID, peer: '198.51.100.6' })).status).toBe(200);
   });
 
+  it('names the next step in one body for a missing, bad or throttled key (DOR-4264)', async () => {
+    const send = fixture();
+    const missing = await send({ peer: '198.51.100.40' });
+    const bad = await send({ key: 'made-up-wrong-key', peer: '198.51.100.41' });
+    for (let i = 0; i < 10; i++) await send({ key: `wrong-${i}`, peer: '198.51.100.42' });
+    const throttled = await send({ key: VALID, peer: '198.51.100.42' });
+    const expected = {
+      error: 'Unauthorized',
+      code: 'AUTH_REQUIRED',
+      message:
+        'Unauthorized. Provide a valid credential as "Authorization: Bearer <token>". ' +
+        'Use your personal API key from Settings → Advanced → Tools → Connect other apps to DorkOS.',
+    };
+    for (const response of [missing, bad, throttled]) {
+      expect(response.status).toBe(401);
+      expect(await response.json()).toEqual(expected);
+    }
+    // No token value and no file path in it.
+    expect(expected.message).not.toMatch(/[/\\]|dork_|mcp-local-token/);
+  });
+
   it('gives successful requests their budget back', async () => {
     const send = fixture();
     for (let i = 0; i < 15; i++) {

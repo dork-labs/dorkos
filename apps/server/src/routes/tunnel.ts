@@ -12,6 +12,7 @@ import { honoRequestFacts } from '../http/request-facts.js';
 import { env } from '../env.js';
 import { getLocalCockpitPort } from '../lib/trusted-origins.js';
 import { tunnelManager } from '../services/core/tunnel-manager.js';
+import { TunnelPortMismatchError } from '../services/core/remote/own-tunnel-ingress.js';
 import { configManager } from '../services/core/config-manager.js';
 import { logConfigWrite } from '../services/core/operator/config-write.js';
 import {
@@ -161,6 +162,12 @@ router.post('/start', async (c) => {
 
     return c.json({ url: tunnelManager.status.url });
   } catch (err) {
+    // A TUNNEL_PORT the tunnel can't use is a setting to fix, not a fault: 409
+    // with a stable code the app and scripts can act on (DOR-4263).
+    if (err instanceof TunnelPortMismatchError) {
+      logger.warn('[Tunnel] Refused start — TUNNEL_PORT points past Remote Access');
+      return c.json({ error: err.message, code: err.code }, 409);
+    }
     // Say what went wrong somewhere a person can read it. The 500 body carries
     // one sentence; whoever is debugging raised the log level for the stack, and
     // before DOR-1738 found nothing there at all (GitHub #1458).

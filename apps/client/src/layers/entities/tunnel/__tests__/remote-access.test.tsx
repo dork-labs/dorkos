@@ -570,6 +570,29 @@ describe('a start against a tunnel that is already up converges (DOR-1738)', () 
     expect(result.current.remote.error).toBeNull();
   });
 
+  it('says a TUNNEL_PORT refusal as an error, never as a tunnel that is up (DOR-4263)', async () => {
+    const { result, transport } = setup();
+    await settled(result);
+    const sentence =
+      'Remote Access only reaches DorkOS on port 4242, not 6241. Unset TUNNEL_PORT, or point it at that port.';
+    vi.mocked(transport.startTunnel).mockRejectedValue(
+      Object.assign(new Error(sentence), {
+        status: 409,
+        code: 'TUNNEL_PORT_MISMATCH',
+        body: { error: sentence, code: 'TUNNEL_PORT_MISMATCH' },
+      })
+    );
+
+    await act(async () => {
+      await result.current.actions.start();
+    });
+
+    expect(result.current.remote.state).not.toBe('connected');
+    expect(result.current.remote.state).not.toBe('reconnecting');
+    expect(result.current.remote.error).toBe(sentence);
+    expect(getOwnerSetupRequest()).toBeNull();
+  });
+
   it('resumes the start once the owner account exists', async () => {
     // The half of the exposure guard nothing asserted: routing somebody into
     // owner setup is only useful if the thing they asked for happens

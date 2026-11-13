@@ -83,6 +83,16 @@ const NEEDS_CREDENTIAL = rpcError(
     'Use your personal API key from Settings → Advanced → Tools → Connect other apps to DorkOS.'
 );
 const AUTH_REQUIRED = { error: 'Unauthorized', code: 'AUTH_REQUIRED' };
+/**
+ * Another device's refusal at `/mcp`: the same code, plus the next step `/a2a` names, with no
+ * token and no path (DOR-4264). Written out, not imported, so the words themselves are pinned.
+ */
+const REMOTE_AUTH_REQUIRED = {
+  ...AUTH_REQUIRED,
+  message:
+    'Unauthorized. Provide a valid credential as "Authorization: Bearer <token>". ' +
+    'Use your personal API key from Settings → Advanced → Tools → Connect other apps to DorkOS.',
+};
 const NOT_ALLOWED_BY_CORS = (origin: string) => ({
   error: `This instance does not answer to pages from "${origin}". If that is how you reach DorkOS, list it in DORKOS_CORS_ORIGIN, or open DorkOS at its own address.`,
   code: 'ORIGIN_NOT_ALLOWED',
@@ -422,7 +432,7 @@ const LOGIN_OFF_CASES: readonly ContractCase[] = [
     expect: {
       status: 401,
       headers: { ...JSON_TYPE, ...NOT_COUNTED },
-      body: AUTH_REQUIRED,
+      body: REMOTE_AUTH_REQUIRED,
     },
   },
 ];
@@ -470,8 +480,9 @@ describe('contract: the /mcp endpoint, login off', () => {
           path: '/mcp',
           headers: { host: 'evil.example:4242', origin: 'http://evil.example:4242' },
           body: rpc('ping'),
-          // Another device: the session gate answers before the switch.
-          expect: { status: 401, body: AUTH_REQUIRED },
+          // Another device: the session gate answers before the switch, in the
+          // remote /mcp body that names the next step (DOR-4264).
+          expect: { status: 401, body: REMOTE_AUTH_REQUIRED },
         },
         token
       );
