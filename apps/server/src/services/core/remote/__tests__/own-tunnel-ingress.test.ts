@@ -82,20 +82,42 @@ export const DOT_SEGMENT_SPELLINGS = [
   '/x/./../.well-known/agent-card.json',
 ];
 
+/**
+ * The spellings Cloud's edge filter is tested on (Nov 11), so both filters are
+ * held to the same set: these normalise to a refused path (404) ...
+ */
+const EDGE_SPELLINGS_NOT_SERVED = ['//a2a', '/%61%32%61', '/./a2a', '/.well-known/./agent'];
+/** ... and these carry an encoded `/`, so they are not a normal path (400). */
+const EDGE_SPELLINGS_NOT_NORMAL = ['/x/..%2fa2a', '/.%2fa2a'];
+
 describe('own-tunnel ingress: normalise, then match', () => {
-  it.each(['/a2a', '/A2A/rpc', '/%61%32%61', '/.well-known/agent-card.json', '//a2a', '/./a2a'])(
-    'refuses %s with 404 and never hands it on',
-    async (target) => {
-      const { ingress, requests } = recordingIngress();
-      const port = Number(new URL(await ingress.open()).port);
-      expect(await rawStatus(port, target)).toBe(404);
-      expect(requests).toHaveLength(0);
-    }
-  );
+  it.each([
+    '/a2a',
+    '/A2A/rpc',
+    '/a2a/agents/x/card',
+    '/%61%32%61',
+    '/.well-known/agent-card.json',
+    '/.well-known/agent.json?x=1',
+    ...EDGE_SPELLINGS_NOT_SERVED,
+  ])('refuses %s with 404 and never hands it on', async (target) => {
+    const { ingress, requests } = recordingIngress();
+    const port = Number(new URL(await ingress.open()).port);
+    expect(await rawStatus(port, target)).toBe(404);
+    expect(requests).toHaveLength(0);
+  });
+
+  it('refuses a target that is not a plain path with 400', async () => {
+    const { ingress, requests } = recordingIngress();
+    const port = Number(new URL(await ingress.open()).port);
+    expect(await rawStatus(port, 'http://abc.ngrok.app/a2a')).toBe(400);
+    expect(await rawStatus(port, '/a2a#x')).toBe(400);
+    expect(requests).toHaveLength(0);
+  });
 
   it.each([
     ...DOT_SEGMENT_SPELLINGS,
     ...RETIRED_ENCODED_PATHS,
+    ...EDGE_SPELLINGS_NOT_NORMAL,
     '/x/%252e%252e/a2a',
     '/x\\..\\a2a',
     '/api/x%5c..%5ca2a',
@@ -115,15 +137,23 @@ describe('own-tunnel ingress: normalise, then match', () => {
     expect(upgrades).toHaveLength(0);
   });
 
-  it.each(['/', '/api/health', '/sw.js', '/mcp', '/api/connectors/webhooks/cpi_abc'])(
-    'still hands %s to the front door',
-    async (target) => {
-      const { ingress, requests } = recordingIngress();
-      const port = Number(new URL(await ingress.open()).port);
-      expect(await rawStatus(port, target)).toBe(200);
-      expect(requests).toHaveLength(1);
-    }
-  );
+  it.each([
+    '/',
+    '/api/health',
+    '/sw.js',
+    '/manifest.webmanifest',
+    '/.well-known/security.txt',
+    // Open until Security rules otherwise: outside services reach this computer only here.
+    '/api/connectors/webhooks/cpi_abc',
+    '/api/relay/webhooks/made-up',
+    // Key-only from another device (mcp-auth), as the docs offer.
+    '/mcp',
+  ])('still hands the app’s own %s to the front door', async (target) => {
+    const { ingress, requests } = recordingIngress();
+    const port = Number(new URL(await ingress.open()).port);
+    expect(await rawStatus(port, target)).toBe(200);
+    expect(requests).toHaveLength(1);
+  });
 });
 
 describe('own-tunnel ingress: the app’s own routes (DOR-4212)', () => {

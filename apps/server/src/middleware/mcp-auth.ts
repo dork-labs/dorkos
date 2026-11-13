@@ -142,11 +142,13 @@ export async function decideMcpAuth(
   // `seedLegacyMcpApiKey` stores that exact value AS a Better Auth key, so
   // there it is a real per-user credential acceptor 2 must still resolve.
   //
-  // On the Wi-Fi route only a bearer key counts (DOR-2969): a Wi-Fi sign-in's
-  // cookie never stands for an agent tool here, whatever bearer rides with it.
+  // From any other device only a bearer key counts: the Wi-Fi (DOR-2969), the
+  // own tunnel, managed access and a forwarding proxy (DOR-3650). A sign-in's
+  // cookie never stands for an agent tool there, whatever bearer rides with it;
+  // only a person at this computer's cookie does.
   const identity = await verifyRequestAuth(request, {
     ...(bearerIsLocalToken ? { bearerIsNotAnApiKey: true } : {}),
-    ...(requestSessionRoute(request) === 'wifi' ? { ignoreSessionCookie: true } : {}),
+    ...(requestSessionRoute(request) !== 'local' ? { ignoreSessionCookie: true } : {}),
   });
   // Recorded, not just accepted. A capability that acts on somebody's own
   // data has to know WHICH person is asking, and this is the only place on
@@ -187,6 +189,8 @@ export type McpAuthEnv = RequestBodyEnv & {
     mcpLocalToken?: boolean;
   };
 };
+/** A query parameter that looks like a credential: refused on /mcp and /a2a (DOR-3650). */
+const KEY_IN_QUERY = /key|token|secret|auth|password|bearer/i;
 
 /**
  * The credential check as Hono middleware, for `/mcp` and the A2A gateway. It
@@ -198,6 +202,12 @@ export type McpAuthEnv = RequestBodyEnv & {
  */
 export function honoMcpAuth(surface: McpAuthSurface): MiddlewareHandler<McpAuthEnv> {
   return async (c, next) => {
+    // A key goes in a header, never the address (Security on DOR-3650): an
+    // address lands in tunnel and proxy logs. A call carrying one is refused
+    // before any key is looked at.
+    if (Object.keys(c.req.queries()).some((name) => KEY_IN_QUERY.test(name))) {
+      return c.json(unauthorizedBody(surface, false), 401);
+    }
     const decision = await decideMcpAuth(surface, {
       method: c.req.method,
       headers: c.env.incoming.headers,

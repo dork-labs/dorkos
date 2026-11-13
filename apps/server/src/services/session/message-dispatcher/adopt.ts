@@ -216,6 +216,12 @@ export function adoptAcceptedPrivateMessages(opts: AdoptQueuedMessagesOpts): num
       turn: {
         ...(opts.cwd !== undefined ? { cwd: opts.cwd } : {}),
         privateReceiptId: receipt.id,
+        // An outside service's event (a signed webhook, reachable over a
+        // tunnel) starts this turn, so it carries the outsider mark, never a
+        // person's (DOR-3650, Security's condition 4). The mark lowers nothing.
+        ...(receipt.sourceKind === 'connector_event'
+          ? { carriedMarks: { outsider: true as const } }
+          : {}),
         ...(opts.privateDispatchSignal
           ? { privateDispatchSignal: opts.privateDispatchSignal }
           : {}),

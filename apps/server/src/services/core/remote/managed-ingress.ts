@@ -30,7 +30,7 @@
 import http, { type IncomingMessage, type ServerResponse } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import type { Duplex } from 'node:stream';
-import type { RemoteEdgeProof } from '@dork-labs/cloud-api';
+import { REMOTE_REFUSED_PATHS, type RemoteEdgeProof } from '@dork-labs/cloud-api';
 import { parseHostname } from '../../../lib/trusted-origins.js';
 import { logger } from '../../../lib/logger.js';
 import {
@@ -118,10 +118,13 @@ export interface ManagedIngress {
 
 /**
  * Whether a request target is plain origin-form (`/path?query`), the only shape
- * the managed edge forwards. Anything else — absolute-form
+ * a remote listener forwards. Anything else — absolute-form
  * (`http://host/path`), asterisk-form, or a target carrying a `#` — is refused,
  * because Express's router used to route it by a pathname this check never saw:
- * `parseurl` read `http://h/a2a` and `/a2a#x` both as `/a2a`.
+ * `parseurl` read `http://h/a2a` and `/a2a#x` both as `/a2a`. Shared with the
+ * own-tunnel ingress (DOR-3650).
+ *
+ * @param target - The raw request target.
  */
 export function isOriginForm(target: string): boolean {
   return target.startsWith('/') && !target.includes('#');
@@ -133,7 +136,7 @@ export type RemotePathVerdict = 'serve' | 'not-served' | 'not-normal';
 /**
  * Decide a target for a remote listener, managed access or the own tunnel:
  * normalise it once, then match the paths never served remotely (the A2A
- * gateway and its agent cards, until DOR-2085 decides otherwise).
+ * gateway and its agent cards, until DOR-2085 decides otherwise; DOR-3650).
  *
  * The router resolves dot segments (WHATWG, `@hono/node-server` builds the URL
  * with `new URL`), so `/x/../a2a` is routed as `/a2a`. Rather than guess how
@@ -142,6 +145,13 @@ export type RemotePathVerdict = 'serve' | 'not-served' | 'not-normal';
  * `not-normal`; so is one that does not decode. What remains is collapsed
  * (`/./` dropped, `//` joined) and lower-cased, since the old Express router
  * matched without regard to case, and only then compared.
+ *
+ * The list is `REMOTE_REFUSED_PATHS` from `@dork-labs/cloud-api`, so any edge in
+ * front of this server refuses the same paths. Deliberately not on it: the
+ * webhook ingress (`/api/connectors/webhooks/`, signature-checked, the only way
+ * an outside service reaches a DorkOS on this computer), relay webhooks
+ * (`/api/relay/webhooks/`, behind the gate and HMAC), and `/mcp`, which takes an
+ * API key from another device and never a sign-in cookie (`middleware/mcp-auth.ts`).
  *
  * @param target - An origin-form request target (see {@link isOriginForm}).
  */
@@ -165,8 +175,9 @@ export function remotePathVerdict(target: string): RemotePathVerdict {
     .replace(/\/\.(?=\/|$)/g, '')
     .replace(/\/{2,}/g, '/')
     .toLowerCase();
-  const refused =
-    path === '/a2a' || path.startsWith('/a2a/') || path.startsWith('/.well-known/agent');
+  const refused = REMOTE_REFUSED_PATHS.some((entry) =>
+    'exact' in entry ? path === entry.exact : path.startsWith(entry.prefix)
+  );
   return refused ? 'not-served' : 'serve';
 }
 

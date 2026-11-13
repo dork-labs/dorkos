@@ -250,8 +250,17 @@ export class TunnelManager extends EventEmitter {
       throw new Error('DorkOS remote access is open. Close it first.');
     if (epoch !== this.byoEpoch) throw new Error('The tunnel was closed while it was opening.');
 
+    // A tunnel aimed past the ingress would skip its mark and its path checks,
+    // so it is refused rather than opened unguarded (DOR-3650).
+    const own = this.ownTunnelIngress;
+    if (own && !own.fronts(config.port)) {
+      throw new Error(
+        `Remote Access only reaches DorkOS on port ${own.frontedPort}, not ${config.port}. ` +
+          'Unset TUNNEL_PORT, or point it at that port.'
+      );
+    }
     const ngrok = await import('@ngrok/ngrok');
-    const ingress = this.ownTunnelIngress?.fronts(config.port) ? this.ownTunnelIngress : null;
+    const ingress = own?.fronts(config.port) ? own : null;
     let listener: ByoListener;
     try {
       const addr = ingress ? await ingress.open() : config.port;

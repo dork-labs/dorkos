@@ -10,6 +10,16 @@
  * bytes that arrived, and nothing about a refused event is logged or recorded
  * as a person.
  *
+ * **Reachable over a tunnel, on purpose (Security's ruling, DOR-3650).** An
+ * outside service can reach DorkOS on this computer only through the tunnel, so
+ * this route stays open there on four conditions, each pinned by a test in
+ * `__tests__/connector-event-ingress.test.ts`: the signature (with its
+ * timestamp window) is checked before anything is kept or woken, and a bad,
+ * stale or unknown request gets the one flat 401; the id must be a plain id, so
+ * no path rides it into another surface; nothing here reads a sign-in, so a
+ * cookie never counts as the person; and a turn an event starts carries the
+ * outsider mark (`session/message-dispatcher/adopt.ts`).
+ *
  * The bytes are read by `body-parser`'s raw reader on the Node request, the
  * reader `express.raw` is, so the ceiling, the early refusal of a declared
  * length over it, a length that does not match, and an aborted upload all
@@ -39,6 +49,9 @@ export interface ConnectorSignedIngress {
     event: ConnectorVerifiedEvent
   ): Promise<'accepted' | 'rejected' | 'unavailable'>;
 }
+
+/** A provider instance id this route serves: no `/`, `\`, `%` or spaces, so it can carry no path. */
+const SAFE_PROVIDER_ID = /^[A-Za-z0-9_.:-]{1,256}$/;
 
 /** The Node request once the raw reader has run: `body` is the bytes, or unset. */
 type ReadRequest = IncomingMessage & { body?: unknown };
@@ -104,12 +117,24 @@ export function mountConnectorSignedIngress(
     const id = headers['webhook-id'];
     const timestamp = headers['webhook-timestamp'];
     const signature = headers['webhook-signature'];
-    if (typeof id !== 'string' || typeof timestamp !== 'string' || typeof signature !== 'string') {
+    // Open over a tunnel on Security's conditions (DOR-3650): the exact route
+    // only, so an id never carries a path (`..%2f..%2fmcp`), and an unknown id
+    // answers exactly like a bad signature, so nobody can probe which exist.
+    if (
+      typeof id !== 'string' ||
+      typeof timestamp !== 'string' ||
+      typeof signature !== 'string' ||
+      !SAFE_PROVIDER_ID.test(providerInstanceId) ||
+      providerInstanceId.includes('..')
+    ) {
       return c.json({ error: 'INVALID_EVENT_SIGNATURE' }, 401);
     }
     try {
       const verifier = ingress.verifier(providerInstanceId);
-      if (!verifier) return c.json({ error: 'EVENTS_UNAVAILABLE' }, 503);
+      if (!verifier) {
+        incoming.body = undefined;
+        return c.json({ error: 'INVALID_EVENT_SIGNATURE' }, 401);
+      }
       const verified = await verifier.verifyWebhook({
         rawBody,
         webhookId: id,

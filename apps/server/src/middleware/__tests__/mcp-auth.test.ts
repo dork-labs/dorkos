@@ -81,6 +81,8 @@ interface Request {
   body?: unknown;
   method: string;
   from?: Origin;
+  /** The request path and query; `/` by default. */
+  path?: string;
 }
 
 /** What the check decided, as a case reads it. */
@@ -125,7 +127,11 @@ function authFor(surface: McpAuthSurface) {
       socket: { remoteAddress: from.peerAddress },
     } as unknown as IncomingMessage;
     if (from.ingress) markIngress(incoming, from.ingress);
-    const answer = await app.request('/', { method: req.method, headers }, { incoming });
+    const answer = await app.request(
+      req.path ?? '/',
+      { method: req.method, headers },
+      { incoming }
+    );
     if (answer.status !== 204) {
       res.statusCode = answer.status;
       res.body = await answer.json();
@@ -752,6 +758,63 @@ describe('honoMcpAuth — another device needs a key even with the password off'
     );
     expect(next).toHaveBeenCalled();
     expect(res.locals.user).toEqual({ userId: 'owner-1', credential: 'api-key' });
+  });
+
+  it.each([
+    ['the own tunnel', OWN_TUNNEL],
+    ['managed remote access', { ...THIS_COMPUTER, ingress: 'managed' } as Origin],
+    ['a phone on the Wi-Fi', WIFI],
+    ['a forwarding proxy', FORWARDED],
+  ])(
+    'never takes a sign-in cookie from %s, on /mcp or /a2a: only a key (DOR-3650)',
+    async (_where, from) => {
+      mockConfig({ authEnabled: false });
+      for (const auth of [mcpAuth, a2aAuth]) {
+        vi.mocked(verifyRequestAuth).mockClear();
+        await auth(
+          createMockReq({ authHeader: 'Bearer user-key', body: rpc('tools/list'), from }),
+          createMockRes(),
+          vi.fn() as NextFunction
+        );
+        expect(verifyRequestAuth).toHaveBeenCalledWith(
+          expect.anything(),
+          expect.objectContaining({ ignoreSessionCookie: true })
+        );
+      }
+    }
+  );
+
+  it.each(['/?key=k', '/?api_key=k', '/?token=k', '/?x=1&Authorization=k'])(
+    'refuses a key in the address %s, so it never lands in a tunnel log (DOR-3650)',
+    async (path) => {
+      mockConfig({ authEnabled: false });
+      vi.mocked(verifyRequestAuth).mockResolvedValue({ userId: 'owner-1', credential: 'api-key' });
+      const next = vi.fn() as NextFunction;
+      const res = createMockRes();
+      for (const auth of [mcpAuth, a2aAuth]) {
+        await auth(
+          { ...createMockReq({ authHeader: 'Bearer user-key', from: OWN_TUNNEL }), path },
+          res,
+          next
+        );
+        expect(res.statusCode).toBe(401);
+      }
+      expect(next).not.toHaveBeenCalled();
+    }
+  );
+
+  it('still reads a sign-in cookie at this computer', async () => {
+    mockConfig({ authEnabled: true });
+    vi.mocked(verifyRequestAuth).mockClear();
+    await mcpAuth(
+      createMockReq({ body: rpc('tools/list') }),
+      createMockRes(),
+      vi.fn() as NextFunction
+    );
+    expect(verifyRequestAuth).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.not.objectContaining({ ignoreSessionCookie: true })
+    );
   });
 
   it('names the personal key, not the local token file, in the 401 to another device', async () => {

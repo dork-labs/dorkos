@@ -37,6 +37,7 @@ import type { AdapterManager } from '../services/relay/adapter-manager.js';
 import { MainRequestAdmission } from '../services/core/lifecycle/main-request-admission.js';
 import { initConfigManager, configManager } from '../services/core/config-manager.js';
 import { initAuth } from '../services/core/auth/index.js';
+import { currentAuditActor } from '../services/audit/audit-context.js';
 
 // Real app middleware, receiver, registry-started adapter and cryptography.
 // Only the downstream publisher and manager's lookup facade are test doubles;
@@ -197,19 +198,19 @@ describe('signed Relay JSON through the finalized application', () => {
     const headers = signed(malformed);
     const response = await send(malformed, headers);
     expect(response.status).toBe(401);
-    expect(response.body).toEqual({ error: 'Publish failed' });
+    expect(response.body).toEqual({ error: 'INVALID_SIGNATURE' });
     expect(inbound).toHaveBeenCalledTimes(1);
     expect(publish).toHaveBeenCalledTimes(0);
     const replay = await send(EXACT, signed(EXACT, headers['X-Nonce']));
     expect(replay.status).toBe(401);
-    expect(replay.body).toEqual({ error: 'Nonce already seen (replay)' });
+    expect(replay.body).toEqual({ error: 'INVALID_SIGNATURE' });
     expect(inbound).toHaveBeenCalledTimes(2);
     expect(publish).toHaveBeenCalledTimes(0);
 
     const invalid = { ...signed(malformed), 'X-Signature': '0'.repeat(64) };
     const rejected = await send(malformed, invalid);
     expect(rejected.status).toBe(401);
-    expect(rejected.body).toEqual({ error: 'Invalid signature' });
+    expect(rejected.body).toEqual({ error: 'INVALID_SIGNATURE' });
     expect(inbound).toHaveBeenCalledTimes(3);
     const control = await send(EXACT, signed(EXACT, invalid['X-Nonce']));
     expect(control.status).toBe(200);
@@ -249,7 +250,7 @@ describe('signed Relay JSON through the finalized application', () => {
       }
       const rejected = await send(body, headers);
       expect(rejected.status).toBe(401);
-      expect(rejected.body).toEqual({ error: 'Invalid signature' });
+      expect(rejected.body).toEqual({ error: 'INVALID_SIGNATURE' });
       expect(inbound).toHaveBeenCalledTimes(1);
       expect(publish).toHaveBeenCalledTimes(0);
       const control = await send(EXACT, signed(EXACT, headers['X-Nonce']));
@@ -264,7 +265,7 @@ describe('signed Relay JSON through the finalized application', () => {
     expect((await send(EXACT, headers)).status).toBe(200);
     const replay = await send(EXACT, headers);
     expect(replay.status).toBe(401);
-    expect(replay.body).toEqual({ error: 'Nonce already seen (replay)' });
+    expect(replay.body).toEqual({ error: 'INVALID_SIGNATURE' });
     expect(inbound).toHaveBeenCalledTimes(2);
     expect(publish).toHaveBeenCalledTimes(1);
   });
@@ -367,6 +368,58 @@ describe('signed Relay JSON through the finalized application', () => {
     expect(publish).toHaveBeenCalledTimes(1);
   });
 
+  it('a sign-in cookie never makes the caller the person, even when it opens the gate (DOR-3650)', async () => {
+    configManager.set('auth', { enabled: true });
+    const origin = `http://localhost:${env.DORKOS_PORT}`;
+    // The one account an install allows; an earlier case may have made it already.
+    const email = 'fixture' + '@' + 'dork.test';
+    const password = 'fixture-password-not-an-operator-credential';
+    await request(target.server)
+      .post('/api/auth/sign-up/email')
+      .set('Origin', origin)
+      .send({ email, password, name: 'Fixture owner' });
+    const signin = await request(target.server)
+      .post('/api/auth/sign-in/email')
+      .set('Origin', origin)
+      .send({ email, password });
+    const kinds: Array<string | undefined> = [];
+    const real = WebhookAdapter.prototype.handleInbound.bind(adapter);
+    inbound.mockImplementation(async (body, headers) => {
+      kinds.push(currentAuditActor()?.actor.kind);
+      return real(body, headers);
+    });
+    const accepted = await request(target.server)
+      .post(URL)
+      .set('Content-Type', 'application/json')
+      .set(signed())
+      .set('Cookie', signin.headers['set-cookie'] ?? [])
+      .send(EXACT.toString('utf8'));
+    expect(accepted.status).toBe(200);
+    expect(kinds).toHaveLength(1);
+    expect(kinds[0]).not.toBe('person');
+  });
+
+  it.each([
+    ['a bad signature', { 'X-Signature': 'forged' }],
+    ['a stale timestamp', { 'X-Timestamp': String(Math.floor(Date.now() / 1000) - 3600) }],
+    ['a missing nonce', { 'X-Nonce': '' }],
+  ])('answers %s with the one flat 401 (DOR-3650)', async (_what, override) => {
+    const result = await send(EXACT, { ...signed(), ...override } as ReturnType<typeof signed>);
+    expect(result.status).toBe(401);
+    expect(result.body).toEqual({ error: 'INVALID_SIGNATURE' });
+    expect(publish).toHaveBeenCalledTimes(0);
+  });
+
+  it('answers an unknown webhook connection exactly like a bad signature (DOR-3650)', async () => {
+    const result = await request(target.server)
+      .post('/api/relay/webhooks/no-such-connection')
+      .set('Content-Type', 'application/json')
+      .set(signed())
+      .send(EXACT.toString('utf8'));
+    expect(result.status).toBe(401);
+    expect(result.body).toEqual({ error: 'INVALID_SIGNATURE' });
+  });
+
   it.each(['host', 'origin', 'admission'] as const)(
     'preserves the %s refusal ahead of adapter verification',
     async (gate) => {
@@ -405,7 +458,7 @@ describe('signed Relay JSON through the finalized application', () => {
     const empty = Buffer.alloc(0);
     const typed = await send(empty);
     expect(typed.status).toBe(401);
-    expect(typed.body).toEqual({ error: 'Publish failed' });
+    expect(typed.body).toEqual({ error: 'INVALID_SIGNATURE' });
     expect(inbound).toHaveBeenCalledTimes(1);
     expect(inbound.mock.calls[0]![0]).toEqual(empty);
     const untyped = await request(target.server).post(URL).set(signed(empty));

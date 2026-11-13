@@ -143,6 +143,15 @@ dorkos --tunnel
 With `TUNNEL_AUTH` set, anyone accessing the tunnel URL is prompted for those credentials by ngrok
 before reaching DorkOS's own sign-in screen.
 
+### What other devices can reach
+
+Remote Access is for using the app from your phone or another computer. Some addresses other programs use are limited:
+
+- **Agent-to-agent (A2A).** Closed. The `/a2a` address and its agent cards aren't served to another device, with or without a key. Use A2A from this computer only.
+- **MCP.** Key only. An MCP client on another device can use `/mcp` with a personal API key, sent in the `Authorization` header. A key put in the address itself (`?key=…`) is refused, because addresses end up in logs. Signing in to the app on that device doesn't count.
+- **Webhooks.** Webhooks from connected apps and from webhook connections stay reachable, because the tunnel is the only way an outside service can reach DorkOS on this computer. Each one is checked against its signature before anything happens. A request that fails the check gets one plain refusal, and it never counts as you.
+- **Agents.** Agents can't read the tunnel's public address.
+
 ## Troubleshooting
 
 <Callout type="warn">
@@ -177,8 +186,9 @@ Everything below is background for the curious. You don't need it to set up or u
     },
     TUNNEL_PORT: {
       type: 'number',
-      description: 'Local port to tunnel to',
-      default: '4241 (dev) / DORKOS_PORT (production)',
+      description:
+        "Local port to tunnel to. It must be DorkOS's own port (DORKOS_PORT): DorkOS refuses to open a tunnel to any other port, because that would skip its checks.",
+      default: 'DORKOS_PORT',
     },
     TUNNEL_AUTH: {
       type: 'string',
@@ -297,6 +307,8 @@ Contributors working on DorkOS itself can run the tunnel against the dev server:
 ```bash
 pnpm --filter=@dorkos/server run dev:tunnel
 ```
+
+The tunnel only opens to DorkOS's own port. In development the app is served by the Vite dev server on another port, so set `TUNNEL_PORT` to the server's port. The tunnel then reaches the API, but not the app's pages.
 
 ## Next Steps
 

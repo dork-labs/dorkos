@@ -19,10 +19,9 @@
  * difference from the managed ingress (`managed-ingress.ts`), which runs the
  * edge-proof and host checks first.
  *
- * It fronts only the main server's own port. In development the app is served
- * by the Vite server, which the front door does not serve, so a tunnel aimed
- * there (or at an operator's `TUNNEL_PORT`) forwards directly, as before; its
- * requests still classify as another device by the `X-Forwarded-For` ngrok adds.
+ * It fronts only the main server's own port. A tunnel aimed anywhere else (the
+ * Vite dev server, or an operator's `TUNNEL_PORT`) would skip this listener's
+ * mark and path checks, so `TunnelManager` refuses to open one (DOR-3650).
  *
  * @module services/core/remote/own-tunnel-ingress
  */
@@ -44,6 +43,8 @@ export interface OwnTunnelIngressOptions {
 
 /** The own-tunnel ingress listener. One per process; owned by `TunnelManager`. */
 export interface OwnTunnelIngress {
+  /** The main server's port, the only one an own tunnel may be aimed at. */
+  readonly frontedPort: number;
   /**
    * Whether a tunnel aimed at `port` should forward here instead: true only for
    * the main server's own port, the one whose front door this hands to.
@@ -142,6 +143,7 @@ export function createOwnTunnelIngress(options: OwnTunnelIngressOptions): OwnTun
   }
 
   return {
+    frontedPort: options.frontedPort,
     fronts(port) {
       return options.frontedPort === port;
     },

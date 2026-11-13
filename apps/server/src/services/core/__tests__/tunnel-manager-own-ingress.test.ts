@@ -19,6 +19,7 @@ const { TunnelManager } = await import('../tunnel-manager.js');
 /** A fake own-tunnel ingress fronting port 4242, recording opens and closes. */
 function fakeIngress() {
   return {
+    frontedPort: 4242,
     fronts: vi.fn((port: number) => port === 4242),
     open: vi.fn(async () => 'http://127.0.0.1:50123'),
     close: vi.fn(async () => undefined),
@@ -51,12 +52,16 @@ describe('TunnelManager and the own-tunnel ingress', () => {
     expect(manager.status.port).toBe(4242);
   });
 
-  // Purpose: in development the app is on the Vite port, which the front door
-  // does not serve, so the tunnel must keep forwarding there directly.
-  it('forwards directly when the tunnel targets another port', async () => {
-    await manager.start({ port: 6241 });
+  // Purpose (DOR-3650): a tunnel aimed anywhere but the main port would skip
+  // the ingress's mark and path checks, so it is refused, with the reason, and
+  // nothing is published.
+  it('refuses a tunnel aimed at another port, and says why', async () => {
+    await expect(manager.start({ port: 6241 })).rejects.toThrow(
+      'Remote Access only reaches DorkOS on port 4242, not 6241'
+    );
     expect(ingress.open).not.toHaveBeenCalled();
-    expect(forward).toHaveBeenCalledWith(expect.objectContaining({ addr: 6241 }));
+    expect(forward).not.toHaveBeenCalled();
+    expect(manager.isRunning).toBe(false);
   });
 
   // Purpose: stopping the tunnel must leave no loopback listener behind.

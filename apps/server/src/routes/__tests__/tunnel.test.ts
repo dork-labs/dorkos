@@ -575,6 +575,20 @@ describe('Tunnel Route', () => {
   });
 
   describe('GET /api/tunnel/status', () => {
+    it('answers a person only: an agent never reads the public address (DOR-3650)', async () => {
+      (tunnelManager as unknown as Record<string, unknown>).status = {
+        ...defaultTunnelStatus,
+        enabled: true,
+        connected: true,
+        url: 'https://made-up.ngrok.io',
+      };
+      for (const path of ['/api/tunnel/status', '/api/tunnel/stream']) {
+        const res = await request(server).get(path).set('x-dorkos-agent', 'agent-token');
+        expect(res.status).toBe(403);
+        expect(JSON.stringify(res.body)).not.toContain('made-up.ngrok.io');
+      }
+    });
+
     it('returns current tunnel status', async () => {
       (tunnelManager as unknown as Record<string, unknown>).status = {
         ...defaultTunnelStatus,
