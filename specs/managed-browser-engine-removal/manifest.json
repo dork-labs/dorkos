@@ -1,0 +1,9 @@
+{
+  "id": "261113-215635",
+  "slug": "managed-browser-engine-removal",
+  "title": "Delete the parked managed browser engine",
+  "created": "2026-11-13",
+  "status": "draft",
+  "project": "After launch: agent browser profiles and global MCP polish",
+  "linearIssue": "DOR-4284"
+}

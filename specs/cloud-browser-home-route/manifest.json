@@ -1,0 +1,9 @@
+{
+  "id": "261113-215634",
+  "slug": "cloud-browser-home-route",
+  "title": "A cloud agent's browser can go out through your home connection (opt-in)",
+  "created": "2026-11-13",
+  "status": "draft",
+  "project": "After launch: agent browser profiles and global MCP polish",
+  "linearIssue": "DOR-4290"
+}
