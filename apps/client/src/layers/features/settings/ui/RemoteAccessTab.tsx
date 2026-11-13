@@ -1,8 +1,11 @@
 import { useTunnelMachine } from '../model/use-tunnel-machine';
 import { useTunnelActions } from '../model/use-tunnel-actions';
+import { useLanAccess } from '../model/use-lan-access';
+import { useRemoteAccessSwitch } from '../model/use-remote-access-switch';
 import { Separator } from '@/layers/shared/ui';
 import { TunnelPanel } from './TunnelPanel';
 import { LanAccessSection } from './lan-access/LanAccessSection';
+import { RemoteAccessSwitch } from './remote-access/RemoteAccessSwitch';
 
 /**
  * Remote Access as a settings tab — reach this DorkOS from your phone or any
@@ -26,18 +29,40 @@ import { LanAccessSection } from './lan-access/LanAccessSection';
 export function RemoteAccessTab() {
   const machine = useTunnelMachine({ open: true });
   const actions = useTunnelActions({ machine });
+  const remote = useRemoteAccessSwitch();
+  const lan = useLanAccess();
 
-  // Nothing above the panel: it opens with an illustration and one sentence
-  // saying what remote access is, and the dialog's own status dot went with the
-  // dialog. A line here would be the third phrasing of the same idea on one
-  // screen.
-  // Wi-Fi access sits under it: another way in, for devices on the same
+  // Turning it on needs nothing more, unless no way in is set up yet: then the
+  // existing tunnel setup opens, as "Get started" would.
+  const handleChange = async (enabled: boolean) => {
+    const taken = await remote.setEnabled(enabled);
+    const nothingSetUp = machine.viewState === 'landing' && !lan.status?.enabled;
+    if (taken && enabled && nothingSetUp) machine.setShowSetup(true);
+  };
+
+  // The switch sits on top and closes every way in at once (DOR-3650). While it
+  // is off the ways in below are hidden: none of them can let a device in.
+  // Wi-Fi access sits under the tunnel: another way in, for devices on the same
   // network, that needs no tunnel (DOR-2930).
+  // Nothing until the config is read, so the switch never shows a guess.
+  if (remote.enabled === undefined) return null;
+
   return (
     <div className="space-y-4">
-      <TunnelPanel machine={machine} actions={actions} />
-      <Separator />
-      <LanAccessSection />
+      <RemoteAccessSwitch
+        enabled={remote.enabled}
+        busy={remote.busy}
+        error={remote.error}
+        onChange={(enabled) => void handleChange(enabled)}
+      />
+      {remote.enabled && (
+        <>
+          <Separator />
+          <TunnelPanel machine={machine} actions={actions} />
+          <Separator />
+          <LanAccessSection />
+        </>
+      )}
     </div>
   );
 }

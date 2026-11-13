@@ -6,10 +6,14 @@
  */
 import { describe, expect, it } from 'vitest';
 import { OPERATOR_ONLY_CONFIG_PATHS } from '../config-write-policy.js';
+import type { ConfigWriteAuthority } from '../config-write.js';
 import {
   patchOnlyTightens,
+  PERSON_TURNS_ON_ONLY_CODE,
   personSettingsRaised,
+  refuseAgentRaises,
   SAFEST_VALUES,
+  unattendedConfigAuthority,
 } from '../operator-only-tightening.js';
 
 describe('the strictest values', () => {
@@ -44,5 +48,45 @@ describe('personSettingsRaised', () => {
       '`tunnel.domain` (Reach & secrets)',
     ]);
     expect(personSettingsRaised({ tunnel: { enabled: false } })).toEqual([]);
+  });
+});
+
+describe('remote access through an agent (DOR-3650)', () => {
+  const allowAll: ConfigWriteAuthority = { refuseOperatorOnly: () => undefined };
+
+  it('lets an agent turn it off on its own at Full', () => {
+    const patch = { remoteAccess: { enabled: false } };
+    expect(patchOnlyTightens(patch)).toBe(true);
+    const authority = refuseAgentRaises(
+      unattendedConfigAuthority(patch, { via: 'permission', source: 'floor' }),
+      patch
+    );
+    expect(authority.refuseOperatorOnly(['remoteAccess.enabled'])).toBeUndefined();
+  });
+
+  it('never lets an agent turn it on, even with a person yes on a card', () => {
+    const patch = { remoteAccess: { enabled: true } };
+    const refusal = refuseAgentRaises(allowAll, patch).refuseOperatorOnly(['remoteAccess.enabled']);
+    expect(refusal).toMatchObject({
+      status: 403,
+      code: PERSON_TURNS_ON_ONLY_CODE,
+      paths: ['remoteAccess.enabled'],
+    });
+  });
+
+  it('leaves every other setting to the authority it wraps', () => {
+    const patch = { tunnel: { enabled: true } };
+    expect(refuseAgentRaises(allowAll, patch).refuseOperatorOnly(['tunnel.enabled'])).toBe(
+      undefined
+    );
+  });
+
+  it('refuses a raise without an approval through the tool authority', () => {
+    const patch = { remoteAccess: { enabled: true } };
+    expect(
+      refuseAgentRaises(unattendedConfigAuthority(patch, undefined), patch).refuseOperatorOnly([
+        'remoteAccess.enabled',
+      ])
+    ).toMatchObject({ status: 403 });
   });
 });

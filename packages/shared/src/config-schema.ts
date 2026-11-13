@@ -69,6 +69,7 @@ import {
   HeartbeatsConfigSchema,
   KeepAwakeConfigSchema,
   NetworkConfigSchema,
+  RemoteAccessConfigSchema,
   ServerConfigSchema,
 } from './config-sections.js';
 import { CredentialReferenceSchema } from './credential-reference.js';
@@ -773,6 +774,8 @@ export const UserConfigSchema = z.object({
   activity: ActivityConfigSchema,
   /** Company certificates the desktop app trusts (`config-sections.ts`). */
   network: NetworkConfigSchema,
+  /** Whether other devices may reach DorkOS at all (`config-sections.ts`, DOR-3650). */
+  remoteAccess: RemoteAccessConfigSchema,
   mesh: z
     .object({
       scanRoots: z.array(z.string()).default(() => []),

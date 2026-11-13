@@ -10,6 +10,7 @@ import {
 } from '../services/core/auth/sessions/wifi-raise-guard.js';
 import { tunnelManager } from '../services/core/tunnel-manager.js';
 import { resolveTunnelSettings } from '../services/core/config/tunnel-settings.js';
+import { remoteAccessOn } from '../middleware/remote-access-switch.js';
 import { getLocalCockpitPort, getOwnServingOrigins } from '../lib/trusted-origins.js';
 import { resolveClaudeCliPath } from '../services/runtimes/claude-code/sdk/sdk-utils.js';
 import { describeClaudeCodeAccounts } from '../services/runtimes/claude-code/claude-config-dir.js';
@@ -223,6 +224,9 @@ router.get('/', async (c) => {
       // the same pair `tasks` and `relay` report below, for the same reason.
       enabledInConfig: storedTunnel?.enabled ?? false,
     },
+    // The Remote Access switch (DOR-3650). Read per request by the chain, so
+    // what the setting says is what is in force.
+    remoteAccess: { enabled: remoteAccessOn() },
     // `enabled` is what is RUNNING; `enabledInConfig` is what the setting says.
     // They are two different facts because `index.ts` reads these flags once, at
     // boot, so a setting changed while the server is up does not move `enabled`

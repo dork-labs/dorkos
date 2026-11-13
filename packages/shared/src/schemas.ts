@@ -5018,6 +5018,18 @@ export const ServerConfigSchema = z
           "What the user's setting says (`tunnel.enabled`), which is not always what is running: `enabled` only moves when a tunnel is actually opened or closed",
       }),
     }),
+    remoteAccess: z
+      .object({
+        enabled: z.boolean().openapi({
+          description:
+            'The `remoteAccess.enabled` setting. Off refuses every request from another device at the server, on its next request; this computer is never refused',
+        }),
+      })
+      .optional()
+      .openapi({
+        description:
+          'The Remote Access switch (DOR-3650). Absent from an older server, which a client reads as on',
+      }),
     tasks: z
       .object({
         enabled: z.boolean().openapi({ description: 'Whether the Tasks scheduler is enabled' }),

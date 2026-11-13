@@ -326,6 +326,30 @@ describe('ConfigManager', () => {
     expect(configManager.get('keepAwake')).toEqual(USER_CONFIG_DEFAULTS.keepAwake);
   });
 
+  it('lands remoteAccess on disk, on, for a config written before it existed, with no migration', () => {
+    // DOR-3650: a whole new TOP-LEVEL section like `keepAwake` above, so conf
+    // writes it before any key runs. On, so an upgrade closes no door.
+    fs.mkdirSync(testDir, { recursive: true });
+    fs.writeFileSync(
+      configPath,
+      JSON.stringify({
+        version: 1,
+        server: { port: 4242, cwd: null, boundary: null, open: true, lanAccess: true },
+        __internal__: { migrations: { version: '0.135.0' } },
+      })
+    );
+
+    const configManager = initConfigManager(testDir);
+
+    const onDisk = JSON.parse(fs.readFileSync(configPath, 'utf-8')) as {
+      remoteAccess?: unknown;
+      server?: { lanAccess?: boolean };
+    };
+    expect(onDisk.remoteAccess).toEqual({ enabled: true });
+    expect(onDisk.server?.lanAccess).toBe(true);
+    expect(configManager.get('remoteAccess')).toEqual(USER_CONFIG_DEFAULTS.remoteAccess);
+  });
+
   it('lands activity.retentionDays on disk for a config written before it existed, with no migration', () => {
     // Spec `audit-trail` §3.5: a whole new TOP-LEVEL section, like `keepAwake`
     // above, so there is no CONFIG_MIGRATIONS entry — conf writes the default

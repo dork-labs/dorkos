@@ -31,6 +31,7 @@ import { getLanAccessHosts } from '../lan-access/lan-trust.js';
 import { isHostAllowed, parseTrustedHosts } from '../../../middleware/host-guard.js';
 import { bypassesManagedIngress } from '../../../middleware/managed-host-guard.js';
 import { noteUpgradeAdmitted } from '../remote/ingress-mark.js';
+import { refusedByRemoteAccessSwitch } from '../../../middleware/remote-access-switch.js';
 import { env } from '../../../env.js';
 import {
   authorizeStreamUpgrade,
@@ -247,6 +248,11 @@ export function attachUpgradeRouter(
     // A managed hostname is served only through the managed ingress, which
     // checked the edge proof before handing the upgrade here.
     if (bypassesManagedIngress(req)) {
+      refuse(socket, 403, 'Forbidden');
+      return;
+    }
+    // With Remote Access off, another device opens no stream (DOR-3650).
+    if (refusedByRemoteAccessSwitch(upgradeFacts(req))) {
       refuse(socket, 403, 'Forbidden');
       return;
     }

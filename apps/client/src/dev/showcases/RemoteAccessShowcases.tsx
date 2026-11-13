@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import type { RemoteAccessReport } from '@dorkos/shared/types';
 import { Button } from '@/layers/shared/ui';
@@ -8,6 +8,7 @@ import {
   useRemoteAccessStore,
 } from '@/layers/entities/tunnel';
 import { RemoteAccessTab } from '@/layers/features/settings/ui/RemoteAccessTab';
+import { RemoteAccessSwitch } from '@/layers/features/settings/ui/remote-access/RemoteAccessSwitch';
 import { RemoteAccessRow } from '@/layers/widgets/control-center';
 import { RemoteAccessBeacon, RemoteAccessPanel } from '@/layers/widgets/remote-access';
 import { PlaygroundSection } from '../PlaygroundSection';
@@ -176,6 +177,23 @@ function StateDriver() {
 }
 
 /**
+ * The Remote access switch (DOR-3650) on its own, flippable, with no server
+ * behind it. `justOff` poses the line right after a person switched it off.
+ */
+function RemoteAccessSwitchDemo({ initial, justOff }: { initial: boolean; justOff?: boolean }) {
+  const [enabled, setEnabled] = useState(initial);
+  return (
+    <RemoteAccessSwitch
+      enabled={enabled}
+      busy={false}
+      error={null}
+      initiallyJustOff={justOff}
+      onChange={setEnabled}
+    />
+  );
+}
+
+/**
  * Remote access in the app's chrome (DOR-1743) — the Control Center's top row
  * and the top-bar beacon, driven through every state they can reach.
  *
@@ -198,6 +216,15 @@ export function RemoteAccessShowcases() {
       <ShowcaseDemo>
         <div className="max-w-sm">
           <RemoteAccessRow />
+        </div>
+      </ShowcaseDemo>
+
+      <ShowcaseLabel>The Remote access switch: on, off, and just switched off</ShowcaseLabel>
+      <ShowcaseDemo>
+        <div className="max-w-md space-y-4">
+          <RemoteAccessSwitchDemo initial />
+          <RemoteAccessSwitchDemo initial={false} />
+          <RemoteAccessSwitchDemo initial={false} justOff />
         </div>
       </ShowcaseDemo>
 

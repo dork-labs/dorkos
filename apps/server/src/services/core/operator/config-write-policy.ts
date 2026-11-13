@@ -238,6 +238,9 @@ export const CONFIG_WRITE_POLICY = {
   'server.open': 'agent-writable',
   // Opens DorkOS to every device on the same network (DOR-2930).
   'server.lanAccess': 'operator-only',
+  // The master switch for every way in from another device (DOR-3650). Only a
+  // person turns it on; off is in SAFEST_VALUES, so an agent may turn it off.
+  'remoteAccess.enabled': 'operator-only',
 
   // Public exposure, the hostname it happens on, whose ngrok account carries it,
   // and the second factor at that edge.
