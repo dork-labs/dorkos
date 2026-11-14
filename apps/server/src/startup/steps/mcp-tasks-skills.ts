@@ -25,7 +25,7 @@ import {
   setRepoConfigActivity,
 } from '../../services/runtimes/claude-code/repo-settings/repo-config-activity.js';
 import { AgentMcpOAuthService } from '../../services/mesh/agent-mcp-oauth-service.js';
-import { localDialHost } from '../../lib/local-dial-host.js';
+import { localDialHost } from '@dorkos/shared/local-dial-host';
 import { env } from '../../env.js';
 import { logger } from '../../lib/logger.js';
 import { resumeAfterMcpSignin } from '../../services/mesh/mcp-signin-resume.js';

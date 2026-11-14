@@ -15,9 +15,16 @@
  * Everything else (`localhost`, a hostname, an IPv4 literal) passes through
  * unchanged: the server resolved and bound that exact name, so dialing the same
  * name lands on the same address family (the invariant the connections browser
- * spec proved matters — see the mint sites in `index.ts`).
+ * spec proved matters — see the server's mint sites in `apps/server/src/index.ts`).
  *
- * @module lib/local-dial-host
+ * It lives here, not in the server, because the desktop shell dials the same
+ * server from its main process and must land on the same address. It once
+ * hard-coded `127.0.0.1` instead, and on macOS, where `localhost` is routinely
+ * `::1` alone, the tray count and desktop notifications died silently
+ * (DOR-4294). `scripts/__tests__/loopback-dial-boundary.test.ts` keeps any new
+ * hard-coded loopback dial out of the server and the shell.
+ *
+ * @module shared/local-dial-host
  */
 
 /** The bind-host spellings that mean "every interface" rather than an address. */

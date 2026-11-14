@@ -52,6 +52,7 @@ import { GET_FOCUS_STATE_CHANNEL } from './window-focus';
 import { findRefusedLaunchSwitch, REFUSED_LAUNCH_SWITCHES } from './launch-switches';
 import { applyExtraCaCerts, readCompanyCertificatesPath } from '../extra-ca-certs';
 import { resolveDataDirectory } from './dork-home';
+import { serverOrigin } from '../shared/server-address';
 
 // A company network's certificates, from the file a person set in Settings and
 // never from the environment (DOR-3361), before anything in the main process
@@ -373,7 +374,7 @@ if (refusedSwitch !== null) {
   ipcMain.on('get-person-proof', (event) => {
     const port = getServerPort();
     event.returnValue =
-      port !== null && frameOrigin(event.senderFrame?.url) === `http://localhost:${port}`
+      port !== null && frameOrigin(event.senderFrame?.url) === serverOrigin(port)
         ? currentPersonProof()
         : null;
   });

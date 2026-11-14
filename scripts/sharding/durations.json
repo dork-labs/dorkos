@@ -1859,7 +1859,7 @@
     "apps/server/src/lib/__tests__/instance-id.test.ts": 10,
     "apps/server/src/lib/__tests__/instance-lock.test.ts": 52,
     "apps/server/src/lib/__tests__/jittered-schedule.test.ts": 22,
-    "apps/server/src/lib/__tests__/local-dial-host.test.ts": 2,
+    "packages/shared/src/__tests__/local-dial-host.test.ts": 2,
     "apps/server/src/lib/__tests__/log-excerpt.test.ts": 187,
     "apps/server/src/lib/__tests__/logger-console-clipping.test.ts": 71,
     "apps/server/src/lib/__tests__/logger-error-serialization.test.ts": 62,

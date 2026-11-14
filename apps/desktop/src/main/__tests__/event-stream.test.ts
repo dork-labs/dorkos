@@ -5,9 +5,13 @@ vi.mock('electron-log', () => import('./electron-log-mock'));
 
 import { watchAgentActivity, type AgentActivityWatch } from '../agent-activity';
 import { watchNotifications, type NotificationsWatch } from '../notifications';
+import electronLog from 'electron-log';
+import { resetLogMock } from './electron-log-mock';
 import {
   nextReconnectDelayMs,
   subscribeEventStream,
+  OutageLog,
+  OUTAGE_LOG_INTERVAL_MS,
   RECONNECT_BASE_MS,
   type EventStreamHandlers,
   type EventStreamSubscription,
@@ -20,6 +24,7 @@ import type {
   NotificationHost,
 } from '../notifications/wrapper';
 import { deferred, FakeEventStream } from './fake-event-stream';
+import { canStageIpv6OnlyLocalhost } from './ipv6-loopback';
 
 /**
  * A `NotificationHost` double — this test only cares that a shown count moves,
@@ -388,5 +393,157 @@ describe('event-stream throw isolation (DOR-1386 review)', () => {
 
     await survivorNotified.promise;
     expect(notifiedCount).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe.skipIf(!(await canStageIpv6OnlyLocalhost()))('the host it dials (DOR-4294)', () => {
+  // The server binds `localhost`; on macOS that is routinely `::1` and nothing
+  // else. A shell that dialled `127.0.0.1` was refused forever, so the tray
+  // count cleared and notifications stopped without a word. These stage that
+  // server literally: one listener, on IPv6 loopback only.
+  let v6: FakeEventStream;
+
+  beforeEach(async () => {
+    v6 = new FakeEventStream();
+    await v6.listen('::1');
+  });
+
+  afterEach(async () => {
+    for (const subscription of subscriptions.splice(0)) subscription.unsubscribe();
+    await v6.close();
+  });
+
+  it('reaches a server that listens only on IPv6 loopback', async () => {
+    const log = new FrameLog();
+    subscribe(() => v6.port, { onFrame: log.record });
+
+    await log.arrives('connected');
+    v6.sendStatus('session-a', 'streaming');
+    await log.arrives('session_status');
+  });
+
+  it('reconnects to that same server after the stream drops', async () => {
+    const log = new FrameLog();
+    const lost = deferred();
+    subscribe(() => v6.port, { onFrame: log.record, onConnectionLost: () => lost.resolve() });
+    await log.arrives('connected');
+
+    v6.dropClients();
+    await lost.promise;
+    await v6.connectionsReach(2);
+
+    v6.sendStatus('session-a', 'streaming');
+    await log.arrives('session_status');
+  });
+});
+
+describe('the host it dials, on IPv4 loopback (DOR-4294)', () => {
+  // The other half: a server whose `localhost` came out as `127.0.0.1` only.
+  // On a machine that lists `::1` first, this is the attempt that has to fall
+  // through to the second address rather than stop at the first refusal.
+  it('reaches a server that listens only on IPv4 loopback', async () => {
+    const v4 = new FakeEventStream();
+    await v4.listen('127.0.0.1');
+    try {
+      const log = new FrameLog();
+      subscribe(() => v4.port, { onFrame: log.record });
+      await log.arrives('connected');
+      v4.sendStatus('session-a', 'streaming');
+      await log.arrives('session_status');
+    } finally {
+      for (const subscription of subscriptions.splice(0)) subscription.unsubscribe();
+      await v4.close();
+    }
+  });
+});
+
+/**
+ * A port nothing is listening on right now, on `host`.
+ *
+ * @param host - The address to find it on.
+ */
+async function refusedPort(host: string): Promise<number> {
+  const probe = new FakeEventStream();
+  await probe.listen(host);
+  const { port } = probe;
+  await probe.close();
+  return port;
+}
+
+describe.each([
+  { family: 'IPv4', host: '127.0.0.1', available: true },
+  { family: 'IPv6', host: '::1', available: await canStageIpv6OnlyLocalhost() },
+])('a server that comes up late, on $family loopback (DOR-4294)', ({ host, available }) => {
+  // The address is looked up again on each retry, so a server that was not
+  // there at first, on either family, is found once it is.
+  it.skipIf(!available)('connects once it is listening, after being refused', async () => {
+    resetLogMock();
+    const port = await refusedPort(host);
+    const log = new FrameLog();
+    const refused = deferred();
+    subscribe(() => port, { onFrame: log.record, onConnectionLost: () => refused.resolve() });
+    await refused.promise;
+    expect(electronLog.warn).toHaveBeenCalledWith(
+      expect.stringContaining('Cannot reach the server event stream (1 failed attempt so far).')
+    );
+
+    const late = new FakeEventStream();
+    await late.listen(host, port);
+    try {
+      await log.arrives('connected');
+      expect(electronLog.info).toHaveBeenCalledWith(
+        expect.stringMatching(/Reconnected to the server event stream after \d+ failed attempts?\./)
+      );
+    } finally {
+      for (const subscription of subscriptions.splice(0)) subscription.unsubscribe();
+      await late.close();
+    }
+  });
+});
+
+describe('the outage log (DOR-4294)', () => {
+  // A loop refused forever used to log once and then nothing, which read the
+  // same as one failure that recovered. Now it says so every thirty seconds.
+  beforeEach(() => resetLogMock());
+
+  it('logs the first failure, then at most one line per interval, with a running count', () => {
+    let now = 1_000_000;
+    const outage = new OutageLog(() => now);
+
+    outage.failed('connect ECONNREFUSED');
+    for (let i = 0; i < 5; i += 1) {
+      now += 1_000;
+      outage.failed('connect ECONNREFUSED');
+    }
+    expect(electronLog.warn).toHaveBeenCalledTimes(1);
+    expect(electronLog.warn).toHaveBeenLastCalledWith(
+      '[event-stream] Cannot reach the server event stream (1 failed attempt so far). connect ECONNREFUSED'
+    );
+
+    now += OUTAGE_LOG_INTERVAL_MS - 5_000;
+    outage.failed('connect ECONNREFUSED');
+    expect(electronLog.warn).toHaveBeenCalledTimes(2);
+    expect(electronLog.warn).toHaveBeenLastCalledWith(
+      '[event-stream] Cannot reach the server event stream (7 failed attempts so far). connect ECONNREFUSED'
+    );
+  });
+
+  it('says once when the stream is back, and only after an outage', () => {
+    const outage = new OutageLog(() => 0);
+    outage.recovered();
+    expect(electronLog.info).not.toHaveBeenCalled();
+
+    outage.failed('connect ECONNREFUSED');
+    outage.failed('connect ECONNREFUSED');
+    outage.recovered();
+    expect(electronLog.info).toHaveBeenCalledExactlyOnceWith(
+      '[event-stream] Reconnected to the server event stream after 2 failed attempts.'
+    );
+
+    // A fresh outage starts its count and its interval again.
+    outage.failed('connect ECONNREFUSED');
+    expect(electronLog.warn).toHaveBeenLastCalledWith(
+      '[event-stream] Cannot reach the server event stream (1 failed attempt so far). connect ECONNREFUSED'
+    );
   });
 });

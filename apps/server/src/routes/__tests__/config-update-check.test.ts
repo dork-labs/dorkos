@@ -30,6 +30,7 @@ vi.mock('../../services/core/config-manager.js', () => {
 vi.mock('../../env.js', () => ({
   env: {
     DORKOS_PORT: 6242,
+    DORKOS_HOST: 'localhost',
     DORKOS_SERVER_ROLE: 'computer',
     MCP_API_KEY: undefined as string | undefined,
   },

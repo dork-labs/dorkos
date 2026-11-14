@@ -22,7 +22,7 @@ import type { RuntimeRegistry } from '../../core/runtime-registry.js';
 import { initCloudLinkManager } from '../../core/auth/cloud-link.js';
 import { setCloudV1Fetch } from '../../core/cloud/v1-client.js';
 import { addTestControlGroup } from '../../../routes/test-control.js';
-import { localDialHost } from '../../../lib/local-dial-host.js';
+import { localDialHost } from '@dorkos/shared/local-dial-host';
 import { logger } from '../../../lib/logger.js';
 import { env } from '../../../env.js';
 import { DoeRuntime } from '../doe/index.js';

@@ -592,6 +592,18 @@ describe('the environment handed to the server child', () => {
     expect(child.env.DORKOS_MANAGED_BY).toBe('desktop');
   });
 
+  it('binds the server to the host the shell dials, whatever the shell inherited (DOR-4294)', async () => {
+    // An inherited DORKOS_HOST (a dev `.env`, a shell export) would move the
+    // server off the host the event stream and Ask answers dial.
+    vi.stubEnv('DORKOS_HOST', '0.0.0.0');
+    const { startServer } = await import('../server-process');
+    const { SERVER_BIND_HOST } = await import('../../shared/server-address');
+
+    const { child } = await startReadyServer(startServer);
+
+    expect(child.env.DORKOS_HOST).toBe(SERVER_BIND_HOST);
+  });
+
   it('tells a dev child it is a checkout, whatever the shell inherited', async () => {
     vi.stubEnv('DORKOS_DISTRIBUTION', 'npm');
     const { startServer } = await import('../server-process');

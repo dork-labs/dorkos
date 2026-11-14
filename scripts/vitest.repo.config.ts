@@ -47,6 +47,7 @@ export const REPO_WIDE_SUITES = [
   '__tests__/dependabot-lockstep-families.test.ts',
   '__tests__/extension-child-build-entry.test.ts',
   '__tests__/gray-matter-import-boundary.test.ts',
+  '__tests__/loopback-dial-boundary.test.ts',
   '__tests__/mcp-exclude-copy.test.ts',
   '__tests__/merge-group-runner-label.test.ts',
   '__tests__/one-shot-routes.test.ts',
