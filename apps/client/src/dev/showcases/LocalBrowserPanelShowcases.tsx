@@ -23,6 +23,18 @@ const NOT_OPEN: LocalBrowserPersonState = {
   signIn: null,
 };
 
+/** Another chat holds a sign-in; this chat keeps its own readable tab. */
+const pausedForSignIn: LocalBrowserPersonState = {
+  ...NOT_OPEN,
+  connectionId: 'playground-browser',
+  sessionId: 'chat-kestrel',
+  mode: 'new-window',
+  status: 'connected',
+  tabs: [{ id: 'kestrel-tab', title: 'Research notes', url: 'https://northwind.example' }],
+  selectedTabId: 'kestrel-tab',
+  signInElsewhere: { handoffId: 'playground-sign-in' },
+};
+
 /**
  * A scoped transport for a browser that was never opened.
  *
@@ -75,6 +87,27 @@ function FolderChangedDemo() {
   );
 }
 
+/** State 1.11, with a long made-up name to exercise wrapping at phone widths. */
+function PausedForSignInDemo() {
+  const [transport] = useState<Transport>(
+    () =>
+      new Proxy(notOpenTransport(), {
+        get: (target, prop, receiver) => {
+          if (prop === 'getLocalBrowserState' || prop === 'signInLocalBrowser')
+            return async () => pausedForSignIn;
+          return Reflect.get(target, prop, receiver) as unknown;
+        },
+      })
+  );
+  return (
+    <TransportProvider transport={transport}>
+      <div className="bg-background h-[36rem] w-full max-w-lg rounded-lg border">
+        <LocalBrowserPanel sessionId="chat-kestrel" agentName="Kestrel the Research Assistant" />
+      </div>
+    </TransportProvider>
+  );
+}
+
 /**
  * The Agent browser panel before first use (DOR-4104): it says "Not open yet",
  * because "Disconnected" before anything was opened reads as broken.
@@ -92,6 +125,10 @@ export function LocalBrowserPanelShowcases() {
       <ShowcaseLabel>Forget refused: the sign-ins folder was changed outside DorkOS</ShowcaseLabel>
       <ShowcaseDemo>
         <FolderChangedDemo />
+      </ShowcaseDemo>
+      <ShowcaseLabel>Paused for a sign-in elsewhere (1.11)</ShowcaseLabel>
+      <ShowcaseDemo responsive>
+        <PausedForSignInDemo />
       </ShowcaseDemo>
     </PlaygroundSection>
   );
