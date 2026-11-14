@@ -370,16 +370,18 @@ function LocalTokenAuthRow({
       <p className="text-muted-foreground text-xs">
         Only apps on this computer can use it. Other devices need a personal API key.
       </p>
-      <Button
-        variant="link"
-        size="sm"
-        className="h-auto p-0 text-left text-xs whitespace-normal"
-        onClick={() => setTab('security')}
-      >
-        {authEnabled
-          ? 'Create one in Login & security → API keys.'
-          : 'Turn on login first, then create a key.'}
-      </Button>
+      <p className="text-xs">
+        <Button
+          variant="link"
+          size="sm"
+          className="h-auto p-0 text-left text-xs whitespace-normal"
+          onClick={() => setTab('security')}
+        >
+          {authEnabled
+            ? 'Create one in Login & security → API keys.'
+            : 'Turn on login first, then create a key.'}
+        </Button>
+      </p>
       {revealedToken ? (
         <div className="flex items-center gap-1.5">
           <code className="bg-muted min-w-0 flex-1 truncate rounded-md px-3 py-2 font-mono text-xs">

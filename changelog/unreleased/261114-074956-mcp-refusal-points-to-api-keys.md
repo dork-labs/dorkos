@@ -1,6 +1,7 @@
 ---
 covers:
   - 'fix(mcp): the key refusal points to Login & security, and says when login comes first'
+  - 'fix(settings): a link inside an open Settings dialog moves it to that tab'
 ---
 
 ### Fixed
