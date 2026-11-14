@@ -3,6 +3,7 @@ import { logError, logger } from '../../../../lib/logger.js';
 import { runtimeRegistry } from '../../../core/runtime-registry.js';
 import type { ChatCaller } from '../../../session/chat-messages/chat-message-service.js';
 import { getChatMessageService } from '../../../session/chat-messages/chat-message-current.js';
+import { getWorkClaims } from '../../../session/claims/work-claim-current.js';
 
 /** Stamp before launch, and settle under the accepted canonical id or discard on refusal. */
 export async function stampStartMessage(
@@ -28,6 +29,8 @@ export async function stampStartMessage(
  * logged, never thrown over the refusal the caller is about to get.
  */
 export async function discardUnstartedSession(sessionId: string): Promise<void> {
+  // Work it claimed goes back, so the agent's other chats can take it (DOR-4019).
+  getWorkClaims()?.releaseSession(sessionId, 'the chat never started');
   try {
     await runtimeRegistry.discardSessionSettings(sessionId);
   } catch (err) {

@@ -58,6 +58,7 @@ export * from './session/session-native-bindings.js';
 export * from './session/session-touches.js';
 export * from './session/turn-context.js';
 export * from './session/chat-messages.js';
+export * from './session/work-claims.js';
 export * from './todos/todos.js';
 export * from './todos/todo-turns.js';
 export * from './work-queue/work-queue.js';
