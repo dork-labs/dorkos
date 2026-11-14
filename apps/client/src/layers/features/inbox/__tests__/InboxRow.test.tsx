@@ -327,6 +327,33 @@ describe('InboxRow: a failing schedule’s Open schedule (DOR-3123)', () => {
   });
 });
 
+it('reads an undelivered report title in full and opens its spin-off chat (DOR-3561)', () => {
+  navigate.mockClear();
+  const title = "A report from Weekly invoice cleanup for the north region didn't arrive";
+  render(
+    <InboxRow
+      notification={build({
+        kind: 'report.undelivered',
+        subject: { type: 'session', id: 'demo-spin-off' },
+        title,
+        body: 'It never reached the chat that started it. Open the chat to read it.',
+        actions: [{ id: 'open-chat', label: 'Open chat', style: 'primary' }],
+      })}
+      onOpen={() => {}}
+    />
+  );
+
+  const shown = document.querySelector('[data-slot="inbox-row-title"]');
+  expect(shown).toHaveTextContent(title);
+  expect(shown).not.toHaveClass('truncate');
+  expect(shown).not.toHaveClass('line-clamp-2');
+
+  fireEvent.click(screen.getByRole('button', { name: 'Open chat' }));
+  expect(navigate).toHaveBeenCalledWith(
+    expect.objectContaining({ search: { session: 'demo-spin-off' } })
+  );
+});
+
 it('reads a new-tool notice in full: which server added a tool, and who uses it (DOR-4118)', () => {
   const title =
     'notion-demo-shared-workspaces-for-a-team added a tool. Atlas, the quarterly planning researcher can use it without asking.';

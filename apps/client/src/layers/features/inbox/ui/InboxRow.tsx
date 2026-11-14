@@ -7,7 +7,7 @@ import type { ReactNode } from 'react';
 import { motion } from 'motion/react';
 import { Lock, XCircle } from 'lucide-react';
 import type { NotificationDTO } from '@dorkos/shared/notification-schemas';
-import { appRoutes, cn, formatCompactAge } from '@/layers/shared/lib';
+import { appRoutes, cn, formatCompactAge, toSession } from '@/layers/shared/lib';
 import { useSafeNavigate } from '@/layers/shared/model';
 import { Button } from '@/layers/shared/ui/button';
 import { NOTIFICATION_ICONS, notificationRowTone } from '@/layers/entities/notifications';
@@ -123,6 +123,9 @@ export interface InboxRowProps {
 /** The action a failing run's notice declares (`run.completed`, DOR-3123). */
 const OPEN_SCHEDULE_ACTION_ID = 'open-schedule';
 
+/** The action declared by an undelivered spin-off report (`report.undelivered`, DOR-3561). */
+const OPEN_CHAT_ACTION_ID = 'open-chat';
+
 /**
  * "Open schedule": takes the person to the Schedules page, filtered to the
  * failing schedules, where the fix lives.
@@ -146,6 +149,26 @@ function OpenScheduleAction({ scheduleId }: { scheduleId?: string }) {
       }}
     >
       Open schedule
+    </Button>
+  );
+}
+
+/** "Open chat": takes the person to the spin-off chat that holds the report. */
+function OpenChatAction({ sessionId }: { sessionId?: string }) {
+  const navigate = useSafeNavigate();
+  return (
+    <Button
+      type="button"
+      variant="outline"
+      size="xs"
+      data-slot="inbox-row-open-chat"
+      className="h-11 w-full shrink-0 sm:h-auto sm:w-auto"
+      onClick={() => {
+        if (sessionId !== undefined && navigate !== null)
+          void navigate(toSession({ session: sessionId }));
+      }}
+    >
+      Open chat
     </Button>
   );
 }
@@ -195,6 +218,10 @@ export function InboxRow({ notification, agent, onOpen, index }: InboxRowProps) 
   const opensSchedule =
     onOpen !== undefined &&
     notification.actions?.some((a) => a.id === OPEN_SCHEDULE_ACTION_ID) === true;
+  const opensChat =
+    onOpen !== undefined &&
+    notification.subject.type === 'session' &&
+    notification.actions?.some((a) => a.id === OPEN_CHAT_ACTION_ID) === true;
   // An agent's mode change on a schedule offers Undo (DOR-3703), laid out the same way.
   const undoesMode =
     onOpen !== undefined &&
@@ -205,7 +232,7 @@ export function InboxRow({ notification, agent, onOpen, index }: InboxRowProps) 
     onOpen !== undefined &&
     notification.kind === 'connector.access_narrowed' &&
     notification.actions?.some((a) => a.id === UNDO_ACCESS_CHANGE_ACTION_ID) === true;
-  const hasAction = opensSchedule || undoesMode || undoesAccessChange;
+  const hasAction = opensSchedule || opensChat || undoesMode || undoesAccessChange;
   // The secret-files notice's body is what to do about it, so it gets the same
   // two lines below `sm` rather than being cut mid-sentence (DOR-3292).
   const twoLineBody = hasAction || notification.kind === 'agent.secret_files';
@@ -215,12 +242,14 @@ export function InboxRow({ notification, agent, onOpen, index }: InboxRowProps) 
   // same: which agent, which app and whose access, never cut at any width. So is
   // a server adding a tool some agent uses without asking: which server, and who.
   // And a server that stopped reaching agents: its name is the whole point (DOR-4262).
+  // And a spin-off report that never arrived names its chat in full (DOR-3561).
   const readsInFull =
     notification.mark === 'refused' ||
     notification.kind === 'schedule.armed_by_agent' ||
     notification.kind === 'connector.access_narrowed' ||
     notification.kind === 'mcp-server.tool_added' ||
-    notification.kind === 'mcp-server.reserved_name';
+    notification.kind === 'mcp-server.reserved_name' ||
+    notification.kind === 'report.undelivered';
   const isScheduleCreation =
     readsInFull && notification.actions?.some((action) => action.id === 'pause') === true;
   const refusalTitle =
@@ -398,6 +427,7 @@ export function InboxRow({ notification, agent, onOpen, index }: InboxRowProps) 
           scheduleId={notification.subject.type === 'task' ? notification.subject.id : undefined}
         />
       )}
+      {opensChat && <OpenChatAction sessionId={notification.subject.id} />}
       {undoesMode && (
         <UndoAgentModeAction taskId={notification.subject.id} notificationId={notification.id} />
       )}

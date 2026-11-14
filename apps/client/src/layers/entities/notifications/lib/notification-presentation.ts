@@ -19,6 +19,7 @@ import {
   Hourglass,
   LogIn,
   Mail,
+  MailX,
   MessageCircleQuestion,
   MessageSquare,
   MonitorSmartphone,
@@ -124,6 +125,7 @@ export const NOTIFICATION_ICONS: Record<NotificationKind, LucideIcon> = {
   // Files in an agent's folder whose names say they are secrets (DOR-3292).
   'agent.secret_files': ShieldAlert,
   'shell.check_down': ShieldAlert,
+  'report.undelivered': MailX,
   // A Claude folder's sign-in is new or changed (DOR-3245).
   'account.signin_review': UserRoundCheck,
 };

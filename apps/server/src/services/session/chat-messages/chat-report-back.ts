@@ -59,10 +59,10 @@
  * ## A report that cannot be delivered
  *
  * It is logged and tried again on {@link DELIVERY_RETRY_MS}, with the parent read
- * afresh each time. A report that never
- * lands ends in one error line naming the chat and its parent. Reports wait in
- * this process: a restart loses one still waiting, though a chat that was holding
- * work is woken at the next boot (`wake-cut-short-work.ts`) and reports then.
+ * afresh each time. A report that never lands ends in one error line naming the
+ * chat and its parent, and tells the person once through an Inbox card. Reports
+ * wait in this process: a restart loses one still waiting, though a chat that was
+ * holding work is woken at the next boot (`wake-cut-short-work.ts`) and reports then.
  *
  * @module services/session/chat-messages/chat-report-back
  */
@@ -72,6 +72,8 @@ import { logError, logger } from '../../../lib/logger.js';
 import { mergeMarks, NO_MARKS, type TurnMarks } from '../../core/turn-power/turn-marks.js';
 import type { ChatCaller, ChatMessageService } from './chat-message-service.js';
 import type { ChatMessageStore } from './chat-message-store.js';
+
+export { spinOffBriefing } from './spin-off-briefing.js';
 
 /** The longest last message a report carries; the parent reads more with `chat_read`. */
 export const REPORT_TEXT_MAX = 6_000;
@@ -94,6 +96,16 @@ export const DELIVERY_RETRY_MS: readonly number[] = [5_000, 30_000, 120_000, 600
 /** Why a report went. */
 export type ReportReason =
   'finished' | 'failed' | 'stopped' | 'limit' | 'needs-you' | 'holding' | 'never-started';
+
+/** A report that exhausted every delivery attempt. */
+export interface UndeliveredReport {
+  /** The spin-off chat whose report did not arrive. */
+  sessionId: string;
+  /** The chat that started the spin-off and did not receive its report. */
+  parentSessionId: string;
+  /** Why the report went. */
+  reason: ReportReason;
+}
 
 /** The status line each reason opens a report with. */
 const STATUS_LINE: Record<ReportReason, string> = {
@@ -153,6 +165,8 @@ export interface ChatReportBackDeps {
   statusOf: (sessionId: string) => SessionStatus | null;
   /** The chat's history. */
   history: (sessionId: string) => Promise<HistoryMessage[]>;
+  /** Told once when a report gave up for good, so a person hears about it (DOR-3561). */
+  onUndelivered?: (report: UndeliveredReport) => void;
   /**
    * Deliver a report to a parent that is a room's seat, as a turn there (DOR-3488). False when
    * the parent is no room's seat, and the report goes as a chat message instead. Throws when it
@@ -250,58 +264,6 @@ export function composeReport(reason: ReportReason, text: string, detail?: strin
     if (cut) parts.push('(Cut short. Read the rest with chat_read.)');
   }
   return parts.join('\n\n');
-}
-
-/**
- * The note a spin-off reads at its start (spec `spin-off-chats` §5): who
- * started it, and how it reports. Every word is DorkOS's own except the
- * parent's title and agent name, which DorkOS also holds.
- *
- * A parent that cannot take chat messages (a room's seat, a bridged chat, a
- * scheduled run) is never named as a `chat_send` target: every such send is
- * refused, and the spin-off would conclude the parent is unreachable. A room's
- * seat still takes reports, as turns of its own (DOR-3488).
- *
- * @param opts - The parent, whether reports go back on their own, whether the
- *   parent takes chat messages at all, and whether it is a room's seat.
- */
-export function spinOffBriefing(opts: {
-  parentChatId: string;
-  parentTitle: string | null;
-  parentAgentName: string;
-  reportBack: boolean;
-  parentTakesMessages: boolean;
-  parentIsRoomSeat?: boolean;
-}): string {
-  const parent = `${opts.parentTitle ? `"${opts.parentTitle}" ` : ''}(chat ${opts.parentChatId}, ${opts.parentAgentName})`;
-  const lines = [`This is a spin-off chat. The chat ${parent} started it.`];
-  if (opts.reportBack) {
-    lines.push(
-      'When you end a turn finished, failed, waiting on the person, or paused at a usage ' +
-        'limit, your last message goes back to that chat on its own. So end each turn with a ' +
-        'short report: what you did and what is left.',
-      opts.parentIsRoomSeat
-        ? 'That chat is its agent’s seat in a room, so it takes no chat_send: your report wakes ' +
-            'it with a turn of its own, and nobody else in the room sees it. Put milestones in ' +
-            'your turn-end reports.'
-        : `Send milestones before then with chat_send to ${opts.parentChatId}; nobody has to ` +
-            'ask. Do not send your final result that way too: it already goes back on its own.',
-      'If you are waiting on CI, a timer or a helper, keep your turn alive (for example ' +
-        '`gh pr checks --watch` or a short sleep loop). A turn that ends only to wait may report ' +
-        'before the work is done.'
-    );
-  } else if (opts.parentTakesMessages) {
-    lines.push(
-      `It does not hear from you on its own. Send what matters with chat_send to ${opts.parentChatId}.`
-    );
-  } else {
-    lines.push(
-      'It does not hear from you on its own, and it cannot take chat messages. If it works in ' +
-        'a room you are in, report there with post_to_room; otherwise say it in your own last ' +
-        'message.'
-    );
-  }
-  return lines.join(' ');
 }
 
 /** Spin-off chats reporting back. See the module documentation. */
@@ -533,6 +495,16 @@ export class ChatReportBack {
         const fields = { sessionId, parent, reason, attempt: attempt + 1, ...logError(err) };
         if (wait === undefined) {
           logger.error('[chat report-back] gave up on a report; its parent never got it', fields);
+          try {
+            this.deps.onUndelivered?.({ sessionId, parentSessionId: parent, reason });
+          } catch (notifyError) {
+            logger.warn('[chat report-back] could not tell the person a report was undelivered', {
+              sessionId,
+              parent,
+              reason,
+              ...logError(notifyError),
+            });
+          }
           return;
         }
         logger.warn('[chat report-back] a spin-off could not report to the chat that started it', {
