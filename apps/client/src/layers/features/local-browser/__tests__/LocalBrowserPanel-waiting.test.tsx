@@ -145,8 +145,12 @@ it.each(['room', 'embedded', 'other-chat'] as const)(
       openChatTabs: waiting.openChatTabs,
     });
     mount(true, scope === 'room' ? null : 'chat-one');
-    await screen.findByRole('button', { name: 'Pause agent' });
-    expect(screen.queryByRole('button', { name: /Also open in/ })).toBeNull();
+    if (scope === 'embedded') await screen.findByRole('button', { name: 'Pause agent' });
+    else {
+      await screen.findByText('This browser is open in another chat');
+      expect(screen.queryByRole('button', { name: 'Pause agent' })).toBeNull();
+    }
+    expect(screen.queryByRole('button', { name: 'See open tabs' })).toBeNull();
   }
 );
 

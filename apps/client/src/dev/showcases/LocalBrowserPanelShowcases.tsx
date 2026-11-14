@@ -199,7 +199,11 @@ function FolderChangedDemo() {
   return (
     <TransportProvider transport={transport}>
       <div className="bg-background h-[36rem] w-full max-w-sm rounded-lg border">
-        <LocalBrowserPanel visible={false} sessionId="chat-atlas-folder-changed" agentName="Atlas" />
+        <LocalBrowserPanel
+          visible={false}
+          sessionId="chat-atlas-folder-changed"
+          agentName="Atlas"
+        />
       </div>
     </TransportProvider>
   );
@@ -276,7 +280,7 @@ function HeldTabDemo({ stopped = false }: { stopped?: boolean }) {
         outcome: stopped ? 'stopped' : null,
       },
     };
-    return new Proxy(notOpenTransport(), {
+    return new Proxy(browserTransport(NOT_OPEN), {
       get: (target, prop, receiver) => {
         if (prop === 'getLocalBrowserState') return async () => state;
         return Reflect.get(target, prop, receiver) as unknown;

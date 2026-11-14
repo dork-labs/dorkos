@@ -17,6 +17,7 @@ covers:
   - 'fix(browser): group panel secondary actions into one wrapping row'
   - 'fix(browser): update popup policy without granting user activation'
   - 'fix(browser): read tab titles without granting popup activation'
+  - 'fix(browser): reconcile shared browser flows after rebase'
 ---
 
 ### Added

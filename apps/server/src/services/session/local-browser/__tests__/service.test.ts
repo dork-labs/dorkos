@@ -702,24 +702,32 @@ describe('local browser ownership and observations', () => {
     await service.disconnect();
     expect(() => service.leaseFor('chat-one')).toThrow();
   });
-  it('moving the browser to another chat takes it from the first chat’s agent (DOR-4265)', async () => {
-    const { service } = await create();
+  it('moving the embedded browser to another chat takes it from the first chat’s agent (DOR-4265)', async () => {
+    const f = await create();
+    const embedded = {
+      open: vi.fn(async () => ({
+        endpoint: 'ws://127.0.0.1:41111/page/fixture',
+        headers: {},
+        close: vi.fn(async () => undefined),
+      })),
+    };
+    const service = new LocalBrowserService(f.dir, embedded, f.backend);
     service.useProfileAccess(
       async () => undefined,
       () => true,
       async (id) => (id === 'chat-one' ? 'Quarterly invoices' : 'Trip plans')
     );
-    await service.open({ mode: 'new-window', sessionId: 'chat-one' });
-    expect(() => service.requireSharedSession('chat-two')).toThrow(
+    await service.open({ mode: 'embedded', sessionId: 'chat-one' });
+    expect(() => service.leaseFor('chat-two')).toThrow(
       expect.objectContaining({
         code: 'shared_elsewhere',
         fields: { chatId: 'chat-one', chatTitle: 'Quarterly invoices' },
       })
     );
     // Use it here is the same person-clicked open, from the second chat.
-    await service.open({ mode: 'new-window', sessionId: 'chat-two' });
-    expect(() => service.requireSharedSession('chat-two')).not.toThrow();
-    expect(() => service.requireSharedSession('chat-one')).toThrow(
+    await service.open({ mode: 'embedded', sessionId: 'chat-two' });
+    expect(() => service.leaseFor('chat-two')).not.toThrow();
+    expect(() => service.leaseFor('chat-one')).toThrow(
       expect.objectContaining({
         code: 'shared_elsewhere',
         message:
@@ -728,12 +736,12 @@ describe('local browser ownership and observations', () => {
       })
     );
     await service.disconnect();
-    expect(() => service.requireSharedSession('chat-two')).toThrow(
+    expect(() => service.leaseFor('chat-two')).toThrow(
       expect.objectContaining({ code: 'not_opened' })
     );
     // Opened again after a Disconnect, nothing was moved away from chat-two.
-    await service.open({ mode: 'new-window', sessionId: 'chat-one' });
-    expect(() => service.requireSharedSession('chat-two')).toThrow(
+    await service.open({ mode: 'embedded', sessionId: 'chat-one' });
+    expect(() => service.leaseFor('chat-two')).toThrow(
       expect.objectContaining({
         message:
           'The Agent browser is in use in another chat, named in chatTitle. Ask the person to move it here.',
