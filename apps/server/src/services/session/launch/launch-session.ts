@@ -21,11 +21,7 @@ import { noteNonBeatMessage } from '../../heartbeats/beat-turns.js';
 import { randomUUID } from 'node:crypto';
 import path from 'node:path';
 import type { MeshCore } from '@dorkos/mesh';
-import type {
-  DirectoryGrant,
-  MessageOpts,
-  TurnPermissionCeiling,
-} from '@dorkos/shared/agent-runtime';
+import type { MessageOpts, TurnPermissionCeiling } from '@dorkos/shared/agent-runtime';
 import type { SendMessageRequest } from '@dorkos/shared/schemas';
 import { newDispatchId } from '@dorkos/shared/dispatch-id';
 import { sanitizeWorkspaceKey } from '@dorkos/shared/workspace';
@@ -41,10 +37,7 @@ import { reportUsageEvent } from '../../core/usage-reporter.js';
 import { runtimeUnlessHeld } from '../../runtimes/claude-code/folder-settings/folder-config-consent.js';
 import { recordDispatchEnd, recordDispatchStart } from '../../observability/dispatch-buffers.js';
 import { fullChatOf, getWorkspaceManager, workspaceGateFor } from '../../workspace/index.js';
-import {
-  resolveSessionCwdWithRoom,
-  type RoomSessionPlacePort,
-} from '../../workspace/room-session-place.js';
+import type { RoomSessionPlacePort } from '../../workspace/room-session-place.js';
 import { DEFAULT_CWD } from '../../../lib/resolve-root.js';
 import { logError, logger } from '../../../lib/logger.js';
 import { runInDispatch } from '../../../lib/dispatch-context.js';
@@ -63,6 +56,8 @@ import {
   type SessionLauncher,
 } from './launch-caller.js';
 import { auditLaunched, auditRefusedLaunch } from './launch-audit.js';
+import { resolveChatPlace } from './resolve-chat-place.js';
+import { isRegisteredChatAgentPath } from './verify-chat-agent.js';
 
 /** What {@link dispatchSessionMessage} needs to start or feed one session. */
 export interface DispatchSessionMessageOpts {
@@ -464,10 +459,12 @@ async function launchSessionMessage(
   // caller may name it only when Mesh currently knows that exact registered
   // agent directory. This keeps the first-write session binding authoritative
   // without letting client metadata manufacture an agent owner.
+  const agentRegistration = {
+    registeredAgentPaths: () => meshCore?.listWithPaths().map((agent) => agent.projectPath),
+  };
   let verifiedAgentPath: string | undefined;
   if (agentPath !== undefined) {
-    const isRegistered = meshCore?.listWithPaths().some((agent) => agent.projectPath === agentPath);
-    if (!isRegistered) {
+    if (!isRegisteredChatAgentPath(agentPath, agentRegistration)) {
       return {
         refused: 'INVALID_AGENT_PATH',
         message: 'Choose a registered agent before starting this chat',
@@ -480,7 +477,7 @@ async function launchSessionMessage(
   // below). A chat with no recorded agent is not pinned (R3, still open).
   if (verifiedAgentPath === undefined && opts.launcher?.kind === 'agent') {
     const own = opts.launcher.agentPath;
-    if (meshCore?.listWithPaths().some((agent) => agent.projectPath === own)) {
+    if (isRegisteredChatAgentPath(own, agentRegistration)) {
       verifiedAgentPath = own;
     }
   }
@@ -490,21 +487,30 @@ async function launchSessionMessage(
   // (`cwd`) and runs the turn with `cwd = workspace.path` + its port block.
   // Additive + resilient: with no key (or a disabled/failing manager) the turn
   // proceeds with the original cwd, byte-for-byte unchanged.
-  let effectiveCwd = cwd;
-  const existing = await runtimeRegistry.resolveForSessionWithOwnership?.(sessionId, {
-    allowUnbound: true,
+  const resolvedChatPlace = await resolveChatPlace({
+    sessionId,
+    ...(cwd !== undefined ? { cwd } : {}),
+    ...(verifiedAgentPath !== undefined ? { agentPath: verifiedAgentPath } : {}),
+    roomSessionPlace,
+    workspaceKeyed: Boolean(workspaceKey),
   });
-  if (existing?.bound) {
-    const actual =
-      existing.runtime.getSessionCwd?.(sessionId) ??
-      runtimeRegistry.getNativeSessionCwd?.(sessionId) ??
-      (await existing.runtime.findSession?.(sessionId))?.cwd;
-    if (actual) effectiveCwd = actual;
+  if ('refusal' in resolvedChatPlace) {
+    return {
+      refused: resolvedChatPlace.refusal.code,
+      message: resolvedChatPlace.refusal.message,
+    };
   }
+  let effectiveCwd = resolvedChatPlace.cwd;
+  const existing = resolvedChatPlace.session;
   // A room-bound session's agent and grants, when the room answered for it
   // (spec `agent-home-desk` §5.7): the turn carries the room's agent as
   // `forAgent` and the same folder grants a room turn carries.
-  let roomPlace: { forAgent?: string; additionalDirectories?: DirectoryGrant[] } = {};
+  const roomPlace = {
+    ...(resolvedChatPlace.forAgent !== undefined ? { forAgent: resolvedChatPlace.forAgent } : {}),
+    ...(resolvedChatPlace.additionalDirectories !== undefined
+      ? { additionalDirectories: resolvedChatPlace.additionalDirectories }
+      : {}),
+  };
   if (workspaceKey && !existing?.bound) {
     try {
       const source = effectiveCwd ?? DEFAULT_CWD;
@@ -540,39 +546,6 @@ async function launchSessionMessage(
         error: err instanceof Error ? err.message : String(err),
       });
     }
-  } else {
-    // No unit-of-work key, so ask the precedence chain where this turn belongs
-    // (`services/workspace/resolve-session-cwd.ts`). `workspaceKey` above keeps
-    // its precedence deliberately: it is a per-turn statement about this piece
-    // of work, which is strictly more specific than a standing per-agent
-    // preference.
-    //
-    // The `default` rung is translated back into saying NOTHING, and that is
-    // load-bearing rather than fussy. Every runtime already falls back to
-    // `DEFAULT_CWD` on an absent cwd, so the turn runs in the same directory
-    // either way — but `effectiveCwd` is also what stamps `projector.cwd`
-    // below, overwriting whatever an `/events` subscribe put there. A turn that
-    // has no opinion about its directory must not acquire one here.
-    //
-    // The room binding is offered to the chain rather than resolved here
-    // (DOR-1624, spec `agent-home-desk` §5.7). A conversation this machine also
-    // answers in a room stands in the agent's home and reaches the room's files
-    // through folder grants, so a resume from the app must carry the same
-    // grants or the agent loses the files it was working on. The port answers
-    // `null` for every other session, which leaves the chain exactly as it was.
-    const resolved = await resolveSessionCwdWithRoom(
-      {
-        ...(effectiveCwd !== undefined ? { cwd: effectiveCwd } : {}),
-        agentPath: verifiedAgentPath,
-        sessionId,
-      },
-      roomSessionPlace
-    );
-    if (resolved.refusal) {
-      return { refused: resolved.refusal.code, message: resolved.refusal.message };
-    }
-    if (resolved.rung !== 'default') effectiveCwd = resolved.cwd;
-    roomPlace = resolved;
   }
 
   // **No turn stands in a room's files** (spec `agent-home-desk` I3), whichever

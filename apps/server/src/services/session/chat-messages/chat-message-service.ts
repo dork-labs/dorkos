@@ -60,6 +60,7 @@ import {
 } from '../launch/launch-session.js';
 import {
   emitQueueUpdate,
+  isQueuedMessageArmed,
   isQueuedMessageLaunching,
   onDispatchLifecycle,
   type DispatchLifecycleEvent,
@@ -410,9 +411,8 @@ export class ChatMessageService {
     });
     if (isSessionLaunchRefusal(result)) {
       // Only a chat that does not exist yet is refused for machine load.
-      if (result.refused === 'LAUNCH_CAP_FULL' && target.sessionId !== null) {
+      if (result.refused === 'LAUNCH_CAP_FULL' && target.sessionId !== null)
         return this.capHold.hold(row, target.sessionId);
-      }
       throw new ChatMessageError(
         result.refused === 'LAUNCH_CAP_FULL' ? 'UNAVAILABLE' : 'NOT_ALLOWED',
         result.refused === 'LAUNCH_CAP_FULL' ? standing.chatLaunchCapMessage() : result.message
@@ -481,8 +481,10 @@ export class ChatMessageService {
     const tail = rows.at(-1);
     if (!tail || !isChatClientId(tail.enqueuedBy) || tail.disposition !== 'queue') return null;
     // Read and written in one tick: a row whose words are being read into a
-    // turn right now would lose anything appended to it.
-    if (isQueuedMessageLaunching(tail.id)) return null;
+    // turn right now would lose anything appended to it. And a row nothing will
+    // run (a restart left it) would take this message down with it; the
+    // dispatcher adopts that row instead and gives this message its own (DOR-3348).
+    if (isQueuedMessageLaunching(tail.id) || !isQueuedMessageArmed(tail.id)) return null;
     // One batched turn grows to five messages' worth at most: past it a message
     // starts a row of its own, so hours of messages into a chat stuck in a long
     // turn cannot become one prompt that fails all at once.

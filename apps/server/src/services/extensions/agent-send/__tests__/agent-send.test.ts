@@ -164,6 +164,7 @@ function build(overrides: Partial<ConstructorParameters<typeof AgentSendService>
     meshCore: () => ({
       get: ((id: string) => (agents.has(id) ? { id } : undefined)) as never,
       getProjectPath: (id: string) => agents.get(id),
+      listWithPaths: () => [...agents].map(([id, projectPath]) => ({ id, name: id, projectPath })),
     }),
     describeSession: async (id) => sessions.get(id) ?? chat({ bound: false, launchOrigin: null }),
     sessionCwd: async () => '/work/project',

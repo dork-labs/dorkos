@@ -5,7 +5,7 @@
  *
  * @module services/session/message-dispatcher/adopt
  */
-import type { AgentRuntime } from '@dorkos/shared/agent-runtime';
+import type { AgentRuntime, MessageOpts } from '@dorkos/shared/agent-runtime';
 import { newDispatchId } from '@dorkos/shared/dispatch-id';
 import { getMessageQueueStore } from '../message-queue-store.js';
 import type { SessionStateProjector } from '../session-state-projector.js';
@@ -34,6 +34,10 @@ export interface AdoptQueuedMessagesOpts {
   runtime: AgentRuntime;
   /** Working directory for the recovered turns, when the caller knows it. */
   cwd?: string;
+  /** The agent identity a room-bound recovered turn runs as. */
+  forAgent?: string;
+  /** Folders a room-bound recovered turn may reach beyond its cwd. */
+  additionalDirectories?: MessageOpts['additionalDirectories'];
   /** Internal protected recovery selection; authority is still rechecked at the runtime claim. */
   privateReceiptSelection?: {
     sourceKind: import('../private-messages/acceptance.js').PrivateSessionMessageSourceRef['kind'];
@@ -133,8 +137,13 @@ export function adoptQueuedMessages(opts: AdoptQueuedMessagesOpts): number {
       // A recovered row is a row by definition, and somebody's words: it waits
       // as long as the queue waits.
       transient: false,
+      recovered: true,
       turn: {
         ...(opts.cwd !== undefined ? { cwd: opts.cwd } : {}),
+        ...(opts.forAgent !== undefined ? { forAgent: opts.forAgent } : {}),
+        ...(opts.additionalDirectories !== undefined
+          ? { additionalDirectories: opts.additionalDirectories }
+          : {}),
         ...(row.context !== null ? { context: row.context } : {}),
         // A to-do's turn kept its power only in the process that queued it (DOR-3088, Must 4):
         // recovered, it runs at the stranger's bound and unattended, never at the chat's own mode.
@@ -215,6 +224,10 @@ export function adoptAcceptedPrivateMessages(opts: AdoptQueuedMessagesOpts): num
       transient: false,
       turn: {
         ...(opts.cwd !== undefined ? { cwd: opts.cwd } : {}),
+        ...(opts.forAgent !== undefined ? { forAgent: opts.forAgent } : {}),
+        ...(opts.additionalDirectories !== undefined
+          ? { additionalDirectories: opts.additionalDirectories }
+          : {}),
         privateReceiptId: receipt.id,
         // An outside service's event (a signed webhook, reachable over a
         // tunnel) starts this turn, so it carries the outsider mark, never a
