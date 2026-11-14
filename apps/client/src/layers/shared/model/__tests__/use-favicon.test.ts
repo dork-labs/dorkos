@@ -135,6 +135,60 @@ describe('useFavicon', () => {
     vi.useRealTimers();
   });
 
+  // Design review of #3722: a hidden background tab is exactly where people look
+  // at the icon, so a hidden tab shows one still "working" frame, not the solid one.
+  it('shows one still working frame while hidden and streaming, with no timer', async () => {
+    vi.useFakeTimers();
+    const setHidden = (hidden: boolean) => {
+      Object.defineProperty(document, 'visibilityState', {
+        value: hidden ? 'hidden' : 'visible',
+        configurable: true,
+      });
+      document.dispatchEvent(new Event('visibilitychange'));
+    };
+    setHidden(false);
+    renderHook(() => useFavicon({ cwd: '/test', isStreaming: true }));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+
+    vi.mocked(setFavicon).mockClear();
+    act(() => setHidden(true));
+    // The middle of the four frames, the pulse at its fullest.
+    expect(vi.mocked(setFavicon)).toHaveBeenLastCalledWith('data:frame2');
+    expect(vi.mocked(setFavicon)).not.toHaveBeenCalledWith('data:image/png;base64,solid');
+    vi.mocked(setFavicon).mockClear();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5_000);
+    });
+    expect(vi.mocked(setFavicon)).not.toHaveBeenCalled();
+    expect(vi.getTimerCount()).toBe(0);
+
+    setHidden(false);
+    vi.useRealTimers();
+  });
+
+  it('shows the working frame when a turn starts in a tab that is already hidden', async () => {
+    vi.useFakeTimers();
+    Object.defineProperty(document, 'visibilityState', { value: 'hidden', configurable: true });
+    try {
+      const { rerender } = renderHook(
+        ({ isStreaming }) => useFavicon({ cwd: '/test', isStreaming }),
+        { initialProps: { isStreaming: false } }
+      );
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+      vi.mocked(setFavicon).mockClear();
+      rerender({ isStreaming: true });
+      expect(vi.mocked(setFavicon)).toHaveBeenLastCalledWith('data:frame2');
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      Object.defineProperty(document, 'visibilityState', { value: 'visible', configurable: true });
+      vi.useRealTimers();
+    }
+  });
+
   it('never pulses in the Mac app, which shows no favicon', async () => {
     vi.useFakeTimers();
     (window as unknown as { electronAPI: unknown }).electronAPI = {

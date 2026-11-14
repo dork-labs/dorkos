@@ -1,6 +1,7 @@
 ---
 covers:
   - 'fix(client): an idle window stops redrawing work nobody can see (DOR-3312)'
+  - 'fix(client): a hidden tab shows a still working icon while a turn runs (DOR-3312)'
 ---
 
 ### Fixed

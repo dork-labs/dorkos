@@ -21,9 +21,9 @@ const FRAME_INTERVAL = 100;
  * Generate a CWD-based colored favicon and tasks-animate it while streaming.
  *
  * The pulse rewrites the icon ten times a second for as long as a turn streams,
- * which can be hours. It only runs where someone can see it (DOR-3312): never in
- * the desktop shell, whose window shows no favicon, and not while the page is
- * hidden.
+ * which can be hours. It only runs where someone can see it move (DOR-3312):
+ * never in the desktop shell, whose window shows no favicon, and not while the
+ * page is hidden, where one still working frame stands in for it.
  */
 export function useFavicon({ cwd, isStreaming, color: colorOverride }: UseFaviconOptions) {
   const solidRef = useRef<string>('');
@@ -40,8 +40,14 @@ export function useFavicon({ cwd, isStreaming, color: colorOverride }: UseFavico
       clearInterval(intervalRef.current);
       intervalRef.current = null;
     }
-    if (framesRef.current.length === 0) return;
-    if (document.visibilityState === 'hidden') return;
+    const frames = framesRef.current;
+    if (frames.length === 0) return;
+    // A hidden background tab is where people check the icon: show one still
+    // "working" frame, the pulse at its fullest, and run no timer until it is shown.
+    if (document.visibilityState === 'hidden') {
+      setFavicon(frames[Math.floor(frames.length / 2)]);
+      return;
+    }
 
     frameIndexRef.current = 0;
     intervalRef.current = window.setInterval(() => {
@@ -103,14 +109,12 @@ export function useFavicon({ cwd, isStreaming, color: colorOverride }: UseFavico
     return stopPulsing;
   }, [isStreaming, startPulsing, stopPulsing]);
 
-  // Pause while hidden, pick up again when shown.
+  // Hidden: one still working frame. Shown again: the pulse picks up.
   useEffect(() => {
     const onVisibility = () => {
-      if (!isStreamingRef.current) return;
-      if (document.visibilityState === 'hidden') stopPulsing();
-      else startPulsing();
+      if (isStreamingRef.current) startPulsing();
     };
     document.addEventListener('visibilitychange', onVisibility);
     return () => document.removeEventListener('visibilitychange', onVisibility);
-  }, [startPulsing, stopPulsing]);
+  }, [startPulsing]);
 }
