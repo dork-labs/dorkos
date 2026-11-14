@@ -10,3 +10,4 @@ export {
   type ConnectorEventPayloadScope,
   type ConnectorEventPayloadKeys,
 } from './event-content.js';
+export * from './paid-operations.js';

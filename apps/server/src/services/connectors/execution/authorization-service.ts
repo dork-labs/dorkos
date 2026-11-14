@@ -45,6 +45,7 @@ import {
 } from '../readiness/connection-readiness.js';
 import { agentGrantScope, type AgentGrantDenial } from './agent-grant-scope.js';
 import { describeServiceAction } from './approval-service-action.js';
+import { grantRefusal } from './grant-refusal.js';
 import { managedAgentAccess } from './managed-agent-access.js';
 import { preflightResultOf } from './reaches-outside.js';
 
@@ -385,12 +386,8 @@ export class ConnectorExecutionAuthorizationService {
     if (granted.denied === 'detached') {
       return this.refuseNotReady('CONNECTOR_GRANT_REQUIRED', row, { offForThisChat: true });
     }
-    if (!granted.named && !granted.everyAgent) {
-      return refuse(
-        'CONNECTOR_GRANT_REQUIRED',
-        'This agent is not granted the selected operation.'
-      );
-    }
+    const missing = grantRefusal(this.db, actor.agentId, input.target, granted, row);
+    if (missing) return refuse('CONNECTOR_GRANT_REQUIRED', missing);
     const provider = this.registry.resolveProviderInstance(
       ConnectorOperationRevisionSchema.shape.providerInstanceId.parse(row.providerInstanceId)
     );

@@ -44,6 +44,7 @@ import {
   LINK_NEEDED_TO_CHANGE_ACCESS_COPY,
   WAY_CAPABILITY_COPY,
   accessLevelRevisionIds,
+  isPaidOperation,
   type ConnectorAccessLevel,
   type ConnectorOperationClassification,
   type ConnectorOperationPage,
@@ -165,6 +166,14 @@ function revisionSetHash(ids: readonly string[]): string {
 }
 
 type DiscoveredOperation = ConnectorOperationPage['operations'][number];
+
+/** Only what a level needs from an operation: never its schema or private upstream ref. */
+function paidFacts(
+  operation: Pick<DiscoveredOperation, 'toolkit' | 'operationSlug' | 'capabilityClassification'>
+) {
+  const { toolkit, operationSlug, capabilityClassification } = operation;
+  return { toolkit, operationSlug, capabilityClassification };
+}
 
 function operationIdentity(operation: DiscoveredOperation): string {
   return [
@@ -744,7 +753,10 @@ export class ConnectorReconciliationService {
   ) {
     const { discovered, existingGrantRows, verifiedByVersion } = catalog;
     const supportById = new Map<string, boolean>();
-    const classificationById = new Map<string, ConnectorOperationClassification>();
+    const operationById = new Map<
+      string,
+      Pick<DiscoveredOperation, 'toolkit' | 'operationSlug' | 'capabilityClassification'>
+    >();
     const ids: string[] = [];
     for (const operation of discovered) {
       const existing = tx
@@ -779,12 +791,12 @@ export class ConnectorReconciliationService {
       }
       ids.push(id);
       supportById.set(id, true);
-      classificationById.set(id, operation.capabilityClassification);
+      operationById.set(id, paidFacts(operation));
     }
 
     for (const row of existingGrantRows) {
       ids.push(row.id);
-      classificationById.set(row.id, row.capabilityClassification);
+      operationById.set(row.id, paidFacts(row));
       const evidence = verifiedByVersion.get(row.toolkitVersion);
       supportById.set(
         row.id,
@@ -838,7 +850,7 @@ export class ConnectorReconciliationService {
       uniqueIds,
       candidates: uniqueIds.map((operationRevisionId) => ({
         operationRevisionId,
-        capabilityClassification: classificationById.get(operationRevisionId)!,
+        ...operationById.get(operationRevisionId)!,
         supported: supportById.get(operationRevisionId) ?? false,
       })),
     };
@@ -978,8 +990,15 @@ export class ConnectorReconciliationService {
         .select({
           operationRevisionId: connectorReconciliationCandidates.operationRevisionId,
           supported: connectorReconciliationCandidates.supported,
+          toolkit: connectorOperationRevisions.toolkit,
+          operationSlug: connectorOperationRevisions.operationSlug,
+          capabilityClassification: connectorOperationRevisions.capabilityClassification,
         })
         .from(connectorReconciliationCandidates)
+        .innerJoin(
+          connectorOperationRevisions,
+          eq(connectorOperationRevisions.id, connectorReconciliationCandidates.operationRevisionId)
+        )
         .where(eq(connectorReconciliationCandidates.previewId, preview.id))
         .all();
       if (
@@ -994,39 +1013,13 @@ export class ConnectorReconciliationService {
       const supported = new Set(
         candidateRows.filter((row) => row.supported).map((row) => row.operationRevisionId)
       );
-      const classificationById = new Map(
-        (candidateRows.length > 0
-          ? tx
-              .select({
-                id: connectorOperationRevisions.id,
-                classification: connectorOperationRevisions.capabilityClassification,
-              })
-              .from(connectorOperationRevisions)
-              .where(
-                inArray(
-                  connectorOperationRevisions.id,
-                  candidateRows.map((row) => row.operationRevisionId)
-                )
-              )
-              .all()
-          : []
-        ).map((row) => [row.id, row.classification] as const)
+      const paid = new Set(
+        candidateRows.filter((row) => isPaidOperation(row)).map((row) => row.operationRevisionId)
       );
       // A level is granted with exactly its set in this review, never more:
       // a selection that names a level and anything else is refused.
       const matchesLevel = (ids: readonly string[], level: ConnectorAccessLevel | undefined) =>
-        level === undefined ||
-        sameIds(
-          ids,
-          accessLevelRevisionIds(
-            candidateRows.map((row) => ({
-              operationRevisionId: row.operationRevisionId,
-              supported: row.supported,
-              capabilityClassification: classificationById.get(row.operationRevisionId)!,
-            })),
-            level
-          )
-        );
+        level === undefined || sameIds(ids, accessLevelRevisionIds(candidateRows, level));
       for (const selection of request.grants) {
         if (
           !allowedAgents.has(selection.agentId) ||
@@ -1059,6 +1052,12 @@ export class ConnectorReconciliationService {
             'The selected action was not part of this complete permission review.'
           );
         }
+        if (request.everyAgent.operationRevisionIds.some((id) => paid.has(id))) {
+          throw new ConnectorReconciliationError(
+            'invalid_selection',
+            `An action that spends money can't be given to every agent. Pick the agents one by one.`
+          );
+        }
         if (
           request.everyAgent.operationRevisionIds.length > 0 &&
           !matchesLevel(request.everyAgent.operationRevisionIds, request.everyAgent.level)
@@ -1081,6 +1080,8 @@ export class ConnectorReconciliationService {
               .select({
                 operationRevisionId: connectorReconciliationCandidates.operationRevisionId,
                 supported: connectorReconciliationCandidates.supported,
+                toolkit: connectorOperationRevisions.toolkit,
+                operationSlug: connectorOperationRevisions.operationSlug,
                 capabilityClassification: connectorOperationRevisions.capabilityClassification,
               })
               .from(connectorReconciliationCandidates)
@@ -1093,11 +1094,7 @@ export class ConnectorReconciliationService {
               )
               .where(eq(connectorReconciliationCandidates.previewId, newest.id))
               .all()
-          : candidateRows.map((row) => ({
-              operationRevisionId: row.operationRevisionId,
-              supported: row.supported,
-              capabilityClassification: classificationById.get(row.operationRevisionId)!,
-            }));
+          : candidateRows;
       const grants = request.grants.map((selection) =>
         selection.level
           ? {
@@ -1496,6 +1493,8 @@ export class ConnectorReconciliationService {
       readonly agentIds: ReadonlySet<string>;
       readonly candidates: ReadonlyArray<{
         readonly operationRevisionId: string;
+        readonly toolkit: string;
+        readonly operationSlug: string;
         readonly capabilityClassification: ConnectorOperationClassification;
         readonly supported: boolean;
       }>;

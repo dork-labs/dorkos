@@ -485,6 +485,32 @@ describe('agents approving read requests', () => {
     return connectionId;
   }
 
+  // DOR-4204: an action that spends money is never handed on by another agent, even when
+  // the service calls it read-only and the approver holds it.
+  it('never hands on an action that spends money', async () => {
+    const connectionId = await secondApp('connection-apify', 'apify', false);
+    const snapshot = await reconciliation.preview(
+      OWNER,
+      { connectionId },
+      new AbortController().signal
+    );
+    const scrape = snapshot.candidates.find((c) => c.operationSlug === 'apify.read')!;
+    expect(scrape.capabilityClassification).toBe('read');
+    await reconciliation.apply(OWNER, {
+      previewId: snapshot.previewId,
+      grants: [{ agentId: 'pm', operationRevisionIds: [scrape.operationRevisionId] }],
+    });
+    requests.set('request-apify', {
+      agentId: 'newbie',
+      serviceSlug: 'apify',
+      requestedAccess: 'read',
+    });
+    expect(await code(approval.approve(caller('pm'), { requestId: 'request-apify' }))).toBe(
+      'APPROVE_NOT_HELD'
+    );
+    expect(readAccessState(db, 'newbie', connectionId).revisionIds).toEqual([]);
+  });
+
   describe('which app (Security, on { requestId, connectionId? })', () => {
     it('refuses when the approver holds more than one app for the service and names none: never the first', async () => {
       const other = await secondApp('connection-b', 'gmail', true);
