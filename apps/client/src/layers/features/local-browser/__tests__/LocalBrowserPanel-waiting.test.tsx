@@ -207,11 +207,19 @@ it.each([390, 1280])(
     mount();
     const trigger = await screen.findByRole('button', { name: 'See open tabs' });
     expectWrappingButton(trigger);
+    expect(trigger).toHaveClass('-ms-3', 'px-3');
     fireEvent.click(trigger);
     const dialog = await screen.findByRole('dialog', { name: 'Open chat tabs' });
     const first = within(dialog).getByRole('link', {
       name: /Northwind quarterly research and planning/,
     });
+    expect(within(first).getByText('northwind.example · Agent')).toBeInTheDocument();
+    expect(dialog).not.toHaveTextContent('https://');
+    if (width >= 768) {
+      expect(dialog).toHaveAttribute('data-side', 'bottom');
+      expect(dialog).toHaveAttribute('data-align', 'start');
+      expect(dialog).toHaveClass('max-w-(--radix-popover-content-available-width)');
+    }
     await waitFor(() => expect(first).toHaveFocus());
   }
 );
