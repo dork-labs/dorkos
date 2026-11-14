@@ -224,6 +224,16 @@ export class BrowserHandover {
   }
 
   /**
+   * Whether this chat's own handoff is open. In its own window, the handoff closes the
+   * agent's window for the sign-in window, so the browser no longer names the chat.
+   *
+   * @param sessionId - The calling chat.
+   */
+  isOpenFor(sessionId: string): boolean {
+    return this.record?.outcome === null && this.record.sessionId === sessionId;
+  }
+
+  /**
    * The agent hands the browser to the person and stops.
    *
    * @param sessionId - The calling chat, already checked as the one the browser is shared with.
