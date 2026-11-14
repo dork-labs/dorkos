@@ -4,6 +4,7 @@ import { localBrowserStateKey } from '@/layers/entities/local-browser';
 import type { LocalBrowserPersonState } from '@dorkos/shared/local-browser';
 import { useTransport } from '@/layers/shared/model';
 import { Button } from '@/layers/shared/ui';
+import { BrowserPanelActions } from './BrowserPanelActions';
 
 /** Popup presence does not introduce a new state or give the agent its held page back. */
 export function HeldChatTab({
@@ -36,6 +37,20 @@ export function HeldChatTab({
     if (state.selectedTabId && state.sessionId)
       void run(() => transport.selectLocalBrowserTab(state.selectedTabId!, state.sessionId!));
   };
+  const showButton = (
+    <Button
+      variant={hasIt ? 'ghost' : 'default'}
+      onClick={show}
+      disabled={busy}
+      className={
+        hasIt
+          ? 'h-auto min-h-11 max-w-full py-2 whitespace-normal transition-none md:h-auto'
+          : 'h-auto min-h-11 w-full py-2 whitespace-normal transition-none min-[480px]:w-auto md:h-auto'
+      }
+    >
+      Show window
+    </Button>
+  );
   return (
     <div className="space-y-3">
       {fallen ? (
@@ -65,34 +80,36 @@ export function HeldChatTab({
           Couldn’t update the tab. Try again.
         </p>
       )}
-      {hasIt && state.handoff && (
-        <Button
-          onClick={() => void run(() => transport.handBackLocalBrowser(state.handoff!.id))}
-          disabled={busy}
-          className="h-auto min-h-11 w-full py-2 whitespace-normal transition-none min-[480px]:w-auto md:h-auto"
-        >
-          Hand back to {agentName || 'your agent'}
-        </Button>
-      )}
-      {!fallen && (
-        <Button
-          variant={state.handoffTaken ? 'ghost' : 'default'}
-          onClick={show}
-          disabled={busy}
-          className="h-auto min-h-11 w-full py-2 whitespace-normal transition-none min-[480px]:w-auto md:h-auto"
-        >
-          Show window
-        </Button>
-      )}
-      {hasIt && state.sessionId && (
-        <Button
-          variant="ghost"
-          disabled={busy}
-          onClick={() => void run(() => transport.disconnectLocalBrowser(state.sessionId!))}
-        >
-          Close tab
-        </Button>
-      )}
+      <BrowserPanelActions
+        primary={
+          hasIt && state.handoff ? (
+            <Button
+              onClick={() => void run(() => transport.handBackLocalBrowser(state.handoff!.id))}
+              disabled={busy}
+              className="h-auto min-h-11 w-full py-2 whitespace-normal transition-none min-[480px]:w-auto md:h-auto"
+            >
+              Hand back to {agentName || 'your agent'}
+            </Button>
+          ) : (
+            !hasIt && showButton
+          )
+        }
+      >
+        {hasIt && (
+          <>
+            {!fallen && showButton}
+            {state.sessionId && (
+              <Button
+                variant="ghost"
+                disabled={busy}
+                onClick={() => void run(() => transport.disconnectLocalBrowser(state.sessionId!))}
+              >
+                Close tab
+              </Button>
+            )}
+          </>
+        )}
+      </BrowserPanelActions>
     </div>
   );
 }

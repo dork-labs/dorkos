@@ -21,6 +21,7 @@ import { HeldChatTab } from './HeldChatTab';
 import { OpenChatTabs } from './OpenChatTabs';
 import { SavedSignIns } from './SavedSignIns';
 import { SharedElsewhere } from './SharedElsewhere';
+import { BrowserPanelActions } from './BrowserPanelActions';
 
 export interface LocalBrowserPanelProps {
   visible?: boolean;
@@ -387,21 +388,25 @@ export function LocalBrowserPanel({
               Only you can use this page. Open from an agent chat to share it.
             </p>
           )}
-          <div className="flex flex-wrap items-center gap-2">
-            <Button
-              size="sm"
-              variant="outline"
-              disabled={busy}
-              onClick={() =>
-                void action(() =>
-                  state.paused
-                    ? transport.resumeLocalBrowser(sessionId ?? undefined)
-                    : transport.pauseLocalBrowser(sessionId ?? undefined)
-                )
-              }
-            >
-              {state.paused ? 'Resume agent' : 'Pause agent'}
-            </Button>
+          <BrowserPanelActions
+            primary={
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-auto min-h-11 w-full py-2 whitespace-normal min-[480px]:w-auto md:h-auto"
+                disabled={busy}
+                onClick={() =>
+                  void action(() =>
+                    state.paused
+                      ? transport.resumeLocalBrowser(sessionId ?? undefined)
+                      : transport.pauseLocalBrowser(sessionId ?? undefined)
+                  )
+                }
+              >
+                {state.paused ? 'Resume agent' : 'Pause agent'}
+              </Button>
+            }
+          >
             <Button
               size="sm"
               variant="ghost"
@@ -425,7 +430,7 @@ export function LocalBrowserPanel({
             >
               Disconnect
             </Button>
-          </div>
+          </BrowserPanelActions>
           <label className="text-sm">
             {state.sessionId ? `Shared with ${agentName || 'this chat’s agent'}` : 'Browser tab'}
             <select
