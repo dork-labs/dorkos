@@ -107,7 +107,27 @@ function fixture() {
       events.emit('framenavigated', frame);
     }),
   } as unknown as Page;
+  const policyEvents = new EventEmitter();
   const context = {
+    newCDPSession: vi.fn(async (target: Page) => {
+      if (target !== page)
+        throw new Error(
+          "This frame does not have a separate CDP session, it is a part of the parent frame's session"
+        );
+      return {
+        on: policyEvents.on.bind(policyEvents),
+        detach: vi.fn(async () => undefined),
+        send: vi.fn(async (method: string) => {
+          if (method === 'Runtime.enable')
+            policyEvents.emit('Runtime.executionContextCreated', {
+              context: { id: 1, auxData: { isDefault: true } },
+            });
+          if (method === 'Page.getFrameTree') return { frameTree: { frame: { id: 'frame' } } };
+          if (method === 'Page.createIsolatedWorld') return { executionContextId: 1 };
+          return { result: { value: false } };
+        }),
+      };
+    }),
     browser: () => null,
     pages: () => [page],
     on: contextEvents.on.bind(contextEvents),

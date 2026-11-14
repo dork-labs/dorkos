@@ -15,6 +15,7 @@ covers:
   - 'fix(dev): show held and stopped chat tabs in the Playground'
   - 'fix(browser): keep stopped chat tabs with the person until hand-back'
   - 'fix(browser): group panel secondary actions into one wrapping row'
+  - 'fix(browser): update popup policy without granting user activation'
 ---
 
 ### Added
@@ -36,3 +37,4 @@ covers:
 
 - Pause other chats’ browser actions while you sign in. Their agents can still read their tabs.
 - Allow sign-in popups after you show the held tab, one at a time. Agents can’t read or use them.
+- Block sign-in popups opened without your click, including those opened by forms.
