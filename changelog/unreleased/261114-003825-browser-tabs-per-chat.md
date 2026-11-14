@@ -20,6 +20,7 @@ covers:
   - 'fix(browser): reconcile shared browser flows after rebase'
   - 'fix(browser): refresh tab API artifacts and verification inventories'
   - 'fix(browser): classify idle close and keep memory checks buildless'
+  - 'fix(browser): use the shared focus ring for chat tab links'
 ---
 
 ### Added

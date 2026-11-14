@@ -67,7 +67,7 @@ export function OpenChatTabs({
             <li key={tab.sessionId}>
               <a
                 ref={index === 0 ? firstLink : undefined}
-                className="focus-visible:ring-ring block min-h-11 rounded p-2 break-words focus-visible:ring-2"
+                className="focus-ring block min-h-11 rounded p-2 break-words"
                 href={sessionHref({ session: tab.sessionId })}
               >
                 <span className="block text-sm font-medium">{tab.title}</span>
