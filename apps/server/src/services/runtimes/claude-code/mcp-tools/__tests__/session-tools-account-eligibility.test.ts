@@ -28,6 +28,11 @@ vi.mock('../../../../core/runtime-registry.js', () => ({
     getDefaultType: vi.fn(() => 'claude-code'),
     persistSessionRuntime: vi.fn(async () => true),
     resolveForSession: vi.fn(async () => runtimes.get('claude-code')),
+    // resolveChatPlace reads ownership through this; a new chat is unbound.
+    resolveForSessionWithOwnership: vi.fn(async () => ({
+      runtime: runtimes.get('claude-code'),
+      bound: false,
+    })),
     resolveSessionRuntime: vi.fn(async () => ({ type: 'claude-code', bound: false })),
     saveSessionSettings: vi.fn(async () => undefined),
     discardSessionSettings: vi.fn(async () => undefined),
