@@ -30,6 +30,13 @@ The desktop entry points keep launch and shutdown ownership. Their support files
 
 Typecheck the maintained runners with `pnpm exec tsc -p scripts/local-browser/tsconfig.json`.
 
+## Chat memory (Docker only)
+
+For the 1/3/5-chat measurement and optional six-chat boundary, use
+[chat-memory.md](chat-memory.md). That runner uses the real service and production
+browser launch in sealed Linux Docker, with synthetic pages and fresh profiles.
+It refuses a Mac host launch and leaves the cap decision pending measured evidence.
+
 ## Fresh installed CLI
 
 The CLI proof runs normal `pnpm --filter dorkos build` before `npm pack --ignore-scripts`. Each build or install command has a 300-second limit and physical process cleanup. Do not substitute older build output or a tarball from another attempt.
