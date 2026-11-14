@@ -67,7 +67,10 @@ it('Security Must 2: takeover refuses all tools on that page while another chat 
   }
   expect(f.context.close).not.toHaveBeenCalled();
   expect(f.pages[0].value.screenshot).not.toHaveBeenCalled();
-  const privateReads = vi.mocked(f.pages[0].value.title).mock.calls.length;
+  const privateReads = () =>
+    f.pages[0].protocol.send.mock.calls.filter(([method]) => method === 'Target.getTargetInfo')
+      .length;
+  const before = privateReads();
   f.pages[0].navigate('https://private.example/?token=person-only');
   await f.call('state', 'nova');
   await f.call('observe', 'nova');
@@ -77,7 +80,7 @@ it('Security Must 2: takeover refuses all tools on that page while another chat 
     {},
     { sessionId: 'nova' }
   );
-  expect(f.pages[0].value.title).toHaveBeenCalledTimes(privateReads);
+  expect(privateReads()).toBe(before);
   expect(f.pages[0].value.screenshot).not.toHaveBeenCalled();
   await f.service.handover.handBack(handoffId);
   await expect(f.call('observe', 'atlas')).resolves.toMatchObject({

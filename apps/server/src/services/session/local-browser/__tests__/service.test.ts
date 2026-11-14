@@ -23,6 +23,7 @@ function fixture() {
   const browserEvents = new EventEmitter();
   let url = 'http://fixture.test/';
   let snapshot = '- button "Save"';
+  const metadataTitle = vi.fn(async () => 'Fixture');
   const click = vi.fn(async () => undefined);
   const fill = vi.fn(async () => undefined);
   const handle = {
@@ -118,6 +119,10 @@ function fixture() {
         on: policyEvents.on.bind(policyEvents),
         detach: vi.fn(async () => undefined),
         send: vi.fn(async (method: string) => {
+          if (method === 'Target.getTargetInfo')
+            return {
+              targetInfo: { targetId: 'fixture-target', title: await metadataTitle(), url },
+            };
           if (method === 'Runtime.enable')
             policyEvents.emit('Runtime.executionContextCreated', {
               context: { id: 1, auxData: { isDefault: true } },
@@ -149,6 +154,7 @@ function fixture() {
     connect: vi.fn(async () => browser),
   };
   return {
+    metadataTitle,
     page,
     handle,
     contextEvents,
@@ -377,16 +383,15 @@ describe('local browser ownership and observations', () => {
   });
 
   it('never polls unselected documents or waits for them on agent state/action completion', async () => {
-    const { service, context, page } = await create();
+    const { service, context, page, metadataTitle: selectedTitle } = await create();
     const unrelated = fixture();
     vi.spyOn(context, 'pages').mockReturnValue([page, unrelated.page]);
-    const unrelatedTitle = vi
-      .spyOn(unrelated.page, 'title')
-      .mockImplementation(() => new Promise<string>(() => {}));
+    const unrelatedTitle = unrelated.metadataTitle.mockImplementation(
+      () => new Promise<string>(() => {})
+    );
     const state = await service.open({ mode: 'new-window', sessionId: 'chat-one' });
     await service.selectTab(state.tabs[0].id);
     unrelatedTitle.mockClear();
-    const selectedTitle = vi.spyOn(page, 'title');
     selectedTitle.mockClear();
     await service.state();
     await service.state();
@@ -413,18 +418,21 @@ describe('local browser ownership and observations', () => {
     other.events.emit('domcontentloaded');
     expect((await service.state()).tabs).toHaveLength(1);
     expect(title).not.toHaveBeenCalled();
+    expect(other.metadataTitle).not.toHaveBeenCalled();
     expect(other.page.close).toHaveBeenCalledOnce();
     await service.disconnect();
   });
   it('refreshes a selected same-document title after polling and action completion', async () => {
-    const { service, page, fill } = await create();
+    const { service, metadataTitle, fill } = await create();
     let current = 'Before input';
-    vi.spyOn(page, 'title').mockImplementation(async () => current);
+    metadataTitle.mockImplementation(async () => current);
     const state = await service.open({ mode: 'new-window', sessionId: 'chat-one' });
     await service.selectTab(state.tabs[0].id);
     current = 'Human input';
     await service.state();
-    expect((await service.agentState()).tabs[0].title).toBe('Human input');
+    await vi.waitFor(async () =>
+      expect((await service.agentState()).tabs[0].title).toBe('Human input')
+    );
     const observed = await service.observe();
     fill.mockImplementationOnce(async () => {
       current = 'Agent input';
@@ -436,7 +444,9 @@ describe('local browser ownership and observations', () => {
       text: 'Agent input',
       revision: observed.revision,
     });
-    expect((await service.agentState()).tabs[0].title).toBe('Agent input');
+    await vi.waitFor(async () =>
+      expect((await service.agentState()).tabs[0].title).toBe('Agent input')
+    );
     await service.disconnect();
   });
   it('discards queued state reads when the connection closes', async () => {

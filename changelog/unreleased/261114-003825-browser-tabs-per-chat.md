@@ -16,6 +16,7 @@ covers:
   - 'fix(browser): keep stopped chat tabs with the person until hand-back'
   - 'fix(browser): group panel secondary actions into one wrapping row'
   - 'fix(browser): update popup policy without granting user activation'
+  - 'fix(browser): read tab titles without granting popup activation'
 ---
 
 ### Added

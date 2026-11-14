@@ -1,6 +1,18 @@
 import type { Page } from 'playwright-core';
 import type { LocalBrowserTab } from '@dorkos/shared/local-browser';
 
+async function readTitle(page: Page): Promise<string> {
+  const client = await page.context().newCDPSession(page);
+  try {
+    // Playwright's page.title() evaluates JS with userGesture:true. Target metadata
+    // never executes the document or gives a reloading page popup activation.
+    const { targetInfo } = await client.send('Target.getTargetInfo', undefined, { timeout: 3000 });
+    return targetInfo.title;
+  } finally {
+    await client.detach();
+  }
+}
+
 /** Event-refreshed tab labels; polling never evaluates an unrelated page's document. */
 export class LocalBrowserTabMetadata {
   private tracked = new WeakSet<Page>();
@@ -59,8 +71,7 @@ export class LocalBrowserTabMetadata {
       pending: true,
     };
     entries.set(page, record);
-    void page
-      .title()
+    void readTitle(page)
       .then((title) => {
         record.pending = false;
         if (

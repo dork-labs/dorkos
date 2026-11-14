@@ -39,6 +39,13 @@ preceding agent click. The separate window must keep focus throughout, no popup
 may be created, and the agent must lose read access. Its sample window covers the
 delayed attempts; it is an explicit negative observation, not a readiness wait.
 
+The third test leaves the tab with its agent. A hostile page loads three documents
+on its own. Each tries a detached target link and an iframe `window.open`, without
+a click. This catches activation from automatic title reads, even when the detached
+link bypasses the page guard. Every load and attempt must run; another window must
+keep focus, no transient popup target may appear, and no popup payload may run.
+The page guard is advisory; this proof checks Chromium's popup blocking too.
+
 Harness expressions use raw CDP with `userGesture: false`, including focus reads.
 A proof must not create the activation it is measuring. Popup creation, policy
 writes, iframe updates and denial reports use the production service.

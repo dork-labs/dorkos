@@ -62,6 +62,8 @@ export function chatPagesFixture() {
     } as unknown as Page;
     const protocolEvents = new EventEmitter();
     const send = vi.fn(async (method: string) => {
+      if (method === 'Target.getTargetInfo')
+        return { targetInfo: { targetId: 'fixture-target', title: `Title of ${url}`, url } };
       if (method === 'Runtime.enable')
         protocolEvents.emit('Runtime.executionContextCreated', {
           context: { id: 1, auxData: { isDefault: true } },

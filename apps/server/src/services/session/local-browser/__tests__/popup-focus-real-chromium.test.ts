@@ -51,10 +51,38 @@ document.getElementById('start').onclick = () => window.arm(new URL(location).se
 document.getElementById('person').onclick = () => window.open('https://login.popup-proof.example/popup', 'proof-popup');
 </script>`;
 
+function hostileHTML(url: URL): string {
+  const round = Number(url.searchParams.get('round') ?? 1);
+  assert([1, 2, 3].includes(round));
+  if (url.pathname === '/hostile-frame')
+    return `<!doctype html><title>Hostile frame ${round}</title><script>
+      setTimeout(() => {
+        console.log('proof-attempt-frame-${round}');
+        window.open('https://login.popup-proof.example/popup', 'proof-popup');
+      }, 850);
+    </script>`;
+  return `<!doctype html><title>Hostile reload ${round}</title>
+    <iframe src="/hostile-frame?round=${round}"></iframe><script>
+      console.log('proof-hostile-load-${round}');
+      // A detached link bypasses the advisory document capture listener.
+      addEventListener('DOMContentLoaded', () => {
+        setTimeout(() => {
+          console.log('proof-attempt-detached-${round}');
+          const link = document.createElement('a');
+          link.href = 'https://login.popup-proof.example/popup';
+          link.target = 'proof-popup';
+          link.click();
+        }, 650);
+        if (${round} < 3) setTimeout(() => location.reload(), 1500);
+      });
+    </script>`;
+}
+
 async function rig(kind: string) {
   const directory = await mkdtemp(path.join(tmpdir(), 'popup-focus-proof-'));
   let context: Context | undefined;
   let scripts = 0;
+  let hostileLoads = 0;
   const service = new runtime.service.LocalBrowserService(
     directory,
     undefined,
@@ -78,6 +106,9 @@ async function rig(kind: string) {
               contentType: 'text/html',
               body: '<script>if(window.name==="proof-popup")fetch("https://marker.popup-proof.example/ran")</script>Sign in',
             });
+          if (url.pathname === '/hostile') url.searchParams.set('round', String(++hostileLoads));
+          if (url.pathname === '/hostile' || url.pathname === '/hostile-frame')
+            return route.fulfill({ contentType: 'text/html', body: hostileHTML(url) });
           if (url.pathname === '/frame')
             return route.fulfill({
               contentType: 'text/html',
@@ -125,8 +156,12 @@ async function rig(kind: string) {
     );
     await observer.goto('https://observer.popup-proof.example/');
     let attempts = 0;
+    const hostileEvents = new Set<string>();
     page.on('console', (message) => {
-      if (message.text() === 'proof-attempt') attempts++;
+      const text = message.text();
+      if (text.startsWith('proof-attempt')) attempts++;
+      if (text.startsWith('proof-attempt-') || text.startsWith('proof-hostile-load-'))
+        hostileEvents.add(text);
     });
     const pageCDP = await context.newCDPSession(page);
     await browserCDP.send('Target.setDiscoverTargets', { discover: true });
@@ -142,6 +177,7 @@ async function rig(kind: string) {
       observerCDP,
       browserCDP,
       targets,
+      hostileEvents,
       scripts: () => scripts,
       async watch() {
         await observer.bringToFront(); // Explicit person focus before the measured interval.
@@ -150,12 +186,12 @@ async function rig(kind: string) {
           'window.losses=0;window.addEventListener("blur",()=>window.losses++);document.hasFocus()'
         ).then((focused) => assert.equal(focused, true));
       },
-      async assertHeldFocus() {
+      async assertHeldFocus(duration = 1500) {
         // A bounded negative observation is the assertion, not a browser readiness sleep.
         // It spans the regression's 650–1010ms timers and delayed popup creation/focus.
         const focus = await evaluate<{ focused: boolean; losses: number }>(
           observerCDP,
-          'new Promise(resolve=>setTimeout(()=>resolve({focused:document.hasFocus(),losses:window.losses}),1500))'
+          `new Promise(resolve=>setTimeout(()=>resolve({focused:document.hasFocus(),losses:window.losses}),${duration}))`
         );
         assert(attempts > 0, 'The fixture timer must actually fire; a throttled timer is no pass');
         assert.deepEqual(focus, { focused: true, losses: 0 });
@@ -306,5 +342,33 @@ describe.runIf(armed)('real Chromium popup activation and focus @sealed-docker',
           }
         });
       }
+  }, 300_000);
+
+  it('a hostile page cannot gain popup activation from titles across repeated loads', async () => {
+    await record('agent-held-hostile-reloads', async () => {
+      const f = await rig('window');
+      try {
+        await f.watch();
+        // Navigate without an agent click or an activating Playwright evaluation.
+        await f.pageCDP.send('Page.navigate', {
+          url: 'https://chat.popup-proof.example/hostile',
+        });
+        // Bounded negative observation spans all three self-driven document loads.
+        await f.assertHeldFocus(7000);
+        const expected = [1, 2, 3].flatMap((round) => [
+          `proof-hostile-load-${round}`,
+          `proof-attempt-detached-${round}`,
+          `proof-attempt-frame-${round}`,
+        ]);
+        assert.deepEqual(
+          [...f.hostileEvents].sort(),
+          expected.sort(),
+          'Every reload and both hostile paths must run'
+        );
+        receipts.at(-1)!.hostileEvents = [...f.hostileEvents].sort();
+      } finally {
+        await f.close();
+      }
+    });
   }, 300_000);
 });

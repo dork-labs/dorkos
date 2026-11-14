@@ -34,6 +34,9 @@ it('keeps exactly six chat tabs, counting a handoff and ignoring personal pages'
     expect(f.context.newPage).toHaveBeenCalledTimes(count!);
     expect(read).not.toHaveBeenCalled();
     expect(personal.value.title).not.toHaveBeenCalled();
+    expect(personal.protocol.send.mock.calls.map(([method]) => method)).not.toContain(
+      'Target.getTargetInfo'
+    );
     expect(f.pages.slice(0, 6).every((p) => !p.value.isClosed())).toBe(true);
   } finally {
     await f.service.disconnect();
