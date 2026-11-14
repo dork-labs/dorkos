@@ -12,6 +12,7 @@ covers:
   - 'fix(browser): admit sign-in popups only after a person takes the tab'
   - 'fix(browser): let panel buttons grow with wrapped labels'
   - 'fix(browser): keep the chat tab popover inside its panel'
+  - 'fix(dev): show held and stopped chat tabs in the Playground'
 ---
 
 ### Added
