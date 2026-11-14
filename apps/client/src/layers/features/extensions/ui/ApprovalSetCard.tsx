@@ -110,12 +110,8 @@ function memberFacts(member: ApprovalSetMemberView): Array<[string, string]> {
       ],
     ];
   }
-  if (!member.runsInServer) {
-    return [
-      ['Access', 'Its screens run in DorkOS with your access'],
-      ['Runs as', 'You'],
-    ];
-  }
+  // Screens alone run sealed off with no access of their own (DOR-3293).
+  if (!member.runsInServer) return [['Runs as', 'You']];
   return [
     ['Access', 'Runs inside DorkOS, with full access to this computer'],
     ['Runs as', 'You'],

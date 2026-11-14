@@ -227,6 +227,11 @@ export interface CanvasOpenOptions {
   pinned?: boolean;
   /** Where a file document's path resolved, and how it is labelled. */
   tree?: CanvasTreePlacement;
+  /**
+   * The app whose frame asked the host to open this (DOR-3293). Set only by the
+   * session canvas route for the host; always a new document, never a refresh.
+   */
+  openedByExtensionId?: string;
 }
 
 /** Every canvas on this machine — the table, the shared rules, the one writer. */
@@ -402,15 +407,10 @@ export class CanvasService {
     content: UiCanvasContent,
     opts: CanvasOpenOptions = {}
   ): CanvasDocument {
-    const sourceKey = canvasSourceKey(content);
+    // An app's open is always a new tab, so it takes no dedupe key at all.
+    const sourceKey = opts.openedByExtensionId ? null : canvasSourceKey(content);
     const existing = this.documents.findBySourceKey(scope, sourceKey);
-    const held = this.lockHeldByAnother(existing, authorId);
-    if (held !== null) {
-      throw new RoomError(
-        'CANVAS_BEING_EDITED',
-        documentBeingEditedMessage(this.displayNameFor(held))
-      );
-    }
+    this.assertNotHeldByAnother(existing, authorId);
     const tree = opts.tree ?? NO_TREE;
     return this.write(
       scope,
@@ -422,6 +422,7 @@ export class CanvasService {
         existing,
         pinned: opts.pinned ?? false,
         channel: opts.channel,
+        openedByExtensionId: opts.openedByExtensionId ?? null,
         ...tree,
       },
       opts.principal
@@ -445,13 +446,7 @@ export class CanvasService {
     content: UiCanvasContent
   ): CanvasDocument {
     const existing = this.requireDocument(scope, documentId);
-    const held = this.lockHeldByAnother(existing, authorId);
-    if (held !== null) {
-      throw new RoomError(
-        'CANVAS_BEING_EDITED',
-        documentBeingEditedMessage(this.displayNameFor(held))
-      );
-    }
+    this.assertNotHeldByAnother(existing, authorId);
     return this.write(scope, authorId, {
       kind: 'write',
       content,
@@ -569,13 +564,7 @@ export class CanvasService {
       }
       return { editingBy: null, expiresAt: null };
     }
-    const held = this.lockHeldByAnother(existing, authorId);
-    if (held !== null) {
-      throw new RoomError(
-        'CANVAS_BEING_EDITED',
-        documentBeingEditedMessage(this.displayNameFor(held))
-      );
-    }
+    this.assertNotHeldByAnother(existing, authorId);
     const at = this.now();
     this.documents.update(scope, documentId, {
       editingBy: authorId,
@@ -858,6 +847,16 @@ export class CanvasService {
     return row;
   }
 
+  /** Refuse a write while somebody else holds the document's edit lock. */
+  private assertNotHeldByAnother(row: CanvasDocumentRow | null, authorId: string): void {
+    const held = this.lockHeldByAnother(row, authorId);
+    if (held === null) return;
+    throw new RoomError(
+      'CANVAS_BEING_EDITED',
+      documentBeingEditedMessage(this.displayNameFor(held))
+    );
+  }
+
   /**
    * Who is holding a live edit lock on this document, when it is not the caller.
    *
@@ -984,6 +983,8 @@ export class CanvasService {
         lastTouchedBy: authorId,
         lastTouchedAt: at,
         lastActiveAt: at,
+        // Any write after the app's own open is not the app's: the label goes.
+        openedByExtensionId: null,
         // `pinned` is deliberately NOT rewritten on a refresh: a document
         // somebody pinned stays pinned when an agent updates it, and an `open`
         // that re-finds it does not silently unpin it either.
@@ -1006,6 +1007,7 @@ export class CanvasService {
         sourceLabel: plan.sourceLabel ?? plan.existing.sourceLabel,
         treeKind: plan.treeKind ?? plan.existing.treeKind,
         aheadOfMain: plan.treeKind !== null ? plan.aheadOfMain : plan.existing.aheadOfMain,
+        openedByExtensionId: null,
       };
       return this.publishDocument(scope, row, 'updated');
     }
@@ -1033,6 +1035,7 @@ export class CanvasService {
       lastActiveAt: at,
       // A document is born without a discussion; the first Discuss writes this.
       threadRootEntryId: null,
+      openedByExtensionId: plan.openedByExtensionId ?? null,
     };
     this.documents.insert(row, (tx) => ({
       declaration: plan.channel,
@@ -1124,6 +1127,8 @@ interface CanvasWritePlan extends CanvasTreePlacement {
   sourceKey: string | null;
   existing: CanvasDocumentRow | null;
   pinned: boolean;
+  /** Set only by an app's bridged open (DOR-3293); every other write leaves it unset. */
+  openedByExtensionId?: string | null;
 }
 
 /**

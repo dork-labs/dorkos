@@ -77,6 +77,8 @@ import { createDiscoveryRoutes } from '../routes/discovery.js';
 import errorRoutes from '../routes/errors.js';
 import { createExtensionApiRoutes } from '../routes/extension-api.js';
 import { createExtensionsRoutes, type ExtensionsRouterDeps } from '../routes/extensions.js';
+import { createExtensionFrameRoutes } from '../routes/extension-frame.js';
+import { appScreenRunsIn } from '../routes/app-screen-runs.js';
 import {
   createExtensionDecisionsRoutes,
   type ExtensionDecisionsRouterDeps,
@@ -496,7 +498,18 @@ export function createHonoApi(options: HonoApiOptions): Hono<ApiEnv> {
         mesh: () => deps.mesh?.meshCore,
       })
     );
-    app.route('/api/ext', createExtensionApiRoutes(deps.extensions.manager));
+    const { manager } = deps.extensions;
+    const records = {
+      manifest: (id: string) => manager.get(id)?.manifest,
+      callerRuns: appScreenRunsIn(manager),
+    };
+    app.route('/api/ext', createExtensionApiRoutes(manager, records));
+    // The empty, sandboxed document every app's screens run in, and the token
+    // a frame's calls to another app carry (DOR-3293).
+    app.route(
+      '/api/extension-frame',
+      createExtensionFrameRoutes({ appScreenRuns: records.callerRuns, manifest: records.manifest })
+    );
   }
   // These two are mounted on all of `/api`, because their paths span several
   // prefixes. Their groups register only their own concrete paths, so mounting them at `/api` claims

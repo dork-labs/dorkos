@@ -1,4 +1,5 @@
 import { test, expect, type APIRequestContext, type Page, type Route } from '@playwright/test';
+import { appFrame, appPage } from '../../pages/app-frame.js';
 
 /**
  * A direct load of an app's own page while the app is still starting (QA's
@@ -89,7 +90,10 @@ function holdBundles(page: Page) {
   };
 }
 
-const PAGE_HEADING = { name: 'Hello, there' };
+/** The app's page heading, drawn inside its own sandboxed frame (DOR-3293). */
+function pageHeading(page: Page) {
+  return appFrame(appPage(page), 'Hello World').getByRole('heading', { name: 'Hello, there' });
+}
 const NOT_AVAILABLE = /isn’t available/;
 
 test.describe('An app’s page while the app is still starting', () => {
@@ -115,7 +119,7 @@ test.describe('An app’s page while the app is still starting', () => {
     } finally {
       await bundles.done();
     }
-    await expect(page.getByRole('heading', PAGE_HEADING)).toBeVisible();
+    await expect(pageHeading(page)).toBeVisible();
     const what = await seen(page);
     expect(what.starting).toBe(true);
     expect(what.said, 'never said the page was unavailable').toEqual([]);
@@ -140,7 +144,7 @@ test.describe('An app’s page while the app is still starting', () => {
       await notWorking.getByRole('button', { name: 'Try again' }).click();
       await bundles.arrived(2);
       await bundles.release(2);
-      await expect(page.getByRole('heading', PAGE_HEADING)).toBeVisible();
+      await expect(pageHeading(page)).toBeVisible();
     } finally {
       await bundles.done();
     }
@@ -173,7 +177,7 @@ test.describe('An app’s page while the app is still starting', () => {
     } finally {
       await bundles.done();
     }
-    await expect(page.getByRole('heading', PAGE_HEADING)).toBeVisible();
+    await expect(pageHeading(page)).toBeVisible();
     expect((await seen(page)).said, 'never said the page was unavailable').toEqual([]);
   });
 

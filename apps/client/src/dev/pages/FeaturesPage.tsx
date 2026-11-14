@@ -24,6 +24,7 @@ import { BrowserHandoffShowcases } from '../showcases/BrowserHandoffShowcases';
 import { LocalBrowserPanelShowcases } from '../showcases/LocalBrowserPanelShowcases';
 import { TriageHeaderShowcases } from '../showcases/TriageHeaderShowcases';
 import { InboxShowcases } from '../showcases/InboxShowcases';
+import { AppApprovalCardShowcases } from '../showcases/AppApprovalCardShowcases';
 import { AccessChangeShowcases } from '../showcases/AccessChangeShowcases';
 import { PresenceStripShowcases } from '../showcases/PresenceStripShowcases';
 import { HomeStatesShowcases } from '../showcases/HomeStatesShowcases';
@@ -105,6 +106,7 @@ export function HomeInboxPage() {
       <LocalBrowserPanelShowcases />
       <TriageHeaderShowcases />
       <InboxShowcases />
+      <AppApprovalCardShowcases />
       <AccessChangeShowcases />
       <PresenceStripShowcases />
       <HomeStatesShowcases />

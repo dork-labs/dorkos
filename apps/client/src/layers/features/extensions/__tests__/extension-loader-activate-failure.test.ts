@@ -4,7 +4,8 @@
 /**
  * An extension whose `activate()` throws part-way leaves nothing behind: what it
  * registered before the throw is removed, on first load and on hot reload.
- * The bundle URL is pointed at a `data:` module so the real dynamic import runs.
+ * Bundles only ever run inside an app's frame, so the loader is handed a module
+ * whose `activate()` behaves like one that registered a command and then threw.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { ExtensionRecordPublic } from '@dorkos/extension-api';
@@ -17,15 +18,14 @@ vi.mock('@/layers/shared/lib/ui-action-dispatcher', () => ({
   executeUiCommand: vi.fn(),
 }));
 
-/** A bundle that registers a command and then throws. */
-const THROWING_BUNDLE =
-  'data:text/javascript,' +
-  encodeURIComponent(
-    "export function activate(api) { api.registerCommand('go', 'Go', () => {}); throw new Error('boom'); }"
-  );
-
-vi.mock('../model/extension-api-url', () => ({
-  extensionApiUrl: (path: string) => (path.includes('/bundle') ? THROWING_BUNDLE : path),
+/** A module that registers a command and then throws. */
+vi.mock('../model/extension-bundle-import', () => ({
+  importExtensionModule: vi.fn(async () => ({
+    activate(api: { registerCommand(id: string, label: string, run: () => void): void }) {
+      api.registerCommand('go', 'Go', () => {});
+      throw new Error('boom');
+    },
+  })),
 }));
 
 import { ExtensionLoader } from '../model/extension-loader';
@@ -61,7 +61,7 @@ function makeDeps(unsubscribe: () => void): ExtensionAPIDeps {
 
 const record: ExtensionRecordPublic = {
   id: 'thrower',
-  manifest: { id: 'thrower', name: 'Thrower', version: '1.0.0' },
+  manifest: { clientApiVersion: 2, id: 'thrower', name: 'Thrower', version: '1.0.0' },
   status: 'compiled',
   scope: 'global',
   origin: 'user',

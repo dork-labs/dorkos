@@ -63,6 +63,7 @@ function makeExtension(overrides: Partial<ExtensionRecordPublic> = {}): Extensio
   return {
     id: 'test-ext',
     manifest: {
+      clientApiVersion: 2,
       id: 'test-ext',
       name: 'Test Extension',
       version: '1.0.0',
@@ -86,7 +87,7 @@ function named(id: string, name: string, overrides: Partial<ExtensionRecordPubli
   return makeExtension({
     id,
     ...overrides,
-    manifest: { id, name, version: '1.0.0', ...overrides.manifest },
+    manifest: { clientApiVersion: 2, id, name, version: '1.0.0', ...overrides.manifest },
   });
 }
 
@@ -244,6 +245,7 @@ describe('ExtensionsSettingsTab', () => {
         '/api/extensions': [
           named('s', 'With summary', {
             manifest: {
+              clientApiVersion: 2,
               id: 's',
               name: 'With summary',
               version: '1.0.0',
@@ -253,6 +255,7 @@ describe('ExtensionsSettingsTab', () => {
           }),
           named('d', 'Description only', {
             manifest: {
+              clientApiVersion: 2,
               id: 'd',
               name: 'Description only',
               version: '1.0.0',
@@ -476,6 +479,7 @@ describe('ExtensionsSettingsTab', () => {
         '/api/extensions': [
           named('ledger', 'Ledger', {
             manifest: {
+              clientApiVersion: 2,
               id: 'ledger',
               name: 'Ledger',
               version: '1.0.0',
@@ -725,6 +729,7 @@ describe('ExtensionsSettingsTab', () => {
       id: 'incompat-ext',
       status: 'incompatible',
       manifest: {
+        clientApiVersion: 2,
         id: 'incompat-ext',
         name: 'Incompat Extension',
         version: '1.0.0',
@@ -828,7 +833,13 @@ describe('ExtensionsSettingsTab — what comes with DorkOS', () => {
           id: 'locked',
           origin: 'core',
           status: 'active',
-          manifest: { id: 'locked', name: 'Locked Core', version: '1.0.0', canDisable: false },
+          manifest: {
+            clientApiVersion: 2,
+            id: 'locked',
+            name: 'Locked Core',
+            version: '1.0.0',
+            canDisable: false,
+          },
         }),
       ],
     });
@@ -848,7 +859,13 @@ describe('ExtensionsSettingsTab — what comes with DorkOS', () => {
           id: 'user-locked',
           origin: 'user',
           status: 'active',
-          manifest: { id: 'user-locked', name: 'User Locked', version: '1.0.0', canDisable: false },
+          manifest: {
+            clientApiVersion: 2,
+            id: 'user-locked',
+            name: 'User Locked',
+            version: '1.0.0',
+            canDisable: false,
+          },
         }),
       ],
     });
@@ -948,9 +965,64 @@ describe('permission to run code inside DorkOS (DOR-516)', () => {
     expect(box).toHaveTextContent('Test Extension wants to run on this computer.');
     const facts = within(box).getByTestId('extension-permissions-full-stack');
     expect(facts).toHaveTextContent('AccessRuns inside DorkOS, with full access to this computer');
-    expect(facts).toHaveTextContent('Runs asRuns as you');
+    expect(facts).toHaveTextContent('Runs asYou');
     expect(within(box).getByRole('button', { name: 'Allow' })).toBeInTheDocument();
     expect(within(box).getByRole('button', { name: 'Not now' })).toBeInTheDocument();
+  });
+
+  // Purpose: Review is a place a person approves (DOR-3293), so it shows what
+  // the screens can change, from the one table the bridge enforces, and never
+  // says they run with your access.
+  it('shows what an app’s screens can change, and nothing about your access', async () => {
+    mockFetch({
+      '/api/extensions': [
+        makeExtension({
+          id: 'report',
+          approvedToRun: false,
+          isolation: null,
+          manifest: {
+            clientApiVersion: 2,
+            id: 'report',
+            name: 'Quarterly report',
+            version: '1.0.0',
+            capabilities: { rooms: true },
+          },
+        }),
+      ],
+    });
+    render(<ExtensionsSettingsTab />, { wrapper: createWrapper() });
+    await screen.findByTestId('extension-card-report');
+    openRow('report');
+
+    const box = screen.getByTestId('extension-needs-approval-report');
+    expect(box).not.toHaveTextContent(/with your access/);
+    expect(box).not.toHaveTextContent(/Screens run/);
+    expect(within(box).getByTestId('extension-permissions-report')).toHaveTextContent('Runs asYou');
+    const extras = within(box).getByTestId('extension-permission-extras-report');
+    expect(extras).toHaveTextContent(
+      'It can change:Its own saved data and project settingsDocuments it opens on your canvas'
+    );
+    expect(extras).toHaveTextContent('Replies in the room threads you pick');
+    expect(extras).not.toHaveTextContent('Messages to an agent you pick');
+  });
+
+  // Purpose: an app with no screens and no server part says nothing about
+  // screens, and keeps the empty block.
+  it('says an app with nothing to run can’t change anything, and nothing about screens', async () => {
+    mockFetch({
+      '/api/extensions': [
+        makeExtension({ id: 'clock', approvedToRun: false, isolation: null, bundleReady: false }),
+      ],
+    });
+    render(<ExtensionsSettingsTab />, { wrapper: createWrapper() });
+    await screen.findByTestId('extension-card-clock');
+    openRow('clock');
+
+    const box = screen.getByTestId('extension-needs-approval-clock');
+    expect(box).not.toHaveTextContent(/screen/i);
+    expect(within(box).getByTestId('extension-permission-extras-clock')).toHaveTextContent(
+      'It can change:It can’t change anything.'
+    );
   });
 
   it('changes nothing on Not now, and leaves the chip in place', async () => {
@@ -1117,7 +1189,7 @@ describe('screens paused (DOR-3068)', () => {
     const digest = `sha256:${'c'.repeat(64)}`;
     const paused = makeExtension({
       id: 'ledger',
-      manifest: { id: 'ledger', name: 'Ledger', version: '2.3.0' },
+      manifest: { clientApiVersion: 2, id: 'ledger', name: 'Ledger', version: '2.3.0' },
       approvedToRun: true,
       screensPaused: true,
       bundleReady: false,

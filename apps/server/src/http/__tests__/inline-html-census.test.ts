@@ -89,6 +89,10 @@ const REVIEWED: Record<string, { why: Why; note: string }> = {
     why: 'fixed-server-text',
     note: "The no-client-build sign-in page: escaped, default-src 'none', no script.",
   },
+  'routes/extension-frame.ts': {
+    why: 'csp-sandbox',
+    note: 'The empty frame for app screens (DOR-3293): CSP sandbox allow-scripts, no allow-same-origin, nonce-only script, no app text.',
+  },
   'routes/workbench-serve.ts': {
     why: 'csp-sandbox',
     note: 'Agent and project files: every answer carries CSP sandbox without allow-same-origin.',

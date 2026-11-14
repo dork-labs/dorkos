@@ -57,8 +57,9 @@ function accessLine(extension: ExtensionRecordPublic): string | null {
       ? `Runs on its own. Can reach ${permissions.net.join(', ')}`
       : 'Runs on its own. Reaches nothing on the internet';
   }
+  // Screens alone run sealed off with no access of their own (DOR-3293).
   return permissions.hasServer === false
-    ? 'Screens run inside DorkOS, with your access'
+    ? null
     : 'Runs inside DorkOS, with full access to this computer';
 }
 

@@ -71,10 +71,11 @@ export class PackageStager {
       localSource: resolved.kind === 'local',
     });
     if (!validation.ok || !validation.manifest) {
-      const errorMessages = validation.issues
-        .filter((i) => i.level === 'error')
-        .map((i) => i.message);
-      throw new InvalidPackageError(errorMessages);
+      const errorIssues = validation.issues.filter((i) => i.level === 'error');
+      throw new InvalidPackageError(
+        errorIssues.map((i) => i.message),
+        errorIssues.map((i) => i.code)
+      );
     }
     // A package may not ship DorkOS's runtime state (settings, secrets, install
     // records): files there are left out of the content hash an approval binds,

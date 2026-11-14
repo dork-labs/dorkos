@@ -1,3 +1,4 @@
+import { extensionFramePlugin } from '../client/extension-frame-plugin';
 import { tanstackRouter } from '@tanstack/router-plugin/vite';
 import { clientRouterOptions } from '../client/router-plugin';
 import { defineConfig } from 'electron-vite';
@@ -141,6 +142,7 @@ export default defineConfig({
     // if that ever recurs.
     define: clientDefines(),
     plugins: [
+      extensionFramePlugin(),
       tanstackRouter(clientRouterOptions()),
       react(),
       tailwindcss(),

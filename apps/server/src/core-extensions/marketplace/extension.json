@@ -6,5 +6,6 @@
   "author": "DorkOS",
   "minHostVersion": "0.1.0",
   "defaultEnabled": true,
-  "canDisable": false
+  "canDisable": false,
+  "clientApiVersion": 2
 }

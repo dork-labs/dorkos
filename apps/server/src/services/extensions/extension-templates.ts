@@ -68,11 +68,15 @@ export function generateManifest(
     ...(description && { description }),
     author: 'agent',
     minHostVersion: '0.1.0',
+    // Version 2: the bundle runs in its own sandboxed frame (DOR-3293).
+    clientApiVersion: 2,
     contributions,
   };
 
   // Data-provider extensions declare server-side capabilities with a sample secret
   if (template === 'data-provider') {
+    // Lets the page call its own server routes through api.request.
+    manifest.capabilities = { http: true };
     manifest.serverCapabilities = {
       serverEntry: './server.ts',
       secrets: [
@@ -245,14 +249,15 @@ function generateDashboardCardTemplate(name: string, description: string): strin
 //   api.registerComponent(slot, id, component, options?) — Register a React component in a UI slot
 //   api.registerCommand(id, label, callback, options?)   — Register a command palette item
 //   api.notify(message, options?)                        — Show a toast notification
-//   api.loadData<T>() / api.saveData<T>(data)            — Persistent storage scoped to this extension
+//   api.loadData<T>() / api.saveData<T>(data)            — This app's screen data (512 KB, apart from ctx.storage)
+//   api.download(name, mimeType, data)                   — Save a file; DorkOS asks the person first
 //   api.getState()                                       — Read-only host state (currentCwd, activeSessionId)
 //   api.subscribe(selector, callback)                    — Subscribe to state changes
 //
 // Available slots: dashboard.sections, command-palette.items, settings.tabs,
 //   sidebar.footer, dialog, right-panel
 
-import type { ExtensionAPI } from '@dorkos/extension-api';
+import type { FrameExtensionAPI as ExtensionAPI } from '@dorkos/extension-api';
 
 /** Main dashboard section component. */
 function ${pascalName}Section() {
@@ -279,13 +284,10 @@ export function activate(api: ExtensionAPI): void {
 
 /**
  * Right-panel tab template — adds a tab to the shell's right panel (the
- * contextual inspector). Registers into the `right-panel` slot with a label and
- * an inline-SVG tab icon.
+ * contextual inspector). Registers into the `right-panel` slot with a label.
  *
- * The icon is a locally-defined component because extensions can only import
- * `react`, `react-dom`, and `@dorkos/extension-api` at runtime — `lucide-react`
- * is not available to them, so an author supplies any `{ className }` component
- * (here, an inline SVG). Omitting `icon` falls back to the host's puzzle-piece.
+ * No `icon`: an icon is a component, and a component cannot cross an app's
+ * sandboxed frame (DOR-3293), so the strip shows the host's puzzle-piece.
  */
 function generateRightPanelTabTemplate(name: string, description: string): string {
   const pascalName = toPascalCase(name);
@@ -300,37 +302,20 @@ function generateRightPanelTabTemplate(name: string, description: string): strin
 //
 // ExtensionAPI Quick Reference:
 //   api.registerComponent(slot, id, component, options?) — Register a React component in a UI slot
-//     right-panel options: { priority?, label?, icon?, showIn? } — label names the tab, icon is its
-//     tab-strip glyph (a { className } component; omit it for the default puzzle-piece),
-//     showIn is where the tab shows by default ({ agents?, rooms?, pages? }; omit = everywhere)
+//     right-panel options: { priority?, label?, showIn? } — label names the tab (the strip shows
+//     the default puzzle-piece icon), showIn is where the tab shows by default
+//     ({ agents?, rooms?, pages? }; omit = everywhere)
 //   api.registerCommand(id, label, callback, options?)   — Register a command palette item
 //   api.notify(message, options?)                        — Show a toast notification
-//   api.loadData<T>() / api.saveData<T>(data)            — Persistent storage scoped to this extension
+//   api.loadData<T>() / api.saveData<T>(data)            — This app's screen data (512 KB, apart from ctx.storage)
+//   api.download(name, mimeType, data)                   — Save a file; DorkOS asks the person first
 //   api.getState()                                       — Read-only host state (currentCwd, activeSessionId)
 //   api.subscribe(selector, callback)                    — Subscribe to state changes
 //
 // Available slots: dashboard.sections, command-palette.items, settings.tabs,
 //   sidebar.footer, dialog, right-panel
 
-import type { ExtensionAPI } from '@dorkos/extension-api';
-
-/** Tab-strip icon. The host renders it with a \`className\` for sizing; \`currentColor\` inherits the theme. */
-function ${pascalName}TabIcon({ className }: { className?: string }) {
-  return (
-    <svg
-      className={className}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth={2}
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <rect x="3" y="3" width="18" height="18" rx="2" />
-      <path d="M15 3v18" />
-    </svg>
-  );
-}
+import type { FrameExtensionAPI as ExtensionAPI } from '@dorkos/extension-api';
 
 /** Panel body rendered when this tab is active. */
 function ${pascalName}Panel() {
@@ -349,7 +334,6 @@ function ${pascalName}Panel() {
 export function activate(api: ExtensionAPI): void {
   // Add a tab to the shell's right panel (the contextual inspector).
   //   label    — the tab's name (tooltip + accessibility); defaults to the id when omitted.
-  //   icon     — the tab-strip glyph; omit it and the strip shows a default puzzle-piece.
   //   priority — lower sorts earlier (leftward) in the tab strip.
   // The panel container owns the shared header (tab strip + close button), so this
   // component only renders the tab body.
@@ -361,7 +345,6 @@ export function activate(api: ExtensionAPI): void {
   api.registerComponent('right-panel', '${name}-panel', ${pascalName}Panel, {
     priority: 50,
     label: '${titleName}',
-    icon: ${pascalName}TabIcon,
   });
 }
 `;
@@ -382,13 +365,14 @@ function generateCommandTemplate(name: string, description: string): string {
 //   api.registerComponent(slot, id, component, options?) — Register a React component in a UI slot
 //   api.registerCommand(id, label, callback, options?)   — Register a command palette item
 //   api.notify(message, options?)                        — Show a toast notification
-//   api.loadData<T>() / api.saveData<T>(data)            — Persistent storage scoped to this extension
+//   api.loadData<T>() / api.saveData<T>(data)            — This app's screen data (512 KB, apart from ctx.storage)
+//   api.download(name, mimeType, data)                   — Save a file; DorkOS asks the person first
 //   api.getState()                                       — Read-only host state (currentCwd, activeSessionId)
 //
 // Available slots: dashboard.sections, command-palette.items, settings.tabs,
 //   sidebar.footer, dialog, right-panel
 
-import type { ExtensionAPI } from '@dorkos/extension-api';
+import type { FrameExtensionAPI as ExtensionAPI } from '@dorkos/extension-api';
 
 export function activate(api: ExtensionAPI): void {
   // Register a command in the command palette (Cmd+K)
@@ -421,13 +405,14 @@ function generateSettingsPanelTemplate(name: string, description: string): strin
 //   api.registerCommand(id, label, callback, options?)   — Register a command palette item
 //   api.registerSettingsTab(id, label, component)        — Register a tab in the settings dialog
 //   api.notify(message, options?)                        — Show a toast notification
-//   api.loadData<T>() / api.saveData<T>(data)            — Persistent storage scoped to this extension
+//   api.loadData<T>() / api.saveData<T>(data)            — This app's screen data (512 KB, apart from ctx.storage)
+//   api.download(name, mimeType, data)                   — Save a file; DorkOS asks the person first
 //   api.getState()                                       — Read-only host state (currentCwd, activeSessionId)
 //
 // Available slots: dashboard.sections, command-palette.items, settings.tabs,
 //   sidebar.footer, dialog, right-panel
 
-import type { ExtensionAPI } from '@dorkos/extension-api';
+import type { FrameExtensionAPI as ExtensionAPI } from '@dorkos/extension-api';
 
 /** Settings panel component demonstrating persistent storage. */
 function ${pascalName}Settings() {
@@ -484,14 +469,15 @@ function generateDataProviderTemplate(name: string, description: string): string
 //   api.registerComponent(slot, id, component, options?) — Register a React component in a UI slot
 //   api.registerSettingsTab(id, label, component)        — Register a custom settings tab (optional)
 //   api.notify(message, options?)                        — Show a toast notification
-//   api.loadData<T>() / api.saveData<T>(data)            — Persistent storage scoped to this extension
+//   api.loadData<T>() / api.saveData<T>(data)            — This app's screen data (512 KB, apart from ctx.storage)
+//   api.download(name, mimeType, data)                   — Save a file; DorkOS asks the person first
 //   api.getState()                                       — Read-only host state (currentCwd, activeSessionId)
 //   api.subscribe(selector, callback)                    — Subscribe to state changes
 //
 // Available slots: dashboard.sections, command-palette.items, settings.tabs,
 //   sidebar.footer, dialog, right-panel
 
-import type { ExtensionAPI } from '@dorkos/extension-api';
+import type { FrameExtensionAPI as ExtensionAPI } from '@dorkos/extension-api';
 
 /** Dashboard section showing data from the server-side provider. */
 function ${pascalName}Section() {

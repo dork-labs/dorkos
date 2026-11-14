@@ -5,9 +5,11 @@
  *
  * @module entities/extension/ui/ExtensionPermissionLines
  */
+import { useState } from 'react';
 import { cn } from '@/layers/shared/lib';
 import {
   extensionPermissionLines,
+  type ExtensionCalledAppEntry,
   type ExtensionPermissionAdditions,
   type ExtensionPermissionTone,
   type ExtensionPermissionView,
@@ -76,6 +78,14 @@ export function ExtensionPermissionLines({
               </bdi>
             )
           )}
+          {line.apps && <CalledAppRows apps={line.apps} />}
+          {line.rows && (
+            <ul className="mt-1 space-y-0.5 pl-3" data-slot="permission-rows">
+              {line.rows.map((row) => (
+                <li key={row}>{row}</li>
+              ))}
+            </ul>
+          )}
           {line.items && (
             <>
               {' '}
@@ -91,6 +101,53 @@ export function ExtensionPermissionLines({
           )}
         </li>
       ))}
+    </ul>
+  );
+}
+
+/** How many other apps show before "and N more". */
+const APPS_SHOWN = 4;
+
+/**
+ * One row per other app: its name in bold (a missing one's id in mono), then
+ * what it shares, and "New" on
+ * an app the last yes did not cover. Past four, "and N more" opens the rest
+ * in place.
+ *
+ * @param props - The rows.
+ */
+function CalledAppRows({ apps }: { apps: readonly ExtensionCalledAppEntry[] }) {
+  const [open, setOpen] = useState(false);
+  const shown = open ? apps : apps.slice(0, APPS_SHOWN);
+  const hidden = apps.length - shown.length;
+  return (
+    <ul className="mt-1 space-y-0.5 pl-3" data-slot="called-apps">
+      {shown.map((app) => (
+        <li key={app.id} data-app={app.id} data-new={app.isNew || undefined}>
+          {/* A missing app's id is the asking app's string: drawn as an id,
+              never in the bold DorkOS gives a name it knows. */}
+          <bdi className={app.installed ? 'text-foreground font-semibold' : 'font-mono'}>
+            {app.name}
+          </bdi>{' '}
+          · {app.detail}
+          {app.isNew && (
+            <span className="text-foreground ml-1.5 rounded-sm border px-1 text-[10px] font-medium">
+              New
+            </span>
+          )}
+        </li>
+      ))}
+      {hidden > 0 && (
+        <li>
+          <button
+            type="button"
+            className="text-foreground underline-offset-2 hover:underline"
+            onClick={() => setOpen(true)}
+          >
+            and {hidden} more
+          </button>
+        </li>
+      )}
     </ul>
   );
 }

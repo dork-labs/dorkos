@@ -935,7 +935,8 @@ describe('a dev link and the permission set its yes covers (DOR-2686)', () => {
     // Purpose: a screens-only extension is never described as having full
     // access to the computer.
     const shown = await service().describeApproval({ path: work, scope: 'global' });
-    expect(shown).toContain('flow-dash: only screens, which run in DorkOS with your access');
+    expect(shown).toContain('flow-dash: only screens');
+    expect(shown).not.toContain('with your access');
     expect(shown).not.toContain('full access');
   });
 

@@ -12,7 +12,12 @@
  * @module entities/extension/lib/app-catalog
  */
 import type { ExtensionClientState } from '@/layers/shared/lib/extension-client-state';
-import type { ExtensionPageBadge, ExtensionRecordPublic } from '@dorkos/extension-api';
+import {
+  needsClientUpdate,
+  type ExtensionPageBadge,
+  type ExtensionRecordPublic,
+} from '@dorkos/extension-api';
+import { APP_NEEDS_UPDATE_COPY } from './needs-update-copy';
 
 /**
  * What one app is doing, as a tile, a pinned row and ⌘K all show it.
@@ -24,8 +29,10 @@ import type { ExtensionPageBadge, ExtensionRecordPublic } from '@dorkos/extensio
  * - `error` — on and allowed, but its screens failed to build or start
  *   (“Not working”). Pressing it retries.
  * - `off` — a person turned it off. Opens its Settings row.
+ * - `needs-update` — built for an older extension API, so none of its screen
+ *   code runs until it is rebuilt (DOR-3293). Opens its page, which says so.
  */
-export type AppState = 'starting' | 'ok' | 'held' | 'error' | 'off';
+export type AppState = 'starting' | 'ok' | 'held' | 'error' | 'off' | 'needs-update';
 
 /** One app, ready to draw. */
 export interface AppEntry {
@@ -111,6 +118,8 @@ const SETTINGS_ONLY_STATUSES = new Set(['invalid', 'incompatible']);
  */
 export function appState(ext: ExtensionRecordPublic, waiting: boolean): AppState {
   if (OFF_STATUSES.has(ext.status)) return 'off';
+  // Approving or retrying cannot help an app that must be rebuilt first.
+  if (needsClientUpdate(ext.manifest)) return 'needs-update';
   if (waiting || (ext.origin === 'user' && !ext.approvedToRun)) return 'held';
   if (ERROR_STATUSES.has(ext.status)) return 'error';
   return 'ok';
@@ -155,7 +164,8 @@ export function buildAppCatalog(input: AppCatalogInput): AppCatalog {
       (ext.bundleReady ||
         clientState === 'starting' ||
         clientState === 'error' ||
-        ERROR_STATUSES.has(ext.status));
+        ERROR_STATUSES.has(ext.status) ||
+        needsClientUpdate(ext.manifest));
     if (!page && !known && !input.pins.includes(ext.id) && !awaitingPages) continue;
     if (SETTINGS_ONLY_STATUSES.has(ext.status)) continue;
     const serverState = appState(ext, input.waitingIds.has(ext.id));
@@ -225,6 +235,7 @@ export function appAccessibleName(app: AppEntry): string {
   if (app.state === 'held') return `${app.name}, needs your OK`;
   if (app.state === 'error') return `${app.name}, not working. Try again`;
   if (app.state === 'off') return `${app.name}, off`;
+  if (app.state === 'needs-update') return APP_NEEDS_UPDATE_COPY.headline(app.name);
   if (app.count > 0) return `${app.name}, ${app.count} waiting`;
   return app.name;
 }

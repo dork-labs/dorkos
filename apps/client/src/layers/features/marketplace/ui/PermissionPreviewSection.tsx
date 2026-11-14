@@ -246,9 +246,14 @@ type DescribedExtension = PermissionPreview['extensions'][number] & {
   isolation: NonNullable<PermissionPreview['extensions'][number]['isolation']>;
 };
 
-/** Whether the server said where this extension runs (an older one does not). */
+/**
+ * Whether the server said where this extension runs (an older one does not)
+ * and it reaches anything: screens alone run sealed off and reach nothing
+ * (DOR-3293), so they get no row here.
+ */
 function isDescribed(ext: PermissionPreview['extensions'][number]): ext is DescribedExtension {
-  return ext.isolation !== undefined;
+  if (ext.isolation === undefined) return false;
+  return ext.isolation.runtime !== 'in-process' || ext.hasServer !== false;
 }
 
 /**

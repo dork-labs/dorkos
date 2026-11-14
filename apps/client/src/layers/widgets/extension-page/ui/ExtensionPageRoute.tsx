@@ -6,6 +6,7 @@ import { useExtensionPageAtPath } from '@/layers/shared/model';
 import { openLink } from '@/layers/shared/lib';
 import { useExtensionClientStates } from '@/layers/shared/lib/extension-client-state';
 import { EmptyState, PageContainer } from '@/layers/shared/ui';
+import { AppNeedsUpdateNotice } from '@/layers/entities/extension';
 import { useExtensions } from '@/layers/features/extensions';
 import { extensionPageState, type ExtensionPageState } from '../model/extension-page-state';
 import { createPageSearchWriter, pageSearchFrom } from '../model/page-search';
@@ -67,11 +68,16 @@ export function ExtensionPageRoute() {
         resetKeys={[location.pathname]}
         fallback={<PageFailed name={page.title} />}
       >
-        {/* The whole content area, scrolled here. Layout and padding are the
-            page's own: a lens page and a settings form want different ones. */}
-        <div data-testid="extension-page" className="h-full min-h-0 overflow-y-auto">
+        {/* The whole content area. Layout and padding are the page's own: a
+            lens page and a settings form want different ones. A column, so
+            the app's frame takes only the height left under the dev-link
+            strip: the frame scrolls inside itself (DOR-3293), and a frame as
+            tall as the whole area would push this box into a second scrollbar. */}
+        <div data-testid="extension-page" className="flex h-full min-h-0 flex-col overflow-y-auto">
           {pageRecord?.devLink && <DevLinkStrip extension={pageRecord} />}
-          <Page params={params} search={search} setSearch={setSearch} />
+          <div data-testid="extension-page-body" className="min-h-0 flex-1">
+            <Page params={params} search={search} setSearch={setSearch} />
+          </div>
         </div>
       </ErrorBoundary>
     );
@@ -80,6 +86,14 @@ export function ExtensionPageRoute() {
   // A held-back answer is already known, so it waits without saying "Starting…".
   if (state.kind === 'loading') return <ExtensionPageStarting quiet={current.kind !== 'loading'} />;
   if (state.kind === 'not-working') return <ExtensionPageNotWorking {...state} />;
+  // Top left in neutral words, never an error page: the app is out of date, not broken.
+  if (state.kind === 'needs-update') {
+    return (
+      <PageContainer width="wide">
+        <AppNeedsUpdateNotice name={state.name} />
+      </PageContainer>
+    );
+  }
 
   return (
     <PageContainer width="reading">
@@ -110,7 +124,7 @@ function UnavailablePage({
 }: {
   state: Exclude<
     ExtensionPageState,
-    { kind: 'page' } | { kind: 'loading' } | { kind: 'not-working' }
+    { kind: 'page' } | { kind: 'loading' } | { kind: 'not-working' } | { kind: 'needs-update' }
   >;
 }) {
   const openExtensions = { onClick: () => void openLink(EXTENSIONS_SETTINGS_LINK) };

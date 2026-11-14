@@ -32,6 +32,15 @@
  *   declared `allow.run` entry must be approved by exactly the same name, and
  *   agent access must not be newly asked for.
  *
+ * The apps it calls (`capabilities.http.apps`, DOR-3293) sit beside all of
+ * that, whatever the runtime: full access to this computer is not a yes to
+ * reach another app's routes, so a newly listed app asks again even under an
+ * `in-process` approval, and a missing entry approved none. So does an app
+ * whose target now shares more with it than when the person said yes
+ * (`appAccess`): a target that starts sharing a route, or starts letting it
+ * change things, is treated like a new target. The targets' sharing is read
+ * live from DorkOS's records through {@link setCalledAppAccessLookup}.
+ *
  * `limits.memoryMb` is not part of the set: it bounds the extension rather
  * than granting it anything.
  *
@@ -39,7 +48,33 @@
  *
  * @module services/extensions/isolation/permission-coverage
  */
-import { isNetEntryCovered, type ExtensionManifest } from '@dorkos/extension-api';
+import { calledApps, isNetEntryCovered, type ExtensionManifest } from '@dorkos/extension-api';
+
+/** What a target shares with a caller: `reads`, `changes`, `both`, or nothing. */
+export type CalledAppAccess = 'reads' | 'changes' | 'both';
+
+/** How a caller's targets are looked up: what one target shares with it now, or `null`. */
+export type CalledAppAccessLookup = (callerId: string, targetId: string) => CalledAppAccess | null;
+
+let accessLookup: CalledAppAccessLookup = () => null;
+
+/**
+ * Tell coverage how to read what each target shares now. The extension
+ * manager's records answer, once, at startup; until then (and in a test that
+ * sets none) nothing is shared.
+ *
+ * @param lookup - The live lookup.
+ */
+export function setCalledAppAccessLookup(lookup: CalledAppAccessLookup): void {
+  accessLookup = lookup;
+}
+
+/** Whether `now` asks for no more than `approved` allowed. */
+function accessCovered(approved: CalledAppAccess | undefined, now: CalledAppAccess | undefined) {
+  if (!now) return true;
+  if (!approved) return false;
+  return approved === 'both' || approved === now;
+}
 import type { ApprovedPermissionSet } from '@dorkos/shared/config-schema';
 
 export type { ApprovedPermissionSet };
@@ -54,6 +89,8 @@ export interface PermissionSetAdditions {
   agents: boolean;
   /** Whether it now asks to run inside DorkOS, with full access. */
   runtime: boolean;
+  /** Apps it now calls that its approval did not name. Absent when none are new. */
+  apps?: string[];
 }
 
 /**
@@ -65,14 +102,24 @@ export interface PermissionSetAdditions {
  */
 export function declaredSet(manifest: ExtensionManifest): ApprovedPermissionSet {
   const caps = manifest.serverCapabilities;
+  const apps = calledApps(manifest);
+  const appAccess = Object.fromEntries(
+    apps.flatMap((id) => {
+      const access = accessLookup(manifest.id, id);
+      return access ? [[id, access] as const] : [];
+    })
+  );
+  const withApps =
+    apps.length > 0 ? { apps, ...(Object.keys(appAccess).length > 0 ? { appAccess } : {}) } : {};
   if (caps?.runtime !== 'subprocess') {
-    return { runtime: 'in-process', net: [], run: [], agents: false };
+    return { runtime: 'in-process', net: [], run: [], agents: false, ...withApps };
   }
   return {
     runtime: 'subprocess',
     net: [...(caps.allow?.net ?? [])],
     run: [...(caps.allow?.run ?? [])],
     agents: caps.allow?.agents ?? false,
+    ...withApps,
   };
 }
 
@@ -103,15 +150,25 @@ export function addedSince(
   declared: ApprovedPermissionSet,
   approved: ApprovedPermissionSet | undefined
 ): PermissionSetAdditions | null {
-  if (!approved || approved.runtime === 'in-process') return null;
+  const approvedApps = approved?.apps ?? [];
+  // New to the list, or sharing more with it than when the person said yes.
+  const newApps = (declared.apps ?? []).filter(
+    (id) =>
+      !approvedApps.includes(id) ||
+      !accessCovered(approved?.appAccess?.[id], declared.appAccess?.[id])
+  );
+  const apps = newApps.length > 0 ? { apps: newApps } : {};
+  if (!approved || approved.runtime === 'in-process') {
+    return newApps.length > 0 ? { net: [], run: [], agents: false, runtime: false, ...apps } : null;
+  }
   if (declared.runtime === 'in-process') {
-    return { net: [], run: [], agents: false, runtime: true };
+    return { net: [], run: [], agents: false, runtime: true, ...apps };
   }
   const net = declared.net.filter((entry) => !isNetEntryCovered(approved.net, entry));
   const run = declared.run.filter((entry) => !approved.run.includes(entry));
   const agents = declared.agents && !approved.agents;
-  if (net.length === 0 && run.length === 0 && !agents) return null;
-  return { net, run, agents, runtime: false };
+  if (net.length === 0 && run.length === 0 && !agents && newApps.length === 0) return null;
+  return { net, run, agents, runtime: false, ...apps };
 }
 
 /**
@@ -132,6 +189,9 @@ export function isSamePermissionSet(
     a.runtime === b.runtime &&
     a.agents === b.agents &&
     sameList(a.net, b.net) &&
-    sameList(a.run, b.run)
+    sameList(a.run, b.run) &&
+    sameList(a.apps ?? [], b.apps ?? []) &&
+    JSON.stringify(Object.entries(a.appAccess ?? {}).sort()) ===
+      JSON.stringify(Object.entries(b.appAccess ?? {}).sort())
   );
 }

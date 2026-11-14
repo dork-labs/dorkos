@@ -1,6 +1,6 @@
 // React is provided by the host — do not import it directly.
 // Use React.createElement() and React.useState() etc. from the global.
-import type { ExtensionAPI } from '@dorkos/extension-api';
+import type { FrameExtensionAPI as ExtensionAPI } from '@dorkos/extension-api';
 
 const h = React.createElement;
 
@@ -47,34 +47,10 @@ interface Settings {
 // ---------------------------------------------------------------------------
 
 const CLIENT_POLL_MS = 30_000;
-const EXT_ID = 'linear-issues';
 
 // ---------------------------------------------------------------------------
 // API base URL
 // ---------------------------------------------------------------------------
-
-/**
- * Resolve the server API base URL for the current runtime (web vs Electron).
- *
- * This bundle is esbuild-compiled standalone (`ExtensionCompiler.runBuild`,
- * `platform: 'browser'`) from `apps/server/src/core-extensions/linear-issues/`
- * and dynamically `import()`-ed by the client's extension loader — it executes
- * in the renderer, not on the server. In the desktop shell the renderer loads
- * from the electron-vite dev server or `file://`, neither of which is the
- * DorkOS API server, so a relative `fetch('/api/...')` silently resolves
- * against the renderer origin instead (DOR-243, DOR-255).
- *
- * The client's `resolveApiBaseUrl()` (`apps/client/src/layers/shared/lib/api-base-url.ts`)
- * is the canonical fix for this, but it can't be imported here: this file has
- * no access to the client app's module graph or `@/` path aliases — the
- * compiler bundles only this entry point plus `react`/`react-dom`/
- * `@dorkos/extension-api` externals. So the same small piece of logic is
- * mirrored inline rather than reaching for a bigger API-surface change.
- */
-function resolveApiBaseUrl(): string {
-  const port = window.electronAPI?.getServerPort?.();
-  return port ? `http://localhost:${port}/api` : '/api';
-}
 
 const DEFAULT_SETTINGS: Settings = {
   showDashboard: true,
@@ -116,7 +92,7 @@ function parseSettings(items: Array<{ key: string; value: unknown }>): Settings 
 // Shared data hook
 // ---------------------------------------------------------------------------
 
-function useLoopData(): { data: LoopData | null; settings: Settings; loading: boolean } {
+function useLoopData(api: ExtensionAPI): { data: LoopData | null; settings: Settings; loading: boolean } {
   const [data, setData] = React.useState<LoopData | null>(null);
   const [settings, setSettings] = React.useState<Settings>(DEFAULT_SETTINGS);
   const [loading, setLoading] = React.useState(true);
@@ -125,15 +101,9 @@ function useLoopData(): { data: LoopData | null; settings: Settings; loading: bo
     let disposed = false;
     const fetchAll = async () => {
       try {
-        const apiBase = resolveApiBaseUrl();
-        const [loopRes, settingsRes] = await Promise.all([
-          fetch(`${apiBase}/ext/${EXT_ID}/loop`),
-          fetch(`${apiBase}/extensions/${EXT_ID}/settings`),
-        ]);
-        if (disposed) return;
         const [loopJson, settingsJson] = await Promise.all([
-          loopRes.ok ? loopRes.json() : Promise.resolve(null),
-          settingsRes.ok ? settingsRes.json() : Promise.resolve(null),
+          api.request<LoopData>('/loop'),
+          api.settings.get<Array<{key: string; value: unknown}>>(),
         ]);
         if (disposed) return;
         if (loopJson) setData(loopJson);
@@ -172,7 +142,7 @@ export function activate(api: ExtensionAPI): () => void {
   const cleanups: Array<() => void> = [];
 
   cleanups.push(
-    api.registerComponent('dashboard.sections', 'linear-loop-dashboard', LoopDashboard, {
+    api.registerComponent('dashboard.sections', 'linear-loop-dashboard', () => h(LoopDashboard, { api }), {
       priority: 6,
     })
   );
@@ -190,8 +160,8 @@ export function activate(api: ExtensionAPI): () => void {
 // Dashboard Section
 // ---------------------------------------------------------------------------
 
-function LoopDashboard() {
-  const { data, settings, loading } = useLoopData();
+function LoopDashboard({ api }: { api: ExtensionAPI }) {
+  const { data, settings, loading } = useLoopData(api);
 
   if (!settings.showDashboard) return null;
   if (loading) return h('div', { style: s.card }, 'Loading Loop status...');

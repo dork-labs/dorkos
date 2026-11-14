@@ -16,9 +16,11 @@ vi.mock('sonner', () => ({
 // Mock ui-action-dispatcher
 vi.mock('@/layers/shared/lib/ui-action-dispatcher', () => ({
   executeUiCommand: vi.fn(),
+  revealForContent: vi.fn(),
 }));
 
 import { toast } from 'sonner';
+import { revealForContent } from '@/layers/shared/lib/ui-action-dispatcher';
 import { executeUiCommand } from '@/layers/shared/lib/ui-action-dispatcher';
 
 // --- Helpers ---
@@ -463,20 +465,24 @@ describe('createExtensionAPI', () => {
   });
 
   // 7. openCanvas
-  it('openCanvas dispatches an open_canvas command with agent origin', () => {
-    const { api } = createExtensionAPI('my-ext', deps);
+  it('openCanvas opens through the host store, stamped with this app’s own id (DOR-3293)', () => {
+    const openCanvasDocument = vi.fn();
+    const store = { openCanvasDocument } as unknown as ReturnType<
+      ExtensionAPIDeps['dispatcherContext']['getStore']
+    >;
+    const ownDeps = makeDeps({
+      dispatcherContext: { ...deps.dispatcherContext, getStore: () => store },
+    });
+    const { api } = createExtensionAPI('my-ext', ownDeps);
     const content: UiCanvasContent = { type: 'markdown', content: '# Hello' };
 
     api.openCanvas(content);
 
-    expect(executeUiCommand).toHaveBeenCalledWith(
-      deps.dispatcherContext,
-      {
-        action: 'open_canvas',
-        content,
-      },
-      'agent'
-    );
+    // The id is this API's, never anything the app sends.
+    expect(openCanvasDocument).toHaveBeenCalledWith(content, { extensionId: 'my-ext' });
+    expect(revealForContent).toHaveBeenCalledWith(store, 'agent', content);
+    // It is not an agent's open_canvas command, which could never carry the mark.
+    expect(executeUiCommand).not.toHaveBeenCalled();
   });
 
   // 8. navigate

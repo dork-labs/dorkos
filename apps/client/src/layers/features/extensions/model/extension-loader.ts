@@ -1,8 +1,10 @@
-import type {
-  ExtensionRecordPublic,
-  ExtensionModule,
-  SecretDeclaration,
-  SettingDeclaration,
+import {
+  needsClientUpdate,
+  type ExtensionManifest,
+  type ExtensionRecordPublic,
+  type ExtensionModule,
+  type SecretDeclaration,
+  type SettingDeclaration,
 } from '@dorkos/extension-api';
 import { createExtensionAPI } from './extension-api-factory';
 import type { ExtensionAPIDeps, LoadedExtension } from './types';
@@ -10,9 +12,11 @@ import { createElement } from 'react';
 import { ManifestSettingsPanel, ManifestSettingsIcon } from '../ui/ManifestSettingsPanel';
 import { extensionApiUrl } from './extension-api-url';
 import { setExtensionClientState } from '@/layers/shared/lib/extension-client-state';
+import { setExtensionNames } from '@/layers/shared/lib/extension-names';
+import { setRunningApps } from '../frame/running-apps';
 import { ExtensionLoadFailure } from '../ui/ExtensionLoadFailure';
 import { importExtensionModule } from './extension-bundle-import';
-import { runningCopiesOnly } from '@/layers/entities/extension';
+import { AppNeedsUpdateNotice, runningCopiesOnly } from '@/layers/entities/extension';
 
 /**
  * Fetch the extension list from the server.
@@ -50,7 +54,11 @@ async function fetchExtensionsOrThrow(): Promise<ExtensionRecordPublic[]> {
 export const EXTENSION_IMPORT_TIMEOUT_MS = 15_000;
 
 /** Import one bundle, returning null on failure or timeout. */
-async function importBundle(id: string, cacheBust: boolean): Promise<ExtensionModule | null> {
+async function importBundle(
+  id: string,
+  cacheBust: boolean,
+  manifest: ExtensionManifest
+): Promise<ExtensionModule | null> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
     // Local bundles can be large; 15 seconds allows a cold load without letting
@@ -58,7 +66,8 @@ async function importBundle(id: string, cacheBust: boolean): Promise<ExtensionMo
     // race discards late results, and only this settled result may activate.
     return await Promise.race([
       importExtensionModule(
-        extensionApiUrl(`/extensions/${id}/bundle${cacheBust ? `?t=${Date.now()}` : ''}`)
+        extensionApiUrl(`/extensions/${id}/bundle${cacheBust ? `?t=${Date.now()}` : ''}`),
+        manifest
       ),
       new Promise<never>((_, reject) => {
         timer = setTimeout(
@@ -189,6 +198,11 @@ export class ExtensionLoader {
     requestedAttempts?: ReadonlyMap<string, number>
   ): Promise<{ extensions: ExtensionRecordPublic[]; loaded: Map<string, LoadedExtension> }> {
     if (this.disposed || gen !== this.generation) return { extensions, loaded: this.loaded };
+    // DorkOS's own names for its apps, for surfaces that say which app did
+    // something, and the apps a frame may call: on the first load as well as
+    // every reload, and before anything activates (DOR-3293).
+    setExtensionNames(Object.fromEntries(extensions.map((ext) => [ext.id, ext.manifest.name])));
+    setRunningApps(extensions);
     // Retry uses exactly the same readiness and approval check as first load.
     // The server still verifies the exact bytes before serving any bundle.
     const ready = extensions.filter(
@@ -204,8 +218,14 @@ export class ExtensionLoader {
         const attempt = requestedAttempts?.get(rec.id) ?? ++this.nextAttempt;
         if (requestedAttempts && this.attempts.get(rec.id) !== attempt) return;
         this.attempts.set(rec.id, attempt);
+        if (needsClientUpdate(rec.manifest)) {
+          // No code of this app is ever fetched; its tile, page and Settings
+          // row say it needs an update, from the record alone.
+          this.markNeedsUpdate(rec);
+          return;
+        }
         setExtensionClientState(rec.id, 'starting');
-        const module = await importBundle(rec.id, cacheBust);
+        const module = await importBundle(rec.id, cacheBust, rec.manifest);
         if (this.disposed || gen !== this.generation || this.attempts.get(rec.id) !== attempt)
           return;
         this.failedSettings.get(rec.id)?.();
@@ -220,7 +240,12 @@ export class ExtensionLoader {
           rec.manifest.capabilities?.events ?? []
         );
         try {
-          const deactivate = module.activate(api);
+          const deactivate = await module.activate(api);
+          if (this.disposed || gen !== this.generation || this.attempts.get(rec.id) !== attempt) {
+            if (typeof deactivate === 'function') deactivate();
+            runCleanups(rec.id, cleanups);
+            return;
+          }
           this.autoRegisterConfigTab(rec, cleanups);
           this.loaded.set(rec.id, {
             id: rec.id,
@@ -245,8 +270,29 @@ export class ExtensionLoader {
     return { extensions, loaded: this.loaded };
   }
 
+  /**
+   * An app built for an older extension API keeps the right-panel tab it
+   * declares, saying in the same words as its tile that it needs an update, so
+   * the tab never vanishes or shows an empty frame (DOR-3293).
+   */
+  private markNeedsUpdate(rec: ExtensionRecordPublic): void {
+    this.failedSettings.get(rec.id)?.();
+    this.failedSettings.delete(rec.id);
+    if (rec.manifest.contributions?.['right-panel'] !== true) return;
+    const name = rec.manifest.name;
+    const unsubscribe = this.deps.registry.register('right-panel', {
+      id: `${rec.id}:needs-update`,
+      priority: 100,
+      title: name,
+      component: () => createElement(AppNeedsUpdateNotice, { name, className: 'p-4' }),
+      extensionId: rec.id,
+    });
+    this.failedSettings.set(rec.id, unsubscribe);
+  }
+
   /** Keep a failed app visible in its own Settings section, with a bounded retry. */
   private markFailed(rec: ExtensionRecordPublic): void {
+    this.failedSettings.get(rec.id)?.();
     setExtensionClientState(rec.id, 'error');
     const unsubscribe = this.deps.registry.register('settings.tabs', {
       id: `${rec.id}:load-error`,
@@ -307,7 +353,6 @@ export class ExtensionLoader {
     if (this.disposed || gen !== this.generation) {
       return { extensions, loaded: this.loaded };
     }
-
     this.teardownLoaded();
     return this.activateFrom(extensions, gen);
   }

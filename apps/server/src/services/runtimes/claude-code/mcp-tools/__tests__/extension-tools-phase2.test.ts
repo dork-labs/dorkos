@@ -106,6 +106,20 @@ describe('get_extension_api handler (Phase 2 constraints)', () => {
     expect(text).toContain('notify');
   });
 
+  it('teaches the version 2 frame API an app must be built for (DOR-3293)', async () => {
+    const handler = createGetExtensionApiHandler(createDeps(undefined));
+
+    const text = (await handler()).content[0].text;
+
+    expect(text).toContain('"clientApiVersion": 2');
+    expect(text).toContain('request<T>(path: string');
+    expect(text).toContain('capabilities.http');
+    // Removed from the frame: an agent following the reference must not use them.
+    expect(text).not.toContain('executeCommand');
+    expect(text).not.toContain('openCanvas');
+    expect(text).not.toContain('icon: MyTabIcon');
+  });
+
   it('documents the Storage usage example', async () => {
     const handler = createGetExtensionApiHandler(createDeps(undefined));
 

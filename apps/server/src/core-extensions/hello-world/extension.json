@@ -11,5 +11,6 @@
     "status-bar": true
   },
   "defaultEnabled": false,
-  "canDisable": true
+  "canDisable": true,
+  "clientApiVersion": 2
 }

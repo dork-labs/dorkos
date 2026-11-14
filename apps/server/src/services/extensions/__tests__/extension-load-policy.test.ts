@@ -182,7 +182,7 @@ function makeRecord(id: string, overrides: Partial<ExtensionRecord> = {}): Exten
 
 /** A bundle whose `activate()` would be observable if it were ever evaluated. */
 const OBSERVABLE_BUNDLE =
-  'export function activate(api) { api.registerCommand("x", "X", () => {}); }';
+  'var __dorkosExtension = { activate(api) { api.registerCommand("x", "X", () => {}); } };';
 
 describe('mayRunExtensionCode', () => {
   /** The copy of `my-ext` installed directly, and an approval of exactly it. */

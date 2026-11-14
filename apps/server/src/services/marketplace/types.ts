@@ -298,7 +298,7 @@ export interface PreviewExtension {
   isolation?: PreviewExtensionIsolation;
   /**
    * Whether it has a server half (a server entry or a data proxy). Without
-   * one it is screens only, which act as you in DorkOS and nothing more.
+   * one it is screens only, which run sealed off in their own frame.
    * Optional only so a preview from an older server still reads.
    */
   hasServer?: boolean;

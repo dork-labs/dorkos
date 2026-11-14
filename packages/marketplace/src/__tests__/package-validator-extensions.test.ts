@@ -122,4 +122,21 @@ describe('validatePackage: bundled extensions', () => {
       })
     );
   });
+
+  it('refuses an app that names another app by anything but its id, in plain words', async () => {
+    // Purpose: DOR-3293. The refusal names the app, never the id it made up.
+    const result = await validatePackage(
+      await pluginWithExtension({
+        ...extension([tool()]),
+        clientApiVersion: 2,
+        capabilities: { http: { apps: ['Google Drive (official)'] } },
+      })
+    );
+    expect(result.ok).toBe(false);
+    const refusals = result.issues.filter((i) => i.code === 'EXTENSION_CALLED_APP_INVALID');
+    expect(refusals.map((i) => i.message)).toEqual([
+      'Mail can’t be installed. It names another app in a way DorkOS doesn’t accept. Ask its maker for an update.',
+    ]);
+    expect(result.issues.some((i) => i.message.includes('Google'))).toBe(false);
+  });
 });

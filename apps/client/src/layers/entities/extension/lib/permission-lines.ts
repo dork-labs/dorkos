@@ -8,10 +8,13 @@
  *
  * @module entities/extension/lib/permission-lines
  */
-import type {
-  ExtensionApprovalAdditions,
-  ExtensionApprovalPermissions,
-  PendingExtensionApproval,
+import {
+  BRIDGE_WRITES,
+  BRIDGE_WRITES_NONE,
+  bridgeWritesFor,
+  type ExtensionApprovalAdditions,
+  type ExtensionApprovalPermissions,
+  type PendingExtensionApproval,
 } from '@dorkos/shared/extension-approval-schemas';
 import { RUN_PROGRAM_NOT_FOUND, type ExtensionRecordPublic } from '@dorkos/extension-api';
 
@@ -38,12 +41,35 @@ export interface ExtensionPermissionView {
   /** Whether it has screens. Absent where unknown. */
   hasPage?: boolean;
   /**
+   * The other apps it calls (DOR-3293), with DorkOS's name for each and what
+   * that app shares with it. Absent where unknown.
+   */
+  apps?: readonly ExtensionCalledApp[];
+  /** What its screens can change through the bridge, as DorkOS's keys. Absent where unknown. */
+  writes?: ExtensionApprovalPermissions['writes'];
+  /**
    * Whether it has a server half (a server entry or a data proxy). `false`
-   * means only screens, which act as you in DorkOS and nothing more, so the
-   * card says that instead of "full access". Absent where unknown: treated
-   * as having one, the wider claim.
+   * means only screens, which run sealed off, so the card claims no "full
+   * access". Absent where unknown: treated as having one, the wider claim.
    */
   hasServer?: boolean;
+}
+
+/** One other app an extension calls, as the server named it. */
+export type ExtensionCalledApp = NonNullable<ExtensionApprovalPermissions['apps']>[number];
+
+/** One app on the "It uses other apps:" line. */
+export interface ExtensionCalledAppEntry {
+  /** The app's id, for the list key. */
+  id: string;
+  /** DorkOS's name for it, or, when it is not installed, its declared id, cut short. */
+  name: string;
+  /** Whether `name` is DorkOS's name for it (`false`: an id, drawn as one). */
+  installed: boolean;
+  /** What it lets this app do, e.g. "reads and changes". */
+  detail: string;
+  /** Whether it is new since the last yes. */
+  isNew: boolean;
 }
 
 /** How a line reads: plain, what is new since the last yes, or a caution. */
@@ -63,6 +89,10 @@ export interface ExtensionPermissionLine {
   parts: readonly ExtensionPermissionPart[];
   /** Names listed after the label, in full. */
   items?: readonly string[];
+  /** Other apps it calls, one per row under the label. */
+  apps?: readonly ExtensionCalledAppEntry[];
+  /** Plain rows under the label, one per thing. */
+  rows?: readonly string[];
   /** How it reads. */
   tone: ExtensionPermissionTone;
 }
@@ -76,6 +106,10 @@ export interface ExtensionPermissionSet {
   net: string[];
   run: string[];
   agents: boolean;
+  /** The other apps it calls. */
+  apps?: string[];
+  /** What each of those apps shares with it. */
+  appAccess?: Record<string, 'reads' | 'changes' | 'both'>;
 }
 
 /**
@@ -115,6 +149,10 @@ export function runsAnyProgram(name: string): boolean {
  */
 export function permissionLineText(line: ExtensionPermissionLine): string {
   const body = line.parts.map((part) => (typeof part === 'string' ? part : part.name)).join('');
+  if (line.apps) {
+    return [body, ...line.apps.map((app) => `${app.name} · ${app.detail}`)].join(' ');
+  }
+  if (line.rows) return [body, ...line.rows].join(' ');
   return line.items ? `${body} ${line.items.join(', ')}` : body;
 }
 
@@ -131,6 +169,102 @@ function plain(key: string, text: string, tone: ExtensionPermissionTone = 'plain
  * @param added - What its last approval did not cover, or `null`.
  */
 export function extensionPermissionLines(
+  permissions: ExtensionPermissionView,
+  added?: ExtensionPermissionAdditions | null
+): ExtensionPermissionLine[] {
+  const writes = screenWritesLine(permissions.writes);
+  const apps = calledAppsLine(permissions.apps, added?.apps);
+  return [...reachLines(permissions, added), ...(writes ? [writes] : []), ...(apps ? [apps] : [])];
+}
+
+/** The apps a card showed and what each shared, as the yes echoes them. */
+function sharedOf(
+  apps: readonly ExtensionCalledApp[]
+): Pick<ExtensionPermissionSet, 'apps' | 'appAccess'> {
+  const shared = apps.flatMap((app) => (app.access ? [[app.id, app.access] as const] : []));
+  return {
+    apps: apps.map((app) => app.id),
+    ...(shared.length > 0 ? { appAccess: Object.fromEntries(shared) } : {}),
+  };
+}
+
+/** The card's words for one write, from `BRIDGE_WRITES`. */
+function wordsFor(write: (typeof BRIDGE_WRITES)[number]['key']): string {
+  return BRIDGE_WRITES.find(({ key }) => key === write)?.words ?? write;
+}
+
+/**
+ * "It can change:", one row per thing its screens can change through the
+ * bridge, in DorkOS's words: never the app's own description of itself. An
+ * app that can change nothing says "It can't change anything." rather than
+ * dropping the block. Absent `writes` (unknown) draws no block.
+ *
+ * @param writes - What its screens can change.
+ */
+function screenWritesLine(
+  writes: ExtensionPermissionView['writes']
+): ExtensionPermissionLine | null {
+  if (!writes) return null;
+  return {
+    key: 'writes',
+    parts: ['It can change:'],
+    tone: 'plain',
+    // The words come from the same table the bridge gate enforces.
+    rows: writes.length > 0 ? writes.map(wordsFor) : [BRIDGE_WRITES_NONE],
+  };
+}
+
+/** How many characters of a missing app's id the card shows before cutting it short. */
+const SHOWN_ID_LENGTH = 32;
+
+/**
+ * A missing app's id as the card draws it: as declared, cut short. The
+ * manifest is refused unless every id it lists is a valid id, so it can hold
+ * only id characters by the time it reaches the card (DOR-3293, Security).
+ *
+ * @param id - The id the asking app listed.
+ */
+function shownAppId(id: string): string {
+  return id.length > SHOWN_ID_LENGTH ? `${id.slice(0, SHOWN_ID_LENGTH)}…` : id;
+}
+
+/** What each app shares, in the designer's words (DOR-3293). */
+const ACCESS_WORDS = { reads: 'reads', changes: 'changes', both: 'reads and changes' } as const;
+
+/**
+ * "It uses other apps:", one row per app: DorkOS's name for it and what it
+ * shares, from that app's own exports. An app that is not installed or not on
+ * says this part won't work; one that shares nothing says the same.
+ *
+ * @param apps - The apps it calls.
+ * @param added - The ids new since the last yes, marked New.
+ */
+function calledAppsLine(
+  apps: readonly ExtensionCalledApp[] | undefined,
+  added: readonly string[] | undefined
+): ExtensionPermissionLine | null {
+  if (!apps || apps.length === 0) return null;
+  return {
+    key: 'apps',
+    parts: ['It uses other apps:'],
+    tone: 'plain',
+    apps: apps.map((app) => ({
+      id: app.id,
+      name: app.name ?? shownAppId(app.id),
+      installed: app.name !== null,
+      detail:
+        app.name === null
+          ? 'not installed, so this part won’t work'
+          : app.access === null
+            ? 'shares nothing, so this part won’t work'
+            : ACCESS_WORDS[app.access],
+      isNew: added?.includes(app.id) ?? false,
+    })),
+  };
+}
+
+/** The lines for where it runs and what it may reach. */
+function reachLines(
   permissions: ExtensionPermissionView,
   added?: ExtensionPermissionAdditions | null
 ): ExtensionPermissionLine[] {
@@ -162,13 +296,12 @@ export function extensionPermissionLines(
   }
 
   if (permissions.runtime === 'in-process') {
-    // Screens only: they act as you in DorkOS, nothing more. A server half
-    // inside DorkOS has full access, which already covers its screens.
-    lines.push(
-      permissions.hasServer === false
-        ? plain('page', 'Its screens run in DorkOS with your access.')
-        : plain('in-process', 'Runs inside DorkOS with full access to this computer.')
-    );
+    // Screens run sealed off, with no access of their own (DOR-3293): what
+    // they can do is the "It can change:" block, so screens alone add no line
+    // here. A server half inside DorkOS has full access, and says so.
+    if (permissions.hasServer !== false) {
+      lines.push(plain('in-process', 'Runs inside DorkOS with full access to this computer.'));
+    }
     return lines;
   }
 
@@ -217,9 +350,6 @@ export function extensionPermissionLines(
   if (permissions.agents) {
     lines.push(plain('agents', 'Can message your agents and start chats.'));
   }
-  if (permissions.hasPage) {
-    lines.push(plain('page', 'Its screens run in DorkOS with your access.'));
-  }
   return lines;
 }
 
@@ -243,6 +373,8 @@ export function permissionsAddedSince(
     agents: now.agents && !seen.agents,
     runtime: now.runtime === 'in-process' && seen.runtime === 'subprocess',
   };
+  const apps = (now.apps ?? []).filter((id) => !(seen.apps ?? []).includes(id));
+  if (apps.length > 0) return { ...added, apps };
   return added.net.length > 0 || added.run.length > 0 || added.agents || added.runtime
     ? added
     : null;
@@ -263,6 +395,22 @@ export function permissionViewFromApproval(
 }
 
 /**
+ * What an installed app's screens can change, by the rule the approval queue
+ * uses: the table's writes when it has screens, nothing at all when it has
+ * neither screens nor a server part, and unknown otherwise (a server part's
+ * reach has its own lines).
+ */
+function recordWrites(
+  record: Pick<
+    ExtensionRecordPublic,
+    'bundleReady' | 'hasServerEntry' | 'hasDataProxy' | 'manifest'
+  >
+): Pick<ExtensionPermissionView, 'writes'> {
+  if (record.bundleReady) return { writes: bridgeWritesFor(record.manifest) };
+  return record.hasServerEntry || record.hasDataProxy ? {} : { writes: [] };
+}
+
+/**
  * The view for an installed extension's card. `isolation: undefined` is a
  * server that never sends it, so the card adds nothing; `null` is an
  * extension that runs inside DorkOS.
@@ -272,7 +420,7 @@ export function permissionViewFromApproval(
 export function permissionViewFromRecord(
   record: Pick<
     ExtensionRecordPublic,
-    'isolation' | 'bundleReady' | 'hasServerEntry' | 'hasDataProxy'
+    'isolation' | 'bundleReady' | 'hasServerEntry' | 'hasDataProxy' | 'manifest'
   >
 ): ExtensionPermissionView | null {
   if (record.isolation === undefined) return null;
@@ -283,9 +431,11 @@ export function permissionViewFromRecord(
       run: [],
       agents: false,
       hasServer: record.hasServerEntry || record.hasDataProxy,
+      ...recordWrites(record),
     };
   }
   return {
+    ...recordWrites(record),
     runtime: 'subprocess',
     net: record.isolation.net,
     run: record.isolation.resolvedRun.map((program) => ({
@@ -317,5 +467,6 @@ export function approvedSetOf(
     net: [...view.net],
     run: view.run.map((program) => program.name),
     agents: view.agents,
+    ...(view.apps && view.apps.length > 0 ? sharedOf(view.apps) : {}),
   };
 }

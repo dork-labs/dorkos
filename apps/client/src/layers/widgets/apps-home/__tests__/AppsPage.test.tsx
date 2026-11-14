@@ -152,6 +152,17 @@ describe('AppsPage', () => {
     expect(broken).toHaveTextContent('Not working');
   });
 
+  // Purpose: the tile's line is the short words the Settings pill uses, so it
+  // never runs past the tile (designer, DOR-3293); the full sentence is the
+  // tile's name for screen readers and lives on the page.
+  it('says "Needs an update" on the tile of an app built for an older DorkOS', () => {
+    given([app('notes', 'Field notes', { state: 'needs-update' })]);
+    render(<AppsPage />);
+    const tile = screen.getByRole('button', { name: 'Field notes needs an update to run safely.' });
+    expect(tile).toHaveTextContent('Needs an update');
+    expect(tile).not.toHaveTextContent('to run safely');
+  });
+
   it('keeps working apps visible beside one that is starting or not working', () => {
     given([
       app('garden', 'Garden'),

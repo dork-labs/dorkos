@@ -20,6 +20,114 @@ import { extendZodWithOpenApiOnce } from './zod-openapi.js';
 
 extendZodWithOpenApiOnce();
 
+/**
+ * Every write an app's screens can make through the frame bridge, what each
+ * needs, and the card's words for it (DOR-3293, Security done-when item 8;
+ * words from the designer). ONE table: the approval
+ * card's "It can change:" rows, the bridge gate in the person's window
+ * (`features/extensions/frame/host.tsx`) and the server's room and forward
+ * routes all read it, so the card can never say less than DorkOS lets through.
+ * A write whose `capability` is `null` is open to every app with screens; one
+ * that names a capability needs it declared in `capabilities` in the manifest.
+ */
+export const BRIDGE_WRITES = [
+  {
+    key: 'data',
+    methods: ['saveData', 'projectSettings.set'],
+    capability: null,
+    words: 'Its own saved data and project settings',
+  },
+  {
+    key: 'canvas',
+    methods: ['openCanvas'],
+    capability: null,
+    words: 'Documents it opens on your canvas',
+  },
+  {
+    key: 'inbox',
+    methods: ['answerDecision'],
+    capability: null,
+    words: 'Its own items in your inbox',
+  },
+  {
+    key: 'work',
+    methods: ['startWork'],
+    capability: null,
+    words: 'Work for an agent, started only when you click',
+  },
+  {
+    key: 'files',
+    methods: ['download'],
+    capability: null,
+    words: 'New files on your computer, only when you choose Save',
+  },
+  {
+    key: 'rooms',
+    methods: ['rooms.reply', 'rooms.markRead'],
+    capability: 'rooms',
+    words: 'Replies in the room threads you pick',
+  },
+  {
+    key: 'forward',
+    methods: ['forward.send'],
+    capability: 'forward',
+    words: 'Messages to an agent you pick, sent in your name',
+  },
+] as const;
+
+/** What the card says when an app can change nothing at all. */
+export const BRIDGE_WRITES_NONE = 'It can’t change anything.';
+
+/** One write an app's screens can make. */
+export type BridgeWriteKey = (typeof BRIDGE_WRITES)[number]['key'];
+
+/** A manifest capability a bridge write can need. */
+export type BridgeCapability = NonNullable<(typeof BRIDGE_WRITES)[number]['capability']>;
+
+/** The parts of a manifest the bridge table reads. */
+type CapabilityManifest = { capabilities?: { rooms?: boolean; forward?: boolean } };
+
+/**
+ * Whether a manifest declares a bridge capability, by the one rule the bridge
+ * gate and the server routes share: declared as exactly `true`.
+ *
+ * @param manifest - The app's manifest, from DorkOS's records.
+ * @param capability - The capability, e.g. `rooms`.
+ */
+export function declaresBridgeCapability(
+  manifest: CapabilityManifest,
+  capability: BridgeCapability
+): boolean {
+  return manifest.capabilities?.[capability] === true;
+}
+
+/**
+ * What an app's screens can change, in the card's order.
+ *
+ * @param manifest - The app's manifest, from DorkOS's records.
+ */
+export function bridgeWritesFor(manifest: CapabilityManifest): BridgeWriteKey[] {
+  return BRIDGE_WRITES.filter(
+    (write) => write.capability === null || declaresBridgeCapability(manifest, write.capability)
+  ).map((write) => write.key);
+}
+
+/**
+ * Whether the bridge lets this app make this call: `true` for a call the
+ * table does not list as a write (it is gated elsewhere, or reads only).
+ *
+ * @param manifest - The app's manifest, from DorkOS's records.
+ * @param method - The bridge method, e.g. `rooms.reply`.
+ */
+export function bridgeWriteAllowed(manifest: CapabilityManifest, method: string): boolean {
+  const write = BRIDGE_WRITES.find((entry) =>
+    (entry.methods as readonly string[]).includes(method)
+  );
+  return (
+    !write || write.capability === null || declaresBridgeCapability(manifest, write.capability)
+  );
+}
+
 /** Where an extension runs and what it may reach, as an approval card shows it (DOR-2686). */
 export const ExtensionApprovalPermissionsSchema = z
   .object({
@@ -42,8 +150,31 @@ export const ExtensionApprovalPermissionsSchema = z
     ),
     /** Whether it may message agents and start agent sessions (`allow.agents`). */
     agents: z.boolean(),
-    /** Whether it has screens (a client bundle), which run in DorkOS with your access. */
+    /** Whether it has screens (a client bundle), which run sealed off in their own frame. */
     hasPage: z.boolean(),
+    /**
+     * What its screens can change through the bridge (DOR-3293), as DorkOS's
+     * own keys, read from its manifest: the card turns each into words.
+     */
+    writes: z
+      .array(
+        z.enum(BRIDGE_WRITES.map((write) => write.key) as [BridgeWriteKey, ...BridgeWriteKey[]])
+      )
+      .optional(),
+    /**
+     * The other apps it calls (DOR-3293), each with DorkOS's name for it and
+     * what that app shares with it, read from that app's own exports. `name`
+     * and `access` are `null` for an app that is not installed or not on.
+     */
+    apps: z
+      .array(
+        z.object({
+          id: z.string(),
+          name: z.string().nullable(),
+          access: z.enum(['reads', 'changes', 'both']).nullable(),
+        })
+      )
+      .optional(),
   })
   .openapi('ExtensionApprovalPermissions');
 
@@ -61,6 +192,8 @@ export const ExtensionApprovalAdditionsSchema = z
     agents: z.boolean(),
     /** Whether it now asks to run inside DorkOS, with full access. */
     runtime: z.boolean(),
+    /** Apps it now calls that its last approval did not name (DOR-3293). */
+    apps: z.array(z.string()).optional(),
   })
   .openapi('ExtensionApprovalAdditions');
 
@@ -276,6 +409,10 @@ export const ApproveExtensionRequestSchema = z
         net: z.array(z.string()).max(64),
         run: z.array(z.string()).max(16),
         agents: z.boolean(),
+        /** The other apps the card said it calls (DOR-3293). */
+        apps: z.array(z.string()).max(20).optional(),
+        /** What each of those apps shared with it, as the card said. */
+        appAccess: z.record(z.string(), z.enum(['reads', 'changes', 'both'])).optional(),
       })
       .optional(),
     /**
@@ -401,6 +538,10 @@ export const ApprovalSetPermissionsSchema = z.object({
   net: z.array(z.string()).max(64),
   run: z.array(z.string()).max(16),
   agents: z.boolean(),
+  /** The other apps it calls (DOR-3293). */
+  apps: z.array(z.string()).max(20).optional(),
+  /** What each of those apps shares with it. */
+  appAccess: z.record(z.string(), z.enum(['reads', 'changes', 'both'])).optional(),
 });
 
 /** The permission set one member was shown with. */
@@ -453,6 +594,8 @@ export async function approvalSetHash(
         net: [...permissions.net].sort(),
         run: [...permissions.run].sort(),
         agents: permissions.agents,
+        apps: [...(permissions.apps ?? [])].sort(),
+        appAccess: Object.entries(permissions.appAccess ?? {}).sort(),
       });
       return `${id}:${version}:${expectedDigest}:${await sha256(canonical)}`;
     })

@@ -12,12 +12,23 @@ import { test, expect } from '../../fixtures';
  * spilling sideways. All names are made up. No turns, nothing billed.
  */
 
-/** One extension record, as `GET /api/extensions` sends it. */
+/**
+ * One extension record, as `GET /api/extensions` sends it. Built for the
+ * current extension API (`clientApiVersion: 2`): an older one would show
+ * "Needs an update" instead of the state each row is here to draw (DOR-3293).
+ */
 function ext(id: string, name: string, extra: Record<string, unknown> = {}) {
   const { manifest, ...rest } = extra as { manifest?: Record<string, unknown> };
   return {
     id,
-    manifest: { id, name, version: '1.0.0', author: 'Example Co', ...manifest },
+    manifest: {
+      clientApiVersion: 2,
+      id,
+      name,
+      version: '1.0.0',
+      author: 'Example Co',
+      ...manifest,
+    },
     status: 'active',
     scope: 'global',
     origin: 'user',
