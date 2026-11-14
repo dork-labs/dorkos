@@ -10,8 +10,10 @@
 # pileup, and on 2026-10-26 there were 25 open at once. At the cap, keep
 # building locally and commit; open the PR when one lands.
 #
-# Counts open, non-draft PRs. The cap is DORKOS_OPEN_PR_CAP (default 8). A P0
-# may pass the cap with --p0 and a reason, which is printed so it is on record.
+# Counts the set that gets armed and queued: open, non-draft PRs into main, so
+# the cap and the arming path never disagree about how many are open.
+# The cap is DORKOS_OPEN_PR_CAP (default 10, the rule since 2026-11-12). A P0 or
+# a CI fix may pass the cap with --p0 and a reason, printed so it is on record.
 #
 # Exit codes: 0 ok to open one; 1 at or over the cap; 2 usage error, or the
 # count could not be read. A failed `gh` is never read as zero open PRs.
@@ -45,7 +47,7 @@ if [ "$p0_given" = 1 ] && [ -z "${p0//[[:space:]]/}" ]; then
   exit 2
 fi
 
-cap="${DORKOS_OPEN_PR_CAP:-8}"
+cap="${DORKOS_OPEN_PR_CAP:-10}"
 case "$cap" in
   '' | *[!0-9]* | 0*)
     echo "open-pr-cap: DORKOS_OPEN_PR_CAP must be a positive whole number, got '$cap'" >&2
@@ -63,7 +65,7 @@ fi
 # The limit is a ceiling on what `gh` returns, not on what exists: a full page
 # means the count is unknown, so it refuses rather than guess low.
 limit=200
-list=$(gh pr list --repo "$repo" --state open --limit "$limit" --json number,isDraft,title) || {
+list=$(gh pr list --repo "$repo" --state open --limit "$limit" --json number,isDraft,baseRefName,title) || {
   echo "open-pr-cap: could not count open PRs in $repo" >&2
   exit 2
 }
@@ -72,7 +74,9 @@ if [ "$total" -ge "$limit" ]; then
   echo "open-pr-cap: $total or more open PRs in $repo, too many to count reliably" >&2
   exit 2
 fi
-open=$(jq '[.[] | select(.isDraft | not)] | length' <<<"$list")
+# One filter for both the count and the list printed at the cap.
+counted='[.[] | select((.isDraft | not) and .baseRefName == "main")]'
+open=$(jq "$counted | length" <<<"$list")
 
 if [ "$open" -lt "$cap" ]; then
   echo "open PRs: $open of $cap; ok to open one"
@@ -85,7 +89,7 @@ if [ "$p0_given" = 1 ]; then
 fi
 
 {
-  echo "open PRs: $open of $cap. Do not open another: finish or land one first, or keep building locally. A P0 may pass with --p0 \"<reason>\"."
-  jq -r '.[] | select(.isDraft | not) | "  #\(.number) \(.title)"' <<<"$list"
+  echo "open PRs: $open of $cap. Do not open another: finish or land one first, or keep building locally. A P0 or a CI fix may pass with --p0 \"<reason>\"."
+  jq -r "$counted | .[] | \"  #\\(.number) \\(.title)\"" <<<"$list"
 } >&2
 exit 1

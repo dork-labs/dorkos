@@ -211,10 +211,10 @@ The full protocol is in `contributing/ci.md` and the `stewarding-ci-pipeline` sk
 
 **Check the open-PR count first.** Run
 `.agents/skills/creating-pull-requests/scripts/open-pr-cap.sh` before `gh pr create`.
-It refuses when 8 PRs are already open (set `DORKOS_OPEN_PR_CAP` to change it),
+It refuses when 10 non-draft PRs into `main` are already open (set `DORKOS_OPEN_PR_CAP` to change it),
 because a review line that can't keep up turns every new PR into a pileup
 (DOR-3341). At the cap, keep building locally and commit; open the PR when one
-lands. A P0 can pass with `--p0 "<reason>"`.
+lands. A P0 or a CI fix can pass with `--p0 "<reason>"`.
 
 Open it once the branch has converged, with the squashed commit and its fragment
 already pushed:

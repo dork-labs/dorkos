@@ -24,10 +24,11 @@ EOF
 chmod +x "$tmp/gh"
 export PATH="$tmp:$PATH"
 
-prs() { # $1 open count, $2 draft count
-  jq -cn --argjson open "$1" --argjson drafts "${2:-0}" '
-    [range($open) | {number: (100 + .), isDraft: false, title: "Made-up change \(.)"}]
-    + [range($drafts) | {number: (900 + .), isDraft: true, title: "Draft \(.)"}]'
+prs() { # $1 open count into main, $2 draft count, $3 count into another base
+  jq -cn --argjson open "$1" --argjson drafts "${2:-0}" --argjson other "${3:-0}" '
+    [range($open) | {number: (100 + .), isDraft: false, baseRefName: "main", title: "Made-up change \(.)"}]
+    + [range($drafts) | {number: (900 + .), isDraft: true, baseRefName: "main", title: "Draft \(.)"}]
+    + [range($other) | {number: (700 + .), isDraft: false, baseRefName: "stack-base", title: "Stacked \(.)"}]'
 }
 
 expect() { # $1 name, $2 expected exit, $3 text the output must contain, rest: args
@@ -48,14 +49,18 @@ expect() { # $1 name, $2 expected exit, $3 text the output must contain, rest: a
   fi
 }
 
-FAKE_PRS=$(prs 7) expect under_cap 0 "open PRs: 7 of 8; ok to open one"
-FAKE_PRS=$(prs 8) expect at_cap 1 "open PRs: 8 of 8. Do not open another"
-FAKE_PRS=$(prs 8) expect at_cap_lists 1 "#107 Made-up change 7"
-FAKE_PRS=$(prs 9) expect over_cap 1 "open PRs: 9 of 8"
-FAKE_PRS=$(prs 7 5) expect drafts_ignored 0 "open PRs: 7 of 8"
-FAKE_PRS=$(prs 8) expect p0_passes 0 "opening anyway as a P0: launch blocker" --p0 "launch blocker"
-FAKE_PRS=$(prs 8) expect p0_empty 2 "needs a reason" --p0 ""
-FAKE_PRS=$(prs 8) expect p0_blank 2 "needs a reason" --p0 "   "
+FAKE_PRS=$(prs 9) expect under_cap 0 "open PRs: 9 of 10; ok to open one"
+FAKE_PRS=$(prs 10) expect at_cap 1 "open PRs: 10 of 10. Do not open another"
+FAKE_PRS=$(prs 10) expect at_cap_lists 1 "#109 Made-up change 9"
+FAKE_PRS=$(prs 10) expect at_cap_names_ci 1 "A P0 or a CI fix may pass"
+FAKE_PRS=$(prs 11) expect over_cap 1 "open PRs: 11 of 10"
+FAKE_PRS=$(prs 9 5) expect drafts_ignored 0 "open PRs: 9 of 10"
+# Only PRs into main count, as the arming path counts them: a stacked layer does not.
+FAKE_PRS=$(prs 9 0 4) expect other_base_ignored 0 "open PRs: 9 of 10"
+FAKE_PRS=$(prs 10 0 4) expect other_base_not_listed 1 "#109 Made-up change 9"
+FAKE_PRS=$(prs 10) expect p0_passes 0 "opening anyway as a P0: launch blocker" --p0 "launch blocker"
+FAKE_PRS=$(prs 10) expect p0_empty 2 "needs a reason" --p0 ""
+FAKE_PRS=$(prs 10) expect p0_blank 2 "needs a reason" --p0 "   "
 FAKE_PRS=$(prs 2) DORKOS_OPEN_PR_CAP=abc expect bad_cap 2 "positive whole number"
 FAKE_PRS=$(prs 2) DORKOS_OPEN_PR_CAP=0 expect zero_cap 2 "positive whole number"
 FAKE_PRS=$(prs 2) DORKOS_OPEN_PR_CAP=2 expect custom_cap 1 "open PRs: 2 of 2"
