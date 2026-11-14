@@ -32,7 +32,8 @@ it('1.11 shows one primary action and announces Paused without claiming other ch
   const forget = within(savedSignIns).getByRole('button', { name: 'Forget…' });
   const buttons = within(panel).getAllByRole('button');
   expect(buttons).toEqual([show, forget]);
-  expect(show).toHaveClass('min-h-11', 'w-full');
+  expect(show).toHaveClass('h-auto', 'min-h-11', 'w-full', 'py-2', 'whitespace-normal');
+  expect([...show.classList].filter((name) => /(?:^|:)h-(?!auto$)/.test(name))).toEqual([]);
   expect(
     show.compareDocumentPosition(savedSignIns) & Node.DOCUMENT_POSITION_FOLLOWING
   ).toBeTruthy();

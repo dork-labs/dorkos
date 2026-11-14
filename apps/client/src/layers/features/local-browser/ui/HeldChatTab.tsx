@@ -57,7 +57,7 @@ export function HeldChatTab({
         <Button
           onClick={() => void run(() => transport.handBackLocalBrowser(state.handoff!.id))}
           disabled={busy}
-          className="min-h-11 w-full whitespace-normal transition-none min-[480px]:w-auto"
+          className="h-auto min-h-11 w-full py-2 whitespace-normal transition-none min-[480px]:w-auto md:h-auto"
         >
           Hand back to {agentName || 'your agent'}
         </Button>
@@ -66,7 +66,7 @@ export function HeldChatTab({
         variant={state.handoffTaken ? 'ghost' : 'default'}
         onClick={show}
         disabled={busy}
-        className="min-h-11 w-full whitespace-normal transition-none min-[480px]:w-auto"
+        className="h-auto min-h-11 w-full py-2 whitespace-normal transition-none min-[480px]:w-auto md:h-auto"
       >
         Show window
       </Button>

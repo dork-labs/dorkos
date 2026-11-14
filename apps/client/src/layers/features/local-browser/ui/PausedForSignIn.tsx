@@ -40,7 +40,7 @@ export function PausedForSignIn({
       <Button
         onClick={() => void show()}
         disabled={busy}
-        className="min-h-11 w-full whitespace-normal transition-none min-[480px]:w-auto"
+        className="h-auto min-h-11 w-full py-2 whitespace-normal transition-none min-[480px]:w-auto md:h-auto"
       >
         Show the sign-in
       </Button>
