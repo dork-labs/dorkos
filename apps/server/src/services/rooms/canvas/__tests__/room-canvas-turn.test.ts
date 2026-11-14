@@ -430,11 +430,16 @@ describe('a room turn’s canvas commands', () => {
     });
 
     it('records “not measured” when the dispatcher measured nothing', async () => {
+      // Markdown carries its text with the row, so it remains shareable while
+      // preserving the source tree and its unmeasured ahead count.
       turnBehaviour = (opts) => {
         openTurn(opts);
         opts.projector.ingest({
           type: 'ui_command',
-          command: { action: 'open_diff', sourcePath: 'app.txt' },
+          command: {
+            action: 'open_canvas',
+            content: { type: 'markdown', content: '# App', sourcePath: 'app.txt' },
+          },
         });
         opts.projector.ingest({ type: 'turn_end' });
         return { accepted: true, canonicalId: opts.sessionId };
@@ -536,15 +541,19 @@ describe('a room turn’s canvas commands', () => {
     expect(triggered).toHaveLength(1);
   });
 
-  it('records the tree a FILE document was opened against', async () => {
+  it('records the tree a file-backed document was opened against', async () => {
     // Without the turn's cwd on the collector's bounds, every document the tap
     // writes records nothing — and the §8.1 reader rule short-circuits to
     // "anybody may read this", which is the rule inverted rather than relaxed.
+    // Markdown keeps this open allowed while still recording its source file.
     turnBehaviour = (opts) => {
       openTurn(opts);
       opts.projector.ingest({
         type: 'ui_command',
-        command: { action: 'open_file', sourcePath: 'src/router.ts' },
+        command: {
+          action: 'open_canvas',
+          content: { type: 'markdown', content: 'Router source', sourcePath: 'src/router.ts' },
+        },
       });
       opts.projector.ingest({ type: 'turn_end' });
       return { accepted: true, canonicalId: opts.sessionId };

@@ -69,7 +69,7 @@
     "apps/server/src/services/relay/adapter-manager.ts": 886,
     "apps/server/src/services/relay/binding-router.ts": 646,
     "apps/server/src/services/rooms/author-registry.ts": 580,
-    "apps/server/src/services/rooms/canvas/room-canvas-service.ts": 559,
+    "apps/server/src/services/rooms/canvas/room-canvas-service.ts": 555,
     "apps/server/src/services/rooms/repo/room-file-editor.ts": 611,
     "apps/server/src/services/rooms/repo/room-repo-git.ts": 563,
     "apps/server/src/services/rooms/repo/room-worktree-manager.ts": 578,

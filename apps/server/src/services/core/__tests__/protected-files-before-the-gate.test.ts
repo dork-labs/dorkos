@@ -258,7 +258,10 @@ describe('at Ask, a protected file is refused with no card', () => {
       roomId,
       authorId: ana,
       turnId: 't',
-      command: { action: 'open_file', sourcePath: 'notes.md' },
+      command: {
+        action: 'open_canvas',
+        content: { type: 'markdown', content: 'notes ok', sourcePath: 'notes.md' },
+      },
       cwd: agent,
     });
     const [document] = harness.service.canvas.list(roomId);
@@ -281,7 +284,10 @@ describe('read_canvas for a room the caller is not in', () => {
       roomId,
       authorId: harness.human,
       turnId: 't',
-      command: { action: 'open_file', sourcePath: 'notes.md' },
+      command: {
+        action: 'open_canvas',
+        content: { type: 'markdown', content: 'notes ok', sourcePath: 'notes.md' },
+      },
       cwd: agent,
     });
     const [document] = harness.service.canvas.list(roomId);

@@ -505,6 +505,10 @@
       "types": "./src/canvas-media-url.ts",
       "default": "./dist/canvas-media-url.js"
     },
+    "./room-canvas-reading": {
+      "types": "./src/room-canvas-reading.ts",
+      "default": "./dist/room-canvas-reading.js"
+    },
     "./canvas-view": {
       "types": "./src/canvas-view.ts",
       "default": "./dist/canvas-view.js"
