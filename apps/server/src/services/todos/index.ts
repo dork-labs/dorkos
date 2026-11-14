@@ -7,8 +7,6 @@ export { TodoPromiseStore, TODO_LIST_LIMIT, type TodoPromiseFilter } from './tod
 export {
   TodoPromiseError,
   TodoPromiseService,
-  isOverdue,
-  toTodoPromise,
   type TodoPromiseActor,
   type TodoPromiseChange,
   type TodoPromiseDueEvent,
@@ -16,6 +14,7 @@ export {
   type TodoPromiseObserver,
   type NewTodoPromise,
 } from './todo-promise-service.js';
+export { isOverdue, toTodoPromise } from './todo-promise-view.js';
 export { TODO_MISSED_AFTER_MS } from './todo-due-timers.js';
 export {
   todoPromisesDomain,

@@ -291,11 +291,14 @@ export function computeMeasures(
     checks += used.checks;
     tokens += used.tokens;
   }
-  const onTime = records.todoPromises.filter(
-    (c) => c.state === 'kept' && c.closedAt !== null && ms(c.closedAt) <= ms(c.dueAt)
-  ).length;
+  // Score against the last date renegotiated before it was due. A late move keeps the missed
+  // score date, so moving a promise after its deadline cannot turn it into an on-time one (DOR-3034).
+  const onTime = records.todoPromises.filter((c) => {
+    const scoreDueAt = c.scoreDueAt ?? c.dueAt;
+    return c.state === 'kept' && c.closedAt !== null && ms(c.closedAt) <= ms(scoreDueAt);
+  }).length;
   const counted = records.todoPromises.filter(
-    (c) => c.state !== 'dropped' && ms(c.dueAt) <= ctx.now
+    (c) => c.state !== 'dropped' && ms(c.scoreDueAt ?? c.dueAt) <= ctx.now
   ).length;
   return {
     windowDays: ctx.windowDays,

@@ -104,6 +104,8 @@ export interface MeasureTodo {
   state: 'open' | 'kept' | 'missed' | 'dropped';
   /** When it was due (ISO 8601). */
   dueAt: string;
+  /** The date on-time completion is scored against, or null on a legacy row. */
+  scoreDueAt: string | null;
   /** When it closed (ISO 8601), or null while open. */
   closedAt: string | null;
 }
@@ -375,10 +377,16 @@ export function readMeasureRecords(
       spokenRaises.set(row.beatId, (spokenRaises.get(row.beatId) ?? 0) + 1);
     }
   }
+  const scoredDueAt = sql<string>`coalesce(${todos.scoreDueAt}, ${todos.dueAt})`;
   const due = db
-    .select({ state: todos.state, dueAt: todos.dueAt, closedAt: todos.closedAt })
+    .select({
+      state: todos.state,
+      dueAt: todos.dueAt,
+      scoreDueAt: todos.scoreDueAt,
+      closedAt: todos.closedAt,
+    })
     .from(todos)
-    .where(and(eq(todos.agentId, agentId), gte(todos.dueAt, since), lte(todos.dueAt, now)))
+    .where(and(eq(todos.agentId, agentId), gte(scoredDueAt, since), lte(scoredDueAt, now)))
     .all()
     .filter((row): row is MeasureTodo => row.dueAt !== null);
   return {

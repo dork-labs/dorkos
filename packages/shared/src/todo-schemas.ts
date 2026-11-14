@@ -50,6 +50,12 @@ export const TodoSchema = z
     assignedBy: z.object({ kind: z.enum(['agent', 'person', 'outsider']), id: z.string() }),
     to: z.string().nullable(),
     dueAt: z.string().nullable(),
+    /** The first due date it ever had, or null before one is set. */
+    originalDueAt: z.string().nullable().describe('The first due date this to-do ever had.'),
+    /** The date used to score whether it was kept on time, or null if it was never dated. */
+    scoreDueAt: z.string().nullable().describe('The due date used to score on-time completion.'),
+    /** How many times an existing due date changed. */
+    moveCount: z.number().int().describe('Changes made to an existing due date.'),
     state: TodoStateSchema,
     /** Open with a due date in the past. Computed on read, never stored. */
     overdue: z.boolean(),

@@ -60,6 +60,8 @@ import type {
   TurnPermissionLevel,
 } from '@dorkos/shared/agent-runtime';
 import { todoTurnPower } from './todo-turn-power.js';
+import { nextDueHistory } from './due-history.js';
+import { readingOrder, toTodoPromise } from './todo-promise-view.js';
 import {
   hasMarks,
   mergeMarks,
@@ -208,63 +210,9 @@ const CLOSE_ACTION: Record<Exclude<TodoState, 'open'>, string> = {
   dropped: 'commitment.dropped',
 };
 
-/**
- * Whether a to-do is overdue at `now`: open, with a due date in the past.
- *
- * @param row - The stored row.
- * @param now - The moment to judge it at, in epoch ms.
- */
-export function isOverdue(row: Pick<AgentTodoRow, 'state' | 'dueAt'>, now: number): boolean {
-  if (row.state !== 'open' || !row.dueAt) return false;
-  const due = Date.parse(row.dueAt);
-  return !Number.isNaN(due) && due < now;
-}
-
-/**
- * Turn a stored row into what readers see, computing `overdue`.
- *
- * @param row - The stored row.
- * @param now - The moment to judge overdue at, in epoch ms.
- */
-export function toTodoPromise(row: AgentTodoRow, now: number): TodoPromise {
-  return {
-    id: row.id,
-    agentId: row.agentId,
-    to: row.toAccount,
-    what: row.what,
-    dueAt: row.dueAt,
-    state: row.state,
-    overdue: isOverdue(row, now),
-    sourceSessionId: row.sourceSessionId,
-    sourceRoomEntryId: row.sourceRoomEntryId,
-    createdAt: row.createdAt,
-    closedAt: row.closedAt,
-    note: row.note,
-  };
-}
-
 /** Normalize an ISO date-time to UTC `Z` form, so stored dates sort and compare alike. */
 function normalizeIso(value: string): string {
   return new Date(value).toISOString();
-}
-
-/** Open first, soonest due first (no date last); closed ones most recently closed first. */
-function readingOrder(a: TodoPromise, b: TodoPromise): number {
-  const openA = a.state === 'open' ? 0 : 1;
-  const openB = b.state === 'open' ? 0 : 1;
-  if (openA !== openB) return openA - openB;
-  if (a.state === 'open') {
-    if (a.dueAt && b.dueAt && a.dueAt !== b.dueAt) return a.dueAt < b.dueAt ? -1 : 1;
-    if (a.dueAt && !b.dueAt) return -1;
-    if (!a.dueAt && b.dueAt) return 1;
-  }
-  if (a.state !== 'open') {
-    const ca = a.closedAt ?? '';
-    const cb = b.closedAt ?? '';
-    if (ca !== cb) return ca < cb ? 1 : -1;
-    return a.id < b.id ? 1 : a.id > b.id ? -1 : 0;
-  }
-  return a.createdAt < b.createdAt ? 1 : a.createdAt > b.createdAt ? -1 : 0;
 }
 
 /** Records, reads and watches to-dos. */
@@ -427,6 +375,9 @@ export class TodoPromiseService {
       toAccount: input.to ?? null,
       what: input.what,
       dueAt,
+      originalDueAt: dueAt,
+      scoreDueAt: dueAt,
+      moveCount: 0,
       state: 'open',
       sourceSessionId: input.sourceSessionId ?? null,
       sourceRoomEntryId: input.sourceRoomEntryId ?? null,
@@ -582,8 +533,11 @@ export class TodoPromiseService {
         'Nothing to change. Pass a new dueAt, or a state of kept, missed or dropped.'
       );
     }
+    const now = this.now().getTime();
+    const dueHistory = nextDueHistory(row, nextDue, now);
+    const lateMove = row.dueAt !== null && now >= Date.parse(row.dueAt);
     const updated = this.store.update(row.id, {
-      dueAt: nextDue,
+      ...dueHistory,
       dueNotifiedAt: null,
       ...(change.note !== undefined ? { note: change.note || null } : {}),
     })!;
@@ -591,11 +545,14 @@ export class TodoPromiseService {
       updated,
       'commitment.moved',
       'modify',
-      [{ field: 'dueAt', before: row.dueAt, after: nextDue }],
+      [
+        { field: 'dueAt', before: row.dueAt, after: nextDue },
+        { field: 'lateMove', before: null, after: lateMove },
+      ],
       change.note
     );
     this.arm(updated);
-    return toTodoPromise(updated, this.now().getTime());
+    return toTodoPromise(updated, now);
   }
 
   /**
@@ -608,11 +565,19 @@ export class TodoPromiseService {
     const dateMoves = change.dueAt !== undefined;
     const nextDue = dateMoves ? (change.dueAt ? this.futureDue(change.dueAt) : null) : row.dueAt;
     const now = this.now();
+    const dueHistory = dateMoves
+      ? nextDueHistory(row, nextDue, now.getTime())
+      : {
+          dueAt: row.dueAt,
+          originalDueAt: row.originalDueAt,
+          scoreDueAt: row.scoreDueAt,
+          moveCount: row.moveCount,
+        };
     const pastDue = nextDue !== null && Date.parse(nextDue) <= now.getTime();
     const patch: TodoPromisePatch = {
       state: 'open',
       closedAt: null,
-      dueAt: nextDue,
+      ...dueHistory,
       // An old date already woken about gets a fresh hour from now and no
       // second wake; one never woken about is woken now by the timer below.
       dueNotifiedAt: dateMoves

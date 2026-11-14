@@ -426,7 +426,13 @@ describe('supporting measures', () => {
       closedAt: null,
       deliverAfter: ago(-HOUR),
     });
-    const promise = (id: string, state: string, dueMsAgo: number, closedMsAgo: number | null) =>
+    const promise = (
+      id: string,
+      state: string,
+      dueMsAgo: number,
+      closedMsAgo: number | null,
+      scoreDueMsAgo = dueMsAgo
+    ) =>
       db
         .insert(todos)
         .values({
@@ -434,6 +440,7 @@ describe('supporting measures', () => {
           agentId: AGENT,
           what: id,
           dueAt: ago(dueMsAgo),
+          scoreDueAt: ago(scoreDueMsAgo),
           state: state as 'open',
           createdAt: ago(5 * DAY),
           closedAt: closedMsAgo === null ? null : ago(closedMsAgo),
@@ -451,12 +458,14 @@ describe('supporting measures', () => {
     promise('missed', 'missed', 3 * DAY, 3 * DAY - HOUR);
     promise('dropped', 'dropped', 3 * DAY, 4 * DAY);
     promise('not-due-yet', 'open', -DAY, null);
+    // Moved late: its new due date is tomorrow, but it missed yesterday's scoring date.
+    promise('moved-late', 'kept', -DAY, HOUR, DAY);
 
     const { supporting } = measure();
     expect(supporting.beats).toBe(6);
     // A beat with no end_beat is unknown, and one that posted around it spoke.
     expect(supporting.quietBeats).toMatchObject({ part: 3, whole: 5 });
-    expect(supporting.todosOnTime).toMatchObject({ part: 1, whole: 3 });
+    expect(supporting.todosOnTime).toMatchObject({ part: 1, whole: 4 });
     expect(supporting.noEndBeat).toBe(1);
     expect(supporting.triage).toEqual({ checks: 2, tokens: 640 });
     expect(supporting.turns).toEqual({ count: 3, tokensPerTurn: 2000 });
