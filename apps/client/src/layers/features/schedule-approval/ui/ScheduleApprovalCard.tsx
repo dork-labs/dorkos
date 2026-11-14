@@ -592,16 +592,19 @@ function ScheduleApprovalContent({
           />
         )}
 
-        {/* Still true until a test run can take the picked mode (the trigger
-            route takes none), so it stays while it is. */}
+        {/* A test run uses the proposed mode until the trigger route can take
+            the picked one, so the card says whose mode, only when they differ. */}
         {answered === null && selectedMode !== task.permissionMode && (
-          <p className="text-muted-foreground text-xs">
-            Test runs use{' '}
-            {schedulePermissionLabel(
+          <p data-slot="schedule-try-mode" className="text-muted-foreground text-xs">
+            {`Try it once now uses ${
+              // Work written after reading outside words is not the agent's own pick.
+              task.proposedByName && !task.originMarks?.outsider
+                ? `${task.proposedByName}’s mode`
+                : 'the proposed mode'
+            }: ${schedulePermissionLabel(
               task.permissionMode,
               power.current?.label ?? permissionModeLabel(task.permissionMode)
-            )}{' '}
-            until you approve.
+            )}.`}
           </p>
         )}
         {pinActions && answered === null && (

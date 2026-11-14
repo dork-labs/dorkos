@@ -1332,6 +1332,27 @@ describe('ScheduleApprovalCard — running it once', () => {
  * the grant either happens or silently does not.
  */
 describe('ScheduleApprovalCard — choosing the run permissions', () => {
+  it('calls it the proposed mode on outsider-marked work', async () => {
+    renderCard(
+      proposal({
+        originMarks: { outsider: true },
+        requestedPermissionMode: 'acceptEdits',
+      } as Partial<Task>)
+    );
+    await screen.findByRole('combobox', { name: 'Run permissions' });
+    expect(await findSlot('schedule-try-mode')).toHaveTextContent(
+      'Try it once now uses the proposed mode: Accept edits.'
+    );
+    expect(slot('schedule-try-mode')).not.toHaveTextContent('DorkBot');
+  });
+
+  it('drops the try-run line when the picked mode is the proposed one', async () => {
+    renderCard(proposal({ requestedPermissionMode: 'dontAsk', permissionMode: 'dontAsk' }));
+    const picker = await screen.findByRole('combobox', { name: 'Run permissions' });
+    expect(picker).toHaveValue('dontAsk');
+    expect(slot('schedule-try-mode')).toBeNull();
+  });
+
   it('seeds a looser preview mode and requires its confirmation', async () => {
     renderCard(
       proposal({ requestedPermissionMode: 'dontAsk', permissionMode: 'dontAsk' }),
@@ -1348,7 +1369,7 @@ describe('ScheduleApprovalCard — choosing the run permissions', () => {
     expect(approve).toBeDisabled();
     // Test runs still use the saved mode, so the card keeps saying so.
     expect(
-      screen.getByText(/Test runs use Allowed commands until you approve/)
+      screen.getByText('Try it once now uses DorkBot’s mode: Allowed commands.')
     ).toBeInTheDocument();
     expect(confirm.closest('label')?.nextElementSibling).toBe(slot('schedule-folder-rules'));
 

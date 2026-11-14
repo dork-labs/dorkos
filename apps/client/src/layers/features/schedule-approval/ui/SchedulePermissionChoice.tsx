@@ -99,7 +99,7 @@ export function SchedulePermissionChoice({
       )}
       {/* After what it confirms, so the tick answers what was just read. */}
       {confirmReason && (
-        <label className="flex min-h-11 items-center gap-2">
+        <label className="flex min-h-6 items-center gap-2">
           <Checkbox
             checked={confirmLooser}
             onCheckedChange={(checked) => onConfirmLooserChange(checked === true)}
