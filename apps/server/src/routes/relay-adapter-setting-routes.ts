@@ -29,17 +29,27 @@ import type { ApiEnv } from '../http/api-chain.js';
 import { readJsonBody } from '../http/request-body.js';
 import { honoRequestFacts } from '../http/request-facts.js';
 import { validationFailureBody } from '../lib/route-utils.js';
+import { env } from '../env.js';
 import { readActivityActor } from '../services/activity/activity-actor.js';
 import type { ActivityService } from '../services/activity/activity-service.js';
 import { readOwnerAccount } from '../services/core/auth/index.js';
-import type { AdapterManager } from '../services/relay/adapter-manager.js';
-import { isPersonReference, type SecretWriter } from '../services/relay/adapter-secret-policy.js';
+import { marksOf } from '../services/core/turn-power/turn-levels.js';
+import { marksHold } from '../services/core/turn-power/turn-marks.js';
+import { AdapterError, type AdapterManager } from '../services/relay/adapter-manager.js';
+import {
+  adapterAddressChanged,
+  hasTypedAdapterSecret,
+  isPersonReference,
+  markedTurnSecretToNewAddressRefusal,
+  type SecretWriter,
+} from '../services/relay/adapter-secret-policy.js';
 import { errorRefusalUnlessOwner } from './cloud-owner-bar.js';
 import {
   adapterResult,
   noOwnerRefusal,
   quotedName,
   secretWriter,
+  sendAdapterError,
   settingName,
   settingNamesText,
 } from './relay-adapter-http.js';
@@ -122,6 +132,42 @@ async function runOrHold(
   });
 }
 
+/**
+ * Apply DOR-3858's marked-turn secret gate using the adapter policy's shared
+ * address comparison and normalized secret-field reader.
+ *
+ * An HTTP agent call names no chat, so its current marks are read through its
+ * verified agent folder, matching the other route-level gates. A presented but
+ * unresolved agent token has no folder to attribute a running turn to and is
+ * therefore unmarked here, while still being treated as an agent writer.
+ */
+function markedAdapterSecretRefusal(
+  c: Context<ApiEnv>,
+  adapterManager: AdapterManager,
+  type: string,
+  existing: Record<string, unknown> | undefined,
+  incoming: Record<string, unknown>
+): ReturnType<typeof markedTurnSecretToNewAddressRefusal> | AdapterError {
+  try {
+    if (!env.DORKOS_MARK_STRANGER_TURNS) return null;
+    const writer = secretWriter(c);
+    if (writer === 'person') return null;
+    const identity = honoRequestFacts(c).agentIdentity;
+    if (identity === undefined || !marksHold(marksOf(undefined, identity.agentPath))) return null;
+    const manifest = adapterManager.getManifest(type);
+    return markedTurnSecretToNewAddressRefusal({
+      enabled: env.DORKOS_MARK_STRANGER_TURNS,
+      writer,
+      turnMarked: true,
+      typedSecret: hasTypedAdapterSecret(incoming, manifest),
+      addressChanged: adapterAddressChanged(existing, incoming, manifest),
+    });
+  } catch (err) {
+    if (err instanceof AdapterError) return err;
+    throw err;
+  }
+}
+
 /** What the setting routes read. */
 export interface SettingRouteDeps {
   adapterManager: AdapterManager;
@@ -166,6 +212,9 @@ export function registerSettingRoutes(router: Hono<ApiEnv>, deps: SettingRouteDe
     const parsed = AdapterCreateRequestSchema.safeParse(readJsonBody(c));
     if (!parsed.success) return c.json(validationFailureBody(parsed.error), 400);
     const { type, id, config, enabled, label: topLabel } = parsed.data;
+    const markedRefusal = markedAdapterSecretRefusal(c, adapterManager, type, undefined, config);
+    if (markedRefusal instanceof AdapterError) return sendAdapterError(c, markedRefusal);
+    if (markedRefusal) return c.json(markedRefusal, 403);
     // The client may embed label inside config (Transport interface doesn't have a separate
     // label param). Fall back to config.label if the top-level field wasn't provided.
     const label = topLabel ?? (typeof config.label === 'string' ? config.label : undefined);
@@ -207,6 +256,16 @@ export function registerSettingRoutes(router: Hono<ApiEnv>, deps: SettingRouteDe
     if (!parsed.success) return c.json(validationFailureBody(parsed.error), 400);
     const id = c.req.param('id') ?? '';
     const { config } = parsed.data;
+    const existing = adapterManager.getAdapter(id)?.config;
+    const markedRefusal = markedAdapterSecretRefusal(
+      c,
+      adapterManager,
+      existing?.type ?? '',
+      existing?.config as Record<string, unknown> | undefined,
+      config
+    );
+    if (markedRefusal instanceof AdapterError) return sendAdapterError(c, markedRefusal);
+    if (markedRefusal) return c.json(markedRefusal, 403);
     const settings = personSettingsIn(config);
     return runOrHold(
       c,

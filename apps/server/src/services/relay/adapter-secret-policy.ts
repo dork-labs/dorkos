@@ -252,6 +252,24 @@ export function readIncoming(
   return normalizeFormConfig(view, manifest) as Record<string, unknown>;
 }
 
+/**
+ * Whether an incoming adapter config contains any secret the caller typed,
+ * rather than an empty value or {@link SECRET_MASK} asking to keep one.
+ * Password maps are inspected after {@link normalizeFormConfig} resolves their
+ * JSON-text form, so every header value is checked separately.
+ *
+ * @param incoming - The adapter config exactly as the route received it.
+ * @param manifest - The adapter type's manifest.
+ */
+export function hasTypedAdapterSecret(
+  incoming: Record<string, unknown>,
+  manifest: AdapterManifest | undefined
+): boolean {
+  return secretValues(readIncoming(incoming, manifest), manifest).some(
+    ({ value }) => freshSecret(value) !== undefined
+  );
+}
+
 /** A `url` value with blank read as no address. */
 function addressOf(config: Record<string, unknown>, key: string): unknown {
   const value = getNestedValue(config, key.split('.'));
@@ -262,6 +280,61 @@ function addressOf(config: Record<string, unknown>, key: string): unknown {
 function urlFieldKeys(manifest: AdapterManifest | undefined): string[] {
   if (!manifest) return [];
   return manifest.configFields.filter((f) => f.type === 'url').map((f) => f.key);
+}
+
+/**
+ * Whether an adapter edit names a new or changed address, using rule 3's own
+ * address comparison. For an add, any non-blank `url` field is new. An omitted
+ * or blank address is not a move.
+ *
+ * @param existing - The saved config, or `undefined` for an add.
+ * @param incoming - The config exactly as the route received it.
+ * @param manifest - The adapter type's manifest.
+ */
+export function adapterAddressChanged(
+  existing: Record<string, unknown> | undefined,
+  incoming: Record<string, unknown>,
+  manifest: AdapterManifest | undefined
+): boolean {
+  const read = readIncoming(incoming, manifest);
+  return urlFieldKeys(manifest).some((key) => {
+    const next = addressOf(read, key);
+    return next !== undefined && next !== addressOf(existing ?? {}, key);
+  });
+}
+
+/**
+ * Refuse a marked agent turn that would pair a typed secret with a new
+ * address. DOR-3858 prevents an outsider from leading an agent to deliver a
+ * key it knows to the outsider's server. A person remains free to enter the
+ * same secret deliberately, and the boot flag preserves prior behavior while
+ * it is off.
+ *
+ * @param input - The independently resolved facts for this attempted write.
+ * @returns The HTTP refusal body, or `null` when this rule allows the write.
+ */
+export function markedTurnSecretToNewAddressRefusal(input: {
+  enabled: boolean;
+  writer: SecretWriter;
+  turnMarked: boolean;
+  typedSecret: boolean;
+  addressChanged: boolean;
+}): { error: string; code: 'marked_turn_secret_to_new_address' } | null {
+  if (
+    !input.enabled ||
+    input.writer === 'person' ||
+    !input.turnMarked ||
+    !input.typedSecret ||
+    !input.addressChanged
+  ) {
+    return null;
+  }
+  return {
+    error:
+      "This turn followed a message from someone other than the owner, so it can't send a " +
+      'secret to a new address. Ask a person to enter it.',
+    code: 'marked_turn_secret_to_new_address',
+  };
 }
 
 /**
@@ -307,10 +380,7 @@ export function mergeSecretUpdate(
   incoming = structuredClone(incoming);
   const read = readIncoming(incoming, manifest);
   assertSecretReferences(adapterId, read, manifest, writer);
-  const moved = urlFieldKeys(manifest).some((key) => {
-    const next = addressOf(read, key);
-    return next !== undefined && next !== addressOf(existing, key);
-  });
+  const moved = adapterAddressChanged(existing, incoming, manifest);
   if (!moved) return mergeWithPasswordPreservation(existing, incoming, manifest);
 
   const merged = { ...existing, ...incoming };
