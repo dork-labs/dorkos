@@ -202,8 +202,11 @@ describe('pausing an agent holds its queued messages (DOR-4327)', () => {
 
   it('runs it exactly once after the pause is lifted, however often the sweep runs', async () => {
     await queueThenPause();
+    // As the server wires it: lifting a pause runs the rearm at once.
+    pauses.onResumed(() => void rearm());
 
     pauses.resume(BETA.id, PERSON);
+    await vi.waitFor(() => expect(ran()).toHaveLength(2), { timeout: 2000 });
     await rearm();
     await rearm();
     await vi.waitFor(() => expect(listQueuedMessages(sessionId)).toEqual([]), { timeout: 2000 });
@@ -223,6 +226,53 @@ describe('pausing an agent holds its queued messages (DOR-4327)', () => {
     await settle();
 
     expect(ran()).toEqual(['start the census', 'from A: add the totals']);
+  });
+
+  it('holds a message sent to an agent that is already paused and idle', async () => {
+    await pauses.pause(BETA.id, PERSON);
+    await dispatchMessage({
+      sessionId,
+      clientId: chatClientId('chat-alpha'),
+      content: 'from A: are you there?',
+      projector: getOrCreateProjector(sessionId, BETA.home),
+      runtime: runtimeRegistry.get(inner.type),
+      cwd: BETA.home,
+    });
+    await settle();
+
+    expect(listQueuedMessages(sessionId).map((row) => row.content)).toEqual([
+      'from A: are you there?',
+    ]);
+    expect(ran()).toEqual([]);
+  });
+
+  it('holds it when the pause lands while its launch is under way', async () => {
+    await pauses.pause(BETA.id, PERSON);
+    // The launch's own check runs a beat before the pause is in force; the
+    // pause backstop at the runtime seam still refuses the turn it opens.
+    const real = pauses.pausedAgentOfSession.bind(pauses);
+    vi.spyOn(pauses, 'pausedAgentOfSession')
+      .mockImplementationOnce(() => undefined)
+      .mockImplementation(real);
+    await dispatchMessage({
+      sessionId,
+      clientId: chatClientId('chat-alpha'),
+      content: 'from A: mid-launch',
+      projector: getOrCreateProjector(sessionId, BETA.home),
+      runtime: runtimeRegistry.get(inner.type),
+      cwd: BETA.home,
+    });
+    await settle();
+
+    const [row] = listQueuedMessages(sessionId);
+    expect(row?.content).toBe('from A: mid-launch');
+    expect(ran()).toEqual([]);
+    expect(isQueuedMessageArmed(row!.id)).toBe(false);
+
+    pauses.resume(BETA.id, PERSON);
+    await rearm();
+    await vi.waitFor(() => expect(listQueuedMessages(sessionId)).toEqual([]), { timeout: 2000 });
+    expect(ran()).toEqual(['from A: mid-launch']);
   });
 
   it('keeps it held when the agent is unregistered while paused', async () => {

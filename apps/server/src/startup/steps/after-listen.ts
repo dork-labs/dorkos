@@ -22,6 +22,7 @@ import {
   liveSessionCwd,
   resumeChatQueue,
 } from '../../services/extensions/agent-send/agent-send-defaults.js';
+import { agentPause } from '../../services/mesh/pause/agent-pause.js';
 import { sweepExpiredTurnContext } from '../../services/session/turn-context/record-turn-context.js';
 import { INTERVALS } from '../../config/constants.js';
 import { takeDailySnapshot } from '@dorkos/db';
@@ -194,6 +195,9 @@ export async function startAfterListen(refs: ServerRefs, built: StartAfterListen
     });
   };
   resumeChatQueues();
+  // A pause holds the messages queued for its agent (DOR-4327); lifting it runs
+  // them now rather than at the next health tick.
+  agentPause()?.onResumed(resumeChatQueues);
 
   // Run session health check periodically. Only ClaudeCodeRuntime needs the
   // eviction half, but the queue sweep is runtime-neutral and rides the same

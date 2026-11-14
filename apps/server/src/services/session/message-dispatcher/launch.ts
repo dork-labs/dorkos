@@ -30,7 +30,9 @@ import {
 } from './state.js';
 import { holdInQueue, parkDispatch, returnToQueue, unwatchedSettle } from './park.js';
 import { rearmLockWaiters, schedulePump } from './pump.js';
+import { forgetRecordedHolds, holdForPause, pausedAgentOfPlan } from './pause-hold.js';
 import { logger } from '../../../lib/logger.js';
+import type { PausedAgentRef } from '../../mesh/pause/agent-pause.js';
 import type { DispatchPlan, InFlightTurn } from './types.js';
 
 /** How many times a recovered row may fail to start before it is given up (DOR-3287). */
@@ -40,12 +42,13 @@ export const RECOVERED_START_TRIES = 3;
 const recoveryFailures = new Map<string, number>();
 
 /**
- * Forget every recovered row's failed starts.
+ * Forget every recovered row's failed starts, and which pause holds were recorded.
  *
  * @internal Exported for testing only, through `resetMessageDispatcher`.
  */
-export function forgetRecoveryFailures(): void {
+export function forgetLaunchMemory(): void {
   recoveryFailures.clear();
+  forgetRecordedHolds();
 }
 
 /**
@@ -138,8 +141,18 @@ export function launchDispatchInner(
   if (plan.turn.privateDispatchSignal?.aborted)
     return Promise.resolve({ accepted: false, suspended: true });
   if (giveUpIfSpent(plan)) return Promise.resolve({ accepted: false });
+  // Its agent is paused: keep the row and start nothing, rather than feed it to
+  // a turn the pause refuses and lose it at that turn's start (DOR-4327).
+  const paused = pausedAgentOfPlan(plan);
+  if (paused) {
+    holdForPause(plan, paused);
+    return Promise.resolve({ accepted: false });
+  }
   const { sessionKey, clientId, messageId } = plan;
   let turnStarted = false;
+  // Set when a pause landed between the check above and this turn's start: the
+  // turn will be refused, so its row is kept and held once it settles.
+  let heldByPause: PausedAgentRef | undefined;
   const remainingMs = opts.budgetExhausted
     ? 0
     : Math.max(0, plan.budgetMs - (Date.now() - plan.startedWaitingAt));
@@ -226,6 +239,10 @@ export function launchDispatchInner(
       // the message it stands for is a lie about what is still waiting.
       onTurnStart: (seq) => {
         turnStarted = true;
+        // Paused while this launch was under way: the pause refuses the turn, so
+        // the row is not taken off the queue and nobody is told it started.
+        heldByPause = pausedAgentOfPlan(plan);
+        if (heldByPause) return;
         recoveryFailures.delete(messageId);
         if (turn.privateReceiptId !== undefined) {
           getPrivateSessionMessageAcceptanceService()?.markTurnStarted(turn.privateReceiptId, seq);
@@ -267,6 +284,15 @@ export function launchDispatchInner(
         // Ended before it began: the row stays queued, so this counts as a failed
         // start, and the next adoption gives it up once it has failed enough.
         if (turnOutcome === 'failed' && !turnStarted) countRecoveredFailure(plan);
+        if (heldByPause) {
+          if (turnOutcome === 'failed') {
+            holdForPause(plan, heldByPause);
+            clearIfOurs();
+            return;
+          }
+          // Lifted again before the turn spoke, so it ran: the row goes now.
+          if (getMessageQueueStore()?.remove(messageId)) emitQueueUpdate(sessionKey);
+        }
         clearIfOurs();
         if (turn.privateReceiptId !== undefined) {
           getPrivateSessionMessageAcceptanceService()?.settle(turn.privateReceiptId, turnOutcome);

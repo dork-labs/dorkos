@@ -189,6 +189,7 @@ export class AgentPauseService {
   /** Which agent each session the hold ran belongs to, newest last. */
   private readonly sessionAgents = new Map<string, string>();
   private stopTaskRuns: ((agentId: string) => Promise<number>) | undefined;
+  private readonly resumeListeners = new Set<(agentId: string) => void>();
 
   constructor(private readonly deps: AgentPauseServiceDeps) {
     for (const row of deps.db.select().from(agentPauses).all()) {
@@ -212,6 +213,21 @@ export class AgentPauseService {
    */
   setTaskRunStopper(stop: (agentId: string) => Promise<number>): void {
     this.stopTaskRuns = stop;
+  }
+
+  /**
+   * Hear each lifted pause, so the messages it held can run (DOR-4327). Only a
+   * resume: an agent removed while paused is forgotten, never resumed, so what
+   * it held stays held.
+   *
+   * @param listener - Called with the agent's mesh id after its pause is lifted.
+   * @returns Stop listening.
+   */
+  onResumed(listener: (agentId: string) => void): () => void {
+    this.resumeListeners.add(listener);
+    return () => {
+      this.resumeListeners.delete(listener);
+    };
   }
 
   /** Every pause in force, oldest first. */
@@ -398,6 +414,16 @@ export class AgentPauseService {
     });
     this.changed();
     logger.info('[agent-pause] resumed', { agentId });
+    for (const listener of this.resumeListeners) {
+      try {
+        listener(agentId);
+      } catch (err) {
+        logger.warn('[agent-pause] a resume listener threw', {
+          agentId,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
     return { agentId, paused: false, changed: true };
   }
 
