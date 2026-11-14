@@ -1,7 +1,25 @@
-# Changelog archive: v0.1.0 – v0.134.0
+# Changelog archive: v0.1.0 – v0.134.1
 
 Released versions aged out of the top-level [CHANGELOG.md](../../CHANGELOG.md).
 See [changelog/README.md](../README.md) for the fragment workflow.
+
+## [0.134.1] - 2026-11-08
+
+> DorkOS 0.134.1 gets Codex chats starting again for people signed in to Codex with ChatGPT, and shows your mini apps as soon as you sign in.
+
+### Note for people upgrading
+
+- On Linux, Codex at Full access doesn't start if Claude Code has run on the same machine, and that includes the Docker image. Use Ask first or Workspace write there for now. We're fixing it (DOR-3965).
+
+### Fixed
+
+- Codex chats start again for people signed in to Codex with ChatGPT. They broke in 0.133.0: each message failed, usually with an error about "failed to load workspace requirements".
+- Your apps and extension Settings show after you sign in, without reloading. With login on, your mini apps appear in the sidebar's Add-ons section, and their tabs appear in Settings, as soon as you sign in. Before, they stayed missing until you reloaded the window.
+- When your mini apps can't be loaded, the sidebar and Settings → Extensions now say "Couldn’t load apps." with a **Try again** button. Before, it looked as if you had none installed.
+
+### Going back
+
+This release doesn't change the database. To go back, install 0.134.0.
 
 ## [0.134.0] - 2026-11-08
 
@@ -8209,6 +8227,7 @@ save also made DorkOS reload that file. Now it writes only when something actual
 - Keyboard shortcuts for navigation
 - Directory picker for working directory selection
 
+[0.134.1]: https://github.com/dork-labs/dorkos/compare/v0.134.0...v0.134.1
 [0.134.0]: https://github.com/dork-labs/dorkos/compare/v0.133.0...v0.134.0
 [0.133.0]: https://github.com/dork-labs/dorkos/compare/v0.132.0...v0.133.0
 [0.132.0]: https://github.com/dork-labs/dorkos/compare/v0.131.0...v0.132.0

@@ -13,6 +13,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Only /system:release compiles fragments into a version section below.
 -->
 
+## [0.135.9] - 2026-11-13
+
+> DorkOS 0.135.9 lets you select and copy more text in the desktop app, shows which chat has the Agent browser so you can take it in one click, and says why an MCP server with a reserved name can't reach your agents.
+
+### Note for people upgrading
+
+- On Linux, Codex at Full access doesn't start if Claude Code has run on the same machine, and that includes the Docker image. Use Ask first or Workspace write there for now. We're fixing it (DOR-3965).
+- For scripts: starting Remote Access with a `TUNNEL_PORT` it can't use now answers `409` with the code `TUNNEL_PORT_MISMATCH`, not a server error. That route already answered `409` when Remote Access was running or no owner account existed, so check `code`. (DOR-4263)
+- For scripts: when the Agent browser isn't shared with an agent's chat, the refusal code is now `not_opened` or `shared_elsewhere`, not `not_shared`. `shared_elsewhere` gives the other chat's `chatId`, and its `chatTitle` when known. (DOR-4265)
+- For scripts: an MCP server's tool check can now answer `reserved-name`, and each MCP server you added for every agent has a new `reservedName` field. (DOR-4262)
+
+### Fixed
+
+- **Select and copy more text in the desktop app.** Mini-app pages, settings, profiles and Activity can now be selected and copied, like messages and documents already could. Buttons, tabs, menus, sidebar rows and the title bar still can't, so dragging across them stays tidy. Everywhere in the app, the copy button on code blocks in messages and documents now reads "Copy code", and it leaves off the last line break, so a command pasted into a terminal waits for you to press Enter. (DOR-2871)
+- **The Agent browser panel names the chat that has it.** When another chat has the Agent browser, the panel names that chat and links to it when it has a title, and offers **Take it here**. If that chat's agent is in the middle of a reply, the button reads **Take it from** and the agent's name, and the panel says taking it stops what the agent is doing there. Outside a direct chat, it says to open a direct chat with an agent instead. (DOR-4265)
+- When the Agent browser hasn't been opened yet, its panel leads with **Open browser**. When another chat's agent is waiting for you to finish signing in, the panel names that agent and chat. (DOR-4265)
+- An agent that can't use the Agent browser now hears why: it isn't open yet, another chat has it, or you moved it to another chat. So it can tell you what to do. (DOR-4265)
+- When you queue a message while a Codex, OpenCode or Doe agent is busy, the note saying you wrote it during its last reply now reaches the agent in plain words. So do the git status, setup details and relayed-message details it gets. Before, they got raw data. Claude Code agents already read them this way. (DOR-3604)
+- An MCP server you added for every agent, whose name is now one of DorkOS's own, says why your agents can't use it. Its row on Connections reads "Agents can’t use it · its name is reserved". Its sheet explains it and offers **Remove and add again…**, which opens Add with the same command or address and arguments filled in. Pick a new name and type each value again, since DorkOS never shows a saved one. The tool check says it works, but agents can't use it until it's renamed. When DorkOS starts, the Inbox tells you about each such server. If it still isn't renamed, it tells you again at a start a month or more later. (DOR-4262)
+- Three messages you can see when the Agent browser can't open now say what to do: choose where it opens (in DorkOS or in its own window), use the desktop app to open it in DorkOS, or open a browser profile in its own window. (DOR-3219)
+- When another device calls DorkOS's `/mcp` without a valid API key, the refusal now says how to send one and where to get it, the same way `/a2a` does. (DOR-4264)
+- The Mac download file itself is now checked by Apple, not just the app inside it. Opening it the first time no longer shows a warning that macOS can't check it. (DOR-4261)
+
+### Changed
+
+- When you open the Agent browser, the two choices now say where the page opens: **In DorkOS** or **In its own window**. A tab with no title is called the Agent browser. (DOR-3219)
+
+### Going back
+
+0.135.9 doesn't change the database or your settings. To go back, install 0.135.8. If 0.135.9 told you about an MCP server with a reserved name, your Inbox on 0.135.8 may count that notice without showing it; **Mark all read** clears it.
+
 ## [0.135.8] - 2026-11-13
 
 > DorkOS 0.135.8 shows what each MCP server can do and which agents have an **Always allow** for it, makes **Always allow** ask whether you mean one tool or a whole server, and tightens remote access.
@@ -383,27 +414,10 @@ On 0.134.1, Needs you may not load if, while you were on 0.135.0, an agent took 
 
 DorkOS still saves a backup before it changes the database, in `~/.dork/backups/`. If you came from 0.134.1, it's named `dork-<date>-<time>-pre-20261108172402_connection_grant_exclusions.db` (the time is UTC). To restore it, quit DorkOS, delete `dork.db-wal` and `dork.db-shm` from `~/.dork/`, copy the backup over `~/.dork/dork.db`, then install 0.134.1. You lose anything written since the upgrade, so if you removed access or revoked a connection since then, do it again.
 
-## [0.134.1] - 2026-11-08
+Older releases (v0.1.0 – v0.134.1) are archived in [changelog/archive/CHANGELOG-v0.1.0-to-v0.134.1.md](changelog/archive/CHANGELOG-v0.1.0-to-v0.134.1.md).
 
-> DorkOS 0.134.1 gets Codex chats starting again for people signed in to Codex with ChatGPT, and shows your mini apps as soon as you sign in.
-
-### Note for people upgrading
-
-- On Linux, Codex at Full access doesn't start if Claude Code has run on the same machine, and that includes the Docker image. Use Ask first or Workspace write there for now. We're fixing it (DOR-3965).
-
-### Fixed
-
-- Codex chats start again for people signed in to Codex with ChatGPT. They broke in 0.133.0: each message failed, usually with an error about "failed to load workspace requirements".
-- Your apps and extension Settings show after you sign in, without reloading. With login on, your mini apps appear in the sidebar's Add-ons section, and their tabs appear in Settings, as soon as you sign in. Before, they stayed missing until you reloaded the window.
-- When your mini apps can't be loaded, the sidebar and Settings → Extensions now say "Couldn’t load apps." with a **Try again** button. Before, it looked as if you had none installed.
-
-### Going back
-
-This release doesn't change the database. To go back, install 0.134.0.
-
-Older releases (v0.1.0 – v0.134.0) are archived in [changelog/archive/CHANGELOG-v0.1.0-to-v0.134.0.md](changelog/archive/CHANGELOG-v0.1.0-to-v0.134.0.md).
-
-[Unreleased]: https://github.com/dork-labs/dorkos/compare/v0.135.8...HEAD
+[Unreleased]: https://github.com/dork-labs/dorkos/compare/v0.135.9...HEAD
+[0.135.9]: https://github.com/dork-labs/dorkos/compare/v0.135.8...v0.135.9
 [0.135.8]: https://github.com/dork-labs/dorkos/compare/v0.135.7...v0.135.8
 [0.135.7]: https://github.com/dork-labs/dorkos/compare/v0.135.6...v0.135.7
 [0.135.6]: https://github.com/dork-labs/dorkos/compare/v0.135.5...v0.135.6
@@ -413,4 +427,3 @@ Older releases (v0.1.0 – v0.134.0) are archived in [changelog/archive/CHANGELO
 [0.135.2]: https://github.com/dork-labs/dorkos/compare/v0.135.1...v0.135.2
 [0.135.1]: https://github.com/dork-labs/dorkos/compare/v0.135.0...v0.135.1
 [0.135.0]: https://github.com/dork-labs/dorkos/compare/v0.134.1...v0.135.0
-[0.134.1]: https://github.com/dork-labs/dorkos/compare/v0.134.0...v0.134.1
