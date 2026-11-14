@@ -20,7 +20,9 @@
  *   message, the scheduler, a room) refuse earlier with a clearer answer.
  * - **Leaves everything else alone.** The agent stays registered, readable and
  *   messageable. A held trigger is recorded once and dropped: lifting the pause
- *   never replays a pile of stale work at once.
+ *   never replays a pile of stale work at once. The one exception is a message
+ *   waiting in the agent's queue, which is somebody's words: it stays queued,
+ *   and a resume runs the ones other chats sent (DOR-4327).
  *
  * ## Who may do what
  *
@@ -367,7 +369,8 @@ export class AgentPauseService {
   }
 
   /**
-   * Lift an agent's pause. What it was held from is not replayed.
+   * Lift an agent's pause. Queued messages it held run through the resume
+   * listeners (DOR-4327); nothing else it was held from is replayed.
    *
    * @param agentId - The agent's mesh id.
    * @param actor - Who lifted it. Never the paused agent itself.

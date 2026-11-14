@@ -287,4 +287,136 @@ describe('pausing an agent holds its queued messages (DOR-4327)', () => {
     expect(listQueuedMessages(sessionId).map((row) => row.id)).toEqual([rowId]);
     expect(ran()).toEqual(['start the census']);
   });
+
+  it('runs a person’s own queued message only when they send, not on resume', async () => {
+    inner.withScenarios([longTurn, quick, quick, quick]);
+    const runtime = runtimeRegistry.get(inner.type);
+    const projector = getOrCreateProjector(sessionId, BETA.home);
+    await dispatchMessage({
+      sessionId,
+      clientId: 'person-window',
+      content: 'start the census',
+      projector,
+      runtime,
+      cwd: BETA.home,
+    });
+    await vi.waitFor(() => expect(inner.isTurnOpen(sessionId)).toBe(true));
+    for (const [clientId, content] of [
+      ['person-window', 'person: one more thing'],
+      [chatClientId('chat-alpha'), 'from A: add the totals'],
+    ] as const) {
+      await dispatchMessage({ sessionId, clientId, content, projector, runtime, cwd: BETA.home });
+    }
+    await pauses.pause(BETA.id, PERSON);
+    await vi.waitFor(() => expect(inner.isTurnOpen(sessionId)).toBe(false));
+    await settle();
+
+    pauses.resume(BETA.id, PERSON);
+    await rearm();
+    await vi.waitFor(() => expect(ran()).toHaveLength(2), { timeout: 2000 });
+    await rearm();
+    await settle();
+
+    // The other chat's message ran; the person's waits in their composer.
+    expect(ran()).toEqual(['start the census', 'from A: add the totals']);
+    expect(listQueuedMessages(sessionId).map((row) => row.content)).toEqual([
+      'person: one more thing',
+    ]);
+
+    // Pressing send runs it, then what they just sent.
+    await dispatchMessage({
+      sessionId,
+      clientId: 'person-window',
+      content: 'person: and this',
+      projector,
+      runtime,
+      cwd: BETA.home,
+    });
+    await vi.waitFor(() => expect(listQueuedMessages(sessionId)).toEqual([]), { timeout: 2000 });
+    await vi.waitFor(() => expect(ran()).toHaveLength(4), { timeout: 2000 });
+    expect(ran().slice(2).sort()).toEqual(['person: and this', 'person: one more thing']);
+  });
+});
+
+/** The bounds a turn's ceiling names, however it was written. */
+function boundsOf(ceiling: unknown): unknown[] {
+  if (ceiling === undefined) return [];
+  return Array.isArray(ceiling) ? ceiling : [ceiling];
+}
+
+/** The options the runtime got for each turn, in order. */
+function optsRan(): Array<Record<string, unknown>> {
+  return inner.sendMessage.mock.calls.map((call) => (call[2] ?? {}) as Record<string, unknown>);
+}
+
+describe('a held message never loses the limits its plan carried (DOR-4327, Security M1)', () => {
+  /**
+   * Agent A posts over HTTP from a marked turn, under a chat-shaped client id so
+   * the rearm picks it up. Its mark and bound live in the plan only. Then B is
+   * paused and resumed by an agent.
+   */
+  async function queueMarkedThenPauseResume(
+    extra: Partial<Parameters<typeof dispatchMessage>[0]>
+  ): Promise<void> {
+    // A spoofed chat id has no chat message record, so no ceiling comes from there.
+    setQueuedChatCeilingResolver(undefined);
+    const runtime = runtimeRegistry.get(inner.type);
+    const projector = getOrCreateProjector(sessionId, BETA.home);
+    await dispatchMessage({
+      sessionId,
+      clientId: 'person-window',
+      content: 'start',
+      projector,
+      runtime,
+      cwd: BETA.home,
+    });
+    await vi.waitFor(() => expect(inner.isTurnOpen(sessionId)).toBe(true));
+    await dispatchMessage({
+      sessionId,
+      clientId: 'chat:spoofed-by-agent-a',
+      content: 'marked words',
+      projector,
+      runtime,
+      cwd: BETA.home,
+      ...extra,
+    });
+    await pauses.pause(BETA.id, PERSON);
+    await vi.waitFor(() => expect(inner.isTurnOpen(sessionId)).toBe(false));
+    await settle();
+    pauses.onResumed(() => void rearm());
+    pauses.resume(BETA.id, {
+      accountId: '01ALPHAAGENTULID0000000000',
+      kind: 'agent',
+      name: 'alpha',
+    });
+    await settle();
+    await settle();
+  }
+
+  /** It ran with its mark and a bound, or at the default level, or not at all. */
+  function expectNoRaise(): void {
+    const index = ran().indexOf('marked words');
+    if (index === -1) return;
+    const opts = optsRan()[index]!;
+    const keptMark =
+      (opts.carriedMarks as { outsider?: boolean } | undefined)?.outsider === true &&
+      opts.permissionCeiling !== undefined;
+    expect(keptMark || boundsOf(opts.permissionCeiling).includes('runtime-default')).toBe(true);
+  }
+
+  it('an outsider mark and a bound', async () => {
+    await queueMarkedThenPauseResume({
+      carriedMarks: { outsider: true },
+      // A loose teammate-chain bound, as `launcherTurnCeiling` passes in the plan only.
+      permissionCeiling: { asks: 'never', reach: 'everything' },
+    });
+    expect(ran()).toContain('marked words');
+    expectNoRaise();
+  });
+
+  it('an unattended turn, as a heartbeat queues', async () => {
+    await queueMarkedThenPauseResume({ unattended: true });
+    expect(ran()).toContain('marked words');
+    expectNoRaise();
+  });
 });

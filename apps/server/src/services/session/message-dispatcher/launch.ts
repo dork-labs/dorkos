@@ -146,6 +146,9 @@ export function launchDispatchInner(
   const paused = pausedAgentOfPlan(plan);
   if (paused) {
     holdForPause(plan, paused);
+    // The messages behind it meet the same check and are held too, so none is
+    // left armed in memory where a resume could not reach it.
+    schedulePump(plan.sessionKey);
     return Promise.resolve({ accepted: false });
   }
   const { sessionKey, clientId, messageId } = plan;

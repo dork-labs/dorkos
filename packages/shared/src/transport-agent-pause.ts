@@ -12,6 +12,6 @@ export interface AgentPauseTransport {
   listAgentPauses(): Promise<AgentPauseList>;
   /** Pause an agent everywhere: its live turns stop and nothing starts a new one. */
   pauseAgent(agentId: string, reason?: string): Promise<AgentPauseResult>;
-  /** Lift an agent's pause. Its held work is not replayed. */
+  /** Lift an agent's pause. Messages other chats queued for it run; other held work is not replayed. */
   resumeAgent(agentId: string, reason?: string): Promise<AgentPauseResult>;
 }

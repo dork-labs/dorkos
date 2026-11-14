@@ -10,9 +10,14 @@
  * nothing retries it while the pause holds.
  *
  * Lifting the pause re-arms it the way a restart does (DOR-3287): the chat-queue
- * rearm adopts rows nothing is running, after checking the chat's agent is
- * still registered and no longer paused. Adoption skips a row already armed, so
- * each held message runs exactly once, however often the rearm runs.
+ * rearm adopts rows other chats sent that nothing is running, after checking the
+ * chat's agent is still registered and no longer paused. Adoption skips a row
+ * already armed, so each held message runs exactly once, however often the
+ * rearm runs. A person's own held row waits in their composer until they send.
+ *
+ * A resume rebuilds the turn from the row alone, so a plan whose limits lived
+ * only in memory (an outsider mark, a ceiling, an unattended turn) has its row
+ * held to the runtime's default before it is let go: stricter, never looser.
  *
  * Only a real queue row is held. A refusing caller's trigger and a transient one
  * have no row to keep, and a protected private message has its own receipt
@@ -70,6 +75,25 @@ export function pausedAgentOfPlan(plan: DispatchPlan): PausedAgentRef | undefine
 }
 
 /**
+ * Whether a plan carries limits its queue row does not keep: an outsider mark,
+ * a ceiling, an unattended turn or a continuation's hold. Each lives only in
+ * memory (an agent's HTTP post, a heartbeat), so a turn rebuilt from the row
+ * would run without it. A chat-sent row's own limits are re-read from its chat
+ * message at launch and need none of these.
+ *
+ * @param plan - The message being held
+ */
+function carriesPlanOnlyLimits(plan: DispatchPlan): boolean {
+  const { turn } = plan;
+  return (
+    turn.carriedMarks?.outsider === true ||
+    turn.permissionCeiling !== undefined ||
+    turn.unattended === true ||
+    turn.continuationHold === true
+  );
+}
+
+/**
  * Hold a queued message for its paused agent: keep the row, let go of it here,
  * and record the hold once per pause.
  *
@@ -81,6 +105,13 @@ export function pausedAgentOfPlan(plan: DispatchPlan): PausedAgentRef | undefine
  * @param agent - The paused agent it is for
  */
 export function holdForPause(plan: DispatchPlan, agent: PausedAgentRef): void {
+  // Fail closed (Security M1): the row is all a resume rebuilds the turn from,
+  // so limits only the plan carried would be lost. Hold its turn to the default.
+  const store = getMessageQueueStore();
+  const row = store?.get(plan.messageId);
+  if (row && !row.heldToDefault && carriesPlanOnlyLimits(plan)) {
+    store?.updateContent(plan.messageId, row.content, { holdToDefault: true });
+  }
   pending.delete(plan.messageId);
   if (setQueuedWaitingOn(plan.messageId, undefined)) emitQueueUpdate(plan.sessionKey);
   const key = `${plan.messageId}:${agent.pausedAt ?? ''}`;
