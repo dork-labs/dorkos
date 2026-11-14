@@ -15,8 +15,8 @@ import type { RoomTurnRequest } from '../room-turn-port.js';
 
 /**
  * The per-turn bounds a room turn sends: its ceiling as the dispatcher derived it, the folders
- * placement granted it, and a mark it carries on from the work it continues (DOR-3561). A room
- * without files grants nothing.
+ * placement granted it, and an outsider mark from a non-owner author or earlier work (DOR-3561,
+ * DOR-3858). A room without files grants nothing.
  *
  * @param request - The turn about to start.
  */

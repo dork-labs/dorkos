@@ -202,9 +202,9 @@ export interface RoomTurnRequest {
    */
   teammate?: true;
   /**
-   * Set when this seat turn carries on work whose turn held a Wi-Fi sign-in's mark (a hand-off or
-   * a spin-off's report, `handoff/seat-carry.ts`, DOR-3561). Sent as `MessageOpts.carriedMarks`:
-   * the turn is refused a raise and keeps its level.
+   * Set when this turn answers a non-owner person while DOR-3858 is on, or carries an outsider mark
+   * from earlier work (a hand-off or spin-off report, `handoff/seat-carry.ts`, DOR-3561). Sent as
+   * `MessageOpts.carriedMarks`: the turn is refused a raise and keeps its level.
    */
   carriedOutsider?: true;
   /**

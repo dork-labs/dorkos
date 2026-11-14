@@ -47,6 +47,7 @@ import {
   resolveCeilingLevel,
 } from '@dorkos/shared/permission-semantics';
 import { logger } from '../../../../../lib/logger.js';
+import { unmarkedTurnClause } from '../../../../core/turn-power/marked-turn-copy.js';
 import {
   AGENT_MODE_REFUSAL_ERROR,
   CONTENT_CHANGED_MESSAGE,
@@ -269,7 +270,7 @@ export const PARKED_BECAUSE = {
   unvouched:
     'This task now runs looser than Don’t ask. No person approved it as it is, and this call ' +
     'could not vouch for it (only the task’s own agent can, from its own chat, in a turn that ' +
-    'read no outside words), so it waits for a person.',
+    `${unmarkedTurnClause()}), so it waits for a person.`,
 } as const;
 
 /**

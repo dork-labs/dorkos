@@ -1236,9 +1236,10 @@ export interface MessageOpts extends SessionSettings {
    */
   continuationHold?: true;
   /**
-   * A mark this turn carries on from work it continues, apart from any
-   * ceiling: a spin-off's Wi-Fi hold reaching the room seat it reports to
-   * (DOR-3561). Recorded on the turn's level, so every raise gate refuses the
+   * A mark this turn carries, apart from any ceiling: a spin-off's Wi-Fi hold
+   * reaching the room seat it reports to (DOR-3561), or, with DOR-3858's boot
+   * flag on, a message from someone other than the owner in a bound chat or a
+   * room. Recorded on the turn's level, so every raise gate refuses the
    * turn on its own, and it lowers nothing: the turn keeps its level for
    * everything else. Server-derived, never from a client. Runtimes ignore it;
    * the turn-level record reads it.
