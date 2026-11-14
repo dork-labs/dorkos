@@ -5,7 +5,7 @@ import type { TabAuditEvent } from './types.js';
 /** A handoff child is never registered with the broker or given any lease. */
 export class HeldSignInPopup {
   private page?: Page;
-  private consumed = false;
+  private ended = false;
   private closing?: Promise<void>;
   private timeout?: ReturnType<typeof setTimeout>;
   private unwatch = () => undefined;
@@ -17,14 +17,13 @@ export class HeldSignInPopup {
   ) {}
 
   accept(page: Page): void {
-    if (this.consumed) {
+    if (this.ended || this.page || page.isClosed()) {
       void page.close().catch(() => undefined);
       return;
     }
-    this.consumed = true;
     this.page = page;
     this.timeout = setTimeout(() => {
-      void this.close().catch(() => undefined);
+      void page.close().catch(() => undefined);
     }, 10 * 60_000);
     this.timeout.unref?.();
     const pageId = randomUUID();
@@ -60,6 +59,7 @@ export class HeldSignInPopup {
       clearTimeout(this.timeout);
       this.unwatch();
       this.page = undefined;
+      this.closing = undefined;
       emit('popup_close');
     };
     this.unwatch = () => {
@@ -78,7 +78,7 @@ export class HeldSignInPopup {
     return true;
   }
   async close(): Promise<void> {
-    this.consumed = true;
+    this.ended = true;
     if (!this.closing && this.page && !this.page.isClosed()) this.closing = this.page.close();
     await this.closing;
   }

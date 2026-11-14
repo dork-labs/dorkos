@@ -122,6 +122,8 @@ export interface LocalBrowserPersonState extends LocalBrowserState {
   signInElsewhere?: { handoffId: string } | null;
   /** The held tab stays attached; its agent is excluded by the page lease. Person UI only. */
   handoffAttached?: boolean;
+  /** True only after the person explicitly shows their held tab (state 1.5). */
+  handoffTaken?: boolean;
 }
 export interface LocalBrowserObservation {
   revision: number;
@@ -240,6 +242,7 @@ export const LocalBrowserPersonStateSchema = LocalBrowserStateSchema.extend({
   signIn: LocalBrowserSignInSchema.nullable(),
   signInElsewhere: z.object({ handoffId: z.string() }).nullable().optional(),
   handoffAttached: z.boolean().optional(),
+  handoffTaken: z.boolean().optional(),
 });
 
 /** What the agent hears back. */

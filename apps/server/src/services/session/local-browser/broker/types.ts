@@ -50,6 +50,7 @@ export interface TabAuditEvent {
 /** Only the host's person-facing controls receive this handle. Agents never do. */
 export interface TabTakeover {
   readonly pageId: string;
+  take(): void;
   handBack(): void;
   abandon(): void;
 }

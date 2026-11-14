@@ -166,6 +166,7 @@ export const productionBackend: LocalBrowserBackend = {
       // that one folder and no other extension, in place of Playwright's blanket one.
       ignoreDefaultArgs: [
         '--enable-automation',
+        '--disable-popup-blocking',
         PINNED_DISABLED_FEATURES_ARG,
         ...(theme ? ['--disable-extensions'] : []),
       ],

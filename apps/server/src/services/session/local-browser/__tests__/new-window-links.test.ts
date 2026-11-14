@@ -41,10 +41,30 @@ it('blocks script windows before creation while an agent owns the page', async (
     expect(window.open('https://made-up.example/')).toBeNull();
     expect(open).not.toHaveBeenCalled();
     expect(report).toHaveBeenCalledOnce();
+    vi.stubGlobal('navigator', { userActivation: { isActive: true } });
     (window as unknown as Record<string, (held: boolean) => void>).__madeUpControl(true);
     window.open('https://made-up.example/sign-in');
     expect(open).toHaveBeenCalledOnce();
   } finally {
     window.open = original;
+    vi.unstubAllGlobals();
+  }
+});
+
+it('blocks a sign-in page script without a click even after the person takes the tab', async () => {
+  const { installWindowPolicy } = await import('../chat/window-policy.js');
+  const { vi } = await import('vitest');
+  const original = window.open;
+  const open = vi.fn(() => null);
+  window.open = open;
+  vi.stubGlobal('navigator', { userActivation: { isActive: false } });
+  try {
+    installWindowPolicy({ control: '__noClickControl', report: '__noClickReport' });
+    (window as unknown as Record<string, (taken: boolean) => void>).__noClickControl(true);
+    expect(window.open('https://login.made-up.example/')).toBeNull();
+    expect(open).not.toHaveBeenCalled();
+  } finally {
+    window.open = original;
+    vi.unstubAllGlobals();
   }
 });

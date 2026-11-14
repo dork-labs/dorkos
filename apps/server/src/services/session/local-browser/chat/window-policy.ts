@@ -18,7 +18,7 @@ export function installWindowPolicy({
     },
   });
   window.open = (...args) => {
-    if (held) return open(...args);
+    if (held && navigator.userActivation?.isActive) return open(...args);
     const notify = scope[report] as (() => Promise<void>) | undefined;
     void notify?.().catch(() => undefined);
     return null;

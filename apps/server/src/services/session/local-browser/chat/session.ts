@@ -255,6 +255,17 @@ export class BrowserChatSession {
     const revision = this.revision;
     await responseDeadline(page.bringToFront(), PAGE_READ_RESPONSE_TIMEOUT_MS, () => this.stale());
     if (revision !== this.revision) throw this.stale();
+    if (this.heldState?.selectedTabId === id && this.takeover) {
+      const takeover = this.takeover;
+      try {
+        await this.host.windowPolicy(id, true);
+        if (revision !== this.revision || takeover !== this.takeover) throw this.stale();
+        takeover.take();
+      } catch (error) {
+        await this.host.windowPolicy(id, false).catch(() => undefined);
+        throw error;
+      }
+    }
     return this.state();
   }
 
@@ -271,7 +282,7 @@ export class BrowserChatSession {
     await this.pause();
     this.takeover = this.host.broker.hold(this.selected());
     try {
-      await this.host.windowPolicy(this.selectedTabId!, true);
+      await this.host.windowPolicy(this.selectedTabId!, false);
     } catch (error) {
       await this.host.windowPolicy(this.selectedTabId!, false).catch(() => undefined);
       try {
