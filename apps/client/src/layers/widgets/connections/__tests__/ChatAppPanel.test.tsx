@@ -142,6 +142,9 @@ describe('ChatAppPanel', () => {
 
     const fix = screen.getByTestId('app-panel-fix');
     expect(fix).toHaveTextContent('Anyone who finds this chat can message your agents.');
+    // Something is wrong here, so it stays a warning, icon included.
+    expect(fix).toHaveAttribute('data-tone', 'warning');
+    expect(fix.querySelector('svg')).not.toBeNull();
     await user.click(within(fix).getByRole('button', { name: 'Only people I list' }));
 
     await waitFor(() =>
@@ -159,7 +162,7 @@ describe('ChatAppPanel', () => {
     ).not.toBeInTheDocument();
   });
 
-  it('says no one can message a bot limited to an empty list, and opens the list', async () => {
+  it('says no one can message a bot limited to an empty list, and opens at the list', async () => {
     const user = userEvent.setup();
     renderPanel(instance({ config: { dmPolicy: 'allowlist', dmAllowlist: [] } }));
 
@@ -167,10 +170,14 @@ describe('ChatAppPanel', () => {
     expect(fix).toHaveTextContent(
       'No one can message it yet, including you. Add people to let them in.'
     );
+    // Nothing is wrong, it waits on the person: neutral, no warning icon (designer).
+    expect(fix).toHaveAttribute('data-tone', 'neutral');
+    expect(fix.querySelector('svg')).toBeNull();
     await user.click(within(fix).getByRole('button', { name: 'Add people' }));
 
     const dialog = await screen.findByRole('dialog', { name: /Edit Telegram/ });
-    expect(within(dialog).getByLabelText(/DM Allowlist/)).toBeInTheDocument();
+    // It opens at the list, not at Name.
+    await waitFor(() => expect(within(dialog).getByLabelText(/DM Allowlist/)).toHaveFocus());
   });
 
   it('says nothing about the list once someone is on it, or while paused', () => {

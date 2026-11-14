@@ -115,6 +115,8 @@ export function ChatAppPanel({ entry, instance, onClose }: ChatAppPanelProps) {
         // never access, so the gate does not let the owner in either.
         <PanelFix
           message="No one can message it yet, including you. Add people to let them in."
+          // Nothing is wrong: it waits on the person, so no warning (designer).
+          tone="neutral"
           action="Add people"
           onAction={() => setWizard('people')}
         />
@@ -190,6 +192,7 @@ export function ChatAppPanel({ entry, instance, onClose }: ChatAppPanelProps) {
                 : instance
           }
           existingAdapterIds={entry.instances.map((candidate) => candidate.id)}
+          {...(wizard === 'people' ? { focusField: 'dmAllowlist' } : {})}
         />
       )}
 
