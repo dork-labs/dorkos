@@ -7,7 +7,7 @@
  */
 import { randomUUID } from 'node:crypto';
 import { request as httpRequest } from 'node:http';
-import { afterAll, beforeAll, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, expect, it } from 'vitest';
 import { assertMemberRoom } from '../host/limits.js';
 import { runHostKeyCommand } from '../host-keys.js';
 import { responseCookies } from './bootstrap-test-helper.js';
@@ -151,6 +151,50 @@ function upload(bytes: number, key: string, channelId = channelA, cookie = opera
   });
 }
 
+/**
+ * Send an upload's headers and hold back every byte of its body, so only a refusal on the
+ * declared size can answer it. A server that waits for the body instead fails the test.
+ *
+ * On a socket of its own (DOR-4291): the server stops reading a refused upload's body and closes
+ * that connection about half a second later. A pooled fetch that had already sent the body would
+ * hand the socket to the next request, which then fails with a reset instead of an answer.
+ */
+function declareUpload(bytes: number, key: string): Promise<{ status: number; body: string }> {
+  return new Promise((resolve, reject) => {
+    const outgoing = httpRequest(`${h.baseUrl}${tenant(a)}/channels/${channelA}/attachments`, {
+      method: 'POST',
+      agent: false,
+      headers: {
+        cookie: operator.cookie,
+        origin: h.config.publicUrl,
+        'content-type': 'text/plain',
+        'x-file-name': `${key}.txt`,
+        'x-file-size': String(bytes),
+        'idempotency-key': key,
+        'content-length': bytes,
+      },
+    });
+    const waiting = setTimeout(() => {
+      outgoing.destroy();
+      reject(new Error('The server waited for the body: the declared size was not refused.'));
+    }, 10_000);
+    outgoing.on('response', (response) => {
+      let body = '';
+      response.on('data', (chunk) => (body += chunk));
+      response.on('end', () => {
+        clearTimeout(waiting);
+        outgoing.destroy();
+        resolve({ status: response.statusCode ?? 0, body });
+      });
+    });
+    outgoing.on('error', (error) => {
+      clearTimeout(waiting);
+      reject(error);
+    });
+    outgoing.flushHeaders();
+  });
+}
+
 beforeAll(async () => {
   h = await startTenancyHarness('host_limits');
   const host = await bootstrapHost(h, 'Operator', 'operator@limits.test');
@@ -169,6 +213,15 @@ beforeAll(async () => {
     await claimAsNewAccount(h, other.token, 'Other Owner', 'other@limits.test')
   ).memberId;
 }, 60_000);
+
+// A test that fails partway can leave a storage limit behind; clear it, so the next test never
+// sees it (DOR-4291). Member limits stay: the tests that count four seats build on each other.
+afterEach(async () => {
+  if (!h || !a) return;
+  const { limits } = await usage(a);
+  if (limits.maxStorageBytes !== null)
+    await setLimits(a, { maxActiveMembers: limits.maxActiveMembers, maxStorageBytes: null });
+});
 
 afterAll(async () => {
   await h?.close();
@@ -544,8 +597,9 @@ it('lets only one of two concurrent uploads that would jointly pass the storage 
 
   // The declared size is refused before any bytes are sent or any file is reserved.
   const reservations = await count('SELECT 1 FROM managed_blobs WHERE community_id=$1', [a]);
-  const early = await upload(6 * MiB, 'six-c');
+  const early = await declareUpload(6 * MiB, 'six-c');
   expect(early.status).toBe(409);
+  expect(JSON.parse(early.body).code).toBe('STORAGE_LIMIT_REACHED');
   expect(await count('SELECT 1 FROM managed_blobs WHERE community_id=$1', [a])).toBe(reservations);
 });
 
