@@ -11,6 +11,7 @@ covers:
   - 'fix(dev): isolate browser panel showcase chat caches'
   - 'fix(browser): admit sign-in popups only after a person takes the tab'
   - 'fix(browser): let panel buttons grow with wrapped labels'
+  - 'fix(browser): keep the chat tab popover inside its panel'
 ---
 
 ### Added
@@ -23,6 +24,7 @@ covers:
 - Keep Saved sign-ins visible while another chat waits for you to sign in.
 - Stack Saved sign-ins on small screens.
 - Keep long chat and agent names readable on browser buttons.
+- Keep the open-tabs list inside the browser panel and show site names without address prefixes.
 - Wait when six chats have browser tabs open. Choose an idle chat’s tab to close.
 
 ### Security

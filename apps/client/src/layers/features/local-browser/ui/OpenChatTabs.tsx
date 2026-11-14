@@ -1,5 +1,6 @@
-import { useId, useRef } from 'react';
+import { useCallback, useId, useRef, useState } from 'react';
 import { sessionHref } from '@/layers/shared/lib';
+import { useIsMobile } from '@/layers/shared/model';
 import type { LocalBrowserPersonState } from '@dorkos/shared/local-browser';
 import {
   Button,
@@ -8,6 +9,14 @@ import {
   ResponsivePopoverContent,
   ResponsivePopoverTitle,
 } from '@/layers/shared/ui';
+
+function tabHost(origin: string): string {
+  try {
+    return new URL(origin).host;
+  } catch {
+    return '';
+  }
+}
 
 /** Person-only chat inventory. It contains origins, never other tabs' page titles or addresses. */
 export function OpenChatTabs({
@@ -19,16 +28,22 @@ export function OpenChatTabs({
 }) {
   const titleId = useId();
   const firstLink = useRef<HTMLAnchorElement>(null);
+  const isMobile = useIsMobile();
+  const [boundary, setBoundary] = useState<HTMLElement | null>(null);
+  const findBoundary = useCallback((trigger: HTMLButtonElement | null) => {
+    setBoundary(trigger?.closest<HTMLElement>('[data-slot="local-browser-panel"]') ?? null);
+  }, []);
   return (
     // This is an explicitly opened sheet with no input; focus must enter its links.
     // eslint-disable-next-line jsx-a11y/no-autofocus
     <ResponsivePopover autoFocus>
       <ResponsivePopoverTrigger asChild>
         <Button
+          ref={findBoundary}
           variant="ghost"
           size="sm"
           aria-haspopup="dialog"
-          className="h-auto min-h-11 py-2 text-left whitespace-normal md:h-auto"
+          className="-ms-3 h-auto min-h-11 py-2 text-left whitespace-normal md:h-auto"
         >
           {label ?? `Also open in ${tabs.length} other ${tabs.length === 1 ? 'chat' : 'chats'}`}
         </Button>
@@ -36,7 +51,10 @@ export function OpenChatTabs({
       <ResponsivePopoverContent
         aria-label="Open chat tabs"
         aria-describedby={undefined}
-        className="space-y-3"
+        side="bottom"
+        align="start"
+        className="max-h-[min(70vh,600px,var(--radix-popover-content-available-height))] max-w-(--radix-popover-content-available-width) space-y-3"
+        {...(!isMobile ? { collisionBoundary: boundary } : {})}
         onOpenAutoFocus={(event) => {
           if (!firstLink.current) return;
           event.preventDefault();
@@ -54,7 +72,7 @@ export function OpenChatTabs({
               >
                 <span className="block text-sm font-medium">{tab.title}</span>
                 <span className="text-muted-foreground block text-xs">
-                  {tab.origin} · {tab.state}
+                  {[tabHost(tab.origin), tab.state].filter(Boolean).join(' · ')}
                 </span>
               </a>
             </li>
