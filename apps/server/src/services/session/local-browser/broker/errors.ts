@@ -8,7 +8,8 @@ export class TabBrokerError extends Error {
       | 'handoff_active'
       | 'tab_limit'
       | 'queue_full'
-      | 'url_blocked',
+      | 'url_blocked'
+      | 'popup_blocked',
     message: string
   ) {
     super(message);

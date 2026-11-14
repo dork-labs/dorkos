@@ -1,7 +1,7 @@
 # Browser memory with 1, 3 and 5 chats
 
 This is the DOR-4273 measurement for B1 draft 1.2 §5.5. It supplies evidence for
-the proposed six-tab window cap. It does not choose or change a cap.
+the six-chat tab cap. PM approved six; this harness measures resource use without changing it.
 
 **Run only in QA's sealed Linux Docker environment. Never launch this script's
 browser on the Mac host.** The entry point refuses non-Linux hosts, Linux outside
@@ -128,7 +128,7 @@ status/log and image digest together. Each completed case has `status: measured`
 and `cleanup: closed`. The final report must also say `status: measured`, contain
 all nine cases (twelve with six chats), match the candidate commit, and have
 unchanged source snapshots. A partial case is written after each completed phase
-so a failure still leaves evidence. `capDecision` intentionally stays `pending`.
+so a failure still leaves evidence. `capDecision` records the PM-approved cap; it is not a memory verdict.
 
 Report a table with one row per chat count and phase: browser PSS median/p95/max,
 Node RSS p95, container memory median/p95/max, and container change from that
@@ -143,5 +143,10 @@ or use the optional six-chat run. These synthetic documents cannot establish
 memory bounds for arbitrary websites, long-lived sessions, video, downloads or
 the whole DorkOS app. This is also **not** Security's popup/focus proof.
 
-No numbers were produced on the Mac while writing this harness. The six-tab
-decision remains pending the checker's Docker run and PM's review.
+No numbers were produced on the Mac while writing this harness. PM approved six chat tabs.
+The checker still owes the memory evidence, including the later real-site run.
+
+The current service leaves Chromium’s initial tabs untouched. The sealed fixture counts those
+separately as `startupPages`; `physicalPages` includes them in the measured process tree. It
+checks snapshots only on its made-up chat fixtures. Do not compare this revision’s totals to
+older runs that reused the startup page. The production service never reads personal pages.

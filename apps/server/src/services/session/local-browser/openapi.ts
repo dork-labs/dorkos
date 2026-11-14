@@ -58,7 +58,7 @@ function registerHandoverOpenApi(registry: OpenAPIRegistry): void {
       authority +
       inPerson +
       'Opens installed Chrome, or managed Chromium, without a debugging channel on the chosen profile. ' +
-      'An embedded handoff keeps its native view detached; a separate window uses the handoff’s saved page. ' +
+      'An embedded handoff keeps its native view detached. In chat-tab mode this raises the server-owned sign-in popup, or the held tab if no popup exists. No agent can read or act on either. Otherwise a separate window uses the handoff’s saved page. ' +
       'Otherwise takes a page the person typed. ' +
       'Accepts https, or http on this computer only. Password saving is off in that window.',
     request: {
@@ -182,6 +182,28 @@ export function registerLocalBrowserOpenApi(registry: OpenAPIRegistry): void {
       'During a handoff, only the tab already selected can be chosen.',
     request: { params: z.object({ id: z.string() }) },
     responses: stateResponses,
+  });
+  registry.registerPath({
+    method: 'post',
+    path: '/api/local-browser/tabs/idle/close',
+    tags: ['Local browser'],
+    summary: 'Close an idle chat tab for a waiting chat',
+    description:
+      authority +
+      inPerson +
+      'Rechecks that the named chat is idle before closing its tab. Saved sign-ins remain. Agents receive only the cap error and cannot call this route.',
+    request: {
+      query: z.object({ sessionId: z.string().min(1).max(200) }),
+      body: {
+        required: true,
+        content: {
+          'application/json': {
+            schema: z.object({ targetSessionId: z.string().min(1).max(200) }).strict(),
+          },
+        },
+      },
+    },
+    responses: { ...personStateResponses, 400: refusal('The chat scope is invalid') },
   });
   registry.registerPath({
     method: 'post',

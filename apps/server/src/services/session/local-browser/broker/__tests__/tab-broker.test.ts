@@ -8,18 +8,24 @@ function page(address = 'https://made-up.example/') {
   const events = new EventEmitter();
   let closed = false;
   let url = address;
+  const mainFrame = { url: () => url };
   const value = {
     on: events.on.bind(events),
     off: events.off.bind(events),
     isClosed: () => closed,
+    close: vi.fn(async () => {
+      closed = true;
+      events.emit('close');
+    }),
     url: () => url,
+    mainFrame: () => mainFrame,
   } as unknown as Page;
   return {
     value,
     events,
     navigate(next: string) {
       url = next;
-      events.emit('framenavigated', { url: () => next });
+      events.emit('framenavigated', mainFrame);
     },
     close() {
       closed = true;
@@ -28,7 +34,7 @@ function page(address = 'https://made-up.example/') {
   };
 }
 
-function fixture(options: { maxPagesPerOwner?: number; maxPages?: number; idleMs?: number } = {}) {
+function fixture(options: { maxPagesPerOwner?: number; maxPages?: number } = {}) {
   const events: TabAuditEvent[] = [];
   const rows = new Map<string, TabOwnershipRecord>();
   const store = {
@@ -129,18 +135,18 @@ describe('tab ownership', () => {
     await expect(broker.run(lease, read)).rejects.toMatchObject({ code: 'tab_locked' });
   });
 
-  it('binds popups to the opener but leaves a person’s tabs unowned', () => {
+  it('closes popups without granting ownership and leaves personal tabs outside the cap', () => {
     const { broker } = fixture();
     const first = page();
     broker.bind(first.value, atlas);
     const popup = page();
     first.events.emit('popup', popup.value);
     const personal = broker.register(page().value);
-    expect(broker.list(atlas)).toHaveLength(2);
-    const child = broker.list(atlas)[1];
-    expect(child.pageId).not.toBe(broker.list(atlas)[0].pageId);
-    expect(broker.leaseFor(atlas, child.pageId)).toBe(child);
-    expect(broker.list(nova)).toEqual([]);
+    expect(broker.list(atlas)).toHaveLength(1);
+    expect(popup.value.close).toHaveBeenCalledOnce();
+    expect(() => broker.bind(popup.value, atlas)).toThrow(
+      expect.objectContaining({ code: 'page_held' })
+    );
     expect(() => broker.leaseFor(atlas, personal)).toThrow(
       expect.objectContaining({ code: 'tab_locked' })
     );
@@ -153,7 +159,7 @@ describe('tab ownership', () => {
       expect.objectContaining({ code: 'tab_limit' })
     );
     broker.bind(page().value, nova);
-    expect(() => broker.register(page().value)).toThrow(
+    expect(() => broker.bind(page().value, { ownerId: 'third', agentId: 'third' })).toThrow(
       expect.objectContaining({ code: 'tab_limit' })
     );
   });
@@ -277,11 +283,11 @@ describe('page queues and takeover', () => {
   });
 
   it('never auto-returns a held page after idle, disconnect, or restart', async () => {
-    const { broker, store } = fixture({ idleMs: 50 });
+    const { broker, store } = fixture();
     const tab = page();
     const first = broker.bind(tab.value, atlas);
     const hold = broker.hold(first);
-    broker.sweepIdle(Date.now() + 100);
+    broker.disconnect(atlas);
     expect(() => hold.handBack()).toThrow(expect.objectContaining({ code: 'tab_locked' }));
     expect(broker.adopt(atlas)).toEqual([]);
     const restarted = new TabBroker({ store, audit: () => undefined });

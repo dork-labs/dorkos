@@ -34,6 +34,7 @@ export interface ChatBrowserHost {
   appOrigins(): readonly string[];
   assertAvailable(): void;
   assertMayAct(): void;
+  windowPolicy(pageId: string, held: boolean): Promise<void>;
 }
 
 /** One chat's revision, node handles, pause, action flight and selected owned page. */
@@ -69,6 +70,17 @@ export class BrowserChatSession {
 
   get busy(): boolean {
     return this.actions.active;
+  }
+
+  get held(): boolean {
+    return !!this.heldState;
+  }
+  ownsTab(id: string): boolean {
+    return this.selectedTabId === id || this.heldState?.selectedTabId === id;
+  }
+  hasPage(): boolean {
+    if (this.heldState) return !this.tabs.get(this.heldState.selectedTabId ?? '')?.isClosed();
+    return this.host.broker.list(this.principal).length > 0;
   }
 
   /** Refuse a missing or revoked page before a tool can obtain this session handle. */
@@ -209,6 +221,7 @@ export class BrowserChatSession {
       );
     }
     this.refuseProtectedPage(page);
+    this.host.broker.requireNoBlockedPopup(lease.pageId);
     return this.agentState();
   }
 
@@ -231,6 +244,8 @@ export class BrowserChatSession {
   }
 
   async selectTab(id: string): Promise<LocalBrowserState> {
+    if (this.heldState?.selectedTabId === id && (await this.host.broker.showSignIn(id)))
+      return this.state();
     this.syncTabs();
     const page = this.tabs.get(id);
     if (!page || page.isClosed())
@@ -255,6 +270,18 @@ export class BrowserChatSession {
     const before = await this.state();
     await this.pause();
     this.takeover = this.host.broker.hold(this.selected());
+    try {
+      await this.host.windowPolicy(this.selectedTabId!, true);
+    } catch (error) {
+      await this.host.windowPolicy(this.selectedTabId!, false).catch(() => undefined);
+      try {
+        this.takeover.handBack();
+      } catch {
+        /* A page that closed stays revoked. */
+      }
+      this.takeover = undefined;
+      throw error;
+    }
     this.heldState = {
       ...before,
       paused: true,
@@ -270,6 +297,10 @@ export class BrowserChatSession {
 
   async resume(): Promise<LocalBrowserState> {
     this.host.assertAvailable();
+    if (this.heldState?.selectedTabId) {
+      await this.host.windowPolicy(this.heldState.selectedTabId, false);
+      await this.host.broker.closeSignIn(this.heldState.selectedTabId);
+    }
     if (this.takeover) {
       try {
         this.takeover.handBack();
@@ -290,7 +321,14 @@ export class BrowserChatSession {
     const page = this.tabs.get(this.heldState?.selectedTabId ?? '');
     if (!page || page.isClosed())
       throw new LocalBrowserError('tab_gone', 'That tab closed. Open the browser again.');
-    this.host.broker.bind(page, this.principal);
+    this.host.broker.personResume(page, this.principal);
+  }
+
+  async closeSignIn(): Promise<void> {
+    if (this.heldState?.selectedTabId) {
+      await this.host.windowPolicy(this.heldState.selectedTabId, false);
+      await this.host.broker.closeSignIn(this.heldState.selectedTabId);
+    }
   }
 
   /** Stop or disconnect leaves a handed-off page unowned for the person. */

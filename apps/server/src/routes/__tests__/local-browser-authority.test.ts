@@ -31,6 +31,7 @@ import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
 const spies = {
   forgetProfile: vi.fn(async () => undefined),
   deleteProfile: vi.fn(async () => undefined),
+  closeIdleTab: vi.fn(async () => undefined),
   capabilities: vi.fn(() => ({})),
   state: vi.fn(async () => ({})),
   open: vi.fn(async () => ({})),
@@ -50,6 +51,7 @@ const service = {
     forgetAll: spies.forgetProfile,
     delete: spies.deleteProfile,
   },
+  closeIdleTab: spies.closeIdleTab,
   capabilities: spies.capabilities,
   handover: {
     pause: spies.pause,
@@ -111,6 +113,7 @@ const endpoints = [
   ['get', '/capabilities', undefined, 'capabilities'],
   ['get', '/state', undefined, 'state'],
   ['post', '/open', { mode: 'new-window' }, 'open'],
+  ['post', '/tabs/idle/close?sessionId=waiting', { targetSessionId: 'idle-chat' }, 'closeIdleTab'],
   ['post', '/tabs/tab-1/select', undefined, 'selectTab'],
   ['post', '/navigate', { url: 'https://example.test/' }, 'navigate'],
   ['post', '/pause', undefined, 'pause'],
@@ -156,6 +159,7 @@ describe.each([
   ['/profiles/default/forget-sign-ins', undefined],
   ['/profiles/11111111-1111-4111-8111-111111111111/forget-sign-ins', undefined],
   ['/open', { mode: 'new-window' }],
+  ['/tabs/idle/close?sessionId=waiting', { targetSessionId: 'idle-chat' }],
   ['/tabs/tab-1/select', undefined],
   ['/navigate', { url: 'https://example.test/' }],
   ['/resume', undefined],

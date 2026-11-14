@@ -42,6 +42,10 @@ export function createLocalBrowserMethods(baseUrl: string): LocalBrowserTranspor
       fetchJSON(baseUrl, `/local-browser/profiles/${encodeURIComponent(id)}`, { method: 'DELETE' }),
     openLocalBrowser: async (input) =>
       LocalBrowserPersonStateSchema.parse(await request('/open', input)),
+    closeIdleLocalBrowserTab: async (targetSessionId, sessionId) =>
+      LocalBrowserPersonStateSchema.parse(
+        await request(scoped('/tabs/idle/close', sessionId), { targetSessionId })
+      ),
     selectLocalBrowserTab: async (id, sessionId) =>
       LocalBrowserStateSchema.parse(
         await request(scoped(`/tabs/${encodeURIComponent(id)}/select`, sessionId), {})

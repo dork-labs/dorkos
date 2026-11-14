@@ -318,7 +318,7 @@ it('Security Must 2: idle and disconnect never regrant the person’s page throu
     await expect(f.call('observe', 'atlas')).rejects.toMatchObject({
       payload: { code: 'task_stopped' },
     });
-    expect(f.pages[0].value.close).not.toHaveBeenCalled();
+    expect(f.pages[0].value.close).toHaveBeenCalledOnce();
     await invokeCapabilityAsMcpResult(
       f.registry,
       'local_browser.screenshot',

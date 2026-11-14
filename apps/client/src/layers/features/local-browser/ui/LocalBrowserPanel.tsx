@@ -16,6 +16,9 @@ import { useFirstFocus } from '../model/use-first-focus';
 import { BrowserPreparation } from './BrowserPreparation';
 import { WaitingElsewhere } from './WaitingElsewhere';
 import { PausedForSignIn } from './PausedForSignIn';
+import { WaitingForTab } from './WaitingForTab';
+import { HeldChatTab } from './HeldChatTab';
+import { OpenChatTabs } from './OpenChatTabs';
 import { SavedSignIns } from './SavedSignIns';
 import { SharedElsewhere } from './SharedElsewhere';
 
@@ -66,6 +69,9 @@ export function LocalBrowserPanel({
   const [surfaceUnavailable, setSurfaceUnavailable] = useState(false);
   const surface = useRef<HTMLDivElement>(null);
   const connected = state?.status === 'connected';
+  const waitingForTab = !!state?.waitingForTab && !!sessionId;
+  const heldHere =
+    !!state?.handoffAttached && state.handoff?.outcome === null && state.sessionId === sessionId;
   // "Disconnected" before anything was ever opened reads as broken (DOR-4104).
   const [hadConnection, setHadConnection] = useState(false);
   useEffect(() => {
@@ -137,6 +143,9 @@ export function LocalBrowserPanel({
         signIn: known?.signIn ?? null,
         signInElsewhere: known?.signInElsewhere ?? null,
         handoffAttached: known?.handoffAttached ?? false,
+        waitingForTab: known?.waitingForTab ?? false,
+        openChatTabs: known?.openChatTabs ?? [],
+        idleTabToClose: known?.idleTabToClose ?? null,
         ...next,
       }));
       return true;
@@ -233,7 +242,11 @@ export function LocalBrowserPanel({
       <div className="flex flex-col items-start gap-0.5 @min-[480px]/browser-panel:flex-row @min-[480px]/browser-panel:items-center @min-[480px]/browser-panel:justify-between @min-[480px]/browser-panel:gap-2">
         <h3 className="text-sm font-medium">Agent browser</h3>
         <span role="status" aria-live="polite" className="text-muted-foreground text-xs">
-          {pausedForSignIn
+          {waitingForTab
+            ? 'Waiting'
+            : heldHere
+              ? 'Waiting for you'
+              : pausedForSignIn
             ? 'Paused'
             : cancelling
             ? 'Cancelling…'
@@ -290,10 +303,14 @@ export function LocalBrowserPanel({
             Reconnect
           </Button>
         )}
-      {pausedForSignIn && (
+      {waitingForTab && state && sessionId && (
+        <WaitingForTab state={state} sessionId={sessionId} agentName={agentName} />
+      )}
+      {heldHere && state && <HeldChatTab state={state} agentName={agentName} />}
+      {pausedForSignIn && !waitingForTab && (
         <PausedForSignIn handoffId={pausedForSignIn.handoffId} agentName={agentName} />
       )}
-      {!pausedForSignIn && waitingElsewhere && (
+      {!pausedForSignIn && !waitingForTab && waitingElsewhere && (
         <WaitingElsewhere
           sessionId={waitingElsewhere.sessionId}
           agentName={waitingElsewhere.agentName}
@@ -318,7 +335,7 @@ export function LocalBrowserPanel({
           )}
         </div>
       )}
-      {!connected && !waitingElsewhere && !handoffHere && !pausedForSignIn && (
+      {!connected && !waitingElsewhere && !handoffHere && !pausedForSignIn && !waitingForTab && !heldHere && (
         <div className="min-h-0 space-y-3 overflow-y-auto">
           {choiceIssue && (
             <p className="text-muted-foreground text-xs">
@@ -349,7 +366,7 @@ export function LocalBrowserPanel({
           </Button>
         </div>
       )}
-      {connected && !waitingElsewhere && !pausedForSignIn && sharedElsewhere && (
+      {connected && !waitingElsewhere && !pausedForSignIn && !waitingForTab && !heldHere && sharedElsewhere && (
         <SharedElsewhere
           holderSessionId={state.sessionId!}
           canTakeHere={!!sessionId}
@@ -358,7 +375,7 @@ export function LocalBrowserPanel({
           onTakeHere={open}
         />
       )}
-      {connected && !waitingElsewhere && !pausedForSignIn && !sharedElsewhere && (
+      {connected && !waitingElsewhere && !pausedForSignIn && !waitingForTab && !heldHere && !sharedElsewhere && (
         <>
           {!state.sessionId && (
             <p className="text-muted-foreground text-xs">
@@ -496,6 +513,9 @@ export function LocalBrowserPanel({
             </div>
           )}
         </>
+      )}
+      {!waitingForTab && !!state?.openChatTabs?.length && (
+        <OpenChatTabs tabs={state.openChatTabs} />
       )}
       {!waitingElsewhere && (
         <SavedSignIns

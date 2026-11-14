@@ -20,6 +20,10 @@ export interface LocalBrowserTransport {
   /** Remove a named profile, its saved site data and agent access. */
   deleteLocalBrowserProfile(profileId: string): Promise<{ success: true }>;
   openLocalBrowser(input: LocalBrowserOpen): Promise<LocalBrowserPersonState>;
+  closeIdleLocalBrowserTab(
+    targetSessionId: string,
+    sessionId: string
+  ): Promise<LocalBrowserPersonState>;
   selectLocalBrowserTab(id: string, sessionId?: string): Promise<LocalBrowserState>;
   navigateLocalBrowser(url: string, sessionId?: string): Promise<LocalBrowserState>;
   pauseLocalBrowser(sessionId?: string): Promise<LocalBrowserState>;

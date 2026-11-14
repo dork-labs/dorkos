@@ -123,6 +123,7 @@ async function measureCase(
   const before = await processTable();
   let context: Awaited<ReturnType<Runtime['backend']['launch']>> | undefined;
   let launches = 0;
+  let startupPages = 0;
   const service = new runtime.LocalBrowserService(
     data,
     undefined,
@@ -131,6 +132,7 @@ async function measureCase(
       launch: async (...args) => {
         launches++;
         context = await runtime.backend.launch(...args);
+        startupPages = context.pages().length;
         await context.route('**/*', async (route) => {
           const url = new URL(route.request().url());
           if (/^chat-\d+\.memory\.example$/.test(url.hostname) && url.pathname === '/')
@@ -158,6 +160,7 @@ async function measureCase(
     status: 'running',
     launches: 0,
     physicalPages: 0,
+    startupPages: 0,
     fixtureSnapshotBytes: [] as number[],
     browserVersion: null as string | null,
     viewport: null as { width: number; height: number; dpr: number } | null,
@@ -191,8 +194,17 @@ async function measureCase(
     }
     assert.equal(launches, 1, 'All chats must share one physical browser window.');
     assert(context);
-    assert.equal(context.pages().length, chats, 'Exactly one physical page per chat.');
-    for (const page of context.pages()) {
+    assert.equal(
+      context.pages().length,
+      chats + startupPages,
+      'Chat tabs plus untouched startup tabs.'
+    );
+    // This sealed, fresh rig has only made-up fixtures; never use this inventory on a live browser.
+    const chatPages = context
+      .pages()
+      .filter((page) => /^https:\/\/chat-\d+\.memory\.example\/$/.test(page.url()));
+    assert.equal(chatPages.length, chats, 'Exactly one fixture page per chat.');
+    for (const page of chatPages) {
       await page.waitForLoadState('load');
       assert.equal(await page.locator('article').count(), MEMORY_FIXTURE_ARTICLES);
       // A real rendered snapshot is the regression test: HTML bytes cannot prove ARIA size.
@@ -200,16 +212,17 @@ async function measureCase(
         assertMemoryFixtureSnapshot(await runtime.boundedPageSnapshot(page, 750))
       );
     }
-    const protocol = await context.newCDPSession(context.pages()[0]!);
+    const protocol = await context.newCDPSession(chatPages[0]!);
     const version = await protocol.send('Browser.getVersion');
     receipt.browserVersion = version.product;
-    receipt.viewport = await context.pages()[0]!.evaluate(() => ({
+    receipt.viewport = await chatPages[0]!.evaluate(() => ({
       width: window.innerWidth,
       height: window.innerHeight,
       dpr: window.devicePixelRatio,
     }));
     receipt.launches = launches;
     receipt.physicalPages = context.pages().length;
+    receipt.startupPages = startupPages;
     await protocol.detach();
     const known = new Set(before.map((row) => `${row.pid}:${row.birth}`));
     const roots = (await processTable()).filter(
@@ -284,7 +297,7 @@ export async function main(args: string[]) {
   const report = {
     schemaVersion: 1,
     status: 'running',
-    capDecision: 'pending',
+    capDecision: 'pm-approved-six-awaiting-memory-evidence',
     options,
     fixture: {
       kind: `${MEMORY_FIXTURE_ARTICLES} synthetic articles per distinct HTTPS origin`,
@@ -331,7 +344,7 @@ export async function main(args: string[]) {
     JSON.stringify({
       status: report.status,
       report: path.join(options.output, 'memory.json'),
-      capDecision: 'pending',
+      capDecision: 'pm-approved-six-awaiting-memory-evidence',
     })
   );
 }

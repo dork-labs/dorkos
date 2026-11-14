@@ -72,6 +72,19 @@ export function createLocalBrowserRoutes(
   router.post('/tabs/:id/select', personOnly, async (c) =>
     c.json(await service.handover.selectTab(c.req.param('id'), scope(c.req.query('sessionId'))))
   );
+  router.post('/tabs/idle/close', personOnly, async (c) => {
+    const requester = z
+      .string()
+      .min(1)
+      .max(200)
+      .parse(scope(c.req.query('sessionId')));
+    const { targetSessionId } = z
+      .object({ targetSessionId: z.string().min(1).max(200) })
+      .strict()
+      .parse(readJsonBody(c));
+    await service.closeIdleTab(targetSessionId, requester);
+    return c.json(await service.handover.state(requester));
+  });
   router.post('/navigate', personOnly, async (c) => {
     const { url } = z.object({ url: z.string().url() }).strict().parse(readJsonBody(c));
     return c.json(await service.handover.navigate(url, scope(c.req.query('sessionId'))));

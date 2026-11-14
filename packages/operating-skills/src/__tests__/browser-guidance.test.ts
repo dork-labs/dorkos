@@ -54,14 +54,12 @@ describe('no named browser profiles (DOR-3219)', () => {
 
 describe('per-chat browser recovery guidance (DOR-4273)', () => {
   it('explains shared sign-ins, server-owned tabs and the single embedded holder', () => {
-    expect(body).toContain('Each chat gets its own tabs in the separate browser window');
+    expect(body).toContain('Each chat gets one tab in the separate browser window');
     expect(body).toContain('Tabs share saved sign-ins');
-    expect(body).toContain('The server chooses which tabs belong to this chat');
+    expect(body).toContain('The server chooses which tab belongs to this chat');
     expect(body).toContain('Never pass chat or tab IDs to change that scope');
     expect(body).toContain('The browser inside the app still serves one chat at a time');
-    expect(body).toContain(
-      'A handed-off tab stays with the person after idle expiry or Disconnect'
-    );
+    expect(body).toContain('A handed-off tab stays with the person until they hand it back');
   });
 
   it.each([
@@ -88,6 +86,12 @@ describe('per-chat browser recovery guidance (DOR-4273)', () => {
       .split('\n')
       .find((line) => line.startsWith('|') && line.includes(`\`${code}\``));
     expect(row ?? '', `Missing recovery for ${code}`).toMatch(instruction);
+  });
+
+  it('teaches the six-chat cap, waiting, and server-owned sign-in popups', () => {
+    expect(body).toContain('The window holds at most 6 chat tabs');
+    expect(body).toContain('Wait for a slot; never close or evict another chat’s tab');
+    expect(body).toContain('Sign-in popups belong only to the person');
   });
 
   it('keeps other chats read-only during a person’s sign-in', () => {

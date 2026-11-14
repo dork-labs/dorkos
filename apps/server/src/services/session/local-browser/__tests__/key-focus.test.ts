@@ -58,7 +58,10 @@ async function fixture() {
     mainFrame: () => ({}),
     locator: () => ({
       ariaSnapshot: async () => snapshot,
-      elementHandle: async () => ({ dispose: async () => undefined }),
+      elementHandle: async () => ({
+        evaluate: vi.fn(async () => false),
+        dispose: async () => undefined,
+      }),
     }),
     keyboard: {
       press: vi.fn(async () => {
@@ -77,7 +80,10 @@ async function fixture() {
     first: () => bodyLocator,
   };
   vi.spyOn(page, 'locator').mockReturnValue(bodyLocator as unknown as ReturnType<Page['locator']>);
-  Object.assign(body, { dispose: vi.fn(async () => undefined) });
+  Object.assign(body, {
+    evaluate: vi.fn(async () => false),
+    dispose: vi.fn(async () => undefined),
+  });
   const handle = {
     evaluate: async (
       evaluate: (nodes: ObservedPageNodes, value: unknown) => unknown,

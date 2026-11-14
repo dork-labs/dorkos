@@ -12,6 +12,7 @@ const transport: {
   pauseLocalBrowser: Mock;
   resumeLocalBrowser: Mock;
   disconnectLocalBrowser: Mock;
+  closeIdleLocalBrowserTab: Mock;
   selectLocalBrowserTab: Mock;
   navigateLocalBrowser: Mock;
   interruptSession: Mock;
@@ -25,6 +26,7 @@ const transport: {
   pauseLocalBrowser: vi.fn(),
   resumeLocalBrowser: vi.fn(),
   disconnectLocalBrowser: vi.fn(),
+  closeIdleLocalBrowserTab: vi.fn(),
   selectLocalBrowserTab: vi.fn(),
   navigateLocalBrowser: vi.fn(),
   interruptSession: vi.fn(),

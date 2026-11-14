@@ -184,7 +184,7 @@ it('never changes a profile beneath another chat’s active handoff', async () =
   await f.service.disconnect();
 });
 
-it('idle expiry leaves a handed-off page unowned while another chat remains active', async () => {
+it('idle time never evicts a held chat or resumes its agent', async () => {
   vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'] });
   const f = await fixture();
   f.service.handover.useOutsideTurnCheck(async () => false);
@@ -194,7 +194,7 @@ it('idle expiry leaves a handed-off page unowned while another chat remains acti
   await vi.advanceTimersByTimeAsync(29 * 60_000);
   await f.service.leaseFor('nova').agentState();
   await vi.advanceTimersByTimeAsync(2 * 60_000);
-  await expect(f.service.leaseFor('atlas').observe()).rejects.toMatchObject({ code: 'tab_locked' });
+  await expect(f.service.leaseFor('atlas').observe()).rejects.toMatchObject({ code: 'page_held' });
   await expect(f.service.leaseFor('nova').agentState()).resolves.toMatchObject({
     sessionId: 'nova',
   });
