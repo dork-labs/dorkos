@@ -145,6 +145,25 @@ describe('tasks_create / tasks_update carry runtime, model and effort', () => {
     expect(content).toMatch(/^ {2}model: zen$/m);
   });
 
+  it('updates a requested grant without applying either field', async () => {
+    const { payload } = await call('tasks_create', BASE);
+    const id = (payload.schedule as Task).id;
+
+    const updated = await call('tasks_update', {
+      id,
+      requestedPermissionMode: 'dontAsk',
+      requestedAllow: ['Bash(/tmp/task.sh --once)'],
+    });
+
+    expect(updated.isError).toBe(false);
+    expect(store.getTask(id)).toMatchObject({
+      requestedPermissionMode: 'dontAsk',
+      requestedAllow: ['Bash(/tmp/task.sh --once)'],
+      permissionMode: 'acceptEdits',
+      approvedAllow: null,
+    });
+  });
+
   it('CLEARS an override with null, in the row AND in the file', async () => {
     const { payload } = await call('tasks_create', {
       ...BASE,

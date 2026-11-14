@@ -589,6 +589,10 @@ export async function createScheduledTask(
       ...(data.sticky !== undefined && { sticky: data.sticky }),
       maxRuntime: data.maxRuntime ? parseDuration(data.maxRuntime) : null,
       permissionMode: effectivePermissionMode,
+      ...(data.requestedPermissionMode !== undefined && {
+        requestedPermissionMode: data.requestedPermissionMode,
+      }),
+      ...(data.requestedAllow !== undefined && { requestedAllow: data.requestedAllow }),
       ...(data.runtime !== undefined && { runtime: data.runtime }),
       ...(data.model !== undefined && { model: data.model }),
       ...(data.effort !== undefined && { effort: data.effort }),
@@ -626,6 +630,10 @@ export async function createScheduledTask(
       ...(options.proposal?.agentPath !== undefined && {
         proposedByAgentPath: options.proposal.agentPath,
       }),
+      ...(data.requestedPermissionMode !== undefined && {
+        requestedPermissionMode: data.requestedPermissionMode,
+      }),
+      ...(data.requestedAllow !== undefined && { requestedAllow: data.requestedAllow }),
     });
     // Its maker is its first editor, so no agent in its chain approves it (DOR-3703).
     deps.store.approvals.recordAgentEdit(schedule.id, {

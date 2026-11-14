@@ -224,6 +224,9 @@ export async function dispatchRunViaRelay(
     // receiver runs in another process and cannot rebuild it — the task's agent
     // and the run's trigger are not otherwise on the wire — so it travels.
     systemPromptAppend: buildTaskAppend(task, run),
+    // The person-approved rules for this task's runs, the same list the direct
+    // path hands its turn (`taskTurnOpts`, DOR-3637).
+    ...(task.approvedAllow?.length ? { approvedAllow: [...task.approvedAllow] } : {}),
     // The session this run's turn executes under, and whether it already has
     // history to resume. `resumeSession` is false for every non-sticky run and
     // for a sticky task's first fire.

@@ -37,6 +37,7 @@ import type { TaskRegistrar } from '../services/tasks/task-registrar.js';
 import { describeScheduleProblem } from '../services/tasks/cron-validation.js';
 import { createScheduledTask } from '../services/tasks/lifecycle/create-task.js';
 import { wifiRunNowRefusal, wifiScheduleRefusal } from './task-wifi-guard.js';
+import { prepareTaskApprovalRequest } from './task-approval-request.js';
 import {
   deleteOrDeclineTask,
   PROJECT_COPY_DELETE_REFUSAL,
@@ -283,15 +284,12 @@ export function createTasksRoutes(deps: TasksRouterDeps): Hono<ApiEnv> {
 
     const parsed = UpdateTaskRequestSchema.safeParse(body);
     if (!parsed.success) return c.json(validationFailureBody(parsed.error), 400);
-    // The hash an approval card showed is not a field of the task: only the settle reads it.
-    const { approvedPromptHash, expectedApprovalRevision, approvalSurface, ...data } = parsed.data;
-
     const existing = store.getTask(id);
     if (!existing) return c.json({ error: 'Scheduled task not found' }, 404);
-    const approval = taskApprovalActor.personTaskApproval(
-      caller,
-      existing.status === 'pending_approval' ? (approvalSurface ?? 'unknown') : 'unknown'
-    );
+    const approvalRequest = prepareTaskApprovalRequest(existing, parsed.data);
+    if (approvalRequest.refusal) return c.json(approvalRequest.refusal, 409);
+    const { approvedPromptHash, expectedApprovalRevision, approvalSurface, data } = approvalRequest;
+    const approval = taskApprovalActor.personTaskApprovalForTask(caller, existing, approvalSurface);
     // From Wi-Fi a schedule runs at Default at most (DOR-3037).
     const wifiRefusal = wifiScheduleRefusal(caller, body, existing);
     if (wifiRefusal) return c.json(wifiRefusal, 403);
@@ -612,14 +610,12 @@ export function createTasksRoutes(deps: TasksRouterDeps): Hono<ApiEnv> {
           `running as ${level}`,
         // The before and after both, so a reader can see a raise without
         // reconstructing what the row used to hold.
-        metadata: {
-          ...taskApprovalActor.taskApprovalActivityMetadata(
-            updated,
-            existing.permissionMode,
-            existing.reason,
-            caller.user?.userId ?? null
-          ),
-        },
+        metadata: taskApprovalActor.taskApprovalActivityMetadata(
+          updated,
+          existing.permissionMode,
+          existing.reason,
+          caller.user?.userId ?? null
+        ),
         linkPath: '/',
       });
       void resolveScheduleParkPayload(updated).then((payload) =>

@@ -40,6 +40,7 @@ import {
   MISPLACED_PERMISSIONS_RUN_ONCE,
 } from '@dorkos/shared/schedule-file-problems';
 import { promptHash } from '../lib/prompt-hash';
+import { schedulePermissionLabel } from '../lib/schedule-permission-copy';
 import { ScheduleApprovalCard } from '../ui/ScheduleApprovalCard';
 
 /** Frozen so a suite that takes a minute cannot age its own fixtures. */
@@ -72,6 +73,9 @@ function proposal(overrides: Partial<Task> = {}): Task {
     sticky: false,
     maxRuntime: null,
     permissionMode: 'acceptEdits',
+    requestedPermissionMode: null,
+    requestedAllow: null,
+    approvedAllow: null,
     runtime: null,
     model: null,
     effort: null,
@@ -568,7 +572,67 @@ describe('ScheduleApprovalCard — the conversation behind it', () => {
 });
 
 describe('ScheduleApprovalCard — answering it', () => {
-  it('approves with the status alone, so the switch stays as it is (DOR-3309)', async () => {
+  it('shows structured requested limits and applies exactly those limits', async () => {
+    const updateTask = vi.fn().mockResolvedValue(proposal({ status: 'active' }));
+    renderCard(
+      proposal({
+        requestedPermissionMode: 'dontAsk',
+        requestedAllow: ['Bash(/abs/path/script.sh --once)'],
+      } as Partial<Task>),
+      { updateTask }
+    );
+
+    await waitFor(() => expect(screen.getByRole('combobox')).toHaveValue('dontAsk'));
+    expect(slot('schedule-requested-allow')).toHaveTextContent(
+      'Runs without asking, and may only:'
+    );
+    expect(slot('schedule-requested-allow')).toHaveTextContent('Bash(/abs/path/script.sh --once)');
+    await userEvent.click(screen.getByRole('button', { name: 'Approve Nightly sweep' }));
+    await waitFor(() =>
+      expect(updateTask).toHaveBeenCalledWith('task-1', {
+        ...SHOWN,
+        status: 'active',
+        permissionMode: 'dontAsk',
+        approvedAllow: ['Bash(/abs/path/script.sh --once)'],
+      })
+    );
+  });
+
+  it('requires a separate choice before applying a looser mode', async () => {
+    const updateTask = vi.fn().mockResolvedValue(proposal({ status: 'active' }));
+    renderCard(
+      proposal({ requestedPermissionMode: 'dontAsk', requestedAllow: [] } as Partial<Task>),
+      { updateTask }
+    );
+    const picker = await screen.findByRole('combobox', { name: 'Run permissions' });
+    await userEvent.selectOptions(picker, 'acceptEdits');
+    const approve = screen.getByRole('button', { name: 'Approve Nightly sweep' });
+    expect(approve).toBeDisabled();
+    await userEvent.click(
+      screen.getByRole('checkbox', { name: /Run it looser than DorkBot asked/i })
+    );
+    expect(approve).toBeEnabled();
+    await userEvent.click(approve);
+    await waitFor(() =>
+      expect(updateTask).toHaveBeenCalledWith(
+        'task-1',
+        expect.objectContaining({
+          acceptLooserThanRequested: true,
+        })
+      )
+    );
+  });
+
+  it('defaults outsider work to the tightest unattended mode', async () => {
+    renderCard(
+      proposal({
+        originMarks: { outsider: true },
+        requestedPermissionMode: 'acceptEdits',
+      } as Partial<Task>)
+    );
+    await waitFor(() => expect(screen.getByRole('combobox')).toHaveValue('dontAsk'));
+  });
+  it('approves an enabled task without changing its switch', async () => {
     const updateTask = vi.fn().mockResolvedValue(proposal({ status: 'active' }));
     renderCard(proposal(), { updateTask });
 
@@ -583,23 +647,24 @@ describe('ScheduleApprovalCard — answering it', () => {
     expect(slot('schedule-approve-turn-on')).toBeNull();
   });
 
-  it('keeps an off schedule off by default, and turns it on only when asked (DOR-3309)', async () => {
+  it('approves and turns on an off schedule with one primary action', async () => {
     const updateTask = vi.fn().mockResolvedValue(proposal({ status: 'active', enabled: false }));
     renderCard(proposal({ enabled: false }), { updateTask });
 
-    const stayOff = await screen.findByRole('button', { name: 'Approve Nightly sweep' });
-    expect(stayOff).toHaveTextContent(/^Approve$/);
-    await userEvent.click(stayOff);
+    const approve = await screen.findByRole('button', {
+      name: 'Approve Nightly sweep and turn it on',
+    });
+    expect(approve).toHaveTextContent('Approve and turn on');
+    await userEvent.click(approve);
 
     await waitFor(() =>
       expect(updateTask).toHaveBeenCalledWith('task-1', {
         ...SHOWN,
         status: 'active',
+        enabled: true,
       })
     );
-    expect(await findSlot('schedule-receipt')).toHaveTextContent(
-      /Approved by you at .+, in Home\. At Accept edits\. Off until you turn it on\./
-    );
+    expect(await findSlot('schedule-receipt')).toHaveTextContent(/Approved by you at/);
   });
 
   it('uses the profile name and server timestamp in the receipt', async () => {
@@ -643,16 +708,13 @@ describe('ScheduleApprovalCard — answering it', () => {
     }
   );
 
-  it('orders the answers Approve, Approve and turn on, Run it once, Reject', async () => {
+  it('orders the three answers Approve and turn on, Try it once now, Reject', async () => {
     renderCard(proposal({ enabled: false }));
 
-    await screen.findByRole('button', { name: 'Approve Nightly sweep' });
-    const order = [
-      'schedule-approve',
-      'schedule-approve-turn-on',
-      'schedule-test-run-start',
-      'schedule-reject',
-    ].map((name) => slot(name));
+    await screen.findByRole('button', { name: 'Approve Nightly sweep and turn it on' });
+    const order = ['schedule-approve', 'schedule-test-run-start', 'schedule-reject'].map((name) =>
+      slot(name)
+    );
     for (let i = 1; i < order.length; i++) {
       expect(
         order[i - 1]!.compareDocumentPosition(order[i]!) & Node.DOCUMENT_POSITION_FOLLOWING
@@ -1212,21 +1274,30 @@ describe('ScheduleApprovalCard — running it once', () => {
  * the grant either happens or silently does not.
  */
 describe('ScheduleApprovalCard — choosing the run permissions', () => {
-  it('starts safely and lets the person explicitly use the requested mode', async () => {
+  it('shows one unattended explanation for every mode, without interactive wording', async () => {
+    renderCard();
+    const picker = await screen.findByRole('combobox', { name: 'Run permissions' });
+    for (const mode of ['default', 'dontAsk', 'acceptEdits', 'bypassPermissions', 'plan']) {
+      await userEvent.selectOptions(picker, mode);
+      const area = slot('schedule-permission-mode')!;
+      expect(area.querySelectorAll('[data-slot="schedule-mode-explanation"]')).toHaveLength(1);
+      expect(area.textContent).not.toMatch(/\bask/i);
+    }
+  });
+
+  it('starts at the structured requested mode', async () => {
     const updateTask = vi
       .fn()
       .mockResolvedValue(proposal({ status: 'active', permissionMode: 'dontAsk' }));
     renderCard(
       proposal({
-        reason: 'Run at Don’t ask with the approved watchdog command.',
+        requestedPermissionMode: 'dontAsk',
         folderRules: { status: 'approved', applied: ['Bash(pnpm check:watchdog)'], pending: [] },
       }),
       { updateTask }
     );
     const picker = await screen.findByRole('combobox', { name: 'Run permissions' });
-    await waitFor(() => expect(picker).toHaveValue('acceptEdits'));
-    await userEvent.click(screen.getByRole('button', { name: 'Use Never ask' }));
-    expect(picker).toHaveValue('dontAsk');
+    await waitFor(() => expect(picker).toHaveValue('dontAsk'));
     expect(slot('schedule-folder-rules')).toHaveTextContent('Bash(pnpm check:watchdog)');
     expect(slot('schedule-mode-mismatch')).toBeNull();
     await userEvent.click(screen.getByRole('button', { name: 'Approve Nightly sweep' }));
@@ -1242,34 +1313,35 @@ describe('ScheduleApprovalCard — choosing the run permissions', () => {
 
   it('flags a mismatch before approval and saves the person’s override', async () => {
     const updateTask = vi.fn().mockResolvedValue(proposal({ status: 'active' }));
-    renderCard(proposal({ reason: 'Run at Don’t ask.' }), { updateTask });
+    renderCard(proposal({ requestedPermissionMode: 'dontAsk' }), { updateTask });
     const picker = await screen.findByRole('combobox', { name: 'Run permissions' });
-    await waitFor(() => expect(picker).toHaveValue('acceptEdits'));
+    await waitFor(() => expect(picker).toHaveValue('dontAsk'));
+    await userEvent.selectOptions(picker, 'acceptEdits');
     expect(slot('schedule-mode-mismatch')).toHaveTextContent(
-      'DorkBot asked for Never ask. This will run at Accept edits.'
+      'DorkBot proposed Allowed commands. Selected: Accept edits.'
     );
-    expect(slot('schedule-mode-mismatch')).toHaveTextContent('Edits files on its own.');
+    expect(screen.getByRole('button', { name: 'Approve Nightly sweep' })).toBeDisabled();
     expect(updateTask).not.toHaveBeenCalled();
+    await userEvent.click(screen.getByRole('checkbox', { name: /Run it looser/i }));
     await userEvent.click(screen.getByRole('button', { name: 'Approve Nightly sweep' }));
     await waitFor(() =>
       expect(updateTask).toHaveBeenCalledWith('task-1', {
         ...SHOWN,
         status: 'active',
+        acceptLooserThanRequested: true,
       })
     );
   });
 
   it('adds the selected mode’s consequence when the person chooses a looser mode', async () => {
-    renderCard(proposal({ reason: 'Run at Accept edits.' }));
+    renderCard(proposal({ requestedPermissionMode: 'acceptEdits' }));
     const picker = await screen.findByRole('combobox', { name: 'Run permissions' });
     await userEvent.selectOptions(picker, 'bypassPermissions');
     expect(slot('schedule-permission-mode')).toHaveClass('text-status-warning-fg');
     expect(slot('schedule-mode-mismatch')).toHaveTextContent(
-      'DorkBot asked for Accept edits. This will run at Bypass permissions.'
+      'DorkBot proposed Accept edits. Selected: Full access.'
     );
-    expect(slot('schedule-mode-mismatch')).toHaveTextContent(
-      'Runs everything without asking, including outside this project.'
-    );
+    expect(screen.getByRole('checkbox', { name: /Run it looser/i })).toBeInTheDocument();
     await userEvent.selectOptions(picker, 'acceptEdits');
     expect(slot('schedule-mode-mismatch')).toBeNull();
     expect(slot('schedule-requested-mode')).toBeNull();
@@ -1279,13 +1351,12 @@ describe('ScheduleApprovalCard — choosing the run permissions', () => {
     const updateTask = vi.fn().mockResolvedValue(proposal({ status: 'active' }));
     renderCard(
       proposal({
-        reason: 'Run at Don’t ask.',
+        requestedPermissionMode: 'dontAsk',
         folderRules: { status: 'waiting', applied: [], pending: ['Bash(pnpm check:watchdog)'] },
       }),
       { updateTask }
     );
-    await waitFor(() => expect(screen.getByRole('combobox')).toHaveValue('acceptEdits'));
-    await userEvent.selectOptions(screen.getByRole('combobox'), 'dontAsk');
+    await waitFor(() => expect(screen.getByRole('combobox')).toHaveValue('dontAsk'));
     expect(slot('schedule-folder-rules')).toHaveTextContent('These commands still need a person.');
     expect(slot('schedule-folder-rules')).toHaveTextContent(
       'Approving this schedule doesn’t approve these rules.'
@@ -1300,51 +1371,9 @@ describe('ScheduleApprovalCard — choosing the run permissions', () => {
     );
   });
 
-  it.each([null, { outsider: true }] as const)(
-    'keeps a Bypass request at the saved level, including marks %j and shortcut A',
-    async (originMarks) => {
-      const updateTask = vi.fn().mockResolvedValue(proposal({ status: 'active' }));
-      renderCard(proposal({ reason: 'This needs Bypass permissions.', originMarks }), {
-        updateTask,
-      });
-      const picker = await screen.findByRole('combobox', { name: 'Run permissions' });
-      await waitFor(() => expect(picker).toHaveValue('acceptEdits'));
-      expect(screen.queryByRole('button', { name: 'Use Bypass permissions' })).toBeNull();
-      expect(slot('schedule-mode-mismatch')).toHaveTextContent(
-        'asked for Bypass permissions. This will run at Accept edits.'
-      );
-      // Open from the start on an agent's proposal, whose yes approves its file (M4).
-      screen.getByRole('region', { name: 'Prompt' }).focus();
-      await userEvent.keyboard('a');
-      await waitFor(() =>
-        expect(updateTask).toHaveBeenCalledWith('task-1', {
-          ...SHOWN,
-          status: 'active',
-        })
-      );
-    }
-  );
-
-  it('withholds a suggestion above the operator’s configured stop', async () => {
-    const base = createMockTransport();
-    renderCard(proposal({ reason: 'Use Accept edits.', permissionMode: 'default' }), {
-      getConfig: vi.fn(async () => ({
-        ...(await base.getConfig()),
-        executionDefaults: {
-          runtime: 'claude-code',
-          trustStop: 'ask' as const,
-          perRuntime: [],
-        },
-      })),
-    });
+  it('uses prose only as a reason, never as a permission request', async () => {
+    renderCard(proposal({ reason: 'Use Full access.', permissionMode: 'default' }));
     await waitFor(() => expect(screen.getByRole('combobox')).toHaveValue('default'));
-    expect(screen.queryByRole('button', { name: 'Use Accept edits' })).toBeNull();
-  });
-
-  it('never offers to pick a reason’s mode for a marked task', async () => {
-    renderCard(proposal({ reason: 'Use Never ask.', originMarks: { outsider: true } }));
-    await waitFor(() => expect(screen.getByRole('combobox')).toHaveValue('acceptEdits'));
-    expect(screen.queryByRole('button', { name: 'Use Never ask' })).toBeNull();
   });
 
   it('uses the saved mode when the reason names none and offers every declared mode', async () => {
@@ -1353,7 +1382,9 @@ describe('ScheduleApprovalCard — choosing the run permissions', () => {
     const modes = map.capabilities[map.defaultRuntime]!.permissionModes.values;
     await waitFor(() => expect(screen.getByRole('combobox')).toHaveValue('acceptEdits'));
     for (const mode of modes)
-      expect(screen.getByRole('option', { name: mode.label })).toHaveValue(mode.id);
+      expect(
+        screen.getByRole('option', { name: schedulePermissionLabel(mode.id, mode.label) })
+      ).toHaveValue(mode.id);
   });
 
   it('keeps approval disabled when the runtime has no readable modes', async () => {
@@ -1475,25 +1506,22 @@ describe('stale schedule approval', () => {
       const updateTask = vi.fn().mockResolvedValue(fresh);
       const { rerender } = renderCard(first, { updateTask }, { pinActions: true });
       await waitFor(() =>
-        expect(screen.getByRole('button', { name: 'Approve Nightly sweep' })).toBeEnabled()
+        expect(screen.getByRole('button', { name: /Approve Nightly sweep/ })).toBeEnabled()
       );
-      screen.getByRole('button', { name: 'Approve Nightly sweep' }).focus();
+      screen.getByRole('button', { name: /Approve Nightly sweep/ }).focus();
       rerender(<ScheduleApprovalCard task={fresh} approvalSurface="home" pinActions />);
       expect(await screen.findByRole('status')).toHaveTextContent(
         'This schedule changed. Review it again.'
       );
       expect(screen.getByRole('button', { name: 'Review again' })).toHaveFocus();
       expect(await screen.findByText('This schedule changed. Review it again.')).toBeVisible();
-      expect(screen.getByRole('button', { name: 'Approve Nightly sweep' })).toBeDisabled();
-      expect(
-        screen.getByRole('button', { name: 'Approve Nightly sweep and turn it on' })
-      ).toBeDisabled();
+      expect(screen.getByRole('button', { name: /Approve Nightly sweep/ })).toBeDisabled();
       fireEvent.keyDown(card(), { key: 'a' });
       expect(updateTask).not.toHaveBeenCalled();
       if (field === 'prompt') expect(screen.queryByText('Check the sample ledger.')).toBeNull();
       await userEvent.click(screen.getByRole('button', { name: 'Review again' }));
       await waitFor(() =>
-        expect(screen.getByRole('button', { name: 'Approve Nightly sweep' })).toBeEnabled()
+        expect(screen.getByRole('button', { name: /Approve Nightly sweep/ })).toBeEnabled()
       );
       if (field === 'prompt') expect(screen.getByText('Check the sample ledger.')).toBeVisible();
       fireEvent.keyDown(card(), { key: 'a' });
@@ -1557,7 +1585,7 @@ describe('stale schedule approval', () => {
       expect(screen.getByRole('button', { name: 'Approve Nightly sweep' })).toBeEnabled()
     );
     expect(document.querySelector('[data-slot="schedule-permission-mode"]')).toHaveTextContent(
-      'Runs as: Never ask'
+      'Runs as: Allowed commands'
     );
     await userEvent.click(screen.getByRole('button', { name: 'Approve Nightly sweep' }));
     await waitFor(() =>
@@ -1589,10 +1617,9 @@ it.each([
     );
     expect(screen.getAllByRole('alert')).toHaveLength(1);
     expect(screen.getByRole('alert')).toHaveTextContent('permissions is in the wrong place');
-    expect(screen.getByRole('button', { name: 'Approve Nightly sweep' })).toBeDisabled();
     expect(
-      screen.queryByRole('button', { name: 'Approve Nightly sweep and turn it on' })
-    ).not.toBeInTheDocument();
+      screen.getByRole('button', { name: 'Approve Nightly sweep and turn it on' })
+    ).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Run Nightly sweep once' })).toBeEnabled();
     expect(
       screen.getByText(

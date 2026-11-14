@@ -64,6 +64,9 @@ export function wifiScheduleRefusal(
   const fields = body as Record<string, unknown>;
   // Approval authorizes a later unattended run; a Wi-Fi-held request cannot grant it.
   if (existing && fields.status === 'active') return wifiRaiseRefusal();
+  // Applied task rules widen what an unattended run may do, like a raised mode (DOR-3637).
+  if (Array.isArray(fields.approvedAllow) && fields.approvedAllow.length > 0)
+    return wifiRaiseRefusal();
   const named = typeof fields.permissionMode === 'string' ? fields.permissionMode : undefined;
   if (!existing && named === undefined) {
     fields.permissionMode = DEFAULT_MODE_ID;

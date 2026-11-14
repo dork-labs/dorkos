@@ -428,6 +428,79 @@ describe('approving a proposed schedule can carry the operator’s trust stop', 
     expect(store.getTask(task.id)!.permissionMode).toBe('acceptEdits');
   });
 
+  it('stores a proposal without applying its requested mode or allow list', async () => {
+    const response = await request(fixtureServer)
+      .post('/api/tasks')
+      .set('x-dorkos-agent', 'agent-token-abc')
+      .send({
+        name: 'requested-limits',
+        description: 'requested limits',
+        prompt: 'Run the exact script.',
+        cron: '0 3 * * *',
+        target: 'global',
+        reason: 'The script must run overnight.',
+        requestedPermissionMode: 'dontAsk',
+        requestedAllow: ['Bash(/abs/path/script.sh --once)'],
+      });
+
+    expect(response.status).toBe(201);
+    const task = store.getTasks().find((candidate) => candidate.name === 'requested-limits')!;
+    expect(task).toMatchObject({
+      permissionMode: 'acceptEdits',
+      requestedPermissionMode: 'dontAsk',
+      requestedAllow: ['Bash(/abs/path/script.sh --once)'],
+      approvedAllow: null,
+    });
+  });
+
+  it('requires an explicit choice before approving looser than proposed', async () => {
+    const task = await proposedByAgent();
+    db.update(pulseSchedules)
+      .set({ requestedPermissionMode: 'dontAsk' })
+      .where(eq(pulseSchedules.id, task.id))
+      .run();
+
+    const refused = await request(fixtureServer)
+      .patch(`/api/tasks/${task.id}`)
+      .send({
+        expectedApprovalRevision: taskReviewRevision(store.getTask(task.id)!),
+        status: 'active',
+        permissionMode: 'acceptEdits',
+      });
+    expect(refused.status).toBe(409);
+    expect(refused.body.error).toMatch(/looser/i);
+    expect(store.getTask(task.id)?.status).toBe('pending_approval');
+
+    const approved = await request(fixtureServer)
+      .patch(`/api/tasks/${task.id}`)
+      .send({
+        expectedApprovalRevision: taskReviewRevision(store.getTask(task.id)!),
+        status: 'active',
+        permissionMode: 'acceptEdits',
+        approvedAllow: [],
+        acceptLooserThanRequested: true,
+      });
+    expect(approved.status).toBe(200);
+  });
+
+  it('refuses outsider approval at edit power without the explicit choice', async () => {
+    const task = await proposedByAgent();
+    db.update(pulseSchedules)
+      .set({ originMarks: JSON.stringify({ outsider: true }) })
+      .where(eq(pulseSchedules.id, task.id))
+      .run();
+
+    const response = await request(fixtureServer)
+      .patch(`/api/tasks/${task.id}`)
+      .send({
+        expectedApprovalRevision: taskReviewRevision(store.getTask(task.id)!),
+        status: 'active',
+        permissionMode: 'acceptEdits',
+      });
+    expect(response.status).toBe(409);
+    expect(store.getTask(task.id)?.status).toBe('pending_approval');
+  });
+
   it('leaves a plain approval exactly where the clamp put it', async () => {
     const task = await proposedByAgent();
 
@@ -452,6 +525,13 @@ describe('approving a proposed schedule can carry the operator’s trust stop', 
 
   it('writes an activity row naming the level, and whether it was raised', async () => {
     const task = await proposedByAgent();
+    db.update(pulseSchedules)
+      .set({
+        requestedPermissionMode: 'bypassPermissions',
+        requestedAllow: JSON.stringify(['Bash(/tmp/task.sh --once)']),
+      })
+      .where(eq(pulseSchedules.id, task.id))
+      .run();
     await request(fixtureServer)
       .patch(`/api/tasks/${task.id}`)
       .send({
@@ -459,6 +539,7 @@ describe('approving a proposed schedule can carry the operator’s trust stop', 
         status: 'active',
         enabled: true,
         permissionMode: 'bypassPermissions',
+        approvedAllow: ['Bash(/tmp/task.sh --once)'],
       });
 
     const approval = emit.mock.calls
@@ -473,6 +554,10 @@ describe('approving a proposed schedule can carry the operator’s trust stop', 
     expect(approval!.summary).not.toContain('bypassPermissions');
     expect(approval!.metadata).toMatchObject({
       permissionMode: 'bypassPermissions',
+      proposedPermissionMode: 'bypassPermissions',
+      proposedAllow: ['Bash(/tmp/task.sh --once)'],
+      approvedPermissionMode: 'bypassPermissions',
+      approvedAllow: ['Bash(/tmp/task.sh --once)'],
       previousPermissionMode: 'acceptEdits',
       raised: true,
     });

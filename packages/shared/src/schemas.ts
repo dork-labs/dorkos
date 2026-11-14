@@ -5854,6 +5854,39 @@ export const TaskFileCapSchema = z
 /** {@link TaskFileCapSchema}. */
 export type TaskFileCap = z.infer<typeof TaskFileCapSchema>;
 
+/**
+ * Whether a Claude Code permission rule names one specific action (DOR-3637).
+ *
+ * The shape must be `Tool(specifier)`, with a plain tool name (no `*`, so no
+ * `mcp__server__*`) and no control characters. A bare tool, empty parentheses,
+ * or a specifier that is only wildcards, slashes, colons, dots and spaces
+ * (`Bash(:*)`, `Bash(* *)`, `Read(/**)`, `WebFetch(domain:*)`) grants the whole
+ * tool, so it is refused: one click on "exactly what was asked" must never
+ * carry a whole-tool grant.
+ *
+ * @param rule - The trimmed rule text.
+ */
+export function isSpecificPermissionRule(rule: string): boolean {
+  if (/[\p{Cc}\p{Cf}]/u.test(rule)) return false;
+  const match = /^([A-Za-z][A-Za-z0-9_-]*)\((.*)\)$/s.exec(rule);
+  if (!match) return false;
+  const specifier = match[2]!.replace(/^domain:/, '');
+  return specifier.replace(/[\s*/:.]/g, '').length > 0;
+}
+
+/** A Claude Code permission rule proposed for one scheduled task's runs. */
+export const TaskPermissionRuleSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(300)
+  .refine(isSpecificPermissionRule, {
+    message: 'Permission rules must name a specific action',
+  });
+
+/** At most twenty exact Claude Code permission rules for one scheduled task. */
+export const TaskPermissionRulesSchema = z.array(TaskPermissionRuleSchema).max(20);
+
 export const TaskSchema = z
   .object({
     id: z.string(),
@@ -5989,6 +6022,12 @@ export const TaskSchema = z
     sticky: z.boolean().default(false),
     maxRuntime: z.number().int().nullable(),
     permissionMode: PermissionModeSchema,
+    /** The mode the proposer asked a person to approve; never an applied grant. */
+    requestedPermissionMode: PermissionModeSchema.nullable().optional(),
+    /** Exact task-run rules the proposer asked a person to approve. */
+    requestedAllow: TaskPermissionRulesSchema.nullable().optional(),
+    /** Exact task-run rules a person approved; never written to folder settings. */
+    approvedAllow: TaskPermissionRulesSchema.nullable().optional(),
     /** Read-time, person-only preview; absent for older servers and agent callers. */
     ...TaskReviewPresentationSchema.shape,
     /**
@@ -6408,6 +6447,10 @@ export const CreateTaskRequestSchema = z
      * guard tell a caller that SENT the field from one that did not.
      */
     permissionMode: PermissionModeSchema.optional(),
+    /** A requested mode for the approval card. This field grants nothing. */
+    requestedPermissionMode: PermissionModeSchema.optional(),
+    /** Requested task-scoped Claude Code rules. This field grants nothing. */
+    requestedAllow: TaskPermissionRulesSchema.optional(),
     /**
      * Why this schedule should exist, in the proposer's own words.
      *
@@ -6573,6 +6616,14 @@ export const UpdateTaskRequestSchema = z
      */
     account: z.string().min(1).nullable().optional(),
     permissionMode: PermissionModeSchema.optional(),
+    /** A requested mode for the approval card. This field grants nothing. */
+    requestedPermissionMode: PermissionModeSchema.optional(),
+    /** Requested task-scoped Claude Code rules. This field grants nothing. */
+    requestedAllow: TaskPermissionRulesSchema.optional(),
+    /** Task-scoped rules a person approved. Agents may never set this field. */
+    approvedAllow: TaskPermissionRulesSchema.optional(),
+    /** Explicit confirmation that the person chose more power than proposed. */
+    acceptLooserThanRequested: z.literal(true).optional(),
     status: SettableTaskStatusSchema.optional(),
     approvalSurface: z.enum(['inbox', 'schedules', 'home']).optional(), // Audit context, never permission.
     /** Why this schedule should exist. See {@link CreateTaskRequestSchema}. */

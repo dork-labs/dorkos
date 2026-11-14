@@ -10925,6 +10925,43 @@
           "permissionMode": {
             "$ref": "#/components/schemas/PermissionMode"
           },
+          "requestedPermissionMode": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PermissionMode"
+              },
+              {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            ]
+          },
+          "requestedAllow": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 300
+            },
+            "maxItems": 20
+          },
+          "approvedAllow": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 300
+            },
+            "maxItems": 20
+          },
           "folderRules": {
             "type": "object",
             "properties": {
@@ -11553,6 +11590,18 @@
           "permissionMode": {
             "$ref": "#/components/schemas/PermissionMode"
           },
+          "requestedPermissionMode": {
+            "$ref": "#/components/schemas/PermissionMode"
+          },
+          "requestedAllow": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 300
+            },
+            "maxItems": 20
+          },
           "reason": {
             "type": "string"
           }
@@ -11652,6 +11701,33 @@
           },
           "permissionMode": {
             "$ref": "#/components/schemas/PermissionMode"
+          },
+          "requestedPermissionMode": {
+            "$ref": "#/components/schemas/PermissionMode"
+          },
+          "requestedAllow": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 300
+            },
+            "maxItems": 20
+          },
+          "approvedAllow": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 300
+            },
+            "maxItems": 20
+          },
+          "acceptLooserThanRequested": {
+            "type": "boolean",
+            "enum": [
+              true
+            ]
           },
           "status": {
             "$ref": "#/components/schemas/SettableTaskStatus"

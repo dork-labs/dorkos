@@ -1,8 +1,9 @@
 import { useId } from 'react';
 import type { PermissionModeDescriptor } from '@dorkos/shared/agent-runtime';
 import type { Task } from '@dorkos/shared/types';
-import { Button, PermissionModeScopeNote } from '@/layers/shared/ui';
+import { Button, Checkbox, PermissionModeScopeNote } from '@/layers/shared/ui';
 import { isNoLooserThan } from '@dorkos/shared/permission-semantics';
+import { schedulePermissionLabel } from '../lib/schedule-permission-copy';
 
 /** The run's mode and the separately approved folder rules, before the person approves. */
 export function SchedulePermissionChoice({
@@ -12,6 +13,9 @@ export function SchedulePermissionChoice({
   requested,
   onChange,
   onUseRequested,
+  confirmLooser,
+  onConfirmLooserChange,
+  requiresLooserConfirmation,
 }: {
   task: Task;
   modes: readonly PermissionModeDescriptor[];
@@ -19,6 +23,9 @@ export function SchedulePermissionChoice({
   requested: PermissionModeDescriptor | null;
   onChange: (mode: string) => void;
   onUseRequested?: () => void;
+  confirmLooser: boolean;
+  onConfirmLooserChange: (confirmed: boolean) => void;
+  requiresLooserConfirmation: boolean;
 }) {
   const id = useId();
   const selected = modes.find((mode) => mode.id === value);
@@ -33,7 +40,7 @@ export function SchedulePermissionChoice({
       <select
         id={id}
         value={value}
-        aria-describedby={selected ? `${id}-${looser ? 'mismatch' : 'promise'}` : undefined}
+        aria-describedby={looser ? `${id}-mismatch` : undefined}
         onChange={(event) => onChange(event.target.value)}
         disabled={modes.length === 0}
         className="focus-ring border-input bg-background min-h-11 w-full rounded-md border px-2 disabled:opacity-50"
@@ -41,7 +48,7 @@ export function SchedulePermissionChoice({
         {!selected && <option value={value}>Saved mode (unavailable)</option>}
         {modes.map((mode) => (
           <option key={mode.id} value={mode.id}>
-            {mode.label}
+            {schedulePermissionLabel(mode.id, mode.label)}
           </option>
         ))}
       </select>
@@ -52,8 +59,9 @@ export function SchedulePermissionChoice({
           data-slot="schedule-mode-mismatch"
           className="text-status-warning-fg"
         >
-          {task.proposedByName ?? 'An agent'} asked for {requested.label}. This will run at{' '}
-          {selected.label}.{looser && ` ${selected.promise}`}
+          {task.proposedByName ?? 'An agent'} proposed{' '}
+          {schedulePermissionLabel(requested.id, requested.label)}. Selected:{' '}
+          {schedulePermissionLabel(selected.id, selected.label)}.
         </p>
       )}
       {mismatch && onUseRequested && (
@@ -63,14 +71,31 @@ export function SchedulePermissionChoice({
           className="min-h-11 w-full text-xs sm:w-auto"
           onClick={onUseRequested}
         >
-          Use {requested.label}
+          Use {schedulePermissionLabel(requested.id, requested.label)}
         </Button>
       )}
-      {selected && !looser && (
-        <p id={`${id}-promise`} className="text-muted-foreground">
-          {selected.promise}
-        </p>
+      {requiresLooserConfirmation && (
+        <label className="flex items-start gap-2">
+          <Checkbox
+            checked={confirmLooser}
+            onCheckedChange={(checked) => onConfirmLooserChange(checked === true)}
+          />
+          <span>Run it looser than {task.proposedByName ?? 'the agent'} asked</span>
+        </label>
       )}
+      {task.requestedAllow && task.requestedAllow.length > 0 && (
+        <div data-slot="schedule-requested-allow" className="space-y-1">
+          <p className="font-medium">Runs without asking, and may only:</p>
+          <ul className="space-y-1">
+            {task.requestedAllow.map((rule) => (
+              <li key={rule} className="font-mono break-all">
+                {rule}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {/* What a never-asks mode still does not cover: DorkOS's own actions. */}
       {selected && <PermissionModeScopeNote mode={value} descriptor={selected} />}
       <div data-slot="schedule-folder-rules" className="space-y-1">
         <p className="font-medium">Approved folder rules</p>
@@ -110,7 +135,7 @@ export function SchedulePermissionChoice({
         )}
         {value === 'dontAsk' && (
           <p className="text-muted-foreground">
-            Unapproved commands are refused. Nobody is asked during a scheduled run.
+            Unapproved commands are refused during scheduled runs.
           </p>
         )}
       </div>

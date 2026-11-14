@@ -128,6 +128,15 @@ describe('tasks_* operator-only field guard (in-session dorkos server)', () => {
     }
   });
 
+  it('advertises applied grants on both tools, so agents receive a refusal', () => {
+    for (const name of ['tasks_create', 'tasks_update']) {
+      expect(tools[name]!.inputSchema.approvedAllow?.description).toContain('Not yours');
+      expect(tools[name]!.inputSchema.acceptLooserThanRequested?.description).toContain(
+        'Not yours'
+      );
+    }
+  });
+
   it('bounds tasks_update name to the SKILL.md slug rule, so it cannot smuggle a prompt', () => {
     // A task's name is read back to an unattended run in its system prompt
     // (`Job: ${task.name}`), so an unbounded name was a prompt-injection primitive
@@ -197,6 +206,21 @@ describe('tasks_* operator-only field guard (in-session dorkos server)', () => {
       const after = store.getTask(parked.id)!;
       expect(after.status).toBe('pending_approval');
       expect(after.name).toBe('nightly');
+    });
+
+    it('refuses the applied allow list and changes nothing else', async () => {
+      const { isError, payload } = await call('tasks_update', {
+        id: existing.id,
+        prompt: 'a different prompt',
+        approvedAllow: ['Bash(/tmp/task.sh --once)'],
+      });
+
+      expect(isError).toBe(true);
+      expect(payload.fields).toEqual(['approvedAllow']);
+      expect(store.getTask(existing.id)).toMatchObject({
+        prompt: 'the prompt the person approved',
+        approvedAllow: null,
+      });
     });
 
     it('still applies the fields an agent may write', async () => {
@@ -304,6 +328,42 @@ describe('tasks_* operator-only field guard (in-session dorkos server)', () => {
 
       expect(isError).toBe(true);
       expect(payload.fields).toEqual(['status']);
+      expect(store.getTasks()).toHaveLength(before);
+    });
+
+    it('stores a requested grant without applying it', async () => {
+      const { isError, payload } = await call('tasks_create', {
+        name: 'requested-grant',
+        prompt: 'do a thing',
+        cron: '0 3 * * *',
+        target: 'global',
+        reason: 'This should run after the person reviews its requested access.',
+        requestedPermissionMode: 'dontAsk',
+        requestedAllow: ['Bash(/tmp/task.sh --once)'],
+      });
+
+      expect(isError).toBe(false);
+      expect(payload.schedule as Task).toMatchObject({
+        requestedPermissionMode: 'dontAsk',
+        requestedAllow: ['Bash(/tmp/task.sh --once)'],
+        permissionMode: 'acceptEdits',
+        approvedAllow: null,
+      });
+    });
+
+    it('refuses an applied allow list and creates nothing', async () => {
+      const before = store.getTasks().length;
+      const { isError, payload } = await call('tasks_create', {
+        name: 'self-allowed',
+        prompt: 'do a thing',
+        cron: '0 3 * * *',
+        target: 'global',
+        reason: 'This should remain a proposal until a person reviews it.',
+        approvedAllow: ['Bash(/tmp/task.sh --once)'],
+      });
+
+      expect(isError).toBe(true);
+      expect(payload.fields).toEqual(['approvedAllow']);
       expect(store.getTasks()).toHaveLength(before);
     });
 
