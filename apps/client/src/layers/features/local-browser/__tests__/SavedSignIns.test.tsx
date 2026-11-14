@@ -30,7 +30,7 @@ describe('Saved sign-ins (DOR-4105)', () => {
     expect(screen.queryByRole('button')).toBeNull();
   });
 
-  it('is one row that says where sign-ins live, and never says profile', () => {
+  it('says where sign-ins live, uses a single ellipsis, and never says profile', () => {
     const { container } = mount();
     const row = screen.getByRole('region', { name: 'Saved sign-ins' });
     expect(
@@ -41,7 +41,30 @@ describe('Saved sign-ins (DOR-4105)', () => {
         .getAllByRole('button')
         .map((button) => button.textContent)
     ).toEqual(['Forget…']);
+    expect(within(row).queryByRole('button', { name: 'Forget...' })).toBeNull();
     expect(container.textContent?.toLowerCase()).not.toContain('profile');
+  });
+
+  it('stacks the full-width copy before the left-aligned secondary below the header’s 480px breakpoint', () => {
+    mount();
+    const footer = screen.getByRole('region', { name: 'Saved sign-ins' });
+    const heading = within(footer).getByRole('heading', { name: 'Saved sign-ins' });
+    const copy = within(footer).getByText(
+      'Kept apart from your own browser. Every agent here shares them.'
+    );
+    const forget = within(footer).getByRole('button', { name: 'Forget…' });
+    expect(footer).toHaveClass(
+      'flex-col',
+      'items-start',
+      'min-[480px]:flex-row',
+      'min-[480px]:items-center'
+    );
+    expect(heading.parentElement).toBe(copy.parentElement);
+    expect(copy.parentElement).toHaveClass('w-full', 'min-[480px]:w-auto', 'min-[480px]:flex-1');
+    expect(heading.compareDocumentPosition(copy) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(copy.compareDocumentPosition(forget) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(forget).toHaveAttribute('data-size', 'sm');
+    expect(forget).toHaveAttribute('data-variant', 'secondary');
   });
 
   it('asks first, and Cancel forgets nothing and returns focus', async () => {

@@ -16,7 +16,7 @@ import {
 import { browserErrorMessage } from '../lib/browser-error-message';
 
 /**
- * The Agent browser's saved sign-ins, as one row with a confirmed Forget (DOR-4105).
+ * The Agent browser's saved sign-ins, stacked on phones, with a confirmed Forget (DOR-4105).
  * Person only; the server owns the writer and authority checks.
  */
 export function SavedSignIns({
@@ -60,8 +60,11 @@ export function SavedSignIns({
   };
   if (!enabled) return null;
   return (
-    <section aria-label="Saved sign-ins" className="flex shrink-0 items-center gap-3">
-      <div className="min-w-0 flex-1">
+    <section
+      aria-label="Saved sign-ins"
+      className="flex shrink-0 flex-col items-start gap-2 min-[480px]:flex-row min-[480px]:items-center min-[480px]:gap-3"
+    >
+      <div className="w-full min-w-0 min-[480px]:w-auto min-[480px]:flex-1">
         <h4 className="text-sm font-medium">Saved sign-ins</h4>
         <p className="text-muted-foreground text-xs">
           Kept apart from your own browser. Every agent here shares them.

@@ -42,8 +42,13 @@ Create an empty evidence directory owned by the image's user. Replace
 The image contains the checkout and dependencies, so the only bind mount is
 the evidence directory. Do not pass the host environment through to Docker.
 
+Chromium's sandbox needs `--cap-add SYS_ADMIN` and a non-root user (`pwuser`
+in QA's image). Keep Docker's default seccomp profile, never `unconfined`.
+Follow QA's `scripts/REALDATA-COPY-RULES.md`, **Chromium in Docker**, for the
+sealed-test conditions. This does not permit real data or additional host mounts.
+
 ```bash
-docker run --rm --init --network none --cgroupns private --ipc private --read-only --memory 4g --memory-swap 4g --cpus 2 --shm-size 1g --tmpfs /tmp:rw,exec,nosuid,size=2g --mount type=bind,src=/absolute/evidence,dst=/evidence --workdir /workspace QA_IMAGE_AT_DIGEST timeout --signal=TERM --kill-after=10s 20m xvfb-run -a pnpm exec tsx scripts/local-browser/chat-memory.ts --revision FULL_CANDIDATE_COMMIT --output /evidence/chat-memory
+docker run --rm --init --network none --user pwuser --cap-add SYS_ADMIN --cgroupns private --ipc private --read-only --memory 4g --memory-swap 4g --cpus 2 --shm-size 1g --tmpfs /tmp:rw,exec,nosuid,size=2g --mount type=bind,src=/absolute/evidence,dst=/evidence --workdir /workspace QA_IMAGE_AT_DIGEST timeout --signal=TERM --kill-after=10s 20m xvfb-run -a pnpm exec tsx scripts/local-browser/chat-memory.ts --revision FULL_CANDIDATE_COMMIT --output /evidence/chat-memory
 ```
 
 The 4 GiB limit is an explicit experiment envelope, **not an approved product
