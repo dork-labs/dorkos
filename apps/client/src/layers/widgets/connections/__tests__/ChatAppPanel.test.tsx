@@ -164,7 +164,9 @@ describe('ChatAppPanel', () => {
     renderPanel(instance({ config: { dmPolicy: 'allowlist', dmAllowlist: [] } }));
 
     const fix = screen.getByTestId('app-panel-fix');
-    expect(fix).toHaveTextContent('No one can message it yet. Add people to let them in.');
+    expect(fix).toHaveTextContent(
+      'No one can message it yet, including you. Add people to let them in.'
+    );
     await user.click(within(fix).getByRole('button', { name: 'Add people' }));
 
     const dialog = await screen.findByRole('dialog', { name: /Edit Telegram/ });

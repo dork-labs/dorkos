@@ -111,8 +111,10 @@ export function ChatAppPanel({ entry, instance, onClose }: ChatAppPanelProps) {
         />
       ) : hasNoOneListed(entry, instance) ? (
         // Limited to a list that is empty, as a chat turned back on can be (DOR-3859).
+        // "Including you": the owner's linked chat identity is attribution only,
+        // never access, so the gate does not let the owner in either.
         <PanelFix
-          message="No one can message it yet. Add people to let them in."
+          message="No one can message it yet, including you. Add people to let them in."
           action="Add people"
           onAction={() => setWizard('people')}
         />
