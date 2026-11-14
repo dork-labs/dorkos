@@ -25,6 +25,7 @@ covers:
   - "fix(canvas): check the document as it will end up on every update, so a mark-only patch can't label an agent widget as an app's (DOR-3293)"
   - 'fix(extensions): an app page whose root is height:100% fills its frame instead of drawing blank (DOR-3293)'
   - 'fix(extensions): an app page taller than its slot scrolls inside its frame (DOR-3293)'
+  - 'fix(extensions): a dev-linked app page shows one scrollbar, its frame taking only the height under the strip (DOR-3293)'
 ---
 
 ### Security

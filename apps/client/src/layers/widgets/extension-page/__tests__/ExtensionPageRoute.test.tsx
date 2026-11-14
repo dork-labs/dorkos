@@ -26,6 +26,13 @@ vi.mock('@/layers/entities/extension', () => ({
   useAppActions: () => ({ tryAgain }),
   useAppTrying: () => false,
 }));
+// The dev-link strip reads the dev-link list; no list yet draws it without its switch.
+vi.mock('@/layers/entities/marketplace', () => ({
+  useDevLinks: () => ({ data: undefined }),
+}));
+vi.mock('@/layers/features/marketplace', () => ({
+  UnlinkDialog: () => null,
+}));
 
 import {
   getExtensionClientStates,
@@ -112,6 +119,27 @@ describe('ExtensionPageRoute (spec flow-multiproject §6.5)', () => {
 
     expect(await screen.findByRole('heading', { name: 'Hello page' })).toBeInTheDocument();
     expect(screen.queryByTestId('extension-page-loading')).not.toBeInTheDocument();
+  });
+
+  it('gives a dev-linked page only the height left under its strip, so one scrollbar shows', async () => {
+    mockExtensions = {
+      extensions: [record({ devLink: { path: '/made-up/hello-app' } })],
+      ready: true,
+    };
+    registerPage('', () => <h1>Hello page</h1>);
+    await renderAt('/x/hello');
+    await screen.findByRole('heading', { name: 'Hello page' });
+
+    // jsdom has no layout, so this pins the structure; the real one-scrollbar
+    // check runs in a browser. The box is a column: the strip, then a body
+    // that takes the rest and may shrink below its content's height.
+    const box = screen.getByTestId('extension-page');
+    expect(box).toHaveClass('flex', 'flex-col', 'h-full', 'min-h-0');
+    const strip = screen.getByTestId('extension-page-dev-link');
+    const body = screen.getByTestId('extension-page-body');
+    expect(Array.from(box.children)).toEqual([strip, body]);
+    expect(body).toHaveClass('flex-1', 'min-h-0');
+    expect(body).toContainElement(screen.getByRole('heading', { name: 'Hello page' }));
   });
 
   it('hands the page its params and the flat query', async () => {

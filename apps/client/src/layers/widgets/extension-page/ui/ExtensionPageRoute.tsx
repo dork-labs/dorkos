@@ -68,11 +68,16 @@ export function ExtensionPageRoute() {
         resetKeys={[location.pathname]}
         fallback={<PageFailed name={page.title} />}
       >
-        {/* The whole content area, scrolled here. Layout and padding are the
-            page's own: a lens page and a settings form want different ones. */}
-        <div data-testid="extension-page" className="h-full min-h-0 overflow-y-auto">
+        {/* The whole content area. Layout and padding are the page's own: a
+            lens page and a settings form want different ones. A column, so
+            the app's frame takes only the height left under the dev-link
+            strip: the frame scrolls inside itself (DOR-3293), and a frame as
+            tall as the whole area would push this box into a second scrollbar. */}
+        <div data-testid="extension-page" className="flex h-full min-h-0 flex-col overflow-y-auto">
           {pageRecord?.devLink && <DevLinkStrip extension={pageRecord} />}
-          <Page params={params} search={search} setSearch={setSearch} />
+          <div data-testid="extension-page-body" className="min-h-0 flex-1">
+            <Page params={params} search={search} setSearch={setSearch} />
+          </div>
         </div>
       </ErrorBoundary>
     );
