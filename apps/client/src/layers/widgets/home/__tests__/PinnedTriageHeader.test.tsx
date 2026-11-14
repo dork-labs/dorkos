@@ -918,7 +918,7 @@ describe('PinnedTriageHeader', () => {
     expect(screen.getByRole('button', { name: 'Approve Nightly sweep' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Reject Nightly sweep' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Run Nightly sweep once' })).toBeInTheDocument();
-    expect(screen.getByText(/At 03:00 AM/i)).toBeInTheDocument();
+    expect(screen.getByText(/^3:00 AM/)).toBeInTheDocument();
   });
 
   it('says nothing about a schedule that is already running', async () => {

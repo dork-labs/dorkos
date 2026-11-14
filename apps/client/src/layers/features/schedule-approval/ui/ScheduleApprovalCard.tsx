@@ -196,8 +196,9 @@ function ScheduleApprovalContent({
 
   const name = task.displayName ?? task.name;
   const proposer = task.proposedByName ?? 'an agent';
-  // Who its runs act as, which is whose turn it would be (DOR-3640 R1).
-  const runsAs = task.agentId ? (task.runsAsName ?? 'an agent') : 'no agent';
+  // Who its runs act as, resolved from the agent roster by the server. An id
+  // alone is not a name, so an unresolved or absent agent draws no claim.
+  const runsAs = task.agentId ? task.runsAsName : null;
   // A schedule DorkOS found on disk, rather than one anybody asked for. Nobody
   // proposed it, so every part of this card that credits a proposer has to say
   // something else — the file it came from (ADR `260823-200726`).
@@ -356,7 +357,7 @@ function ScheduleApprovalContent({
       data-testid="schedule-approval-card"
       data-task-id={task.id}
       className={cn(
-        'flex min-w-0 flex-col gap-2',
+        'border-border bg-card flex min-w-0 flex-col gap-2 border border-l ring-0 ring-transparent',
         pinActions && 'bg-background max-h-[76dvh] min-h-0 flex-1 ring-inset',
         className
       )}
@@ -424,9 +425,7 @@ function ScheduleApprovalContent({
         </div>
 
         <AskCard.Headline className="min-w-0 break-words">{name}</AskCard.Headline>
-        <p className="text-muted-foreground text-xs">
-          {task.agentId ? `Agent: ${runsAs}` : 'No agent'}
-        </p>
+        {runsAs && <p className="text-muted-foreground text-xs">Agent: {runsAs}</p>}
 
         <AskCard.Detail className="text-xs">
           <p className="min-w-0 break-words">

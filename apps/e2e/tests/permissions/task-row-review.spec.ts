@@ -241,7 +241,7 @@ for (const surface of ['light', 'dark', 'phone'] as const) {
     await expect(title).toBeFocused();
     await expect(review.locator('select')).toHaveValue('acceptEdits');
     await expect(review.getByText('Runs as: Accept edits', { exact: true })).toBeVisible();
-    await expect(review.getByText('No agent', { exact: true })).toBeVisible();
+    await expect(review.getByText(/^Agent:/)).toHaveCount(0);
     const approve = review.getByRole('button', { name: 'Approve Sample ledger', exact: true });
     await expect(approve).toBeEnabled();
     await expect(approve).toBeInViewport();

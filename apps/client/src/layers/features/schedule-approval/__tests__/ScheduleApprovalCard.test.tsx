@@ -218,6 +218,14 @@ afterEach(() => {
 const AGENT_UNNAMED_COPY = 'An agent asked. DorkOS can’t tell which.';
 
 describe('ScheduleApprovalCard — what it says', () => {
+  it('uses the normal card surface without a status edge or active outline', async () => {
+    renderCard();
+
+    await screen.findByText('Nightly sweep');
+    expect(card()).toHaveClass('border', 'border-l', 'border-border', 'bg-card', 'ring-0');
+    expect(card()).not.toHaveClass('border-l-2', 'border-status-info', 'ring-2', 'ring-ring/30');
+  });
+
   it('names the schedule, its proposer, and how long it has waited', async () => {
     renderCard();
 
@@ -271,8 +279,8 @@ describe('ScheduleApprovalCard — what it says', () => {
     renderCard();
 
     const cadence = await findSlot('schedule-cadence');
-    expect(cadence).toHaveTextContent(/At 03:00 AM/i);
-    expect(cadence).toHaveTextContent('(UTC)');
+    expect(cadence).toHaveTextContent('3:00 AM (UTC)');
+    expect(cadence).not.toHaveTextContent(/At 0|\b0\d:\d{2}/);
   });
 
   it('falls back to the raw expression for a cron nothing can read', async () => {
@@ -309,7 +317,8 @@ describe('ScheduleApprovalCard — what it says', () => {
     expect(region).toBe(slot('schedule-prompt'));
     expect(region.getAttribute('tabindex')).toBe('0');
     expect(region.className).toContain('focus-ring');
-    expect(region.className).toContain('text-sm');
+    expect(region.className).toContain('text-xs');
+    expect(region.className).not.toContain('text-sm');
     expect(region.className).toContain('whitespace-pre-wrap');
     expect(region.className).toContain('break-words');
     expect(region.className).toContain('max-h-[40dvh]');
@@ -418,6 +427,17 @@ describe('ScheduleApprovalCard — what it says', () => {
     expect(screen.getByText('Agent: Scout')).toBeVisible();
   });
 
+  it.each([
+    ['has no agent', { agentId: null, runsAsName: null }],
+    ['cannot resolve the agent name', { agentId: 'agent-b', runsAsName: null }],
+  ] as const)('drops the agent line when the schedule %s', async (_case, overrides) => {
+    renderCard(proposal(overrides));
+
+    await screen.findByText('Nightly sweep');
+    expect(screen.queryByText(/^Agent:/)).toBeNull();
+    expect(screen.queryByText(/an agent/i)).toBeNull();
+  });
+
   it('says a proposal has no agent identity rather than inventing one', async () => {
     // The sessionless external `/mcp` registration stamps no path. A disc and a
     // name invented from nothing would put a request under a mark it never earned.
@@ -429,7 +449,6 @@ describe('ScheduleApprovalCard — what it says', () => {
     // unchanged: no name and no agent mark are invented.
     expect(await screen.findByText(AGENT_UNNAMED_COPY)).toBeInTheDocument();
     expect(slot('ask-detail')).toHaveTextContent('Proposed by an agent');
-    expect(screen.getByText('No agent', { exact: true })).toBeVisible();
     expect(screen.queryByText(/^Agent:/)).toBeNull();
   });
 
@@ -592,9 +611,11 @@ describe('ScheduleApprovalCard — answering it', () => {
 
     await userEvent.click(await screen.findByRole('button', { name: 'Approve Nightly sweep' }));
 
-    expect(await findSlot('schedule-receipt')).toHaveTextContent(
-      'Approved by Dorian at 2:30 PM, in Home.'
-    );
+    const receipt = await findSlot('schedule-receipt');
+    expect(receipt).toHaveTextContent('Approved by Dorian at 2:30 PM, in Home.');
+    expect(receipt).toHaveClass('items-start');
+    expect(receipt).not.toHaveClass('items-center');
+    expect(receipt.querySelector('svg')).toHaveClass('mt-px', 'size-3.5', 'shrink-0');
   });
 
   it.each(['button', 'shortcut'] as const)(

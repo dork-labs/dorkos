@@ -58,7 +58,7 @@ describe('describeApprovalChanges (DOR-2323)', () => {
       ])
     ).toEqual([
       // In words, like the card's own cadence line, not as a raw expression.
-      { label: 'Schedule', from: 'At 03:00 AM', to: 'Every minute', unbroken: false },
+      { label: 'Schedule', from: '3:00 AM', to: 'Every minute', unbroken: false },
       { label: 'Timezone', from: 'UTC', to: 'Asia/Tokyo', unbroken: true },
       { label: 'Name', from: 'sweep', to: 'purge', unbroken: true },
     ]);
