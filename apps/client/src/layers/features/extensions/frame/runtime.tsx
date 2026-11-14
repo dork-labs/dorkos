@@ -87,10 +87,14 @@ async function start(init: FrameInit, port: MessagePort): Promise<void> {
   // A filling view needs a definite `height`, not only `min-height`: a
   // percentage height resolves against its parent's height, and a min-height
   // alone leaves that `auto`, so an app whose root is `height:100%` drew 0 px
-  // tall. Taller content still overflows the root and scrolls the frame.
+  // tall. The host CSS copied in above keeps `html` and `body` at
+  // `overflow:hidden`, so the document never scrolls; `#root` is the scroller,
+  // or a page taller than its slot is clipped with no way to reach the rest.
+  // Never reset `html,body` to `height:auto`: that brings the 0 px root back.
   const layout =
     init.fit === 'fill'
-      ? 'html,body,#root{margin:0;width:100%;height:100%;min-height:100%;}'
+      ? 'html,body{margin:0;width:100%;height:100%;overflow:hidden;}' +
+        '#root{margin:0;width:100%;height:100%;min-height:100%;overflow:auto;}'
       : init.fit === 'both'
         ? 'html,body{margin:0;}#root{display:inline-block;}'
         : 'html,body{margin:0;width:100%;}#root{display:flow-root;}';

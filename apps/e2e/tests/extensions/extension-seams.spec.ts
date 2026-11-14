@@ -133,24 +133,42 @@ test.describe('Extension seams — hello-world’s page, status item and tab dot
     await expect(app.getByRole('heading', { name: 'Hello, there' })).toBeVisible();
 
     // An app whose root is `height:100%` (Media Library's shape) inside the
-    // real frame document: it must be as tall as the frame, never 0 px. Then
-    // content taller than the frame must still scroll inside it.
-    const measured = await app.locator('#root').evaluate((root) => {
+    // real frame document: it must be as tall as the frame, never 0 px.
+    const root = app.locator('#root');
+    const measured = await root.evaluate((element) => {
       const probe = document.createElement('div');
       probe.style.height = '100%';
-      root.append(probe);
+      element.append(probe);
       const filled = probe.getBoundingClientRect().height;
-      const frameHeight = document.documentElement.clientHeight;
-      probe.style.height = '4000px';
-      const scroller = document.scrollingElement!;
-      const scrolls = scroller.scrollHeight > scroller.clientHeight;
       probe.remove();
-      return { filled, frameHeight, scrolls };
+      return { filled, frameHeight: document.documentElement.clientHeight };
     });
     expect(measured.frameHeight).toBeGreaterThan(0);
     expect(measured.filled).toBeGreaterThan(0);
     expect(Math.abs(measured.filled - measured.frameHeight)).toBeLessThanOrEqual(1);
-    expect(measured.scrolls, 'tall content scrolls inside the frame').toBe(true);
+
+    // A page taller than its slot (mkt-ads, mkt-core) must be reachable: a
+    // wheel over it really scrolls, not merely "the content is taller".
+    await root.evaluate((element) => {
+      const tall = document.createElement('div');
+      tall.dataset.testid = 'tall-probe';
+      tall.style.height = '4000px';
+      element.append(tall);
+      element.scrollTop = 0;
+    });
+    try {
+      await root.hover();
+      await page.mouse.wheel(0, 600);
+      await expect
+        .poll(() => root.evaluate((element) => element.scrollTop), {
+          message: 'a wheel over a tall page scrolls it inside the frame',
+        })
+        .toBeGreaterThan(0);
+    } finally {
+      await root.evaluate((element) =>
+        element.querySelector('[data-testid="tall-probe"]')?.remove()
+      );
+    }
   });
 
   test('shows its item in a chat’s status bar', async ({ page }) => {
