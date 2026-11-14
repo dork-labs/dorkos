@@ -5,6 +5,7 @@ covers:
   - 'fix(browser): teach agents to recover within their own tabs'
   - 'fix(browser): pause other chats while a person signs in'
   - 'fix(browser): keep saved sign-ins visible while paused'
+  - 'fix(browser): stack saved sign-ins on small screens'
 ---
 
 ### Added
@@ -15,6 +16,7 @@ covers:
 
 - Pause a chat’s browser when it tries to open a blocked site. Other chats keep browsing.
 - Keep Saved sign-ins visible while another chat waits for you to sign in.
+- Stack Saved sign-ins on small screens.
 
 ### Security
 
