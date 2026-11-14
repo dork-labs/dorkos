@@ -82,6 +82,12 @@ const WAITING_HERE: LocalBrowserPersonState = {
   },
 };
 
+/** The person closed the sign-in window and it saved; only Continue is left (DOR-4325). */
+const WINDOW_CLOSED_HERE: LocalBrowserPersonState = {
+  ...WAITING_HERE,
+  signIn: { ...WAITING_HERE.signIn!, status: 'saved' },
+};
+
 /** Open browser refused while a sign-in window holds the profile (DOR-4325). */
 async function refuseWhileSigningIn(): Promise<never> {
   throw Object.assign(new Error('Finish signing in first.'), { code: 'signing_in' });
@@ -90,19 +96,20 @@ async function refuseWhileSigningIn(): Promise<never> {
 /**
  * A scoped transport for one browser state, with a made-up holder chat.
  *
- * @param state - What the browser reports.
+ * @param state - What the browser reports, or a reader for a state that changes.
  * @param forget - What Forget does; the playground's own by default.
  * @param open - What Open browser does; the playground's own by default.
  */
 function browserTransport(
-  state: LocalBrowserPersonState,
+  state: LocalBrowserPersonState | (() => LocalBrowserPersonState),
   forget?: () => Promise<never>,
   open?: () => Promise<never>
 ): Transport {
   const base = createPlaygroundTransport();
   return new Proxy(base, {
     get: (target, prop, receiver) => {
-      if (prop === 'getLocalBrowserState') return async () => state;
+      if (prop === 'getLocalBrowserState')
+        return async () => (typeof state === 'function' ? state() : state);
       if (prop === 'getSession')
         return async (id: string) => ({ id, title: HOLDER_TITLES[id] ?? '', cwd: '/agents/scout' });
       if (prop === 'getAgentByPath') return async () => ({ name: 'scout', displayName: 'Scout' });
@@ -125,11 +132,25 @@ function browserTransport(
 function PanelDemo({
   state,
   open,
+  afterOpen,
 }: {
   state: LocalBrowserPersonState;
   open?: () => Promise<never>;
+  /** What the browser reports once Open browser was pressed: a handoff that began meanwhile. */
+  afterOpen?: LocalBrowserPersonState;
 }) {
-  const [transport] = useState<Transport>(() => browserTransport(state, undefined, open));
+  const [transport] = useState<Transport>(() => {
+    let current = state;
+    return browserTransport(
+      () => current,
+      undefined,
+      open &&
+        (() => {
+          if (afterOpen) current = afterOpen;
+          return open();
+        })
+    );
+  });
   useEffect(() => {
     if (state.sessionId !== IN_USE_WORKING.sessionId) return;
     // A live status is how the app knows a chat's agent is working right now.
@@ -202,9 +223,19 @@ export function LocalBrowserPanelShowcases() {
       <ShowcaseDemo>
         <PanelDemo state={WAITING_HERE} />
       </ShowcaseDemo>
+      <ShowcaseLabel>This chat’s agent waits on you after the sign-in window closed</ShowcaseLabel>
+      <ShowcaseDemo>
+        <PanelDemo state={WINDOW_CLOSED_HERE} />
+      </ShowcaseDemo>
       <ShowcaseLabel>Open browser refused while signing in: press Open browser</ShowcaseLabel>
       <ShowcaseDemo>
         <PanelDemo state={NOT_OPEN} open={refuseWhileSigningIn} />
+      </ShowcaseDemo>
+      <ShowcaseLabel>
+        Refused because this chat’s agent just handed over: press Open browser
+      </ShowcaseLabel>
+      <ShowcaseDemo>
+        <PanelDemo state={NOT_OPEN} open={refuseWhileSigningIn} afterOpen={WAITING_HERE} />
       </ShowcaseDemo>
       <ShowcaseLabel>Forget refused: the sign-ins folder was changed outside DorkOS</ShowcaseLabel>
       <ShowcaseDemo>

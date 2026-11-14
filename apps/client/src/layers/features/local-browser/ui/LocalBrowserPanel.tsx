@@ -82,6 +82,8 @@ export function LocalBrowserPanel({
     !!sessionId && state?.handoff?.outcome === null && state.handoff.sessionId === sessionId
       ? state.handoff
       : null;
+  // The person closed the sign-in window and it saved, so all that's left is Continue.
+  const signInClosed = !!handoffHere && state?.signIn?.status === 'saved';
   const mode =
     connected && state.mode
       ? state.mode
@@ -135,7 +137,13 @@ export function LocalBrowserPanel({
       setError(browserErrorMessage(cause));
       // A sign-in started since the last read: show its handoff now, not on the next poll.
       if ((cause as { code?: string } | null)?.code === 'signing_in')
-        void queryClient.invalidateQueries({ queryKey: LOCAL_BROWSER_STATE_KEY });
+        void queryClient.invalidateQueries({ queryKey: LOCAL_BROWSER_STATE_KEY }).then(() => {
+          // Waiting for you already says to finish, so the refusal isn't said twice.
+          const read = queryClient.getQueryData<LocalBrowserPersonState>(LOCAL_BROWSER_STATE_KEY);
+          const waiting = read?.handoff?.outcome === null && read.handoff.sessionId === sessionId;
+          if (ticket === operation.current && waiting && read.status !== 'connected')
+            setError(null);
+        });
       return false;
     } finally {
       if (ticket === operation.current) {
@@ -283,10 +291,17 @@ export function LocalBrowserPanel({
             {agentName || handoffHere.agentName || 'The agent'} needs you to sign in to{' '}
             {handoffHere.site}.
           </p>
-          <p>
-            Finish in the sign-in window, then press{' '}
-            <strong className="font-medium">Continue in the chat</strong>.
-          </p>
+          {signInClosed ? (
+            <p>
+              The sign-in window closed. Press{' '}
+              <strong className="font-medium">Continue in the chat</strong> to hand it back.
+            </p>
+          ) : (
+            <p>
+              Finish in the sign-in window, then press{' '}
+              <strong className="font-medium">Continue in the chat</strong>.
+            </p>
+          )}
         </div>
       )}
       {!connected && !waitingElsewhere && !handoffHere && (

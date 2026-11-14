@@ -392,6 +392,24 @@ describe('LocalBrowserPanel', () => {
         await screen.findByText('Waiting for you', undefined, { timeout: 300 })
       ).toBeInTheDocument();
       expect(screen.queryByRole('button', { name: 'Open browser' })).toBeNull();
+      // The state already says it, so "Finish…" isn't said twice.
+      expect(screen.queryByRole('alert')).toBeNull();
+    });
+    it('says the sign-in window closed once it has, and still waits for you', async () => {
+      transport.getLocalBrowserState.mockResolvedValue({
+        ...signingIn,
+        signIn: { ...signingIn.signIn, status: 'saved' },
+      });
+      mount();
+      expect(await screen.findByText('Waiting for you')).toBeInTheDocument();
+      const next = screen.getByText(
+        (_, element) =>
+          element?.tagName === 'P' &&
+          element.textContent ===
+            'The sign-in window closed. Press Continue in the chat to hand it back.'
+      );
+      expect(within(next).getByText('Continue in the chat').tagName).toBe('STRONG');
+      expect(screen.queryByText(/Finish in the sign-in window/)).toBeNull();
     });
   });
   it('shows the server’s signing_in refusal, not a reconnect hint (DOR-4325)', async () => {
