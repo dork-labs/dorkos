@@ -116,6 +116,7 @@
         "$TURBO_ROOT$/contributing/capabilities/runtimes.md",
         "$TURBO_ROOT$/scripts/lib/code-only.mjs",
         "$TURBO_ROOT$/scripts/lib/community-migration-id.mjs",
+        "$TURBO_ROOT$/scripts/local-browser/chat-memory-fixture.ts",
         "$TURBO_ROOT$/apps/space/package.json",
         "$TURBO_ROOT$/Dockerfile",
         "$TURBO_ROOT$/.dockerignore",

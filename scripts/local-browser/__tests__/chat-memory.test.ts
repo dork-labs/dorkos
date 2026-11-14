@@ -19,7 +19,6 @@ import {
   MEMORY_FIXTURE_SNAPSHOT_BUDGET_BYTES,
   assertMemoryFixtureSnapshot,
 } from '../chat-memory-fixture.js';
-import { MAX_BROWSER_SNAPSHOT_BYTES } from '../../../apps/server/src/services/session/local-browser/observation-limits.js';
 
 describe('memory fixture observation headroom', () => {
   it('keeps the fixture markup small before the checker measures its real ARIA snapshot', () => {
@@ -32,10 +31,7 @@ describe('memory fixture observation headroom', () => {
     expect(MEMORY_FIXTURE_HTML).toContain('<button>Read record 99</button>');
   });
 
-  it('requires actual snapshots to keep at least 75% headroom below production', () => {
-    expect(MEMORY_FIXTURE_SNAPSHOT_BUDGET_BYTES).toBeLessThanOrEqual(
-      MAX_BROWSER_SNAPSHOT_BYTES / 4
-    );
+  it('requires actual snapshots to stay within the fixture budget', () => {
     expect(assertMemoryFixtureSnapshot('- heading "Northwind research notes" [level=1]')).toBe(
       Buffer.byteLength('- heading "Northwind research notes" [level=1]', 'utf8')
     );

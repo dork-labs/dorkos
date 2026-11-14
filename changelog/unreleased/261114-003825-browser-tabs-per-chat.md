@@ -19,6 +19,7 @@ covers:
   - 'fix(browser): read tab titles without granting popup activation'
   - 'fix(browser): reconcile shared browser flows after rebase'
   - 'fix(browser): refresh tab API artifacts and verification inventories'
+  - 'fix(browser): classify idle close and keep memory checks buildless'
 ---
 
 ### Added

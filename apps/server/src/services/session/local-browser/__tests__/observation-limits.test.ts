@@ -1,5 +1,6 @@
 import type { Page } from 'playwright-core';
 import { describe, expect, it, vi } from 'vitest';
+import { MEMORY_FIXTURE_SNAPSHOT_BUDGET_BYTES } from '../../../../../../../scripts/local-browser/chat-memory-fixture.js';
 import {
   boundedPageScreenshot,
   boundedPageSnapshot,
@@ -18,6 +19,12 @@ function image(width: number, height: number, length = 24): Buffer {
 }
 
 describe('local browser observation payload limits', () => {
+  it('keeps the memory proof fixture at least 75% below the production snapshot limit', () => {
+    expect(MEMORY_FIXTURE_SNAPSHOT_BUDGET_BYTES).toBeLessThanOrEqual(
+      MAX_BROWSER_SNAPSHOT_BYTES / 4
+    );
+  });
+
   it('accepts the exact UTF-8 byte limit and refuses multibyte overflow without truncation', async () => {
     const read = vi.fn(async () => 'x'.repeat(MAX_BROWSER_SNAPSHOT_BYTES));
     const body = { ariaSnapshot: read, count: async () => 1, nth: () => body };

@@ -259,6 +259,7 @@ const ALLOWED_ON_WIFI: Readonly<Record<string, readonly string[]>> = {
     'POST /api/local-browser/resume',
     'POST /api/local-browser/disconnect',
     'POST /api/local-browser/tabs/:id/select',
+    'POST /api/local-browser/tabs/idle/close',
     'POST /api/local-browser/profiles',
     'DELETE /api/local-browser/profiles/:id',
     'POST /api/local-browser/profiles/:id/forget-sign-ins',
