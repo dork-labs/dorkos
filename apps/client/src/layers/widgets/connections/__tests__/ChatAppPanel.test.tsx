@@ -159,6 +159,27 @@ describe('ChatAppPanel', () => {
     ).not.toBeInTheDocument();
   });
 
+  it('says no one can message a bot limited to an empty list, and opens the list', async () => {
+    const user = userEvent.setup();
+    renderPanel(instance({ config: { dmPolicy: 'allowlist', dmAllowlist: [] } }));
+
+    const fix = screen.getByTestId('app-panel-fix');
+    expect(fix).toHaveTextContent('No one can message it yet. Add people to let them in.');
+    await user.click(within(fix).getByRole('button', { name: 'Add people' }));
+
+    const dialog = await screen.findByRole('dialog', { name: /Edit Telegram/ });
+    expect(within(dialog).getByLabelText(/DM Allowlist/)).toBeInTheDocument();
+  });
+
+  it('says nothing about the list once someone is on it, or while paused', () => {
+    renderPanel(instance({ config: { dmPolicy: 'allowlist', dmAllowlist: ['42'] } }));
+    expect(screen.queryByText(/No one can message it yet/)).not.toBeInTheDocument();
+    cleanup();
+
+    renderPanel(instance({ enabled: false, config: { dmPolicy: 'allowlist', dmAllowlist: [] } }));
+    expect(screen.queryByText(/No one can message it yet/)).not.toBeInTheDocument();
+  });
+
   it('opens the edit wizard with the allowlist fields from Add people', async () => {
     const user = userEvent.setup();
     renderPanel(instance({ config: { dmPolicy: 'open' } }));

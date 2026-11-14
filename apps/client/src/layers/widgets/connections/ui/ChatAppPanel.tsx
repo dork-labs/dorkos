@@ -12,6 +12,7 @@ import {
 import { PausedConfirm } from './PausedConfirm';
 import {
   ClaimFeed,
+  hasNoOneListed,
   isOpenToAnyone,
   PanelFix,
   PanelMoreRow,
@@ -107,6 +108,13 @@ export function ChatAppPanel({ entry, instance, onClose }: ChatAppPanelProps) {
               Add people
             </Button>
           }
+        />
+      ) : hasNoOneListed(entry, instance) ? (
+        // Limited to a list that is empty, as a chat turned back on can be (DOR-3859).
+        <PanelFix
+          message="No one can message it yet. Add people to let them in."
+          action="Add people"
+          onAction={() => setWizard('people')}
         />
       ) : null}
 

@@ -19,3 +19,21 @@ export function isOpenToAnyone(entry: CatalogEntry, instance: CatalogInstance): 
     instance.config?.dmPolicy === 'open'
   );
 }
+
+/**
+ * Whether an enabled Slack or Telegram connection is limited to a list with
+ * nobody on it, so no one can message it privately. A chat turned back on
+ * lands here when nobody was listed before (DOR-3859).
+ *
+ * @param entry - The chat app's catalog entry.
+ * @param instance - The configured connection.
+ */
+export function hasNoOneListed(entry: CatalogEntry, instance: CatalogInstance): boolean {
+  const list = instance.config?.dmAllowlist;
+  return (
+    instance.enabled &&
+    OPEN_DM_TYPES.has(entry.manifest.type) &&
+    instance.config?.dmPolicy === 'allowlist' &&
+    (!Array.isArray(list) || list.length === 0)
+  );
+}

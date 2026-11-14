@@ -16,7 +16,7 @@ export { YourAppRowView, CatalogAppRowView } from './ui/app-list/AppRow';
 export { useAppList } from './model/use-app-list';
 export type { AppListData } from './model/use-app-list';
 export { appUses, chatAppAccount, remainingUses } from './lib/app-list';
-export { isOpenToAnyone } from './lib/open-dm-policy';
+export { hasNoOneListed, isOpenToAnyone } from './lib/open-dm-policy';
 export { accountChangeError } from './lib/account-change-error';
 export type {
   AppRowAction,
