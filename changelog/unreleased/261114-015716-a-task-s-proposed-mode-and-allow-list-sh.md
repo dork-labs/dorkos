@@ -4,6 +4,7 @@ covers:
   - 'fix(schedules): looser modes, command rules and outsider rules each take a separate yes (DOR-3637)'
   - 'fix(schedules): approval card design review for requested rules, and a "Run it looser" demo (DOR-3637)'
   - 'fix(schedules): approval card names whose mode a test run uses, and a normal gap under the tick (DOR-3637)'
+  - "fix(schedules): the approval card's tick row is a 44px target on touch screens (DOR-3637)"
 ---
 
 ### Security

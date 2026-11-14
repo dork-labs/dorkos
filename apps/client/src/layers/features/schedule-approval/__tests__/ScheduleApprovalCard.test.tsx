@@ -670,7 +670,15 @@ describe('ScheduleApprovalCard — answering it', () => {
     );
     await screen.findByRole('combobox', { name: 'Run permissions' });
     expect(screen.getByRole('button', { name: 'Approve Nightly sweep' })).toBeDisabled();
-    expect(screen.getByRole('checkbox', { name: 'Allow these rules anyway' })).toBeInTheDocument();
+    const tick = screen.getByRole('checkbox', { name: 'Allow these rules anyway' });
+    // Looks 24px tall; a touch screen gets a 44px target from 10px above and below.
+    expect(tick.closest('label')).toHaveClass(
+      'relative',
+      'min-h-6',
+      'pointer-coarse:before:absolute',
+      'pointer-coarse:before:inset-x-0',
+      'pointer-coarse:before:-inset-y-2.5'
+    );
   });
 
   it('needs the tick to raise the saved mode when nothing was requested (D-1)', async () => {

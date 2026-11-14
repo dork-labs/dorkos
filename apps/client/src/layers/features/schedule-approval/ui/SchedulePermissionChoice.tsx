@@ -97,9 +97,11 @@ export function SchedulePermissionChoice({
           )}
         </div>
       )}
-      {/* After what it confirms, so the tick answers what was just read. */}
+      {/* After what it confirms, so the tick answers what was just read. It
+          looks 24px tall; on a touch screen an invisible layer reaches 10px
+          above and below, so the whole row is a 44px target and nothing moves. */}
       {confirmReason && (
-        <label className="flex min-h-6 items-center gap-2">
+        <label className="relative flex min-h-6 items-center gap-2 pointer-coarse:before:absolute pointer-coarse:before:inset-x-0 pointer-coarse:before:-inset-y-2.5 pointer-coarse:before:content-['']">
           <Checkbox
             checked={confirmLooser}
             onCheckedChange={(checked) => onConfirmLooserChange(checked === true)}
