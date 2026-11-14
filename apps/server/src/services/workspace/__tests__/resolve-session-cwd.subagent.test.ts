@@ -42,9 +42,10 @@ const SERVER_SRC = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '.
  *
  * Each is a place where a TURN BEGINS and no turn is yet running:
  *
- * - the session launch service's message-send path — a person pressing enter
- *   (`POST /api/sessions/:id/messages` calls it; the route only names the
- *   port's type now);
+ * - the shared chat-place resolver — a person pressing enter or boot recovery
+ *   re-arming a queued message (both reach it before a turn starts;
+ *   `POST /api/sessions/:id/messages` calls the launch service, while the
+ *   route only names the port's type now);
  * - the task scheduler — a cron tick starting a scheduled run;
  * - the relay binding router — an inbound chat message opening or feeding a
  *   session;
@@ -66,7 +67,7 @@ const SERVER_SRC = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '.
  * (`services/rooms/repo/room-turn-place.ts`), so it no longer asks the chain.
  */
 const ALLOWED = new Set([
-  'services/session/launch/launch-session.ts',
+  'services/session/launch/resolve-chat-place.ts',
   'services/tasks/task-scheduler-service.ts',
   'services/relay/binding-router.ts',
   'services/relay/adapter-factory.ts',

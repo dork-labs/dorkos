@@ -178,7 +178,8 @@ export async function startAfterListen(refs: ServerRefs, built: StartAfterListen
   // those chats now, and on the health tick for any row left with nothing to run it.
   const resumeChatQueues = (): void => {
     void rearmChatQueues({
-      resume: async (id) => resumeChatQueue(id, await liveSessionCwd(id)),
+      resume: async (id) =>
+        resumeChatQueue(id, await liveSessionCwd(id), refs.roomSessionPlacePort),
     }).catch((err: unknown) => {
       logger.warn('[DorkOS] could not resume chats’ queued messages', logError(err));
     });

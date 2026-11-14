@@ -221,7 +221,9 @@ export class AgentSendService {
     this.dispatchSessionMessage = deps.dispatch ?? dispatchSessionMessage;
     this.reserveChat = deps.reserveChat ?? reserveKeptChat;
     this.isQueued = deps.isQueued ?? ((id) => getMessageQueueStore()?.get(id) !== undefined);
-    this.resumeQueue = deps.resumeQueue ?? resumeChatQueue;
+    this.resumeQueue =
+      deps.resumeQueue ??
+      ((sessionId, cwd) => resumeChatQueue(sessionId, cwd, deps.roomSessionPlace?.()));
     this.onLifecycle = deps.onLifecycle ?? onDispatchLifecycle;
     this.unsubscribeLifecycle = this.onLifecycle((event) => this.onDispatch(event));
   }

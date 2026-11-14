@@ -7,8 +7,13 @@
  *
  * @module services/extensions/agent-send/agent-send-defaults
  */
+import { logger } from '../../../lib/logger.js';
 import { runtimeRegistry } from '../../core/runtime-registry.js';
 import { adoptQueuedMessages, isTurnInFlight } from '../../session/message-dispatcher.js';
+import {
+  resolveChatPlace,
+  type ResolveChatPlaceDeps,
+} from '../../session/launch/resolve-chat-place.js';
 import { getSessionStartedByStore } from '../../session/origin/session-started-by-store.js';
 import { persistenceModeFor } from '../../session/projector-persistence.js';
 import { getOrCreateProjector, peekProjector } from '../../session/session-state-projector.js';
@@ -48,11 +53,9 @@ export function describeSessionFor(
 }
 
 /**
- * The folder a chat runs in: its live projector's, else its runtime's live
- * binding. Unknown after a restart for a chat nobody has opened since: the
- * launch then resolves the folder from the chat's stored agent path, and
- * failing that the default folder, the same ladder a person's message with no
- * `cwd` walks.
+ * The folder currently known in memory: the live projector's, else the
+ * runtime's live binding. Unknown after a restart for a chat nobody has opened
+ * since; a caller starting work must still resolve the chat's durable place.
  *
  * @param sessionId - The chat.
  */
@@ -105,12 +108,45 @@ export function reserveKeptChat(
  * next message to that chat to adopt them.
  *
  * @param sessionId - The chat.
- * @param cwd - The folder it runs in, when known.
+ * @param liveCwd - The folder currently known in memory, when any.
+ * @param roomSessionPlace - The room binding port available to this launch surface.
+ * @param placeDeps - Test seams for place resolution.
  */
-export async function resumeChatQueue(sessionId: string, cwd: string | undefined): Promise<void> {
-  const runtime = await runtimeRegistry.resolveForSession(sessionId);
+export async function resumeChatQueue(
+  sessionId: string,
+  liveCwd: string | undefined,
+  roomSessionPlace?: RoomSessionPlacePort,
+  placeDeps: Partial<ResolveChatPlaceDeps> = {}
+): Promise<void> {
+  const agentPath = (await runtimeRegistry.getSessionAgentPath(sessionId)) ?? undefined;
+  const place = await resolveChatPlace(
+    {
+      sessionId,
+      ...(liveCwd !== undefined ? { cwd: liveCwd } : {}),
+      ...(agentPath !== undefined ? { agentPath } : {}),
+      ...(roomSessionPlace !== undefined ? { roomSessionPlace } : {}),
+    },
+    placeDeps
+  );
+  if ('refusal' in place) {
+    logger.warn('[MessageDispatcher] queued messages kept after place refusal', {
+      sessionId,
+      refusalCode: place.refusal.code,
+    });
+    return;
+  }
+  const { cwd, forAgent, additionalDirectories } = place;
+  const runtime = place.session.runtime;
   const projector = getOrCreateProjector(sessionId, cwd, {
     persist: persistenceModeFor(runtime.getCapabilities()),
   });
-  adoptQueuedMessages({ sessionId, projector, runtime, ...(cwd ? { cwd } : {}) });
+  if (cwd !== undefined) projector.cwd = cwd;
+  adoptQueuedMessages({
+    sessionId,
+    projector,
+    runtime,
+    ...(cwd !== undefined ? { cwd } : {}),
+    ...(forAgent !== undefined ? { forAgent } : {}),
+    ...(additionalDirectories !== undefined ? { additionalDirectories } : {}),
+  });
 }
