@@ -50,7 +50,7 @@ export function WaitingForTab({
           <Button
             disabled={busy}
             onClick={() => void close()}
-            className="min-h-11 w-full text-left whitespace-normal transition-none min-[480px]:w-auto"
+            className="h-auto min-h-11 w-full py-2 text-left whitespace-normal transition-none min-[480px]:w-auto md:h-auto"
           >
             Close the tab in {idle.title}
           </Button>

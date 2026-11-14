@@ -1,4 +1,4 @@
-import { useId } from 'react';
+import { useId, useRef } from 'react';
 import { sessionHref } from '@/layers/shared/lib';
 import type { LocalBrowserPersonState } from '@dorkos/shared/local-browser';
 import {
@@ -18,6 +18,7 @@ export function OpenChatTabs({
   label?: string;
 }) {
   const titleId = useId();
+  const firstLink = useRef<HTMLAnchorElement>(null);
   return (
     // This is an explicitly opened sheet with no input; focus must enter its links.
     // eslint-disable-next-line jsx-a11y/no-autofocus
@@ -27,7 +28,7 @@ export function OpenChatTabs({
           variant="ghost"
           size="sm"
           aria-haspopup="dialog"
-          className="h-auto min-h-11 text-left whitespace-normal"
+          className="h-auto min-h-11 py-2 text-left whitespace-normal md:h-auto"
         >
           {label ?? `Also open in ${tabs.length} other ${tabs.length === 1 ? 'chat' : 'chats'}`}
         </Button>
@@ -36,12 +37,18 @@ export function OpenChatTabs({
         aria-label="Open chat tabs"
         aria-describedby={undefined}
         className="space-y-3"
+        onOpenAutoFocus={(event) => {
+          if (!firstLink.current) return;
+          event.preventDefault();
+          firstLink.current.focus();
+        }}
       >
         <ResponsivePopoverTitle id={titleId}>Open chat tabs</ResponsivePopoverTitle>
         <ul className="space-y-3">
-          {tabs.map((tab) => (
+          {tabs.map((tab, index) => (
             <li key={tab.sessionId}>
               <a
+                ref={index === 0 ? firstLink : undefined}
                 className="focus-visible:ring-ring block min-h-11 rounded p-2 break-words focus-visible:ring-2"
                 href={sessionHref({ session: tab.sessionId })}
               >

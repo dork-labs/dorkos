@@ -10,17 +10,22 @@ import {
 
 beforeEach(resetBrowserPanelFixture);
 afterEach(() => vi.restoreAllMocks());
+function expectWrappingButton(button: HTMLElement) {
+  expect(button).toHaveClass('h-auto', 'min-h-11', 'py-2', 'whitespace-normal');
+  expect([...button.classList].filter((name) => /(?:^|:)h-(?!auto$)/.test(name))).toEqual([]);
+}
+
 const waiting = {
   ...connected,
   status: 'disconnected' as const,
   tabs: [],
   selectedTabId: null,
   waitingForTab: true,
-  idleTabToClose: { sessionId: 'chat-nova', title: 'Northwind quarterly research' },
+  idleTabToClose: { sessionId: 'chat-nova', title: 'Northwind quarterly research and planning' },
   openChatTabs: [
     {
       sessionId: 'chat-nova',
-      title: 'Northwind quarterly research',
+      title: 'Northwind quarterly research and planning',
       origin: 'https://northwind.example',
       state: 'Agent' as const,
       idle: true,
@@ -32,23 +37,28 @@ it('1.12 announces Waiting and offers the person an idle close before See open t
   transport.getLocalBrowserState.mockResolvedValue(waiting);
   mount();
   const close = await screen.findByRole('button', {
-    name: 'Close the tab in Northwind quarterly research',
+    name: 'Close the tab in Northwind quarterly research and planning',
   });
   const panel = screen.getByRole('region', { name: 'Agent browser' });
   expect(within(panel).getByText(/^Waiting$/)).toHaveAttribute('role', 'status');
   expect(within(panel).getByText('All 6 tabs are in use by other chats.')).toBeInTheDocument();
   expect(within(panel).getByText('Kai will wait until one is free.')).toBeInTheDocument();
-  expect(close).toHaveClass('w-full', 'min-h-11', 'whitespace-normal');
+  expect(close).toHaveClass('w-full');
+  expectWrappingButton(close);
   expect(
     within(panel)
       .getAllByRole('button')
       .map((b) => b.textContent)
-  ).toEqual(['Close the tab in Northwind quarterly research', 'See open tabs', 'Forget…']);
+  ).toEqual([
+    'Close the tab in Northwind quarterly research and planning',
+    'See open tabs',
+    'Forget…',
+  ]);
   expect(within(panel).queryByRole('combobox')).toBeNull();
   fireEvent.click(within(panel).getByRole('button', { name: 'See open tabs' }));
   const dialog = await screen.findByRole('dialog', { name: 'Open chat tabs' });
   expect(
-    within(dialog).getByRole('link', { name: /Northwind quarterly research/ })
+    within(dialog).getByRole('link', { name: /Northwind quarterly research and planning/ })
   ).toHaveAttribute('href', '/session?session=chat-nova');
 });
 
@@ -85,7 +95,9 @@ it('sends the named idle close through the person transport with this chat as re
   transport.closeIdleLocalBrowserTab.mockResolvedValue({ ...connected, waitingForTab: false });
   mount();
   fireEvent.click(
-    await screen.findByRole('button', { name: 'Close the tab in Northwind quarterly research' })
+    await screen.findByRole('button', {
+      name: 'Close the tab in Northwind quarterly research and planning',
+    })
   );
   await waitFor(() =>
     expect(transport.closeIdleLocalBrowserTab).toHaveBeenCalledExactlyOnceWith(
@@ -111,6 +123,7 @@ it('keeps an attached sign-in in 1.4 and raises it only on this chat’s Show wi
   transport.selectLocalBrowserTab.mockResolvedValue(connected);
   mount();
   const show = await screen.findByRole('button', { name: 'Show window' });
+  expectWrappingButton(show);
   expect(screen.getByText('Waiting for you')).toHaveAttribute('role', 'status');
   expect(screen.queryByText(/Handed back/)).toBeNull();
   expect(transport.selectLocalBrowserTab).not.toHaveBeenCalled();
@@ -158,6 +171,7 @@ it('moves from 1.4 to 1.5 only after the person shows the held tab, with a hand-
   transport.handBackLocalBrowser.mockResolvedValue(connected);
   mount();
   const show = await screen.findByRole('button', { name: 'Show window' });
+  expectWrappingButton(show);
   expect(screen.getByText('Waiting for you')).toHaveAttribute('role', 'status');
   expect(screen.queryByRole('button', { name: 'Hand back to Kai' })).toBeNull();
   fireEvent.click(show);
@@ -166,9 +180,38 @@ it('moves from 1.4 to 1.5 only after the person shows the held tab, with a hand-
     screen.getByText('Kai can’t see or use this tab until you hand it back.')
   ).toBeInTheDocument();
   expect(screen.queryByText(/Handed back/)).toBeNull();
-  fireEvent.click(screen.getByRole('button', { name: 'Hand back to Kai' }));
+  const handBack = screen.getByRole('button', { name: 'Hand back to Kai' });
+  expectWrappingButton(handBack);
+  expectWrappingButton(screen.getByRole('button', { name: 'Show window' }));
+  fireEvent.click(handBack);
   await waitFor(() =>
     expect(transport.handBackLocalBrowser).toHaveBeenCalledExactlyOnceWith('made-up-handoff')
   );
   expect(transport.resumeLocalBrowser).not.toHaveBeenCalled();
 });
+
+it.each([390, 1280])(
+  'focuses the first chat link when opening the 1.10 inventory at %ipx',
+  async (width) => {
+    vi.spyOn(window, 'matchMedia').mockImplementation((query) => ({
+      matches: /max-width:\s*767px/.test(query) && width < 768,
+      media: query,
+      onchange: null,
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+    }));
+    transport.getLocalBrowserState.mockResolvedValue(waiting);
+    mount();
+    const trigger = await screen.findByRole('button', { name: 'See open tabs' });
+    expectWrappingButton(trigger);
+    fireEvent.click(trigger);
+    const dialog = await screen.findByRole('dialog', { name: 'Open chat tabs' });
+    const first = within(dialog).getByRole('link', {
+      name: /Northwind quarterly research and planning/,
+    });
+    await waitFor(() => expect(first).toHaveFocus());
+  }
+);

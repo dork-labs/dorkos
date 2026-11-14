@@ -10,6 +10,7 @@ covers:
   - 'fix(browser): scope chat tab inventory to direct chats'
   - 'fix(dev): isolate browser panel showcase chat caches'
   - 'fix(browser): admit sign-in popups only after a person takes the tab'
+  - 'fix(browser): let panel buttons grow with wrapped labels'
 ---
 
 ### Added
@@ -21,6 +22,7 @@ covers:
 - Pause a chat’s browser when it tries to open a blocked site. Other chats keep browsing.
 - Keep Saved sign-ins visible while another chat waits for you to sign in.
 - Stack Saved sign-ins on small screens.
+- Keep long chat and agent names readable on browser buttons.
 - Wait when six chats have browser tabs open. Choose an idle chat’s tab to close.
 
 ### Security
