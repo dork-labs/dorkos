@@ -7,6 +7,9 @@
  * The card used to send it, which left the agent asleep whenever that send
  * failed or the person resumed the browser some other way.
  */
+import { randomUUID } from 'node:crypto';
+import { holdStagedContext } from '../../staged-context-store.js';
+import { emitContextStaged } from '../../queue-stream-events.js';
 import type { LocalBrowserHandoff } from '@dorkos/shared/local-browser';
 import { logger } from '../../../../lib/logger.js';
 import {
@@ -38,14 +41,22 @@ export interface HandBackWakeDeps {
  *
  * @param deps - Mesh and the room port, read at hand-back time.
  */
-export function handBackWake(deps: HandBackWakeDeps): (handoff: LocalBrowserHandoff) => void {
+export function handBackWake(
+  deps: HandBackWakeDeps
+): (handoff: LocalBrowserHandoff, options?: { defer: boolean }) => void {
   const warn = (handoff: LocalBrowserHandoff, detail: Record<string, string>) =>
     logger.warn('[Browser] Couldn’t wake the agent after a hand back', {
       handoffId: handoff.id,
       ...detail,
     });
-  return (handoff) => {
+  return (handoff, options) => {
     if (handoff.outcome !== 'handed-back') return;
+    if (options?.defer) {
+      const id = randomUUID();
+      holdStagedContext(handoff.sessionId, HANDED_BACK_MESSAGE, id);
+      emitContextStaged(handoff.sessionId, HANDED_BACK_MESSAGE, id);
+      return;
+    }
     void dispatchSessionMessage({
       // Only a person can hand back (both routes are person-only), so this is their
       // message, sent to the chat they were helping.

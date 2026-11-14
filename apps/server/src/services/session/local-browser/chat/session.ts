@@ -327,6 +327,25 @@ export class BrowserChatSession {
     return this.state();
   }
 
+  /** Failed chats keep their page and slot, but no tool handle or popup grant. */
+  async fallToPerson(): Promise<void> {
+    if (!this.heldState) {
+      const before = await this.pause();
+      this.host.broker.fall(this.selected());
+      this.heldState = {
+        ...before,
+        tabs: before.tabs.map((tab) => ({
+          ...tab,
+          url: new URL(tab.url).origin,
+          title: '',
+        })),
+      };
+      this.metadata.clear();
+    }
+    await this.closeSignIn();
+    this.abandon();
+  }
+
   /** An explicit person Resume can re-share only this session's former page. */
   private rebindPersonPage(): void {
     const page = this.tabs.get(this.heldState?.selectedTabId ?? '');

@@ -13,6 +13,8 @@ export function HeldChatTab({
   state: LocalBrowserPersonState;
   agentName: string | null;
 }) {
+  const fallen = state.handoff?.outcome === 'stopped';
+  const hasIt = fallen || state.handoffTaken;
   const transport = useTransport();
   const client = useQueryClient();
   const [busy, setBusy] = useState(false);
@@ -36,7 +38,17 @@ export function HeldChatTab({
   };
   return (
     <div className="space-y-3">
-      {state.handoffTaken ? (
+      {fallen ? (
+        <>
+          <p className="text-sm break-words">
+            {agentName || 'Your agent'} stopped, so this tab is yours now.
+          </p>
+          <p className="text-sm">It stays yours until you hand it back.</p>
+          <span className="sr-only" aria-live="polite">
+            {agentName || 'Your agent'} stopped. The tab is yours now.
+          </span>
+        </>
+      ) : state.handoffTaken ? (
         <p className="text-sm break-words">
           {agentName || 'Your agent'} can’t see or use this tab until you hand it back.
         </p>
@@ -53,7 +65,7 @@ export function HeldChatTab({
           Couldn’t update the tab. Try again.
         </p>
       )}
-      {state.handoffTaken && state.handoff && (
+      {hasIt && state.handoff && (
         <Button
           onClick={() => void run(() => transport.handBackLocalBrowser(state.handoff!.id))}
           disabled={busy}
@@ -62,15 +74,17 @@ export function HeldChatTab({
           Hand back to {agentName || 'your agent'}
         </Button>
       )}
-      <Button
-        variant={state.handoffTaken ? 'ghost' : 'default'}
-        onClick={show}
-        disabled={busy}
-        className="h-auto min-h-11 w-full py-2 whitespace-normal transition-none min-[480px]:w-auto md:h-auto"
-      >
-        Show window
-      </Button>
-      {state.handoffTaken && state.sessionId && (
+      {!fallen && (
+        <Button
+          variant={state.handoffTaken ? 'ghost' : 'default'}
+          onClick={show}
+          disabled={busy}
+          className="h-auto min-h-11 w-full py-2 whitespace-normal transition-none min-[480px]:w-auto md:h-auto"
+        >
+          Show window
+        </Button>
+      )}
+      {hasIt && state.sessionId && (
         <Button
           variant="ghost"
           disabled={busy}

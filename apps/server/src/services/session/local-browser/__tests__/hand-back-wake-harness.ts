@@ -7,6 +7,7 @@ import { initConfigManager } from '../../../core/config-manager.js';
 import { runtimeRegistry } from '../../../core/runtime-registry.js';
 import { MessageQueueStore, setMessageQueueStore } from '../../message-queue-store.js';
 import { isTurnInFlight, resetMessageDispatcher } from '../../message-dispatcher.js';
+import { StagedContextStore, setStagedContextStore } from '../../staged-context-store.js';
 import { disposeProjector } from '../../session-state-projector.js';
 
 /** Wire one existing conversation to an isolated folder and a fake runtime. */
@@ -25,6 +26,7 @@ export async function handBackWakeHarness(cwd: string, sessionId: string) {
   runtimeRegistry.setDefault(runtime.type);
   await runtimeRegistry.persistSessionRuntime(sessionId, runtime.type, { kind: 'interactive' });
   setMessageQueueStore(new MessageQueueStore(db));
+  setStagedContextStore(new StagedContextStore(db));
   return {
     runtime,
     async dispose() {
@@ -36,6 +38,7 @@ export async function handBackWakeHarness(cwd: string, sessionId: string) {
       resetMessageDispatcher();
       disposeProjector(sessionId);
       setMessageQueueStore(undefined);
+      setStagedContextStore(undefined);
       vi.unstubAllEnvs();
     },
   };
