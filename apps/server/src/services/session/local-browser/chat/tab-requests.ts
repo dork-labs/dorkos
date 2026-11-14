@@ -59,7 +59,12 @@ export class ChatTabRequests {
   }
   async personState(
     id?: string
-  ): Promise<Pick<LocalBrowserPersonState, 'waitingForTab' | 'openChatTabs' | 'idleTabToClose'>> {
+  ): Promise<
+    Pick<
+      LocalBrowserPersonState,
+      'waitingForTab' | 'openChatTabs' | 'idleTabToClose' | 'handoffTaken'
+    >
+  > {
     const records = this.ports.broker.chatRecords();
     const rows = await Promise.all(
       records
@@ -76,7 +81,8 @@ export class ChatTabRequests {
             title: facts.title,
             origin: this.ports.origin(row.pageId),
             state: row.held
-              ? this.ports.waitingForPerson(row.ownerId!)
+              ? this.ports.waitingForPerson(row.ownerId!) &&
+                !this.ports.broker.personHasTaken(row.ownerId!)
                 ? ('Waiting' as const)
                 : ('You' as const)
               : ('Agent' as const),
@@ -88,6 +94,7 @@ export class ChatTabRequests {
     const other = rows.filter((row) => row.sessionId !== id);
     const idle = other.filter((row) => row.idle).sort((a, b) => a.lastActiveAt - b.lastActiveAt)[0];
     return {
+      handoffTaken: !!id && this.ports.broker.personHasTaken(id),
       waitingForTab: !!id && this.waiting(id),
       openChatTabs: other.map(({ lastActiveAt: _at, ...row }) => row),
       idleTabToClose: idle ? { sessionId: idle.sessionId, title: idle.title } : null,

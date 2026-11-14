@@ -17,6 +17,7 @@ const transport: {
   navigateLocalBrowser: Mock;
   interruptSession: Mock;
   signInLocalBrowser: Mock;
+  handBackLocalBrowser: Mock;
 } = vi.hoisted(() => ({
   getLocalBrowserState: vi.fn(),
   getLocalBrowserCapabilities: vi.fn(),
@@ -29,6 +30,7 @@ const transport: {
   navigateLocalBrowser: vi.fn(),
   interruptSession: vi.fn(),
   signInLocalBrowser: vi.fn(),
+  handBackLocalBrowser: vi.fn(),
 }));
 const navigate: Mock = vi.hoisted(() => vi.fn());
 vi.mock('@tanstack/react-router', async (importOriginal) => ({

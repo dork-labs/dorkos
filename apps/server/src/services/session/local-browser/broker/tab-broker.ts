@@ -62,7 +62,7 @@ export class TabBroker {
   private readonly perOwner: number;
   private readonly total: number;
   private readonly queueLimit: number;
-  private takeover?: { entry: Entry; token: object; popup: HeldSignInPopup };
+  private takeover?: { entry: Entry; token: object; taken: boolean; popup: HeldSignInPopup };
   private readonly serverPopups = new WeakSet<Page>();
   private readonly blocked = new Set<string>();
 
@@ -197,6 +197,7 @@ export class TabBroker {
     this.takeover = {
       entry,
       token,
+      taken: false,
       popup: new HeldSignInPopup(lease.pageId, lease.ownerId, this.options.audit, this.now),
     };
     this.emit(entry, 'hold');
@@ -206,6 +207,10 @@ export class TabBroker {
     };
     return Object.freeze({
       pageId: lease.pageId,
+      take: () => {
+        current();
+        this.takeover!.taken = true;
+      },
       handBack: () => {
         current();
         this.update(entry, { held: false });
@@ -279,7 +284,8 @@ export class TabBroker {
       // No popup, including a handoff child, can ever be rebound as an agent page.
       if (!entry.record.ownerId) return;
       this.serverPopups.add(page);
-      if (entry.record.held && this.takeover?.entry === entry) this.takeover.popup.accept(page);
+      if (entry.record.held && this.takeover?.entry === entry && this.takeover.taken)
+        this.takeover.popup.accept(page);
       else if (entry.record.ownerId) {
         this.blocked.add(entry.record.pageId);
         void page.close().catch(() => undefined);
@@ -295,6 +301,9 @@ export class TabBroker {
     };
   }
 
+  personHasTaken(ownerId: string): boolean {
+    return this.takeover?.entry.record.ownerId === ownerId && this.takeover.taken;
+  }
   async showSignIn(pageId: string): Promise<boolean> {
     return this.takeover?.entry.record.pageId === pageId ? this.takeover.popup.show() : false;
   }

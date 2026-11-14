@@ -181,7 +181,12 @@ describe('pinned managed browser preparation', () => {
           `--load-extension=${path.join('.agent-window-theme')}`,
           '--window-name=An agent is using this window',
         ],
-        ignoreDefaultArgs: ['--enable-automation', defaultFeatures, '--disable-extensions'],
+        ignoreDefaultArgs: [
+          '--enable-automation',
+          '--disable-popup-blocking',
+          defaultFeatures,
+          '--disable-extensions',
+        ],
       });
       expect(mocks.execFile).not.toHaveBeenCalled();
       // The agent's window shares the profile with the sign-in window: neither saves passwords.

@@ -136,3 +136,39 @@ it.each(['room', 'embedded', 'other-chat'] as const)(
     expect(screen.queryByRole('button', { name: /Also open in/ })).toBeNull();
   }
 );
+
+it('moves from 1.4 to 1.5 only after the person shows the held tab, with a hand-back action', async () => {
+  const held = {
+    ...connected,
+    paused: true,
+    handoffAttached: true,
+    handoffTaken: false,
+    handoff: {
+      id: 'made-up-handoff',
+      sessionId: 'chat-one',
+      site: 'northwind.example',
+      outcome: null,
+    },
+  };
+  transport.getLocalBrowserState.mockResolvedValue(held);
+  transport.selectLocalBrowserTab.mockImplementation(async () => {
+    transport.getLocalBrowserState.mockResolvedValue({ ...held, handoffTaken: true });
+    return held;
+  });
+  transport.handBackLocalBrowser.mockResolvedValue(connected);
+  mount();
+  const show = await screen.findByRole('button', { name: 'Show window' });
+  expect(screen.getByText('Waiting for you')).toHaveAttribute('role', 'status');
+  expect(screen.queryByRole('button', { name: 'Hand back to Kai' })).toBeNull();
+  fireEvent.click(show);
+  expect(await screen.findByText('You have it')).toHaveAttribute('role', 'status');
+  expect(
+    screen.getByText('Kai can’t see or use this tab until you hand it back.')
+  ).toBeInTheDocument();
+  expect(screen.queryByText(/Handed back/)).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: 'Hand back to Kai' }));
+  await waitFor(() =>
+    expect(transport.handBackLocalBrowser).toHaveBeenCalledExactlyOnceWith('made-up-handoff')
+  );
+  expect(transport.resumeLocalBrowser).not.toHaveBeenCalled();
+});

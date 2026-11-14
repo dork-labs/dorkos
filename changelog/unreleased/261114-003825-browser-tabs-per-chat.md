@@ -9,6 +9,7 @@ covers:
   - 'fix(browser): limit chat tabs and isolate sign-in popups'
   - 'fix(browser): scope chat tab inventory to direct chats'
   - 'fix(dev): isolate browser panel showcase chat caches'
+  - 'fix(browser): admit sign-in popups only after a person takes the tab'
 ---
 
 ### Added
@@ -25,4 +26,4 @@ covers:
 ### Security
 
 - Pause other chats’ browser actions while you sign in. Their agents can still read their tabs.
-- Keep sign-in popups with the person. Agents can’t read or use them.
+- Allow sign-in popups after you show the held tab, one at a time. Agents can’t read or use them.

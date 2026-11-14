@@ -133,6 +133,7 @@ export function LocalBrowserPanel({
         signIn: known?.signIn ?? null,
         signInElsewhere: known?.signInElsewhere ?? null,
         handoffAttached: known?.handoffAttached ?? false,
+        handoffTaken: known?.handoffTaken ?? false,
         waitingForTab: known?.waitingForTab ?? false,
         openChatTabs: known?.openChatTabs ?? [],
         idleTabToClose: known?.idleTabToClose ?? null,
@@ -226,7 +227,9 @@ export function LocalBrowserPanel({
           {waitingForTab
             ? 'Waiting'
             : heldHere
-              ? 'Waiting for you'
+              ? state?.handoffTaken
+                ? 'You have it'
+                : 'Waiting for you'
               : pausedForSignIn
                 ? 'Paused'
                 : cancelling
