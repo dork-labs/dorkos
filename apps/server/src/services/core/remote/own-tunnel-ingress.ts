@@ -60,6 +60,8 @@ export interface OwnTunnelIngress {
   open(): Promise<string>;
   /** Stop listening and cut every connection it carried, upgraded ones included. */
   close(): Promise<void>;
+  /** Cut every connection it carries now and keep listening (Remote Access off, DOR-3650). */
+  dropConnections(): void;
 }
 
 /**
@@ -154,6 +156,10 @@ export function createOwnTunnelIngress(options: OwnTunnelIngressOptions): OwnTun
         opening = null;
       });
       return opening;
+    },
+    dropConnections() {
+      for (const socket of connections) socket.destroy();
+      connections.clear();
     },
     async close() {
       await opening?.catch(() => undefined);

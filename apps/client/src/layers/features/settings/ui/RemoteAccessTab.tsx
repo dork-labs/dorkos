@@ -44,20 +44,23 @@ export function RemoteAccessTab() {
   // is off the ways in below are hidden: none of them can let a device in.
   // Wi-Fi access sits under the tunnel: another way in, for devices on the same
   // network, that needs no tunnel (DOR-2930).
-  // Nothing until the config is read, so the switch never shows a guess.
-  if (remote.enabled === undefined) return null;
-
+  // The switch waits for the config, so it never shows a guess; the ways in
+  // show unless the config says it is off.
   return (
     <div className="space-y-4">
-      <RemoteAccessSwitch
-        enabled={remote.enabled}
-        busy={remote.busy}
-        error={remote.error}
-        onChange={(enabled) => void handleChange(enabled)}
-      />
-      {remote.enabled && (
+      {remote.enabled !== undefined && (
         <>
-          <Separator />
+          <RemoteAccessSwitch
+            enabled={remote.enabled}
+            busy={remote.busy}
+            error={remote.error}
+            onChange={(enabled) => void handleChange(enabled)}
+          />
+          {remote.enabled && <Separator />}
+        </>
+      )}
+      {remote.enabled !== false && (
+        <>
           <TunnelPanel machine={machine} actions={actions} />
           <Separator />
           <LanAccessSection />

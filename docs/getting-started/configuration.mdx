@@ -102,7 +102,9 @@ DorkOS supports ngrok tunnels (a service that gives your local machine a public 
 
 ### Turning remote access off
 
-`remoteAccess.enabled` (default `true`) is the **Remote access** switch at the top of **Settings → Remote access**. Turn it off and only this computer can reach DorkOS: the tunnel, managed remote access, Wi-Fi and any proxy are all refused on their next request. It stays off after a restart. Only a person can turn it back on, in Settings on this computer; an agent can turn it off.
+`remoteAccess.enabled` (default `true`) is the **Remote access** switch at the top of **Settings → Remote access**. Turn it off and only this computer can reach DorkOS. Other devices are disconnected at once, through the tunnel, managed remote access, Wi-Fi, a proxy or chat from the web, and turned away after that. It stays off after a restart. Only a person can turn it back on, in Settings on this computer; an agent can turn it off.
+
+Telegram and Slack keep reaching your agents, because DorkOS connects out to them. Two things have their own ports and are not closed by this switch: app previews, and Telegram's webhook mode.
 
 <TypeTable
   type={{

@@ -11,10 +11,16 @@ import os from 'node:os';
 import path from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const state = vi.hoisted(() => ({ enabled: true }));
+const state = vi.hoisted(() => ({ enabled: true, remoteAccess: true }));
 vi.mock('../../config-manager.js', () => ({
   configManager: {
-    get: vi.fn((key: string) => (key === 'sessionRelay' ? { enabled: state.enabled } : undefined)),
+    get: vi.fn((key: string) =>
+      key === 'sessionRelay'
+        ? { enabled: state.enabled }
+        : key === 'remoteAccess'
+          ? { enabled: state.remoteAccess }
+          : undefined
+    ),
   },
 }));
 
@@ -45,6 +51,7 @@ const PIN: RelayPin = {
 
 beforeEach(() => {
   state.enabled = true;
+  state.remoteAccess = true;
 });
 
 describe('the pin the dialer may use', () => {
@@ -56,6 +63,13 @@ describe('the pin the dialer may use', () => {
   it('is none while the experiment is off, even with a pin saved', () => {
     state.enabled = false;
     expect(sessionRelayEnabled()).toBe(false);
+    const read = vi.fn(() => PIN);
+    expect(dialablePin(read)).toBeNull();
+    expect(read).not.toHaveBeenCalled();
+  });
+
+  it('is none while Remote Access is off, even with a pin saved (DOR-3650)', () => {
+    state.remoteAccess = false;
     const read = vi.fn(() => PIN);
     expect(dialablePin(read)).toBeNull();
     expect(read).not.toHaveBeenCalled();
@@ -151,5 +165,27 @@ describe('the live presence', () => {
     expect(data).toMatchObject({ active: true });
     expect(typeof audience).toBe('function');
     expect(fanOut.broadcast.mock.calls[1]![1]).toEqual({ active: false, devices: [] });
+  });
+});
+
+describe('turning Remote Access off (DOR-3650)', () => {
+  it('closes the live relay at once, and leaves it for other settings', () => {
+    const close = vi.spyOn(RelayDialer.prototype, 'close');
+    close.mockClear();
+    sessionRelayDialer();
+    let listener: ((change: { paths: readonly string[] }) => void) | undefined;
+    watchSessionRelaySwitch(((fn: typeof listener) => {
+      listener = fn;
+      return () => undefined;
+    }) as never);
+
+    listener!({ paths: ['remoteAccess'] });
+    expect(close).not.toHaveBeenCalled();
+
+    state.remoteAccess = false;
+    listener!({ paths: ['ui.theme'] });
+    expect(close).not.toHaveBeenCalled();
+    listener!({ paths: ['remoteAccess.enabled'] });
+    expect(close).toHaveBeenCalledTimes(1);
   });
 });

@@ -235,3 +235,23 @@ describe('LanAccess', () => {
     await expect(controller.reconcile()).resolves.toMatchObject({ listening: false });
   });
 });
+
+describe('LanAccess.dropConnections (Remote Access off, DOR-3650)', () => {
+  it('cuts a kept-alive connection now and keeps listening', async () => {
+    const port = await freePort();
+    const { controller, turn } = setup();
+    await controller.attach({ port, createServer: okServer });
+    turn(true);
+    await controller.reconcile();
+    const socket = connect(port, '127.0.0.1');
+    await new Promise((resolve) => socket.once('connect', resolve));
+    socket.write('GET / HTTP/1.1\r\nHost: studio.local\r\nConnection: keep-alive\r\n\r\n');
+    await new Promise((resolve) => socket.once('data', resolve));
+    const closed = new Promise((resolve) => socket.once('close', resolve));
+
+    controller.dropConnections();
+
+    await closed;
+    expect(await get(port)).toBe(200);
+  });
+});

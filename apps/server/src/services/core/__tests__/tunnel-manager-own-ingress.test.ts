@@ -23,6 +23,7 @@ function fakeIngress() {
     fronts: vi.fn((port: number) => port === 4242),
     open: vi.fn(async () => 'http://127.0.0.1:50123'),
     close: vi.fn(async () => undefined),
+    dropConnections: vi.fn(),
   } satisfies OwnTunnelIngress;
 }
 

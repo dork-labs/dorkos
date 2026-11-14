@@ -140,6 +140,10 @@ describe('RemoteAccessTab, the Remote access switch (DOR-3650)', () => {
     expect(
       screen.getByText('Your other devices can reach DorkOS with an API key.')
     ).toBeInTheDocument();
+    // What Off does not touch shows before the switch is flipped (DOR-3650).
+    expect(
+      screen.getByText('Telegram, Slack and preview links aren’t affected.')
+    ).toBeInTheDocument();
     expect(await screen.findByText('Enable remote access')).toBeInTheDocument();
   });
 
@@ -153,10 +157,13 @@ describe('RemoteAccessTab, the Remote access switch (DOR-3650)', () => {
 
     expect(await masterSwitch()).not.toBeChecked();
     expect(screen.getByText('Off. Only this computer can reach DorkOS.')).toBeInTheDocument();
+    expect(
+      screen.getByText('Telegram, Slack and preview links aren’t affected.')
+    ).toBeInTheDocument();
     expect(screen.queryByText('Enable remote access')).not.toBeInTheDocument();
   });
 
-  it('turns it off with no confirm, and says devices lose access on their next request', async () => {
+  it('turns it off with no confirm, and says other devices are disconnected now', async () => {
     const { updateConfig } = renderWithSwitch(true);
 
     fireEvent.click(await masterSwitch());
@@ -165,8 +172,9 @@ describe('RemoteAccessTab, the Remote access switch (DOR-3650)', () => {
     await waitFor(() =>
       expect(updateConfig).toHaveBeenCalledWith({ remoteAccess: { enabled: false } })
     );
+    expect(await screen.findByText('Off. Other devices are disconnected now.')).toBeInTheDocument();
     expect(
-      await screen.findByText('Off. Devices using it lose access on their next request.')
+      screen.getByText('Telegram, Slack and preview links aren’t affected.')
     ).toBeInTheDocument();
     await waitFor(() => expect(screen.queryByText('Enable remote access')).not.toBeInTheDocument());
   });

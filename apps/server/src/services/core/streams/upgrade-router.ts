@@ -31,7 +31,10 @@ import { getLanAccessHosts } from '../lan-access/lan-trust.js';
 import { isHostAllowed, parseTrustedHosts } from '../../../middleware/host-guard.js';
 import { bypassesManagedIngress } from '../../../middleware/managed-host-guard.js';
 import { noteUpgradeAdmitted } from '../remote/ingress-mark.js';
-import { refusedByRemoteAccessSwitch } from '../../../middleware/remote-access-switch.js';
+import {
+  refusedByRemoteAccessSwitch,
+  trackRemoteStream,
+} from '../../../middleware/remote-access-switch.js';
 import { env } from '../../../env.js';
 import {
   authorizeStreamUpgrade,
@@ -366,6 +369,11 @@ export function attachUpgradeRouter(
         if (decision.ok) {
           decision.open(ws);
           closeOnSignOut(ws, locals);
+          // Turning Remote Access off closes a socket another device holds (DOR-3650).
+          const untrack = trackRemoteStream(req, () =>
+            ws.close(STREAM_CLOSE_CODE_BASE + 403, 'Remote access is off')
+          );
+          ws.once('close', untrack);
           // Managed remote access counts it only now, past every check above.
           noteUpgradeAdmitted(req, ws);
           return;
