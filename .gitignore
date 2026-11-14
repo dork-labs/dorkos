@@ -108,6 +108,18 @@ mockups/running-figure-v3.html
 .agents/skills/visual-companion/examples/prototype/index.html
 .agents/skills/visual-companion/**/shots/
 .claude/skills/*__*
+# Skills DorkOS writes for one machine's own schedules: one-time timers
+# (`<name>-one-time[-<date>]`) and the coordinator's sweeps. They are that
+# machine's state, never the project's. No trailing slash: the .claude/skills
+# side is a symlink, which a directory-only pattern would miss.
+.agents/skills/*-one-time*
+.claude/skills/*-one-time*
+.agents/skills/arm-sweep-v2
+.claude/skills/arm-sweep-v2
+.agents/skills/branch-sweep-delete
+.claude/skills/branch-sweep-delete
+.agents/skills/branch-sweep-list
+.claude/skills/branch-sweep-list
 .claude/settings.local.json
 .codex/hooks.json
 .cursor/hooks.json
