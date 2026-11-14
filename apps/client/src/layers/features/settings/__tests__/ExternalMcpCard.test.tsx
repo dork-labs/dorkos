@@ -288,7 +288,9 @@ describe('ExternalMcpCard', () => {
     render(<ExternalMcpCard mcp={LOCAL_TOKEN_MCP} authEnabled={true} />, { wrapper: Wrapper });
     await expandCard(user);
     expect(screen.getByText(/Other devices need a personal API key\./)).toBeInTheDocument();
-    expect(screen.queryByText('Turn on login first, then create a key.')).not.toBeInTheDocument();
+    expect(
+      screen.queryByText('Turn on "Ask for a password" in Login & security, then create a key.')
+    ).not.toBeInTheDocument();
     await user.click(
       screen.getByRole('button', { name: 'Create one in Login & security → API keys.' })
     );
@@ -305,7 +307,9 @@ describe('ExternalMcpCard', () => {
       screen.queryByText('Create one in Login & security → API keys.')
     ).not.toBeInTheDocument();
     await user.click(
-      screen.getByRole('button', { name: 'Turn on login first, then create a key.' })
+      screen.getByRole('button', {
+        name: 'Turn on "Ask for a password" in Login & security, then create a key.',
+      })
     );
     expect(setTabSpy).toHaveBeenCalledWith('security');
   });

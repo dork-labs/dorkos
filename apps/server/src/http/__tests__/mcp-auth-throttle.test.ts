@@ -142,9 +142,9 @@ describe('remote /mcp bad-key throttle on the real API chain', () => {
       error: 'Unauthorized',
       code: 'AUTH_REQUIRED',
       message:
-        'Unauthorized. Other devices need a personal API key, and keys need login. ' +
-        'In DorkOS, turn on login in Settings → Login & security, create a key under API keys, ' +
-        'then send it as "Authorization: Bearer <key>".',
+        'Unauthorized. Other devices need a personal API key. ' +
+        'In DorkOS, open Settings → Login & security, turn on "Ask for a password on this computer too", ' +
+        'then create a key under API keys. Send it as "Authorization: Bearer <key>".',
     };
     for (const response of [missing, bad, throttled]) {
       expect(response.status).toBe(401);

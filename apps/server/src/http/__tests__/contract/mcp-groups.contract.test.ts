@@ -90,9 +90,9 @@ const AUTH_REQUIRED = { error: 'Unauthorized', code: 'AUTH_REQUIRED' };
 const REMOTE_AUTH_REQUIRED = {
   ...AUTH_REQUIRED,
   message:
-    'Unauthorized. Other devices need a personal API key, and keys need login. ' +
-    'In DorkOS, turn on login in Settings → Login & security, create a key under API keys, ' +
-    'then send it as "Authorization: Bearer <key>".',
+    'Unauthorized. Other devices need a personal API key. ' +
+    'In DorkOS, open Settings → Login & security, turn on "Ask for a password on this computer too", ' +
+    'then create a key under API keys. Send it as "Authorization: Bearer <key>".',
 };
 const NOT_ALLOWED_BY_CORS = (origin: string) => ({
   error: `This instance does not answer to pages from "${origin}". If that is how you reach DorkOS, list it in DORKOS_CORS_ORIGIN, or open DorkOS at its own address.`,

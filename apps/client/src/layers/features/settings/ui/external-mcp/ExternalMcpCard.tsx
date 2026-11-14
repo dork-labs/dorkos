@@ -379,7 +379,7 @@ function LocalTokenAuthRow({
         >
           {authEnabled
             ? 'Create one in Login & security → API keys.'
-            : 'Turn on login first, then create a key.'}
+            : 'Turn on "Ask for a password" in Login & security, then create a key.'}
         </Button>
       </p>
       {revealedToken ? (

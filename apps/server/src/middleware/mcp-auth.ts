@@ -328,9 +328,9 @@ export function mcpKeyRefusalMessage(): string {
   return loginOn
     ? 'Unauthorized. Send a personal API key as "Authorization: Bearer <key>". ' +
         'Create one in DorkOS: Settings → Login & security → API keys.'
-    : 'Unauthorized. Other devices need a personal API key, and keys need login. ' +
-        'In DorkOS, turn on login in Settings → Login & security, create a key under API keys, ' +
-        'then send it as "Authorization: Bearer <key>".';
+    : 'Unauthorized. Other devices need a personal API key. ' +
+        'In DorkOS, open Settings → Login & security, turn on "Ask for a password on this computer too", ' +
+        'then create a key under API keys. Send it as "Authorization: Bearer <key>".';
 }
 
 /**
