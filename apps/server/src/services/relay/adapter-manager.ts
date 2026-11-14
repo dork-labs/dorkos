@@ -636,7 +636,8 @@ export class AdapterManager {
     const config = this.configs.find((c) => c.id === id);
     if (!config) throw new Error(`Adapter not found: ${id}`);
 
-    if (closeDmPolicyOnEnable(config)) {
+    // Only a paused one: a running bot is not rebuilt below, so it would stay open.
+    if (!config.enabled && closeDmPolicyOnEnable(config)) {
       logger.info(`[Relay] '${id}' turned back on with a DM allowlist (DOR-3859).`);
     }
     config.enabled = true;

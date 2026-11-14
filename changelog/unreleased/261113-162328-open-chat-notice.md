@@ -1,6 +1,7 @@
 ---
 covers:
   - 'fix(relay): an open Telegram or Slack chat says anyone can message it, and comes back limited when turned on (DOR-3859)'
+  - 'fix(relay): turning on a chat that is already on leaves its DM policy alone (DOR-3859)'
 ---
 
 ### Fixed

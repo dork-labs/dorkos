@@ -439,6 +439,18 @@ describe('AdapterManager', () => {
       expect(persistedDmPolicy('slack-old')).toBe('allowlist');
     });
 
+    // The live bot is only rebuilt when it was paused, so closing a running one
+    // would save "only people I list" over a bot that still answers anyone.
+    it('leaves an open chat that is already on alone when enable() is called again', async () => {
+      vi.mocked(readFile).mockResolvedValue(VALID_CONFIG);
+      await initAndStart(manager);
+      vi.clearAllMocks();
+
+      await manager.enable('tg-main');
+
+      expect(persistedDmPolicy('tg-main')).toBe('open');
+    });
+
     it('leaves a running open chat alone: only turning it on closes it', async () => {
       vi.mocked(readFile).mockResolvedValue(VALID_CONFIG);
       await initAndStart(manager);
