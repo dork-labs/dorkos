@@ -2,6 +2,7 @@
 covers:
   - 'fix(server): an agent handing over the browser in its own window hears it was handed over (DOR-4325)'
   - 'fix(client): the browser panel says it is waiting for you during a sign-in, and shows the server’s refusals (DOR-4325)'
+  - 'fix(client): the browser panel names Continue in the chat, and shows a new sign-in at once (DOR-4325)'
 ---
 
 ### Fixed

@@ -133,6 +133,9 @@ export function LocalBrowserPanel({
     } catch (cause) {
       if (ticket !== operation.current) return false;
       setError(browserErrorMessage(cause));
+      // A sign-in started since the last read: show its handoff now, not on the next poll.
+      if ((cause as { code?: string } | null)?.code === 'signing_in')
+        void queryClient.invalidateQueries({ queryKey: LOCAL_BROWSER_STATE_KEY });
       return false;
     } finally {
       if (ticket === operation.current) {
@@ -280,7 +283,10 @@ export function LocalBrowserPanel({
             {agentName || handoffHere.agentName || 'The agent'} needs you to sign in to{' '}
             {handoffHere.site}.
           </p>
-          <p>Finish in the sign-in window, then press Continue.</p>
+          <p>
+            Finish in the sign-in window, then press{' '}
+            <strong className="font-medium">Continue in the chat</strong>.
+          </p>
         </div>
       )}
       {!connected && !waitingElsewhere && !handoffHere && (

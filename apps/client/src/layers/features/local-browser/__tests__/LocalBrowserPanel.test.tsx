@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { LocalBrowserCapabilities, LocalBrowserState } from '@dorkos/shared/local-browser';
 import { LocalBrowserPanel } from '../ui/LocalBrowserPanel';
@@ -358,9 +358,12 @@ describe('LocalBrowserPanel', () => {
       expect(
         screen.getByText('Kai needs you to sign in to northwind.example.')
       ).toBeInTheDocument();
-      expect(
-        screen.getByText('Finish in the sign-in window, then press Continue.')
-      ).toBeInTheDocument();
+      const next = screen.getByText(
+        (_, element) =>
+          element?.tagName === 'P' &&
+          element.textContent === 'Finish in the sign-in window, then press Continue in the chat.'
+      );
+      expect(within(next).getByText('Continue in the chat').tagName).toBe('STRONG');
       expect(screen.queryByText('Not open yet')).toBeNull();
       expect(screen.queryByRole('button', { name: 'Open browser' })).toBeNull();
       expect(screen.queryByRole('button', { name: 'Reconnect' })).toBeNull();
@@ -373,6 +376,22 @@ describe('LocalBrowserPanel', () => {
       mount();
       expect(await screen.findByRole('button', { name: 'Open browser' })).toBeInTheDocument();
       expect(screen.queryByText('Waiting for you')).toBeNull();
+    });
+    it('after a signing_in refusal, reads the browser again and lands on Waiting for you', async () => {
+      transport.openLocalBrowser.mockRejectedValue(
+        Object.assign(new Error('Finish signing in first.'), { code: 'signing_in', status: 409 })
+      );
+      mount();
+      const open = await screen.findByRole('button', { name: 'Open browser' });
+      await waitFor(() => expect(open).toBeEnabled());
+      // The handoff began after this panel last read the browser.
+      transport.getLocalBrowserState.mockResolvedValue(signingIn);
+      fireEvent.click(open);
+      // At once, not on the next one-second poll.
+      expect(
+        await screen.findByText('Waiting for you', undefined, { timeout: 300 })
+      ).toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: 'Open browser' })).toBeNull();
     });
   });
   it('shows the server’s signing_in refusal, not a reconnect hint (DOR-4325)', async () => {
