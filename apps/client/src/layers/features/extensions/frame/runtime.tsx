@@ -84,9 +84,13 @@ async function start(init: FrameInit, port: MessagePort): Promise<void> {
   const style = document.createElement('style');
   // A view that fills its slot stretches to it; one that fits its content is
   // measured, so the host can size the frame to it (or hide it when empty).
+  // A filling view needs a definite `height`, not only `min-height`: a
+  // percentage height resolves against its parent's height, and a min-height
+  // alone leaves that `auto`, so an app whose root is `height:100%` drew 0 px
+  // tall. Taller content still overflows the root and scrolls the frame.
   const layout =
     init.fit === 'fill'
-      ? 'html,body,#root{margin:0;width:100%;min-height:100%;}'
+      ? 'html,body,#root{margin:0;width:100%;height:100%;min-height:100%;}'
       : init.fit === 'both'
         ? 'html,body{margin:0;}#root{display:inline-block;}'
         : 'html,body{margin:0;width:100%;}#root{display:flow-root;}';

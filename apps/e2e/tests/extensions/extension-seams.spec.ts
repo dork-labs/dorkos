@@ -125,6 +125,34 @@ test.describe('Extension seams — hello-world’s page, status item and tab dot
     await expect(page.getByTestId('extension-page-loading')).toHaveCount(0);
   });
 
+  test('gives its page a full-height frame, so an app root at height:100% is not blank', async ({
+    page,
+  }) => {
+    await page.goto(`/x/${HELLO}`);
+    const app = appFrame(appPage(page), HELLO_NAME);
+    await expect(app.getByRole('heading', { name: 'Hello, there' })).toBeVisible();
+
+    // An app whose root is `height:100%` (Media Library's shape) inside the
+    // real frame document: it must be as tall as the frame, never 0 px. Then
+    // content taller than the frame must still scroll inside it.
+    const measured = await app.locator('#root').evaluate((root) => {
+      const probe = document.createElement('div');
+      probe.style.height = '100%';
+      root.append(probe);
+      const filled = probe.getBoundingClientRect().height;
+      const frameHeight = document.documentElement.clientHeight;
+      probe.style.height = '4000px';
+      const scroller = document.scrollingElement!;
+      const scrolls = scroller.scrollHeight > scroller.clientHeight;
+      probe.remove();
+      return { filled, frameHeight, scrolls };
+    });
+    expect(measured.frameHeight).toBeGreaterThan(0);
+    expect(measured.filled).toBeGreaterThan(0);
+    expect(Math.abs(measured.filled - measured.frameHeight)).toBeLessThanOrEqual(1);
+    expect(measured.scrolls, 'tall content scrolls inside the frame').toBe(true);
+  });
+
   test('shows its item in a chat’s status bar', async ({ page }) => {
     const chat = new ChatPage(page);
     await chat.goto();
