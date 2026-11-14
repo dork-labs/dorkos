@@ -3,8 +3,6 @@ covers:
   - 'fix(schedules): an approved schedule records who approved it, when, and where (DOR-3641)'
 ---
 
-### Fixed
+### Security
 
-<!-- dorkos-changelog:seeded — rewrite this bullet for a human, then delete this comment. If the change needs no changelog entry, delete the whole fragment instead. See changelog/README.md#seeded-fragments. -->
-
-- An approved schedule records who approved it, when, and where (DOR-3641)
+- Each schedule now records who approved it, when, and where, and the approval card says so. (DOR-3641)
