@@ -151,7 +151,6 @@ export {
   sweepOrphanedMessageQueues,
   withDispatchMutex,
 } from './message-dispatcher.js';
-export { rearmChatQueues } from './message-dispatcher/queue-upkeep.js';
 export type {
   AdoptQueuedMessagesOpts,
   DispatchMessageOpts,

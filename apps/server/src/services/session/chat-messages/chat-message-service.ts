@@ -60,7 +60,6 @@ import {
 } from '../launch/launch-session.js';
 import {
   emitQueueUpdate,
-  isQueuedMessageArmed,
   isQueuedMessageLaunching,
   onDispatchLifecycle,
   type DispatchLifecycleEvent,
@@ -279,7 +278,6 @@ export class ChatMessageService {
       target.redirectedReplyTo ??
       replyTargetOf(this.deps.store, caller, target.sessionId, input.replyTo);
     const messageId = crypto.randomUUID();
-    const words = input.message.trim();
     const rendered = renderChatMessage(
       {
         messageId,
@@ -289,7 +287,7 @@ export class ChatMessageService {
         chatTitle: fromChatTitle,
       },
       kind,
-      words,
+      text(input),
       this.deps.nonce?.()
     );
     const ceilingJson = senderCeilingJson(this.deps, caller);
@@ -305,7 +303,7 @@ export class ChatMessageService {
       fromAgentName: sender.agentName,
       fromChatTitle,
       kind,
-      text: words,
+      text: text(input),
       summary: input.summary?.trim() ? input.summary.trim().slice(0, CHAT_SUMMARY_MAX) : null,
       nonce: rendered.nonce,
       delivery,
@@ -482,10 +480,8 @@ export class ChatMessageService {
     const tail = rows.at(-1);
     if (!tail || !isChatClientId(tail.enqueuedBy) || tail.disposition !== 'queue') return null;
     // Read and written in one tick: a row whose words are being read into a
-    // turn right now would lose anything appended to it. And a row nothing will
-    // run (a restart left it) would take this message down with it; the
-    // dispatcher adopts that row instead and gives this message its own (DOR-3348).
-    if (isQueuedMessageLaunching(tail.id) || !isQueuedMessageArmed(tail.id)) return null;
+    // turn right now would lose anything appended to it.
+    if (isQueuedMessageLaunching(tail.id)) return null;
     // One batched turn grows to five messages' worth at most: past it a message
     // starts a row of its own, so hours of messages into a chat stuck in a long
     // turn cannot become one prompt that fails all at once.
@@ -840,4 +836,9 @@ export class ChatMessageService {
       this.deps.emitActivity(row.toSessionId);
     }
   }
+}
+
+/** The words a message carries, trimmed of the whitespace around them. */
+function text(input: ChatSendInput): string {
+  return input.message.trim();
 }

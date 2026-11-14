@@ -190,7 +190,7 @@ import {
   isStillProducing,
   refusesOpenTurn,
 } from './message-dispatcher/turn-probes.js';
-import { forgetRecoveryFailures, launchDispatch } from './message-dispatcher/launch.js';
+import { launchDispatch } from './message-dispatcher/launch.js';
 import {
   carriedHoldMayJoin,
   ceilingHoldsToDefault,
@@ -215,7 +215,6 @@ import type {
 // The dispatcher's public surface is this module; its parts live in
 // `./message-dispatcher/` and are re-exported here so no caller changes.
 export {
-  isQueuedMessageArmed,
   isQueuedMessageLaunching,
   onDispatchLifecycle,
   setQueuedChatCeilingResolver,
@@ -1028,7 +1027,6 @@ export function resetMessageDispatcher(): void {
   dispatchMutex.clear();
   orphanedSessions.clear();
   sweptWhileLaunching.clear();
-  forgetRecoveryFailures();
 }
 
 // Wired on import rather than from the composition root, deliberately. The
