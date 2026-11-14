@@ -23,6 +23,7 @@ import {
   createShellPathGuardHook,
   SHELL_NO_CHECK_ASK_REASON,
   SHELL_NO_CHECK_REASON,
+  SHELL_NO_CHECK_TOLD_REASON,
   SHELL_READ_ASK_REASON,
   SHELL_UNREADABLE_DENY_REASON,
   SHELL_WRITE_DENY_REASON,
@@ -1129,6 +1130,7 @@ describe('createShellPathGuardHook', () => {
         toolName: 'Bash',
         toolUseId: 'toolu_1',
         command,
+        verdict: 'writes',
       });
     }
   );
@@ -1154,6 +1156,7 @@ describe('createShellPathGuardHook', () => {
         toolName: 'Bash',
         toolUseId: 'toolu_1',
         command,
+        verdict: 'writes',
       });
     }
   );
@@ -1230,11 +1233,12 @@ describe('createShellPathGuardHook', () => {
     const hookFor = (
       permissionMode: string,
       outcome: 'failed' | 'unavailable',
-      goingOnWithoutCheck?: () => boolean
+      goingOnWithoutCheck?: () => boolean,
+      told = false
     ) => {
       const recordRefusal = vi.fn();
       const hook = createShellPathGuardHook({ permissionMode } as never, {
-        check: async () => ({ outcome }),
+        check: async () => (outcome === 'unavailable' ? { outcome, told } : { outcome }),
         ...(goingOnWithoutCheck ? { goingOnWithoutCheck } : {}),
         roots: () => roots,
         recordRefusal,
@@ -1250,16 +1254,30 @@ describe('createShellPathGuardHook', () => {
         const result = await hook(call('ls'), undefined, signal);
         expect(decisionOf(result)).toBe('deny');
         expect(JSON.stringify(result)).toContain(SHELL_UNREADABLE_DENY_REASON);
-        expect(recordRefusal).toHaveBeenCalledOnce();
+        expect(recordRefusal).toHaveBeenCalledWith(expect.objectContaining({ verdict: 'failed' }));
       }
     );
 
-    it('stops the shell at Full when there is no check', async () => {
+    // DOR-4304: under load the check's process can be slow to start. That still stops the shell,
+    // but it is a "retry", audited as no check, never a setup-file write or "restart DorkOS".
+    it('stops the shell at Full when there is no check, and says to retry the same command', async () => {
       const { hook, recordRefusal } = hookFor('bypassPermissions', 'unavailable');
-      const result = await hook(call('ls'), undefined, signal);
+      const result = await hook(call('uptime'), undefined, signal);
       expect(decisionOf(result)).toBe('deny');
       expect(JSON.stringify(result)).toContain(SHELL_NO_CHECK_REASON);
+      expect(SHELL_NO_CHECK_REASON).toContain('Retry this exact command in a few seconds');
+      expect(SHELL_NO_CHECK_REASON).not.toMatch(/restart/i);
       expect(recordRefusal).toHaveBeenCalledOnce();
+      expect(recordRefusal).toHaveBeenCalledWith(expect.objectContaining({ verdict: 'no-check' }));
+    });
+
+    it('says a person was told only once the host has told one', async () => {
+      const { hook, recordRefusal } = hookFor('bypassPermissions', 'unavailable', undefined, true);
+      const result = await hook(call('uptime'), undefined, signal);
+      expect(decisionOf(result)).toBe('deny');
+      expect(JSON.stringify(result)).toContain(SHELL_NO_CHECK_TOLD_REASON);
+      expect(JSON.stringify(result)).not.toContain(SHELL_NO_CHECK_REASON);
+      expect(recordRefusal).toHaveBeenCalledWith(expect.objectContaining({ verdict: 'no-check' }));
     });
 
     it('goes on at Full only once a person chose to', async () => {
@@ -1281,7 +1299,25 @@ describe('createShellPathGuardHook', () => {
       expect(recordRefusal).not.toHaveBeenCalled();
       const named = await hook(call('echo x > .claude/settings.json'), undefined, signal);
       expect(decisionOf(named)).toBe('deny');
+      expect(JSON.stringify(named)).toContain(SHELL_NO_CHECK_REASON);
       expect(recordRefusal).toHaveBeenCalledOnce();
+      expect(recordRefusal).toHaveBeenCalledWith(expect.objectContaining({ verdict: 'no-check' }));
+    });
+
+    it('records an unreadable command under its own verdict', async () => {
+      const recordRefusal = vi.fn();
+      const hook = createShellPathGuardHook({ permissionMode: 'bypassPermissions' } as never, {
+        check: async () => ({ outcome: 'checked', write: 'unreadable', reaches: false }),
+        roots: () => roots,
+        recordRefusal,
+        log,
+      });
+      const result = await hook(call('ls'), undefined, signal);
+      expect(decisionOf(result)).toBe('deny');
+      expect(JSON.stringify(result)).toContain(SHELL_UNREADABLE_DENY_REASON);
+      expect(recordRefusal).toHaveBeenCalledWith(
+        expect.objectContaining({ verdict: 'unreadable' })
+      );
     });
   });
 });
