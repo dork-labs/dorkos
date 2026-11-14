@@ -327,6 +327,66 @@ describe('LocalBrowserPanel', () => {
       expect(screen.queryByText(/is waiting for you to finish signing in here/)).toBeNull();
     });
   });
+  describe('while this chat’s agent waits on a person in its own window (DOR-4325)', () => {
+    const here = {
+      id: 'h1',
+      sessionId: 'chat-one',
+      agentName: 'Atlas',
+      agentId: null,
+      agentFolder: null,
+      profileId: null,
+      reason: 'password',
+      site: 'northwind.example',
+      askedAt: '2026-11-03T00:00:00.000Z',
+      outcome: null,
+    };
+    // The handoff closed the agent's window for the sign-in window.
+    const signingIn = {
+      ...disconnected,
+      handoff: here,
+      signIn: {
+        profileId: null,
+        site: 'northwind.example',
+        status: 'open',
+        startedAt: '2026-11-03T00:00:01.000Z',
+      },
+    };
+    it('says it is waiting for you and where to finish, with no Open browser', async () => {
+      transport.getLocalBrowserState.mockResolvedValue(signingIn);
+      mount();
+      expect(await screen.findByText('Waiting for you')).toBeInTheDocument();
+      expect(
+        screen.getByText('Kai needs you to sign in to northwind.example.')
+      ).toBeInTheDocument();
+      expect(
+        screen.getByText('Finish in the sign-in window, then press Continue.')
+      ).toBeInTheDocument();
+      expect(screen.queryByText('Not open yet')).toBeNull();
+      expect(screen.queryByRole('button', { name: 'Open browser' })).toBeNull();
+      expect(screen.queryByRole('button', { name: 'Reconnect' })).toBeNull();
+    });
+    it('keeps Open browser once that handoff has ended', async () => {
+      transport.getLocalBrowserState.mockResolvedValue({
+        ...signingIn,
+        handoff: { ...here, outcome: 'handed-back' },
+      });
+      mount();
+      expect(await screen.findByRole('button', { name: 'Open browser' })).toBeInTheDocument();
+      expect(screen.queryByText('Waiting for you')).toBeNull();
+    });
+  });
+  it('shows the server’s signing_in refusal, not a reconnect hint (DOR-4325)', async () => {
+    transport.openLocalBrowser.mockRejectedValue(
+      Object.assign(new Error('Finish signing in first.'), { code: 'signing_in', status: 409 })
+    );
+    mount();
+    const open = await screen.findByRole('button', { name: 'Open browser' });
+    await waitFor(() => expect(open).toBeEnabled());
+    fireEvent.click(open);
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Finish signing in first. The sign-in window is open.'
+    );
+  });
   describe('Disconnect during a handoff', () => {
     const handoff = {
       id: 'h1',
