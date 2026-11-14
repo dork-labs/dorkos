@@ -168,8 +168,17 @@ export class BrowserChatSession {
     const nodes = this.observedNodes;
     const fence = actionFence(input, observed, Boolean(nodes), this.revision, () => this.stale());
     if (input.kind === 'navigate') {
-      assertLocalBrowserUrl(input.url, 'agent', this.host.cloudOrigins(), this.host.appOrigins());
-      await this.policy.assert(input.url);
+      try {
+        assertLocalBrowserUrl(input.url, 'agent', this.host.cloudOrigins(), this.host.appOrigins());
+        await this.policy.assert(input.url);
+      } catch (error) {
+        // A refused destination stops only this lease. Normalize broker errors before
+        // the action journal handles them, so a refusal cannot become an uncertain effect.
+        this.paused = true;
+        this.invalidate();
+        if (error instanceof TabBrokerError) throw new LocalBrowserError(error.code, error.message);
+        throw error;
+      }
     }
     try {
       // BrowserActionFlight's deadline is outside this queue: a timed-out effect still owns its slot.
