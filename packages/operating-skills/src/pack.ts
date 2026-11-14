@@ -407,8 +407,11 @@ export interface OperatingSkill {
  *   it a profile (DOR-3219; Security's no-named-profiles condition), and says
  *   "the person" where it said "the operator", as the browser tools do. An agent
  *   seeded at 53 could still tell a person it has browser "profiles".
+ * - 55: the browser skill teaches per-chat tabs, shared sign-ins and recovery from
+ *   ownership, takeover, site-policy and queue refusals (DOR-4273). Existing
+ *   unmodified copies receive the new guidance on their next seed.
  */
-export const OPERATING_SKILLS_VERSION = 54;
+export const OPERATING_SKILLS_VERSION = 55;
 
 /**
  * The canonical pack, umbrella skill first. Every entry is validated against the

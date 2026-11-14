@@ -51,3 +51,58 @@ describe('no named browser profiles (DOR-3219)', () => {
     expect(OPERATING_SKILLS_VERSION).toBeGreaterThanOrEqual(54);
   });
 });
+
+describe('per-chat browser recovery guidance (DOR-4273)', () => {
+  it('explains shared sign-ins, server-owned tabs and the single embedded holder', () => {
+    expect(body).toContain('Each chat gets its own tabs in the separate browser window');
+    expect(body).toContain('Tabs share saved sign-ins');
+    expect(body).toContain('The server chooses which tabs belong to this chat');
+    expect(body).toContain('Never pass chat or tab IDs to change that scope');
+    expect(body).toContain('The browser inside the app still serves one chat at a time');
+    expect(body).toContain(
+      'A handed-off tab stays with the person after idle expiry or Disconnect'
+    );
+  });
+
+  it.each([
+    ['tab_locked', /ask the person.*share.*this chat/i],
+    ['tab_gone', /ask the person.*open.*this chat/i],
+    ['not_opened', /ask the person.*open.*this chat/i],
+    ['shared_elsewhere', /person.*choose.*chat/i],
+    ['page_held', /end your turn.*wait/i],
+    ['handed_to_person', /end your turn.*wait/i],
+    ['handoff_active', /wait.*person.*finish/i],
+    ['signing_in', /wait.*person.*finish/i],
+    ['signing_in_elsewhere', /read.*own tab.*do not act/i],
+    ['task_stopped', /stay stopped.*person/i],
+    ['busy', /wait.*finish/i],
+    ['queue_full', /wait.*finish/i],
+    ['tab_limit', /person.*close.*tabs/i],
+    ['url_blocked', /respect.*refusal/i],
+    ['cloud_origin', /respect.*refusal/i],
+    ['dorkos_origin', /respect.*refusal/i],
+    ['stale_page', /read.*again/i],
+    ['uncertain', /read.*again.*retry/i],
+  ])('gives a bounded next step for %s', (code, instruction) => {
+    const row = usingTheAgentBrowser.body
+      .split('\n')
+      .find((line) => line.startsWith('|') && line.includes(`\`${code}\``));
+    expect(row ?? '', `Missing recovery for ${code}`).toMatch(instruction);
+  });
+
+  it('keeps other chats read-only during a person’s sign-in', () => {
+    expect(body).toContain('Other chats may read their own tabs during a sign-in');
+    expect(body).toContain('Their actions must wait until it ends');
+    expect(body).not.toContain('Other chats can keep using their own tabs');
+  });
+
+  it('never turns a scope refusal into a handoff or another browser route', () => {
+    expect(body).toContain(
+      'Never use a handoff, another chat or another browser to bypass a refusal'
+    );
+    expect(body).not.toContain(
+      'If the shared browser is already open, use `local_browser_ask_person` instead of asking for another page'
+    );
+    expect(OPERATING_SKILLS_VERSION).toBeGreaterThanOrEqual(55);
+  });
+});

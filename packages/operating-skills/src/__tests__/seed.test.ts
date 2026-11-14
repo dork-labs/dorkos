@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { mkdtemp, rm, readFile, writeFile, mkdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
+import { createHash } from 'node:crypto';
 import path from 'node:path';
 import { parseFrontmatter, stringifyFrontmatter } from '@dorkos/skills/frontmatter';
 import { isUnmodifiedSeededSkill, seedOperatingSkills } from '../seed.js';
@@ -141,6 +142,39 @@ describe('seedOperatingSkills', () => {
       const { content } = parseFrontmatter(await readFile(skillFile(skill.name), 'utf-8'));
       expect(content.trim()).toBe(skill.body.trim());
     }
+  });
+
+  it('replaces version 54 browser guidance with tab recovery on the next seed', async () => {
+    await seedOperatingSkills(root);
+    const file = skillFile('using-the-agent-browser');
+    const { data } = parseFrontmatter(await readFile(file, 'utf-8'));
+    const oldBody = '# Using the Agent browser\n\nOlder shared-browser guidance.';
+    await writeFile(
+      file,
+      stringifyFrontmatter(oldBody, {
+        ...data,
+        metadata: {
+          ...(data.metadata as Record<string, string>),
+          dorkosPackVersion: '54',
+          dorkosContentHash: createHash('sha256').update(oldBody.trim()).digest('hex'),
+        },
+      }),
+      'utf-8'
+    );
+
+    const result = await seedOperatingSkills(root);
+    expect(
+      result.outcomes.find((outcome) => outcome.name === 'using-the-agent-browser')?.action
+    ).toBe('upgraded');
+    const after = await readFile(file, 'utf-8');
+    expect(after).toContain('`tab_locked`');
+    expect(after).toContain('`handed_to_person`');
+    expect(after).not.toContain('Older shared-browser guidance.');
+    const again = await seedOperatingSkills(root);
+    expect(
+      again.outcomes.find((outcome) => outcome.name === 'using-the-agent-browser')?.action
+    ).toBe('unchanged');
+    expect(await readFile(file, 'utf-8')).toBe(after);
   });
 });
 
