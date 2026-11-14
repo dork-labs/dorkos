@@ -296,7 +296,7 @@ describe('BrowserHandover.ask', () => {
     expect(answer.site).toBe('accounts.example.com');
     expect(answer.next).toMatch(/End your turn/);
     expect(browser.handToPerson).toHaveBeenCalledOnce();
-    expect(browser.selectTab).toHaveBeenCalledWith('t1');
+    expect(browser.selectTab).toHaveBeenCalledWith('t1', 'chat-1');
     expect((await handover.state()).handoff).toMatchObject({
       id: answer.handoffId,
       sessionId: 'chat-1',
@@ -631,7 +631,7 @@ describe('a person’s own browser controls during a handoff', () => {
     expect(browser.navigate).not.toHaveBeenCalled();
     expect(browser.selectTab).not.toHaveBeenCalled();
     await handover.selectTab('t1');
-    expect(browser.selectTab).toHaveBeenCalledExactlyOnceWith('t1');
+    expect(browser.selectTab).toHaveBeenCalledExactlyOnceWith('t1', undefined);
   });
 
   it('takes a new address and any tab once the handoff has ended, or with none open', async () => {

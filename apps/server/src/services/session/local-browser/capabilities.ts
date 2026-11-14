@@ -15,6 +15,8 @@ import {
   type CapabilityHandlerContext,
 } from '../../core/capabilities/index.js';
 import { LocalBrowserError, type LocalBrowserService } from './service.js';
+import { TabBrokerError } from './broker/errors.js';
+import type { BrowserChatSession } from './chat/session.js';
 
 declare module '../../core/capabilities/capability-definition.js' {
   interface CapabilityDeps {
@@ -23,12 +25,10 @@ declare module '../../core/capabilities/capability-definition.js' {
   }
 }
 
-/**
- * A chat whose own handoff is open still holds the browser, though in its own window
- * the handoff closed the agent's window. Only the handoff answers it then: every other
- * call is refused as handed_to_person before it can read or act.
- */
-function requireSession(service: LocalBrowserService, context: CapabilityHandlerContext): void {
+function requireSession(
+  service: LocalBrowserService,
+  context: CapabilityHandlerContext
+): BrowserChatSession {
   if (!context.sessionId)
     throw new CapabilityToolError({
       code: 'session_required',
@@ -36,11 +36,14 @@ function requireSession(service: LocalBrowserService, context: CapabilityHandler
     });
   try {
     service.handover.refuseStopped(context.sessionId);
-    if (service.handover.isOpenFor(context.sessionId)) return;
-    service.requireSharedSession(context.sessionId);
+    return service.leaseFor(context.sessionId);
   } catch (error) {
-    if (error instanceof LocalBrowserError)
-      throw new CapabilityToolError({ ...error.fields, code: error.code, error: error.message });
+    if (error instanceof LocalBrowserError || error instanceof TabBrokerError)
+      throw new CapabilityToolError({
+        ...(error instanceof LocalBrowserError ? error.fields : {}),
+        code: error.code,
+        error: error.message,
+      });
     throw error;
   }
 }
@@ -48,8 +51,12 @@ async function answer<T>(run: () => Promise<T>): Promise<T> {
   try {
     return await run();
   } catch (error) {
-    if (error instanceof LocalBrowserError)
-      throw new CapabilityToolError({ ...error.fields, code: error.code, error: error.message });
+    if (error instanceof LocalBrowserError || error instanceof TabBrokerError)
+      throw new CapabilityToolError({
+        ...(error instanceof LocalBrowserError ? error.fields : {}),
+        code: error.code,
+        error: error.message,
+      });
     throw error;
   }
 }
@@ -61,21 +68,25 @@ async function answer<T>(run: () => Promise<T>): Promise<T> {
 function scopedAnswer<T>(
   service: LocalBrowserService,
   context: CapabilityHandlerContext,
-  run: () => Promise<T>,
+  run: (lease: BrowserChatSession) => Promise<T>,
   handingOver = false
 ): Promise<T> {
-  requireSession(service, context);
+  const lease = requireSession(service, context);
   const allowed = async () => {
     await answer(() => service.requireProfileAccess(context.sessionId!));
     if (!handingOver) {
       await answer(() => service.handover.requireAgentMayUse(context.sessionId!));
-      await answer(() => service.requireNotFullScreen());
+      await answer(() => lease.requireNotFullScreen());
     }
-    requireSession(service, context);
+    if (requireSession(service, context) !== lease)
+      throw new CapabilityToolError({
+        code: 'tab_gone',
+        error: 'This chat’s tab changed. Read it again.',
+      });
   };
   return (async () => {
     await allowed();
-    const result = await answer(run);
+    const result = await answer(() => run(lease));
     requireSession(service, context);
     await allowed();
     return result;
@@ -107,7 +118,7 @@ export function createLocalBrowserDomain(service: LocalBrowserService): Capabili
           },
         },
         invoke: (_deps, _input, context) => {
-          return scopedAnswer(service, context, () => service.agentState());
+          return scopedAnswer(service, context, (lease) => lease.agentState());
         },
       }),
       defineCapability({
@@ -128,7 +139,7 @@ export function createLocalBrowserDomain(service: LocalBrowserService): Capabili
           },
         },
         invoke: (_deps, _input, context) => {
-          return scopedAnswer(service, context, () => service.observe());
+          return scopedAnswer(service, context, (lease) => lease.observe());
         },
       }),
       defineCapability({
@@ -150,8 +161,8 @@ export function createLocalBrowserDomain(service: LocalBrowserService): Capabili
           },
         },
         invoke: (_deps, _input, context) =>
-          scopedAnswer(service, context, async () => {
-            const image = await service.screenshot();
+          scopedAnswer(service, context, async (lease) => {
+            const image = await lease.screenshot();
             return new CapabilityImageResult(
               { data: image.data, mimeType: image.mimeType },
               { revision: image.revision, tabId: image.tabId }
@@ -179,9 +190,9 @@ export function createLocalBrowserDomain(service: LocalBrowserService): Capabili
           },
         },
         invoke: (_deps, input, context) => {
-          return scopedAnswer(service, context, async () => {
-            await service.action(input.action);
-            return service.agentState();
+          return scopedAnswer(service, context, async (lease) => {
+            await lease.action(input.action);
+            return lease.agentState();
           });
         },
       }),

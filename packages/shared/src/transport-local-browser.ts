@@ -11,7 +11,7 @@ import type {
 export interface LocalBrowserTransport {
   /** Scan profile metadata only after a person taps Find my browsers. Never cache the response. */
   scanYourBrowsers(): Promise<import('./your-browser.js').YourBrowserScan>;
-  getLocalBrowserState(): Promise<LocalBrowserPersonState>;
+  getLocalBrowserState(sessionId?: string): Promise<LocalBrowserPersonState>;
   getLocalBrowserCapabilities(): Promise<LocalBrowserCapabilities>;
   /** Profile metadata for the person's browser controls. */
   listLocalBrowserProfiles(): Promise<{ profiles: LocalBrowserProfile[] }>;
@@ -20,11 +20,11 @@ export interface LocalBrowserTransport {
   /** Remove a named profile, its saved site data and agent access. */
   deleteLocalBrowserProfile(profileId: string): Promise<{ success: true }>;
   openLocalBrowser(input: LocalBrowserOpen): Promise<LocalBrowserPersonState>;
-  selectLocalBrowserTab(id: string): Promise<LocalBrowserState>;
-  navigateLocalBrowser(url: string): Promise<LocalBrowserState>;
-  pauseLocalBrowser(): Promise<LocalBrowserState>;
-  resumeLocalBrowser(): Promise<LocalBrowserPersonState>;
-  disconnectLocalBrowser(): Promise<LocalBrowserPersonState>;
+  selectLocalBrowserTab(id: string, sessionId?: string): Promise<LocalBrowserState>;
+  navigateLocalBrowser(url: string, sessionId?: string): Promise<LocalBrowserState>;
+  pauseLocalBrowser(sessionId?: string): Promise<LocalBrowserState>;
+  resumeLocalBrowser(sessionId?: string): Promise<LocalBrowserPersonState>;
+  disconnectLocalBrowser(sessionId?: string): Promise<LocalBrowserPersonState>;
   /** Open the plain sign-in window, which no agent can reach. */
   signInLocalBrowser(input: LocalBrowserSignInRequest): Promise<LocalBrowserPersonState>;
   /** Give the browser back to the agent that handed it over. */
