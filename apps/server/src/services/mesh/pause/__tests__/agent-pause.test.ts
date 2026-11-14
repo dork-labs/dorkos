@@ -341,6 +341,24 @@ describe('AgentPauseService (spec audit-trail PR5)', () => {
     expect(service.isPaused(SCOUT.id)).toBeDefined();
   });
 
+  it('tells resume listeners only when a pause is really lifted (DOR-4327)', async () => {
+    const heard: string[] = [];
+    service.onResumed((agentId) => heard.push(agentId));
+    service.onResumed(() => {
+      throw new Error('a broken listener');
+    });
+
+    await service.pause(SCOUT.id, PERSON);
+    expect(() => service.resume(SCOUT.id, SCOUT_ACTOR)).toThrow(CannotResumeSelfError);
+    expect(service.resume(SCOUT.id, ANA_ACTOR).changed).toBe(true);
+    expect(service.resume(SCOUT.id, ANA_ACTOR).changed).toBe(false);
+    // Removed while paused: forgotten, not resumed, so what it held stays held.
+    await service.pause(ANA.id, PERSON);
+    service.forget(ANA.id);
+
+    expect(heard).toEqual([SCOUT.id]);
+  });
+
   it('lets an agent pause itself', async () => {
     await expect(service.pause(SCOUT.id, SCOUT_ACTOR)).resolves.toMatchObject({ paused: true });
   });

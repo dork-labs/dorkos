@@ -117,9 +117,11 @@ export const agentPauseDomain: CapabilityDomain = {
       description:
         'Stop an agent everywhere at once: its running turns end, its running scheduled runs ' +
         'stop, and nothing starts a new turn for it (messages, schedules, rooms, relay) until ' +
-        'someone resumes it. Anyone may pause any agent, including DorkBot; it never waits for ' +
-        'approval. Held work is not replayed later. Recorded with who did it and why. Pass ' +
-        'the mesh id of the agent and, ideally, a reason.',
+        'someone resumes it. Messages already waiting in its chats are kept and wait too: ' +
+        'pausing does not cancel them. Other held work, such as a skipped scheduled run, is ' +
+        'not done later. Anyone may pause any agent, including DorkBot; it never waits for ' +
+        'approval. Recorded with who did it and why. Pass the mesh id of the agent and, ' +
+        'ideally, a reason.',
       tier: 'act',
       area: null,
       areaNote: 'emergency stop: never asks',
@@ -144,7 +146,10 @@ export const agentPauseDomain: CapabilityDomain = {
       title: 'Resume a paused agent',
       description:
         'Lift a pause so the agent can work again. Anyone may resume an agent except the paused ' +
-        'agent itself. Work it was held from is not replayed. Recorded with who did it and why.',
+        'agent itself. Messages other chats left waiting for it then run, once each, at no ' +
+        'more than the level they were sent at; a person’s own waiting message runs when they ' +
+        'next send. Other held work, such as a skipped scheduled run, is not done later. ' +
+        'Recorded with who did it and why.',
       tier: 'act',
       area: null,
       areaNote: 'emergency stop: never asks',
