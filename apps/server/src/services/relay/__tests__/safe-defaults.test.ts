@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import {
   carryForwardBindingDefaults,
   carryForwardAdapterDefaults,
+  closeDmPolicyOnEnable,
   warnOnOpenDmPolicy,
 } from '../safe-defaults.js';
 import {
@@ -208,6 +209,39 @@ describe('carryForwardAdapterDefaults', () => {
     expect(TelegramAdapterConfigSchema.parse(carried.adapters[0].config).respondMode).toBe(
       'thread-aware'
     );
+  });
+});
+
+describe('closeDmPolicyOnEnable', () => {
+  it('closes an open Slack connection and keeps its list', () => {
+    const entry = {
+      type: 'slack',
+      config: { dmPolicy: 'open', dmAllowlist: ['U1'] },
+    };
+
+    expect(closeDmPolicyOnEnable(entry)).toBe(true);
+    expect(entry.config).toEqual({ dmPolicy: 'allowlist', dmAllowlist: ['U1'] });
+  });
+
+  it('closes a Telegram connection whose stored policy is missing', () => {
+    const entry = { type: 'telegram', config: { dmAllowlist: ['42'] } };
+
+    expect(closeDmPolicyOnEnable(entry)).toBe(true);
+    expect(entry.config).toEqual({ dmPolicy: 'allowlist', dmAllowlist: ['42'] });
+  });
+
+  it('leaves an allowlisted connection unchanged', () => {
+    const entry = { type: 'telegram', config: { dmPolicy: 'allowlist', dmAllowlist: ['42'] } };
+
+    expect(closeDmPolicyOnEnable(entry)).toBe(false);
+    expect(entry.config).toEqual({ dmPolicy: 'allowlist', dmAllowlist: ['42'] });
+  });
+
+  it('leaves a webhook untouched', () => {
+    const entry = { type: 'webhook', config: { dmPolicy: 'open' } };
+
+    expect(closeDmPolicyOnEnable(entry)).toBe(false);
+    expect(entry.config.dmPolicy).toBe('open');
   });
 });
 

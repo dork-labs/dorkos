@@ -61,6 +61,7 @@ export function PanelFix({
   technicalDetail,
   actionHint,
   icon: Icon = AlertTriangle,
+  tone = 'warning',
 }: {
   /** What is wrong, plainly ("Signed out. Agents can't use Notion."). */
   message: string;
@@ -73,6 +74,12 @@ export function PanelFix({
   actionHint?: string;
   /** The mark beside the message: a warning by default, a pause for a paused app. */
   icon?: LucideIcon;
+  /**
+   * `warning` (amber, with the icon) when something is wrong; `neutral` (the
+   * panel's muted tint, muted text, no icon) for a state that only waits on the
+   * person, such as a chat nobody is listed for yet (DOR-3859).
+   */
+  tone?: 'warning' | 'neutral';
   /** The fix's button label; absent when there is nothing to press. */
   action?: string;
   /** Run the fix. */
@@ -89,14 +96,17 @@ export function PanelFix({
   technicalDetail?: string;
 }) {
   const hintId = useId();
+  const warning = tone === 'warning';
+  const ink = warning ? 'text-status-warning-fg' : 'text-muted-foreground';
   return (
     <div
       role="status"
       data-testid="app-panel-fix"
-      className="bg-status-warning-bg flex flex-col gap-3 rounded-xl p-3.5"
+      data-tone={tone}
+      className={`${warning ? 'bg-status-warning-bg' : 'bg-muted/50'} flex flex-col gap-3 rounded-xl p-3.5`}
     >
-      <p className="text-status-warning-fg flex items-start gap-2 text-sm">
-        <Icon className="mt-0.5 size-4 shrink-0" aria-hidden />
+      <p className={`${ink} flex items-start gap-2 text-sm`}>
+        {warning && <Icon className="mt-0.5 size-4 shrink-0" aria-hidden />}
         <span>
           {message}
           {detail && <span className="mt-1 block">{detail}</span>}
@@ -120,7 +130,7 @@ export function PanelFix({
         </div>
       )}
       {actionHint && (
-        <p id={hintId} className="text-status-warning-fg text-xs">
+        <p id={hintId} className={`${ink} text-xs`}>
           {actionHint}
         </p>
       )}

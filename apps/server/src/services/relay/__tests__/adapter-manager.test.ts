@@ -375,6 +375,91 @@ describe('AdapterManager', () => {
 
       await expect(manager.enable('nonexistent')).rejects.toThrow('Adapter not found: nonexistent');
     });
+
+    /** The `dmPolicy` the last persisted write gave one adapter. */
+    function persistedDmPolicy(id: string): unknown {
+      const writes = vi.mocked(writeFile).mock.calls;
+      const body = JSON.parse(String(writes[writes.length - 1]?.[1])) as {
+        adapters: Array<{ id: string; config: { dmPolicy?: unknown } }>;
+      };
+      return body.adapters.find((entry) => entry.id === id)?.config.dmPolicy;
+    }
+
+    // DOR-3859: an old Telegram or Slack chat carried forward at `open` keeps
+    // answering while it runs, but turning it back on is a person's choice to
+    // start it again, so it comes back limited to the people they list.
+    it('turns a paused Telegram chat that was open to anyone back on at allowlist', async () => {
+      vi.mocked(readFile).mockResolvedValue(
+        JSON.stringify({
+          adapters: [
+            {
+              id: 'tg-old',
+              type: 'telegram',
+              enabled: false,
+              config: { token: 'bot-token-123', mode: 'polling' },
+            },
+          ],
+        })
+      );
+      await initAndStart(manager);
+      vi.clearAllMocks();
+
+      await manager.enable('tg-old');
+
+      expect(persistedDmPolicy('tg-old')).toBe('allowlist');
+      expect(manager.listAdapters().find((a) => a.config.id === 'tg-old')?.config).toMatchObject({
+        config: { dmPolicy: 'allowlist' },
+      });
+    });
+
+    it('turns a paused Slack chat set to open back on at allowlist, keeping its list', async () => {
+      vi.mocked(readFile).mockResolvedValue(
+        JSON.stringify({
+          adapters: [
+            {
+              id: 'slack-old',
+              type: 'slack',
+              enabled: false,
+              config: {
+                botToken: 'xoxb-made-up',
+                appToken: 'xapp-made-up',
+                signingSecret: 'made-up-signing-secret',
+                dmPolicy: 'open',
+                dmAllowlist: ['U0MADEUP1'],
+              },
+            },
+          ],
+        })
+      );
+      await initAndStart(manager);
+      vi.clearAllMocks();
+
+      await manager.enable('slack-old');
+
+      expect(persistedDmPolicy('slack-old')).toBe('allowlist');
+    });
+
+    // The live bot is only rebuilt when it was paused, so closing a running one
+    // would save "only people I list" over a bot that still answers anyone.
+    it('leaves an open chat that is already on alone when enable() is called again', async () => {
+      vi.mocked(readFile).mockResolvedValue(VALID_CONFIG);
+      await initAndStart(manager);
+      vi.clearAllMocks();
+
+      await manager.enable('tg-main');
+
+      expect(persistedDmPolicy('tg-main')).toBe('open');
+    });
+
+    it('leaves a running open chat alone: only turning it on closes it', async () => {
+      vi.mocked(readFile).mockResolvedValue(VALID_CONFIG);
+      await initAndStart(manager);
+      vi.clearAllMocks();
+
+      await manager.enable('wh-github');
+
+      expect(persistedDmPolicy('tg-main')).toBe('open');
+    });
   });
 
   describe('refreshBridgeVisibility — the §8 write path (chats-as-channels task 1.13)', () => {
