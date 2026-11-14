@@ -190,7 +190,7 @@ import {
   isStillProducing,
   refusesOpenTurn,
 } from './message-dispatcher/turn-probes.js';
-import { forgetRecoveryFailures, launchDispatch } from './message-dispatcher/launch.js';
+import { forgetLaunchMemory, launchDispatch } from './message-dispatcher/launch.js';
 import {
   carriedHoldMayJoin,
   ceilingHoldsToDefault,
@@ -1028,7 +1028,7 @@ export function resetMessageDispatcher(): void {
   dispatchMutex.clear();
   orphanedSessions.clear();
   sweptWhileLaunching.clear();
-  forgetRecoveryFailures();
+  forgetLaunchMemory();
 }
 
 // Wired on import rather than from the composition root, deliberately. The

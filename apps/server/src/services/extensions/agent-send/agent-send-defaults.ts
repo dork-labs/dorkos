@@ -240,6 +240,7 @@ export async function resumeChatQueue(
     ...(cwd !== undefined ? { cwd } : {}),
     ...(forAgent !== undefined ? { forAgent } : {}),
     ...(additionalDirectories !== undefined ? { additionalDirectories } : {}),
+    onlyFromChats: true,
   });
   clearResumeRefusals(sessionId);
 }
