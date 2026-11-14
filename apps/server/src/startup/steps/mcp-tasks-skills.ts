@@ -432,6 +432,17 @@ export async function wireMcpTasksAndSkills(refs: ServerRefs, built: WireMcpTask
     const agent = agentPath ? refs.meshCore?.getByPath(agentPath) : undefined;
     return agent ? { label: agentWindowLabel(agent), agentId: agent.id } : undefined;
   });
+  localBrowserService.useChatLookup(async (sessionId) => {
+    const runtime = await runtimeRegistry.resolveForSession(sessionId);
+    const internalId = runtime.getInternalSessionId(sessionId) ?? sessionId;
+    const cwd =
+      runtime.getSessionCwd?.(internalId) ?? (await runtimeRegistry.getSessionAgentPath(sessionId));
+    const session = cwd ? await runtime.getSession(cwd, internalId) : null;
+    return {
+      title: session?.title || 'Untitled chat',
+      active: runtime.isTurnOpen?.(internalId) ?? true,
+    };
+  });
   localBrowserService.handover.useOutsideTurnCheck(liveOutsideTurnCheck());
   localBrowserService.handover.useAgentIdLookup(
     (agentFolder) => refs.meshCore?.getByPath(agentFolder)?.id

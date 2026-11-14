@@ -6,18 +6,21 @@ covers:
   - 'fix(browser): pause other chats while a person signs in'
   - 'fix(browser): keep saved sign-ins visible while paused'
   - 'fix(browser): stack saved sign-ins on small screens'
+  - 'fix(browser): limit chat tabs and isolate sign-in popups'
 ---
 
 ### Added
 
-- Browse from several chats at once in the Agent browser’s separate window. Each chat keeps its own tabs and pause controls.
+- Browse from several chats at once in the Agent browser’s separate window. Each chat keeps one tab and its own pause controls.
 
 ### Fixed
 
 - Pause a chat’s browser when it tries to open a blocked site. Other chats keep browsing.
 - Keep Saved sign-ins visible while another chat waits for you to sign in.
 - Stack Saved sign-ins on small screens.
+- Wait when six chats have browser tabs open. Choose an idle chat’s tab to close.
 
 ### Security
 
 - Pause other chats’ browser actions while you sign in. Their agents can still read their tabs.
+- Keep sign-in popups with the person. Agents can’t read or use them.

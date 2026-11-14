@@ -88,13 +88,36 @@ function FolderChangedDemo() {
 }
 
 /** State 1.11, with a long made-up name to exercise wrapping at phone widths. */
-function PausedForSignInDemo() {
+function PausedForSignInDemo({ waiting = false }: { waiting?: boolean }) {
   const [transport] = useState<Transport>(
     () =>
       new Proxy(notOpenTransport(), {
         get: (target, prop, receiver) => {
           if (prop === 'getLocalBrowserState' || prop === 'signInLocalBrowser')
-            return async () => pausedForSignIn;
+            return async () =>
+              waiting
+                ? {
+                    ...pausedForSignIn,
+                    status: 'disconnected',
+                    tabs: [],
+                    selectedTabId: null,
+                    signInElsewhere: null,
+                    waitingForTab: true,
+                    idleTabToClose: {
+                      sessionId: 'chat-nova',
+                      title: 'Northwind quarterly research and planning',
+                    },
+                    openChatTabs: [
+                      {
+                        sessionId: 'chat-nova',
+                        title: 'Northwind quarterly research and planning',
+                        origin: 'https://northwind.example',
+                        state: 'Agent',
+                        idle: true,
+                      },
+                    ],
+                  }
+                : pausedForSignIn;
           return Reflect.get(target, prop, receiver) as unknown;
         },
       })
@@ -129,6 +152,10 @@ export function LocalBrowserPanelShowcases() {
       <ShowcaseLabel>Paused for a sign-in elsewhere (1.11)</ShowcaseLabel>
       <ShowcaseDemo responsive>
         <PausedForSignInDemo />
+      </ShowcaseDemo>
+      <ShowcaseLabel>Waiting for a tab (1.12)</ShowcaseLabel>
+      <ShowcaseDemo responsive>
+        <PausedForSignInDemo waiting />
       </ShowcaseDemo>
     </PlaygroundSection>
   );

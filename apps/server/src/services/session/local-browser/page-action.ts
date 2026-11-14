@@ -7,6 +7,7 @@ import { boundedPageSnapshot } from './observation-limits.js';
 import { responseDeadline } from './lifecycle.js';
 import type { ObservedPageNodes } from './observation-nodes.js';
 import { isInertFillTarget } from './inert-target.js';
+import { retargetNewWindowLink } from './chat/new-window-links.js';
 
 /** Each durable journal wait has its own budget, separate from the action effect deadline. */
 export const AUDIT_WRITE_RESPONSE_TIMEOUT_MS = 2_000;
@@ -212,6 +213,21 @@ export async function performPageAction(
         if (!sameFocus) throw stale();
       }
       admit();
+      const redirected =
+        input.kind === 'press' && input.key === 'Enter'
+          ? await body.evaluate(() => {
+              let focus = document.activeElement;
+              while (focus?.shadowRoot?.activeElement) focus = focus.shadowRoot.activeElement;
+              const link = focus?.closest('a[href],area[href]');
+              const target =
+                link?.getAttribute('target') ??
+                document.querySelector('base[target]')?.getAttribute('target');
+              if (!link || !target || target.toLowerCase() === '_self') return false;
+              link.setAttribute('target', '_self');
+              return true;
+            })
+          : false;
+      admit();
       dispatched();
       if (input.kind === 'press') {
         // Enter on a link or a form starts a load, as a click does.
@@ -223,6 +239,7 @@ export async function performPageAction(
           throw error;
         }
         await load.settle();
+        if (redirected) throw newWindowLinkError();
       } else await page.mouse.wheel(input.deltaX, input.deltaY);
     } finally {
       void body.dispose().catch(() => undefined);
@@ -262,6 +279,8 @@ export async function performPageAction(
       if (input.kind === 'click') {
         // `noWaitAfter` means the click is only sent; whatever load it starts is checked here
         // (DOR-3897), so a click onto the browser's error page never reports success.
+        const redirected = await handle.evaluate(retargetNewWindowLink);
+        admit();
         const load = watchMainFrameLoad(page);
         try {
           await handle.click({ timeout: ACTION_TIMEOUT_MS, noWaitAfter: true });
@@ -270,6 +289,7 @@ export async function performPageAction(
           throw error;
         }
         await load.settle();
+        if (redirected) throw newWindowLinkError();
       } else await handle.fill(input.text, { timeout: ACTION_TIMEOUT_MS });
     } finally {
       void handle.dispose().catch(() => undefined);
@@ -381,5 +401,13 @@ function uncertainAction(): LocalBrowserError {
   return new LocalBrowserError(
     'uncertain',
     'The page changed. Check what happened before continuing.'
+  );
+}
+
+/** A completed same-tab navigation is reported as such, never silently retried. */
+function newWindowLinkError(): LocalBrowserError {
+  return new LocalBrowserError(
+    'new_window_link',
+    "This tab can't open new windows. The link opened here instead."
   );
 }

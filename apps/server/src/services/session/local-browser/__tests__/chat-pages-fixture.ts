@@ -46,6 +46,9 @@ export function chatPagesFixture() {
       evaluateHandle: vi.fn(async () => nodes),
       locator: () => body,
       bringToFront: vi.fn(async () => undefined),
+      exposeBinding: vi.fn(async () => undefined),
+      addInitScript: vi.fn(async () => undefined),
+      evaluate: vi.fn(async () => undefined),
       screenshot: vi.fn(async () => pixels),
       goto: vi.fn(async (next: string) => {
         url = next;

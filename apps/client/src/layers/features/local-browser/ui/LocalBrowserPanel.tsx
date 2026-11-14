@@ -15,6 +15,9 @@ import { useActionFocusReturn } from '../model/use-action-focus-return';
 import { BrowserPreparation } from './BrowserPreparation';
 import { WaitingElsewhere } from './WaitingElsewhere';
 import { PausedForSignIn } from './PausedForSignIn';
+import { WaitingForTab } from './WaitingForTab';
+import { HeldChatTab } from './HeldChatTab';
+import { OpenChatTabs } from './OpenChatTabs';
 import { SavedSignIns } from './SavedSignIns';
 
 export interface LocalBrowserPanelProps {
@@ -64,6 +67,9 @@ export function LocalBrowserPanel({
   const [surfaceUnavailable, setSurfaceUnavailable] = useState(false);
   const surface = useRef<HTMLDivElement>(null);
   const connected = state?.status === 'connected';
+  const waitingForTab = !!state?.waitingForTab && !!sessionId;
+  const heldHere =
+    !!state?.handoffAttached && state.handoff?.outcome === null && state.sessionId === sessionId;
   // "Disconnected" before anything was ever opened reads as broken (DOR-4104).
   const [hadConnection, setHadConnection] = useState(false);
   useEffect(() => {
@@ -127,6 +133,9 @@ export function LocalBrowserPanel({
         signIn: known?.signIn ?? null,
         signInElsewhere: known?.signInElsewhere ?? null,
         handoffAttached: known?.handoffAttached ?? false,
+        waitingForTab: known?.waitingForTab ?? false,
+        openChatTabs: known?.openChatTabs ?? [],
+        idleTabToClose: known?.idleTabToClose ?? null,
         ...next,
       }));
       return true;
@@ -207,30 +216,34 @@ export function LocalBrowserPanel({
     >
       <div
         className={
-          pausedForSignIn
+          pausedForSignIn || waitingForTab || heldHere
             ? 'flex flex-col items-start gap-1 min-[480px]:flex-row min-[480px]:items-center min-[480px]:justify-between min-[480px]:gap-2'
             : 'flex items-center justify-between gap-2'
         }
       >
         <h3 className="text-sm font-medium">Agent browser</h3>
         <span role="status" aria-live="polite" className="text-muted-foreground text-xs">
-          {pausedForSignIn
-            ? 'Paused'
-            : cancelling
-              ? 'Cancelling…'
-              : opening
-                ? 'Preparing browser'
-                : busy
-                  ? 'Updating…'
-                  : state?.status === 'closed'
-                    ? 'Browser closed'
-                    : connected
-                      ? state.paused
-                        ? 'Agent paused'
-                        : 'Connected'
-                      : hadConnection
-                        ? 'Disconnected'
-                        : 'Not open yet'}
+          {waitingForTab
+            ? 'Waiting'
+            : heldHere
+              ? 'Waiting for you'
+              : pausedForSignIn
+                ? 'Paused'
+                : cancelling
+                  ? 'Cancelling…'
+                  : opening
+                    ? 'Preparing browser'
+                    : busy
+                      ? 'Updating…'
+                      : state?.status === 'closed'
+                        ? 'Browser closed'
+                        : connected
+                          ? state.paused
+                            ? 'Agent paused'
+                            : 'Connected'
+                          : hadConnection
+                            ? 'Disconnected'
+                            : 'Not open yet'}
         </span>
       </div>
       {opening && !pausedForSignIn && (
@@ -266,44 +279,53 @@ export function LocalBrowserPanel({
             Reconnect
           </Button>
         )}
-      {pausedForSignIn && (
+      {waitingForTab && state && sessionId && (
+        <WaitingForTab state={state} sessionId={sessionId} agentName={agentName} />
+      )}
+      {heldHere && state && <HeldChatTab state={state} agentName={agentName} />}
+      {pausedForSignIn && !waitingForTab && (
         <PausedForSignIn handoffId={pausedForSignIn.handoffId} agentName={agentName} />
       )}
-      {!pausedForSignIn && waitingElsewhere && (
+      {!pausedForSignIn && !waitingForTab && waitingElsewhere && (
         <WaitingElsewhere sessionId={waitingElsewhere.sessionId} />
       )}
-      {!connected && !waitingElsewhere && !pausedForSignIn && (
-        <div className="min-h-0 space-y-3 overflow-y-auto">
-          {choiceIssue && (
-            <p className="text-muted-foreground text-xs">
-              {needsChoice
-                ? 'Choose a browser. The saved choice couldn’t be read.'
-                : 'Browser choice couldn’t be saved. It lasts until this window closes.'}
-            </p>
-          )}
-          <BrowserModeChoice
-            value={needsChoice ? null : mode}
-            onChange={(next) => {
-              saveChoice({ mode: next });
-            }}
-            capabilities={capabilities}
-            disabled={busy || cancelling}
-          />
-          {state?.status === 'closed' && (
-            <p className="text-muted-foreground text-xs">
-              Open it again to reconnect. Saved sign-ins are kept.
-            </p>
-          )}
-          <Button
-            ref={openButton}
-            disabled={busy || cancelling || needsChoice || !supported}
-            onClick={open}
-          >
-            {state?.mode ? 'Reconnect' : 'Open browser'}
-          </Button>
-        </div>
-      )}
-      {connected && !waitingElsewhere && !pausedForSignIn && (
+      {!connected &&
+        !waitingElsewhere &&
+        !pausedForSignIn &&
+        !waitingForTab &&
+        !heldHere &&
+        !waitingForTab && (
+          <div className="min-h-0 space-y-3 overflow-y-auto">
+            {choiceIssue && (
+              <p className="text-muted-foreground text-xs">
+                {needsChoice
+                  ? 'Choose a browser. The saved choice couldn’t be read.'
+                  : 'Browser choice couldn’t be saved. It lasts until this window closes.'}
+              </p>
+            )}
+            <BrowserModeChoice
+              value={needsChoice ? null : mode}
+              onChange={(next) => {
+                saveChoice({ mode: next });
+              }}
+              capabilities={capabilities}
+              disabled={busy || cancelling}
+            />
+            {state?.status === 'closed' && (
+              <p className="text-muted-foreground text-xs">
+                Open it again to reconnect. Saved sign-ins are kept.
+              </p>
+            )}
+            <Button
+              ref={openButton}
+              disabled={busy || cancelling || needsChoice || !supported}
+              onClick={open}
+            >
+              {state?.mode ? 'Reconnect' : 'Open browser'}
+            </Button>
+          </div>
+        )}
+      {connected && !waitingElsewhere && !pausedForSignIn && !waitingForTab && !heldHere && (
         <>
           {sharedElsewhere && (
             <p className="text-muted-foreground text-xs">
@@ -450,6 +472,9 @@ export function LocalBrowserPanel({
             </div>
           )}
         </>
+      )}
+      {!waitingForTab && !!state?.openChatTabs?.length && (
+        <OpenChatTabs tabs={state.openChatTabs} />
       )}
       {!waitingElsewhere && (
         <SavedSignIns

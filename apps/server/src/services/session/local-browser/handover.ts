@@ -25,10 +25,13 @@ import type { SignInWindow } from './sign-in-window.js';
 
 /** The parts of the browser service a handoff steers. */
 export interface HandoverBrowser {
+  personTabs?(
+    sessionId?: string
+  ): Promise<Pick<LocalBrowserPersonState, 'waitingForTab' | 'openChatTabs' | 'idleTabToClose'>>;
   profileRemoval?: { assertAvailable(): void };
   state(sessionId?: string): Promise<LocalBrowserState>;
   usesPageLeases?(sessionId?: string): boolean;
-  abandon?(sessionId: string): void;
+  abandon?(sessionId: string): void | Promise<void>;
   capabilities(): { newWindow: boolean };
   currentProfileId(): string | null;
   /** Whether a named profile exists. False until startup wires the profile list. */
@@ -56,46 +59,8 @@ interface ReopenAt {
 export const HANDED_OVER_NEXT =
   'The person has the browser now. End your turn and wait. You get a message when they hand it back. Never ask again or retry on your own.';
 
-/**
- * A sign-in page must be `https:`, or `http:` on this computer only.
- *
- * @param value - The address to open.
- */
-export function assertSignInUrl(value: string): URL {
-  let url: URL;
-  try {
-    url = new URL(value);
-  } catch {
-    throw new LocalBrowserError(
-      'unsupported_address',
-      'Use a website address starting with https.'
-    );
-  }
-  const local = ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname);
-  if (url.protocol !== 'https:' && !(url.protocol === 'http:' && local))
-    throw new LocalBrowserError(
-      'unsupported_address',
-      'Use a website address starting with https.'
-    );
-  return url;
-}
-
-/**
- * A page's address cut to its site: the origin, or for an address with none
- * (`about:`, `data:`) its scheme alone.
- *
- * @param value - The tab's address.
- */
-export function siteOnly(value: string): string {
-  try {
-    const url = new URL(value);
-    if (url.origin !== 'null') return url.origin;
-    // A blank tab carries nothing, and the panel names it "New tab".
-    return url.href === 'about:blank' ? url.href : url.protocol;
-  } catch {
-    return '';
-  }
-}
+import { assertSignInUrl, siteOnly } from './handover/urls.js';
+export { assertSignInUrl, siteOnly } from './handover/urls.js';
 
 /** One handoff at a time, and the plain sign-in window it can open. */
 export class BrowserHandover {
@@ -193,6 +158,7 @@ export class BrowserHandover {
     const scope =
       sessionId ??
       (before && this.browser.usesPageLeases?.(before.sessionId) ? before.sessionId : undefined);
+    const tabs = await this.browser.personTabs?.(scope);
     const state = this.trimmed(await this.browser.state(scope));
     const open = this.record?.outcome === null ? this.record : null;
     // A handoff can start while state is being read. Never pair its card with another tab.
@@ -212,6 +178,7 @@ export class BrowserHandover {
       this.browser.usesPageLeases?.(open.sessionId);
     return {
       ...state,
+      ...tabs,
       handoff: sessionId === undefined || this.record?.sessionId === sessionId ? this.record : null,
       signIn: this.signIns.current,
       signInElsewhere: elsewhere ? { handoffId: open.id } : null,
@@ -506,7 +473,7 @@ export class BrowserHandover {
     try {
       this.stoppedFor.add(handoff.sessionId);
       await this.browser.pause(handoff.sessionId);
-      this.browser.abandon?.(handoff.sessionId);
+      await this.browser.abandon?.(handoff.sessionId);
       this.end(handoff, 'stopped');
       return this.state(handoff.sessionId);
     } finally {
@@ -555,6 +522,15 @@ export class BrowserHandover {
   }
 
   /** The window closed on its own, so a card saying "finish it in the window" re-reads the state. */
+  waitingForPerson(sessionId: string): boolean {
+    return this.record?.sessionId === sessionId && this.record.outcome === null;
+  }
+  tabClosed(sessionId: string): void {
+    if (this.record?.outcome === null && this.record.sessionId === sessionId) {
+      this.stoppedFor.add(sessionId);
+      this.end(this.record, 'window-closed');
+    }
+  }
   windowClosed(): void {
     this.changed();
   }

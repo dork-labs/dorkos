@@ -1,18 +1,24 @@
 import { appendFileSync, mkdirSync } from 'node:fs';
 import path from 'node:path';
 import type { Page } from 'playwright-core';
+import { ChatWindowPolicy } from './window-policy.js';
 import { TabBroker } from '../broker/tab-broker.js';
 import type { TabOwnershipRecord } from '../broker/types.js';
 import { LocalBrowserError } from '../errors.js';
-import { TabBrokerError } from '../broker/errors.js';
 
 /** Host-owned page handles and audit storage; the broker itself has no server dependencies. */
 export class BrowserTabRegistry {
   readonly pages = new Map<string, Page>();
   readonly broker: TabBroker;
+  readonly windows = new Map<string, ChatWindowPolicy>();
+  async prepare(page: Page, id: string): Promise<void> {
+    const policy = new ChatWindowPolicy(page);
+    await policy.install(() => this.broker.popupBlocked(id));
+    this.windows.set(id, policy);
+  }
   private registered = new WeakMap<Page, string>();
   private auditUnavailable = false;
-  private idleTimer?: ReturnType<typeof setInterval>;
+  onClosed: (id: string) => void = () => undefined;
 
   constructor(dataDirectory: string) {
     const rows = new Map<string, TabOwnershipRecord>();
@@ -56,27 +62,13 @@ export class BrowserTabRegistry {
     const id = this.broker.register(page);
     this.pages.set(id, page);
     this.registered.set(page, id);
-    page.on('popup', (popup) => {
-      this.trackEvent(popup);
-    });
-    if (!this.idleTimer) {
-      this.idleTimer = setInterval(() => this.broker.sweepIdle(), 15_000);
-      this.idleTimer.unref();
-    }
     page.on('close', () => {
+      this.windows.delete(id);
       this.pages.delete(id);
       this.registered.delete(page);
+      this.onClosed(id);
     });
     return id;
-  }
-
-  /** Page limits refuse discovery without throwing inside a browser event callback. */
-  trackEvent(page: Page): void {
-    try {
-      this.track(page);
-    } catch (error) {
-      if (!(error instanceof TabBrokerError)) this.auditUnavailable = true;
-    }
   }
 
   /** Durable audit failure stops admission across the window rather than losing receipts silently. */
@@ -90,10 +82,9 @@ export class BrowserTabRegistry {
 
   /** A closed window invalidates all leases, including those waiting in queues. */
   close(): void {
-    clearInterval(this.idleTimer);
-    this.idleTimer = undefined;
     this.broker.close();
     this.pages.clear();
+    this.windows.clear();
     this.registered = new WeakMap();
   }
 }

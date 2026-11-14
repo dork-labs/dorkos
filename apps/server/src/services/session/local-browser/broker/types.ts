@@ -27,7 +27,17 @@ export interface TabOwnershipStore {
 
 /** Minimal lifecycle audit; the origin field can never contain a path, query or user info. */
 export interface TabAuditEvent {
-  readonly kind: 'open' | 'bind' | 'adopt' | 'release' | 'close' | 'hold' | 'hand_back' | 'origin';
+  readonly kind:
+    | 'open'
+    | 'bind'
+    | 'adopt'
+    | 'release'
+    | 'close'
+    | 'hold'
+    | 'hand_back'
+    | 'origin'
+    | 'popup_open'
+    | 'popup_close';
   readonly at: number;
   readonly pageId: string;
   readonly ownerId: string | null;

@@ -107,6 +107,15 @@ export interface LocalBrowserState {
 }
 /** What a person's controls see: the browser plus its handoff and sign-in. Never sent to an agent. */
 export interface LocalBrowserPersonState extends LocalBrowserState {
+  waitingForTab?: boolean;
+  openChatTabs?: {
+    sessionId: string;
+    title: string;
+    origin: string;
+    state: 'Agent' | 'You' | 'Waiting';
+    idle: boolean;
+  }[];
+  idleTabToClose?: { sessionId: string; title: string } | null;
   handoff: LocalBrowserHandoff | null;
   signIn: LocalBrowserSignIn | null;
   /** Person-only target for focusing another chat’s held sign-in. Never sent to agents. */
@@ -214,6 +223,19 @@ export const LocalBrowserAskPersonSchema = z
 
 /** The person's view of the browser; see {@link LocalBrowserPersonState}. */
 export const LocalBrowserPersonStateSchema = LocalBrowserStateSchema.extend({
+  waitingForTab: z.boolean().optional(),
+  openChatTabs: z
+    .array(
+      z.object({
+        sessionId: z.string(),
+        title: z.string(),
+        origin: z.string(),
+        state: z.enum(['Agent', 'You', 'Waiting']),
+        idle: z.boolean(),
+      })
+    )
+    .optional(),
+  idleTabToClose: z.object({ sessionId: z.string(), title: z.string() }).nullable().optional(),
   handoff: LocalBrowserHandoffSchema.nullable(),
   signIn: LocalBrowserSignInSchema.nullable(),
   signInElsewhere: z.object({ handoffId: z.string() }).nullable().optional(),

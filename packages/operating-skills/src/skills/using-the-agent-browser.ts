@@ -45,18 +45,23 @@ The managed browser engine in \`packages/browser\` and \`services/browser\` is a
 private contracts are not another tool set you can invoke. The CLI's \`browser install\` and \`status --runtime\` check
 its files; they do not share a page or prove that browsing is ready.
 
-## This chat's tabs
+## This chat's tab
 
-Each chat gets its own tabs in the separate browser window. Tabs share saved sign-ins. Opening the browser in another
+Each chat gets one tab in the separate browser window. Tabs share saved sign-ins. Opening the browser in another
 chat adds a tab there; it does not move yours. Pausing or closing your tab does not stop another chat's work. The
 browser inside the app still serves one chat at a time.
 
-The server chooses which tabs belong to this chat. Never pass chat or tab IDs to change that scope. Read and act only
+The server chooses which tab belongs to this chat. Never pass chat or tab IDs to change that scope. Read and act only
 through this chat's Agent browser tools. They cannot attach to another chat's tab or capture the whole window.
 
 While a person holds your tab, do not read, screenshot or act on it. Other chats may read their own tabs during a
-sign-in. Their actions must wait until it ends. Only the person can hand yours back. A handed-off tab stays with the
-person after idle expiry or Disconnect. Never reattach it yourself.
+sign-in. Their actions must wait until it ends. Only the person can hand yours back. A handed-off tab stays with the person until they hand it back. Never reattach it yourself.
+
+The window holds at most 6 chat tabs, including handed-off tabs. The person's own tabs are never counted or read.
+Wait for a slot; never close or evict another chat’s tab. Only a person may close an idle chat's tab.
+
+New-window links open in this chat's tab. Script popups are blocked. Sign-in popups belong only to the person during
+an active handoff: never list, read, screenshot, click, type in, navigate or adopt one. It closes when the handoff ends.
 
 ## What the older signed-in browser saves
 
@@ -138,8 +143,9 @@ bypass a refusal.
 | \`signing_in_elsewhere\` | Wait for the person to finish. Read your own tab if needed; do not act or retry the effect. |
 | \`task_stopped\` | Stay stopped until the person opens or resumes this chat's browser. |
 | \`busy\`, \`queue_full\` | Wait for the current action to finish. Then read the page before another action. Do not repeat a pending effect. |
-| \`tab_limit\` | Ask the person to close unused tabs. Never close another chat's tabs. |
+| \`tab_limit\` | Wait for a slot, or ask the person to close unused chat tabs. Never close another chat's tabs. |
 | \`url_blocked\`, \`cloud_origin\`, \`dorkos_origin\` | Respect the refusal. Use DorkOS tools for app work, or ask the person to choose an allowed site. This chat stays paused. |
+| \`popup_blocked\`, \`new_window_link\` | Read this chat's tab to check what happened. Never retry the popup or claim another tab. |
 | \`stale_page\` | Read the page again before acting. Use the new revision. |
 | \`uncertain\` | Read the page again and check what happened. Never retry the effect blindly. |
 

@@ -36,6 +36,7 @@ import { SignInWindow } from './sign-in-window.js';
 import { BrowserProfileRemoval } from './profile-removal/index.js';
 import { BrowserChatSession } from './chat/session.js';
 import { BrowserTabRegistry } from './chat/registry.js';
+import { ChatTabRequests, type BrowserChatLookup } from './chat/tab-requests.js';
 import type { EmbeddedBrowserPort } from './desktop-bridge.js';
 export type { EmbeddedBrowserPort } from './desktop-bridge.js';
 export { LocalBrowserError } from './errors.js';
@@ -64,6 +65,7 @@ export class LocalBrowserService {
   private readonly preparation = new BrowserPreparation();
   private readonly profileAuthorization = new BrowserProfileAccessGate();
   private readonly registry: BrowserTabRegistry;
+  private readonly tabRequests: ChatTabRequests;
   private agentIdentity: (sessionId: string) => Promise<string | undefined> = (id) =>
     this.windowNames.agentId(id);
   readonly windowNames = new AgentWindowNames();
@@ -97,6 +99,22 @@ export class LocalBrowserService {
     private readonly appOrigins: () => readonly string[] = localBrowserAppOrigins
   ) {
     this.registry = new BrowserTabRegistry(dataDirectory);
+    this.tabRequests = new ChatTabRequests({
+      broker: this.registry.broker,
+      canOpen: () => !this.opening && !this.closing && this.status === 'connected',
+      open: (input) => this.open(input, true),
+      busy: (id) => this.sessions.get(id)?.busy ?? true,
+      waitingForPerson: (id) => this.handover.waitingForPerson(id),
+      origin: (id) => this.registry.broker.originFor(id),
+    });
+    this.registry.onClosed = (pageId) => {
+      for (const session of this.sessions.values())
+        if (session.ownsTab(pageId)) {
+          session.closed();
+          if (session.sessionId) this.handover.tabClosed(session.sessionId);
+        }
+      void this.tabRequests.drain();
+    };
   }
 
   capabilities(): LocalBrowserCapabilities {
@@ -112,15 +130,14 @@ export class LocalBrowserService {
     this.profileAuthorization.use(...wiring);
   }
   readonly profileExists = (id: string): boolean => this.profileAuthorization.exists?.(id) ?? false;
-  currentProfileId(): string | null {
-    return this.profileId;
-  }
+  readonly currentProfileId = (): string | null => this.profileId;
   async requireProfileAccess(sessionId: string): Promise<void> {
     await this.profileAuthorization.require(this.profileId, sessionId);
   }
 
   /** Capture a scope once per tool call; another chat opening a page cannot change it. */
   leaseFor(sessionId: string): BrowserChatSession {
+    this.tabRequests.assertAgent(sessionId);
     if (this.mode === 'embedded' && this.status === 'connected')
       this.profileAuthorization.requireShared(this.selectedSession, sessionId);
     const session = this.sessions.get(sessionId);
@@ -167,7 +184,20 @@ export class LocalBrowserService {
     };
   }
 
-  async open(input: LocalBrowserOpen): Promise<LocalBrowserState> {
+  useChatLookup(lookup: BrowserChatLookup): void {
+    this.tabRequests.useLookup(lookup);
+  }
+  async personTabs(sessionId?: string) {
+    await this.tabRequests.drain();
+    return this.tabRequests.personState(sessionId);
+  }
+  async closeIdleTab(target: string, requester: string): Promise<void> {
+    await this.tabRequests.requireIdle(target, requester);
+    await this.disconnect(target);
+    await this.tabRequests.drain();
+  }
+
+  async open(input: LocalBrowserOpen, background = false): Promise<LocalBrowserState> {
     this.profileRemoval.assertAvailable();
     this.assertAvailable();
     for (const session of this.retiredSessions)
@@ -194,6 +224,15 @@ export class LocalBrowserService {
         'profile_busy',
         'Close the Agent browser before changing its saved sign-ins.'
       );
+    if (
+      sharedWindow &&
+      input.sessionId &&
+      !this.sessions.get(input.sessionId)?.hasPage() &&
+      !this.registry.broker.hasCapacity()
+    ) {
+      this.tabRequests.enqueue(input);
+      return this.state(input.sessionId);
+    }
     this.opening = true;
     this.openingSession = input.sessionId ?? null;
     const abort = new AbortController();
@@ -217,12 +256,14 @@ export class LocalBrowserService {
         const context = this.contexts()[0];
         if (!context) throw browserSetupCancelled();
         let page: Page;
-        const existing = context.pages();
+        const existing = input.mode === 'embedded' ? context.pages() : [];
         if (!reuse && input.mode === 'embedded' && existing[0]) page = existing[0];
-        else if (!reuse && existing.length === 1 && existing[0].url() === 'about:blank')
-          page = existing[0];
         else {
-          page = await context.newPage();
+          const parentId = background ? this.registry.broker.chatRecords()[0]?.pageId : undefined;
+          const parent = parentId ? this.registry.pages.get(parentId) : undefined;
+          page = this.backend.newPage
+            ? await this.backend.newPage(context, background, parent)
+            : await context.newPage();
           createdPage = page;
         }
         const pageId = this.registry.track(page);
@@ -233,24 +274,15 @@ export class LocalBrowserService {
         };
         abort.signal.throwIfAborted();
         this.registry.broker.bind(page, principal);
+        if (input.mode === 'new-window') await this.registry.prepare(page, pageId);
         this.assertAvailable();
-        session = new BrowserChatSession(id, principal, {
-          broker: this.registry.broker,
-          pages: this.registry.pages,
-          connectionId: this.connectionId!,
-          mode: input.mode,
-          audit: this.audit,
-          cloudOrigins: this.cloudOrigins,
-          appOrigins: this.appOrigins,
-          assertAvailable: () => this.assertAvailable(),
-          assertMayAct: () => this.handover.requireAgentMayAct(),
-        });
+        session = this.createSession(id, principal, input.mode);
         this.sessions.set(id, session);
         added = session;
         await session.state();
-        await session.selectTab(pageId);
+        if (!background) await session.selectTab(pageId);
       }
-      this.selectedSession = id;
+      if (!background) this.selectedSession = id;
       if (input.url) await session.navigate(input.url);
       abort.signal.throwIfAborted();
       return session.state();
@@ -305,7 +337,6 @@ export class LocalBrowserService {
           await this.windowNames.of(input.sessionId)
         );
         this.ownedContext.on('close', () => this.closed(id));
-        this.ownedContext.on('page', (page) => this.registry.trackEvent(page));
       } else {
         const bridge = await this.embedded!.open(id);
         this.embeddedClose = bridge.close;
@@ -324,9 +355,7 @@ export class LocalBrowserService {
     }
     if (this.lifecycle !== lifecycle) throw browserSetupCancelled();
     this.status = 'connected';
-    // Existing restored/person tabs are registered unowned, never swept into a chat's grant.
-    for (const context of this.contexts())
-      for (const page of context.pages()) this.registry.track(page);
+    // Restored and person-created pages are never registered or read.
   }
 
   /** Handoff can keep a new-window page while other chats continue on the same context. */
@@ -362,17 +391,7 @@ export class LocalBrowserService {
         throw new LocalBrowserError('tab_gone', 'That tab closed. Open the browser again.');
       this.registry.track(page);
       this.registry.broker.bind(page, prior.principal);
-      const session = new BrowserChatSession(id, prior.principal, {
-        broker: this.registry.broker,
-        pages: this.registry.pages,
-        connectionId: this.connectionId!,
-        mode: 'embedded',
-        audit: this.audit,
-        cloudOrigins: this.cloudOrigins,
-        appOrigins: this.appOrigins,
-        assertAvailable: () => this.assertAvailable(),
-        assertMayAct: () => this.handover.requireAgentMayAct(),
-      });
+      const session = this.createSession(id, prior.principal, 'embedded');
       this.sessions.set(id, session);
       return session.state();
     }
@@ -380,20 +399,24 @@ export class LocalBrowserService {
   }
 
   /** Stop a handed-off page without returning it to any agent. */
-  abandon(sessionId: string): void {
+  async abandon(sessionId: string): Promise<void> {
+    await this.sessions.get(sessionId)?.closeSignIn();
     this.sessions.get(sessionId)?.abandon();
   }
 
   /** A scoped Disconnect ends only that chat; an omitted scope closes the physical connection. */
   async disconnect(sessionId?: string): Promise<LocalBrowserState> {
+    this.tabRequests.cancel(sessionId);
     if (sessionId === undefined || this.mode === 'embedded') return this.closeConnection(true);
     if (this.opening && this.openingSession === sessionId) this.openingAbort?.abort();
     const session = this.sessions.get(sessionId);
     if (!session) return this.state(sessionId);
+    if (session.held) await session.closeSignIn();
     if (!this.closingSessions.has(sessionId)) {
       const pages = this.registry.broker
-        .list(session.principal)
-        .map((lease) => this.registry.pages.get(lease.pageId)!);
+        .chatRecords()
+        .filter((record) => record.ownerId === session.principal.ownerId)
+        .map((record) => this.registry.pages.get(record.pageId)!);
       session.abandon();
       session.closed();
       const operation = Promise.all(pages.map((page) => page.close())).then(() => {
@@ -411,6 +434,7 @@ export class LocalBrowserService {
   private async closeConnection(abortSetup: boolean, closed = false): Promise<LocalBrowserState> {
     if (abortSetup) this.openingAbort?.abort();
     if (!this.closing) {
+      this.tabRequests.cancel();
       this.preparation.clear();
       this.lifecycle++;
       for (const session of this.sessions.values()) {
@@ -461,12 +485,31 @@ export class LocalBrowserService {
     this.handover.windowClosed();
     if (!this.closing) void this.closeConnection(false, true).catch(() => undefined);
   }
+  private createSession(
+    id: string | null,
+    principal: BrowserChatSession['principal'],
+    mode: LocalBrowserMode
+  ): BrowserChatSession {
+    return new BrowserChatSession(id, principal, {
+      broker: this.registry.broker,
+      pages: this.registry.pages,
+      connectionId: this.connectionId!,
+      mode,
+      windowPolicy: async (id, held) => this.registry.windows.get(id)?.setHeld(held),
+      audit: this.audit,
+      cloudOrigins: this.cloudOrigins,
+      appOrigins: this.appOrigins,
+      assertAvailable: () => this.assertAvailable(),
+      assertMayAct: () => this.handover.requireAgentMayAct(),
+    });
+  }
   private contexts(): BrowserContext[] {
     return this.ownedContext ? [this.ownedContext] : (this.browser?.contexts() ?? []);
   }
   private session(sessionId?: string): BrowserChatSession {
     this.assertAvailable();
     const key = sessionId === undefined ? this.selectedSession : sessionId;
+    if (key) this.tabRequests.assertAgent(key);
     const session = this.sessions.get(key);
     if (!session)
       throw new LocalBrowserError(

@@ -1,10 +1,11 @@
 /** Pinned Playwright packaging and managed browser acquisition. */
 import { access } from 'node:fs/promises';
+import { createBackgroundPage } from './chat/background-page.js';
 import path from 'node:path';
 import { execFile } from 'node:child_process';
 import { createRequire } from 'node:module';
 import { promisify } from 'node:util';
-import { chromium, type Browser, type BrowserContext } from 'playwright-core';
+import { chromium, type Browser, type BrowserContext, type Page } from 'playwright-core';
 import {
   agentWindowNameArg,
   agentWindowThemeArgs,
@@ -62,6 +63,7 @@ export interface LocalBrowserBackend {
     onPreparation?: BrowserPreparationListener,
     agentName?: string | null
   ): Promise<BrowserContext>;
+  newPage?(context: BrowserContext, background?: boolean, backgroundParent?: Page): Promise<Page>;
   connect(endpoint: string, headers?: Record<string, string>): Promise<Browser>;
 }
 
@@ -133,6 +135,8 @@ export async function managedChromiumPath(): Promise<string> {
 }
 
 export const productionBackend: LocalBrowserBackend = {
+  newPage: (context, background, parent) =>
+    background ? createBackgroundPage(context, parent) : context.newPage(),
   async launch(storagePath, signal, onPreparation, agentName) {
     assertLocalPlaywrightVersion();
     const chrome = installedChromePath();
