@@ -66,6 +66,28 @@ export function taskApprovalReceiptColumns(receipt: TaskApprovalReceipt) {
   };
 }
 
+/**
+ * The receipt columns emptied, written wherever the grant is withdrawn: a
+ * record must never say a person approved content they never saw (DOR-3641,
+ * Security Should C-1).
+ */
+export const CLEARED_APPROVAL_RECEIPT = {
+  approvedAt: null,
+  approvedBy: null,
+  approvedVia: null,
+} as const;
+
+/**
+ * The receipt for work the schedule's own trusted agent re-keyed while it
+ * stays live: the agent's trust setting approved it, not the person whose
+ * earlier yes covered different content.
+ */
+export function trustedAgentReceiptColumns() {
+  return taskApprovalReceiptColumns(
+    completeTaskApproval({ approvedBy: { kind: 'policy' }, approvedVia: 'trusted_agent' })
+  );
+}
+
 /** Receipt columns for a create, with policy/created as the safe default. */
 export function createTaskApprovalColumns(input?: TaskApprovalInput | null) {
   return input === null

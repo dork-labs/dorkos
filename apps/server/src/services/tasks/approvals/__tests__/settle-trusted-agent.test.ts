@@ -56,18 +56,48 @@ describe('an agent changing the work of an approved schedule', () => {
     expect(row.approvedContentKey).toBeNull();
   });
 
-  it('parks a schedule that came from a file, even for our agent', () => {
+  it('parks a schedule that came from a file, even for our agent, and clears its record', () => {
     const approved = approvedSchedule('file');
-    const stamp = {
-      approvedAt: approved.approvedAt,
-      approvedBy: approved.approvedBy,
-      approvedVia: approved.approvedVia,
-    };
+    expect(approved.approvedAt).not.toBeNull();
     const { settled, after } = agentEdits(approved, true);
 
     expect(settled).toBe('parked');
     expect(after.status).toBe('pending_approval');
-    expect(after).toMatchObject(stamp);
+    // The person's yes covered the old work, not this (Security Should C-1).
+    expect(after).toMatchObject({ approvedAt: null, approvedBy: null, approvedVia: null });
+  });
+
+  it('clears the record wherever a person withdraws the grant', () => {
+    const task = approvedSchedule();
+    store.updateTask(task.id, { status: 'pending_approval' });
+
+    expect(store.getTask(task.id)).toMatchObject({
+      approvedAt: null,
+      approvedBy: null,
+      approvedVia: null,
+    });
+  });
+
+  it('re-stamps a vouched re-key as the trusted agent, not the earlier person', () => {
+    const task = approvedSchedule();
+    db.update(pulseSchedules)
+      .set({ approvedBy: JSON.stringify({ kind: 'person', userId: null, name: 'Sam' }) })
+      .where(eq(pulseSchedules.id, task.id))
+      .run();
+    const before = { ...taskWorkOf(task), status: task.status };
+    store.updateTask(task.id, { prompt: 'Post the digest, and the weather.' });
+    const settled = store.approvals.settleApprovedWorkChange(task.id, before, {
+      trusted: false,
+      armsAgentWork: true,
+      ownAgentVouches: true,
+    });
+    const after = store.getTask(task.id)!;
+
+    expect(settled).toBe('rekeyed');
+    expect(after.status).toBe('active');
+    expect(after.approvedBy).toEqual({ kind: 'policy' });
+    expect(after.approvedVia).toBe('trusted_agent');
+    expect(after.approvedAt).not.toBeNull();
   });
 
   it('parks when the agent is not one whose work arms (Careful, or an outsider)', () => {
@@ -109,13 +139,8 @@ describe('an agent changing the work of an approved schedule', () => {
     expect(after.reason).not.toBeNull();
   });
 
-  it('keeps the earlier receipt when a matching grant re-arms the task', () => {
+  it('re-stamps as the trusted agent when its vouched edit re-arms a parked task', () => {
     const task = approvedSchedule();
-    const stamp = {
-      approvedAt: task.approvedAt,
-      approvedBy: task.approvedBy,
-      approvedVia: task.approvedVia,
-    };
     const before = { ...taskWorkOf(task), status: task.status };
     const approvedKey = db
       .select()
@@ -139,7 +164,14 @@ describe('an agent changing the work of an approved schedule', () => {
     });
 
     expect(settled).toBe('rekeyed');
-    expect(store.getTask(task.id)).toMatchObject({ status: 'active', ...stamp });
+    // The agent's trust re-armed new work; the earlier person's yes no longer
+    // describes it (Security Should C-1).
+    const after = store.getTask(task.id)!;
+    expect(after).toMatchObject({
+      status: 'active',
+      approvedBy: { kind: 'policy' },
+      approvedVia: 'trusted_agent',
+    });
   });
 
   it('leaves a schedule nobody approved waiting', () => {

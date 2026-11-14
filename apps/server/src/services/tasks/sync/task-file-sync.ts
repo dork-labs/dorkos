@@ -38,6 +38,7 @@ import {
   type StickySessionLookup,
 } from '../session/sticky-session.js';
 import {
+  CLEARED_APPROVAL_RECEIPT,
   completeTaskApproval,
   taskApprovalReceiptColumns,
   type TaskApprovalInput,
@@ -233,6 +234,7 @@ export class TaskFileSync {
               ...(arm.status === 'pending_approval'
                 ? {
                     approvedContentKey: null,
+                    ...CLEARED_APPROVAL_RECEIPT,
                     // Kept for the card's "what changed" (DOR-2323).
                     previousApprovalKey:
                       existing.approvedContentKey ?? existing.previousApprovalKey,

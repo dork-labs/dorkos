@@ -44,8 +44,10 @@ import type { TurnMarks } from '../../core/turn-power/turn-marks.js';
 import { clearOutsiderParks, markScheduleOrigin } from './marked-schedules.js';
 import { patchAgentModeColumnOf, readAgentModeColumnOf } from './agent-mode-column.js';
 import {
+  CLEARED_APPROVAL_RECEIPT,
   completeTaskApproval,
   taskApprovalColumns,
+  trustedAgentReceiptColumns,
   type TaskApprovalInput,
 } from './task-approval-receipt.js';
 import type {
@@ -181,6 +183,7 @@ export class TaskApprovals {
       .set({
         status: 'pending_approval',
         approvedContentKey: null,
+        ...CLEARED_APPROVAL_RECEIPT,
         previousApprovalKey: row.approvedContentKey ?? row.previousApprovalKey,
         declinedContentKey: effectiveContentKey(row),
         updatedAt: new Date().toISOString(),
@@ -289,6 +292,7 @@ export class TaskApprovals {
             .set({
               status: 'pending_approval',
               approvedContentKey: null,
+              ...CLEARED_APPROVAL_RECEIPT,
               previousApprovalKey: row.approvedContentKey ?? row.previousApprovalKey,
               followedAgentChanges: merged,
               reason: AGENT_DEFAULTS_CHANGED_OUTSIDE_REASON,
@@ -302,6 +306,7 @@ export class TaskApprovals {
           tx.update(pulseSchedules)
             .set({
               approvedContentKey: null,
+              ...CLEARED_APPROVAL_RECEIPT,
               previousApprovalKey: row.approvedContentKey,
               followedAgentChanges: merged,
               updatedAt: now,
@@ -402,6 +407,9 @@ export class TaskApprovals {
         .set({
           approvedContentKey: key,
           previousApprovalKey: null,
+          // The agent's trust approved this work, not the person whose earlier
+          // yes covered different content (Security Should C-1).
+          ...trustedAgentReceiptColumns(),
           ...(parkedMidRequest
             ? {
                 status: 'active' as const,
@@ -423,6 +431,7 @@ export class TaskApprovals {
       .set({
         status: 'pending_approval',
         approvedContentKey: null,
+        ...CLEARED_APPROVAL_RECEIPT,
         // What was approved, so the card can say what the agent changed. A sync
         // that parked mid-request already moved it here; keep that.
         previousApprovalKey: row.approvedContentKey ?? row.previousApprovalKey,
@@ -446,7 +455,7 @@ export class TaskApprovals {
   withdrawApproval(id: string): void {
     this.db
       .update(pulseSchedules)
-      .set({ approvedContentKey: null })
+      .set({ approvedContentKey: null, ...CLEARED_APPROVAL_RECEIPT })
       .where(eq(pulseSchedules.id, id))
       .run();
   }
@@ -706,6 +715,7 @@ export class TaskApprovals {
             filePath: to,
             status: 'pending_approval',
             approvedContentKey: null,
+            ...CLEARED_APPROVAL_RECEIPT,
             // Kept for the card's "what changed" (DOR-2323).
             previousApprovalKey: existing.approvedContentKey ?? existing.previousApprovalKey,
             ...fileProvenance(existing, { reason }),

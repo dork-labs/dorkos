@@ -159,7 +159,11 @@ describe('scheduled task approval receipts', () => {
 
   it('names the owner only when login is off, never a signed-in account', () => {
     // The saved profile name is the owner's; a signed-in account is not them.
-    expect(personTaskApprover({})).toEqual({ kind: 'person', userId: null, name: 'Dorian' });
+    expect(personTaskApprover({ user: undefined })).toEqual({
+      kind: 'person',
+      userId: null,
+      name: 'Dorian',
+    });
     expect(personTaskApprover({ user: { userId: 'user-2', credential: 'cookie' } })).toEqual({
       kind: 'person',
       userId: 'user-2',

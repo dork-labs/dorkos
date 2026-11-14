@@ -211,6 +211,24 @@ export function ScheduleApprovalShowcases() {
         </div>
       </ShowcaseDemo>
       <ShowcaseLabel>
+        After a yes: the receipt names who approved it, when, and where (press Approve)
+      </ShowcaseLabel>
+      <ShowcaseDemo>
+        <div className="w-full max-w-lg" data-shot="approval-receipt">
+          <ScheduleApprovalCard
+            approvalSurface="inbox"
+            task={proposal({
+              id: 'task-approval-receipt',
+              displayName: 'Weekly invoices',
+              reason: 'Send the invoice summary every Friday.',
+              approvalRevision: 'a'.repeat(64),
+              folderRules: { status: 'approved', applied: [], pending: [] },
+            })}
+          />
+        </div>
+      </ShowcaseDemo>
+
+      <ShowcaseLabel>
         Everything present: a reason, a named proposer, a session to open, three run times
       </ShowcaseLabel>
       <ShowcaseDemo>

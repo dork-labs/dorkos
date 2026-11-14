@@ -38,17 +38,20 @@ export function ScheduleApprovalReceipt({
   const outcome = enabled ? (firstRun ? `First run ${firstRun}` : '') : 'Off until you turn it on.';
   return (
     <AskCard.Receipt data-slot="schedule-receipt" tone="allowed">
-      <span className="block">{`Approved by ${name} at ${time}, in ${place}.`}</span>
-      {(grantedLabel || outcome) && (
-        <>
-          {' '}
-          <span className="block">
+      {/* One column beside the check mark: the receipt sits in a row, and two
+          loose spans became two squeezed columns on a phone. */}
+      <span className="flex min-w-0 flex-col">
+        <span>{`Approved by ${name} at ${time}, in ${place}.`}</span>
+        {(grantedLabel || outcome) && (
+          <span>
+            {/* Read aloud and copied as one sentence after the first. */}
+            <span className="sr-only"> </span>
             {grantedLabel ? `At ${grantedLabel}.` : ''}
             {grantedLabel && outcome ? ' ' : ''}
             {outcome}
           </span>
-        </>
-      )}
+        )}
+      </span>
     </AskCard.Receipt>
   );
 }
