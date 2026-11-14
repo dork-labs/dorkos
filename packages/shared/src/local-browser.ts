@@ -109,6 +109,10 @@ export interface LocalBrowserState {
 export interface LocalBrowserPersonState extends LocalBrowserState {
   handoff: LocalBrowserHandoff | null;
   signIn: LocalBrowserSignIn | null;
+  /** Person-only target for focusing another chat’s held sign-in. Never sent to agents. */
+  signInElsewhere?: { handoffId: string } | null;
+  /** The held tab stays attached; its agent is excluded by the page lease. Person UI only. */
+  handoffAttached?: boolean;
 }
 export interface LocalBrowserObservation {
   revision: number;
@@ -212,6 +216,8 @@ export const LocalBrowserAskPersonSchema = z
 export const LocalBrowserPersonStateSchema = LocalBrowserStateSchema.extend({
   handoff: LocalBrowserHandoffSchema.nullable(),
   signIn: LocalBrowserSignInSchema.nullable(),
+  signInElsewhere: z.object({ handoffId: z.string() }).nullable().optional(),
+  handoffAttached: z.boolean().optional(),
 });
 
 /** What the agent hears back. */

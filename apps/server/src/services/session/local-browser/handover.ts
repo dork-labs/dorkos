@@ -188,11 +188,37 @@ export class BrowserHandover {
    * than the person's own window (DOR-4163).
    */
   async state(sessionId?: string): Promise<LocalBrowserPersonState> {
-    const state = this.trimmed(await this.browser.state(sessionId));
+    const before = this.record?.outcome === null ? this.record : null;
+    // The global handoff card must follow the held tab, not the last chat that opened one.
+    const scope =
+      sessionId ??
+      (before && this.browser.usesPageLeases?.(before.sessionId) ? before.sessionId : undefined);
+    const state = this.trimmed(await this.browser.state(scope));
+    const open = this.record?.outcome === null ? this.record : null;
+    // A handoff can start while state is being read. Never pair its card with another tab.
+    if (
+      sessionId === undefined &&
+      open &&
+      state.sessionId !== open.sessionId &&
+      this.browser.usesPageLeases?.(open.sessionId)
+    )
+      return this.state(open.sessionId);
+    const elsewhere =
+      state.status === 'connected' &&
+      state.mode === 'new-window' &&
+      sessionId !== undefined &&
+      open &&
+      open.sessionId !== sessionId &&
+      this.browser.usesPageLeases?.(open.sessionId);
     return {
       ...state,
       handoff: sessionId === undefined || this.record?.sessionId === sessionId ? this.record : null,
       signIn: this.signIns.current,
+      signInElsewhere: elsewhere ? { handoffId: open.id } : null,
+      handoffAttached:
+        !!open &&
+        (sessionId === undefined || sessionId === open.sessionId) &&
+        !!this.browser.usesPageLeases?.(open.sessionId),
     };
   }
 
@@ -236,6 +262,21 @@ export class BrowserHandover {
     }
     if (this.signIns.active && (await this.signInOnAgentProfile()))
       throw new LocalBrowserError('signing_in', 'A person is signing in. Wait until they finish.');
+  }
+
+  /** A different tab can steal focus with a popup during sign-in. Reads stay scoped and usable. */
+  requireAgentMayAct(): void {
+    if (
+      this.preparingHandoff ||
+      this.answeringHandoff ||
+      this.record?.outcome === null ||
+      this.signingIn > 0 ||
+      this.signIns.active
+    )
+      throw new LocalBrowserError(
+        'signing_in_elsewhere',
+        'The person is signing in for another chat. Acting is paused until they finish. Reading still works.'
+      );
   }
 
   /**

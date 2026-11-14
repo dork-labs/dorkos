@@ -15,6 +15,7 @@ import { useActionFocusReturn } from '../model/use-action-focus-return';
 import { useFirstFocus } from '../model/use-first-focus';
 import { BrowserPreparation } from './BrowserPreparation';
 import { WaitingElsewhere } from './WaitingElsewhere';
+import { PausedForSignIn } from './PausedForSignIn';
 import { SavedSignIns } from './SavedSignIns';
 import { SharedElsewhere } from './SharedElsewhere';
 
@@ -72,6 +73,10 @@ export function LocalBrowserPanel({
     if (connected) setHadConnection(true);
   }, [connected]);
   const sharedElsewhere = !!state?.sessionId && state.sessionId !== sessionId;
+  const pausedForSignIn =
+    connected && !sharedElsewhere && sessionId && state?.mode === 'new-window'
+      ? state.signInElsewhere
+      : null;
   // Another chat's agent is waiting on a person. Nothing here may answer for that chat.
   const waitingElsewhere =
     state?.handoff?.outcome === null && state.handoff.sessionId !== sessionId
@@ -130,6 +135,8 @@ export function LocalBrowserPanel({
       queryClient.setQueryData<LocalBrowserPersonState>(stateKey, (known) => ({
         handoff: known?.handoff ?? null,
         signIn: known?.signIn ?? null,
+        signInElsewhere: known?.signInElsewhere ?? null,
+        handoffAttached: known?.handoffAttached ?? false,
         ...next,
       }));
       return true;
@@ -225,8 +232,10 @@ export function LocalBrowserPanel({
       {/* Below 480px of panel the state sits under the title, so neither wraps (DOR-4265). */}
       <div className="flex flex-col items-start gap-0.5 @min-[480px]/browser-panel:flex-row @min-[480px]/browser-panel:items-center @min-[480px]/browser-panel:justify-between @min-[480px]/browser-panel:gap-2">
         <h3 className="text-sm font-medium">Agent browser</h3>
-        <span role="status" className="text-muted-foreground text-xs">
-          {cancelling
+        <span role="status" aria-live="polite" className="text-muted-foreground text-xs">
+          {pausedForSignIn
+            ? 'Paused'
+            : cancelling
             ? 'Cancelling…'
             : opening
               ? 'Preparing browser'
@@ -248,7 +257,7 @@ export function LocalBrowserPanel({
                           : 'Not open yet'}
         </span>
       </div>
-      {opening && (
+      {opening && !pausedForSignIn && (
         <Button
           size="sm"
           variant="outline"
@@ -268,7 +277,8 @@ export function LocalBrowserPanel({
       )}
       {(query.isError || capabilityQuery.isError) &&
         readCode !== 'local_only' &&
-        readCode !== 'owner_only' && (
+        readCode !== 'owner_only' &&
+        !pausedForSignIn && (
           <Button
             size="sm"
             variant="outline"
@@ -280,7 +290,10 @@ export function LocalBrowserPanel({
             Reconnect
           </Button>
         )}
-      {waitingElsewhere && (
+      {pausedForSignIn && (
+        <PausedForSignIn handoffId={pausedForSignIn.handoffId} agentName={agentName} />
+      )}
+      {!pausedForSignIn && waitingElsewhere && (
         <WaitingElsewhere
           sessionId={waitingElsewhere.sessionId}
           agentName={waitingElsewhere.agentName}
@@ -305,7 +318,7 @@ export function LocalBrowserPanel({
           )}
         </div>
       )}
-      {!connected && !waitingElsewhere && !handoffHere && (
+      {!connected && !waitingElsewhere && !handoffHere && !pausedForSignIn && (
         <div className="min-h-0 space-y-3 overflow-y-auto">
           {choiceIssue && (
             <p className="text-muted-foreground text-xs">
@@ -336,7 +349,7 @@ export function LocalBrowserPanel({
           </Button>
         </div>
       )}
-      {connected && !waitingElsewhere && sharedElsewhere && (
+      {connected && !waitingElsewhere && !pausedForSignIn && sharedElsewhere && (
         <SharedElsewhere
           holderSessionId={state.sessionId!}
           canTakeHere={!!sessionId}
@@ -345,7 +358,7 @@ export function LocalBrowserPanel({
           onTakeHere={open}
         />
       )}
-      {connected && !waitingElsewhere && !sharedElsewhere && (
+      {connected && !waitingElsewhere && !pausedForSignIn && !sharedElsewhere && (
         <>
           {!state.sessionId && (
             <p className="text-muted-foreground text-xs">
@@ -484,7 +497,7 @@ export function LocalBrowserPanel({
           )}
         </>
       )}
-      {!waitingElsewhere && (
+      {!waitingElsewhere && !pausedForSignIn && (
         <SavedSignIns
           enabled={!!state && !!capabilities && !query.isError && !capabilityQuery.isError}
           disabled={busy || cancelling}
