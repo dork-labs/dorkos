@@ -248,6 +248,7 @@ describe('approving a proposed schedule can carry the operator’s trust stop', 
         status: 'active',
         enabled: true,
         permissionMode: 'bypassPermissions',
+        acceptLooserThanRequested: true,
       });
 
     expect(res.status).toBe(200);
@@ -268,6 +269,7 @@ describe('approving a proposed schedule can carry the operator’s trust stop', 
         status: 'active',
         enabled: true,
         permissionMode: 'bypassPermissions',
+        acceptLooserThanRequested: true,
       });
 
     // The arm grant is what `resolveFileArmStatus` and `keepsApprovedBypass`
@@ -539,6 +541,7 @@ describe('approving a proposed schedule can carry the operator’s trust stop', 
         status: 'active',
         enabled: true,
         permissionMode: 'bypassPermissions',
+        acceptLooserThanRequested: true,
         approvedAllow: ['Bash(/tmp/task.sh --once)'],
       });
 

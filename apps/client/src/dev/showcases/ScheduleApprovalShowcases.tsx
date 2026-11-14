@@ -229,6 +229,46 @@ export function ScheduleApprovalShowcases() {
       </ShowcaseDemo>
 
       <ShowcaseLabel>
+        The agent asked for Allowed commands and one exact command: shown, flagged as running
+        programs, and confirmed with its own tick
+      </ShowcaseLabel>
+      <ShowcaseDemo>
+        <div className="w-full max-w-lg" data-shot="requested-allow">
+          <ScheduleApprovalCard
+            approvalSurface="inbox"
+            task={proposal({
+              id: 'task-requested-allow',
+              displayName: 'Nightly report',
+              reason: 'Run the report script each night and nothing else.',
+              permissionMode: 'dontAsk',
+              requestedPermissionMode: 'dontAsk',
+              requestedAllow: ['Bash(/Users/sam/reports/nightly.sh --once)'],
+            })}
+          />
+        </div>
+      </ShowcaseDemo>
+
+      <ShowcaseLabel>
+        Proposed after reading outside words: starts at the tightest mode, and its rules take a
+        separate tick
+      </ShowcaseLabel>
+      <ShowcaseDemo>
+        <div className="w-full max-w-lg" data-shot="outsider-default">
+          <ScheduleApprovalCard
+            approvalSurface="schedules"
+            task={proposal({
+              id: 'task-outsider-default',
+              displayName: 'Inbox digest',
+              reason: 'Sum up the support inbox every morning.',
+              originMarks: { outsider: true },
+              requestedPermissionMode: 'acceptEdits',
+              requestedAllow: ['Read(/Users/sam/support/inbox.md)'],
+            })}
+          />
+        </div>
+      </ShowcaseDemo>
+
+      <ShowcaseLabel>
         Everything present: a reason, a named proposer, a session to open, three run times
       </ShowcaseLabel>
       <ShowcaseDemo>

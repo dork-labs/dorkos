@@ -587,6 +587,8 @@ describe('ScheduleApprovalCard — answering it', () => {
       'Runs without asking, and may only:'
     );
     expect(slot('schedule-requested-allow')).toHaveTextContent('Bash(/abs/path/script.sh --once)');
+    // A command rule always takes its own tick (Security Should D-2).
+    await userEvent.click(screen.getByRole('checkbox', { name: /run these programs/i }));
     await userEvent.click(screen.getByRole('button', { name: 'Approve Nightly sweep' }));
     await waitFor(() =>
       expect(updateTask).toHaveBeenCalledWith('task-1', {
@@ -594,6 +596,7 @@ describe('ScheduleApprovalCard — answering it', () => {
         status: 'active',
         permissionMode: 'dontAsk',
         approvedAllow: ['Bash(/abs/path/script.sh --once)'],
+        acceptLooserThanRequested: true,
       })
     );
   });
@@ -621,6 +624,56 @@ describe('ScheduleApprovalCard — answering it', () => {
         })
       )
     );
+  });
+
+  it('says a command rule can run programs and needs its own tick (D-2)', async () => {
+    const updateTask = vi.fn().mockResolvedValue(proposal({ status: 'active' }));
+    renderCard(
+      proposal({
+        permissionMode: 'dontAsk',
+        requestedPermissionMode: 'dontAsk',
+        requestedAllow: ['Bash(/abs/report.sh --once)'],
+      } as Partial<Task>),
+      { updateTask }
+    );
+    expect(await findSlot('schedule-runs-programs')).toHaveTextContent(
+      'Can run programs on this computer.'
+    );
+    const approve = screen.getByRole('button', { name: 'Approve Nightly sweep' });
+    expect(approve).toBeDisabled();
+    await userEvent.click(screen.getByRole('checkbox', { name: /run these programs/i }));
+    await userEvent.click(approve);
+    await waitFor(() =>
+      expect(updateTask).toHaveBeenCalledWith(
+        'task-1',
+        expect.objectContaining({
+          approvedAllow: ['Bash(/abs/report.sh --once)'],
+          acceptLooserThanRequested: true,
+        })
+      )
+    );
+  });
+
+  it('asks for the tick before an outsider’s requested rules (D-3)', async () => {
+    renderCard(
+      proposal({
+        permissionMode: 'dontAsk',
+        originMarks: { outsider: true },
+        requestedPermissionMode: 'dontAsk',
+        requestedAllow: ['Read(/abs/notes/today.md)'],
+      } as Partial<Task>)
+    );
+    await screen.findByRole('combobox', { name: 'Run permissions' });
+    expect(screen.getByRole('button', { name: 'Approve Nightly sweep' })).toBeDisabled();
+    expect(screen.getByRole('checkbox', { name: /read outside words/i })).toBeInTheDocument();
+  });
+
+  it('needs the tick to raise the saved mode when nothing was requested (D-1)', async () => {
+    renderCard(proposal({ permissionMode: 'dontAsk' } as Partial<Task>));
+    const picker = await screen.findByRole('combobox', { name: 'Run permissions' });
+    await userEvent.selectOptions(picker, 'acceptEdits');
+    expect(screen.getByRole('button', { name: 'Approve Nightly sweep' })).toBeDisabled();
+    expect(screen.getByRole('checkbox', { name: /Run it looser/i })).toBeInTheDocument();
   });
 
   it('defaults outsider work to the tightest unattended mode', async () => {

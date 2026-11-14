@@ -3,7 +3,12 @@ import type { PermissionModeDescriptor } from '@dorkos/shared/agent-runtime';
 import type { Task } from '@dorkos/shared/types';
 import { Button, Checkbox, PermissionModeScopeNote } from '@/layers/shared/ui';
 import { isNoLooserThan } from '@dorkos/shared/permission-semantics';
-import { schedulePermissionLabel } from '../lib/schedule-permission-copy';
+import { runsPrograms } from '@dorkos/shared/permission-rules';
+import {
+  scheduleConfirmLabel,
+  schedulePermissionLabel,
+  type ScheduleConfirmReason,
+} from '../lib/schedule-permission-copy';
 
 /** The run's mode and the separately approved folder rules, before the person approves. */
 export function SchedulePermissionChoice({
@@ -15,7 +20,7 @@ export function SchedulePermissionChoice({
   onUseRequested,
   confirmLooser,
   onConfirmLooserChange,
-  requiresLooserConfirmation,
+  confirmReason,
 }: {
   task: Task;
   modes: readonly PermissionModeDescriptor[];
@@ -25,7 +30,8 @@ export function SchedulePermissionChoice({
   onUseRequested?: () => void;
   confirmLooser: boolean;
   onConfirmLooserChange: (confirmed: boolean) => void;
-  requiresLooserConfirmation: boolean;
+  /** Why approving needs the separate tick, or `null` when it does not. */
+  confirmReason: ScheduleConfirmReason | null;
 }) {
   const id = useId();
   const selected = modes.find((mode) => mode.id === value);
@@ -74,15 +80,6 @@ export function SchedulePermissionChoice({
           Use {schedulePermissionLabel(requested.id, requested.label)}
         </Button>
       )}
-      {requiresLooserConfirmation && (
-        <label className="flex items-start gap-2">
-          <Checkbox
-            checked={confirmLooser}
-            onCheckedChange={(checked) => onConfirmLooserChange(checked === true)}
-          />
-          <span>Run it looser than {task.proposedByName ?? 'the agent'} asked</span>
-        </label>
-      )}
       {task.requestedAllow && task.requestedAllow.length > 0 && (
         <div data-slot="schedule-requested-allow" className="space-y-1">
           <p className="font-medium">Runs without asking, and may only:</p>
@@ -93,7 +90,22 @@ export function SchedulePermissionChoice({
               </li>
             ))}
           </ul>
+          {task.requestedAllow.some(runsPrograms) && (
+            <p data-slot="schedule-runs-programs" className="text-status-warning-fg">
+              Can run programs on this computer.
+            </p>
+          )}
         </div>
+      )}
+      {/* After what it confirms, so the tick answers what was just read. */}
+      {confirmReason && (
+        <label className="flex min-h-11 items-start gap-2">
+          <Checkbox
+            checked={confirmLooser}
+            onCheckedChange={(checked) => onConfirmLooserChange(checked === true)}
+          />
+          <span>{scheduleConfirmLabel(confirmReason, task.proposedByName)}</span>
+        </label>
       )}
       {/* What a never-asks mode still does not cover: DorkOS's own actions. */}
       {selected && <PermissionModeScopeNote mode={value} descriptor={selected} />}

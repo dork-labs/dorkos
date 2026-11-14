@@ -309,6 +309,10 @@
       "types": "./src/memory-provider.ts",
       "default": "./dist/memory-provider.js"
     },
+    "./permission-rules": {
+      "types": "./src/permission-rules.ts",
+      "default": "./dist/permission-rules.js"
+    },
     "./permission-semantics": {
       "types": "./src/permission-semantics.ts",
       "default": "./dist/permission-semantics.js"

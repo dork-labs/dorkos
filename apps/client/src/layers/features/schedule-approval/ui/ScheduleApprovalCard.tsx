@@ -33,7 +33,7 @@ import { formatCadence, formatFirstRuns } from '../lib/format-schedule-times';
 import { describeApprovalChanges } from '../lib/describe-approval-changes';
 import { useScheduleApprovalPower } from '../model/use-schedule-approval-power';
 import { SchedulePermissionChoice } from './SchedulePermissionChoice';
-import { schedulePermissionLabel } from '../lib/schedule-permission-copy';
+import { scheduleConfirmReason, schedulePermissionLabel } from '../lib/schedule-permission-copy';
 import {
   cancelRejection,
   rejectAfterUndoWindow,
@@ -232,10 +232,17 @@ function ScheduleApprovalContent({
     power.ceiling &&
     isNoLooserThan(power.ceiling, requested);
   const selected = power.modes.find((mode) => mode.id === selectedMode);
-  const confirmationBaseline = task.originMarks?.outsider ? outsiderDefault : requested;
-  const needsLooserConfirmation = Boolean(
+  // Matches the server's check (`task-approval-request.ts`): with no request the
+  // saved mode is the proposal, so anything looser takes the separate choice.
+  const savedMode = power.modes.find((mode) => mode.id === task.permissionMode) ?? null;
+  const confirmationBaseline = task.originMarks?.outsider
+    ? outsiderDefault
+    : (requested ?? savedMode);
+  const looserMode = Boolean(
     selected && confirmationBaseline && !isNoLooserThan(confirmationBaseline, selected)
   );
+  const confirmReason = scheduleConfirmReason(task, looserMode);
+  const needsLooserConfirmation = confirmReason !== null;
   const currentLabel = schedulePermissionLabel(
     selectedMode,
     selected?.label ?? permissionModeLabel(selectedMode)
@@ -578,7 +585,7 @@ function ScheduleApprovalContent({
             }
             confirmLooser={confirmLooser}
             onConfirmLooserChange={setConfirmLooser}
-            requiresLooserConfirmation={needsLooserConfirmation}
+            confirmReason={confirmReason}
           />
         )}
 

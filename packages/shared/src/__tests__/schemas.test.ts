@@ -52,6 +52,21 @@ describe('task permission requests', () => {
     'mcp__dorkos__*',
     'mcp__dorkos__*(x)',
     'Bash(ls)\nBash(*)',
+    // Security Should D-2: the home folder, any wildcard domain, interpreters.
+    'Read(~/**)',
+    'Edit(~/**)',
+    'Read(~)',
+    'Read($HOME/**)',
+    'Edit(${HOME}/**)',
+    'WebFetch(domain:*.com)',
+    'WebFetch(domain:*.example.com)',
+    'Bash(python3:*)',
+    'Bash(node:*)',
+    'Bash(sh -c:*)',
+    'Bash(bash -c *)',
+    'Bash(python3 *)',
+    'Bash(env:*)',
+    'Bash(npx:*)',
   ])('refuses unsafe requested rules: %j', (rule) => {
     expect(UpdateTaskRequestSchema.safeParse({ requestedAllow: [rule] }).success).toBe(false);
   });

@@ -83,6 +83,7 @@ import type { PermissionStop } from './agent-runtime.js';
 // A leaf module (zod only), so this value import forms no load-time cycle.
 import { AccountUsageSchema } from './account-usage.js';
 import { ProjectRefSchema } from './project-schemas.js';
+import { isSpecificPermissionRule } from './permission-rules.js';
 // A leaf module (zod only), so this value import forms no load-time cycle.
 import {
   ChatMessageStampSchema,
@@ -5854,25 +5855,7 @@ export const TaskFileCapSchema = z
 /** {@link TaskFileCapSchema}. */
 export type TaskFileCap = z.infer<typeof TaskFileCapSchema>;
 
-/**
- * Whether a Claude Code permission rule names one specific action (DOR-3637).
- *
- * The shape must be `Tool(specifier)`, with a plain tool name (no `*`, so no
- * `mcp__server__*`) and no control characters. A bare tool, empty parentheses,
- * or a specifier that is only wildcards, slashes, colons, dots and spaces
- * (`Bash(:*)`, `Bash(* *)`, `Read(/**)`, `WebFetch(domain:*)`) grants the whole
- * tool, so it is refused: one click on "exactly what was asked" must never
- * carry a whole-tool grant.
- *
- * @param rule - The trimmed rule text.
- */
-export function isSpecificPermissionRule(rule: string): boolean {
-  if (/[\p{Cc}\p{Cf}]/u.test(rule)) return false;
-  const match = /^([A-Za-z][A-Za-z0-9_-]*)\((.*)\)$/s.exec(rule);
-  if (!match) return false;
-  const specifier = match[2]!.replace(/^domain:/, '');
-  return specifier.replace(/[\s*/:.]/g, '').length > 0;
-}
+export { isSpecificPermissionRule } from './permission-rules.js';
 
 /** A Claude Code permission rule proposed for one scheduled task's runs. */
 export const TaskPermissionRuleSchema = z

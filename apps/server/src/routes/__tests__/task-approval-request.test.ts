@@ -36,6 +36,46 @@ describe('task approval request limits', () => {
     ).not.toBeNull();
   });
 
+  it('measures a raise from the saved mode when nothing was requested (D-1)', () => {
+    const task = createMockSchedule({ status: 'pending_approval', permissionMode: 'default' });
+
+    expect(
+      taskApprovalRequestRefusal(
+        task,
+        { status: 'active', permissionMode: 'bypassPermissions' },
+        undefined
+      )
+    ).not.toBeNull();
+    expect(taskApprovalRequestRefusal(task, { status: 'active' }, undefined)).toBeNull();
+  });
+
+  it('asks for the confirmation before any rule that runs programs (D-2)', () => {
+    const task = createMockSchedule({
+      status: 'pending_approval',
+      permissionMode: 'dontAsk',
+      requestedPermissionMode: 'dontAsk',
+      requestedAllow: ['Bash(/abs/report.sh --once)'],
+    });
+    const update = { status: 'active' as const, approvedAllow: ['Bash(/abs/report.sh --once)'] };
+
+    expect(taskApprovalRequestRefusal(task, update, undefined)).not.toBeNull();
+    expect(taskApprovalRequestRefusal(task, update, true)).toBeNull();
+  });
+
+  it('asks for the confirmation before an outsider’s requested rules (D-3)', () => {
+    const task = createMockSchedule({
+      status: 'pending_approval',
+      permissionMode: 'dontAsk',
+      originMarks: { outsider: true },
+      requestedPermissionMode: 'dontAsk',
+      requestedAllow: ['Read(/abs/notes/today.md)'],
+    });
+    const update = { status: 'active' as const, approvedAllow: ['Read(/abs/notes/today.md)'] };
+
+    expect(taskApprovalRequestRefusal(task, update, undefined)).not.toBeNull();
+    expect(taskApprovalRequestRefusal(task, update, true)).toBeNull();
+  });
+
   it('refuses allow rules beyond the proposal without explicit confirmation', () => {
     const task = createMockSchedule({
       status: 'pending_approval',
