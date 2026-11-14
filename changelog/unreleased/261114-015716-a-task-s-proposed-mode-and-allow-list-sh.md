@@ -2,6 +2,7 @@
 covers:
   - "fix(schedules): a task's proposed mode and allow list show on the approval card and apply exactly, scoped to its runs (DOR-3637)"
   - 'fix(schedules): looser modes, command rules and outsider rules each take a separate yes (DOR-3637)'
+  - 'fix(schedules): approval card design review for requested rules, and a "Run it looser" demo (DOR-3637)'
 ---
 
 ### Security

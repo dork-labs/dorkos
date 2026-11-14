@@ -210,6 +210,21 @@ export function ScheduleApprovalShowcases() {
           />
         </div>
       </ShowcaseDemo>
+      <ShowcaseLabel>A looser picked mode needs its own tick</ShowcaseLabel>
+      <ShowcaseDemo>
+        <div className="w-full max-w-lg" data-shot="run-looser">
+          <ScheduleApprovalCard
+            approvalSurface="home"
+            task={proposal({
+              requestedPermissionMode: 'dontAsk',
+              permissionMode: 'dontAsk',
+              displayName: 'Weekly cleanup',
+              reason: 'Tidy old branches every Sunday.',
+            })}
+            initialPickedMode="acceptEdits"
+          />
+        </div>
+      </ShowcaseDemo>
       <ShowcaseLabel>
         After a yes: the receipt names who approved it, when, and where (press Approve)
       </ShowcaseLabel>

@@ -133,7 +133,12 @@ const SHOWN = {
 function renderCard(
   task: Task = proposal(),
   overrides: Partial<Transport> = {},
-  props: { pinActions?: boolean; compact?: boolean; turnOnApproval?: boolean } = {}
+  props: {
+    pinActions?: boolean;
+    compact?: boolean;
+    turnOnApproval?: boolean;
+    initialPickedMode?: string;
+  } = {}
 ) {
   const base = createMockTransport();
   const transport = createMockTransport({
@@ -665,7 +670,7 @@ describe('ScheduleApprovalCard — answering it', () => {
     );
     await screen.findByRole('combobox', { name: 'Run permissions' });
     expect(screen.getByRole('button', { name: 'Approve Nightly sweep' })).toBeDisabled();
-    expect(screen.getByRole('checkbox', { name: /read outside words/i })).toBeInTheDocument();
+    expect(screen.getByRole('checkbox', { name: 'Allow these rules anyway' })).toBeInTheDocument();
   });
 
   it('needs the tick to raise the saved mode when nothing was requested (D-1)', async () => {
@@ -1327,6 +1332,30 @@ describe('ScheduleApprovalCard — running it once', () => {
  * the grant either happens or silently does not.
  */
 describe('ScheduleApprovalCard — choosing the run permissions', () => {
+  it('seeds a looser preview mode and requires its confirmation', async () => {
+    renderCard(
+      proposal({ requestedPermissionMode: 'dontAsk', permissionMode: 'dontAsk' }),
+      {},
+      { initialPickedMode: 'acceptEdits' }
+    );
+
+    const picker = await screen.findByRole('combobox', { name: 'Run permissions' });
+    expect(picker).toHaveValue('acceptEdits');
+    const confirm = screen.getByRole('checkbox', {
+      name: 'Run it looser than DorkBot asked',
+    });
+    const approve = screen.getByRole('button', { name: 'Approve Nightly sweep' });
+    expect(approve).toBeDisabled();
+    // Test runs still use the saved mode, so the card keeps saying so.
+    expect(
+      screen.getByText(/Test runs use Allowed commands until you approve/)
+    ).toBeInTheDocument();
+    expect(confirm.closest('label')?.nextElementSibling).toBe(slot('schedule-folder-rules'));
+
+    await userEvent.click(confirm);
+    expect(approve).toBeEnabled();
+  });
+
   it('shows one unattended explanation for every mode, without interactive wording', async () => {
     renderCard();
     const picker = await screen.findByRole('combobox', { name: 'Run permissions' });

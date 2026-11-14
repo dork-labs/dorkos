@@ -92,6 +92,8 @@ export interface ScheduleApprovalCardProps {
   turnOnApproval?: boolean;
   /** Phone review title, scrolling with the instructions above the sticky mode. */
   reviewHeader?: ReactNode;
+  /** Seed the picked mode for previews and the Playground. */
+  initialPickedMode?: string;
   /**
    * The card sits in a short host (Home's pinned header): the prompt block is
    * capped lower, so the title, the prompt and Approve fit in it together.
@@ -163,6 +165,7 @@ function ScheduleApprovalContent({
   className,
   pinActions = false,
   reviewHeader,
+  initialPickedMode,
   compact = false,
   onStale,
   onApproved,
@@ -176,7 +179,7 @@ function ScheduleApprovalContent({
   const deleteTask = useDeleteTask();
   const testRun = useScheduleTestRun(task.id);
   const [decision, setDecision] = useState<Decision | null>(null);
-  const [pickedMode, setPickedMode] = useState<string | null>(null);
+  const [pickedMode, setPickedMode] = useState<string | null>(initialPickedMode ?? null);
   const [confirmLooser, setConfirmLooser] = useState(false);
   const [grantedLabel, setGrantedLabel] = useState<string | null>(null);
   const [approvedAt, setApprovedAt] = useState<string | null>(null);
@@ -589,10 +592,16 @@ function ScheduleApprovalContent({
           />
         )}
 
+        {/* Still true until a test run can take the picked mode (the trigger
+            route takes none), so it stays while it is. */}
         {answered === null && selectedMode !== task.permissionMode && (
           <p className="text-muted-foreground text-xs">
-            Test runs use {power.current?.label ?? permissionModeLabel(task.permissionMode)} until
-            you approve.
+            Test runs use{' '}
+            {schedulePermissionLabel(
+              task.permissionMode,
+              power.current?.label ?? permissionModeLabel(task.permissionMode)
+            )}{' '}
+            until you approve.
           </p>
         )}
         {pinActions && answered === null && (

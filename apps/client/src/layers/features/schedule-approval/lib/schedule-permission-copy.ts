@@ -58,5 +58,5 @@ export function scheduleConfirmReason(
 export function scheduleConfirmLabel(reason: ScheduleConfirmReason, agent: string | null): string {
   if (reason === 'looser') return `Run it looser than ${agent ?? 'the agent'} asked`;
   if (reason === 'programs') return 'Let it run these programs with nobody there';
-  return 'Allow these rules, though it read outside words';
+  return 'Allow these rules anyway';
 }

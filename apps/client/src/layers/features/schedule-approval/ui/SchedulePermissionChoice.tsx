@@ -2,7 +2,7 @@ import { useId } from 'react';
 import type { PermissionModeDescriptor } from '@dorkos/shared/agent-runtime';
 import type { Task } from '@dorkos/shared/types';
 import { Button, Checkbox, PermissionModeScopeNote } from '@/layers/shared/ui';
-import { isNoLooserThan } from '@dorkos/shared/permission-semantics';
+import { actsWithoutAsking, isNoLooserThan } from '@dorkos/shared/permission-semantics';
 import { runsPrograms } from '@dorkos/shared/permission-rules';
 import {
   scheduleConfirmLabel,
@@ -99,7 +99,7 @@ export function SchedulePermissionChoice({
       )}
       {/* After what it confirms, so the tick answers what was just read. */}
       {confirmReason && (
-        <label className="flex min-h-11 items-start gap-2">
+        <label className="flex min-h-11 items-center gap-2">
           <Checkbox
             checked={confirmLooser}
             onCheckedChange={(checked) => onConfirmLooserChange(checked === true)}
@@ -108,7 +108,9 @@ export function SchedulePermissionChoice({
         </label>
       )}
       {/* What a never-asks mode still does not cover: DorkOS's own actions. */}
-      {selected && <PermissionModeScopeNote mode={value} descriptor={selected} />}
+      {selected && actsWithoutAsking(selected) && (
+        <PermissionModeScopeNote mode={value} descriptor={selected} />
+      )}
       <div data-slot="schedule-folder-rules" className="space-y-1">
         <p className="font-medium">Approved folder rules</p>
         {rules?.status === 'approved' && rules.applied.length > 0 ? (

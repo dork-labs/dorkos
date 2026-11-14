@@ -63,9 +63,16 @@ describe('task permission requests', () => {
     'Bash(python3:*)',
     'Bash(node:*)',
     'Bash(sh -c:*)',
+    'Bash(bash -c:*)',
     'Bash(bash -c *)',
     'Bash(python3 *)',
     'Bash(env:*)',
+    'Bash(env *)',
+    'Bash(xargs:*)',
+    'Bash(perl:*)',
+    'Bash(perl -e *)',
+    'Bash(ruby:*)',
+    'Bash(ruby -e *)',
     'Bash(npx:*)',
   ])('refuses unsafe requested rules: %j', (rule) => {
     expect(UpdateTaskRequestSchema.safeParse({ requestedAllow: [rule] }).success).toBe(false);
