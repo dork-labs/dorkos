@@ -11,8 +11,10 @@ import {
   createRoute,
   createRouter,
 } from '@tanstack/react-router';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { ExtensionPageProps, ExtensionRecordPublic } from '@dorkos/extension-api';
-import { createInitialSlots, useExtensionRegistry } from '@/layers/shared/model';
+import { createMockTransport } from '@dorkos/test-utils';
+import { createInitialSlots, TransportProvider, useExtensionRegistry } from '@/layers/shared/model';
 
 let mockExtensions: { extensions: ExtensionRecordPublic[]; ready: boolean; settling?: boolean } = {
   extensions: [],
@@ -25,13 +27,6 @@ const tryAgain = vi.fn(async (_id: string) => {});
 vi.mock('@/layers/entities/extension', () => ({
   useAppActions: () => ({ tryAgain }),
   useAppTrying: () => false,
-}));
-// The dev-link strip reads the dev-link list; no list yet draws it without its switch.
-vi.mock('@/layers/entities/marketplace', () => ({
-  useDevLinks: () => ({ data: undefined }),
-}));
-vi.mock('@/layers/features/marketplace', () => ({
-  UnlinkDialog: () => null,
 }));
 
 import {
@@ -78,7 +73,16 @@ async function renderAt(url: string) {
     history: createMemoryHistory({ initialEntries: [url] }),
   });
   await router.load();
-  render(<RouterProvider router={router} />);
+  // The real data layer: a dev-linked page's strip reads the dev-link list
+  // through it. Only the transport, the network edge, is a mock.
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  render(
+    <QueryClientProvider client={queryClient}>
+      <TransportProvider transport={createMockTransport()}>
+        <RouterProvider router={router} />
+      </TransportProvider>
+    </QueryClientProvider>
+  );
   return router;
 }
 
