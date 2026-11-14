@@ -3,7 +3,7 @@
  "id": "261111-163545",
  "verdict": "pending",
  "reason": "The after-window runs to 2026-11-18T19:42:13Z; the verdict is computed on 2026-11-19.",
- "computed_at": "2026-11-13T12:57:32.874Z",
+ "computed_at": "2026-11-14T12:00:45.552Z",
  "hypothesis_hash": "55c071ce7457236c",
  "metric": "gate.wf.test.test-shard.failure_rate",
  "anchor": "2026-11-11T19:42:13Z",
@@ -25,15 +25,15 @@
  "after": {
   "from": "2026-11-11T19:42:13Z",
   "to": "2026-11-18T19:42:13Z",
-  "n": 456,
-  "value": 0.0132
+  "n": 1417,
+  "value": 0.0155
  },
  "confounders": [],
  "slo": {
   "id": "wasted-queue-builds",
   "stat": "share",
   "before": 0.1458,
-  "after": 0.02,
+  "after": 0.0182,
   "movement": "better"
  }
 }
