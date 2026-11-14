@@ -66,7 +66,7 @@ export function BrowserHandoffCardView({
   const title = asksPassword
     ? `${site} needs you to sign in`
     : `${site} wants a person to continue`;
-  const showWindowFirst = canShowWindow && step === 'wall';
+  const showWindowFirst = canShowWindow && (step === 'wall' || step === 'person');
   return (
     <section
       aria-label={title}
@@ -93,7 +93,7 @@ export function BrowserHandoffCardView({
         <div className="space-y-1">
           <p>Finish in {name}’s window, then press Continue.</p>
           <p className="text-muted-foreground">
-            {name} can’t see or use it until you hand it back.
+            {name} can’t see or use this tab until you hand it back.
           </p>
         </div>
       )}

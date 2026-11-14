@@ -243,6 +243,7 @@ export class LocalBrowserService {
           cloudOrigins: this.cloudOrigins,
           appOrigins: this.appOrigins,
           assertAvailable: () => this.assertAvailable(),
+          assertMayAct: () => this.handover.requireAgentMayAct(),
         });
         this.sessions.set(id, session);
         added = session;
@@ -370,6 +371,7 @@ export class LocalBrowserService {
         cloudOrigins: this.cloudOrigins,
         appOrigins: this.appOrigins,
         assertAvailable: () => this.assertAvailable(),
+        assertMayAct: () => this.handover.requireAgentMayAct(),
       });
       this.sessions.set(id, session);
       return session.state();

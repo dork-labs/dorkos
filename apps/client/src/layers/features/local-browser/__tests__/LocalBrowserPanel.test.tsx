@@ -2,92 +2,23 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import type { LocalBrowserCapabilities, LocalBrowserState } from '@dorkos/shared/local-browser';
+import type { LocalBrowserState } from '@dorkos/shared/local-browser';
+import {
+  transport,
+  navigate,
+  connected,
+  disconnected,
+  capabilities,
+  holdOpening,
+  mount,
+  resetBrowserPanelFixture,
+} from './local-browser-panel-fixture';
 import { LocalBrowserPanel } from '../ui/LocalBrowserPanel';
 import { useAppStore } from '@/layers/shared/model';
 import { STORAGE_KEYS } from '@/layers/shared/lib/constants';
 import { readLocalBrowserChoice } from '@/layers/shared/model/app-store/local-browser-preference';
 
-const transport = vi.hoisted(() => ({
-  getLocalBrowserState: vi.fn(),
-  getLocalBrowserCapabilities: vi.fn(),
-  openLocalBrowser: vi.fn(),
-  pauseLocalBrowser: vi.fn(),
-  resumeLocalBrowser: vi.fn(),
-  disconnectLocalBrowser: vi.fn(),
-  selectLocalBrowserTab: vi.fn(),
-  navigateLocalBrowser: vi.fn(),
-  interruptSession: vi.fn(),
-}));
-const navigate = vi.hoisted(() => vi.fn());
-vi.mock('@tanstack/react-router', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('@tanstack/react-router')>()),
-  useNavigate: () => navigate,
-}));
-vi.mock('@/layers/shared/model', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('@/layers/shared/model')>()),
-  useTransport: () => transport,
-}));
-const disconnected: LocalBrowserState = {
-  connectionId: null,
-  sessionId: null,
-  mode: null,
-  status: 'disconnected',
-  paused: false,
-  tabs: [],
-  selectedTabId: null,
-  revision: 0,
-  preparation: null,
-};
-const connected: LocalBrowserState = {
-  ...disconnected,
-  connectionId: 'owned',
-  sessionId: 'chat-one',
-  mode: 'new-window',
-  status: 'connected',
-  tabs: [
-    { id: 'one', title: 'First page', url: 'https://example.com' },
-    { id: 'two', title: 'Second page', url: 'https://example.org' },
-  ],
-  selectedTabId: 'one',
-};
-const capabilities: LocalBrowserCapabilities = {
-  embedded: false,
-  newWindow: true,
-  defaultMode: 'new-window',
-  platform: 'darwin',
-  managedChromiumVersion: '157.0.8103.15',
-  unavailableReasons: {},
-  playwrightVersion: '1.65.0-alpha-2026-10-30',
-};
-function holdOpening() {
-  let resolve!: (state: LocalBrowserState) => void;
-  let reject!: (cause: Error) => void;
-  const promise = new Promise<LocalBrowserState>((done, fail) => {
-    resolve = done;
-    reject = fail;
-  });
-  transport.openLocalBrowser.mockReturnValue(promise);
-  return { resolve, reject };
-}
-function mount(visible = true) {
-  const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
-  const view = render(
-    <QueryClientProvider client={client}>
-      <LocalBrowserPanel visible={visible} sessionId="chat-one" agentName="Kai" />
-    </QueryClientProvider>
-  );
-  return { ...view, client };
-}
-beforeEach(() => {
-  vi.resetAllMocks();
-  delete window.electronAPI;
-  localStorage.clear();
-  useAppStore.setState({ localBrowserChoice: null, localBrowserChoiceIssue: null });
-  transport.getLocalBrowserState.mockResolvedValue(disconnected);
-  transport.getLocalBrowserCapabilities.mockResolvedValue(capabilities);
-  transport.openLocalBrowser.mockResolvedValue(connected);
-});
+beforeEach(resetBrowserPanelFixture);
 afterEach(() => {
   delete window.electronAPI;
   vi.restoreAllMocks();

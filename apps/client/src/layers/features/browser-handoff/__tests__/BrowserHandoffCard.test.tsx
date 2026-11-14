@@ -580,13 +580,21 @@ describe('BrowserHandoffCard', () => {
   });
 });
 
-it('lets a person finish a password step in the detached embedded view', async () => {
-  transport.getLocalBrowserState.mockResolvedValue(
-    person({ mode: 'embedded', handoff: { ...handoff, reason: 'password' } })
-  );
-  mount();
-  expect(await screen.findByText('Finish in Atlas’s window, then press Continue.')).toBeVisible();
-  expect(screen.getByText('Atlas can’t see or use it until you hand it back.')).toBeVisible();
-  expect(screen.getByRole('button', { name: 'Continue' })).toBeVisible();
-  expect(screen.queryByRole('button', { name: 'Open sign-in window' })).toBeNull();
-});
+it.each([
+  { mode: 'embedded' as const, handoffAttached: false },
+  { mode: 'new-window' as const, handoffAttached: true },
+])(
+  'lets a person finish a password step on an attached $mode tab',
+  async ({ mode, handoffAttached }) => {
+    transport.getLocalBrowserState.mockResolvedValue(
+      person({ mode, handoffAttached, handoff: { ...handoff, reason: 'password' } })
+    );
+    mount();
+    expect(await screen.findByText('Finish in Atlas’s window, then press Continue.')).toBeVisible();
+    expect(
+      screen.getByText('Atlas can’t see or use this tab until you hand it back.')
+    ).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Continue' })).toBeVisible();
+    expect(screen.queryByRole('button', { name: 'Open sign-in window' })).toBeNull();
+  }
+);

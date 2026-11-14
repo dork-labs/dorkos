@@ -1,0 +1,120 @@
+// @vitest-environment jsdom
+import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
+import {
+  transport,
+  connected,
+  mount,
+  resetBrowserPanelFixture,
+} from './local-browser-panel-fixture';
+
+beforeEach(resetBrowserPanelFixture);
+afterEach(() => {
+  vi.restoreAllMocks();
+});
+const held = { ...connected, signInElsewhere: { handoffId: 'held-atlas' } };
+
+it('1.11 shows one primary action and announces Paused without claiming other chats’ tabs', async () => {
+  transport.getLocalBrowserState.mockResolvedValue(held);
+  mount();
+  await screen.findByRole('button', { name: 'Show the sign-in' });
+  const panel = screen.getByRole('region', { name: 'Agent browser' });
+  expect(within(panel).getByRole('status')).toHaveTextContent(/^Paused$/);
+  expect(within(panel).getByRole('status')).toHaveAttribute('aria-live', 'polite');
+  expect(
+    within(panel).getByText(
+      'Paused while you sign in for another chat. Kai can still read this tab.'
+    )
+  ).toBeInTheDocument();
+  const buttons = within(panel).getAllByRole('button');
+  expect(buttons).toHaveLength(1);
+  expect(buttons[0]).toHaveAccessibleName('Show the sign-in');
+  expect(buttons[0]).toHaveClass('min-h-11', 'w-full');
+  expect(within(panel).queryByRole('combobox')).toBeNull();
+  expect(within(panel).queryByLabelText('Web address')).toBeNull();
+  expect(within(panel).queryByRole('region', { name: 'Saved sign-ins' })).toBeNull();
+});
+
+it('focuses only the held sign-in on an explicit click, without caching its answer in this chat', async () => {
+  transport.getLocalBrowserState.mockResolvedValue(held);
+  const other = { ...connected, sessionId: 'atlas', selectedTabId: 'private-atlas' };
+  transport.signInLocalBrowser.mockResolvedValue(other);
+  const view = mount();
+  const show = await screen.findByRole('button', { name: 'Show the sign-in' });
+  expect(transport.signInLocalBrowser).not.toHaveBeenCalled();
+  fireEvent.click(show);
+  await waitFor(() =>
+    expect(transport.signInLocalBrowser).toHaveBeenCalledExactlyOnceWith({
+      handoffId: 'held-atlas',
+    })
+  );
+  await waitFor(() => expect(show).toBeEnabled());
+  expect(view.client.getQueryData(['local-browser', 'state', 'chat-one'])).toEqual(held);
+  expect(view.client.getQueryData(['local-browser', 'state', 'atlas'])).toBeUndefined();
+  expect(transport.openLocalBrowser).not.toHaveBeenCalled();
+  expect(transport.resumeLocalBrowser).not.toHaveBeenCalled();
+  expect(transport.selectLocalBrowserTab).not.toHaveBeenCalled();
+});
+
+it('arrives and clears without taking focus, adding a receipt or restarting the agent', async () => {
+  transport.getLocalBrowserState.mockResolvedValue(connected);
+  const outside = document.createElement('input');
+  outside.setAttribute('aria-label', 'Composer');
+  document.body.append(outside);
+  const view = mount();
+  try {
+    await screen.findByRole('button', { name: 'Pause agent' });
+    outside.focus();
+    transport.getLocalBrowserState.mockResolvedValue(held);
+    act(() => view.client.setQueryData(['local-browser', 'state', 'chat-one'], held));
+    await screen.findByRole('button', { name: 'Show the sign-in' });
+    expect(outside).toHaveFocus();
+    transport.getLocalBrowserState.mockResolvedValue(connected);
+    act(() =>
+      view.client.setQueryData(['local-browser', 'state', 'chat-one'], {
+        ...connected,
+        signInElsewhere: null,
+      })
+    );
+    await screen.findByRole('button', { name: 'Pause agent' });
+    expect(outside).toHaveFocus();
+    expect(screen.queryByText(/Handed back/)).toBeNull();
+    expect(transport.resumeLocalBrowser).not.toHaveBeenCalled();
+  } finally {
+    outside.remove();
+  }
+});
+
+it('keeps the paused state and its only action when showing the sign-in fails', async () => {
+  transport.getLocalBrowserState.mockResolvedValue(held);
+  transport.signInLocalBrowser.mockRejectedValue(new Error('private process details'));
+  mount();
+  fireEvent.click(await screen.findByRole('button', { name: 'Show the sign-in' }));
+  expect(await screen.findByRole('alert')).not.toHaveTextContent('private process details');
+  expect(screen.getByRole('status')).toHaveTextContent(/^Paused$/);
+  expect(screen.getAllByRole('button')).toHaveLength(1);
+  expect(screen.getByRole('button', { name: 'Show the sign-in' })).toBeEnabled();
+});
+
+it('keeps a newly arrived sign-in hold when an older pause response finishes', async () => {
+  transport.getLocalBrowserState.mockResolvedValue(connected);
+  let finish!: (state: typeof connected) => void;
+  transport.pauseLocalBrowser.mockReturnValue(
+    new Promise<typeof connected>((resolve) => {
+      finish = resolve;
+    })
+  );
+  const view = mount();
+  fireEvent.click(await screen.findByRole('button', { name: 'Pause agent' }));
+  await waitFor(() => expect(transport.pauseLocalBrowser).toHaveBeenCalledOnce());
+  transport.getLocalBrowserState.mockResolvedValue(held);
+  act(() => view.client.setQueryData(['local-browser', 'state', 'chat-one'], held));
+  await screen.findByRole('button', { name: 'Show the sign-in' });
+  await act(async () => finish({ ...connected, paused: true }));
+  expect(screen.getByRole('status')).toHaveTextContent(/^Paused$/);
+  expect(screen.getAllByRole('button')).toHaveLength(1);
+  expect(view.client.getQueryData(['local-browser', 'state', 'chat-one'])).toMatchObject({
+    signInElsewhere: { handoffId: 'held-atlas' },
+    paused: true,
+  });
+});

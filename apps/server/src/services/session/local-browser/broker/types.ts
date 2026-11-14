@@ -32,6 +32,8 @@ export interface TabAuditEvent {
   readonly pageId: string;
   readonly ownerId: string | null;
   readonly agentId: string | null;
+  /** Person-held events retain chat context but never name an agent as their actor. */
+  readonly held: boolean;
   readonly origin?: string;
 }
 

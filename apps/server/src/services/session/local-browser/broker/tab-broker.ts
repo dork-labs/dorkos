@@ -339,13 +339,14 @@ export class TabBroker {
   }
 
   private emit(entry: Entry, kind: TabAuditEvent['kind'], origin?: string): void {
-    const { pageId, ownerId, agentId } = entry.record;
+    const { pageId, ownerId, agentId, held } = entry.record;
     this.options.audit({
       kind,
       at: this.now(),
       pageId,
       ownerId,
-      agentId,
+      agentId: held ? null : agentId,
+      held,
       ...(origin ? { origin } : {}),
     });
   }

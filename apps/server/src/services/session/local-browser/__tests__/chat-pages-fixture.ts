@@ -3,7 +3,7 @@ import { vi, type Mock } from 'vitest';
 import type { BrowserContext, Page } from 'playwright-core';
 import type { LocalBrowserBackend } from '../playwright-backend.js';
 
-interface FixturePage {
+export interface FixturePage {
   value: Page;
   events: EventEmitter;
   body: { ariaSnapshot: Mock<() => Promise<string>> };

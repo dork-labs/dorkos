@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import type { LocalBrowserPersonState } from '@dorkos/shared/local-browser';
 import {
@@ -30,9 +30,7 @@ export function useBrowserHandoff(sessionId?: string | null) {
   const handoff = ours?.outcome === null ? ours : null;
   const ended = ours && ours.outcome !== null && ours.id === shownId ? ours : null;
   const openId = handoff?.id ?? null;
-  useEffect(() => {
-    if (openId) setShownId(openId);
-  }, [openId]);
+  if (openId && shownId !== openId) setShownId(openId);
 
   const run = async (call: () => Promise<LocalBrowserPersonState | void>) => {
     setBusy(true);
@@ -60,7 +58,7 @@ export function useBrowserHandoff(sessionId?: string | null) {
           handoff,
           state?.signIn,
           state?.status === 'connected',
-          state?.mode === 'embedded'
+          state?.mode === 'embedded' || state?.handoffAttached === true
         )
       : null,
     canShowWindow: state?.mode === 'new-window' && state.status === 'connected' && !!selectedTabId,
@@ -89,7 +87,9 @@ export function useBrowserHandoff(sessionId?: string | null) {
       // A plain browser answer says nothing about the handoff, so nothing is cached from it.
       if (selectedTabId)
         void run(async () => {
-          await transport.selectLocalBrowserTab(selectedTabId);
+          if (state?.handoffAttached && handoff)
+            await transport.signInLocalBrowser({ handoffId: handoff.id });
+          else await transport.selectLocalBrowserTab(selectedTabId);
         });
     },
     stopTask: async () => {

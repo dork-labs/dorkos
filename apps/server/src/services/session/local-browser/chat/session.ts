@@ -33,6 +33,7 @@ export interface ChatBrowserHost {
   cloudOrigins(): readonly CloudOriginEntry[];
   appOrigins(): readonly string[];
   assertAvailable(): void;
+  assertMayAct(): void;
 }
 
 /** One chat's revision, node handles, pause, action flight and selected owned page. */
@@ -139,6 +140,7 @@ export class BrowserChatSession {
 
   async action(input: LocalBrowserAction): Promise<LocalBrowserState> {
     this.requirePage();
+    this.host.assertMayAct();
     return auditPageAction(
       this.tabs.get(this.selectedTabId!),
       {
@@ -379,6 +381,7 @@ export class BrowserChatSession {
 
   private admit(revision: number): void {
     this.selected();
+    this.host.assertMayAct();
     if (this.paused)
       throw new LocalBrowserError('paused', 'Your agent is paused. Resume it to continue.');
     if (revision !== this.revision) throw this.stale();
