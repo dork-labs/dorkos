@@ -81,11 +81,14 @@ export function holdOpening() {
   transport.openLocalBrowser.mockReturnValue(promise);
   return { resolve, reject };
 }
-export function mount(visible = true): RenderResult & { client: QueryClient } {
+export function mount(
+  visible = true,
+  sessionId: string | null = 'chat-one'
+): RenderResult & { client: QueryClient } {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
   const view = render(
     <QueryClientProvider client={client}>
-      <LocalBrowserPanel visible={visible} sessionId="chat-one" agentName="Kai" />
+      <LocalBrowserPanel visible={visible} sessionId={sessionId} agentName="Kai" />
     </QueryClientProvider>
   );
   return { ...view, client };

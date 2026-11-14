@@ -7,6 +7,7 @@ covers:
   - 'fix(browser): keep saved sign-ins visible while paused'
   - 'fix(browser): stack saved sign-ins on small screens'
   - 'fix(browser): limit chat tabs and isolate sign-in popups'
+  - 'fix(browser): scope chat tab inventory to direct chats'
 ---
 
 ### Added

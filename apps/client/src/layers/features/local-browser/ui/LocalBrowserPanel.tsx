@@ -473,9 +473,11 @@ export function LocalBrowserPanel({
           )}
         </>
       )}
-      {!waitingForTab && !!state?.openChatTabs?.length && (
-        <OpenChatTabs tabs={state.openChatTabs} />
-      )}
+      {!waitingForTab &&
+        sessionId &&
+        !sharedElsewhere &&
+        state?.mode === 'new-window' &&
+        !!state.openChatTabs?.length && <OpenChatTabs tabs={state.openChatTabs} />}
       {!waitingElsewhere && (
         <SavedSignIns
           enabled={!!state && !!capabilities && !query.isError && !capabilityQuery.isError}

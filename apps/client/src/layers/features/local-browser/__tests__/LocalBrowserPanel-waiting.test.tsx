@@ -121,3 +121,18 @@ it('keeps an attached sign-in in 1.4 and raises it only on this chat’s Show wi
   expect(transport.resumeLocalBrowser).not.toHaveBeenCalled();
   expect(transport.signInLocalBrowser).not.toHaveBeenCalled();
 });
+
+it.each(['room', 'embedded', 'other-chat'] as const)(
+  'keeps the chat tab inventory out of %s panels',
+  async (scope) => {
+    transport.getLocalBrowserState.mockResolvedValue({
+      ...connected,
+      mode: scope === 'embedded' ? 'embedded' : 'new-window',
+      sessionId: scope === 'other-chat' ? 'another-chat' : connected.sessionId,
+      openChatTabs: waiting.openChatTabs,
+    });
+    mount(true, scope === 'room' ? null : 'chat-one');
+    await screen.findByRole('button', { name: 'Pause agent' });
+    expect(screen.queryByRole('button', { name: /Also open in/ })).toBeNull();
+  }
+);
