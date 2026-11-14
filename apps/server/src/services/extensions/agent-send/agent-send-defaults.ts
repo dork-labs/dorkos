@@ -7,18 +7,85 @@
  *
  * @module services/extensions/agent-send/agent-send-defaults
  */
+import type { MeshCore } from '@dorkos/mesh';
 import { logger } from '../../../lib/logger.js';
 import { runtimeRegistry } from '../../core/runtime-registry.js';
+import { agentPause } from '../../mesh/pause/agent-pause.js';
 import { adoptQueuedMessages, isTurnInFlight } from '../../session/message-dispatcher.js';
 import {
   resolveChatPlace,
   type ResolveChatPlaceDeps,
 } from '../../session/launch/resolve-chat-place.js';
+import {
+  verifyChatAgent,
+  type ChatAgentRefusal,
+  type VerifyChatAgentDeps,
+} from '../../session/launch/verify-chat-agent.js';
 import { getSessionStartedByStore } from '../../session/origin/session-started-by-store.js';
 import { persistenceModeFor } from '../../session/projector-persistence.js';
 import { getOrCreateProjector, peekProjector } from '../../session/session-state-projector.js';
 import type { RoomSessionPlacePort } from '../../workspace/room-session-place.js';
 import { getStartWorkService, type StartReservation } from '../start-work.js';
+
+const CHAT_QUEUE_RESUME_WARNING_MAX = 1_000;
+const chatQueueResumeWarnings = new Set<string>();
+
+/** Forget boot-recovery warning history. Tests use this to model a new process. */
+export function resetChatQueueResumeWarnings(): void {
+  chatQueueResumeWarnings.clear();
+}
+
+/** Log one recovery refusal for this chat and reason during the current process. */
+function warnResumeRefusal(
+  sessionId: string,
+  reason: string,
+  message: string,
+  details: Record<string, unknown>
+): void {
+  const key = `${sessionId}:${reason}`;
+  if (chatQueueResumeWarnings.has(key)) return;
+  if (chatQueueResumeWarnings.size >= CHAT_QUEUE_RESUME_WARNING_MAX) {
+    chatQueueResumeWarnings.clear();
+  }
+  chatQueueResumeWarnings.add(key);
+  logger.warn(message, { sessionId, ...details });
+}
+
+/** A successful recovery makes any prior refusal fresh if this chat blocks again. */
+function clearResumeRefusals(sessionId: string): void {
+  const prefix = `${sessionId}:`;
+  for (const key of chatQueueResumeWarnings) {
+    if (key.startsWith(prefix)) chatQueueResumeWarnings.delete(key);
+  }
+}
+
+/** Production verification collaborators with selected test seams replaced. */
+function chatAgentDeps(overrides: Partial<VerifyChatAgentDeps>): VerifyChatAgentDeps {
+  return {
+    registeredAgentPaths: () => undefined,
+    pausedAgentOfTurn: (opts) => agentPause()?.pausedAgentOfTurn(opts),
+    ...overrides,
+  };
+}
+
+/** Keep a refused recovery row on disk and warn once for its reason. */
+function refuseChatAgent(sessionId: string, refusal: ChatAgentRefusal): void {
+  if (refusal.reason === 'agent-not-registered') {
+    warnResumeRefusal(
+      sessionId,
+      refusal.reason,
+      '[MessageDispatcher] queued messages kept because their agent is not registered',
+      { reason: refusal.reason }
+    );
+    return;
+  }
+  warnResumeRefusal(
+    sessionId,
+    refusal.reason,
+    '[MessageDispatcher] queued messages kept because their agent is paused',
+    { reason: refusal.reason, agentId: refusal.agent.id }
+  );
+}
 
 /** What DorkOS knows about a chat an extension names. */
 export interface SessionFacts {
@@ -111,14 +178,24 @@ export function reserveKeptChat(
  * @param liveCwd - The folder currently known in memory, when any.
  * @param roomSessionPlace - The room binding port available to this launch surface.
  * @param placeDeps - Test seams for place resolution.
+ * @param agentOverrides - Live Mesh and pause readers, with optional test seams.
  */
 export async function resumeChatQueue(
   sessionId: string,
   liveCwd: string | undefined,
   roomSessionPlace?: RoomSessionPlacePort,
-  placeDeps: Partial<ResolveChatPlaceDeps> = {}
+  placeDeps: Partial<ResolveChatPlaceDeps> = {},
+  agentOverrides: Partial<VerifyChatAgentDeps> = {}
 ): Promise<void> {
   const agentPath = (await runtimeRegistry.getSessionAgentPath(sessionId)) ?? undefined;
+  const verification = chatAgentDeps(agentOverrides);
+  if (agentPath !== undefined) {
+    const refusal = verifyChatAgent({ agentPath }, verification);
+    if (refusal) {
+      refuseChatAgent(sessionId, refusal);
+      return;
+    }
+  }
   const place = await resolveChatPlace(
     {
       sessionId,
@@ -129,13 +206,28 @@ export async function resumeChatQueue(
     placeDeps
   );
   if ('refusal' in place) {
-    logger.warn('[MessageDispatcher] queued messages kept after place refusal', {
+    warnResumeRefusal(
       sessionId,
-      refusalCode: place.refusal.code,
-    });
+      `place:${place.refusal.code}`,
+      '[MessageDispatcher] queued messages kept after place refusal',
+      { refusalCode: place.refusal.code }
+    );
     return;
   }
   const { cwd, forAgent, additionalDirectories } = place;
+  if (agentPath !== undefined) {
+    const refusal = verifyChatAgent(
+      {
+        agentPath,
+        turn: { cwd, ...(forAgent !== undefined ? { forAgent } : {}) },
+      },
+      verification
+    );
+    if (refusal) {
+      refuseChatAgent(sessionId, refusal);
+      return;
+    }
+  }
   const runtime = place.session.runtime;
   const projector = getOrCreateProjector(sessionId, cwd, {
     persist: persistenceModeFor(runtime.getCapabilities()),
@@ -149,4 +241,30 @@ export async function resumeChatQueue(
     ...(forAgent !== undefined ? { forAgent } : {}),
     ...(additionalDirectories !== undefined ? { additionalDirectories } : {}),
   });
+  clearResumeRefusals(sessionId);
+}
+
+/**
+ * Build the default queue recovery callback from the service's late-bound ports.
+ *
+ * @param meshCore - The live Mesh accessor already held by the service.
+ * @param roomSessionPlace - The live room-place accessor held by the service.
+ */
+export function resumeChatQueueFor(
+  meshCore: () => Pick<MeshCore, 'listWithPaths'> | undefined,
+  roomSessionPlace: (() => RoomSessionPlacePort | undefined) | undefined
+): (sessionId: string, cwd: string | undefined) => Promise<void> {
+  return (sessionId, cwd) =>
+    resumeChatQueue(
+      sessionId,
+      cwd,
+      roomSessionPlace?.(),
+      {},
+      {
+        registeredAgentPaths: () =>
+          meshCore()
+            ?.listWithPaths()
+            .map((agent) => agent.projectPath),
+      }
+    );
 }

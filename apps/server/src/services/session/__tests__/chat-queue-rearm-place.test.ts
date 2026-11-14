@@ -11,7 +11,12 @@ import type { StreamEvent } from '@dorkos/shared/types';
 
 import { logger } from '../../../lib/logger.js';
 import { runtimeRegistry } from '../../core/runtime-registry.js';
-import { resumeChatQueue } from '../../extensions/agent-send/agent-send-defaults.js';
+import {
+  resetChatQueueResumeWarnings,
+  resumeChatQueue,
+} from '../../extensions/agent-send/agent-send-defaults.js';
+import { initAgentPause, resetAgentPause } from '../../mesh/pause/agent-pause.js';
+import type { VerifyChatAgentDeps } from '../launch/verify-chat-agent.js';
 import type { ResolveChatPlaceDeps } from '../launch/resolve-chat-place.js';
 import {
   listQueuedMessages,
@@ -44,6 +49,7 @@ beforeEach(() => {
   runtimeRegistry.setDefault(runtime.type);
   sessionId = crypto.randomUUID();
   setQueuedChatCeilingResolver(() => 'runtime-default');
+  resetChatQueueResumeWarnings();
 });
 
 afterEach(async () => {
@@ -52,6 +58,8 @@ afterEach(async () => {
   resetMessageDispatcher();
   setMessageQueueStore(undefined);
   disposeProjector(sessionId);
+  resetChatQueueResumeWarnings();
+  resetAgentPause();
   vi.restoreAllMocks();
 });
 
@@ -92,12 +100,19 @@ function placeDeps(
   };
 }
 
+function agentDeps(paths: string[] | undefined): VerifyChatAgentDeps {
+  return {
+    registeredAgentPaths: () => paths,
+    pausedAgentOfTurn: () => undefined,
+  };
+}
+
 describe('boot chat-queue place recovery', () => {
   it('runs a cold chat in its stored agent folder under the same session id', async () => {
     bind(AGENT);
     leaveChatRow();
 
-    await resumeChatQueue(sessionId, undefined, undefined, placeDeps());
+    await resumeChatQueue(sessionId, undefined, undefined, placeDeps(), agentDeps([AGENT]));
 
     await vi.waitFor(() => expect(runtime.sendMessage).toHaveBeenCalledTimes(1));
     expect(runtime.sendMessage).toHaveBeenCalledWith(
@@ -121,7 +136,7 @@ describe('boot chat-queue place recovery', () => {
     runtime.getSessionCwd = vi.fn(() => '/runtime/project');
     leaveChatRow();
 
-    await resumeChatQueue(sessionId, undefined, undefined, placeDeps());
+    await resumeChatQueue(sessionId, undefined, undefined, placeDeps(), agentDeps([AGENT]));
 
     await vi.waitFor(() => expect(runtime.sendMessage).toHaveBeenCalledTimes(1));
     expect(runtime.sendMessage.mock.calls[0]![2]).toEqual(
@@ -148,7 +163,13 @@ describe('boot chat-queue place recovery', () => {
       additionalDirectories: grants,
     }));
 
-    await resumeChatQueue(sessionId, undefined, roomSessionPlace, placeDeps(resolveWithRoom));
+    await resumeChatQueue(
+      sessionId,
+      undefined,
+      roomSessionPlace,
+      placeDeps(resolveWithRoom),
+      agentDeps([AGENT])
+    );
 
     await vi.waitFor(() => expect(runtime.sendMessage).toHaveBeenCalledTimes(1));
     expect(resolveWithRoom).toHaveBeenCalledWith(expect.any(Object), roomSessionPlace);
@@ -170,7 +191,8 @@ describe('boot chat-queue place recovery', () => {
         cwd: AGENT,
         rung: 'explicit',
         refusal: { code: 'DESK_NOT_OWN', message: 'Use the agent home.' },
-      }))
+      })),
+      agentDeps([AGENT])
     );
 
     expect(runtime.sendMessage).not.toHaveBeenCalled();
@@ -182,11 +204,126 @@ describe('boot chat-queue place recovery', () => {
     expect(warn).toHaveBeenCalledTimes(1);
   });
 
+  it('keeps the row when its stored agent was removed from Mesh', async () => {
+    bind(AGENT);
+    leaveChatRow();
+    const warn = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
+
+    await resumeChatQueue(sessionId, undefined, undefined, placeDeps(), agentDeps([]));
+
+    expect(runtime.sendMessage).not.toHaveBeenCalled();
+    expect(listQueuedMessages(sessionId)).toHaveLength(1);
+    expect(warn).toHaveBeenCalledWith(expect.any(String), {
+      sessionId,
+      reason: 'agent-not-registered',
+    });
+    expect(warn).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps the row when the registered agent moved to another folder', async () => {
+    bind(AGENT);
+    leaveChatRow();
+    const warn = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
+
+    await resumeChatQueue(
+      sessionId,
+      undefined,
+      undefined,
+      placeDeps(),
+      agentDeps(['/demo/agents/moved-beta'])
+    );
+
+    expect(runtime.sendMessage).not.toHaveBeenCalled();
+    expect(listQueuedMessages(sessionId)).toHaveLength(1);
+    expect(warn).toHaveBeenCalledWith(expect.any(String), {
+      sessionId,
+      reason: 'agent-not-registered',
+    });
+    expect(warn).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps the row when Mesh is unavailable for a stored agent', async () => {
+    bind(AGENT);
+    leaveChatRow();
+    const warn = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
+
+    await resumeChatQueue(sessionId, undefined, undefined, placeDeps(), agentDeps(undefined));
+
+    expect(runtime.sendMessage).not.toHaveBeenCalled();
+    expect(listQueuedMessages(sessionId)).toHaveLength(1);
+    expect(warn).toHaveBeenCalledWith(expect.any(String), {
+      sessionId,
+      reason: 'agent-not-registered',
+    });
+    expect(warn).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps the row without recording a held send when its agent is paused', async () => {
+    bind(AGENT);
+    leaveChatRow();
+    const warn = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
+    const recordHeld = vi.fn();
+    const pausedAgentOfTurn = vi.fn(() => ({ id: 'agent-1', name: 'Beta' }));
+    initAgentPause({ pausedAgentOfTurn, recordHeld } as never);
+
+    await resumeChatQueue(sessionId, undefined, undefined, placeDeps(), {
+      registeredAgentPaths: () => [AGENT],
+    });
+
+    expect(runtime.sendMessage).not.toHaveBeenCalled();
+    expect(listQueuedMessages(sessionId)).toHaveLength(1);
+    expect(pausedAgentOfTurn).toHaveBeenCalledWith({ cwd: AGENT });
+    expect(recordHeld).not.toHaveBeenCalled();
+    expect(warn).toHaveBeenCalledWith(expect.any(String), {
+      sessionId,
+      reason: 'agent-paused',
+      agentId: 'agent-1',
+    });
+    expect(warn).toHaveBeenCalledTimes(1);
+  });
+
+  it('warns once when the same refused chat is checked twice', async () => {
+    bind(AGENT);
+    leaveChatRow();
+    const warn = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
+
+    await resumeChatQueue(sessionId, undefined, undefined, placeDeps(), agentDeps([]));
+    await resumeChatQueue(sessionId, undefined, undefined, placeDeps(), agentDeps([]));
+
+    expect(runtime.sendMessage).not.toHaveBeenCalled();
+    expect(listQueuedMessages(sessionId)).toHaveLength(1);
+    expect(warn).toHaveBeenCalledTimes(1);
+  });
+
+  it('allows a new warning after the chat resumes successfully', async () => {
+    bind(AGENT);
+    leaveChatRow();
+    const warn = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
+    let paths: string[] = [];
+    const deps: VerifyChatAgentDeps = {
+      registeredAgentPaths: () => paths,
+      pausedAgentOfTurn: () => undefined,
+    };
+
+    await resumeChatQueue(sessionId, undefined, undefined, placeDeps(), deps);
+    paths = [AGENT];
+    await resumeChatQueue(sessionId, undefined, undefined, placeDeps(), deps);
+    await vi.waitFor(() => expect(runtime.isTurnOpen(sessionId)).toBe(false));
+    await vi.waitFor(() => expect(listQueuedMessages(sessionId)).toEqual([]));
+    leaveChatRow();
+    paths = [];
+    await resumeChatQueue(sessionId, undefined, undefined, placeDeps(), deps);
+
+    expect(runtime.sendMessage).toHaveBeenCalledTimes(1);
+    expect(listQueuedMessages(sessionId)).toHaveLength(1);
+    expect(warn).toHaveBeenCalledTimes(2);
+  });
+
   it('keeps the default-folder behavior when the chat has no known place', async () => {
     bind(null);
     leaveChatRow();
 
-    await resumeChatQueue(sessionId, undefined, undefined, placeDeps());
+    await resumeChatQueue(sessionId, undefined, undefined, placeDeps(), agentDeps(undefined));
 
     await vi.waitFor(() => expect(runtime.sendMessage).toHaveBeenCalledTimes(1));
     expect(runtime.sendMessage.mock.calls[0]![2]).not.toHaveProperty('cwd');

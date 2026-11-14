@@ -179,7 +179,16 @@ export async function startAfterListen(refs: ServerRefs, built: StartAfterListen
   const resumeChatQueues = (): void => {
     void rearmChatQueues({
       resume: async (id) =>
-        resumeChatQueue(id, await liveSessionCwd(id), refs.roomSessionPlacePort),
+        resumeChatQueue(
+          id,
+          await liveSessionCwd(id),
+          refs.roomSessionPlacePort,
+          {},
+          {
+            registeredAgentPaths: () =>
+              refs.meshCore?.listWithPaths().map((agent) => agent.projectPath),
+          }
+        ),
     }).catch((err: unknown) => {
       logger.warn('[DorkOS] could not resume chats’ queued messages', logError(err));
     });

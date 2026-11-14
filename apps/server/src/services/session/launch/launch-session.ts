@@ -57,6 +57,7 @@ import {
 } from './launch-caller.js';
 import { auditLaunched, auditRefusedLaunch } from './launch-audit.js';
 import { resolveChatPlace } from './resolve-chat-place.js';
+import { isRegisteredChatAgentPath } from './verify-chat-agent.js';
 
 /** What {@link dispatchSessionMessage} needs to start or feed one session. */
 export interface DispatchSessionMessageOpts {
@@ -458,10 +459,12 @@ async function launchSessionMessage(
   // caller may name it only when Mesh currently knows that exact registered
   // agent directory. This keeps the first-write session binding authoritative
   // without letting client metadata manufacture an agent owner.
+  const agentRegistration = {
+    registeredAgentPaths: () => meshCore?.listWithPaths().map((agent) => agent.projectPath),
+  };
   let verifiedAgentPath: string | undefined;
   if (agentPath !== undefined) {
-    const isRegistered = meshCore?.listWithPaths().some((agent) => agent.projectPath === agentPath);
-    if (!isRegistered) {
+    if (!isRegisteredChatAgentPath(agentPath, agentRegistration)) {
       return {
         refused: 'INVALID_AGENT_PATH',
         message: 'Choose a registered agent before starting this chat',
@@ -474,7 +477,7 @@ async function launchSessionMessage(
   // below). A chat with no recorded agent is not pinned (R3, still open).
   if (verifiedAgentPath === undefined && opts.launcher?.kind === 'agent') {
     const own = opts.launcher.agentPath;
-    if (meshCore?.listWithPaths().some((agent) => agent.projectPath === own)) {
+    if (isRegisteredChatAgentPath(own, agentRegistration)) {
       verifiedAgentPath = own;
     }
   }
