@@ -12,9 +12,10 @@ import type { ServerConfig } from '@dorkos/shared/types';
 // The card's outbound-direction cross-link uses useNavigate + useSettingsDeepLink's
 // close(), both of which need TanStack Router context. Mock them to plain spies —
 // everything else in the shared/model barrel (TransportProvider above) stays real.
-const { navigateSpy, closeSpy } = vi.hoisted(() => ({
+const { navigateSpy, closeSpy, setTabSpy } = vi.hoisted(() => ({
   navigateSpy: vi.fn(),
   closeSpy: vi.fn(),
+  setTabSpy: vi.fn(),
 }));
 vi.mock('@tanstack/react-router', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@tanstack/react-router')>()),
@@ -23,7 +24,10 @@ vi.mock('@tanstack/react-router', async (importOriginal) => ({
 vi.mock('@/layers/shared/model', async () => {
   const actual =
     await vi.importActual<typeof import('@/layers/shared/model')>('@/layers/shared/model');
-  return { ...actual, useSettingsDeepLink: () => ({ open: vi.fn(), close: closeSpy }) };
+  return {
+    ...actual,
+    useSettingsDeepLink: () => ({ open: vi.fn(), close: closeSpy, setTab: setTabSpy }),
+  };
 });
 
 type McpConfig = NonNullable<ServerConfig['mcp']>;
@@ -276,6 +280,38 @@ describe('ExternalMcpCard', () => {
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: configKeys.all });
     // The rotate response carries the new token; it renders without a reveal.
     expect(await screen.findByText('dork_mcp_local_test')).toBeInTheDocument();
+  });
+
+  it('sends other devices to API keys when login is on (QA S2)', async () => {
+    const user = userEvent.setup();
+    const { Wrapper } = createWrapper();
+    render(<ExternalMcpCard mcp={LOCAL_TOKEN_MCP} authEnabled={true} />, { wrapper: Wrapper });
+    await expandCard(user);
+    expect(screen.getByText(/Other devices need a personal API key\./)).toBeInTheDocument();
+    expect(
+      screen.queryByText('Turn on "Ask for a password" in Login & security, then create a key.')
+    ).not.toBeInTheDocument();
+    await user.click(
+      screen.getByRole('button', { name: 'Create one in Login & security → API keys.' })
+    );
+    expect(setTabSpy).toHaveBeenCalledWith('security');
+  });
+
+  it('says login comes first when it is off, linking to Login & security (QA S2)', async () => {
+    const user = userEvent.setup();
+    const { Wrapper } = createWrapper();
+    render(<ExternalMcpCard mcp={LOCAL_TOKEN_MCP} authEnabled={false} />, { wrapper: Wrapper });
+    await expandCard(user);
+    expect(screen.getByText(/Other devices need a personal API key\./)).toBeInTheDocument();
+    expect(
+      screen.queryByText('Create one in Login & security → API keys.')
+    ).not.toBeInTheDocument();
+    await user.click(
+      screen.getByRole('button', {
+        name: 'Turn on "Ask for a password" in Login & security, then create a key.',
+      })
+    );
+    expect(setTabSpy).toHaveBeenCalledWith('security');
   });
 
   it('reads green Enabled in local-token mode and amber Not protected only in none', () => {

@@ -3,7 +3,7 @@ import { useState } from 'react';
 interface UseDialogTabStateOptions<T extends string> {
   /** Whether the dialog is currently open. Used to detect open transitions. */
   open: boolean;
-  /** Optional pre-targeted tab. Honored each time the dialog opens. */
+  /** Optional pre-targeted tab. Honored each time the dialog opens, and when it changes while open. */
   initialTab: T | null;
   /** Fallback tab when no `initialTab` is set. */
   defaultTab: T;
@@ -29,10 +29,20 @@ export function useDialogTabState<T extends string>({
 }: UseDialogTabStateOptions<T>): [T, (tab: T) => void] {
   const [activeTab, setActiveTab] = useState<T>(initialTab ?? defaultTab);
   const [prevOpen, setPrevOpen] = useState(open);
+  const [prevInitialTab, setPrevInitialTab] = useState(initialTab);
 
   // Adjust state during render (React 19 recommended pattern)
   if (open !== prevOpen) {
     setPrevOpen(open);
+    if (open && initialTab) {
+      setActiveTab(initialTab);
+    }
+  }
+  // A link inside the open dialog that names another tab changes the deep
+  // link without closing it, so follow it (QA S2). A tab the person picks in
+  // the nav leaves the deep link alone, so it is never overridden here.
+  if (initialTab !== prevInitialTab) {
+    setPrevInitialTab(initialTab);
     if (open && initialTab) {
       setActiveTab(initialTab);
     }

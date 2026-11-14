@@ -653,6 +653,58 @@ describe('honoMcpAuth — helpful 401 body', () => {
   });
 });
 
+describe('honoMcpAuth — the key refusal points where keys really are (QA S2)', () => {
+  const LOGIN_ON =
+    'Unauthorized. Send a personal API key as "Authorization: Bearer <key>". ' +
+    'Create one in DorkOS: Settings → Login & security → API keys.';
+  const LOGIN_OFF =
+    'Unauthorized. Other devices need a personal API key. ' +
+    'In DorkOS, open Settings → Login & security, turn on "Ask for a password on this computer too", ' +
+    'then create a key under API keys. Send it as "Authorization: Bearer <key>".';
+  const SERVER_KEY = 'Unauthorized. Send this server\'s API key as "Authorization: Bearer <key>".';
+
+  async function refusalTo(from: Origin, surface: McpAuthSurface = 'mcp'): Promise<string> {
+    const res = createMockRes();
+    await authFor(surface)(
+      createMockReq({ body: rpc('tools/call', 'create_extension'), from }),
+      res,
+      vi.fn() as NextFunction
+    );
+    expect(res.statusCode).toBe(401);
+    return (res.body as { error: { message: string } }).error.message;
+  }
+
+  it('tells another device to create a key under Login & security when login is on', async () => {
+    mockConfig({ authEnabled: true });
+    expect(await refusalTo(WIFI)).toBe(LOGIN_ON);
+    expect(await refusalTo(WIFI, 'a2a')).toBe(LOGIN_ON);
+  });
+
+  it('tells another device to turn login on first when it is off', async () => {
+    mockConfig({ authEnabled: false });
+    expect(await refusalTo(WIFI)).toBe(LOGIN_OFF);
+    expect(await refusalTo(WIFI, 'a2a')).toBe(LOGIN_OFF);
+  });
+
+  it('names the server key, and no Settings page, where MCP_API_KEY is the credential', async () => {
+    // At this computer with no password asked, MCP_API_KEY replaces the local token.
+    (env as { MCP_API_KEY: string | undefined }).MCP_API_KEY = 'env-key';
+    vi.mocked(getMcpLocalToken).mockReturnValue(null);
+    vi.mocked(getMcpLocalTokenPath).mockReturnValue(null);
+    mockConfig({ authEnabled: false });
+    expect(await refusalTo(THIS_COMPUTER)).toBe(SERVER_KEY);
+    expect(await refusalTo(THIS_COMPUTER, 'a2a')).toBe(SERVER_KEY);
+  });
+
+  it('never offers the server key to another device, which only a personal key admits', async () => {
+    (env as { MCP_API_KEY: string | undefined }).MCP_API_KEY = 'env-key';
+    vi.mocked(getMcpLocalToken).mockReturnValue(null);
+    vi.mocked(getMcpLocalTokenPath).mockReturnValue(null);
+    mockConfig({ authEnabled: false });
+    expect(await refusalTo(WIFI)).toBe(LOGIN_OFF);
+  });
+});
+
 describe('honoMcpAuth — surface "a2a", login off', () => {
   it('allows an agent-card GET tokenless', async () => {
     // Card discovery is rate-limited public metadata, the tools/list analogue.

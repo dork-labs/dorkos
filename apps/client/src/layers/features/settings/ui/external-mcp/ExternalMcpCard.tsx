@@ -233,7 +233,12 @@ function McpAuthRow({
 
   if (authSource === 'local-token') {
     return (
-      <LocalTokenAuthRow revealedToken={revealedToken} onReveal={onReveal} onRotate={onRotate} />
+      <LocalTokenAuthRow
+        authEnabled={authEnabled}
+        revealedToken={revealedToken}
+        onReveal={onReveal}
+        onRotate={onRotate}
+      />
     );
   }
 
@@ -273,17 +278,21 @@ function McpAuthRow({
  * Local-token authentication row (login-off mode): a Reveal action fetches the
  * per-instance token on demand (it never rides the config GET) and shows it in
  * a copyable field, plus a Rotate action guarded by a breaks-existing-clients
- * confirm.
+ * confirm. It also says where other devices get their key: Login & security,
+ * whose API keys need login on first (QA S2).
  */
 function LocalTokenAuthRow({
+  authEnabled,
   revealedToken,
   onReveal,
   onRotate,
 }: {
+  authEnabled: boolean;
   revealedToken: string | null;
   onReveal: () => Promise<void>;
   onRotate: () => Promise<void>;
 }) {
+  const { setTab } = useSettingsDeepLink();
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [isRotating, setIsRotating] = useState(false);
   const [isRevealing, setIsRevealing] = useState(false);
@@ -360,6 +369,18 @@ function LocalTokenAuthRow({
       </p>
       <p className="text-muted-foreground text-xs">
         Only apps on this computer can use it. Other devices need a personal API key.
+      </p>
+      <p className="text-xs">
+        <Button
+          variant="link"
+          size="sm"
+          className="h-auto p-0 text-left text-xs whitespace-normal"
+          onClick={() => setTab('security')}
+        >
+          {authEnabled
+            ? 'Create one in Login & security → API keys.'
+            : 'Turn on "Ask for a password" in Login & security, then create a key.'}
+        </Button>
       </p>
       {revealedToken ? (
         <div className="flex items-center gap-1.5">
