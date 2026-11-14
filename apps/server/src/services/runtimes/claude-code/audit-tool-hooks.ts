@@ -87,10 +87,10 @@ export function createAuditToolHook(options: AuditToolHookOptions): HookCallback
  * was once recorded as a setup-file write (DOR-4304).
  */
 const SHELL_REFUSAL_REASONS: Record<ShellRefusalVerdict, string> = {
-  writes: 'A shell write to an agent’s setup files.',
-  unreadable: 'A shell command too long or complex to check for setup-file writes.',
-  failed: 'A shell command the check could not finish reading.',
-  'no-check': 'A shell command refused because the check could not start.',
+  writes: 'Refused: It changes an agent’s setup files.',
+  unreadable: 'Refused: Too long or complex to check.',
+  failed: 'Refused: The check couldn’t finish reading it.',
+  'no-check': 'Refused: The check couldn’t start.',
 };
 
 /**
