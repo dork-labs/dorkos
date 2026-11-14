@@ -43,6 +43,11 @@ import {
 import type { TurnMarks } from '../../core/turn-power/turn-marks.js';
 import { clearOutsiderParks, markScheduleOrigin } from './marked-schedules.js';
 import { patchAgentModeColumnOf, readAgentModeColumnOf } from './agent-mode-column.js';
+import {
+  completeTaskApproval,
+  taskApprovalColumns,
+  type TaskApprovalInput,
+} from './task-approval-receipt.js';
 import type {
   AgentAttestation,
   AgentModeColumn,
@@ -136,7 +141,7 @@ export class TaskApprovals {
    *
    * @param id - The schedule a person just armed.
    */
-  recordApproval(id: string): void {
+  recordApproval(id: string, approval?: TaskApprovalInput): void {
     const row = this.db.select().from(pulseSchedules).where(eq(pulseSchedules.id, id)).get();
     if (!row) return;
     // The content that RUNS, a person's own timing included (DOR-2302): an
@@ -144,17 +149,7 @@ export class TaskApprovals {
     // an approval of work nobody looked at.
     this.db
       .update(pulseSchedules)
-      .set({
-        approvedContentKey: effectiveContentKey(row),
-        previousApprovalKey: null,
-        followedAgentChanges: null,
-        // A person approved it, so it is theirs now: the marks it waited on are cleared (DOR-3036).
-        originMarks: null,
-        // Approving is a person changing their mind about a decline (DOR-2097).
-        declinedContentKey: null,
-        // Whoever approved last, a person's approval supersedes an agent's (DOR-3703).
-        agentApprovalKey: null,
-      })
+      .set(taskApprovalColumns(row, completeTaskApproval(approval)))
       .where(eq(pulseSchedules.id, id))
       .run();
     this.notifyApproved(row.agentId);

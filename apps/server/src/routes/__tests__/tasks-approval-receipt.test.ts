@@ -1,0 +1,252 @@
+/**
+ * Approval receipts for scheduled tasks (DOR-3641).
+ *
+ * Exercises the real create and PATCH routes over a real task file and store.
+ * The stamp is a security record: every activation path must persist it, and
+ * the Activity row must repeat the exact same values.
+ *
+ * @module routes/__tests__/tasks-approval-receipt
+ */
+import fs from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
+import type { IncomingMessage } from 'node:http';
+import { Hono } from 'hono';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { createTestDb } from '@dorkos/test-utils/db';
+import { pulseSchedules, type Db } from '@dorkos/db';
+import { eq } from 'drizzle-orm';
+import { createTasksRoutes } from '../tasks.js';
+import { personTaskApprover } from '../task-approval-actor.js';
+import { TaskRegistrar } from '../../services/tasks/task-registrar.js';
+import { TaskStore } from '../../services/tasks/task-store.js';
+import type { TaskSchedulerService } from '../../services/tasks/task-scheduler-service.js';
+import type { ActivityService } from '../../services/activity/activity-service.js';
+import type { ApiEnv } from '../../http/api-chain.js';
+import type { Task } from '@dorkos/shared/types';
+
+vi.mock('../../services/core/config-manager.js', () => ({
+  configManager: {
+    get: (key: string) => {
+      if (key === 'auth') return { enabled: false };
+      if (key === 'permissions') return { preset: 'careful' };
+      if (key === 'profile') return { displayName: 'Dorian' };
+      return undefined;
+    },
+  },
+}));
+
+vi.mock('../../services/core/runtime-registry.js', async () => {
+  const { CLAUDE_CODE_CAPABILITIES } =
+    await import('../../services/runtimes/claude-code/runtime-constants.js');
+  return {
+    runtimeRegistry: {
+      getDefaultType: () => 'claude-code',
+      has: () => true,
+      getAllCapabilities: () => ({ 'claude-code': CLAUDE_CODE_CAPABILITIES }),
+      computerRuntimeForAgentPath: () => undefined,
+      getNativeSessionCwd: () => null,
+    },
+  };
+});
+
+/** What these routes answer: a task, or a list of them for GET `/`. */
+type ResponseBody = Partial<Task> & Record<string, unknown> & Pick<Task[], 'find'>;
+
+describe('scheduled task approval receipts', () => {
+  let store: TaskStore;
+  let db: Db;
+  let dorkHome: string;
+  let emitted: Array<Record<string, unknown>>;
+  let routes: Hono<ApiEnv>;
+
+  beforeEach(async () => {
+    db = createTestDb();
+    store = new TaskStore(db);
+    dorkHome = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'task-receipt-')));
+    emitted = [];
+    const scheduler = {
+      registerTask: vi.fn(),
+      unregisterTask: vi.fn(),
+      getNextRun: vi.fn().mockReturnValue(null),
+      previewNextRuns: vi.fn().mockReturnValue([]),
+      isRegistered: vi.fn().mockReturnValue(false),
+    } as unknown as TaskSchedulerService;
+    const activity = {
+      emit: vi.fn((event: Record<string, unknown>) => emitted.push(event)),
+    } as unknown as ActivityService;
+    routes = new Hono<ApiEnv>();
+    routes.use('*', async (c, next) => {
+      c.set('user', { userId: 'user-1', credential: 'cookie' });
+      if (c.req.method !== 'GET') c.set('body', await c.req.json());
+      return next();
+    });
+    routes.route(
+      '/',
+      createTasksRoutes({
+        store,
+        scheduler,
+        registrar: new TaskRegistrar({ store, scheduler }),
+        dorkHome,
+        activity,
+      })
+    );
+  });
+
+  /** Call the route without opening a network listener. */
+  async function call(
+    path: string,
+    method: 'GET' | 'POST' | 'PATCH' = 'GET',
+    body?: Record<string, unknown>,
+    agent?: string
+  ) {
+    const headers = {
+      ...(body ? { 'content-type': 'application/json' } : {}),
+      ...(agent ? { 'x-dorkos-agent': agent } : {}),
+    };
+    const incoming = {
+      headers,
+      socket: { remoteAddress: '127.0.0.1' },
+    } as unknown as IncomingMessage;
+    const response = await routes.request(
+      path,
+      {
+        method,
+        headers,
+        ...(body ? { body: JSON.stringify(body) } : {}),
+      },
+      { incoming }
+    );
+    return { status: response.status, body: (await response.json()) as ResponseBody };
+  }
+
+  afterEach(async () => {
+    store.close();
+    await fs.rm(dorkHome, { recursive: true, force: true });
+  });
+
+  /** Make one agent proposal that waits for the operator. */
+  async function parked(name: string, enabled = true) {
+    const response = await call(
+      '/',
+      'POST',
+      {
+        name,
+        description: name,
+        prompt: `Run ${name}.`,
+        cron: '0 3 * * *',
+        target: 'global',
+        enabled,
+        reason: `${name} should run overnight.`,
+      },
+      'unresolved-agent-token'
+    );
+    expect(response.status, JSON.stringify(response.body)).toBe(201);
+    expect(response.body).toMatchObject({
+      status: 'pending_approval',
+      approvedAt: null,
+      approvedBy: null,
+      approvedVia: null,
+    });
+    return response.body as { id: string };
+  }
+
+  /** Read the revision the approval card would send. */
+  async function revision(id: string): Promise<string> {
+    const listed = await call('/');
+    return listed.body.find((task) => task.id === id)?.approvalRevision ?? '';
+  }
+
+  it('names the owner only when login is off, never a signed-in account', () => {
+    // The saved profile name is the owner's; a signed-in account is not them.
+    expect(personTaskApprover({})).toEqual({ kind: 'person', userId: null, name: 'Dorian' });
+    expect(personTaskApprover({ user: { userId: 'user-2', credential: 'cookie' } })).toEqual({
+      kind: 'person',
+      userId: 'user-2',
+      name: null,
+    });
+  });
+
+  it('stamps an operator create as its approval', async () => {
+    const response = await call('/', 'POST', {
+      name: 'person-made',
+      description: 'person-made',
+      prompt: 'Run the report.',
+      cron: '0 4 * * *',
+      target: 'global',
+    });
+
+    expect(response.status, JSON.stringify(response.body)).toBe(201);
+    expect(Number.isNaN(Date.parse(response.body.approvedAt ?? ''))).toBe(false);
+    expect(response.body).toMatchObject({
+      approvedBy: { kind: 'person', userId: 'user-1', name: null },
+      approvedVia: 'created',
+    });
+  });
+
+  it.each([
+    ['inbox', false],
+    ['schedules', true],
+    [undefined, false],
+  ] as const)('stamps PATCH approval from %s, including turn-on=%s', async (surface, turnOn) => {
+    const task = await parked(`approval-${surface ?? 'unknown'}-${turnOn}`, !turnOn);
+    const response = await call(`/${task.id}`, 'PATCH', {
+      status: 'active',
+      expectedApprovalRevision: await revision(task.id),
+      ...(turnOn ? { enabled: true } : {}),
+      ...(surface ? { approvalSurface: surface } : {}),
+    });
+
+    expect(response.status, JSON.stringify(response.body)).toBe(200);
+    expect(Number.isNaN(Date.parse(response.body.approvedAt ?? ''))).toBe(false);
+    expect(response.body).toMatchObject({
+      status: 'active',
+      approvedBy: { kind: 'person', userId: 'user-1', name: null },
+      approvedVia: surface ?? 'unknown',
+      ...(turnOn ? { enabled: true } : {}),
+    });
+    const event = emitted.find((entry) => entry.eventType === 'tasks.task_approved');
+    expect(event?.metadata).toMatchObject({
+      approvedAt: response.body.approvedAt,
+      approvedBy: response.body.approvedBy,
+      approvedVia: response.body.approvedVia,
+    });
+  });
+
+  it('fails closed at the store when no approver reaches an activation', async () => {
+    const task = await parked('store-fallback');
+    const updated = store.updateTask(task.id, { status: 'active' });
+
+    expect(updated).toMatchObject({
+      status: 'active',
+      approvedBy: { kind: 'policy' },
+      approvedVia: 'unknown',
+    });
+    expect(updated?.approvedAt).toEqual(expect.any(String));
+    const row = db
+      .select({ approvedContentKey: pulseSchedules.approvedContentKey })
+      .from(pulseSchedules)
+      .where(eq(pulseSchedules.id, task.id))
+      .get();
+    expect(row?.approvedContentKey).toEqual(expect.any(String));
+  });
+
+  it('ignores approvalSurface when the task was already active', async () => {
+    const created = await call('/', 'POST', {
+      name: 'already-active',
+      description: 'already-active',
+      prompt: 'Run the report.',
+      cron: '0 4 * * *',
+      target: 'global',
+    });
+
+    const response = await call(`/${created.body.id}`, 'PATCH', {
+      status: 'active',
+      approvalSurface: 'inbox',
+      expectedApprovalRevision: await revision(created.body.id as string),
+    });
+
+    expect(response.status, JSON.stringify(response.body)).toBe(200);
+    expect(response.body.approvedVia).toBe('unknown');
+  });
+});

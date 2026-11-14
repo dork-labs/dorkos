@@ -235,6 +235,8 @@ export class ShapeScheduleService implements ShapeScheduleServiceLike {
           // parse failure is not a reason to skip it.
           permissionMode: clampSchedulePermissionMode(req.permissionMode ?? 'acceptEdits').mode,
           filePath,
+          // Parked just below, so nobody approved it: no receipt (DOR-3641).
+          approval: null,
         });
 
     // The raw fallback writer starts active. A parser failure cannot approve a Shape's work;

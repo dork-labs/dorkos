@@ -37,6 +37,11 @@ import {
   stickyAccountLocked,
   type StickySessionLookup,
 } from '../session/sticky-session.js';
+import {
+  completeTaskApproval,
+  taskApprovalReceiptColumns,
+  type TaskApprovalInput,
+} from '../approvals/task-approval-receipt.js';
 
 /**
  * What {@link TaskFileSync.upsertFromFile} needs to know beyond the file itself:
@@ -46,7 +51,10 @@ import {
  * documents both fields — and re-exported here under the name its one caller
  * uses.
  */
-export type UpsertFromFileOptions = FileSyncSource;
+export type UpsertFromFileOptions = FileSyncSource & {
+  /** The operator create's receipt, or null for a parked create. */
+  approval?: TaskApprovalInput | null;
+};
 
 /**
  * Syncs SKILL.md files into task rows, over the same database the store writes.
@@ -277,6 +285,12 @@ export class TaskFileSync {
     }
 
     const id = ulid();
+    const approval =
+      (arm?.status ?? 'active') === 'active' && options?.approval !== null
+        ? completeTaskApproval(
+            options?.approval ?? { approvedBy: { kind: 'policy' }, approvedVia: 'created' }
+          )
+        : null;
     this.db
       .insert(pulseSchedules)
       .values({
@@ -315,6 +329,7 @@ export class TaskFileSync {
               cron: incomingCron,
               timezone: schedule.timezone,
             }),
+        ...(approval ? taskApprovalReceiptColumns(approval) : {}),
         filePath: def.filePath,
         packageOwned: options?.packageOwned ?? null,
         tags: '[]',

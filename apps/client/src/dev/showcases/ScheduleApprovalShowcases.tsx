@@ -90,6 +90,9 @@ function proposal(overrides: Partial<Task> = {}): Task {
     effort: null,
     account: null,
     status: 'pending_approval',
+    approvedAt: null,
+    approvedBy: null,
+    approvedVia: null,
     filePath: '/Users/dev/agents/dorkbot/.dork/tasks/morning-standup/SKILL.md',
     createdAt: minutesFromLoad(-26),
     updatedAt: minutesFromLoad(-26),
@@ -193,6 +196,7 @@ export function ScheduleApprovalShowcases() {
       <ShowcaseDemo>
         <div className="w-full max-w-lg">
           <ScheduleApprovalCard
+            approvalSurface="home"
             task={proposal({
               id: 'task-permission-picker',
               displayName: 'Watchdog check',
@@ -211,7 +215,7 @@ export function ScheduleApprovalShowcases() {
       </ShowcaseLabel>
       <ShowcaseDemo>
         <div className="w-full max-w-lg">
-          <ScheduleApprovalCard task={proposal()} />
+          <ScheduleApprovalCard task={proposal()} approvalSurface="home" />
         </div>
       </ShowcaseDemo>
 
@@ -222,6 +226,7 @@ export function ScheduleApprovalShowcases() {
       <ShowcaseDemo>
         <div className="w-full max-w-lg">
           <ScheduleApprovalCard
+            approvalSurface="home"
             task={proposal({
               id: 'task-file-origin',
               origin: 'file',
@@ -242,6 +247,7 @@ export function ScheduleApprovalShowcases() {
       <ShowcaseDemo>
         <div className="w-full max-w-lg">
           <ScheduleApprovalCard
+            approvalSurface="home"
             task={proposal({
               id: 'task-file-broken',
               origin: 'file',
@@ -264,6 +270,7 @@ export function ScheduleApprovalShowcases() {
       <ShowcaseDemo>
         <div className="w-full max-w-lg">
           <ScheduleApprovalCard
+            approvalSurface="home"
             task={proposal({
               id: 'task-settings-changed',
               proposedBySessionId: null,
@@ -291,6 +298,7 @@ export function ScheduleApprovalShowcases() {
       <ShowcaseDemo>
         <div className="w-full max-w-lg">
           <ScheduleApprovalCard
+            approvalSurface="home"
             task={proposal({
               id: 'task-agent-changed-outside',
               proposedBySessionId: null,
@@ -313,7 +321,7 @@ export function ScheduleApprovalShowcases() {
       </ShowcaseLabel>
       <ShowcaseDemo>
         <div className="w-full max-w-[22rem]">
-          <ScheduleApprovalCard task={proposal({ id: 'task-narrow' })} />
+          <ScheduleApprovalCard task={proposal({ id: 'task-narrow' })} approvalSurface="home" />
         </div>
       </ShowcaseDemo>
 
@@ -323,6 +331,7 @@ export function ScheduleApprovalShowcases() {
       <ShowcaseDemo>
         <div className="w-full max-w-lg">
           <ScheduleApprovalCard
+            approvalSurface="home"
             task={proposal({
               id: 'task-legacy',
               reason: null,
@@ -339,6 +348,7 @@ export function ScheduleApprovalShowcases() {
       <ShowcaseDemo>
         <div className="w-full max-w-lg">
           <ScheduleApprovalCard
+            approvalSurface="home"
             task={proposal({
               id: 'task-anonymous',
               reason: null,
@@ -358,6 +368,7 @@ export function ScheduleApprovalShowcases() {
       <ShowcaseDemo>
         <div className="w-full max-w-lg">
           <ScheduleApprovalCard
+            approvalSurface="home"
             task={proposal({
               id: 'task-badcron',
               displayName: 'Hourly triage',
@@ -376,6 +387,7 @@ export function ScheduleApprovalShowcases() {
       <ShowcaseDemo>
         <div className="w-full max-w-lg">
           <ScheduleApprovalCard
+            approvalSurface="home"
             task={proposal({
               id: 'task-unnamed',
               displayName: null,
@@ -395,8 +407,9 @@ export function ScheduleApprovalShowcases() {
       </ShowcaseLabel>
       <ShowcaseDemo>
         <div className="flex w-full max-w-lg flex-col gap-3">
-          <ScheduleApprovalCard task={proposal({ id: 'task-decide-1' })} />
+          <ScheduleApprovalCard task={proposal({ id: 'task-decide-1' })} approvalSurface="home" />
           <ScheduleApprovalCard
+            approvalSurface="home"
             task={proposal({
               id: 'task-decide-2',
               displayName: 'Weekly digest',
@@ -414,15 +427,20 @@ export function ScheduleApprovalShowcases() {
       <ShowcaseDemo>
         <div className="flex w-full max-w-lg flex-col gap-3">
           <TestRunBench outcome="running">
-            <ScheduleApprovalCard task={proposal({ id: 'task-run-going' })} />
+            <ScheduleApprovalCard
+              task={proposal({ id: 'task-run-going' })}
+              approvalSurface="home"
+            />
           </TestRunBench>
           <TestRunBench outcome="completed">
             <ScheduleApprovalCard
+              approvalSurface="home"
               task={proposal({ id: 'task-run-done', displayName: 'Morning standup (finishes)' })}
             />
           </TestRunBench>
           <TestRunBench outcome="failed">
             <ScheduleApprovalCard
+              approvalSurface="home"
               task={proposal({ id: 'task-run-failed', displayName: 'Morning standup (fails)' })}
             />
           </TestRunBench>

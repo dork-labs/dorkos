@@ -57,10 +57,17 @@ describe('an agent changing the work of an approved schedule', () => {
   });
 
   it('parks a schedule that came from a file, even for our agent', () => {
-    const { settled, after } = agentEdits(approvedSchedule('file'), true);
+    const approved = approvedSchedule('file');
+    const stamp = {
+      approvedAt: approved.approvedAt,
+      approvedBy: approved.approvedBy,
+      approvedVia: approved.approvedVia,
+    };
+    const { settled, after } = agentEdits(approved, true);
 
     expect(settled).toBe('parked');
     expect(after.status).toBe('pending_approval');
+    expect(after).toMatchObject(stamp);
   });
 
   it('parks when the agent is not one whose work arms (Careful, or an outsider)', () => {
@@ -100,6 +107,39 @@ describe('an agent changing the work of an approved schedule', () => {
     const after = store.getTask(task.id)!;
     expect(after.status).toBe('pending_approval');
     expect(after.reason).not.toBeNull();
+  });
+
+  it('keeps the earlier receipt when a matching grant re-arms the task', () => {
+    const task = approvedSchedule();
+    const stamp = {
+      approvedAt: task.approvedAt,
+      approvedBy: task.approvedBy,
+      approvedVia: task.approvedVia,
+    };
+    const before = { ...taskWorkOf(task), status: task.status };
+    const approvedKey = db
+      .select()
+      .from(pulseSchedules)
+      .where(eq(pulseSchedules.id, task.id))
+      .get()!.approvedContentKey;
+    store.updateTask(task.id, { prompt: 'Post the digest, and the weather.' });
+    db.update(pulseSchedules)
+      .set({
+        status: 'pending_approval',
+        approvedContentKey: null,
+        previousApprovalKey: approvedKey,
+      })
+      .where(eq(pulseSchedules.id, task.id))
+      .run();
+
+    const settled = store.approvals.settleApprovedWorkChange(task.id, before, {
+      trusted: false,
+      armsAgentWork: true,
+      ownAgentVouches: true,
+    });
+
+    expect(settled).toBe('rekeyed');
+    expect(store.getTask(task.id)).toMatchObject({ status: 'active', ...stamp });
   });
 
   it('leaves a schedule nobody approved waiting', () => {

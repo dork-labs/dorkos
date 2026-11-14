@@ -24,7 +24,7 @@ import path from 'node:path';
 import fs from 'node:fs/promises';
 import { z } from 'zod';
 import { CreateTaskRequestSchema } from '@dorkos/shared/schemas';
-import type { CreateTaskInput, Task } from '@dorkos/shared/schemas';
+import type { CreateTaskInput, Task, TaskApprover } from '@dorkos/shared/schemas';
 import type { MeshCore } from '@dorkos/mesh';
 import { writeSkillFile } from '@dorkos/skills/writer';
 import { parseSkillFile } from '@dorkos/skills/parser';
@@ -69,6 +69,7 @@ import { scheduleAccountRefusal, scheduleRunFolder } from './schedule-account-el
 import { scheduleCreditsModelRefusal } from './schedule-credits-model.js';
 import { marksHold, NO_MARKS, type TurnMarks } from '../../core/turn-power/turn-marks.js';
 import { auditCrossAgentTask, capModeAtAgentLevel } from '../approvals/cross-agent.js';
+import { scheduledTaskCreateApproval } from '../approvals/task-approval-receipt.js';
 
 /**
  * An ungranted agent create may preserve only these known modes. In particular,
@@ -131,6 +132,8 @@ export interface CreateScheduledTaskOptions {
    * {@link CreateScheduledTaskOptions.callerIsOurAgent} arms it.
    */
   trusted: boolean;
+  /** The person who created it, for a trusted operator create receipt. */
+  createdBy?: TaskApprover;
   /**
    * Whether the server identified an untrusted caller as one of this install's
    * agents: an in-session tool call, or a verified agent token. On a Trusted
@@ -355,6 +358,11 @@ export async function createScheduledTask(
       options.parkForPerson === true ||
       (!forAnother && !runsAsItsCreator(data.target, callerId)) ||
       !agentSchedulesArmWithoutAsking(options.callerIsOurAgent === true));
+  const approval = scheduledTaskCreateApproval({
+    parks,
+    trusted,
+    ...(options.createdBy && { createdBy: options.createdBy }),
+  });
 
   // Asked before ANY write, because the file is written first and never
   // withdrawn: a cron or timezone croner cannot read would otherwise leave a
@@ -561,7 +569,10 @@ export async function createScheduledTask(
 
   let schedule: Task;
   if (discovered) {
-    schedule = deps.store.fileSync.upsertFromFile(discovered.def, home.agentId ?? undefined);
+    schedule = deps.store.fileSync.upsertFromFile(discovered.def, home.agentId ?? undefined, {
+      source: 'operator',
+      approval,
+    });
   } else {
     // Fallback: create the row directly. NOT a file path, so it gets none of
     // `upsertFromFile`'s clamping — which is why the mode handed in was clamped at
@@ -583,6 +594,7 @@ export async function createScheduledTask(
       ...(data.effort !== undefined && { effort: data.effort }),
       ...(data.account !== undefined && { account: data.account }),
       filePath,
+      approval,
     });
   }
 

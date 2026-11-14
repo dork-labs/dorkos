@@ -202,7 +202,7 @@ export function PulseAttentionSection() {
           vanish under its own receipt. */}
       <AnimatePresence initial={false}>
         {shownSchedules.map((task) => (
-          <ScheduleApprovalCard key={task.id} task={task} className="mb-2" />
+          <ScheduleApprovalCard key={task.id} task={task} approvalSurface="home" className="mb-2" />
         ))}
       </AnimatePresence>
       <motion.div variants={staggerContainer} initial="initial" animate="animate">

@@ -15,6 +15,8 @@ import { configKeys, CONFIG_STALE_TIME_MS } from '@/layers/entities/config';
 
 /** What {@link useProfile} hands its consumers. */
 export interface ProfileApi {
+  /** The person's saved display name, or null until they provide one. */
+  displayName: string | null;
   /** The saved roles; empty until the user answers. */
   roles: string[];
   /** When the one-time existing-user prompt was dismissed, or null. */
@@ -69,6 +71,7 @@ export function useProfile(): ProfileApi {
   });
 
   return {
+    displayName: config?.profile?.displayName ?? null,
     roles: config?.profile?.roles ?? [],
     rolePromptDismissedAt: config?.profile?.rolePromptDismissedAt ?? null,
     identityPromptDismissedAt: config?.profile?.identityPromptDismissedAt ?? null,

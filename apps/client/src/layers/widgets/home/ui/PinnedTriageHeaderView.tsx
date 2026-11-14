@@ -514,7 +514,13 @@ export function PinnedTriageHeaderView({
                       order the Inbox panel lists them in. */}
                   <AnimatePresence initial={false}>
                     {scheduleApprovals.map((task) => (
-                      <ScheduleApprovalCard key={task.id} task={task} className="mt-2" compact />
+                      <ScheduleApprovalCard
+                        key={task.id}
+                        task={task}
+                        approvalSurface="home"
+                        className="mt-2"
+                        compact
+                      />
                     ))}
                   </AnimatePresence>
                 </TriageGroup>

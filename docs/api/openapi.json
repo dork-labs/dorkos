@@ -11005,6 +11005,19 @@
           "status": {
             "$ref": "#/components/schemas/TaskStatus"
           },
+          "approvedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "approvedBy": {
+            "$ref": "#/components/schemas/TaskApprover"
+          },
+          "approvedVia": {
+            "$ref": "#/components/schemas/TaskApprovalVia"
+          },
           "filePath": {
             "type": "string"
           },
@@ -11122,6 +11135,9 @@
           "maxRuntime",
           "permissionMode",
           "status",
+          "approvedAt",
+          "approvedBy",
+          "approvedVia",
           "filePath",
           "createdAt",
           "updatedAt"
@@ -11144,6 +11160,96 @@
           "active",
           "paused",
           "pending_approval"
+        ]
+      },
+      "TaskApprover": {
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "person"
+                ]
+              },
+              "userId": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "name": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "kind",
+              "userId",
+              "name"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "agent"
+                ]
+              },
+              "agentPath": {
+                "type": "string"
+              },
+              "name": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "kind",
+              "agentPath",
+              "name"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "policy"
+                ]
+              }
+            },
+            "required": [
+              "kind"
+            ]
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "TaskApprovalVia": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "enum": [
+          "inbox",
+          "schedules",
+          "home",
+          "created",
+          "agent_tool",
+          "trusted_agent",
+          "unknown",
+          null
         ]
       },
       "ScheduleOriginMarks": {
@@ -11549,6 +11655,14 @@
           },
           "status": {
             "$ref": "#/components/schemas/SettableTaskStatus"
+          },
+          "approvalSurface": {
+            "type": "string",
+            "enum": [
+              "inbox",
+              "schedules",
+              "home"
+            ]
           },
           "reason": {
             "type": "string"

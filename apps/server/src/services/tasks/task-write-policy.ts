@@ -204,6 +204,9 @@ export const TASK_WRITE_POLICY = {
   // a person's approval of the SKILL file, so it is never an agent's to send.
   approvedPromptHash: 'operator-only',
   expectedApprovalRevision: 'operator-only',
+  // Where a person approved from (DOR-3641): it labels the receipt only, and
+  // means something only beside `status`, which is the person's to send.
+  approvalSurface: 'operator-only',
 } as const satisfies Record<string, TaskFieldWriteAccess>;
 
 /** The `operator-only` fields, derived from the table so the two cannot drift. */

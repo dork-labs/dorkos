@@ -43,6 +43,8 @@ import { holdApprovedSchedule, releaseSettledSchedule } from '../model/settling-
 import { useScheduleTestRun } from '../model/use-schedule-test-run';
 import { TestRunStrip } from './TestRunStrip';
 import { ScheduleOriginMarks } from './ScheduleOriginMarks';
+import { useProfile } from '@/layers/entities/user-profile';
+import { ScheduleApprovalReceipt, type ScheduleApprovalSurface } from './ScheduleApprovalReceipt';
 
 /** What a person answered, once they have. */
 type Decision = 'approved' | 'rejected';
@@ -53,6 +55,8 @@ const AGE_TICK_MS = 30_000;
 export interface ScheduleApprovalCardProps {
   /** The schedule waiting on a yes or a no. */
   task: Task;
+  /** Where this approval card is shown, for its durable receipt. */
+  approvalSurface: ScheduleApprovalSurface;
   /**
    * Whether this card is the keyboard shortcut's current target. Defaults to
    * true, as {@link AskCard} does — a surface drawing a queue passes false for
@@ -152,6 +156,7 @@ function ChangeValue({ value, unbroken }: { value: string; unbroken: boolean }) 
  */
 function ScheduleApprovalContent({
   task,
+  approvalSurface,
   isActive = true,
   onNavigate,
   className,
@@ -173,6 +178,8 @@ function ScheduleApprovalContent({
   const [decision, setDecision] = useState<Decision | null>(null);
   const [pickedMode, setPickedMode] = useState<string | null>(null);
   const [grantedLabel, setGrantedLabel] = useState<string | null>(null);
+  const [approvedAt, setApprovedAt] = useState<string | null>(null);
+  const { displayName } = useProfile();
   // A yes that approves the task's SKILL file shows the prompt it approves,
   // open from the start (DOR-3703, M4): an agent's proposal, or any task whose
   // file this approval would vouch for.
@@ -255,6 +262,7 @@ function ScheduleApprovalContent({
   const approve = async (turnOn = false) => {
     if (answered !== null || !selected || refreshing || !task.approvalRevision) return;
     setDecision('approved');
+    setApprovedAt(new Date().toISOString());
     setGrantedLabel(currentLabel);
     setTurnedOn(turnOn);
     const approvedTask = { ...task, permissionMode: selectedMode as PermissionMode };
@@ -266,6 +274,7 @@ function ScheduleApprovalContent({
         id: task.id,
         status: 'active',
         expectedApprovalRevision: task.approvalRevision,
+        approvalSurface,
         ...(approvedPromptHash && { approvedPromptHash }),
         ...(turnOn && { enabled: true }),
         // Omit an unchanged value for package-owned schedules, which do not
@@ -275,11 +284,15 @@ function ScheduleApprovalContent({
         }),
       },
       {
-        onSuccess: () => onApproved?.(),
+        onSuccess: (approved) => {
+          if (approved?.approvedAt) setApprovedAt(approved.approvedAt);
+          onApproved?.();
+        },
         onError: (error) => {
           if ('code' in error && error.code === 'schedule_review_changed') onStale();
           releaseSettledSchedule(task.id);
           setDecision(null);
+          setApprovedAt(null);
           setGrantedLabel(null);
         },
       }
@@ -615,17 +628,20 @@ function ScheduleApprovalContent({
         </AskCard.Actions>
       ) : (
         <AskCard.Actions>
-          <AskCard.Receipt
-            data-slot="schedule-receipt"
-            tone={answered === 'approved' ? 'allowed' : 'denied'}
-          >
-            {answered === 'approved'
-              ? `Approved${grantedLabel ? ` at ${grantedLabel}` : ''}` +
-                (task.enabled || turnedOn
-                  ? `${firstRuns ? `. First run ${firstRuns.first}` : ''}`
-                  : '. Off until you turn it on.')
-              : 'Rejected'}
-          </AskCard.Receipt>
+          {answered === 'approved' && approvedAt ? (
+            <ScheduleApprovalReceipt
+              name={displayName ?? 'you'}
+              approvedAt={approvedAt}
+              surface={approvalSurface}
+              grantedLabel={grantedLabel}
+              firstRun={firstRuns?.first ?? null}
+              enabled={task.enabled || turnedOn}
+            />
+          ) : (
+            <AskCard.Receipt data-slot="schedule-receipt" tone="denied">
+              Rejected
+            </AskCard.Receipt>
+          )}
           {/* Live for as long as the DELETE has not been sent. Once the window
               closes the offer goes, because a button that cannot do what it says
               is worse than no button. */}

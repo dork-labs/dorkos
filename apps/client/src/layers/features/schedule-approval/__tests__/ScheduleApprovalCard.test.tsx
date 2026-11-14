@@ -77,6 +77,9 @@ function proposal(overrides: Partial<Task> = {}): Task {
     effort: null,
     account: null,
     status: 'pending_approval',
+    approvedAt: null,
+    approvedBy: null,
+    approvedVia: null,
     filePath: '/tmp/nightly-sweep/SKILL.md',
     createdAt: minutesFromLoad(-20),
     updatedAt: minutesFromLoad(-20),
@@ -119,6 +122,7 @@ function taskRun(overrides: Partial<TaskRun> = {}): TaskRun {
 const SHOWN = {
   expectedApprovalRevision: 'a'.repeat(64),
   approvedPromptHash: expect.stringMatching(/^sha256:[A-Za-z0-9_-]{43}$/),
+  approvalSurface: 'home',
 };
 
 /** Render one card over a mock transport. */
@@ -159,7 +163,9 @@ function renderCard(
   }
   return {
     transport,
-    ...render(<ScheduleApprovalCard task={task} {...props} />, { wrapper: Wrapper }),
+    ...render(<ScheduleApprovalCard task={task} approvalSurface="home" {...props} />, {
+      wrapper: Wrapper,
+    }),
   };
 }
 
@@ -362,6 +368,7 @@ describe('ScheduleApprovalCard — what it says', () => {
       expect(updateTask).toHaveBeenCalledWith('task-1', {
         status: 'active',
         expectedApprovalRevision: 'a'.repeat(64),
+        approvalSurface: 'home',
       })
     );
   });
@@ -380,6 +387,7 @@ describe('ScheduleApprovalCard — what it says', () => {
         status: 'active',
         approvedPromptHash: shown,
         expectedApprovalRevision: 'a'.repeat(64),
+        approvalSurface: 'home',
       })
     );
   });
@@ -394,6 +402,7 @@ describe('ScheduleApprovalCard — what it says', () => {
         expect(updateTask).toHaveBeenCalledWith('task-1', {
           status: 'active',
           expectedApprovalRevision: 'a'.repeat(64),
+          approvalSurface: 'home',
         })
       );
     } finally {
@@ -570,7 +579,21 @@ describe('ScheduleApprovalCard — answering it', () => {
       })
     );
     expect(await findSlot('schedule-receipt')).toHaveTextContent(
-      'Approved at Accept edits. Off until you turn it on.'
+      /Approved by you at .+, in Home\. At Accept edits\. Off until you turn it on\./
+    );
+  });
+
+  it('uses the profile name and server timestamp in the receipt', async () => {
+    const approvedAt = new Date(2026, 0, 15, 14, 30).toISOString();
+    renderCard(proposal(), {
+      getConfig: vi.fn().mockResolvedValue({ profile: { displayName: 'Dorian' } }),
+      updateTask: vi.fn().mockResolvedValue(proposal({ status: 'active', approvedAt })),
+    });
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Approve Nightly sweep' }));
+
+    expect(await findSlot('schedule-receipt')).toHaveTextContent(
+      'Approved by Dorian at 2:30 PM, in Home.'
     );
   });
 
@@ -642,7 +665,9 @@ describe('ScheduleApprovalCard — answering it', () => {
     expect(receipt).toHaveAttribute('data-tone', 'allowed');
     // Not a bare "Approved": the whole point of the card is that a person knows
     // what they just armed, and the first run is the fact they were weighing.
-    expect(receipt).toHaveTextContent(/^Approved at Accept edits. First run /);
+    expect(receipt).toHaveTextContent(
+      /^Approved by you at .+, in Home\. At Accept edits\. First run /
+    );
   });
 
   it('says only "Approved" when there was no first run to promise', async () => {
@@ -824,8 +849,14 @@ describe('ScheduleApprovalCard — the rejection really lands', () => {
     render(
       <QueryClientProvider client={queryClient}>
         <TransportProvider transport={transport}>
-          <ScheduleApprovalCard task={proposal({ id: 'task-1', displayName: 'First' })} />
-          <ScheduleApprovalCard task={proposal({ id: 'task-2', displayName: 'Second' })} />
+          <ScheduleApprovalCard
+            task={proposal({ id: 'task-1', displayName: 'First' })}
+            approvalSurface="home"
+          />
+          <ScheduleApprovalCard
+            task={proposal({ id: 'task-2', displayName: 'Second' })}
+            approvalSurface="home"
+          />
         </TransportProvider>
       </QueryClientProvider>
     );
@@ -862,7 +893,7 @@ describe('ScheduleApprovalCard — the receipt outlives the refetch', () => {
     return (
       <>
         {shown.map((task) => (
-          <ScheduleApprovalCard key={task.id} task={task} />
+          <ScheduleApprovalCard key={task.id} task={task} approvalSurface="home" />
         ))}
       </>
     );
@@ -1185,7 +1216,7 @@ describe('ScheduleApprovalCard — choosing the run permissions', () => {
         permissionMode: 'dontAsk',
       })
     );
-    expect(await findSlot('schedule-receipt')).toHaveTextContent(/Approved at/);
+    expect(await findSlot('schedule-receipt')).toHaveTextContent(/Approved by you at/);
   });
 
   it('flags a mismatch before approval and saves the person’s override', async () => {
@@ -1395,6 +1426,7 @@ describe('stale schedule approval', () => {
       rerender(
         <ScheduleApprovalCard
           task={proposal({ prompt: 'Changed work.', approvalRevision: 'b'.repeat(64) })}
+          approvalSurface="home"
           pinActions={pinActions}
         />
       );
@@ -1425,7 +1457,7 @@ describe('stale schedule approval', () => {
         expect(screen.getByRole('button', { name: 'Approve Nightly sweep' })).toBeEnabled()
       );
       screen.getByRole('button', { name: 'Approve Nightly sweep' }).focus();
-      rerender(<ScheduleApprovalCard task={fresh} pinActions />);
+      rerender(<ScheduleApprovalCard task={fresh} approvalSurface="home" pinActions />);
       expect(await screen.findByRole('status')).toHaveTextContent(
         'This schedule changed. Review it again.'
       );
@@ -1461,6 +1493,7 @@ describe('stale schedule approval', () => {
     rerender(
       <ScheduleApprovalCard
         task={proposal({ status: 'active', approvalRevision: 'b'.repeat(64) })}
+        approvalSurface="home"
       />
     );
     expect(slot('schedule-receipt')).not.toBeNull();

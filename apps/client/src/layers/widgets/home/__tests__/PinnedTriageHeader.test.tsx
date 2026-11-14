@@ -228,6 +228,9 @@ function parkedSchedule(overrides: Partial<Task> = {}): Task {
     effort: null,
     account: null,
     status: 'pending_approval',
+    approvedAt: null,
+    approvedBy: null,
+    approvedVia: null,
     filePath: '/tmp/nightly-sweep/SKILL.md',
     createdAt: new Date(Date.now() - 20 * 60_000).toISOString(),
     updatedAt: new Date(Date.now() - 20 * 60_000).toISOString(),
@@ -952,6 +955,7 @@ describe('PinnedTriageHeader', () => {
       expect(updateTask).toHaveBeenCalledWith('task-1', {
         status: 'active',
         expectedApprovalRevision: 'a'.repeat(64),
+        approvalSurface: 'home',
       })
     );
   });
