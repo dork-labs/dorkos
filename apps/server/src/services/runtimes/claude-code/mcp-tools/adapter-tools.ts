@@ -6,10 +6,7 @@ import { jsonContent } from './types.js';
 /** Guard that returns an error response when adapters are not available. */
 function requireAdapterManager(deps: McpToolDeps) {
   if (!deps.adapterManager) {
-    return jsonContent(
-      { error: 'Relay adapters are not enabled', code: 'ADAPTERS_DISABLED' },
-      true
-    );
+    return jsonContent({ error: 'Chat connections are off', code: 'ADAPTERS_DISABLED' }, true);
   }
   return null;
 }
@@ -86,25 +83,25 @@ export function adapterToolDefinitions(deps: McpToolDeps) {
   return [
     tool(
       'relay_list_adapters',
-      'List all Relay external adapters with their current status (connected, disconnected, error).',
+      'List every chat connection with its status (connected, disconnected, error).',
       {},
       createRelayListAdaptersHandler(deps)
     ),
     tool(
       'relay_enable_adapter',
-      'Enable a Relay external adapter by ID. Starts the adapter and persists the change to config.',
+      'Turn on a chat connection by ID. Starts the adapter and persists the change to config.',
       { id: z.string().describe('Adapter ID to enable') },
       createRelayEnableAdapterHandler(deps)
     ),
     tool(
       'relay_disable_adapter',
-      'Disable a Relay external adapter by ID. Stops the adapter and persists the change to config.',
+      'Turn off a chat connection by ID. Stops the adapter and persists the change to config.',
       { id: z.string().describe('Adapter ID to disable') },
       createRelayDisableAdapterHandler(deps)
     ),
     tool(
       'relay_reload_adapters',
-      'Reload Relay adapter configuration from disk. Hot-reloads adapter state without server restart.',
+      'Reload chat connection settings from disk. Hot-reloads adapter state without server restart.',
       {},
       createRelayReloadAdaptersHandler(deps)
     ),

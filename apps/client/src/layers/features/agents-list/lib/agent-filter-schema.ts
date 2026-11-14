@@ -56,7 +56,7 @@ export const agentFilterSchema = createFilterSchema<TopologyAgent>({
       cursor: 'Cursor',
       codex: 'Codex',
       opencode: 'OpenCode',
-      doe: 'DorkOS',
+      doe: 'DorkOS (built-in)',
       other: 'Other',
     },
   }),

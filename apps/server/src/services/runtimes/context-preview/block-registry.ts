@@ -76,7 +76,11 @@ export const SESSION_BLOCKS: readonly ContextBlockSpec[] = [
   { ...toolDoc('dorkos_tools', 'How to call DorkOS tools', 'Always.'), condition: 'always' },
   toolDoc('chat_tools', 'Chat tools', 'Agent chats, unless Messages is blocked.'),
   toolDoc('mesh_tools', 'Agent directory tools', 'Unless the Other agents area is blocked.'),
-  toolDoc('adapter_tools', 'Chat connection tools', 'When Relay is on and not blocked.'),
+  toolDoc(
+    'adapter_tools',
+    'Chat connection tools',
+    'When chat connections are on and not blocked.'
+  ),
   toolDoc('tasks_tools', 'Schedule tools', 'When Tasks is on and not blocked.'),
   toolDoc('marketplace_tools', 'Marketplace tools', 'Unless Tools & packages is blocked.'),
   {
@@ -122,7 +126,7 @@ export const SESSION_BLOCKS: readonly ContextBlockSpec[] = [
     title: 'Persona',
     source: 'SOUL.md and personality traits',
     condition: 'setting',
-    conditionNote: 'When SOUL.md is on and not empty.',
+    conditionNote: 'When the persona file is on and not empty.',
     locked: false,
     editIn: 'Profile › Instructions',
     runtimes: ALL,
@@ -132,7 +136,7 @@ export const SESSION_BLOCKS: readonly ContextBlockSpec[] = [
     title: 'Boundaries',
     source: 'NOPE.md',
     condition: 'setting',
-    conditionNote: 'When NOPE.md is on and not empty.',
+    conditionNote: 'When the boundaries file is on and not empty.',
     locked: false,
     editIn: 'Profile › Boundaries',
     runtimes: ALL,
@@ -215,7 +219,7 @@ export const SESSION_BLOCKS: readonly ContextBlockSpec[] = [
     title: 'Loaded chat tools',
     source: 'runtimes/doe/context.ts',
     condition: 'agent',
-    conditionNote: 'Agent chats on Doe, when the DorkOS tools connect.',
+    conditionNote: 'Agent chats on DorkOS (built-in), when its tools connect.',
     locked: true,
     runtimes: ['doe'],
     match: /^Chat tools? .+ (is|are) loaded: /,
@@ -306,7 +310,7 @@ const TURN_BLOCK_SPECS = {
   ),
   env: turn('Environment', 'session/context-assembler.ts', 'state', 'Reserved; not sent today.'),
   relay_context: turn(
-    'Relay message',
+    'Relayed message',
     'relay',
     'connection',
     'When the turn answers a relayed message.'

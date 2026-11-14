@@ -58,7 +58,7 @@ export function getRelayTools(deps: McpToolDeps, identity: SenderIdentity) {
   return [
     tool(
       'relay_list_endpoints',
-      'List all registered Relay endpoints. Each endpoint includes subject, hash, maildirPath, ' +
+      'List all registered message endpoints. Each endpoint includes subject, hash, maildirPath, ' +
         "registeredAt, type ('dispatch'|'query'|'persistent'|'agent'|'unknown'), and expiresAt " +
         '(ISO timestamp for dispatch endpoints indicating 30-min TTL expiry; null for others).',
       {},

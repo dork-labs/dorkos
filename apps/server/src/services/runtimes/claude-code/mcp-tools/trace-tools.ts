@@ -6,7 +6,7 @@ import { jsonContent, structuredJsonContent } from './types.js';
 /** Guard that returns an error response when TraceStore is not available. */
 function requireTraceStore(deps: McpToolDeps) {
   if (!deps.traceStore) {
-    return jsonContent({ error: 'Relay tracing is not enabled', code: 'TRACING_DISABLED' }, true);
+    return jsonContent({ error: 'Message tracing is off', code: 'TRACING_DISABLED' }, true);
   }
   return null;
 }
@@ -51,13 +51,13 @@ export function traceToolDefinitions(deps: McpToolDeps) {
   return [
     tool(
       'relay_get_trace',
-      'Get the full delivery trace for a Relay message. Returns all spans in the trace chain.',
+      'Get the full delivery trace for a message. Returns all spans in the trace chain.',
       { messageId: z.string().describe('Message ID to look up the trace for') },
       createRelayGetTraceHandler(deps)
     ),
     tool(
       'relay_get_metrics',
-      'Get aggregate delivery metrics for the Relay message bus. Includes counts, delivery-latency stats ' +
+      'Get aggregate delivery metrics for message delivery. Includes counts, delivery-latency stats ' +
         '(avg, p50, p95, p99, all in ms — null when no deliveries are in the window), and budget rejections.',
       {},
       createRelayGetMetricsHandler(deps)

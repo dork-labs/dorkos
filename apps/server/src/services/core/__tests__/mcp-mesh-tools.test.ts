@@ -504,7 +504,7 @@ describe('Mesh MCP Tools', () => {
       for (const name of ['mesh_list', 'mesh_inspect']) {
         const text = descriptionOf(name);
         expect(text).toMatch(/the chat send tool/);
-        expect(text).toMatch(/only for Relay and A2A integrations/);
+        expect(text).toMatch(/only for message-bus and A2A integrations/);
         expect(text).not.toMatch(/Send to that exact/);
       }
     });
