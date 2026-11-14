@@ -497,7 +497,7 @@ export function LocalBrowserPanel({
           )}
         </>
       )}
-      {!waitingElsewhere && !pausedForSignIn && (
+      {!waitingElsewhere && (
         <SavedSignIns
           enabled={!!state && !!capabilities && !query.isError && !capabilityQuery.isError}
           disabled={busy || cancelling}
