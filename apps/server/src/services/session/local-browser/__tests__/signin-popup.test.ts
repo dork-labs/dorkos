@@ -27,6 +27,9 @@ it('refuses every agent verb on a held sign-in popup and never lists or adopts i
       });
     expect((await f.service.state('atlas')).tabs).toHaveLength(1);
     expect(popup.value.title).not.toHaveBeenCalled();
+    expect(popup.protocol.send.mock.calls.map(([method]) => method)).not.toContain(
+      'Target.getTargetInfo'
+    );
     expect(popup.body.ariaSnapshot).not.toHaveBeenCalled();
     expect(popup.value.screenshot).not.toHaveBeenCalled();
     await f.service.handover.handBack((handoff as { handoffId: string }).handoffId);
@@ -143,7 +146,16 @@ it('expires a sign-in child after ten minutes without returning the held tab to 
 it('fails a handoff closed if its window policy cannot be installed, without leaving an orphaned hold', async () => {
   const f = await chatToolsFixture();
   try {
-    f.pages[0].protocol.send.mockRejectedValueOnce(new Error('made-up navigation race'));
+    const send = f.pages[0].protocol.send;
+    const original = send.getMockImplementation()!;
+    let failed = false;
+    send.mockImplementation(async (method, ...args) => {
+      if (method === 'Runtime.evaluate' && !failed) {
+        failed = true;
+        throw new Error('made-up navigation race');
+      }
+      return original(method, ...args);
+    });
     await expect(f.service.handover.ask('atlas', 'password')).rejects.toThrow(
       'made-up navigation race'
     );

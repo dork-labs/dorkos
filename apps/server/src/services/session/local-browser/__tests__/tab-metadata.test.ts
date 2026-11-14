@@ -1,5 +1,6 @@
-import type { Page } from 'playwright-core';
+import { EventEmitter } from 'node:events';
 import { describe, expect, it, vi } from 'vitest';
+import type { Page } from 'playwright-core';
 import { LocalBrowserTabMetadata } from '../tab-metadata.js';
 
 function deferred<T>() {
@@ -9,93 +10,144 @@ function deferred<T>() {
   });
   return { promise, resolve };
 }
+
 function fixture() {
-  let url = 'http://fixture.test/first';
-  const page = { url: () => url, title: vi.fn(async () => 'Initial'), isClosed: () => false };
+  let url = 'https://synthetic.example/';
+  const events = new EventEmitter();
+  const send = vi.fn(async () => ({ targetInfo: { title: 'Synthetic title' } }));
+  const detach = vi.fn(async () => undefined);
+  const newCDPSession = vi.fn(async () => ({ send, detach }));
+  const title = vi.fn(async () => 'Activating title read');
+  const evaluate = vi.fn();
+  const mainFrame = {};
+  const page = {
+    on: events.on.bind(events),
+    context: () => ({ newCDPSession }),
+    mainFrame: () => mainFrame,
+    url: () => url,
+    isClosed: () => false,
+    title,
+    evaluate,
+  } as unknown as Page;
+  const metadata = new LocalBrowserTabMetadata();
+  metadata.track(page, {
+    active: () => true,
+    selected: () => true,
+    invalidate: vi.fn(),
+    framesChanged: vi.fn(),
+    closed: vi.fn(),
+  });
+  const label = () => metadata.describe([['synthetic-tab', page]])[0].title;
   return {
-    page: page as unknown as Page,
-    title: page.title,
+    metadata,
+    page,
+    events,
+    mainFrame,
+    send,
+    detach,
+    newCDPSession,
+    title,
+    evaluate,
+    label,
     navigate: (next: string) => {
       url = next;
     },
   };
 }
 
-describe('event-refreshed local browser metadata', () => {
-  it('describes only cached admitted pages without title evaluation', async () => {
-    const { page, title } = fixture();
-    const metadata = new LocalBrowserTabMetadata();
-    metadata.refresh(page);
-    await Promise.resolve();
-    title.mockClear();
-    expect(metadata.describe([['selected', page]])).toEqual([
-      { id: 'selected', url: 'http://fixture.test/first', title: 'Initial' },
+describe('tab metadata without page activation', () => {
+  it('describes only cached admitted pages and retains labels during a same-document refresh', async () => {
+    const f = fixture();
+    f.metadata.refresh(f.page);
+    await vi.waitFor(() => expect(f.label()).toBe('Synthetic title'));
+    f.send.mockClear();
+    expect(f.metadata.describe([['selected', f.page]])).toEqual([
+      { id: 'selected', url: 'https://synthetic.example/', title: 'Synthetic title' },
     ]);
-    expect(title).not.toHaveBeenCalled();
+    expect(f.send).not.toHaveBeenCalled();
+    const pending = deferred<{ targetInfo: { title: string } }>();
+    f.send.mockImplementationOnce(() => pending.promise);
+    f.metadata.refresh(f.page);
+    f.metadata.refresh(f.page);
+    await vi.waitFor(() => expect(f.send).toHaveBeenCalledOnce());
+    expect(f.label()).toBe('Synthetic title');
+    pending.resolve({ targetInfo: { title: 'Changed without navigation' } });
+    await vi.waitFor(() => expect(f.label()).toBe('Changed without navigation'));
   });
-  it('preserves the cached title while deduplicating a pending same-document refresh', async () => {
-    const { page, title } = fixture();
-    const metadata = new LocalBrowserTabMetadata();
-    metadata.refresh(page);
-    await Promise.resolve();
-    title.mockClear();
-    const pending = deferred<string>();
-    title.mockImplementationOnce(() => pending.promise);
-    metadata.refresh(page);
-    metadata.refresh(page);
-    metadata.refresh(page);
-    expect(title).toHaveBeenCalledOnce();
-    expect(metadata.describe([['selected', page]])[0].title).toBe('Initial');
-    pending.resolve('Changed without navigation');
-    await Promise.resolve();
-    expect(metadata.describe([['selected', page]])[0].title).toBe('Changed without navigation');
+
+  it.each(['framenavigated', 'domcontentloaded'])(
+    'reads %s titles without running page JS',
+    async (event) => {
+      const f = fixture();
+      f.events.emit(event, f.mainFrame);
+      await vi.waitFor(() => expect(f.label()).toBe('Synthetic title'));
+      expect(f.newCDPSession).toHaveBeenCalledWith(f.page);
+      expect(f.send).toHaveBeenCalledExactlyOnceWith('Target.getTargetInfo', undefined, {
+        timeout: 3000,
+      });
+      expect(f.detach).toHaveBeenCalledOnce();
+      expect(f.title).not.toHaveBeenCalled();
+      expect(f.evaluate).not.toHaveBeenCalled();
+    }
+  );
+
+  it('deduplicates pending reads and fences an older document at the same URL', async () => {
+    const f = fixture();
+    let resolveOld!: (value: { targetInfo: { title: string } }) => void;
+    f.send.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveOld = resolve;
+        })
+    );
+    f.metadata.refresh(f.page);
+    f.metadata.refresh(f.page);
+    await vi.waitFor(() => expect(f.send).toHaveBeenCalledOnce());
+    f.events.emit('domcontentloaded');
+    await vi.waitFor(() => expect(f.label()).toBe('Synthetic title'));
+    resolveOld({ targetInfo: { title: 'Old document' } });
+    await vi.waitFor(() => expect(f.detach).toHaveBeenCalledTimes(2));
+    expect(f.label()).toBe('Synthetic title');
   });
-  it('replaces a pending old-document read even when navigation keeps the same address', async () => {
-    const { page, title } = fixture();
-    const metadata = new LocalBrowserTabMetadata();
-    const old = deferred<string>();
-    title
-      .mockImplementationOnce(() => old.promise)
-      .mockResolvedValueOnce('New same-address document');
-    metadata.refresh(page);
-    metadata.refresh(page, { newDocument: true });
-    await Promise.resolve();
-    old.resolve('Old document');
-    await Promise.resolve();
-    expect(metadata.describe([['selected', page]])[0].title).toBe('New same-address document');
+
+  it('detaches a failed read and allows the next refresh', async () => {
+    const f = fixture();
+    f.send.mockRejectedValueOnce(new Error('Target closed'));
+    f.metadata.refresh(f.page);
+    await vi.waitFor(() => expect(f.detach).toHaveBeenCalledOnce());
+    expect(f.label()).toBe('');
+    f.metadata.refresh(f.page);
+    await vi.waitFor(() => expect(f.label()).toBe('Synthetic title'));
+    expect(f.detach).toHaveBeenCalledTimes(2);
   });
-  it('rejects old-document replies and never labels a new address with the old title', async () => {
-    const { page, title, navigate } = fixture();
-    const metadata = new LocalBrowserTabMetadata();
-    const first = deferred<string>();
-    const second = deferred<string>();
-    title.mockImplementationOnce(() => first.promise).mockImplementationOnce(() => second.promise);
-    metadata.refresh(page);
-    navigate('http://fixture.test/second');
-    metadata.refresh(page);
-    second.resolve('New document');
-    await Promise.resolve();
-    first.resolve('Old document');
-    await Promise.resolve();
-    expect(metadata.describe([['selected', page]])[0]).toEqual({
-      id: 'selected',
-      url: 'http://fixture.test/second',
-      title: 'New document',
-    });
-    navigate('http://fixture.test/third');
-    expect(metadata.describe([['selected', page]])[0].title).toBe('');
+
+  it('rejects old-document replies and never labels a new URL with the old title', async () => {
+    const f = fixture();
+    const old = deferred<{ targetInfo: { title: string } }>();
+    f.send.mockImplementationOnce(() => old.promise);
+    f.metadata.refresh(f.page);
+    await vi.waitFor(() => expect(f.send).toHaveBeenCalledOnce());
+    f.navigate('https://synthetic.example/second');
+    f.metadata.refresh(f.page);
+    await vi.waitFor(() => expect(f.label()).toBe('Synthetic title'));
+    old.resolve({ targetInfo: { title: 'Old document' } });
+    await vi.waitFor(() => expect(f.detach).toHaveBeenCalledTimes(2));
+    expect(f.label()).toBe('Synthetic title');
+    f.navigate('https://synthetic.example/third');
+    expect(f.label()).toBe('');
   });
+
   it('fences pending replies from a disconnected browser connection', async () => {
-    const { page, title } = fixture();
-    const metadata = new LocalBrowserTabMetadata();
-    const old = deferred<string>();
-    title.mockImplementationOnce(() => old.promise);
-    metadata.refresh(page);
-    metadata.clear();
-    metadata.refresh(page);
-    await Promise.resolve();
-    old.resolve('Old connection secret');
-    await Promise.resolve();
-    expect(metadata.describe([['selected', page]])[0].title).toBe('Initial');
+    const f = fixture();
+    const old = deferred<{ targetInfo: { title: string } }>();
+    f.send.mockImplementationOnce(() => old.promise);
+    f.metadata.refresh(f.page);
+    await vi.waitFor(() => expect(f.send).toHaveBeenCalledOnce());
+    f.metadata.clear();
+    f.metadata.refresh(f.page);
+    await vi.waitFor(() => expect(f.label()).toBe('Synthetic title'));
+    old.resolve({ targetInfo: { title: 'Old connection secret' } });
+    await vi.waitFor(() => expect(f.detach).toHaveBeenCalledTimes(2));
+    expect(f.label()).toBe('Synthetic title');
   });
 });
