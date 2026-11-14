@@ -13,6 +13,38 @@ import {
   ownedProcesses,
   summarize,
 } from '../chat-memory-support.js';
+import {
+  MEMORY_FIXTURE_ARTICLES,
+  MEMORY_FIXTURE_HTML,
+  MEMORY_FIXTURE_SNAPSHOT_BUDGET_BYTES,
+  assertMemoryFixtureSnapshot,
+} from '../chat-memory-fixture.js';
+import { MAX_BROWSER_SNAPSHOT_BYTES } from '../../../apps/server/src/services/session/local-browser/observation-limits.js';
+
+describe('memory fixture observation headroom', () => {
+  it('keeps the fixture markup small before the checker measures its real ARIA snapshot', () => {
+    expect(MEMORY_FIXTURE_ARTICLES).toBe(100);
+    expect(MEMORY_FIXTURE_HTML.match(/<article>/g)).toHaveLength(MEMORY_FIXTURE_ARTICLES);
+    expect(Buffer.byteLength(MEMORY_FIXTURE_HTML, 'utf8')).toBeLessThan(
+      MEMORY_FIXTURE_SNAPSHOT_BUDGET_BYTES
+    );
+    expect(MEMORY_FIXTURE_HTML).toContain('<article><h2>Record 0</h2>');
+    expect(MEMORY_FIXTURE_HTML).toContain('<button>Read record 99</button>');
+  });
+
+  it('requires actual snapshots to keep at least 75% headroom below production', () => {
+    expect(MEMORY_FIXTURE_SNAPSHOT_BUDGET_BYTES).toBeLessThanOrEqual(
+      MAX_BROWSER_SNAPSHOT_BYTES / 4
+    );
+    expect(assertMemoryFixtureSnapshot('- heading "Northwind research notes" [level=1]')).toBe(
+      Buffer.byteLength('- heading "Northwind research notes" [level=1]', 'utf8')
+    );
+    expect(() => assertMemoryFixtureSnapshot('')).toThrow('accessibility snapshot');
+    expect(() =>
+      assertMemoryFixtureSnapshot('é'.repeat(MEMORY_FIXTURE_SNAPSHOT_BUDGET_BYTES / 2 + 1))
+    ).toThrow('budget');
+  });
+});
 
 describe('chat memory evidence, without launching a browser', () => {
   it('refuses at the real entry point before writing evidence or loading a browser', async () => {
