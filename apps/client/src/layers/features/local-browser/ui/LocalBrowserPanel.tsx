@@ -76,6 +76,12 @@ export function LocalBrowserPanel({
     state?.handoff?.outcome === null && state.handoff.sessionId !== sessionId
       ? state.handoff
       : null;
+  // This chat's agent is waiting on a person. In its own window the handoff closed the
+  // agent's window for the sign-in window, so this is not a browser to open.
+  const handoffHere =
+    !!sessionId && state?.handoff?.outcome === null && state.handoff.sessionId === sessionId
+      ? state.handoff
+      : null;
   const mode =
     connected && state.mode
       ? state.mode
@@ -127,6 +133,9 @@ export function LocalBrowserPanel({
     } catch (cause) {
       if (ticket !== operation.current) return false;
       setError(browserErrorMessage(cause));
+      // A sign-in started since the last read: show its handoff now, not on the next poll.
+      if ((cause as { code?: string } | null)?.code === 'signing_in')
+        void queryClient.invalidateQueries({ queryKey: LOCAL_BROWSER_STATE_KEY });
       return false;
     } finally {
       if (ticket === operation.current) {
@@ -182,7 +191,7 @@ export function LocalBrowserPanel({
   // Open browser is the one main action while nothing is open, so focus starts there.
   useFirstFocus(
     openButton,
-    visible && !connected && !waitingElsewhere && !needsChoice && !!supported
+    visible && !connected && !waitingElsewhere && !handoffHere && !needsChoice && !!supported
   );
   const preparation =
     opening &&
@@ -214,18 +223,20 @@ export function LocalBrowserPanel({
               ? 'Preparing browser'
               : busy
                 ? 'Updating…'
-                : state?.status === 'closed'
-                  ? 'Browser closed'
-                  : connected && sharedElsewhere
-                    ? // The body says where the browser is; the header adds nothing.
-                      ''
-                    : connected
-                      ? state.paused
-                        ? 'Agent paused'
-                        : 'Connected'
-                      : hadConnection
-                        ? 'Disconnected'
-                        : 'Not open yet'}
+                : !connected && handoffHere
+                  ? 'Waiting for you'
+                  : state?.status === 'closed'
+                    ? 'Browser closed'
+                    : connected && sharedElsewhere
+                      ? // The body says where the browser is; the header adds nothing.
+                        ''
+                      : connected
+                        ? state.paused
+                          ? 'Agent paused'
+                          : 'Connected'
+                        : hadConnection
+                          ? 'Disconnected'
+                          : 'Not open yet'}
         </span>
       </div>
       {opening && (
@@ -266,7 +277,19 @@ export function LocalBrowserPanel({
           agentName={waitingElsewhere.agentName}
         />
       )}
-      {!connected && !waitingElsewhere && (
+      {!connected && handoffHere && (
+        <div className="space-y-1 text-sm">
+          <p>
+            {agentName || handoffHere.agentName || 'The agent'} needs you to sign in to{' '}
+            {handoffHere.site}.
+          </p>
+          <p>
+            Finish in the sign-in window, then press{' '}
+            <strong className="font-medium">Continue in the chat</strong>.
+          </p>
+        </div>
+      )}
+      {!connected && !waitingElsewhere && !handoffHere && (
         <div className="min-h-0 space-y-3 overflow-y-auto">
           {choiceIssue && (
             <p className="text-muted-foreground text-xs">

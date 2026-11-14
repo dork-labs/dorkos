@@ -1,3 +1,6 @@
+import { mkdtemp, rm } from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
 import type { LocalBrowserState } from '@dorkos/shared/local-browser';
@@ -60,6 +63,7 @@ function setup() {
     handover: {
       requireAgentMayUse: vi.fn(async (_sessionId: string) => undefined),
       refuseStopped: vi.fn((_sessionId: string) => undefined),
+      isOpenFor: vi.fn((_sessionId: string) => false),
       ask: vi.fn(async () => ({ handoffId: 'h1', site: 'fixture.test', next: 'Wait.' })),
     },
   };
@@ -405,6 +409,102 @@ describe('local browser scoped tool projection', () => {
     await expect(
       (async () => tool('local_browser.state').invoke(deps, {}, context('chat-two')))()
     ).rejects.toMatchObject({ payload: { code: 'not_opened' } });
+  });
+  it('in its own window, the handoff answers handed over though it closed the agent’s window', async () => {
+    const { domain, deps, context, service } = setup();
+    const dataDirectory = await mkdtemp(path.join(os.tmpdir(), 'handoff-own-window-'));
+    // Its own copy, so the page spies below see only what the tools did.
+    const page: LocalBrowserState = {
+      connectionId: 'live',
+      sessionId: 'chat-one',
+      mode: 'new-window',
+      status: 'connected',
+      paused: false,
+      selectedTabId: 'selected',
+      revision: 3,
+      preparation: null,
+      // A sign-in window opens only on https.
+      tabs: [{ id: 'selected', url: 'https://fixture.test/login', title: 'Sign in' }],
+    };
+    const browser = {
+      state: async () => page,
+      currentProfileId: () => null,
+      profileExists: () => true,
+      capabilities: () => ({ newWindow: true }),
+      open: vi.fn(async () => page),
+      selectTab: vi.fn(async () => page),
+      navigate: vi.fn(async () => page),
+      pause: vi.fn(async () => page),
+      handToPerson: vi.fn(async () => page),
+      resume: vi.fn(async () => page),
+      // The handoff closes the agent's window for the sign-in window, and the real
+      // browser forgets its chat when it closes, as requireSharedSession then sees.
+      disconnect: vi.fn(async () => {
+        service.requireSharedSession.mockImplementation(() => {
+          throw new LocalBrowserError('not_opened', 'Open this chat’s browser.');
+        });
+        return page;
+      }),
+    };
+    const signIns = {
+      current: null,
+      active: false,
+      holds: () => false,
+      start: vi.fn(async () => undefined),
+    } as unknown as SignInWindow;
+    const handover = new BrowserHandover(browser, signIns, () => dataDirectory);
+    handover.useOutsideTurnCheck(async () => false);
+    (service as { handover: unknown }).handover = handover;
+    const tool = (id: string) => domain.capabilities.find((item) => item.id === id)!;
+    try {
+      const handed = await tool('local_browser.ask_person').invoke(
+        deps,
+        { reason: 'password' },
+        context('chat-one')
+      );
+      // The handoff result, never page access.
+      expect(handed).toEqual({
+        handoffId: expect.any(String),
+        site: 'fixture.test',
+        next: expect.any(String),
+      });
+      expect(browser.disconnect).toHaveBeenCalledOnce();
+      // Asking again while the person has it answers the same handoff.
+      await expect(
+        tool('local_browser.ask_person').invoke(deps, { reason: 'password' }, context('chat-one'))
+      ).resolves.toEqual(handed);
+      // Every other tool hears that a person has the browser, before reading or acting.
+      for (const capability of domain.capabilities.filter(
+        (item) => item.id !== 'local_browser.ask_person'
+      ))
+        await expect(
+          (async () => capability.invoke(deps, inputFor(capability.id), context('chat-one')))()
+        ).rejects.toMatchObject({ payload: { code: 'handed_to_person' } });
+      expect(service.observe).not.toHaveBeenCalled();
+      expect(service.screenshot).not.toHaveBeenCalled();
+      expect(service.action).not.toHaveBeenCalled();
+      expect(service.agentState).not.toHaveBeenCalled();
+      // Any other chat still only hears that the browser isn't open, on every tool.
+      for (const capability of domain.capabilities)
+        await expect(
+          (async () => capability.invoke(deps, inputFor(capability.id), context('chat-two')))()
+        ).rejects.toMatchObject({ payload: { code: 'not_opened' } });
+    } finally {
+      await rm(dataDirectory, { recursive: true, force: true });
+    }
+  });
+  it('with no handoff open, a chat whose browser isn’t open is refused on every tool (not_opened)', async () => {
+    const { domain, deps, context, service } = setup();
+    service.requireSharedSession.mockImplementation(() => {
+      throw new LocalBrowserError('not_opened', 'Open this chat’s browser.');
+    });
+    for (const capability of domain.capabilities)
+      await expect(
+        (async () => capability.invoke(deps, inputFor(capability.id), context('chat-one')))()
+      ).rejects.toMatchObject({ payload: { code: 'not_opened' } });
+    expect(service.handover.ask).not.toHaveBeenCalled();
+    expect(service.observe).not.toHaveBeenCalled();
+    expect(service.agentState).not.toHaveBeenCalled();
   });
   it('keeps the holding chat’s title in its own field, never in the sentence (DOR-4265)', async () => {
     const { domain, deps, context, service } = setup();

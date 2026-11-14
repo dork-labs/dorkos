@@ -23,6 +23,11 @@ declare module '../../core/capabilities/capability-definition.js' {
   }
 }
 
+/**
+ * A chat whose own handoff is open still holds the browser, though in its own window
+ * the handoff closed the agent's window. Only the handoff answers it then: every other
+ * call is refused as handed_to_person before it can read or act.
+ */
 function requireSession(service: LocalBrowserService, context: CapabilityHandlerContext): void {
   if (!context.sessionId)
     throw new CapabilityToolError({
@@ -31,6 +36,7 @@ function requireSession(service: LocalBrowserService, context: CapabilityHandler
     });
   try {
     service.handover.refuseStopped(context.sessionId);
+    if (service.handover.isOpenFor(context.sessionId)) return;
     service.requireSharedSession(context.sessionId);
   } catch (error) {
     if (error instanceof LocalBrowserError)
