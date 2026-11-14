@@ -72,11 +72,16 @@ const NEEDS_LOCAL_TOKEN = z
     id: z.null(),
   })
   .strict();
-/** The 401 where no local token applies: it points at the credential that does. */
-const NEEDS_CREDENTIAL = rpcError(
+/** The 401 where no local token applies and login is on: it points at API keys. */
+const NEEDS_PERSONAL_KEY = rpcError(
   -32001,
-  'Unauthorized. Provide a valid credential as "Authorization: Bearer <token>". ' +
-    'Use your personal API key from Settings → Advanced → Tools → Connect other apps to DorkOS.'
+  'Unauthorized. Send a personal API key as "Authorization: Bearer <key>". ' +
+    'Create one in DorkOS: Settings → Login & security → API keys.'
+);
+/** The 401 where MCP_API_KEY replaces the local token: it names that key and no page. */
+const NEEDS_SERVER_KEY = rpcError(
+  -32001,
+  'Unauthorized. Send this server\'s API key as "Authorization: Bearer <key>".'
 );
 const NOT_ALLOWED_BY_CORS = (origin: string) => ({
   error: `This instance does not answer to pages from "${origin}". If that is how you reach DorkOS, list it in DORKOS_CORS_ORIGIN, or open DorkOS at its own address.`,
@@ -1170,7 +1175,7 @@ describe('contract: the A2A gateway with a person’s credentials, login off the
           expect: {
             status: 401,
             headers: { ...JSON_TYPE, ...NOSNIFF, ...CARD_COUNTED },
-            body: NEEDS_CREDENTIAL,
+            body: NEEDS_PERSONAL_KEY,
           },
         },
         known
@@ -1181,7 +1186,7 @@ describe('contract: the A2A gateway with a person’s credentials, login off the
       server,
       {
         path: `/a2a/agents/${AGENT}/card`,
-        expect: { status: 401, headers: NOT_COUNTED, body: NEEDS_CREDENTIAL },
+        expect: { status: 401, headers: NOT_COUNTED, body: NEEDS_PERSONAL_KEY },
       },
       known
     );
@@ -1196,7 +1201,7 @@ describe('contract: the A2A gateway with a person’s credentials, login off the
           expect: {
             status: 401,
             headers: { ...JSON_TYPE, ...NOT_COUNTED },
-            body: NEEDS_CREDENTIAL,
+            body: NEEDS_PERSONAL_KEY,
           },
         },
         known
@@ -1298,7 +1303,7 @@ describe('contract: the A2A gateway with MCP_API_KEY and tight limits', () => {
         path: '/a2a',
         headers: { authorization: 'Bearer not-the-key' },
         body: rpc('message/send', legacyMessage('m-key-2', { agentId: AGENT }), 102),
-        expect: { status: 401, headers: NOT_COUNTED, body: NEEDS_CREDENTIAL },
+        expect: { status: 401, headers: NOT_COUNTED, body: NEEDS_SERVER_KEY },
       },
       known
     );

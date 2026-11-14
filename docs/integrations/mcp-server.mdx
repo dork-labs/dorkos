@@ -46,7 +46,7 @@ Manage it from **Settings → Advanced → Tools → Connect other apps to DorkO
 
 ### Authentication
 
-How you authenticate depends on whether you've turned on login, and on where your client runs. A client on another device (through your tunnel, over Wi-Fi or through a proxy) always needs a per-user API key, sent in the `Authorization` header; signing in to the app on that device doesn't count, and a key in the address (`?key=…`) is refused. The local token and the no-token checks below are for clients on this computer.
+How you authenticate depends on whether you've turned on login, and on where your client runs. A client on another device (through your tunnel, over Wi-Fi or through a proxy) always needs a per-user API key, sent in the `Authorization` header; signing in to the app on that device doesn't count, and a key in the address (`?key=…`) is refused. You make keys in **Settings → Login & security → API keys**, which shows up once login is on. So with login off, that client's `401` tells you to turn login on first, then make a key. The local token and the no-token checks below are for clients on this computer.
 
 **Login off (the default), on this computer.** DorkOS protects the tools that change things on your machine with a **local token** it makes for you. You paste this token into your MCP client once, as a Bearer header. Read-only checks (listing tools, `ping`, `get_server_info`) still work with no token, so a quick health probe needs no setup:
 
@@ -78,7 +78,7 @@ One honest note on what this protects: it stops tokenless calls, keeps the token
 
 **Login on.** Once you turn on login, MCP clients authenticate with a **personal API key** instead, created and revoked from **Settings → Login & security → API keys** and sent as a Bearer token. The local token steps aside; per-user keys take over. See [Securing Your Instance](/docs/self-hosting/securing-your-instance) for the full flow.
 
-**Headless deployments** (CI, servers no one signs into): set the `MCP_API_KEY` environment variable. It's a static override that every client uses as its Bearer token; it wins over the local token, and it can only be changed in the environment, never revoked from the UI. It's for setups that leave login **off** — turn login on and the login gate answers `/mcp` before this key is ever considered, so clients need a personal API key instead.
+**Headless deployments** (CI, servers no one signs into): set the `MCP_API_KEY` environment variable. It's a static override that every client on this computer uses as its Bearer token; it takes the local token's place, so a `401` there asks for this server's API key, and it can only be changed in the environment, never revoked from the UI. A client on another device still needs a personal API key. It's for setups that leave login **off** — turn login on and the login gate answers `/mcp` before this key is ever considered, so clients need a personal API key instead.
 
 ### Client configuration
 

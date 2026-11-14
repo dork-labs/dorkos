@@ -8,7 +8,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 import { createDb, runMigrations } from '@dorkos/db';
 import { createApiApp } from '../api-chain.js';
 import { MainRequestAdmission } from '../../services/core/lifecycle/main-request-admission.js';
-import { initConfigManager } from '../../services/core/config-manager.js';
+import { configManager, initConfigManager } from '../../services/core/config-manager.js';
 import { initAuth } from '../../services/core/auth/index.js';
 import { env } from '../../env.js';
 import { markIngress } from '../../services/core/remote/ingress-mark.js';
@@ -137,12 +137,14 @@ describe('remote /mcp bad-key throttle on the real API chain', () => {
     const bad = await send({ key: 'made-up-wrong-key', peer: '198.51.100.41' });
     for (let i = 0; i < 10; i++) await send({ key: `wrong-${i}`, peer: '198.51.100.42' });
     const throttled = await send({ key: VALID, peer: '198.51.100.42' });
+    // Login is off here, so the next step starts with turning it on (QA S2).
     const expected = {
       error: 'Unauthorized',
       code: 'AUTH_REQUIRED',
       message:
-        'Unauthorized. Provide a valid credential as "Authorization: Bearer <token>". ' +
-        'Use your personal API key from Settings → Advanced → Tools → Connect other apps to DorkOS.',
+        'Unauthorized. Other devices need a personal API key, and keys need login. ' +
+        'In DorkOS, turn on login in Settings → Login & security, create a key under API keys, ' +
+        'then send it as "Authorization: Bearer <key>".',
     };
     for (const response of [missing, bad, throttled]) {
       expect(response.status).toBe(401);
@@ -150,6 +152,23 @@ describe('remote /mcp bad-key throttle on the real API chain', () => {
     }
     // No token value and no file path in it.
     expect(expected.message).not.toMatch(/[/\\]|dork_|mcp-local-token/);
+  });
+
+  it('sends a remote caller straight to API keys once login is on (QA S2)', async () => {
+    configManager.set('auth', { enabled: true });
+    try {
+      const response = await fixture()({ peer: '198.51.100.50' });
+      expect(response.status).toBe(401);
+      expect(await response.json()).toEqual({
+        error: 'Unauthorized',
+        code: 'AUTH_REQUIRED',
+        message:
+          'Unauthorized. Send a personal API key as "Authorization: Bearer <key>". ' +
+          'Create one in DorkOS: Settings → Login & security → API keys.',
+      });
+    } finally {
+      configManager.set('auth', { enabled: false });
+    }
   });
 
   it('gives successful requests their budget back', async () => {

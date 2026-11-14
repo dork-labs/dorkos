@@ -3,6 +3,7 @@ import type { IncomingHttpHeaders } from 'node:http';
 import type { MiddlewareHandler } from 'hono';
 import { env } from '../env.js';
 import { configManager } from '../services/core/config-manager.js';
+import { currentServerRole } from '../lib/server-role.js';
 import { gateAccessFor } from '../services/core/auth/gate-policy.js';
 import { ingressOf, type RequestIngress } from '../services/core/remote/ingress-mark.js';
 import { verifyRequestAuth } from '../services/core/auth/index.js';
@@ -299,20 +300,38 @@ function buildUnauthorizedMessage(surface: McpAuthSurface, localTokenWorks: bool
       '"Authorization: Bearer <token>".'
     );
   }
+  // At this computer with no password asked, an MCP_API_KEY override replaces
+  // the local token, so it is the key to send. Nowhere else: the session gate
+  // answers every other caller first and takes only a personal key.
+  if (localTokenWorks && env.MCP_API_KEY?.trim()) return MCP_SERVER_KEY_REFUSAL_MESSAGE;
   // A caller asked for a key (another device, or this computer when it asks
-  // for a password), or an MCP_API_KEY override is the bearer: point at the
-  // credential that applies here rather than a local-token file that does not.
-  return MCP_KEY_REFUSAL_MESSAGE;
+  // for a password): point at the personal key rather than a token file.
+  return mcpKeyRefusalMessage();
 }
 
+/** What a caller is told where this server's `MCP_API_KEY` is the credential. Names no page. */
+const MCP_SERVER_KEY_REFUSAL_MESSAGE =
+  'Unauthorized. Send this server\'s API key as "Authorization: Bearer <key>".';
+
 /**
- * What a caller asked for a key is told: how to send one and where to get it.
- * No token, no file path. `/a2a` says it in its JSON-RPC refusal, and `/mcp`'s
- * flat remote refusal carries the same words (DOR-4264).
+ * What a caller asked for a personal key is told: how to send one and where to
+ * make it. Keys live in Settings → Login & security → API keys, which exists
+ * only once login is on (QA S2), so with login off the first step is turning it
+ * on. A hub always asks and has no switch, so it reads as on. No token, no file
+ * path. `/a2a` says it in its JSON-RPC refusal, and `/mcp`'s flat remote
+ * refusal carries the same words (DOR-4264). Read per request, like the gate.
+ *
+ * @returns The refusal message for this install's login state now.
  */
-export const MCP_KEY_REFUSAL_MESSAGE =
-  'Unauthorized. Provide a valid credential as "Authorization: Bearer <token>". ' +
-  'Use your personal API key from Settings → Advanced → Tools → Connect other apps to DorkOS.';
+export function mcpKeyRefusalMessage(): string {
+  const loginOn = configManager.get('auth')?.enabled === true || currentServerRole() === 'hub';
+  return loginOn
+    ? 'Unauthorized. Send a personal API key as "Authorization: Bearer <key>". ' +
+        'Create one in DorkOS: Settings → Login & security → API keys.'
+    : 'Unauthorized. Other devices need a personal API key, and keys need login. ' +
+        'In DorkOS, turn on login in Settings → Login & security, create a key under API keys, ' +
+        'then send it as "Authorization: Bearer <key>".';
+}
 
 /**
  * Compare two secrets in constant time so a wrong key cannot be recovered by
