@@ -278,6 +278,7 @@ export class ChatMessageService {
       target.redirectedReplyTo ??
       replyTargetOf(this.deps.store, caller, target.sessionId, input.replyTo);
     const messageId = crypto.randomUUID();
+    const words = input.message.trim();
     const rendered = renderChatMessage(
       {
         messageId,
@@ -287,7 +288,7 @@ export class ChatMessageService {
         chatTitle: fromChatTitle,
       },
       kind,
-      text(input),
+      words,
       this.deps.nonce?.()
     );
     const ceilingJson = senderCeilingJson(this.deps, caller);
@@ -303,7 +304,7 @@ export class ChatMessageService {
       fromAgentName: sender.agentName,
       fromChatTitle,
       kind,
-      text: text(input),
+      text: words,
       summary: input.summary?.trim() ? input.summary.trim().slice(0, CHAT_SUMMARY_MAX) : null,
       nonce: rendered.nonce,
       delivery,
@@ -836,9 +837,4 @@ export class ChatMessageService {
       this.deps.emitActivity(row.toSessionId);
     }
   }
-}
-
-/** The words a message carries, trimmed of the whitespace around them. */
-function text(input: ChatSendInput): string {
-  return input.message.trim();
 }
