@@ -10,6 +10,12 @@ import { setTimeout as sampleInterval } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
 import { ProofSourceCustody } from './source-snapshot.js';
 import {
+  MEMORY_FIXTURE_ARTICLES,
+  MEMORY_FIXTURE_HTML as FIXTURE,
+  MEMORY_FIXTURE_SNAPSHOT_BUDGET_BYTES,
+  assertMemoryFixtureSnapshot,
+} from './chat-memory-fixture.js';
+import {
   assertDocker,
   ownedProcesses,
   parseOptions,
@@ -24,13 +30,6 @@ import {
 const ROOT = path.resolve(import.meta.dirname, '../..');
 // eslint-disable-next-line no-restricted-syntax -- Standalone Docker runner: graphical host facts and Git subprocess environment, never app settings.
 const environment = process.env;
-const FIXTURE = `<!doctype html><html><head><title>Memory fixture</title></head>
-<body><h1>Northwind research notes</h1><main>${Array.from(
-  { length: 1000 },
-  (_, row) =>
-    `<article><h2>Record ${row}</h2><p>Made-up research notes for browser memory measurement.</p>
-  <button>Read record ${row}</button></article>`
-).join('')}</main></body></html>`;
 
 async function sha256(file: string) {
   const hash = createHash('sha256');
@@ -40,11 +39,13 @@ async function sha256(file: string) {
 
 /** Loaded only after Docker/display/cgroup/source preflight; never downloads a browser. */
 async function loadRuntime() {
-  const [{ LocalBrowserService }, backend, { installedChromePath }] = await Promise.all([
-    import('../../apps/server/src/services/session/local-browser/service.js'),
-    import('../../apps/server/src/services/session/local-browser/playwright-backend.js'),
-    import('../../apps/server/src/services/session/local-browser/connection/chrome-installation.js'),
-  ]);
+  const [{ LocalBrowserService }, backend, { installedChromePath }, { boundedPageSnapshot }] =
+    await Promise.all([
+      import('../../apps/server/src/services/session/local-browser/service.js'),
+      import('../../apps/server/src/services/session/local-browser/playwright-backend.js'),
+      import('../../apps/server/src/services/session/local-browser/connection/chrome-installation.js'),
+      import('../../apps/server/src/services/session/local-browser/observation-limits.js'),
+    ]);
   backend.assertLocalPlaywrightVersion();
   const requireServer = createRequire(path.join(ROOT, 'apps/server/package.json'));
   const core = requireServer('playwright-core') as { chromium: { executablePath(): string } };
@@ -53,6 +54,7 @@ async function loadRuntime() {
   return {
     LocalBrowserService,
     backend: backend.productionBackend,
+    boundedPageSnapshot,
     receipt: {
       libraryVersion: backend.LOCAL_PLAYWRIGHT_VERSION,
       managedVersion: backend.LOCAL_MANAGED_CHROMIUM_VERSION,
@@ -156,6 +158,7 @@ async function measureCase(
     status: 'running',
     launches: 0,
     physicalPages: 0,
+    fixtureSnapshotBytes: [] as number[],
     browserVersion: null as string | null,
     viewport: null as { width: number; height: number; dpr: number } | null,
     phases,
@@ -191,7 +194,11 @@ async function measureCase(
     assert.equal(context.pages().length, chats, 'Exactly one physical page per chat.');
     for (const page of context.pages()) {
       await page.waitForLoadState('load');
-      assert.equal(await page.locator('article').count(), 1000);
+      assert.equal(await page.locator('article').count(), MEMORY_FIXTURE_ARTICLES);
+      // A real rendered snapshot is the regression test: HTML bytes cannot prove ARIA size.
+      receipt.fixtureSnapshotBytes.push(
+        assertMemoryFixtureSnapshot(await runtime.boundedPageSnapshot(page, 750))
+      );
     }
     const protocol = await context.newCDPSession(context.pages()[0]!);
     const version = await protocol.send('Browser.getVersion');
@@ -214,7 +221,12 @@ async function measureCase(
     await record('warm-up', roots, 3, options);
     await record('idle', roots, options.samples, options);
     await record('reading', roots, options.samples, options, () =>
-      Promise.all(ids.map((id) => service.observe(id)))
+      Promise.all(
+        ids.map(async (id) => {
+          const observation = await service.observe(id);
+          assertMemoryFixtureSnapshot(observation.snapshot);
+        })
+      )
     );
     await service.disconnect();
     await awaitClosed(before);
@@ -275,8 +287,9 @@ export async function main(args: string[]) {
     capDecision: 'pending',
     options,
     fixture: {
-      kind: '1000 synthetic articles per distinct HTTPS origin',
+      kind: `${MEMORY_FIXTURE_ARTICLES} synthetic articles per distinct HTTPS origin`,
       sha256: createHash('sha256').update(FIXTURE).digest('hex'),
+      snapshotBudgetBytes: MEMORY_FIXTURE_SNAPSHOT_BUDGET_BYTES,
     },
     source: source.evidence,
     runtime: runtime.receipt,

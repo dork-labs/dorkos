@@ -70,10 +70,19 @@ without labeling that difference. Output directories cannot be reused.
 
 The real `LocalBrowserService`, page leases, audit and production headed-browser
 launch run in-process. The script asserts one physical launch and exactly one
-physical page per chat. Each page has its own HTTPS fixture origin and 1,000
+physical page per chat. Each page has its own HTTPS fixture origin and 100
 made-up article/button rows. Playwright fulfills those requests locally; every
 other page request is aborted. There is no DorkOS UI, model call, external site,
 sign-in, download or screenshot in this measurement.
+
+Before sampling, each loaded page's real ARIA snapshot must fit within 32 KiB,
+one quarter of production's unchanged 128 KiB observation limit. The rendered
+snapshot byte counts are saved in each case's `fixtureSnapshotBytes` receipt.
+Every production `observe` in the reading phase must also stay within that
+budget. The fast unit regression separately bounds the fixture's HTML size;
+HTML size alone is not evidence of rendered snapshot size. Older runs with the
+1,000-article fixture are not comparable; do not mix their measurements with this
+fixture's results. The fixture hash identifies the actual document used.
 
 Each case records these phases:
 
