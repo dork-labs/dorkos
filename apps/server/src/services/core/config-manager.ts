@@ -698,7 +698,17 @@ export class ConfigManager {
    * same list on demand.
    */
   private announceUnreadableSettings(): void {
-    const warning = unreadableSettingsWarning(this.unreadableSettings(), this.store.path);
+    let leaves: readonly WidenedLeaf[];
+    try {
+      leaves = this.unreadableSettings();
+    } catch (error) {
+      // The file loaded a moment ago, so an errno here is the disk refusing one
+      // more read (EMFILE on a busy machine), not damage. It gets the printed
+      // refusal every other unreadable boot gets, never a bare stack trace.
+      if (typeof (error as NodeJS.ErrnoException | null)?.code !== 'string') throw error;
+      throw new ConfigUnreadableError(this.store.path, error);
+    }
+    const warning = unreadableSettingsWarning(leaves, this.store.path);
     if (warning) logger.warn(warning);
   }
 
