@@ -18,6 +18,7 @@ covers:
   - 'fix(browser): update popup policy without granting user activation'
   - 'fix(browser): read tab titles without granting popup activation'
   - 'fix(browser): reconcile shared browser flows after rebase'
+  - 'fix(browser): refresh tab API artifacts and verification inventories'
 ---
 
 ### Added

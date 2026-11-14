@@ -31427,6 +31427,62 @@
                       "type": "integer",
                       "minimum": 0
                     },
+                    "waitingForTab": {
+                      "type": "boolean"
+                    },
+                    "openChatTabs": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "sessionId": {
+                            "type": "string"
+                          },
+                          "title": {
+                            "type": "string"
+                          },
+                          "origin": {
+                            "type": "string"
+                          },
+                          "state": {
+                            "type": "string",
+                            "enum": [
+                              "Agent",
+                              "You",
+                              "Waiting"
+                            ]
+                          },
+                          "idle": {
+                            "type": "boolean"
+                          }
+                        },
+                        "required": [
+                          "sessionId",
+                          "title",
+                          "origin",
+                          "state",
+                          "idle"
+                        ]
+                      }
+                    },
+                    "idleTabToClose": {
+                      "type": [
+                        "object",
+                        "null"
+                      ],
+                      "properties": {
+                        "sessionId": {
+                          "type": "string"
+                        },
+                        "title": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "sessionId",
+                        "title"
+                      ]
+                    },
                     "handoff": {
                       "type": [
                         "object",
@@ -31536,6 +31592,26 @@
                         "status",
                         "startedAt"
                       ]
+                    },
+                    "signInElsewhere": {
+                      "type": [
+                        "object",
+                        "null"
+                      ],
+                      "properties": {
+                        "handoffId": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "handoffId"
+                      ]
+                    },
+                    "handoffAttached": {
+                      "type": "boolean"
+                    },
+                    "handoffTaken": {
+                      "type": "boolean"
                     }
                   },
                   "required": [
@@ -31782,6 +31858,62 @@
                       "type": "integer",
                       "minimum": 0
                     },
+                    "waitingForTab": {
+                      "type": "boolean"
+                    },
+                    "openChatTabs": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "sessionId": {
+                            "type": "string"
+                          },
+                          "title": {
+                            "type": "string"
+                          },
+                          "origin": {
+                            "type": "string"
+                          },
+                          "state": {
+                            "type": "string",
+                            "enum": [
+                              "Agent",
+                              "You",
+                              "Waiting"
+                            ]
+                          },
+                          "idle": {
+                            "type": "boolean"
+                          }
+                        },
+                        "required": [
+                          "sessionId",
+                          "title",
+                          "origin",
+                          "state",
+                          "idle"
+                        ]
+                      }
+                    },
+                    "idleTabToClose": {
+                      "type": [
+                        "object",
+                        "null"
+                      ],
+                      "properties": {
+                        "sessionId": {
+                          "type": "string"
+                        },
+                        "title": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "sessionId",
+                        "title"
+                      ]
+                    },
                     "handoff": {
                       "type": [
                         "object",
@@ -31891,6 +32023,26 @@
                         "status",
                         "startedAt"
                       ]
+                    },
+                    "signInElsewhere": {
+                      "type": [
+                        "object",
+                        "null"
+                      ],
+                      "properties": {
+                        "handoffId": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "handoffId"
+                      ]
+                    },
+                    "handoffAttached": {
+                      "type": "boolean"
+                    },
+                    "handoffTaken": {
+                      "type": "boolean"
                     }
                   },
                   "required": [
@@ -32144,6 +32296,456 @@
                     "tabs",
                     "selectedTabId",
                     "revision"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is not the owner on this computer",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The browser cannot complete this request in its current state",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The browser operation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/local-browser/tabs/idle/close": {
+      "post": {
+        "tags": [
+          "Local browser"
+        ],
+        "summary": "Close an idle chat tab for a waiting chat",
+        "description": "Only the owner on this computer can call this route. Only the owner, in person, can call this route: no agent, API key or approval token. Rechecks that the named chat is idle before closing its tab. Saved sign-ins remain. Agents receive only the cap error and cannot call this route.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            },
+            "required": true,
+            "name": "sessionId",
+            "in": "query"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "targetSessionId": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200
+                  }
+                },
+                "required": [
+                  "targetSessionId"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Current browser state, with its handoff and sign-in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "preparation": {
+                      "type": [
+                        "object",
+                        "null"
+                      ],
+                      "properties": {
+                        "stage": {
+                          "type": "string",
+                          "enum": [
+                            "checking",
+                            "downloading",
+                            "launching"
+                          ]
+                        },
+                        "component": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "enum": [
+                            "chromium",
+                            "headless-shell",
+                            "ffmpeg",
+                            null
+                          ]
+                        },
+                        "percent": {
+                          "type": [
+                            "number",
+                            "null"
+                          ],
+                          "minimum": 0,
+                          "maximum": 100
+                        }
+                      },
+                      "required": [
+                        "stage",
+                        "component",
+                        "percent"
+                      ]
+                    },
+                    "connectionId": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "sessionId": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "mode": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "enum": [
+                        "embedded",
+                        "new-window",
+                        null
+                      ]
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "disconnected",
+                        "connected",
+                        "closed"
+                      ]
+                    },
+                    "paused": {
+                      "type": "boolean"
+                    },
+                    "tabs": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "url": {
+                            "type": "string"
+                          },
+                          "title": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "url",
+                          "title"
+                        ]
+                      }
+                    },
+                    "selectedTabId": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "revision": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "waitingForTab": {
+                      "type": "boolean"
+                    },
+                    "openChatTabs": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "sessionId": {
+                            "type": "string"
+                          },
+                          "title": {
+                            "type": "string"
+                          },
+                          "origin": {
+                            "type": "string"
+                          },
+                          "state": {
+                            "type": "string",
+                            "enum": [
+                              "Agent",
+                              "You",
+                              "Waiting"
+                            ]
+                          },
+                          "idle": {
+                            "type": "boolean"
+                          }
+                        },
+                        "required": [
+                          "sessionId",
+                          "title",
+                          "origin",
+                          "state",
+                          "idle"
+                        ]
+                      }
+                    },
+                    "idleTabToClose": {
+                      "type": [
+                        "object",
+                        "null"
+                      ],
+                      "properties": {
+                        "sessionId": {
+                          "type": "string"
+                        },
+                        "title": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "sessionId",
+                        "title"
+                      ]
+                    },
+                    "handoff": {
+                      "type": [
+                        "object",
+                        "null"
+                      ],
+                      "properties": {
+                        "id": {
+                          "type": "string"
+                        },
+                        "sessionId": {
+                          "type": "string"
+                        },
+                        "agentName": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "agentId": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "agentFolder": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "profileId": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "reason": {
+                          "type": "string",
+                          "enum": [
+                            "wall",
+                            "password"
+                          ]
+                        },
+                        "site": {
+                          "type": "string"
+                        },
+                        "askedAt": {
+                          "type": "string"
+                        },
+                        "outcome": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "enum": [
+                            "handed-back",
+                            "stopped",
+                            "window-closed",
+                            null
+                          ]
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "sessionId",
+                        "agentName",
+                        "agentId",
+                        "agentFolder",
+                        "profileId",
+                        "reason",
+                        "site",
+                        "askedAt",
+                        "outcome"
+                      ]
+                    },
+                    "signIn": {
+                      "type": [
+                        "object",
+                        "null"
+                      ],
+                      "properties": {
+                        "profileId": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "site": {
+                          "type": "string"
+                        },
+                        "status": {
+                          "type": "string",
+                          "enum": [
+                            "open",
+                            "saving",
+                            "saved",
+                            "failed"
+                          ]
+                        },
+                        "startedAt": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "profileId",
+                        "site",
+                        "status",
+                        "startedAt"
+                      ]
+                    },
+                    "signInElsewhere": {
+                      "type": [
+                        "object",
+                        "null"
+                      ],
+                      "properties": {
+                        "handoffId": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "handoffId"
+                      ]
+                    },
+                    "handoffAttached": {
+                      "type": "boolean"
+                    },
+                    "handoffTaken": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "preparation",
+                    "connectionId",
+                    "sessionId",
+                    "mode",
+                    "status",
+                    "paused",
+                    "tabs",
+                    "selectedTabId",
+                    "revision",
+                    "handoff",
+                    "signIn"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The chat scope is invalid",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
                   ]
                 }
               }
@@ -32796,6 +33398,62 @@
                       "type": "integer",
                       "minimum": 0
                     },
+                    "waitingForTab": {
+                      "type": "boolean"
+                    },
+                    "openChatTabs": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "sessionId": {
+                            "type": "string"
+                          },
+                          "title": {
+                            "type": "string"
+                          },
+                          "origin": {
+                            "type": "string"
+                          },
+                          "state": {
+                            "type": "string",
+                            "enum": [
+                              "Agent",
+                              "You",
+                              "Waiting"
+                            ]
+                          },
+                          "idle": {
+                            "type": "boolean"
+                          }
+                        },
+                        "required": [
+                          "sessionId",
+                          "title",
+                          "origin",
+                          "state",
+                          "idle"
+                        ]
+                      }
+                    },
+                    "idleTabToClose": {
+                      "type": [
+                        "object",
+                        "null"
+                      ],
+                      "properties": {
+                        "sessionId": {
+                          "type": "string"
+                        },
+                        "title": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "sessionId",
+                        "title"
+                      ]
+                    },
                     "handoff": {
                       "type": [
                         "object",
@@ -32905,6 +33563,26 @@
                         "status",
                         "startedAt"
                       ]
+                    },
+                    "signInElsewhere": {
+                      "type": [
+                        "object",
+                        "null"
+                      ],
+                      "properties": {
+                        "handoffId": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "handoffId"
+                      ]
+                    },
+                    "handoffAttached": {
+                      "type": "boolean"
+                    },
+                    "handoffTaken": {
+                      "type": "boolean"
                     }
                   },
                   "required": [
@@ -33543,6 +34221,62 @@
                       "type": "integer",
                       "minimum": 0
                     },
+                    "waitingForTab": {
+                      "type": "boolean"
+                    },
+                    "openChatTabs": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "sessionId": {
+                            "type": "string"
+                          },
+                          "title": {
+                            "type": "string"
+                          },
+                          "origin": {
+                            "type": "string"
+                          },
+                          "state": {
+                            "type": "string",
+                            "enum": [
+                              "Agent",
+                              "You",
+                              "Waiting"
+                            ]
+                          },
+                          "idle": {
+                            "type": "boolean"
+                          }
+                        },
+                        "required": [
+                          "sessionId",
+                          "title",
+                          "origin",
+                          "state",
+                          "idle"
+                        ]
+                      }
+                    },
+                    "idleTabToClose": {
+                      "type": [
+                        "object",
+                        "null"
+                      ],
+                      "properties": {
+                        "sessionId": {
+                          "type": "string"
+                        },
+                        "title": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "sessionId",
+                        "title"
+                      ]
+                    },
                     "handoff": {
                       "type": [
                         "object",
@@ -33652,6 +34386,26 @@
                         "status",
                         "startedAt"
                       ]
+                    },
+                    "signInElsewhere": {
+                      "type": [
+                        "object",
+                        "null"
+                      ],
+                      "properties": {
+                        "handoffId": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "handoffId"
+                      ]
+                    },
+                    "handoffAttached": {
+                      "type": "boolean"
+                    },
+                    "handoffTaken": {
+                      "type": "boolean"
                     }
                   },
                   "required": [
@@ -33746,7 +34500,7 @@
           "Local browser"
         ],
         "summary": "Open the plain sign-in window",
-        "description": "Only the owner on this computer can call this route. Only the owner, in person, can call this route: no agent, API key or approval token. Opens installed Chrome, or managed Chromium, without a debugging channel on the chosen profile. An embedded handoff keeps its native view detached; a separate window uses the handoff’s saved page. Otherwise takes a page the person typed. Accepts https, or http on this computer only. Password saving is off in that window.",
+        "description": "Only the owner on this computer can call this route. Only the owner, in person, can call this route: no agent, API key or approval token. Opens installed Chrome, or managed Chromium, without a debugging channel on the chosen profile. An embedded handoff keeps its native view detached. In chat-tab mode this raises the server-owned sign-in popup, or the held tab if no popup exists. No agent can read or act on either. Otherwise a separate window uses the handoff’s saved page. Otherwise takes a page the person typed. Accepts https, or http on this computer only. Password saving is off in that window.",
         "requestBody": {
           "required": true,
           "content": {
@@ -33903,6 +34657,62 @@
                       "type": "integer",
                       "minimum": 0
                     },
+                    "waitingForTab": {
+                      "type": "boolean"
+                    },
+                    "openChatTabs": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "sessionId": {
+                            "type": "string"
+                          },
+                          "title": {
+                            "type": "string"
+                          },
+                          "origin": {
+                            "type": "string"
+                          },
+                          "state": {
+                            "type": "string",
+                            "enum": [
+                              "Agent",
+                              "You",
+                              "Waiting"
+                            ]
+                          },
+                          "idle": {
+                            "type": "boolean"
+                          }
+                        },
+                        "required": [
+                          "sessionId",
+                          "title",
+                          "origin",
+                          "state",
+                          "idle"
+                        ]
+                      }
+                    },
+                    "idleTabToClose": {
+                      "type": [
+                        "object",
+                        "null"
+                      ],
+                      "properties": {
+                        "sessionId": {
+                          "type": "string"
+                        },
+                        "title": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "sessionId",
+                        "title"
+                      ]
+                    },
                     "handoff": {
                       "type": [
                         "object",
@@ -34012,6 +34822,26 @@
                         "status",
                         "startedAt"
                       ]
+                    },
+                    "signInElsewhere": {
+                      "type": [
+                        "object",
+                        "null"
+                      ],
+                      "properties": {
+                        "handoffId": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "handoffId"
+                      ]
+                    },
+                    "handoffAttached": {
+                      "type": "boolean"
+                    },
+                    "handoffTaken": {
+                      "type": "boolean"
                     }
                   },
                   "required": [
@@ -34264,6 +35094,62 @@
                       "type": "integer",
                       "minimum": 0
                     },
+                    "waitingForTab": {
+                      "type": "boolean"
+                    },
+                    "openChatTabs": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "sessionId": {
+                            "type": "string"
+                          },
+                          "title": {
+                            "type": "string"
+                          },
+                          "origin": {
+                            "type": "string"
+                          },
+                          "state": {
+                            "type": "string",
+                            "enum": [
+                              "Agent",
+                              "You",
+                              "Waiting"
+                            ]
+                          },
+                          "idle": {
+                            "type": "boolean"
+                          }
+                        },
+                        "required": [
+                          "sessionId",
+                          "title",
+                          "origin",
+                          "state",
+                          "idle"
+                        ]
+                      }
+                    },
+                    "idleTabToClose": {
+                      "type": [
+                        "object",
+                        "null"
+                      ],
+                      "properties": {
+                        "sessionId": {
+                          "type": "string"
+                        },
+                        "title": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "sessionId",
+                        "title"
+                      ]
+                    },
                     "handoff": {
                       "type": [
                         "object",
@@ -34373,6 +35259,26 @@
                         "status",
                         "startedAt"
                       ]
+                    },
+                    "signInElsewhere": {
+                      "type": [
+                        "object",
+                        "null"
+                      ],
+                      "properties": {
+                        "handoffId": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "handoffId"
+                      ]
+                    },
+                    "handoffAttached": {
+                      "type": "boolean"
+                    },
+                    "handoffTaken": {
+                      "type": "boolean"
                     }
                   },
                   "required": [
@@ -34625,6 +35531,62 @@
                       "type": "integer",
                       "minimum": 0
                     },
+                    "waitingForTab": {
+                      "type": "boolean"
+                    },
+                    "openChatTabs": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "sessionId": {
+                            "type": "string"
+                          },
+                          "title": {
+                            "type": "string"
+                          },
+                          "origin": {
+                            "type": "string"
+                          },
+                          "state": {
+                            "type": "string",
+                            "enum": [
+                              "Agent",
+                              "You",
+                              "Waiting"
+                            ]
+                          },
+                          "idle": {
+                            "type": "boolean"
+                          }
+                        },
+                        "required": [
+                          "sessionId",
+                          "title",
+                          "origin",
+                          "state",
+                          "idle"
+                        ]
+                      }
+                    },
+                    "idleTabToClose": {
+                      "type": [
+                        "object",
+                        "null"
+                      ],
+                      "properties": {
+                        "sessionId": {
+                          "type": "string"
+                        },
+                        "title": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "sessionId",
+                        "title"
+                      ]
+                    },
                     "handoff": {
                       "type": [
                         "object",
@@ -34734,6 +35696,26 @@
                         "status",
                         "startedAt"
                       ]
+                    },
+                    "signInElsewhere": {
+                      "type": [
+                        "object",
+                        "null"
+                      ],
+                      "properties": {
+                        "handoffId": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "handoffId"
+                      ]
+                    },
+                    "handoffAttached": {
+                      "type": "boolean"
+                    },
+                    "handoffTaken": {
+                      "type": "boolean"
                     }
                   },
                   "required": [

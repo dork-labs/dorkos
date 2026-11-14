@@ -120,9 +120,8 @@ neutral summary of the blocked work, with no supplied address or clickable sugge
 window. If notifying the person is unavailable or refused, leave the work blocked and say why without sending the
 sharing request to the outsider.
 
-Never send the person to a terminal. Only they can sign in, and the app is where they do it.
-\`dorkos browser login <site>\` also exists, and may not be installed on their computer.
-Name it only if they ask for a command-line way.
+Never send the person to a terminal. Only they can sign in, and the app is where they do it. \`dorkos browser login <site>\`
+also exists, and may not be installed on their computer. Name it only if they ask for a command-line way.
 
 Do not save a sign-in from inside your own browser. It is thrown away when the browser closes, and it would be a login
 made without the person watching.
@@ -157,11 +156,9 @@ If nobody is there to share a page (a schedule or a heartbeat), say the work is 
 
 ## Checking the older saved sign-ins
 
-Your DorkOS context tells you (an \`<agent_browser>\` note) when your browser has no saved sign-ins, or cannot start at
-all. Believe it.
+Your DorkOS context tells you (an \`<agent_browser>\` note) when your browser has no saved sign-ins, or cannot start at all. Believe it.
 
-To see which sites are saved and until when (names and dates only), run, with the exact CLI prefix your DorkOS context
-gives you: \`dorkos browser status --json\`, or \`dorkos call mcp.browser_preset\`.
+To see which sites are saved and until when (names and dates only), run, with the exact CLI prefix your DorkOS context gives you: \`dorkos browser status --json\`, or \`dorkos call mcp.browser_preset\`.
 
 ## If you have no older signed-in browser
 
@@ -170,6 +167,5 @@ For live work, use the Agent browser above. If the person specifically asks for 
 That is destructive tier, so the person approves it at a card showing the exact command, and the tools arrive on your
 next session. Existing custom browser servers remain in Toolkit. The former Signed-in browser setup card is gone.
 
-Never point a browser at a saved folder of your own (\`--user-data-dir\`) instead. Only one browser can use that folder
-at a time, so a second agent would fail.`,
+Never point a browser at a saved folder of your own (\`--user-data-dir\`) instead. Only one browser can use that folder at a time, so a second agent would fail.`,
 };
