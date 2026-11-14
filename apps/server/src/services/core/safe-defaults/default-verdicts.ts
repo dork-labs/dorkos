@@ -620,6 +620,11 @@ export const PERMISSIVE_DEFAULTS: Readonly<Record<string, PermissiveDefault>> = 
     reason:
       'Accepts every MIME type, because an agent working on a real codebase receives arbitrary file types and a curated allowlist would reject legitimate work. The size and count caps stay on and are a real bound regardless; a person who narrows this list further has that narrowing carried across a wipe and closed to agent writes, same as those two (DOR-1505).',
   },
+  'remoteAccess.enabled': {
+    value: true,
+    reason:
+      'The master switch for reaching DorkOS from another device ships on, so an upgrade closes no door a person already opened. On grants nothing by itself: each way in (the own tunnel, managed remote access, Wi-Fi) starts off and needs its own setup by a person at this computer, and every request from another device still needs a session or a key. Off is the one-switch way to close them all, open to an agent too, and PROTECTIVE_CARRYOVERS keeps it off through a wipe (DOR-3650).',
+  },
   'rooms.repo.enabled': {
     value: true,
     reason:

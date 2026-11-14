@@ -236,3 +236,22 @@ describe('own-tunnel ingress', () => {
     expect(recordingIngress(4242).ingress.fronts(6241)).toBe(false);
   });
 });
+
+describe('dropConnections (Remote Access off, DOR-3650)', () => {
+  it('cuts a kept-alive connection now and keeps listening', async () => {
+    const { ingress } = recordingIngress();
+    const port = Number(new URL(await ingress.open()).port);
+    const socket = net.connect(port, '127.0.0.1');
+    await new Promise((resolve) => socket.once('connect', resolve));
+    socket.write(
+      'GET /api/health HTTP/1.1\r\nHost: abc.ngrok.app\r\nConnection: keep-alive\r\n\r\n'
+    );
+    await new Promise((resolve) => socket.once('data', resolve));
+    const closed = new Promise((resolve) => socket.once('close', resolve));
+
+    ingress.dropConnections();
+
+    await closed;
+    expect(await rawStatus(port, '/api/health')).toBe(200);
+  });
+});

@@ -114,6 +114,11 @@ export interface ManagedIngress {
    * forgotten.
    */
   close(options: ManagedIngressCloseOptions): Promise<ManagedIngressCloseResult>;
+  /**
+   * Cut every connection it carries now, forwarded WebSockets included, and
+   * keep listening: Remote Access was turned off (DOR-3650).
+   */
+  dropConnections(): void;
 }
 
 /**
@@ -367,6 +372,9 @@ export function createManagedIngress(options: ManagedIngressOptions): ManagedIng
   }
 
   return {
+    dropConnections() {
+      if (server) forceClose(server);
+    },
     async open() {
       if (closing) await closing;
       if (url) return url;

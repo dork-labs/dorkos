@@ -331,6 +331,13 @@ export const PROTECTIVE_CARRYOVERS: readonly ProtectiveCarryover[] = [
       'How many conversations one agent may work in at the same time. Lower is the tightened bound: fewer turns writing the same folder at once, and a person who set it to one did so because two turns collided.',
   },
   {
+    path: 'remoteAccess.enabled',
+    direction: 'boolean',
+    protectiveValue: false,
+    reason:
+      'Remote access defaults ON so an upgrade closes nothing, and off is the one switch that shuts every way in from another device. Someone who switched it off should not have their devices let back in by a wipe (DOR-3650).',
+  },
+  {
     path: 'rooms.repo.enabled',
     direction: 'boolean',
     protectiveValue: false,

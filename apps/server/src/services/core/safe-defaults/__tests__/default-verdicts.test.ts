@@ -178,7 +178,12 @@ describe('config default verdicts cover the whole schema', () => {
     // Raised 22 -> 23 for `tasks.agentModeControl` (DOR-3703): Dorian's rule
     // that an agent may set its own schedule's mode up to its own level ships
     // ON, as a kill switch, with a reason and a carryover rule.
-    expect(Object.keys(PERMISSIVE_DEFAULTS).length).toBeLessThanOrEqual(23);
+    //
+    // Raised 23 -> 24 for `remoteAccess.enabled` (DOR-3650): the master switch
+    // for every way in from another device ships ON so an upgrade closes no door
+    // a person opened. Each way in still starts off on its own, and the switch
+    // carries a reason and a carryover rule, so a wipe never lets devices back in.
+    expect(Object.keys(PERMISSIVE_DEFAULTS).length).toBeLessThanOrEqual(24);
   });
 });
 

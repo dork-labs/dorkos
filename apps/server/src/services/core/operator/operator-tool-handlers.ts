@@ -39,11 +39,10 @@ import {
 } from './agent-execution.js';
 import { CapabilityToolError } from '../capabilities/mcp-envelope.js';
 import { sanitizedConfigSnapshot } from './config-patch.js';
-import { unattendedConfigAuthority } from './operator-only-tightening.js';
+import { configPatchAuthority } from './operator-only-tightening.js';
 import {
   applyGuardedConfigWrite,
   OPERATOR_TOOL_AUTHORITY,
-  personApprovedAuthority,
   type GuardedConfigWriteResult,
 } from './config-write.js';
 import {
@@ -545,7 +544,7 @@ function agentWriter(identity?: AgentIdentity): DisplayNameWriter {
  * The one way through is a person's yes: such a patch is decided in every floor
  * area it touches, by the strictest of them (`operatorOnlyAreasForPatch`, spec
  * `agent-permissions` D6), and asks on a card unless one of them is Blocked; and when the gate spent that approval the write goes through
- * {@link personApprovedAuthority}, because the change is then the person's.
+ * `personApprovedAuthority` (`configPatchAuthority`), because the change is then the person's.
  *
  * **This is also where an agent-set display name gets its receipt** (DOR-1022).
  * `profile.displayName` stays writable here — DorkBot saving "call me Dorian" is
@@ -566,16 +565,8 @@ export function createConfigPatchHandler(identity?: AgentIdentity, approval?: Gr
   return async (args: { patch?: Record<string, unknown> }): Promise<OperatorToolResult> => {
     const result = applyGuardedConfigWrite({
       patch: args.patch,
-      // A person approved THIS patch on a card (the gate asks in the floor area
-      // an operator-only setting belongs to): the change is theirs. Without
-      // that, the agent may change preferences only, exactly as before.
-      // The DorkOS account's own settings ask one more thing of that yes: that
-      // it came from the owner of this DorkOS (DOR-2678).
-      // At Full, a patch that only turns a person's settings down runs on its own (DOR-3426).
-      authority:
-        approval?.via === 'approval'
-          ? personApprovedAuthority(approval.decidedByUserId)
-          : unattendedConfigAuthority(args.patch, approval),
+      // A person's card, Full's turn-down rule, and never turning remote access on.
+      authority: configPatchAuthority(args.patch, approval),
       source: 'the config_patch tool',
       writer: agentWriter(identity),
     });

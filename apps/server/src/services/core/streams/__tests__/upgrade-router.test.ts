@@ -12,7 +12,10 @@ vi.mock('../../tunnel-manager.js', () => ({
 }));
 
 vi.mock('../../config-manager.js', () => ({
-  configManager: { get: vi.fn(() => ({ enabled: false })) },
+  // Login (`auth`) off; Remote Access (`remoteAccess`) on, as it ships (DOR-3650).
+  configManager: {
+    get: vi.fn((key: string) => ({ enabled: key === 'remoteAccess' })),
+  },
 }));
 
 // Only the credential check is stubbed: `upgradeFacts` stays real, so the
@@ -39,10 +42,16 @@ import { resolveTrustedOrigins } from '../../../../lib/trusted-origins.js';
 import { env } from '../../../../env.js';
 import { configManager } from '../../config-manager.js';
 import { markIngress, setManagedUpgradeListener } from '../../remote/ingress-mark.js';
+import {
+  closeRemoteStreams,
+  resetRemoteStreamsForTests,
+} from '../../../../middleware/remote-access-switch.js';
 
 const gate = vi.mocked(authorizeStreamUpgrade);
 const loginEnabled = (enabled: boolean): void => {
-  vi.mocked(configManager.get).mockReturnValue({ enabled } as never);
+  vi.mocked(configManager.get).mockImplementation(
+    (key: string) => ({ enabled: key === 'remoteAccess' ? true : enabled }) as never
+  );
 };
 const mutableEnv = env as {
   DORKOS_TRUSTED_HOSTS?: string;
@@ -407,6 +416,65 @@ describe('attachUpgradeRouter', () => {
       ws.send('keystroke');
       await vi.waitFor(() => expect(messages).toEqual(['/api/gated']));
       ws.close();
+    });
+  });
+
+  describe('the Remote Access switch (DOR-3650)', () => {
+    /** Remote Access off, login off. */
+    const remoteAccessOff = (): void => {
+      vi.mocked(configManager.get).mockImplementation(() => ({ enabled: false }) as never);
+    };
+    afterEach(() => {
+      loginEnabled(false);
+      resetRemoteStreamsForTests();
+    });
+
+    it.each(['own-tunnel', 'managed', 'wifi'] as const)(
+      'turned off, refuses a %s upgrade before any route runs',
+      async (via) => {
+        const authorize = vi.fn(() => ({ ok: true as const, open: () => {} }));
+        await listen([
+          { name: 'guarded', pattern: /^\/api\/accept$/, credential: 'bearer-of-id', authorize },
+        ]);
+        server.prependListener('upgrade', (req) => markIngress(req, via));
+        expect((await attempt('/api/accept')).opened).toBe(true);
+
+        remoteAccessOff();
+        const result = await attempt('/api/accept');
+        expect(result.httpStatus).toBe(403);
+        expect(authorize).toHaveBeenCalledTimes(1);
+      }
+    );
+
+    it('turning off closes a socket another device already holds, and keeps this computer’s', async () => {
+      await listen([acceptingRoute]);
+      // Only upgrades carrying this header arrive as the own tunnel.
+      server.prependListener('upgrade', (req) => {
+        if (req.headers['x-test-tunnel']) markIngress(req, 'own-tunnel');
+      });
+      /** Open a socket and keep it, reporting its close code once it closes. */
+      const hold = async (headers: Record<string, string>) => {
+        const ws = new WebSocket(`ws://127.0.0.1:${port}/api/accept`, { headers });
+        let code: number | undefined;
+        ws.on('close', (c) => (code = c));
+        await new Promise((resolve) => ws.once('open', resolve));
+        return { ws, code: () => code };
+      };
+      const remote = await hold({ 'x-test-tunnel': '1' });
+      const local = await hold({});
+
+      remoteAccessOff();
+      expect(closeRemoteStreams()).toBe(1);
+
+      await vi.waitFor(() => expect(remote.code()).toBe(STREAM_CLOSE_CODE_BASE + 403));
+      expect(local.code()).toBeUndefined();
+      local.ws.close();
+    });
+
+    it('turned off, still opens a stream from this computer', async () => {
+      await listen([acceptingRoute]);
+      remoteAccessOff();
+      expect((await attempt('/api/accept')).opened).toBe(true);
     });
   });
 

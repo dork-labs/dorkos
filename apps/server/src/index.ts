@@ -11,6 +11,7 @@ import { runtimeRegistry } from './services/core/runtime-registry.js';
 import { canExpose, checkBindAllowed } from './services/core/auth/exposure-guard.js';
 import { tunnelManager } from './services/core/tunnel-manager.js';
 import { lanAccess } from './services/core/lan-access/index.js';
+import { registerRemoteListener } from './middleware/remote-access-switch.js';
 import { exitOnPortConflict } from './services/core/lifecycle/port-conflict.js';
 import { createSignalShutdown } from './lib/shutdown-signal.js';
 import { getCloudLinkManager } from './services/core/auth/cloud-link.js';
@@ -380,7 +381,12 @@ async function start() {
       // access (edge-proof and host checks first) and the person's own tunnel.
       // Each marks what it admits, then hands requests to the same front door
       // and upgrades to the router above. Nothing listens until a tunnel opens.
-      tunnelManager.attachIngresses(tunnelIngressesFor(frontDoorListener(frontDoor), server, PORT));
+      const ingresses = tunnelIngressesFor(frontDoorListener(frontDoor), server, PORT);
+      tunnelManager.attachIngresses(ingresses);
+      // Turning Remote Access off cuts what each listener only other devices reach carries (DOR-3650).
+      registerRemoteListener(() => ingresses.managed.dropConnections());
+      registerRemoteListener(() => ingresses.ownTunnel.dropConnections());
+      registerRemoteListener(() => lanAccess.dropConnections());
       // Reconnect Cloud's command stream when the boot rule allows it (DOR-2086); opens nothing.
       // Never on an agent computer, which holds no DorkOS account link (DOR-2940).
       if (!isAgentComputer()) managedRemoteCommands.boot(db, currentRemoteBootPlan(env));

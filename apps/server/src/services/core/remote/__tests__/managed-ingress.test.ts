@@ -412,3 +412,34 @@ describe('drain and close', () => {
     expect((await get(port, '/anything', [hostHeader, proofHeader])).status).toBe(503);
   });
 });
+
+describe('dropConnections (Remote Access off, DOR-3650)', () => {
+  /** Open a raw connection, send one request, and resolve once the first bytes come back. */
+  async function holdOpen(lines: string[], upgrade = false): Promise<net.Socket> {
+    const socket = net.connect(port, '127.0.0.1');
+    await new Promise((resolve) => socket.once('connect', resolve));
+    const connection = upgrade
+      ? 'Connection: Upgrade\r\nUpgrade: websocket'
+      : 'Connection: keep-alive';
+    socket.write([...lines, connection, '', ''].join('\r\n'));
+    if (!upgrade) await new Promise((resolve) => socket.once('data', resolve));
+    return socket;
+  }
+
+  it('cuts an open event stream and a forwarded socket now, and keeps listening', async () => {
+    forwardUpgrade.mockImplementation(() => {}); // the router holds it open
+    const stream = await holdOpen(['GET /stream HTTP/1.1', hostHeader, proofHeader]);
+    const upgraded = await holdOpen(
+      ['GET /api/sessions/x/socket HTTP/1.1', hostHeader, proofHeader],
+      true
+    );
+    await vi.waitFor(() => expect(forwardUpgrade).toHaveBeenCalled());
+    const streamClosed = new Promise((resolve) => stream.once('close', resolve));
+    const socketClosed = new Promise((resolve) => upgraded.once('close', resolve));
+
+    ingress.dropConnections();
+
+    await Promise.all([streamClosed, socketClosed]);
+    expect((await get(port, '/anything', [hostHeader, proofHeader])).status).toBe(200);
+  });
+});
