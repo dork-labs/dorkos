@@ -6,6 +6,7 @@
  */
 import { beforeEach, describe, expect, it } from 'vitest';
 import {
+  connectionAccessLevels,
   connectionOperationGrants,
   connections,
   createDb,
@@ -124,6 +125,16 @@ describe('operations that spend money', () => {
     });
   }
 
+  /** The refusal's sentence, wherever the error keeps it. */
+  async function sentence(promise: Promise<unknown>): Promise<string | undefined> {
+    try {
+      await promise;
+      return undefined;
+    } catch (error) {
+      return (error as { payload?: { error?: string } }).payload?.error;
+    }
+  }
+
   async function refusal(promise: Promise<unknown>): Promise<string | undefined> {
     try {
       await promise;
@@ -192,6 +203,38 @@ describe('operations that spend money', () => {
       })
       .run();
     expect(await refusal(run('agent-b', scrape))).toBe('CONNECTOR_GRANT_REQUIRED');
+    expect(await sentence(run('agent-b', scrape))).toMatch(/spends money/);
+  });
+
+  it('refuses a paid action held only through a Read level given before this rule', async () => {
+    const snapshot = await preview();
+    const scrape = revisionId(snapshot, 'apify.read');
+    // What an install that gave agent-a Read before this change holds until its next catalog read.
+    db.insert(connectionAccessLevels)
+      .values({
+        subjectType: 'agent',
+        subjectId: 'agent-a',
+        agentId: 'agent-a',
+        connectionId: CONNECTION_ID,
+        level: 'read',
+        createdBy: OWNER.installationId,
+        updatedAt: NOW.toISOString(),
+      })
+      .run();
+    db.insert(connectionOperationGrants)
+      .values({
+        id: 'legacy-level-row',
+        subjectType: 'agent',
+        subjectId: 'agent-a',
+        agentId: 'agent-a',
+        connectionId: CONNECTION_ID,
+        operationRevisionId: scrape,
+        createdBy: OWNER.installationId,
+        createdAt: NOW.toISOString(),
+      })
+      .run();
+    expect(await refusal(run('agent-a', scrape))).toBe('CONNECTOR_GRANT_REQUIRED');
+    expect(await sentence(run('agent-a', scrape))).toMatch(/spends money/);
   });
 
   it('runs a paid action for an agent the person picked that action for', async () => {

@@ -19,7 +19,7 @@ import {
   sessionConnectionOverrides,
   type DbTransaction,
 } from '@dorkos/db';
-import type { ConnectorAccessLevel } from '@dorkos/shared/connector-schemas';
+import { isPaidOperation, type ConnectorAccessLevel } from '@dorkos/shared/connector-schemas';
 import { everyAgentLevel } from '../execution/access-levels.js';
 import { agentGrantScope } from '../execution/agent-grant-scope.js';
 import { readAccessState } from './access-state.js';
@@ -57,7 +57,11 @@ export function approverHolding(
   });
   if (scope.kind === 'denied') return { readIds: [], level: null };
   const readIds = tx
-    .select({ id: connectionOperationGrants.operationRevisionId })
+    .select({
+      id: connectionOperationGrants.operationRevisionId,
+      toolkit: connectorOperationRevisions.toolkit,
+      operationSlug: connectorOperationRevisions.operationSlug,
+    })
     .from(connectionOperationGrants)
     .innerJoin(
       connectorOperationRevisions,
@@ -72,6 +76,7 @@ export function approverHolding(
       )
     )
     .all()
+    .filter((row) => !isPaidOperation(row))
     .map((row) => row.id);
   const unique = [...new Set(readIds)].sort();
   // A chat's own setting decides alone, as exact actions: no level.
