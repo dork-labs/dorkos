@@ -333,11 +333,12 @@ describe('GuardHost when no child can start', () => {
       onRecovered,
       tuning: { startRetryMs: 0 },
     });
-    // Fork of a missing file exits without getting ready.
-    expect(await host.check('ls', roots, false)).toEqual({ outcome: 'unavailable' });
+    // Fork of a missing file exits without getting ready. Two starts: nobody told yet.
+    expect(await host.check('ls', roots, false)).toEqual({ outcome: 'unavailable', told: false });
     expect(host.unavailable).toBe(true);
-    expect(await host.check('ls', roots, false)).toEqual({ outcome: 'unavailable' });
-    expect(await host.check('ls', roots, false)).toEqual({ outcome: 'unavailable' });
+    // The third failed start tells the person, and the answer says so.
+    expect(await host.check('ls', roots, false)).toEqual({ outcome: 'unavailable', told: true });
+    expect(await host.check('ls', roots, false)).toEqual({ outcome: 'unavailable', told: true });
     expect(onUnavailable).toHaveBeenCalledOnce();
     expect(onUnavailable).toHaveBeenCalledWith({ full: true });
     expect(onRecovered).not.toHaveBeenCalled();
@@ -358,8 +359,56 @@ describe('GuardHost when no child can start', () => {
     const host = hostWith({ childFile, tuning: { startRetryMs: 60_000 } });
     await host.check('ls', roots, false);
     expect(childFile).toHaveBeenCalledTimes(2);
-    expect(await host.check('ls', roots, false)).toEqual({ outcome: 'unavailable' });
+    expect(await host.check('ls', roots, false)).toEqual({ outcome: 'unavailable', told: false });
     expect(childFile).toHaveBeenCalledTimes(2);
+  });
+
+  // DOR-4304: under load a start can take longer than `startMs`. It used to log nothing and come
+  // back as "no check", which stopped the shell at Full.
+  it('gives a slow start more time on its retry, and checks the command', async () => {
+    const warn = vi.fn();
+    const file = fakeChild(
+      'slow-start.cjs',
+      `process.on('disconnect', () => process.exit(0));
+       setTimeout(() => process.send({ type: 'ready' }), 600);
+       process.on('message', (m) => process.send({ type: 'answer', id: m.id, answer: { write: 'none', reaches: false } }));`
+    );
+    const host = hostWith({ childFile: async () => file, log: { warn }, tuning: { startMs: 400 } });
+    expect(await host.check('uptime', roots, false)).toMatchObject({ outcome: 'checked' });
+    expect(host.unavailable).toBe(false);
+    expect(warn).toHaveBeenCalledWith(
+      '[ShellGuard] the check did not start in time',
+      expect.objectContaining({ reason: 'timeout', waitedMs: 400, nextStartMs: 800 })
+    );
+  });
+
+  it('never waits past its cap for a start', async () => {
+    const warn = vi.fn();
+    const file = fakeChild('never-ready.cjs', `setInterval(() => {}, 1_000);`);
+    const host = hostWith({
+      childFile: async () => file,
+      log: { warn },
+      tuning: { startMs: 100, maxStartMs: 150 },
+    });
+    expect(await host.check('uptime', roots, false)).toEqual({
+      outcome: 'unavailable',
+      told: false,
+    });
+    expect(warn.mock.calls.map(([, data]) => data.waitedMs)).toEqual([100, 150]);
+  });
+
+  it('logs the exit code of a child that ends before it is ready', async () => {
+    const warn = vi.fn();
+    const file = fakeChild('exits.cjs', `process.exit(7);`);
+    const host = hostWith({ childFile: async () => file, log: { warn } });
+    expect(await host.check('uptime', roots, false)).toEqual({
+      outcome: 'unavailable',
+      told: false,
+    });
+    expect(warn).toHaveBeenCalledWith(
+      '[ShellGuard] the check ended before it was ready',
+      expect.objectContaining({ reason: 'exit', code: 7, signal: null })
+    );
   });
 
   it('won’t call a child ready if it holds power it was promised it wouldn’t', async () => {

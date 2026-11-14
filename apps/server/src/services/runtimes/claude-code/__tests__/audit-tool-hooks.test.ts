@@ -6,11 +6,11 @@
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import type { HookInput } from '@anthropic-ai/claude-agent-sdk';
-import type { Db } from '@dorkos/db';
+import { auditEvents, type Db } from '@dorkos/db';
 import { resetAuditTrail } from '../../../audit/audit-trail.js';
 import { setAgentHomeRegistry } from '../../../core/agent-identity/agent-home.js';
 import { SCOUT, setUpAuditTrail, toolRows } from '../../../audit/__tests__/tool-use-harness.js';
-import { createAuditToolHook } from '../audit-tool-hooks.js';
+import { createAuditToolHook, createShellRefusalRecorder } from '../audit-tool-hooks.js';
 
 const base = {
   session_id: 'sdk-1',
@@ -73,5 +73,33 @@ describe('createAuditToolHook', () => {
   it('leaves a main-thread call to the stream', async () => {
     await run({ ...base, hook_event_name: 'PostToolUse', tool_response: 'ok' });
     expect(toolRows(db)).toEqual([]);
+  });
+});
+
+describe('createShellRefusalRecorder', () => {
+  let db: Db;
+  beforeEach(() => {
+    db = setUpAuditTrail();
+  });
+  afterEach(() => {
+    resetAuditTrail();
+    setAgentHomeRegistry(undefined);
+  });
+
+  // DOR-4304: a check that couldn't start was audited as a setup-file write.
+  it.each([
+    ['writes', 'Refused: It changes an agent’s setup files.'],
+    ['unreadable', 'Refused: Too long or complex to check.'],
+    ['failed', 'Refused: The check couldn’t finish reading it.'],
+    ['no-check', 'Refused: The check couldn’t start.'],
+  ] as const)('records a %s refusal under its own reason', (verdict, reason) => {
+    const record = createShellRefusalRecorder({
+      sessionId: 'session-1',
+      turn: { cwd: SCOUT.home },
+    });
+    record({ toolName: 'Bash', toolUseId: `call-${verdict}`, command: 'uptime', verdict });
+    const rows = db.select().from(auditEvents).all();
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ outcome: 'refused', error: reason });
   });
 });
