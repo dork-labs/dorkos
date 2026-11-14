@@ -134,6 +134,46 @@ function PausedForSignInDemo({ waiting = false }: { waiting?: boolean }) {
   );
 }
 
+/** Real person-state fixtures for holding a tab (1.5) and stopping its chat (1.7). */
+function HeldTabDemo({ stopped = false }: { stopped?: boolean }) {
+  const sessionId = stopped ? 'chat-kestrel-stopped' : 'chat-kestrel-held';
+  const [transport] = useState<Transport>(() => {
+    const state: LocalBrowserPersonState = {
+      ...pausedForSignIn,
+      sessionId,
+      paused: true,
+      signInElsewhere: null,
+      handoffAttached: !stopped,
+      handoffTaken: !stopped,
+      handoff: {
+        id: stopped ? 'playground-stopped-handoff' : 'playground-held-handoff',
+        sessionId,
+        site: 'northwind.example',
+        profileId: null,
+        agentName: 'Kestrel the Research Assistant',
+        agentId: null,
+        agentFolder: null,
+        reason: 'password',
+        askedAt: '2026-11-14T00:00:00.000Z',
+        outcome: stopped ? 'stopped' : null,
+      },
+    };
+    return new Proxy(notOpenTransport(), {
+      get: (target, prop, receiver) => {
+        if (prop === 'getLocalBrowserState') return async () => state;
+        return Reflect.get(target, prop, receiver) as unknown;
+      },
+    });
+  });
+  return (
+    <TransportProvider transport={transport}>
+      <div className="bg-background h-[36rem] w-full max-w-lg rounded-lg border">
+        <LocalBrowserPanel sessionId={sessionId} agentName="Kestrel the Research Assistant" />
+      </div>
+    </TransportProvider>
+  );
+}
+
 /**
  * The Agent browser panel before first use (DOR-4104): it says "Not open yet",
  * because "Disconnected" before anything was opened reads as broken.
@@ -151,6 +191,17 @@ export function LocalBrowserPanelShowcases() {
       <ShowcaseLabel>Forget refused: the sign-ins folder was changed outside DorkOS</ShowcaseLabel>
       <ShowcaseDemo>
         <FolderChangedDemo />
+      </ShowcaseDemo>
+      <ShowcaseLabel>You have it (1.5)</ShowcaseLabel>
+      <ShowcaseDemo responsive>
+        <HeldTabDemo />
+      </ShowcaseDemo>
+      <ShowcaseLabel>Fell to you (1.7)</ShowcaseLabel>
+      <p className="text-muted-foreground text-sm">
+        Stopped handoffs currently show Agent paused; the hand-back controls are missing.
+      </p>
+      <ShowcaseDemo responsive>
+        <HeldTabDemo stopped />
       </ShowcaseDemo>
       <ShowcaseLabel>Paused for a sign-in elsewhere (1.11)</ShowcaseLabel>
       <ShowcaseDemo responsive>
