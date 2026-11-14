@@ -579,6 +579,13 @@ jobs:
       - name: Watch-PRs FAILING-state regression fixtures
         run: bash .agents/skills/creating-pull-requests/scripts/test-watch-prs.sh
 
+      # The open-PR cap and the PR age list (DOR-3341), beside watch-prs.sh for
+      # the same reason: the skill's own scripts, bash + jq + a stubbed `gh`.
+      - name: Open-PR cap and PR age list fixtures
+        run: |
+          bash .agents/skills/creating-pull-requests/scripts/test-open-pr-cap.sh
+          bash .agents/skills/creating-pull-requests/scripts/test-pr-age-list.sh
+
       # spec-manifest-ops.ts, id.ts, and the changelog merge-behavior experiments
       # under .claude/scripts/ had a test directory (`__tests__/*.test.ts`,
       # Node's built-in runner, no workspace) that nothing ran (DOR-751): not

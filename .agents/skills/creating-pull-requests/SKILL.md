@@ -209,6 +209,13 @@ The full protocol is in `contributing/ci.md` and the `stewarding-ci-pipeline` sk
 
 ## Opening the PR
 
+**Check the open-PR count first.** Run
+`.agents/skills/creating-pull-requests/scripts/open-pr-cap.sh` before `gh pr create`.
+It refuses when 8 PRs are already open (set `DORKOS_OPEN_PR_CAP` to change it),
+because a review line that can't keep up turns every new PR into a pileup
+(DOR-3341). At the cap, keep building locally and commit; open the PR when one
+lands. A P0 can pass with `--p0 "<reason>"`.
+
 Open it once the branch has converged, with the squashed commit and its fragment
 already pushed:
 
@@ -580,6 +587,12 @@ needs. Confirm the required set (the rules API command above), then act only on 
 Every watcher on this machine spends the operator's one GraphQL budget (5,000 points
 an hour, shared with merge-tail), so poll no faster than you need: 120 seconds is
 plenty for a PR whose checks take 15 to 40 minutes.
+
+**Arming is not the end.** Keep watching until the PR is merged (report the squash
+SHA) or ejected from the queue (report the red `merge_group` checks); an ejection
+clears auto-merge without telling anyone (DOR-3341). For a standup,
+`scripts/pr-age-list.sh` lists open PRs older than three days, each to ship, split
+or close.
 
 It reports state **transitions** (never a once-per-PR "seen" flag that goes blind
 after the first event; a watcher written that way missed a check failure on
