@@ -122,6 +122,7 @@ import { restoreProtectedState } from './safe-defaults/protected-state.js';
 import { backupConfigFile } from './config/backups.js';
 import { readStoredConfigForSalvage } from './config/salvage-read.js';
 import { loadConfigStore } from './config/load-store.js';
+import { assertSupportedConfigUpgrade } from './config/upgrade-floor.js';
 import {
   tolerateLegacyClaudeAccountEncoding,
   tolerateRetiredSidebarKeys,
@@ -144,7 +145,6 @@ export { classifyConfigLoadFailure, type ConfigLoadFailureKind } from './config/
 import { CONFIG_MIGRATIONS } from './config-migrations/index.js';
 import { RETIRED_SIDEBAR_COLLAPSE_KEYS } from './config-migrations/v0-57-to-v0-59.js';
 export { CONFIG_MIGRATIONS } from './config-migrations/index.js';
-export * from './config-migrations/v0-44-to-v0-56.js';
 export * from './config-migrations/v0-57-to-v0-59.js';
 export * from './config-migrations/v0-60-to-v0-89.js';
 export * from './config-migrations/v0-90-onward.js';
@@ -466,13 +466,9 @@ export class ConfigManager {
     const configDir = dorkHome;
     const configPath = path.join(configDir, 'config.json');
     this._isFirstRun = !fs.existsSync(configPath);
+    if (!this._isFirstRun) assertSupportedConfigUpgrade(configPath, SERVER_VERSION, retryDelaysMs);
 
-    // Single source of truth for Conf constructor options. Used by both the
-    // primary instantiation (try branch) and the corrupt-recovery fallback
-    // (catch branch) so migrations and projectVersion apply on recovery too.
-    // Previously the catch branch silently dropped projectVersion and
-    // migrations, which meant users who hit corrupt-recovery would never run
-    // migrations on subsequent upgrades.
+    // Share migrations and projectVersion between normal boot and recovery.
     const confOptions = {
       configName: 'config',
       cwd: configDir,
