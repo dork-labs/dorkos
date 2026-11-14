@@ -400,8 +400,7 @@ export class LocalBrowserService {
 
   /** Stop a handed-off page without returning it to any agent. */
   async abandon(sessionId: string): Promise<void> {
-    await this.sessions.get(sessionId)?.closeSignIn();
-    this.sessions.get(sessionId)?.abandon();
+    await this.sessions.get(sessionId)?.fallToPerson();
   }
 
   /** A scoped Disconnect ends only that chat; an omitted scope closes the physical connection. */

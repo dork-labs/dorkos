@@ -108,8 +108,19 @@ export class TabBroker {
     const id = this.pages.get(page);
     const entry = id ? this.entry(id) : undefined;
     if (!entry || !sameOwner(entry.record, principal)) throw tabLocked();
-    if (entry.record.held && !entry.lease) this.update(entry, { held: false });
-    return this.bind(page, principal);
+    const fallen = entry.record.held && !entry.lease;
+    if (fallen) this.update(entry, { held: false });
+    const lease = this.bind(page, principal);
+    if (fallen) this.emit(entry, 'hand_back');
+    return lease;
+  }
+
+  /** Reserve a failed chat's slot for the person without taking the active sign-in gate. */
+  fall(lease: TabLease): void {
+    const entry = this.checked(lease);
+    this.update(entry, { held: true });
+    this.emit(entry, 'hold');
+    this.revoke(entry);
   }
 
   /** Resolve a page solely against the host's authenticated caller, without leaking other owners. */

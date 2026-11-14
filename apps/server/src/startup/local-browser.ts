@@ -1,18 +1,25 @@
 import { logger } from '../lib/logger.js';
 import { desktopBrowserPort } from '../services/session/local-browser/desktop-bridge.js';
+import { watchBrowserChatLifecycle } from '../services/session/local-browser/handover/turn-lifecycle.js';
 import { LocalBrowserService } from '../services/session/local-browser/service.js';
 
 // Consume the shell-only bridge handoff during module initialization, before harness children start.
 const embedded = desktopBrowserPort();
 let current: LocalBrowserService | undefined;
+let unwatch: (() => void) | undefined;
 
 /** Keep the human routes, runtime tools, and test runtime on one boot-owned browser service. */
 export const localBrowserHost = {
   start(dataDirectory: string): LocalBrowserService {
-    current ??= new LocalBrowserService(dataDirectory, embedded);
+    if (!current) {
+      current = new LocalBrowserService(dataDirectory, embedded);
+      unwatch = watchBrowserChatLifecycle(current.handover);
+    }
     return current;
   },
   async close(): Promise<void> {
+    unwatch?.();
+    unwatch = undefined;
     try {
       await current?.disconnect();
       current = undefined;

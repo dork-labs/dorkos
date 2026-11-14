@@ -223,3 +223,47 @@ it.each([390, 1280])(
     await waitFor(() => expect(first).toHaveFocus());
   }
 );
+
+it('1.7 keeps focus, announces a stopped agent and lets the person hand back the fallen tab', async () => {
+  const fallen = {
+    ...connected,
+    paused: true,
+    handoffAttached: true,
+    handoffTaken: false,
+    handoff: {
+      id: 'fallen-handoff',
+      sessionId: 'chat-one',
+      site: 'northwind.example',
+      outcome: 'stopped',
+    },
+  };
+  const input = document.createElement('input');
+  document.body.append(input);
+  input.focus();
+  transport.getLocalBrowserState.mockResolvedValue(fallen);
+  transport.handBackLocalBrowser.mockResolvedValue(connected);
+  try {
+    mount();
+    const back = await screen.findByRole('button', { name: 'Hand back to Kai' });
+    expect(back).toBeEnabled();
+    expectWrappingButton(back);
+    expect(screen.getByText('You have it')).toHaveAttribute('role', 'status');
+    expect(screen.getByText('Kai stopped, so this tab is yours now.')).toBeInTheDocument();
+    expect(screen.getByText('It stays yours until you hand it back.')).toBeInTheDocument();
+    expect(screen.getByText('Kai stopped. The tab is yours now.')).toHaveAttribute(
+      'aria-live',
+      'polite'
+    );
+    expect(screen.queryByText('Agent paused')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Show window' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Close tab' })).toBeEnabled();
+    expect(input).toHaveFocus();
+    fireEvent.click(back);
+    await waitFor(() =>
+      expect(transport.handBackLocalBrowser).toHaveBeenCalledExactlyOnceWith('fallen-handoff')
+    );
+    expect(transport.resumeLocalBrowser).not.toHaveBeenCalled();
+  } finally {
+    input.remove();
+  }
+});

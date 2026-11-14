@@ -13,6 +13,7 @@ covers:
   - 'fix(browser): let panel buttons grow with wrapped labels'
   - 'fix(browser): keep the chat tab popover inside its panel'
   - 'fix(dev): show held and stopped chat tabs in the Playground'
+  - 'fix(browser): keep stopped chat tabs with the person until hand-back'
 ---
 
 ### Added
@@ -25,6 +26,7 @@ covers:
 - Keep Saved sign-ins visible while another chat waits for you to sign in.
 - Stack Saved sign-ins on small screens.
 - Keep long chat and agent names readable on browser buttons.
+- Keep a stopped chat’s tab until you hand it back. The chat gets a note next turn.
 - Keep the open-tabs list inside the browser panel and show site names without address prefixes.
 - Wait when six chats have browser tabs open. Choose an idle chat’s tab to close.
 

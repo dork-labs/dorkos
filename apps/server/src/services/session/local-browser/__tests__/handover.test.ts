@@ -1,14 +1,13 @@
 /** Handing the browser to a person and back, with a fake browser and a fake sign-in window. */
+import { dataDirectory, connected, fakeBrowser, fakeSignIns, setup } from './handover-fixture.js';
 import { randomBytes } from 'node:crypto';
-import { existsSync, mkdtempSync, rmSync } from 'node:fs';
+import { existsSync, rmSync } from 'node:fs';
 import { readFile, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { LocalBrowserState } from '@dorkos/shared/local-browser';
+import { describe, expect, it, vi } from 'vitest';
 import { createTestDb } from '@dorkos/test-utils/db';
 import { logger } from '../../../../lib/logger.js';
-import { BrowserHandover, assertSignInUrl, type HandoverBrowser } from '../handover.js';
+import { BrowserHandover, assertSignInUrl } from '../handover.js';
 import { HANDED_BACK_MESSAGE, handBackWake } from '../hand-back-wake/index.js';
 
 import { handBackWakeHarness } from './hand-back-wake-harness.js';
@@ -16,84 +15,6 @@ import { BrowserProfileRemoval } from '../profile-removal/index.js';
 import { prepareProfileFolder } from '../profile-folders.js';
 import { createLocalBrowserProfileStore } from '../profile-store.js';
 import type { SignInWindow } from '../sign-in-window.js';
-
-let dataDirectory: string;
-beforeEach(() => {
-  dataDirectory = mkdtempSync(path.join(tmpdir(), 'handover-'));
-});
-afterEach(() => rmSync(dataDirectory, { recursive: true, force: true }));
-
-function connected(url = 'https://accounts.example.com/login?next=%2Fhome'): LocalBrowserState {
-  return {
-    connectionId: 'c1',
-    sessionId: 'chat-1',
-    mode: 'new-window',
-    status: 'connected',
-    paused: false,
-    tabs: [{ id: 't1', url, title: 'Sign in' }],
-    selectedTabId: 't1',
-    revision: 1,
-    preparation: null,
-  };
-}
-
-function fakeBrowser(initial = connected()) {
-  let state = initial;
-  let profileId: string | null = 'p1';
-  const browser = {
-    state: vi.fn(async () => state),
-    capabilities: vi.fn(() => ({ newWindow: true })),
-    currentProfileId: vi.fn(() => profileId),
-    profileExists: vi.fn((_id: string) => true),
-    open: vi.fn(async () => (state = connected())),
-    selectTab: vi.fn(async () => state),
-    navigate: vi.fn(async () => state),
-    pause: vi.fn(async () => (state = { ...state, paused: true })),
-    handToPerson: vi.fn(async () => (state = { ...state, paused: true })),
-    resume: vi.fn(async () => (state = { ...state, paused: false })),
-    disconnect: vi.fn(async () => (state = { ...state, status: 'disconnected', sessionId: null })),
-  } satisfies HandoverBrowser;
-  return {
-    browser,
-    set: (next: LocalBrowserState) => (state = next),
-    setProfile: (id: string | null) => (profileId = id),
-  };
-}
-
-function fakeSignIns() {
-  let status: 'open' | 'saving' | 'saved' | 'failed' | null = null;
-  let folder: string | undefined;
-  const signIns = {
-    get current() {
-      return status ? { profileId: null, site: 'x', status, startedAt: 'now' } : null;
-    },
-    get active() {
-      return status === 'open' || status === 'saving';
-    },
-    holds: (candidate: string) =>
-      (status === 'open' || status === 'saving') && candidate === folder,
-    start: vi.fn(async (profileFolder: string, _profileId: string | null, _url: string) => {
-      folder = profileFolder;
-      status = 'open';
-      return signIns.current!;
-    }),
-    close: vi.fn(),
-    onChange: vi.fn(),
-  };
-  return { signIns, finish: (next: 'saved' | 'failed') => (status = next) };
-}
-
-function setup(outside = false, mode: 'embedded' | 'new-window' = 'embedded') {
-  const browser = fakeBrowser({ ...connected(), mode });
-  const signIns = fakeSignIns();
-  const handover = new BrowserHandover(
-    browser.browser,
-    signIns.signIns as unknown as SignInWindow,
-    () => dataDirectory
-  );
-  handover.useOutsideTurnCheck(async () => outside);
-  return { handover, ...browser, ...signIns };
-}
 
 describe('detached handoffs', () => {
   it('serializes hand-back against a second answer or reopen', async () => {
@@ -883,4 +804,12 @@ describe('a handoff waiting on a profile (DOR-3887)', () => {
     await expect(removal.delete(id, profiles)).resolves.toBeUndefined();
     expect(profiles.get(id)).toBeUndefined();
   });
+});
+
+it('keeps embedded handoff lifecycle recovery unchanged', async () => {
+  const { handover } = setup();
+  const { handoffId } = await handover.ask('chat-1', 'password');
+  await handover.handBack(handoffId);
+  await handover.chatEnded('chat-1');
+  await expect(handover.requireAgentMayUse('chat-1')).resolves.toBeUndefined();
 });

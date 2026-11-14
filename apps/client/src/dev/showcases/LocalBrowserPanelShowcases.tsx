@@ -143,7 +143,7 @@ function HeldTabDemo({ stopped = false }: { stopped?: boolean }) {
       sessionId,
       paused: true,
       signInElsewhere: null,
-      handoffAttached: !stopped,
+      handoffAttached: true,
       handoffTaken: !stopped,
       handoff: {
         id: stopped ? 'playground-stopped-handoff' : 'playground-held-handoff',
@@ -197,9 +197,6 @@ export function LocalBrowserPanelShowcases() {
         <HeldTabDemo />
       </ShowcaseDemo>
       <ShowcaseLabel>Fell to you (1.7)</ShowcaseLabel>
-      <p className="text-muted-foreground text-sm">
-        Stopped handoffs currently show Agent paused; the hand-back controls are missing.
-      </p>
       <ShowcaseDemo responsive>
         <HeldTabDemo stopped />
       </ShowcaseDemo>

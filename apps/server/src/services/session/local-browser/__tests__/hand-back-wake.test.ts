@@ -4,6 +4,8 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { LocalBrowserHandoff } from '@dorkos/shared/local-browser';
+import { dispatchSessionMessage } from '../../launch/launch-session.js';
+import { takeStagedContext } from '../../staged-context-store.js';
 import { logger } from '../../../../lib/logger.js';
 import { HAND_BACK_CLIENT_ID, HANDED_BACK_MESSAGE, handBackWake } from '../hand-back-wake/index.js';
 import { handBackWakeHarness } from './hand-back-wake-harness.js';
@@ -50,6 +52,41 @@ afterEach(async () => {
 });
 
 describe('handBackWake', () => {
+  it('queues a fallen tab note for the next turn without waking a stopped chat', async () => {
+    wake()(handoff('handed-back'), { defer: true });
+    await vi.waitFor(() =>
+      expect(takeStagedContext('chat-1')).toEqual([
+        expect.objectContaining({ data: { text: HANDED_BACK_MESSAGE } }),
+      ])
+    );
+    expect(harness.runtime.sendMessage).not.toHaveBeenCalled();
+    expect(takeStagedContext('chat-1')).toEqual([]);
+  });
+
+  it('carries the fallen-tab note on the next person-started turn exactly once', async () => {
+    wake()(handoff('handed-back'), { defer: true });
+    expect(harness.runtime.sendMessage).not.toHaveBeenCalled();
+    await dispatchSessionMessage({
+      origin: { kind: 'interactive' },
+      sessionId: 'chat-1',
+      request: { content: 'Continue the research' },
+      clientId: 'chat:person',
+      meshCore: meshCore(),
+      roomSessionPlace: roomPlace(),
+    });
+    await vi.waitFor(() => expect(harness.runtime.sendMessage).toHaveBeenCalledOnce());
+    expect(harness.runtime.sendMessage).toHaveBeenCalledWith(
+      'chat-1',
+      'Continue the research',
+      expect.objectContaining({
+        additionalContext: expect.arrayContaining([
+          expect.objectContaining({ kind: 'staged_context', data: { text: HANDED_BACK_MESSAGE } }),
+        ]),
+      })
+    );
+    expect(takeStagedContext('chat-1')).toEqual([]);
+  });
+
   it('sends the fixed message into the handed-back chat as the person’s turn', async () => {
     wake()(handoff('handed-back'));
     await vi.waitFor(() => expect(harness.runtime.sendMessage).toHaveBeenCalledOnce());

@@ -69,7 +69,9 @@ export function LocalBrowserPanel({
   const connected = state?.status === 'connected';
   const waitingForTab = !!state?.waitingForTab && !!sessionId;
   const heldHere =
-    !!state?.handoffAttached && state.handoff?.outcome === null && state.sessionId === sessionId;
+    !!state?.handoffAttached &&
+    (state.handoff?.outcome === null || state.handoff?.outcome === 'stopped') &&
+    state.sessionId === sessionId;
   // "Disconnected" before anything was ever opened reads as broken (DOR-4104).
   const [hadConnection, setHadConnection] = useState(false);
   useEffect(() => {
@@ -78,7 +80,7 @@ export function LocalBrowserPanel({
   }, [connected]);
   const sharedElsewhere = !!state?.sessionId && state.sessionId !== sessionId;
   const pausedForSignIn =
-    connected && !sharedElsewhere && sessionId && state?.mode === 'new-window'
+    connected && !sharedElsewhere && !heldHere && sessionId && state?.mode === 'new-window'
       ? state.signInElsewhere
       : null;
   // Another chat's agent is waiting on a person. Nothing here may answer for that chat.
@@ -227,7 +229,7 @@ export function LocalBrowserPanel({
           {waitingForTab
             ? 'Waiting'
             : heldHere
-              ? state?.handoffTaken
+              ? state?.handoffTaken || state?.handoff?.outcome === 'stopped'
                 ? 'You have it'
                 : 'Waiting for you'
               : pausedForSignIn
