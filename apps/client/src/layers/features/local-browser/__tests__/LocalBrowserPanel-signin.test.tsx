@@ -19,20 +19,25 @@ it('1.11 shows one primary action and announces Paused without claiming other ch
   mount();
   await screen.findByRole('button', { name: 'Show the sign-in' });
   const panel = screen.getByRole('region', { name: 'Agent browser' });
-  expect(within(panel).getByRole('status')).toHaveTextContent(/^Paused$/);
-  expect(within(panel).getByRole('status')).toHaveAttribute('aria-live', 'polite');
+  const status = within(panel).getByText(/^Paused$/);
+  expect(status).toHaveAttribute('role', 'status');
+  expect(status).toHaveAttribute('aria-live', 'polite');
   expect(
     within(panel).getByText(
       'Paused while you sign in for another chat. Kai can still read this tab.'
     )
   ).toBeInTheDocument();
+  const savedSignIns = within(panel).getByRole('region', { name: 'Saved sign-ins' });
+  const show = within(panel).getByRole('button', { name: 'Show the sign-in' });
+  const forget = within(savedSignIns).getByRole('button', { name: 'Forget…' });
   const buttons = within(panel).getAllByRole('button');
-  expect(buttons).toHaveLength(1);
-  expect(buttons[0]).toHaveAccessibleName('Show the sign-in');
-  expect(buttons[0]).toHaveClass('min-h-11', 'w-full');
+  expect(buttons).toEqual([show, forget]);
+  expect(show).toHaveClass('min-h-11', 'w-full');
+  expect(
+    show.compareDocumentPosition(savedSignIns) & Node.DOCUMENT_POSITION_FOLLOWING
+  ).toBeTruthy();
   expect(within(panel).queryByRole('combobox')).toBeNull();
   expect(within(panel).queryByLabelText('Web address')).toBeNull();
-  expect(within(panel).queryByRole('region', { name: 'Saved sign-ins' })).toBeNull();
 });
 
 it('focuses only the held sign-in on an explicit click, without caching its answer in this chat', async () => {
@@ -64,10 +69,12 @@ it('arrives and clears without taking focus, adding a receipt or restarting the 
   const view = mount();
   try {
     await screen.findByRole('button', { name: 'Pause agent' });
+    const savedSignIns = screen.getByRole('region', { name: 'Saved sign-ins' });
     outside.focus();
     transport.getLocalBrowserState.mockResolvedValue(held);
     act(() => view.client.setQueryData(['local-browser', 'state', 'chat-one'], held));
     await screen.findByRole('button', { name: 'Show the sign-in' });
+    expect(screen.getByRole('region', { name: 'Saved sign-ins' })).toBe(savedSignIns);
     expect(outside).toHaveFocus();
     transport.getLocalBrowserState.mockResolvedValue(connected);
     act(() =>
@@ -77,6 +84,7 @@ it('arrives and clears without taking focus, adding a receipt or restarting the 
       })
     );
     await screen.findByRole('button', { name: 'Pause agent' });
+    expect(screen.getByRole('region', { name: 'Saved sign-ins' })).toBe(savedSignIns);
     expect(outside).toHaveFocus();
     expect(screen.queryByText(/Handed back/)).toBeNull();
     expect(transport.resumeLocalBrowser).not.toHaveBeenCalled();
@@ -85,14 +93,15 @@ it('arrives and clears without taking focus, adding a receipt or restarting the 
   }
 });
 
-it('keeps the paused state and its only action when showing the sign-in fails', async () => {
+it('keeps the paused state and saved sign-ins when showing the sign-in fails', async () => {
   transport.getLocalBrowserState.mockResolvedValue(held);
   transport.signInLocalBrowser.mockRejectedValue(new Error('private process details'));
   mount();
   fireEvent.click(await screen.findByRole('button', { name: 'Show the sign-in' }));
   expect(await screen.findByRole('alert')).not.toHaveTextContent('private process details');
-  expect(screen.getByRole('status')).toHaveTextContent(/^Paused$/);
-  expect(screen.getAllByRole('button')).toHaveLength(1);
+  expect(screen.getByText(/^Paused$/)).toHaveAttribute('role', 'status');
+  expect(screen.getAllByRole('button')).toHaveLength(2);
+  expect(screen.getByRole('region', { name: 'Saved sign-ins' })).toBeInTheDocument();
   expect(screen.getByRole('button', { name: 'Show the sign-in' })).toBeEnabled();
 });
 
@@ -111,8 +120,9 @@ it('keeps a newly arrived sign-in hold when an older pause response finishes', a
   act(() => view.client.setQueryData(['local-browser', 'state', 'chat-one'], held));
   await screen.findByRole('button', { name: 'Show the sign-in' });
   await act(async () => finish({ ...connected, paused: true }));
-  expect(screen.getByRole('status')).toHaveTextContent(/^Paused$/);
-  expect(screen.getAllByRole('button')).toHaveLength(1);
+  expect(screen.getByText(/^Paused$/)).toHaveAttribute('role', 'status');
+  expect(screen.getAllByRole('button')).toHaveLength(2);
+  expect(screen.getByRole('region', { name: 'Saved sign-ins' })).toBeInTheDocument();
   expect(view.client.getQueryData(['local-browser', 'state', 'chat-one'])).toMatchObject({
     signInElsewhere: { handoffId: 'held-atlas' },
     paused: true,

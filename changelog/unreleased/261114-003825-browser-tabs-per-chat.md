@@ -4,6 +4,7 @@ covers:
   - 'fix(browser): pause only the chat whose destination was refused'
   - 'fix(browser): teach agents to recover within their own tabs'
   - 'fix(browser): pause other chats while a person signs in'
+  - 'fix(browser): keep saved sign-ins visible while paused'
 ---
 
 ### Added
@@ -13,6 +14,7 @@ covers:
 ### Fixed
 
 - Pause a chat’s browser when it tries to open a blocked site. Other chats keep browsing.
+- Keep Saved sign-ins visible while another chat waits for you to sign in.
 
 ### Security
 
