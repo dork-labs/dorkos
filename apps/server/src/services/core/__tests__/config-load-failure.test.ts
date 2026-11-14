@@ -430,6 +430,36 @@ describe('a config the OS refused is left alone', () => {
     expect(error.advice).toContain('start DorkOS again');
   });
 
+  it('prints the same refusal when only the read after a good load fails (DOR-4354)', () => {
+    // The settings loaded, then the boot-time check for values this build cannot
+    // use read them once more and met EMFILE. That read had no wrap, so a busy
+    // machine got a raw stack trace instead of the message above. Only that one
+    // read fails here, picked by the call stack, so every run lands on it.
+    const dir = makeDir('load-announce');
+    const configPath = path.join(dir, 'config.json');
+    new ConfigManager(dir, FAST_RETRIES).setDot('server.port', 5177);
+    const before = fs.readFileSync(configPath, 'utf-8');
+    const injected = failReadsOf(configPath, 'EMFILE', {
+      when: () => new Error().stack?.includes('announceUnreadableSettings') === true,
+    });
+
+    let thrown: unknown;
+    try {
+      new ConfigManager(dir, FAST_RETRIES);
+    } catch (error) {
+      thrown = error;
+    }
+    vi.restoreAllMocks();
+
+    expect(injected.failed).toBeGreaterThan(0);
+    expect(thrown).toBeInstanceOf(ConfigUnreadableError);
+    expect((thrown as ConfigUnreadableError).configPath).toBe(configPath);
+    expect(((thrown as ConfigUnreadableError).cause as NodeJS.ErrnoException).code).toBe('EMFILE');
+    expect(fs.readFileSync(configPath, 'utf-8')).toBe(before);
+    expect(backupsIn(dir)).toEqual([]);
+    expect(new ConfigManager(dir, FAST_RETRIES).getDot('server.port')).toBe(5177);
+  });
+
   it.skipIf(process.getuid?.() === 0)(
     'does not tell someone to retry a permission they lack',
     () => {
