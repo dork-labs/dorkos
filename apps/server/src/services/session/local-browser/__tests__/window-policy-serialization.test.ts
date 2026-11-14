@@ -15,6 +15,7 @@ it('serializes the window guard through the CLI keepNames build without host hel
     runInNewContext(`(${host.install!.toString()})({ control: 'control', report: 'report' })`, {
       window: browser,
       document: { addEventListener: () => undefined },
+      HTMLFormElement: { prototype: { submit() {}, requestSubmit() {} } },
     })
   ).not.toThrow();
 });

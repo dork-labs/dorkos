@@ -143,9 +143,7 @@ it('expires a sign-in child after ten minutes without returning the held tab to 
 it('fails a handoff closed if its window policy cannot be installed, without leaving an orphaned hold', async () => {
   const f = await chatToolsFixture();
   try {
-    vi.mocked(f.pages[0].value.evaluate).mockRejectedValueOnce(
-      new Error('made-up navigation race')
-    );
+    f.pages[0].protocol.send.mockRejectedValueOnce(new Error('made-up navigation race'));
     await expect(f.service.handover.ask('atlas', 'password')).rejects.toThrow(
       'made-up navigation race'
     );

@@ -1,6 +1,6 @@
 import { EventEmitter } from 'node:events';
 import { vi, type Mock } from 'vitest';
-import type { BrowserContext, Page } from 'playwright-core';
+import type { BrowserContext, CDPSession, Page } from 'playwright-core';
 import type { LocalBrowserBackend } from '../playwright-backend.js';
 
 export interface FixturePage {
@@ -8,6 +8,7 @@ export interface FixturePage {
   events: EventEmitter;
   body: { ariaSnapshot: Mock<() => Promise<string>> };
   nodes: { evaluate: Mock<() => Promise<boolean>>; dispose: Mock<() => Promise<undefined>> };
+  protocol: { send: Mock; value: CDPSession };
   navigate(next: string): void;
 }
 
@@ -59,11 +60,31 @@ export function chatPagesFixture() {
         events.emit('close');
       }),
     } as unknown as Page;
+    const protocolEvents = new EventEmitter();
+    const send = vi.fn(async (method: string) => {
+      if (method === 'Runtime.enable')
+        protocolEvents.emit('Runtime.executionContextCreated', {
+          context: { id: 1, auxData: { isDefault: true } },
+        });
+      if (method === 'Page.getFrameTree') return { frameTree: { frame: { id: 'frame' } } };
+      if (method === 'Page.createIsolatedWorld') return { executionContextId: 1 };
+      if (method === 'Runtime.evaluate') return { result: { value: false } };
+      return {};
+    });
+    const protocol = {
+      send,
+      value: {
+        on: protocolEvents.on.bind(protocolEvents),
+        send,
+        detach: vi.fn(async () => undefined),
+      } as unknown as CDPSession,
+    };
     const fixture = {
       value,
       events,
       body,
       nodes,
+      protocol,
       navigate: (next: string) => {
         url = next;
         events.emit('framenavigated', mainFrame);
@@ -84,15 +105,11 @@ export function chatPagesFixture() {
     close: vi.fn(async () => {
       contextEvents.emit('close');
     }),
-    newCDPSession: vi.fn(async () => ({
-      on: vi.fn(),
-      send: vi.fn(async (method: string) => {
-        if (method === 'Page.getFrameTree') return { frameTree: { frame: { id: 'frame' } } };
-        if (method === 'Page.createIsolatedWorld') return { executionContextId: 1 };
-        if (method === 'Runtime.evaluate') return { result: { value: false } };
-        return {};
-      }),
-    })),
+    newCDPSession: vi.fn(async (target: Page) => {
+      const page = pages.find((page) => page.value === target);
+      if (!page) throw new Error('Unknown fixture page');
+      return page.protocol.value;
+    }),
   } as unknown as BrowserContext;
   const backend: LocalBrowserBackend = { launch: vi.fn(async () => context), connect: vi.fn() };
   return { backend, context, contextEvents, pages, makePage };

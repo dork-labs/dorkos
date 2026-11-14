@@ -44,7 +44,7 @@ it('blocks script windows before creation while an agent owns the page', async (
     vi.stubGlobal('navigator', { userActivation: { isActive: true } });
     (window as unknown as Record<string, (held: boolean) => void>).__madeUpControl(true);
     window.open('https://made-up.example/sign-in');
-    expect(open).toHaveBeenCalledOnce();
+    expect(open).not.toHaveBeenCalled(); // Activation carried from agent activity is not a person click.
   } finally {
     window.open = original;
     vi.unstubAllGlobals();
