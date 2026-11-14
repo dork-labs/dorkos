@@ -5,7 +5,12 @@ import { resetDesktopReleaseCache } from '@/lib/desktop-download';
 import { GET as getMac } from '../mac/route';
 import { GET as getWindows } from '../windows/route';
 
-vi.mock('@/lib/telemetry/download-count', () => ({ countDownload: vi.fn() }));
+// The real download counter runs; only Next's after-response hook is stubbed,
+// since there is no request scope here for it to attach to.
+vi.mock('next/server', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('next/server')>()),
+  after: vi.fn(),
+}));
 
 const mockFetch = vi.fn();
 vi.stubGlobal('fetch', mockFetch);
