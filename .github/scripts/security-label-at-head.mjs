@@ -89,10 +89,10 @@ export function labelNewerThanHead({ name, sha, ref, labels, timeline, activity,
 /**
  * The gate's check: `security-reviewed`, newer than the head, with no `hold`.
  *
- * @param {object} input See {@link labelNewerThanHead}, less `name` and `after`.
+ * @param {object} input See {@link labelNewerThanHead}, less `name`.
  */
-export function labelAtHead({ sha, ref, labels, timeline, activity }) {
+export function labelAtHead({ sha, ref, labels, timeline, activity, after = [] }) {
   if (labels.some((label) => label.name === HOLD_LABEL))
     return { passed: false, reason: `the ${HOLD_LABEL} label is on` };
-  return labelNewerThanHead({ name: REVIEW_LABEL, sha, ref, labels, timeline, activity });
+  return labelNewerThanHead({ name: REVIEW_LABEL, sha, ref, labels, timeline, activity, after });
 }

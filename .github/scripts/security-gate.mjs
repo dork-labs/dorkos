@@ -8,6 +8,7 @@ import {
   labelAtHead,
   labelNewerThanHead,
 } from './security-label-at-head.mjs';
+import { REQUIRED_RULESET_NAME, lastRequiredCheck } from './security-required-checks.mjs';
 
 const CONTEXT = 'security-review';
 
@@ -174,9 +175,8 @@ export function verdictDue({ sha, ref, timeline, activity }, floor) {
  * {@link verdictDue}. A stale or pending status is polled, never judged on; when
  * the bound runs out it refuses. A status is read for this exact SHA only.
  */
-async function judgeFreshReview(api, sha, input, deep, wait) {
-  let verdict = labelAtHead(input);
-  if (verdict.passed && deep) verdict = labelNewerThanHead({ ...input, name: DEEP_LABEL });
+async function judgeFreshReview(api, sha, input, deep, wait, lastRequired) {
+  const verdict = labelsAfterRequired(input, deep, lastRequired);
   if (!verdict.passed) return verdict;
   const due = verdictDue(input, wait.eventTime);
   if (Number.isNaN(due))
@@ -198,6 +198,62 @@ async function judgeFreshReview(api, sha, input, deep, wait) {
       };
     await wait.sleep(wait.intervalMs);
   }
+}
+
+function labelsAfterRequired(input, deep, lastRequired) {
+  let verdict = labelAtHead(input);
+  if (!verdict.passed) return verdict;
+  verdict = labelAtHead({ ...input, after: [lastRequired.at] });
+  if (!verdict.passed)
+    return {
+      passed: false,
+      reason: `${REVIEW_LABEL} went on before the last required check (${lastRequired.name}) finished; remove it and add it again`,
+    };
+  if (!deep) return verdict;
+  verdict = labelNewerThanHead({ ...input, name: DEEP_LABEL });
+  if (!verdict.passed) return verdict;
+  verdict = labelNewerThanHead({
+    ...input,
+    name: DEEP_LABEL,
+    after: [lastRequired.at],
+  });
+  if (!verdict.passed)
+    return {
+      passed: false,
+      reason: `${DEEP_LABEL} went on before the last required check (${lastRequired.name}) finished; remove it and add it again`,
+    };
+  return verdict;
+}
+
+async function requiredAtHead(api, sha, statuses) {
+  const rulesets = await api.rulesets();
+  if (!Array.isArray(rulesets)) throw new Error('Incomplete ruleset list');
+  const matches = rulesets.filter((ruleset) => ruleset?.name === REQUIRED_RULESET_NAME);
+  if (matches.length !== 1)
+    throw new Error(
+      `${matches.length ? 'More than one' : 'No'} ruleset named ${REQUIRED_RULESET_NAME}`
+    );
+  const ruleset = await api.ruleset(matches[0].id);
+  if (!Array.isArray(ruleset?.rules)) throw new Error('Incomplete required ruleset');
+  const contexts = [];
+  for (const rule of ruleset.rules.filter(
+    (candidate) => candidate?.type === 'required_status_checks'
+  )) {
+    const checks = rule.parameters?.required_status_checks;
+    if (!Array.isArray(checks)) throw new Error('Incomplete required status checks');
+    for (const check of checks) {
+      if (typeof check?.context !== 'string' || !check.context)
+        throw new Error('Incomplete required status check');
+      contexts.push(check.context);
+    }
+  }
+  if (!contexts.length) throw new Error(`No required checks in ${REQUIRED_RULESET_NAME}`);
+  return lastRequiredCheck({
+    contexts: [...new Set(contexts)],
+    checkRuns: await api.checkRuns(sha),
+    statuses,
+    sha,
+  });
 }
 
 /** A Security label put on after the PR merged, which reviewed nothing. `null` if none. */
@@ -230,7 +286,9 @@ async function verifyApproval(
   botUserId,
   deep = false,
   waitForReview = false,
-  wait = undefined
+  wait = undefined,
+  statuses = [],
+  requireFreshChecks = true
 ) {
   if (!sensitive || approvalMode(botUserId) !== 'label-at-head') {
     const passed = hasApproval(review, sensitive, botUserId);
@@ -244,16 +302,21 @@ async function verifyApproval(
   if (late) return { passed: false, reason: late };
   const waiting = waitForReview && awaitingReview(pr, input, deep);
   if (waiting) return { passed: true, waiting };
+  const lastRequired = requireFreshChecks ? await requiredAtHead(api, sha, statuses) : undefined;
+  if (lastRequired && !lastRequired.passed) return lastRequired;
   if (waitForReview && pr.base?.ref === VERDICT_BASE)
-    return judgeFreshReview(api, sha, input, deep, wait);
+    return judgeFreshReview(api, sha, input, deep, wait, lastRequired);
   // The merge queue, and a PR into another base, judge the status they read,
   // unchanged by DOR-3710.
   // The initializer's pending is every sensitive head's start; a refusal still refuses.
   if (review && review.state !== 'pending' && review.state !== 'success')
     return { passed: false, reason: `security-review is ${review.state}` };
-  const verdict = labelAtHead(input);
-  if (!verdict.passed || !deep) return verdict;
-  return labelNewerThanHead({ ...input, name: DEEP_LABEL });
+  if (!lastRequired) {
+    const verdict = labelAtHead(input);
+    if (!verdict.passed || !deep) return verdict;
+    return labelNewerThanHead({ ...input, name: DEEP_LABEL });
+  }
+  return labelsAfterRequired(input, deep, lastRequired);
 }
 
 /** Whether a diff touches a P0 identity path. No list refuses, never reads as none. */
@@ -338,7 +401,8 @@ async function checkPullRequestOnce(
   if (pr.head.sha !== sha) throw new Error(`PR #${number} head moved`);
   const files = await prFiles(api, number, pr, pattern);
   const sensitive = touchesSecurity(files, pattern);
-  let review = latestReview(await api.statuses(sha));
+  const statuses = await api.statuses(sha);
+  let review = latestReview(statuses);
   if (write && (!sensitive || !hasApproval(review, sensitive, botUserId))) {
     const state = sensitive ? 'pending' : 'success';
     if (
@@ -369,7 +433,8 @@ async function checkPullRequestOnce(
           botUserId,
           sensitive && touchesDeep(files, deepPattern),
           true,
-          wait
+          wait,
+          statuses
         )
       : { passed: true };
   const current = await api.pr(number);
@@ -420,7 +485,7 @@ async function audit(api, number, sha, review, botUserId) {
   if (previous?.body.includes(marker)) return;
   const rule =
     approvalMode(botUserId) === 'label-at-head'
-      ? `No Security App is set: sensitive approvals require a security-reviewed label newer than the last push, with no hold label. A P0 identity path also needs ${DEEP_LABEL}, newer than the last push.`
+      ? `No Security App is set: sensitive approvals require a security-reviewed label newer than the last push, with no hold label. A P0 identity path also needs ${DEEP_LABEL}, newer than the last push. Both labels must also be newer than the last required check to finish at that head.`
       : 'Sensitive approvals require the configured Security App as status creator. The security-reviewed label is a human signal only.';
   await api.comment(
     number,
@@ -472,7 +537,8 @@ export async function checkMergeGroup(api, event, pattern, botUserId, deepPatter
     // arguments are pinned by the merge-group event/entry snapshot.
     const files = await queuedFiles(api, entry.baseCommit.oid, entry.headCommit.oid, pattern);
     const sensitive = touchesSecurity(files, pattern);
-    const review = latestReview(await api.statuses(sha));
+    const statuses = await api.statuses(sha);
+    const review = latestReview(statuses);
     const computed = !review && !sensitive;
     const verdict = computed
       ? { passed: true }
@@ -483,7 +549,11 @@ export async function checkMergeGroup(api, event, pattern, botUserId, deepPatter
           review,
           sensitive,
           botUserId,
-          sensitive && touchesDeep(files, deepPattern)
+          sensitive && touchesDeep(files, deepPattern),
+          false,
+          undefined,
+          statuses,
+          options.requiredChecks !== false
         );
     if (!verdict.passed)
       throw new Error(
@@ -498,6 +568,10 @@ export async function checkMergeGroup(api, event, pattern, botUserId, deepPatter
       `PR #${number}: ${computed ? 'no security paths (computed)' : 'Security status verified'}`
     );
   }
+  // The merge-queue run re-judges every queued PR, so a required check re-run
+  // after the label refuses here until the PR is re-labelled. A check_suite
+  // trigger cannot enforce that: GitHub does not start workflows for check
+  // suites that GitHub Actions created.
   // A push can dequeue/rebuild an entry while statuses are being read.
   const current = groupMembers(await api.queue(group.base_ref), group);
   if (JSON.stringify(current) !== JSON.stringify(members))
@@ -524,7 +598,7 @@ export function githubApi(repository, token, apiUrl = 'https://api.github.com') 
       next: /<([^>]+)>; rel="next"/.exec(response.headers.get('link') ?? '')?.[1],
     };
   }
-  async function pages(path) {
+  async function pages(path, key) {
     const values = [];
     const seen = new Set();
     let url = `${root}${path}${path.includes('?') ? '&' : '?'}per_page=100`;
@@ -532,8 +606,9 @@ export function githubApi(repository, token, apiUrl = 'https://api.github.com') 
       if (seen.has(url)) throw new Error('Repeated pagination cursor');
       seen.add(url);
       const result = await request(url);
-      if (!Array.isArray(result.data)) throw new Error('Incomplete GitHub list response');
-      values.push(...result.data);
+      const page = key ? result.data?.[key] : result.data;
+      if (!Array.isArray(page)) throw new Error('Incomplete GitHub list response');
+      values.push(...page);
       url = result.next;
     }
     return values;
@@ -548,6 +623,9 @@ export function githubApi(repository, token, apiUrl = 'https://api.github.com') 
         )
       ).data,
     statuses: (sha) => pages(`/commits/${sha}/statuses`),
+    checkRuns: (sha) => pages(`/commits/${encodeURIComponent(sha)}/check-runs`, 'check_runs'),
+    rulesets: () => pages('/rulesets'),
+    ruleset: async (id) => (await request(`${root}/rulesets/${encodeURIComponent(id)}`)).data,
     setStatus: async (sha, state, description) =>
       (await request(`${root}/statuses/${sha}`, { context: CONTEXT, state, description })).data,
     timeline: (number) => pages(`/issues/${number}/timeline`),

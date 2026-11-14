@@ -15,6 +15,7 @@ import {
   latestReview,
   githubApi,
 } from './security-gate.mjs';
+import { REQUIRED_RULESET_NAME } from './security-required-checks.mjs';
 
 const workflow = readFileSync(new URL('../workflows/security-gate.yml', import.meta.url), 'utf8');
 const initializerWorkflow = readFileSync(
@@ -35,7 +36,13 @@ const approved = {
   creator: { login: `${appSlug}[bot]`, id: botUserId },
   id: 123,
 };
-const prEvent = { pull_request: { number: 1, head: { sha: 'head1' } } };
+const prEvent = {
+  pull_request: {
+    number: 1,
+    head: { sha: 'head1' },
+    updated_at: '2026-11-08T11:00:00Z',
+  },
+};
 const groupEvent = {
   merge_group: { base_ref: 'refs/heads/main', base_sha: 'base', head_sha: 'group2' },
 };
@@ -51,19 +58,27 @@ const entries = [
     pullRequest: { number: 2, headRefOid: 'head2' },
   },
 ];
-function fixture({ files = ['apps/server/src/http/gate.ts'], statuses = {} } = {}) {
+function fixture({
+  files = ['apps/server/src/http/gate.ts'],
+  statuses = {},
+  labels = ['security-reviewed'],
+  timeline = [],
+  activity = [],
+  checkRuns = {},
+} = {}) {
   const comments = [];
   const writes = [];
+  const requiredReads = [];
   const heads = { 1: 'head1', 2: 'head2' };
   const api = {
     pr: async (number) => ({
-      head: { sha: heads[number] },
-      base: { ref: 'main' },
+      head: { sha: heads[number], ref: 'fix/checks' },
+      base: { ref: 'main', sha: 'base' },
       changed_files: files.length,
-      labels: [{ name: 'security-reviewed' }],
+      labels: labels.map((name) => ({ name })),
     }),
-    timeline: async () => [],
-    activity: async () => [],
+    timeline: async () => timeline,
+    activity: async () => activity,
     files: async () => files.map((filename) => ({ filename })),
     compare: async (base) => ({
       base_commit: { sha: base },
@@ -71,6 +86,25 @@ function fixture({ files = ['apps/server/src/http/gate.ts'], statuses = {} } = {
       files: files.map((filename) => ({ filename })),
     }),
     statuses: async (sha) => statuses[sha] ?? [],
+    rulesets: async () => {
+      requiredReads.push('rulesets');
+      return [{ id: 7, name: REQUIRED_RULESET_NAME }];
+    },
+    ruleset: async (id) => {
+      requiredReads.push(`ruleset:${id}`);
+      return {
+        rules: [
+          {
+            type: 'required_status_checks',
+            parameters: { required_status_checks: [{ context: 'test' }] },
+          },
+        ],
+      };
+    },
+    checkRuns: async (sha) => {
+      requiredReads.push(`checkRuns:${sha}`);
+      return checkRuns[sha] ?? [];
+    },
     setStatus: async (sha, state, description) => {
       writes.push({ sha, state });
       const review = {
@@ -89,8 +123,122 @@ function fixture({ files = ['apps/server/src/http/gate.ts'], statuses = {} } = {
     },
     queue: async () => structuredClone(entries),
   };
-  return { api, comments, writes, heads, statuses };
+  return { api, comments, writes, heads, statuses, requiredReads };
 }
+
+const PUSHED = '2026-11-08T09:00:00Z';
+const CHECKED = '2026-11-08T10:00:00Z';
+const LABELLED = '2026-11-08T11:00:00Z';
+const labelled = (name, at) => ({
+  event: 'labeled',
+  label: { name },
+  created_at: at,
+  actor: { type: 'User' },
+});
+const requiredRun = (sha, at = CHECKED) => ({
+  name: 'test',
+  head_sha: sha,
+  status: 'completed',
+  conclusion: 'success',
+  completed_at: at,
+});
+function labelFixture({ deep = false, reviewAt = LABELLED, deepAt = LABELLED } = {}) {
+  const labels = ['security-reviewed', ...(deep ? ['security-deep-reviewed'] : [])];
+  const timeline = [
+    labelled('security-reviewed', reviewAt),
+    ...(deep ? [labelled('security-deep-reviewed', deepAt)] : []),
+  ];
+  return fixture({
+    files: [
+      deep ? 'apps/server/src/services/tasks/create-task.ts' : 'apps/server/src/http/gate.ts',
+    ],
+    labels,
+    timeline,
+    activity: [
+      { after: 'head1', ref: 'refs/heads/fix/checks', timestamp: PUSHED },
+      { after: 'head2', ref: 'refs/heads/fix/checks', timestamp: PUSHED },
+    ],
+    statuses: {
+      head1: [{ ...approved, created_at: '2026-11-08T12:00:00Z' }],
+      head2: [{ ...approved, created_at: '2026-11-08T12:00:00Z' }],
+    },
+    checkRuns: {
+      head1: [requiredRun('head1')],
+      head2: [requiredRun('head2')],
+    },
+  });
+}
+
+test('label-at-head finds the required ruleset by exact name', async () => {
+  const f = labelFixture();
+  f.api.rulesets = async () => [
+    { id: 6, name: `${REQUIRED_RULESET_NAME} old` },
+    { id: 7, name: REQUIRED_RULESET_NAME },
+  ];
+  assert.equal(
+    await runPullRequest(f.api, prEvent, pattern, { botUserId: '0', deepPattern }),
+    'Security status verified'
+  );
+  assert.ok(f.requiredReads.includes('ruleset:7'));
+});
+
+test('label-at-head refuses a missing, duplicate or unreadable required ruleset', async () => {
+  for (const rulesets of [
+    [],
+    [
+      { id: 7, name: REQUIRED_RULESET_NAME },
+      { id: 8, name: REQUIRED_RULESET_NAME },
+    ],
+  ]) {
+    const f = labelFixture();
+    f.api.rulesets = async () => rulesets;
+    await assert.rejects(
+      runPullRequest(f.api, prEvent, pattern, { botUserId: '0', deepPattern }),
+      /ruleset named main: merge queue/
+    );
+  }
+  const failed = labelFixture();
+  failed.api.rulesets = async () => {
+    throw new Error('Ruleset API failed');
+  };
+  await assert.rejects(
+    runPullRequest(failed.api, prEvent, pattern, { botUserId: '0', deepPattern }),
+    /Ruleset API failed/
+  );
+});
+
+for (const [pathName, run] of [
+  ['PR', (api) => runPullRequest(api, prEvent, pattern, { botUserId: '0', deepPattern })],
+  ['merge-group', (api) => runMergeGroup(api, groupEvent, pattern, '0', deepPattern)],
+]) {
+  test(`${pathName} path refuses security-reviewed before the last required check`, async () => {
+    const f = labelFixture({ reviewAt: '2026-11-08T09:30:00Z' });
+    await assert.rejects(
+      run(f.api),
+      /security-reviewed went on before the last required check \(test\) finished; remove it and add it again/
+    );
+  });
+
+  test(`${pathName} path refuses security-deep-reviewed before the last required check`, async () => {
+    const f = labelFixture({ deep: true, deepAt: '2026-11-08T09:30:00Z' });
+    await assert.rejects(
+      run(f.api),
+      /security-deep-reviewed went on before the last required check \(test\) finished; remove it and add it again/
+    );
+  });
+}
+
+test('a PR still waiting for its label does not read required checks', async () => {
+  const f = fixture({
+    labels: [],
+    activity: [{ after: 'head1', ref: 'refs/heads/fix/checks', timestamp: PUSHED }],
+  });
+  assert.match(
+    await runPullRequest(f.api, prEvent, pattern, { botUserId: '0', deepPattern }),
+    /^Waiting for Security:/
+  );
+  assert.deepEqual(f.requiredReads, []);
+});
 
 test('labelled, same approved head: passes without overwriting Security', async () => {
   const { api, writes, comments } = fixture({ statuses: { head1: [approved] } });
@@ -454,6 +602,23 @@ test('GitHub client paginates statuses, files and queue entries; API failures th
   await assert.rejects(api.statuses('head1'), /GitHub API 403/);
 });
 
+test('GitHub client reads named rulesets and paginates check runs', async (t) => {
+  const urls = [];
+  t.mock.method(globalThis, 'fetch', async (url) => {
+    urls.push(url);
+    if (url.includes('/check-runs')) return Response.json({ check_runs: [requiredRun('head1')] });
+    if (/\/rulesets\/7$/.test(url)) return Response.json({ id: 7, rules: [] });
+    return Response.json([{ id: 7, name: REQUIRED_RULESET_NAME }]);
+  });
+  const api = githubApi('owner/repo', 'fake-test-token');
+  assert.equal((await api.rulesets())[0].name, REQUIRED_RULESET_NAME);
+  assert.equal((await api.ruleset(7)).id, 7);
+  assert.equal((await api.checkRuns('head1'))[0].name, 'test');
+  assert.match(urls[0], /\/rulesets\?per_page=100$/);
+  assert.match(urls[1], /\/rulesets\/7$/);
+  assert.match(urls[2], /\/commits\/head1\/check-runs\?per_page=100$/);
+});
+
 test('same SHA with a different base cannot reuse a no-security-paths approval', async () => {
   const automatic = { ...approved, description: 'no security paths' };
   const f = fixture({ statuses: { head1: [automatic], head2: [approved] } });
@@ -530,7 +695,7 @@ test('all verifier runs are read-only, including same-repo PRs and merge groups'
   const verifier = workflow.slice(workflow.indexOf('  security-gate:'));
   assert.match(
     verifier,
-    /permissions:\n {6}contents: read\n {6}statuses: read\n {6}pull-requests: read/
+    /permissions:\n {6}checks: read\n {6}contents: read\n {6}statuses: read\n {6}pull-requests: read/
   );
   assert.doesNotMatch(verifier, /github.sha|: write/);
   assert.match(
@@ -587,6 +752,10 @@ test('pinned-main fixture blocks a branch whose workflow and script both exit 0'
   writeFileSync(
     join(dir, '.github/scripts/security-label-at-head.mjs'),
     readFileSync(new URL('./security-label-at-head.mjs', import.meta.url))
+  );
+  writeFileSync(
+    join(dir, '.github/scripts/security-required-checks.mjs'),
+    readFileSync(new URL('./security-required-checks.mjs', import.meta.url))
   );
   writeFileSync(join(dir, workflowPath), workflow);
   git('add', '.');

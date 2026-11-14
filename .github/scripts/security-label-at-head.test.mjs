@@ -10,6 +10,7 @@ import {
   VERDICT_POLL,
 } from './security-gate.mjs';
 import { approvalMode, labelAtHead } from './security-label-at-head.mjs';
+import { REQUIRED_RULESET_NAME } from './security-required-checks.mjs';
 
 const pattern = '^apps/server/src/(http|services/tasks)/';
 const deepPattern = '^apps/server/src/services/tasks/';
@@ -56,6 +57,7 @@ function gate({
   let reads = 0;
   const api = {
     fileReads: 0,
+    requiredReads: 0,
     pr: async () => ({
       head: { sha: SHA, ref: REF },
       base: { ref: 'main', sha: bases[Math.min(reads++, bases.length - 1)] },
@@ -71,6 +73,31 @@ function gate({
     statuses: async (sha) => {
       api.statusReads += 1;
       return sha === SHA ? statuses : [];
+    },
+    rulesets: async () => {
+      api.requiredReads += 1;
+      return [{ id: 1, name: REQUIRED_RULESET_NAME }];
+    },
+    ruleset: async () => ({
+      rules: [
+        {
+          type: 'required_status_checks',
+          parameters: { required_status_checks: [{ context: 'test' }] },
+        },
+      ],
+    }),
+    checkRuns: async (sha) => {
+      api.requiredReads += 1;
+      return sha === SHA
+        ? [
+            {
+              name: 'test',
+              status: 'completed',
+              conclusion: 'success',
+              completed_at: '2026-10-30T09:00:00Z',
+            },
+          ]
+        : [];
     },
     timeline: async () => timeline,
     activity: async () => activity,
