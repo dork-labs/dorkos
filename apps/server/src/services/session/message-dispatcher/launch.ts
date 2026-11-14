@@ -30,7 +30,61 @@ import {
 } from './state.js';
 import { holdInQueue, parkDispatch, returnToQueue, unwatchedSettle } from './park.js';
 import { rearmLockWaiters, schedulePump } from './pump.js';
+import { logger } from '../../../lib/logger.js';
 import type { DispatchPlan, InFlightTurn } from './types.js';
+
+/** How many times a recovered row may fail to start before it is given up (DOR-3287). */
+export const RECOVERED_START_TRIES = 3;
+
+/** Failed starts of recovered rows, by row id; kept across adoptions, cleared once one runs. */
+const recoveryFailures = new Map<string, number>();
+
+/**
+ * Forget every recovered row's failed starts.
+ *
+ * @internal Exported for testing only, through `resetMessageDispatcher`.
+ */
+export function forgetRecoveryFailures(): void {
+  recoveryFailures.clear();
+}
+
+/**
+ * Count one failed start of a recovered row. Rows this process accepted itself
+ * are never counted: their sender is still here to see the failure.
+ *
+ * @param plan - The message whose start failed
+ */
+function countRecoveredFailure(plan: DispatchPlan): void {
+  if (!plan.recovered) return;
+  recoveryFailures.set(plan.messageId, (recoveryFailures.get(plan.messageId) ?? 0) + 1);
+}
+
+/**
+ * Give up on a recovered row that has failed to start {@link RECOVERED_START_TRIES}
+ * times: take it off the queue and tell its sender it will not run. Without this
+ * a row whose chat was deleted while the server was down retries, and warns, on
+ * every health tick for the life of the process.
+ *
+ * @param plan - The message about to start, or whose start just failed
+ * @returns True when it was given up, so the caller neither launches nor re-parks it
+ */
+function giveUpIfSpent(plan: DispatchPlan): boolean {
+  if (!plan.recovered || (recoveryFailures.get(plan.messageId) ?? 0) < RECOVERED_START_TRIES) {
+    return false;
+  }
+  recoveryFailures.delete(plan.messageId);
+  pending.delete(plan.messageId);
+  setQueuedWaitingOn(plan.messageId, undefined);
+  if (getMessageQueueStore()?.remove(plan.messageId)) emitQueueUpdate(plan.sessionKey);
+  logger.warn('[MessageDispatcher] gave up on a recovered message that kept failing to start', {
+    sessionId: plan.sessionKey,
+    messageId: plan.messageId,
+    tries: RECOVERED_START_TRIES,
+  });
+  emitLifecycle({ phase: 'dropped', messageId: plan.messageId, reason: 'session_gone' });
+  plan.turn.onSettled?.('failed');
+  return true;
+}
 
 /**
  * Start one accepted message's turn: claim the session, hand it to
@@ -83,7 +137,9 @@ export function launchDispatchInner(
 ): Promise<TriggerTurnResult> {
   if (plan.turn.privateDispatchSignal?.aborted)
     return Promise.resolve({ accepted: false, suspended: true });
+  if (giveUpIfSpent(plan)) return Promise.resolve({ accepted: false });
   const { sessionKey, clientId, messageId } = plan;
+  let turnStarted = false;
   const remainingMs = opts.budgetExhausted
     ? 0
     : Math.max(0, plan.budgetMs - (Date.now() - plan.startedWaitingAt));
@@ -169,6 +225,8 @@ export function launchDispatchInner(
       // every window is told so in the same beat — a queue chip that outlives
       // the message it stands for is a lie about what is still waiting.
       onTurnStart: (seq) => {
+        turnStarted = true;
+        recoveryFailures.delete(messageId);
         if (turn.privateReceiptId !== undefined) {
           getPrivateSessionMessageAcceptanceService()?.markTurnStarted(turn.privateReceiptId, seq);
           emitQueueUpdate(sessionKey);
@@ -206,6 +264,9 @@ export function launchDispatchInner(
         // go, and a message refused in between would otherwise wait out its
         // whole wait bound behind a free session.
         rearmLockWaiters(sessionKey);
+        // Ended before it began: the row stays queued, so this counts as a failed
+        // start, and the next adoption gives it up once it has failed enough.
+        if (turnOutcome === 'failed' && !turnStarted) countRecoveredFailure(plan);
         clearIfOurs();
         if (turn.privateReceiptId !== undefined) {
           getPrivateSessionMessageAcceptanceService()?.settle(turn.privateReceiptId, turnOutcome);
@@ -232,7 +293,8 @@ export function launchDispatchInner(
       getPrivateSessionMessageAcceptanceService()?.cancel(turn.privateReceiptId, err.code);
       emitQueueUpdate(sessionKey);
     } else {
-      returnToQueue(plan);
+      countRecoveredFailure(plan);
+      if (!giveUpIfSpent(plan)) returnToQueue(plan);
     }
     // Rejected with what was thrown, unchanged: `triggerTurn` throws typed
     // errors its callers narrow on, and re-wrapping would cost them that.
@@ -306,7 +368,8 @@ export function launchDispatchInner(
         getPrivateSessionMessageAcceptanceService()?.cancel(turn.privateReceiptId, err.code);
         emitQueueUpdate(sessionKey);
       } else {
-        returnToQueue(plan);
+        countRecoveredFailure(plan);
+        if (!giveUpIfSpent(plan)) returnToQueue(plan);
       }
       throw err;
     }

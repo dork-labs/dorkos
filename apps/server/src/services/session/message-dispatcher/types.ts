@@ -459,6 +459,13 @@ export interface DispatchPlan {
    * anything a person typed — the right way round, since those words came first.
    */
   transient: boolean;
+  /**
+   * A row a previous process accepted, adopted by this one. Its failed starts
+   * are counted across adoptions, and it is given up after a few: the chat it
+   * waits in may have been deleted while the server was down, and nothing else
+   * would ever stop it retrying (DOR-3287).
+   */
+  recovered?: boolean;
   /** What the caller passes straight through to the turn. */
   turn: Pick<
     DispatchMessageOpts,

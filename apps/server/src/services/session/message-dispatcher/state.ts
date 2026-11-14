@@ -177,6 +177,17 @@ export function isQueuedMessageLaunching(messageId: string): boolean {
   return launching.has(messageId);
 }
 
+/**
+ * Whether this process holds a live entry that will run a queue row: one
+ * waiting in line, or one on its way out. A row on disk with neither (a restart
+ * left it) runs only once something adopts it.
+ *
+ * @param messageId - The queue row's id.
+ */
+export function isQueuedMessageArmed(messageId: string): boolean {
+  return pending.has(messageId) || launching.has(messageId);
+}
+
 /** Agent-requested summaries waiting to run, one per session at most, keyed by primary id. */
 export const pendingCompactions = new Map<string, PendingAgentCompaction>();
 /** Tail of each session's dispatch mutex chain; dropped when it drains. */
