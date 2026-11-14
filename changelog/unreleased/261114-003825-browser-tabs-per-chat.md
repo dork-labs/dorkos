@@ -8,6 +8,7 @@ covers:
   - 'fix(browser): stack saved sign-ins on small screens'
   - 'fix(browser): limit chat tabs and isolate sign-in popups'
   - 'fix(browser): scope chat tab inventory to direct chats'
+  - 'fix(dev): isolate browser panel showcase chat caches'
 ---
 
 ### Added

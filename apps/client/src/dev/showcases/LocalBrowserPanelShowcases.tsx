@@ -81,7 +81,7 @@ function FolderChangedDemo() {
   return (
     <TransportProvider transport={transport}>
       <div className="bg-background h-[36rem] w-full max-w-sm rounded-lg border">
-        <LocalBrowserPanel sessionId="chat-atlas" agentName="Atlas" />
+        <LocalBrowserPanel sessionId="chat-atlas-folder-changed" agentName="Atlas" />
       </div>
     </TransportProvider>
   );
@@ -89,6 +89,8 @@ function FolderChangedDemo() {
 
 /** State 1.11, with a long made-up name to exercise wrapping at phone widths. */
 function PausedForSignInDemo({ waiting = false }: { waiting?: boolean }) {
+  // Playground examples share a QueryClient, so each state needs its own cache key.
+  const sessionId = waiting ? 'chat-kestrel-waiting' : 'chat-kestrel';
   const [transport] = useState<Transport>(
     () =>
       new Proxy(notOpenTransport(), {
@@ -98,6 +100,7 @@ function PausedForSignInDemo({ waiting = false }: { waiting?: boolean }) {
               waiting
                 ? {
                     ...pausedForSignIn,
+                    sessionId,
                     status: 'disconnected',
                     tabs: [],
                     selectedTabId: null,
@@ -125,7 +128,7 @@ function PausedForSignInDemo({ waiting = false }: { waiting?: boolean }) {
   return (
     <TransportProvider transport={transport}>
       <div className="bg-background h-[36rem] w-full max-w-lg rounded-lg border">
-        <LocalBrowserPanel sessionId="chat-kestrel" agentName="Kestrel the Research Assistant" />
+        <LocalBrowserPanel sessionId={sessionId} agentName="Kestrel the Research Assistant" />
       </div>
     </TransportProvider>
   );
