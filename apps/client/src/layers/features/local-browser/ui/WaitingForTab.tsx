@@ -5,6 +5,7 @@ import { useTransport } from '@/layers/shared/model';
 import { Button } from '@/layers/shared/ui';
 import { localBrowserStateKey } from '@/layers/entities/local-browser';
 import { OpenChatTabs } from './OpenChatTabs';
+import { BrowserPanelActions } from './BrowserPanelActions';
 
 /** State 1.12 never closes anything until the person chooses the named idle chat. */
 export function WaitingForTab({
@@ -45,18 +46,21 @@ export function WaitingForTab({
           Couldn’t close that tab. Check open tabs and try again.
         </p>
       )}
-      <div className="flex flex-col items-start gap-2">
-        {idle && (
-          <Button
-            disabled={busy}
-            onClick={() => void close()}
-            className="h-auto min-h-11 w-full py-2 text-left whitespace-normal transition-none min-[480px]:w-auto md:h-auto"
-          >
-            Close the tab in {idle.title}
-          </Button>
-        )}
+      <BrowserPanelActions
+        primary={
+          idle && (
+            <Button
+              disabled={busy}
+              onClick={() => void close()}
+              className="h-auto min-h-11 w-full py-2 text-left whitespace-normal transition-none min-[480px]:w-auto md:h-auto"
+            >
+              Close the tab in {idle.title}
+            </Button>
+          )
+        }
+      >
         <OpenChatTabs tabs={state.openChatTabs ?? []} label="See open tabs" />
-      </div>
+      </BrowserPanelActions>
     </div>
   );
 }
