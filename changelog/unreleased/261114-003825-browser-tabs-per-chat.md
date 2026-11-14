@@ -2,6 +2,7 @@
 covers:
   - 'feat(browser): give each chat its own Agent browser tabs'
   - 'fix(browser): pause only the chat whose destination was refused'
+  - 'fix(browser): teach agents to recover within their own tabs'
 ---
 
 ### Added
