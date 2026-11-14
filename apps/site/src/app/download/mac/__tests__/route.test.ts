@@ -4,6 +4,7 @@ import { findLatestDmgDownloadUrl } from '@/lib/desktop-download';
 
 import { countDownload } from '@/lib/telemetry/download-count';
 
+import * as route from '../route';
 import { GET } from '../route';
 
 const request = () => new Request('https://dorkos.ai/download/mac');
@@ -19,13 +20,21 @@ afterEach(() => {
 });
 
 describe('GET /download/mac', () => {
-  it('302-redirects to the resolved .dmg url', async () => {
+  // DOR-4300: a cached route or a stale-while-revalidate data cache served the
+  // old version for hours after a release. The route must run on every visit.
+  it('runs on every request, with no route-level cache', () => {
+    expect(route.dynamic).toBe('force-dynamic');
+    expect('revalidate' in route).toBe(false);
+  });
+
+  it('302-redirects to the resolved .dmg url, uncacheable', async () => {
     vi.mocked(findLatestDmgDownloadUrl).mockResolvedValue('https://example.com/DorkOS-0.1.0.dmg');
 
     const res = await GET(request());
 
     expect(res.status).toBe(302);
     expect(res.headers.get('location')).toBe('https://example.com/DorkOS-0.1.0.dmg');
+    expect(res.headers.get('cache-control')).toBe('no-store');
     expect(countDownload).toHaveBeenCalledWith(expect.any(Request), 'mac', true);
   });
 
