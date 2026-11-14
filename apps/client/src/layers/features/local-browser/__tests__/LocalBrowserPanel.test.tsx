@@ -191,7 +191,7 @@ describe('LocalBrowserPanel', () => {
       await waitFor(() =>
         expect(transport.interruptSession).toHaveBeenCalledExactlyOnceWith('chat-one')
       );
-      expect(view.client.getQueryData(['local-browser', 'state'])).toMatchObject({
+      expect(view.client.getQueryData(['local-browser', 'state', 'chat-one'])).toMatchObject({
         handoff: { outcome: 'window-closed' },
       });
     });
@@ -209,7 +209,7 @@ describe('LocalBrowserPanel', () => {
       const view = mount();
       fireEvent.click(await screen.findByRole('button', { name: 'Disconnect' }));
       await waitFor(() =>
-        expect(view.client.getQueryData(['local-browser', 'state'])).toMatchObject({
+        expect(view.client.getQueryData(['local-browser', 'state', 'chat-one'])).toMatchObject({
           handoff: answered,
         })
       );
@@ -337,7 +337,7 @@ describe('LocalBrowserPanel', () => {
       preparation: { stage: 'downloading', component: 'chromium', percent: 37 },
     };
     act(() =>
-      view.client.setQueryData(['local-browser', 'state'], preparing, {
+      view.client.setQueryData(['local-browser', 'state', 'chat-one'], preparing, {
         updatedAt: Date.now() + 1000,
       })
     );
@@ -348,7 +348,7 @@ describe('LocalBrowserPanel', () => {
     );
     act(() =>
       view.client.setQueryData(
-        ['local-browser', 'state'],
+        ['local-browser', 'state', 'chat-one'],
         {
           ...preparing,
           preparation: { stage: 'downloading', component: 'headless-shell', percent: null },
@@ -360,7 +360,7 @@ describe('LocalBrowserPanel', () => {
     expect(screen.queryByRole('progressbar')).not.toBeInTheDocument();
     act(() =>
       view.client.setQueryData(
-        ['local-browser', 'state'],
+        ['local-browser', 'state', 'chat-one'],
         { ...preparing, preparation: { stage: 'downloading', component: 'ffmpeg', percent: 5 } },
         { updatedAt: Date.now() + 1000 }
       )
@@ -375,7 +375,7 @@ describe('LocalBrowserPanel', () => {
     await waitFor(() => expect(open).toBeEnabled());
     expect(screen.queryByRole('progressbar')).not.toBeInTheDocument();
     act(() =>
-      view.client.setQueryData(['local-browser', 'state'], preparing, {
+      view.client.setQueryData(['local-browser', 'state', 'chat-one'], preparing, {
         updatedAt: Date.now() + 1000,
       })
     );
@@ -398,14 +398,14 @@ describe('LocalBrowserPanel', () => {
     fireEvent.click(open);
     await screen.findByText('Preparing browser');
     act(() =>
-      view.client.setQueryData(['local-browser', 'state'], previous, {
+      view.client.setQueryData(['local-browser', 'state', 'chat-one'], previous, {
         updatedAt: Date.now() + 1000,
       })
     );
     expect(screen.queryByRole('progressbar')).not.toBeInTheDocument();
     act(() =>
       view.client.setQueryData(
-        ['local-browser', 'state'],
+        ['local-browser', 'state', 'chat-one'],
         { ...previous, connectionId: 'foreign', sessionId: 'another-chat' },
         { updatedAt: Date.now() + 1000 }
       )
@@ -603,7 +603,9 @@ describe('LocalBrowserPanel', () => {
       });
       await waitFor(() => expect(open).toBeEnabled());
       expect(screen.queryByText('Cancelling…')).not.toBeInTheDocument();
-      expect(view.client.getQueryData(['local-browser', 'state'])).toEqual(disconnected);
+      expect(view.client.getQueryData(['local-browser', 'state', 'chat-one'])).toEqual(
+        disconnected
+      );
       expect(screen.getByText('Not open yet')).toBeInTheDocument();
       expect(screen.queryByRole('button', { name: 'Pause agent' })).not.toBeInTheDocument();
       expect(screen.queryByRole('alert')).not.toBeInTheDocument();
@@ -638,11 +640,11 @@ describe('LocalBrowserPanel', () => {
     fireEvent.click(open);
     expect(screen.getByText('Preparing browser')).toBeInTheDocument();
     expect(open).toBeDisabled();
-    expect(view.client.getQueryData(['local-browser', 'state'])).toEqual(disconnected);
+    expect(view.client.getQueryData(['local-browser', 'state', 'chat-one'])).toEqual(disconnected);
     await waitFor(() => expect(transport.openLocalBrowser).toHaveBeenCalledTimes(2));
     await act(async () => second({ ...connected, connectionId: 'new-opening' }));
     expect(await screen.findByRole('button', { name: 'Pause agent' })).toBeEnabled();
-    expect(view.client.getQueryData(['local-browser', 'state'])).toMatchObject({
+    expect(view.client.getQueryData(['local-browser', 'state', 'chat-one'])).toMatchObject({
       connectionId: 'new-opening',
     });
   });
@@ -673,7 +675,9 @@ describe('LocalBrowserPanel', () => {
     fireEvent.change(await screen.findByLabelText('Shared with Kai'), {
       target: { value: 'two' },
     });
-    await waitFor(() => expect(transport.selectLocalBrowserTab).toHaveBeenCalledWith('two'));
+    await waitFor(() =>
+      expect(transport.selectLocalBrowserTab).toHaveBeenCalledWith('two', 'chat-one')
+    );
   });
   it('keeps the selected tab when another tab stops responding', async () => {
     transport.getLocalBrowserState.mockResolvedValue(connected);
@@ -800,7 +804,10 @@ describe('LocalBrowserPanel', () => {
     dialog.remove();
     await waitFor(() => expect(setBounds.mock.calls.at(-1)?.[0].visible).toBe(true));
     act(() =>
-      view.client.setQueryData(['local-browser', 'state'], { ...native, sessionId: 'another-chat' })
+      view.client.setQueryData(['local-browser', 'state', 'chat-one'], {
+        ...native,
+        sessionId: 'another-chat',
+      })
     );
     expect(
       await screen.findByText('Shared with another chat. Disconnect to use it here.')
@@ -852,4 +859,23 @@ describe('LocalBrowserPanel', () => {
       })
     );
   });
+});
+
+it('scopes polling, controls and cached state to the current chat', async () => {
+  transport.getLocalBrowserState.mockResolvedValue(connected);
+  transport.pauseLocalBrowser.mockResolvedValue({ ...connected, paused: true });
+  const view = mount();
+  const other = { ...connected, sessionId: 'chat-two', selectedTabId: 'private-tab' };
+  // The helper uses gcTime: 0. Retain this unobserved query to test cross-chat writes.
+  view.client.setQueryDefaults(['local-browser', 'state', 'chat-two'], { gcTime: Infinity });
+  view.client.setQueryData(['local-browser', 'state', 'chat-two'], other);
+  fireEvent.click(await screen.findByRole('button', { name: 'Pause agent' }));
+  await screen.findByRole('button', { name: 'Resume agent' });
+  expect(transport.getLocalBrowserState).toHaveBeenCalledWith('chat-one');
+  expect(transport.pauseLocalBrowser).toHaveBeenCalledWith('chat-one');
+  expect(view.client.getQueryData(['local-browser', 'state', 'chat-one'])).toMatchObject({
+    paused: true,
+  });
+  expect(view.client.getQueryData(['local-browser', 'state', 'chat-two'])).toEqual(other);
+  expect(view.client.getQueryData(['local-browser', 'state'])).toBeUndefined();
 });

@@ -5,7 +5,7 @@ import type {
   LocalBrowserPersonState,
   LocalBrowserState,
 } from '@dorkos/shared/local-browser';
-import { useLocalBrowser, LOCAL_BROWSER_STATE_KEY } from '@/layers/entities/local-browser';
+import { useLocalBrowser, localBrowserStateKey } from '@/layers/entities/local-browser';
 import { useAppStore, useTransport } from '@/layers/shared/model';
 import { Button, Input } from '@/layers/shared/ui';
 import { BrowserModeChoice } from './BrowserModeChoice';
@@ -32,7 +32,8 @@ export function LocalBrowserPanel({
 }: LocalBrowserPanelProps) {
   const transport = useTransport();
   const queryClient = useQueryClient();
-  const { state: query, capabilities: capabilityQuery } = useLocalBrowser();
+  const { state: query, capabilities: capabilityQuery } = useLocalBrowser(sessionId ?? undefined);
+  const stateKey = localBrowserStateKey(sessionId);
   const state = query.data;
   const capabilities = capabilityQuery.data;
   const readCode = ((query.error ?? capabilityQuery.error) as { code?: string } | null)?.code;
@@ -107,16 +108,16 @@ export function LocalBrowserPanel({
     try {
       if (setup) {
         // A poll from a previous setup cannot become the new request's progress.
-        await queryClient.cancelQueries({ queryKey: LOCAL_BROWSER_STATE_KEY });
+        await queryClient.cancelQueries({ queryKey: stateKey });
         if (ticket !== operation.current) return false;
       }
       const next = await run();
       if (ticket !== operation.current) return false;
       // An older poll must not overwrite a just-observed connect, tab choice, or pause.
-      await queryClient.cancelQueries({ queryKey: LOCAL_BROWSER_STATE_KEY });
+      await queryClient.cancelQueries({ queryKey: stateKey });
       if (ticket !== operation.current) return false;
       // A plain browser answer says nothing about a handoff, so what's known about it stays.
-      queryClient.setQueryData<LocalBrowserPersonState>(LOCAL_BROWSER_STATE_KEY, (known) => ({
+      queryClient.setQueryData<LocalBrowserPersonState>(stateKey, (known) => ({
         handoff: known?.handoff ?? null,
         signIn: known?.signIn ?? null,
         ...next,
@@ -159,9 +160,9 @@ export function LocalBrowserPanel({
     const setup = pendingSetup.current;
     setCancelling(true);
     try {
-      const stopped = await action(() => transport.disconnectLocalBrowser());
+      const stopped = await action(() => transport.disconnectLocalBrowser(sessionId ?? undefined));
       if (stopped) {
-        await queryClient.invalidateQueries({ queryKey: LOCAL_BROWSER_STATE_KEY });
+        await queryClient.invalidateQueries({ queryKey: stateKey });
       }
       // Disconnect can answer before the original setup has finished cancelling.
       await setup;
@@ -300,7 +301,9 @@ export function LocalBrowserPanel({
               disabled={busy}
               onClick={() =>
                 void action(() =>
-                  state.paused ? transport.resumeLocalBrowser() : transport.pauseLocalBrowser()
+                  state.paused
+                    ? transport.resumeLocalBrowser(sessionId ?? undefined)
+                    : transport.pauseLocalBrowser(sessionId ?? undefined)
                 )
               }
             >
@@ -314,16 +317,17 @@ export function LocalBrowserPanel({
                 rememberFocus(event.currentTarget);
                 const asked = state.handoff?.outcome === null ? state.handoff.id : null;
                 let answer: LocalBrowserPersonState | undefined;
-                void action(async () => (answer = await transport.disconnectLocalBrowser())).then(
-                  (closed) => {
-                    // Disconnect ends a handoff as Stop task does (outcome `window-closed`), and
-                    // that ends the agent's turn. Only this one: a handoff that ended first must
-                    // not cost that chat its next turn.
-                    const ended = answer?.handoff;
-                    if (closed && ended?.id === asked && ended?.outcome === 'window-closed')
-                      void transport.interruptSession(ended.sessionId).catch(() => {});
-                  }
-                );
+                void action(
+                  async () =>
+                    (answer = await transport.disconnectLocalBrowser(sessionId ?? undefined))
+                ).then((closed) => {
+                  // Disconnect ends a handoff as Stop task does (outcome `window-closed`), and
+                  // that ends the agent's turn. Only this one: a handoff that ended first must
+                  // not cost that chat its next turn.
+                  const ended = answer?.handoff;
+                  if (closed && ended?.id === asked && ended?.outcome === 'window-closed')
+                    void transport.interruptSession(ended.sessionId).catch(() => {});
+                });
               }}
             >
               Disconnect
@@ -341,7 +345,9 @@ export function LocalBrowserPanel({
               disabled={busy}
               onChange={(event) => {
                 setAddress(null);
-                void action(() => transport.selectLocalBrowserTab(event.target.value));
+                void action(() =>
+                  transport.selectLocalBrowserTab(event.target.value, sessionId ?? undefined)
+                );
               }}
             >
               {!state.selectedTabId && <option value="">Choose a tab</option>}
@@ -362,7 +368,9 @@ export function LocalBrowserPanel({
                   const parsed = new URL(url);
                   if (!['http:', 'https:'].includes(parsed.protocol))
                     throw new Error('unsupported');
-                  void action(() => transport.navigateLocalBrowser(parsed.href)).then((ok) => {
+                  void action(() =>
+                    transport.navigateLocalBrowser(parsed.href, sessionId ?? undefined)
+                  ).then((ok) => {
                     if (ok) setAddress(null);
                   });
                 } catch {

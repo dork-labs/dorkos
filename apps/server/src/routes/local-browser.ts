@@ -14,6 +14,7 @@ import {
   LocalBrowserError,
   type LocalBrowserService,
 } from '../services/session/local-browser/service.js';
+import { TabBrokerError } from '../services/session/local-browser/broker/errors.js';
 import { isAtThisComputer } from '../services/core/auth/gate-policy.js';
 import { mountLocalBrowserProfileRemoval } from './local-browser-profile-removal.js';
 import {
@@ -48,8 +49,9 @@ export function createLocalBrowserRoutes(
       );
     return next();
   });
+  const scope = (value: string | undefined) => z.string().min(1).max(200).optional().parse(value);
   router.onError((error, c) => {
-    if (error instanceof LocalBrowserError)
+    if (error instanceof LocalBrowserError || error instanceof TabBrokerError)
       return c.json({ error: error.message, code: error.code }, 409);
     if (error instanceof z.ZodError)
       return c.json(
@@ -59,21 +61,27 @@ export function createLocalBrowserRoutes(
     return c.json({ error: 'Couldn’t use the browser. Try again.', code: 'browser_error' }, 500);
   });
   router.get('/capabilities', (c) => c.json(service.capabilities()));
-  router.get('/state', async (c) => c.json(await service.handover.state()));
+  router.get('/state', async (c) =>
+    c.json(await service.handover.state(scope(c.req.query('sessionId'))))
+  );
   // Opening and resuming end a handoff and lift a Stop task, so they take a person too.
   router.post('/open', personOnly, async (c) =>
     c.json(await service.handover.open(LocalBrowserOpenSchema.parse(readJsonBody(c))))
   );
   // These three can move or close the page under an open card, so they take a person too.
   router.post('/tabs/:id/select', personOnly, async (c) =>
-    c.json(await service.handover.selectTab(c.req.param('id')))
+    c.json(await service.handover.selectTab(c.req.param('id'), scope(c.req.query('sessionId'))))
   );
   router.post('/navigate', personOnly, async (c) => {
     const { url } = z.object({ url: z.string().url() }).strict().parse(readJsonBody(c));
-    return c.json(await service.handover.navigate(url));
+    return c.json(await service.handover.navigate(url, scope(c.req.query('sessionId'))));
   });
-  router.post('/pause', async (c) => c.json(await service.handover.pause()));
-  router.post('/resume', personOnly, async (c) => c.json(await service.handover.resume()));
+  router.post('/pause', async (c) =>
+    c.json(await service.handover.pause(scope(c.req.query('sessionId'))))
+  );
+  router.post('/resume', personOnly, async (c) =>
+    c.json(await service.handover.resume(scope(c.req.query('sessionId'))))
+  );
   // Signing in and answering a handoff take a person: no agent, API key or approval token.
   router.post('/sign-in', personOnly, async (c) =>
     c.json(await service.handover.signIn(LocalBrowserSignInRequestSchema.parse(readJsonBody(c))))
@@ -86,7 +94,9 @@ export function createLocalBrowserRoutes(
     const { handoffId } = LocalBrowserHandoffAnswerSchema.parse(readJsonBody(c));
     return c.json(await service.handover.stop(handoffId));
   });
-  router.post('/disconnect', personOnly, async (c) => c.json(await service.handover.disconnect()));
+  router.post('/disconnect', personOnly, async (c) =>
+    c.json(await service.handover.disconnect(scope(c.req.query('sessionId'))))
+  );
   if (profiles) mountLocalBrowserProfileRoutes(router, profiles);
   mountLocalBrowserProfileRemoval(router, service, profiles);
   return router;

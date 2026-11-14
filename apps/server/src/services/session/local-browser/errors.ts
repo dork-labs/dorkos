@@ -10,7 +10,8 @@ import { isLocalBrowserAppUrl, localBrowserAppOrigins, underlyingPageUrl } from 
 export class LocalBrowserError extends Error {
   constructor(
     public readonly code: string,
-    message: string
+    message: string,
+    public readonly fields?: Readonly<Record<string, string | null>>
   ) {
     super(message);
   }

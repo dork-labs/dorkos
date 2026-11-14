@@ -71,7 +71,7 @@ function fixture() {
   pixels.write('IHDR', 12, 'ascii');
   pixels.writeUInt32BE(100, 16);
   pixels.writeUInt32BE(100, 20);
-  const frame = {};
+  const frame = { url: () => url };
   const childFrames: { url: () => string }[] = [];
   const page = {
     on: events.on.bind(events),
@@ -200,7 +200,8 @@ describe('the agent window’s name (DOR-3111)', () => {
     );
     f.service.windowNames.use(lookup);
     await f.service.open({ mode: 'new-window', sessionId: 'chat-one' });
-    expect(lookup).toHaveBeenCalledExactlyOnceWith('chat-one');
+    expect(lookup).toHaveBeenCalledTimes(2);
+    expect(lookup).toHaveBeenLastCalledWith('chat-one');
     expect(vi.mocked(f.backend.launch).mock.calls[0]?.[3]).toBe('Atlas');
     await f.service.disconnect();
   });
@@ -333,14 +334,16 @@ describe('local browser ownership and observations', () => {
       waitUntil: 'commit',
       timeout: 15_000,
     });
-    expect(context.newPage).not.toHaveBeenCalled();
+    expect(context.newPage).toHaveBeenCalledOnce();
     await service.disconnect();
   });
   it('fences observation and late selection when a person chooses another owned tab', async () => {
-    const { service, context, page, observedNodeSets } = await create();
+    const { service, context, page, events, observedNodeSets } = await create();
     const other = fixture();
     vi.spyOn(context, 'pages').mockReturnValue([page, other.page]);
-    const state = await service.open({ mode: 'new-window', sessionId: 'chat-one' });
+    await service.open({ mode: 'new-window', sessionId: 'chat-one' });
+    events.emit('popup', other.page);
+    const state = await service.state();
     let finishSelection!: () => void;
     vi.mocked(page.bringToFront).mockReturnValueOnce(
       new Promise<void>((resolve) => {
@@ -354,7 +357,7 @@ describe('local browser ownership and observations', () => {
     const second = service.selectTab(state.tabs[1].id);
     finishSelection();
     await Promise.all([firstRefusal, observationRefusal, second]);
-    expect(observedNodeSets[0].dispose).toHaveBeenCalledOnce();
+    expect(observedNodeSets).toEqual([]);
     expect((await service.state()).selectedTabId).toBe(state.tabs[1].id);
     await service.disconnect();
   });
@@ -387,22 +390,23 @@ describe('local browser ownership and observations', () => {
     expect(selectedTitle).toHaveBeenCalled();
     await service.disconnect();
   });
-  it('refreshes cached labels on document events without reading titles on polling', async () => {
-    const { service, context, page, events } = await create();
-    const selected = fixture();
-    vi.spyOn(context, 'pages').mockReturnValue([selected.page, page]);
+  it('refreshes an owned popup’s cached label on document events without polling it', async () => {
+    const { service, page, events } = await create();
+    const other = fixture();
+    await service.open({ mode: 'new-window', sessionId: 'chat-one' });
     let finishInitialTitle!: (title: string) => void;
-    const title = vi.spyOn(page, 'title').mockResolvedValue('Loaded document');
+    const title = vi.spyOn(other.page, 'title').mockResolvedValue('Loaded document');
     title.mockImplementationOnce(
       () =>
         new Promise<string>((resolve) => {
           finishInitialTitle = resolve;
         })
     );
-    const state = await service.open({ mode: 'new-window', sessionId: 'chat-one' });
-    // Opening must finish even when the document never answers its title request.
-    expect(state.tabs[1].title).toBe('');
-    events.emit('domcontentloaded');
+    events.emit('popup', other.page);
+    await service.state();
+    other.events.emit('domcontentloaded');
+    expect((await service.state()).tabs[1].title).toBe('');
+    other.events.emit('domcontentloaded');
     await Promise.resolve();
     const count = title.mock.calls.length;
     expect((await service.state()).tabs[1].title).toBe('Loaded document');
@@ -410,6 +414,8 @@ describe('local browser ownership and observations', () => {
     await Promise.resolve();
     expect((await service.state()).tabs[1].title).toBe('Loaded document');
     expect(title).toHaveBeenCalledTimes(count);
+    expect((await service.state()).selectedTabId).not.toBe((await service.state()).tabs[1].id);
+    expect(page).not.toBe(other.page);
     await service.disconnect();
   });
   it('refreshes a selected same-document title after polling and action completion', async () => {
@@ -435,26 +441,23 @@ describe('local browser ownership and observations', () => {
     expect((await service.agentState()).tabs[0].title).toBe('Agent input');
     await service.disconnect();
   });
-  it('captures state identity atomically across selection and disconnect changes', async () => {
-    const { service, context, page } = await create();
+  it('discards queued state reads when selection or connection ownership changes', async () => {
+    const { service, page, events } = await create();
     const other = fixture();
-    vi.spyOn(context, 'pages').mockReturnValue([page, other.page]);
-    const state = await service.open({ mode: 'new-window', sessionId: 'chat-one' });
-    await service.selectTab(state.tabs[0].id);
-    const first = service.agentState();
+    await service.open({ mode: 'new-window', sessionId: 'chat-one' });
+    events.emit('popup', other.page);
+    const state = await service.state();
+    const first = expect(service.agentState()).rejects.toMatchObject({ code: 'stale_page' });
     await service.selectTab(state.tabs[1].id);
-    const captured = await first;
-    expect(captured.connectionId).toBe(state.connectionId);
-    expect(captured.selectedTabId).toBe(state.tabs[0].id);
-    expect(captured.tabs.map((tab) => tab.id)).toEqual([state.tabs[0].id]);
-    const second = service.agentState();
+    await first;
+    const second = expect(service.agentState()).rejects.toMatchObject({
+      code: expect.stringMatching(/^(tab_gone|busy)$/),
+    });
     await service.disconnect();
-    const prior = await second;
-    expect(prior.connectionId).toBe(state.connectionId);
-    expect(prior.selectedTabId).toBe(state.tabs[1].id);
-    expect(prior.tabs.map((tab) => tab.id)).toEqual([state.tabs[1].id]);
-    expect((await service.agentState()).tabs).toEqual([]);
+    await second;
+    expect(page).not.toBe(other.page);
   });
+
   it('rejects an oversized UTF-8 observation without granting a revision or retaining node handles', async () => {
     const { service, change, click, observedNodeSets } = await create();
     await selectOwned(service);
@@ -690,13 +693,13 @@ describe('local browser ownership and observations', () => {
   it('shares only with the chosen chat and exposes only its selected tab to tools', async () => {
     const { service } = await create();
     const state = await service.open({ mode: 'new-window', sessionId: 'chat-one' });
-    expect(() => service.requireSharedSession('chat-two')).toThrow();
-    expect(() => service.requireSharedSession('chat-one')).not.toThrow();
+    expect(() => service.leaseFor('chat-two')).toThrow();
+    expect(() => service.leaseFor('chat-one')).not.toThrow();
     expect((await service.agentState()).selectedTabId).toBe(state.tabs[0].id);
     await service.selectTab(state.tabs[0].id);
     expect((await service.agentState()).tabs).toHaveLength(1);
     await service.disconnect();
-    expect(() => service.requireSharedSession('chat-one')).toThrow();
+    expect(() => service.leaseFor('chat-one')).toThrow();
   });
 
   it('closes the embedded bridge transport and guest without closing an owned context', async () => {
@@ -856,9 +859,9 @@ describe('bounded browser lifecycle ownership', () => {
     await vi.advanceTimersByTimeAsync(ACTION_EFFECT_RESPONSE_TIMEOUT_MS);
     await refused;
     await service.resume();
-    const fresh = await service.observe();
+    await expect(service.observe()).rejects.toMatchObject({ code: 'busy' });
     await expect(
-      service.action({ kind: 'click', role: 'button', name: 'Save', revision: fresh.revision })
+      service.action({ kind: 'click', role: 'button', name: 'Save', revision: observed.revision })
     ).rejects.toMatchObject({ code: 'busy' });
     stalled.resolve(true);
     await vi.advanceTimersByTimeAsync(0);
@@ -879,7 +882,7 @@ describe('bounded browser lifecycle ownership', () => {
       name: 'Save',
       revision: observed.revision,
     });
-    const refused = expect(acting).rejects.toMatchObject({ code: 'paused' });
+    const refused = expect(acting).rejects.toMatchObject({ code: 'tab_gone' });
     await vi.advanceTimersByTimeAsync(0);
     expect(observedNodeSets[0].evaluate).toHaveBeenCalledOnce();
     expect((await service.disconnect()).status).toBe('disconnected');
@@ -906,9 +909,9 @@ describe('bounded browser lifecycle ownership', () => {
     await vi.advanceTimersByTimeAsync(ACTION_EFFECT_RESPONSE_TIMEOUT_MS);
     await uncertain;
     await service.resume();
-    const fresh = await service.observe();
+    await expect(service.observe()).rejects.toMatchObject({ code: 'busy' });
     await expect(
-      service.action({ kind: 'press', key: 'Enter', revision: fresh.revision })
+      service.action({ kind: 'press', key: 'Enter', revision: observed.revision })
     ).rejects.toMatchObject({ code: 'busy' });
     acknowledgement.resolve();
     await vi.advanceTimersByTimeAsync(0);
@@ -1328,7 +1331,7 @@ describe('DorkOS app origins (DOR-3218)', () => {
       const { service, page, events, pixels } = await create(origins);
       await selectOwned(service);
       vi.mocked(page.screenshot).mockImplementationOnce(async () => {
-        events.emit(event, {});
+        events.emit(event, { url: () => 'https://frame.example/' });
         return Buffer.from(pixels);
       });
       await expect(service.screenshot()).rejects.toMatchObject({ code: 'stale_page' });
@@ -1459,15 +1462,15 @@ describe('DorkOS app origins (DOR-3218)', () => {
     await service.disconnect();
   });
 
-  it('checks a replacement tab before returning its state to an agent', async () => {
+  it('never adopts a restored tab when the chat’s owned tab closes', async () => {
     const { service, context, page } = await create(origins);
     const other = fixture();
     other.navigate('http://localhost:4242/connections');
     vi.spyOn(context, 'pages').mockReturnValue([page, other.page]);
     await service.open({ mode: 'new-window' });
     vi.spyOn(page, 'isClosed').mockReturnValue(true);
-    await expect(service.agentState()).rejects.toMatchObject(refused);
-    expect((await service.state()).paused).toBe(true);
+    await expect(service.agentState()).rejects.toMatchObject({ code: 'tab_gone' });
+    expect((await service.state()).tabs).toEqual([]);
     await service.disconnect();
   });
 });

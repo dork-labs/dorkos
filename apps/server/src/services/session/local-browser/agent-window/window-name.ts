@@ -40,14 +40,18 @@ export function agentWindowLabel(agent: { name: string; displayName?: string }):
 /** The name of the agent a chat belongs to, for the title of the window it drives. */
 export class AgentWindowNames {
   // None until startup wires the mesh.
-  private lookup: (sessionId: string) => Promise<string | undefined> = async () => undefined;
+  private lookup: (
+    sessionId: string
+  ) => Promise<string | { label: string; agentId: string } | undefined> = async () => undefined;
 
   /**
    * Set once at startup.
    *
    * @param lookup - The agent's name for a chat, or undefined when it isn't known.
    */
-  use(lookup: (sessionId: string) => Promise<string | undefined>): void {
+  use(
+    lookup: (sessionId: string) => Promise<string | { label: string; agentId: string } | undefined>
+  ): void {
     this.lookup = lookup;
   }
 
@@ -59,7 +63,14 @@ export class AgentWindowNames {
    */
   async of(sessionId: string | undefined): Promise<string | null> {
     if (!sessionId) return null;
-    return (await this.lookup(sessionId).catch(() => undefined)) ?? null;
+    const identity = await this.lookup(sessionId).catch(() => undefined);
+    return typeof identity === 'string' ? identity : (identity?.label ?? null);
+  }
+
+  /** The registered actor for page audit, from the same server-side chat lookup. */
+  async agentId(sessionId: string): Promise<string | undefined> {
+    const identity = await this.lookup(sessionId).catch(() => undefined);
+    return typeof identity === 'object' ? identity.agentId : undefined;
   }
 }
 

@@ -13,6 +13,7 @@ import { createServerPrincipal } from '../../../connectors/principal/server-prin
 import { capabilityMcpTools } from '../../../runtimes/claude-code/mcp-tools/capability-mcp-tools.js';
 import { createAgentRuntimeMcpServer } from '../../../runtimes/connector-mcp/agent-runtime-server.js';
 import { createLocalBrowserDomain } from '../capabilities.js';
+import type { BrowserChatSession } from '../chat/session.js';
 import { BrowserHandover } from '../handover.js';
 import type { SignInWindow } from '../sign-in-window.js';
 import type { LocalBrowserService } from '../service.js';
@@ -45,7 +46,9 @@ async function handedOver() {
   const service = {
     requireProfileAccess: vi.fn(async () => undefined),
     requireNotFullScreen: vi.fn(async () => undefined),
-    requireSharedSession: vi.fn(() => undefined),
+    leaseFor: vi.fn<() => BrowserChatSession>(
+      (): BrowserChatSession => service as unknown as BrowserChatSession
+    ),
     agentState: vi.fn(async () => state),
     observe: vi.fn(async () => ({ revision: 3, snapshot: '- heading "Private"', tabId: 'x' })),
     screenshot: vi.fn(async () => ({ data: 'cGl4', mimeType: 'image/png', revision: 3 })),

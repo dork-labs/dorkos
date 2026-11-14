@@ -15,6 +15,8 @@ export function createLocalBrowserMethods(baseUrl: string): LocalBrowserTranspor
       method: body === undefined ? 'GET' : 'POST',
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     });
+  const scoped = (path: string, sessionId?: string) =>
+    sessionId ? `${path}?sessionId=${encodeURIComponent(sessionId)}` : path;
   return {
     scanYourBrowsers: async () =>
       YourBrowserScanSchema.parse(
@@ -24,7 +26,8 @@ export function createLocalBrowserMethods(baseUrl: string): LocalBrowserTranspor
           cache: 'no-store',
         })
       ),
-    getLocalBrowserState: async () => LocalBrowserPersonStateSchema.parse(await request('/state')),
+    getLocalBrowserState: async (sessionId) =>
+      LocalBrowserPersonStateSchema.parse(await request(scoped('/state', sessionId))),
     getLocalBrowserCapabilities: async () =>
       LocalBrowserCapabilitiesSchema.parse(await request('/capabilities')),
     listLocalBrowserProfiles: async () => {
@@ -39,15 +42,18 @@ export function createLocalBrowserMethods(baseUrl: string): LocalBrowserTranspor
       fetchJSON(baseUrl, `/local-browser/profiles/${encodeURIComponent(id)}`, { method: 'DELETE' }),
     openLocalBrowser: async (input) =>
       LocalBrowserPersonStateSchema.parse(await request('/open', input)),
-    selectLocalBrowserTab: async (id) =>
-      LocalBrowserStateSchema.parse(await request(`/tabs/${encodeURIComponent(id)}/select`, {})),
-    navigateLocalBrowser: async (url) =>
-      LocalBrowserStateSchema.parse(await request('/navigate', { url })),
-    pauseLocalBrowser: async () => LocalBrowserStateSchema.parse(await request('/pause', {})),
-    resumeLocalBrowser: async () =>
-      LocalBrowserPersonStateSchema.parse(await request('/resume', {})),
-    disconnectLocalBrowser: async () =>
-      LocalBrowserPersonStateSchema.parse(await request('/disconnect', {})),
+    selectLocalBrowserTab: async (id, sessionId) =>
+      LocalBrowserStateSchema.parse(
+        await request(scoped(`/tabs/${encodeURIComponent(id)}/select`, sessionId), {})
+      ),
+    navigateLocalBrowser: async (url, sessionId) =>
+      LocalBrowserStateSchema.parse(await request(scoped('/navigate', sessionId), { url })),
+    pauseLocalBrowser: async (sessionId) =>
+      LocalBrowserStateSchema.parse(await request(scoped('/pause', sessionId), {})),
+    resumeLocalBrowser: async (sessionId) =>
+      LocalBrowserPersonStateSchema.parse(await request(scoped('/resume', sessionId), {})),
+    disconnectLocalBrowser: async (sessionId) =>
+      LocalBrowserPersonStateSchema.parse(await request(scoped('/disconnect', sessionId), {})),
     signInLocalBrowser: async (input) =>
       LocalBrowserPersonStateSchema.parse(await request('/sign-in', input)),
     handBackLocalBrowser: async (handoffId) =>

@@ -1,105 +1,91 @@
-/** One DorkOS-owned visible browser, embedded or in a separate persistent window. */
+/** A shared browser connection with independent, server-owned chat page leases. */
 import { randomUUID } from 'node:crypto';
-import type { Browser, BrowserContext, Page, JSHandle } from 'playwright-core';
+import type { Browser, BrowserContext, Page } from 'playwright-core';
+import type { CloudOriginEntry } from '@dorkos/shared/cloud-origin';
+import type {
+  LocalBrowserAction,
+  LocalBrowserCapabilities,
+  LocalBrowserMode,
+  LocalBrowserOpen,
+  LocalBrowserState,
+} from '@dorkos/shared/local-browser';
 import { localBrowserAuditWriter, type LocalBrowserAuditWriter } from './action-audit.js';
-import {
-  LocalBrowserError,
-  assertLocalBrowserUrl,
-  protectedPageRefusal,
-  browserSetupCancelled,
-} from './errors.js';
+import { LocalBrowserError, assertLocalBrowserUrl, browserSetupCancelled } from './errors.js';
 import { assertOpenable } from './open-input.js';
 import { localBrowserAppOrigins } from './app-origins.js';
 import { prepareProfileFolder } from './profile-folders.js';
-import { BrowserProfileAccessGate, type LocalBrowserProfileAccess } from './profile-access.js';
-import type { CloudOriginEntry } from '@dorkos/shared/cloud-origin';
+import { BrowserProfileAccessGate } from './profile-access.js';
 import { cloudOriginsForThisServer } from '../../core/cloud/cloud-api-origin.js';
 import {
-  BrowserActionFlight,
   responseDeadline,
   closeBrowserConnection,
   CLOSE_RESPONSE_TIMEOUT_MS,
-  PAGE_READ_RESPONSE_TIMEOUT_MS,
   closingError,
 } from './lifecycle.js';
-import { actionFence, performPageAction, auditPageAction } from './page-action.js';
-import type { ObservedPageNodes } from './observation-nodes.js';
-import { observeSelectedPage, screenshotSelectedPage } from './connection/observe-page.js';
 import { BrowserPreparation } from './preparation.js';
-import { LocalBrowserTabMetadata } from './tab-metadata.js';
 import {
   localBrowserCapabilities,
   localBrowserHostFacts,
   type LocalBrowserHostFacts,
 } from './presentation.js';
-import { AgentWindowNames, FullScreenGuard } from './agent-window/index.js';
+import { AgentWindowNames } from './agent-window/index.js';
 import { productionBackend, type LocalBrowserBackend } from './playwright-backend.js';
 import { EmbeddedBrowserAttachment } from './connection/embedded-attachment.js';
 import { BrowserHandover } from './handover.js';
 import { SignInWindow } from './sign-in-window.js';
 import { BrowserProfileRemoval } from './profile-removal/index.js';
+import { BrowserChatSession } from './chat/session.js';
+import { BrowserTabRegistry } from './chat/registry.js';
 import type { EmbeddedBrowserPort } from './desktop-bridge.js';
 export type { EmbeddedBrowserPort } from './desktop-bridge.js';
 export { LocalBrowserError } from './errors.js';
-import type {
-  LocalBrowserAction,
-  LocalBrowserCapabilities,
-  LocalBrowserMode,
-  LocalBrowserObservation,
-  LocalBrowserOpen,
-  LocalBrowserState,
-} from '@dorkos/shared/local-browser';
 
-/** One selected live tab, with consumed observations and bounded, never-retried actions. */
+/** One physical connection, many chat-local revisions, observations, queues and pause states. */
 export class LocalBrowserService {
+  private connectionId: string | null = null;
+  private selectedSession: string | null = null;
+  private profileId: string | null = null;
+  private mode: LocalBrowserMode | null = null;
+  private status: LocalBrowserState['status'] = 'disconnected';
+  private browser?: Browser;
+  private ownedContext?: BrowserContext;
+  private embeddedAttachment?: EmbeddedBrowserAttachment;
+  private embeddedClose?: () => Promise<void>;
+  private acquisition?: Promise<void>;
+  private closing?: Promise<void>;
+  private closingFailed = false;
+  private opening = false;
+  private openingSession: string | null = null;
+  private openingAbort?: AbortController;
+  private lifecycle = 0;
+  private readonly sessions = new Map<string | null, BrowserChatSession>();
+  private readonly retiredSessions = new Set<BrowserChatSession>();
+  private readonly closingSessions = new Map<string | null, Promise<void>>();
+  private readonly preparation = new BrowserPreparation();
+  private readonly profileAuthorization = new BrowserProfileAccessGate();
+  private readonly registry: BrowserTabRegistry;
+  private agentIdentity: (sessionId: string) => Promise<string | undefined> = (id) =>
+    this.windowNames.agentId(id);
+  readonly windowNames = new AgentWindowNames();
+  readonly handover: BrowserHandover = new BrowserHandover(
+    this,
+    new SignInWindow(),
+    () => this.dataDirectory
+  );
   readonly profileRemoval: BrowserProfileRemoval = new BrowserProfileRemoval({
     dataDirectory: () => this.dataDirectory,
-    busy: (id) =>
+    busy: (id): boolean =>
       Boolean(
         this.opening ||
         this.closing ||
         this.acquisition ||
-        this.actions.active ||
+        [...this.sessions.values(), ...this.retiredSessions].some((session) => session.busy) ||
         this.handover.holdsProfile(id) ||
         (this.profileId === id && (this.ownedContext || this.browser || this.embeddedClose))
       ),
     forgotten: (id) => this.handover.forgetProfileState(id),
     embedded: () => this.embedded,
   });
-  private connectionId: string | null = null;
-  private sessionId: string | null = null;
-  private profileId: string | null = null;
-  private readonly profileAuthorization = new BrowserProfileAccessGate();
-  private mode: LocalBrowserMode | null = null;
-  private status: LocalBrowserState['status'] = 'disconnected';
-  private paused = false;
-  private browser?: Browser;
-  private ownedContext?: BrowserContext;
-  private embeddedAttachment?: EmbeddedBrowserAttachment;
-  private detachedState?: LocalBrowserState;
-  private embeddedClose?: () => Promise<void>;
-  private tabs = new Map<string, Page>();
-  private selectedTabId: string | null = null;
-  private revision = 0;
-  // A frame that came and went during a read fails that read, but a page that churns
-  // frames (ads) must not stale every action, so this is separate from `revision`.
-  private frameChanges = 0;
-  private observation?: LocalBrowserObservation;
-  private observedNodes?: JSHandle<ObservedPageNodes>;
-  private readonly actions = new BrowserActionFlight();
-  private acquisition?: Promise<void>;
-  private closing?: Promise<void>;
-  private closingFailed = false;
-  private opening = false;
-  private openingAbort?: AbortController;
-  private lifecycle = 0;
-  private readonly preparation = new BrowserPreparation();
-  private readonly metadata = new LocalBrowserTabMetadata();
-  private readonly fullScreen = new FullScreenGuard();
-  /** The chat's agent name, for the title of the window it drives (DOR-3111). */
-  readonly windowNames = new AgentWindowNames();
-  /** Handing the browser to the person and back, and the plain sign-in window. */
-  readonly handover = new BrowserHandover(this, new SignInWindow(), () => this.dataDirectory);
 
   constructor(
     private readonly dataDirectory: string,
@@ -109,43 +95,91 @@ export class LocalBrowserService {
     private readonly hostFacts: () => LocalBrowserHostFacts = localBrowserHostFacts,
     private readonly cloudOrigins: () => readonly CloudOriginEntry[] = cloudOriginsForThisServer,
     private readonly appOrigins: () => readonly string[] = localBrowserAppOrigins
-  ) {}
+  ) {
+    this.registry = new BrowserTabRegistry(dataDirectory);
+  }
 
   capabilities(): LocalBrowserCapabilities {
     return localBrowserCapabilities(Boolean(this.embedded), this.hostFacts());
   }
 
-  async state(): Promise<LocalBrowserState> {
-    return this.snapshot();
+  /** Lookup is supplied by the runtime/agent registry, never by a browser tool argument. */
+  useAgentIdentityLookup(lookup: (sessionId: string) => Promise<string | undefined>): void {
+    this.agentIdentity = lookup;
   }
 
-  private snapshot(selectedOnly = false): LocalBrowserState {
-    if (this.detachedState) return { ...this.detachedState, paused: true, revision: this.revision };
-    this.syncTabs();
-    const selected = this.tabs.get(this.selectedTabId ?? '');
-    if (selected) this.metadata.refresh(selected);
-    const pages = [...this.tabs].filter(([id]) => !selectedOnly || id === this.selectedTabId);
-    const tabs = this.metadata.describe(pages);
+  useProfileAccess(...wiring: Parameters<BrowserProfileAccessGate['use']>): void {
+    this.profileAuthorization.use(...wiring);
+  }
+  readonly profileExists = (id: string): boolean => this.profileAuthorization.exists?.(id) ?? false;
+  currentProfileId(): string | null {
+    return this.profileId;
+  }
+  async requireProfileAccess(sessionId: string): Promise<void> {
+    await this.profileAuthorization.require(this.profileId, sessionId);
+  }
+
+  /** Capture a scope once per tool call; another chat opening a page cannot change it. */
+  leaseFor(sessionId: string): BrowserChatSession {
+    if (this.mode === 'embedded' && this.status === 'connected')
+      this.profileAuthorization.requireShared(this.selectedSession, sessionId);
+    const session = this.sessions.get(sessionId);
+    if (!session)
+      throw new LocalBrowserError(
+        'not_opened',
+        'Ask the person to open this chat’s Agent browser.'
+      );
+    session.requirePage();
+    return session;
+  }
+
+  async requireNotFullScreen(sessionId?: string): Promise<void> {
+    await this.session(sessionId).requireNotFullScreen();
+  }
+  async agentState(sessionId?: string) {
+    return this.session(sessionId).agentState();
+  }
+  async observe(sessionId?: string) {
+    return this.session(sessionId).observe();
+  }
+  async screenshot(sessionId?: string) {
+    return this.session(sessionId).screenshot();
+  }
+  async action(input: LocalBrowserAction, sessionId?: string) {
+    return this.session(sessionId).action(input);
+  }
+
+  /** A person's controls choose their chat explicitly; an omitted scope retains the previous API. */
+  async state(sessionId?: string): Promise<LocalBrowserState> {
+    const session = this.sessions.get(sessionId === undefined ? this.selectedSession : sessionId);
+    if (session) return session.state();
+    const absent = sessionId !== undefined && this.mode === 'new-window';
     return {
-      connectionId: this.connectionId,
-      sessionId: this.sessionId,
+      connectionId: absent ? null : this.connectionId,
+      sessionId: sessionId ?? this.selectedSession,
       mode: this.mode,
-      status: this.status,
-      paused: this.paused,
-      tabs,
-      selectedTabId: this.selectedTabId,
-      revision: this.revision,
+      status: absent ? 'disconnected' : this.status,
+      paused: absent || this.status !== 'connected',
+      tabs: [],
+      selectedTabId: null,
+      revision: this.lifecycle,
       preparation: this.preparation.current,
     };
   }
 
   async open(input: LocalBrowserOpen): Promise<LocalBrowserState> {
     this.profileRemoval.assertAvailable();
-    this.assertNotClosing();
-    if (this.actions.active)
-      throw new LocalBrowserError('busy', 'A browser action is finishing. Read the page again.');
+    this.assertAvailable();
+    for (const session of this.retiredSessions)
+      if (!session.busy) this.retiredSessions.delete(session);
+    if (this.retiredSessions.size)
+      throw new LocalBrowserError(
+        'busy',
+        'A browser action is finishing. Wait before opening it again.'
+      );
     if (this.opening)
       throw new LocalBrowserError('busy', 'The browser is starting. Wait a moment.');
+    if (this.closingSessions.has(input.sessionId ?? null)) throw closingError(false);
     assertOpenable(
       input,
       Boolean(this.embedded),
@@ -153,306 +187,258 @@ export class LocalBrowserService {
       this.profileAuthorization.exists
     );
     if (input.url) assertLocalBrowserUrl(input.url, 'person');
+    const sharedWindow =
+      input.mode === 'new-window' && this.mode === 'new-window' && this.status === 'connected';
+    if (sharedWindow && this.profileId !== (input.profileId ?? null) && this.sessions.size > 1)
+      throw new LocalBrowserError(
+        'profile_busy',
+        'Close the Agent browser before changing its saved sign-ins.'
+      );
     this.opening = true;
-    const setupAbort = new AbortController();
-    this.openingAbort = setupAbort;
+    this.openingSession = input.sessionId ?? null;
+    const abort = new AbortController();
+    this.openingAbort = abort;
+    let added: BrowserChatSession | undefined;
+    let createdPage: Page | undefined;
+    const reuse = sharedWindow && this.profileId === (input.profileId ?? null);
     try {
-      await this.closeConnection(false);
-      setupAbort.signal.throwIfAborted();
-      const lifecycle = this.lifecycle;
-      const connectionId = randomUUID();
-      this.connectionId = connectionId;
-      this.sessionId = input.sessionId ?? null;
-      this.profileId = input.profileId ?? null;
-      this.mode = input.mode;
-      const acquisition = (async () => {
-        if (input.mode === 'new-window') {
-          const storage = await prepareProfileFolder(this.dataDirectory, input.profileId ?? null);
-          setupAbort.signal.throwIfAborted();
-          this.ownedContext = await this.backend.launch(
-            storage,
-            setupAbort.signal,
-            this.preparation.start(),
-            await this.windowNames.of(input.sessionId)
-          );
-          this.ownedContext.on('close', () => this.closed(connectionId));
-        } else {
-          const bridge = await this.embedded!.open(connectionId);
-          this.embeddedClose = bridge.close;
-          setupAbort.signal.throwIfAborted();
-          this.embeddedAttachment = new EmbeddedBrowserAttachment(bridge, this.backend, () =>
-            this.closed(connectionId)
-          );
-          this.browser = await this.embeddedAttachment.connect();
+      if (!reuse) await this.acquire(input, abort);
+      abort.signal.throwIfAborted();
+      const id = input.sessionId ?? null;
+      let session = this.sessions.get(id);
+      if (session) {
+        try {
+          session.requirePage();
+        } catch {
+          session = undefined;
         }
-      })();
-      this.acquisition = acquisition;
-      try {
-        await acquisition;
-      } finally {
-        if (this.acquisition === acquisition) this.acquisition = undefined;
       }
-      if (this.lifecycle !== lifecycle) throw browserSetupCancelled();
-      this.status = 'connected';
-      this.preparation.clear();
-      this.paused = false;
-      this.syncTabs();
-      for (const page of this.tabs.values()) this.metadata.refresh(page);
-      if (this.tabs.size === 0) {
+      if (!session) {
         const context = this.contexts()[0];
-        if (context) this.track(await context.newPage());
+        if (!context) throw browserSetupCancelled();
+        let page: Page;
+        const existing = context.pages();
+        if (!reuse && input.mode === 'embedded' && existing[0]) page = existing[0];
+        else if (!reuse && existing.length === 1 && existing[0].url() === 'about:blank')
+          page = existing[0];
+        else {
+          page = await context.newPage();
+          createdPage = page;
+        }
+        const pageId = this.registry.track(page);
+        abort.signal.throwIfAborted();
+        const principal = {
+          ownerId: id ?? 'person',
+          agentId: id ? ((await this.agentIdentity(id)) ?? 'unidentified') : 'unidentified',
+        };
+        abort.signal.throwIfAborted();
+        this.registry.broker.bind(page, principal);
+        this.assertAvailable();
+        session = new BrowserChatSession(id, principal, {
+          broker: this.registry.broker,
+          pages: this.registry.pages,
+          connectionId: this.connectionId!,
+          mode: input.mode,
+          audit: this.audit,
+          cloudOrigins: this.cloudOrigins,
+          appOrigins: this.appOrigins,
+          assertAvailable: () => this.assertAvailable(),
+        });
+        this.sessions.set(id, session);
+        added = session;
+        await session.state();
+        await session.selectTab(pageId);
       }
-      if (input.url) await this.navigate(input.url);
-      return await this.state();
+      this.selectedSession = id;
+      if (input.url) await session.navigate(input.url);
+      abort.signal.throwIfAborted();
+      return session.state();
     } catch (error) {
-      const failure = setupAbort.signal.aborted ? browserSetupCancelled() : error;
-      await this.disconnect();
-      if (failure instanceof LocalBrowserError) throw failure;
+      if (!reuse) await this.closeConnection(false);
+      else {
+        if (added) {
+          added.abandon();
+          this.sessions.delete(added.sessionId);
+        }
+        if (createdPage) {
+          const id = input.sessionId ?? null;
+          const closing = createdPage.close().then(() => {
+            this.closingSessions.delete(id);
+          });
+          this.closingSessions.set(id, closing);
+          void closing.catch(() => undefined);
+          await responseDeadline(closing, CLOSE_RESPONSE_TIMEOUT_MS, () => closingError(false));
+        }
+      }
+      if (abort.signal.aborted) throw browserSetupCancelled();
+      if (error instanceof LocalBrowserError || (error instanceof Error && 'code' in error))
+        throw error;
       throw new LocalBrowserError('connect_failed', 'Couldn’t open the browser. Try again.');
     } finally {
       this.preparation.clear();
-      if (this.openingAbort === setupAbort) this.openingAbort = undefined;
+      if (this.openingAbort === abort) this.openingAbort = undefined;
       this.opening = false;
+      this.openingSession = null;
     }
   }
 
-  /** The browser is shared with one live chat, not every agent or external caller. */
-  requireSharedSession(sessionId: string): void {
-    this.profileAuthorization.requireShared(this.sessionId, sessionId);
-  }
-
-  /** The profile the browser opened last, or null for the default one. */
-  currentProfileId(): string | null {
-    return this.profileId;
-  }
-
-  /** Whether a named profile exists. False until startup wires the profile list, as for open. */
-  readonly profileExists = (id: string): boolean => this.profileAuthorization.exists?.(id) ?? false;
-
-  /** Set once at startup. Until then, no agent can use a named profile. */
-  useProfileAccess(access: LocalBrowserProfileAccess, exists: (id: string) => boolean): void {
-    this.profileAuthorization.use(access, exists);
-  }
-
-  /** On a named profile, the chat's agent must be one a person added, on every call. */
-  async requireProfileAccess(sessionId: string): Promise<void> {
-    await this.profileAuthorization.require(this.profileId, sessionId);
-  }
-
-  /** Refuse an agent while any page, including a new popup, is in full screen. */
-  async requireNotFullScreen(): Promise<void> {
-    this.syncTabs();
-    await this.fullScreen.requireNone();
-  }
-
-  /** A tool describes only the selected tab, excluding DorkOS and Cloud pages. */
-  async agentState(): Promise<LocalBrowserState> {
-    this.syncTabs();
-    const selected = this.tabs.get(this.selectedTabId ?? '');
-    if (selected && !selected.isClosed()) this.refuseProtectedPage(selected);
-    return this.snapshot(true);
-  }
-
-  async selectTab(id: string): Promise<LocalBrowserState> {
-    this.assertNotClosing();
-    this.syncTabs();
-    if (!this.tabs.has(id))
-      throw new LocalBrowserError('closed', 'That tab closed. Choose another tab.');
-    this.selectedTabId = id;
-    this.metadata.refresh(this.page());
-    this.invalidate();
-    const revision = this.revision;
-    await responseDeadline(this.page().bringToFront(), PAGE_READ_RESPONSE_TIMEOUT_MS, () => {
-      this.invalidate();
-      return this.stale();
-    });
-    if (revision !== this.revision) throw this.stale();
-    return this.state();
-  }
-
-  async observe(): Promise<LocalBrowserObservation> {
-    const page = this.page();
-    this.refuseProtectedPage(page);
-    this.invalidate();
-    const observed = await observeSelectedPage(page, this.selectedTabId!, {
-      revision: () => this.revision,
-      frames: () => this.frameChanges,
-      refuse: () => this.refuseProtectedPage(page),
-      stale: () => this.stale(),
-    });
-    this.observedNodes = observed.nodes;
-    this.observation = observed.observation;
-    return observed.observation;
-  }
-
-  /** Capture pixels from the same selected page; this grants no new action observation. */
-  async screenshot(): Promise<{ data: string; mimeType: string; revision: number; tabId: string }> {
-    const page = this.page();
-    return screenshotSelectedPage(
-      page,
-      () => ({ revision: this.revision, tabId: this.selectedTabId!, frames: this.frameChanges }),
-      () => this.refuseProtectedPage(page)
-    );
-  }
-
-  async action(input: LocalBrowserAction): Promise<LocalBrowserState> {
-    return auditPageAction(
-      this.tabs.get(this.selectedTabId ?? ''),
-      {
-        sessionId: this.sessionId,
-        mode: this.mode,
-        connectionId: this.connectionId,
-        tabId: this.selectedTabId,
-      },
-      input,
-      this.audit,
-      (dispatch) => this.performAction(input, dispatch)
-    );
-  }
-
-  private async performAction(
-    input: LocalBrowserAction,
-    dispatch: () => void
-  ): Promise<LocalBrowserState> {
-    const selected = this.tabs.get(this.selectedTabId ?? '');
-    if (selected && !selected.isClosed()) this.refuseProtectedPage(selected);
-    if (this.paused)
-      throw new LocalBrowserError('paused', 'Your agent is paused. Resume it to continue.');
-    if (this.actions.active)
-      throw new LocalBrowserError('busy', 'A browser action is finishing. Read the page again.');
-    const observed = this.observation;
-    const observedNodes = this.observedNodes;
-    // Leaving needs no current read (DOR-4192); the pause, handoff and address checks still hold.
-    const fence = actionFence(input, observed, Boolean(observedNodes), this.revision, () =>
-      this.stale()
-    );
-    const page = this.page();
-    this.refuseProtectedPage(page);
-    if (input.kind === 'navigate')
-      assertLocalBrowserUrl(input.url, 'agent', this.cloudOrigins(), this.appOrigins());
+  private async acquire(input: LocalBrowserOpen, abort: AbortController): Promise<void> {
+    const previous = this.status === 'connected' ? this.selectedSession : null;
+    await this.closeConnection(false);
+    abort.signal.throwIfAborted();
     const lifecycle = this.lifecycle;
-    const operation = async (admit: () => void, dispatched: () => void) => {
-      admit();
-      await performPageAction(page, observed, observedNodes, input, admit, dispatched, () =>
-        this.stale()
-      );
-    };
+    const id = randomUUID();
+    this.connectionId = id;
+    this.selectedSession = input.sessionId ?? null;
+    this.mode = input.mode;
+    this.profileId = input.profileId ?? null;
+    await this.profileAuthorization.rememberHolder(this.selectedSession, previous);
+    const acquisition = (async () => {
+      if (input.mode === 'new-window') {
+        const storage = await prepareProfileFolder(this.dataDirectory, this.profileId);
+        abort.signal.throwIfAborted();
+        this.ownedContext = await this.backend.launch(
+          storage,
+          abort.signal,
+          this.preparation.start(),
+          await this.windowNames.of(input.sessionId)
+        );
+        this.ownedContext.on('close', () => this.closed(id));
+        this.ownedContext.on('page', (page) => this.registry.trackEvent(page));
+      } else {
+        const bridge = await this.embedded!.open(id);
+        this.embeddedClose = bridge.close;
+        abort.signal.throwIfAborted();
+        this.embeddedAttachment = new EmbeddedBrowserAttachment(bridge, this.backend, () =>
+          this.closed(id)
+        );
+        this.browser = await this.embeddedAttachment.connect();
+      }
+    })();
+    this.acquisition = acquisition;
     try {
-      await this.actions.run(
-        operation,
-        () => this.admit(fence),
-        dispatch,
-        () => {
-          if (this.lifecycle === lifecycle) this.invalidate();
-        }
-      );
-    } catch (error) {
-      // A click or redirect onto DorkOS or Cloud gets that refusal, not a stale-page error.
-      this.refuseProtectedPage(page);
-      if (error instanceof LocalBrowserError) throw error;
-      throw new LocalBrowserError(
-        'uncertain',
-        'The page changed. Check what happened before continuing.'
-      );
+      await acquisition;
+    } finally {
+      if (this.acquisition === acquisition) this.acquisition = undefined;
     }
-    this.refuseProtectedPage(page);
-    return this.agentState();
+    if (this.lifecycle !== lifecycle) throw browserSetupCancelled();
+    this.status = 'connected';
+    // Existing restored/person tabs are registered unowned, never swept into a chat's grant.
+    for (const context of this.contexts())
+      for (const page of context.pages()) this.registry.track(page);
   }
 
-  /** Human navigation remains available while the agent is paused. */
-  async navigate(url: string): Promise<LocalBrowserState> {
-    assertLocalBrowserUrl(url, 'person');
-    this.invalidate();
-    const revision = this.revision;
-    const page = this.page();
-    if (revision !== this.revision) throw this.stale();
-    try {
-      await page.goto(url, { waitUntil: 'commit', timeout: 15_000 });
-    } catch {
-      throw new LocalBrowserError(
-        'navigation_uncertain',
-        'Couldn’t finish opening the page. Check the browser.'
-      );
-    }
-    return this.state();
+  /** Handoff can keep a new-window page while other chats continue on the same context. */
+  usesPageLeases(sessionId?: string): boolean {
+    return this.mode === 'new-window' && this.sessions.has(sessionId ?? this.selectedSession);
   }
-
-  /** Stop admission immediately; bounded in-flight effects may already have happened. */
-  async pause(): Promise<LocalBrowserState> {
-    this.paused = true;
-    this.invalidate();
-    return this.state();
+  async selectTab(id: string, sessionId?: string) {
+    return this.session(sessionId).selectTab(id);
   }
-  /** Detach the guest while keeping its native view, cookies and current page. */
-  async handToPerson(): Promise<LocalBrowserState> {
-    await this.pause();
+  async navigate(url: string, sessionId?: string) {
+    return this.session(sessionId).navigate(url);
+  }
+  async pause(sessionId?: string) {
+    return this.session(sessionId).pause();
+  }
+  async handToPerson(sessionId?: string): Promise<LocalBrowserState> {
+    const session = this.session(sessionId);
+    await session.handToPerson();
     if (this.mode === 'embedded') {
-      // A lost host acknowledgment must never let a retry skip detaching.
-      this.detachedState ??= this.snapshot();
       await this.embeddedAttachment!.detach();
       this.browser = undefined;
-      this.tabs.clear();
-      this.metadata.clear();
+      this.registry.close();
     }
-    return this.state();
+    return session.state();
   }
-  async resume(): Promise<LocalBrowserState> {
-    this.assertNotClosing();
-    if (this.detachedState) {
-      this.browser = await this.embeddedAttachment!.resume();
-      this.detachedState = undefined;
-      this.selectedTabId = null;
+  async resume(sessionId?: string): Promise<LocalBrowserState> {
+    if (this.mode === 'embedded' && !this.browser && this.embeddedAttachment) {
+      this.browser = await this.embeddedAttachment.resume();
+      const id = sessionId ?? this.selectedSession;
+      const prior = this.sessions.get(id)!;
+      const page = this.contexts()[0]?.pages()[0];
+      if (!page)
+        throw new LocalBrowserError('tab_gone', 'That tab closed. Open the browser again.');
+      this.registry.track(page);
+      this.registry.broker.bind(page, prior.principal);
+      const session = new BrowserChatSession(id, prior.principal, {
+        broker: this.registry.broker,
+        pages: this.registry.pages,
+        connectionId: this.connectionId!,
+        mode: 'embedded',
+        audit: this.audit,
+        cloudOrigins: this.cloudOrigins,
+        appOrigins: this.appOrigins,
+        assertAvailable: () => this.assertAvailable(),
+      });
+      this.sessions.set(id, session);
+      return session.state();
     }
-    this.paused = false;
-    this.invalidate();
-    return this.state();
+    return this.session(sessionId).resume();
   }
 
-  async disconnect(): Promise<LocalBrowserState> {
-    return this.closeConnection(true);
+  /** Stop a handed-off page without returning it to any agent. */
+  abandon(sessionId: string): void {
+    this.sessions.get(sessionId)?.abandon();
   }
 
-  /**
-   * Close the connection and release what it holds. `closed` is the person closing
-   * the window: the same release, but the panel keeps saying it closed.
-   */
+  /** A scoped Disconnect ends only that chat; an omitted scope closes the physical connection. */
+  async disconnect(sessionId?: string): Promise<LocalBrowserState> {
+    if (sessionId === undefined || this.mode === 'embedded') return this.closeConnection(true);
+    if (this.opening && this.openingSession === sessionId) this.openingAbort?.abort();
+    const session = this.sessions.get(sessionId);
+    if (!session) return this.state(sessionId);
+    if (!this.closingSessions.has(sessionId)) {
+      const pages = this.registry.broker
+        .list(session.principal)
+        .map((lease) => this.registry.pages.get(lease.pageId)!);
+      session.abandon();
+      session.closed();
+      const operation = Promise.all(pages.map((page) => page.close())).then(() => {
+        this.closingSessions.delete(sessionId);
+      });
+      this.closingSessions.set(sessionId, operation);
+      void operation.catch(() => undefined);
+    }
+    await responseDeadline(this.closingSessions.get(sessionId)!, CLOSE_RESPONSE_TIMEOUT_MS, () =>
+      closingError(false)
+    );
+    return this.state(sessionId);
+  }
+
   private async closeConnection(abortSetup: boolean, closed = false): Promise<LocalBrowserState> {
     if (abortSetup) this.openingAbort?.abort();
     if (!this.closing) {
-      this.metadata.clear();
       this.preparation.clear();
-      this.lifecycle += 1;
-      this.paused = true;
-      this.invalidate();
+      this.lifecycle++;
+      for (const session of this.sessions.values()) {
+        if (session.busy) this.retiredSessions.add(session);
+        session.closed();
+      }
       const acquisition = this.acquisition;
       const closing = Promise.resolve().then(async () => {
         await acquisition?.catch(() => undefined);
-        const context = this.ownedContext;
-        const browser = this.browser;
-        const embeddedClose = this.embeddedClose;
         await Promise.all([
-          browser && closeBrowserConnection(browser),
-          // Persistent Chromium's protocol-close event can precede process exit and
-          // cookie flushing. Keep this profile owned until the original close request
-          // settles; its protocol event cannot release the persistent profile lease.
-          context?.close(),
-          embeddedClose?.(),
+          this.browser && closeBrowserConnection(this.browser),
+          this.ownedContext?.close(),
+          this.embeddedClose?.(),
         ]);
         this.ownedContext = undefined;
         this.browser = undefined;
         this.embeddedClose = undefined;
-        this.embeddedAttachment = this.detachedState = undefined;
-        if (!closed) this.connectionId = this.sessionId = this.mode = null;
-        if (!closed) this.status = 'disconnected';
-        this.tabs.clear();
-        this.selectedTabId = null;
+        this.embeddedAttachment = undefined;
+        this.registry.close();
+        if (!closed) {
+          this.connectionId = this.selectedSession = this.mode = null;
+          this.status = 'disconnected';
+          this.sessions.clear();
+        }
       });
       this.closing = closing;
       void closing
         .then(() => {
           if (this.closing === closing) this.closing = undefined;
         })
-        // A failed bridge close retains this tombstone until app restart; it never grants another writer.
         .catch(() => {
           this.closingFailed = true;
         });
@@ -465,95 +451,30 @@ export class LocalBrowserService {
     return this.state();
   }
 
-  private assertNotClosing(): void {
-    if (this.closing) throw closingError(this.closingFailed);
+  private closed(id: string): void {
+    if (this.connectionId !== id) return;
+    this.status = 'closed';
+    for (const session of this.sessions.values()) session.closed();
+    this.registry.close();
+    this.handover.windowClosed();
+    if (!this.closing) void this.closeConnection(false, true).catch(() => undefined);
   }
-
   private contexts(): BrowserContext[] {
     return this.ownedContext ? [this.ownedContext] : (this.browser?.contexts() ?? []);
   }
-  private syncTabs(): void {
-    if (this.detachedState || this.closing || this.status !== 'connected') return;
-    for (const context of this.contexts()) for (const page of context.pages()) this.track(page);
-    for (const [id, page] of this.tabs) if (page.isClosed()) this.tabs.delete(id);
-    if (this.selectedTabId && !this.tabs.has(this.selectedTabId)) {
-      this.selectedTabId = null;
-      this.invalidate();
-    }
-    if (!this.selectedTabId) this.selectedTabId = this.tabs.keys().next().value ?? null;
+  private session(sessionId?: string): BrowserChatSession {
+    this.assertAvailable();
+    const key = sessionId === undefined ? this.selectedSession : sessionId;
+    const session = this.sessions.get(key);
+    if (!session)
+      throw new LocalBrowserError(
+        'not_opened',
+        'Ask the person to open this chat’s Agent browser.'
+      );
+    return session;
   }
-  private track(page: Page): string {
-    for (const [id, known] of this.tabs) if (known === page) return id;
-    const id = randomUUID();
-    this.tabs.set(id, page);
-    if (this.ownedContext) this.fullScreen.watch(page);
-    this.metadata.track(page, {
-      active: () => [...this.tabs.values()].includes(page),
-      selected: () => this.tabs.get(this.selectedTabId ?? '') === page,
-      invalidate: () => this.invalidate(),
-      framesChanged: () => void this.frameChanges++,
-      closed: () => {
-        this.selectedTabId = null;
-        this.invalidate();
-      },
-    });
-    return id;
-  }
-  private page(): Page {
-    this.assertNotClosing();
-    this.syncTabs();
-    const page = this.tabs.get(this.selectedTabId ?? '');
-    if (this.detachedState)
-      throw new LocalBrowserError('paused', 'Your agent is paused. Resume it to continue.');
-    if (this.status !== 'connected')
-      throw new LocalBrowserError('closed', 'The browser closed. Connect it again.');
-    if (!page || page.isClosed())
-      throw new LocalBrowserError('no_tab', 'Choose the tab your agent should use.');
-    return page;
-  }
-  private closed(id: string): void {
-    if (this.connectionId !== id) return;
-    this.metadata.clear();
-    this.status = 'closed';
-    this.paused = true;
-    this.tabs.clear();
-    this.selectedTabId = null;
-    this.invalidate();
-    this.handover.windowClosed();
-    // Release the profile as Disconnect does, once the close settles (DOR-4181). Its own errors
-    // keep it held, as a failed Disconnect does.
-    void this.closeConnection(false, true).catch(() => undefined);
-  }
-  private invalidate(): void {
-    this.revision += 1;
-    this.observation = undefined;
-    const nodes = this.observedNodes;
-    this.observedNodes = undefined;
-    // Invalidation is synchronous so navigation/pause fences admission immediately.
-    // Disposal is asynchronous protocol cleanup and cannot delay that fence.
-    void nodes?.dispose().catch(() => undefined);
-  }
-  private admit(revision: number): void {
-    this.assertNotClosing();
-    if (this.paused)
-      throw new LocalBrowserError('paused', 'Your agent is paused. Resume it to continue.');
-    if (revision !== this.revision) throw this.stale();
-    this.refuseProtectedPage(this.page());
-  }
-  /**
-   * An agent never reads or acts on a page showing DorkOS or Cloud, in the
-   * tab or in any of its frames (DOR-3196): agent control pauses until the
-   * person resumes it, and the agent is refused.
-   */
-  private refuseProtectedPage(page: Page): void {
-    const urls = [page.url(), ...page.frames().map((frame) => frame.url())];
-    const refusal = protectedPageRefusal(urls, this.cloudOrigins(), this.appOrigins());
-    if (!refusal) return;
-    this.paused = true;
-    this.invalidate();
-    throw refusal;
-  }
-  private stale(): LocalBrowserError {
-    return new LocalBrowserError('stale_page', 'The page changed. Read it again before acting.');
+  private assertAvailable(): void {
+    if (this.closing) throw closingError(this.closingFailed);
+    this.registry.assertAvailable();
   }
 }

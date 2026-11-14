@@ -430,7 +430,7 @@ export async function wireMcpTasksAndSkills(refs: ServerRefs, built: WireMcpTask
   localBrowserService.windowNames.use(async (sessionId) => {
     const agentPath = await runtimeRegistry.getSessionAgentPath(sessionId);
     const agent = agentPath ? refs.meshCore?.getByPath(agentPath) : undefined;
-    return agent ? agentWindowLabel(agent) : undefined;
+    return agent ? { label: agentWindowLabel(agent), agentId: agent.id } : undefined;
   });
   localBrowserService.handover.useOutsideTurnCheck(liveOutsideTurnCheck());
   localBrowserService.handover.useAgentIdLookup(

@@ -253,7 +253,34 @@ it('POST /pause ignores a body that names a handoff, a page or a tab', async () 
     .set('Host', 'localhost')
     .send({ handoffId: 'h1', url: 'https://example.test/', tabId: 'tab-1', resume: true });
   expect(response.status).toBe(200);
-  expect(spies.pause).toHaveBeenCalledWith();
+  expect(spies.pause).toHaveBeenCalledWith(undefined);
   for (const [name, spy] of Object.entries(spies))
     if (name !== 'pause') expect(spy, name).not.toHaveBeenCalled();
+});
+
+it('scopes person controls to the chat named in the authenticated request query', async () => {
+  const query = '?sessionId=atlas';
+  const state = await request(server)
+    .get('/api/local-browser/state' + query)
+    .set('Host', 'localhost');
+  expect(state.status).toBe(200);
+  expect(spies.state).toHaveBeenCalledWith('atlas');
+  for (const [path, body] of [
+    ['/pause', {}],
+    ['/resume', {}],
+    ['/disconnect', {}],
+    ['/navigate', { url: 'https://atlas.example/' }],
+    ['/tabs/tab-atlas/select', {}],
+  ] as const) {
+    const response = await request(server)
+      .post('/api/local-browser' + path + query)
+      .set('Host', 'localhost')
+      .send(body);
+    expect(response.status).toBe(200);
+  }
+  expect(spies.pause).toHaveBeenCalledWith('atlas');
+  expect(spies.resume).toHaveBeenCalledWith('atlas');
+  expect(spies.disconnect).toHaveBeenCalledWith('atlas');
+  expect(spies.navigate).toHaveBeenCalledWith('https://atlas.example/', 'atlas');
+  expect(spies.selectTab).toHaveBeenCalledWith('tab-atlas', 'atlas');
 });

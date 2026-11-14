@@ -8,13 +8,18 @@ import {
 
 export const LOCAL_BROWSER_STATE_KEY = ['local-browser', 'state'] as const;
 
+/** Cache each chat separately, while the base key still invalidates every browser surface. */
+export function localBrowserStateKey(sessionId?: string | null) {
+  return sessionId ? ([...LOCAL_BROWSER_STATE_KEY, sessionId] as const) : LOCAL_BROWSER_STATE_KEY;
+}
+
 /** Observe the real connection, including tabs closed or navigated by the person. */
-export function useLocalBrowserState(enabled = true) {
+export function useLocalBrowserState(enabled = true, sessionId?: string) {
   const transport = useTransport();
   return useQuery({
-    queryKey: LOCAL_BROWSER_STATE_KEY,
+    queryKey: localBrowserStateKey(sessionId),
     enabled,
-    queryFn: () => transport.getLocalBrowserState(),
+    queryFn: () => transport.getLocalBrowserState(sessionId),
     refetchInterval: (query) => {
       const code = (query.state.error as { code?: string } | null)?.code;
       return code === 'local_only' || code === 'owner_only' ? false : 1000;
@@ -42,9 +47,9 @@ export function useLocalBrowserPersonState() {
 }
 
 /** Setup choices and live state for the browser control panel. */
-export function useLocalBrowser() {
+export function useLocalBrowser(sessionId?: string) {
   const transport = useTransport();
-  const state = useLocalBrowserState();
+  const state = useLocalBrowserState(true, sessionId);
   const capabilities = useQuery({
     queryKey: ['local-browser', 'capabilities'],
     queryFn: () => transport.getLocalBrowserCapabilities(),

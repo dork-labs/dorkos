@@ -10,6 +10,7 @@ import {
 } from '../../../core/capabilities/mcp-projection.js';
 import type { CapabilityDeps, CapabilityHandlerContext } from '../../../core/capabilities/index.js';
 import { createLocalBrowserDomain } from '../capabilities.js';
+import type { BrowserChatSession } from '../chat/session.js';
 import { BrowserHandover } from '../handover.js';
 import type { SignInWindow } from '../sign-in-window.js';
 import { LocalBrowserError, type LocalBrowserService } from '../service.js';
@@ -29,12 +30,13 @@ function setup() {
   const service = {
     requireProfileAccess: vi.fn(async () => undefined),
     requireNotFullScreen: vi.fn(async () => undefined),
-    requireSharedSession: vi.fn((id: string) => {
+    leaseFor: vi.fn<(id: string) => BrowserChatSession>((id): BrowserChatSession => {
       if (id !== 'chat-one')
         throw new LocalBrowserError(
           'not_shared',
           'Open this chat’s browser to share it with your agent.'
         );
+      return service as unknown as BrowserChatSession;
     }),
     agentState: vi.fn(async () => state),
     observe: vi.fn(async () => ({
@@ -170,7 +172,7 @@ describe('local browser scoped tool projection', () => {
     });
     const read = domain.capabilities.find((item) => item.id === 'local_browser.observe')!;
     const result = read.invoke(deps, {}, context('chat-one'));
-    service.requireSharedSession.mockImplementation(() => {
+    service.leaseFor.mockImplementation(() => {
       throw new LocalBrowserError(
         'not_shared',
         'Open this chat’s browser to share it with your agent.'
@@ -381,9 +383,9 @@ describe('local browser scoped tool projection', () => {
       pause: vi.fn(async () => service.agentState()),
       handToPerson: vi.fn(async () => service.agentState()),
       resume: vi.fn(async () => service.agentState()),
-      // The real browser forgets its chat when it closes, as requireSharedSession then sees.
+      // The real browser forgets its chat when it closes, as leaseFor then sees.
       disconnect: vi.fn(async () => {
-        service.requireSharedSession.mockImplementation(() => {
+        service.leaseFor.mockImplementation(() => {
           throw new LocalBrowserError('not_shared', 'Open this chat’s browser.');
         });
         return service.agentState();

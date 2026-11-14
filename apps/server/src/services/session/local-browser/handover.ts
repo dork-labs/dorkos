@@ -26,18 +26,20 @@ import type { SignInWindow } from './sign-in-window.js';
 /** The parts of the browser service a handoff steers. */
 export interface HandoverBrowser {
   profileRemoval?: { assertAvailable(): void };
-  state(): Promise<LocalBrowserState>;
+  state(sessionId?: string): Promise<LocalBrowserState>;
+  usesPageLeases?(sessionId?: string): boolean;
+  abandon?(sessionId: string): void;
   capabilities(): { newWindow: boolean };
   currentProfileId(): string | null;
   /** Whether a named profile exists. False until startup wires the profile list. */
   profileExists(id: string): boolean;
   open(input: LocalBrowserOpen): Promise<LocalBrowserState>;
-  selectTab(id: string): Promise<LocalBrowserState>;
-  navigate(url: string): Promise<LocalBrowserState>;
-  pause(): Promise<LocalBrowserState>;
-  handToPerson(): Promise<LocalBrowserState>;
-  resume(): Promise<LocalBrowserState>;
-  disconnect(): Promise<LocalBrowserState>;
+  selectTab(id: string, sessionId?: string): Promise<LocalBrowserState>;
+  navigate(url: string, sessionId?: string): Promise<LocalBrowserState>;
+  pause(sessionId?: string): Promise<LocalBrowserState>;
+  handToPerson(sessionId?: string): Promise<LocalBrowserState>;
+  resume(sessionId?: string): Promise<LocalBrowserState>;
+  disconnect(sessionId?: string): Promise<LocalBrowserState>;
 }
 
 /** Whether a chat's current turn was started by, or read words from, someone outside the team. */
@@ -99,6 +101,7 @@ export function siteOnly(value: string): string {
 export class BrowserHandover {
   private signingIn = 0;
   private preparingHandoff = false;
+  private preparingFor: string | null = null;
   private answeringHandoff = false;
 
   /** Includes preparation, saving, and a handoff that can reopen this profile. */
@@ -122,7 +125,7 @@ export class BrowserHandover {
   private askedUrl?: string;
   // After Stop task the browser stays open for the person (2FA, a payment), so that
   // chat reads nothing until a person opens or resumes the browser for it again.
-  private stoppedFor: string | null = null;
+  private readonly stoppedFor = new Set<string>();
   // Fails closed until startup says how to read a turn's marks.
   private outsideTurn: OutsideTurnCheck = async () => true;
   // The registry id of the agent in a folder; none until startup wires the mesh.
@@ -184,19 +187,24 @@ export class BrowserHandover {
    * a code or token, a title can carry private text, and this state is read by more
    * than the person's own window (DOR-4163).
    */
-  async state(): Promise<LocalBrowserPersonState> {
-    const state = this.trimmed(await this.browser.state());
-    return { ...state, handoff: this.record, signIn: this.signIns.current };
+  async state(sessionId?: string): Promise<LocalBrowserPersonState> {
+    const state = this.trimmed(await this.browser.state(sessionId));
+    return {
+      ...state,
+      handoff: sessionId === undefined || this.record?.sessionId === sessionId ? this.record : null,
+      signIn: this.signIns.current,
+    };
   }
 
   /** A person's Pause, answered with the same trimmed tabs as {@link state}. */
-  async pause(): Promise<LocalBrowserState> {
-    return this.trimmed(await this.browser.pause());
+  async pause(sessionId?: string): Promise<LocalBrowserState> {
+    return this.trimmed(await this.browser.pause(sessionId));
   }
 
   /** Every tab cut to its site, with no title, while a person has the browser. */
   private trimmed(state: LocalBrowserState): LocalBrowserState {
     if (this.record?.outcome !== null) return state;
+    if (this.record.sessionId !== state.sessionId && this.browser.usesPageLeases?.()) return state;
     const tabs = state.tabs.map((tab) => ({ ...tab, url: siteOnly(tab.url), title: '' }));
     return { ...state, tabs };
   }
@@ -208,7 +216,14 @@ export class BrowserHandover {
    */
   async requireAgentMayUse(sessionId: string): Promise<void> {
     this.refuseStopped(sessionId);
-    if (this.preparingHandoff || (this.record && this.record.outcome === null)) {
+    if (
+      (this.preparingHandoff &&
+        (this.preparingFor === sessionId ||
+          !this.browser.usesPageLeases?.(this.preparingFor ?? undefined))) ||
+      (this.record?.outcome === null &&
+        (this.record.sessionId === sessionId ||
+          !this.browser.usesPageLeases?.(this.record.sessionId)))
+    ) {
       // QA reads these: every browser call an agent tried while a person had the browser.
       logger.info('[Browser] Refused an agent call during a handoff', {
         handoffId: this.record?.id,
@@ -250,10 +265,12 @@ export class BrowserHandover {
     if (open || this.signIns.active)
       throw new LocalBrowserError('busy', 'A browser handoff is already open. Finish it first.');
     this.preparingHandoff = true;
+    this.preparingFor = sessionId;
     try {
       return await this.prepareHandoff(sessionId, reason, asker);
     } finally {
       this.preparingHandoff = false;
+      this.preparingFor = null;
     }
   }
 
@@ -262,14 +279,14 @@ export class BrowserHandover {
     reason: LocalBrowserHandoffReason,
     asker: { name: string; folder: string } | null
   ) {
-    const state = await this.browser.state();
+    const state = await this.browser.state(sessionId);
     const tab = state.tabs.find((candidate) => candidate.id === state.selectedTabId);
     if (state.status !== 'connected' || !tab)
       throw new LocalBrowserError('no_tab', 'Choose the tab your agent should use.');
     const site = new URL(tab.url).host;
     if (!site) throw new LocalBrowserError('no_site', 'Open the website first, then ask again.');
     if (state.mode === 'new-window') assertSignInUrl(tab.url);
-    await this.browser.handToPerson();
+    await this.browser.handToPerson(sessionId);
     const profileId = this.browser.currentProfileId();
     this.record = {
       id: randomUUID(),
@@ -285,7 +302,7 @@ export class BrowserHandover {
     };
     this.reopenAt = undefined;
     this.askedUrl = tab.url;
-    if (state.mode === 'new-window') {
+    if (state.mode === 'new-window' && !this.browser.usesPageLeases?.(sessionId)) {
       this.reopenAt = { sessionId, profileId, url: tab.url };
       // No page-reading connection, automation pipe or theme extension survives
       // into the person's window. Form fields do not survive this deliberate swap.
@@ -294,7 +311,8 @@ export class BrowserHandover {
       await this.signIns.start(folder, profileId, assertSignInUrl(tab.url).href);
     }
     // Bring the agent's window to the person. Its strip and card are drawn by DorkOS.
-    if (state.mode === 'embedded') await this.browser.selectTab(tab.id).catch(() => undefined);
+    if (state.mode === 'embedded')
+      await this.browser.selectTab(tab.id, sessionId).catch(() => undefined);
     this.changed();
     this.handedOver(this.record);
     logger.info('[Browser] An agent handed the browser to a person', {
@@ -327,6 +345,12 @@ export class BrowserHandover {
     let profileId: string | null;
     if ('handoffId' in input) {
       const handoff = this.openHandoff(input.handoffId);
+      if (this.browser.usesPageLeases?.(handoff.sessionId)) {
+        const shared = await this.browser.state(handoff.sessionId);
+        if (shared.selectedTabId)
+          await this.browser.selectTab(shared.selectedTabId, handoff.sessionId);
+        return this.state(handoff.sessionId);
+      }
       this.assertProfileExists(this.browser.currentProfileId());
       if (state.mode === 'embedded' && state.status === 'connected') {
         await this.browser.handToPerson();
@@ -363,6 +387,11 @@ export class BrowserHandover {
       profileId = input.profileId ?? null;
       this.assertProfileExists(profileId);
     }
+    if (this.browser.usesPageLeases?.() && this.browser.currentProfileId() === profileId)
+      throw new LocalBrowserError(
+        'profile_busy',
+        'Close the Agent browser before opening a separate sign-in window.'
+      );
     const folder = await prepareProfileFolder(this.dataDirectory(), profileId);
     // Only one Chromium can hold a profile, so the agent's window on it closes first.
     if (
@@ -410,7 +439,7 @@ export class BrowserHandover {
         'sign_in_failed',
         'Couldn’t save your sign-in. Open the sign-in window again.'
       );
-    const state = await this.browser.state();
+    const state = await this.browser.state(handoff.sessionId);
     if (reopenAt && state.status === 'disconnected')
       await this.browser.open({
         mode: 'new-window',
@@ -418,9 +447,9 @@ export class BrowserHandover {
         ...(reopenAt.profileId ? { profileId: reopenAt.profileId } : {}),
         ...(reopenAt.url ? { url: reopenAt.url } : {}),
       });
-    else await this.browser.resume();
+    else await this.browser.resume(handoff.sessionId);
     this.end(handoff, 'handed-back');
-    return this.state();
+    return this.state(handoff.sessionId);
   }
 
   /**
@@ -434,10 +463,11 @@ export class BrowserHandover {
     const handoff = this.openHandoff(handoffId);
     this.answeringHandoff = true;
     try {
-      this.stoppedFor = handoff.sessionId;
-      await this.browser.pause();
+      this.stoppedFor.add(handoff.sessionId);
+      await this.browser.pause(handoff.sessionId);
+      this.browser.abandon?.(handoff.sessionId);
       this.end(handoff, 'stopped');
-      return this.state();
+      return this.state(handoff.sessionId);
     } finally {
       this.answeringHandoff = false;
     }
@@ -452,10 +482,19 @@ export class BrowserHandover {
   async open(input: LocalBrowserOpen): Promise<LocalBrowserPersonState> {
     if (this.preparingHandoff || this.answeringHandoff)
       throw new LocalBrowserError('busy', 'The browser handoff is changing. Wait a moment.');
-    if (this.record?.sessionId !== input.sessionId) this.refuseDuringHandoff();
+    if (
+      this.record?.sessionId !== input.sessionId &&
+      !(
+        input.mode === 'new-window' &&
+        this.browser.usesPageLeases?.() &&
+        this.browser.currentProfileId() === (input.profileId ?? null)
+      )
+    )
+      this.refuseDuringHandoff();
     if (input.mode === 'new-window' && this.signIns.holds(this.folderOf(input.profileId ?? null)))
       throw new LocalBrowserError('signing_in', 'Finish signing in first.');
-    if (this.record?.outcome === null) {
+    if (this.record?.outcome === null && this.record.sessionId === input.sessionId) {
+      if (this.browser.usesPageLeases?.(input.sessionId)) return this.state(input.sessionId);
       const handoff = this.record;
       if (input.mode === 'new-window') {
         const url = assertSignInUrl(this.askedUrl ?? input.url ?? '').href;
@@ -470,8 +509,8 @@ export class BrowserHandover {
     } else {
       await this.browser.open(input);
     }
-    this.stoppedFor = null;
-    return this.state();
+    this.stoppedFor.delete(input.sessionId ?? '');
+    return this.state(input.sessionId);
   }
 
   /** The window closed on its own, so a card saying "finish it in the window" re-reads the state. */
@@ -483,15 +522,19 @@ export class BrowserHandover {
    * A person's Resume answers an open handoff as Hand back, so the agent is never
    * unpaused while the record still says a person has the browser.
    */
-  async resume(): Promise<LocalBrowserPersonState> {
+  async resume(sessionId?: string): Promise<LocalBrowserPersonState> {
     if (this.preparingHandoff || this.answeringHandoff)
       throw new LocalBrowserError('busy', 'The browser handoff is changing. Wait a moment.');
-    if (this.record?.outcome === null) return this.handBack(this.record.id);
+    if (
+      this.record?.outcome === null &&
+      (sessionId === undefined || this.record.sessionId === sessionId)
+    )
+      return this.handBack(this.record.id);
     if (this.signIns.active)
       throw new LocalBrowserError('signing_in', 'Close the sign-in window first.');
-    await this.browser.resume();
-    this.stoppedFor = null;
-    return this.state();
+    const resumed = await this.browser.resume(sessionId);
+    this.stoppedFor.delete(resumed.sessionId ?? '');
+    return this.state(sessionId);
   }
 
   /**
@@ -500,10 +543,14 @@ export class BrowserHandover {
    *
    * @param id - The tab to select.
    */
-  async selectTab(id: string): Promise<LocalBrowserState> {
-    if (this.record?.outcome === null && id !== (await this.browser.state()).selectedTabId)
+  async selectTab(id: string, sessionId?: string): Promise<LocalBrowserState> {
+    if (
+      this.record?.outcome === null &&
+      (sessionId === undefined || this.record.sessionId === sessionId) &&
+      id !== (await this.browser.state(sessionId)).selectedTabId
+    )
       this.refuseDuringHandoff();
-    return this.trimmed(await this.browser.selectTab(id));
+    return this.trimmed(await this.browser.selectTab(id, sessionId));
   }
 
   /**
@@ -512,24 +559,27 @@ export class BrowserHandover {
    *
    * @param url - The address to open.
    */
-  async navigate(url: string): Promise<LocalBrowserState> {
-    this.refuseDuringHandoff();
-    return this.browser.navigate(url);
+  async navigate(url: string, sessionId?: string): Promise<LocalBrowserState> {
+    this.refuseDuringHandoff(sessionId);
+    return this.browser.navigate(url, sessionId);
   }
 
   /**
    * A person's Disconnect. During a handoff it ends as Stop task does, so no card stays
    * up over a closed window. If the window won't close, the handoff stays open.
    */
-  async disconnect(): Promise<LocalBrowserPersonState> {
+  async disconnect(sessionId?: string): Promise<LocalBrowserPersonState> {
     if (this.preparingHandoff || this.answeringHandoff)
       throw new LocalBrowserError('busy', 'The browser handoff is changing. Wait a moment.');
-    await this.browser.disconnect();
-    if (this.record?.outcome === null) {
-      this.stoppedFor = this.record.sessionId;
+    await this.browser.disconnect(sessionId);
+    if (
+      this.record?.outcome === null &&
+      (sessionId === undefined || this.record.sessionId === sessionId)
+    ) {
+      this.stoppedFor.add(this.record.sessionId);
       this.end(this.record, 'window-closed');
     }
-    return this.state();
+    return this.state(sessionId);
   }
 
   /**
@@ -539,15 +589,18 @@ export class BrowserHandover {
    * @param sessionId - The calling chat.
    */
   refuseStopped(sessionId: string): void {
-    if (this.stoppedFor === sessionId)
+    if (this.stoppedFor.has(sessionId))
       throw new LocalBrowserError(
         'task_stopped',
         'The person stopped this task. They can open the browser for you again.'
       );
   }
 
-  private refuseDuringHandoff(): void {
-    if (this.record?.outcome === null)
+  private refuseDuringHandoff(sessionId?: string): void {
+    if (
+      this.record?.outcome === null &&
+      (sessionId === undefined || this.record.sessionId === sessionId)
+    )
       throw new LocalBrowserError(
         'handoff_open',
         'An agent is waiting on you in this browser. Answer its card first.'
