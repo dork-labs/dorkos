@@ -2,7 +2,7 @@
  * @vitest-environment jsdom
  */
 import { describe, it, expect, beforeEach } from 'vitest';
-import { mockCanvasDocument } from '@dorkos/test-utils';
+import { mockCanvasDocument } from '@dorkos/test-utils/mock-factories';
 import type { CanvasDocument, RoomCanvasEvent, RoomSignalEvent } from '@dorkos/shared/room-schemas';
 import { useAppStore } from '../app-store';
 import { roomDocumentsInView } from '../app-store-room-canvas';

@@ -10,7 +10,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, cleanup } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { createMockTransport } from '@dorkos/test-utils';
+import { createMockTransport } from '@dorkos/test-utils/mock-factories';
 import type { TeamMember } from '@dorkos/shared/team-schemas';
 import { TransportProvider } from '@/layers/shared/model';
 import { MOCK_TEAM_ROSTER } from '@/dev/mock-samples';

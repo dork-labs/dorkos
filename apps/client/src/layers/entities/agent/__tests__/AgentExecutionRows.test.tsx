@@ -7,7 +7,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
 import type { ExecutionDefaults, ModelOption } from '@dorkos/shared/types';
 import type { AccountUsage } from '@dorkos/shared/account-usage';
-import { createMockAccountUsage, createMockTransport } from '@dorkos/test-utils';
+import { createMockAccountUsage, createMockTransport } from '@dorkos/test-utils/mock-factories';
 import { TransportProvider, seedAccountUsage } from '@/layers/shared/model';
 import { AgentExecutionRows } from '../ui/AgentExecutionRows';
 

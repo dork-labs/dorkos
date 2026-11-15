@@ -27,7 +27,7 @@ import { act, render, screen, cleanup, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom/vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { createMockTransport, mockCanvasDocument } from '@dorkos/test-utils';
+import { createMockTransport, mockCanvasDocument } from '@dorkos/test-utils/mock-factories';
 import type { CanvasDocument, RoomWithRoster } from '@dorkos/shared/room-schemas';
 import type { Transport } from '@dorkos/shared/transport';
 import { useRoomFollowStore, useRoomOpenThreadStore } from '@/layers/entities/room';

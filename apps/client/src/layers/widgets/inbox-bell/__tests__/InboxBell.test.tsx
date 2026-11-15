@@ -22,7 +22,7 @@ import type { Transport } from '@dorkos/shared/transport';
 import type { ConnectionState, Task } from '@dorkos/shared/types';
 import type { PendingApproval } from '@dorkos/shared/approval-schemas';
 import type { NotificationDTO } from '@dorkos/shared/notification-schemas';
-import { createMockTransport } from '@dorkos/test-utils';
+import { createMockTransport } from '@dorkos/test-utils/mock-factories';
 
 /** Global stream state the widget reads; mutable so a test can drop the link. */
 let mockConnectionState: ConnectionState = 'connected';

@@ -14,7 +14,7 @@ import type { ReactNode } from 'react';
 import { render, screen, fireEvent, cleanup, waitFor, act } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import '@testing-library/jest-dom/vitest';
-import { createMockTransport } from '@dorkos/test-utils';
+import { createMockTransport } from '@dorkos/test-utils/mock-factories';
 import type { SearchHit } from '@dorkos/shared/search-schemas';
 import { SEARCH_DEBOUNCE_MS } from '@dorkos/shared/search-schemas';
 import type { RoomSummary } from '@dorkos/shared/room-schemas';

@@ -5,7 +5,7 @@ import type { ReactNode } from 'react';
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { createMockTransport } from '@dorkos/test-utils';
+import { createMockTransport } from '@dorkos/test-utils/mock-factories';
 import type { ActivityItem } from '@dorkos/shared/activity-schemas';
 import { TransportProvider } from '@/layers/shared/model';
 import { useActivitySeenStore, useNewActivityCount } from '../model/activity-seen';

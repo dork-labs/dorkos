@@ -15,7 +15,11 @@ import { QueryClientProvider } from '@tanstack/react-query';
 import type { LimitHistoryEntry } from '@dorkos/shared/account-usage';
 import type { Session, ServerConfig } from '@dorkos/shared/types';
 import type { Transport } from '@dorkos/shared/transport';
-import { createMockSession, createMockSessionLimit, createMockTransport } from '@dorkos/test-utils';
+import {
+  createMockSession,
+  createMockSessionLimit,
+  createMockTransport,
+} from '@dorkos/test-utils/mock-factories';
 import { createTestQueryClient } from '@dorkos/test-utils/react-helpers';
 import { TransportProvider, accountKeys } from '@/layers/shared/model';
 import { TooltipProvider } from '@/layers/shared/ui';

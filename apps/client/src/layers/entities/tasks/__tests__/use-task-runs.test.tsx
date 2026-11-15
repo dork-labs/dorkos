@@ -6,9 +6,9 @@ import { renderHook, waitFor, act } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { Transport } from '@dorkos/shared/transport';
-import { createMockTransport } from '@dorkos/test-utils';
+import { createMockTransport } from '@dorkos/test-utils/mock-factories';
 import { TransportProvider } from '@/layers/shared/model';
-import { createMockRun } from '@dorkos/test-utils';
+import { createMockRun } from '@dorkos/test-utils/mock-factories';
 import type { ListTaskRunsQuery } from '@dorkos/shared/types';
 import {
   useTaskRuns,

@@ -26,7 +26,7 @@ import type {
   ListNotificationsResponse,
   NotificationDTO,
 } from '@dorkos/shared/notification-schemas';
-import { createMockTransport } from '@dorkos/test-utils';
+import { createMockTransport } from '@dorkos/test-utils/mock-factories';
 
 /**
  * The viewport, as a box a test can set. jsdom has no media queries worth

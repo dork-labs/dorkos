@@ -13,7 +13,7 @@ import { QueryClientProvider } from '@tanstack/react-query';
 import type { NotificationDTO } from '@dorkos/shared/notification-schemas';
 import type { Transport } from '@dorkos/shared/transport';
 import type { ConnectorAccessChange } from '@dorkos/shared/connector-exclusion-schemas';
-import { createMockTransport } from '@dorkos/test-utils';
+import { createMockTransport } from '@dorkos/test-utils/mock-factories';
 import { createTestQueryClient } from '@dorkos/test-utils/react-helpers';
 import { TransportProvider } from '@/layers/shared/model';
 import { InboxRow } from '../ui/InboxRow';

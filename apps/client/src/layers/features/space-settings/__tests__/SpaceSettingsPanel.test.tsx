@@ -8,7 +8,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, render, screen, within } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { createMockTransport, withSpacesExperiment } from '@dorkos/test-utils';
+import { createMockTransport, withSpacesExperiment } from '@dorkos/test-utils/mock-factories';
 import type { CommunityConnectionDescriptor } from '@dorkos/shared/community-connections';
 import type { CommunitySpaceRead } from '@dorkos/shared/community-space-settings';
 import { TransportProvider } from '@/layers/shared/model';

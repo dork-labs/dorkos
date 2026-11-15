@@ -8,7 +8,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { ServerConfig } from '@dorkos/shared/types';
 import type { NotificationPrefs } from '@dorkos/shared/config-schema';
 import { NOTIFICATION_PREFS_DEFAULTS } from '@dorkos/shared/config-schema';
-import { createMockTransport } from '@dorkos/test-utils';
+import { createMockTransport } from '@dorkos/test-utils/mock-factories';
 
 /** The blocking queue the hook reads, swapped between renders. */
 const world = {

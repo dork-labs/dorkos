@@ -27,7 +27,7 @@ import { useAppStore } from '@/layers/shared/model';
 import { roomKeys } from '@/layers/entities/room';
 import type { RoomSummary } from '@dorkos/shared/room-schemas';
 import type { TeamMember } from '@dorkos/shared/team-schemas';
-import { createMockTransport } from '@dorkos/test-utils';
+import { createMockTransport } from '@dorkos/test-utils/mock-factories';
 import { TransportProvider } from '@/layers/shared/model';
 import { sessionSearchSchema } from '@/layers/shared/lib';
 import { SessionRouteHeader } from '../ui/SessionRouteHeader';

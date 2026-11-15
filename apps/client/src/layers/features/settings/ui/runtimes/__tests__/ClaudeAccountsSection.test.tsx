@@ -17,7 +17,7 @@ import '@testing-library/jest-dom/vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { ServerConfig } from '@dorkos/shared/types';
 import type { AccountUsage } from '@dorkos/shared/account-usage';
-import { createMockAccountUsage, createMockTransport } from '@dorkos/test-utils';
+import { createMockAccountUsage, createMockTransport } from '@dorkos/test-utils/mock-factories';
 import { TransportProvider, seedAccountUsage, useExtensionRegistry } from '@/layers/shared/model';
 import { TooltipProvider } from '@/layers/shared/ui';
 import { ClaudeAccountsSection } from '../sections/ClaudeAccountsSection';

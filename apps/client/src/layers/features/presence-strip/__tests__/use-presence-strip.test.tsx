@@ -19,7 +19,7 @@ import {
 } from '@tanstack/react-router';
 import type { Transport } from '@dorkos/shared/transport';
 import type { RoomSignalEvent } from '@dorkos/shared/room-schemas';
-import { createMockTransport } from '@dorkos/test-utils';
+import { createMockTransport } from '@dorkos/test-utils/mock-factories';
 import { TransportProvider } from '@/layers/shared/model';
 import { useInteractionStore } from '@/layers/entities/interactions';
 import { useRoomPresenceStore } from '@/layers/entities/room';

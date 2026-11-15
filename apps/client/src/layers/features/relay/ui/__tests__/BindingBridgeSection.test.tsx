@@ -4,7 +4,7 @@ import { render, screen, fireEvent, cleanup, waitFor } from '@testing-library/re
 import '@testing-library/jest-dom/vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { TransportProvider } from '@/layers/shared/model';
-import { createMockTransport } from '@dorkos/test-utils';
+import { createMockTransport } from '@dorkos/test-utils/mock-factories';
 import type { AdapterBinding } from '@dorkos/shared/relay-schemas';
 import type { RoomWithRoster } from '@dorkos/shared/room-schemas';
 import type { Transport } from '@dorkos/shared/transport';

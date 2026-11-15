@@ -7,7 +7,7 @@ import '@testing-library/jest-dom/vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { SystemRequirements } from '@dorkos/shared/agent-runtime';
 import type { OpenCodeDirectSetup } from '@dorkos/shared/runtime-connect';
-import { createMockTransport } from '@dorkos/test-utils';
+import { createMockTransport } from '@dorkos/test-utils/mock-factories';
 import { TransportProvider } from '@/layers/shared/model';
 
 import { RuntimeSetupDialog } from '@/layers/entities/runtime';

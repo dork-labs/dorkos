@@ -15,7 +15,7 @@ import {
   shelvesFor,
   type YourAppsInput,
 } from '../lib/app-list';
-import { createMockConnectionReadiness } from '@dorkos/test-utils';
+import { createMockConnectionReadiness } from '@dorkos/test-utils/mock-factories';
 
 function connection(over: Partial<ConnectorConnectionSummary> = {}): ConnectorConnectionSummary {
   return {

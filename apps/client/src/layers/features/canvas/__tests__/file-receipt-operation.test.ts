@@ -1,5 +1,5 @@
 import { beforeEach, expect, it, vi } from 'vitest';
-import { createMockTransport } from '@dorkos/test-utils';
+import { createMockTransport } from '@dorkos/test-utils/mock-factories';
 import type { WriteFileOptions, WriteFileResult } from '@dorkos/shared/transport';
 import {
   FileReceiptOperation,
