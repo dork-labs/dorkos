@@ -1,0 +1,30 @@
+#!/bin/sh
+# A fake `gh` for scripts/__tests__/pre-push-midrun-check.test.ts.
+#
+# Committed, not written by the test: on Linux, executing a file a test has
+# just written can fail with ETXTBSY when a process forked elsewhere in the
+# vitest run still holds the write descriptor, and the guard reads that as
+# "gh is not installed". The test links this file into its PATH and puts the
+# answers in $FAKE_GH_DIR instead, which it only reads:
+#
+#   $FAKE_GH_DIR/gh-calls          every call's argv, one line each (appended)
+#   $FAKE_GH_DIR/body.sh           if present, sourced instead of the default
+#   $FAKE_GH_DIR/runs-<workflow>   the JSON `run list --workflow <workflow>`
+#                                  prints; `[]` when absent
+printf '%s\n' "$*" >> "$FAKE_GH_DIR/gh-calls"
+if [ -f "$FAKE_GH_DIR/body.sh" ]; then
+  . "$FAKE_GH_DIR/body.sh"
+  exit 0
+fi
+wf=""
+prev=""
+for a in "$@"; do
+  [ "$prev" = "--workflow" ] && wf="$a"
+  prev="$a"
+done
+if [ -n "$wf" ] && [ -f "$FAKE_GH_DIR/runs-$wf" ]; then
+  # Builtins only: the test's PATH holds nothing but git and this file.
+  while IFS= read -r line; do printf '%s\n' "$line"; done < "$FAKE_GH_DIR/runs-$wf"
+else
+  printf '[]\n'
+fi
