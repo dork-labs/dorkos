@@ -93,6 +93,12 @@ export interface StartWorkInput {
   reason: string;
 }
 
+/** A new chat, including tool warnings the extension should show. */
+export interface StartWorkResponse {
+  sessionId: string;
+  warnings?: Array<{ code: 'NO_DORKOS_TOOLS'; message: string }> | undefined;
+}
+
 /** Codes: 'not_a_project' | 'account_not_allowed_here' | 'start_limit'. `message` is plain words. */
 export declare class StartWorkError extends Error {
   /** Which rule refused the start. */
@@ -104,7 +110,7 @@ export declare class StartWorkError extends Error {
 /** `ctx.sessions`. */
 export interface SessionsApi {
   /** Start work in a new chat in a project, without a person. */
-  start(input: StartWorkInput): Promise<{ sessionId: string }>;
+  start(input: StartWorkInput): Promise<StartWorkResponse>;
 }
 
 /** The `SessionInfo` / `LimitedSessionInfo` members this contract covers. */
@@ -499,7 +505,7 @@ export interface ExtensionAPISeams {
   /** This extension's open decisions. */
   listDecisions(): Promise<ExtensionDecisionView[]>;
   /** Start work in a NEW chat; never touches the current one. */
-  startWork(input: StartWorkInput): Promise<{ sessionId: string }>;
+  startWork(input: StartWorkInput): Promise<StartWorkResponse>;
   /** Per-project settings core holds for this extension. */
   readonly projectSettings: {
     /** The stored value for a project, or null. */

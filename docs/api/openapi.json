@@ -3482,6 +3482,12 @@
       "Session": {
         "type": "object",
         "properties": {
+          "warnings": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SessionLaunchWarning"
+            }
+          },
           "id": {
             "type": "string",
             "format": "uuid"
@@ -3612,6 +3618,24 @@
           "updatedAt",
           "permissionMode",
           "runtime"
+        ]
+      },
+      "SessionLaunchWarning": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "enum": [
+              "NO_DORKOS_TOOLS"
+            ]
+          },
+          "message": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "message"
         ]
       },
       "PermissionModeId": {
@@ -9775,20 +9799,26 @@
             "type": "string",
             "description": "Server-minted id for this message; the queue is keyed by it"
           },
-          "outcome": {
-            "$ref": "#/components/schemas/MessageDeliveryOutcome"
-          },
           "queuePosition": {
             "type": "integer",
             "exclusiveMinimum": 0,
             "description": "1-based place in the session queue at acceptance; 1 means nothing was ahead of it"
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SessionLaunchWarning"
+            }
+          },
+          "outcome": {
+            "$ref": "#/components/schemas/MessageDeliveryOutcome"
           }
         },
         "required": [
           "sessionId",
           "messageId",
-          "outcome",
-          "queuePosition"
+          "queuePosition",
+          "outcome"
         ]
       },
       "SendMessageRequest": {
@@ -20736,6 +20766,12 @@
         "properties": {
           "sessionId": {
             "type": "string"
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SessionLaunchWarning"
+            }
           }
         },
         "required": [

@@ -577,12 +577,14 @@ describe('GET /api/sessions — multi-runtime aggregation (real registry + real 
 
       expect(res.status).toBe(202);
       // The whole body: the canonical id plus the queue receipt, and no turn
-      // frames — the turn is delivered on /events and nowhere else.
+      // frames — the turn is delivered on /events and nowhere else. No agent
+      // owns this folder, so the receipt says the chat has no DorkOS tools.
       expect(res.body).toEqual({
         sessionId: CODEX_SESSION,
         messageId: expect.any(String),
         outcome: { messageId: expect.any(String), requested: 'queue', applied: 'queue' },
         queuePosition: 1,
+        warnings: [{ code: 'NO_DORKOS_TOOLS', message: 'This chat has no DorkOS tools.' }],
       });
 
       await vi.waitFor(() => {

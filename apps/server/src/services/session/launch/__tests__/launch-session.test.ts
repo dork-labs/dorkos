@@ -82,6 +82,49 @@ const mesh = {
 } as unknown as MeshCore;
 
 describe('dispatchSessionMessage', () => {
+  afterEach(() => clearTestHomes());
+
+  it.each(['interactive', 'extension-start'] as const)(
+    'tells a %s caller when a Codex chat has no agent or DorkOS tools',
+    async (kind) => {
+      registerTestHomes([]);
+      const result = await dispatchSessionMessage({
+        sessionId: SESSION,
+        request: { content: 'hi', cwd: '/work/project', runtime: 'codex' },
+        clientId: 'c',
+        meshCore: undefined,
+        roomSessionPlace: undefined,
+        origin: { kind },
+      });
+      expect(result).toMatchObject({
+        warnings: [{ code: 'NO_DORKOS_TOOLS', message: 'This chat has no DorkOS tools.' }],
+      });
+      expect(dispatchMessage).toHaveBeenCalledWith(
+        expect.not.objectContaining({ forAgent: expect.anything() })
+      );
+    }
+  );
+
+  it.each([undefined, '/agents/known'])(
+    'resolves a registered Codex home without a warning (explicit agent: %s)',
+    async (agentPath) => {
+      registerTestHomes(['/agents/known']);
+      vi.mocked(resolveSessionCwdWithRoom).mockResolvedValueOnce({
+        cwd: '/agents/known',
+        rung: 'explicit',
+      });
+      const result = await dispatchSessionMessage({
+        sessionId: SESSION,
+        request: { content: 'hi', cwd: '/agents/known', runtime: 'codex', agentPath },
+        clientId: 'c',
+        meshCore: mesh,
+        roomSessionPlace: undefined,
+        origin: { kind: 'interactive' },
+      });
+      expect(result).not.toHaveProperty('warnings');
+    }
+  );
+
   beforeEach(() => {
     vi.clearAllMocks();
     vi.mocked(runtimeRegistry.has).mockReturnValue(true);

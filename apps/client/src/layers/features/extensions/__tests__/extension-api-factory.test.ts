@@ -887,6 +887,23 @@ describe('createExtensionAPI', () => {
   });
 
   describe('startWork (spec flow-multiproject §7.7)', () => {
+    it('preserves the no-tools warning from an agentless Codex start', async () => {
+      const response = {
+        sessionId: 'chat-new',
+        warnings: [{ code: 'NO_DORKOS_TOOLS', message: 'This chat has no DorkOS tools.' }],
+      };
+      vi.stubGlobal(
+        'fetch',
+        vi.fn().mockResolvedValue({
+          ok: true,
+          status: 200,
+          json: async () => response,
+        })
+      );
+      const { api } = createExtensionAPI('my-ext', deps);
+      await expect(api.startWork(input)).resolves.toEqual(response);
+    });
+
     const input = {
       project: '/repos/dorkos',
       prompt: 'Sort the new ideas.',
