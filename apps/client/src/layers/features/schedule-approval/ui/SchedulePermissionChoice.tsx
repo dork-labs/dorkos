@@ -3,7 +3,7 @@ import type { PermissionModeDescriptor } from '@dorkos/shared/agent-runtime';
 import type { Task } from '@dorkos/shared/types';
 import { Button, Checkbox, PermissionModeScopeNote } from '@/layers/shared/ui';
 import { actsWithoutAsking, isNoLooserThan } from '@dorkos/shared/permission-semantics';
-import { runsPrograms } from '@dorkos/shared/permission-rules';
+import { runsPrograms, writesOutsideTaskFolder } from '@dorkos/shared/permission-rules';
 import {
   scheduleConfirmLabel,
   schedulePermissionLabel,
@@ -82,7 +82,13 @@ export function SchedulePermissionChoice({
       )}
       {task.requestedAllow && task.requestedAllow.length > 0 && (
         <div data-slot="schedule-requested-allow" className="space-y-1">
-          <p className="font-medium">Runs without asking, and may only:</p>
+          {/* Only Allowed commands limits a run to its rules; every other mode
+              keeps what it already allows and adds these on top. */}
+          <p className="font-medium">
+            {value === 'dontAsk'
+              ? 'Runs without asking, and may only:'
+              : 'Also runs these without asking:'}
+          </p>
           <ul className="space-y-1">
             {task.requestedAllow.map((rule) => (
               <li key={rule} className="font-mono break-all">
@@ -93,6 +99,11 @@ export function SchedulePermissionChoice({
           {task.requestedAllow.some(runsPrograms) && (
             <p data-slot="schedule-runs-programs" className="text-status-warning-fg">
               Can run programs on this computer.
+            </p>
+          )}
+          {task.requestedAllow.some(writesOutsideTaskFolder) && (
+            <p data-slot="schedule-writes-outside" className="text-status-warning-fg">
+              Can change files outside its folder.
             </p>
           )}
         </div>

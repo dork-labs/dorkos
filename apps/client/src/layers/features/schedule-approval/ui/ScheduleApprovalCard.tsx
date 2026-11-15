@@ -4,6 +4,7 @@ import {
 } from '@dorkos/shared/schedule-file-problems';
 import { appRoutes } from '@/layers/shared/lib';
 import { isNoLooserThan } from '@dorkos/shared/permission-semantics';
+import { isLooserScheduleMode, scheduleApprovalBaseline } from '@dorkos/shared/schedule-approval';
 /**
  * A schedule an agent proposed, and everything you need to decide about it.
  *
@@ -148,8 +149,12 @@ function ChangeValue({ value, unbroken }: { value: string; unbroken: boolean }) 
  * afterwards backed by evidence. Nothing about a test run arms a timer, changes
  * the status, or resolves the standing proposal.
  *
- * Approval starts at the saved mode. A reason can suggest a mode, but only
- * the person picks it. Folder rules remain separately approved grants.
+ * Approval starts at the one-click baseline: the tightest of the saved mode,
+ * the requested mode and, for outsider-written work, Allowed commands. A
+ * request only preselects itself when it is that tightest mode and within the
+ * person's ceiling. Anything looser than the baseline takes a separate tick,
+ * measured by the same rule the server uses (`@dorkos/shared/schedule-approval`).
+ * Folder rules remain separately approved grants.
  *
  * Neither answer toasts on success. The receipt is the confirmation, where the
  * decision was made; the app's one failure toast (`query-client.ts`) already
@@ -219,31 +224,25 @@ function ScheduleApprovalContent({
   const requested = task.requestedPermissionMode
     ? (power.modes.find((mode) => mode.id === task.requestedPermissionMode) ?? null)
     : null;
-  const outsiderDefault =
-    power.modes.find((mode) => mode.id === 'dontAsk') ??
-    power.modes.find((mode) => mode.id === 'default') ??
-    null;
-  const proposedDefault = task.originMarks?.outsider
-    ? (outsiderDefault?.id ?? task.permissionMode)
-    : (requested?.id ?? task.permissionMode);
-  // Structured proposal fields are requests, never grants. The person still approves below.
-  const selectedMode = pickedMode ?? proposedDefault;
+  // One rule for the card and the server (review of #3794): the request can
+  // only narrow what one click grants, never widen it.
+  const baseline = scheduleApprovalBaseline(task);
   const canSuggest =
     !task.originMarks &&
     requested &&
     !isBypassPermissionMode(requested.id) &&
     power.ceiling &&
     isNoLooserThan(power.ceiling, requested);
+  const startsAtBaseline =
+    power.modes.some((mode) => mode.id === baseline) &&
+    (baseline !== requested?.id || canSuggest || task.originMarks?.outsider === true);
+  // Structured proposal fields are requests, never grants. The person still approves below.
+  const selectedMode = pickedMode ?? (startsAtBaseline ? baseline : task.permissionMode);
   const selected = power.modes.find((mode) => mode.id === selectedMode);
-  // Matches the server's check (`task-approval-request.ts`): with no request the
-  // saved mode is the proposal, so anything looser takes the separate choice.
-  const savedMode = power.modes.find((mode) => mode.id === task.permissionMode) ?? null;
-  const confirmationBaseline = task.originMarks?.outsider
-    ? outsiderDefault
-    : (requested ?? savedMode);
-  const looserMode = Boolean(
-    selected && confirmationBaseline && !isNoLooserThan(confirmationBaseline, selected)
-  );
+  const looserMode = Boolean(selected && isLooserScheduleMode(selected.id, baseline));
+  // A trial is held to the baseline too; a saved mode looser than it waits for approval.
+  const trialTooLoose =
+    task.status === 'pending_approval' && isLooserScheduleMode(task.permissionMode, baseline);
   const confirmReason = scheduleConfirmReason(task, looserMode);
   const needsLooserConfirmation = confirmReason !== null;
   const currentLabel = schedulePermissionLabel(
@@ -592,19 +591,16 @@ function ScheduleApprovalContent({
           />
         )}
 
-        {/* A test run uses the proposed mode until the trigger route can take
-            the picked one, so the card says whose mode, only when they differ. */}
-        {answered === null && selectedMode !== task.permissionMode && (
+        {/* A test run uses the saved mode (the trigger route takes no pick), and
+            never one looser than the baseline: then it waits for approval. */}
+        {answered === null && (trialTooLoose || selectedMode !== task.permissionMode) && (
           <p data-slot="schedule-try-mode" className="text-muted-foreground text-xs">
-            {`Try it once now uses ${
-              // Work written after reading outside words is not the agent's own pick.
-              task.proposedByName && !task.originMarks?.outsider
-                ? `${task.proposedByName}’s mode`
-                : 'the proposed mode'
-            }: ${schedulePermissionLabel(
-              task.permissionMode,
-              power.current?.label ?? permissionModeLabel(task.permissionMode)
-            )}.`}
+            {trialTooLoose
+              ? 'Approve it first to try it. Its saved mode is looser than proposed.'
+              : `Try it once now uses the saved mode: ${schedulePermissionLabel(
+                  task.permissionMode,
+                  power.current?.label ?? permissionModeLabel(task.permissionMode)
+                )}.`}
           </p>
         )}
         {pinActions && answered === null && (
@@ -615,7 +611,7 @@ function ScheduleApprovalContent({
               data-slot="schedule-test-run-start"
               aria-label={`Run ${name} once`}
               className="min-h-11 px-2.5 text-xs sm:min-h-0"
-              disabled={testRun.phase === 'running' || refreshing}
+              disabled={testRun.phase === 'running' || refreshing || trialTooLoose}
               onClick={testRun.start}
             >
               Try it once now
@@ -639,6 +635,7 @@ function ScheduleApprovalContent({
         }
         onApprove={approveAtSelectedLevel}
         refreshing={refreshing}
+        trialBlocked={trialTooLoose}
         testRun={testRun}
         trialNote={trialNote}
         onReject={reject}

@@ -13,6 +13,8 @@ interface ScheduleApprovalActionsProps {
   approveDisabled: boolean;
   onApprove: () => void;
   refreshing: boolean;
+  /** A trial would run looser than one click could approve, so it waits. */
+  trialBlocked: boolean;
   testRun: ReturnType<typeof useScheduleTestRun>;
   trialNote: ReactNode;
   onReject: () => void;
@@ -35,6 +37,7 @@ export function ScheduleApprovalActions({
   approveDisabled,
   onApprove,
   refreshing,
+  trialBlocked,
   testRun,
   trialNote,
   onReject,
@@ -104,7 +107,7 @@ export function ScheduleApprovalActions({
             data-slot="schedule-test-run-start"
             aria-label={`Run ${name} once`}
             className="min-h-11 w-full px-2.5 text-xs sm:h-7 sm:min-h-0 sm:w-auto"
-            disabled={testRun.phase === 'running' || refreshing}
+            disabled={testRun.phase === 'running' || refreshing || trialBlocked}
             onClick={testRun.start}
           >
             Try it once now

@@ -1,5 +1,5 @@
 import type { Task } from '@dorkos/shared/types';
-import { runsPrograms } from '@dorkos/shared/permission-rules';
+import { runsPrograms, writesOutsideTaskFolder } from '@dorkos/shared/permission-rules';
 
 /** Schedule-specific consequence copy for a run with nobody present. */
 const SCHEDULE_PERMISSION_EXPLANATIONS: Readonly<Record<string, string>> = {
@@ -27,16 +27,17 @@ export function schedulePermissionExplanation(mode: string): string {
 }
 
 /** Why approving needs a separate, ticked yes; mirrors the server's check. */
-export type ScheduleConfirmReason = 'looser' | 'programs' | 'outsider-rules';
+export type ScheduleConfirmReason = 'looser' | 'programs' | 'writes' | 'outsider-rules';
 
 /**
  * The reason a schedule's approval needs the separate confirmation, or `null`
  * when the plain Approve is enough (DOR-3637, Security Shoulds D-1 to D-3): a
- * mode looser than proposed, any rule that starts programs, or rules on work
- * written after reading outside words.
+ * mode looser than the one-click baseline, any rule that starts programs or
+ * changes files outside the task's folder, or rules on work written after
+ * reading outside words.
  *
  * @param task - The proposal on the card.
- * @param looserMode - Whether the selected mode is looser than the proposal.
+ * @param looserMode - Whether the selected mode is looser than the baseline.
  */
 export function scheduleConfirmReason(
   task: Pick<Task, 'requestedAllow' | 'originMarks'>,
@@ -45,6 +46,7 @@ export function scheduleConfirmReason(
   const rules = task.requestedAllow ?? [];
   if (looserMode) return 'looser';
   if (rules.some(runsPrograms)) return 'programs';
+  if (rules.some(writesOutsideTaskFolder)) return 'writes';
   if (task.originMarks?.outsider && rules.length > 0) return 'outsider-rules';
   return null;
 }
@@ -58,5 +60,6 @@ export function scheduleConfirmReason(
 export function scheduleConfirmLabel(reason: ScheduleConfirmReason, agent: string | null): string {
   if (reason === 'looser') return `Run it looser than ${agent ?? 'the agent'} asked`;
   if (reason === 'programs') return 'Let it run these programs with nobody there';
+  if (reason === 'writes') return 'Let it change files outside its folder with nobody there';
   return 'Allow these rules anyway';
 }

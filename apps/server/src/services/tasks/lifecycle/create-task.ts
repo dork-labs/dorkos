@@ -70,6 +70,7 @@ import { scheduleCreditsModelRefusal } from './schedule-credits-model.js';
 import { marksHold, NO_MARKS, type TurnMarks } from '../../core/turn-power/turn-marks.js';
 import { auditCrossAgentTask, capModeAtAgentLevel } from '../approvals/cross-agent.js';
 import { scheduledTaskCreateApproval } from '../approvals/task-approval-receipt.js';
+import { taskPermissionRulesRefusal } from '../task-permission-rules.js';
 
 /**
  * An ungranted agent create may preserve only these known modes. In particular,
@@ -331,6 +332,12 @@ export async function createScheduledTask(
     };
   }
   const data = parsed.data;
+  // Rules the task's runs could not honour are refused up front (#3794).
+  const rules = taskPermissionRulesRefusal({
+    runtime: data.runtime,
+    rules: data.requestedAllow ?? [],
+  });
+  if (rules) return { ok: false, status: 400, error: rules.error, code: rules.code };
   const { trusted } = options;
   // An untrusted caller parks unless it is one of our agents on a Trusted
   // install (ADR 261006-225605). Read once, so the park and the reply agree.

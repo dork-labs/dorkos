@@ -631,6 +631,38 @@ describe('ScheduleApprovalCard — answering it', () => {
     );
   });
 
+  it('says rules add to a mode that is not Allowed commands', async () => {
+    renderCard(
+      proposal({
+        requestedPermissionMode: 'acceptEdits',
+        requestedAllow: ['Read(/abs/notes/today.md)'],
+      } as Partial<Task>)
+    );
+    expect(await findSlot('schedule-requested-allow')).toHaveTextContent(
+      'Also runs these without asking:'
+    );
+    expect(slot('schedule-requested-allow')).not.toHaveTextContent('may only');
+  });
+
+  it('confirms a rule that changes files outside the task folder', async () => {
+    renderCard(
+      proposal({
+        requestedPermissionMode: 'acceptEdits',
+        requestedAllow: ['Edit(~/.zshrc)'],
+      } as Partial<Task>)
+    );
+    expect(await findSlot('schedule-writes-outside')).toHaveTextContent(
+      'Can change files outside its folder.'
+    );
+    expect(screen.getByRole('button', { name: 'Approve Nightly sweep' })).toBeDisabled();
+    await userEvent.click(
+      screen.getByRole('checkbox', {
+        name: 'Let it change files outside its folder with nobody there',
+      })
+    );
+    expect(screen.getByRole('button', { name: 'Approve Nightly sweep' })).toBeEnabled();
+  });
+
   it('says a command rule can run programs and needs its own tick (D-2)', async () => {
     const updateTask = vi.fn().mockResolvedValue(proposal({ status: 'active' }));
     renderCard(
@@ -1340,7 +1372,7 @@ describe('ScheduleApprovalCard — running it once', () => {
  * the grant either happens or silently does not.
  */
 describe('ScheduleApprovalCard — choosing the run permissions', () => {
-  it('calls it the proposed mode on outsider-marked work', async () => {
+  it('holds an outsider’s trial run to the baseline: off until approved', async () => {
     renderCard(
       proposal({
         originMarks: { outsider: true },
@@ -1348,10 +1380,35 @@ describe('ScheduleApprovalCard — choosing the run permissions', () => {
       } as Partial<Task>)
     );
     await screen.findByRole('combobox', { name: 'Run permissions' });
+    // Saved Accept edits is looser than Allowed commands, the outsider floor.
     expect(await findSlot('schedule-try-mode')).toHaveTextContent(
-      'Try it once now uses the proposed mode: Accept edits.'
+      'Approve it first to try it. Its saved mode is looser than proposed.'
     );
-    expect(slot('schedule-try-mode')).not.toHaveTextContent('DorkBot');
+    expect(screen.getByRole('button', { name: 'Run Nightly sweep once' })).toBeDisabled();
+  });
+
+  it('never preselects a requested Full access, and raising to it takes the tick', async () => {
+    renderCard(proposal({ requestedPermissionMode: 'bypassPermissions' } as Partial<Task>));
+    const picker = await screen.findByRole('combobox', { name: 'Run permissions' });
+    expect(picker).toHaveValue('acceptEdits');
+    expect(screen.getByRole('button', { name: 'Approve Nightly sweep' })).toBeEnabled();
+    await userEvent.selectOptions(picker, 'bypassPermissions');
+    expect(screen.getByRole('button', { name: 'Approve Nightly sweep' })).toBeDisabled();
+    expect(screen.getByRole('checkbox', { name: /Run it looser/i })).toBeInTheDocument();
+  });
+
+  it('measures outsider work that asked for plan against plan, as the server does', async () => {
+    renderCard(
+      proposal({
+        originMarks: { outsider: true },
+        requestedPermissionMode: 'plan',
+      } as Partial<Task>)
+    );
+    const picker = await screen.findByRole('combobox', { name: 'Run permissions' });
+    await waitFor(() => expect(picker).toHaveValue('plan'));
+    expect(screen.getByRole('button', { name: 'Approve Nightly sweep' })).toBeEnabled();
+    await userEvent.selectOptions(picker, 'dontAsk');
+    expect(screen.getByRole('button', { name: 'Approve Nightly sweep' })).toBeDisabled();
   });
 
   it('drops the try-run line when the picked mode is the proposed one', async () => {
@@ -1377,7 +1434,7 @@ describe('ScheduleApprovalCard — choosing the run permissions', () => {
     expect(approve).toBeDisabled();
     // Test runs still use the saved mode, so the card keeps saying so.
     expect(
-      screen.getByText('Try it once now uses DorkBot’s mode: Allowed commands.')
+      screen.getByText('Try it once now uses the saved mode: Allowed commands.')
     ).toBeInTheDocument();
     expect(confirm.closest('label')?.nextElementSibling).toBe(slot('schedule-folder-rules'));
 

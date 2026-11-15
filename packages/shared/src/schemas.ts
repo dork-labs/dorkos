@@ -5863,7 +5863,7 @@ export const TaskPermissionRuleSchema = z
   .trim()
   .min(1)
   .max(300)
-  .refine(isSpecificPermissionRule, {
+  .refine((rule) => isSpecificPermissionRule(rule), {
     message: 'Permission rules must name a specific action',
   });
 

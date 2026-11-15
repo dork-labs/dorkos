@@ -97,4 +97,24 @@ describe('task approval request limits', () => {
       )
     ).toBeNull();
   });
+  it('takes the separate yes for a file-writing rule outside the task folder', () => {
+    const task = createMockSchedule({
+      status: 'pending_approval',
+      requestedPermissionMode: 'acceptEdits',
+      permissionMode: 'acceptEdits',
+      requestedAllow: ['Edit(~/.zshrc)'],
+    });
+    const update = { status: 'active' as const, approvedAllow: ['Edit(~/.zshrc)'] };
+    expect(taskApprovalRequestRefusal(task, update, undefined)).not.toBeNull();
+    expect(taskApprovalRequestRefusal(task, update, true)).toBeNull();
+    // A relative path stays in the task's own folder and needs no extra yes.
+    const inside = { status: 'active' as const, approvedAllow: ['Edit(notes/today.md)'] };
+    expect(
+      taskApprovalRequestRefusal(
+        { ...task, requestedAllow: ['Edit(notes/today.md)'] },
+        inside,
+        undefined
+      )
+    ).toBeNull();
+  });
 });

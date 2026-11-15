@@ -634,9 +634,10 @@ export class TaskSchedulerService {
     return this.cronJobs.has(id);
   }
 
-  /** Manually trigger a run for a task. */
-  async triggerManualRun(taskId: string): Promise<TaskRun | null> {
-    const task = this.store.getTask(taskId);
+  /** Manually trigger a run for a task, at `mode` when the route held a trial tighter. */
+  async triggerManualRun(taskId: string, mode?: PermissionMode): Promise<TaskRun | null> {
+    const found = this.store.getTask(taskId);
+    const task = found && mode ? { ...found, permissionMode: mode } : found;
     if (!task) return null;
 
     const run = this.store.createRun(taskId, 'manual');
@@ -647,9 +648,7 @@ export class TaskSchedulerService {
     // Fire and forget — executeRun handles its own error handling
     this.runs
       .prepare(run.id, () => this.executeRun(task, run))
-      .catch((err) => {
-        logger.error(`manual run error for ${task.name}:`, err);
-      });
+      .catch((err) => logger.error(`manual run error for ${task.name}:`, err));
     return run;
   }
 

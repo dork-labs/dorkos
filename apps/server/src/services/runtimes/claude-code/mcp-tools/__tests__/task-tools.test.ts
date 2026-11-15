@@ -351,6 +351,25 @@ describe('tasks_* operator-only field guard (in-session dorkos server)', () => {
       });
     });
 
+    it('refuses rules for a task whose runs are on Codex, which cannot apply them', async () => {
+      const codex = store.createTask({
+        name: 'codex-nightly',
+        description: 'codex nightly',
+        prompt: 'run the script',
+        cron: '0 2 * * *',
+        runtime: 'codex',
+        filePath: '/tmp/tasks/codex-nightly/SKILL.md',
+      });
+      const { isError, payload } = await call('tasks_update', {
+        id: codex.id,
+        requestedAllow: ['Bash(/tmp/task.sh --once)'],
+      });
+
+      expect(isError).toBe(true);
+      expect(payload.code).toBe('task_rules_unsupported_runtime');
+      expect(store.getTask(codex.id)!.requestedAllow).toBeNull();
+    });
+
     it('refuses an applied allow list and creates nothing', async () => {
       const before = store.getTasks().length;
       const { isError, payload } = await call('tasks_create', {

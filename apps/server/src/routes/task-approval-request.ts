@@ -1,6 +1,9 @@
 import type { Task, UpdateTaskRequest } from '@dorkos/shared/types';
-import { runsPrograms } from '@dorkos/shared/permission-rules';
-import { isLooserMode } from '../services/tasks/schedule-permission-clamp.js';
+import { needsOwnConfirmation } from '@dorkos/shared/permission-rules';
+import { isLooserScheduleMode, scheduleApprovalBaseline } from '@dorkos/shared/schedule-approval';
+import * as personReview from '../services/tasks/approvals/person-review.js';
+import type { TaskStore } from '../services/tasks/task-store.js';
+import { taskPermissionRulesRefusal } from '../services/tasks/task-permission-rules.js';
 
 /** A refusal returned when approval exceeds the proposal without a person's confirmation. */
 export interface TaskApprovalRequestRefusal {
@@ -8,8 +11,23 @@ export interface TaskApprovalRequestRefusal {
   code: 'looser_than_requested_confirmation_required';
 }
 
-/** Separate approval receipt fields from the task patch and enforce its requested ceiling. */
-export function prepareTaskApprovalRequest(task: Task, update: UpdateTaskRequest) {
+/** A PATCH refusal and the status it answers with. */
+export interface TaskPatchRefusal {
+  status: 400 | 409;
+  body: { error: string; code: string };
+}
+
+/**
+ * Separate approval receipt fields from the task patch, then refuse, in order:
+ * rules the task's runs cannot honour (400), a review the proposal has moved
+ * past (409, so the card refreshes before anything else is judged), and an
+ * approval looser than one click may give (409).
+ */
+export function prepareTaskApprovalRequest(
+  store: Pick<TaskStore, 'getTask'>,
+  task: Task,
+  update: UpdateTaskRequest
+) {
   const {
     approvedPromptHash,
     expectedApprovalRevision,
@@ -17,21 +35,39 @@ export function prepareTaskApprovalRequest(task: Task, update: UpdateTaskRequest
     acceptLooserThanRequested,
     ...data
   } = update;
-  return {
-    data,
-    approvedPromptHash,
-    expectedApprovalRevision,
-    approvalSurface,
-    refusal: taskApprovalRequestRefusal(task, data, acceptLooserThanRequested),
-  };
+  const review = personReview.preparePersonTaskReview(store, task, data, expectedApprovalRevision);
+  const rules =
+    data.requestedAllow !== undefined ||
+    data.approvedAllow !== undefined ||
+    data.runtime !== undefined
+      ? taskPermissionRulesRefusal({
+          runtime: data.runtime !== undefined ? data.runtime : task.runtime,
+          rules: [
+            ...((data.requestedAllow !== undefined ? data.requestedAllow : task.requestedAllow) ??
+              []),
+            ...(data.approvedAllow ?? []),
+          ],
+        })
+      : null;
+  const looser = taskApprovalRequestRefusal(task, data, acceptLooserThanRequested);
+  const refusal: TaskPatchRefusal | null = rules
+    ? { status: 400, body: rules }
+    : review.stale
+      ? { status: 409, body: { ...personReview.STALE_SCHEDULE_REVIEW } }
+      : looser
+        ? { status: 409, body: looser }
+        : null;
+  return { data, approvedPromptHash, expectedApprovalRevision, approvalSurface, review, refusal };
 }
 
 /**
- * Refuse an activation that grants more power than the proposer requested.
+ * Refuse an activation that grants more power than one click may give.
  *
- * Outsider-marked work is measured from the unattended safe floor even when it
- * carried no structured request. An applied allow list may be equal to or
- * narrower than the proposal; adding any rule needs the same explicit choice.
+ * The mode is measured against {@link scheduleApprovalBaseline}: the tightest of
+ * the saved mode, the requested mode and, for outsider-marked work, the
+ * outsider floor. So a request never widens what one click grants, even one for
+ * Full access. An applied allow list may be equal to or narrower than the
+ * proposal; adding any rule needs the same explicit choice.
  */
 export function taskApprovalRequestRefusal(
   task: Task,
@@ -41,23 +77,19 @@ export function taskApprovalRequestRefusal(
   if (task.status !== 'pending_approval' || update.status !== 'active') return null;
 
   const appliedMode = update.permissionMode ?? task.permissionMode;
-  // With no request, the saved (already clamped) mode is the proposal: a looser
-  // mode is never set without the confirmation (PM ruling, Security Should D-1).
-  const proposedMode = task.requestedPermissionMode ?? task.permissionMode;
-  const looserThanRequested = isLooserMode(appliedMode, proposedMode);
+  // The card's tick reads the same baseline (Security Should D-1, review of #3794).
+  const looserThanBaseline = isLooserScheduleMode(appliedMode, scheduleApprovalBaseline(task));
   const outsider = task.originMarks?.outsider === true;
-  const outsiderAtLooseMode =
-    outsider && ['acceptEdits', 'bypassPermissions', 'auto'].includes(appliedMode);
   const requestedRules = new Set(task.requestedAllow ?? []);
   const appliedRules = update.approvedAllow ?? task.approvedAllow ?? [];
   const addsRule = appliedRules.some((rule) => !requestedRules.has(rule));
-  // Any rule that starts programs is said plainly and confirmed (D-2), and an
-  // outsider's rules get the same extra yes a loose mode gets (D-3).
-  const startsPrograms = appliedRules.some(runsPrograms);
+  // A rule that starts programs or writes outside the task's folder is said
+  // plainly and confirmed (D-2), and an outsider's rules get the same extra yes
+  // a loose mode gets (D-3).
+  const ownConfirmation = appliedRules.some(needsOwnConfirmation);
   const outsiderRules = outsider && appliedRules.length > 0;
 
-  const needsConfirmation =
-    looserThanRequested || outsiderAtLooseMode || addsRule || startsPrograms || outsiderRules;
+  const needsConfirmation = looserThanBaseline || addsRule || ownConfirmation || outsiderRules;
   if (needsConfirmation && accepted !== true) {
     return {
       error: 'Choose to run this task looser than proposed.',
