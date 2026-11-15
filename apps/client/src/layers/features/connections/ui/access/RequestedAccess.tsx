@@ -44,11 +44,11 @@ export function RequestedAccess({
               ? `Allow gives Read only. DorkOS can’t make changes in ${serviceName} yet.`
               : 'Allow gives Read only.'}
           </p>
-          <p className="text-muted-foreground">
-            {writeOffer === 'none'
-              ? `If that seems wrong, connect ${serviceName} again.`
-              : 'To let it change things, choose exact actions on the Connections page.'}
-          </p>
+          {writeOffer === 'exact' && (
+            <p className="text-muted-foreground">
+              To change things, choose exact actions under Advanced on the Connections page.
+            </p>
+          )}
         </div>
       ) : (
         wantsWrite &&

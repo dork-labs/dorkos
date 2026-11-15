@@ -40,5 +40,12 @@ describe('read-only connection showcases', () => {
       'Allow gives Read only. DorkOS can’t make changes in Linear yet.'
     );
     expect(screen.getByRole('button', { name: 'Allow' })).toBeEnabled();
+    expect(
+      screen.queryByText('If that seems wrong, connect Linear again.')
+    ).not.toBeInTheDocument();
+    expect(screen.queryByTestId('agent-request-write-note')).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: 'Connect another Linear account' })
+    ).not.toBeInTheDocument();
   });
 });

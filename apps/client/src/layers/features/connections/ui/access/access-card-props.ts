@@ -1,5 +1,6 @@
 import type { ServiceLogo } from '@/layers/entities/connectors';
 import type { CardAccessLevel, WhoCanUse } from '../../lib/access-card-selection';
+import type { RequestedWriteOffer } from '../../lib/access-level-offer';
 import type { AccessCardVariant } from './AccessCardFrame';
 
 interface SharedCardProps {
@@ -48,6 +49,8 @@ export interface PageAccessCardProps extends SharedCardProps {
 
 /** The chat's question: may this one agent use the app? It never offers "every agent". */
 export interface AgentAccessCardProps extends SharedCardProps {
+  /** Report the selected account's write offer; undefined while no preview is loaded. */
+  onWriteOfferChange?: (offer: RequestedWriteOffer | undefined) => void;
   /** Answer for one fixed agent. */
   mode: 'agent';
   /** The agent asking. */

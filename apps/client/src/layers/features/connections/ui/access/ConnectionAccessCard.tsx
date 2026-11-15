@@ -16,7 +16,7 @@ import {
   type EveryAgentDecision,
   type WhoCanUse,
 } from '../../lib/access-card-selection';
-import { displayedAccessLevel } from '../../lib/access-level-offer';
+import { displayedAccessLevel, requestedWriteOffer } from '../../lib/access-level-offer';
 import { selectionsFromPreview } from '../../lib/reconciliation-selection';
 import { useAccessReconciliation } from '../../model/use-access-reconciliation';
 import { LoadFailedState } from '../LoadFailedState';
@@ -115,6 +115,12 @@ function AccessStep(
     },
   });
   const { preview } = access;
+  const writeOffer = preview ? requestedWriteOffer(preview.candidates) : undefined;
+  const onWriteOfferChange = props.mode === 'agent' ? props.onWriteOfferChange : undefined;
+  useEffect(() => {
+    onWriteOfferChange?.(writeOffer);
+    return () => onWriteOfferChange?.(undefined);
+  }, [writeOffer, onWriteOfferChange]);
 
   const fixedAgentId = props.mode === 'agent' ? props.agentId : null;
   const decision = useMemo<CardDecision>(
@@ -270,12 +276,16 @@ function AccessStep(
       ) : null}
 
       {/* Another agent can approve Read, never more, so a request for write access is always the
-          person's to answer: said once, quietly, just above the buttons it is about (DOR-3959). */}
-      {props.mode === 'agent' && props.request?.access === 'read-write' && preview && !outcome && (
-        <p data-testid="agent-request-write-note" className="text-muted-foreground text-xs">
-          Write access needs you.
-        </p>
-      )}
+          person's to answer. An app with no change actions cannot offer it (DOR-3959, DOR-4444). */}
+      {props.mode === 'agent' &&
+        props.request?.access === 'read-write' &&
+        writeOffer !== 'none' &&
+        preview &&
+        !outcome && (
+          <p data-testid="agent-request-write-note" className="text-muted-foreground text-xs">
+            Write access needs you.
+          </p>
+        )}
       <div className="flex flex-wrap items-center justify-end gap-2">
         {access.needsReconciliation ? (
           <Button variant="secondary" onClick={access.refresh}>

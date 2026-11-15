@@ -182,6 +182,28 @@ describe('access for an app with no write actions', () => {
     }
   );
 
+  it('does not save a downgrade when Read is clicked on a stored write level', async () => {
+    const user = userEvent.setup();
+    const snapshot = readOnlyPreview();
+    snapshot.currentGrants = [
+      { agentId: 'scout', operationRevisionIds: ['read'], level: 'read-write' },
+    ];
+    const transport = renderWith(
+      snapshot,
+      <ConnectionAccessDialog connectionId="connection-1" open onOpenChange={vi.fn()} />
+    );
+    const scout = await screen.findByRole('group', { name: 'Access for Scout' });
+    await user.click(within(scout).getByRole('button', { name: 'Read' }));
+    expect(within(scout).getByRole('button', { name: 'Read' })).toHaveAttribute(
+      'aria-pressed',
+      'true'
+    );
+    const save = screen.getByRole('button', { name: 'Save access' });
+    expect(save).toBeDisabled();
+    await user.click(save);
+    expect(transport.applyConnectorReconciliation).not.toHaveBeenCalled();
+  });
+
   it.each(['needs_review', 'access_update_failed'] as const)(
     'keeps %s confirmation intact for an untouched stored write level',
     async (reason) => {
@@ -305,7 +327,13 @@ describe('access for an app with no write actions', () => {
     expect(note).toHaveTextContent(
       'Allow gives Read only. DorkOS can’t make changes in Linear yet.'
     );
-    expect(note).toHaveTextContent('If that seems wrong, connect Linear again.');
+    expect(
+      screen.queryByText('If that seems wrong, connect Linear again.')
+    ).not.toBeInTheDocument();
+    expect(screen.queryByTestId('agent-request-write-note')).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: 'Connect another Linear account' })
+    ).not.toBeInTheDocument();
   });
 
   it('does not claim changes are unavailable when exact change actions exist', async () => {

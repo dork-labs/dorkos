@@ -14,6 +14,7 @@ import {
 } from '@/layers/entities/connectors';
 import { Button, QueryErrorState, Skeleton } from '@/layers/shared/ui';
 import { cn } from '@/layers/shared/lib';
+import type { RequestedWriteOffer } from '../../lib/access-level-offer';
 import { offerableAccounts } from '../../lib/readiness';
 import { AccessCardFrame } from '../access/AccessCardFrame';
 import { ConnectionAccessCard } from '../access/ConnectionAccessCard';
@@ -135,6 +136,8 @@ export function AgentRequestCard({
       .find((candidate) => candidate.serviceSlug === request.serviceSlug) ?? null;
   const serviceName = service?.displayName ?? appServiceName(request.serviceSlug);
   const agentName = request.agent.displayName;
+  // Only the selected account's loaded preview can say changes are unavailable.
+  const [writeOffer, setWriteOffer] = useState<RequestedWriteOffer>();
   // The account a sign-in from this card just made; the access step skips the
   // "which account?" question for it.
   const [signedInId, setSignedInId] = useState<string | null>(null);
@@ -362,14 +365,15 @@ export function AgentRequestCard({
           {...(signedInId ? { connectionId: signedInId } : {})}
           request={{ reason: request.reason, access: request.access }}
           {...(onEditExactActions ? { onEditExactActions } : {})}
+          onWriteOfferChange={setWriteOffer}
           onSkip={decline}
           onAllowed={allowed}
         />
         {/* The agent may need an account that isn't connected yet, so the
             existing ones are never the only answer besides "Not now". Hidden
             once this card signed one in (that account is the answer) and
-            once Allow is answering. */}
-        {!signedInId && !allowedId && (
+            once Allow is answering, or the app has no change actions. */}
+        {!signedInId && !allowedId && writeOffer !== 'none' && (
           <Button
             variant="link"
             size="sm"
