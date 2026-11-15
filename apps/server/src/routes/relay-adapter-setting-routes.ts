@@ -27,6 +27,7 @@ import {
 
 import type { ApiEnv } from '../http/api-chain.js';
 import { readJsonBody } from '../http/request-body.js';
+import { presentsAgentIdentity } from '../middleware/agent-identity.js';
 import { honoRequestFacts } from '../http/request-facts.js';
 import { validationFailureBody } from '../lib/route-utils.js';
 import { env } from '../env.js';
@@ -137,9 +138,11 @@ async function runOrHold(
  * address comparison and normalized secret-field reader.
  *
  * An HTTP agent call names no chat, so its current marks are read through its
- * verified agent folder, matching the other route-level gates. An agent writer
- * with no verified identity has no turn to read marks from, so it is refused
- * as a marked one is: the gate fails closed. Used by add, save and test.
+ * verified agent folder, matching the other route-level gates. A caller that
+ * presents an agent header that does not resolve has no turn to read marks
+ * from, so it is refused as a marked one is: the gate fails closed. A
+ * signed-in person who isn't the owner, or an API key, presents no agent
+ * header and is not this rule's to judge. Used by add, save and test.
  */
 function markedAdapterSecretRefusal(
   c: Context<ApiEnv>,
@@ -152,9 +155,13 @@ function markedAdapterSecretRefusal(
     if (!env.DORKOS_MARK_STRANGER_TURNS) return null;
     const writer = secretWriter(c);
     if (writer === 'person') return null;
-    const identity = honoRequestFacts(c).agentIdentity;
-    const unidentified = identity === undefined;
-    const turnMarked = !unidentified && marksHold(marksOf(undefined, identity.agentPath));
+    const facts = honoRequestFacts(c);
+    const identity = facts.agentIdentity;
+    // Fail closed only on an agent header that did not resolve. A signed-in person who isn't the
+    // owner, or an API key, is a non-person writer here too, but not an agent: not this rule.
+    const unidentified = identity === undefined && presentsAgentIdentity(facts);
+    if (identity === undefined && !unidentified) return null;
+    const turnMarked = identity !== undefined && marksHold(marksOf(undefined, identity.agentPath));
     if (!unidentified && !turnMarked) return null;
     const manifest = adapterManager.getManifest(type);
     return markedTurnSecretToNewAddressRefusal({

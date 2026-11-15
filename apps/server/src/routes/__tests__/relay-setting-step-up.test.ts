@@ -403,6 +403,20 @@ describe('a marked agent turn sending typed secrets to an address', () => {
     expect(manager.addAdapter).not.toHaveBeenCalled();
   });
 
+  // Re-review of #3778: a signed-in person who isn't the owner presents no agent header, so this
+  // rule doesn't judge them, and they aren't told they are an agent.
+  it('lets a signed-in person who is not the owner add a typed secret at a new address', async () => {
+    state.notTheOwner = true;
+    const res = await withStrangerMarkFlag(true, () =>
+      request(app())
+        .post('/api/relay/adapters')
+        .send({ type: 'webhook', id: 'wh-new', config: TYPED_SECRETS })
+    );
+
+    expect(res.status).toBe(201);
+    expect(manager.addAdapter).toHaveBeenCalledOnce();
+  });
+
   it('lets an agent it cannot identify keep the same saved address', async () => {
     const res = await withStrangerMarkFlag(true, () =>
       request(app())
