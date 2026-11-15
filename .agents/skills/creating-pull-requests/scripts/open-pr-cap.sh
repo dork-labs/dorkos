@@ -12,8 +12,9 @@
 #
 # Counts the set that gets armed and queued: open, non-draft PRs into main, so
 # the cap and the arming path never disagree about how many are open.
-# The cap is DORKOS_OPEN_PR_CAP (default 10, the rule since 2026-11-12). A P0 or
-# a CI fix may pass the cap with --p0 and a reason, printed so it is on record.
+# The cap is DORKOS_OPEN_PR_CAP (default 30, the rule since 2026-11-15, Dorian).
+# A P0 or a CI fix may pass the cap with --p0 and a reason, printed so it is on
+# record.
 #
 # Exit codes: 0 ok to open one; 1 at or over the cap; 2 usage error, or the
 # count could not be read. A failed `gh` is never read as zero open PRs.
@@ -47,7 +48,7 @@ if [ "$p0_given" = 1 ] && [ -z "${p0//[[:space:]]/}" ]; then
   exit 2
 fi
 
-cap="${DORKOS_OPEN_PR_CAP:-10}"
+cap="${DORKOS_OPEN_PR_CAP:-30}"
 case "$cap" in
   '' | *[!0-9]* | 0*)
     echo "open-pr-cap: DORKOS_OPEN_PR_CAP must be a positive whole number, got '$cap'" >&2

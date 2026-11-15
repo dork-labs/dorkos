@@ -365,6 +365,20 @@ export const FEATURE_SURFACE_SECTIONS: PlaygroundSection[] = [
     ],
   },
   {
+    id: 'connectionaccessdialog',
+    title: 'ConnectionAccessDialog',
+    page: 'home-inbox',
+    category: 'Connections',
+    keywords: ['access', 'read only', 'disabled', 'write', 'Linear', 'Scout'],
+  },
+  {
+    id: 'read-only-agent-request',
+    title: 'Read-only agent request',
+    page: 'home-inbox',
+    category: 'Connections',
+    keywords: ['request', 'read only', 'allow', 'Linear', 'Scout'],
+  },
+  {
     id: 'agentrequestcard',
     title: 'AgentRequestCard',
     page: 'home-inbox',

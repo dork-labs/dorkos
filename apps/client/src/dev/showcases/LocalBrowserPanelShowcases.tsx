@@ -10,6 +10,7 @@ import { createPlaygroundTransport } from '../playground-transport';
 import { PlaygroundSection } from '../PlaygroundSection';
 import { ShowcaseLabel } from '../ShowcaseLabel';
 import { ShowcaseDemo } from '../ShowcaseDemo';
+import { NativeBrowserStillDemo } from './NativeBrowserStillDemo';
 
 /** A browser nobody has opened yet. */
 const NOT_OPEN: LocalBrowserPersonState = {
@@ -267,6 +268,10 @@ export function LocalBrowserPanelShowcases() {
       <ShowcaseLabel>Forget refused: the sign-ins folder was changed outside DorkOS</ShowcaseLabel>
       <ShowcaseDemo>
         <FolderChangedDemo />
+      </ShowcaseDemo>
+      <ShowcaseLabel>Page covered by an app layer: open ⋯ or Settings over its still</ShowcaseLabel>
+      <ShowcaseDemo>
+        <NativeBrowserStillDemo />
       </ShowcaseDemo>
     </PlaygroundSection>
   );

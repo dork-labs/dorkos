@@ -10,6 +10,7 @@ import {
   VERDICT_POLL,
 } from './security-gate.mjs';
 import { approvalMode, labelAtHead } from './security-label-at-head.mjs';
+import { headVerdict } from './security-verdict.mjs';
 import { REQUIRED_RULESET_NAME } from './security-required-checks.mjs';
 
 const pattern = '^apps/server/src/(http|services/tasks)/';
@@ -150,18 +151,19 @@ test('push then label passes, in the PR run and in the queue', async () => {
   assert.match(await queued(api), /Security status verified/);
 });
 
-test('label and hold fails', async () => {
+const WAITING =
+  /^Waiting for Security: no security-reviewed label yet on head1\. security-review decides/;
+const HELD = /^Waiting for Security: the hold label is on .* on head1\. security-review decides/;
+
+test('label and hold waits in the PR run, and fails in the queue', async () => {
   const api = gate({
     labels: ['security-reviewed', 'hold'],
     timeline: [labelled(LATE)],
     activity: [push(EARLY)],
   });
-  await assert.rejects(check(api), /hold label is on/);
+  assert.match(await check(api), HELD);
   await assert.rejects(queued(api), /hold label is on/);
 });
-
-const WAITING =
-  /^Waiting for Security: no security-reviewed label yet on head1\. security-review decides/;
 
 test('no label waits in the PR run, and fails in the queue', async () => {
   const api = gate({ labels: [], activity: [push(EARLY)] });
@@ -347,7 +349,8 @@ describe('security-deep-reviewed on a P0 identity path (#dorkos, 2026-11-02)', (
       timeline: both(LATE),
       activity: [push(EARLY)],
     });
-    await assert.rejects(check(held), /hold label is on/);
+    assert.match(await check(held), HELD);
+    await assert.rejects(queued(held), /hold label is on/);
   });
 
   test('a sensitive path outside the P0 list needs only security-reviewed', async () => {
@@ -395,11 +398,36 @@ describe('an unlabelled PR waits; anything wrong still fails (Security, step 4)'
     await assert.rejects(check(api), /not from a person/);
   });
 
-  test('hold fails, with or without the label', async () => {
-    for (const labels of [['hold'], ['security-reviewed', 'hold']]) {
-      const api = gate({ labels, timeline: [labelled(LATE)], activity: [push(EARLY)] });
-      await assert.rejects(check(api), /hold label is on/, labels.join(','));
+  test('a stale label fails under hold only when the label is wrong, not merely old', async () => {
+    // Stale under hold waits: the head is judged in full when hold comes off.
+    const stale = gate({
+      labels: ['security-reviewed', 'hold'],
+      timeline: [labelled(EARLY)],
+      activity: [push(LATE)],
+    });
+    assert.match(await check(stale), HELD);
+    await assert.rejects(queued(stale), /hold label is on/);
+  });
+
+  test('hold never hides a Security label a bot added', async () => {
+    for (const name of ['security-reviewed', DEEP_LABEL]) {
+      const api = gate({
+        files: [DEEP],
+        labels: ['security-reviewed', DEEP_LABEL, 'hold'],
+        timeline: [
+          labelled(LATE),
+          labelled(LATE, 'User', DEEP_LABEL),
+          labelled('2026-10-30T11:05:00Z', 'Bot', name),
+        ],
+        activity: [push(EARLY)],
+      });
+      await assert.rejects(check(api), /hold label is on/, name);
     }
+  });
+
+  test('hold never hides a Security label with no labelled event', async () => {
+    const api = gate({ labels: ['security-reviewed', 'hold'], activity: [push(EARLY)] });
+    await assert.rejects(check(api), /hold label is on/);
   });
 
   test('a label added after the merge fails', async () => {
@@ -546,16 +574,18 @@ describe("the PR run waits for main's verdict on a label change (DOR-3710)", () 
     assert.equal(await check(api, '0', poll), 'Security status verified');
   });
 
-  test('a stale success, then hold added: fails without polling', async () => {
-    const api = gate({
+  test('a stale success, then hold added: waits without polling, and the queue refuses', async () => {
+    const input = {
       labels: ['security-reviewed', 'hold'],
       timeline: [labelled(LATE), labelled('2026-10-30T12:30:00Z', 'User', 'hold')],
       activity: [push(EARLY)],
       statuses: [review('success')],
-    });
-    await assert.rejects(check(api), /hold label is on/);
+    };
+    const api = gate(input);
+    assert.match(await check(api), HELD);
     // Only the read before judging; no polling.
     assert.equal(api.statusReads, 1);
+    await assert.rejects(queued(gate(input)), /hold label is on/);
   });
 
   test('a stale success, then a fresh failure: fails', async () => {
@@ -747,5 +777,76 @@ describe("DOR-3710 second look: other bases, newer pending, the event's time, on
     });
     await assert.rejects(check(moving, '0', always), /base kept moving/);
     assert.equal(always.slept, 90_000);
+  });
+});
+
+/**
+ * DOR-4459: while a PR is only waiting (no Security label yet, or `hold` on), its
+ * own `security-gate` run succeeds and says it is waiting, instead of failing.
+ * That success approves nothing: everything that decides a merge still refuses.
+ */
+describe('waiting is never green where a merge is decided (DOR-4459)', () => {
+  const lists = { pattern, deepPattern, botUserId: '0' };
+  const verdict = async (api) => headVerdict(api, await api.pr(1), await api.files(), lists);
+  const cases = [
+    ['no label', { labels: [], activity: [push(EARLY)] }, WAITING],
+    ['hold, no label', { labels: ['hold'], activity: [push(EARLY)] }, HELD],
+    [
+      'hold, fresh label',
+      {
+        labels: ['security-reviewed', 'hold'],
+        timeline: [labelled(LATE)],
+        activity: [push(EARLY)],
+      },
+      HELD,
+    ],
+    [
+      'hold, stale label',
+      {
+        labels: ['security-reviewed', 'hold'],
+        timeline: [labelled(EARLY)],
+        activity: [push(LATE)],
+      },
+      HELD,
+    ],
+    [
+      'hold, P0 path with both labels',
+      {
+        files: [DEEP],
+        labels: ['security-reviewed', DEEP_LABEL, 'hold'],
+        timeline: [labelled(LATE), labelled(LATE, 'User', DEEP_LABEL)],
+        activity: [push(EARLY)],
+      },
+      HELD,
+    ],
+  ];
+  for (const [name, input, said] of cases) {
+    test(`${name}: the PR run waits; the queue and main's verdict refuse`, async () => {
+      const api = gate(input);
+      // Waiting reads no required checks and never polls main's verdict.
+      assert.match(await check(api), said);
+      assert.equal(api.requiredReads, 0);
+      await assert.rejects(queued(gate(input)), /no security-review success/);
+      // `security-review`, the status arm.sh and merge-tail require to be success.
+      const main = await verdict(gate(input));
+      assert.notEqual(main.state, 'success');
+    });
+  }
+
+  test('labelled at the head, no hold: verified, and main says success', async () => {
+    const input = { timeline: [labelled(LATE)], activity: [push(EARLY)] };
+    assert.equal(await check(gate(input)), 'Security status verified');
+    assert.equal((await verdict(gate(input))).state, 'success');
+  });
+
+  test('no security path: passes, and main says success', async () => {
+    const input = { files: ['docs/a.mdx'], labels: [], statuses: [] };
+    assert.equal(await check(gate(input)), 'no security paths (computed)');
+    assert.equal((await verdict(gate(input))).state, 'success');
+  });
+
+  test('a stale label without hold is a real failure, not a wait', async () => {
+    const api = gate({ timeline: [labelled(EARLY)], activity: [push(LATE)] });
+    await assert.rejects(check(api), /older than the last push/);
   });
 });

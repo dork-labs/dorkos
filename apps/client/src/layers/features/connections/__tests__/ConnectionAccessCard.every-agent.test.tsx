@@ -8,10 +8,8 @@ import type { Transport } from '@dorkos/shared/transport';
 import type { ConnectorReconciliationPreview } from '@dorkos/shared/connector-schemas';
 import { createMockTransport } from '@dorkos/test-utils';
 import { TransportProvider } from '@/layers/shared/model';
-import {
-  ConnectionAccessCard,
-  type ConnectionAccessCardProps,
-} from '../ui/access/ConnectionAccessCard';
+import { ConnectionAccessCard } from '../ui/access/ConnectionAccessCard';
+import type { ConnectionAccessCardProps } from '../ui/access/access-card-props';
 
 afterEach(cleanup);
 

@@ -27,7 +27,6 @@ import * as personReview from '../services/tasks/approvals/person-review.js';
  * @module routes/tasks
  */
 import { Hono } from 'hono';
-import { createHash } from 'node:crypto';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import { UpdateTaskRequestSchema, ListTaskRunsQuerySchema } from '@dorkos/shared/schemas';
 import type { CreateTaskInput, PermissionMode, Task } from '@dorkos/shared/schemas';
@@ -102,6 +101,7 @@ import {
 import { marksOf } from '../services/core/turn-power/turn-levels.js';
 import { mountTaskModeUndo } from './task-mode-undo.js';
 import { marksHold } from '../services/core/turn-power/turn-marks.js';
+import * as taskApprovalActor from './task-approval-actor.js';
 
 /**
  * What a schedule on DorkOS credits says to a caller that is not the owner.
@@ -216,6 +216,7 @@ export function createTasksRoutes(deps: TasksRouterDeps): Hono<ApiEnv> {
       {
         input: body as CreateTaskInput,
         trusted,
+        ...(trusted && { createdBy: taskApprovalActor.personTaskApprover(caller) }),
         callerIsOurAgent: agentIdentity != null,
         // An agent's HTTP call names no chat, so its turn is read through its
         // agent: the marks of any marked turn of it running now (DOR-3036).
@@ -283,10 +284,14 @@ export function createTasksRoutes(deps: TasksRouterDeps): Hono<ApiEnv> {
     const parsed = UpdateTaskRequestSchema.safeParse(body);
     if (!parsed.success) return c.json(validationFailureBody(parsed.error), 400);
     // The hash an approval card showed is not a field of the task: only the settle reads it.
-    const { approvedPromptHash, expectedApprovalRevision, ...data } = parsed.data;
+    const { approvedPromptHash, expectedApprovalRevision, approvalSurface, ...data } = parsed.data;
 
     const existing = store.getTask(id);
     if (!existing) return c.json({ error: 'Scheduled task not found' }, 404);
+    const approval = taskApprovalActor.personTaskApproval(
+      caller,
+      existing.status === 'pending_approval' ? (approvalSurface ?? 'unknown') : 'unknown'
+    );
     // From Wi-Fi a schedule runs at Default at most (DOR-3037).
     const wifiRefusal = wifiScheduleRefusal(caller, body, existing);
     if (wifiRefusal) return c.json(wifiRefusal, 403);
@@ -455,7 +460,7 @@ export function createTasksRoutes(deps: TasksRouterDeps): Hono<ApiEnv> {
 
     const rowData =
       fileOutcome.clampApplied && clampTo ? { ...data, permissionMode: clampTo } : data;
-    let updated = store.updateTask(id, rowData, { timingLandsOn });
+    let updated = store.updateTask(id, rowData, { timingLandsOn, approval });
     if (!updated) return c.json({ error: 'Scheduled task not found' }, 404);
 
     // **Re-assert the status the caller asked for.** The file is written before
@@ -481,7 +486,7 @@ export function createTasksRoutes(deps: TasksRouterDeps): Hono<ApiEnv> {
       ? (data.status ?? (changesFile && existing.status === 'active' ? 'active' : undefined))
       : undefined;
     if (intendedStatus !== undefined && updated.status !== intendedStatus) {
-      updated = store.updateTask(id, { status: intendedStatus }) ?? updated;
+      updated = store.updateTask(id, { status: intendedStatus }, { approval }) ?? updated;
     }
 
     // **A person editing their own live schedule re-approves it.**
@@ -501,7 +506,7 @@ export function createTasksRoutes(deps: TasksRouterDeps): Hono<ApiEnv> {
     // So the grant is re-issued only for a caller that cleared the agent bar. An
     // agent's edit still re-parks, and a person still has to look at it.
     if (rearms && changesFile && existing.status === 'active' && updated.status === 'active') {
-      store.approvals.recordApproval(updated.id);
+      store.approvals.recordApproval(updated.id, approval);
       updated = store.getTask(updated.id) ?? updated;
     }
 
@@ -588,7 +593,6 @@ export function createTasksRoutes(deps: TasksRouterDeps): Hono<ApiEnv> {
     // picked mode before any write, then record who approved which proposal.
     if (existing.status === 'pending_approval' && updated.status === 'active') {
       const actorPrincipal = readCallerPrincipal(caller);
-      const raised = updated.permissionMode !== existing.permissionMode;
       // Resolved before the call rather than inside its argument: it reads the
       // agent's manifest off disk, and an await buried in a template literal
       // reads like a synchronous format.
@@ -609,13 +613,12 @@ export function createTasksRoutes(deps: TasksRouterDeps): Hono<ApiEnv> {
         // The before and after both, so a reader can see a raise without
         // reconstructing what the row used to hold.
         metadata: {
-          permissionMode: updated.permissionMode,
-          previousPermissionMode: existing.permissionMode,
-          reasonHead: createHash('sha256')
-            .update(existing.reason ?? '')
-            .digest('hex'),
-          personId: caller.user?.userId ?? null,
-          raised,
+          ...taskApprovalActor.taskApprovalActivityMetadata(
+            updated,
+            existing.permissionMode,
+            existing.reason,
+            caller.user?.userId ?? null
+          ),
         },
         linkPath: '/',
       });

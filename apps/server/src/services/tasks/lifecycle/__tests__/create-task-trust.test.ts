@@ -135,6 +135,9 @@ describe('an agent schedule on a Trusted install', () => {
     expect(row.proposedBySessionId).toBe('ses-1');
     expect(row.proposedByAgentPath).toBe(agentHome());
     expect(row.reason).toBe(AGENT_REQUEST.reason);
+    expect(row.approvedAt).toEqual(expect.any(String));
+    expect(row.approvedBy).toEqual({ kind: 'policy' });
+    expect(row.approvedVia).toBe('trusted_agent');
 
     expect(state.raised).toEqual([]);
     expect(state.notified).toHaveLength(1);
@@ -182,7 +185,12 @@ describe('an agent schedule on a Trusted install', () => {
     const outcome = await agentCreates(false);
 
     expect(outcome.parked).toBe(true);
-    expect(store.getTask(outcome.task.id)!.status).toBe('pending_approval');
+    expect(store.getTask(outcome.task.id)).toMatchObject({
+      status: 'pending_approval',
+      approvedAt: null,
+      approvedBy: null,
+      approvedVia: null,
+    });
     expect(state.notified).toEqual([]);
     expect(state.raised.map((r) => r.kind)).toEqual(['schedule.parked']);
   });

@@ -117,6 +117,8 @@ export type {
   ConfigPatchRequest,
   ConfigPatchResponse,
   TaskStatus,
+  TaskApprover,
+  TaskApprovalVia,
   TaskRunStatus,
   TaskRunOutcome,
   TaskFailureReason,

@@ -4,7 +4,7 @@
     ".claude/scripts/spec-manifest-ops.ts": 589,
     "apps/client/src/dev/sections/content/conversation-sections.ts": 840,
     "apps/client/src/dev/showcases/CommandPaletteShowcases.tsx": 511,
-    "apps/client/src/dev/showcases/ConnectionsShowcases.tsx": 608,
+    "apps/client/src/dev/showcases/ConnectionsShowcases.tsx": 604,
     "apps/client/src/dev/showcases/DataDisplayShowcases.tsx": 593,
     "apps/client/src/dev/showcases/GenUiShowcases.tsx": 515,
     "apps/client/src/dev/showcases/InboxShowcases.tsx": 523,
