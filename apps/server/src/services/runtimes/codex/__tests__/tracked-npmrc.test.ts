@@ -104,6 +104,14 @@ describe('what counts as unchanged', () => {
     expect(matchesIndex({ file: file(), id: blobId('auto-install-peers=true\n') })).toBe(false);
   });
 
+  it('never blocks on a tracked .npmrc swapped for a FIFO, and spares it nothing (Must 3)', async () => {
+    await settleTrackedLookups(repo);
+    fs.rmSync(file());
+    execFileSync('mkfifo', [file()]);
+    // A blocking open would hang the event loop here; the test timeout catches it.
+    expect(trackedUnchangedNpmrc(repo).size).toBe(0);
+  }, 5_000);
+
   it('hashes SHA-1 and SHA-256 blob ids the way git does', () => {
     const text = 'auto-install-peers=true\n';
     expect(matchesIndex({ file: file(), id: blobId(text) })).toBe(true);

@@ -79,7 +79,10 @@ export function parseIndexEntries(base: string, out: string): TrackedEntry[] {
 export function matchesIndex(entry: TrackedEntry): boolean {
   let fd: number | undefined;
   try {
-    fd = fs.openSync(entry.file, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW);
+    fd = fs.openSync(
+      entry.file,
+      fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW | fs.constants.O_NONBLOCK
+    );
     const stat = fs.fstatSync(fd);
     if (!stat.isFile() || stat.size > MAX_NPMRC_BYTES) return false;
     const bytes = fs.readFileSync(fd);
