@@ -722,7 +722,7 @@ export function projectGlobal(input: Omit<GlobalPlanInput, 'packages'>): GlobalP
   const extensions = globalExtensionSkillPackages(ledger, input.roots.dorkHome);
   return buildGlobalPlan({
     ...input,
-    userSkills: readUserSkillNames(input.roots.ownSkillDirs ?? []),
+    userSkills: readUserSkillNames(input.roots.ownSkillDirs ?? [], input.roots.dorkHome),
     packages: scan.plugins,
     unreadableManifests: scan.unreadableManifests,
     extensionPackages: extensions.packages,

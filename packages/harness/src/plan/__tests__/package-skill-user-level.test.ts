@@ -51,7 +51,10 @@ function homeWith(root: '.claude/skills' | '.agents/skills', folder: string, nam
   writeSkill(join(home, root, folder), name);
   return {
     home,
-    dirs: [join(home, '.claude', 'skills'), join(home, '.agents', 'skills')],
+    userSkills: {
+      dirs: [join(home, '.claude', 'skills'), join(home, '.agents', 'skills')],
+      dorkHome: temp('dor4392-dork-'),
+    },
   };
 }
 
@@ -78,8 +81,8 @@ describe("a project package skill never replaces the person's user-level skill",
     ['~/.claude/skills (U1)', '.claude/skills'],
     ['~/.agents/skills (U2)', '.agents/skills'],
   ] as const)('SK-06: skips it when the name is taken in %s', (_label, root) => {
-    const { home, dirs } = homeWith(root, 'my-deploy', 'deploy');
-    const plan = project(repoWithPackage('ship', 'deploy'), { userSkillDirs: dirs });
+    const { home, userSkills } = homeWith(root, 'my-deploy', 'deploy');
+    const plan = project(repoWithPackage('ship', 'deploy'), { userSkills });
 
     expect(linksFor(plan, 'acme__ship')).toEqual([]);
     expect(plan.skippedPackageSkills).toEqual([
@@ -92,9 +95,26 @@ describe("a project package skill never replaces the person's user-level skill",
     ]);
   });
 
+  it("SK-06: skips it for the person's own `team__deploy` link into their dotfiles (#3761 Should 1)", () => {
+    const home = temp('dor4392-home-');
+    const dotfiles = join(temp('dor4392-dotfiles-'), 'deploy');
+    writeSkill(dotfiles, 'deploy');
+    mkdirSync(join(home, '.agents', 'skills'), { recursive: true });
+    symlinkSync(dotfiles, join(home, '.agents', 'skills', 'team__deploy'));
+    const plan = project(repoWithPackage('ship', 'deploy'), {
+      userSkills: { dirs: [join(home, '.agents', 'skills')], dorkHome: temp('dor4392-dork-') },
+    });
+
+    expect(linksFor(plan, 'acme__ship')).toEqual([]);
+    expect(plan.skippedPackageSkills?.[0]?.winner).toEqual({
+      kind: 'own',
+      source: join(home, '.agents', 'skills', 'team__deploy'),
+    });
+  });
+
   it('SK-06: keeps it when no user-level skill has the name', () => {
-    const { dirs } = homeWith('.agents/skills', 'mine', 'other');
-    const plan = project(repoWithPackage('ship', 'deploy'), { userSkillDirs: dirs });
+    const { userSkills } = homeWith('.agents/skills', 'mine', 'other');
+    const plan = project(repoWithPackage('ship', 'deploy'), { userSkills });
 
     expect(linksFor(plan, 'acme__ship').length).toBeGreaterThan(0);
     expect(plan.skippedPackageSkills).toBeUndefined();
@@ -110,14 +130,41 @@ describe("a project package skill never replaces the person's user-level skill",
 describe('the user-level reader', () => {
   it("leaves out DorkOS's own <pkg>__<name> links, so a package never skips itself", () => {
     const home = temp('dor4392-home-');
-    const pluginSkill = join(temp('dor4392-dork-'), 'plugins', 'acme', 'skills', 'deploy');
+    const dorkHome = temp('dor4392-dork-');
+    const pluginSkill = join(dorkHome, 'plugins', 'acme', 'skills', 'deploy');
     writeSkill(pluginSkill, 'deploy');
     mkdirSync(join(home, '.agents', 'skills'), { recursive: true });
     symlinkSync(pluginSkill, join(home, '.agents', 'skills', 'acme__deploy'));
     writeSkill(join(home, '.agents', 'skills', 'mine'), 'mine');
 
-    expect(readUserSkillNames([join(home, '.agents', 'skills')])).toEqual([
+    expect(readUserSkillNames([join(home, '.agents', 'skills')], dorkHome)).toEqual([
       { source: join(home, '.agents', 'skills', 'mine'), exactFrontmatterName: 'mine' },
+    ]);
+  });
+
+  it("keeps the person's own <x>__<y> link that points anywhere else (#3761 Should 1)", () => {
+    const home = temp('dor4392-home-');
+    const dotfiles = join(temp('dor4392-dotfiles-'), 'a');
+    writeSkill(dotfiles, 'a');
+    mkdirSync(join(home, '.agents', 'skills'), { recursive: true });
+    symlinkSync(dotfiles, join(home, '.agents', 'skills', 'team__a'));
+
+    expect(readUserSkillNames([join(home, '.agents', 'skills')], temp('dor4392-dork-'))).toEqual([
+      { source: join(home, '.agents', 'skills', 'team__a'), exactFrontmatterName: 'a' },
+    ]);
+  });
+
+  it('reads the name off a frontmatter DorkOS cannot parse (#3761 Should 2)', () => {
+    const home = temp('dor4392-home-');
+    const dir = join(home, 'skills', 'big');
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(
+      join(dir, 'SKILL.md'),
+      `---\nname: "deploy"\ndescription: big\npad: "${'a'.repeat(40_000)}"\n---\nbody\n`
+    );
+
+    expect(readUserSkillNames([join(home, 'skills')], temp('dor4392-dork-'))).toEqual([
+      { source: dir, exactFrontmatterName: 'deploy' },
     ]);
   });
 
@@ -128,7 +175,10 @@ describe('the user-level reader', () => {
     writeFileSync(join(home, 'skills', 'nameless', 'SKILL.md'), '---\ndescription: d\n---\n');
 
     expect(
-      readUserSkillNames([join(home, 'missing'), join(home, 'not-a-folder'), join(home, 'skills')])
+      readUserSkillNames(
+        [join(home, 'missing'), join(home, 'not-a-folder'), join(home, 'skills')],
+        temp('dor4392-dork-')
+      )
     ).toEqual([]);
   });
 });

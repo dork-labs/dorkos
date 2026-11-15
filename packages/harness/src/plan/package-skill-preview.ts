@@ -14,7 +14,11 @@
  */
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { inventorySourceTree, readUserSkillNames } from '../inventory/index.js';
+import {
+  inventorySourceTree,
+  readUserSkillNames,
+  type UserSkillFolders,
+} from '../inventory/index.js';
 import {
   isProjectScoped,
   readPackageSkills,
@@ -32,7 +36,7 @@ import type { SkippedPackageSkill } from './types.js';
  * @param input.packageName - the package's name, which is its folder name once installed.
  * @param input.packageDir - where the package's files are now (a staging folder).
  * @param input.packageType - the package's manifest type; types the plan does not project skip nothing.
- * @param input.userSkillDirs - the person's user-level skill folders, as `project()` takes them.
+ * @param input.userSkills - the person's user-level skill folders, as `project()` takes them.
  * @returns every skip the install would cause: this package's skills, and any
  *   installed package's skill this one would take the name of. Empty when the
  *   project has no harness manifest, which means nothing is projected.
@@ -42,7 +46,7 @@ export function previewPackageSkillSkips(input: {
   packageName: string;
   packageDir: string;
   packageType: string;
-  userSkillDirs?: readonly string[];
+  userSkills?: UserSkillFolders;
 }): SkippedPackageSkill[] {
   if (!PROJECTABLE_PLUGIN_TYPES.has(input.packageType)) return [];
   // No harness manifest, nothing is projected, so nothing can be skipped.
@@ -58,7 +62,9 @@ export function previewPackageSkillSkips(input: {
   const settled = settlePackageSkillNameCollisions({
     packages,
     ownSkills: inventorySourceTree(input.repoRoot).skills,
-    userSkills: readUserSkillNames(input.userSkillDirs ?? []),
+    userSkills: input.userSkills
+      ? readUserSkillNames(input.userSkills.dirs, input.userSkills.dorkHome)
+      : [],
   });
   return settled.skipped.filter(
     (skip) =>
@@ -76,13 +82,13 @@ export function previewPackageSkillSkips(input: {
  * staged package.
  *
  * @param repoRoot - the project the agent works in.
- * @param userSkillDirs - the person's user-level skill folders, as `project()` takes them.
+ * @param userSkills - the person's user-level skill folders, as `project()` takes them.
  * @returns every package skill the plan skips, empty when the project has no
  *   harness manifest.
  */
 export function currentPackageSkillSkips(
   repoRoot: string,
-  userSkillDirs: readonly string[] = []
+  userSkills?: UserSkillFolders
 ): SkippedPackageSkill[] {
   if (!existsSync(join(repoRoot, '.agents', 'harness.manifest.json'))) return [];
   const packages = scanInstalledSources({ projectRoot: repoRoot })
@@ -91,6 +97,6 @@ export function currentPackageSkillSkips(
   return settlePackageSkillNameCollisions({
     packages,
     ownSkills: inventorySourceTree(repoRoot).skills,
-    userSkills: readUserSkillNames(userSkillDirs),
+    userSkills: userSkills ? readUserSkillNames(userSkills.dirs, userSkills.dorkHome) : [],
   }).skipped;
 }

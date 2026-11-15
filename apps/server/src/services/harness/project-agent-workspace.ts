@@ -107,7 +107,7 @@ import { setImmediate as yieldToEventLoop } from 'node:timers/promises';
 import { resolveDorkHome } from '../../lib/dork-home.js';
 import { logger } from '../../lib/logger.js';
 import { adoptInOwnedWorkspace } from './adopt-owned-workspace.js';
-import { projectUserSkillDirs } from './global-scope.js';
+import { projectUserSkills } from './global-scope.js';
 
 /** Workspace-relative directory holding an agent's canonical skills. */
 const AGENT_SKILLS_DIR = join('.agents', 'skills');
@@ -354,7 +354,7 @@ export function projectAgentWorkspace(
       extensionSkillsHome: dorkHome,
       // An agent on OpenCode reads the person's user-level skills here too, so
       // no package skill may replace one (DOR-4392).
-      userSkillDirs: projectUserSkillDirs(dorkHome),
+      userSkills: projectUserSkills(dorkHome),
     });
     const { applied, conflicts } = applyPlan(agentDir, plan);
 

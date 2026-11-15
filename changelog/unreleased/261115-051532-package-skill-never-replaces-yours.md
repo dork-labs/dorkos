@@ -5,6 +5,7 @@ covers:
   - 'fix(harness): close the two gaps Security found in the same-name package skill skip'
   - "fix(opencode): quote a package's skill folder in the agent's skipped-skills note"
   - 'fix(harness): a package skill never replaces a skill in your home folder either'
+  - 'fix(harness): a home-folder skill link of yours stays yours even when its name has __'
 ---
 
 ### Fixed

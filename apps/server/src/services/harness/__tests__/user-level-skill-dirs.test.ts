@@ -11,7 +11,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { byNameUserSkillDirs } from '../agents-user-home.js';
-import { projectUserSkillDirs, resolveGlobalScopeInputs } from '../global-scope.js';
+import { projectUserSkills, resolveGlobalScopeInputs } from '../global-scope.js';
 import { AGENT_WORKSPACE_HARNESSES } from '../project-agent-workspace.js';
 import { renderSkippedSkillLines } from '../../runtimes/opencode/messaging/skipped-skills.js';
 
@@ -70,8 +70,8 @@ describe('the user-level skill folders OpenCode reads', () => {
   });
 
   it('are not read at all under a configured boundary', () => {
-    expect(projectUserSkillDirs(dorkHome, { DORKOS_BOUNDARY: '/somewhere' })).toEqual([]);
-    expect(projectUserSkillDirs(dorkHome, {})).toEqual(byNameUserSkillDirs());
+    expect(projectUserSkills(dorkHome, { DORKOS_BOUNDARY: '/somewhere' }).dirs).toEqual([]);
+    expect(projectUserSkills(dorkHome, {})).toEqual({ dirs: byNameUserSkillDirs(), dorkHome });
   });
 });
 

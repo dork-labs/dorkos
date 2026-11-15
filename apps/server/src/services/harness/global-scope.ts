@@ -43,7 +43,11 @@
  */
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { AGENTS_SKILLS_DIR_READERS, type GlobalPlanRoots } from '@dorkos/harness';
+import {
+  AGENTS_SKILLS_DIR_READERS,
+  type GlobalPlanRoots,
+  type UserSkillFolders,
+} from '@dorkos/harness';
 import type { HarnessId } from '@dorkos/shared/harness-schemas';
 import { UserConfigSchema } from '@dorkos/shared/config-schema';
 import { boundaryWasConfigured, type BoundaryConfigReader } from '../../lib/boundary.js';
@@ -274,14 +278,18 @@ function userTierRoots(dorkHome: string, harnesses: readonly HarnessId[]): Globa
  * @param dorkHome - the resolved DorkOS data directory.
  * @param env - the process environment, for the boundary check. Defaults to
  *   the live one, read as the CLI reads it, because this module serves both.
- * @returns the absolute folders, or none.
+ * @returns the absolute folders, or none, with the data directory whose links
+ *   in them are DorkOS's own.
  */
-export function projectUserSkillDirs(
+export function projectUserSkills(
   dorkHome: string,
   // eslint-disable-next-line no-restricted-syntax -- shared with the CLI, which never loads env.ts; DORKOS_BOUNDARY is read the same way resolveGlobalScopeInputs' CLI callers pass it
   env: NodeJS.ProcessEnv = process.env
-): string[] {
-  return boundaryWasConfigured(env, boundaryConfigFromDisk(dorkHome)) ? [] : byNameUserSkillDirs();
+): UserSkillFolders {
+  const dirs = boundaryWasConfigured(env, boundaryConfigFromDisk(dorkHome))
+    ? []
+    : byNameUserSkillDirs();
+  return { dirs, dorkHome };
 }
 
 /**

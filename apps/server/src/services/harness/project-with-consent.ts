@@ -122,7 +122,7 @@ import {
   type ProvenInstall,
 } from './dorkos-installed.js';
 import { hookScriptPins } from './hook-script-pins.js';
-import { projectUserSkillDirs, readGlobalSharingFromDisk } from './global-scope.js';
+import { projectUserSkills, readGlobalSharingFromDisk } from './global-scope.js';
 import { withPersonRepinAtHome } from '../runtimes/claude-code/folder-settings/folder-config-consent.js';
 
 /**
@@ -648,7 +648,7 @@ export function planWithConsent(
     ...(opts.dorkosHarness === undefined ? {} : { dorkosHarness: opts.dorkosHarness }),
     ...(sharedWithTools ? { sharedWithTools: true } : {}),
     // The person's user-level skills, so no package skill replaces one (DOR-4392).
-    userSkillDirs: projectUserSkillDirs(opts.dorkHome),
+    userSkills: projectUserSkills(opts.dorkHome),
   });
   const plan = opts.harness === undefined ? full : filterPlanToHarness(full, opts.harness);
   return { plan, withheld, ...(allowedAtFull ? { allowedAtFull } : {}) };
