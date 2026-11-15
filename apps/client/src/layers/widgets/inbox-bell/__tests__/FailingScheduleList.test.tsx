@@ -69,14 +69,35 @@ const task = makeTask({
   },
 });
 
+/** The card's title line, read as one string. */
+function title(): string {
+  return screen.getByTestId('schedule-failure-title').textContent ?? '';
+}
+
 describe('schedule Needs you card', () => {
-  it('uses fixed cause words and opens the actual failed run', () => {
+  it('uses fixed cause words and opens the schedule, expanded', () => {
     render(<FailingScheduleList schedules={[task]} />);
-    expect(screen.getByText('Grooming failed twice in a row')).toBeTruthy();
-    expect(screen.getByText('An unknown error.')).toBeTruthy();
+    expect(title()).toBe('Grooming failed twice in a row');
+    expect(screen.getByText('It didn’t finish.')).toBeTruthy();
     expect(screen.queryByText(/IGNORE|evil/)).toBeNull();
-    fireEvent.click(screen.getByRole('button', { name: 'Open run' }));
-    expect(navigate).toHaveBeenCalledWith({ href: '/tasks?schedule=schedule&run=run-two' });
+    fireEvent.click(screen.getByRole('button', { name: 'Open schedule' }));
+    expect(navigate).toHaveBeenCalledWith({ href: '/tasks?expand=schedule' });
+  });
+
+  it('says "An unknown error" only when nothing was recorded', () => {
+    const unknown = {
+      ...task,
+      health: { ...task.health!, reason: { ...task.health!.reason!, message: null } },
+    };
+    render(<FailingScheduleList schedules={[unknown]} />);
+    expect(screen.getByText('An unknown error.')).toBeTruthy();
+  });
+
+  it('shows the whole name, never cut to two words (DOR-4121)', () => {
+    const long = { ...task, displayName: 'Hourly uptime check for the status page' };
+    render(<FailingScheduleList schedules={[long]} />);
+    expect(title()).toBe('Hourly uptime check for the status page failed twice in a row');
+    expect(screen.queryByText(/…/)).toBeNull();
   });
 
   it('names a blocked schedule and clears when recovery removes it from the queue', () => {
@@ -93,23 +114,34 @@ describe('schedule Needs you card', () => {
       },
     };
     const { rerender } = render(<FailingScheduleList schedules={[blocked]} />);
-    expect(screen.getByText('Grooming was blocked twice in a row')).toBeTruthy();
+    expect(title()).toBe('Grooming was blocked twice in a row');
     expect(screen.getByText('A command was refused.')).toBeTruthy();
     rerender(<FailingScheduleList schedules={[]} />);
-    expect(screen.queryByRole('button', { name: 'Open run' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Open schedule' })).toBeNull();
   });
 
-  it('says the reason as a sentence with when it tries again, kept on one line', () => {
+  it('says the reason with a 12-hour next try, kept to fifteen words', () => {
     const active = {
       ...task,
       status: 'active' as const,
-      // Local 10:00, so the card reads the same time in any test timezone.
-      nextRun: new Date(2026, 10, 10, 10, 0).toISOString(),
+      // 11:00 PM local today, so the card reads the same in any test time zone.
+      nextRun: new Date(new Date().setHours(23, 0, 0, 0)).toISOString(),
     };
     render(<FailingScheduleList schedules={[active]} />);
-    const reason = screen.getByText(/^An unknown error\. Next/);
-    expect(reason.textContent).toBe('An unknown error. Next try: 10:00.');
+    const reason = screen.getByText(/^It didn’t finish\. Next/);
+    expect(reason.textContent).toBe('It didn’t finish. Next\u00a0try\u00a011:00\u00a0PM.');
     expect(reason.textContent!.split(/\s+/).length).toBeLessThanOrEqual(15);
+  });
+
+  it('names the day when the next try is not today', () => {
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    tomorrow.setHours(9, 0, 0, 0);
+    const active = { ...task, status: 'active' as const, nextRun: tomorrow.toISOString() };
+    render(<FailingScheduleList schedules={[active]} />);
+    expect(screen.getByText(/Next/).textContent).toBe(
+      'It didn’t finish. Next\u00a0try\u00a0tomorrow\u00a0at\u00a09:00\u00a0AM.'
+    );
   });
 
   it('drops the next try for a paused schedule', () => {
@@ -120,6 +152,6 @@ describe('schedule Needs you card', () => {
       nextRun: new Date(2026, 10, 10, 10, 0).toISOString(),
     };
     render(<FailingScheduleList schedules={[paused]} />);
-    expect(screen.getByText('An unknown error.')).toBeTruthy();
+    expect(screen.getByText('It didn’t finish.')).toBeTruthy();
   });
 });

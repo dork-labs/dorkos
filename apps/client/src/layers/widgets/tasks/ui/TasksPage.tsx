@@ -33,7 +33,7 @@ export function TasksPage() {
 
 /** Every state of the `/tasks` page below its heading. */
 function TasksPageBody() {
-  const search = useSafeSearch() as { schedule?: string; run?: string };
+  const search = useSafeSearch() as { schedule?: string; run?: string; expand?: string };
   const navigate = useSafeNavigate();
   const tasksEnabled = useTasksEnabled();
   const { data: allTasks = [], isLoading, isError, refetch } = useTasks(tasksEnabled);
@@ -154,6 +154,7 @@ function TasksPageBody() {
               isLoading={isLoading}
               agentMap={agentMap}
               onEditTask={handleEditTask}
+              expandId={search.expand}
             />
           </PageContainer>
         </motion.div>

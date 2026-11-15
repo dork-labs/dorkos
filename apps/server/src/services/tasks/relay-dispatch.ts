@@ -74,6 +74,10 @@ function nothingAnswered(result: PublishResult): boolean {
  * (DOR-3033). Every run used to read "nothing was available", including the
  * ones a two-minute delivery timeout had cut off while they ran.
  *
+ * The fails-twice notice reads these sentences back into fixed words by their
+ * opening (`ERROR_CAUSES` in `@dorkos/shared/schedule-notice-copy`, DOR-4121),
+ * so a rewording here belongs there too.
+ *
  * @param trigger - What started the run
  * @param result - What the publish returned
  */
