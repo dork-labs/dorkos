@@ -187,13 +187,29 @@ test.describe('Touch reach — the surfaces batch 07 fixed @smoke', () => {
     await rightPanel.ensureTabStripOpen();
     await rightPanel.selectView('Terminal');
 
-    // The panel spawns its first terminal on open, so the tab arriving is the
-    // PTY having been created — an outcome to wait for rather than a guess at
-    // how long the round trip takes.
-    const close = rightPanel.header.getByRole('button', { name: /^Close .+ view$/ }).first();
-    await expect(close, 'opening the Terminal tab must spawn a closable terminal').toBeVisible({
-      timeout: 20_000,
+    // The strip draws this tab three times before it settles, and each one is a
+    // new element with its own close button (DOR-4490): a placeholder "Terminal"
+    // tab while the panel mounts, then "Shell 1" keyed by its client key (`t1`)
+    // while the PTY spawns, then "Shell 1" keyed by the server's PTY id. The
+    // React key is the tab id, so each step unmounts the close button the last
+    // one drew. Waiting for any close button caught an early one, and the scroll
+    // in `expectReach` then held an element the next render threw away
+    // ("Element is not attached to the DOM", on the retry too). So wait for the
+    // outcome itself — the selected tab carrying a real PTY id, the same check
+    // `tests/pulse/terminal-resource-lifecycle.spec.ts` uses — and only then
+    // find its close button.
+    const shell = rightPanel.header.getByRole('tab', { name: 'Shell 1', exact: true });
+    await expect(shell, 'opening the Terminal tab must spawn a terminal').toHaveAttribute(
+      'id',
+      /^right-panel-tab-resource\/terminal\/[0-9a-f-]{36}$/,
+      { timeout: 20_000 }
+    );
+    await expect(shell).toHaveAttribute('aria-selected', 'true');
+    const close = rightPanel.header.getByRole('button', {
+      name: 'Close Shell 1 view',
+      exact: true,
     });
+    await expect(close, 'the spawned terminal must be closable').toBeVisible();
 
     await expectReach(close, 'the terminal tab close button', {
       minTouch: TAB_CLOSE_MIN_TOUCH_PX,
