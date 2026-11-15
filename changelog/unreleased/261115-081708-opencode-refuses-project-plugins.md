@@ -1,6 +1,7 @@
 ---
 covers:
   - "fix(opencode): a project's own OpenCode plugins never run in the shared sidecar"
+  - "fix(opencode): the project-plugins notice reads like the chat's other lasting notices"
 ---
 
 ### Fixed

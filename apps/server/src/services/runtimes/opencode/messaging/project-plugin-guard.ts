@@ -29,6 +29,7 @@
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import path from 'node:path';
 import type { StreamEvent } from '@dorkos/shared/types';
+import { OPENCODE_PROJECT_PLUGINS_ERROR_CODE } from '@dorkos/shared/run-outcome';
 
 /** The largest config file read; a bigger one cannot be checked, so it counts. */
 const MAX_CONFIG_BYTES = 256 * 1024;
@@ -40,11 +41,11 @@ const CODE_FILE = /\.(?:[cm]?[jt]sx?)$/i;
 const CONFIG_NAMES = ['opencode.json', 'opencode.jsonc'];
 
 /** The stable code the chat keys the refusal on. */
-export const PROJECT_PLUGINS_CODE = 'opencode_project_plugins';
+export const PROJECT_PLUGINS_CODE = OPENCODE_PROJECT_PLUGINS_ERROR_CODE;
 
-/** What the chat says. Frozen copy; no project text. */
+/** What the chat says. Frozen copy; no project text. The app draws the same two lines. */
 export const PROJECT_PLUGINS_MESSAGE =
-  'This project has its own OpenCode plugins. DorkOS won’t run them without your yes. An allow for your own projects is coming.';
+  'OpenCode can’t run in this project. It has its own plugins. DorkOS won’t run a project’s code without your yes. Allowing your own projects comes next.';
 
 /** Whether an error just means "nothing here". */
 function isAbsent(err: unknown): boolean {

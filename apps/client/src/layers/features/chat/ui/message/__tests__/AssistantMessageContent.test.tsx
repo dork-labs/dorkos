@@ -441,6 +441,29 @@ describe('AssistantMessageContent — unreadable-entry placeholders (DOR-2078)',
   });
 });
 
+describe('AssistantMessageContent — a turn refused for project plugins (DOR-4394)', () => {
+  it("draws the lasting notice in its own words, never the error's text", () => {
+    render(
+      <AssistantMessageContent
+        message={makeMessage([
+          {
+            type: 'error' as const,
+            message: 'text that must not be shown',
+            code: 'opencode_project_plugins',
+            category: 'execution_error' as const,
+          },
+        ])}
+      />
+    );
+
+    expect(screen.getByTestId('project-plugins-note')).toHaveTextContent(
+      'OpenCode can’t run in this project.'
+    );
+    expect(screen.queryByText('text that must not be shown')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('error-message-block')).not.toBeInTheDocument();
+  });
+});
+
 /**
  * The renderer used to end with a bare comment asserting "at this point
  * part.type === 'tool_call'". Adding a member to `MessagePartSchema` made that
