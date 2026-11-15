@@ -36,16 +36,18 @@ import {
 import { DORKOS_MCP_SERVER_NAME } from '../../shared/dorkos-tool-names.js';
 import { codexCreditsThreadConfig } from '../credits-launch.js';
 import { withLiteralHeaders } from '../mcp-server-config.js';
-import { MODE_TO_SANDBOX } from '../turn-input.js';
 import type { CodexTurnTools } from '../transport/codex-transport.js';
 import type { CodexAppServerProcess } from './process-pool.js';
 import { guardedMountTargetRecorder } from '../policy/writable-missing-targets.js';
 import { codexPermissionProfile, codexProtectedConfig } from '../policy/protected-profile.js';
 import { loadWithProtectedProfile } from './profile-load.js';
+import { withThreadLoadBinding } from './thread-load-binding.js';
+import { sandboxFor, trustLevelFor } from './thread-trust.js';
+export { trustLevelFor } from './thread-trust.js';
 import { credentialsOf } from './thread-credentials.js';
 import { approvalPolicyFor } from './turn-parts.js';
 import { isCodexRpcError } from './protocol/errors.js';
-import type { SandboxMode, ThreadLoadOverrides } from './protocol/methods.js';
+import type { ThreadLoadOverrides } from './protocol/methods.js';
 
 /** The copy a person reads when Codex lost the conversation (§6). */
 export const THREAD_STARTS_FRESH_NOTICE = 'Codex no longer has this chat, so it starts fresh.';
@@ -135,26 +137,6 @@ export interface CodexThreadLoaderOptions {
   readonly realpath?: (path: string) => string;
   /** Persist only the missing literals captured for an actual load. */
   readonly recordMissingTargets?: (data: string, targets: string[]) => void;
-}
-
-/**
- * The trust a thread loads with (spike 2c). The credits home never trusts a
- * folder; the person's home keeps the person's own recorded verdict, else
- * trusts the folder for a writable mode — exactly what exec does today, minus
- * writing it to their `config.toml`.
- *
- * @param home - Which home.
- * @param sandbox - The thread's sandbox.
- * @param recorded - The person's own verdict for this path, if any.
- */
-export function trustLevelFor(
-  home: CodexHomeKind,
-  sandbox: SandboxMode,
-  recorded: string | undefined
-): 'trusted' | 'untrusted' | undefined {
-  if (home === 'credits') return 'untrusted';
-  if (recorded === 'trusted' || recorded === 'untrusted') return recorded;
-  return sandbox === 'read-only' ? undefined : 'trusted';
 }
 
 /** Loads threads, one record per (process, thread). */
@@ -361,10 +343,12 @@ export class CodexThreadLoader {
     try {
       const overrides = await this.overrides(input, key?.key);
       forked = (
-        await loadWithProtectedProfile(input.process.client, 'thread/fork', {
-          threadId,
-          ...overrides,
-        })
+        await withThreadLoadBinding(input, key?.keyId, this.options.threadKeys(), () =>
+          loadWithProtectedProfile(input.process.client, 'thread/fork', {
+            threadId,
+            ...overrides,
+          })
+        )
       ).thread.id;
     } catch (err) {
       if (key) this.options.threadKeys()?.revoke(key.keyId, 'superseded');
@@ -435,10 +419,12 @@ export class CodexThreadLoader {
     const key = this.mintKey(input);
     try {
       const overrides = await this.overrides(input, key?.key);
-      await loadWithProtectedProfile(input.process.client, 'thread/resume', {
-        threadId,
-        ...overrides,
-      });
+      await withThreadLoadBinding(input, key?.keyId, this.options.threadKeys(), () =>
+        loadWithProtectedProfile(input.process.client, 'thread/resume', {
+          threadId,
+          ...overrides,
+        })
+      );
     } catch (err) {
       if (key) this.options.threadKeys()?.revoke(key.keyId, 'superseded');
       // Deleted (or its rollout removed) in Codex. DorkOS's own history stays visible.
@@ -476,8 +462,11 @@ export class CodexThreadLoader {
     let threadId: string;
     try {
       const overrides = await this.overrides(input, key?.key);
-      threadId = (await loadWithProtectedProfile(input.process.client, 'thread/start', overrides))
-        .thread.id;
+      threadId = (
+        await withThreadLoadBinding(input, key?.keyId, this.options.threadKeys(), () =>
+          loadWithProtectedProfile(input.process.client, 'thread/start', overrides)
+        )
+      ).thread.id;
     } catch (err) {
       if (key) this.options.threadKeys()?.revoke(key.keyId, 'superseded');
       throw err;
@@ -686,10 +675,6 @@ export class CodexThreadLoader {
     );
     return createHash('sha256').update(JSON.stringify(shape)).digest('hex');
   }
-}
-
-function sandboxFor(settings: SessionSettings): SandboxMode {
-  return (MODE_TO_SANDBOX[settings.permissionMode ?? 'default'] ?? 'read-only') as SandboxMode;
 }
 
 /**
