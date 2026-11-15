@@ -235,6 +235,7 @@
     "GET /api/harness/status",
     "GET /api/health",
     "GET /api/health/deep",
+    "GET /api/heartbeats/wakers-off",
     "GET /api/hub/computers",
     "GET /api/hub/computers/:computerId/agents/:agentId/chats",
     "GET /api/hub/computers/:computerId/sessions/:sessionId/stream",

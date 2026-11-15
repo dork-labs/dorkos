@@ -194,6 +194,18 @@ export const pulseSchedules = sqliteTable('pulse_schedules', {
   followedAgentChanges: text('followed_agent_changes'),
   enabled: integer('enabled', { mode: 'boolean' }).notNull().default(true),
   /**
+   * When this schedule stopped being able to run (switched off, waiting for
+   * approval, or paused), or NULL while it is on and active. The team page
+   * shows it as "off since" (DOR-3641).
+   *
+   * Written by the SQLite triggers `pulse_schedules_off_since_*` (migration
+   * `dor3641_waker_off_since`), never by app code: more than a dozen writers
+   * flip `enabled` or `status`, and a trigger is the one place none of them can
+   * forget. A table rebuild drops triggers, so `waker-off-since-migration.test.ts`
+   * checks they survive every migration.
+   */
+  offSince: text('off_since'),
+  /**
    * The SKILL.md's own `enabled`, as the last sync read it (DOR-3309). A file
    * may switch a task off but never on, so the row and its file can disagree;
    * this is how a sync tells a file that has just started saying "on" from one

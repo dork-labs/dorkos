@@ -913,6 +913,58 @@ describe('TaskStore', () => {
       expect(store.getTask(task.id)?.id).toBe(task.id);
     });
 
+    it('stamps the un-pause as an approval, never leaving the old receipt or none (DOR-3641)', () => {
+      const filePath = '/home/u/.dork/tasks/stamped/SKILL.md';
+      const task = store.createTask(taskInput({ name: 'stamped', filePath }));
+      store.fileSync.markRemovedByFilePath(filePath);
+      // A park elsewhere may have cleared the receipt while it was paused.
+      db.update(pulseSchedules)
+        .set({ approvedAt: null, approvedBy: null, approvedVia: null })
+        .where(eq(pulseSchedules.id, task.id))
+        .run();
+
+      store.fileSync.upsertFromFile(definition('stamped', filePath), undefined, {
+        source: 'operator',
+        approval: {
+          approvedBy: { kind: 'person', userId: 'user-1', name: null },
+          approvedVia: 'created',
+        },
+      });
+      expect(store.getTask(task.id)).toMatchObject({
+        status: 'active',
+        approvedBy: { kind: 'person', userId: 'user-1', name: null },
+        approvedVia: 'created',
+      });
+
+      // With no approver named, the policy's stamp, never a blank one.
+      store.fileSync.markRemovedByFilePath(filePath);
+      store.fileSync.upsertFromFile(definition('stamped', filePath));
+      expect(store.getTask(task.id)).toMatchObject({
+        status: 'active',
+        approvedBy: { kind: 'policy' },
+        approvedVia: 'unknown',
+      });
+      expect(store.getTask(task.id)?.approvedAt).toEqual(expect.any(String));
+    });
+
+    it('brings a paused task back waiting when the write approves nothing (DOR-3641)', () => {
+      const filePath = '/home/u/.dork/tasks/parked-create/SKILL.md';
+      const task = store.createTask(taskInput({ name: 'parked-create', filePath }));
+      store.fileSync.markRemovedByFilePath(filePath);
+
+      store.fileSync.upsertFromFile(definition('parked-create', filePath), undefined, {
+        source: 'operator',
+        approval: null,
+      });
+
+      expect(store.getTask(task.id)).toMatchObject({
+        status: 'pending_approval',
+        approvedAt: null,
+        approvedBy: null,
+        approvedVia: null,
+      });
+    });
+
     it('leaves pending_approval alone — only a person clears that gate', () => {
       const filePath = '/home/u/.dork/tasks/needs-ok/SKILL.md';
       const task = store.createTask(taskInput({ name: 'needs-ok', filePath }));

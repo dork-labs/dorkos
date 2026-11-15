@@ -19,3 +19,5 @@ export { TeamRosterToolbar } from './ui/TeamRosterToolbar';
 export type { TeamRosterToolbarProps } from './ui/TeamRosterToolbar';
 export { TeamRosterWarnings } from './ui/TeamRosterWarnings';
 export type { TeamRosterWarningsProps } from './ui/TeamRosterWarnings';
+export { WakersOffList, wakerStatus } from './ui/WakersOffList';
+export type { WakersOffListProps } from './ui/WakersOffList';

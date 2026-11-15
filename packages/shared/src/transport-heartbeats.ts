@@ -5,6 +5,7 @@
  * @module shared/transport-heartbeats
  */
 import type { HeartbeatStatus, TriageCreditsChoice } from './heartbeat-schemas.js';
+import type { WakersOff } from './waker-schemas.js';
 
 /** What the app asks the server about an agent's heartbeat. */
 export interface HeartbeatTransport {
@@ -22,4 +23,9 @@ export interface HeartbeatTransport {
    * @param useCredits - `true` is **Use credits**; `false` is **Not now**.
    */
   chooseTriageCredits(useCredits: boolean): Promise<TriageCreditsChoice>;
+  /**
+   * Every schedule and heartbeat that cannot wake now, since when, and who it
+   * waits on, for the team page (DOR-3641).
+   */
+  listWakersOff(): Promise<WakersOff>;
 }

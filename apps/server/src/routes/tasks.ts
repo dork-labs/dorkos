@@ -288,10 +288,9 @@ export function createTasksRoutes(deps: TasksRouterDeps): Hono<ApiEnv> {
 
     const existing = store.getTask(id);
     if (!existing) return c.json({ error: 'Scheduled task not found' }, 404);
-    const approval = taskApprovalActor.personTaskApproval(
-      caller,
-      existing.status === 'pending_approval' ? (approvalSurface ?? 'unknown') : 'unknown'
-    );
+    // The card's surface labels only an approval of a waiting task.
+    const surface = existing.status === 'pending_approval' ? approvalSurface : undefined;
+    const approval = taskApprovalActor.personTaskApproval(caller, surface ?? 'unknown');
     // From Wi-Fi a schedule runs at Default at most (DOR-3037).
     const wifiRefusal = wifiScheduleRefusal(caller, body, existing);
     if (wifiRefusal) return c.json(wifiRefusal, 403);
@@ -523,6 +522,7 @@ export function createTasksRoutes(deps: TasksRouterDeps): Hono<ApiEnv> {
     if (!rearms || !changesFile) {
       store.approvals.settleApprovedWorkChange(updated.id, before, {
         trusted: rearms,
+        approval,
         // Only an agent's own schedule stays live through its edit (DOR-3640 R1),
         // and not one an agent approved or a person set looser than Don't ask (DOR-3703).
         armsAgentWork: !trusted && edit.armsAgentWork && agentEditMayStayLive(existing, store),

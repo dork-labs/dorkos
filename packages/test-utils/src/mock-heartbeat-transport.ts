@@ -77,5 +77,6 @@ export function createMockHeartbeatTransport(): HeartbeatTransport {
     chooseTriageCredits: vi
       .fn()
       .mockImplementation(async (useCredits: boolean) => ({ useCredits })),
+    listWakersOff: vi.fn().mockResolvedValue({ wakers: [] }),
   };
 }

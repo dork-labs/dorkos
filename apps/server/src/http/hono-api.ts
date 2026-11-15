@@ -93,6 +93,7 @@ import {
   createHeartbeatTriageRoutes,
   type HeartbeatTriageRouterDeps,
 } from '../routes/heartbeat-triage.js';
+import { createWakersOffRoutes, type WakersOffRouterDeps } from '../routes/wakers-off.js';
 import keepAwakeRoutes from '../routes/keep-awake.js';
 import { createMarketplaceRoutes, type MarketplaceRouteDeps } from '../routes/marketplace.js';
 import { createMcpRoutes, type McpServerFactory } from '../routes/mcp.js';
@@ -229,6 +230,8 @@ export interface ComposedGroupDeps {
    * {@link ComposedGroupDeps.heartbeat}.
    */
   heartbeatTriage?: HeartbeatTriageRouterDeps;
+  /** Every waker that cannot wake now, for the team page (`GET /api/heartbeats/wakers-off`). */
+  wakersOff?: WakersOffRouterDeps;
   /** The embedded terminal's REST half (`/api/terminal`); its socket is an upgrade. */
   terminal?: TerminalManager;
   computers?: ComputerRoutesService;
@@ -564,6 +567,8 @@ export function createHonoApi(options: HonoApiOptions): Hono<ApiEnv> {
   if (deps.heartbeatTriage) {
     app.route('/api/heartbeats/triage-credits', createHeartbeatTriageRoutes(deps.heartbeatTriage));
   }
+  if (deps.wakersOff)
+    app.route('/api/heartbeats/wakers-off', createWakersOffRoutes(deps.wakersOff));
   if (deps.terminal) app.route('/api/terminal', createTerminalRoutes(deps.terminal));
   if (deps.localBrowser)
     app.route(

@@ -5,6 +5,7 @@
  */
 import type { pulseSchedules } from '@dorkos/db';
 import type { TaskApprover, TaskApprovalVia } from '@dorkos/shared/types';
+import { TaskApproverSchema, TaskApprovalViaSchema } from '@dorkos/shared/schemas';
 import { effectiveContentKey } from '../timing/effective-timing.js';
 
 /** The actor and path supplied by an approval door. */
@@ -95,6 +96,49 @@ export function createTaskApprovalColumns(input?: TaskApprovalInput | null) {
     : taskApprovalReceiptColumns(
         completeTaskApproval(input ?? { approvedBy: { kind: 'policy' }, approvedVia: 'created' })
       );
+}
+
+/** How much a receipt says: a named approver outweighs a policy, then a known surface counts. */
+function receiptWeight(receipt: TaskApprovalReceipt): number {
+  return (
+    (receipt.approvedBy.kind === 'policy' ? 0 : 2) + (receipt.approvedVia === 'unknown' ? 0 : 1)
+  );
+}
+
+/** The receipt a row holds now, or null when any part is missing or unreadable. */
+export function standingTaskApproval(
+  row: Pick<typeof pulseSchedules.$inferSelect, 'approvedAt' | 'approvedBy' | 'approvedVia'>
+): TaskApprovalReceipt | null {
+  if (row.approvedAt === null || row.approvedBy === null || row.approvedVia === null) return null;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(row.approvedBy);
+  } catch {
+    return null;
+  }
+  const approvedBy = TaskApproverSchema.safeParse(parsed);
+  const approvedVia = TaskApprovalViaSchema.safeParse(row.approvedVia);
+  return approvedBy.success && approvedVia.success
+    ? { approvedAt: row.approvedAt, approvedBy: approvedBy.data, approvedVia: approvedVia.data }
+    : null;
+}
+
+/**
+ * The receipt an approval of the row's CURRENT content writes. Approving the
+ * same content again keeps the standing receipt unless the new one says more:
+ * re-sending `active` on a live task is not a new approval, and must not turn
+ * "Dorian, in the Inbox" into "someone, somewhere" (DOR-3641 review, nit 4).
+ * New content always takes the new receipt, since nobody approved it before.
+ */
+export function reapprovalReceipt(
+  row: typeof pulseSchedules.$inferSelect,
+  incoming: TaskApprovalReceipt
+): TaskApprovalReceipt {
+  if (row.approvedContentKey === null || row.approvedContentKey !== effectiveContentKey(row)) {
+    return incoming;
+  }
+  const standing = standingTaskApproval(row);
+  return standing && receiptWeight(standing) >= receiptWeight(incoming) ? standing : incoming;
 }
 
 /** Choose the receipt for an operator, trusted agent, or parked create. */

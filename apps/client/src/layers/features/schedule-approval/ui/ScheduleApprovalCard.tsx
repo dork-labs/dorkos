@@ -43,7 +43,6 @@ import { holdApprovedSchedule, releaseSettledSchedule } from '../model/settling-
 import { useScheduleTestRun } from '../model/use-schedule-test-run';
 import { TestRunStrip } from './TestRunStrip';
 import { ScheduleOriginMarks } from './ScheduleOriginMarks';
-import { useProfile } from '@/layers/entities/user-profile';
 import { ScheduleApprovalReceipt, type ScheduleApprovalSurface } from './ScheduleApprovalReceipt';
 
 /** What a person answered, once they have. */
@@ -179,7 +178,9 @@ function ScheduleApprovalContent({
   const [pickedMode, setPickedMode] = useState<string | null>(null);
   const [grantedLabel, setGrantedLabel] = useState<string | null>(null);
   const [approvedAt, setApprovedAt] = useState<string | null>(null);
-  const { displayName } = useProfile();
+  // The approver the server recorded, never the owner's saved name: with
+  // login on, someone else may have approved (DOR-3641 review, nit 3).
+  const [approverName, setApproverName] = useState<string | null>(null);
   // A yes that approves the task's SKILL file shows the prompt it approves,
   // open from the start (DOR-3703, M4): an agent's proposal, or any task whose
   // file this approval would vouch for.
@@ -287,6 +288,7 @@ function ScheduleApprovalContent({
       {
         onSuccess: (approved) => {
           if (approved?.approvedAt) setApprovedAt(approved.approvedAt);
+          if (approved?.approvedBy?.kind === 'person') setApproverName(approved.approvedBy.name);
           onApproved?.();
         },
         onError: (error) => {
@@ -294,6 +296,7 @@ function ScheduleApprovalContent({
           releaseSettledSchedule(task.id);
           setDecision(null);
           setApprovedAt(null);
+          setApproverName(null);
           setGrantedLabel(null);
         },
       }
@@ -629,7 +632,7 @@ function ScheduleApprovalContent({
         <AskCard.Actions>
           {answered === 'approved' && approvedAt ? (
             <ScheduleApprovalReceipt
-              name={displayName ?? 'you'}
+              name={approverName ?? 'you'}
               approvedAt={approvedAt}
               surface={approvalSurface}
               grantedLabel={grantedLabel}
