@@ -4,6 +4,16 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, render } from '@testing-library/react';
 import { useRef } from 'react';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogTitle,
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/layers/shared/ui';
 import { useNativeBrowserSurface } from '../use-native-browser-surface';
 
 // DOR-3312: the shared-browser surface used to measure itself on every animation
@@ -234,26 +244,114 @@ describe('useNativeBrowserSurface', () => {
     expect(query.mock.calls.length).toBeLessThanOrEqual(3);
   });
 
-  it('hides itself when a modal dialog opens over it', async () => {
-    render(<Surface onUnavailable={() => {}} />);
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(FRAME_MS * 30);
-    });
-    setBounds.mockClear();
-    vi.spyOn(HTMLElement.prototype, 'getClientRects').mockReturnValue([
-      {} as DOMRect,
-    ] as unknown as DOMRectList);
+  // DOR-4417 and DOR-4418: real Radix layers, placed where a real window would put them.
+  describe('app layers', () => {
+    const WINDOW = { x: 0, y: 0, width: 1200, height: 800 };
+    // Stable, as in the panel: a new callback would restart the surface on every render.
+    const noop = () => {};
+    let tooltipRect = { x: 600, y: 300, width: 80, height: 24 };
 
-    const dialog = document.createElement('div');
-    dialog.setAttribute('role', 'dialog');
-    dialog.setAttribute('aria-modal', 'true');
-    await act(async () => {
-      document.body.appendChild(dialog);
-      await Promise.resolve();
-      await vi.advanceTimersByTimeAsync(FRAME_MS * 3);
+    function placeLayers() {
+      vi.mocked(HTMLElement.prototype.getBoundingClientRect).mockImplementation(function (
+        this: HTMLElement
+      ) {
+        const box = this.matches('[data-slot$="-overlay"]')
+          ? WINDOW
+          : this.matches('[data-radix-popper-content-wrapper]')
+            ? tooltipRect
+            : this.closest('[role="dialog"]')
+              ? { x: 700, y: 300, width: 400, height: 300 }
+              : rect;
+        return {
+          ...box,
+          top: box.y,
+          left: box.x,
+          right: box.x + box.width,
+          bottom: box.y + box.height,
+          toJSON: () => box,
+        } as DOMRect;
+      });
+      // jsdom lays nothing out; a real window gives every rendered element a box.
+      vi.spyOn(HTMLElement.prototype, 'getClientRects').mockImplementation(function (
+        this: HTMLElement
+      ) {
+        return [this.getBoundingClientRect()] as unknown as DOMRectList;
+      });
+    }
+
+    function WithLayers({ dialog, tooltip }: { dialog: boolean; tooltip: boolean }) {
+      return (
+        <TooltipProvider>
+          <Surface onUnavailable={noop} />
+          <Tooltip open={tooltip}>
+            <TooltipTrigger>Help</TooltipTrigger>
+            <TooltipContent>More about this</TooltipContent>
+          </Tooltip>
+          <Dialog open={dialog}>
+            <DialogContent>
+              <DialogTitle>Settings</DialogTitle>
+              <DialogDescription>Your preferences</DialogDescription>
+            </DialogContent>
+          </Dialog>
+        </TooltipProvider>
+      );
+    }
+
+    async function settle() {
+      await act(async () => {
+        await Promise.resolve();
+        await vi.advanceTimersByTimeAsync(FRAME_MS * 10);
+      });
+    }
+
+    beforeEach(() => {
+      tooltipRect = { x: 600, y: 300, width: 80, height: 24 };
+      placeLayers();
     });
 
-    expect(setBounds).toHaveBeenLastCalledWith(expect.objectContaining({ visible: false }));
+    it('stays on screen while a tooltip opens away from it', async () => {
+      const view = render(<WithLayers dialog={false} tooltip={false} />);
+      await settle();
+      setBounds.mockClear();
+
+      view.rerender(<WithLayers dialog={false} tooltip />);
+      await settle();
+
+      expect(document.querySelector('[data-radix-popper-content-wrapper]')).not.toBeNull();
+      expect(setBounds).not.toHaveBeenCalledWith(expect.objectContaining({ visible: false }));
+    });
+
+    it('steps aside while a tooltip overlaps it, and comes back when it closes', async () => {
+      tooltipRect = { x: 100, y: 100, width: 80, height: 24 };
+      const view = render(<WithLayers dialog={false} tooltip={false} />);
+      await settle();
+
+      view.rerender(<WithLayers dialog={false} tooltip />);
+      await settle();
+      expect(setBounds).toHaveBeenLastCalledWith(expect.objectContaining({ visible: false }));
+
+      view.rerender(<WithLayers dialog={false} tooltip={false} />);
+      await settle();
+      await settle();
+      expect(setBounds).toHaveBeenLastCalledWith(expect.objectContaining({ visible: true }));
+    });
+
+    it('hides behind a modal dialog even where the dialog box does not reach it', async () => {
+      const view = render(<WithLayers dialog={false} tooltip={false} />);
+      await settle();
+      expect(setBounds).toHaveBeenLastCalledWith(expect.objectContaining({ visible: true }));
+
+      view.rerender(<WithLayers dialog tooltip={false} />);
+      await settle();
+      // Radix never sets aria-modal; the backdrop is what covers the page.
+      expect(document.querySelector('[role="dialog"]')?.getAttribute('aria-modal')).toBeNull();
+      expect(setBounds).toHaveBeenLastCalledWith(expect.objectContaining({ visible: false }));
+
+      view.rerender(<WithLayers dialog={false} tooltip={false} />);
+      await settle();
+      await settle();
+      expect(setBounds).toHaveBeenLastCalledWith(expect.objectContaining({ visible: true }));
+    });
   });
 
   it('stops all work when it closes', async () => {
