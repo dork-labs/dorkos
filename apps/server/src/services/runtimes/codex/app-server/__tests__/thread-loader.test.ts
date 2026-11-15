@@ -15,6 +15,7 @@ import type { CodexTurnTools } from '../../transport/codex-transport.js';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { settleBackgroundScans } from '../../policy/expand-deep-globs.js';
 
 const HOME = '/fake/home';
 const FILE_POLICY: CodexTurnTools['filePolicy'] = {
@@ -310,7 +311,7 @@ describe('load config (§9)', () => {
       http_headers: { Authorization: 'Bearer notion-secret' },
     });
     expect(config.shell_environment_policy).toEqual({
-      set: { DORKOS_AGENT_TOKEN: 'identity-secret' },
+      set: { NPM_CONFIG_USERCONFIG: '/dev/null', DORKOS_AGENT_TOKEN: 'identity-secret' },
     });
     expect(config.projects).toEqual({ '/real/project': { trust_level: 'trusted' } });
     // The key resolves to this session, and nothing is attached yet.
@@ -408,6 +409,7 @@ describe('review fixes: fingerprint and identity', () => {
       const home = path.join(root, 'home');
       const data = path.join(root, 'data');
       for (const dir of [own, home, data]) fs.mkdirSync(dir);
+      fs.writeFileSync(path.join(own, '.env'), 'made-up');
       try {
         const { host, loader, fake, input } = await setup();
         host.home(HOME).threads.set('disk-t', { id: 'disk-t', hasRollout: true });
@@ -430,17 +432,31 @@ describe('review fixes: fingerprint and identity', () => {
           return Object.values(config.permissions)[0]!.filesystem;
         };
         await loader.ensureLoaded(loadInput);
+        // On macOS the home folder's scan lands in the background (DOR-4358);
+        // let it land, so only the folder appearing below changes the load.
+        await settleBackgroundScans(home);
         expect(files('disk-t')[path.join(home, '.claude')]).toBe('deny');
         fs.mkdirSync(path.join(home, '.claude'));
         const next = await loader.ensureLoaded(loadInput);
+        await settleBackgroundScans(home);
         expect(next.threadId).not.toBe('disk-t');
         expect(fake.requestsOf('thread/fork')).toHaveLength(1);
         expect(files(next.threadId)[path.join(home, '.claude')]).toBe('read');
         expect(files(next.threadId)[path.join(home, '.claude', 'backups')]).toBe('deny');
         expect(files(next.threadId)[path.join(data, 'host.key')]).toBe('deny');
-        expect(files(next.threadId)[path.join(own, '**', '.env')]).toBe('deny');
-        await loader.ensureLoaded({ ...loadInput, boundThreadId: next.threadId });
-        expect(fake.requestsOf('thread/fork')).toHaveLength(1);
+        // On macOS a working folder's deep globs become exact paths (DOR-4358).
+        const ownSecret =
+          process.platform === 'darwin' ? path.join(own, '.env') : path.join(own, '**', '.env');
+        expect(files(next.threadId)[ownSecret]).toBe('deny');
+        // On macOS the home scan from before `.claude` appeared never looked inside
+        // it, so a fresh scan runs, and its landing may reload the thread once more.
+        const landed = await loader.ensureLoaded({ ...loadInput, boundThreadId: next.threadId });
+        await settleBackgroundScans(home);
+        const forks = fake.requestsOf('thread/fork').length;
+        expect(forks).toBeLessThanOrEqual(process.platform === 'darwin' ? 2 : 1);
+        // Nothing changes after that, so nothing reloads.
+        await loader.ensureLoaded({ ...loadInput, boundThreadId: landed.threadId });
+        expect(fake.requestsOf('thread/fork')).toHaveLength(forks);
       } finally {
         fs.rmSync(root, { recursive: true, force: true });
       }
@@ -581,7 +597,7 @@ describe('review fixes: fingerprint and identity', () => {
     expect(
       (fake.requestsOf('thread/start')[0]!.config as LoadConfig).shell_environment_policy
     ).toEqual({
-      set: { DORKOS_AGENT_TOKEN: 'token-1' },
+      set: { NPM_CONFIG_USERCONFIG: '/dev/null', DORKOS_AGENT_TOKEN: 'token-1' },
     });
   });
 });
