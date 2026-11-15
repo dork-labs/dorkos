@@ -2281,8 +2281,8 @@ export const SessionStatusEventSchema = z
      * turn and so must never read the running figure. Absent when the runtime
      * could not tell this turn's share apart. The observability seam then falls
      * back to `costUsd` ONLY for a runtime whose `costUsd` is already per-turn;
-     * for a runtime whose `costUsd` is the running total (claude-code, see
-     * `RUNNING_COST_RUNTIMES` in `ai-metadata.ts`) it reports no cost at all.
+     * for a runtime whose `costUsd` is the running total (one that declares
+     * `RuntimeCapabilities.costUsdIsRunningTotal`) it reports no cost at all.
      */
     turnCostUsd: z.number().min(0).optional(),
     /** Tokens read from prompt cache (90% cost savings). */

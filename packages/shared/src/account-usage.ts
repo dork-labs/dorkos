@@ -15,6 +15,7 @@ import { z } from 'zod';
 import { extendZodWithOpenApiOnce } from './zod-openapi.js';
 import { ledgerSlug } from './ledger-slug.js';
 import { ACCOUNT_ID_PATTERN } from './account-identity.js';
+import { mergeWindow, readingsOf } from './ledger-window-merge.js';
 import type { LimitPlan, UsageStatus } from './schemas.js';
 
 export { ledgerSlug } from './ledger-slug.js';
@@ -116,8 +117,13 @@ export const LedgerEntrySchema = z
     windowMinutes: z.number().int().min(1).optional(),
     /** The status the source reported, or `null` when it reported none (omitted reads as `null`). */
     status: RateLimitStatusSchema.nullable().default(null),
-    /** When the source observed this reading, ISO-8601 with an explicit zone. */
+    /** When the source observed this reading (its `usedPct`, when it kept one), ISO-8601 with an explicit zone. */
     observedAt: IsoTimeSchema,
+    /**
+     * When a later reading with no `usedPct` set the status (DOR-3589); the
+     * entry then keeps the earlier share and its `observedAt`. Omitted otherwise.
+     */
+    statusObservedAt: IsoTimeSchema.optional(),
     /** Which source produced the reading. */
     source: LedgerSourceSchema,
   })
@@ -304,6 +310,9 @@ function parseEntry(value: unknown): LedgerEntry | null {
     ...(entry.windowMinutes !== undefined ? { windowMinutes: entry.windowMinutes } : {}),
     status: entry.status,
     observedAt: toUtc(entry.observedAt),
+    ...(entry.statusObservedAt !== undefined
+      ? { statusObservedAt: toUtc(entry.statusObservedAt) }
+      : {}),
     source: entry.source,
   };
 }
@@ -336,7 +345,12 @@ export function readWindow(entry: unknown, now: Date, key: string): ReadWindow |
     }
     return { ...parsed, expired: false };
   }
-  if (nowMs - Date.parse(parsed.observedAt) > windowLengthMs(key, parsed)) return null;
+  // A kept share (DOR-3589) can go stale before the status that came later.
+  const length = windowLengthMs(key, parsed);
+  if (nowMs - Date.parse(parsed.statusObservedAt ?? parsed.observedAt) > length) return null;
+  if (nowMs - Date.parse(parsed.observedAt) > length) {
+    return { ...parsed, usedPct: null, expired: false };
+  }
   return { ...parsed, expired: false };
 }
 
@@ -457,40 +471,10 @@ function replaces(observedMs: number, stored: unknown): boolean {
   return Number.isNaN(storedMs) || observedMs > storedMs;
 }
 
-/** How severe a window status is, for breaking a tie: higher wins, no status lowest. */
-const STATUS_RANK: Readonly<Record<RateLimitStatus, number>> = {
-  allowed: 1,
-  allowed_warning: 2,
-  rejected: 3,
-};
-
-/**
- * Whether a window reading replaces the stored one (contract §1.2 "Merging",
- * revision 6e, fixtures 4.0.0). Both are normalized entries ({@link parseEntry}:
- * UTC times, clamped `usedPct`).
- *
- * A strictly later `observedAt` wins. On an equal one (two sessions on one
- * account can see a limit in the same millisecond) the more severe reading
- * wins: status `rejected` > `allowed_warning` > `allowed` > none, then the
- * higher `usedPct`, then the later `resetsAt`, then the greater `source`
- * (code-unit order), then the longer `windowMinutes` (a missing value lowest
- * in each). A reading equal on all of these keeps the stored one. It is a
- * strict total order, so the merge is deterministic whatever order readings
- * arrive in, a replay changes nothing, and a same-millisecond `rejected` is
- * never lost.
- */
-function replacesWindow(next: LedgerEntry, stored: LedgerEntry): boolean {
-  const nextAt = Date.parse(next.observedAt);
-  const storedAt = Date.parse(stored.observedAt);
-  if (nextAt !== storedAt) return nextAt > storedAt;
-  const rank = (e: LedgerEntry) => (e.status === null ? 0 : STATUS_RANK[e.status]);
-  if (rank(next) !== rank(stored)) return rank(next) > rank(stored);
-  const used = (e: LedgerEntry) => e.usedPct ?? -1;
-  if (used(next) !== used(stored)) return used(next) > used(stored);
-  const resets = (e: LedgerEntry) => (e.resetsAt === null ? -Infinity : Date.parse(e.resetsAt));
-  if (resets(next) !== resets(stored)) return resets(next) > resets(stored);
-  if (next.source !== stored.source) return next.source > stored.source;
-  return (next.windowMinutes ?? -1) > (stored.windowMinutes ?? -1);
+/** Whether two normalized window entries hold the same reading, field by field. */
+function sameEntry(a: LedgerEntry, b: LedgerEntry): boolean {
+  const keys = new Set([...Object.keys(a), ...Object.keys(b)]) as Set<keyof LedgerEntry>;
+  return [...keys].every((k) => a[k] === b[k]);
 }
 
 /** Validate a fact observation (without its `kind`) and normalize its times. */
@@ -521,7 +505,8 @@ function parseFact(kind: LedgerFactKind, value: Record<string, unknown>) {
  * stored one only when its `observedAt` is strictly later; an equal one keeps
  * the stored one, so a replay is a no-op. Per window key, a later observation
  * always wins, even with a lower `usedPct` (the window reset), and a tie on
- * `observedAt` goes to the more severe reading ({@link replacesWindow}). An
+ * `observedAt` goes to the more severe reading; but a winner with no `usedPct`
+ * keeps the stored share from the same window (`mergeWindow`, DOR-3589). An
  * observation more than 5 minutes after `now` is dropped, so one bad clock
  * cannot pin a window; an invalid one is dropped while the rest merge. A
  * stored entry that is not valid loses to any valid observation. `usedPct` is
@@ -602,15 +587,16 @@ export function mergeLedger(
       warnings.push({ code: 'observation-invalid', key });
       continue;
     }
-    const observedMs = Date.parse(entry.observedAt);
+    const observedMs = Date.parse(entry.statusObservedAt ?? entry.observedAt);
     if (observedMs - now.getTime() > MAX_FUTURE_SKEW_MS) {
       warnings.push({ code: 'observation-future', key });
       continue;
     }
     // A stored entry that is not valid loses to any valid reading.
     const stored = windows[key] === undefined ? null : parseEntry(windows[key]);
-    if (stored !== null && !replacesWindow(entry, stored)) continue;
-    windows[key] = entry;
+    const merged = readingsOf(entry).reduce<LedgerEntry | null>(mergeWindow, stored)!;
+    if (stored !== null && sameEntry(merged, stored)) continue;
+    windows[key] = merged;
     changed = true;
   }
 

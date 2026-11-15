@@ -105,7 +105,11 @@ export function BrowserChrome({
         data-slot="browser-chrome"
         className={cn('bg-background @container/browser-chrome flex shrink-0 flex-col', className)}
       >
-        <div className="flex h-12 items-center gap-1 px-2.5 md:h-9">
+        <div
+          data-slot="browser-chrome-row"
+          aria-busy={loading}
+          className="flex h-12 items-center gap-1 px-2.5 md:h-9"
+        >
           <ChromeButton
             label="Back"
             icon={ArrowLeft}

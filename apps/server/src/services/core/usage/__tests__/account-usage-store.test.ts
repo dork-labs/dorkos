@@ -146,6 +146,39 @@ describe('AccountUsageStore: recording and persistence', () => {
     expect(work!.subscriptionType).toBeNull();
   });
 
+  it('a limit notice with no number keeps the probed share, on disk and after a restart (DOR-3589)', async () => {
+    await writeConfig(
+      claudeConfig([{ id: 'work', path: path.join(home, '.claude3'), label: null }])
+    );
+    const first = makeStore();
+    await first.load();
+    first.record('claude-code', { accountId: 'work' }, [
+      { ...obs('seven_day', 10), source: 'sdk_usage' },
+    ]);
+    await first.flush();
+    clock += 60_000;
+    // The SDK's rate_limit_event, with a status and no utilization.
+    first.record('claude-code', { accountId: 'work' }, [
+      { ...obs('seven_day', 0), usedPct: null, status: 'allowed_warning' },
+    ]);
+    await first.flush();
+    first.stop();
+
+    const onDisk = await readLedger(claudeDir(), 'work');
+    expect(onDisk!.windows.seven_day).toMatchObject({
+      usedPct: 10,
+      status: 'allowed_warning',
+      observedAt: new Date(clock - 60_000).toISOString(),
+      statusObservedAt: new Date(clock).toISOString(),
+    });
+    const second = makeStore();
+    await second.load();
+    const [work] = second.peek('claude-code', ['work']);
+    expect(work!.windows.map((w) => [w.key, w.usedPct, w.status])).toEqual([
+      ['seven_day', 10, 'allowed_warning'],
+    ]);
+  });
+
   it('keeps a reading flow wrote between two flushes', async () => {
     await writeConfig(
       claudeConfig([{ id: 'work', path: path.join(home, '.claude3'), label: null }])

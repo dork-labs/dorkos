@@ -125,7 +125,7 @@
     "packages/relay/src/adapters/claude-code/agent-handler.ts": 560,
     "packages/relay/src/adapters/telegram/telegram-adapter.ts": 509,
     "packages/relay/src/relay-publish.ts": 649,
-    "packages/shared/src/account-usage.ts": 574,
+    "packages/shared/src/account-usage.ts": 570,
     "packages/shared/src/community-admin-wire.ts": 618,
     "packages/shared/src/community-wire.ts": 1017,
     "packages/shared/src/transport.ts": 1089,
@@ -134,7 +134,7 @@
     "packages/test-utils/src/community-conformance-universal.ts": 672,
     "packages/test-utils/src/fake-community-adapter.ts": 789,
     "packages/test-utils/src/mock-factories.ts": 1225,
-    "packages/test-utils/src/runtime-capability-matrix.ts": 776,
+    "packages/test-utils/src/runtime-capability-matrix.ts": 773,
     "packages/test-utils/src/runtime-conformance.ts": 2426
   }
 }

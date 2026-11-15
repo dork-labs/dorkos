@@ -11,15 +11,14 @@ import { YourTurnStrip } from '@/layers/features/browser-handoff';
 import { useAppStore, useTransport } from '@/layers/shared/model';
 import { Button } from '@/layers/shared/ui';
 import { BrowserModeChoice } from './BrowserModeChoice';
-import { useNativeBrowserSurface } from '../model/use-native-browser-surface';
 import { browserErrorMessage } from '../lib/browser-error-message';
 import { useActionFocusReturn } from '../model/use-action-focus-return';
 import { useFirstFocus } from '../model/use-first-focus';
 import { BrowserPreparation } from './BrowserPreparation';
 import { WaitingElsewhere } from './WaitingElsewhere';
 import { SavedSignIns } from './SavedSignIns';
-import { LocalBrowserView } from './LocalBrowserView';
 import { SharedElsewhere } from './SharedElsewhere';
+import { LocalBrowserView } from './LocalBrowserView';
 
 export interface LocalBrowserPanelProps {
   visible?: boolean;
@@ -64,7 +63,6 @@ export function LocalBrowserPanel({
   const pendingSetup = useRef<Promise<boolean> | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [surfaceUnavailable, setSurfaceUnavailable] = useState(false);
-  const surface = useRef<HTMLDivElement>(null);
   const connected = state?.status === 'connected';
   // "Disconnected" before anything was ever opened reads as broken (DOR-4104).
   const [hadConnection, setHadConnection] = useState(false);
@@ -100,17 +98,6 @@ export function LocalBrowserPanel({
       operation.current += 1;
     },
     []
-  );
-  useNativeBrowserSurface(
-    surface,
-    state?.connectionId ?? null,
-    visible &&
-      connected &&
-      !query.isError &&
-      !sharedElsewhere &&
-      mode === 'embedded' &&
-      !surfaceUnavailable,
-    unavailable
   );
 
   const action = async (run: () => Promise<LocalBrowserState>, setup = false) => {
@@ -446,9 +433,11 @@ export function LocalBrowserPanel({
       {showsPage && (
         <LocalBrowserView
           tab={selected ?? null}
+          connectionId={state.connectionId ?? null}
           embedded={mode === 'embedded'}
-          surface={surface}
+          pageVisible={visible && !query.isError && !surfaceUnavailable}
           surfaceUnavailable={surfaceUnavailable}
+          onUnavailable={unavailable}
           busy={busy}
           action={action}
           onReconnect={open}

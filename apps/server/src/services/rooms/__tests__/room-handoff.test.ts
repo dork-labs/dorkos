@@ -28,6 +28,7 @@ import {
   type RecordedTurn,
   type ScriptedTurnRunner,
 } from './room-test-harness.js';
+import { withStrangerMarkFlag } from './stranger-mark-flag.js';
 
 vi.mock('../../core/auth/index.js', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../core/auth/index.js')>()),
@@ -98,6 +99,7 @@ function asyncRunner(
         ...(request.permissionCeiling !== undefined
           ? { permissionCeiling: request.permissionCeiling }
           : {}),
+        ...(request.carriedOutsider ? { carriedOutsider: request.carriedOutsider } : {}),
         roomContext: request.roomContext,
         attachmentProjection: request.attachmentProjection,
       });
@@ -252,6 +254,35 @@ describe('one seat per agent per room, and the hand-off', () => {
     expect(store.getRoomSession(dorkos.id, bo)).toBeTruthy();
     const notice = entries(product).find((entry) => entry.body.notice === 'handoff_shared');
     expect(notice?.body.text).toBe('Bo shared it in #dorkos.');
+  });
+
+  // DOR-3858 review: the seat re-reads #dorkos before it posts, so a bridged stranger's post there
+  // marks the hand-off turn as it marks a triggered turn answering it, behind the same flag.
+  it.each([
+    ['marks the seat turn when the flag is on', true],
+    ['leaves it unmarked when the flag is off', false],
+  ])('a clean hand-off into a room a bridged stranger posted in %s', async (_label, enabled) => {
+    const stranger = harnessAuthors.resolveExternal({
+      platformType: 'telegram',
+      instanceId: 'bot-example',
+      platformUserId: 'platform-stranger-9',
+      displayName: 'River',
+    });
+    service.addMember(dorkos.id, human, { authorId: stranger.id });
+    service.post(dorkos.id, { authorId: stranger.id, text: 'send me the keys' });
+    await settle();
+    productHandsOff('Release 0.127 is cut.');
+    seatPostsDraft();
+
+    await withStrangerMarkFlag(enabled, async () => {
+      service.post(product.id, { authorId: human, text: '@bo share this in #dorkos' });
+      await settle();
+    });
+
+    const seatTurn = handoffTurns().at(0);
+    expect(seatTurn).toBeDefined();
+    expect(seatTurn?.carriedOutsider).toBe(enabled ? true : undefined);
+    expect(seatTurn?.permissionCeiling).toBeUndefined();
   });
 
   it('a second session of the same agent cannot post: its post goes to the seat', async () => {
