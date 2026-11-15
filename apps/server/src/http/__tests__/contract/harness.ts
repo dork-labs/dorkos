@@ -3,8 +3,11 @@
  *
  * A contract file states what the real server answers for one route group:
  * status, the headers that matter, and the body or its Zod schema. It talks to
- * the COMPOSED server, booted from `src/index.ts` exactly as the e2e legs boot
- * it, over a real port. So the same unchanged file passed before a group moved
+ * the COMPOSED server, a real process booted from `src/index.ts`, over a real
+ * port. The run builds that entry once and each boot runs the build with plain
+ * Node, which keeps every module's own location and packages
+ * (`server-build.ts`); `DORKOS_CONTRACT_TSX=1` boots `tsx src/index.ts` instead,
+ * exactly as the e2e legs boot it. So the same unchanged file passed before a group moved
  * (Express answered) and after (Hono answers), which is the proof each move PR
  * offered; a move PR could not edit its group's contract file (plan rule 2).
  * The contracts now pin the server's answers for whatever changes it next.
@@ -20,18 +23,28 @@ import { spawn, type ChildProcess } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import http from 'node:http';
 import { once } from 'node:events';
-import { mkdir, mkdtemp, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { pathToFileURL } from 'node:url';
+import { afterAll, beforeAll, describe, expect, inject, it } from 'vitest';
 import type { ZodType } from 'zod';
+import { BUILT_ENTRIES, SERVER_DIR, buildContractServer } from './server-build.js';
 
-const SERVER_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../..');
 const REPO_ROOT = path.resolve(SERVER_DIR, '../..');
 // The CLI script run by this Node, not the `.bin` shim, so it spawns the same way everywhere.
 const TSX_CLI = path.join(SERVER_DIR, 'node_modules/tsx/dist/cli.mjs');
+
+/**
+ * Set to `1` to boot every server with `tsx src/index.ts`, as the harness did
+ * before it built the server once per run (`server-build.ts`): for telling a
+ * fault in the build from a fault in the server.
+ */
+export const TSX_ESCAPE_FLAG = 'DORKOS_CONTRACT_TSX';
+
+/** How often a boot checks whether the server answers. */
+const HEALTH_POLL_MS = 50;
 
 /** How long a cold boot may take before the harness gives up. */
 export const BOOT_TIMEOUT_MS = 180_000;
@@ -140,9 +153,81 @@ async function waitUntilUp(
       if (error instanceof Error && error.message.startsWith('Another server')) throw error;
       // Not listening yet.
     }
-    await new Promise((resolve) => setTimeout(resolve, 250));
+    await new Promise((resolve) => setTimeout(resolve, HEALTH_POLL_MS));
   }
   throw new Error(`The server did not answer /api/health in ${BOOT_TIMEOUT_MS} ms:\n${output()}`);
+}
+
+/** This worker's built entries, once a boot has asked for them. */
+let builtEntries: Promise<Map<string, string>> | undefined;
+
+/** How long a worker waits for another worker's build before it gives up. */
+const BUILD_WAIT_MS = 180_000;
+
+/**
+ * This run's build of the composed server (`server-build.ts`), made by the
+ * first worker to ask and read by the rest. The first to create the `lock`
+ * folder builds into `out/` and then writes `ready` (or `failed`, with the
+ * error); every other worker waits for one of the two.
+ */
+function loadBuiltEntries(): Promise<Map<string, string>> {
+  builtEntries ??= (async () => {
+    const dir = inject('contractServerBuildDir');
+    if (!dir) throw new Error('No contract build folder: is global-setup.ts in vitest.config.ts?');
+    const out = path.join(dir, 'out');
+    const ready = path.join(dir, 'ready');
+    const failed = path.join(dir, 'failed');
+    let builder = true;
+    try {
+      await mkdir(path.join(dir, 'lock'));
+    } catch {
+      builder = false;
+    }
+    if (builder) {
+      try {
+        const built = await buildContractServer(out);
+        // Written whole, then renamed, so a waiting worker never reads half of it.
+        await writeFile(`${ready}.tmp`, JSON.stringify([...built]));
+        await rename(`${ready}.tmp`, ready);
+        return built;
+      } catch (error) {
+        await writeFile(
+          failed,
+          error instanceof Error ? (error.stack ?? error.message) : String(error)
+        );
+        throw error;
+      }
+    }
+    const deadline = Date.now() + BUILD_WAIT_MS;
+    while (Date.now() < deadline) {
+      const done = await readFile(ready, 'utf8').catch(() => undefined);
+      if (done) return new Map(JSON.parse(done) as [string, string][]);
+      const error = await readFile(failed, 'utf8').catch(() => undefined);
+      if (error !== undefined) throw new Error(`The contract server build failed:\n${error}`);
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+    throw new Error(`The contract server build did not finish in ${BUILD_WAIT_MS} ms`);
+  })();
+  return builtEntries;
+}
+
+/**
+ * The Node arguments that boot `entrypoint`: its build when there is one,
+ * with source maps on and the source entry in `argv[1]` as tsx leaves them,
+ * otherwise (or with {@link TSX_ESCAPE_FLAG}) tsx on the source.
+ *
+ * @param entrypoint - `src/index.ts`, or an absolute path to a test bootstrap.
+ */
+async function nodeArgs(entrypoint: string): Promise<string[]> {
+  const source = path.resolve(SERVER_DIR, entrypoint);
+  if (process.env[TSX_ESCAPE_FLAG] !== '1' && Object.values(BUILT_ENTRIES).includes(source)) {
+    const built = (await loadBuiltEntries()).get(source);
+    if (built) {
+      const prelude = built.replace(/\.mjs$/, '.argv.mjs');
+      return ['--enable-source-maps', '--import', pathToFileURL(prelude).href, built];
+    }
+  }
+  return [TSX_CLI, entrypoint];
 }
 
 /** How many ports a boot tries before it gives up. */
@@ -158,6 +243,7 @@ const BOOT_ATTEMPTS = 3;
  *
  * @param extra - More environment for the server, over the defaults.
  * @param entrypoint - A contract-specific test bootstrap, otherwise the real server entry.
+ *   One listed in `server-build.ts` runs from this run's build; any other runs with tsx.
  * @returns The running server.
  */
 export async function bootComposedServer(
@@ -191,7 +277,7 @@ async function bootOnce(
   // numbers with a leading zero are not a valid semver prerelease, and the
   // config store refuses to start on that version.
   const version = `0.0.0-contract.r${randomUUID().slice(0, 8)}`;
-  const child = spawn(process.execPath, [TSX_CLI, entrypoint], {
+  const child = spawn(process.execPath, await nodeArgs(entrypoint), {
     cwd: SERVER_DIR,
     env: serverEnv(port, dorkHome, version, extra),
     stdio: ['ignore', 'pipe', 'pipe'],
