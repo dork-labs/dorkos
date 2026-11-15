@@ -4,6 +4,7 @@ import {
   activityEvents,
   connectionAccessLevels,
   connectionOperationGrants,
+  connectorOperationRevisions,
   connections,
   eq,
   notifications,
@@ -78,13 +79,29 @@ describe('one-time Composio write upgrade', () => {
   });
   it('leaves exact grants untouched', async () => {
     const h = await setup('linear');
+    const writeRevision = h.db
+      .select()
+      .from(connectorOperationRevisions)
+      .all()
+      .find((row) => row.capabilityClassification === 'write');
+    if (!writeRevision) throw new Error('The fixture must offer a write action.');
+    const writeGrant = h.db
+      .select()
+      .from(connectionOperationGrants)
+      .all()
+      .find((row) => row.subjectId === 'writer' && row.operationRevisionId === writeRevision.id);
+    if (!writeGrant) throw new Error('The fixture writer must hold that write action.');
+    h.db
+      .insert(connectionOperationGrants)
+      .values({ ...writeGrant, id: 'exact-write', subjectId: 'exact', agentId: 'exact' })
+      .run();
     const before = h.db
       .select()
       .from(connectionOperationGrants)
       .all()
       .filter((x) => x.subjectId === 'exact');
     upgradeComposioWriteLevels(h.db, NOW.toISOString());
-    expect(before).toHaveLength(1);
+    expect(before).toHaveLength(2);
     expect(
       h.db
         .select()
@@ -92,6 +109,10 @@ describe('one-time Composio write upgrade', () => {
         .all()
         .filter((x) => x.subjectId === 'exact')
     ).toEqual(before);
+    expect(liveActions(h.db, { agentId: 'exact' })).toEqual([
+      'gmail.list:read',
+      'gmail.send:write',
+    ]);
   });
   it('lowers every-agent sharing too, with one notice per connection and one row per level', async () => {
     const h = await setup('linear');
