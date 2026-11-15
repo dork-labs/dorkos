@@ -3,6 +3,7 @@ import { shortenHomePath } from '@/layers/shared/lib';
 import { Button } from '@/layers/shared/ui';
 import { cardAgentName } from '../lib/agent-name';
 import type { HandoffStep } from '../lib/handoff-step';
+import { YourTurnStrip } from './YourTurnStrip';
 
 /** Props for {@link BrowserHandoffCardView}. */
 export interface BrowserHandoffCardViewProps {
@@ -98,9 +99,8 @@ export function BrowserHandoffCardView({
         </div>
       )}
       {step === 'wall' && (
-        <div className="space-y-1">
-          {/* True because the server refuses every browser tool for that chat until hand-back. */}
-          <p className="font-medium">Your turn: {name} can’t see or use this window.</p>
+        <div className="space-y-2">
+          <YourTurnStrip agentName={agentName} />
           <p>The site wants a check only a person can do. It isn’t anything you did.</p>
         </div>
       )}

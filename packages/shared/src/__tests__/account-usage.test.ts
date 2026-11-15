@@ -306,6 +306,180 @@ describe('mergeLedger', () => {
     });
   });
 
+  describe('a reading with no usedPct keeps the stored number (DOR-3589)', () => {
+    const PROBE_AT = at(-30 * MIN);
+    const EVENT_AT = at(-5 * MIN);
+    const RESETS = at(3 * DAY);
+    const probe = obs('seven_day', {
+      usedPct: 10,
+      resetsAt: RESETS,
+      status: null,
+      observedAt: PROBE_AT,
+      source: 'sdk_usage',
+    });
+    const notice = (overrides: Partial<LedgerEntry> = {}) =>
+      obs('seven_day', {
+        usedPct: null,
+        resetsAt: null,
+        status: 'allowed_warning',
+        observedAt: EVENT_AT,
+        source: 'sdk_event',
+        ...overrides,
+      });
+
+    it('a probe reads 10%, then a limit notice with no number: the 10% stays', () => {
+      const afterProbe = written(mergeLedger(null, [probe], NOW, OWNER));
+      const out = written(mergeLedger(afterProbe, [notice()], NOW, OWNER));
+      expect(out.windows.seven_day).toEqual({
+        usedPct: 10,
+        resetsAt: RESETS,
+        status: 'allowed_warning',
+        observedAt: PROBE_AT,
+        statusObservedAt: EVENT_AT,
+        source: 'sdk_event',
+      });
+      expect(UsageLedgerSchema.safeParse(out).success).toBe(true);
+      expect(toAccountUsage(out, identity, NOW).windows[0]).toMatchObject({
+        key: 'seven_day',
+        usedPct: 10,
+        status: 'allowed_warning',
+        observedAt: PROBE_AT,
+      });
+    });
+
+    it('takes the notice resetsAt when it carries one in the same window', () => {
+      const out = written(mergeLedger(null, [probe, notice({ resetsAt: RESETS })], NOW, OWNER));
+      expect(out.windows.seven_day).toMatchObject({ usedPct: 10, resetsAt: RESETS });
+    });
+
+    it('drops the number when the notice names a later reset: a new window', () => {
+      const later = at(10 * DAY);
+      const out = written(mergeLedger(null, [probe, notice({ resetsAt: later })], NOW, OWNER));
+      expect(out.windows.seven_day).toEqual({
+        usedPct: null,
+        resetsAt: later,
+        status: 'allowed_warning',
+        observedAt: EVENT_AT,
+        source: 'sdk_event',
+      });
+    });
+
+    it('drops the number when its window had already reset when the notice came', () => {
+      const expired = obs('five_hour', {
+        usedPct: 80,
+        resetsAt: at(-10 * MIN),
+        observedAt: at(-2 * HOUR),
+      });
+      const after = obs('five_hour', { usedPct: null, status: 'allowed', observedAt: EVENT_AT });
+      const out = written(mergeLedger(null, [expired, after], NOW, OWNER));
+      expect(out.windows.five_hour).toMatchObject({ usedPct: null, status: 'allowed' });
+      expect(out.windows.five_hour).not.toHaveProperty('statusObservedAt');
+    });
+
+    it('records a status-only reading when nothing is stored', () => {
+      const out = written(mergeLedger(null, [notice({ status: 'rejected' })], NOW, OWNER));
+      expect(out.windows.seven_day).toEqual({
+        usedPct: null,
+        resetsAt: null,
+        status: 'rejected',
+        observedAt: EVENT_AT,
+        source: 'sdk_event',
+      });
+    });
+
+    it('gives the same ledger in any order, one batch or one call each', () => {
+      const between = obs('seven_day', {
+        usedPct: 20,
+        resetsAt: RESETS,
+        observedAt: at(-20 * MIN),
+        source: 'sdk_usage',
+      });
+      const rejected = notice({ status: 'rejected', observedAt: at(-2 * MIN) });
+      const readings = [probe, notice(), between, rejected];
+      const orders = [
+        [0, 1, 2, 3],
+        [3, 2, 1, 0],
+        [1, 3, 0, 2],
+        [2, 0, 3, 1],
+      ];
+      const results = orders.flatMap((order) => {
+        const batch = written(
+          mergeLedger(
+            null,
+            order.map((i) => readings[i]!),
+            NOW,
+            OWNER
+          )
+        );
+        let oneByOne: unknown = null;
+        for (const i of order) {
+          const out = mergeLedger(oneByOne, [readings[i]!], NOW, OWNER);
+          oneByOne = out.ledger;
+        }
+        return [batch.windows.seven_day, (oneByOne as UsageLedger).windows.seven_day];
+      });
+      for (const result of results) expect(result).toEqual(results[0]);
+      expect(results[0]).toEqual({
+        usedPct: 20,
+        resetsAt: RESETS,
+        status: 'rejected',
+        observedAt: at(-20 * MIN),
+        statusObservedAt: at(-2 * MIN),
+        source: 'sdk_event',
+      });
+    });
+
+    it('a replay of either reading changes nothing', () => {
+      const stored = written(mergeLedger(null, [probe, notice()], NOW, OWNER));
+      for (const reading of [probe, notice()]) {
+        const out = mergeLedger(stored, [reading], NOW, OWNER);
+        expect(out.changed).toBe(false);
+        expect(out.ledger).toBe(stored);
+      }
+    });
+
+    it('a kept entry fed back in as a reading keeps both times', () => {
+      const kept = written(mergeLedger(null, [probe, notice()], NOW, OWNER)).windows.seven_day!;
+      const again = written(mergeLedger(null, [{ key: 'seven_day', ...kept }], NOW, OWNER));
+      expect(again.windows.seven_day).toEqual(kept);
+      // An older status-only reading fed in after it still loses to the kept status.
+      const older = notice({ status: 'rejected', observedAt: at(-10 * MIN) });
+      expect(mergeLedger(again, [older], NOW, OWNER).changed).toBe(false);
+    });
+
+    it('a newer number replaces the kept one and its status', () => {
+      const stored = written(mergeLedger(null, [probe, notice()], NOW, OWNER));
+      const fresh = obs('seven_day', {
+        usedPct: 35,
+        resetsAt: RESETS,
+        status: 'allowed',
+        observedAt: at(-MIN),
+        source: 'sdk_usage',
+      });
+      const out = written(mergeLedger(stored, [fresh], NOW, OWNER));
+      expect(out.windows.seven_day).toEqual({
+        usedPct: 35,
+        resetsAt: RESETS,
+        status: 'allowed',
+        observedAt: at(-MIN),
+        source: 'sdk_usage',
+      });
+    });
+
+    it('reads a kept share and its later status as stale each on its own time', () => {
+      const kept = entry({ usedPct: 30, status: 'rejected', statusObservedAt: at(-MIN) });
+      expect(readWindow(kept, NOW, 'seven_day')).toMatchObject({ usedPct: 30, status: 'rejected' });
+      const oldShare = { ...kept, observedAt: at(-8 * DAY) };
+      expect(readWindow(oldShare, NOW, 'seven_day')).toMatchObject({
+        usedPct: null,
+        status: 'rejected',
+      });
+      expect(readWindow({ ...oldShare, statusObservedAt: at(-8 * DAY) }, NOW, 'seven_day')).toBe(
+        null
+      );
+    });
+  });
+
   it('lets a newer observation win even with a lower usedPct (the window reset)', () => {
     const stored = ledger({ seven_day: entry({ usedPct: 95, observedAt: at(-HOUR) }) });
     const out = mergeLedger(stored, [obs('seven_day', { usedPct: 3 })], NOW, OWNER);

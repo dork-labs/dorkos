@@ -3,7 +3,25 @@ import { useEffect, type RefObject } from 'react';
 /** Unchanged frames in a row before the surface stops following a move. */
 const SETTLE_FRAMES = 6;
 
-/** Native guests sit above HTML: hide them before any app dialog or menu can be covered. */
+/**
+ * App layers that float above the page's spot. Radix dialogs never set
+ * `aria-modal`, so a modal is found by its backdrop, which covers the whole
+ * window: an open dialog, sheet or drawer always overlaps (DOR-4418). A tooltip,
+ * popover or menu counts only where it overlaps the page (DOR-4417).
+ */
+const FLOATING_LAYERS = [
+  '[data-slot="dialog-overlay"]',
+  '[data-slot="alert-dialog-overlay"]',
+  '[data-slot="sheet-overlay"]',
+  '[data-slot="drawer-overlay"]',
+  '[role="dialog"]',
+  '[role="alertdialog"]',
+  '[role="menu"]',
+  '[role="listbox"]',
+  '[data-radix-popper-content-wrapper]',
+].join(', ');
+
+/** Native guests sit above HTML: hide them while any app layer overlaps their spot. */
 export function useNativeBrowserSurface(
   ref: RefObject<HTMLDivElement | null>,
   connectionId: string | null,
@@ -17,7 +35,6 @@ export function useNativeBrowserSurface(
     let broken = false;
     let previous = '';
     let frame = 0;
-    let covered = false;
     const clipping: HTMLElement[] = [];
     for (let parent = ref.current?.parentElement; parent; parent = parent.parentElement) {
       const style = getComputedStyle(parent);
@@ -25,16 +42,26 @@ export function useNativeBrowserSurface(
         clipping.push(parent);
       }
     }
-    const checkOverlays = () => {
-      covered = [
-        ...document.querySelectorAll<HTMLElement>(
-          '[role="dialog"][aria-modal="true"], [role="alertdialog"], [role="menu"], [data-radix-popper-content-wrapper]'
-        ),
-      ].some(
-        (element) =>
-          !element.contains(ref.current) && element.getClientRects().length > 0 && !element.hidden
-      );
-      publish();
+    // A native page cannot be drawn under HTML, so it steps aside while a layer overlaps it.
+    const overlapped = (x: number, y: number, right: number, bottom: number) => {
+      // Below desktop width the panel is itself a sheet. Layers portal into the
+      // page in the order they open, so its own backdrop, and anything opened
+      // before it, sit under the page; a dialog opened over it comes later.
+      const own = ref.current?.parentElement?.closest(FLOATING_LAYERS);
+      return [...document.querySelectorAll<HTMLElement>(FLOATING_LAYERS)].some((element) => {
+        if (element.hidden || element.contains(ref.current)) return false;
+        if (own && element.compareDocumentPosition(own) & Node.DOCUMENT_POSITION_FOLLOWING)
+          return false;
+        const area = element.getBoundingClientRect();
+        return (
+          area.width > 0 &&
+          area.height > 0 &&
+          area.x < right &&
+          area.x + area.width > x &&
+          area.y < bottom &&
+          area.y + area.height > y
+        );
+      });
     };
     const publish = () => {
       if (disposed || broken) return;
@@ -54,7 +81,11 @@ export function useNativeBrowserSurface(
       const width = Math.max(0, right - x);
       const height = Math.max(0, bottom - y);
       const shown =
-        !!rect && !covered && document.visibilityState !== 'hidden' && width > 0 && height > 0;
+        !!rect &&
+        document.visibilityState !== 'hidden' &&
+        width > 0 &&
+        height > 0 &&
+        !overlapped(x, y, right, bottom);
       const bounds = {
         connectionId,
         x,
@@ -93,7 +124,7 @@ export function useNativeBrowserSurface(
         ) ?? false;
     const onFrame = () => {
       frame = 0;
-      checkOverlays();
+      publish();
       if (disposed || broken) return;
       stillFrames = previous === lastFrameKey ? stillFrames + 1 : 0;
       lastFrameKey = previous;
@@ -132,7 +163,7 @@ export function useNativeBrowserSurface(
     }
     document.addEventListener('visibilitychange', schedule);
     window.addEventListener('resize', schedule);
-    checkOverlays();
+    publish();
     lastFrameKey = previous;
     // Follow the panel's own entrance, then settle.
     schedule();

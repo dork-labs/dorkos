@@ -27,6 +27,18 @@ adopts these cases upstream in F4 (DOR-2532); the next re-sync from a
 marketplace commit that carries them replaces this proposal and `SOURCE.json`'s
 `proposed` note.
 
+## A merge rule proposed here (DOR-3589)
+
+DorkOS's `mergeLedger` goes one step past these cases. A winning window reading
+with no `usedPct` (a Claude `rate_limit_event` without `utilization`) keeps the
+stored share from the same window with its own `observedAt`, and records its
+own time as `statusObservedAt`. The share is dropped when the window reset: the
+reading names a later `resetsAt`, or the stored one had passed by then. The
+logic is `packages/shared/src/ledger-window-merge.ts`, pinned in
+`account-usage.test.ts`. Every vendored case still passes unchanged. flow still
+lets such a reading blank the share until it adopts the rule upstream; the
+next re-sync should carry it as cases.
+
 ## Re-syncing
 
 Never edit these files by hand. From the repo root:
