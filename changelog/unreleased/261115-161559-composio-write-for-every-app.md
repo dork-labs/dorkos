@@ -1,5 +1,7 @@
 ---
 covers:
+  - 'fix(connections): harden Composio write classification (DOR-4194)'
+  - 'fix(connections): review write grants and protect workflow files (DOR-4194, DOR-4461)'
   - 'fix(connections): keep deleting batches outside access levels (DOR-4194, DOR-4270)'
   - 'fix(connections): distinguish ordinary creation from destructive updates (DOR-4194, DOR-4270)'
   - 'fix(connections): keep reviewed exceptions out of app access levels (DOR-4194, DOR-4270)'
@@ -8,4 +10,7 @@ covers:
 
 ### Changed
 
-- “Read and write” now works for every connected app. Agents can create and edit there. Deleting, sharing, spending money and changing who has access still need you to pick those actions one by one. (DOR-4194, DOR-4270)
+- “Read and write” now works across connected Composio apps. Agents can create and edit there when the app offers those actions. Deleting, sharing, spending money and changing who has access still need you to pick those actions one by one. (DOR-4194, DOR-4270)
+
+- If you gave an agent Read and write on an app that had no write actions, it now shows Read. Pick Read and write again to let it change things. Gmail, Google Calendar and actions picked one by one keep their choices. (DOR-4461)
+- Keep changes in money apps, repository workflow files and release files as one-by-one picks.
