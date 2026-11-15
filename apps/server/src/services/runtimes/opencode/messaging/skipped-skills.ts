@@ -10,6 +10,8 @@
  * @module services/runtimes/opencode/messaging/skipped-skills
  */
 import { currentPackageSkillSkips, type SkippedPackageSkill } from '@dorkos/harness';
+import { resolveDorkHome } from '../../../../lib/dork-home.js';
+import { projectUserSkills } from '../../../harness/global-scope.js';
 import { logger } from '../../../../lib/logger.js';
 
 /** The longest a package-chosen name may run in DorkOS's own words: OpenCode's documented 64. */
@@ -56,7 +58,7 @@ function describe(skip: SkippedPackageSkill): string {
 export function renderSkippedSkillLines(projectRoot: string): string | undefined {
   let skips: SkippedPackageSkill[];
   try {
-    skips = currentPackageSkillSkips(projectRoot);
+    skips = currentPackageSkillSkips(projectRoot, projectUserSkills(resolveDorkHome()));
   } catch (err) {
     logger.debug('[OpenCode] could not read skipped package skills', { err: String(err) });
     return undefined;

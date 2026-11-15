@@ -78,17 +78,8 @@
  *
  * @module apply/global-apply
  */
-import {
-  accessSync,
-  constants,
-  existsSync,
-  lstatSync,
-  mkdirSync,
-  readlinkSync,
-  rmSync,
-  symlinkSync,
-} from 'node:fs';
-import { basename, dirname, join, relative, resolve, sep } from 'node:path';
+import { accessSync, constants, existsSync, mkdirSync, rmSync, symlinkSync } from 'node:fs';
+import { dirname, join, relative, resolve } from 'node:path';
 import {
   globalPluginsDir,
   globalSkillsDir,
@@ -96,9 +87,9 @@ import {
   type GlobalProjectionPlan,
 } from '../plan/global-projector.js';
 import type { DriftResult, ProjectionAction, SweptPath } from '../plan/types.js';
-import { INSTALLED_PROJECTION_MARKER } from '../scan/scanner.js';
 import { extensionSkillPluginsDir } from '../sources/running-extension-skills.js';
 import { listDir, occupantKind, pathExists } from './link-state.js';
+import { linkOwnerUnder } from './link-owner.js';
 import { directoryWriteBlock, writePathDirs, writePathReason } from './write-path-occupants.js';
 import { SWEEP_REASONS } from './sweep-reasons.js';
 import { partitionRemovable, removableOf } from './sweep-warnings.js';
@@ -173,22 +164,6 @@ function globalSweepDirs(roots: GlobalPlanRoots): string[] {
 }
 
 /**
- * Whether `child` is `root` or sits inside it, judged one path segment at a
- * time.
- *
- * `startsWith` alone answers `true` for `<dorkHome>/plugins-of-someone-else`
- * against `<dorkHome>/plugins`, which is a neighbouring directory DorkOS has no
- * claim over whatever it is called.
- *
- * @param child - the resolved candidate path.
- * @param root - the resolved containing directory.
- * @returns `true` when `child` is inside `root`, or is `root` itself.
- */
-function isInside(child: string, root: string): boolean {
-  return child === root || child.startsWith(root + sep);
-}
-
-/**
  * The package a candidate link belongs to — clauses 1 to 3 of the predicate,
  * answered with the package's NAME rather than with a yes.
  *
@@ -208,41 +183,6 @@ function isInside(child: string, root: string): boolean {
  */
 function globalLinkPackage(abs: string, pluginsRoot: string): string | undefined {
   return linkOwnerUnder(abs, pluginsRoot);
-}
-
-/**
- * The folder directly under `root` a candidate link's own text points into —
- * clauses 1 to 3 of the predicate for one owning root.
- *
- * Shared by the two roots a global link can be ours through: `<dorkHome>/plugins`
- * (a package's skill) and the generated extension plugin roots (a running
- * extension's skill, DOR-2685). Never follows the link, for the reason
- * {@link globalLinkPackage} gives.
- *
- * @param abs - the absolute candidate path, directly inside a swept directory.
- * @param root - the resolved owning root.
- * @returns the folder name under `root`, or `undefined` when this is not one of
- *   ours or names no folder.
- */
-function linkOwnerUnder(abs: string, root: string): string | undefined {
-  if (!basename(abs).includes(INSTALLED_PROJECTION_MARKER)) return undefined;
-  let stats;
-  try {
-    stats = lstatSync(abs);
-  } catch {
-    return undefined;
-  }
-  if (!stats.isSymbolicLink()) return undefined;
-  let text: string;
-  try {
-    text = readlinkSync(abs);
-  } catch {
-    return undefined;
-  }
-  const resolved = resolve(dirname(abs), text);
-  if (!isInside(resolved, root)) return undefined;
-  const [first] = relative(root, resolved).split(sep);
-  return first === undefined || first === '' || first === '..' ? undefined : first;
 }
 
 /** Every absolute `symlink` target the plan names. */

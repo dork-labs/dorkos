@@ -107,6 +107,7 @@ import { setImmediate as yieldToEventLoop } from 'node:timers/promises';
 import { resolveDorkHome } from '../../lib/dork-home.js';
 import { logger } from '../../lib/logger.js';
 import { adoptInOwnedWorkspace } from './adopt-owned-workspace.js';
+import { projectUserSkills } from './global-scope.js';
 
 /** Workspace-relative directory holding an agent's canonical skills. */
 const AGENT_SKILLS_DIR = join('.agents', 'skills');
@@ -351,6 +352,9 @@ export function projectAgentWorkspace(
       // other sync reads (DOR-2685), so this plan and the consent seam's agree
       // about a workspace an extension runs in. Global plugins stay out.
       extensionSkillsHome: dorkHome,
+      // An agent on OpenCode reads the person's user-level skills here too, so
+      // no package skill may replace one (DOR-4392).
+      userSkills: projectUserSkills(dorkHome),
     });
     const { applied, conflicts } = applyPlan(agentDir, plan);
 

@@ -14,6 +14,8 @@ import { join } from 'node:path';
 import { PACKAGE_TEXT_MAX_BYTES, readPackageFileWithin } from '@dorkos/shared/bounded-read';
 import { parseFrontmatter } from '@dorkos/skills/frontmatter';
 import { previewPackageSkillSkips, type SkippedPackageSkill } from '@dorkos/harness';
+import { resolveDorkHome } from '../../../lib/dork-home.js';
+import { projectUserSkills } from '../../harness/global-scope.js';
 import type { MarketplacePackageManifest } from '@dorkos/marketplace';
 import { isInstallSiblingName } from '@dorkos/shared/marketplace-schemas';
 import type { AdapterManager } from '../../relay/adapter-manager.js';
@@ -172,6 +174,7 @@ export class ConflictDetector {
         packageName: ctx.manifest.name,
         packageDir: ctx.packagePath,
         packageType: ctx.manifest.type,
+        userSkills: projectUserSkills(resolveDorkHome()),
       });
     } catch {
       return [];

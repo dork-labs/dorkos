@@ -32,10 +32,17 @@
  *   nor is shadowed. There is no folder-name fallback;
  * - a blank `name: ""` IS loaded, and collides with another blank one.
  *
+ * **The person's own skills include their user-level ones** (DOR-4392):
+ * OpenCode reads `~/.config/opencode/skills`, `~/.claude/skills` and
+ * `~/.agents/skills` in every project, so a package can replace a skill there
+ * too. The caller reads those folders (`inventory/user-skills.ts`) and hands the
+ * names in; the engine resolves no home directory.
+ *
  * @module plan/package-skill-collisions
  */
 import { HARNESS_IDS, HARNESS_LABELS, type HarnessId } from '../manifest/schema.js';
 import type { SkillInventoryEntry } from '../inventory/types.js';
+import type { UserSkillName } from '../inventory/user-skills.js';
 import { skillsFactsFor } from '../vendor-facts/index.js';
 import type { SkillSourcePackage } from './installed-projector.js';
 import type { ProjectionWarning, SkippedPackageSkill } from './types.js';
@@ -65,20 +72,26 @@ export function byNameHarnesses(): HarnessId[] {
  * where the skill lives.
  *
  * The key is the exact parsed `name`. A skill with none is left out: OpenCode
- * does not load it, so there is nothing for a package to shadow. Only skills in
- * a folder one of those harnesses reads count.
+ * does not load it, so there is nothing for a package to shadow. Only project
+ * skills in a folder one of those harnesses reads count; user-level skills come
+ * already limited to those folders. Project skills are listed first.
  *
  * @param skills - every authored skill the inventory found.
+ * @param userSkills - the person's user-level skills, already read.
  * @param harnesses - the by-name harnesses.
  */
 function ownSkillNames(
   skills: readonly SkillInventoryEntry[],
+  userSkills: readonly UserSkillName[],
   harnesses: readonly HarnessId[]
 ): Map<string, string> {
   const roots = new Set(harnesses.flatMap((h) => skillsFactsFor(h).readPaths.project));
   const own = new Map<string, string>();
   for (const skill of [...skills].sort((a, b) => a.source.localeCompare(b.source))) {
     if (!roots.has(skill.root) || skill.exactFrontmatterName === undefined) continue;
+    if (!own.has(skill.exactFrontmatterName)) own.set(skill.exactFrontmatterName, skill.source);
+  }
+  for (const skill of userSkills) {
     if (!own.has(skill.exactFrontmatterName)) own.set(skill.exactFrontmatterName, skill.source);
   }
   return own;
@@ -90,12 +103,14 @@ function ownSkillNames(
  *
  * @param input.packages - the packages this plan would project, in plan order.
  * @param input.ownSkills - every authored skill the inventory found.
+ * @param input.userSkills - the person's user-level skills, read by the caller.
  * @param input.taken - names already claimed by an earlier call (packages before extensions).
  * @returns the packages to plan, the warnings and skip records, and the claimed names.
  */
 export function settlePackageSkillNameCollisions<T extends SkillSourcePackage>(input: {
   packages: readonly T[];
   ownSkills: readonly SkillInventoryEntry[];
+  userSkills?: readonly UserSkillName[];
   taken?: ReadonlyMap<string, string>;
 }): SettledPackageSkills<T> {
   const taken = new Map(input.taken ?? []);
@@ -103,7 +118,7 @@ export function settlePackageSkillNameCollisions<T extends SkillSourcePackage>(i
   if (collapsing.length === 0) {
     return { packages: [...input.packages], warnings: [], skipped: [], taken };
   }
-  const own = ownSkillNames(input.ownSkills, collapsing);
+  const own = ownSkillNames(input.ownSkills, input.userSkills ?? [], collapsing);
   const label = collapsing.map((h) => HARNESS_LABELS[h]).join(' and ');
   const warnings: ProjectionWarning[] = [];
   const skipped: SkippedPackageSkill[] = [];
