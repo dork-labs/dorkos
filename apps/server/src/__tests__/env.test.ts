@@ -33,9 +33,16 @@ describe('serverEnv', () => {
     vi.stubEnv('DORKOS_MARK_STRANGER_TURNS', undefined as unknown as string);
     const { env } = await import('../env.js');
     expect(env.DORKOS_TASKS_ENABLED).toBe(false);
-    expect(env.DORKOS_MARK_STRANGER_TURNS).toBe(false);
     // An override, not a switch: unset has to let the saved setting decide.
     expect(env.DORKOS_RELAY_ENABLED).toBeUndefined();
+  });
+
+  it('marks stranger turns by default, and "false" turns the mark off (DOR-4453)', async () => {
+    vi.stubEnv('DORKOS_MARK_STRANGER_TURNS', undefined as unknown as string);
+    expect((await import('../env.js')).env.DORKOS_MARK_STRANGER_TURNS).toBe(true);
+    vi.resetModules();
+    vi.stubEnv('DORKOS_MARK_STRANGER_TURNS', 'false');
+    expect((await import('../env.js')).env.DORKOS_MARK_STRANGER_TURNS).toBe(false);
   });
 
   it('keeps an explicit DORKOS_RELAY_ENABLED=false as an override', async () => {

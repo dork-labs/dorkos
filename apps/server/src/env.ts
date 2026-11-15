@@ -8,6 +8,15 @@ const boolFlag = z
   .transform((v) => v === 'true');
 
 /**
+ * {@link boolFlag} for a switch that is ON unless somebody sets it to 'false': a
+ * safety default that an operator may still turn off.
+ */
+const boolFlagDefaultOn = z
+  .enum(['true', 'false'])
+  .default('true')
+  .transform((v) => v === 'true');
+
+/**
  * Reusable Zod type for a 'true'/'false' env flag that keeps the difference
  * between "unset" and "explicitly false".
  *
@@ -170,13 +179,13 @@ export const serverEnvSchema = z.object({
   DORKOS_TODOS_ENABLED: boolFlag,
   // DOR-3858: turns from someone other than the owner on Telegram, Slack or in a room carry the
   // outsider mark, so raises, grants, connector sends and destructive actions ask a person. The
-  // turn keeps its level. Off until the owner approves turning it on. Before it goes on
-  // (DOR-4453): the owner's own Telegram and Slack accounts belong on each connection's approver
-  // allowlist, or the owner's phone is marked too (a room always marks it until DOR-4318). Text an
+  // turn keeps its level. On by default since DOR-4453; 'false' turns it off. The owner's own
+  // Telegram and Slack accounts belong on each connection's approver allowlist, or the owner's
+  // phone is marked too (a room always marks it until DOR-4318). Text an
   // extension posts or relays carries no mark, so no check may rely on the mark covering it.
   // With it on, the owner's own phone posts in a bridged room mark most turns that show them, not
   // only the turns that answer them, until DOR-4318.
-  DORKOS_MARK_STRANGER_TURNS: boolFlag,
+  DORKOS_MARK_STRANGER_TURNS: boolFlagDefaultOn,
   // Your browser discovery (DOR-3215): hidden and refused until explicitly enabled at boot.
   DORKOS_YOUR_BROWSER_ENABLED: boolFlag,
   // The official DorkOS space's public link (spec `official-community-space`

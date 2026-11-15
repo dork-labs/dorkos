@@ -84,11 +84,15 @@ While it waits, everyone is told. A notification appears in the Inbox (the bell)
 
 This is a cancel, not an undo. Once an action has run, DorkOS can't take it back.
 
-Everything else still asks you first with an approval card: on **Careful**, in a chat that asks before acting, when someone other than you messaged the agent over Wi-Fi, and when the request doesn't come from an agent's chat.
+Everything else still asks you first with an approval card: on **Careful**, in a chat that asks before acting, when someone other than you messaged the agent, and when the request doesn't come from an agent's chat.
 
 A message over Wi-Fi from someone other than you brings back the card, even in a chat set to **Full**. After one, the agent asks you before it sends, replies or forwards an email, creates a calendar event with guests, changes any calendar event, or takes any action that can't be taken back. Drafts, labels and reading still run without asking.
 
-Other outside words don't bring the card back. That includes a message from someone else on Telegram or Slack, and an email or web page the agent reads. An agent runs at its set level, whoever messages it. So set Telegram and Slack to an allowlist, and don't connect an agent at **Full** to a chat other people can write in.
+A message from someone else on Telegram, Slack or in a room counts too, even at **Full**. Nobody is watching a chat that started on Telegram or Slack, so there is no one to answer a card. The agent can't send through a connected app in that turn at all. In a room, it asks you first or is refused.
+
+DorkOS knows it's you on Telegram or Slack only if your own account is on that connection's **Approvers** list. Check that list in the connection's settings, or your own messages are treated as someone else's and your agent won't send for you.
+
+An email or web page the agent reads doesn't bring the card back. Treat it as untrusted.
 
 ## Agents can ask, but you decide
 
