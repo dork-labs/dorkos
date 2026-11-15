@@ -9,23 +9,120 @@ export const WRITE_INCLUDES_DELETES = false;
 /** Verified Composio money apps; every change needs a hand-picked action. */
 export const MONEY_TOOLKITS: ReadonlySet<string> = new Set([
   // Ads.
+  'adroll',
+  'adtraction',
+  'adyntel',
+  'facebook',
+  'google_adsense',
   'googleads',
+  'googlesuper',
+  'linkedin_ads',
   'metaads',
-  // Crypto.
+  'microsoft_advertising',
+  'pinterest_ads',
+  'reddit_ads',
+  'snapchat',
+  'tiktok_ads',
+  'toneden',
+  'vibe',
+  'zernio_mcp',
+  // Crypto, including market-data apps.
+  'alpaca',
   'coinbase',
+  'coinbase_agents_mcp',
   'coinbase_wallet_mcp',
+  'coingecko',
+  'coinmarketcal',
+  'coinmarketcap',
+  'coinranking',
+  'currencyscoop',
+  'finage',
+  'minerstat',
+  'open_sea',
+  'owl_protocol',
+  'plisio',
+  'polygon',
+  'polygon_io',
+  'poof',
+  'quicknode_mcp',
+  'surf',
+  'token_metrics',
+  'twelve_data',
   // Payments, including store administration that can charge or refund.
+  'airwallex',
+  'altoviz',
+  'apaleo',
+  'billsby',
+  'btcpay_server',
+  'cashfree_payments_mcp',
+  'check_cherry',
+  'clientary',
+  'clio_manage',
+  'clover',
+  'debitura',
+  'era_context_mcp',
+  'fidel_api',
+  'finmei',
+  'finmo',
+  'flutterwave',
+  'fraudlabs_pro',
+  'gocardless_mcp',
+  'gorgias',
+  'gorilladesk',
   'gumroad',
+  'harvest',
+  'highlevel_location',
+  'hitpay',
+  'hotspotsystem',
+  'jobber',
+  'klarna',
+  'lemon_squeezy',
+  'linq',
+  'maxio',
+  'memberstack',
+  'mindbody',
+  'moonclerk',
+  'netsuite',
+  'paychasers',
+  'payhere',
+  'payhip',
   'paypal',
+  'paystack',
   'quickbooks',
+  'ramp_mcp',
+  'razorpay',
   'recurly',
+  'sage_intacct',
+  'servicetitan',
   'shopify',
+  'smokeball',
+  'spoki',
   'square',
+  'storeganise',
   'stripe',
+  'stripe_mcp',
+  'tipalti',
+  'trackdesk',
+  'wild_apricot',
   'wise',
+  'workiz',
   'xero',
+  'zip',
+  'zoho_invoice',
   // Shopping.
+  'amazon',
+  'baselinker',
+  'cloudcart',
+  'commerce_layer',
   'ebay',
+  'goody',
+  'google_merchant',
+  'merchantpro',
+  'netlicensing',
+  'printify',
+  'shipday',
+  'shipengine',
+  'shippo',
 ]);
 
 /** Canonical spelling used for every action-name policy match. */
@@ -102,8 +199,18 @@ function classifyComposioTags(tags: readonly string[]): ConnectorOperationClassi
   return 'destructive';
 }
 
+// Exact actions compare normalized words independently of the app prefix's
+// word boundaries: GitHub/GITHUB and GoogleDrive/GOOGLEDRIVE are equivalent.
+function exactKey(slug: string): string {
+  return normalizeSlug(slug).replaceAll('_', '');
+}
+
+function exactActions(slugs: readonly string[]): ReadonlySet<string> {
+  return new Set(slugs.map(exactKey));
+}
+
 /** Exact reach exceptions retained from the dated catalog when a family is insufficient. */
-const ACCOUNT_REACH_ACTIONS = new Set([
+const ACCOUNT_REACH_ACTIONS = exactActions([
   'GITHUB_UPLOAD_RELEASE_ASSET',
   'GITHUB_UPDATE_A_RELEASE_ASSET',
   'GOOGLECALENDAR_ACL_INSERT',
@@ -172,7 +279,7 @@ const ACCOUNT_REACH_ACTIONS = new Set([
 // hiding an archive, permanent data loss or batch deletions stay explicit with
 // deletes on too.
 // The remaining pinned delete-on list is what DOR-4451 would admit and review.
-const ALWAYS_EXPLICIT_DELETES = new Set([
+const ALWAYS_EXPLICIT_DELETES = exactActions([
   'GOOGLEDOCS_UPDATE_DOCUMENT_BATCH',
   'GOOGLECALENDAR_BATCH_EVENTS',
   'GOOGLEDOCS_UPDATE_EXISTING_DOCUMENT',
@@ -221,19 +328,19 @@ const LIVE_CONNECTION_REACH = /WEBHOOK|_HOOK|SUBSCRI|WATCH|_RTM_|DISPATCH|UNFURL
 const SHARING_REACH =
   /_ACL_|PERMISSION|SHARING|SHARE|PUBLIC|PUBLISH|VISIBILITY|COLLABORAT|MEMBER|INVIT|PARTICIPANT|_ACCESS|FOLLOW|TRANSFER|GIST|PAGES|GRANT|GUEST|EXPORT/;
 const CREDENTIAL_REACH =
-  /SECRET|TOKEN|_KEY|API_KEY|APIKEY|DEPLOYKEY|OAUTH|CREDENTIAL|GITHUB_APP|INSTALL|INTEGRATION|AUTHORIZE|PASSWORD|MFA|SSO|BOT|RUNNER|OIDC|EMAIL_ADDRESS|SOCIAL_ACCOUNT/;
+  /SECRET|TOKEN|_KEY|API_KEY|APIKEY|DEPLOYKEY|OAUTH|CREDENTIAL|GIT_?HUB_APP|INSTALL|INTEGRATION|AUTHORIZE|PASSWORD|MFA|SSO|BOT|RUNNER|OIDC|EMAIL_ADDRESS|SOCIAL_ACCOUNT/;
 const PEOPLE_REACH =
   /ADMIN|OWNER|_ROLE|ROLE_|_USER_TO_|USERS_TO_|_TEAM(?:_|$)|ENTERPRISE|WORKSPACE|ORGANIZATION|_ORG(?:_|$)|DEFAULT_CHANNELS|USER_GROUP|USER_PROFILE|PROFILE_PHOTO/;
 const SECURITY_CONTROLS =
-  /PROTECTION|RESTRICT|RULESET|ALLOWED_ACTIONS|GITHUB_ACTIONS|WORKFLOW|CODE_SCANNING|VULN|INTERACTION|SECURITY|LFS|CUSTOM_PROPERT|_VARIABLE|ENVIRONMENT|DEPLOYMENT_BRANCH_POLICY|AUTHORIZATION|DEFAULT_BRANCH/;
+  /PROTECTION|RESTRICT|RULESET|ALLOWED_ACTIONS|GIT_?HUB_ACTIONS|WORKFLOW|CODE_SCANNING|VULN|INTERACTION|SECURITY|LFS|CUSTOM_PROPERT|_VARIABLE|ENVIRONMENT|DEPLOYMENT_BRANCH_POLICY|AUTHORIZATION|DEFAULT_BRANCH/;
 const MONEY_ACTIONS =
   /SPONSOR|CODESPACE|PAYMENT|CHARGE|REFUND|INVOICE|PAYOUT|PURCHASE|ORDER|BILLING|CHECKOUT|PRICE|DONAT|_AD(?:_|$)|CAMPAIGN|BUDGET|BID|BOOST|CRYPTO|WITHDRAW|TRADE|BUY|SEND_MONEY/;
 const IRREVERSIBLE_ACTIONS =
-  /PURGE|WIPE|RESET|REVOKE|CANCEL|EMPTY|FORCE|DESTROY|TERMINATE|PERMANENT|^GITHUB_UPDATE_A_REFERENCE$/;
+  /PURGE|WIPE|RESET|REVOKE|CANCEL|EMPTY|FORCE|DESTROY|TERMINATE|PERMANENT|^GIT_?HUB_UPDATE_A_REFERENCE$/;
 const DELETE_ACTIONS = /DELETE|REMOVE|(?<!UN)TRASH|(?<!UN)ARCHIVE|_LEAVE(?:_|$)|CLOSE_DM/;
 // Reviewed catalog exception: removing paragraph bullets changes formatting only.
 // It still needs a clean write verdict; this never promotes destructive hints.
-const FORMATTING_ONLY_ACTIONS = new Set(['GOOGLEDOCS_DELETE_PARAGRAPH_BULLETS']);
+const FORMATTING_ONLY_ACTIONS = exactActions(['GOOGLEDOCS_DELETE_PARAGRAPH_BULLETS']);
 const DELETE_COMPATIBLE_HINTS = new Set(['destructiveHint', 'idempotentHint', 'openWorldHint']);
 
 /**
@@ -245,7 +352,7 @@ const DELETE_COMPATIBLE_HINTS = new Set(['destructiveHint', 'idempotentHint', 'o
 export function isAccountReachAction(slug: string): boolean {
   slug = normalizeSlug(slug);
   return (
-    ACCOUNT_REACH_ACTIONS.has(slug) ||
+    ACCOUNT_REACH_ACTIONS.has(exactKey(slug)) ||
     [
       MAIL_REACH,
       LIVE_CONNECTION_REACH,
@@ -293,11 +400,11 @@ export function classifyComposioAction(
     isAccountReachAction(slug) ||
     MONEY_ACTIONS.test(slug) ||
     IRREVERSIBLE_ACTIONS.test(slug) ||
-    ALWAYS_EXPLICIT_DELETES.has(slug)
+    ALWAYS_EXPLICIT_DELETES.has(exactKey(slug))
   ) {
     return 'destructive';
   }
-  if (DELETE_ACTIONS.test(slug) && !FORMATTING_ONLY_ACTIONS.has(slug)) {
+  if (DELETE_ACTIONS.test(slug) && !FORMATTING_ONLY_ACTIONS.has(exactKey(slug))) {
     const includesDeletes = options.writeIncludesDeletes ?? WRITE_INCLUDES_DELETES;
     return includesDeletes && (classification === 'write' || hasOnlyDeleteHints(tags))
       ? 'write'

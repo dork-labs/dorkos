@@ -3,6 +3,25 @@ import { accessLevelRevisionIds } from '../../connector-schemas.js';
 import { classifyComposioAction, isAccountReachAction, MONEY_TOOLKITS } from '../action-classes.js';
 
 describe('Composio write hardening', () => {
+  it.each(['CAMPAIGN', 'BUDGET', 'BID', 'BOOST', 'CRYPTO', 'WITHDRAW', 'TRADE', 'BUY'])(
+    'keeps a new %s money action explicit on a neutral app',
+    (name) => {
+      expect(classifyComposioAction('futureapp', `FUTUREAPP_CREATE_${name}`, ['createHint'])).toBe(
+        'destructive'
+      );
+    }
+  );
+  it.each([
+    'GitHubCreateAGitHubAppFromAManifest',
+    'GitHubUpdateAReference',
+    'GitHubDeleteARepository',
+    'GoogleDriveUpdateDrive',
+    'GitHubUploadReleaseAsset',
+  ])('preserves family and exact-list policy across app-name word boundaries: %s', (slug) => {
+    expect(
+      classifyComposioAction('futureapp', slug, ['createHint'], { writeIncludesDeletes: true })
+    ).toBe('destructive');
+  });
   it.each(['linear-create-issue', 'LinearCreateIssue', './linear.create.issue/'])(
     'accepts an ordinary normalized write %s',
     (slug) => {
@@ -17,20 +36,117 @@ describe('Composio write hardening', () => {
   );
   it('pins every verified money toolkit exactly', () => {
     expect([...MONEY_TOOLKITS].sort()).toEqual([
+      'adroll',
+      'adtraction',
+      'adyntel',
+      'airwallex',
+      'alpaca',
+      'altoviz',
+      'amazon',
+      'apaleo',
+      'baselinker',
+      'billsby',
+      'btcpay_server',
+      'cashfree_payments_mcp',
+      'check_cherry',
+      'clientary',
+      'clio_manage',
+      'cloudcart',
+      'clover',
       'coinbase',
+      'coinbase_agents_mcp',
       'coinbase_wallet_mcp',
+      'coingecko',
+      'coinmarketcal',
+      'coinmarketcap',
+      'coinranking',
+      'commerce_layer',
+      'currencyscoop',
+      'debitura',
       'ebay',
+      'era_context_mcp',
+      'facebook',
+      'fidel_api',
+      'finage',
+      'finmei',
+      'finmo',
+      'flutterwave',
+      'fraudlabs_pro',
+      'gocardless_mcp',
+      'goody',
+      'google_adsense',
+      'google_merchant',
       'googleads',
+      'googlesuper',
+      'gorgias',
+      'gorilladesk',
       'gumroad',
+      'harvest',
+      'highlevel_location',
+      'hitpay',
+      'hotspotsystem',
+      'jobber',
+      'klarna',
+      'lemon_squeezy',
+      'linkedin_ads',
+      'linq',
+      'maxio',
+      'memberstack',
+      'merchantpro',
       'metaads',
+      'microsoft_advertising',
+      'mindbody',
+      'minerstat',
+      'moonclerk',
+      'netlicensing',
+      'netsuite',
+      'open_sea',
+      'owl_protocol',
+      'paychasers',
+      'payhere',
+      'payhip',
       'paypal',
+      'paystack',
+      'pinterest_ads',
+      'plisio',
+      'polygon',
+      'polygon_io',
+      'poof',
+      'printify',
       'quickbooks',
+      'quicknode_mcp',
+      'ramp_mcp',
+      'razorpay',
       'recurly',
+      'reddit_ads',
+      'sage_intacct',
+      'servicetitan',
+      'shipday',
+      'shipengine',
+      'shippo',
       'shopify',
+      'smokeball',
+      'snapchat',
+      'spoki',
       'square',
+      'storeganise',
       'stripe',
+      'stripe_mcp',
+      'surf',
+      'tiktok_ads',
+      'tipalti',
+      'token_metrics',
+      'toneden',
+      'trackdesk',
+      'twelve_data',
+      'vibe',
+      'wild_apricot',
       'wise',
+      'workiz',
       'xero',
+      'zernio_mcp',
+      'zip',
+      'zoho_invoice',
     ]);
   });
 
@@ -138,7 +254,7 @@ describe('Composio write hardening', () => {
     );
   });
 
-  it.each(['创建', ''])('refuses an unknown read slug %j', (slug) => {
+  it.each(['创建', 'CrÉateItem', ''])('refuses an unknown read slug %j', (slug) => {
     expect(classifyComposioAction(slug.split('_')[0]!.toLowerCase(), slug, ['readOnlyHint'])).toBe(
       'destructive'
     );

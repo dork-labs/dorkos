@@ -160,3 +160,16 @@ describe('notification presentation', () => {
     expect(notificationLink(row)).toEqual({ to: '/team', search: {} });
   });
 });
+
+it('opens the exact account whose write level needs choosing again', () => {
+  expect(
+    notificationLink({
+      id: 'notice',
+      kind: 'connector.write_available',
+      tier: 'notable',
+      subject: { type: 'system', id: 'work-linear' },
+      title: 'Write access for Linear',
+      createdAt: '2026-11-15T12:00:00Z',
+    })
+  ).toEqual({ to: '/connections', search: { app: 'work-linear' } });
+});
