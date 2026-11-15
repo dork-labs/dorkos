@@ -115,6 +115,7 @@ import { sessionDirectoryOf } from './sessions/session-directory.js';
 import { resolveCompactionModel } from './messaging/compaction-model.js';
 import type { OpenCodeTurnOptions } from './messaging/turn-options.js';
 import { validatedGrants } from './messaging/directory-grants.js';
+import { projectPluginRefusal } from './messaging/project-plugin-guard.js';
 import { discoverOpenCodeModels } from './model-discovery.js';
 import { OpenCodeContextWindows } from './providers/context-windows.js';
 import { protectedPathRoots } from '../shared/policy/protected-path-roots.js';
@@ -137,8 +138,8 @@ import { ConnectorTurnLeaseManager, type ConnectorTurnLease } from './mcp/connec
 import {
   OPENCODE_LABEL,
   OPENCODE_OWN_PLAN,
-  OpenCodeSwitchPendingError,
   openCodeRunsOnCredits,
+  switchPendingEvent,
   type OpenCodeSidecarPlan,
 } from './credits-sidecar.js';
 import {
@@ -595,6 +596,10 @@ export class OpenCodeRuntime implements AgentRuntime {
     ) => Promise<void>,
     opts?: OpenCodeTurnOptions
   ): AsyncGenerator<StreamEvent> {
+    // A project's own plugins would run in the shared sidecar, flag or not
+    // (DOR-4394): asked on every turn, before the sidecar sees the folder.
+    const pluginRefusal = projectPluginRefusal(cwd);
+    if (pluginRefusal) return yield pluginRefusal;
     // **Who pays** (ADR 261001-000811), decided before anything is sent: the
     // sidecar is made right for OpenCode's recorded choice, and a credits turn
     // that credits cannot pay for is REFUSED here, with nothing sent.
@@ -610,14 +615,7 @@ export class OpenCodeRuntime implements AgentRuntime {
     } catch (err) {
       this.settingUp.delete(settingUp);
       void this.provider.turnSettled?.().catch(() => undefined);
-      if (err instanceof OpenCodeSwitchPendingError) {
-        yield {
-          type: 'error',
-          data: { message: err.message, code: err.code, category: 'execution_error' },
-        };
-        return;
-      }
-      const refusal = creditsRefusalEvent(err);
+      const refusal = switchPendingEvent(err) ?? creditsRefusalEvent(err);
       if (!refusal) throw err;
       yield refusal;
       return;
