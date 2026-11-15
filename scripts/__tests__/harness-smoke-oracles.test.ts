@@ -183,6 +183,23 @@ describe('the listing oracle', () => {
     expect(failed).toHaveLength(1);
     expect(failed[0]?.capabilities).toContain('SK-06');
   });
+
+  it('fails SK-09 when the `pkg__x` folder does not load on Codex', () => {
+    const listing: ListingObservation = {
+      skills: ['x', 'x', 'probe'],
+      commands: [],
+      skillPaths: [
+        '/repo/.agents/skills/x/SKILL.md',
+        '/repo/.agents/skills/x-twin/SKILL.md',
+        '/repo/.agents/skills/probe/SKILL.md',
+      ],
+    };
+    const failed = listingVerdicts(CODEX, listing, '/repo').filter(
+      (verdict) => verdict.status === 'fail'
+    );
+    expect(failed).toHaveLength(1);
+    expect(failed[0]?.capabilities).toEqual(['SK-09']);
+  });
 });
 
 describe('the activation oracle', () => {

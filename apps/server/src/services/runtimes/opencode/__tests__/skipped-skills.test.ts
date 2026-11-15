@@ -51,6 +51,27 @@ describe("the OpenCode agent's note about skipped package skills (DOR-4387)", ()
     expect(lines.split('\n')).toHaveLength(2);
   });
 
+  it("quotes the winning package's skill folder, so a newline or U+2028 in it cannot break the line", () => {
+    // Two packages share a name; the first's skill FOLDER carries a newline and
+    // a U+2028, and is the projection the second's line names (Security S1).
+    const root = project('acme-c');
+    const alpha = join(root, '.dork', 'plugins', 'alpha');
+    mkdirSync(join(alpha, '.claude-plugin'), { recursive: true });
+    writeFileSync(join(alpha, '.claude-plugin', 'plugin.json'), JSON.stringify({ name: 'alpha' }));
+    skillAt(join(alpha, 'skills', 'x\n\u2028- injected'), 'shared');
+    const beta = join(root, '.dork', 'plugins', 'beta');
+    mkdirSync(join(beta, '.claude-plugin'), { recursive: true });
+    writeFileSync(join(beta, '.claude-plugin', 'plugin.json'), JSON.stringify({ name: 'beta' }));
+    skillAt(join(beta, 'skills', 'y'), 'shared');
+
+    const lines = renderSkippedSkillLines(root) ?? '';
+    expect(lines.split('\n')).toHaveLength(2);
+    expect(lines).not.toMatch(/[\u2028\u2029\u0085]/);
+    expect(lines).toContain(
+      `- "shared" from the beta package: "alpha__x\\n- injected" was added first with this name`
+    );
+  });
+
   it('says nothing when no package skill was left out', () => {
     expect(renderSkippedSkillLines(project('acme-c'))).toBeUndefined();
   });

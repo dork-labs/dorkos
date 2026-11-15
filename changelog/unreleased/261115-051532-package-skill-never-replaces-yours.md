@@ -3,6 +3,7 @@ covers:
   - "fix(harness): a package skill never replaces a person's own skill of the same name"
   - 'fix(harness): skip same-name package skills only where a by-name harness is enabled'
   - 'fix(harness): close the two gaps Security found in the same-name package skill skip'
+  - "fix(opencode): quote a package's skill folder in the agent's skipped-skills note"
 ---
 
 ### Fixed

@@ -16,12 +16,20 @@ import { logger } from '../../../../lib/logger.js';
 const NAME_CAP = 64;
 
 /**
- * A skill name a package wrote, made safe to quote in DorkOS's voice: clipped
- * to {@link NAME_CAP} characters, then JSON-quoted so a newline or quote in it
+ * Line breaks `JSON.stringify` leaves as they are: U+2028, U+2029 and U+0085
+ * (NEL). A model may read any of them as a new line.
+ */
+const UNESCAPED_LINE_BREAKS = /[\u2028\u2029\u0085]/g;
+
+/**
+ * A skill or folder name a package wrote, made safe to quote in DorkOS's
+ * voice: the line breaks JSON keeps are stripped, it is clipped to
+ * {@link NAME_CAP} characters, then JSON-quoted so a newline or quote in it
  * cannot break out of the line (Security, #3752 review).
  */
 function quoted(name: string): string {
-  return JSON.stringify(name.length > NAME_CAP ? `${name.slice(0, NAME_CAP)}…` : name);
+  const flat = name.replace(UNESCAPED_LINE_BREAKS, '');
+  return JSON.stringify(flat.length > NAME_CAP ? `${flat.slice(0, NAME_CAP)}…` : flat);
 }
 
 /** One line per skip. */
@@ -31,7 +39,7 @@ function describe(skip: SkippedPackageSkill): string {
     case 'own':
       return `- ${what}: the person's own skill at ${skip.winner.source} has this name, so theirs is the one you have.`;
     case 'package':
-      return `- ${what}: ${skip.winner.projection} was added first with this name, so that is the one you have.`;
+      return `- ${what}: ${quoted(skip.winner.projection)} was added first with this name, so that is the one you have.`;
     case 'unreadable':
       return `- the ${quoted(skip.skill)} skill folder from the ${skip.package} package: its name could not be read, so it was left out.`;
   }
