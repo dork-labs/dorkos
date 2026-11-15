@@ -1,5 +1,8 @@
 ---
-covers: []
+covers:
+  - "fix(chat): another agent's queued message gets Send now and Don't deliver, waits on its own row, and never shows the wrapper (DOR-3060)"
+  - 'fix(chat): Send now holds the row before it waits, never carries a passed-on mark, and a drain join folds in one transaction (DOR-3060)'
+  - 'fix(chat): Send now never steers a row held to the default (DOR-3060)'
 ---
 
 ### Changed

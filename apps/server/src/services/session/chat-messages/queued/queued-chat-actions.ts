@@ -78,7 +78,8 @@ type MoveReason = 'no-running-turn' | 'steer-not-allowed' | 'steer-did-not-land'
  *
  * A message runs at its receiving agent's own level (DOR-3440), but what its
  * sender's turn carried rides on the row: a teammate's chain, a Wi-Fi hold,
- * outside words. A running turn cannot take those on after it started, so a
+ * outside words, or a hold to the runtime's default. A running turn cannot
+ * take those on after it started, so a
  * row that carries any of them never joins one; it runs next, as its own turn,
  * where launch applies them. The rest is the live check the send-time steer
  * makes, for every sender on the row.
@@ -86,10 +87,14 @@ type MoveReason = 'no-running-turn' | 'steer-not-allowed' | 'steer-did-not-land'
 async function joinRefusal(
   deps: QueuedChatActionsDeps,
   sessionId: string,
+  queueRowId: string,
   records: readonly ChatMessageRow[]
 ): Promise<MoveReason | null> {
   if (!(await deps.isBusy(sessionId).catch(() => false))) return 'no-running-turn';
-  const carries = rowsCeiling(records) !== undefined || rowsCarryWords(records);
+  // A row held to the runtime's default (a pause kept limits only its plan
+  // knew, DOR-3037) launches at that default; a running turn may be above it.
+  const heldToDefault = getMessageQueueStore()?.get(queueRowId)?.heldToDefault === true;
+  const carries = heldToDefault || rowsCeiling(records) !== undefined || rowsCarryWords(records);
   if (records.length === 0 || carries) return 'steer-not-allowed';
   return records.every((record) => mayChatSteer(deps, record.fromSessionId, sessionId))
     ? null
@@ -119,7 +124,7 @@ export async function steerQueuedChatMessage(
   const records = deps.store.listByQueueMessage(queueRowId);
   let refusal: MoveReason | null;
   try {
-    refusal = await joinRefusal(deps, sessionId, records);
+    refusal = await joinRefusal(deps, sessionId, queueRowId, records);
     if (refusal === null) {
       const landed = await deps.steerInto(sessionId, row.content, queueRowId).catch(() => false);
       if (!landed) refusal = 'steer-did-not-land';

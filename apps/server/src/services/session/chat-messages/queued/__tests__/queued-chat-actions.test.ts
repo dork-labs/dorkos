@@ -171,6 +171,17 @@ describe('steerQueuedChatMessage, more', () => {
     }
   );
 
+  it('never joins a running turn with a row held to the runtime default', async () => {
+    const seeded = seedChatMessage();
+    queue.updateContent(seeded.rowId, queue.get(seeded.rowId)!.content, { holdToDefault: true });
+
+    await expect(steerQueuedChatMessage(TARGET, seeded.rowId)).resolves.toEqual({
+      outcome: 'moved-to-front',
+      reason: 'steer-not-allowed',
+    });
+    expect(steerInto).not.toHaveBeenCalled();
+  });
+
   it('holds the row before its first wait, so no turn or drain join can take it meanwhile', async () => {
     const seeded = seedChatMessage();
     let heldWhileChecking = false;
