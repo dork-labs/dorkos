@@ -25,3 +25,17 @@ export function requestedWriteOffer(
     ? 'exact'
     : 'none';
 }
+
+/**
+ * A level as offered now. Use for display and comparison, never to rewrite stored intent.
+ * Exact-action and absent selections keep their meaning.
+ *
+ * @param level - The stored or picked level.
+ * @param candidates - The account's complete action snapshot.
+ */
+export function displayedAccessLevel<T extends string | null | undefined>(
+  level: T,
+  candidates: readonly ConnectorReconciliationCandidate[]
+): T | 'read' {
+  return level === 'read-write' && requestedWriteOffer(candidates) !== 'level' ? 'read' : level;
+}

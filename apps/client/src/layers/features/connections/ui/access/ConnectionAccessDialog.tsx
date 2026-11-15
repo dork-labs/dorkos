@@ -26,7 +26,7 @@ import {
   selectionsFromPreview,
   type AgentOperationSelections,
 } from '../../lib/reconciliation-selection';
-import { requestedWriteOffer } from '../../lib/access-level-offer';
+import { displayedAccessLevel, requestedWriteOffer } from '../../lib/access-level-offer';
 import { olderVersionIds } from '../../lib/older-versions';
 import { useAccessReconciliation } from '../../model/use-access-reconciliation';
 import { LoadFailedState } from '../LoadFailedState';
@@ -52,15 +52,7 @@ export function ConnectionAccessDialog({
   const access = useAccessReconciliation({
     connectionId,
     active: open,
-    onPreview: (nextPreview) => {
-      const next = selectionsFromPreview(nextPreview);
-      if (requestedWriteOffer(nextPreview.candidates) !== 'level') {
-        for (const selection of Object.values(next)) {
-          if (selection.level === 'read-write') selection.level = 'read';
-        }
-      }
-      setSelections(next);
-    },
+    onPreview: (nextPreview) => setSelections(selectionsFromPreview(nextPreview)),
   });
   const { preview, saveOutcome, saved, needsReconciliation, needsRefresh } = access;
   // Why the owner is here, in the server's words, when the account is waiting
@@ -205,12 +197,14 @@ function ReconciliationEditor({
             const older = olderVersionIds(preview.candidates);
             const selection = selections[agent.agentId];
             const selected = new Set(selection?.operationRevisionIds ?? []);
+            const selectedLevel = displayedAccessLevel(selection?.level, preview.candidates);
+            const descriptionId = `${baseId}-${agent.agentId}-write-unavailable`;
             // The level the owner chose, kept as the app changes; ticking
             // single actions below makes it exact actions instead.
             const level =
-              selection?.level === 'read'
+              selectedLevel === 'read'
                 ? 'Read'
-                : selection?.level === 'read-write'
+                : selectedLevel === 'read-write'
                   ? 'Read + write'
                   : selected.size === 0
                     ? 'No access'
@@ -256,7 +250,6 @@ function ReconciliationEditor({
                     ] as const
                   ).map(([value, label]) => {
                     const unavailable = value === 'read-write' && !hasWriteLevel;
-                    const descriptionId = `${baseId}-${agent.agentId}-write-unavailable`;
                     return (
                       <div key={value} className="min-w-0">
                         <Button
@@ -264,21 +257,21 @@ function ReconciliationEditor({
                           variant={level === label ? 'secondary' : 'outline'}
                           aria-pressed={level === label}
                           disabled={unavailable}
-                          aria-disabled={unavailable}
+                          aria-disabled={unavailable || undefined}
                           aria-describedby={unavailable ? descriptionId : undefined}
                           onClick={() => setLevel(value)}
                           className="w-full px-2 text-xs"
                         >
                           {label}
                         </Button>
-                        {unavailable && (
-                          <p id={descriptionId} className="text-muted-foreground mt-1 text-xs">
-                            Not available for {appName} yet.
-                          </p>
-                        )}
                       </div>
                     );
                   })}
+                  {!hasWriteLevel && (
+                    <p id={descriptionId} className="text-muted-foreground col-span-3 text-xs">
+                      Not available for {appName} yet.
+                    </p>
+                  )}
                 </div>
                 {advanced && (
                   <ul className="mt-3 space-y-1.5" data-testid={`advanced-access-${agent.agentId}`}>

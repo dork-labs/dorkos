@@ -39,7 +39,11 @@ export function RequestedAccess({
       <p className="text-muted-foreground text-xs">{ASKED_FOR[access](serviceName)}</p>
       {wantsWrite && writeOffer !== 'level' ? (
         <div className="space-y-0.5 text-xs" role="status" data-testid="requested-write-missing">
-          <p>Allow gives Read only. DorkOS can’t make changes in {serviceName} yet.</p>
+          <p>
+            {writeOffer === 'none'
+              ? `Allow gives Read only. DorkOS can’t make changes in ${serviceName} yet.`
+              : 'Allow gives Read only.'}
+          </p>
           <p className="text-muted-foreground">
             {writeOffer === 'none'
               ? `If that seems wrong, connect ${serviceName} again.`

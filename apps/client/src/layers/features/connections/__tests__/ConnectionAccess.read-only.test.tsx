@@ -5,9 +5,12 @@ import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
 import type { ConnectorReconciliationPreview } from '@dorkos/shared/connector-schemas';
-import { createMockTransport } from '@dorkos/test-utils';
+import { createMockTransport, createMockConnectionReadiness } from '@dorkos/test-utils';
+import { mockConnection } from '@/dev/mock-samples';
 import { TransportProvider } from '@/layers/shared/model';
 import { ConnectionAccessCard } from '../ui/access/ConnectionAccessCard';
+import { AgentRequestCard } from '../ui/agent-request/AgentRequestCard';
+import { READ_ONLY_AGENT_REQUEST } from '@/dev/mock-samples';
 import { ConnectionAccessDialog } from '../ui/access/ConnectionAccessDialog';
 
 afterEach(cleanup);
@@ -54,7 +57,20 @@ function preview(hasWrites = false): ConnectorReconciliationPreview {
   };
 }
 
-function renderWith(snapshot: ConnectorReconciliationPreview, ui: ReactNode) {
+/** A true no-change catalog, distinct from exact-only and paid change actions. */
+function readOnlyPreview(): ConnectorReconciliationPreview {
+  const snapshot = preview();
+  return {
+    ...snapshot,
+    candidates: snapshot.candidates.filter((c) => c.capabilityClassification === 'read'),
+  };
+}
+
+function renderWith(
+  snapshot: ConnectorReconciliationPreview,
+  ui: ReactNode,
+  reason?: 'needs_review' | 'access_update_failed'
+) {
   const transport = createMockTransport();
   vi.mocked(transport.previewConnectorReconciliation).mockResolvedValue(snapshot);
   vi.mocked(transport.applyConnectorReconciliation).mockImplementation(async (input) => ({
@@ -63,6 +79,15 @@ function renderWith(snapshot: ConnectorReconciliationPreview, ui: ReactNode) {
     authoritySync: { status: 'ready' },
     grants: input.grants,
   }));
+  vi.mocked(transport.getConnectorConnections).mockResolvedValue({
+    connections: [
+      mockConnection({
+        connectionId: 'connection-1' as never,
+        toolkit: 'linear',
+        ...(reason && { readiness: createMockConnectionReadiness({ state: 'needs_you', reason }) }),
+      }),
+    ],
+  });
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
@@ -80,7 +105,7 @@ describe('access for an app with no write actions', () => {
   it('shows Read and its explanation in the panel, then saves Read', async () => {
     const user = userEvent.setup();
     const transport = renderWith(
-      preview(),
+      readOnlyPreview(),
       <ConnectionAccessCard mode="page" connectionId="connection-1" serviceName="Linear" />
     );
     expect(await screen.findByText(readOnlyCopy)).toHaveClass('text-muted-foreground', 'text-xs');
@@ -126,7 +151,7 @@ describe('access for an app with no write actions', () => {
     'opens a saved %s grant on Read and disables Read + write with an explanation',
     async (level) => {
       const user = userEvent.setup();
-      const snapshot = preview();
+      const snapshot = readOnlyPreview();
       snapshot.currentGrants = [{ agentId: 'scout', operationRevisionIds: ['read'], level }];
       const transport = renderWith(
         snapshot,
@@ -138,32 +163,133 @@ describe('access for an app with no write actions', () => {
       expect(write).toHaveAttribute('aria-disabled', 'true');
       expect(write).toHaveAccessibleDescription('Not available for Linear yet.');
       expect(within(scout).getByText('Not available for Linear yet.')).toBeVisible();
+      expect(within(scout).getByText('Not available for Linear yet.')).toHaveClass('col-span-3');
       expect(within(scout).getByRole('button', { name: 'Read' })).toHaveAttribute(
         'aria-pressed',
         'true'
       );
       await user.click(write);
+      expect(within(scout).getByRole('button', { name: 'Read' })).toHaveAttribute(
+        'aria-pressed',
+        'true'
+      );
+      expect(screen.getByRole('button', { name: 'Save access' })).toBeDisabled();
+      expect(transport.applyConnectorReconciliation).not.toHaveBeenCalled();
       await user.click(within(scout).getByRole('button', { name: 'No access' }));
       await user.click(within(scout).getByRole('button', { name: 'Read' }));
-      if (level === 'read') {
-        expect(screen.getByRole('button', { name: 'Save access' })).toBeDisabled();
-        expect(transport.applyConnectorReconciliation).not.toHaveBeenCalled();
-      } else {
-        await user.click(screen.getByRole('button', { name: 'Save access' }));
-        await waitFor(() =>
-          expect(transport.applyConnectorReconciliation).toHaveBeenCalledWith({
-            previewId: 'preview-1',
-            grants: [{ agentId: 'scout', operationRevisionIds: ['read'], level: 'read' }],
-          })
-        );
-      }
+      expect(screen.getByRole('button', { name: 'Save access' })).toBeDisabled();
+      expect(transport.applyConnectorReconciliation).not.toHaveBeenCalled();
     }
   );
+
+  it.each(['needs_review', 'access_update_failed'] as const)(
+    'keeps %s confirmation intact for an untouched stored write level',
+    async (reason) => {
+      const user = userEvent.setup();
+      const snapshot = readOnlyPreview();
+      snapshot.currentGrants = [
+        { agentId: 'scout', operationRevisionIds: ['read'], level: 'read-write' },
+      ];
+      const transport = renderWith(
+        snapshot,
+        <ConnectionAccessDialog connectionId="connection-1" open onOpenChange={vi.fn()} />,
+        reason
+      );
+      const confirm = await screen.findByRole('button', { name: 'Confirm access' });
+      expect(confirm).toBeEnabled();
+      await user.click(screen.getByRole('button', { name: 'Read + write' }));
+      expect(screen.getByRole('button', { name: 'Read' })).toHaveAttribute('aria-pressed', 'true');
+      expect(screen.getByRole('button', { name: 'Confirm access' })).toBeEnabled();
+      expect(screen.queryByRole('button', { name: 'Save access' })).not.toBeInTheDocument();
+      await user.click(confirm);
+      await waitFor(() =>
+        expect(transport.applyConnectorReconciliation).toHaveBeenCalledWith({
+          previewId: 'preview-1',
+          grants: [],
+        })
+      );
+    }
+  );
+
+  it('saves another agent without rewriting an untouched stored write level', async () => {
+    const user = userEvent.setup();
+    const snapshot = readOnlyPreview();
+    snapshot.agents.push({ agentId: 'atlas', displayName: 'Atlas' });
+    snapshot.currentGrants = [
+      { agentId: 'scout', operationRevisionIds: ['read'], level: 'read-write' },
+    ];
+    const transport = renderWith(
+      snapshot,
+      <ConnectionAccessDialog connectionId="connection-1" open onOpenChange={vi.fn()} />
+    );
+    const atlas = await screen.findByRole('group', { name: 'Access for Atlas' });
+    expect(screen.getByRole('button', { name: 'Save access' })).toBeDisabled();
+    await user.click(within(atlas).getByRole('button', { name: 'Read' }));
+    await user.click(screen.getByRole('button', { name: 'Save access' }));
+    await waitFor(() =>
+      expect(transport.applyConnectorReconciliation).toHaveBeenCalledWith({
+        previewId: 'preview-1',
+        grants: [{ agentId: 'atlas', operationRevisionIds: ['read'], level: 'read' }],
+      })
+    );
+  });
+
+  it('leaves every-agent write intent satisfied without enabling Save on a read-only app', async () => {
+    const user = userEvent.setup();
+    const snapshot = readOnlyPreview();
+    snapshot.everyAgent = { available: true, operationRevisionIds: ['read'], level: 'read-write' };
+    const transport = renderWith(
+      snapshot,
+      <ConnectionAccessCard mode="page" connectionId="connection-1" serviceName="Linear" />
+    );
+    await screen.findByText(readOnlyCopy);
+    const save = screen.getByRole('button', { name: 'Save' });
+    expect(save).toBeDisabled();
+    await user.click(save);
+    expect(transport.applyConnectorReconciliation).not.toHaveBeenCalled();
+  });
+
+  it('names an agent’s own Read access without attributing it to every agent', async () => {
+    const snapshot = readOnlyPreview();
+    snapshot.currentGrants = [
+      { agentId: 'scout', operationRevisionIds: ['read'], level: 'read-write' },
+    ];
+    renderWith(
+      snapshot,
+      <ConnectionAccessCard
+        mode="agent"
+        agentId="scout"
+        connectionId="connection-1"
+        toolkit="linear"
+        serviceName="Linear"
+      />
+    );
+    expect(await screen.findByText('Scout can already do this.')).toBeInTheDocument();
+    expect(screen.queryByText('Scout already can, like every agent.')).not.toBeInTheDocument();
+  });
+
+  it('explains the read-only result in the real request card for a no-change catalog', async () => {
+    renderWith(readOnlyPreview(), <AgentRequestCard request={READ_ONLY_AGENT_REQUEST} />);
+    const note = await screen.findByTestId('requested-write-missing');
+    expect(note).toHaveTextContent(
+      'Allow gives Read only. DorkOS can’t make changes in Linear yet.'
+    );
+    expect(note).toHaveTextContent('If that seems wrong, connect Linear again.');
+  });
+
+  it('does not claim changes are unavailable when exact change actions exist', async () => {
+    renderWith(
+      preview(),
+      <ConnectionAccessCard mode="page" connectionId="connection-1" serviceName="Linear" />
+    );
+    await screen.findByText('Read', { exact: true });
+    expect(screen.queryByText(readOnlyCopy)).not.toBeInTheDocument();
+  });
 
   it('saves the selected Read level from the dialog for a new grant', async () => {
     const user = userEvent.setup();
     const transport = renderWith(
-      preview(),
+      readOnlyPreview(),
       <ConnectionAccessDialog connectionId="connection-1" open onOpenChange={vi.fn()} />
     );
     const scout = await screen.findByRole('group', { name: 'Access for Scout' });
@@ -192,6 +318,7 @@ describe('access for an app with no write actions', () => {
     );
     const write = within(scout).getByRole('button', { name: 'Read + write' });
     expect(write).toBeEnabled();
+    expect(write).not.toHaveAttribute('aria-disabled');
     expect(screen.queryByText('Not available for Linear yet.')).not.toBeInTheDocument();
     await user.click(write);
     expect(write).toHaveAttribute('aria-pressed', 'true');

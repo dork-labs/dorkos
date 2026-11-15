@@ -11,10 +11,10 @@ import {
   type CardDecision,
   type WhoCanUse,
 } from '../../lib/access-card-selection';
-import { requestedWriteOffer } from '../../lib/access-level-offer';
+import { displayedAccessLevel, requestedWriteOffer } from '../../lib/access-level-offer';
 import { selectionsFromPreview } from '../../lib/reconciliation-selection';
 import { AppActions } from '../AppActions';
-import type { ConnectionAccessCardProps } from './ConnectionAccessCard';
+import type { ConnectionAccessCardProps } from './access-card-props';
 import { AgentChecklist } from './AgentChecklist';
 import { LEVEL_LABELS } from './access-labels';
 import { EveryAgentWarning } from './EveryAgentWarning';
@@ -70,7 +70,7 @@ export function AccessEditor({
   let whoView: ReactNode;
   if (props.mode === 'agent') {
     const agent = preview.agents.find((candidate) => candidate.agentId === props.agentId);
-    const held = heldAccess(current[props.agentId]);
+    const held = displayedAccessLevel(heldAccess(current[props.agentId]), preview.candidates);
     const effective = agentHeldAccess(preview, props.agentId, Boolean(props.onAllowed));
     const covered = effective === level || (effective === 'read-write' && level === 'read');
     whoView = !agent ? (
@@ -164,7 +164,7 @@ export function AccessEditor({
             ) : (
               <p className="text-sm">{LEVEL_LABELS[levels[0]]}</p>
             )}
-            {props.mode === 'page' && writeOffer !== 'level' && (
+            {props.mode === 'page' && writeOffer === 'none' && (
               <p className="text-muted-foreground text-xs">
                 Only Read is available for {props.serviceName}. DorkOS can’t make changes there yet.
               </p>

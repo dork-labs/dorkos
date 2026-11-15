@@ -8,7 +8,7 @@ import {
   VISIBLE_AGENT_LIMIT,
   type CardDecision,
 } from '../../lib/access-card-selection';
-import { requestedWriteOffer } from '../../lib/access-level-offer';
+import { displayedAccessLevel } from '../../lib/access-level-offer';
 import { selectionsFromPreview } from '../../lib/reconciliation-selection';
 import { HELD_LABELS } from './access-labels';
 
@@ -54,7 +54,6 @@ export function AgentChecklist({
 }: AgentChecklistProps) {
   const baseId = useId();
   const current = selectionsFromPreview(preview);
-  const hasWriteLevel = requestedWriteOffer(preview.candidates) === 'level';
   const ranked = rankAgents(preview, { preferredAgentIds, systemAgentIds });
   const visible = showAll
     ? ranked
@@ -72,8 +71,7 @@ export function AgentChecklist({
       <legend className="sr-only">Agents that can use {serviceName}</legend>
       {visible.map((agent) => {
         const id = `${baseId}-${agent.agentId}`;
-        const stored = heldAccess(current[agent.agentId]);
-        const held = stored === 'read-write' && !hasWriteLevel ? 'read' : stored;
+        const held = displayedAccessLevel(heldAccess(current[agent.agentId]), preview.candidates);
         const loses =
           decision.removedAgentIds.includes(agent.agentId) ||
           decision.downgradedAgentIds.includes(agent.agentId);

@@ -12,6 +12,7 @@ import {
   type ConnectionAccessCardProps,
 } from '@/layers/features/connections';
 import { TransportProvider } from '@/layers/shared/model';
+import { ReadOnlyPageDemo } from './ReadOnlyAccessShowcases';
 import { READY } from '../mock-samples';
 import { createPlaygroundTransport } from '../playground-transport';
 import { PlaygroundSection } from '../PlaygroundSection';
@@ -182,6 +183,11 @@ export function ConnectionAccessCardShowcase() {
       title="ConnectionAccessCard"
       description="Who can use an app, and what can they do. The page picks agents or every agent; the chat answers for one agent and asks which account when there are two."
     >
+      <ShowcaseLabel>Page: Linear offers Read only; Scout already has Read</ShowcaseLabel>
+      <ShowcaseDemo responsive>
+        <ReadOnlyPageDemo />
+      </ShowcaseDemo>
+
       <ShowcaseLabel>
         Page: pick agents (mailroom already reads; untick it to see the warning)
       </ShowcaseLabel>
