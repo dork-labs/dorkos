@@ -214,6 +214,25 @@ function exactActions(slugs: readonly string[]): ReadonlySet<string> {
   return new Set(slugs.map(exactKey));
 }
 
+/**
+ * Security's persistence rule; Dorian may overrule it.
+ * These repository actions stay hand-picked even if their catalog hints change.
+ */
+const REPOSITORY_PERSISTENCE_ACTIONS = exactActions([
+  'GITEA_CREATE_BRANCH',
+  'GITEA_MERGE_PULL_REQUEST',
+  'GITHUB_CREATE_A_REFERENCE',
+  'GITHUB_MCP_CREATE_BRANCH',
+  'GITHUB_MCP_MERGE_PULL_REQUEST',
+  'GITHUB_MERGE_A_BRANCH',
+  'GITHUB_MERGE_A_PULL_REQUEST',
+  'GITLAB_CHERRY_PICK_COMMIT',
+  'GITLAB_CREATE_REPOSITORY_BRANCH',
+  'GITLAB_MERGE_MERGE_REQUEST',
+  'GITLAB_REBASE_MERGE_REQUEST',
+  'GITLAB_REVERT_COMMIT',
+]);
+
 /** Exact reach exceptions retained from the dated catalog when a family is insufficient. */
 const ACCOUNT_REACH_ACTIONS = exactActions([
   'GITHUB_UPLOAD_RELEASE_ASSET',
@@ -398,6 +417,7 @@ export function classifyComposioAction(
   if ([...slug].some((character) => character.charCodeAt(0) > 127)) return 'destructive';
   slug = normalizeSlug(slug);
   if (!/^[A-Z0-9_]+$/.test(slug)) return 'destructive';
+  if (REPOSITORY_PERSISTENCE_ACTIONS.has(exactKey(slug))) return 'destructive';
   const classification = classifyComposioTags(tags);
   if (classification === 'read') return classification;
   if (

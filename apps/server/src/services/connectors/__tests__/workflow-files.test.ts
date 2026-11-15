@@ -1,4 +1,4 @@
-/** GitHub workflow-file policy crosses the real reconciliation and execution-authority seam. */
+/** Repository-control policy crosses the real reconciliation and execution-authority seam. */
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { connections, eq } from '@dorkos/db';
 import { ConnectorExecutionTargetSchema } from '@dorkos/shared/connector-schemas';
@@ -37,6 +37,8 @@ async function setup(toolkit = 'github') {
       'GITHUB_MCP_CREATE_OR_UPDATE_FILE',
       'GITHUB_MCP_PUSH_FILES',
       'GITLAB_SAVE_FILE',
+      'GITEA_SAVE_FILE',
+      'DROPBOX_SAVE_FILE',
     ].map((slug) => ({
       slug,
       classification: 'write' as const,
@@ -101,7 +103,8 @@ describe('workflow files need the agent’s own exact grant', () => {
     await expect(run('writer', CONTENTS, { path })).rejects.toMatchObject({
       payload: {
         code: 'CONNECTOR_GRANT_REQUIRED',
-        error: 'Changing workflow files needs this action given to this agent on its own.',
+        error:
+          'Changing repository control files needs this action given to this agent on its own.',
       },
     });
   });
@@ -184,7 +187,6 @@ describe('repository-control paths need the agent’s own exact grant', () => {
     '.github\\workflows\\x.yml',
     ' .github /workflows/x.yml',
     'src/../.github/workflows/x.yml',
-    '%broken/path',
   ])('refuses a disguised or undecodable control path %s', async (path) => {
     const run = await setup('gitlab');
     await expect(
@@ -204,5 +206,74 @@ describe('repository-control paths need the agent’s own exact grant', () => {
         files: [{ path: 'src/./nested/../x.ts', content: '.github/workflows/ci.yml' }],
       })
     ).resolves.toMatchObject({ agentId: 'writer' });
+  });
+});
+
+describe('more repository controls and ordinary percent filenames', () => {
+  it.each([
+    'CODEOWNERS',
+    'docs/CODEOWNERS',
+    '.github/CODEOWNERS',
+    '.gitlab/CODEOWNERS',
+    'Jenkinsfile',
+    'azure-pipelines.yml',
+    'azure-pipelines.yaml',
+    '.travis.yml',
+    '.drone.yml',
+    '.woodpecker.yml',
+    '.woodpecker/',
+    '.woodpecker/pipeline.yml',
+    'appveyor.yml',
+    '.semaphore/',
+    '.semaphore/semaphore.yml',
+    'cloudbuild.yaml',
+    'cloudbuild.yml',
+  ])('requires an exact action for control file %s regardless of case', async (path) => {
+    const run = await setup();
+    for (const spelling of [path, path.toUpperCase()]) {
+      await expect(run('writer', CONTENTS, { path: spelling })).rejects.toMatchObject({
+        payload: { code: 'CONNECTOR_GRANT_REQUIRED' },
+      });
+    }
+  });
+  it.each(['/Reports/50% off.pdf', '/Reports/50%25 off.pdf', '%broken/path', 'src/CODEOWNERS'])(
+    'allows an ordinary Dropbox path %s through a level',
+    async (path) => {
+      const run = await setup('dropbox');
+      await expect(run('writer', 'DROPBOX_SAVE_FILE', { path })).resolves.toMatchObject({
+        agentId: 'writer',
+      });
+    }
+  );
+  it.each([
+    '%2Egithub%2Fworkflows%2Fx.yml',
+    '50%%2F.github/workflows/x.yml',
+    '50%%252F.github/workflows/x.yml',
+    '%FF%2F.github/workflows/x.yml',
+    '.github/workflows/50% off.yml',
+  ])('keeps encoded or mixed percent control path %s explicit', async (path) => {
+    const run = await setup('dropbox');
+    await expect(run('writer', 'DROPBOX_SAVE_FILE', { path })).rejects.toMatchObject({
+      payload: { code: 'CONNECTOR_GRANT_REQUIRED' },
+    });
+  });
+  it.each([
+    ['gitlab', 'GITLAB_SAVE_FILE', { actions: [{ file_path: '.gitlab-ci.yml' }] }],
+    [
+      'gitlab',
+      'GITLAB_SAVE_FILE',
+      { actions: [{ file_path: 'ci/new.yml', previous_path: '.gitlab-ci.yml' }] },
+    ],
+    [
+      'gitea',
+      'GITEA_SAVE_FILE',
+      { files: [{ path: 'ci/new.yml', from_path: '.gitea/workflows/ci.yml' }] },
+    ],
+    ['gitea', 'GITEA_SAVE_FILE', { filepath: '.gitea/workflows/ci.yml' }],
+  ] as const)('checks real path keys for %s action %s: %j', async (toolkit, slug, args) => {
+    const run = await setup(toolkit);
+    await expect(run('writer', slug, args)).rejects.toMatchObject({
+      payload: { code: 'CONNECTOR_GRANT_REQUIRED' },
+    });
   });
 });

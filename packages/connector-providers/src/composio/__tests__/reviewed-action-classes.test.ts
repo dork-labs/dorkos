@@ -10,6 +10,9 @@ const live = JSON.parse(
 const actions = Object.values(live).flat();
 // Each slug was reviewed against its description in the 2026-11-15 catalog.
 const explicit = [
+  'GITHUB_MERGE_A_BRANCH', // repository persistence
+  'GITHUB_MERGE_A_PULL_REQUEST', // repository persistence
+  'GITHUB_CREATE_A_REFERENCE', // repository persistence
   'GOOGLEDOCS_UPDATE_DOCUMENT_BATCH', // batch can delete content
   'GOOGLECALENDAR_BATCH_EVENTS', // batch can delete content
   'GOOGLEDOCS_UPDATE_EXISTING_DOCUMENT', // batch can delete content
@@ -120,8 +123,6 @@ describe('reviewed Composio exceptions', () => {
   it.each([
     'GITHUB_CREATE_A_RELEASE',
     'GITHUB_UPDATE_A_RELEASE',
-    'GITHUB_MERGE_A_BRANCH',
-    'GITHUB_MERGE_A_PULL_REQUEST',
     'GITHUB_CREATE_OR_UPDATE_FILE_CONTENTS',
     'GOOGLEDRIVE_CREATE_FILE',
     'GOOGLEDRIVE_CREATE_FILE_FROM_TEXT',

@@ -46,7 +46,7 @@ export function grantRefusal(
     changesRepositoryControlFiles(target.arguments) &&
     !holdsOwnExactAction(db, agentId, target)
   ) {
-    return 'Changing workflow files needs this action given to this agent on its own.';
+    return 'Changing repository control files needs this action given to this agent on its own.';
   }
   if (!isPaidOperation(operation)) {
     return granted.named || granted.everyAgent

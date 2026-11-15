@@ -1,0 +1,58 @@
+{
+  "github": [
+    {
+      "slug": "GITHUB_CREATE_A_REFERENCE",
+      "tags": ["git", "openWorldHint", "important", "createHint"]
+    },
+    {
+      "slug": "GITHUB_MERGE_A_BRANCH",
+      "tags": ["openWorldHint", "repos", "updateHint"]
+    },
+    {
+      "slug": "GITHUB_MERGE_A_PULL_REQUEST",
+      "tags": ["openWorldHint", "pulls", "updateHint"]
+    }
+  ],
+  "github_mcp": [
+    {
+      "slug": "GITHUB_MCP_CREATE_BRANCH",
+      "tags": ["createHint"]
+    },
+    {
+      "slug": "GITHUB_MCP_MERGE_PULL_REQUEST",
+      "tags": ["destructiveHint"]
+    }
+  ],
+  "gitlab": [
+    {
+      "slug": "GITLAB_CHERRY_PICK_COMMIT",
+      "tags": ["createHint", "updateHint"]
+    },
+    {
+      "slug": "GITLAB_CREATE_REPOSITORY_BRANCH",
+      "tags": ["important", "createHint"]
+    },
+    {
+      "slug": "GITLAB_MERGE_MERGE_REQUEST",
+      "tags": ["important", "updateHint", "destructiveHint", "openWorldHint", "Merge Requests"]
+    },
+    {
+      "slug": "GITLAB_REBASE_MERGE_REQUEST",
+      "tags": ["Merge Requests", "updateHint"]
+    },
+    {
+      "slug": "GITLAB_REVERT_COMMIT",
+      "tags": ["updateHint", "Commits"]
+    }
+  ],
+  "gitea": [
+    {
+      "slug": "GITEA_CREATE_BRANCH",
+      "tags": ["openWorldHint", "createHint", "repositories"]
+    },
+    {
+      "slug": "GITEA_MERGE_PULL_REQUEST",
+      "tags": ["openWorldHint", "updateHint", "repositories", "pull-requests"]
+    }
+  ]
+}
