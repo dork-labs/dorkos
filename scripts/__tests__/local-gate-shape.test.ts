@@ -223,9 +223,9 @@ describe('the root heavy scripts take a host-wide slot (DOR-3274)', () => {
   });
 
   it('`pnpm verify` runs both of its turbo sweeps under the lock', () => {
-    expect(wraps(scripts.verify ?? '', 'typecheck')).toBe(true);
-    expect(wraps(scripts.verify ?? '', 'test')).toBe(true);
-    expect(scripts.verify).not.toMatch(/&& turbo run/);
+    expect(wraps(scripts['verify:checks'] ?? '', 'typecheck')).toBe(true);
+    expect(wraps(scripts['verify:checks'] ?? '', 'test')).toBe(true);
+    expect(scripts['verify:checks']).not.toMatch(/&& turbo run/);
   });
 
   it('`pnpm heavy` is the lock in job mode, for anything else heavy', () => {

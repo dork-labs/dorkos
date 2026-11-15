@@ -212,7 +212,7 @@ describe('local turbo --affected gates pin their diff base', () => {
     ]);
     expect(sites.map((s) => s.label).sort()).toEqual([
       'lefthook.yml pre-commit.lint',
-      'package.json scripts.verify',
+      'package.json scripts.verify:checks',
     ]);
   });
 
