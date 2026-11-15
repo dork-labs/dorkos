@@ -83,11 +83,13 @@ const AGENT_OUTPUT: ReadonlySet<StreamEvent['type']> = new Set<StreamEvent['type
 
 /**
  * The only events a turn may show and still count as one where the agent did
- * nothing (DOR-4353): bookkeeping about the request and the session, and what
- * runs before the model sees the message — the person's own configured hooks
- * and the CLI's memory recall (QA's 0.135.11 gate, W5 and W6). Anything else
- * (text, thinking, a tool call starting, a held card) is the agent acting. An
- * allow list, so an event type added later counts as acting.
+ * nothing (DOR-4353): bookkeeping about the request and the session. That
+ * includes `prompt_suggestion`, the next-prompt suggestion Claude Code carries
+ * over from the previous turn: it lands at the start of the next query, before
+ * any model request (QA's 0.135.11 gate, W5 and W6), and says nothing about
+ * this turn. Anything else (text, thinking, a tool call starting, a held card)
+ * is the agent acting. An allow list of exact types, so an event type added
+ * later counts as acting.
  */
 const QUIET: ReadonlySet<StreamEvent['type']> = new Set<StreamEvent['type']>([
   'model_request',
@@ -97,10 +99,7 @@ const QUIET: ReadonlySet<StreamEvent['type']> = new Set<StreamEvent['type']>([
   'session_status',
   'session_state_changed',
   'system_status',
-  'hook_started',
-  'hook_progress',
-  'hook_response',
-  'memory_recall',
+  'prompt_suggestion',
   'error',
   'done',
 ]);
