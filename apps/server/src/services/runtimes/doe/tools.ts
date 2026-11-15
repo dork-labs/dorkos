@@ -65,6 +65,13 @@ export async function assembleDoeHost(options: DoeHostOptions) {
     connectorInjection: options.connectorInjection,
     servers:
       agentPath && !held ? options.managedMcp?.injectableServersForCwd(agentPath) : undefined,
+    // Read fresh at each call, so a server removed mid-turn stops (DOR-3872).
+    ...(agentPath && options.managedMcp
+      ? {
+          stillManaged: (name: string) =>
+            name in (options.managedMcp!.injectableServersForCwd(agentPath) ?? {}),
+        }
+      : {}),
     signal: options.signal,
     agentToAgent,
   });

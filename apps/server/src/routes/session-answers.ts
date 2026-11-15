@@ -201,12 +201,13 @@ export function createSessionAnswerRoutes(): Hono<ApiEnv> {
     const { sessionId, facts } = answering;
     const parsed = ApprovalRequestSchema.safeParse(readJsonBody(c));
     if (!parsed.success) return c.json(INVALID_REQUEST, 400);
-    const { toolCallId, alwaysAllow } = parsed.data;
+    const { toolCallId, alwaysAllow, alwaysAllowBreadth } = parsed.data;
     const standing = refuseStandingYesFromWifi(facts, alwaysAllow === true);
     if (standing) return c.json(standing, 403);
     const runtime = await runtimeRegistry.resolveForSession(sessionId);
     const approved = runtime.approveTool(sessionId, toolCallId, true, {
       alwaysAllow,
+      ...(alwaysAllowBreadth ? { alwaysAllowBreadth } : {}),
       ...answeredBy(facts),
     });
     if (!approved) {

@@ -21,6 +21,7 @@ import { session } from 'electron';
 import log from 'electron-log';
 
 import type { ServerChild } from '../server-spawn';
+import { serverOrigin } from '../../shared/server-address';
 
 /** How long the shell waits for the server to answer with a code. */
 export const SIGN_IN_CODE_TIMEOUT_MS = 5_000;
@@ -101,7 +102,7 @@ export async function signInWindow(deps: WindowSignInDeps): Promise<WindowSignIn
       return 'failed';
     }
     const post = deps.fetch ?? ((url, init) => session.defaultSession.fetch(url, init));
-    const res = await post(`http://localhost:${deps.port}/api/desktop/sign-in`, {
+    const res = await post(`${serverOrigin(deps.port)}/api/desktop/sign-in`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ code }),

@@ -320,6 +320,12 @@ export interface RelayPort {
 export interface ManagedMcpServerResolver {
   /** Enabled managed servers for a session cwd, by name; `{}` when none apply. */
   injectableServersForCwd(cwd: string): Record<string, McpAppServerConnection>;
+  /**
+   * Call `listener` when the answer above may have changed for chats already
+   * running, so a runtime can drop a removed server without waiting for a turn
+   * (DOR-3872). Optional: a resolver with nothing to watch omits it.
+   */
+  onChange?(listener: () => void): void;
 }
 
 /**
@@ -1385,6 +1391,11 @@ export interface ToolDecisionOptions extends InteractionAnswerOptions {
    * the same call is not asked about again. Ignored on a denial.
    */
   alwaysAllow?: boolean;
+  /**
+   * On a card that offered a whole MCP server, which the person meant
+   * (DOR-4101). Anything but `server` narrows the grant to the one tool.
+   */
+  alwaysAllowBreadth?: 'tool' | 'server';
   /**
    * Why the person refused, in their own words, delivered to the agent with the
    * denial so it can adjust rather than retry. Ignored on an approval, and

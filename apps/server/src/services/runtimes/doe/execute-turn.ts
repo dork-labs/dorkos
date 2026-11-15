@@ -254,7 +254,9 @@ export async function executeDoeTurn(
         ? {
             builderExecutionPolicy: {
               kind: 'unrestricted',
-              environment: runtimeEnvironment('doe', 'process-inspection'),
+              // Through the turn allow-list, which admits DORKOS_SESSION_ID; Dork's
+              // builder env exists only at Bypass, so only then does it carry the id.
+              environment: runtimeEnvironment('doe', 'turn', { DORKOS_SESSION_ID: id }),
             } as const,
           }
         : {}),

@@ -1,7 +1,9 @@
-import { useEffect } from 'react';
-import { useQueryClient } from '@tanstack/react-query';
+import { useEffect, useMemo } from 'react';
+import { QueryClient, QueryClientProvider, useQueryClient } from '@tanstack/react-query';
+import type { Transport } from '@dorkos/shared/transport';
 import type { RemoteAccessReport } from '@dorkos/shared/types';
 import { Button } from '@/layers/shared/ui';
+import { TransportProvider } from '@/layers/shared/model';
 import {
   remoteAccessKeys,
   resetRemoteAccessStore,
@@ -13,7 +15,7 @@ import { RemoteAccessBeacon, RemoteAccessPanel } from '@/layers/widgets/remote-a
 import { PlaygroundSection } from '../PlaygroundSection';
 import { ShowcaseDemo } from '../ShowcaseDemo';
 import { ShowcaseLabel } from '../ShowcaseLabel';
-import { setPlaygroundRemoteReport } from '../playground-transport';
+import { createPlaygroundTransport, setPlaygroundRemoteReport } from '../playground-transport';
 
 const DEMO_URL = 'https://calm-otter.ngrok.app';
 const MANAGED_URL = 'https://calm-otter.example.com';
@@ -175,6 +177,73 @@ function StateDriver() {
   );
 }
 
+/** One pose of the Remote Access tab: the switch, and whether a tunnel is set up. */
+interface RemoteTabPose {
+  remoteOn: boolean;
+  tunnelSetUp: boolean;
+}
+
+/**
+ * The playground transport, plus a config that holds the Remote access switch
+ * and remembers what the switch writes, so flipping it acts as the app does.
+ */
+function remoteTabTransport(pose: RemoteTabPose): Transport {
+  let remoteOn = pose.remoteOn;
+  return new Proxy(createPlaygroundTransport(), {
+    get: (target, prop, receiver) => {
+      if (prop === 'getConfig') {
+        return async () => ({
+          version: '0.0.0',
+          port: 4242,
+          uptime: 0,
+          workingDirectory: '/Users/sam/desk',
+          nodeVersion: 'v24.0.0',
+          tunnel: {
+            enabled: false,
+            connected: false,
+            url: null,
+            port: null,
+            startedAt: null,
+            authEnabled: false,
+            tokenConfigured: pose.tunnelSetUp,
+            domain: null,
+          },
+          remoteAccess: { enabled: remoteOn },
+        });
+      }
+      if (prop === 'updateConfig') {
+        return async (patch: { remoteAccess?: { enabled: boolean } }) => {
+          if (patch.remoteAccess) remoteOn = patch.remoteAccess.enabled;
+        };
+      }
+      return Reflect.get(target, prop, receiver);
+    },
+  });
+}
+
+/** The real Remote Access tab in one pose, with its own cache so poses never share state. */
+function RemoteTabDemo({ testId, pose }: { testId: string; pose: RemoteTabPose }) {
+  const client = useMemo(
+    () => new QueryClient({ defaultOptions: { queries: { retry: false } } }),
+    []
+  );
+  const transport = useMemo(() => remoteTabTransport(pose), [pose]);
+  return (
+    <ShowcaseDemo>
+      <QueryClientProvider client={client}>
+        <TransportProvider transport={transport}>
+          <div data-testid={testId} className="w-[min(32rem,100%)]">
+            <RemoteAccessTab />
+          </div>
+        </TransportProvider>
+      </QueryClientProvider>
+    </ShowcaseDemo>
+  );
+}
+
+const POSE_ON: RemoteTabPose = { remoteOn: true, tunnelSetUp: true };
+const POSE_OFF_NOTHING_SET_UP: RemoteTabPose = { remoteOn: false, tunnelSetUp: false };
+
 /**
  * Remote access in the app's chrome (DOR-1743) — the Control Center's top row
  * and the top-bar beacon, driven through every state they can reach.
@@ -200,6 +269,17 @@ export function RemoteAccessShowcases() {
           <RemoteAccessRow />
         </div>
       </ShowcaseDemo>
+
+      <ShowcaseLabel>
+        The Remote access switch (DOR-3650): on, with a tunnel set up. Switch it off to see the line
+        right after.
+      </ShowcaseLabel>
+      <RemoteTabDemo testId="remote-tab-on" pose={POSE_ON} />
+
+      <ShowcaseLabel>
+        Off, with nothing set up. Switch it on to open the tunnel setup.
+      </ShowcaseLabel>
+      <RemoteTabDemo testId="remote-tab-off-nothing" pose={POSE_OFF_NOTHING_SET_UP} />
 
       <ShowcaseLabel>Settings: the mode choice, DorkOS setup and status</ShowcaseLabel>
       <ShowcaseDemo>

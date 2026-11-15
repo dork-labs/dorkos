@@ -32,6 +32,7 @@ import {
   type DbTransaction,
   type GrantChangeKind,
 } from '@dorkos/db';
+import { isPaidOperation } from '@dorkos/shared/connector-schemas';
 import { describeAccessChange, type AccessChangeEvents } from './access-change-events.js';
 import {
   NARROWING_MESSAGES,
@@ -358,7 +359,11 @@ export class AccessApprovalService {
     if (added.length > 0) {
       const reads = new Set(
         tx
-          .select({ id: connectorOperationRevisions.id })
+          .select({
+            id: connectorOperationRevisions.id,
+            toolkit: connectorOperationRevisions.toolkit,
+            operationSlug: connectorOperationRevisions.operationSlug,
+          })
           .from(connectorOperationRevisions)
           .where(
             and(
@@ -367,6 +372,7 @@ export class AccessApprovalService {
             )
           )
           .all()
+          .filter((row) => !isPaidOperation(row))
           .map((r) => r.id)
       );
       if (added.some((id) => !reads.has(id))) return 'APPROVE_NOT_READ';

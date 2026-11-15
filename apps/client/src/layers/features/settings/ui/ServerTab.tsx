@@ -351,6 +351,10 @@ function ServerAddress({ port }: { port: number }) {
           For MCP clients like Claude Code or Cursor. Paste it, don’t visit it.
         </p>
         <AddressField url={`${baseUrl}/mcp`} label="MCP endpoint" />
+        {/* A sign-in from the app never counts there from another device (DOR-3650). */}
+        <p className="text-muted-foreground col-span-2 text-xs">
+          From another device, it needs an API key.
+        </p>
       </div>
     </div>
   );

@@ -51,6 +51,11 @@ import { ConnectorRuntimePrincipalService } from '../../../../connectors/princip
 import type { ConnectorRuntimeTools } from '../../../connector-tools.js';
 import type { CodexTurnRequest } from '../../transport/codex-transport.js';
 import type { AppServerTransportOptions } from '../../transport/app-server-transport.js';
+import {
+  forgetProjectConfigActivity,
+  setProjectConfigActivity,
+  type ProjectConfigActivityEntry,
+} from '../project-config-activity.js';
 import { spawn as nodeSpawn } from 'node:child_process';
 import {
   protectedProbe,
@@ -80,6 +85,16 @@ let stallNext = false;
 const scripted: Array<(res: http.ServerResponse, body: string) => void> = [];
 /** Tool calls the third-party MCP server ran, by name. */
 const mcpCalls: string[] = [];
+/**
+ * When set, the fake `dorkos` server refuses any request whose key does not
+ * resolve through the real principal service, as the listener does, and
+ * offers one tool only to a resolved caller (DOR-3169).
+ */
+let gateDorkos = false;
+/** DorkOS tool calls the gated `dorkos` server ran, by name. */
+const dorkosCalls: string[] = [];
+/** Every request the gated `dorkos` server saw, and how its key resolved. */
+const gatedLog: Array<{ method: string | undefined; verdict: string }> = [];
 /** `turn/started` notifications every spawned process sent, counted off its stdout. */
 let turnStartedSeen = 0;
 const seen: Seen = { responses: 0, mcpAuthorizations: [], resolvedDuringTurn: [] };
@@ -97,6 +112,7 @@ const STARTS_AT_FULL = [
   'wakes the chat exactly once when a command finishes after its turn completed',
   'never wakes for a command that never ends, and Stop terminates it without a model turn',
   'stops a never-ending command once at the ceiling, and still wakes no model turn',
+  'starts a cloned repo’s own MCP server only at Full',
   // The refusal rows plant their one backup themselves.
   'refuses Full while a Claude Code backup sits in',
 ];
@@ -273,6 +289,10 @@ function handle(req: http.IncomingMessage, res: http.ServerResponse, body: strin
     res.end(JSON.stringify({ jsonrpc: '2.0', id: message.id, result }));
     return;
   }
+  if (req.url?.startsWith('/mcp') && gateDorkos) {
+    void handleGatedDorkos(req, res, body);
+    return;
+  }
   if (req.url?.startsWith('/mcp')) {
     if (req.headers.authorization) seen.mcpAuthorizations.push(req.headers.authorization);
     let message: { id?: number; method?: string } = {};
@@ -300,6 +320,63 @@ function handle(req: http.IncomingMessage, res: http.ServerResponse, body: strin
     return;
   }
   res.writeHead(404).end();
+}
+
+/**
+ * The `dorkos` server as the listener treats it: every request's key goes
+ * through the real principal service, and a refused key gets a 401 before any
+ * tool is listed or run.
+ */
+async function handleGatedDorkos(
+  req: http.IncomingMessage,
+  res: http.ServerResponse,
+  body: string
+): Promise<void> {
+  const authorization = req.headers.authorization ?? '';
+  seen.mcpAuthorizations.push(authorization);
+  const verdict = await principals.resolve({
+    bearer: authorization.replace(/^Bearer /, ''),
+    expectedRuntime: 'codex',
+    expectedCanonicalCwd: project,
+  });
+  gatedLog.push({
+    method: (JSON.parse(body || '{}') as { method?: string }).method,
+    verdict: verdict.status === 'resolved' ? 'resolved' : `refused:${verdict.reason}`,
+  });
+  if (verdict.status !== 'resolved') {
+    res.writeHead(401, { 'content-type': 'application/json' });
+    res.end(JSON.stringify({ error: 'unauthorized' }));
+    return;
+  }
+  const message = JSON.parse(body || '{}') as { id?: number; method?: string; params?: unknown };
+  if (message.id === undefined) {
+    res.writeHead(202).end();
+    return;
+  }
+  const result =
+    message.method === 'initialize'
+      ? {
+          protocolVersion: '2025-06-18',
+          capabilities: { tools: {} },
+          serverInfo: { name: 'fake-dorkos', version: '0' },
+        }
+      : message.method === 'tools/list'
+        ? {
+            tools: [
+              {
+                name: 'ping_team',
+                description: 'Say hello to the team',
+                inputSchema: { type: 'object', properties: {} },
+                annotations: { readOnlyHint: true },
+              },
+            ],
+          }
+        : message.method === 'tools/call'
+          ? (dorkosCalls.push((message.params as { name: string }).name),
+            { content: [{ type: 'text', text: 'team pinged' }] })
+          : {};
+  res.writeHead(200, { 'content-type': 'application/json' });
+  res.end(JSON.stringify({ jsonrpc: '2.0', id: message.id, result }));
 }
 
 function makeTransport(
@@ -537,8 +614,31 @@ nativeSuite('the app-server transport against the real Codex binary', NATIVE_LIM
       fs.symlinkSync(target, link, 'dir');
       const before = { ino: fs.lstatSync(link).ino, target: fs.readlinkSync(link) };
       const parents = [policy.roots.home, policy.roots.data, project];
+      // An untrusted folder (DOR-4408) no longer gets Codex's up-front "deny
+      // path crosses a link" refusal, so the turn starts. Codex refuses the
+      // command instead: it will not build a sandbox across the link, so the
+      // scripted write never runs and nothing lands in the target.
+      const quote = (value: string) => JSON.stringify(value);
+      let returned = '';
+      scripted.push(
+        (res) =>
+          res.end(
+            sseCall({
+              cmd: `printf PUBLIC-link-write-start; printf unsafe > ${quote(path.join(link, 'planted.md'))} 2>/dev/null && printf WRITE-THROUGH || printf WRITE-REFUSED`,
+              login: false,
+            })
+          ),
+        (res, body) => {
+          returned = body;
+          res.end(sse('link checked'));
+        }
+      );
       try {
-        await nativeRefusal(turn, 'codex_unavailable', ['crosses writable symlink', link]);
+        const { events } = await capturedTurn(turn);
+        expect(events.filter((event) => event.type === 'error')).toEqual([]);
+        expect(shellControlReturned(returned, `crosses writable symlink ${link}`)).toBe(true);
+        expect(shellControlReturned(returned, 'PUBLIC-link-write-start')).toBe(false);
+        expect(shellControlReturned(returned, 'WRITE-THROUGH')).toBe(false);
         expect({ ino: fs.lstatSync(link).ino, target: fs.readlinkSync(link) }).toEqual(before);
         expect(fs.readdirSync(target)).toEqual([]);
       } finally {
@@ -1100,7 +1200,7 @@ nativeSuite('the app-server transport against the real Codex binary', NATIVE_LIM
         (res) =>
           res.end(
             sseCall({
-              cmd: `cat ${quote(backup)} 2>/dev/null; cat ${quote(path.join(link, FIXTURE_BACKUP_NAME))} 2>/dev/null; printf PUBLIC-linked-done`,
+              cmd: `cat ${quote(backup)} 2>/dev/null; cat ${quote(path.join(link, FIXTURE_BACKUP_NAME))} 2>/dev/null; printf unsafe > ${quote(path.join(link, 'planted.backup'))} 2>/dev/null && printf WRITE-THROUGH || printf WRITE-REFUSED; printf PUBLIC-linked-done`,
               login: false,
             })
           ),
@@ -1109,21 +1209,24 @@ nativeSuite('the app-server transport against the real Codex binary', NATIVE_LIM
           res.end(sse('linked checked'));
         }
       );
-      const responses = seen.responses;
-      const { events, bound, printed } = await capturedTurn(
+      const { events, printed } = await capturedTurn(
         request('backup-linked', undefined, {
           settings: { permissionMode: 'acceptEdits', model: 'fake-model' },
         })
       );
-      // Codex refuses a deny path that crosses a link (its own copy, kept as
-      // is). No turn starts, and the target is never read or echoed anywhere.
-      expect(events.map((event) => event.type)).toEqual(['error', 'done']);
-      expect(bound).not.toHaveBeenCalled();
-      expect(seen.responses).toBe(responses);
-      expect(returned).toBe('');
+      // An untrusted folder (DOR-4408) no longer gets Codex's up-front "deny
+      // path crosses a link" refusal, so the turn starts. Codex refuses the
+      // command instead: it will not build a sandbox across the link, so
+      // neither read nor the scripted write runs.
+      expect(events.filter((event) => event.type === 'error')).toEqual([]);
+      expect(shellControlReturned(returned, `crosses writable symlink ${link}`)).toBe(true);
+      expect(shellControlReturned(returned, 'PUBLIC-linked-done')).toBe(false);
+      expect(shellControlReturned(returned, 'WRITE-THROUGH')).toBe(false);
+      expect(returned).not.toContain('CANARY-linked-backup');
       expect(JSON.stringify(events)).not.toContain('CANARY-linked-backup');
       expect(printed).not.toContain('CANARY-linked-backup');
       expect(fs.readFileSync(backup, 'utf8')).toBe('CANARY-linked-backup');
+      expect(fs.readdirSync(target)).toEqual([FIXTURE_BACKUP_NAME]);
     }
   );
 
@@ -1253,6 +1356,117 @@ nativeSuite('the app-server transport against the real Codex binary', NATIVE_LIM
     expect(fs.readFileSync(path.join(codexHome, 'config.toml'), 'utf8')).toBe(configBefore);
   });
 
+  describe('DorkOS tools behind a listener that checks every key (DOR-3169)', () => {
+    const open = async (sessionId: string) =>
+      (
+        await principals.openTurn(
+          {
+            runtime: 'codex',
+            canonicalSessionId: sessionId,
+            agentPath: project,
+            canonicalCwd: project,
+            signal: new AbortController().signal,
+          },
+          { isCurrent: () => true }
+        )
+      ).bindingId;
+    const drain = async (
+      transport: AppServerCodexTransport,
+      turn: CodexTurnRequest
+    ): Promise<StreamEvent[]> => {
+      const events: StreamEvent[] = [];
+      for await (const event of transport.runTurn(turn)) events.push(event);
+      return events;
+    };
+    const callsTool = () =>
+      scripted.push(
+        (res) => res.end(sseCall({}, { name: 'ping_team', namespace: 'mcp__dorkos' })),
+        (res) => res.end(sse('done'))
+      );
+    const expectToolRan = (events: StreamEvent[]) => {
+      expect(
+        gatedLog.filter((entry) => entry.verdict !== 'resolved'),
+        JSON.stringify(gatedLog)
+      ).toEqual([]);
+      expect(dorkosCalls, JSON.stringify(events)).toEqual(['ping_team']);
+    };
+
+    beforeEach(() => {
+      gateDorkos = true;
+      dorkosCalls.length = 0;
+      gatedLog.length = 0;
+    });
+    afterEach(() => {
+      gateDorkos = false;
+    });
+
+    it.for(['default', 'acceptEdits'] as const)(
+      'lists and runs one on a fresh thread at %s',
+      async (mode) => {
+        callsTool();
+        const events = await drain(
+          makeTransport(),
+          request(`fresh-${mode}`, await open(`fresh-${mode}`), {
+            settings: { permissionMode: mode, model: 'fake-model' },
+          })
+        );
+        expectToolRan(events);
+      }
+    );
+
+    it('lists and runs one after a cold resume', async () => {
+      const bound: string[] = [];
+      await drain(
+        makeTransport(),
+        request('cold', await open('cold'), { onThreadBound: (id) => bound.push(id) })
+      );
+      expect(bound).toHaveLength(1);
+      // Cold: the process that knew the thread is gone.
+      await pools.at(-1)!.shutdown();
+      gatedLog.length = 0;
+      dorkosCalls.length = 0;
+      callsTool();
+      const events = await drain(
+        makeTransport(),
+        request('cold', await open('cold'), { boundThreadId: bound[0] })
+      );
+      expectToolRan(events);
+    });
+
+    it('lists and runs one on a forked thread', async () => {
+      const transport = makeTransport();
+      const bound: string[] = [];
+      // A changed managed header forces a reload, which forks the thread.
+      const managed = (value: string) => ({
+        servers: {
+          refreshed: { url: `${base}/repo-mcp`, env_http_headers: { Authorization: 'H' } },
+        },
+        env: { H: value },
+      });
+      await drain(
+        transport,
+        request('forked', await open('forked'), {
+          tools: { ...request('x', undefined).tools, managed: managed('Bearer one') },
+          onThreadBound: (id) => bound.push(id),
+        })
+      );
+      gatedLog.length = 0;
+      dorkosCalls.length = 0;
+      callsTool();
+      const events = await drain(
+        transport,
+        request('forked', await open('forked'), {
+          boundThreadId: bound[0],
+          tools: { ...request('x', undefined).tools, managed: managed('Bearer two') },
+          onThreadBound: (id) => bound.push(id),
+        })
+      );
+      expect(bound).toHaveLength(2);
+      expect(bound[1]).not.toBe(bound[0]);
+      expectToolRan(events);
+    });
+  });
+
   // Spec §9 asks P1 to RECORD whether a stdio MCP server Codex launches sees
   // the identity token (on exec it inherits the process environment; here the
   // token rides shell_environment_policy.set instead). Either answer is
@@ -1288,6 +1502,123 @@ nativeSuite('the app-server transport against the real Codex binary', NATIVE_LIM
     // Recorded: the token does NOT reach a stdio MCP server's environment on
     // app-server (it is set for the agent's own shell commands only).
     expect(JSON.parse(fs.readFileSync(report, 'utf8'))).toEqual({ sawToken: false });
+  });
+
+  // DOR-4408: a cloned repo's `.codex/config.toml` names an MCP server whose
+  // `command` would start outside Codex's sandbox. It loads only at Full, and
+  // the person is told in Activity when it does.
+  it('starts a cloned repo’s own MCP server only at Full, and says so (DOR-4408)', async () => {
+    const lines: ProjectConfigActivityEntry[] = [];
+    setProjectConfigActivity((entry) => lines.push(entry));
+    try {
+      fs.mkdirSync(path.join(project, '.git'), { recursive: true });
+      fs.mkdirSync(path.join(project, '.codex'), { recursive: true });
+      const started: Record<string, boolean> = {};
+      for (const mode of ['default', 'acceptEdits', 'bypassPermissions'] as const) {
+        const report = path.join(root, `repo-mcp-${mode}.json`);
+        const script = path.join(root, `repo-mcp-${mode}.cjs`);
+        fs.writeFileSync(
+          script,
+          [
+            "const fs = require('fs');",
+            `fs.writeFileSync(${JSON.stringify(report)}, '{}');`,
+            "let buf = '';",
+            "process.stdin.on('data', (c) => { buf += c; let i; while ((i = buf.indexOf('\\n')) >= 0) { const line = buf.slice(0, i); buf = buf.slice(i + 1);",
+            '  let m; try { m = JSON.parse(line); } catch { continue; } if (m.id === undefined) continue;',
+            "  const result = m.method === 'initialize' ? { protocolVersion: '2025-06-18', capabilities: { tools: {} }, serverInfo: { name: 'r', version: '0' } } : m.method === 'tools/list' ? { tools: [] } : {};",
+            "  process.stdout.write(JSON.stringify({ jsonrpc: '2.0', id: m.id, result }) + '\\n'); } });",
+          ].join('\n')
+        );
+        fs.writeFileSync(
+          path.join(project, '.codex', 'config.toml'),
+          `[mcp_servers.repo_probe]\ncommand = ${JSON.stringify(process.execPath)}\nargs = [${JSON.stringify(script)}]\n`
+        );
+        const transport = makeTransport();
+        const turn = request(`repo-${mode}`, undefined, {
+          settings: { permissionMode: mode, model: 'fake-model' },
+        });
+        for await (const _event of transport.runTurn(turn)) {
+          // drained
+        }
+        started[mode] = fs.existsSync(report);
+      }
+      expect(started).toEqual({ default: false, acceptEdits: false, bypassPermissions: true });
+      expect(lines).toEqual([
+        {
+          cwd: project,
+          summary: `Codex loaded .codex/config.toml in ${path.basename(project)} at Full.`,
+          files: [path.join(project, '.codex', 'config.toml')],
+        },
+      ]);
+    } finally {
+      setProjectConfigActivity(undefined);
+      forgetProjectConfigActivity();
+    }
+  });
+
+  // DOR-3837: a managed server's key reaches the server, and no file Codex
+  // writes in its home (config, rollouts, logs, state) holds it afterwards.
+  it('keeps a managed server’s key out of every file Codex writes (DOR-3837)', async () => {
+    const envCanary = 'CANARY-dor3837-stdio-env';
+    const headerCanary = 'CANARY-dor3837-http-header';
+    const report = path.join(root, 'stdio-env-3837.json');
+    const script = path.join(root, 'stdio-mcp-3837.cjs');
+    fs.writeFileSync(
+      script,
+      [
+        "const fs = require('fs');",
+        // A yes or no only, so the report itself never holds the value.
+        `fs.writeFileSync(${JSON.stringify(report)}, JSON.stringify({ got: process.env.MADE_UP_TOKEN === ${JSON.stringify(envCanary)} }));`,
+        "let buf = '';",
+        "process.stdin.on('data', (c) => { buf += c; let i; while ((i = buf.indexOf('\\n')) >= 0) { const line = buf.slice(0, i); buf = buf.slice(i + 1);",
+        '  let m; try { m = JSON.parse(line); } catch { continue; } if (m.id === undefined) continue;',
+        "  const result = m.method === 'initialize' ? { protocolVersion: '2025-06-18', capabilities: { tools: {} }, serverInfo: { name: 's', version: '0' } } : m.method === 'tools/list' ? { tools: [] } : {};",
+        "  process.stdout.write(JSON.stringify({ jsonrpc: '2.0', id: m.id, result }) + '\\n'); } });",
+      ].join('\n')
+    );
+    const transport = makeTransport();
+    const turn = request('s3837', undefined, {
+      tools: {
+        agentTokenEnv: {},
+        managed: {
+          servers: {
+            probe: { command: process.execPath, args: [script], env: { MADE_UP_TOKEN: envCanary } },
+            remote: { url: `${base}/mcp`, env_http_headers: { Authorization: 'H3837' } },
+          },
+          env: { H3837: `Bearer ${headerCanary}` },
+        },
+        dorkosTools: null,
+        connectorTools: null,
+      },
+    });
+    const events: StreamEvent[] = [];
+    for await (const event of transport.runTurn(turn)) events.push(event);
+    expect(events.filter((e) => e.type === 'done')).toHaveLength(1);
+
+    // The control: both values really reached their servers, so their absence
+    // below means Codex did not keep them, not that they never arrived.
+    expect(JSON.parse(fs.readFileSync(report, 'utf8'))).toEqual({ got: true });
+    expect(seen.mcpAuthorizations).toContain(`Bearer ${headerCanary}`);
+
+    const files: string[] = [];
+    const walk = (dir: string): void => {
+      for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+        const full = path.join(dir, entry.name);
+        if (entry.isDirectory()) walk(full);
+        else if (entry.isFile()) files.push(full);
+      }
+    };
+    walk(codexHome);
+    walk(path.join(root, 'home'));
+    // The thread's own record (its rollout) is among what was read.
+    expect(files.some((file) => file.includes(`${path.sep}sessions${path.sep}`))).toBe(true);
+    const holding = files.filter((file) => {
+      const text = fs.readFileSync(file).toString('latin1');
+      return text.includes(envCanary) || text.includes(headerCanary);
+    });
+    expect(holding).toEqual([]);
+    // Nor on the command line or in the process environment.
+    expect(JSON.stringify(spawned)).not.toMatch(/CANARY-dor3837/);
   });
 
   // A refreshed OAuth header on a managed server reaches a loaded thread by

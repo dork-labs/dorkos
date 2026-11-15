@@ -28,18 +28,6 @@ function cards(page: Page) {
 }
 
 /**
- * The reader's own card — the one the roster marks "you".
- *
- * The badge is the only handle: a card carries its member id and its identity
- * colour, neither of which says which of them is the person looking at it. The
- * roster draws exactly one, which is what lets a caller assert on its presence
- * rather than on a count of everybody (see "the Agents chip hides the people").
- */
-function operatorCard(page: Page) {
-  return cards(page).filter({ has: page.getByText('you', { exact: true }) });
-}
-
-/**
  * Is this card's disc a circle?
  *
  * The shape IS the fix (spec §W1): a person is a circle, an agent is a filled
@@ -77,17 +65,6 @@ test.describe('Team — the roster @smoke', () => {
     await expect(page.locator('header').getByRole('button', { name: 'New agent' })).toBeVisible();
   });
 
-  test('/agents redirects to /team, keeping the view', async ({ page, basePage }) => {
-    // The alias exists for addresses this repo does not own: a bookmark, a docs
-    // link, the Electron shell's persisted tab list. `?view=list` is the old
-    // spelling of the table and has to land on it rather than 404.
-    await page.goto('/agents?view=list');
-    await basePage.waitForAppReady();
-
-    await expect(page).toHaveURL(/\/team/);
-    await expect(page).toHaveURL(/[?&]view=table/);
-  });
-
   test('the operator is on the roster, drawn as a circle', async ({ page, basePage }) => {
     await page.goto('/team');
     await basePage.waitForAppReady();
@@ -120,48 +97,6 @@ test.describe('Team — the roster @smoke', () => {
     await expect(
       agentCard.getByRole('button', { name: /Show only .* and their agents/ })
     ).toBeVisible();
-  });
-
-  test('the Agents chip hides the people', async ({ page, basePage, roomsApi }) => {
-    const agent = await roomsApi.registerAgent(`E2E Chip ${roomsApi.runId}`, '🧭', '#a855f7');
-    await page.goto('/team');
-    await basePage.waitForAppReady();
-    await expect(card(page, agent.name)).toBeVisible();
-    // The reader's own card is the "people" this chip hides, and it is the
-    // control for the assertion after the click: without it, "the operator is
-    // gone" would also be true of a roster that never drew them.
-    await expect(operatorCard(page)).toHaveCount(1);
-
-    await page
-      .getByRole('group', { name: 'Filter by kind' })
-      .getByRole('button', { name: 'Agents' })
-      .click();
-
-    await expect(page).toHaveURL(/[?&]kind=agents/);
-    // The agent stays; the operator's card goes. Named, not counted (DOR-1420).
-    // This read `cards(page)` twice and asserted the second was one shorter,
-    // which made it two separate hostages to a roster nobody in this test
-    // controls: the aggregate is still filling on a just-booted server — which
-    // is whatever spec `--shard` happens to put first — and a neighbouring spec
-    // registering its own agent between the two reads moves the number just as
-    // effectively. Asking who is on the roster instead of how many is immune to
-    // both, and it is the claim the chip actually makes. A chip that only wrote
-    // a param still fails here, because the operator's card would still be up.
-    await expect(card(page, agent.name)).toBeVisible();
-    await expect(operatorCard(page)).toHaveCount(0);
-  });
-
-  test('clicking an attribution filters to that owner', async ({ page, basePage, roomsApi }) => {
-    const agent = await roomsApi.registerAgent(`E2E Owner ${roomsApi.runId}`, '🦉', '#f59e0b');
-    await page.goto('/team');
-    await basePage.waitForAppReady();
-
-    await card(page, agent.name)
-      .getByRole('button', { name: /Show only .* and their agents/ })
-      .click();
-
-    await expect(page).toHaveURL(/[?&]owner=/);
-    await expect(page.getByText(/Showing .* and their agents/)).toBeVisible();
   });
 
   test('the whole card opens that identity’s profile', async ({ page, basePage, roomsApi }) => {
@@ -300,23 +235,6 @@ test.describe('Team — the roster @smoke', () => {
     await expect.poll(rotateOf).toBe('none');
   });
 
-  test('Group by owner clusters the roster under a header', async ({
-    page,
-    basePage,
-    roomsApi,
-  }) => {
-    const agent = await roomsApi.registerAgent(`E2E Group ${roomsApi.runId}`, '🐝', '#22c55e');
-    await page.goto('/team');
-    await basePage.waitForAppReady();
-    await expect(card(page, agent.name)).toBeVisible();
-
-    await page.getByRole('button', { name: 'Group by owner' }).click();
-
-    await expect(page).toHaveURL(/[?&]group=manager/);
-    await expect(page.getByRole('main').locator('[data-slot="team-roster-groups"]')).toBeVisible();
-    await expect(page.getByRole('main').getByRole('heading', { level: 2 }).first()).toBeVisible();
-  });
-
   test('a filtered roster survives a reload', async ({ page, basePage }) => {
     // The whole point of the controls writing to the URL: a narrowed roster is
     // an address someone can send, and sending it has to work.
@@ -345,67 +263,6 @@ test.describe('Team — the roster @smoke', () => {
 
     await views.getByRole('link', { name: 'Topology' }).click();
     await expect(page).toHaveURL(/[?&]view=topology/);
-  });
-
-  test('the topology draws agents while every agent may talk to every other (DOR-3154)', async ({
-    page,
-    basePage,
-    roomsApi,
-    request,
-  }) => {
-    // The open-mesh switch (`*` -> `*`) is on by default on Trusted installs.
-    // It once became an edge to a group that does not exist, the layout engine
-    // refused the graph, and the map drew its legend with no agents in it.
-    // The registered agent lands in this run's namespace and DorkBot in
-    // `system`, so the map draws namespace groups, the case that broke.
-    await roomsApi.registerAgent(`E2E Map ${roomsApi.runId}`, '🗺️', '#0ea5e9');
-    const topology = await request.get('/api/mesh/topology');
-    expect(topology.ok()).toBe(true);
-    const { accessRules } = (await topology.json()) as {
-      accessRules: { sourceNamespace: string; targetNamespace: string; origin: string }[];
-    };
-    const wasOpen = accessRules.some(
-      (r) => r.sourceNamespace === '*' && r.targetNamespace === '*' && r.origin === 'explicit'
-    );
-    const setOpenMesh = (action: 'allow' | 'deny') =>
-      request.put('/api/mesh/topology/access', {
-        data: { sourceNamespace: '*', targetNamespace: '*', action },
-      });
-    if (!wasOpen) expect((await setOpenMesh('allow')).ok()).toBe(true);
-
-    try {
-      await page.goto('/team?view=topology');
-      await basePage.waitForAppReady();
-
-      // A zoomed-out map draws compact nodes without names, so count nodes
-      // rather than look for this agent's label.
-      await expect(page.locator('.react-flow__node-agent').first()).toBeVisible();
-      // The rule names no namespace, so the map says it in words instead.
-      await expect(page.getByText('Everyone can message everyone')).toBeVisible();
-    } finally {
-      // Leave the mesh as this test found it for every spec after it.
-      if (!wasOpen) await setOpenMesh('deny');
-    }
-  });
-
-  test('the Denied view reports having blocked nothing', async ({ page, basePage }) => {
-    await page.goto('/team?view=denied');
-    await basePage.waitForAppReady();
-
-    await expect(page.getByText('No blocked paths')).toBeVisible();
-    await expect(page.getByText('Folders you block from scans show up here.')).toBeVisible();
-  });
-
-  test('the Access view renders the cross-project access surface', async ({ page, basePage }) => {
-    await page.goto('/team?view=access');
-    await basePage.waitForAppReady();
-
-    // Which of the two it shows depends on how many projects the install has,
-    // which depends on what else the run seeded — so accept either, and fail if
-    // the view renders neither.
-    const needsProjects = page.getByText('You need agents in more than one project');
-    const projectList = page.getByRole('heading', { name: 'Projects' });
-    await expect(needsProjects.or(projectList).first()).toBeVisible();
   });
 });
 

@@ -35,24 +35,32 @@ import type { ServerPrincipalProof } from '../../connectors/principal/server-pri
  *
  * @module services/session/browser-seat/ui-control
  */
+import path from 'node:path';
 import { UiCommandSchema } from '@dorkos/shared/schemas';
 import type { UiState, UiStateReport, UiCommand } from '@dorkos/shared/types';
 import {
   CANVAS_VERBS,
   SESSION_AGENT_AUTHOR,
+  canvasOutsideFolderRefusal,
   canvasSourceRefusal,
   frontOfViewIds,
   peekCanvasService,
   sessionScope,
   type CanvasApplyResult,
 } from '../../canvas/index.js';
-import { getRoomService, RoomError, type RoomService } from '../../rooms/index.js';
+import {
+  getRoomService,
+  RoomError,
+  tryGetRoomRepoService,
+  type RoomService,
+} from '../../rooms/index.js';
 import { shareRoomCanvasMedia } from '../../rooms/canvas/room-canvas-media.js';
 import type { RawSessionEvent } from '../session-state-projector.js';
 // The leaf module rather than the `core/capabilities` barrel, for the reason
 // `./devtools-reads` states in full: the barrel closes an import cycle back to
 // this domain, and the domain reads schemas from these files at module scope.
 import { CapabilityToolError } from '../../core/capabilities/mcp-envelope.js';
+import { resolveDorkHome } from '../../../lib/dork-home.js';
 import { logger } from '../../../lib/logger.js';
 import { emitToSession } from './session-reach.js';
 import { uiTurnFacts, type UiRoomTurn } from './ui-turn-facts.js';
@@ -253,6 +261,31 @@ export async function controlUi(
   // for the same turn in the same place.
   const target = 'target' in command ? command.target : undefined;
   const targetsAnotherRoom = target !== undefined && target.roomId !== roomTurn?.roomId;
+
+  // **A room canvas shows only files from the agent's folder, or from that
+  // room's own folders** (DOR-3519). A room copies what it shows to every other
+  // member, so a path outside them is an error naming it, before any document or
+  // event exists. The person's own one-on-one window is not asked this: it
+  // opens what it always did.
+  const destination =
+    targetsAnotherRoom && CANVAS_VERBS.has(command.action) ? target.roomId : roomTurn?.roomId;
+  const outsideFolder =
+    destination !== undefined
+      ? await canvasOutsideFolderRefusal(command, {
+          cwd: roomTurn?.cwd ?? caller.cwd,
+          roomFolders: roomCanvasFolders(destination, roomTurn),
+          roomsDir: path.join(resolveDorkHome(), 'rooms'),
+        })
+      : null;
+  if (outsideFolder !== null) {
+    throw new CapabilityToolError({
+      success: false,
+      action: command.action,
+      code: outsideFolder.code,
+      error: outsideFolder.message,
+    });
+  }
+
   if (targetsAnotherRoom && CANVAS_VERBS.has(command.action)) {
     return applyToTargetedRoom({
       sessionId,
@@ -721,6 +754,30 @@ async function applyToTargetedRoom(input: {
           : 'That room’s canvas could not be reached just now.',
     });
   }
+}
+
+/**
+ * The folders of the room a canvas command is going to that may also hold a
+ * file it shows (DOR-3519): the agent's copy of THAT room's files, as the turn
+ * was placed with it, and the room's shared `repo/`, as the repo service says.
+ * Another room's folders are never in it, so a targeted write to a second room
+ * does not carry this room's copy along.
+ *
+ * @param roomId - The room the command is going to.
+ * @param roomTurn - The room this turn is answering in, if any.
+ */
+function roomCanvasFolders(roomId: string, roomTurn: UiRoomTurn | undefined): string[] {
+  const folders: string[] = [];
+  if (roomTurn?.roomId === roomId && roomTurn.worktree !== undefined) {
+    folders.push(roomTurn.worktree);
+  }
+  try {
+    const repo = tryGetRoomRepoService()?.repoPathFor(roomId) ?? null;
+    if (repo !== null) folders.push(repo);
+  } catch {
+    // An id that could be read as a path has no repo; the room refuses it later.
+  }
+  return folders;
 }
 
 /**

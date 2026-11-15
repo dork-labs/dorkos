@@ -8,7 +8,7 @@
  * being news. On a restraint case, whose whole subject is whether the agent says
  * anything, that reads as PASS.
  */
-import { describe, expect, it, afterEach } from 'vitest';
+import { describe, expect, it, afterEach, beforeEach, vi } from 'vitest';
 import http from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { openRoomStream } from '../room-drive.js';
@@ -41,7 +41,43 @@ function entry(id: string, text: string): unknown {
 
 let server: http.Server | undefined;
 
+/** Fake time one drive step moves on: one of the drive's own 50 ms polls. */
+const CLOCK_STEP_MS = 50;
+
+/**
+ * Await `work` while moving the fake clock on. The stub's timeline, its
+ * repeaters and the drive's own polls and deadlines all run on the fake clock,
+ * so a six-second timeline takes no real six seconds. The frames still travel
+ * over a real socket, so every step also gives real I/O a few turns before the
+ * clock moves again.
+ */
+async function drive<T>(work: Promise<T>): Promise<T> {
+  let settled = false;
+  const watched = work.finally(() => {
+    settled = true;
+  });
+  // Seen here so a rejection is never unhandled while the clock moves.
+  watched.catch(() => undefined);
+  for (let spent = 0; !settled; spent += CLOCK_STEP_MS) {
+    if (spent > 60_000) throw new Error('the drive never settled on the fake clock');
+    await vi.advanceTimersByTimeAsync(CLOCK_STEP_MS);
+    for (let turn = 0; turn < 3; turn++) {
+      await new Promise<void>((resolve) => setImmediate(resolve));
+    }
+  }
+  return watched;
+}
+
+beforeEach(() => {
+  // Everything the timeline and the drive keep time with. setImmediate stays
+  // real: it is how each step hands the socket a turn.
+  vi.useFakeTimers({
+    toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'Date'],
+  });
+});
+
 afterEach(async () => {
+  vi.useRealTimers();
   const running = server;
   server = undefined;
   if (running) await new Promise<void>((resolve) => running.close(() => resolve()));
@@ -97,9 +133,9 @@ describe('openRoomStream().settle', () => {
       { atMs: 6_050, write: frame('signal', presence('done')) },
     ]);
     const stream = openRoomStream({ baseUrl, roomId: 'room-1', timeoutMs: 20_000 });
-    await stream.ready;
+    await drive(stream.ready);
     try {
-      const frames = await stream.settle({ quietMs: 2_000 });
+      const frames = await drive(stream.settle({ quietMs: 2_000 }));
       const texts = frames
         .filter((f) => f.event === 'entry')
         .map((f) => (f.data as { entry?: { body?: { text?: string } } }).entry?.body?.text);
@@ -116,10 +152,10 @@ describe('openRoomStream().settle', () => {
       { atMs: 450, write: frame('signal', presence('done')) },
     ]);
     const stream = openRoomStream({ baseUrl, roomId: 'room-1', timeoutMs: 20_000 });
-    await stream.ready;
+    await drive(stream.ready);
     try {
       const startedAt = Date.now();
-      await stream.settle({ quietMs: 1_000 });
+      await drive(stream.settle({ quietMs: 1_000 }));
       // It returned on the quiet window rather than on the hard ceiling — the
       // keepalives and republishes did not hold it open.
       expect(Date.now() - startedAt).toBeLessThan(8_000);
@@ -131,9 +167,9 @@ describe('openRoomStream().settle', () => {
   it('settles with nothing when a room never reacts at all', async () => {
     const baseUrl = await stubRoom([], { republishWorking: false });
     const stream = openRoomStream({ baseUrl, roomId: 'room-1', timeoutMs: 20_000 });
-    await stream.ready;
+    await drive(stream.ready);
     try {
-      const frames = await stream.settle({ quietMs: 1_000 });
+      const frames = await drive(stream.settle({ quietMs: 1_000 }));
       expect(frames.filter((f) => f.event === 'entry')).toEqual([]);
     } finally {
       stream.close();
@@ -146,9 +182,11 @@ describe('openRoomStream().settle', () => {
     // reader is not left guessing which agent stopped.
     const baseUrl = await stubRoom([{ atMs: 100, write: frame('signal', presence('working')) }]);
     const stream = openRoomStream({ baseUrl, roomId: 'room-1', timeoutMs: 3_000 });
-    await stream.ready;
+    await drive(stream.ready);
     try {
-      await expect(stream.settle({ quietMs: 500 })).rejects.toThrow(/turn\(s\) still running/);
+      await expect(drive(stream.settle({ quietMs: 500 }))).rejects.toThrow(
+        /turn\(s\) still running/
+      );
     } finally {
       stream.close();
     }
@@ -157,13 +195,13 @@ describe('openRoomStream().settle', () => {
   it('shares ONE budget across every settle call, so a case is bounded by its own ceiling', async () => {
     const baseUrl = await stubRoom([{ atMs: 100, write: frame('signal', presence('working')) }]);
     const stream = openRoomStream({ baseUrl, roomId: 'room-1', timeoutMs: 3_000 });
-    await stream.ready;
+    await drive(stream.ready);
     const startedAt = Date.now();
     try {
-      await expect(stream.settle({ quietMs: 500 })).rejects.toThrow();
+      await expect(drive(stream.settle({ quietMs: 500 }))).rejects.toThrow();
       // A per-settle deadline would give this second call a fresh 3 seconds. A
       // per-drive one is already spent, so it fails at once.
-      await expect(stream.settle({ quietMs: 500 })).rejects.toThrow();
+      await expect(drive(stream.settle({ quietMs: 500 }))).rejects.toThrow();
       expect(Date.now() - startedAt).toBeLessThan(6_000);
     } finally {
       stream.close();

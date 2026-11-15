@@ -1,0 +1,51 @@
+---
+title: DorkOS 0.135.7
+description: Unblock agent works over Remote Access again, the agent's Chrome window is easy to spot, and handing the browser to you is simpler.
+date: 2026-11-12
+author: DorkOS Team
+category: release
+tags: [release, remote-access, browser]
+---
+
+DorkOS 0.135.7 makes Unblock agent work over Remote Access again, makes the agent's own Chrome window easy to spot, and makes handing the browser to you simpler.
+
+## All Changes
+
+### Note for people upgrading
+
+- On Linux, Codex at Full access doesn't start if Claude Code has run on the same machine, and that includes the Docker image. Use Ask first or Workspace write there for now. We're fixing it (DOR-3965).
+- Removing a global MCP server stops new chats from using it. Chats that are already running keep it until they end or you restart them. If you remove a server because you no longer trust it, restart DorkOS so no chat can still reach it. The Connections guide says so (DOR-3872).
+- Agents below Full can no longer change saved browser sign-ins with their file tools, or from a shell on Claude Code, including `dorkos browser login` and `dorkos browser forget`. To let an agent save a sign-in, set it to Full. This works on Claude Code and Doe only; on Codex and OpenCode, no agent can. (DOR-4136)
+- If you added a Playwright browser to an agent with options that save browser state, write files or run a file at start, DorkOS now leaves it out of that agent's chats. Remove those options to use it again. (DOR-4136)
+- In **New browser window** mode, DorkOS now uses your installed Google Chrome when it finds it. When an agent hands you the browser there, its window closes and the page opens for you in a plain browser window (your installed Chrome, if DorkOS found it). Anything typed into a form on that page doesn't carry over. An agent can only hand you a site whose address starts with `https` (or `localhost`). (DOR-4178)
+- For scripts: `DELETE /api/mesh/denied/{encodedPath}` is now `DELETE /api/mesh/denied?path=<folder>`. The marketplace source routes also take the name as `?name=`: `DELETE /api/marketplace/sources?name=` and `POST /api/marketplace/sources/refresh?name=`. The old source routes still work. A browser tab left open from before the upgrade needs a reload before **Unblock agent** works. (DOR-4212)
+
+### Security
+
+- Agents below Full can't change the browser sign-ins DorkOS keeps: the sign-ins saved by `dorkos browser login`, the Agent browser's profiles and saved sign-ins, and the desktop app's data folder. Their file tools refuse on every runtime, and so does a shell command on Claude Code. An agent you set to Full can now save a sign-in on Claude Code and Doe, the way you can. That includes the Agent browser's profiles, which 0.135.6 kept from every agent. (DOR-4136)
+- DorkOS now leaves a Playwright browser out of an agent's chats when its options save browser state, write files or run a file at start. This holds at every level, Full included. Options that bring their own config were already left out; now every spelling of them is. (DOR-4136)
+- Signing in on a browser profile that no longer exists is refused, instead of quietly making it again. (DOR-4180)
+
+### Added
+
+- **Pictures in a room's Files list now open as pictures.** Before, they said only text files could be shown. SVG files still open as text. (DOR-4179)
+
+### Fixed
+
+- **Unblock agent works over Remote Access again.** In 0.135.6 it failed from another device, over both DorkOS's remote access and your own ngrok tunnel. That known issue is fixed. (DOR-4212)
+- Over Remote Access, a picture you attached in a chat now shows when DorkOS runs on Windows, and you can refresh or remove a marketplace source saved by an older DorkOS whose name holds a `/`. (DOR-4212)
+- **When a site needs you, the handoff is simpler.** In **New browser window** mode, the page opens for you in a plain window: sign in or finish the check, close the window, then press **Continue**. In the Mac app's panel, you finish right in the panel, then press **Continue**. The agent can't use the browser until you hand it back. A long site name now wraps in the card's title, so no button runs off the edge on a phone. (DOR-3112, DOR-4178)
+- After you hand the Agent browser back, DorkOS wakes the agent itself, whether you pressed **Continue** or resumed the browser yourself. Before, it woke only if the card's own message got through. The card, in the chat and in the Inbox, then becomes one quiet line saying how it ended, for example "Atlas is carrying on.", "Stopped. Atlas won’t carry on with this." or "The window closed. Atlas stopped here." (DOR-3112)
+- While you finish one agent's handoff, no other agent can use the Agent browser. (DOR-4178)
+- **The agent's Chrome window is easy to tell apart.** When DorkOS uses your installed Chrome, each agent window gets an orange colour and the agent's name. In the Mac app's panel, websites now see an ordinary Chrome-style browser at its real engine version, without the app's name in it. (DOR-4178)
+- Putting a room file back on the canvas shows its tab again, even after you closed that tab. In a file preview, the line under the name now shows its folder ("Top folder" at the top), not the full path. (DOR-4179)
+- After you close the Agent browser's window, **Forget…** works on its saved sign-ins right away. It no longer asks you to close a browser that's already closed. (DOR-4181)
+- The Agent browser can read a page built in an unusual way, with two main page sections. Before, the read failed, and the agent was stuck on that tab. (DOR-4192)
+- An agent can always open another page, even after it couldn't read the one it's on. It still can't while you have the browser or it's paused, or go anywhere it's not allowed to go. (DOR-4192)
+- When an agent asks to read and change things in an app, it no longer hears "You can now read" as if that were everything. Its answer now says it can't change anything there, and why. Maybe you picked Read. Maybe the app has nothing to change. Or maybe the app's change actions are allowed one at a time, as with Linear today. (DOR-4193)
+- When an agent that has only Read asks again to change things, you now see a card. Before, for an app like Linear, it could be told it already had access without you seeing anything. (DOR-4193)
+- When an agent asks to change things in an app that can only give Read, the access card now says so before you answer. If the app has actions that change things, it tells you to choose exact actions on the Connections page. (DOR-4193)
+
+### Going back
+
+0.135.7 doesn't change the database or your settings. To go back, install 0.135.6. On 0.135.6, **Unblock agent** over Remote Access fails again, and scripts must use the old route that puts the folder in the address. Browser profiles that 0.135.7 opened in your installed Chrome may keep an agent's orange colour and name, even in the sign-in window.

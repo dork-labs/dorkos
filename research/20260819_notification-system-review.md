@@ -91,7 +91,7 @@ Four systems, **no cross-coordinator** — on a fresh install the telemetry bann
 ### 2.6 Out-of-app: deliberately nothing (ADR 0009)
 
 - **No Electron `Notification` anywhere**; the tray is explicitly "a control panel, not a notification farm" (`tray.ts:6-17`) and **counts blocked sessions as "working"** (`agent-activity.ts:34-37` lumps `streaming`+`blocked`), so it cannot say "waiting on you."
-- **No web push / service worker / PWA manifest / `Notification.requestPermission`** in the client. ADR `0009-calm-tech-notification-layers.md` explicitly excluded the Browser Notification API; `specs/notification-sound/01-ideation.md:26` scoped OS notifications out.
+- **No web push / service worker / PWA manifest / `Notification.requestPermission`** in the client. ADR `0009-calm-tech-notification-layers.md` explicitly excluded the Browser Notification API; [historical spec](https://github.com/dork-labs/dorkos/blob/78baefc5ac7aeac33c67f5e697fbe2f36179a960/specs/notification-sound/01-ideation.md#L26) scoped OS notifications out.
 - In-tab signals that do exist and are quietly great: favicon animation (`use-favicon.ts`), tab-title `(N) 🔔 🏁` prefixes while hidden (`use-document-title.ts:111-196`), one notification sound (`notification-sound.ts`, `/notification.wav`, played on every `onStreamingDone`, localStorage toggle).
 - The only out-of-app path: **Relay → Telegram/Slack** — `relay_notify_user` (consent-gated `canInitiate`, 10/agent/hour budget, DM-room fallback via `notify-dm.ts`) and the system `TaskCompletionNotifier` (`notifyOnTaskComplete` per binding). Email is cloud-site-only by design (`apps/site/src/lib/mailer.ts`).
 - **No notification preferences, no quiet hours, no DND concept anywhere.** `enableNotificationSound` is per-browser localStorage.

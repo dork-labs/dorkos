@@ -24,10 +24,11 @@
  * Runtimes ask for their servers synchronously (`injectableServersForCwd`), and
  * the credential store is async. So the store resolves every reference once at
  * {@link GlobalMcpStore.load} and again after each write, and answers
- * {@link GlobalMcpStore.injectableFor} from memory. A change reaches the next
- * process a chat launches, with no server restart. A chat whose process launched
- * with a server keeps its tools after off, keep-from or Remove until that process
- * ends, and a turn in flight keeps them too.
+ * {@link GlobalMcpStore.injectableFor} from memory. A change reaches every chat
+ * on its next message, with no restart (DOR-3872): Claude Code and Doe refuse a
+ * removed server's tools at the next call, OpenCode disconnects it when
+ * {@link GlobalMcpStore.onChange} fires, and Codex reloads its thread on the next
+ * turn, so only a Codex reply already running can finish with it.
  *
  * ## What it may run
  *
@@ -49,7 +50,9 @@ import type { McpAppServerConnection } from '@dorkos/shared/agent-runtime';
 import { stableStringify } from '@dorkos/shared/capabilities';
 import {
   GlobalMcpServerNameSchema,
+  isReservedMcpServerName,
   isSecretName,
+  reservedMcpServerNameMessage,
   type GlobalMcpServerInput,
   type GlobalMcpServerPatch,
   type GlobalMcpServerView,
@@ -57,7 +60,6 @@ import {
 import type { Logger } from '@dorkos/shared/logger';
 import { McpServerTransportSchema, type McpServerTransport } from '@dorkos/shared/mesh-schemas';
 import type { CredentialStore } from '../../core/credential-provider.js';
-import { RESERVED_MCP_SERVER_NAME } from '../agent-mcp-server-service.js';
 import {
   flaggedEnvNames,
   refuseGlobalServer,
@@ -205,6 +207,31 @@ export class GlobalMcpStore {
    * saving a new server can never overwrite the servers that file still holds.
    */
   private unreadable = false;
+  /** Told after each saved write, so running chats can drop a server (DOR-3872). */
+  private readonly listeners = new Set<() => void>();
+
+  /**
+   * Call `listener` after every write that saved, so a runtime can act on chats
+   * already running. A listener that throws is reported and never fails the write.
+   *
+   * @param listener - Called with no arguments; it reads the store itself.
+   */
+  onChange(listener: () => void): void {
+    this.listeners.add(listener);
+  }
+
+  /** Tell every listener that the saved servers changed. */
+  private notifyChanged(): void {
+    for (const listener of this.listeners) {
+      try {
+        listener();
+      } catch (err) {
+        this.logger.warn('[mcp-servers] a change listener failed', {
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
+  }
 
   /**
    * Build a store over the data directory. Call {@link GlobalMcpStore.load} before use.
@@ -286,6 +313,21 @@ export class GlobalMcpStore {
   }
 
   /**
+   * The connection a person's sheet may check a server's tools over, with
+   * secrets resolved, or `null` (DOR-4118). Only a server that is on and that
+   * this store would hand an agent: anything else is never started.
+   *
+   * @param name - The server's name.
+   */
+  connectionToCheck(name: string): McpServerTransport | null {
+    const server = this.servers.find((candidate) => candidate.name === name);
+    if (!server?.enabled) return null;
+    const connection = this.resolved.get(name);
+    if (!connection) return null;
+    return refuseGlobalServer(connection, this.guardContext()) ? null : connection;
+  }
+
+  /**
    * Add a server for every agent.
    *
    * @param input - The server, with its secret values typed by a person.
@@ -350,13 +392,20 @@ export class GlobalMcpStore {
    *
    * @param name - The server to replace.
    * @param input - Its new definition. The name may not change.
+   * @param guard - Checked in the write queue: `expect` refuses a server that
+   *   changed since it was read, so a held replace can't undo a narrowing.
    */
-  replace(name: string, input: GlobalMcpServerInput): Promise<GlobalMcpServerView> {
+  replace(
+    name: string,
+    input: GlobalMcpServerInput,
+    guard: Pick<GlobalMcpPatchGuard, 'expect'> = {}
+  ): Promise<GlobalMcpServerView> {
     return this.exclusive(async () => {
       // Every refusal before anything is deleted, so a refused edit leaves the
       // working server running with its secrets.
       this.refuseReplace(name, input);
       const existing = this.find(name);
+      this.refuseChanged(existing, guard.expect);
       await this.deleteSecrets(existing);
       this.servers = this.servers.filter((s) => s.name !== name);
       return this.put(input, existing.addedAt);
@@ -379,9 +428,7 @@ export class GlobalMcpStore {
   ): Promise<GlobalMcpServerView> {
     return this.exclusive(async () => {
       const existing = this.find(name);
-      if (guard.expect !== undefined && fingerprintOf(existing) !== guard.expect) {
-        throw new GlobalMcpStoreError('changed', `${name} changed. Check it and try again.`);
-      }
+      this.refuseChanged(existing, guard.expect);
       const next: StoredServer = {
         ...existing,
         ...(patch.enabled !== undefined ? { enabled: patch.enabled } : {}),
@@ -412,6 +459,8 @@ export class GlobalMcpStore {
       try {
         await this.deleteSecrets(existing);
       } catch {
+        // The server is gone even though its key is not, so running chats are told.
+        this.notifyChanged();
         throw new GlobalMcpStoreError(
           'secret_left',
           `${name} is removed, but its saved key couldn't be deleted.`
@@ -422,12 +471,24 @@ export class GlobalMcpStore {
 
   /** Run one write after every write before it, refusing all of them on an unreadable file. */
   private exclusive<T>(work: () => Promise<T>): Promise<T> {
-    const run = this.writes.then(() => {
-      this.refuseUnreadable();
-      return work();
-    });
+    const run = this.writes
+      .then(() => {
+        this.refuseUnreadable();
+        return work();
+      })
+      .then((result) => {
+        this.notifyChanged();
+        return result;
+      });
     this.writes = run.catch(() => undefined);
     return run;
+  }
+
+  /** Throw when a server no longer matches the fingerprint a held change was read at. */
+  private refuseChanged(existing: StoredServer, expect: string | undefined): void {
+    if (expect !== undefined && fingerprintOf(existing) !== expect) {
+      throw new GlobalMcpStoreError('changed', `${existing.name} changed. Check it and try again.`);
+    }
   }
 
   /** Throw when the file exists but could not be read. */
@@ -442,8 +503,8 @@ export class GlobalMcpStore {
 
   /** Throw why a server may not be saved, if it may not. Changes nothing. */
   private refuseInput(input: GlobalMcpServerInput): void {
-    if (input.name === RESERVED_MCP_SERVER_NAME) {
-      throw new GlobalMcpStoreError('reserved_name', `${input.name} is DorkOS's own server.`);
+    if (isReservedMcpServerName(input.name)) {
+      throw new GlobalMcpStoreError('reserved_name', reservedMcpServerNameMessage(input.name));
     }
     if (input.connection.transport !== 'stdio' && input.connection.authKind === 'oauth2') {
       throw new GlobalMcpStoreError(
@@ -515,6 +576,7 @@ export class GlobalMcpStore {
       addedAt: server.addedAt,
       skippedOn: connection.transport === 'sse' ? ['codex', 'opencode'] : [],
       warnings: this.warningsFor(server),
+      reservedName: isReservedMcpServerName(server.name),
     };
   }
 

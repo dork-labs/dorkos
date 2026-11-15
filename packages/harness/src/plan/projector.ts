@@ -61,6 +61,7 @@ import {
 } from './installed-projector.js';
 import { labelDevLinkActions } from './dev-link-labels.js';
 import { settleExtensionSkillCollisions } from './extension-skills.js';
+import { settlePackageSkillNameCollisions } from './package-skill-collisions.js';
 import type { ExtensionSkillPackage } from '../sources/running-extension-skills.js';
 import { planUnreadableHookWarnings } from './unreadable-hooks.js';
 import { planUnreadableManifestWarnings } from './unreadable-manifests.js';
@@ -71,7 +72,11 @@ import {
   planInventoryWarnings,
 } from './source-artifacts.js';
 import { commandDropReason } from './command-formats.js';
-import { inventorySourceTree, type SourceInventory } from '../inventory/index.js';
+import {
+  inventorySourceTree,
+  type SourceInventory,
+  type UserSkillName,
+} from '../inventory/index.js';
 import {
   blockedWritePath,
   unwritableWritePath,
@@ -524,6 +529,13 @@ export function buildPlan(input: {
    * which is the state of every machine that has not answered.
    */
   sharedWithTools?: boolean;
+  /**
+   * The person's user-level skills (`~/.agents/skills` and the rest a by-name
+   * harness reads in every project), read by the caller with
+   * `readUserSkillNames`. A package skill named like one of them is skipped,
+   * as for a project skill of theirs (DOR-4392). Omitted means none.
+   */
+  userSkills?: readonly UserSkillName[];
 }): ProjectionPlan {
   const {
     repoRoot,
@@ -615,8 +627,30 @@ export function buildPlan(input: {
     plugins: projectable,
     authoredSkillNames: agentsSkillNames,
   });
-  const extensions = extensionSettled.packages;
   warnings.push(...extensionSettled.warnings);
+
+  // A harness that keys skills by name keeps one of two same-name skills and
+  // drops the other silently (OpenCode). So no package skill may take the name
+  // of the person's own skill, or of a package skill planned before it: it is
+  // left out of every skill folder, with a warning and a record (DOR-4387).
+  // Whatever the manifest enables: an agent on OpenCode reads `.agents/skills`
+  // in any project (DOR-4392). Only the skill planners below see the filtered
+  // lists; commands, hooks and every other layer still read `projectable`.
+  const pluginSkills = settlePackageSkillNameCollisions({
+    packages: projectable,
+    ownSkills: inventory.skills,
+    userSkills: input.userSkills ?? [],
+  });
+  const extensionSkills = settlePackageSkillNameCollisions({
+    packages: extensionSettled.packages,
+    ownSkills: inventory.skills,
+    userSkills: input.userSkills ?? [],
+    taken: pluginSkills.taken,
+  });
+  const skillPlugins = pluginSkills.packages;
+  const extensions = extensionSkills.packages;
+  const skippedPackageSkills = [...pluginSkills.skipped, ...extensionSkills.skipped];
+  warnings.push(...pluginSkills.warnings, ...extensionSkills.warnings);
 
   // Which packages may contribute shell commands. Applied HERE, before the hooks
   // are folded in, because a package's hooks reach every enabled harness — the
@@ -696,7 +730,7 @@ export function buildPlan(input: {
     });
     all.push(...inventoried.actions);
     warnings.push(...inventoried.warnings);
-    for (const plugin of projectable) {
+    for (const plugin of skillPlugins) {
       const skillResult = planInstalledSkills(harness, plugin);
       all.push(...labelDevLinkActions(skillResult.actions, plugin));
       warnings.push(...skillResult.warnings);
@@ -744,10 +778,10 @@ export function buildPlan(input: {
   // when an enabled harness already links installed skills there, so the target
   // is planned exactly once.
   const canonicalLinks = planCanonicalSkillLinks({
-    plugins: projectable,
+    plugins: skillPlugins,
     harnesses: manifest.harnesses,
   });
-  all.push(...labelCanonicalLinks(canonicalLinks.actions, projectable));
+  all.push(...labelCanonicalLinks(canonicalLinks.actions, skillPlugins));
   warnings.push(...canonicalLinks.warnings);
   // The same `.agents/skills` link for each extension skill, planned per
   // extension so its dev link labels exactly its own links.
@@ -772,7 +806,7 @@ export function buildPlan(input: {
   warnings.push(
     ...planSkillNameCollisions({
       authoredSkillNames: [...agentsSkillNames],
-      plugins: [...projectable, ...extensions],
+      plugins: [...skillPlugins, ...extensions],
       harnesses: manifest.harnesses,
     })
   );
@@ -818,6 +852,7 @@ export function buildPlan(input: {
     warnings,
     notEnabled: notEnabledHarnesses(manifest.harnesses, detectedHarnesses, dorkosHarness),
     ...(unreadableSkillRoots.length > 0 ? { unreadableSkillRoots } : {}),
+    ...(skippedPackageSkills.length > 0 ? { skippedPackageSkills } : {}),
     ...(input.extensionLedger !== undefined ? { extensionLedger: input.extensionLedger } : {}),
   };
 }

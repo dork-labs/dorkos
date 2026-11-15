@@ -22,7 +22,11 @@
 import { getPermissionArea } from '@dorkos/shared/permissions';
 import { findOperatorOnlyPaths, operatorOnlyAreasForPatch } from './config-write-policy.js';
 import { OPERATOR_ONLY_STAKES } from './operator-only-stakes.js';
-import { OPERATOR_TOOL_AUTHORITY, type ConfigWriteAuthority } from './config-write.js';
+import {
+  OPERATOR_TOOL_AUTHORITY,
+  personApprovedAuthority,
+  type ConfigWriteAuthority,
+} from './config-write.js';
 import type { GrantedApproval } from '../capabilities/tier-enforcement.js';
 
 /** Each operator-only setting with a strictest value, and that value. */
@@ -30,6 +34,7 @@ export const SAFEST_VALUES: ReadonlyMap<string, unknown> = new Map<string, unkno
   // Who can reach this instance, and how far it reaches.
   ['tunnel.enabled', false],
   ['server.lanAccess', false],
+  ['remoteAccess.enabled', false],
   ['mcp.enabled', false],
   ['mcp.rateLimit.enabled', true],
   ['browser.enabled', false],
@@ -144,4 +149,67 @@ export function unattendedConfigAuthority(
         ? undefined
         : OPERATOR_TOOL_AUTHORITY.refuseOperatorOnly(paths),
   };
+}
+
+/**
+ * Settings an agent's `config_patch` may turn down but never up, not even with a person's yes on
+ * a card (Security, DOR-3650): turning them on is the person's own act, in Settings at this
+ * computer. A card approves what an agent proposed, so it is still the agent's tool doing it.
+ */
+export const NEVER_RAISED_BY_AN_AGENT: ReadonlySet<string> = new Set(['remoteAccess.enabled']);
+
+/** The code a raise of a {@link NEVER_RAISED_BY_AN_AGENT} setting is refused with. */
+export const PERSON_TURNS_ON_ONLY_CODE = 'PERSON_TURNS_ON_ONLY';
+
+/**
+ * Wrap the authority a `config_patch` writes under so a patch that raises any
+ * {@link NEVER_RAISED_BY_AN_AGENT} setting is refused whatever `authority` would allow. Writing
+ * such a setting's strictest value still goes to `authority` as before.
+ *
+ * @param authority - The authority the call would otherwise write under.
+ * @param patch - The patch being written.
+ */
+export function refuseAgentRaises(
+  authority: ConfigWriteAuthority,
+  patch: unknown
+): ConfigWriteAuthority {
+  return {
+    refuseOperatorOnly: (paths) => {
+      const raised = paths.filter(
+        (path) => NEVER_RAISED_BY_AN_AGENT.has(path) && !writesStrictest(patch, path)
+      );
+      if (raised.length === 0) return authority.refuseOperatorOnly(paths);
+      return {
+        status: 403,
+        code: PERSON_TURNS_ON_ONLY_CODE,
+        error: 'Only a person can turn this on.',
+        message:
+          'DorkOS changed nothing. Only a person can turn remote access on, in Settings on this ' +
+          'computer. An agent may turn it off.',
+        paths: raised,
+      };
+    },
+  };
+}
+
+/**
+ * The authority one `config_patch` writes under. A person approved THIS patch on a card: the
+ * change is theirs ({@link personApprovedAuthority}, which asks the DorkOS account's own settings
+ * for the owner's yes, DOR-2678). Otherwise preferences only, except a patch that only turns a
+ * person's settings down at Full (DOR-3426). Either way remote access is never turned on by an
+ * agent (DOR-3650).
+ *
+ * @param patch - The patch being written.
+ * @param approval - What the gate concluded about this exact call.
+ */
+export function configPatchAuthority(
+  patch: unknown,
+  approval: GrantedApproval | undefined
+): ConfigWriteAuthority {
+  return refuseAgentRaises(
+    approval?.via === 'approval'
+      ? personApprovedAuthority(approval.decidedByUserId)
+      : unattendedConfigAuthority(patch, approval),
+    patch
+  );
 }

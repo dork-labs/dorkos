@@ -5,6 +5,7 @@ import { RemoteAccessShowcases } from '../showcases/RemoteAccessShowcases';
 import { TeamBoardShowcases } from '../showcases/TeamBoardShowcases';
 import { KeepAwakeShowcases } from '../showcases/KeepAwakeShowcases';
 import { CompanyCertificatesShowcases } from '../showcases/CompanyCertificatesShowcases';
+import { TerminalCommandShowcases } from '../showcases/TerminalCommandShowcases';
 import { RuntimeCardShowcases } from '../showcases/RuntimeCardShowcases';
 import { CloudUsageShowcases } from '../showcases/CloudUsageShowcases';
 import { CreditsOfferShowcases } from '../showcases/CreditsOfferShowcases';
@@ -24,6 +25,7 @@ export function SettingsPage() {
       <TeamBoardShowcases />
       <KeepAwakeShowcases />
       <CompanyCertificatesShowcases />
+      <TerminalCommandShowcases />
       <CloudUsageShowcases />
     </PlaygroundPageLayout>
   );

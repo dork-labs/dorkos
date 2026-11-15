@@ -39,6 +39,7 @@ const launches = vi.hoisted(
 );
 /** What the next launch answers: accepted under the same id unless a test says otherwise. */
 const nextLaunch = vi.hoisted(() => ({
+  warnings: undefined as undefined | Array<{ code: string; message: string }>,
   refused: null as null | { refused: string; message: string },
   canonical: null as null | ((id: string) => string),
 }));
@@ -55,6 +56,7 @@ vi.mock('../../session/launch/launch-session.js', () => ({
       outcome: { kind: 'started', messageId: 'm-1' },
       queued: false,
       queuePosition: 1,
+      ...(nextLaunch.warnings ? { warnings: nextLaunch.warnings } : {}),
     };
   }),
 }));
@@ -140,6 +142,7 @@ async function refusal(promise: Promise<unknown>): Promise<StartWorkError> {
 }
 
 beforeEach(() => {
+  nextLaunch.warnings = undefined;
   launches.length = 0;
   nextLaunch.refused = null;
   nextLaunch.canonical = null;
@@ -158,6 +161,14 @@ afterEach(() => {
 });
 
 describe('a start', () => {
+  it('returns the Codex no-tools warning without assigning the project an agent', async () => {
+    service = build({ defaultRuntime: () => 'codex' });
+    nextLaunch.warnings = [{ code: 'NO_DORKOS_TOOLS', message: 'This chat has no DorkOS tools.' }];
+    const result = await service.start('flow', INPUT, 'ctx');
+    expect(result).toMatchObject({ warnings: nextLaunch.warnings });
+    expect(launches[0]!.request).not.toHaveProperty('agentPath');
+  });
+
   it('launches one chat in the project root, with its title and the prompt as its first message', async () => {
     const { sessionId } = await service.start('flow', INPUT, 'ctx');
 

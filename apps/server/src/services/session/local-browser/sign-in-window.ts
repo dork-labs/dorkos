@@ -1,6 +1,7 @@
 /** One plain sign-in window at a time, and whether its sign-in reached the disk. */
 import type { LocalBrowserSignIn } from '@dorkos/shared/local-browser';
-import { clearAgentWindowTheme } from './agent-window/index.js';
+import { clearAgentChromeProfile, clearAgentWindowTheme } from './agent-window/index.js';
+import { installedChromePath } from './connection/chrome-installation.js';
 import { LocalBrowserError } from './errors.js';
 import { managedChromiumPath } from './playwright-backend.js';
 import {
@@ -24,6 +25,7 @@ export const SIGN_IN_LOCK_TIMEOUT_MS = 5_000;
 async function preparePlainProfile(profileFolder: string): Promise<void> {
   await disablePasswordSaving(profileFolder);
   await clearAgentWindowTheme(profileFolder);
+  await clearAgentChromeProfile(profileFolder);
   await forgetOpenTabs(profileFolder);
 }
 
@@ -34,8 +36,10 @@ const lockOwnerHere: LockOwner = (folder) =>
 
 /** The machine pieces a sign-in window uses, swapped for fakes in tests. */
 export interface SignInWindowDeps {
-  /** The managed Chromium's path, downloading it first if needed. */
+  /** Installed Chrome, or the pinned Chromium downloaded if needed. */
   executable?: () => Promise<string>;
+  /** The person's installed Google Chrome, if any. Any other executable is the pinned test build. */
+  installedChrome?: () => string | undefined;
   spawner?: PlainChromiumSpawner;
   /** Whether a Chromium still holds the profile folder. */
   held?: (profileFolder: string) => boolean;
@@ -128,7 +132,8 @@ export class SignInWindow {
       await (this.deps.prepare ?? preparePlainProfile)(profileFolder);
       const executable = await (this.deps.executable ?? managedChromiumPath)();
       const spawner = this.deps.spawner ?? spawnPlainChromium;
-      this.window = spawner(executable, plainChromiumArgs(profileFolder, url, site));
+      const testBuild = executable !== (this.deps.installedChrome ?? installedChromePath)();
+      this.window = spawner(executable, plainChromiumArgs(profileFolder, url, site, testBuild));
     } catch {
       this.finish(attempt, 'failed');
       throw new LocalBrowserError('sign_in_failed', 'Couldn’t open the sign-in window. Try again.');

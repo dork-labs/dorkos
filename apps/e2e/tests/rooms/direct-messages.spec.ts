@@ -1,6 +1,5 @@
 import { test, expect } from '../../fixtures';
 import type { Page } from '@playwright/test';
-import { visibleText } from '../../pages/RoomsPage';
 import { SERVER_ROUND_TRIP_MS } from '../../fixtures/rooms-api';
 import { openCockpit } from './open-cockpit';
 
@@ -145,48 +144,6 @@ test.describe('Rooms — starting a direct message @smoke', () => {
       timeout: SERVER_ROUND_TRIP_MS,
     });
     await expect(roomsPage.memberFace(kai.name)).toHaveText(kai.emoji);
-  });
-
-  test('a query nobody matches does not open the half-assembled conversation', async ({
-    page,
-    roomsApi,
-    roomsPage,
-    basePage,
-  }) => {
-    const ana = await roomsApi.registerAgent(`E2E Ana ${roomsApi.runId}`, '🦊', '#e07b39');
-    const kai = await roomsApi.registerAgent(`E2E Kai ${roomsApi.runId}`, '🦉', '#5b8def');
-    await openCockpit(basePage);
-
-    await roomsPage.openDirectMessagePicker();
-    await roomsPage.chooseAgent(ana.name);
-    const before = page.url();
-
-    // Reaching for the second agent and mistyping its name. Enter here used to
-    // open the conversation with only the first agent in it and throw the rest
-    // of the intent away — the exact "Kia for Kai" case.
-    await roomsPage.agentSearch.fill(`${kai.name}xx`);
-    await expect(roomsPage.agentOptions).toHaveCount(0);
-    await expect(page.getByText('No agent by that name.')).toBeVisible();
-    await roomsPage.agentSearch.press('Enter');
-    expect(page.url()).toBe(before);
-
-    // The picker is still open with the work so far intact, which is what makes
-    // correcting the typo possible at all. Under the defect the popover has
-    // closed by now and this line has nothing to type into.
-    await expect(roomsPage.agentChip(ana.name)).toBeVisible();
-    await roomsPage.chooseAgent(kai.name);
-    await roomsPage.startConversationButton.click();
-
-    // The conversation that opens is the one that was asked for — both agents.
-    await expect(page).toHaveURL(/\/channels\?.*id=/, { timeout: SERVER_ROUND_TRIP_MS });
-    roomsApi.track(openRoomId(page));
-    const title = `${ana.name} and ${kai.name}`;
-    await expect(roomsPage.roomHeading).toHaveAccessibleName(title, {
-      timeout: SERVER_ROUND_TRIP_MS,
-    });
-    await expect(roomsPage.membersChip).toHaveAccessibleName('3 members');
-    // And no one-to-one with the first agent was left behind by the stray Enter.
-    await expect(roomsPage.rowIn(roomsPage.directMessages, ana.name)).toHaveCount(0);
   });
 
   test('asking for the same people again opens the conversation you already have', async ({

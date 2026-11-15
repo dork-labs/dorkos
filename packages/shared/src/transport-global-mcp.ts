@@ -14,6 +14,8 @@ import type {
   GlobalMcpServerList,
   GlobalMcpServerPatch,
   GlobalMcpServerView,
+  GlobalMcpStandingAllowList,
+  GlobalMcpToolsCheck,
 } from './global-mcp-schemas.js';
 
 /** The global MCP server methods every Transport implements. */
@@ -50,4 +52,28 @@ export interface GlobalMcpTransport {
    * @param name - The server.
    */
   removeGlobalMcpServer(name: string): Promise<void>;
+
+  /**
+   * Check a server's tools now, for its sheet (DOR-4118). Starts the server only when it is on and
+   * approved; otherwise answers `not-checked`. Names and descriptions are the server's own text.
+   *
+   * @param name - The server.
+   */
+  checkGlobalMcpServerTools(name: string): Promise<GlobalMcpToolsCheck>;
+
+  /**
+   * The agents whose folders let them use a server, or one tool on it, without asking.
+   *
+   * @param name - The server.
+   */
+  listGlobalMcpStandingAllows(name: string): Promise<GlobalMcpStandingAllowList>;
+
+  /**
+   * Remove one standing yes from an agent's own settings file. Owner at this computer only.
+   *
+   * @param name - The server.
+   * @param agentId - The agent, as the registry knows it.
+   * @param rule - The exact rule to remove.
+   */
+  undoGlobalMcpStandingAllow(name: string, agentId: string, rule: string): Promise<void>;
 }

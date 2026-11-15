@@ -88,7 +88,10 @@ export class TestModeSessionRegistry {
    *   session (drives session-list runtime marks). Defaults to `'test-mode'`;
    *   a secondary e2e instance passes its own type.
    */
-  constructor(private readonly runtimeType: string = 'test-mode') {}
+  constructor(
+    private readonly runtimeType: string = 'test-mode',
+    private readonly labelTitle: (title: string) => string = (title) => title
+  ) {}
 
   /**
    * Track a session (or refresh its settings) without a message — the
@@ -109,7 +112,8 @@ export class TestModeSessionRegistry {
   recordMessage(sessionId: string, content: string, patch: TrackedSessionPatch = {}): void {
     const session = this.upsert(sessionId, patch);
     const preview = toPreview(content);
-    if (session.title === '') session.title = deriveSessionTitle(content) || preview;
+    if (session.title === '')
+      session.title = this.labelTitle(deriveSessionTitle(content) || preview);
     session.lastMessagePreview = preview;
     session.updatedAt = new Date().toISOString();
     this.emit({ type: 'session_upserted', session: { ...session } });
@@ -125,7 +129,7 @@ export class TestModeSessionRegistry {
    */
   rename(sessionId: string, title: string): void {
     const session = this.upsert(sessionId, {});
-    session.title = title;
+    session.title = this.labelTitle(title);
     session.updatedAt = new Date().toISOString();
     this.emit({ type: 'session_upserted', session: { ...session } });
   }
@@ -301,7 +305,7 @@ export class TestModeSessionRegistry {
       const now = new Date().toISOString();
       session = {
         id: sessionId,
-        title: '',
+        title: this.labelTitle(''),
         createdAt: now,
         updatedAt: now,
         permissionMode: patch.permissionMode ?? BIRTH_PERMISSION_MODE,

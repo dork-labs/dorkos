@@ -1120,6 +1120,15 @@ The per-agent `enabledToolGroups` toggle this section used to describe is retire
 
 Reading it back is three states resolved by one function (`resolvePermission`) rather than a boolean per toggle: Blocked, Ask, or Allowed, each carrying WHERE it came from (`source`: agent, default, preset, or floor) so the row can say "Same as everyone" versus "set here." This pattern — one dial with a resolved value and a labelled source, reset by clearing the override rather than flipping a switch — is reusable for any per-entity override of a global setting; it is not specific to permissions.
 
+### Text Selection (Desktop)
+
+In the desktop app, text a person reads is selectable by default, and only app chrome opts out (DOR-2871). `index.css` sets `user-select: none` under `.desktop` on buttons, tabs, menu items, options, separators (resize handles), sidebar rows and `.app-drag-region`; fields stay selectable inside them. Content needs no opt-in class.
+
+- New chrome that is none of those shapes (a custom drag handle, say) takes `desktop:select-none`.
+- `role="button"` is deliberately not chrome: mention pills carry it inline in messages, and a copied message must keep them.
+- Code blocks get Streamdown's own copy button, labelled from `STREAMDOWN_TRANSLATIONS` in `shared/lib`. `MarkdownCodePre` drops the block's closing newline, so a copied command never runs on paste. Any new Streamdown surface passes both.
+- `apps/client/src/__tests__/desktop-text-selection.test.tsx` pins both sides.
+
 ---
 
 ## Accessibility

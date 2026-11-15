@@ -16,9 +16,11 @@ import type { ConnectorAgentRequestItem } from '@dorkos/shared/connector-schemas
 
 /**
  * Whether a tool name is the connection-request tool as some runtime spells it:
- * `mcp__dorkos__connectors.request_connection` (Claude Code),
- * `mcp__dorkos_connections__connectors.request_connection` (Codex), or
- * `dorkos_connections_connectors_request_connection` (OpenCode).
+ * `mcp__dorkos__connectors_request_connection` (Claude Code),
+ * `mcp__dorkos_connections__connectors_request_connection` (Codex), or
+ * `dorkos_connections_connectors_request_connection` (OpenCode). Every runtime
+ * turns the registered dot into `_` (DOR-4112); the registered, dotted
+ * name is matched too.
  *
  * @param toolName - The tool call's name as the transcript recorded it.
  */

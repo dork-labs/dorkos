@@ -172,3 +172,65 @@ describe.each(DIRECTORY_MEMBERSHIP_VECTORS)(
     });
   }
 );
+
+describe('a chat losing and regaining its DorkOS tools (DOR-4393)', () => {
+  /** The `dorkosTools` each announced upsert carried. */
+  async function announced(registry: CodexSessionRegistry, count: number) {
+    const iterator = registry.subscribe();
+    const seen: unknown[] = [];
+    // The first frame is the inventory snapshot.
+    await iterator.next();
+    return {
+      seen,
+      take: async () => {
+        for (let i = 0; i < count; i++) {
+          const { value } = await iterator.next();
+          seen.push(
+            (value as Extract<SessionListEvent, { type: 'session_upserted' }>).session.dorkosTools
+          );
+        }
+        await iterator.return?.();
+        return seen;
+      },
+    };
+  }
+
+  it('is lost, then back, and back leaves with the next message', async () => {
+    const registry = new CodexSessionRegistry();
+    registry.register(SESSION_ID, { cwd: '/projects/demo' });
+    const watch = await announced(registry, 3);
+    registry.noteDorkosTools(SESSION_ID, false);
+    expect(registry.get(SESSION_ID)?.dorkosTools).toBe('lost');
+    registry.noteDorkosTools(SESSION_ID, true);
+    expect(registry.get(SESSION_ID)?.dorkosTools).toBe('back');
+    registry.recordMessage(SESSION_ID, 'next');
+    // Null, not absent: a list row must overwrite the cached "back".
+    expect(registry.get(SESSION_ID)).toHaveProperty('dorkosTools', null);
+    expect(await watch.take()).toEqual(['lost', 'back', null]);
+  });
+
+  it('announces nothing for a chat that keeps its tools, and stays lost until they return', async () => {
+    const registry = new CodexSessionRegistry();
+    registry.register(SESSION_ID, { cwd: '/projects/demo' });
+    registry.noteDorkosTools(SESSION_ID, true);
+    expect(registry.get(SESSION_ID)?.dorkosTools).toBeUndefined();
+    registry.noteDorkosTools(SESSION_ID, false);
+    registry.recordMessage(SESSION_ID, 'still lost');
+    registry.noteDorkosTools(SESSION_ID, false);
+    expect(registry.get(SESSION_ID)?.dorkosTools).toBe('lost');
+  });
+
+  it('keeps the state when Codex hands over its own copy of the chat', () => {
+    const registry = new CodexSessionRegistry();
+    registry.register(SESSION_ID, { cwd: '/projects/demo' });
+    registry.noteDorkosTools(SESSION_ID, false);
+    registry.adoptNative(hydratedSession({ id: SESSION_ID }));
+    expect(registry.get(SESSION_ID)?.dorkosTools).toBe('lost');
+  });
+
+  it('ignores a chat it does not track', () => {
+    const registry = new CodexSessionRegistry();
+    registry.noteDorkosTools(OTHER_SESSION_ID, false);
+    expect(registry.has(OTHER_SESSION_ID)).toBe(false);
+  });
+});

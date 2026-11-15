@@ -45,6 +45,12 @@ const CENTRAL_READERS = ['packages/skills/src/scanner.ts', 'packages/harness/src
 const NOT_READING_INSTALLS: Record<string, string> = {
   'apps/server/src/services/runtimes/shared/policy/protected-path-check.ts':
     'protection walk: skipping a sibling would leave it unprotected, and a name could hide a file from it',
+  // The OpenCode project-plugin guard (DOR-4394, Security's ruling on #3764):
+  // it refuses a turn when a project ships plugin code, so it must see every
+  // file OpenCode would import. A sibling-named file is still a file OpenCode
+  // imports, and skipping it would let a name hide a plugin from the guard.
+  'apps/server/src/services/runtimes/opencode/messaging/project-plugin-guard.ts':
+    'security guard; must see every file OpenCode would import, so it never skips a name',
   // One file, one reader: `dataEntriesAgentsNeverWrite` lists the TOP of the
   // data folder (never an install or skills root) to name a write-deny rule per
   // entry, and names `agents` only to leave agent homes out (DOR-3039, M1).

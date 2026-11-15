@@ -7,6 +7,7 @@ import { createLocalBrowserProfileStore } from '../../services/session/local-bro
 import { liveOutsideTurnCheck } from '../../services/session/local-browser/outside-turn.js';
 import { agentWindowLabel } from '../../services/session/local-browser/agent-window/index.js';
 import { handBackWake } from '../../services/session/local-browser/hand-back-wake/index.js';
+import { chatTitleOf } from '../../services/session/chat-messages/chat-message-wiring.js';
 import { eventFanOut } from '../../services/core/event-fan-out.js';
 import { notify } from '../../services/notifications/notification-service.js';
 import { localBrowserChangedAnnouncer } from '../../services/core/streams/live-change-broadcasts.js';
@@ -23,8 +24,12 @@ import {
   createRepoConfigActivityWriter,
   setRepoConfigActivity,
 } from '../../services/runtimes/claude-code/repo-settings/repo-config-activity.js';
+import {
+  createProjectConfigActivityWriter,
+  setProjectConfigActivity,
+} from '../../services/runtimes/codex/app-server/project-config-activity.js';
 import { AgentMcpOAuthService } from '../../services/mesh/agent-mcp-oauth-service.js';
-import { localDialHost } from '../../lib/local-dial-host.js';
+import { localDialHost } from '@dorkos/shared/local-dial-host';
 import { env } from '../../env.js';
 import { logger } from '../../lib/logger.js';
 import { resumeAfterMcpSignin } from '../../services/mesh/mcp-signin-resume.js';
@@ -65,7 +70,10 @@ import type { WireTeamRoomAndRelayAdaptersResult } from './team-room-relay-adapt
 import type { StartSearchRelayAndMeshResult } from './search-relay-mesh.js';
 import type { ServerRefs } from '../server-refs.js';
 import { GlobalMcpStore } from '../../services/mesh/global-mcp/global-mcp-store.js';
+import { sayReservedNameServers } from '../../services/mesh/global-mcp/global-mcp-reserved-name-notice.js';
+import { GlobalMcpToolLedger } from '../../services/mesh/global-mcp/global-mcp-tools.js';
 import { setGlobalMcpServerLookup } from '../../services/runtimes/claude-code/tool-gate/global-server-always-allow.js';
+import { setManagedServerNames } from '../../services/runtimes/claude-code/tool-gate/managed-server-deny.js';
 import { credentialStore } from '../../services/core/credential-provider.js';
 
 /** What {@link wireMcpTasksAndSkills} reads from the startup steps before it. */
@@ -128,9 +136,19 @@ export async function wireMcpTasksAndSkills(refs: ServerRefs, built: WireMcpTask
       error: err instanceof Error ? err.message : String(err),
     });
   });
+  // A server saved before its name was reserved no longer reaches agents
+  // (DOR-3600): say so once in the Inbox, so the person can rename it (DOR-4262).
+  sayReservedNameServers(globalMcpServers.list(), (server) => {
+    void notify('mcp-server.reserved_name', { server });
+  });
   // An "Always allow" on one of their tools stays with the agent that was
   // asked, never every agent (Security's T9).
   setGlobalMcpServerLookup((name) => globalMcpServers.has(name));
+  // A running Claude Code chat refuses a server the agent no longer gets at its
+  // next call, read fresh each time (DOR-3872).
+  setManagedServerNames((agentDir) =>
+    Object.keys(refs.agentMcpServerService?.injectableServersForCwd(agentDir) ?? {})
+  );
   // A plugin reload that threw a conversation's prompt cache away leaves a line
   // in the feed — with what it cost and whether it waited first. Free reloads
   // stay silent (spec `plugin-reload-cache-cost`). Outside the mesh block below
@@ -140,6 +158,8 @@ export async function wireMcpTasksAndSkills(refs: ServerRefs, built: WireMcpTask
   }
   // Repo hooks, local settings or MCP servers a launch paused, by name (DOR-3298).
   setRepoConfigActivity(createRepoConfigActivityWriter(activityService));
+  // A folder's own Codex settings that loaded at Full, by name (DOR-4408).
+  setProjectConfigActivity(createProjectConfigActivityWriter(activityService));
   // Managed per-agent MCP servers (spec `mcp-server-management`). Constructed
   // once meshCore exists — the service resolves an agent id to its workspace
   // path through the mesh registry (the single instance, shared, ADR-0043) and
@@ -418,7 +438,8 @@ export async function wireMcpTasksAndSkills(refs: ServerRefs, built: WireMcpTask
       agentIdAtPath: (agentPath) => refs.meshCore?.getByPath(agentPath)?.id,
       realFolder,
     }),
-    (id) => localBrowserProfiles.get(id) !== undefined
+    (id) => localBrowserProfiles.get(id) !== undefined,
+    chatTitleOf
   );
   localBrowserService.windowNames.use(async (sessionId) => {
     const agentPath = await runtimeRegistry.getSessionAgentPath(sessionId);
@@ -456,6 +477,7 @@ export async function wireMcpTasksAndSkills(refs: ServerRefs, built: WireMcpTask
       },
     },
     mcpServers: globalMcpServers,
+    mcpServerTools: new GlobalMcpToolLedger(dorkHome),
     connectorEventIngress: connectorSignedIngress,
     mcp: mcpServerFactory,
     docChannel: { ...docChannelHttp, metrics: docChannelMetrics, workReview: docWorkReview },

@@ -15,10 +15,7 @@ const UNNAMED_AGENT: AuditReader = { kind: 'agent', accountId: 'unidentified' };
 /** Guard that returns an error response when BindingStore is not available. */
 function requireBindingStore(deps: McpToolDeps) {
   if (!deps.bindingStore) {
-    return jsonContent(
-      { error: 'Relay bindings are not enabled', code: 'BINDINGS_DISABLED' },
-      true
-    );
+    return jsonContent({ error: 'Chat connections are off', code: 'BINDINGS_DISABLED' }, true);
   }
   return null;
 }

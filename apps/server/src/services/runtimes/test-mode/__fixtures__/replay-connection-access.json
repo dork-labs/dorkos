@@ -1,0 +1,60 @@
+{
+  "version": 1,
+  "title": "Sample connection access",
+  "turns": [
+    {
+      "events": [
+        {
+          "type": "tool_call_start",
+          "data": {
+            "toolCallId": "sample-exclusion",
+            "toolName": "narrow_agent_access",
+            "status": "running"
+          }
+        },
+        {
+          "type": "tool_result",
+          "data": {
+            "toolCallId": "sample-exclusion",
+            "toolName": "narrow_agent_access",
+            "status": "complete",
+            "result": "Harbor Files is hidden from Pixel. Undo is available in Activity."
+          }
+        },
+        {
+          "type": "text_delta",
+          "data": {
+            "text": "Pixel can no longer use Harbor Files. The change can be undone in Activity."
+          }
+        }
+      ]
+    },
+    {
+      "events": [
+        {
+          "type": "tool_call_start",
+          "data": {
+            "toolCallId": "sample-undo",
+            "toolName": "undo_access_change",
+            "status": "running"
+          }
+        },
+        {
+          "type": "tool_result",
+          "data": {
+            "toolCallId": "sample-undo",
+            "toolName": "undo_access_change",
+            "status": "complete",
+            "result": "Pixel can use Harbor Files again."
+          }
+        },
+        {
+          "type": "text_delta",
+          "data": {
+            "text": "Pixel can use Harbor Files again."
+          }
+        }
+      ]
+    }
+  ]
+}

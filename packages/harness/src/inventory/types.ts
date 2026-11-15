@@ -95,6 +95,12 @@ export interface SkillInventoryEntry extends InventoryEntryBase {
    * (`vendor-facts/skill-rules.ts`).
    */
   frontmatterName?: string;
+  /**
+   * The same `name`, exactly as the YAML parsed it: untrimmed, and present even
+   * when blank. OpenCode compares this form (DOR-4392); absent when the file
+   * declares no string `name`, which OpenCode does not load at all.
+   */
+  exactFrontmatterName?: string;
 }
 
 /** One authored slash command under `.claude/commands`. */

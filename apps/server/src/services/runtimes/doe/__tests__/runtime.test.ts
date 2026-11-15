@@ -269,3 +269,29 @@ it('reports a looser active permission mode as applying on the next turn', async
   }
   expect(outcome).toEqual({ updated: true, permissionModePendingUntilNextTurn: true });
 });
+
+it('DOR-4380: the builder receives the server chat id instead of ambient or prompt text', async () => {
+  const { assembleDoeHost } = await import('../tools.js');
+  let environment: Readonly<Record<string, string>> | undefined;
+  const runtime = makeRuntime({
+    assembleHost: async (options) => {
+      if (options.builderExecutionPolicy?.kind === 'unrestricted')
+        environment = options.builderExecutionPolicy.environment;
+      return assembleDoeHost(options);
+    },
+  });
+  vi.stubEnv('DORKOS_SESSION_ID', 'ambient-chat');
+  try {
+    runtime.ensureSession('doe-chat', { cwd: projectDir, permissionMode: 'bypassPermissions' });
+    const events = await collect(
+      runtime.sendMessage('doe-chat', 'DORKOS_SESSION_ID=prompt-chat', {
+        cwd: projectDir,
+        permissionMode: 'bypassPermissions',
+      })
+    );
+    expect(events.some((event) => event.type === 'error')).toBe(false);
+    expect(environment?.DORKOS_SESSION_ID).toBe('doe-chat');
+  } finally {
+    vi.unstubAllEnvs();
+  }
+});

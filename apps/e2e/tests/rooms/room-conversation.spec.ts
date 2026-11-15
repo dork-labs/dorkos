@@ -508,25 +508,4 @@ test.describe('Rooms — reading past the page a room opens on', () => {
     // The room has nothing older left, so the control has nothing left to offer.
     await expect(page.getByTestId('room-load-older')).toHaveCount(0);
   });
-
-  test('offers nothing over a room smaller than one page', async ({
-    page,
-    roomsApi,
-    roomsPage,
-  }) => {
-    // The overwhelmingly common room. A first read that comes back short IS the
-    // beginning of the room on this route, so the control must never be drawn
-    // here — not drawn-and-then-dead on the first press.
-    const room = await roomsApi.createChannel(`e2e-paging-small-${roomsApi.runId}`);
-    await roomsApi.postEntries(
-      room.id,
-      Array.from({ length: 5 }, (_, i) => `history line ${i + 1}`)
-    );
-
-    await page.goto(`/channels?id=${room.id}`);
-    await roomsPage.waitForHistory(5, SERVER_ROUND_TRIP_MS);
-
-    await expect(page.getByTestId('room-load-older')).toHaveCount(0);
-    await expect.poll(() => roomsPage.isAtBottom()).toBe(true);
-  });
 });

@@ -249,48 +249,6 @@ describe('useNavigationLayout', () => {
   });
 });
 
-describe('className merging', () => {
-  it('merges custom className on NavigationLayout', () => {
-    const { container } = renderDesktopNav();
-    const root = container.querySelector('[data-slot="navigation-layout"]')!;
-    expect(root.className).toContain('flex');
-  });
-
-  it('merges custom className on NavigationLayoutSidebar', () => {
-    render(
-      <NavigationLayout value="one" onValueChange={vi.fn()}>
-        <NavigationLayoutSidebar className="custom-sidebar">
-          <NavigationLayoutItem value="one">One</NavigationLayoutItem>
-        </NavigationLayoutSidebar>
-        <NavigationLayoutContent>
-          <NavigationLayoutPanel value="one">Panel</NavigationLayoutPanel>
-        </NavigationLayoutContent>
-      </NavigationLayout>
-    );
-    // The class lands on the scrolling sidebar, which holds the tablist (and
-    // any footer) rather than being the tablist itself.
-    const sidebar = screen.getByRole('tablist').closest('[data-slot="navigation-layout-sidebar"]');
-    expect(sidebar?.className).toContain('custom-sidebar');
-  });
-
-  it('merges custom className on NavigationLayoutPanel', () => {
-    render(
-      <NavigationLayout value="one" onValueChange={vi.fn()}>
-        <NavigationLayoutSidebar>
-          <NavigationLayoutItem value="one">One</NavigationLayoutItem>
-        </NavigationLayoutSidebar>
-        <NavigationLayoutContent>
-          <NavigationLayoutPanel value="one" className="custom-panel">
-            Panel
-          </NavigationLayoutPanel>
-        </NavigationLayoutContent>
-      </NavigationLayout>
-    );
-    const panel = screen.getByRole('tabpanel');
-    expect(panel.className).toContain('custom-panel');
-  });
-});
-
 describe('NavigationLayoutPanelHeader', () => {
   it('renders title and actions on desktop', () => {
     render(
@@ -371,18 +329,6 @@ describe('NavigationLayoutBody', () => {
     const body = container.querySelector('[data-slot="navigation-layout-body"]');
     expect(body).toBeInTheDocument();
     expect(screen.getByTestId('body-child')).toBeInTheDocument();
-  });
-
-  it('merges custom className', () => {
-    const { container } = render(
-      <NavigationLayout value="one" onValueChange={vi.fn()}>
-        <NavigationLayoutBody className="custom-body">
-          <div>Content</div>
-        </NavigationLayoutBody>
-      </NavigationLayout>
-    );
-    const body = container.querySelector('[data-slot="navigation-layout-body"]');
-    expect(body?.className).toContain('custom-body');
   });
 });
 

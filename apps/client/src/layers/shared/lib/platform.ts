@@ -19,8 +19,8 @@ export function localDeviceNoun(): string {
  * exposed by the preload script's contextBridge). Drives styling that only
  * makes sense against macOS's frameless window — the drag region and the
  * traffic-light inset — see the `desktop-darwin` custom variant in
- * `index.css`. Chrome that applies to every desktop platform, like the
- * selection-default (DOR-562), instead uses the platform-neutral `desktop`
+ * `index.css`. Chrome that applies to every desktop platform, like keeping
+ * chrome unselectable (DOR-562, DOR-2871), instead uses the platform-neutral `desktop`
  * class/variant, which is stamped alongside this one on every OS running the
  * shell.
  */

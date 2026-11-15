@@ -721,7 +721,7 @@ jobs:
           elif git rev-parse --verify --quiet 'HEAD^2' >/dev/null &&
             base=$(git rev-parse --verify --quiet 'HEAD^1') &&
             changed=$(git -c core.quotePath=false diff --no-renames --name-only "$base" HEAD); then
-            if printf '%s\n' "$changed" | grep -qE '^(apps/server|packages/shared)/|^(turbo\.json|package\.json|pnpm-lock\.yaml|pnpm-workspace\.yaml)$'; then
+            if grep <<<"$changed" -qE '^(apps/server|packages/shared)/|^(turbo\.json|package\.json|pnpm-lock\.yaml|pnpm-workspace\.yaml)$'; then
               echo "this change touches apps/server, packages/shared or a file turbo treats as global: six shards"
             else
               matrix='[1, 2]'
@@ -736,7 +736,7 @@ jobs:
             if [ "${SCOPE:-}" != 'selected' ]; then
               matrix=$six
               echo "the test plan runs every suite: six shards"
-            elif printf ' %s ' "${DIRS:-}" | grep -qE ' (apps/server|packages/shared) '; then
+            elif grep <<<" ${DIRS:-} " -qE ' (apps/server|packages/shared) '; then
               matrix=$six
               echo "the test plan reaches apps/server or packages/shared: six shards"
             fi

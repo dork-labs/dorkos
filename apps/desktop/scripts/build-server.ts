@@ -1,4 +1,4 @@
-import { buildGuardChild, checkChildBundle } from './build-guard-child';
+import { buildGuardChild, buildTerminalCommand, checkChildBundle } from './build-guard-child';
 import { execFileSync } from 'child_process';
 import {
   build,
@@ -1010,6 +1010,7 @@ async function buildServer() {
   await checkChildBundle(OUT, childOutfile, childResult.warnings, assertNoUnexpectedWarnings);
 
   await buildGuardChild(ROOT, OUT, dorkosSourcePlugin(), assertNoUnexpectedWarnings);
+  await buildTerminalCommand(ROOT, OUT, dorkosSourcePlugin(), assertNoUnexpectedWarnings, version);
 
   // Copy Drizzle migration files alongside the bundled server — see the
   // dist/server/ layout note above.

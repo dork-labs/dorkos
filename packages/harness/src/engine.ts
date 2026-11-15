@@ -24,7 +24,11 @@ import {
   readRunningExtensionSkillsSync,
 } from './sources/running-extension-skills.js';
 import type { DevLinkRecord } from '@dorkos/shared/marketplace-schemas';
-import { inventorySourceTree } from './inventory/index.js';
+import {
+  inventorySourceTree,
+  readUserSkillNames,
+  type UserSkillFolders,
+} from './inventory/index.js';
 import { detectHarnessFootprints } from './scaffold/manifest.js';
 
 /**
@@ -187,6 +191,11 @@ export function scanClaudeOnlySkills(
  * home (an agent workspace) still reads the ledger, so it does not sweep links
  * the server projected.
  *
+ * `opts.userSkills` are the person's user-level skill folders a by-name
+ * harness reads in every project (`~/.agents/skills` and the rest), resolved by
+ * the server because this engine resolves no home. Only their names are read:
+ * a package skill named like one is not projected (DOR-4392).
+ *
  * @param repoRoot - absolute path to the repository root.
  * @param opts - optional resolved dork home, enabling global-scope projection,
  *   an optional per-package gate on hook contribution, the harness DorkOS's own
@@ -202,6 +211,7 @@ export function project(
     sharedWithTools?: boolean;
     devLinks?: readonly DevLinkRecord[];
     extensionSkillsHome?: string;
+    userSkills?: UserSkillFolders;
   }
 ): ProjectionPlan {
   const installed = scanInstalledSources({
@@ -236,5 +246,8 @@ export function project(
     ...(opts?.allowPluginHooks ? { allowPluginHooks: opts.allowPluginHooks } : {}),
     ...(opts?.dorkosHarness ? { dorkosHarness: opts.dorkosHarness } : {}),
     ...(opts?.sharedWithTools === true ? { sharedWithTools: true } : {}),
+    ...(opts?.userSkills
+      ? { userSkills: readUserSkillNames(opts.userSkills.dirs, opts.userSkills.dorkHome) }
+      : {}),
   });
 }

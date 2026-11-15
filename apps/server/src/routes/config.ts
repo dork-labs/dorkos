@@ -10,7 +10,8 @@ import {
 } from '../services/core/auth/sessions/wifi-raise-guard.js';
 import { tunnelManager } from '../services/core/tunnel-manager.js';
 import { resolveTunnelSettings } from '../services/core/config/tunnel-settings.js';
-import { getLocalCockpitPort } from '../lib/trusted-origins.js';
+import { remoteAccessOn } from '../middleware/remote-access-switch.js';
+import { getLocalCockpitPort, getOwnServingOrigins } from '../lib/trusted-origins.js';
 import { resolveClaudeCliPath } from '../services/runtimes/claude-code/sdk/sdk-utils.js';
 import { describeClaudeCodeAccounts } from '../services/runtimes/claude-code/claude-config-dir.js';
 import { creditsCanBeHad } from '../services/core/cloud/credits-availability.js';
@@ -23,6 +24,8 @@ import { describeExecutionDefaults } from '../services/session/resolution/resolv
 // cannot reach the registry itself — the registry imports IT — so the caller
 // hands over the capability map instead of the module reaching for it.
 import { runtimeRegistry } from '../services/core/runtime-registry.js';
+import { localDialHost } from '@dorkos/shared/local-dial-host';
+import { effectiveTier1Telemetry } from '@dorkos/shared/telemetry-consent';
 import { env } from '../env.js';
 import { DEFAULT_CWD } from '../lib/resolve-root.js';
 import {
@@ -167,6 +170,9 @@ router.get('/', async (c) => {
     // browser-notification code reads three of them on the same render.
     notifications: configManager.get('notifications') ?? NOTIFICATION_PREFS_DEFAULTS,
     port: env.DORKOS_PORT,
+    // The canvas browser reads these so a page that names this server by its
+    // tunnel, Wi-Fi or hub address is framed as this server, never as a stranger.
+    ownOrigins: getOwnServingOrigins(),
     uptime: process.uptime(),
     // The resolved default working directory (lib/resolve-root.js) — the same
     // value `GET /api/directory/default` reports, and for the same reason: a
@@ -220,6 +226,9 @@ router.get('/', async (c) => {
       // the same pair `tasks` and `relay` report below, for the same reason.
       enabledInConfig: storedTunnel?.enabled ?? false,
     },
+    // The Remote Access switch (DOR-3650). Read per request by the chain, so
+    // what the setting says is what is in force.
+    remoteAccess: { enabled: remoteAccessOn() },
     // `enabled` is what is RUNNING; `enabledInConfig` is what the setting says.
     // They are two different facts because `index.ts` reads these flags once, at
     // boot, so a setting changed while the server is up does not move `enabled`
@@ -321,22 +330,28 @@ router.get('/', async (c) => {
         // The token value itself deliberately does NOT ride this GET: it is
         // revealed only via POST /api/config/mcp/reveal-token so it never lands
         // in GET caches or logs and never leaks through a generic config dump.
-        endpoint: `http://localhost:${env.DORKOS_PORT}/mcp`,
+        // The host the server bound, so a client that copies it lands on a
+        // listener (DOR-4294).
+        endpoint: `http://${localDialHost(env.DORKOS_HOST)}:${env.DORKOS_PORT}/mcp`,
         rateLimit: mcpConfig?.rateLimit ?? { enabled: true, maxPerWindow: 60, windowSecs: 60 },
       };
     })(),
     // Fallback mirrors the schema defaults: every channel off until a person
     // says otherwise (ADR 260727-181825). Absence is never read as consent.
-    telemetry: configManager.get('telemetry') ?? {
-      userHasDecided: false,
-      install: false,
-      heartbeat: false,
-      errorReporting: false,
-      lastPromptedVersion: null,
-      usage: false,
-      linkAnalyticsToAccount: false,
-      aiMetadata: false,
-    },
+    // An unanswered file's stored "on" flags read as off here too, so Privacy
+    // never shows a switch on for a channel that sends nothing (DOR-4400).
+    telemetry: effectiveTier1Telemetry(
+      configManager.get('telemetry') ?? {
+        userHasDecided: false,
+        install: false,
+        heartbeat: false,
+        errorReporting: false,
+        lastPromptedVersion: null,
+        usage: false,
+        linkAnalyticsToAccount: false,
+        aiMetadata: false,
+      }
+    ),
     // The owner's email rides with the flag so Settings › Login & security can
     // tell "sign in as the owner" from "create one" before the switch flips.
     // Turning login on for an install that already has an owner used to open

@@ -3,6 +3,7 @@ import type { IncomingHttpHeaders } from 'node:http';
 import type { MiddlewareHandler } from 'hono';
 import { env } from '../env.js';
 import { configManager } from '../services/core/config-manager.js';
+import { currentServerRole } from '../lib/server-role.js';
 import { gateAccessFor } from '../services/core/auth/gate-policy.js';
 import { ingressOf, type RequestIngress } from '../services/core/remote/ingress-mark.js';
 import { verifyRequestAuth } from '../services/core/auth/index.js';
@@ -142,11 +143,13 @@ export async function decideMcpAuth(
   // `seedLegacyMcpApiKey` stores that exact value AS a Better Auth key, so
   // there it is a real per-user credential acceptor 2 must still resolve.
   //
-  // On the Wi-Fi route only a bearer key counts (DOR-2969): a Wi-Fi sign-in's
-  // cookie never stands for an agent tool here, whatever bearer rides with it.
+  // From any other device only a bearer key counts: the Wi-Fi (DOR-2969), the
+  // own tunnel, managed access and a forwarding proxy (DOR-3650). A sign-in's
+  // cookie never stands for an agent tool there, whatever bearer rides with it;
+  // only a person at this computer's cookie does.
   const identity = await verifyRequestAuth(request, {
     ...(bearerIsLocalToken ? { bearerIsNotAnApiKey: true } : {}),
-    ...(requestSessionRoute(request) === 'wifi' ? { ignoreSessionCookie: true } : {}),
+    ...(requestSessionRoute(request) !== 'local' ? { ignoreSessionCookie: true } : {}),
   });
   // Recorded, not just accepted. A capability that acts on somebody's own
   // data has to know WHICH person is asking, and this is the only place on
@@ -187,6 +190,8 @@ export type McpAuthEnv = RequestBodyEnv & {
     mcpLocalToken?: boolean;
   };
 };
+/** A query parameter that looks like a credential: refused on /mcp and /a2a (DOR-3650). */
+const KEY_IN_QUERY = /key|token|secret|auth|password|bearer/i;
 
 /**
  * The credential check as Hono middleware, for `/mcp` and the A2A gateway. It
@@ -198,6 +203,12 @@ export type McpAuthEnv = RequestBodyEnv & {
  */
 export function honoMcpAuth(surface: McpAuthSurface): MiddlewareHandler<McpAuthEnv> {
   return async (c, next) => {
+    // A key goes in a header, never the address (Security on DOR-3650): an
+    // address lands in tunnel and proxy logs. A call carrying one is refused
+    // before any key is looked at.
+    if (Object.keys(c.req.queries()).some((name) => KEY_IN_QUERY.test(name))) {
+      return c.json(unauthorizedBody(surface, false), 401);
+    }
     const decision = await decideMcpAuth(surface, {
       method: c.req.method,
       headers: c.env.incoming.headers,
@@ -289,13 +300,37 @@ function buildUnauthorizedMessage(surface: McpAuthSurface, localTokenWorks: bool
       '"Authorization: Bearer <token>".'
     );
   }
+  // At this computer with no password asked, an MCP_API_KEY override replaces
+  // the local token, so it is the key to send. Nowhere else: the session gate
+  // answers every other caller first and takes only a personal key.
+  if (localTokenWorks && env.MCP_API_KEY?.trim()) return MCP_SERVER_KEY_REFUSAL_MESSAGE;
   // A caller asked for a key (another device, or this computer when it asks
-  // for a password), or an MCP_API_KEY override is the bearer: point at the
-  // credential that applies here rather than a local-token file that does not.
-  return (
-    'Unauthorized. Provide a valid credential as "Authorization: Bearer <token>". ' +
-    'Use your personal API key from Settings → Advanced → Tools → Connect other apps to DorkOS.'
-  );
+  // for a password): point at the personal key rather than a token file.
+  return mcpKeyRefusalMessage();
+}
+
+/** What a caller is told where this server's `MCP_API_KEY` is the credential. Names no page. */
+const MCP_SERVER_KEY_REFUSAL_MESSAGE =
+  'Unauthorized. Send this server\'s API key as "Authorization: Bearer <key>".';
+
+/**
+ * What a caller asked for a personal key is told: how to send one and where to
+ * make it. Keys live in Settings → Login & security → API keys, which exists
+ * only once login is on (QA S2), so with login off the first step is turning it
+ * on. A hub always asks and has no switch, so it reads as on. No token, no file
+ * path. `/a2a` says it in its JSON-RPC refusal, and `/mcp`'s flat remote
+ * refusal carries the same words (DOR-4264). Read per request, like the gate.
+ *
+ * @returns The refusal message for this install's login state now.
+ */
+export function mcpKeyRefusalMessage(): string {
+  const loginOn = configManager.get('auth')?.enabled === true || currentServerRole() === 'hub';
+  return loginOn
+    ? 'Unauthorized. Send a personal API key as "Authorization: Bearer <key>". ' +
+        'Create one in DorkOS: Settings → Login & security → API keys.'
+    : 'Unauthorized. Other devices need a personal API key. ' +
+        'In DorkOS, open Settings → Login & security, turn on "Ask for a password on this computer too", ' +
+        'then create a key under API keys. Send it as "Authorization: Bearer <key>".';
 }
 
 /**

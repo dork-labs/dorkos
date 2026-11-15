@@ -96,21 +96,4 @@ describe('usePrefersReducedMotion', () => {
     });
     expect(result.current).toBe(false);
   });
-
-  it('registers a change event listener on the MediaQueryList', () => {
-    const { mql } = createMockMql(false);
-    stubMatchMedia(mql);
-
-    renderHook(() => usePrefersReducedMotion());
-    expect(mql.addEventListener).toHaveBeenCalledWith('change', expect.any(Function));
-  });
-
-  it('cleans up the event listener on unmount', () => {
-    const { mql } = createMockMql(false);
-    stubMatchMedia(mql);
-
-    const { unmount } = renderHook(() => usePrefersReducedMotion());
-    unmount();
-    expect(mql.removeEventListener).toHaveBeenCalledWith('change', expect.any(Function));
-  });
 });

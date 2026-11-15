@@ -55,9 +55,15 @@ export function useBrowserHandoff(sessionId?: string | null) {
   return {
     handoff,
     ended,
-    step: handoff ? handoffStep(handoff, state?.signIn, state?.status === 'connected') : null,
+    step: handoff
+      ? handoffStep(
+          handoff,
+          state?.signIn,
+          state?.status === 'connected',
+          state?.mode === 'embedded'
+        )
+      : null,
     canShowWindow: state?.mode === 'new-window' && state.status === 'connected' && !!selectedTabId,
-    movesToOwnWindow: state?.mode === 'embedded',
     sharedProfile: handoff?.profileId === null,
     busy,
     error,

@@ -50,7 +50,7 @@ import {
 import { capabilityApprovalPayload } from '../../services/notifications/emitters/capability-approval.js';
 import { ManagedConnectorExecutionContextStore } from '../../services/connectors/execution/managed-execution-context.js';
 import { legacyDefaultProviderInstanceId } from '../../services/connectors/legacy-connection-migration.js';
-import { localDialHost } from '../../lib/local-dial-host.js';
+import { localDialHost } from '@dorkos/shared/local-dial-host';
 import { ManagedAuthoritySyncService } from '../../services/connectors/resources/managed-authority-sync-service.js';
 import { getCloudLinkManager } from '../../services/core/auth/cloud-link.js';
 import {

@@ -73,11 +73,7 @@ export function CodeMirrorEditor({
       onChange={onChange}
       theme={theme}
       height="100%"
-      // desktop:select-text — read-only mode (`editable={false}`) turns
-      // contenteditable off, so the desktop shell's body-level user-select:none
-      // (every platform, DOR-562) would otherwise make the file's text
-      // unselectable (DOR-253).
-      className="desktop:select-text h-full text-sm"
+      className="h-full text-sm"
       extensions={[EditorView.lineWrapping, ...languageExtension]}
       basicSetup={{ highlightActiveLine: editable, highlightActiveLineGutter: editable }}
     />

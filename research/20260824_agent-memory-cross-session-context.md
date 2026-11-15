@@ -80,7 +80,7 @@ memories** — one runtime transcript each — with zero overlap.
    claude-code adapter **actively suppresses** the SDK preset's auto-memory
    section (`launch-resolver.ts:268-271`, `excludeDynamicSections: true`, per
    ADR-0273 A2). The `memory_recall` event is a UI display passthrough
-   (`specs/memory-recall-indicator/`), nothing more.
+   ([historical spec](https://github.com/dork-labs/dorkos/tree/78baefc5ac7aeac33c67f5e697fbe2f36179a960/specs/memory-recall-indicator)), nothing more.
 6. **What IS shared across an agent's sessions:** its identity files. Every
    turn on every runtime injects `<agent_identity>`, `<agent_persona>`
    (SOUL.md), `<agent_safety_boundaries>` (NOPE.md), `<user_profile>`, `<env>`

@@ -8,6 +8,8 @@
  * @module connector-providers/connector-schemas
  */
 import { z } from 'zod';
+import { isPaidOperation, type AccessLevelCandidate } from './paid-operations.js';
+export { isPaidOperation };
 
 /** Maximum complete operation set supported by the provider discovery safety ceiling. */
 export const CONNECTOR_OPERATION_SELECTION_LIMIT = 100_000;
@@ -786,7 +788,7 @@ export type ConnectorReconciliationCandidate = z.infer<
 
 /**
  * The exact revisions an access level covers in one complete snapshot: every
- * action the app still offers whose class the level includes
+ * non-paid action the app still offers whose class the level includes
  * ({@link levelIncludes}), sorted. The server grants a level with exactly
  * this set, and re-derives it every time the catalog is read again, so a
  * level follows the app and never covers more than its classes.
@@ -795,17 +797,12 @@ export type ConnectorReconciliationCandidate = z.infer<
  * @param level - The access level, or `'none'`.
  */
 export function accessLevelRevisionIds(
-  candidates: ReadonlyArray<
-    Pick<
-      ConnectorReconciliationCandidate,
-      'operationRevisionId' | 'capabilityClassification' | 'supported'
-    >
-  >,
+  candidates: ReadonlyArray<AccessLevelCandidate>,
   level: 'none' | ConnectorAccessLevel
 ): string[] {
   return candidates
     .filter(
-      (candidate) => candidate.supported && levelIncludes(candidate.capabilityClassification, level)
+      (c) => c.supported && !isPaidOperation(c) && levelIncludes(c.capabilityClassification, level)
     )
     .map((candidate) => candidate.operationRevisionId)
     .sort();

@@ -31,6 +31,7 @@ vi.mock('../../auth/index.js', async (importOriginal) => ({
 
 import { createConfigPatchHandler } from '../operator-tool-handlers.js';
 import { CLOUD_SETTINGS_OWNER_ONLY_MESSAGE } from '../config-write.js';
+import { PERSON_TURNS_ON_ONLY_CODE } from '../operator-only-tightening.js';
 import type { AgentIdentity } from '../../agent-identity/agent-identity-service.js';
 
 const AGENT: AgentIdentity = {
@@ -92,5 +93,51 @@ describe('a person-approved change to the DorkOS account settings', () => {
     const result = await approvedBy()(CLOUD_PATCH);
     expect(result.isError).toBeUndefined();
     expect(written).toHaveLength(1);
+  });
+});
+
+/**
+ * The tool never turns Remote Access on, not even with a person's yes on a
+ * card, and may always turn it off (Security, DOR-3650). Pinned at the tool, so
+ * taking the rule out of the handler turns this red even while the rule's own
+ * module still holds it.
+ */
+const REMOTE_ON = { patch: { remoteAccess: { enabled: true } } };
+const REMOTE_OFF = { patch: { remoteAccess: { enabled: false } } };
+
+describe('config_patch and Remote Access', () => {
+  beforeEach(() => {
+    written.length = 0;
+  });
+
+  it('never turns it on, even with a person yes on a card', async () => {
+    const result = await approvedBy()(REMOTE_ON);
+    expect(result.isError).toBe(true);
+    expect(JSON.parse(result.content[0]!.text)).toMatchObject({
+      code: PERSON_TURNS_ON_ONLY_CODE,
+      paths: ['remoteAccess.enabled'],
+    });
+    expect(written).toEqual([]);
+  });
+
+  it('never turns it on without a card either', async () => {
+    const result = await createConfigPatchHandler(AGENT)(REMOTE_ON);
+    expect(result.isError).toBe(true);
+    expect(written).toEqual([]);
+  });
+
+  it('turns it off on a person yes', async () => {
+    const result = await approvedBy()(REMOTE_OFF);
+    expect(result.isError).toBeUndefined();
+    expect(written).toEqual([REMOTE_OFF.patch]);
+  });
+
+  it('turns it off on its own at Full, where only turning a setting down runs unasked', async () => {
+    const result = await createConfigPatchHandler(AGENT, {
+      via: 'permission',
+      source: 'floor',
+    })(REMOTE_OFF);
+    expect(result.isError).toBeUndefined();
+    expect(written).toEqual([REMOTE_OFF.patch]);
   });
 });

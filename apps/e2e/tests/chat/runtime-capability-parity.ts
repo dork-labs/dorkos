@@ -66,7 +66,7 @@
  * The same constraint `session-read-state.ts` states at length: the mock server
  * is global mutable state, `POST /api/test/reset` wipes it for everyone, and
  * Playwright schedules separate spec FILES onto concurrent workers. New
- * mock-server suites belong in `chat-mock.spec.ts` or in a module it registers.
+ * mock-server suites belong in a `chat-mock*.spec.ts` file or a module one registers.
  * The `.ts` extension is load-bearing for the second reason that file gives too:
  * every `*.spec.ts` under `tests/chat/` runs on the COCKPIT leg against a real,
  * billable runtime.
@@ -98,7 +98,7 @@ const TEST_MODE_DEFAULT_LABEL = 'Always allow';
 const CLAUDE_ONLY_LABELS = [/^Plan$/, /^Accept edits$/, /^Bypass permissions$/];
 
 /**
- * Register the runtime-descriptor parity tests into `chat-mock.spec.ts`.
+ * Register the runtime-descriptor parity tests into `chat-mock-turns.spec.ts`.
  *
  * @param deps.agentDir - The seeded agent's directory, read fresh per test
  *   because the file's `beforeEach` re-seeds it.

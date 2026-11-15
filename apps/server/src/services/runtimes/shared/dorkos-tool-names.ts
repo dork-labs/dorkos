@@ -2,7 +2,9 @@
  * How the DorkOS MCP server and its tools are NAMED, on every runtime that
  * reaches them.
  *
- * A leaf module with no imports, and deliberately so. These names are needed by
+ * A leaf module that imports only the shared package, and deliberately so. The
+ * server's name itself lives in `@dorkos/shared/global-mcp-schemas`, beside the
+ * reserved list the app's Name field reads too. These names are needed by
  * three places that must not depend on each other: the claude-code in-session
  * server that registers under the name, the codex/opencode injection that dials
  * it over HTTP, and the shared prompt block that has to spell a tool the way the
@@ -13,16 +15,17 @@
  *
  * @module services/runtimes/shared/dorkos-tool-names
  */
+import { DORKOS_TOOL_SERVER_NAME } from '@dorkos/shared/global-mcp-schemas';
 
 /**
  * The name the DorkOS MCP server is registered under, on every runtime.
  *
  * Load-bearing three times over: it is what `createSdkMcpServer` is given
  * in-session, it is the key the codex/opencode injection writes, and it is the
- * middle of every tool name the model sees. Both injecting runtimes reserve it,
- * so a user's own server cannot occupy it.
+ * middle of every tool name the model sees. It is on the one reserved list
+ * (`RESERVED_MCP_SERVER_NAMES`), so no other server can occupy it (DOR-3600).
  */
-export const DORKOS_MCP_SERVER_NAME = 'dorkos';
+export const DORKOS_MCP_SERVER_NAME = DORKOS_TOOL_SERVER_NAME;
 
 /**
  * What Codex puts in front of a `dorkos` MCP tool name.
@@ -51,6 +54,34 @@ export const OPENCODE_DORKOS_TOOL_PREFIX = `${DORKOS_MCP_SERVER_NAME}_`;
  * The in-session server's `IN_SESSION_TOOL_PREFIX` is this value.
  */
 export const CLAUDE_CODE_DORKOS_TOOL_PREFIX = `mcp__${DORKOS_MCP_SERVER_NAME}__` as const;
+
+/**
+ * Spell any MCP tool the way one runtime's model has to call it.
+ *
+ * A registered name may carry a character a model-facing tool name may not, and
+ * every runtime rewrites it to `_` before the model sees it: the connection
+ * tools register as `connectors.list_granted_connections` and are called
+ * `…connectors_list_granted_connections` everywhere (DOR-4112). Claude Code and
+ * OpenCode keep `-`; Codex's Responses API rewrites that too. No DorkOS server or
+ * tool name carries a `-`, so the difference never shows, but it is kept exact.
+ *
+ * @param runtime - The runtime whose qualifying rule applies.
+ * @param server - The MCP server the tool is registered on.
+ * @param tool - The tool's registered name on that server.
+ */
+export function mcpToolNameFor(
+  runtime: 'claude-code' | 'codex' | 'opencode',
+  server: string,
+  tool: string
+): string {
+  if (runtime === 'opencode') {
+    const clean = (part: string) => part.replace(/[^a-zA-Z0-9_-]/g, '_');
+    return `${clean(server)}_${clean(tool)}`;
+  }
+  const clean = (part: string) =>
+    part.replace(runtime === 'codex' ? /[^a-zA-Z0-9_]/g : /[^a-zA-Z0-9_-]/g, '_');
+  return `mcp__${clean(server)}__${clean(tool)}`;
+}
 
 /**
  * Spell a `dorkos` server tool the way one runtime's model has to call it; a

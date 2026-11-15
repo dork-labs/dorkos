@@ -3482,6 +3482,15 @@
       "Session": {
         "type": "object",
         "properties": {
+          "warnings": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SessionLaunchWarning"
+            }
+          },
+          "dorkosTools": {
+            "$ref": "#/components/schemas/SessionDorkosTools"
+          },
           "id": {
             "type": "string",
             "format": "uuid"
@@ -3612,6 +3621,35 @@
           "updatedAt",
           "permissionMode",
           "runtime"
+        ]
+      },
+      "SessionLaunchWarning": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "enum": [
+              "NO_DORKOS_TOOLS"
+            ]
+          },
+          "message": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "message"
+        ]
+      },
+      "SessionDorkosTools": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "enum": [
+          "lost",
+          "back",
+          null
         ]
       },
       "PermissionModeId": {
@@ -3991,6 +4029,9 @@
               },
               "alwaysAllowScope": {
                 "$ref": "#/components/schemas/AlwaysAllowScope"
+              },
+              "alwaysAllowBreadth": {
+                "$ref": "#/components/schemas/AlwaysAllowBreadth"
               }
             },
             "required": [
@@ -4103,6 +4144,13 @@
           "session",
           "project",
           "user"
+        ]
+      },
+      "AlwaysAllowBreadth": {
+        "type": "string",
+        "enum": [
+          "tool",
+          "server"
         ]
       },
       "QuestionItem": {
@@ -4600,6 +4648,16 @@
               },
               {
                 "description": "Scope an accepted \"Always Allow\" grants — session, project, or the operator's global settings"
+              }
+            ]
+          },
+          "approvalAlwaysAllowBreadth": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AlwaysAllowBreadth"
+              },
+              {
+                "description": "Whether \"Always Allow\" covers this MCP tool or every tool from its server"
               }
             ]
           },
@@ -6205,6 +6263,9 @@
               },
               "alwaysAllowScope": {
                 "$ref": "#/components/schemas/AlwaysAllowScope"
+              },
+              "alwaysAllowBreadth": {
+                "$ref": "#/components/schemas/AlwaysAllowBreadth"
               }
             },
             "required": [
@@ -9765,20 +9826,26 @@
             "type": "string",
             "description": "Server-minted id for this message; the queue is keyed by it"
           },
-          "outcome": {
-            "$ref": "#/components/schemas/MessageDeliveryOutcome"
-          },
           "queuePosition": {
             "type": "integer",
             "exclusiveMinimum": 0,
             "description": "1-based place in the session queue at acceptance; 1 means nothing was ahead of it"
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SessionLaunchWarning"
+            }
+          },
+          "outcome": {
+            "$ref": "#/components/schemas/MessageDeliveryOutcome"
           }
         },
         "required": [
           "sessionId",
           "messageId",
-          "outcome",
-          "queuePosition"
+          "queuePosition",
+          "outcome"
         ]
       },
       "SendMessageRequest": {
@@ -10145,6 +10212,9 @@
           },
           "alwaysAllow": {
             "type": "boolean"
+          },
+          "alwaysAllowBreadth": {
+            "$ref": "#/components/schemas/AlwaysAllowBreadth"
           },
           "reason": {
             "type": "string",
@@ -19405,10 +19475,13 @@
           "connector.destructive_pending",
           "connector.destructive_executed",
           "connector.access_narrowed",
+          "mcp-server.tool_added",
+          "mcp-server.reserved_name",
           "web.new_device",
           "agent.secret_files",
           "account.signin_review",
-          "shell.check_down"
+          "shell.check_down",
+          "report.undelivered"
         ]
       },
       "NotificationTier": {
@@ -20793,6 +20866,12 @@
         "properties": {
           "sessionId": {
             "type": "string"
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SessionLaunchWarning"
+            }
           }
         },
         "required": [
@@ -33839,7 +33918,7 @@
           "Local browser"
         ],
         "summary": "Open the plain sign-in window",
-        "description": "Only the owner on this computer can call this route. Only the owner, in person, can call this route: no agent, API key or approval token. Opens DorkOS’s Chromium on a profile with no debugging channel, so no agent can see or use it. Takes a page the person typed, or a handoff, which opens the agent page’s own origin and is refused if that page has left the site the handoff names. Accepts https, or http on this computer only. Password saving is off in that window.",
+        "description": "Only the owner on this computer can call this route. Only the owner, in person, can call this route: no agent, API key or approval token. Opens installed Chrome, or managed Chromium, without a debugging channel on the chosen profile. An embedded handoff keeps its native view detached; a separate window uses the handoff’s saved page. Otherwise takes a page the person typed. Accepts https, or http on this computer only. Password saving is off in that window.",
         "requestBody": {
           "required": true,
           "content": {
@@ -41277,6 +41356,9 @@
                         },
                         "alwaysAllowScope": {
                           "$ref": "#/components/schemas/AlwaysAllowScope"
+                        },
+                        "alwaysAllowBreadth": {
+                          "$ref": "#/components/schemas/AlwaysAllowBreadth"
                         }
                       },
                       "required": [
@@ -98183,7 +98265,7 @@
           "Mcp"
         ],
         "summary": "Add a managed MCP server to an agent",
-        "description": "Add an MCP server to an agent and enable it. This introduces a command (stdio) or remote endpoint (http/sse) that will run in the agent’s environment, so a person approves it first at a card showing the exact command/args/url. Rejects the reserved name \"dorkos\" and any name the agent already uses. If the added entry comes back with connection.authKind \"oauth2\", the server needs a sign-in: call the MCP sign-in tool for it immediately, in the same turn, rather than asking permission first — the person already approved this endpoint at the card above, and nothing leaves this machine until they open the sign-in link. Its tools are live on the next turn once they finish.",
+        "description": "Add an MCP server to an agent and enable it. This introduces a command (stdio) or remote endpoint (http/sse) that will run in the agent’s environment, so a person approves it first at a card showing the exact command/args/url. Rejects DorkOS’s own names (\"dorkos\", \"dorkos_connections\", in any case) and any name the agent already uses. If the added entry comes back with connection.authKind \"oauth2\", the server needs a sign-in: call the MCP sign-in tool for it immediately, in the same turn, rather than asking permission first — the person already approved this endpoint at the card above, and nothing leaves this machine until they open the sign-in link. Its tools are live on the next turn once they finish.",
         "requestBody": {
           "content": {
             "application/json": {
@@ -98344,7 +98426,7 @@
           "Mcp"
         ],
         "summary": "Import a discovered MCP server into DorkOS management",
-        "description": "Bring a server DorkOS discovered in a project’s .mcp.json under DorkOS management: resolve its transport, then add it as an enabled, editable managed server. It asks a person first only when the agent’s permissions say so: the entry already runs in the agent’s environment from the project’s own .mcp.json. Rejects the reserved name \"dorkos\" and any name already managed; reports a clear error when no such discovered server can be resolved.",
+        "description": "Bring a server DorkOS discovered in a project’s .mcp.json under DorkOS management: resolve its transport, then add it as an enabled, editable managed server. It asks a person first only when the agent’s permissions say so: the entry already runs in the agent’s environment from the project’s own .mcp.json. Rejects DorkOS’s own names (\"dorkos\", \"dorkos_connections\", in any case) and any name already managed; reports a clear error when no such discovered server can be resolved.",
         "requestBody": {
           "content": {
             "application/json": {
@@ -99462,7 +99544,7 @@
           "Agent"
         ],
         "summary": "Pause an agent everywhere",
-        "description": "Stop an agent everywhere at once: its running turns end, its running scheduled runs stop, and nothing starts a new turn for it (messages, schedules, rooms, relay) until someone resumes it. Anyone may pause any agent, including DorkBot; it never waits for approval. Held work is not replayed later. Recorded with who did it and why. Pass the mesh id of the agent and, ideally, a reason.",
+        "description": "Stop an agent everywhere at once: its running turns end, its running scheduled runs stop, and nothing starts a new turn for it (messages, schedules, rooms, relay) until someone resumes it. Messages already waiting in its chats are kept and wait too: pausing does not cancel them. Other held work, such as a skipped scheduled run, is not done later. Anyone may pause any agent, including DorkBot; it never waits for approval. Recorded with who did it and why. Pass the mesh id of the agent and, ideally, a reason.",
         "requestBody": {
           "content": {
             "application/json": {
@@ -99492,7 +99574,7 @@
           "Agent"
         ],
         "summary": "Resume a paused agent",
-        "description": "Lift a pause so the agent can work again. Anyone may resume an agent except the paused agent itself. Work it was held from is not replayed. Recorded with who did it and why.",
+        "description": "Lift a pause so the agent can work again. Anyone may resume an agent except the paused agent itself. Messages other chats left waiting for it then run, once each, at no more than the level they were sent at; a person’s own waiting message runs when they next send. Other held work, such as a skipped scheduled run, is not done later. Recorded with who did it and why.",
         "requestBody": {
           "content": {
             "application/json": {

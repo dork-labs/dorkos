@@ -6,8 +6,10 @@
  * @module services/core/runtime-seam/session-metadata-columns
  */
 import type { SessionSettings } from '@dorkos/shared/types';
-import { sessionMetadata, sql, type SQL } from '@dorkos/db';
+import { inArray, sessionMetadata, sql, type SQL } from '@dorkos/db';
 import { EffortLevelSchema } from '@dorkos/shared/schemas';
+import type { PermissionModeDescriptor } from '@dorkos/shared/agent-runtime';
+import { strictestTrustModeId } from '@dorkos/shared/permission-semantics';
 import { logger } from '../../../lib/logger.js';
 import type { TurnOrigin } from '../../session/origin/turn-origin.js';
 
@@ -152,4 +154,24 @@ export function rowToSettings(row: SettingsRow): SessionSettings {
   }
   if (row.fastMode != null) settings.fastMode = row.fastMode;
   return settings;
+}
+
+/**
+ * The stored `permission_mode` a claim keeps: as it is when the runtime being
+ * bound declares it, else that runtime's strictest trust-axis mode, never left
+ * NULL for the seed, which is the configured stop or the agent's level
+ * (DOR-4411). A row with no mode stays NULL, so the seed still fills it.
+ *
+ * A runtime that declares no modes at all declares this one no more than any
+ * other, so the stored value cannot survive: `sql`null`` rather than an empty
+ * `in ()`, which drizzle refuses to build.
+ *
+ * @param declared - The modes the runtime being bound declares.
+ */
+export function keptPermissionMode(declared: readonly PermissionModeDescriptor[]): SQL {
+  const strictest = strictestTrustModeId({ values: declared });
+  if (declared.length === 0 || strictest === undefined) return sql`null`;
+  const ids = declared.map((descriptor) => descriptor.id);
+  const stored = sessionMetadata.permissionMode;
+  return sql`case when ${inArray(stored, ids)} then ${stored} when ${stored} is not null then ${strictest} end`;
 }

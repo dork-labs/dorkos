@@ -208,7 +208,11 @@ export async function verdictForMergeGroup(api, event, lists) {
   let state = 'success';
   let description = 'Security label covers every queued PR';
   try {
-    await checkMergeGroup(api, event, lists.pattern, lists.botUserId, lists.deepPattern);
+    // security-gate dates labels against required checks. This writer only posts
+    // security-review and intentionally has no checks permission.
+    await checkMergeGroup(api, event, lists.pattern, lists.botUserId, lists.deepPattern, {
+      requiredChecks: false,
+    });
     for (const entry of groupMembers(await api.queue(group.base_ref), group)) {
       const { number, headRefOid } = entry.pullRequest;
       const pr = await api.pr(number);

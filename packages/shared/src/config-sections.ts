@@ -105,6 +105,27 @@ export const NetworkConfigSchema = z
   .default(() => ({ extraCaCertsPath: null }));
 
 /**
+ * The Remote Access switch (DOR-3650): one setting that closes every way in
+ * from another device at once. A whole top-level section on purpose, like
+ * `network`: conf writes a new section into every stored config on its own, so
+ * the field needs no migration. The default is declared twice, here and in the
+ * section literal below, and the two must agree.
+ */
+export const RemoteAccessConfigSchema = z
+  .object({
+    /**
+     * Whether another device may reach DorkOS at all: the own tunnel, managed
+     * remote access, Wi-Fi, a proxy or any other non-loopback route. Off
+     * refuses every such request at the server, on its next request; this
+     * computer is never refused. On by default, so an upgrade changes nothing:
+     * each way in still needs its own setup. Operator-only: only a person may
+     * turn it on, at this computer, though an agent may turn it off.
+     */
+    enabled: z.boolean().default(true),
+  })
+  .default(() => ({ enabled: true }));
+
+/**
  * Where the server listens and what it opens on start (`server`). Every stored
  * config already carries this section, so conf never adds a new member to it on
  * its own: a field added here needs a migration that writes it.

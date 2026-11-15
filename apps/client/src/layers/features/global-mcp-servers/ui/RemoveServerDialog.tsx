@@ -62,7 +62,7 @@ export function RemoveServerDialog({
           <AlertDialogTitle>Remove {server.name}?</AlertDialogTitle>
           <AlertDialogDescription asChild>
             <div className="space-y-2">
-              <p>New chats won’t get its tools. Open ones may keep them until they stop.</p>
+              <p>Changes reach every chat on its next message.</p>
               {secrets === 1 && (
                 <p>Its key is deleted here. If it may have leaked, revoke it at the service.</p>
               )}

@@ -5,6 +5,7 @@ import { isQuitting } from './quit-guard';
 import { frontTabUrl } from './tab-session';
 import { noteDocumentReplaced } from './renderer-health/document-watermark';
 import { setServerRestarting, showServerStopped } from './server-stopped';
+import { serverOrigin } from '../shared/server-address';
 
 /**
  * What the desktop shell does about a server it did not expect to lose: start
@@ -182,7 +183,7 @@ export function pointWindowsAtServer(port: number): void {
     if (app.isPackaged) {
       // Back onto the tab that was in front, not the app's root: the location
       // sync would otherwise rewrite that tab to `/`, and keep it that way.
-      void win.loadURL(frontTabUrl(win, `http://localhost:${port}`));
+      void win.loadURL(frontTabUrl(win, serverOrigin(port)));
     } else {
       win.reload();
     }

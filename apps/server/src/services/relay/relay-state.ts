@@ -8,6 +8,7 @@
  *
  * @module services/relay-state
  */
+import { isReplayIsolated } from '../../lib/replay/isolation.js';
 import { createFeatureFlag } from '../../lib/feature-flag.js';
 
 const relayFlag = createFeatureFlag();
@@ -26,7 +27,7 @@ export const isRelayEnabled = relayFlag.isEnabled;
  * @param setting - The saved `relay.enabled` setting.
  */
 export function relayStartsEnabled(override: boolean | undefined, setting: boolean): boolean {
-  return override ?? setting;
+  return !isReplayIsolated() && (override ?? setting);
 }
 
 /** Record why Relay failed to initialize. */

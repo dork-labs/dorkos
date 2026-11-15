@@ -252,6 +252,11 @@ describe('host and path checks', () => {
     '/.WELL-KNOWN/Agent.json',
     '/.well-known/agent.json/',
     '/.well-known/%61gent.json',
+    // Cloud's edge filter is tested on these too (Nov 11): they normalise to a refused path.
+    '//a2a',
+    '/%61%32%61',
+    '/./a2a',
+    '/.well-known/./agent',
   ])('refuses %s on the managed listener', async (path) => {
     const res = await get(port, path, [hostHeader, proofHeader]);
     expect(res.status).toBe(404);
@@ -269,6 +274,9 @@ describe('host and path checks', () => {
     '/x/./../.well-known/agent-card.json',
     '/x/%252e%252e/a2a',
     '/api/x%5c..%5ca2a',
+    // Cloud's edge spellings with an encoded `/` (Nov 11).
+    '/x/..%2fa2a',
+    '/.%2fa2a',
   ])('rejects %s on the managed listener with 400', async (path) => {
     const res = await get(port, path, [hostHeader, proofHeader]);
     expect(res.status).toBe(400);
@@ -402,5 +410,36 @@ describe('drain and close', () => {
     await ingress.close({ immediate: true });
     port = Number(new URL(await ingress.open()).port);
     expect((await get(port, '/anything', [hostHeader, proofHeader])).status).toBe(503);
+  });
+});
+
+describe('dropConnections (Remote Access off, DOR-3650)', () => {
+  /** Open a raw connection, send one request, and resolve once the first bytes come back. */
+  async function holdOpen(lines: string[], upgrade = false): Promise<net.Socket> {
+    const socket = net.connect(port, '127.0.0.1');
+    await new Promise((resolve) => socket.once('connect', resolve));
+    const connection = upgrade
+      ? 'Connection: Upgrade\r\nUpgrade: websocket'
+      : 'Connection: keep-alive';
+    socket.write([...lines, connection, '', ''].join('\r\n'));
+    if (!upgrade) await new Promise((resolve) => socket.once('data', resolve));
+    return socket;
+  }
+
+  it('cuts an open event stream and a forwarded socket now, and keeps listening', async () => {
+    forwardUpgrade.mockImplementation(() => {}); // the router holds it open
+    const stream = await holdOpen(['GET /stream HTTP/1.1', hostHeader, proofHeader]);
+    const upgraded = await holdOpen(
+      ['GET /api/sessions/x/socket HTTP/1.1', hostHeader, proofHeader],
+      true
+    );
+    await vi.waitFor(() => expect(forwardUpgrade).toHaveBeenCalled());
+    const streamClosed = new Promise((resolve) => stream.once('close', resolve));
+    const socketClosed = new Promise((resolve) => upgraded.once('close', resolve));
+
+    ingress.dropConnections();
+
+    await Promise.all([streamClosed, socketClosed]);
+    expect((await get(port, '/anything', [hostHeader, proofHeader])).status).toBe(200);
   });
 });

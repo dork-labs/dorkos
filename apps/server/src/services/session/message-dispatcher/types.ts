@@ -136,6 +136,9 @@ export interface PendingAgentCompaction {
  *
  * - `started` — a turn began with the message (its `turn_start`).
  * - `settled` — that turn ended, however it ended.
+ * - `held` — instead of settling: a pause stopped that turn before the agent
+ *   read the message, so it is back on the queue, held until the pause lifts
+ *   (DOR-4353). A resume starts it again with a fresh `started`.
  * - `dropped` — the message left the queue without running and never will:
  *   `removed` when a person took it off (Remove, or Stop clearing the queue),
  *   `session_gone` when the orphan sweep deleted its vanished session's queue.
@@ -154,6 +157,7 @@ export type DispatchLifecycleEvent =
       /** The runtime's words when it refused the turn before the agent saw it. */
       reason?: string;
     }
+  | { phase: 'held'; messageId: string; sessionId: string }
   | { phase: 'dropped'; messageId: string; reason: 'removed' | 'session_gone' };
 
 /** Inputs for {@link dispatchMessage}. */
@@ -459,6 +463,13 @@ export interface DispatchPlan {
    * anything a person typed — the right way round, since those words came first.
    */
   transient: boolean;
+  /**
+   * A row a previous process accepted, adopted by this one. Its failed starts
+   * are counted across adoptions, and it is given up after a few: the chat it
+   * waits in may have been deleted while the server was down, and nothing else
+   * would ever stop it retrying (DOR-3287).
+   */
+  recovered?: boolean;
   /** What the caller passes straight through to the turn. */
   turn: Pick<
     DispatchMessageOpts,

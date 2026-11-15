@@ -67,6 +67,24 @@ describe('ConnectorThreadKeyRegistry', () => {
     expect(registry.size).toBe(1);
   });
 
+  it('records that a live key’s thread listed its DorkOS tools, and nothing else (DOR-4384)', () => {
+    const registry = new ConnectorThreadKeyRegistry();
+    const { keyId, key } = registry.mint({ ...SCOPE, loadKind: 'fork' });
+    expect(registry.toolListing(keyId)).toEqual({
+      listed: false,
+      scope: { ...SCOPE, loadKind: 'fork' },
+    });
+    // A turn bearer or a forged key changes nothing.
+    registry.noteToolsListed('turn-secret');
+    registry.noteToolsListed(`${THREAD_KEY_PREFIX}${'x'.repeat(43)}`);
+    expect(registry.toolListing(keyId)?.listed).toBe(false);
+    registry.noteToolsListed(key);
+    expect(registry.toolListing(keyId)?.listed).toBe(true);
+    // A revoked key has no listing at all.
+    registry.revoke(keyId, 'thread_unloaded');
+    expect(registry.toolListing(keyId)).toBeUndefined();
+  });
+
   it('never writes a key value to the log, only its id', () => {
     const debug = vi.spyOn(logger, 'debug');
     try {

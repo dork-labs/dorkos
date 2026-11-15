@@ -26,3 +26,7 @@ Done or superseded, kept because something still cites it: the Feb and March 202
 ## Deleted in the 2026-10 sweep
 
 Restore from git history if needed: the relay conversation-view implementation plan (shipped), the UI audit codification plan (it became the `auditing-ui` skill and `audits/`), and five archived Feb and March 2026 plans nothing cited (homepage design review, homepage rebuild, version-update UX, agent selector redesign, agent visual refactor).
+
+## Deleted in the 2026-11 sweep
+
+The two March 6 chat self-test findings reports had no current consumers or open project references. Recover them from the [archive before removal](https://github.com/dork-labs/dorkos/tree/aa1817fad11eb7f2f1f21d91c22f185e4177a338/plans/archive). Current consumers and their dependencies keep the other reviewed plans in place.

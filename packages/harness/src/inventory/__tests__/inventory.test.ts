@@ -303,6 +303,7 @@ describe('inventorySourceTree', () => {
           isSymlink: false,
           root,
           frontmatterName: 'review-pr',
+          exactFrontmatterName: 'review-pr',
         },
       ]);
       expect(unreadable).toEqual([]);

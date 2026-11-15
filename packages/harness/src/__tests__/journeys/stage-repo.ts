@@ -54,8 +54,14 @@ import { writeFileAt, writeJsonAt } from './stage.js';
  * frontmatter `hooks:` declaration (HK-12).
  */
 export interface SkillDirSpec {
-  /** The skill's directory name, and its frontmatter `name`. */
+  /** The skill's directory name, and its frontmatter `name` unless {@link SkillDirSpec.frontmatterName} says otherwise. */
   name: string;
+  /**
+   * A frontmatter `name` that differs from the directory. For a fixture that
+   * needs two folders answering to one name, or a package skill that must not
+   * share the person's name (DOR-4392: such a package skill is never projected).
+   */
+  frontmatterName?: string;
   /** Declare a `schedule:` block, which is what makes any skill a scheduled task. */
   scheduled?: boolean;
   /** Put a `${CLAUDE_PLUGIN_ROOT}` token in the body, which only resolves in plugin context. */
@@ -253,7 +259,7 @@ const GIT_IDENTITY = [
  * @returns the file's exact bytes.
  */
 export function skillFile(spec: SkillSpec): string {
-  const { name, scheduled, pluginRoot, frontmatterHooks } = normalizeSkill(spec);
+  const { name, scheduled, pluginRoot, frontmatterHooks, frontmatterName } = normalizeSkill(spec);
   const schedule = scheduled ? "schedule:\n  cron: '0 9 * * *'\n" : '';
   const hooks =
     frontmatterHooks === undefined || frontmatterHooks === false
@@ -261,7 +267,7 @@ export function skillFile(spec: SkillSpec): string {
       : 'hooks:\n  PreToolUse:\n    - matcher: Bash\n      hooks:\n        - type: command\n' +
         `          command: ${frontmatterHooks === true ? './scripts/guard.sh' : frontmatterHooks}\n`;
   const body = pluginRoot ? 'Run ${CLAUDE_PLUGIN_ROOT}/bin/run.mjs.\n' : `The ${name} skill.\n`;
-  return `---\nname: ${name}\ndescription: The ${name} skill\n${schedule}${hooks}---\n\n# ${name}\n\n${body}`;
+  return `---\nname: ${frontmatterName ?? name}\ndescription: The ${name} skill\n${schedule}${hooks}---\n\n# ${name}\n\n${body}`;
 }
 
 /** Widen a plain name into the full skill spec. */

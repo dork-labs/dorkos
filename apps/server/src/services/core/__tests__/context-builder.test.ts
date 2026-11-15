@@ -150,6 +150,18 @@ describe('buildSystemPromptAppend', () => {
     expect(result).toContain('</env>');
   });
 
+  it('names no internal subsystem: the agent repeats what it reads (DOR-4114)', async () => {
+    // An agent's session, so `<dorkos_context>` is written too.
+    mockedReadManifest.mockResolvedValue(makeManifest());
+    const result = (await buildSystemPromptAppend(testHome('/test/dir'), '/test/dir')).text;
+    expect(result).toContain('<mesh_tools>');
+    expect(result).toContain('<adapter_tools>');
+    expect(result).not.toMatch(/\b(Relay|Mesh)\b/);
+    expect(result).toContain(
+      "Schedules, chat connections and the agent directory aren't in the catalog: use their tools, whose names end in `tasks_*`, `relay_*`/`binding_*` and `mesh_*`."
+    );
+  });
+
   it('<env> contains all required fields', async () => {
     const result = (await buildSystemPromptAppend(testHome('/test/dir'), '/test/dir')).text;
     expect(result).toContain('Working directory: /test/dir');

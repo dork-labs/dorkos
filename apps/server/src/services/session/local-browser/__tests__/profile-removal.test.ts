@@ -4,6 +4,10 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createTestDb } from '@dorkos/test-utils/db';
+import type { AuditEvent } from '@dorkos/shared/audit-schemas';
+import { AuditLog } from '../../../audit/audit-log.js';
+import { AccountIds } from '../../../audit/account-ids.js';
+import { initAuditTrail, resetAuditTrail } from '../../../audit/audit-trail.js';
 import { BrowserProfileRemoval } from '../profile-removal/index.js';
 import { createLocalBrowserProfileStore } from '../profile-store.js';
 import { prepareProfileFolder } from '../profile-folders.js';
@@ -43,6 +47,7 @@ describe('whole-profile disk removal (DOR-3887)', () => {
     vi.stubEnv('DORKOS_TEST_RUNTIME', 'true');
   });
   afterEach(async () => {
+    resetAuditTrail();
     vi.unstubAllEnvs();
     await rm(home, { recursive: true, force: true });
   });
@@ -104,6 +109,39 @@ describe('whole-profile disk removal (DOR-3887)', () => {
     await expect(readFile(path.join(stray, 'Default/Network/Cookies'))).rejects.toMatchObject({
       code: 'ENOENT',
     });
+  });
+
+  it('removes orphan profile folders whole while preserving the binding key (DOR-4219)', async () => {
+    const profiles = store();
+    const known = profiles.create('Example work');
+    const orphan = '88888888-8888-4888-8888-888888888888';
+    const root = path.join(home, 'browser-profiles');
+    const folders = [
+      await prepareProfileFolder(home, null),
+      await prepareProfileFolder(home, known.id),
+      await prepareProfileFolder(home, orphan),
+    ];
+    for (const folder of folders) await seed(folder);
+    const key = path.join(root, '.binding-key');
+    await writeFile(key, 'made-up-binding-key');
+    const forgotten = vi.fn();
+
+    await new BrowserProfileRemoval({
+      dataDirectory: () => home,
+      busy: () => false,
+      forgotten,
+    }).forgetAll([known.id]);
+
+    for (const folder of folders)
+      await expect(stat(folder)).rejects.toMatchObject({ code: 'ENOENT' });
+    expect(await readFile(key, 'utf8')).toBe('made-up-binding-key');
+    expect(profiles.get(known.id)).toBeDefined();
+    expect(profiles.get(orphan)).toBeUndefined();
+    expect(forgotten).toHaveBeenCalledWith(orphan);
+    // A later open cannot recover cookies or another storage type from the orphan.
+    const reopened = await prepareProfileFolder(home, orphan);
+    for (const file of ['storage-state.json', 'Default/IndexedDB/site/data'])
+      await expect(readFile(path.join(reopened, file))).rejects.toMatchObject({ code: 'ENOENT' });
   });
 
   it('removes a planted link under a profile name and never empties what it points to', async () => {
@@ -344,6 +382,36 @@ describe('whole-profile disk removal (DOR-3887)', () => {
     await expect(signingIn).rejects.toThrow('fixture cancelled');
   });
 
+  // DOR-4180: through the real service, a deleted profile stays deleted.
+  it('refuses a sign-in on a profile it just deleted, and makes no folder', async () => {
+    const service = new LocalBrowserService(home);
+    const profiles = store();
+    service.useProfileAccess(
+      async () => undefined,
+      (candidate) => profiles.get(candidate) !== undefined
+    );
+    const { id } = profiles.create('Example work');
+    await prepareProfileFolder(home, id);
+    await service.profileRemoval.delete(id, profiles);
+    const folder = path.join(home, 'browser-profiles', id);
+    await expect(stat(folder)).rejects.toMatchObject({ code: 'ENOENT' });
+    await expect(
+      service.handover.signIn({ url: 'https://example.test/', profileId: id })
+    ).rejects.toMatchObject({ code: 'profile_not_found' });
+    await expect(stat(folder)).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+
+  it('refuses a named profile’s sign-in before startup wires the profile list', async () => {
+    const service = new LocalBrowserService(home);
+    const id = '00000000-0000-4000-8000-00000000abcd';
+    await expect(
+      service.handover.signIn({ url: 'https://example.test/', profileId: id })
+    ).rejects.toMatchObject({ code: 'profile_not_found' });
+    await expect(stat(path.join(home, 'browser-profiles', id))).rejects.toMatchObject({
+      code: 'ENOENT',
+    });
+  });
+
   it('refuses while the older CLI window holds its source profile, preserving its exported state', async () => {
     if (process.platform === 'win32') return;
     const cli = path.join(home, 'browser');
@@ -498,28 +566,40 @@ describe('whole-profile disk removal (DOR-3887)', () => {
     });
 
     it('writes one audit event per finding with the profile id and no path or contents', async () => {
-      vi.resetModules();
-      const recordAudit = vi.fn();
-      vi.doMock('../../../audit/audit-trail.js', () => ({ recordAudit }));
+      const db = createTestDb();
+      const log = new AuditLog(db);
+      const events: AuditEvent[] = [];
+      log.observe((event) => events.push(event));
+      initAuditTrail({
+        log,
+        accounts: new AccountIds({
+          db,
+          installId: 'profile-removal-test',
+          readOwnerAccount: () => null,
+        }),
+      });
       try {
-        const { BrowserProfileRemoval: Audited } = await import('../profile-removal/index.js');
         const theirs = await mkdtemp(path.join(tmpdir(), 'dorkos-persons-own-'));
         try {
           const id = '77777777-7777-4777-8777-777777777777';
           await mkdir(path.join(home, 'browser-profiles'), { recursive: true });
           await writeFile(path.join(theirs, 'keep.txt'), 'made-up-person-file');
           await symlink(theirs, path.join(home, 'browser-profiles', id));
-          await new Audited({ dataDirectory: () => home, busy: () => false }).forgetAll([]);
-          expect(recordAudit).toHaveBeenCalledTimes(1);
-          expect(recordAudit.mock.calls[0]![0]).toMatchObject({
+          await new BrowserProfileRemoval({
+            dataDirectory: () => home,
+            busy: () => false,
+          }).forgetAll([]);
+          expect(events).toHaveLength(1);
+          expect(log.verify()).toMatchObject({ ok: true, checked: 1 });
+          expect(events[0]!).toMatchObject({
             action: 'local_browser.profiles.planted_link',
             outcome: 'ok',
             target: { type: 'browser-profile', id },
           });
           // The actor is whoever ran Forget: the summary says what Forget found, never
           // that the actor planted the link.
-          expect(recordAudit.mock.calls[0]![0].summary).toMatch(/^Forget found /);
-          const written = JSON.stringify(recordAudit.mock.calls);
+          expect(events[0]!.summary).toMatch(/^Forget found /);
+          const written = JSON.stringify(events);
           expect(written).not.toContain(theirs);
           expect(written).not.toContain(home);
           expect(written).not.toContain('made-up-person-file');
@@ -527,38 +607,47 @@ describe('whole-profile disk removal (DOR-3887)', () => {
           await rm(theirs, { recursive: true, force: true });
         }
       } finally {
-        vi.doUnmock('../../../audit/audit-trail.js');
-        vi.resetModules();
+        resetAuditTrail();
       }
     });
 
     it('records a swapped folder as what Forget found, with no target and no path', async () => {
-      vi.resetModules();
-      const recordAudit = vi.fn();
-      vi.doMock('../../../audit/audit-trail.js', () => ({ recordAudit }));
+      const db = createTestDb();
+      const log = new AuditLog(db);
+      const events: AuditEvent[] = [];
+      log.observe((event) => events.push(event));
+      initAuditTrail({
+        log,
+        accounts: new AccountIds({
+          db,
+          installId: 'profile-removal-test',
+          readOwnerAccount: () => null,
+        }),
+      });
       try {
-        const { BrowserProfileRemoval: Audited } = await import('../profile-removal/index.js');
         const theirs = await mkdtemp(path.join(tmpdir(), 'dorkos-persons-own-'));
         try {
           await symlink(theirs, path.join(home, 'browser-profiles'));
           await expect(
-            new Audited({ dataDirectory: () => home, busy: () => false }).forgetAll([])
+            new BrowserProfileRemoval({ dataDirectory: () => home, busy: () => false }).forgetAll(
+              []
+            )
           ).rejects.toMatchObject({ code: 'profiles_folder_changed' });
-          expect(recordAudit).toHaveBeenCalledTimes(1);
-          const event = recordAudit.mock.calls[0]![0];
+          expect(events).toHaveLength(1);
+          expect(log.verify()).toMatchObject({ ok: true, checked: 1 });
+          const event = events[0]!;
           expect(event).toMatchObject({
             action: 'local_browser.profiles.root_not_directory',
             outcome: 'refused',
             target: null,
           });
           expect(event.summary).toMatch(/^Forget found /);
-          expect(JSON.stringify(recordAudit.mock.calls)).not.toContain(theirs);
+          expect(JSON.stringify(events)).not.toContain(theirs);
         } finally {
           await rm(theirs, { recursive: true, force: true });
         }
       } finally {
-        vi.doUnmock('../../../audit/audit-trail.js');
-        vi.resetModules();
+        resetAuditTrail();
       }
     });
   });

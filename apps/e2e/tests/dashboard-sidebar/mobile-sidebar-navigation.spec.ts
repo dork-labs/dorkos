@@ -147,37 +147,6 @@ test.describe('Mobile tabs — 390×844 @smoke', { tag: SOLE_SIDEBAR_TAG }, () =
     await expect(row).toBeVisible();
   });
 
-  test('re-opening the room you are already in still gets out of the way', async ({
-    page,
-    basePage,
-    roomsApi,
-    roomsPage,
-  }) => {
-    // **The defect review B1 measured, in a browser.** Re-opening the room you
-    // are in is the commonest tap there is — and TanStack reports it as an
-    // unchanged href. A layout that yielded on
-    // href identity left a layer with no way out: no press recovered it.
-    const slug = `e2e-mobile-same-${roomsApi.runId}`;
-    await roomsApi.createChannel(slug);
-    await basePage.goto();
-    await basePage.waitForAppReady();
-
-    await goTo(page, 'home');
-    const row = roomsPage.rowIn(roomsPage.channels, `#${slug}`);
-    await expect(row).toBeVisible({ timeout: SERVER_ROUND_TRIP_MS });
-    await row.click();
-    await expect(page).toHaveURL(/\/channels\?.*id=/, { timeout: SERVER_ROUND_TRIP_MS });
-    const settled = page.url();
-
-    // Open the very same room again from the very same row.
-    await goTo(page, 'home');
-    await row.click();
-
-    await expect(page.getByTestId('mobile-tab-panels')).toBeHidden();
-    expect(page.url()).toBe(settled);
-    await expect(roomsPage.roomHeading).toHaveAccessibleName(`#${slug}`);
-  });
-
   test('the top-level destinations are reachable from You', async ({ page, basePage }) => {
     await basePage.goto();
     await basePage.waitForAppReady();

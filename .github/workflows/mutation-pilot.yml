@@ -1,0 +1,115 @@
+name: Mutation Pilot
+
+# An on-demand mutation test of packages/shared, for Codebase Cleanup's Phase 0
+# (DOR-4186). Stryker changes shared's source on purpose, one small change at a
+# time, and reruns the tests that cover each change. A change no test notices is
+# a "survived" mutant: code the suite does not really check. The results help
+# calibrate which tests are worth keeping; they never decide a deletion alone.
+#
+# CI ONLY. Mutation runs are heavy and must never run on a team Mac, so this is
+# the one place they run. NOT a required check, and it has no pull_request,
+# merge_group or push trigger: it holds a runner only when a person dispatches
+# it, and nothing waits on it.
+#
+# Scope is packages/shared and nothing else. The `mutate` input can narrow it to
+# a smaller set of files inside that package, never widen it outside: Stryker
+# runs from packages/shared, and the input is checked before use.
+on:
+  workflow_dispatch:
+    inputs:
+      mutate:
+        description: Comma-separated globs inside packages/shared to mutate
+        required: false
+        type: string
+        default: 'src/**/*.ts,!src/**/__tests__/**,!src/**/__fixtures__/**'
+      concurrency:
+        description: Stryker worker processes (1-8)
+        required: false
+        type: string
+        default: '4'
+
+permissions: {}
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
+
+concurrency:
+  group: mutation-pilot
+  cancel-in-progress: false
+
+jobs:
+  shared:
+    runs-on: ubuntu-latest
+    # Unmeasured: no run exists yet. 300 of the 360 GitHub allows, so a first
+    # run finishes or reports how far it got. Lower it once the first run's time
+    # is in the ledger entry.
+    timeout-minutes: 300
+    permissions:
+      contents: read
+    env:
+      MUTATE: ${{ inputs.mutate }}
+      WORKERS: ${{ inputs.concurrency }}
+    steps:
+      # Inputs reach the shell only through env, never interpolated into a
+      # script, and both are checked before anything else runs.
+      - name: Refuse inputs outside the pilot's bounds
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$WORKERS" =~ ^[1-8]$ ]] || { echo "::error::concurrency must be 1-8"; exit 1; }
+          [[ "$MUTATE" =~ ^[A-Za-z0-9_./*!,{}-]+$ ]] || { echo "::error::mutate has a character outside [A-Za-z0-9_./*!,{}-]"; exit 1; }
+          [[ "$MUTATE" != *..* && "$MUTATE" != /* && "$MUTATE" != *,/* ]] || { echo "::error::mutate must stay inside packages/shared"; exit 1; }
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # shared's tests import its workspace dependencies' built output.
+      - name: Build shared's workspace dependencies
+        run: pnpm exec turbo run build --filter=@dorkos/shared^...
+
+      - name: Name this runner
+        run: |
+          echo "cpus=$(nproc)"
+          free -m
+
+      - name: Run Stryker on packages/shared
+        working-directory: packages/shared
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p reports/mutation
+          start=$(date +%s)
+          status=0
+          if [[ -x /usr/bin/time ]]; then
+            /usr/bin/time -v -o reports/mutation/resources.txt \
+              pnpm exec stryker run --mutate "$MUTATE" --concurrency "$WORKERS" || status=$?
+          else
+            pnpm exec stryker run --mutate "$MUTATE" --concurrency "$WORKERS" || status=$?
+          fi
+          echo "elapsed_seconds=$(( $(date +%s) - start ))" > reports/mutation/elapsed.txt
+          echo "stryker_exit=$status" >> reports/mutation/elapsed.txt
+          cat reports/mutation/elapsed.txt
+          exit "$status"
+
+      - name: Summarize the run
+        if: ${{ always() }}
+        run: node .github/scripts/mutation-pilot/summary.mjs packages/shared/reports/mutation >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Keep the report
+        if: ${{ always() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: mutation-pilot-shared
+          path: packages/shared/reports/mutation/
+          if-no-files-found: warn
+          retention-days: 30

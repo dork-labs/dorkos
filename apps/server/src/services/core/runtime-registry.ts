@@ -58,6 +58,7 @@ import {
   fillNullsWith,
   launchColumns,
   pickSettings,
+  keptPermissionMode,
   type SettingsUpdate,
 } from './runtime-seam/session-metadata-columns.js';
 
@@ -789,7 +790,8 @@ export class RuntimeRegistry {
 
   /**
    * The `permission_mode` a CLAIM should write: the stored one if the runtime
-   * being bound can actually run it, otherwise the seed, otherwise nothing.
+   * being bound can actually run it, otherwise that runtime's strictest mode;
+   * the seed only where nothing was stored.
    *
    * ## Why the claim has to judge a mode at all
    *
@@ -810,8 +812,10 @@ export class RuntimeRegistry {
    * ## What it does in each case
    *
    * - **Declared** → kept. A choice made early is still the person's.
-   * - **Not declared** → dropped, and the seed for the runtime being bound lands
-   *   in its place (the `coalesce` order). Dropped rather than refused, because
+   * - **Not declared** → replaced with the runtime's strictest trust-axis mode
+   *   (`strictestTrustModeId`), never the seed. The seed is the configured stop
+   *   or the agent's level, so a Codex chat stored at Plan used to bind at its
+   *   agent's Full (DOR-4411). Replaced rather than refused, because
    *   there is no request to refuse — the turn is already starting, and NULL
    *   means "the runtime decides" everywhere else in this table.
    * - **Runtime not registered here** (`undefined` descriptors, not an empty
@@ -836,16 +840,7 @@ export class RuntimeRegistry {
         ? {}
         : { permissionMode: sql`coalesce(${sessionMetadata.permissionMode}, ${seed})` };
     }
-    // A runtime that declares no modes at all declares this one no more than any
-    // other, so the stored value cannot survive — `sql`null`` rather than an
-    // empty `in ()`, which drizzle refuses to build.
-    const kept =
-      declared.length > 0
-        ? sql`case when ${inArray(
-            sessionMetadata.permissionMode,
-            declared.map((descriptor) => descriptor.id)
-          )} then ${sessionMetadata.permissionMode} end`
-        : sql`null`;
+    const kept = keptPermissionMode(declared);
     return { permissionMode: seed === undefined ? kept : sql`coalesce(${kept}, ${seed})` };
   }
 

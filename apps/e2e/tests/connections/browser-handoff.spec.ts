@@ -178,8 +178,9 @@ test.describe('Agent browser handoff card', () => {
       await page.getByRole('menuitem', { name: 'Browser', exact: true }).click();
     }
     const panel = page.getByRole('region', { name: 'Agent browser', exact: true });
+    // The chat isn't a real session here, so it reads "another chat", with no link (DOR-4265).
     await expect(
-      panel.getByText('Another agent is waiting for a person in this window.')
+      panel.getByText('Atlas in another chat is waiting for you to finish signing in here.')
     ).toBeVisible();
     await expect(panel.getByRole('button')).toHaveText(['Open that chat']);
   });

@@ -33,6 +33,7 @@
  */
 import os from 'os';
 import path from 'path';
+import { byNameHarnesses, skillsFactsFor } from '@dorkos/harness';
 
 /**
  * The cross-tool user-level skills directory: `~/.agents/skills`.
@@ -45,4 +46,37 @@ import path from 'path';
  */
 export function agentsUserSkillsDir(): string {
   return path.join(os.homedir(), '.agents', 'skills');
+}
+
+/**
+ * Every user-level skill folder a harness that keys skills by name reads, as
+ * that harness resolves it: today OpenCode's `~/.config/opencode/skills`,
+ * `~/.claude/skills` and `~/.agents/skills` (DOR-4392).
+ *
+ * The list is the vendor table's `skills.readPaths.user` for each such harness,
+ * not one typed here. `~/.config` follows `$XDG_CONFIG_HOME` when it is set,
+ * as OpenCode's own config folder does; `~/.claude` is the literal home folder,
+ * because OpenCode reads that path and not Claude Code's `$CLAUDE_CONFIG_DIR`.
+ *
+ * Only read, for skill names, so a package skill never replaces one of the
+ * person's own. DorkOS writes into none of them for this.
+ *
+ * @returns the absolute folders, de-duplicated, in vendor-table order.
+ */
+export function byNameUserSkillDirs(): string[] {
+  const home = os.homedir();
+  // eslint-disable-next-line no-restricted-syntax -- mirrors OpenCode's own read of XDG_CONFIG_HOME, which is not a DorkOS setting and has no place in env.ts
+  const xdgConfig = process.env.XDG_CONFIG_HOME;
+  const configHome =
+    xdgConfig !== undefined && xdgConfig !== '' ? xdgConfig : path.join(home, '.config');
+  const dirs = byNameHarnesses()
+    .flatMap((harness) => skillsFactsFor(harness).readPaths.user)
+    .map((spelled) =>
+      spelled.startsWith('~/.config/')
+        ? path.join(configHome, spelled.slice('~/.config/'.length))
+        : spelled.startsWith('~/')
+          ? path.join(home, spelled.slice(2))
+          : spelled
+    );
+  return [...new Set(dirs)];
 }

@@ -1795,6 +1795,31 @@ describe('the scope an "Always Allow" card names (DOR-1462)', () => {
     expect(member).not.toHaveProperty('alwaysAllowScope');
   });
 
+  it('says when an MCP card’s Always Allow would cover the whole server, and only then (DOR-4101)', () => {
+    const raiseMcp = (toolName: string) => {
+      const session = makeBareSession();
+      const context = {
+        signal: new AbortController().signal,
+        toolUseID: 'breadth-1',
+        suggestions: [{ ...rule('localSettings'), rules: [{ toolName }] }],
+      } as ToolApprovalContext;
+      void handleToolApproval(session, 'breadth-1', 'mcp__made-up__list', {}, context);
+      const pushed = session.eventQueue.find((e) => e.type === 'approval_required')!;
+      return {
+        data: pushed.data as Record<string, unknown>,
+        snapshot: session.pendingInteractions.get('breadth-1')?.snapshot,
+        member: toRawSessionEvent(pushed),
+      };
+    };
+    const wide = raiseMcp('mcp__made-up');
+    expect(wide.data).toMatchObject({ alwaysAllowBreadth: 'server' });
+    expect(wide.snapshot).toMatchObject({ alwaysAllowBreadth: 'server' });
+    expect(wide.member).toMatchObject({ alwaysAllowBreadth: 'server' });
+    const one = raiseMcp('mcp__made-up__list');
+    expect(one.member).toMatchObject({ alwaysAllowBreadth: 'tool' });
+    expect(raise([rule('localSettings')]).member).not.toHaveProperty('alwaysAllowBreadth');
+  });
+
   it('logs the raw destinations the card would write to', () => {
     // The deferred half of DOR-1462: whether wide scopes should ever be
     // stripped is answered by a week of these lines, so they carry the SDK's

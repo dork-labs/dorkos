@@ -88,33 +88,6 @@ export class TasksPage {
     return this.createDialog.getByRole('textbox', { name: 'Prompt *' });
   }
 
-  /**
-   * Reveal the cadence controls.
-   *
-   * They sit in a closed `CollapsibleFieldCard` whenever the form started blank,
-   * and a closed one keeps its rows out of the DOM entirely, so the cadence
-   * controls cannot be reached until this runs (DOR-1759). The trigger is a real
-   * button carrying the section name and its badge — it used to be a `<summary>`,
-   * which had no implicit ARIA role and needed a tag selector.
-   */
-  async openScheduleSection() {
-    // Anchored: the trigger's accessible name is the section name plus its badge
-    // ("Schedule Optional"), and "Advanced settings" is the only sibling card.
-    await this.createDialog.getByRole('button', { name: /^schedule\b/i }).click();
-  }
-
-  /**
-   * Pick a cadence by name — `Every 15 minutes`, `Every hour`, `Every day`,
-   * `Every week`, `Every month`.
-   *
-   * @param label - The frequency option to choose.
-   */
-  async selectFrequency(label: string) {
-    await this.createDialog.getByRole('combobox', { name: 'Frequency' }).click();
-    // The listbox portals out of the dialog, so it is addressed on the page.
-    await this.page.getByRole('option', { name: label, exact: true }).click();
-  }
-
   /** Get the Create button in the create dialog. */
   get createButton() {
     return this.createDialog.getByRole('button', { name: /^create task$/i });

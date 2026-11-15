@@ -45,9 +45,16 @@ export const SHELL_WRITE_DENY_REASON =
 export const SHELL_UNREADABLE_DENY_REASON =
   'DorkOS could not check this command, so it did not run. If it is long or opens into many paths, split it into smaller commands.';
 
-/** What the model is told when DorkOS has no check to run. */
+/**
+ * What the model is told when the check didn't start. Under load that is most often just slow, so
+ * the same command usually runs on a retry (DOR-4304). Reworded, it would be the same command.
+ */
 export const SHELL_NO_CHECK_REASON =
-  'DorkOS can’t check shell commands for protected files, so this one did not run. A person needs to restart DorkOS.';
+  'DorkOS’s check on shell commands didn’t start in time, so this command did not run. Retry this exact command in a few seconds. Don’t reword it.';
+
+/** What the model is told when the check still can't start, and a person has been told. */
+export const SHELL_NO_CHECK_TOLD_REASON =
+  'DorkOS still can’t check shell commands, so this command did not run. A person has been told. Retry this exact command later. Don’t reword it.';
 
 /** What a person is asked when DorkOS has no check to run. */
 export const SHELL_NO_CHECK_ASK_REASON =
@@ -56,12 +63,19 @@ export const SHELL_NO_CHECK_ASK_REASON =
 /** The tools that take a shell command. */
 export const SHELL_TOOLS: ReadonlySet<string> = new Set(['Bash', 'Monitor', 'PowerShell']);
 
-/** Called with the call a shell write to setup files was refused for. */
+/**
+ * Why a shell command was refused: `writes` it writes an agent's setup files, `unreadable` it is too
+ * much to read, `failed` the check broke on it, `no-check` the check never started.
+ */
+export type ShellRefusalVerdict = 'writes' | 'unreadable' | 'failed' | 'no-check';
+
+/** Called with the shell call that was refused, and why. */
 export type ShellRefusalRecorder = (call: {
   toolName: string;
   toolUseId: string;
   command: string;
   agentId?: string;
+  verdict: ShellRefusalVerdict;
 }) => void;
 
 /** What the hook needs beyond the session. */
@@ -99,13 +113,14 @@ export function createShellPathGuardHook(
     const command = input?.command;
     if (typeof command !== 'string') return {};
     /** Refuse and audit. Never the command in the log: it may hold a token. */
-    const refuse = (reason: string, verdict: string) => {
+    const refuse = (reason: string, verdict: ShellRefusalVerdict) => {
       log.info('[ShellGuard] refused a shell command', { verdict });
       recordRefusal({
         toolName: hookInput.tool_name,
         toolUseId: hookInput.tool_use_id,
         command,
         ...(hookInput.agent_id ? { agentId: hookInput.agent_id } : {}),
+        verdict,
       });
       return decision('deny', reason);
     };
@@ -126,10 +141,12 @@ export function createShellPathGuardHook(
       result = { outcome: 'failed' };
     }
     if (result.outcome === 'unavailable') {
+      // Still a refusal: only the words change once a person has been told (DOR-4304).
+      const noCheck = result.told ? SHELL_NO_CHECK_TOLD_REASON : SHELL_NO_CHECK_REASON;
       if (full) {
-        return goingOnWithoutCheck?.() ? {} : refuse(SHELL_NO_CHECK_REASON, 'no-check');
+        return goingOnWithoutCheck?.() ? {} : refuse(noCheck, 'no-check');
       }
-      if (namesSetup(command)) return refuse(SHELL_NO_CHECK_REASON, 'no-check');
+      if (namesSetup(command)) return refuse(noCheck, 'no-check');
       log.info('[ShellGuard] no check to run; asking', {});
       return decision('ask', SHELL_NO_CHECK_ASK_REASON);
     }

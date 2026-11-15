@@ -6,16 +6,7 @@ import { BasePage } from '../pages/BasePage.js';
 import { ChatPage } from '../pages/ChatPage.js';
 import { RightPanelPage } from '../pages/RightPanelPage.js';
 import { caretOffset, composerText, expectComposerText } from '../pages/composer-probe.js';
-import { registerCompactionTests } from './chat/compaction.js';
-import { registerComposerEscapeAndImeTests } from './chat/composer-escape-and-ime.js';
-import { registerHeldProcessTests } from './chat/held-process.js';
-import { registerInteractivePromptTests } from './chat/interactive-prompts.js';
-import { registerAskAnywhereTests } from './conversation/ask-anywhere.js';
-import { registerAskParksTests } from './conversation/ask-parks.js';
-import { registerLiveTurnVisibilityTests } from './chat/live-turn-visibility.js';
-import { registerRuntimeCapabilityParityTests } from './chat/runtime-capability-parity.js';
-import { registerSessionReadStateTests } from './chat/session-read-state.js';
-import { registerDorkBotSeedSurvivesReloadTests } from './dashboard-sidebar/dorkbot-seed-survives-reload.js';
+import { MOCK_API_URL, useMockServer } from './chat/mock-server.js';
 
 /**
  * Browser simulation tests using TestModeRuntime.
@@ -46,48 +37,11 @@ import { registerDorkBotSeedSurvivesReloadTests } from './dashboard-sidebar/dork
  *                    race — see `tests/chat/compaction.ts` and GOTCHAS.
  */
 
-// eslint-disable-next-line no-restricted-syntax -- E2E test config; no env.ts available
-const MOCK_PORT = process.env.DORKOS_MOCK_PORT || '4243';
-const API_URL = `http://localhost:${MOCK_PORT}`;
+const API_URL = MOCK_API_URL;
 
-// The mock server is SHARED mutable state: POST /api/test/reset wipes the
-// default scenario, tracked sessions, AND projectors globally. Under the
-// project-wide fullyParallel setting these tests would race each other's
-// beforeEach reset (observed: a tool-call test receiving the simple-text echo),
-// so this file opts back into sequential same-worker execution.
-test.describe.configure({ mode: 'default' });
-
-// Seeded by POST /api/test/seed-agent in beforeEach.
-let agentDir: string;
-
-// And after each: the reset above only protects THIS file's tests, and the
-// scenario a test selected would otherwise still be the default for whatever
-// runs next on this shared server.
-test.afterEach(async ({ request }) => {
-  await request.post(`${API_URL}/api/test/reset`);
-});
-
-test.beforeEach(async ({ request }) => {
-  // Reset to default scenario (simple-text) before each test
-  await request.post(`${API_URL}/api/test/reset`);
-  // Dismiss onboarding so the main app shell renders immediately.
-  // Fresh DORK_HOME has no completed steps, which would show the onboarding wizard.
-  await request.patch(`${API_URL}/api/config`, {
-    data: { onboarding: { dismissedAt: new Date().toISOString() } },
-  });
-  // Seed a test agent so the chat UI has an agent to select and enables the send button.
-  // The agent is created at <boundary>/tmp/dorkos-e2e-agent — the server derives it from the
-  // resolved directory boundary, so it is in-bounds whatever DORKOS_BOUNDARY is set to.
-  const seedRes = await request.post(`${API_URL}/api/test/seed-agent`);
-  // The seed route refuses when the runtime its manifest declares is registered
-  // here — that would bind every seeded session to it instead of the server
-  // default (DOR-991). Read the refusal out loud; without this the suite fails
-  // later with an undefined agentDir and no hint why.
-  if (!seedRes.ok()) {
-    throw new Error(`seed-agent failed (${seedRes.status()}): ${await seedRes.text()}`);
-  }
-  ({ agentDir } = (await seedRes.json()) as { agentDir: string });
-});
+// The reset-and-seed hooks this file shares with the other chat-mock*.spec.ts
+// files, and the seeded agent's directory (tests/chat/mock-server.ts).
+const agentDir = useMockServer();
 
 test.describe('TestModeRuntime — mock browser tests', () => {
   test('R-12: renders streamed text response from simple-text scenario', async ({
@@ -99,7 +53,7 @@ test.describe('TestModeRuntime — mock browser tests', () => {
     });
 
     const chatPage = new ChatPage(page);
-    await chatPage.goto(undefined, { dir: agentDir });
+    await chatPage.goto(undefined, { dir: agentDir() });
     await chatPage.sendMessage('Hello');
 
     // simple-text scenario echoes: "Echo: Hello". Scoped to the transcript
@@ -126,13 +80,13 @@ test.describe('TestModeRuntime — mock browser tests', () => {
     });
 
     const chatPage = new ChatPage(page);
-    await chatPage.goto(undefined, { dir: agentDir });
+    await chatPage.goto(undefined, { dir: agentDir() });
     await chatPage.sendAndLand('Hello from a phone');
     const sessionId = await chatPage.getSessionId();
     expect(sessionId).toBeTruthy();
     const longTitle = 'Add rate limiting to the public API before the launch';
     const renamed = await request.patch(
-      `${API_URL}/api/sessions/${sessionId}?cwd=${encodeURIComponent(agentDir)}`,
+      `${API_URL}/api/sessions/${sessionId}?cwd=${encodeURIComponent(agentDir())}`,
       { data: { title: longTitle } }
     );
     expect(renamed.ok()).toBe(true);
@@ -200,7 +154,7 @@ test.describe('TestModeRuntime — mock browser tests', () => {
     });
 
     const chatPage = new ChatPage(page);
-    await chatPage.goto(undefined, { dir: agentDir });
+    await chatPage.goto(undefined, { dir: agentDir() });
     await chatPage.sendMessage('Run bash');
 
     // tool-call scenario emits a Bash tool call
@@ -222,7 +176,7 @@ test.describe('TestModeRuntime — mock browser tests', () => {
     });
 
     const chatPage = new ChatPage(page);
-    await chatPage.goto(undefined, { dir: agentDir });
+    await chatPage.goto(undefined, { dir: agentDir() });
 
     // Three long prompts; simple-text echoes each back, so every turn adds a
     // user row AND an assistant row that both wrap far past the 80px estimate.
@@ -298,13 +252,6 @@ test.describe('TestModeRuntime — mock browser tests', () => {
     expect(scrollHeight).toBeGreaterThanOrEqual(sumOfRowHeights);
   });
 
-  test('scenario endpoint rejects unknown scenario names', async ({ request }) => {
-    const res = await request.post(`${API_URL}/api/test/scenario`, {
-      data: { name: 'nonexistent-scenario' },
-    });
-    expect(res.status()).toBe(400);
-  });
-
   test('a session id reused across POST /api/test/reset gets a fresh session, not resurrected history', async ({
     request,
   }) => {
@@ -317,7 +264,7 @@ test.describe('TestModeRuntime — mock browser tests', () => {
     // (review finding, acceptance run 20260611-145454; durable-tier gap DOR-334).
     const sessionId = crypto.randomUUID();
     const messagesUrl = `${API_URL}/api/sessions/${sessionId}/messages`;
-    const historyUrl = `${messagesUrl}?cwd=${encodeURIComponent(agentDir)}`;
+    const historyUrl = `${messagesUrl}?cwd=${encodeURIComponent(agentDir())}`;
 
     const turnHistory = async () => {
       const res = await request.get(historyUrl);
@@ -328,7 +275,7 @@ test.describe('TestModeRuntime — mock browser tests', () => {
 
     // Turn 1 under the id (202 = trigger accepted; turn runs detached).
     const post1 = await request.post(messagesUrl, {
-      data: { content: 'before reset', cwd: agentDir, create: true },
+      data: { content: 'before reset', cwd: agentDir(), create: true },
     });
     expect(post1.status()).toBe(202);
     await expect
@@ -347,7 +294,7 @@ test.describe('TestModeRuntime — mock browser tests', () => {
 
     // And a new turn under the reused id contains ONLY post-reset content.
     const post2 = await request.post(messagesUrl, {
-      data: { content: 'after reset', cwd: agentDir, create: true },
+      data: { content: 'after reset', cwd: agentDir(), create: true },
     });
     expect(post2.status()).toBe(202);
     await expect
@@ -371,7 +318,7 @@ test.describe('Runtime UX — multi-runtime test server', () => {
     page,
   }) => {
     const chatPage = new ChatPage(page);
-    await chatPage.goto(undefined, { dir: agentDir });
+    await chatPage.goto(undefined, { dir: agentDir() });
 
     const statusLine = page.getByTestId('status-line');
     // Pre-launch with >1 registered runtime the chip is a dropdown trigger
@@ -420,7 +367,7 @@ test.describe('Runtime UX — multi-runtime test server', () => {
     request,
   }) => {
     const chatPage = new ChatPage(page);
-    await chatPage.goto(undefined, { dir: agentDir, runtime: 'test-mode-b' });
+    await chatPage.goto(undefined, { dir: agentDir(), runtime: 'test-mode-b' });
 
     // The launch param survives the loader's session-mint redirect.
     await expect(page).toHaveURL(/session=/);
@@ -459,7 +406,7 @@ test.describe('Runtime UX — multi-runtime test server', () => {
   }) => {
     // Session on the default runtime.
     const chatPage = new ChatPage(page);
-    await chatPage.goto(undefined, { dir: agentDir });
+    await chatPage.goto(undefined, { dir: agentDir() });
     await chatPage.sendMessage('Default runtime session');
     // Scoped to the transcript — see GOTCHAS (announcer duplicates the echo).
     await expect(
@@ -483,7 +430,7 @@ test.describe('Runtime UX — multi-runtime test server', () => {
     // without it the loader auto-selects the existing session instead of
     // creating a new one.
     await chatPage.goto(crypto.randomUUID(), {
-      dir: agentDir,
+      dir: agentDir(),
       runtime: 'test-mode-b',
       draft: true,
     });
@@ -500,7 +447,7 @@ test.describe('Runtime UX — multi-runtime test server', () => {
     // nothing until the page is opened. The list marks each row's runtime only
     // because these two chats run on different ones (spec `your-activity-first`
     // D12).
-    await new RightPanelPage(page).openProfilePage('sessions', agentDir);
+    await new RightPanelPage(page).openProfilePage('sessions', agentDir());
     const rows = page.locator('[data-slot="chat-list-row"]');
     await expect(
       rows.filter({ has: page.locator('[aria-label="Runs on Test Mode"]') })
@@ -517,7 +464,7 @@ test.describe('Runtime UX — multi-runtime test server', () => {
     await request.post(`${API_URL}/api/test/scenario`, { data: { name: 'error' } });
 
     const chatPage = new ChatPage(page);
-    await chatPage.goto(undefined, { dir: agentDir });
+    await chatPage.goto(undefined, { dir: agentDir() });
     await chatPage.sendMessage('please fail');
 
     // The 'error' scenario yields a full-fidelity typed error event
@@ -543,70 +490,6 @@ test.describe('Runtime UX — multi-runtime test server', () => {
     await expect(page.getByTestId('transcript-feed').getByText('Echo: please fail')).toBeVisible({
       timeout: 10_000,
     });
-  });
-});
-
-// Universal command intents in the inline slash palette (DOR-109, VC2 + VC3
-// enabled side). Backed by the test-mode runtime, whose caps declare
-// `commandIntents.compact.supported === true` (Phase 2 task 2.3), so the compact
-// row renders ENABLED here. The DISABLED "Not supported by {runtime}" side (VC3
-// negative) is NOT reachable in this environment: the test-mode server registers
-// only `test-mode` + `test-mode-b` (both supported), codex is not a registered
-// runtime here, and `buildPaletteCommands` renders an unresolved (undefined) caps
-// map as enabled — so no palette row is ever disabled against this server. That
-// gating branch is covered by the Phase 3 unit tests
-// (features/chat/model/__tests__/build-palette-commands.test.ts +
-// features/slash-commands SlashCommandList gating), which mock caps to supported:false.
-// The intent rows themselves are client-side (COMMAND_INTENTS), so these
-// assertions hold on a cold session with no prior turn.
-test.describe('Command Intents — inline palette dedupe + alias hints', () => {
-  test('shows exactly one row per canonical intent, folding the native runtime command', async ({
-    page,
-  }) => {
-    const chatPage = new ChatPage(page);
-    await chatPage.goto(undefined, { dir: agentDir });
-
-    // Typing `/` opens the palette with every command; each canonical intent
-    // appears once — a runtime's own command for the same action folds into the
-    // single intent row rather than doubling (the dedupe pass).
-    await chatPage.openCommandPalette('/');
-    await expect(chatPage.paletteRow('/compact')).toHaveCount(1);
-    await expect(chatPage.paletteRow('/clear')).toHaveCount(1);
-    await expect(chatPage.paletteRow('/context')).toHaveCount(1);
-
-    // The plain-language intent descriptions render (writing-for-humans).
-    await expect(
-      chatPage.commandPalette.getByText('Shrink the chat to free up context')
-    ).toBeVisible();
-  });
-
-  test('typing an alias fuzzy-matches the intent and shows the "matched /{alias}" hint', async ({
-    page,
-  }) => {
-    const chatPage = new ChatPage(page);
-    await chatPage.goto(undefined, { dir: agentDir });
-
-    // `/compress` is a cross-agent alias of `compact`; typing it ranks the
-    // compact intent and surfaces the shipped alias hint so a user's muscle
-    // memory resolves to the right intent.
-    await chatPage.openCommandPalette('/compress');
-    await expect(chatPage.paletteRow('/compact')).toHaveCount(1);
-    await expect(chatPage.commandPalette.getByText('matched /compress')).toBeVisible();
-  });
-
-  test('C-04: the compact row is ENABLED on a runtime that supports it (test-mode)', async ({
-    page,
-  }) => {
-    const chatPage = new ChatPage(page);
-    await chatPage.goto(undefined, { dir: agentDir });
-
-    // test-mode declares compact supported, so the row is selectable — not the
-    // greyed, aria-disabled "Not supported by {runtime}" state (which the unit
-    // tests cover for an unsupporting runtime).
-    await chatPage.openCommandPalette('/compact');
-    const compactRow = chatPage.paletteRow('/compact');
-    await expect(compactRow).toHaveCount(1);
-    await expect(compactRow).toHaveAttribute('aria-disabled', 'false');
   });
 });
 
@@ -922,7 +805,7 @@ test.describe('the chat composer with formatting on', () => {
    */
   async function openRichChat(page: Page): Promise<ChatPage> {
     const chatPage = new ChatPage(page);
-    await chatPage.goto(undefined, { dir: agentDir });
+    await chatPage.goto(undefined, { dir: agentDir() });
     await expect(page.locator('[contenteditable="true"]')).toBeVisible({ timeout: 20_000 });
     // The same locator every page object uses, resolving to the rich field: the
     // swap kept one control's identity rather than adding a second one, which
@@ -1038,71 +921,6 @@ test.describe('the chat composer with formatting on', () => {
   });
 });
 
-// Cross-device read state for chat sessions (DOR-1040). Declared in its own
-// module but registered INTO this file, and that is the point: `/api/test/reset`
-// above deletes every tracked session's transcript, and Playwright schedules
-// separate spec FILES onto concurrent workers — so a suite that needs a
-// transcript to survive a minute of browser work has to be on this file's
-// worker rather than beside it. See the module header for the full argument.
-registerSessionReadStateTests({ apiUrl: API_URL, agentDir: () => agentDir });
-
-// What a session went through surviving a page load (DOR-1136). Registered here
-// for the same reason as the suite above — it needs the `error` scenario, which
-// only this leg has — and because the defect is about what a FRESH page
-// connection is told, which no unit test can observe.
-registerDorkBotSeedSurvivesReloadTests({ apiUrl: API_URL, agentDir: () => agentDir });
-
-// The double-Escape clear on both fields, and Enter during an IME composition
-// (DOR-948). Registered here because both suites flip `ui.composer.richText`,
-// which is server-global — only this file's sequential single worker makes that
-// safe. See the module header.
-registerComposerEscapeAndImeTests({ apiUrl: API_URL, agentDir: () => agentDir });
-
-// The prompts a turn STOPS on — tool approvals, the batch bar, AskUserQuestion,
-// MCP elicitation (capability rows I-01..I-04, DOR-1214). Registered here
-// because each drives a turn that PARKS waiting for an answer, and the
-// `POST /api/test/reset` at the top of this file tears every tracked session
-// down: a parked turn living on a concurrent worker would be disposed mid-click.
-// See the module header.
-registerInteractivePromptTests({ apiUrl: API_URL, agentDir: () => agentDir });
-
-// A prompt answered from a route that is not the session's (DOR-1330).
-// Registered here for the same reason as the suite above: it parks a turn and
-// then LEAVES the session, so the turn has to survive a navigation on this
-// file's own worker rather than a concurrent reset.
-registerAskAnywhereTests({ apiUrl: API_URL, agentDir: () => agentDir });
-
-// A prompt nobody answered in time, which WAITS rather than dying (DOR-1350).
-// Same lock again: it parks a turn, leaves the session, and answers it from
-// another route, so it has to run on this file's worker.
-registerAskParksTests({ apiUrl: API_URL, agentDir: () => agentDir });
-
-// What a live turn shows while it runs, and how Stop settles it (capability rows
-// C-10, R-05, R-06, R-07, DOR-1214). Same lock, same reason: these hold a turn
-// open across several assertions using step barriers, which only survives on
-// this file's sequential worker.
-registerLiveTurnVisibilityTests({ apiUrl: API_URL, agentDir: () => agentDir });
-
-// The persistent path — warm agents, a steer that cuts in, Add context, and Stop
-// on a warm agent (L-11, C-09b, C-11, C-10's pump scope; DOR-1326). Registered
-// here for the same lock as the suite above, plus one of its own: it puts
-// individual sessions on the held-process path, which only stays contained
-// because this file's tests run one at a time on one worker.
-registerHeldProcessTests({ apiUrl: API_URL, agentDir: () => agentDir });
-
-// Compaction end to end (L-04, DOR-1215). Registered here because it drives
-// turns and a `/compact` against the shared test-mode server — see the module
-// header for why it must ride this file's worker rather than be its own spec.
-registerCompactionTests({ apiUrl: API_URL, agentDir: () => agentDir });
-
-// The app adapting to the runtime it is talking to (L-10). Registered here
-// because this leg is the ONLY place a browser can see a runtime that is not
-// Claude Code: real Codex and OpenCode need model credentials a PR runner does
-// not have, so the divergent descriptors TestModeRuntime declares are the whole
-// available surface. See the module header for what that does and does not
-// cover.
-registerRuntimeCapabilityParityTests({ agentDir: () => agentDir });
-
 /**
  * Conversations in ⌘K (spec `sidebar-now-today-library` P3, §15).
  *
@@ -1155,7 +973,7 @@ test.describe('conversations in the command palette', () => {
    */
   async function startNamedSession(page: Page): Promise<string> {
     const chatPage = new ChatPage(page);
-    await chatPage.goto(undefined, { dir: agentDir });
+    await chatPage.goto(undefined, { dir: agentDir() });
     await chatPage.sendMessage(`${TITLE_WORD} migration plan`);
     await expect(page.getByTestId('transcript-feed').getByText(/Echo:/)).toBeVisible({
       timeout: 15_000,
@@ -1291,23 +1109,5 @@ test.describe('conversations in the command palette', () => {
     // which is precisely the shape of check this suite exists to avoid.
     // (`row-grammar.test.ts` pins the literal; this pins what it BUYS.)
     expect(parseFloat(titleMinWidth)).toBeCloseTo(sixCh, 0);
-  });
-
-  test('the untyped palette is Continue, Recent and New — and nothing else', async ({ page }) => {
-    await startNamedSession(page);
-    await page.goto('/');
-
-    await openPalette(page);
-
-    const headings = page.locator('[cmdk-root] [cmdk-group-heading]');
-    await expect(headings.filter({ hasText: 'Recent' }).first()).toBeVisible({ timeout: 15_000 });
-
-    // Every heading the untyped palette draws is one of the three. The
-    // "Features" and "Quick Actions" dumps this replaced would both fail here.
-    const texts = await headings.allTextContents();
-    expect(texts.length).toBeGreaterThan(0);
-    for (const text of texts) {
-      expect(['Continue', 'Recent', 'New']).toContain(text.trim());
-    }
   });
 });

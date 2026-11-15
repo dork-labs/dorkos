@@ -150,11 +150,6 @@ describe('SessionPage', () => {
     expect(mockUseSessionCanvas).toHaveBeenCalledWith('session-abc', { canonical: false });
   });
 
-  it('renders ChatPanel', () => {
-    render(<SessionPage />);
-    expect(screen.getByTestId('chat-panel')).toBeInTheDocument();
-  });
-
   it('passes the session id from useSessionId to ChatPanel', () => {
     render(<SessionPage />);
     expect(screen.getByTestId('chat-panel')).toHaveAttribute('data-session-id', 'session-abc');

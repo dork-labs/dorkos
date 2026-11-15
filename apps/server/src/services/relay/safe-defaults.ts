@@ -60,6 +60,9 @@
  * `warnOnOpenDmPolicy` says so out loud at startup so the choice is theirs to
  * make knowingly rather than by omission.
  *
+ * A running connection is never changed. When a person turns one back on,
+ * `closeDmPolicyOnEnable` limits it to the people they list (DOR-3859).
+ *
  * @module services/relay/safe-defaults
  */
 import { logger } from '../../lib/logger.js';
@@ -84,6 +87,26 @@ const DM_POLICY_TYPES = new Set(['slack', 'telegram']);
 /** Whether a value is a plain JSON object we can safely read keys from. */
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+/**
+ * Limit a re-enabled Slack or Telegram connection to the people already listed.
+ *
+ * Turning a connection back on is a person's choice, so it comes back closed.
+ * Running connections are never passed here and therefore are never flipped.
+ * The existing `dmAllowlist` stays intact.
+ *
+ * @param entry - The stored adapter entry being enabled.
+ * @returns Whether the entry's direct-message policy changed.
+ */
+export function closeDmPolicyOnEnable(entry: unknown): boolean {
+  if (!isRecord(entry) || typeof entry.type !== 'string' || !DM_POLICY_TYPES.has(entry.type)) {
+    return false;
+  }
+  const config = entry.config;
+  if (!isRecord(config) || config.dmPolicy === 'allowlist') return false;
+  config.dmPolicy = 'allowlist';
+  return true;
 }
 
 /**

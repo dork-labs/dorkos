@@ -520,6 +520,53 @@ describe('a report that cannot be delivered (DOR-3720)', () => {
     });
   });
 
+  it('tells the person once when a report never lands, so it is never silent (DOR-3561)', async () => {
+    const onUndelivered = vi.fn();
+    const toRoomSeat = vi.fn().mockRejectedValue(new Error('did not reach'));
+    const { end } = harness({ toRoomSeat, onUndelivered });
+    await end();
+    expect(onUndelivered).toHaveBeenCalledTimes(1);
+    expect(onUndelivered).toHaveBeenCalledWith({
+      sessionId: CHILD,
+      parentSessionId: PARENT,
+      reason: 'finished',
+    });
+  });
+
+  it('a refused chat message that never lands tells the person too (DOR-3561)', async () => {
+    const onUndelivered = vi.fn();
+    const send = vi.fn().mockRejectedValue(new Error('That chat belongs to a room'));
+    const { reportBack } = harness({
+      service: { send },
+      onUndelivered,
+      statusOf: () => status({ lifecycle: 'error' }),
+    });
+    await reportBack.onTurnEnd(CHILD, status({ lifecycle: 'error' }), { from: NOW - 1, to: NOW });
+    expect(onUndelivered).toHaveBeenCalledTimes(1);
+    expect(onUndelivered.mock.calls[0]![0]).toMatchObject({ reason: 'failed' });
+  });
+
+  it('says nothing to the person when a retry lands (DOR-3561)', async () => {
+    const onUndelivered = vi.fn();
+    const send = vi
+      .fn()
+      .mockRejectedValueOnce(new Error('no'))
+      .mockResolvedValue({ messageId: 'r1', chatId: PARENT, status: 'working' });
+    const { end } = harness({ service: { send }, onUndelivered });
+    await end();
+    expect(onUndelivered).not.toHaveBeenCalled();
+  });
+
+  it('a person-telling hook that throws never breaks report-back (DOR-3561)', async () => {
+    const onUndelivered = vi.fn(() => {
+      throw new Error('inbox down');
+    });
+    const toRoomSeat = vi.fn().mockRejectedValue(new Error('did not reach'));
+    const { end } = harness({ toRoomSeat, onUndelivered });
+    await expect(end()).resolves.toBe('finished');
+    expect(onUndelivered).toHaveBeenCalledTimes(1);
+  });
+
   it('a chat with no agent home yet is tried again, never dropped without a word', async () => {
     const agentPathOf = vi.fn().mockResolvedValueOnce(null).mockResolvedValue('/agents/builder');
     const { end, send } = harness({ agentPathOf });

@@ -16,6 +16,7 @@ import type {
   TaskItem,
   SessionLockedError,
   ReloadPluginsResult,
+  AlwaysAllowBreadth,
 } from '@dorkos/shared/types';
 import type { ClaudePluginTransport, DevtoolsRecordingPayload } from '@dorkos/shared/transport';
 import type {
@@ -602,11 +603,16 @@ export function createSessionMethods(
     approveTool(
       sessionId: string,
       toolCallId: string,
-      alwaysAllow?: boolean
+      alwaysAllow?: boolean | AlwaysAllowBreadth
     ): Promise<{ ok: boolean }> {
       return fetchJSON<{ ok: boolean }>(baseUrl, `/sessions/${sessionId}/approve`, {
         method: 'POST',
-        body: JSON.stringify({ toolCallId, alwaysAllow: alwaysAllow || undefined }),
+        body: JSON.stringify({
+          toolCallId,
+          alwaysAllow: alwaysAllow ? true : undefined,
+          // A pick from a card that offered a whole MCP server (DOR-4101).
+          ...(typeof alwaysAllow === 'string' ? { alwaysAllowBreadth: alwaysAllow } : {}),
+        }),
         timeout: INTERACTION_TIMEOUT_MS,
       });
     },

@@ -7,6 +7,7 @@
  *
  * @module services/runtimes/connector-tools
  */
+import { DORKOS_CONNECTIONS_SERVER_NAME } from '@dorkos/shared/global-mcp-schemas';
 import type {
   ConnectorRuntime,
   ConnectorRuntimePrincipalPort,
@@ -23,8 +24,8 @@ export const CONNECTOR_RUNTIME_AUTHORIZATION_HEADER = 'Authorization';
 export const CONNECTOR_RUNTIME_KIND_HEADER = 'X-DorkOS-Connector-Runtime';
 /** Header constraining a bearer to the runtime's canonical working directory. */
 export const CONNECTOR_RUNTIME_CWD_HEADER = 'X-DorkOS-Connector-Cwd';
-/** Dedicated MCP server name used by Codex and OpenCode. */
-export const CONNECTOR_RUNTIME_MCP_SERVER_NAME = 'dorkos_connections';
+/** Dedicated MCP server name used by Codex, OpenCode and Doe; on the reserved list (DOR-3600). */
+export const CONNECTOR_RUNTIME_MCP_SERVER_NAME = DORKOS_CONNECTIONS_SERVER_NAME;
 
 /**
  * The longest one call on the connection tools may run before the runtime

@@ -110,6 +110,7 @@ export const OPERATOR_ONLY_STAKES: readonly OperatorOnlyStakeGroup[] = [
       'tunnel.domain',
       'tunnel.authtoken',
       'tunnel.auth',
+      'remoteAccess.enabled',
       'server.lanAccess',
       ...CLOUD_REMOTE_REACH_PATHS,
       'mcp.enabled',

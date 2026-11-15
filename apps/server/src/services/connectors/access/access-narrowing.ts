@@ -33,6 +33,7 @@ import {
   type DbTransaction,
   type GrantChangeKind,
 } from '@dorkos/db';
+import { isPaidOperation } from '@dorkos/shared/connector-schemas';
 import type { ConnectorOwnerAuthority } from '../principal/server-principal.js';
 import {
   anotherAgentTurnRefusal,
@@ -396,7 +397,11 @@ export class AccessNarrowingService {
       before.revisionIds.length === 0
         ? []
         : tx
-            .select({ id: connectorOperationRevisions.id })
+            .select({
+              id: connectorOperationRevisions.id,
+              toolkit: connectorOperationRevisions.toolkit,
+              operationSlug: connectorOperationRevisions.operationSlug,
+            })
             .from(connectorOperationRevisions)
             .where(
               and(
@@ -405,6 +410,7 @@ export class AccessNarrowingService {
               )
             )
             .all()
+            .filter((row) => !isPaidOperation(row))
             .map((row) => row.id)
     );
     return {

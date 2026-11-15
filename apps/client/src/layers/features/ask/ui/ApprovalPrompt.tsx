@@ -12,18 +12,24 @@ import { Check, Lock, X, Shield, ShieldCheck } from 'lucide-react';
 import { useTransport } from '@/layers/shared/model';
 import { useOnWifi } from '@/layers/entities/config';
 import { DENY_REASON_MAX_LENGTH } from '@dorkos/shared/schemas';
-import type { AlwaysAllowScope } from '@dorkos/shared/types';
+import type { AlwaysAllowBreadth, AlwaysAllowScope } from '@dorkos/shared/types';
 import {
   ToolArgumentsDisplay,
   awayFromTheComputerSentence,
   cn,
   getToolLabel,
   getMcpServerBadge,
+  parseMcpToolName,
 } from '@/layers/shared/lib';
 import { Kbd, Button, Input, CompactResultRow } from '@/layers/shared/ui';
 import { AskCard, WARN_AT_S, URGENT_AT_S } from './AskCard';
+import { AlwaysAllowChoice } from './AlwaysAllowChoice';
 import { ASK_PARKED_LABEL } from '../lib/format-time-left';
 import { alwaysAllowScopeLabel } from '../lib/always-allow-scope-label';
+import { WRAPPING_ACTION_CLASS } from '../lib/wrapping-action';
+
+/** Every answer button on the card: it wraps a long tool name rather than overflow (DOR-4247). */
+const ACTION_CLASS = cn('transition-opacity duration-150', WRAPPING_ACTION_CLASS);
 
 /** What a card on Wi-Fi says in place of Always allow (DOR-2969). */
 export const WIFI_ALWAYS_ALLOW_LINE = 'Always allow is only available at this computer.';
@@ -35,26 +41,6 @@ const confirmTransition = { duration: 0.12, ease: 'easeOut' as const } as const;
 
 /** Reduced motion gets the end state with no travel and no time. */
 const instantTransition = { duration: 0 } as const;
-
-// --- Risk classification for visual differentiation ---
-
-type RiskLevel = 'high' | 'medium' | 'low';
-
-/** Tools that can modify the filesystem, execute commands, or have side effects. */
-const HIGH_RISK_TOOLS = new Set(['Bash', 'Write', 'Edit', 'NotebookEdit']);
-
-/** Tools that modify state but with more constrained scope. */
-const MEDIUM_RISK_TOOLS = new Set(['WebFetch', 'WebSearch']);
-
-function classifyToolRisk(toolName: string): RiskLevel {
-  // Strip MCP prefix for classification — mcp__server__tool → tool
-  const baseName = toolName.includes('__') ? toolName.split('__').pop()! : toolName;
-  if (HIGH_RISK_TOOLS.has(baseName) || HIGH_RISK_TOOLS.has(toolName)) return 'high';
-  if (MEDIUM_RISK_TOOLS.has(baseName) || MEDIUM_RISK_TOOLS.has(toolName)) return 'medium';
-  // MCP tools from unknown servers are medium risk by default
-  if (toolName.startsWith('mcp__')) return 'medium';
-  return 'low';
-}
 
 /** Format seconds as m:ss or Ns for the visible countdown. */
 function formatCountdown(seconds: number): string {
@@ -116,6 +102,11 @@ interface ApprovalPromptProps {
    */
   approvalAlwaysAllowScope?: AlwaysAllowScope;
   /**
+   * `server` when Always allow would cover every tool from this MCP server,
+   * including ones it adds later: the card then asks which (DOR-4101).
+   */
+  approvalAlwaysAllowBreadth?: AlwaysAllowBreadth;
+  /**
    * Whether this session's runtime can deliver a free-text deny reason to the
    * agent (`RuntimeCapabilities.permissionModes.denyReason`). Defaults to
    * `true` — most runtimes have the channel. `false` (OpenCode: its respond
@@ -124,6 +115,12 @@ interface ApprovalPromptProps {
    * (DOR-825).
    */
   allowsDenyReason?: boolean;
+  /**
+   * The asking agent's name, when the host knows it. The title then names the
+   * agent and the tool; without it the title names the tool only, never a
+   * stand-in like "Your agent" (DOR-4117).
+   */
+  agentName?: string;
 }
 
 export interface ApprovalPromptHandle {
@@ -136,7 +133,7 @@ export interface ApprovalPromptHandle {
  * Tool approval card rendered when the agent requests permission to use a tool.
  *
  * Supports imperative control via `ref` (approve/deny) for keyboard shortcut integration.
- * Shows a countdown timer when `timeoutMs` is provided, with warning phases at 2 min and 1 min.
+ * Shows a countdown timer when `timeoutMs` is provided: neutral, red only for its last 30 seconds.
  * Once that countdown runs out the card PARKS: the words say the agent is waiting, the bar
  * goes, and both answers stay live until the server withdraws the card (spec
  * `ask-parks-on-timeout`).
@@ -160,11 +157,12 @@ export function ApprovalPrompt({
   approvalDecisionReason,
   approvalHasSuggestions,
   approvalAlwaysAllowScope,
+  approvalAlwaysAllowBreadth,
   allowsDenyReason = true,
+  agentName,
 }: ApprovalPromptProps) {
   const transport = useTransport();
   const reducedMotion = useReducedMotion();
-  const riskLevel = useMemo(() => classifyToolRisk(toolName), [toolName]);
   const badge = getMcpServerBadge(toolName);
   const rawLabel = getToolLabel(toolName, input);
   // Prefer SDK-provided display name, fall back to our own label
@@ -175,6 +173,25 @@ export function ApprovalPrompt({
   // server refuses one (DOR-2969), so the card neither offers it nor answers
   // its shortcut, and says once where it lives instead.
   const onWifi = useOnWifi();
+  // A whole-server rule on offer: "Always allow…" asks which first (DOR-4101).
+  const mcp = parseMcpToolName(toolName);
+  const asksBreadth = approvalAlwaysAllowBreadth === 'server' && mcp !== null && !onWifi;
+  // Who and what (DOR-4117): the agent and the tool when the name is known, else
+  // the runtime's own sentence, else the tool alone.
+  // An MCP tool reads by the friendly names the badge and the choice use, both
+  // parsed from its `mcp__<server>__<tool>` key, never from the tool's own text
+  // (DOR-4247). Raw snake_case in a sentence read like a bug.
+  const toolWord = mcp?.toolLabel ?? toolName;
+  // A third-party server can name its tool `Bash`, so its title says where the
+  // tool comes from, by the server's name in Connections rather than anything
+  // the tool says about itself: the badge's own label. Built-ins keep the short title.
+  const fromServer = badge !== null && mcp ? ` from ${badge}` : '';
+  const headline = agentName
+    ? `${agentName} wants to use ${toolWord}${fromServer}`
+    : fromServer
+      ? `Allow ${toolWord}${fromServer}?`
+      : approvalTitle || `Allow ${toolWord}?`;
+  const [choosing, setChoosing] = useState(false);
   const [responding, setResponding] = useState(false);
   const [decided, setDecided] = useState<'approved' | 'denied' | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -330,27 +347,34 @@ export function ApprovalPrompt({
     }
   }, [responding, decided, transport, sessionId, toolCallId, onDecided]);
 
-  const handleAlwaysAllow = useCallback(async () => {
-    if (responding || decided) return;
-    setResponding(true);
-    setError(null);
-    try {
-      await transport.approveTool(sessionId, toolCallId, true);
-      setDecided('approved');
-      onDecided?.();
-    } catch (err) {
-      const code = (err as { code?: string }).code;
-      if (code === 'INTERACTION_ALREADY_RESOLVED') {
+  const handleAlwaysAllow = useCallback(
+    async (breadth?: AlwaysAllowBreadth) => {
+      if (responding || decided) return;
+      if (asksBreadth && breadth === undefined) {
+        setChoosing(true);
+        return;
+      }
+      setResponding(true);
+      setError(null);
+      try {
+        await transport.approveTool(sessionId, toolCallId, breadth ?? true);
         setDecided('approved');
         onDecided?.();
-      } else {
-        console.error('Always Allow failed:', err);
-        setError(awayFromTheComputerSentence(err) ?? 'Couldn’t send your answer. Try again.');
+      } catch (err) {
+        const code = (err as { code?: string }).code;
+        if (code === 'INTERACTION_ALREADY_RESOLVED') {
+          setDecided('approved');
+          onDecided?.();
+        } else {
+          console.error('Always Allow failed:', err);
+          setError(awayFromTheComputerSentence(err) ?? 'Couldn’t send your answer. Try again.');
+        }
+      } finally {
+        setResponding(false);
       }
-    } finally {
-      setResponding(false);
-    }
-  }, [responding, decided, transport, sessionId, toolCallId, onDecided]);
+    },
+    [responding, decided, asksBreadth, transport, sessionId, toolCallId, onDecided]
+  );
 
   const handleDeny = useCallback(async () => {
     if (responding || decided) return;
@@ -463,16 +487,13 @@ export function ApprovalPrompt({
         data-testid="tool-approval"
       >
         <div className="mb-1 flex items-center gap-2">
-          <Shield
-            className={cn(
-              'size-(--size-icon-md)',
-              riskLevel === 'high' && 'text-status-error',
-              riskLevel === 'medium' && 'text-status-warning',
-              riskLevel === 'low' && 'text-muted-foreground'
-            )}
-          />
-          <AskCard.Headline className="font-semibold">
-            {approvalTitle || 'Your agent wants to use a tool'}
+          {/* Neutral on every routine ask: red on each card teaches people to
+              ignore red (DOR-4117). The countdown keeps red for its last seconds. */}
+          {/* shrink-0: a title that wraps on a phone squeezed the shield to a dot (DOR-4247). */}
+          <Shield className="text-muted-foreground size-(--size-icon-md) shrink-0" />
+          {/* Wraps rather than truncates: a long server name is the part that matters. */}
+          <AskCard.Headline className="min-w-0 font-semibold break-words">
+            {headline}
           </AskCard.Headline>
         </div>
 
@@ -524,12 +545,23 @@ export function ApprovalPrompt({
           </div>
         )}
         {error && <p className="text-status-error text-2xs mb-2">{error}</p>}
+        {choosing && mcp && (
+          <AlwaysAllowChoice
+            toolLabel={mcp.toolLabel}
+            serverLabel={mcp.serverLabel}
+            scopeLabel={scopeLabel}
+            agentLabel={agentName}
+            disabled={responding}
+            onConfirm={(breadth) => void handleAlwaysAllow(breadth)}
+            onBack={() => setChoosing(false)}
+          />
+        )}
         {/* The optional "why". Hidden until asked for, so the fast path — read
             the command, allow or deny — is untouched; revealed, it is one line
             and the agent gets it with the refusal. Withheld entirely on a
             runtime with no channel for one (DOR-825) — the field would
             otherwise take a person's words and deliver them nowhere. */}
-        {allowsDenyReason && !onWifi && reasonOpen && (
+        {allowsDenyReason && !onWifi && reasonOpen && !choosing && (
           <div className="mb-2">
             <Input
               autoFocus
@@ -560,13 +592,13 @@ export function ApprovalPrompt({
             />
           </div>
         )}
-        <AskCard.Actions>
+        <AskCard.Actions className={cn(choosing && 'hidden')}>
           <Button
             size="sm"
             variant={onWifi ? 'outline' : 'default'}
             onClick={handleApprove}
             disabled={responding}
-            className="transition-opacity duration-150"
+            className={ACTION_CLASS}
           >
             <Check className="size-(--size-icon-xs)" /> {onWifi ? 'Allow once' : 'Allow'}
             {showKeyHints && <Kbd className="ml-1.5">Enter</Kbd>}
@@ -575,7 +607,7 @@ export function ApprovalPrompt({
             <Button
               size="sm"
               variant="outline"
-              onClick={handleAlwaysAllow}
+              onClick={() => void handleAlwaysAllow()}
               disabled={responding}
               // Spelled out rather than assembled from the children, and this
               // is the one button on the card that gets an explicit name. The
@@ -586,15 +618,23 @@ export function ApprovalPrompt({
               // to turn this into "Always Allow· this project". The keyboard
               // hint is left out on purpose: it is a visual affordance, not
               // part of the grant.
-              aria-label={scopeLabel === undefined ? 'Always allow' : `Always allow, ${scopeLabel}`}
-              className="transition-opacity duration-150"
+              aria-label={
+                asksBreadth
+                  ? 'Always allow…'
+                  : scopeLabel === undefined
+                    ? 'Always allow'
+                    : `Always allow, ${scopeLabel}`
+              }
+              className={ACTION_CLASS}
             >
-              <ShieldCheck className="size-(--size-icon-xs)" /> Always allow
+              <ShieldCheck className="size-(--size-icon-xs)" />{' '}
+              {asksBreadth ? 'Always allow…' : 'Always allow'}
               {/* The reach, ON the button rather than under it: this grant can
                   outlive the conversation, because a settings file the runtime
                   writes is read by every future session (DOR-1462). Absent when
-                  the server named no scope. */}
-              {scopeLabel !== undefined && (
+                  the server named no scope, and moved to the choice's legend
+                  when the card asks which tools first (DOR-4101). */}
+              {scopeLabel !== undefined && !asksBreadth && (
                 <span className="text-2xs opacity-70">{`· ${scopeLabel}`}</span>
               )}
               {showKeyHints && <Kbd className="ml-1.5">Shift+Enter</Kbd>}
@@ -605,7 +645,7 @@ export function ApprovalPrompt({
             variant="outline"
             onClick={handleDeny}
             disabled={responding}
-            className="transition-opacity duration-150"
+            className={ACTION_CLASS}
           >
             <X className="size-(--size-icon-xs)" /> {onWifi ? 'Deny' : 'Don’t allow'}
             {isActive && <Kbd className="ml-1.5">Esc</Kbd>}

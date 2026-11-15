@@ -485,6 +485,32 @@ describe('agents approving read requests', () => {
     return connectionId;
   }
 
+  // DOR-4204: an action that spends money is never handed on by another agent, even when
+  // the service calls it read-only and the approver holds it.
+  it('never hands on an action that spends money', async () => {
+    const connectionId = await secondApp('connection-apify', 'apify', false);
+    const snapshot = await reconciliation.preview(
+      OWNER,
+      { connectionId },
+      new AbortController().signal
+    );
+    const scrape = snapshot.candidates.find((c) => c.operationSlug === 'apify.read')!;
+    expect(scrape.capabilityClassification).toBe('read');
+    await reconciliation.apply(OWNER, {
+      previewId: snapshot.previewId,
+      grants: [{ agentId: 'pm', operationRevisionIds: [scrape.operationRevisionId] }],
+    });
+    requests.set('request-apify', {
+      agentId: 'newbie',
+      serviceSlug: 'apify',
+      requestedAccess: 'read',
+    });
+    expect(await code(approval.approve(caller('pm'), { requestId: 'request-apify' }))).toBe(
+      'APPROVE_NOT_HELD'
+    );
+    expect(readAccessState(db, 'newbie', connectionId).revisionIds).toEqual([]);
+  });
+
   describe('which app (Security, on { requestId, connectionId? })', () => {
     it('refuses when the approver holds more than one app for the service and names none: never the first', async () => {
       const other = await secondApp('connection-b', 'gmail', true);
@@ -574,6 +600,19 @@ describe('agents approving read requests', () => {
         refusalCode: 'UNDO_PERSON_ONLY',
         undoOf: personUndo.undoId,
       });
+    });
+
+    it('a person’s Undo is final: no agent approves that request again (DOR-4049)', async () => {
+      const approved = await approval.approve(caller('pm'), { requestId: 'request-newbie' });
+      await narrowing.undo(OWNER, approved.changeId!);
+      expect(readAccessState(db, 'newbie', CONNECTION_ID).level).toBeNull();
+      // The fake keeps saying the request waits; the undone approval still counts.
+      for (const agent of ['pm', 'agent-b']) {
+        expect(await code(approval.approve(caller(agent), { requestId: 'request-newbie' }))).toBe(
+          'APPROVE_NOT_FOUND'
+        );
+      }
+      expect(readAccessState(db, 'newbie', CONNECTION_ID).level).toBeNull();
     });
 
     it('P2: two approvals racing on one request apply once', async () => {

@@ -1,8 +1,6 @@
-import { formatNewSince } from '../../shared/prose/new-since-block.js';
 import { renderDocEvents } from '../../../canvas/doc-channel/prompt.js';
 import { formatAccountsAccess } from '../../shared/accounts-access-context.js';
 import { formatContextWarning } from '../../../session/agent-compaction/context-warning-block.js';
-import { formatTurnCutoff } from '../../../session/turn-cutoff/turn-cutoff.js';
 /**
  * Per-turn input shaping for the OpenCode runtime: the `session.promptAsync`
  * body assembly that delivers the neutral additional-context bag (ADR-0273)
@@ -30,10 +28,10 @@ import { CONTEXT_TAG } from '@dorkos/shared/additional-context';
 import { GEN_UI_CONTEXT } from '../../shared/gen-ui-context.js';
 import { OPENCODE_DORKOS_TOOL_PREFIX } from '../../shared/dorkos-tool-names.js';
 import { formatRoomContext } from '../../shared/room-context-block.js';
-import { formatApprovalVerdict } from '../../shared/approval-verdict-block.js';
-import { formatDirectNotes } from '../../shared/prose/direct-notes-block.js';
-import { formatSeedContext } from '../../shared/seed-context-block.js';
-import { formatStagedContext } from '../../shared/staged-context-block.js';
+import {
+  renderProseContextBlock,
+  type ProseContextEntry,
+} from '../../shared/prose/prose-context.js';
 import type { SessionSettings } from '@dorkos/shared/types';
 import {
   recordTurnContext,
@@ -47,6 +45,7 @@ import {
   joinFitted,
   type ContextPart,
 } from '../../shared/window/context-fit.js';
+import { openCodeProjectInstructions } from './project-instructions.js';
 
 /** The `session.promptAsync` text-part input shape (SDK `TextPartInput`). */
 export interface OpenCodeTextPartInput {
@@ -77,53 +76,59 @@ export function parseModelSelection(
 /**
  * Render one neutral context entry into a tagged block — the OpenCode half of
  * ADR-0273 (the server owns WHAT context exists; the adapter owns HOW it is
- * rendered). Same honest JSON rendering as the Codex adapter, and the same four
- * exceptions — see {@link renderContextBody}.
+ * rendered). Shared prose kinds use the same complete block writer as every
+ * other runtime.
  */
 function renderContextEntry(entry: AdditionalContextEntry): string {
-  if (entry.kind === 'doc_events') return renderDocEvents(entry.data);
-  const tag = CONTEXT_TAG[entry.kind];
-  return `<${tag}>\n${renderContextBody(entry)}\n</${tag}>`;
+  switch (entry.kind) {
+    case 'doc_events':
+      return renderDocEvents(entry.data);
+    case 'git_status':
+    case 'env':
+    case 'relay_context':
+    case 'queue_note':
+    case 'staged_context':
+    case 'seed_context':
+    case 'approval_verdict':
+    case 'direct_notes':
+    case 'turn_cutoff':
+    case 'new_since_last_run':
+      return renderProseContextBlock(entry);
+    case 'accounts_access':
+    case 'context_warning':
+    case 'room_context':
+    case 'ui_state': {
+      const tag = CONTEXT_TAG[entry.kind];
+      return `<${tag}>\n${renderContextBody(entry)}\n</${tag}>`;
+    }
+  }
+  const exhaustiveEntry: never = entry;
+  return exhaustiveEntry;
 }
 
 /**
- * The body of one rendered block: structured data as JSON, except for the kinds
- * whose body is PROSE and must read identically on every runtime.
+ * Render one runtime-specific context body after shared prose and document
+ * events have already been dispatched.
  *
  * `room_context` carries text other people wrote inside an untrusted-input fence
- * a JSON dump would not carry. `seed_context` carries a paragraph somebody wrote
- * for a model to read, plus the sentence telling the reader the person cannot
- * see the block — JSON would deliver both as one quoted line with `\n` spelled
- * out in it. `approval_verdict` reports a security decision a person made, and
- * the `default` arm below is exactly what would have dumped it here as raw JSON
- * while it read as a formatted block on claude-code. All of them go through the
- * shared writers in `runtimes/shared/`.
+ * a JSON dump would not carry. `ui_state` is the sole context kind whose body
+ * remains structured JSON.
  */
-function renderContextBody(entry: AdditionalContextEntry): string {
+function renderContextBody(
+  entry: Exclude<AdditionalContextEntry, ProseContextEntry | { kind: 'doc_events' }>
+): string {
   switch (entry.kind) {
     case 'accounts_access':
       return formatAccountsAccess(entry.data, 'opencode');
     case 'context_warning':
       return formatContextWarning(entry.data, 'opencode');
-    case 'new_since_last_run':
-      return formatNewSince(entry.data);
-    case 'turn_cutoff':
-      return formatTurnCutoff(entry.data);
-    case 'approval_verdict':
-      return formatApprovalVerdict(entry.data);
-    case 'direct_notes':
-      return formatDirectNotes(entry.data);
     case 'room_context':
       // OpenCode builds `sanitize(server) + "_" + sanitize(tool)` rather than
       // the `mcp__server__tool` the other two use, so the tool-only closing
       // directive can only name the posting tool if this adapter says how
       // (DOR-1292).
       return formatRoomContext(entry.data, { toolPrefix: OPENCODE_DORKOS_TOOL_PREFIX });
-    case 'seed_context':
-      return formatSeedContext(entry.data);
-    case 'staged_context':
-      return formatStagedContext(entry.data);
-    default:
+    case 'ui_state':
       return JSON.stringify(entry.data, null, 2);
   }
 }
@@ -180,12 +185,15 @@ function renderContextBody(entry: AdditionalContextEntry): string {
  *   tagged parts, or `''`/omitted when the working directory hosts no agent manifest
  * @param contextWindow - The model's context window in tokens, when the catalog
  *   states it; nothing is left out without one
+ * @param projectInstructions - The project's `AGENTS.md` text, which DorkOS reads
+ *   because the sidecar no longer does (DOR-4394)
  * @returns The joined system prompt, or `undefined` when there is nothing to say
  */
 export function buildOpenCodeSystem(
   opts?: MessageOpts,
   agentContext?: string | readonly ContextPart[],
-  contextWindow?: number
+  contextWindow?: number,
+  projectInstructions?: string
 ): string | undefined {
   const parts: ContextPart[] = [
     { block: 'gen_ui' as const, text: GEN_UI_CONTEXT },
@@ -193,6 +201,8 @@ export function buildOpenCodeSystem(
       ? [{ block: null, text: agentContext ?? '' }]
       : agentContext),
     { block: null, text: opts?.systemPromptAppend ?? '' },
+    // The project's own words come last, never above DorkOS's (DOR-4394).
+    { block: null, text: projectInstructions ?? '' },
   ].filter((part) => part.text !== '');
   const fit = chooseTrims(
     parts.map(fitItemOf),
@@ -249,15 +259,18 @@ export interface OpenCodeTurnBody {
  * @param agentContext - The runtime-neutral DorkOS context blocks
  * @param contextWindow - The model's context window in tokens, when known
  * @param model - The model to name, when one is chosen
+ * @param directory - The session's folder, whose `AGENTS.md` text DorkOS passes
  */
 export function openCodeTurnBody(
   content: string,
   opts: MessageOpts | undefined,
   agentContext: string | readonly ContextPart[] | undefined,
   contextWindow: number | undefined,
-  model: { providerID: string; modelID: string } | undefined
+  model: { providerID: string; modelID: string } | undefined,
+  directory?: string
 ): OpenCodeTurnBody {
-  const system = buildOpenCodeSystem(opts, agentContext, contextWindow);
+  const project = directory === undefined ? undefined : openCodeProjectInstructions(directory);
+  const system = buildOpenCodeSystem(opts, agentContext, contextWindow, project);
   return {
     parts: buildOpenCodeParts(content, opts),
     ...(system !== undefined ? { system } : {}),

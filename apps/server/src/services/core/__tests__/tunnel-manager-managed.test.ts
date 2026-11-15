@@ -152,6 +152,7 @@ function fakeIngress(): ManagedIngress & {
       fake.log.push(`ingress.close ${immediate ? 'immediate' : 'gentle'}`);
       return { deadlineHit: false, usedLocalDeadline: !immediate };
     }),
+    dropConnections: vi.fn(),
   };
   return ingress;
 }

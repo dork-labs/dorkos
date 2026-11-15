@@ -84,7 +84,8 @@ export function isTelemetryDebugEnabled(env: TelemetryEnv): boolean {
  */
 export function resolveTelemetryConsent(configValue: boolean, env: TelemetryEnv): boolean {
   if (isTelemetryDisabledByEnv(env)) return false;
-  return configValue;
+  // Exactly `true`: anything a hand-edited file could hold instead reads as off.
+  return configValue === true;
 }
 
 /**
@@ -120,4 +121,88 @@ export interface Tier1GateConfig {
 export function hasTier1SendGate(config: Tier1GateConfig | undefined | null): boolean {
   if (config == null) return false;
   return config.userHasDecided === true || config.lastPromptedVersion !== null;
+}
+
+/** The three anonymous, first-party channels a person answers once for (ADR 260727-181825). */
+export const TIER1_CHANNELS = ['install', 'heartbeat', 'usage'] as const;
+
+/** One of {@link TIER1_CHANNELS}. */
+export type Tier1Channel = (typeof TIER1_CHANNELS)[number];
+
+/**
+ * The stored telemetry shape these helpers read. Loose on purpose: it is read
+ * straight from a settings file a person may have written by hand, so nothing
+ * in it is trusted to be the type the schema says.
+ */
+export interface Tier1ConsentConfig {
+  userHasDecided?: unknown;
+  install?: unknown;
+  heartbeat?: unknown;
+  usage?: unknown;
+}
+
+/**
+ * Whether one Tier 1 channel may send, read from the person's answer and never
+ * from a migration having run (DOR-4400).
+ *
+ * The channel is on only when the person has answered (`userHasDecided` is
+ * exactly `true`), its flag is exactly `true`, and no env kill switch is set.
+ * Anything else, including stored `true` flags in a file nobody answered for,
+ * reads as off. Every Tier 1 sender (marketplace installs, the heartbeat,
+ * usage events) reads its consent through here.
+ *
+ * @param config - The stored telemetry block (`config.telemetry`), if any.
+ * @param channel - Which channel is asking.
+ * @param env - The environment record to read (e.g. `process.env`).
+ * @returns True when the channel may send.
+ */
+export function resolveTier1ChannelConsent(
+  config: Tier1ConsentConfig | undefined | null,
+  channel: Tier1Channel,
+  env: TelemetryEnv
+): boolean {
+  if (config == null || config.userHasDecided !== true) return false;
+  return resolveTelemetryConsent(config[channel] === true, env);
+}
+
+/**
+ * The telemetry block as it is in force, for anything that shows it to a
+ * person: when nobody has answered, the three Tier 1 channels read off,
+ * whatever the file says, so a switch never shows "on" for a channel that
+ * sends nothing (DOR-4400). Every other field is passed through unchanged.
+ *
+ * @param config - The stored telemetry block.
+ * @returns The same block, with the Tier 1 channels off when unanswered.
+ */
+export function effectiveTier1Telemetry<T extends Tier1ConsentConfig>(config: T): T {
+  if (config.userHasDecided === true) return config;
+  return { ...config, install: false, heartbeat: false, usage: false };
+}
+
+/**
+ * The Tier 1 channels a person's FIRST answer turns off without naming them
+ * (DOR-4400, Security M1).
+ *
+ * While nobody has answered, stored "on" flags read as off
+ * ({@link resolveTier1ChannelConsent}) and are shown as off. The first write
+ * that records an answer (`userHasDecided: true`) would otherwise bring every
+ * flag it did not touch into force, so one crash-report switch could turn on
+ * install, heartbeat and usage data nobody said yes to. This names those
+ * channels so the same write stores them as `false`, which is what the person
+ * was shown.
+ *
+ * @param stored - The telemetry block as it is stored before the write.
+ * @param written - The telemetry part of the write; it may set other channels too.
+ * @returns `false` for each Tier 1 channel to store off; empty when the write
+ *   is not a first answer.
+ */
+export function tier1ChannelsSettledByFirstAnswer(
+  stored: Tier1ConsentConfig | undefined | null,
+  written: Readonly<Record<string, unknown>> | undefined | null
+): Partial<Record<Tier1Channel, false>> {
+  if (written == null || written.userHasDecided !== true) return {};
+  if (stored != null && stored.userHasDecided === true) return {};
+  const settled: Partial<Record<Tier1Channel, false>> = {};
+  for (const channel of TIER1_CHANNELS) if (!(channel in written)) settled[channel] = false;
+  return settled;
 }

@@ -38,13 +38,17 @@ describe('Doe context tool names', () => {
     expect(partial).not.toContain('chat_send');
     expect(partial).toContain('chat_read is loaded');
   });
-  it('renders generic neutral data in the context tag', () => {
+  it('renders UI state as JSON in the context tag', () => {
     expect(
       renderDoeContextEntry({
-        kind: 'env',
+        kind: 'ui_state',
         scope: 'per-turn',
-        data: { cwd: '/workspace' },
-      } as never)
+        data: {
+          panels: { settings: false, tasks: false, relay: false, picker: false },
+          sidebar: { open: false },
+          agent: { id: null, cwd: '/workspace' },
+        },
+      })
     ).toContain('/workspace');
   });
 });

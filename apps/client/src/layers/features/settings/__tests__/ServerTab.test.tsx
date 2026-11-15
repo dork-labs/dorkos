@@ -67,6 +67,13 @@ describe('ServerTab', () => {
     expect(await screen.findByText(`http://localhost:${PORT}/mcp`)).toBeInTheDocument();
   });
 
+  it('says the MCP endpoint takes only an API key from another device (DOR-3650)', async () => {
+    renderTab();
+    await screen.findByText(`http://localhost:${PORT}/mcp`);
+
+    expect(screen.getByText('From another device, it needs an API key.')).toBeInTheDocument();
+  });
+
   it('copies each address', async () => {
     const user = userEvent.setup();
     // After `setup()`, which installs a clipboard stub of its own that would

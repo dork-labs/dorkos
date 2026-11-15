@@ -17,6 +17,7 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' || github.event_name == 'pull_request_target' }}
 
 permissions:
+  checks: read
   contents: read
   statuses: read
   pull-requests: read
@@ -47,6 +48,7 @@ jobs:
     # Enforcement requires the ruleset workflow source pinned to main. A named
     # status check alone lets a candidate replace this YAML. See ci/security-gate-promotion.md.
     permissions:
+      checks: read
       contents: read
       statuses: read
       pull-requests: read

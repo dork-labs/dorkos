@@ -30,6 +30,8 @@
     "agent-hours/**/*.ts",
     "check-copy-spec-drift.ts",
     "vitest-flake-reporter.ts",
+    "check-knip.ts",
+    "knip/**/*.ts",
     "sharding/**/*.ts",
     "neon-preview-sweep.ts",
     "origin-branch-janitor.ts"

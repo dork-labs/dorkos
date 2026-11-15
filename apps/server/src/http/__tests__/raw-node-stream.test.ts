@@ -212,12 +212,18 @@ describe('streamToNodeResponse', () => {
     expect(await left).toBe(true);
   });
 
+  /** A request from this computer, all the bare context needs to stand in for one. */
+  const THIS_COMPUTER = {
+    headers: { host: 'localhost:4242' },
+    socket: { remoteAddress: '127.0.0.1' },
+  };
+
   it('answers with a fresh marker, never the shared one', async () => {
     const outgoing = Object.assign(new (await import('node:events')).EventEmitter(), {
       destroyed: false,
       writableFinished: true,
     });
-    const c = { env: { outgoing }, var: {} } as unknown as Context<ApiEnv>;
+    const c = { env: { outgoing, incoming: THIS_COMPUTER }, var: {} } as unknown as Context<ApiEnv>;
     const marker = await streamToNodeResponse(c, () => undefined);
     expect(marker).not.toBe(RESPONSE_ALREADY_SENT);
     expect([...marker.headers]).toEqual([...RESPONSE_ALREADY_SENT.headers]);
@@ -229,7 +235,7 @@ describe('streamToNodeResponse', () => {
       destroyed: true,
       writableFinished: false,
     });
-    const c = { env: { outgoing }, var: {} } as unknown as Context<ApiEnv>;
+    const c = { env: { outgoing, incoming: THIS_COMPUTER }, var: {} } as unknown as Context<ApiEnv>;
     let aborted: boolean | undefined;
     await streamToNodeResponse(c, (_res, { signal }) => {
       aborted = signal.aborted;

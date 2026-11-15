@@ -85,6 +85,21 @@ export const AUTHORED_SKILL = 'x';
 /** The installed package every fixture carries, whose skill projects as `pkg__x`. */
 export const INSTALLED_PACKAGE = 'pkg';
 
+/**
+ * The frontmatter `name` of the package's `x` skill. Deliberately NOT `x`: a
+ * package skill named like the person's own is never projected (DOR-4392), so
+ * a package `x` would leave no `pkg__x` to ask SK-09 about.
+ */
+export const PACKAGE_SKILL_NAME = 'pkg-x';
+
+/**
+ * A second authored folder whose frontmatter also says `x`, staged for Codex
+ * only. It carries SK-06's "two skills whose frontmatter agrees both appear",
+ * which used to ride the package skill until a package could no longer share
+ * the person's name (DOR-4392).
+ */
+export const AUTHORED_TWIN = 'x-twin';
+
 /** The skill whose body is the activation probe. */
 export const PROBE_SKILL = 'probe';
 
@@ -233,7 +248,13 @@ export function fixtureSpecFor(
 
   return {
     agents: {
-      skills: [AUTHORED_SKILL, PROBE_SKILL],
+      skills: [
+        AUTHORED_SKILL,
+        PROBE_SKILL,
+        ...(harness.harnessId === 'codex'
+          ? [{ name: AUTHORED_TWIN, frontmatterName: AUTHORED_SKILL }]
+          : []),
+      ],
       // OpenCode is the one harness asked about the `CLAUDE.md` fallback, which
       // only exists when there is no `AGENTS.md` to prefer. Every other fixture
       // carries one, so the `@../AGENTS.md` scaffold has something to point at.
@@ -256,7 +277,8 @@ export function fixtureSpecFor(
         scope: 'project',
         // The same leaf name as the authored skill AND as the wrapper below —
         // which is CM-05 asked as a question rather than asserted as a shape.
-        skills: [AUTHORED_SKILL],
+        // Its frontmatter name differs, so the package skill is projected.
+        skills: [{ name: AUTHORED_SKILL, frontmatterName: PACKAGE_SKILL_NAME }],
         commands: [AUTHORED_SKILL],
         // The PROJECTED hook: merged into `.claude/settings.local.json` under
         // the `_dorkosHarness` sentinel for Claude Code (HK-06), folded into the

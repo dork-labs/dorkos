@@ -931,36 +931,47 @@
   -webkit-app-region: no-drag;
 }
 
-/* Desktop chrome defaults to non-selectable text (it reads like an app, not
-   a document) — content surfaces opt back in explicitly below. `user-select`
-   is inherited, so the re-enables must be as explicit as the disable.
+/* Desktop text is selectable by default; only app chrome opts out (DOR-2871).
+   Chrome — buttons, tabs, menu items and options, sidebar rows, resize
+   handles, the title bar — reads like an app, so a drag across it selects
+   nothing. Everything else a person reads (messages, tool output, markdown,
+   mini-app pages, settings, profiles, Activity, toasts) can be copied.
 
-   Platform-neutral (DOR-562): scoped to `.desktop`, not `.desktop-darwin`, so
-   Windows gets the same app-like chrome instead of drag-selectable labels
-   and sidebar rows like a web page. */
-.desktop body {
-  -webkit-user-select: none;
-  user-select: none;
-}
+   This used to be the other way round: `user-select: none` on the whole body
+   (DOR-562), with each content surface asked to opt back in. Most never did,
+   so a mini-app page or a settings line could not be copied at all.
 
-.desktop input,
-.desktop textarea,
-.desktop [contenteditable='true'] {
-  -webkit-user-select: text;
-  user-select: text;
-}
+   - `[role='button']` is deliberately absent: mention pills and refused links
+     carry it inline inside messages, and a copied message must keep them.
+   - Inside `@layer base`, so a per-element `select-text` utility still wins.
+   - Platform-neutral: `.desktop`, not `.desktop-darwin`, so Windows matches. */
+@layer base {
+  .desktop
+    :is(
+      button,
+      [role='tab'],
+      [role='menuitem'],
+      [role='menuitemcheckbox'],
+      [role='menuitemradio'],
+      [role='option'],
+      [role='separator'],
+      [data-sidebar='menu-button'],
+      [data-sidebar='menu-sub-button'],
+      [data-sidebar='menu-action'],
+      [data-sidebar='group-label'],
+      [data-sidebar='rail'],
+      .app-drag-region
+    ) {
+    -webkit-user-select: none;
+    user-select: none;
+  }
 
-/* Toast/error text selectable (DOR-254): `<Toaster />` (App.tsx/AppShell.tsx)
-   renders straight into the component tree, same as everything else — sonner
-   does not portal it. It's just chrome that happens to render text, and no
-   content-surface re-enable container (`.chat-scroll-area`, `desktop:select-text`,
-   etc.) happens to wrap it, so it inherited the blanket disable above with
-   nothing opting it back in — a person could not select and copy an error
-   message out of a toast. `[data-sonner-toast]` is the attribute sonner
-   stamps on every individual toast. */
-.desktop [data-sonner-toast] {
-  -webkit-user-select: text;
-  user-select: text;
+  /* Fields stay editable and selectable even inside chrome (a search box in
+     the title bar). `user-select` inherits, so this must be explicit. */
+  .desktop :is(input, textarea, [contenteditable='true']) {
+    -webkit-user-select: text;
+    user-select: text;
+  }
 }
 
 /* Window dim-on-blur (DOR-254): native mac apps dim their chrome when the

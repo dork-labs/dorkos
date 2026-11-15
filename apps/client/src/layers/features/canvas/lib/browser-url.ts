@@ -57,9 +57,18 @@ export type BrowserTarget =
   | { mode: 'serve'; path: string }
   | { mode: 'blocked' };
 
-/** Whether a URL's hostname is a loopback address. */
+/**
+ * Whether a URL's hostname is a loopback address. A trailing dot (`localhost.`)
+ * names the same host, so it is read the same.
+ */
 function isLoopbackHost(hostname: string): boolean {
-  return LOOPBACK_HOSTS.has(hostname) || hostname.endsWith('.localhost');
+  const host = withoutTrailingDot(hostname);
+  return LOOPBACK_HOSTS.has(host) || host.endsWith('.localhost');
+}
+
+/** A hostname with its one trailing dot, if any, removed: `a.example.` names `a.example`. */
+function withoutTrailingDot(hostname: string): string {
+  return hostname.endsWith('.') ? hostname.slice(0, -1) : hostname;
 }
 
 /** The parts of the page's own `Location` {@link isThisAppsAddress} reads. */
@@ -78,28 +87,49 @@ export interface PageAddress {
  * Whether a frame source is this app's own server, so framing it with
  * `allow-same-origin` would hand the framed page the app's own powers.
  *
- * Two shapes count. The page's exact origin, which a tunnel or Wi-Fi address
- * reaches as an `external` target. And, while the page is on a loopback name,
- * any loopback name on the page's own port: `127.0.0.1:4242` is a different
- * origin string from `localhost:4242` but the same server, and the server
- * trusts both. A source that does not parse is treated as this app's, since a
- * relative URL resolves onto the page's own origin.
+ * Three shapes count. The page's exact origin, which a tunnel or Wi-Fi address
+ * reaches as an `external` target. Any of the server's own other addresses
+ * (`ownOrigins`: its tunnel, Wi-Fi and hub origins, from the server's config),
+ * which a page open on `localhost` would otherwise read as a stranger's (DOR-4132).
+ * And, while the page is on a loopback name, any loopback name on the page's own
+ * port: `127.0.0.1:4242` is a different origin string from `localhost:4242` but
+ * the same server, and the server trusts both. A trailing dot on the source's
+ * host names the same host and is ignored. A source that does not parse is
+ * treated as this app's, since a relative URL resolves onto the page's own origin.
  *
  * @param src - The URL about to be framed (absolute, or relative to the page).
  * @param page - The page rendering the frame, normally `window.location`.
+ * @param ownOrigins - The server's own other origins, as `GET /api/config` reports them.
  */
-export function isThisAppsAddress(src: string, page: PageAddress): boolean {
+export function isThisAppsAddress(
+  src: string,
+  page: PageAddress,
+  ownOrigins: readonly string[] = []
+): boolean {
   let target: URL;
   try {
     target = new URL(src, page.origin);
   } catch {
     return true;
   }
+  target.hostname = withoutTrailingDot(target.hostname);
   if (target.origin === page.origin) return true;
+  if (ownOrigins.some((origin) => sameOrigin(origin, target.origin))) return true;
   if (!isLoopbackHost(page.hostname) || !isLoopbackHost(target.hostname)) return false;
   const pagePort = page.port || String(defaultPort(page.protocol));
   const targetPort = target.port || String(defaultPort(target.protocol));
   return pagePort === targetPort;
+}
+
+/** Whether a configured origin names `origin`. One that does not parse names nothing. */
+function sameOrigin(configured: string, origin: string): boolean {
+  try {
+    const parsed = new URL(configured);
+    parsed.hostname = withoutTrailingDot(parsed.hostname);
+    return parsed.origin === origin;
+  } catch {
+    return false;
+  }
 }
 
 /** How a loopback (`proxy`) target is loaded: straight into the frame, or via the server. */

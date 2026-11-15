@@ -36,6 +36,7 @@ import {
   type StepUpWindowSubmit,
 } from '../../shared/step-up-page';
 import { isHeldActionId, StepUpConfirmation } from './step-up-confirmation';
+import { serverOrigin } from '../../shared/server-address';
 
 /** What the window needs from the rest of the shell. */
 export interface StepUpWindowDeps {
@@ -126,7 +127,7 @@ export function registerStepUpWindow(deps: StepUpWindowDeps): void {
         return { kind: 'not-confirmed' };
       }
       const confirmation = new StepUpConfirmation(heldActionId, {
-        origin: `http://localhost:${port}`,
+        origin: serverOrigin(port),
         fetch: deps.fetch,
         personProof: deps.personProof,
       });

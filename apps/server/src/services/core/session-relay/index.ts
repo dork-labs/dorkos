@@ -24,6 +24,7 @@ import { eventFanOut } from '../event-fan-out.js';
 import { SERVER_VERSION } from '../../../lib/version.js';
 import { canExpose } from '../auth/exposure-guard.js';
 import { configManager } from '../config-manager.js';
+import { remoteAccessOn } from '../../../middleware/remote-access-switch.js';
 import {
   computerSigningKey,
   readRelayPin,
@@ -62,14 +63,15 @@ export function sessionRelayEnabled(): boolean {
 }
 
 /**
- * The pin the dialer may use: none while the experiment is off or the owner
- * has paused the link, so the dialer's every check (at the dial and on each
+ * The pin the dialer may use: none while the experiment is off, Remote Access
+ * is off, or the owner has paused the link, so the dialer's every check (at the dial and on each
  * viewer report) treats either as no pin.
  *
  * @param read - Reads the stored pin; the live file by default.
  */
 export function dialablePin(read: () => RelayPin | null = () => readRelayPin()): RelayPin | null {
-  if (!sessionRelayEnabled()) return null;
+  // Remote Access off closes every way in from another device, this one too (DOR-3650).
+  if (!sessionRelayEnabled() || !remoteAccessOn()) return null;
   const pin = read();
   return pin && !pin.paused ? pin : null;
 }
@@ -153,7 +155,8 @@ export function closeSessionRelay(): void {
 let stopWatching: (() => void) | null = null;
 
 /**
- * Close a live relay the moment the person switches the experiment off,
+ * Close a live relay the moment the person switches the experiment or Remote
+ * Access off,
  * rather than at the next frame from the hub, and pause the link (under the
  * pin lock, if there is one), so switching it back on never dials again
  * without the owner's Resume and password. Called once at startup; a later
@@ -168,6 +171,12 @@ export function watchSessionRelaySwitch(
 ): void {
   stopWatching?.();
   stopWatching = onChange((change) => {
+    // Remote Access off ends the live relay too; the pin stays as it is, and no
+    // dial happens until it is back on (DOR-3650).
+    const remotePaths = change.paths.some(
+      (p) => p === 'remoteAccess' || p.startsWith('remoteAccess.')
+    );
+    if (remotePaths && !remoteAccessOn()) closeSessionRelay();
     if (!change.paths.some((p) => p === 'sessionRelay' || p.startsWith('sessionRelay.'))) return;
     if (sessionRelayEnabled()) return;
     closeSessionRelay();

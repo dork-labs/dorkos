@@ -20,9 +20,14 @@ import { verifyDevChildBundle } from '../../../extensions/isolation/child-bundle
 import { answerFrom, isGuardReady, type GuardRequest, type WireRoots } from './guard-protocol.js';
 import type { ShellCheckAnswer, ShellGuardRoots } from './shell-check.js';
 
-/** What the host said about one command. */
+/**
+ * What the host said about one command. `unavailable` says whether the person has been told yet:
+ * before that, a failed start is most likely load, and the command is worth retrying.
+ */
 export type ShellCheckResult =
-  ({ outcome: 'checked' } & ShellCheckAnswer) | { outcome: 'failed' } | { outcome: 'unavailable' };
+  | ({ outcome: 'checked' } & ShellCheckAnswer)
+  | { outcome: 'failed' }
+  | { outcome: 'unavailable'; told: boolean };
 
 /** Asks about one command. Never rejects. */
 export type ShellChecker = (
@@ -33,8 +38,10 @@ export type ShellChecker = (
 
 /** Timings and limits, overridable by tests. */
 export interface GuardHostTuning {
-  /** How long a child has to get ready. */
+  /** How long a child first has to get ready. Each start that runs out of time doubles it. */
   startMs: number;
+  /** The most a start is ever given, however slow the last ones were. */
+  maxStartMs: number;
   /** How long a child has to answer. */
   answerMs: number;
   /** How long a command may wait for a free child, once the limit is reached. */
@@ -51,6 +58,7 @@ export interface GuardHostTuning {
 
 const DEFAULTS: GuardHostTuning = {
   startMs: 5_000,
+  maxStartMs: 30_000,
   answerMs: 5_000,
   queueMs: 15_000,
   maxChildren: 4,
@@ -128,6 +136,11 @@ export class GuardHost {
   private told = false;
   private everStarted = false;
   private lastAtFull = false;
+  /**
+   * How long the next start may take. It only grows: it is a limit, not a wait, so a computer that
+   * was slow once costs nothing when it is fast again (DOR-4304).
+   */
+  private startMs: number;
 
   /**
    * Prepare a host; no child starts until a command is asked about.
@@ -136,6 +149,7 @@ export class GuardHost {
    */
   constructor(private readonly options: GuardHostOptions) {
     this.tuning = { ...DEFAULTS, ...options.tuning };
+    this.startMs = Math.min(this.tuning.startMs, this.tuning.maxStartMs);
   }
 
   /** Whether DorkOS currently has no check: the last start failed and none has worked since. */
@@ -167,7 +181,11 @@ export class GuardHost {
     }
     for (let attempt = 0; attempt < 2; attempt++) {
       const worker = await this.takeWorker();
-      if (!worker) return { outcome: this.unavailable ? 'unavailable' : 'failed' };
+      if (!worker) {
+        return this.unavailable
+          ? { outcome: 'unavailable', told: this.told }
+          : { outcome: 'failed' };
+      }
       const answer = await this.ask(worker, command, wire, reads);
       if (answer) {
         this.release(worker);
@@ -288,11 +306,24 @@ export class GuardHost {
         else this.park(child);
         resolve(ready ? worker : null);
       };
-      const timer = setTimeout(() => finish(false), this.tuning.startMs);
+      const waitedMs = this.startMs;
+      const timer = setTimeout(() => {
+        // Under load a start can just be slow: give the next one longer (DOR-4304).
+        this.startMs = Math.min(waitedMs * 2, this.tuning.maxStartMs);
+        this.note('the check did not start in time', {
+          reason: 'timeout',
+          waitedMs,
+          nextStartMs: this.startMs,
+        });
+        finish(false);
+      }, waitedMs);
       const onMessage = (message: unknown): void => {
         if (isGuardReady(message)) finish(true);
       };
-      const onExit = (): void => finish(false);
+      const onExit = (code: number | null, signal: NodeJS.Signals | null): void => {
+        this.note('the check ended before it was ready', { reason: 'exit', code, signal });
+        finish(false);
+      };
       const onError = (err: Error): void => {
         this.warn('the check could not start', err);
         finish(false);
@@ -405,8 +436,11 @@ export class GuardHost {
   }
 
   private warn(message: string, err: unknown): void {
-    this.options.log.warn(`[ShellGuard] ${message}`, {
-      error: err instanceof Error ? err.name : 'unknown',
-    });
+    this.note(message, { error: err instanceof Error ? err.name : 'unknown' });
+  }
+
+  /** Logs why a start failed. Never a command or a path: only numbers and names. */
+  private note(message: string, data: Record<string, unknown>): void {
+    this.options.log.warn(`[ShellGuard] ${message}`, data);
   }
 }

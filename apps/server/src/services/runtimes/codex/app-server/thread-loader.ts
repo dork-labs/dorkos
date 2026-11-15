@@ -36,16 +36,18 @@ import {
 import { DORKOS_MCP_SERVER_NAME } from '../../shared/dorkos-tool-names.js';
 import { codexCreditsThreadConfig } from '../credits-launch.js';
 import { withLiteralHeaders } from '../mcp-server-config.js';
-import { MODE_TO_SANDBOX } from '../turn-input.js';
 import type { CodexTurnTools } from '../transport/codex-transport.js';
 import type { CodexAppServerProcess } from './process-pool.js';
 import { guardedMountTargetRecorder } from '../policy/writable-missing-targets.js';
 import { codexPermissionProfile, codexProtectedConfig } from '../policy/protected-profile.js';
 import { loadWithProtectedProfile } from './profile-load.js';
+import { withThreadLoadBinding } from './thread-load-binding.js';
+import { loadTrust, sandboxFor } from './thread-trust.js';
+export { trustLevelFor } from './thread-trust.js';
 import { credentialsOf } from './thread-credentials.js';
 import { approvalPolicyFor } from './turn-parts.js';
 import { isCodexRpcError } from './protocol/errors.js';
-import type { SandboxMode, ThreadLoadOverrides } from './protocol/methods.js';
+import type { ThreadLoadOverrides } from './protocol/methods.js';
 
 /** The copy a person reads when Codex lost the conversation (§6). */
 export const THREAD_STARTS_FRESH_NOTICE = 'Codex no longer has this chat, so it starts fresh.';
@@ -112,7 +114,8 @@ export type NothingToCompact =
 
 interface LoadedRecord {
   readonly sessionId: string;
-  readonly fingerprint: string;
+  /** What it loaded with; `markToolsLost` overwrites it to force a reload. */
+  fingerprint: string;
   /**
    * Loaded cold for a compaction alone, with none of the agent's tools. The
    * next turn keeps it only if it wants exactly that load; otherwise it is
@@ -135,26 +138,6 @@ export interface CodexThreadLoaderOptions {
   readonly realpath?: (path: string) => string;
   /** Persist only the missing literals captured for an actual load. */
   readonly recordMissingTargets?: (data: string, targets: string[]) => void;
-}
-
-/**
- * The trust a thread loads with (spike 2c). The credits home never trusts a
- * folder; the person's home keeps the person's own recorded verdict, else
- * trusts the folder for a writable mode — exactly what exec does today, minus
- * writing it to their `config.toml`.
- *
- * @param home - Which home.
- * @param sandbox - The thread's sandbox.
- * @param recorded - The person's own verdict for this path, if any.
- */
-export function trustLevelFor(
-  home: CodexHomeKind,
-  sandbox: SandboxMode,
-  recorded: string | undefined
-): 'trusted' | 'untrusted' | undefined {
-  if (home === 'credits') return 'untrusted';
-  if (recorded === 'trusted' || recorded === 'untrusted') return recorded;
-  return sandbox === 'read-only' ? undefined : 'trusted';
 }
 
 /** Loads threads, one record per (process, thread). */
@@ -217,7 +200,9 @@ export class CodexThreadLoader {
       }
       // A changed file policy or held MCP server must apply BEFORE the next
       // turn. A loaded thread ignores new config, so fork it with the new
-      // profile now instead of continuing on the old grants until idle.
+      // profile now instead of continuing on the old grants until idle. A
+      // thread that lost its DorkOS tools is forked the same way (see
+      // `markToolsLost`): a fresh key and tools connection, the conversation kept.
       if (record.fingerprint !== desired) return this.reload(input, existingId);
       return {
         threadId: existingId,
@@ -228,9 +213,8 @@ export class CodexThreadLoader {
       };
     }
 
-    if (input.boundThreadId === undefined) {
+    if (input.boundThreadId === undefined)
       return this.start(input, records, desired, credentials, undefined);
-    }
     return this.resume(input, records, desired, credentials, input.boundThreadId);
   }
 
@@ -258,9 +242,7 @@ export class CodexThreadLoader {
       const record = records.get(existingId)!;
       // A thread started for a first turn that never began has nothing in it
       // (a fork waiting to bind names the thread it replaces, and has).
-      if (record.unbound && record.replaces === undefined) {
-        return 'empty';
-      }
+      if (record.unbound && record.replaces === undefined) return 'empty';
       return {
         threadId: existingId,
         keyId: record.keyId,
@@ -356,15 +338,17 @@ export class CodexThreadLoader {
       this.dropThread(input.process, threadId);
       void input.process.client.request('thread/unsubscribe', { threadId }).catch(() => undefined);
     };
-    const key = this.mintKey(input);
+    const key = this.mintKey(input, 'fork');
     let forked: string;
     try {
       const overrides = await this.overrides(input, key?.key);
       forked = (
-        await loadWithProtectedProfile(input.process.client, 'thread/fork', {
-          threadId,
-          ...overrides,
-        })
+        await withThreadLoadBinding(input, key?.keyId, this.options.threadKeys(), () =>
+          loadWithProtectedProfile(input.process.client, 'thread/fork', {
+            threadId,
+            ...overrides,
+          })
+        )
       ).thread.id;
     } catch (err) {
       if (key) this.options.threadKeys()?.revoke(key.keyId, 'superseded');
@@ -432,19 +416,20 @@ export class CodexThreadLoader {
       if (isCodexRpcError(err, 'thread-not-found')) return freshWith(THREAD_STARTS_FRESH_NOTICE);
       // Anything else: the resume below has the final word.
     }
-    const key = this.mintKey(input);
+    const key = this.mintKey(input, 'resume');
     try {
       const overrides = await this.overrides(input, key?.key);
-      await loadWithProtectedProfile(input.process.client, 'thread/resume', {
-        threadId,
-        ...overrides,
-      });
+      await withThreadLoadBinding(input, key?.keyId, this.options.threadKeys(), () =>
+        loadWithProtectedProfile(input.process.client, 'thread/resume', {
+          threadId,
+          ...overrides,
+        })
+      );
     } catch (err) {
       if (key) this.options.threadKeys()?.revoke(key.keyId, 'superseded');
       // Deleted (or its rollout removed) in Codex. DorkOS's own history stays visible.
-      if (isCodexRpcError(err, 'no-rollout', 'thread-not-found')) {
+      if (isCodexRpcError(err, 'no-rollout', 'thread-not-found'))
         return freshWith(THREAD_STARTS_FRESH_NOTICE);
-      }
       if (isCodexRpcError(err, 'archived')) return freshWith(THREAD_ARCHIVED_NOTICE);
       throw err;
     }
@@ -472,12 +457,15 @@ export class CodexThreadLoader {
     credentials: string,
     replaces: string | undefined
   ): Promise<LoadedThread> {
-    const key = this.mintKey(input);
+    const key = this.mintKey(input, 'start');
     let threadId: string;
     try {
       const overrides = await this.overrides(input, key?.key);
-      threadId = (await loadWithProtectedProfile(input.process.client, 'thread/start', overrides))
-        .thread.id;
+      threadId = (
+        await withThreadLoadBinding(input, key?.keyId, this.options.threadKeys(), () =>
+          loadWithProtectedProfile(input.process.client, 'thread/start', overrides)
+        )
+      ).thread.id;
     } catch (err) {
       if (key) this.options.threadKeys()?.revoke(key.keyId, 'superseded');
       throw err;
@@ -535,6 +523,21 @@ export class CodexThreadLoader {
   }
 
   /**
+   * Mark a thread whose completed turn never listed its DorkOS tools, so the
+   * next turn reloads it with a fresh key (DOR-4393). Its fingerprint becomes
+   * one no load has, so the next turn takes the ordinary changed-config
+   * reload. A thread no longer loaded is left alone: its next turn loads
+   * afresh anyway.
+   *
+   * @param process - Its process.
+   * @param threadId - The thread.
+   */
+  markToolsLost(process: CodexAppServerProcess, threadId: string): void {
+    const record = this.byProcess.get(process.key)?.get(threadId);
+    if (record) record.fingerprint = 'dorkos-tools-lost';
+  }
+
+  /**
    * The threads a session has loaded, by process (to reap them).
    *
    * @param sessionId - The session.
@@ -582,7 +585,8 @@ export class CodexThreadLoader {
     return records;
   }
 
-  private mintKey(input: ThreadLoadInput): { keyId: string; key: string } | undefined {
+  // `loadKind` names the load in the key's scope, for the DOR-4384 warning.
+  private mintKey(input: ThreadLoadInput, loadKind: 'start' | 'resume' | 'fork') {
     if (!input.tools.dorkosTools && !input.tools.connectorTools) return undefined;
     const keys = this.options.threadKeys();
     if (!keys) return undefined;
@@ -591,6 +595,7 @@ export class CodexThreadLoader {
       canonicalSessionId: input.sessionId,
       canonicalCwd: input.cwd,
       processKey: input.process.key,
+      loadKind,
     });
   }
 
@@ -611,7 +616,7 @@ export class CodexThreadLoader {
       { ...input, tools: { ...input.tools, agentTokenEnv } },
       {
         threadKey,
-        trust: trustLevelFor(input.home, sandbox, recorded),
+        trust: loadTrust(input.home, sandbox, recorded, this.realpath(input.cwd)),
         realCwd: this.realpath(input.cwd),
         onMissingTargets:
           input.tools.filePolicy && this.options.recordMissingTargets
@@ -688,10 +693,6 @@ export class CodexThreadLoader {
   }
 }
 
-function sandboxFor(settings: SessionSettings): SandboxMode {
-  return (MODE_TO_SANDBOX[settings.permissionMode ?? 'default'] ?? 'read-only') as SandboxMode;
-}
-
 /**
  * Build one load's params from a read-only filesystem snapshot: sandbox mapping,
  * the mode's approval policy (`approvalPolicyFor`), and the reviewer always
@@ -701,7 +702,10 @@ function sandboxFor(settings: SessionSettings): SandboxMode {
  * @param secrets - The thread key, the trust verdict and the cwd's realpath.
  */
 export function buildLoadOverrides(
-  input: Pick<ThreadLoadInput, 'cwd' | 'settings' | 'tools' | 'creditsRelay' | 'preventIdleSleep'>,
+  input: Pick<
+    ThreadLoadInput,
+    'sessionId' | 'cwd' | 'settings' | 'tools' | 'creditsRelay' | 'preventIdleSleep'
+  >,
   secrets: {
     threadKey: string | undefined;
     trust: 'trusted' | 'untrusted' | undefined;
@@ -735,9 +739,9 @@ export function buildLoadOverrides(
     }
   }
   if (Object.keys(servers).length > 0) config.mcp_servers = servers;
-  if (Object.keys(input.tools.agentTokenEnv).length > 0) {
-    config.shell_environment_policy = { set: { ...input.tools.agentTokenEnv } };
-  }
+  // Vendor thread ids differ; shells always receive the server-owned DorkOS chat id.
+  const set = { ...input.tools.agentTokenEnv, DORKOS_SESSION_ID: input.sessionId };
+  config.shell_environment_policy = { set };
   if (secrets.trust !== undefined) {
     config.projects = { [secrets.realCwd]: { trust_level: secrets.trust } };
   }

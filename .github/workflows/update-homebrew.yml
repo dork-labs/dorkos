@@ -148,7 +148,7 @@ jobs:
           tag="v${PKG_VERSION}"
           dmg_name="DorkOS-${PKG_VERSION}-arm64.dmg"
           if ! gh release view "$tag" --repo dork-labs/dorkos --json assets \
-              --jq '.assets[].name' 2>/dev/null | grep -qx "$dmg_name"; then
+              --jq '.assets[].name' 2>/dev/null | grep -x "$dmg_name" >/dev/null; then
             echo "No ${dmg_name} on release ${tag} yet — skipping cask update (desktop builds can lag CLI releases)."
             exit 0
           fi

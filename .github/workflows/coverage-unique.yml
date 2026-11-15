@@ -1,0 +1,131 @@
+name: Coverage Unique
+
+# An on-demand per-file coverage reading for Codebase Cleanup (DOR-4190). Each
+# test file of one package runs ON ITS OWN with v8 coverage, and the report
+# lists every test file that reaches no source line another test file does not
+# also reach, with its length. Lane D reads that list as a place to look, never
+# as a verdict: two files can reach the same lines and assert different things.
+#
+# CI ONLY. A per-file run of a whole package is thousands of test processes and
+# must never run on a team Mac. NOT a required check, and it has no
+# pull_request, merge_group or push trigger: it holds runners only when a person
+# dispatches it, and nothing waits on it.
+#
+# 16 chunks run in parallel; each takes every 16th test file of a sorted list,
+# so every chunk computes the same split. The combine job counts the chunks
+# together.
+on:
+  workflow_dispatch:
+    inputs:
+      package:
+        description: Package whose tests to read
+        required: true
+        type: choice
+        options:
+          - shared
+          - server
+
+permissions: {}
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
+
+concurrency:
+  group: coverage-unique-${{ inputs.package }}
+  cancel-in-progress: false
+
+jobs:
+  cover:
+    runs-on: ubuntu-latest
+    # Unmeasured: no run exists yet. Server is about 2,570 test files, so about
+    # 160 per chunk; at 2-6 s each that is 5-16 minutes. 120 leaves room for a
+    # slow runner and the per-file 10-minute stop in run-chunk.mjs. Lower it
+    # once the first run's time is in the ledger entry.
+    timeout-minutes: 120
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        chunk: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]
+    env:
+      PACKAGE: ${{ inputs.package }}
+      CHUNK: ${{ matrix.chunk }}
+    steps:
+      # The input reaches the shell only through env, and only as one of two
+      # fixed values, mapped here to a fixed directory and package name.
+      - name: Refuse a package outside the pilot
+        shell: bash
+        run: |
+          set -euo pipefail
+          case "$PACKAGE" in
+            shared) echo "PKG_DIR=packages/shared" >>"$GITHUB_ENV"; echo "PKG_NAME=@dorkos/shared" >>"$GITHUB_ENV" ;;
+            server) echo "PKG_DIR=apps/server" >>"$GITHUB_ENV"; echo "PKG_NAME=@dorkos/server" >>"$GITHUB_ENV" ;;
+            *) echo "::error::package must be shared or server"; exit 1 ;;
+          esac
+          [[ "$CHUNK" =~ ^([1-9]|1[0-6])$ ]] || { echo "::error::chunk must be 1-16"; exit 1; }
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # The package's tests import its workspace dependencies' built output.
+      - name: Build the package's workspace dependencies
+        run: pnpm exec turbo run build --filter="${PKG_NAME}^..."
+
+      - name: Run this chunk's test files one at a time, with coverage
+        run: node .github/scripts/coverage-unique/run-chunk.mjs "$PKG_DIR" "$CHUNK" 16 "$RUNNER_TEMP/chunk-$CHUNK.jsonl"
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: coverage-unique-chunk-${{ matrix.chunk }}
+          path: ${{ runner.temp }}/chunk-${{ matrix.chunk }}.jsonl
+          if-no-files-found: error
+          retention-days: 7
+
+  combine:
+    needs: cover
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    env:
+      PACKAGE: ${{ inputs.package }}
+    steps:
+      - name: Refuse a package outside the pilot
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$PACKAGE" == shared || "$PACKAGE" == server ]] || { echo "::error::package must be shared or server"; exit 1; }
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: coverage-unique-chunk-*
+          path: ${{ runner.temp }}/chunks
+
+      - name: Count the chunks together
+        run: node .github/scripts/coverage-unique/combine.mjs "$RUNNER_TEMP/chunks" "$PACKAGE" "$RUNNER_TEMP/report" >>"$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: coverage-unique-${{ inputs.package }}
+          path: ${{ runner.temp }}/report/
+          if-no-files-found: error
+          retention-days: 30

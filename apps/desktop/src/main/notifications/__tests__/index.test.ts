@@ -485,7 +485,7 @@ describe('watchNotifications — Asks', () => {
     // that reads its answer ever suspends.
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(fetchMock).toHaveBeenCalledWith(
-      `http://127.0.0.1:${PORT}/api/sessions/session-9/approve`,
+      `http://localhost:${PORT}/api/sessions/session-9/approve`,
       {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
@@ -501,7 +501,7 @@ describe('watchNotifications — Asks', () => {
     host.shown[0]?.spec.onAction?.(1);
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(fetchMock).toHaveBeenCalledWith(`http://127.0.0.1:${PORT}/api/sessions/session-9/deny`, {
+    expect(fetchMock).toHaveBeenCalledWith(`http://localhost:${PORT}/api/sessions/session-9/deny`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ toolCallId: 'tool-9' }),
@@ -520,7 +520,7 @@ describe('watchNotifications — Asks', () => {
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(fetchMock).toHaveBeenCalledWith(
-      `http://127.0.0.1:${PORT}/api/sessions/session-9/submit-answers`,
+      `http://localhost:${PORT}/api/sessions/session-9/submit-answers`,
       {
         method: 'POST',
         headers: { 'content-type': 'application/json' },

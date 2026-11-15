@@ -177,6 +177,26 @@ entries:
     step: Prove the browser suite actually executed
     kind: step-if
     reason: Proves the queue's and the canary's shards really ran the suite; the PR smoke subset proves nonempty execution in each shard.
+  - workflow: browser-test.yml
+    job: browser-smoke
+    step: Restore the OS packages Chromium needs
+    kind: step-if
+    reason: Restores the cached Chromium OS packages only when the plan step found missing packages and could read their exact files from the image's apt lists; that decision is the same on every event. Skipping it asserts nothing away, because the install step after it still installs every package, from the network, and fails the job if it cannot (ledger 261112-190000).
+  - workflow: browser-test.yml
+    job: browser-shard
+    step: Restore the OS packages Chromium needs
+    kind: step-if
+    reason: Restores the cached Chromium OS packages only when the plan step found missing packages and could read their exact files from the image's apt lists; that decision is the same on every event. Skipping it asserts nothing away, because the install step after it still installs every package, from the network, and fails the job if it cannot (ledger 261112-190000).
+  - workflow: browser-test.yml
+    job: first-run
+    step: Restore the OS packages Chromium needs
+    kind: step-if
+    reason: Restores the cached Chromium OS packages only when the plan step found missing packages and could read their exact files from the image's apt lists; that decision is the same on every event. Skipping it asserts nothing away, because the install step after it still installs every package, from the network, and fails the job if it cannot (ledger 261112-190000).
+  - workflow: browser-test.yml
+    job: browser-shard
+    step: Save the OS packages Chromium needs (scheduled runs on main only)
+    kind: step-if
+    reason: Saves the Chromium OS-package cache on a scheduled run on main only, so a pull request or a queue build can never plant packages main later installs (Security's rule for ledger 261112-190000); it asserts nothing.
 
   # --- credential-free-build.yml ---
   - workflow: credential-free-build.yml

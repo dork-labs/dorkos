@@ -9,10 +9,12 @@ import {
   agentWindowNameArg,
   agentWindowThemeArgs,
   assertAgentFrame,
+  writeAgentChromeProfile,
   writeAgentWindowTheme,
 } from './agent-window/index.js';
 import { LocalBrowserError } from './errors.js';
 import { BrowserDownloadProgress, type BrowserPreparationListener } from './preparation.js';
+import { installedChromePath } from './connection/chrome-installation.js';
 import { disablePasswordSaving } from './plain-chromium.js';
 const runFile = promisify(execFile);
 const require = createRequire(import.meta.url);
@@ -122,31 +124,37 @@ export async function acquireLocalChromium(
     );
   }
 }
-/** The managed Chromium's path, downloading it first if needed. The sign-in window runs it plainly. */
+/** Installed Chrome, or pinned Chromium downloaded if needed. The sign-in window runs it plainly. */
 export async function managedChromiumPath(): Promise<string> {
+  const chrome = installedChromePath();
+  if (chrome) return chrome;
   await acquireLocalChromium();
   return chromium.executablePath();
 }
 
 export const productionBackend: LocalBrowserBackend = {
   async launch(storagePath, signal, onPreparation, agentName) {
-    await acquireLocalChromium(signal, onPreparation);
+    assertLocalPlaywrightVersion();
+    const chrome = installedChromePath();
+    if (!chrome) await acquireLocalChromium(signal, onPreparation);
     signal?.throwIfAborted();
     onPreparation?.({ stage: 'launching', component: null, percent: null });
     // The profile is shared with the plain sign-in window, and with the basic
     // password store a saved password is readable on disk. Neither window saves one.
     await disablePasswordSaving(storagePath);
-    const theme = await writeAgentWindowTheme(storagePath);
+    if (chrome) await writeAgentChromeProfile(storagePath, agentName);
+    const theme = chrome ? undefined : await writeAgentWindowTheme(storagePath);
     // Playwright launch does not accept AbortSignal. The service retains setup ownership
     // and closes a context that arrives after cancellation; never race this result away.
     const context = await chromium.launchPersistentContext(storagePath, {
+      ...(chrome ? { channel: 'chrome' } : {}),
       timeout: BROWSER_LAUNCH_TIMEOUT_MS,
       headless: false,
       viewport: null,
       chromiumSandbox: true,
       args: [
         `${PINNED_DISABLED_FEATURES_ARG},HttpsUpgrades,HttpsFirstBalancedModeAutoEnable`,
-        ...agentWindowThemeArgs(theme),
+        ...(theme ? agentWindowThemeArgs(theme) : []),
         agentWindowNameArg(agentName),
       ],
       // Without the automation flag the window looks like the person's Chrome;
@@ -155,11 +163,13 @@ export const productionBackend: LocalBrowserBackend = {
       ignoreDefaultArgs: [
         '--enable-automation',
         PINNED_DISABLED_FEATURES_ARG,
-        '--disable-extensions',
+        ...(theme ? ['--disable-extensions'] : []),
       ],
     });
     try {
-      await assertAgentFrame(context);
+      // Installed Chrome no longer supports the flags that load our code-free theme.
+      // Use built-in profile colour/name/avatar prefs, keeping extensions disabled.
+      if (!chrome) await assertAgentFrame(context);
     } catch (error) {
       await context.close().catch(() => undefined);
       throw error;

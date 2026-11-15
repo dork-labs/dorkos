@@ -75,7 +75,7 @@ import type { AgentIdentityPin } from '../sessions/launch-fingerprint.js';
 import { transcriptIdTaken } from '../sessions/session-root-index.js';
 import { narrowToClaudeCodeMode } from '../runtime-constants.js';
 import { applyDirectoryGrants, applyPersonOnlyDataDeny } from './directory-grants.js';
-import { applyBrowserToolDeny, browserToolHookMatcher } from '../tool-gate/browser-tool-deny.js';
+import { applyBrowserToolDeny, mcpToolHookMatchers } from '../tool-gate/mcp-tool-guards.js';
 import { applySecretReadDeny } from '../secret-files/secret-read-deny.js';
 import { heldRuntimeNotice } from '../folder-settings/held-runtime-notice.js';
 import { applyLaunchExtensionsDeny } from '../folder-settings/agent-extensions-deny.js';
@@ -390,9 +390,7 @@ export async function resolveLaunch(args: {
       // auto-memory is switched off separately, in the env below.
       excludeDynamicSections: true,
     },
-    toolConfig: {
-      askUserQuestion: { previewFormat: 'html' },
-    },
+    toolConfig: { askUserQuestion: { previewFormat: 'html' } },
     // Send the plugin list over stdin instead of on the command line (SDK
     // 0.3.261). ADR-0239 activates every enabled marketplace plugin through
     // `options.plugins`, and that array is an unbounded, person-controlled
@@ -410,6 +408,7 @@ export async function resolveLaunch(args: {
     env: forCredits(
       onCredits ? creditsEnv : undefined,
       runtimeEnvironment('claude-code', 'turn', {
+        DORKOS_SESSION_ID: sessionId,
         CLAUDE_CODE_EMIT_SESSION_STATE_EVENTS: '1',
         // Keeps the task and todo tools on the model's surface. SDK 0.3.233 took
         // TodoWrite / TaskCreate / TaskUpdate / TaskGet / TaskList off the DEFAULT
@@ -842,8 +841,8 @@ export async function resolveLaunch(args: {
   const auditHooks = auditToolHookMatchers(auditTurn);
   sdkOptions.hooks = {
     PreToolUse: [
-      // A browser tool that runs code outside the page, on any server, at every level.
-      browserToolHookMatcher(),
+      // Withheld browser tools, and a server the agent no longer gets (DOR-3872).
+      ...mcpToolHookMatchers(turnAgentPath),
       // DorkOS's own tools and protected files (DOR-4060): refused before any card.
       protectedFileMatcher({
         sessionId: () => session.sdkSessionId || sessionId,

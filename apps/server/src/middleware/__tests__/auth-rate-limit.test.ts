@@ -7,6 +7,7 @@ import request from '@dorkos/test-utils/supertest';
 import { buildAccountSignInLimiter, buildAuthRateLimiter } from '../auth-rate-limit.js';
 import { env } from '../../env.js';
 import type { RequestFactsEnv } from '../../http/request-facts.js';
+import { markIngress } from '../../services/core/remote/ingress-mark.js';
 
 /**
  * The limiter is configured with `max: 10` per window. Kept in sync with the
@@ -268,6 +269,71 @@ describe('buildAuthRateLimiter', () => {
         .set('X-Forwarded-For', '203.0.113.2')
         .send({ email: 'a@b.c' });
       expect(other.status).toBe(200);
+    });
+
+    // DOR-4227: the own tunnel and managed access forward from loopback, so keyed by peer every
+    // caller through them shared one bucket, and a stranger's failures locked the owner out.
+    // ngrok's edge appends the address it saw to `X-Forwarded-For` (made-up ones here).
+    describe.each(['own-tunnel', 'managed'] as const)('through %s', (ingress) => {
+      /** The limiter behind the listener that marks `ingress`, as that listener does. */
+      function viaIngress(): typeof server {
+        const limiter = buildAuthRateLimiter();
+        currentLimiter = (c, next) => {
+          markIngress(c.env.incoming, ingress);
+          return limiter(c, next);
+        };
+        return server;
+      }
+
+      it('a stranger’s failed sign-ins never refuse the owner’s from another source', async () => {
+        const app = viaIngress();
+        for (let i = 0; i < MAX_ATTEMPTS; i++) {
+          const res = await request(app)
+            .post('/api/auth/sign-in/email')
+            .set('X-Forwarded-For', '198.51.100.66')
+            .send({ email: 'a@b.c', password: 'wrong' });
+          expect(res.status).toBe(401);
+        }
+        const owner = await request(app)
+          .post('/api/auth/sign-in/email')
+          .set('X-Forwarded-For', '203.0.113.20')
+          .send({ email: 'a@b.c', password: 'right' });
+        expect(owner.status).toBe(200);
+      });
+
+      it('still refuses the stranger, whatever it writes left of the edge’s entry', async () => {
+        const app = viaIngress();
+        for (let i = 0; i < MAX_ATTEMPTS; i++) {
+          await request(app)
+            .post('/api/auth/sign-in/email')
+            .set('X-Forwarded-For', `192.0.2.${i}, 198.51.100.66`)
+            .send({ email: 'a@b.c', password: 'wrong' });
+        }
+        const blocked = await request(app)
+          .post('/api/auth/sign-in/email')
+          .set('X-Forwarded-For', '192.0.2.99, 198.51.100.66')
+          .send({ email: 'a@b.c', password: 'right' });
+        expect(blocked.status).toBe(429);
+      });
+    });
+
+    it('keeps Wi-Fi keyed by the socket peer, whatever X-Forwarded-For says', async () => {
+      const limiter = buildAuthRateLimiter();
+      currentLimiter = (c, next) => {
+        markIngress(c.env.incoming, 'wifi');
+        return limiter(c, next);
+      };
+      for (let i = 0; i < MAX_ATTEMPTS; i++) {
+        await request(server)
+          .post('/api/auth/sign-in/email')
+          .set('X-Forwarded-For', `203.0.113.${i + 1}`)
+          .send({ email: 'a@b.c' });
+      }
+      const blocked = await request(server)
+        .post('/api/auth/sign-in/email')
+        .set('X-Forwarded-For', '198.51.100.77')
+        .send({ email: 'a@b.c' });
+      expect(blocked.status).toBe(429);
     });
 
     it('reads the flag per request, so it cannot be captured at mount time', async () => {

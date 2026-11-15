@@ -47,8 +47,9 @@
  *
  * @module services/connectors/bootstrap
  */
+import { isReplayIsolated } from '../../lib/replay/isolation.js';
+import type { ManagedProviderSpec } from './bootstrap/spec.js';
 import type {
-  ConnectorCustody,
   ConnectorKeyKind,
   ConnectorProvider,
   ConnectorProviderStatus,
@@ -176,33 +177,14 @@ export interface ConnectorProviderBootstrapperOpts {
   makeNangoClient?: MaybeCreateNangoProviderDeps['makeClient'];
 }
 
-/** One credential-gated provider the bootstrapper owns end to end. */
-interface ManagedProviderSpec {
-  /** The backend type (= the `:provider` route segment). */
-  type: string;
-  /** Exact default instance owned by this legacy type-scoped configuration. */
-  defaultInstanceId: ConnectorProvider['instanceId'];
-  /** The log label boot/reload messages use, e.g. `'Composio managed backend'`. */
-  logLabel: string;
-  /** Custody stance echoed onto the status DTO. */
-  custody: ConnectorCustody;
-  /** The credential-store NAME (not the `file:` ref) the routes write/delete. */
-  credentialName: string;
-  /** Whether the provider counts as configured (credential + any required env). */
-  configured(): Promise<boolean>;
-  /** Run the provider factory; `null` = unconfigured, may throw a refusal. */
-  create(): Promise<ConnectorProvider | null>;
-  /** Whether a thrown factory error is a log-and-skip refusal (vs a genuine bug). */
-  isRefusal(err: unknown): boolean;
-}
-
 /**
  * How long a way that failed its check waits before the next automatic check,
  * one entry per failure in a row. Short at first so a blip clears in seconds,
  * and no more often than the periodic sign-in refresh once an outage lasts.
- * After the last one DorkOS stops checking on its own: a way that hasn't
- * answered for about 25 minutes settles on the person's one fix. A failed
- * listing seen by the periodic sign-in refresh starts the count again.
+ * Own-key ways stop after the last delay and settle on the person's one fix.
+ * The DorkOS account way keeps checking at the last delay until it answers
+ * (DOR-4229). A failed listing seen by the periodic sign-in refresh starts an
+ * own-key way's count again.
  */
 export const WAY_RECHECK_DELAYS_MS = [30_000, 60_000, 120_000, 300_000, 900_000] as const;
 
@@ -382,10 +364,11 @@ export class ConnectorProviderBootstrapper {
     this._registry = opts.registry;
     this._rawMcpServers = opts.rawMcpServers;
     this._rawMcpPendingConnect = opts.rawMcpPendingConnect;
-    this._managedCloud = opts.managedCloud;
+    this._managedCloud = isReplayIsolated() ? undefined : opts.managedCloud;
     this._onClosedByNewLink = opts.onClosedByNewLink;
     this._onRelinked = opts.onRelinked;
 
+    if (isReplayIsolated()) return;
     const { credentials, nangoEnv } = opts;
     const specs: ManagedProviderSpec[] = [
       {
@@ -468,6 +451,7 @@ export class ConnectorProviderBootstrapper {
    * configured. Same semantics as the old inline `index.ts` block, moved here.
    */
   async registerBootProviders(): Promise<void> {
+    if (isReplayIsolated()) return;
     // The raw-MCP baseline registers unconditionally — with the empty list too,
     // so the seam is live before anyone configures a server (gap 3).
     const rawMcpServers = this._rawMcpServers();
@@ -729,34 +713,41 @@ export class ConnectorProviderBootstrapper {
   }
 
   /**
-   * The DorkOS account's way failed its check: re-check it later while it is
-   * still linked, unless the account refused the link itself.
+   * The DorkOS account's way failed its check: re-check it while it is still
+   * linked, unless the account refused the link itself. It never gives up
+   * because there is nothing for the person to fix; an outage of hours must
+   * clear on its own (DOR-4229).
    */
   private _managedWayFailed(err: unknown): void {
     if (!this._managedCloud?.configured() || isLinkRefusal(err)) {
       this._clearRecheck(MANAGED_CLOUD_PROVIDER_TYPE);
       return;
     }
-    this._wayFailed(MANAGED_CLOUD_PROVIDER_TYPE, () => this.recoverManagedCloud());
+    this._wayFailed(MANAGED_CLOUD_PROVIDER_TYPE, () => this.recoverManagedCloud(), true);
   }
 
   /**
    * Schedule one way's next automatic check, waiting longer after each failure
-   * in a row ({@link WAY_RECHECK_DELAYS_MS}). Once those run out, nothing more
-   * is scheduled: the way settles on the person's one fix, and a check they
-   * start (or a periodic listing that fails again later) begins a fresh count.
-   * A check already waiting is left alone, so a failure seen by some other
-   * read never pushes it later.
+   * in a row ({@link WAY_RECHECK_DELAYS_MS}). Own-key ways stop after the last
+   * delay and settle on the person's one fix. With `untilAnswered`, the DorkOS
+   * account way keeps checking at the last delay until it answers (DOR-4229).
+   * A check already waiting is left alone, so a failure seen by some other read
+   * never pushes it later.
+   *
+   * @param key - The way whose failures and waiting check are tracked.
+   * @param recheck - Start another check after the selected delay.
+   * @param untilAnswered - Keep checking at the last delay instead of stopping.
    */
-  private _wayFailed(key: string, recheck: () => Promise<void>): void {
+  private _wayFailed(key: string, recheck: () => Promise<void>, untilAnswered = false): void {
     if (this._stopped || this._rechecks.has(key)) return;
     const failures = (this._consecutiveFailures.get(key) ?? 0) + 1;
-    if (failures > WAY_RECHECK_DELAYS_MS.length) {
+    if (failures > WAY_RECHECK_DELAYS_MS.length && !untilAnswered) {
       this._consecutiveFailures.delete(key);
       return;
     }
-    this._consecutiveFailures.set(key, failures);
-    const delay = WAY_RECHECK_DELAYS_MS[failures - 1]!;
+    // Held at the last delay, so a way that never answers never counts past it.
+    this._consecutiveFailures.set(key, Math.min(failures, WAY_RECHECK_DELAYS_MS.length));
+    const delay = WAY_RECHECK_DELAYS_MS[this._consecutiveFailures.get(key)! - 1]!;
     const timer = setTimeout(() => {
       this._rechecks.delete(key);
       void recheck().catch((err: unknown) =>

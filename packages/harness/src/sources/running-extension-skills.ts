@@ -380,7 +380,8 @@ function checkExtensionSkill(skillsDir: string, name: string, sourceDir: string)
       reason: `${file} is not a valid skill: ${parsed.error}`,
     };
   }
-  const frontmatter = readRawFrontmatter(content)?.data ?? {};
+  const raw = readRawFrontmatter(content);
+  const frontmatter = raw?.data ?? {};
   return {
     ok: true,
     skill: {
@@ -389,6 +390,8 @@ function checkExtensionSkill(skillsDir: string, name: string, sourceDir: string)
       usesPluginRoot: content.includes(CLAUDE_PLUGIN_ROOT_TOKEN),
       usesPluginData: content.includes(CLAUDE_PLUGIN_DATA_TOKEN),
       ...(typeof frontmatter.name === 'string' ? { frontmatterName: frontmatter.name } : {}),
+      // A frontmatter the raw reader refuses leaves a name another tool may read (Security M1).
+      ...(raw === null ? { nameUnreadable: true as const } : {}),
       hasSchedule: declaresSchedule(frontmatter),
     },
   };

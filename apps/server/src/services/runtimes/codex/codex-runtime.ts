@@ -1031,6 +1031,8 @@ export class CodexRuntime implements AgentRuntime {
         },
         signal: controller.signal,
         events: ctx,
+        // The chat's "lost its DorkOS tools" / "back" notice (DOR-4393).
+        onDorkosToolsListing: (listed) => this.registry.noteDorkosTools(sessionId, listed),
         // Persisted the moment the transport learns the id — before the
         // terminal done — so even an interrupted or crashed first turn stays
         // resumable. The cwd is persisted with it so a post-restart resume runs
@@ -1345,9 +1347,8 @@ export class CodexRuntime implements AgentRuntime {
     content?: Record<string, unknown>,
     opts?: InteractionAnswerOptions
   ): boolean {
-    if (!this.transport.answerElicitation?.(sessionId, interactionId, action, content)) {
-      return false;
-    }
+    const answered = this.transport.answerElicitation?.(sessionId, interactionId, action, content);
+    if (!answered) return false;
     peekProjector(sessionId)?.resolveInteraction(
       interactionId,
       action === 'accept' ? 'answered' : 'denied',

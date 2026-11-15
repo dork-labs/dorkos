@@ -11,6 +11,7 @@ import { runtimeRegistry } from './services/core/runtime-registry.js';
 import { canExpose, checkBindAllowed } from './services/core/auth/exposure-guard.js';
 import { tunnelManager } from './services/core/tunnel-manager.js';
 import { lanAccess } from './services/core/lan-access/index.js';
+import { registerRemoteListener } from './middleware/remote-access-switch.js';
 import { exitOnPortConflict } from './services/core/lifecycle/port-conflict.js';
 import { createSignalShutdown } from './lib/shutdown-signal.js';
 import { getCloudLinkManager } from './services/core/auth/cloud-link.js';
@@ -51,7 +52,7 @@ import { shutdownUsageReporter } from './services/core/usage-reporter.js';
 import { flushServerError } from './services/core/error-reporter.js';
 import { createProcessFaultHandlers } from './lib/process/network-fault.js';
 import { shutdownAiMetadataReporter } from './services/core/ai-metadata-reporter.js';
-import { resolveTelemetryConsent } from '@dorkos/shared/telemetry-consent';
+import { resolveTier1ChannelConsent } from '@dorkos/shared/telemetry-consent';
 import { keepAwakeService } from './services/core/keep-awake/index.js';
 import { setAccountUsageStore } from './services/core/usage/current-usage-store.js';
 import { shutdownObservability } from './services/observability/index.js';
@@ -64,6 +65,7 @@ import { claimDataDirectory } from './startup/steps/data-directory.js';
 import { openConfigAndDatabase } from './startup/steps/config-and-database.js';
 import { raiseExistingChatsOnBoot } from './startup/steps/raise-existing-chats.js';
 import { recordKeptFromAutoMovesOnBoot } from './startup/steps/record-kept-from-auto-moves.js';
+import { recordCodexTrustedFoldersOnBoot } from './startup/steps/codex-trusted-folders.js';
 import { applyDmViewUpgradeOnBoot } from './startup/steps/apply-dm-view-upgrade.js';
 import { startSecretFileScanOnBoot } from './startup/steps/secret-file-scan.js';
 import { wireCoreStores } from './startup/steps/core-stores.js';
@@ -305,6 +307,11 @@ async function start() {
   });
   // The accounts the upgrade kept out of automatic moves, one history line (Re-seat P0).
   await recordKeptFromAutoMovesOnBoot(refs, { dorkHome, activity: upToCoreRoutes.activityService });
+  // The folders Codex trusts in the person's own settings, named once (DOR-4410).
+  await recordCodexTrustedFoldersOnBoot(refs, {
+    dorkHome,
+    activity: upToCoreRoutes.activityService,
+  });
   // The DM view turns on, once, for an install that never chose (DOR-3074).
   applyDmViewUpgradeOnBoot(refs, { dorkHome, db });
   // Secret-looking files in agent folders, told to the person (DOR-3292). Background.
@@ -380,7 +387,12 @@ async function start() {
       // access (edge-proof and host checks first) and the person's own tunnel.
       // Each marks what it admits, then hands requests to the same front door
       // and upgrades to the router above. Nothing listens until a tunnel opens.
-      tunnelManager.attachIngresses(tunnelIngressesFor(frontDoorListener(frontDoor), server, PORT));
+      const ingresses = tunnelIngressesFor(frontDoorListener(frontDoor), server, PORT);
+      tunnelManager.attachIngresses(ingresses);
+      // Turning Remote Access off cuts what each listener only other devices reach carries (DOR-3650).
+      registerRemoteListener(() => ingresses.managed.dropConnections());
+      registerRemoteListener(() => ingresses.ownTunnel.dropConnections());
+      registerRemoteListener(() => lanAccess.dropConnections());
       // Reconnect Cloud's command stream when the boot rule allows it (DOR-2086); opens nothing.
       // Never on an agent computer, which holds no DorkOS account link (DOR-2940).
       if (!isAgentComputer()) managedRemoteCommands.boot(db, currentRemoteBootPlan(env));
@@ -408,8 +420,7 @@ async function start() {
       ];
       registerHeartbeat({
         consent:
-          resolveTelemetryConsent(telemetryConfig?.heartbeat ?? false, telemetryEnv) &&
-          tier1SendGate,
+          resolveTier1ChannelConsent(telemetryConfig, 'heartbeat', telemetryEnv) && tier1SendGate,
         debug: telemetryDebug,
         dorkHome,
         dorkosVersion: SERVER_VERSION,
@@ -547,6 +558,7 @@ async function shutdownServices(reason: 'authority' | 'shutdown' = 'shutdown') {
   refs.searchIndexer?.stop();
   refs.todoWiring?.stop();
   refs.workQueueWiring?.stop();
+  refs.workClaimWiring?.stop();
   heartbeats.stopHeartbeats();
   if (refs.meshCore) {
     refs.meshCore.stopPeriodicReconciliation();

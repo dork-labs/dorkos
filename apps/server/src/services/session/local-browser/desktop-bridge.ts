@@ -6,6 +6,8 @@ export interface EmbeddedBrowserPort {
     endpoint: string;
     headers: Record<string, string>;
     close(): Promise<void>;
+    detach?(): Promise<void>;
+    reattach?(): Promise<void>;
   }>;
 }
 
@@ -54,6 +56,12 @@ export function desktopBrowserPort(): EmbeddedBrowserPort | undefined {
       return {
         endpoint: guest.endpoint,
         headers: guest.headers,
+        detach: async () => {
+          await call('/detach', connectionId);
+        },
+        reattach: async () => {
+          await call('/reattach', connectionId);
+        },
         close: async () => {
           await call('/close', connectionId);
         },

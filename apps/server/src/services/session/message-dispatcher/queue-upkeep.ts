@@ -22,6 +22,7 @@ import { deleteTurnContextForSessions } from '../turn-context/record-turn-contex
 import { forgetContextWarning } from '../agent-compaction/context-warning.js';
 import { forgetTurnCutoff } from '../turn-cutoff/turn-cutoff.js';
 import { logger } from '../../../lib/logger.js';
+import { isChatClientId } from '../chat-messages/chat-client-id.js';
 import {
   emitLifecycle,
   inFlight,
@@ -131,6 +132,53 @@ export function sweepOrphanedMessageQueues(opts?: {
     });
   }
   return removed;
+}
+
+/**
+ * Resume every chat holding a message another chat queued that nothing in this
+ * process will run, and report how many were resumed.
+ *
+ * Rows survive a restart; the entries that run them do not. Until this ran at
+ * boot and on the health-check cadence, only a NEWER message to the same chat
+ * re-armed them, so an idle chat's messages sat for days while their senders
+ * read "queued" (DOR-3287). Only rows another chat sent: nobody is watching
+ * those to notice, while a person's own leftover rows are in their composer.
+ *
+ * One at a time, so a boot with many such chats does not resolve every runtime
+ * at once, and one chat that cannot be resumed never stops the rest.
+ *
+ * @param opts.resume - Re-arms one chat's queue (resolves its runtime and adopts its rows)
+ * @returns How many chats were resumed
+ */
+export async function rearmChatQueues(opts: {
+  resume: (sessionId: string) => void | Promise<void>;
+}): Promise<number> {
+  const store = getMessageQueueStore();
+  if (!store) return 0;
+  let resumed = 0;
+  for (const sessionId of store.listSessionIds()) {
+    const stranded = store
+      .list(sessionId)
+      .some(
+        (row) => isChatClientId(row.enqueuedBy) && !pending.has(row.id) && !launching.has(row.id)
+      );
+    if (!stranded) continue;
+    try {
+      await opts.resume(sessionId);
+      resumed += 1;
+    } catch (err) {
+      logger.warn('[MessageDispatcher] could not resume a chat’s queued messages', {
+        sessionId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+  if (resumed > 0) {
+    logger.info('[MessageDispatcher] resumed chats whose queued messages nothing was running', {
+      sessions: resumed,
+    });
+  }
+  return resumed;
 }
 
 /**

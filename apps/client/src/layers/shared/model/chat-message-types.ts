@@ -14,6 +14,7 @@ import type {
 } from '@dorkos/shared/chat-messages';
 import type {
   AlwaysAllowScope,
+  AlwaysAllowBreadth,
   QuestionItem,
   MessagePart,
   HookPart,
@@ -187,6 +188,11 @@ export interface ToolCallState {
    * then reads exactly as it always did.
    */
   approvalAlwaysAllowScope?: AlwaysAllowScope;
+  /**
+   * Whether "Always Allow" on an MCP tool covers the tool or its whole server;
+   * with `server` the card asks which (DOR-4101).
+   */
+  approvalAlwaysAllowBreadth?: AlwaysAllowBreadth;
   /** Hook executions attached to this tool call (pre-tool and post-tool hooks). */
   hooks?: HookState[];
   /** Timestamp (ms since epoch) when tool_call_start was received. */

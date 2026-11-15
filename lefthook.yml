@@ -244,6 +244,14 @@ pre-push:
         max_lines_base=$(git merge-base origin/main HEAD) || exit 1
         pnpm check:max-lines -- --base "$max_lines_base"
       fail_text: File-size ratchet failed — fix the files listed above.
+    own-mocks:
+      # The own-module mock ratchet (DOR-4190), on the same branch point as
+      # max-lines above. Pure file reads, well under a second.
+      run: |
+        [ -r packages/ci-steward/bin/time-wrap.sh ] && . packages/ci-steward/bin/time-wrap.sh && ci_steward_time_wrap pre-push own-mocks
+        own_mocks_base=$(git merge-base origin/main HEAD) || exit 1
+        pnpm check:own-mocks -- --base "$own_mocks_base"
+      fail_text: Own-module mock ratchet failed — fix the packages listed above.
     ledger-coverage:
       # Coverage discovers gate scripts and checks only changed pipeline paths.
       # Use the branch point so later main changes are not charged to this PR.

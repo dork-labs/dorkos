@@ -97,6 +97,10 @@
       "types": "./src/links.ts",
       "default": "./dist/links.js"
     },
+    "./local-dial-host": {
+      "types": "./src/local-dial-host.ts",
+      "default": "./dist/local-dial-host.js"
+    },
     "./bounded-read": {
       "types": "./src/bounded-read.ts",
       "default": "./dist/bounded-read.js"
@@ -509,6 +513,10 @@
       "types": "./src/canvas-media-url.ts",
       "default": "./dist/canvas-media-url.js"
     },
+    "./room-canvas-reading": {
+      "types": "./src/room-canvas-reading.ts",
+      "default": "./dist/room-canvas-reading.js"
+    },
     "./canvas-view": {
       "types": "./src/canvas-view.ts",
       "default": "./dist/canvas-view.js"
@@ -700,7 +708,10 @@
   "devDependencies": {
     "@dorkos/eslint-config": "workspace:*",
     "@dorkos/typescript-config": "workspace:*",
+    "@stryker-mutator/core": "10.1.1",
+    "@stryker-mutator/vitest-runner": "10.1.1",
     "@types/node": "^24",
+    "@vitest/coverage-v8": "^4.1.11",
     "vitest": "^4.1.11"
   }
 }

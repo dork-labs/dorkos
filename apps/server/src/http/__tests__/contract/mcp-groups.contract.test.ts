@@ -76,13 +76,24 @@ const NEEDS_LOCAL_TOKEN = z
     id: z.null(),
   })
   .strict();
-/** The 401 where no local token applies: it points at the credential that does. */
-const NEEDS_CREDENTIAL = rpcError(
+/** The 401 where MCP_API_KEY replaces the local token: it names that key and no page. */
+const NEEDS_SERVER_KEY = rpcError(
   -32001,
-  'Unauthorized. Provide a valid credential as "Authorization: Bearer <token>". ' +
-    'Use your personal API key from Settings → Advanced → Tools → Connect other apps to DorkOS.'
+  'Unauthorized. Send this server\'s API key as "Authorization: Bearer <key>".'
 );
 const AUTH_REQUIRED = { error: 'Unauthorized', code: 'AUTH_REQUIRED' };
+/**
+ * Another device's refusal at `/mcp` with login off: the same code, plus the next step `/a2a`
+ * names, with no token and no path (DOR-4264). Keys need login, so it starts there (QA S2).
+ * Written out, not imported, so the words themselves are pinned.
+ */
+const REMOTE_AUTH_REQUIRED = {
+  ...AUTH_REQUIRED,
+  message:
+    'Unauthorized. Other devices need a personal API key. ' +
+    'In DorkOS, open Settings → Login & security, turn on "Ask for a password on this computer too", ' +
+    'then create a key under API keys. Send it as "Authorization: Bearer <key>".',
+};
 const NOT_ALLOWED_BY_CORS = (origin: string) => ({
   error: `This instance does not answer to pages from "${origin}". If that is how you reach DorkOS, list it in DORKOS_CORS_ORIGIN, or open DorkOS at its own address.`,
   code: 'ORIGIN_NOT_ALLOWED',
@@ -422,7 +433,7 @@ const LOGIN_OFF_CASES: readonly ContractCase[] = [
     expect: {
       status: 401,
       headers: { ...JSON_TYPE, ...NOT_COUNTED },
-      body: AUTH_REQUIRED,
+      body: REMOTE_AUTH_REQUIRED,
     },
   },
 ];
@@ -470,8 +481,9 @@ describe('contract: the /mcp endpoint, login off', () => {
           path: '/mcp',
           headers: { host: 'evil.example:4242', origin: 'http://evil.example:4242' },
           body: rpc('ping'),
-          // Another device: the session gate answers before the switch.
-          expect: { status: 401, body: AUTH_REQUIRED },
+          // Another device: the session gate answers before the switch, in the
+          // remote /mcp body that names the next step (DOR-4264).
+          expect: { status: 401, body: REMOTE_AUTH_REQUIRED },
         },
         token
       );
@@ -662,14 +674,14 @@ describe('contract: the /mcp endpoint with MCP_API_KEY, a legacy key and a tight
       path: '/mcp',
       headers: { ...MCP_CLIENT, authorization: 'Bearer dork_mcp_not_the_key' },
       body: MUTATING_CALL,
-      expect: { status: 401, headers: NOT_COUNTED, body: NEEDS_CREDENTIAL },
+      expect: { status: 401, headers: NOT_COUNTED, body: NEEDS_SERVER_KEY },
     });
     await check(server, {
       method: 'POST',
       path: '/mcp',
       headers: MCP_CLIENT,
       body: MUTATING_CALL,
-      expect: { status: 401, headers: NOT_COUNTED, body: NEEDS_CREDENTIAL },
+      expect: { status: 401, headers: NOT_COUNTED, body: NEEDS_SERVER_KEY },
     });
     // (2) The legacy key, while no owner account exists to fold it into.
     await check(server, {
@@ -716,7 +728,7 @@ describe('contract: the /mcp endpoint with MCP_API_KEY, a legacy key and a tight
       path: '/mcp',
       headers: MCP_CLIENT,
       body: MUTATING_CALL,
-      expect: { status: 401, headers: NOT_COUNTED, body: NEEDS_CREDENTIAL },
+      expect: { status: 401, headers: NOT_COUNTED, body: NEEDS_SERVER_KEY },
     });
   });
 

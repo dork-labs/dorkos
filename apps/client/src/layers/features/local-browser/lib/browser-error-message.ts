@@ -12,6 +12,13 @@ const MESSAGES: Record<string, string> = {
   focus_unavailable: 'This tab stopped responding. Choose it again.',
   handoff_open: 'An agent is waiting on you in this browser. Answer its card first.',
 };
+/** Refusals the server writes for a person, so its own words show. The fallback covers an empty one. */
+const SERVER_WORDED: Record<string, string> = {
+  local_only: 'Use DorkOS on this computer to control its browser.',
+  person_only: 'Only you can do this, from DorkOS.',
+  bad_request: 'Check your browser choice and try again.',
+  unsupported: 'This browser can’t open here.',
+};
 const STORAGE_MESSAGES = [
   'Free some space, then open the browser again.',
   'Check folder permissions, then open the browser again.',
@@ -33,6 +40,10 @@ export function browserErrorMessage(cause: unknown): string {
       'Couldn’t save the browser. Check free space and folder permissions.'
     );
   }
+  // The panel can point at the window, so it says more than the server's line.
+  if (error?.code === 'signing_in') return 'Finish signing in first. The sign-in window is open.';
+  if (error?.code && Object.hasOwn(SERVER_WORDED, error.code))
+    return error.message?.trim() || SERVER_WORDED[error.code];
   const known =
     error?.code && Object.hasOwn(MESSAGES, error.code) ? MESSAGES[error.code] : undefined;
   return known ?? 'Couldn’t reach the browser. Reconnect and try again.';

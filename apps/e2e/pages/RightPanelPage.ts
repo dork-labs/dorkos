@@ -2,8 +2,8 @@ import { expect, type Page, type Locator } from '@playwright/test';
 import { BasePage } from './BasePage';
 
 /**
- * Page Object for the shell-level right inspector panel — its toggle, the Pulse
- * spine tab, and the ambient attention badge.
+ * Page Object for the shell-level right inspector panel — its toggle and the Pulse
+ * spine tab.
  *
  * The panel defaults CLOSED on every route; {@link open} reveals it. On routes
  * with no contextual tab (Activity, Scheduled) Pulse fills the panel; where one
@@ -21,8 +21,6 @@ export class RightPanelPage {
   readonly header: Locator;
   /** The Pulse panel body (rendered when Pulse is the active tab). */
   readonly pulsePanel: Locator;
-  /** The ambient needs-attention count pill on the toggle. */
-  readonly badge: Locator;
   /** Pulse's "Needs attention" section heading (scoped to the panel — Home has its own). */
   readonly attentionHeading: Locator;
   /** Pulse's "Activity" section heading (scoped to the panel). */
@@ -54,7 +52,6 @@ export class RightPanelPage {
     this.toggle = page.getByRole('button', { name: /right panel/i });
     this.header = page.locator('[data-slot="right-panel-header"]');
     this.pulsePanel = page.locator('[data-slot="pulse"]');
-    this.badge = page.locator('[data-testid="right-panel-attention-badge"]');
     // Scope Pulse's own sections to the panel: Home's pinned triage header
     // renders its own "Needs Attention" group in the main column too.
     this.attentionHeading = this.pulsePanel.getByRole('heading', { name: 'Needs attention' });

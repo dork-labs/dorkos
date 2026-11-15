@@ -105,7 +105,7 @@ import {
   isSessionBusy,
   liveSessionCwd,
   reserveKeptChat,
-  resumeChatQueue,
+  resumeChatQueueFor,
   type SessionFacts,
 } from './agent-send-defaults.js';
 import { extensionClientId } from './extension-client-id.js';
@@ -125,7 +125,7 @@ export interface AgentSendDeps {
   /** An extension's manifest name, or its id when it is not installed. */
   extensionName: (extensionId: string) => string;
   /** Mesh, when it is running: resolves an agent id to its home. */
-  meshCore: () => Pick<MeshCore, 'get' | 'getProjectPath'> | undefined;
+  meshCore: () => Pick<MeshCore, 'get' | 'getProjectPath' | 'listWithPaths'> | undefined;
   /**
    * The room binding port, read at call time: which chats a room answers for,
    * and the launch's own room guard (`ROOM_SESSION_MOVED`).
@@ -221,7 +221,7 @@ export class AgentSendService {
     this.dispatchSessionMessage = deps.dispatch ?? dispatchSessionMessage;
     this.reserveChat = deps.reserveChat ?? reserveKeptChat;
     this.isQueued = deps.isQueued ?? ((id) => getMessageQueueStore()?.get(id) !== undefined);
-    this.resumeQueue = deps.resumeQueue ?? resumeChatQueue;
+    this.resumeQueue = deps.resumeQueue ?? resumeChatQueueFor(deps.meshCore, deps.roomSessionPlace);
     this.onLifecycle = deps.onLifecycle ?? onDispatchLifecycle;
     this.unsubscribeLifecycle = this.onLifecycle((event) => this.onDispatch(event));
   }
@@ -673,6 +673,12 @@ export class AgentSendService {
         sessionId: row.sessionId ?? event.sessionId,
         outcome: event.outcome === 'ok' ? 'ok' : 'error',
       });
+      return;
+    }
+    // A pause cut its turn before the agent read it: it waits in the queue again
+    // and starts afresh on resume (DOR-4353).
+    if (event.phase === 'held') {
+      if (row.status === 'started') this.deps.store.update(row.id, { status: 'queued' });
       return;
     }
     if (row.status === 'queued' || row.status === 'held') this.fail(row, event.reason);

@@ -76,6 +76,8 @@ import { parseRequestBody, underMount, type BodyRule } from './request-body.js';
 import { answerUnclaimed } from './unclaimed.js';
 import { wifiLevelMiddleware } from '../services/core/auth/sessions/wifi-level.js';
 import { personSessionRefusal } from './person-session-refusal.js';
+import { buildMcpAuthThrottle } from '../middleware/mcp-auth-throttle.js';
+import { refuseWhileRemoteAccessOff } from '../middleware/remote-access-switch.js';
 
 /** What the chain puts on `c.var` for the routes behind it. */
 export interface ApiVariables extends RequestFactsVariables {
@@ -149,6 +151,9 @@ export function createApiApp(options: ApiChainOptions): Hono<ApiEnv> {
     if (bypassesManagedIngress(c.env.incoming)) return c.json(MANAGED_HOST_REFUSAL_BODY, 403);
     await next();
   });
+  // With Remote Access off, another device is refused here, ahead of sign-in,
+  // webhooks, the app's files and every route (DOR-3650).
+  app.use(refuseWhileRemoteAccessOff);
   // Only DorkOS's own service worker installs from this origin (DOR-3547 M-A).
   app.use(refuseForeignServiceWorkers);
   const noteFirstApiRequest = createFirstContactMarker('[Client] first API request');
@@ -198,6 +203,8 @@ export function createApiApp(options: ApiChainOptions): Hono<ApiEnv> {
     );
     await next();
   });
+  // Before the session gate: bad remote MCP keys never reach the route limiter.
+  app.use(buildMcpAuthThrottle());
   app.use(async (c, next) => {
     // An OAuth callback is judged without the provider page it came from.
     const facts = gateFactsFor(c.req.method, c.req.path, honoRequestFacts(c));

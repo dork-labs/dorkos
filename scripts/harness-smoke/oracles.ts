@@ -26,7 +26,13 @@
  * @module harness-smoke/oracles
  */
 import { existsSync, realpathSync } from 'node:fs';
-import { AUTHORED_SKILL, INSTALLED_PACKAGE, PROBE_SKILL } from './fixture.js';
+import {
+  AUTHORED_SKILL,
+  AUTHORED_TWIN,
+  INSTALLED_PACKAGE,
+  PACKAGE_SKILL_NAME,
+  PROBE_SKILL,
+} from './fixture.js';
 import type { ListingObservation, SmokeHarness, TurnObservation } from './harnesses.js';
 
 /**
@@ -148,8 +154,10 @@ export function expectedListing(harness: SmokeHarness): ExpectedEntry[] {
   }
 
   if (harness.harnessId === 'codex') {
-    // Codex keys by FRONTMATTER name, so the authored skill and the installed
-    // one both answer to `x` — SK-06's collision, asked rather than assumed.
+    // Codex keys by FRONTMATTER name, so the authored skill and its twin both
+    // answer to `x` — SK-06's collision, asked rather than assumed. The pair is
+    // two AUTHORED folders: a package skill named like the person's own is never
+    // projected (DOR-4392), so the package's `x` folder declares `pkg-x`.
     return [
       {
         name: AUTHORED_SKILL,
@@ -165,12 +173,17 @@ export function expectedListing(harness: SmokeHarness): ExpectedEntry[] {
       },
       {
         name: AUTHORED_SKILL,
-        fromPath: `.agents/skills/${INSTALLED_PACKAGE}__${AUTHORED_SKILL}/SKILL.md`,
-        capabilities: ['SK-06', 'SK-09'],
+        fromPath: `.agents/skills/${AUTHORED_TWIN}/SKILL.md`,
+        capabilities: ['SK-06'],
         because:
-          'the `pkg__x` directory loads on Codex under its frontmatter name — and together with ' +
-          'the entry above it, two skills whose frontmatter agrees both appear rather than one ' +
-          'collapsing into the other (SK-06)',
+          'together with the entry above it, two skills whose frontmatter agrees both appear ' +
+          'rather than one collapsing into the other (SK-06)',
+      },
+      {
+        name: PACKAGE_SKILL_NAME,
+        fromPath: `.agents/skills/${INSTALLED_PACKAGE}__${AUTHORED_SKILL}/SKILL.md`,
+        capabilities: ['SK-09'],
+        because: 'the `pkg__x` directory loads on Codex under its frontmatter name',
       },
       {
         name: PROBE_SKILL,
@@ -206,12 +219,11 @@ export function expectedListing(harness: SmokeHarness): ExpectedEntry[] {
       capabilities: ['SK-09'],
       because: 'the `pkg__x` directory shape is loadable by a harness that reads the directory',
       unanswerable:
-        'OpenCode keys a skill by its frontmatter `name`, and the installed skill’s frontmatter ' +
-        'says `x` — so the `pkg__x` DIRECTORY answers to the same key as the authored skill and ' +
-        'is indistinguishable from it in a name-only listing. SK-09 needs a listing that carries ' +
-        'FILE PATHS (Codex has one; OpenCode has no listing surface here at all yet), or a fixture ' +
-        'whose package skill declares a different frontmatter name — which would then stop asking ' +
-        'SK-09’s actual question, since the shape under test is the directory.',
+        'OpenCode keys a skill by its frontmatter `name`, which for the installed skill is ' +
+        '`pkg-x` (a package skill may not share the person’s name, DOR-4392). A name-only ' +
+        'listing could find `pkg-x` but not say WHICH directory it came from, and the shape under ' +
+        'test is the directory. SK-09 needs a listing that carries FILE PATHS (Codex has one; ' +
+        'OpenCode has no listing surface here at all yet).',
     },
   ];
 }

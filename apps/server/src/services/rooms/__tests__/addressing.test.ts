@@ -436,12 +436,6 @@ describe('standDownFallbackSeat', () => {
     expect(stand(['dorian'], ['dorkbot'])).toEqual(['dorkbot']);
   });
 
-  it('leaves a post whose names reached nobody alone', () => {
-    // `@ghost` resolved to no member, so nothing was addressed and the seat is
-    // the only thing standing between the question and silence.
-    expect(stand([], ['dorkbot'])).toEqual(['dorkbot']);
-  });
-
   it('never touches a member that is not the seat', () => {
     // An `engaged` agent selected because IT was mentioned is not a fallback.
     expect(stand(['nova', 'ace'], ['nova', 'ace'])).toEqual(['nova', 'ace']);

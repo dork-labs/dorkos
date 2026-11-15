@@ -48,8 +48,18 @@ export const FORBIDDEN_PLAIN_FLAGS = [
  * @param site - The page's host, taken from `url`, for the window title. The title
  *   never says "DorkOS": any https page can open here, and DorkOS's name must not
  *   vouch for it.
+ * @param testBuild - True when this is DorkOS's pinned Chromium rather than the person's
+ *   installed Google Chrome. Only that build shows a bar saying it is "only for automated
+ *   testing", above the field where a person types a password, so only it hides info bars. The
+ *   release check `pnpm check:chromium-age` keeps that build within 30 days of stable, the
+ *   condition for hiding them (DOR-3876). Installed Chrome keeps every bar it shows.
  */
-export function plainChromiumArgs(profileFolder: string, url: string, site: string): string[] {
+export function plainChromiumArgs(
+  profileFolder: string,
+  url: string,
+  site: string,
+  testBuild: boolean
+): string[] {
   return [
     `--user-data-dir=${profileFolder}`,
     '--no-first-run',
@@ -59,6 +69,7 @@ export function plainChromiumArgs(profileFolder: string, url: string, site: stri
     // An extension could read the page; the person's own window needs none.
     '--disable-extensions',
     '--disable-features=HttpsUpgrades,HttpsFirstBalancedModeAutoEnable',
+    ...(testBuild ? ['--disable-infobars'] : []),
     `--window-name=Sign in to ${site}`,
     url,
   ];

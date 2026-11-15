@@ -379,7 +379,7 @@ export type { FeatureDisabledStateProps } from './FeatureDisabledState';
 export { LinkifiedText, containsUrl } from './linkified-text';
 export type { LinkifiedTextProps } from './linkified-text';
 export { LinkSafetyModal } from './link-safety-modal';
-export { MarkdownContent, type MarkdownContentProps } from './markdown-content';
+export { MarkdownCodePre, MarkdownContent, type MarkdownContentProps } from './markdown-content';
 export { MarkdownErrorBoundary } from './markdown-error-boundary';
 export type { MarkdownErrorBoundaryProps } from './markdown-error-boundary';
 export { MarkdownLink, type MarkdownLinkProps } from './markdown-link';

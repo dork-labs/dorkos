@@ -3,7 +3,7 @@
  *
  * @module routes/tunnel
  */
-import { Hono } from 'hono';
+import { Hono, type MiddlewareHandler } from 'hono';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import type { TunnelStatus } from '@dorkos/shared/types';
 import type { ApiEnv } from '../http/api-chain.js';
@@ -12,6 +12,7 @@ import { honoRequestFacts } from '../http/request-facts.js';
 import { env } from '../env.js';
 import { getLocalCockpitPort } from '../lib/trusted-origins.js';
 import { tunnelManager } from '../services/core/tunnel-manager.js';
+import { TunnelPortMismatchError } from '../services/core/remote/own-tunnel-ingress.js';
 import { configManager } from '../services/core/config-manager.js';
 import { logConfigWrite } from '../services/core/operator/config-write.js';
 import {
@@ -31,18 +32,35 @@ import {
   requireOperatorCookieUnderLogin,
 } from '../lib/caller-authority.js';
 import { logger, logError } from '../lib/logger.js';
+import { presentsAgentIdentity } from '../middleware/agent-identity.js';
 
 const router = new Hono<ApiEnv>();
 
+/** Refusal code when an agent reads the tunnel's state. */
+export const TUNNEL_STATUS_NOT_FOR_AGENTS = 'TUNNEL_STATUS_NOT_FOR_AGENTS';
+
+/**
+ * The read bar (DOR-3650): the status carries this machine's public address.
+ * Another device already needs a sign-in or a key to get here (the session
+ * gate, pinned by the cloud-groups contract); this keeps out a caller that says
+ * it is an agent, here or anywhere. A key holder still reads it, as the
+ * contract says. The app reads remote-access state elsewhere, so nothing it
+ * does meets this.
+ */
+const refuseAgentRead: MiddlewareHandler<ApiEnv> = async (c, next) =>
+  presentsAgentIdentity(honoRequestFacts(c))
+    ? c.json({ error: 'Agents can’t read Remote Access.', code: TUNNEL_STATUS_NOT_FOR_AGENTS }, 403)
+    : next();
+
 /** GET /api/tunnel/status — on-demand status check. */
-router.get('/status', (c) => c.json(tunnelManager.status));
+router.get('/status', refuseAgentRead, (c) => c.json(tunnelManager.status));
 
 /**
  * GET /api/tunnel/stream — SSE endpoint for real-time tunnel status events.
  * Written straight to the Node response (`http/raw-node-stream.ts`), and held
  * open until the client leaves.
  */
-router.get('/stream', (c) =>
+router.get('/stream', refuseAgentRead, (c) =>
   streamToNodeResponse(c, async (res, { signal }) => {
     logger.warn('[DEPRECATED] GET /api/tunnel/stream — use GET /api/events instead');
     res.writeHead(200, {
@@ -144,6 +162,12 @@ router.post('/start', async (c) => {
 
     return c.json({ url: tunnelManager.status.url });
   } catch (err) {
+    // A TUNNEL_PORT the tunnel can't use is a setting to fix, not a fault: 409
+    // with a stable code the app and scripts can act on (DOR-4263).
+    if (err instanceof TunnelPortMismatchError) {
+      logger.warn('[Tunnel] Refused start — TUNNEL_PORT points past Remote Access');
+      return c.json({ error: err.message, code: err.code }, 409);
+    }
     // Say what went wrong somewhere a person can read it. The 500 body carries
     // one sentence; whoever is debugging raised the log level for the stack, and
     // before DOR-1738 found nothing there at all (GitHub #1458).

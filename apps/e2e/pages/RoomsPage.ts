@@ -717,11 +717,6 @@ export class RoomsPage {
     return entry.getByTestId('entry-reactions-add');
   }
 
-  /** The searchable emoji grid, wherever it was opened from. */
-  get reactionPicker(): Locator {
-    return this.page.getByTestId('reaction-picker');
-  }
-
   /**
    * The one quiet line under a thread's root: "↳ 3 replies · last 9:45 AM".
    *

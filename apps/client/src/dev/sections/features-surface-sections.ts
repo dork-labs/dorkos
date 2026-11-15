@@ -7,7 +7,7 @@ import type { PlaygroundSection } from '../playground-registry';
  * Sources: PipPanelShowcases, ApprovalsShowcases, ScheduleApprovalShowcases,
  * TriageHeaderShowcases, InboxShowcases, PresenceStripShowcases,
  * HomeStatesShowcases, TodosShowcases, ConnectionsShowcases, PausedConnectionShowcases,
- * CommunityHostingShowcases, McpServerCardShowcases.
+ * CommunityHostingShowcases, McpServerCardShowcases, McpServerSheetShowcases.
  *
  * See `features-agent-sections.ts` for why this used to share a page — and a
  * file — with `FEATURE_AGENT_SECTIONS`, and no longer does.
@@ -438,5 +438,36 @@ export const FEATURE_SURFACE_SECTIONS: PlaygroundSection[] = [
     page: 'home-inbox',
     category: 'MCP servers',
     keywords: ['mcp', 'server', 'card', 'order', 'sort', 'freeze', 'panel', 'attention first'],
+  },
+  // McpServerSheetShowcases
+  {
+    id: 'mcp-server-sheet-who-uses-it',
+    title: 'MCP server sheet: who uses it',
+    page: 'home-inbox',
+    category: 'MCP servers',
+    keywords: [
+      'mcp',
+      'server',
+      'sheet',
+      'who uses it',
+      'without asking',
+      'undo',
+      'tools',
+      'standing',
+    ],
+  },
+  {
+    id: 'mcp-server-sheet-reserved-name',
+    title: 'MCP server sheet: reserved name',
+    page: 'home-inbox',
+    category: 'MCP servers',
+    keywords: ['mcp', 'server', 'reserved', 'name', 'rename', 'remove and add again', 'inbox'],
+  },
+  {
+    id: 'mcp-server-sheet-new-tool-notice',
+    title: 'MCP server sheet: new tool notice',
+    page: 'home-inbox',
+    category: 'MCP servers',
+    keywords: ['mcp', 'server', 'inbox', 'new tool', 'tool added', 'notice'],
   },
 ];

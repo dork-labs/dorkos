@@ -517,16 +517,16 @@ describe('VC-01 — the status model derives eight states from five reads', () =
 
   it('VC-01, SK-12: one name in two folders warns on BOTH rows without unseating either native cell', () => {
     // Seeded defect: emit the collision as a row of its own, or let it replace
-    // the `native` cell. Both copies really do load, so a cell that stopped
-    // saying `native` would be a claim the vendor has not made — and a row of
-    // its own would separate the sentence from the file it is about.
+    // the `native` cell. Each file sits where OpenCode reads, and OpenCode keeps
+    // one by name (observed against `opencode 1.19.3`), which the warning says;
+    // a row of its own would separate the sentence from the file it is about.
     const { repo, home } = stageBare('collision', ['claude-code', 'opencode']);
     writeSkill(join(repo, '.claude', 'skills', 'review-pr'), 'review-pr');
     writeSkill(join(repo, '.opencode', 'skills', 'review-pr'), 'review-pr');
 
     const status = statusOf(repo, home);
 
-    const tail = 'Its own documentation does not say which one wins. Keep one.';
+    const tail = 'Only one of them loads, and which one is not something you choose. Keep one.';
     const collision: Record<string, string> = {
       '.claude/skills/review-pr': `another skill named "review-pr" is in .opencode/skills, and OpenCode reads both folders. ${tail}`,
       '.opencode/skills/review-pr': `another skill named "review-pr" is in .claude/skills, and OpenCode reads both folders. ${tail}`,

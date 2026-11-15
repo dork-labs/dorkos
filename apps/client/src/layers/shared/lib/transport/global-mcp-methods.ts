@@ -12,6 +12,8 @@ import type {
   GlobalMcpServerList,
   GlobalMcpServerPatch,
   GlobalMcpServerView,
+  GlobalMcpStandingAllowList,
+  GlobalMcpToolsCheck,
 } from '@dorkos/shared/global-mcp-schemas';
 import { fetchJSON, fetchNoContent } from './http-client';
 
@@ -47,6 +49,24 @@ export function createGlobalMcpMethods(baseUrl: string) {
     removeGlobalMcpServer(name: string): Promise<void> {
       return fetchNoContent(baseUrl, `/mcp-servers/${encodeURIComponent(name)}`, {
         method: 'DELETE',
+      });
+    },
+
+    checkGlobalMcpServerTools(name: string): Promise<GlobalMcpToolsCheck> {
+      // A POST: it may start the server, so no cross-site GET can (DOR-4118).
+      return fetchJSON(baseUrl, `/mcp-servers/${encodeURIComponent(name)}/tools`, {
+        method: 'POST',
+      });
+    },
+
+    listGlobalMcpStandingAllows(name: string): Promise<GlobalMcpStandingAllowList> {
+      return fetchJSON(baseUrl, `/mcp-servers/${encodeURIComponent(name)}/allows`);
+    },
+
+    undoGlobalMcpStandingAllow(name: string, agentId: string, rule: string): Promise<void> {
+      return fetchNoContent(baseUrl, `/mcp-servers/${encodeURIComponent(name)}/allows`, {
+        method: 'DELETE',
+        body: JSON.stringify({ agentId, rule }),
       });
     },
   };

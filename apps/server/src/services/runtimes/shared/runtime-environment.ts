@@ -84,6 +84,7 @@ function overrideNames(input: RuntimeEnvironmentInput): Set<string> {
     doe: [],
   };
   for (const name of paths[input.runtime]) names.add(name);
+  if (input.purpose === 'turn') names.add('DORKOS_SESSION_ID');
   if (authPurpose(input.purpose)) for (const name of profileNames(input)) names.add(name);
   if (input.runtime === 'claude-code' && ['turn', 'warmup'].includes(input.purpose)) {
     names.add('CLAUDE_CODE_EMIT_SESSION_STATE_EVENTS');
@@ -98,6 +99,8 @@ function overrideNames(input: RuntimeEnvironmentInput): Set<string> {
   if (input.runtime === 'opencode' && input.purpose === 'turn') {
     names.add('OPENCODE_SERVER_PASSWORD');
     names.add('OPENCODE_CONFIG_CONTENT');
+    // The shared sidecar loads no project's config or code (DOR-4394).
+    names.add('OPENCODE_DISABLE_PROJECT_CONFIG');
   }
   for (const name of Object.keys(flowIdentityEnv(input.runtime, input.purpose))) names.add(name);
   return names;

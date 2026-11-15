@@ -37,7 +37,7 @@ vi.mock('../../../tasks/task-state.js', async (original) => ({
 import { configManager } from '../../../core/config-manager.js';
 import { resetMemoryProvider } from '../../../memory/index.js';
 import { buildInstructionsView, buildOwnNextTurnTemplate, type PreviewAgent } from '../preview.js';
-import { LOCKED_BLOCK_IDS, SESSION_BLOCKS } from '../block-registry.js';
+import { LOCKED_BLOCK_IDS, SESSION_BLOCKS, TURN_BLOCKS } from '../block-registry.js';
 import { fillTemplate, variableValuesFor } from '../variables.js';
 
 const RUNTIMES: InstructionsRuntime[] = ['claude-code', 'codex', 'opencode', 'doe'];
@@ -287,5 +287,23 @@ describe('fillTemplate', () => {
     expect(fillTemplate('{{room.secret}} {{agent.name}}', {})).toBe(
       '{{room.secret}} {{agent.name}}'
     );
+  });
+});
+
+describe('the viewer names things the way a person knows them (DOR-4114)', () => {
+  // Titles and condition notes are app copy. Internal subsystem and file names
+  // are not, and "Doe" shows by its public name.
+  const blocks = [...SESSION_BLOCKS, ...TURN_BLOCKS];
+
+  it.each(blocks.map((block) => [block.id, block] as const))('%s', (_id, block) => {
+    const words = `${block.title} ${block.conditionNote}`;
+    expect(words).not.toMatch(/\b(Relay|Mesh|Doe)\b|SOUL\.md|NOPE\.md/);
+  });
+
+  it('the persona, boundaries and chat-connection notes say what turns them on', () => {
+    const note = (id: string) => blocks.find((block) => block.id === id)?.conditionNote;
+    expect(note('agent_persona')).toBe('When the persona file is on and not empty.');
+    expect(note('agent_safety_boundaries')).toBe('When the boundaries file is on and not empty.');
+    expect(note('adapter_tools')).toBe('When chat connections are on and not blocked.');
   });
 });

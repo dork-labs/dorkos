@@ -202,6 +202,16 @@ Belt-and-braces, seconds, deterministic. CI's `db-check` workflow (a required ch
 
 **If it fails, STOP**: run `pnpm --filter @dorkos/db db:generate` on a real terminal (a column rename needs an interactive answer drizzle-kit refuses to guess), review and land the migration through a PR, then re-run the release. Unlike Check 6, nothing here is release-versioned — Drizzle migrations are numbered and apply at server boot — so there is no per-version key to verify and nothing to scaffold; the migration just has to exist on `main`.
 
+### Check 8: The Agent browser's fallback Chromium is within 30 days of stable
+
+```bash
+pnpm check:chromium-age
+```
+
+When a person has no Google Chrome, the Agent browser and its plain sign-in window run the Chromium build pinned in `apps/server/src/services/session/local-browser/playwright-backend.ts` (`LOCAL_MANAGED_CHROMIUM_VERSION`), and a person may type a password there. That pin moves only when a release bumps Playwright. The check counts the days since the next Chromium milestone first reached stable (Chromium Dash's schedule) and fails past 30: Security's condition for the sign-in window hiding Chromium's "only for automated testing" bar (DOR-3876).
+
+**If it fails (exit 1), STOP**: land a Playwright bump that moves the pin, then re-run the release. **Exit 2** means it could not read the pin or Chromium Dash; re-run it, and never treat a check that could not measure as a pass.
+
 ---
 
 ## Phase 3: Version Analysis
@@ -659,6 +669,17 @@ gh release create vX.Y.Z --draft --title "vX.Y.Z" --notes-file /tmp/dorkos-notes
 If `gh` is unavailable: `brew install gh && gh auth login`, or create the release manually (as a draft) at `https://github.com/dork-labs/dorkos/releases/new?tag=vX.Y.Z`.
 
 **The GitHub Release is created here, first, as a draft with the notes above.** The desktop assets (macOS `.dmg` + `.zip` + `.blockmap` + `latest-mac.yml`, Windows `.exe` + `latest.yml` + `.blockmap`) attach **later, asynchronously**: pushing the `vX.Y.Z` tag (Phase 6.9) already kicked off the "Desktop Release" workflow, which builds (and, on macOS, signs + notarizes) each platform, uploads the files onto this release, and then — in the last step of its `build-macos` job — flips the draft to **published**. The first-ever notarization from a fresh signing identity can take ~30–65 min; later ones are minutes. Until the workflow publishes it, the release stays a draft — invisible to the auto-updater and the public, which is what prevents the "Check for updates" 404 during the build. Publishing is gated on macOS only: the last step of the `build-macos` job flips the draft to published once the macOS build and its install-verification pass, and the Windows alpha (`continue-on-error`) can never block it. If the macOS build or verification fails, the release stays a draft by design (electron-updater ignores drafts, so users keep the previous version) — fix the cause and re-run the failed job, or, once you've confirmed the assets are good, publish by hand: `gh release edit vX.Y.Z --draft=false`.
+
+### 6.12: Gate — both download links serve the new version
+
+**Nothing about the release is announced (room post, blog, social, feedback sweep) until this passes.** Right after the Desktop Release workflow publishes the draft, check where each stable link redirects:
+
+```bash
+curl -sS -o /dev/null -w '%{http_code} %{redirect_url}\n' https://dorkos.ai/download/mac
+curl -sS -o /dev/null -w '%{http_code} %{redirect_url}\n' https://dorkos.ai/download/windows
+```
+
+Each must print `302` and a URL under `/releases/download/vX.Y.Z/` for the version just released. The site keeps the GitHub release list for at most one minute (`RELEASE_LIST_TTL_MS` in `apps/site/src/lib/desktop-download.ts`), so if a link still shows the previous version, wait a minute and check again. A redirect to `/releases/latest` instead means GitHub refused the site's lookup (rate limit) and the link fell back to the release page; that is safe for people but not a pass, so check again a minute later. Still old after three tries is a bug: stop and file it (DOR-4300 was this failure: 0.135.8 served as 0.135.7 for two hours). The one allowed exception: when the Windows alpha build failed (non-gating), the release has no `.exe`, so `/download/windows` correctly keeps the previous version; say so in the report.
 
 ---
 

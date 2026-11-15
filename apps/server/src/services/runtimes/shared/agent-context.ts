@@ -80,8 +80,9 @@ import { diskContextSource, type AgentContextSource } from './source/agent-conte
  * under `runtimes/shared/` may spell a concrete prefix, and
  * `claude-code/messaging/__tests__/context-tool-names.test.ts` enforces that.
  *
- * Tasks/Relay/Mesh use separate injected tools rather than the capability
- * catalog. Keep that distinction beside the discovery instruction.
+ * Schedules, chat connections, and the agent directory use separate injected
+ * tools rather than the capability catalog. Keep that distinction beside the
+ * discovery instruction.
  *
  * The two doc pointers are built from `env.DORKOS_DOCS_BASE_URL` (production by
  * default) rather than hardcoded, so an instance running its own `apps/site`
@@ -103,8 +104,8 @@ ready to use: the one whose name ends in \`session_start\`, the one that ends in
 one that ends in \`chat_read\`. Outside DorkOS (Telegram, Slack), give the title alone.
 What you can do here is listed area by area in the next block.
 ${dorkosToolGuardLines()}
-Tasks, Relay, and Mesh are NOT in the capability catalog: use their injected tools
-whose names end in \`tasks_*\`, \`relay_*\` and \`mesh_*\`. Relay and Mesh have no CLI path.
+Schedules, chat connections and the agent directory aren't in the catalog: use their tools, whose names end in \`tasks_*\`, \`relay_*\`/\`binding_*\` and \`mesh_*\`.
+Chat connections and the agent directory have no CLI path.
 Documentation: ${env.DORKOS_DOCS_BASE_URL}/llms.txt
 Full docs: ${env.DORKOS_DOCS_BASE_URL}/docs
 </dorkos_context>`;

@@ -17,6 +17,8 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
 import { runtimeRegistry } from '../services/core/runtime-registry.js';
+import { openedChatToolWarnings } from '../services/session/launch/session-tool-warnings.js';
+import { sessionMessageReceipt } from './session-message-receipt.js';
 import {
   UpdateSessionRequestSchema,
   ForkSessionRequestSchema,
@@ -85,6 +87,7 @@ import {
   modelGateAuthority,
   rejectUndeclaredPermissionMode,
   rejectUnknownModel,
+  sessionModeAuthority,
 } from './session-model-gate.js';
 import { mountWindowSignalRoutes, touchedSinceKeeper } from './session-touch-handler.js';
 import { sessionCommandIntentHandler } from './session-command-intent-handler.js';
@@ -460,7 +463,10 @@ export function createSessionRoutes(deps: SessionRouteDeps = {}): Hono<ApiEnv> {
     if (session.accountId === undefined && session.status?.accountUsage?.accountId) {
       session.accountId = session.status.accountUsage.accountId;
     }
-    return c.json(session);
+    return c.json({
+      ...session,
+      ...(await openedChatToolWarnings(runtime, projectDir, sessionId)),
+    });
   });
 
   // GET /api/sessions/:id/tasks - Get task state from SDK transcript
@@ -596,12 +602,16 @@ export function createSessionRoutes(deps: SessionRouteDeps = {}): Hono<ApiEnv> {
     // adopted — a codex session PATCHed to `auto` reads "Auto" everywhere while
     // it keeps running read-only. WRITE PATH ONLY: a session already persisted in
     // a now-undeclared mode still loads and runs.
-    if (requestedMode !== undefined) {
-      const modeError = rejectUndeclaredPermissionMode(runtime, requestedMode);
-      if (modeError) return c.json(errorBody(modeError, 'UNSUPPORTED_PERMISSION_MODE'), 400);
-    }
-    // From Wi-Fi a chat's mode may go down, never up (DOR-3037).
-    const raise = await wifiModeRaiseReply(c, runtime, sessionId, requestedMode);
+    //
+    // Asked of the runtime the session will run on: its bound one, else the one
+    // the request names, else the inferred one. Asking the inferred claude-code
+    // for a chat headed to Codex accepted `plan`, which Codex does not have, and
+    // the turn then ran at the agent's level (DOR-4411).
+    const modeRuntime = sessionModeAuthority(runtime, bound, runtimeHint);
+    const modeError = requestedMode && rejectUndeclaredPermissionMode(modeRuntime, requestedMode);
+    if (modeError) return c.json(errorBody(modeError, 'UNSUPPORTED_PERMISSION_MODE'), 400);
+    // From Wi-Fi a chat's mode may go down, never up (DOR-3037), judged by the same runtime.
+    const raise = await wifiModeRaiseReply(c, modeRuntime, sessionId, requestedMode);
     if (raise) return raise;
     // Same authority argument as the mode gate directly above, applied to the
     // model: only the runtime can say whether the id it was handed is real, and it
@@ -611,12 +621,10 @@ export function createSessionRoutes(deps: SessionRouteDeps = {}): Hono<ApiEnv> {
     // Model ids are namespaced per runtime and overlap nowhere, so asking the
     // wrong one is a guaranteed refusal rather than a rare one — which is exactly
     // what shipped, and what {@link modelGateAuthority} exists to stop. The mode
-    // gate above keeps asking `runtime` because every runtime here declares a
-    // SUBSET of claude-code's mode ids, so the inference can only ever be too
-    // permissive there, and the too-permissive direction is already caught where
-    // the runtime finally becomes known (`RuntimeRegistry.claimedPermissionMode`
-    // drops a mode the bound runtime does not declare). Narrowing it to the hint
-    // would ADD refusals, not remove them, and that is a separate decision.
+    // gate above asks the same authority, falling back to `runtime` when the
+    // session is unbound and names no runtime: there the inference can only be
+    // too permissive, and the turn backstop (`clampModeToCeiling`) runs an
+    // undeclared mode at the runtime's strictest, never the agent's level.
     //
     // Which MENU is the other half of the question. A session on DorkOS credits
     // may run only what credits serve on its runtime's protocol, so it is judged
@@ -883,15 +891,7 @@ export function createSessionRoutes(deps: SessionRouteDeps = {}): Hono<ApiEnv> {
     // the sending device out stops the chat (DOR-3172).
     if (result.accepted) recordAccepted(honoRequestFacts(c), result, sessionId, clientId);
 
-    return c.json(
-      {
-        sessionId: result.canonicalId,
-        messageId: result.outcome.messageId,
-        outcome: result.outcome,
-        queuePosition: result.queuePosition,
-      },
-      202
-    );
+    return c.json(sessionMessageReceipt(result), 202);
   });
 
   // POST /api/sessions/:id/opened — the chat page is showing this chat (spec

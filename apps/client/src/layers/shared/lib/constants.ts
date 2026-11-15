@@ -1,4 +1,5 @@
 /** Client-only constants — localStorage keys, font scales, and UI limits. */
+import { isDesktopShell } from './platform';
 
 export const STORAGE_KEYS = {
   FONT_SIZE: 'dorkos-font-size',
@@ -176,6 +177,7 @@ export type BuiltInSettingsTab =
   | 'tools'
   | 'security'
   | 'remote-access'
+  | 'terminal-command'
   | 'runtimes'
   | 'rooms'
   | 'connections'
@@ -202,6 +204,8 @@ export interface SettingsTabEntry {
    * never linked to a DorkOS account from here. See {@link settingsTabsFor}.
    */
   onHub?: false;
+  /** `true` for a tab only the desktop app can act on. See {@link settingsTabsFor}. */
+  desktopOnly?: true;
 }
 
 /**
@@ -234,6 +238,14 @@ export const SETTINGS_TAB_DIRECTORY: readonly SettingsTabEntry[] = [
   { id: 'security', label: 'Login & security', group: 'This computer' },
   { id: 'remote-access', label: 'Remote access', group: 'This computer', onHub: false },
   { id: 'privacy', label: 'Privacy & data', group: 'This computer' },
+  // `dorkos` in the person's own Terminal, which only the Mac app can install (DOR-3105).
+  {
+    id: 'terminal-command',
+    label: 'Terminal command',
+    group: 'This computer',
+    onHub: false,
+    desktopOnly: true,
+  },
   { id: 'server', label: 'Server', group: SETTINGS_ADVANCED_GROUP },
   { id: 'tools', label: 'Tools', group: SETTINGS_ADVANCED_GROUP },
   // Only the DEFAULTS every room follows: each room keeps its own limits in
@@ -247,12 +259,17 @@ export const SETTINGS_TAB_DIRECTORY: readonly SettingsTabEntry[] = [
 
 /**
  * The Settings tabs that apply where the app runs: every one on a person's own
- * computer, and on a hub only those not marked `onHub: false`.
+ * computer, and on a hub only those not marked `onHub: false`. Outside the
+ * desktop app, none marked `desktopOnly`.
  *
  * @param isHub - Whether the app runs on a hub (`useIsHub`).
+ * @param inDesktopApp - Whether this window is the desktop app's.
  */
-export function settingsTabsFor(isHub: boolean): readonly SettingsTabEntry[] {
-  return isHub
-    ? SETTINGS_TAB_DIRECTORY.filter((entry) => entry.onHub !== false)
-    : SETTINGS_TAB_DIRECTORY;
+export function settingsTabsFor(
+  isHub: boolean,
+  inDesktopApp: boolean = isDesktopShell()
+): readonly SettingsTabEntry[] {
+  return SETTINGS_TAB_DIRECTORY.filter(
+    (entry) => !(isHub && entry.onHub === false) && !(entry.desktopOnly && !inDesktopApp)
+  );
 }

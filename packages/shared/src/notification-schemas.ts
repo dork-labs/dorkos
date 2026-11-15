@@ -153,6 +153,16 @@ export const NOTIFICATION_KINDS = [
    */
   'connector.access_narrowed',
   /**
+   * A global MCP server added a tool that an agent may use without asking,
+   * because it allows every tool on that server (DOR-4118). Once per tool.
+   */
+  'mcp-server.tool_added',
+  /**
+   * A saved global MCP server's name is one of DorkOS's own, so no agent gets
+   * its tools (DOR-4262). Once per server, said at startup.
+   */
+  'mcp-server.reserved_name',
+  /**
    * A browser this computer had never seen used chat from the web here, over
    * the owner's hub (spec `everything-is-a-space` step B3). Once per browser.
    */
@@ -175,6 +185,8 @@ export const NOTIFICATION_KINDS = [
    * end it by restarting.
    */
   'shell.check_down',
+  /** A spin-off report never reached the chat that started it (DOR-3561). */
+  'report.undelivered',
 ] as const;
 
 /** What the app shows about DorkOS's check on agents' shell commands (DOR-3300). */

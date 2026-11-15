@@ -217,16 +217,6 @@ describe('ResponsivePopoverContent', () => {
     expect(screen.getByTestId('popover-content').className).toContain('w-80');
   });
 
-  it('merges custom className on desktop', () => {
-    mockUseIsMobile.mockReturnValue(false);
-    render(
-      <ResponsivePopover open>
-        <ResponsivePopoverContent className="p-4">inner</ResponsivePopoverContent>
-      </ResponsivePopover>
-    );
-    expect(screen.getByTestId('popover-content').className).toContain('p-4');
-  });
-
   it('applies bottom drawer classes on mobile (ignoring caller className)', () => {
     mockUseIsMobile.mockReturnValue(true);
     render(

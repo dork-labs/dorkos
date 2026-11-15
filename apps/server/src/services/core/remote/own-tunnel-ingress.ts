@@ -19,10 +19,9 @@
  * difference from the managed ingress (`managed-ingress.ts`), which runs the
  * edge-proof and host checks first.
  *
- * It fronts only the main server's own port. In development the app is served
- * by the Vite server, which the front door does not serve, so a tunnel aimed
- * there (or at an operator's `TUNNEL_PORT`) forwards directly, as before; its
- * requests still classify as another device by the `X-Forwarded-For` ngrok adds.
+ * It fronts only the main server's own port. A tunnel aimed anywhere else (the
+ * Vite dev server, or an operator's `TUNNEL_PORT`) would skip this listener's
+ * mark and path checks, so `TunnelManager` refuses to open one (DOR-3650).
  *
  * @module services/core/remote/own-tunnel-ingress
  */
@@ -44,6 +43,8 @@ export interface OwnTunnelIngressOptions {
 
 /** The own-tunnel ingress listener. One per process; owned by `TunnelManager`. */
 export interface OwnTunnelIngress {
+  /** The main server's port, the only one an own tunnel may be aimed at. */
+  readonly frontedPort: number;
   /**
    * Whether a tunnel aimed at `port` should forward here instead: true only for
    * the main server's own port, the one whose front door this hands to.
@@ -59,6 +60,35 @@ export interface OwnTunnelIngress {
   open(): Promise<string>;
   /** Stop listening and cut every connection it carried, upgraded ones included. */
   close(): Promise<void>;
+  /** Cut every connection it carries now and keep listening (Remote Access off, DOR-3650). */
+  dropConnections(): void;
+}
+
+/** The stable code a tunnel aimed past this ingress is refused with (DOR-4263). */
+export const TUNNEL_PORT_MISMATCH = 'TUNNEL_PORT_MISMATCH';
+
+/**
+ * A tunnel aimed at a port this ingress doesn't front (DOR-3650): a setting to
+ * fix, not a server fault, so the start route answers it with 409 and
+ * {@link TUNNEL_PORT_MISMATCH} rather than 500 (DOR-4263). It names ports, never
+ * a token or a path.
+ */
+export class TunnelPortMismatchError extends Error {
+  readonly code = TUNNEL_PORT_MISMATCH;
+
+  /**
+   * Name both ports and the setting to change.
+   *
+   * @param frontedPort - The one port Remote Access reaches.
+   * @param asked - The port the tunnel was aimed at.
+   */
+  constructor(frontedPort: number, asked: number) {
+    super(
+      `Remote Access only reaches DorkOS on port ${frontedPort}, not ${asked}. ` +
+        'Unset TUNNEL_PORT, or point it at that port.'
+    );
+    this.name = 'TunnelPortMismatchError';
+  }
 }
 
 /**
@@ -142,6 +172,7 @@ export function createOwnTunnelIngress(options: OwnTunnelIngressOptions): OwnTun
   }
 
   return {
+    frontedPort: options.frontedPort,
     fronts(port) {
       return options.frontedPort === port;
     },
@@ -152,6 +183,10 @@ export function createOwnTunnelIngress(options: OwnTunnelIngressOptions): OwnTun
         opening = null;
       });
       return opening;
+    },
+    dropConnections() {
+      for (const socket of connections) socket.destroy();
+      connections.clear();
     },
     async close() {
       await opening?.catch(() => undefined);

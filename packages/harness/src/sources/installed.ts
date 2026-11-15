@@ -21,7 +21,12 @@
  */
 import { existsSync, lstatSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
-import { PACKAGE_TEXT_MAX_BYTES, readTextFileWithinSync } from '@dorkos/shared/bounded-read';
+import {
+  PACKAGE_TEXT_MAX_BYTES,
+  readTextFileWithinSync,
+  TooLargeError,
+  UnsafeFileError,
+} from '@dorkos/shared/bounded-read';
 import { MarketplacePackageManifestSchema, PackageNameSchema } from '@dorkos/marketplace';
 import { isInstallSiblingName, type DevLinkRecord } from '@dorkos/shared/marketplace-schemas';
 import { hasSchedule, isInvalidSchedule, readScheduleField } from '@dorkos/skills/schedule-schema';
@@ -84,6 +89,14 @@ export interface InstalledSkill extends SkillEntry {
    * directory namespacing. The projector reads this to warn on such collisions.
    */
   frontmatterName?: string;
+  /**
+   * True when the skill has a `SKILL.md` but DorkOS could not read its `name`:
+   * the file is over the read cap, or not a plain file, or its frontmatter is
+   * one the parser refuses (over 32 KB, too many YAML aliases). OpenCode may
+   * still read a name there, so the by-name skip treats such a skill as unsafe
+   * to project rather than guessing (DOR-4387, Security M1).
+   */
+  nameUnreadable?: true;
   /**
    * True when a global sync has already linked this skill into
    * `<dorkHome>/skills/<pkg>__<name>`.
@@ -567,21 +580,29 @@ function toInstalledSkill(
   dorkHomeLink?: (skillName: string) => boolean
 ): InstalledSkill {
   let skillMd = '';
+  let nameUnreadable = false;
   try {
     skillMd = readTextFileWithinSync(
       join(absSkillsRoot, entry.name, 'SKILL.md'),
       PACKAGE_TEXT_MAX_BYTES,
       'The SKILL.md'
     );
-  } catch {
-    // No readable SKILL.md — the empty default above stands.
+  } catch (err) {
+    // No readable SKILL.md — the empty default above stands. A file DorkOS
+    // REFUSED (over the cap, not a plain file) leaves a name another tool may
+    // still read. One the OS would not open (missing, permissions) is unread by
+    // every tool alike, and keeps its links (DOR-1935).
+    nameUnreadable = err instanceof TooLargeError || err instanceof UnsafeFileError;
   }
-  const frontmatter = readRawFrontmatter(skillMd)?.data ?? {};
+  const parsed = readRawFrontmatter(skillMd);
+  if (parsed === null) nameUnreadable = true;
+  const frontmatter = parsed?.data ?? {};
   return {
     ...entry,
     usesPluginRoot: skillMd.includes(CLAUDE_PLUGIN_ROOT_TOKEN),
     usesPluginData: skillMd.includes(CLAUDE_PLUGIN_DATA_TOKEN),
     ...(typeof frontmatter.name === 'string' ? { frontmatterName: frontmatter.name } : {}),
+    ...(nameUnreadable ? { nameUnreadable: true as const } : {}),
     ...(dorkHomeLink ? { linkedInDorkHome: dorkHomeLink(entry.name) } : {}),
     hasSchedule: declaresSchedule(frontmatter),
   };
@@ -652,6 +673,20 @@ function collectPortableSkills(
       .map((entry) => entry.sourceDir)
       .sort(),
   };
+}
+
+/**
+ * The skills one package folder would contribute, read exactly as the install
+ * scan reads them: `skills/*` and `.dork/tasks/*`, links refused, sorted by
+ * name. For a package that is not installed yet, such as one staged for an
+ * install preview (DOR-4387).
+ *
+ * @param pluginDir - absolute path to the package folder.
+ * @param sourcePrefix - how the package's paths are spelled once installed,
+ *   e.g. `.dork/plugins/<name>`.
+ */
+export function readPackageSkills(pluginDir: string, sourcePrefix: string): InstalledSkill[] {
+  return collectPortableSkills(pluginDir, sourcePrefix).skills;
 }
 
 /**

@@ -1,3 +1,4 @@
+import { refuseReplayOutbound } from '../../lib/replay/isolation.js';
 /**
  * Opt-in ngrok tunnel lifecycle manager (singleton).
  *
@@ -35,7 +36,7 @@ import type { Config as NgrokForwardOpts } from '@ngrok/ngrok';
 import type { TunnelStatus } from '@dorkos/shared/types';
 import type { RemoteAccessMode } from '@dorkos/shared/config-schema';
 import type { ManagedIngress } from './remote/managed-ingress.js';
-import type { OwnTunnelIngress } from './remote/own-tunnel-ingress.js';
+import { TunnelPortMismatchError, type OwnTunnelIngress } from './remote/own-tunnel-ingress.js';
 import type { TunnelIngresses } from './remote/tunnel-ingresses.js';
 import {
   ManagedForwarding,
@@ -211,6 +212,7 @@ export class TunnelManager extends EventEmitter {
    *   returns a listener with no URL — see below.
    */
   start(config: TunnelConfig): Promise<string> {
+    refuseReplayOutbound();
     // The same queue as managed opens, so the two can never both be opening
     // and both end up open. The close count is read NOW: a stop() issued while
     // this waits in the queue still wins.
@@ -250,8 +252,14 @@ export class TunnelManager extends EventEmitter {
       throw new Error('DorkOS remote access is open. Close it first.');
     if (epoch !== this.byoEpoch) throw new Error('The tunnel was closed while it was opening.');
 
+    // A tunnel aimed past the ingress would skip its mark and its path checks,
+    // so it is refused rather than opened unguarded (DOR-3650).
+    const own = this.ownTunnelIngress;
+    if (own && !own.fronts(config.port)) {
+      throw new TunnelPortMismatchError(own.frontedPort, config.port);
+    }
     const ngrok = await import('@ngrok/ngrok');
-    const ingress = this.ownTunnelIngress?.fronts(config.port) ? this.ownTunnelIngress : null;
+    const ingress = own?.fronts(config.port) ? own : null;
     let listener: ByoListener;
     try {
       const addr = ingress ? await ingress.open() : config.port;
@@ -420,6 +428,7 @@ export class TunnelManager extends EventEmitter {
    * @param input - The credential, its hostnames and edge proof, and the generation.
    */
   startManaged(input: ManagedStartInput): Promise<ManagedStartResult> {
+    refuseReplayOutbound();
     // Read NOW, so a closeManaged() issued while this waits in the queue wins.
     const closes = this.managedForwarding.closeCount;
     return this.enqueue(() => this.managedForwarding.open(input, closes));
@@ -433,6 +442,7 @@ export class TunnelManager extends EventEmitter {
    * @param hosts - The complete hostname set; compared without regard to case.
    */
   applyHosts(hosts: string[]): Promise<ManagedHostsResult> {
+    refuseReplayOutbound();
     return this.enqueue(() => this.managedForwarding.applyHosts(hosts));
   }
 

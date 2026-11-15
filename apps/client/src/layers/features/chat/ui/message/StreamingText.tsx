@@ -1,9 +1,19 @@
 import { createContext, useContext, useMemo } from 'react';
 import { Streamdown } from 'streamdown';
 import type { Components } from 'streamdown';
-import { cn, DEFAULT_TEXT_EFFECT, resolveStreamdownAnimation } from '@/layers/shared/lib';
+import {
+  cn,
+  DEFAULT_TEXT_EFFECT,
+  resolveStreamdownAnimation,
+  STREAMDOWN_TRANSLATIONS,
+} from '@/layers/shared/lib';
 import type { TextEffectConfig } from '@/layers/shared/lib';
-import { MarkdownErrorBoundary, MarkdownImage, MarkdownLink } from '@/layers/shared/ui';
+import {
+  MarkdownCodePre,
+  MarkdownErrorBoundary,
+  MarkdownImage,
+  MarkdownLink,
+} from '@/layers/shared/ui';
 import { WidgetFence, WIDGET_FENCE_LANGUAGE } from '@/layers/features/gen-ui';
 import 'streamdown/styles.css';
 
@@ -36,7 +46,11 @@ interface StreamingTextProps {
  * the shared link-safety modal first. A Markdown picture opens the lightbox
  * through {@link MarkdownImage}, the same as every other picture in a message.
  */
-const streamdownComponents: Components = { a: MarkdownLink, img: MarkdownImage };
+const streamdownComponents: Components = {
+  a: MarkdownLink,
+  img: MarkdownImage,
+  pre: MarkdownCodePre,
+};
 
 /** The message-scoped values a `dorkos-ui` fence needs beyond its own code. */
 interface FenceContextValue {
@@ -109,6 +123,7 @@ export function StreamingText({
             animated={animatedConfig}
             isAnimating={isStreaming}
             plugins={widgetPlugins}
+            translations={STREAMDOWN_TRANSLATIONS}
           >
             {content}
           </Streamdown>

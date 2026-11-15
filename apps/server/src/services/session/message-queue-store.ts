@@ -300,6 +300,35 @@ export class MessageQueueStore {
   }
 
   /**
+   * Put a row {@link remove} handed back on the queue again, exactly as it was:
+   * same id, words, sender, context, hold and place in line. For a message whose
+   * turn started and was then stopped before the agent read it (DOR-4353).
+   * Changes nothing when the id is queued already.
+   *
+   * @param sessionId - The session the row waited on, as it was enqueued
+   * @param record - The row as {@link remove} returned it
+   * @returns Whether the row is back
+   */
+  restore(sessionId: string, record: QueuedMessageRecord): boolean {
+    if (this.row(record.id)) return false;
+    this.db
+      .insert(sessionMessageQueue)
+      .values({
+        id: record.id,
+        sessionId,
+        position: record.position,
+        content: record.content,
+        disposition: record.disposition,
+        clientId: record.enqueuedBy,
+        enqueuedAt: record.enqueuedAt,
+        contextJson: record.context ? JSON.stringify(record.context) : null,
+        heldToDefault: record.heldToDefault,
+      })
+      .run();
+    return true;
+  }
+
+  /**
    * Replace a queued message's text, keeping its id and its place in the queue.
    * Returns the edited record, or `undefined` for an unknown id.
    *

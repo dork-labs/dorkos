@@ -43,14 +43,18 @@
  */
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { AGENTS_SKILLS_DIR_READERS, type GlobalPlanRoots } from '@dorkos/harness';
+import {
+  AGENTS_SKILLS_DIR_READERS,
+  type GlobalPlanRoots,
+  type UserSkillFolders,
+} from '@dorkos/harness';
 import type { HarnessId } from '@dorkos/shared/harness-schemas';
 import { UserConfigSchema } from '@dorkos/shared/config-schema';
 import { boundaryWasConfigured, type BoundaryConfigReader } from '../../lib/boundary.js';
 import { configManager } from '../core/config-manager.js';
 import { logConfigWrite } from '../core/operator/config-write.js';
 import { inheritedClaudeRoot } from '../runtimes/claude-code/claude-config-dir.js';
-import { agentsUserSkillsDir } from './agents-user-home.js';
+import { agentsUserSkillsDir, byNameUserSkillDirs } from './agents-user-home.js';
 
 /** The two decisions `harness.global` records, as read off disk. */
 export interface GlobalSharingAnswer {
@@ -235,19 +239,59 @@ export function resolveGlobalScopeInputs(
     return { ...base, roots: { dorkHome }, boundaryRoot: configuredBoundaryRoot(env, config) };
   }
 
-  const enabled = new Set(answer.harnesses);
-  return {
-    ...base,
-    roots: {
-      dorkHome,
-      ...(AGENTS_SKILLS_DIR_READERS.some((harness) => enabled.has(harness))
-        ? { agentsSkillsDir: agentsUserSkillsDir() }
-        : {}),
-      ...(enabled.has('claude-code')
-        ? { claudeSkillsDir: join(inheritedClaudeRoot(), 'skills') }
-        : {}),
-    },
+  return { ...base, roots: userTierRoots(dorkHome, answer.harnesses) };
+}
+
+/**
+ * The roots an unconfined machine sharing with `harnesses` gets, with the
+ * person's own skill folders beside them whenever a user tier is written.
+ *
+ * `ownSkillDirs` rides only with a user tier: a plan that links into DorkOS's
+ * own folder alone can replace nothing, so it reads nothing in a home folder.
+ *
+ * @param dorkHome - the resolved DorkOS data directory.
+ * @param harnesses - the agent tools shared with.
+ * @returns the roots.
+ */
+function userTierRoots(dorkHome: string, harnesses: readonly HarnessId[]): GlobalPlanRoots {
+  const enabled = new Set(harnesses);
+  const roots: GlobalPlanRoots = {
+    dorkHome,
+    ...(AGENTS_SKILLS_DIR_READERS.some((harness) => enabled.has(harness))
+      ? { agentsSkillsDir: agentsUserSkillsDir() }
+      : {}),
+    ...(enabled.has('claude-code')
+      ? { claudeSkillsDir: join(inheritedClaudeRoot(), 'skills') }
+      : {}),
   };
+  if (roots.agentsSkillsDir === undefined && roots.claudeSkillsDir === undefined) return roots;
+  return { ...roots, ownSkillDirs: byNameUserSkillDirs() };
+}
+
+/**
+ * The person's user-level skill folders a project plan reads names from, so a
+ * project package skill never replaces one of them (DOR-4392).
+ *
+ * Empty under a configured boundary, which keeps DorkOS out of the home folder
+ * for reading as much as for writing, exactly as the global plan's user tier.
+ *
+ * @param dorkHome - the resolved DorkOS data directory.
+ * @param env - the process environment, for the boundary check. Defaults to
+ *   the live one, read as the CLI reads it, because this module serves both.
+ * @returns the absolute folders, or none, with the data directory whose links
+ *   in them are DorkOS's own.
+ */
+export function projectUserSkills(
+  dorkHome: string,
+  // eslint-disable-next-line no-restricted-syntax -- shared with the CLI, which never loads env.ts; DORKOS_BOUNDARY is read the same way resolveGlobalScopeInputs' CLI callers pass it
+  env: NodeJS.ProcessEnv = process.env
+): UserSkillFolders {
+  // `configuredBoundaryRoot` rather than `boundaryWasConfigured`: the same two
+  // places, read the same way, from this module, so a projection never hangs
+  // on a second module's answer to an optional read.
+  const confined = configuredBoundaryRoot(env, boundaryConfigFromDisk(dorkHome)) !== '';
+  const dirs = confined ? [] : byNameUserSkillDirs();
+  return { dirs, dorkHome };
 }
 
 /**
@@ -273,16 +317,7 @@ export function globalRootsFor(
   config: BoundaryConfigReader
 ): GlobalPlanRoots {
   if (boundaryWasConfigured(env, config)) return { dorkHome };
-  const enabled = new Set(harnesses);
-  return {
-    dorkHome,
-    ...(AGENTS_SKILLS_DIR_READERS.some((harness) => enabled.has(harness))
-      ? { agentsSkillsDir: agentsUserSkillsDir() }
-      : {}),
-    ...(enabled.has('claude-code')
-      ? { claudeSkillsDir: join(inheritedClaudeRoot(), 'skills') }
-      : {}),
-  };
+  return userTierRoots(dorkHome, harnesses);
 }
 
 /**

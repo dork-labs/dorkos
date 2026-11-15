@@ -1,15 +1,23 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Plus } from 'lucide-react';
 import { useGlobalMcpServers } from '@/layers/entities/global-mcp';
 import { useRegisteredAgents } from '@/layers/entities/mesh';
 import { Button, focusPageHeading, Skeleton } from '@/layers/shared/ui';
+import { formFromServer } from '../lib/server-form';
 import { AddServerDialog } from './AddServerDialog';
 import { McpServerRow } from './McpServerRow';
 import { RemoveServerDialog } from './RemoveServerDialog';
 import { ServerSheet } from './ServerSheet';
 
-/** What sits over the list: the sheet for a server, or the question about removing it. */
-type Open = { kind: 'sheet'; name: string } | { kind: 'remove'; name: string } | null;
+/**
+ * What sits over the list: the sheet for a server, the question about removing it, or the Add
+ * form holding it again under a new name (DOR-4262).
+ */
+type Open =
+  | { kind: 'sheet'; name: string }
+  | { kind: 'remove'; name: string }
+  | { kind: 're-add'; name: string }
+  | null;
 
 /** A server that went but left a saved key behind: how many it held decides the wording. */
 interface KeyLeft {
@@ -17,20 +25,41 @@ interface KeyLeft {
   several: boolean;
 }
 
+interface McpServersTabProps {
+  /** A server whose sheet should open once the list has it, from a link such as the Inbox's. */
+  openServer?: string;
+  /** Called once that link is used, found or not, so the address can drop it. */
+  onServerOpened?: () => void;
+}
+
 /**
  * Connections → MCP servers: the servers a person adds once for every agent. Every change here is
  * a person's, and the server decides which of them need "Confirm it's you".
  */
-export function McpServersTab() {
+export function McpServersTab({ openServer, onServerOpened }: McpServersTabProps = {}) {
   const servers = useGlobalMcpServers();
   const agents = useRegisteredAgents();
   const [adding, setAdding] = useState(false);
-  const [open, setOpen] = useState<Open>(null);
+  const [open, setOpen] = useState<Open>(
+    openServer === undefined ? null : { kind: 'sheet', name: openServer }
+  );
+  // A link opens its server's sheet as it arrives, even with the tab already showing. A server
+  // the list lacks opens nothing, like a sheet whose server was just removed.
+  const [linked, setLinked] = useState(openServer);
+  if (openServer !== linked) {
+    setLinked(openServer);
+    if (openServer !== undefined) setOpen({ kind: 'sheet', name: openServer });
+  }
   const [keyLeft, setKeyLeft] = useState<KeyLeft | null>(null);
   // The row that opened the sheet, to hand focus back to, or the heading once it is gone.
   const opener = useRef<HTMLElement | null>(null);
   const list = servers.data ?? [];
   const current = open ? list.find((server) => server.name === open.name) : undefined;
+
+  // Once the list is in, the link has done its job, and the address can drop it.
+  useEffect(() => {
+    if (openServer !== undefined && servers.isSuccess) onServerOpened?.();
+  }, [openServer, servers.isSuccess, onServerOpened]);
 
   const nameOf = (agentId: string) => {
     const agent = agents.data?.agents.find((candidate) => candidate.id === agentId);
@@ -123,7 +152,7 @@ export function McpServersTab() {
         ))}
 
       <div className="text-muted-foreground space-y-1 text-xs">
-        <p>Changes reach new chats. Open ones may keep a server until they stop.</p>
+        <p>Changes reach every chat on its next message.</p>
         <p>A server added for one agent lives in that agent’s Toolkit.</p>
       </div>
 
@@ -134,7 +163,19 @@ export function McpServersTab() {
           server={current}
           onClose={() => setOpen(null)}
           onRemove={() => setOpen({ kind: 'remove', name: current.name })}
+          onReAdd={() => setOpen({ kind: 're-add', name: current.name })}
           onCloseAutoFocus={returnFocus}
+        />
+      )}
+
+      {/* The same Add, refused and confirmed the same way: added first, so nothing is lost if
+          it is cancelled, and only then the old one's own Remove (DOR-4262). */}
+      {open?.kind === 're-add' && current && (
+        <AddServerDialog
+          initial={formFromServer(current)}
+          replacing={current.name}
+          onClose={() => setOpen((now) => (now?.kind === 're-add' ? null : now))}
+          onAdded={() => setOpen({ kind: 'remove', name: current.name })}
         />
       )}
 

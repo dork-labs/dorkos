@@ -22,6 +22,8 @@
  * - **A client that leaves aborts {@link RawNodeStreamControl.signal}**, so
  *   the writer can stop work nobody will read. The listener is removed when
  *   the writer finishes, so nothing outlives the request.
+ * - **Turning Remote Access off closes it** when another device opened it
+ *   (`middleware/remote-access-switch.ts`, DOR-3650).
  * - **Signing out closes it.** A stream opened with a person's session cookie
  *   is registered under that sign-in while it runs, and ending the sign-in
  *   destroys the response (`services/core/auth/sessions/live-connections.ts`,
@@ -41,6 +43,7 @@ import {
   registerLiveConnection,
   type LiveConnectionKind,
 } from '../services/core/auth/sessions/live-connections.js';
+import { trackRemoteStream } from '../middleware/remote-access-switch.js';
 
 /** What a writer is handed beside the response. */
 export interface RawNodeStreamControl {
@@ -77,11 +80,13 @@ export async function streamToNodeResponse<E extends RawNodeStreamEnv>(
   // Gone before the route got here: nothing will close again to say so.
   if (outgoing.destroyed) controller.abort();
   const unregister = registerWithSignIn(c, () => outgoing.destroy());
+  const untrack = trackRemoteStream(c.env.incoming, () => outgoing.destroy());
   try {
     await write(outgoing, { signal: controller.signal });
   } finally {
     outgoing.off('close', onClose);
     unregister();
+    untrack();
   }
   // A fresh marker each time: the shared one has mutable headers, and a chain
   // step that sets one after the route would write it into every later answer.
@@ -118,5 +123,9 @@ export function registerWithSignIn<E extends Env>(
 export function closeResponseWithSignIn<E extends RawNodeStreamEnv>(c: Context<E>): void {
   const { outgoing } = c.env;
   const unregister = registerWithSignIn(c, () => outgoing.destroy());
-  outgoing.once('close', unregister);
+  const untrack = trackRemoteStream(c.env.incoming, () => outgoing.destroy());
+  outgoing.once('close', () => {
+    unregister();
+    untrack();
+  });
 }

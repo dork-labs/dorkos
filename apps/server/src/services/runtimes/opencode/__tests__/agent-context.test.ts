@@ -127,6 +127,7 @@ describe('what an OpenCode turn carries', () => {
           return { stream: queue };
         }),
       },
+      app: { agents: vi.fn(async () => ({ data: [] })) },
       session: {
         create: vi.fn(async () => ({ data: info })),
         get: vi.fn(async () => ({ data: info })),
@@ -137,6 +138,10 @@ describe('what an OpenCode turn carries', () => {
         abort: vi.fn(async () => ({ data: true })),
         todo: vi.fn(async () => ({ data: [] })),
         promptAsync: vi.fn(async (req: { body: PromptBody }) => {
+          expect(bindSessionEnvironment).toHaveBeenLastCalledWith(
+            '3f2b8c1e-9d4a-4b6f-8a1c-2e5d7f9b0a3c',
+            'ses_test'
+          );
           promptBodies.push(req.body);
           return {};
         }),
@@ -144,8 +149,10 @@ describe('what an OpenCode turn carries', () => {
       postSessionIdPermissionsPermissionId: vi.fn(async () => ({ data: true })),
       provider: { list: vi.fn(async () => ({ data: { all: [], default: {}, connected: [] } })) },
     };
+    const bindSessionEnvironment = vi.fn(async (_chat: string, _vendor: string) => {});
     const runtime = new OpenCodeRuntime({
       provider: {
+        bindSessionEnvironment,
         getClient: vi.fn(async () => client as unknown as OpencodeClient),
         peekClient: vi.fn(() => client as unknown as OpencodeClient),
       },

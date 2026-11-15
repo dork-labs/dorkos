@@ -15,6 +15,7 @@ export { ServerRestartOverlay } from './ui/ServerRestartOverlay';
 export { SleepSettings } from './ui/tools/SleepSettings';
 // Shown on its own in the Dev Playground: it draws only inside the desktop app.
 export { NetworkSection } from './ui/network/NetworkSection';
+export { TerminalCommandTab } from './ui/terminal-command/TerminalCommandTab';
 
 // The Runtimes tab, in the pieces the dev playground renders. Every one of them
 // is props-only or owns its own read, which is what the redesign bought: the

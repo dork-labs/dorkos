@@ -1048,25 +1048,25 @@ describe('Adapter routes', () => {
       ).toHaveBeenCalled();
     });
 
-    it('returns 404 for unknown webhook adapter', async () => {
+    it('answers an unknown webhook adapter with the flat 401 (DOR-3650)', async () => {
       const res = await request(server)
         .post('/api/relay/webhooks/unknown')
         .set('Content-Type', 'application/json')
         .send('{}');
 
-      expect(res.status).toBe(404);
-      expect(res.body.error).toBe('Webhook adapter not found');
+      expect(res.status).toBe(401);
+      expect(res.body.error).toBe('INVALID_SIGNATURE');
     });
 
-    it('returns 404 for non-webhook adapter type', async () => {
+    it('answers a non-webhook adapter with the flat 401 (DOR-3650)', async () => {
       // tg-main is a telegram adapter, not webhook
       const res = await request(server)
         .post('/api/relay/webhooks/tg-main')
         .set('Content-Type', 'application/json')
         .send('{}');
 
-      expect(res.status).toBe(404);
-      expect(res.body.error).toBe('Webhook adapter not found');
+      expect(res.status).toBe(401);
+      expect(res.body.error).toBe('INVALID_SIGNATURE');
     });
 
     it('returns 401 when signature verification fails', async () => {
@@ -1082,7 +1082,7 @@ describe('Adapter routes', () => {
         .send('{}');
 
       expect(res.status).toBe(401);
-      expect(res.body.error).toBe('Invalid signature');
+      expect(res.body.error).toBe('INVALID_SIGNATURE');
     });
   });
 

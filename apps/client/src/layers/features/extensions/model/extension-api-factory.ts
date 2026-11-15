@@ -461,7 +461,7 @@ export function createExtensionAPI(
 
     // Starts a NEW chat and never navigates: the extension shows "· Watch",
     // and the current chat (and anything typed in it) is left alone.
-    async startWork(input: StartWorkInput): Promise<{ sessionId: string }> {
+    async startWork(input: StartWorkInput) {
       const res = await fetch(extensionApiUrl(`/extensions/${extId}/start-work`), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -471,7 +471,7 @@ export function createExtensionAPI(
         const err = await requestError(res, 'startWork');
         throw isStartWorkCode(err.code) ? new StartWorkError(err.code, err.message) : err;
       }
-      return { sessionId: StartWorkResponseSchema.parse(await res.json()).sessionId };
+      return StartWorkResponseSchema.parse(await res.json());
     },
 
     projectSettings: {

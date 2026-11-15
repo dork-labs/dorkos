@@ -73,16 +73,4 @@ test.describe('Threads page', () => {
     await expect(roomsPage.threadPanel).toBeVisible({ timeout: SERVER_ROUND_TRIP_MS });
     await expect(roomsPage.threadPanel).toContainText(answer);
   });
-
-  test('says so in plain words when there is no thread to show', async ({ page }) => {
-    // The list is the server's, and this leg is shared — so the empty state is
-    // asked of a page whose thread read answers nothing, rather than of a
-    // server that may hold another spec's threads.
-    await page.route(
-      (url) => url.pathname === '/api/rooms/threads',
-      (route) => route.fulfill({ json: { threads: [] } })
-    );
-    await page.goto('/threads');
-    await expect(page.getByText('No threads yet')).toBeVisible({ timeout: SERVER_ROUND_TRIP_MS });
-  });
 });

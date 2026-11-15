@@ -54,18 +54,38 @@ function afterHookBodies(source: string): string[] {
   return bodies;
 }
 
+/** Whether one of these hook bodies resets the store or selects `simple-text`. */
+function putsItBack(bodies: string[]): boolean {
+  return bodies.some((body) => body.includes('/api/test/reset') || body.includes("'simple-text'"));
+}
+
+/**
+ * Shared setup a spec may call instead of writing the hook itself, and the file
+ * that defines it. The `chat-mock*.spec.ts` files all call `useMockServer()`,
+ * whose `test.afterEach` resets the store; the last case below holds that file
+ * to the same rule, so the exemption cannot outlive the hook it stands for.
+ */
+const SHARED_SETUP = [{ call: 'useMockServer()', file: 'chat/mock-server.ts' }];
+
 describe('specs that change the default scenario', () => {
   it('put it back after themselves', () => {
     const offenders = specFiles(TESTS_DIR)
       .filter((file) => {
         const source = readFileSync(file, 'utf8');
         if (!setsDefaultScenario(source)) return false;
-        return !afterHookBodies(source).some(
-          (body) => body.includes('/api/test/reset') || body.includes("'simple-text'")
-        );
+        if (SHARED_SETUP.some(({ call }) => source.includes(call))) return false;
+        return !putsItBack(afterHookBodies(source));
       })
       .map((file) => relative(TESTS_DIR, file));
     expect(offenders).toEqual([]);
+  });
+
+  it('accepts shared setup only where that setup puts it back', () => {
+    for (const { file } of SHARED_SETUP) {
+      expect(putsItBack(afterHookBodies(readFileSync(join(TESTS_DIR, file), 'utf8'))), file).toBe(
+        true
+      );
+    }
   });
 
   it('still recognises the specs it is meant to police', () => {

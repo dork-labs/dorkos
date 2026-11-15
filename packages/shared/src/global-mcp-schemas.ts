@@ -67,6 +67,61 @@ export function isUnpinnedPackage(command: string, args: readonly string[]): boo
   return spec === undefined || !PINNED_SPEC.test(spec);
 }
 
+/** The name of DorkOS's own tool server, on every runtime. */
+export const DORKOS_TOOL_SERVER_NAME = 'dorkos';
+
+/** The name of the server DorkOS's connected-app tools ride, on every runtime. */
+export const DORKOS_CONNECTIONS_SERVER_NAME = 'dorkos_connections';
+
+/**
+ * The MCP server names DorkOS's own servers use (DOR-3600). No server a person
+ * or an agent adds may take one, whatever its case, so nothing can stand in for
+ * DorkOS's tools on any runtime.
+ */
+export const RESERVED_MCP_SERVER_NAMES: readonly string[] = [
+  DORKOS_TOOL_SERVER_NAME,
+  DORKOS_CONNECTIONS_SERVER_NAME,
+];
+
+/**
+ * Whether `name` is one of {@link RESERVED_MCP_SERVER_NAMES}, compared without case.
+ *
+ * @param name - A server name.
+ */
+export function isReservedMcpServerName(name: string): boolean {
+  return RESERVED_MCP_SERVER_NAMES.includes(name.toLowerCase());
+}
+
+/**
+ * Leave out every server whose name is one of DorkOS's own, whatever its case:
+ * the one rule every runtime and the managed-server service apply (DOR-3600).
+ *
+ * @param servers - Servers by name.
+ * @returns The servers that may run, and the names left out (for a warning).
+ */
+export function partitionReservedMcpServers<T>(servers: Record<string, T>): {
+  kept: Record<string, T>;
+  reserved: string[];
+} {
+  const kept: Record<string, T> = {};
+  const reserved: string[] = [];
+  for (const [name, server] of Object.entries(servers)) {
+    if (isReservedMcpServerName(name)) reserved.push(name);
+    else kept[name] = server;
+  }
+  return { kept, reserved };
+}
+
+/**
+ * What a person is told when a name is one of DorkOS's own: by the Name field,
+ * and by the server's refusal.
+ *
+ * @param name - The name as typed.
+ */
+export function reservedMcpServerNameMessage(name: string): string {
+  return `${name} is one of DorkOS's own names. Pick another.`;
+}
+
 /** A global server's name: the same rule an agent's managed server follows. */
 export const GlobalMcpServerNameSchema = z
   .string()
@@ -204,6 +259,12 @@ export const GlobalMcpServerViewSchema = z.object({
   skippedOn: z.array(z.enum(['codex', 'opencode'])),
   /** What to look at twice, and why a saved server is not started. */
   warnings: z.array(GlobalMcpServerWarningSchema),
+  /**
+   * Its name is one of DorkOS's own (DOR-3600), so no agent gets its tools.
+   * Decided by the server from the saved name (DOR-4262); a server saved before
+   * the rule keeps running for the person's checks, never for an agent.
+   */
+  reservedName: z.boolean(),
 });
 
 export type GlobalMcpServerView = z.infer<typeof GlobalMcpServerViewSchema>;
@@ -226,3 +287,68 @@ export const GlobalMcpServerListSchema = z.object({
 });
 
 export type GlobalMcpServerList = z.infer<typeof GlobalMcpServerListSchema>;
+
+/**
+ * One tool a global server listed when its sheet opened (DOR-4118). Its name and description come
+ * from the server: untrusted text, shown as plain text and never put in an agent's context.
+ */
+export const GlobalMcpCheckedToolSchema = z.object({
+  name: z.string(),
+  description: z.string(),
+  /** The server added it since an earlier check, within the last day. */
+  isNew: z.boolean(),
+});
+
+export type GlobalMcpCheckedTool = z.infer<typeof GlobalMcpCheckedToolSchema>;
+
+/**
+ * `POST /api/mcp-servers/:name/tools`. A server that is off, or not approved, is never started and
+ * answers `not-checked`.
+ */
+export const GlobalMcpToolsCheckSchema = z.discriminatedUnion('status', [
+  z.object({ status: z.literal('not-checked') }),
+  z.object({
+    status: z.literal('ok'),
+    tools: z.array(GlobalMcpCheckedToolSchema),
+    /** Tools the server added since its last check. */
+    added: z.array(z.string()),
+    /** Tools listed past the caps, which were not kept. */
+    omitted: z.number().int().nonnegative(),
+  }),
+  z.object({ status: z.literal('needs-sign-in') }),
+  z.object({ status: z.literal('unreachable'), error: z.string() }),
+  /**
+   * It answered, but its name is one of DorkOS's own, so no agent gets these
+   * tools (DOR-4262). Never `ok`: the sheet says why and still lists them.
+   */
+  z.object({
+    status: z.literal('reserved-name'),
+    tools: z.array(GlobalMcpCheckedToolSchema),
+    added: z.array(z.string()),
+    omitted: z.number().int().nonnegative(),
+  }),
+]);
+
+export type GlobalMcpToolsCheck = z.infer<typeof GlobalMcpToolsCheckSchema>;
+
+/** One agent's standing yes for a global server: it uses it, or one tool on it, without asking. */
+export const GlobalMcpStandingAllowSchema = z.object({
+  agentId: z.string(),
+  agentName: z.string(),
+  /** The exact rule, `mcp__{server}`, `mcp__{server}__*` or `mcp__{server}__{tool}`. */
+  rule: z.string(),
+  /** Every tool on the server, new ones included, or the one tool. */
+  breadth: z.enum(['server', 'tool']),
+  tool: z.string().optional(),
+  /** Which settings file holds it. Undo reaches only `settings.local.json`. */
+  file: z.enum(['settings.json', 'settings.local.json']),
+});
+
+export type GlobalMcpStandingAllow = z.infer<typeof GlobalMcpStandingAllowSchema>;
+
+/** `GET /api/mcp-servers/:name/allows`. */
+export const GlobalMcpStandingAllowListSchema = z.object({
+  allows: z.array(GlobalMcpStandingAllowSchema),
+});
+
+export type GlobalMcpStandingAllowList = z.infer<typeof GlobalMcpStandingAllowListSchema>;

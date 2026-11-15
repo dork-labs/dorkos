@@ -126,7 +126,7 @@ export function inferEndpointType(
 /** Guard that returns an error response when Relay is disabled. */
 export function requireRelay(deps: McpToolDeps) {
   if (!deps.relayCore) {
-    return jsonContent({ error: 'Relay is not enabled', code: 'RELAY_DISABLED' }, true);
+    return jsonContent({ error: 'Message delivery is off', code: 'RELAY_DISABLED' }, true);
   }
   return null;
 }

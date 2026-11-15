@@ -17,8 +17,25 @@ import {
 import { CODEX_DORKOS_TOOL_PREFIX } from '../shared/dorkos-tool-names.js';
 
 /**
- * Join the gated neutral context with the room verbs and the Blocked-area
- * lines.
+ * Where a Codex agent drives a browser (DOR-4357). On macOS, Codex's own
+ * sandbox refuses the Mach lookup Chromium needs, so a browser the agent
+ * starts itself fails. The DorkOS browser tools are served by DorkOS, outside
+ * that sandbox. Claude Code learns them from its `<ui_tools>` block; this is
+ * Codex's only pointer to them. It names no way around the sandbox.
+ *
+ * @param prefix - The prefix Codex calls DorkOS tools under.
+ */
+function buildBrowserToolsBlock(prefix: string): string {
+  return `<browser_tools>
+In a Codex chat, use the DorkOS browser tools. Codex can’t start its own browser on macOS.
+A website a person shares with this chat: ${prefix}local_browser_observe, then ${prefix}local_browser_act.
+A preview DorkOS serves: ${prefix}browser_read_page, then ${prefix}browser_click and ${prefix}browser_type.
+</browser_tools>`;
+}
+
+/**
+ * Join the gated neutral context with the room verbs, the browser pointer and
+ * the Blocked-area lines.
  *
  * The room verbs ride ONLY when this turn actually carries them — gated on
  * the resolved injection itself, not on a second guess at it, so the prose
@@ -46,6 +63,7 @@ export async function buildCodexAgentContext(
   return [
     neutralText,
     buildRoomToolsBlock(CODEX_DORKOS_TOOL_PREFIX),
+    buildBrowserToolsBlock(CODEX_DORKOS_TOOL_PREFIX),
     renderBlockedAreaLines((await resolveToolVisibilityFor(agentPath)).blockedAreas),
   ]
     .filter(Boolean)

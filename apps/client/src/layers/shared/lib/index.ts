@@ -17,6 +17,11 @@ export { canvasViewForContent, type CanvasView } from '@dorkos/shared/canvas-vie
 export { resolveApiBaseUrl } from './api-base-url';
 export { getDesktopAdmin, restartDorkOS, unwrapDesktopAdminResult } from './desktop-admin';
 export { getCertificateFilePicker, type CertificateFilePicker } from './certificate-file-picker';
+export {
+  getTerminalCommandBridge,
+  type TerminalCommandBridge,
+  type TerminalCommandStatus,
+} from './terminal-command';
 export { getDesktopShellLogExcerpt } from './desktop-shell-log';
 export {
   captureAppShot,
@@ -295,6 +300,7 @@ export {
   useTextEffectConfig,
 } from './text-effects';
 export type { TextEffectMode, TextEffectConfig } from './text-effects';
+export { STREAMDOWN_TRANSLATIONS } from './streamdown-translations';
 export { DURATION, EASE, SPRING, STAGGER, installReducedMotion } from './motion';
 export { useAppForm, withForm, formOptions, useFieldContext, useFormContext } from './form';
 export { formatDuration } from './format-duration';

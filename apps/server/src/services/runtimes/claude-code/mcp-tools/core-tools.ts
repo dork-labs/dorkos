@@ -31,7 +31,7 @@ export function resolveAgentCwd(
   }
   // agent_id path
   if (!deps.meshCore) {
-    throw new Error('Mesh is not enabled. Cannot resolve agent_id without Mesh.');
+    throw new Error('The agent directory is off, so agent_id cannot be resolved.');
   }
   const projectPath = deps.meshCore.getProjectPath(args.agent_id!);
   if (!projectPath) {

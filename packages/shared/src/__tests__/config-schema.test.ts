@@ -121,6 +121,7 @@ describe('UserConfigSchema', () => {
       heartbeats: { enabled: true, triageOnCredits: null, idleAlertRoomId: null },
       activity: { retentionDays: 365 },
       network: { extraCaCertsPath: null },
+      remoteAccess: { enabled: true },
       mesh: { scanRoots: [] },
       rooms: {
         turnLimitsEnabled: true,
@@ -558,6 +559,7 @@ describe('USER_CONFIG_DEFAULTS', () => {
       heartbeats: { enabled: true, triageOnCredits: null, idleAlertRoomId: null },
       activity: { retentionDays: 365 },
       network: { extraCaCertsPath: null },
+      remoteAccess: { enabled: true },
       mesh: { scanRoots: [] },
       rooms: {
         turnLimitsEnabled: true,
@@ -954,6 +956,11 @@ describe('per-field and section-literal defaults agree', () => {
   it('network trusts no company certificates either way (DOR-3361)', () => {
     expect(fromFactory.network).toEqual({ extraCaCertsPath: null });
     expect(fromFields.network).toEqual({ extraCaCertsPath: null });
+  });
+
+  it('remoteAccess is on either way, so an upgrade closes nothing (DOR-3650)', () => {
+    expect(fromFactory.remoteAccess).toEqual({ enabled: true });
+    expect(fromFields.remoteAccess).toEqual({ enabled: true });
   });
 
   it('runtimes.claudeCode.persistentSession is true either way', () => {

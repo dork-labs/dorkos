@@ -22,6 +22,17 @@ import {
 export { ScheduleOriginMarksSchema } from './task-approval-schemas.js';
 export type { ScheduleOriginMarks } from './task-approval-schemas.js';
 import { CanvasChannelDeclarationSchema } from './canvas-channel-schemas.js';
+import {
+  SendMessageReceiptSchema,
+  SessionDorkosToolsSchema,
+  SessionLaunchWarningShape,
+} from './session-launch-schemas.js';
+export {
+  SessionDorkosToolsSchema,
+  SessionLaunchWarningSchema,
+  type SessionDorkosTools,
+  type SessionLaunchWarning,
+} from './session-launch-schemas.js';
 /**
  * Zod schemas — single source of truth for all shared types and OpenAPI metadata.
  *
@@ -632,6 +643,8 @@ export type SessionStartedBy = z.infer<typeof SessionStartedBySchema>;
 
 export const SessionSchema = z
   .object({
+    ...SessionLaunchWarningShape,
+    dorkosTools: SessionDorkosToolsSchema.optional(),
     id: z.string().uuid(),
     title: z.string(),
     createdAt: z.string().datetime(),
@@ -1413,22 +1426,9 @@ export type SendMessageRequest = z.infer<typeof SendMessageRequestSchema>;
  * resolves to — which for a session with a queue is always the canonical one,
  * because a queue means a turn has already run.
  */
-export const SendMessageResponseSchema = z
-  .object({
-    sessionId: z
-      .string()
-      .describe('Canonical session id; differs from the request id for a new session'),
-    messageId: z.string().describe('Server-minted id for this message; the queue is keyed by it'),
-    outcome: MessageDeliveryOutcomeSchema,
-    queuePosition: z
-      .number()
-      .int()
-      .positive()
-      .describe(
-        '1-based place in the session queue at acceptance; 1 means nothing was ahead of it'
-      ),
-  })
-  .openapi('SendMessageResponse');
+export const SendMessageResponseSchema = SendMessageReceiptSchema.extend({
+  outcome: MessageDeliveryOutcomeSchema,
+}).openapi('SendMessageResponse');
 
 export type SendMessageResponse = z.infer<typeof SendMessageResponseSchema>;
 
@@ -1519,11 +1519,30 @@ export type UpdateQueuedMessageResponse = z.infer<typeof UpdateQueuedMessageResp
  */
 export const DENY_REASON_MAX_LENGTH = 1_000;
 
+/**
+ * Which tools an accepted "Always Allow" on an MCP tool's card covers (DOR-4101).
+ *
+ * - `tool` — the one tool on the card.
+ * - `server` — the runtime offered a bare `mcp__{server}` rule: every tool that
+ *   server has, including ones it adds later. The card then asks which the
+ *   person meant, and "Just {tool}" narrows the rule before it is written.
+ *
+ * Absent on a card that is not an MCP tool's, or offers no Always Allow.
+ */
+export const AlwaysAllowBreadthSchema = z.enum(['tool', 'server']).openapi('AlwaysAllowBreadth');
+
+export type AlwaysAllowBreadth = z.infer<typeof AlwaysAllowBreadthSchema>;
+
 export const ApprovalRequestSchema = z
   .object({
     toolCallId: z.string(),
     /** When true, resolves as "Always Allow" — forwards SDK permission suggestions. */
     alwaysAllow: z.boolean().optional(),
+    /**
+     * On a card whose Always Allow could cover a whole MCP server, the person's
+     * pick (DOR-4101). Anything but `server` writes the one tool's rule.
+     */
+    alwaysAllowBreadth: AlwaysAllowBreadthSchema.optional(),
     /**
      * Why the person refused, in their own words — delivered to the agent with
      * the denial so it can adjust instead of retrying the same call. Ignored on
@@ -1908,6 +1927,9 @@ export const ApprovalEventSchema = z
     alwaysAllowScope: AlwaysAllowScopeSchema.optional().describe(
       'How far an accepted "Always Allow" reaches — named on the card so the click is informed'
     ),
+    alwaysAllowBreadth: AlwaysAllowBreadthSchema.optional().describe(
+      'Whether "Always Allow" on an MCP tool covers that tool or every tool from its server'
+    ),
     remainingMs: z
       .number()
       .optional()
@@ -1980,6 +2002,8 @@ export const PendingInteractionDTOSchema = z
       hasSuggestions: z.boolean(),
       /** See {@link AlwaysAllowScopeSchema} — carried so a recovered card names its scope too. */
       alwaysAllowScope: AlwaysAllowScopeSchema.optional(),
+      /** See {@link AlwaysAllowBreadthSchema} — so a recovered card still asks which. */
+      alwaysAllowBreadth: AlwaysAllowBreadthSchema.optional(),
     }),
     z.object({
       type: z.literal('question'),
@@ -3302,6 +3326,10 @@ export const ToolCallPartSchema = z
      */
     approvalAlwaysAllowScope: AlwaysAllowScopeSchema.optional().describe(
       'Scope an accepted "Always Allow" grants — session, project, or the operator\'s global settings'
+    ),
+    /** See {@link AlwaysAllowBreadthSchema}; absent on a card that is not an MCP tool's. */
+    approvalAlwaysAllowBreadth: AlwaysAllowBreadthSchema.optional().describe(
+      'Whether "Always Allow" covers this MCP tool or every tool from its server'
     ),
     /**
      * How an approval interaction was ANSWERED, folded from the resolving
@@ -4829,6 +4857,10 @@ export const ServerConfigSchema = z
     // rather than `.openapi()`-annotated here.
     notifications: NotificationPrefsSchema,
     port: z.number().int(),
+    ownOrigins: z.array(z.string()).optional().openapi({
+      description:
+        'This server`s own addresses beyond loopback, right now: its live tunnel origins, its Wi-Fi origins while Wi-Fi access is open, and a serving hub`s own address. The canvas browser reads them so a frame naming this server by one of them gets no same-origin powers. Absent from an older server',
+    }),
     uptime: z.number(),
     workingDirectory: z.string(),
     nodeVersion: z.string(),
@@ -4986,6 +5018,18 @@ export const ServerConfigSchema = z
           "What the user's setting says (`tunnel.enabled`), which is not always what is running: `enabled` only moves when a tunnel is actually opened or closed",
       }),
     }),
+    remoteAccess: z
+      .object({
+        enabled: z.boolean().openapi({
+          description:
+            'The `remoteAccess.enabled` setting. Off refuses every request from another device at the server, on its next request; this computer is never refused',
+        }),
+      })
+      .optional()
+      .openapi({
+        description:
+          'The Remote Access switch (DOR-3650). Absent from an older server, which a client reads as on',
+      }),
     tasks: z
       .object({
         enabled: z.boolean().openapi({ description: 'Whether the Tasks scheduler is enabled' }),

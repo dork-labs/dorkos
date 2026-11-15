@@ -1,3 +1,5 @@
+import { existsSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { defineConfig, devices } from '@playwright/test';
 import { BOOT_CACHE_DISABLED_KEY } from './boot-cache-flag';
 import { unitKey } from './reporters/balanced-shard';
@@ -62,6 +64,34 @@ function shardTotal(): number {
   }
   return Number(value);
 }
+
+/**
+ * How many tests the cockpit project (`chromium`) may run at once in CI: 1, or 2
+ * for the two-worker trial (DOR-4190, ledger 261113-012626). Unset is 1, which
+ * is what every queue build and PR run uses.
+ *
+ * Only `browser-test.yml`'s `workflow_dispatch` sets it, from its
+ * `chromium_workers` input, so the trial runs as the main canary and never as a
+ * gate. Every other project keeps its own `workers: 1`, so at 2 the extra worker
+ * can only ever hold a cockpit test. What config cannot stop: Playwright has no
+ * cap for a GROUP of projects, so at 2 a cockpit test and a test-mode test, or
+ * two test-mode projects, can run side by side. Local runs already do that; the
+ * trial is what measures it in CI.
+ */
+function chromiumWorkers(): number {
+  const value = process.env.E2E_CHROMIUM_WORKERS;
+  if (value === undefined || value === '') return 1;
+  if (value !== '1' && value !== '2') {
+    throw new Error(`E2E_CHROMIUM_WORKERS must be 1 or 2, got: ${JSON.stringify(value)}`);
+  }
+  return Number(value);
+}
+
+/** Workers for the whole CI run: the cockpit project's count; locally Playwright's default. */
+const CI_WORKERS = CI ? chromiumWorkers() : undefined;
+
+/** One worker in CI, Playwright's default locally: every project but the cockpit. */
+const ONE_IN_CI = CI ? 1 : undefined;
 
 const SHARD_TOTAL = shardTotal();
 
@@ -242,6 +272,50 @@ function resetThrowawayHome(dorkHome: string): string {
 }
 
 /**
+ * A file each package's build leaves behind, relative to this config. Only the
+ * packages a leg builds are listed; a package missing here always builds.
+ */
+const BUILD_OUTPUT: Record<string, string> = {
+  '@dorkos/server': '../server/dist/index.js',
+  '@dorkos/client': '../client/dist/index.html',
+};
+
+/**
+ * True when CI's own build step has already built every one of `packages`, so a
+ * leg may skip its `turbo run build`.
+ *
+ * WHY. In CI the workflow builds everything the legs boot from in a step of its
+ * own ("Build what the webServer legs boot from" / "… the smoke projects boot
+ * from"), and the legs then ran `turbo run build` again on the expectation of a
+ * cache replay. They missed the cache on every shard: run 43007007159 shard 3
+ * spent 96 s and 110 s rebuilding on the two API legs and about 150 s on the
+ * production leg's client, all before the first test, because Playwright starts
+ * the legs one after another (DOR-4190, ledger `261111-193622`). A second
+ * build of the same tree is pure cost, so CI skips it when the step's outputs
+ * are on disk.
+ *
+ * WHY THE OUTPUT IS THIS COMMIT'S. In CI the files can only come from the
+ * job's own build step, minutes earlier, on this tree: the runner is fresh per
+ * job, `dist/` is gitignored so checkout never brings one, the jobs cache only
+ * the pnpm store and the Playwright browsers (no turbo cache, no dist), and the
+ * build step runs before the suite in the same job. A future cache of `dist/`
+ * or a turbo remote cache would break that, and must re-check this.
+ *
+ * Only under `CI`: locally there is no build step, and a dist left from an
+ * older checkout would boot stale code, so a local run always builds. A CI job
+ * that forgot its build step finds no outputs and builds as before.
+ *
+ * @param packages - The workspace packages the leg would build.
+ */
+function builtByCiStep(packages: string[]): boolean {
+  if (!CI) return false;
+  return packages.every((pkg) => {
+    const output = BUILD_OUTPUT[pkg];
+    return output !== undefined && existsSync(fileURLToPath(new URL(output, import.meta.url)));
+  });
+}
+
+/**
  * The command that boots an Express API leg, for every leg that needs one.
  *
  * Deliberately NOT `turbo dev` (`tsx watch`). On boot the server compiles each
@@ -257,8 +331,9 @@ function resetThrowawayHome(dorkHome: string): string {
  * back. So no e2e leg may watch. Tests never edit source, so nothing is lost.
  *
  * `turbo run build` supplies the workspace-dependency dists that `turbo dev`
- * used to provide via `^build`. Both legs run it concurrently and turbo
- * deduplicates them, so the second is free.
+ * used to provide via `^build`. Locally the first leg builds and the others
+ * replay its cache. In CI the workflow's build step has already built them, so
+ * the legs skip it ({@link builtByCiStep}): there the replay missed every time.
  *
  * The server itself runs on a throwaway `HOME` inside the leg's `DORK_HOME`
  * (DOR-3587, `throwaway-home.ts`); the build before it keeps the real one. That
@@ -281,8 +356,12 @@ function apiLegCommand(
   const prefix = Object.entries(env)
     .map(([key, value]) => `${key}=${value}`)
     .join(' ');
-  const filters = ['@dorkos/server', ...alsoBuild].map((pkg) => `--filter=${pkg}`).join(' ');
-  const boot = `turbo run build ${filters} --output-logs=new-only && ${bootServerOnThrowawayHome(env.DORK_HOME)}`;
+  const packages = ['@dorkos/server', ...alsoBuild];
+  const filters = packages.map((pkg) => `--filter=${pkg}`).join(' ');
+  const build = builtByCiStep(packages)
+    ? ''
+    : `turbo run build ${filters} --output-logs=new-only && `;
+  const boot = `${build}${bootServerOnThrowawayHome(env.DORK_HOME)}`;
   const script = preBoot ? `${preBoot} && ${boot}` : boot;
   return `${prefix ? `${prefix} ` : ''}dotenv -- sh -c '${script}'`;
 }
@@ -302,7 +381,8 @@ export default defineConfig({
   // every pass-on-retry is named in the CI log by the assert step's flaky
   // warning, so nothing is absorbed silently.
   retries: CI ? 1 : 0,
-  workers: CI ? 1 : undefined,
+  // One in CI unless the two-worker trial raises it — see `chromiumWorkers`.
+  workers: CI_WORKERS,
   timeout: 30_000,
 
   // STOP AFTER FIVE FAILURES IN CI — fail fast, report loudly (DOR-1110).
@@ -770,8 +850,8 @@ export default defineConfig({
             // The same ≈240s family as every other Express leg, +3s so this
             // array's timeout VALUES stay distinct (see the cockpit Express
             // leg's comment for why that matters). It builds the client on top
-            // of the server, which is a cache replay whenever the workflow's
-            // build step ran first.
+            // of the server, except in CI after the workflow's build step,
+            // where it boots from that step's output (`builtByCiStep`).
             timeout: 243_000,
             reuseExistingServer: REUSE_EXISTING_SERVER,
             stdout: 'pipe' as const,
@@ -795,7 +875,9 @@ export default defineConfig({
       // `test-connector` provider exists only under DORKOS_TEST_RUNTIME), so it
       // runs in chromium-connections below, never against the real cockpit leg.
       testIgnore: [
-        '**/chat-mock.spec.ts',
+        // Every mock-server file, by glob: one missed here would run its turns
+        // against this leg, each a real, billable claude-code turn.
+        '**/chat-mock*.spec.ts',
         '**/connections/**',
         // Runs against the test-mode leg in `chromium-team-room` below. It must
         // NEVER run here: posting in #team on this leg starts a real
@@ -842,14 +924,14 @@ export default defineConfig({
         // in `chromium-bridge` below, never against the real cockpit leg.
         '**/relay/bridged-channel.spec.ts',
         // Belt and braces. `tests/chat/session-read-state*` is a MODULE, not a
-        // spec — it is registered into `chat-mock.spec.ts` and runs on the
+        // spec — it is registered into `chat-mock-session.spec.ts` and runs on the
         // test-mode leg (see its header), so the default `**/*.spec.ts` match
         // already cannot reach it. Named anyway because `tests/chat/` is
         // otherwise a cockpit-leg directory, and this suite drives real turns:
         // one rename to `.spec.ts` would put four billable sessions on the
         // machine's own `claude` sign-in, and nothing else here would object.
         '**/chat/session-read-state*',
-        // Same shape, same lock: a module registered into `chat-mock.spec.ts`,
+        // Same shape, same lock: a module registered into `chat-mock-session.spec.ts`,
         // living under `tests/chat/` because that is the feature it belongs to.
         // It drives a send and flips a server-global preference, so it must
         // never reach this leg (DOR-948).
@@ -892,29 +974,34 @@ export default defineConfig({
       ...(INCLUDE_INTEGRATION ? {} : { grepInvert: /@integration/ }),
     },
     {
-      // Mock-browser project — runs chat-mock.spec.ts against the test-mode server.
-      // No real Claude API calls; responses are controlled via /api/test/scenario.
+      // Mock-browser project — runs the chat-mock*.spec.ts files against the
+      // test-mode server. No real Claude API calls; responses are controlled via
+      // /api/test/scenario.
       //
-      // Deliberately a SINGLE spec file: the mock server is global mutable
-      // state (POST /api/test/reset wipes scenarios, sessions, and projectors
-      // for everyone), and fullyParallel schedules separate files onto
-      // concurrent workers — a second mock spec file would race the first's
-      // beforeEach resets.
+      // ONE WORKER, so its files run one after another: the mock server is
+      // global mutable state (POST /api/test/reset wipes scenarios, sessions,
+      // and projectors for everyone), and fullyParallel would otherwise put two
+      // mock files on concurrent workers, racing each other's resets. Every file
+      // calls `useMockServer()` (`tests/chat/mock-server.ts`) for the shared
+      // reset-and-seed hooks. CI already runs one worker everywhere; this keeps
+      // local runs the same.
       //
-      // So a new mock-server suite takes one of two shapes, never a second spec
-      // file. Write it into chat-mock.spec.ts when it is a handful of tests. Put
-      // it in a MODULE that exports a register function when it is a coherent
-      // feature suite worth finding by name — `tests/chat/session-read-state.ts`
-      // is the worked example. Playwright groups workers by the file it LOADED
-      // (`_requireFile`), so a registered module runs on this file's worker, in
-      // its order, and is as safe from the resets as a suite written inline.
-      // What it must not be is its own `*.spec.ts`.
+      // SEVERAL FILES, not one, so the browser shards can share the suite out:
+      // as one file it was a single ~9-minute unit the balancer could never split
+      // (`reporters/balanced-shard.ts`). A new mock-server suite goes in a MODULE
+      // that exports a register function (`tests/chat/session-read-state.ts` is
+      // the worked example), registered from one of the `chat-mock*.spec.ts`
+      // files, or in a new `chat-mock-*.spec.ts` when it is big enough to balance
+      // on its own. Never a `*.spec.ts` with another name: the cockpit project
+      // above ignores this suite by that glob, and a mock suite that reached the
+      // cockpit leg would bill real turns.
       name: 'chromium-mock',
+      workers: 1,
       use: {
         ...devices['Desktop Chrome'],
         baseURL: `http://localhost:${MOCK_VITE_PORT}`,
       },
-      testMatch: ['**/chat-mock.spec.ts'],
+      testMatch: ['**/chat-mock*.spec.ts'],
     },
     {
       // Connector-gateway specs — also against the test-mode server, whose
@@ -932,6 +1019,8 @@ export default defineConfig({
       // state, not runtime state). Verified empirically 2026-07-29: both
       // projects run concurrently against one test-mode server, 18/18 passed.
       name: 'chromium-connections',
+      // One worker in CI whatever the cockpit gets: see `chromiumWorkers`.
+      workers: ONE_IN_CI,
       use: {
         ...devices['Desktop Chrome'],
         baseURL: `http://localhost:${MOCK_VITE_PORT}`,
@@ -951,6 +1040,8 @@ export default defineConfig({
       // chat-mock's scenario/reset choreography — it asserts only on its own
       // pages' sockets, so it runs beside the other test-mode projects.
       name: 'chromium-streams',
+      // One worker in CI whatever the cockpit gets: see `chromiumWorkers`.
+      workers: ONE_IN_CI,
       use: {
         ...devices['Desktop Chrome'],
         baseURL: `http://localhost:${MOCK_VITE_PORT}`,
@@ -1009,6 +1100,8 @@ export default defineConfig({
       // test archives the shared #team, which changes what `/` renders for every
       // page on this server until it is restored.
       name: 'chromium-team-room',
+      // One worker in CI whatever the cockpit gets: see `chromiumWorkers`.
+      workers: ONE_IN_CI,
       use: {
         ...devices['Desktop Chrome'],
         baseURL: `http://localhost:${MOCK_VITE_PORT}`,
@@ -1033,6 +1126,8 @@ export default defineConfig({
       // assert only on rooms they seeded, so they run beside each other and
       // beside the other test-mode projects.
       name: 'chromium-rooms-agents',
+      // One worker in CI whatever the cockpit gets: see `chromiumWorkers`.
+      workers: ONE_IN_CI,
       use: {
         ...devices['Desktop Chrome'],
         baseURL: `http://localhost:${MOCK_VITE_PORT}`,
@@ -1061,6 +1156,8 @@ export default defineConfig({
       // room and asserts only on that room, so it runs beside the other
       // test-mode projects without racing them.
       name: 'chromium-bridge',
+      // One worker in CI whatever the cockpit gets: see `chromiumWorkers`.
+      workers: ONE_IN_CI,
       use: {
         ...devices['Desktop Chrome'],
         baseURL: `http://localhost:${MOCK_VITE_PORT}`,
@@ -1118,6 +1215,8 @@ export default defineConfig({
       ? [
           {
             name: 'chromium-production',
+            // One worker in CI whatever the cockpit gets: see `chromiumWorkers`.
+            workers: ONE_IN_CI,
             use: {
               ...devices['Desktop Chrome'],
               baseURL: `http://localhost:${PROD_PORT}`,

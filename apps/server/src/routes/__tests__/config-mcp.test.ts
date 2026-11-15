@@ -25,6 +25,7 @@ vi.mock('../../services/core/config-manager.js', () => {
 vi.mock('../../env.js', () => ({
   env: {
     DORKOS_PORT: 6242,
+    DORKOS_HOST: 'localhost',
     MCP_API_KEY: undefined as string | undefined,
   },
 }));
@@ -160,6 +161,19 @@ describe('Config MCP endpoints', () => {
         maxPerWindow: 60,
         windowSecs: 60,
       });
+    });
+
+    it('names the host the server bound in the endpoint, not a fixed localhost (DOR-4294)', async () => {
+      // Purpose: a client copies this URL to reach the server. Bound to an
+      // IPv6 literal, `localhost` may resolve to an address nothing listens on.
+      const host = env as { DORKOS_HOST: string };
+      host.DORKOS_HOST = '::1';
+      try {
+        const res = await request(fixtureServer).get('/api/config').expect(200);
+        expect(res.body.mcp.endpoint).toBe('http://[::1]:6242/mcp');
+      } finally {
+        host.DORKOS_HOST = 'localhost';
+      }
     });
 
     it('returns authSource "local-token" WITHOUT the token value in login-off mode', async () => {

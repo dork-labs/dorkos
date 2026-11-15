@@ -428,6 +428,8 @@ export type RoomErrorCode =
   | 'CANVAS_PROTECTED_FILE'
   /** A document an app opened would hold a widget action other than a link (DOR-3293). */
   | 'CANVAS_APP_WIDGET_ACTION'
+  /** An agent tried to open a file the room's members cannot read (DOR-4110). */
+  | 'CANVAS_MEMBERS_CANT_READ'
   /** An agent named a path that is missing, is a folder, or is a kind of file this install does not accept. */
   | 'ATTACHMENT_UNREADABLE'
   /** An agent named a file bigger than `uploads.maxFileSize`. */

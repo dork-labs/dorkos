@@ -281,4 +281,19 @@ export class OpenCodeSessionRegistry {
     if (!isAnnounceable(event)) return;
     for (const listener of this.listeners) listener(event);
   }
+
+  /**
+   * Overlay DorkOS-tracked settings onto a listed session — OpenCode has no
+   * per-session permission mode, so the mapper hardcodes `'default'` and the
+   * tracked value (kept current by `updateSession`) wins.
+   *
+   * @param session - The listed session, changed in place.
+   */
+  overlayTrackedSettings(session: Session): void {
+    const tracked = this.get(session.id);
+    if (!tracked) return;
+    session.permissionMode = tracked.permissionMode;
+    if (tracked.model !== undefined) session.model = tracked.model;
+    if (tracked.fastMode !== undefined) session.fastMode = tracked.fastMode;
+  }
 }

@@ -6,7 +6,8 @@ name: Desktop Release
 # assets to the GitHub Release the command already created — it never creates
 # its own release or rewrites the human-written notes:
 #
-#   - macOS (build-macos): signs + notarizes the arm64 app, attaches
+#   - macOS (build-macos): signs + notarizes the arm64 app, then notarizes
+#     and staples the .dmg around it (DOR-4261), attaches
 #     .dmg + .zip + .blockmap + latest-mac.yml. electron-updater (Squirrel.Mac)
 #     reads the .zip as the update payload and the .blockmap for differential
 #     (delta) downloads; the .dmg is the human-facing installer.
@@ -267,6 +268,69 @@ jobs:
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
 
+      # electron-builder notarizes the .app (mac.notarize) but never the .dmg
+      # around it: dmg-builder only signs it. A signed but unnotarized DMG is
+      # what Gatekeeper checks first when a person opens the download, so
+      # 0.135.7's DMG was rejected as "Unnotarized Developer ID" even though the
+      # app inside was stapled (DOR-4261). This submits the signed DMG to Apple,
+      # waits for the answer and staples the ticket to it. The DMG holds the
+      # already-notarized app, so Apple only checks it once more; it is a second
+      # submission, not a second build.
+      #
+      # Same three Apple secrets as the package step, scoped to this step only.
+      # notarytool answers with JSON; anything but "Accepted" prints Apple's log
+      # for that submission and fails the job, before anything is uploaded. No
+      # keychain is read or written: the credentials go on the command line from
+      # env, the way electron-builder's own notarize call passes them.
+      - name: Notarize and staple the DMG
+        if: ${{ vars.APPLE_DEVELOPER_CONFIGURED == 'true' }}
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          dmgs=(apps/desktop/release/*.dmg)
+          if [ ${#dmgs[@]} -ne 1 ]; then
+            echo "::error::Expected exactly one .dmg in apps/desktop/release, found ${#dmgs[@]}." >&2
+            exit 1
+          fi
+          dmg="${dmgs[0]}"
+          auth=(--apple-id "$APPLE_ID" --password "$APPLE_APP_SPECIFIC_PASSWORD" --team-id "$APPLE_TEAM_ID")
+          echo "Submitting ${dmg} for notarization…"
+          # --timeout bounds the wait well inside the job's 56-min budget. A
+          # non-zero exit is not trusted or ignored: the status below decides,
+          # and anything but "Accepted" fails.
+          result=""
+          if ! result="$(xcrun notarytool submit "$dmg" "${auth[@]}" --wait --timeout 20m --output-format json)"; then
+            echo "notarytool submit exited non-zero; output: ${result:-<none>}"
+          fi
+          status=""
+          id=""
+          if ! status="$(jq -r '.status // empty' <<<"$result")" || ! id="$(jq -r '.id // empty' <<<"$result")"; then
+            echo "notarytool did not answer with JSON: ${result:-<none>}"
+            status=""
+          fi
+          if [ "$status" != "Accepted" ]; then
+            echo "::error::Notarization of ${dmg} ended '${status:-unknown}' (submission ${id:-unknown})." >&2
+            if [ -n "$id" ]; then
+              if ! xcrun notarytool log "$id" "${auth[@]}"; then
+                echo "Could not fetch Apple's log for ${id}."
+              fi
+            fi
+            exit 1
+          fi
+          echo "Notarized (submission ${id}). Stapling…"
+          xcrun stapler staple "$dmg"
+
+      # Stapling rewrote the DMG's bytes after electron-builder hashed it, so its
+      # sha512 and size in latest-mac.yml and its .blockmap are now stale. This
+      # rebuilds both with electron-builder's own block-map code. No secrets.
+      - name: Refresh the DMG's update info
+        if: ${{ vars.APPLE_DEVELOPER_CONFIGURED == 'true' }}
+        run: pnpm --filter @dorkos/desktop exec tsx scripts/refresh-dmg-update-info.ts release
+
       # The gate that used to be the verify-macos job, unchanged except that it
       # reads the .dmg where the package step wrote it instead of downloading
       # the artifact on a second runner. It runs BEFORE upload and attach, so a
@@ -318,6 +382,16 @@ jobs:
             echo "Signed build — asserting Gatekeeper acceptance…"
             if ! spctl --assess --type execute --verbose=4 "$app"; then
               echo "::error::spctl --assess rejected ${app}; a signed build must pass Gatekeeper." >&2
+              exit 1
+            fi
+            # The DMG itself, the way Gatekeeper sees the download (DOR-4261):
+            # a stapled ticket, and acceptance as a notarized disk image.
+            if ! xcrun stapler validate "$dmg"; then
+              echo "::error::${dmg} has no valid stapled notarization ticket." >&2
+              exit 1
+            fi
+            if ! spctl --assess --type open --context context:primary-signature --verbose=4 "$dmg"; then
+              echo "::error::spctl rejected ${dmg}; a signed release DMG must be notarized." >&2
               exit 1
             fi
           else

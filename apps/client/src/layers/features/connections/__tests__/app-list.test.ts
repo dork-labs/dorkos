@@ -237,6 +237,43 @@ describe('chatAppRow', () => {
     });
   });
 
+  it('marks an enabled open Telegram chat for review, even when it has a list', () => {
+    const open = instance({ config: { dmPolicy: 'open', dmAllowlist: ['42'] } });
+
+    expect(
+      chatAppRow(entry, open, {
+        bindings: [binding('telegram-1', 'dorkbot')],
+        agentNames: { dorkbot: 'DorkBot' },
+        waitingByChatApp: {},
+      })
+    ).toMatchObject({
+      tone: 'attention',
+      action: 'review',
+      detailTone: 'warning',
+      detail: '@lifeos_bot · Anyone can message it',
+    });
+  });
+
+  it('leaves an allowlisted Telegram row ready', () => {
+    const allowlisted = instance({ config: { dmPolicy: 'allowlist', dmAllowlist: ['42'] } });
+
+    expect(
+      chatAppRow(entry, allowlisted, {
+        bindings: [binding('telegram-1', 'dorkbot')],
+        agentNames: { dorkbot: 'DorkBot' },
+        waitingByChatApp: {},
+      })
+    ).toMatchObject({ tone: 'ready', action: null, detail: '@lifeos_bot · DorkBot answers' });
+  });
+
+  it('keeps a paused open Telegram row off', () => {
+    const paused = instance({ enabled: false, config: { dmPolicy: 'open' } });
+
+    expect(
+      chatAppRow(entry, paused, { bindings: [], agentNames: {}, waitingByChatApp: {} })
+    ).toMatchObject({ tone: 'off', action: 'resume' });
+  });
+
   it('says when nobody answers yet', () => {
     const row = chatAppRow(entry, instance(), {
       bindings: [],

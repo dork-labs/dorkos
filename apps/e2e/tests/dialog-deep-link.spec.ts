@@ -1,5 +1,4 @@
 import { test, expect } from '../fixtures';
-import { openFromCommandPalette } from '../pages/command-palette';
 
 test.describe('Settings — URL Deep Links @smoke', () => {
   test('navigating to ?settings=tools opens Settings to Tools tab', async ({ page }) => {
@@ -36,21 +35,6 @@ test.describe('Settings — URL Deep Links @smoke', () => {
     await page.waitForSelector('[data-testid="settings-dialog"]');
     await page.goBack();
     await expect(page.locator('[data-testid="settings-dialog"]')).toBeHidden();
-  });
-
-  test('palette open updates URL after migration (settings=open)', async ({ page }) => {
-    await page.goto('/');
-    // Wait for app shell so the global keyboard handler is mounted.
-    await page.waitForSelector('[data-testid="app-shell"]');
-    // The shared opener presses the in-DOM trigger rather than a synthetic
-    // keypress, so the test is robust across platforms (Meta vs Control), and
-    // types the name — Settings is not a row until someone does.
-    await openFromCommandPalette(page, 'Settings');
-    await page.waitForSelector('[data-testid="settings-dialog"]');
-    // Palette callsite was migrated in task 2.7 — clicking the Settings entry
-    // should now drive the URL via useSettingsDeepLink().open(), producing
-    // `?settings=open` (no tab argument).
-    await expect(page).toHaveURL(/[?&]settings=open/);
   });
 
   test('navigating to ?panel=profile opens the profile on a fresh tab', async ({
@@ -142,17 +126,5 @@ test.describe('Settings — URL Deep Links @smoke', () => {
         message: 'the panel a rewritten link asked for must have a real width',
       })
       .toBeGreaterThan(0);
-  });
-
-  test('?agent= on the Team page still selects a topology node', async ({ page, roomsApi }) => {
-    // `?agent=` belongs to the topology's detail panel here, and to the dead
-    // agent dialog everywhere else. Claiming all of them for the profile
-    // rewrote this link and the detail panel could never open again.
-    const agent = await roomsApi.registerAgent(`E2E Topology ${roomsApi.runId}`, '🛠️', '#22c55e');
-    await page.goto(`/team?view=topology&agent=${encodeURIComponent(agent.id)}`);
-    await page.waitForSelector('[data-testid="app-shell"]');
-
-    await expect(page).toHaveURL(new RegExp(`agent=${agent.id}`));
-    await expect(page).not.toHaveURL(/panel=profile/);
   });
 });

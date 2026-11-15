@@ -60,6 +60,7 @@ import {
 } from '../launch/launch-session.js';
 import {
   emitQueueUpdate,
+  isQueuedMessageArmed,
   isQueuedMessageLaunching,
   onDispatchLifecycle,
   type DispatchLifecycleEvent,
@@ -278,6 +279,7 @@ export class ChatMessageService {
       target.redirectedReplyTo ??
       replyTargetOf(this.deps.store, caller, target.sessionId, input.replyTo);
     const messageId = crypto.randomUUID();
+    const words = input.message.trim();
     const rendered = renderChatMessage(
       {
         messageId,
@@ -287,7 +289,7 @@ export class ChatMessageService {
         chatTitle: fromChatTitle,
       },
       kind,
-      text(input),
+      words,
       this.deps.nonce?.()
     );
     const ceilingJson = senderCeilingJson(this.deps, caller);
@@ -303,7 +305,7 @@ export class ChatMessageService {
       fromAgentName: sender.agentName,
       fromChatTitle,
       kind,
-      text: text(input),
+      text: words,
       summary: input.summary?.trim() ? input.summary.trim().slice(0, CHAT_SUMMARY_MAX) : null,
       nonce: rendered.nonce,
       delivery,
@@ -409,9 +411,8 @@ export class ChatMessageService {
     });
     if (isSessionLaunchRefusal(result)) {
       // Only a chat that does not exist yet is refused for machine load.
-      if (result.refused === 'LAUNCH_CAP_FULL' && target.sessionId !== null) {
+      if (result.refused === 'LAUNCH_CAP_FULL' && target.sessionId !== null)
         return this.capHold.hold(row, target.sessionId);
-      }
       throw new ChatMessageError(
         result.refused === 'LAUNCH_CAP_FULL' ? 'UNAVAILABLE' : 'NOT_ALLOWED',
         result.refused === 'LAUNCH_CAP_FULL' ? standing.chatLaunchCapMessage() : result.message
@@ -480,8 +481,10 @@ export class ChatMessageService {
     const tail = rows.at(-1);
     if (!tail || !isChatClientId(tail.enqueuedBy) || tail.disposition !== 'queue') return null;
     // Read and written in one tick: a row whose words are being read into a
-    // turn right now would lose anything appended to it.
-    if (isQueuedMessageLaunching(tail.id)) return null;
+    // turn right now would lose anything appended to it. And a row nothing will
+    // run (a restart left it) would take this message down with it; the
+    // dispatcher adopts that row instead and gives this message its own (DOR-3348).
+    if (isQueuedMessageLaunching(tail.id) || !isQueuedMessageArmed(tail.id)) return null;
     // One batched turn grows to five messages' worth at most: past it a message
     // starts a row of its own, so hours of messages into a chat stuck in a long
     // turn cannot become one prompt that fails all at once.
@@ -812,11 +815,15 @@ export class ChatMessageService {
       return;
     }
     if (event.phase === 'started') noteChatTurnStarted(event.sessionId, this.now(), rows);
-    else if (event.phase === 'settled') noteChatTurnSettled(event.sessionId);
+    // A held turn ended too, without settling (DOR-4353).
+    else if (event.phase !== 'dropped') noteChatTurnSettled(event.sessionId);
     for (const row of rows) {
       let status: ChatMessageStatus | null = null;
       let failureReason: string | undefined;
       if (event.phase === 'started' && row.status === 'queued') status = 'working';
+      // A pause stopped its turn before the agent read it: it waits in the
+      // queue again, held until the pause lifts, so it reads as queued (DOR-4353).
+      else if (event.phase === 'held' && row.status === 'working') status = 'queued';
       else if (event.phase === 'settled' && (row.status === 'working' || row.status === 'queued')) {
         status = standing.settledStatus(event.outcome, event.reason);
         if (status === 'failed') failureReason = standing.settledFailureReason(event.reason);
@@ -828,17 +835,9 @@ export class ChatMessageService {
             : 'Someone took it off the chat’s queue, or pressed Stop.';
       }
       if (status === null) continue;
-      this.deps.store.update(row.id, {
-        status,
-        ...(failureReason ? { failureReason } : {}),
-      });
+      this.deps.store.update(row.id, { status, ...(failureReason ? { failureReason } : {}) });
       this.deps.emitActivity(row.fromSessionId);
       this.deps.emitActivity(row.toSessionId);
     }
   }
-}
-
-/** The words a message carries, trimmed of the whitespace around them. */
-function text(input: ChatSendInput): string {
-  return input.message.trim();
 }

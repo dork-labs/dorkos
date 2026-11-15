@@ -73,6 +73,7 @@ import { MAX_CANVAS_DOCUMENTS } from '../../canvas/canvas-limits.js';
 import { RoomError } from '../room-errors.js';
 import type { RoomBroadcaster } from '../room-stream.js';
 import type { RoomVisibility } from '../service/room-visibility.js';
+import { roomCanvasMembersCantReadRefusal } from './room-canvas-members-cant-read.js';
 
 /**
  * How many unpinned documents one room's canvas holds before the least recently
@@ -378,7 +379,7 @@ export class RoomCanvasService {
     aheadOfMain?: number | null;
     worktree?: string;
   }): CanvasApplyResult {
-    const { roomId, authorId, turnId, command } = input;
+    const { roomId, authorId, turnId, command, cwd, aheadOfMain, worktree } = input;
 
     // Before the table is touched, and before an allowance is spent: an archived
     // room accepts nothing, in anybody's voice (§3.7).
@@ -410,33 +411,29 @@ export class RoomCanvasService {
     // which names no file path at all).
     const content = this.canvas.contentForCommand(command);
     // A protected file never reaches the table, by any turn's road (DOR-4060).
-    const refused = content === null ? null : canvasContentRefusal(content, input.cwd);
+    const refused = content === null ? null : canvasContentRefusal(content, cwd);
     if (refused) return { applied: false, code: 'CANVAS_PROTECTED_FILE', reason: refused.message };
     // A room's own question, answered here and handed down: which tree this
     // file came out of, and whose copy it is.
     const tree =
       content === null
         ? undefined
-        : this.resolveTree(
-            roomId,
-            authorId,
-            content,
-            input.cwd,
-            input.aheadOfMain ?? null,
-            input.worktree
-          );
-    return this.canvas.apply({
-      scope: roomScope(roomId),
-      authorId,
-      // Stored relative to the tree it came out of, as every reader of a room
-      // file document expects (the review, the merge, the document key).
-      command: tree === undefined ? command : withTreeRelativeSource(command, tree),
-      tree,
-      // A room has NO shared active document by design, so the only default that
-      // cannot edit somebody else's work is the author's own last one (§5.6).
-      defaultTarget: 'author-last',
-      record: (entry) => this.record(turnId, roomId, authorId, entry),
-    });
+        : this.resolveTree(roomId, authorId, content, cwd, aheadOfMain ?? null, worktree);
+    return (
+      roomCanvasMembersCantReadRefusal(content, tree) ??
+      this.canvas.apply({
+        scope: roomScope(roomId),
+        authorId,
+        // Stored relative to the tree it came out of, as every reader of a room
+        // file document expects (the review, the merge, the document key).
+        command: tree === undefined ? command : withTreeRelativeSource(command, tree),
+        tree,
+        // A room has NO shared active document by design, so the only default that
+        // cannot edit somebody else's work is the author's own last one (§5.6).
+        defaultTarget: 'author-last',
+        record: (entry) => this.record(turnId, roomId, authorId, entry),
+      })
+    );
   }
 
   /**
@@ -1390,7 +1387,6 @@ function withTreeRelativeSource(command: UiCommand, tree: CanvasTreePlacement): 
 }
 
 function isWithin(child: string, parent: string): boolean {
-  if (child === parent) return true;
   const base = parent.endsWith('/') ? parent : `${parent}/`;
-  return child.startsWith(base);
+  return child === parent || child.startsWith(base);
 }

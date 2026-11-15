@@ -154,6 +154,12 @@ export class LanAccess {
     return this.reconcile();
   }
 
+  /** Cut every connection the network listener carries now: Remote Access was turned off (DOR-3650). */
+  dropConnections(): void {
+    for (const socket of this.sockets) socket.destroy();
+    this.sockets.clear();
+  }
+
   /**
    * Bring the listener in line with the setting and the login posture, then
    * answer the status. Safe to call any number of times; calls run in order.

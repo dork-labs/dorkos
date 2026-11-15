@@ -86,6 +86,11 @@ export function writeCertificateBundle(home: string, name: string, count: number
  * Make a throwaway CA and name it as the company certificate in the smoke
  * home's `config.json`, before the app launches.
  *
+ * The file is written by hand on purpose, with no `__internal__` version
+ * stamp, the way a person following the docs would write it. It is the
+ * packaged smoke's proof that the config upgrade floor lets an unstamped,
+ * current file start (DOR-4376).
+ *
  * @param home - The throwaway home the app will run against.
  * @returns The certificate file's absolute path.
  */

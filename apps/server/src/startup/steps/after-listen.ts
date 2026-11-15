@@ -7,6 +7,7 @@
  *
  * @module startup/steps/after-listen
  */
+import { isReplayIsolated } from '../../lib/replay/isolation.js';
 import { sweepOrphanedCanvases } from '../../services/canvas/sweep-orphaned-canvases.js';
 import { peekCanvasService } from '../../services/canvas/index.js';
 import { aggregateSessionList } from '../../services/session/catalog/aggregate-session-list.js';
@@ -16,7 +17,12 @@ import { DEFAULT_CWD } from '../../lib/resolve-root.js';
 import { logger, logError } from '../../lib/logger.js';
 import { sharedBackgroundWorkLedger } from '../../services/runtimes/claude-code/messaging/background-work-ledger.js';
 import { wakeChatsCutShort } from '../../services/session/runtime-turns/wake-cut-short-work.js';
-import { sweepOrphanedMessageQueues } from '../../services/session/index.js';
+import { rearmChatQueues, sweepOrphanedMessageQueues } from '../../services/session/index.js';
+import {
+  liveSessionCwd,
+  resumeChatQueue,
+} from '../../services/extensions/agent-send/agent-send-defaults.js';
+import { agentPause } from '../../services/mesh/pause/agent-pause.js';
 import { sweepExpiredTurnContext } from '../../services/session/turn-context/record-turn-context.js';
 import { INTERVALS } from '../../config/constants.js';
 import { takeDailySnapshot } from '@dorkos/db';
@@ -168,12 +174,38 @@ export async function startAfterListen(refs: ServerRefs, built: StartAfterListen
     });
   }
 
+  // Messages other chats queued survive a restart, but nothing ran them until a
+  // newer message reached the same chat, sometimes days later (DOR-3287). Resume
+  // those chats now, and on the health tick for any row left with nothing to run it.
+  const resumeChatQueues = (): void => {
+    void rearmChatQueues({
+      resume: async (id) =>
+        resumeChatQueue(
+          id,
+          await liveSessionCwd(id),
+          refs.roomSessionPlacePort,
+          {},
+          {
+            registeredAgentPaths: () =>
+              refs.meshCore?.listWithPaths().map((agent) => agent.projectPath),
+          }
+        ),
+    }).catch((err: unknown) => {
+      logger.warn('[DorkOS] could not resume chats’ queued messages', logError(err));
+    });
+  };
+  resumeChatQueues();
+  // A pause holds the messages queued for its agent (DOR-4327); lifting it runs
+  // them now rather than at the next health tick.
+  agentPause()?.onResumed(resumeChatQueues);
+
   // Run session health check periodically. Only ClaudeCodeRuntime needs the
   // eviction half, but the queue sweep is runtime-neutral and rides the same
   // cadence rather than adding a second timer, so it runs either way.
   refs.healthCheckInterval = setInterval(() => {
     refs.claudeRuntime?.checkSessionHealth();
     sweepOrphanedMessageQueues();
+    resumeChatQueues();
     void sweepCanvases();
     void refs.connectorAgentRequests?.reconcile().catch((error: unknown) => {
       logger.warn('[Connections] Agent request recovery failed', logError(error));
@@ -293,6 +325,8 @@ export async function startAfterListen(refs: ServerRefs, built: StartAfterListen
 
   // Dispatch retained document work only after every runtime and capability is ready.
   docDeliveryRunner.start();
+
+  if (isReplayIsolated()) return;
 
   // Cloud link (accounts-and-auth P2): if this instance is device-linked to a
   // DorkOS account, heartbeat now and every 15 minutes. Non-blocking and

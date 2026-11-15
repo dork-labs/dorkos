@@ -966,11 +966,17 @@ export interface Transport extends TransportSlices {
    * only listing is new. See `GET /api/sessions/pending-interactions`.
    */
   listPendingInteractions(): Promise<PendingInteractionsResponse>;
-  /** Approve a pending tool call that requires user confirmation. */
+  /**
+   * Approve a pending tool call that requires user confirmation.
+   *
+   * @param alwaysAllow - `true` approves persistently. On a card that offered a
+   *   whole MCP server it is the person's pick instead (DOR-4101): `tool` or
+   *   `server`, and anything but `server` writes the one tool's rule.
+   */
   approveTool(
     sessionId: string,
     toolCallId: string,
-    alwaysAllow?: boolean
+    alwaysAllow?: boolean | 'tool' | 'server'
   ): Promise<{ ok: boolean }>;
   /**
    * Deny a pending tool call that requires user confirmation.

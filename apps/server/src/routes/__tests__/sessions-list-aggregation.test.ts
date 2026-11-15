@@ -304,9 +304,11 @@ function makeOpenCodeSidecar() {
         })(),
       })),
     },
+    app: { agents: vi.fn(async () => ({ data: [] })) },
     session: {
       create: vi.fn(async () => ({ data: ocSessionInfo() })),
       get: vi.fn(async () => ({ data: ocSessionInfo() })),
+      update: vi.fn(async () => ({ data: {} })),
       list: vi.fn(async () => ({ data: [] as unknown[] })),
       messages: vi.fn(async () => ({ data: opencodeHistory() })),
       promptAsync: vi.fn(async () => ({})),
@@ -577,12 +579,14 @@ describe('GET /api/sessions — multi-runtime aggregation (real registry + real 
 
       expect(res.status).toBe(202);
       // The whole body: the canonical id plus the queue receipt, and no turn
-      // frames — the turn is delivered on /events and nowhere else.
+      // frames — the turn is delivered on /events and nowhere else. No agent
+      // owns this folder, so the receipt says the chat has no DorkOS tools.
       expect(res.body).toEqual({
         sessionId: CODEX_SESSION,
         messageId: expect.any(String),
         outcome: { messageId: expect.any(String), requested: 'queue', applied: 'queue' },
         queuePosition: 1,
+        warnings: [{ code: 'NO_DORKOS_TOOLS', message: 'This chat has no DorkOS tools.' }],
       });
 
       await vi.waitFor(() => {

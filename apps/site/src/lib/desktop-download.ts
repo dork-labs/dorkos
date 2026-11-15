@@ -15,7 +15,28 @@
 
 import { links } from '@dorkos/shared/links';
 
-const REVALIDATE_SECONDS = 300;
+/**
+ * How long one instance reuses a release list it fetched from GitHub.
+ *
+ * Deliberately NOT the Next.js data cache (DOR-4300): that cache is
+ * stale-while-revalidate, so on a quiet link the first visit after the window
+ * got the list from before the newest release, and 0.135.8 was still served
+ * as 0.135.7 two hours after it shipped. An in-memory copy is never served
+ * past this window, so a new release shows up within a minute. The window
+ * absorbs bursts: one GitHub call a minute per instance. That alone cannot
+ * promise the unauthenticated limit (60 an hour per IP, and Vercel's outbound
+ * IPs are shared), which is why a refusal falls back to the last good list,
+ * then to {@link RELEASES_PAGE_URL}.
+ */
+export const RELEASE_LIST_TTL_MS = 60_000;
+
+/**
+ * Where a download link sends a person when GitHub can't be asked and there
+ * is no earlier list to fall back on (a cold instance hitting the rate limit).
+ * The human release page always lists the newest installers, which beats an
+ * error page on the download button.
+ */
+export const RELEASES_PAGE_URL = `https://github.com/${links.repoSlug}/releases/latest`;
 
 interface GitHubReleaseAsset {
   name: string;
@@ -30,6 +51,61 @@ interface GitHubRelease {
   assets: GitHubReleaseAsset[];
 }
 
+/** The last list GitHub returned, and when; the fallback when GitHub refuses. */
+let lastGood: { releases: GitHubRelease[]; fetchedAt: number } | null = null;
+/** A fetch already on its way, shared by visits that arrive while it runs. */
+let inFlight: Promise<GitHubRelease[] | null> | null = null;
+
+/**
+ * Forget the remembered release list.
+ *
+ * @internal For tests, which need each case to start with nothing fetched.
+ */
+export function resetDesktopReleaseCache(): void {
+  lastGood = null;
+  inFlight = null;
+}
+
+/** Ask GitHub for the release list right now, bypassing every cache. */
+async function fetchReleaseList(): Promise<GitHubRelease[] | null> {
+  let res: Response;
+  try {
+    res = await fetch(`https://api.github.com/repos/${links.repoSlug}/releases?per_page=30`, {
+      headers: { Accept: 'application/vnd.github+json' },
+      cache: 'no-store',
+    });
+  } catch {
+    return null;
+  }
+  if (!res.ok) return null;
+
+  try {
+    return (await res.json()) as GitHubRelease[];
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The release list, at most {@link RELEASE_LIST_TTL_MS} old. When GitHub
+ * fails or refuses (a rate limit answers 403), the last good list of any age
+ * beats sending a person to an error page; `null` only when there is none.
+ */
+async function getReleaseList(): Promise<GitHubRelease[] | null> {
+  if (lastGood && Date.now() - lastGood.fetchedAt < RELEASE_LIST_TTL_MS) {
+    return lastGood.releases;
+  }
+  inFlight ??= fetchReleaseList().finally(() => {
+    inFlight = null;
+  });
+  const releases = await inFlight;
+  if (releases) {
+    lastGood = { releases, fetchedAt: Date.now() };
+    return releases;
+  }
+  return lastGood?.releases ?? null;
+}
+
 /**
  * Find the `browser_download_url` of the newest release asset whose name
  * ends with `assetSuffix` (e.g. `.dmg`, `.exe`) across all published
@@ -41,29 +117,18 @@ interface GitHubRelease {
  * Prereleases ARE included: a release the team hasn't promoted to "latest"
  * yet may still be the only one that ships a desktop build.
  *
- * Cached for 5 minutes (Next.js fetch revalidation) so repeat visits to a
- * `/download/*` route don't burn the unauthenticated GitHub rate limit.
- *
- * Returns `null` when no release with a matching asset exists yet (e.g.
- * before the first desktop build ships) or the GitHub API call fails.
+ * Returns {@link RELEASES_PAGE_URL} when the GitHub API call fails with no
+ * earlier list to fall back on, and `null` only when GitHub answered but no
+ * release with a matching asset exists yet (e.g. before the first desktop
+ * build ships).
  */
 async function findLatestReleaseAssetUrl(assetSuffix: string): Promise<string | null> {
-  let res: Response;
-  try {
-    res = await fetch(`https://api.github.com/repos/${links.repoSlug}/releases?per_page=30`, {
-      headers: { Accept: 'application/vnd.github+json' },
-      next: { revalidate: REVALIDATE_SECONDS },
-    });
-  } catch {
-    return null;
-  }
-  if (!res.ok) return null;
-
-  let releases: GitHubRelease[];
-  try {
-    releases = (await res.json()) as GitHubRelease[];
-  } catch {
-    return null;
+  const releases = await getReleaseList();
+  if (!releases) {
+    console.warn(
+      `[lib/desktop-download] GitHub release list unavailable, no earlier list; sending ${assetSuffix} download to the releases page`
+    );
+    return RELEASES_PAGE_URL;
   }
 
   const sorted = releases

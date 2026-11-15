@@ -124,12 +124,24 @@ export function settledWithin<T>(promise: Promise<T>, ms: number, fallback: T): 
 }
 
 /**
+ * One tool a probed server listed, as the server described it. Both strings
+ * come from the server, so they are untrusted text: shown plainly to a person,
+ * never put in an agent's context (DOR-4118).
+ */
+export interface ProbedTool {
+  /** The tool's name on that server. */
+  name: string;
+  /** Its description, or an empty string when it gave none. */
+  description: string;
+}
+
+/**
  * What one bounded probe round trip found. Split three ways because the callers
  * treat a 401 differently from every other failure: it is not just "unreachable",
  * it is evidence the server is OAuth-protected.
  */
 export type ProbeOutcome =
-  | { kind: 'ok'; toolCount: number }
+  | { kind: 'ok'; toolCount: number; tools: ProbedTool[] }
   | { kind: 'unauthorized'; error: string }
   | { kind: 'failed'; error: string };
 
@@ -168,7 +180,14 @@ export async function runProbe(
       })(),
       timeoutMs
     );
-    return { kind: 'ok', toolCount: tools.tools.length };
+    return {
+      kind: 'ok',
+      toolCount: tools.tools.length,
+      tools: tools.tools.map((tool) => ({
+        name: tool.name,
+        description: tool.description ?? '',
+      })),
+    };
   } catch (err) {
     const error = err instanceof Error ? err.message : String(err);
     return isUnauthorizedProbeError(err)

@@ -47,7 +47,7 @@ import { resolveDorkosMcpInjection } from '../shared/dorkos-mcp-injection.js';
 import type { ConnectorRuntimeMcpInjection } from '../connector-tools.js';
 import { protectedPathRoots } from '../shared/policy/protected-path-roots.js';
 import { managedConfigHeld } from '../shared/policy/managed-config.js';
-import { DORKOS_MCP_SERVER_NAME } from '../shared/dorkos-tool-names.js';
+import { RESERVED_MCP_SERVER_NAMES } from '@dorkos/shared/global-mcp-schemas';
 import { logger } from '../../../lib/logger.js';
 
 /**
@@ -236,8 +236,8 @@ export interface CodexMcpConversion {
  * `AgentMcpServerService` resolved for a session cwd) into a name → Codex-config
  * record.
  *
- * A `reservedNames` set is dropped so a managed server can never occupy a name
- * DorkOS owns (today just the injected `dorkos` tool server); the caller also
+ * A `reservedNames` set is dropped, compared without case, so a managed server
+ * can never occupy a name DorkOS owns (`RESERVED_MCP_SERVER_NAMES`); the caller also
  * writes the reserved entries LAST when merging, so shadowing is impossible on
  * either count. Dropped names are REPORTED in
  * {@link CodexMcpConversion.reserved} so the caller can say so — see that field
@@ -266,7 +266,7 @@ export function toCodexMcpServers(
   const reserved: string[] = [];
   const withheld: string[] = [];
   for (const [name, connection] of Object.entries(connections)) {
-    if (reservedNames.has(name)) {
+    if (reservedNames.has(name.toLowerCase())) {
       reserved.push(name);
       continue;
     }
@@ -307,32 +307,21 @@ export interface CodexManagedMcpServers {
  * @param resolver - The composition root's managed-server resolver, or
  *   `undefined` when none was wired.
  * @param cwd - The session's working directory (the agent's workspace path).
- * @param injectingDorkosTools - Whether THIS turn injects the `dorkos` server,
- *   which is what decides whether that name is reserved.
  */
 export function resolveManagedMcpServers(
   resolver: ManagedMcpServerResolver | undefined,
-  cwd: string,
-  injectingDorkosTools: boolean
+  cwd: string
 ): CodexManagedMcpServers {
   if (!resolver) return { servers: {}, env: {} };
   const neutral = resolver.injectableServersForCwd(cwd);
-  // `dorkos` is ours only on the turns we actually inject it, which is why the
-  // set is built per turn rather than being a constant. (It used to have a
-  // companion, the always-injected `dorkos_ui` bridge; that is retired —
-  // `control_ui` rides the `dorkos` server now, spec `canvas-agent-seat` §5.)
-  //
-  // Reserving it unconditionally was a REGRESSION on the default path: with
-  // the experiment off DorkOS wants nothing called `dorkos`, so dropping a
-  // person's own server of that name took something and gave nothing back,
-  // and it made the flag-OFF path stop being byte-identical to the one that
-  // shipped before this feature. It also disagreed with OpenCode, where the
-  // desired set simply has no `dorkos` entry when the experiment is off and a
-  // user's server of that name is therefore never touched. Same experiment,
-  // same name, two runtimes: they have to answer this the same way.
-  const reservedNames = new Set<string>();
-  if (injectingDorkosTools) reservedNames.add(DORKOS_MCP_SERVER_NAME);
-  const { servers, env, skipped, reserved, withheld } = toCodexMcpServers(neutral, reservedNames);
+  // DorkOS's own names are reserved on every turn, the same rule every runtime
+  // and both stores apply (DOR-3600). They used to be reserved only on turns
+  // that injected `dorkos`; with the stores refusing them, only a file saved
+  // before that can still hold one, and it never reaches Codex.
+  const { servers, env, skipped, reserved, withheld } = toCodexMcpServers(
+    neutral,
+    new Set(RESERVED_MCP_SERVER_NAMES)
+  );
   if (withheld.length > 0) {
     logger.warn(
       '[CodexRuntime] left the agent browser out: Codex cannot hold back its file arguments',
@@ -401,14 +390,13 @@ export async function resolvePinnedCodexMcp(
   home: string | undefined,
   cwd: string,
   full: boolean,
-  reserved: boolean,
   mesh?: AgentRegistryPort
 ): Promise<CodexManagedMcpServers> {
   if (!home || (await managedConfigHeld(home, cwd, full, mesh))) return { servers: {}, env: {} };
-  return resolveManagedMcpServers(resolver, home, reserved);
+  return resolveManagedMcpServers(resolver, home);
 }
 
-/** Resolve host tools and pinned managed servers together, preserving reserved names. */
+/** Resolve host tools and pinned managed servers together; DorkOS's own names stay reserved. */
 export async function resolveCodexLaunchTools(
   home: string | undefined,
   cwd: string,
@@ -430,14 +418,7 @@ export async function resolveCodexLaunchTools(
     home && mesh?.getByPath(home) ? home : undefined,
     connectorTools
   );
-  const managedMcpServers = await resolvePinnedCodexMcp(
-    resolver,
-    home,
-    cwd,
-    full,
-    dorkosTools !== null,
-    mesh
-  );
+  const managedMcpServers = await resolvePinnedCodexMcp(resolver, home, cwd, full, mesh);
   return {
     agentTokenEnv,
     ...(mintsOnLoad ? { mintAgentToken } : {}),

@@ -30,6 +30,11 @@ interface AdapterSetupWizardProps {
   existingInstance?: CatalogInstance & { config?: Record<string, unknown> };
   /** All adapter IDs currently in use — used to generate a non-colliding default ID for new instances. */
   existingAdapterIds?: string[];
+  /**
+   * The config field to focus when the dialog opens, in place of the first
+   * input (Name). "Add people" opens straight at the list (DOR-3859).
+   */
+  focusField?: string;
 }
 
 /** Four-step dialog for adding or editing adapter instances. */
@@ -39,6 +44,7 @@ export function AdapterSetupWizard({
   manifest,
   existingInstance,
   existingAdapterIds = [],
+  focusField,
 }: AdapterSetupWizardProps) {
   const wizard = useAdapterWizard({
     manifest,
@@ -86,7 +92,16 @@ export function AdapterSetupWizard({
   return (
     <Fragment>
       <Dialog open={open} onOpenChange={handleOpenChange}>
-        <DialogContent className="flex max-h-[85vh] max-w-lg flex-col">
+        <DialogContent
+          className="flex max-h-[85vh] max-w-lg flex-col"
+          onOpenAutoFocus={(event) => {
+            // `config-field-<key>` is the id ConfigFieldInput gives each field.
+            const field = focusField && document.getElementById(`config-field-${focusField}`);
+            if (!field) return;
+            event.preventDefault();
+            field.focus();
+          }}
+        >
           <DialogHeader>
             <DialogTitle>
               {isEditMode ? `Edit ${manifest.displayName}` : `Add ${manifest.displayName}`}

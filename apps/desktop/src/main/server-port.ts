@@ -2,6 +2,7 @@ import net from 'node:net';
 import path from 'node:path';
 import log from 'electron-log';
 import { resolveDataDirectory } from './dork-home';
+import { SERVER_BIND_HOST } from '../shared/server-address';
 import { readUserConfig } from './user-config';
 
 /**
@@ -99,8 +100,8 @@ const LOWEST_UNPRIVILEGED_PORT = 1024;
 /**
  * The host the probe binds, matching what the child binds.
  *
- * The server listens on `DORKOS_HOST`, which the shell never sets, so it is
- * always `localhost` here. Probing the same name is what makes the answer
+ * The server listens on `DORKOS_HOST`, which the shell pins to
+ * {@link SERVER_BIND_HOST}. Probing the same name is what makes the answer
  * meaningful: a wildcard probe would report a port busy because some unrelated
  * interface holds it, and a probe of one fixed address could miss a holder that
  * `localhost` happens to resolve to.
@@ -110,7 +111,7 @@ const LOWEST_UNPRIVILEGED_PORT = 1024;
  * busy only on the network must not stop the app from opening. If that bind
  * fails, Settings says so and the app keeps working on this computer.
  */
-const PROBE_HOST = 'localhost';
+const PROBE_HOST = SERVER_BIND_HOST;
 
 /**
  * What a probe found.

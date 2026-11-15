@@ -21,6 +21,7 @@
     "spice": 2
   },
   "isSystem": false,
+  "account": "claude5",
   "mcpServers": [],
   "workspace": {
     "mode": "home"

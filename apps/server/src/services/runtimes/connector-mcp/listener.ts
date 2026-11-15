@@ -28,6 +28,22 @@ export interface ConnectorRuntimeMcpListenerOptions {
   readonly maxRequestsPerMinute?: number;
   /** Accept a Claude Code claim; test runtime only (see `ConnectorRuntimeAuthOptions`). */
   readonly acceptInProcessRuntime?: boolean;
+  /**
+   * Told the bearer of each authorized `tools/list` the DorkOS tools route
+   * answered, so a thread that never lists its tools can be noticed (DOR-4384).
+   */
+  readonly onAgentToolsListed?: (bearer: string) => void;
+}
+
+/** Whether a JSON-RPC body (one message or a batch) asks for the tool list. */
+function asksForToolList(body: unknown): boolean {
+  const messages = Array.isArray(body) ? body : [body];
+  return messages.some(
+    (message) =>
+      typeof message === 'object' &&
+      message !== null &&
+      (message as { method?: unknown }).method === 'tools/list'
+  );
 }
 
 /** Running listener handle consumed by the server composition root. */
@@ -88,6 +104,14 @@ function createListenerApp(options: ConnectorRuntimeMcpListenerOptions): Hono<Co
     await next();
   });
   app.route('/mcp', createConnectorRuntimeMcpRoutes(options.serverFactory));
+  // After the route answered: only a tool list actually sent counts (DOR-4384).
+  app.use('/agent-mcp', async (c, next) => {
+    await next();
+    const bearer = c.req.header('authorization')?.slice('Bearer '.length);
+    if (bearer && c.env.outgoing.statusCode === 200 && asksForToolList(c.get('body'))) {
+      options.onAgentToolsListed?.(bearer);
+    }
+  });
   app.route('/agent-mcp', createConnectorRuntimeMcpRoutes(options.agentServerFactory));
   return app;
 }

@@ -1,8 +1,6 @@
-import { formatNewSince } from '../shared/prose/new-since-block.js';
 import { renderDocEvents } from '../../canvas/doc-channel/prompt.js';
 import { formatAccountsAccess } from '../shared/accounts-access-context.js';
 import { formatContextWarning } from '../../session/agent-compaction/context-warning-block.js';
-import { formatTurnCutoff } from '../../session/turn-cutoff/turn-cutoff.js';
 /**
  * Per-turn input shaping for the Codex runtime: the DorkOS permission-mode →
  * ThreadOptions projection (NOTES.md Verdict 2) and the prompt assembly that
@@ -21,11 +19,8 @@ import { CONTEXT_TAG } from '@dorkos/shared/additional-context';
 import type { EffortLevel, SessionSettings } from '@dorkos/shared/types';
 import { GEN_UI_CONTEXT } from '../shared/gen-ui-context.js';
 import { CODEX_DORKOS_TOOL_PREFIX } from '../shared/dorkos-tool-names.js';
-import { formatApprovalVerdict } from '../shared/approval-verdict-block.js';
-import { formatDirectNotes } from '../shared/prose/direct-notes-block.js';
 import { formatRoomContext } from '../shared/room-context-block.js';
-import { formatSeedContext } from '../shared/seed-context-block.js';
-import { formatStagedContext } from '../shared/staged-context-block.js';
+import { renderProseContextBlock, type ProseContextEntry } from '../shared/prose/prose-context.js';
 import { recordTurnContext, turnPlaceOf } from '../../session/turn-context/record-turn-context.js';
 import type { CodexContextSelection } from './context-gate.js';
 
@@ -91,58 +86,59 @@ export function grantedWritableDirectories(
 /**
  * Render one neutral context entry into a tagged block — the Codex half of
  * ADR-0273 (the server owns WHAT context exists; the adapter owns HOW it is
- * rendered). The wrapper tag comes from the shared `CONTEXT_TAG` map, and the
- * body is the structured data as JSON: honest, machine-readable, and free of
- * the Claude adapter's heavyweight formatting dependencies.
- *
- * Four kinds are exceptions, and none of them is a style preference — see
- * {@link renderContextBody}.
+ * rendered). Shared prose kinds use the same complete block writer as every
+ * other runtime; the remaining kinds use the shared `CONTEXT_TAG` map around
+ * their runtime-specific bodies.
  */
 function renderContextEntry(entry: AdditionalContextEntry): string {
-  if (entry.kind === 'doc_events') return renderDocEvents(entry.data);
-  const tag = CONTEXT_TAG[entry.kind];
-  return `<${tag}>\n${renderContextBody(entry)}\n</${tag}>`;
+  switch (entry.kind) {
+    case 'doc_events':
+      return renderDocEvents(entry.data);
+    case 'git_status':
+    case 'env':
+    case 'relay_context':
+    case 'queue_note':
+    case 'staged_context':
+    case 'seed_context':
+    case 'approval_verdict':
+    case 'direct_notes':
+    case 'turn_cutoff':
+    case 'new_since_last_run':
+      return renderProseContextBlock(entry);
+    case 'accounts_access':
+    case 'context_warning':
+    case 'room_context':
+    case 'ui_state': {
+      const tag = CONTEXT_TAG[entry.kind];
+      return `<${tag}>\n${renderContextBody(entry)}\n</${tag}>`;
+    }
+  }
+  const exhaustiveEntry: never = entry;
+  return exhaustiveEntry;
 }
 
 /**
- * The body of one rendered block: structured data as JSON, except for the kinds
- * whose body is PROSE and must read identically on every runtime.
+ * Render one runtime-specific context body after shared prose and document
+ * events have already been dispatched.
  *
  * `room_context` carries text other people wrote, wrapped in an untrusted-input
- * fence that a JSON dump would not carry. `seed_context` carries a paragraph
- * somebody wrote for a model to read, plus the sentence telling the reader the
- * person cannot see the block — JSON would deliver both as one quoted line with
- * `\n` spelled out in it. `approval_verdict` reports a security decision a person
- * made, and the `default` arm below is exactly what would have shipped it here as
- * a raw dump while it read as a formatted block on claude-code. All of them go
- * through the shared writers in `runtimes/shared/`, so a room holding agents on
- * three runtimes, a seeded turn on any of them, and a verdict delivered to any of
- * them read the same words.
+ * fence that a JSON dump would not carry. `ui_state` is the sole context kind
+ * whose body remains structured JSON.
  */
-function renderContextBody(entry: AdditionalContextEntry): string {
+function renderContextBody(
+  entry: Exclude<AdditionalContextEntry, ProseContextEntry | { kind: 'doc_events' }>
+): string {
   switch (entry.kind) {
     case 'accounts_access':
       return formatAccountsAccess(entry.data, 'codex');
     case 'context_warning':
       return formatContextWarning(entry.data, 'codex');
-    case 'new_since_last_run':
-      return formatNewSince(entry.data);
-    case 'turn_cutoff':
-      return formatTurnCutoff(entry.data);
-    case 'approval_verdict':
-      return formatApprovalVerdict(entry.data);
-    case 'direct_notes':
-      return formatDirectNotes(entry.data);
     case 'room_context':
       // The prefix Codex qualifies plugin-provided MCP tools with, so the
       // tool-only closing directive can name the posting tool rather than
       // describe it. Never guessed here: it is the shared constant (DOR-1292).
       return formatRoomContext(entry.data, { toolPrefix: CODEX_DORKOS_TOOL_PREFIX });
-    case 'seed_context':
-      return formatSeedContext(entry.data);
-    case 'staged_context':
-      return formatStagedContext(entry.data);
-    default:
+    case 'ui_state':
       return JSON.stringify(entry.data, null, 2);
   }
 }

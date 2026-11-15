@@ -4,6 +4,7 @@ import { findLatestExeDownloadUrl } from '@/lib/desktop-download';
 
 import { countDownload } from '@/lib/telemetry/download-count';
 
+import * as route from '../route';
 import { GET } from '../route';
 
 const request = () => new Request('https://dorkos.ai/download/windows');
@@ -19,13 +20,20 @@ afterEach(() => {
 });
 
 describe('GET /download/windows', () => {
-  it('302-redirects to the resolved .exe url', async () => {
+  // DOR-4300: see the matching test in download/mac.
+  it('runs on every request, with no route-level cache', () => {
+    expect(route.dynamic).toBe('force-dynamic');
+    expect('revalidate' in route).toBe(false);
+  });
+
+  it('302-redirects to the resolved .exe url, uncacheable', async () => {
     vi.mocked(findLatestExeDownloadUrl).mockResolvedValue('https://example.com/DorkOS-0.1.0.exe');
 
     const res = await GET(request());
 
     expect(res.status).toBe(302);
     expect(res.headers.get('location')).toBe('https://example.com/DorkOS-0.1.0.exe');
+    expect(res.headers.get('cache-control')).toBe('no-store');
     expect(countDownload).toHaveBeenCalledWith(expect.any(Request), 'windows', true);
   });
 

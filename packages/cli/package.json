@@ -1,6 +1,6 @@
 {
   "name": "dorkos",
-  "version": "0.135.6",
+  "version": "0.135.10",
   "description": "You, multiplied. Build and run your business with an agent team. Your agents join your team chat, take on real work, and build the tools your company runs on.",
   "license": "MIT",
   "author": "Dorian Collier",
@@ -75,7 +75,7 @@
     "dotenv": "^17.4.2",
     "esbuild": "^0.28.2",
     "express": "^5.2.1",
-    "hono": "^4.13.9",
+    "hono": "^4.13.16",
     "node-pty": "^1.1.0",
     "playwright-core": "1.65.0-alpha-2026-10-30",
     "qrcode-terminal": "^0.12.0",

@@ -18,7 +18,7 @@
  *
  * **Why this is a module and not a spec file.** The same lock
  * `interactive-prompts.ts` documents at length: these tests belong to
- * `chat-mock.spec.ts`, whose `POST /api/test/reset` tears down every tracked
+ * `chat-mock-prompts.spec.ts`, whose `POST /api/test/reset` tears down every tracked
  * session, and Playwright schedules separate spec FILES onto concurrent workers
  * — so a parked turn living beside it would be disposed mid-assertion. A
  * `*.spec.ts` here would also run on the COCKPIT leg against the real runtime,

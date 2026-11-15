@@ -15,9 +15,9 @@
  *
  * Both suites flip `ui.composer.richText`, which is SERVER-global with no
  * per-tab override — so while they run, every page against this leg sees the
- * field they chose. That is only safe on `chat-mock.spec.ts`'s worker, which is
- * `mode: 'default'` (sequential, one worker) and is the single mock-server spec
- * file `playwright.config.ts` allows. Registering from there
+ * field they chose. That is only safe in a `chat-mock*.spec.ts` file: each is
+ * `mode: 'default'` (sequential), and the `chromium-mock` project runs them on
+ * one worker, one file after another. Registering from `chat-mock-session.spec.ts`
  * ({@link registerComposerEscapeAndImeTests}) puts these tests in that file's
  * order while keeping them findable under the feature they test. Written inline
  * they would also have pushed that file further past `max-lines`, which the

@@ -15,6 +15,8 @@
  *   (DOR-3218).
  * - `shell-check-notifications.ts`: the check on agents' shell commands can't
  *   start (DOR-3300).
+ * - `session/chat-messages/report-undelivered-notice.ts`: a spin-off report
+ *   never reached its parent chat (DOR-3561).
  *
  * @module services/notifications/declared-entries
  */
@@ -34,12 +36,24 @@ import {
   type AccountSigninPayloads,
 } from './account-signin-notifications.js';
 import { SHELL_CHECK_ENTRIES, type ShellCheckPayloads } from './shell-check-notifications.js';
+import {
+  REPORT_UNDELIVERED_ENTRIES,
+  type ReportUndeliveredPayloads,
+} from '../session/chat-messages/report-undelivered-notice.js';
 
 import {
   BROWSER_HANDOFF_ENTRIES,
   type BrowserHandoffPayloads,
 } from './browser-handoff-notifications.js';
 import { ACCESS_CHANGE_ENTRIES, type AccessChangePayloads } from './access-change-notifications.js';
+import {
+  MCP_TOOL_ADDED_ENTRIES,
+  type McpToolAddedPayloads,
+} from '../mesh/global-mcp/global-mcp-tool-added-notice.js';
+import {
+  MCP_RESERVED_NAME_ENTRIES,
+  type McpReservedNamePayloads,
+} from '../mesh/global-mcp/global-mcp-reserved-name-notice.js';
 
 /** The payloads of every declared kind, joined into `NotificationPayloads`. */
 export interface DeclaredPayloads
@@ -51,7 +65,10 @@ export interface DeclaredPayloads
     AccountSigninPayloads,
     BrowserHandoffPayloads,
     ShellCheckPayloads,
-    AccessChangePayloads {}
+    ReportUndeliveredPayloads,
+    AccessChangePayloads,
+    McpToolAddedPayloads,
+    McpReservedNamePayloads {}
 
 /** Every declared entry, spread into the registry's `ENTRIES`. */
 export const DECLARED_ENTRIES = {
@@ -62,7 +79,10 @@ export const DECLARED_ENTRIES = {
   ...ACCOUNT_SIGNIN_ENTRIES,
   ...BROWSER_HANDOFF_ENTRIES,
   ...SHELL_CHECK_ENTRIES,
+  ...REPORT_UNDELIVERED_ENTRIES,
   ...ACCESS_CHANGE_ENTRIES,
+  ...MCP_TOOL_ADDED_ENTRIES,
+  ...MCP_RESERVED_NAME_ENTRIES,
 };
 
 /**
@@ -78,5 +98,8 @@ export const DECLARED_WIRED_KINDS = [
   'account.signin_review',
   'browser.handoff',
   'shell.check_down',
+  'report.undelivered',
   'connector.access_narrowed',
+  'mcp-server.tool_added',
+  'mcp-server.reserved_name',
 ] as const;

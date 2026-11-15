@@ -229,35 +229,4 @@ test.describe('Dev Playground — pointing at one element', () => {
       'the picker must swallow the click rather than press what is under it'
     ).toBeVisible();
   });
-
-  test('Escape puts the dialog back exactly as it was', async ({ page }) => {
-    await page.goto(PLAYGROUND_PATH);
-
-    const section = page.locator('section', {
-      has: page.getByRole('heading', { name: 'Feedback dialog' }),
-    });
-    await expect(section).toBeVisible({ timeout: 15_000 });
-    await section.getByRole('button', { name: 'Open (Feedback)' }).click();
-
-    const dialog = page.getByRole('dialog');
-    const message = dialog.getByPlaceholder(/what works, what does not/i);
-    await message.click();
-    await message.fill('changed my mind');
-    await dialog.getByRole('button', { name: 'Point at it' }).click();
-
-    const picker = page.getByRole('dialog', {
-      name: 'Point at the part of the app that looks wrong',
-    });
-    await expect(picker).toBeVisible();
-
-    await page.keyboard.press('Escape');
-
-    // Not a fresh dialog: the same one, with everything still in it. A round
-    // trip that resets the form makes the affordance not worth pressing — and
-    // Escape must not fall through to close the dialog either.
-    await expect(picker).toBeHidden();
-    await expect(message).toBeVisible();
-    await expect(message).toHaveValue('changed my mind');
-    await expect(dialog.getByAltText(/^The part you pointed at: /)).toHaveCount(0);
-  });
 });

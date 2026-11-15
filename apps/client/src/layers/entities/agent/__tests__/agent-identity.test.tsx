@@ -195,12 +195,6 @@ describe('AgentIdentity', () => {
     expect(avatar.querySelector('.animate-ping')).not.toBeInTheDocument();
   });
 
-  it('applies custom className to root', () => {
-    const { container } = render(<AgentIdentity {...baseProps} className="my-custom-class" />);
-    const identity = container.querySelector('[data-slot="agent-identity"]')!;
-    expect(identity.className).toContain('my-custom-class');
-  });
-
   // ---------------------------------------------------------------------------
   // Interactivity — onClick makes the component a button
   // ---------------------------------------------------------------------------

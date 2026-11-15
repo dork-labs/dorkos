@@ -17,6 +17,7 @@ import { logger } from '../../../../lib/logger.js';
 import { logRefusal } from '../../../observability/refusals.js';
 import { NEVER_ASK_REASON_TYPE, NO_APPROVAL_SURFACE } from '@dorkos/shared/run-refusals';
 import { alwaysAllowScopeOf, suggestionDestinations } from './always-allow-scope.js';
+import { alwaysAllowBreadthOf } from '../tool-gate/always-allow-breadth.js';
 import { keepAlwaysAllowToAgent } from '../tool-gate/global-server-always-allow.js';
 import {
   armInteractionWait,
@@ -669,6 +670,8 @@ export function handleToolApproval(
   // can answer whether wide destinations turn up often enough to be worth
   // stripping — the follow-up question DOR-1462 deliberately left open.
   const alwaysAllowScope = alwaysAllowScopeOf(context.suggestions);
+  // Whether that Always Allow could cover a whole MCP server, so the card asks which (DOR-4101).
+  const alwaysAllowBreadth = alwaysAllowBreadthOf(toolName, context.suggestions);
   if (alwaysAllowScope !== undefined) {
     logger.info('[handleToolApproval] always-allow suggestions offered', {
       toolName,
@@ -694,6 +697,7 @@ export function handleToolApproval(
       decisionReason: context.decisionReason,
       hasSuggestions: (context.suggestions?.length ?? 0) > 0,
       ...(alwaysAllowScope !== undefined ? { alwaysAllowScope } : {}),
+      ...(alwaysAllowBreadth !== undefined ? { alwaysAllowBreadth } : {}),
     },
   });
   session.eventQueueNotify?.();
@@ -742,6 +746,7 @@ export function handleToolApproval(
         decisionReason: context.decisionReason,
         hasSuggestions: (context.suggestions?.length ?? 0) > 0,
         ...(alwaysAllowScope !== undefined ? { alwaysAllowScope } : {}),
+        ...(alwaysAllowBreadth !== undefined ? { alwaysAllowBreadth } : {}),
       },
       resolve: (result, denyReason) => {
         clearInteractionTimer(session, toolUseId);

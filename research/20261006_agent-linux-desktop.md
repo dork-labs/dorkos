@@ -10,6 +10,8 @@ tags: [agent-computer, linux-desktop, sandboxing, containers, streaming, browser
 
 Research date: 2026-10-06. Web and repo research for the founder's decision: every agent gets its own Linux desktop, and that desktop is the only computer it can reach. It must be provisioned the same way on a Mac, on Windows, on Linux, in DorkOS Cloud and on a self-hosted server. Local use must be free. An agent can move from the laptop to a cloud or self-hosted instance and back.
 
+> **Update (2026-11-13): the browser in the box.** Sections 0, 3 and 8 below attach Playwright MCP to the in-box Chromium. That is no longer the plan. A cloud agent computer runs DorkOS, and DorkOS runs its own Agent browser layer there, the same one as on the person's computer. That way every browser safety rule (chat ownership, person handoff, outsider holds, audit, refusing DorkOS and Cloud pages) applies in the cloud too. The person watches through a page stream (DOR-2667). See [Agent browser: keep building, adopt, or package?](20261113_agent-browser-build-vs-adopt.md), §1 and §9 action 7.
+
 Legend: **[verified]** = read at the cited source today. **[unverified]** = my estimate or a secondary source only; test it in a prototype before relying on it.
 
 ---

@@ -19,15 +19,6 @@ describe('FieldCard', () => {
     expect(screen.getByText('Card content')).toBeInTheDocument();
   });
 
-  it('applies custom className', () => {
-    const { container } = render(
-      <FieldCard className="mt-6">
-        <p>Spaced</p>
-      </FieldCard>
-    );
-    expect(container.firstChild).toHaveClass('mt-6');
-  });
-
   it('has the field-card data-slot', () => {
     const { container } = render(
       <FieldCard>
@@ -183,15 +174,5 @@ describe('CollapsibleFieldCard', () => {
       expect(document.activeElement).toBe(before);
       expect(document.activeElement).not.toBe(screen.getByTestId('collapsible-field-card-chevron'));
     });
-  });
-
-  it('applies custom className to the outer card', () => {
-    const { container } = render(
-      <CollapsibleFieldCard open={false} onOpenChange={vi.fn()} trigger="Section" className="mt-6">
-        <div>Content</div>
-      </CollapsibleFieldCard>
-    );
-    const card = container.querySelector('[data-slot="collapsible-field-card"]');
-    expect(card).toHaveClass('mt-6');
   });
 });

@@ -190,6 +190,8 @@ describe('CONFIG_WRITE_POLICY drift guard', () => {
       'relay.dataDir',
       'relay.maxAgentTurnsPerAgentPerHour',
       'relay.maxAgentTurnsTotalPerHour',
+      // The master switch for every way in from another device (DOR-3650).
+      'remoteAccess.enabled',
       'rooms.collectDebounceMs',
       'rooms.collectMaxEntries',
       'rooms.engagedWindowMinutes',

@@ -9,6 +9,7 @@
  *
  * @module startup/relay-adapters
  */
+import { isReplayIsolated } from '../lib/replay/isolation.js';
 import path from 'node:path';
 import type { AdapterRegistry, AgentRuntimeLike, RelayCore } from '@dorkos/relay';
 import type { Db } from '@dorkos/db';
@@ -82,6 +83,7 @@ export interface RelayAdaptersStartupDeps {
 export async function startRelayAdapters(
   deps: RelayAdaptersStartupDeps
 ): Promise<AdapterManager | undefined> {
+  if (isReplayIsolated()) return undefined;
   const {
     relayEnabled,
     relayCore,

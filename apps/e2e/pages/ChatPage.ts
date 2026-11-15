@@ -195,11 +195,4 @@ export class ChatPage {
     await this.input.pressSequentially(query);
     await this.commandPalette.waitFor({ state: 'visible', timeout: 10_000 });
   }
-
-  /** A single palette row by its canonical slash token (e.g. `'/compact'`). */
-  paletteRow(fullCommand: string): Locator {
-    return this.paletteOptions.filter({
-      has: this.page.getByText(fullCommand, { exact: true }),
-    });
-  }
 }

@@ -72,7 +72,7 @@ dorkos/
 ├── ci/                   # CI Steward intent: gates, required checks, SLOs, ledger
 ├── meta/                 # Brand, personas, value architecture, litepaper
 ├── decisions/            # ADRs                          ├── plans/     # Implementation plans
-├── docs/                 # User-facing MDX (Fumadocs)    ├── research/  # 350+ research reports
+├── docs/                 # User-facing MDX (Fumadocs)    ├── research/  # Retained research reports
 ├── specs/                # Feature specs with manifest.json
 └── contributing/         # 48 internal dev guides + capabilities/ contracts (see contributing/INDEX.md)
 ```
@@ -200,7 +200,7 @@ Non-negotiable, enforced by ESLint/CI/convention. Rules 1-4 are ESLint `error`s,
 
 ## Testing
 
-Vitest with `vi.mock()`; tests in `__tests__/` alongside source. Client tests: React Testing Library + jsdom with mock `Transport` via `TransportProvider`. Server session-route tests: `FakeAgentRuntime` + scenarios from `@dorkos/test-utils`; SSE integration via `collectDurableEvents`. Patterns and anti-patterns: `.claude/rules/testing.md`. Single file: `pnpm vitest run <path>`; full runs: `pnpm test -- --run` (see Commands for the bare-vitest gotcha). Local evidence, throwaway `DORK_HOME`s and Playwright output worth keeping go under `/Volumes/ext-ssd-1/dork-os/` when that drive is mounted (`contributing/browser-verification.md#where-local-output-goes`).
+Vitest with `vi.mock()`; tests in `__tests__/` alongside source. Client tests: React Testing Library + jsdom with mock `Transport` via `TransportProvider`. Server session-route tests: `FakeAgentRuntime` + scenarios from `@dorkos/test-utils`; SSE integration via `collectDurableEvents`. Patterns and anti-patterns: `.claude/rules/testing.md`. Mock only at the edges (network, clock, filesystem, a model, a runtime SDK): each package's count of `vi.mock` calls on our own modules is a ratchet that may only fall (`pnpm check:own-mocks`, held by a test in `scripts/__tests__/check-own-mocks.test.ts` and by pre-push; run `-- --update` after removing some, never raise `scripts/own-mocks/baseline.json` by hand). Single file: `pnpm vitest run <path>`; full runs: `pnpm test -- --run` (see Commands for the bare-vitest gotcha). Local evidence, throwaway `DORK_HOME`s and Playwright output worth keeping go under `/Volumes/ext-ssd-1/dork-os/` when that drive is mounted (`contributing/browser-verification.md#where-local-output-goes`).
 
 ## CI
 
@@ -222,12 +222,12 @@ Emit only fields you actually know (omitted is a fact; invented is a lie); the v
 
 ## Research
 
-350+ reports in `research/` (`YYYYMMDD_topic-slug.md`). **Always check `research/` before doing new research.**
+Reports in `research/` use `YYYYMMDD_topic-slug.md`. **Always check `research/` before doing new research.** See [research/README.md](research/README.md) for the retention rules and recovery from Git history.
 
 ## Artifacts
 
 - **Identifiers**: new ADRs and specs use timestamp ids `YYMMDD-HHMMSS` from `.claude/scripts/id.ts` (coordination-free; ADR-0312). Legacy 4-digit numbers are frozen and sort first. There is no `nextNumber`.
 - **ADRs**: `decisions/<id>-<slug>.md` + `manifest.json`. `/adr:create`, `/adr:from-spec` (applies the significance rubric at extraction — no draft state), `/adr:review`, `/adr:list`.
-- **Specs**: `specs/<slug>/` with `manifest.json` (`01-ideation.md`, `02-specification.md`, optional `03-tasks.json`). **Plans**: `plans/` at repo root.
+- **Specs**: `specs/<slug>/` with `manifest.json` (`01-ideation.md`, `02-specification.md`, optional `03-tasks.json`). Completed or abandoned specs leave the checkout after checking open work; recover them from Git history ([spec lifecycle](specs/README.md)). **Plans**: `plans/` at repo root.
 - **Audits**: one committed charter per domain in `audits/<domain>.md` (shared preamble in `audits/README.md`), with run logs and per-lens diff stamps under `audits/runs/<domain>/`; the UI domain is driven by `/ui-audit:init|run|execute|pulse|measure` and the `auditing-ui` skill, and judged against `contributing/design-review.md`.
 - **Changelog**: per-change fragments in `changelog/unreleased/` (`<id>-<slug>.md`, timestamp-id + slug), compiled into `CHANGELOG.md` at release; never edit `CHANGELOG.md` directly (ADR 260707-231641, `changelog/README.md`).

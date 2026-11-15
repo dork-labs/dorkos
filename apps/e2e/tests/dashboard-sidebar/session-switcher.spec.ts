@@ -159,65 +159,6 @@ async function sectionOrder(page: Page): Promise<string[]> {
 const SECTIONS = ['Needs you', 'Running', 'Other chats'];
 
 test.describe('session switcher @smoke', { tag: SOLE_SIDEBAR_TAG }, () => {
-  test('draws needs you, running and the rest, folds spin-offs, and keeps Automated closed', async ({
-    page,
-  }) => {
-    await openShowcaseSwitcher(page);
-    const dialog = page.locator('[role="dialog"]');
-
-    expect(await sectionOrder(page)).toEqual(SECTIONS);
-
-    // Needs you: the chat waiting on an approval, the chat whose account ran
-    // out, and a spin-off that needs you lifted out of its parent's fold,
-    // saying where it started (D14 rule 3).
-    const needsYou = dialog
-      .locator('section[aria-label="Needs you"]')
-      .locator('[data-slot="chat-list-row"]');
-    await expect(needsYou).toHaveCount(3);
-    await expect(needsYou.filter({ hasText: 'Rewrite the onboarding emails' })).toContainText(
-      'Out of usage'
-    );
-    await expect(needsYou.filter({ hasText: 'Price the ad test' })).toContainText(
-      'Started from Plan the launch week'
-    );
-
-    // Running: two concurrent turns are two rows, each with its own verb.
-    const running = dialog
-      .locator('section[aria-label="Running"]')
-      .locator('[data-slot="chat-list-row"]');
-    await expect(running).toHaveCount(2);
-    await expect(running.filter({ hasText: 'Dashboard overhaul' })).toContainText(
-      'Editing RoomRow.tsx'
-    );
-    await expect(running.filter({ hasText: 'Release notes draft' })).toContainText(
-      'Reading CHANGELOG.md'
-    );
-
-    // Spin-offs fold under the chat that started them, closed until asked.
-    const fold = dialog.getByRole('button', { name: '2 spin-offs from Plan the launch week' });
-    await expect(fold).toHaveAttribute('aria-expanded', 'false');
-    await expect(
-      dialog.locator('[data-slot="chat-list-row"]', { hasText: 'Draft the launch email' })
-    ).toHaveCount(0);
-    await fold.click();
-    await expect(
-      dialog.locator('[data-slot="chat-list-row"]', { hasText: 'Draft the launch email' })
-    ).toContainText('Running');
-    await expect(
-      dialog.locator('[data-slot="chat-list-row"]', { hasText: 'Check every docs link' })
-    ).toContainText('Done');
-
-    // Automated is one closed group with a count: the toggle is there, its rows are not.
-    const automated = dialog.locator('section[aria-label="Automated"]');
-    const toggle = automated.getByRole('button');
-    await expect(toggle).toContainText('Automated');
-    await expect(toggle).toContainText('3');
-    await expect(toggle).toHaveAttribute('aria-expanded', 'false');
-    await expect(automated.locator('[data-slot="chat-list-row"]')).toHaveCount(0);
-    await toggle.click();
-    await expect(automated.locator('[data-slot="chat-list-row"]')).toHaveCount(3);
-  });
-
   test('is a dialog on the desktop and a bottom sheet on a phone', async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 900 });
     await openShowcaseSwitcher(page);

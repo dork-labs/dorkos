@@ -230,6 +230,8 @@ describe.each(adapters)('%s native file protection', (adapter) => {
     ['the default data folder’s guard config', 'home', '.dork/browser/agent-browser-guard.json'],
     ['the key profile bindings are signed with', 'data', 'browser-profiles/.binding-key'],
     ['the default data folder’s binding key', 'home', '.dork/browser-profiles/.binding-key'],
+    // DOR-3105: rewriting it runs the agent's code as the person next time they type `dorkos`.
+    ['the Terminal command the person runs', 'home', '.local/bin/dorkos'],
   ] as const)('still refuses a Full agent writing %s', async (_what, root, file) => {
     const target = path.join(root === 'home' ? roots.home : roots.data, file);
     expect(await refused(adapter, target, 'write', true)).toBe(true);

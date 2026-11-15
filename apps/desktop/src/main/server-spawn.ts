@@ -5,6 +5,7 @@ import path from 'node:path';
 import log from 'electron-log';
 import { processStartTime } from '@dorkos/shared/process-liveness';
 import { resolveDataDirectory } from './dork-home';
+import { SERVER_BIND_HOST } from '../shared/server-address';
 import { resolveServerCwd, type ServerWorkingDirectory } from './server-cwd';
 import { createStderrTail, type StderrTail } from './server-output';
 import { resolveChildPath } from './shell-path';
@@ -361,6 +362,9 @@ function buildServerEnv(
 
   return {
     DORKOS_PORT: String(port),
+    // Pinned, so an inherited value (a dev `.env`, a shell export) can never
+    // move the server off the host the main process dials (DOR-4294).
+    DORKOS_HOST: SERVER_BIND_HOST,
     NODE_ENV: app.isPackaged ? 'production' : 'development',
     DORKOS_MANAGED_BY: MANAGED_BY,
     // Which kind of DorkOS this is, for agents' update advice (the server's

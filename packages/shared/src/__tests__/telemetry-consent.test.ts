@@ -4,6 +4,10 @@ import {
   isTelemetryDebugEnabled,
   resolveTelemetryConsent,
   hasTier1SendGate,
+  resolveTier1ChannelConsent,
+  effectiveTier1Telemetry,
+  tier1ChannelsSettledByFirstAnswer,
+  TIER1_CHANNELS,
   TELEMETRY_DISABLE_ENV_VARS,
   TELEMETRY_DEBUG_ENV_VAR,
 } from '../telemetry-consent.js';
@@ -94,5 +98,111 @@ describe('hasTier1SendGate (notice-before-first-send)', () => {
   it('is closed for null/undefined config (defensive)', () => {
     expect(hasTier1SendGate(null)).toBe(false);
     expect(hasTier1SendGate(undefined)).toBe(false);
+  });
+});
+
+// DOR-4400: consent is read from the person's answer, never from a migration.
+describe('resolveTier1ChannelConsent', () => {
+  // QA's #3643 row-5 case 1: every channel stored on, and nobody answered.
+  const undecidedAllOn = { install: true, heartbeat: true, usage: true, userHasDecided: false };
+
+  it.each(TIER1_CHANNELS)('reads %s as off when nobody has answered', (channel) => {
+    expect(resolveTier1ChannelConsent(undecidedAllOn, channel, {})).toBe(false);
+  });
+
+  it.each(TIER1_CHANNELS)('reads %s as off when the answer is missing', (channel) => {
+    expect(
+      resolveTier1ChannelConsent({ install: true, heartbeat: true, usage: true }, channel, {})
+    ).toBe(false);
+  });
+
+  it.each([1, 'true', null])('reads a non-boolean answer (%j) as no answer', (answer) => {
+    const config = { install: true, heartbeat: true, usage: true, userHasDecided: answer };
+    expect(resolveTier1ChannelConsent(config, 'install', {})).toBe(false);
+  });
+
+  it.each(TIER1_CHANNELS)('reads %s as on once the person said yes', (channel) => {
+    expect(
+      resolveTier1ChannelConsent({ ...undecidedAllOn, userHasDecided: true }, channel, {})
+    ).toBe(true);
+  });
+
+  it('keeps a decided "off" off, and lets the env kill switch win', () => {
+    const decided = { install: false, heartbeat: true, usage: true, userHasDecided: true };
+    expect(resolveTier1ChannelConsent(decided, 'install', {})).toBe(false);
+    expect(resolveTier1ChannelConsent(decided, 'heartbeat', { DO_NOT_TRACK: '1' })).toBe(false);
+  });
+
+  it('reads no telemetry block at all as off', () => {
+    expect(resolveTier1ChannelConsent(undefined, 'usage', {})).toBe(false);
+    expect(resolveTier1ChannelConsent(null, 'usage', {})).toBe(false);
+  });
+});
+
+describe('effectiveTier1Telemetry', () => {
+  it('shows an unanswered all-on block as all off, keeping everything else', () => {
+    const stored = {
+      install: true,
+      heartbeat: true,
+      usage: true,
+      userHasDecided: false,
+      errorReporting: false,
+      lastPromptedVersion: '0.135.0',
+    };
+    expect(effectiveTier1Telemetry(stored)).toEqual({
+      ...stored,
+      install: false,
+      heartbeat: false,
+      usage: false,
+    });
+  });
+
+  it('leaves an answered block exactly as stored', () => {
+    const stored = { install: true, heartbeat: false, usage: true, userHasDecided: true };
+    expect(effectiveTier1Telemetry(stored)).toEqual(stored);
+  });
+});
+
+describe('tier1ChannelsSettledByFirstAnswer (DOR-4400 M1)', () => {
+  const unanswered = { install: true, heartbeat: true, usage: true, userHasDecided: false };
+
+  it('stores off every channel a first answer does not name', () => {
+    expect(
+      tier1ChannelsSettledByFirstAnswer(unanswered, { errorReporting: true, userHasDecided: true })
+    ).toEqual({ install: false, heartbeat: false, usage: false });
+  });
+
+  it('keeps the channels the answer names', () => {
+    expect(
+      tier1ChannelsSettledByFirstAnswer(unanswered, { usage: true, userHasDecided: true })
+    ).toEqual({ install: false, heartbeat: false });
+  });
+
+  it('does nothing when the person had already answered, or this is not an answer', () => {
+    expect(
+      tier1ChannelsSettledByFirstAnswer(
+        { ...unanswered, userHasDecided: true },
+        { userHasDecided: true }
+      )
+    ).toEqual({});
+    expect(tier1ChannelsSettledByFirstAnswer(unanswered, { errorReporting: true })).toEqual({});
+    expect(tier1ChannelsSettledByFirstAnswer(unanswered, undefined)).toEqual({});
+  });
+
+  it('treats a missing stored block as unanswered', () => {
+    expect(tier1ChannelsSettledByFirstAnswer(undefined, { userHasDecided: true })).toEqual({
+      install: false,
+      heartbeat: false,
+      usage: false,
+    });
+  });
+});
+
+describe('resolveTelemetryConsent (DOR-4400 S3)', () => {
+  it('reads only an exact true as on', () => {
+    expect(resolveTelemetryConsent(true, {})).toBe(true);
+    for (const value of [1, 'true', null, undefined, {}]) {
+      expect(resolveTelemetryConsent(value as unknown as boolean, {})).toBe(false);
+    }
   });
 });

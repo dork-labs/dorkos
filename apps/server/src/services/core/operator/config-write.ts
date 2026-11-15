@@ -41,6 +41,7 @@
 import type { UserConfig } from '@dorkos/shared/config-schema';
 import { logger } from '../../../lib/logger.js';
 import { configManager } from '../config-manager.js';
+import { tier1ChannelsSettledByFirstAnswer } from '@dorkos/shared/telemetry-consent';
 import { isInstallOwner } from '../auth/install-owner.js';
 import {
   stampDisplayNameSource,
@@ -511,7 +512,7 @@ export function applyGuardedConfigWrite(write: GuardedConfigWrite): GuardedConfi
     ? deepMerge(requested as Record<string, unknown>, provenance)
     : (requested as Record<string, unknown>);
 
-  const result = applyConfigPatch(patch);
+  const result = applyConfigPatch(withFirstTelemetryAnswerSettled(patch));
   if (!result.ok) {
     return {
       ok: false,
@@ -532,6 +533,27 @@ export function applyGuardedConfigWrite(write: GuardedConfigWrite): GuardedConfi
   reportTrustStopMoves(result.before, result.config, { source, writer });
 
   return { ok: true, config: result.config, warnings: result.warnings };
+}
+
+/**
+ * A write that records the person's first telemetry answer also stores off
+ * every Tier 1 channel it does not name, so a stored "on" nobody agreed to
+ * cannot come into force behind it (DOR-4400). Every general config door runs
+ * through here, so the Privacy tab, `dorkos config set` and `config_patch` all
+ * get it.
+ *
+ * @param patch - The write, after the bars above.
+ * @returns The same write, with those channels set to `false` when it is a first answer.
+ */
+function withFirstTelemetryAnswerSettled(patch: Record<string, unknown>): Record<string, unknown> {
+  const written = patch.telemetry;
+  if (written === null || typeof written !== 'object' || Array.isArray(written)) return patch;
+  const settled = tier1ChannelsSettledByFirstAnswer(
+    configManager.get('telemetry'),
+    written as Record<string, unknown>
+  );
+  if (Object.keys(settled).length === 0) return patch;
+  return { ...patch, telemetry: { ...(written as Record<string, unknown>), ...settled } };
 }
 
 /**

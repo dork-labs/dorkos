@@ -27,6 +27,7 @@ import {
   readCompanyCertificatesPath,
 } from './extra-ca-certs';
 import { exitWhenOrphaned } from './orphan-watchdog';
+import { serverOrigin } from './shared/server-address';
 import { SERVER_READY_TIMEOUT_MS } from './shared/boot-timeouts';
 
 // Mark this file as a module so the ambient declaration above and the
@@ -59,7 +60,7 @@ async function waitForServer(port: number, timeoutMs = SERVER_READY_TIMEOUT_MS):
   const start = Date.now();
   while (Date.now() - start < timeoutMs) {
     try {
-      const res = await fetch(`http://localhost:${port}/api/health`);
+      const res = await fetch(`${serverOrigin(port)}/api/health`);
       if (res.ok) return;
     } catch {
       // Server not ready yet

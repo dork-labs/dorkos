@@ -127,6 +127,8 @@ asks the agent to stop as well, so a caller walking away doesn't leave a model r
 
 ### Authentication
 
+A2A is for clients on this computer. Remote access and your own tunnel never serve `/a2a` or an agent card to another device, with or without a token.
+
 Every A2A JSON-RPC call runs a prompt against one of your agents, so **execution is always token-gated**. While login is off, fetching an Agent Card (the `GET` discovery paths) stays open — that's public metadata, the A2A analogue of listing tools. Turn login on and card reads need a credential too, so send your token on card fetches as well as on calls.
 
 Which token you send depends on your setup:

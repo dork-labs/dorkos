@@ -323,6 +323,12 @@ export class RuntimeCache {
           prompt: neverYield,
           options: {
             cwd,
+            // The person's own settings only, as the commands warm-up does: a
+            // repo's committed hooks, helpers and `.mcp.json` servers wait for a
+            // person when nobody reviewed them (DOR-3298), and this probe starts
+            // the CLI in the default folder with no such check (DOR-4409). The
+            // model list needs nothing from the project.
+            settingSources: ['user'],
             env: runtimeEnvironment(
               'claude-code',
               'warmup',

@@ -204,6 +204,30 @@ describe('adding a server', () => {
     expect(res.body).toMatchObject({ ok: true, status: 409, result: { code: 'name_taken' } });
   });
 
+  it('a confirm whose write was refused is audited as not applied, never as Confirmed (DOR-3836)', async () => {
+    const id = heldId(await post());
+    await store.add(stored());
+    await confirm(id);
+    const rows = vi
+      .mocked(recordAudit)
+      .mock.calls.map(([row]) => row)
+      .filter((row) => row.action === 'step-up.confirm');
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ outcome: 'refused', error: 'not-applied-409' });
+    expect(rows[0]!.summary).not.toMatch(/^Confirmed/);
+  });
+
+  it('a confirm whose write ran is audited as Confirmed', async () => {
+    await confirm(heldId(await post()));
+    const rows = vi
+      .mocked(recordAudit)
+      .mock.calls.map(([row]) => row)
+      .filter((row) => row.action === 'step-up.confirm');
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ outcome: 'ok' });
+    expect(rows[0]!.summary).toMatch(/^Confirmed it was them: /);
+  });
+
   it('refuses before the password what a password could not change', async () => {
     await store.add(stored());
     expect((await post()).status).toBe(409);
@@ -694,6 +718,23 @@ describe('replacing a server', () => {
     expect(store.injectableFor('agent-a').github).toMatchObject({
       env: { GITHUB_TOKEN: 'typed-again' },
     });
+  });
+
+  it('a narrowing made while the sheet is up makes the held replace answer 409 and keeps it (DOR-3836)', async () => {
+    await store.add(stored());
+    const res = await request(app())
+      .put('/api/mcp-servers/github')
+      .set('Origin', OWN_ORIGIN)
+      .send({
+        ...SERVER,
+        connection: { ...SERVER.connection, env: { GITHUB_TOKEN: 'typed-again' } },
+      });
+    const id = heldId(res);
+    expect((await patch({ excludedAgents: ['agent-a'] })).status).toBe(200);
+    const done = await confirm(id);
+    expect(done.body).toMatchObject({ ok: true, status: 409, result: { code: 'changed' } });
+    expect(store.list()[0]!.excludedAgents).toEqual(['agent-a']);
+    expect(store.injectableFor('agent-b').github).toMatchObject({ env: { GITHUB_TOKEN: SECRET } });
   });
 
   it('refuses a server that is not there before asking', async () => {

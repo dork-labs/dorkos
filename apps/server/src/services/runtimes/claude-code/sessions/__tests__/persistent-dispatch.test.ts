@@ -238,6 +238,30 @@ async function turn(sessionId: string, content = 'hello'): Promise<StreamEvent[]
   return events;
 }
 
+/**
+ * Run `work` with `setTimeout` on a fake clock, moving it on until `work`
+ * settles. For a turn that waits out a control bound (`bounded-control.ts`):
+ * the bound still expires and the turn still goes on, without the real
+ * seconds. Each step also gives real I/O (this case's data directory) a turn.
+ */
+async function onFakeClock<T>(work: () => Promise<T>): Promise<T> {
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+  try {
+    let settled = false;
+    const result = work().finally(() => {
+      settled = true;
+    });
+    for (let spent = 0; !settled; spent += 100) {
+      if (spent > 60_000) throw new Error('the work never settled on the fake clock');
+      await vi.advanceTimersByTimeAsync(100);
+      await new Promise<void>((resolve) => setImmediate(resolve));
+    }
+    return await result;
+  } finally {
+    vi.useRealTimers();
+  }
+}
+
 beforeEach(() => {
   optIn.persistentSession = false;
   cli = new FakeCli();
@@ -1260,7 +1284,8 @@ describe("a stranger's turn on a warm process (official-community-space D10)", (
     const process = cli.processes[0]!;
     await runtime.updateSession(sessionId, { permissionMode: 'acceptEdits' });
     process.permissionModeNeverSettles = true;
-    await turn(sessionId, 'the owner, unanswered');
+    // The unanswered setter waits out its bound, here on a fake clock.
+    await onFakeClock(() => turn(sessionId, 'the owner, unanswered'));
     process.permissionModeNeverSettles = false;
     await runtime.updateSession(sessionId, { permissionMode: 'default' });
 

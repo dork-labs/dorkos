@@ -11,7 +11,7 @@
  * hrefless `<button>` and its own, non-design-system confirm modal. Every
  * surface gets the same real anchor and the same confirmation instead.
  */
-import { useMemo, type ReactNode } from 'react';
+import { cloneElement, isValidElement, useMemo, type ComponentProps, type ReactNode } from 'react';
 import { Streamdown } from 'streamdown';
 import type { AllowedTags, Components, CustomRenderer } from 'streamdown';
 // Streamdown's own stylesheet, which is what actually draws this markdown.
@@ -20,7 +20,7 @@ import type { AllowedTags, Components, CustomRenderer } from 'streamdown';
 // static markdown was borrowing the styling of a component it does not use, and
 // would have lost it the day chat was code-split away from that surface.
 import 'streamdown/styles.css';
-import { cn } from '@/layers/shared/lib/utils';
+import { STREAMDOWN_TRANSLATIONS } from '@/layers/shared/lib/streamdown-translations';
 import { MarkdownErrorBoundary } from './markdown-error-boundary';
 import { MarkdownLink } from './markdown-link';
 import { MarkdownImage } from './image-lightbox';
@@ -83,6 +83,30 @@ export interface MarkdownContentProps {
   renderers?: CustomRenderer[];
 }
 
+/**
+ * Streamdown's `pre` override: drops the closing newline from a code block, so
+ * "Copy code" copies `echo hello`, not `echo hello\n` (DOR-2871).
+ *
+ * markdown-to-hast ends a fenced block's text with a newline, and Streamdown's
+ * copy button copies that text as is. Pasted into a terminal, the newline is
+ * an Enter: the command runs before the person has looked at it. Only that one
+ * newline goes; blank lines inside the block stay.
+ *
+ * Otherwise this is Streamdown's own `pre`: it marks the child `data-block`,
+ * which is how its `code` renderer tells a block from inline code. Done here,
+ * not as a rehype plugin, because passing `rehypePlugins` replaces Streamdown's
+ * defaults (the sanitizer among them) instead of adding to them. Chat's
+ * `StreamingText` passes it too.
+ */
+export function MarkdownCodePre({ children }: ComponentProps<'pre'> & { node?: unknown }) {
+  if (!isValidElement<{ children?: ReactNode }>(children)) return children;
+  const text = children.props.children;
+  const trimmed = typeof text === 'string' && text.endsWith('\n') ? text.slice(0, -1) : text;
+  return cloneElement(children, { 'data-block': 'true', children: trimmed } as {
+    children?: ReactNode;
+  });
+}
+
 /** Renders static markdown content using streamdown. */
 export function MarkdownContent({
   content,
@@ -98,11 +122,6 @@ export function MarkdownContent({
   // then built exactly once for the life of the app.
   const plugins = useMemo(() => (renderers ? { renderers } : undefined), [renderers]);
   return (
-    // desktop:select-text — see message-variants.ts for why: the desktop
-    // shell defaults chrome to non-selectable on every platform (DOR-562),
-    // and static markdown (setup guides, canvas documents, help text) is
-    // genuinely copyable content, not chrome.
-    //
     // **No `prose` classes here, and that is deliberate rather than an
     // oversight.** They were on this container for a long time and generated no
     // CSS at all: `@tailwindcss/typography` is not a dependency of this app and
@@ -114,15 +133,16 @@ export function MarkdownContent({
     // the stylesheet imported above for the rest. Adding the plugin would have
     // meant a new dependency whose typography then had to be reconciled with
     // Streamdown's, to restyle surfaces that already look right.
-    <div className={cn('desktop:select-text', className)}>
+    <div className={className}>
       {/* Guard the render so a failed code-block chunk degrades to a note here
           instead of throwing to the route boundary. Reset on content change. */}
       <MarkdownErrorBoundary resetKey={content} fallback={errorFallback}>
         <Streamdown
-          components={{ img: MarkdownImage, ...components, a: MarkdownLink }}
+          components={{ img: MarkdownImage, pre: MarkdownCodePre, ...components, a: MarkdownLink }}
           allowedTags={allowedTags}
           literalTagContent={literalTagContent}
           plugins={plugins}
+          translations={STREAMDOWN_TRANSLATIONS}
         >
           {content}
         </Streamdown>

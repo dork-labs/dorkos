@@ -7,6 +7,7 @@ import type { UpdateStatus } from '../main/auto-updater';
 import type { AdminActionResult } from '../main/admin';
 import type { CaptureAppViewResult } from '../main/capture';
 import type { CertificateFilePickResult } from '../main/certificate-file-picker';
+import type { TerminalCommandResult } from '../main/terminal-command/state';
 import type { HeartbeatReport } from '../main/renderer-health';
 import type { ClosedTab, StartupMode, WindowTabs } from '../main/tab-session';
 import type { StepUpWindowOutcome } from '../shared/step-up-page';
@@ -44,6 +45,10 @@ const RESET_ALL_DATA_CHANNEL = 'admin:reset-all-data';
 const CAPTURE_APP_VIEW_CHANNEL = 'capture:app-view';
 /** IPC channel Settings' certificate "Choose…" goes out on (mirrors `main/certificate-file-picker.ts`). */
 const CHOOSE_CERTIFICATE_FILE_CHANNEL = 'company-certificates:choose-file';
+/** IPC channels Settings' Terminal command goes out on (mirror `main/terminal-command/index.ts`). */
+const TERMINAL_COMMAND_STATUS_CHANNEL = 'terminal-command:status';
+const TERMINAL_COMMAND_INSTALL_CHANNEL = 'terminal-command:install';
+const TERMINAL_COMMAND_REMOVE_CHANNEL = 'terminal-command:remove';
 
 /** IPC channel a mounted renderer reports itself alive on (mirrors `ALIVE_CHANNEL` in renderer-health/index.ts). */
 const ALIVE_CHANNEL = 'renderer:alive';
@@ -211,6 +216,18 @@ contextBridge.exposeInMainWorld('electronAPI', {
    */
   chooseCertificateFile: (): Promise<CertificateFilePickResult> =>
     ipcRenderer.invoke(CHOOSE_CERTIFICATE_FILE_CHANNEL),
+  /**
+   * Settings → This computer → Terminal command (DOR-3105): read its state, fresh
+   * each time, or install or remove `~/.local/bin/dorkos`. Never rejects.
+   */
+  terminalCommand: {
+    status: (): Promise<TerminalCommandResult> =>
+      ipcRenderer.invoke(TERMINAL_COMMAND_STATUS_CHANNEL),
+    install: (): Promise<TerminalCommandResult> =>
+      ipcRenderer.invoke(TERMINAL_COMMAND_INSTALL_CHANNEL),
+    remove: (): Promise<TerminalCommandResult> =>
+      ipcRenderer.invoke(TERMINAL_COMMAND_REMOVE_CHANNEL),
+  },
   /**
    * A scrubbed, bounded tail of the shell's OWN log, for a bug report filed
    * from the desktop app (DOR-2045).

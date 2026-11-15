@@ -324,6 +324,8 @@ describe('storage state file', () => {
   // that browser. Neither may reach the file every agent's browser starts from.
   it('never writes the person’s DorkOS session cookie or person proof (DOR-4099)', async () => {
     const file = path.join(root, 'browser', 'storage-state.json');
+    // DOR-4141: the production cookie on this computer's own name, not only loopback.
+    const machine = hostname();
     const session = (name: string, domain: string) => ({
       name,
       value: 'made-up-session-token',
@@ -339,6 +341,8 @@ describe('storage state file', () => {
           session('better-auth.session_token', 'localhost'),
           session('__Secure-better-auth.session_token', 'localhost'),
           session('better-auth.session_data', '127.0.0.1'),
+          session('__Secure-better-auth.session_token', machine),
+          session('__Secure-better-auth.session_data', `${machine.replace(/\..*$/, '')}.local`),
         ],
       }),
       'Target.getTargets': () => ({

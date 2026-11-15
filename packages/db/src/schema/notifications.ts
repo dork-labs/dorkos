@@ -69,10 +69,13 @@ export const notifications = sqliteTable(
         'connector.destructive_pending',
         'connector.destructive_executed',
         'connector.access_narrowed',
+        'mcp-server.tool_added',
+        'mcp-server.reserved_name',
         'web.new_device',
         'agent.secret_files',
         'account.signin_review',
         'shell.check_down',
+        'report.undelivered',
       ],
     }).notNull(),
 

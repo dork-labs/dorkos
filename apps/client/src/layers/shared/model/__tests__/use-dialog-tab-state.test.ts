@@ -75,6 +75,20 @@ describe('useDialogTabState', () => {
     expect(result.current[0]).toBe('tools');
   });
 
+  it('follows a new initialTab while the dialog stays open (an in-dialog link)', () => {
+    // A link inside one tab that sends the person to another (QA S2: the Tools
+    // card's "Login & security" link) changes the deep link while open.
+    const { result, rerender } = renderHook(
+      ({ initialTab }: { initialTab: TestTab | null }) =>
+        useDialogTabState<TestTab>({ open: true, initialTab, defaultTab: 'general' }),
+      { initialProps: { initialTab: 'tools' as TestTab | null } }
+    );
+    expect(result.current[0]).toBe('tools');
+
+    rerender({ initialTab: 'advanced' });
+    expect(result.current[0]).toBe('advanced');
+  });
+
   it('preserves the user-selected tab while the dialog stays open', () => {
     const { result, rerender } = renderHook(
       ({ open }: { open: boolean }) =>

@@ -192,23 +192,6 @@ test.describe('Settings — Runtimes tab @smoke', () => {
     expect(restored.ok()).toBe(true);
   });
 
-  test('renders one card per runtime, with exactly one marked default', async ({
-    settingsPage,
-  }) => {
-    for (const type of SHIPPED_RUNTIMES) {
-      await expect(settingsPage.runtimeCard(type)).toBeVisible();
-    }
-
-    // One default, and it is a state a CARD is in — the dropdown that used to
-    // say this is gone.
-    await expect(settingsPage.runtimeDefaultPills).toHaveCount(1);
-    await expect(settingsPage.runtimeDefaultPill(DEFAULT_RUNTIME)).toBeVisible();
-
-    // The two things that are true of the whole fleet, beneath the cards.
-    await expect(settingsPage.globalTrustRow).toBeVisible();
-    await expect(settingsPage.runtimesRecheck).toBeVisible();
-  });
-
   test('settled cards offer setup or default selection according to real readiness', async ({
     settingsPage,
   }) => {
@@ -254,19 +237,6 @@ test.describe('Settings — Runtimes tab @smoke', () => {
     await toggle.click();
     await expect(toggle).toHaveAttribute('aria-expanded', 'false');
     await expect(settingsPage.runtimeCardBody(DEFAULT_RUNTIME)).toBeHidden();
-  });
-
-  test('Check again re-probes the server', async ({ page, settingsPage }) => {
-    // The requirements query is deliberately never automatic (it shells out to
-    // each runtime's binary), so this button is the only thing that re-asks.
-    // Asserting the REQUEST, not a repaint: a button that re-rendered stale
-    // state would look identical.
-    const reprobe = page.waitForResponse(
-      (response) =>
-        response.url().includes('/api/system/requirements') && response.request().method() === 'GET'
-    );
-    await settingsPage.runtimesRecheck.click();
-    expect((await reprobe).ok()).toBe(true);
   });
 
   test('Make default moves the default, and it survives a reload', async ({

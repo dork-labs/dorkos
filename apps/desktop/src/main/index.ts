@@ -28,6 +28,7 @@ import { setupCloseTab } from './close-tab';
 import { setupAdminActions } from './admin';
 import { setupAppViewCapture } from './capture';
 import { setupCertificateFilePicker } from './certificate-file-picker';
+import { setupTerminalCommand } from './terminal-command';
 import { registerShellLogExcerptHandler } from './shell-log-excerpt';
 import { clearHttpCacheOnVersionChange } from './cache-hygiene';
 import { describeLogLocation } from './log-location';
@@ -51,6 +52,7 @@ import { GET_FOCUS_STATE_CHANNEL } from './window-focus';
 import { findRefusedLaunchSwitch, REFUSED_LAUNCH_SWITCHES } from './launch-switches';
 import { applyExtraCaCerts, readCompanyCertificatesPath } from '../extra-ca-certs';
 import { resolveDataDirectory } from './dork-home';
+import { serverOrigin } from '../shared/server-address';
 
 // A company network's certificates, from the file a person set in Settings and
 // never from the environment (DOR-3361), before anything in the main process
@@ -341,6 +343,8 @@ if (refusedSwitch !== null) {
   setupAppViewCapture({ getRendererUrl });
   // Settings' "Choose…" for company certificates: the native file dialog.
   setupCertificateFilePicker({ getRendererUrl });
+  // Settings' Terminal command: `dorkos` in the person's Terminal (DOR-3105).
+  setupTerminalCommand({ getRendererUrl });
 
   // The shell's own recent log, for a bug report filed from the desktop app.
   // The server child cannot see `main.log`, so nothing but the shell can answer
@@ -370,7 +374,7 @@ if (refusedSwitch !== null) {
   ipcMain.on('get-person-proof', (event) => {
     const port = getServerPort();
     event.returnValue =
-      port !== null && frameOrigin(event.senderFrame?.url) === `http://localhost:${port}`
+      port !== null && frameOrigin(event.senderFrame?.url) === serverOrigin(port)
         ? currentPersonProof()
         : null;
   });

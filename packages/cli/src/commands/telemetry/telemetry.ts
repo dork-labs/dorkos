@@ -23,7 +23,10 @@ import {
   isTelemetryDisabledByEnv,
   isTelemetryDebugEnabled,
   resolveTelemetryConsent,
+  resolveTier1ChannelConsent,
+  tier1ChannelsSettledByFirstAnswer,
   TELEMETRY_DISABLE_ENV_VARS,
+  type Tier1Channel,
 } from '@dorkos/shared/telemetry-consent';
 import type { ConfigStore } from '../../config-commands.js';
 
@@ -78,18 +81,33 @@ export function runTelemetryStatus(deps: TelemetryDeps): number {
   const { store, env, io } = deps;
   const killed = isTelemetryDisabledByEnv(env);
 
+  const decided = store.getDot('telemetry.userHasDecided') === true;
+
   io.log('Telemetry status');
   io.log('');
   for (const channel of TELEMETRY_CHANNELS) {
     const configValue = readConfigFlag(store, channel);
-    const effective = resolveTelemetryConsent(configValue, env);
+    // Install, heartbeat and usage stay off until a person has answered,
+    // whatever the file says (DOR-4400); crash reports are their own opt-in.
+    const tier1 = channel !== 'errors';
+    const effective = tier1
+      ? resolveTier1ChannelConsent(
+          { userHasDecided: decided, [CHANNEL_META[channel].configKey]: configValue },
+          channel as Tier1Channel,
+          env
+        )
+      : resolveTelemetryConsent(configValue, env);
     const state = effective ? 'on ' : 'off';
-    const note = killed && configValue ? ' (forced off by env)' : ` (config: ${configValue})`;
+    const note =
+      killed && configValue
+        ? ' (forced off by env)'
+        : tier1 && configValue && !decided
+          ? ' (off until you choose)'
+          : ` (config: ${configValue})`;
     io.log(`  ${CHANNEL_META[channel].label.padEnd(18)}${state}${note}`);
   }
   io.log('');
 
-  const decided = store.getDot('telemetry.userHasDecided') === true;
   io.log(
     decided
       ? 'You have made a telemetry choice, so the first-run prompt stays hidden.'
@@ -115,7 +133,7 @@ export function runTelemetryStatus(deps: TelemetryDeps): number {
 }
 
 /**
- * Write telemetry channel flags. Sets one channel (via `channel`) or all three,
+ * Write telemetry channel flags. Sets one channel (via `channel`) or all four,
  * then records `telemetry.userHasDecided = true`.
  *
  * @param deps - Config store, environment, and output sink.
@@ -127,8 +145,16 @@ function writeChannels(deps: TelemetryDeps, enabled: boolean, channel?: Telemetr
   const { store, io } = deps;
   const targets = channel ? [channel] : TELEMETRY_CHANNELS;
 
-  for (const target of targets) {
-    store.setDot(`telemetry.${CHANNEL_META[target].configKey}`, enabled);
+  const written: Record<string, unknown> = { userHasDecided: true };
+  for (const target of targets) written[CHANNEL_META[target].configKey] = enabled;
+  // A first answer about one channel stores the unnamed Tier 1 channels off,
+  // so a stored "on" nobody agreed to cannot come into force behind it (DOR-4400).
+  const settled = tier1ChannelsSettledByFirstAnswer(
+    { userHasDecided: store.getDot('telemetry.userHasDecided') },
+    written
+  );
+  for (const [key, value] of Object.entries({ ...written, ...settled })) {
+    if (key !== 'userHasDecided') store.setDot(`telemetry.${key}`, value);
   }
   store.setDot('telemetry.userHasDecided', true);
 
@@ -196,29 +222,78 @@ const consoleIo: TelemetryCommandIO = {
   error: (message) => console.error(message),
 };
 
+/** Whether a word names a telemetry channel. */
+function isChannel(word: string): word is TelemetryChannel {
+  return (TELEMETRY_CHANNELS as readonly string[]).includes(word);
+}
+
 /**
- * Parse a `--channel <name>` / `--channel=<name>` flag out of the subcommand
- * args. Returns the channel, `undefined` when the flag is absent (meaning "all
- * channels"), or an `error` string for an unknown channel.
+ * Parse the args after `enable`/`disable`: nothing (all channels), or exactly
+ * one `--channel <name>` / `--channel=<name>`.
+ *
+ * Anything else is refused, never read as "all channels" (DOR-4414): a bare
+ * `enable errors` used to skip past the word and turn every channel on, which
+ * is the opposite of what the person typed. A bare channel word gets a hint
+ * with the flag, and a `--channel` with no name says so.
+ *
+ * @param args - The argv slice after the subcommand.
+ * @returns The channel, `undefined` for all channels, or an `error` to print.
  */
-function parseChannel(args: string[]): { channel?: TelemetryChannel; error?: string } {
+export function parseChannelArgs(args: readonly string[]): {
+  channel?: TelemetryChannel;
+  error?: string;
+} {
+  const names = TELEMETRY_CHANNELS.join(', ');
   let raw: string | undefined;
   for (let i = 0; i < args.length; i++) {
-    const arg = args[i];
-    if (arg === '--channel') {
-      raw = args[i + 1];
-      break;
+    const arg = args[i]!;
+    let value: string | undefined;
+    if (arg === '--channel') value = args[++i] ?? '';
+    else if (arg.startsWith('--channel=')) value = arg.slice('--channel='.length);
+    else if (isChannel(arg)) {
+      return { error: `Did you mean \`--channel ${arg}\`? Nothing was changed.` };
+    } else {
+      return { error: `Unknown argument: ${arg}. Use --channel with one of: ${names}.` };
     }
-    if (arg.startsWith('--channel=')) {
-      raw = arg.slice('--channel='.length);
-      break;
+    if (raw !== undefined) return { error: 'Name one channel at a time. Nothing was changed.' };
+    if (value === '' || value.startsWith('-')) {
+      return { error: `Name a channel after --channel: ${names}. Nothing was changed.` };
     }
+    raw = value;
   }
   if (raw === undefined) return {};
-  if ((TELEMETRY_CHANNELS as readonly string[]).includes(raw)) {
-    return { channel: raw as TelemetryChannel };
+  if (isChannel(raw)) return { channel: raw };
+  return { error: `Unknown channel: ${raw}. Use one of: ${names}` };
+}
+
+/**
+ * Run a `dorkos telemetry` subcommand against injected dependencies: what
+ * {@link runTelemetryDispatcher} does once it has a config store.
+ *
+ * @param deps - Config store, environment, and output sink.
+ * @param subcommand - `status`, `enable` or `disable`.
+ * @param subArgs - The argv slice following the subcommand.
+ * @returns The intended process exit code.
+ */
+export function runTelemetryCommand(
+  deps: TelemetryDeps,
+  subcommand: string,
+  subArgs: readonly string[]
+): number {
+  if (subcommand === 'status') return runTelemetryStatus(deps);
+  if (subcommand === 'enable' || subcommand === 'disable') {
+    const { channel, error } = parseChannelArgs(subArgs);
+    if (error) {
+      deps.io.error(error);
+      return 1;
+    }
+    return subcommand === 'enable'
+      ? runTelemetryEnable(deps, channel)
+      : runTelemetryDisable(deps, channel);
   }
-  return { error: `Unknown channel: ${raw}. Use one of: ${TELEMETRY_CHANNELS.join(', ')}` };
+  deps.io.error(`Unknown telemetry subcommand: ${subcommand}`);
+  deps.io.error('Usage: dorkos telemetry <status|enable|disable>');
+  return 1;
 }
 
 /**
@@ -247,24 +322,7 @@ export async function runTelemetryDispatcher(
     // convention in cli.ts); read process.env directly at call time.
     // eslint-disable-next-line no-restricted-syntax -- call-time env resolution (CLI convention)
     const env = process.env;
-    const deps = { store, env, io: consoleIo };
-
-    if (subcommand === 'status') return runTelemetryStatus(deps);
-
-    if (subcommand === 'enable' || subcommand === 'disable') {
-      const { channel, error } = parseChannel(subArgs);
-      if (error) {
-        console.error(error);
-        return 1;
-      }
-      return subcommand === 'enable'
-        ? runTelemetryEnable(deps, channel)
-        : runTelemetryDisable(deps, channel);
-    }
-
-    console.error(`Unknown telemetry subcommand: ${subcommand}`);
-    console.error('Usage: dorkos telemetry <status|enable|disable>');
-    return 1;
+    return runTelemetryCommand({ store, env, io: consoleIo }, subcommand, subArgs);
   } catch (err) {
     console.error(`Error: ${err instanceof Error ? err.message : String(err)}`);
     return 1;

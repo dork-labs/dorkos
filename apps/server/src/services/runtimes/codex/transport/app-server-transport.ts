@@ -83,6 +83,7 @@ import type {
 import { prepareCodexFilePolicy } from './prepare-file-policy.js';
 import { acquireCodexProcess } from './acquire-codex-process.js';
 import { failedCompaction, failedSetup, failedStart } from './app-server-turn-failures.js';
+import { threadKeyTurn } from './thread-key-turn.js';
 
 /** The shared bound on a stop's acknowledgement (claude-code's `STOP_ACK_TIMEOUT_MS`). */
 export const APP_SERVER_STOP_ACK_MS = 3_000;
@@ -436,10 +437,9 @@ export class AppServerCodexTransport implements CodexTransport {
     }
 
     const keys = this.options.connectorTools()?.threadKeys;
-    const attached =
-      loaded.keyId !== undefined && request.tools.connectorBindingId !== undefined
-        ? { keyId: loaded.keyId, bindingId: request.tools.connectorBindingId }
-        : undefined;
+    const keyTurn = threadKeyTurn(keys, loaded, request, sessionId, () =>
+      this.loader.markToolsLost(process, loaded.threadId)
+    );
     const queue = new EventQueue();
     const priorContextTokens = this.contextTokens.get(loaded.threadId);
     const mapper = new AppServerTurnMapper(request.events, {
@@ -529,21 +529,7 @@ export class AppServerCodexTransport implements CodexTransport {
       for (const message of this.takeWarnings(process)) {
         yield { type: 'system_status', data: { message } };
       }
-      if (attached) {
-        try {
-          keys?.attach(attached.keyId, {
-            bindingId: attached.bindingId,
-            canonicalSessionId: sessionId,
-          });
-        } catch (err) {
-          // The turn runs; its DorkOS tools are refused (nothing is attached).
-          logger.warn('[CodexAppServer] could not attach the turn to its thread key', {
-            sessionId,
-            keyId: attached.keyId,
-            err: String(err),
-          });
-        }
-      }
+      keyTurn.attach();
       channel.open(sink);
       if (request.signal.aborted) {
         yield* finish(mapper.closeQuietly());
@@ -595,7 +581,8 @@ export class AppServerCodexTransport implements CodexTransport {
       this.requests.dropSession(sessionId);
       request.signal.removeEventListener('abort', onAbort);
       channel.release(sink);
-      if (attached) keys?.detach(attached.keyId, attached.bindingId);
+      // A turn that ran tools also says if its thread never listed the DorkOS ones.
+      keyTurn.end(mode === 'compact' ? undefined : turn.completed);
       this.closeTurn(turn);
       release();
     }

@@ -88,10 +88,15 @@ describe('vendor-facts table', () => {
     // would: `codex.skills` was observed against a real `codex-cli 0.145.0` on
     // 2026-09-09 (DOR-1856, the free listing probe). Every other row is still on
     // paper, and loosening this without a binary run is the failure mode it
-    // exists to catch.
-    const onPaper = HARNESS_IDS.filter((h) => h !== 'codex');
+    // exists to catch. `opencode.skills` followed on 2026-11-14 (`opencode
+    // 1.19.3`, a hand probe against the pinned binary).
+    const observed = ['codex', 'opencode'];
+    const onPaper = HARNESS_IDS.filter((h) => !observed.includes(h));
     expect(onPaper.map((h) => skillsFactsFor(h).verified)).toEqual(onPaper.map(() => 'docs'));
-    expect(skillsFactsFor('codex').verified).toBe('binary');
+    expect(observed.map((h) => skillsFactsFor(h as HarnessId).verified)).toEqual([
+      'binary',
+      'binary',
+    ]);
   });
 
   it('makes a `binary` row say WHICH cells were observed, and against what', () => {
@@ -155,7 +160,6 @@ describe('vendor-facts table', () => {
     // here means fetching the page (or running the binary) and bumping its
     // `fetchedAt`.
     const unknowns: ReadonlyArray<[HarnessId, string, unknown]> = [
-      ['opencode', 'symlinks', skillsFactsFor('opencode').symlinks],
       ['cursor', 'symlinks', skillsFactsFor('cursor').symlinks],
       ['gemini', 'symlinks', skillsFactsFor('gemini').symlinks],
       ['copilot', 'symlinks', skillsFactsFor('copilot').symlinks],
@@ -164,10 +168,8 @@ describe('vendor-facts table', () => {
       ['gemini', 'nameMustMatchDir', skillsFactsFor('gemini').nameMustMatchDir],
       ['copilot', 'nameMustMatchDir', skillsFactsFor('copilot').nameMustMatchDir],
       // SK-12 leaves "is one skill reachable twice loaded once or twice?" open
-      // for all three harnesses that read both `.claude/skills` and
-      // `.agents/skills`. OpenCode is not the exception: the 2026-07 source
-      // check is a hypothesis in its notes, not a documented outcome.
-      ['opencode', 'dedupe', skillsFactsFor('opencode').dedupe],
+      // for the harnesses that read both `.claude/skills` and `.agents/skills`.
+      // OpenCode left this list when its binary answered it (`by-name`).
       ['cursor', 'dedupe', skillsFactsFor('cursor').dedupe],
       ['gemini', 'dedupe', skillsFactsFor('gemini').dedupe],
       ['copilot', 'dedupe', skillsFactsFor('copilot').dedupe],
@@ -196,10 +198,10 @@ describe('vendor-facts table', () => {
     // (which harnesses state one, and that each stated one rejects `pkg__name`).
     // This census is the contract between the table and the walk's fixtures:
     // change a cell and this reds, which is the prompt to bring a fixture with
-    // the change. Three values in the vocabulary have no row today —
-    // `dedupe: 'by-name'` (the OpenCode hypothesis, unconfirmed),
+    // the change. Two values in the vocabulary have no row today —
     // `onInvalidName: 'skip'` and `'warn-and-load'` — and the assertions below
-    // are what keep that true.
+    // are what keep that true. `dedupe: 'by-name'` arrived with OpenCode's
+    // binary observation, and its fixtures are in `coverage.test.ts`.
     const census = HARNESS_IDS.map((harness) => {
       const f = skillsFactsFor(harness);
       return [
@@ -220,14 +222,14 @@ describe('vendor-facts table', () => {
       'cursor descend-recursive dir true unknown unknown unknown unknown',
       'gemini fixed unknown unknown unknown unknown unknown unknown',
       'copilot fixed unknown unknown true unknown unknown unknown',
-      'opencode ascend-to-worktree frontmatter true unknown unknown unknown unknown',
+      'opencode ascend-to-worktree frontmatter false unknown unknown by-name followed',
     ]);
 
     // Copilot is the only harness whose page states the key is required, and it
     // is the reason the cell exists: a `SKILL.md` with no name was "loads" there,
     // for both the plan and the walk, until the ladder learned to ask.
     expect(HARNESS_IDS.filter((h) => skillsFactsFor(h).nameRequired === true)).toEqual(['copilot']);
-    expect(HARNESS_IDS.map((h) => skillsFactsFor(h).dedupe)).not.toContain('by-name');
+    expect(HARNESS_IDS.filter((h) => skillsFactsFor(h).dedupe === 'by-name')).toEqual(['opencode']);
     expect(HARNESS_IDS.map((h) => skillsFactsFor(h).onInvalidName)).not.toContain('skip');
     expect(HARNESS_IDS.map((h) => skillsFactsFor(h).onInvalidName)).not.toContain('warn-and-load');
   });

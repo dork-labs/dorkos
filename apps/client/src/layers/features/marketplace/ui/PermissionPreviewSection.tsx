@@ -25,6 +25,7 @@ import { useState, type ComponentType } from 'react';
 import { cn } from '@/layers/shared/lib';
 import { Badge, CollapsibleFieldCard } from '@/layers/shared/ui';
 import { ExtensionPermissionLines } from '@/layers/entities/extension';
+import { runtimesMissingPackageHooks } from '@/layers/entities/runtime';
 import {
   formatPermissionPreview,
   summarizePermissionPreview,
@@ -372,6 +373,9 @@ export function PermissionPreviewSection({ preview, installBase }: PermissionPre
   // files" under a package that simply has no preview to show would be a claim
   // rather than a summary.
   const hasAnything = Object.values(groups).some((rows) => rows.length > 0);
+  // Where this package's hooks would not run, said where it is installed
+  // rather than only in its README (DOR-4379).
+  const hooksSkipOn = runtimesMissingPackageHooks(preview.hooks);
 
   return (
     <div className="space-y-6">
@@ -383,6 +387,11 @@ export function PermissionPreviewSection({ preview, installBase }: PermissionPre
         items={groups.commands}
         defaultOpen
       />
+      {hooksSkipOn.length > 0 && (
+        <p className="text-muted-foreground text-xs" data-testid="preview-hooks-runtime-note">
+          {`Its safety checks don't run on ${new Intl.ListFormat('en', { type: 'disjunction' }).format(hooksSkipOn)} yet.`}
+        </p>
+      )}
       <PermissionSection title="Jobs it will schedule" items={groups.schedules} defaultOpen />
       <PermissionSection title="Secrets required" items={groups.secrets} />
       <PermissionSection title="External hosts" items={groups.hosts} />

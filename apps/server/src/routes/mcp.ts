@@ -34,6 +34,7 @@ import { validateMcpOrigin } from '../middleware/mcp-origin.js';
 import { buildMcpRateLimiter } from '../middleware/mcp-rate-limit.js';
 import type { AgentIdentity } from '../services/core/agent-identity/agent-identity-service.js';
 import { logger } from '../lib/logger.js';
+import { recordRemoteMcpSession } from '../services/core/auth/remote-mcp-audit.js';
 
 /**
  * Who made one MCP request, as the per-request server factory is told it.
@@ -137,6 +138,7 @@ export function createMcpEndpoint(serverFactory: McpServerFactory): Hono<ApiEnv>
   // POST: JSON-RPC tool calls (primary endpoint)
   router.post('/', async (c) => {
     try {
+      recordRemoteMcpSession(honoRequestFacts(c));
       const identity = c.get('agentIdentity');
       // The wider question, asked from the raw header so a token that did not
       // resolve is still reported as a machine calling.

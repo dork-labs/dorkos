@@ -52,7 +52,7 @@ bad() {
 # a probe that ran nothing would read exactly like a clean scrub.
 assert_no_line() {
   local label="$1" out="$2" pattern="$3" message="$4"
-  if printf '%s\n' "$out" | grep -qx 'PROBE-BROKEN'; then
+  if grep <<<"$out" -qx 'PROBE-BROKEN'; then
     bad "$label: the probe itself failed — see its stderr above; this case proves nothing"
     return
   fi
@@ -146,8 +146,8 @@ assert_no_line 'case 1' "$out" '=present$' 'hosted-side variables survived the s
 # produce — must come out ABSENT, not empty. If this case ever flips, the check
 # starts certifying a build against an environment no contributor has.
 out=$(probe DATABASE_URL= BETTER_AUTH_SECRET= -- DATABASE_URL BETTER_AUTH_SECRET)
-if printf '%s\n' "$out" | grep -q '^DATABASE_URL=absent$' &&
-  printf '%s\n' "$out" | grep -q '^BETTER_AUTH_SECRET=absent$'; then
+if grep <<<"$out" -q '^DATABASE_URL=absent$' &&
+  grep <<<"$out" -q '^BETTER_AUTH_SECRET=absent$'; then
   ok
 else
   bad "empty-string variables were left present rather than unset: $out"
@@ -203,7 +203,7 @@ fi
 # environment and then runs no build in it.
 out=$(env -i PATH="$PATH" HOME="$HOME" bash "$CHECK" 2>&1)
 rc=$?
-if [ "$rc" -eq 2 ] && printf '%s' "$out" | grep -q '^usage:'; then
+if [ "$rc" -eq 2 ] && grep <<<"$out" -q '^usage:'; then
   ok
 else
   bad "no command: expected exit 2 + usage, got rc=$rc output=$out"
@@ -217,9 +217,9 @@ out=$(env -i PATH="$PATH" HOME="$HOME" DATABASE_URL=x BETTER_AUTH_SECRET=y CI=tr
   bash "$CHECK" --print 2>&1)
 rc=$?
 if [ "$rc" -eq 0 ] &&
-  printf '%s\n' "$out" | grep -q 'DATABASE_URL' &&
-  printf '%s\n' "$out" | grep -q 'BETTER_AUTH_SECRET' &&
-  ! printf '%s\n' "$out" | grep -qx '  CI'; then
+  grep <<<"$out" -q 'DATABASE_URL' &&
+  grep <<<"$out" -q 'BETTER_AUTH_SECRET' &&
+  ! grep <<<"$out" -qx '  CI'; then
   ok
 else
   bad "--print did not report exactly the hosted-side names: rc=$rc output=$out"
@@ -230,7 +230,7 @@ fi
 # an empty report as a broken scrub.
 out=$(env -i PATH="$PATH" HOME="$HOME" bash "$CHECK" --print 2>&1)
 rc=$?
-if [ "$rc" -eq 0 ] && printf '%s' "$out" | grep -q 'already clean\|no hosted-side variable is set'; then
+if [ "$rc" -eq 0 ] && grep <<<"$out" -q 'already clean\|no hosted-side variable is set'; then
   ok
 else
   bad "clean environment: expected a clean report and exit 0, got rc=$rc output=$out"

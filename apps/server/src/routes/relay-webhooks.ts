@@ -10,6 +10,14 @@
  * it did on Express. So its raw read is a body rule in the chain's body stage,
  * not a route registered before it.
  *
+ * **Reachable over a tunnel, on purpose (Security's ruling, DOR-3650)**, on
+ * four conditions pinned by `__tests__/relay-signed-json.test.ts`: the HMAC,
+ * timestamp window and nonce are checked before anything is published, and
+ * every refusal before that is one flat 401; the route matches exactly; the
+ * caller never counts as the person, whatever cookie it carries; and what it
+ * publishes goes out as `relay.webhook.<id>`, which never starts a turn and,
+ * if one ever did, is outside sender shaping (`turn-shaping-sender.ts`).
+ *
  * @module routes/relay-webhooks
  */
 import bodyParser from 'body-parser';
@@ -19,6 +27,9 @@ import type { WebhookAdapter } from '@dorkos/relay';
 import type { ApiEnv } from '../http/api-chain.js';
 import { readJsonBody, type BodyRule } from '../http/request-body.js';
 import type { AdapterManager } from '../services/relay/adapter-manager.js';
+
+/** The one answer to any request whose signature was not verified (DOR-3650). */
+const INVALID_SIGNATURE_BODY = { error: 'INVALID_SIGNATURE' } as const;
 
 /** The receiver's raw byte ceiling. */
 const WEBHOOK_BODY_LIMIT = '1mb';
@@ -51,18 +62,24 @@ export function createRelayWebhookRoutes(adapterManager: AdapterManager): Hono<A
   const router = new Hono<ApiEnv>();
 
   router.post('/webhooks/:adapterId', async (c) => {
+    // The caller is an outside service, never the person, whatever cookie it
+    // carries (DOR-3650, Security's condition 3): nothing after this reads one.
+    c.set('user', undefined);
+    c.set('agentIdentity', undefined);
+    // Every refusal before a verified signature is the same flat 401, so an
+    // unsigned caller learns nothing: not which connections exist or run, nor
+    // which check failed (Security's condition 1).
+    const refused = () => c.json(INVALID_SIGNATURE_BODY, 401);
     const adapterInfo = adapterManager.getAdapter(c.req.param('adapterId'));
-    if (!adapterInfo || adapterInfo.config.type !== 'webhook') {
-      return c.json({ error: 'Webhook adapter not found' }, 404);
-    }
+    if (!adapterInfo || adapterInfo.config.type !== 'webhook') return refused();
     const registry = adapterManager.getRegistry();
     const adapter = registry.get(c.req.param('adapterId'));
-    if (!adapter) return c.json({ error: 'Adapter not running' }, 404);
     if (
+      !adapter ||
       !('handleInbound' in adapter) ||
       typeof (adapter as Record<string, unknown>).handleInbound !== 'function'
     ) {
-      return c.json({ error: 'Adapter does not support webhook ingestion' }, 500);
+      return refused();
     }
     // Raw parsing skips requests without a content type. A cast cannot turn
     // an absent body (or a body consumed by an earlier parser) back into bytes.
@@ -76,7 +93,12 @@ export function createRelayWebhookRoutes(adapterManager: AdapterManager): Hono<A
       c.env.incoming.headers as Record<string, string | string[] | undefined>
     );
     if (result.ok) return c.json({ ok: true }, 200);
-    return c.json({ error: result.error }, (result.status ?? 401) as ContentfulStatusCode);
+    // A signature, timestamp or nonce refusal is the flat 401; anything else
+    // (an adapter that failed after verifying) keeps its own status.
+    if (result.status === undefined || result.status === 401 || result.status === 400) {
+      return refused();
+    }
+    return c.json({ error: result.error }, result.status as ContentfulStatusCode);
   });
 
   return router;

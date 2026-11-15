@@ -122,7 +122,7 @@ import {
   type ProvenInstall,
 } from './dorkos-installed.js';
 import { hookScriptPins } from './hook-script-pins.js';
-import { readGlobalSharingFromDisk } from './global-scope.js';
+import { projectUserSkills, readGlobalSharingFromDisk } from './global-scope.js';
 import { withPersonRepinAtHome } from '../runtimes/claude-code/folder-settings/folder-config-consent.js';
 
 /**
@@ -498,14 +498,31 @@ function scanHookRequestsWithRoots(
   });
 }
 
+/** One hook-declaring package whose hooks may run, with its install folders. */
+export interface ConsentedHookPackage {
+  /** The package's hooks, commands resolved to absolute paths. */
+  request: HookProjectionRequest;
+  /** Every project copy of the package, absolute. */
+  installRoots: string[];
+}
+
+/** What {@link consentedHookPackages} answers. */
+export interface ConsentedHookPackages {
+  /** Packages whose hooks run, in scan order. */
+  allowed: ConsentedHookPackage[];
+  /** Every hook-declaring package left out, with the reason. */
+  withheld: WithheldHooks[];
+  /** Packages allowed by Full rather than by a person's yes. */
+  allowedAtFull?: HookProjectionRequest[];
+}
+
 /**
- * Build the projection plan for a project with every unapproved package's hooks
- * left out of it, and report what was left out.
+ * Decide, package by package, whose hooks may run in a project: the consent
+ * half of {@link planWithConsent}, without building the projection plan.
  *
- * Read-only, with one exception: on the running server's own lists (no
- * `opts.decisions`, or lists marked `live`), a yes recorded before files were
- * pinned gets today's files pinned onto it, once (DOR-3403). A caller that
- * passes a copy, like `--check`, writes nothing.
+ * The Claude Code settings merge and DorkOS's own hosted hook runner (DOR-4379)
+ * both read this, so a package runs on every runtime exactly when it runs on
+ * Claude Code.
  *
  * For each hook-declaring package, in order: the settings file could not be
  * read, or a no covers it → withheld. On Full, DorkOS installed it with its
@@ -514,15 +531,15 @@ function scanHookRequestsWithRoots(
  * Full with a card.
  *
  * @param projectPath - The project root being projected into.
- * @param opts - Dork home, the decisions to obey, and an optional harness filter.
- * @returns The consented plan and the withheld packages.
+ * @param opts - Dork home and the decisions to obey.
+ * @returns The allowed packages and the withheld ones.
  */
-export function planWithConsent(
+export function consentedHookPackages(
   projectPath: string,
   opts: ProjectWithConsentOptions
-): ConsentedPlan {
+): ConsentedHookPackages {
   const decisions = opts.decisions ?? storedHookDecisions();
-  const allowed = new Set<string>();
+  const allowed: ConsentedHookPackage[] = [];
   const withheld: WithheldHooks[] = [];
   const allowedAtFull: HookProjectionRequest[] = [];
   // Read once, and only when some package is not refused.
@@ -569,7 +586,7 @@ export function planWithConsent(
       const unpinnable = full && !proven && !linked && (request.scripts ?? []).length === 0;
       const yes = (match === 'exact' || match === 'unpinned') && !unpinnable;
       if (proven || yes) {
-        allowed.add(request.packageName);
+        allowed.push({ request, installRoots });
         // Full, not a person, let these files run: the trigger writes one
         // Activity line, and no yes is recorded, so below Full the card is back.
         if (!yes) allowedAtFull.push(request);
@@ -592,6 +609,29 @@ export function planWithConsent(
       }
     }
   }
+  return { allowed, withheld, ...(allowedAtFull.length > 0 ? { allowedAtFull } : {}) };
+}
+
+/**
+ * Build the projection plan for a project with every unapproved package's hooks
+ * left out of it, and report what was left out.
+ *
+ * Read-only, with one exception: on the running server's own lists (no
+ * `opts.decisions`, or lists marked `live`), a yes recorded before files were
+ * pinned gets today's files pinned onto it, once (DOR-3403). A caller that
+ * passes a copy, like `--check`, writes nothing.
+ *
+ * Which packages are allowed is decided by {@link consentedHookPackages}.
+ *
+ * @param projectPath - The project root being projected into.
+ * @param opts - Dork home, the decisions to obey, and an optional harness filter.
+ * @returns The consented plan and the withheld packages.
+ */
+export function planWithConsent(
+  projectPath: string,
+  opts: ProjectWithConsentOptions
+): ConsentedPlan {
+  const { allowed, withheld, allowedAtFull } = consentedHookPackages(projectPath, opts);
 
   // Whether this machine shares its all-projects packages with any agent tool.
   // Read straight off `config.json`, never through the config store, for the
@@ -604,12 +644,14 @@ export function planWithConsent(
 
   const full = _internal.project(projectPath, {
     dorkHome: opts.dorkHome,
-    allowPluginHooks: (name) => allowed.has(name),
+    allowPluginHooks: (name) => allowed.some((pkg) => pkg.request.packageName === name),
     ...(opts.dorkosHarness === undefined ? {} : { dorkosHarness: opts.dorkosHarness }),
     ...(sharedWithTools ? { sharedWithTools: true } : {}),
+    // The person's user-level skills, so no package skill replaces one (DOR-4392).
+    userSkills: projectUserSkills(opts.dorkHome),
   });
   const plan = opts.harness === undefined ? full : filterPlanToHarness(full, opts.harness);
-  return { plan, withheld, ...(allowedAtFull.length > 0 ? { allowedAtFull } : {}) };
+  return { plan, withheld, ...(allowedAtFull ? { allowedAtFull } : {}) };
 }
 
 /**

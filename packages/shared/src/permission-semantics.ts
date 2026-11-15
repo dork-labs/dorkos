@@ -657,9 +657,14 @@ function stricterPower(a: TurnPermissionLevel, b: TurnPermissionLevel): TurnPerm
  * mode the runtime declares.
  *
  * Never writes anything: the caller runs one turn at the answer and leaves the
- * session's stored mode alone. An id the runtime does not declare never fits,
- * because nothing can say how far it reaches. A working-axis mode (Claude's
- * Plan) is kept when the session is in it and never chosen in its place.
+ * session's stored mode alone. Under a ceiling that bounds the turn, an id the
+ * runtime does not declare runs at the strictest trust-axis mode it does
+ * declare when the ceiling admits that, else at the fallback below, never at the
+ * ceiling's loosest: nothing can say how far it reaches, and a Codex chat set to
+ * Plan ran at its agent's Full (DOR-4411). A ceiling that only records (Full)
+ * hands any id back unchanged, as the first line says.
+ * A working-axis mode (Claude's Plan) is kept when the session is in it and
+ * never chosen in its place.
  *
  * @param declared - The receiving runtime's declared modes.
  * @param modeId - The mode the session is set to.
@@ -676,7 +681,16 @@ export function clampModeToCeiling(
   if (ceilingOnlyRecords(ceiling)) return modeId;
   const level = resolveCeilingLevel(declared, ceiling);
   const own = declared.values.find((m) => m.id === modeId);
-  if (own && admits(level, own)) return modeId;
+  if (!own) {
+    // An id the runtime does not have runs at its strictest trust mode when the
+    // ceiling admits that; below it, the fallback further down answers, as it
+    // does for a declared mode (a sender in Plan keeps the turn in Plan).
+    const strictestId = strictestTrustModeId(declared);
+    const strictest = declared.values.find((m) => m.id === strictestId);
+    if (strictest && admits(level, strictest)) return strictest.id;
+  } else if (admits(level, own)) {
+    return modeId;
+  }
   const loosest = declared.values
     .filter((m) => m.axis !== 'working' && admits(level, m))
     .sort(
@@ -692,8 +706,32 @@ export function clampModeToCeiling(
   // runtime declares, never the default, which would be looser than asked.
   const working = declared.values.find((m) => admits(level, m));
   if (working) return working.id;
-  const strictest = [...declared.values].sort(
+  return strictestDeclared(declared) ?? modeId;
+}
+
+/**
+ * The strictest trust-axis mode a runtime declares: reaching least, then asking
+ * most. What a mode the runtime does not have runs at, and is replaced with
+ * when a chat is bound to that runtime, never the agent's level (DOR-4411).
+ * Falls back to any declared mode for a runtime with no trust-axis ones.
+ *
+ * @param declared - The runtime's declared modes.
+ * @returns The mode id, or `undefined` when the runtime declares none.
+ */
+export function strictestTrustModeId(declared: DeclaredModes): string | undefined {
+  return strictestDeclared(declared, (m) => m.axis !== 'working');
+}
+
+/**
+ * The runtime's strictest declared mode, reaching least and then asking most,
+ * among those `among` keeps (every mode when it keeps them all).
+ */
+function strictestDeclared(
+  declared: DeclaredModes,
+  among: (mode: PermissionModeDescriptor) => boolean = () => true
+): string | undefined {
+  const candidates = declared.values.filter(among);
+  return [...(candidates.length > 0 ? candidates : declared.values)].sort(
     (a, b) => REACH_RANK[a.reach] - REACH_RANK[b.reach] || ASKS_RANK[b.asks] - ASKS_RANK[a.asks]
-  )[0];
-  return strictest?.id ?? modeId;
+  )[0]?.id;
 }

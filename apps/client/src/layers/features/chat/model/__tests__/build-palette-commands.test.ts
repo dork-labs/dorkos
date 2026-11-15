@@ -85,7 +85,7 @@ describe('buildPaletteCommands', () => {
       expect(compact?.disabledReason).toBe('Not available on Codex');
     });
 
-    it('leaves the compact row enabled when the runtime supports compact', () => {
+    it('C-04: leaves the compact row enabled when the runtime supports compact', () => {
       const rows = buildPaletteCommands([], {
         commandIntents: { compact: { supported: true } },
         runtimeLabel: 'Claude Code',

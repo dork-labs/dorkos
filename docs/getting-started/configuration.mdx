@@ -24,6 +24,10 @@ DORKOS_PORT=5000 dorkos
   DorkOS's built-in defaults.
 </Callout>
 
+## Upgrading older settings
+
+If your settings were last used before version 0.115, upgrade to 0.115 first. Then upgrade to the current version. DorkOS stops before changing older settings and shows these steps. A settings file you wrote by hand starts normally.
+
 ## Required
 
 <TypeTable
@@ -99,6 +103,23 @@ DorkOS supports ngrok tunnels (a service that gives your local machine a public 
   Always set `TUNNEL_AUTH` when exposing DorkOS publicly via a tunnel. Without it, anyone with the
   tunnel URL can access your sessions.
 </Callout>
+
+### Turning remote access off
+
+`remoteAccess.enabled` (default `true`) is the **Remote access** switch at the top of **Settings → Remote access**. Turn it off and only this computer can reach DorkOS. Other devices are disconnected at once, through the tunnel, managed remote access, Wi-Fi, a proxy or chat from the web, and turned away after that. It stays off after a restart. Only a person can turn it back on, in Settings on this computer; an agent can turn it off.
+
+Telegram and Slack keep reaching your agents, because DorkOS connects out to them. Two things have their own ports and are not closed by this switch: app previews, and Telegram's webhook mode.
+
+<TypeTable
+  type={{
+    'remoteAccess.enabled': {
+      description:
+        'Whether other devices may reach DorkOS at all. Off refuses them all; this computer is never refused.',
+      type: 'boolean',
+      default: 'true',
+    },
+  }}
+/>
 
 ### Wi-Fi access
 
@@ -913,6 +934,8 @@ credentials stored by a runtime or supplied through your environment.
 DorkOS passes a selected set of environment variables to Claude Code, Codex, OpenCode, and their setup commands.
 It preserves normal home folders, command lookup (`PATH`), Git and SSH settings, proxy and certificate settings, and `DO_NOT_TRACK`.
 Supported model sign-ins are included when the command needs them. Binary lookup, installation, and hardware checks do not receive model keys automatically.
+
+Turn commands and hooks receive `DORKOS_SESSION_ID`, the DorkOS chat id. It grants no access. On the Dork runtime, commands only run at Bypass permissions, so that's the only time it's set there.
 
 The `runtimes.environment.inherit` lists let the owner add exact names for custom tools.
 These lists start empty, including after an upgrade. Agents cannot change them through DorkOS tools.

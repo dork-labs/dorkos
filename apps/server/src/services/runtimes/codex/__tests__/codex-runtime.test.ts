@@ -1791,6 +1791,18 @@ describe('resolveCodexTransport (spec §15)', () => {
     expect(resolveCodexTransport('app-server')).toBe('app-server');
     expect(resolveCodexTransport('exec')).toBe('app-server');
   });
+
+  it('a runtime set to exec launches on app-server, which keeps MCP secrets off the command line (DOR-3883)', async () => {
+    // `codex exec` put a stdio server's env on its argv; app-server sends config over stdin.
+    const runtime = new CodexRuntime({
+      transport: 'exec',
+      threadMap: new CodexThreadMap(createTestDb()),
+      resolveBinary: async () => '/opt/codex',
+    });
+    expect(runtime.getCapabilities().supportsPersistentSession).toBe(true);
+    expect(runtime.getSessionWarmth).toBeDefined();
+    await runtime.shutdown();
+  });
 });
 
 describe('CodexRuntime — the transport seam (ADR 261005-113107)', () => {

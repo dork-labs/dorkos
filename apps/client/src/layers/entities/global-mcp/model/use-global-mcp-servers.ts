@@ -82,3 +82,54 @@ export function useRemoveGlobalMcpServer() {
     onSettled,
   });
 }
+
+/** One server's sheet: what it can do, and who uses it without asking (DOR-4118). */
+export const globalMcpSheetKey = (name: string) => [...GLOBAL_MCP_KEY, 'sheet', name] as const;
+
+/**
+ * Check a server's tools while its sheet is open. Each open checks again, since the server may
+ * have changed; a closed sheet checks nothing. The check may start the server, so it never retries.
+ *
+ * @param name - The server, or `null` while no sheet is open.
+ */
+export function useGlobalMcpServerTools(name: string | null) {
+  const transport = useTransport();
+  return useQuery({
+    queryKey: [...globalMcpSheetKey(name ?? ''), 'tools'],
+    queryFn: () => transport.checkGlobalMcpServerTools(name!),
+    enabled: name !== null,
+    networkMode: 'always',
+    staleTime: 0,
+    gcTime: 0,
+    retry: false,
+    refetchOnWindowFocus: false,
+  });
+}
+
+/**
+ * The agents allowed to use a server, or one tool on it, without asking.
+ *
+ * @param name - The server, or `null` while no sheet is open.
+ */
+export function useGlobalMcpStandingAllows(name: string | null) {
+  const transport = useTransport();
+  return useQuery({
+    queryKey: [...globalMcpSheetKey(name ?? ''), 'allows'],
+    queryFn: async () => (await transport.listGlobalMcpStandingAllows(name!)).allows,
+    enabled: name !== null,
+    networkMode: 'always',
+  });
+}
+
+/** Undo one agent's standing yes. Refetches who uses it however the change ended. */
+export function useUndoGlobalMcpStandingAllow() {
+  const transport = useTransport();
+  const queryClient = useQueryClient();
+  return useMutation({
+    ...CHANGE_OPTIONS,
+    mutationFn: ({ name, agentId, rule }: { name: string; agentId: string; rule: string }) =>
+      transport.undoGlobalMcpStandingAllow(name, agentId, rule),
+    onSettled: (_data, _error, { name }) =>
+      queryClient.invalidateQueries({ queryKey: [...globalMcpSheetKey(name), 'allows'] }),
+  });
+}

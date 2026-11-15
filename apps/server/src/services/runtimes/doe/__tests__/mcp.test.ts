@@ -83,11 +83,11 @@ describe('authenticated Doe MCP assembly', () => {
     const assembly = await assembleDoeMcp({
       agentPath: '/agent',
       connectorInjection: injection,
-      servers: { dorkos: { transport: 'http', url: 'http://127.0.0.1:5555/mcp' } },
+      servers: { tracker: { transport: 'http', url: 'http://127.0.0.1:5555/mcp' } },
       signal: new AbortController().signal,
     });
     expect(
-      assembly.tools.find((tool) => tool.name === mcpAlias('managed:dorkos', 'post_to_room'))
+      assembly.tools.find((tool) => tool.name === mcpAlias('managed:tracker', 'post_to_room'))
         ?.initialLoad
     ).toBeUndefined();
     expect(assembly.tools.filter((tool) => tool.name === 'post_to_room')).toHaveLength(1);
@@ -96,6 +96,22 @@ describe('authenticated Doe MCP assembly', () => {
       CONNECTOR_RUNTIME_TOOL_TIMEOUT_MS,
       10000,
     ]);
+    await assembly.dispose();
+  });
+  it('never loads a managed server named like DorkOS’s own, in any case (DOR-3600)', async () => {
+    const assembly = await assembleDoeMcp({
+      agentPath: '/agent',
+      connectorInjection: injection,
+      servers: {
+        dorkos: { transport: 'http', url: 'http://127.0.0.1:5555/mcp' },
+        DorkOS_Connections: { transport: 'http', url: 'http://127.0.0.1:5556/mcp' },
+      },
+      signal: new AbortController().signal,
+    });
+    // Only DorkOS's own two servers connected; neither managed one was dialled.
+    expect(calls.limits).toHaveLength(2);
+    expect(assembly.statuses.map((entry) => entry.scope)).toEqual(['runtime']);
+    expect(assembly.serverConfigs).toEqual({});
     await assembly.dispose();
   });
   // On any configured server, not only one shaped like the agent browser: a Playwright server
@@ -181,6 +197,27 @@ describe('authenticated Doe MCP assembly', () => {
     await expect(tool('browser_take_screenshot').execute({}, context)).resolves.toEqual({
       content: [{ type: 'text', text: 'managed:pw' }],
     });
+    await assembly.dispose();
+  });
+  it('refuses a call to a server the agent no longer gets, mid-turn (DOR-3872)', async () => {
+    calls.names = ['create_issue'];
+    let current = ['github', 'tracker'];
+    const assembly = await assembleDoeMcp({
+      agentPath: '/agent',
+      servers: {
+        github: { transport: 'stdio', command: 'node', args: ['gh.js'] },
+        tracker: { transport: 'stdio', command: 'node', args: ['t.js'] },
+      },
+      stillManaged: (name) => current.includes(name),
+      signal: new AbortController().signal,
+    });
+    const tool = (server: string) =>
+      assembly.tools.find((entry) => entry.name === mcpAlias(`managed:${server}`, 'create_issue'))!;
+    const context = { signal: new AbortController().signal, emit: () => {} } as never;
+    await expect(tool('github').execute({}, context)).resolves.toBeDefined();
+    current = ['tracker'];
+    await expect(tool('github').execute({}, context)).rejects.toThrow('removed or turned off');
+    await expect(tool('tracker').execute({}, context)).resolves.toBeDefined();
     await assembly.dispose();
   });
   it('holds the eager schema budget constant as registry contributions grow', async () => {

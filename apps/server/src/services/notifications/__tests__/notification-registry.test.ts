@@ -99,6 +99,14 @@ const PAYLOADS: { [K in NotificationKind]: NotificationPayloads[K] } = {
   'agent.unreachable': { agentId: 'agent-1', agentName: 'Ana' },
   'signin.required': { runtime: 'claude-code', since: '2026-08-20T03:00:00.000Z' },
   'shell.check_down': { since: '2026-11-04T03:00:00.000Z', full: true },
+  'report.undelivered': {
+    sessionId: 'sess-1',
+    parentSessionId: 'sess-parent',
+    sessionLabel: 'Research follow-up',
+    agentId: 'agent-1',
+    reason: 'finished',
+    at: '2026-11-13T17:00:00.000Z',
+  },
   'update.installed': { version: '0.61.0', previousVersion: '0.60.0' },
   'report.daily': {
     date: '2026-08-20',
@@ -190,6 +198,8 @@ const PAYLOADS: { [K in NotificationKind]: NotificationPayloads[K] } = {
     targetAgentId: 'agent-2',
     title: 'Scout took Gmail (Work) access away from Bea',
   },
+  'mcp-server.tool_added': { server: 'tracker', tool: 'export_all', agentNames: ['Quill'] },
+  'mcp-server.reserved_name': { server: 'dorkos' },
   'web.new_device': { deviceRef: 'ref-1', label: 'Safari on iPhone' },
   'agent.secret_files': {
     agentId: 'agent-1',
@@ -234,6 +244,7 @@ const EXPECTED_TIERS: Record<NotificationKind, string> = {
   'agent.unreachable': 'quiet',
   'signin.required': 'blocking',
   'shell.check_down': 'blocking',
+  'report.undelivered': 'notable',
   'update.installed': 'quiet',
   'report.daily': 'quiet',
   'account.limited': 'notable',
@@ -261,6 +272,10 @@ const EXPECTED_TIERS: Record<NotificationKind, string> = {
   'connector.destructive_executed': 'quiet',
   // One agent took another's access away: the person sees it now (Security G2).
   'connector.access_narrowed': 'blocking',
+  // A server added a tool an agent already allows wholesale: worth seeing, not urgent.
+  'mcp-server.tool_added': 'notable',
+  // A saved server stopped reaching agents: worth fixing, nothing waits on it (DOR-4262).
+  'mcp-server.reserved_name': 'notable',
   'web.new_device': 'notable',
   'agent.secret_files': 'notable',
   // A notice with a way to act, never a hold: nothing waits on it (DOR-3245).
@@ -363,8 +378,11 @@ describe('notification registry', () => {
       'extension.approval',
       'extension.decision',
       'heartbeat.credits-offer',
+      'mcp-server.reserved_name',
+      'mcp-server.tool_added',
       'mention.received',
       'report.daily',
+      'report.undelivered',
       'run.completed',
       'schedule.armed_by_agent',
       'schedule.parked',

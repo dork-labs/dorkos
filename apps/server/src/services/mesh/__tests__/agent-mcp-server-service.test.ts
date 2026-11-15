@@ -194,6 +194,16 @@ describe('AgentMcpServerService — name rules', () => {
     ).rejects.toBeInstanceOf(AgentMcpServerError);
   });
 
+  it('rejects the connection tools’ name too, in any case (DOR-3600)', async () => {
+    const { service, agentId } = await setup();
+    await expect(
+      service.add({ agentId, name: 'Dorkos_Connections', connection: stdioConn, addedBy: 'x' })
+    ).rejects.toMatchObject({
+      code: 'RESERVED_NAME',
+      message: "Dorkos_Connections is one of DorkOS's own names. Pick another.",
+    });
+  });
+
   it('rejects a duplicate name within the agent', async () => {
     const { service, agentId } = await setup();
     await service.add({ agentId, name: 'dup', connection: stdioConn, addedBy: 'x' });

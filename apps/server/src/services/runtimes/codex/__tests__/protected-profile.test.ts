@@ -38,7 +38,7 @@ describe.each(['default', 'acceptEdits', 'bypassPermissions'])(
     it('selects the same profile on start/resume without a legacy sandbox option', () => {
       const settings = { permissionMode };
       const load = buildLoadOverrides(
-        { cwd: roots.cwd, settings, tools },
+        { sessionId: 'profile-chat', cwd: roots.cwd, settings, tools },
         { threadKey: undefined, trust: undefined, realCwd: roots.cwd }
       );
       expect(load.permissions).toBe(codexPermissionProfile(settings));
@@ -52,7 +52,7 @@ describe.each(['default', 'acceptEdits', 'bypassPermissions'])(
       const settings = { permissionMode };
       const config = codexProtectedConfig(roots.cwd, filePolicy, settings);
       const load = buildLoadOverrides(
-        { cwd: roots.cwd, settings, tools },
+        { sessionId: 'profile-chat', cwd: roots.cwd, settings, tools },
         { threadKey: undefined, trust: undefined, realCwd: roots.cwd }
       );
       expect(config.default_permissions).toBe(codexPermissionProfile(settings));
@@ -76,6 +76,15 @@ describe.each(['default', 'acceptEdits', 'bypassPermissions'])(
       expect(files['/probe/home/**/.dork/plugins/**']).toBe('deny');
       expect(files).not.toHaveProperty('/probe/data/agents/*/.agents/**');
       expect(files['/probe/agent/.agents']).toBe('read');
+    });
+
+    // DOR-3105: rewriting the Terminal command would run Codex's code as the person the next
+    // time they type `dorkos`. Codex may read it, never write it, even at Full.
+    it('keeps the Terminal command read-only, even at Full', () => {
+      const config = codexProtectedConfig(roots.cwd, filePolicy, { permissionMode });
+      const profiles = config.permissions as Record<string, { filesystem: Record<string, string> }>;
+      const files = profiles[codexPermissionProfile({ permissionMode })]!.filesystem;
+      expect(files['/probe/home/.local/bin/dorkos']).toBe('read');
     });
 
     // DOR-3613: the person's DorkOS sign-in and the agent browser's cookies.

@@ -146,6 +146,9 @@ export const connectionsSearchSchema = mergeDialogSearch(
     who: z.literal('picked').optional().catch(undefined),
     // Which list the page shows. Absent, or anything else, is Apps.
     tab: z.literal('mcp').optional().catch(undefined),
+    // Opens one global MCP server's sheet on the MCP servers list (the Inbox's
+    // Review on "added a tool", DOR-4118). Cleared once the sheet opens.
+    mcpServer: z.string().min(1).max(200).optional().catch(undefined),
   })
 );
 export const activitySearchSchema = mergeDialogSearch(

@@ -4,7 +4,7 @@ import {
   CONNECTOR_RUNTIME_MCP_SERVER_NAME,
   type ConnectorRuntimeTools,
 } from '../connector-tools.js';
-import { dorkosToolNameFor } from './dorkos-tool-names.js';
+import { DORKOS_MCP_SERVER_NAME, dorkosToolNameFor, mcpToolNameFor } from './dorkos-tool-names.js';
 import { SERVICE_CATALOG_TOOL_NAME } from '../../connectors/connector-capabilities.js';
 
 /** Select a snapshot now; record it only after the adapter delivers the context. */
@@ -59,16 +59,12 @@ export function formatAccountsAccess(
   names?: { dorkos(name: string): string; connector(name: string): string }
 ): string {
   // Claude Code carries the connection tools on its in-session `dorkos` server;
-  // Codex and OpenCode receive them on a dedicated server of their own.
-  const prefix =
-    runtime === 'claude-code'
-      ? dorkosToolNameFor('claude-code', '')
-      : runtime === 'codex'
-        ? `mcp__${CONNECTOR_RUNTIME_MCP_SERVER_NAME}__`
-        : `${CONNECTOR_RUNTIME_MCP_SERVER_NAME}_`;
+  // Codex and OpenCode receive them on a dedicated server of their own. Each
+  // runtime rewrites the registered dot to `_`, so the name is never written raw.
+  const server =
+    runtime === 'claude-code' ? DORKOS_MCP_SERVER_NAME : CONNECTOR_RUNTIME_MCP_SERVER_NAME;
   const tool = (name: string) =>
-    names?.connector(`connectors.${name}`) ??
-    prefix + (runtime === 'opencode' ? `connectors_${name}` : `connectors.${name}`);
+    names?.connector(`connectors.${name}`) ?? mcpToolNameFor(runtime, server, `connectors.${name}`);
   // The service catalog lives on the ordinary `dorkos` server, not on the
   // dedicated connections server. Name it only when this turn attached that
   // server; a name the model cannot call is worse than none (DOR-1292).

@@ -11,6 +11,7 @@ import { PERMISSION_AREA_IDS } from '@dorkos/shared/permissions';
 import { composeCapabilityRegistryForDocs } from '../../../../core/self-description/dorkos-registry.js';
 import { MCP_TOOL_TIERS, type McpToolTier } from '../../../../core/mcp-tool-tiers.js';
 import { DORKOS_AREAS, areaLineCovers, buildDorkosAreasBlock } from '../dorkos-areas.js';
+import { estimateTokens } from '../../window/context-fit.js';
 
 /** Every agent-reachable id, with the permission area it belongs to. */
 function everyId(): { id: string; area: string | null }[] {
@@ -62,10 +63,31 @@ describe('DORKOS_AREAS', () => {
 describe('buildDorkosAreasBlock', () => {
   const block = buildDorkosAreasBlock();
 
-  it('lists every area, each with what governs it', () => {
+  it('lists every area, each with what governs it: a bracket, the gates line, or both', () => {
     for (const line of DORKOS_AREAS) expect(block).toContain(`- ${line.name}: `);
-    expect(block).toContain('[Tools & packages; adding or changing one always asks]');
-    expect(block.match(/\[[^\]]+\]$/gm)).toHaveLength(DORKOS_AREAS.length);
+    const withArea = DORKOS_AREAS.filter((line) => line.areas.length > 0);
+    expect(block.match(/\[[^\]]+\]$/gm)).toHaveLength(withArea.length);
+    expect(block).toContain('[Tools & packages]');
+    const gates = block.split('\n').find((text) => text.startsWith('Gates:')) ?? '';
+    for (const line of DORKOS_AREAS.filter((candidate) => candidate.gate)) {
+      expect({ line: line.name, gated: gates.includes(line.name) }).toEqual({
+        line: line.name,
+        gated: true,
+      });
+    }
+    expect(gates).toContain(
+      'adding or changing an MCP server asks, and only a person adds one for all agents (Tools)'
+    );
+  });
+
+  it('keeps every step that needs a person (Security, DOR-3219 diet)', () => {
+    // The trim may shorten a line, never drop what tells an agent to ask a person.
+    expect(block).toContain('only a person adds one for all agents (Tools)');
+    expect(block).toContain('build extensions a person approves');
+    expect(block).toContain('a person shares it (Agent browser)');
+    expect(block).toContain('per-app grant (Connected apps)');
+    for (const label of ['Permissions', 'Safety limits', 'Tools & packages'])
+      expect(block).toContain(label);
   });
 
   it('gives every line with no permission area the thing that gates it instead', () => {
@@ -76,7 +98,7 @@ describe('buildDorkosAreasBlock', () => {
   });
 
   it('says it describes what exists, not what is allowed, and where the levels are', () => {
-    expect(block).toContain('This is what exists, not what you may do now');
+    expect(block).toContain('What exists, not what you may do now');
     expect(block).toContain('ends in `list_my_permissions`');
   });
 
@@ -90,12 +112,48 @@ describe('buildDorkosAreasBlock', () => {
     expect(block).toContain('never send them to a terminal');
   });
 
-  it('stays small enough to ride in every session', () => {
-    // About 600 tokens; the ticket aimed at 400 for fifteen lines.
-    expect(block.length).toBeLessThan(2_700);
+  it('stays small enough to ride in every session (DOR-3219 diet)', () => {
+    // Design pass v1 row 14: at most 450 tokens, by the estimate the context
+    // window fit uses, and no area line past about 25 words.
+    expect(estimateTokens(block.length)).toBeLessThanOrEqual(450);
+    for (const text of block.split('\n').filter((candidate) => candidate.startsWith('- '))) {
+      const sentence = text.replace(/^- /, '').replace(/ \[[^\]]*\]$/, '');
+      expect({ text, words: sentence.split(/\s+/).length <= 25 }).toEqual({ text, words: true });
+    }
   });
 
   it('names no runtime prefix and no third-party engine', () => {
     expect(block).not.toMatch(/mcp__|Playwright/);
+  });
+});
+
+/**
+ * Area lines that carry no bracket and are not named on the Gates line: a line
+ * an agent would read as ungoverned. Reads the rendered TEXT, so it holds
+ * whatever the data model behind it becomes.
+ */
+function bareUngatedLines(block: string): string[] {
+  const gates = block.split('\n').find((text) => text.startsWith('Gates:')) ?? '';
+  return block
+    .split('\n')
+    .filter((text) => text.startsWith('- ') && !/\[[^\]]+\]$/.test(text))
+    .map((text) => text.slice(2, text.indexOf(':')))
+    .filter(
+      (name) => !new RegExp(`[(,] ?${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}[,)]`).test(gates)
+    );
+}
+
+describe('no area line reads as ungoverned (Security, DOR-3219 diet)', () => {
+  it('names every bracketless line on the Gates line', () => {
+    expect(bareUngatedLines(buildDorkosAreasBlock())).toEqual([]);
+  });
+
+  it('catches a bracketless line the Gates line does not name', () => {
+    // The guard on the guard: a planted line with neither must be reported.
+    const planted = buildDorkosAreasBlock().replace(
+      '\nGates:',
+      '\n- Planted area: do something new.\nGates:'
+    );
+    expect(bareUngatedLines(planted)).toEqual(['Planted area']);
   });
 });

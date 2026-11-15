@@ -1,7 +1,8 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import { env } from '../../env.js';
 import { requestFactsFor } from '../../http/__tests__/described-request.js';
-import { forwardedForIsTrusted, rateLimitKey } from '../rate-limit-key.js';
+import { edgeClientRateLimitKey, forwardedForIsTrusted, rateLimitKey } from '../rate-limit-key.js';
+import type { RequestIngress } from '../../services/core/remote/ingress-mark.js';
 
 /**
  * The bucket key, tested where it is DECIDED.
@@ -106,5 +107,34 @@ describe('rateLimitKey', () => {
       // that opens up when it cannot identify anyone has an off switch.
       expect(await key(undefined)).toBe('unknown');
     });
+  });
+});
+
+// DOR-4205: the `/mcp` bad-key throttle refuses before a key is checked, so through the tunnel
+// it must tell callers apart by the client ngrok's edge saw. Made-up addresses.
+describe('edgeClientRateLimitKey', () => {
+  const facts = (ingress: RequestIngress, forwardedAddress?: string) => ({
+    ingress,
+    peerAddress: '127.0.0.1',
+    forwardedAddress: forwardedAddress ?? '127.0.0.1',
+  });
+
+  it.each(['own-tunnel', 'managed'] as const)('keys %s by the edge-observed client', (ingress) => {
+    expect(edgeClientRateLimitKey(facts(ingress, '203.0.113.7'))).toBe('203.0.113.7');
+    expect(edgeClientRateLimitKey(facts(ingress, '::ffff:203.0.113.7'))).toBe('203.0.113.7');
+  });
+
+  it('keeps a tunnel request with no forwarded address in the shared loopback bucket', () => {
+    expect(edgeClientRateLimitKey(facts('own-tunnel'))).toBe('127.0.0.1');
+  });
+
+  it.each(['direct', 'wifi'] as const)('trusts no forwarded address on %s', (ingress) => {
+    expect(
+      edgeClientRateLimitKey({
+        ingress,
+        peerAddress: '198.51.100.4',
+        forwardedAddress: '203.0.113.7',
+      })
+    ).toBe('198.51.100.4');
   });
 });

@@ -22,7 +22,7 @@ import type { RuntimeRegistry } from '../../core/runtime-registry.js';
 import { initCloudLinkManager } from '../../core/auth/cloud-link.js';
 import { setCloudV1Fetch } from '../../core/cloud/v1-client.js';
 import { addTestControlGroup } from '../../../routes/test-control.js';
-import { localDialHost } from '../../../lib/local-dial-host.js';
+import { localDialHost } from '@dorkos/shared/local-dial-host';
 import { logger } from '../../../lib/logger.js';
 import { env } from '../../../env.js';
 import { DoeRuntime } from '../doe/index.js';
@@ -35,6 +35,17 @@ import { createFakeInferenceRoutes } from './fake-inference.js';
 /** Why a test-mode DorkOS turn on anything but credits is refused. */
 export const TEST_MODE_DOE_REFUSAL =
   'In test mode, the DorkOS runtime runs only on DorkOS credits.';
+
+/** Block both Cloud transports for recorded demos without constructing a model client. */
+export function composeReplayCloud(): void {
+  if (!env.DORKOS_TEST_RUNTIME) throw new Error('Recorded demo needs the test runtime.');
+  // Every Cloud method uses this transport, including explicit clicks after boot.
+  const blockedFetch = async (): Promise<never> => {
+    throw new Error('Recorded demo: Cloud is off.');
+  };
+  initCloudLinkManager({ fetchImpl: blockedFetch });
+  setCloudV1Fetch(blockedFetch);
+}
 
 /**
  * The DorkOS runtime's options in test mode: a turn resolves its model only

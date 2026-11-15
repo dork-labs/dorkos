@@ -1,0 +1,9 @@
+{
+  "id": "261113-215636",
+  "slug": "agent-browser-tab-broker",
+  "title": "The tab broker: a boundary we can package later",
+  "created": "2026-11-13",
+  "status": "draft",
+  "project": "After launch: agent browser profiles and global MCP polish",
+  "linearIssue": "DOR-4273"
+}

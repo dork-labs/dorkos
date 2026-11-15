@@ -191,17 +191,17 @@ describe('harnessCoverage() — OpenCode', () => {
     expect(uncertain).toEqual([]);
   });
 
-  it('cannot say what a <pkg>__<name> directory does: the name must match the directory, and the docs never say what happens when it does not (SK-09)', () => {
+  it('loads a <pkg>__<name> directory under its frontmatter name: the binary does not hold the name to the directory (SK-09)', () => {
+    // The docs say the name must match the directory; `opencode 1.19.3` listed
+    // and loaded `pkg__x` as `x` anyway (meta/harness-smoke/20261114-opencode-skill-probe.md).
     const root = makeRoot();
     skill(root, '.agents/skills/pkg__x', 'x');
 
     const { discovered, uncertain } = harnessCoverage('opencode', root);
 
-    expect(discovered).toEqual([]);
-    expect(uncertain).toHaveLength(1);
-    expect(uncertain[0].path).toBe(join(root, '.agents/skills/pkg__x'));
-    expect(uncertain[0].reason).toContain('does not match the directory');
-    expect(uncertain[0].reason).toContain('does not document what it does');
+    expect(discovered.map((d) => d.key)).toEqual(['x']);
+    expect(discovered[0].dir).toBe(join(root, '.agents/skills/pkg__x'));
+    expect(uncertain).toEqual([]);
   });
 
   it('cannot say what the other half of the <pkg>__<name> shape does either: a name that DOES match the directory breaks the charset rule instead', () => {
@@ -217,10 +217,9 @@ describe('harnessCoverage() — OpenCode', () => {
     expect(uncertain[0].reason).toContain('charset rule');
   });
 
-  it('reports the SECOND copy of one skill reachable through two read paths, and keeps the first — SK-12 leaves "once or twice" open here too', () => {
-    // The 2026-07 source check suggests OpenCode keys on the frontmatter name
-    // and would collapse the pair. That is a hypothesis in the row's notes, not
-    // a documented outcome, so the walk does not act on it.
+  it('collapses one skill reachable through two read paths into the first copy, by name (SK-12)', () => {
+    // Observed against `opencode 1.19.3`: the same skill linked from both
+    // directories listed once.
     const root = makeRoot();
     skill(root, '.claude/skills/dup', 'dup');
     skill(root, '.agents/skills/dup', 'dup');
@@ -229,10 +228,20 @@ describe('harnessCoverage() — OpenCode', () => {
 
     expect(discovered).toHaveLength(1);
     expect(discovered[0].via).toBe('.claude/skills');
-    expect(uncertain).toHaveLength(1);
-    expect(uncertain[0].path).toBe(join(root, '.agents/skills/dup'));
-    expect(uncertain[0].reason).toContain('loads once or twice');
-    expect(uncertain[0].reason).toContain('.claude/skills/dup and .agents/skills/dup');
+    expect(uncertain).toEqual([]);
+  });
+
+  it('keeps one of two DIFFERENT skills that share a frontmatter name, and says nothing about the other — by name, not by path', () => {
+    // The `by-name` fixture the census asks for: two packs, two targets, one
+    // name. OpenCode listed one and dropped the other silently.
+    const root = makeRoot();
+    skill(root, '.agents/skills/pack-a__shared', 'shared');
+    skill(root, '.agents/skills/pack-b__shared', 'shared');
+
+    const { discovered, uncertain } = harnessCoverage('opencode', root);
+
+    expect(discovered.map((d) => d.key)).toEqual(['shared']);
+    expect(uncertain).toEqual([]);
   });
 
   it('stops ascending at the nearest git worktree instead of climbing to the tree root', () => {

@@ -1,4 +1,6 @@
 import { MainRequestAdmission } from '../../services/core/lifecycle/main-request-admission.js';
+import http from 'node:http';
+import type { AddressInfo } from 'node:net';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 vi.mock('../../services/core/tunnel-manager.js', () => ({
@@ -229,5 +231,90 @@ describe('Host guard on /api (DNS rebinding)', () => {
     const res = await request(server).get('/api/health').set('Host', 'dorkos.example.com');
 
     expect(res.status).toBe(200);
+  });
+});
+
+/**
+ * One request to the listener, answered as soon as its head arrives: the tunnel
+ * stream never ends, so its headers are all a test can wait for. A body is read
+ * only when the answer is not a stream.
+ */
+function answer(
+  path: string,
+  headers: Record<string, string>,
+  method = 'GET'
+): Promise<{ status: number; headers: http.IncomingHttpHeaders; body: string }> {
+  const { port } = server.address() as AddressInfo;
+  return new Promise((resolve, reject) => {
+    const req = http.request({ host: '127.0.0.1', port, path, method, headers }, (res) => {
+      const done = (body: string) => {
+        resolve({ status: res.statusCode ?? 0, headers: res.headers, body });
+        req.destroy();
+      };
+      if (String(res.headers['content-type']).startsWith('text/event-stream')) return done('');
+      let body = '';
+      res.setEncoding('utf8');
+      res.on('data', (chunk: string) => (body += chunk));
+      res.on('end', () => done(body));
+      res.on('error', () => undefined);
+    });
+    req.on('error', (error) => {
+      if (!req.destroyed) reject(error);
+    });
+    req.end();
+  });
+}
+
+// DOR-3650 (Security, Nov 12). Remote Access's own state is read by the app from
+// this computer or the person's own tunnel. A page on any other site must get no
+// CORS grant to read it, and a rebound Host must not reach it at all.
+describe('Remote Access reads refuse a foreign page and a foreign Host (DOR-3650)', () => {
+  const READS = ['/api/tunnel/status', '/api/tunnel/stream'];
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    delete process.env.DORKOS_CORS_ORIGIN;
+    vi.mocked(configManager.get).mockReset();
+    // Connected, so the tunnel's own origin is allowed and only the foreign one is not.
+    (tunnelManager as unknown as Record<string, unknown>).status = {
+      enabled: true,
+      connected: true,
+      url: 'https://abc123.ngrok-free.app',
+      port: 4241,
+      startedAt: new Date().toISOString(),
+      authEnabled: false,
+      tokenConfigured: true,
+      domain: null,
+    };
+  });
+
+  it.each(READS)('%s grants no CORS to a foreign origin', async (path) => {
+    const res = await answer(path, { Origin: 'https://evil.example.com' });
+
+    expect(res.headers['access-control-allow-origin']).toBeUndefined();
+    expect(res.headers['access-control-allow-credentials']).toBeUndefined();
+  });
+
+  it.each(READS)('%s passes no preflight for a foreign origin', async (path) => {
+    const res = await answer(
+      path,
+      { Origin: 'https://evil.example.com', 'Access-Control-Request-Method': 'GET' },
+      'OPTIONS'
+    );
+
+    expect(res.headers['access-control-allow-origin']).toBeUndefined();
+  });
+
+  it.each(READS)('%s still grants CORS to the tunnel’s own origin', async (path) => {
+    const res = await answer(path, { Origin: 'https://abc123.ngrok-free.app' });
+
+    expect(res.headers['access-control-allow-origin']).toBe('https://abc123.ngrok-free.app');
+  });
+
+  it.each(READS)('%s refuses a foreign Host', async (path) => {
+    const res = await answer(path, { Host: 'evil.com:4242', Origin: 'http://evil.com:4242' });
+
+    expect(res.status).toBe(403);
+    expect(JSON.parse(res.body).code).toBe('HOST_NOT_ALLOWED');
   });
 });

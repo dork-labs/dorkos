@@ -4,9 +4,32 @@ import {
   GlobalMcpServerInputSchema,
   MAX_GLOBAL_MCP_ARG_LENGTH,
   MAX_GLOBAL_MCP_ARGS,
+  RESERVED_MCP_SERVER_NAMES,
+  isReservedMcpServerName,
   isSecretName,
   isUnpinnedPackage,
+  partitionReservedMcpServers,
 } from '../global-mcp-schemas.js';
+
+describe('DorkOS’s own MCP server names (DOR-3600)', () => {
+  it('reserves the tool server and the connection tools, and nothing else', () => {
+    expect(RESERVED_MCP_SERVER_NAMES).toEqual(['dorkos', 'dorkos_connections']);
+  });
+
+  it('matches a reserved name in any case, and only a whole name', () => {
+    for (const name of ['dorkos', 'DorkOS', 'DORKOS', 'dorkos_connections', 'Dorkos_Connections'])
+      expect(isReservedMcpServerName(name)).toBe(true);
+    for (const name of ['dorkos-notes', 'my_dorkos', 'dorkos_connections2', ''])
+      expect(isReservedMcpServerName(name)).toBe(false);
+  });
+
+  it('splits servers into what may run and the names left out', () => {
+    expect(partitionReservedMcpServers({ DorkOS: 1, notes: 2, dorkos_connections: 3 })).toEqual({
+      kept: { notes: 2 },
+      reserved: ['DorkOS', 'dorkos_connections'],
+    });
+  });
+});
 
 describe('isSecretName', () => {
   it('a name matching the rule is secret, whatever a person marked', () => {

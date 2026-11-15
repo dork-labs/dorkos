@@ -54,6 +54,7 @@
  * @module services/runtimes/opencode/credits-sidecar
  */
 import type { InferenceModel } from '@dork-labs/cloud-api';
+import type { StreamEvent } from '@dorkos/shared/types';
 import { CreditsUnavailableError, isCreditsTokenVar } from '../../core/cloud/credits-protocols.js';
 import { creditsIsDefaultFor } from '../../core/cloud/credits-defaults.js';
 
@@ -271,4 +272,18 @@ export class OpenCodeSwitchPendingError extends Error {
     );
     this.name = 'OpenCodeSwitchPendingError';
   }
+}
+
+/**
+ * The chat's error event for a turn refused by a pending Runs on switch, or
+ * `undefined` for any other failure.
+ *
+ * @param err - What preparing the sidecar threw.
+ */
+export function switchPendingEvent(err: unknown): StreamEvent | undefined {
+  if (!(err instanceof OpenCodeSwitchPendingError)) return undefined;
+  return {
+    type: 'error',
+    data: { message: err.message, code: err.code, category: 'execution_error' },
+  };
 }

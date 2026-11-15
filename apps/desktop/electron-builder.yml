@@ -310,6 +310,9 @@ asarUnpack:
   - 'dist/server/extension-child.cjs'
   # The shell guard's child (DOR-3300) is forked the same way, on the same binary.
   - 'dist/server/shell-guard-child.cjs'
+  # The Terminal command (DOR-3105): `~/.local/bin/dorkos` names this file by
+  # its absolute path from a person's own shell, so it must be a real file.
+  - 'dist/cli/dorkos.mjs'
   # ensureCoreExtensions's fs.cp() (staging bundled extensions into
   # DORK_HOME) can't read this source tree from inside app.asar either —
   # same class of read limitation as dist/renderer above.

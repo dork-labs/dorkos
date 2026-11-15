@@ -8,9 +8,17 @@ import { isLocalBrowserAppUrl, localBrowserAppOrigins, underlyingPageUrl } from 
 
 /** Machine-readable refusal plus short app copy. Raw Playwright errors never reach the UI. */
 export class LocalBrowserError extends Error {
+  /**
+   * A refusal with a code an agent can act on.
+   *
+   * @param code - The refusal an agent can act on.
+   * @param message - DorkOS's own words; never text from a page, a chat or a person.
+   * @param fields - Untrusted text (a chat's title) kept beside the sentence, never in it.
+   */
   constructor(
     public readonly code: string,
-    message: string
+    message: string,
+    public readonly fields?: Readonly<Record<string, string | null>>
   ) {
     super(message);
   }
@@ -81,4 +89,9 @@ export function assertLocalBrowserUrl(
     );
   if (who === 'agent' && isCloudOriginUrl(value, cloudOrigins)) throw cloudOriginRefusal();
   if (who === 'agent' && isLocalBrowserAppUrl(value, appOrigins)) throw appOriginRefusal();
+}
+
+/** One recovery message for setup cancelled before the browser is ready. */
+export function browserSetupCancelled(): LocalBrowserError {
+  return new LocalBrowserError('cancelled', 'Browser setup stopped. Open it again to continue.');
 }

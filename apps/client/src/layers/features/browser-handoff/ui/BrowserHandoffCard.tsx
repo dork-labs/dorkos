@@ -19,7 +19,6 @@ export function BrowserHandoffCard({ sessionId }: BrowserHandoffCardProps) {
     ended,
     step,
     canShowWindow,
-    movesToOwnWindow,
     sharedProfile,
     busy,
     error,
@@ -47,7 +46,6 @@ export function BrowserHandoffCard({ sessionId }: BrowserHandoffCardProps) {
             agentFolder={handoff.agentFolder}
             step={step}
             canShowWindow={canShowWindow}
-            movesToOwnWindow={movesToOwnWindow}
             sharedProfile={sharedProfile}
             busy={busy}
             error={error}

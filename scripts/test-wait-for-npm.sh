@@ -100,7 +100,7 @@ EOF
 # Case 1: no version argument at all — must refuse before touching npm.
 out=$("$CHECK" 2>&1)
 rc=$?
-if [ "$rc" -eq 1 ] && printf '%s' "$out" | grep -q '^usage:'; then
+if [ "$rc" -eq 1 ] && grep <<<"$out" -q '^usage:'; then
   ok
 else
   bad "missing version: expected exit 1 + usage, got rc=$rc output=$out"
@@ -112,7 +112,7 @@ make_npm_stub "$stub_dir" success
 out=$(PATH="$stub_dir:$PATH" WAIT_FOR_NPM_POLL_SECONDS=0 WAIT_FOR_NPM_TIMEOUT_SECONDS=2 \
   "$CHECK" 1.2.3 2>&1)
 rc=$?
-if [ "$rc" -eq 0 ] && printf '%s' "$out" | grep -q 'Available after'; then
+if [ "$rc" -eq 0 ] && grep <<<"$out" -q 'Available after'; then
   ok
 else
   bad "immediate success: expected exit 0 + 'Available after', got rc=$rc output=$out"
@@ -126,7 +126,7 @@ make_npm_stub "$stub_dir" fail-then-succeed 2
 out=$(PATH="$stub_dir:$PATH" WAIT_FOR_NPM_POLL_SECONDS=0 WAIT_FOR_NPM_TIMEOUT_SECONDS=5 \
   "$CHECK" 1.2.3 2>&1)
 rc=$?
-if [ "$rc" -eq 0 ] && printf '%s' "$out" | grep -q 'attempt 3'; then
+if [ "$rc" -eq 0 ] && grep <<<"$out" -q 'attempt 3'; then
   ok
 else
   bad "eventual success: expected exit 0 on the 3rd attempt, got rc=$rc output=$out"
@@ -140,7 +140,7 @@ make_npm_stub "$stub_dir" fail
 out=$(PATH="$stub_dir:$PATH" WAIT_FOR_NPM_POLL_SECONDS=0 WAIT_FOR_NPM_TIMEOUT_SECONDS=1 \
   "$CHECK" 1.2.3 2>&1)
 rc=$?
-if [ "$rc" -eq 1 ] && printf '%s' "$out" | grep -q '::error::.*not found on npm'; then
+if [ "$rc" -eq 1 ] && grep <<<"$out" -q '::error::.*not found on npm'; then
   ok
 else
   bad "timeout: expected exit 1 + ::error:: line, got rc=$rc output=$out"
@@ -158,7 +158,7 @@ make_npm_stub "$stub_dir" fail
 out=$(env -u WAIT_FOR_NPM_TIMEOUT_SECONDS PATH="$stub_dir:$PATH" WAIT_FOR_NPM_POLL_SECONDS=0 \
   "$CHECK" 1.2.3 0 2>&1)
 rc=$?
-if [ "$rc" -eq 1 ] && printf '%s' "$out" | grep -q '::error::'; then
+if [ "$rc" -eq 1 ] && grep <<<"$out" -q '::error::'; then
   ok
 else
   bad "minutes argument: expected a 0-minute timeout to fail fast, got rc=$rc output=$out"
@@ -173,7 +173,7 @@ make_curl_stub "$stub_dir" fail-then-succeed 2
 out=$(PATH="$stub_dir:$PATH" WAIT_FOR_NPM_POLL_SECONDS=0 WAIT_FOR_NPM_TIMEOUT_SECONDS=5 \
   "$CHECK" 1.2.3 2>&1)
 rc=$?
-if [ "$rc" -eq 0 ] && printf '%s' "$out" | grep -q 'attempt 3'; then
+if [ "$rc" -eq 0 ] && grep <<<"$out" -q 'attempt 3'; then
   ok
 else
   bad "tarball late: expected exit 0 on the 3rd attempt, got rc=$rc output=$out"
@@ -188,7 +188,7 @@ make_curl_stub "$stub_dir" fail
 out=$(PATH="$stub_dir:$PATH" WAIT_FOR_NPM_POLL_SECONDS=0 WAIT_FOR_NPM_TIMEOUT_SECONDS=1 \
   "$CHECK" 1.2.3 2>&1)
 rc=$?
-if [ "$rc" -eq 1 ] && printf '%s' "$out" | grep -q '::error::'; then
+if [ "$rc" -eq 1 ] && grep <<<"$out" -q '::error::'; then
   ok
 else
   bad "tarball never: expected exit 1 + ::error::, got rc=$rc output=$out"
@@ -203,8 +203,8 @@ for v in 'v1.2.3' '1.2' '1.2.3.4' '01.2.3' '1.2.3/../x' '1.2.3 ' '1.2.3;id' '1.2
   out=$(PATH="$stub_dir:$PATH" WAIT_FOR_NPM_POLL_SECONDS=0 WAIT_FOR_NPM_TIMEOUT_SECONDS=1 \
     "$CHECK" "$v" 2>&1)
   rc=$?
-  if [ "$rc" -eq 1 ] && printf '%s' "$out" | grep -q '::error::' &&
-    printf '%s' "$out" | grep -q 'semver' && [ ! -e "$stub_dir/.curl-calls" ]; then
+  if [ "$rc" -eq 1 ] && grep <<<"$out" -q '::error::' &&
+    grep <<<"$out" -q 'semver' && [ ! -e "$stub_dir/.curl-calls" ]; then
     ok
   else
     bad "bad version '$v': expected exit 1 + ::error:: before curl, got rc=$rc output=$out"
@@ -216,7 +216,7 @@ done
 # in it can't become a workflow command of its own.
 out=$("$CHECK" $'1.2.3\n::warning::injected' 2>&1)
 rc=$?
-if [ "$rc" -eq 1 ] && ! printf '%s\n' "$out" | grep -q -e '^::warning::' -e 'injected'; then
+if [ "$rc" -eq 1 ] && ! grep <<<"$out" -q -e '^::warning::' -e 'injected'; then
   ok
 else
   bad "newline version: expected exit 1 and no echo of it, got rc=$rc output=$out"
@@ -225,7 +225,7 @@ fi
 # Case 9: a non-numeric timeout is refused rather than read as 0 minutes.
 out=$("$CHECK" 1.2.3 soon 2>&1)
 rc=$?
-if [ "$rc" -eq 1 ] && printf '%s' "$out" | grep -q '::error::'; then
+if [ "$rc" -eq 1 ] && grep <<<"$out" -q '::error::'; then
   ok
 else
   bad "bad timeout: expected exit 1 + ::error::, got rc=$rc output=$out"

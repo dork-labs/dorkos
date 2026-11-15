@@ -15,9 +15,13 @@ import {
 } from '@/layers/features/ask';
 import { useMessageContext } from './MessageContext';
 import { SubagentBlock } from './SubagentBlock';
-import { UNREADABLE_ENTRY_ERROR_CODE } from '@dorkos/shared/run-outcome';
+import {
+  OPENCODE_PROJECT_PLUGINS_ERROR_CODE,
+  UNREADABLE_ENTRY_ERROR_CODE,
+} from '@dorkos/shared/run-outcome';
 import { ErrorMessageBlock } from './ErrorMessageBlock';
 import { UnreadableEntryNote } from './UnreadableEntryNote';
+import { ProjectPluginsNote } from './ProjectPluginsNote';
 import { MemoryRecallBlock } from './MemoryRecallBlock';
 import { PermissionDeniedChip } from './rows/PermissionDeniedChip';
 import { CapabilityApprovalTimedOut } from './CapabilityApprovalTimedOut';
@@ -163,6 +167,9 @@ export function AssistantMessageContent({
     }
     if (part.type === 'background_task') {
       return <SubagentBlock key={part.taskId} part={part} />;
+    }
+    if (part.type === 'error' && part.code === OPENCODE_PROJECT_PLUGINS_ERROR_CODE) {
+      return <ProjectPluginsNote key={`project-plugins-${i}`} />;
     }
     if (part.type === 'error' && part.code === UNREADABLE_ENTRY_ERROR_CODE) {
       return <UnreadableEntryNote key={`unreadable-${i}`} message={part.message} />;
@@ -374,6 +381,7 @@ export function AssistantMessageContent({
           approvalDecisionReason={toolPart.approvalDecisionReason}
           approvalHasSuggestions={toolPart.approvalHasSuggestions}
           approvalAlwaysAllowScope={toolPart.approvalAlwaysAllowScope}
+          approvalAlwaysAllowBreadth={toolPart.approvalAlwaysAllowBreadth}
           isActive={isActive}
           onDecided={onToolDecided ? () => onToolDecided(toolPart.toolCallId) : undefined}
           allowsDenyReason={allowsDenyReason}

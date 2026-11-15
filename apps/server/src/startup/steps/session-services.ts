@@ -28,6 +28,7 @@ import { wireChatMessaging } from '../../services/session/chat-messages/chat-mes
 import { ChatMessageStore } from '../../services/session/chat-messages/chat-message-store.js';
 import { wireTodos } from '../../services/todos/todo-wiring.js';
 import { wireWorkQueue } from '../../services/work-queue/work-queue-wiring.js';
+import { wireWorkClaims } from '../../services/session/claims/work-claim-wiring.js';
 import {
   setOnEveryAgentEnded,
   createEveryAgentEndedRecorder,
@@ -151,6 +152,8 @@ export async function wireSessionServices(refs: ServerRefs, built: WireSessionSe
     activityService,
     meshCore: () => refs.meshCore,
   }));
+  // One agent's chats claiming work so two never take the same job (DOR-4019).
+  const workClaims = (refs.workClaimWiring = wireWorkClaims({ db, meshCore: () => refs.meshCore }));
   // Sharing with every agent that ends as a side effect (a disconnect, a move
   // to a DorkOS account) is recorded too, so every change to it leaves a
   // trace. Set here, before any provider registers, so boot-time changes count.
@@ -322,6 +325,7 @@ export async function wireSessionServices(refs: ServerRefs, built: WireSessionSe
     chatMessaging,
     todoPromises,
     workQueue,
+    workClaims,
     arrivalRecord,
     personSetPermissions,
     permissionObserver,

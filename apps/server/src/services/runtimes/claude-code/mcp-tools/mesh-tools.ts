@@ -18,7 +18,7 @@ import { jsonContent, structuredJsonContent } from './types.js';
 /** Guard that returns an error response when Mesh is disabled. */
 function requireMesh(deps: McpToolDeps) {
   if (!deps.meshCore) {
-    return jsonContent({ error: 'Mesh is not enabled', code: 'MESH_DISABLED' }, true);
+    return jsonContent({ error: 'The agent directory is off', code: 'MESH_DISABLED' }, true);
   }
   return null;
 }
@@ -417,7 +417,7 @@ export function meshToolDefinitions(deps: McpToolDeps) {
     tool(
       'mesh_list',
       'List all registered agents with optional filters. To message an agent, pass its id ' +
-        'as "to" to the chat send tool. The relaySubject field is only for Relay and A2A integrations.',
+        'as "to" to the chat send tool. The relaySubject field is only for message-bus and A2A integrations.',
       {
         runtime: z.string().optional().describe('Filter by runtime'),
         capability: z.string().optional().describe('Filter by capability'),
@@ -451,7 +451,7 @@ export function meshToolDefinitions(deps: McpToolDeps) {
     tool(
       'mesh_inspect',
       'Inspect a specific agent — manifest and health status. Its id is what the chat send ' +
-        'tool takes as "to"; the relay endpoint is only for Relay and A2A integrations.',
+        'tool takes as "to"; the relay endpoint is only for message-bus and A2A integrations.',
       {
         agentId: z.string().describe('The agent ULID to inspect'),
       },

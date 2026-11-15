@@ -192,12 +192,20 @@ describe('common room document notifications', () => {
       let frames: () => StreamFrame[];
       let end: () => void;
       let closed: () => boolean;
+      // The headers the request arrived with, which the caller must carry.
+      let requestHeaders: Record<string, string>;
       if (protocol === 'sse') {
         const res = new ResponseProbe();
         sinks.push(res);
         // The handler as the rooms group serves it, on the raw Node pair.
         const app = new Hono<ApiEnv>().get('/api/rooms/:id/events', roomEventsHandler);
-        const incoming = { headers: {}, socket: {} };
+        // A request from this computer. With no peer address it would count as
+        // another device, which the Remote Access switch tracks (DOR-3650).
+        const incoming = {
+          headers: { host: 'localhost:4242' },
+          socket: { remoteAddress: '127.0.0.1' },
+        };
+        requestHeaders = incoming.headers;
         completion = Promise.resolve(
           app.fetch(new Request(`http://localhost/api/rooms/${f.room.id}/events`), {
             incoming,
@@ -216,9 +224,10 @@ describe('common room document notifications', () => {
         const socket = new SocketProbe();
         sinks.push(socket);
         const path = `/api/rooms/${f.room.id}/events`;
+        requestHeaders = {};
         const decision = await roomEventsRoute.authorize({
           url: new URL(`http://localhost${path}`),
-          headers: {},
+          headers: requestHeaders,
           match: /^\/api\/rooms\/([^/]+)\/events$/.exec(path)!,
           locals: {},
         });
@@ -232,7 +241,10 @@ describe('common room document notifications', () => {
       try {
         await until(() => frames().some((frame) => frame.event === 'canvas_channel_snapshot'));
         expect(frames()[0]!.event).toBe('snapshot');
-        expect(factory).toHaveBeenCalledWith(f.scope, expect.objectContaining({ headers: {} }));
+        expect(factory).toHaveBeenCalledWith(
+          f.scope,
+          expect.objectContaining({ headers: requestHeaders })
+        );
         const initialCursor = f.service.maxSeq(f.room.id);
         f.append();
         await until(() => documentEvents(frames()).length === 1);

@@ -70,7 +70,7 @@ run() {
 
 # refused <name>: exit 1, a ::error:: line, and nothing on stdout to hash.
 refused() {
-  if [ "$rc" -eq 1 ] && [ -z "$out" ] && printf '%s' "$err" | grep -q '::error::'; then
+  if [ "$rc" -eq 1 ] && [ -z "$out" ] && grep <<<"$err" -q '::error::'; then
     ok
   else
     bad "$1: expected exit 1, empty stdout and ::error::, got rc=$rc out=$out err=$err"
@@ -80,7 +80,7 @@ refused() {
 # Case 1: no version argument.
 out=$("$CHECK" 2>&1)
 rc=$?
-if [ "$rc" -eq 1 ] && printf '%s' "$out" | grep -q '^usage:'; then ok; else bad "missing version: rc=$rc out=$out"; fi
+if [ "$rc" -eq 1 ] && grep <<<"$out" -q '^usage:'; then ok; else bad "missing version: rc=$rc out=$out"; fi
 
 # Case 2: the CDN answers 404, so `curl -f` fails.
 run "$fixtures/404.html" 22 "$real_integrity"
@@ -89,12 +89,12 @@ refused "http 404"
 # Case 3: an HTML 404 page served with a success status: not gzip.
 run "$fixtures/404.html" 0 "$real_integrity"
 refused "html 404 body"
-if printf '%s' "$err" | grep -q "isn't a gzip file"; then ok; else bad "html 404 body: wrong reason: $err"; fi
+if grep <<<"$err" -q "isn't a gzip file"; then ok; else bad "html 404 body: wrong reason: $err"; fi
 
 # Case 4: a valid gzip with the wrong contents: integrity mismatch.
 run "$fixtures/other.tgz" 0 "$real_integrity"
 refused "wrong gzip"
-if printf '%s' "$err" | grep -q "doesn't match npm's dist.integrity"; then ok; else bad "wrong gzip: wrong reason: $err"; fi
+if grep <<<"$err" -q "doesn't match npm's dist.integrity"; then ok; else bad "wrong gzip: wrong reason: $err"; fi
 
 # Case 5: npm gives no sha512 integrity.
 run "$fixtures/real.tgz" 0 ""
@@ -128,7 +128,7 @@ done
 # in it can't become a workflow command of its own.
 run "$fixtures/real.tgz" 0 "$real_integrity" 0 $'1.2.3\n::warning::injected'
 refused "newline version"
-if printf '%s\n' "$err" | grep -q -e '^::warning::' -e 'injected'; then
+if grep <<<"$err" -q -e '^::warning::' -e 'injected'; then
   bad "newline version: the refusal echoed it: $err"
 else
   ok

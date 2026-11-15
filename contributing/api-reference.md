@@ -1687,6 +1687,8 @@ Via ngrok tunnel:
 }
 ```
 
+From another device `/mcp` is key-only: a per-user API key in the `Authorization` header. A sign-in cookie is ignored unless the request comes from this computer, and any query parameter named like a credential (`key`, `token`, `secret`, `auth`, `password`, `bearer`) is a `401` (`KEY_IN_QUERY` in `middleware/mcp-auth.ts`, DOR-3650).
+
 **Cursor / Windsurf:** Add an MCP server in settings with URL `http://localhost:6242/mcp` and type `http`. If using an API key, configure the `Authorization: Bearer <key>` header in the MCP server settings.
 
 ## A2A Gateway
@@ -1708,6 +1710,7 @@ A card carrying that requirement does not claim the card endpoint is closed. A2A
 
 ### Deployment security
 
+- **Closed to other devices.** Managed remote access and the own tunnel refuse `/a2a`, `/a2a/*` and `/.well-known/agent*` before routing (DOR-3650). The list is `REMOTE_REFUSED_PATHS` in `@dork-labs/cloud-api`, shared with any edge in front of the server; `isRefusedRemotePath` in `services/core/remote/managed-ingress.ts` applies it.
 - **Exposure guard.** On a non-loopback `DORKOS_HOST` with no auth configured (no `MCP_API_KEY`, no legacy compat key, login disabled), the server refuses to mount the A2A gateway and its well-known card routes, logging the fix: set `MCP_API_KEY` or enable login. `DORKOS_ALLOW_INSECURE_BIND=true` overrides for containers that own their network boundary.
 - **Rate limiting counts per connection, not per forwarded header.** JSON-RPC endpoints are limited to ~60 req/min and card endpoints to ~300 (`DORKOS_A2A_RPC_RATE_LIMIT` / `DORKOS_A2A_CARD_RATE_LIMIT` override). Every limiter keys on the TCP peer address through `middleware/rate-limit-key.ts` (DOR-1711); it used to key on `req.ip`, which the app's `trust proxy, 1` derives from `X-Forwarded-For`, so a caller on a direct bind could rotate spoofed values across unlimited buckets. Requests arriving through DorkOS's own tunnel share one bucket, because the ngrok agent runs in-process and forwards to the local port. Set `DORKOS_TRUST_PROXY=true` to get per-client buckets behind a proxy you control — and only then, since it means whoever reaches that proxy's upstream writes the key.
 - **`contextId` is a caller-supplied partition key, not a per-principal boundary.** A2A-originated agent sessions are keyed on `agentId + contextId`: callers using distinct `contextId`s get distinct sessions, but under a shared credential (one static `MCP_API_KEY`) a caller who learns another caller's `contextId` can deliberately join that session. Treat `contextId` as a shared secret between a caller and the gateway (use unguessable values, e.g. UUIDs). Per-principal isolation is future work.

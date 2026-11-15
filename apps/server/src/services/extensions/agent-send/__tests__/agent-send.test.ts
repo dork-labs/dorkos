@@ -31,6 +31,7 @@ import {
 } from '../../../session/message-dispatcher.js';
 import { MessageQueueStore, setMessageQueueStore } from '../../../session/message-queue-store.js';
 import { cancelQueuedMessage } from '../../../session/queued-message-edits.js';
+import { emitLifecycle } from '../../../session/message-dispatcher/state.js';
 import {
   disposeProjector,
   getOrCreateProjector,
@@ -164,6 +165,7 @@ function build(overrides: Partial<ConstructorParameters<typeof AgentSendService>
     meshCore: () => ({
       get: ((id: string) => (agents.has(id) ? { id } : undefined)) as never,
       getProjectPath: (id: string) => agents.get(id),
+      listWithPaths: () => [...agents].map(([id, projectPath]) => ({ id, name: id, projectPath })),
     }),
     describeSession: async (id) => sessions.get(id) ?? chat({ bound: false, launchOrigin: null }),
     sessionCwd: async () => '/work/project',
@@ -333,6 +335,30 @@ describe('ctx.agent.send — a busy chat holds the message', () => {
     expect(runtime.sendMessage).toHaveBeenCalledTimes(2);
     expect(events.map((e) => e.kind)).toEqual(['turn.started', 'turn.done']);
     expect(events[0]).toMatchObject({ messageId: receipt.messageId });
+  });
+
+  it('waits again, never failed, when a pause cuts its turn before the agent read it (DOR-4353)', async () => {
+    const first = gate();
+    await personTurn(first.wait);
+    const receipt = await service.send(EXT, { to: session, text: 'later', idempotencyKey: 'k1' });
+    // As the dispatcher reports a turn that started and a pause then held.
+    emitLifecycle({ phase: 'started', messageId: receipt.messageId, sessionId: session });
+    emitLifecycle({ phase: 'held', messageId: receipt.messageId, sessionId: session });
+
+    expect(store.get(receipt.messageId)?.status).toBe('queued');
+    expect(events.map((e) => e.kind)).toEqual(['turn.started']);
+
+    // The resume starts it afresh, and it finishes as any turn does.
+    emitLifecycle({ phase: 'started', messageId: receipt.messageId, sessionId: session });
+    emitLifecycle({
+      phase: 'settled',
+      messageId: receipt.messageId,
+      sessionId: session,
+      outcome: 'ok',
+    });
+    expect(events.map((e) => e.kind)).toEqual(['turn.started', 'turn.started', 'turn.done']);
+    first.open();
+    await settle();
   });
 
   it('tells the extension when a person removes the waiting message', async () => {

@@ -429,6 +429,18 @@ describe('sessions route — multi-runtime routing (real registry + real DB)', (
       expect(row!.model).toBe('sonnet');
     });
 
+    it('refuses a mode the runtime the request names does not have (DOR-4411)', async () => {
+      // QA's case: an unbound chat headed to Codex was set to Plan, judged by the
+      // inferred claude-code that has it, then bound at its agent's Full. The
+      // runtime the request names is the one asked; test-mode has no Plan.
+      const refused = await request(testServer)
+        .patch(`/api/sessions/${TEST_MODE_SESSION}`)
+        .send({ permissionMode: 'plan', runtime: 'test-mode' });
+      expect(refused.status).toBe(400);
+      expect(refused.body.code).toBe('UNSUPPORTED_PERMISSION_MODE');
+      expect(refused.body.error).toContain("cannot run permission mode 'plan'");
+    });
+
     it('keeps answering settings writes while the session is unbound, and stays unbound', async () => {
       // The row exists but names no runtime, and every read still resolves it by
       // inference — so the capability gate on `PATCH /api/sessions/:id` behaves
@@ -483,9 +495,9 @@ describe('sessions route — multi-runtime routing (real registry + real DB)', (
         .where(eq(sessionMetadata.sessionId, TEST_MODE_SESSION))
         .get();
       expect(row!.runtime).toBe('test-mode');
-      // test-mode declares no `plan`. What lands instead is its OWN mode at the
-      // configured stop — the seed, under the drop.
-      expect(row!.permissionMode).toBe('scripted');
+      // test-mode declares no `plan`. What lands instead is its OWN strictest
+      // mode, never the configured stop, which could be the agent's Full (DOR-4411).
+      expect(row!.permissionMode).toBe('always-deny');
     });
 
     it('keeps a pre-launch mode the runtime it binds does declare', async () => {
