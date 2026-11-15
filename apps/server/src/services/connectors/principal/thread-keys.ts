@@ -45,6 +45,7 @@ import type {
   ConnectorThreadKeyScope,
   MintedConnectorThreadKey,
   RevokeConnectorThreadKeyReason,
+  ThreadKeyToolListing,
 } from '../runtime-principal-port.js';
 
 /** Prefix that marks a bearer as a thread key rather than a turn bearer. */
@@ -61,6 +62,8 @@ interface ThreadKeyEntry {
   readonly scope: ConnectorThreadKeyScope;
   /** The open turn's binding, while one is attached. */
   attachedBindingId: string | undefined;
+  /** Whether its thread has fetched its DorkOS tool list (DOR-4384). */
+  toolsListed: boolean;
 }
 
 /** What a thread key resolves to: its scope, and the open turn's binding if any. */
@@ -113,7 +116,7 @@ export class ConnectorThreadKeyRegistry
     const key = `${THREAD_KEY_PREFIX}${this.random(THREAD_KEY_BYTES).toString('base64url')}`;
     const keyId = this.random(8).toString('hex');
     const hash = hashOf(key);
-    this.byHash.set(hash, { keyId, scope, attachedBindingId: undefined });
+    this.byHash.set(hash, { keyId, scope, attachedBindingId: undefined, toolsListed: false });
     this.hashById.set(keyId, hash);
     logger.debug('[ThreadKeys] minted', {
       keyId,
@@ -169,6 +172,29 @@ export class ConnectorThreadKeyRegistry
     const entry = this.byHash.get(hashOf(bearer));
     if (!entry) return undefined;
     return { keyId: entry.keyId, scope: entry.scope, bindingId: entry.attachedBindingId };
+  }
+
+  /**
+   * Record that a live key's thread fetched its DorkOS tool list (DOR-4384).
+   * A bearer that is not a live key changes nothing.
+   *
+   * @param bearer - The bearer the `tools/list` request carried.
+   */
+  noteToolsListed(bearer: string): void {
+    if (!this.isThreadKey(bearer)) return;
+    const entry = this.byHash.get(hashOf(bearer));
+    if (entry) entry.toolsListed = true;
+  }
+
+  /**
+   * Whether a live key's thread has fetched its DorkOS tool list.
+   *
+   * @param keyId - The key's non-secret id.
+   * @returns Its listing state and scope, or `undefined` when not live.
+   */
+  toolListing(keyId: string): ThreadKeyToolListing | undefined {
+    const entry = this.entryById(keyId);
+    return entry ? { listed: entry.toolsListed, scope: entry.scope } : undefined;
   }
 
   /** How many keys are live; diagnostics and tests. */
