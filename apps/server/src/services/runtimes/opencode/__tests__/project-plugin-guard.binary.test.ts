@@ -41,6 +41,14 @@ function chunk(delta: object, finish: string | null = null): string {
   return `data: ${JSON.stringify({ ...body, choices: [{ index: 0, delta, finish_reason: finish }] })}\n\n`;
 }
 
+/**
+ * While set and true, the fake model holds its reply (at most 75 s). The
+ * control sets it until its marker appears: OpenCode imports a project plugin
+ * in the background, and a run that got its answer at once could end before
+ * the import did (seen on CI: `done` in under 4 s, no marker).
+ */
+let holdReply: (() => boolean) | undefined;
+
 /** A fake model that answers every request with one word, and counts them. */
 function fakeModel(calls: string[]): Promise<{ url: string; close: () => Promise<void> }> {
   return new Promise((resolve) => {
@@ -49,10 +57,18 @@ function fakeModel(calls: string[]): Promise<{ url: string; close: () => Promise
       req.on('data', (part) => (raw += part));
       req.on('end', () => {
         calls.push(raw);
-        res.writeHead(200, { 'content-type': 'text/event-stream' });
-        res.write(chunk({ role: 'assistant', content: 'done' }));
-        res.write(chunk({}, 'stop'));
-        res.end('data: [DONE]\n\n');
+        const started = Date.now();
+        const reply = (): void => {
+          if (holdReply?.() && Date.now() - started < 75_000) {
+            setTimeout(reply, 200);
+            return;
+          }
+          res.writeHead(200, { 'content-type': 'text/event-stream' });
+          res.write(chunk({ role: 'assistant', content: 'done' }));
+          res.write(chunk({}, 'stop'));
+          res.end('data: [DONE]\n\n');
+        };
+        reply();
       });
     });
     server.listen(0, '127.0.0.1', () => {
@@ -79,7 +95,7 @@ function projectWithMarkerPlugin(root: string, marker: string): string {
   return project;
 }
 
-/** Run `opencode run` in `cwd` until it exits; 60 s at most. */
+/** Run `opencode run` in `cwd` until it exits; 100 s at most. */
 async function runOnce(cwd: string, env: Record<string, string>): Promise<string> {
   const child = spawn(BINARY!, ['run', '-m', 'fake/x', 'hello'], {
     cwd,
@@ -91,7 +107,7 @@ async function runOnce(cwd: string, env: Record<string, string>): Promise<string
   child.stderr.on('data', (data) => (output += String(data)));
   await new Promise<void>((resolve) => {
     // Let the run finish: the plugin is imported after the first model call.
-    const deadline = setTimeout(resolve, 60_000);
+    const deadline = setTimeout(resolve, 100_000);
     child.once('exit', () => {
       clearTimeout(deadline);
       resolve();
@@ -188,9 +204,17 @@ describe.skipIf(BINARY === null)('a project plugin on the real OpenCode (DOR-439
       XDG_CACHE_HOME: own('cache'),
     } as Record<string, string>;
     expect(env.OPENCODE_DISABLE_PROJECT_CONFIG).toBe('1');
-    const output = await runOnce(project, env);
+    // The run stays alive until the import has had its chance; the assertion
+    // is unchanged, so a plugin that never loads still fails this.
+    holdReply = () => !fs.existsSync(marker);
+    let output: string;
+    try {
+      output = await runOnce(project, env);
+    } finally {
+      holdReply = undefined;
+    }
     expect(fs.existsSync(marker), output).toBe(true);
-  }, 90_000);
+  }, 150_000);
 
   it("DorkOS refuses a real prompt there, and the plugin's code never runs", async () => {
     const marker = path.join(root, 'guarded-marker');
