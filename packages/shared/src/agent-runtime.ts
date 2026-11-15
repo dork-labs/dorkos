@@ -877,7 +877,9 @@ export interface RuntimeCapabilities {
    * misspells a key, gets the strictest treatment rather than inheriting a
    * guard it never built. Declaring one is a promise the conformance suite
    * holds the runtime to: every declared guard comes with a test that proves
-   * it, and a proof for an undeclared guard fails too.
+   * it, and a proof for an undeclared guard fails too. A proof tests the pieces
+   * a launch builds the guard from, not that a launch still wires them in; that
+   * is each runtime's own launch tests' job.
    */
   guards?: RuntimeGuards;
 
