@@ -66,22 +66,35 @@ function check(cwd: string, ref: string, escape: boolean): number {
     const { sha, tree } = commit(cwd, ref);
     shortSha = sha.slice(0, 12);
     const dir = proofDir(cwd);
+    // The clean-tree rule lives at record time (runVerification). Checking judges only the
+    // recorded proof against the commit's own tree, so it works from a checkout with
+    // unrelated edits, such as the main checkout the arm script runs from.
     if (escape) {
       mkdirSync(dir, { recursive: true });
       appendFileSync(
         path.join(dir, 'escapes.jsonl'),
         JSON.stringify({
           sha,
+          tree,
+          // Unknown identity is refused (git config exits non-zero), never logged as blank.
           who: git(cwd, 'config', 'user.name'),
+          // eslint-disable-next-line no-restricted-syntax -- scripts/ has no env.ts; the OS login is the audit fact itself
+          user: process.env.USER || process.env.USERNAME || null,
           when: new Date().toISOString(),
         }) + '\n'
       );
       return 0;
     }
     const proof = JSON.parse(readFileSync(path.join(dir, sha), 'utf8'));
-    if (proof.sha === sha && proof.tree === tree && typeof proof.passedAt === 'string') return 0;
+    if (
+      proof.sha === sha &&
+      proof.tree === tree &&
+      typeof proof.passedAt === 'string' &&
+      Number.isFinite(Date.parse(proof.passedAt))
+    )
+      return 0;
   } catch {
-    // Missing, unreadable, or malformed proof is the same actionable refusal.
+    // Missing, unreadable, malformed, or mismatched proof is the same actionable refusal.
   }
   console.error(
     `no pnpm verify pass recorded for ${shortSha}; run pnpm verify, or pass --no-verify-proof`
@@ -104,6 +117,13 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
       );
       return result.status ?? 1;
     });
+  } else if (command === 'run') {
+    // A forced or filtered run is not the gate a proof stands for, so it is refused outright.
+    console.error(
+      `pnpm verify takes no arguments (got: ${process.argv.slice(3).join(' ')}); ` +
+        'for a forced run use turbo run typecheck lint --force, or turbo run test --force -- --run'
+    );
+    process.exitCode = 2;
   } else if (command === 'check' && ref && flags.every((flag) => flag === '--no-verify-proof')) {
     process.exitCode = check(process.cwd(), ref, flags.includes('--no-verify-proof'));
   } else {

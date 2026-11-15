@@ -1,5 +1,5 @@
 import { execFileSync, spawnSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -51,6 +51,7 @@ describe('verification proof', () => {
       spawnSync(process.execPath, [script, 'run'], {
         cwd: repo,
         encoding: 'utf8',
+        // eslint-disable-next-line no-restricted-syntax -- scripts/ has no env.ts; child processes inherit PATH and git config
         env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, PROOF_TEST_EXIT: status },
       });
     expect(run('0').status).toBe(0);
@@ -61,6 +62,16 @@ describe('verification proof', () => {
     expect(readFileSync(path.join(repo, '.git/gate-runs'), 'utf8')).toBe(
       'run verify:checks\nrun verify:checks\n'
     );
+  });
+
+  it('refuses extra arguments to run before any check starts', () => {
+    const result = spawnSync(process.execPath, [script, 'run', '--force'], {
+      cwd: repo,
+      encoding: 'utf8',
+    });
+    expect(result.status).toBe(2);
+    expect(result.stderr).toMatch(/^pnpm verify takes no arguments \(got: --force\);/);
+    expect(existsSync(path.join(repo, '.git/dorkos-verify-proof'))).toBe(false);
   });
 
   it('refuses a missing record with exactly one actionable line', () => {
@@ -93,13 +104,80 @@ describe('verification proof', () => {
     expect(result.stderr).toBe('');
   });
 
-  it('allows the explicit escape and logs who, when, and the exact SHA', () => {
-    expect(check('--no-verify-proof').status).toBe(0);
+  it('allows the explicit escape and logs who, when, the full SHA, and its tree', () => {
+    const escaped = spawnSync(process.execPath, [script, 'check', sha, '--no-verify-proof'], {
+      cwd: repo,
+      encoding: 'utf8',
+      // eslint-disable-next-line no-restricted-syntax -- scripts/ has no env.ts; child processes inherit PATH and git config
+      env: { ...process.env, USER: 'test-operator' },
+    });
+    expect(escaped.status).toBe(0);
     const log = readFileSync(path.join(repo, '.git/dorkos-verify-proof/escapes.jsonl'), 'utf8');
     const record = JSON.parse(log.trim());
-    expect(record).toMatchObject({ sha, who: 'Test Founder' });
+    expect(record).toEqual({
+      sha,
+      tree: git('rev-parse', `${sha}^{tree}`),
+      who: 'Test Founder',
+      user: 'test-operator',
+      when: expect.any(String),
+    });
+    expect(sha).toMatch(/^[0-9a-f]{40}$/);
     expect(Number.isNaN(Date.parse(record.when))).toBe(false);
     expect(check().status).toBe(1);
+  });
+
+  it('refuses the escape when the git user is unknown, and logs nothing', () => {
+    git('config', '--unset', 'user.name');
+    const result = spawnSync(process.execPath, [script, 'check', sha, '--no-verify-proof'], {
+      cwd: repo,
+      encoding: 'utf8',
+      // eslint-disable-next-line no-restricted-syntax -- scripts/ has no env.ts; child processes inherit PATH and git config
+      env: { ...process.env, GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1' },
+    });
+    expect(result.status).toBe(1);
+    expect(result.stderr).toBe(refusal());
+    expect(existsSync(path.join(repo, '.git/dorkos-verify-proof/escapes.jsonl'))).toBe(false);
+  });
+
+  it.each([
+    ['corrupt JSON', '{"sha":'],
+    ['a JSON null', 'null'],
+    ['an empty file', ''],
+    [
+      'an unparseable pass time',
+      (record: object) => JSON.stringify({ ...record, passedAt: 'soon' }),
+    ],
+    ['another commit', (record: object) => JSON.stringify({ ...record, sha: 'f'.repeat(40) })],
+  ])('refuses a proof file holding %s', (_label, contents) => {
+    expect(runVerification(repo, () => 0)).toBe(0);
+    const proof = path.join(repo, '.git/dorkos-verify-proof', sha);
+    const record = JSON.parse(readFileSync(proof, 'utf8'));
+    writeFileSync(proof, typeof contents === 'string' ? contents : contents(record));
+    const result = check();
+    expect(result.status).toBe(1);
+    expect(result.stderr).toBe(refusal());
+  });
+
+  it('refuses a proof path it cannot read as a file', () => {
+    mkdirSync(path.join(repo, '.git/dorkos-verify-proof', sha), { recursive: true });
+    expect(check().status).toBe(1);
+    expect(check().stderr).toBe(refusal());
+  });
+
+  it('refuses a ref that is not a commit', () => {
+    sha = 'not-a-ref';
+    expect(check().status).toBe(1);
+    expect(check().stderr).toBe(refusal());
+  });
+
+  it('judges valid proof the same from a checkout with unrelated edits', () => {
+    expect(runVerification(repo, () => 0)).toBe(0);
+    // The arm script checks from the main checkout, which carries other people's edits.
+    writeFileSync(path.join(repo, 'example.txt'), 'someone else is mid-edit');
+    writeFileSync(path.join(repo, 'scratch.txt'), 'untracked');
+    const result = check();
+    expect(result.status).toBe(0);
+    expect(result.stderr).toBe('');
   });
 
   it('records nothing for a dirty starting tree even if checks clean it', () => {
