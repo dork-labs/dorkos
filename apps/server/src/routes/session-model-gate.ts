@@ -177,6 +177,29 @@ export function rejectUndeclaredPermissionMode(
 }
 
 /**
+ * {@link rejectUndeclaredPermissionMode}, asked of the runtime the session runs
+ * on: its bound one, else the one the request names, else the inferred one.
+ * Asking the inferred claude-code for a chat headed to Codex accepted `plan`,
+ * which Codex does not have (DOR-4411).
+ *
+ * @param owner - The runtime the session resolves to now.
+ * @param bound - Whether that answer is a binding or an inference.
+ * @param hint - The runtime the request names, if any.
+ * @param permissionMode - The mode the request asks to store.
+ */
+export function rejectUndeclaredSessionMode(
+  owner: AgentRuntime,
+  bound: boolean,
+  hint: string | undefined,
+  permissionMode: PermissionModeId
+): string | null {
+  return rejectUndeclaredPermissionMode(
+    modelGateAuthority(owner, bound, hint) ?? owner,
+    permissionMode
+  );
+}
+
+/**
  * The runtime whose catalog may REFUSE this model write, or `null` when nothing
  * has the standing to refuse it.
  *

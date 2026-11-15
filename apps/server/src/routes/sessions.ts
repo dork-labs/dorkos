@@ -83,7 +83,7 @@ import { sessionEventsHandler } from './session-events-handler.js';
 import { guardSessionParam, readableSessions } from './session-read-guard.js';
 import {
   modelGateAuthority,
-  rejectUndeclaredPermissionMode,
+  rejectUndeclaredSessionMode,
   rejectUnknownModel,
 } from './session-model-gate.js';
 import { mountWindowSignalRoutes, touchedSinceKeeper } from './session-touch-handler.js';
@@ -596,8 +596,13 @@ export function createSessionRoutes(deps: SessionRouteDeps = {}): Hono<ApiEnv> {
     // adopted — a codex session PATCHed to `auto` reads "Auto" everywhere while
     // it keeps running read-only. WRITE PATH ONLY: a session already persisted in
     // a now-undeclared mode still loads and runs.
+    //
+    // Asked of the runtime the session will run on: its bound one, else the one
+    // the request names, else the inferred one. Asking the inferred claude-code
+    // for a chat headed to Codex accepted `plan`, which Codex does not have, and
+    // the turn then ran at the agent's level (DOR-4411).
     if (requestedMode !== undefined) {
-      const modeError = rejectUndeclaredPermissionMode(runtime, requestedMode);
+      const modeError = rejectUndeclaredSessionMode(runtime, bound, runtimeHint, requestedMode);
       if (modeError) return c.json(errorBody(modeError, 'UNSUPPORTED_PERMISSION_MODE'), 400);
     }
     // From Wi-Fi a chat's mode may go down, never up (DOR-3037).
@@ -611,12 +616,10 @@ export function createSessionRoutes(deps: SessionRouteDeps = {}): Hono<ApiEnv> {
     // Model ids are namespaced per runtime and overlap nowhere, so asking the
     // wrong one is a guaranteed refusal rather than a rare one — which is exactly
     // what shipped, and what {@link modelGateAuthority} exists to stop. The mode
-    // gate above keeps asking `runtime` because every runtime here declares a
-    // SUBSET of claude-code's mode ids, so the inference can only ever be too
-    // permissive there, and the too-permissive direction is already caught where
-    // the runtime finally becomes known (`RuntimeRegistry.claimedPermissionMode`
-    // drops a mode the bound runtime does not declare). Narrowing it to the hint
-    // would ADD refusals, not remove them, and that is a separate decision.
+    // gate above asks the same authority, falling back to `runtime` when the
+    // session is unbound and names no runtime: there the inference can only be
+    // too permissive, and the turn backstop (`clampModeToCeiling`) runs an
+    // undeclared mode at the runtime's strictest, never the agent's level.
     //
     // Which MENU is the other half of the question. A session on DorkOS credits
     // may run only what credits serve on its runtime's protocol, so it is judged
