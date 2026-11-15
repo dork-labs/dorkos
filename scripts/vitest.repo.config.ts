@@ -91,6 +91,7 @@ export const HERMETIC_SUITES = [
   '__tests__/origin-branch-janitor.test.ts',
   '__tests__/pr-test-plan.test.ts',
   '__tests__/pre-push-format-gate.test.ts',
+  '__tests__/pre-push-midrun-check.test.ts',
   '__tests__/scripts-block-not-versions.test.ts',
   '__tests__/shell-suite-parity.test.ts',
   '__tests__/space-runtime-packages.test.ts',

@@ -10,21 +10,13 @@
  * override of a real refusal is logged outside git, under the common git dir.
  *
  * Every case runs the real script against a throwaway git repository with a
- * fake `gh` first on PATH. Nothing here talks to GitHub. PATH holds only a
+ * fake `gh` (scripts/fixtures/midrun-gh/gh) first on PATH. Nothing here talks to GitHub. PATH holds only a
  * directory with `git` linked into it (and the fake `gh` when a case wants
  * one), so "gh is not installed" is true even on a runner that ships it.
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { spawnSync } from 'node:child_process';
-import {
-  chmodSync,
-  existsSync,
-  mkdtempSync,
-  readFileSync,
-  rmSync,
-  symlinkSync,
-  writeFileSync,
-} from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
@@ -54,33 +46,21 @@ function git(...args: string[]): string {
 /** Minutes ago, as the ISO timestamp `gh run list --json createdAt` gives. */
 const ago = (minutes: number) => new Date(Date.now() - minutes * 60_000).toISOString();
 
+/** The committed fake `gh` (see its header for why it is not written here). */
+const FAKE_GH = path.join(repoRoot, 'scripts', 'fixtures', 'midrun-gh', 'gh');
+
 /**
- * Installs a fake `gh` that answers `run list` for each workflow file with the
- * JSON given for it (`[]` for a workflow not named), and records its argv.
+ * Puts the fake `gh` on PATH, answering `run list` for each workflow file with
+ * the JSON given for it (`[]` for a workflow not named). A `body` replaces that
+ * with a shell snippet the fake sources. Only data is written: the executable
+ * is a committed file, linked in.
  */
 function fakeGh(runs: Record<string, unknown[]>, opts: { body?: string } = {}) {
-  const lines = [
-    '#!/bin/sh',
-    `printf '%s\\n' "$*" >> "${path.join(work, 'gh-calls')}"`,
-    ...(opts.body !== undefined
-      ? [opts.body]
-      : [
-          'wf=""',
-          'prev=""',
-          'for a in "$@"; do',
-          '  [ "$prev" = "--workflow" ] && wf="$a"',
-          '  prev="$a"',
-          'done',
-          ...Object.entries(runs).map(
-            ([wf, list]) =>
-              `[ "$wf" = "${wf}" ] && { printf '%s\\n' '${JSON.stringify(list)}'; exit 0; }`
-          ),
-          "printf '[]\\n'",
-        ]),
-  ];
-  const file = path.join(bin, 'gh');
-  writeFileSync(file, lines.join('\n') + '\n');
-  chmodSync(file, 0o755);
+  for (const [wf, list] of Object.entries(runs)) {
+    writeFileSync(path.join(work, `runs-${wf}`), JSON.stringify(list) + '\n');
+  }
+  if (opts.body !== undefined) writeFileSync(path.join(work, 'body.sh'), opts.body + '\n');
+  symlinkSync(FAKE_GH, path.join(bin, 'gh'));
 }
 
 /** Runs the guard in the fixture repo with a PATH of only the fake bin dir. */
@@ -89,7 +69,7 @@ function runCheck(env: Record<string, string> = {}) {
     cwd: repo,
     encoding: 'utf8',
     timeout: 20_000,
-    env: { PATH: bin, HOME: work, ...env },
+    env: { PATH: bin, HOME: work, FAKE_GH_DIR: work, ...env },
   });
 }
 
@@ -126,7 +106,7 @@ describe('a run still going from the last push', () => {
     const r = runCheck();
     expect(r.status).not.toBe(0);
     expect(r.stdout + r.stderr).toMatch(/browser-test/);
-    const calls = spawnSync('cat', [path.join(work, 'gh-calls')], { encoding: 'utf8' }).stdout;
+    const calls = readFileSync(path.join(work, 'gh-calls'), 'utf8');
     expect(calls).toMatch(/--branch feature\/x/);
   });
 
