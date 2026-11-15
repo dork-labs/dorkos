@@ -78,8 +78,8 @@ DorkOS chooses the sign-in method in this order:
 The actions available after OAuth depend on the scopes approved during consent. You then choose which agents can use the account, and how much they can do. On **Trusted**, the default [permissions preset](/docs/guides/permissions#presets), a new account starts shared with every agent at **Read and write**, or **Read** where that is all the app offers, and you can narrow it from the same question. On **Careful**, nobody can use it until you choose:
 
 - **Read** lets agents look without changing anything, such as reading email or finding free time in your calendar.
-- **Read and write**, for Gmail and Google Calendar, also lets agents send, create and edit things, such as sending an email, replying, saving a draft, labeling a message or adding an event. Other apps offer **Read** only for now.
-- Some actions are never part of a level, and you allow them one at a time: deleting anything, sharing a calendar, forwarding or redirecting mail, changing who your mail is sent as or how it is delivered, turning on an automatic reply, changing many messages at once, moving an event to another calendar, and watching for changes. So is any action whose effect DorkOS can't tell for sure.
+- **Read and write** also lets agents send, create and edit in every connected Composio app. This includes sending email, saving drafts and adding calendar events.
+- Deleting, sharing or changing access always need an exact choice. So do spending money and actions marked as irreversible (they cannot be undone). Forwarding mail, changing delivery settings, moving files or pages, publishing, and changing security settings also need exact choices. An action whose effect DorkOS cannot tell stays outside both levels.
 
 On **Trusted**, when an agent working on its own runs one of these high-risk actions, it waits 60 seconds first, and anyone except that agent can cancel it. See [High-risk actions wait 60 seconds](/docs/connections#high-risk-actions-wait-60-seconds). Everywhere else, it still asks you first.
 
