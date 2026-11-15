@@ -1110,7 +1110,7 @@ export class OpenCodeRuntime implements AgentRuntime {
       if (!byId.has(tracked.id)) byId.set(tracked.id, tracked);
     }
     const sessions = [...byId.values()];
-    for (const session of sessions) this.overlayTrackedSettings(session);
+    for (const session of sessions) this.registry.overlayTrackedSettings(session);
     return sessions;
   }
 
@@ -1132,7 +1132,7 @@ export class OpenCodeRuntime implements AgentRuntime {
     const listed = sessions.find((session) => session.id === sessionId);
     if (listed) return listed;
     const session = await this.mapper.getSession(canonicalDirectory(projectDir), sessionId);
-    if (session) this.overlayTrackedSettings(session);
+    if (session) this.registry.overlayTrackedSettings(session);
     return session;
   }
 
@@ -1482,18 +1482,5 @@ export class OpenCodeRuntime implements AgentRuntime {
       });
     this.binding.set(sessionId, creating);
     return creating;
-  }
-
-  /**
-   * Overlay DorkOS-tracked settings onto a listed session — OpenCode has no
-   * per-session permission mode, so the mapper hardcodes `'default'` and the
-   * tracked value (kept current by `updateSession`) wins.
-   */
-  private overlayTrackedSettings(session: Session): void {
-    const tracked = this.registry.get(session.id);
-    if (!tracked) return;
-    session.permissionMode = tracked.permissionMode;
-    if (tracked.model !== undefined) session.model = tracked.model;
-    if (tracked.fastMode !== undefined) session.fastMode = tracked.fastMode;
   }
 }
