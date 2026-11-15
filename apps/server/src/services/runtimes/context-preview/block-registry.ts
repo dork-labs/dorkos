@@ -104,6 +104,15 @@ export const SESSION_BLOCKS: readonly ContextBlockSpec[] = [
   },
   toolDoc('ui_tools', 'App window tools', 'Always.'),
   {
+    id: 'browser_tools',
+    title: 'Browser tools',
+    source: 'runtimes/codex/agent-context.ts',
+    condition: 'always',
+    conditionNote: 'When this chat carries the DorkOS tools.',
+    locked: true,
+    runtimes: ['codex'],
+  },
+  {
     id: 'gen_ui',
     title: 'Inline widgets',
     source: 'runtimes/shared/gen-ui-context.ts',
