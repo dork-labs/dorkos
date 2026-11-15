@@ -39,7 +39,11 @@ describe('accessLevelRevisionIds with a paid operation', () => {
     (toolkit) => {
       // Synthetic create action: this checks the paid mark independently of the name families.
       const slug = `${toolkit.toUpperCase()}_CREATE_ITEM`;
-      const capabilityClassification = classifyComposioAction(slug, ['createHint']);
+      const capabilityClassification = classifyComposioAction(
+        slug.split('_')[0]!.toLowerCase(),
+        slug,
+        ['createHint']
+      );
       expect(capabilityClassification).toBe('write');
       const operations = [
         {

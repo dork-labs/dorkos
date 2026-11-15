@@ -83,6 +83,8 @@ const explicit = [
   'GITHUB_UPDATE_AN_ENVIRONMENT_VARIABLE', // security controls
   'GITHUB_UPDATE_A_REPOSITORY_VARIABLE', // security controls
   'GITHUB_DELETE_APP_AUTHORIZATION', // credentials
+  'GITHUB_UPLOAD_RELEASE_ASSET', // release files
+  'GITHUB_UPDATE_A_RELEASE_ASSET', // release files
 ];
 
 describe('reviewed Composio exceptions', () => {
@@ -90,9 +92,11 @@ describe('reviewed Composio exceptions', () => {
     const action = actions.find((row) => row.slug === slug);
     expect(action, 'must exist in the dated catalog').toBeDefined();
     for (const writeIncludesDeletes of [false, true]) {
-      expect(classifyComposioAction(slug, action!.tags, { writeIncludesDeletes })).toBe(
-        'destructive'
-      );
+      expect(
+        classifyComposioAction(slug.split('_')[0]!.toLowerCase(), slug, action!.tags, {
+          writeIncludesDeletes,
+        })
+      ).toBe('destructive');
     }
   });
 
@@ -105,14 +109,17 @@ describe('reviewed Composio exceptions', () => {
     expect(action, 'must exist in the dated catalog').toBeDefined();
     const tags = action!.tags.filter((tag) => tag !== 'destructiveHint');
     for (const writeIncludesDeletes of [false, true]) {
-      expect(classifyComposioAction(slug, tags, { writeIncludesDeletes })).toBe('destructive');
+      expect(
+        classifyComposioAction(slug.split('_')[0]!.toLowerCase(), slug, tags, {
+          writeIncludesDeletes,
+        })
+      ).toBe('destructive');
     }
   });
 
   it.each([
     'GITHUB_CREATE_A_RELEASE',
     'GITHUB_UPDATE_A_RELEASE',
-    'GITHUB_UPLOAD_RELEASE_ASSET',
     'GITHUB_MERGE_A_BRANCH',
     'GITHUB_MERGE_A_PULL_REQUEST',
     'GITHUB_CREATE_OR_UPDATE_FILE_CONTENTS',
@@ -131,7 +138,11 @@ describe('reviewed Composio exceptions', () => {
     const action = actions.find((row) => row.slug === slug);
     expect(action).toBeDefined();
     for (const writeIncludesDeletes of [false, true]) {
-      expect(classifyComposioAction(slug, action!.tags, { writeIncludesDeletes })).toBe('write');
+      expect(
+        classifyComposioAction(slug.split('_')[0]!.toLowerCase(), slug, action!.tags, {
+          writeIncludesDeletes,
+        })
+      ).toBe('write');
     }
   });
 
@@ -145,7 +156,7 @@ describe('reviewed Composio exceptions', () => {
   )('does not promote an unsafe formatting verdict $tags', ({ tags }) => {
     for (const writeIncludesDeletes of [false, true]) {
       expect(
-        classifyComposioAction('GOOGLEDOCS_DELETE_PARAGRAPH_BULLETS', tags, {
+        classifyComposioAction('googledocs', 'GOOGLEDOCS_DELETE_PARAGRAPH_BULLETS', tags, {
           writeIncludesDeletes,
         })
       ).toBe('destructive');
@@ -156,7 +167,9 @@ describe('reviewed Composio exceptions', () => {
     expect(
       live[toolkit]!.filter(
         ({ slug, tags }) =>
-          classifyComposioAction(slug, tags, { writeIncludesDeletes: true }) === 'write'
+          classifyComposioAction(slug.split('_')[0]!.toLowerCase(), slug, tags, {
+            writeIncludesDeletes: true,
+          }) === 'write'
       )
         .map(({ slug }) => slug)
         .sort()
@@ -168,7 +181,9 @@ describe('reviewed Composio exceptions', () => {
       expect(
         live[toolkit]!.filter(
           ({ slug, tags }) =>
-            classifyComposioAction(slug, tags, { writeIncludesDeletes }) === 'read'
+            classifyComposioAction(slug.split('_')[0]!.toLowerCase(), slug, tags, {
+              writeIncludesDeletes,
+            }) === 'read'
         )
           .map(({ slug }) => slug)
           .sort()

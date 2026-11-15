@@ -112,12 +112,16 @@ describe('Composio action classes', () => {
       expect(action, 'must be a real action in the dated catalog').toBeDefined();
       // A plain issue archive follows the delete flag; the rest never do.
       const deleteOnly = slug === 'LINEAR_ARCHIVE_ISSUE';
-      expect(classifyComposioAction(slug, action!.tags, { writeIncludesDeletes: false })).toBe(
-        'destructive'
-      );
-      expect(classifyComposioAction(slug, action!.tags, { writeIncludesDeletes: true })).toBe(
-        deleteOnly ? 'write' : 'destructive'
-      );
+      expect(
+        classifyComposioAction(slug.split('_')[0]!.toLowerCase(), slug, action!.tags, {
+          writeIncludesDeletes: false,
+        })
+      ).toBe('destructive');
+      expect(
+        classifyComposioAction(slug.split('_')[0]!.toLowerCase(), slug, action!.tags, {
+          writeIncludesDeletes: true,
+        })
+      ).toBe(deleteOnly ? 'write' : 'destructive');
     }
   );
 
@@ -129,16 +133,22 @@ describe('Composio action classes', () => {
       const reads = named.filter(({ tags }) => tags.includes('readOnlyHint'));
       expect(reads.map(({ slug }) => slug)).toEqual(
         toolkit === 'googledocs'
-          ? ['GOOGLEDOCS_LIST_DRIVE_ITEM_PERMISSIONS']
+          ? ['GOOGLEDOCS_EXPORT_DOCUMENT_AS_PDF', 'GOOGLEDOCS_LIST_DRIVE_ITEM_PERMISSIONS']
           : ['NOTION_QUERY_DATABASE_WITH_FILTER']
       );
-      expect(reads.map(({ slug, tags }) => classifyComposioAction(slug, tags))).toEqual(['read']);
+      expect(
+        reads.map(({ slug, tags }) =>
+          classifyComposioAction(slug.split('_')[0]!.toLowerCase(), slug, tags)
+        )
+      ).toEqual(reads.map(() => 'read'));
       const changing = named.filter(({ tags }) => !tags.includes('readOnlyHint'));
       expect(changing.map(({ slug }) => slug)).toEqual(
         toolkit === 'googledocs' ? [] : ['NOTION_MOVE_PAGE']
       );
       for (const { slug, tags } of changing)
-        expect(classifyComposioAction(slug, tags)).toBe('destructive');
+        expect(classifyComposioAction(slug.split('_')[0]!.toLowerCase(), slug, tags)).toBe(
+          'destructive'
+        );
     }
   );
 
@@ -153,7 +163,9 @@ describe('Composio action classes', () => {
     'LINEAR_CREATE_API_KEY',
   ])('keeps the synthetic future reach action %s explicit', (slug) => {
     expect(actions.some((row) => row.slug === slug)).toBe(false);
-    expect(classifyComposioAction(slug, ['createHint'])).toBe('destructive');
+    expect(classifyComposioAction(slug.split('_')[0]!.toLowerCase(), slug, ['createHint'])).toBe(
+      'destructive'
+    );
   });
 
   it('puts Linear issue creation and editing in Read and write, without deletes or teams', () => {
@@ -162,7 +174,11 @@ describe('Composio action classes', () => {
       operationSlug: slug,
       toolkit: 'linear',
       supported: true,
-      capabilityClassification: classifyComposioAction(slug, tags),
+      capabilityClassification: classifyComposioAction(
+        slug.split('_')[0]!.toLowerCase(),
+        slug,
+        tags
+      ),
     }));
     const ids = accessLevelRevisionIds(candidates, 'read-write');
     for (const slug of ['LINEAR_CREATE_LINEAR_ISSUE', 'LINEAR_UPDATE_ISSUE']) {
@@ -192,7 +208,9 @@ describe('Composio action classes', () => {
   });
 
   it('gives a clean write verdict to an app outside the dated fixture too', () => {
-    expect(classifyComposioAction('FUTUREAPP_CREATE_ITEM', ['createHint'])).toBe('write');
+    expect(classifyComposioAction('futureapp', 'FUTUREAPP_CREATE_ITEM', ['createHint'])).toBe(
+      'write'
+    );
   });
 });
 
@@ -206,9 +224,19 @@ describe('delete decision', () => {
     ['SLACK_CLOSE_DM', ['updateHint']],
     ['SLACK_LEAVE_CONVERSATION', ['updateHint']],
   ] as const)('flips only the delete decision for %s', (slug, tags) => {
-    expect(classifyComposioAction(slug, tags)).toBe('destructive');
-    expect(classifyComposioAction(slug, tags, { writeIncludesDeletes: false })).toBe('destructive');
-    expect(classifyComposioAction(slug, tags, { writeIncludesDeletes: true })).toBe('write');
+    expect(classifyComposioAction(slug.split('_')[0]!.toLowerCase(), slug, tags)).toBe(
+      'destructive'
+    );
+    expect(
+      classifyComposioAction(slug.split('_')[0]!.toLowerCase(), slug, tags, {
+        writeIncludesDeletes: false,
+      })
+    ).toBe('destructive');
+    expect(
+      classifyComposioAction(slug.split('_')[0]!.toLowerCase(), slug, tags, {
+        writeIncludesDeletes: true,
+      })
+    ).toBe('write');
   });
 
   it.each([
@@ -223,13 +251,19 @@ describe('delete decision', () => {
     ['GMAIL_DELETE_MESSAGE', ['readOnlyHint', 'destructiveHint']], // conflicting verdicts
     ['GMAIL_SEND_DRAFT', ['updateHint', 'destructiveHint']], // irreversible hint, no delete
   ] as const)('does not widen a second exclusion or unknown verdict for %s (%j)', (slug, tags) => {
-    expect(classifyComposioAction(slug, tags, { writeIncludesDeletes: true })).toBe('destructive');
+    expect(
+      classifyComposioAction(slug.split('_')[0]!.toLowerCase(), slug, tags, {
+        writeIncludesDeletes: true,
+      })
+    ).toBe('destructive');
   });
 
   it.each(['GMAIL_UNTRASH_MESSAGE', 'LINEAR_UNARCHIVE_PROJECT_UPDATE'])(
     'keeps restoring %s in write',
     (slug) => {
-      expect(classifyComposioAction(slug, ['updateHint'])).toBe('write');
+      expect(classifyComposioAction(slug.split('_')[0]!.toLowerCase(), slug, ['updateHint'])).toBe(
+        'write'
+      );
     }
   );
 
@@ -242,7 +276,9 @@ describe('delete decision', () => {
     );
     expect(deletes.length).toBeGreaterThan(0);
     for (const { slug, tags } of deletes) {
-      expect([slug, classifyComposioAction(slug, tags)]).toEqual([slug, 'destructive']);
+      expect([slug, classifyComposioAction(slug.split('_')[0]!.toLowerCase(), slug, tags)]).toEqual(
+        [slug, 'destructive']
+      );
     }
   });
 });
@@ -275,7 +311,9 @@ describe('money and irreversible names', () => {
   ])('keeps the synthetic %s action explicit', (name) => {
     for (const writeIncludesDeletes of [false, true]) {
       expect(
-        classifyComposioAction(`FUTUREAPP_CREATE_${name}`, ['createHint'], { writeIncludesDeletes })
+        classifyComposioAction('futureapp', `FUTUREAPP_CREATE_${name}`, ['createHint'], {
+          writeIncludesDeletes,
+        })
       ).toBe('destructive');
     }
   });
@@ -288,12 +326,17 @@ describe('money and irreversible names', () => {
     );
     expect(money.length).toBeGreaterThan(0);
     for (const { slug, tags } of money)
-      expect([slug, classifyComposioAction(slug, tags)]).not.toEqual([slug, 'write']);
+      expect([
+        slug,
+        classifyComposioAction(slug.split('_')[0]!.toLowerCase(), slug, tags),
+      ]).not.toEqual([slug, 'write']);
   });
 
   it('never promotes a read just because its name matches a family', () => {
     for (const slug of ['GMAIL_LIST_FILTERS', 'GITHUB_LIST_INVOICES', 'GOOGLECALENDAR_ACL_LIST']) {
-      expect(classifyComposioAction(slug, ['readOnlyHint'])).toBe('read');
+      expect(
+        classifyComposioAction(slug.split('_')[0]!.toLowerCase(), slug, ['readOnlyHint'])
+      ).toBe('read');
     }
   });
 });

@@ -20,13 +20,17 @@ describe('Composio access-level security policy', () => {
       operationSlug: 'FUTUREAPP_CREATE_ITEM',
       toolkit: 'futureapp',
       supported: true,
-      capabilityClassification: policy.classifyComposioAction('FUTUREAPP_CREATE_ITEM', tags),
+      capabilityClassification: policy.classifyComposioAction(
+        'futureapp',
+        'FUTUREAPP_CREATE_ITEM',
+        tags
+      ),
     };
     const read = {
       ...uncertain,
       operationRevisionId: 'revision-read',
       operationSlug: 'FUTUREAPP_READ_ITEM',
-      capabilityClassification: policy.classifyComposioAction('FUTUREAPP_READ_ITEM', [
+      capabilityClassification: policy.classifyComposioAction('futureapp', 'FUTUREAPP_READ_ITEM', [
         'readOnlyHint',
       ]),
     };
@@ -45,16 +49,21 @@ describe('Composio access-level security policy', () => {
     ['LINEAR_PURGE_ARCHIVED_ISSUES', 'irreversible'],
     ['LINEAR_DELETE_CYCLE', 'delete'],
   ])('keeps a new Linear action named for %s (%s) out of Read and write', (slug) => {
-    expect(policy.classifyComposioAction(slug, ['openWorldHint', 'createHint'])).toBe(
-      'destructive'
-    );
+    expect(
+      policy.classifyComposioAction(slug.split('_')[0]!.toLowerCase(), slug, [
+        'openWorldHint',
+        'createHint',
+      ])
+    ).toBe('destructive');
   });
 
   it('gives a new, plainly named create action on a pinned app write, by design', () => {
-    expect(policy.classifyComposioAction('LINEAR_CREATE_ISSUE_TEMPLATE', ['createHint'])).toBe(
-      'write'
+    expect(
+      policy.classifyComposioAction('linear', 'LINEAR_CREATE_ISSUE_TEMPLATE', ['createHint'])
+    ).toBe('write');
+    expect(policy.classifyComposioAction('linear', 'LINEAR_CREATE_ISSUE_TEMPLATE', [])).toBe(
+      'destructive'
     );
-    expect(policy.classifyComposioAction('LINEAR_CREATE_ISSUE_TEMPLATE', [])).toBe('destructive');
   });
 
   it('keeps WRITE_INCLUDES_DELETES a source constant with no runtime setter', () => {
@@ -82,17 +91,18 @@ describe('Composio access-level security policy', () => {
     expect(declaration.initializer?.kind).toBe(ts.SyntaxKind.FalseKeyword);
     // Enumerate every actual export, so adding a setter requires explicit review.
     expect(Object.keys(policy).sort()).toEqual([
+      'MONEY_TOOLKITS',
       'WRITE_INCLUDES_DELETES',
       'classifyComposioAction',
       'isAccountReachAction',
     ]);
     expect(policy.WRITE_INCLUDES_DELETES).toBe(false);
     expect(
-      policy.classifyComposioAction('GMAIL_MOVE_TO_TRASH', ['updateHint'], {
+      policy.classifyComposioAction('gmail', 'GMAIL_MOVE_TO_TRASH', ['updateHint'], {
         writeIncludesDeletes: true,
       })
     ).toBe('write');
-    expect(policy.classifyComposioAction('GMAIL_MOVE_TO_TRASH', ['updateHint'])).toBe(
+    expect(policy.classifyComposioAction('gmail', 'GMAIL_MOVE_TO_TRASH', ['updateHint'])).toBe(
       'destructive'
     );
     expect(policy.WRITE_INCLUDES_DELETES).toBe(false);

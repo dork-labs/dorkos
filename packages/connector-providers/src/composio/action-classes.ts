@@ -6,6 +6,38 @@ import type { ConnectorOperationClassification } from '../connector-schemas.js';
  */
 export const WRITE_INCLUDES_DELETES = false;
 
+/** Verified Composio money apps; every change needs a hand-picked action. */
+export const MONEY_TOOLKITS: ReadonlySet<string> = new Set([
+  // Ads.
+  'googleads',
+  'metaads',
+  // Crypto.
+  'coinbase',
+  'coinbase_wallet_mcp',
+  // Payments, including store administration that can charge or refund.
+  'gumroad',
+  'paypal',
+  'quickbooks',
+  'recurly',
+  'shopify',
+  'square',
+  'stripe',
+  'wise',
+  'xero',
+  // Shopping.
+  'ebay',
+]);
+
+/** Canonical spelling used for every action-name policy match. */
+function normalizeSlug(slug: string): string {
+  return slug
+    .replace(/([A-Z])([A-Z][a-z])/g, '$1_$2')
+    .replace(/([a-z0-9])([A-Z])/g, '$1_$2')
+    .toUpperCase()
+    .replace(/[^A-Z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '');
+}
+
 /**
  * Composio's safety verdicts are its tags that end in `Hint`. The same `tags`
  * list also carries category labels ("gmail", "messages", "Events
@@ -72,6 +104,8 @@ function classifyComposioTags(tags: readonly string[]): ConnectorOperationClassi
 
 /** Exact reach exceptions retained from the dated catalog when a family is insufficient. */
 const ACCOUNT_REACH_ACTIONS = new Set([
+  'GITHUB_UPLOAD_RELEASE_ASSET',
+  'GITHUB_UPDATE_A_RELEASE_ASSET',
   'GOOGLECALENDAR_ACL_INSERT',
   'GOOGLECALENDAR_ACL_PATCH',
   'GOOGLECALENDAR_ACL_UPDATE',
@@ -182,18 +216,18 @@ const ALWAYS_EXPLICIT_DELETES = new Set([
 
 // Named reach families apply to every app, including future catalog entries.
 const MAIL_REACH =
-  /FORWARD|SEND_AS|_IMAP_|_POP_|FILTER|VACATION|AUTO_REPL|MAILBOX_SETTINGS|DELEGAT|IMPORT_MESSAGE|INSERT_MESSAGE|_RULE/;
+  /FORWARD|SEND_AS|_IMAP_|_POP_|FILTER|VACATION|AUTO_REPL|AUTOMATIC_REPLY|REDIRECT|ALIAS|MAILBOX_SETTINGS|DELEGAT|IMPORT_MESSAGE|INSERT_MESSAGE|_RULE/;
 const LIVE_CONNECTION_REACH = /WEBHOOK|_HOOK|SUBSCRI|WATCH|_RTM_|DISPATCH|UNFURL/;
 const SHARING_REACH =
-  /_ACL_|PERMISSION|SHARING|SHARE|PUBLIC|PUBLISH|VISIBILITY|COLLABORAT|MEMBER|INVIT|PARTICIPANT|_ACCESS|FOLLOW|TRANSFER|GIST|PAGES/;
+  /_ACL_|PERMISSION|SHARING|SHARE|PUBLIC|PUBLISH|VISIBILITY|COLLABORAT|MEMBER|INVIT|PARTICIPANT|_ACCESS|FOLLOW|TRANSFER|GIST|PAGES|GRANT|GUEST|EXPORT/;
 const CREDENTIAL_REACH =
-  /SECRET|TOKEN|_KEY|OAUTH|CREDENTIAL|GITHUB_APP|APP_INSTALLATION|RUNNER|OIDC|EMAIL_ADDRESS|SOCIAL_ACCOUNT/;
+  /SECRET|TOKEN|_KEY|API_KEY|APIKEY|DEPLOYKEY|OAUTH|CREDENTIAL|GITHUB_APP|INSTALL|INTEGRATION|AUTHORIZE|PASSWORD|MFA|SSO|BOT|RUNNER|OIDC|EMAIL_ADDRESS|SOCIAL_ACCOUNT/;
 const PEOPLE_REACH =
   /ADMIN|OWNER|_ROLE|ROLE_|_USER_TO_|USERS_TO_|_TEAM(?:_|$)|ENTERPRISE|WORKSPACE|ORGANIZATION|_ORG(?:_|$)|DEFAULT_CHANNELS|USER_GROUP|USER_PROFILE|PROFILE_PHOTO/;
 const SECURITY_CONTROLS =
-  /PROTECTION|RESTRICT|RULESET|ALLOWED_ACTIONS|GITHUB_ACTIONS|WORKFLOW|CODE_SCANNING|VULN|INTERACTION|SECURITY|LFS|CUSTOM_PROPERT|_VARIABLE|ENVIRONMENT|DEPLOYMENT_BRANCH_POLICY|AUTHORIZATION/;
+  /PROTECTION|RESTRICT|RULESET|ALLOWED_ACTIONS|GITHUB_ACTIONS|WORKFLOW|CODE_SCANNING|VULN|INTERACTION|SECURITY|LFS|CUSTOM_PROPERT|_VARIABLE|ENVIRONMENT|DEPLOYMENT_BRANCH_POLICY|AUTHORIZATION|DEFAULT_BRANCH/;
 const MONEY_ACTIONS =
-  /SPONSOR|CODESPACE|PAYMENT|CHARGE|REFUND|INVOICE|PAYOUT|PURCHASE|ORDER|BILLING|CHECKOUT|PRICE|DONAT/;
+  /SPONSOR|CODESPACE|PAYMENT|CHARGE|REFUND|INVOICE|PAYOUT|PURCHASE|ORDER|BILLING|CHECKOUT|PRICE|DONAT|_AD(?:_|$)|CAMPAIGN|BUDGET|BID|BOOST|CRYPTO|WITHDRAW|TRADE|BUY|SEND_MONEY/;
 const IRREVERSIBLE_ACTIONS =
   /PURGE|WIPE|RESET|REVOKE|CANCEL|EMPTY|FORCE|DESTROY|TERMINATE|PERMANENT|^GITHUB_UPDATE_A_REFERENCE$/;
 const DELETE_ACTIONS = /DELETE|REMOVE|(?<!UN)TRASH|(?<!UN)ARCHIVE|_LEAVE(?:_|$)|CLOSE_DM/;
@@ -209,6 +243,7 @@ const DELETE_COMPATIBLE_HINTS = new Set(['destructiveHint', 'idempotentHint', 'o
  * @internal Also exposed to pin catalogs with no reach actions.
  */
 export function isAccountReachAction(slug: string): boolean {
+  slug = normalizeSlug(slug);
   return (
     ACCOUNT_REACH_ACTIONS.has(slug) ||
     [
@@ -237,18 +272,24 @@ function hasOnlyDeleteHints(tags: readonly string[]): boolean {
  * permanent deletes, whole-container deletes and updates hiding an archive or
  * permanent data loss remain explicit with either setting.
  *
+ * @param toolkit - Composio's app slug.
  * @param slug - Composio's action slug.
  * @param tags - Tags exactly as Composio listed them.
  * @param options - Inject the delete decision for tests; production uses the constant.
  */
 export function classifyComposioAction(
+  toolkit: string,
   slug: string,
   tags: readonly string[],
   options: { writeIncludesDeletes?: boolean } = {}
 ): ConnectorOperationClassification {
+  if ([...slug].some((character) => character.charCodeAt(0) > 127)) return 'destructive';
+  slug = normalizeSlug(slug);
+  if (!/^[A-Z0-9_]+$/.test(slug)) return 'destructive';
   const classification = classifyComposioTags(tags);
   if (classification === 'read') return classification;
   if (
+    MONEY_TOOLKITS.has(toolkit.toLowerCase()) ||
     isAccountReachAction(slug) ||
     MONEY_ACTIONS.test(slug) ||
     IRREVERSIBLE_ACTIONS.test(slug) ||

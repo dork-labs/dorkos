@@ -336,7 +336,7 @@ export class ComposioSdkClient implements ComposioOperationClient {
       }
 
       const operations = result.items.map((item) => {
-        const classification = classifyComposioAction(item.slug, item.tags);
+        const classification = classifyComposioAction(request.toolkit, item.slug, item.tags);
         if (item.toolkit.slug !== request.toolkit || item.version !== request.toolkitVersion) {
           throw new ComposioCatalogError(
             'Composio returned operation metadata for another version.'
