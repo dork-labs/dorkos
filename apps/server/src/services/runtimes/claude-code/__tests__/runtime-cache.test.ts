@@ -107,6 +107,17 @@ describe('RuntimeCache', () => {
     }
   });
 
+  it('warms up on the person’s own settings, never the default folder’s project ones (DOR-4409)', async () => {
+    // A repo's settings, hooks and `.mcp.json` servers wait for a person's
+    // review before they run (DOR-3298). The model-list probe starts the CLI in
+    // the default folder with no such check, so it may load only user settings.
+    vi.mocked(query).mockReturnValue({ supportedModels: async () => [], close: vi.fn() } as never);
+    await cache.warmup('/synthetic/kestrel-project');
+    const options = vi.mocked(query).mock.calls.at(-1)?.[0].options;
+    expect(options?.cwd).toBe('/synthetic/kestrel-project');
+    expect(options?.settingSources).toEqual(['user']);
+  });
+
   // =========================================================================
   // getSupportedModels
   // =========================================================================
