@@ -8,8 +8,13 @@ import { isCockpitSender as isAppSender, isWebLink } from '../window-manager';
 import { forgetGuestSignIns } from './forget-sign-ins';
 import { chromeIdentity } from './browser-identity';
 import { pageTransport } from './page-transport';
+import { isGuestPageAction, watchGuestPage } from './page-events';
 
 export const LOCAL_BROWSER_BOUNDS_CHANNEL = 'local-browser:set-bounds';
+/** The app asks about or acts on one guest page (DOR-4430, DOR-4431). */
+const LOCAL_BROWSER_PAGE_CHANNEL = 'local-browser:page';
+/** The shell tells the window showing a guest that its page started, stopped or failed a load. */
+const LOCAL_BROWSER_PAGE_CHANGED_CHANNEL = 'local-browser:page-changed';
 export interface BrowserBounds {
   connectionId: string;
   x: number;
@@ -27,6 +32,7 @@ interface Guest {
   socket?: WebSocket;
   attachTimer?: ReturnType<typeof setTimeout>;
   popups?: Set<BrowserWindow>;
+  page?: ReturnType<typeof watchGuestPage>;
 }
 
 /** A private authenticated bridge from the child server to page-only guest targets. */
@@ -60,6 +66,7 @@ export async function startLocalBrowserBridge(
     if (guest.parent && guest.onParentClosed)
       guest.parent.removeListener('closed', guest.onParentClosed);
     clearTimeout(guest.attachTimer);
+    guest.page?.dispose();
     for (const popup of guest.popups ?? []) if (!popup.isDestroyed()) popup.destroy();
     guest.socket?.terminate();
     guest.transport?.close();
@@ -228,6 +235,12 @@ export async function startLocalBrowserBridge(
         if (!isWebLink(event.url)) event.preventDefault();
       });
       view.webContents.once('destroyed', () => closeGuest(connectionId));
+      // Loads and failures go only to the window showing the page, which follows a move.
+      guest.page = watchGuestPage(connectionId, view.webContents, (page) => {
+        const shown = guest.parent;
+        if (shown && !shown.isDestroyed())
+          shown.webContents.send(LOCAL_BROWSER_PAGE_CHANGED_CHANNEL, page);
+      });
       try {
         await view.webContents.loadURL('about:blank');
       } catch (error) {
@@ -332,6 +345,22 @@ export async function startLocalBrowserBridge(
     });
     guest.view.setVisible(bounds.visible === true);
   });
+  ipcMain.handle(
+    LOCAL_BROWSER_PAGE_CHANNEL,
+    (event, input: { connectionId?: unknown; action?: unknown }) => {
+      if (!isAppSender(event, getRendererUrl) || event.senderFrame !== event.sender.mainFrame)
+        return null;
+      const guest =
+        typeof input?.connectionId === 'string' ? guests.get(input.connectionId) : undefined;
+      if (!guest?.page || guest.view.webContents.isDestroyed() || !isGuestPageAction(input.action))
+        return null;
+      // Only the window showing the page may act on it.
+      if (input.action !== 'read' && BrowserWindow.fromWebContents(event.sender) !== guest.parent)
+        return null;
+      guest.page.run(input.action);
+      return guest.page.read();
+    }
+  );
   try {
     await new Promise<void>((resolve, reject) => {
       server.once('error', reject);
@@ -339,6 +368,7 @@ export async function startLocalBrowserBridge(
     });
   } catch (error) {
     ipcMain.removeHandler(LOCAL_BROWSER_BOUNDS_CHANNEL);
+    ipcMain.removeHandler(LOCAL_BROWSER_PAGE_CHANNEL);
     sockets.close();
     server.close();
     throw error;
@@ -350,6 +380,7 @@ export async function startLocalBrowserBridge(
   return {
     async close() {
       ipcMain.removeHandler(LOCAL_BROWSER_BOUNDS_CHANNEL);
+      ipcMain.removeHandler(LOCAL_BROWSER_PAGE_CHANNEL);
       for (const id of guests.keys()) closeGuest(id);
       sockets.close();
       await new Promise<void>((resolve) => server.close(() => resolve()));

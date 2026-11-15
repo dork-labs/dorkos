@@ -2,6 +2,11 @@ import { randomUUID } from 'node:crypto';
 import type { LocalBrowserAuditRecord, LocalBrowserAuditWriter } from './action-audit.js';
 import type { Page, JSHandle } from 'playwright-core';
 import type { LocalBrowserAction, LocalBrowserObservation } from '@dorkos/shared/local-browser';
+import {
+  pageErrorKind,
+  pageErrorTitle,
+  type PageErrorKind,
+} from '@dorkos/shared/local-browser-page-error';
 import { LocalBrowserError } from './errors.js';
 import { boundedPageSnapshot } from './observation-limits.js';
 import { responseDeadline } from './lifecycle.js';
@@ -39,6 +44,14 @@ function netErrorCode(reason: string | undefined): string | undefined {
   return /net::(ERR_[A-Z0-9_]+)/.exec(reason ?? '')?.[1];
 }
 
+/** Causes whose title names the host, so they need one to be said. */
+const HOST_TITLED = new Set<PageErrorKind>([
+  'name-not-found',
+  'no-response',
+  'blocked-by-policy',
+  'too-many-redirects',
+]);
+
 /**
  * The error an agent gets when its action opened a page that didn't load. It names only the host
  * of the request the browser made (never its path or query, which can hold a token) and
@@ -56,11 +69,16 @@ export function loadFailedError(url: string | undefined, reason: string | undefi
   }
   const code = netErrorCode(reason);
   const why = code ? ` (${code})` : '';
+  // The same title the person sees in the page area (DOR-4430), as a sentence.
+  const kind = code ? pageErrorKind(code) : null;
+  const title = kind && (host || !HOST_TITLED.has(kind)) ? pageErrorTitle(kind, host ?? '') : null;
   return new LocalBrowserError(
     'load_failed',
-    host
-      ? `${host} didn’t load${why}. Read the page again.`
-      : `The page didn’t load${why}. Read the page again.`
+    title
+      ? `${title}${why}. Read the page again.`
+      : host
+        ? `${host} didn’t load${why}. Read the page again.`
+        : `The page didn’t load${why}. Read the page again.`
   );
 }
 
