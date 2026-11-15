@@ -2,6 +2,7 @@
 covers:
   - 'fix(codex): disclose tool availability when a chat starts (DOR-4385)'
   - 'fix(codex): finish the no-tools notice and verify it (DOR-4385)'
+  - 'fix(client): the no-tools notice shows an unplugged icon (DOR-4385)'
 ---
 
 ### Fixed

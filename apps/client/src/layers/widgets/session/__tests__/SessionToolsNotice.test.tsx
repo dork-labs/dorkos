@@ -38,9 +38,10 @@ describe('SessionToolsNotice', () => {
         </QueryClientProvider>
       );
       if (noTools) {
-        expect(await screen.findByRole('status')).toHaveTextContent(
-          'This chat has no DorkOS tools.'
-        );
+        const notice = await screen.findByRole('status');
+        expect(notice).toHaveTextContent('This chat has no DorkOS tools.');
+        // The unplugged icon is decoration: hidden from screen readers.
+        expect(notice.querySelector('svg.lucide-unplug')).toHaveAttribute('aria-hidden');
       } else {
         await waitFor(() => expect(getSession).toHaveBeenCalledWith('chat-1', undefined));
         expect(screen.queryByRole('status')).not.toBeInTheDocument();
