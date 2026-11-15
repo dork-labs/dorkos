@@ -222,6 +222,15 @@ stops OpenCode reading the project's `AGENTS.md`, so DorkOS reads it (project to
 (`messaging/project-instructions.ts`). A project's own plugins and MCP servers no longer load;
 DOR-4399 brings them back behind a person's yes.
 
+### DorkOS's own config carries no `plugin` entry (2026-11-15)
+
+Any `plugin` entry in `OPENCODE_CONFIG_CONTENT`, even a local `file://` one, makes OpenCode
+install `@opencode-ai/plugin` from npm into its config folder before a new folder's first turn:
+about 6 s once per home online, about 70 s on every new folder offline. #3755 added one to set
+`DORKOS_SESSION_ID` from a `shell.env` hook; it was removed for that cost, so OpenCode turns
+don't get `DORKOS_SESSION_ID` yet (Claude Code, Codex and Dork do). Bringing it back needs a
+way that triggers no install.
+
 ### A project's config cannot switch the asks off: session rules (DOR-4394, live 2026-11-15)
 
 The injected ruleset above is TOP-LEVEL `permission`. OpenCode decides an ask from

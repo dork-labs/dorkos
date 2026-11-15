@@ -287,7 +287,7 @@ Actuation is only half of it: an agent also has to know what it is and what it c
 | codex       | Prompt prefix (`buildCodexPrompt`)                     | Per-turn `DORKOS_AGENT_TOKEN` via a turn-scoped `Codex` client |
 | opencode    | `synthetic` text part (`buildOpenCodeParts`)           | **None**, see below                                            |
 
-`DORKOS_SESSION_ID` carries the server-owned DorkOS chat id to turn shells and hooks on Claude Code, Codex, OpenCode, and Dork/doe. Vendor thread/session ids may differ. On Dork, only the builder's shell gets it, and that shell exists only at `bypassPermissions`. This identifier is not a credential and never authenticates a request.
+`DORKOS_SESSION_ID` carries the server-owned DorkOS chat id to turn shells and hooks on Claude Code, Codex, and Dork/doe. Vendor thread/session ids may differ. OpenCode turns do not get it: the only way to set it there was a sidecar plugin, and any plugin makes OpenCode install a package from npm before a new folder's first turn. On Dork, only the builder's shell gets it, and that shell exists only at `bypassPermissions`. This identifier is not a credential and never authenticates a request.
 
 Runtime-SPECIFIC tool documentation (`<chat_tools>`, `<mesh_tools>`, `<ui_tools>`, ...) deliberately stays in the Claude adapter's `context-builder.ts`: those blocks teach in-session MCP tools only that runtime is given.
 

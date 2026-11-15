@@ -19,7 +19,6 @@
  *
  * @module services/runtimes/opencode/server-manager
  */
-import { OpenCodeSessionEnvironment } from './session-environment.js';
 import { runtimeEnvironment } from '../shared/runtime-environment-config.js';
 import { spawn, type ChildProcess } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
@@ -117,29 +116,22 @@ type SidecarPhase = 'idle' | 'starting' | 'ready' | 'stopped';
  * @param password - The per-boot basic-auth secret.
  * @param providerEnv - The person's own provider environment; ignored on credits.
  * @param relay - This boot's relay grant, or `null` when credits cannot pay.
- * @param sessionPlugin - Server-owned shell metadata plugin URL.
  */
 export function buildSidecarSpawnEnv(
   plan: OpenCodeSidecarPlan,
   password: string,
   providerEnv: Record<string, string>,
-  relay: OpenCodeRelayGrant | null = null,
-  sessionPlugin?: string
+  relay: OpenCodeRelayGrant | null = null
 ): Record<string, string> {
-  const sessionConfig = sessionPlugin ? { plugin: [sessionPlugin] } : {};
   if (plan.mode === 'own') {
     return runtimeEnvironment('opencode', 'turn', {
       ...providerEnv,
       OPENCODE_SERVER_PASSWORD: password,
-      OPENCODE_CONFIG_CONTENT: JSON.stringify({ ...OPENCODE_SIDECAR_CONFIG, ...sessionConfig }),
+      OPENCODE_CONFIG_CONTENT: JSON.stringify(OPENCODE_SIDECAR_CONFIG),
       ...NO_PROJECT_CODE,
     });
   }
-  const config = {
-    ...OPENCODE_SIDECAR_CONFIG,
-    ...openCodeCreditsConfig(relay, plan.models),
-    ...sessionConfig,
-  };
+  const config = { ...OPENCODE_SIDECAR_CONFIG, ...openCodeCreditsConfig(relay, plan.models) };
   return openCodeCreditsEnv(
     runtimeEnvironment('opencode', 'turn', {
       OPENCODE_SERVER_PASSWORD: password,
@@ -176,11 +168,6 @@ export interface OpenCodeServerManagerOptions extends Partial<OpenCodeSidecarPla
  * {@link SIDECAR_TIMING.maxRestartAttempts} consecutive attempts.
  */
 export class OpenCodeServerManager implements OpenCodeClientProvider {
-  private readonly sessionEnvironment = new OpenCodeSessionEnvironment();
-  /** Hand chat metadata to the shell plugin without modifying the shared process env. */
-  bindSessionEnvironment(sessionId: string, openCodeSessionId: string): Promise<void> {
-    return this.sessionEnvironment.bind(sessionId, openCodeSessionId);
-  }
   private phase: SidecarPhase = 'idle';
   private child: ChildProcess | null = null;
   private client: OpencodeClient | null = null;
@@ -384,7 +371,6 @@ export class OpenCodeServerManager implements OpenCodeClientProvider {
       await this.killChild(child);
       logger.info('[OpenCode] sidecar stopped');
     }
-    await this.sessionEnvironment.close();
   }
 
   /**
@@ -482,13 +468,7 @@ export class OpenCodeServerManager implements OpenCodeClientProvider {
         : null;
     this.grantKey = grant?.key ?? null;
     const child = spawn(binary, ['serve', `--hostname=${SIDECAR_HOSTNAME}`, `--port=${port}`], {
-      env: buildSidecarSpawnEnv(
-        plan,
-        password,
-        providerEnv,
-        grant,
-        this.sessionEnvironment.plugin()
-      ),
+      env: buildSidecarSpawnEnv(plan, password, providerEnv, grant),
       stdio: ['ignore', 'pipe', 'pipe'],
     });
     this.child = child;

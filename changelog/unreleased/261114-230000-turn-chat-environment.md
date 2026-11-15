@@ -6,4 +6,4 @@ covers:
 
 ### Added
 
-- Agents on Claude Code, Codex, OpenCode and the Dork runtime can now tell which DorkOS chat they're in: their commands and hooks get `DORKOS_SESSION_ID` (DOR-4380).
+- Agents on Claude Code, Codex and the Dork runtime can now tell which DorkOS chat they're in: their commands and hooks get `DORKOS_SESSION_ID` (DOR-4380).

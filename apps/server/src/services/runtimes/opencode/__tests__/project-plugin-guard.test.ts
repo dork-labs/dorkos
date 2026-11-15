@@ -23,7 +23,6 @@ import {
 } from '../messaging/project-plugin-guard.js';
 import { buildSidecarSpawnEnv } from '../server-manager.js';
 import { OPENCODE_OWN_PLAN } from '../credits-sidecar.js';
-import { OpenCodeSessionEnvironment } from '../session-environment.js';
 
 const roots: string[] = [];
 afterEach(() => {
@@ -172,20 +171,24 @@ describe('any doubt refuses', () => {
   });
 });
 
-describe("DorkOS's own plugins still load (#3755)", () => {
-  it('allows a clean project when the sidecar config carries DorkOS’s session plugin', async () => {
-    const environment = new OpenCodeSessionEnvironment();
-    try {
-      const env = buildSidecarSpawnEnv(OPENCODE_OWN_PLAN, 'pw', {}, null, environment.plugin());
-      const config = JSON.parse(env.OPENCODE_CONFIG_CONTENT!) as { plugin?: string[] };
-      // The plugin really is there, in DorkOS's own config, not in the project.
-      expect(config.plugin).toEqual([environment.plugin()]);
-      const dir = repo();
-      expect(projectHasPlugins(dir)).toBe(false);
-      expect(projectPluginRefusal(dir)).toBeUndefined();
-    } finally {
-      await environment.close();
-    }
+describe('DorkOS adds no plugin of its own to the sidecar', () => {
+  // A `plugin` entry makes OpenCode install `@opencode-ai/plugin` from npm
+  // before a new folder's first turn: seconds online, over a minute offline.
+  it.each([
+    ['own sign-in', OPENCODE_OWN_PLAN],
+    ['credits', { mode: 'credits', fingerprint: 'credits:none', models: [] } as const],
+  ])('on %s, the sidecar config has no plugin entry', (_side, plan) => {
+    const env = buildSidecarSpawnEnv({ ...plan, models: [] }, 'pw', {}, null);
+    const config = JSON.parse(env.OPENCODE_CONFIG_CONTENT!) as Record<string, unknown>;
+    expect(config).not.toHaveProperty('plugin');
+    // Project config stays off whatever DorkOS's own config holds.
+    expect(env.OPENCODE_DISABLE_PROJECT_CONFIG).toBe('1');
+  });
+
+  it('allows a clean project', () => {
+    const dir = repo();
+    expect(projectHasPlugins(dir)).toBe(false);
+    expect(projectPluginRefusal(dir)).toBeUndefined();
   });
 });
 

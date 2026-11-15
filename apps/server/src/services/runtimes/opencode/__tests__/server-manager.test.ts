@@ -189,7 +189,6 @@ describe('OpenCodeServerManager', () => {
       expect(env.OPENCODE_SERVER_PASSWORD).toMatch(/^[0-9a-f]{64}$/);
       // Conservative ask-ruleset — the safety boundary (NOTES.md §2).
       expect(JSON.parse(env.OPENCODE_CONFIG_CONTENT!)).toEqual({
-        plugin: [expect.stringMatching(/^file:.*session-environment\.mjs$/)],
         permission: {
           read: { '*': 'ask', '*.env': 'deny', '*.env.*': 'deny', '*.env.example': 'allow' },
           grep: 'ask',
@@ -199,10 +198,7 @@ describe('OpenCodeServerManager', () => {
           webfetch: 'ask',
         },
       });
-      expect(JSON.parse(env.OPENCODE_CONFIG_CONTENT!)).toEqual({
-        ...OPENCODE_SIDECAR_CONFIG,
-        plugin: [expect.stringMatching(/^file:.*session-environment\.mjs$/)],
-      });
+      expect(JSON.parse(env.OPENCODE_CONFIG_CONTENT!)).toEqual(OPENCODE_SIDECAR_CONFIG);
 
       // Client is constructed against the parsed URL with basic auth.
       const password = env.OPENCODE_SERVER_PASSWORD!;
@@ -230,10 +226,7 @@ describe('OpenCodeServerManager', () => {
       expect(env.OPENAI_BASE_URL).toBe('https://proxy.example/v1');
       // Provider env must never clobber the sidecar's own control vars.
       expect(env.OPENCODE_SERVER_PASSWORD).toMatch(/^[0-9a-f]{64}$/);
-      expect(JSON.parse(env.OPENCODE_CONFIG_CONTENT!)).toEqual({
-        ...OPENCODE_SIDECAR_CONFIG,
-        plugin: [expect.stringMatching(/^file:.*session-environment\.mjs$/)],
-      });
+      expect(JSON.parse(env.OPENCODE_CONFIG_CONTENT!)).toEqual(OPENCODE_SIDECAR_CONFIG);
     });
 
     it('spawns with no extra provider env when no provider credential resolves', async () => {
@@ -779,11 +772,7 @@ describe('OpenCodeServerManager', () => {
       const env = spawnEnv();
       expect(env.OPENROUTER_API_KEY).toBeUndefined();
       const config = JSON.parse(env.OPENCODE_CONFIG_CONTENT!);
-      expect(config).toEqual({
-        ...OPENCODE_SIDECAR_CONFIG,
-        enabled_providers: ['dorkos-credits'],
-        plugin: [expect.stringMatching(/^file:.*session-environment\.mjs$/)],
-      });
+      expect(config).toEqual({ ...OPENCODE_SIDECAR_CONFIG, enabled_providers: ['dorkos-credits'] });
       await expect(manager.prepareTurn(false)).rejects.toMatchObject({
         code: 'credits_unavailable',
       });

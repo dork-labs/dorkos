@@ -628,7 +628,6 @@ export class OpenCodeRuntime implements AgentRuntime {
     try {
       ocSessionId = await this.resolveOpenCodeSession(sessionId, cwd, title);
       client = await this.provider.getClient(cwd);
-      await this.provider.bindSessionEnvironment?.(sessionId, ocSessionId);
       directory = await sessionDirectoryOf(this.directoryByOcId, client, ocSessionId);
       // The prompt goes to the session's STORED folder (Security M2, #3764).
       assertNoProjectPlugins(cwd, directory);

@@ -113,9 +113,6 @@ export interface OpenCodeClientProvider {
 
   /** A turn ended; a switch that was waiting for it may now happen. */
   turnSettled?(): Promise<void>;
-
-  /** Bind server-owned chat metadata before dispatch; never used as authentication. */
-  bindSessionEnvironment?(sessionId: string, openCodeSessionId: string): Promise<void>;
 }
 
 /**

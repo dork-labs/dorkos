@@ -5,4 +5,4 @@ covers:
 
 ### Fixed
 
-- If OpenCode can't look up which chat a command belongs to, the command still runs, just without `DORKOS_SESSION_ID`, instead of failing (DOR-4380).
+- On the Dork runtime, `DORKOS_SESSION_ID` reaches commands through the same allow-list as every other runtime (DOR-4380).
