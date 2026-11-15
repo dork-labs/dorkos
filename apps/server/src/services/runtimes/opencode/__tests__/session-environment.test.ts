@@ -43,3 +43,25 @@ it('DOR-4380: concurrent OpenCode shells use server chat bindings, including ven
     { EXISTING: 'kept', DORKOS_SESSION_ID: 'chat-alpha' },
   ]);
 });
+
+it('DOR-4380: a session lookup that fails leaves the chat id unset instead of failing the command', async () => {
+  const environment = new OpenCodeSessionEnvironment();
+  environments.push(environment);
+  const plugin = environment.plugin();
+  await environment.bind('chat-alpha', 'ses_vendor_alpha');
+  const script = `
+    const { default: plugin } = await import(${JSON.stringify(plugin)});
+    const hooks = await plugin({ client: { session: { get: async () => {
+      throw new Error('lookup failed');
+    } } } });
+    const output = { env: { EXISTING: 'kept' } };
+    await hooks['shell.env']({ sessionID: 'ses_unbound_child' }, output);
+    process.stdout.write(JSON.stringify(output.env));
+  `;
+  const { stdout } = await promisify(execFile)(
+    process.execPath,
+    ['--input-type=module', '-e', script],
+    { timeout: 10000 }
+  );
+  expect(JSON.parse(stdout)).toEqual({ EXISTING: 'kept' });
+});
