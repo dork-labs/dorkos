@@ -3,6 +3,7 @@
  * @module schedule-notice-copy
  */
 import type { Task, TaskFailureReason } from './types.js';
+import { RUN_TIME_LIMIT_OPENING } from './run-time-limit.js';
 
 /**
  * The whole name as literal text, for surfaces only the person sees (the
@@ -27,30 +28,51 @@ export function scheduleNoticeName(task: Pick<Task, 'name' | 'displayName'>): st
 }
 
 /**
- * The run lines DorkOS itself writes, read back into fixed words (DOR-4121).
- * Each pattern matches a sentence a DorkOS writer owns, so the notice can say
- * the real cause without ever repeating recorded text: `relay-dispatch.ts`
- * (a run that never started), `run-time-limit.ts` (the clock), the task
- * store (a restart). A runtime's usage-limit line is the one outside text
- * matched, and only to choose words. Order matters: the hourly turn limit is
- * checked before the usage limit. A line that matches none still says the run
- * didn't finish, which is true of every recorded error.
+ * How the run lines DorkOS writes open. The writers (`relay-dispatch.ts`, the
+ * task store) build their sentences from these, and the notice reads a stored
+ * line back by its opening, so the two cannot drift apart (DOR-4121).
  */
-const ERROR_CAUSES: ReadonlyArray<readonly [RegExp, string]> = [
+export const RUN_LINE = {
+  slotsBusy: 'Every agent slot stayed busy',
+  tooBusy: 'DorkOS was too busy',
+  turnLimit: 'The hourly limit on agent turns',
+  pastTimeLimit: 'This run went past its time limit',
+  runtimeMissing: 'The program this task runs on isn’t running',
+  couldNotStart: 'This run couldn’t start',
+  nothingAvailable: 'Nothing was available to run',
+  serverRestart: 'Interrupted by server restart',
+} as const;
+
+/** Rows written before {@link runTimeLimitError} existed on the relay path. */
+const LEGACY_TIMEOUT_OPENING = 'Run timed out';
+
+/**
+ * The run lines DorkOS itself writes, read back into fixed words (DOR-4121),
+ * so the notice can say the real cause without ever repeating recorded text.
+ * A runtime's usage-limit line is the one outside text matched, and only to
+ * choose words. Order matters: the hourly turn limit is checked before the
+ * usage limit. A line that matches none still says the run didn't finish,
+ * which is true of every recorded error.
+ */
+const ERROR_CAUSES: ReadonlyArray<readonly [readonly string[] | RegExp, string]> = [
+  [[RUN_TIME_LIMIT_OPENING, RUN_LINE.pastTimeLimit, LEGACY_TIMEOUT_OPENING], 'it ran out of time'],
+  [[RUN_LINE.slotsBusy], 'every agent slot was busy'],
+  [[RUN_LINE.tooBusy], 'DorkOS was too busy'],
+  [[RUN_LINE.turnLimit], 'the hourly turn limit was reached'],
   [
-    /^(Run stopped after passing its|This run went past its time limit|Run timed out)/,
-    'it ran out of time',
-  ],
-  [/^Every agent slot stayed busy/, 'every agent slot was busy'],
-  [/^DorkOS was too busy/, 'DorkOS was too busy'],
-  [/^The hourly limit on agent turns/, 'the hourly turn limit was reached'],
-  [
-    /^(Nothing was available to run|The program this task runs on isn’t running|This run couldn’t start)/,
+    [RUN_LINE.nothingAvailable, RUN_LINE.runtimeMissing, RUN_LINE.couldNotStart],
     'it never started',
   ],
-  [/^Interrupted by server restart/, 'DorkOS restarted during the run'],
+  [[RUN_LINE.serverRestart], 'DorkOS restarted during the run'],
   [/\b(usage|weekly|daily|monthly|session|5-hour) limit\b|hit your limit/i, 'it hit a usage limit'],
 ];
+
+/** Whether a stored line opens one of these ways, or matches the pattern. */
+function opensWith(message: string, match: readonly string[] | RegExp): boolean {
+  return match instanceof RegExp
+    ? match.test(message)
+    : match.some((opening) => message.startsWith(opening));
+}
 
 /**
  * A cause from the stored health catalogue, expressed only in fixed words.
@@ -66,7 +88,7 @@ export function scheduleFailureClause(reason: TaskFailureReason | null | undefin
     case 'error': {
       const message = reason.message;
       if (!message) return 'an unknown error';
-      return ERROR_CAUSES.find(([pattern]) => pattern.test(message))?.[1] ?? 'it didn’t finish';
+      return ERROR_CAUSES.find(([match]) => opensWith(message, match))?.[1] ?? 'it didn’t finish';
     }
     default:
       return 'an unknown error';

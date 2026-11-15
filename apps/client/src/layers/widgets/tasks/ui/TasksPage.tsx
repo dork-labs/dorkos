@@ -1,5 +1,5 @@
 import { FailedRunDetailSheet } from '@/layers/features/dashboard-attention';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { motion } from 'motion/react';
 import {
   FeatureDisabledState,
@@ -41,6 +41,18 @@ function TasksPageBody() {
   const [editTask, setEditTask] = useState<Task | undefined>();
   const [appliedPreset, setAppliedPreset] = useState<TaskTemplate | null>(null);
   const linkedTask = allTasks.find((task) => task.id === search.schedule);
+
+  // `?expand=` is a one-shot: once the list has opened that row, it comes off
+  // the URL, so the same Open schedule clicked again is a new link (DOR-4121).
+  // The list's own effect runs first, so the row has scrolled into view by then.
+  useEffect(() => {
+    if (!search.expand || isLoading || !navigate) return;
+    void navigate({
+      ...appRoutes.tasks(),
+      search: { ...search, expand: undefined },
+      replace: true,
+    });
+  }, [search, isLoading, navigate]);
 
   // Fetch registered mesh agents for building the agent map
   const hasAgentIdTasks = allTasks.some((t) => t.agentId);

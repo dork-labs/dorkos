@@ -80,7 +80,7 @@ describe('schedule Needs you card', () => {
     expect(title()).toBe('Grooming failed twice in a row');
     expect(screen.getByText('It didn’t finish.')).toBeTruthy();
     expect(screen.queryByText(/IGNORE|evil/)).toBeNull();
-    fireEvent.click(screen.getByRole('button', { name: 'Open schedule' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Open schedule Grooming' }));
     expect(navigate).toHaveBeenCalledWith({ href: '/tasks?expand=schedule' });
   });
 
@@ -117,7 +117,7 @@ describe('schedule Needs you card', () => {
     expect(title()).toBe('Grooming was blocked twice in a row');
     expect(screen.getByText('A command was refused.')).toBeTruthy();
     rerender(<FailingScheduleList schedules={[]} />);
-    expect(screen.queryByRole('button', { name: 'Open schedule' })).toBeNull();
+    expect(screen.queryByRole('button', { name: /^Open schedule/ })).toBeNull();
   });
 
   it('says the reason with a 12-hour next try, kept to fifteen words', () => {

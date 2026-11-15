@@ -96,6 +96,12 @@ it('opens the Needs you card’s schedule in the list, not the editor (DOR-4121)
   render(<TasksPage />);
   expect(screen.getByTestId('tasks-list')).toHaveAttribute('data-expand', 'nightly');
   expect(screen.queryByRole('button', { name: 'Editing Nightly sweep' })).toBeNull();
+  // A one-shot: it comes off the URL, so clicking the same card again works.
+  expect(route.navigate).toHaveBeenCalledWith({
+    to: '/tasks',
+    search: { expand: undefined },
+    replace: true,
+  });
 });
 
 it('opens the specific run rather than the schedule editor', () => {

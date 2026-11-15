@@ -24,8 +24,10 @@ describe('useLinkedExpansion (DOR-4121)', () => {
     expect(result.current.expandedId).toBeNull();
     act(() => result.current.toggle('c'));
     expect(result.current.expandedId).toBe('c');
-    // The same link again does not override the person's choice.
-    rerender({ id: 'a' });
+    // The page clears the link once applied; the same link again re-opens it.
+    rerender({ id: undefined });
     expect(result.current.expandedId).toBe('c');
+    rerender({ id: 'a' });
+    expect(result.current.expandedId).toBe('a');
   });
 });
