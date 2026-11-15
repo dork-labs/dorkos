@@ -21,7 +21,7 @@ import {
   QueryErrorState,
   Skeleton,
 } from '@/layers/shared/ui';
-import { useCopyFeedback } from '@/layers/shared/lib';
+import { formatRelativeTime, useCopyFeedback } from '@/layers/shared/lib';
 import { useApiKeys, useCreateApiKey, useRevokeApiKey } from '../model/use-api-keys';
 import type { ApiKeyRecord, CreatedApiKey } from '../model/auth-client';
 
@@ -205,8 +205,14 @@ function ApiKeyRow({
 }) {
   const label = apiKey.name || 'Unnamed key';
   const hint = apiKey.start ? `${apiKey.start}…` : apiKey.prefix || '';
+  const remoteUse = apiKey.lastUsedRemotelyAt;
+  const exactRemoteTime = remoteUse ? new Date(remoteUse).toLocaleString() : null;
   return (
-    <div className="flex items-center justify-between gap-2 rounded-md border px-3 py-2">
+    <div
+      role="group"
+      aria-label={exactRemoteTime ? `${label}. Last used remotely ${exactRemoteTime}` : label}
+      className="flex items-center justify-between gap-2 rounded-md border px-3 py-2"
+    >
       <div className="min-w-0">
         <p className="truncate text-sm font-medium">{label}</p>
         <p className="text-muted-foreground font-mono text-xs">
@@ -215,6 +221,16 @@ function ApiKeyRow({
             ? ` · expires ${new Date(apiKey.expiresAt).toLocaleDateString()}`
             : ' · no expiry'}
         </p>
+        {remoteUse && (
+          <p className="text-muted-foreground text-xs">
+            Last used remotely{' '}
+            <time dateTime={remoteUse} title={exactRemoteTime ?? undefined}>
+              {formatRelativeTime(remoteUse).replace(/^(Just now|Yesterday)/, (word) =>
+                word.toLowerCase()
+              )}
+            </time>
+          </p>
+        )}
       </div>
       <AlertDialog>
         <AlertDialogTrigger asChild>

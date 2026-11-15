@@ -33,7 +33,46 @@ const KEY: ApiKeyRecord = {
 
 describe('ApiKeysSection', () => {
   beforeEach(() => vi.clearAllMocks());
-  afterEach(() => cleanup());
+  afterEach(() => {
+    cleanup();
+    vi.useRealTimers();
+  });
+
+  it('shows when a listed key was last used remotely, with its exact time', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-11-14T18:05:00Z'));
+    const lastUsedRemotelyAt = '2026-11-14T18:00:00Z';
+    const apiKeyList = vi.fn().mockResolvedValue({
+      data: { apiKeys: [{ ...KEY, lastUsedRemotelyAt }], total: 1 },
+      error: null,
+    });
+    renderSection(createFakeAuthClient({ apiKeyList }));
+
+    const remoteUse = await screen.findByText('Last used remotely');
+    expect(remoteUse).toHaveTextContent('Last used remotely 5m ago');
+    const time = remoteUse.querySelector('time');
+    expect(time).toHaveAttribute('dateTime', lastUsedRemotelyAt);
+    expect(time).toHaveAttribute('title', new Date(lastUsedRemotelyAt).toLocaleString());
+    expect(
+      screen.getByRole('group', {
+        name: `laptop. Last used remotely ${new Date(lastUsedRemotelyAt).toLocaleString()}`,
+      })
+    ).toContainElement(remoteUse);
+  });
+
+  it.each([null, undefined])(
+    'omits remote-use metadata when no use is recorded (%s)',
+    async (lastUsedRemotelyAt) => {
+      const apiKeyList = vi.fn().mockResolvedValue({
+        data: { apiKeys: [{ ...KEY, lastUsedRemotelyAt }], total: 1 },
+        error: null,
+      });
+      renderSection(createFakeAuthClient({ apiKeyList }));
+
+      expect(await screen.findByText('laptop')).toBeInTheDocument();
+      expect(screen.queryByText(/Last used remotely/)).not.toBeInTheDocument();
+    }
+  );
 
   it('creates a key and reveals the secret exactly once', async () => {
     const user = userEvent.setup();
