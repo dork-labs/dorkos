@@ -20,6 +20,7 @@ import { turnEnded } from '@dorkos/shared/schemas';
 import type { ComposerInputHandle } from '@/layers/features/composer';
 import { Conversation, useConversation } from '@/layers/features/conversation';
 import { SessionAsks } from './SessionAsks';
+import { SessionPausedQueueNotice } from './SessionPausedQueueNotice';
 import {
   BackgroundTaskBar,
   ChatStatusSection,
@@ -133,6 +134,8 @@ interface SessionComposerProps {
    * has one source.
    */
   waiting: QueuedMessage[];
+  /** The agent is paused, read by the host with `waiting` (DOR-4348). */
+  agentPaused?: boolean;
   interaction: InteractionProps;
   sync: SyncPresenceProps;
 }
@@ -184,6 +187,7 @@ export function SessionComposer({
   sessionId,
   sessionStatus,
   waiting,
+  agentPaused = false,
   interaction,
   sync,
 }: SessionComposerProps) {
@@ -710,6 +714,11 @@ export function SessionComposer({
               onSwitchNow={handleSwitchNow}
               agentActions={agentQueueActions}
               onFocusComposer={() => chatInputRef.current?.focus()}
+              pausedLine={
+                agentPaused && agentName
+                  ? `Held while ${agentName} is paused. Runs when it's resumed.`
+                  : undefined
+              }
               // The server dispatches the head the moment the session frees up,
               // so what genuinely holds the line is the agent parked on a
               // person, or the head held for the agent's background work.
@@ -726,6 +735,13 @@ export function SessionComposer({
       }
       aboveInput={
         <>
+          {currentAgent && (
+            <SessionPausedQueueNotice
+              sessionId={sessionId}
+              agentId={currentAgent.id}
+              agentName={agentName}
+            />
+          )}
           <BrowserHandoffCard sessionId={sessionId} />
           <BackgroundTaskBar tasks={backgroundTasks} onStopTask={handleStopTask} />
         </>

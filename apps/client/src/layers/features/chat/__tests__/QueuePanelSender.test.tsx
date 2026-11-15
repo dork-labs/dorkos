@@ -273,3 +273,31 @@ describe('queueSenderOf', () => {
     expect(queueSenderOf(undefined)).toBeNull();
   });
 });
+
+describe('QueuePanel: messages held while the agent is paused (DOR-4348)', () => {
+  const PAUSED_LINE = "Held while Scout is paused. Runs when it's resumed.";
+
+  it('says on another chat’s message that it runs once the agent is resumed', () => {
+    render(
+      <QueuePanel
+        queue={[fromChat('a', 'Please hold PR #12.', SECURITY), mine('b', 'My own words')]}
+        editingId={null}
+        onEdit={vi.fn()}
+        onRemove={vi.fn()}
+        onSend={vi.fn()}
+        onMoveUp={vi.fn()}
+        statusNote="Sending one at a time"
+        pausedLine={PAUSED_LINE}
+      />
+    );
+    const chatRow = screen.getByRole('group', { name: 'From Security: Please hold PR #12.' });
+    expect(within(chatRow).getByText(PAUSED_LINE)).toBeInTheDocument();
+    // The person's own message waits for their Send, so it never promises to run.
+    expect(screen.getAllByText(PAUSED_LINE)).toHaveLength(1);
+  });
+
+  it('says nothing about a pause when the agent is not paused', () => {
+    renderPanel([fromChat('a', 'Please hold PR #12.', SECURITY)]);
+    expect(screen.queryByText(/is paused/)).not.toBeInTheDocument();
+  });
+});
