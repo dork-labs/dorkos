@@ -190,6 +190,22 @@ describe('QueuePanel: focus after a row leaves (DOR-3060)', () => {
     expect(onFocusComposer).toHaveBeenCalledOnce();
   });
 
+  it('forgets the row when Send now fails, so a later drain never moves focus', () => {
+    const onFocusComposer = vi.fn();
+    actions.sendNow.mockImplementationOnce((_id: string, onFailed?: () => void) => onFailed?.());
+    const view = render(panel([a], {}, onFocusComposer));
+    const send = screen.getByRole('button', { name: /^Send now/ });
+    send.focus();
+    fireEvent.click(send);
+
+    // The row ran later, as its own turn, while focus had fallen to the page.
+    send.blur();
+    view.rerender(panel([], {}, onFocusComposer));
+    view.unmount();
+
+    expect(onFocusComposer).not.toHaveBeenCalled();
+  });
+
   it('stays put when Send now could only move the row first', () => {
     const onFocusComposer = vi.fn();
     const view = render(panel([a], {}, onFocusComposer));

@@ -116,6 +116,24 @@ describe('a second Send now press', () => {
   });
 });
 
+describe('telling the queue an action failed', () => {
+  it('calls back only when the row stays where it was', async () => {
+    const { transport, view } = mount();
+    const failed = vi.fn();
+    vi.mocked(transport.steerQueuedChatMessage).mockRejectedValueOnce(new Error('offline'));
+    act(() => view.result.current.sendNow('row-1', failed));
+    await waitFor(() => expect(failed).toHaveBeenCalledOnce());
+
+    const onItsWay = vi.fn();
+    vi.mocked(transport.removeQueuedMessage).mockRejectedValueOnce(
+      Object.assign(new Error('starting'), { code: 'QUEUED_MESSAGE_LAUNCHING' })
+    );
+    act(() => view.result.current.dontDeliver('row-2', 'Security', onItsWay));
+    await waitFor(() => expect(toast).toHaveBeenCalledWith('It’s already on its way.'));
+    expect(onItsWay).not.toHaveBeenCalled();
+  });
+});
+
 describe('the copy', () => {
   it('words each Send now outcome and the removal', () => {
     expect(sendNowNotice({ outcome: 'steered' })).toBeNull();

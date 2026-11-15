@@ -32,9 +32,9 @@ export function notDeliveredLine(senderName: string | null): string {
 /** Send now and Don't deliver, for a queued message from another agent. */
 export interface AgentQueueActions {
   /** Send it into the running turn, or put it first when it may not join. */
-  sendNow: (id: string) => void;
+  sendNow: (id: string, onFailed?: () => void) => void;
   /** Take it off the queue; its sender (`null` when unknown) is told who removed it. */
-  dontDeliver: (id: string, senderName: string | null) => void;
+  dontDeliver: (id: string, senderName: string | null, onFailed?: () => void) => void;
   /** Rows whose Send now is on its way, so a second press waits for the first. */
   sending: ReadonlySet<string>;
   /** A row's note after Send now moved it to the front instead, by row id. */
@@ -62,7 +62,7 @@ export function useAgentQueueActions(sessionId: string | null): AgentQueueAction
   const [sending, setSending] = useState<ReadonlySet<string>>(new Set());
 
   const sendNow = useCallback(
-    (id: string) => {
+    (id: string, onFailed?: () => void) => {
       if (!sessionId) return;
       setSending((prev) => new Set(prev).add(id));
       const done = () =>
@@ -81,7 +81,10 @@ export function useAgentQueueActions(sessionId: string | null): AgentQueueAction
           done();
           // Gone, or already on its way (a press from another window): both
           // mean the message is going, which is what was asked.
-          if (!isGone(err) && !isOnItsWay(err)) toast.error('Couldn’t send that message now');
+          if (isGone(err) || isOnItsWay(err)) return;
+          // It stays where it was: whoever was waiting for it to leave stops.
+          onFailed?.();
+          toast.error('Couldn’t send that message now');
         }
       );
     },
@@ -89,7 +92,7 @@ export function useAgentQueueActions(sessionId: string | null): AgentQueueAction
   );
 
   const dontDeliver = useCallback(
-    (id: string, senderName: string | null) => {
+    (id: string, senderName: string | null, onFailed?: () => void) => {
       if (!sessionId) return;
       void transport.removeQueuedMessage(sessionId, id).then(
         () => toast(notDeliveredLine(senderName)),
@@ -100,6 +103,7 @@ export function useAgentQueueActions(sessionId: string | null): AgentQueueAction
             toast('It’s already on its way.');
             return;
           }
+          onFailed?.();
           toast.error('Couldn’t take that message off the queue');
         }
       );

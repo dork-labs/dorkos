@@ -145,6 +145,19 @@ export function QueuePanel({
     leaving.current = { id, index, last: queue.length === 1 };
   };
 
+  // A Send now or Don't deliver that failed leaves the row where it was, so
+  // nothing should wait for it to go. Only on failure: a Send now that moves the
+  // row first can change the queue before its stay-in-place notice arrives.
+  const forgetLeaving = (id: string): void => {
+    if (leaving.current?.id === id) leaving.current = null;
+  };
+  const rowActions: AgentQueueActions = {
+    ...agentActions,
+    sendNow: (id) => agentActions.sendNow(id, () => forgetLeaving(id)),
+    dontDeliver: (id, senderName) =>
+      agentActions.dontDeliver(id, senderName, () => forgetLeaving(id)),
+  };
+
   // Also guarded at the call site, which is what lets AnimatePresence see this
   // panel leave and play the exit below. Kept here too so the component never
   // renders a "Queued (0)" header for any other caller.
@@ -184,7 +197,7 @@ export function QueuePanel({
                 <QueueAgentRow
                   item={item}
                   index={i}
-                  actions={agentActions}
+                  actions={rowActions}
                   onSwitchNow={onSwitchNow}
                   onLeaving={noteLeaving}
                 />
