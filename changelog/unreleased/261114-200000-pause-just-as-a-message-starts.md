@@ -2,6 +2,7 @@
 covers:
   - 'fix(session): a pause that lands as a queued message starts holds it instead of losing it (DOR-4353)'
   - 'fix(session): a held message reruns only when the agent did nothing at all, and keeps its marks (DOR-4353)'
+  - 'fix(session): hooks and memory recall before the first model request do not count as the agent acting (DOR-4353)'
 ---
 
 ### Fixed
