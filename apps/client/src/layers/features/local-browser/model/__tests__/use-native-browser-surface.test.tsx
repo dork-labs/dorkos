@@ -4,11 +4,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, render } from '@testing-library/react';
 import { useRef } from 'react';
+import { toast } from 'sonner';
 import {
   Dialog,
   DialogContent,
   DialogDescription,
   DialogTitle,
+  Toaster,
   Sheet,
   SheetContent,
   SheetDescription,
@@ -276,6 +278,7 @@ describe('useNativeBrowserSurface', () => {
     // Stable, as in the panel: a new callback would restart the surface on every render.
     const noop = () => {};
     let tooltipRect = { x: 600, y: 300, width: 80, height: 24 };
+    let toastRect = { x: 860, y: 720, width: 320, height: 56 };
 
     function placeLayers() {
       vi.mocked(HTMLElement.prototype.getBoundingClientRect).mockImplementation(function (
@@ -285,11 +288,13 @@ describe('useNativeBrowserSurface', () => {
           ? WINDOW
           : this.matches('[data-radix-popper-content-wrapper]')
             ? tooltipRect
-            : this.contains(document.querySelector('[data-testid="surface"]'))
-              ? rect
-              : this.closest('[role="dialog"]')
-                ? { x: 700, y: 300, width: 400, height: 300 }
-                : rect;
+            : this.matches('[data-sonner-toast]')
+              ? toastRect
+              : this.contains(document.querySelector('[data-testid="surface"]'))
+                ? rect
+                : this.closest('[role="dialog"]')
+                  ? { x: 700, y: 300, width: 400, height: 300 }
+                  : rect;
         return {
           ...box,
           top: box.y,
@@ -342,6 +347,7 @@ describe('useNativeBrowserSurface', () => {
 
     beforeEach(() => {
       tooltipRect = { x: 600, y: 300, width: 80, height: 24 };
+      toastRect = { x: 860, y: 720, width: 320, height: 56 };
       placeLayers();
     });
 
@@ -588,6 +594,64 @@ describe('useNativeBrowserSurface', () => {
 
         expect(still()).toBeNull();
         expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:still-1');
+      });
+
+      // Security's Should: a toast over the page is an app layer like any other.
+      function WithToaster() {
+        return (
+          <>
+            <Surface onUnavailable={noop} />
+            <Toaster />
+          </>
+        );
+      }
+
+      it('leaves a still under a toast that lands on the page, and comes back after', async () => {
+        toastRect = { x: 100, y: 150, width: 180, height: 56 };
+        render(<WithToaster />);
+        await settle();
+
+        await act(async () => {
+          toast('Saved', { id: 'over' });
+        });
+        await settle();
+        await settle();
+        expect(document.querySelector('[data-sonner-toast]')).not.toBeNull();
+        expect(captureStill).toHaveBeenCalledWith('conn-1');
+        expect(still()).not.toBeNull();
+        expect(setBounds).toHaveBeenLastCalledWith(expect.objectContaining({ visible: false }));
+
+        await act(async () => {
+          toast.dismiss('over');
+          await vi.advanceTimersByTimeAsync(1_000);
+        });
+        // Sonner unmounts the toast after its exit; then the page comes back.
+        await settle();
+        await settle();
+        await settle();
+        expect(document.querySelector('[data-sonner-toast]')).toBeNull();
+        expect(setBounds).toHaveBeenLastCalledWith(expect.objectContaining({ visible: true }));
+        expect(still()).toBeNull();
+      });
+
+      it('stays live for a toast in a corner away from the page', async () => {
+        render(<WithToaster />);
+        await settle();
+        setBounds.mockClear();
+
+        await act(async () => {
+          toast('Saved', { id: 'away' });
+        });
+        await settle();
+        await settle();
+
+        expect(document.querySelector('[data-sonner-toast]')).not.toBeNull();
+        expect(captureStill).not.toHaveBeenCalled();
+        expect(setBounds).not.toHaveBeenCalledWith(expect.objectContaining({ visible: false }));
+        await act(async () => {
+          toast.dismiss('away');
+          await vi.advanceTimersByTimeAsync(1_000);
+        });
       });
 
       it('works without a still on an older desktop shell', async () => {

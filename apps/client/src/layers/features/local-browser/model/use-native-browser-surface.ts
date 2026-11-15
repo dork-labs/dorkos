@@ -26,7 +26,7 @@ const afterPaint = (run: () => void) =>
  * App layers that float above the page's spot. Radix dialogs never set
  * `aria-modal`, so a modal is found by its backdrop, which covers the whole
  * window: an open dialog, sheet or drawer always overlaps (DOR-4418). A tooltip,
- * popover or menu counts only where it overlaps the page (DOR-4417).
+ * popover, menu or toast counts only where it overlaps the page (DOR-4417).
  */
 const FLOATING_LAYERS = [
   '[data-slot="dialog-overlay"]',
@@ -38,6 +38,8 @@ const FLOATING_LAYERS = [
   '[role="menu"]',
   '[role="listbox"]',
   '[data-radix-popper-content-wrapper]',
+  // Each toast on its own, so one in a far corner leaves the page alone (DOR-4438).
+  '[data-sonner-toast]',
 ].join(', ');
 
 /**
