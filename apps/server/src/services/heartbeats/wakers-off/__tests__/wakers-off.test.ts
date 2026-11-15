@@ -3,6 +3,10 @@
  * and heartbeats it names, since when, and who each waits on.
  */
 import { beforeEach, describe, expect, it } from 'vitest';
+import { Hono } from 'hono';
+import { WakersOffSchema } from '@dorkos/shared/waker-schemas';
+import { createWakersOffRoutes } from '../../../../routes/wakers-off.js';
+import type { ApiEnv } from '../../../../http/api-chain.js';
 import { eq } from 'drizzle-orm';
 import { createTestDb } from '@dorkos/test-utils/db';
 import { pulseSchedules, type Db } from '@dorkos/db';
@@ -26,7 +30,10 @@ describe('wakers off (DOR-3641)', () => {
     db = createTestDb();
   });
 
-  function schedule(id: string, values: { enabled?: boolean; status?: string; agentId?: string }) {
+  function schedule(
+    id: string,
+    values: { enabled?: boolean; status?: string; agentId?: string; projectOnly?: boolean }
+  ) {
     db.insert(pulseSchedules)
       .values({
         id,
@@ -39,6 +46,7 @@ describe('wakers off (DOR-3641)', () => {
         enabled: values.enabled ?? true,
         status: (values.status ?? 'active') as 'active',
         agentId: values.agentId ?? null,
+        projectOnly: values.projectOnly ?? false,
       })
       .run();
   }
@@ -86,6 +94,29 @@ describe('wakers off (DOR-3641)', () => {
       waitingOn: { accountId: OWNER, name: 'Dorian' },
     });
     expect(wakers.find((waker) => waker.id === 'running')).toBeUndefined();
+  });
+
+  it('leaves out a project’s copy that was never turned on, but not one that is waiting', async () => {
+    schedule('project-copy', { enabled: false, projectOnly: true, agentId: SCOUT.id });
+    schedule('project-waiting', { status: 'pending_approval', projectOnly: true });
+
+    const { wakers } = await listWakersOff(input());
+
+    expect(wakers.map((waker) => waker.id)).toEqual(['project-waiting']);
+  });
+
+  it('answers on GET /api/heartbeats/wakers-off', async () => {
+    schedule('switched-off', { enabled: false });
+    const app = new Hono<ApiEnv>();
+    app.route(
+      '/api/heartbeats/wakers-off',
+      createWakersOffRoutes({ list: () => listWakersOff(input()) })
+    );
+
+    const response = await app.request('/api/heartbeats/wakers-off');
+
+    expect(response.status).toBe(200);
+    expect(WakersOffSchema.parse(await response.json()).wakers[0]?.id).toBe('switched-off');
   });
 
   it('dates a switched-off heartbeat from its file and asks its agent’s person', async () => {

@@ -74,12 +74,15 @@ describe('the waker off-since migration (DOR-3641)', () => {
     db.$client.prepare(`UPDATE pulse_schedules SET ${columns} WHERE id = ?`).run(id);
   }
 
-  it('stamps a policy receipt on every active schedule that has none, and leaves the rest', () => {
+  it('stamps a policy receipt on every active or granted schedule that has none, and leaves the rest', () => {
     migrateThrough(MIGRATION_IDX - 1);
     schedule('active-blank', true, 'active');
     schedule('active-off', false, 'active');
     schedule('waiting', true, 'pending_approval');
     schedule('approved', true, 'active');
+    // Paused with its grant: it comes back live when its file returns.
+    schedule('paused-granted', true, 'paused');
+    set('paused-granted', `approved_content_key = 'k1'`);
     set(
       'approved',
       `approved_at = '2026-11-03T00:00:00.000Z', approved_by = '{"kind":"person","userId":null,"name":"Dorian"}', approved_via = 'inbox'`
@@ -87,7 +90,7 @@ describe('the waker off-since migration (DOR-3641)', () => {
 
     migrateThrough(MIGRATION_IDX);
 
-    for (const id of ['active-blank', 'active-off']) {
+    for (const id of ['active-blank', 'active-off', 'paused-granted']) {
       expect(row(id)).toMatchObject({
         approvedAt: '2026-11-02T00:00:00.000Z',
         approvedBy: '{"kind":"policy"}',

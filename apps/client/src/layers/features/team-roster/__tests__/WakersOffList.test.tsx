@@ -58,6 +58,19 @@ describe('WakersOffList', () => {
     expect(screen.getByRole('heading', { name: 'Off or waiting' })).toBeInTheDocument();
   });
 
+  it('names a paused agent as an agent, not as a schedule', () => {
+    render(
+      <WakersOffList
+        wakers={[
+          waker({ kind: 'heartbeat', id: 'a', name: 'Atlas', agentId: 'a', state: 'paused' }),
+        ]}
+      />
+    );
+    expect(screen.getByRole('listitem')).toHaveTextContent(
+      'Atlas (agent)Paused, waiting on Dorian.'
+    );
+  });
+
   it('says why: waiting for approval, or paused', () => {
     expect(wakerStatus(waker({ state: 'waiting' }))).toBe('Needs approval, waiting on Dorian.');
     expect(wakerStatus(waker({ state: 'paused' }))).toBe('Paused, waiting on Dorian.');

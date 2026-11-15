@@ -35,6 +35,8 @@ export interface OffScheduleRow {
   enabled: boolean;
   status: 'active' | 'paused' | 'pending_approval';
   offSince: string | null;
+  /** A project's own copy of a shared schedule (DOR-3376). */
+  projectOnly: boolean;
 }
 
 /** What {@link listWakersOff} reads. */
@@ -61,19 +63,25 @@ export interface WakersOffInput {
  * @param db - The server database.
  */
 export function readOffSchedules(db: Db): OffScheduleRow[] {
-  return db
-    .select({
-      id: pulseSchedules.id,
-      name: pulseSchedules.name,
-      displayName: pulseSchedules.displayName,
-      agentId: pulseSchedules.agentId,
-      enabled: pulseSchedules.enabled,
-      status: pulseSchedules.status,
-      offSince: pulseSchedules.offSince,
-    })
-    .from(pulseSchedules)
-    .where(not(and(eq(pulseSchedules.enabled, true), eq(pulseSchedules.status, 'active'))!))
-    .all();
+  return (
+    db
+      .select({
+        id: pulseSchedules.id,
+        name: pulseSchedules.name,
+        displayName: pulseSchedules.displayName,
+        agentId: pulseSchedules.agentId,
+        enabled: pulseSchedules.enabled,
+        status: pulseSchedules.status,
+        offSince: pulseSchedules.offSince,
+        projectOnly: pulseSchedules.projectOnly,
+      })
+      .from(pulseSchedules)
+      .where(not(and(eq(pulseSchedules.enabled, true), eq(pulseSchedules.status, 'active'))!))
+      .all()
+      // A project's copy starts off on purpose until that project's person turns
+      // it on (DOR-3376); listing every one would bury the wakers that stopped.
+      .filter((row) => !(row.projectOnly && !row.enabled && row.status === 'active'))
+  );
 }
 
 /** Why a schedule row cannot run, in the list's terms. */

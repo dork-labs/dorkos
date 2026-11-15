@@ -98,11 +98,12 @@ export function createTaskApprovalColumns(input?: TaskApprovalInput | null) {
       );
 }
 
-/** How much a receipt says: a named approver outweighs a policy, then a known surface counts. */
+/** Who counts most in a receipt: a person, then an agent, then a policy. */
+const APPROVER_RANK = { person: 3, agent: 2, policy: 1 } as const;
+
+/** How much a receipt says: who approved first, and a known surface only breaks a tie. */
 function receiptWeight(receipt: TaskApprovalReceipt): number {
-  return (
-    (receipt.approvedBy.kind === 'policy' ? 0 : 2) + (receipt.approvedVia === 'unknown' ? 0 : 1)
-  );
+  return APPROVER_RANK[receipt.approvedBy.kind] * 2 + (receipt.approvedVia === 'unknown' ? 0 : 1);
 }
 
 /** The receipt a row holds now, or null when any part is missing or unreadable. */
@@ -129,12 +130,17 @@ export function standingTaskApproval(
  * re-sending `active` on a live task is not a new approval, and must not turn
  * "Dorian, in the Inbox" into "someone, somewhere" (DOR-3641 review, nit 4).
  * New content always takes the new receipt, since nobody approved it before.
+ *
+ * @param row - The row as it stands, with its standing grant and receipt.
+ * @param incoming - The receipt this approval would write.
+ * @param contentKey - The key of the content being approved; defaults to the row's own.
  */
 export function reapprovalReceipt(
   row: typeof pulseSchedules.$inferSelect,
-  incoming: TaskApprovalReceipt
+  incoming: TaskApprovalReceipt,
+  contentKey: string = effectiveContentKey(row)
 ): TaskApprovalReceipt {
-  if (row.approvedContentKey === null || row.approvedContentKey !== effectiveContentKey(row)) {
+  if (row.approvedContentKey === null || row.approvedContentKey !== contentKey) {
     return incoming;
   }
   const standing = standingTaskApproval(row);
@@ -175,5 +181,33 @@ export function taskApprovalColumns(
     declinedContentKey: null,
     agentApprovalKey: null,
     ...taskApprovalReceiptColumns(receipt),
+  };
+}
+
+/**
+ * The columns a paused row's return writes when it ARMS the row: the grant for
+ * what will run, and its receipt. The receipt is the operator's when the write
+ * names one, else the policy's; unchanged content keeps a receipt that says
+ * more, so a file coming back never erases who approved it.
+ *
+ * @param row - The paused row as it stands.
+ * @param approval - Who the write says approved it, if anyone (the caller parks a `null`).
+ * @param work - The row as the write will leave it, for its content key.
+ */
+export function unpauseApprovalColumns(
+  row: typeof pulseSchedules.$inferSelect,
+  approval: TaskApprovalInput | null | undefined,
+  work: typeof pulseSchedules.$inferSelect
+) {
+  // What will RUN, a person's own timing included (DOR-2302).
+  const key = effectiveContentKey(work);
+  const incoming = completeTaskApproval(
+    approval ?? { approvedBy: { kind: 'policy' }, approvedVia: 'unknown' }
+  );
+  return {
+    status: 'active' as const,
+    approvedContentKey: key,
+    previousApprovalKey: null,
+    ...taskApprovalReceiptColumns(reapprovalReceipt(row, incoming, key)),
   };
 }

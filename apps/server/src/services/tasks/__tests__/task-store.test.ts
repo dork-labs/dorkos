@@ -936,9 +936,21 @@ describe('TaskStore', () => {
         approvedVia: 'created',
       });
 
-      // With no approver named, the policy's stamp, never a blank one.
+      // The same file back again, with no approver named: the person's receipt
+      // still covers it, so it stays.
       store.fileSync.markRemovedByFilePath(filePath);
       store.fileSync.upsertFromFile(definition('stamped', filePath));
+      expect(store.getTask(task.id)).toMatchObject({
+        status: 'active',
+        approvedBy: { kind: 'person', userId: 'user-1', name: null },
+      });
+
+      // Changed content with no approver named: the policy's stamp, never the
+      // old receipt and never a blank one.
+      store.fileSync.markRemovedByFilePath(filePath);
+      const changed = definition('stamped', filePath);
+      changed.body = 'do something else';
+      store.fileSync.upsertFromFile(changed);
       expect(store.getTask(task.id)).toMatchObject({
         status: 'active',
         approvedBy: { kind: 'policy' },

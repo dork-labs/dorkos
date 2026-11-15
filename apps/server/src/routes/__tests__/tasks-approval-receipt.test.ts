@@ -270,6 +270,28 @@ describe('scheduled task approval receipts', () => {
     });
   });
 
+  it('lets a person’s re-approval outrank an agent’s record of the same content', async () => {
+    const task = await parked('agent-first');
+    store.updateTask(
+      task.id,
+      { status: 'active' },
+      {
+        approval: {
+          approvedBy: { kind: 'agent', agentPath: '/agents/scout', name: 'Scout' },
+          approvedVia: 'agent_tool',
+        },
+      }
+    );
+
+    const response = await call(`/${task.id}`, 'PATCH', {
+      status: 'active',
+      expectedApprovalRevision: await revision(task.id),
+    });
+
+    expect(response.status, JSON.stringify(response.body)).toBe(200);
+    expect(response.body.approvedBy).toEqual({ kind: 'person', userId: 'user-1', name: null });
+  });
+
   it('stamps the person whose edit changed the work, not the approver of the old work', async () => {
     const task = await parked('edited-live');
     await call(`/${task.id}`, 'PATCH', {

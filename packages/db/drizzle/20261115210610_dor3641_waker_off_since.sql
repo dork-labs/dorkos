@@ -1,14 +1,15 @@
 ALTER TABLE `pulse_schedules` ADD `off_since` text;--> statement-breakpoint
 -- HAND-WRITTEN below this line (DOR-3641).
 --
--- Schedules already active when the approval receipt arrived have no receipt.
--- Nobody knows who approved them, so they are stamped as the policy's, at the
--- row's last write: never active with the receipt blank.
+-- Schedules already active, or holding a grant, when the approval receipt
+-- arrived have no receipt. Nobody knows who approved them, so they are stamped
+-- as the policy's, at the row's last write: never active with the receipt
+-- blank, and never brought back from a pause with it blank either.
 UPDATE `pulse_schedules` SET
   `approved_at` = `updated_at`,
   `approved_by` = '{"kind":"policy"}',
   `approved_via` = 'unknown'
-  WHERE `status` = 'active' AND (`approved_at` IS NULL OR `approved_by` IS NULL OR `approved_via` IS NULL);
+  WHERE (`status` = 'active' OR `approved_content_key` IS NOT NULL) AND (`approved_at` IS NULL OR `approved_by` IS NULL OR `approved_via` IS NULL);
 --> statement-breakpoint
 -- A schedule that is off now has been off since at least its last write.
 UPDATE `pulse_schedules` SET `off_since` = `updated_at`

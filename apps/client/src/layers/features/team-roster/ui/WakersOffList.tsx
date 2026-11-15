@@ -9,8 +9,9 @@ export interface WakersOffListProps {
 
 /** What a waker is called on its line. */
 function wakerTitle(waker: WakerOff): string {
-  if (waker.kind === 'schedule' || waker.state === 'paused') return waker.name;
-  return waker.agentId === null ? waker.name : `${waker.name}’s heartbeat`;
+  if (waker.kind === 'schedule' || waker.agentId === null) return waker.name;
+  // A paused agent stops all its work, not just its heartbeat.
+  return waker.state === 'paused' ? `${waker.name} (agent)` : `${waker.name}’s heartbeat`;
 }
 
 /** When it stopped, in the app's time words: a clock time today, else a day. */

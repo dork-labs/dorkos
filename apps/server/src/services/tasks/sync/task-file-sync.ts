@@ -29,7 +29,6 @@ import {
 import { mapTaskRow } from '../task-row-mappers.js';
 import { resolveFileSwitch } from './file-switch.js';
 import { scheduleContentKey } from '../schedule-permission-clamp.js';
-import { effectiveContentKey } from '../timing/effective-timing.js';
 import { patchAgentModeColumn } from '../agent-mode/agent-mode-record-field.js';
 import { bodyHash } from '../agent-mode/file-cap/file-hash.js';
 import {
@@ -41,6 +40,7 @@ import {
   CLEARED_APPROVAL_RECEIPT,
   completeTaskApproval,
   taskApprovalReceiptColumns,
+  unpauseApprovalColumns,
   type TaskApprovalInput,
 } from '../approvals/task-approval-receipt.js';
 
@@ -252,37 +252,21 @@ export class TaskFileSync {
                 previousApprovalKey: existing.approvedContentKey ?? existing.previousApprovalKey,
               }
             : existing.status === 'paused'
-              ? {
-                  status: 'active' as const,
-                  // ...and with a grant, because this branch ARMS the row. An
-                  // operator write that un-pauses a schedule is the operator's
-                  // approval of it, exactly as the insert branch treats a create;
-                  // leaving the key null would put the row live and ungranted
-                  // until the next sync noticed and parked it (DOR-1485 review,
-                  // R2). Reachable through `shape-schedule-service` and through a
-                  // route write over a path whose file had been deleted.
-                  // What will RUN, a person's own timing included (DOR-2302).
-                  approvedContentKey: effectiveContentKey({
-                    ...existing,
-                    ...fileSettingsOf(def),
-                    prompt: def.body,
-                    cron: incomingCron,
-                    timezone: schedule.timezone,
-                  }),
-                  previousApprovalKey: null,
-                  // Arming is an approval, so it writes its receipt: the
-                  // operator's when the write names one, else the policy's. An
-                  // older receipt would describe content this write may have
-                  // changed (DOR-3641 review, nit 2).
-                  ...taskApprovalReceiptColumns(
-                    completeTaskApproval(
-                      options?.approval ?? {
-                        approvedBy: { kind: 'policy' },
-                        approvedVia: 'unknown',
-                      }
-                    )
-                  ),
-                }
+              ? // ...and with a grant, because this branch ARMS the row. An
+                // operator write that un-pauses a schedule is the operator's
+                // approval of it, exactly as the insert branch treats a create;
+                // leaving the key null would put the row live and ungranted
+                // until the next sync noticed and parked it (DOR-1485 review,
+                // R2). Reachable through `shape-schedule-service` and through a
+                // route write over a path whose file had been deleted. Arming
+                // writes its receipt too (DOR-3641 review, nit 2).
+                unpauseApprovalColumns(existing, options?.approval, {
+                  ...existing,
+                  ...fileSettingsOf(def),
+                  prompt: def.body,
+                  cron: incomingCron,
+                  timezone: schedule.timezone,
+                })
               : {}),
         tags: '[]',
         // A prompt this sync folds in is marked, so it is never a file's first-read

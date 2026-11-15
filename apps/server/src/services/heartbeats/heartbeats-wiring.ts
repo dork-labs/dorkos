@@ -298,7 +298,9 @@ export function startHeartbeats(deps: HeartbeatsWiringDeps): HeartbeatsHandle {
   deps.routes.wakersOff = wakersOffReader({
     db,
     agents,
-    enabled,
+    // The person's own switch: on an agent computer the hub drives beats, which
+    // is not "off" (DOR-2940).
+    enabled: () => configManager.get('heartbeats').enabled,
     store,
     pauses: () => agentPause()?.list() ?? [],
     personOf: (agentId) =>
