@@ -4,6 +4,7 @@
  * @module services/tasks/notices/schedule-notices
  */
 import { Cron } from 'croner';
+import { streakCountsFrom } from '../history/schedule-health.js';
 import type { Task, TaskRun } from '@dorkos/shared/types';
 import type { RoomEntryBody } from '@dorkos/shared/room-schemas';
 import {
@@ -87,9 +88,13 @@ export class ScheduleNotices {
       )
       .sort((a, b) => b.id.localeCompare(a.id));
     const older = history.filter((r) => r.id !== run.id);
+    // Only runs since the schedule last changed count, the same rule as the
+    // Needs you card (DOR-4127), so the room line and the card agree.
+    const from = streakCountsFrom(task.updatedAt);
     const streak = (rows: TaskRun[]) => {
-      const completed = rows.findIndex((r) => r.status === 'completed');
-      return completed < 0 ? rows.length : completed;
+      const recent = rows.filter((r) => Date.parse(r.startedAt ?? r.createdAt) >= from);
+      const completed = recent.findIndex((r) => r.status === 'completed');
+      return completed < 0 ? recent.length : completed;
     };
     if (run.status === 'completed') {
       const recoveredAt = run.finishedAt ?? run.startedAt;

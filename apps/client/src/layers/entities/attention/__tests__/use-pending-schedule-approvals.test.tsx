@@ -293,7 +293,7 @@ describe('repeated schedule failures', () => {
     act(() =>
       queryClient.setQueryData(
         ['tasks'],
-        [{ ...schedule, health: { ...schedule.health, streak: 2 } }]
+        [{ ...schedule, health: { ...schedule.health, streak: 2, recentStreak: 2 } }]
       )
     );
     await waitFor(() => expect(result.current.failingSchedules).toHaveLength(1));
@@ -315,6 +315,48 @@ describe('repeated schedule failures', () => {
       )
     );
     await waitFor(() => expect(result.current.failingSchedules).toEqual([]));
+  });
+
+  /** A schedule with two failures in a row since it last changed. */
+  function failingTwice(overrides: Partial<Task> = {}): Task {
+    return task({
+      id: 'failing',
+      status: 'active',
+      health: {
+        state: 'failing',
+        reason: { kind: 'error', tools: [], nothingDone: false, message: null },
+        since: '2026-11-12T00:00:00Z',
+        streak: 2,
+        lastRunId: 'run-two',
+        recentStreak: 2,
+      },
+      ...overrides,
+    });
+  }
+
+  it('shows no card for a schedule that is turned off, and turning it off clears one (DOR-4127)', async () => {
+    const { wrapper, queryClient } = setup([failingTwice()]);
+    const { result } = renderHook(() => usePendingScheduleApprovals(), { wrapper });
+    await waitFor(() => expect(result.current.failingSchedules).toHaveLength(1));
+    act(() => queryClient.setQueryData(['tasks'], [failingTwice({ enabled: false })]));
+    await waitFor(() => expect(result.current.failingSchedules).toEqual([]));
+  });
+
+  it('shows no card for a paused schedule, even one still switched on (DOR-4127)', async () => {
+    const { wrapper } = setup([failingTwice({ status: 'paused' })]);
+    const { result } = renderHook(() => usePendingScheduleApprovals(), { wrapper });
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    expect(result.current.failingSchedules).toEqual([]);
+  });
+
+  it('shows no card for failures from before the schedule last changed (DOR-4127)', async () => {
+    const stale = failingTwice();
+    const { wrapper } = setup([
+      { ...stale, health: { ...stale.health!, streak: 2, recentStreak: 0 } },
+    ]);
+    const { result } = renderHook(() => usePendingScheduleApprovals(), { wrapper });
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    expect(result.current.failingSchedules).toEqual([]);
   });
 
   it('never puts a sleep miss in Needs you', async () => {
