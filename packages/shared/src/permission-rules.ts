@@ -59,9 +59,6 @@ const HOME_PREFIX = /^(?:~|\$HOME|\$\{HOME\})(?=[\\/]|$)/;
 /** A path that starts at a root: `/`, `\`, or a drive letter. */
 const ABSOLUTE = /^(?:[\\/]|[A-Za-z]:[\\/])/;
 
-/** Tools whose rules name files: reads and every kind of write. */
-const PATH_TOOLS = new Set(['Read', 'Edit', 'Write', 'MultiEdit', 'NotebookEdit']);
-
 /** Tools whose rules let a run change files. */
 const FILE_WRITING_TOOLS = new Set(['Edit', 'Write', 'MultiEdit', 'NotebookEdit']);
 
@@ -223,27 +220,20 @@ export function writesOutsideTaskFolder(rule: string): boolean {
 }
 
 /**
- * Whether a Read rule is a pattern over an absolute or home path
- * (`Read(//users/sam/**)`), which can reach far more than it seems to name.
- * A named absolute file stays one click; a pattern takes the separate yes.
+ * Whether a Read rule can reach far more than it seems to name: a pattern
+ * over an absolute or home path (`Read(//users/sam/**)`), or any path with a
+ * `..` step (`Read(../../../sam/**)`), which climbs out of the task's folder
+ * as an edit rule's would. A named absolute file stays one click; these take
+ * the separate yes.
  *
  * @param rule - An approved or requested rule.
  */
 export function readsBroadly(rule: string): boolean {
   const parsed = parseRule(rule);
   if (!parsed || parsed.tool !== 'Read') return false;
+  if (parsed.spec.split(/[\\/]/).includes('..')) return true;
   const rooted = HOME_PREFIX.test(parsed.spec) || ABSOLUTE.test(parsed.spec);
   return rooted && GLOB.test(parsed.spec);
-}
-
-/**
- * Whether a rule names files at all: the rules the outsider tick has to name.
- *
- * @param rule - An approved or requested rule.
- */
-export function namesFiles(rule: string): boolean {
-  const parsed = parseRule(rule);
-  return !!parsed && PATH_TOOLS.has(parsed.tool);
 }
 
 /**

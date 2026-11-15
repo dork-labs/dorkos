@@ -154,6 +154,11 @@ describe('other spellings of the same folder (third review of #3794)', () => {
       expect(readsBroadly(rule), rule).toBe(true);
       expect(needsOwnConfirmation(rule), rule).toBe(true);
     }
+    // A relative read that climbs out with `..` is just as broad (fourth review).
+    for (const rule of ['Read(../../../sam/**)', 'Read(notes/../../x.md)', 'Read(a\\..\\b)']) {
+      expect(readsBroadly(rule), rule).toBe(true);
+      expect(needsOwnConfirmation(rule), rule).toBe(true);
+    }
     expect(needsOwnConfirmation('Read(/Users/sam/notes/x.md)')).toBe(false);
     expect(needsOwnConfirmation('Read(notes/*.md)')).toBe(false);
   });

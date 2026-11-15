@@ -92,7 +92,8 @@ export function taskApprovalRequestRefusal(
   const requestedRules = new Set(task.requestedAllow ?? []);
   const appliedRules = update.approvedAllow ?? task.approvedAllow ?? [];
   const addsRule = appliedRules.some((rule) => !requestedRules.has(rule));
-  // A rule that starts programs or writes outside the task's folder is said
+  // A rule that starts programs, writes outside the task's folder or reads
+  // broadly (a pattern over an absolute or home path, or a `..` step) is said
   // plainly and confirmed (D-2), and an outsider's rules get the same extra yes
   // a loose mode gets (D-3).
   const ownConfirmation = appliedRules.some(needsOwnConfirmation);

@@ -8,6 +8,7 @@ covers:
   - 'fix(schedules): one click never grants more than the tightest of the saved and requested modes, and a trial is held to it (DOR-3637)'
   - 'fix(schedules): glob rules take the tick, a trial starts a fresh chat, and checks use the runtime a run starts on (DOR-3637)'
   - 'fix(schedules): file rules are judged by their shape, so no spelling of home or .git slips past the tick (DOR-3637)'
+  - 'fix(schedules): a Read rule that climbs out with .. takes the tick too (DOR-3637)'
 ---
 
 ### Security
