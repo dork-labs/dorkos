@@ -210,6 +210,18 @@ Because config is per-sidecar (env at spawn) and DorkOS wants **per-session** mo
    - `bypassPermissions` → auto-respond `once` to everything.
 3. A turn's **folder grants** answer first, in every mode — see "Folder grants" below.
 
+### No project config or code in the shared sidecar (DOR-4394, live 2026-11-15)
+
+One sidecar serves every OpenCode chat on the computer. On the pinned 1.19.3, a cloned
+project's `.opencode/plugin/` and `.opencode/plugins/` code ran INSIDE that process the moment
+DorkOS listed agents or created a session for its folder, before any message. The sidecar now
+spawns with `OPENCODE_DISABLE_PROJECT_CONFIG=1` (`NO_PROJECT_CODE` in `server-manager.ts`);
+with it, neither ran. DorkOS's own `OPENCODE_CONFIG_CONTENT` still applies. The switch also
+stops OpenCode reading the project's `AGENTS.md`, so DorkOS reads it (project top, the nearest
+`.git`, down to the session's folder) and passes it after its own instructions
+(`messaging/project-instructions.ts`). A project's own plugins and MCP servers no longer load;
+DOR-4399 brings them back behind a person's yes.
+
 ### Folder grants: answered at the ask, not written as session rules (agent-home-desk §4.4)
 
 A turn's `MessageOpts.additionalDirectories` reach the sidecar through the ask handler

@@ -45,6 +45,7 @@ import {
   joinFitted,
   type ContextPart,
 } from '../../shared/window/context-fit.js';
+import { openCodeProjectInstructions } from './project-instructions.js';
 
 /** The `session.promptAsync` text-part input shape (SDK `TextPartInput`). */
 export interface OpenCodeTextPartInput {
@@ -184,12 +185,15 @@ function renderContextBody(
  *   tagged parts, or `''`/omitted when the working directory hosts no agent manifest
  * @param contextWindow - The model's context window in tokens, when the catalog
  *   states it; nothing is left out without one
+ * @param projectInstructions - The project's `AGENTS.md` text, which DorkOS reads
+ *   because the sidecar no longer does (DOR-4394)
  * @returns The joined system prompt, or `undefined` when there is nothing to say
  */
 export function buildOpenCodeSystem(
   opts?: MessageOpts,
   agentContext?: string | readonly ContextPart[],
-  contextWindow?: number
+  contextWindow?: number,
+  projectInstructions?: string
 ): string | undefined {
   const parts: ContextPart[] = [
     { block: 'gen_ui' as const, text: GEN_UI_CONTEXT },
@@ -197,6 +201,8 @@ export function buildOpenCodeSystem(
       ? [{ block: null, text: agentContext ?? '' }]
       : agentContext),
     { block: null, text: opts?.systemPromptAppend ?? '' },
+    // The project's own words come last, never above DorkOS's (DOR-4394).
+    { block: null, text: projectInstructions ?? '' },
   ].filter((part) => part.text !== '');
   const fit = chooseTrims(
     parts.map(fitItemOf),
@@ -253,15 +259,18 @@ export interface OpenCodeTurnBody {
  * @param agentContext - The runtime-neutral DorkOS context blocks
  * @param contextWindow - The model's context window in tokens, when known
  * @param model - The model to name, when one is chosen
+ * @param directory - The session's folder, whose `AGENTS.md` text DorkOS passes
  */
 export function openCodeTurnBody(
   content: string,
   opts: MessageOpts | undefined,
   agentContext: string | readonly ContextPart[] | undefined,
   contextWindow: number | undefined,
-  model: { providerID: string; modelID: string } | undefined
+  model: { providerID: string; modelID: string } | undefined,
+  directory?: string
 ): OpenCodeTurnBody {
-  const system = buildOpenCodeSystem(opts, agentContext, contextWindow);
+  const project = directory === undefined ? undefined : openCodeProjectInstructions(directory);
+  const system = buildOpenCodeSystem(opts, agentContext, contextWindow, project);
   return {
     parts: buildOpenCodeParts(content, opts),
     ...(system !== undefined ? { system } : {}),

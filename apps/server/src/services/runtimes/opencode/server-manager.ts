@@ -72,6 +72,17 @@ export const OPENCODE_SIDECAR_CONFIG = {
   },
 } as const;
 
+/**
+ * One sidecar serves every OpenCode chat on this computer, so a project's own
+ * config must never load into it (DOR-4394): a cloned repo's `opencode.json`,
+ * `.opencode/` plugins, tools and MCP servers, or one in a folder above it, ran
+ * its code in this shared process the moment DorkOS opened a session there,
+ * and could loosen DorkOS's asks. DorkOS's own config (`OPENCODE_CONFIG_CONTENT`)
+ * still applies, and DorkOS passes the project's `AGENTS.md` text itself
+ * (`messaging/project-instructions.ts`).
+ */
+export const NO_PROJECT_CODE = { OPENCODE_DISABLE_PROJECT_CONFIG: '1' } as const;
+
 /** @internal Exported for tests — lifecycle timing and backoff constants. */
 export const SIDECAR_TIMING = {
   /** How long a booting sidecar may take to print its ready line. */
@@ -117,6 +128,7 @@ export function buildSidecarSpawnEnv(
       ...providerEnv,
       OPENCODE_SERVER_PASSWORD: password,
       OPENCODE_CONFIG_CONTENT: JSON.stringify(OPENCODE_SIDECAR_CONFIG),
+      ...NO_PROJECT_CODE,
     });
   }
   const config = { ...OPENCODE_SIDECAR_CONFIG, ...openCodeCreditsConfig(relay, plan.models) };
@@ -124,6 +136,7 @@ export function buildSidecarSpawnEnv(
     runtimeEnvironment('opencode', 'turn', {
       OPENCODE_SERVER_PASSWORD: password,
       OPENCODE_CONFIG_CONTENT: JSON.stringify(config),
+      ...NO_PROJECT_CODE,
     })
   );
 }
