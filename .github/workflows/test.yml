@@ -636,6 +636,7 @@ jobs:
       matrix: ${{ steps.count.outputs.matrix }}
       scope: ${{ steps.plan.outputs.scope }}
       packages: ${{ steps.plan.outputs.packages }}
+      tests: ${{ steps.noscope.outputs.run }}
     steps:
       # A canary run is against `main` or it is nothing.
       #
@@ -681,6 +682,54 @@ jobs:
         with:
           fetch-depth: 2
           persist-credentials: false
+      # Decides whether a pull request can affect any test, from
+      # scripts/no-code-scope.sh, and hands test-shard and test-binary the
+      # answer as `tests`. A release PR bumps "version" in package.json files,
+      # which turbo treats as global, so every suite ran for tests nothing in it
+      # could change (PR #3237: 13m18s of turbo time on shard 3/6 alone); a
+      # changelog- or docs-only PR paid the same. HERE, not in the shards: this
+      # job's depth-2 checkout holds the test-merge commit's parents, and the
+      # shards' depth-1 checkout does not (DOR-4484, ledger 261115-205154).
+      # No `if:` of its own; it writes `run=true|false`.
+      #
+      # Every event but pull_request answers true without looking: the queue and
+      # the canary always run the full sweep, which this never touches.
+      # pull_request diffs the test-merge commit against its first parent, for
+      # the reason community-packaged's scope step gives, and requires a second
+      # parent so a checkout that lands on a plain commit cannot score only its
+      # last commit. The script comes from the BASE commit, never this checkout,
+      # so a pull request cannot edit the rule that grades it (Security, #3238).
+      # Every failure on the PR path FAILS OPEN to running the tests: a base git
+      # cannot resolve, a HEAD that is not a merge, a tree that predates the
+      # script, or a script that errors or answers anything but `false`.
+      - name: Decide whether this change can affect a test
+        id: noscope
+        env:
+          EVENT: ${{ github.event_name }}
+        run: |
+          set -uo pipefail
+          if [ "$EVENT" != 'pull_request' ]; then
+            echo "$EVENT run: the tests always run here"
+            echo 'run=true' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          verdict=true
+          if git rev-parse --verify --quiet 'HEAD^2' >/dev/null &&
+            base=$(git rev-parse --verify --quiet 'HEAD^1'); then
+            if git cat-file blob "$base:scripts/no-code-scope.sh" > "$RUNNER_TEMP/no-code-scope.sh" 2>/dev/null; then
+              verdict=$(bash "$RUNNER_TEMP/no-code-scope.sh" "$base" HEAD) || verdict=true
+            else
+              echo "the base commit has no scripts/no-code-scope.sh; running the tests"
+            fi
+          else
+            echo "cannot diff this pull request against its base (no test-merge commit); running the tests"
+          fi
+          if [ "$verdict" != false ]; then
+            verdict=true
+          else
+            echo "::notice title=No-code scope::only changelog, docs or version lines changed, so test-shard and test-binary run no suite here. The merge queue runs the full suite."
+          fi
+          echo "run=$verdict" >> "$GITHUB_OUTPUT"
       # Writes scope=full, or scope=selected with the chosen suites' package
       # names and directories. No `if:`: on every event but pull_request it
       # answers full without looking, and those legs never read it.
@@ -1062,52 +1111,39 @@ jobs:
             "${args[@]}" \
             --title "Quarantine gate — test shard ${{ matrix.shard }}/6"
 
-      # Decides whether the PR leg's tests run at all, from
-      # scripts/no-code-scope.sh. A release PR bumps "version" in package.json
-      # files, which turbo treats as global, so `--affected` ran the whole suite
-      # on every shard for tests nothing in it could change (PR #3237: 13m18s of
-      # turbo time on shard 3/6 alone). No `if:` of its own, so this required
-      # job never skips it; it writes `run=true|false` and the PR test step reads
-      # that.
+      # Decides whether the PR leg's tests run at all. test-shard-count makes
+      # the decision (its "Decide whether this change can affect a test" step,
+      # from scripts/no-code-scope.sh) and hands it here as `tests`; this step
+      # only reads it. It used to decide here, but this job checks out one
+      # commit (fetch-depth 1), where the test-merge commit's parents are not in
+      # the clone, so `HEAD^2` never resolved and every pull request logged
+      # "cannot diff" and ran the shards, docs-only ones included (DOR-4484,
+      # ledger 261115-205154). No `if:` of its own, so this required job never
+      # skips it; it writes `run=true|false` and the PR test step reads that.
       #
-      # Every event but pull_request answers true without looking: the queue and
-      # the canary always run the full sweep, which this never touches.
-      # pull_request diffs the test-merge commit against its first parent, for
-      # the reason community-packaged's scope step gives, and requires a second
-      # parent so a checkout that lands on a plain commit cannot score only its
-      # last commit. Every failure on the PR path FAILS OPEN to running the
-      # tests: a base git cannot resolve, a HEAD that is not a merge, a tree that
-      # predates the script, or a script that errors.
+      # Only the literal answer `false` on a pull_request skips. Every other
+      # event answers true without looking: the queue and the canary always run
+      # the full sweep. An empty, missing or unexpected `tests` FAILS OPEN to
+      # running the tests. The job still runs and reports success, so the
+      # required `test` fan-in reads it as the green it always was.
       - name: Decide whether this change can affect a test
         id: noscope
         env:
           EVENT: ${{ github.event_name }}
+          TESTS: ${{ needs.test-shard-count.outputs.tests }}
         run: |
           set -uo pipefail
           if [ "$EVENT" != 'pull_request' ]; then
             echo "$EVENT run: the shards always run here"
-            echo 'run=true' >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          verdict=true
-          # The script comes from the BASE commit, never this checkout, so a
-          # pull request cannot edit the rule that grades it (Security, #3238).
-          if git rev-parse --verify --quiet 'HEAD^2' >/dev/null &&
-            base=$(git rev-parse --verify --quiet 'HEAD^1'); then
-            if git cat-file blob "$base:scripts/no-code-scope.sh" > "$RUNNER_TEMP/no-code-scope.sh" 2>/dev/null; then
-              verdict=$(bash "$RUNNER_TEMP/no-code-scope.sh" "$base" HEAD) || verdict=true
-            else
-              echo "the base commit has no scripts/no-code-scope.sh; running the shards"
-            fi
-          else
-            echo "cannot diff this pull request against its base (no test-merge commit); running the shards"
-          fi
-          if [ "$verdict" != false ]; then
-            verdict=true
-          else
+            run=true
+          elif [ "${TESTS:-}" = false ]; then
             echo "Only changelog, docs or version lines changed, so the shards did not run here. The merge queue runs the full suite."
+            run=false
+          else
+            echo "test-shard-count answered '${TESTS:-}' (anything but 'false' runs): running the shards"
+            run=true
           fi
-          echo "run=$verdict" >> "$GITHUB_OUTPUT"
+          echo "run=$run" >> "$GITHUB_OUTPUT"
 
       # The PR leg's quarter. Same split, same `--concurrency=1`, narrower
       # scope — and deliberately NOT the queue leg's line with one flag
@@ -1378,10 +1414,10 @@ jobs:
   # ON A PULL REQUEST, exactly when the shards would have run them: when
   # test-shard-count's plan (read from the base commit, failing open to every
   # suite) is every suite or reaches a package that holds one. On every other
-  # event it always runs. (The shards' no-code-scope step is not mirrored: at
-  # their fetch-depth 1 it cannot see the test-merge commit's parents and
-  # always answers "run", so mirroring it would only skip suites the shards
-  # ran.)
+  # event it always runs. It also honours the no-code scope the shards honour:
+  # when test-shard-count's `tests` is exactly `false` (only changelog, docs or
+  # version lines changed) a pull request runs none, and anything else runs
+  # them (DOR-4484, ledger 261115-205154).
   #
   # Not a required context: the `test` fan-in reads its result and fails on
   # anything but success, and its collected-file list joins the union check.
@@ -1467,13 +1503,14 @@ jobs:
 
       # Writes the file list and the packages holding them, and run=true|false.
       # No `if:`, so it decides on every event; only a pull request whose plan
-      # leaves those packages out can say false.
+      # leaves those packages out, or that changes no code, can say false.
       - name: Decide which binary suites run
         id: plan
         env:
           EVENT: ${{ github.event_name }}
           SCOPE: ${{ needs.test-shard-count.outputs.scope }}
           PACKAGES: ${{ needs.test-shard-count.outputs.packages }}
+          TESTS: ${{ needs.test-shard-count.outputs.tests }}
         run: |
           set -uo pipefail
           all=$(git ls-files -- 'apps/*.binary.test.ts' 'packages/*.binary.test.ts') ||
@@ -1490,6 +1527,9 @@ jobs:
           if [ ! -s "$RUNNER_TEMP/binary-files.txt" ]; then
             run=false
             echo "no binary suite outside codex/ in this tree; nothing to run"
+          elif [ "$EVENT" = 'pull_request' ] && [ "${TESTS:-}" = false ]; then
+            run=false
+            echo "only changelog, docs or version lines changed, so the shards run no suite here and neither does this job."
           elif [ "$EVENT" = 'pull_request' ] && [ "$SCOPE" = 'selected' ]; then
             reach=false
             while IFS= read -r name; do

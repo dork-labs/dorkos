@@ -90,6 +90,7 @@ export const HERMETIC_SUITES = [
   '__tests__/local-gate-shape.test.ts',
   '__tests__/local-worker-cap.test.ts',
   '__tests__/neon-preview-sweep.test.ts',
+  '__tests__/no-code-scope-step.test.ts',
   '__tests__/origin-branch-janitor.test.ts',
   '__tests__/pr-test-plan.test.ts',
   '__tests__/pre-push-format-gate.test.ts',
