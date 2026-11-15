@@ -3,6 +3,7 @@ covers:
   - 'fix(server): a to-do moved after its date stays late in the on-time score (DOR-3034)'
   - 'feat(todos): a moved to-do says so, and a dropped one counts in the on-time score (DOR-3034)'
   - 'fix(server): a later move or a cleared date cannot wipe a missed to-do from the score (DOR-3034)'
+  - 'fix(server): a dropped to-do counts from its drop, whatever its date was moved to (DOR-3034)'
 ---
 
 ### Fixed

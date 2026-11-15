@@ -288,7 +288,9 @@ export const todosDomain: CapabilityDomain = {
       title: 'Update a to-do',
       description:
         'Change a to-do. `state: "kept"` when it is done (put the outcome in `note`), `"dropped"` ' +
-        'to decline it (say why in `note`). You can change the state only of to-dos assigned to ' +
+        'to decline it (say why in `note`). The first due date is kept: a move after the date has ' +
+        'passed still counts as late, and a dropped to-do counts as not kept on time. ' +
+        'You can change the state only of to-dos assigned to ' +
         'you, and reassign only to-dos you made. In a marked or capped turn you can only close, ' +
         'reopen or reorder your own; the rest waits for the person.',
       tier: 'act',

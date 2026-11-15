@@ -82,7 +82,7 @@ export const MEASURE_SOURCES = {
   surprises: 'Not measured yet. It needs the manager to say so.',
   mutes: 'Pauses, heartbeat switched off, and mutes, by a person.',
   quiet: 'Checks that sent no message. Lines saved for a report still count.',
-  todoPromises: 'Promises due in this window, kept by their date.',
+  todoPromises: 'Due this window. A late move stays late; a dropped one counts as missed.',
 } as const;
 
 /** What the computation needs beside the rows. */

@@ -431,7 +431,7 @@ describe('supporting measures', () => {
       state: string,
       dueMsAgo: number | null,
       closedMsAgo: number | null,
-      scoreDueMsAgo: number = dueMsAgo ?? 0
+      scoreDueMsAgo: number | null = dueMsAgo
     ) =>
       db
         .insert(todos)
@@ -440,7 +440,7 @@ describe('supporting measures', () => {
           agentId: AGENT,
           what: id,
           dueAt: dueMsAgo === null ? null : ago(dueMsAgo),
-          scoreDueAt: ago(scoreDueMsAgo),
+          scoreDueAt: scoreDueMsAgo === null ? null : ago(scoreDueMsAgo),
           state: state as 'open',
           createdAt: ago(5 * DAY),
           closedAt: closedMsAgo === null ? null : ago(closedMsAgo),
@@ -462,13 +462,17 @@ describe('supporting measures', () => {
     promise('moved-late', 'kept', -DAY, HOUR, DAY);
     // Cleared after it was missed: no date now, but still judged against the date it missed.
     promise('cleared-late', 'open', null, null, 2 * DAY);
+    // Dropped after clearing its date, or after moving it a year out: judged when dropped, so
+    // neither escapes the score.
+    promise('cleared-then-dropped', 'dropped', null, HOUR, null);
+    promise('moved-out-then-dropped', 'dropped', -365 * DAY, HOUR);
 
     const { supporting } = measure();
     expect(supporting.beats).toBe(6);
     // A beat with no end_beat is unknown, and one that posted around it spoke.
     expect(supporting.quietBeats).toMatchObject({ part: 3, whole: 5 });
     // The dropped one counts as not kept on time (DOR-3034): dropping is no free exit.
-    expect(supporting.todosOnTime).toMatchObject({ part: 1, whole: 6 });
+    expect(supporting.todosOnTime).toMatchObject({ part: 1, whole: 8 });
     expect(supporting.noEndBeat).toBe(1);
     expect(supporting.triage).toEqual({ checks: 2, tokens: 640 });
     expect(supporting.turns).toEqual({ count: 3, tokensPerTurn: 2000 });

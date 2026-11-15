@@ -106,7 +106,8 @@ export interface MeasureTodo {
   dueAt: string | null;
   /**
    * The date on-time completion is judged against (ISO 8601): the score date, or the due date on a
-   * legacy row. A late move or clear leaves it on the date missed (DOR-3034).
+   * legacy row. A late move or clear leaves it on the date missed, and a dropped one is judged no
+   * later than its drop (DOR-3034).
    */
   scoreDueAt: string;
   /** When it closed (ISO 8601), or null while open. */
@@ -380,7 +381,12 @@ export function readMeasureRecords(
       spokenRaises.set(row.beatId, (spokenRaises.get(row.beatId) ?? 0) + 1);
     }
   }
-  const scoredDueAt = sql<string>`coalesce(${todos.scoreDueAt}, ${todos.dueAt})`;
+  // The date each to-do is judged against. A dropped one is judged no later than when it was
+  // dropped, so clearing its date or moving it far out first cannot keep the drop off the score
+  // (DOR-3034); one that never had a date counts from its drop.
+  const scoredDueAt = sql<string>`case when ${todos.state} = 'dropped' and ${todos.closedAt} is not null
+    then min(coalesce(${todos.scoreDueAt}, ${todos.dueAt}, ${todos.closedAt}), ${todos.closedAt})
+    else coalesce(${todos.scoreDueAt}, ${todos.dueAt}) end`;
   const due = db
     .select({
       state: todos.state,
