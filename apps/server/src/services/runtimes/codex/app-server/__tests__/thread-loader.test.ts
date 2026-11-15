@@ -100,7 +100,7 @@ async function setup(withKeys = true) {
 
 describe('the load table (§6)', () => {
   it.each(['thread/start', 'thread/resume', 'thread/fork'] as const)(
-    'RT-ENV-01: %s pins shell env to the DorkOS chat even without an agent token',
+    'DOR-4380: %s pins shell env to the DorkOS chat even without an agent token',
     async (method) => {
       const { loader, fake, input, host } = await setup();
       host.home(HOME).threads.set('vendor-thread', { id: 'vendor-thread', hasRollout: true });

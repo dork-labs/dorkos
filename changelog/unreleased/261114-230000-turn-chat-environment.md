@@ -1,6 +1,7 @@
 ---
 covers:
   - "feat(runtimes): every runtime's turn env carries the DorkOS chat id (DORKOS_SESSION_ID)"
+  - 'fix(runtimes): a chat rekey keeps its warm Claude process, and the env tests carry no matrix id'
 ---
 
 ### Added

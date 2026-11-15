@@ -607,7 +607,15 @@ export function captureLaunchFingerprint(launch: LaunchParams): LaunchFingerprin
   }
   // The env pin covers everything the three env-borne pins above do NOT, so the
   // partition is complete and each row is independently comparable.
-  const owned = new Set(['CLAUDE_CONFIG_DIR', AGENT_TOKEN_ENV_VAR, ...Object.keys(credentialEnv)]);
+  // `DORKOS_SESSION_ID` is left out too (DOR-4380): a chat rekey (DOR-1309) changes
+  // the id the turn arrives under, but every id of the chat resolves to the same
+  // chat, so it must not cost the warm process.
+  const owned = new Set([
+    'CLAUDE_CONFIG_DIR',
+    'DORKOS_SESSION_ID',
+    AGENT_TOKEN_ENV_VAR,
+    ...Object.keys(credentialEnv),
+  ]);
   return {
     account,
     pins: {

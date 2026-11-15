@@ -8,7 +8,7 @@ afterEach(async () => {
   await Promise.all(environments.splice(0).map((env) => env.close()));
 });
 
-it('RT-ENV-01: concurrent OpenCode shells use server chat bindings, including vendor child sessions', async () => {
+it('DOR-4380: concurrent OpenCode shells use server chat bindings, including vendor child sessions', async () => {
   const environment = new OpenCodeSessionEnvironment();
   environments.push(environment);
   const plugin = environment.plugin();

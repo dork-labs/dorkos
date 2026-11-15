@@ -270,7 +270,7 @@ it('reports a looser active permission mode as applying on the next turn', async
   expect(outcome).toEqual({ updated: true, permissionModePendingUntilNextTurn: true });
 });
 
-it('RT-ENV-01: the builder receives the server chat id instead of ambient or prompt text', async () => {
+it('DOR-4380: the builder receives the server chat id instead of ambient or prompt text', async () => {
   const { assembleDoeHost } = await import('../tools.js');
   let environment: Readonly<Record<string, string>> | undefined;
   const runtime = makeRuntime({

@@ -726,9 +726,8 @@ export function buildLoadOverrides(
   }
   if (Object.keys(servers).length > 0) config.mcp_servers = servers;
   // Vendor thread ids differ; shells always receive the server-owned DorkOS chat id.
-  config.shell_environment_policy = {
-    set: { ...input.tools.agentTokenEnv, DORKOS_SESSION_ID: input.sessionId },
-  };
+  const set = { ...input.tools.agentTokenEnv, DORKOS_SESSION_ID: input.sessionId };
+  config.shell_environment_policy = { set };
   if (secrets.trust !== undefined) {
     config.projects = { [secrets.realCwd]: { trust_level: secrets.trust } };
   }

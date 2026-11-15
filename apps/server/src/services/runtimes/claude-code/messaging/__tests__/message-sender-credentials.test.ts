@@ -78,7 +78,7 @@ describe('executeSdkQuery — Claude credential injection (ADR-0315)', () => {
     vi.clearAllMocks();
   });
 
-  it('RT-ENV-01: gives subprocesses and hooks the DorkOS chat id, not the SDK id or ambient value', async () => {
+  it('DOR-4380: gives subprocesses and hooks the DorkOS chat id, not the SDK id or ambient value', async () => {
     vi.stubEnv('DORKOS_SESSION_ID', 'ambient-chat');
     try {
       vi.mocked(resolveClaudeCredentialEnv).mockResolvedValue({});
