@@ -625,7 +625,7 @@ describe('PermissionPreviewSection — where hooks run (DOR-4379)', () => {
       />
     );
     expect(screen.getByTestId('preview-hooks-runtime-note')).toHaveTextContent(
-      "Its hooks don't run on Codex yet."
+      "Its safety checks don't run on Codex yet."
     );
   });
 
@@ -636,7 +636,7 @@ describe('PermissionPreviewSection — where hooks run (DOR-4379)', () => {
       />
     );
     expect(screen.getByTestId('preview-hooks-runtime-note')).toHaveTextContent(
-      "Its hooks don't run on Codex, OpenCode, or DorkOS yet."
+      "Its safety checks don't run on Codex, OpenCode, or DorkOS yet."
     );
   });
 
@@ -649,7 +649,7 @@ describe('PermissionPreviewSection — where hooks run (DOR-4379)', () => {
       />
     );
     expect(screen.getByTestId('preview-hooks-runtime-note')).toHaveTextContent(
-      "Its hooks don't run on Codex, OpenCode, or DorkOS yet."
+      "Its safety checks don't run on Codex, OpenCode, or DorkOS yet."
     );
   });
 

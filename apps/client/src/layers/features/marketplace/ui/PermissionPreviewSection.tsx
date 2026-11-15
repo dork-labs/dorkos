@@ -384,7 +384,7 @@ export function PermissionPreviewSection({ preview, installBase }: PermissionPre
       />
       {hooksSkipOn.length > 0 && (
         <p className="text-muted-foreground text-xs" data-testid="preview-hooks-runtime-note">
-          {`Its hooks don't run on ${new Intl.ListFormat('en', { type: 'disjunction' }).format(hooksSkipOn)} yet.`}
+          {`Its safety checks don't run on ${new Intl.ListFormat('en', { type: 'disjunction' }).format(hooksSkipOn)} yet.`}
         </p>
       )}
       <PermissionSection title="Jobs it will schedule" items={groups.schedules} defaultOpen />

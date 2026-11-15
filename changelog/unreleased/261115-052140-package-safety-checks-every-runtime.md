@@ -1,6 +1,7 @@
 ---
 covers:
   - 'fix(runtimes): run package safety checks on OpenCode and the DorkOS runtime (DOR-4379)'
+  - 'fix(marketplace): the install note says safety checks, not hooks (DOR-4379)'
 ---
 
 ### Fixed
