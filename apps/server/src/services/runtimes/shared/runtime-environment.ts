@@ -98,6 +98,8 @@ function overrideNames(input: RuntimeEnvironmentInput): Set<string> {
   if (input.runtime === 'opencode' && input.purpose === 'turn') {
     names.add('OPENCODE_SERVER_PASSWORD');
     names.add('OPENCODE_CONFIG_CONTENT');
+    // The shared sidecar loads no project's config or code (DOR-4394).
+    names.add('OPENCODE_DISABLE_PROJECT_CONFIG');
   }
   for (const name of Object.keys(flowIdentityEnv(input.runtime, input.purpose))) names.add(name);
   return names;

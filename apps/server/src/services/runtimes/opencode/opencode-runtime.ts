@@ -450,7 +450,7 @@ export class OpenCodeRuntime implements AgentRuntime {
           model?.providerID,
           model?.modelID
         );
-        const body = openCodeTurnBody(content, turnOpts, agentContext, window, model);
+        const body = openCodeTurnBody(content, turnOpts, agentContext, window, model, at);
         // The exact body the sidecar is handed, for the turn's context record.
         recordOpenCodeTurn(sessionId, body, turnOpts, settings);
         const prompted = await client.session.promptAsync({ path: { id: ocSessionId }, body });

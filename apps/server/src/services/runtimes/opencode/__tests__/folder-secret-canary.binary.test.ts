@@ -97,8 +97,11 @@ describe.skipIf(BINARY === null)('OpenCode and a secret file in its folder (DOR-
     results = [];
     calls = [];
     model = await fakeModel(results, () => target, calls);
+    // The fake model lives in the throwaway global config: the sidecar reads
+    // no project's own config (DOR-4394).
+    fs.mkdirSync(path.join(root, 'config', 'opencode'), { recursive: true });
     fs.writeFileSync(
-      path.join(folder, 'opencode.json'),
+      path.join(root, 'config', 'opencode', 'opencode.json'),
       JSON.stringify({
         enabled_providers: ['fake'],
         model: 'fake/x',
