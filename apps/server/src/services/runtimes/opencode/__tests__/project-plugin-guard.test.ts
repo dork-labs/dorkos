@@ -21,6 +21,9 @@ import {
   projectHasPlugins,
   projectPluginRefusal,
 } from '../messaging/project-plugin-guard.js';
+import { buildSidecarSpawnEnv } from '../server-manager.js';
+import { OPENCODE_OWN_PLAN } from '../credits-sidecar.js';
+import { OpenCodeSessionEnvironment } from '../session-environment.js';
 
 const roots: string[] = [];
 afterEach(() => {
@@ -166,6 +169,23 @@ describe('any doubt refuses', () => {
     mkdirSync(join(dir, '.opencode', 'plugin'), { recursive: true });
     chmodSync(join(dir, '.opencode', 'plugin'), 0o000);
     expect(projectHasPlugins(dir)).toBe(true);
+  });
+});
+
+describe("DorkOS's own plugins still load (#3755)", () => {
+  it('allows a clean project when the sidecar config carries DorkOS’s session plugin', async () => {
+    const environment = new OpenCodeSessionEnvironment();
+    try {
+      const env = buildSidecarSpawnEnv(OPENCODE_OWN_PLAN, 'pw', {}, null, environment.plugin());
+      const config = JSON.parse(env.OPENCODE_CONFIG_CONTENT!) as { plugin?: string[] };
+      // The plugin really is there, in DorkOS's own config, not in the project.
+      expect(config.plugin).toEqual([environment.plugin()]);
+      const dir = repo();
+      expect(projectHasPlugins(dir)).toBe(false);
+      expect(projectPluginRefusal(dir)).toBeUndefined();
+    } finally {
+      await environment.close();
+    }
   });
 });
 

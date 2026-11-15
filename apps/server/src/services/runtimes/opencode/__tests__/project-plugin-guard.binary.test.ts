@@ -173,9 +173,19 @@ describe.skipIf(BINARY === null)('a project plugin on the real OpenCode (DOR-439
   it('control: the switch alone does not stop the plugin, so the marker is a real signal', async () => {
     const marker = path.join(root, 'control-marker');
     const project = projectWithMarkerPlugin(path.join(root, 'control'), marker);
+    // Its own data, state and cache folders: a finished `opencode run` must
+    // leave nothing (a lock, a half-written store) for the sidecar below.
+    const own = (name: string) => {
+      const dir = path.join(root, 'control-xdg', name);
+      fs.mkdirSync(dir, { recursive: true });
+      return dir;
+    };
     const env = {
       ...buildSidecarSpawnEnv(OPENCODE_OWN_PLAN, 'pw', {}),
       ...OFFLINE_PROXY_ENV,
+      XDG_DATA_HOME: own('data'),
+      XDG_STATE_HOME: own('state'),
+      XDG_CACHE_HOME: own('cache'),
     } as Record<string, string>;
     expect(env.OPENCODE_DISABLE_PROJECT_CONFIG).toBe('1');
     const output = await runOnce(project, env);
@@ -231,10 +241,16 @@ describe.skipIf(BINARY === null)('a project plugin on the real OpenCode (DOR-439
     const query = { query: { directory: project } };
     // The four calls DorkOS sends with a project folder outside a turn: a new
     // session's bind, MCP status, the config read beside it, and the model list.
-    await client.session.create({ ...query, body: {} });
-    await client.mcp.status(query);
-    await client.config.get(query);
-    await client.provider.list(query);
+    // Each call is capped: what is under test is whether the plugin's code
+    // runs, not how fast a busy sidecar opens a second folder (it can take
+    // longer than a test's budget under load). A call that never answers
+    // still had every chance to import the plugin.
+    const capped = (call: Promise<unknown>) =>
+      Promise.race([call, new Promise((resolve) => setTimeout(resolve, 20_000))]);
+    await capped(client.session.create({ ...query, body: {} }));
+    await capped(client.mcp.status(query));
+    await capped(client.config.get(query));
+    await capped(client.provider.list(query));
     await new Promise((resolve) => setTimeout(resolve, 3_000));
     expect(fs.existsSync(marker)).toBe(false);
   }, 120_000);
