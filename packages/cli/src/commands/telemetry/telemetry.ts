@@ -23,7 +23,10 @@ import {
   isTelemetryDisabledByEnv,
   isTelemetryDebugEnabled,
   resolveTelemetryConsent,
+  resolveTier1ChannelConsent,
+  tier1ChannelsSettledByFirstAnswer,
   TELEMETRY_DISABLE_ENV_VARS,
+  type Tier1Channel,
 } from '@dorkos/shared/telemetry-consent';
 import type { ConfigStore } from '../../config-commands.js';
 
@@ -78,18 +81,33 @@ export function runTelemetryStatus(deps: TelemetryDeps): number {
   const { store, env, io } = deps;
   const killed = isTelemetryDisabledByEnv(env);
 
+  const decided = store.getDot('telemetry.userHasDecided') === true;
+
   io.log('Telemetry status');
   io.log('');
   for (const channel of TELEMETRY_CHANNELS) {
     const configValue = readConfigFlag(store, channel);
-    const effective = resolveTelemetryConsent(configValue, env);
+    // Install, heartbeat and usage stay off until a person has answered,
+    // whatever the file says (DOR-4400); crash reports are their own opt-in.
+    const tier1 = channel !== 'errors';
+    const effective = tier1
+      ? resolveTier1ChannelConsent(
+          { userHasDecided: decided, [CHANNEL_META[channel].configKey]: configValue },
+          channel as Tier1Channel,
+          env
+        )
+      : resolveTelemetryConsent(configValue, env);
     const state = effective ? 'on ' : 'off';
-    const note = killed && configValue ? ' (forced off by env)' : ` (config: ${configValue})`;
+    const note =
+      killed && configValue
+        ? ' (forced off by env)'
+        : tier1 && configValue && !decided
+          ? ' (off until you choose)'
+          : ` (config: ${configValue})`;
     io.log(`  ${CHANNEL_META[channel].label.padEnd(18)}${state}${note}`);
   }
   io.log('');
 
-  const decided = store.getDot('telemetry.userHasDecided') === true;
   io.log(
     decided
       ? 'You have made a telemetry choice, so the first-run prompt stays hidden.'
@@ -127,8 +145,16 @@ function writeChannels(deps: TelemetryDeps, enabled: boolean, channel?: Telemetr
   const { store, io } = deps;
   const targets = channel ? [channel] : TELEMETRY_CHANNELS;
 
-  for (const target of targets) {
-    store.setDot(`telemetry.${CHANNEL_META[target].configKey}`, enabled);
+  const written: Record<string, unknown> = { userHasDecided: true };
+  for (const target of targets) written[CHANNEL_META[target].configKey] = enabled;
+  // A first answer about one channel stores the unnamed Tier 1 channels off,
+  // so a stored "on" nobody agreed to cannot come into force behind it (DOR-4400).
+  const settled = tier1ChannelsSettledByFirstAnswer(
+    { userHasDecided: store.getDot('telemetry.userHasDecided') },
+    written
+  );
+  for (const [key, value] of Object.entries({ ...written, ...settled })) {
+    if (key !== 'userHasDecided') store.setDot(`telemetry.${key}`, value);
   }
   store.setDot('telemetry.userHasDecided', true);
 

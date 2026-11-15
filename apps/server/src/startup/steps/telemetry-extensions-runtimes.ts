@@ -18,7 +18,11 @@ import { withInstallTargetLock } from '../../services/marketplace/transaction.js
 import { globalApprovalCarryOver } from '../../services/marketplace/lib/saved-copies/saved-copies-consent.js';
 import { env } from '../../env.js';
 import { initBoundary } from '../../lib/boundary.js';
-import { isTelemetryDebugEnabled, resolveTelemetryConsent } from '@dorkos/shared/telemetry-consent';
+import {
+  isTelemetryDebugEnabled,
+  resolveTelemetryConsent,
+  resolveTier1ChannelConsent,
+} from '@dorkos/shared/telemetry-consent';
 import { configManager } from '../../services/core/config-manager.js';
 import {
   decideTier1Boot,
@@ -133,7 +137,7 @@ export async function startTelemetryExtensionsAndRuntimes(
   // https://dorkos.ai/api/telemetry/install with a stable per-machine install ID
   // stored in dorkHome. Privacy contract: https://dorkos.ai/marketplace/privacy
   const installConsent =
-    resolveTelemetryConsent(telemetryConfig?.install ?? false, telemetryEnv) && tier1SendGate;
+    resolveTier1ChannelConsent(telemetryConfig, 'install', telemetryEnv) && tier1SendGate;
   registerDorkosCommunityTelemetry(installConsent, dorkHome, SERVER_VERSION, telemetryDebug);
   if (installConsent) {
     logger.info('[Telemetry] Marketplace install reporter registered (Tier 1, anonymous)');
@@ -170,8 +174,9 @@ export async function startTelemetryExtensionsAndRuntimes(
   // yes to it, and absence is never read as consent.
   // `isConsentLive` re-reads the setting on every send, so turning usage off
   // mid-run stops the reporter at once (DOR-2862).
+  // Consent is read from the person's answer, never from a migration (DOR-4400).
   const usageOn = () =>
-    resolveTelemetryConsent(configManager.get('telemetry')?.usage ?? false, telemetryEnv);
+    resolveTier1ChannelConsent(configManager.get('telemetry'), 'usage', telemetryEnv);
   const usageConsent = usageOn() && tier1SendGate;
   registerUsageReporter({
     enabled: usageConsent,
