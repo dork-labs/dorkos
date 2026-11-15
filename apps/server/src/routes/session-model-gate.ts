@@ -177,6 +177,23 @@ export function rejectUndeclaredPermissionMode(
 }
 
 /**
+ * The runtime a session's mode is judged by: its bound one, else the one the
+ * request names, else the inferred one. The mode gate and the Wi-Fi raise
+ * check both ask it, so they judge against the same runtime (DOR-4411).
+ *
+ * @param owner - The runtime the session resolves to now.
+ * @param bound - Whether that answer is a binding or an inference.
+ * @param hint - The runtime the request names, if any.
+ */
+export function sessionModeAuthority(
+  owner: AgentRuntime,
+  bound: boolean,
+  hint: string | undefined
+): AgentRuntime {
+  return modelGateAuthority(owner, bound, hint) ?? owner;
+}
+
+/**
  * The runtime whose catalog may REFUSE this model write, or `null` when nothing
  * has the standing to refuse it.
  *

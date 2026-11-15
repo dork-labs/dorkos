@@ -1647,12 +1647,13 @@ describe('RuntimeRegistry', () => {
 
       await registry.persistSessionRuntime('mode-undeclared', 'narrow', A_PERSON);
 
-      expect(read('mode-undeclared')?.permissionMode).toBeNull();
+      // Replaced with the runtime's strictest mode, never left for a looser one (DOR-4411).
+      expect(read('mode-undeclared')?.permissionMode).toBe('strict');
     });
 
-    it('lands the bound runtime’s own default where the dropped mode was', async () => {
-      // Order matters: the drop has to happen UNDER the seed, or the session
-      // would be left with no stop where the person had chosen one.
+    it('lands the bound runtime’s strictest mode, never the configured stop (DOR-4411)', async () => {
+      // QA's case: a Codex chat stored at Plan bound with the drop UNDER the seed,
+      // so it took the configured stop, the agent's Full on a Trusted install.
       registry.register(
         createMockRuntime('narrow', {
           permissionModes: {
@@ -1666,16 +1667,58 @@ describe('RuntimeRegistry', () => {
                 reach: 'read',
                 promise: 'Asks first.',
               },
+              {
+                id: 'open',
+                label: 'Open',
+                stop: 'autonomy',
+                asks: 'never',
+                reach: 'everything',
+                promise: 'Never asks.',
+              },
             ],
           },
         })
       );
-      configuredStopDefaults = { permissionMode: 'strict' };
+      configuredStopDefaults = { permissionMode: 'open' };
       await registry.saveSessionSettings('mode-reseeded', { permissionMode: 'plan' });
 
       await registry.persistSessionRuntime('mode-reseeded', 'narrow', { kind: 'interactive' });
 
       expect(read('mode-reseeded')?.permissionMode).toBe('strict');
+    });
+
+    it('still seeds a session that stored no mode at all', async () => {
+      registry.register(
+        createMockRuntime('narrow', {
+          permissionModes: {
+            supported: true,
+            values: [
+              {
+                id: 'strict',
+                label: 'Strict',
+                stop: 'ask',
+                asks: 'always',
+                reach: 'read',
+                promise: 'Asks first.',
+              },
+              {
+                id: 'open',
+                label: 'Open',
+                stop: 'autonomy',
+                asks: 'never',
+                reach: 'everything',
+                promise: 'Never asks.',
+              },
+            ],
+          },
+        })
+      );
+      configuredStopDefaults = { permissionMode: 'open' };
+      await registry.saveSessionSettings('mode-unset', { model: 'sonnet' });
+
+      await registry.persistSessionRuntime('mode-unset', 'narrow', { kind: 'interactive' });
+
+      expect(read('mode-unset')?.permissionMode).toBe('open');
     });
 
     it('keeps a stored mode the runtime it binds does declare', async () => {
