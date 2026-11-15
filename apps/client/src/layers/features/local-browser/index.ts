@@ -1,5 +1,6 @@
 export { LocalBrowserPanel } from './ui/LocalBrowserPanel';
 export { LocalBrowserContent } from './ui/LocalBrowserContent';
+export { NativeBrowserStill } from './ui/NativeBrowserStill';
 export type { LocalBrowserPanelProps } from './ui/LocalBrowserPanel';
 export { PageErrorBlock } from './ui/PageErrorBlock';
 export { BrowserLoadingBar } from './ui/BrowserLoadingBar';

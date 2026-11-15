@@ -1,6 +1,6 @@
 /**
  * CI-only native witness: the page steps aside for app layers drawn over it,
- * and only for those (DOR-4417, DOR-4418). No real profiles, sign-ins or
+ * and only for those (DOR-4417, DOR-4418), leaving a still of itself (DOR-4438). No real profiles, sign-ins or
  * outside websites; the host page is `overlay-page.tsx`, served from here.
  */
 import assert from 'node:assert/strict';
@@ -10,6 +10,7 @@ import { app, BrowserWindow, WebContentsView } from 'electron';
 import { chromium } from 'playwright-core';
 import {
   LOCAL_BROWSER_BOUNDS_CHANNEL,
+  LOCAL_BROWSER_STILL_CHANNEL,
   startLocalBrowserBridge,
 } from '../../src/main/local-browser';
 
@@ -21,6 +22,7 @@ async function main(): Promise<void> {
   assert.equal(process.platform, 'darwin');
   // overlay-preload.ts sends this literal; it cannot import the bridge module.
   assert.equal(LOCAL_BROWSER_BOUNDS_CHANNEL, 'local-browser:set-bounds');
+  assert.equal(LOCAL_BROWSER_STILL_CHANNEL, 'local-browser:capture-still');
   const script = readFileSync(process.env.DORKOS_OVERLAY_PAGE!, 'utf8');
   const server = createServer((request, response) => {
     if (request.url === '/page.js') {
@@ -93,8 +95,17 @@ async function main(): Promise<void> {
     throw new Error(`${step}: ${selector} never rendered`);
   };
 
+  // A made-up page with something to see, so its still has pixels to compare.
+  await (page() as WebContentsView).webContents.loadURL(
+    'data:text/html,<body style="margin:0;background:rgb(200,30,30)">Made-up page</body>'
+  );
   await host.loadURL(origin);
   await shown(true, 'Start');
+  const stillDrawn = () =>
+    host.webContents.executeJavaScript(
+      `(() => { const still = document.querySelector('[data-slot="native-browser-still"]');
+        return !!still && still.complete && still.naturalWidth > 0; })()`
+    ) as Promise<boolean>;
 
   // 1. A tooltip away from the page leaves it on screen the whole time.
   await open('tooltip-away');
@@ -114,8 +125,13 @@ async function main(): Promise<void> {
   await open('dialog');
   await mounted('[data-slot="dialog-overlay"]', 'Dialog');
   await shown(false, 'Dialog');
+  // The page left a real still of itself in its place, not a blank.
+  assert.equal(await stillDrawn(), true, 'Dialog: no still where the page was');
   await open('none');
   await shown(true, 'Dialog, closed');
+  for (const deadline = Date.now() + 5_000; await stillDrawn(); await delay(50)) {
+    assert(Date.now() < deadline, 'Dialog, closed: the still stayed after the page came back');
+  }
 
   // 4. On a narrow window, the bottom drawer hides the page too.
   host.setContentSize(390, 800);
@@ -131,7 +147,7 @@ async function main(): Promise<void> {
   await new Promise<void>((resolve) => server.close(() => resolve()));
   host.destroy();
   console.log(
-    'Embedded page: stays for a tooltip elsewhere; steps aside for a tooltip over it, a dialog and a drawer, and comes back after each.'
+    'Embedded page: stays for a tooltip elsewhere; steps aside for a tooltip over it, a dialog and a drawer, leaving a still, and comes back after each.'
   );
 }
 main()

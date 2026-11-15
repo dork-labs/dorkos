@@ -1,7 +1,26 @@
-import { useEffect, type RefObject } from 'react';
+import { useEffect, useRef, useState, type RefObject } from 'react';
 
 /** Unchanged frames in a row before the surface stops following a move. */
 const SETTLE_FRAMES = 6;
+/** How long a covered page waits for its still before it hides without one. */
+const STILL_WAIT_MS = 150;
+
+/** A picture of the page, drawn where the page was while an app layer covers it. */
+export interface NativeBrowserStill {
+  /** An in-memory `blob:` address, revoked when the still is dropped. */
+  url: string;
+  /** Where the page was, in CSS pixels from the surface's top-left corner. */
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+}
+
+/** Two frames: the first one paints what was just committed, the second follows it. */
+const afterPaint = (run: () => void) =>
+  requestAnimationFrame(() => {
+    requestAnimationFrame(run);
+  });
 
 /**
  * App layers that float above the page's spot. Radix dialogs never set
@@ -21,13 +40,27 @@ const FLOATING_LAYERS = [
   '[data-radix-popper-content-wrapper]',
 ].join(', ');
 
-/** Native guests sit above HTML: hide them while any app layer overlaps their spot. */
+/**
+ * Native guests sit above HTML: hide them while any app layer overlaps their spot.
+ * A covered page leaves a still of itself in its place (DOR-4438). The still stays in
+ * this hook's memory only, never in a store, on disk, or on the way to the server, and
+ * it is dropped when the page comes back, closes, or moves to another chat.
+ */
 export function useNativeBrowserSurface(
   ref: RefObject<HTMLDivElement | null>,
   connectionId: string | null,
   visible: boolean,
   onUnavailable: () => void
-) {
+): NativeBrowserStill | null {
+  const [still, setStill] = useState<NativeBrowserStill | null>(null);
+  // Runs once the still is committed to the page, so the page steps aside only after.
+  const onStillDrawn = useRef<(() => void) | null>(null);
+  useEffect(() => {
+    if (!still) return;
+    const run = onStillDrawn.current;
+    onStillDrawn.current = null;
+    run?.();
+  }, [still]);
   useEffect(() => {
     const bridge = window.electronAPI?.localBrowser;
     if (!bridge || !connectionId || !visible) return;
@@ -35,6 +68,72 @@ export function useNativeBrowserSurface(
     let broken = false;
     let previous = '';
     let frame = 0;
+    // The page was last told to show itself, so it is on screen to capture.
+    let live = false;
+    // A capture is under way, so the page stays up until its still is drawn.
+    let capturing = false;
+    // Bumped to abandon a capture whose answer is no longer wanted.
+    let ticket = 0;
+    // This cover got no still in time, so the page hides without one until it is uncovered.
+    let declined = false;
+    let stillUrl: string | null = null;
+    // The page was told to come back, and its still goes once that has painted.
+    let returning = false;
+    const dropStill = () => {
+      if (stillUrl) URL.revokeObjectURL(stillUrl);
+      stillUrl = null;
+      returning = false;
+      setStill(null);
+    };
+    const capture = (x: number, y: number, width: number, height: number) => {
+      const captureStill = bridge.captureStill;
+      const rect = ref.current?.getBoundingClientRect();
+      if (!captureStill || !rect) return false;
+      const mine = ++ticket;
+      capturing = true;
+      const release = () => {
+        if (mine !== ticket) return;
+        capturing = false;
+        schedule();
+      };
+      const decline = () => {
+        if (mine !== ticket) return;
+        declined = true;
+        ticket += 1;
+        capturing = false;
+        schedule();
+      };
+      // Late or missing: the page hides as it did before, and a late still is dropped.
+      const timeout = setTimeout(decline, STILL_WAIT_MS);
+      void (async () => {
+        let url: string | null = null;
+        try {
+          const bytes = await captureStill(connectionId);
+          if (mine !== ticket || disposed || !bytes) return;
+          url = URL.createObjectURL(new Blob([bytes as BlobPart], { type: 'image/jpeg' }));
+          const image = new Image();
+          image.src = url;
+          await image.decode?.();
+          if (mine !== ticket || disposed) return;
+          clearTimeout(timeout);
+          if (stillUrl) URL.revokeObjectURL(stillUrl);
+          stillUrl = url;
+          url = null;
+          // Draw the still first; the page steps aside a frame later, so nothing flashes.
+          onStillDrawn.current = () => requestAnimationFrame(release);
+          setStill({ url: stillUrl, left: x - rect.x, top: y - rect.y, width, height });
+        } catch {
+          /* No still: the page hides as it did before. */
+        } finally {
+          if (url) URL.revokeObjectURL(url);
+          if (mine === ticket && capturing && !stillUrl) {
+            clearTimeout(timeout);
+            decline();
+          }
+        }
+      })();
+      return true;
+    };
     const clipping: HTMLElement[] = [];
     for (let parent = ref.current?.parentElement; parent; parent = parent.parentElement) {
       const style = getComputedStyle(parent);
@@ -80,12 +179,22 @@ export function useNativeBrowserSurface(
       }
       const width = Math.max(0, right - x);
       const height = Math.max(0, bottom - y);
-      const shown =
-        !!rect &&
-        document.visibilityState !== 'hidden' &&
-        width > 0 &&
-        height > 0 &&
-        !overlapped(x, y, right, bottom);
+      const onScreen = !!rect && document.visibilityState !== 'hidden' && width > 0 && height > 0;
+      const covered = onScreen && overlapped(x, y, right, bottom);
+      const shown = onScreen && !covered;
+      if (!covered) {
+        // Uncovered: abandon a capture in flight, and drop the still once the page is back.
+        if (capturing) ticket += 1;
+        capturing = false;
+        declined = false;
+      }
+      // Covered while live: the page stays up until its still is in place.
+      if (
+        covered &&
+        live &&
+        (capturing || (!stillUrl && !declined && capture(x, y, width, height)))
+      )
+        return;
       const bounds = {
         connectionId,
         x,
@@ -97,12 +206,27 @@ export function useNativeBrowserSurface(
       const key = JSON.stringify(bounds);
       if (key !== previous) {
         previous = key;
-        void bridge.setBounds(bounds).catch(() => {
+        live = shown;
+        const sent = bridge.setBounds(bounds);
+        if (shown && stillUrl) {
+          // The page is back on top; the still goes a frame later, so nothing flashes.
+          const back = stillUrl;
+          returning = true;
+          void sent.then(() =>
+            afterPaint(() => {
+              if (!disposed && stillUrl === back && live) dropStill();
+            })
+          );
+        }
+        void sent.catch(() => {
           if (!disposed) {
             broken = true;
             onUnavailable();
           }
         });
+      } else if (shown && stillUrl && !returning) {
+        // Already back (a capture was abandoned before the page hid).
+        dropStill();
       }
     };
     // Event-driven, not a per-frame loop (DOR-3312): measuring every frame kept
@@ -169,6 +293,10 @@ export function useNativeBrowserSurface(
     schedule();
     return () => {
       disposed = true;
+      ticket += 1;
+      onStillDrawn.current = null;
+      // Closing, or moving to another chat, drops the still with the page.
+      dropStill();
       observer.disconnect();
       resizes?.disconnect();
       for (const type of captured) document.removeEventListener(type, schedule, true);
@@ -182,4 +310,5 @@ export function useNativeBrowserSurface(
         });
     };
   }, [ref, connectionId, visible, onUnavailable]);
+  return still;
 }
