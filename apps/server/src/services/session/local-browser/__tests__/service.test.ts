@@ -1637,6 +1637,12 @@ describe('the Cloud origin (DOR-3196)', () => {
       code: 'navigation_unreachable',
     });
     vi.mocked(page.goto).mockRejectedValueOnce(
+      new Error('page.goto: net::ERR_SSL_PROTOCOL_ERROR at https://made-up.example:5000/')
+    );
+    await expect(service.navigate('https://made-up.example:5000/')).rejects.toMatchObject({
+      code: 'navigation_unreachable',
+    });
+    vi.mocked(page.goto).mockRejectedValueOnce(
       new Error('page.goto: net::ERR_CERT_AUTHORITY_INVALID at https://made-up.example/')
     );
     await expect(service.navigate('https://made-up.example/')).rejects.toMatchObject({

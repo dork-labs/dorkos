@@ -94,9 +94,13 @@ export function assertLocalBrowserUrl(
   if (who === 'agent' && isLocalBrowserAppUrl(value, appOrigins)) throw appOriginRefusal();
 }
 
-/** Chromium's words for a page that never connected: refused, timed out or unreachable. */
+/**
+ * Chromium's words for a page that never connected over https: refused, timed
+ * out, unreachable, or a server that answered in plain http
+ * (`ERR_SSL_PROTOCOL_ERROR`, what `nas.lan:5000` gives). Never an `ERR_CERT_*`.
+ */
 const UNREACHABLE =
-  /net::ERR_(?:CONNECTION_REFUSED|CONNECTION_TIMED_OUT|TIMED_OUT|ADDRESS_UNREACHABLE)\b/;
+  /net::ERR_(?:CONNECTION_REFUSED|CONNECTION_TIMED_OUT|TIMED_OUT|ADDRESS_UNREACHABLE|SSL_PROTOCOL_ERROR)\b/;
 
 /**
  * Why a person's navigation failed, as a refusal. A page that never connected

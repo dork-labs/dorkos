@@ -142,12 +142,26 @@ export interface AddressInputOptions {
   current?: string;
   /** Whether a URL is this DorkOS app's own address, which never opens here. */
   isOwnAddress?: (url: string) => boolean;
+  /**
+   * Open local files rather than refusing them: `file://…`, `/…`, `./…`, `../…`,
+   * `~/…` and a relative path like `demo/index.html`, passed through as typed.
+   * The canvas browser serves those; the Agent browser never opens them.
+   */
+  allowLocalPaths?: boolean;
 }
 
-/** `scheme:` followed by anything but a port, so `localhost:3000` is not a scheme. */
-const SCHEME = /^([a-z][a-z0-9+.-]*):(?!\d+(?:[/?#]|$))/i;
+/**
+ * `scheme:` followed by anything but a port, so `localhost:3000` (and a bare
+ * `localhost:`) is not a scheme. Only read on text with no space in it, so a
+ * pasted `Error: ENOENT` is a search.
+ */
+const SCHEME = /^([a-z][a-z0-9+.-]*):(?!\d+(?:[/?#]|$)|$)/i;
+/** A local path: absolute, relative to here or a parent, or to the home folder. */
+const LOCAL_PATH = /^(?:\/|\.{1,2}\/|~\/)/;
 /** A dotted IPv4 address. */
 const IPV4 = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/;
+/** A port: digits only. */
+const PORT = /^\d+$/;
 /** A bracketed IPv6 address. */
 const IPV6 = /^\[[0-9a-f:.]+\]$/i;
 /** One host label: letters, digits and inner hyphens. */
@@ -187,20 +201,23 @@ function splitAuthority(text: string): { host: string; port: string | null } {
  * 3. `about:blank` → a new empty page;
  * 4. any other scheme (`file:`, `javascript:`, `data:`, `chrome:`, `mailto:`…) →
  *    refused with a notice, and a local path (`/…`, `./…`, `../…`, `~/…`) is
- *    read as a file;
+ *    read as a file — unless `allowLocalPaths`, which opens files as typed;
  * 5. this machine or a private network — `localhost`, `*.localhost`, `127.x`,
  *    `[::1]`, `0.0.0.0`, `10.x`, `172.16–31.x`, `192.168.x` — with or without a
  *    port → `http://` in front;
  * 6. any other bare IPv4 or `[IPv6]` address, with or without a port → `http://`;
  * 7. `word:1234` (a one-label host and a port) → `http://`;
- * 8. anything with a space → a search;
+ * 8. with `allowLocalPaths`, a relative path whose first part is not a host
+ *    (`demo/index.html`) → opened as typed; then anything with a space → a search;
  * 9. no dot, no port, not localhost → a search;
  * 10. a dotted host ending in a letters TLD (`google.com`) → `https://` in front,
  *     with `http://` as the one fallback when it cannot connect;
  * 11. anything else → a search.
  *
- * An address that opens is also refused when it is this app's own, and one
- * that does not parse as a URL gets the "not complete" notice.
+ * A leading `//` is read as the address after it. An address that opens is
+ * refused when it is this app's own, and its `http://` fallback is dropped
+ * when that one is. One that does not parse as a URL gets the "not complete"
+ * notice, and so does an `http:` or `https:` missing its `//`.
  *
  * @param input - Raw address-bar text.
  * @param options - The open address and the own-address check.
@@ -212,49 +229,77 @@ export function normalizeAddressInput(
 ): AddressInput {
   const text = input.trim();
   if (text === '' || text === options.current) return { kind: 'reload' };
-  const result = readAddress(text);
+  const result = readAddress(text.startsWith('//') ? text.slice(2) : text, options);
   if (result.kind !== 'open') return result;
+  // A local path is the canvas browser's to resolve, not a URL to parse.
+  if (options.allowLocalPaths && !/^(?:https?|about):/i.test(result.url)) return result;
   if (!parses(result.url)) return { kind: 'refused', notice: ADDRESS_NOTICES.incomplete };
   if (result.url === options.current) return { kind: 'reload' };
-  if (options.isOwnAddress?.(result.url))
-    return { kind: 'refused', notice: ADDRESS_NOTICES.ownAddress };
+  const own = options.isOwnAddress;
+  if (own?.(result.url)) return { kind: 'refused', notice: ADDRESS_NOTICES.ownAddress };
+  if (result.httpFallback && own?.(result.httpFallback)) return { kind: 'open', url: result.url };
   return result;
 }
 
 /** Rules 2–11 of {@link normalizeAddressInput}, before the own-address and parse checks. */
-function readAddress(text: string): AddressInput {
+function readAddress(text: string, options: AddressInputOptions): AddressInput {
+  const spaced = /\s/.test(text);
   if (/^https?:\/\//i.test(text)) return { kind: 'open', url: text };
   if (text.toLowerCase() === 'about:blank') return { kind: 'open', url: 'about:blank' };
-  if (/^(?:\/|\.{1,2}\/|~\/)/.test(text)) return { kind: 'refused', notice: ADDRESS_NOTICES.file };
-  const scheme = SCHEME.exec(text)?.[1].toLowerCase();
-  if (scheme !== undefined) {
-    return {
-      kind: 'refused',
-      notice: scheme === 'file' ? ADDRESS_NOTICES.file : ADDRESS_NOTICES.otherScheme,
-    };
+  if (LOCAL_PATH.test(text) || /^file:/i.test(text)) {
+    return options.allowLocalPaths
+      ? { kind: 'open', url: text }
+      : { kind: 'refused', notice: ADDRESS_NOTICES.file };
   }
+  const scheme = spaced ? undefined : SCHEME.exec(text)?.[1].toLowerCase();
+  if (scheme === 'http' || scheme === 'https')
+    return { kind: 'refused', notice: ADDRESS_NOTICES.incomplete };
+  if (scheme !== undefined) return { kind: 'refused', notice: ADDRESS_NOTICES.otherScheme };
 
-  const { host, port } = splitAuthority(text);
-  const hasPort = port !== null;
+  const { host: typedHost, port } = splitAuthority(text);
+  const portOk = port === null || PORT.test(port);
+  // One trailing dot names the same host, and a non-ASCII name is read in its
+  // ASCII form, so `example.com.` and `münchen.de` are hosts like any other.
+  const host = asciiHost(typedHost.endsWith('.') ? typedHost.slice(0, -1) : typedHost);
   const plainHttp = { kind: 'open', url: `http://${text}` } as const;
-  if (!/\s/.test(host)) {
-    const ipv4 = IPV4.exec(host);
-    const octets = ipv4?.slice(1).map(Number);
-    if (isLoopbackHost(host.toLowerCase()) || (octets && isPrivateIpv4(octets))) return plainHttp;
-    if (octets || IPV6.test(host)) return plainHttp;
-    if (hasPort && LABEL.test(host)) return plainHttp;
+  if (host !== null && portOk) {
+    const octets = IPV4.exec(host)?.slice(1).map(Number);
+    const ipv4 = octets !== undefined && octets.every((octet) => octet <= 255);
+    if (isLoopbackHost(host) || (ipv4 && isPrivateIpv4(octets))) return plainHttp;
+    if (ipv4 || IPV6.test(host)) return plainHttp;
+    if (port !== null && LABEL.test(host)) return plainHttp;
   }
 
-  if (/\s/.test(text)) return search(text);
-  if (!host.includes('.') && !hasPort) return search(text);
+  if (options.allowLocalPaths && !spaced && text.includes('/') && host !== null) {
+    if (!host.includes('.') && port === null) return { kind: 'open', url: text };
+  }
+  if (spaced || host === null) return search(text);
+  if (!host.includes('.') && port === null) return search(text);
   const labels = host.split('.');
-  const tld = labels.at(-1) ?? '';
-  if (port === null || /^\d+$/.test(port)) {
-    if (labels.every((label) => LABEL.test(label)) && LETTER_TLD.test(tld)) {
-      return { kind: 'open', url: `https://${text}`, httpFallback: `http://${text}` };
-    }
+  if (
+    portOk &&
+    labels.every((label) => LABEL.test(label)) &&
+    LETTER_TLD.test(labels.at(-1) ?? '')
+  ) {
+    return { kind: 'open', url: `https://${text}`, httpFallback: `http://${text}` };
   }
   return search(text);
+}
+
+/**
+ * A typed host in the ASCII form a URL carries, lowercased, or `null` when it
+ * cannot be a host at all (a space, or characters no host may hold). Bracketed
+ * IPv6 is returned as typed, lowercased.
+ */
+function asciiHost(host: string): string | null {
+  if (host === '' || /\s/.test(host)) return null;
+  if (host.startsWith('[')) return host.toLowerCase();
+  if (/^[\x21-\x7e]+$/.test(host)) return host.toLowerCase();
+  try {
+    return new URL(`http://${host}`).hostname;
+  } catch {
+    return null;
+  }
 }
 
 /** A search for `text` on {@link ADDRESS_SEARCH_URL}. */

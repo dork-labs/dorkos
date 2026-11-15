@@ -3,13 +3,11 @@ import { ArrowLeft, ArrowRight, ExternalLink, RotateCw } from 'lucide-react';
 import type { UiCanvasContent } from '@dorkos/shared/types';
 import { useFollowedView } from '@/layers/entities/room';
 import type { BrowserHistoryState } from '@/layers/shared/model';
-import { useOwnOrigins } from '@/layers/entities/config';
 import { useAppStore } from '@/layers/shared/model';
 import { Input } from '@/layers/shared/ui';
 import {
   ADDRESS_PLACEHOLDER,
   cn,
-  isThisAppsAddress,
   normalizeAddressInput,
   openExternalLink,
 } from '@/layers/shared/lib';
@@ -206,8 +204,10 @@ export function CanvasBrowserContent({ documentId, content }: CanvasBrowserConte
   //
   // What was typed is read by the shared address rules first: a reload, an
   // address, a search, or a notice saying why it does not open here. A refusal
-  // keeps the typed text in the bar so the fix is an edit, not a retype. The
-  // `http://` fallback those rules offer for a bare host is not tried here: a
+  // keeps the typed text in the bar so the fix is an edit, not a retype. Local
+  // files open, because this browser serves them. This app's own address is not
+  // refused here: the frame already loads it without the app's powers
+  // (`use-resolved-frame`). The `http://` fallback is not tried either, since a
   // framed page's failure to connect cannot be seen from the parent.
   //
   // **On a room route an address is a post, not a navigation** (spec
@@ -216,13 +216,9 @@ export function CanvasBrowserContent({ documentId, content }: CanvasBrowserConte
   // `canvas` frame that reaches every member, and this frame follows it like
   // everybody else's does. Typing the same address again is a reload of the page
   // in front of you, which is nobody else's business and stays local.
-  const ownOrigins = useOwnOrigins();
   const submitAddress = useCallback(
     (value: string) => {
-      const input = normalizeAddressInput(value, {
-        current: currentUrl,
-        isOwnAddress: (url) => isThisAppsAddress(url, window.location, ownOrigins),
-      });
+      const input = normalizeAddressInput(value, { current: currentUrl, allowLocalPaths: true });
       if (input.kind === 'refused') {
         setRefusedAddress({ url: value.trim(), message: input.notice });
         return;
@@ -249,7 +245,7 @@ export function CanvasBrowserContent({ documentId, content }: CanvasBrowserConte
       notePersonNavigated();
       navigate(next);
     },
-    [currentUrl, navigate, roomId, openInRoom, notePersonNavigated, ownOrigins]
+    [currentUrl, navigate, roomId, openInRoom, notePersonNavigated]
   );
 
   // Always leaves the app, even for one of our own URLs — that is what the

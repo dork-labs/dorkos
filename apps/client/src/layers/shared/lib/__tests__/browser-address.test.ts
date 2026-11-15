@@ -138,6 +138,67 @@ describe('normalizeAddressInput', () => {
     }
   );
 
+  it.each([
+    'Error: ENOENT no such file',
+    'python: list comprehension',
+    'note: buy milk',
+    'javascript: what is a closure',
+  ])('searches text that starts like a scheme but has a space (%s)', (typed) => {
+    expect(normalizeAddressInput(typed)).toEqual(search(typed));
+  });
+
+  it('reads a trailing dot, a non-ASCII host and a leading // as the host they name', () => {
+    expect(normalizeAddressInput('example.com.')).toMatchObject({ url: 'https://example.com.' });
+    expect(normalizeAddressInput('münchen.de')).toMatchObject({ url: 'https://münchen.de' });
+    expect(normalizeAddressInput('//example.com/a')).toMatchObject({
+      url: 'https://example.com/a',
+    });
+  });
+
+  it('searches an IPv4 lookalike out of range, and a port with words after it', () => {
+    for (const typed of ['999.1.1.1', 'localhost:3000 foo', 'mybox:80 x']) {
+      expect(normalizeAddressInput(typed)).toEqual(search(typed));
+    }
+  });
+
+  it('says http: or https: missing its // is not complete', () => {
+    for (const typed of ['http:/example.com', 'https:example.com']) {
+      expect(normalizeAddressInput(typed)).toEqual({
+        kind: 'refused',
+        notice: ADDRESS_NOTICES.incomplete,
+      });
+    }
+  });
+
+  it('opens local files as typed where local files are allowed (the canvas browser)', () => {
+    for (const typed of [
+      'file:///proj/index.html',
+      '/abs/index.html',
+      './index.html',
+      '../up.html',
+      '~/site/index.html',
+      'demo/index.html',
+    ]) {
+      expect(normalizeAddressInput(typed, { allowLocalPaths: true })).toEqual({
+        kind: 'open',
+        url: typed,
+      });
+    }
+    // Hosts still read as hosts, and words still search.
+    expect(normalizeAddressInput('localhost:3000/a', { allowLocalPaths: true })).toEqual(
+      http('localhost:3000/a')
+    );
+    expect(normalizeAddressInput('weather', { allowLocalPaths: true })).toEqual(search('weather'));
+  });
+
+  it('drops the http:// fallback when that one is DorkOS’s own address', () => {
+    const isOwnAddress = (url: string) => url.startsWith('http://mybox.lan');
+    expect(normalizeAddressInput('mybox.lan', { isOwnAddress })).toEqual({
+      kind: 'open',
+      url: 'https://mybox.lan',
+    });
+  });
+
   it('sends a search to DuckDuckGo with the text as the query', () => {
     const result = normalizeAddressInput('a & b?');
     expect(result.kind).toBe('search');

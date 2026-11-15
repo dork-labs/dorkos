@@ -1057,6 +1057,8 @@ describe('LocalBrowserPanel', () => {
       transport.navigateLocalBrowser.mockRejectedValue(unreachable());
       await submit('news.example');
       await waitFor(() => expect(transport.navigateLocalBrowser).toHaveBeenCalledTimes(2));
+      expect(transport.navigateLocalBrowser).toHaveBeenNthCalledWith(1, 'https://news.example');
+      expect(transport.navigateLocalBrowser).toHaveBeenNthCalledWith(2, 'http://news.example');
       expect(await screen.findByRole('alert')).toHaveTextContent('Couldn’t reach that site.');
     });
 
