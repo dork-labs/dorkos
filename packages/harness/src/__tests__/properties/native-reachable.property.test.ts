@@ -43,7 +43,6 @@ import { join } from 'node:path';
 import { loadManifest, project } from '../../engine.js';
 import { applyPlan } from '../../apply/apply.js';
 import { harnessCoverage, type CoverageResult } from '../../vendor-facts/coverage.js';
-import { skillsFactsFor } from '../../vendor-facts/index.js';
 import { inventorySourceTree } from '../../inventory/index.js';
 import { CLAUDE_SKILLS_DIR } from '../../plan/installed-projector.js';
 import type { HarnessId } from '../../manifest/schema.js';
@@ -127,24 +126,6 @@ describe('P9b — a `native` skill is somewhere its harness actually reads', () 
               checked += 1;
               const target = realpath(join(repoRoot, action.source));
               const coverage = coverageFor(action.harness);
-              // A harness that collapses by name keeps one of two skills sharing a
-              // name (OpenCode, observed). The other is legitimately missing only
-              // when the plan already warned about that collision on that harness,
-              // and the name itself must still be found.
-              const warnedCollision =
-                skillsFactsFor(action.harness).dedupe === 'by-name' &&
-                plan.warnings.some(
-                  (w) =>
-                    w.harness === action.harness &&
-                    w.reason.includes(`frontmatter name "${action.name}" collides`)
-                );
-              if (warnedCollision) {
-                expect(
-                  coverage.discovered.some((d) => d.key === action.name),
-                  `${action.harness} should still load one "${action.name}"`
-                ).toBe(true);
-                continue;
-              }
               expect({
                 harness: action.harness,
                 skill: action.name,

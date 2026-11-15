@@ -21,7 +21,8 @@
  *    Copilot's symlink handling, Gemini's identity rule,
  *    several live-reload clauses — the cell says `unknown` and the coverage walk
  *    reports an `uncertain` finding rather than guessing. Filling one of those in
- *    without a citation is the single most damaging edit that can be made here. * 3. **Dates, not vibes.** `source.fetchedAt` is the day the page was read.
+ *    without a citation is the single most damaging edit that can be made here.
+ * 3. **Dates, not vibes.** `source.fetchedAt` is the day the page was read.
  *    Updating a cell means re-fetching the page, quoting the sentence, and
  *    bumping the date — see `contributing/harness-sync.md` §5.
  *
