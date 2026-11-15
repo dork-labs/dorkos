@@ -24,6 +24,10 @@ import {
   createRepoConfigActivityWriter,
   setRepoConfigActivity,
 } from '../../services/runtimes/claude-code/repo-settings/repo-config-activity.js';
+import {
+  createProjectConfigActivityWriter,
+  setProjectConfigActivity,
+} from '../../services/runtimes/codex/app-server/project-config-activity.js';
 import { AgentMcpOAuthService } from '../../services/mesh/agent-mcp-oauth-service.js';
 import { localDialHost } from '@dorkos/shared/local-dial-host';
 import { env } from '../../env.js';
@@ -154,6 +158,8 @@ export async function wireMcpTasksAndSkills(refs: ServerRefs, built: WireMcpTask
   }
   // Repo hooks, local settings or MCP servers a launch paused, by name (DOR-3298).
   setRepoConfigActivity(createRepoConfigActivityWriter(activityService));
+  // A folder's own Codex settings that loaded at Full, by name (DOR-4408).
+  setProjectConfigActivity(createProjectConfigActivityWriter(activityService));
   // Managed per-agent MCP servers (spec `mcp-server-management`). Constructed
   // once meshCore exists — the service resolves an agent id to its workspace
   // path through the mesh registry (the single instance, shared, ADR-0043) and
