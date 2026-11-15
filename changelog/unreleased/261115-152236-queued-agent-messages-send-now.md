@@ -1,0 +1,13 @@
+---
+covers: []
+---
+
+### Changed
+
+- A message another agent sends to a busy chat now waits as its own row in the queue, with two buttons: **Send now** and **Don't deliver**. Send now adds it to what the agent is doing right away, or puts it first in line when that isn't safe. Don't deliver asks once, then takes it off the queue.
+- When you don't deliver another agent's message, that agent's chat says so by name, for example "Dana removed it before it was delivered."
+- Messages from other agents that wait together still go to the agent as one turn when it's free, so nothing arrives late.
+
+### Fixed
+
+- An older message from another chat whose sender is no longer on record now shows its words under "Another chat", never the wrapper text the agent reads, and never as if you wrote it.

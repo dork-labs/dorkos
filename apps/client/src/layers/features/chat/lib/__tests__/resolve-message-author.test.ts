@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import type { ChatMessage } from '@/layers/shared/model';
+import { CHAT_MESSAGE_FENCE_LABEL, CHAT_MESSAGE_LEAD } from '@dorkos/shared/chat-messages';
 import { resolveMessageAuthor, type MessageAuthorAgent } from '../resolve-message-author';
 
 function msg(overrides: Partial<ChatMessage> = {}): ChatMessage {
@@ -178,5 +179,28 @@ describe('resolveMessageAuthor — a room post in a room-attached chat (DOR-2113
       { humanName: 'Dorian' }
     );
     expect(author).toEqual({ kind: 'human', id: 'room-author:tg-1', displayName: 'Sam' });
+  });
+});
+
+describe('resolveMessageAuthor — another chat’s words with no sender on record (DOR-3060)', () => {
+  it('reads "Another chat", never "You"', () => {
+    const content = [
+      CHAT_MESSAGE_LEAD,
+      `--- BEGIN ${CHAT_MESSAGE_FENCE_LABEL} c0ffee12 ---`,
+      'Kind: message',
+      'hello',
+      `--- END ${CHAT_MESSAGE_FENCE_LABEL} c0ffee12 ---`,
+    ].join('\n');
+    expect(
+      resolveMessageAuthor(msg({ role: 'user', content }), { humanName: 'Dana' })
+    ).toMatchObject({
+      kind: 'agent',
+      displayName: 'Another chat',
+    });
+    expect(
+      resolveMessageAuthor(msg({ role: 'user', content: 'hi' }), { humanName: 'Dana' })
+    ).toMatchObject({
+      kind: 'human',
+    });
   });
 });

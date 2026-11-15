@@ -33,6 +33,8 @@ const makeItem = (content: string, index: number, over: Partial<QueueItem> = {})
   ...over,
 });
 
+const AGENT_ACTIONS = { sendNow: vi.fn(), dontDeliver: vi.fn(), notices: {} };
+
 const STATUS_NOTE = 'Sending one at a time as the agent finishes';
 
 /** Renders the panel with the props a plain waiting queue has. */
@@ -46,6 +48,7 @@ function renderPanel(props: Partial<React.ComponentProps<typeof QueuePanel>> = {
       onSend={vi.fn()}
       onMoveUp={vi.fn()}
       statusNote={STATUS_NOTE}
+      agentActions={AGENT_ACTIONS}
       {...props}
     />
   );
@@ -144,6 +147,7 @@ describe('QueuePanel', () => {
         onSend={vi.fn()}
         onMoveUp={vi.fn()}
         statusNote={STATUS_NOTE}
+        agentActions={AGENT_ACTIONS}
       />
     );
     expect(rowClasses()).toContain('border-l-2');

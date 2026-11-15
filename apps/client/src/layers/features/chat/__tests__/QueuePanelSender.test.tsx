@@ -33,6 +33,8 @@ beforeAll(() => {
 afterEach(() => {
   cleanup();
   navigate.mockReset();
+  actions.sendNow.mockReset();
+  actions.dontDeliver.mockReset();
 });
 
 const SECURITY = {
@@ -58,7 +60,9 @@ const fromChat = (id: string, content: string, sender: QueueItem['sender']): Que
   notice: null,
 });
 
-function renderPanel(queue: QueueItem[]) {
+const actions = { sendNow: vi.fn(), dontDeliver: vi.fn(), notices: {} as Record<string, string> };
+
+function renderPanel(queue: QueueItem[], notices: Record<string, string> = {}) {
   return render(
     <QueuePanel
       queue={queue}
@@ -68,14 +72,18 @@ function renderPanel(queue: QueueItem[]) {
       onSend={vi.fn()}
       onMoveUp={vi.fn()}
       statusNote="Sending one at a time"
+      agentActions={{ ...actions, notices }}
     />
   );
 }
 
 describe('QueuePanel: who sent a queued message', () => {
-  it('names an agent sender above its words, links its chat, and starts the name with "From"', () => {
+  it('names an agent sender above its words and links its chat', () => {
     renderPanel([fromChat('a', 'Please hold PR #12.', SECURITY)]);
-    const row = screen.getByRole('group', { name: 'From Security: Please hold PR #12.' });
+    const row = screen.getByRole('group', {
+      name: 'Queued message from Security, from Dependency audit for 0.121',
+    });
+    expect(within(row).getByText('Please hold PR #12.')).toBeInTheDocument();
     expect(within(row).getByText('Security')).toHaveClass('font-semibold');
     const link = within(row).getByRole('link', { name: 'Dependency audit for 0.121' });
     fireEvent.click(link);
@@ -93,7 +101,11 @@ describe('QueuePanel: who sent a queued message', () => {
 
   it('reads "Another chat" for an unknown sender, with no link', () => {
     renderPanel([fromChat('a', 'Hi', null)]);
-    expect(screen.getByRole('group', { name: 'From Another chat: Hi' })).toBeInTheDocument();
+    expect(
+      screen.getByRole('group', {
+        name: 'Queued message from Another chat',
+      })
+    ).toBeInTheDocument();
     expect(screen.queryByRole('link')).not.toBeInTheDocument();
   });
 

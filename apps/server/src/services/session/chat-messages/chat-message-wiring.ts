@@ -8,7 +8,7 @@
  */
 import { noteSteeredInto } from './chat-started-turns.js';
 import { setQueuedChatView } from '../message-queue-store.js';
-import { queuedChatViewOf } from './queued-chat-view.js';
+import { queuedChatViewOf } from './queued/queued-chat-view.js';
 import type { MeshCore } from '@dorkos/mesh';
 import type { Db } from '@dorkos/db';
 import { filterKickoffHistory } from '@dorkos/shared/kickoff';
@@ -28,6 +28,7 @@ import {
   setQueuedChatHoldResolver,
   setQueuedChatWordsResolver,
 } from '../message-dispatcher.js';
+import { setQueuedChatJoiner } from '../message-dispatcher/state.js';
 import { rememberedChatTitle } from '../origin/started-by-origin-overlay.js';
 import {
   getSessionStartedByStore,
@@ -61,6 +62,8 @@ import { resolveAgentIdForPath } from '../../mesh/agent-path-lookup.js';
 import { notify } from '../../notifications/notification-service.js';
 import { getSpinOffStartup } from './startup/spin-off-startup.js';
 import { wireSpinOffStartup } from './startup/wire-spin-off-startup.js';
+import { readOperatorDisplayName } from '../../core/config/operator-display-name.js';
+import { setQueuedChatActionsDeps } from './queued/queued-chat-actions.js';
 
 /** How far down a chat's chain of spin-offs a reader may follow. */
 const DESCENDANT_DEPTH = 8;
@@ -284,10 +287,24 @@ export function wireChatMessaging(deps: WireChatMessagingDeps): {
     emitActivity: emitChatActivity,
   });
   setChatMessageService(service);
+  // Send now and Don't deliver on another chat's queued message (DOR-3060).
+  setQueuedChatActionsDeps({
+    store: deps.store,
+    isBusy: isSessionBusy,
+    turnLevelOf: passedOnLevelOf,
+    steerInto: steerChatTurn,
+    emitActivity: emitChatActivity,
+    operatorName: readOperatorDisplayName,
+  });
   service.startHeldRetries();
   wireChatReportBack(service, deps.store);
   setQueuedChatCeilingResolver((messageId) => service.ceilingForQueuedMessage(messageId));
   setQueuedChatHoldResolver((messageId) => rowsCarryHold(deps.store.listByQueueMessage(messageId)));
+  setQueuedChatJoiner((fromRowId, toRowId) => {
+    for (const row of deps.store.listByQueueMessage(fromRowId)) {
+      deps.store.update(row.id, { queueMessageId: toRowId });
+    }
+  });
   setQueuedChatWordsResolver((messageId) =>
     rowsCarryWords(deps.store.listByQueueMessage(messageId))
   );

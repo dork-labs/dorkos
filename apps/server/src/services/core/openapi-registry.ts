@@ -50,6 +50,7 @@ import {
   SessionQueueResponseSchema,
   UpdateQueuedMessageRequestSchema,
   UpdateQueuedMessageResponseSchema,
+  SteerQueuedChatMessageResponseSchema,
   ApprovalRequestSchema,
   SubmitAnswersRequestSchema,
   UiActionRequestSchema,
@@ -1274,6 +1275,41 @@ registry.registerPath({
     },
     404: {
       description: 'No such message on this queue',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+  },
+});
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/sessions/{id}/queue/{messageId}/steer',
+  tags: ['Sessions'],
+  summary: 'Send a queued agent message now',
+  description:
+    "Joins another chat's queued message to the running turn when every sender may join " +
+    'that turn: the turn already runs no looser than each sender and carries its marks. ' +
+    "Otherwise it moves the row to the front so it runs next, at the senders' own level. " +
+    'The model still reads the fenced message. A person in the app only; an agent is refused.',
+  request: { params: z.object({ id: z.string().uuid(), messageId: z.string() }) },
+  responses: {
+    200: {
+      description: 'The message joined the running turn or moved to the front',
+      content: { 'application/json': { schema: SteerQueuedChatMessageResponseSchema } },
+    },
+    400: {
+      description: 'Invalid ids',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    403: {
+      description: 'The caller cannot act on this chat, or is not a person',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    404: {
+      description: 'No such message on this queue',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    409: {
+      description: 'The row is not from another chat, or it is already starting',
       content: { 'application/json': { schema: ErrorResponseSchema } },
     },
   },

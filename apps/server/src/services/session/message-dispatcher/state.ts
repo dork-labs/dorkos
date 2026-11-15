@@ -58,13 +58,20 @@ export const privateLaunches = new Map<AbortSignal, Set<Promise<TriggerTurnResul
  * server that never restarted.
  */
 export const launching = new Set<string>();
+/**
+ * Queue rows a person is sending into the running turn right now (Send now,
+ * DOR-3060). The row keeps its place and its pending entry while the steer is
+ * in flight, but nothing launches it: its words reach the model once, either
+ * steered or as a turn of their own, never both.
+ */
+export const steering = new Set<string>();
 
 /**
  * The ceiling a queued message another chat sent launches under (spec
  * `spin-off-chats` §3), read from that chat's own record of the send at the
- * moment the turn LAUNCHES, not when it was accepted: a batched row gains
- * senders while it waits, and a row adopted after a restart has no in-memory
- * plan to carry one. Wired at boot by the chat-message service.
+ * moment the turn LAUNCHES, not when it was accepted: a drain join gains
+ * senders just before launch, and a row adopted after a restart has no
+ * in-memory plan to carry one. Wired at boot by the chat-message service.
  */
 export type QueuedChatCeilingResolver = (messageId: string) => TurnPermissionCeiling | undefined;
 
@@ -168,8 +175,8 @@ export function launchCeiling(
 
 /**
  * Whether a queued message is being launched right now: its words are being
- * read into a turn, so anything appended to its row would be lost. A caller
- * that batches into a waiting row asks this first, in the same tick.
+ * read into a turn, so it may no longer be edited, removed, or drain-joined
+ * into another row.
  *
  * @param messageId - The queue row's id.
  */
@@ -186,6 +193,38 @@ export function isQueuedMessageLaunching(messageId: string): boolean {
  */
 export function isQueuedMessageArmed(messageId: string): boolean {
   return pending.has(messageId) || launching.has(messageId);
+}
+
+/** Re-points the chat-message records of a drain-joined row to its surviving row. */
+export type QueuedChatJoiner = (fromRowId: string, toRowId: string) => void;
+
+let queuedChatJoiner: QueuedChatJoiner | undefined;
+
+/**
+ * Wire (or clear) how a drain join re-points chat-message records.
+ *
+ * @param joiner - Moves records between queue row ids; `undefined` clears it.
+ */
+export function setQueuedChatJoiner(joiner: QueuedChatJoiner | undefined): void {
+  queuedChatJoiner = joiner;
+}
+
+/** Whether chat messaging has wired record re-pointing for drain joins. */
+export function queuedChatJoinIsWired(): boolean {
+  return queuedChatJoiner !== undefined;
+}
+
+/**
+ * Re-point one joined row's chat-message records to the row that will launch.
+ *
+ * @param fromRowId - The queue row being folded away.
+ * @param toRowId - The queue row whose turn will carry both envelopes.
+ * @returns False when chat messaging has not wired the joiner.
+ */
+export function repointQueuedChatJoin(fromRowId: string, toRowId: string): boolean {
+  if (!queuedChatJoiner) return false;
+  queuedChatJoiner(fromRowId, toRowId);
+  return true;
 }
 
 /** Agent-requested summaries waiting to run, one per session at most, keyed by primary id. */

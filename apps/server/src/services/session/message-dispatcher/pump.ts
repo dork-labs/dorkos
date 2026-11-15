@@ -10,10 +10,12 @@ import { runtimeLockHolder } from '../session-lock.js';
 import { logger } from '../../../lib/logger.js';
 import {
   inFlight,
+  launching,
   pending,
   pendingCompactions,
   releases,
   runtimeTurns,
+  steering,
   withDispatchMutex,
 } from './state.js';
 import { launchDueCompaction } from './agent-compaction.js';
@@ -38,6 +40,30 @@ export function schedulePump(sessionId: string): void {
       });
     });
   });
+}
+
+/**
+ * Keep a waiting row from launching while a person sends it into the running
+ * turn (Send now, DOR-3060). It keeps its place and its pending entry.
+ *
+ * @param messageId - The queue row.
+ * @returns False when the row is already launching or already being sent now.
+ */
+export function holdForSteer(messageId: string): boolean {
+  if (launching.has(messageId) || steering.has(messageId)) return false;
+  steering.add(messageId);
+  return true;
+}
+
+/**
+ * Let a row held by {@link holdForSteer} launch again, and give its queue a
+ * chance to move: a steer that did not land leaves it to run as its own turn.
+ *
+ * @param sessionId - The session whose queue holds the row.
+ * @param messageId - The queue row.
+ */
+export function releaseSteerHold(sessionId: string, messageId: string): void {
+  if (steering.delete(messageId)) schedulePump(sessionId);
 }
 
 /**

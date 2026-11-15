@@ -2,8 +2,9 @@ import { AnimatePresence, motion } from 'motion/react';
 import { AppWindow, ArrowUp, CornerDownLeft, X } from 'lucide-react';
 import { cn, COLLAPSE_TRANSITION, COLLAPSE_VARIANTS, SPRING } from '@/layers/shared/lib';
 import type { QueueItem } from '../../model/use-message-queue';
-import { queueHeaderCount, UNKNOWN_SENDER } from '../../lib/queue-sender';
-import { QueueSenderLine } from './QueueSenderLine';
+import type { AgentQueueActions } from '../../model/messaging/use-agent-queue-actions';
+import { queueHeaderCount } from '../../lib/queue-sender';
+import { QueueAgentRow } from './QueueAgentRow';
 
 /**
  * Invisible reach that grows each 24px row action into a 32px touch target
@@ -55,6 +56,8 @@ interface QueuePanelProps {
    * anyway, stopping that work. The row says what it stops.
    */
   onSwitchNow?: () => void;
+  /** Send now and Don't deliver, for a message another agent sent (DOR-3060). */
+  agentActions: AgentQueueActions;
 }
 
 /**
@@ -74,8 +77,9 @@ interface QueuePanelProps {
  *
  * A chip another window queued says so, quietly. It stays fully editable — the
  * queue belongs to the session, not to a window — it just does not pretend to be
- * yours. A message another chat sent names its sender above its words, so it
- * never reads as the person's own (DOR-3060).
+ * yours. A message another chat sent is its own quiet row (`QueueAgentRow`):
+ * it names its sender above its words, so it never reads as the person's own,
+ * and offers only Send now and Don't deliver (DOR-3060).
  */
 export function QueuePanel({
   queue,
@@ -86,6 +90,7 @@ export function QueuePanel({
   onMoveUp,
   statusNote,
   onSwitchNow,
+  agentActions,
 }: QueuePanelProps) {
   // Also guarded at the call site, which is what lets AnimatePresence see this
   // panel leave and play the exit below. Kept here too so the component never
@@ -107,7 +112,7 @@ export function QueuePanel({
         <span className="font-medium">{queueHeaderCount(queue)}</span>
         <span className="truncate">&middot; {statusNote}</span>
       </div>
-      <div className="space-y-0.5">
+      <div className="max-h-[40vh] space-y-0.5 overflow-y-auto">
         <AnimatePresence mode="popLayout">
           {queue.map((item, i) => (
             <motion.div
@@ -121,49 +126,27 @@ export function QueuePanel({
               exit={{ opacity: 0, scale: 0.95, transition: { duration: 0.15 } }}
               layout
             >
-              <div
-                className={cn(
-                  // The left border is always here, transparent at rest: applying
-                  // it only while editing shifted the whole row 2px sideways the
-                  // moment you clicked into it.
-                  //
-                  // `gap-2` below `md` (not the desktop `gap-1`) is what the three
-                  // action buttons' invisible reach spends: half of it, 4px, on
-                  // each side of each button — see the buttons below.
-                  'group flex w-full items-center gap-2 rounded-md border-l-2 border-l-transparent pr-2 transition-colors md:gap-1',
-                  editingId === item.id ? 'border-l-primary bg-muted' : 'hover:bg-muted/50'
-                )}
-              >
-                {item.fromChat ? (
-                  // Another chat's message is moved or removed, never edited
-                  // (DOR-3060), so it is no door into the editor: a group
-                  // whose name says who sent it, with the sender line on top.
-                  <div
-                    role="group"
-                    aria-label={`From ${item.sender?.agentName ?? UNKNOWN_SENDER}: ${item.content}`}
-                    className="flex min-w-0 flex-1 items-center gap-2 py-1.5 pl-3"
-                  >
-                    <span className="text-muted-foreground shrink-0 text-xs font-medium">
-                      {i + 1}.
-                    </span>
-                    <span className="min-w-0 flex-1">
-                      <QueueSenderLine sender={item.sender ?? null} />
-                      <span className="text-muted-foreground line-clamp-1 text-sm">
-                        {item.content}
-                      </span>
-                      {item.notice !== null && (
-                        <span className="text-muted-foreground/70 line-clamp-1 text-xs">
-                          {item.notice}
-                        </span>
-                      )}
-                      {item.waiting !== undefined && (
-                        <span className="text-muted-foreground/70 line-clamp-1 text-xs">
-                          {item.waiting.line}
-                        </span>
-                      )}
-                    </span>
-                  </div>
-                ) : (
+              {item.fromChat ? (
+                <QueueAgentRow
+                  item={item}
+                  index={i}
+                  actions={agentActions}
+                  onSwitchNow={onSwitchNow}
+                />
+              ) : (
+                <div
+                  className={cn(
+                    // The left border is always here, transparent at rest: applying
+                    // it only while editing shifted the whole row 2px sideways the
+                    // moment you clicked into it.
+                    //
+                    // `gap-2` below `md` (not the desktop `gap-1`) is what the three
+                    // action buttons' invisible reach spends: half of it, 4px, on
+                    // each side of each button — see the buttons below.
+                    'group flex w-full items-center gap-2 rounded-md border-l-2 border-l-transparent pr-2 transition-colors md:gap-1',
+                    editingId === item.id ? 'border-l-primary bg-muted' : 'hover:bg-muted/50'
+                  )}
+                >
                   <button
                     type="button"
                     onClick={() => onEdit(item.id)}
@@ -198,69 +181,69 @@ export function QueuePanel({
                       </span>
                     )}
                   </button>
-                )}
-                {/* Held for background work: the one way to run it anyway. A
+                  {/* Held for background work: the one way to run it anyway. A
                     text button, not an icon — it ends work, so it says so. */}
-                {item.waiting !== undefined && onSwitchNow !== undefined && (
-                  <>
-                    <button
-                      type="button"
-                      onClick={onSwitchNow}
-                      title={item.waiting.switchHint}
-                      aria-describedby={`switch-now-${item.id}`}
-                      className="focus-ring text-muted-foreground hover:text-foreground shrink-0 rounded-sm px-1.5 py-1 text-xs font-medium transition-colors"
-                    >
-                      Switch now
-                    </button>
-                    <span id={`switch-now-${item.id}`} className="sr-only">
-                      {item.waiting.switchHint}
-                    </span>
-                  </>
-                )}
-                {/* Nothing to reorder on the head — it is already as far forward
+                  {item.waiting !== undefined && onSwitchNow !== undefined && (
+                    <>
+                      <button
+                        type="button"
+                        onClick={onSwitchNow}
+                        title={item.waiting.switchHint}
+                        aria-describedby={`switch-now-${item.id}`}
+                        className="focus-ring text-muted-foreground hover:text-foreground shrink-0 rounded-sm px-1.5 py-1 text-xs font-medium transition-colors"
+                      >
+                        Switch now
+                      </button>
+                      <span id={`switch-now-${item.id}`} className="sr-only">
+                        {item.waiting.switchHint}
+                      </span>
+                    </>
+                  )}
+                  {/* Nothing to reorder on the head — it is already as far forward
                     as a message gets, and offering a control that cannot do
                     anything is worse than not offering one. */}
-                {i > 0 && (
+                  {i > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => onMoveUp(item.id)}
+                      className={cn(
+                        'focus-ring text-muted-foreground hover:text-foreground relative flex size-6 shrink-0 items-center justify-center rounded-sm opacity-100 transition-opacity md:opacity-0 md:group-hover:opacity-100 md:focus-visible:opacity-100',
+                        TOUCH_REACH
+                      )}
+                      aria-label={`Move queued message ${i + 1} earlier`}
+                    >
+                      <ArrowUp className="size-3" />
+                    </button>
+                  )}
+                  {i > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => onSend(item.id)}
+                      aria-label={`Send queued message ${i + 1} next`}
+                      // Always visible, unlike the tucked-away reorder and remove:
+                      // this is the primary action on a queued row, so it must not
+                      // need a hover to be found.
+                      className={cn(
+                        'focus-ring text-muted-foreground hover:text-foreground relative flex size-6 shrink-0 items-center justify-center rounded-sm transition-colors',
+                        TOUCH_REACH
+                      )}
+                    >
+                      <CornerDownLeft className="size-3" />
+                    </button>
+                  )}
                   <button
                     type="button"
-                    onClick={() => onMoveUp(item.id)}
+                    onClick={() => onRemove(item.id)}
                     className={cn(
                       'focus-ring text-muted-foreground hover:text-foreground relative flex size-6 shrink-0 items-center justify-center rounded-sm opacity-100 transition-opacity md:opacity-0 md:group-hover:opacity-100 md:focus-visible:opacity-100',
                       TOUCH_REACH
                     )}
-                    aria-label={`Move queued message ${i + 1} earlier`}
+                    aria-label={`Remove queued message ${i + 1}`}
                   >
-                    <ArrowUp className="size-3" />
+                    <X className="size-3" />
                   </button>
-                )}
-                {i > 0 && (
-                  <button
-                    type="button"
-                    onClick={() => onSend(item.id)}
-                    aria-label={`Send queued message ${i + 1} next`}
-                    // Always visible, unlike the tucked-away reorder and remove:
-                    // this is the primary action on a queued row, so it must not
-                    // need a hover to be found.
-                    className={cn(
-                      'focus-ring text-muted-foreground hover:text-foreground relative flex size-6 shrink-0 items-center justify-center rounded-sm transition-colors',
-                      TOUCH_REACH
-                    )}
-                  >
-                    <CornerDownLeft className="size-3" />
-                  </button>
-                )}
-                <button
-                  type="button"
-                  onClick={() => onRemove(item.id)}
-                  className={cn(
-                    'focus-ring text-muted-foreground hover:text-foreground relative flex size-6 shrink-0 items-center justify-center rounded-sm opacity-100 transition-opacity md:opacity-0 md:group-hover:opacity-100 md:focus-visible:opacity-100',
-                    TOUCH_REACH
-                  )}
-                  aria-label={`Remove queued message ${i + 1}`}
-                >
-                  <X className="size-3" />
-                </button>
-              </div>
+                </div>
+              )}
             </motion.div>
           ))}
         </AnimatePresence>

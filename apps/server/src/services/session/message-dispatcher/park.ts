@@ -16,7 +16,7 @@ import {
   getPrivateSessionMessageAcceptanceService,
   PrivateSessionMessageRefusalError,
 } from '../private-messages/acceptance.js';
-import { emitLifecycle, inFlight, pending, sweptWhileLaunching } from './state.js';
+import { emitLifecycle, inFlight, pending, steering, sweptWhileLaunching } from './state.js';
 import { launchDispatch } from './launch.js';
 import { schedulePump } from './pump.js';
 import { projectorFor } from '../resolution/session-key-registry.js';
@@ -304,6 +304,7 @@ export function parkDispatch(
   };
   const entry: PendingDispatch = {
     abandon: () => plan.turn.onSettled?.('failed'),
+    folded: () => plan.turn.onSettled?.('ok'),
     ...(plan.turn.privateDispatchSignal
       ? { privateDispatchSignal: plan.turn.privateDispatchSignal }
       : {}),
@@ -316,6 +317,9 @@ export function parkDispatch(
     ...(opts?.held !== undefined ? { held: opts.held } : {}),
     launch: (launchOpts) => {
       if (pending.get(plan.messageId) !== entry) return;
+      // A person is sending it into the running turn (Send now): the steer's
+      // end runs the pump again if it did not land (DOR-3060).
+      if (steering.has(plan.messageId)) return;
       if (plan.turn.privateDispatchSignal?.aborted) {
         clearTimeout(entry.timer);
         pending.delete(plan.messageId);

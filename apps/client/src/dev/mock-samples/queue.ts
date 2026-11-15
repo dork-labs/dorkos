@@ -1,4 +1,5 @@
 import type { QueueItem } from '@/layers/features/chat/model/use-message-queue';
+import type { AgentQueueActions } from '@/layers/features/chat/model/messaging/use-agent-queue-actions';
 import { queueDowngradeNotice } from '@/layers/features/chat/lib/queue-chips';
 import { createQueueItem } from '../mock-factories';
 
@@ -22,6 +23,7 @@ export const SAMPLE_QUEUE: QueueItem[] = [
       agentName: 'Security',
       chatId: 'demo-chat-security',
       chatTitle: 'Dependency audit for the 0.126 release candidate',
+      summary: 'Two lockfile fixes to bump before the cut',
     },
   }),
   // A sender whose chat could not be read: the row says it can't open.
@@ -39,6 +41,13 @@ export const SAMPLE_QUEUE: QueueItem[] = [
     sender: null,
   }),
 ];
+
+/** Send now and Don't deliver that do nothing, for the queue showcase. */
+export const SAMPLE_AGENT_ACTIONS: AgentQueueActions = {
+  sendNow: () => {},
+  dontDeliver: () => {},
+  notices: {},
+};
 
 /** A queue whose rows did not all come from this window, and one with a notice. */
 export const SAMPLE_QUEUE_MIXED_ORIGINS: QueueItem[] = [

@@ -2,9 +2,10 @@
  * The HTTP surface of a session's message queue (spec
  * `persistent-session-runtime` §3.3, task 2.4).
  *
- * Three routes over what {@link dispatchMessage} accepted: read the queue, edit
- * a waiting message, remove one. They live here rather than in `routes/sessions.ts`
- * to keep that file under the size rule, mirroring `session-ui-action-handler.ts`.
+ * Four routes over what {@link dispatchMessage} accepted: read the queue, edit
+ * a waiting message, remove one, or send another chat's row now. They live here
+ * rather than in `routes/sessions.ts` to keep that file under the size rule,
+ * mirroring `session-ui-action-handler.ts`.
  *
  * **The queue belongs to the session, not to a window.** Any client may edit or
  * remove any message on it — that is the point of moving the queue off the
@@ -18,7 +19,7 @@
  *
  * @module routes/session-queue-handler
  */
-import type { Context } from 'hono';
+import type { Context, Hono } from 'hono';
 import { UpdateQueuedMessageRequestSchema } from '@dorkos/shared/schemas';
 import type { ApiEnv } from '../http/api-chain.js';
 import { readJsonBody } from '../http/request-body.js';
@@ -32,10 +33,25 @@ import {
 import type { MeshCore } from '@dorkos/mesh';
 import { errorBody, parseSessionId } from '../lib/route-utils.js';
 import { chatPlaceRefusal } from './session-launcher.js';
+import {
+  noteRemovedByPerson,
+  queuedChatRecordsOf,
+  steerQueuedChatMessage,
+} from '../services/session/chat-messages/queued/queued-chat-actions.js';
+import { clearsTheAgentBar } from '../lib/caller-authority.js';
 
 const INVALID_SESSION_ID = errorBody('Invalid session ID', 'INVALID_SESSION_ID');
 const INVALID_MESSAGE_ID = errorBody('Invalid message ID', 'INVALID_MESSAGE_ID');
 const NOT_QUEUED = errorBody('No such queued message', 'QUEUED_MESSAGE_NOT_FOUND');
+const SEND_NOW_PERSON_ONLY = errorBody(
+  'Only a person in the DorkOS app can send another chat’s message now.',
+  'person_only'
+);
+const NOT_A_CHAT_MESSAGE = errorBody(
+  'Only a message from another chat can be sent now. Move your own instead.',
+  'NOT_A_CHAT_MESSAGE'
+);
+const ALREADY_STARTING = errorBody('That message is already starting.', 'QUEUED_MESSAGE_LAUNCHING');
 
 /** Read the `messageId` path param: an empty one is refused rather than guessed at. */
 function parseMessageId(raw: string | undefined): string | undefined {
@@ -121,7 +137,53 @@ export function sessionQueueRemoveHandler(meshCore: MeshCore | undefined) {
     // business, not a stranger's (DOR-3644 S1).
     const refused = await chatPlaceRefusal(honoRequestFacts(c), meshCore, sessionId);
     if (refused) return c.json(errorBody(refused.message, 'DESK_NOT_OWN'), 403);
+    // Another chat's message: read before it goes, so its sender can be told
+    // by name who took it off (DOR-3060).
+    const fromChats = queuedChatRecordsOf(sessionId, messageId);
     if (!cancelQueuedMessage(sessionId, messageId)) return c.json(NOT_QUEUED, 404);
+    noteRemovedByPerson(fromChats);
     return c.json({ queue: listQueuedMessages(sessionId) });
   };
+}
+
+/**
+ * `POST /api/sessions/:id/queue/:messageId/steer` — send another chat's
+ * waiting message now, or put it first when it cannot safely join the live
+ * turn.
+ *
+ * @param meshCore - Mesh, which lists the registered homes.
+ */
+export function sessionQueueSteerHandler(meshCore: MeshCore | undefined) {
+  return async (c: Context<ApiEnv>): Promise<Response> => {
+    const sessionId = parseSessionId(c.req.param('id'));
+    if (!sessionId) return c.json(INVALID_SESSION_ID, 400);
+    const messageId = parseMessageId(c.req.param('messageId'));
+    if (!messageId) return c.json(INVALID_MESSAGE_ID, 400);
+    // A person's act: an agent pushing another agent's words into a running
+    // turn is the laundering this route must never offer.
+    if (!clearsTheAgentBar(honoRequestFacts(c))) return c.json(SEND_NOW_PERSON_ONLY, 403);
+    const refused = await chatPlaceRefusal(honoRequestFacts(c), meshCore, sessionId);
+    if (refused) return c.json(errorBody(refused.message, 'DESK_NOT_OWN'), 403);
+    const result = await steerQueuedChatMessage(sessionId, messageId);
+    if (result.outcome === 'not-found') return c.json(NOT_QUEUED, 404);
+    if (result.outcome === 'not-chat-row') return c.json(NOT_A_CHAT_MESSAGE, 409);
+    if (result.outcome === 'launching') return c.json(ALREADY_STARTING, 409);
+    return c.json(result);
+  };
+}
+
+/**
+ * Register every route over a session's durable message queue.
+ *
+ * @param router - The session router mounted at `/api/sessions`.
+ * @param meshCore - Mesh, which lists the registered homes.
+ */
+export function registerSessionQueueRoutes(
+  router: Hono<ApiEnv>,
+  meshCore: MeshCore | undefined
+): void {
+  router.get('/:id/queue', sessionQueueListHandler);
+  router.patch('/:id/queue/:messageId', sessionQueueUpdateHandler(meshCore));
+  router.delete('/:id/queue/:messageId', sessionQueueRemoveHandler(meshCore));
+  router.post('/:id/queue/:messageId/steer', sessionQueueSteerHandler(meshCore));
 }

@@ -30,6 +30,7 @@ import {
   selectRenderedMessages,
   sessionContextKey,
   useBackgroundTasks,
+  useAgentQueueActions,
   useChatQueue,
   useRotatingPlaceholder,
   shouldReofferStop,
@@ -281,6 +282,7 @@ export function SessionComposer({
     tryNativeCommand,
     chatInputRef,
   });
+  const agentQueueActions = useAgentQueueActions(sessionId);
 
   // Stop means stop everything queued. When messages are waiting, the person is
   // asked first and told the cost, because a Stop that silently emptied a queue
@@ -704,6 +706,7 @@ export function SessionComposer({
               onSend={chatQueue.handleQueueSend}
               onMoveUp={chatQueue.handleQueueMoveUp}
               onSwitchNow={handleSwitchNow}
+              agentActions={agentQueueActions}
               // The server dispatches the head the moment the session frees up,
               // so what genuinely holds the line is the agent parked on a
               // person, or the head held for the agent's background work.

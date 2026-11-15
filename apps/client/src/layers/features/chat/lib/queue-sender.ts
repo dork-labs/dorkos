@@ -10,6 +10,7 @@
  * @module features/chat/lib/queue-sender
  */
 import type { QueuedMessage } from '@dorkos/shared/schemas';
+import { UNKNOWN_CHAT_SENDER } from './unstamped-chat-message';
 
 /** The agent and chat a queued message came from. */
 export interface QueueSender {
@@ -21,10 +22,16 @@ export interface QueueSender {
   chatId: string;
   /** That chat's title. Absent when it could not be read: the row says "can't open". */
   chatTitle?: string;
+  /**
+   * The sender's one-line summary (`chat_send`'s `summary`), shown before the
+   * words. Only for a row that carries one message, so it never stands in for
+   * someone else's words.
+   */
+  summary?: string;
 }
 
 /** The name an unknown sender is shown under. */
-export const UNKNOWN_SENDER = 'Another chat';
+export const UNKNOWN_SENDER = UNKNOWN_CHAT_SENDER;
 
 /**
  * The sender of a queued message from another chat, or `null` when it cannot
@@ -41,6 +48,7 @@ export function queueSenderOf(fromChats: QueuedMessage['fromChats']): QueueSende
     chatId,
     ...(agentId ? { agentId } : {}),
     ...(chatTitle ? { chatTitle } : {}),
+    ...(fromChats?.length === 1 && first.summary ? { summary: first.summary } : {}),
   };
 }
 

@@ -1512,6 +1512,20 @@ export const UpdateQueuedMessageResponseSchema = z
 
 export type UpdateQueuedMessageResponse = z.infer<typeof UpdateQueuedMessageResponseSchema>;
 
+/** The successful result of sending a queued chat message now. */
+export const SteerQueuedChatMessageResponseSchema = z
+  .discriminatedUnion('outcome', [
+    z.object({ outcome: z.literal('steered') }),
+    z.object({
+      outcome: z.literal('moved-to-front'),
+      reason: z.enum(['no-running-turn', 'steer-not-allowed', 'steer-did-not-land']),
+    }),
+  ])
+  .openapi('SteerQueuedChatMessageResponse');
+
+/** See {@link SteerQueuedChatMessageResponseSchema}. */
+export type SteerQueuedChatMessageResponse = z.infer<typeof SteerQueuedChatMessageResponseSchema>;
+
 /**
  * Longest deny reason accepted. Generous enough for a couple of sentences of
  * context and short enough that a paste accident cannot flood the agent's

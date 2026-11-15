@@ -1,0 +1,39 @@
+/**
+ * Another chat's words with no sender on record (DOR-3060).
+ *
+ * The server stamps a received chat message with its sender by looking up the
+ * fence's nonce. When that record is gone, the message still carries the
+ * envelope the model read ("This message is from another chat…", then the
+ * fence). A person must never read that envelope, and must never see those
+ * words as their own: the transcript shows them under "Another chat", as the
+ * fence's words in plain text.
+ *
+ * @module features/chat/lib/unstamped-chat-message
+ */
+import { chatMessageFenceNonces, displayTextOf } from '@dorkos/shared/chat-messages';
+import type { ChatMessage } from '@/layers/shared/model';
+
+/** The name another chat's words go under when nobody knows who sent them. */
+export const UNKNOWN_CHAT_SENDER = 'Another chat';
+
+/**
+ * Whether a user message holds another chat's fenced words that carry no
+ * sender stamp.
+ *
+ * @param message - The user message.
+ */
+export function isUnstampedChatMessage(
+  message: Pick<ChatMessage, 'content' | 'chatMessages'>
+): boolean {
+  return !message.chatMessages?.length && chatMessageFenceNonces(message.content).length > 0;
+}
+
+/**
+ * The words of an unstamped chat message, without the envelope, or a plain
+ * placeholder when nothing is left.
+ *
+ * @param content - The user message's raw text.
+ */
+export function unstampedChatWords(content: string): string {
+  return displayTextOf(content) || 'A message from another chat.';
+}
