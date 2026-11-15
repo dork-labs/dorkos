@@ -177,6 +177,29 @@ for (const decision of ['allow', 'deny', 'abort'] as const)
     expect(result.stopReason).toBe(decision === 'abort' ? 'aborted' : 'stop');
     expect(result.approvalDenied).toBe(decision === 'deny' ? true : undefined);
   });
+it('hands the model the reason a host refusal gives', async () => {
+  const fixture = await protocolFixture('openai-completions', { tool: 'guarded' });
+  cleanups.push(fixture.close);
+  const c = setup('openai-completions', fixture.endpoint);
+  const execute = vi.fn(async () => ({ content: [] }));
+  c.registry.register({
+    name: 'guarded',
+    description: 'Guarded tool',
+    schema: { type: 'object' },
+    initialLoad: true,
+    execute,
+  });
+  c.approve = vi.fn(async () => ({
+    decision: 'deny' as const,
+    reason: 'Blocked: git stash is shared by every worktree.',
+  }));
+  const result = await new Doe(c).run('approve');
+  expect(execute).not.toHaveBeenCalled();
+  expect(result.approvalDenied).toBe(true);
+  expect(JSON.stringify(fixture.bodies.at(-1))).toContain(
+    'Blocked: git stash is shared by every worktree.'
+  );
+});
 it('abort cancels a running tool and a waiting credentials callback', async () => {
   const fixture = await protocolFixture('openai-completions', { tool: 'slow' });
   cleanups.push(fixture.close);

@@ -339,6 +339,40 @@ export function describeHookEvent(event: string, matcher?: string): string {
 }
 
 /**
+ * Whether a Claude Code hook matcher covers the `Bash` tool.
+ *
+ * Claude Code's rule: no matcher, an empty one or `*` matches every tool; a
+ * matcher of plain name characters is an exact name list split on `|`;
+ * anything else is a regular expression. The expression is tested unanchored,
+ * the looser of the two readings, and an unreadable one counts as covering
+ * `Bash`: a guard that might apply is run rather than skipped.
+ *
+ * @param matcher - The matcher group's `matcher`, when it has one.
+ * @returns True when a hook under this matcher runs before a shell command.
+ */
+export function hookMatcherCoversBash(matcher: string | undefined): boolean {
+  if (matcher === undefined || matcher === '' || matcher === '*') return true;
+  if (/^[\w|]+$/.test(matcher)) return matcher.split('|').includes('Bash');
+  try {
+    return new RegExp(matcher).test('Bash');
+  } catch {
+    return true;
+  }
+}
+
+/**
+ * Whether a hook is a shell check: a `PreToolUse` hook that runs before the
+ * agent's shell command. DorkOS runs these itself on runtimes with no hooks of
+ * their own (DOR-4379); other hooks run only where the runtime reads them.
+ *
+ * @param hook - The hook's event and matcher.
+ * @returns True for a shell check.
+ */
+export function isShellCheckHook(hook: { event: string; matcher?: string }): boolean {
+  return hook.event === 'PreToolUse' && hookMatcherCoversBash(hook.matcher);
+}
+
+/**
  * A shell hook a package registers with the harness.
  *
  * Mirrors `PreviewHook` in `apps/server/src/services/marketplace/types.ts`.

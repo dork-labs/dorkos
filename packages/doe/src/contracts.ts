@@ -141,12 +141,18 @@ export interface ToolRegistry {
   search(query: string, limit?: number): readonly ToolDescriptor[];
   execute(name: string, arguments_: JsonValue, context: ToolContext): Promise<ToolResult>;
 }
+/** A refusal that tells the model why, in the host's words. */
+export interface ApprovalRefusal {
+  decision: 'deny';
+  /** Shown to the model as the reason the call was blocked. */
+  reason: string;
+}
 /** Approval decision is host policy, not a permission mode imposed by Doe. */
 export type ApprovalCallback = (
   tool: ToolDescriptor,
   arguments_: JsonValue,
   context: ToolContext
-) => Promise<'allow' | 'deny'>;
+) => Promise<'allow' | 'deny' | ApprovalRefusal>;
 /** Host retry decisions; implementations must still refuse replay after observable effects. */
 export interface RetryPolicy {
   maxAttempts: number;

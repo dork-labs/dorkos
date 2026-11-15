@@ -57,6 +57,11 @@ export { formatRuntimeIdentity, formatModelLabel } from './lib/runtime-identity'
 export type { RuntimeIdentityText } from './lib/runtime-identity';
 export { settingsForRuntime } from './lib/settings-for-runtime';
 export { listRuntimeTypes } from './lib/list-runtime-types';
+export {
+  PACKAGE_HOOKS_NOT_YET,
+  runtimesMissingPackageHooks,
+  runsNoPackageHooks,
+} from './lib/package-hook-coverage';
 export { DependencyInstallHint } from './ui/DependencyInstallHint';
 export { CommandTransparencyNote } from './ui/CommandTransparencyNote';
 export { RemoteSigninNotice } from './ui/RemoteSigninNotice';

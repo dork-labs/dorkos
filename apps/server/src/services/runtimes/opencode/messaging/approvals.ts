@@ -55,6 +55,7 @@ import { resolveGrantVerdict } from './directory-grants.js';
 import { protectedFileVerdict } from './protected-files.js';
 import { protectedPathRoots } from '../../shared/policy/protected-path-roots.js';
 import type { ProtectedPathRoots } from '../../shared/policy/protected-path-check.js';
+import { checkShellCommand, type ShellCommandVerdict } from '../../shared/policy/package-hooks.js';
 
 /** How a permission request should be resolved under a DorkOS mode. */
 export type ApprovalDecision = 'ask' | 'auto-approve';
@@ -322,6 +323,48 @@ export async function respondPermission(
 }
 
 /**
+ * Run the installed packages' shell guards for one `bash` ask (DOR-4379).
+ *
+ * The command rides the ask's `metadata.command`. One that names none is
+ * refused when a shell check applies (see `checkShellCommand`), and a check
+ * that throws is refused too.
+ *
+ * @param deps - The runtime state, for the live permission mode
+ * @param turn - The turn's routing: session and working directory
+ * @param approval - The mapped `bash` ask
+ */
+async function shellGuardVerdict(
+  deps: ApprovalGateDeps,
+  turn: ApprovalRouting,
+  approval: ApprovalEvent
+): Promise<ShellCommandVerdict> {
+  let command: string | undefined;
+  try {
+    const parsed = (JSON.parse(approval.input) as { command?: unknown }).command;
+    command = typeof parsed === 'string' ? parsed : undefined;
+  } catch {
+    command = undefined;
+  }
+  const permissionMode = deps.registry.get(turn.sessionId)?.permissionMode;
+  try {
+    return await checkShellCommand({
+      runtime: 'opencode',
+      cwd: turn.cwd,
+      command,
+      sessionId: turn.sessionId,
+      ...(permissionMode !== undefined ? { permissionMode } : {}),
+    });
+  } catch (err) {
+    logger.warn('[PackageHooks] OpenCode shell check failed', logError(err));
+    return {
+      allowed: false,
+      packageName: 'DorkOS',
+      reason: "DorkOS could not run this project's safety checks, so this command was blocked.",
+    };
+  }
+}
+
+/**
  * Permission-mode enforcement on the mapped turn stream (NOTES.md §2):
  * auto-approvable requests are answered `once` and SUPPRESSED (the user
  * never sees a card); forwarded requests are tracked with an auto-deny
@@ -402,6 +445,34 @@ export async function* enforceApprovals(
         fileVerdict === 'deny' ? 'reject' : 'once'
       );
       return;
+    }
+    // An installed package's own shell guards answer next, before folder grants
+    // and before the mode's auto-approve, so Full cannot skip them. OpenCode
+    // has no hooks of its own (DOR-4379).
+    if (approval.toolName === 'bash') {
+      const verdict = await shellGuardVerdict(deps, turn, approval);
+      if (!verdict.allowed) {
+        await respondPermission(
+          deps.provider,
+          { ocSessionId: askedIn, cwd },
+          approval.toolCallId,
+          'reject'
+        );
+        // The sidecar's reject carries no message, so the model sees only
+        // OpenCode's own "rejected" text. The person sees the guard's words
+        // here instead.
+        yield {
+          type: 'permission_denied',
+          data: {
+            toolCallId: approval.toolCallId,
+            toolName: approval.toolName,
+            reasonType: 'package_hook',
+            reason: verdict.reason,
+            message: verdict.reason,
+          },
+        };
+        return;
+      }
     }
     const grantVerdict = resolveGrantVerdict(approval, turn.grants ?? []);
     if (grantVerdict !== undefined) {

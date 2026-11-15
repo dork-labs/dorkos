@@ -1,5 +1,10 @@
 import type { AgentRuntime } from '@dorkos/shared/mesh-schemas';
-import { SELECTABLE_RUNTIME_TYPES, getRuntimeDescriptor } from '@/layers/entities/runtime';
+import {
+  PACKAGE_HOOKS_NOT_YET,
+  SELECTABLE_RUNTIME_TYPES,
+  getRuntimeDescriptor,
+  runsNoPackageHooks,
+} from '@/layers/entities/runtime';
 import { cn } from '@/layers/shared/lib';
 
 /** Props for {@link RuntimePicker}. */
@@ -16,41 +21,51 @@ export interface RuntimePickerProps {
  * shared descriptor registry, so it reads identically to every other runtime
  * surface.
  *
+ * A runtime where installed packages' safety checks do not run says so under
+ * the picker when it is chosen (DOR-4379).
+ *
  * @param props - Selected runtime and change handler.
  */
 export function RuntimePicker({ value, onChange }: RuntimePickerProps) {
   return (
-    <div
-      role="radiogroup"
-      aria-label="Runs on"
-      className="flex gap-1.5"
-      data-testid="runtime-picker"
-    >
-      {SELECTABLE_RUNTIME_TYPES.map((type) => {
-        const descriptor = getRuntimeDescriptor(type);
-        const Icon = descriptor.icon;
-        const selected = value === type;
-        return (
-          <button
-            key={type}
-            type="button"
-            role="radio"
-            aria-checked={selected}
-            onClick={() => onChange(type)}
-            className={cn(
-              'flex flex-1 items-center justify-center gap-1.5 rounded-md border px-2 py-1.5 text-xs transition-colors',
-              'focus-visible:ring-ring focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none',
-              selected
-                ? 'border-primary bg-primary/10 font-medium'
-                : 'hover:border-border hover:bg-accent border-transparent'
-            )}
-            data-testid={`runtime-${type}`}
-          >
-            <Icon size={14} />
-            {descriptor.label}
-          </button>
-        );
-      })}
+    <div className="space-y-1.5">
+      <div
+        role="radiogroup"
+        aria-label="Runs on"
+        className="flex gap-1.5"
+        data-testid="runtime-picker"
+      >
+        {SELECTABLE_RUNTIME_TYPES.map((type) => {
+          const descriptor = getRuntimeDescriptor(type);
+          const Icon = descriptor.icon;
+          const selected = value === type;
+          return (
+            <button
+              key={type}
+              type="button"
+              role="radio"
+              aria-checked={selected}
+              onClick={() => onChange(type)}
+              className={cn(
+                'flex flex-1 items-center justify-center gap-1.5 rounded-md border px-2 py-1.5 text-xs transition-colors',
+                'focus-visible:ring-ring focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none',
+                selected
+                  ? 'border-primary bg-primary/10 font-medium'
+                  : 'hover:border-border hover:bg-accent border-transparent'
+              )}
+              data-testid={`runtime-${type}`}
+            >
+              <Icon size={14} />
+              {descriptor.label}
+            </button>
+          );
+        })}
+      </div>
+      {runsNoPackageHooks(value) && (
+        <p className="text-muted-foreground text-xs" data-testid="runtime-package-hooks-note">
+          {PACKAGE_HOOKS_NOT_YET}
+        </p>
+      )}
     </div>
   );
 }
