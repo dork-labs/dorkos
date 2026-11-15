@@ -10,7 +10,7 @@
  */
 import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { project } from '../../engine.js';
 import { readUserSkillNames } from '../../inventory/user-skills.js';
@@ -70,9 +70,11 @@ function repoWithPackage(folder: string, name: string): string {
   return repo;
 }
 
+/** Every link the plan makes for one projection; a target's separator is the platform's. */
 function linksFor(plan: ProjectionPlan, projection: string): string[] {
   return plan.actions
-    .filter((a) => a.kind === 'symlink' && a.target?.endsWith(`/${projection}`))
+    .filter((a) => a.kind === 'symlink' && a.target !== undefined)
+    .filter((a) => basename(a.target!.replaceAll('\\', '/')) === projection)
     .map((a) => a.target as string);
 }
 

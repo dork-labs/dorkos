@@ -6,6 +6,7 @@ covers:
   - "fix(opencode): quote a package's skill folder in the agent's skipped-skills note"
   - 'fix(harness): a package skill never replaces a skill in your home folder either'
   - 'fix(harness): a home-folder skill link of yours stays yours even when its name has __'
+  - 'fix(harness): the home-folder skill check works on Windows and in every agent home'
 ---
 
 ### Fixed

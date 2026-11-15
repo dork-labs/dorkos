@@ -10,23 +10,67 @@
  * @module apply/link-owner
  */
 import { lstatSync, readlinkSync } from 'node:fs';
-import { basename, dirname, relative, resolve, sep } from 'node:path';
+import path, { basename } from 'node:path';
 import { INSTALLED_PROJECTION_MARKER } from '../scan/scanner.js';
+
+/** The path functions this module judges with: the platform's, or a test's `path.win32`. */
+type PathApi = Pick<typeof path, 'resolve' | 'relative' | 'dirname' | 'sep'>;
+
+/**
+ * One spelling of a path, for comparing: resolved, without Windows'
+ * `\\?\` long-path prefix, and lower-cased on Windows, whose paths ignore case.
+ *
+ * @param value - an absolute path.
+ * @param p - the path functions to judge with.
+ */
+function comparable(value: string, p: PathApi): string {
+  const resolved = p.resolve(withoutLongPrefix(value, p));
+  return p.sep === '\\' ? resolved.toLowerCase() : resolved;
+}
+
+/** A Windows path without its `\\?\` long-path prefix, which `readlink` can return. */
+function withoutLongPrefix(value: string, p: PathApi): string {
+  return p.sep === '\\' && value.startsWith('\\\\?\\') ? value.slice(4) : value;
+}
 
 /**
  * Whether `child` is `root` or sits inside it, judged one path segment at a
- * time.
+ * time, the same way on every platform (the #3761 `harness-windows` leg).
  *
  * `startsWith` alone answers `true` for `<dorkHome>/plugins-of-someone-else`
  * against `<dorkHome>/plugins`, which is a neighbouring directory DorkOS has no
  * claim over whatever it is called.
  *
- * @param child - the resolved candidate path.
- * @param root - the resolved containing directory.
+ * @param child - the candidate path.
+ * @param root - the containing directory.
+ * @param p - the path functions to judge with; the platform's by default.
  * @returns `true` when `child` is inside `root`, or is `root` itself.
  */
-export function isInside(child: string, root: string): boolean {
-  return child === root || child.startsWith(root + sep);
+export function isInside(child: string, root: string, p: PathApi = path): boolean {
+  const c = comparable(child, p);
+  const r = comparable(root, p);
+  return c === r || c.startsWith(r.endsWith(p.sep) ? r : r + p.sep);
+}
+
+/**
+ * The first folder under `root` that `target` sits in, or `undefined` when it
+ * is not inside `root` or names no folder.
+ *
+ * @param target - where a link's text points, absolute.
+ * @param root - the owning root.
+ * @param p - the path functions to judge with; the platform's by default.
+ */
+export function ownerFolderUnder(
+  target: string,
+  root: string,
+  p: PathApi = path
+): string | undefined {
+  if (!isInside(target, root, p)) return undefined;
+  // `relative` ignores case on Windows and keeps the target's own spelling.
+  const [first] = p
+    .relative(p.resolve(withoutLongPrefix(root, p)), p.resolve(withoutLongPrefix(target, p)))
+    .split(p.sep);
+  return first === undefined || first === '' || first === '..' ? undefined : first;
 }
 
 /**
@@ -58,8 +102,5 @@ export function linkOwnerUnder(abs: string, root: string): string | undefined {
   } catch {
     return undefined;
   }
-  const resolved = resolve(dirname(abs), text);
-  if (!isInside(resolved, root)) return undefined;
-  const [first] = relative(root, resolved).split(sep);
-  return first === undefined || first === '' || first === '..' ? undefined : first;
+  return ownerFolderUnder(path.resolve(path.dirname(abs), text), root);
 }

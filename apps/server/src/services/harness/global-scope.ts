@@ -286,9 +286,11 @@ export function projectUserSkills(
   // eslint-disable-next-line no-restricted-syntax -- shared with the CLI, which never loads env.ts; DORKOS_BOUNDARY is read the same way resolveGlobalScopeInputs' CLI callers pass it
   env: NodeJS.ProcessEnv = process.env
 ): UserSkillFolders {
-  const dirs = boundaryWasConfigured(env, boundaryConfigFromDisk(dorkHome))
-    ? []
-    : byNameUserSkillDirs();
+  // `configuredBoundaryRoot` rather than `boundaryWasConfigured`: the same two
+  // places, read the same way, from this module, so a projection never hangs
+  // on a second module's answer to an optional read.
+  const confined = configuredBoundaryRoot(env, boundaryConfigFromDisk(dorkHome)) !== '';
+  const dirs = confined ? [] : byNameUserSkillDirs();
   return { dirs, dorkHome };
 }
 
