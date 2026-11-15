@@ -96,6 +96,7 @@ export const HERMETIC_SUITES = [
   '__tests__/space-runtime-packages.test.ts',
   '__tests__/turbo-affected-base-pinned.test.ts',
   '__tests__/unit-shard-workdivision.test.ts',
+  '__tests__/verify-proof.test.ts',
   '__tests__/vitest-flake-reporter.test.ts',
   '__tests__/worktree-janitor-volumes.test.ts',
   'q3-contention/__tests__/canary.test.ts',
