@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { nextDueHistory } from '../due-history.js';
+import { isLateMove, nextDueHistory } from '../due-history.js';
 
 const FIRST = '2026-11-13T10:00:00.000Z';
 const SECOND = '2026-11-13T12:00:00.000Z';
@@ -33,10 +33,40 @@ describe('nextDueHistory', () => {
     expect(nextDueHistory(DATED, FIRST, Date.parse(FIRST) + 1)).toEqual(DATED);
   });
 
-  it('leaves both history dates in place when the due date is cleared', () => {
+  it('lets go of the score date when the date is cleared before it is due', () => {
     expect(nextDueHistory(DATED, null, Date.parse(FIRST) - 1)).toEqual({
       ...DATED,
       dueAt: null,
+      scoreDueAt: null,
+      moveCount: 1,
+    });
+  });
+
+  it('keeps the missed score date when the date is cleared after it is due', () => {
+    expect(nextDueHistory(DATED, null, Date.parse(FIRST) + 1)).toEqual({
+      ...DATED,
+      dueAt: null,
+      moveCount: 1,
+    });
+  });
+
+  it('keeps a late move late when the date then moves again before the new date', () => {
+    const THIRD = '2026-11-14T12:00:00.000Z';
+    const late = nextDueHistory(DATED, SECOND, Date.parse(FIRST) + 1);
+    expect(nextDueHistory(late, THIRD, Date.parse(SECOND) - 1)).toEqual({
+      dueAt: THIRD,
+      originalDueAt: FIRST,
+      scoreDueAt: FIRST,
+      moveCount: 2,
+    });
+  });
+
+  it('keeps the first date on a legacy row with no history', () => {
+    const legacy = { dueAt: FIRST, originalDueAt: null, scoreDueAt: null, moveCount: 0 };
+    expect(nextDueHistory(legacy, SECOND, Date.parse(FIRST) + 1)).toEqual({
+      dueAt: SECOND,
+      originalDueAt: FIRST,
+      scoreDueAt: FIRST,
       moveCount: 1,
     });
   });
@@ -60,5 +90,14 @@ describe('nextDueHistory', () => {
 
   it('does not count the first date assigned to an undated to-do as a move', () => {
     expect(nextDueHistory(UNDATED, SECOND, Date.parse(FIRST))).toMatchObject({ moveCount: 0 });
+  });
+});
+
+describe('isLateMove', () => {
+  it('judges a move against the date being scored, not the current one', () => {
+    const late = nextDueHistory(DATED, SECOND, Date.parse(FIRST) + 1);
+    expect(isLateMove(late, Date.parse(SECOND) - 1)).toBe(true);
+    expect(isLateMove(DATED, Date.parse(FIRST) - 1)).toBe(false);
+    expect(isLateMove(UNDATED, Date.parse(FIRST))).toBe(false);
   });
 });

@@ -60,7 +60,7 @@ import type {
   TurnPermissionLevel,
 } from '@dorkos/shared/agent-runtime';
 import { todoTurnPower } from './todo-turn-power.js';
-import { nextDueHistory } from './due-history.js';
+import { isLateMove, nextDueHistory } from './due-history.js';
 import { readingOrder, toTodoPromise } from './todo-promise-view.js';
 import {
   hasMarks,
@@ -535,7 +535,7 @@ export class TodoPromiseService {
     }
     const now = this.now().getTime();
     const dueHistory = nextDueHistory(row, nextDue, now);
-    const lateMove = row.dueAt !== null && now >= Date.parse(row.dueAt);
+    const lateMove = isLateMove(row, now);
     const updated = this.store.update(row.id, {
       ...dueHistory,
       dueNotifiedAt: null,
@@ -594,7 +594,12 @@ export class TodoPromiseService {
       'modify',
       [
         { field: 'state', before: row.state, after: 'open' },
-        ...(dateMoves ? [{ field: 'dueAt', before: row.dueAt, after: nextDue }] : []),
+        ...(dateMoves
+          ? [
+              { field: 'dueAt', before: row.dueAt, after: nextDue },
+              { field: 'lateMove', before: null, after: isLateMove(row, now.getTime()) },
+            ]
+          : []),
       ],
       change.note
     );

@@ -57,7 +57,7 @@ export const todos = sqliteTable(
     dueAt: text('due_at'),
     /** The first due date it ever had (ISO 8601), or NULL before one is first set. */
     originalDueAt: text('original_due_at'),
-    /** The due date used to score whether it was kept on time (ISO 8601), or NULL if never dated. */
+    /** The due date on-time is judged against (ISO 8601); NULL if undated or cleared before due. */
     scoreDueAt: text('score_due_at'),
     /** How many times an existing due date changed, including being cleared. */
     moveCount: integer('move_count').notNull().default(0),

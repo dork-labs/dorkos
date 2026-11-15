@@ -50,7 +50,7 @@ import { isOverdue } from './todo-promise-view.js';
 import { listTodoRows } from './todo-list.js';
 import { mayChangeState, mayEdit, mayRank, mayReassign } from './todo-policy.js';
 import type { TodoPatch, TodoStore } from './todo-store.js';
-import { nextDueHistory } from './due-history.js';
+import { isLateMove, nextDueHistory } from './due-history.js';
 
 /** Who a to-do is assigned to. */
 export type TodoAssignee =
@@ -470,7 +470,7 @@ export class TodoService {
         audit.push({
           field: 'lateMove',
           before: null,
-          after: row.dueAt !== null && now >= Date.parse(row.dueAt),
+          after: isLateMove(row, now),
         });
       }
     }

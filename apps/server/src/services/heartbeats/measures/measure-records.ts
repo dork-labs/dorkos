@@ -102,10 +102,13 @@ export function isRealAction(action: string, summary: string): boolean {
 export interface MeasureTodo {
   /** Where it stands. */
   state: 'open' | 'kept' | 'missed' | 'dropped';
-  /** When it was due (ISO 8601). */
-  dueAt: string;
-  /** The date on-time completion is scored against, or null on a legacy row. */
-  scoreDueAt: string | null;
+  /** When it is due now (ISO 8601), or null when the date was cleared after it was missed. */
+  dueAt: string | null;
+  /**
+   * The date on-time completion is judged against (ISO 8601): the score date, or the due date on a
+   * legacy row. A late move or clear leaves it on the date missed (DOR-3034).
+   */
+  scoreDueAt: string;
   /** When it closed (ISO 8601), or null while open. */
   closedAt: string | null;
 }
@@ -382,13 +385,12 @@ export function readMeasureRecords(
     .select({
       state: todos.state,
       dueAt: todos.dueAt,
-      scoreDueAt: todos.scoreDueAt,
+      scoreDueAt: scoredDueAt,
       closedAt: todos.closedAt,
     })
     .from(todos)
     .where(and(eq(todos.agentId, agentId), gte(scoredDueAt, since), lte(scoredDueAt, now)))
-    .all()
-    .filter((row): row is MeasureTodo => row.dueAt !== null);
+    .all();
   return {
     beats,
     deliveries: [...delivered, ...held],

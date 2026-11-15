@@ -293,13 +293,12 @@ export function computeMeasures(
   }
   // Score against the last date renegotiated before it was due. A late move keeps the missed
   // score date, so moving a promise after its deadline cannot turn it into an on-time one (DOR-3034).
-  const onTime = records.todoPromises.filter((c) => {
-    const scoreDueAt = c.scoreDueAt ?? c.dueAt;
-    return c.state === 'kept' && c.closedAt !== null && ms(c.closedAt) <= ms(scoreDueAt);
-  }).length;
+  const onTime = records.todoPromises.filter(
+    (c) => c.state === 'kept' && c.closedAt !== null && ms(c.closedAt) <= ms(c.scoreDueAt)
+  ).length;
   // A dropped promise counts too, as one not kept on time: dropping is no longer a free exit from
   // the score (DOR-3034). A missed one reopened and then kept closes after its date, so it stays late.
-  const counted = records.todoPromises.filter((c) => ms(c.scoreDueAt ?? c.dueAt) <= ctx.now).length;
+  const counted = records.todoPromises.filter((c) => ms(c.scoreDueAt) <= ctx.now).length;
   return {
     windowDays: ctx.windowDays,
     since: ctx.since,
