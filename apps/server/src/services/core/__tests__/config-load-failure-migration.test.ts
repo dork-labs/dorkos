@@ -30,10 +30,8 @@ import { describe, it, expect, afterEach, vi } from 'vitest';
 
 // Hoisted above the imports below: `SERVER_VERSION` is a module-level const,
 // so the override has to be in the environment before `lib/version.ts` loads.
-// 0.115.0 is the upgrade floor itself, so the floor check stands aside and the
-// read counts below are conf's own, and its `0.115.0` body still reads the store.
 vi.hoisted(() => {
-  process.env.DORKOS_VERSION_OVERRIDE = '0.115.0';
+  process.env.DORKOS_VERSION_OVERRIDE = '0.57.0';
 });
 
 import fs from 'fs';
@@ -50,8 +48,8 @@ import { SERVER_VERSION } from '../../../lib/version.js';
 /** Reads that happen before `_migrate` enters its per-migration `try`. */
 const READS_BEFORE_THE_TRY = 3;
 
-/** A config one release behind, so an upgrade boot has work to do. */
-const STORED_VERSION = '0.114.0';
+/** A config from before the migration chain, so an upgrade boot has work to do. */
+const STORED_VERSION = '0.43.0';
 
 /**
  * The retry staircase, with the waiting taken out.
@@ -149,7 +147,7 @@ describe('an upgrade boot on a machine that is struggling', () => {
   it('really is running migrations, or none of the rest of this file means anything', () => {
     // The whole file is vacuous without the override, and a vacuous suite is
     // how the defect below survived its first review.
-    expect(SERVER_VERSION).toBe('0.115.0');
+    expect(SERVER_VERSION).toBe('0.57.0');
   });
 
   it('preserves the file when a storm hits the reads inside a migration body', () => {
