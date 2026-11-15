@@ -355,8 +355,12 @@ export function notificationLink(notification: NotificationDTO): NotificationLin
     kind === 'spending.limit-reached' ||
     kind === 'spending.meter-reset'
   ) {
-    // Connections, where the Spending block sets the monthly limit (DOR-4204 PR 2).
-    return { ...appRoutes.connections(), search: {} };
+    // Connections at Spending, where the monthly limit is set (DOR-4204 PR 2).
+    // At the limit, the cursor waits in the field: raising it is the way on.
+    return {
+      ...appRoutes.connections(),
+      search: { section: kind === 'spending.limit-reached' ? 'spending-limit' : 'spending' },
+    };
   }
   if (kind === 'heartbeat.credits-offer') {
     // The offer's card is on every agent's Heartbeat page; the team is where

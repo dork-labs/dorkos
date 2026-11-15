@@ -5,29 +5,21 @@
  *
  * @module services/connectors/spending/spend-copy
  */
-import { formatMoneyRate } from '@dork-labs/cloud-api/display';
+import { SPEND_CURRENCY, spendLimitMoney, spendMoney } from '@dorkos/shared/connector-spending';
 
-/** The only currency in 1.0; the formatter, not the copy, changes for another. */
-export const SPEND_CURRENCY = 'USD';
+export { SPEND_CURRENCY };
 
 /**
  * An amount in micro-units as money text, like `$0.30` or `$40.00` (spec §8):
  * rounded to the cent, both decimals always shown, and `<$0.01` under a cent.
  */
-export function money(micro: number): string {
-  const whole = Math.max(0, Math.round(micro));
-  if (whole > 0 && whole < 5_000) return '<$0.01';
-  const cents = Math.round(whole / 10_000) * 10_000;
-  return formatMoneyRate(String(cents), { currency: SPEND_CURRENCY }) ?? '$0.00';
-}
+export const money: (micro: number) => string = spendMoney;
 
 /**
  * A limit in micro-units as money text, like `$40.00`: rounded down to the cent
  * so it never reads higher than the limit enforced, with both decimals shown.
  */
-export function limitMoney(micro: number): string {
-  return money(Math.floor(Math.max(0, micro) / 10_000) * 10_000);
-}
+export const limitMoney: (micro: number) => string = spendLimitMoney;
 
 /** The day the month resets, like `Dec 1`, in UTC as the meter counts it. */
 export function resetDay(at: Date): string {

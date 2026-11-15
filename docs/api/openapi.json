@@ -23163,12 +23163,13 @@
                       "string",
                       "null"
                     ],
-                    "pattern": "^\\d+$"
+                    "pattern": "^\\d{1,16}$"
                   }
                 },
                 "required": [
                   "limit"
-                ]
+                ],
+                "additionalProperties": false
               }
             }
           }
@@ -23316,12 +23317,13 @@
                       "string",
                       "null"
                     ],
-                    "pattern": "^\\d+$"
+                    "pattern": "^\\d{1,16}$"
                   }
                 },
                 "required": [
                   "price"
-                ]
+                ],
+                "additionalProperties": false
               }
             }
           }

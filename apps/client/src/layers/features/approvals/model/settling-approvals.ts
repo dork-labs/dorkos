@@ -91,7 +91,13 @@ export const APPROVAL_RECEIPT_SETTLE_MS = (EXIT.delay + EXIT.duration) * 1000;
  * What a person answered, once they have: allowed once, allowed always (for
  * this agent and this action, spec `agent-permissions` D7), or denied.
  */
-export type ApprovalDecision = 'granted' | 'granted-always' | 'denied';
+export type ApprovalDecision =
+  | 'granted'
+  | 'granted-always'
+  | 'denied'
+  // A paid run's Allow once that the monthly limit stopped at the tap (DOR-4204):
+  // the server denied the card, and nothing was spent.
+  | 'spend-refused';
 
 /**
  * How many answers are remembered at once.

@@ -10,7 +10,11 @@
  * @module routes/connector-spending
  */
 import { Hono, type Context } from 'hono';
-import { z } from 'zod';
+import {
+  SetSpendingLimitBodySchema,
+  SetSpendingPriceBodySchema,
+  type SpendingSummary,
+} from '@dorkos/shared/connector-spending';
 import type { ApiEnv } from '../http/api-chain.js';
 import { readJsonBody } from '../http/request-body.js';
 import { honoRequestFacts } from '../http/request-facts.js';
@@ -42,13 +46,6 @@ const WORDING: AccountOwnerWording = {
   action: 'change spending',
 };
 
-/** A micro-unit amount on the wire, or null to clear it. */
-const AmountSchema = z
-  .string()
-  .regex(/^\d{1,16}$/)
-  .nullable();
-const LimitBodySchema = z.object({ limit: AmountSchema }).strict();
-const PriceBodySchema = z.object({ price: AmountSchema }).strict();
 const TOOLKIT = /^[a-z0-9][a-z0-9_-]{0,63}$/;
 
 /** The copy a refused amount answers with (spec §2.3). */
@@ -71,7 +68,7 @@ function parseAmount(
 }
 
 /** What the Spending block reads (spec §2.1); amounts are micro-unit strings. */
-function summary(spending: SpendingStore, now: Date) {
+function summary(spending: SpendingStore, now: Date): SpendingSummary {
   const limitMicro = spending.limit();
   const base = {
     currency: SPEND_CURRENCY,
@@ -125,7 +122,7 @@ export function createConnectorSpendingRoutes(deps: ConnectorSpendingRouteDeps):
   router.put('/limit', async (c) => {
     const refused = refusal(c);
     if (refused) return c.json(refused, 403);
-    const parsed = LimitBodySchema.safeParse(readJsonBody(c, { emptyAs: {} }));
+    const parsed = SetSpendingLimitBodySchema.safeParse(readJsonBody(c, { emptyAs: {} }));
     if (!parsed.success)
       return c.json({ error: 'Enter an amount, like 40.', code: 'INVALID_AMOUNT' }, 400);
     const next = parseAmount(c, parsed.data.limit, SPENDING_LIMIT_MAX_MICRO);
@@ -167,7 +164,7 @@ export function createConnectorSpendingRoutes(deps: ConnectorSpendingRouteDeps):
     const toolkit = c.req.param('toolkit').toLowerCase();
     if (!TOOLKIT.test(toolkit))
       return c.json({ error: 'No such app.', code: 'INVALID_TOOLKIT' }, 400);
-    const parsed = PriceBodySchema.safeParse(readJsonBody(c, { emptyAs: {} }));
+    const parsed = SetSpendingPriceBodySchema.safeParse(readJsonBody(c, { emptyAs: {} }));
     if (!parsed.success)
       return c.json({ error: 'Enter an amount, like 0.30.', code: 'INVALID_AMOUNT' }, 400);
     const next = parseAmount(c, parsed.data.price, SPENDING_LIMIT_MAX_MICRO);

@@ -6,34 +6,11 @@
  */
 import type { OpenAPIRegistry } from '@asteasolutions/zod-to-openapi';
 import { z } from 'zod';
-
-const Micro = z.string().regex(/^\d+$/);
-
-/** What the Spending block reads. */
-export const SpendingSummarySchema = z.object({
-  currency: z.string(),
-  limitMicro: Micro.nullable(),
-  maxMicro: Micro,
-  resetsAt: z.string(),
-  prices: z.record(z.string(), Micro),
-  meterReadable: z.boolean(),
-  month: z.string().optional(),
-  usedMicro: Micro.optional(),
-  leftMicro: Micro.nullable().optional(),
-  overMicro: Micro.nullable().optional(),
-  approximate: z.boolean().optional(),
-  byApp: z
-    .array(
-      z.object({
-        toolkit: z.string(),
-        runs: z.number().int(),
-        amountMicro: Micro,
-        estimated: z.boolean(),
-        unknownRuns: z.number().int(),
-      })
-    )
-    .optional(),
-});
+import {
+  SetSpendingLimitBodySchema,
+  SetSpendingPriceBodySchema,
+  SpendingSummarySchema,
+} from '@dorkos/shared/connector-spending';
 
 const held = { description: 'Confirm it’s you first: more money could leave without a card.' };
 const refused = { description: 'Only the person who owns this DorkOS can change spending.' };
@@ -64,7 +41,7 @@ export function registerConnectorSpendingOpenApi(registry: OpenAPIRegistry): voi
     description: 'A first limit or a higher one waits for Confirm it’s you; lowering never does.',
     request: {
       body: {
-        content: { 'application/json': { schema: z.object({ limit: Micro.nullable() }) } },
+        content: { 'application/json': { schema: SetSpendingLimitBodySchema } },
       },
     },
     responses: { 200: ok, 400: invalid, 403: refused, 428: held },
@@ -78,7 +55,7 @@ export function registerConnectorSpendingOpenApi(registry: OpenAPIRegistry): voi
     request: {
       params: z.object({ toolkit: z.string() }),
       body: {
-        content: { 'application/json': { schema: z.object({ price: Micro.nullable() }) } },
+        content: { 'application/json': { schema: SetSpendingPriceBodySchema } },
       },
     },
     responses: { 200: ok, 400: invalid, 403: refused, 428: held },
