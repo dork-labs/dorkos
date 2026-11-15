@@ -32,6 +32,10 @@
  *
  * @module services/session/chat-messages/chat-message-service
  */
+import { CHAT_STOP_REASON_MAX } from './sending/chat-message-limits.js';
+export { CHAT_SUMMARY_MAX, CHAT_STOP_REASON_MAX } from './sending/chat-message-limits.js';
+import { sendChatMessage } from './sending/chat-send-message.js';
+import type { RoomSeatMessagesPort } from '../../rooms/handoff/seat-message-types.js';
 import {
   CHAT_MESSAGE_ORIGIN,
   mayChatSteer,
@@ -76,23 +80,11 @@ import type { ChatMessageStore } from './chat-message-store.js';
 import { ChatCapHold } from './chat-cap-hold.js';
 import { ChatMessageError } from './chat-message-error.js';
 import * as standing from './chat-queue-standing.js';
-import {
-  assertChatSendable,
-  replyTargetOf,
-  resolveChatTarget,
-  sameChat,
-  type ChatTarget,
-} from './chat-target.js';
+import { assertChatSendable, sameChat, type ChatTarget } from './chat-target.js';
 
 export { ChatMessageError } from './chat-message-error.js';
 export { CHAT_SENDABLE_ORIGINS, CHAT_UNATTENDED_ORIGINS } from './chat-target.js';
 export { CHAT_MESSAGE_MAX } from './chat-client-id.js';
-
-/** The longest Sent-card summary. */
-export const CHAT_SUMMARY_MAX = 80;
-
-/** The longest stop reason. */
-export const CHAT_STOP_REASON_MAX = 200;
 
 /** The calling chat, as the verified turn names it. */
 export interface ChatCaller {
@@ -134,6 +126,11 @@ export interface ChatSendReceipt extends Partial<standing.QueueStanding> {
 
 /** What the chat-message service needs. Everything after `meshCore` has a production default in boot. */
 export interface ChatMessageServiceDeps {
+  /** Dedicated private-seat delivery, resolved after rooms boot. */
+  seatMessages?: () => RoomSeatMessagesPort | undefined;
+  /** Dispose this service's composition lifetime without touching a newer inbox. */
+  stopSeatMessages?: () => void;
+
   /** The store. */
   store: ChatMessageStore;
   /** Mesh, when running. */
@@ -185,6 +182,8 @@ export class ChatMessageService {
   private readonly unsubscribe: () => void;
   private readonly capHold: ChatCapHold;
   /** Sends opening an agent's DM chat, chained per (sender, agent), so two firsts open one chat. */
+  private stopped = false;
+  private seatInbox: RoomSeatMessagesPort | undefined;
   private readonly dmLocks = new Map<string, Promise<unknown>>();
 
   /**
@@ -193,6 +192,10 @@ export class ChatMessageService {
    * @param deps - What it needs.
    */
   constructor(private readonly deps: ChatMessageServiceDeps) {
+    const resolveSeat = deps.seatMessages;
+    if (resolveSeat)
+      this.deps = { ...deps, seatMessages: () => (this.seatInbox ??= resolveSeat()) };
+
     this.dispatch = deps.dispatch ?? dispatchSessionMessage;
     this.now = deps.now ?? Date.now;
     this.capHold = new ChatCapHold({
@@ -205,8 +208,12 @@ export class ChatMessageService {
 
   /** Stop listening, for a server shutting down. */
   stop(): void {
+    if (this.stopped) return;
+    this.stopped = true;
     this.unsubscribe();
     this.capHold.stop();
+    this.seatInbox?.stop();
+    this.deps.stopSeatMessages?.();
   }
 
   /** Start offering held messages again on a clock (boot; tests call {@link retryHeld}). */
@@ -242,6 +249,8 @@ export class ChatMessageService {
     input: ChatSendInput,
     kind: Extract<ChatMessageKind, 'message' | 'report'> = 'message'
   ): Promise<ChatSendReceipt> {
+    if (this.stopped)
+      throw new ChatMessageError('UNAVAILABLE', 'Messaging stopped. Try again after restart.');
     if (input.message.trim() === '')
       throw new ChatMessageError('INVALID_INPUT', 'Say what the message is.');
     if (input.message.length > CHAT_MESSAGE_MAX) {
@@ -261,78 +270,16 @@ export class ChatMessageService {
     delivery: ChatDelivery,
     kind: Extract<ChatMessageKind, 'message' | 'report'>
   ): Promise<ChatSendReceipt> {
-    const target = await resolveChatTarget(this.deps, caller, input.to, input.replyTo);
-    const sender = this.agentFacts(caller.agentPath);
-    const fromChatTitle = await this.deps.chatTitle(caller.sessionId).catch(() => null);
-    const replyToId =
-      target.redirectedReplyTo ??
-      replyTargetOf(this.deps.store, caller, target.sessionId, input.replyTo);
-    const messageId = crypto.randomUUID();
-    const words = input.message.trim();
-    const rendered = renderChatMessage(
-      {
-        messageId,
-        agentName: sender.agentName,
-        agentId: sender.agentId,
-        chatId: caller.sessionId,
-        chatTitle: fromChatTitle,
-      },
-      kind,
-      words,
-      this.deps.nonce?.()
-    );
-    const ceilingJson = senderCeilingJson(this.deps, caller);
-    // A new DM chat's id is minted here, before the row, so a window already
-    // watching it can match the message to its sender from the first event.
-    if (target.sessionId === null) target.newSessionId = crypto.randomUUID();
-    const row = this.deps.store.insert({
-      id: messageId,
-      toSessionId: target.sessionId ?? target.newSessionId ?? '',
-      fromSessionId: caller.sessionId,
-      fromAgentPath: caller.agentPath,
-      fromAgentId: sender.agentId,
-      fromAgentName: sender.agentName,
-      fromChatTitle,
-      kind,
-      text: words,
-      summary: input.summary?.trim() ? input.summary.trim().slice(0, CHAT_SUMMARY_MAX) : null,
-      nonce: rendered.nonce,
+    return sendChatMessage({
+      deps: this.deps,
+      caller,
+      input,
       delivery,
-      status: 'queued',
-      queueMessageId: crypto.randomUUID(),
-      ceilingJson,
-      replyToId,
+      kind,
+      sender: this.agentFacts(caller.agentPath),
+      deliver: (...args) => this.deliver(...args),
+      markReplied: (id) => this.markReplied(id),
     });
-
-    let receipt: ChatSendReceipt;
-    try {
-      receipt = await this.deliver(caller, row, target, rendered.text, delivery);
-    } catch (err) {
-      this.deps.store.delete(row.id);
-      if (err instanceof ChatMessageError) throw err;
-      logger.warn('[chat_send] could not send a chat message', {
-        from: caller.sessionId,
-        to: input.to,
-        ...logError(err),
-      });
-      throw new ChatMessageError(
-        'UNAVAILABLE',
-        'DorkOS could not send the message just now. Try again.'
-      );
-    }
-    if (replyToId) this.markReplied(replyToId);
-    this.deps.emitActivity(caller.sessionId);
-    this.deps.emitActivity(receipt.chatId);
-    if (target.redirectedReplyTo) {
-      const asker = this.deps.store.get(target.redirectedReplyTo)?.fromAgentName ?? 'that agent';
-      return {
-        ...receipt,
-        note:
-          `That chat was a scheduled run, so your answer went to ${asker}'s direct chat ` +
-          'with you, where it will see it.',
-      };
-    }
-    return receipt;
   }
 
   /** Hand one message to the dispatcher, by the delivery asked for. */
@@ -452,9 +399,9 @@ export class ChatMessageService {
   }
 
   /**
-   * Whether a chat can be sent chat messages at all: one bound here that is
-   * not a room's, a bridged chat, or a scheduled run. A spin-off of a chat
-   * that cannot is never promised reports it could not deliver.
+   * Whether a chat takes ordinary dispatcher messages. Private seat asides
+   * are a separate route and do not make this predicate true. A spin-off is
+   * never promised ordinary reports into a chat that cannot take them.
    *
    * @param sessionId - The chat.
    */

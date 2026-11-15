@@ -31,7 +31,12 @@ import type {
 } from '@dorkos/shared/chat-messages';
 
 /** A chat message as the store writes it. */
-export interface NewChatMessage {
+export interface NewChatMessage extends Partial<
+  Pick<
+    ChatMessageRow,
+    'deliveryRoute' | 'seatRoomId' | 'seatAuthorId' | 'seatJoinedAt' | 'seatSessionId'
+  >
+> {
   /** The receipt id. */
   id: string;
   /** The receiving chat. */
@@ -96,12 +101,55 @@ export class ChatMessageStore {
     const at = this.now().toISOString();
     const row: ChatMessageRow = {
       ...input,
+      deliveryRoute: input.deliveryRoute ?? 'chat',
+      seatRoomId: input.seatRoomId ?? null,
+      seatAuthorId: input.seatAuthorId ?? null,
+      seatJoinedAt: input.seatJoinedAt ?? null,
+      seatSessionId: input.seatSessionId ?? null,
       failureReason: null,
       createdAt: at,
       updatedAt: at,
     };
     this.db.insert(chatMessages).values(row).run();
     return row;
+  }
+
+  /** Commit a receipt and its trusted local trace in the same consolidated database transaction. */
+  insertWithTrace<T>(input: NewChatMessage, trace: () => T): { row: ChatMessageRow; trace: T } {
+    return this.db.transaction(() => ({ row: this.insert(input), trace: trace() }));
+  }
+
+  /** Compare-and-set only live seat receipts; a late completion cannot revive an interrupted row. */
+  updatePendingSeatMessage(id: string, patch: ChatMessagePatch): boolean {
+    const result = this.db
+      .update(chatMessages)
+      .set({ ...patch, updatedAt: this.now().toISOString() })
+      .where(
+        and(
+          eq(chatMessages.id, id),
+          eq(chatMessages.deliveryRoute, 'seat'),
+          inArray(
+            chatMessages.status,
+            patch.status === 'working' ? ['queued'] : ['queued', 'working']
+          )
+        )
+      )
+      .run();
+    return result.changes > 0;
+  }
+
+  /** Pending private-seat rows from an earlier process, never ordinary-dispatch candidates. */
+  pendingSeatMessages(): ChatMessageRow[] {
+    return this.db
+      .select()
+      .from(chatMessages)
+      .where(
+        and(
+          eq(chatMessages.deliveryRoute, 'seat'),
+          inArray(chatMessages.status, ['queued', 'working'])
+        )
+      )
+      .all();
   }
 
   /**
@@ -177,7 +225,9 @@ export class ChatMessageStore {
     return this.db
       .select()
       .from(chatMessages)
-      .where(eq(chatMessages.queueMessageId, queueMessageId))
+      .where(
+        and(eq(chatMessages.queueMessageId, queueMessageId), eq(chatMessages.deliveryRoute, 'chat'))
+      )
       .orderBy(asc(chatMessages.createdAt))
       .all();
   }
@@ -187,7 +237,13 @@ export class ChatMessageStore {
     return this.db
       .select()
       .from(chatMessages)
-      .where(and(eq(chatMessages.status, 'queued'), isNull(chatMessages.queueMessageId)))
+      .where(
+        and(
+          eq(chatMessages.deliveryRoute, 'chat'),
+          eq(chatMessages.status, 'queued'),
+          isNull(chatMessages.queueMessageId)
+        )
+      )
       .orderBy(asc(chatMessages.createdAt))
       .all();
   }
@@ -263,6 +319,27 @@ export class ChatMessageStore {
           inArray(chatMessages.kind, ['message', 'start']),
           // Not `queued`: a message still waiting has not been read, so nothing
           // sent meanwhile can be its answer (DOR-2994).
+          inArray(chatMessages.status, ['working', 'delivered', 'steered'])
+        )
+      )
+      .orderBy(desc(chatMessages.createdAt))
+      .get();
+  }
+
+  /** Latest actually read ask from any server-verified native alias of a seat. */
+  latestUnansweredFromAliases(
+    fromIds: readonly string[],
+    toSessionId: string
+  ): ChatMessageRow | undefined {
+    if (!fromIds.length) return undefined;
+    return this.db
+      .select()
+      .from(chatMessages)
+      .where(
+        and(
+          inArray(chatMessages.fromSessionId, [...fromIds]),
+          eq(chatMessages.toSessionId, toSessionId),
+          inArray(chatMessages.kind, ['message', 'start']),
           inArray(chatMessages.status, ['working', 'delivered', 'steered'])
         )
       )

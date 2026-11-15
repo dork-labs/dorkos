@@ -2,6 +2,15 @@
   "version": 1,
   "specs": [
     {
+      "id": "261115-194346",
+      "slug": "agent-teams-seat-asides",
+      "title": "Private messages into room seats",
+      "created": "2026-11-15",
+      "status": "specified",
+      "project": "P-DOR-119",
+      "linearIssue": "DOR-4472"
+    },
+    {
       "id": "261113-214252",
       "slug": "agent-browser-tab-per-chat",
       "title": "Agent browser: a tab per chat, with shared sign-ins",

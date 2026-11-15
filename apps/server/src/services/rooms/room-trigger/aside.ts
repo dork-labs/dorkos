@@ -22,6 +22,8 @@ import { roomLaunchStepFor } from '../repo/room-launch-step.js';
 import type { TurnPermissionCeiling } from '@dorkos/shared/agent-runtime';
 import { pendingSeatLaunch, settleSeatLaunch } from './reseat.js';
 import type { RoomTriggerDispatcher } from '../room-trigger.js';
+import type { RoomTurnRequest } from '../room-turn-port.js';
+import { refusePausedRoomTurn, pausedRefusalOf } from '../turn-guards/paused-turn.js';
 
 /**
  * What a room hand-off's turn carries from the chat that wrote the draft (DOR-3397): the marks
@@ -58,6 +60,12 @@ export interface AsideInput {
   prompt: string;
   /** Set on a room hand-off: what the drafting chat's turn carried. */
   carried?: AsideCarry;
+  /** Peer message text is untrusted independently of its permission level. */
+  untrustedText?: true;
+  /** Recheck the admitted immutable seat identity before claim and after placement. */
+  validateTarget?: () => boolean;
+  /** Join current room/sender restrictions immediately before the runtime sees this turn. */
+  prepareCarry?: () => AsideCarry;
   /** Told the turn's dispatch id once its claim is held, so its posts can be told apart. */
   onClaimed?: (dispatchId: string) => void;
 }
@@ -82,7 +90,7 @@ export interface AsideResult {
   /** How it ended. */
   outcome: ClaimOutcome | 'busy' | 'refused';
   /** Which bound refused it, on `refused`. */
-  why?: 'gone' | 'budget' | 'session';
+  why?: 'gone' | 'budget' | 'session' | 'paused';
   /** What the turn wrote back to its own session, or `null`. */
   text: string | null;
 }
@@ -103,6 +111,7 @@ export async function askAside(
   input: AsideInput
 ): Promise<AsideResult> {
   const { room, entry, authorId } = input;
+  if (input.validateTarget?.() === false) return refusedAside('gone');
   const record = self.deps.authors.getMany([authorId]).get(authorId);
   // Only an agent takes a turn, and only a live one: a directory that no
   // longer holds this agent has nothing to offer and no session to offer it
@@ -126,27 +135,9 @@ export async function askAside(
     });
     return { outcome: 'busy', text: null };
   }
-  // Charged through the same seam `claimCollected` uses, which is what keeps
-  // an offer from being the one path that spends without counting: with every
-  // cap off the budget allows it and charges nothing, and there is then no
-  // window to re-arm.
-  const afford = self.deps.budget.tryReserve(room.id);
-  if (!afford.allowed) {
-    logger.debug('[rooms] skipped a welcome-back offer: the room is out of automatic turns', {
-      roomId: room.id,
-      authorId,
-    });
-    return refusedAside('budget');
-  }
-  // **The re-arm, exactly as `claimCollected` does it, and it is not optional
-  // here.** Spending again means the hourly window moved, so the next
-  // exhaustion is news rather than a repeat. Without this line an offer
-  // silently consumes the freshly-rolled window and leaves the memory of the
-  // LAST refusal standing — so the next person to be refused is refused with
-  // no notice at all. An invisible refusal of a message somebody addressed is
-  // the shape `.claude/rules/room-conduct.md` forbids, and an offer nobody
-  // asked for must not be the thing that causes it.
-  if (afford.counted) self.notices.budgetRecovered(room.id);
+  // Preflight only: placement or a current-target refusal must not spend a turn.
+  const remaining = self.deps.budget.remaining(room.id);
+  if (remaining.room === 0 || remaining.global === 0) return refusedAside('budget');
 
   let sessionId: string;
   try {
@@ -220,6 +211,24 @@ export async function runAsideInDispatch(
     // An aside turn is a real turn, so it is placed the same way an ordinary
     // one is — see `runOneInDispatch`.
     const place = await self.placeTurn(room.id, input.agentPath, displayName);
+    if (input.validateTarget?.() === false) return refusedAside('gone');
+    // Only an authoritative native retirement may refresh this already-held seat.
+    // A replacement membership or dispatch never inherits the pending request.
+    const binding = self.deps.store.sessionLedger.bindingForSession(input.sessionId);
+    const claim = self.claimed.get(key);
+    if (
+      !binding ||
+      binding.roomId !== room.id ||
+      binding.authorId !== authorId ||
+      binding.sessionId !== self.deps.store.getRoomSession(room.id, authorId) ||
+      claim?.dispatchId !== input.dispatchId
+    )
+      return refusedAside('gone');
+    if (binding.sessionId !== input.sessionId) {
+      input.sessionId = binding.sessionId;
+      self.noteSessionBound(room.id, authorId, binding.sessionId);
+    }
+    const carried = input.prepareCarry?.() ?? input.carried;
     const { cwd } = place;
     const files = place.files ?? undefined;
     const turnContext = buildRoomContext(self.deps, {
@@ -251,7 +260,7 @@ export async function runAsideInDispatch(
       // at a line written about itself (DOR-1263).
       aside: true,
     });
-    const result = await self.deps.runner.run({
+    const request: RoomTurnRequest = {
       room,
       authorId,
       agentPath: input.agentPath,
@@ -265,14 +274,14 @@ export async function runAsideInDispatch(
       entry,
       // Never external for an offer: `entry` here is the greeter's own status post, written
       // by this machine. A hand-off carries the drafting chat's marks instead.
-      externalAuthor: input.carried?.externalAuthor ?? false,
-      ...(input.carried?.permissionCeiling !== undefined
-        ? { permissionCeiling: input.carried.permissionCeiling }
+      externalAuthor: carried?.externalAuthor ?? false,
+      ...(carried?.permissionCeiling !== undefined
+        ? { permissionCeiling: carried.permissionCeiling }
         : {}),
-      ...(input.carried?.teammate ? { teammate: true as const } : {}),
+      ...(carried?.teammate ? { teammate: true as const } : {}),
       // Or a non-owner's post its context showed: a thread opener or the channel glance, when the
       // greeter's post sits in a thread (DOR-4453 F1).
-      ...(input.carried?.outsider
+      ...(carried?.outsider
         ? { carriedOutsider: true as const }
         : strangerMarkForShown(
             env.DORKOS_MARK_STRANGER_TURNS,
@@ -281,7 +290,8 @@ export async function runAsideInDispatch(
             [],
             turnContext.context
           )),
-      ...(input.carried?.outsideWords ? { outsideWords: true as const } : {}),
+      ...(carried?.outsideWords ? { outsideWords: true as const } : {}),
+      ...(input.untrustedText ? { untrustedText: true as const } : {}),
       prompt: input.prompt,
       roomContext: turnContext.context,
       attachmentProjection: turnContext.projection,
@@ -291,7 +301,20 @@ export async function runAsideInDispatch(
       // any other turn.
       onActivity: (activity) => self.noteActivity(key, activity),
       onSessionBound: (id) => self.noteSessionBound(room.id, authorId, id),
-    });
+    };
+    if (input.validateTarget?.() === false) return refusedAside('gone');
+    if (self.wasHalted(input.dispatchId)) {
+      outcome = 'halted';
+      return { outcome, text: null };
+    }
+    // Reuse the runner's authoritative guard and held audit, not a second pause policy.
+    refusePausedRoomTurn(request);
+    // One synchronous reservation per admitted runner attempt. Later runtime/dispatch
+    // refusals retain the existing attempt accounting; there is no refund policy here.
+    const afford = self.deps.budget.tryReserve(room.id);
+    if (!afford.allowed) return refusedAside('budget');
+    if (afford.counted) self.notices.budgetRecovered(room.id);
+    const result = await self.deps.runner.run(request);
     if (result.unanswered !== 'busy') settleSeatLaunch(self, room.id, authorId, input.sessionId);
     if (result.sessionId !== input.sessionId) {
       self.deps.store.rebindRoomSession(room.id, authorId, result.sessionId);
@@ -345,6 +368,7 @@ export async function runAsideInDispatch(
     outcome = spoke || reacted ? 'answered' : 'quiet';
     return { outcome, text };
   } catch (err) {
+    if (pausedRefusalOf(err)) return refusedAside('paused');
     outcome = 'failed';
     logger.warn('[rooms] a welcome-back offer turn failed', {
       roomId: room.id,

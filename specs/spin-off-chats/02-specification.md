@@ -13,7 +13,8 @@ Area `messages` (Messages: "Message other agents, and message you"). `chat_send`
 ### `chat_send({ to, message, summary?, delivery?, replyTo? })`
 
 - `to` is a chat id or an agent id.
-  - A **chat id** posts into that chat. It must be a chat this server has bound, and not a room's conversation, a bridged Telegram/Slack chat or a scheduled run (`CHAT_SENDABLE_ORIGINS`; `null` origins refused, same rule as `ctx.agent.send`). One exception: an answer to a message a scheduled run or a heartbeat beat sent (`CHAT_UNATTENDED_ORIGINS`) goes to the asking agent's DM chat with the one answering, threaded to the question, and the receipt's `note` says so. That DM chat is what `to=<agent id>` reaches anyway, so nothing new becomes reachable.
+  - A **chat id** posts into that chat. It must be a chat this server has bound, and not a bridged Telegram/Slack chat or a scheduled run (`CHAT_SENDABLE_ORIGINS`; `null` origins refused, same rule as `ctx.agent.send`). One exception: an answer to a message a scheduled run or a heartbeat beat sent (`CHAT_UNATTENDED_ORIGINS`) goes to the asking agent's DM chat with the one answering, threaded to the question, and the receipt's `note` says so. That DM chat is what `to=<agent id>` reaches anyway, so nothing new becomes reachable.
+  - A **room-seat chat id** receives a private queued aside, not a public room post (DOR-4472). A valid reply names a message that seat sent the caller; unsolicited writes leave a constant body-free room notice. A moved/replaced seat refuses rather than rerouting. Steer and interrupt downgrade to queue. Room/global automatic-turn budgets and the receiving seat's current restrictions apply; no bridge switch or new scheduled-run write path exists.
   - An **agent id** posts into the sender agent's own DM chat with that agent (`chat_agent_dms`, keyed by sender agent and receiver agent), opening one in the receiver's home on the first message.
   - Sending to your own chat is refused (`SELF`).
 - `message`: markdown, 1 to 20,000 characters.
@@ -64,7 +65,8 @@ Area `messages` (Messages: "Message other agents, and message you"). `chat_send`
 
 ## 4. Who can reach what
 
-- **Send and stop:** any chat in `CHAT_SENDABLE_ORIGINS` (agents are trusted by default, ADR 261006-225605; anyone in a space may message anyone, ADR 261006-235240).
+- **Send and stop:** any ordinary chat in `CHAT_SENDABLE_ORIGINS` (agents are trusted by default, ADR 261006-225605; anyone in a space may message anyone, ADR 261006-235240).
+- **Private seat send only:** a verified current room seat through its bounded aside inbox. This adds no `chat_stop` or `chat_read` authority. Admitted seat scope follows genuine native rekeys, not leave/rejoin or cross-room moves. Pending interrupted messages fail visibly after restart; they never enter ordinary dispatch.
 - **Read:** the chats a person in its role could read is the rule, and until roles exist it is the chats linked to the caller: its own chat, the chat that started it, chats it started (and theirs, down the chain), and chats its agent has exchanged chat messages with, in either direction and from any of the agent's own chats (so a beat or scheduled run can read the chat it asked; widened 2026-10-16 from "chats that messaged this chat"). A stop never counts. Inside that, a person's own chat stays closed under `audit-trail` §3.4.
 
 ## 5. Automatic report-back (PR 2)

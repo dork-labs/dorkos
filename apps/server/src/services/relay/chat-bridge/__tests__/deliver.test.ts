@@ -1,3 +1,5 @@
+import { ChatMessageStore } from '../../../session/chat-messages/chat-message-store.js';
+import { renderSeatMessage, seatCarryOf } from '../../../rooms/handoff/seat-message-prompt.js';
 /**
  * `ChatBridgeDelivery` — the outbound half of the bridge (chats-as-channels spec
  * §6), and the loop-closer: a committed room entry reaches the platform chat.
@@ -27,6 +29,7 @@ import { externalSenderIdentity } from '../../platform-identity.js';
 import {
   agentLookupFor,
   createRoomHarness,
+  outcomeRunner,
   type RoomHarness,
 } from '../../../rooms/__tests__/room-test-harness.js';
 import type { CreateBridgedRoomRequest } from '../../../rooms/room-service.js';
@@ -239,6 +242,109 @@ describe('ChatBridgeDelivery (chats-as-channels §6, §10)', () => {
     binding = makeBinding();
     nextAdapterResult = () => ({ success: true, responseMessageId: 'tg-out-1' });
     operatorDisplayName = () => null;
+  });
+
+  it('M5: a peer-message aside cannot use the inbound reply exemption; the same bridge delivers a real reply', async () => {
+    const posted: import('@dorkos/shared/room-schemas').RoomEntry[] = [];
+    harness = createRoomHarness({
+      agents: agentLookupFor({
+        [AGENT_PATH]: { name: 'ana', displayName: 'Ana', responseMode: 'mention-only' },
+      }),
+      runner: outcomeRunner((request) => {
+        if (request.prompt.includes('PRIVATE_ASIDE_TEST')) {
+          expect(request.sessionId).toBe('m5-seat');
+          posted.push(
+            harness.service.postFromTool(request.room.id, {
+              authorId: request.authorId,
+              callerSessionId: request.sessionId ?? undefined,
+              text: 'Explicit post from the private aside.',
+            })
+          );
+        }
+        return { text: null };
+      }),
+    });
+    const room = harness.service.createBridgedRoom(bridgeRequest('555', true));
+    const author = harness.authors.resolveAgent(AGENT_PATH, 'Ana');
+    harness.store.bindRoomSession(room.id, author.id, 'm5-seat', new Date().toISOString());
+    const external = harness.authors.resolveExternal({
+      platformType: 'telegram',
+      instanceId: ADAPTER,
+      platformUserId: 'outsider',
+      displayName: 'Guest',
+    });
+    const inbound = harness.store.appendEntry({
+      roomId: room.id,
+      id: 'm5-inbound',
+      authorId: external.id,
+      kind: 'post',
+      body: { text: 'An inbound question.' },
+      mentions: [],
+      sessionId: null,
+      cascadeRoot: 'm5-inbound',
+      cascadeDepth: 0,
+      parentEntryId: null,
+      threadRootEntryId: null,
+      createdAt: new Date().toISOString(),
+    });
+    harness.bridges.recordInboundRef({
+      roomId: room.id,
+      entryId: inbound.id,
+      adapterId: ADAPTER,
+      chatId: '555',
+      platformMessageId: 'm5-platform',
+      createdAt: new Date().toISOString(),
+    });
+    binding = makeBinding({ canInitiate: false, canReply: true });
+    // Publication enters the real consent gate; only this post-gate seam reaches the platform.
+    const adapterDelivery = vi.fn(() => ({ success: true, responseMessageId: 'm5-outbound' }));
+    nextAdapterResult = adapterDelivery;
+    const delivery = makeDelivery(bindingRow(room.id, '555'));
+    const receipts = new ChatMessageStore(harness.db);
+    const inbox = harness.service.createSeatMessages(receipts, () => undefined);
+    const row = {
+      id: 'm5-message',
+      toSessionId: 'm5-seat',
+      fromSessionId: 'peer-chat',
+      fromAgentPath: '/agents/peer',
+      fromAgentId: 'peer',
+      fromAgentName: 'Peer',
+      fromChatTitle: null,
+      kind: 'message' as const,
+      text: 'PRIVATE_ASIDE_TEST',
+      summary: null,
+      nonce: '33334444',
+      delivery: 'queue' as const,
+      status: 'queued' as const,
+      queueMessageId: 'm5-queue',
+      ceilingJson: '"none"',
+      replyToId: null,
+    };
+    inbox.admit({
+      target: inbox.resolveSeatTarget('m5-seat')!,
+      row,
+      rendered: renderSeatMessage(row),
+      carried: seatCarryOf(row),
+      unsolicited: false,
+    });
+    await inbox.idle();
+    expect(posted).toHaveLength(1);
+    // Invoke the real bridge before asserting its classification: the no-aside mutant must
+    // actually deliver through the reply exemption, not fail on a decorative root assertion.
+    const privateOutcome = await delivery.deliverEntry(posted[0]!);
+    expect(adapterDelivery).not.toHaveBeenCalled();
+    expect(privateOutcome).toBe('blocked');
+    expect(noticesOf(room.id, 'bridge_blocked')).toHaveLength(1);
+    expect(posted[0]!.cascadeRoot).not.toBe(inbound.id);
+    expect(publish).toHaveBeenCalledTimes(1);
+    expect(publish.mock.calls[0]![2].from).toBe('relay.bridge.initiate.tg-main.555');
+    // Live positive control: identical binding, gate and outbound seam, genuine inbound root.
+    const positive = agentPost(room.id, 'A genuine answer.', inbound.id);
+    expect(await delivery.deliverEntry(positive)).toBe('delivered');
+    expect(publish).toHaveBeenCalledTimes(2);
+    expect(adapterDelivery).toHaveBeenCalledTimes(1);
+    expect(publish.mock.calls[1]![2].from).toBe('relay.bridge.reply.tg-main.555');
+    inbox.stop();
   });
 
   it('A6.1: an inbound message never round-trips back to the platform', async () => {

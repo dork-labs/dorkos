@@ -129,6 +129,8 @@ export const chatDomain: CapabilityDomain = {
         'started if needed). The other side sees it came from you and this chat, never from the ' +
         'person. It waits until that chat’s current turn ends (delivery `queue`, the default); ' +
         '`steer` joins its running turn now, `interrupt` stops its turn and runs this next. ' +
+        'Room-seat chat ids always receive private queued turns, never public posts; unsolicited ' +
+        'messages leave a short room notice. Bridged direct chats and scheduled runs stay closed. ' +
         'Waking an idle chat starts its turn at once. Give a short `summary` (a few words) for ' +
         'the card the person sees. Use `replyTo` with a message id to answer a message another ' +
         'chat sent you. Their reply comes back as a new message in this chat. A queued result ' +
