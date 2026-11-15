@@ -7,7 +7,7 @@
  */
 import { readRefusedToolsColumn } from './run-cap-column.js';
 import { asc, desc, inArray } from 'drizzle-orm';
-import { pulseRuns, type Db } from '@dorkos/db';
+import { pulseRuns, pulseSchedules, type Db } from '@dorkos/db';
 import type { TaskFailureReason, TaskHealth } from '@dorkos/shared/types';
 
 /**
@@ -27,7 +27,30 @@ export const HEALTHY: TaskHealth = {
   since: null,
   streak: 0,
   lastRunId: null,
+  recentStreak: 0,
 };
+
+/**
+ * When DorkOS began counting failing streaks for Needs you: the v0.135.3
+ * release, which shipped the fails-twice notice (#3602, DOR-4127). Runs from
+ * before it never raise a card, so an upgrade does not surface weeks-old
+ * failures nobody can act on.
+ */
+export const STREAKS_COUNTED_FROM = '2026-11-10T17:32:57.000Z';
+
+/**
+ * Where a schedule's recent streak starts counting: the later of
+ * {@link STREAKS_COUNTED_FROM} and when the schedule last changed (turned on,
+ * edited, approved or re-read from a changed file). Failures from before a
+ * change say nothing about the schedule as it is now.
+ *
+ * @param updatedAt - The schedule row's `updatedAt`, if known.
+ */
+export function streakCountsFrom(updatedAt: string | null | undefined): number {
+  const floor = Date.parse(STREAKS_COUNTED_FROM);
+  const changed = updatedAt ? Date.parse(updatedAt) : Number.NaN;
+  return Number.isNaN(changed) ? floor : Math.max(floor, changed);
+}
 
 /**
  * The prefix `run-outcome` puts on an expired sign-in's line ("Sign in again:
@@ -99,8 +122,12 @@ export function failureReasonOf(run: FinishedRun): TaskFailureReason {
  * the last `completed` one, and `since` is when the oldest of them started.
  *
  * @param runs - The schedule's finished runs, newest first.
+ * @param countFrom - Epoch ms the recent streak counts from ({@link streakCountsFrom}).
  */
-export function healthOf(runs: readonly FinishedRun[]): TaskHealth {
+export function healthOf(
+  runs: readonly FinishedRun[],
+  countFrom: number = Date.parse(STREAKS_COUNTED_FROM)
+): TaskHealth {
   const latest = runs[0];
   if (!latest || latest.status === 'completed') return HEALTHY;
   let streak = 0;
@@ -108,12 +135,18 @@ export function healthOf(runs: readonly FinishedRun[]): TaskHealth {
     if (run.status === 'completed') break;
     streak += 1;
   }
+  // Newest first, so the recent runs are the streak's leading ones.
+  let recentStreak = 0;
+  while (recentStreak < streak && Date.parse(runs[recentStreak]!.startedAt) >= countFrom) {
+    recentStreak += 1;
+  }
   return {
     state: 'failing',
     reason: failureReasonOf(latest),
     since: runs[streak - 1]!.startedAt,
     streak,
     lastRunId: latest.id,
+    recentStreak,
   };
 }
 
@@ -147,7 +180,15 @@ export function scheduleHealth(db: Db): Map<string, TaskHealth> {
     list.push(row);
     bySchedule.set(row.scheduleId, list);
   }
+  const changedAt = new Map(
+    db
+      .select({ id: pulseSchedules.id, updatedAt: pulseSchedules.updatedAt })
+      .from(pulseSchedules)
+      .all()
+      .map((row) => [row.id, row.updatedAt])
+  );
   const health = new Map<string, TaskHealth>();
-  for (const [scheduleId, runs] of bySchedule) health.set(scheduleId, healthOf(runs));
+  for (const [scheduleId, runs] of bySchedule)
+    health.set(scheduleId, healthOf(runs, streakCountsFrom(changedAt.get(scheduleId))));
   return health;
 }

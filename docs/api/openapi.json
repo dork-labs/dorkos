@@ -11523,6 +11523,10 @@
               "string",
               "null"
             ]
+          },
+          "recentStreak": {
+            "type": "integer",
+            "minimum": 0
           }
         },
         "required": [

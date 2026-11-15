@@ -5856,6 +5856,14 @@ export const TaskHealthSchema = z
     streak: z.number().int().min(0),
     /** The run the reason was read from; `null` when `ok`. */
     lastRunId: z.string().nullable(),
+    /**
+     * How many runs of the streak started after the schedule last changed
+     * (turned on, edited or approved) and after DorkOS began counting failing
+     * streaks (v0.135.3). Needs you asks for two (DOR-4127), so runs from
+     * before an edit, or from before an upgrade, never raise a card. Absent
+     * from an older server, which reads as none.
+     */
+    recentStreak: z.number().int().min(0).optional(),
   })
   .openapi('TaskHealth');
 
