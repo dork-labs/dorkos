@@ -168,16 +168,18 @@ it('refuses global fallback when the caller has no registered home', async () =>
   await expectNothingWritten();
 });
 
-it('refuses global fallback when the caller is unidentified', async () => {
-  expect(await create({ caller: null })).toMatchObject({ ok: false, status: 403 });
-  await expectNothingWritten();
+it('parks a global proposal from a caller it cannot identify, as before', async () => {
+  // No agent to bind to: a person decides, and an agent-less run gets a fresh folder.
+  const outcome = await create({ caller: null });
+  expect(outcome.ok && outcome.task.agentId).toBe(null);
+  expect(outcome.ok && outcome.parked).toBe(true);
 });
 
 it.each(['protected', 'unknown'] as const)(
   'names the project-folder fix when refusing an agent home that is %s',
   async (reason) => {
-    if (reason === 'protected') agents = [{ id: 'scout', projectPath: home }];
-    const outcome = await create({ caller: reason === 'protected' ? home : null });
+    agents = reason === 'protected' ? [{ id: 'scout', projectPath: home }] : [];
+    const outcome = await create({ caller: reason === 'protected' ? home : agentPath });
     expect(outcome).toMatchObject({
       ok: false,
       status: 403,

@@ -5,4 +5,4 @@ covers:
 
 ### Security
 
-- Keep schedules your agents create in their own folders. Check the folder before saving each schedule.
+- A schedule an agent makes now runs in that agent's own folder, even when the agent asks for a "global" one or names no place. Below Full autonomy, DorkOS refuses the schedule up front if that folder is your home folder or the DorkOS data folder, so nothing is saved there. Schedules you make yourself work as before.

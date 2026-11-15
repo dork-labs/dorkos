@@ -99,6 +99,9 @@ describe('a room post’s marks, after a restart', () => {
 
 describe('the external /mcp task tools', () => {
   const home = mkdtempSync(path.join(os.tmpdir(), 'dorkos-external-marks-'));
+  /** A registered agent with a folder of its own, so its global request is filed under it (DOR-4067). */
+  const agentHome = mkdtempSync(path.join(os.tmpdir(), 'dorkos-external-agent-'));
+  const agents = [{ id: 'nobody-running', projectPath: agentHome }];
 
   /** The `tasks_create` handler the external server registers for this caller. */
   function externalCreate(store: TaskStore, identity?: { agentPath: string }) {
@@ -115,6 +118,10 @@ describe('the external /mcp task tools', () => {
         defaultCwd: home,
         dorkHome: home,
         taskStore: store,
+        meshCore: {
+          listWithPaths: () => agents,
+          getProjectPath: (id: string) => agents.find((a) => a.id === id)?.projectPath,
+        },
       } as unknown as McpToolDeps,
       identity as never
     );
@@ -139,7 +146,7 @@ describe('the external /mcp task tools', () => {
 
   it('read an identified agent through its running turns, and mark nothing when none is marked', async () => {
     const store = new TaskStore(createTestDb());
-    const reply = await externalCreate(store, { agentPath: '/agents/nobody-running' })({
+    const reply = await externalCreate(store, { agentPath: agentHome })({
       name: 'Agent nightly',
       prompt: 'check the build',
       cron: '0 4 * * *',

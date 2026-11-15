@@ -100,6 +100,7 @@ import { attestNewTask, attestToolWrite, fileStateBefore } from './task-tool-fil
 import { marksOf } from '../../../../core/turn-power/turn-levels.js';
 import { marksHold } from '../../../../core/turn-power/turn-marks.js';
 import {
+  callingTurnIsFull,
   capPatch,
   decideCrossAgent,
   forWhomOf,
@@ -277,6 +278,8 @@ export function createCreateScheduleHandler(
         // An agent files a schedule only under itself or `global` (DOR-3640 R1).
         ...callerAgentPathOf(provenance, callerAgent),
         ...(forOther.kind === 'allowed' && { forAnotherAgent: true, writerMarks: forOther.marks }),
+        // At Full, unmarked, its own folder may be home, as a person's may (DOR-4067, DOR-4136).
+        ...(callingTurnIsFull(resolveProvenance, callerAgent) && { callerAtFull: true }),
       }
     );
 

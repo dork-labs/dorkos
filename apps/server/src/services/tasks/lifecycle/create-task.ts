@@ -165,6 +165,12 @@ export interface CreateScheduledTaskOptions {
   /** The calling turn's marks the server checked for `forAnotherAgent`, kept for its runs. */
   writerMarks?: TurnMarks;
   /**
+   * The server found the calling turn at Full autonomy and unmarked. Such an agent may file a
+   * schedule in its own folder even when that folder is home or the data folder, as a person
+   * can (DOR-4067, the DOR-4136 level rule). Never read from the request body.
+   */
+  callerAtFull?: boolean;
+  /**
    * The agent's named mode was decided as `tasks.set_mode` and granted
    * (DOR-3703): by a person's card, or by a setting for that action. It lands
    * as named, Bypass included, instead of being clamped.
@@ -360,8 +366,17 @@ export async function createScheduledTask(
       (!forAnother && !runsAsItsCreator(data.target, callerId)) ||
       !agentSchedulesArmWithoutAsking(options.callerIsOurAgent === true));
 
+  // An agent's omitted or `global` schedule is filed under itself, so it runs in its own folder,
+  // never home (DOR-4067). Below Full, a folder that is home or the data folder is refused.
   if (!trusted) {
-    const placement = await agentScheduleTarget(data.target, callerId, deps);
+    const placement = await agentScheduleTarget(
+      data.target,
+      { agentPath: callerAgentPath, id: callerId },
+      deps,
+      {
+        checkFolder: options.callerAtFull !== true,
+      }
+    );
     if (!placement.ok) return placement;
     data.target = placement.target;
   }
