@@ -31586,6 +31586,9 @@
                         "status",
                         "startedAt"
                       ]
+                    },
+                    "takenOver": {
+                      "type": "boolean"
                     }
                   },
                   "required": [
@@ -31599,7 +31602,8 @@
                     "selectedTabId",
                     "revision",
                     "handoff",
-                    "signIn"
+                    "signIn",
+                    "takenOver"
                   ]
                 }
               }
@@ -31941,6 +31945,9 @@
                         "status",
                         "startedAt"
                       ]
+                    },
+                    "takenOver": {
+                      "type": "boolean"
                     }
                   },
                   "required": [
@@ -31954,7 +31961,8 @@
                     "selectedTabId",
                     "revision",
                     "handoff",
-                    "signIn"
+                    "signIn",
+                    "takenOver"
                   ]
                 }
               }
@@ -32274,7 +32282,7 @@
           "Local browser"
         ],
         "summary": "Open a web address in the selected tab",
-        "description": "Only the owner on this computer can call this route. Only the owner, in person, can call this route: no agent, API key or approval token. Accepts HTTP or HTTPS addresses and invalidates earlier observations. Refused during a handoff.",
+        "description": "Only the owner on this computer can call this route. Only the owner, in person, can call this route: no agent, API key or approval token. Accepts HTTP or HTTPS addresses and invalidates earlier observations. Refused during a handoff. Takes the page from a chat sharing it first, as take-over does.",
         "requestBody": {
           "required": true,
           "content": {
@@ -32297,7 +32305,7 @@
         },
         "responses": {
           "200": {
-            "description": "Current browser state",
+            "description": "Current browser state, with its handoff and sign-in",
             "content": {
               "application/json": {
                 "schema": {
@@ -32409,6 +32417,119 @@
                     "revision": {
                       "type": "integer",
                       "minimum": 0
+                    },
+                    "handoff": {
+                      "type": [
+                        "object",
+                        "null"
+                      ],
+                      "properties": {
+                        "id": {
+                          "type": "string"
+                        },
+                        "sessionId": {
+                          "type": "string"
+                        },
+                        "agentName": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "agentId": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "agentFolder": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "profileId": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "reason": {
+                          "type": "string",
+                          "enum": [
+                            "wall",
+                            "password"
+                          ]
+                        },
+                        "site": {
+                          "type": "string"
+                        },
+                        "askedAt": {
+                          "type": "string"
+                        },
+                        "outcome": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "enum": [
+                            "handed-back",
+                            "stopped",
+                            "window-closed",
+                            null
+                          ]
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "sessionId",
+                        "agentName",
+                        "agentId",
+                        "agentFolder",
+                        "profileId",
+                        "reason",
+                        "site",
+                        "askedAt",
+                        "outcome"
+                      ]
+                    },
+                    "signIn": {
+                      "type": [
+                        "object",
+                        "null"
+                      ],
+                      "properties": {
+                        "profileId": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "site": {
+                          "type": "string"
+                        },
+                        "status": {
+                          "type": "string",
+                          "enum": [
+                            "open",
+                            "saving",
+                            "saved",
+                            "failed"
+                          ]
+                        },
+                        "startedAt": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "profileId",
+                        "site",
+                        "status",
+                        "startedAt"
+                      ]
+                    },
+                    "takenOver": {
+                      "type": "boolean"
                     }
                   },
                   "required": [
@@ -32420,7 +32541,10 @@
                     "paused",
                     "tabs",
                     "selectedTabId",
-                    "revision"
+                    "revision",
+                    "handoff",
+                    "signIn",
+                    "takenOver"
                   ]
                 }
               }
@@ -32443,6 +32567,329 @@
                   "required": [
                     "error",
                     "code"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is not the owner on this computer",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The browser cannot complete this request in its current state",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The browser operation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/local-browser/take-over": {
+      "post": {
+        "tags": [
+          "Local browser"
+        ],
+        "summary": "Take the page from the agent",
+        "description": "Only the owner on this computer can call this route. Only the owner, in person, can call this route: no agent, API key or approval token. Pauses the chat sharing the page and refuses its every browser call, reads included, until a person resumes, opens or disconnects the browser. Does nothing when no chat shares it or during a handoff.",
+        "responses": {
+          "200": {
+            "description": "Current browser state, with its handoff and sign-in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "preparation": {
+                      "type": [
+                        "object",
+                        "null"
+                      ],
+                      "properties": {
+                        "stage": {
+                          "type": "string",
+                          "enum": [
+                            "checking",
+                            "downloading",
+                            "launching"
+                          ]
+                        },
+                        "component": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "enum": [
+                            "chromium",
+                            "headless-shell",
+                            "ffmpeg",
+                            null
+                          ]
+                        },
+                        "percent": {
+                          "type": [
+                            "number",
+                            "null"
+                          ],
+                          "minimum": 0,
+                          "maximum": 100
+                        }
+                      },
+                      "required": [
+                        "stage",
+                        "component",
+                        "percent"
+                      ]
+                    },
+                    "connectionId": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "sessionId": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "mode": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "enum": [
+                        "embedded",
+                        "new-window",
+                        null
+                      ]
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "disconnected",
+                        "connected",
+                        "closed"
+                      ]
+                    },
+                    "paused": {
+                      "type": "boolean"
+                    },
+                    "tabs": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "url": {
+                            "type": "string"
+                          },
+                          "title": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "url",
+                          "title"
+                        ]
+                      }
+                    },
+                    "selectedTabId": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "revision": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "handoff": {
+                      "type": [
+                        "object",
+                        "null"
+                      ],
+                      "properties": {
+                        "id": {
+                          "type": "string"
+                        },
+                        "sessionId": {
+                          "type": "string"
+                        },
+                        "agentName": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "agentId": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "agentFolder": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "profileId": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "reason": {
+                          "type": "string",
+                          "enum": [
+                            "wall",
+                            "password"
+                          ]
+                        },
+                        "site": {
+                          "type": "string"
+                        },
+                        "askedAt": {
+                          "type": "string"
+                        },
+                        "outcome": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "enum": [
+                            "handed-back",
+                            "stopped",
+                            "window-closed",
+                            null
+                          ]
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "sessionId",
+                        "agentName",
+                        "agentId",
+                        "agentFolder",
+                        "profileId",
+                        "reason",
+                        "site",
+                        "askedAt",
+                        "outcome"
+                      ]
+                    },
+                    "signIn": {
+                      "type": [
+                        "object",
+                        "null"
+                      ],
+                      "properties": {
+                        "profileId": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "site": {
+                          "type": "string"
+                        },
+                        "status": {
+                          "type": "string",
+                          "enum": [
+                            "open",
+                            "saving",
+                            "saved",
+                            "failed"
+                          ]
+                        },
+                        "startedAt": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "profileId",
+                        "site",
+                        "status",
+                        "startedAt"
+                      ]
+                    },
+                    "takenOver": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "preparation",
+                    "connectionId",
+                    "sessionId",
+                    "mode",
+                    "status",
+                    "paused",
+                    "tabs",
+                    "selectedTabId",
+                    "revision",
+                    "handoff",
+                    "signIn",
+                    "takenOver"
                   ]
                 }
               }
@@ -32730,7 +33177,7 @@
           "Local browser"
         ],
         "summary": "Resume agent browser actions",
-        "description": "Only the owner on this computer can call this route. The agent must read a fresh observation before its next action. During a handoff this hands the browser back.",
+        "description": "Only the owner on this computer can call this route. The agent must read a fresh observation before its next action. During a handoff this hands the browser back, and after a take-over it gives the page back to the agent.",
         "responses": {
           "200": {
             "description": "Current browser state, with its handoff and sign-in",
@@ -32955,6 +33402,9 @@
                         "status",
                         "startedAt"
                       ]
+                    },
+                    "takenOver": {
+                      "type": "boolean"
                     }
                   },
                   "required": [
@@ -32968,7 +33418,8 @@
                     "selectedTabId",
                     "revision",
                     "handoff",
-                    "signIn"
+                    "signIn",
+                    "takenOver"
                   ]
                 }
               }
@@ -33702,6 +34153,9 @@
                         "status",
                         "startedAt"
                       ]
+                    },
+                    "takenOver": {
+                      "type": "boolean"
                     }
                   },
                   "required": [
@@ -33715,7 +34169,8 @@
                     "selectedTabId",
                     "revision",
                     "handoff",
-                    "signIn"
+                    "signIn",
+                    "takenOver"
                   ]
                 }
               }
@@ -34062,6 +34517,9 @@
                         "status",
                         "startedAt"
                       ]
+                    },
+                    "takenOver": {
+                      "type": "boolean"
                     }
                   },
                   "required": [
@@ -34075,7 +34533,8 @@
                     "selectedTabId",
                     "revision",
                     "handoff",
-                    "signIn"
+                    "signIn",
+                    "takenOver"
                   ]
                 }
               }
@@ -34423,6 +34882,9 @@
                         "status",
                         "startedAt"
                       ]
+                    },
+                    "takenOver": {
+                      "type": "boolean"
                     }
                   },
                   "required": [
@@ -34436,7 +34898,8 @@
                     "selectedTabId",
                     "revision",
                     "handoff",
-                    "signIn"
+                    "signIn",
+                    "takenOver"
                   ]
                 }
               }
@@ -34784,6 +35247,9 @@
                         "status",
                         "startedAt"
                       ]
+                    },
+                    "takenOver": {
+                      "type": "boolean"
                     }
                   },
                   "required": [
@@ -34797,7 +35263,8 @@
                     "selectedTabId",
                     "revision",
                     "handoff",
-                    "signIn"
+                    "signIn",
+                    "takenOver"
                   ]
                 }
               }

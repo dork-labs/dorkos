@@ -7,7 +7,6 @@ import type {
 } from '@dorkos/shared/local-browser';
 import { useLocalBrowser, LOCAL_BROWSER_STATE_KEY } from '@/layers/entities/local-browser';
 import { cn } from '@/layers/shared/lib';
-import { YourTurnStrip } from '@/layers/features/browser-handoff';
 import { useAppStore, useTransport } from '@/layers/shared/model';
 import { Button } from '@/layers/shared/ui';
 import { BrowserModeChoice } from './BrowserModeChoice';
@@ -15,7 +14,9 @@ import { useNativeBrowserSurface } from '../model/use-native-browser-surface';
 import { browserErrorMessage } from '../lib/browser-error-message';
 import { useActionFocusReturn } from '../model/use-action-focus-return';
 import { useFirstFocus } from '../model/use-first-focus';
+import { useBrowserPill } from '../model/use-browser-pill';
 import { BrowserPreparation } from './BrowserPreparation';
+import { BrowserStatusPill } from './BrowserStatusPill';
 import { WaitingElsewhere } from './WaitingElsewhere';
 import { SavedSignIns } from './SavedSignIns';
 import { LocalBrowserView } from './LocalBrowserView';
@@ -133,6 +134,7 @@ export function LocalBrowserPanel({
       queryClient.setQueryData<LocalBrowserPersonState>(LOCAL_BROWSER_STATE_KEY, (known) => ({
         handoff: known?.handoff ?? null,
         signIn: known?.signIn ?? null,
+        takenOver: known?.takenOver ?? false,
         ...next,
       }));
       return true;
@@ -156,6 +158,8 @@ export function LocalBrowserPanel({
       }
     }
   };
+  // The pill says who has the page, and holds Take over, Pause, Resume and Hand back.
+  const { pill, actions: pillActions } = useBrowserPill({ state, sessionId, action });
   const open = () => {
     saveChoice({ mode });
     setOpeningRequest({
@@ -245,16 +249,13 @@ export function LocalBrowserPanel({
                     ? 'Waiting for you'
                     : state?.status === 'closed'
                       ? 'Browser closed'
-                      : connected && sharedElsewhere
-                        ? // The body says where the browser is; the header adds nothing.
+                      : connected
+                        ? // The body says where the browser is, or the pill's own
+                          // status region says who has the page (DOR-4428).
                           ''
-                        : connected
-                          ? state.paused
-                            ? 'Agent paused'
-                            : 'Connected'
-                          : hadConnection
-                            ? 'Disconnected'
-                            : 'Not open yet'}
+                        : hadConnection
+                          ? 'Disconnected'
+                          : 'Not open yet'}
           </span>
         </div>
         {opening && (
@@ -356,27 +357,10 @@ export function LocalBrowserPanel({
         )}
         {connected && !waitingElsewhere && !sharedElsewhere && (
           <>
-            {/* In the Mac app the agent's page stays here while the person has it. DorkOS
-              draws this, outside the page, so the page can't hide or fake it (DOR-3111). */}
-            {handoffHere && <YourTurnStrip agentName={handoffHere.agentName ?? agentName} />}
-            {!state.sessionId && (
-              <p className="text-muted-foreground text-xs">
-                Only you can use this page. Open from an agent chat to share it.
-              </p>
-            )}
+            {/* Who has the page (Your turn, Only you, Paused) and Pause, Resume, Take over
+              and Hand back live in the chrome's status pill, which DorkOS draws outside
+              the page so the page can't hide or fake it (DOR-3111, DOR-4428). */}
             <div className="flex flex-wrap items-center gap-2">
-              <Button
-                size="sm"
-                variant="outline"
-                disabled={busy}
-                onClick={() =>
-                  void action(() =>
-                    state.paused ? transport.resumeLocalBrowser() : transport.pauseLocalBrowser()
-                  )
-                }
-              >
-                {state.paused ? 'Resume agent' : 'Pause agent'}
-              </Button>
               <Button
                 size="sm"
                 variant="ghost"
@@ -418,22 +402,6 @@ export function LocalBrowserPanel({
                 ))}
               </select>
             </label>
-            {state.paused && (
-              <div className="text-muted-foreground space-y-1 text-xs">
-                <p>Pause stops new actions. An action already started may finish.</p>
-                <p>Your mouse and keyboard still work.</p>
-              </div>
-            )}
-            {mode === 'embedded' && (
-              <p className="text-muted-foreground text-xs">This page stays in the right panel.</p>
-            )}
-            {mode === 'embedded' && (
-              <p className="text-muted-foreground text-xs">
-                {state.sessionId
-                  ? 'Extra windows are for you. Your agent stays on this page.'
-                  : 'Extra windows are for you.'}
-              </p>
-            )}
           </>
         )}
         {!waitingElsewhere && (
@@ -452,6 +420,17 @@ export function LocalBrowserPanel({
           busy={busy}
           action={action}
           onReconnect={open}
+          agentDriving={pill?.kind === 'driving'}
+          status={
+            pill && (
+              <BrowserStatusPill
+                state={pill}
+                agentName={handoffHere?.agentName ?? agentName}
+                busy={busy}
+                {...pillActions}
+              />
+            )
+          }
         />
       )}
     </section>

@@ -24,6 +24,7 @@ const NOT_OPEN: LocalBrowserPersonState = {
   preparation: null,
   handoff: null,
   signIn: null,
+  takenOver: false,
 };
 
 /** A browser another chat holds, in a separate window (DOR-4265). Made-up chat and agent. */

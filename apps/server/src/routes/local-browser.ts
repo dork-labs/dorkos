@@ -72,6 +72,8 @@ export function createLocalBrowserRoutes(
     const { url } = z.object({ url: z.string().url() }).strict().parse(readJsonBody(c));
     return c.json(await service.handover.navigate(url));
   });
+  // Taking the page shuts an agent out of it, so only a person can.
+  router.post('/take-over', personOnly, async (c) => c.json(await service.handover.takeOver()));
   router.post('/pause', async (c) => c.json(await service.handover.pause()));
   router.post('/resume', personOnly, async (c) => c.json(await service.handover.resume()));
   // Signing in and answering a handoff take a person: no agent, API key or approval token.

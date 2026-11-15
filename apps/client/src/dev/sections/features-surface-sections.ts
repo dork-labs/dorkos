@@ -138,6 +138,14 @@ export const FEATURE_SURFACE_SECTIONS: PlaygroundSection[] = [
     category: 'Home',
     keywords: ['browser', 'address bar', 'back', 'forward', 'reload', 'not secure', 'chrome'],
   },
+  // BrowserStatusPillShowcases
+  {
+    id: 'browser-status-pill',
+    title: 'Browser status pill',
+    page: 'home-inbox',
+    category: 'Home',
+    keywords: ['browser', 'agent browser', 'pill', 'take over', 'your turn', 'hand back', 'paused'],
+  },
   // LocalBrowserPanelShowcases
   {
     id: 'agent-browser-panel',

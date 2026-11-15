@@ -1,4 +1,4 @@
-import { useState, type RefObject } from 'react';
+import { useState, type ReactNode, type RefObject } from 'react';
 import type { LocalBrowserState } from '@dorkos/shared/local-browser';
 import { useOwnOrigins } from '@/layers/entities/config';
 import { isThisAppsAddress, normalizeAddressInput } from '@/layers/shared/lib';
@@ -21,6 +21,10 @@ export interface LocalBrowserViewProps {
   action: (run: () => Promise<LocalBrowserState>) => Promise<boolean>;
   /** Open the browser again after the page could not be drawn. */
   onReconnect: () => void;
+  /** The status pill, in the chrome's pill place. */
+  status?: ReactNode;
+  /** Whether an agent drives the page now, which turns the seam orange. */
+  agentDriving?: boolean;
 }
 
 /**
@@ -40,6 +44,8 @@ export function LocalBrowserView({
   busy,
   action,
   onReconnect,
+  status,
+  agentDriving = false,
 }: LocalBrowserViewProps) {
   const transport = useTransport();
   const ownOrigins = useOwnOrigins();
@@ -118,6 +124,8 @@ export function LocalBrowserView({
           tooltips={false}
           retry={shownRetry}
           notice={shownRetry?.notice ?? null}
+          status={status}
+          agentDriving={agentDriving}
         />
       )}
       {embedded ? (

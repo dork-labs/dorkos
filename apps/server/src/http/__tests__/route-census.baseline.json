@@ -538,6 +538,7 @@
     "POST /api/local-browser/resume",
     "POST /api/local-browser/sign-in",
     "POST /api/local-browser/tabs/:id/select",
+    "POST /api/local-browser/take-over",
     "POST /api/marketplace/cache/prune",
     "POST /api/marketplace/dev-links",
     "POST /api/marketplace/dev-links/:name/unlink",

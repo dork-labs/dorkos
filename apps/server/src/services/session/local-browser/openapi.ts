@@ -191,14 +191,28 @@ export function registerLocalBrowserOpenApi(registry: OpenAPIRegistry): void {
     description:
       authority +
       inPerson +
-      'Accepts HTTP or HTTPS addresses and invalidates earlier observations. Refused during a handoff.',
+      'Accepts HTTP or HTTPS addresses and invalidates earlier observations. Refused during a handoff. ' +
+      'Takes the page from a chat sharing it first, as take-over does.',
     request: {
       body: {
         required: true,
         content: { 'application/json': { schema: z.object({ url: z.string().url() }).strict() } },
       },
     },
-    responses: { ...stateResponses, 400: refusal('The web address is invalid') },
+    responses: { ...personStateResponses, 400: refusal('The web address is invalid') },
+  });
+  registry.registerPath({
+    method: 'post',
+    path: '/api/local-browser/take-over',
+    tags: ['Local browser'],
+    summary: 'Take the page from the agent',
+    description:
+      authority +
+      inPerson +
+      'Pauses the chat sharing the page and refuses its every browser call, reads included, ' +
+      'until a person resumes, opens or disconnects the browser. Does nothing when no chat shares it ' +
+      'or during a handoff.',
+    responses: personStateResponses,
   });
   registry.registerPath({
     method: 'post',
@@ -218,7 +232,8 @@ export function registerLocalBrowserOpenApi(registry: OpenAPIRegistry): void {
     summary: 'Resume agent browser actions',
     description:
       authority +
-      'The agent must read a fresh observation before its next action. During a handoff this hands the browser back.',
+      'The agent must read a fresh observation before its next action. During a handoff this hands the browser back, ' +
+      'and after a take-over it gives the page back to the agent.',
     responses: personStateResponses,
   });
   const profileResponse = {
