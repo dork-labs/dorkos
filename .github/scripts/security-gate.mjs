@@ -105,12 +105,35 @@ function hasApproval(review, sensitive, botUserId) {
   );
 }
 
+/** How a PR run's result starts when the PR is only waiting; the job still succeeds. */
+export const WAITING_PREFIX = 'Waiting for Security:';
+
 /**
- * Why an open PR is only waiting for Security, or `null` when it is not: a label
- * it needs has never been put on, and nothing is wrong (no `hold`, no stale or
- * bot label). Main's `security-review` still refuses it; this keeps the PR's own
- * check from going red over a review that simply has not happened yet (Security's
- * required-checks plan, step 4).
+ * Whether a Security label is acceptable to leave unjudged while `hold` is on:
+ * absent, covering the head, or merely older than the last push (Security
+ * re-labels before hold comes off). A label a bot put on, one with no labelled
+ * event, or an unreadable push time is wrong and is never hidden by `hold`. A
+ * reason this does not recognise is treated as wrong, so drift only refuses more.
+ */
+function deferrableUnderHold(input, name) {
+  if (!input.labels.some((label) => label.name === name)) return true;
+  const verdict = labelNewerThanHead({ ...input, name });
+  return (
+    verdict.passed ||
+    verdict.reason === `${name} is older than the last push; remove it and add it again`
+  );
+}
+
+/**
+ * Why an open PR is only waiting, or `null` when it is not. Main's
+ * `security-review` still refuses it and the merge queue still refuses it; this
+ * keeps the PR's own check from going red over something that simply has not
+ * happened yet (Security's required-checks plan, step 4; DOR-4459):
+ * - a Security label it needs has never been put on, with no `hold`;
+ * - `hold` is on, so the PR is not asking to merge, and no Security label on it
+ *   is wrong (see {@link deferrableUnderHold}). Removing `hold` re-runs the gate,
+ *   which then judges the head in full.
+ * A stale label with no `hold`, or a bot's label, still fails.
  *
  * @param {object} pr The PR, as `GET /pulls/{n}` returns it.
  * @param {object} input The label-at-head input.
@@ -119,7 +142,10 @@ function hasApproval(review, sensitive, botUserId) {
 function awaitingReview(pr, input, deep) {
   if (pr.merged_at || pr.state === 'closed') return null;
   const has = (name) => input.labels.some((label) => label.name === name);
-  if (has(HOLD_LABEL)) return null;
+  if (has(HOLD_LABEL))
+    return [REVIEW_LABEL, DEEP_LABEL].every((name) => deferrableUnderHold(input, name))
+      ? `the ${HOLD_LABEL} label is on (judged in full when it comes off)`
+      : null;
   if (!has(REVIEW_LABEL)) return `no ${REVIEW_LABEL} label yet`;
   if (deep && !has(DEEP_LABEL) && labelAtHead(input).passed) return `no ${DEEP_LABEL} label yet`;
   return null;
@@ -448,7 +474,7 @@ async function checkPullRequestOnce(
     );
   if (verdict.waiting)
     return {
-      said: `Waiting for Security: ${verdict.waiting} on ${sha}. security-review decides; it is not success yet`,
+      said: `${WAITING_PREFIX} ${verdict.waiting} on ${sha}. security-review decides; it is not success yet`,
     };
   return { said: computed ? 'no security paths (computed)' : 'Security status verified' };
 }
@@ -671,6 +697,7 @@ export function githubApi(repository, token, apiUrl = 'https://api.github.com') 
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  let waiting;
   try {
     const event = JSON.parse(readFileSync(process.env.GITHUB_EVENT_PATH, 'utf8'));
     const api = githubApi(
@@ -680,12 +707,17 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     );
     if (process.env.GITHUB_EVENT_NAME === 'pull_request') {
       if (!process.env.SECURITY_PATH_PATTERN) throw new Error('Security path list missing');
-      console.log(
-        await checkPullRequest(api, event, process.env.SECURITY_PATH_PATTERN, {
-          botUserId: process.env.SECURITY_APPROVAL_BOT_USER_ID,
-          deepPattern: process.env.SECURITY_DEEP_PATH_PATTERN,
-        })
-      );
+      const said = await checkPullRequest(api, event, process.env.SECURITY_PATH_PATTERN, {
+        botUserId: process.env.SECURITY_APPROVAL_BOT_USER_ID,
+        deepPattern: process.env.SECURITY_DEEP_PATH_PATTERN,
+      });
+      console.log(said);
+      // A waiting run succeeds, so say so where people look: an annotation on the
+      // run and a line in its summary. It approves nothing (DOR-4459).
+      if (said.startsWith(WAITING_PREFIX)) {
+        waiting = said;
+        console.log(`::notice title=security-gate is waiting, not approved::${said}`);
+      }
     } else if (process.env.GITHUB_EVENT_NAME === 'pull_request_target') {
       // The base-copy writer is security-verdict.mjs, in its own workflow and
       // identity; this verifier never writes.
@@ -703,7 +735,9 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     } else {
       throw new Error('Unsupported security gate event');
     }
-    console.log('Security gate passed');
+    console.log(
+      waiting ? 'Security gate is waiting; this is not an approval' : 'Security gate passed'
+    );
   } catch (error) {
     console.error(error.message);
     process.exitCode = 1;
@@ -712,5 +746,10 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   if (process.env.GITHUB_STEP_SUMMARY && process.env.SECURITY_APPROVAL_BOT_USER_ID) {
     const mode = approvalMode(process.env.SECURITY_APPROVAL_BOT_USER_ID);
     appendFileSync(process.env.GITHUB_STEP_SUMMARY, `Security gate mode: **${mode}**\n`);
+    if (waiting)
+      appendFileSync(
+        process.env.GITHUB_STEP_SUMMARY,
+        `\n**Waiting, not approved.** ${waiting}. The merge queue and \`security-review\` still refuse this head.\n`
+      );
   }
 }

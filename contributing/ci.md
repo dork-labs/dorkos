@@ -113,7 +113,12 @@ label, push and edit (`.github/scripts/security-verdict.mjs`), and on `merge_gro
 queue's verdict on the group's SHA. It comments once per observed
 SHA/state transition, recording that observation's status author and ID. Replacing
 a status with the same state adds no comment. It never renders `target_url`.
-After Security approves, rerun the PR verifier. A fully classified nonsensitive
+After Security approves, rerun the PR verifier. While a PR is only waiting (no
+Security label yet, or `hold` on and no Security label on it is wrong), the PR
+run of `security-gate` succeeds with a "Waiting for Security" annotation instead
+of failing. It approves nothing: `security-review` stays short of `success`, so
+`arm.sh` and merge-tail refuse, and the merge-queue run still refuses (DOR-4459).
+A stale label with no `hold`, or a label a bot added, still fails. A fully classified nonsensitive
 PR with no security-review status can pass read-only as "no security paths
 (computed)". The queue can do the same using `base...queuedHead`, never the current
 PR's files. An explicit pending/failure cannot use computed clearance. Incomplete
