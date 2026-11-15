@@ -10,7 +10,8 @@ import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { runtimeConformance, type HandedGrants } from '@dorkos/test-utils';
+import { runtimeConformance, runtimeGuardConformance, type HandedGrants } from '@dorkos/test-utils';
+import { CLAUDE_CODE_GUARD_PROOFS } from './guard-proofs.js';
 import { controlUi } from '../../../session/browser-seat/ui-control.js';
 import { driveRoomCanvasTurn } from '../../../session/__tests__/durable-turn-harness.js';
 import {
@@ -559,6 +560,17 @@ describe('what claude-code says it does with media', () => {
     expect(runtime.getCapabilities().mediaOutput).toBe('attachments');
   });
 });
+
+// The guards Claude Code declares, each proved by the code a real launch runs (DOR-3596).
+runtimeGuardConformance(
+  () =>
+    new ClaudeCodeRuntime(
+      '/tmp/dorkos-conformance',
+      '/projects/conformance',
+      new LocalSessionAttachmentStore(ATTACHMENT_HOME)
+    ),
+  CLAUDE_CODE_GUARD_PROOFS
+);
 
 runtimeConformance(
   () =>

@@ -869,6 +869,27 @@ export interface RuntimeCapabilities {
   credits?: RuntimeCreditsSupport;
 
   /**
+   * The safety guards this runtime enforces on its own agents (runtime-parity
+   * plan, DOR-3596). See {@link RUNTIME_GUARDS} for what each one promises.
+   *
+   * **Absent means none**, and so does any value but `true`: DorkOS reads a
+   * guard only through {@link declaresGuard}, so a new runtime, or one that
+   * misspells a key, gets the strictest treatment rather than inheriting a
+   * guard it never built. Declaring one is a promise the conformance suite
+   * holds the runtime to: every declared guard comes with a test that proves
+   * it, and a proof for an undeclared guard fails too.
+   */
+  guards?: RuntimeGuards;
+
+  /**
+   * Whether `session_status.costUsd` is the session's RUNNING total rather than
+   * one turn's (Claude Code). Such a runtime reports a turn's own share as
+   * `turnCostUsd`, and a turn without one reports no cost at all rather than
+   * the whole session's. Absent means `costUsd` is already one turn's.
+   */
+  costUsdIsRunningTotal?: boolean;
+
+  /**
    * Runtime-specific extension point for metadata that does not fit the
    * common shape. Consumers must validate what they read — see ADR 0256.
    */
@@ -880,6 +901,46 @@ export interface RuntimeCapabilities {
  * {@link RuntimeCapabilities.mediaOutput}.
  */
 export type RuntimeMediaOutput = 'none' | 'attachments';
+
+/**
+ * The safety guards a runtime can declare in {@link RuntimeCapabilities.guards}.
+ * Each is a promise about every turn the runtime runs, whatever its level:
+ *
+ * - `protectedPaths` — the agent's file tools refuse every path on the shared
+ *   protected list (`runtimes/shared/policy/protected-paths.ts`), and its shell
+ *   is kept off the list's protected reads too. So it cannot read DorkOS's
+ *   secrets or a browser profile's sign-ins, by any tool. A runtime whose
+ *   shell can still reach them does not have this guard.
+ * - `ownFolder` — below Full, the agent cannot change its own setup (hooks,
+ *   skills, settings, MCP servers), and at any level it cannot change its
+ *   `.dork/agent.json` (its level, account and held servers).
+ *
+ * A guard that used to be listed here by runtime name is gone with the rule it
+ * served: a teammate's or a stranger's words no longer lower a turn on any
+ * runtime (DOR-3440), so there is no teammate tier or carried-shell guard to
+ * declare.
+ */
+export const RUNTIME_GUARDS = ['protectedPaths', 'ownFolder'] as const;
+
+/** One of {@link RUNTIME_GUARDS}. */
+export type RuntimeGuard = (typeof RUNTIME_GUARDS)[number];
+
+/** See {@link RuntimeCapabilities.guards}. */
+export type RuntimeGuards = Readonly<Partial<Record<RuntimeGuard, boolean>>>;
+
+/**
+ * Whether a runtime enforces one safety guard. Fails closed: no capabilities,
+ * no `guards`, a missing key or any value but `true` all read as no guard.
+ *
+ * @param capabilities - The runtime's declared capabilities, if known.
+ * @param guard - The guard to ask about.
+ */
+export function declaresGuard(
+  capabilities: Pick<RuntimeCapabilities, 'guards'> | null | undefined,
+  guard: RuntimeGuard
+): boolean {
+  return capabilities?.guards?.[guard] === true;
+}
 
 /**
  * The request formats the DorkOS credits endpoint can serve, one per vendor API

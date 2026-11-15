@@ -1,4 +1,5 @@
 /** Whether the agent behind a chat may use a named Agent browser profile. */
+import { declaresGuard, type RuntimeGuards } from '@dorkos/shared/agent-runtime';
 import { LocalBrowserError } from './errors.js';
 import type { LocalBrowserProfileStore } from './profile-store.js';
 
@@ -6,6 +7,8 @@ import type { LocalBrowserProfileStore } from './profile-store.js';
 export interface LocalBrowserProfileAccessDeps {
   profiles: Pick<LocalBrowserProfileStore, 'isBound'>;
   resolveSessionRuntime(sessionId: string): Promise<{ type: string; bound: boolean }>;
+  /** The safety guards a runtime declares, or undefined for one this server doesn't have. */
+  guardsOf(runtimeType: string): RuntimeGuards | undefined;
   getSessionAgentPath(sessionId: string): Promise<string | null>;
   agentIdAtPath(agentPath: string): string | undefined;
   /** The folder's real path, or undefined when it can't be read. */
@@ -110,11 +113,12 @@ export function createLocalBrowserProfileAccess(
 ): LocalBrowserProfileAccess {
   return async (profileId, sessionId) => {
     const runtime = await deps.resolveSessionRuntime(sessionId);
-    // Codex and OpenCode don't honour the deny on the profiles folder yet.
-    if (!runtime.bound || runtime.type !== 'claude-code')
+    // A profile holds live sign-ins, so its runtime must keep every tool, the shell included, off
+    // the profiles folder. Read from what the runtime declares, which fails closed (DOR-3596).
+    if (!runtime.bound || !declaresGuard({ guards: deps.guardsOf(runtime.type) }, 'protectedPaths'))
       throw new LocalBrowserError(
         'profile_runtime',
-        'Named browser profiles aren’t available for Codex or OpenCode agents yet.'
+        'Named browser profiles aren’t available on this agent’s runtime yet.'
       );
     const agentPath = await deps.getSessionAgentPath(sessionId);
     const agentId = agentPath ? deps.agentIdAtPath(agentPath) : undefined;

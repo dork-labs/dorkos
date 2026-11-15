@@ -166,10 +166,19 @@ if (shared.parseErrors > 0) unparsed.push(CONFORMANCE);
 /** The ids the shared conformance suite's titles claim. */
 const sharedClaims = new Set(shared.titles.flatMap(idsClaimedBy));
 
+/** Whether a runtime's conformance file calls this conformance entry point. */
+function runsSuite(
+  runtime: MatrixRuntime,
+  entry: 'runtimeConformance' | 'runtimeGuardConformance'
+): boolean {
+  const file = join(ROOT, runtimeDir(runtime), '__tests__/conformance.test.ts');
+  const { code } = lexWithoutComments(readFileSync(file, 'utf8'), file);
+  return new RegExp(`\\b${entry}\\s*\\(`).test(code);
+}
+
 /** Whether a runtime's conformance file runs the shared suite. */
 function runsSharedSuite(runtime: MatrixRuntime): boolean {
-  const file = join(ROOT, runtimeDir(runtime), '__tests__/conformance.test.ts');
-  return /\bruntimeConformance\s*\(/.test(readFileSync(file, 'utf8'));
+  return runsSuite(runtime, 'runtimeConformance');
 }
 
 /** Every id a test claims anywhere this census reads. */
@@ -194,6 +203,12 @@ describe('the runtime capabilities census', () => {
       expect({ runtime, runsShared: runsSharedSuite(runtime) }).toEqual({
         runtime,
         runsShared: true,
+      });
+      // The safety-guard cases (DOR-3596): every declared guard has a proof, and a runtime that
+      // declares none is held to that too, so gaining a guard means declaring it.
+      expect({ runtime, runsGuards: runsSuite(runtime, 'runtimeGuardConformance') }).toEqual({
+        runtime,
+        runsGuards: true,
       });
     }
     expect(unparsed).toEqual([]);

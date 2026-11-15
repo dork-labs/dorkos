@@ -60,5 +60,9 @@ export const DOE_CAPABILITIES: RuntimeCapabilities = {
   },
   commandIntents: { compact: { supported: true } },
   credits: { protocol: 'anthropic-messages', scope: 'conversation' },
+  // Not yet: its file tools refuse the shared protected list (`approvals.ts`),
+  // but its shell is not checked against it, and an agent outside the data
+  // folder can change its own setup below Full (DOR-3598).
+  guards: { protectedPaths: false, ownFolder: false },
   features: {},
 };

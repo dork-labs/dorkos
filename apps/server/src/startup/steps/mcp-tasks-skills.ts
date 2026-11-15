@@ -434,6 +434,8 @@ export async function wireMcpTasksAndSkills(refs: ServerRefs, built: WireMcpTask
     createLocalBrowserProfileAccess({
       profiles: localBrowserProfiles,
       resolveSessionRuntime: (sessionId) => runtimeRegistry.resolveSessionRuntime(sessionId),
+      guardsOf: (type) =>
+        runtimeRegistry.has(type) ? runtimeRegistry.get(type).getCapabilities().guards : undefined,
       getSessionAgentPath: (sessionId) => runtimeRegistry.getSessionAgentPath(sessionId),
       agentIdAtPath: (agentPath) => refs.meshCore?.getByPath(agentPath)?.id,
       realFolder,
