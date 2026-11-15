@@ -10,6 +10,8 @@ export { BrowserHandoffInboxItem } from './ui/BrowserHandoffInboxItem';
 export { BrowserHandoffCardView } from './ui/BrowserHandoffCardView';
 export type { BrowserHandoffCardViewProps } from './ui/BrowserHandoffCardView';
 export { BrowserHandoffReceipt } from './ui/BrowserHandoffReceipt';
+export { YourTurnStrip } from './ui/YourTurnStrip';
+export type { YourTurnStripProps } from './ui/YourTurnStrip';
 export type { BrowserHandoffReceiptProps } from './ui/BrowserHandoffReceipt';
 export { useBrowserHandoff } from './model/use-browser-handoff';
 export type { HandoffStep } from './lib/handoff-step';
