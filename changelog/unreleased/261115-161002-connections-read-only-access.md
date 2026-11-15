@@ -1,6 +1,8 @@
 ---
 covers:
   - 'fix(connections): show available access without silent downgrades (DOR-4444)'
+  - 'fix(connections): preserve stored access during read-only review (DOR-4444)'
+  - 'fix(connections): compare displayed levels for named agents (DOR-4444)'
 ---
 
 ### Fixed
