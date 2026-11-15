@@ -44,9 +44,12 @@ import { newApprovalRow, APPROVAL_TOKEN_BYTES } from './approval-new-row.js';
 import { purgeExpiredApprovals } from './approval-retention.js';
 import { and, asc, count, desc, eq, gte, isNotNull, isNull, approvals, type Db } from '@dorkos/db';
 import type { ApprovalVerdictData } from '@dorkos/shared/additional-context';
-import type { CapabilityTier } from '@dorkos/shared/capabilities';
 import type { ProjectRef } from '@dorkos/shared/project-schemas';
-import { type ApprovalOutcome, type PendingApproval } from '@dorkos/shared/approval-schemas';
+import {
+  type ApprovalOutcome,
+  type ApprovalServiceAction,
+  type PendingApproval,
+} from '@dorkos/shared/approval-schemas';
 import type { PermissionAreaId } from '@dorkos/shared/permissions';
 import { broadcastApprovalPending, broadcastApprovalResolved } from './approval-events.js';
 import { cannotAllowCard } from './approval-completeness.js';
@@ -66,7 +69,7 @@ import {
 } from './approval-card.js';
 
 export { isAlwaysOffered };
-import { ownAnswerInput, storedFullDetail } from './approval-storable.js';
+import { ownAnswerInput, storedFullDetail, withServiceAction } from './approval-storable.js';
 import {
   raiseCapabilityApproval,
   resolveCapabilityApproval,
@@ -281,30 +284,8 @@ function hashToken(token: string): string {
   return createHash('sha256').update(token, 'utf8').digest('hex');
 }
 
-/**
- * What the grant route needs to answer one approval: the action, the agent that
- * asked, and what the gate recorded about it. Never includes token material.
- */
-export interface ApprovalAnswerScope {
-  /** The capability id or hand-registered tool name. */
-  capabilityId: string;
-  /** The agent's path, or `null` for an unidentified request. */
-  agentPath: string | null;
-  /** The recorded area, or `null` for an action with no area. */
-  area: PermissionAreaId | null;
-  /** Whether "Always allow" may be answered (see {@link isAlwaysOffered}). */
-  alwaysOffered: boolean;
-  /** Whether the agent asked past a Blocked permission. */
-  blockedRequest: boolean;
-  /** Whether granting it could raise what agents may do (DOR-3037). */
-  raisesPermissions: boolean;
-  /** Where the request stands right now. */
-  state: 'pending' | 'granted' | 'denied';
-  /** Whether it is spent, written off, or past its window. */
-  closed: boolean;
-  /** The recorded permission tier of the action. */
-  tier: CapabilityTier;
-}
+import type { ApprovalAnswerScope } from './approval-card.js';
+export type { ApprovalAnswerScope };
 
 /**
  * Why a blocked request (spec `agent-permissions` D8) may not raise a card,
@@ -1051,6 +1032,16 @@ export class ApprovalService {
    * @param approvalId - ULID of the approval.
    * @returns The scope, or `undefined` when there is no such approval.
    */
+  /**
+   * The app and action a card is about, as stored with it (DOR-4204 PR 2).
+   *
+   * @param approvalId - The card.
+   */
+  serviceActionOf(approvalId: string): ApprovalServiceAction | undefined {
+    const row = this.db.select().from(approvals).where(eq(approvals.id, approvalId)).get();
+    return row ? withServiceAction(row.serviceAction).serviceAction : undefined;
+  }
+
   answerScope(approvalId: string): ApprovalAnswerScope | undefined {
     const row = this.db.select().from(approvals).where(eq(approvals.id, approvalId)).get();
     if (!row) return undefined;

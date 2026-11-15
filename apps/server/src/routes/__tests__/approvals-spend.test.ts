@@ -12,6 +12,9 @@ vi.mock('../../services/core/auth/sessions/wifi-level.js', async (importOriginal
   ...(await importOriginal<typeof import('../../services/core/auth/sessions/wifi-level.js')>()),
   isFromWifi: () => wifi.on,
 }));
+vi.mock('../../services/core/auth/install-owner.js', () => ({
+  isInstallOwner: (user?: { userId: string }) => user?.userId === 'owner',
+}));
 vi.mock('../../services/core/config-manager.js', () => ({
   configManager: { get: vi.fn(() => undefined), set: vi.fn() },
 }));
@@ -35,6 +38,8 @@ describe('a paid-run card', () => {
   let approvals: ApprovalService;
   let tapRefusal: string | null;
   let app: Server;
+  let routes: ReturnType<typeof createApprovalsRoutes>;
+  let loginOn: boolean;
 
   beforeEach(() => {
     wifi.on = false;
@@ -43,10 +48,11 @@ describe('a paid-run card', () => {
       describeCapability: () => ({ title: 'Run a connected app action', tier: 'observe' }),
     });
     vi.spyOn(eventFanOut, 'broadcast').mockImplementation(() => {});
-    const routes = createApprovalsRoutes(approvals, {
+    loginOn = false;
+    routes = createApprovalsRoutes(approvals, {
       activity: { emit: async () => undefined } as unknown as ActivityService,
       permissions: createPermissionWorld({ preset: 'full', agents: [] }).service,
-      isLoginEnabled: () => false,
+      isLoginEnabled: () => loginOn,
       spending: { tapRefusal: () => tapRefusal },
     });
     app = target.mount(honoGroupListener({ path: '/api/approvals', routes }));
@@ -116,9 +122,37 @@ describe('a paid-run card', () => {
     const res = await grant(card.approvalId);
     expect(res.status).toBe(409);
     expect(res.body).toMatchObject({ code: 'SPEND_LIMIT', error: LIMIT_RECEIPT });
-    expect(approvals.consume(card.token, {
-      capabilityId: 'connectors.execute_read',
-      inputHash: hashApprovalInput({ query: 'Northwind pricing' }),
-    }).outcome).not.toBe('granted');
+    expect(
+      approvals.consume(card.token, {
+        capabilityId: 'connectors.execute_read',
+        inputHash: hashApprovalInput({ query: 'Northwind pricing' }),
+      }).outcome
+    ).not.toBe('granted');
+  });
+
+  it('is never answered by a signed-in person who does not own this DorkOS', async () => {
+    const card = spendCard();
+    loginOn = true;
+    const asUser = (userId: string) =>
+      target.mount(
+        honoGroupListener(
+          { path: '/api/approvals', routes },
+          {
+            before: async (c, next) => {
+              c.set('user', { userId, credential: 'cookie', sessionId: `sess-${userId}` });
+              await next();
+            },
+          }
+        )
+      );
+    const teammate = await request(asUser('teammate'))
+      .post(`/api/approvals/${card.approvalId}/grant`)
+      .send({});
+    expect(teammate.status).toBe(403);
+    expect(approvals.answerScope(card.approvalId)?.state).toBe('pending');
+    const owner = await request(asUser('owner'))
+      .post(`/api/approvals/${card.approvalId}/grant`)
+      .send({});
+    expect(owner.status).toBe(200);
   });
 });

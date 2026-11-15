@@ -78,6 +78,8 @@ import {
   watchSessionRelaySwitch,
   wireSessionRelay,
 } from '../../services/core/session-relay/index.js';
+import { wireConnectorSpending } from '../../services/connectors/spending/spending-port.js';
+import { chatReadOutsideWords } from '../../services/core/turn-power/chat-outside-words.js';
 
 /** What {@link mountCoreRoutes} reads from the startup steps before it. */
 export interface MountCoreRoutesInput {
@@ -180,6 +182,8 @@ export function mountCoreRoutes(refs: ServerRefs, built: MountCoreRoutesInput) {
     resolveOwner: () => connectorOwner,
     loginEnabled: personSessionRequired,
   };
+  // The monthly spend limit on paid app actions (DOR-4204 PR 2): one meter for the routes, the gate and the broker.
+  const connectorSpending = wireConnectorSpending(db, activityService, chatReadOutsideWords);
   const connectorRoutes: ConnectorRoutesDeps = {
     providers: { bootstrapper: connectorBootstrapper, credentialStore },
     events: {
@@ -214,6 +218,7 @@ export function mountCoreRoutes(refs: ServerRefs, built: MountCoreRoutesInput) {
       ...connectorOwnerBoundary,
     },
     holds: { holds: connectorHolds },
+    spending: { spending: connectorSpending, activity: activityService },
     accessChanges: { ...connectorOwnerBoundary, narrowing: connectorAccessNarrowing, db },
     // Read at request time: the extension manager starts after these routes.
     miniAppAccess: {

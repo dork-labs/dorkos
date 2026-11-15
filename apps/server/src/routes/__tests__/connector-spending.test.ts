@@ -56,12 +56,19 @@ const stepUpDeps: StepUpRouteDeps = {
 };
 
 let spending: SpendingStore;
+const lines: string[] = [];
 
 function app(user: RequestUser | null = OWNER) {
   return target.mount(
     honoGroupListener(
       [
-        { path: '/api/connectors/spending', routes: createConnectorSpendingRoutes({ spending }) },
+        {
+          path: '/api/connectors/spending',
+          routes: createConnectorSpendingRoutes({
+            spending,
+            activity: { emit: async (event) => void lines.push(event.summary) },
+          }),
+        },
         { path: '/api/step-up', routes: createStepUpRoutes(stepUpDeps) },
       ],
       {
@@ -82,11 +89,15 @@ const putPrice = (price: string | null) =>
     .set('Origin', OWN_ORIGIN)
     .send({ price });
 const confirm = (id: string) =>
-  request(app()).post(`/api/step-up/${id}/password`).set('Origin', OWN_ORIGIN).send({ password: PASSWORD });
+  request(app())
+    .post(`/api/step-up/${id}/password`)
+    .set('Origin', OWN_ORIGIN)
+    .send({ password: PASSWORD });
 
 beforeEach(() => {
   resetHeldStepUpsForTests();
   spending = new SpendingStore(createTestDb());
+  lines.length = 0;
 });
 
 afterEach(() => vi.clearAllMocks());
@@ -158,5 +169,26 @@ describe('only a person (spec 1.1)', () => {
     }
     expect(spending.limit()).toBe(40_000_000);
     expect(spending.price('tavily')).toBeNull();
+  });
+});
+
+describe('the Activity record (spec §9)', () => {
+  it('says each change to the limit and to a price', async () => {
+    spending.setLimit(40_000_000);
+    await putLimit('20000000');
+    await putLimit(null);
+    spending.setPrice('tavily', 300_000);
+    await putPrice('500000');
+    expect(lines).toEqual([
+      'Lowered the monthly limit to $20.00',
+      'Set spending to ask every time',
+      "Set tavily's price to about $0.50 a run",
+    ]);
+  });
+
+  it('says a raise once it is confirmed', async () => {
+    const held = await putLimit('60000000');
+    await confirm(StepUpRequiredBodySchema.parse(held.body).heldActionId);
+    expect(lines).toEqual(['Raised the monthly limit to $60.00 · confirmed with password']);
   });
 });

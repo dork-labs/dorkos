@@ -34,6 +34,7 @@ import type { MountCoreRoutesResult } from './core-routes.js';
 import type { WireSessionServicesResult } from './session-services.js';
 import type { StartTelemetryExtensionsAndRuntimesResult } from './telemetry-extensions-runtimes.js';
 import type { ServerRefs } from '../server-refs.js';
+import { spendTapRefusal } from '../../services/connectors/spending/spend-gate.js';
 
 /** What {@link mountLateRoutes} reads from the startup steps before it. */
 export interface MountLateRoutesInput {
@@ -186,6 +187,8 @@ export async function mountLateRoutes(refs: ServerRefs, built: MountLateRoutesIn
       // Names the action for the answer's audit line. Read lazily: the registry
       // is composed later in boot.
       describeCapability: (capabilityId) => refs.capabilityRegistry?.get(capabilityId),
+      // A paid-run card re-checks the monthly limit at the tap (DOR-4204 PR 2).
+      spending: { tapRefusal: (id) => spendTapRefusal(approvalService.serviceActionOf(id)) },
     },
   };
 

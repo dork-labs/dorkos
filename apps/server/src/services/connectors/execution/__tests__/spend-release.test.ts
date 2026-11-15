@@ -6,8 +6,21 @@
  * Real authorization, broker, usage store and SQLite; only the provider is a
  * fake. The service, account and amounts are made up.
  */
-import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { connectionOperationGrants, connections, connectorOperationRevisions, type Db } from '@dorkos/db';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+const notified = vi.hoisted(() => [] as Array<{ kind: string; payload: unknown }>);
+vi.mock('../../../notifications/notification-service.js', () => ({
+  notify: vi.fn(async (kind: string, payload: unknown) => {
+    notified.push({ kind, payload });
+    return { deduped: false };
+  }),
+}));
+import {
+  connectionOperationGrants,
+  connections,
+  connectorOperationRevisions,
+  type Db,
+} from '@dorkos/db';
 import {
   ConnectionIdSchema,
   ConnectorProviderInstanceIdSchema,
@@ -20,6 +33,7 @@ import { ConnectorExecutionAuthorizationService } from '../authorization-service
 import { ConnectorExecutionBroker } from '../execution-broker.js';
 import { ConnectorUsageStore } from '../usage-store.js';
 import { SpendingStore } from '../../spending/spending-store.js';
+import { initConnectorSpending } from '../../spending/spending-port.js';
 
 const OWNER = { kind: 'local_install', installationId: 'install-a' } as const;
 const NOW = new Date('2026-11-14T00:00:00.000Z');
@@ -27,6 +41,7 @@ const NOW = new Date('2026-11-14T00:00:00.000Z');
 const PAID = ConnectionIdSchema.parse('connection-acme-search');
 const REVISION = 'revision-acme-search';
 const DOLLAR = 1_000_000;
+const activity: Array<{ eventType: string; summary: string }> = [];
 
 describe('a paid run where it is let go', () => {
   let db: Db;
@@ -40,6 +55,7 @@ describe('a paid run where it is let go', () => {
   beforeEach(() => {
     db = createTestDb();
     outsider = false;
+    notified.length = 0;
     spending = new SpendingStore(db, () => NOW);
     provider = new FakeConnectorProvider({
       instanceId: ConnectorProviderInstanceIdSchema.parse('provider-a'),
@@ -94,7 +110,13 @@ describe('a paid run where it is let go', () => {
       .run();
     authorization = new ConnectorExecutionAuthorizationService(db, registry, {
       ownsAgent: (_owner, agentId) => agentId === 'agent-kestrel',
-      spending: { store: spending, outsider: () => outsider },
+    });
+    activity.length = 0;
+    initConnectorSpending({
+      store: spending,
+      outsider: () => outsider,
+      activity: { emit: async (event) => void activity.push(event) },
+      agentName: () => 'Kestrel',
     });
     executeProvider = vi.spyOn(provider, 'execute').mockImplementation(async (command) => {
       await command.authorizeDispatch();
@@ -104,13 +126,11 @@ describe('a paid run where it is let go', () => {
       authorization,
       new ConnectorUsageStore(db),
       { revalidate: () => true },
-      () => NOW,
-      undefined,
-      undefined,
-      () => (outsider ? [{ kind: 'outsider' }] : []) as never,
-      spending
+      () => NOW
     );
   });
+
+  afterEach(() => initConnectorSpending(undefined));
 
   async function run(approved = false) {
     const caller = createServerPrincipal({
@@ -135,7 +155,7 @@ describe('a paid run where it is let go', () => {
             approval: {
               via: 'approval' as const,
               approvalId: 'approval-spend',
-              authorityBindingDigest: prepared.authorityBinding.digest,
+              authorityBindingDigest: prepared.authorityBinding.approvalScope.digest,
             },
           }
         : {}),
@@ -156,14 +176,16 @@ describe('a paid run where it is let go', () => {
           agentPath: '/agents/kestrel',
         }),
       });
-    await expect(preflight()).resolves.toMatchObject({ spend: { kind: 'ask', reason: 'no-limit' } });
+    await expect(preflight()).resolves.toMatchObject({
+      spend: { kind: 'ask', reason: 'no-limit' },
+    });
     spending.setLimit(DOLLAR);
     spending.setPrice('tavily', 300_000);
     await expect(preflight()).resolves.toMatchObject({ spend: { kind: 'run' } });
   });
 
   it('never runs a paid action quietly while no limit is set', async () => {
-    await expect(run()).rejects.toMatchObject({ code: 'SPEND_APPROVAL_REQUIRED' });
+    await expect(run()).rejects.toMatchObject({ payload: { code: 'SPEND_APPROVAL_REQUIRED' } });
     expect(executeProvider).not.toHaveBeenCalled();
   });
 
@@ -178,7 +200,7 @@ describe('a paid run where it is let go', () => {
     for (let index = 0; index < 3; index += 1) {
       await expect(run()).resolves.toMatchObject({ result: { status: 'success' } });
     }
-    await expect(run()).rejects.toMatchObject({ code: 'SPEND_LIMIT' });
+    await expect(run()).rejects.toMatchObject({ payload: { code: 'SPEND_LIMIT' } });
     expect(executeProvider).toHaveBeenCalledTimes(3);
     expect(spending.meter().usedMicro).toBe(900_000);
   });
@@ -194,7 +216,7 @@ describe('a paid run where it is let go', () => {
       source: 'person',
       enforceLimit: true,
     });
-    await expect(run(true)).rejects.toMatchObject({ code: 'SPEND_LIMIT' });
+    await expect(run(true)).rejects.toMatchObject({ payload: { code: 'SPEND_LIMIT' } });
     expect(executeProvider).not.toHaveBeenCalled();
     expect(spending.meter().usedMicro).toBe(800_000);
   });
@@ -214,7 +236,7 @@ describe('a paid run where it is let go', () => {
     spending.setPrice('tavily', 300_000);
     outsider = true;
     for (const approved of [false, true]) {
-      await expect(run(approved)).rejects.toMatchObject({ code: 'SPEND_OUTSIDER' });
+      await expect(run(approved)).rejects.toMatchObject({ payload: { code: 'SPEND_OUTSIDER' } });
     }
     expect(executeProvider).not.toHaveBeenCalled();
     expect(spending.meter()).toMatchObject({ usedMicro: 0, unknownRuns: 0 });
@@ -224,7 +246,45 @@ describe('a paid run where it is let go', () => {
     spending.setLimit(40 * DOLLAR);
     spending.setPrice('tavily', 300_000);
     db.$client.exec('DROP TABLE spending_runs');
-    await expect(run()).rejects.toMatchObject({ code: 'SPEND_APPROVAL_REQUIRED' });
+    await expect(run()).rejects.toMatchObject({ payload: { code: 'SPEND_APPROVAL_REQUIRED' } });
     expect(executeProvider).not.toHaveBeenCalled();
+  });
+
+  it('tells the person at 80% and at the limit as runs cross them (spec §13 #9)', async () => {
+    spending.setLimit(DOLLAR);
+    spending.setPrice('tavily', 400_000);
+    await run();
+    expect(notified).toEqual([]);
+    await run();
+    expect(notified.map((n) => n.kind)).toEqual(['spending.near-limit']);
+    spending.setPrice('tavily', 200_000);
+    await run();
+    expect(notified.map((n) => n.kind)).toEqual(['spending.near-limit', 'spending.limit-reached']);
+  });
+
+  it('writes an Activity line for each paid run, and each refusal (spec §9)', async () => {
+    spending.setLimit(DOLLAR);
+    spending.setPrice('tavily', 300_000);
+    await run();
+    await run(true);
+    spending.reserve({
+      id: 'later',
+      toolkit: 'tavily',
+      agentId: 'agent-kestrel',
+      amountMicro: 400_000,
+      source: 'person',
+      enforceLimit: true,
+    });
+    await run().catch(() => undefined);
+    outsider = true;
+    await run().catch(() => undefined);
+    const lines = activity.map((a) => a.summary);
+    expect(lines[0]).toMatch(/^Kestrel ran .+ · about \$0\.30 · \$0\.70 left$/);
+    expect(lines[1]).toMatch(/^Kestrel ran .+ · allowed once · about \$0\.30$/);
+    expect(lines).toContainEqual(
+      expect.stringMatching(/^Refused Kestrel: .+ · monthly limit reached$/)
+    );
+    expect(lines).toContain("Kestrel's paid run was refused: the turn read outside content.");
+    expect(activity.every((a) => a.eventType.startsWith('spending.'))).toBe(true);
   });
 });

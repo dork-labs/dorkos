@@ -154,6 +154,8 @@ import {
 } from '../services/core/auth/sessions/wifi-level.js';
 import { wifiTurnHeld } from '../services/core/auth/sessions/wifi-turn-ceiling.js';
 import { WIFI_DENY_REASON_REFUSAL } from './session-answer-wifi.js';
+import { isInstallOwner } from '../services/core/auth/install-owner.js';
+import { personSessionRequired } from '../services/core/auth/gate-policy.js';
 
 /** Optional collaborators the boot wiring supplies; omitted in unit tests. */
 export interface ApprovalsRouterOptions {
@@ -182,6 +184,12 @@ export interface ApprovalsRouterOptions {
    * hand-registered tool table and then to its own id.
    */
   describeCapability?: (capabilityId: string) => { title: string } | undefined;
+  /**
+   * The monthly spend limit's check at the tap (DOR-4204 PR 2, spec §4.4):
+   * the receipt to answer with when a paid-run card no longer fits the limit,
+   * or `null` when it does. Omitted where no limit is wired.
+   */
+  spending?: { tapRefusal: (approvalId: string) => string | null };
 }
 
 /**
@@ -573,10 +581,13 @@ export function createApprovalsRoutes(
     // A Wi-Fi sign-in answers approvals, but never a destructive one (DOR-2969)
     // or one that could raise what agents may do (DOR-3037): those are the
     // computer's owner's call, made at the computer.
+    // A paid-run card is the owner's yes to spending money, made at the
+    // computer (DOR-4204 PR 2, Security Must 2), like a destructive one.
+    const spend = approvals.answerScope(c.req.param('id'))?.spend === true;
     const scope = isFromWifi(honoRequestFacts(c))
       ? approvals.answerScope(c.req.param('id'))
       : undefined;
-    if (scope && (scope.tier === 'destructive' || scope.raisesPermissions)) {
+    if (scope && (scope.tier === 'destructive' || scope.raisesPermissions || spend)) {
       return c.json({ error: WIFI_ACTION_REFUSAL, code: NOT_FROM_WIFI }, 403);
     }
 
@@ -591,6 +602,34 @@ export function createApprovalsRoutes(
     const standing = refuseStandingYesFromWifi(honoRequestFacts(c), answer === 'always');
     if (standing) return c.json(standing, 403);
     const id = c.req.param('id');
+    if (spend) {
+      // Money leaves the owner's account: under login, only the owner answers (Security Must 2).
+      const gated = options.isLoginEnabled
+        ? options.isLoginEnabled()
+        : personSessionRequired(authority.facts);
+      if (gated && !isInstallOwner(authority.facts.user)) {
+        return c.json(
+          {
+            error: 'Only the owner of this DorkOS can allow a paid run.',
+            code: 'SPEND_OWNER_ONLY',
+          },
+          403
+        );
+      }
+      // "Always" for money is the monthly limit, set in Connections.
+      if (answer === 'always') {
+        return c.json(
+          { error: 'Paid runs are allowed once at a time.', code: 'SPEND_ONCE_ONLY' },
+          409
+        );
+      }
+      // Re-checked at the tap: a limit set or used up since the card was raised.
+      const receipt = options.spending?.tapRefusal(id) ?? null;
+      if (receipt !== null) {
+        approvals.deny(id, receipt);
+        return c.json({ error: receipt, code: 'SPEND_LIMIT' }, 409);
+      }
+    }
 
     // Two Always allows for the same agent and action run one after the other:
     // run side by side, both would read "not set" before either wrote, and the

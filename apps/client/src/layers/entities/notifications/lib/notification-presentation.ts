@@ -34,6 +34,7 @@ import {
   WifiOff,
   type LucideIcon,
   Hand,
+  Coins,
 } from 'lucide-react';
 import type { NotificationDTO, NotificationKind } from '@dorkos/shared/notification-schemas';
 import { toSession } from '@/layers/shared/lib';
@@ -109,6 +110,10 @@ export const NOTIFICATION_ICONS: Record<NotificationKind, LucideIcon> = {
   'community.owner-replacement': TriangleAlert,
   'community.teammate-limit': CircleAlert,
   'community.teammate-limits-reset': CircleAlert,
+  // The monthly spend limit on paid app actions (DOR-4204 PR 2).
+  'spending.near-limit': Coins,
+  'spending.limit-reached': Coins,
+  'spending.meter-reset': CircleAlert,
   'heartbeat.credits-offer': Sparkles,
   // An agent handed a person the Agent browser (DOR-3218).
   'browser.handoff': Hand,
@@ -344,6 +349,14 @@ export function notificationLink(notification: NotificationDTO): NotificationLin
   if (kind === 'web.new_device') {
     // Where the owner pauses chat from the web if it wasn't them.
     return { ...appRoutes.home(), search: { settings: ACCOUNT_SETTINGS_TAB } };
+  }
+  if (
+    kind === 'spending.near-limit' ||
+    kind === 'spending.limit-reached' ||
+    kind === 'spending.meter-reset'
+  ) {
+    // Connections, where the Spending block sets the monthly limit (DOR-4204 PR 2).
+    return { ...appRoutes.connections(), search: {} };
   }
   if (kind === 'heartbeat.credits-offer') {
     // The offer's card is on every agent's Heartbeat page; the team is where

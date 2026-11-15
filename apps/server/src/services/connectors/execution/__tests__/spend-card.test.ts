@@ -132,6 +132,15 @@ describe('a paid run at the permission gate', () => {
     );
   });
 
+  it('raises a card on Trusted too: auto-share and Trusted never stand in for a yes to spend (Security Must 2)', async () => {
+    initPermissionGate({
+      readConfig: () => ({ preset: 'trusted', defaults: { areas: {}, actions: {} } }),
+    });
+    await expect(call()).rejects.toBeInstanceOf(CapabilityGateRefusal);
+    expect(request).toHaveBeenCalledTimes(1);
+    expect(execute).not.toHaveBeenCalled();
+  });
+
   it('raises a card when the price is unknown, even with plenty left (spec §13 #3)', async () => {
     spend = {
       kind: 'ask',
@@ -144,18 +153,30 @@ describe('a paid run at the permission gate', () => {
   });
 
   it('refuses past the limit with no card (spec §4.1)', async () => {
-    spend = { kind: 'refuse', code: 'SPEND_LIMIT', message: 'This run would pass the monthly spending limit. $0.20 is left.' };
+    spend = {
+      kind: 'refuse',
+      code: 'SPEND_LIMIT',
+      message: 'This run would pass the monthly spending limit. $0.20 is left.',
+    };
     await expect(call()).rejects.toSatisfy(
-      (error) => error instanceof CapabilityToolError && error.fields.code === 'SPEND_LIMIT'
+      (error) =>
+        error instanceof CapabilityToolError &&
+        (error.payload as { code?: string }).code === 'SPEND_LIMIT'
     );
     expect(request).not.toHaveBeenCalled();
     expect(execute).not.toHaveBeenCalled();
   });
 
   it('refuses an outsider-marked turn with no card (Security Must 1)', async () => {
-    spend = { kind: 'refuse', code: 'SPEND_OUTSIDER', message: 'Paid actions are off for this turn. It read outside content.' };
+    spend = {
+      kind: 'refuse',
+      code: 'SPEND_OUTSIDER',
+      message: 'Paid actions are off for this turn. It read outside content.',
+    };
     await expect(call()).rejects.toSatisfy(
-      (error) => error instanceof CapabilityToolError && error.fields.code === 'SPEND_OUTSIDER'
+      (error) =>
+        error instanceof CapabilityToolError &&
+        (error.payload as { code?: string }).code === 'SPEND_OUTSIDER'
     );
     expect(request).not.toHaveBeenCalled();
     expect(execute).not.toHaveBeenCalled();
@@ -170,7 +191,10 @@ describe('a paid run at the permission gate', () => {
 
   it('runs once after a person allows the card, and the token is spent', async () => {
     const first = await call().catch((error: unknown) => error);
-    if (!(first instanceof CapabilityGateRefusal) || first.decision.outcome !== 'approval_required') {
+    if (
+      !(first instanceof CapabilityGateRefusal) ||
+      first.decision.outcome !== 'approval_required'
+    ) {
       throw first;
     }
     const { approvalId, approvalToken } = first.decision.payload as {
