@@ -37,8 +37,10 @@ import { rearmLockWaiters, schedulePump } from './pump.js';
 import {
   forgetRecordedHolds,
   holdForPause,
+  forgetRuntimeMessageId,
   holdStartedForPause,
   pausedAgentOfPlan,
+  runtimeMessageIdFor,
 } from './pause-hold.js';
 import { logger } from '../../../lib/logger.js';
 import type { PausedAgentRef } from '../../mesh/pause/agent-pause.js';
@@ -265,6 +267,7 @@ export function launchDispatchInner(
           // Kept, so a pause that cuts the turn before the agent reads it can
           // put the row back (DOR-4353).
           startedRow = getMessageQueueStore()?.remove(messageId);
+          forgetRuntimeMessageId(messageId);
           if (startedRow) emitQueueUpdate(sessionKey);
         }
         // A launch the wait bound forced claimed no slot, so it met the lock as
@@ -289,7 +292,8 @@ export function launchDispatchInner(
       projector: plan.projector,
       deps: buildTurnDeps(plan.runtime),
       queueWaitMs: remainingMs,
-      messageId,
+      // A fresh id after a pause cut this row's turn; the row keeps its own (DOR-4353).
+      messageId: runtimeMessageIdFor(messageId),
       onError: turn.onError,
       onSettled: (turnOutcome, reason, agentActed) => {
         // This turn has let go of the write-lock, so whatever the lock refused

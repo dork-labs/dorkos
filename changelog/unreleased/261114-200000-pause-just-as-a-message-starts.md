@@ -4,6 +4,7 @@ covers:
   - 'fix(session): a held message reruns only when the agent did nothing at all, and keeps its marks (DOR-4353)'
   - 'fix(session): hooks and memory recall before the first model request do not count as the agent acting (DOR-4353)'
   - "fix(session): the prompt suggestion carried over from the last turn doesn't count as the agent acting (DOR-4353)"
+  - 'fix(session): a message rerun after a pause goes to Claude Code under a fresh id (DOR-4353)'
 ---
 
 ### Fixed

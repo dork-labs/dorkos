@@ -30,6 +30,7 @@
  *
  * @module services/session/message-dispatcher/pause-hold
  */
+import { randomUUID } from 'node:crypto';
 import { agentPause, type PausedAgentRef } from '../../mesh/pause/agent-pause.js';
 import {
   getMessageQueueStore,
@@ -49,12 +50,41 @@ const RECORDED_HOLDS_MAX = 1_000;
 const recordedHolds = new Set<string>();
 
 /**
+ * A fresh runtime message id for each row a pause cut after its turn started
+ * (DOR-4353, QA's W1). The cut runtime may already hold the message in its
+ * transcript under the id it was sent with, and Claude Code runs nothing for
+ * an id it already holds, so the rerun goes out under a new one. The row keeps
+ * its own id: its chat record, its marks and its place in line are keyed to it.
+ */
+const rerunIds = new Map<string, string>();
+
+/**
+ * The id a row's turn is sent to the runtime under: the row's own, or a fresh
+ * one after a pause cut it.
+ *
+ * @param rowId - The queue row.
+ */
+export function runtimeMessageIdFor(rowId: string): string {
+  return rerunIds.get(rowId) ?? rowId;
+}
+
+/**
+ * Forget a row's fresh runtime id once its turn has started.
+ *
+ * @param rowId - The queue row.
+ */
+export function forgetRuntimeMessageId(rowId: string): void {
+  rerunIds.delete(rowId);
+}
+
+/**
  * Forget which holds were recorded.
  *
  * @internal Exported for testing only, through `resetMessageDispatcher`.
  */
 export function forgetRecordedHolds(): void {
   recordedHolds.clear();
+  rerunIds.clear();
 }
 
 /**
@@ -164,6 +194,7 @@ export function holdStartedForPause(plan: DispatchPlan, row: QueuedMessageRecord
   const store = getMessageQueueStore();
   if (!agent || !store) return false;
   store.restore(queueKeyOf(plan.sessionKey), row);
+  rerunIds.set(row.id, randomUUID());
   emitQueueUpdate(plan.sessionKey);
   holdForPause(plan, agent);
   emitLifecycle({ phase: 'held', messageId: plan.messageId, sessionId: plan.sessionKey });
