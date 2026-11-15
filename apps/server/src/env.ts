@@ -170,7 +170,10 @@ export const serverEnvSchema = z.object({
   DORKOS_TODOS_ENABLED: boolFlag,
   // DOR-3858: turns from someone other than the owner on Telegram, Slack or in a room carry the
   // outsider mark, so raises, grants, connector sends and destructive actions ask a person. The
-  // turn keeps its level. Off until the owner approves turning it on.
+  // turn keeps its level. Off until the owner approves turning it on. Before it goes on
+  // (DOR-4453): the owner's own Telegram and Slack accounts belong on each connection's approver
+  // allowlist, or the owner's phone is marked too (a room always marks it until DOR-4318). Text an
+  // extension posts or relays carries no mark, so no check may rely on the mark covering it.
   DORKOS_MARK_STRANGER_TURNS: boolFlag,
   // Your browser discovery (DOR-3215): hidden and refused until explicitly enabled at boot.
   DORKOS_YOUR_BROWSER_ENABLED: boolFlag,

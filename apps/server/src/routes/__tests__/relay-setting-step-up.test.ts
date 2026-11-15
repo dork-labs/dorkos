@@ -296,7 +296,7 @@ const TYPED_SECRETS = {
   },
 };
 
-describe('a marked agent turn sending typed secrets to an address', () => {
+describe('a marked agent turn typing secrets into a connection (DOR-3858, DOR-4453 F2)', () => {
   it.each([
     {
       name: 'add',
@@ -316,15 +316,16 @@ describe('a marked agent turn sending typed secrets to an address', () => {
           .send({ config: TYPED_SECRETS }),
       saved: () => manager.updateConfig,
     },
-  ])('refuses a $name to a new address and saves nothing', async ({ send, saved }) => {
+  ])('refuses a $name with typed secrets and saves nothing', async ({ send, saved }) => {
     const res = await withStrangerMarkFlag(true, () => duringMarkedTurn(send));
 
     expect(res.status).toBe(403);
-    expect(res.body.code).toBe('marked_turn_secret_to_new_address');
+    expect(res.body.code).toBe('marked_turn_typed_secret');
     expect(saved()).not.toHaveBeenCalled();
   });
 
-  it('allows the same saved address', async () => {
+  // DOR-4453 F2: the address no longer decides it, so the two-call route is closed.
+  it('refuses typed secrets at the same saved address', async () => {
     const res = await withStrangerMarkFlag(true, () =>
       duringMarkedTurn(() =>
         request(app())
@@ -332,6 +333,49 @@ describe('a marked agent turn sending typed secrets to an address', () => {
           .set(...AGENT)
           .send({
             config: { ...TYPED_SECRETS, outbound: { ...TYPED_SECRETS.outbound, url: URL_A } },
+          })
+      )
+    );
+
+    expect(res.status).toBe(403);
+    expect(res.body.code).toBe('marked_turn_typed_secret');
+    expect(manager.updateConfig).not.toHaveBeenCalled();
+  });
+
+  it('refuses the two-call route: add at a new address with no secret, then save one there', async () => {
+    const [added, saved] = await withStrangerMarkFlag(true, () =>
+      duringMarkedTurn(async () => {
+        const first = await request(app())
+          .post('/api/relay/adapters')
+          .set(...AGENT)
+          .send({ type: 'webhook', id: 'wh', config: { outbound: { url: URL_A } } });
+        // The connection now names URL_A, which is the saved address the second call sends.
+        const second = await request(app())
+          .patch('/api/relay/adapters/wh/config')
+          .set(...AGENT)
+          .send({
+            config: {
+              outbound: { url: URL_A, headers: '{"Authorization":"made-up-header-secret"}' },
+            },
+          });
+        return [first, second] as const;
+      })
+    );
+
+    expect(added.status).toBe(201);
+    expect(saved.status).toBe(403);
+    expect(saved.body.code).toBe('marked_turn_typed_secret');
+    expect(manager.updateConfig).not.toHaveBeenCalled();
+  });
+
+  it('lets a marked turn save a change that types no secret', async () => {
+    const res = await withStrangerMarkFlag(true, () =>
+      duringMarkedTurn(() =>
+        request(app())
+          .patch('/api/relay/adapters/wh/config')
+          .set(...AGENT)
+          .send({
+            config: { outbound: { url: URL_A, secret: '***', headers: '{"Authorization":"***"}' } },
           })
       )
     );
@@ -361,7 +405,7 @@ describe('a marked agent turn sending typed secrets to an address', () => {
     expect(manager.updateConfig).toHaveBeenCalledOnce();
   });
 
-  it('refuses a test that sends typed secrets to a new address, and connects nothing', async () => {
+  it('refuses a test that sends typed secrets, and connects nothing', async () => {
     const res = await withStrangerMarkFlag(true, () =>
       duringMarkedTurn(() =>
         request(app())
@@ -372,7 +416,7 @@ describe('a marked agent turn sending typed secrets to an address', () => {
     );
 
     expect(res.status).toBe(403);
-    expect(res.body.code).toBe('marked_turn_secret_to_new_address');
+    expect(res.body.code).toBe('marked_turn_typed_secret');
     expect(manager.testConnection).not.toHaveBeenCalled();
   });
 
@@ -398,7 +442,7 @@ describe('a marked agent turn sending typed secrets to an address', () => {
     );
 
     expect(res.status).toBe(403);
-    expect(res.body.code).toBe('marked_turn_secret_to_new_address');
+    expect(res.body.code).toBe('marked_turn_typed_secret');
     expect(res.body.error).toContain("couldn't tell which agent");
     expect(manager.addAdapter).not.toHaveBeenCalled();
   });
@@ -417,7 +461,7 @@ describe('a marked agent turn sending typed secrets to an address', () => {
     expect(manager.addAdapter).toHaveBeenCalledOnce();
   });
 
-  it('lets an agent it cannot identify keep the same saved address', async () => {
+  it('refuses an agent it cannot identify at the same saved address too', async () => {
     const res = await withStrangerMarkFlag(true, () =>
       request(app())
         .patch('/api/relay/adapters/wh/config')
@@ -427,8 +471,9 @@ describe('a marked agent turn sending typed secrets to an address', () => {
         })
     );
 
-    expect(res.status).toBe(200);
-    expect(manager.updateConfig).toHaveBeenCalledOnce();
+    expect(res.status).toBe(403);
+    expect(res.body.code).toBe('marked_turn_typed_secret');
+    expect(manager.updateConfig).not.toHaveBeenCalled();
   });
 
   it('keeps today’s behavior while the flag is off', async () => {

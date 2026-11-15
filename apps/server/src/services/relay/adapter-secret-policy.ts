@@ -258,6 +258,10 @@ export function readIncoming(
  * Password maps are inspected after {@link normalizeFormConfig} resolves their
  * JSON-text form, so every header value is checked separately.
  *
+ * With no manifest nothing says which fields are secret, so any entered string
+ * anywhere in the config counts (DOR-4453): the gate fails closed. A manifest
+ * that types a secret as plain text is still read at its word.
+ *
  * @param incoming - The adapter config exactly as the route received it.
  * @param manifest - The adapter type's manifest.
  */
@@ -265,9 +269,18 @@ export function hasTypedAdapterSecret(
   incoming: Record<string, unknown>,
   manifest: AdapterManifest | undefined
 ): boolean {
+  if (!manifest) return hasEnteredString(incoming);
   return secretValues(readIncoming(incoming, manifest), manifest).some(
     ({ value }) => freshSecret(value) !== undefined
   );
+}
+
+/** Whether any string in a config, at any depth, is entered: not blank and not the mask. */
+function hasEnteredString(value: unknown): boolean {
+  if (typeof value === 'string') return value !== '' && value !== SECRET_MASK;
+  if (Array.isArray(value)) return value.some(hasEnteredString);
+  if (isSecretMap(value)) return Object.values(value).some(hasEnteredString);
+  return false;
 }
 
 /** A `url` value with blank read as no address. */
@@ -304,41 +317,47 @@ export function adapterAddressChanged(
 }
 
 /**
- * Refuse a marked agent turn that would pair a typed secret with a new
- * address. DOR-3858 prevents an outsider from leading an agent to deliver a
- * key it knows to the outsider's server. An agent writer DorkOS can't identify
- * has no turn to read marks from, so it is refused the same way: the gate
- * fails closed. A person remains free to enter the same secret deliberately,
- * and the boot flag preserves prior behavior while it is off.
+ * Refuse a marked agent turn that types a secret into a connection, whatever
+ * address the connection names. DOR-3858 prevents an outsider from leading an
+ * agent to deliver a key it knows to the outsider's server.
+ *
+ * The address is deliberately not read (DOR-4453 F2). A rule scoped to "a new
+ * address" is stepped around in two calls: add the connection at the
+ * outsider's URL with no secret, then save the secret at what is now the
+ * same address. It also missed every adapter whose address field is not typed
+ * `url`. So no typed secret passes from a marked turn, on add, save or test.
+ *
+ * An agent writer DorkOS can't identify has no turn to read marks from, so it
+ * is refused the same way: the gate fails closed. A person remains free to
+ * enter the same secret deliberately, and the boot flag preserves prior
+ * behavior while it is off.
  *
  * @param input - The independently resolved facts for this attempted write.
  * @param input.unidentified - The writer is an agent DorkOS could not identify.
  * @returns The HTTP refusal body, or `null` when this rule allows the write.
  */
-export function markedTurnSecretToNewAddressRefusal(input: {
+export function markedTurnTypedSecretRefusal(input: {
   enabled: boolean;
   writer: SecretWriter;
   turnMarked: boolean;
   unidentified?: boolean;
   typedSecret: boolean;
-  addressChanged: boolean;
-}): { error: string; code: 'marked_turn_secret_to_new_address' } | null {
+}): { error: string; code: 'marked_turn_typed_secret' } | null {
   if (
     !input.enabled ||
     input.writer === 'person' ||
     !(input.turnMarked || input.unidentified === true) ||
-    !input.typedSecret ||
-    !input.addressChanged
+    !input.typedSecret
   ) {
     return null;
   }
   return {
     error: input.turnMarked
-      ? "This turn followed a message DorkOS can't vouch for, so it can't send a secret to a " +
-        'new address. Ask a person to enter it.'
-      : "DorkOS couldn't tell which agent sent this, so it can't send a secret to a new " +
-        'address. Ask a person to enter it.',
-    code: 'marked_turn_secret_to_new_address',
+      ? "This turn followed a message DorkOS can't vouch for, so it can't enter a secret. " +
+        'Ask a person to enter it.'
+      : "DorkOS couldn't tell which agent sent this, so it can't enter a secret. " +
+        'Ask a person to enter it.',
+    code: 'marked_turn_typed_secret',
   };
 }
 
