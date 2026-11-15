@@ -935,7 +935,7 @@ DorkOS passes a selected set of environment variables to Claude Code, Codex, Ope
 It preserves normal home folders, command lookup (`PATH`), Git and SSH settings, proxy and certificate settings, and `DO_NOT_TRACK`.
 Supported model sign-ins are included when the command needs them. Binary lookup, installation, and hardware checks do not receive model keys automatically.
 
-Turn commands and hooks receive `DORKOS_SESSION_ID`, the DorkOS chat id. It grants no access.
+Turn commands and hooks receive `DORKOS_SESSION_ID`, the DorkOS chat id. It grants no access. On the Dork runtime, commands only run at Bypass permissions, so that's the only time it's set there.
 
 The `runtimes.environment.inherit` lists let the owner add exact names for custom tools.
 These lists start empty, including after an upgrade. Agents cannot change them through DorkOS tools.

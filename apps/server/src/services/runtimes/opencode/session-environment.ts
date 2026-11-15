@@ -15,17 +15,22 @@ export default async ({ client }) => ({
   'shell.env': async (input, output) => {
     // OpenCode sessionID is a vendor id, never the DorkOS chat id.
     // Children inherit their root chat's binding, without changing process.env.
-    let id = input.sessionID;
-    const seen = new Set();
-    while (id && !seen.has(id) && seen.size < 32) {
-      seen.add(id);
-      const name = createHash('sha256').update(id).digest('hex');
-      try {
-        output.env.DORKOS_SESSION_ID = await readFile(join(${JSON.stringify(directory)}, name), 'utf8');
-        return;
-      } catch (error) { if (error.code !== 'ENOENT') throw error; }
-      const result = await client.session.get({ path: { id } });
-      id = result.data?.parentID;
+    // Any unexpected failure leaves the id unset rather than failing the command.
+    try {
+      let id = input.sessionID;
+      const seen = new Set();
+      while (id && !seen.has(id) && seen.size < 32) {
+        seen.add(id);
+        const name = createHash('sha256').update(id).digest('hex');
+        try {
+          output.env.DORKOS_SESSION_ID = await readFile(join(${JSON.stringify(directory)}, name), 'utf8');
+          return;
+        } catch (error) { if (error.code !== 'ENOENT') throw error; }
+        const result = await client.session.get({ path: { id } });
+        id = result.data?.parentID;
+      }
+    } catch {
+      delete output.env.DORKOS_SESSION_ID;
     }
   }
 });
