@@ -249,6 +249,45 @@ describe('the fixture ledger schema', () => {
     });
   }
 
+  // Purpose (DOR-3589): `statusObservedAt` is additive. A ledger the new merge
+  // writes, with a kept share beside a later status, is still one the contract
+  // schema accepts, so a reader of the old shape (flow's CLI today) reads it.
+  it('accepts a ledger whose window kept a share beside a later status', () => {
+    const now = new Date('2026-09-26T16:00:00.000Z');
+    const out = mergeLedger(
+      null,
+      [
+        {
+          key: 'seven_day',
+          usedPct: 10,
+          resetsAt: '2026-09-29T00:00:00.000Z',
+          observedAt: '2026-09-26T15:00:00.000Z',
+          source: 'sdk_usage',
+        },
+        {
+          key: 'seven_day',
+          status: 'allowed_warning',
+          observedAt: '2026-09-26T15:30:00.000Z',
+          source: 'sdk_event',
+        },
+      ],
+      now,
+      { runtime: 'claude-code', accountId: 'work' }
+    );
+    const written = JSON.parse(JSON.stringify(out.ledger)) as UsageLedger;
+    expect(written.windows.seven_day).toMatchObject({
+      usedPct: 10,
+      statusObservedAt: '2026-09-26T15:30:00.000Z',
+    });
+    expect(validate(written), JSON.stringify(validate.errors)).toBe(true);
+    // The old reading of the window: the share, the status, and the share's time.
+    expect(readWindow(written.windows.seven_day, now, 'seven_day')).toMatchObject({
+      usedPct: 10,
+      status: 'allowed_warning',
+      observedAt: '2026-09-26T15:00:00.000Z',
+    });
+  });
+
   it('names only invalid examples that exist as reader leniencies', () => {
     const names = new Set(examples.invalid.map((e) => e.name));
     for (const name of READER_ACCEPTS) expect(names.has(name), name).toBe(true);
