@@ -10,6 +10,10 @@ const live = JSON.parse(
 const actions = Object.values(live).flat();
 // Each slug was reviewed against its description in the 2026-11-15 catalog.
 const explicit = [
+  'GOOGLEDOCS_UPDATE_DOCUMENT_BATCH', // batch can delete content
+  'GOOGLECALENDAR_BATCH_EVENTS', // batch can delete content
+  'GOOGLEDOCS_UPDATE_EXISTING_DOCUMENT', // batch can delete content
+
   'NOTION_UPDATE_SCHEMA_DATABASE', // permanent column and data deletion
   'GITHUB_UPDATE_USER_STATUS', // public profile status
   'GITHUB_DISMISS_A_REVIEW_FOR_A_PULL_REQUEST', // security controls
@@ -93,6 +97,19 @@ describe('reviewed Composio exceptions', () => {
   });
 
   it.each([
+    'GOOGLEDOCS_UPDATE_DOCUMENT_BATCH',
+    'GOOGLECALENDAR_BATCH_EVENTS',
+    'GOOGLEDOCS_UPDATE_EXISTING_DOCUMENT',
+  ])('keeps the deleting batch %s explicit if its destructive hint disappears', (slug) => {
+    const action = actions.find((row) => row.slug === slug);
+    expect(action, 'must exist in the dated catalog').toBeDefined();
+    const tags = action!.tags.filter((tag) => tag !== 'destructiveHint');
+    for (const writeIncludesDeletes of [false, true]) {
+      expect(classifyComposioAction(slug, tags, { writeIncludesDeletes })).toBe('destructive');
+    }
+  });
+
+  it.each([
     'GITHUB_CREATE_A_RELEASE',
     'GITHUB_UPDATE_A_RELEASE',
     'GITHUB_UPLOAD_RELEASE_ASSET',
@@ -107,7 +124,6 @@ describe('reviewed Composio exceptions', () => {
     'NOTION_CREATE_DATABASE',
     'NOTION_DUPLICATE_PAGE',
     'GOOGLEDRIVE_BATCH_UPDATE_SPREADSHEET_VALUES',
-    'GOOGLEDOCS_UPDATE_DOCUMENT_BATCH',
     'GOOGLEDOCS_DELETE_PARAGRAPH_BULLETS',
     'GOOGLEDRIVE_COPY_FILE',
     'GOOGLEDRIVE_CREATE_SHORTCUT_TO_FILE',

@@ -135,9 +135,13 @@ const ACCOUNT_REACH_ACTIONS = new Set([
 ]);
 
 // Composio-described permanent deletes, whole-container deletes and updates
-// hiding an archive or permanent data loss stay explicit with deletes on too.
+// hiding an archive, permanent data loss or batch deletions stay explicit with
+// deletes on too.
 // The remaining pinned delete-on list is what DOR-4451 would admit and review.
 const ALWAYS_EXPLICIT_DELETES = new Set([
+  'GOOGLEDOCS_UPDATE_DOCUMENT_BATCH',
+  'GOOGLECALENDAR_BATCH_EVENTS',
+  'GOOGLEDOCS_UPDATE_EXISTING_DOCUMENT',
   'GITHUB_DELETE_A_RELEASE',
   'GITHUB_DELETE_A_REPOSITORY',
   'GITHUB_DELETE_DEPLOYMENT',
