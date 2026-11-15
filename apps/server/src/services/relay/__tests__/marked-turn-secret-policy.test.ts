@@ -56,13 +56,25 @@ describe('markedTurnSecretToNewAddressRefusal', () => {
   it('refuses only the marked agent turn that types a secret for a new address', () => {
     expect(markedTurnSecretToNewAddressRefusal(blocked)).toEqual({
       error:
-        "This turn followed a message from someone other than the owner, so it can't send a secret to a new address. Ask a person to enter it.",
+        "This turn followed a message DorkOS can't vouch for, so it can't send a secret to a new address. Ask a person to enter it.",
+      code: 'marked_turn_secret_to_new_address',
+    });
+  });
+
+  it('refuses an agent writer it cannot identify, saying so', () => {
+    expect(
+      markedTurnSecretToNewAddressRefusal({ ...blocked, turnMarked: false, unidentified: true })
+    ).toEqual({
+      error:
+        "DorkOS couldn't tell which agent sent this, so it can't send a secret to a new address. Ask a person to enter it.",
       code: 'marked_turn_secret_to_new_address',
     });
   });
 
   it.each([
     ['flag off', { enabled: false }],
+    ['unidentified with the flag off', { unidentified: true, enabled: false }],
+    ['unidentified at the same address', { unidentified: true, addressChanged: false }],
     ['person writer', { writer: 'person' as const }],
     ['unmarked turn', { turnMarked: false }],
     ['empty or masked secret', { typedSecret: false }],

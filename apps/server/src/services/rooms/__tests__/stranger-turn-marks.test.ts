@@ -6,7 +6,6 @@
 import { describe, expect, it } from 'vitest';
 import type { AgentRuntime, TurnPermissionLevel } from '@dorkos/shared/agent-runtime';
 import type { StreamEvent } from '@dorkos/shared/types';
-import { env } from '../../../env.js';
 import { CLAUDE_CODE_CAPABILITIES } from '../../runtimes/claude-code/runtime-constants.js';
 import { lastTurnLevelOf, recordTurnLevels } from '../../core/turn-power/turn-levels.js';
 import { turnBoundsOf } from '../limits/teammate-turn.js';
@@ -17,6 +16,7 @@ import {
   outcomeRunner,
   settleUntil,
 } from './room-test-harness.js';
+import { withStrangerMarkFlag as withFlag } from './stranger-mark-flag.js';
 
 const agents = agentLookupFor({
   '/agents/ana': { name: 'ana', displayName: 'Ana', responseMode: 'mention-only' },
@@ -27,20 +27,6 @@ interface ObservedTurn {
   carriedOutsider?: true;
   permissionCeiling: RoomTurnRequest['permissionCeiling'];
   level: TurnPermissionLevel;
-}
-
-/** Run a room scenario with the boot flag temporarily set to `enabled`. */
-async function withFlag<T>(enabled: boolean, run: () => Promise<T>): Promise<T> {
-  const key = 'DORKOS_MARK_STRANGER_TURNS';
-  const target = env as unknown as Record<string, unknown>;
-  const previous = Object.getOwnPropertyDescriptor(target, key);
-  Object.defineProperty(target, key, { configurable: true, enumerable: true, value: enabled });
-  try {
-    return await run();
-  } finally {
-    if (previous) Object.defineProperty(target, key, previous);
-    else Reflect.deleteProperty(target, key);
-  }
 }
 
 /** Post as the owner, a teammate, and a bridged Telegram person, then return their turns. */

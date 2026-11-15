@@ -306,33 +306,38 @@ export function adapterAddressChanged(
 /**
  * Refuse a marked agent turn that would pair a typed secret with a new
  * address. DOR-3858 prevents an outsider from leading an agent to deliver a
- * key it knows to the outsider's server. A person remains free to enter the
- * same secret deliberately, and the boot flag preserves prior behavior while
- * it is off.
+ * key it knows to the outsider's server. An agent writer DorkOS can't identify
+ * has no turn to read marks from, so it is refused the same way: the gate
+ * fails closed. A person remains free to enter the same secret deliberately,
+ * and the boot flag preserves prior behavior while it is off.
  *
  * @param input - The independently resolved facts for this attempted write.
+ * @param input.unidentified - The writer is an agent DorkOS could not identify.
  * @returns The HTTP refusal body, or `null` when this rule allows the write.
  */
 export function markedTurnSecretToNewAddressRefusal(input: {
   enabled: boolean;
   writer: SecretWriter;
   turnMarked: boolean;
+  unidentified?: boolean;
   typedSecret: boolean;
   addressChanged: boolean;
 }): { error: string; code: 'marked_turn_secret_to_new_address' } | null {
   if (
     !input.enabled ||
     input.writer === 'person' ||
-    !input.turnMarked ||
+    !(input.turnMarked || input.unidentified === true) ||
     !input.typedSecret ||
     !input.addressChanged
   ) {
     return null;
   }
   return {
-    error:
-      "This turn followed a message from someone other than the owner, so it can't send a " +
-      'secret to a new address. Ask a person to enter it.',
+    error: input.turnMarked
+      ? "This turn followed a message DorkOS can't vouch for, so it can't send a secret to a " +
+        'new address. Ask a person to enter it.'
+      : "DorkOS couldn't tell which agent sent this, so it can't send a secret to a new " +
+        'address. Ask a person to enter it.',
     code: 'marked_turn_secret_to_new_address',
   };
 }

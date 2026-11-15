@@ -137,9 +137,9 @@ async function runOrHold(
  * address comparison and normalized secret-field reader.
  *
  * An HTTP agent call names no chat, so its current marks are read through its
- * verified agent folder, matching the other route-level gates. A presented but
- * unresolved agent token has no folder to attribute a running turn to and is
- * therefore unmarked here, while still being treated as an agent writer.
+ * verified agent folder, matching the other route-level gates. An agent writer
+ * with no verified identity has no turn to read marks from, so it is refused
+ * as a marked one is: the gate fails closed. Used by add, save and test.
  */
 function markedAdapterSecretRefusal(
   c: Context<ApiEnv>,
@@ -153,12 +153,15 @@ function markedAdapterSecretRefusal(
     const writer = secretWriter(c);
     if (writer === 'person') return null;
     const identity = honoRequestFacts(c).agentIdentity;
-    if (identity === undefined || !marksHold(marksOf(undefined, identity.agentPath))) return null;
+    const unidentified = identity === undefined;
+    const turnMarked = !unidentified && marksHold(marksOf(undefined, identity.agentPath));
+    if (!unidentified && !turnMarked) return null;
     const manifest = adapterManager.getManifest(type);
     return markedTurnSecretToNewAddressRefusal({
       enabled: env.DORKOS_MARK_STRANGER_TURNS,
       writer,
-      turnMarked: true,
+      turnMarked,
+      unidentified,
       typedSecret: hasTypedAdapterSecret(incoming, manifest),
       addressChanged: adapterAddressChanged(existing, incoming, manifest),
     });
@@ -190,6 +193,10 @@ export function registerSettingRoutes(router: Hono<ApiEnv>, deps: SettingRouteDe
     const parsed = AdapterTestRequestSchema.safeParse(readJsonBody(c));
     if (!parsed.success) return c.json(validationFailureBody(parsed.error), 400);
     const { type, config } = parsed.data;
+    // A test connects with what it is given, so it is held to the add's rule (DOR-3858).
+    const markedRefusal = markedAdapterSecretRefusal(c, adapterManager, type, undefined, config);
+    if (markedRefusal instanceof AdapterError) return sendAdapterError(c, markedRefusal);
+    if (markedRefusal) return c.json(markedRefusal, 403);
     const settings = personSettingsIn(config);
     return runOrHold(
       c,

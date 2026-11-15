@@ -361,6 +361,62 @@ describe('a marked agent turn sending typed secrets to an address', () => {
     expect(manager.updateConfig).toHaveBeenCalledOnce();
   });
 
+  it('refuses a test that sends typed secrets to a new address, and connects nothing', async () => {
+    const res = await withStrangerMarkFlag(true, () =>
+      duringMarkedTurn(() =>
+        request(app())
+          .post('/api/relay/adapters/test')
+          .set(...AGENT)
+          .send({ type: 'webhook', config: TYPED_SECRETS })
+      )
+    );
+
+    expect(res.status).toBe(403);
+    expect(res.body.code).toBe('marked_turn_secret_to_new_address');
+    expect(manager.testConnection).not.toHaveBeenCalled();
+  });
+
+  it('lets an unmarked agent turn test the same connection', async () => {
+    const res = await withStrangerMarkFlag(true, () =>
+      request(app())
+        .post('/api/relay/adapters/test')
+        .set(...AGENT)
+        .send({ type: 'webhook', config: TYPED_SECRETS })
+    );
+
+    expect(res.status).toBe(200);
+    expect(manager.testConnection).toHaveBeenCalledOnce();
+  });
+
+  // Fail closed: an agent header DorkOS can't resolve names no turn to read marks from.
+  it('refuses an agent it cannot identify, with a reason that says so', async () => {
+    const res = await withStrangerMarkFlag(true, () =>
+      request(app())
+        .post('/api/relay/adapters')
+        .set('X-DorkOS-Agent', 'made-up-unknown-token')
+        .send({ type: 'webhook', id: 'wh-new', config: TYPED_SECRETS })
+    );
+
+    expect(res.status).toBe(403);
+    expect(res.body.code).toBe('marked_turn_secret_to_new_address');
+    expect(res.body.error).toContain("couldn't tell which agent");
+    expect(manager.addAdapter).not.toHaveBeenCalled();
+  });
+
+  it('lets an agent it cannot identify keep the same saved address', async () => {
+    const res = await withStrangerMarkFlag(true, () =>
+      request(app())
+        .patch('/api/relay/adapters/wh/config')
+        .set('X-DorkOS-Agent', 'made-up-unknown-token')
+        .send({
+          config: { ...TYPED_SECRETS, outbound: { ...TYPED_SECRETS.outbound, url: URL_A } },
+        })
+    );
+
+    expect(res.status).toBe(200);
+    expect(manager.updateConfig).toHaveBeenCalledOnce();
+  });
+
   it('keeps today’s behavior while the flag is off', async () => {
     const res = await withStrangerMarkFlag(false, () =>
       duringMarkedTurn(() =>

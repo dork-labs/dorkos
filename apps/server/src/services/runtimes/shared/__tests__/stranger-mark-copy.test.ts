@@ -17,6 +17,17 @@ describe('marked-turn copy (DOR-3858)', () => {
     }
   });
 
+  // Review of #3778: a relay message from another agent or an outside app, and a marked hand-off
+  // or spin-off report, mark a turn in every boot, so the clauses name them in both states.
+  it('names every source that marks a turn, whatever the flag', () => {
+    for (const enabled of [false, true]) {
+      for (const line of [unmarkedTurnClause(enabled), markedTurnClause(enabled)]) {
+        expect(line).toContain('a relay message from another agent or an outside app');
+        expect(line).toContain('a hand-off or spin-off report that carried a mark');
+      }
+    }
+  });
+
   it('keeps the connected-app note word for word with the flag off', () => {
     expect(outsideWordsNote(false)).toBe(
       ' A message sent over Wi-Fi by anyone but the owner runs with limits, and a send through a ' +

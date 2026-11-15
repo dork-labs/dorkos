@@ -30,7 +30,7 @@ Available tools:
   ${T}tasks_delete(id) -- remove a schedule
   ${T}tasks_get_run_history(scheduleId) -- view past run results
 
-A schedule's target is your own agent id, "global", or (only from a chat at Full autonomy whose turn ${unmarkedTurnClause()}) another agent's id;
+A schedule's target is your own agent id, "global", or another agent's id. Another agent's id works only from a chat at Full autonomy whose turn ${unmarkedTurnClause()};
 a schedule you make or change for another agent runs at that agent's own level at most, and records that you made it.
 
 Claude Code's own CronCreate with durable: true is not reliable here: its job fires only

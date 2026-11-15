@@ -1,9 +1,13 @@
 /**
- * What agents are told about which messages mark a turn, in one place, so every
- * tool description and context block says exactly what the code does.
+ * What agents are told about what marks a turn, in one place, so every tool
+ * description and context block says exactly what the code does.
  *
- * Today only a message over Wi-Fi from someone other than the owner marks a
- * turn (`wifi-turn-ceiling.ts`). With DOR-3858's boot flag on
+ * Three things mark a turn in every boot: a message over Wi-Fi from someone
+ * other than the owner (`wifi-turn-ceiling.ts`); a relay message from a sender
+ * that may not shape the turn, such as another agent's `relay_send`, the A2A
+ * gateway or an outside MCP client (its `runtime-default` ceiling reads as the
+ * outsider mark, `turnPowerOptions`); and a hand-off or spin-off report that
+ * carries a mark on (`seat-carry.ts`). With DOR-3858's boot flag on
  * (`DORKOS_MARK_STRANGER_TURNS`), a message from someone other than the owner
  * on Telegram, Slack or in a room marks it too. Pages, mail and tool results
  * never do, in either state. The older wording ("a turn that read no messages
@@ -15,12 +19,16 @@
 import { env } from '../../../env.js';
 
 /**
- * Where a message from someone other than the owner marks the turn that follows it.
+ * What marks a turn, as a parenthetical list.
  *
  * @param markStrangerTurns - DOR-3858's boot flag.
  */
-function markingPlaces(markStrangerTurns: boolean): string {
-  return markStrangerTurns ? 'over Wi-Fi, Telegram, Slack or in a room' : 'over Wi-Fi';
+function markingSources(markStrangerTurns: boolean): string {
+  const places = markStrangerTurns ? 'over Wi-Fi, Telegram, Slack or in a room' : 'over Wi-Fi';
+  return (
+    `(a message from anyone but the owner ${places}, a relay message from another agent or an ` +
+    'outside app, or a hand-off or spin-off report that carried a mark)'
+  );
 }
 
 /**
@@ -29,7 +37,7 @@ function markingPlaces(markStrangerTurns: boolean): string {
  * @param markStrangerTurns - DOR-3858's boot flag; this boot's value by default.
  */
 export function unmarkedTurnClause(markStrangerTurns = env.DORKOS_MARK_STRANGER_TURNS): string {
-  return `followed no message ${markingPlaces(markStrangerTurns)} from anyone but the owner`;
+  return `followed nothing DorkOS marks ${markingSources(markStrangerTurns)}`;
 }
 
 /**
@@ -38,7 +46,7 @@ export function unmarkedTurnClause(markStrangerTurns = env.DORKOS_MARK_STRANGER_
  * @param markStrangerTurns - DOR-3858's boot flag; this boot's value by default.
  */
 export function markedTurnClause(markStrangerTurns = env.DORKOS_MARK_STRANGER_TURNS): string {
-  return `followed a message ${markingPlaces(markStrangerTurns)} from anyone but the owner`;
+  return `followed something DorkOS marks ${markingSources(markStrangerTurns)}`;
 }
 
 /**
