@@ -46,6 +46,8 @@ import {
   type ExtensionSkillPackage,
 } from '../sources/running-extension-skills.js';
 import { settleExtensionSkillCollisions } from './extension-skills.js';
+import { settlePackageSkillNameCollisions } from './package-skill-collisions.js';
+import { readUserSkillNames, type UserSkillName } from '../inventory/user-skills.js';
 
 /**
  * Where a global plan may write. An absent root is a root the plan does not
@@ -103,6 +105,17 @@ export interface GlobalPlanRoots {
    * in the harness list.
    */
   claudeSkillsDir?: string;
+  /**
+   * The person's own user-level skill folders a by-name harness reads
+   * (`~/.agents/skills`, `~/.claude/skills`, `~/.config/opencode/skills`),
+   * absolute. READ ONLY: never written into and never swept. Only the names
+   * are read, so a global package skill named like one of them is kept out of
+   * every folder an agent tool reads (DOR-4392).
+   *
+   * Resolved by the server beside the two roots above, and absent with them
+   * under a boundary.
+   */
+  ownSkillDirs?: readonly string[];
 }
 
 /**
@@ -190,6 +203,11 @@ export interface GlobalPlanInput {
    * written at all, never how many times.
    */
   harnesses: readonly HarnessId[];
+  /**
+   * The person's user-level skills, already read from
+   * {@link GlobalPlanRoots.ownSkillDirs}. {@link projectGlobal} fills this in.
+   */
+  userSkills?: readonly UserSkillName[];
 }
 
 /**
@@ -395,6 +413,8 @@ interface GlobalPlanTier {
   harnessAgnostic: boolean;
   /** The frozen note an action carries, given whether the skill runs on a timer. */
   reason: (hasSchedule: boolean) => string;
+  /** Whether agent tools read this folder, so a skipped same-name skill stays out of it. */
+  readByAgents: boolean;
 }
 
 /**
@@ -423,6 +443,7 @@ function globalPlanTiers(input: Omit<GlobalPlanInput, 'packages'>): GlobalPlanTi
       harnessAgnostic: true,
       reason: (hasSchedule) =>
         hasSchedule ? GLOBAL_SCHEDULE_LINK_REASON : GLOBAL_CANONICAL_LINK_REASON,
+      readByAgents: false,
     },
   ];
   const enabled = new Set(input.harnesses);
@@ -439,6 +460,7 @@ function globalPlanTiers(input: Omit<GlobalPlanInput, 'packages'>): GlobalPlanTi
       harness: 'codex',
       harnessAgnostic: true,
       reason: () => AGENTS_USER_LINK_REASON,
+      readByAgents: true,
     });
   }
   if (input.roots.claudeSkillsDir !== undefined && enabled.has('claude-code')) {
@@ -449,6 +471,7 @@ function globalPlanTiers(input: Omit<GlobalPlanInput, 'packages'>): GlobalPlanTi
       harness: 'claude-code',
       harnessAgnostic: false,
       reason: () => CLAUDE_USER_LINK_REASON,
+      readByAgents: true,
     });
   }
   return tiers;
@@ -522,11 +545,39 @@ export function buildGlobalPlan(input: GlobalPlanInput): GlobalProjectionPlan {
   const planned = new Set<string>();
   const tiers = globalPlanTiers(input);
 
-  for (const plugin of input.packages) {
-    if (plugin.location.scope !== 'global') continue;
+  // A harness that keys skills by name (OpenCode) keeps one of two same-name
+  // skills, and reads both user folders, so a global package skill named like
+  // the person's own user-level skill, or an earlier package's, is kept out of
+  // every folder an agent tool reads (DOR-4392). It stays in DorkOS's own
+  // folder, which no agent tool reads, so a skill on a timer still runs.
+  const globalPackages = input.packages.filter((plugin) => plugin.location.scope === 'global');
+  const byName = settlePackageSkillNameCollisions({
+    packages: globalPackages,
+    ownSkills: [],
+    userSkills: input.userSkills ?? [],
+  });
+  const settledExtensions = settleExtensionSkillCollisions({
+    extensions: input.extensionPackages ?? [],
+    plugins: globalPackages,
+  });
+  const byNameExtensions = settlePackageSkillNameCollisions({
+    packages: settledExtensions.packages,
+    ownSkills: [],
+    userSkills: input.userSkills ?? [],
+    taken: byName.taken,
+  });
+  // Only said when this plan writes a folder an agent tool reads: a plan that
+  // links into DorkOS's own folder alone replaces nothing.
+  const readByAgents = tiers.some((tier) => tier.readByAgents);
+  const skippedPackageSkills = readByAgents ? [...byName.skipped, ...byNameExtensions.skipped] : [];
+  const keptFromAgents = new Set(skippedPackageSkills.map((s) => `${s.package}__${s.skill}`));
+  if (readByAgents) warnings.push(...byName.warnings);
+
+  for (const plugin of globalPackages) {
     for (const skill of plugin.skills) {
       const namespaced = `${plugin.name}__${skill.name}`;
       for (const tier of tiers) {
+        if (tier.readByAgents && keptFromAgents.has(namespaced)) continue;
         // `join`, never `${dir}/${name}`: a target is a real path on this
         // machine, and the plan is the thing every other reader compares against
         // — the apply's `pathExists`, the sweep's `resolve`, the CLI's report,
@@ -569,15 +620,13 @@ export function buildGlobalPlan(input: GlobalPlanInput): GlobalProjectionPlan {
   // per target path, through each extension's generated plugin root. A global
   // package's skill of the same name wins.
   warnings.push(...(input.extensionWarnings ?? []));
-  const settled = settleExtensionSkillCollisions({
-    extensions: input.extensionPackages ?? [],
-    plugins: input.packages.filter((plugin) => plugin.location.scope === 'global'),
-  });
-  warnings.push(...settled.warnings);
-  for (const extension of settled.packages) {
+  warnings.push(...settledExtensions.warnings);
+  if (readByAgents) warnings.push(...byNameExtensions.warnings);
+  for (const extension of settledExtensions.packages) {
     for (const skill of extension.skills) {
       const namespaced = `${extension.name}__${skill.name}`;
       for (const tier of tiers) {
+        if (tier.readByAgents && keptFromAgents.has(namespaced)) continue;
         const target = join(tier.dir, namespaced);
         if (planned.has(target)) continue;
         planned.add(target);
@@ -603,9 +652,8 @@ export function buildGlobalPlan(input: GlobalPlanInput): GlobalProjectionPlan {
     drops: [],
     warnings,
     notEnabled: [],
-    enumeratedPackages: input.packages
-      .filter((plugin) => plugin.location.scope === 'global')
-      .map((plugin) => plugin.name),
+    ...(skippedPackageSkills.length > 0 ? { skippedPackageSkills } : {}),
+    enumeratedPackages: globalPackages.map((plugin) => plugin.name),
     ...(input.extensionLedger !== undefined ? { extensionLedger: input.extensionLedger } : {}),
   };
 }
@@ -674,6 +722,7 @@ export function projectGlobal(input: Omit<GlobalPlanInput, 'packages'>): GlobalP
   const extensions = globalExtensionSkillPackages(ledger, input.roots.dorkHome);
   return buildGlobalPlan({
     ...input,
+    userSkills: readUserSkillNames(input.roots.ownSkillDirs ?? []),
     packages: scan.plugins,
     unreadableManifests: scan.unreadableManifests,
     extensionPackages: extensions.packages,

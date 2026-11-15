@@ -72,7 +72,11 @@ import {
   planInventoryWarnings,
 } from './source-artifacts.js';
 import { commandDropReason } from './command-formats.js';
-import { inventorySourceTree, type SourceInventory } from '../inventory/index.js';
+import {
+  inventorySourceTree,
+  type SourceInventory,
+  type UserSkillName,
+} from '../inventory/index.js';
 import {
   blockedWritePath,
   unwritableWritePath,
@@ -525,6 +529,13 @@ export function buildPlan(input: {
    * which is the state of every machine that has not answered.
    */
   sharedWithTools?: boolean;
+  /**
+   * The person's user-level skills (`~/.agents/skills` and the rest a by-name
+   * harness reads in every project), read by the caller with
+   * `readUserSkillNames`. A package skill named like one of them is skipped,
+   * as for a project skill of theirs (DOR-4392). Omitted means none.
+   */
+  userSkills?: readonly UserSkillName[];
 }): ProjectionPlan {
   const {
     repoRoot,
@@ -628,10 +639,12 @@ export function buildPlan(input: {
   const pluginSkills = settlePackageSkillNameCollisions({
     packages: projectable,
     ownSkills: inventory.skills,
+    userSkills: input.userSkills ?? [],
   });
   const extensionSkills = settlePackageSkillNameCollisions({
     packages: extensionSettled.packages,
     ownSkills: inventory.skills,
+    userSkills: input.userSkills ?? [],
     taken: pluginSkills.taken,
   });
   const skillPlugins = pluginSkills.packages;

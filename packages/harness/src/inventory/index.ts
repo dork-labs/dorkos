@@ -43,6 +43,7 @@ import type { SourceInventory } from './types.js';
 
 export * from './types.js';
 export { inventorySkills } from './skills.js';
+export { readUserSkillNames, type UserSkillName } from './user-skills.js';
 export { inventoryCommands } from './commands.js';
 export { inventoryHooks } from './hooks.js';
 export { inventoryAgents, CLAUDE_AGENTS_DIR } from './agents.js';
