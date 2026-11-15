@@ -5,9 +5,13 @@ import os from 'node:os';
 import path from 'node:path';
 import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
-import { build } from 'esbuild';
+import { build, type Plugin } from 'esbuild';
 
-/** CI-only macOS spec for the real native guest, before/during/after handoff and Stop. */
+const witness = (file: string) =>
+  fileURLToPath(new URL(`./local-browser-ci/${file}`, import.meta.url));
+const client = fileURLToPath(new URL('../../client', import.meta.url));
+
+/** CI-only macOS spec for the real native guest: handoff and Stop, then app layers over it. */
 export async function assertEmbeddedBrowserHandoff(): Promise<string> {
   if (process.env.CI !== 'true' || process.platform !== 'darwin')
     throw new Error('The native guest proof runs only on a macOS CI runner.');
@@ -15,34 +19,36 @@ export async function assertEmbeddedBrowserHandoff(): Promise<string> {
   const scratch = await mkdtemp(path.join(os.tmpdir(), 'dorkos-native-browser-'));
   const home = path.join(scratch, 'home');
   await mkdir(home);
-  try {
-    const outfile = path.join(scratch, 'main.cjs');
+  const installedPlaywright: Plugin = {
+    name: 'installed-playwright',
+    setup(builder) {
+      builder.onResolve({ filter: /^playwright-core$/ }, () => ({
+        path: require.resolve('playwright-core'),
+        external: true,
+      }));
+    },
+  };
+  const mainProcess = async (entry: string) => {
+    const outfile = path.join(scratch, `${path.basename(entry, '.ts')}.cjs`);
     await build({
-      entryPoints: [fileURLToPath(new URL('./local-browser-ci/fixture.ts', import.meta.url))],
+      entryPoints: [witness(entry)],
       outfile,
       bundle: true,
       platform: 'node',
       format: 'cjs',
       external: ['electron'],
-      plugins: [
-        {
-          name: 'installed-playwright',
-          setup(builder) {
-            builder.onResolve({ filter: /^playwright-core$/ }, () => ({
-              path: require.resolve('playwright-core'),
-              external: true,
-            }));
-          },
-        },
-      ],
+      plugins: [installedPlaywright],
     });
+    return outfile;
+  };
+  const run = async (outfile: string, env: Record<string, string> = {}) => {
     const { stdout } = await promisify(execFile)(
       require('electron') as string,
       [
         outfile,
         '--use-mock-keychain',
         '--password-store=basic',
-        `--user-data-dir=${path.join(scratch, 'profile')}`,
+        `--user-data-dir=${path.join(scratch, `profile-${path.basename(outfile, '.cjs')}`)}`,
       ],
       {
         timeout: 60_000,
@@ -54,10 +60,43 @@ export async function assertEmbeddedBrowserHandoff(): Promise<string> {
           DORK_HOME: path.join(home, '.dork'),
           CLAUDE_CONFIG_DIR: path.join(home, '.claude'),
           DORKOS_TEST_RUNTIME: 'true',
+          ...env,
         },
       }
     );
     return stdout.trim();
+  };
+  try {
+    const handoff = await run(await mainProcess('fixture.ts'));
+
+    // DOR-4417, DOR-4418: the client's real surface hook and shared layers, bundled
+    // from the client's own modules, drive the same native bridge.
+    const page = path.join(scratch, 'overlay-page.js');
+    await build({
+      entryPoints: [witness('overlay-page.tsx')],
+      outfile: page,
+      bundle: true,
+      platform: 'browser',
+      format: 'iife',
+      tsconfig: path.join(client, 'tsconfig.json'),
+      nodePaths: [path.join(client, 'node_modules')],
+      jsx: 'automatic',
+      define: { 'process.env.NODE_ENV': '"production"' },
+    });
+    const preload = path.join(scratch, 'overlay-preload.cjs');
+    await build({
+      entryPoints: [witness('overlay-preload.ts')],
+      outfile: preload,
+      bundle: true,
+      platform: 'node',
+      format: 'cjs',
+      external: ['electron'],
+    });
+    const overlays = await run(await mainProcess('overlays.ts'), {
+      DORKOS_OVERLAY_PAGE: page,
+      DORKOS_OVERLAY_PRELOAD: preload,
+    });
+    return `${handoff} ${overlays}`;
   } finally {
     await rm(scratch, { recursive: true, force: true });
   }
