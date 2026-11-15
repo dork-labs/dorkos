@@ -572,6 +572,39 @@ describe('approving a proposed schedule can carry the operator’s trust stop', 
     expect(scheduler.triggerManualRun).toHaveBeenCalledWith(task.id, 'dontAsk');
   });
 
+  it('refuses a trial the runtime it starts on cannot hold to the baseline', async () => {
+    // The agent runs on Codex (no task override), which offers no Allowed
+    // commands, so an outsider-written trial cannot be tightened: refused, not run.
+    const task = await proposedByAgent();
+    meshProjectPath = path.join(dorkHome, 'codex-agent');
+    await writeManifest(meshProjectPath, baseManifest());
+    db.update(pulseSchedules)
+      .set({ agentId: AGENT_ID, originMarks: JSON.stringify({ outsider: true }) })
+      .where(eq(pulseSchedules.id, task.id))
+      .run();
+
+    const response = await request(fixtureServer).post(`/api/tasks/${task.id}/trigger`).send({});
+    expect(response.status).toBe(409);
+    expect(response.body.code).toBe('trial_looser_than_proposal');
+    expect(scheduler.triggerManualRun).not.toHaveBeenCalled();
+  });
+
+  it('judges rules by the runtime the run starts on, the agent one when the task names none', async () => {
+    const task = await proposedByAgent();
+    meshProjectPath = path.join(dorkHome, 'codex-agent');
+    await writeManifest(meshProjectPath, baseManifest());
+    db.update(pulseSchedules)
+      .set({ agentId: AGENT_ID })
+      .where(eq(pulseSchedules.id, task.id))
+      .run();
+
+    const response = await request(fixtureServer)
+      .patch(`/api/tasks/${task.id}`)
+      .send({ requestedAllow: ['Bash(/abs/path/script.sh --once)'] });
+    expect(response.status).toBe(400);
+    expect(response.body.code).toBe('task_rules_unsupported_runtime');
+  });
+
   it('refuses rules a Codex run could not apply, at proposal time', async () => {
     const response = await request(fixtureServer)
       .post('/api/tasks')

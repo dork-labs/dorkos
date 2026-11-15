@@ -26,11 +26,23 @@ export function schedulePermissionExplanation(mode: string): string {
   return SCHEDULE_PERMISSION_EXPLANATIONS[mode] ?? 'Uses this mode’s scheduled-run limits.';
 }
 
-/** Why approving needs a separate, ticked yes; mirrors the server's check. */
-export type ScheduleConfirmReason = 'looser' | 'programs' | 'writes' | 'outsider-rules';
+/**
+ * What the separate, ticked yes covers; mirrors the server's check
+ * (`routes/task-approval-request.ts`). Each part is said in the tick's words.
+ */
+export interface ScheduleConfirmReason {
+  /** The selected mode is looser than the one-click baseline. */
+  mode: boolean;
+  /** A rule starts programs. */
+  programs: boolean;
+  /** A rule may change files outside the task's folder. */
+  writes: boolean;
+  /** Outsider-written work carries rules, none of them covered above. */
+  outsiderRules: boolean;
+}
 
 /**
- * The reason a schedule's approval needs the separate confirmation, or `null`
+ * What a schedule's approval needs the separate confirmation for, or `null`
  * when the plain Approve is enough (DOR-3637, Security Shoulds D-1 to D-3): a
  * mode looser than the one-click baseline, any rule that starts programs or
  * changes files outside the task's folder, or rules on work written after
@@ -44,22 +56,30 @@ export function scheduleConfirmReason(
   looserMode: boolean
 ): ScheduleConfirmReason | null {
   const rules = task.requestedAllow ?? [];
-  if (looserMode) return 'looser';
-  if (rules.some(runsPrograms)) return 'programs';
-  if (rules.some(writesOutsideTaskFolder)) return 'writes';
-  if (task.originMarks?.outsider && rules.length > 0) return 'outsider-rules';
-  return null;
+  const programs = rules.some(runsPrograms);
+  const writes = rules.some(writesOutsideTaskFolder);
+  const outsiderRules = Boolean(task.originMarks?.outsider) && rules.length > 0;
+  const reason = {
+    mode: looserMode,
+    programs,
+    writes,
+    outsiderRules: outsiderRules && !programs && !writes,
+  };
+  return Object.values(reason).some(Boolean) ? reason : null;
 }
 
 /**
- * The words beside the confirmation tick, at most a short line.
+ * The words beside the confirmation tick: what it allows, at most 15 words.
  *
- * @param reason - Why the tick is needed.
- * @param agent - The proposer's name, when known.
+ * @param reason - What the tick covers.
  */
-export function scheduleConfirmLabel(reason: ScheduleConfirmReason, agent: string | null): string {
-  if (reason === 'looser') return `Run it looser than ${agent ?? 'the agent'} asked`;
-  if (reason === 'programs') return 'Let it run these programs with nobody there';
-  if (reason === 'writes') return 'Let it change files outside its folder with nobody there';
-  return 'Allow these rules anyway';
+export function scheduleConfirmLabel(reason: ScheduleConfirmReason): string {
+  const parts = [
+    reason.mode && 'a looser mode',
+    reason.programs && 'these programs',
+    reason.writes && 'file changes outside its folder',
+    reason.outsiderRules && 'these rules',
+  ].filter((part): part is string => typeof part === 'string');
+  const list = parts.length > 1 ? `${parts.slice(0, -1).join(', ')} and ${parts.at(-1)}` : parts[0];
+  return `Allow ${list} with nobody there`;
 }

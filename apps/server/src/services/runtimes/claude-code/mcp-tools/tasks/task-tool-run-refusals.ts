@@ -59,8 +59,9 @@ export async function updateRunRefusal(
   }
   // Rules the task's runs could not honour are refused up front (#3794).
   if (args.requestedAllow !== undefined || args.runtime !== undefined) {
-    const rules = taskPermissionRulesRefusal({
+    const rules = await taskPermissionRulesRefusal({
       runtime: args.runtime !== undefined ? args.runtime : existing.runtime,
+      agentPath: existing.agentId ? deps.meshCore?.getProjectPath(existing.agentId) : null,
       rules:
         (args.requestedAllow !== undefined ? args.requestedAllow : existing.requestedAllow) ?? [],
     });

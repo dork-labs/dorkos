@@ -240,9 +240,17 @@ function ScheduleApprovalContent({
   const selectedMode = pickedMode ?? (startsAtBaseline ? baseline : task.permissionMode);
   const selected = power.modes.find((mode) => mode.id === selectedMode);
   const looserMode = Boolean(selected && isLooserScheduleMode(selected.id, baseline));
-  // A trial is held to the baseline too; a saved mode looser than it waits for approval.
-  const trialTooLoose =
+  // A trial of a pending schedule runs at the baseline when the saved mode is
+  // looser, as the trigger route does (`routes/task-trial-mode.ts`); one whose
+  // runtime does not offer that mode waits for approval.
+  const trialTightened =
     task.status === 'pending_approval' && isLooserScheduleMode(task.permissionMode, baseline);
+  const trialBlocked = trialTightened && !power.modes.some((mode) => mode.id === baseline);
+  const trialMode = trialTightened ? baseline : task.permissionMode;
+  const trialLabel = schedulePermissionLabel(
+    trialMode,
+    power.modes.find((mode) => mode.id === trialMode)?.label ?? permissionModeLabel(trialMode)
+  );
   const confirmReason = scheduleConfirmReason(task, looserMode);
   const needsLooserConfirmation = confirmReason !== null;
   const currentLabel = schedulePermissionLabel(
@@ -591,16 +599,15 @@ function ScheduleApprovalContent({
           />
         )}
 
-        {/* A test run uses the saved mode (the trigger route takes no pick), and
-            never one looser than the baseline: then it waits for approval. */}
-        {answered === null && (trialTooLoose || selectedMode !== task.permissionMode) && (
+        {/* A test run takes no pick: it uses the saved mode, or the baseline when
+            the saved one is looser. Said only when that differs from the pick. */}
+        {answered === null && (trialBlocked || selectedMode !== trialMode) && (
           <p data-slot="schedule-try-mode" className="text-muted-foreground text-xs">
-            {trialTooLoose
-              ? 'Approve it first to try it. Its saved mode is looser than proposed.'
-              : `Try it once now uses the saved mode: ${schedulePermissionLabel(
-                  task.permissionMode,
-                  power.current?.label ?? permissionModeLabel(task.permissionMode)
-                )}.`}
+            {trialBlocked
+              ? 'Try it once now waits until you approve it.'
+              : trialTightened
+                ? `Try it once now uses ${trialLabel}.`
+                : `Try it once now uses the saved mode: ${trialLabel}.`}
           </p>
         )}
         {pinActions && answered === null && (
@@ -611,7 +618,7 @@ function ScheduleApprovalContent({
               data-slot="schedule-test-run-start"
               aria-label={`Run ${name} once`}
               className="min-h-11 px-2.5 text-xs sm:min-h-0"
-              disabled={testRun.phase === 'running' || refreshing || trialTooLoose}
+              disabled={testRun.phase === 'running' || refreshing || trialBlocked}
               onClick={testRun.start}
             >
               Try it once now
@@ -635,7 +642,7 @@ function ScheduleApprovalContent({
         }
         onApprove={approveAtSelectedLevel}
         refreshing={refreshing}
-        trialBlocked={trialTooLoose}
+        trialBlocked={trialBlocked}
         testRun={testRun}
         trialNote={trialNote}
         onReject={reject}

@@ -1,4 +1,5 @@
 import type { Task, UpdateTaskRequest } from '@dorkos/shared/types';
+import type { MeshCore } from '@dorkos/mesh';
 import { needsOwnConfirmation } from '@dorkos/shared/permission-rules';
 import { isLooserScheduleMode, scheduleApprovalBaseline } from '@dorkos/shared/schedule-approval';
 import * as personReview from '../services/tasks/approvals/person-review.js';
@@ -22,11 +23,18 @@ export interface TaskPatchRefusal {
  * rules the task's runs cannot honour (400), a review the proposal has moved
  * past (409, so the card refreshes before anything else is judged), and an
  * approval looser than one click may give (409).
+ *
+ * @param store - Reads the task again for the stale check.
+ * @param task - The task as it stands.
+ * @param update - The parsed PATCH body.
+ * @param meshCore - Finds the task's agent folder, so the rules are judged
+ *   against the runtime its runs actually start on.
  */
-export function prepareTaskApprovalRequest(
+export async function prepareTaskApprovalRequest(
   store: Pick<TaskStore, 'getTask'>,
   task: Task,
-  update: UpdateTaskRequest
+  update: UpdateTaskRequest,
+  meshCore?: Pick<MeshCore, 'getProjectPath'>
 ) {
   const {
     approvedPromptHash,
@@ -40,8 +48,9 @@ export function prepareTaskApprovalRequest(
     data.requestedAllow !== undefined ||
     data.approvedAllow !== undefined ||
     data.runtime !== undefined
-      ? taskPermissionRulesRefusal({
+      ? await taskPermissionRulesRefusal({
           runtime: data.runtime !== undefined ? data.runtime : task.runtime,
+          agentPath: task.agentId ? meshCore?.getProjectPath(task.agentId) : null,
           rules: [
             ...((data.requestedAllow !== undefined ? data.requestedAllow : task.requestedAllow) ??
               []),

@@ -9,6 +9,7 @@
 import { isSpecificPermissionRule } from '@dorkos/shared/permission-rules';
 import { expandTilde } from '../../lib/boundary.js';
 import { runtimeRegistry } from '../core/runtime-registry.js';
+import { resolveTaskRunRuntime } from './execution/run-runtime.js';
 
 /** A refusal for a proposal or approval whose rules cannot be honoured. */
 export interface TaskPermissionRulesRefusal {
@@ -31,17 +32,24 @@ export interface TaskPermissionRulesRefusal {
 const RULES_RUNTIME = 'claude-code';
 
 /**
- * Refuse rules the task's runs could not honour, or that reach the whole home
- * folder by its absolute path. Nothing to check when there are no rules.
+ * Refuse rules the task's runs could not honour, or that reach all of home or
+ * a folder above it. The runtime is the one the runs actually start on: the
+ * task's, else its agent's, else the default, as a run resolves it. Nothing to
+ * check when there are no rules.
  *
- * @param input - The task's runtime (null for the default) and its rules.
+ * @param input - The task's own runtime (null for none), its agent's folder, and its rules.
  */
-export function taskPermissionRulesRefusal(input: {
+export async function taskPermissionRulesRefusal(input: {
   runtime: string | null | undefined;
+  agentPath?: string | null;
   rules: readonly string[];
-}): TaskPermissionRulesRefusal | null {
+}): Promise<TaskPermissionRulesRefusal | null> {
   if (input.rules.length === 0) return null;
-  const runtime = input.runtime ?? runtimeRegistry.getDefaultType();
+  const runtime = await resolveTaskRunRuntime(
+    { runtime: input.runtime ?? null },
+    runtimeRegistry,
+    input.agentPath
+  );
   if (runtime !== RULES_RUNTIME) {
     return {
       error: 'Task rules only work for Claude Code runs. Leave them off for this runtime.',
@@ -53,7 +61,7 @@ export function taskPermissionRulesRefusal(input: {
   const broad = input.rules.find((rule) => !isSpecificPermissionRule(rule, { home }));
   return broad
     ? {
-        error: `"${broad}" covers your whole home folder. Name one file or command.`,
+        error: `"${broad}" reaches your whole home folder. Name one file or command.`,
         code: 'task_rule_too_broad',
       }
     : null;

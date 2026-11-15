@@ -333,8 +333,9 @@ export async function createScheduledTask(
   }
   const data = parsed.data;
   // Rules the task's runs could not honour are refused up front (#3794).
-  const rules = taskPermissionRulesRefusal({
+  const rules = await taskPermissionRulesRefusal({
     runtime: data.runtime,
+    agentPath: data.target === 'global' ? null : deps.meshCore?.getProjectPath(data.target),
     rules: data.requestedAllow ?? [],
   });
   if (rules) return { ok: false, status: 400, error: rules.error, code: rules.code };

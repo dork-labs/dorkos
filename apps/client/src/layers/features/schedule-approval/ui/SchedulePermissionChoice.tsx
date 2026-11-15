@@ -117,7 +117,7 @@ export function SchedulePermissionChoice({
             checked={confirmLooser}
             onCheckedChange={(checked) => onConfirmLooserChange(checked === true)}
           />
-          <span>{scheduleConfirmLabel(confirmReason, task.proposedByName)}</span>
+          <span>{scheduleConfirmLabel(confirmReason)}</span>
         </label>
       )}
       {/* What a never-asks mode still does not cover: DorkOS's own actions. */}

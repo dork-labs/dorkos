@@ -637,7 +637,9 @@ export class TaskSchedulerService {
   /** Manually trigger a run for a task, at `mode` when the route held a trial tighter. */
   async triggerManualRun(taskId: string, mode?: PermissionMode): Promise<TaskRun | null> {
     const found = this.store.getTask(taskId);
-    const task = found && mode ? { ...found, permissionMode: mode } : found;
+    // A tightened trial starts a fresh chat: a warm sticky one keeps the mode it was
+    // launched at (as a capped run does, `file-cap/run-cap.ts`).
+    const task = found && mode ? { ...found, permissionMode: mode, sticky: false } : found;
     if (!task) return null;
 
     const run = this.store.createRun(taskId, 'manual');

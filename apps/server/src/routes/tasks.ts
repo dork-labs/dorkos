@@ -288,8 +288,8 @@ export function createTasksRoutes(deps: TasksRouterDeps): Hono<ApiEnv> {
     const existing = store.getTask(id);
     if (!existing) return c.json({ error: 'Scheduled task not found' }, 404);
     // Rules, then a stale review, then a looser-than-proposed approval (#3794).
-    const approvalRequest = prepareTaskApprovalRequest(store, existing, parsed.data);
-    const { refusal, review, approvedPromptHash, approvalSurface, data } = approvalRequest;
+    const prepared = await prepareTaskApprovalRequest(store, existing, parsed.data, meshCore);
+    const { refusal, review, approvedPromptHash, approvalSurface, data } = prepared;
     if (refusal) return c.json(refusal.body, refusal.status);
     const approval = taskApprovalActor.personTaskApprovalForTask(caller, existing, approvalSurface);
     // From Wi-Fi a schedule runs at Default at most (DOR-3037).
@@ -757,7 +757,7 @@ export function createTasksRoutes(deps: TasksRouterDeps): Hono<ApiEnv> {
     if (creditsRefusal) return c.json(creditsRefusal, 403);
 
     // A trial of a pending schedule is never looser than one click could approve.
-    const trial = pendingTrialMode(store.getTask(id));
+    const trial = await pendingTrialMode(store.getTask(id), meshCore);
     if (trial.kind === 'refused') return c.json(TRIAL_TOO_LOOSE_REFUSAL, 409);
     const run =
       trial.kind === 'tightened'
