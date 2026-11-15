@@ -73,8 +73,10 @@ name: test
 #
 # NO separate build step: `test` declares `dependsOn: ["^build"]` in turbo.json,
 # so `turbo test` builds every dependency package first. Turbo computes that
-# from the task graph. (Each shard pays that build; that is the price of the
-# split and it is a few minutes against the ~20 it buys back.)
+# from the task graph. Each shard used to pay that whole build cold; since
+# DOR-4190 the shards restore the builds the last main canary made, and turbo
+# replays the ones whose task hash still matches (see "Restore the builds the
+# last main canary made").
 #
 # `-- --run` is REQUIRED, not decoration. Five packages' `test` scripts are a
 # bare `vitest` (@dorkos/db, harness, marketplace, operating-skills, skills),
@@ -271,6 +273,8 @@ name: test
 # TURBO CACHE: this repository has no remote cache, so a canary run cannot
 # replay another machine's green `test` task; `assert-tests-executed.sh` is
 # measuring a real execution here exactly as it does in the queue. The canary
+# does SAVE turbo's local cache for the shards (DOR-4190), trimmed to `build`
+# entries first, so what it hands on is builds and never a test result. The canary
 # also re-warms the `refs/heads/main` Actions caches (pnpm store, Playwright
 # browsers), which have had no writer since the push-to-main legs were retired
 # on 2026-09-19 and which every PR branch restores from.
@@ -914,6 +918,42 @@ jobs:
             exit 1
           fi
 
+      # THE BUILDS, FROM THE LAST MAIN CANARY (DOR-4190, ledger
+      # 261115-201939-test-shard-build-cache). Every shard rebuilt the same ~19
+      # packages from an empty turbo cache: 141-223 s each, `Cached: 0 cached`
+      # in every turbo summary, about 13.5% of this workflow's job time. This
+      # restores turbo's own local cache directory (the 2.x default, as
+      # credential-free-build.yml found) from GitHub's cache service.
+      #
+      # TURBO DECIDES WHAT IS REUSED, NOT THIS KEY. A restored entry is only
+      # replayed when its turbo task hash matches: the package's files, its
+      # dependencies' task hashes, the lockfile's resolution for it and the env
+      # turbo.json declares. A changed source misses and rebuilds exactly as
+      # before. The key only picks which entry to download: same OS, arch and
+      # lockfile, newest first. Turbo hashes the resolved dependencies anyway,
+      # so the lockfile in the key just keeps stale entries from downloading at all.
+      #
+      # BUILD ENTRIES ONLY. The saved cache never holds a `test` entry: the
+      # trim before the save keeps only this run's `build` and
+      # `generate:api-docs` entries (scripts/keep-build-cache-only.sh). If a
+      # `test` entry ever did get through, "Prove the suite actually executed"
+      # refuses the replay; it is not weakened here.
+      #
+      # WHO WRITES IT. Only the main canary, at the end of this job. GitHub
+      # scopes caches by branch with a read fallback to `main`, and the
+      # canary is the only run of this workflow on `main`'s scope, so its entry
+      # is the one every queue build and every pull request can read. A queue
+      # build's own scope is deleted with its ref, so a save there would be
+      # waste. Builds that changed since the last canary still miss and
+      # rebuild, so a busy day sees partial hits.
+      - name: Restore the builds the last main canary made
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .turbo/cache
+          key: turbo-test-builds-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('pnpm-lock.yaml') }}-${{ github.sha }}
+          restore-keys: |
+            turbo-test-builds-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('pnpm-lock.yaml') }}-
+
       # --summarize writes a machine-readable record of the run to
       # .turbo/runs/<id>.json. The assert step is the only reason it is here.
       #
@@ -1267,6 +1307,40 @@ jobs:
           if-no-files-found: warn
           overwrite: true
           retention-days: 7
+
+      # The other half of "Restore the builds the last main canary made": the
+      # main canary saves this run's builds for the queue and pull requests to
+      # restore. `refs/heads/main` is the canary and nothing else here: a pull
+      # request runs on refs/pull/*, a queue build on gh-readonly-queue/*, and
+      # the first step of this job refuses a dispatch on any other branch.
+      # After every step above, so a red shard saves nothing.
+      #
+      # The trim deletes every entry that is not one of THIS run's `build` or
+      # `generate:api-docs` tasks, read from the turbo run summary, so no `test`
+      # entry is ever saved. If it cannot read the summary it deletes the whole
+      # cache and the save is skipped: the next run is cold, never wrong. This
+      # step exits 0 either way, because a cache that was not saved is a
+      # warning, not a failed canary.
+      #
+      # Every shard tries the save, so one green shard is enough. The key ends
+      # in this commit's SHA, so the first shard to save wins and the other
+      # five log "another job may be creating this cache" and skip.
+      - name: Keep only this run's build entries in the turbo cache
+        id: trim
+        if: ${{ github.ref == 'refs/heads/main' }}
+        run: |
+          if bash scripts/keep-build-cache-only.sh; then
+            echo 'save=true' >> "$GITHUB_OUTPUT"
+          else
+            echo '::warning title=Build cache not saved::the turbo cache could not be trimmed to build entries, so this run saves none; the next run rebuilds.'
+            echo 'save=false' >> "$GITHUB_OUTPUT"
+          fi
+      - name: Save the builds for the queue and pull requests
+        if: ${{ steps.trim.outputs.save == 'true' }}
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .turbo/cache
+          key: turbo-test-builds-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('pnpm-lock.yaml') }}-${{ github.sha }}
 
   # Distro bubblewrap with its scoped AppArmor profile; never a global sysctl.
   # Every Codex binary suite moves here; Linux still runs mocked refusal tests.
