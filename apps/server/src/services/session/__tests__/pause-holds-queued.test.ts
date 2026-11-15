@@ -604,6 +604,42 @@ describe('a pause between a queued turn’s start and its first model request (D
     expect(boundsOf(opts[1]!.permissionCeiling)).toContain('runtime-default');
   });
 
+  /**
+   * What a real Claude Code turn can show before its first model request:
+   * the session's model, launch notes, the person's own configured hooks and
+   * the CLI's memory recall. None of it is the agent acting (QA's 0.135.11
+   * gate, W5: three such events, then the pause backstop's thrown
+   * `AgentPausedError`, and the message was lost).
+   */
+  const LAUNCH_EVENTS = [
+    { type: 'session_status', data: { sessionId: 'x', model: 'claude-made-up' } },
+    { type: 'system_status', data: { message: 'Starting.' } },
+    { type: 'session_state_changed', data: { state: 'running' } },
+    {
+      type: 'hook_started',
+      data: { hookId: 'h-1', hookName: 'SessionStart', hookEvent: 'SessionStart' },
+    },
+    { type: 'hook_progress', data: { hookId: 'h-1', output: 'ok' } },
+    { type: 'hook_response', data: { hookId: 'h-1', outcome: 'success' } },
+    { type: 'memory_recall', data: { memories: [] } },
+    { type: 'context_usage', data: { usedTokens: 10 } },
+  ] as unknown as StreamEvent[];
+
+  it('reruns a turn the pause cut after its launch events, with no model request (QA W5)', async () => {
+    const { runs } = await cutPauseResume(LAUNCH_EVENTS);
+    expect(runs).toBe(2);
+    expect(answered).toEqual(['from A: add the totals']);
+  });
+
+  it('reruns a turn the pause cut after one model request with no output (QA W6)', async () => {
+    const { runs } = await cutPauseResume([
+      ...LAUNCH_EVENTS,
+      { type: 'model_request', data: { requestId: 'r-1', phase: 'start', startedAt: 1 } },
+    ] as unknown as StreamEvent[]);
+    expect(runs).toBe(2);
+    expect(answered).toEqual(['from A: add the totals']);
+  });
+
   it('tells the sender it is held, not that it failed or ran', async () => {
     const events: DispatchLifecycleEvent[] = [];
     const rowId = await startThenPauseBeforeModel(events);
