@@ -187,6 +187,22 @@ async function unattendedReplyTarget(
 }
 
 /**
+ * Whether these facts admit an ordinary chat message, without resolving or changing a target.
+ *
+ * @param facts - The target's binding, origin and room standing.
+ */
+export function isChatSendable(
+  facts: Pick<SessionFacts, 'bound' | 'roomBound' | 'launchOrigin'>
+): boolean {
+  return (
+    facts.bound &&
+    !facts.roomBound &&
+    facts.launchOrigin !== null &&
+    CHAT_SENDABLE_ORIGINS.has(facts.launchOrigin)
+  );
+}
+
+/**
  * Refuse a chat id a chat may not write into or stop.
  *
  * @param deps - What it reads.
@@ -206,11 +222,7 @@ export async function assertChatSendable(
     }
     throw new ChatMessageError('NOT_FOUND', 'There is no agent or chat with that id here.');
   }
-  if (
-    facts.roomBound ||
-    facts.launchOrigin === null ||
-    !CHAT_SENDABLE_ORIGINS.has(facts.launchOrigin)
-  ) {
+  if (!isChatSendable(facts)) {
     throw new ChatMessageError(
       'NOT_ALLOWED',
       'That chat belongs to a room, a Telegram or Slack chat, or a scheduled run. Post in the ' +

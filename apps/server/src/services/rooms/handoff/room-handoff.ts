@@ -33,6 +33,8 @@ import type { Room, RoomEntry } from '@dorkos/shared/room-schemas';
 import { sanitizeIdentity } from '@dorkos/shared/untrusted-text';
 import { logger } from '../../../lib/logger.js';
 import { getChatMessageService } from '../../session/chat-messages/chat-message-current.js';
+import { isChatSendable } from '../../session/chat-messages/chat-target.js';
+import { describeSessionFor } from '../../extensions/agent-send/agent-send-defaults.js';
 import { fenceUntrustedBlock } from '../../runtimes/shared/untrusted-fence.js';
 import type { AuthorRecord } from '../author-registry.js';
 import { resolveOperatorAuthor } from '../operator-author.js';
@@ -193,13 +195,13 @@ export class RoomHandoffs {
    * @param sessionId - The session the call came from, as the surface verified it.
    * @returns The tool result to return instead of posting, or what to post.
    */
-  gate(
+  async gate(
     author: AuthorRecord,
     input: { roomId: string; text: string; replyTo?: string; verbatim?: boolean },
     sessionId: string | undefined
-  ):
-    | { result: Record<string, unknown> }
-    | { text: string; replyTo?: string; handoff?: RoomHandoff } {
+  ): Promise<
+    { result: Record<string, unknown> } | { text: string; replyTo?: string; handoff?: RoomHandoff }
+  > {
     const asWritten = {
       text: input.text,
       ...(input.replyTo !== undefined ? { replyTo: input.replyTo } : {}),
@@ -207,7 +209,7 @@ export class RoomHandoffs {
     if (author.kind !== 'agent' || sessionId === undefined) return asWritten;
     if (!this.isSeat(input.roomId, author.id, sessionId)) {
       return {
-        result: this.handOff({
+        result: await this.handOff({
           roomId: input.roomId,
           author,
           text: input.text,
@@ -264,14 +266,14 @@ export class RoomHandoffs {
    * @returns What the sender's tool call answers.
    * @throws {RoomError} `ROOM_NOT_FOUND` when the agent is not in that room (scenario D).
    */
-  handOff(input: {
+  async handOff(input: {
     roomId: string;
     author: AuthorRecord;
     text: string;
     replyTo?: string;
     verbatim: boolean;
     callerSessionId: string;
-  }): Record<string, unknown> {
+  }): Promise<Record<string, unknown>> {
     const { roomId, author } = input;
     // The same answer for a room that does not exist and one the agent is not in, so a room id
     // cannot be probed; the operator can see every room, so naming them gives nothing away.
@@ -293,6 +295,8 @@ export class RoomHandoffs {
       origin: this.originOf(input.callerSessionId, author.id),
       carried: carryFrom(input.callerSessionId, author.naturalKey),
     };
+    const receivesAnswer =
+      handoff.origin.roomId !== null || (await this.draftingChatSendable(input.callerSessionId));
     const key = agentKey(roomId, author.id);
     this.outcomes.noteWaiting(handoff.id, author.id, this.chains.has(key) ? 'queued' : 'running');
     const settled = (this.chains.get(key) ?? Promise.resolve()).then(() => this.run(handoff));
@@ -313,7 +317,9 @@ export class RoomHandoffs {
         'draft, re-reads the room, then posts it or says why not. ' +
         (handoff.origin.roomId !== null
           ? 'The answer shows in this room. '
-          : 'The answer comes back to this chat. ') +
+          : receivesAnswer
+            ? 'The answer comes back to this chat. '
+            : 'No answer comes back to this chat; read it with `room_handoff_status`. ') +
         'The tool whose name ends in `room_handoff_status` reads how it stands, by handoffId.',
     };
   }
@@ -399,12 +405,27 @@ export class RoomHandoffs {
         ? { status: 'posted', entryId: outcome.entryId }
         : { status: 'declined', reason: outcome.reason }
     );
-    this.report(handoff, outcome);
+    await this.report(handoff, outcome);
     return outcome;
   }
 
+  /** Resolve the same admission facts as chat_send; a missing binding promises no answer. */
+  private async draftingChatSendable(sessionId: string): Promise<boolean> {
+    try {
+      const facts = await describeSessionFor(undefined)(sessionId);
+      return isChatSendable({
+        ...facts,
+        roomBound:
+          facts.roomBound ||
+          this.core.store.sessionLedger.bindingForSession(sessionId) !== undefined,
+      });
+    } catch {
+      return false;
+    }
+  }
+
   /** Send a hand-off's answer back to where it came from. Never throws. */
-  private report(handoff: RoomHandoff, outcome: HandoffOutcome): void {
+  private async report(handoff: RoomHandoff, outcome: HandoffOutcome): Promise<void> {
     const name = nameForAgents(this.core, handoff.authorId, { sentenceStart: true }) ?? 'An agent';
     const target = roomLabel(this.core.store.getRoom(handoff.roomId));
     const body = buildHandoffNotice(
@@ -418,21 +439,28 @@ export class RoomHandoffs {
         this.postNotice(handoff.origin.roomId, body);
         return;
       }
+      if (!(await this.draftingChatSendable(handoff.origin.sessionId))) {
+        logger.debug('[rooms] hand-off answer skipped for a chat that cannot receive messages', {
+          handoffId: handoff.id,
+          sessionId: handoff.origin.sessionId,
+          roomId: handoff.roomId,
+          authorId: handoff.authorId,
+        });
+        return;
+      }
       const seat = this.core.store.getRoomSession(handoff.roomId, handoff.authorId);
       const agentPath = this.core.authors.getById(handoff.authorId)?.naturalKey;
       const chats = getChatMessageService();
       if (seat === null || agentPath === undefined || chats === undefined) return;
-      chats
-        .send(
-          { sessionId: seat, agentPath },
-          {
-            to: handoff.origin.sessionId,
-            message: body.text,
-            summary: outcome.posted ? 'Shared' : 'Not shared',
-          },
-          'report'
-        )
-        .catch((err: unknown) => logReportFailure(handoff, err));
+      await chats.send(
+        { sessionId: seat, agentPath },
+        {
+          to: handoff.origin.sessionId,
+          message: body.text,
+          summary: outcome.posted ? 'Shared' : 'Not shared',
+        },
+        'report'
+      );
     } catch (err) {
       logReportFailure(handoff, err);
     }
