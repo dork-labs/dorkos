@@ -50,13 +50,16 @@ describe('Tier 1 consent reads (DOR-4400)', () => {
     const offenders: string[] = [];
     for (const root of ROOTS) {
       for (const file of files(path.join(repo, root))) {
+        const text = readFileSync(file, 'utf8');
+        // Only a file that names the function can call it; parse just those.
+        if (!text.includes('resolveTelemetryConsent')) continue;
         const rel = path.relative(repo, file);
-        for (const call of bypasses(readFileSync(file, 'utf8'), rel))
-          offenders.push(`${rel}: ${call}`);
+        for (const call of bypasses(text, rel)) offenders.push(`${rel}: ${call}`);
       }
     }
     expect(offenders).toEqual([]);
-  });
+    // Walks two source trees; generous for a loaded machine.
+  }, 30_000);
 
   it.each([
     ['apps/server/src/index.ts', 'heartbeat'],
