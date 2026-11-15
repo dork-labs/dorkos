@@ -1,9 +1,8 @@
 import { EventEmitter } from 'node:events';
 import { describe, expect, it, vi } from 'vitest';
 
-vi.mock('../../window-manager', () => ({
-  isWebLink: (url: string) => url.startsWith('http://') || url.startsWith('https://'),
-}));
+// The real link rule; only Electron itself is faked.
+vi.mock('electron', () => import('../../__tests__/electron-mock'));
 
 import { isGuestPageAction, watchGuestPage, type GuestPageState } from '../page-events';
 

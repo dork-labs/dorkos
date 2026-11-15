@@ -4,7 +4,8 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { LocalBrowserCapabilities, LocalBrowserState } from '@dorkos/shared/local-browser';
 import { LocalBrowserPanel } from '../ui/LocalBrowserPanel';
-import { useAppStore } from '@/layers/shared/model';
+import type { Transport } from '@dorkos/shared/transport';
+import { TransportProvider, useAppStore } from '@/layers/shared/model';
 
 // DOR-4430 (page errors) and DOR-4431 (loading bar), driven through the panel with a fake
 // desktop bridge. Every host and address here is made up.
@@ -15,10 +16,6 @@ const transport = vi.hoisted(() => ({
   navigateLocalBrowser: vi.fn(),
   getSession: vi.fn(),
   getAgentByPath: vi.fn(),
-}));
-vi.mock('@/layers/shared/model', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('@/layers/shared/model')>()),
-  useTransport: () => transport,
 }));
 
 const embedded: LocalBrowserState = {
@@ -64,7 +61,9 @@ function mount() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
   return render(
     <QueryClientProvider client={client}>
-      <LocalBrowserPanel visible sessionId="chat-one" agentName="Kai" />
+      <TransportProvider transport={transport as unknown as Transport}>
+        <LocalBrowserPanel visible sessionId="chat-one" agentName="Kai" />
+      </TransportProvider>
     </QueryClientProvider>
   );
 }
