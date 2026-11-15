@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   ADDRESS_NOTICES,
+  describeAddress,
   isThisAppsAddress,
   normalizeAddressInput,
   type AddressInput,
@@ -299,5 +300,78 @@ describe('isThisAppsAddress', () => {
     expect(isThisAppsAddress('http://192.168.1.20:5173/', local, own)).toBe(false);
     expect(isThisAppsAddress('http://box.tail.ts.net/', local, own)).toBe(false);
     expect(isThisAppsAddress('https://example.com/', local, own)).toBe(false);
+  });
+});
+
+describe('describeAddress', () => {
+  it('strips the scheme and splits host (emphasized) from path (dimmed)', () => {
+    expect(describeAddress('https://example.com/docs/guide?x=1')).toEqual({
+      kind: 'url',
+      host: 'example.com',
+      rest: '/docs/guide?x=1',
+      notSecure: false,
+    });
+  });
+
+  it('strips a leading www. from the host', () => {
+    expect(describeAddress('https://www.example.com/')).toEqual({
+      kind: 'url',
+      host: 'example.com',
+      rest: '',
+      notSecure: false,
+    });
+  });
+
+  it('keeps the port — it is the identity of a dev server', () => {
+    expect(describeAddress('http://localhost:5173/foo')).toEqual({
+      kind: 'url',
+      host: 'localhost:5173',
+      rest: '/foo',
+      notSecure: false,
+    });
+  });
+
+  it('renders a root path as empty rest (host only)', () => {
+    expect(describeAddress('https://example.com')).toEqual({
+      kind: 'url',
+      host: 'example.com',
+      rest: '',
+      notSecure: false,
+    });
+  });
+
+  it('shows a local file as its logical path (never a token URL)', () => {
+    expect(describeAddress('demo/index.html')).toEqual({ kind: 'local', path: 'demo/index.html' });
+    expect(describeAddress('file:///proj/dist/index.html')).toEqual({
+      kind: 'local',
+      path: '/proj/dist/index.html',
+    });
+  });
+
+  it('says plain http:// is not secure, except on this machine', () => {
+    expect(describeAddress('http://example.com/a')).toMatchObject({
+      host: 'example.com',
+      notSecure: true,
+    });
+    expect(describeAddress('http://192.168.1.1/')).toMatchObject({ notSecure: true });
+    for (const url of [
+      'http://localhost:3000',
+      'http://127.0.0.1/',
+      'http://[::1]:80/',
+      'https://example.com',
+    ]) {
+      expect(describeAddress(url)).toMatchObject({ notSecure: false });
+    }
+  });
+
+  it('shows about:blank as an empty bar', () => {
+    expect(describeAddress('about:blank')).toEqual({ kind: 'raw', text: '' });
+  });
+
+  it('falls back to raw text for a blocked target', () => {
+    expect(describeAddress('javascript:alert(1)')).toEqual({
+      kind: 'raw',
+      text: 'javascript:alert(1)',
+    });
   });
 });

@@ -444,6 +444,8 @@ export {
   SIDEBAR_MENU_ITEM_ATTRS,
 } from './sidebar';
 export type { SidebarContextProps, SidebarTriggerProps } from './sidebar';
+export { BrowserChrome, ChromeButton, SEAM_SHOWS_AGENT_DRIVING } from './browser-chrome';
+export type { BrowserChromeProps } from './browser-chrome';
 export { FilterBar } from './filter-bar';
 export type { FilterBarProps } from './filter-bar';
 export { RouteErrorFallback } from './route-error-fallback';
