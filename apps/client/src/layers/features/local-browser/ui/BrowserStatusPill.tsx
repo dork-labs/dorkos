@@ -57,6 +57,32 @@ export function askedAgo(askedAt: string, now: number): string {
   return `Asked ${hours} hour${hours === 1 ? '' : 's'} ago.`;
 }
 
+/** Words the pill says on its own, which an agent's name must not pass for. */
+const PILL_WORDS = new Set([
+  'agent',
+  'the agent',
+  'paused',
+  'your turn',
+  'you',
+  'handed back',
+  'only you',
+  'in another chat',
+  'waiting',
+]);
+
+/**
+ * The agent's name as the pill shows it, or null when there is none. Agents pick
+ * their own names, so one that reads as the pill's own words ("You", "Your turn")
+ * is put in quotes, and never passes for a state.
+ *
+ * @param agentName - The agent's name, or null.
+ */
+export function pillAgentName(agentName: string | null): string | null {
+  const name = agentName?.trim();
+  if (!name) return null;
+  return PILL_WORDS.has(name.toLowerCase()) ? `“${name}”` : name;
+}
+
 /**
  * Each state's icon, label, popover lines and status words (spec §4).
  *
@@ -69,14 +95,15 @@ export function browserPillCopy(
   agentName: string | null,
   now: number
 ): PillCopy {
-  const agent = agentName?.trim() || 'The agent';
+  const named = pillAgentName(agentName);
+  const agent = named ?? 'The agent';
   const using = [
     `${agent} is using this page.`,
     `${agent} stays on this page. Other windows are yours.`,
   ];
   switch (state.kind) {
     case 'driving':
-      return { icon: Hand, label: agentName?.trim() || 'Agent', lines: using, status: 'Connected' };
+      return { icon: Hand, label: named ?? 'Agent', lines: using, status: 'Connected' };
     case 'paused':
       return {
         icon: Pause,
@@ -167,7 +194,7 @@ export function BrowserStatusPill({
   };
   const copy = browserPillCopy(state, agentName, now ?? openedAt);
   const yourTurn = state.kind === 'your-turn';
-  const agent = agentName?.trim() || 'the agent';
+  const agent = pillAgentName(agentName) ?? 'the agent';
   const run = (action: (() => void) | undefined) =>
     action &&
     (() => {

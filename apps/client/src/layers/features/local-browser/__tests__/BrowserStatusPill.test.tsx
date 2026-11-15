@@ -305,6 +305,23 @@ describe('BrowserStatusPill', () => {
     expect(browserPillCopy({ kind: 'driving' }, '  ', NOW).label).toBe('Agent');
   });
 
+  it.each(['You', 'your turn', ' Paused ', 'Only you', 'Agent'])(
+    'quotes an agent named %j, so it never passes for the pill’s own words',
+    (name) => {
+      const copy = browserPillCopy({ kind: 'driving' }, name, NOW);
+      expect(copy.label).toBe(`“${name.trim()}”`);
+      expect(copy.lines[0]).toBe(`“${name.trim()}” is using this page.`);
+    }
+  );
+
+  it('quotes the agent in Hand back too, and leaves an ordinary name alone', async () => {
+    render(<BrowserStatusPill state={{ kind: 'you' }} agentName="You" onHandBack={vi.fn()} />);
+    expect(pill()).toHaveAccessibleName('“You” can’t see or use this page until you hand it back.');
+    fireEvent.click(pill());
+    expect(await screen.findByRole('button', { name: 'Hand back to “You”' })).toBeInTheDocument();
+    expect(browserPillCopy({ kind: 'driving' }, 'Youssef', NOW).label).toBe('Youssef');
+  });
+
   it('names a wall, not a sign-in, when the agent asked for another step', () => {
     const wall = { ...(EVERY_STATE['your-turn'] as object), reason: 'wall' } as BrowserPillState;
     expect(browserPillCopy(wall, 'Atlas', NOW).lines[0]).toBe(
