@@ -26,7 +26,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Anonymous install, heartbeat and usage data now wait for your answer to the sharing question. If you saw the question but never answered it, they stop until you do. (DOR-4400)
 - `dorkos telemetry enable errors` without `--channel` now changes nothing. Use `--channel errors`. (DOR-4414)
 - A Codex, DorkOS runtime or OpenCode chat that had Plan, Auto or Never ask saved now runs in that runtime's most careful mode: Ask first on Codex and the DorkOS runtime, Default on OpenCode. (DOR-4411)
-- Upgrade settings last used before 0.115 through version 0.115 first. DorkOS stops before changing older settings and explains the two steps. A settings file you wrote by hand still starts normally. (DOR-4188, DOR-4376)
+- Upgrade settings last used before 0.115 through version 0.115 first. DorkOS stops before changing older settings and explains the two steps. A settings file you wrote by hand still starts normally, unless it holds a setting only versions before 0.115 wrote: `sessionSecret`, a tunnel passcode setting, `telemetry.enabled`, or the onboarding steps `tasks` or `adapters`. Remove that setting and start again. (DOR-4188, DOR-4376)
 - On Linux, Codex at Full access doesn't start if Claude Code has run on the same machine, and that includes the Docker image. Use Ask first or Workspace write there for now. We're fixing it (DOR-3965).
 - On a Mac, Codex chats can't delete or move folders (rm -r, rmdir, mv). We're fixing it (DOR-4358).
 - Known issue: offline, OpenCode's first turn in a new folder can take about a minute. Online, the first turn waits a few seconds once. A fix is coming in the next release (DOR-4422).
