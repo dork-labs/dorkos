@@ -18,9 +18,10 @@
  * ## What sets a mark
  *
  * A turn runs at its agent's set level, wherever its message came from (Dorian 2026-10-30,
- * DOR-3440). Only a Wi-Fi sign-in's hold bounds one (who is calling, DOR-3037), which sets `outsider`
- * on that turn and goes no further. A teammate's chain in a shared space is a record for the space's
- * monthly limit, and lowers nothing.
+ * DOR-3440). A Wi-Fi sign-in's hold bounds one (who is calling, DOR-3037). An outsider mark can
+ * instead ride beside the level without lowering it, including one carried from earlier work and,
+ * when DOR-3858 is on, one from a non-owner Telegram, Slack, or room message. A teammate's chain in
+ * a shared space is a record for the space's monthly limit, and lowers nothing.
  *
  * ## The seam
  *
@@ -206,8 +207,8 @@ export function hasMarks(marks: TurnMarks): boolean {
 }
 
 /**
- * Whether a set's marks hold anything back: only a Wi-Fi sign-in's hold does. A teammate's mark is
- * a record for the space's monthly limit (DOR-3440).
+ * Whether a set's marks hold a protected action for a person. An outsider mark does; a teammate's
+ * mark is only a record for the space's monthly limit (DOR-3440).
  *
  * @param marks - The set.
  */

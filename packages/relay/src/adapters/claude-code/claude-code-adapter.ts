@@ -871,6 +871,7 @@ export class ClaudeCodeAdapter implements RelayAdapter {
               ? { bindSessionRuntime: this.deps.bindSessionRuntime }
               : {}),
             ...(this.deps.noteTurnStart ? { noteTurnStart: this.deps.noteTurnStart } : {}),
+            ...(this.deps.markStrangerTurns ? { markStrangerTurns: true } : {}),
             turnController,
             ...(this.deps.lateTurns
               ? { lateTurns: this.deps.lateTurns, lateFollowers: this.lateFollowers }

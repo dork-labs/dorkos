@@ -37,6 +37,7 @@ import {
   type MatrixRuntime,
   type RuntimeCapability,
 } from './runtime-capability-types.js';
+import { GUARD_CAPABILITIES } from './runtime-capability-guards.js';
 
 export {
   HAS_CAPABILITY,
@@ -58,13 +59,8 @@ const yes: MatrixCell = { status: 'supported', evidence: U };
 
 /** The same answer for every runtime. */
 function all(cell: MatrixCell): Record<MatrixRuntime, MatrixCell> {
-  return {
-    'claude-code': cell,
-    codex: cell,
-    opencode: cell,
-    doe: cell,
-    'test-mode': cell,
-  };
+  const cells = MATRIX_RUNTIMES.map((runtime) => [runtime, cell] as const);
+  return Object.fromEntries(cells) as Record<MatrixRuntime, MatrixCell>;
 }
 
 /** Builds a flag from a boolean field of `RuntimeCapabilities`. */
@@ -759,6 +755,7 @@ export const RUNTIME_CAPABILITIES: readonly RuntimeCapability[] = [
     // since its usage event names none.
     cells: all(yes),
   },
+  ...GUARD_CAPABILITIES,
 ];
 
 /** What to call a status in the doc. */

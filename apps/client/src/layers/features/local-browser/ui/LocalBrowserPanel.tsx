@@ -12,7 +12,9 @@ import { YourTurnStrip } from '@/layers/features/browser-handoff';
 import { useAppStore, useTransport } from '@/layers/shared/model';
 import { Button, Input } from '@/layers/shared/ui';
 import { BrowserModeChoice } from './BrowserModeChoice';
-import { useNativeBrowserSurface } from '../model/use-native-browser-surface';
+import { useGuestPage } from '../model/use-guest-page';
+import { searchAddress } from '../lib/page-error';
+import { BrowserPageArea } from './BrowserPageArea';
 import { browserErrorMessage } from '../lib/browser-error-message';
 import { useActionFocusReturn } from '../model/use-action-focus-return';
 import { useFirstFocus } from '../model/use-first-focus';
@@ -65,8 +67,9 @@ export function LocalBrowserPanel({
   const [error, setError] = useState<string | null>(null);
   const [address, setAddress] = useState<string | null>(null);
   const [surfaceUnavailable, setSurfaceUnavailable] = useState(false);
-  const surface = useRef<HTMLDivElement>(null);
   const ownOrigins = useOwnOrigins();
+  // What the person last typed and went to: only their own words are ever searched for.
+  const [typed, setTyped] = useState<{ text: string; host: string } | null>(null);
   const connected = state?.status === 'connected';
   // "Disconnected" before anything was ever opened reads as broken (DOR-4104).
   const [hadConnection, setHadConnection] = useState(false);
@@ -101,17 +104,8 @@ export function LocalBrowserPanel({
     },
     []
   );
-  useNativeBrowserSurface(
-    surface,
-    state?.connectionId ?? null,
-    visible &&
-      connected &&
-      !query.isError &&
-      !sharedElsewhere &&
-      mode === 'embedded' &&
-      !surfaceUnavailable,
-    unavailable
-  );
+  const page = useGuestPage(connected && mode === 'embedded' ? state.connectionId : null);
+  const typedFailed = !!typed && !!page.failure && page.failure.host === typed.host;
 
   const action = async (run: () => Promise<LocalBrowserState>, setup = false) => {
     const ticket = ++operation.current;
@@ -416,9 +410,12 @@ export function LocalBrowserPanel({
           {selected && (
             <form
               className="flex gap-2"
+              aria-busy={page.loading}
               onSubmit={(event) => {
                 event.preventDefault();
-                const input = normalizeAddressInput(address ?? selected.url, {
+                // A failed load keeps its address in the field, so Go retries it (DOR-4430).
+                const shown = address ?? (page.failure?.url || selected.url);
+                const input = normalizeAddressInput(shown, {
                   current: selected.url,
                   isOwnAddress: (url) => isThisAppsAddress(url, window.location, ownOrigins),
                 });
@@ -427,6 +424,9 @@ export function LocalBrowserPanel({
                   return;
                 }
                 const url = input.kind === 'reload' ? selected.url : input.url;
+                // Only an address the person typed is remembered for a later search.
+                if (address !== null && input.kind === 'open')
+                  setTyped({ text: address, host: new URL(url).host });
                 // Only a bare host the person typed carries a fallback, and only a page
                 // that could not connect at all tries it, once (DOR-4419).
                 const fallback = input.kind === 'open' ? input.httpFallback : undefined;
@@ -446,13 +446,20 @@ export function LocalBrowserPanel({
               <Input
                 aria-label="Web address"
                 placeholder={ADDRESS_PLACEHOLDER}
-                value={address ?? selected.url}
+                // A failed load keeps its address in the field (DOR-4430).
+                value={address ?? (page.failure?.url || selected.url)}
                 onChange={(event) => setAddress(event.target.value)}
                 className="min-w-0"
               />
-              <Button size="sm" variant="outline" type="submit" disabled={busy}>
-                Go
-              </Button>
+              {page.loading ? (
+                <Button size="sm" variant="outline" type="button" onClick={() => page.run('stop')}>
+                  Stop
+                </Button>
+              ) : (
+                <Button size="sm" variant="outline" type="submit" disabled={busy}>
+                  Go
+                </Button>
+              )}
             </form>
           )}
           {state.paused && (
@@ -477,10 +484,18 @@ export function LocalBrowserPanel({
             </p>
           )}
           {mode === 'embedded' && (
-            <div
-              ref={surface}
-              data-slot="native-browser-surface"
-              className="bg-muted/20 relative min-h-48 flex-1 rounded-lg"
+            <BrowserPageArea
+              connectionId={state.connectionId ?? null}
+              visible={visible && !query.isError && !surfaceUnavailable}
+              page={page}
+              typed={typedFailed}
+              onSearch={() => {
+                if (!typed) return;
+                setAddress(null);
+                void action(() => transport.navigateLocalBrowser(searchAddress(typed.text)));
+              }}
+              onUnavailable={unavailable}
+              disabled={busy}
             >
               {surfaceUnavailable && (
                 <div className="space-y-2 p-3">
@@ -492,7 +507,7 @@ export function LocalBrowserPanel({
                   </Button>
                 </div>
               )}
-            </div>
+            </BrowserPageArea>
           )}
         </>
       )}

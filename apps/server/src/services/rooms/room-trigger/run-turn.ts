@@ -19,7 +19,9 @@ import {
   answersUntrustedText,
   ceilingForEntries,
   isEntryAuthorExternal,
+  strangerMarkForEntries,
 } from '../limits/turn-ceiling.js';
+import { env } from '../../../env.js';
 import { teammateOf } from '../limits/space-teammates.js';
 import { turnRefusalOf } from '../turn-guards/paused-turn.js';
 import { buildRoomContext } from '../room-context.js';
@@ -130,6 +132,12 @@ export async function runOneInDispatch(
       ),
       // Only a Wi-Fi sign-in's post or a teammate's bounds the turn (`turn-ceiling.ts`).
       ...ceilingForEntries(self.deps.authors, answered, inSpaceRoom, room.id),
+      ...strangerMarkForEntries(
+        env.DORKOS_MARK_STRANGER_TURNS,
+        self.deps.authors,
+        answered,
+        self.deps.isOwnerAuthor
+      ),
       ...(answersUntrustedText(self.deps.authors, answered, room.id)
         ? { untrustedText: true as const }
         : {}),

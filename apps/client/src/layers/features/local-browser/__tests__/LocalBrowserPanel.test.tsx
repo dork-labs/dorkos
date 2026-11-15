@@ -4,6 +4,7 @@ import { act, fireEvent, render, screen, waitFor, within } from '@testing-librar
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { LocalBrowserCapabilities, LocalBrowserState } from '@dorkos/shared/local-browser';
 import { LocalBrowserPanel } from '../ui/LocalBrowserPanel';
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/layers/shared/ui';
 import { useSessionListStore } from '@/layers/entities/session';
 import { useAppStore } from '@/layers/shared/model';
 import { STORAGE_KEYS } from '@/layers/shared/lib/constants';
@@ -1206,12 +1207,17 @@ describe('LocalBrowserPanel', () => {
     vi.spyOn(HTMLElement.prototype, 'getClientRects').mockReturnValue({ length: 1 } as DOMRectList);
     const view = mount();
     await waitFor(() => expect(setBounds.mock.calls.at(-1)?.[0].visible).toBe(true));
-    const dialog = document.createElement('div');
-    dialog.setAttribute('role', 'dialog');
-    dialog.setAttribute('aria-modal', 'true');
-    document.body.append(dialog);
+    // A real shared Dialog: Radix never sets aria-modal, so a hand-built one proves nothing.
+    const dialog = render(
+      <Dialog open>
+        <DialogContent>
+          <DialogTitle>Settings</DialogTitle>
+          <DialogDescription>Your preferences</DialogDescription>
+        </DialogContent>
+      </Dialog>
+    );
     await waitFor(() => expect(setBounds.mock.calls.at(-1)?.[0].visible).toBe(false));
-    dialog.remove();
+    dialog.unmount();
     await waitFor(() => expect(setBounds.mock.calls.at(-1)?.[0].visible).toBe(true));
     act(() =>
       view.client.setQueryData(['local-browser', 'state'], { ...native, sessionId: 'another-chat' })

@@ -30,8 +30,10 @@ describe('serverEnv', () => {
   it('feature flags default to false', async () => {
     vi.stubEnv('DORKOS_TASKS_ENABLED', undefined as unknown as string);
     vi.stubEnv('DORKOS_RELAY_ENABLED', undefined as unknown as string);
+    vi.stubEnv('DORKOS_MARK_STRANGER_TURNS', undefined as unknown as string);
     const { env } = await import('../env.js');
     expect(env.DORKOS_TASKS_ENABLED).toBe(false);
+    expect(env.DORKOS_MARK_STRANGER_TURNS).toBe(false);
     // An override, not a switch: unset has to let the saved setting decide.
     expect(env.DORKOS_RELAY_ENABLED).toBeUndefined();
   });
@@ -44,8 +46,10 @@ describe('serverEnv', () => {
 
   it('feature flag "true" string becomes boolean true', async () => {
     vi.stubEnv('DORKOS_TASKS_ENABLED', 'true');
+    vi.stubEnv('DORKOS_MARK_STRANGER_TURNS', 'true');
     const { env } = await import('../env.js');
     expect(env.DORKOS_TASKS_ENABLED).toBe(true);
+    expect(env.DORKOS_MARK_STRANGER_TURNS).toBe(true);
   });
 
   it('feature flag "false" string becomes boolean false', async () => {

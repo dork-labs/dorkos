@@ -32,6 +32,51 @@ export function isEntryAuthorExternal(authors: AuthorRegistry, authorId: string)
 }
 
 /**
+ * Whether any triggering entry was written by a person other than the install owner.
+ *
+ * A bridged author is always marked. The room dispatcher has no clean path to
+ * the owning connection's approver allowlist, so it cannot prove that a
+ * platform identity is the owner's phone. Security chose the conservative
+ * result: mark that phone too rather than couple rooms back to relay state.
+ * Agents and the room's system voice are not people and remain out of scope.
+ *
+ * @param authors - The registry holding the stored author records.
+ * @param entries - Every message the turn answers.
+ * @param owner - The room subsystem's authoritative owner predicate. Its registry method delegates
+ *   to `isOwnerRecord`; a platform identity's `linkedOwnerKey` does not affect it.
+ */
+export function answersStranger(
+  authors: AuthorRegistry,
+  entries: readonly Pick<RoomEntry, 'authorId'>[],
+  owner: (authorId: string) => boolean
+): boolean {
+  const records = authors.getMany(entries.map((entry) => entry.authorId));
+  return entries.some((entry) => {
+    const record = records.get(entry.authorId);
+    if (record === undefined) return true;
+    if (authorOrigin(record.naturalKey) !== 'local') return true;
+    return record.kind === 'human' && !owner(entry.authorId);
+  });
+}
+
+/**
+ * The room-turn option added by DOR-3858, or nothing while its boot flag is off.
+ *
+ * @param enabled - Whether the boot flag is on.
+ * @param authors - The registry holding the stored author records.
+ * @param entries - Every message the turn answers.
+ * @param owner - The room subsystem's authoritative owner predicate.
+ */
+export function strangerMarkForEntries(
+  enabled: boolean,
+  authors: AuthorRegistry,
+  entries: readonly Pick<RoomEntry, 'authorId'>[],
+  owner: (authorId: string) => boolean
+): { carriedOutsider?: true } {
+  return enabled && answersStranger(authors, entries, owner) ? { carriedOutsider: true } : {};
+}
+
+/**
  * The ceiling a turn this entry starts runs under, as the spread a `RoomTurnRequest` takes. A
  * teammate's only carries their mark (DOR-3036, `ceilingCarrying`). A post held to the default (a
  * person's from Wi-Fi, DOR-3037) is held to the runtime's default. Every other post has none.
