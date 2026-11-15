@@ -42,6 +42,8 @@ export const TODO_FIELD_POLICY: Record<keyof TodoRow, FieldWriter> = {
   dueNotifiedAt: 'server',
   checkinNotifiedAt: 'server',
   dueSetAt: 'server',
+  confirmState: 'server',
+  delivered: 'assignee',
   closedAt: 'server',
   sourceRoomEntryId: 'once',
   roomId: 'once',

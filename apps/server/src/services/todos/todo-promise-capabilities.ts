@@ -43,6 +43,7 @@ import { marksHold } from '../core/turn-power/turn-marks.js';
 import { markedTurnRunsAtFull } from '../core/turn-power/full-autonomy.js';
 import {
   TODO_PROMISE_LIST_MAX,
+  TODO_DELIVERED_MAX,
   TODO_NOTE_MAX,
   TODO_TO_MAX,
   TODO_WHAT_MAX,
@@ -318,7 +319,9 @@ export const todoPromisesDomain: CapabilityDomain = {
       id: 'todo_promises.update',
       title: 'Change a to-do',
       description:
-        'Change one of your promises. `state: "kept"` when you have done it, `"dropped"` when it ' +
+        'Change one of your promises. `state: "kept"` when you have done it, with `delivered` ' +
+        'linking what you delivered when there is one; a person you promised is asked to ' +
+        'confirm it, and their Not yet reopens it. `"dropped"` when it ' +
         'no longer applies (say why in `note`), `"missed"` when you could not make it. To move ' +
         'the date, pass `state: "open"` with a new `dueAt`; DorkOS tells whoever you promised, ' +
         'with your `note` as the reason, and the same when you drop it. ' +
@@ -345,6 +348,15 @@ export const todoPromisesDomain: CapabilityDomain = {
           .max(TODO_NOTE_MAX)
           .optional()
           .describe('A short note on how it ended or why it moved.'),
+        delivered: z
+          .string()
+          .trim()
+          .min(1)
+          .max(TODO_DELIVERED_MAX)
+          .optional()
+          .describe(
+            'With state kept: a link to what you delivered (a pull request, a message, a file).'
+          ),
       }),
       output: z.union([
         z.object({ ok: z.literal(true), todoPromise: TodoPromiseSchema }),
@@ -369,6 +381,7 @@ export const todoPromisesDomain: CapabilityDomain = {
             ...(input.dueAt !== undefined ? { dueAt: input.dueAt } : {}),
             ...(input.note !== undefined ? { note: input.note } : {}),
             ...(input.from !== undefined ? { from: input.from } : {}),
+            ...(input.delivered && input.state === 'kept' ? { delivered: input.delivered } : {}),
           }),
         }));
         // The agent's own move or drop is told to whoever the promise was made to (DOR-3034).
@@ -376,9 +389,11 @@ export const todoPromisesDomain: CapabilityDomain = {
         const change =
           input.state === 'dropped'
             ? 'dropped'
-            : input.state === 'open' && input.dueAt !== undefined && wasOpen
-              ? 'moved'
-              : null;
+            : input.state === 'kept' && wasOpen
+              ? 'kept'
+              : input.state === 'open' && input.dueAt !== undefined && wasOpen
+                ? 'moved'
+                : null;
         if (result.ok && change && actor.kind === 'agent' && todoPromiseDeps.tellRecipient) {
           void todoPromiseDeps.tellRecipient({
             todoPromise: result.todoPromise,

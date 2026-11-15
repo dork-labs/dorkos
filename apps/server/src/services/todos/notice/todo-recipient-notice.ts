@@ -1,6 +1,7 @@
 /**
  * Tell whoever a promise was made to that its agent moved or dropped it, with the agent's reason
- * (DOR-3034). Before this the tool description only advised it.
+ * (DOR-3034). Before this the tool description only advised it. A promise to a person that its
+ * agent marks kept asks that person to confirm it (`todo-confirm.ts`).
  *
  * - A person hears it in the Inbox (`todo.changed`).
  * - An agent hears it as a message from the promising agent's chat.
@@ -20,7 +21,7 @@ export interface TodoChangeNotice {
   /** The promise as it stands after the change. */
   todoPromise: TodoPromise;
   /** What happened to it. */
-  change: 'moved' | 'dropped';
+  change: 'moved' | 'dropped' | 'kept';
   /** The reason the agent gave with this change, or null. Never an older note left on the row. */
   reason: string | null;
   /** The chat the agent changed it from, when known: an agent recipient hears it from there. */
@@ -40,6 +41,8 @@ export interface TodoRecipientNoticeDeps {
   agentName: (id: string) => string | undefined;
   /** A date in the person's own words, on their clock ("Fri, Nov 20"). */
   dateWords: (iso: string) => string;
+  /** Ask the person to confirm a kept promise; false when it is not waiting for them. */
+  askConfirm: (id: string) => boolean;
   /** Raise the Inbox event for a person. */
   notifyPerson: (payload: TodoChangePayloads['todo.changed']) => Promise<void> | void;
   /** Send one message from the promising agent's chat to another agent. */
@@ -97,9 +100,12 @@ export function createTodoRecipientNotice(
     if (!recipient || (recipient.kind === 'agent' && recipient.agentId === todoPromise.agentId)) {
       return;
     }
+    // Agent-to-agent promises stay quiet when kept; only a miss or a move is news between them.
+    if (notice.change === 'kept' && recipient.kind === 'agent') return;
     const agentName = deps.agentName(todoPromise.agentId) ?? todoPromise.agentId;
     try {
       if (recipient.kind === 'person') {
+        if (notice.change === 'kept' && !deps.askConfirm(todoPromise.id)) return;
         await deps.notifyPerson({
           todoId: todoPromise.id,
           agentId: todoPromise.agentId,
@@ -111,6 +117,7 @@ export function createTodoRecipientNotice(
             notice.change === 'moved' && todoPromise.dueAt
               ? deps.dateWords(todoPromise.dueAt)
               : null,
+          delivered: notice.change === 'kept' ? todoPromise.delivered : null,
           at: now().toISOString(),
         });
         return;

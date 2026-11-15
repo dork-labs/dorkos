@@ -97,6 +97,8 @@ export interface TodoPromiseChange {
   dueAt?: string | null;
   /** A short note on how it ended or why it moved. */
   note?: string;
+  /** With state `kept`: a link to what was delivered (a pull request, a message, a file). */
+  delivered?: string;
   /**
    * The state the caller believes it is in now. When given and it differs,
    * the change is refused with `CONFLICT`, so an Undo never reverts a change

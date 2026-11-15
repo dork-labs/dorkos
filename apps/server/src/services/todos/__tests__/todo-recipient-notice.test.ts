@@ -25,6 +25,8 @@ function promise(over: Partial<TodoPromise> = {}): TodoPromise {
     originalDueAt: '2026-11-18T17:00:00.000Z',
     scoreDueAt: '2026-11-20T17:00:00.000Z',
     moveCount: 1,
+    confirmState: null,
+    delivered: null,
     state: 'open',
     overdue: false,
     sourceSessionId: null,
@@ -41,6 +43,7 @@ function build(over: Partial<TodoRecipientNoticeDeps> = {}) {
     isAgent: (id: string) => id.startsWith('agent-'),
     agentName: (id: string) => (id === 'agent-ana' ? 'Ana' : undefined),
     dateWords: () => 'Fri, Nov 20',
+    askConfirm: vi.fn(() => true),
     notifyPerson: vi.fn(),
     sendToAgent: vi.fn().mockResolvedValue(undefined),
     now: () => AT,
@@ -71,6 +74,7 @@ describe('createTodoRecipientNotice', () => {
       change: 'moved',
       note: 'Waiting on their numbers',
       newDue: 'Fri, Nov 20',
+      delivered: null,
       at: AT.toISOString(),
     });
   });
@@ -98,6 +102,31 @@ describe('createTodoRecipientNotice', () => {
     await tell({ todoPromise: promise({ to: 'agent-ana' }), change: 'moved', reason: null });
     expect(deps.notifyPerson).not.toHaveBeenCalled();
     expect(deps.sendToAgent).not.toHaveBeenCalled();
+  });
+
+  it('asks a person to confirm a kept promise, and stays quiet for an agent (DOR-3034)', async () => {
+    const { deps, tell } = build();
+    await tell({
+      todoPromise: promise({ state: 'kept', delivered: 'https://example.com/pr/1' }),
+      change: 'kept',
+      reason: null,
+    });
+    expect(deps.askConfirm).toHaveBeenCalledWith('todo-1');
+    expect(deps.notifyPerson).toHaveBeenCalledWith(
+      expect.objectContaining({ change: 'kept', delivered: 'https://example.com/pr/1' })
+    );
+    await tell({
+      todoPromise: promise({ to: 'agent-bo', state: 'kept' }),
+      change: 'kept',
+      reason: null,
+    });
+    expect(deps.sendToAgent).not.toHaveBeenCalled();
+  });
+
+  it('raises nothing when a kept promise is not waiting for an answer', async () => {
+    const { deps, tell } = build({ askConfirm: vi.fn(() => false) });
+    await tell({ todoPromise: promise({ state: 'kept' }), change: 'kept', reason: null });
+    expect(deps.notifyPerson).not.toHaveBeenCalled();
   });
 
   it('never throws when the notice fails', async () => {
@@ -132,6 +161,9 @@ describe('the todo.changed notice', () => {
     );
     expect(body({ ...base, change: 'moved', note: null, newDue: null })).toBe(
       'Now with no date. No reason given.'
+    );
+    expect(body({ ...base, change: 'kept', note: null, newDue: null, delivered: 'pr/1' })).toBe(
+      'Done? Answer Yes or Not yet on the promise. Delivered: pr/1'
     );
     expect(body({ ...base, change: 'dropped', note: 'Not needed', newDue: null })).toBe(
       'Why: Not needed'

@@ -1,7 +1,8 @@
 /**
  * What agents promised, as a list a person can act on (spec `heartbeats` §12).
  *
- * Open to-dos first, soonest due first, with overdue ones marked. Kept,
+ * Open to-dos first, soonest due first, with overdue ones marked. A promise its agent just marked
+ * kept waits under them for the person's Yes or Not yet, for a day (DOR-3034). Kept,
  * missed and dropped ones sit folded under them. A person marks one kept or
  * drops it (with an Undo), and, on one agent's list, adds one for that agent.
  * A read-only list (someone else's agent) shows the same rows as facts, with
@@ -13,7 +14,11 @@ import { useState } from 'react';
 import { toast } from 'sonner';
 import type { TodoPromise } from '@dorkos/shared/todo-promise-schemas';
 import { ChevronRight, Plus } from 'lucide-react';
-import { useTodoPromises, useUpdateTodoPromise } from '@/layers/entities/todo';
+import {
+  useConfirmTodoPromise,
+  useTodoPromises,
+  useUpdateTodoPromise,
+} from '@/layers/entities/todo';
 import {
   Button,
   Collapsible,
@@ -62,6 +67,7 @@ export function TodoPromiseList({
 }: TodoPromiseListProps) {
   const query = useTodoPromises(agentId ? { agentId } : {});
   const update = useUpdateTodoPromise();
+  const confirm = useConfirmTodoPromise();
   const [adding, setAdding] = useState(false);
   const spansAgents = agentId === undefined;
 
@@ -90,12 +96,16 @@ export function TodoPromiseList({
     return <p className="text-muted-foreground text-sm">Couldn’t read to-dos.</p>;
   }
 
-  const { open, closed } = splitTodos(query.data);
-  const busyId = update.isPending ? update.variables?.id : undefined;
+  const { open, confirm: waiting, closed } = splitTodos(query.data);
+  const busyId = update.isPending
+    ? update.variables?.id
+    : confirm.isPending
+      ? confirm.variables?.id
+      : undefined;
 
   return (
     <div data-slot="todo-promise-list" className="flex flex-col gap-2">
-      {open.length === 0 && closed.length === 0 && !adding && (
+      {open.length === 0 && waiting.length === 0 && closed.length === 0 && !adding && (
         <p className="text-muted-foreground text-sm">No to-dos yet.</p>
       )}
       {open.length > 0 && (
@@ -114,7 +124,26 @@ export function TodoPromiseList({
           ))}
         </ul>
       )}
-      {update.isError && (
+      {waiting.length > 0 && (
+        <ul className="flex flex-col" aria-label="Kept, waiting for your answer">
+          {waiting.map((todoPromise) => (
+            <TodoPromiseRow
+              key={todoPromise.id}
+              todoPromise={todoPromise}
+              agentName={spansAgents ? nameOf?.(todoPromise.agentId) : undefined}
+              nameOf={nameOf}
+              busy={busyId === todoPromise.id}
+              {...(readOnly || (canChange && !canChange(todoPromise))
+                ? {}
+                : {
+                    onConfirm: (answer: 'yes' | 'not-yet') =>
+                      confirm.mutate({ id: todoPromise.id, answer }),
+                  })}
+            />
+          ))}
+        </ul>
+      )}
+      {(update.isError || confirm.isError) && (
         <p role="alert" className="text-destructive text-xs">
           Couldn’t change that to-do. Try again.
         </p>

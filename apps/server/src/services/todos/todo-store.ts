@@ -21,6 +21,8 @@ export type TodoPatch = Partial<
     | 'dueNotifiedAt'
     | 'checkinNotifiedAt'
     | 'dueSetAt'
+    | 'confirmState'
+    | 'delivered'
     | 'state'
     | 'closedAt'
     | 'note'

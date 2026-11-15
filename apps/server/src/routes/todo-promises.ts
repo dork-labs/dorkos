@@ -9,6 +9,8 @@
  * - `PATCH /api/todo-promises/:id` — a person closes one or moves its date. Agents
  *   change their own with `todo_promise_update`, which the permission gate decides,
  *   so a caller presenting an agent identity is refused here (DOR-3936).
+ * - `POST /api/todo-promises/:id/confirm` — the person answers "was it kept?" with Yes or Not
+ *   yet (DOR-3034). A person only, like the change above.
  *
  * Every rule lives in `TodoPromiseService`; this file reads the caller and maps
  * refusals to status codes.
@@ -18,6 +20,7 @@
 import { Hono, type Context } from 'hono';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import {
+  ConfirmTodoPromiseRequestSchema,
   CreateTodoPromiseRequestSchema,
   ListTodoPromisesQuerySchema,
   UpdateTodoPromiseRequestSchema,
@@ -34,6 +37,7 @@ import {
   type TodoPromiseErrorCode,
   type TodoPromiseService,
 } from '../services/todos/index.js';
+import type { TodoConfirm } from '../services/todos/notice/todo-confirm.js';
 
 /** What the to-do routes need. */
 export interface TodoPromiseRouterDeps {
@@ -61,6 +65,8 @@ export interface TodoPromiseRouterDeps {
    * @param facts - The request's facts, carrying the resolved caller.
    */
   personProven(facts: RequestFacts): boolean;
+  /** Takes a person's answer to "was it kept?" (DOR-3034). */
+  confirm: Pick<TodoConfirm, 'answer'>;
 }
 
 /** The HTTP status for each refusal. */
@@ -139,6 +145,18 @@ export function createTodoPromisesRoutes(deps: TodoPromiseRouterDeps): Hono<ApiE
     if ('refused' in caller) return caller.refused;
     try {
       return c.json(deps.service.update(caller.actor, c.req.param('id'), body.data));
+    } catch (err) {
+      return refusal(c, err);
+    }
+  });
+
+  router.post('/:id/confirm', (c) => {
+    const body = ConfirmTodoPromiseRequestSchema.safeParse(readJsonBody(c, { emptyAs: {} }));
+    if (!body.success) return c.json(validationFailureBody(body.error), 400);
+    const caller = actorOf(c, deps);
+    if ('refused' in caller) return caller.refused;
+    try {
+      return c.json(deps.confirm.answer(caller.actor, c.req.param('id'), body.data.answer));
     } catch (err) {
       return refusal(c, err);
     }

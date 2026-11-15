@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "1bf8b796-41eb-4939-aa69-a4dc790c90e4",
+  "id": "651f933e-a5d8-439c-a783-5b3fb291cfc8",
   "prevId": "4ac1d8f7-1cfe-4620-9c8a-3148c37bc408",
   "tables": {
     "a2a_tasks": {
@@ -14358,6 +14358,20 @@
         },
         "checkin_notified_at": {
           "name": "checkin_notified_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "confirm_state": {
+          "name": "confirm_state",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "delivered": {
+          "name": "delivered",
           "type": "text",
           "primaryKey": false,
           "notNull": false,

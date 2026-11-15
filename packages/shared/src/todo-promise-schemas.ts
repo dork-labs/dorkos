@@ -63,6 +63,13 @@ export const TodoPromiseSchema = z
     /** When it left `open`, or null while open. */
     closedAt: z.string().nullable(),
     note: z.string().nullable(),
+    /**
+     * Whether the person it was promised to confirmed it kept: `asked` while their answer waits,
+     * `confirmed` once they said yes, null when nobody was asked (DOR-3034).
+     */
+    confirmState: z.enum(['asked', 'confirmed']).nullable(),
+    /** A link to what was delivered when it was kept (a pull request, a message, a file), or null. */
+    delivered: z.string().nullable(),
   })
   .openapi('TodoPromise');
 
@@ -100,6 +107,17 @@ export const UpdateTodoPromiseRequestSchema = z
 
 /** An update-to-do request. */
 export type UpdateTodoPromiseRequest = z.infer<typeof UpdateTodoPromiseRequestSchema>;
+
+/** A person's answer to "was it kept?" (DOR-3034): Yes confirms it, Not yet reopens it. */
+export const ConfirmTodoPromiseRequestSchema = z
+  .object({ answer: z.enum(['yes', 'not-yet']) })
+  .openapi('ConfirmTodoPromiseRequest');
+
+/** A confirm-to-do request. */
+export type ConfirmTodoPromiseRequest = z.infer<typeof ConfirmTodoPromiseRequestSchema>;
+
+/** The longest link to what was delivered. */
+export const TODO_DELIVERED_MAX = 500;
 
 /** The most rows one list request may ask for. */
 export const TODO_PROMISE_LIST_MAX = 500;

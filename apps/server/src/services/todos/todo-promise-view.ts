@@ -41,6 +41,8 @@ export function toTodoPromise(row: AgentTodoRow, now: number): TodoPromise {
     createdAt: row.createdAt,
     closedAt: row.closedAt,
     note: row.note,
+    confirmState: row.confirmState,
+    delivered: row.delivered,
   };
 }
 

@@ -58,6 +58,8 @@ export type TodoPromisePatch = Partial<
     | 'dueNotifiedAt'
     | 'checkinNotifiedAt'
     | 'dueSetAt'
+    | 'confirmState'
+    | 'delivered'
     | 'closedAt'
     | 'note'
     | 'authority'

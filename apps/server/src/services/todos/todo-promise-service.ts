@@ -311,6 +311,8 @@ export class TodoPromiseService {
       dueNotifiedAt: null,
       estimateMinutes: input.estimate ? TODO_ESTIMATES[input.estimate] : null,
       dueSetAt: dueAt ? this.now().toISOString() : null,
+      confirmState: null,
+      delivered: null,
       checkinNotifiedAt: null,
       closedAt: null,
       note: null,
@@ -393,7 +395,7 @@ export class TodoPromiseService {
       if (change.note !== undefined) return this.saveNote(row, change.note);
       throw new TodoPromiseError('NOTHING_TO_CHANGE', `That promise is already ${row.state}.`);
     }
-    return this.close(row, change.state, change.note);
+    return this.close(row, change.state, change.note, change.delivered);
   }
 
   /**
@@ -518,6 +520,8 @@ export class TodoPromiseService {
           : row.dueNotifiedAt,
       // A new date owes a fresh check-in; the old date keeps whatever it had.
       ...(dateMoves ? { checkinNotifiedAt: null, dueSetAt: now.toISOString() } : {}),
+      // A reopened promise is owed again: any ask to confirm it was kept is over.
+      confirmState: null,
       ...(change.note !== undefined ? { note: change.note || null } : {}),
     };
     const updated = this.store.update(row.id, patch)!;
@@ -557,12 +561,14 @@ export class TodoPromiseService {
   private close(
     row: AgentTodoRow,
     state: Exclude<TodoState, 'open'>,
-    note: string | undefined
+    note: string | undefined,
+    delivered?: string
   ): TodoPromise {
     const patch: TodoPromisePatch = {
       state,
       closedAt: this.now().toISOString(),
       ...(note !== undefined ? { note: note || null } : {}),
+      ...(state === 'kept' && delivered ? { delivered } : {}),
     };
     const updated = this.store.update(row.id, patch)!;
     this.timers.clear(row.id);

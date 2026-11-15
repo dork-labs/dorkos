@@ -13,8 +13,10 @@ export { useTodosEnabled, useTodosEnabledState } from './model/use-todos-config'
 export { todoPromiseKeys } from './model/todo-promise-keys';
 export { useTodoPromises } from './model/use-todo-promises';
 export {
+  useConfirmTodoPromise,
   useCreateTodoPromise,
   useUpdateTodoPromise,
+  type ConfirmTodoPromiseInput,
   type CreateTodoPromiseInput,
   type UpdateTodoPromiseInput,
 } from './model/use-todo-promise-mutations';

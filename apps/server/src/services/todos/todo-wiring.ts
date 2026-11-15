@@ -25,6 +25,7 @@ import { logger } from '../../lib/logger.js';
 import { notify } from '../notifications/notification-service.js';
 import { getChatMessageService } from '../session/chat-messages/chat-message-current.js';
 import { createTodoRecipientNotice } from './notice/todo-recipient-notice.js';
+import { TodoConfirm } from './notice/todo-confirm.js';
 import { readOperatorTimeZone } from '../core/config/operator-time-zone.js';
 
 /** How often queued to-do turns are checked for a new day. */
@@ -70,8 +71,14 @@ export interface TodoWiring {
  * @param deps - The database and the lazy agent registry.
  */
 export function wireTodos(deps: TodoWiringDeps): TodoWiring {
-  const service = new TodoPromiseService({ store: new TodoPromiseStore(deps.db) });
+  const promiseStore = new TodoPromiseStore(deps.db);
+  const service = new TodoPromiseService({ store: promiseStore });
   service.start();
+  // "Kept" asks the person it was promised to; Not yet reopens it the usual way (DOR-3034).
+  const confirm = new TodoConfirm({
+    store: promiseStore,
+    reopen: (actor, id, note) => service.update(actor, id, { state: 'open', note, from: 'kept' }),
+  });
   const agentIdForPath = (agentPath: string) => deps.meshCore()?.getByPath(agentPath)?.id;
   const agentExists = (agentId: string) => deps.meshCore()?.get(agentId) !== undefined;
   const routerDeps: TodoPromiseRouterDeps = {
@@ -82,6 +89,7 @@ export function wireTodos(deps: TodoWiringDeps): TodoWiring {
     isOwner: (facts) => refuseUnlessAccountOwner(facts) === undefined,
     // Only the owner's own session cookie mints `person` authority (DOR-3088).
     personProven: personProof,
+    confirm,
   };
   const todoStore = new TodoStore(deps.db);
   const todoTurns = new TodoTurns({ db: deps.db, ...todoTurnSeams(deps) });
@@ -140,6 +148,7 @@ export function wireTodos(deps: TodoWiringDeps): TodoWiring {
       tellRecipient: createTodoRecipientNotice({
         isAgent: agentExists,
         agentName: (id) => deps.meshCore()?.get(id)?.name,
+        askConfirm: (id) => confirm.ask(id),
         dateWords: (iso) =>
           new Date(iso).toLocaleDateString('en-US', {
             weekday: 'short',

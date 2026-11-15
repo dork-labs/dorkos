@@ -343,6 +343,8 @@ export class TodoService {
       estimateMinutes: null,
       checkinNotifiedAt: null,
       dueSetAt: dueAt ? this.now().toISOString() : null,
+      confirmState: null,
+      delivered: null,
       closedAt: null,
       note: null,
       originMarks: null,

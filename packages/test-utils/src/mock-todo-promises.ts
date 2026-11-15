@@ -11,7 +11,7 @@ import type { Transport } from '@dorkos/shared/transport';
 /** The to-do methods of the Transport port. */
 type TodoPromiseMethods = Pick<
   Transport,
-  'listTodoPromises' | 'createTodoPromise' | 'updateTodoPromise'
+  'listTodoPromises' | 'createTodoPromise' | 'updateTodoPromise' | 'confirmTodoPromise'
 >;
 
 /**
@@ -31,6 +31,8 @@ export function todoPromiseTransportMocks(): TodoPromiseMethods {
         originalDueAt: null,
         scoreDueAt: null,
         moveCount: 0,
+        confirmState: null,
+        delivered: null,
         state: 'open',
         overdue: false,
         sourceSessionId: null,
@@ -41,5 +43,6 @@ export function todoPromiseTransportMocks(): TodoPromiseMethods {
       })
     ),
     updateTodoPromise: vi.fn().mockRejectedValue(new Error('updateTodoPromise not mocked')),
+    confirmTodoPromise: vi.fn().mockRejectedValue(new Error('confirmTodoPromise not mocked')),
   };
 }

@@ -1,5 +1,6 @@
 /**
- * The Inbox event raised when an agent moves or drops a promise it made to a person (DOR-3034).
+ * The Inbox event raised when an agent moves, drops or keeps a promise it made to a person
+ * (DOR-3034). A kept one asks the person to confirm it (`todo-confirm.ts`).
  * The emitter is `todo-recipient-notice.ts`, wired in `todo-wiring.ts`. It is notable: nothing
  * waits on the person, but a promise to them changed, and they hear it with the agent's reason.
  *
@@ -16,7 +17,7 @@ const WHAT_IN_TITLE_MAX = 60;
 
 /** The payload of the promise-changed kind, joined into `NotificationPayloads`. */
 export interface TodoChangePayloads {
-  /** An agent moved or dropped a promise it made to a person. */
+  /** An agent moved, dropped or kept a promise it made to a person. */
   'todo.changed': {
     /** The to-do. */
     todoId: string;
@@ -27,11 +28,13 @@ export interface TodoChangePayloads {
     /** The promise, in its own words. */
     what: string;
     /** What happened to it. */
-    change: 'moved' | 'dropped';
+    change: 'moved' | 'dropped' | 'kept';
     /** The reason the agent gave, or null when it gave none. */
     note: string | null;
     /** A moved promise's new date in the person's own words ("Fri, Nov 20"), or null. */
     newDue: string | null;
+    /** A kept promise's link to what was delivered, or null. */
+    delivered?: string | null;
     /** ISO time of the change. */
     at: string;
   };
@@ -55,6 +58,10 @@ export const TODO_CHANGE_ENTRIES: {
     locate: (p) => ({ subjectId: p.agentId, agentId: p.agentId }),
     title: (p) => `${p.agentName} ${p.change} ${quoted(p.what)}`,
     body: (p) => {
+      if (p.change === 'kept') {
+        const ask = 'Done? Answer Yes or Not yet on the promise.';
+        return p.delivered ? `${ask} Delivered: ${p.delivered}` : ask;
+      }
       const why = p.note ? `Why: ${p.note}` : 'No reason given.';
       if (p.change !== 'moved') return why;
       return `${p.newDue ? `Now due ${p.newDue}.` : 'Now with no date.'} ${why}`;
