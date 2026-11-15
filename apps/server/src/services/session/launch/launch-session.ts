@@ -799,7 +799,8 @@ async function launchSessionMessage(
     });
   }
 
-  return { ...result, ...sessionToolWarnings(runtimeType, effectiveCwd ?? DEFAULT_CWD, forAgent) };
+  const tools = { cwd: effectiveCwd ?? DEFAULT_CWD, sessionId, agentPath: forAgent };
+  return { ...result, ...(await sessionToolWarnings(runtimeType, runtime, tools)) };
 }
 
 /** @internal Exported for testing only. */
