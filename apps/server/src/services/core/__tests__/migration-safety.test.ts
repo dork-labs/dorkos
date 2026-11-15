@@ -246,9 +246,18 @@ describe('checkMigrationSafety', () => {
 
   it("defaults to the repository's own removal list when none is passed", () => {
     // The real call site passes nothing, so the default is what production uses.
-    // The two keys this repository has ever removed, both from DOR-2099's
-    // graduation of the two experiments they seeded.
-    expect(Object.keys(REMOVED_SHIPPED_KEYS)).toEqual(['0.71.0', '0.72.0']);
+    // The retired pre-floor keys and the two graduated experiments.
+    expect(Object.keys(REMOVED_SHIPPED_KEYS)).toEqual([
+      '0.44.0',
+      '0.45.0',
+      '0.46.0',
+      '0.48.0',
+      '0.50.0',
+      '0.52.0',
+      '0.55.0',
+      '0.71.0',
+      '0.72.0',
+    ]);
     for (const reason of Object.values(REMOVED_SHIPPED_KEYS)) {
       expect(reason.trim()).not.toBe('');
     }
