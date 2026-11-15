@@ -4335,6 +4335,9 @@
                   "$ref": "#/components/schemas/ModelSubstitutedPart"
                 },
                 {
+                  "$ref": "#/components/schemas/ProjectAddonsOffPart"
+                },
+                {
                   "$ref": "#/components/schemas/WorkLeftRunningPart"
                 },
                 {
@@ -4356,6 +4359,7 @@
                   "memory_recall": "#/components/schemas/MemoryRecallPart",
                   "permission_denied": "#/components/schemas/PermissionDeniedPart",
                   "model_substituted": "#/components/schemas/ModelSubstitutedPart",
+                  "project_addons_off": "#/components/schemas/ProjectAddonsOffPart",
                   "work_left_running": "#/components/schemas/WorkLeftRunningPart",
                   "compact_boundary": "#/components/schemas/CompactBoundaryPart"
                 }
@@ -5586,6 +5590,35 @@
           "to",
           "toName",
           "reason"
+        ]
+      },
+      "ProjectAddonsOffPart": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "project_addons_off"
+            ]
+          },
+          "plugins": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "tools": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "mcpServers": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "type",
+          "plugins",
+          "tools",
+          "mcpServers"
         ]
       },
       "WorkLeftRunningPart": {
@@ -6845,6 +6878,40 @@
               "to",
               "toName",
               "reason"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "seq": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "project_addons_off"
+                ]
+              },
+              "plugins": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "tools": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "mcpServers": {
+                "type": "integer",
+                "minimum": 0
+              }
+            },
+            "required": [
+              "seq",
+              "type",
+              "plugins",
+              "tools",
+              "mcpServers"
             ]
           },
           {
@@ -41930,6 +41997,40 @@
                         "to",
                         "toName",
                         "reason"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "seq": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "type": {
+                          "type": "string",
+                          "enum": [
+                            "project_addons_off"
+                          ]
+                        },
+                        "plugins": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "tools": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "mcpServers": {
+                          "type": "integer",
+                          "minimum": 0
+                        }
+                      },
+                      "required": [
+                        "seq",
+                        "type",
+                        "plugins",
+                        "tools",
+                        "mcpServers"
                       ]
                     },
                     {

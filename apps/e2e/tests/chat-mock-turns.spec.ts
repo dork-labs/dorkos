@@ -1,5 +1,6 @@
 import { registerHeldProcessTests } from './chat/held-process.js';
 import { registerLiveTurnVisibilityTests } from './chat/live-turn-visibility.js';
+import { registerProjectAddonsNoticeTests } from './chat/project-addons-notice.js';
 import { MOCK_API_URL, useMockServer } from './chat/mock-server.js';
 import { registerRuntimeCapabilityParityTests } from './chat/runtime-capability-parity.js';
 
@@ -30,3 +31,6 @@ registerHeldProcessTests({ apiUrl: MOCK_API_URL, agentDir });
 // descriptors TestModeRuntime declares are the whole available surface. See the
 // module header for what that does and does not cover.
 registerRuntimeCapabilityParityTests({ agentDir });
+
+// The lasting notice that a project's own OpenCode add-ons are off (DOR-4404).
+registerProjectAddonsNoticeTests({ apiUrl: MOCK_API_URL, agentDir });

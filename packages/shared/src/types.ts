@@ -175,6 +175,8 @@ export type {
   PermissionDeniedPart,
   ModelSubstitutedEvent,
   ModelSubstitutedPart,
+  ProjectAddonsOffEvent,
+  ProjectAddonsOffPart,
   WorkLeftEndStatus,
   WorkLeftTask,
   WorkLeftRunningEvent,

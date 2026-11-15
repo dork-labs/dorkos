@@ -95,6 +95,7 @@ const QUIET: ReadonlySet<StreamEvent['type']> = new Set<StreamEvent['type']>([
   'model_request',
   'api_retry',
   'model_substituted',
+  'project_addons_off',
   'context_usage',
   'session_status',
   'session_state_changed',
