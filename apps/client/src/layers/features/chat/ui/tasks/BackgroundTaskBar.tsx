@@ -81,7 +81,8 @@ export function BackgroundTaskBar({ tasks, onStopTask }: BackgroundTaskBarProps)
 
   const { shown, ambient: ambientTasks } = partitionAmbientTasks(tasks);
   const agentTasks = shown.filter((t) => t.taskType === 'agent');
-  const bashTasks = shown.filter((t) => t.taskType === 'bash');
+  // Shells and every other kind (a Monitor, a Workflow) draw as dots.
+  const bashTasks = shown.filter((t) => t.taskType !== 'agent');
   const count = shown.length;
 
   const visibleAgents = agentTasks.slice(0, MAX_VISIBLE_AGENTS);

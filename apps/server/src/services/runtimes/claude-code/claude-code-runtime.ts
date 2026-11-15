@@ -1283,7 +1283,9 @@ export class ClaudeCodeRuntime implements AgentRuntime {
 
   /** @inheritdoc */
   async stopTask(sessionId: string, taskId: string): Promise<InterruptReceipt> {
-    return this.sessionStore.stopTask(sessionId, taskId);
+    // A task that outlived its turn on a held process is stopped there (DOR-2065).
+    const held = this.persistent.liveTaskIds(sessionId).includes(taskId);
+    return this.sessionStore.stopTask(sessionId, taskId, held);
   }
 
   /** @inheritdoc */
@@ -1882,9 +1884,7 @@ export class ClaudeCodeRuntime implements AgentRuntime {
     // `warmCommands` — it exits before booting a probe when none do.
     // Fire-and-forget: the probe broadcasts `commands_changed` on completion,
     // which re-fetches the palette.
-    if (!this.cache.hasSdkCommands(root)) {
-      void this.warmCommands(root);
-    }
+    if (!this.cache.hasSdkCommands(root)) void this.warmCommands(root);
     return this.cache.getCommands(registry, root, forceRefresh);
   }
 

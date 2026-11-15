@@ -646,9 +646,12 @@ function foldSubagent(
     parts.push({
       type: 'background_task',
       taskId: event.taskId,
-      taskType: 'agent',
+      // The start names its kind (D8); a server that predates it, or an update
+      // whose start this turn never saw, draws as a helper, as it always has.
+      // A shell's command comes from the session-level list (`withSessionTasks`).
+      taskType: event.taskType ?? 'agent',
       status: event.status,
-      startedAt: 0,
+      startedAt: event.startedAt ?? 0,
       description: event.description,
       toolUses: event.toolUses,
       lastToolName: event.lastToolName,

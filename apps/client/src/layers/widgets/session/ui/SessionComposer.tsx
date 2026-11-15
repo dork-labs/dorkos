@@ -56,6 +56,7 @@ import {
 import { useCurrentAgent, useAgentVisual } from '@/layers/entities/agent';
 import { AGENT_IDENTITY_LIMIT_MS, useWaitedPast } from '@/layers/shared/lib';
 import { useLoadingTooLong } from '../model/use-transcript-hold';
+import { useStopTask } from '../model/use-stop-task';
 import {
   useDirectoryState,
   useSessionAwaitingDecision,
@@ -530,19 +531,17 @@ export function SessionComposer({
     () => selectRenderedMessages(streamState, legacyMessages),
     [streamState, legacyMessages]
   );
-  const backgroundTasks = useBackgroundTasks(messages);
-
-  const handleStopTask = useCallback(
-    async (taskId: string) => {
-      if (!sessionId) return;
-      try {
-        await transport.stopTask(sessionId, taskId);
-      } catch (err) {
-        console.error('[chat] Failed to stop task:', err);
-      }
-    },
-    [sessionId, transport]
+  // The session-level running set decides which tasks the strip shows, so a
+  // helper keeps its row through `turn_end` and the reload after it (FB-18).
+  const runningTasks = streamState.status?.runningSubagents;
+  const ambientIds = streamState.ambientSubagentIds;
+  const sessionRunning = useMemo(
+    () => ({ tasks: runningTasks, ambientIds }),
+    [runningTasks, ambientIds]
   );
+  const backgroundTasks = useBackgroundTasks(messages, sessionRunning);
+
+  const handleStopTask = useStopTask(sessionId, transport);
 
   // Switch now on a message held for the agent's background work (DOR-2065).
   // The queue update that follows clears the row; only a failure needs words.

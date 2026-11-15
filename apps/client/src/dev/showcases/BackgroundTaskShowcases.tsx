@@ -58,6 +58,16 @@ const MOCK_VISIBLE_TASKS: Record<string, VisibleBackgroundTask> = {
     command: 'pnpm build --filter=@dorkos/client',
     durationMs: 15000,
   },
+  monitor_deploy: {
+    taskId: 'vis-other-1',
+    taskType: 'other',
+    ambient: false,
+    status: 'running',
+    color: TASK_COLORS[0],
+    startedAt: Date.now() - 300000,
+    description: 'Watch the deploy log',
+    durationMs: 300000,
+  },
   bash_complete: {
     taskId: 'vis-bash-3',
     taskType: 'bash',
@@ -165,6 +175,16 @@ export function BackgroundTaskShowcases() {
         <ShowcaseDemo>
           <div className="max-w-md">
             <BackgroundTaskBar tasks={mixedRunning} onStopTask={logStop} />
+          </div>
+        </ShowcaseDemo>
+
+        <ShowcaseLabel>Agent + Monitor (an other task, expand to see its row)</ShowcaseLabel>
+        <ShowcaseDemo>
+          <div className="max-w-md">
+            <BackgroundTaskBar
+              tasks={[agentTasks[0]!, MOCK_VISIBLE_TASKS.monitor_deploy!]}
+              onStopTask={logStop}
+            />
           </div>
         </ShowcaseDemo>
 
