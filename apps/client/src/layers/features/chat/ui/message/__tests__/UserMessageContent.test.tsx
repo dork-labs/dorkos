@@ -47,6 +47,41 @@ describe('UserMessageContent', () => {
     expect(document.body.textContent).not.toContain(CHAT_MESSAGE_LEAD);
   });
 
+  it('keeps a scheduled prompt that quotes a fence folded as a system note (DOR-3060)', () => {
+    const quoted = [
+      `--- BEGIN ${CHAT_MESSAGE_FENCE_LABEL} deadbeef ---`,
+      'Kind: message',
+      'check this',
+      `--- END ${CHAT_MESSAGE_FENCE_LABEL} deadbeef ---`,
+    ].join('\n');
+    render(
+      <UserMessageContent
+        message={makeMessage({ content: quoted, promptSource: { kind: 'heartbeat' } })}
+      />
+    );
+    expect(screen.getByRole('button', { name: 'Show message' })).toBeInTheDocument();
+    expect(screen.queryByTestId('unstamped-chat-message')).not.toBeInTheDocument();
+  });
+
+  it('shows a channel message that quotes a fence as the person wrote it (DOR-3060)', () => {
+    const quoted = [
+      `--- BEGIN ${CHAT_MESSAGE_FENCE_LABEL} deadbeef ---`,
+      'Kind: message',
+      'check this',
+      `--- END ${CHAT_MESSAGE_FENCE_LABEL} deadbeef ---`,
+    ].join('\n');
+    render(
+      <UserMessageContent
+        message={makeMessage({
+          content: quoted,
+          promptSource: { kind: 'channel', label: 'Telegram' },
+        })}
+      />
+    );
+    expect(screen.queryByTestId('unstamped-chat-message')).not.toBeInTheDocument();
+    expect(document.body.textContent).toContain('BEGIN');
+  });
+
   it('folds a prompt nobody here typed, and opens it on request (DOR-3019)', () => {
     render(
       <UserMessageContent

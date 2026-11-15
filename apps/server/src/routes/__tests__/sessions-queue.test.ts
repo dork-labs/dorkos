@@ -464,6 +464,9 @@ describe('POST /api/sessions/:id/queue/:messageId/steer', () => {
       .set('x-dorkos-agent', 'agent-token-abc');
 
     expect(res.status).toBe(403);
+    // The person bar refuses, not the desk check: an agent may never send another
+    // chat's words into a running turn, whatever chat it is in.
+    expect(res.body.code).toBe('person_only');
     expect((await readQueue()).map((row) => row.id)).toEqual([queued.messageId]);
   });
 

@@ -18,17 +18,25 @@ export function sendNowNotice(result: SteerQueuedChatMessageResponse): string | 
     : 'Sends next. This agent can’t take it mid-turn.';
 }
 
-/** What the person is told once a message is taken off the queue. */
-export function notDeliveredLine(senderName: string): string {
-  return `Not delivered. ${senderName}’s chat shows it.`;
+/**
+ * What the person is told once a message is taken off the queue.
+ *
+ * @param senderName - The sending agent, or `null` when nobody knows who sent it.
+ */
+export function notDeliveredLine(senderName: string | null): string {
+  return senderName === null
+    ? 'Not delivered. The chat that sent it shows it.'
+    : `Not delivered. ${senderName}’s chat shows it.`;
 }
 
 /** Send now and Don't deliver, for a queued message from another agent. */
 export interface AgentQueueActions {
   /** Send it into the running turn, or put it first when it may not join. */
   sendNow: (id: string) => void;
-  /** Take it off the queue; its sender is told who removed it. */
-  dontDeliver: (id: string, senderName: string) => void;
+  /** Take it off the queue; its sender (`null` when unknown) is told who removed it. */
+  dontDeliver: (id: string, senderName: string | null) => void;
+  /** Rows whose Send now is on its way, so a second press waits for the first. */
+  sending: ReadonlySet<string>;
   /** A row's note after Send now moved it to the front instead, by row id. */
   notices: Readonly<Record<string, string>>;
 }
@@ -36,6 +44,11 @@ export interface AgentQueueActions {
 /** A queue call that failed only because the message already left the queue. */
 function isGone(err: unknown): boolean {
   return (err as { code?: string })?.code === 'QUEUED_MESSAGE_NOT_FOUND';
+}
+
+/** A queue call refused because the message is already on its way into a turn. */
+function isOnItsWay(err: unknown): boolean {
+  return (err as { code?: string })?.code === 'QUEUED_MESSAGE_LAUNCHING';
 }
 
 /**
@@ -46,17 +59,29 @@ function isGone(err: unknown): boolean {
 export function useAgentQueueActions(sessionId: string | null): AgentQueueActions {
   const transport = useTransport();
   const [notices, setNotices] = useState<Record<string, string>>({});
+  const [sending, setSending] = useState<ReadonlySet<string>>(new Set());
 
   const sendNow = useCallback(
     (id: string) => {
       if (!sessionId) return;
+      setSending((prev) => new Set(prev).add(id));
+      const done = () =>
+        setSending((prev) => {
+          const next = new Set(prev);
+          next.delete(id);
+          return next;
+        });
       void transport.steerQueuedChatMessage(sessionId, id).then(
         (result) => {
+          done();
           const notice = sendNowNotice(result);
           if (notice !== null) setNotices((prev) => ({ ...prev, [id]: notice }));
         },
         (err: unknown) => {
-          if (!isGone(err)) toast.error('Couldn’t send that message now');
+          done();
+          // Gone, or already on its way (a press from another window): both
+          // mean the message is going, which is what was asked.
+          if (!isGone(err) && !isOnItsWay(err)) toast.error('Couldn’t send that message now');
         }
       );
     },
@@ -64,14 +89,14 @@ export function useAgentQueueActions(sessionId: string | null): AgentQueueAction
   );
 
   const dontDeliver = useCallback(
-    (id: string, senderName: string) => {
+    (id: string, senderName: string | null) => {
       if (!sessionId) return;
       void transport.removeQueuedMessage(sessionId, id).then(
         () => toast(notDeliveredLine(senderName)),
         (err: unknown) => {
           if (isGone(err)) return;
           // Send now was already carrying it into the running turn.
-          if ((err as { code?: string })?.code === 'QUEUED_MESSAGE_LAUNCHING') {
+          if (isOnItsWay(err)) {
             toast('It’s already on its way.');
             return;
           }
@@ -82,5 +107,5 @@ export function useAgentQueueActions(sessionId: string | null): AgentQueueAction
     [sessionId, transport]
   );
 
-  return { sendNow, dontDeliver, notices };
+  return { sendNow, dontDeliver, notices, sending };
 }

@@ -1,3 +1,4 @@
+import { useEffect, useRef } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import { AppWindow, ArrowUp, CornerDownLeft, X } from 'lucide-react';
 import { cn, COLLAPSE_TRANSITION, COLLAPSE_VARIANTS, SPRING } from '@/layers/shared/lib';
@@ -58,6 +59,11 @@ interface QueuePanelProps {
   onSwitchNow?: () => void;
   /** Send now and Don't deliver, for a message another agent sent (DOR-3060). */
   agentActions: AgentQueueActions;
+  /**
+   * Focus the composer: where focus goes when the last row leaves after Send
+   * now or Don't deliver, so a keyboard user never lands on the page itself.
+   */
+  onFocusComposer?: () => void;
 }
 
 /**
@@ -91,7 +97,54 @@ export function QueuePanel({
   statusNote,
   onSwitchNow,
   agentActions,
+  onFocusComposer,
 }: QueuePanelProps) {
+  const listRef = useRef<HTMLDivElement>(null);
+  const leaving = useRef<{ id: string; index: number; last: boolean } | null>(null);
+  const focusComposer = useRef(onFocusComposer);
+  focusComposer.current = onFocusComposer;
+
+  // A row that left after Send now or Don't deliver hands focus to the row
+  // now in its place, else the one before it. Only when focus was in that row:
+  // a click elsewhere meanwhile is the person's own choice.
+  useEffect(() => {
+    const left = leaving.current;
+    if (!left) return;
+    if (queue.some((item) => item.id === left.id)) {
+      // Send now could only move it first: it stays, and so does focus.
+      if (agentActions.notices[left.id] !== undefined) leaving.current = null;
+      return;
+    }
+    leaving.current = null;
+    const active = document.activeElement;
+    const inLeftRow = active?.closest(`[data-queue-row="${left.id}"]`) != null;
+    if (!inLeftRow && active !== null && active !== document.body) return;
+    const target = queue[left.index] ?? queue[left.index - 1];
+    const next = target
+      ? listRef.current?.querySelector<HTMLElement>(`[data-queue-row="${target.id}"] button`)
+      : undefined;
+    if (next) next.focus();
+    else focusComposer.current?.();
+  }, [queue, agentActions.notices]);
+
+  // The last row leaving takes the panel with it: focus goes to the composer.
+  useEffect(
+    () => () => {
+      // Only when focus fell to the page with the row, never away from where
+      // the person has since moved it.
+      const active = document.activeElement;
+      if (leaving.current?.last && (active === null || active === document.body)) {
+        focusComposer.current?.();
+      }
+    },
+    []
+  );
+
+  const noteLeaving = (id: string): void => {
+    const index = queue.findIndex((item) => item.id === id);
+    leaving.current = { id, index, last: queue.length === 1 };
+  };
+
   // Also guarded at the call site, which is what lets AnimatePresence see this
   // panel leave and play the exit below. Kept here too so the component never
   // renders a "Queued (0)" header for any other caller.
@@ -112,11 +165,12 @@ export function QueuePanel({
         <span className="font-medium">{queueHeaderCount(queue)}</span>
         <span className="truncate">&middot; {statusNote}</span>
       </div>
-      <div className="max-h-[40vh] space-y-0.5 overflow-y-auto">
+      <div ref={listRef} className="max-h-[40vh] space-y-0.5 overflow-y-auto">
         <AnimatePresence mode="popLayout">
           {queue.map((item, i) => (
             <motion.div
               key={item.id}
+              data-queue-row={item.id}
               initial={{ opacity: 0, y: -4 }}
               animate={{
                 opacity: 1,
@@ -132,6 +186,7 @@ export function QueuePanel({
                   index={i}
                   actions={agentActions}
                   onSwitchNow={onSwitchNow}
+                  onLeaving={noteLeaving}
                 />
               ) : (
                 <div

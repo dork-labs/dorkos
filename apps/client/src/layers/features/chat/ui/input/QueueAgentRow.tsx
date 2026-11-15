@@ -17,6 +17,8 @@ interface QueueAgentRowProps {
   actions: AgentQueueActions;
   /** Run a message held for the agent's background work anyway, ending that work. */
   onSwitchNow?: (() => void) | undefined;
+  /** Called as Send now or Don't deliver starts, so the queue can keep focus if the row leaves. */
+  onLeaving?: ((id: string) => void) | undefined;
 }
 
 /**
@@ -32,7 +34,13 @@ interface QueueAgentRowProps {
  * Every control is a real button in the Tab order. Escape in the confirm
  * keeps the message and hands focus back to Don't deliver.
  */
-export function QueueAgentRow({ item, index, actions, onSwitchNow }: QueueAgentRowProps) {
+export function QueueAgentRow({
+  item,
+  index,
+  actions,
+  onSwitchNow,
+  onLeaving,
+}: QueueAgentRowProps) {
   const [confirming, setConfirming] = useState(false);
   const [expanded, setExpanded] = useState(false);
   const keepRef = useRef<HTMLButtonElement>(null);
@@ -105,7 +113,9 @@ export function QueueAgentRow({ item, index, actions, onSwitchNow }: QueueAgentR
       {confirming ? (
         <div className="ml-auto flex basis-full flex-wrap items-center justify-end gap-1 text-xs sm:basis-auto">
           <span className="text-foreground">
-            Don’t deliver? {name}’s chat will say it wasn’t delivered.
+            {sender === null
+              ? 'Don’t deliver? The chat that sent it will be told.'
+              : `Don’t deliver? ${name}’s chat will say it wasn’t delivered.`}
           </span>
           <Button
             ref={keepRef}
@@ -125,7 +135,8 @@ export function QueueAgentRow({ item, index, actions, onSwitchNow }: QueueAgentR
             onKeyDown={keepOnEscape}
             onClick={() => {
               setConfirming(false);
-              actions.dontDeliver(item.id, name);
+              onLeaving?.(item.id);
+              actions.dontDeliver(item.id, sender === null ? null : name);
             }}
           >
             Don’t deliver
@@ -149,7 +160,12 @@ export function QueueAgentRow({ item, index, actions, onSwitchNow }: QueueAgentR
             variant="ghost"
             size="xs"
             responsive={false}
-            onClick={() => actions.sendNow(item.id)}
+            loading={actions.sending.has(item.id)}
+            loadingLabel="Sending…"
+            onClick={() => {
+              onLeaving?.(item.id);
+              actions.sendNow(item.id);
+            }}
           >
             Send now
           </Button>

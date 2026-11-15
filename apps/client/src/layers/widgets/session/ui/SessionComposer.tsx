@@ -707,6 +707,7 @@ export function SessionComposer({
               onMoveUp={chatQueue.handleQueueMoveUp}
               onSwitchNow={handleSwitchNow}
               agentActions={agentQueueActions}
+              onFocusComposer={() => chatInputRef.current?.focus()}
               // The server dispatches the head the moment the session frees up,
               // so what genuinely holds the line is the agent parked on a
               // person, or the head held for the agent's background work.

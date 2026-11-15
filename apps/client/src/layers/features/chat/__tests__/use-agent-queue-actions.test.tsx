@@ -90,6 +90,32 @@ describe('Don’t deliver while Send now carries it', () => {
   });
 });
 
+describe('a second Send now press', () => {
+  it('marks the row as sending until the answer comes back', async () => {
+    const { transport, view } = mount();
+    let answer!: (value: { outcome: 'steered' }) => void;
+    vi.mocked(transport.steerQueuedChatMessage).mockReturnValueOnce(
+      new Promise((resolve) => {
+        answer = resolve;
+      })
+    );
+    act(() => view.result.current.sendNow('row-1'));
+    expect(view.result.current.sending.has('row-1')).toBe(true);
+    await act(async () => answer({ outcome: 'steered' }));
+    expect(view.result.current.sending.has('row-1')).toBe(false);
+  });
+
+  it('treats "already on its way" as the send it is, not a failure', async () => {
+    const { transport, view } = mount();
+    vi.mocked(transport.steerQueuedChatMessage).mockRejectedValueOnce(
+      Object.assign(new Error('starting'), { code: 'QUEUED_MESSAGE_LAUNCHING' })
+    );
+    act(() => view.result.current.sendNow('row-1'));
+    await waitFor(() => expect(view.result.current.sending.has('row-1')).toBe(false));
+    expect(toast.error).not.toHaveBeenCalled();
+  });
+});
+
 describe('the copy', () => {
   it('words each Send now outcome and the removal', () => {
     expect(sendNowNotice({ outcome: 'steered' })).toBeNull();
@@ -100,5 +126,6 @@ describe('the copy', () => {
       'Sends next. This agent can’t take it mid-turn.'
     );
     expect(notDeliveredLine('Security')).toBe('Not delivered. Security’s chat shows it.');
+    expect(notDeliveredLine(null)).toBe('Not delivered. The chat that sent it shows it.');
   });
 });

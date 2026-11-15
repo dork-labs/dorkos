@@ -37,8 +37,12 @@ function agentItem(over: Partial<QueueItem> = {}): QueueItem {
   };
 }
 
-function renderRow(item: QueueItem = agentItem(), notices: Record<string, string> = {}) {
-  const actions = { sendNow: vi.fn(), dontDeliver: vi.fn(), notices };
+function renderRow(
+  item: QueueItem = agentItem(),
+  notices: Record<string, string> = {},
+  sending: ReadonlySet<string> = new Set()
+) {
+  const actions = { sendNow: vi.fn(), dontDeliver: vi.fn(), notices, sending };
   render(<QueueAgentRow item={item} index={0} actions={actions} />);
   return actions;
 }
@@ -46,15 +50,16 @@ function renderRow(item: QueueItem = agentItem(), notices: Record<string, string
 describe('QueueAgentRow', () => {
   it('offers exactly Send now and Don’t deliver, and no edit or reorder', () => {
     renderRow();
-    expect(screen.getAllByRole('button').map((b) => b.textContent)).toEqual([
-      'Send now',
-      'Don’t deliver',
-    ]);
+    // Send now carries a hidden "Sending…" twin so its width never moves.
+    const buttons = screen.getAllByRole('button');
+    expect(buttons).toHaveLength(2);
+    expect(buttons[0]!.textContent).toMatch(/^Send now/);
+    expect(buttons[1]!.textContent).toBe('Don’t deliver');
   });
 
   it('sends it now', () => {
     const actions = renderRow();
-    fireEvent.click(screen.getByRole('button', { name: 'Send now' }));
+    fireEvent.click(screen.getByRole('button', { name: /^Send now/ }));
     expect(actions.sendNow).toHaveBeenCalledWith('row-1');
   });
 
@@ -130,6 +135,25 @@ describe('QueueAgentRow', () => {
   it('says when Send now could only move it to the front', () => {
     renderRow(agentItem(), { 'row-1': 'Sends next. This agent can’t take it mid-turn.' });
     expect(screen.getByText('Sends next. This agent can’t take it mid-turn.')).toBeInTheDocument();
+  });
+
+  it('holds Send now while a send is on its way, so a second press does nothing', () => {
+    const actions = renderRow(agentItem(), {}, new Set(['row-1']));
+    const send = screen.getByRole('button', { name: /Send now/ });
+    expect(send).toHaveAttribute('aria-disabled', 'true');
+    fireEvent.click(send);
+    expect(actions.sendNow).not.toHaveBeenCalled();
+  });
+
+  it('asks in plain words when nobody knows who sent it', () => {
+    const actions = renderRow(agentItem({ sender: null }));
+    fireEvent.click(screen.getByRole('button', { name: 'Don’t deliver' }));
+    expect(
+      screen.getByText('Don’t deliver? The chat that sent it will be told.')
+    ).toBeInTheDocument();
+    expect(document.body.textContent).not.toContain('Another chat’s chat');
+    fireEvent.click(screen.getAllByRole('button', { name: 'Don’t deliver' }).at(-1)!);
+    expect(actions.dontDeliver).toHaveBeenCalledWith('row-1', null);
   });
 
   it('never shows the envelope the agent reads', () => {

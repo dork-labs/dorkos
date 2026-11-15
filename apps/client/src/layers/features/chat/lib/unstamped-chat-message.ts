@@ -8,8 +8,8 @@
  * words as their own: the transcript shows them under "Another chat", as the
  * fence's words in plain text.
  *
- * A person who pastes a whole envelope into their own message reads it back
- * under "Another chat" too. That only ever names fewer people, never someone
+ * A person who pastes a whole envelope into a message of their own reads it
+ * back under "Another chat" too. That only ever names fewer people, never someone
  * who did not write it, so it is the safe way to be wrong.
  *
  * @module features/chat/lib/unstamped-chat-message
@@ -24,12 +24,18 @@ export const UNKNOWN_CHAT_SENDER = 'Another chat';
  * Whether a user message holds another chat's fenced words that carry no
  * sender stamp.
  *
+ * Only a message nobody else is named for. A fence is plain text anyone can
+ * type, so a room post (whose room names its author) and a prompt with a
+ * source (a channel, a schedule, a heartbeat) keep the name they have: a
+ * stranger quoting a fence must never pass for one of the person's own chats.
+ *
  * @param message - The user message.
  */
 export function isUnstampedChatMessage(
-  message: Pick<ChatMessage, 'content' | 'chatMessages'>
+  message: Pick<ChatMessage, 'content' | 'chatMessages' | 'roomMessage' | 'promptSource'>
 ): boolean {
-  return !message.chatMessages?.length && chatMessageFenceNonces(message.content).length > 0;
+  if (message.chatMessages?.length || message.roomMessage || message.promptSource) return false;
+  return chatMessageFenceNonces(message.content).length > 0;
 }
 
 /**

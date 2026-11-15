@@ -47,6 +47,7 @@ export const SAMPLE_AGENT_ACTIONS: AgentQueueActions = {
   sendNow: () => {},
   dontDeliver: () => {},
   notices: {},
+  sending: new Set(),
 };
 
 /** A queue whose rows did not all come from this window, and one with a notice. */

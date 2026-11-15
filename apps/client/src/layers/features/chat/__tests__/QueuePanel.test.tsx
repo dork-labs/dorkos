@@ -33,7 +33,12 @@ const makeItem = (content: string, index: number, over: Partial<QueueItem> = {})
   ...over,
 });
 
-const AGENT_ACTIONS = { sendNow: vi.fn(), dontDeliver: vi.fn(), notices: {} };
+const AGENT_ACTIONS = {
+  sendNow: vi.fn(),
+  dontDeliver: vi.fn(),
+  notices: {},
+  sending: new Set<string>(),
+};
 
 const STATUS_NOTE = 'Sending one at a time as the agent finishes';
 

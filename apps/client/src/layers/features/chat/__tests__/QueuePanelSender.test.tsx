@@ -60,7 +60,32 @@ const fromChat = (id: string, content: string, sender: QueueItem['sender']): Que
   notice: null,
 });
 
-const actions = { sendNow: vi.fn(), dontDeliver: vi.fn(), notices: {} as Record<string, string> };
+const actions = {
+  sendNow: vi.fn(),
+  dontDeliver: vi.fn(),
+  notices: {} as Record<string, string>,
+  sending: new Set<string>(),
+};
+
+function panel(
+  queue: QueueItem[],
+  notices: Record<string, string> = {},
+  onFocusComposer: () => void = () => {}
+) {
+  return (
+    <QueuePanel
+      queue={queue}
+      editingId={null}
+      onEdit={vi.fn()}
+      onRemove={vi.fn()}
+      onSend={vi.fn()}
+      onMoveUp={vi.fn()}
+      statusNote="Sending one at a time"
+      agentActions={{ ...actions, notices }}
+      onFocusComposer={onFocusComposer}
+    />
+  );
+}
 
 function renderPanel(queue: QueueItem[], notices: Record<string, string> = {}) {
   return render(
@@ -119,6 +144,63 @@ describe('QueuePanel: who sent a queued message', () => {
   it('counts a mixed queue by who sent what', () => {
     renderPanel([mine('a', 'mine'), fromChat('b', 'theirs', SECURITY)]);
     expect(screen.getByText('2 queued · 1 yours, 1 from Security')).toBeInTheDocument();
+  });
+});
+
+describe('QueuePanel: focus after a row leaves (DOR-3060)', () => {
+  const a = fromChat('a', 'first', SECURITY);
+  const b = fromChat('b', 'second', { ...SECURITY, agentName: 'QA' });
+
+  it('moves to the row now in its place after Don’t deliver', () => {
+    const view = render(panel([a, b]));
+    const rowA = screen.getByRole('group', { name: /from Security/ });
+    fireEvent.click(within(rowA).getByRole('button', { name: 'Don’t deliver' }));
+    const confirm = within(rowA).getAllByRole('button', { name: 'Don’t deliver' }).at(-1)!;
+    confirm.focus();
+    fireEvent.click(confirm);
+
+    view.rerender(panel([b]));
+
+    const rowB = screen.getByRole('group', { name: /from QA/ });
+    expect(rowB.contains(document.activeElement)).toBe(true);
+  });
+
+  it('moves to the row before it when the last row in line leaves', () => {
+    const view = render(panel([a, b]));
+    const rowB = screen.getByRole('group', { name: /from QA/ });
+    const sendB = within(rowB).getByRole('button', { name: /^Send now/ });
+    sendB.focus();
+    fireEvent.click(sendB);
+
+    view.rerender(panel([a]));
+
+    const rowA = screen.getByRole('group', { name: /from Security/ });
+    expect(rowA.contains(document.activeElement)).toBe(true);
+  });
+
+  it('moves to the composer when the only row leaves', () => {
+    const onFocusComposer = vi.fn();
+    const view = render(panel([a], {}, onFocusComposer));
+    const send = screen.getByRole('button', { name: /^Send now/ });
+    send.focus();
+    fireEvent.click(send);
+
+    view.rerender(panel([], {}, onFocusComposer));
+
+    expect(onFocusComposer).toHaveBeenCalledOnce();
+  });
+
+  it('stays put when Send now could only move the row first', () => {
+    const onFocusComposer = vi.fn();
+    const view = render(panel([a], {}, onFocusComposer));
+    const send = screen.getByRole('button', { name: /^Send now/ });
+    send.focus();
+    fireEvent.click(send);
+
+    view.rerender(panel([a], { a: 'Sends next.' }, onFocusComposer));
+    view.unmount();
+
+    expect(onFocusComposer).not.toHaveBeenCalled();
   });
 });
 
