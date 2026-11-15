@@ -52,6 +52,7 @@ import type { OpenCodePermissionState } from '../events/session-event-mapper.js'
 import type { OpenCodeClientProvider } from '../sessions/session-mapper.js';
 import type { OpenCodeSessionRegistry } from '../sessions/session-registry.js';
 import { resolveGrantVerdict } from './directory-grants.js';
+import { installedPackageReadGrants } from './package-grants.js';
 import { protectedFileVerdict } from './protected-files.js';
 import { protectedPathRoots } from '../../shared/policy/protected-path-roots.js';
 import type { ProtectedPathRoots } from '../../shared/policy/protected-path-check.js';
@@ -427,10 +428,8 @@ export async function* enforceApprovals(
     // inside a `read` grant has to beat `bypassPermissions`, which would
     // otherwise approve the write below. A refusal that cannot be delivered
     // falls to the person's card, never to the mode's auto-approve.
-    const fileVerdict = protectedFileVerdict(
-      approval,
-      turn.protectedRoots ?? protectedPathRoots(cwd)
-    );
+    const roots = turn.protectedRoots ?? protectedPathRoots(cwd);
+    const fileVerdict = protectedFileVerdict(approval, roots);
     if (fileVerdict !== undefined) {
       if (fileVerdict === 'deny')
         logger.warn('[ProtectedFiles] Refused an OpenCode native file operation', {
@@ -474,7 +473,13 @@ export async function* enforceApprovals(
         return;
       }
     }
-    const grantVerdict = resolveGrantVerdict(approval, turn.grants ?? []);
+    // Each globally installed package's own folder is a read-only grant too,
+    // so a headless turn can read its installed skills and never write them
+    // (DOR-4386). Read per ask: an install takes effect on the next one.
+    const grantVerdict = resolveGrantVerdict(approval, [
+      ...(turn.grants ?? []),
+      ...installedPackageReadGrants(roots.data),
+    ]);
     if (grantVerdict !== undefined) {
       try {
         await respondPermission(
