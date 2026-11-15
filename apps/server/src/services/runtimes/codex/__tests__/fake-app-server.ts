@@ -387,6 +387,8 @@ export class FakeAppServer extends EventEmitter {
   exitOnTurnStart = false;
   /** Hold every `turn/start` answer until this settles. */
   turnStartGate: Promise<void> | undefined;
+  /** Hold every `thread/start` answer until this settles. */
+  threadStartGate: Promise<void> | undefined;
   /** Set to refuse every request with `Server overloaded` this many times. */
   overloadNext = 0;
   /** Send a compaction's `turn/started` BEFORE answering `thread/compact/start`. */
@@ -514,6 +516,10 @@ export class FakeAppServer extends EventEmitter {
     if (!this.initialized) return this.fail(id, 'Not initialized');
     switch (method) {
       case 'thread/start':
+        if (this.threadStartGate) {
+          void this.threadStartGate.then(() => this.threadStart(id, params));
+          return;
+        }
         return this.threadStart(id, params);
       case 'thread/resume':
         return this.threadResume(id, params);

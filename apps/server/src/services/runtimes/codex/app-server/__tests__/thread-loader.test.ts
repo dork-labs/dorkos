@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ConnectorThreadKeyRegistry } from '../../../../connectors/principal/thread-keys.js';
 import { FakeAppServerHost } from '../../__tests__/fake-app-server.js';
 import { CodexAppServerPool } from '../process-pool.js';
@@ -17,13 +17,26 @@ import os from 'node:os';
 import path from 'node:path';
 
 const HOME = '/fake/home';
+const FILE_POLICY: CodexTurnTools['filePolicy'] = {
+  roots: {
+    cwd: '/project',
+    home: HOME,
+    data: '/fake/data',
+    accounts: [],
+    agentFolders: [],
+    agentHomes: [],
+  },
+  writable: [],
+};
 const NO_TOOLS: CodexTurnTools = {
+  filePolicy: FILE_POLICY,
   agentTokenEnv: {},
   managed: { servers: {}, env: {} },
   dorkosTools: null,
   connectorTools: null,
 };
 const TOOLS: CodexTurnTools = {
+  filePolicy: FILE_POLICY,
   agentTokenEnv: { DORKOS_AGENT_TOKEN: 'identity-secret' },
   managed: {
     servers: {
@@ -86,6 +99,101 @@ async function setup(withKeys = true) {
 }
 
 describe('the load table (§6)', () => {
+  it.each(['thread/start', 'thread/resume', 'thread/fork'] as const)(
+    'authenticates DorkOS discovery during %s with the open turn binding',
+    async (method) => {
+      const { loader, fake, input, keys, host } = await setup();
+      host.home(HOME).threads.set('t-existing', { id: 't-existing', hasRollout: true });
+      const discovery: Array<{ bindingId: string | undefined; server: string }> = [];
+      const bearers: string[] = [];
+      // Codex initializes MCP clients while loading, before replying to the RPC.
+      // Observe that wire boundary, rather than checking the config after loading.
+      fake.stdin.on('data', (chunk: Buffer) => {
+        for (const line of chunk.toString().trim().split('\n')) {
+          const message = JSON.parse(line) as { method: string; params: { config?: LoadConfig } };
+          if (message.method !== method) continue;
+          for (const server of ['dorkos', 'dorkos_connections']) {
+            const bearer = message.params.config!.mcp_servers[
+              server
+            ]!.http_headers!.Authorization!.slice('Bearer '.length);
+            bearers.push(bearer);
+            discovery.push({ server, bindingId: keys.lookup(bearer)?.bindingId });
+          }
+        }
+      });
+      const turn = input({ tools: { ...TOOLS, connectorBindingId: 'open-turn' } });
+      if (method === 'thread/fork') await loader.reload(turn, 't-existing');
+      else
+        await loader.ensureLoaded({
+          ...turn,
+          boundThreadId: method === 'thread/resume' ? 't-existing' : undefined,
+        });
+      expect(discovery).toEqual([
+        { server: 'dorkos', bindingId: 'open-turn' },
+        { server: 'dorkos_connections', bindingId: 'open-turn' },
+      ]);
+      // Loading alone grants no authority between turns; the transport owns attachment next.
+      expect(keys.size).toBe(1);
+      expect(bearers.map((bearer) => keys.lookup(bearer)?.bindingId)).toEqual([
+        undefined,
+        undefined,
+      ]);
+    }
+  );
+
+  it('keeps two overlapping loads for different agents on their own bindings', async () => {
+    const { loader, fake, input, keys } = await setup();
+    let release!: () => void;
+    fake.threadStartGate = new Promise<void>((resolve) => (release = resolve));
+    const agent = (sessionId: string, bindingId: string) =>
+      input({
+        sessionId,
+        cwd: `/project/${sessionId}`,
+        tools: {
+          ...TOOLS,
+          agentTokenEnv: { DORKOS_AGENT_TOKEN: `${sessionId}-identity` },
+          connectorBindingId: bindingId,
+        },
+      });
+    const loads = [
+      loader.ensureLoaded(agent('agent-a-chat', 'binding-a')),
+      loader.ensureLoaded(agent('agent-b-chat', 'binding-b')),
+    ];
+    const resolved = () =>
+      fake.requestsOf('thread/start').map((params) => {
+        const servers = (params.config as LoadConfig).mcp_servers;
+        return ['dorkos', 'dorkos_connections'].map((server) => {
+          const bearer = servers[server]!.http_headers!.Authorization!.slice('Bearer '.length);
+          const key = keys.lookup(bearer);
+          return { session: key?.scope.canonicalSessionId, bindingId: key?.bindingId };
+        });
+      });
+    try {
+      // Both loads are in flight at once: Codex holds both replies.
+      await vi.waitFor(() => expect(fake.requestsOf('thread/start')).toHaveLength(2));
+      expect(resolved()).toEqual([
+        [
+          { session: 'agent-a-chat', bindingId: 'binding-a' },
+          { session: 'agent-a-chat', bindingId: 'binding-a' },
+        ],
+        [
+          { session: 'agent-b-chat', bindingId: 'binding-b' },
+          { session: 'agent-b-chat', bindingId: 'binding-b' },
+        ],
+      ]);
+    } finally {
+      release();
+      await Promise.allSettled(loads);
+    }
+    await Promise.all(loads);
+    // Both loads finished: neither key carries any binding until its own turn attaches.
+    expect(
+      resolved()
+        .flat()
+        .map((key) => key.bindingId)
+    ).toEqual([undefined, undefined, undefined, undefined]);
+  });
+
   it('starts a thread for an unbound session and does not bind it yet', async () => {
     const { loader, fake, input } = await setup();
     const loaded = await loader.ensureLoaded(input());
@@ -278,11 +386,12 @@ describe('thread key lifecycle', () => {
 
   it('revokes a key minted for a load that failed, and on drop', async () => {
     const { loader, fake, input, keys, process } = await setup();
+    const tools = { ...TOOLS, connectorBindingId: 'open-turn' };
     fake.overloadNext = 10;
-    await expect(loader.ensureLoaded(input({ tools: TOOLS }))).rejects.toThrow();
+    await expect(loader.ensureLoaded(input({ tools }))).rejects.toThrow();
     expect(keys.size).toBe(0);
     fake.overloadNext = 0;
-    const loaded = await loader.ensureLoaded(input({ tools: TOOLS }));
+    const loaded = await loader.ensureLoaded(input({ tools }));
     expect(keys.size).toBe(1);
     loader.dropThread(process, loaded.threadId);
     expect(keys.size).toBe(0);
