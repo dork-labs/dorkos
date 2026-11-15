@@ -213,9 +213,8 @@ export class CodexThreadLoader {
       };
     }
 
-    if (input.boundThreadId === undefined) {
+    if (input.boundThreadId === undefined)
       return this.start(input, records, desired, credentials, undefined);
-    }
     return this.resume(input, records, desired, credentials, input.boundThreadId);
   }
 
@@ -429,9 +428,8 @@ export class CodexThreadLoader {
     } catch (err) {
       if (key) this.options.threadKeys()?.revoke(key.keyId, 'superseded');
       // Deleted (or its rollout removed) in Codex. DorkOS's own history stays visible.
-      if (isCodexRpcError(err, 'no-rollout', 'thread-not-found')) {
+      if (isCodexRpcError(err, 'no-rollout', 'thread-not-found'))
         return freshWith(THREAD_STARTS_FRESH_NOTICE);
-      }
       if (isCodexRpcError(err, 'archived')) return freshWith(THREAD_ARCHIVED_NOTICE);
       throw err;
     }
