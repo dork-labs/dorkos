@@ -17,6 +17,10 @@ const fakeRuntime = {
   getSessionCwd: () => '/actual',
   getCapabilities: () => ({}),
   ensureSession: vi.fn(),
+  /** The runtime's own answer to "would a turn here carry the DorkOS tools?". */
+  carriesRoomTools: vi.fn(async (): Promise<boolean> => false) as
+    | ((session: { cwd: string; sessionId: string; agentPath?: string }) => Promise<boolean>)
+    | undefined,
 };
 
 vi.mock('../../../core/runtime-registry.js', () => ({
@@ -113,6 +117,7 @@ describe('dispatchSessionMessage', () => {
         cwd: '/agents/known',
         rung: 'explicit',
       });
+      vi.mocked(fakeRuntime.carriesRoomTools!).mockResolvedValueOnce(true);
       const result = await dispatchSessionMessage({
         sessionId: SESSION,
         request: { content: 'hi', cwd: '/agents/known', runtime: 'codex', agentPath },
@@ -122,8 +127,58 @@ describe('dispatchSessionMessage', () => {
         origin: { kind: 'interactive' },
       });
       expect(result).not.toHaveProperty('warnings');
+      // The runtime is asked about this turn: its folder, chat and agent.
+      expect(fakeRuntime.carriesRoomTools).toHaveBeenCalledWith(
+        expect.objectContaining({ cwd: '/agents/known', sessionId: SESSION })
+      );
     }
   );
+
+  // Security's Should on #3757: an agent folder is not proof of tools. The
+  // runtime decides, and every doubt shows the notice.
+  it.each([
+    ['says no (agent not in Mesh, or its tool connection down)', () => Promise.resolve(false)],
+    ['throws', () => Promise.reject(new Error('mesh read failed'))],
+  ])('warns a registered Codex home when the runtime %s', async (_label, answer) => {
+    registerTestHomes(['/agents/known']);
+    vi.mocked(resolveSessionCwdWithRoom).mockResolvedValueOnce({
+      cwd: '/agents/known',
+      rung: 'explicit',
+    });
+    vi.mocked(fakeRuntime.carriesRoomTools!).mockImplementationOnce(answer);
+    const result = await dispatchSessionMessage({
+      sessionId: SESSION,
+      request: { content: 'hi', cwd: '/agents/known', runtime: 'codex' },
+      clientId: 'c',
+      meshCore: mesh,
+      roomSessionPlace: undefined,
+      origin: { kind: 'interactive' },
+    });
+    expect(result).toMatchObject({ warnings: [{ code: 'NO_DORKOS_TOOLS' }] });
+  });
+
+  it('warns a Codex chat whose runtime cannot answer at all', async () => {
+    registerTestHomes(['/agents/known']);
+    vi.mocked(resolveSessionCwdWithRoom).mockResolvedValueOnce({
+      cwd: '/agents/known',
+      rung: 'explicit',
+    });
+    const carries = fakeRuntime.carriesRoomTools;
+    fakeRuntime.carriesRoomTools = undefined;
+    try {
+      const result = await dispatchSessionMessage({
+        sessionId: SESSION,
+        request: { content: 'hi', cwd: '/agents/known', runtime: 'codex' },
+        clientId: 'c',
+        meshCore: mesh,
+        roomSessionPlace: undefined,
+        origin: { kind: 'interactive' },
+      });
+      expect(result).toMatchObject({ warnings: [{ code: 'NO_DORKOS_TOOLS' }] });
+    } finally {
+      fakeRuntime.carriesRoomTools = carries;
+    }
+  });
 
   beforeEach(() => {
     vi.clearAllMocks();

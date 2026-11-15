@@ -250,6 +250,32 @@ describe('POST /:id/messages from an agent', () => {
     });
   });
 
+  it.each([
+    [true, false],
+    [false, true],
+  ])(
+    'asks the runtime about a reopened agent-bound Codex chat (carries: %s, notice: %s)',
+    async (carries, notice) => {
+      fakeRuntime = new FakeAgentRuntime('codex');
+      fakeRuntime.getSession.mockResolvedValue(
+        createMockSession({ id: SESSION, runtime: 'codex', cwd: homeB })
+      );
+      fakeRuntime.getSessionCwd = () => homeB;
+      // A registered home is not proof: Mesh may have lost the agent, or its
+      // tool connection may be down. The runtime's own answer decides.
+      const carriesRoomTools = vi.fn(async () => carries);
+      Object.assign(fakeRuntime, { carriesRoomTools });
+      vi.mocked(runtimeRegistry.getSessionAgentPath).mockResolvedValue(homeB);
+      const res = await post('', undefined, PERSON, 'GET');
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { warnings?: unknown };
+      expect(body.warnings !== undefined).toBe(notice);
+      expect(carriesRoomTools).toHaveBeenCalledWith(
+        expect.objectContaining({ cwd: homeB, sessionId: SESSION, agentPath: homeB })
+      );
+    }
+  );
+
   it('returns a no-tools warning for a person starting Codex in an unowned folder', async () => {
     const res = await post(
       '/messages',

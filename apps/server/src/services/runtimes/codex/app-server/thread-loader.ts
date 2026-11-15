@@ -114,7 +114,8 @@ export type NothingToCompact =
 
 interface LoadedRecord {
   readonly sessionId: string;
-  readonly fingerprint: string;
+  /** What it loaded with; `markToolsLost` overwrites it to force a reload. */
+  fingerprint: string;
   /**
    * Loaded cold for a compaction alone, with none of the agent's tools. The
    * next turn keeps it only if it wants exactly that load; otherwise it is
@@ -199,7 +200,9 @@ export class CodexThreadLoader {
       }
       // A changed file policy or held MCP server must apply BEFORE the next
       // turn. A loaded thread ignores new config, so fork it with the new
-      // profile now instead of continuing on the old grants until idle.
+      // profile now instead of continuing on the old grants until idle. A
+      // thread that lost its DorkOS tools is forked the same way (see
+      // `markToolsLost`): a fresh key and tools connection, the conversation kept.
       if (record.fingerprint !== desired) return this.reload(input, existingId);
       return {
         threadId: existingId,
@@ -210,9 +213,8 @@ export class CodexThreadLoader {
       };
     }
 
-    if (input.boundThreadId === undefined) {
+    if (input.boundThreadId === undefined)
       return this.start(input, records, desired, credentials, undefined);
-    }
     return this.resume(input, records, desired, credentials, input.boundThreadId);
   }
 
@@ -240,9 +242,7 @@ export class CodexThreadLoader {
       const record = records.get(existingId)!;
       // A thread started for a first turn that never began has nothing in it
       // (a fork waiting to bind names the thread it replaces, and has).
-      if (record.unbound && record.replaces === undefined) {
-        return 'empty';
-      }
+      if (record.unbound && record.replaces === undefined) return 'empty';
       return {
         threadId: existingId,
         keyId: record.keyId,
@@ -428,9 +428,8 @@ export class CodexThreadLoader {
     } catch (err) {
       if (key) this.options.threadKeys()?.revoke(key.keyId, 'superseded');
       // Deleted (or its rollout removed) in Codex. DorkOS's own history stays visible.
-      if (isCodexRpcError(err, 'no-rollout', 'thread-not-found')) {
+      if (isCodexRpcError(err, 'no-rollout', 'thread-not-found'))
         return freshWith(THREAD_STARTS_FRESH_NOTICE);
-      }
       if (isCodexRpcError(err, 'archived')) return freshWith(THREAD_ARCHIVED_NOTICE);
       throw err;
     }
@@ -521,6 +520,21 @@ export class CodexThreadLoader {
     if (!record) return;
     records!.delete(threadId);
     if (record.keyId) this.options.threadKeys()?.revoke(record.keyId, 'thread_unloaded');
+  }
+
+  /**
+   * Mark a thread whose completed turn never listed its DorkOS tools, so the
+   * next turn reloads it with a fresh key (DOR-4393). Its fingerprint becomes
+   * one no load has, so the next turn takes the ordinary changed-config
+   * reload. A thread no longer loaded is left alone: its next turn loads
+   * afresh anyway.
+   *
+   * @param process - Its process.
+   * @param threadId - The thread.
+   */
+  markToolsLost(process: CodexAppServerProcess, threadId: string): void {
+    const record = this.byProcess.get(process.key)?.get(threadId);
+    if (record) record.fingerprint = 'dorkos-tools-lost';
   }
 
   /**

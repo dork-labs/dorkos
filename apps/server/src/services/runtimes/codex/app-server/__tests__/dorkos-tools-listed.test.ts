@@ -98,18 +98,20 @@ describe('a Codex thread that never lists its DorkOS tools (DOR-4384)', () => {
     expect(unlistedWarnings()).toEqual([]);
   });
 
-  it('warns once per load, however many turns it runs', async () => {
+  it('warns once per load: a retry is a new load, and warns for itself', async () => {
     const h = harness();
     h.host.home(PERSON_HOME).nextTurn(turn(h, { lists: false }));
     await h.run(h.request({ sessionId: 'chat-c', tools: toolsWith(true) }));
-    // The second turn runs on the thread the first one bound: the same load.
+    // The next turn reloads the thread to try again (DOR-4393): a fork, with a new key.
     const boundThreadId = h.bindings[0]!.threadId;
     h.host.home(PERSON_HOME).nextTurn(turn(h, { lists: false }));
     await h.run(h.request({ sessionId: 'chat-c', boundThreadId, tools: toolsWith(true) }));
     await settle();
-    const starts = h.host.home(PERSON_HOME).processes.flatMap((p) => p.requestsOf('thread/start'));
-    expect(starts, 'both turns ran on one load').toHaveLength(1);
-    expect(unlistedWarnings()).toHaveLength(1);
+    const forks = h.host.home(PERSON_HOME).processes.flatMap((p) => p.requestsOf('thread/fork'));
+    expect(forks, 'the second turn ran on a fresh load').toHaveLength(1);
+    const keyIds = unlistedWarnings().map(([, data]) => (data as { keyId: string }).keyId);
+    expect(keyIds).toHaveLength(2);
+    expect(new Set(keyIds).size, 'one warning per key').toBe(2);
   });
 
   it('stays quiet for a turn that did not complete', async () => {
@@ -126,5 +128,72 @@ describe('a Codex thread that never lists its DorkOS tools (DOR-4384)', () => {
     await h.run(h.request({ sessionId: 'chat-e', tools: toolsWith(false) }));
     await settle();
     expect(unlistedWarnings()).toEqual([]);
+  });
+});
+
+describe('a Codex chat that loses its DorkOS tools (DOR-4393)', () => {
+  /** The forks Codex was asked for: each is a reload with a fresh key. */
+  const forksOf = (h: Harness) =>
+    h.host.home(PERSON_HOME).processes.flatMap((p) => p.requestsOf('thread/fork'));
+
+  it('tells the runtime, and the next message reloads the thread to try again', async () => {
+    const h = harness();
+    const listings: boolean[] = [];
+    const onDorkosToolsListing = (listed: boolean) => void listings.push(listed);
+    h.host.home(PERSON_HOME).nextTurn(turn(h, { lists: false }));
+    await h.run(h.request({ sessionId: 'chat-f', tools: toolsWith(true), onDorkosToolsListing }));
+    await settle();
+    expect(listings).toEqual([false]);
+    expect(forksOf(h), 'nothing reloads before the next message').toHaveLength(0);
+
+    const boundThreadId = h.bindings[0]!.threadId;
+    h.host.home(PERSON_HOME).nextTurn(turn(h, { lists: true }));
+    await h.run(
+      h.request({
+        sessionId: 'chat-f',
+        boundThreadId,
+        tools: toolsWith(true),
+        onDorkosToolsListing,
+      })
+    );
+    await settle();
+    expect(forksOf(h), 'the next message reloaded the thread').toHaveLength(1);
+    expect(listings).toEqual([false, true]);
+  });
+
+  it('reports a kept listing and never reloads the thread', async () => {
+    const h = harness();
+    const listings: boolean[] = [];
+    const onDorkosToolsListing = (listed: boolean) => void listings.push(listed);
+    h.host.home(PERSON_HOME).nextTurn(turn(h, { lists: true }));
+    await h.run(h.request({ sessionId: 'chat-g', tools: toolsWith(true), onDorkosToolsListing }));
+    const boundThreadId = h.bindings[0]!.threadId;
+    h.host.home(PERSON_HOME).nextTurn(turn(h, { lists: true }));
+    await h.run(
+      h.request({
+        sessionId: 'chat-g',
+        boundThreadId,
+        tools: toolsWith(true),
+        onDorkosToolsListing,
+      })
+    );
+    await settle();
+    expect(listings).toEqual([true, true]);
+    expect(forksOf(h)).toHaveLength(0);
+  });
+
+  it('reports nothing for a chat never handed the DorkOS tools', async () => {
+    const h = harness();
+    const listings: boolean[] = [];
+    h.host.home(PERSON_HOME).nextTurn(turn(h, { lists: false }));
+    await h.run(
+      h.request({
+        sessionId: 'chat-h',
+        tools: toolsWith(false),
+        onDorkosToolsListing: (listed) => void listings.push(listed),
+      })
+    );
+    await settle();
+    expect(listings).toEqual([]);
   });
 });

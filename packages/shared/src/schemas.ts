@@ -22,8 +22,17 @@ import {
 export { ScheduleOriginMarksSchema } from './task-approval-schemas.js';
 export type { ScheduleOriginMarks } from './task-approval-schemas.js';
 import { CanvasChannelDeclarationSchema } from './canvas-channel-schemas.js';
-import { SendMessageReceiptSchema, SessionLaunchWarningShape } from './session-launch-schemas.js';
-export { SessionLaunchWarningSchema, type SessionLaunchWarning } from './session-launch-schemas.js';
+import {
+  SendMessageReceiptSchema,
+  SessionDorkosToolsSchema,
+  SessionLaunchWarningShape,
+} from './session-launch-schemas.js';
+export {
+  SessionDorkosToolsSchema,
+  SessionLaunchWarningSchema,
+  type SessionDorkosTools,
+  type SessionLaunchWarning,
+} from './session-launch-schemas.js';
 /**
  * Zod schemas — single source of truth for all shared types and OpenAPI metadata.
  *
@@ -635,6 +644,7 @@ export type SessionStartedBy = z.infer<typeof SessionStartedBySchema>;
 export const SessionSchema = z
   .object({
     ...SessionLaunchWarningShape,
+    dorkosTools: SessionDorkosToolsSchema.optional(),
     id: z.string().uuid(),
     title: z.string(),
     createdAt: z.string().datetime(),

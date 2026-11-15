@@ -465,7 +465,7 @@ export function createSessionRoutes(deps: SessionRouteDeps = {}): Hono<ApiEnv> {
     }
     return c.json({
       ...session,
-      ...(await openedChatToolWarnings(runtime.type, projectDir, sessionId)),
+      ...(await openedChatToolWarnings(runtime, projectDir, sessionId)),
     });
   });
 
