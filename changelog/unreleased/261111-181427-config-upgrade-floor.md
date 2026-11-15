@@ -3,6 +3,8 @@ covers:
   - 'refactor(config): retire v0.44-v0.56 migrators (DOR-4188)'
   - 'fix(config): refuse upgrades from before 0.115 (DOR-4188)'
   - 'fix(config): refuse only settings from before 0.115, and start hand-written ones (DOR-4376)'
+  - '#3643'
+  - 'refactor(config): retire the v0.60, v0.79 and v0.83 migrators, the three the upgrade floor leaves as no-ops (DOR-4188)'
 ---
 
 ### Note for people upgrading
