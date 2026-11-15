@@ -14,10 +14,10 @@
  *
  * - **The session carries DorkOS's asks.** Session rules come after every
  *   agent's, so they win whichever agent runs the turn.
- * - **An unsafe subagent is refused.** A subagent's session keeps only its
- *   parent's denies, not its asks, so a project subagent whose own rules allow
- *   bash would still skip the ask. Such a subagent gets a `task` deny, which
- *   also passes down to any subagent it would start.
+ * - **An unsafe task target is refused.** `task` starts whichever agent it
+ *   names, a primary one included, and that child session keeps only its
+ *   parent's denies, not its asks. So any agent whose own rules would skip the
+ *   ask gets a `task` deny, which also passes down to anything it would start.
  *
  * @module services/runtimes/opencode/messaging/session-rules
  */
@@ -134,7 +134,8 @@ export function sessionRulesToAdd(
   const current = session ?? [];
   const added = holdsDorkosAsks(current, dataDir) ? [] : dorkosSessionRules(dataDir);
   for (const agent of agents) {
-    if (agent.mode === 'primary') continue;
+    // Any agent, whatever its mode: `task` starts whichever agent it is named,
+    // a primary one too, and that child keeps only its parent's denies.
     if (holdsDorkosAsks(agent.permission, dataDir, [OPENCODE_SCRATCH])) continue;
     const refusal: OpenCodeRule = { permission: 'task', pattern: agent.name, action: 'deny' };
     const last = lastIndexWhere(

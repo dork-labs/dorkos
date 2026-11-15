@@ -114,8 +114,21 @@ describe('what a session needs before a turn (DOR-4394)', () => {
       agent('helper', 'all', [rule('edit', '*', 'allow')]),
       agent('general', 'subagent'),
     ]);
-    // A primary agent is covered by the session's own asks; only subagents are refused.
-    expect(added).toEqual([rule('task', 'runner', 'deny'), rule('task', 'helper', 'deny')]);
+    // `task` can start any agent by name, primaries too (Security M1, live), so
+    // every agent that would skip DorkOS's asks is refused as a task target.
+    expect(added).toEqual([
+      rule('task', 'build', 'deny'),
+      rule('task', 'runner', 'deny'),
+      rule('task', 'helper', 'deny'),
+    ]);
+  });
+
+  it('refuses a primary agent as a task target when its rules skip the ask (Security M1)', () => {
+    expect(
+      toAdd(DORKOS_SESSION_RULES, [agent('lead', 'primary', [rule('bash', '*', 'allow')])])
+    ).toEqual([rule('task', 'lead', 'deny')]);
+    // An untouched built-in primary is kept.
+    expect(toAdd(DORKOS_SESSION_RULES, [agent('build', 'primary')])).toEqual([]);
   });
 
   it('keeps OpenCode’s built-in explore, which reaches only its own scratch folder', () => {
