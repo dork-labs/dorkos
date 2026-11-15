@@ -17,6 +17,7 @@ import {
 } from '../lib/task-filter-schema';
 import { failingFirst, isFailing } from '../lib/schedule-health';
 import { TaskRow } from './TaskRow';
+import { useLinkedExpansion } from '../lib/use-linked-expansion';
 import { FailingChip, FailingCount, NothingFailing } from './TasksFailing';
 
 /** Items beyond this index are rendered without stagger delay to keep animation snappy. */
@@ -68,14 +69,7 @@ export function TasksList({
   // staggerKey is intentionally never updated -- keeping it stable prevents the
   // stagger container from remounting (and re-animating) on filter changes.
   const [staggerKey] = useState(0);
-  const [expandedId, setExpandedId] = useState<string | null>(expandId ?? null);
-  // A new link expands its row even when the page is already open. Render-time
-  // adjustment, not an effect: https://react.dev/learn/you-might-not-need-an-effect
-  const [linkedId, setLinkedId] = useState(expandId);
-  if (expandId !== linkedId) {
-    setLinkedId(expandId);
-    if (expandId) setExpandedId(expandId);
-  }
+  const { expandedId, toggle } = useLinkedExpansion(expandId);
 
   // Pre-filter by agent when agentId is provided
   const baseTasks = useMemo(
@@ -201,7 +195,7 @@ export function TasksList({
                     task={task}
                     agent={(task.agentId ? agentMap.get(task.agentId) : undefined) ?? null}
                     expanded={expandedId === task.id}
-                    onToggleExpand={() => setExpandedId(expandedId === task.id ? null : task.id)}
+                    onToggleExpand={() => toggle(task.id)}
                     onEdit={() => onEditTask(task)}
                   />
                 </motion.div>
