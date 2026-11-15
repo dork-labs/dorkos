@@ -32,7 +32,7 @@ export const HEALTHY: TaskHealth = {
 
 /**
  * When DorkOS began counting failing streaks for Needs you: the v0.135.3
- * release, which shipped the fails-twice notice (#3602, DOR-4127). Runs from
+ * release, which shipped the fails-twice notice (#3602; floor added by DOR-4127). Runs from
  * before it never raise a card, so an upgrade does not surface weeks-old
  * failures nobody can act on.
  */

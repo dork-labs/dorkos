@@ -342,6 +342,13 @@ describe('repeated schedule failures', () => {
     await waitFor(() => expect(result.current.failingSchedules).toEqual([]));
   });
 
+  it('shows no card for a paused schedule, even one still switched on (DOR-4127)', async () => {
+    const { wrapper } = setup([failingTwice({ status: 'paused' })]);
+    const { result } = renderHook(() => usePendingScheduleApprovals(), { wrapper });
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    expect(result.current.failingSchedules).toEqual([]);
+  });
+
   it('shows no card for failures from before the schedule last changed (DOR-4127)', async () => {
     const stale = failingTwice();
     const { wrapper } = setup([
