@@ -619,7 +619,7 @@ describe('warmth is answered honestly', () => {
 
     const events = await working;
     expect(JSON.stringify(events)).toContain(
-      'This turn reached the 16-hour limit, so DorkOS closed the agent.'
+      'The agent hit the 16-hour limit on nonstop work, so DorkOS closed it.'
     );
     expect(events.filter((e) => e.type === 'done')).toHaveLength(1);
     const { logger } = await import('../../../../../lib/logger.js');

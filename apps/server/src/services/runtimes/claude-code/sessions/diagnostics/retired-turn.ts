@@ -11,41 +11,46 @@ import type { PumpTeardownReason } from '../session-pump-contract.js';
 /**
  * Why a process was let go.
  *
- * - `limit` — the open turn ran past the absolute turn limit,
- *   `SESSIONS.TURN_HARD_CEILING_MS` (16 hours from its start), however much it
- *   was still saying. Reached through a reap or a record eviction.
+ * - `limit` — the 16-hour limit, `SESSIONS.TURN_HARD_CEILING_MS`: one turn,
+ *   or one continuous busy stretch of turns, ran that long however much it was
+ *   still saying. Reached only through DorkOS's own reap or record sweep.
  * - `ceiling` — reaped past the four-hour ceiling while the open turn's main
  *   thread had said nothing for four hours. Helpers' frames do not count
  *   (`isTurnActivity`). A plain idle reap only takes a quiet process, so no
  *   turn is open on one.
- * - `evict` — torn down with its session record, by the idle sweep, a pause or
- *   a relaunch.
+ * - `evict` — torn down by a person's pause, a credits unlink, a relaunch, or
+ *   the idle sweep for any other reason.
  * - `shutdown` — DorkOS itself is stopping.
  */
-export type RetireReason = 'limit' | 'ceiling' | PumpTeardownReason;
+export type RetireReason = 'limit' | 'ceiling' | 'evict' | 'shutdown';
 
 /** What {@link retireReasonOf} reads off the pump. `SessionPump` satisfies it. */
 export interface RetiringPump {
   /** Why the pump was torn down, once it has been. */
   readonly teardownReason?: PumpTeardownReason;
-  /** Whether the open turn ran past the absolute turn limit. */
-  isPastTurnLimit?(): boolean;
+  /** Whether the process passed the 16-hour limit. */
+  isPastHardLimit?(): boolean;
 }
 
 /**
- * Name the reason from the pump's state change. A shutdown always says so.
+ * Name the reason from the pump's state change.
+ *
+ * Whoever ended it outranks the limit: a shutdown says so, and so does a
+ * person's pause or a relaunch (`evict`). The limit is named only when DorkOS
+ * itself let the process go, by a reap or by its record sweep.
  *
  * @param to - The state the pump moved to
  * @param pump - The pump that moved
  */
 export function retireReasonOf(to: 'cold' | 'reaped', pump: RetiringPump): RetireReason {
   if (to === 'cold' && pump.teardownReason === 'shutdown') return 'shutdown';
-  if (pump.isPastTurnLimit?.() === true) return 'limit';
-  return to === 'reaped' ? 'ceiling' : (pump.teardownReason ?? 'evict');
+  const ownCleanUp = to === 'reaped' || pump.teardownReason === 'sweep';
+  if (ownCleanUp && pump.isPastHardLimit?.() === true) return 'limit';
+  return to === 'reaped' ? 'ceiling' : 'evict';
 }
 
 const RETIRED_WORDS: Record<RetireReason, string> = {
-  limit: 'This turn reached the 16-hour limit, so DorkOS closed the agent.',
+  limit: 'The agent hit the 16-hour limit on nonstop work, so DorkOS closed it.',
   ceiling: 'The agent sent nothing for four hours, so DorkOS closed it.',
   evict: 'DorkOS closed the agent before it finished this turn.',
   shutdown: 'DorkOS shut down before the agent finished this turn.',

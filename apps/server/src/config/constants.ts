@@ -393,9 +393,11 @@ export const SESSIONS = {
    */
   BACKGROUND_WORK_PARK_CEILING_MS: 4 * 60 * 60 * 1000,
   /**
-   * The absolute limit on one turn, measured from its start in awake time,
-   * however much it is still saying (DOR-2705): four times
-   * {@link SESSIONS.BACKGROUND_WORK_PARK_CEILING_MS}.
+   * The absolute limit on nonstop work, in awake time, however much the agent
+   * is still saying (DOR-2705): four times
+   * {@link SESSIONS.BACKGROUND_WORK_PARK_CEILING_MS}. It bounds both one turn,
+   * from its start, and one continuous busy stretch of turns, so a chain of
+   * turns the agent starts itself (a Monitor, a `/loop`) cannot reset it.
    *
    * A turn that keeps talking is exempt from the four-hour ceiling, so without
    * this a turn caught in a loop (read, edit, test, repeat) would hold its

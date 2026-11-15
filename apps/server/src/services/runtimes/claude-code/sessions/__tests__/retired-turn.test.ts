@@ -17,16 +17,23 @@ describe('retireReasonOf', () => {
   it("reads a teardown by the pump's own reason", () => {
     expect(retireReasonOf('cold', { teardownReason: 'shutdown' })).toBe('shutdown');
     expect(retireReasonOf('cold', { teardownReason: 'evict' })).toBe('evict');
+    expect(retireReasonOf('cold', { teardownReason: 'sweep' })).toBe('evict');
   });
 
   it('reads a teardown with no recorded reason as an eviction, the default teardown', () => {
     expect(retireReasonOf('cold', {})).toBe('evict');
   });
 
-  it('names the 16-hour limit over a reap or an eviction, but never over a shutdown', () => {
-    const pastLimit = { isPastTurnLimit: () => true };
+  it("names the 16-hour limit only for DorkOS's own reap or record sweep", () => {
+    const pastLimit = { isPastHardLimit: () => true };
     expect(retireReasonOf('reaped', pastLimit)).toBe('limit');
-    expect(retireReasonOf('cold', { ...pastLimit, teardownReason: 'evict' })).toBe('limit');
+    expect(retireReasonOf('cold', { ...pastLimit, teardownReason: 'sweep' })).toBe('limit');
+  });
+
+  it("never names the limit over a person's pause, a relaunch or a shutdown", () => {
+    const pastLimit = { isPastHardLimit: () => true };
+    // A pause and a relaunch both tear down with `evict`.
+    expect(retireReasonOf('cold', { ...pastLimit, teardownReason: 'evict' })).toBe('evict');
     expect(retireReasonOf('cold', { ...pastLimit, teardownReason: 'shutdown' })).toBe('shutdown');
   });
 });

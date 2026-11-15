@@ -373,9 +373,37 @@ describe('an open turn that is still talking is never past the ceiling', () => {
     await harness.emit(assistantMessage());
 
     expect(SESSIONS.TURN_HARD_CEILING_MS).toBe(4 * SESSIONS.BACKGROUND_WORK_PARK_CEILING_MS);
-    expect(harness.pump.isPastTurnLimit()).toBe(true);
+    expect(harness.pump.isPastHardLimit()).toBe(true);
     expect(harness.pump.isPastCeiling()).toBe(true);
     expect(await reapNow(harness.pump)).toBe(true);
+  });
+
+  it('ends a chain of short turns at 16 hours of nonstop work', async () => {
+    let turnOpen = false;
+    const harness = await warmPump({ hasRuntimeTurnOpen: () => turnOpen });
+    // A Monitor stays live across every turn, so the process is never quiet.
+    await runTask(harness, 'monitor');
+    // Turn after turn the agent starts itself, each one hour, back to back.
+    for (let hour = 1; hour <= 15; hour += 1) {
+      await harness.emit(assistantMessage());
+      turnOpen = true;
+      vi.advanceTimersByTime(60 * 60_000 - 1_000);
+      await harness.emit(assistantMessage());
+      await harness.emit(resultMessage());
+      turnOpen = false;
+      vi.advanceTimersByTime(1_000);
+    }
+    await harness.emit(assistantMessage());
+    turnOpen = true;
+    expect(harness.pump.isPastCeiling()).toBe(false);
+
+    vi.advanceTimersByTime(60 * 60_000);
+    await harness.emit(assistantMessage());
+
+    // No single turn ran past an hour, but the busy stretch has run sixteen.
+    expect(harness.pump.isPastHardLimit()).toBe(true);
+    expect(harness.pump.isPastCeiling()).toBe(true);
+    expect(harness.pump.isHoldingWork()).toBe(false);
   });
 
   it("does not count a helper's frames as the turn talking", async () => {
@@ -407,7 +435,7 @@ describe('an open turn that is still talking is never past the ceiling', () => {
     await harness.emit(assistantMessage());
     turnOpen = true;
 
-    expect(harness.pump.isPastTurnLimit()).toBe(false);
+    expect(harness.pump.isPastHardLimit()).toBe(false);
   });
 
   it('still ends a /loop between its turns once the background clock runs out', async () => {

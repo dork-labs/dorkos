@@ -319,26 +319,34 @@ export class ProcessQuiet {
    * helpers ran for nearly four hours, the agent opened a turn to report on
    * them, and the ceiling took the process back mid-sentence. A turn silent
    * for four hours still meets it, and the stall watchdog long before. A turn
-   * that keeps talking meets {@link isPastTurnLimit} instead.
+   * that keeps talking meets {@link isPastHardLimit} instead.
    */
   isPastCeiling(): boolean {
     const now = this.awakeNow();
     const ceiling = SESSIONS.BACKGROUND_WORK_PARK_CEILING_MS;
     if (this.busySinceAwake === undefined || now - this.busySinceAwake < ceiling) return false;
-    if (this.isPastTurnLimit()) return true;
+    if (this.isPastHardLimit()) return true;
     const turnOpen = this.opts.isTurnOpen() || this.opts.hasRuntimeTurnOpen();
     const spoke = this.lastTurnOutputAwake;
     return !(turnOpen && spoke !== undefined && now - spoke < ceiling);
   }
 
   /**
-   * Has the current turn run past the absolute turn limit,
+   * Has this process passed the 16-hour limit,
    * {@link SESSIONS.TURN_HARD_CEILING_MS}, however much it is still saying
-   * (DOR-2705)? Measured from the turn's first main-thread work, in awake time.
+   * (DOR-2705)? Two ways, both in awake time:
+   *
+   * - One turn ran 16 hours, from its first main-thread work.
+   * - One continuous busy spell ran 16 hours. A chain of turns the agent starts
+   *   itself (a Monitor, a `/loop`, an event stream) restarts the turn clock at
+   *   every `result` and never goes a minute quiet, so without this it would
+   *   run for ever: no check is sure to land in the gap between two turns.
    */
-  isPastTurnLimit(): boolean {
-    const began = this.turnBeganAwake;
-    return began !== undefined && this.awakeNow() - began >= SESSIONS.TURN_HARD_CEILING_MS;
+  isPastHardLimit(): boolean {
+    const now = this.awakeNow();
+    const limit = SESSIONS.TURN_HARD_CEILING_MS;
+    if (this.busySinceAwake !== undefined && now - this.busySinceAwake >= limit) return true;
+    return this.turnBeganAwake !== undefined && now - this.turnBeganAwake >= limit;
   }
 
   /**

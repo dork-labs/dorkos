@@ -36,6 +36,12 @@ export function isRunningTurnAlive(session: AgentSession, now: number): boolean 
  * that keeps talking is never idle by that test: without it, the limit would
  * never be reached.
  *
+ * On the warm path two clocks measure the same limit from slightly different
+ * starts: this one from when the turn's stream opened (`turnStartedAwake`),
+ * the pump's from the turn's first main-thread work. This one can be reached
+ * first while the pump's `isHoldingWork` still says hold, so the turn ends one
+ * sweep later, up to five minutes. Harmless, and not worth a shared clock.
+ *
  * @param session - The session record
  */
 export function isTurnPastLimit(session: AgentSession): boolean {

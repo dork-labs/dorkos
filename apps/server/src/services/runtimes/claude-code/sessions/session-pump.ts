@@ -547,11 +547,11 @@ export class SessionPump {
   }
 
   /**
-   * Has the current turn run past the absolute turn limit (DOR-2705)? See
-   * `ProcessQuiet.isPastTurnLimit`.
+   * Has this process passed the 16-hour limit, in one turn or one continuous
+   * busy stretch (DOR-2705)? See `ProcessQuiet.isPastHardLimit`.
    */
-  isPastTurnLimit(): boolean {
-    return this.quiet.isPastTurnLimit();
+  isPastHardLimit(): boolean {
+    return this.quiet.isPastHardLimit();
   }
 
   /**
