@@ -1048,7 +1048,8 @@ describe('LocalBrowserPanel', () => {
     transport.getLocalBrowserState.mockResolvedValue(connected);
     mount();
     const back = await screen.findByRole('button', { name: 'Back' });
-    expect(back).toHaveAttribute('title', 'Back is coming soon');
+    expect(back).toHaveAttribute('title', 'Back');
+    expect(screen.getByRole('button', { name: 'Forward' })).toHaveAttribute('title', 'Forward');
     expect(back).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Reload' })).toHaveAttribute('title', 'Reload');
     fireEvent.focus(screen.getByRole('button', { name: 'Reload' }));

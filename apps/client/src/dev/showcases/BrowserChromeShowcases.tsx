@@ -84,7 +84,7 @@ export function BrowserChromeShowcases() {
       <ShowcaseDemo>
         <ChromeDemo width={640} agentDriving />
       </ShowcaseDemo>
-      <ShowcaseLabel>No way to go back or forward yet: Coming soon</ShowcaseLabel>
+      <ShowcaseLabel>No way to go back or forward yet: both stay disabled</ShowcaseLabel>
       <ShowcaseDemo>
         <ChromeDemo width={640} onBack={undefined} onForward={undefined} />
       </ShowcaseDemo>

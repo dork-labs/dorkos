@@ -27,8 +27,8 @@ export interface LocalBrowserViewProps {
  * The Agent browser's page: the shared browser chrome over the native page,
  * which runs flush to the panel's edges. What the person types is read by the
  * shared address rules (DOR-4419); a refusal shows on the chrome's notice line
- * and keeps the typed text. Back and Forward wait on a way to move the page's
- * own history, so they say they are coming soon. Its buttons name themselves
+ * and keeps the typed text. Back and Forward stay disabled until the page's own
+ * history can be moved (DOR-4449). Its buttons name themselves
  * with the browser's own hint, not a Radix tooltip, because the desktop host
  * hides the native page under any Radix popper (`use-native-browser-surface`).
  */

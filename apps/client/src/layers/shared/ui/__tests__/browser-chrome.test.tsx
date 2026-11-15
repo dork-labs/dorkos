@@ -111,22 +111,27 @@ describe('BrowserChrome', () => {
     expect(screen.queryByRole('button', { name: 'Reload' })).not.toBeInTheDocument();
   });
 
-  it('says a button with no handler is coming soon', async () => {
+  it('disables a button with no handler and names it plainly', async () => {
     renderChrome({ onBack: undefined });
     const back = screen.getByRole('button', { name: 'Back' });
-    expect(back).toHaveAttribute('aria-disabled', 'true');
-    fireEvent.focus(back);
-    expect(await screen.findByRole('tooltip')).toHaveTextContent('Back is coming soon');
+    expect(back).toBeDisabled();
+    expect(back).not.toHaveAttribute('title');
   });
 
-  it('names its buttons with a title hint when tooltips are off', () => {
-    renderChrome({ onBack: undefined, tooltips: false });
-    expect(screen.getByRole('button', { name: 'Back' })).toHaveAttribute(
-      'title',
-      'Back is coming soon'
-    );
+  it('names every button with a title hint, keeping its aria-label, when tooltips are off', () => {
+    renderChrome({ onBack: undefined, tooltips: false, loading: true, onStop: vi.fn() });
+    for (const name of ['Back', 'Forward', 'Stop']) {
+      const button = screen.getByRole('button', { name });
+      expect(button).toHaveAttribute('aria-label', name);
+      expect(button).toHaveAttribute('title', name);
+    }
     expect(screen.getByRole('button', { name: 'Back' })).toBeDisabled();
-    expect(screen.getByRole('button', { name: 'Reload' })).toHaveAttribute('title', 'Reload');
+  });
+
+  it('names Reload with a tooltip by default', async () => {
+    renderChrome();
+    fireEvent.focus(screen.getByRole('button', { name: 'Reload' }));
+    expect(await screen.findByRole('tooltip')).toHaveTextContent('Reload');
   });
 
   it('keeps the field open on Enter while busy, and disables Reload', () => {
@@ -155,6 +160,8 @@ describe('BrowserChrome', () => {
     );
     expect(screen.getByRole('alert')).toHaveTextContent('Only web pages open here.');
     expect(screen.getByRole('alert')).toHaveClass('min-h-7');
+    // A glyph in front of the words makes it read as a refusal, not a hint.
+    expect(screen.getByRole('alert').querySelector('svg.text-destructive')).not.toBeNull();
   });
 
   it('turns the seam brand orange while an agent drives', () => {
