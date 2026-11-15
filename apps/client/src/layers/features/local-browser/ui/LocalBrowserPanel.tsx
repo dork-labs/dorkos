@@ -6,6 +6,8 @@ import type {
   LocalBrowserState,
 } from '@dorkos/shared/local-browser';
 import { useLocalBrowser, LOCAL_BROWSER_STATE_KEY } from '@/layers/entities/local-browser';
+import { ADDRESS_PLACEHOLDER, isThisAppsAddress, normalizeAddressInput } from '@/layers/shared/lib';
+import { useOwnOrigins } from '@/layers/entities/config';
 import { YourTurnStrip } from '@/layers/features/browser-handoff';
 import { useAppStore, useTransport } from '@/layers/shared/model';
 import { Button, Input } from '@/layers/shared/ui';
@@ -65,6 +67,7 @@ export function LocalBrowserPanel({
   const [error, setError] = useState<string | null>(null);
   const [address, setAddress] = useState<string | null>(null);
   const [surfaceUnavailable, setSurfaceUnavailable] = useState(false);
+  const ownOrigins = useOwnOrigins();
   // What the person last typed and went to: only their own words are ever searched for.
   const [typed, setTyped] = useState<{ text: string; host: string } | null>(null);
   const connected = state?.status === 'connected';
@@ -410,22 +413,39 @@ export function LocalBrowserPanel({
               aria-busy={page.loading}
               onSubmit={(event) => {
                 event.preventDefault();
-                const url = address ?? (page.failure?.url || selected.url);
-                try {
-                  const parsed = new URL(url);
-                  if (!['http:', 'https:'].includes(parsed.protocol))
-                    throw new Error('unsupported');
-                  if (address !== null) setTyped({ text: address, host: parsed.host });
-                  void action(() => transport.navigateLocalBrowser(parsed.href)).then((ok) => {
-                    if (ok) setAddress(null);
-                  });
-                } catch {
-                  setError('Enter a full web address, starting with https:// or http://.');
+                // A failed load keeps its address in the field, so Go retries it (DOR-4430).
+                const shown = address ?? (page.failure?.url || selected.url);
+                const input = normalizeAddressInput(shown, {
+                  current: selected.url,
+                  isOwnAddress: (url) => isThisAppsAddress(url, window.location, ownOrigins),
+                });
+                if (input.kind === 'refused') {
+                  setError(input.notice);
+                  return;
                 }
+                const url = input.kind === 'reload' ? selected.url : input.url;
+                // Only an address the person typed is remembered for a later search.
+                if (address !== null && input.kind === 'open')
+                  setTyped({ text: address, host: new URL(url).host });
+                // Only a bare host the person typed carries a fallback, and only a page
+                // that could not connect at all tries it, once (DOR-4419).
+                const fallback = input.kind === 'open' ? input.httpFallback : undefined;
+                void action(async () => {
+                  try {
+                    return await transport.navigateLocalBrowser(url);
+                  } catch (cause) {
+                    const code = (cause as { code?: string } | null)?.code;
+                    if (!fallback || code !== 'navigation_unreachable') throw cause;
+                    return transport.navigateLocalBrowser(fallback);
+                  }
+                }).then((ok) => {
+                  if (ok) setAddress(null);
+                });
               }}
             >
               <Input
                 aria-label="Web address"
+                placeholder={ADDRESS_PLACEHOLDER}
                 // A failed load keeps its address in the field (DOR-4430).
                 value={address ?? (page.failure?.url || selected.url)}
                 onChange={(event) => setAddress(event.target.value)}

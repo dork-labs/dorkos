@@ -1041,6 +1041,114 @@ describe('LocalBrowserPanel', () => {
       expect(transport.navigateLocalBrowser).toHaveBeenCalledTimes(1);
     }
   );
+  // DOR-4419: the address box reads what the person typed with the shared address rules.
+  describe('typed addresses', () => {
+    const unreachable = () =>
+      Object.assign(new Error('no answer'), { code: 'navigation_unreachable' });
+    const submit = async (typed: string) => {
+      const address = await screen.findByRole('textbox', { name: 'Web address' });
+      fireEvent.change(address, { target: { value: typed } });
+      fireEvent.click(screen.getByRole('button', { name: 'Go' }));
+    };
+
+    it('puts https:// in front of a bare host, and http:// for a private one', async () => {
+      transport.getLocalBrowserState.mockResolvedValue(connected);
+      transport.navigateLocalBrowser.mockResolvedValue(connected);
+      mount();
+      await submit('example.com/docs');
+      await waitFor(() =>
+        expect(transport.navigateLocalBrowser).toHaveBeenCalledWith('https://example.com/docs')
+      );
+      await submit('192.168.1.1');
+      await waitFor(() =>
+        expect(transport.navigateLocalBrowser).toHaveBeenLastCalledWith('http://192.168.1.1')
+      );
+    });
+
+    it('tries http:// once when a bare host it put https:// on cannot connect', async () => {
+      transport.getLocalBrowserState.mockResolvedValue(connected);
+      transport.navigateLocalBrowser
+        .mockRejectedValueOnce(unreachable())
+        .mockResolvedValueOnce(connected);
+      mount();
+      await submit('shop.example');
+      await waitFor(() => expect(transport.navigateLocalBrowser).toHaveBeenCalledTimes(2));
+      expect(transport.navigateLocalBrowser.mock.calls).toEqual([
+        ['https://shop.example'],
+        ['http://shop.example'],
+      ]);
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    });
+
+    it('never falls back from an address typed with https://', async () => {
+      transport.getLocalBrowserState.mockResolvedValue(connected);
+      transport.navigateLocalBrowser.mockRejectedValue(unreachable());
+      mount();
+      await submit('https://example.com');
+      expect(await screen.findByRole('alert')).toHaveTextContent(
+        'Couldn’t reach that site. Check the address and try again.'
+      );
+      expect(transport.navigateLocalBrowser).toHaveBeenCalledTimes(1);
+    });
+
+    it('never falls back after a certificate error, and tries http:// only once', async () => {
+      transport.getLocalBrowserState.mockResolvedValue(connected);
+      transport.navigateLocalBrowser.mockRejectedValueOnce(
+        Object.assign(new Error('cert'), { code: 'navigation_uncertain' })
+      );
+      mount();
+      await submit('shop.example');
+      expect(await screen.findByText('Check what happened before continuing.')).toBeInTheDocument();
+      expect(transport.navigateLocalBrowser).toHaveBeenCalledTimes(1);
+
+      transport.navigateLocalBrowser.mockClear();
+      transport.navigateLocalBrowser.mockRejectedValue(unreachable());
+      await submit('news.example');
+      await waitFor(() => expect(transport.navigateLocalBrowser).toHaveBeenCalledTimes(2));
+      expect(transport.navigateLocalBrowser).toHaveBeenNthCalledWith(1, 'https://news.example');
+      expect(transport.navigateLocalBrowser).toHaveBeenNthCalledWith(2, 'http://news.example');
+      expect(await screen.findByRole('alert')).toHaveTextContent('Couldn’t reach that site.');
+    });
+
+    it.each([
+      ['file:///etc/hosts', 'Files don’t open here. Ask the agent to put it on the canvas.'],
+      ['javascript:alert(1)', 'Only web pages open here. Try an address starting with https://.'],
+      ['http://[bad', 'That address isn’t complete. Check it and try again.'],
+    ])('refuses %s with its notice and never asks the server', async (typed, notice) => {
+      transport.getLocalBrowserState.mockResolvedValue(connected);
+      mount();
+      await submit(typed);
+      expect(await screen.findByRole('alert')).toHaveTextContent(notice);
+      expect(transport.navigateLocalBrowser).not.toHaveBeenCalled();
+      expect(screen.getByRole('textbox', { name: 'Web address' })).toHaveValue(typed);
+    });
+
+    it('refuses DorkOS’s own address', async () => {
+      transport.getLocalBrowserState.mockResolvedValue(connected);
+      mount();
+      await submit(`${window.location.origin}/connections`);
+      expect(await screen.findByRole('alert')).toHaveTextContent(
+        'DorkOS doesn’t open its own pages in the Agent browser.'
+      );
+      expect(transport.navigateLocalBrowser).not.toHaveBeenCalled();
+    });
+
+    it('searches DuckDuckGo for words, and names it in the placeholder', async () => {
+      transport.getLocalBrowserState.mockResolvedValue(connected);
+      transport.navigateLocalBrowser.mockResolvedValue(connected);
+      mount();
+      expect(await screen.findByRole('textbox', { name: 'Web address' })).toHaveAttribute(
+        'placeholder',
+        'Search DuckDuckGo or type an address'
+      );
+      await submit('best tacos');
+      await waitFor(() =>
+        expect(transport.navigateLocalBrowser).toHaveBeenCalledWith(
+          'https://duckduckgo.com/?q=best+tacos'
+        )
+      );
+    });
+  });
   it('offers reconnect after the browser closes without claiming the page is still open', async () => {
     transport.getLocalBrowserState.mockResolvedValue({ ...connected, status: 'closed', tabs: [] });
     mount();
