@@ -70,7 +70,7 @@ function mount() {
 
 async function mountOpen() {
   mount();
-  await screen.findByRole('textbox', { name: 'Web address' });
+  await screen.findByRole('button', { name: /^Address:/ });
   await waitFor(() => expect(page).toHaveBeenCalledWith('owned', 'read'));
 }
 
@@ -117,9 +117,9 @@ describe('page errors DorkOS draws in the page area (DOR-4430)', () => {
     const block = await screen.findByRole('alert');
     expect(block).toHaveTextContent('Can’t find northwind.example');
     expect(block).toHaveTextContent('Check the spelling. If it’s right, the site may be down.');
-    expect(screen.getByRole('textbox', { name: 'Web address' })).toHaveValue(
-      'https://northwind.example/pricing'
-    );
+    expect(
+      screen.getByRole('button', { name: 'Address: northwind.example/pricing' })
+    ).toBeInTheDocument();
     await waitFor(() => expect(setBounds.mock.calls.at(-1)?.[0].visible).toBe(false));
     // An agent's address is never searched for.
     expect(screen.queryByRole('button', { name: 'Search for it' })).toBeNull();
@@ -129,7 +129,8 @@ describe('page errors DorkOS draws in the page area (DOR-4430)', () => {
 
   it('offers to search only for what the person typed, in their own words', async () => {
     await mountOpen();
-    const field = screen.getByRole('textbox', { name: 'Web address' });
+    fireEvent.click(screen.getByRole('button', { name: /^Address:/ }));
+    const field = screen.getByRole('textbox', { name: 'Address' });
     fireEvent.change(field, { target: { value: 'https://northwind.example/' } });
     fireEvent.submit(field.closest('form')!);
     await waitFor(() =>
@@ -232,20 +233,20 @@ describe('page errors DorkOS draws in the page area (DOR-4430)', () => {
 });
 
 describe('the loading bar (DOR-4431)', () => {
-  it('runs in the seam while loading, turns Go into Stop and marks the row busy', async () => {
+  it('runs in the seam while loading, turns Reload into Stop and marks the row busy', async () => {
     await mountOpen();
-    const form = screen.getByRole('textbox', { name: 'Web address' }).closest('form')!;
+    const form = document.querySelector('[data-slot="browser-chrome-row"]')!;
     expect(form).toHaveAttribute('aria-busy', 'false');
     expect(document.querySelector('[data-slot="browser-loading-bar"]')).toBeNull();
     emit({ loading: true });
     expect(form).toHaveAttribute('aria-busy', 'true');
     expect(document.querySelector('[data-slot="browser-loading-bar"]')).not.toBeNull();
-    expect(screen.queryByRole('button', { name: 'Go' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Reload' })).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: 'Stop' }));
     expect(page).toHaveBeenCalledWith('owned', 'stop');
     emit({ loading: false });
     expect(form).toHaveAttribute('aria-busy', 'false');
-    expect(screen.getByRole('button', { name: 'Go' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Reload' })).toBeInTheDocument();
   });
 
   it('picks up a load that started before the panel opened', async () => {
@@ -257,6 +258,6 @@ describe('the loading bar (DOR-4431)', () => {
   it('stays idle on a desktop shell without the page bridge', async () => {
     window.electronAPI = { localBrowser: { setBounds } } as unknown as ElectronAPI;
     mount();
-    expect(await screen.findByRole('button', { name: 'Go' })).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: 'Reload' })).toBeInTheDocument();
   });
 });

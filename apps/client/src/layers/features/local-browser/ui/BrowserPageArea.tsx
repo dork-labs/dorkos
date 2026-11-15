@@ -51,7 +51,7 @@ export function BrowserPageArea({
       <div
         ref={surface}
         data-slot="native-browser-surface"
-        className="bg-muted/20 relative min-h-48 flex-1 rounded-lg"
+        className="bg-muted/20 relative min-h-48 flex-1"
       >
         {block ? (
           <div className="absolute inset-0 flex overflow-y-auto p-4">

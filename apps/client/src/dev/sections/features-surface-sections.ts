@@ -130,6 +130,14 @@ export const FEATURE_SURFACE_SECTIONS: PlaygroundSection[] = [
     category: 'Home',
     keywords: ['browser', 'agent browser', 'handoff', 'sign in', 'password', 'paused', 'continue'],
   },
+  // BrowserChromeShowcases
+  {
+    id: 'browser-chrome',
+    title: 'Browser chrome',
+    page: 'home-inbox',
+    category: 'Home',
+    keywords: ['browser', 'address bar', 'back', 'forward', 'reload', 'not secure', 'chrome'],
+  },
   // LocalBrowserPanelShowcases
   {
     id: 'agent-browser-panel',
