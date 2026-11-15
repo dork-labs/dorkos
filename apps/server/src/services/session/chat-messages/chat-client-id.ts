@@ -12,6 +12,9 @@
 /** The prefix of every chat-message lock identity. */
 export const CHAT_CLIENT_PREFIX = 'chat:';
 
+/** The longest message one chat may send another. */
+export const CHAT_MESSAGE_MAX = 20_000;
+
 /**
  * The lock identity for a message a chat sends.
  *

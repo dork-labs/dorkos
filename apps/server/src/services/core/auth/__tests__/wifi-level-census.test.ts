@@ -31,6 +31,7 @@ const ALLOWED_ON_WIFI: Readonly<Record<string, readonly string[]>> = {
     'POST /api/rooms/:id/members/:authorId/reseat',
     'POST /api/sessions/:id/command-intents/:intent',
     'POST /api/sessions/:id/process/switch',
+    'POST /api/sessions/:id/queue/:messageId/steer',
     'POST /api/sessions/:id/reload-plugins',
     'POST /api/sessions/:id/submit-answers',
     'POST /api/sessions/:id/submit-elicitation',

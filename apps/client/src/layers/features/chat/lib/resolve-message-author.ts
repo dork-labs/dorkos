@@ -7,6 +7,7 @@ import { runtimeDisplayName } from '@dorkos/shared/agent-runtime';
 import type { PromptSource } from '@dorkos/shared/chat-messages';
 import type { ChatMessage, MessageAuthor } from '@/layers/shared/model';
 import { resolveAgentVisual } from '@/layers/shared/lib';
+import { isUnstampedChatMessage, UNKNOWN_CHAT_SENDER } from './unstamped-chat-message';
 
 /** Name for the human participant when the caller supplies none. */
 const DEFAULT_HUMAN_NAME = 'You';
@@ -130,6 +131,19 @@ export function resolveMessageAuthor(
       kind: 'agent',
       id: `${CHAT_SENDER_ID_PREFIX}${key}`,
       displayName: sender.agentName,
+      emoji: visual.emoji,
+      color: visual.color,
+    };
+  }
+
+  // Another chat's words whose sender is no longer on record: still never
+  // "You" (DOR-3060). The body shows them as "Another chat" too.
+  if (message.role === 'user' && isUnstampedChatMessage(message)) {
+    const visual = resolveAgentVisual({ id: UNKNOWN_CHAT_SENDER });
+    return {
+      kind: 'agent',
+      id: `${CHAT_SENDER_ID_PREFIX}${UNKNOWN_CHAT_SENDER}`,
+      displayName: UNKNOWN_CHAT_SENDER,
       emoji: visual.emoji,
       color: visual.color,
     };

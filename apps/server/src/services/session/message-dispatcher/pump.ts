@@ -4,16 +4,19 @@
  *
  * @module services/session/message-dispatcher/pump
  */
-import { getMessageQueueStore } from '../message-queue-store.js';
+import { getMessageQueueStore, setQueuedWaitingOn } from '../message-queue-store.js';
+import { emitQueueUpdate } from '../queue-stream-events.js';
 import { primaryOf, projectorFor, queueKeyOf } from '../resolution/session-key-registry.js';
 import { runtimeLockHolder } from '../session-lock.js';
 import { logger } from '../../../lib/logger.js';
 import {
   inFlight,
+  launching,
   pending,
   pendingCompactions,
   releases,
   runtimeTurns,
+  steering,
   withDispatchMutex,
 } from './state.js';
 import { launchDueCompaction } from './agent-compaction.js';
@@ -38,6 +41,49 @@ export function schedulePump(sessionId: string): void {
       });
     });
   });
+}
+
+/**
+ * Keep a waiting row from launching while a person sends it into the running
+ * turn (Send now, DOR-3060). It keeps its place and its pending entry.
+ *
+ * @param messageId - The queue row.
+ * @returns False when the row is already launching or already being sent now.
+ */
+export function holdForSteer(messageId: string): boolean {
+  if (launching.has(messageId) || steering.has(messageId)) return false;
+  steering.add(messageId);
+  return true;
+}
+
+/**
+ * Let a row held by {@link holdForSteer} launch again, and give its queue a
+ * chance to move: a steer that did not land leaves it to run as its own turn.
+ *
+ * @param sessionId - The session whose queue holds the row.
+ * @param messageId - The queue row.
+ */
+export function releaseSteerHold(sessionId: string, messageId: string): void {
+  if (steering.delete(messageId)) schedulePump(sessionId);
+}
+
+/**
+ * A row held by {@link holdForSteer} went into the running turn: take it off
+ * the queue quietly. Not a removal: no `dropped` is reported, and its caller
+ * is settled as answered, the way a drain join settles a folded row.
+ *
+ * @param sessionId - The session whose queue held the row.
+ * @param messageId - The queue row.
+ */
+export function finishSteer(sessionId: string, messageId: string): void {
+  const entry = pending.get(messageId);
+  if (entry) clearTimeout(entry.timer);
+  pending.delete(messageId);
+  setQueuedWaitingOn(messageId, undefined);
+  if (getMessageQueueStore()?.remove(messageId)) emitQueueUpdate(sessionId);
+  entry?.folded();
+  steering.delete(messageId);
+  schedulePump(sessionId);
 }
 
 /**
