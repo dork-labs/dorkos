@@ -6,6 +6,7 @@ import type {
   LocalBrowserState,
 } from '@dorkos/shared/local-browser';
 import { useLocalBrowser, LOCAL_BROWSER_STATE_KEY } from '@/layers/entities/local-browser';
+import { cn } from '@/layers/shared/lib';
 import { YourTurnStrip } from '@/layers/features/browser-handoff';
 import { useAppStore, useTransport } from '@/layers/shared/model';
 import { Button } from '@/layers/shared/ui';
@@ -403,9 +404,17 @@ export function LocalBrowserPanel({
               )}
             </div>
           )}
-          {/* While it opens, the choice stays in place, frozen, so focus has somewhere to return. */}
+          {/* While it opens, the choice stays in place so focus has somewhere to return, but
+              frozen: out of reach (inert) and dimmed, so it doesn't read as a second question. */}
           {!connected && !waitingElsewhere && !handoffHere && !readFailed && (
-            <>
+            <div
+              data-slot="local-browser-choice"
+              inert={opening || cancelling}
+              className={cn(
+                'space-y-3 transition-opacity',
+                (opening || cancelling) && 'opacity-50'
+              )}
+            >
               {choiceIssue && (
                 <p className="text-muted-foreground text-xs">
                   {needsChoice
@@ -433,7 +442,7 @@ export function LocalBrowserPanel({
               >
                 {state?.mode ? 'Reconnect' : 'Open browser'}
               </Button>
-            </>
+            </div>
           )}
           {connected && !waitingElsewhere && sharedElsewhere && (
             <SharedElsewhere

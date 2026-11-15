@@ -766,16 +766,24 @@ describe('LocalBrowserPanel', () => {
     mount();
     const mode = await screen.findByRole('radio', { name: /^In its own window/ });
     await waitFor(() => expect(mode).toBeEnabled());
+    const choice = mode.closest('[data-slot="local-browser-choice"]')!;
+    expect(choice).not.toHaveAttribute('inert');
     fireEvent.click(screen.getByRole('button', { name: 'Open browser' }));
     expect(mode).toBeDisabled();
+    // Frozen while it opens: out of reach and dimmed, not a second question (DOR-4433).
+    expect(choice).toHaveAttribute('inert');
+    expect(choice).toHaveClass('opacity-50');
     fireEvent.click(await screen.findByRole('button', { name: 'Cancel' }));
     expect(await screen.findByText('Cancelling…')).toBeInTheDocument();
     expect(mode).toBeDisabled();
+    expect(choice).toHaveAttribute('inert');
     await act(async () => finishCancel(disconnected));
     expect(mode).toBeDisabled();
     expect(screen.getByText('Cancelling…')).toBeInTheDocument();
     await act(async () => opening.resolve(disconnected));
     await waitFor(() => expect(mode).toBeEnabled());
+    expect(choice).not.toHaveAttribute('inert');
+    expect(choice).not.toHaveClass('opacity-50');
   });
   it('returns keyboard focus after cancelling browser setup', async () => {
     vi.spyOn(document, 'hasFocus').mockReturnValue(true);

@@ -1,6 +1,7 @@
 ---
 covers:
   - 'feat(client): the Agent browser says what is going on where the page would be (DOR-4433)'
+  - 'fix(client): the browser choice is out of reach and dimmed while the browser opens (DOR-4433)'
 ---
 
 ### Changed
