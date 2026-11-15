@@ -160,6 +160,8 @@ export function LocalBrowserView({
           onSearch={() => {
             if (typed) void go(searchAddress(typed.text));
           }}
+          // With no allowed page behind, "Go back" opens an empty page instead.
+          onBack={() => (tab?.canGoBack ? step('back') : void go('about:blank'))}
           onUnavailable={onUnavailable}
           disabled={busy}
         >

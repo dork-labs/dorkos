@@ -129,7 +129,7 @@ export function BrowserChrome({
             label={stopping ? 'Stop' : 'Reload'}
             icon={stopping ? X : RotateCw}
             disabled={busy && !stopping}
-            onClick={stopping ? () => onStop?.() : onReload}
+            onClick={stopping ? onStop : onReload}
             tooltip={tooltips}
           />
           {/* Keyed on the retry so a refused address reopens the field in edit
