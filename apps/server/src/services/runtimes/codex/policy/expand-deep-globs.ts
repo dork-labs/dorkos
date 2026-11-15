@@ -37,6 +37,7 @@
 import { execFile, execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
+import { runSafeGit } from '@dorkos/shared/safe-git';
 import { runtimeEnvironment } from '../../shared/runtime-environment-config.js';
 import { codexVendoredRg } from './hidden-folder-scans.js';
 
@@ -95,7 +96,9 @@ export interface DeepGlobScanner {
   filesLater(base: string, globs: readonly string[]): Promise<string[] | null>;
   /**
    * The `.npmrc` files git tracks under `base` with no local change, as
-   * absolute paths. Empty when `base` is not in a repository.
+   * absolute paths. Empty when `base` is not in a repository. The production
+   * scanner answers from its last lookup and refreshes it off the turn's path,
+   * so a render before the first answer denies every `.npmrc`.
    *
    * @param base - An existing folder.
    */
@@ -130,6 +133,14 @@ interface BackgroundScan {
 }
 
 const background = new Map<string, BackgroundScan>();
+
+/** One base's tracked `.npmrc` files: the last answer and the lookup in flight. */
+interface TrackedLookup {
+  files: ReadonlySet<string>;
+  running?: Promise<void>;
+}
+
+const tracked = new Map<string, TrackedLookup>();
 
 /** A tail's name as a regex body: `*` matches within one path segment. */
 function tailSource(tail: string): string {
@@ -302,27 +313,32 @@ export function expandDeepGlobs(
 }
 
 /**
- * Wait for the background scans in flight, of one base or of all.
+ * Wait for the background scans and tracked-file lookups in flight, of one
+ * base or of all.
  *
- * @param base - Only this base's scans; omitted, every scan.
+ * @param base - Only this base's; omitted, every one.
  * @internal Exported for tests.
  */
 export async function settleBackgroundScans(base?: string): Promise<void> {
   const prefix = base === undefined ? undefined : `${base}\0`;
-  await Promise.all(
-    [...background.entries()]
+  await Promise.all([
+    ...[...background.entries()]
       .filter(([key]) => prefix === undefined || key.startsWith(prefix))
-      .map(([, scan]) => scan.running)
-  );
+      .map(([, scan]) => scan.running),
+    ...[...tracked.entries()]
+      .filter(([dir]) => base === undefined || dir === base)
+      .map(([, lookup]) => lookup.running),
+  ]);
 }
 
 /**
- * Forget every background result, so each test starts cold.
+ * Forget every background result and tracked-file answer, so each test starts cold.
  *
  * @internal Exported for tests.
  */
 export function resetBackgroundScans(): void {
   background.clear();
+  tracked.clear();
 }
 
 /**
@@ -368,40 +384,38 @@ function outputFiles(base: string, out: string): string[] {
 }
 
 /** The tracked `.npmrc` files under `base` that git sees no local change in. */
-function gitTrackedNpmrc(base: string): ReadonlySet<string> {
-  // fsmonitor is the one setting `ls-files` would run as a program; an agent
-  // can write the repo's config, so it is switched off here.
-  const git = (extra: readonly string[]) =>
-    execFileSync(
-      'git',
-      [
-        '-c',
-        'core.fsmonitor=false',
-        '--no-optional-locks',
-        'ls-files',
-        '-z',
-        ...extra,
-        '--',
-        ':(glob)**/.npmrc',
-      ],
-      {
-        cwd: base,
-        encoding: 'utf8',
-        timeout: WORKING_SCAN_TIMEOUT_MS,
-        // A folder outside any repository is an answer (nothing tracked), not noise.
-        stdio: ['ignore', 'pipe', 'ignore'],
-        env: runtimeEnvironment('codex', 'process-inspection'),
-      }
-    )
+async function gitTrackedNpmrc(base: string): Promise<Set<string>> {
+  // The audited runner: it refuses a repository whose settings could run a
+  // program (an agent can write the repo's config), and that answer is "none".
+  const git = async (extra: readonly string[]) =>
+    (await runSafeGit(['ls-files', '-z', ...extra, '--', ':(glob)**/.npmrc'], base))
       .split('\0')
       .filter(Boolean)
       .map((file) => path.join(base, file).split(path.sep).join('/'));
-  try {
-    const changed = new Set(git(['--modified']));
-    return new Set(git([]).filter((file) => !changed.has(file)));
-  } catch {
-    return new Set();
-  }
+  const [all, changed] = await Promise.all([git([]), git(['--modified'])]);
+  const modified = new Set(changed);
+  return new Set(all.filter((file) => !modified.has(file)));
+}
+
+/**
+ * The last answer for a base's tracked `.npmrc` files, refreshing it off the
+ * turn's path. Empty until the first answer, so every `.npmrc` stays denied.
+ */
+function cachedTrackedNpmrc(base: string): ReadonlySet<string> {
+  const entry = tracked.get(base) ?? { files: new Set<string>() };
+  tracked.set(base, entry);
+  entry.running ??= gitTrackedNpmrc(base)
+    .then((files) => {
+      entry.files = files;
+    })
+    .catch(() => {
+      // Not a repository, or one the runner refused: nothing is tracked.
+      entry.files = new Set();
+    })
+    .finally(() => {
+      entry.running = undefined;
+    });
+  return entry.files;
 }
 
 /**
@@ -451,5 +465,5 @@ export const ripgrepScanner: DeepGlobScanner = {
       child.unref();
     });
   },
-  trackedNpmrc: gitTrackedNpmrc,
+  trackedNpmrc: cachedTrackedNpmrc,
 };

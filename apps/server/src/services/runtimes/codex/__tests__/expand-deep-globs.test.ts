@@ -271,7 +271,7 @@ describe.skipIf(!codexVendoredRg())('the real rg and git (DOR-4358)', () => {
     });
   }
 
-  it('finds nested secrets, skips node_modules, and spares only an unchanged tracked .npmrc', () => {
+  it('finds nested secrets, skips node_modules, and spares only an unchanged tracked .npmrc', async () => {
     plant(base, SECRET);
     plant(base, `apps/client/${SECRET}`);
     plant(base, 'node_modules/pkg/test/fixture.pem');
@@ -284,14 +284,16 @@ describe.skipIf(!codexVendoredRg())('the real rg and git (DOR-4358)', () => {
     git('commit', '-q', '-m', 'made-up');
     fs.appendFileSync(path.join(base, 'packages/a/.npmrc'), 'changed-after-commit\n');
 
-    const out = expandDeepGlobs(
-      {
-        [`${base}/**/${SECRET}`]: 'deny',
-        [`${base}/**/*.pem`]: 'deny',
-        [`${base}/**/.npmrc`]: 'deny',
-      },
-      { platform: 'darwin', working: [base] }
-    );
+    const entries = {
+      [`${base}/**/${SECRET}`]: 'deny',
+      [`${base}/**/*.pem`]: 'deny',
+      [`${base}/**/.npmrc`]: 'deny',
+    } as const;
+    const render = () => expandDeepGlobs(entries, { platform: 'darwin', working: [base] });
+    // Before git's answer (looked up off the turn's path), every .npmrc stays denied.
+    expect(render()[`${base}/.npmrc`]).toBe('deny');
+    await settleBackgroundScans(base);
+    const out = render();
     expect(out).toEqual({
       [`${base}/${SECRET}`]: 'deny',
       [`${base}/apps/client/${SECRET}`]: 'deny',
