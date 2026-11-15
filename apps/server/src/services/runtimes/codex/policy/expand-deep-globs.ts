@@ -19,7 +19,10 @@
  * profile renders on every turn, and a whole-home scan can take ~20 s.
  *
  * Fail closed, always: a base keeps its `**` keys when it can't be read, when
- * its scan errors, times out or hasn't finished, when its last result is older
+ * its scan errors, times out or hasn't finished, when it holds a folder the
+ * person owns but has shut by its mode bits (the agent could open it again with
+ * `chmod`), when its last result skipped a folder this render does not deny
+ * whole, when its last result is older
  * than {@link BACKGROUND_RESULT_MAX_AGE_MS}, or when its exact rules would pass
  * {@link MAX_EXACT_RULES} (Codex passes the profile on one command line, and
  * ~1,800 rules overflow it). Keeping them protects the secrets and only brings
@@ -37,9 +40,13 @@
 import { execFile, execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
-import { runSafeGit } from '@dorkos/shared/safe-git';
 import { runtimeEnvironment } from '../../shared/runtime-environment-config.js';
 import { codexVendoredRg } from './hidden-folder-scans.js';
+import {
+  resetTrackedLookups,
+  settleTrackedLookups,
+  trackedUnchangedNpmrc,
+} from './tracked-npmrc.js';
 
 type Access = 'read' | 'deny';
 
@@ -76,6 +83,12 @@ const TRACKED_READABLE_NAME = '.npmrc';
 const NEVER_SCANNED = ['node_modules', '.git/objects'];
 /** An `rg` error line for a folder the server itself may not read. */
 const UNREADABLE_LINE = /: (Permission denied|Operation not permitted) \(os error (1|13)\)$/;
+/**
+ * An `rg` permission error (EACCES) on a path, captured. Its own mode bits can
+ * shut the server out of a folder the person owns, and the agent runs as that
+ * person and can `chmod` it back open (Security's Must 2 on #3751).
+ */
+const MODE_BITS_LINE = /^rg: (.*): Permission denied \(os error 13\)$/;
 
 /** How {@link expandDeepGlobs} finds files; tests pass their own. */
 export interface DeepGlobScanner {
@@ -95,10 +108,11 @@ export interface DeepGlobScanner {
    */
   filesLater(base: string, globs: readonly string[]): Promise<string[] | null>;
   /**
-   * The `.npmrc` files git tracks under `base` with no local change, as
-   * absolute paths. Empty when `base` is not in a repository. The production
-   * scanner answers from its last lookup and refreshes it off the turn's path,
-   * so a render before the first answer denies every `.npmrc`.
+   * The `.npmrc` files git tracks under `base` whose bytes match the tracked
+   * copy, as absolute paths. Empty when `base` is not in a repository. The
+   * production scanner reads only git's index, off the turn's path, and checks
+   * the bytes at render time (`tracked-npmrc.ts`); a render before the first
+   * index read denies every `.npmrc`.
    *
    * @param base - An existing folder.
    */
@@ -127,20 +141,14 @@ interface DeepPattern {
 /** One background base's scans: the last finished result and the one in flight. */
 interface BackgroundScan {
   files?: string[];
+  /** The folders the finished scan skipped (its `!` globs). */
+  skipped?: readonly string[];
   finishedAt?: number;
   startedAt?: number;
   running?: Promise<void>;
 }
 
 const background = new Map<string, BackgroundScan>();
-
-/** One base's tracked `.npmrc` files: the last answer and the lookup in flight. */
-interface TrackedLookup {
-  files: ReadonlySet<string>;
-  running?: Promise<void>;
-}
-
-const tracked = new Map<string, TrackedLookup>();
 
 /** A tail's name as a regex body: `*` matches within one path segment. */
 function tailSource(tail: string): string {
@@ -223,11 +231,16 @@ function backgroundFiles(
 ): string[] | null {
   // Keyed by what is searched for, not by the skipped folders: those change
   // whenever a denied folder appears, and a new key would mean a new scan and a
-  // thread reload each time. A stale skip list only scans a little more.
+  // thread reload each time.
   const key = `${base}\0${globs.filter((glob) => !glob.startsWith('!')).join('\0')}`;
+  const skipping = globs.filter((glob) => glob.startsWith('!'));
   const scan = background.get(key) ?? {};
   background.set(key, scan);
-  const due = scan.startedAt === undefined || now() - scan.startedAt >= BACKGROUND_SCAN_EVERY_MS;
+  // A result that skipped a folder this render no longer denies whole never
+  // looked inside it, so it can't vouch for that folder: scan again now.
+  const covers = (scan.skipped ?? []).every((glob) => skipping.includes(glob));
+  const due =
+    !covers || scan.startedAt === undefined || now() - scan.startedAt >= BACKGROUND_SCAN_EVERY_MS;
   if (scan.running === undefined && due) {
     scan.startedAt = now();
     scan.running = scanner
@@ -235,6 +248,7 @@ function backgroundFiles(
       .then((files) => {
         if (files === null) return;
         scan.files = files;
+        scan.skipped = skipping;
         scan.finishedAt = now();
       })
       .catch(() => undefined)
@@ -244,7 +258,7 @@ function backgroundFiles(
   }
   const fresh =
     scan.finishedAt !== undefined && now() - scan.finishedAt <= BACKGROUND_RESULT_MAX_AGE_MS;
-  return fresh && scan.files !== undefined ? scan.files : null;
+  return fresh && covers && scan.files !== undefined ? scan.files : null;
 }
 
 /**
@@ -325,9 +339,7 @@ export async function settleBackgroundScans(base?: string): Promise<void> {
     ...[...background.entries()]
       .filter(([key]) => prefix === undefined || key.startsWith(prefix))
       .map(([, scan]) => scan.running),
-    ...[...tracked.entries()]
-      .filter(([dir]) => base === undefined || dir === base)
-      .map(([, lookup]) => lookup.running),
+    settleTrackedLookups(base),
   ]);
 }
 
@@ -338,7 +350,7 @@ export async function settleBackgroundScans(base?: string): Promise<void> {
  */
 export function resetBackgroundScans(): void {
   background.clear();
-  tracked.clear();
+  resetTrackedLookups();
 }
 
 /**
@@ -349,19 +361,40 @@ export function resetBackgroundScans(): void {
  * @param threads - A thread cap, for a scan nothing waits on.
  */
 function rgArgs(base: string, globs: readonly string[], threads?: number): string[] {
-  const args = ['--no-config', '--files', '--hidden', '--no-ignore'];
+  const args = ['--no-config', '--files', '--hidden', '--no-ignore', '--null'];
   if (threads !== undefined) args.push('--threads', String(threads));
   for (const glob of globs) args.push('--glob', glob);
   return [...args, '--', base];
 }
 
 /**
+ * Whether the person owns a path the server was refused by mode bits. Anything
+ * that can't be told counts as owned, so its base keeps its globs.
+ *
+ * @param file - The path `rg` named.
+ */
+function ownedPath(file: string): boolean {
+  try {
+    return fs.lstatSync(file).uid === process.getuid?.();
+  } catch {
+    return true;
+  }
+}
+
+/**
  * What a finished `rg` run means: its output, or `null` when the scan did not
- * finish. Exit 1 with no errors is "no matches"; exit 2 with only unreadable
- * folders is a finished scan (a folder the server can't read, the agent it
- * starts can't either).
+ * finish. Exit 1 with no errors is "no matches". Exit 2 with only unreadable
+ * folders is a finished scan when the agent can't open them either: a privacy
+ * block or another owner (EPERM, or EACCES on a path someone else owns). A
+ * folder the person owns but has shut by its mode bits is not: the agent can
+ * `chmod` it, so its base keeps its globs.
+ *
+ * @param base - The folder scanned; `rg`'s relative paths resolve against it.
+ * @param error - What the failed run reported, or `null` on success.
+ * @param stdout - What it printed.
  */
 function rgOutcome(
+  base: string,
   error: { status?: number | null; code?: unknown; stderr?: string } | null,
   stdout: string
 ): string | null {
@@ -369,53 +402,21 @@ function rgOutcome(
   const status = typeof error.status === 'number' ? error.status : error.code;
   const stderr = (error.stderr ?? '').split('\n').filter(Boolean);
   if (status === 1 && stderr.length === 0) return '';
-  if (status === 2 && stderr.length > 0 && stderr.every((l) => UNREADABLE_LINE.test(l))) {
-    return stdout;
-  }
-  return null;
+  if (status !== 2 || stderr.length === 0) return null;
+  if (!stderr.every((line) => UNREADABLE_LINE.test(line))) return null;
+  const ownShut = stderr.some((line) => {
+    const named = MODE_BITS_LINE.exec(line)?.[1];
+    return named !== undefined && ownedPath(path.resolve(base, named));
+  });
+  return ownShut ? null : stdout;
 }
 
-/** `rg` output lines as absolute paths. */
+/** `rg --null` output as absolute paths: split on NUL, so a newline in a name can't. */
 function outputFiles(base: string, out: string): string[] {
   return out
-    .split('\n')
+    .split('\0')
     .filter(Boolean)
     .map((line) => (path.isAbsolute(line) ? line : path.join(base, line)));
-}
-
-/** The tracked `.npmrc` files under `base` that git sees no local change in. */
-async function gitTrackedNpmrc(base: string): Promise<Set<string>> {
-  // The audited runner: it refuses a repository whose settings could run a
-  // program (an agent can write the repo's config), and that answer is "none".
-  const git = async (extra: readonly string[]) =>
-    (await runSafeGit(['ls-files', '-z', ...extra, '--', ':(glob)**/.npmrc'], base))
-      .split('\0')
-      .filter(Boolean)
-      .map((file) => path.join(base, file).split(path.sep).join('/'));
-  const [all, changed] = await Promise.all([git([]), git(['--modified'])]);
-  const modified = new Set(changed);
-  return new Set(all.filter((file) => !modified.has(file)));
-}
-
-/**
- * The last answer for a base's tracked `.npmrc` files, refreshing it off the
- * turn's path. Empty until the first answer, so every `.npmrc` stays denied.
- */
-function cachedTrackedNpmrc(base: string): ReadonlySet<string> {
-  const entry = tracked.get(base) ?? { files: new Set<string>() };
-  tracked.set(base, entry);
-  entry.running ??= gitTrackedNpmrc(base)
-    .then((files) => {
-      entry.files = files;
-    })
-    .catch(() => {
-      // Not a repository, or one the runner refused: nothing is tracked.
-      entry.files = new Set();
-    })
-    .finally(() => {
-      entry.running = undefined;
-    });
-  return entry.files;
 }
 
 /**
@@ -438,7 +439,7 @@ export const ripgrepScanner: DeepGlobScanner = {
       return outputFiles(base, out);
     } catch (error) {
       const failure = error as { status?: number; stdout?: string; stderr?: string };
-      const out = rgOutcome(failure, failure.stdout ?? '');
+      const out = rgOutcome(base, failure, failure.stdout ?? '');
       return out === null ? null : outputFiles(base, out);
     }
   },
@@ -457,7 +458,7 @@ export const ripgrepScanner: DeepGlobScanner = {
           env: runtimeEnvironment('codex', 'process-inspection'),
         },
         (error, stdout, stderr) => {
-          const out = rgOutcome(error === null ? null : { ...error, stderr }, stdout);
+          const out = rgOutcome(base, error === null ? null : { ...error, stderr }, stdout);
           resolve(out === null ? null : outputFiles(base, out));
         }
       );
@@ -465,5 +466,5 @@ export const ripgrepScanner: DeepGlobScanner = {
       child.unref();
     });
   },
-  trackedNpmrc: cachedTrackedNpmrc,
+  trackedNpmrc: trackedUnchangedNpmrc,
 };

@@ -214,6 +214,27 @@ describe('expandDeepGlobs outside the working folders: the background scan (DOR-
     expect(render(fake.scanner, 1)).toEqual(entries());
   });
 
+  it('never reuses a result that skipped a folder this render no longer denies whole', async () => {
+    // Scanned while `vault` was denied whole, so the scan never looked inside it.
+    const withVault = { ...entries(), [`${home()}/vault`]: 'deny' } as const;
+    const fake = fakeScanner([]);
+    const renderWith = (at: number, current: Readonly<Record<string, 'deny'>>) =>
+      expandDeepGlobs(current, {
+        platform: 'darwin',
+        working: [base],
+        scanner: fake.scanner,
+        now: () => at,
+      });
+    renderWith(0, withVault);
+    await settleBackgroundScans();
+    expect(renderWith(1, withVault)).toEqual({ [`${home()}/vault`]: 'deny' });
+    // `vault` is no longer denied whole: the old result can't vouch for it.
+    expect(renderWith(2, entries())).toEqual(entries());
+    await settleBackgroundScans();
+    expect(fake.laterCalls(), 'a new scan started at once').toBe(2);
+    expect(renderWith(3, entries())).toEqual({});
+  });
+
   it('stops using a result once it is too old and no newer scan has finished', async () => {
     let answer: string[] | null = [];
     const fake = fakeScanner(null, { later: () => Promise.resolve(answer) });
@@ -310,6 +331,31 @@ describe.skipIf(!codexVendoredRg())('the real rg and git (DOR-4358)', () => {
     fs.symlinkSync(path.join(outside, SECRET), path.join(base, 'linked.env'));
     expect(ripgrepScanner.files(base, [`**/${SECRET}`, '**/linked.env'])).toEqual([]);
     expect(await ripgrepScanner.filesLater(base, [`**/${SECRET}`, '**/linked.env'])).toEqual([]);
+  });
+
+  it('keeps the glob over a folder the person owns but has shut by its mode bits (Must 2)', async () => {
+    // The agent runs as this person and could `chmod` it open, so "the server
+    // can't read it" says nothing about what the agent can.
+    plant(base, `locked/${SECRET}`);
+    const locked = path.join(base, 'locked');
+    fs.chmodSync(locked, 0o000);
+    try {
+      const entries = { [`${base}/**/${SECRET}`]: 'deny' } as const;
+      expect(expandDeepGlobs(entries, { platform: 'darwin', working: [base] })).toEqual(entries);
+      expect(ripgrepScanner.files(base, [`**/${SECRET}`])).toBeNull();
+      expect(await ripgrepScanner.filesLater(base, [`**/${SECRET}`])).toBeNull();
+    } finally {
+      fs.chmodSync(locked, 0o700);
+    }
+  });
+
+  it('names a secret whose folder has a newline in its name', () => {
+    plant(base, `odd\nname/${SECRET}`);
+    const out = expandDeepGlobs(
+      { [`${base}/**/${SECRET}`]: 'deny' },
+      { platform: 'darwin', working: [base] }
+    );
+    expect(out).toEqual({ [`${base}/odd\nname/${SECRET}`]: 'deny' });
   });
 });
 

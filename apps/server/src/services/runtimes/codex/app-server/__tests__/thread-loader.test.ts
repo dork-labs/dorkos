@@ -339,8 +339,15 @@ describe('review fixes: fingerprint and identity', () => {
         const ownSecret =
           process.platform === 'darwin' ? path.join(own, '.env') : path.join(own, '**', '.env');
         expect(files(next.threadId)[ownSecret]).toBe('deny');
-        await loader.ensureLoaded({ ...loadInput, boundThreadId: next.threadId });
-        expect(fake.requestsOf('thread/fork')).toHaveLength(1);
+        // On macOS the home scan from before `.claude` appeared never looked inside
+        // it, so a fresh scan runs, and its landing may reload the thread once more.
+        const landed = await loader.ensureLoaded({ ...loadInput, boundThreadId: next.threadId });
+        await settleBackgroundScans(home);
+        const forks = fake.requestsOf('thread/fork').length;
+        expect(forks).toBeLessThanOrEqual(process.platform === 'darwin' ? 2 : 1);
+        // Nothing changes after that, so nothing reloads.
+        await loader.ensureLoaded({ ...loadInput, boundThreadId: landed.threadId });
+        expect(fake.requestsOf('thread/fork')).toHaveLength(forks);
       } finally {
         fs.rmSync(root, { recursive: true, force: true });
       }

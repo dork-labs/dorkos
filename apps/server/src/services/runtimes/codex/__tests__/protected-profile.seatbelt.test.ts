@@ -51,10 +51,12 @@ beforeEach(() => {
     path.join(home, '.ssh'),
     path.join(project, 'apps/client/src/layers/entities'),
     path.join(project, 'deep/parent'),
+    path.join(project, 'a/b/c'),
     codexHome,
   ])
     fs.mkdirSync(dir, { recursive: true });
   fs.writeFileSync(path.join(project, 'deep/parent/site.pem'), 'made-up key');
+  fs.writeFileSync(path.join(project, 'a/b/c/key.pem'), 'made-up key');
   fs.writeFileSync(path.join(home, '.ssh/known_hosts'), 'example.com ssh-ed25519 AAAAmadeup\n');
   fs.writeFileSync(path.join(home, '.ssh/id_made_up'), 'made-up private key');
 });
@@ -160,6 +162,8 @@ describe.skipIf(realPlatform !== 'darwin' || !BINARY)('the macOS sandbox (DOR-43
           'cat deep/parent/site.pem >/dev/null 2>&1 && echo READ-OPEN || echo READ-SHUT',
           'mv deep/parent deep/moved 2>/dev/null && echo PARENT-MOVED || echo PARENT-REFUSED',
           'mv deep deep2 2>/dev/null && echo GRANDPARENT-MOVED || echo GRANDPARENT-REFUSED',
+          'mv a a2 2>/dev/null && echo THIRD-MOVED || echo THIRD-REFUSED',
+          'mv deep/parent/site.pem deep/parent/x.pem 2>/dev/null && echo FILE-MOVED || echo FILE-REFUSED',
           'ln deep/parent/site.pem hard-link 2>/dev/null && echo LINK-MADE || echo LINK-REFUSED',
           'cat hard-link >/dev/null 2>&1 && echo LINK-READ-OPEN || echo LINK-READ-SHUT',
         ].join('; ')
@@ -167,9 +171,34 @@ describe.skipIf(realPlatform !== 'darwin' || !BINARY)('the macOS sandbox (DOR-43
       expect(out).toContain('READ-SHUT');
       expect(out).toContain('PARENT-REFUSED');
       expect(out).toContain('GRANDPARENT-REFUSED');
+      // Three levels up (`a/b/c/key.pem`), and the denied file itself (Security S5).
+      expect(out).toContain('THIRD-REFUSED');
+      expect(out).toContain('FILE-REFUSED');
       // Refused outright today; if Codex ever allowed the link, the key must still not read.
       expect(out).toMatch(/LINK-REFUSED|LINK-READ-SHUT/);
       expect(out).not.toContain('LINK-READ-OPEN');
+    }
+  );
+
+  it.each(['acceptEdits', 'bypassPermissions'])(
+    'at %s, a secret in a folder the person shut with chmod 000 stays shut after the agent reopens it',
+    async (permissionMode) => {
+      // Security's Must 2: the scan can't read the folder, but the agent runs as
+      // its owner and can `chmod` it open, so the base keeps its glob.
+      const locked = path.join(project, 'locked');
+      fs.mkdirSync(locked);
+      fs.writeFileSync(path.join(locked, '.env'), 'made-up secret');
+      fs.chmodSync(locked, 0o000);
+      try {
+        const profile = await writeProfile('darwin', permissionMode);
+        const out = inSandbox(
+          profile,
+          'chmod 700 locked 2>/dev/null; cat locked/.env >/dev/null 2>&1 && echo LOCKED-READ-OPEN || echo LOCKED-READ-SHUT'
+        );
+        expect(out).toContain('LOCKED-READ-SHUT');
+      } finally {
+        fs.chmodSync(locked, 0o700);
+      }
     }
   );
 

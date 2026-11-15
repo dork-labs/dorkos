@@ -2,6 +2,7 @@
 covers:
   - 'fix(codex): on a Mac, Codex chats can delete and rename folders again, and npm runs (DOR-4358)'
   - 'fix(codex): read tracked .npmrc files through the audited git runner (DOR-4358)'
+  - 'fix(codex): the tracked .npmrc check runs no git filter, and a chmod-000 folder keeps its rule (DOR-4358)'
 ---
 
 ### Fixed
