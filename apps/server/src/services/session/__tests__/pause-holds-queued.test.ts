@@ -532,9 +532,13 @@ describe('a pause between a queued turn’s start and its first model request (D
     });
     releaseLongTurn?.();
     await vi.waitFor(() => expect(atModelRequest).toBeDefined(), { timeout: 2000 });
+    const stopped = vi.spyOn(pauses, 'stopSession');
     await pauses.pause(BETA.id, PERSON);
     await vi.waitFor(() => expect(inner.isTurnOpen(sessionId)).toBe(false));
     await settle();
+    // Cut by the pause backstop's thrown AgentPausedError, as QA saw live:
+    // `stopSession` runs only on that path.
+    expect(stopped).toHaveBeenCalled();
     // A different caller lifts the pause: its limits must not reach the run.
     pauses.resume(BETA.id, {
       accountId: '01ALPHAAGENTULID0000000000',
@@ -605,24 +609,18 @@ describe('a pause between a queued turn’s start and its first model request (D
   });
 
   /**
-   * What a real Claude Code turn can show before its first model request:
-   * the session's model, launch notes, the person's own configured hooks and
-   * the CLI's memory recall. None of it is the agent acting (QA's 0.135.11
-   * gate, W5: three such events, then the pause backstop's thrown
-   * `AgentPausedError`, and the message was lost).
+   * What a real Claude Code turn showed before its first model request in
+   * QA's 0.135.11 gate (W5, W6): its session state, and the next-prompt
+   * suggestion carried over from the previous turn. None of it is the agent
+   * acting; the suggestion made every queued turn read as acted, so the
+   * pause backstop's thrown `AgentPausedError` lost the message.
    */
   const LAUNCH_EVENTS = [
-    { type: 'session_status', data: { sessionId: 'x', model: 'claude-made-up' } },
     { type: 'system_status', data: { message: 'Starting.' } },
+    { type: 'session_status', data: { sessionId: 'x', model: 'claude-made-up' } },
     { type: 'session_state_changed', data: { state: 'running' } },
-    {
-      type: 'hook_started',
-      data: { hookId: 'h-1', hookName: 'SessionStart', hookEvent: 'SessionStart' },
-    },
-    { type: 'hook_progress', data: { hookId: 'h-1', output: 'ok' } },
-    { type: 'hook_response', data: { hookId: 'h-1', outcome: 'success' } },
-    { type: 'memory_recall', data: { memories: [] } },
-    { type: 'context_usage', data: { usedTokens: 10 } },
+    { type: 'prompt_suggestion', data: { suggestion: 'Add the totals' } },
+    { type: 'session_state_changed', data: { state: 'running' } },
   ] as unknown as StreamEvent[];
 
   it('reruns a turn the pause cut after its launch events, with no model request (QA W5)', async () => {
