@@ -16,6 +16,7 @@ import { MODE_TO_SANDBOX } from '../turn-input.js';
 import { readMountTargets, emptyOwnedMountTarget } from './mount-target-ledger.js';
 import { collapseProtectedPaths } from './collapse-protected-paths.js';
 import { keepScansOutOfHiddenFolders } from './hidden-folder-scans.js';
+import { gitMetadataReadRules } from './git-metadata.js';
 
 /** Stable reserved names; the profile selection is explicit on every thread load and turn. */
 export function codexPermissionProfile(settings: Pick<SessionSettings, 'permissionMode'>): string {
@@ -31,7 +32,8 @@ export interface CodexFilePolicy {
 /** Render the shared protected list in Codex's absolute path/glob spelling. */
 function protectedEntries(
   { roots, writable }: CodexFilePolicy,
-  onMissingTargets?: (targets: string[]) => void
+  onMissingTargets?: (targets: string[]) => void,
+  metadataFolders: readonly string[] = []
 ): Record<string, 'read' | 'deny'> {
   const entries: Record<string, 'read' | 'deny'> = {};
   // Codex's rg and internal walkers disagree on fixed-depth glob suffixes.
@@ -73,6 +75,7 @@ function protectedEntries(
     roots.data,
     roots.cwd,
     ...writable,
+    ...metadataFolders,
     ...roots.agentFolders,
     ...agentHomes,
     ...savedCopies,
@@ -117,6 +120,7 @@ function protectedEntries(
                     roots.data,
                     roots.cwd,
                     ...writable,
+                    ...metadataFolders,
                     ...roots.agentFolders,
                     ...roots.agentHomes,
                     ...roots.accounts,
@@ -186,7 +190,13 @@ export function codexProtectedConfig(
   settings: Pick<SessionSettings, 'permissionMode'> = {},
   onMissingTargets?: (targets: string[]) => void
 ): NonNullable<CodexOptions['config']> {
-  const protectedFiles = protectedEntries(policy, onMissingTargets);
+  const metadataRules = gitMetadataReadRules([cwd, ...policy.writable], policy.roots);
+  // Linked worktree metadata can sit outside every active folder. Reuse the
+  // shared anywhere-secret rules there too, without granting directory writes.
+  const metadataFolders = Object.keys(metadataRules).filter((file) =>
+    fs.statSync(file).isDirectory()
+  );
+  const protectedFiles = protectedEntries(policy, onMissingTargets, metadataFolders);
   const mode = MODE_TO_SANDBOX[settings.permissionMode ?? 'default'] ?? 'read-only';
   const profile = codexPermissionProfile(settings);
   return {
@@ -212,6 +222,8 @@ export function codexProtectedConfig(
                 ])
               )
             : {}),
+          // Explicit restrictions also hold when /tmp is a broader writable root.
+          ...(mode !== 'danger-full-access' ? metadataRules : {}),
           ...protectedFiles,
         },
         ...(mode === 'workspace-write'
