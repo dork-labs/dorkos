@@ -701,6 +701,7 @@
     "POST /api/test/seed-bridge",
     "POST /api/test/seed-oauth-mcp-agent",
     "POST /api/test/step",
+    "POST /api/todo-promises/:id/confirm",
     "POST /api/tunnel/start",
     "POST /api/tunnel/stop",
     "POST /api/uploads",

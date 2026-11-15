@@ -73,6 +73,10 @@ const REFUSED: readonly (readonly [reason: string, routes: readonly string[]])[]
       'PUT /api/work-queues/stop',
     ],
   ],
+  [
+    'whether a promise was kept is the answer of the person it was made to (DOR-3034)',
+    ['POST /api/todo-promises/:id/confirm'],
+  ],
   ['no person signs in or up here', ['ALL /api/auth/*']],
   ['middleware in front of the routes it guards', ['ALL /api/canvas/docs/*']],
   [
