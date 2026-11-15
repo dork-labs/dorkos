@@ -188,6 +188,8 @@ import {
 } from '../../../../session/origin/session-started-by-store.js';
 import { StartWorkService, setStartWorkService } from '../../../../extensions/start-work.js';
 import { queuedChatCaller } from '../../../../work-queue/work-queue-wiring.js';
+import { WorkClaimService } from '../../../../session/claims/work-claim-service.js';
+import { setWorkClaims } from '../../../../session/claims/work-claim-current.js';
 import { handRegisteredInSessionTools } from '../index.js';
 import { SessionStore } from '../../sessions/session-store.js';
 import {
@@ -2189,5 +2191,105 @@ describe('a launch that names no folder, when the default folder is home (DOR-40
   it('a person is unchanged, at the default folder', async () => {
     const result = await launch({ kind: 'person' });
     expect(isSessionLaunchRefusal(result)).toBe(false);
+  });
+});
+
+describe('session_start claims the work it starts (DOR-4019)', () => {
+  let claims: WorkClaimService;
+
+  beforeEach(() => {
+    claims = new WorkClaimService({ db: createTestDb() });
+    setWorkClaims(claims);
+  });
+
+  afterEach(() => setWorkClaims(undefined));
+
+  it('claims the key for the new chat, under the id it settled on', async () => {
+    const result = await asScout()({ ...BASE, claim: 'dor-1' });
+    expect(result.isError).toBeFalsy();
+    const minted = vi.mocked(dispatchMessage).mock.calls[0]![0].sessionId;
+    expect(claims.check('a1')).toEqual([
+      expect.objectContaining({ key: 'DOR-1', sessionId: `canon-${minted}` }),
+    ]);
+  });
+
+  it('asks first: a key another chat of the agent holds is refused, and nothing starts', async () => {
+    claims.claim('a1', 'other-chat', 'DOR-1');
+    const result = await asScout()({ ...BASE, claim: 'DOR-1' });
+    expect(result.isError).toBe(true);
+    const payload = payloadOf(result);
+    expect(payload.code).toBe('CLAIMED');
+    // No calling chat here, so the reader rule cannot clear the holder: it stays private.
+    expect(payload.error).toMatch(/^DOR-1 is already claimed by a private chat of yours since /);
+    expect(payload.error).toMatch(/startAnyway: true/);
+    expect(dispatchMessage).not.toHaveBeenCalled();
+    expect(runtimeRegistry.saveSessionSettings).not.toHaveBeenCalled();
+  });
+
+  it('starts anyway when told to, and leaves the claim with its holder', async () => {
+    claims.claim('a1', 'other-chat', 'DOR-1');
+    const result = await asScout()({ ...BASE, claim: 'DOR-1', startAnyway: true });
+    expect(result.isError).toBeFalsy();
+    expect(claims.check('a1')).toEqual([expect.objectContaining({ sessionId: 'other-chat' })]);
+  });
+
+  it('frees the claim when the launch does not go through', async () => {
+    vi.mocked(dispatchMessage).mockResolvedValueOnce({
+      accepted: false,
+      outcome: { kind: 'refused', messageId: 'm-1' },
+      queued: false,
+      queuePosition: 0,
+    } as never);
+    const result = await asScout()({ ...BASE, claim: 'DOR-2' });
+    expect(result.isError).toBe(true);
+    expect(claims.check('a1')).toEqual([]);
+  });
+
+  it('lets exactly one of two racing starts on one key through', async () => {
+    const results = await Promise.all([
+      asScout()({ ...BASE, claim: 'DOR-3' }),
+      asScout()({ ...BASE, claim: 'DOR-3' }),
+    ]);
+    expect(results.filter((r) => !r.isError)).toHaveLength(1);
+    expect(results.filter((r) => r.isError && payloadOf(r).code === 'CLAIMED')).toHaveLength(1);
+  });
+
+  it('claims nothing when no key is named', async () => {
+    await asScout()(BASE);
+    expect(claims.check('a1')).toEqual([]);
+  });
+});
+
+describe('session_start gives back a claim when the chat never runs (DOR-4019)', () => {
+  let claims: WorkClaimService;
+
+  beforeEach(() => {
+    claims = new WorkClaimService({ db: createTestDb() });
+    setWorkClaims(claims);
+  });
+
+  afterEach(() => setWorkClaims(undefined));
+
+  it('frees the claim when the launch fails before its first turn', async () => {
+    const result = await asScout()({ ...BASE, claim: 'DOR-5' });
+    expect(result.isError).toBeFalsy();
+    expect(claims.check('a1')).toHaveLength(1);
+    const [opts] = vi.mocked(dispatchMessage).mock.calls[0]!;
+    opts.onSettled?.('failed', 'The runtime ended before its first turn started.');
+    expect(claims.check('a1')).toEqual([]);
+  });
+
+  it('hands the calling chat’s own claim to the lane it starts for that work', async () => {
+    claims.claim('a1', 'coordinator', 'DOR-6');
+    const fromCoordinator = createSessionStartHandler(makeDeps(), () => ({
+      agentPath: AGENT_HOME,
+      sessionId: 'coordinator',
+    }));
+    const result = await fromCoordinator({ ...BASE, claim: 'DOR-6' });
+    expect(result.isError).toBeFalsy();
+    const minted = vi.mocked(dispatchMessage).mock.calls[0]![0].sessionId;
+    expect(claims.check('a1')).toEqual([
+      expect.objectContaining({ key: 'DOR-6', sessionId: `canon-${minted}` }),
+    ]);
   });
 });

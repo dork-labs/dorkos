@@ -60,8 +60,10 @@ export interface DorkosAreaLine {
 export const DORKOS_AREAS: readonly DorkosAreaLine[] = [
   {
     name: 'Chats',
+    // Work claims ride here with no words of their own: a claim is a chat saying
+    // "I have this", and the block has no room left under its token cap.
     can: 'spin off long work; message, read or stop chats; summarize yours.',
-    covers: ['chat.', 'session_start', 'session.compact'],
+    covers: ['chat.', 'session_start', 'session.compact', 'work-claims.'],
     areas: ['agents', 'messages', 'own_chat'],
   },
   {

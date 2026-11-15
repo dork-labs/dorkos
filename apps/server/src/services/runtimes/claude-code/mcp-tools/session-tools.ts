@@ -44,6 +44,8 @@
  * @module services/runtimes/claude-code/mcp-tools/session-tools
  */
 import { discardUnstartedSession, stampStartMessage } from './session-start-setup.js';
+import { claimForStart } from '../../../session/claims/work-claim-start.js';
+import { getWorkClaims } from '../../../session/claims/work-claim-current.js';
 import { marksForTurn } from '../../../core/turn-power/turn-marks.js';
 import { getSpinOffStartup } from '../../../session/chat-messages/startup/spin-off-startup.js';
 import { SessionCapacityError } from '@dorkos/shared/running-chats';
@@ -171,6 +173,8 @@ function findAccount(runtime: string, id: string): RuntimeAccount | null {
 
 /** A registered agent, as Mesh lists it. */
 interface CallerAgent {
+  /** The Mesh id. */
+  id: string;
   agentPath: string;
   label: string;
   name: string;
@@ -200,6 +204,7 @@ function callerOf(
     resolved.permissionMode !== undefined ||
     resolved.runtime !== undefined;
   return {
+    id: agent.id,
     agentPath,
     label: agent.displayName ?? agent.name,
     name: agent.name,
@@ -378,6 +383,19 @@ export function createSessionStartHandler(
     });
     if (!claimed.ok) return refuse(claimed.message, 'START_LIMIT');
     const reservation = claimed.reservation;
+    // The work it takes on, claimed before launch; held by another chat, it is refused (DOR-4019).
+    const held = await claimForStart({
+      claim: args.claim,
+      startAnyway: args.startAnyway,
+      agentId: caller.id,
+      agentPath,
+      callerSessionId: parentChatId,
+      sessionId,
+    });
+    if (held) {
+      reservation?.cancel();
+      return refuse(held, 'CLAIMED');
+    }
     const startup = getSpinOffStartup();
     // Widened from the UUID type: the runtime's canonical id need not be one.
     let startupId: string = sessionId;
@@ -396,6 +414,7 @@ export function createSessionStartHandler(
     } catch (err) {
       startup?.forget(startupId);
       reservation?.cancel();
+      getWorkClaims()?.releaseSession(sessionId, 'the chat never started');
       throw err;
     }
 
@@ -477,11 +496,13 @@ export function createSessionStartHandler(
         roomSessionPlace: undefined,
         countsTowardLaunchCap: true,
         onSettled: (outcome, refusal) => {
-          if (outcome === 'failed')
+          if (outcome === 'failed') {
             startup?.noteFailure(
               startupId,
               refusal ?? 'The runtime ended before its first turn started.'
             );
+            getWorkClaims()?.releaseSession(startupId, 'the chat never started');
+          }
           reservation?.settle();
           lastTitleTry?.();
         },
@@ -522,6 +543,7 @@ export function createSessionStartHandler(
     if (carriesWords && canonicalId !== sessionId) noteRoomTurnWords(canonicalId, true);
     settleStamp(canonicalId);
     if (canonicalId !== sessionId) reservation?.rekey(canonicalId);
+    getWorkClaims()?.rekey(sessionId, canonicalId);
     lastTitleTry = nameStartedChat({
       sessionId: canonicalId,
       rename: () =>
