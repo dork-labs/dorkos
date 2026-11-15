@@ -70,6 +70,31 @@ export function todoDueLabel(
   return `Due ${when.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}`;
 }
 
+/** How many times, in a word where one reads better than a number. */
+function timesWord(count: number): string {
+  if (count === 1) return 'once';
+  if (count === 2) return 'twice';
+  return `${count} times`;
+}
+
+/**
+ * How often a to-do's date moved and when it was first due (DOR-3034): "Moved twice, first due
+ * Mar 14". A date set once and never changed says nothing.
+ *
+ * @param todo - The to-do, or an agent's promise: its move count and its first and current dates.
+ * @returns The label, or null when the date never moved.
+ */
+export function todoMovedLabel(
+  todo: Pick<Todo, 'moveCount' | 'originalDueAt' | 'dueAt'>
+): string | null {
+  if (todo.moveCount < 1) return null;
+  const moved = `Moved ${timesWord(todo.moveCount)}`;
+  if (!todo.originalDueAt || todo.originalDueAt === todo.dueAt) return moved;
+  const first = new Date(todo.originalDueAt);
+  if (Number.isNaN(first.getTime())) return moved;
+  return `${moved}, first due ${first.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}`;
+}
+
 /**
  * Who made a to-do, for the quiet "from" line: you, an agent by name, or a guest.
  *

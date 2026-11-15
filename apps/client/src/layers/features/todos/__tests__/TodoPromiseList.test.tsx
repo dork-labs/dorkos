@@ -71,6 +71,17 @@ describe('TodoPromiseList', () => {
     expect(await screen.findByText('No to-dos yet.')).toBeInTheDocument();
   });
 
+  it('says a moved promise moved, and when it was first due (DOR-3034)', async () => {
+    renderList([
+      todoPromise({
+        dueAt: '2099-03-20T12:00:00.000Z',
+        originalDueAt: '2099-03-14T12:00:00.000Z',
+        moveCount: 1,
+      }),
+    ]);
+    expect(await screen.findByText(/Moved once, first due Mar 1[34]/)).toBeInTheDocument();
+  });
+
   it('reads one agent’s list when given an agent', async () => {
     const transport = renderList([], { agentId: 'agent-ana' });
     await screen.findByText('No to-dos yet.');

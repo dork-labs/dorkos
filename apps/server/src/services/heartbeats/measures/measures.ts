@@ -297,9 +297,9 @@ export function computeMeasures(
     const scoreDueAt = c.scoreDueAt ?? c.dueAt;
     return c.state === 'kept' && c.closedAt !== null && ms(c.closedAt) <= ms(scoreDueAt);
   }).length;
-  const counted = records.todoPromises.filter(
-    (c) => c.state !== 'dropped' && ms(c.scoreDueAt ?? c.dueAt) <= ctx.now
-  ).length;
+  // A dropped promise counts too, as one not kept on time: dropping is no longer a free exit from
+  // the score (DOR-3034). A missed one reopened and then kept closes after its date, so it stays late.
+  const counted = records.todoPromises.filter((c) => ms(c.scoreDueAt ?? c.dueAt) <= ctx.now).length;
   return {
     windowDays: ctx.windowDays,
     since: ctx.since,

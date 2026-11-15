@@ -61,6 +61,21 @@ const ROWS: { label: string; todo: Todo; agent?: AgentPathEntry; from: string; r
     room: '#launch',
   },
   {
+    label: 'Moved twice, with its first date',
+    todo: {
+      ...BASE,
+      id: 'todo-moved',
+      what: 'Send the pricing page draft',
+      assignee: { kind: 'agent', agentId: SCOUT.id },
+      dueAt: inDays(4),
+      originalDueAt: inDays(-2),
+      scoreDueAt: inDays(-2),
+      moveCount: 2,
+    },
+    agent: SCOUT,
+    from: 'you',
+  },
+  {
     label: 'Declined, with its reason',
     todo: {
       ...BASE,

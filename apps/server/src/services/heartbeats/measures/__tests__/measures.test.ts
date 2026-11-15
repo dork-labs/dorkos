@@ -465,7 +465,8 @@ describe('supporting measures', () => {
     expect(supporting.beats).toBe(6);
     // A beat with no end_beat is unknown, and one that posted around it spoke.
     expect(supporting.quietBeats).toMatchObject({ part: 3, whole: 5 });
-    expect(supporting.todosOnTime).toMatchObject({ part: 1, whole: 4 });
+    // The dropped one counts as not kept on time (DOR-3034): dropping is no free exit.
+    expect(supporting.todosOnTime).toMatchObject({ part: 1, whole: 5 });
     expect(supporting.noEndBeat).toBe(1);
     expect(supporting.triage).toEqual({ checks: 2, tokens: 640 });
     expect(supporting.turns).toEqual({ count: 3, tokensPerTurn: 2000 });
