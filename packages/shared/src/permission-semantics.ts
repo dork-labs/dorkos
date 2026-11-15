@@ -657,10 +657,12 @@ function stricterPower(a: TurnPermissionLevel, b: TurnPermissionLevel): TurnPerm
  * mode the runtime declares.
  *
  * Never writes anything: the caller runs one turn at the answer and leaves the
- * session's stored mode alone. An id the runtime does not declare runs at the
- * strictest trust-axis mode it does declare, never the ceiling's: nothing can
- * say how far it reaches, and a Codex chat set to Plan ran at its agent's Full
- * (DOR-4411).
+ * session's stored mode alone. Under a ceiling that bounds the turn, an id the
+ * runtime does not declare runs at the strictest trust-axis mode it does
+ * declare when the ceiling admits that, else at the fallback below, never at the
+ * ceiling's loosest: nothing can say how far it reaches, and a Codex chat set to
+ * Plan ran at its agent's Full (DOR-4411). A ceiling that only records (Full)
+ * hands any id back unchanged, as the first line says.
  * A working-axis mode (Claude's Plan) is kept when the session is in it and
  * never chosen in its place.
  *
@@ -679,8 +681,16 @@ export function clampModeToCeiling(
   if (ceilingOnlyRecords(ceiling)) return modeId;
   const level = resolveCeilingLevel(declared, ceiling);
   const own = declared.values.find((m) => m.id === modeId);
-  if (!own) return strictestTrustModeId(declared) ?? modeId;
-  if (admits(level, own)) return modeId;
+  if (!own) {
+    // An id the runtime does not have runs at its strictest trust mode when the
+    // ceiling admits that; below it, the fallback further down answers, as it
+    // does for a declared mode (a sender in Plan keeps the turn in Plan).
+    const strictestId = strictestTrustModeId(declared);
+    const strictest = declared.values.find((m) => m.id === strictestId);
+    if (strictest && admits(level, strictest)) return strictest.id;
+  } else if (admits(level, own)) {
+    return modeId;
+  }
   const loosest = declared.values
     .filter((m) => m.axis !== 'working' && admits(level, m))
     .sort(

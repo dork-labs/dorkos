@@ -83,8 +83,9 @@ import { sessionEventsHandler } from './session-events-handler.js';
 import { guardSessionParam, readableSessions } from './session-read-guard.js';
 import {
   modelGateAuthority,
-  rejectUndeclaredSessionMode,
+  rejectUndeclaredPermissionMode,
   rejectUnknownModel,
+  sessionModeAuthority,
 } from './session-model-gate.js';
 import { mountWindowSignalRoutes, touchedSinceKeeper } from './session-touch-handler.js';
 import { sessionCommandIntentHandler } from './session-command-intent-handler.js';
@@ -601,12 +602,11 @@ export function createSessionRoutes(deps: SessionRouteDeps = {}): Hono<ApiEnv> {
     // the request names, else the inferred one. Asking the inferred claude-code
     // for a chat headed to Codex accepted `plan`, which Codex does not have, and
     // the turn then ran at the agent's level (DOR-4411).
-    if (requestedMode !== undefined) {
-      const modeError = rejectUndeclaredSessionMode(runtime, bound, runtimeHint, requestedMode);
-      if (modeError) return c.json(errorBody(modeError, 'UNSUPPORTED_PERMISSION_MODE'), 400);
-    }
-    // From Wi-Fi a chat's mode may go down, never up (DOR-3037).
-    const raise = await wifiModeRaiseReply(c, runtime, sessionId, requestedMode);
+    const modeRuntime = sessionModeAuthority(runtime, bound, runtimeHint);
+    const modeError = requestedMode && rejectUndeclaredPermissionMode(modeRuntime, requestedMode);
+    if (modeError) return c.json(errorBody(modeError, 'UNSUPPORTED_PERMISSION_MODE'), 400);
+    // From Wi-Fi a chat's mode may go down, never up (DOR-3037), judged by the same runtime.
+    const raise = await wifiModeRaiseReply(c, modeRuntime, sessionId, requestedMode);
     if (raise) return raise;
     // Same authority argument as the mode gate directly above, applied to the
     // model: only the runtime can say whether the id it was handed is real, and it

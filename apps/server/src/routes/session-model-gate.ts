@@ -177,26 +177,20 @@ export function rejectUndeclaredPermissionMode(
 }
 
 /**
- * {@link rejectUndeclaredPermissionMode}, asked of the runtime the session runs
- * on: its bound one, else the one the request names, else the inferred one.
- * Asking the inferred claude-code for a chat headed to Codex accepted `plan`,
- * which Codex does not have (DOR-4411).
+ * The runtime a session's mode is judged by: its bound one, else the one the
+ * request names, else the inferred one. The mode gate and the Wi-Fi raise
+ * check both ask it, so they judge against the same runtime (DOR-4411).
  *
  * @param owner - The runtime the session resolves to now.
  * @param bound - Whether that answer is a binding or an inference.
  * @param hint - The runtime the request names, if any.
- * @param permissionMode - The mode the request asks to store.
  */
-export function rejectUndeclaredSessionMode(
+export function sessionModeAuthority(
   owner: AgentRuntime,
   bound: boolean,
-  hint: string | undefined,
-  permissionMode: PermissionModeId
-): string | null {
-  return rejectUndeclaredPermissionMode(
-    modelGateAuthority(owner, bound, hint) ?? owner,
-    permissionMode
-  );
+  hint: string | undefined
+): AgentRuntime {
+  return modelGateAuthority(owner, bound, hint) ?? owner;
 }
 
 /**

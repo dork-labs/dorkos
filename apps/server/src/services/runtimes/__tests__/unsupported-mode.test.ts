@@ -80,6 +80,19 @@ describe('QA’s case: Plan on a Codex chat under a Full agent (DOR-4411)', () =
   });
 });
 
+describe('a ceiling below every trust mode keeps its fallback (Security M1 on #3770)', () => {
+  const claude = CLAUDE_CODE_CAPABILITIES.permissionModes;
+  const plan = levelOfMode(claude, 'plan')!;
+
+  it('runs an unknown id on Claude at Plan under a sender in Plan, never at Default', () => {
+    expect(clampModeToCeiling(claude, 'retired-mode', plan)).toBe('plan');
+  });
+
+  it('runs a declared mode the same way under that ceiling', () => {
+    expect(clampModeToCeiling(claude, 'bypassPermissions', plan)).toBe('plan');
+  });
+});
+
 describe('every runtime refuses and contains a mode it does not have (census)', () => {
   it('covers every runtime in the capability matrix', () => {
     expect(Object.keys(RUNTIMES).sort()).toEqual([...MATRIX_RUNTIMES].sort());
@@ -101,13 +114,16 @@ describe('every runtime refuses and contains a mode it does not have (census)', 
         expect(rejectUndeclaredPermissionMode(runtimeOf(name, caps), id)).not.toBeNull();
       });
 
-      it(`${name}: runs a stored '${id}' at its strictest mode under every bounding level`, () => {
+      it(`${name}: runs a stored '${id}' as its strictest mode would, under every bounding level`, () => {
+        const strictest = strictestTrustModeId(declared)!;
         for (const level of declared.values) {
           const ceiling = levelOfMode(declared, level.id);
           // A Full ceiling bounds nothing and hands the id back; the runtime's
           // own mapping and the bind-time replacement answer for it.
           if (!ceiling || ceilingOnlyRecords(ceiling)) continue;
-          expect(isStrictestTrust(caps, clampModeToCeiling(declared, id, ceiling))).toBe(true);
+          expect(clampModeToCeiling(declared, id, ceiling)).toBe(
+            clampModeToCeiling(declared, strictest, ceiling)
+          );
         }
         expect(isStrictestTrust(caps, clampModeToCeiling(declared, id, 'runtime-default'))).toBe(
           true
