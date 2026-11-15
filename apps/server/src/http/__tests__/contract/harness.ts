@@ -6,8 +6,9 @@
  * the COMPOSED server, a real process booted from `src/index.ts`, over a real
  * port. The run builds that entry once and each boot runs the build with plain
  * Node, which keeps every module's own location and packages
- * (`server-build.ts`); `DORKOS_CONTRACT_TSX=1` boots `tsx src/index.ts` instead,
- * exactly as the e2e legs boot it. So the same unchanged file passed before a group moved
+ * (`server-build.ts`); `DORKOS_CONTRACT_TSX=1`, or `vitest --watch`, boots
+ * `tsx src/index.ts` instead, exactly as the e2e legs boot it, and
+ * `tsx-parity.contract.test.ts` boots it that way once in every bundle run. So the same unchanged file passed before a group moved
  * (Express answered) and after (Hono answers), which is the proof each move PR
  * offered; a move PR could not edit its group's contract file (plan rule 2).
  * The contracts now pin the server's answers for whatever changes it next.
@@ -23,6 +24,7 @@ import { spawn, type ChildProcess } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import http from 'node:http';
 import { once } from 'node:events';
+import { existsSync } from 'node:fs';
 import { mkdir, mkdtemp, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
@@ -30,18 +32,18 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { afterAll, beforeAll, describe, expect, inject, it } from 'vitest';
 import type { ZodType } from 'zod';
-import { BUILT_ENTRIES, SERVER_DIR, buildContractServer } from './server-build.js';
+import {
+  BOOTED_MARKER_PREFIX,
+  BUILD_MS_FILE,
+  BUILT_ENTRIES,
+  SERVER_DIR,
+  TSX_ESCAPE_FLAG,
+  buildContractServer,
+} from './server-build.js';
 
 const REPO_ROOT = path.resolve(SERVER_DIR, '../..');
 // The CLI script run by this Node, not the `.bin` shim, so it spawns the same way everywhere.
 const TSX_CLI = path.join(SERVER_DIR, 'node_modules/tsx/dist/cli.mjs');
-
-/**
- * Set to `1` to boot every server with `tsx src/index.ts`, as the harness did
- * before it built the server once per run (`server-build.ts`): for telling a
- * fault in the build from a fault in the server.
- */
-export const TSX_ESCAPE_FLAG = 'DORKOS_CONTRACT_TSX';
 
 /** How often a boot checks whether the server answers. */
 const HEALTH_POLL_MS = 50;
@@ -164,28 +166,51 @@ let builtEntries: Promise<Map<string, string>> | undefined;
 /** How long a worker waits for another worker's build before it gives up. */
 const BUILD_WAIT_MS = 180_000;
 
+/** This run's folder, from `global-setup.ts`. */
+function runDir(): string {
+  const dir = inject('contractServerBuildDir');
+  if (!dir) throw new Error('No contract build folder: is global-setup.ts in vitest.config.ts?');
+  return dir;
+}
+
+/** Whether process `pid` is still running (`EPERM` means it is, just not ours). */
+function isAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === 'EPERM';
+  }
+}
+
 /**
  * This run's build of the composed server (`server-build.ts`), made by the
  * first worker to ask and read by the rest. The first to create the `lock`
- * folder builds into `out/` and then writes `ready` (or `failed`, with the
- * error); every other worker waits for one of the two.
+ * folder writes its pid into it, builds into `out/` and then writes `ready`
+ * (or `failed`, with the error); every other worker waits for one of the two,
+ * and fails at once if the builder's process has gone without writing either.
+ * (Vitest's default `forks` pool gives each worker its own pid.)
  */
 function loadBuiltEntries(): Promise<Map<string, string>> {
   builtEntries ??= (async () => {
-    const dir = inject('contractServerBuildDir');
-    if (!dir) throw new Error('No contract build folder: is global-setup.ts in vitest.config.ts?');
+    const dir = runDir();
     const out = path.join(dir, 'out');
     const ready = path.join(dir, 'ready');
     const failed = path.join(dir, 'failed');
+    const lock = path.join(dir, 'lock');
+    const lockPid = path.join(lock, 'pid');
     let builder = true;
     try {
-      await mkdir(path.join(dir, 'lock'));
+      await mkdir(lock);
     } catch {
       builder = false;
     }
     if (builder) {
       try {
+        await writeFile(lockPid, String(process.pid));
+        const started = Date.now();
         const built = await buildContractServer(out);
+        await writeFile(path.join(dir, BUILD_MS_FILE), String(Date.now() - started));
         // Written whole, then renamed, so a waiting worker never reads half of it.
         await writeFile(`${ready}.tmp`, JSON.stringify([...built]));
         await rename(`${ready}.tmp`, ready);
@@ -204,6 +229,15 @@ function loadBuiltEntries(): Promise<Map<string, string>> {
       if (done) return new Map(JSON.parse(done) as [string, string][]);
       const error = await readFile(failed, 'utf8').catch(() => undefined);
       if (error !== undefined) throw new Error(`The contract server build failed:\n${error}`);
+      // No pid yet means the builder has only just taken the lock. A builder
+      // that finished and exited since `ready` was read above is not dead.
+      const pid = Number(await readFile(lockPid, 'utf8').catch(() => ''));
+      if (pid > 0 && !isAlive(pid) && !existsSync(ready)) {
+        throw new Error(
+          `The contract server build's worker (pid ${pid}) exited without finishing it ` +
+            `or writing ${failed}; see that worker's error above.`
+        );
+      }
       await new Promise((resolve) => setTimeout(resolve, 100));
     }
     throw new Error(`The contract server build did not finish in ${BUILD_WAIT_MS} ms`);
@@ -212,22 +246,37 @@ function loadBuiltEntries(): Promise<Map<string, string>> {
 }
 
 /**
- * The Node arguments that boot `entrypoint`: its build when there is one,
- * with source maps on and the source entry in `argv[1]` as tsx leaves them,
- * otherwise (or with {@link TSX_ESCAPE_FLAG}) tsx on the source.
+ * The Node arguments that boot `entrypoint`. In a bundle-mode run
+ * (`global-setup.ts`) a listed entry runs from its build, with source maps on
+ * and the source entry in `argv[1]` as tsx leaves them, and a build that lacks
+ * it throws rather than fall back to tsx. Anything else runs with tsx on the
+ * source. Each boot marks its mode in the run folder for the run's mode line.
  *
  * @param entrypoint - `src/index.ts`, or an absolute path to a test bootstrap.
+ * @param forceTsx - Boot with tsx whatever the run's mode (the parity boot).
  */
-async function nodeArgs(entrypoint: string): Promise<string[]> {
+async function nodeArgs(entrypoint: string, forceTsx: boolean): Promise<string[]> {
   const source = path.resolve(SERVER_DIR, entrypoint);
-  if (process.env[TSX_ESCAPE_FLAG] !== '1' && Object.values(BUILT_ENTRIES).includes(source)) {
-    const built = (await loadBuiltEntries()).get(source);
-    if (built) {
-      const prelude = built.replace(/\.mjs$/, '.argv.mjs');
-      return ['--enable-source-maps', '--import', pathToFileURL(prelude).href, built];
-    }
+  const bundled =
+    !forceTsx &&
+    inject('contractServerMode') === 'bundle' &&
+    Object.values(BUILT_ENTRIES).includes(source);
+  await writeFile(path.join(runDir(), BOOTED_MARKER_PREFIX + (bundled ? 'bundle' : 'tsx')), '');
+  if (!bundled) return [TSX_CLI, entrypoint];
+  const built = (await loadBuiltEntries()).get(source);
+  if (!built) {
+    throw new Error(
+      `The contract server build has no ${source}; set ${TSX_ESCAPE_FLAG}=1 to boot with tsx.`
+    );
   }
-  return [TSX_CLI, entrypoint];
+  const prelude = built.replace(/\.mjs$/, '.argv.mjs');
+  return ['--enable-source-maps', '--import', pathToFileURL(prelude).href, built];
+}
+
+/** Options for {@link bootComposedServer}. */
+export interface BootOptions {
+  /** Boot with `tsx` even in a bundle-mode run: the parity check's real-ESM boot. */
+  readonly tsx?: boolean;
 }
 
 /** How many ports a boot tries before it gives up. */
@@ -244,15 +293,17 @@ const BOOT_ATTEMPTS = 3;
  * @param extra - More environment for the server, over the defaults.
  * @param entrypoint - A contract-specific test bootstrap, otherwise the real server entry.
  *   One listed in `server-build.ts` runs from this run's build; any other runs with tsx.
+ * @param options - See {@link BootOptions}.
  * @returns The running server.
  */
 export async function bootComposedServer(
   extra: Record<string, string> = {},
-  entrypoint = 'src/index.ts'
+  entrypoint = 'src/index.ts',
+  options: BootOptions = {}
 ): Promise<ComposedServer> {
   for (let attempt = 1; ; attempt++) {
     try {
-      return await bootOnce(extra, entrypoint);
+      return await bootOnce(extra, entrypoint, options.tsx ?? false);
     } catch (error) {
       const lostPort = error instanceof Error && /Port \d+ is already in use/.test(error.message);
       if (!lostPort || attempt >= BOOT_ATTEMPTS) throw error;
@@ -267,7 +318,8 @@ export async function bootComposedServer(
  */
 async function bootOnce(
   extra: Record<string, string>,
-  entrypoint: string
+  entrypoint: string,
+  forceTsx: boolean
 ): Promise<ComposedServer> {
   const port = await freePort();
   const dorkHome = await mkdtemp(path.join(tmpdir(), 'dorkos-contract-'));
@@ -277,7 +329,7 @@ async function bootOnce(
   // numbers with a leading zero are not a valid semver prerelease, and the
   // config store refuses to start on that version.
   const version = `0.0.0-contract.r${randomUUID().slice(0, 8)}`;
-  const child = spawn(process.execPath, await nodeArgs(entrypoint), {
+  const child = spawn(process.execPath, await nodeArgs(entrypoint, forceTsx), {
     cwd: SERVER_DIR,
     env: serverEnv(port, dorkHome, version, extra),
     stdio: ['ignore', 'pipe', 'pipe'],
@@ -426,6 +478,8 @@ export async function checkContractCase(baseUrl: string, testCase: ContractCase)
 export interface ContractSuiteOptions {
   /** More environment for the server, over the defaults. */
   readonly env?: Record<string, string>;
+  /** Boot with tsx whatever the run's mode (see {@link BootOptions}). */
+  readonly tsx?: boolean;
 }
 
 /**
@@ -445,7 +499,7 @@ export function contractSuite(
   describe(`contract: ${group}`, () => {
     let server: ComposedServer | undefined;
     beforeAll(async () => {
-      server = await bootComposedServer(options.env);
+      server = await bootComposedServer(options.env, undefined, { tsx: options.tsx });
     }, BOOT_HOOK_TIMEOUT_MS);
     afterAll(async () => {
       await server?.close();

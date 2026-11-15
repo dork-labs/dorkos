@@ -42,8 +42,32 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 export const SERVER_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../..');
 
 /**
+ * Where each run's build folder goes: under the server's own `node_modules`,
+ * so a bare specifier the bundle imports at run time resolves as it would
+ * from `apps/server` (git-ignored, as all of `node_modules` is).
+ */
+export const CONTRACT_BUILD_ROOT = path.join(SERVER_DIR, 'node_modules/.cache/dorkos-contract');
+
+/**
+ * Set to `1` to boot every server with `tsx src/index.ts`, as the harness did
+ * before it built the server once per run: for telling a fault in the build
+ * from a fault in the server.
+ */
+export const TSX_ESCAPE_FLAG = 'DORKOS_CONTRACT_TSX';
+
+/** How a run boots the composed server: from this run's build, or with tsx. */
+export type ContractBootMode = 'bundle' | 'tsx';
+
+/** A file in the run folder per mode that booted a server, for the run's mode line. */
+export const BOOTED_MARKER_PREFIX = 'booted.';
+
+/** A file in the run folder holding how long the build took, in ms. */
+export const BUILD_MS_FILE = 'build-ms';
+
+/**
  * The entries the harness boots, as source paths, each built to its own file.
- * An entry not listed here is booted with tsx, as before.
+ * An entry not listed here is booted with tsx, as before; a listed one in a
+ * bundle-mode run must come from the build, never quietly from tsx.
  */
 export const BUILT_ENTRIES: Readonly<Record<string, string>> = {
   index: path.join(SERVER_DIR, 'src/index.ts'),

@@ -446,8 +446,10 @@ export default defineConfig({
     // bargain from a silent one.
     retry: process.env.VITEST_RETRY ? Number(process.env.VITEST_RETRY) : 0,
     // A folder for this run's build of the composed server, which the contract
-    // harness boots instead of transpiling `src/index.ts` per suite (DOR-4190).
-    // It builds nothing itself; the first contract boot does.
+    // harness boots instead of transpiling `src/index.ts` per suite (DOR-4190),
+    // under `node_modules/.cache/dorkos-contract/`, and the run's boot mode
+    // (tsx under `--watch` or `DORKOS_CONTRACT_TSX=1`). It builds nothing
+    // itself; the first contract boot does.
     globalSetup: ['src/http/__tests__/contract/global-setup.ts'],
     coverage: {
       provider: 'v8',
