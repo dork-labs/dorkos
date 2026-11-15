@@ -657,10 +657,41 @@ describe('ScheduleApprovalCard — answering it', () => {
     expect(screen.getByRole('button', { name: 'Approve Nightly sweep' })).toBeDisabled();
     await userEvent.click(
       screen.getByRole('checkbox', {
-        name: 'Allow file changes outside its folder with nobody there',
+        name: 'Allow edits outside its folder with nobody there',
       })
     );
     expect(screen.getByRole('button', { name: 'Approve Nightly sweep' })).toBeEnabled();
+  });
+
+  it('names the reads and the programs on outsider work in one tick', async () => {
+    renderCard(
+      proposal({
+        permissionMode: 'dontAsk',
+        originMarks: { outsider: true },
+        requestedPermissionMode: 'dontAsk',
+        requestedAllow: ['Read(notes/today.md)', 'Bash(/abs/report.sh --once)'],
+      } as Partial<Task>)
+    );
+    expect(
+      await screen.findByRole('checkbox', {
+        name: 'Allow these programs and these reads with nobody there',
+      })
+    ).toBeInTheDocument();
+  });
+
+  it('warns and asks before a broad read over an absolute path', async () => {
+    renderCard(
+      proposal({
+        requestedPermissionMode: 'acceptEdits',
+        requestedAllow: ['Read(//users/sam/notes/**)'],
+      } as Partial<Task>)
+    );
+    expect(await findSlot('schedule-reads-broadly')).toHaveTextContent(
+      'Can read files across this computer.'
+    );
+    expect(
+      screen.getByRole('checkbox', { name: 'Allow these reads with nobody there' })
+    ).toBeInTheDocument();
   });
 
   it('names everything one tick covers, and nothing it does not', async () => {
@@ -722,7 +753,7 @@ describe('ScheduleApprovalCard — answering it', () => {
     );
     await screen.findByRole('combobox', { name: 'Run permissions' });
     expect(screen.getByRole('button', { name: 'Approve Nightly sweep' })).toBeDisabled();
-    const tick = screen.getByRole('checkbox', { name: 'Allow these rules with nobody there' });
+    const tick = screen.getByRole('checkbox', { name: 'Allow these reads with nobody there' });
     // Looks 24px tall; a touch screen gets a 44px target from 10px above and below.
     expect(tick.closest('label')).toHaveClass(
       'relative',

@@ -32,8 +32,8 @@ export interface TaskPermissionRulesRefusal {
 const RULES_RUNTIME = 'claude-code';
 
 /**
- * Refuse rules the task's runs could not honour, or that reach all of home or
- * a folder above it. The runtime is the one the runs actually start on: the
+ * Refuse rules the task's runs could not honour, or that are too broad: no
+ * specific action, or all of home or a folder above it. The runtime is the one the runs actually start on: the
  * task's, else its agent's, else the default, as a run resolves it. Nothing to
  * check when there are no rules.
  *
@@ -61,7 +61,7 @@ export async function taskPermissionRulesRefusal(input: {
   const broad = input.rules.find((rule) => !isSpecificPermissionRule(rule, { home }));
   return broad
     ? {
-        error: `"${broad}" reaches your whole home folder. Name one file or command.`,
+        error: `"${broad}" is too broad. Name one file or command, not a whole folder.`,
         code: 'task_rule_too_broad',
       }
     : null;

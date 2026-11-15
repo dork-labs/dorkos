@@ -1,5 +1,9 @@
 import type { Task } from '@dorkos/shared/types';
-import { runsPrograms, writesOutsideTaskFolder } from '@dorkos/shared/permission-rules';
+import {
+  readsBroadly,
+  runsPrograms,
+  writesOutsideTaskFolder,
+} from '@dorkos/shared/permission-rules';
 
 /** Schedule-specific consequence copy for a run with nobody present. */
 const SCHEDULE_PERMISSION_EXPLANATIONS: Readonly<Record<string, string>> = {
@@ -37,16 +41,18 @@ export interface ScheduleConfirmReason {
   programs: boolean;
   /** A rule may change files outside the task's folder. */
   writes: boolean;
-  /** Outsider-written work carries rules, none of them covered above. */
-  outsiderRules: boolean;
+  /** A Read rule is a pattern over an absolute or home path, or outsider work reads files. */
+  reads: boolean;
+  /** Outsider-written work carries rules none of the parts above names. */
+  otherRules: boolean;
 }
 
 /**
  * What a schedule's approval needs the separate confirmation for, or `null`
  * when the plain Approve is enough (DOR-3637, Security Shoulds D-1 to D-3): a
- * mode looser than the one-click baseline, any rule that starts programs or
- * changes files outside the task's folder, or rules on work written after
- * reading outside words.
+ * mode looser than the one-click baseline; a rule that starts programs, changes
+ * files outside the task's folder or reads by a broad pattern; and every rule
+ * on work written after reading outside words, each named in the tick.
  *
  * @param task - The proposal on the card.
  * @param looserMode - Whether the selected mode is looser than the baseline.
@@ -56,30 +62,37 @@ export function scheduleConfirmReason(
   looserMode: boolean
 ): ScheduleConfirmReason | null {
   const rules = task.requestedAllow ?? [];
-  const programs = rules.some(runsPrograms);
-  const writes = rules.some(writesOutsideTaskFolder);
-  const outsiderRules = Boolean(task.originMarks?.outsider) && rules.length > 0;
-  const reason = {
+  const outsider = Boolean(task.originMarks?.outsider);
+  const reads = (rule: string) => /^Read\(/.test(rule.trim());
+  const reason: ScheduleConfirmReason = {
     mode: looserMode,
-    programs,
-    writes,
-    outsiderRules: outsiderRules && !programs && !writes,
+    programs: rules.some(runsPrograms),
+    writes: rules.some(writesOutsideTaskFolder),
+    reads: rules.some((rule) => readsBroadly(rule) || (outsider && reads(rule))),
+    otherRules:
+      outsider &&
+      rules.some((rule) => !runsPrograms(rule) && !writesOutsideTaskFolder(rule) && !reads(rule)),
   };
   return Object.values(reason).some(Boolean) ? reason : null;
 }
 
 /**
- * The words beside the confirmation tick: what it allows, at most 15 words.
+ * The words beside the confirmation tick: everything it allows, at most 15
+ * words. "with nobody there" is added while the line stays within that.
  *
  * @param reason - What the tick covers.
  */
 export function scheduleConfirmLabel(reason: ScheduleConfirmReason): string {
+  const named = [reason.mode, reason.programs, reason.writes, reason.reads].some(Boolean);
   const parts = [
     reason.mode && 'a looser mode',
     reason.programs && 'these programs',
-    reason.writes && 'file changes outside its folder',
-    reason.outsiderRules && 'these rules',
+    reason.writes && 'edits outside its folder',
+    reason.reads && 'these reads',
+    reason.otherRules && (named ? 'other rules' : 'these rules'),
   ].filter((part): part is string => typeof part === 'string');
   const list = parts.length > 1 ? `${parts.slice(0, -1).join(', ')} and ${parts.at(-1)}` : parts[0];
-  return `Allow ${list} with nobody there`;
+  const label = `Allow ${list}`;
+  const withNobody = `${label} with nobody there`;
+  return withNobody.split(/\s+/).length <= 15 ? withNobody : label;
 }

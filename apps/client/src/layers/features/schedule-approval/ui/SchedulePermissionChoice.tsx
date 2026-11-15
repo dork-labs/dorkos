@@ -3,7 +3,11 @@ import type { PermissionModeDescriptor } from '@dorkos/shared/agent-runtime';
 import type { Task } from '@dorkos/shared/types';
 import { Button, Checkbox, PermissionModeScopeNote } from '@/layers/shared/ui';
 import { actsWithoutAsking, isNoLooserThan } from '@dorkos/shared/permission-semantics';
-import { runsPrograms, writesOutsideTaskFolder } from '@dorkos/shared/permission-rules';
+import {
+  readsBroadly,
+  runsPrograms,
+  writesOutsideTaskFolder,
+} from '@dorkos/shared/permission-rules';
 import {
   scheduleConfirmLabel,
   schedulePermissionLabel,
@@ -99,6 +103,11 @@ export function SchedulePermissionChoice({
           {task.requestedAllow.some(runsPrograms) && (
             <p data-slot="schedule-runs-programs" className="text-status-warning-fg">
               Can run programs on this computer.
+            </p>
+          )}
+          {task.requestedAllow.some(readsBroadly) && (
+            <p data-slot="schedule-reads-broadly" className="text-status-warning-fg">
+              Can read files across this computer.
             </p>
           )}
           {task.requestedAllow.some(writesOutsideTaskFolder) && (

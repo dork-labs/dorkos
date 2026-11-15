@@ -9,6 +9,7 @@
 import { readManifest } from '@dorkos/shared/manifest';
 import type { RuntimeCapabilities } from '@dorkos/shared/agent-runtime';
 import type { Task } from '@dorkos/shared/types';
+import type { MeshCore } from '@dorkos/mesh';
 
 /**
  * What this resolver needs from the runtime registry — no more, so a test can
@@ -79,4 +80,22 @@ export async function resolveTaskRunRuntime(
     }
   }
   return resolveRuntimeType(task, runtimes, agentRuntime).type;
+}
+
+/**
+ * {@link resolveTaskRunRuntime} for a task by its agent id: the one lookup the
+ * mode labels, the folder-rule preview, the trial and the rules check share,
+ * so the card's modes and the server's checks cannot drift apart.
+ *
+ * @param task - The task, with its own runtime and agent id.
+ * @param runtimes - The registry.
+ * @param meshCore - Finds the agent's folder; absent when Mesh is off.
+ */
+export function taskRunRuntime(
+  task: Pick<Task, 'runtime' | 'agentId'>,
+  runtimes: RunExecutionRuntimes,
+  meshCore?: Pick<MeshCore, 'getProjectPath'>
+): Promise<string> {
+  const agentPath = task.agentId ? meshCore?.getProjectPath(task.agentId) : null;
+  return resolveTaskRunRuntime(task, runtimes, agentPath);
 }

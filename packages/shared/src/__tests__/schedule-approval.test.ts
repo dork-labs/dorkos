@@ -3,6 +3,7 @@ import { isLooserScheduleMode, scheduleApprovalBaseline } from '../schedule-appr
 import {
   isSpecificPermissionRule,
   needsOwnConfirmation,
+  readsBroadly,
   writesOutsideTaskFolder,
 } from '../permission-rules.js';
 
@@ -106,5 +107,54 @@ describe('glob patterns in rules (re-review of #3794)', () => {
     expect(isSpecificPermissionRule('Read(//Users/sam/notes/x.md)', { home })).toBe(true);
     expect(isSpecificPermissionRule('Read(/Users/sam/notes/*.md)', { home })).toBe(true);
     expect(isSpecificPermissionRule('Read(notes/**)', { home })).toBe(true);
+  });
+});
+
+describe('other spellings of the same folder (third review of #3794)', () => {
+  const home = '/Users/sam';
+
+  it('refuses home or a parent of it under case, firmlink, volume and step spellings', () => {
+    for (const rule of [
+      'Read(//users/sam/**)',
+      'Read(//USERS/SAM/**)',
+      'Read(//System/Volumes/Data/Users/**)',
+      'Read(//Volumes/Macintosh HD/Users/**)',
+      'Read(//Users/x/../sam/**)',
+      'Read(//Users//sam/**)',
+      'Read(//Users/sam/notes/*/../../**)',
+    ]) {
+      expect(isSpecificPermissionRule(rule, { home }), rule).toBe(false);
+    }
+    expect(isSpecificPermissionRule('Read(//users/sam/notes/x.md)', { home })).toBe(true);
+  });
+
+  it('refuses a Windows home and its parents', () => {
+    const windows = 'C:\\Users\\sam';
+    for (const rule of ['Read(C:\\Users\\**)', 'Read(c:/users/sam/**)', 'Read(~/**)']) {
+      expect(isSpecificPermissionRule(rule, { home: windows }), rule).toBe(false);
+    }
+    expect(isSpecificPermissionRule('Read(C:\\Users\\sam\\notes\\x.md)', { home: windows })).toBe(
+      true
+    );
+  });
+
+  it('gives escaped, backslashed or stepped .git writes their own yes', () => {
+    for (const rule of [
+      'Edit(.gi\\t/hooks/pre-commit)',
+      'Edit(.git\\hooks\\pre-commit)',
+      'Edit(a/../.git/hooks/x)',
+    ]) {
+      expect(writesOutsideTaskFolder(rule), rule).toBe(true);
+      expect(needsOwnConfirmation(rule), rule).toBe(true);
+    }
+  });
+
+  it('gives any pattern over an absolute or home path its own yes, Read included', () => {
+    for (const rule of ['Read(//users/sam/notes/**)', 'Read(~/notes/*.md)', 'Read(C:/x/*)']) {
+      expect(readsBroadly(rule), rule).toBe(true);
+      expect(needsOwnConfirmation(rule), rule).toBe(true);
+    }
+    expect(needsOwnConfirmation('Read(/Users/sam/notes/x.md)')).toBe(false);
+    expect(needsOwnConfirmation('Read(notes/*.md)')).toBe(false);
   });
 });

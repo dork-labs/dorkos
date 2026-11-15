@@ -47,38 +47,37 @@ const INTERPRETERS = new Set([
 ]);
 
 /**
- * A specifier with nothing left once wildcards, slashes, colons, dots and
- * spaces go. Claude Code's path rules are gitignore-style patterns, so `?`,
- * `[...]`, `{...}` and `!` count as wildcards too.
+ * Characters that make a path rule a pattern rather than one path. `\` is in
+ * the set: gitignore-style matching reads it as an escape (`.gi\t` is `.git`),
+ * and Windows reads it as a separator, so it is never taken at face value.
  */
-function onlyWildcards(specifier: string): boolean {
-  return specifier.replace(/[\s*/:.?[\]{}!]/g, '').length === 0;
-}
-
-/** Characters that make a path rule a pattern rather than one path. */
-const GLOB = /[*?[{]/;
+const GLOB = /[*?[{\\]/;
 
 /** The home spellings a rule may start with. */
-const HOME_PREFIX = /^(?:~|\$HOME|\$\{HOME\})(?=\/|$)/;
+const HOME_PREFIX = /^(?:~|\$HOME|\$\{HOME\})(?=[\\/]|$)/;
+
+/** A path that starts at a root: `/`, `\`, or a drive letter. */
+const ABSOLUTE = /^(?:[\\/]|[A-Za-z]:[\\/])/;
+
+/** Tools whose rules name files: reads and every kind of write. */
+const PATH_TOOLS = new Set(['Read', 'Edit', 'Write', 'MultiEdit', 'NotebookEdit']);
+
+/** Tools whose rules let a run change files. */
+const FILE_WRITING_TOOLS = new Set(['Edit', 'Write', 'MultiEdit', 'NotebookEdit']);
+
+/** A rule split into its tool and the text between the parentheses. */
+function parseRule(rule: string): { tool: string; spec: string } | null {
+  const match = /^([A-Za-z][A-Za-z0-9_-]*)\((.*)\)$/s.exec(rule.trim());
+  return match ? { tool: match[1]!, spec: match[2]!.trim() } : null;
+}
 
 /**
- * Whether a path rule reaches the whole home folder, or a folder above it
- * (`//Users/**`, `/**`, `/Users/sa?/**`). The fixed part before the first
- * wildcard names a folder; when that folder is home or one of its parents and
- * a wildcard follows, the rule can match everything in home.
+ * A specifier with nothing left once wildcards, slashes, colons, dots and
+ * spaces go. Claude Code's path rules are gitignore-style patterns, so `?`,
+ * `[...]`, `{...}`, `!` and `\` count as wildcards too.
  */
-function coversHome(specifier: string, home: string): boolean {
-  const root = home.replace(/\/+$/, '') || '/';
-  const path = specifier
-    .trim()
-    .replace(HOME_PREFIX, root)
-    .replace(/^\/{2,}/, '/');
-  if (!path.startsWith('/')) return false;
-  const glob = path.search(GLOB);
-  const fixed = glob === -1 ? path.replace(/\/+$/, '') : path.slice(0, glob);
-  const folder = glob === -1 ? fixed : fixed.slice(0, fixed.lastIndexOf('/'));
-  const holds = (dir: string) => dir === '' || root === dir || root.startsWith(`${dir}/`);
-  return glob === -1 ? fixed === '' || holds(fixed) : holds(folder);
+function onlyWildcards(specifier: string): boolean {
+  return specifier.replace(/[\s*/:.?[\]{}!\\]/g, '').length === 0;
 }
 
 /**
@@ -91,6 +90,56 @@ function normalisePath(specifier: string): string {
     .trim()
     .replace(HOME_PREFIX, '')
     .replace(/^\/{2,}/, '/');
+}
+
+/**
+ * One spelling for a folder path, so two spellings of the same folder compare
+ * equal: `\` read as `/`, doubled slashes collapsed, `.` and `..` resolved,
+ * case folded (the default macOS and Windows disks ignore case), a drive letter
+ * dropped, and macOS's other names for the root (`/System/Volumes/Data`,
+ * `/Volumes/<disk>`) read as `/`. A `..` that climbs past the root stays at it.
+ */
+function canonicalFolder(path: string): string {
+  const parts: string[] = [];
+  const text = path
+    .replace(/\\/g, '/')
+    .replace(/^[A-Za-z]:(?=\/)/, '')
+    .toLowerCase();
+  for (const part of text.split('/')) {
+    if (part === '' || part === '.') continue;
+    if (part === '..') parts.pop();
+    else parts.push(part);
+  }
+  let canonical = `/${parts.join('/')}`;
+  canonical = canonical.replace(/^\/system\/volumes\/data(?=\/|$)/, '');
+  canonical = canonical.replace(/^\/volumes\/[^/]+(?=\/|$)/, '');
+  return canonical || '/';
+}
+
+/**
+ * Whether a path rule reaches the whole home folder, or a folder above it
+ * (`//Users/**`, `/**`, `//users/sa?/**`, `C:\Users\**`). The fixed part
+ * before the first pattern character names a folder; when that folder is home
+ * or one of its parents, compared in {@link canonicalFolder}'s one spelling,
+ * the rule can match everything in home. A `..` after a pattern character
+ * cannot be resolved, so it counts as reaching the root. A Windows home
+ * (`C:\\Users\\sam`) is compared the same way.
+ */
+function coversHome(specifier: string, home: string): boolean {
+  const root = canonicalFolder(home);
+  // Claude Code on Windows reads \ as a separator; elsewhere it is an escape,
+  // so it stays a pattern character (and the fixed part stops before it).
+  const windows = /^[A-Za-z]:|\\/.test(home);
+  const typed = specifier.trim().replace(HOME_PREFIX, home);
+  const path = windows ? typed.replace(/\\/g, '/') : typed;
+  if (!ABSOLUTE.test(path)) return false;
+  const glob = path.search(GLOB);
+  const tail = glob === -1 ? '' : path.slice(glob);
+  if (/(^|[\\/])\.\.([\\/]|$)/.test(tail)) return true;
+  const fixed = glob === -1 ? path : path.slice(0, glob);
+  // With a pattern after it, the last fixed segment is only part of a name.
+  const folder = canonicalFolder(glob === -1 ? fixed : fixed.replace(/[^\\/]*$/, ''));
+  return folder === '/' || root === folder || root.startsWith(`${folder}/`);
 }
 
 /** Options for {@link isSpecificPermissionRule}. */
@@ -109,7 +158,8 @@ export interface PermissionRuleCheckOptions {
  *   the home folder is taken off (`Bash(:*)`, `Read(/**)`, `Read(~/**)`);
  * - a `WebFetch` domain with any wildcard (`domain:*.com`);
  * - a `Bash` rule that hands a wildcard to an interpreter (`Bash(node:*)`);
- * - given `home`, a path rule that reaches all of home or a parent of it.
+ * - given `home`, a path rule that reaches all of home or a parent of it, in
+ *   any spelling of that folder.
  *
  * @param rule - The trimmed rule text.
  * @param options - The home folder, when the caller knows it.
@@ -147,34 +197,62 @@ export function runsPrograms(rule: string): boolean {
   return /^Bash\(/.test(rule.trim());
 }
 
-/** Tools whose rules let a run change files. */
-const FILE_WRITING_TOOLS = new Set(['Edit', 'Write', 'MultiEdit', 'NotebookEdit']);
+/**
+ * Whether a file rule reaches past the folder the run starts in, judged by its
+ * shape rather than by listing bad spellings: an absolute or home path, a
+ * `..` step, or any pattern character (`* ? [ { \`), which can match anything,
+ * `.git` included, under any case or escape. A relative path with none of
+ * those names one file inside the folder, except one into `.git` or `.claude`
+ * (hooks and settings, which run code or grant more), compared without case.
+ */
+function reachesPastTaskFolder(spec: string): boolean {
+  if (HOME_PREFIX.test(spec) || ABSOLUTE.test(spec) || GLOB.test(spec)) return true;
+  return spec.split('/').some((part) => ['..', '.git', '.claude'].includes(part.toLowerCase()));
+}
 
 /**
  * Whether a rule lets a run change files outside the task's own folder, or
- * may. A relative path stays in the folder the run starts in; an absolute or
- * home path, a `..` step, or a path into `.git` or `.claude` (hooks and
- * settings, which run code or grant more) reaches past it, compared without
- * case for case-insensitive disks. Any wildcard counts too: `**\/hooks/x` or
- * `.gi?/hooks/*` can match `.git`. The card confirms these separately, as it
- * does a rule that runs programs (review of DOR-3637).
+ * may (see {@link reachesPastTaskFolder}). The card confirms these separately,
+ * as it does a rule that runs programs (review of DOR-3637).
  *
  * @param rule - An approved or requested rule.
  */
 export function writesOutsideTaskFolder(rule: string): boolean {
-  const match = /^([A-Za-z][A-Za-z0-9_-]*)\((.*)\)$/s.exec(rule.trim());
-  if (!match || !FILE_WRITING_TOOLS.has(match[1]!)) return false;
-  const path = match[2]!.trim();
-  if (/^(?:\/|~|\$HOME|\$\{HOME\})/.test(path) || GLOB.test(path)) return true;
-  return path.split('/').some((part) => ['..', '.git', '.claude'].includes(part.toLowerCase()));
+  const parsed = parseRule(rule);
+  return !!parsed && FILE_WRITING_TOOLS.has(parsed.tool) && reachesPastTaskFolder(parsed.spec);
+}
+
+/**
+ * Whether a Read rule is a pattern over an absolute or home path
+ * (`Read(//users/sam/**)`), which can reach far more than it seems to name.
+ * A named absolute file stays one click; a pattern takes the separate yes.
+ *
+ * @param rule - An approved or requested rule.
+ */
+export function readsBroadly(rule: string): boolean {
+  const parsed = parseRule(rule);
+  if (!parsed || parsed.tool !== 'Read') return false;
+  const rooted = HOME_PREFIX.test(parsed.spec) || ABSOLUTE.test(parsed.spec);
+  return rooted && GLOB.test(parsed.spec);
+}
+
+/**
+ * Whether a rule names files at all: the rules the outsider tick has to name.
+ *
+ * @param rule - An approved or requested rule.
+ */
+export function namesFiles(rule: string): boolean {
+  const parsed = parseRule(rule);
+  return !!parsed && PATH_TOOLS.has(parsed.tool);
 }
 
 /**
  * Whether a rule needs its own confirmation on the card and at the server: it
- * runs programs, or it changes files outside the task's folder.
+ * runs programs, changes files outside the task's folder, or reads by a
+ * pattern over an absolute or home path.
  *
  * @param rule - An approved or requested rule.
  */
 export function needsOwnConfirmation(rule: string): boolean {
-  return runsPrograms(rule) || writesOutsideTaskFolder(rule);
+  return runsPrograms(rule) || writesOutsideTaskFolder(rule) || readsBroadly(rule);
 }
