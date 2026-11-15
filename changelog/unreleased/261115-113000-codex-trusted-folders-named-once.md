@@ -1,6 +1,7 @@
 ---
 covers:
   - 'fix(codex): name the folders Codex trusts in your settings once, and see a repo’s own Codex settings from any subfolder (DOR-4410)'
+  - 'fix(server): the Codex trusted-folders startup step takes refs first, like every step (DOR-4410)'
 ---
 
 ### Fixed

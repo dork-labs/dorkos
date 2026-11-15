@@ -15,18 +15,23 @@ import {
   resolveCodexHome,
 } from '../../services/runtimes/codex/codex-home.js';
 import { recordTrustedFoldersNotice } from '../../services/runtimes/codex/app-server/trusted-folders-notice.js';
+import type { ServerRefs } from '../server-refs.js';
 
 /**
  * Record the line. Never throws: a failure is logged and the server starts as
  * it would have.
  *
+ * @param _refs - The server's live references, taken like every startup step's.
  * @param input.dorkHome - DorkOS's data directory, for the done file.
  * @param input.activity - The Activity writer.
  */
-export async function recordCodexTrustedFoldersOnBoot(input: {
-  dorkHome: string;
-  activity: Pick<ActivityService, 'emit'>;
-}): Promise<void> {
+export async function recordCodexTrustedFoldersOnBoot(
+  _refs: ServerRefs,
+  input: {
+    dorkHome: string;
+    activity: Pick<ActivityService, 'emit'>;
+  }
+): Promise<void> {
   try {
     await recordTrustedFoldersNotice({
       homes: [resolveCodexHome(), machineDefaultCodexHome()],

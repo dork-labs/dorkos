@@ -308,7 +308,10 @@ async function start() {
   // The accounts the upgrade kept out of automatic moves, one history line (Re-seat P0).
   await recordKeptFromAutoMovesOnBoot(refs, { dorkHome, activity: upToCoreRoutes.activityService });
   // The folders Codex trusts in the person's own settings, named once (DOR-4410).
-  await recordCodexTrustedFoldersOnBoot({ dorkHome, activity: upToCoreRoutes.activityService });
+  await recordCodexTrustedFoldersOnBoot(refs, {
+    dorkHome,
+    activity: upToCoreRoutes.activityService,
+  });
   // The DM view turns on, once, for an install that never chose (DOR-3074).
   applyDmViewUpgradeOnBoot(refs, { dorkHome, db });
   // Secret-looking files in agent folders, told to the person (DOR-3292). Background.
