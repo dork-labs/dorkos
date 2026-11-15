@@ -5,4 +5,4 @@ covers:
 
 ### Fixed
 
-- An installed package can no longer swap in its own skill for one of yours with the same name. OpenCode keeps only one skill per name, so DorkOS leaves the package's skill out, says so on the install screen, and tells the agent which one it has (DOR-4387).
+- In projects that use OpenCode, an installed package can no longer swap in its own skill for one of yours with the same name. OpenCode keeps only one skill per name, so DorkOS leaves the package's skill out, says so on the install screen, and tells the agent which one it has (DOR-4387).

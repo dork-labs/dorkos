@@ -838,10 +838,10 @@ describe('ConflictDetector — skills a by-name harness would skip (DOR-4387)', 
     ]);
   });
 
-  it('warns even when the project does not list OpenCode, because the skip applies anyway', async () => {
+  it('says nothing when no enabled harness keys skills by name', async () => {
     await harnesses(['claude-code', 'codex']);
 
-    expect((await detect()).filter((r) => r.type === 'skill-name')).toHaveLength(1);
+    expect((await detect()).filter((r) => r.type === 'skill-name')).toEqual([]);
   });
 
   it('says nothing when the project has no harness manifest, since nothing is projected', async () => {

@@ -14,6 +14,7 @@
  */
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
+import { loadManifest } from '../engine.js';
 import { inventorySourceTree } from '../inventory/index.js';
 import {
   isProjectScoped,
@@ -34,7 +35,8 @@ import type { SkippedPackageSkill } from './types.js';
  * @param input.packageType - the package's manifest type; types the plan does not project skip nothing.
  * @returns every skip the install would cause: this package's skills, and any
  *   installed package's skill this one would take the name of. Empty when the
- *   project has no harness manifest, which means nothing is projected.
+ *   project has no harness manifest (nothing is projected) or enables no
+ *   harness that keys skills by name.
  */
 export function previewPackageSkillSkips(input: {
   repoRoot: string;
@@ -55,6 +57,7 @@ export function previewPackageSkillSkips(input: {
   const packages = [...installed, staged].sort((a, b) => a.name.localeCompare(b.name));
   const settled = settlePackageSkillNameCollisions({
     packages,
+    harnesses: loadManifest(input.repoRoot).harnesses,
     ownSkills: inventorySourceTree(input.repoRoot).skills,
   });
   return settled.skipped.filter(
@@ -83,6 +86,7 @@ export function currentPackageSkillSkips(repoRoot: string): SkippedPackageSkill[
     .filter((p) => PROJECTABLE_PLUGIN_TYPES.has(p.type));
   return settlePackageSkillNameCollisions({
     packages,
+    harnesses: loadManifest(repoRoot).harnesses,
     ownSkills: inventorySourceTree(repoRoot).skills,
   }).skipped;
 }

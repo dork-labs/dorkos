@@ -16,18 +16,16 @@
  * Each skip leaves a warning naming both skills and the reason, and a
  * structured record the install screen and the agent's context can show.
  *
- * **The rule applies whatever the manifest enables.** Every package skill is
- * linked into `.agents/skills` whichever harnesses a manifest lists (DOR-1518),
- * and an agent running on OpenCode reads that folder in any project, enabled or
- * not. Waiting for the manifest to list OpenCode would leave exactly the agent
- * this protects unprotected. The cost is that a package skill with a taken name
- * is left out for every harness; a person's own skill never shares its name.
- *
- * Nothing is skipped when no harness in the vendor table collapses by name.
+ * **Scoped to the harnesses the manifest enables.** Nothing is skipped when no
+ * enabled harness collapses by name: Claude Code keys by folder, so `<pkg>__`
+ * keeps the two apart, and Codex loads both. Open question for Security: every
+ * package skill also reaches `.agents/skills` whatever the manifest lists
+ * (DOR-1518), so an agent on OpenCode in a project whose manifest does not list
+ * OpenCode still reads both copies.
  *
  * @module plan/package-skill-collisions
  */
-import { HARNESS_IDS, HARNESS_LABELS, type HarnessId } from '../manifest/schema.js';
+import { HARNESS_LABELS, type HarnessId } from '../manifest/schema.js';
 import type { SkillInventoryEntry } from '../inventory/types.js';
 import { skillsFactsFor } from '../vendor-facts/index.js';
 import type { SkillSourcePackage } from './installed-projector.js';
@@ -48,9 +46,9 @@ export interface SettledPackageSkills<T extends SkillSourcePackage> {
   taken: Map<string, string>;
 }
 
-/** Every harness whose vendor facts say duplicate skill names collapse into one. */
-export function byNameHarnesses(): HarnessId[] {
-  return HARNESS_IDS.filter((harness) => skillsFactsFor(harness).dedupe === 'by-name');
+/** The harnesses in this set whose vendor facts say duplicate skill names collapse into one. */
+export function byNameHarnesses(harnesses: readonly HarnessId[]): HarnessId[] {
+  return harnesses.filter((harness) => skillsFactsFor(harness).dedupe === 'by-name');
 }
 
 /**
@@ -83,17 +81,19 @@ function ownSkillNames(
  * already the person's own skill or an earlier package skill.
  *
  * @param input.packages - the packages this plan would project, in plan order.
+ * @param input.harnesses - the harnesses the manifest enables.
  * @param input.ownSkills - every authored skill the inventory found.
  * @param input.taken - names already claimed by an earlier call (packages before extensions).
  * @returns the packages to plan, the warnings and skip records, and the claimed names.
  */
 export function settlePackageSkillNameCollisions<T extends SkillSourcePackage>(input: {
   packages: readonly T[];
+  harnesses: readonly HarnessId[];
   ownSkills: readonly SkillInventoryEntry[];
   taken?: ReadonlyMap<string, string>;
 }): SettledPackageSkills<T> {
   const taken = new Map(input.taken ?? []);
-  const collapsing = byNameHarnesses();
+  const collapsing = byNameHarnesses(input.harnesses);
   if (collapsing.length === 0) {
     return { packages: [...input.packages], warnings: [], skipped: [], taken };
   }

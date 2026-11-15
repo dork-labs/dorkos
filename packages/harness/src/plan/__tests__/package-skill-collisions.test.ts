@@ -68,7 +68,7 @@ function mentions(p: ProjectionPlan, projection: string) {
 
 const ALL: HarnessId[] = ['claude-code', 'codex', 'opencode'];
 
-describe('a package skill never takes the name of a skill a by-name harness would read', () => {
+describe('a package skill never replaces a skill with the same name on a by-name harness', () => {
   it("SK-06: skips a package skill named like the person's own skill, and says so", () => {
     const repo = repoWith([['.agents/skills', 'c', 'c']]);
     const p = plan(repo, [pkg('acme', 'c', 'c')], ALL);
@@ -126,14 +126,13 @@ describe('a package skill never takes the name of a skill a by-name harness woul
     );
   });
 
-  it('SK-06: skips it even when the manifest does not list OpenCode', () => {
-    // `.agents/skills` gets every package skill whatever the manifest lists, and
-    // an agent on OpenCode reads it in any project.
+  it('SK-06: skips nothing when no enabled harness keys skills by name', () => {
+    // Claude Code keys by folder and Codex loads both, so neither can lose the person's skill.
     const repo = repoWith([['.agents/skills', 'c', 'c']]);
     const p = plan(repo, [pkg('acme', 'c', 'c')], ['claude-code', 'codex']);
 
-    expect(mentions(p, 'acme__c')).toEqual([]);
-    expect(p.skippedPackageSkills?.map((s) => s.package)).toEqual(['acme']);
+    expect(mentions(p, 'acme__c').length).toBeGreaterThan(0);
+    expect(p.skippedPackageSkills).toBeUndefined();
   });
 
   it('SK-06: skips nothing when the names differ', () => {
