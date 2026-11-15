@@ -1,6 +1,7 @@
 ---
 covers:
   - 'feat(browser): the Agent browser draws its own page errors and a loading line (DOR-4430, DOR-4431)'
+  - 'fix(browser): the Blocked by DorkOS line reads "The Agent browser keeps pages like this closed." (DOR-4430)'
 ---
 
 ### Changed
