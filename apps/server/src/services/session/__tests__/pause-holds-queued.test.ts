@@ -29,8 +29,10 @@ import {
   dispatchMessage,
   isQueuedMessageArmed,
   listQueuedMessages,
+  onDispatchLifecycle,
   resetMessageDispatcher,
   setQueuedChatCeilingResolver,
+  type DispatchLifecycleEvent,
 } from '../message-dispatcher.js';
 import { rearmChatQueues } from '../message-dispatcher/queue-upkeep.js';
 import { chatClientId } from '../chat-messages/chat-client-id.js';
@@ -335,6 +337,167 @@ describe('pausing an agent holds its queued messages (DOR-4327)', () => {
     await vi.waitFor(() => expect(listQueuedMessages(sessionId)).toEqual([]), { timeout: 2000 });
     await vi.waitFor(() => expect(ran()).toHaveLength(4), { timeout: 2000 });
     expect(ran().slice(2).sort()).toEqual(['person: and this', 'person: one more thing']);
+  });
+});
+
+describe('a pause between a queued turn’s start and its first model request (DOR-4353)', () => {
+  /** Set while the cut turn waits at its first model request. */
+  let atModelRequest: (() => void) | undefined;
+  /** Which words each scenario answered, in order: what the agent really read. */
+  let answered: string[];
+
+  /**
+   * The queued message's turn: started (its `turn_start` is out, its row is
+   * off the queue), then held at the model request until something interrupts.
+   */
+  const stallsBeforeModel = async function* (content: string): AsyncGenerator<StreamEvent> {
+    await new Promise<void>((resolve) => {
+      atModelRequest = resolve;
+    });
+    yield { type: 'text_delta', data: { text: 'too late' } };
+    // Only reached when the hold passed that output on, so the agent spoke.
+    answered.push(content);
+    yield { type: 'done', data: {} };
+  };
+
+  const answers = async function* (content: string): AsyncGenerator<StreamEvent> {
+    answered.push(content);
+    yield { type: 'text_delta', data: { text: 'reply' } };
+    yield { type: 'done', data: {} };
+  };
+
+  beforeEach(() => {
+    answered = [];
+    atModelRequest = undefined;
+    inner.withScenarios([longTurn, stallsBeforeModel, answers, answers]);
+    inner.interruptQuery.mockImplementation(async () => {
+      releaseLongTurn?.();
+      atModelRequest?.();
+      return { outcome: 'acked', runtime: inner.type };
+    });
+  });
+
+  /**
+   * B runs a turn while A's message waits; the turn ends, A's message starts,
+   * and B is paused before its model request is made. Returns the row's id.
+   */
+  async function startThenPauseBeforeModel(events: DispatchLifecycleEvent[] = []): Promise<string> {
+    const stop = onDispatchLifecycle((event) => events.push(event));
+    const runtime = runtimeRegistry.get(inner.type);
+    const projector = getOrCreateProjector(sessionId, BETA.home);
+    await dispatchMessage({
+      sessionId,
+      clientId: 'person-window',
+      content: 'start the census',
+      projector,
+      runtime,
+      cwd: BETA.home,
+    });
+    await vi.waitFor(() => expect(inner.isTurnOpen(sessionId)).toBe(true));
+    await dispatchMessage({
+      sessionId,
+      clientId: chatClientId('chat-alpha'),
+      content: 'from A: add the totals',
+      projector,
+      runtime,
+      cwd: BETA.home,
+    });
+    const [row] = listQueuedMessages(sessionId);
+    expect(row?.content).toBe('from A: add the totals');
+
+    // The turn ahead ends; A's message starts and waits at its model request.
+    releaseLongTurn?.();
+    await vi.waitFor(() => expect(atModelRequest).toBeDefined(), { timeout: 2000 });
+    // Pinned: its turn_start is out and its row is off the queue.
+    expect(events).toContainEqual({ phase: 'started', messageId: row!.id, sessionId });
+    expect(listQueuedMessages(sessionId)).toEqual([]);
+
+    await pauses.pause(BETA.id, PERSON, 'demo pause');
+    await vi.waitFor(() => expect(inner.isTurnOpen(sessionId)).toBe(false));
+    await settle();
+    stop();
+    return row!.id;
+  }
+
+  it('holds the row, then runs it exactly once on resume', async () => {
+    const rowId = await startThenPauseBeforeModel();
+
+    // Held: back on the queue, unread, and nothing here is about to run it.
+    expect(listQueuedMessages(sessionId).map((row) => row.id)).toEqual([rowId]);
+    expect(answered).toEqual([]);
+    expect(isQueuedMessageArmed(rowId)).toBe(false);
+    await rearm();
+    await settle();
+    expect(answered).toEqual([]);
+
+    pauses.onResumed(() => void rearm());
+    pauses.resume(BETA.id, PERSON);
+    await vi.waitFor(() => expect(answered).toEqual(['from A: add the totals']), {
+      timeout: 2000,
+    });
+    await vi.waitFor(() => expect(listQueuedMessages(sessionId)).toEqual([]), { timeout: 2000 });
+    await rearm();
+    await rearm();
+    await settle();
+
+    expect(answered).toEqual(['from A: add the totals']);
+  });
+
+  it('never reruns a turn the agent had already started answering', async () => {
+    const answersThenWaits = async function* (content: string): AsyncGenerator<StreamEvent> {
+      answered.push(content);
+      yield { type: 'text_delta', data: { text: 'halfway' } };
+      await new Promise<void>((resolve) => {
+        atModelRequest = resolve;
+      });
+      yield { type: 'done', data: {} };
+    };
+    inner.withScenarios([longTurn, answersThenWaits, answers]);
+    const events: DispatchLifecycleEvent[] = [];
+    const stop = onDispatchLifecycle((event) => events.push(event));
+    const runtime = runtimeRegistry.get(inner.type);
+    const projector = getOrCreateProjector(sessionId, BETA.home);
+    await dispatchMessage({
+      sessionId,
+      clientId: 'person-window',
+      content: 'start the census',
+      projector,
+      runtime,
+      cwd: BETA.home,
+    });
+    await vi.waitFor(() => expect(inner.isTurnOpen(sessionId)).toBe(true));
+    await dispatchMessage({
+      sessionId,
+      clientId: chatClientId('chat-alpha'),
+      content: 'from A: add the totals',
+      projector,
+      runtime,
+      cwd: BETA.home,
+    });
+    releaseLongTurn?.();
+    await vi.waitFor(() => expect(atModelRequest).toBeDefined(), { timeout: 2000 });
+
+    await pauses.pause(BETA.id, PERSON);
+    await vi.waitFor(() => expect(inner.isTurnOpen(sessionId)).toBe(false));
+    await settle();
+    pauses.resume(BETA.id, PERSON);
+    await rearm();
+    await settle();
+    stop();
+
+    // It ran once, as far as it got; the pause stops it like any running turn.
+    expect(listQueuedMessages(sessionId)).toEqual([]);
+    expect(answered).toEqual(['from A: add the totals']);
+    expect(events.map((event) => event.phase)).not.toContain('held');
+  });
+
+  it('tells the sender it is held, not that it failed or ran', async () => {
+    const events: DispatchLifecycleEvent[] = [];
+    const rowId = await startThenPauseBeforeModel(events);
+
+    const mine = events.filter((event) => event.messageId === rowId);
+    expect(mine.map((event) => event.phase)).toEqual(['started', 'held']);
+    expect(mine.at(-1)).toEqual({ phase: 'held', messageId: rowId, sessionId });
   });
 });
 
