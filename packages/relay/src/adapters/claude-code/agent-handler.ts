@@ -12,7 +12,6 @@ import { randomUUID } from 'node:crypto';
 import type { RelayEnvelope } from '@dorkos/shared/relay-schemas';
 import { StreamEventTypeSchema, type PermissionMode } from '@dorkos/shared/schemas';
 import type { StreamEvent } from '@dorkos/shared/types';
-import type { TurnPermissionCeiling } from '@dorkos/shared/agent-runtime';
 import { CONTEXT_TAG } from '@dorkos/shared/additional-context';
 import { defuseSystemTags, defuseUntrustedPrompt } from '@dorkos/shared/untrusted-text';
 // One answer to "is this error the turn failing?", shared with the scheduled-run
@@ -29,7 +28,7 @@ import { extractPayloadContent, extractSenderIdentity } from '../../lib/payload-
 import { extractSessionIdFromSubject } from '../../lib/subjects.js';
 import { buildResponseFormatBlock, type ResponseContext } from './response-format.js';
 import { relayMessageStarter } from './turn-starter.js';
-import { isTurnShapingSender } from './turn-shaping-sender.js';
+import { isTurnShapingSender, turnPowerOptions } from './turn-shaping-sender.js';
 import type {
   AgentRuntimeLike,
   AgentSessionStoreLike,
@@ -105,6 +104,8 @@ export interface AgentHandlerDeps {
   bindSessionRuntime?: SessionRuntimeBinder;
   /** Told before the turn starts — see {@link TurnStartNote}. */
   noteTurnStart?: TurnStartNote;
+  /** Whether a bound chat's unproven sender marks the turn (DOR-3858's boot flag). */
+  markStrangerTurns?: boolean;
   /**
    * This turn's clock, injectable so a test can pin the TTL boundary instead of
    * racing it (DOR-1729).
@@ -453,15 +454,6 @@ export async function handleAgentMessage(
   // prompting mode — absence is not consent (DOR-604). The in-process readers
   // that used to default to 'acceptEdits' were the bug and are gone.
   const effectivePermissionMode: PermissionMode = bindingPerms?.permissionMode ?? 'default';
-  // The mode above only reaches a conversation that is NEW: a runtime resolves
-  // a turn as per-send → stored → its own default, and a warm or stored
-  // conversation keeps the level it already has. So a sender that may not shape
-  // the turn (another agent, the A2A gateway, an external MCP client) also
-  // bounds THIS turn at the runtime's default, whatever the conversation is set
-  // to. Power flows downstream, never up (spec `trusted-by-default-flip` §4).
-  const permissionCeiling: TurnPermissionCeiling | undefined = trustedShaper
-    ? undefined
-    : 'runtime-default';
 
   // Which model an agent is, is a property of the AGENT — so the manifest is
   // looked for where the agent lives, and NOT at `effectiveCwd`. The two differ
@@ -649,7 +641,11 @@ export async function handleAgentMessage(
     ? NO_EVENTS
     : deps.agentManager.sendMessage(ccaSessionKey, prompt, {
         permissionMode: effectivePermissionMode,
-        ...(permissionCeiling !== undefined ? { permissionCeiling } : {}),
+        // The sender bounds the turn, or marks it, never both ways at once (`turnPowerOptions`).
+        ...turnPowerOptions(
+          trustedShaper,
+          deps.markStrangerTurns === true && shaping?.__untrustedWords === true
+        ),
         ...(effectiveCwd ? { cwd: effectiveCwd } : {}),
         ...(payloadForAgent ? { forAgent: payloadForAgent } : {}),
         ...(formatBlock ? { systemPromptAppend: formatBlock } : {}),
