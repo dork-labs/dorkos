@@ -227,10 +227,17 @@ export interface SkippedPackageSkill {
   package: string;
   /** The skill's folder name inside the package. */
   skill: string;
-  /** The name a by-name harness keys it by: its frontmatter `name`, else the folder name. */
+  /** The name a by-name harness keys it by: its frontmatter `name`; the folder name when that could not be read. */
   name: string;
-  /** What kept its place: the person's own skill, or a package skill planned first. */
-  winner: { kind: 'own'; source: string } | { kind: 'package'; projection: string };
+  /**
+   * Why it was left out: the person's own skill, or a package skill planned
+   * first, has its name; or DorkOS could not read its name at all, so it cannot
+   * be shown not to take one (Security M1, fail closed).
+   */
+  winner:
+    | { kind: 'own'; source: string }
+    | { kind: 'package'; projection: string }
+    | { kind: 'unreadable' };
 }
 
 /**

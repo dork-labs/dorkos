@@ -158,24 +158,30 @@ describe('the listing oracle', () => {
     const entries = expectedListing(CODEX);
     const both = entries.filter((entry) => entry.name === 'x');
     expect(both).toHaveLength(2);
+    // Two AUTHORED folders since DOR-4392: a package skill named like the
+    // person's own is never projected, so the package's `x` declares `pkg-x`.
     expect(both.map((entry) => entry.fromPath)).toEqual([
       '.agents/skills/x/SKILL.md',
-      '.agents/skills/pkg__x/SKILL.md',
+      '.agents/skills/x-twin/SKILL.md',
     ]);
   });
 
   it('will not accept a name from the wrong file when the harness reports paths', () => {
-    // Without the path check, `pkg__x` never loading would still pass: the
+    // Without the path check, the twin never loading would still pass: the
     // authored `x` answers to the same key on Codex.
     const listing: ListingObservation = {
-      skills: ['x', 'probe'],
+      skills: ['x', 'pkg-x', 'probe'],
       commands: [],
-      skillPaths: ['/repo/.agents/skills/x/SKILL.md', '/repo/.agents/skills/probe/SKILL.md'],
+      skillPaths: [
+        '/repo/.agents/skills/x/SKILL.md',
+        '/repo/.agents/skills/pkg__x/SKILL.md',
+        '/repo/.agents/skills/probe/SKILL.md',
+      ],
     };
     const verdicts = listingVerdicts(CODEX, listing, '/repo');
     const failed = verdicts.filter((verdict) => verdict.status === 'fail');
     expect(failed).toHaveLength(1);
-    expect(failed[0]?.capabilities).toContain('SK-09');
+    expect(failed[0]?.capabilities).toContain('SK-06');
   });
 });
 
@@ -401,10 +407,11 @@ describe('the calibration diff', () => {
     const fixture = stageSmokeFixture(CODEX);
     try {
       const listing: ListingObservation = {
-        skills: ['x', 'x', 'probe'],
+        skills: ['x', 'x', 'pkg-x', 'probe'],
         commands: [],
         skillPaths: [
           join(fixture.repoRoot, '.agents/skills/x/SKILL.md'),
+          join(fixture.repoRoot, '.agents/skills/x-twin/SKILL.md'),
           join(fixture.repoRoot, '.agents/skills/pkg__x/SKILL.md'),
           join(fixture.repoRoot, '.agents/skills/probe/SKILL.md'),
         ],
@@ -412,7 +419,7 @@ describe('the calibration diff', () => {
       const { verdict, findings } = calibrationVerdict(CODEX, fixture.repoRoot, listing);
       expect(findings).toEqual([]);
       expect(verdict.status).toBe('pass');
-      expect(verdict.detail).toContain('3 skills discovered');
+      expect(verdict.detail).toContain('4 skills discovered');
     } finally {
       fixture.cleanup();
     }

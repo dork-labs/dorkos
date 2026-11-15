@@ -12,22 +12,26 @@ afterEach(() => {
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
 });
 
-/** A repo with the person's own skills, each `[folder, frontmatter name]` under a root. */
-function repoWith(own: Array<[root: string, dir: string, name: string]>): string {
+/**
+ * A repo with the person's own skills, each `[root, folder, name]`. The name is
+ * written into the YAML exactly as given (so `'c'` stays quoted), and `null`
+ * writes no `name` key at all.
+ */
+function repoWith(own: Array<[root: string, dir: string, yamlName: string | null]>): string {
   const repo = mkdtempSync(join(tmpdir(), 'harness-pkg-skill-'));
   roots.push(repo);
-  for (const [root, dir, name] of own) {
+  for (const [root, dir, yamlName] of own) {
     mkdirSync(join(repo, root, dir), { recursive: true });
     writeFileSync(
       join(repo, root, dir, 'SKILL.md'),
-      `---\nname: ${name}\ndescription: the person's own ${name}\n---\n\nmine\n`
+      `---\n${yamlName === null ? '' : `name: ${yamlName}\n`}description: the person's own ${dir}\n---\n\nmine\n`
     );
   }
   return repo;
 }
 
-/** A project-scoped package shipping one skill folder with a frontmatter name. */
-function pkg(name: string, dir: string, frontmatterName: string): ProjectInstalledPlugin {
+/** A project-scoped package shipping one skill folder; the name is the parsed value, or none. */
+function pkg(name: string, dir: string, frontmatterName?: string): ProjectInstalledPlugin {
   return {
     name,
     type: 'skill-pack',
@@ -38,7 +42,7 @@ function pkg(name: string, dir: string, frontmatterName: string): ProjectInstall
         sourceDir: `.dork/plugins/${name}/skills/${dir}`,
         usesPluginRoot: false,
         hasSchedule: false,
-        frontmatterName,
+        ...(frontmatterName === undefined ? {} : { frontmatterName }),
       },
     ],
     commands: [],
@@ -126,13 +130,15 @@ describe('a package skill never replaces a skill with the same name on a by-name
     );
   });
 
-  it('SK-06: skips nothing when no enabled harness keys skills by name', () => {
-    // Claude Code keys by folder and Codex loads both, so neither can lose the person's skill.
+  it('SK-06: skips it in a project whose manifest does not list OpenCode (DOR-4392)', () => {
+    // Every package skill reaches `.agents/skills` whatever the manifest lists,
+    // and an agent on OpenCode reads that folder in any project.
     const repo = repoWith([['.agents/skills', 'c', 'c']]);
     const p = plan(repo, [pkg('acme', 'c', 'c')], ['claude-code', 'codex']);
 
-    expect(mentions(p, 'acme__c').length).toBeGreaterThan(0);
-    expect(p.skippedPackageSkills).toBeUndefined();
+    expect(mentions(p, 'acme__c')).toEqual([]);
+    expect(p.actions.some((a) => a.source === '.agents/skills/c')).toBe(true);
+    expect(p.skippedPackageSkills?.map((s) => s.package)).toEqual(['acme']);
   });
 
   it('SK-06: skips nothing when the names differ', () => {
@@ -141,5 +147,49 @@ describe('a package skill never replaces a skill with the same name on a by-name
 
     expect(mentions(p, 'acme__c').length).toBeGreaterThan(0);
     expect(p.skippedPackageSkills).toBeUndefined();
+  });
+});
+
+// Two names are one name exactly when OpenCode treats them as one, measured on
+// the pinned `opencode 1.19.3` (`opencode debug skill`, DOR-4392).
+describe('same-name matching follows OpenCode', () => {
+  const skips = (yamlName: string | null, packageName: string | undefined) => {
+    const repo = repoWith([['.agents/skills', 'mine', yamlName]]);
+    return plan(repo, [pkg('acme', 'theirs', packageName)], ALL).skippedPackageSkills ?? [];
+  };
+
+  it.each([
+    ['single-quoted', "'c'", 'c'],
+    ['double-quoted', '"c"', 'c'],
+    ['blank names', '""', ''],
+  ])('SK-06: treats %s YAML as the same name', (_label, yamlName, packageName) => {
+    expect(skips(yamlName, packageName).map((s) => s.package)).toEqual(['acme']);
+  });
+
+  it.each([
+    ['a different case', 'c', 'C'],
+    ['a trailing space', 'c', 'c '],
+    ['a leading space', 'c', ' c'],
+    ['NFC against NFD', 'café', 'café'],
+    ['a fullwidth letter', 'c', 'ｃ'],
+    ['two inner spaces', 'a b', 'a  b'],
+  ])(
+    'SK-06: keeps names apart that differ by %s, as OpenCode does',
+    (_label, yamlName, packageName) => {
+      expect(skips(yamlName, packageName)).toEqual([]);
+    }
+  );
+
+  it("SK-06: matches the person's quoted name exactly, spaces included", () => {
+    // OpenCode keys `" c"` as ` c`; a trimmed comparison would miss this pair.
+    expect(skips('" c"', ' c').map((s) => s.package)).toEqual(['acme']);
+  });
+
+  it('SK-06: has no folder-name fallback, because OpenCode loads no skill without a name', () => {
+    // The person's nameless `c` folder is not loaded, so a package `c` shadows nothing.
+    const repo = repoWith([['.agents/skills', 'c', null]]);
+    expect(plan(repo, [pkg('acme', 'c', 'c')], ALL).skippedPackageSkills).toBeUndefined();
+    // And a nameless package skill is never loaded, so it is never skipped.
+    expect(skips('c', undefined)).toEqual([]);
   });
 });

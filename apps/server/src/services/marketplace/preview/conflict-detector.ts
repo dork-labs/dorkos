@@ -653,13 +653,19 @@ async function readSkillCron(
  * @param installing - the package being installed.
  */
 function skippedSkillDescription(skip: SkippedPackageSkill, installing: string): string {
+  // A package chose this name: clip it to OpenCode's documented 64 characters.
+  const name = skip.name.length > 64 ? `${skip.name.slice(0, 64)}…` : skip.name;
   if (skip.package !== installing) {
-    return `"${skip.name}" from ${skip.package} stops loading. This package's skill has its name.`;
+    return `"${name}" from ${skip.package} stops loading. This package's skill has its name.`;
   }
-  if (skip.winner.kind === 'own') {
-    return `"${skip.name}" won't be added. Your own skill has this name; OpenCode keeps one.`;
+  switch (skip.winner.kind) {
+    case 'own':
+      return `"${name}" won't be added. Your own skill has this name; OpenCode keeps one.`;
+    case 'package':
+      return `"${name}" won't be added. ${skip.winner.projection} has this name; OpenCode keeps one.`;
+    case 'unreadable':
+      return `Skill folder "${skip.skill}" won't be added: DorkOS couldn't read its name.`;
   }
-  return `"${skip.name}" won't be added. ${skip.winner.projection} has this name; OpenCode keeps one.`;
 }
 
 /**

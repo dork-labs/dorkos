@@ -12,11 +12,29 @@
 import { currentPackageSkillSkips, type SkippedPackageSkill } from '@dorkos/harness';
 import { logger } from '../../../../lib/logger.js';
 
+/** The longest a package-chosen name may run in DorkOS's own words: OpenCode's documented 64. */
+const NAME_CAP = 64;
+
+/**
+ * A skill name a package wrote, made safe to quote in DorkOS's voice: clipped
+ * to {@link NAME_CAP} characters, then JSON-quoted so a newline or quote in it
+ * cannot break out of the line (Security, #3752 review).
+ */
+function quoted(name: string): string {
+  return JSON.stringify(name.length > NAME_CAP ? `${name.slice(0, NAME_CAP)}…` : name);
+}
+
 /** One line per skip. */
 function describe(skip: SkippedPackageSkill): string {
-  return skip.winner.kind === 'own'
-    ? `- "${skip.name}" from the ${skip.package} package: the person's own skill at ${skip.winner.source} has this name, so theirs is the one you have.`
-    : `- "${skip.name}" from the ${skip.package} package: ${skip.winner.projection} was added first with this name, so that is the one you have.`;
+  const what = `${quoted(skip.name)} from the ${skip.package} package`;
+  switch (skip.winner.kind) {
+    case 'own':
+      return `- ${what}: the person's own skill at ${skip.winner.source} has this name, so theirs is the one you have.`;
+    case 'package':
+      return `- ${what}: ${skip.winner.projection} was added first with this name, so that is the one you have.`;
+    case 'unreadable':
+      return `- the ${quoted(skip.skill)} skill folder from the ${skip.package} package: its name could not be read, so it was left out.`;
+  }
 }
 
 /**
@@ -37,7 +55,7 @@ export function renderSkippedSkillLines(projectRoot: string): string | undefined
   }
   if (skips.length === 0) return undefined;
   return [
-    'Some installed package skills were not added, because a skill with the same name already exists and OpenCode keeps only one per name:',
+    'Some installed package skills were not added, because OpenCode keeps only one skill per name and these could replace one you already have:',
     ...skips.map(describe),
   ].join('\n');
 }

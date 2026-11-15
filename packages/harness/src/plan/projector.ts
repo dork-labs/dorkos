@@ -622,17 +622,15 @@ export function buildPlan(input: {
   // drops the other silently (OpenCode). So no package skill may take the name
   // of the person's own skill, or of a package skill planned before it: it is
   // left out of every skill folder, with a warning and a record (DOR-4387).
-  // Only when an enabled harness collapses by name. Only the skill planners
-  // below see the filtered lists; commands, hooks and every other layer still
-  // read `projectable`.
+  // Whatever the manifest enables: an agent on OpenCode reads `.agents/skills`
+  // in any project (DOR-4392). Only the skill planners below see the filtered
+  // lists; commands, hooks and every other layer still read `projectable`.
   const pluginSkills = settlePackageSkillNameCollisions({
     packages: projectable,
-    harnesses: manifest.harnesses,
     ownSkills: inventory.skills,
   });
   const extensionSkills = settlePackageSkillNameCollisions({
     packages: extensionSettled.packages,
-    harnesses: manifest.harnesses,
     ownSkills: inventory.skills,
     taken: pluginSkills.taken,
   });

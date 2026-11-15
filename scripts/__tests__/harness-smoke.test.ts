@@ -590,7 +590,9 @@ describe('the report', () => {
       calibration: [{ side: 'coverage-only', key: 'x', where: '.agents/skills/x/SKILL.md' }],
       applied: ['codex generate hook .codex/hooks.json'],
     });
-    expect(report).toContain('SK-06, SK-09');
+    // SK-06 and SK-09 now ride two verdicts: the authored twin and the package's `pkg__x`.
+    expect(report).toContain('— SK-06\n');
+    expect(report).toContain('— SK-09\n');
     expect(report).toContain('The coverage walk discovered `x`');
     expect(report).toContain('codex generate hook .codex/hooks.json');
     expect(report).toContain('`codex debug prompt-input` — non-model, so it costs nothing');

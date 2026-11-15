@@ -35,10 +35,20 @@ describe("the OpenCode agent's note about skipped package skills (DOR-4387)", ()
   it("names the package skill left out and the person's own skill that kept its place", () => {
     expect(renderSkippedSkillLines(project('c'))).toBe(
       [
-        'Some installed package skills were not added, because a skill with the same name already exists and OpenCode keeps only one per name:',
+        'Some installed package skills were not added, because OpenCode keeps only one skill per name and these could replace one you already have:',
         `- "c" from the acme package: the person's own skill at .agents/skills/c has this name, so theirs is the one you have.`,
       ].join('\n')
     );
+  });
+
+  it('quotes a package-chosen name and clips it to 64 characters, so it cannot break the line', () => {
+    const long = `c\n${'z'.repeat(100)}`;
+    const root = project(JSON.stringify(long));
+    // The person's own skill takes the same long name, so the package's is skipped.
+    skillAt(join(root, '.agents', 'skills', 'c'), JSON.stringify(long));
+    const lines = renderSkippedSkillLines(root) ?? '';
+    expect(lines).toContain(JSON.stringify(`${long.slice(0, 64)}…`));
+    expect(lines.split('\n')).toHaveLength(2);
   });
 
   it('says nothing when no package skill was left out', () => {
