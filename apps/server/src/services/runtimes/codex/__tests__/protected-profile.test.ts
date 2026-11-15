@@ -38,7 +38,7 @@ describe.each(['default', 'acceptEdits', 'bypassPermissions'])(
     it('selects the same profile on start/resume without a legacy sandbox option', () => {
       const settings = { permissionMode };
       const load = buildLoadOverrides(
-        { cwd: roots.cwd, settings, tools },
+        { sessionId: 'profile-chat', cwd: roots.cwd, settings, tools },
         { threadKey: undefined, trust: undefined, realCwd: roots.cwd }
       );
       expect(load.permissions).toBe(codexPermissionProfile(settings));
@@ -52,7 +52,7 @@ describe.each(['default', 'acceptEdits', 'bypassPermissions'])(
       const settings = { permissionMode };
       const config = codexProtectedConfig(roots.cwd, filePolicy, settings);
       const load = buildLoadOverrides(
-        { cwd: roots.cwd, settings, tools },
+        { sessionId: 'profile-chat', cwd: roots.cwd, settings, tools },
         { threadKey: undefined, trust: undefined, realCwd: roots.cwd }
       );
       expect(config.default_permissions).toBe(codexPermissionProfile(settings));

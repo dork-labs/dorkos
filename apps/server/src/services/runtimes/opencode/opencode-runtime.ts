@@ -619,12 +619,11 @@ export class OpenCodeRuntime implements AgentRuntime {
       yield refusal;
       return;
     }
-    let ocSessionId: string;
-    let client: OpencodeClient;
-    let directory: string;
+    let ocSessionId: string, client: OpencodeClient, directory: string;
     try {
       ocSessionId = await this.resolveOpenCodeSession(sessionId, cwd, title);
       client = await this.provider.getClient(cwd);
+      await this.provider.bindSessionEnvironment?.(sessionId, ocSessionId);
       directory = await this.resolveSessionDirectory(client, ocSessionId);
     } catch (err) {
       this.settingUp.delete(settingUp);

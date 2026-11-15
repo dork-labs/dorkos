@@ -100,6 +100,24 @@ async function setup(withKeys = true) {
 
 describe('the load table (§6)', () => {
   it.each(['thread/start', 'thread/resume', 'thread/fork'] as const)(
+    'DOR-4380: %s pins shell env to the DorkOS chat even without an agent token',
+    async (method) => {
+      const { loader, fake, input, host } = await setup();
+      host.home(HOME).threads.set('vendor-thread', { id: 'vendor-thread', hasRollout: true });
+      const turn = input({ sessionId: 'dorkos-chat' });
+      if (method === 'thread/fork') await loader.reload(turn, 'vendor-thread');
+      else
+        await loader.ensureLoaded({
+          ...turn,
+          boundThreadId: method === 'thread/resume' ? 'vendor-thread' : undefined,
+        });
+      expect((fake.requestsOf(method)[0]!.config as LoadConfig).shell_environment_policy).toEqual({
+        set: { DORKOS_SESSION_ID: 'dorkos-chat' },
+      });
+    }
+  );
+
+  it.each(['thread/start', 'thread/resume', 'thread/fork'] as const)(
     'authenticates DorkOS discovery during %s with the open turn binding',
     async (method) => {
       const { loader, fake, input, keys, host } = await setup();
@@ -310,7 +328,7 @@ describe('load config (§9)', () => {
       http_headers: { Authorization: 'Bearer notion-secret' },
     });
     expect(config.shell_environment_policy).toEqual({
-      set: { DORKOS_AGENT_TOKEN: 'identity-secret' },
+      set: { DORKOS_AGENT_TOKEN: 'identity-secret', DORKOS_SESSION_ID: 's1' },
     });
     expect(config.projects).toEqual({ '/real/project': { trust_level: 'trusted' } });
     // The key resolves to this session, and nothing is attached yet.
@@ -351,6 +369,7 @@ describe('load config (§9)', () => {
   it('points a credits thread at the relay with its key, and turns web search off', () => {
     const overrides = buildLoadOverrides(
       {
+        sessionId: 'credits-chat',
         cwd: '/p',
         settings: { permissionMode: 'default' },
         tools: NO_TOOLS,
@@ -581,7 +600,7 @@ describe('review fixes: fingerprint and identity', () => {
     expect(
       (fake.requestsOf('thread/start')[0]!.config as LoadConfig).shell_environment_policy
     ).toEqual({
-      set: { DORKOS_AGENT_TOKEN: 'token-1' },
+      set: { DORKOS_AGENT_TOKEN: 'token-1', DORKOS_SESSION_ID: 's1' },
     });
   });
 });

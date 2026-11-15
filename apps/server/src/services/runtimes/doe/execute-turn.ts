@@ -254,7 +254,10 @@ export async function executeDoeTurn(
         ? {
             builderExecutionPolicy: {
               kind: 'unrestricted',
-              environment: runtimeEnvironment('doe', 'process-inspection'),
+              environment: {
+                ...runtimeEnvironment('doe', 'process-inspection'),
+                DORKOS_SESSION_ID: id,
+              },
             } as const,
           }
         : {}),

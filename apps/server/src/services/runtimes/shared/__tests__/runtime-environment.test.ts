@@ -13,6 +13,7 @@ const parent = {
   NANGO_ENCRYPTION_KEY: 'fake-nango-secret',
   MCP_API_KEY: 'fake-server-token',
   DORKOS_AGENT_TOKEN: 'fake-stale-identity',
+  DORKOS_SESSION_ID: 'fake-stale-chat',
   ANTHROPIC_API_KEY: 'fake-anthropic',
   OPENAI_API_KEY: 'fake-openai',
   OPENROUTER_API_KEY: 'fake-openrouter',
@@ -33,6 +34,7 @@ describe('runtime environment authority', () => {
         'NANGO_ENCRYPTION_KEY',
         'MCP_API_KEY',
         'DORKOS_AGENT_TOKEN',
+        'DORKOS_SESSION_ID',
         'SYNTHETIC_TOOL_SETTING',
         'AWS_SECRET_ACCESS_KEY',
         'GOOGLE_APPLICATION_CREDENTIALS',
@@ -206,3 +208,25 @@ it('DorkOS builder inherits no ambient model credential unless deliberately name
   for (const name of ['ANTHROPIC_API_KEY', 'OPENAI_API_KEY', 'OPENROUTER_API_KEY'])
     expect(projected).not.toHaveProperty(name);
 });
+
+it.each(['claude-code', 'codex', 'opencode', 'doe'] as const)(
+  'chat metadata is explicit and turn-only for %s',
+  (runtime) => {
+    expect(
+      projectRuntimeEnvironment({
+        parent,
+        runtime,
+        purpose: 'turn',
+        overrides: { DORKOS_SESSION_ID: 'server-chat' },
+      }).DORKOS_SESSION_ID
+    ).toBe('server-chat');
+    expect(() =>
+      projectRuntimeEnvironment({
+        parent,
+        runtime,
+        purpose: 'locator',
+        overrides: { DORKOS_SESSION_ID: 'server-chat' },
+      })
+    ).toThrow('Unsupported');
+  }
+);

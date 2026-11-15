@@ -78,6 +78,18 @@ describe('executeSdkQuery — Claude credential injection (ADR-0315)', () => {
     vi.clearAllMocks();
   });
 
+  it('DOR-4380: gives subprocesses and hooks the DorkOS chat id, not the SDK id or ambient value', async () => {
+    vi.stubEnv('DORKOS_SESSION_ID', 'ambient-chat');
+    try {
+      vi.mocked(resolveClaudeCredentialEnv).mockResolvedValue({});
+      const options = await captureSdkOptions();
+      expect(options.env?.DORKOS_SESSION_ID).toBe('s1');
+      expect(options.env?.DORKOS_SESSION_ID).not.toBe('sdk-1');
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
   it('injects the resolved ANTHROPIC_API_KEY into sdkOptions.env when a reference is configured', async () => {
     vi.mocked(resolveClaudeCredentialEnv).mockResolvedValue({
       ANTHROPIC_API_KEY: 'sk-injected-xyz',

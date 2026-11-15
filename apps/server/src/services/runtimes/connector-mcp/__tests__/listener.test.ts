@@ -86,6 +86,31 @@ describe('connector runtime MCP listener', () => {
     await Promise.all(listeners.splice(0).map((listener) => listener.close()));
   });
 
+  it.each(['header', 'query'] as const)(
+    'refuses a chat identifier supplied only as %s, without a bearer',
+    async (carrier) => {
+      const principals = port({ status: 'resolved', principal });
+      const factory = vi.fn(() => new McpServer({ name: 'test', version: '1.0.0' }));
+      const listener = await startConnectorRuntimeMcpListener({
+        principals,
+        serverFactory: factory,
+        agentServerFactory: factory,
+      });
+      listeners.push(listener);
+      for (const surface of [listener.url, listener.agentUrl]) {
+        const url = new URL(surface);
+        if (carrier === 'query') url.searchParams.set('DORKOS_SESSION_ID', 'session-1');
+        const response = await request(url.href, {
+          authorization: '',
+          ...(carrier === 'header' ? { DORKOS_SESSION_ID: 'session-1' } : {}),
+        });
+        expect(response.status).toBe(401);
+      }
+      expect(factory).not.toHaveBeenCalled();
+      expect(principals.resolve).not.toHaveBeenCalled();
+    }
+  );
+
   it('binds an authenticated stateless MCP server to IPv4 loopback', async () => {
     const principals = port({ status: 'resolved', principal });
     const factory = vi.fn(() => {
