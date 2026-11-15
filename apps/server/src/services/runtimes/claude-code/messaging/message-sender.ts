@@ -364,6 +364,9 @@ export async function* executeSdkQuery(
       pendingSdkPromise = null;
       const { result } = winner;
       if (result.done) break;
+      // Still talking is still active: record eviction measures a running turn
+      // from here, not from its start (DOR-2705).
+      session.lastActivity = Date.now();
       initGuard.observe(result.value);
 
       // Track the last MAIN-THREAD assistant message uuid so the NEXT turn can

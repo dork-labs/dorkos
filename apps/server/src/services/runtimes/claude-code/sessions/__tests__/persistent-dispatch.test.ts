@@ -534,6 +534,49 @@ describe('warmth is answered honestly', () => {
     const events = await hanging;
     expect(events.some((e) => e.type === 'error')).toBe(true);
     expect(events.filter((e) => e.type === 'done')).toHaveLength(1);
+    // DOR-2705: the reason is logged, not left for someone to guess.
+    const { logger } = await import('../../../../../lib/logger.js');
+    expect(vi.mocked(logger.warn)).toHaveBeenCalledWith(
+      '[SessionTurnWindows] ended an open turn with its process',
+      expect.objectContaining({ reason: 'evict', turnIds: expect.any(Array) })
+    );
+  });
+
+  // DOR-2705. The same sweep, but the turn is still talking four hours and five
+  // minutes in. Every non-shutdown "DorkOS closed the agent" in the logs was
+  // this: a working turn evicted at 240 to 244 minutes because the record and
+  // the busy spell were both measured from when the turn STARTED.
+  it('keeps a running turn that is still talking past the four-hour ceiling', async () => {
+    const sessionId = nextSession();
+    await turn(sessionId);
+    const first = cli.processes[0]!;
+    first.goSilent();
+
+    const working = turn(sessionId, 'a long job');
+    await vi.waitFor(() => {
+      expect(first.received).toHaveLength(2);
+    });
+    first.say('step one');
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    const later = SESSIONS.BACKGROUND_WORK_PARK_CEILING_MS + 5 * 60_000;
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(Date.now() + later);
+    const awake = vi.spyOn(performance, 'now').mockReturnValue(performance.now() + later);
+    try {
+      // Still working, four hours and five minutes after the turn began.
+      first.say('step two hundred');
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      runtime.checkSessionHealth();
+    } finally {
+      clock.mockRestore();
+      awake.mockRestore();
+    }
+
+    expect(runtime.getSessionWarmth(sessionId)).toBe('running');
+    first.answer(first.received[1]!);
+    const events = await working;
+    expect(events.some((e) => e.type === 'error')).toBe(false);
+    expect(events.filter((e) => e.type === 'done')).toHaveLength(1);
+    expect(cli.launches).toBe(1);
   });
 });
 

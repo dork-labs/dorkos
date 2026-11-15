@@ -26,6 +26,11 @@ export interface RequestUsage {
 /** In-memory state for an active agent session. */
 export interface AgentSession {
   sdkSessionId: string;
+  /**
+   * Epoch ms of the session's last sign of life: its creation, a turn's start,
+   * and every frame a turn produces (DOR-2705). Record eviction measures idle
+   * time and a running turn's silence from here.
+   */
   lastActivity: number;
   /**
    * The mode this session runs under — any id a runtime declared, not only a

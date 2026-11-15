@@ -1084,14 +1084,17 @@ export class SessionStore {
     const expiredIds: string[] = [];
     for (const [id, session] of this.sessions) {
       if (now - session.lastActivity <= this.SESSION_TIMEOUT_MS) continue;
-      // A turn still running is not idle. `lastActivity` is stamped when a turn
-      // STARTS, so without this a turn that ran past thirty minutes was evicted
-      // out from under itself: the warm process was torn down mid-work and the
-      // turn sat dark until the stall watchdog ended it with nothing left to
-      // interrupt (DOR-2681). Both paths mean the same thing by `activeQuery`.
-      // Bounded by the background-work ceiling, so a turn whose `finally` never
-      // ran cannot make a record immortal; one that went dark is ended by the
-      // stall watchdog long before.
+      // A turn still running is not idle. A turn can sit thirty minutes inside
+      // one long tool call with no frame to stamp `lastActivity`, so without
+      // this it was evicted out from under itself: the warm process was torn
+      // down mid-work and the turn sat dark until the stall watchdog ended it
+      // with nothing left to interrupt (DOR-2681). Both paths mean the same
+      // thing by `activeQuery`. Bounded by the background-work ceiling, measured
+      // from the turn's LAST frame, not its start: both turn loops stamp
+      // `lastActivity` on every frame, because measuring from the start ended
+      // every turn still working four hours in (DOR-2705). So only a turn
+      // silent for four hours, whose `finally` never ran, loses its record; one
+      // that merely went dark is ended by the stall watchdog long before.
       if (
         session.activeQuery !== undefined &&
         now - session.lastActivity < SESSIONS.BACKGROUND_WORK_PARK_CEILING_MS
@@ -1108,9 +1111,9 @@ export class SessionStore {
       if (isHoldingWork?.(id) === true) continue;
       // A session parked on a person is not idle, it is waiting, and evicting
       // it throws away the very tool call the person is coming back to answer.
-      // `lastActivity` is stamped at creation and at each turn, never during a
-      // wait, so without this the real ceiling on any wait would be thirty
-      // minutes from turn start and a four-hour park would be a lie. Bounded by
+      // `lastActivity` is stamped at creation and by a turn's frames, never
+      // during a wait, so without this the real ceiling on any wait would be
+      // thirty minutes from the last frame and a four-hour park would be a lie. Bounded by
       // the park ceiling rather than by the interaction, so a STRANDED entry
       // cannot make a record immortal: it ages out on the same clock the
       // selector and the stall watchdog use. `startedAt`, not a parked flag,

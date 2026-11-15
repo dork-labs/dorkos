@@ -164,6 +164,11 @@ export async function* streamTurnWindow(args: PumpTurnStreamArgs): AsyncGenerato
       pending = null;
       if (winner.done) break;
       const message = winner.value;
+      // A turn that is still talking is active, however long ago it started.
+      // Record eviction spares a running turn only while this is under the
+      // four-hour ceiling, so stamping it at the start alone ended every turn
+      // still working four hours in (DOR-2705).
+      session.lastActivity = Date.now();
 
       if (message.type === 'assistant' && message.parent_tool_use_id === null) {
         lastMainAssistantUuid = message.uuid;

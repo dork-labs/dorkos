@@ -21,7 +21,8 @@
  * ## Two clocks, because two holds could otherwise last forever
  *
  * - **The busy spell** ({@link SESSIONS.BACKGROUND_WORK_PARK_CEILING_MS}, 4 h)
- *   bounds "this process is working". Reset only by
+ *   bounds "this process is working", except while an open turn is still
+ *   talking (DOR-2705). Reset only by
  *   {@link SESSIONS.BACKGROUND_QUIET_RESET_MS} of CONTINUOUS quiet, so a level
  *   frame dropping one helper and naming the next — which arrive inside one
  *   output burst — is a single spell rather than a fresh four hours each time.
@@ -118,6 +119,11 @@ export class ProcessQuiet {
   /** When the current run of continuous quiet began, on the awake clock, or undefined while busy. */
   private quietSinceAwake: number | undefined;
   /**
+   * When a turn on this process last produced output, on the awake clock
+   * (DOR-2705). Read only while a turn is open: see {@link isPastCeiling}.
+   */
+  private lastTurnOutputAwake: number | undefined;
+  /**
    * True between a frame that proves a segment is running and the `result` that
    * ends it. The owed-delivery clock arms only when nothing is running to
    * deliver into.
@@ -178,8 +184,26 @@ export class ProcessQuiet {
     // Every frame is also a chance to notice the busy spell has ended, so the
     // sixty seconds of quiet do not wait on a consumer happening to ask.
     this.noteBusySpell(this.blockingReason(this.opts.liveness().liveTaskCounts()) === undefined);
+    this.noteTurnOutput(message);
     this.noteHoldingWork();
     return change;
+  }
+
+  /**
+   * Note when a turn last produced output (DOR-2705).
+   *
+   * Stamped whether or not a window is open yet: the frame that opens an
+   * agent-started turn reaches this before the windower opens its window.
+   * Only ever read while a turn is open, so a frame outside one counts for
+   * nothing. The busy spell is left alone on purpose: it still bounds the
+   * background work between turns, which is what ends a `/loop` or a Monitor
+   * that would otherwise hold the process for ever.
+   *
+   * @param message - The frame just observed
+   */
+  private noteTurnOutput(message: SDKMessage): void {
+    if (!['assistant', 'user', 'stream_event'].includes(message.type)) return;
+    this.lastTurnOutputAwake = this.awakeNow();
   }
 
   /**
@@ -272,12 +296,20 @@ export class ProcessQuiet {
    * Measured in awake time (DOR-2717). A laptop asleep overnight moves the wall
    * clock by hours while the process does nothing, and measuring that would
    * reap the agent's waiting work the moment the machine woke up.
+   *
+   * Never while a turn is open and has spoken inside the ceiling (DOR-2705).
+   * The ceiling bounds work nobody hears from, and a talking turn is not that:
+   * helpers ran for nearly four hours, the agent opened a turn to report on
+   * them, and the ceiling took the process back mid-sentence. A turn silent
+   * for four hours still meets it, and the stall watchdog long before.
    */
   isPastCeiling(): boolean {
-    return (
-      this.busySinceAwake !== undefined &&
-      this.awakeNow() - this.busySinceAwake >= SESSIONS.BACKGROUND_WORK_PARK_CEILING_MS
-    );
+    const now = this.awakeNow();
+    const ceiling = SESSIONS.BACKGROUND_WORK_PARK_CEILING_MS;
+    if (this.busySinceAwake === undefined || now - this.busySinceAwake < ceiling) return false;
+    const turnOpen = this.opts.isTurnOpen() || this.opts.hasRuntimeTurnOpen();
+    const spoke = this.lastTurnOutputAwake;
+    return !(turnOpen && spoke !== undefined && now - spoke < ceiling);
   }
 
   /**
@@ -300,6 +332,7 @@ export class ProcessQuiet {
     this.busySince = undefined;
     this.busySinceAwake = undefined;
     this.quietSinceAwake = undefined;
+    this.lastTurnOutputAwake = undefined;
     this.segmentRunning = false;
     this.owedExpiredAt = undefined;
     this.lastFrame = now;

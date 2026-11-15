@@ -200,9 +200,11 @@ describe('checkSessionHealth exempts a session whose turn is still running', () 
     expect(store.findSession(SESSION_ID)).toBeDefined();
   });
 
-  it('evicts it once the turn has run past the background-work ceiling', () => {
+  it('evicts it once the turn has been silent past the background-work ceiling', () => {
     // The bound: a turn whose `finally` never ran must not keep the record
     // forever. The stall watchdog ends a turn that has gone dark long before.
+    // A turn still producing frames re-stamps `lastActivity` and is never
+    // here (DOR-2705, `pump-turn-stream-activity.test.ts`).
     const store = storeRunningTurn(SESSIONS.BACKGROUND_WORK_PARK_CEILING_MS + 60_000);
 
     expect(store.checkSessionHealth(new SessionLockManager(), () => false)).toEqual([SESSION_ID]);
