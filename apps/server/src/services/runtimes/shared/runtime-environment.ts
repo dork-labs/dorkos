@@ -84,6 +84,7 @@ function overrideNames(input: RuntimeEnvironmentInput): Set<string> {
     doe: [],
   };
   for (const name of paths[input.runtime]) names.add(name);
+  if (input.purpose === 'turn') names.add('DORKOS_SESSION_ID');
   if (authPurpose(input.purpose)) for (const name of profileNames(input)) names.add(name);
   if (input.runtime === 'claude-code' && ['turn', 'warmup'].includes(input.purpose)) {
     names.add('CLAUDE_CODE_EMIT_SESSION_STATE_EVENTS');

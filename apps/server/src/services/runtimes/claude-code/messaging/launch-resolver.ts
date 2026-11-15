@@ -390,9 +390,7 @@ export async function resolveLaunch(args: {
       // auto-memory is switched off separately, in the env below.
       excludeDynamicSections: true,
     },
-    toolConfig: {
-      askUserQuestion: { previewFormat: 'html' },
-    },
+    toolConfig: { askUserQuestion: { previewFormat: 'html' } },
     // Send the plugin list over stdin instead of on the command line (SDK
     // 0.3.261). ADR-0239 activates every enabled marketplace plugin through
     // `options.plugins`, and that array is an unbounded, person-controlled
@@ -410,6 +408,7 @@ export async function resolveLaunch(args: {
     env: forCredits(
       onCredits ? creditsEnv : undefined,
       runtimeEnvironment('claude-code', 'turn', {
+        DORKOS_SESSION_ID: sessionId,
         CLAUDE_CODE_EMIT_SESSION_STATE_EVENTS: '1',
         // Keeps the task and todo tools on the model's surface. SDK 0.3.233 took
         // TodoWrite / TaskCreate / TaskUpdate / TaskGet / TaskList off the DEFAULT

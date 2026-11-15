@@ -688,7 +688,10 @@ export class CodexThreadLoader {
  * @param secrets - The thread key, the trust verdict and the cwd's realpath.
  */
 export function buildLoadOverrides(
-  input: Pick<ThreadLoadInput, 'cwd' | 'settings' | 'tools' | 'creditsRelay' | 'preventIdleSleep'>,
+  input: Pick<
+    ThreadLoadInput,
+    'sessionId' | 'cwd' | 'settings' | 'tools' | 'creditsRelay' | 'preventIdleSleep'
+  >,
   secrets: {
     threadKey: string | undefined;
     trust: 'trusted' | 'untrusted' | undefined;
@@ -722,9 +725,10 @@ export function buildLoadOverrides(
     }
   }
   if (Object.keys(servers).length > 0) config.mcp_servers = servers;
-  if (Object.keys(input.tools.agentTokenEnv).length > 0) {
-    config.shell_environment_policy = { set: { ...input.tools.agentTokenEnv } };
-  }
+  // Vendor thread ids differ; shells always receive the server-owned DorkOS chat id.
+  config.shell_environment_policy = {
+    set: { ...input.tools.agentTokenEnv, DORKOS_SESSION_ID: input.sessionId },
+  };
   if (secrets.trust !== undefined) {
     config.projects = { [secrets.realCwd]: { trust_level: secrets.trust } };
   }
