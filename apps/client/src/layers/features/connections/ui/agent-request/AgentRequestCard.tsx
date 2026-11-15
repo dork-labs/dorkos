@@ -372,17 +372,19 @@ export function AgentRequestCard({
         {/* The agent may need an account that isn't connected yet, so the
             existing ones are never the only answer besides "Not now". Hidden
             once this card signed one in (that account is the answer) and
-            once Allow is answering, or the app has no change actions. */}
-        {!signedInId && !allowedId && writeOffer !== 'none' && (
-          <Button
-            variant="link"
-            size="sm"
-            className="h-auto px-0"
-            onClick={() => setConnectingNew(true)}
-          >
-            Connect another {serviceName} account
-          </Button>
-        )}
+            once Allow is answering, or a write request cannot be met by this app. */}
+        {!signedInId &&
+          !allowedId &&
+          !(request.access === 'read-write' && writeOffer === 'none') && (
+            <Button
+              variant="link"
+              size="sm"
+              className="h-auto px-0"
+              onClick={() => setConnectingNew(true)}
+            >
+              Connect another {serviceName} account
+            </Button>
+          )}
         {declineFailure}
       </div>
     </AccessStepMount>

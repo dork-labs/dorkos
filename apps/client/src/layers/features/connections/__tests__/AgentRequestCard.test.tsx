@@ -657,7 +657,7 @@ describe('AgentRequestCard — an account exists', () => {
       expect(missing).toHaveTextContent('Allow gives Read only.');
       expect(missing).not.toHaveTextContent('DorkOS can’t make changes');
       expect(missing).toHaveTextContent(
-        'To change things, choose exact actions under Advanced on the Connections page.'
+        'To let it change things, use Advanced on the Connections page.'
       );
     });
 
@@ -677,7 +677,7 @@ describe('AgentRequestCard — an account exists', () => {
       );
       const missing = await screen.findByTestId('requested-write-missing');
       expect(missing).toHaveTextContent(
-        'To change things, choose exact actions under Advanced on the Connections page.'
+        'To let it change things, use Advanced on the Connections page.'
       );
       await user.click(screen.getByRole('button', { name: 'Choose exact actions' }));
       expect(onEditExactActions).toHaveBeenCalledExactlyOnceWith('connection-1');
@@ -708,20 +708,24 @@ describe('AgentRequestCard — an account exists', () => {
       ).not.toBeInTheDocument();
     });
 
-    it('says nothing of the kind when Read and write is on offer, or only Read was asked', async () => {
+    it('says nothing of the kind when Read and write is on offer', async () => {
       renderWith(
         transportWith([account('connection-1')]),
         <AgentRequestCard request={{ ...REQUEST, access: 'read-write' }} />
       );
       await screen.findByTestId('requested-access');
       expect(screen.queryByTestId('requested-write-missing')).not.toBeInTheDocument();
-      cleanup();
+    });
 
+    it('keeps Connect another account for a Read request on an app without change actions', async () => {
       const transport = transportWith([account('connection-1')]);
       vi.mocked(transport.previewConnectorReconciliation).mockResolvedValue(previewOf(['read']));
       renderWith(transport, <AgentRequestCard request={REQUEST} />);
       await screen.findByTestId('requested-access');
       expect(screen.queryByTestId('requested-write-missing')).not.toBeInTheDocument();
+      expect(
+        screen.getByRole('button', { name: 'Connect another Gmail account' })
+      ).toBeInTheDocument();
     });
   });
 });
