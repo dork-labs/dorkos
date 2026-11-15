@@ -7,12 +7,7 @@
  * @vitest-environment jsdom
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import {
-  ARRIVAL_PAUSE_MS,
-  arriveAtAppPage,
-  frameHasGesture,
-  resetArrivalPause,
-} from '../frame/app-arrival';
+import { ARRIVAL_PAUSE_MS, arriveAtAppPage, resetArrivalPause } from '../frame/app-arrival';
 
 /** Answer `prefers-reduced-motion` as asked. */
 function reducedMotion(on: boolean): void {
@@ -141,65 +136,5 @@ describe('the pause after arriving on another app’s page', () => {
     arriveAtAppPage(() => {});
     vi.advanceTimersByTime(ARRIVAL_PAUSE_MS);
     expect(document.body.hasAttribute('inert')).toBe(true);
-  });
-});
-
-describe('a fresh gesture in the calling frame', () => {
-  /** Say whether the window has transient user activation right now. */
-  function activation(isActive: boolean): void {
-    Object.defineProperty(navigator, 'userActivation', {
-      configurable: true,
-      value: { isActive, hasBeenActive: isActive },
-    });
-  }
-  afterEach(() => {
-    Reflect.deleteProperty(navigator, 'userActivation');
-  });
-
-  it('needs both a live activation and focus in that very frame', () => {
-    const atlas = document.createElement('iframe');
-    const quill = document.createElement('iframe');
-    document.body.append(atlas, quill);
-
-    activation(true);
-    atlas.focus();
-    expect(frameHasGesture(atlas)).toBe(true);
-    // The person's click was in Quill's frame: Atlas cannot ride it.
-    quill.focus();
-    expect(frameHasGesture(atlas)).toBe(false);
-
-    activation(false);
-    atlas.focus();
-    expect(frameHasGesture(atlas)).toBe(false);
-  });
-
-  // Security Should 1 (Nov 12): one cross-app open per gesture.
-  it('spends the gesture on one open: a second in the same activation is refused', () => {
-    const atlas = document.createElement('iframe');
-    document.body.append(atlas);
-    activation(true);
-    atlas.focus();
-    expect(frameHasGesture(atlas)).toBe(true);
-
-    arriveAtAppPage(() => {});
-    // The app puts focus back on its own frame, still inside the same activation.
-    atlas.focus();
-    expect(frameHasGesture(atlas)).toBe(false);
-    vi.advanceTimersByTime(ARRIVAL_PAUSE_MS * 4);
-    expect(frameHasGesture(atlas)).toBe(false);
-
-    // Only once that activation has run out does a new click count again.
-    activation(false);
-    vi.advanceTimersByTime(250);
-    activation(true);
-    atlas.focus();
-    expect(frameHasGesture(atlas)).toBe(true);
-  });
-
-  it('fails closed where the browser cannot say', () => {
-    const atlas = document.createElement('iframe');
-    document.body.append(atlas);
-    atlas.focus();
-    expect(frameHasGesture(atlas)).toBe(false);
   });
 });

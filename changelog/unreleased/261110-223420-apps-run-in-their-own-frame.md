@@ -35,6 +35,7 @@ covers:
   - "fix(extensions): a dot on the approval card's app rows never starts a line on a phone (DOR-3293)"
   - 'fix(server): a call between apps whose path part hides a slash is refused, never read as two parts (DOR-3293)'
   - 'fix(extensions): one click in an app opens at most one other app’s page (DOR-3293)'
+  - 'fix(extensions): tighten cross-app open gesture check (DOR-3293)'
 ---
 
 ### Security

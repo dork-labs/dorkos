@@ -1,30 +1,18 @@
 /**
- * The two guards on one app opening another app's page (DOR-3293, Security's
- * Must, Nov 11).
+ * The pause after one app opens another app's page (DOR-3293, Security's
+ * Must, Nov 11). Whether the open may happen at all is the gesture fence's
+ * call (`gesture-fence.ts`); an honoured open spends that gesture here.
  *
- * - **A fresh gesture in the calling frame** ({@link frameHasGesture}). The
- *   host cannot see input inside a sandboxed cross-origin frame, so it reads
- *   two things only the browser and the person control: the window's own
- *   transient user activation, which a real click or key press in a child
- *   frame raises in its ancestors and no script can set, and which element
- *   has focus, which must be the calling app's own `<iframe>`. Together they
- *   mean the person acted inside THAT app; activation alone would let one app
- *   ride a click made in another. "Fresh" is the browser's own transient
- *   activation window, which it sets (a few seconds in current browsers), not
- *   a timer of ours: the host cannot time a click it cannot see.
- * - **One open per gesture.** An honoured open spends that activation: no
- *   other cross-app open is honoured until the browser reports the activation
- *   over and a new click raises it again. Without this, an app could put focus
- *   back on its own frame and open a second page on the same click.
- * - **A pause on arrival** ({@link arriveAtAppPage}). For 500 ms from the start
- *   of the navigation, pointer and key input to the whole window is dropped,
- *   so a click timed for the old page can't land on the new one. The new page
- *   fades in over 150 ms so the person sees it arrive; under reduced motion it
- *   appears at once, and the pause still applies. No spinner, no cursor change.
+ * For 500 ms from the start of the navigation ({@link arriveAtAppPage}),
+ * pointer and key input to the whole window is dropped, so a click timed for
+ * the old page can't land on the new one. The new page fades in over 150 ms so
+ * the person sees it arrive; under reduced motion it appears at once, and the
+ * pause still applies. No spinner, no cursor change.
  *
  * @module features/extensions/frame/app-arrival
  */
 import { DURATION, EASE } from '@/layers/shared/lib/motion';
+import { resetGestureFence, spendGesture } from './gesture-fence';
 
 /** How long input is dropped after an app opens another app's page. */
 export const ARRIVAL_PAUSE_MS = 500;
@@ -52,12 +40,7 @@ const DROPPED_INPUT = [
   'keyup',
 ] as const;
 
-/** How often a spent activation is checked for having run out. */
-const SPENT_POLL_MS = 100;
-
 let paused = false;
-let spent = false;
-let spentWatch: ReturnType<typeof setInterval> | undefined;
 let release: ReturnType<typeof setTimeout> | undefined;
 let madeInert = false;
 let listening = false;
@@ -75,34 +58,6 @@ function endPause(): void {
   release = undefined;
   if (madeInert) document.body.removeAttribute('inert');
   madeInert = false;
-}
-
-/**
- * Whether the person acted inside this frame just now: the window has
- * transient user activation, and focus is on this very `<iframe>`.
- *
- * Fails closed where the browser has no `navigator.userActivation`.
- *
- * @param iframe - The calling app's frame, as the host created it.
- */
-export function frameHasGesture(iframe: HTMLIFrameElement | null): boolean {
-  if (iframe === null || spent || !('userActivation' in navigator)) return false;
-  return navigator.userActivation.isActive && document.activeElement === iframe;
-}
-
-/**
- * Spend the current activation on one open. It stays spent until the browser
- * reports the activation over, so only a new click counts again.
- */
-function spendGesture(): void {
-  spent = true;
-  if (spentWatch !== undefined) clearInterval(spentWatch);
-  spentWatch = setInterval(() => {
-    if ('userActivation' in navigator && navigator.userActivation.isActive) return;
-    spent = false;
-    clearInterval(spentWatch);
-    spentWatch = undefined;
-  }, SPENT_POLL_MS);
 }
 
 /**
@@ -146,7 +101,5 @@ function fadeIn(): void {
 export function resetArrivalPause(): void {
   if (release !== undefined) clearTimeout(release);
   endPause();
-  if (spentWatch !== undefined) clearInterval(spentWatch);
-  spentWatch = undefined;
-  spent = false;
+  resetGestureFence();
 }

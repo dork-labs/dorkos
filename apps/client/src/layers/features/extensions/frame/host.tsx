@@ -8,7 +8,8 @@ import {
 import { z } from 'zod';
 import { extensionApiUrl } from '../model/extension-api-url';
 import { refuseNavigation, resolveAppNavigation } from '../model/app-navigation';
-import { arriveAtAppPage, frameHasGesture } from './app-arrival';
+import { arriveAtAppPage } from './app-arrival';
+import { frameHasGesture } from './gesture-fence';
 import {
   bridgeWriteAllowed,
   declaresBridgeCapability,

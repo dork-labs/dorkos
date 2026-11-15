@@ -334,8 +334,10 @@ describe('isolated app host', () => {
       });
     /** The person clicked inside the calling app's own frame just now. */
     const clickInCallingFrame = () => {
-      activation(true);
       document.querySelector('iframe')!.focus();
+      // The host window blurs as focus moves into the frame, which the fence watches.
+      window.dispatchEvent(new FocusEvent('blur'));
+      activation(true);
     };
 
     it('opens a listed app’s item page after a click in this app, and answers ok', async () => {
@@ -472,6 +474,7 @@ describe('isolated app host', () => {
         value: { isActive: true, hasBeenActive: true },
       });
       document.querySelector('iframe')!.focus();
+      window.dispatchEvent(new FocusEvent('blur'));
     };
     const card = (opens: boolean): ExtensionPermissionView => ({
       runtime: 'in-process',
