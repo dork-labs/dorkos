@@ -13,11 +13,14 @@ import { strangerMarkForEntries } from './turn-ceiling.js';
  * The id of every room message a built context shows the agent besides the one it answers: the
  * unread window, a gathered burst, a thread turn's channel glance, and the thread opener's excerpt.
  *
- * The agent's own recent posts are left out: it wrote them. So are the short labels a context
- * also carries: canvas document titles and links, roster names, a forum topic's name and a bridged
- * chat's title. Each is a few sanitized words a non-owner may have chosen, not a message, and the
- * canvas names its author by handle only. That gap is accepted, not overlooked: no check may rely
- * on the mark covering those words.
+ * The agent's own recent posts are left out: it wrote them. So is room text that is not a
+ * message, which a non-owner may have written. That gap is accepted, pending Security's sign-off,
+ * and no check may rely on the mark covering it:
+ *
+ * - the room's topic, up to 500 characters, rendered on every turn. No editor is recorded for it,
+ *   so a turn cannot be marked by who set it;
+ * - canvas document titles and links, whose author the canvas names by handle only;
+ * - roster names, a forum topic's name and a bridged chat's title.
  *
  * @param context - The context `buildRoomContext` returned for this turn.
  */

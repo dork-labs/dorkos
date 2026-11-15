@@ -4,11 +4,9 @@
  */
 import { describe, expect, it } from 'vitest';
 import { WEBHOOK_MANIFEST } from '@dorkos/relay';
-import {
-  adapterAddressChanged,
-  hasTypedAdapterSecret,
-  markedTurnTypedSecretRefusal,
-} from '../adapter-secret-policy.js';
+import type { AdapterManifest } from '@dorkos/shared/relay-schemas';
+import { adapterAddressChanged, hasTypedAdapterSecret } from '../adapter-secret-policy.js';
+import { markedTurnSecretRefusal, movesStoredSecrets } from '../secrets/marked-turn-secret-gate.js';
 
 const URL_A = 'https://first.example.test/hooks';
 const URL_B = 'https://second.example.test/hooks';
@@ -50,7 +48,7 @@ describe('adapter address and typed-secret facts', () => {
   });
 });
 
-describe('markedTurnTypedSecretRefusal', () => {
+describe('markedTurnSecretRefusal', () => {
   const blocked = {
     enabled: true,
     writer: 'agent' as const,
@@ -59,7 +57,7 @@ describe('markedTurnTypedSecretRefusal', () => {
   };
 
   it('refuses the marked agent turn that types a secret, with no address to judge', () => {
-    expect(markedTurnTypedSecretRefusal(blocked)).toEqual({
+    expect(markedTurnSecretRefusal(blocked)).toEqual({
       error:
         "This turn followed a message DorkOS can't vouch for, so it can't enter a secret. Ask a person to enter it.",
       code: 'marked_turn_typed_secret',
@@ -67,9 +65,7 @@ describe('markedTurnTypedSecretRefusal', () => {
   });
 
   it('refuses an agent writer it cannot identify, saying so', () => {
-    expect(
-      markedTurnTypedSecretRefusal({ ...blocked, turnMarked: false, unidentified: true })
-    ).toEqual({
+    expect(markedTurnSecretRefusal({ ...blocked, turnMarked: false, unidentified: true })).toEqual({
       error:
         "DorkOS couldn't tell which agent sent this, so it can't enter a secret. Ask a person to enter it.",
       code: 'marked_turn_typed_secret',
@@ -84,6 +80,62 @@ describe('markedTurnTypedSecretRefusal', () => {
     ['empty or masked secret', { typedSecret: false }],
     ['unidentified with no typed secret', { unidentified: true, typedSecret: false }],
   ])('allows %s', (_name, change) => {
-    expect(markedTurnTypedSecretRefusal({ ...blocked, ...change })).toBeNull();
+    expect(markedTurnSecretRefusal({ ...blocked, ...change })).toBeNull();
+  });
+});
+
+// DOR-4453 review nit 3: a plugin whose endpoint is typed text. Rule 3 reads only url fields, so
+// a save that moves the endpoint and sends the masks back would carry the stored token along.
+const PLUGIN_MANIFEST = {
+  configFields: [
+    { key: 'endpoint', type: 'text', label: 'Endpoint' },
+    { key: 'token', type: 'password', label: 'Token', required: true },
+  ],
+} as unknown as AdapterManifest;
+const STORED = { endpoint: 'https://owner.example.test/in', token: 'file:relay-adapter:p:token' };
+
+describe('movesStoredSecrets', () => {
+  it('is true when a text endpoint changes on a connection holding a stored secret', () => {
+    expect(
+      movesStoredSecrets(
+        STORED,
+        { endpoint: 'https://outside.example.test/in', token: '***' },
+        PLUGIN_MANIFEST
+      )
+    ).toBe(true);
+  });
+
+  it.each([
+    ['the same endpoint', STORED, { endpoint: STORED.endpoint, token: '***' }],
+    ['no endpoint sent', STORED, { token: '***' }],
+    ['an add (nothing stored)', undefined, { endpoint: 'https://outside.example.test/in' }],
+    [
+      'nothing stored to carry',
+      { endpoint: STORED.endpoint },
+      { endpoint: 'https://outside.example.test/in' },
+    ],
+  ])('is false for %s', (_name, existing, incoming) => {
+    expect(movesStoredSecrets(existing, incoming, PLUGIN_MANIFEST)).toBe(false);
+  });
+
+  it('refuses the move for a marked turn, and says why', () => {
+    expect(
+      markedTurnSecretRefusal({
+        enabled: true,
+        writer: 'agent',
+        turnMarked: true,
+        typedSecret: false,
+        movesSecrets: true,
+      })
+    ).toMatchObject({ code: 'marked_turn_moves_secret' });
+    expect(
+      markedTurnSecretRefusal({
+        enabled: true,
+        writer: 'agent',
+        turnMarked: false,
+        typedSecret: false,
+        movesSecrets: true,
+      })
+    ).toBeNull();
   });
 });

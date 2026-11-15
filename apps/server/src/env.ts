@@ -174,6 +174,8 @@ export const serverEnvSchema = z.object({
   // (DOR-4453): the owner's own Telegram and Slack accounts belong on each connection's approver
   // allowlist, or the owner's phone is marked too (a room always marks it until DOR-4318). Text an
   // extension posts or relays carries no mark, so no check may rely on the mark covering it.
+  // With it on, the owner's own phone posts in a bridged room mark most turns that show them, not
+  // only the turns that answer them, until DOR-4318.
   DORKOS_MARK_STRANGER_TURNS: boolFlag,
   // Your browser discovery (DOR-3215): hidden and refused until explicitly enabled at boot.
   DORKOS_YOUR_BROWSER_ENABLED: boolFlag,

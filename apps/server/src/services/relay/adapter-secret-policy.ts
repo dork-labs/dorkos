@@ -317,51 +317,6 @@ export function adapterAddressChanged(
 }
 
 /**
- * Refuse a marked agent turn that types a secret into a connection, whatever
- * address the connection names. DOR-3858 prevents an outsider from leading an
- * agent to deliver a key it knows to the outsider's server.
- *
- * The address is deliberately not read (DOR-4453 F2). A rule scoped to "a new
- * address" is stepped around in two calls: add the connection at the
- * outsider's URL with no secret, then save the secret at what is now the
- * same address. It also missed every adapter whose address field is not typed
- * `url`. So no typed secret passes from a marked turn, on add, save or test.
- *
- * An agent writer DorkOS can't identify has no turn to read marks from, so it
- * is refused the same way: the gate fails closed. A person remains free to
- * enter the same secret deliberately, and the boot flag preserves prior
- * behavior while it is off.
- *
- * @param input - The independently resolved facts for this attempted write.
- * @param input.unidentified - The writer is an agent DorkOS could not identify.
- * @returns The HTTP refusal body, or `null` when this rule allows the write.
- */
-export function markedTurnTypedSecretRefusal(input: {
-  enabled: boolean;
-  writer: SecretWriter;
-  turnMarked: boolean;
-  unidentified?: boolean;
-  typedSecret: boolean;
-}): { error: string; code: 'marked_turn_typed_secret' } | null {
-  if (
-    !input.enabled ||
-    input.writer === 'person' ||
-    !(input.turnMarked || input.unidentified === true) ||
-    !input.typedSecret
-  ) {
-    return null;
-  }
-  return {
-    error: input.turnMarked
-      ? "This turn followed a message DorkOS can't vouch for, so it can't enter a secret. " +
-        'Ask a person to enter it.'
-      : "DorkOS couldn't tell which agent sent this, so it can't enter a secret. " +
-        'Ask a person to enter it.',
-    code: 'marked_turn_typed_secret',
-  };
-}
-
-/**
  * The part of an incoming secret value that was actually entered: the value
  * itself, or for a map only its entries that are not the mask. `undefined`
  * when nothing new was entered (masked, empty or absent).

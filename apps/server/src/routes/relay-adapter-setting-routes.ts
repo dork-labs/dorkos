@@ -40,9 +40,12 @@ import { AdapterError, type AdapterManager } from '../services/relay/adapter-man
 import {
   hasTypedAdapterSecret,
   isPersonReference,
-  markedTurnTypedSecretRefusal,
   type SecretWriter,
 } from '../services/relay/adapter-secret-policy.js';
+import {
+  markedTurnSecretRefusal,
+  movesStoredSecrets,
+} from '../services/relay/secrets/marked-turn-secret-gate.js';
 import { errorRefusalUnlessOwner } from './cloud-owner-bar.js';
 import {
   adapterResult,
@@ -134,8 +137,10 @@ async function runOrHold(
 
 /**
  * Apply DOR-3858's marked-turn secret gate using the adapter policy's
- * normalized secret-field reader. Every typed secret is refused, whatever the
- * address (DOR-4453 F2), so the gate needs no saved config to compare against.
+ * normalized secret-field reader (`marked-turn-secret-gate.ts`). Every typed
+ * secret is refused, whatever the address (DOR-4453 F2). A save is also refused
+ * when it would carry the saved secrets to a changed `url`, `text` or
+ * `textarea` field, so it reads the saved config; add and test pass none.
  *
  * An HTTP agent call names no chat, so its current marks are read through its
  * verified agent folder, matching the other route-level gates. A caller that
@@ -148,8 +153,9 @@ function markedAdapterSecretRefusal(
   c: Context<ApiEnv>,
   adapterManager: AdapterManager,
   type: string,
-  incoming: Record<string, unknown>
-): ReturnType<typeof markedTurnTypedSecretRefusal> | AdapterError {
+  incoming: Record<string, unknown>,
+  existing?: Record<string, unknown>
+): ReturnType<typeof markedTurnSecretRefusal> | AdapterError {
   try {
     if (!env.DORKOS_MARK_STRANGER_TURNS) return null;
     const writer = secretWriter(c);
@@ -163,12 +169,13 @@ function markedAdapterSecretRefusal(
     const turnMarked = identity !== undefined && marksHold(marksOf(undefined, identity.agentPath));
     if (!unidentified && !turnMarked) return null;
     const manifest = adapterManager.getManifest(type);
-    return markedTurnTypedSecretRefusal({
+    return markedTurnSecretRefusal({
       enabled: env.DORKOS_MARK_STRANGER_TURNS,
       writer,
       turnMarked,
       unidentified,
       typedSecret: hasTypedAdapterSecret(incoming, manifest),
+      movesSecrets: movesStoredSecrets(existing, incoming, manifest),
     });
   } catch (err) {
     if (err instanceof AdapterError) return err;
@@ -273,7 +280,8 @@ export function registerSettingRoutes(router: Hono<ApiEnv>, deps: SettingRouteDe
       c,
       adapterManager,
       existing?.type ?? '',
-      config
+      config,
+      existing?.config as Record<string, unknown> | undefined
     );
     if (markedRefusal instanceof AdapterError) return sendAdapterError(c, markedRefusal);
     if (markedRefusal) return c.json(markedRefusal, 403);
