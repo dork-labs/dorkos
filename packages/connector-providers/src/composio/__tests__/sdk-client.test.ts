@@ -388,7 +388,7 @@ describe('ComposioSdkClient', () => {
     ['GOOGLECALENDAR_CREATE_EVENT', ['createHint'], 'write'],
     // Every app gets a write tier for clean create and update verdicts.
     ['GITHUB_UPDATE_AN_ISSUE', ['updateHint', 'idempotentHint'], 'write'],
-    ['GOOGLEDRIVE_CREATE_FILE', ['createHint'], 'destructive'],
+    ['GOOGLEDRIVE_CREATE_FILE', ['createHint'], 'write'],
     // DorkOS keeps account-reach actions out of levels, by name for future tools too.
     ['GOOGLEDRIVE_CREATE_PERMISSION', ['createHint'], 'destructive'],
     ['OUTLOOK_CREATE_EMAIL_RULE', ['createHint'], 'destructive'],

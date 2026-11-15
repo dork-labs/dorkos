@@ -10,6 +10,11 @@ const live = JSON.parse(
 const actions = Object.values(live).flat();
 // Each slug was reviewed against its description in the 2026-11-15 catalog.
 const explicit = [
+  'NOTION_UPDATE_SCHEMA_DATABASE', // permanent column and data deletion
+  'GITHUB_UPDATE_USER_STATUS', // public profile status
+  'GITHUB_DISMISS_A_REVIEW_FOR_A_PULL_REQUEST', // security controls
+  'GITHUB_CREATE_A_SNAPSHOT_OF_DEPENDENCIES_FOR_A_REPOSITORY', // security controls
+  'SLACK_CREATE_CHANNEL_BASED_CONVERSATION', // org-wide channel
   'GOOGLEDRIVE_UPDATE_FILE_REVISION_METADATA', // reach
   'SLACK_SET_STATUS', // reach
   'GITHUB_UPDATE_A_PROJECT', // reach
@@ -21,13 +26,6 @@ const explicit = [
   'GOOGLEDRIVE_UPDATE_FILE_PUT', // reach
   'GOOGLEDRIVE_COPY_FILE_ADVANCED', // reach
   'NOTION_MOVE_PAGE', // reach
-  'GOOGLEDRIVE_CREATE_FILE', // reach
-  'GOOGLEDRIVE_CREATE_FILE_FROM_TEXT', // reach
-  'GOOGLEDRIVE_CREATE_FOLDER', // reach
-  'GOOGLEDRIVE_UPLOAD_FILE', // reach
-  'NOTION_CREATE_DATABASE', // reach
-  'NOTION_CREATE_NOTION_PAGE', // reach
-  'NOTION_DUPLICATE_PAGE', // reach
   'GOOGLEDRIVE_DELETE_CHILD', // reach
   'GOOGLEDRIVE_DELETE_PARENT', // reach
   'GOOGLEDRIVE_UPDATE_FILE_METADATA_PATCH', // reach
@@ -101,6 +99,16 @@ describe('reviewed Composio exceptions', () => {
     'GITHUB_MERGE_A_BRANCH',
     'GITHUB_MERGE_A_PULL_REQUEST',
     'GITHUB_CREATE_OR_UPDATE_FILE_CONTENTS',
+    'GOOGLEDRIVE_CREATE_FILE',
+    'GOOGLEDRIVE_CREATE_FILE_FROM_TEXT',
+    'GOOGLEDRIVE_CREATE_FOLDER',
+    'GOOGLEDRIVE_UPLOAD_FILE',
+    'NOTION_CREATE_NOTION_PAGE',
+    'NOTION_CREATE_DATABASE',
+    'NOTION_DUPLICATE_PAGE',
+    'GOOGLEDRIVE_BATCH_UPDATE_SPREADSHEET_VALUES',
+    'GOOGLEDOCS_UPDATE_DOCUMENT_BATCH',
+    'GOOGLEDOCS_DELETE_PARAGRAPH_BULLETS',
     'GOOGLEDRIVE_COPY_FILE',
     'GOOGLEDRIVE_CREATE_SHORTCUT_TO_FILE',
   ])('retains the reviewed write %s', (slug) => {
@@ -108,6 +116,23 @@ describe('reviewed Composio exceptions', () => {
     expect(action).toBeDefined();
     for (const writeIncludesDeletes of [false, true]) {
       expect(classifyComposioAction(slug, action!.tags, { writeIncludesDeletes })).toBe('write');
+    }
+  });
+
+  it.each(
+    [
+      [],
+      ['destructiveHint'],
+      ['updateHint', 'futureEffectHint'],
+      ['updateHint', 'readOnlyHint'],
+    ].map((tags) => ({ tags }))
+  )('does not promote an unsafe formatting verdict $tags', ({ tags }) => {
+    for (const writeIncludesDeletes of [false, true]) {
+      expect(
+        classifyComposioAction('GOOGLEDOCS_DELETE_PARAGRAPH_BULLETS', tags, {
+          writeIncludesDeletes,
+        })
+      ).toBe('destructive');
     }
   });
 

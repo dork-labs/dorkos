@@ -106,6 +106,8 @@ const ACCOUNT_REACH_ACTIONS = new Set([
   'SLACK_SET_CONVERSATION_PREFS',
   'GOOGLEDRIVE_UPDATE_FILE_REVISION_METADATA',
   'SLACK_SET_STATUS',
+  'GITHUB_UPDATE_USER_STATUS',
+  'SLACK_CREATE_CHANNEL_BASED_CONVERSATION',
   'GITHUB_UPDATE_A_PROJECT',
   'GITHUB_UPDATE_USER_LIST',
   'TWITTER_UPDATE_LIST',
@@ -115,17 +117,12 @@ const ACCOUNT_REACH_ACTIONS = new Set([
   'GOOGLEDRIVE_UPDATE_FILE_PUT',
   'GOOGLEDRIVE_COPY_FILE_ADVANCED',
   'NOTION_MOVE_PAGE',
-  'GOOGLEDRIVE_CREATE_FILE',
-  'GOOGLEDRIVE_CREATE_FILE_FROM_TEXT',
-  'GOOGLEDRIVE_CREATE_FOLDER',
-  'GOOGLEDRIVE_UPLOAD_FILE',
-  'NOTION_CREATE_DATABASE',
-  'NOTION_CREATE_NOTION_PAGE',
-  'NOTION_DUPLICATE_PAGE',
   'GOOGLEDRIVE_DELETE_CHILD',
   'GOOGLEDRIVE_DELETE_PARENT',
   'GOOGLEDRIVE_UPDATE_FILE_METADATA_PATCH',
   'GITHUB_UPLOAD_SARIF_ANALYSIS',
+  'GITHUB_DISMISS_A_REVIEW_FOR_A_PULL_REQUEST',
+  'GITHUB_CREATE_A_SNAPSHOT_OF_DEPENDENCIES_FOR_A_REPOSITORY',
   'GITHUB_CREATE_A_COMMIT_STATUS',
   'GITHUB_CREATE_A_CHECK_RUN',
   'GITHUB_UPDATE_A_CHECK_RUN',
@@ -137,7 +134,9 @@ const ACCOUNT_REACH_ACTIONS = new Set([
   'GITHUB_CREATE_A_DEPLOYMENT_STATUS',
 ]);
 
-// Reviewed irreversible and whole-container deletes never follow the delete switch.
+// Composio-described permanent deletes, whole-container deletes and updates
+// hiding an archive or permanent data loss stay explicit with deletes on too.
+// The remaining pinned delete-on list is what DOR-4451 would admit and review.
 const ALWAYS_EXPLICIT_DELETES = new Set([
   'GITHUB_DELETE_A_RELEASE',
   'GITHUB_DELETE_A_REPOSITORY',
@@ -174,6 +173,7 @@ const ALWAYS_EXPLICIT_DELETES = new Set([
   'LINEAR_ARCHIVE_PROJECT',
   'SLACK_ARCHIVE_CONVERSATION',
   'NOTION_UPDATE_PAGE',
+  'NOTION_UPDATE_SCHEMA_DATABASE',
 ]);
 
 // Named reach families apply to every app, including future catalog entries.
@@ -192,8 +192,10 @@ const MONEY_ACTIONS =
   /SPONSOR|CODESPACE|PAYMENT|CHARGE|REFUND|INVOICE|PAYOUT|PURCHASE|ORDER|BILLING|CHECKOUT|PRICE|DONAT/;
 const IRREVERSIBLE_ACTIONS =
   /PURGE|WIPE|RESET|REVOKE|CANCEL|EMPTY|FORCE|DESTROY|TERMINATE|PERMANENT|^GITHUB_UPDATE_A_REFERENCE$/;
-const DELETE_ACTIONS =
-  /DELETE|REMOVE|(?<!UN)TRASH|(?<!UN)ARCHIVE|_LEAVE(?:_|$)|CLOSE_DM|(?:^|_)BATCH(?:_|$)/;
+const DELETE_ACTIONS = /DELETE|REMOVE|(?<!UN)TRASH|(?<!UN)ARCHIVE|_LEAVE(?:_|$)|CLOSE_DM/;
+// Reviewed catalog exception: removing paragraph bullets changes formatting only.
+// It still needs a clean write verdict; this never promotes destructive hints.
+const FORMATTING_ONLY_ACTIONS = new Set(['GOOGLEDOCS_DELETE_PARAGRAPH_BULLETS']);
 const DELETE_COMPATIBLE_HINTS = new Set(['destructiveHint', 'idempotentHint', 'openWorldHint']);
 
 /**
@@ -228,7 +230,8 @@ function hasOnlyDeleteHints(tags: readonly string[]): boolean {
  * Reads stay reads. Reach, money and irreversible writes stay explicit.
  * Only the delete decision can admit a destructive verdict: a named delete
  * with solely destructive/idempotent/open-world hints, when enabled. Reviewed
- * irreversible and whole-container deletes remain explicit with either setting.
+ * permanent deletes, whole-container deletes and updates hiding an archive or
+ * permanent data loss remain explicit with either setting.
  *
  * @param slug - Composio's action slug.
  * @param tags - Tags exactly as Composio listed them.
@@ -249,7 +252,7 @@ export function classifyComposioAction(
   ) {
     return 'destructive';
   }
-  if (DELETE_ACTIONS.test(slug)) {
+  if (DELETE_ACTIONS.test(slug) && !FORMATTING_ONLY_ACTIONS.has(slug)) {
     const includesDeletes = options.writeIncludesDeletes ?? WRITE_INCLUDES_DELETES;
     return includesDeletes && (classification === 'write' || hasOnlyDeleteHints(tags))
       ? 'write'

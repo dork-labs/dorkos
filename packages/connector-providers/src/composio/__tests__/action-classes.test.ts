@@ -80,7 +80,6 @@ const excluded = [
   'LINEAR_UPDATE_TEAM', // people
   'LINEAR_ARCHIVE_ISSUE', // deletes
   'LINEAR_ARCHIVE_PROJECT', // deletes
-  'GOOGLEDOCS_UPDATE_DOCUMENT_BATCH', // deletes, batch
 ] as const;
 
 describe('Composio action classes', () => {
@@ -111,10 +110,8 @@ describe('Composio action classes', () => {
     (slug) => {
       const action = actions.find((row) => row.slug === slug);
       expect(action, 'must be a real action in the dated catalog').toBeDefined();
-      // Batch and plain archive actions follow the delete flag; the rest never do.
-      const deleteOnly = ['LINEAR_ARCHIVE_ISSUE', 'GOOGLEDOCS_UPDATE_DOCUMENT_BATCH'].includes(
-        slug
-      );
+      // A plain issue archive follows the delete flag; the rest never do.
+      const deleteOnly = slug === 'LINEAR_ARCHIVE_ISSUE';
       expect(classifyComposioAction(slug, action!.tags, { writeIncludesDeletes: false })).toBe(
         'destructive'
       );
@@ -138,14 +135,7 @@ describe('Composio action classes', () => {
       expect(reads.map(({ slug, tags }) => classifyComposioAction(slug, tags))).toEqual(['read']);
       const changing = named.filter(({ tags }) => !tags.includes('readOnlyHint'));
       expect(changing.map(({ slug }) => slug)).toEqual(
-        toolkit === 'googledocs'
-          ? []
-          : [
-              'NOTION_CREATE_DATABASE',
-              'NOTION_CREATE_NOTION_PAGE',
-              'NOTION_DUPLICATE_PAGE',
-              'NOTION_MOVE_PAGE',
-            ]
+        toolkit === 'googledocs' ? [] : ['NOTION_MOVE_PAGE']
       );
       for (const { slug, tags } of changing)
         expect(classifyComposioAction(slug, tags)).toBe('destructive');
@@ -215,7 +205,6 @@ describe('delete decision', () => {
     ['GMAIL_MOVE_TO_TRASH', ['updateHint', 'openWorldHint']],
     ['SLACK_CLOSE_DM', ['updateHint']],
     ['SLACK_LEAVE_CONVERSATION', ['updateHint']],
-    ['GOOGLEDOCS_UPDATE_DOCUMENT_BATCH', ['updateHint']],
   ] as const)('flips only the delete decision for %s', (slug, tags) => {
     expect(classifyComposioAction(slug, tags)).toBe('destructive');
     expect(classifyComposioAction(slug, tags, { writeIncludesDeletes: false })).toBe('destructive');
@@ -247,9 +236,9 @@ describe('delete decision', () => {
   it('keeps every catalog delete with a changing verdict explicit by default', () => {
     const deletes = actions.filter(
       ({ slug, tags }) =>
-        /DELETE|REMOVE|(?<!UN)TRASH|(?<!UN)ARCHIVE|_LEAVE(?:_|$)|CLOSE_DM|(?:^|_)BATCH(?:_|$)/.test(
-          slug
-        ) && tags.some((tag) => ['createHint', 'updateHint', 'destructiveHint'].includes(tag))
+        slug !== 'GOOGLEDOCS_DELETE_PARAGRAPH_BULLETS' &&
+        /DELETE|REMOVE|(?<!UN)TRASH|(?<!UN)ARCHIVE|_LEAVE(?:_|$)|CLOSE_DM/.test(slug) &&
+        tags.some((tag) => ['createHint', 'updateHint', 'destructiveHint'].includes(tag))
     );
     expect(deletes.length).toBeGreaterThan(0);
     for (const { slug, tags } of deletes) {
