@@ -44,6 +44,7 @@ export const REPO_WIDE_SUITES = [
   '__tests__/connector-public-copy.test.ts',
   '__tests__/credential-free-workflow.test.ts',
   '__tests__/decision-narrow-only.test.ts',
+  '__tests__/dependabot-lockfile-repair-paths.test.ts',
   '__tests__/dependabot-lockstep-families.test.ts',
   '__tests__/extension-child-build-entry.test.ts',
   '__tests__/gray-matter-import-boundary.test.ts',

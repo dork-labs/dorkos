@@ -7,7 +7,7 @@ actor: agent
 gates:
   - wf.dependabot-lockfile-repair.repair-lockfile
   - wf.typecheck.typecheck
-prs: []
+prs: [3800]
 hypothesis:
   metric: gate.wf.typecheck.typecheck.failure_rate@pull_request
   baseline: 0.0588
