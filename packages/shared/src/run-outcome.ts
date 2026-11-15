@@ -248,6 +248,13 @@ export function isNonFatalErrorCode(code: string | undefined): boolean {
 export const UNREADABLE_ENTRY_ERROR_CODE = 'unreadable_entry';
 
 /**
+ * The code on an OpenCode turn DorkOS refused because the project has its own
+ * OpenCode plugins (DOR-4394). The chat draws it as a lasting notice in its
+ * own fixed words, never the text a project wrote.
+ */
+export const OPENCODE_PROJECT_PLUGINS_ERROR_CODE = 'opencode_project_plugins';
+
+/**
  * Whether a terminal reason says the turn DID its work — so an error frame it
  * carried along the way was one it recovered from.
  *

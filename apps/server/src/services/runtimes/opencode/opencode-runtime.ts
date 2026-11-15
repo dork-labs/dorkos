@@ -115,6 +115,11 @@ import { sessionDirectoryOf } from './sessions/session-directory.js';
 import { resolveCompactionModel } from './messaging/compaction-model.js';
 import type { OpenCodeTurnOptions } from './messaging/turn-options.js';
 import { validatedGrants } from './messaging/directory-grants.js';
+import {
+  assertNoProjectPlugins,
+  projectPluginRefusal,
+  ProjectPluginsRefusedError,
+} from './messaging/project-plugin-guard.js';
 import { discoverOpenCodeModels } from './model-discovery.js';
 import { OpenCodeContextWindows } from './providers/context-windows.js';
 import { protectedPathRoots } from '../shared/policy/protected-path-roots.js';
@@ -137,8 +142,8 @@ import { ConnectorTurnLeaseManager, type ConnectorTurnLease } from './mcp/connec
 import {
   OPENCODE_LABEL,
   OPENCODE_OWN_PLAN,
-  OpenCodeSwitchPendingError,
   openCodeRunsOnCredits,
+  switchPendingEvent,
   type OpenCodeSidecarPlan,
 } from './credits-sidecar.js';
 import {
@@ -595,6 +600,10 @@ export class OpenCodeRuntime implements AgentRuntime {
     ) => Promise<void>,
     opts?: OpenCodeTurnOptions
   ): AsyncGenerator<StreamEvent> {
+    // A project's own plugins would run in the shared sidecar, flag or not
+    // (DOR-4394): asked on every turn, before the sidecar sees the folder.
+    const pluginRefusal = projectPluginRefusal(cwd);
+    if (pluginRefusal) return yield pluginRefusal;
     // **Who pays** (ADR 261001-000811), decided before anything is sent: the
     // sidecar is made right for OpenCode's recorded choice, and a credits turn
     // that credits cannot pay for is REFUSED here, with nothing sent.
@@ -610,14 +619,7 @@ export class OpenCodeRuntime implements AgentRuntime {
     } catch (err) {
       this.settingUp.delete(settingUp);
       void this.provider.turnSettled?.().catch(() => undefined);
-      if (err instanceof OpenCodeSwitchPendingError) {
-        yield {
-          type: 'error',
-          data: { message: err.message, code: err.code, category: 'execution_error' },
-        };
-        return;
-      }
-      const refusal = creditsRefusalEvent(err);
+      const refusal = switchPendingEvent(err) ?? creditsRefusalEvent(err);
       if (!refusal) throw err;
       yield refusal;
       return;
@@ -628,9 +630,12 @@ export class OpenCodeRuntime implements AgentRuntime {
       client = await this.provider.getClient(cwd);
       await this.provider.bindSessionEnvironment?.(sessionId, ocSessionId);
       directory = await sessionDirectoryOf(this.directoryByOcId, client, ocSessionId);
+      // The prompt goes to the session's STORED folder (Security M2, #3764).
+      assertNoProjectPlugins(cwd, directory);
     } catch (err) {
       this.settingUp.delete(settingUp);
       void this.provider.turnSettled?.().catch(() => undefined);
+      if (err instanceof ProjectPluginsRefusedError) return yield err.event;
       throw err;
     }
 
@@ -1105,7 +1110,7 @@ export class OpenCodeRuntime implements AgentRuntime {
       if (!byId.has(tracked.id)) byId.set(tracked.id, tracked);
     }
     const sessions = [...byId.values()];
-    for (const session of sessions) this.overlayTrackedSettings(session);
+    for (const session of sessions) this.registry.overlayTrackedSettings(session);
     return sessions;
   }
 
@@ -1127,7 +1132,7 @@ export class OpenCodeRuntime implements AgentRuntime {
     const listed = sessions.find((session) => session.id === sessionId);
     if (listed) return listed;
     const session = await this.mapper.getSession(canonicalDirectory(projectDir), sessionId);
-    if (session) this.overlayTrackedSettings(session);
+    if (session) this.registry.overlayTrackedSettings(session);
     return session;
   }
 
@@ -1477,18 +1482,5 @@ export class OpenCodeRuntime implements AgentRuntime {
       });
     this.binding.set(sessionId, creating);
     return creating;
-  }
-
-  /**
-   * Overlay DorkOS-tracked settings onto a listed session — OpenCode has no
-   * per-session permission mode, so the mapper hardcodes `'default'` and the
-   * tracked value (kept current by `updateSession`) wins.
-   */
-  private overlayTrackedSettings(session: Session): void {
-    const tracked = this.registry.get(session.id);
-    if (!tracked) return;
-    session.permissionMode = tracked.permissionMode;
-    if (tracked.model !== undefined) session.model = tracked.model;
-    if (tracked.fastMode !== undefined) session.fastMode = tracked.fastMode;
   }
 }
