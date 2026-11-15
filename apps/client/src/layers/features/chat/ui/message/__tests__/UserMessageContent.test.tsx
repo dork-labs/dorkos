@@ -5,6 +5,7 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, screen, cleanup, fireEvent } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import { formatUiActionMessage } from '@dorkos/shared/ui-widget';
+import { CHAT_MESSAGE_FENCE_LABEL, CHAT_MESSAGE_LEAD } from '@dorkos/shared/chat-messages';
 import { UserMessageContent } from '../UserMessageContent';
 import type { ChatMessage } from '../../../model/use-chat-session';
 
@@ -29,6 +30,56 @@ function makeMessage(overrides: Partial<ChatMessage>): ChatMessage {
 describe('UserMessageContent', () => {
   afterEach(() => {
     cleanup();
+  });
+
+  it('shows another chat’s words with no sender on record, never the envelope (DOR-3060)', () => {
+    const fenced = [
+      CHAT_MESSAGE_LEAD,
+      `--- BEGIN ${CHAT_MESSAGE_FENCE_LABEL} c0ffee12 ---`,
+      'From: Security',
+      'Kind: message',
+      'Please hold PR #12.',
+      `--- END ${CHAT_MESSAGE_FENCE_LABEL} c0ffee12 ---`,
+    ].join('\n');
+    render(<UserMessageContent message={makeMessage({ content: fenced })} />);
+    expect(screen.getByTestId('unstamped-chat-message')).toHaveTextContent('Please hold PR #12.');
+    expect(document.body.textContent).not.toContain('BEGIN');
+    expect(document.body.textContent).not.toContain(CHAT_MESSAGE_LEAD);
+  });
+
+  it('keeps a scheduled prompt that quotes a fence folded as a system note (DOR-3060)', () => {
+    const quoted = [
+      `--- BEGIN ${CHAT_MESSAGE_FENCE_LABEL} deadbeef ---`,
+      'Kind: message',
+      'check this',
+      `--- END ${CHAT_MESSAGE_FENCE_LABEL} deadbeef ---`,
+    ].join('\n');
+    render(
+      <UserMessageContent
+        message={makeMessage({ content: quoted, promptSource: { kind: 'heartbeat' } })}
+      />
+    );
+    expect(screen.getByRole('button', { name: 'Show message' })).toBeInTheDocument();
+    expect(screen.queryByTestId('unstamped-chat-message')).not.toBeInTheDocument();
+  });
+
+  it('shows a channel message that quotes a fence as the person wrote it (DOR-3060)', () => {
+    const quoted = [
+      `--- BEGIN ${CHAT_MESSAGE_FENCE_LABEL} deadbeef ---`,
+      'Kind: message',
+      'check this',
+      `--- END ${CHAT_MESSAGE_FENCE_LABEL} deadbeef ---`,
+    ].join('\n');
+    render(
+      <UserMessageContent
+        message={makeMessage({
+          content: quoted,
+          promptSource: { kind: 'channel', label: 'Telegram' },
+        })}
+      />
+    );
+    expect(screen.queryByTestId('unstamped-chat-message')).not.toBeInTheDocument();
+    expect(document.body.textContent).toContain('BEGIN');
   });
 
   it('folds a prompt nobody here typed, and opens it on request (DOR-3019)', () => {

@@ -51,6 +51,13 @@ const NOT_READING_INSTALLS: Record<string, string> = {
   // imports, and skipping it would let a name hide a plugin from the guard.
   'apps/server/src/services/runtimes/opencode/messaging/project-plugin-guard.ts':
     'security guard; must see every file OpenCode would import, so it never skips a name',
+  // The withheld add-ons count (DOR-4404) lists a PROJECT's own
+  // `.opencode/plugin(s)/` and `.opencode/tool(s)/` folders, never a DorkOS
+  // install root, to tell the person how many OpenCode would have loaded. A
+  // sibling-named file there is still one OpenCode loads, so skipping it would
+  // undercount what DorkOS kept off.
+  'apps/server/src/services/runtimes/opencode/messaging/withheld-project-addons.ts':
+    "counts a project's own .opencode plugin and tool files, never an install root; skipping a name would undercount",
   // One file, one reader: `dataEntriesAgentsNeverWrite` lists the TOP of the
   // data folder (never an install or skills root) to name a write-deny rule per
   // entry, and names `agents` only to leave agent homes out (DOR-3039, M1).

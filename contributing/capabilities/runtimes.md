@@ -18,11 +18,11 @@ To add a capability, add a row to `packages/test-utils/src/runtime-capability-ma
 
 | Runtime | yes | partial | unverified | planned | no | n/a |
 | --- | --- | --- | --- | --- | --- | --- |
-| claude-code | 40 | 1 | 2 | 0 | 1 | 1 |
-| codex | 32 | 1 | 3 | 0 | 8 | 1 |
-| opencode | 28 | 0 | 4 | 1 | 10 | 2 |
-| doe | 34 | 0 | 0 | 0 | 11 | 0 |
-| test-mode | 26 | 0 | 6 | 0 | 0 | 13 |
+| claude-code | 42 | 1 | 2 | 0 | 1 | 1 |
+| codex | 32 | 1 | 3 | 2 | 8 | 1 |
+| opencode | 28 | 0 | 4 | 3 | 10 | 2 |
+| doe | 34 | 0 | 0 | 2 | 11 | 0 |
+| test-mode | 26 | 0 | 6 | 0 | 0 | 15 |
 
 ## Sessions
 
@@ -204,6 +204,16 @@ To add a capability, add a row to `packages/test-utils/src/runtime-capability-ma
 - **RT-CMP-02** An agent asks for its own conversation to be summarized; it runs after the turn ends, and the chat says the agent asked. Its focus note is used where the runtime takes one (Claude Code). _(flag `commandIntents.compact`)_
 - **RT-CMP-03** After each reply the runtime reports the tokens in the context and the size of the window, so DorkOS can tell the agent when it passes 80%. A model whose window the runtime cannot learn reports no window rather than a guess.
 
+## Safety guards
+
+| ID | Capability | claude-code | codex | opencode | doe | test-mode |
+| --- | --- | --- | --- | --- | --- | --- |
+| RT-GRD-01 | Keep the agent off protected files | yes (U) | planned DOR-3597 | planned DOR-4445 | planned DOR-4445 | n/a |
+| RT-GRD-02 | Keep the agent’s own setup closed below Full | yes (U) | planned DOR-3598 | planned DOR-3598 | planned DOR-3598 | n/a |
+
+- **RT-GRD-01** File tools refuse the shared protected list: its secrets at every level, the files that grant power below Full. Below Full, a shell command that reads a protected file, such as a browser profile’s sign-ins, goes to a person first. _(flag `guards.protectedPaths`)_
+- **RT-GRD-02** Below Full, file tools cannot change the agent’s own hooks, skills, settings or MCP servers, and at any level they cannot change its `.dork/agent.json`. A shell command that plainly writes them is refused too. _(flag `guards.ownFolder`)_
+
 ## Gaps
 
 Every cell that is not `yes`, `no` or `n/a`, planned work first.
@@ -211,6 +221,12 @@ Every cell that is not `yes`, `no` or `n/a`, planned work first.
 | ID | Runtime | Status | Ticket | Why |
 | --- | --- | --- | --- | --- |
 | RT-LIFE-03 | opencode | planned | DOR-2717 | Nothing delivers work that finishes after an OpenCode turn. |
+| RT-GRD-01 | codex | planned | DOR-3597 | The sandbox denies protected paths only under the folders DorkOS names (DOR-3790), and file-change approvals are not checked against the list. |
+| RT-GRD-01 | opencode | planned | DOR-4445 | Its file tools refuse the protected list; its shell is not checked against it. |
+| RT-GRD-01 | doe | planned | DOR-4445 | Its file tools refuse the protected list; its shell is not checked against it. |
+| RT-GRD-02 | codex | planned | DOR-3598 | Its own `.codex/` and `.agents/` setup is not held below Full. |
+| RT-GRD-02 | opencode | planned | DOR-3598 | Its own `opencode.json` and `.agents/` setup is not held below Full. |
+| RT-GRD-02 | doe | planned | DOR-3598 | An agent home in the data folder is closed to its file tools; an agent in a project folder, and its shell, are not held. |
 | RT-LIFE-03 | claude-code | partial | DOR-2717 | Helpers, shells and session timers report back on a warm session; async hooks and durable timers do not. |
 | RT-LIFE-03 | codex | partial | DOR-2717 | Background commands wake the chat; a helper agent that outlives its turn is tracked but not yet proven against Codex. |
 | RT-SES-03 | codex | unverified |  | Resumes its thread by id; no test pins a resumed turn seeing earlier history. |

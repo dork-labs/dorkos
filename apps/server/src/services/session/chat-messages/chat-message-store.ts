@@ -169,7 +169,7 @@ export class ChatMessageStore {
 
   /**
    * Every chat message waiting in one dispatcher queue row: one, or several
-   * when agent messages that waited together were batched into one turn.
+   * when adjacent agent rows were joined into one turn at drain time.
    *
    * @param queueMessageId - The dispatcher's message id.
    */

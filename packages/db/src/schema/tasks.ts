@@ -139,6 +139,14 @@ export const pulseSchedules = sqliteTable('pulse_schedules', {
    * moment its content drifts.
    */
   approvedContentKey: text('approved_content_key'),
+  /** ISO timestamp for the approval that armed the current task content. */
+  approvedAt: text('approved_at'),
+  /** JSON identifying the person, agent, or policy that approved the task. */
+  approvedBy: text('approved_by'),
+  /** The surface or policy path through which the task was approved. */
+  approvedVia: text('approved_via', {
+    enum: ['inbox', 'schedules', 'home', 'created', 'agent_tool', 'trusted_agent', 'unknown'],
+  }),
   /**
    * The approval a park last withdrew, kept so the approval card can say what
    * changed since (DOR-2323): old and new model, runtime, timing and so on.

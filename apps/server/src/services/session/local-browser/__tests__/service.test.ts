@@ -1736,16 +1736,21 @@ describe('a page load an action starts', () => {
   }
 
   it.each([
-    ['a refused port', 'http://127.0.0.1:9/', 'net::ERR_CONNECTION_REFUSED', '127.0.0.1:9'],
+    [
+      'a refused port',
+      'http://127.0.0.1:9/',
+      'net::ERR_CONNECTION_REFUSED',
+      '127.0.0.1:9 didn’t respond',
+    ],
     [
       'an unknown host',
       'http://made-up-host.invalid/',
       'net::ERR_NAME_NOT_RESOLVED',
-      'made-up-host.invalid',
+      'Can’t find made-up-host.invalid',
     ],
   ])(
-    'a click onto %s reports that it didn’t load, and is journaled as failed',
-    async (_what, url, error, host) => {
+    'a click onto %s reports that it didn’t load, in the page’s own title, and is journaled as failed',
+    async (_what, url, error, title) => {
       const f = await create();
       await selectOwned(f.service);
       const { revision } = await f.service.observe();
@@ -1754,7 +1759,7 @@ describe('a page load an action starts', () => {
         f.service.action({ kind: 'click', role: 'button', name: 'Save', revision })
       ).rejects.toMatchObject({
         code: 'load_failed',
-        message: `${host} didn’t load (${error.replace('net::', '')}). Read the page again.`,
+        message: `${title} (${error.replace('net::', '')}). Read the page again.`,
       });
       expect((await journal(f)).map((record) => record.outcome)).toEqual(['unknown', 'failed']);
       await f.service.disconnect();
@@ -1846,7 +1851,7 @@ describe('a page load an action starts', () => {
       f.service.action({ kind: 'navigate', url: 'http://127.0.0.1:9/', revision })
     ).rejects.toMatchObject({
       code: 'load_failed',
-      message: '127.0.0.1:9 didn’t load (ERR_CONNECTION_REFUSED). Read the page again.',
+      message: '127.0.0.1:9 didn’t respond (ERR_CONNECTION_REFUSED). Read the page again.',
     });
     expect((await journal(f)).map((record) => record.outcome)).toEqual(['unknown', 'failed']);
     await f.service.disconnect();
@@ -1878,7 +1883,7 @@ describe('a page load an action starts', () => {
     const refusal = f.service.action({ kind: 'click', role: 'button', name: 'Save', revision });
     await expect(refusal).rejects.toMatchObject({
       code: 'load_failed',
-      message: 'made-up.example:8443 didn’t load (ERR_CONNECTION_REFUSED). Read the page again.',
+      message: 'made-up.example:8443 didn’t respond (ERR_CONNECTION_REFUSED). Read the page again.',
     });
     const message = await refusal.catch((error: Error) => error.message);
     for (const leak of ['token', '/reset', 'frag', 'injected', 'secret', '<b>'])

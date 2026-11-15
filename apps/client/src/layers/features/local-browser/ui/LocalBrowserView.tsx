@@ -1,20 +1,27 @@
-import { useState, type RefObject } from 'react';
+import { useState } from 'react';
 import type { LocalBrowserHistoryDirection, LocalBrowserState } from '@dorkos/shared/local-browser';
 import { useOwnOrigins } from '@/layers/entities/config';
 import { isThisAppsAddress, normalizeAddressInput } from '@/layers/shared/lib';
 import { useTransport } from '@/layers/shared/model';
 import { BrowserChrome, Button } from '@/layers/shared/ui';
+import { useGuestPage } from '../model/use-guest-page';
+import { searchAddress } from '../lib/page-error';
+import { BrowserPageArea } from './BrowserPageArea';
 
 /** Props for {@link LocalBrowserView}. */
 export interface LocalBrowserViewProps {
   /** The tab the person is looking at, or `null` before one is chosen (no chrome then). */
   tab: LocalBrowserState['tabs'][number] | null;
+  /** The live browser connection, which the embedded page follows. */
+  connectionId: string | null;
   /** Whether the page sits in the panel (embedded) or in its own window. */
   embedded: boolean;
-  /** Where the desktop host draws the native page, when embedded. */
-  surface: RefObject<HTMLDivElement | null>;
+  /** Everything else that decides whether the native page may show. */
+  pageVisible: boolean;
   /** Whether the native page could not be drawn. */
   surfaceUnavailable: boolean;
+  /** The native page could not be drawn. */
+  onUnavailable: () => void;
   /** Whether another browser action is running. */
   busy: boolean;
   /** Run a browser action through the panel, which owns busy and error. */
@@ -25,7 +32,8 @@ export interface LocalBrowserViewProps {
 
 /**
  * The Agent browser's page: the shared browser chrome over the native page,
- * which runs flush to the panel's edges. What the person types is read by the
+ * which runs flush to the panel's edges, in the page area that draws loads and
+ * load failures (DOR-4430, DOR-4431). What the person types is read by the
  * shared address rules (DOR-4419); a refusal shows on the chrome's notice line
  * and keeps the typed text. Back and Forward move the page's own history on
  * the server, which re-checks every step against the same address rules and
@@ -36,15 +44,23 @@ export interface LocalBrowserViewProps {
  */
 export function LocalBrowserView({
   tab,
+  connectionId,
   embedded,
-  surface,
+  pageVisible,
   surfaceUnavailable,
+  onUnavailable,
   busy,
   action,
   onReconnect,
 }: LocalBrowserViewProps) {
   const transport = useTransport();
   const ownOrigins = useOwnOrigins();
+  // The embedded page's loads and failures (DOR-4430, DOR-4431): Reload turns
+  // into Stop while it loads, and a failed load keeps its address in the bar.
+  const page = useGuestPage(embedded ? connectionId : null);
+  // What the person last typed and went to: only their own words are ever searched for.
+  const [typed, setTyped] = useState<{ text: string; host: string } | null>(null);
+  const typedFailed = !!typed && !!page.failure && page.failure.host === typed.host;
   /**
    * What was typed, held when it did not open so the field reopens on it, with
    * the notice when the address rules refused it. A navigation that failed has
@@ -92,13 +108,13 @@ export function LocalBrowserView({
     void action(() => transport.stepLocalBrowserHistory(direction));
   };
 
-  const submit = (tabId: string, url: string, typed: string) => {
-    const input = normalizeAddressInput(typed, {
+  const submit = (tabId: string, url: string, text: string) => {
+    const input = normalizeAddressInput(text, {
       current: url,
       isOwnAddress: (candidate) => isThisAppsAddress(candidate, window.location, ownOrigins),
     });
     if (input.kind === 'refused') {
-      holdTyped(tabId, typed, input.notice);
+      holdTyped(tabId, text, input.notice);
       return;
     }
     setRetry(null);
@@ -106,10 +122,12 @@ export function LocalBrowserView({
       void go(url);
       return;
     }
+    // Only an address the person typed is remembered, for "Search for it" if it fails.
+    if (input.kind === 'open') setTyped({ text: text.trim(), host: new URL(input.url).host });
     // Only a real failure reopens the field: a navigation that Pause, Disconnect
     // or another tab replaced must not take focus back from where the person went.
     void go(input.url, input.kind === 'open' ? input.httpFallback : undefined).then((failed) => {
-      if (failed) holdTyped(tabId, typed, null);
+      if (failed) holdTyped(tabId, text, null);
     });
   };
 
@@ -117,13 +135,16 @@ export function LocalBrowserView({
     <div data-slot="local-browser-view" className="flex min-h-48 flex-1 flex-col">
       {tab && (
         <BrowserChrome
-          url={tab.url}
+          // A failed load keeps its address in the bar, so Reload retries it (DOR-4430).
+          url={page.failure?.url || tab.url}
           canBack={!busy && (tab.canGoBack ?? false)}
           canForward={!busy && (tab.canGoForward ?? false)}
           onBack={() => step('back')}
           onForward={() => step('forward')}
-          onReload={() => void go(tab.url)}
-          onSubmit={(typed) => submit(tab.id, tab.url, typed)}
+          onReload={() => void go(page.failure?.url || tab.url)}
+          loading={page.loading}
+          onStop={() => page.run('stop')}
+          onSubmit={(text) => submit(tab.id, tab.url, text)}
           busy={busy}
           tooltips={false}
           retry={shownRetry}
@@ -131,10 +152,16 @@ export function LocalBrowserView({
         />
       )}
       {embedded ? (
-        <div
-          ref={surface}
-          data-slot="native-browser-surface"
-          className="bg-muted/20 relative min-h-48 flex-1"
+        <BrowserPageArea
+          connectionId={connectionId}
+          visible={pageVisible}
+          page={page}
+          typed={typedFailed}
+          onSearch={() => {
+            if (typed) void go(searchAddress(typed.text));
+          }}
+          onUnavailable={onUnavailable}
+          disabled={busy}
         >
           {surfaceUnavailable && (
             <div className="space-y-2 p-3">
@@ -146,7 +173,7 @@ export function LocalBrowserView({
               </Button>
             </div>
           )}
-        </div>
+        </BrowserPageArea>
       ) : (
         <p className="text-muted-foreground p-3 text-sm">
           This page is in the separate browser window.

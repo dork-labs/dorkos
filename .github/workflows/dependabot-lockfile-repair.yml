@@ -84,8 +84,8 @@ name: dependabot-lockfile-repair
 #   - The actor gate below keeps this job from ever running, with secrets,
 #     against a human-authored (and therefore adversarial-fork-capable) PR.
 #
-# WHY THE ACTOR GATE: `pull_request_target` fires for every PR touching
-# `pnpm-lock.yaml`, not just Dependabot's. Scoping to
+# WHY THE ACTOR GATE: `pull_request_target` fires for every PR touching the
+# lockfile or a workspace package.json, not just Dependabot's. Scoping to
 # `github.event.pull_request.user.login == 'dependabot[bot]'` keeps the
 # elevated-permission path exclusive to the one PR author this job trusts.
 # (`dependabot[bot]`'s login can't be spoofed by an external contributor.) It
@@ -120,11 +120,28 @@ name: dependabot-lockfile-repair
 # packages Dependabot's own edits require, leaving the rest of the lockfile
 # alone. The versions the PR proposes stay the versions the PR proposes.
 
+# WHY THE MANIFEST PATHS, NOT JUST THE LOCKFILE (DOR-4458): Dependabot's
+# security updates open one PR per workspace directory ("bump hono in
+# /apps/space") that edits only that package's package.json and leaves
+# pnpm-lock.yaml untouched. Every installing job on such a PR dies at
+# `pnpm install --frozen-lockfile` with ERR_PNPM_OUTDATED_LOCKFILE: #3662 went
+# red in 17 jobs on 2026-11-12. #3675, #3231, #3153, #3136 and #3133 had the
+# same manifest-only shape; such a PR goes red whenever the lockfile does not
+# already satisfy the new range. With a lockfile-only filter this job never ran
+# on any of them.
+# The same resolver-only run repairs that case: it writes the lockfile entries
+# the edited manifest now asks for, and nothing else. The actor gate below is
+# unchanged, so the wider trigger reaches no new author.
+# scripts/__tests__/dependabot-lockfile-repair-paths.test.ts pins these paths
+# against pnpm-workspace.yaml.
 on:
   pull_request_target:
     types: [opened, synchronize, reopened]
     paths:
       - 'pnpm-lock.yaml'
+      - 'package.json'
+      - 'apps/*/package.json'
+      - 'packages/*/package.json'
 
 # One in flight per PR — if two events land in quick succession (e.g. a
 # force-push right after open), the later run's repair+push subsumes the
@@ -174,7 +191,9 @@ jobs:
 
       # DOR-1644: put back the `overrides:`/`settings:` block Dependabot's
       # regenerated lockfile drops, which otherwise fails every job on the PR
-      # with ERR_PNPM_LOCKFILE_CONFIG_MISMATCH.
+      # with ERR_PNPM_LOCKFILE_CONFIG_MISMATCH. DOR-4458: the same run writes
+      # the lockfile entries a manifest-only Dependabot PR never wrote, which
+      # otherwise fails every job with ERR_PNPM_OUTDATED_LOCKFILE.
       #
       # `--lockfile-only` is load-bearing and is NOT an optimisation: it is what
       # keeps this a resolver run rather than an install, so no package from the
@@ -197,7 +216,7 @@ jobs:
           HEAD_REF: ${{ github.event.pull_request.head.ref }}
         run: |
           if git diff --quiet -- pnpm-lock.yaml; then
-            echo "pnpm-lock.yaml already carries its pnpm config — nothing to do."
+            echo "pnpm-lock.yaml already matches its pnpm config and every manifest — nothing to do."
             exit 0
           fi
           git config user.name "github-actions[bot]"
@@ -208,7 +227,7 @@ jobs:
           # (a dedented line here would break the `run: |` block).
           git commit \
             -m "chore: repair pnpm-lock.yaml for Dependabot" \
-            -m "Dependabot cannot speak pnpm: it drops the root package.json's pnpm.overrides block from the lockfile, after which every job dies at pnpm install --frozen-lockfile with ERR_PNPM_LOCKFILE_CONFIG_MISMATCH (DOR-1644). Repaired automatically by .github/workflows/dependabot-lockfile-repair.yml."
+            -m "Dependabot cannot speak pnpm: it drops the root package.json's pnpm.overrides block from the lockfile, after which every job dies at pnpm install --frozen-lockfile with ERR_PNPM_LOCKFILE_CONFIG_MISMATCH (DOR-1644), and its per-directory security PRs edit a package.json without touching the lockfile at all, which fails the same jobs with ERR_PNPM_OUTDATED_LOCKFILE (DOR-4458). Repaired automatically by .github/workflows/dependabot-lockfile-repair.yml."
           # Push to the PR's actual branch name, not the detached HEAD this
           # job checked out (see the checkout step: we checked out a SHA).
           git push origin "HEAD:${HEAD_REF}"

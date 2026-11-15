@@ -178,6 +178,21 @@ describe('tasks_* on a Trusted install', () => {
     expect(changed.payload.schedule).not.toHaveProperty('folderRules');
   });
 
+  it('includes lastRunAt for a task whose latest run needs attention', async () => {
+    const tools = inSession();
+    const created = await call(tools.tasks_create!, GOOD_ARGS);
+    const id = (created.payload.schedule as { id: string }).id;
+    const run = store.createRun(id, 'scheduled');
+    store.updateRun(run.id, { status: 'needs_attention', outcome: 'partial' });
+
+    const { payload } = await call(tools.tasks_list!, {});
+
+    const listed = (payload.schedules as Array<{ id: string; lastRunAt: string }>).find(
+      (schedule) => schedule.id === id
+    );
+    expect(listed?.lastRunAt).toBe(run.startedAt);
+  });
+
   it.each([{ permissionMode: 'dontAsk' }, { target: 'someone-else' }])(
     'refuses an agent’s restricted write %j without changing approval',
     async (patch) => {

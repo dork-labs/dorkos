@@ -28,7 +28,13 @@ exists**. Opening the PR is the last step, not the first:
 3. A reviewer fetches and checks out that branch. It does not need a PR.
 4. Findings, fixes, convergence.
 5. Squash to one clean commit carrying one changelog fragment.
-6. **Then** open the PR, already reviewed, so the repo's automated review spends
+6. Check the exact final commit with `node scripts/verify-proof/cli.ts check HEAD`.
+   `pnpm verify` records its pass locally in the common git directory only when
+   HEAD and the working tree stay clean and unchanged throughout the run. A new
+   commit needs its own pass. The checker runs no gates. If an exceptional PR
+   must open without proof, add `--no-verify-proof` to the checker; it logs who,
+   when, and which commit locally. This does not bypass CI.
+7. **Then** open the PR, already reviewed, so the repo's automated review spends
    its single pass on final content.
 
 **A pushed branch that will not become a PR is yours to delete.** GitHub removes a
@@ -211,7 +217,7 @@ The full protocol is in `contributing/ci.md` and the `stewarding-ci-pipeline` sk
 
 **Check the open-PR count first.** Run
 `.agents/skills/creating-pull-requests/scripts/open-pr-cap.sh` before `gh pr create`.
-It refuses when 10 non-draft PRs into `main` are already open (set `DORKOS_OPEN_PR_CAP` to change it),
+It refuses when 30 non-draft PRs into `main` are already open (set `DORKOS_OPEN_PR_CAP` to change it),
 because a review line that can't keep up turns every new PR into a pileup
 (DOR-3341). At the cap, keep building locally and commit; open the PR when one
 lands. A P0 or a CI fix can pass with `--p0 "<reason>"`.

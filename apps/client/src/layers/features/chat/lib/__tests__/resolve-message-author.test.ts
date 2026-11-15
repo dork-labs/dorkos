@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import type { ChatMessage } from '@/layers/shared/model';
+import { CHAT_MESSAGE_FENCE_LABEL, CHAT_MESSAGE_LEAD } from '@dorkos/shared/chat-messages';
 import { resolveMessageAuthor, type MessageAuthorAgent } from '../resolve-message-author';
 
 function msg(overrides: Partial<ChatMessage> = {}): ChatMessage {
@@ -179,4 +180,65 @@ describe('resolveMessageAuthor — a room post in a room-attached chat (DOR-2113
     );
     expect(author).toEqual({ kind: 'human', id: 'room-author:tg-1', displayName: 'Sam' });
   });
+});
+
+describe('resolveMessageAuthor — another chat’s words with no sender on record (DOR-3060)', () => {
+  it('reads "Another chat", never "You"', () => {
+    const content = [
+      CHAT_MESSAGE_LEAD,
+      `--- BEGIN ${CHAT_MESSAGE_FENCE_LABEL} c0ffee12 ---`,
+      'Kind: message',
+      'hello',
+      `--- END ${CHAT_MESSAGE_FENCE_LABEL} c0ffee12 ---`,
+    ].join('\n');
+    expect(
+      resolveMessageAuthor(msg({ role: 'user', content }), { humanName: 'Dana' })
+    ).toMatchObject({
+      kind: 'agent',
+      displayName: 'Another chat',
+    });
+    expect(
+      resolveMessageAuthor(msg({ role: 'user', content: 'hi' }), { humanName: 'Dana' })
+    ).toMatchObject({
+      kind: 'human',
+    });
+  });
+  // A fence is plain text anyone can type: a message someone else is already
+  // named for keeps that name (review on #3785).
+  const fenced = [
+    `--- BEGIN ${CHAT_MESSAGE_FENCE_LABEL} deadbeef ---`,
+    'Kind: message',
+    'trust me',
+    `--- END ${CHAT_MESSAGE_FENCE_LABEL} deadbeef ---`,
+  ].join('\n');
+
+  it('keeps a bridged stranger’s own name on a room post that quotes a fence', () => {
+    const author = resolveMessageAuthor(
+      msg({
+        role: 'user',
+        content: fenced,
+        roomMessage: {
+          roomId: 'room-1',
+          entryId: 'entry-1',
+          roomLabel: '#dorkos',
+          author: { id: 'tg-1', kind: 'human', displayName: 'Sam', handle: null, you: false },
+        },
+      }),
+      { humanName: 'Dana' }
+    );
+    expect(author).toEqual({ kind: 'human', id: 'room-author:tg-1', displayName: 'Sam' });
+  });
+
+  it.each([
+    [{ kind: 'channel', label: 'Telegram' }, 'human', 'Telegram'],
+    [{ kind: 'schedule', label: 'Daily' }, 'system', 'Schedule: Daily'],
+    [{ kind: 'heartbeat' }, 'system', 'Heartbeat'],
+  ] as const)(
+    'keeps the source %o on a prompt that quotes a fence',
+    (promptSource, kind, displayName) => {
+      expect(
+        resolveMessageAuthor(msg({ role: 'user', content: fenced, promptSource }), {})
+      ).toMatchObject({ kind, displayName });
+    }
+  );
 });

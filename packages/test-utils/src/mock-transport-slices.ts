@@ -12,7 +12,8 @@
  * a framed page's script decision, which is never known, an agent's
  * level, where every agent runs at Full autonomy, confirming a paused
  * connection's settings, which succeeds, and undoing an agent's task mode,
- * where there is nothing to undo.
+ * where there is nothing to undo, and sending another chat's queued message
+ * now, which joins the running turn.
  * Heartbeats and a hub's computers come from their own mocks.
  *
  * @module test-utils/mock-transport-slices
@@ -63,7 +64,8 @@ type SliceMethods =
   | 'approveTaskFile'
   | 'sendFeedback'
   | 'listMyFeedback'
-  | 'previewRoomTranscript';
+  | 'previewRoomTranscript'
+  | 'steerQueuedChatMessage';
 
 /** An instructions view with no blocks, for tests that never open the viewer. */
 const EMPTY_INSTRUCTIONS_VIEW: InstructionsView = {
@@ -157,5 +159,7 @@ export function transportSliceMocks(): Pick<Transport, SliceMethods> &
     undoAgentTaskMode: vi.fn().mockRejectedValue(new Error('Nothing to undo')),
     // No task's file is capped, so there is nothing to approve.
     approveTaskFile: vi.fn().mockRejectedValue(new Error('Nothing to change')),
+    // Another chat's queued message joins the running turn.
+    steerQueuedChatMessage: vi.fn().mockResolvedValue({ outcome: 'steered' }),
   };
 }

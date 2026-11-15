@@ -40,6 +40,7 @@ import {
   runsCappedForFile,
 } from './file-cap/file-cap-rule.js';
 import { attestPersonEdit } from './file-cap/file-cap-person.js';
+import { toolTaskApproval } from '../approvals/task-approval-receipt.js';
 
 /** Mesh as recording reads it: the folder a task runs in, and the agent a home is. */
 type RecordMesh =
@@ -148,12 +149,22 @@ export function armAgentApproval(ctx: {
     const now = setMode ? { ...found, permissionMode: setMode } : found;
     const binding = agentApprovalBindingOf(now, runFolderOf(now, ctx.meshCore));
     if (!auditAgentMode(grant, before, now, binding, ctx.meshCore)) return null;
+    const agentName =
+      ctx.meshCore?.listWithPaths?.().find((agent) => agent.projectPath === ctx.agentPath)?.name ??
+      null;
     return store.approvals.inTransaction(() => {
       if (!stillSo()) throw new Error('the task changed while it was being approved');
-      store.updateTask(now.id, {
-        status: 'active',
-        ...(setMode ? { permissionMode: setMode } : {}),
-      });
+      store.updateTask(
+        now.id,
+        { status: 'active', ...(setMode ? { permissionMode: setMode } : {}) },
+        {
+          approval: toolTaskApproval({
+            answeredByPerson: grant.via === 'card',
+            agentPath: ctx.agentPath,
+            agentName,
+          }),
+        }
+      );
       // A person's yes on the card approves the content it showed, and only that (M-A, M1).
       if (grant.via === 'card') store.approvals.recordPersonApproval(now.id, grant.boundContentKey);
       store.approvals.recordAgentApproval(
@@ -215,6 +226,9 @@ export async function recordAgentModeOutcome(ctx: {
         decidedBy: grant.via,
         reachedVia: grant.credential,
         taskHash: binding,
+        approvedAt: after.approvedAt,
+        approvedBy: after.approvedBy,
+        approvedVia: after.approvedVia,
       },
       linkPath: taskLinkOf(after),
     });

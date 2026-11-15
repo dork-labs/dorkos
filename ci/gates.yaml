@@ -38,6 +38,11 @@ gates:
     source: .github/workflows/browser-native-release-artifact.yml
     purpose: Checks that the Linux CLI build accepts the exact attested Mac browser assets from the same source commit.
 
+  # --- codex-binary-macos.yml ---
+  - id: wf.codex-binary-macos.codex-binary-macos
+    source: .github/workflows/codex-binary-macos.yml
+    purpose: Runs the real Codex binary suites and protected-file probes on macOS, on Codex or release PRs and on request, so a release gets a macOS result.
+
   # --- mac-browser-reading.yml ---
   - id: wf.mac-browser-reading.read
     source: .github/workflows/mac-browser-reading.yml
@@ -288,6 +293,9 @@ gates:
   - id: lefthook.pre-push.ledger-coverage
     source: lefthook.yml
     purpose: Requires a ledger entry for changed pipeline paths before pushing.
+  - id: lefthook.pre-push.ci-midrun
+    source: lefthook.yml
+    purpose: Refuses a push while this branch's test or browser-test run from the last push is under ten minutes old, since the push would cancel it.
 
   # --- .claude/settings.json ---
   - id: claude.PreToolUse.file-guard

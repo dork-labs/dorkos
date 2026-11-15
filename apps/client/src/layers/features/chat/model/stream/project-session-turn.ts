@@ -36,7 +36,7 @@ import { mapHistoryMessages } from './stream-history-helpers';
 import { foldCapabilityApproval, foldCapabilityApprovalResolved } from './capability-approval-fold';
 import { foldMcpSignin, foldMcpSigninResolved } from './mcp-signin-fold';
 import { isPromptResolution, settledInteractionIds } from './turn-resolutions';
-import { applyWorkLeftEnded, noticePart } from './notice-folds';
+import { applyWorkLeftEnded, isNoticeEvent, noticePart } from './notice-folds';
 
 /** Stable id for the synthesized trailing in-progress assistant bubble. */
 const IN_PROGRESS_ASSISTANT_ID = '__in_progress_turn__';
@@ -886,6 +886,7 @@ export function projectInProgressTurn(events: SessionEvent[]): MessagePart[] {
   // drained by foldToolCall when the part appears (pass-local, never escapes).
   const orphanHooks = new Map<string, HookPart[]>();
   for (const event of events) {
+    if (isNoticeEvent(event)) parts.push(noticePart(event));
     switch (event.type) {
       case 'text_delta':
         foldTextDelta(parts, event);
@@ -943,10 +944,6 @@ export function projectInProgressTurn(events: SessionEvent[]): MessagePart[] {
         break;
       case 'permission_denied':
         foldPermissionDenied(parts, event);
-        break;
-      case 'model_substituted':
-      case 'work_left_running':
-        parts.push(noticePart(event));
         break;
       case 'operation_progress':
         foldOperationProgress(parts, event);

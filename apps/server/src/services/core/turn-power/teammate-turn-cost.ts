@@ -67,7 +67,7 @@ export function meterTeammateTurns(runtime: AgentRuntime): AgentRuntime {
         return (sessionId: string, input: unknown, opts?: MessageOpts) => {
           const turn = start(sessionId, input, opts);
           const rooms = teammateRoomsOf(opts);
-          return rooms.length === 0 ? turn : metered(target.type, rooms, turn);
+          return rooms.length === 0 ? turn : metered(target, rooms, turn);
         };
       }
       // A turn the runtime starts on its own runs under the session's latest turn: counted when
@@ -79,7 +79,7 @@ export function meterTeammateTurns(runtime: AgentRuntime): AgentRuntime {
             const rooms = sessionTeammateRooms(sessionId);
             listener(
               sessionId,
-              rooms.length === 0 ? events : metered(target.type, rooms, toGenerator(events))
+              rooms.length === 0 ? events : metered(target, rooms, toGenerator(events))
             );
           });
       }
@@ -118,11 +118,11 @@ function answered(event: StreamEvent): boolean {
 }
 
 async function* metered(
-  runtimeType: string,
+  runtime: AgentRuntime,
   rooms: readonly string[],
   source: AsyncGenerator<StreamEvent>
 ): AsyncGenerator<StreamEvent> {
-  const cost = turnCostReader(runtimeType);
+  const cost = turnCostReader(runtime);
   let ran = false;
   let failed = false;
   try {

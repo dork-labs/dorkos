@@ -21,10 +21,10 @@ export interface BrowserChromeProps {
   canBack: boolean;
   /** Whether there is a page to go forward to. */
   canForward: boolean;
-  /** Go back one page in the page's own history. */
-  onBack: () => void;
-  /** Go forward one page in the page's own history. */
-  onForward: () => void;
+  /** Go back. Omit it where the browser cannot yet, and the button stays disabled. */
+  onBack?: () => void;
+  /** Go forward. Omit it where the browser cannot yet, and the button stays disabled. */
+  onForward?: () => void;
   /** Reload the page. */
   onReload: () => void;
   /**
@@ -105,7 +105,11 @@ export function BrowserChrome({
         data-slot="browser-chrome"
         className={cn('bg-background @container/browser-chrome flex shrink-0 flex-col', className)}
       >
-        <div className="flex h-12 items-center gap-1 px-2.5 md:h-9">
+        <div
+          data-slot="browser-chrome-row"
+          aria-busy={loading}
+          className="flex h-12 items-center gap-1 px-2.5 md:h-9"
+        >
           <ChromeButton
             label="Back"
             icon={ArrowLeft}
@@ -156,9 +160,10 @@ export function BrowserChrome({
             role="alert"
             className="text-foreground flex min-h-7 shrink-0 items-center gap-1.5 px-2.5 py-1 text-xs"
           >
-            {/* Only the glyph is red: muted words would read weaker than the refusal is (spec §2). */}
-            <CircleAlert aria-hidden className="text-destructive size-3.5 shrink-0" />
-            <span>{notice}</span>
+            {/* The glyph is what makes it read as a refusal rather than a hint (spec §6).
+                Only it is red: muted words would read weaker than the refusal is (spec §2). */}
+            <CircleAlert aria-hidden className="text-destructive size-4 shrink-0" />
+            <span className="min-w-0">{notice}</span>
           </p>
         )}
       </div>
@@ -166,7 +171,10 @@ export function BrowserChrome({
   );
 }
 
-/** One 28px ghost icon button (44px on a phone) with its name in a tooltip. */
+/**
+ * One 28px ghost icon button (44px on a phone), named by its `aria-label` and
+ * shown by a tooltip or a `title` hint. With no handler it stays disabled.
+ */
 export function ChromeButton({
   label,
   icon: Icon,
@@ -178,41 +186,28 @@ export function ChromeButton({
   label: string;
   icon: LucideIcon;
   disabled?: boolean;
-  onClick: () => void;
+  onClick?: () => void;
   /** Name it in a Radix tooltip, or in the browser's own `title` hint when off. */
   tooltip?: boolean;
   className?: string;
 }) {
-  const classes = cn('text-muted-foreground hover:text-foreground md:size-7', className);
-  if (!tooltip) {
-    return (
-      <Button
-        variant="ghost"
-        size="icon-sm"
-        aria-label={label}
-        title={label}
-        disabled={disabled}
-        onClick={onClick}
-        className={classes}
-      >
-        <Icon aria-hidden />
-      </Button>
-    );
-  }
+  const button = (
+    <Button
+      variant="ghost"
+      size="icon-sm"
+      aria-label={label}
+      title={tooltip ? undefined : label}
+      disabled={onClick === undefined || disabled}
+      onClick={onClick}
+      className={cn('text-muted-foreground hover:text-foreground md:size-7', className)}
+    >
+      <Icon aria-hidden />
+    </Button>
+  );
+  if (!tooltip) return button;
   return (
     <Tooltip>
-      <TooltipTrigger asChild>
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          aria-label={label}
-          disabled={disabled}
-          onClick={onClick}
-          className={classes}
-        >
-          <Icon aria-hidden />
-        </Button>
-      </TooltipTrigger>
+      <TooltipTrigger asChild>{button}</TooltipTrigger>
       <TooltipContent>{label}</TooltipContent>
     </Tooltip>
   );

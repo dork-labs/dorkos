@@ -4,12 +4,12 @@
  * table test.
  *
  * A queued row from another agent must never read as the person's own words,
- * so the row names the agent and the chat it came from, and the header counts
- * who sent what.
+ * so the row names the agent and the chat it came from.
  *
  * @module features/chat/lib/queue-sender
  */
 import type { QueuedMessage } from '@dorkos/shared/schemas';
+import { UNKNOWN_CHAT_SENDER } from './unstamped-chat-message';
 
 /** The agent and chat a queued message came from. */
 export interface QueueSender {
@@ -21,10 +21,16 @@ export interface QueueSender {
   chatId: string;
   /** That chat's title. Absent when it could not be read: the row says "can't open". */
   chatTitle?: string;
+  /**
+   * The sender's one-line summary (`chat_send`'s `summary`), shown before the
+   * words. Only for a row that carries one message, so it never stands in for
+   * someone else's words.
+   */
+  summary?: string;
 }
 
 /** The name an unknown sender is shown under. */
-export const UNKNOWN_SENDER = 'Another chat';
+export const UNKNOWN_SENDER = UNKNOWN_CHAT_SENDER;
 
 /**
  * The sender of a queued message from another chat, or `null` when it cannot
@@ -41,35 +47,23 @@ export function queueSenderOf(fromChats: QueuedMessage['fromChats']): QueueSende
     chatId,
     ...(agentId ? { agentId } : {}),
     ...(chatTitle ? { chatTitle } : {}),
+    ...(fromChats?.length === 1 && first.summary ? { summary: first.summary } : {}),
   };
 }
 
-/** What the header counts: who sent each queued message. */
+/** What the header counts: whether each queued message came from another chat. */
 export interface QueueHeaderRow {
   /** True when another chat sent it. */
   fromChat: boolean;
-  /** Its sender, or `null` for an unknown one. */
-  sender?: QueueSender | null;
 }
 
 /**
- * The queue header's count. Only the person's own: "Queued (2)". Only agents:
- * "1 from Security", or "3 from Security and 2 others" across three or more
- * senders. Mixed: "2 queued · 1 yours, 1 from Security".
+ * The queue header's count. Only the person's own: "Queued (2)". Any message
+ * from another chat: "3 waiting". It never names a sender: each row already
+ * does, and the names crowded out when the queue sends.
  *
  * @param rows - The queued messages, in order.
  */
 export function queueHeaderCount(rows: readonly QueueHeaderRow[]): string {
-  const agentRows = rows.filter((row) => row.fromChat);
-  if (agentRows.length === 0) return `Queued (${rows.length})`;
-  const bySender = new Map<string, number>();
-  for (const row of agentRows) {
-    const name = row.sender?.agentName ?? UNKNOWN_SENDER;
-    bySender.set(name, (bySender.get(name) ?? 0) + 1);
-  }
-  const [top, topCount] = [...bySender].sort((a, b) => b[1] - a[1])[0]!;
-  const others = bySender.size - 1;
-  const agents = `${topCount} from ${top}${others > 0 ? ` and ${others} other${others === 1 ? '' : 's'}` : ''}`;
-  const yours = rows.length - agentRows.length;
-  return yours === 0 ? agents : `${rows.length} queued · ${yours} yours, ${agents}`;
+  return rows.some((row) => row.fromChat) ? `${rows.length} waiting` : `Queued (${rows.length})`;
 }

@@ -76,6 +76,7 @@ describe('TASK_WRITE_POLICY drift guard', () => {
     expect(TASK_WRITE_POLICY.permissionMode).toBe('operator-only');
     expect(TASK_WRITE_POLICY.status).toBe('operator-only');
     expect([...OPERATOR_ONLY_TASK_FIELDS].sort()).toEqual([
+      'approvalSurface',
       'approvedPromptHash',
       'expectedApprovalRevision',
       'permissionMode',

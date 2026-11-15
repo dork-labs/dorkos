@@ -113,21 +113,27 @@ describe('BrowserChrome', () => {
     expect(screen.queryByRole('button', { name: 'Reload' })).not.toBeInTheDocument();
   });
 
-  it('names Back in a tooltip, and never says it is coming soon', async () => {
-    renderChrome();
-    fireEvent.focus(screen.getByRole('button', { name: 'Back' }));
-    expect(await screen.findByRole('tooltip')).toHaveTextContent(/^Back$/);
+  it('disables a button with no handler and names it plainly', async () => {
+    renderChrome({ onBack: undefined });
+    const back = screen.getByRole('button', { name: 'Back' });
+    expect(back).toBeDisabled();
+    expect(back).not.toHaveAttribute('title');
   });
 
-  it('names its buttons with a title hint when tooltips are off, and still drives them', () => {
-    const { onBack } = renderChrome({ canBack: true, canForward: false, tooltips: false });
-    const back = screen.getByRole('button', { name: 'Back' });
-    expect(back).toHaveAttribute('title', 'Back');
-    expect(back).toBeEnabled();
-    fireEvent.click(back);
-    expect(onBack).toHaveBeenCalledOnce();
-    expect(screen.getByRole('button', { name: 'Forward' })).toBeDisabled();
-    expect(screen.getByRole('button', { name: 'Reload' })).toHaveAttribute('title', 'Reload');
+  it('names every button with a title hint, keeping its aria-label, when tooltips are off', () => {
+    renderChrome({ onBack: undefined, tooltips: false, loading: true, onStop: vi.fn() });
+    for (const name of ['Back', 'Forward', 'Stop']) {
+      const button = screen.getByRole('button', { name });
+      expect(button).toHaveAttribute('aria-label', name);
+      expect(button).toHaveAttribute('title', name);
+    }
+    expect(screen.getByRole('button', { name: 'Back' })).toBeDisabled();
+  });
+
+  it('names Reload with a tooltip by default', async () => {
+    renderChrome();
+    fireEvent.focus(screen.getByRole('button', { name: 'Reload' }));
+    expect(await screen.findByRole('tooltip')).toHaveTextContent('Reload');
   });
 
   it('keeps the field open on Enter while busy, and disables Reload', () => {
@@ -149,20 +155,18 @@ describe('BrowserChrome', () => {
         url="https://example.com"
         canBack
         canForward
-        onBack={vi.fn()}
-        onForward={vi.fn()}
         onReload={vi.fn()}
         onSubmit={vi.fn()}
         notice="Only web pages open here. Try an address starting with https://."
       />
     );
-    const alert = screen.getByRole('alert');
-    expect(alert).toHaveTextContent('Only web pages open here.');
-    expect(alert).toHaveClass('min-h-7');
+    expect(screen.getByRole('alert')).toHaveTextContent('Only web pages open here.');
+    expect(screen.getByRole('alert')).toHaveClass('min-h-7');
+    // A glyph in front of the words makes it read as a refusal, not a hint.
+    expect(screen.getByRole('alert').querySelector('svg.text-destructive')).not.toBeNull();
     // The words are full strength; only the glyph is red (spec §2).
-    expect(alert).toHaveClass('text-foreground');
-    expect(alert).not.toHaveClass('text-muted-foreground');
-    expect(alert.querySelector('svg')).toHaveClass('text-destructive');
+    expect(screen.getByRole('alert')).toHaveClass('text-foreground');
+    expect(screen.getByRole('alert')).not.toHaveClass('text-muted-foreground');
   });
 
   it('turns the seam brand orange while an agent drives', () => {

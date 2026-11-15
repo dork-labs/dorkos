@@ -41,12 +41,19 @@ import { Hono } from 'hono';
 import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
 import { StepUpRequiredBodySchema } from '@dorkos/shared/step-up';
+import { WEBHOOK_MANIFEST } from '@dorkos/relay';
+import type { StreamEvent } from '@dorkos/shared/types';
 
 import type { ApiEnv } from '../../http/api-chain.js';
 import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
 import type { RequestUser } from '../../services/core/auth/session-gate.js';
 import { resetHeldStepUpsForTests } from '../../services/core/auth/step-up/step-up-holds.js';
+import {
+  countWhileRunning,
+  resetLiveOutsiderTurns,
+} from '../../services/core/turn-power/live-outsider-turns.js';
 import type { AdapterManager } from '../../services/relay/adapter-manager.js';
+import { env } from '../../env.js';
 import { personSettingsIn, registerSettingRoutes } from '../relay-adapter-setting-routes.js';
 import { createStepUpRoutes, type StepUpRouteDeps } from '../step-up.js';
 
@@ -54,6 +61,10 @@ const target = swappableServer();
 const OWN_ORIGIN = 'http://localhost:4242';
 const PASSWORD = 'correct horse battery';
 const OWNER: RequestUser = { userId: 'user_owner', credential: 'cookie', sessionId: 'sess-a' };
+const AGENT = ['X-DorkOS-Agent', 'agent-token'] as const;
+const AGENT_HOME = '/made-up/agents/porter';
+const URL_A = 'https://first.example.test/hooks';
+const URL_B = 'https://second.example.test/hooks';
 const WITH_SETTING = {
   url: 'https://hooks.example.dev',
   headers: { Authorization: 'env:DEPLOY_TOKEN' },
@@ -64,6 +75,8 @@ let manager: {
   addAdapter: ReturnType<typeof vi.fn>;
   updateConfig: ReturnType<typeof vi.fn>;
   resolveAdapterName: ReturnType<typeof vi.fn>;
+  getAdapter: ReturnType<typeof vi.fn>;
+  getManifest: ReturnType<typeof vi.fn>;
 };
 
 const stepUpDeps: StepUpRouteDeps = {
@@ -90,6 +103,13 @@ function app(user: RequestUser | null = OWNER) {
       {
         before: async (c, next) => {
           if (user) c.set('user', user);
+          if (c.req.header(AGENT[0]) === AGENT[1]) {
+            c.set('agentIdentity', {
+              agentPath: AGENT_HOME,
+              displayName: 'Porter',
+              createdAt: '2026-11-01T00:00:00.000Z',
+            });
+          }
           await next();
         },
       }
@@ -145,11 +165,26 @@ beforeEach(() => {
     addAdapter: vi.fn(async () => undefined),
     updateConfig: vi.fn(async () => undefined),
     resolveAdapterName: vi.fn(() => 'Deploy hooks'),
+    getAdapter: vi.fn(() => ({
+      config: {
+        id: 'wh',
+        type: 'webhook',
+        enabled: true,
+        builtin: false,
+        config: {
+          inbound: { subject: 'relay.webhook.wh', secret: '***' },
+          outbound: { url: URL_A, secret: '***', headers: { Authorization: '***' } },
+        },
+      },
+      status: { state: 'disabled' },
+    })),
+    getManifest: vi.fn(() => WEBHOOK_MANIFEST),
   };
 });
 afterEach(() => {
   state.ownerId = 'user_owner';
   state.notTheOwner = false;
+  resetLiveOutsiderTurns();
 });
 
 describe.each(ROUTES)('$name with a person’s setting', ({ send, call, reason }) => {
@@ -217,6 +252,197 @@ describe('a request with no person’s setting', () => {
       .send({ config: WITH_SETTING });
     expect(res.status).not.toBe(428);
     expect(manager.updateConfig).toHaveBeenCalledWith('wh', expect.any(Object), 'agent');
+  });
+});
+
+/** Run `request` while the verified agent has an outsider-marked turn in progress. */
+async function duringMarkedTurn<T>(run: () => Promise<T>): Promise<T> {
+  const turn = countWhileRunning(
+    { cwd: AGENT_HOME },
+    { outsider: true },
+    (async function* () {
+      yield { type: 'done', data: {} } as StreamEvent;
+    })()
+  );
+  await turn.next();
+  try {
+    return await run();
+  } finally {
+    await turn.return(undefined);
+  }
+}
+
+/** Run one scenario with DOR-3858's boot flag temporarily set. */
+async function withStrangerMarkFlag<T>(enabled: boolean, run: () => Promise<T>): Promise<T> {
+  const key = 'DORKOS_MARK_STRANGER_TURNS';
+  const target = env as unknown as Record<string, unknown>;
+  const previous = Object.getOwnPropertyDescriptor(target, key);
+  Object.defineProperty(target, key, { configurable: true, enumerable: true, value: enabled });
+  try {
+    return await run();
+  } finally {
+    if (previous) Object.defineProperty(target, key, previous);
+    else Reflect.deleteProperty(target, key);
+  }
+}
+
+const TYPED_SECRETS = {
+  inbound: { subject: 'relay.webhook.wh', secret: 'made-up-inbound-secret' },
+  outbound: {
+    url: URL_B,
+    secret: 'made-up-outbound-secret',
+    // The form sends this password map as JSON text. The gate must inspect the normalized map.
+    headers: '{"Authorization":"made-up-header-secret"}',
+  },
+};
+
+describe('a marked agent turn sending typed secrets to an address', () => {
+  it.each([
+    {
+      name: 'add',
+      send: () =>
+        request(app())
+          .post('/api/relay/adapters')
+          .set(...AGENT)
+          .send({ type: 'webhook', id: 'wh-new', config: TYPED_SECRETS }),
+      saved: () => manager.addAdapter,
+    },
+    {
+      name: 'save',
+      send: () =>
+        request(app())
+          .patch('/api/relay/adapters/wh/config')
+          .set(...AGENT)
+          .send({ config: TYPED_SECRETS }),
+      saved: () => manager.updateConfig,
+    },
+  ])('refuses a $name to a new address and saves nothing', async ({ send, saved }) => {
+    const res = await withStrangerMarkFlag(true, () => duringMarkedTurn(send));
+
+    expect(res.status).toBe(403);
+    expect(res.body.code).toBe('marked_turn_secret_to_new_address');
+    expect(saved()).not.toHaveBeenCalled();
+  });
+
+  it('allows the same saved address', async () => {
+    const res = await withStrangerMarkFlag(true, () =>
+      duringMarkedTurn(() =>
+        request(app())
+          .patch('/api/relay/adapters/wh/config')
+          .set(...AGENT)
+          .send({
+            config: { ...TYPED_SECRETS, outbound: { ...TYPED_SECRETS.outbound, url: URL_A } },
+          })
+      )
+    );
+
+    expect(res.status).toBe(200);
+    expect(manager.updateConfig).toHaveBeenCalledOnce();
+  });
+
+  it('allows an unmarked agent turn to use a new address', async () => {
+    const res = await withStrangerMarkFlag(true, () =>
+      request(app())
+        .patch('/api/relay/adapters/wh/config')
+        .set(...AGENT)
+        .send({ config: TYPED_SECRETS })
+    );
+
+    expect(res.status).toBe(200);
+    expect(manager.updateConfig).toHaveBeenCalledOnce();
+  });
+
+  it('allows the person writer to use a new address', async () => {
+    const res = await withStrangerMarkFlag(true, () =>
+      request(app()).patch('/api/relay/adapters/wh/config').send({ config: TYPED_SECRETS })
+    );
+
+    expect(res.status).toBe(200);
+    expect(manager.updateConfig).toHaveBeenCalledOnce();
+  });
+
+  it('refuses a test that sends typed secrets to a new address, and connects nothing', async () => {
+    const res = await withStrangerMarkFlag(true, () =>
+      duringMarkedTurn(() =>
+        request(app())
+          .post('/api/relay/adapters/test')
+          .set(...AGENT)
+          .send({ type: 'webhook', config: TYPED_SECRETS })
+      )
+    );
+
+    expect(res.status).toBe(403);
+    expect(res.body.code).toBe('marked_turn_secret_to_new_address');
+    expect(manager.testConnection).not.toHaveBeenCalled();
+  });
+
+  it('lets an unmarked agent turn test the same connection', async () => {
+    const res = await withStrangerMarkFlag(true, () =>
+      request(app())
+        .post('/api/relay/adapters/test')
+        .set(...AGENT)
+        .send({ type: 'webhook', config: TYPED_SECRETS })
+    );
+
+    expect(res.status).toBe(200);
+    expect(manager.testConnection).toHaveBeenCalledOnce();
+  });
+
+  // Fail closed: an agent header DorkOS can't resolve names no turn to read marks from.
+  it('refuses an agent it cannot identify, with a reason that says so', async () => {
+    const res = await withStrangerMarkFlag(true, () =>
+      request(app())
+        .post('/api/relay/adapters')
+        .set('X-DorkOS-Agent', 'made-up-unknown-token')
+        .send({ type: 'webhook', id: 'wh-new', config: TYPED_SECRETS })
+    );
+
+    expect(res.status).toBe(403);
+    expect(res.body.code).toBe('marked_turn_secret_to_new_address');
+    expect(res.body.error).toContain("couldn't tell which agent");
+    expect(manager.addAdapter).not.toHaveBeenCalled();
+  });
+
+  // Re-review of #3778: a signed-in person who isn't the owner presents no agent header, so this
+  // rule doesn't judge them, and they aren't told they are an agent.
+  it('lets a signed-in person who is not the owner add a typed secret at a new address', async () => {
+    state.notTheOwner = true;
+    const res = await withStrangerMarkFlag(true, () =>
+      request(app())
+        .post('/api/relay/adapters')
+        .send({ type: 'webhook', id: 'wh-new', config: TYPED_SECRETS })
+    );
+
+    expect(res.status).toBe(201);
+    expect(manager.addAdapter).toHaveBeenCalledOnce();
+  });
+
+  it('lets an agent it cannot identify keep the same saved address', async () => {
+    const res = await withStrangerMarkFlag(true, () =>
+      request(app())
+        .patch('/api/relay/adapters/wh/config')
+        .set('X-DorkOS-Agent', 'made-up-unknown-token')
+        .send({
+          config: { ...TYPED_SECRETS, outbound: { ...TYPED_SECRETS.outbound, url: URL_A } },
+        })
+    );
+
+    expect(res.status).toBe(200);
+    expect(manager.updateConfig).toHaveBeenCalledOnce();
+  });
+
+  it('keeps today’s behavior while the flag is off', async () => {
+    const res = await withStrangerMarkFlag(false, () =>
+      duringMarkedTurn(() =>
+        request(app())
+          .patch('/api/relay/adapters/wh/config')
+          .set(...AGENT)
+          .send({ config: TYPED_SECRETS })
+      )
+    );
+
+    expect(res.status).toBe(200);
+    expect(manager.updateConfig).toHaveBeenCalledOnce();
   });
 });
 
