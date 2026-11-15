@@ -1,5 +1,6 @@
 import { crashResult } from './diagnostics/session-crash-result.js';
 import { logRetiredTurn, retiredResult, retireReasonOf } from './diagnostics/retired-turn.js';
+import type { RetiringPump } from './diagnostics/retired-turn.js';
 /**
  * Turn windowing over the pump's single continuous output (spec
  * `persistent-session-runtime` §5, task 3.3).
@@ -239,7 +240,6 @@ import {
   type PumpControlQuery,
   type PumpCrash,
   type PumpDispatch,
-  type PumpTeardownReason,
 } from './session-pump-contract.js';
 
 /**
@@ -423,15 +423,13 @@ export interface TurnWindow {
 }
 
 /** The slice of `SessionPump` the windower drives. `SessionPump` satisfies it. */
-export interface WindowedPump {
+export interface WindowedPump extends RetiringPump {
   /** Run one dequeued batch as one turn. */
   dispatch(batch: readonly PumpDispatch[]): Promise<void>;
   /** `RUNNING → WARM`, once the closing window's accounting is done. */
   endTurn(): void;
   /** The live process's control channel, for the per-window accounting fetch. */
   readonly controlQuery: PumpControlQuery | undefined;
-  /** Why the process was torn down, once it has been (DOR-2705). */
-  readonly teardownReason?: PumpTeardownReason;
 }
 
 /** Everything the windower needs to cut turns out of one pump's output. */
@@ -1609,7 +1607,7 @@ export class SessionTurnWindows {
    *   reason it names why the process was let go
    */
   onRetired(to: 'cold' | 'reaped'): void {
-    const reason = retireReasonOf(to, this.opts.pump.teardownReason);
+    const reason = retireReasonOf(to, this.opts.pump);
     const window = this.closeForGoneProcess(retiredResult(this.opts.sessionId, reason));
     if (window !== undefined) logRetiredTurn(this.opts.sessionId, reason, window.ids);
   }

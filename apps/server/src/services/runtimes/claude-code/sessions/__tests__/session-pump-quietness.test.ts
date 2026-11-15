@@ -358,6 +358,58 @@ describe('an open turn that is still talking is never past the ceiling', () => {
     expect(await reapNow(harness.pump)).toBe(false);
   });
 
+  it('ends a turn that keeps talking at the 16-hour limit', async () => {
+    let turnOpen = false;
+    const harness = await warmPump({ hasRuntimeTurnOpen: () => turnOpen });
+    await harness.emit(assistantMessage());
+    turnOpen = true;
+    // One word every hour: never four quiet hours, but sixteen in all.
+    for (let hour = 1; hour < 16; hour += 1) {
+      vi.advanceTimersByTime(60 * 60_000);
+      await harness.emit(assistantMessage());
+      expect(harness.pump.isPastCeiling()).toBe(false);
+    }
+    vi.advanceTimersByTime(60 * 60_000);
+    await harness.emit(assistantMessage());
+
+    expect(SESSIONS.TURN_HARD_CEILING_MS).toBe(4 * SESSIONS.BACKGROUND_WORK_PARK_CEILING_MS);
+    expect(harness.pump.isPastTurnLimit()).toBe(true);
+    expect(harness.pump.isPastCeiling()).toBe(true);
+    expect(await reapNow(harness.pump)).toBe(true);
+  });
+
+  it("does not count a helper's frames as the turn talking", async () => {
+    let turnOpen = false;
+    const harness = await warmPump({ hasRuntimeTurnOpen: () => turnOpen });
+    await runTask(harness, 'local_agent');
+    await harness.emit(assistantMessage());
+    turnOpen = true;
+    vi.advanceTimersByTime(SESSIONS.BACKGROUND_WORK_PARK_CEILING_MS);
+    // Only the helper is talking now.
+    await harness.emit({
+      ...assistantMessage(),
+      parent_tool_use_id: 'toolu_helper',
+    } as ReturnType<typeof assistantMessage>);
+
+    expect(harness.pump.isPastCeiling()).toBe(true);
+  });
+
+  it('starts the turn clocks over after a result', async () => {
+    let turnOpen = false;
+    const harness = await warmPump({ hasRuntimeTurnOpen: () => turnOpen });
+    await harness.emit(assistantMessage());
+    turnOpen = true;
+    vi.advanceTimersByTime(15 * 60 * 60_000);
+    await harness.emit(resultMessage());
+    turnOpen = false;
+    // The next turn begins: sixteen hours since the FIRST turn began, one since this.
+    vi.advanceTimersByTime(60 * 60_000);
+    await harness.emit(assistantMessage());
+    turnOpen = true;
+
+    expect(harness.pump.isPastTurnLimit()).toBe(false);
+  });
+
   it('still ends a /loop between its turns once the background clock runs out', async () => {
     let turnOpen = false;
     const harness = await warmPump({

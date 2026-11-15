@@ -58,6 +58,7 @@ import {
   sessionRecordCapacity,
   type SessionRecordPolicy,
 } from './records/capacity.js';
+import { isRunningTurnAlive, isTurnPastLimit } from './records/running-turn.js';
 
 /**
  * Build one of this store's stop receipts.
@@ -1083,37 +1084,33 @@ export class SessionStore {
     const now = Date.now();
     const expiredIds: string[] = [];
     for (const [id, session] of this.sessions) {
-      if (now - session.lastActivity <= this.SESSION_TIMEOUT_MS) continue;
+      // A turn past the 16-hour limit is never "recently active" (DOR-2705).
+      if (now - session.lastActivity <= this.SESSION_TIMEOUT_MS && !isTurnPastLimit(session)) {
+        continue;
+      }
       // A turn still running is not idle. A turn can sit thirty minutes inside
       // one long tool call with no frame to stamp `lastActivity`, so without
       // this it was evicted out from under itself: the warm process was torn
       // down mid-work and the turn sat dark until the stall watchdog ended it
       // with nothing left to interrupt (DOR-2681). Both paths mean the same
-      // thing by `activeQuery`. Bounded by the background-work ceiling, measured
-      // from the turn's LAST frame, not its start: both turn loops stamp
-      // `lastActivity` on every frame, because measuring from the start ended
-      // every turn still working four hours in (DOR-2705). So only a turn
-      // silent for four hours, whose `finally` never ran, loses its record; one
-      // that merely went dark is ended by the stall watchdog long before.
-      if (
-        session.activeQuery !== undefined &&
-        now - session.lastActivity < SESSIONS.BACKGROUND_WORK_PARK_CEILING_MS
-      ) {
-        continue;
-      }
+      // thing by `activeQuery`. Bounded twice (DOR-2705): by four hours of
+      // silence, and by the absolute turn limit however much it is still
+      // saying. See `isRunningTurnAlive`.
+      if (isRunningTurnAlive(session, now)) continue;
       // A session whose agent is still working is not idle either, and eviction
       // is the harsher of the two sweeps: it tears the process down
       // unconditionally, so a helper agent, a Monitor or an undelivered
       // notification thirty minutes after the last turn was simply thrown away
-      // (spec `warm-process-lifecycle` D1, DOR-2065). Bounded by the same
-      // four-hour ceiling the pump applies to every other hold, so work that
-      // never finishes cannot make a record immortal.
+      // (spec `warm-process-lifecycle` D1, DOR-2065). Bounded by the pump's
+      // four-hour ceiling, and an open turn that is still talking by the
+      // absolute turn limit, so work that never finishes cannot make a record
+      // immortal.
       if (isHoldingWork?.(id) === true) continue;
       // A session parked on a person is not idle, it is waiting, and evicting
       // it throws away the very tool call the person is coming back to answer.
       // `lastActivity` is stamped at creation and by a turn's frames, never
       // during a wait, so without this the real ceiling on any wait would be
-      // thirty minutes from the last frame and a four-hour park would be a lie. Bounded by
+      // thirty minutes from the last activity and a four-hour park would be a lie. Bounded by
       // the park ceiling rather than by the interaction, so a STRANDED entry
       // cannot make a record immortal: it ages out on the same clock the
       // selector and the stall watchdog use. `startedAt`, not a parked flag,

@@ -209,4 +209,24 @@ describe('checkSessionHealth exempts a session whose turn is still running', () 
 
     expect(store.checkSessionHealth(new SessionLockManager(), () => false)).toEqual([SESSION_ID]);
   });
+
+  // DOR-2705. A turn that keeps talking re-stamps `lastActivity` for ever, so
+  // the 16-hour limit from its start is what ends one stuck in a loop.
+  it('evicts a turn still talking once it has run past the 16-hour limit', () => {
+    const store = storeRunningTurn(THIRTY_ONE_MINUTES);
+    const session = store.findSession(SESSION_ID)!;
+    session.lastActivity = Date.now() - 60_000;
+    session.turnStartedAwake = performance.now() - SESSIONS.TURN_HARD_CEILING_MS - 1;
+
+    expect(store.checkSessionHealth(new SessionLockManager(), () => false)).toEqual([SESSION_ID]);
+  });
+
+  it('keeps that turn one minute short of the 16-hour limit', () => {
+    const store = storeRunningTurn(THIRTY_ONE_MINUTES);
+    const session = store.findSession(SESSION_ID)!;
+    session.lastActivity = Date.now() - 60_000;
+    session.turnStartedAwake = performance.now() - SESSIONS.TURN_HARD_CEILING_MS + 60_000;
+
+    expect(store.checkSessionHealth(new SessionLockManager(), () => false)).toEqual([]);
+  });
 });

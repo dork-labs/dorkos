@@ -547,6 +547,14 @@ export class SessionPump {
   }
 
   /**
+   * Has the current turn run past the absolute turn limit (DOR-2705)? See
+   * `ProcessQuiet.isPastTurnLimit`.
+   */
+  isPastTurnLimit(): boolean {
+    return this.quiet.isPastTurnLimit();
+  }
+
+  /**
    * Are background shells and session timers the only things this process is
    * holding for (DOR-2065, DOR-2717)? See `ProcessQuiet.isHoldingOnlyReclaimable`.
    */
