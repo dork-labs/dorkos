@@ -67,6 +67,7 @@ import {
   settleLegacyApprovals,
   upkeepApprovals,
 } from './pin/extension-approval-upkeep.js';
+import { dropStaleApprovals, forgetToolSettings } from './pin/stale-approvals.js';
 import {
   reconcileRunningSkills,
   mergeSkillChanges,
@@ -442,6 +443,9 @@ export class ExtensionManager {
       this.extensions.set(rec.id, rec);
     }
     upkeepApprovals(records, this.shadowed, this.dorkHome);
+    // Gone, not replaced (DOR-4305): its tool settings go with its approval.
+    for (const id of dropStaleApprovals(records, this.shadowed))
+      await forgetToolSettings(this.forgetToolPermissions, id, id);
     await placeSnapshots(this.dorkHome, records, configManager.get('extensions'));
 
     await this.compileEnabled();
@@ -1217,18 +1221,8 @@ export class ExtensionManager {
     await this.serverLifecycle.shutdown(id);
     // Removed, not stopped: a per-tool setting kept for its tools must not
     // carry over to whatever is installed under this id next (DOR-2685).
-    if (installRoot) await this.forgetToolPermissionsOf(id, name);
+    if (installRoot) await forgetToolSettings(this.forgetToolPermissions, id, name);
     this.emitChanged();
-  }
-
-  /** Clear one extension's tool permission settings, best-effort. */
-  private async forgetToolPermissionsOf(id: string, name: string): Promise<void> {
-    if (!this.forgetToolPermissions) return;
-    try {
-      await this.forgetToolPermissions(id, name);
-    } catch (err) {
-      logger.warn(`[Extensions] Could not clear the tool permission settings of ${id}`, err);
-    }
   }
 
   /** Initialize server-side extension code (delegated to server lifecycle). */
