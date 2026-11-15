@@ -94,7 +94,7 @@ export function canvasContentRefusal(
   return base === undefined ? null : protectedSourceRefusal(source, base);
 }
 
-/** Why a room canvas will not show a local file: it is outside the agent's folder. */
+/** Why a canvas will not show a local file: it is outside the agent's folder. */
 export interface OutsideFolderRefusal {
   /** Always `OUTSIDE_FOLDER`. */
   code: 'OUTSIDE_FOLDER';
@@ -102,16 +102,17 @@ export interface OutsideFolderRefusal {
   message: string;
 }
 
-/** The folders a room canvas may show a local file from (DOR-3519). */
-export interface RoomCanvasFolders {
+/** The folders a canvas may show a local file from (DOR-3519). */
+export interface CanvasFolders {
   /** The chat's folder. A relative path resolves against it, as every canvas writer resolves it. */
   cwd: string | undefined;
   /**
-   * The destination room's own folders, as the server placed them: the agent's
-   * copy of THAT room's files and the room's shared `repo/`. Only an absolute
-   * path reaches them.
+   * For a room's canvas, the destination room's own folders, as the server
+   * placed them: the agent's copy of THAT room's files and the room's shared
+   * `repo/`. Only an absolute path reaches them. Omitted for a one-on-one chat,
+   * whose canvas reads only from `cwd`.
    */
-  roomFolders: readonly string[];
+  roomFolders?: readonly string[];
   /**
    * The rooms directory. Inside it only `roomFolders` count, even when `cwd`
    * contains it (a DorkOS dev checkout keeps its data under the repo), so
@@ -145,21 +146,22 @@ async function realFolder(folder: string): Promise<string | null> {
 }
 
 /**
- * Why a ROOM canvas will not show the local file a command names, or `null`
- * when it names none or may (DOR-3519).
+ * Why a canvas will not show the local file a command names, or `null` when it
+ * names none or may (DOR-3519).
  *
- * A room copies what its canvas shows to every other member, so a file outside
- * the agent's folder and that room's own folders (or a link inside one that
- * points out) is an error the agent reads, asked with the file routes' own
- * {@link resolveWithinCwd}. Only the room paths call this: the person's own
- * one-on-one window is not asked.
+ * A file outside the agent's folder (or a link inside it that points out) is an
+ * error the agent reads, asked with the file routes' own {@link resolveWithinCwd}.
+ * A one-on-one canvas reads a local file only through routes held to the chat's
+ * folder, so anything else would be "opened" and then draw an empty card. A room
+ * also copies what its canvas shows to every other member, and adds that room's
+ * own folders.
  *
  * @param command - The validated `control_ui` command.
- * @param folders - The chat's folder, the destination room's folders, and the rooms directory.
+ * @param folders - The chat's folder, and for a room its folders and the rooms directory.
  */
 export async function canvasOutsideFolderRefusal(
   command: UiCommand,
-  folders: RoomCanvasFolders
+  folders: CanvasFolders
 ): Promise<OutsideFolderRefusal | null> {
   const content = contentFor(command);
   const { cwd } = folders;
@@ -170,7 +172,8 @@ export async function canvasOutsideFolderRefusal(
 
   let resolved = await resolvedWithin(cwd, source);
   if (resolved === undefined) return null;
-  const roomFolders = (await Promise.all(folders.roomFolders.map(realFolder))).filter(
+  const forRoom = folders.roomFolders !== undefined;
+  const roomFolders = (await Promise.all((folders.roomFolders ?? []).map(realFolder))).filter(
     (folder): folder is string => folder !== null
   );
   if (resolved === null && path.isAbsolute(source)) {
@@ -191,9 +194,10 @@ export async function canvasOutsideFolderRefusal(
     isInside(rooms, where) &&
     !roomFolders.some((folder) => isInside(folder, where));
   if (where !== null && !anotherRoomsFile) return null;
+  const allowed = forRoom ? "your folder and this room's files" : 'your folder';
   return {
     code: 'OUTSIDE_FOLDER',
-    message: `${source} is outside your folder and this room's files, so the canvas can't show it. To show it, copy it into your folder first and open the copy.`,
+    message: `The canvas only shows files from ${allowed}, and ${source} is outside it. You can still read the file yourself and show what's in it, or copy it into your folder and open the copy.`,
   };
 }
 

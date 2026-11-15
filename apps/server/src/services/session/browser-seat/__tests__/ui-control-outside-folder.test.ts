@@ -3,8 +3,9 @@
  * an error naming the path (DOR-3519). A room copies what its canvas shows to
  * every other member, so the call has to refuse when it is made.
  *
- * The person's own one-on-one window is not asked this (Security's ruling): it
- * opens an outside-folder file exactly as it did before.
+ * A one-on-one chat refuses the same way. Its canvas reads a local file through
+ * routes held to the chat's folder (`/api/files/raw`, the static-serve route), so
+ * an outside file was "opened" and then drew an empty card.
  *
  * Real files in a temp tree, a real boundary at its root, a real canvas writer
  * over an in-memory database.
@@ -90,6 +91,17 @@ afterEach(() => {
 
 const MEDIA = ['image', 'pdf', 'audio', 'video', 'model3d', 'csv'] as const;
 
+/**
+ * The refusal reads as a canvas limit, never a rule about the file (Security +
+ * PM): the agent may still read the file itself, or copy it in.
+ */
+function expectCanvasLimit(error: string): void {
+  expect(error).toContain('The canvas only shows files from');
+  expect(error).toContain('You can still read the file yourself');
+  expect(error).toContain('copy it into your folder and open the copy');
+  expect(error).not.toMatch(/security|forbidden|not allowed|off limits|outside access/i);
+}
+
 describe("a local file outside the agent folder, on a room's canvas (DOR-3519)", () => {
   it.each(MEDIA)('open_canvas %s with an outside src is an error naming the path', async (type) => {
     inRoom();
@@ -98,7 +110,7 @@ describe("a local file outside the agent folder, on a room's canvas (DOR-3519)",
     expect(isError).toBe(true);
     expect(payload.code).toBe('OUTSIDE_FOLDER');
     expect(String(payload.error)).toContain(src);
-    expect(String(payload.error)).toContain('copy it into your folder');
+    expectCanvasLimit(String(payload.error));
     // Refused before anything is written: no document exists in the room.
     expect(canvas.list(ROOM)).toEqual([]);
   });
@@ -147,13 +159,18 @@ describe("a local file outside the agent folder, on a room's canvas (DOR-3519)",
   });
 });
 
-describe('the person’s own one-on-one window opens what it did before (Security, DOR-3519)', () => {
-  it.each(MEDIA)('open_canvas %s with an outside src still opens', async (type) => {
+describe('a local file outside the agent folder, in a one-on-one chat (DOR-3519)', () => {
+  it.each(MEDIA)('open_canvas %s with an outside src is an error naming the path', async (type) => {
     const src = path.join(outside, 'clip.mp4');
     const { payload, isError } = await control({ action: 'open_canvas', content: { type, src } });
-    expect(isError).toBe(false);
-    expect(payload.success).toBe(true);
-    expect(canvas.list(sessionScope(SESSION))).toHaveLength(1);
+    expect(isError).toBe(true);
+    expect(payload.code).toBe('OUTSIDE_FOLDER');
+    expect(String(payload.error)).toContain(src);
+    expectCanvasLimit(String(payload.error));
+    // No room is involved, so the sentence does not mention one.
+    expect(String(payload.error)).not.toContain('room');
+    // Refused before anything is written: this chat's canvas has no document.
+    expect(canvas.list(sessionScope(SESSION))).toEqual([]);
   });
 
   it.each([
@@ -166,10 +183,16 @@ describe('the person’s own one-on-one window opens what it did before (Securit
       'a link that points out',
       { action: 'open_canvas', content: { type: 'video', src: 'link/clip.mp4' } },
     ],
-  ])('%s outside the folder still opens', async (_name, args) => {
-    const resolved = JSON.parse(JSON.stringify(args).replace('OUTSIDE/', `${outside}/`));
-    const { isError } = await control(resolved);
-    expect(isError).toBe(false);
+    ['a file:// src', { action: 'open_canvas', content: { type: 'video', src: 'FILEURL' } }],
+  ])('%s outside the folder is an error too', async (_name, args) => {
+    const resolved = JSON.parse(
+      JSON.stringify(args)
+        .replace('OUTSIDE/', `${outside}/`)
+        .replace('FILEURL', `file://${path.join(outside, 'clip.mp4')}`)
+    );
+    const { payload, isError } = await control(resolved);
+    expect(isError).toBe(true);
+    expect(payload.code).toBe('OUTSIDE_FOLDER');
   });
 
   it.each([
