@@ -23,10 +23,6 @@ const expected: Record<string, number> = {
   // hasPathCopy only: Codex's vendored rg via execFileSync, no shell, fixed
   // `--files --hidden --no-ignore --glob` flags; DorkOS sets the root and glob.
   'codex/policy/hidden-folder-scans.ts': 1,
-  // DOR-4358: the same vendored rg, once on the turn's path (a working folder)
-  // and once off it (the home's background scan). No shell, fixed flags,
-  // `runtimeEnvironment` env; DorkOS sets the root and globs from its own list.
-  'codex/policy/expand-deep-globs.ts': 2,
   'connect/delegated-login.ts': 2,
   'opencode/server-manager.ts': 1,
   'opencode/providers/provision.ts': 1,

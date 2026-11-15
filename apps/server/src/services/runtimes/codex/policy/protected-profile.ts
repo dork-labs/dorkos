@@ -16,8 +16,6 @@ import { MODE_TO_SANDBOX } from '../turn-input.js';
 import { readMountTargets, emptyOwnedMountTarget } from './mount-target-ledger.js';
 import { collapseProtectedPaths } from './collapse-protected-paths.js';
 import { keepScansOutOfHiddenFolders } from './hidden-folder-scans.js';
-import { expandDeepGlobs } from './expand-deep-globs.js';
-import { withMacKnownSecrets } from './mac-known-secrets.js';
 
 /** Stable reserved names; the profile selection is explicit on every thread load and turn. */
 export function codexPermissionProfile(settings: Pick<SessionSettings, 'permissionMode'>): string {
@@ -166,24 +164,11 @@ function protectedEntries(
   // `:workspace` also opens /tmp and $TMPDIR (what os.tmpdir() reads) for
   // writes, so they count as opened too.
   const tmp = [...new Set(['/tmp', os.tmpdir()])];
-  const scanned = keepScansOutOfHiddenFolders(collapsed, [
+  return keepScansOutOfHiddenFolders(collapsed, [
     ...activeFolders,
     ...writable.flatMap(spellings),
     ...tmp.flatMap(spellings),
   ]);
-  // macOS only: a deep glob would stop every folder under its base being
-  // removed or renamed (DOR-4358), so name the matches exactly instead. The
-  // working folders are scanned now; every other base in the background.
-  const platform = process.platform;
-  const expanded = expandDeepGlobs(scanned, {
-    platform,
-    working: [...activeFolders, ...writable.flatMap(spellings)],
-  });
-  return withMacKnownSecrets(expanded, {
-    homes: spellings(roots.home),
-    data: roots.data,
-    platform,
-  });
 }
 
 /**
