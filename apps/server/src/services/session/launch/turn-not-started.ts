@@ -81,6 +81,29 @@ const AGENT_OUTPUT: ReadonlySet<StreamEvent['type']> = new Set<StreamEvent['type
   'tool_call_start',
 ]);
 
+/**
+ * The only events a turn may show and still count as one where the agent did
+ * nothing (DOR-4353): bookkeeping about the request and the session. That
+ * includes `prompt_suggestion`, the next-prompt suggestion Claude Code carries
+ * over from the previous turn: it lands at the start of the next query, before
+ * any model request (QA's 0.135.11 gate, W5 and W6), and says nothing about
+ * this turn. Anything else (text, thinking, a tool call starting, a held card)
+ * is the agent acting. An allow list of exact types, so an event type added
+ * later counts as acting.
+ */
+const QUIET: ReadonlySet<StreamEvent['type']> = new Set<StreamEvent['type']>([
+  'model_request',
+  'api_retry',
+  'model_substituted',
+  'context_usage',
+  'session_status',
+  'session_state_changed',
+  'system_status',
+  'prompt_suggestion',
+  'error',
+  'done',
+]);
+
 /** How a turn settles: its outcome and, when nobody read the message, why. */
 export type SettledAs = [outcome: 'ok' | 'failed', reason?: TurnRefusal | typeof TURN_NO_ANSWER];
 
@@ -90,6 +113,12 @@ export interface WatchedTurn {
   stream: AsyncIterable<StreamEvent>;
   /** Whether the agent produced output, even if its turn later failed. */
   readonly started: boolean;
+  /**
+   * Whether the turn showed anything beyond request and session bookkeeping:
+   * output, a tool call starting, a held card. Wider than {@link started}, so a
+   * turn that did anything at all is never run again (DOR-4353).
+   */
+  readonly acted: boolean;
   /** Set when the turn threw: it settles `failed` too. */
   threw: boolean;
   /** How the turn settles, as `onSettled`'s arguments. */
@@ -111,9 +140,11 @@ export function watchNotStarted(
   let reason: TurnRefusal | undefined;
   let sawError = false;
   let sawOutput = false;
+  let sawAction = false;
   async function* stream(): AsyncIterable<StreamEvent> {
     for await (const event of source) {
       reason ??= notStartedReason(event);
+      if (!QUIET.has(event.type)) sawAction = true;
       if (event.type === 'error') sawError = true;
       if (!sawOutput && AGENT_OUTPUT.has(event.type)) {
         sawOutput = true;
@@ -126,6 +157,9 @@ export function watchNotStarted(
     stream: stream(),
     get started() {
       return sawOutput;
+    },
+    get acted() {
+      return sawAction;
     },
     threw: false,
     settledAs: () => {

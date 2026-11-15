@@ -19,17 +19,28 @@
  * only in memory (an outsider mark, a ceiling, an unattended turn) has its row
  * held to the runtime's default before it is let go: stricter, never looser.
  *
+ * A pause can also land after the turn started (its row already off the queue)
+ * but before the agent read the message (DOR-4353). That turn is stopped like
+ * any running one, so the row is put back in its old place and held the same
+ * way, and its sender hears `held` rather than a failure.
+ *
  * Only a real queue row is held. A refusing caller's trigger and a transient one
  * have no row to keep, and a protected private message has its own receipt
  * lifecycle; those meet the pause as before.
  *
  * @module services/session/message-dispatcher/pause-hold
  */
+import { randomUUID } from 'node:crypto';
 import { agentPause, type PausedAgentRef } from '../../mesh/pause/agent-pause.js';
-import { getMessageQueueStore, setQueuedWaitingOn } from '../message-queue-store.js';
+import {
+  getMessageQueueStore,
+  setQueuedWaitingOn,
+  type QueuedMessageRecord,
+} from '../message-queue-store.js';
 import { emitQueueUpdate } from '../queue-stream-events.js';
+import { queueKeyOf } from '../resolution/session-key-registry.js';
 import { logger } from '../../../lib/logger.js';
-import { pending } from './state.js';
+import { emitLifecycle, pending } from './state.js';
 import type { DispatchPlan } from './types.js';
 
 /** How many held rows remember that their hold was already recorded. */
@@ -39,12 +50,41 @@ const RECORDED_HOLDS_MAX = 1_000;
 const recordedHolds = new Set<string>();
 
 /**
+ * A fresh runtime message id for each row a pause cut after its turn started
+ * (DOR-4353, QA's W1). The cut runtime may already hold the message in its
+ * transcript under the id it was sent with, and Claude Code runs nothing for
+ * an id it already holds, so the rerun goes out under a new one. The row keeps
+ * its own id: its chat record, its marks and its place in line are keyed to it.
+ */
+const rerunIds = new Map<string, string>();
+
+/**
+ * The id a row's turn is sent to the runtime under: the row's own, or a fresh
+ * one after a pause cut it.
+ *
+ * @param rowId - The queue row.
+ */
+export function runtimeMessageIdFor(rowId: string): string {
+  return rerunIds.get(rowId) ?? rowId;
+}
+
+/**
+ * Forget a row's fresh runtime id once its turn has started.
+ *
+ * @param rowId - The queue row.
+ */
+export function forgetRuntimeMessageId(rowId: string): void {
+  rerunIds.delete(rowId);
+}
+
+/**
  * Forget which holds were recorded.
  *
  * @internal Exported for testing only, through `resetMessageDispatcher`.
  */
 export function forgetRecordedHolds(): void {
   recordedHolds.clear();
+  rerunIds.clear();
 }
 
 /**
@@ -54,11 +94,19 @@ export function forgetRecordedHolds(): void {
  * @returns The paused agent, or `undefined` to launch as usual
  */
 export function pausedAgentOfPlan(plan: DispatchPlan): PausedAgentRef | undefined {
-  if (plan.whenBusy !== 'queue' || plan.transient || plan.turn.privateReceiptId !== undefined) {
-    return undefined;
-  }
+  if (!holdable(plan) || !getMessageQueueStore()?.get(plan.messageId)) return undefined;
+  return pausedAgentOf(plan);
+}
+
+/** Whether a message is the kind a pause holds: one with a real queue row. */
+function holdable(plan: DispatchPlan): boolean {
+  return plan.whenBusy === 'queue' && !plan.transient && plan.turn.privateReceiptId === undefined;
+}
+
+/** The paused agent a message is for, or `undefined`. */
+function pausedAgentOf(plan: DispatchPlan): PausedAgentRef | undefined {
   const pauses = agentPause();
-  if (!pauses || !getMessageQueueStore()?.get(plan.messageId)) return undefined;
+  if (!pauses) return undefined;
   const { cwd, forAgent, roomTurn } = plan.turn;
   const named = cwd !== undefined || forAgent !== undefined || roomTurn !== undefined;
   return pauses.pausedAgentOfSession(
@@ -128,4 +176,27 @@ export function holdForPause(plan: DispatchPlan, agent: PausedAgentRef): void {
     messageId: plan.messageId,
     agentId: agent.id,
   });
+}
+
+/**
+ * Hold a message whose turn started and was then stopped by a pause before the
+ * agent read it (DOR-4353). Its row left the queue at `turn_start`, so the pause
+ * used to stop it like any running turn and the words were gone. Now the row
+ * goes back in its old place and is held as {@link holdForPause} holds one, and
+ * its sender hears `held` in place of `settled`.
+ *
+ * @param plan - The message whose turn was cut
+ * @param row - Its row, as the turn's start took it off the queue
+ * @returns Whether it was held; when not, the turn settles as usual
+ */
+export function holdStartedForPause(plan: DispatchPlan, row: QueuedMessageRecord): boolean {
+  const agent = holdable(plan) ? pausedAgentOf(plan) : undefined;
+  const store = getMessageQueueStore();
+  if (!agent || !store) return false;
+  store.restore(queueKeyOf(plan.sessionKey), row);
+  rerunIds.set(row.id, randomUUID());
+  emitQueueUpdate(plan.sessionKey);
+  holdForPause(plan, agent);
+  emitLifecycle({ phase: 'held', messageId: plan.messageId, sessionId: plan.sessionKey });
+  return true;
 }

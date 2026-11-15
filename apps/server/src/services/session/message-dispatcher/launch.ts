@@ -5,7 +5,11 @@
  *
  * @module services/session/message-dispatcher/launch
  */
-import { getMessageQueueStore, setQueuedWaitingOn } from '../message-queue-store.js';
+import {
+  getMessageQueueStore,
+  setQueuedWaitingOn,
+  type QueuedMessageRecord,
+} from '../message-queue-store.js';
 import { triggerTurn, type TriggerTurnResult } from '../trigger-turn.js';
 import { emitQueueUpdate } from '../queue-stream-events.js';
 import { TURN_NO_ANSWER } from '../launch/turn-not-started.js';
@@ -30,7 +34,14 @@ import {
 } from './state.js';
 import { holdInQueue, parkDispatch, returnToQueue, unwatchedSettle } from './park.js';
 import { rearmLockWaiters, schedulePump } from './pump.js';
-import { forgetRecordedHolds, holdForPause, pausedAgentOfPlan } from './pause-hold.js';
+import {
+  forgetRecordedHolds,
+  holdForPause,
+  forgetRuntimeMessageId,
+  holdStartedForPause,
+  pausedAgentOfPlan,
+  runtimeMessageIdFor,
+} from './pause-hold.js';
 import { logger } from '../../../lib/logger.js';
 import type { PausedAgentRef } from '../../mesh/pause/agent-pause.js';
 import type { DispatchPlan, InFlightTurn } from './types.js';
@@ -156,6 +167,8 @@ export function launchDispatchInner(
   // Set when a pause landed between the check above and this turn's start: the
   // turn will be refused, so its row is kept and held once it settles.
   let heldByPause: PausedAgentRef | undefined;
+  // The row as this turn's start took it off the queue (DOR-4353).
+  let startedRow: QueuedMessageRecord | undefined;
   const remainingMs = opts.budgetExhausted
     ? 0
     : Math.max(0, plan.budgetMs - (Date.now() - plan.startedWaitingAt));
@@ -250,8 +263,12 @@ export function launchDispatchInner(
         if (turn.privateReceiptId !== undefined) {
           getPrivateSessionMessageAcceptanceService()?.markTurnStarted(turn.privateReceiptId, seq);
           emitQueueUpdate(sessionKey);
-        } else if (getMessageQueueStore()?.remove(messageId)) {
-          emitQueueUpdate(sessionKey);
+        } else {
+          // Kept, so a pause that cuts the turn before the agent reads it can
+          // put the row back (DOR-4353).
+          startedRow = getMessageQueueStore()?.remove(messageId);
+          forgetRuntimeMessageId(messageId);
+          if (startedRow) emitQueueUpdate(sessionKey);
         }
         // A launch the wait bound forced claimed no slot, so it met the lock as
         // a stranger would. Running now, it IS the session's turn, and claims
@@ -275,9 +292,10 @@ export function launchDispatchInner(
       projector: plan.projector,
       deps: buildTurnDeps(plan.runtime),
       queueWaitMs: remainingMs,
-      messageId,
+      // A fresh id after a pause cut this row's turn; the row keeps its own (DOR-4353).
+      messageId: runtimeMessageIdFor(messageId),
       onError: turn.onError,
-      onSettled: (turnOutcome, reason) => {
+      onSettled: (turnOutcome, reason, agentActed) => {
         // This turn has let go of the write-lock, so whatever the lock refused
         // may try again now. Its boundary is no substitute: a turn that ends and
         // then drains background work announces `turn_end` long before it lets
@@ -295,6 +313,11 @@ export function launchDispatchInner(
           }
           // Lifted again before the turn spoke, so it ran: the row goes now.
           if (getMessageQueueStore()?.remove(messageId)) emitQueueUpdate(sessionKey);
+        } else if (startedRow && agentActed === false && holdStartedForPause(plan, startedRow)) {
+          // Paused after the turn started but before the agent did anything:
+          // its row is back on the queue, held, and its sender hears `held`.
+          clearIfOurs();
+          return;
         }
         clearIfOurs();
         if (turn.privateReceiptId !== undefined) {

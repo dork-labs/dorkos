@@ -815,11 +815,15 @@ export class ChatMessageService {
       return;
     }
     if (event.phase === 'started') noteChatTurnStarted(event.sessionId, this.now(), rows);
-    else if (event.phase === 'settled') noteChatTurnSettled(event.sessionId);
+    // A held turn ended too, without settling (DOR-4353).
+    else if (event.phase !== 'dropped') noteChatTurnSettled(event.sessionId);
     for (const row of rows) {
       let status: ChatMessageStatus | null = null;
       let failureReason: string | undefined;
       if (event.phase === 'started' && row.status === 'queued') status = 'working';
+      // A pause stopped its turn before the agent read it: it waits in the
+      // queue again, held until the pause lifts, so it reads as queued (DOR-4353).
+      else if (event.phase === 'held' && row.status === 'working') status = 'queued';
       else if (event.phase === 'settled' && (row.status === 'working' || row.status === 'queued')) {
         status = standing.settledStatus(event.outcome, event.reason);
         if (status === 'failed') failureReason = standing.settledFailureReason(event.reason);
@@ -831,10 +835,7 @@ export class ChatMessageService {
             : 'Someone took it off the chat’s queue, or pressed Stop.';
       }
       if (status === null) continue;
-      this.deps.store.update(row.id, {
-        status,
-        ...(failureReason ? { failureReason } : {}),
-      });
+      this.deps.store.update(row.id, { status, ...(failureReason ? { failureReason } : {}) });
       this.deps.emitActivity(row.fromSessionId);
       this.deps.emitActivity(row.toSessionId);
     }

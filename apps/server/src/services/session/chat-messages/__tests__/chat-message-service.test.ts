@@ -1066,6 +1066,21 @@ describe('the lifecycle of a sent message', () => {
     }
   });
 
+  it('a turn a pause stopped before its model request → queued again, never failed (DOR-4353)', async () => {
+    const { queueId, ids } = await queuedPair();
+    lifecycle!({ phase: 'started', messageId: queueId, sessionId: 'chat-b' });
+    lifecycle!({ phase: 'held', messageId: queueId, sessionId: 'chat-b' });
+    for (const id of ids) {
+      expect(store.get(id)).toMatchObject({ status: 'queued' });
+      expect(store.get(id)!.failureReason ?? undefined).toBeUndefined();
+    }
+
+    // The resume runs it, and it settles as any turn does.
+    lifecycle!({ phase: 'started', messageId: queueId, sessionId: 'chat-b' });
+    lifecycle!({ phase: 'settled', messageId: queueId, sessionId: 'chat-b', outcome: 'ok' });
+    expect(ids.map((id) => store.get(id)!.status)).toEqual(['delivered', 'delivered']);
+  });
+
   it('a turn the runtime refused before the agent saw it → failed, never delivered, with its words (DOR-2994)', async () => {
     const { queueId, ids } = await queuedPair();
     lifecycle!({ phase: 'started', messageId: queueId, sessionId: 'chat-b' });

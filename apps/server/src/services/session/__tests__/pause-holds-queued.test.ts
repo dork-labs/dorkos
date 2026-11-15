@@ -29,8 +29,11 @@ import {
   dispatchMessage,
   isQueuedMessageArmed,
   listQueuedMessages,
+  onDispatchLifecycle,
   resetMessageDispatcher,
   setQueuedChatCeilingResolver,
+  setQueuedChatHoldResolver,
+  type DispatchLifecycleEvent,
 } from '../message-dispatcher.js';
 import { rearmChatQueues } from '../message-dispatcher/queue-upkeep.js';
 import { chatClientId } from '../chat-messages/chat-client-id.js';
@@ -169,6 +172,7 @@ afterEach(async () => {
   releaseLongTurn = undefined;
   await vi.waitFor(() => expect(inner.isTurnOpen(sessionId)).toBe(false));
   setQueuedChatCeilingResolver(undefined);
+  setQueuedChatHoldResolver(undefined);
   resetMessageDispatcher();
   setMessageQueueStore(undefined);
   disposeProjector(sessionId);
@@ -335,6 +339,333 @@ describe('pausing an agent holds its queued messages (DOR-4327)', () => {
     await vi.waitFor(() => expect(listQueuedMessages(sessionId)).toEqual([]), { timeout: 2000 });
     await vi.waitFor(() => expect(ran()).toHaveLength(4), { timeout: 2000 });
     expect(ran().slice(2).sort()).toEqual(['person: and this', 'person: one more thing']);
+  });
+});
+
+describe('a pause between a queued turn’s start and its first model request (DOR-4353)', () => {
+  /** Set while the cut turn waits at its first model request. */
+  let atModelRequest: (() => void) | undefined;
+  /** Which words each scenario answered, in order: what the agent really read. */
+  let answered: string[];
+
+  /**
+   * The queued message's turn: started (its `turn_start` is out, its row is
+   * off the queue), then held at the model request until something interrupts.
+   */
+  const stallsBeforeModel = async function* (content: string): AsyncGenerator<StreamEvent> {
+    await new Promise<void>((resolve) => {
+      atModelRequest = resolve;
+    });
+    yield { type: 'text_delta', data: { text: 'too late' } };
+    // Only reached when the hold passed that output on, so the agent spoke.
+    answered.push(content);
+    yield { type: 'done', data: {} };
+  };
+
+  const answers = async function* (content: string): AsyncGenerator<StreamEvent> {
+    answered.push(content);
+    yield { type: 'text_delta', data: { text: 'reply' } };
+    yield { type: 'done', data: {} };
+  };
+
+  beforeEach(() => {
+    answered = [];
+    atModelRequest = undefined;
+    inner.withScenarios([longTurn, stallsBeforeModel, answers, answers]);
+    inner.interruptQuery.mockImplementation(async () => {
+      releaseLongTurn?.();
+      atModelRequest?.();
+      return { outcome: 'acked', runtime: inner.type };
+    });
+  });
+
+  /**
+   * B runs a turn while A's message waits; the turn ends, A's message starts,
+   * and B is paused before its model request is made. Returns the row's id.
+   */
+  async function startThenPauseBeforeModel(events: DispatchLifecycleEvent[] = []): Promise<string> {
+    const stop = onDispatchLifecycle((event) => events.push(event));
+    const runtime = runtimeRegistry.get(inner.type);
+    const projector = getOrCreateProjector(sessionId, BETA.home);
+    await dispatchMessage({
+      sessionId,
+      clientId: 'person-window',
+      content: 'start the census',
+      projector,
+      runtime,
+      cwd: BETA.home,
+    });
+    await vi.waitFor(() => expect(inner.isTurnOpen(sessionId)).toBe(true));
+    await dispatchMessage({
+      sessionId,
+      clientId: chatClientId('chat-alpha'),
+      content: 'from A: add the totals',
+      projector,
+      runtime,
+      cwd: BETA.home,
+    });
+    const [row] = listQueuedMessages(sessionId);
+    expect(row?.content).toBe('from A: add the totals');
+
+    // The turn ahead ends; A's message starts and waits at its model request.
+    releaseLongTurn?.();
+    await vi.waitFor(() => expect(atModelRequest).toBeDefined(), { timeout: 2000 });
+    // Pinned: its turn_start is out and its row is off the queue.
+    expect(events).toContainEqual({ phase: 'started', messageId: row!.id, sessionId });
+    expect(listQueuedMessages(sessionId)).toEqual([]);
+
+    await pauses.pause(BETA.id, PERSON, 'demo pause');
+    await vi.waitFor(() => expect(inner.isTurnOpen(sessionId)).toBe(false));
+    await settle();
+    stop();
+    return row!.id;
+  }
+
+  it('holds the row, then runs it exactly once on resume', async () => {
+    const rowId = await startThenPauseBeforeModel();
+
+    // Held: back on the queue, unread, and nothing here is about to run it.
+    expect(listQueuedMessages(sessionId).map((row) => row.id)).toEqual([rowId]);
+    expect(answered).toEqual([]);
+    expect(isQueuedMessageArmed(rowId)).toBe(false);
+    await rearm();
+    await settle();
+    expect(answered).toEqual([]);
+
+    pauses.onResumed(() => void rearm());
+    pauses.resume(BETA.id, PERSON);
+    await vi.waitFor(() => expect(answered).toEqual(['from A: add the totals']), {
+      timeout: 2000,
+    });
+    await vi.waitFor(() => expect(listQueuedMessages(sessionId)).toEqual([]), { timeout: 2000 });
+    await rearm();
+    await rearm();
+    await settle();
+
+    expect(answered).toEqual(['from A: add the totals']);
+  });
+
+  it('never reruns a turn the agent had already started answering', async () => {
+    const answersThenWaits = async function* (content: string): AsyncGenerator<StreamEvent> {
+      answered.push(content);
+      yield { type: 'text_delta', data: { text: 'halfway' } };
+      await new Promise<void>((resolve) => {
+        atModelRequest = resolve;
+      });
+      yield { type: 'done', data: {} };
+    };
+    inner.withScenarios([longTurn, answersThenWaits, answers]);
+    const events: DispatchLifecycleEvent[] = [];
+    const stop = onDispatchLifecycle((event) => events.push(event));
+    const runtime = runtimeRegistry.get(inner.type);
+    const projector = getOrCreateProjector(sessionId, BETA.home);
+    await dispatchMessage({
+      sessionId,
+      clientId: 'person-window',
+      content: 'start the census',
+      projector,
+      runtime,
+      cwd: BETA.home,
+    });
+    await vi.waitFor(() => expect(inner.isTurnOpen(sessionId)).toBe(true));
+    await dispatchMessage({
+      sessionId,
+      clientId: chatClientId('chat-alpha'),
+      content: 'from A: add the totals',
+      projector,
+      runtime,
+      cwd: BETA.home,
+    });
+    releaseLongTurn?.();
+    await vi.waitFor(() => expect(atModelRequest).toBeDefined(), { timeout: 2000 });
+
+    await pauses.pause(BETA.id, PERSON);
+    await vi.waitFor(() => expect(inner.isTurnOpen(sessionId)).toBe(false));
+    await settle();
+    pauses.resume(BETA.id, PERSON);
+    await rearm();
+    await settle();
+    stop();
+
+    // It ran once, as far as it got; the pause stops it like any running turn.
+    expect(listQueuedMessages(sessionId)).toEqual([]);
+    expect(answered).toEqual(['from A: add the totals']);
+    expect(events.map((event) => event.phase)).not.toContain('held');
+  });
+
+  /**
+   * A's message starts with `cut` as its turn, which shows `shown` and then
+   * waits until interrupted; B is paused there and resumed. Returns how many
+   * times B's runtime was asked to run A's words, and the options of each.
+   */
+  async function cutPauseResume(
+    shown: StreamEvent[],
+    extra: Partial<Parameters<typeof dispatchMessage>[0]> = {}
+  ): Promise<{ runs: number; opts: Array<Record<string, unknown>> }> {
+    const cut = async function* (): AsyncGenerator<StreamEvent> {
+      for (const event of shown) yield event;
+      await new Promise<void>((resolve) => {
+        atModelRequest = resolve;
+      });
+      yield { type: 'done', data: {} };
+    };
+    inner.withScenarios([longTurn, cut, answers, answers]);
+    const runtime = runtimeRegistry.get(inner.type);
+    const projector = getOrCreateProjector(sessionId, BETA.home);
+    await dispatchMessage({
+      sessionId,
+      clientId: 'person-window',
+      content: 'start the census',
+      projector,
+      runtime,
+      cwd: BETA.home,
+    });
+    await vi.waitFor(() => expect(inner.isTurnOpen(sessionId)).toBe(true));
+    await dispatchMessage({
+      sessionId,
+      clientId: chatClientId('chat-alpha'),
+      content: 'from A: add the totals',
+      projector,
+      runtime,
+      cwd: BETA.home,
+      ...extra,
+    });
+    releaseLongTurn?.();
+    await vi.waitFor(() => expect(atModelRequest).toBeDefined(), { timeout: 2000 });
+    const stopped = vi.spyOn(pauses, 'stopSession');
+    await pauses.pause(BETA.id, PERSON);
+    await vi.waitFor(() => expect(inner.isTurnOpen(sessionId)).toBe(false));
+    await settle();
+    // Cut by the pause backstop's thrown AgentPausedError, as QA saw live:
+    // `stopSession` runs only on that path.
+    expect(stopped).toHaveBeenCalled();
+    // A different caller lifts the pause: its limits must not reach the run.
+    pauses.resume(BETA.id, {
+      accountId: '01ALPHAAGENTULID0000000000',
+      kind: 'agent',
+      name: 'alpha',
+    });
+    await rearm();
+    await settle();
+    await settle();
+    const calls = inner.sendMessage.mock.calls.filter(
+      (call) => call[1] === 'from A: add the totals'
+    );
+    return {
+      runs: calls.length,
+      opts: calls.map((call) => (call[2] ?? {}) as Record<string, unknown>),
+    };
+  }
+
+  it('never reruns a turn whose tool call had started (Security Must 1)', async () => {
+    const { runs } = await cutPauseResume([
+      { type: 'tool_call_start', data: { toolCallId: 'call-1', toolName: 'Bash', input: '' } },
+    ] as StreamEvent[]);
+    expect(runs).toBe(1);
+    expect(listQueuedMessages(sessionId)).toEqual([]);
+  });
+
+  it('never reruns a turn that raised a card (Security Must 1)', async () => {
+    const { runs } = await cutPauseResume([
+      {
+        type: 'approval_required',
+        data: { toolCallId: 'call-1', toolName: 'Bash', input: '{}', timeoutMs: 60_000 },
+      },
+    ] as unknown as StreamEvent[]);
+    expect(runs).toBe(1);
+    expect(listQueuedMessages(sessionId)).toEqual([]);
+  });
+
+  it('still reruns a turn that only made its model request (the PM’s ruling: a repeat beats a loss)', async () => {
+    const { runs } = await cutPauseResume([
+      { type: 'model_request', data: { requestId: 'r-1', phase: 'start', startedAt: 1 } },
+    ] as unknown as StreamEvent[]);
+    expect(runs).toBe(2);
+    expect(answered).toEqual(['from A: add the totals']);
+  });
+
+  it('keeps the author and every mark on the rerun, never the resumer’s (Security Must 2)', async () => {
+    // A Wi-Fi hold (held to the default) and a chat-recorded outsider mark. No
+    // chat ceiling, so the default level can only come from the row's own hold.
+    setQueuedChatCeilingResolver(undefined);
+    setQueuedChatHoldResolver(() => true);
+    const { runs, opts } = await cutPauseResume([], { permissionCeiling: 'runtime-default' });
+    setQueuedChatHoldResolver(undefined);
+
+    expect(runs).toBe(2);
+    // Sent under a fresh runtime id, and still marked: the marks are keyed to the row's id.
+    expect(opts[1]!.messageId).not.toBe(opts[0]!.messageId);
+    const rerun = opts[1]!;
+    expect((rerun.carriedMarks as { outsider?: boolean } | undefined)?.outsider).toBe(true);
+    expect(boundsOf(rerun.permissionCeiling)).toContain('runtime-default');
+    const asked = inner.sendMessage.mock.calls.at(-1);
+    expect(asked?.[1]).toBe('from A: add the totals');
+  });
+
+  it('a mark that lived only in memory is held to the default on the rerun (Security Must 2)', async () => {
+    setQueuedChatCeilingResolver(undefined);
+    const { runs, opts } = await cutPauseResume([], { carriedMarks: { outsider: true } });
+
+    expect(runs).toBe(2);
+    expect(boundsOf(opts[1]!.permissionCeiling)).toContain('runtime-default');
+  });
+
+  /**
+   * What a real Claude Code turn showed before its first model request in
+   * QA's 0.135.11 gate (W5, W6): its session state, and the next-prompt
+   * suggestion carried over from the previous turn. None of it is the agent
+   * acting; the suggestion made every queued turn read as acted, so the
+   * pause backstop's thrown `AgentPausedError` lost the message.
+   */
+  const LAUNCH_EVENTS = [
+    { type: 'system_status', data: { message: 'Starting.' } },
+    { type: 'session_status', data: { sessionId: 'x', model: 'claude-made-up' } },
+    { type: 'session_state_changed', data: { state: 'running' } },
+    { type: 'prompt_suggestion', data: { suggestion: 'Add the totals' } },
+    { type: 'session_state_changed', data: { state: 'running' } },
+  ] as unknown as StreamEvent[];
+
+  it('reruns a turn the pause cut after its launch events, with no model request (QA W5)', async () => {
+    const { runs } = await cutPauseResume(LAUNCH_EVENTS);
+    expect(runs).toBe(2);
+    expect(answered).toEqual(['from A: add the totals']);
+  });
+
+  it('reruns a turn the pause cut after one model request with no output (QA W6)', async () => {
+    const { runs } = await cutPauseResume([
+      ...LAUNCH_EVENTS,
+      { type: 'model_request', data: { requestId: 'r-1', phase: 'start', startedAt: 1 } },
+    ] as unknown as StreamEvent[]);
+    expect(runs).toBe(2);
+    expect(answered).toEqual(['from A: add the totals']);
+  });
+
+  it('reruns under a fresh runtime message id, the row keeping its own (QA W1)', async () => {
+    // A cut turn's message can already be in the runtime's transcript under the id it was sent
+    // with, and Claude Code runs nothing for an id it already holds: the rerun never started.
+    const started: string[] = [];
+    const stop = onDispatchLifecycle((event) => {
+      if (event.phase === 'started') started.push(event.messageId);
+    });
+    const { runs, opts } = await cutPauseResume(LAUNCH_EVENTS);
+    stop();
+
+    expect(runs).toBe(2);
+    expect(answered).toEqual(['from A: add the totals']);
+    // The same queue row both times, so its chat record and marks still match it ...
+    expect(started.slice(-2)).toEqual([opts[0]!.messageId, opts[0]!.messageId]);
+    // ... sent to the runtime under a new id the second time.
+    expect(opts[1]!.messageId).toEqual(expect.any(String));
+    expect(opts[1]!.messageId).not.toBe(opts[0]!.messageId);
+  });
+
+  it('tells the sender it is held, not that it failed or ran', async () => {
+    const events: DispatchLifecycleEvent[] = [];
+    const rowId = await startThenPauseBeforeModel(events);
+
+    const mine = events.filter((event) => event.messageId === rowId);
+    expect(mine.map((event) => event.phase)).toEqual(['started', 'held']);
+    expect(mine.at(-1)).toEqual({ phase: 'held', messageId: rowId, sessionId });
   });
 });
 
