@@ -650,11 +650,12 @@ export interface TriggerTurnOpts {
    * @param outcome - `'failed'` when the turn threw, or when the runtime refused
    *   it before the agent saw the message (code `turn_not_started`); else `'ok'`.
    * @param reason - The runtime's words for a refused turn (DOR-2994).
-   * @param agentSpoke - Whether the agent produced any output (text, thinking or
-   *   a tool call), so a caller can tell a turn cut before the agent read its
-   *   message from one cut mid-answer (DOR-4353).
+   * @param agentActed - Whether the turn showed anything beyond request and
+   *   session bookkeeping (output, a tool call starting, a held card), so a
+   *   caller can tell a turn cut before the agent did anything from one cut
+   *   after it did (DOR-4353).
    */
-  onSettled?(outcome: 'ok' | 'failed', reason?: string, agentSpoke?: boolean): void;
+  onSettled?(outcome: 'ok' | 'failed', reason?: string, agentActed?: boolean): void;
   /**
    * Receives the `seq` of THIS turn's `turn_start` — its identity on the durable
    * stream.
@@ -1115,7 +1116,7 @@ export async function triggerTurn(opts: TriggerTurnOpts): Promise<TriggerTurnRes
         // asked for in the hook's doc.
         try {
           const [outcome, reason] = watched.settledAs();
-          opts.onSettled?.(outcome, reason, watched.started);
+          opts.onSettled?.(outcome, reason, watched.acted);
         } catch (err) {
           logger.warn('[trigger-turn] a turn-settled observer threw', {
             sessionId,

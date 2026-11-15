@@ -291,7 +291,7 @@ export function launchDispatchInner(
       queueWaitMs: remainingMs,
       messageId,
       onError: turn.onError,
-      onSettled: (turnOutcome, reason, agentSpoke) => {
+      onSettled: (turnOutcome, reason, agentActed) => {
         // This turn has let go of the write-lock, so whatever the lock refused
         // may try again now. Its boundary is no substitute: a turn that ends and
         // then drains background work announces `turn_end` long before it lets
@@ -309,8 +309,8 @@ export function launchDispatchInner(
           }
           // Lifted again before the turn spoke, so it ran: the row goes now.
           if (getMessageQueueStore()?.remove(messageId)) emitQueueUpdate(sessionKey);
-        } else if (startedRow && agentSpoke === false && holdStartedForPause(plan, startedRow)) {
-          // Paused after the turn started but before the agent read the message:
+        } else if (startedRow && agentActed === false && holdStartedForPause(plan, startedRow)) {
+          // Paused after the turn started but before the agent did anything:
           // its row is back on the queue, held, and its sender hears `held`.
           clearIfOurs();
           return;
