@@ -1,8 +1,9 @@
-import { useMemo, useState } from 'react';
+import { useId, useMemo, useState } from 'react';
 import { RefreshCw } from 'lucide-react';
 import {
   accessLevelRevisionIds,
   actionNameFromSlug,
+  serviceNameFromToolkit,
   OPERATION_CLASSIFICATION_LABELS,
   type ConnectorReconciliationPreview,
 } from '@dorkos/shared/connector-schemas';
@@ -25,6 +26,7 @@ import {
   selectionsFromPreview,
   type AgentOperationSelections,
 } from '../../lib/reconciliation-selection';
+import { requestedWriteOffer } from '../../lib/access-level-offer';
 import { olderVersionIds } from '../../lib/older-versions';
 import { useAccessReconciliation } from '../../model/use-access-reconciliation';
 import { LoadFailedState } from '../LoadFailedState';
@@ -50,7 +52,15 @@ export function ConnectionAccessDialog({
   const access = useAccessReconciliation({
     connectionId,
     active: open,
-    onPreview: (nextPreview) => setSelections(selectionsFromPreview(nextPreview)),
+    onPreview: (nextPreview) => {
+      const next = selectionsFromPreview(nextPreview);
+      if (requestedWriteOffer(nextPreview.candidates) !== 'level') {
+        for (const selection of Object.values(next)) {
+          if (selection.level === 'read-write') selection.level = 'read';
+        }
+      }
+      setSelections(next);
+    },
   });
   const { preview, saveOutcome, saved, needsReconciliation, needsRefresh } = access;
   // Why the owner is here, in the server's words, when the account is waiting
@@ -157,6 +167,10 @@ function ReconciliationEditor({
   advancedAgentId: string | null;
   setAdvancedAgentId: (next: string | null) => void;
 }) {
+  const baseId = useId();
+  const hasWriteLevel = requestedWriteOffer(preview.candidates) === 'level';
+  const appName = serviceNameFromToolkit(preview.connection.toolkit);
+
   return (
     <>
       <div>
@@ -202,7 +216,8 @@ function ReconciliationEditor({
                     ? 'No access'
                     : 'Custom access';
             const advanced = advancedAgentId === agent.agentId;
-            const setLevel = (next: 'none' | 'read' | 'read-write') =>
+            const setLevel = (next: 'none' | 'read' | 'read-write') => {
+              if (next === 'read-write' && !hasWriteLevel) return;
               setSelections({
                 ...selections,
                 [agent.agentId]: {
@@ -210,6 +225,7 @@ function ReconciliationEditor({
                   ...(next !== 'none' && { level: next }),
                 },
               });
+            };
 
             return (
               <fieldset key={agent.agentId} className="bg-muted/40 rounded-lg p-3">
@@ -238,18 +254,31 @@ function ReconciliationEditor({
                       ['read', 'Read'],
                       ['read-write', 'Read + write'],
                     ] as const
-                  ).map(([value, label]) => (
-                    <Button
-                      key={value}
-                      size="sm"
-                      variant={level === label ? 'secondary' : 'outline'}
-                      aria-pressed={level === label}
-                      onClick={() => setLevel(value)}
-                      className="px-2 text-xs"
-                    >
-                      {label}
-                    </Button>
-                  ))}
+                  ).map(([value, label]) => {
+                    const unavailable = value === 'read-write' && !hasWriteLevel;
+                    const descriptionId = `${baseId}-${agent.agentId}-write-unavailable`;
+                    return (
+                      <div key={value} className="min-w-0">
+                        <Button
+                          size="sm"
+                          variant={level === label ? 'secondary' : 'outline'}
+                          aria-pressed={level === label}
+                          disabled={unavailable}
+                          aria-disabled={unavailable}
+                          aria-describedby={unavailable ? descriptionId : undefined}
+                          onClick={() => setLevel(value)}
+                          className="w-full px-2 text-xs"
+                        >
+                          {label}
+                        </Button>
+                        {unavailable && (
+                          <p id={descriptionId} className="text-muted-foreground mt-1 text-xs">
+                            Not available for {appName} yet.
+                          </p>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
                 {advanced && (
                   <ul className="mt-3 space-y-1.5" data-testid={`advanced-access-${agent.agentId}`}>

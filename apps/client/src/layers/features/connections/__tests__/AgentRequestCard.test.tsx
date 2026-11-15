@@ -651,7 +651,9 @@ describe('AgentRequestCard — an account exists', () => {
       renderWith(transport, <AgentRequestCard request={{ ...REQUEST, access: 'read-write' }} />);
 
       const missing = await screen.findByTestId('requested-write-missing');
-      expect(missing).toHaveTextContent('Allow gives Read only. Gmail has no Read and write here.');
+      expect(missing).toHaveTextContent(
+        'Allow gives Read only. DorkOS can’t make changes in Gmail yet.'
+      );
       expect(missing).toHaveTextContent(
         'To let it change things, choose exact actions on the Connections page.'
       );
