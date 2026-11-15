@@ -12,6 +12,7 @@ import type { StreamEvent } from '@dorkos/shared/types';
 import { OpenCodeRuntime } from '../opencode-runtime.js';
 import type { OpenCodeClientProvider } from '../sessions/session-mapper.js';
 import { PROJECT_PLUGINS_CODE } from '../messaging/project-plugin-guard.js';
+import { sessionInfo } from './opencode-sse-fixtures.js';
 
 const roots: string[] = [];
 afterEach(() => {
@@ -84,6 +85,32 @@ describe('a project with its own OpenCode plugins', () => {
     expect(runtime.hasRunningTurns()).toBe(false);
   });
 
+  it("refuses when only the session's STORED folder has a plugin (Security M2)", async () => {
+    const cwd = repo();
+    const stored = repo();
+    mkdirSync(join(stored, '.opencode', 'plugin'), { recursive: true });
+    writeFileSync(join(stored, '.opencode', 'plugin', 'p.ts'), 'export default {}\n');
+    const promptAsync = vi.fn();
+    const client = {
+      session: {
+        create: vi.fn(async () => ({ data: sessionInfo('oc-stored', stored) })),
+        get: vi.fn(async () => ({ data: sessionInfo('oc-stored', stored) })),
+        promptAsync,
+      },
+    };
+    const { provider } = stubProvider();
+    provider.getClient = vi.fn(async () => client as never);
+    const runtime = new OpenCodeRuntime({ provider });
+    runtime.ensureSession('s3', { permissionMode: 'default', cwd });
+
+    const events = await drain(runtime.sendMessage('s3', 'hello', { cwd }));
+    expect(events).toEqual([
+      expect.objectContaining({ data: expect.objectContaining({ code: PROJECT_PLUGINS_CODE }) }),
+    ]);
+    expect(promptAsync).not.toHaveBeenCalled();
+    expect(runtime.hasRunningTurns()).toBe(false);
+  });
+
   it('refuses a compaction too', async () => {
     const dir = repo();
     writeFileSync(join(dir, 'opencode.json'), JSON.stringify({ plugin: ['some-npm-plugin'] }));
@@ -118,6 +145,16 @@ describe('census: every turn start passes the plugin gate', () => {
     for (const later of ['this.prepareSidecar(', 'this.resolveOpenCodeSession(', 'getClient(']) {
       expect(source.indexOf(later, start) - start).toBeGreaterThan(gate);
     }
+  });
+
+  it("checks the session's stored folder before the turn's callback can send", () => {
+    const start = source.indexOf('private async *runOpenCodeTurn(');
+    const resolved = source.indexOf('directory = await sessionDirectoryOf(', start);
+    const second = source.indexOf('assertNoProjectPlugins(cwd, directory);', start);
+    const sent = source.indexOf('await trigger(', start);
+    expect(resolved).toBeGreaterThan(start);
+    expect(second).toBeGreaterThan(resolved);
+    expect(sent).toBeGreaterThan(second);
   });
 
   it('sends a prompt or a summary only from inside a turn the gate checked', () => {

@@ -89,7 +89,7 @@ describe('what counts as a project plugin', () => {
   });
 });
 
-describe('how far up it looks, as OpenCode does', () => {
+describe('how far up it looks: always to the root, .git ignored (Security M1)', () => {
   it("counts a plugin in a folder between the session's and the repo top", () => {
     const dir = repo();
     put(join(dir, '.opencode', 'plugin', 'top.ts'));
@@ -97,10 +97,24 @@ describe('how far up it looks, as OpenCode does', () => {
     expect(projectHasPlugins(join(dir, 'packages', 'app'))).toBe(true);
   });
 
-  it('stops at the nearest .git, so a plugin above the repo does not count', () => {
+  it('does not stop at a .git folder: a plugin above the repo counts', () => {
     const dir = repo();
     put(join(dir, '..', '.opencode', 'plugin', 'above.ts'));
-    expect(projectHasPlugins(dir)).toBe(false);
+    expect(projectHasPlugins(dir)).toBe(true);
+  });
+
+  it('an empty app/.git file cannot hide a plugin one level up', () => {
+    const dir = repo();
+    put(join(dir, '.opencode', 'plugin', 'x.js'));
+    put(join(dir, 'app', '.git'), '');
+    expect(projectHasPlugins(join(dir, 'app'))).toBe(true);
+  });
+
+  it('a real nested repo with a plugin above it refuses', () => {
+    const dir = repo();
+    put(join(dir, '.opencode', 'plugin', 'outer.ts'));
+    mkdirSync(join(dir, 'vendor', 'inner', '.git'), { recursive: true });
+    expect(projectHasPlugins(join(dir, 'vendor', 'inner'))).toBe(true);
   });
 
   it('outside a repo, looks all the way up', () => {
@@ -113,12 +127,12 @@ describe('how far up it looks, as OpenCode does', () => {
     expect(dirname(last)).toBe(last); // the filesystem root
   });
 
-  it('treats a .git file (a worktree) as the repo top too', () => {
+  it('a worktree .git file does not end the walk either', () => {
     const root = realpathSync(mkdtempSync(join(tmpdir(), 'oc-plugin-guard-wt-')));
     roots.push(root);
     put(join(root, '.opencode', 'plugin', 'above.ts'));
     put(join(root, 'wt', '.git'), 'gitdir: /elsewhere\n');
-    expect(projectHasPlugins(join(root, 'wt'))).toBe(false);
+    expect(projectHasPlugins(join(root, 'wt'))).toBe(true);
   });
 
   it('follows a linked .opencode folder', () => {

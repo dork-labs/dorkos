@@ -115,7 +115,11 @@ import { sessionDirectoryOf } from './sessions/session-directory.js';
 import { resolveCompactionModel } from './messaging/compaction-model.js';
 import type { OpenCodeTurnOptions } from './messaging/turn-options.js';
 import { validatedGrants } from './messaging/directory-grants.js';
-import { projectPluginRefusal } from './messaging/project-plugin-guard.js';
+import {
+  assertNoProjectPlugins,
+  projectPluginRefusal,
+  ProjectPluginsRefusedError,
+} from './messaging/project-plugin-guard.js';
 import { discoverOpenCodeModels } from './model-discovery.js';
 import { OpenCodeContextWindows } from './providers/context-windows.js';
 import { protectedPathRoots } from '../shared/policy/protected-path-roots.js';
@@ -626,9 +630,12 @@ export class OpenCodeRuntime implements AgentRuntime {
       client = await this.provider.getClient(cwd);
       await this.provider.bindSessionEnvironment?.(sessionId, ocSessionId);
       directory = await sessionDirectoryOf(this.directoryByOcId, client, ocSessionId);
+      // The prompt goes to the session's STORED folder (Security M2, #3764).
+      assertNoProjectPlugins(cwd, directory);
     } catch (err) {
       this.settingUp.delete(settingUp);
       void this.provider.turnSettled?.().catch(() => undefined);
+      if (err instanceof ProjectPluginsRefusedError) return yield err.event;
       throw err;
     }
 

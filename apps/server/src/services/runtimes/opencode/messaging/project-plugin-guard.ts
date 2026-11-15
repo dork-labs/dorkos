@@ -8,10 +8,12 @@
  * a person can allow a project's plugins (DOR-4399), DorkOS sends no turn for a
  * folder that has any, and the chat says why.
  *
- * Security's rule, mirrored from OpenCode's own lookup (`Config` walks
- * `Filesystem.up` from the session folder to the worktree, the nearest `.git`,
- * or to the filesystem root outside a repo). In each folder on that walk, a
- * project has plugins when either holds:
+ * Security's rule, a superset of OpenCode's own lookup (`Config` walks
+ * `Filesystem.up` from the session folder to the worktree): every folder from
+ * the session's up to the filesystem root, with `.git` ignored entirely, so an
+ * empty `.git` file or a nested repo cannot end the walk below a plugin
+ * (#3764, Security M1). In each folder on that walk, a project has plugins
+ * when either holds:
  *
  * - `.opencode/plugin/` or `.opencode/plugins/` holds a code file;
  * - `opencode.json`, `opencode.jsonc`, `.opencode/opencode.json` or
@@ -26,7 +28,7 @@
  *
  * @module services/runtimes/opencode/messaging/project-plugin-guard
  */
-import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
+import { readdirSync, readFileSync, statSync } from 'node:fs';
 import path from 'node:path';
 import type { StreamEvent } from '@dorkos/shared/types';
 import { OPENCODE_PROJECT_PLUGINS_ERROR_CODE } from '@dorkos/shared/run-outcome';
@@ -54,8 +56,8 @@ function isAbsent(err: unknown): boolean {
 }
 
 /**
- * The folders OpenCode looks in, from `dir` up to the nearest folder holding
- * `.git` (inclusive), or to the filesystem root when there is none.
+ * Every folder from `dir` up to the filesystem root. `.git` plays no part:
+ * where OpenCode would stop is never a reason to look less.
  *
  * @param dir - The session's folder.
  */
@@ -63,7 +65,6 @@ export function pluginLookupChain(dir: string): string[] {
   const chain: string[] = [];
   for (let at = path.resolve(dir); ; at = path.dirname(at)) {
     chain.push(at);
-    if (existsSync(path.join(at, '.git'))) return chain;
     if (path.dirname(at) === at) return chain;
   }
 }
@@ -153,6 +154,29 @@ export function projectHasPlugins(dir: string): boolean {
   } catch {
     return true;
   }
+}
+
+/** Thrown to refuse a turn once the session's stored folder is known; carries the chat's event. */
+export class ProjectPluginsRefusedError extends Error {
+  /**
+   * Build the refusal for one turn.
+   *
+   * @param event - The refusal the chat shows.
+   */
+  constructor(readonly event: StreamEvent) {
+    super(PROJECT_PLUGINS_MESSAGE);
+  }
+}
+
+/**
+ * Throw {@link ProjectPluginsRefusedError} when any folder the turn would hand
+ * the sidecar has plugins of its own.
+ *
+ * @param dirs - The turn's folder and the session's stored folder.
+ */
+export function assertNoProjectPlugins(...dirs: string[]): void {
+  const refusal = projectPluginRefusal(...dirs);
+  if (refusal) throw new ProjectPluginsRefusedError(refusal);
 }
 
 /**

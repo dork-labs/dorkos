@@ -218,4 +218,24 @@ describe.skipIf(BINARY === null)('a project plugin on the real OpenCode (DOR-439
     expect(calls.length).toBeGreaterThan(before);
     expect(fs.existsSync(marker)).toBe(false);
   }, 150_000);
+
+  it('the calls DorkOS makes outside a turn do not import it either (Security Should 1)', async () => {
+    const marker = path.join(root, 'side-marker');
+    const project = projectWithMarkerPlugin(path.join(root, 'side'), marker);
+    const { OpenCodeServerManager } = await import('../server-manager.js');
+    const live =
+      (manager as InstanceType<typeof OpenCodeServerManager> | undefined) ??
+      new OpenCodeServerManager();
+    manager = live;
+    const client = await live.getClient(project);
+    const query = { query: { directory: project } };
+    // The four calls DorkOS sends with a project folder outside a turn: a new
+    // session's bind, MCP status, the config read beside it, and the model list.
+    await client.session.create({ ...query, body: {} });
+    await client.mcp.status(query);
+    await client.config.get(query);
+    await client.provider.list(query);
+    await new Promise((resolve) => setTimeout(resolve, 3_000));
+    expect(fs.existsSync(marker)).toBe(false);
+  }, 120_000);
 });
