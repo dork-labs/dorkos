@@ -1547,6 +1547,7 @@ nativeSuite('the app-server transport against the real Codex binary', NATIVE_LIM
         {
           cwd: project,
           summary: `Codex loaded .codex/config.toml in ${path.basename(project)} at Full.`,
+          files: [path.join(project, '.codex', 'config.toml')],
         },
       ]);
     } finally {

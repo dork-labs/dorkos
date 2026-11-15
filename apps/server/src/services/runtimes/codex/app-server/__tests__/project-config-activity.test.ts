@@ -45,7 +45,11 @@ describe('a folder’s own Codex settings', () => {
     expect(loadTrust('person', 'danger-full-access', undefined, dir)).toBe('trusted');
     expect(loadTrust('person', 'danger-full-access', undefined, dir)).toBe('trusted');
     expect(lines).toEqual([
-      { cwd: dir, summary: 'Codex loaded .codex/config.toml in sample-repo at Full.' },
+      {
+        cwd: dir,
+        summary: 'Codex loaded .codex/config.toml in sample-repo at Full.',
+        files: [path.join(dir, '.codex', 'config.toml')],
+      },
     ]);
     expect(JSON.stringify(lines)).not.toContain('/bin/echo');
   });
@@ -84,6 +88,51 @@ describe('a folder’s own Codex settings', () => {
   it('never trusts a folder in the credits home', () => {
     const dir = repo('sample-repo', SERVER);
     expect(loadTrust('credits', 'danger-full-access', undefined, dir)).toBe('untrusted');
+    expect(lines).toEqual([]);
+  });
+});
+
+describe('the folders Codex reads, up to the repo top (DOR-4410)', () => {
+  /** A made-up repo with a `.git` at its top and a subfolder to open a chat in. */
+  function gitRepo(topConfig?: string, subConfig?: string): { top: string; sub: string } {
+    const top = repo('kestrel-repo', topConfig);
+    fs.mkdirSync(path.join(top, '.git'));
+    const sub = path.join(top, 'packages', 'northwind');
+    fs.mkdirSync(path.join(sub, '.codex'), { recursive: true });
+    if (subConfig !== undefined)
+      fs.writeFileSync(path.join(sub, '.codex', 'config.toml'), subConfig);
+    return { top, sub };
+  }
+
+  it('says so for a chat opened in a subfolder when the repo top has the file', () => {
+    const { top, sub } = gitRepo(SERVER);
+    loadTrust('person', 'danger-full-access', undefined, sub);
+    expect(lines).toHaveLength(1);
+    expect(lines[0]!.files).toEqual([path.join(top, '.codex', 'config.toml')]);
+  });
+
+  it('names every file it finds, outermost first', () => {
+    const { top, sub } = gitRepo(SERVER, SERVER);
+    loadTrust('person', 'danger-full-access', undefined, sub);
+    expect(lines[0]!.files).toEqual([
+      path.join(top, '.codex', 'config.toml'),
+      path.join(sub, '.codex', 'config.toml'),
+    ]);
+  });
+
+  it('says it again when a parent folder’s file changes', () => {
+    const { top, sub } = gitRepo(SERVER);
+    loadTrust('person', 'danger-full-access', undefined, sub);
+    fs.writeFileSync(path.join(top, '.codex', 'config.toml'), `${SERVER}# changed\n`);
+    loadTrust('person', 'danger-full-access', undefined, sub);
+    expect(lines).toHaveLength(2);
+  });
+
+  it('never looks above the repo top', () => {
+    fs.mkdirSync(path.join(root, '.codex'), { recursive: true });
+    fs.writeFileSync(path.join(root, '.codex', 'config.toml'), SERVER);
+    const { sub } = gitRepo();
+    loadTrust('person', 'danger-full-access', undefined, sub);
     expect(lines).toEqual([]);
   });
 });
