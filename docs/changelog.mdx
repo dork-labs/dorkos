@@ -21,7 +21,7 @@ All notable changes to DorkOS are documented here. This project follows [Semanti
 - Upgrade settings last used before 0.115 through version 0.115 first. DorkOS stops before changing older settings and explains the two steps. A settings file you wrote by hand still starts normally. (DOR-4188, DOR-4376)
 - On Linux, Codex at Full access doesn't start if Claude Code has run on the same machine, and that includes the Docker image. Use Ask first or Workspace write there for now. We're fixing it (DOR-3965).
 - On a Mac, Codex chats can't delete or move folders (rm -r, rmdir, mv). We're fixing it (DOR-4358).
-- Known issue: offline, OpenCode's first turn in a new folder can take about a minute. Online, the first turn waits a few seconds once. A fix is coming in the next release (DOR-4422).
+- Known issue: offline, OpenCode's first turn in a new folder can take about a minute. Online, the first turn waits about 10 seconds once. A fix is coming in the next release (DOR-4422).
 
 ### Security
 
