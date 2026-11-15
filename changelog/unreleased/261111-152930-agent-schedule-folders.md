@@ -1,6 +1,7 @@
 ---
 covers:
   - 'fix(tasks): keep agent-created schedules in a safe agent folder (DOR-4067)'
+  - "fix(tasks): an agent's schedule follows the DOR-4136 level rule for its folder (DOR-4067)"
 ---
 
 ### Security

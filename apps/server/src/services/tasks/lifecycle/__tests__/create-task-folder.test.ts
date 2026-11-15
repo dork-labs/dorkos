@@ -12,15 +12,6 @@ import { parseSkillFile } from '@dorkos/skills/parser';
 import { SkillFrontmatterSchema } from '@dorkos/skills/schema';
 import { readScheduleFromSkill } from '../../skills-root-discovery.js';
 
-vi.mock('../../../core/config-manager.js', () => ({
-  configManager: { get: () => undefined },
-}));
-vi.mock('../../../notifications/notification-service.js', () => ({
-  notify: vi.fn(async () => ({ notification: null, deduped: false })),
-  resolveStanding: vi.fn(),
-}));
-vi.mock('../../../notifications/standing-events.js', () => ({ raiseStanding: vi.fn() }));
-
 let root: string;
 let home: string;
 let dorkHome: string;

@@ -12,12 +12,6 @@ import type { AgentRuntime } from '@dorkos/shared/agent-runtime';
 import type { StreamEvent } from '@dorkos/shared/types';
 import { createTestDb } from '@dorkos/test-utils/db';
 
-vi.mock('../../../../tasks/scheduled-run-power.js', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../../../../tasks/scheduled-run-power.js')>();
-  const { CLAUDE_CODE_CAPABILITIES } = await import('../../runtime-constants.js');
-  return { ...actual, capabilitiesForTaskRuntime: () => CLAUDE_CODE_CAPABILITIES };
-});
-
 import { TaskStore } from '../../../../tasks/task-store.js';
 import { getTasksTools } from '../tasks/task-tools.js';
 import type { McpToolDeps } from '../types.js';
