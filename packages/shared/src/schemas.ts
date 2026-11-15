@@ -22,6 +22,8 @@ import {
 export { ScheduleOriginMarksSchema } from './task-approval-schemas.js';
 export type { ScheduleOriginMarks } from './task-approval-schemas.js';
 import { CanvasChannelDeclarationSchema } from './canvas-channel-schemas.js';
+import { SendMessageReceiptSchema, SessionLaunchWarningShape } from './session-launch-schemas.js';
+export { SessionLaunchWarningSchema, type SessionLaunchWarning } from './session-launch-schemas.js';
 /**
  * Zod schemas — single source of truth for all shared types and OpenAPI metadata.
  *
@@ -632,6 +634,7 @@ export type SessionStartedBy = z.infer<typeof SessionStartedBySchema>;
 
 export const SessionSchema = z
   .object({
+    ...SessionLaunchWarningShape,
     id: z.string().uuid(),
     title: z.string(),
     createdAt: z.string().datetime(),
@@ -1413,22 +1416,9 @@ export type SendMessageRequest = z.infer<typeof SendMessageRequestSchema>;
  * resolves to — which for a session with a queue is always the canonical one,
  * because a queue means a turn has already run.
  */
-export const SendMessageResponseSchema = z
-  .object({
-    sessionId: z
-      .string()
-      .describe('Canonical session id; differs from the request id for a new session'),
-    messageId: z.string().describe('Server-minted id for this message; the queue is keyed by it'),
-    outcome: MessageDeliveryOutcomeSchema,
-    queuePosition: z
-      .number()
-      .int()
-      .positive()
-      .describe(
-        '1-based place in the session queue at acceptance; 1 means nothing was ahead of it'
-      ),
-  })
-  .openapi('SendMessageResponse');
+export const SendMessageResponseSchema = SendMessageReceiptSchema.extend({
+  outcome: MessageDeliveryOutcomeSchema,
+}).openapi('SendMessageResponse');
 
 export type SendMessageResponse = z.infer<typeof SendMessageResponseSchema>;
 

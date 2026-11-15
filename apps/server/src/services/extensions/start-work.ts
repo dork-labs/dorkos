@@ -36,6 +36,7 @@ import {
   START_WORK_LIMITS,
   StartWorkRequestSchema,
   type StartWorkRequest,
+  type StartWorkResponse,
 } from '@dorkos/shared/extension-decision-schemas';
 import { sessionPath } from '@dorkos/shared/session-link';
 import type { TurnPermissionCeiling } from '@dorkos/shared/agent-runtime';
@@ -192,7 +193,7 @@ export class StartWorkService {
     input: unknown,
     via: StartWorkVia,
     opts: { permissionCeiling?: TurnPermissionCeiling } = {}
-  ): Promise<{ sessionId: string }> {
+  ): Promise<StartWorkResponse> {
     const parsed = StartWorkRequestSchema.safeParse(input);
     if (!parsed.success) throw new StartWorkInputError(describeInputProblem(input));
     const request: StartWorkRequest = parsed.data;
@@ -305,7 +306,7 @@ export class StartWorkService {
         logger.warn('[start-work] could not record a started chat', logError(err))
       );
 
-    return { sessionId: canonicalId };
+    return { sessionId: canonicalId, ...(result.warnings ? { warnings: result.warnings } : {}) };
   }
 
   /**

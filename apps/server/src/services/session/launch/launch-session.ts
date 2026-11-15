@@ -58,6 +58,8 @@ import {
 import { auditLaunched, auditRefusedLaunch } from './launch-audit.js';
 import { resolveChatPlace } from './resolve-chat-place.js';
 import { isRegisteredChatAgentPath } from './verify-chat-agent.js';
+import { recordedAgentOf, sessionToolWarnings } from './session-tool-warnings.js';
+import type { SessionLaunchWarning } from '@dorkos/shared/schemas';
 
 /** What {@link dispatchSessionMessage} needs to start or feed one session. */
 export interface DispatchSessionMessageOpts {
@@ -219,7 +221,8 @@ export interface SessionLaunchRefusal {
 }
 
 /** The dispatcher's result for a message that went through, or why none did. */
-export type DispatchSessionMessageResult = MessageDispatchResult | SessionLaunchRefusal;
+export type DispatchSessionMessageResult =
+  (MessageDispatchResult & { warnings?: SessionLaunchWarning[] }) | SessionLaunchRefusal;
 
 /**
  * Whether a launch was refused before anything started.
@@ -796,7 +799,7 @@ async function launchSessionMessage(
     });
   }
 
-  return result;
+  return { ...result, ...sessionToolWarnings(runtimeType, effectiveCwd ?? DEFAULT_CWD, forAgent) };
 }
 
 /** @internal Exported for testing only. */
@@ -818,23 +821,4 @@ function refusedPlace(
   if (!refusal) return null;
   auditRefusedLaunch(opts.sessionId, refusal, launchedByOf(opts.meshCore, opts.launcher), place);
   return { refused: 'DESK_NOT_OWN', message: refusal.message, launcherRefused: refusal.code };
-}
-
-/**
- * The agent recorded for a chat when it was first bound, or null when it has
- * none or the record cannot be read. An unreadable record names no agent; it
- * is never a reason to fail the turn, as in the cwd chain.
- *
- * @param sessionId - The chat.
- */
-async function recordedAgentOf(sessionId: string): Promise<string | null> {
-  try {
-    return await runtimeRegistry.getSessionAgentPath(sessionId);
-  } catch (err) {
-    logger.debug('[launch] could not read the chat’s recorded agent', {
-      sessionId,
-      error: err instanceof Error ? err.message : String(err),
-    });
-    return null;
-  }
 }

@@ -72,7 +72,7 @@ import { useDirectChatLog } from '../model/use-direct-chat-notes';
 import { useSessionLaneState } from '../model/use-session-lane-state';
 import { useSessionSurface } from '../model/use-session-surface';
 import { useSessionTarget } from '../model/session-target';
-import { SessionErrorNotice } from './SessionErrorNotice';
+import { SessionNotices } from './SessionNotices';
 import { SessionComposer } from './SessionComposer';
 import { SessionTranscript } from './SessionTranscript';
 
@@ -796,13 +796,12 @@ export function ChatPanel({
           />
         )}
 
-        {error && (
-          <SessionErrorNotice
-            error={error}
-            composerAgent={composerAgent}
-            onRetry={handleTransportRetry}
-          />
-        )}
+        <SessionNotices
+          sessionId={sessionId}
+          error={error ?? undefined}
+          composerAgent={composerAgent}
+          onRetry={handleTransportRetry}
+        />
 
         {/* Directly above the box it pauses: who ran out, until when, and what
           to do about it (spec `claude-account-ui` §6.7). Its Continue sends

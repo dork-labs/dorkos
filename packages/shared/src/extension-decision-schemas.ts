@@ -17,6 +17,7 @@
  */
 import { z } from 'zod';
 import { ProjectRefSchema } from './project-schemas.js';
+export { StartWorkResponseSchema, type StartWorkResponse } from './session-launch-schemas.js';
 import { extendZodWithOpenApiOnce } from './zod-openapi.js';
 
 extendZodWithOpenApiOnce();
@@ -375,17 +376,6 @@ export const StartWorkRequestSchema = z
 
 /** Body of `POST /api/extensions/:id/start-work`. */
 export type StartWorkRequest = z.infer<typeof StartWorkRequestSchema>;
-
-/** Response of `POST /api/extensions/:id/start-work`. */
-export const StartWorkResponseSchema = z
-  .object({
-    /** The new chat: open it at `/session?session=<sessionId>`. */
-    sessionId: z.string(),
-  })
-  .openapi('StartWorkResponse');
-
-/** Response of `POST /api/extensions/:id/start-work`. */
-export type StartWorkResponse = z.infer<typeof StartWorkResponseSchema>;
 
 /** A refused start: the sentence to show, and which rule refused it. */
 export const StartWorkErrorResponseSchema = z

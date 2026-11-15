@@ -18,6 +18,11 @@ import { Hono } from 'hono';
 import { z } from 'zod';
 import { runtimeRegistry } from '../services/core/runtime-registry.js';
 import {
+  recordedAgentOf,
+  sessionToolWarnings,
+} from '../services/session/launch/session-tool-warnings.js';
+import { sessionMessageReceipt } from './session-message-receipt.js';
+import {
   UpdateSessionRequestSchema,
   ForkSessionRequestSchema,
   SendMessageRequestSchema,
@@ -460,7 +465,10 @@ export function createSessionRoutes(deps: SessionRouteDeps = {}): Hono<ApiEnv> {
     if (session.accountId === undefined && session.status?.accountUsage?.accountId) {
       session.accountId = session.status.accountUsage.accountId;
     }
-    return c.json(session);
+    return c.json({
+      ...session,
+      ...sessionToolWarnings(runtime.type, projectDir, await recordedAgentOf(sessionId)),
+    });
   });
 
   // GET /api/sessions/:id/tasks - Get task state from SDK transcript
@@ -883,15 +891,7 @@ export function createSessionRoutes(deps: SessionRouteDeps = {}): Hono<ApiEnv> {
     // the sending device out stops the chat (DOR-3172).
     if (result.accepted) recordAccepted(honoRequestFacts(c), result, sessionId, clientId);
 
-    return c.json(
-      {
-        sessionId: result.canonicalId,
-        messageId: result.outcome.messageId,
-        outcome: result.outcome,
-        queuePosition: result.queuePosition,
-      },
-      202
-    );
+    return c.json(sessionMessageReceipt(result), 202);
   });
 
   // POST /api/sessions/:id/opened — the chat page is showing this chat (spec

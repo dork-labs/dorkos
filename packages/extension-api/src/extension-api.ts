@@ -2,6 +2,7 @@ import type { ComponentType } from 'react';
 import type { UiCommand, UiCanvasContent } from '@dorkos/shared/types';
 import type { ExtensionEventsAPI } from './extension-events.js';
 import type { StartWorkInput } from './start-work.js';
+import type { StartWorkResponse } from '@dorkos/shared/extension-decision-schemas';
 import type { ExtensionPageBadge } from './page-badge.js';
 import type { ExtensionRoomsApi } from './room-threads.js';
 import type { ExtensionForwardApi } from './agent-forward.js';
@@ -507,7 +508,7 @@ export interface ExtensionAPI {
    * {@link StartWorkError} on refusal. Probe with
    * `typeof api.startWork === 'function'`.
    */
-  startWork(input: StartWorkInput): Promise<{ sessionId: string }>;
+  startWork(input: StartWorkInput): Promise<StartWorkResponse>;
 
   /**
    * Per-project settings core holds for this extension (spec §7.10): the home

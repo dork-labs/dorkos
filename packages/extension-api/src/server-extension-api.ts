@@ -11,6 +11,7 @@
 import type { AccountUsage as CoreAccountUsage } from '@dorkos/shared/account-usage';
 import type { DecisionActions, ProjectRef } from './extension-api.js';
 import type { StartWorkInput } from './start-work.js';
+import type { StartWorkResponse } from '@dorkos/shared/extension-decision-schemas';
 import type { AgentApi } from './agent-messaging.js';
 import type { ToolsApi } from './extension-tools.js';
 
@@ -372,7 +373,7 @@ export interface SessionsApi {
    * started from its started chats. Records startedBy { kind: 'extension' }.
    * Eligibility refusals begin with phase 3.
    */
-  start(input: StartWorkInput): Promise<{ sessionId: string }>;
+  start(input: StartWorkInput): Promise<StartWorkResponse>;
 }
 
 /** The server half's read-only view of its per-project settings. */
