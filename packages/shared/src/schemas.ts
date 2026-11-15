@@ -256,6 +256,7 @@ export const StreamEventTypeSchema = z
     'elicitation_complete',
     'permission_denied',
     'model_substituted',
+    'project_addons_off',
     'work_left_running',
     'work_left_ended',
     'interaction_cancelled',
@@ -2851,6 +2852,28 @@ export const ModelSubstitutedEventSchema = z
 /** Inferred type for {@link ModelSubstitutedEventSchema}. */
 export type ModelSubstitutedEvent = z.infer<typeof ModelSubstitutedEventSchema>;
 
+/**
+ * How many of a project's own OpenCode add-ons DorkOS kept off (DOR-4404).
+ *
+ * The shared OpenCode sidecar loads no project's config or code (DOR-4394),
+ * so a project's plugins, tools and MCP servers stay off. Counts only, from
+ * DorkOS's own record of what it withheld: never a name or any other text the
+ * project wrote.
+ */
+export const ProjectAddonsOffEventSchema = z
+  .object({
+    /** Plugin files and config `plugin` entries kept off. */
+    plugins: z.number().int().nonnegative(),
+    /** Custom tool files kept off. */
+    tools: z.number().int().nonnegative(),
+    /** MCP servers kept off. */
+    mcpServers: z.number().int().nonnegative(),
+  })
+  .openapi('ProjectAddonsOffEvent');
+
+/** Inferred type for {@link ProjectAddonsOffEventSchema}. */
+export type ProjectAddonsOffEvent = z.infer<typeof ProjectAddonsOffEventSchema>;
+
 /** How a background command left running by a Stop finally ended (DOR-3285). */
 export const WorkLeftEndStatusSchema = z
   .enum(['completed', 'failed', 'stopped'])
@@ -3179,6 +3202,7 @@ export const StreamEventSchema = z
       ElicitationCompleteEventSchema,
       PermissionDeniedEventSchema,
       ModelSubstitutedEventSchema,
+      ProjectAddonsOffEventSchema,
       WorkLeftRunningEventSchema,
       WorkLeftEndedEventSchema,
       InteractionCancelledEventSchema,
@@ -3614,6 +3638,21 @@ export const ModelSubstitutedPartSchema = z
 export type ModelSubstitutedPart = z.infer<typeof ModelSubstitutedPartSchema>;
 
 /**
+ * A lasting notice, once per chat, that a project's own OpenCode add-ons are
+ * off (DOR-4404). Sourced from the `project_addons_off` session event, which
+ * reaches the live turn and, recorded durably, a reopened one.
+ */
+export const ProjectAddonsOffPartSchema = z
+  .object({
+    type: z.literal('project_addons_off'),
+    ...ProjectAddonsOffEventSchema.shape,
+  })
+  .openapi('ProjectAddonsOffPart');
+
+/** Inferred type for {@link ProjectAddonsOffPartSchema}. */
+export type ProjectAddonsOffPart = z.infer<typeof ProjectAddonsOffPartSchema>;
+
+/**
  * The lasting line under a stopped turn that names the background commands
  * the Stop could not end (DOR-3285). Sourced from `work_left_running`, with
  * each later `work_left_ended` folded in as that task's `ended`.
@@ -3690,6 +3729,7 @@ export const MessagePartSchema = z.discriminatedUnion('type', [
   MemoryRecallPartSchema,
   PermissionDeniedPartSchema,
   ModelSubstitutedPartSchema,
+  ProjectAddonsOffPartSchema,
   WorkLeftRunningPartSchema,
   CompactBoundaryPartSchema,
 ]);

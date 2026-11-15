@@ -575,6 +575,12 @@ describe('StreamManager', () => {
         reason: 'credits-not-covered',
       } as SessionEvent,
     ],
+    // A project's own OpenCode add-ons kept off (DOR-4404): a dropped frame
+    // would lose them silently.
+    [
+      'project_addons_off',
+      { type: 'project_addons_off', seq: 2, plugins: 2, tools: 0, mcpServers: 1 } as SessionEvent,
+    ],
     // Background commands a Stop could not end (DOR-3285): a dropped frame
     // hides work still running on the computer.
     [

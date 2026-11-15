@@ -525,6 +525,24 @@ export function reconstructHistoryFromEvents(
           ],
         });
         break;
+      case 'project_addons_off':
+        // A project's own OpenCode add-ons kept off (DOR-4404), placed like the
+        // substitution notice above, so a log-backed reopen keeps it too.
+        messages.push({
+          id: `project-addons-off-${event.seq}`,
+          role: 'assistant',
+          content: '',
+          ...stamp(savedAt(event)),
+          parts: [
+            {
+              type: 'project_addons_off',
+              plugins: event.plugins,
+              tools: event.tools,
+              mcpServers: event.mcpServers,
+            },
+          ],
+        });
+        break;
       case 'image_attachment':
         // A reference, exactly as it rode the stream — the bytes are behind the
         // URL and this loader never touches them.

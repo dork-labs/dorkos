@@ -15,14 +15,41 @@ import type { SessionEvent } from '@dorkos/shared/session-stream';
 import type { ChatMessage } from '../chat-types';
 
 /** The notice events {@link noticePart} turns into a part. */
-type NoticeEvent = Extract<SessionEvent, { type: 'model_substituted' | 'work_left_running' }>;
+type NoticeEvent = Extract<
+  SessionEvent,
+  { type: 'model_substituted' | 'project_addons_off' | 'work_left_running' }
+>;
+
+/** The event types {@link noticePart} folds, one lasting row each. */
+const NOTICE_TYPES: ReadonlySet<string> = new Set([
+  'model_substituted',
+  'project_addons_off',
+  'work_left_running',
+]);
+
+/**
+ * Whether an event is one {@link noticePart} folds.
+ *
+ * @param event - Any session event in the open turn.
+ */
+export function isNoticeEvent(event: SessionEvent): event is NoticeEvent {
+  return NOTICE_TYPES.has(event.type);
+}
 
 /**
  * The part one notice event becomes.
  *
- * @param event - A `model_substituted` or `work_left_running` event.
+ * @param event - A `model_substituted`, `project_addons_off` or `work_left_running` event.
  */
 export function noticePart(event: NoticeEvent): MessagePart {
+  if (event.type === 'project_addons_off') {
+    return {
+      type: 'project_addons_off',
+      plugins: event.plugins,
+      tools: event.tools,
+      mcpServers: event.mcpServers,
+    };
+  }
   if (event.type === 'work_left_running') {
     return {
       type: 'work_left_running',
