@@ -112,6 +112,7 @@ const STARTS_AT_FULL = [
   'wakes the chat exactly once when a command finishes after its turn completed',
   'never wakes for a command that never ends, and Stop terminates it without a model turn',
   'stops a never-ending command once at the ceiling, and still wakes no model turn',
+  'starts a cloned repo’s own MCP server only at Full',
   // The refusal rows plant their one backup themselves.
   'refuses Full while a Claude Code backup sits in',
 ];
@@ -613,8 +614,31 @@ nativeSuite('the app-server transport against the real Codex binary', NATIVE_LIM
       fs.symlinkSync(target, link, 'dir');
       const before = { ino: fs.lstatSync(link).ino, target: fs.readlinkSync(link) };
       const parents = [policy.roots.home, policy.roots.data, project];
+      // An untrusted folder (DOR-4408) no longer gets Codex's up-front "deny
+      // path crosses a link" refusal, so the turn starts. Codex refuses the
+      // command instead: it will not build a sandbox across the link, so the
+      // scripted write never runs and nothing lands in the target.
+      const quote = (value: string) => JSON.stringify(value);
+      let returned = '';
+      scripted.push(
+        (res) =>
+          res.end(
+            sseCall({
+              cmd: `printf PUBLIC-link-write-start; printf unsafe > ${quote(path.join(link, 'planted.md'))} 2>/dev/null && printf WRITE-THROUGH || printf WRITE-REFUSED`,
+              login: false,
+            })
+          ),
+        (res, body) => {
+          returned = body;
+          res.end(sse('link checked'));
+        }
+      );
       try {
-        await nativeRefusal(turn, 'codex_unavailable', ['crosses writable symlink', link]);
+        const { events } = await capturedTurn(turn);
+        expect(events.filter((event) => event.type === 'error')).toEqual([]);
+        expect(shellControlReturned(returned, `crosses writable symlink ${link}`)).toBe(true);
+        expect(shellControlReturned(returned, 'PUBLIC-link-write-start')).toBe(false);
+        expect(shellControlReturned(returned, 'WRITE-THROUGH')).toBe(false);
         expect({ ino: fs.lstatSync(link).ino, target: fs.readlinkSync(link) }).toEqual(before);
         expect(fs.readdirSync(target)).toEqual([]);
       } finally {
@@ -1176,7 +1200,7 @@ nativeSuite('the app-server transport against the real Codex binary', NATIVE_LIM
         (res) =>
           res.end(
             sseCall({
-              cmd: `cat ${quote(backup)} 2>/dev/null; cat ${quote(path.join(link, FIXTURE_BACKUP_NAME))} 2>/dev/null; printf PUBLIC-linked-done`,
+              cmd: `cat ${quote(backup)} 2>/dev/null; cat ${quote(path.join(link, FIXTURE_BACKUP_NAME))} 2>/dev/null; printf unsafe > ${quote(path.join(link, 'planted.backup'))} 2>/dev/null && printf WRITE-THROUGH || printf WRITE-REFUSED; printf PUBLIC-linked-done`,
               login: false,
             })
           ),
@@ -1185,21 +1209,24 @@ nativeSuite('the app-server transport against the real Codex binary', NATIVE_LIM
           res.end(sse('linked checked'));
         }
       );
-      const responses = seen.responses;
-      const { events, bound, printed } = await capturedTurn(
+      const { events, printed } = await capturedTurn(
         request('backup-linked', undefined, {
           settings: { permissionMode: 'acceptEdits', model: 'fake-model' },
         })
       );
-      // Codex refuses a deny path that crosses a link (its own copy, kept as
-      // is). No turn starts, and the target is never read or echoed anywhere.
-      expect(events.map((event) => event.type)).toEqual(['error', 'done']);
-      expect(bound).not.toHaveBeenCalled();
-      expect(seen.responses).toBe(responses);
-      expect(returned).toBe('');
+      // An untrusted folder (DOR-4408) no longer gets Codex's up-front "deny
+      // path crosses a link" refusal, so the turn starts. Codex refuses the
+      // command instead: it will not build a sandbox across the link, so
+      // neither read nor the scripted write runs.
+      expect(events.filter((event) => event.type === 'error')).toEqual([]);
+      expect(shellControlReturned(returned, `crosses writable symlink ${link}`)).toBe(true);
+      expect(shellControlReturned(returned, 'PUBLIC-linked-done')).toBe(false);
+      expect(shellControlReturned(returned, 'WRITE-THROUGH')).toBe(false);
+      expect(returned).not.toContain('CANARY-linked-backup');
       expect(JSON.stringify(events)).not.toContain('CANARY-linked-backup');
       expect(printed).not.toContain('CANARY-linked-backup');
       expect(fs.readFileSync(backup, 'utf8')).toBe('CANARY-linked-backup');
+      expect(fs.readdirSync(target)).toEqual([FIXTURE_BACKUP_NAME]);
     }
   );
 
