@@ -13,29 +13,14 @@
  * every folder above the home, then `CLAUDE.md` and `.claude/CLAUDE.md` in the
  * home and each folder down to the turn's own. `CLAUDE.local.md` is the local
  * source and stays out. `@` imports are not followed: their text does not
- * reach the model while the hold lasts.
+ * reach the model while the hold lasts. A symlink or anything but a regular
+ * file is never read, and the text is cut to a fixed budget
+ * (`shared/project-files/instruction-files.ts`, DOR-4405).
  *
  * @module services/runtimes/claude-code/folder-settings/folder-instructions
  */
-import { readFileSync, statSync } from 'node:fs';
 import path from 'node:path';
-
-/** The largest file read. A real one is a few kilobytes. */
-const MAX_FILE_BYTES = 64 * 1024;
-
-/** The most text passed in all, so a planted file can't flood the prompt. */
-const MAX_TOTAL_CHARS = 128 * 1024;
-
-/** A regular file's text, or `undefined` when it is absent, too big or unreadable. */
-function readInstructions(file: string): string | undefined {
-  try {
-    const stat = statSync(file);
-    if (!stat.isFile() || stat.size > MAX_FILE_BYTES) return undefined;
-    return readFileSync(file, 'utf8');
-  } catch {
-    return undefined;
-  }
-}
+import { joinInstructionFiles } from '../../shared/project-files/instruction-files.js';
 
 /** Every folder from the filesystem root down to `dir`, outermost first. */
 function chainTo(dir: string): string[] {
@@ -61,15 +46,5 @@ export function folderInstructions(cwd: string, home: string): string | undefine
     const inHome = dir === resolvedHome || dir.startsWith(`${resolvedHome}${path.sep}`);
     if (inHome) files.push(path.join(dir, '.claude', 'CLAUDE.md'));
   }
-  const parts: string[] = [];
-  let total = 0;
-  for (const file of files) {
-    const text = readInstructions(file);
-    if (text === undefined || text.trim() === '') continue;
-    const part = `Contents of ${file}:\n\n${text}`;
-    if (total + part.length > MAX_TOTAL_CHARS) break;
-    parts.push(part);
-    total += part.length;
-  }
-  return parts.length > 0 ? parts.join('\n\n') : undefined;
+  return joinInstructionFiles(files);
 }

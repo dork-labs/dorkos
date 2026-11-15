@@ -95,6 +95,18 @@ const WINDOW_CLOSED_HERE: LocalBrowserPersonState = {
   signIn: { ...WAITING_HERE.signIn!, status: 'saved' },
 };
 
+/**
+ * Atlas handed this chat's browser to a person in the Mac app (DOR-3111): the page
+ * stays in the panel, paused, under the "Your turn" strip.
+ */
+const HANDED_OVER_HERE: LocalBrowserPersonState = {
+  ...IN_USE_ELSEWHERE,
+  sessionId: 'chat-atlas',
+  mode: 'embedded',
+  paused: true,
+  handoff: { ...WAITING_HERE.handoff!, reason: 'wall' },
+};
+
 /** Open browser refused while a sign-in window holds the profile (DOR-4325). */
 async function refuseWhileSigningIn(): Promise<never> {
   throw Object.assign(new Error('Finish signing in first.'), { code: 'signing_in' });
@@ -237,6 +249,10 @@ export function LocalBrowserPanelShowcases() {
       <ShowcaseLabel>This chat’s agent waits on you after the sign-in window closed</ShowcaseLabel>
       <ShowcaseDemo>
         <PanelDemo state={WINDOW_CLOSED_HERE} />
+      </ShowcaseDemo>
+      <ShowcaseLabel>This chat’s agent handed you its page in the Mac app</ShowcaseLabel>
+      <ShowcaseDemo>
+        <PanelDemo state={HANDED_OVER_HERE} />
       </ShowcaseDemo>
       <ShowcaseLabel>Open browser refused while signing in: press Open browser</ShowcaseLabel>
       <ShowcaseDemo>

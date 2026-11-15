@@ -11,6 +11,10 @@ import { OPENCODE_OWN_PLAN } from '../credits-sidecar.js';
 import { buildSidecarSpawnEnv, OPENCODE_SIDECAR_CONFIG } from '../server-manager.js';
 import { openCodeProjectInstructions } from '../messaging/project-instructions.js';
 import { buildOpenCodeSystem } from '../messaging/turn-input.js';
+import {
+  INSTRUCTION_BUDGET_CHARS,
+  TRIMMED_MARKER,
+} from '../../shared/project-files/instruction-files.js';
 
 describe('the sidecar loads no project config (DOR-4394)', () => {
   it('spawns on a person’s own sign-in with project config off and DorkOS’s asks on', () => {
@@ -80,10 +84,12 @@ describe('the project’s AGENTS.md, passed by DorkOS (DOR-4394)', () => {
     );
   });
 
-  it('skips a file too big to be real instructions', () => {
+  it('cuts a file too big to be real instructions to the budget, and says so (DOR-4405)', () => {
     const { top } = project();
     writeFileSync(path.join(top, 'AGENTS.md'), 'x'.repeat(65 * 1024));
-    expect(openCodeProjectInstructions(top)).toBeUndefined();
+    const text = openCodeProjectInstructions(top)!;
+    expect(text.length).toBeLessThanOrEqual(INSTRUCTION_BUDGET_CHARS + TRIMMED_MARKER.length + 2);
+    expect(text.endsWith(TRIMMED_MARKER)).toBe(true);
   });
 
   it('puts the project’s text after DorkOS’s own, never above it', () => {

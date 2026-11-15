@@ -7,6 +7,7 @@ import type {
 } from '@dorkos/shared/local-browser';
 import { useLocalBrowser, LOCAL_BROWSER_STATE_KEY } from '@/layers/entities/local-browser';
 import { cn } from '@/layers/shared/lib';
+import { YourTurnStrip } from '@/layers/features/browser-handoff';
 import { useAppStore, useTransport } from '@/layers/shared/model';
 import { Button } from '@/layers/shared/ui';
 import { BrowserModeChoice } from './BrowserModeChoice';
@@ -17,8 +18,8 @@ import { useFirstFocus } from '../model/use-first-focus';
 import { BrowserPreparation } from './BrowserPreparation';
 import { WaitingElsewhere } from './WaitingElsewhere';
 import { SavedSignIns } from './SavedSignIns';
-import { SharedElsewhere } from './SharedElsewhere';
 import { LocalBrowserView } from './LocalBrowserView';
+import { SharedElsewhere } from './SharedElsewhere';
 
 export interface LocalBrowserPanelProps {
   visible?: boolean;
@@ -355,6 +356,9 @@ export function LocalBrowserPanel({
         )}
         {connected && !waitingElsewhere && !sharedElsewhere && (
           <>
+            {/* In the Mac app the agent's page stays here while the person has it. DorkOS
+              draws this, outside the page, so the page can't hide or fake it (DOR-3111). */}
+            {handoffHere && <YourTurnStrip agentName={handoffHere.agentName ?? agentName} />}
             {!state.sessionId && (
               <p className="text-muted-foreground text-xs">
                 Only you can use this page. Open from an agent chat to share it.
