@@ -20,8 +20,14 @@ import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { joinInstructionFiles } from '../../shared/project-files/instruction-files.js';
 
-/** The folders from the project's top down to `dir`, outermost first. */
-function projectChain(dir: string): string[] {
+/**
+ * The folders from the project's top (the nearest folder holding `.git`) down
+ * to `dir`, outermost first; outside a repo, `dir` alone. The same walk counts
+ * the project's withheld add-ons (`withheld-project-addons.ts`).
+ *
+ * @param dir - The session's folder.
+ */
+export function openCodeProjectChain(dir: string): string[] {
   const chain: string[] = [];
   for (let at = path.resolve(dir); ; at = path.dirname(at)) {
     chain.unshift(at);
@@ -37,5 +43,7 @@ function projectChain(dir: string): string[] {
  * @param directory - The session's folder, as OpenCode stores it.
  */
 export function openCodeProjectInstructions(directory: string): string | undefined {
-  return joinInstructionFiles(projectChain(directory).map((dir) => path.join(dir, 'AGENTS.md')));
+  return joinInstructionFiles(
+    openCodeProjectChain(directory).map((dir) => path.join(dir, 'AGENTS.md'))
+  );
 }

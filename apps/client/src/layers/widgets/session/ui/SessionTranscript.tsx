@@ -18,6 +18,7 @@
  */
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { MessagePart } from '@dorkos/shared/types';
+import { displayTextOf } from '@dorkos/shared/chat-messages';
 import type { TextEffectConfig } from '@/layers/shared/lib';
 import { getAgentDisplayName, resolveAgentVisual } from '@/layers/shared/lib';
 import { useAppStore, useAgentBirthRecord } from '@/layers/shared/model';
@@ -537,7 +538,11 @@ export function SessionTranscript({
       // A started chat's prompt: readable, never the headline. A spin-off's
       // first message reads as the words another chat sent, never their fence.
       if (messageIndex === foldedPromptIndex) {
-        return <StartedPrompt content={message.chatMessages?.[0]?.text ?? message.content} />;
+        return (
+          <StartedPrompt
+            content={message.chatMessages?.[0]?.text ?? displayTextOf(message.content)}
+          />
+        );
       }
 
       // Where this message sits among the messages, stop lines not counted.

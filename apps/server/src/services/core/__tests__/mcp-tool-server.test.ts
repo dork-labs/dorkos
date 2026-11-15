@@ -164,6 +164,8 @@ function makeMockTasksStore(overrides: Partial<Record<string, ReturnType<typeof 
     },
     deleteTask: vi.fn().mockReturnValue(false),
     listRuns: vi.fn().mockReturnValue([]),
+    // tasks_list reads each task's last run (DOR-3641): none has run.
+    runHistory: vi.fn().mockReturnValue(() => ({ lastRunAt: null })),
     ...overrides,
   } as unknown as McpToolDeps['taskStore'];
 }
@@ -341,7 +343,9 @@ describe('MCP Tool Handlers', () => {
       );
       const result = await handler({});
       const parsed = JSON.parse(result.content[0].text);
-      expect(parsed.schedules).toEqual(schedules);
+      expect(parsed.schedules).toEqual(
+        schedules.map((schedule) => ({ ...schedule, lastRunAt: null }))
+      );
       expect(parsed.count).toBe(2);
     });
 

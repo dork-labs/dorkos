@@ -207,13 +207,18 @@ export class BrowserHandover {
     if (this.preparingHandoff || this.answeringHandoff)
       throw new LocalBrowserError('busy', 'The browser handoff is changing. Wait a moment.');
     const state = await this.browser.state();
+    // Checked again after the read: a handoff that began meanwhile already gave the
+    // person the page, and one lock on top of it would outlive its hand back.
     if (
       this.takenFrom === null &&
+      !this.preparingHandoff &&
+      !this.answeringHandoff &&
       this.record?.outcome !== null &&
       state.status === 'connected' &&
       state.sessionId
     ) {
-      // Locked before the pause is awaited, so no agent call slips in between.
+      // Locked before the pause is awaited, so no agent call slips in between. If the
+      // pause fails the lock stays on: failing closed, and Resume clears it.
       this.takenFrom = state.sessionId;
       await this.browser.pause();
       logger.info('[Browser] A person took the browser', { sessionId: state.sessionId });

@@ -118,6 +118,9 @@ const TASK: Task = {
   effort: null,
   account: null,
   status: 'active',
+  approvedAt: null,
+  approvedBy: null,
+  approvedVia: null,
   filePath: '',
   createdAt: NOW,
   updatedAt: NOW,
@@ -162,6 +165,7 @@ describe('external MCP structured-output tools (real tools/call pipeline)', () =
       dorkHome: '/tmp/dorkos-test-home',
       taskStore: {
         getTasks: () => [TASK],
+        runHistory: () => () => ({ lastRunAt: null }),
       } as unknown as McpToolDeps['taskStore'],
       traceStore: {
         getMetrics: () => METRICS,
@@ -214,7 +218,7 @@ describe('external MCP structured-output tools (real tools/call pipeline)', () =
   it('tasks_list returns schema-valid structuredContent', async () => {
     const structured = await callStructured('tasks_list');
     expect(structured).toMatchObject({ count: 1 });
-    expect(structured.schedules).toEqual([TASK]);
+    expect(structured.schedules).toEqual([{ ...TASK, lastRunAt: null }]);
   });
 
   it('relay_get_metrics returns schema-valid structuredContent', async () => {

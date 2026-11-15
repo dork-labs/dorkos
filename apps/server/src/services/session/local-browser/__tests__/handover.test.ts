@@ -927,6 +927,24 @@ describe('a person takes the page (DOR-4428)', () => {
     await taking;
   });
 
+  it('takes nothing when an agent’s handoff starts while the take-over reads the browser', async () => {
+    const { handover, browser } = setup();
+    let release!: () => void;
+    browser.state.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          release = () => resolve(connected());
+        })
+    );
+    const taking = handover.takeOver();
+    await vi.waitFor(() => expect(browser.state).toHaveBeenCalled());
+    // The agent asks while the take-over is still reading.
+    const asking = handover.ask('chat-1', 'password');
+    release();
+    await asking;
+    expect((await taking).takenOver).toBe(false);
+  });
+
   it('takes the page first when the person navigates, in the same call', async () => {
     const { handover, browser } = setup();
     const next = await handover.navigate('https://northwind.example/pricing');

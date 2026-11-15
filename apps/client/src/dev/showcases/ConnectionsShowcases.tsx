@@ -1,3 +1,4 @@
+import { ConnectionAccessShowcases } from './ConnectionAccessShowcases';
 import { useMemo, useState, type ReactNode } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { ConnectorProviderStatus } from '@dorkos/shared/connector-provider';
@@ -37,9 +38,6 @@ import {
   mockConnection,
   mockConnectionDetail,
 } from '../mock-samples';
-import { ConnectionAccessCardShowcase } from './ConnectionAccessCardShowcase';
-import { AgentRequestCardShowcase } from './AgentRequestCardShowcase';
-import { SessionConnectionAccessListShowcase } from './SessionConnectionAccessListShowcase';
 
 const SERVICES = new Map(MOCK_CATALOG_SERVICES.map((service) => [service.serviceSlug, service]));
 
@@ -498,9 +496,7 @@ export function ConnectionsShowcases() {
         </ShowcaseDemo>
       </PlaygroundSection>
 
-      <SessionConnectionAccessListShowcase />
-      <ConnectionAccessCardShowcase />
-      <AgentRequestCardShowcase />
+      <ConnectionAccessShowcases />
       <ConnectionWaysShowcase />
     </>
   );

@@ -168,6 +168,10 @@ export const serverEnvSchema = z.object({
   // To-dos v1 (DOR-3088): the to-do tools and routes, off until v1 is complete. The record, its
   // caps and its turns are built either way; nothing reaches them while this is off.
   DORKOS_TODOS_ENABLED: boolFlag,
+  // DOR-3858: turns from someone other than the owner on Telegram, Slack or in a room carry the
+  // outsider mark, so raises, grants, connector sends and destructive actions ask a person. The
+  // turn keeps its level. Off until the owner approves turning it on.
+  DORKOS_MARK_STRANGER_TURNS: boolFlag,
   // Your browser discovery (DOR-3215): hidden and refused until explicitly enabled at boot.
   DORKOS_YOUR_BROWSER_ENABLED: boolFlag,
   // The official DorkOS space's public link (spec `official-community-space`

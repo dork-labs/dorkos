@@ -10,17 +10,17 @@ import { cn } from '@/layers/shared/lib';
 import { useAppStore, useTransport } from '@/layers/shared/model';
 import { Button } from '@/layers/shared/ui';
 import { BrowserModeChoice } from './BrowserModeChoice';
-import { useNativeBrowserSurface } from '../model/use-native-browser-surface';
 import { browserErrorMessage } from '../lib/browser-error-message';
 import { useActionFocusReturn } from '../model/use-action-focus-return';
 import { useFirstFocus } from '../model/use-first-focus';
 import { useBrowserPill } from '../model/use-browser-pill';
+import { chromeTakesOver } from '../model/browser-pill-state';
 import { BrowserPreparation } from './BrowserPreparation';
 import { BrowserStatusPill } from './BrowserStatusPill';
 import { WaitingElsewhere } from './WaitingElsewhere';
 import { SavedSignIns } from './SavedSignIns';
-import { LocalBrowserView } from './LocalBrowserView';
 import { SharedElsewhere } from './SharedElsewhere';
+import { LocalBrowserView } from './LocalBrowserView';
 
 export interface LocalBrowserPanelProps {
   visible?: boolean;
@@ -65,7 +65,6 @@ export function LocalBrowserPanel({
   const pendingSetup = useRef<Promise<boolean> | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [surfaceUnavailable, setSurfaceUnavailable] = useState(false);
-  const surface = useRef<HTMLDivElement>(null);
   const connected = state?.status === 'connected';
   // "Disconnected" before anything was ever opened reads as broken (DOR-4104).
   const [hadConnection, setHadConnection] = useState(false);
@@ -101,17 +100,6 @@ export function LocalBrowserPanel({
       operation.current += 1;
     },
     []
-  );
-  useNativeBrowserSurface(
-    surface,
-    state?.connectionId ?? null,
-    visible &&
-      connected &&
-      !query.isError &&
-      !sharedElsewhere &&
-      mode === 'embedded' &&
-      !surfaceUnavailable,
-    unavailable
   );
 
   const action = async (run: () => Promise<LocalBrowserState>, setup = false) => {
@@ -251,8 +239,13 @@ export function LocalBrowserPanel({
                       ? 'Browser closed'
                       : connected
                         ? // The body says where the browser is, or the pill's own
-                          // status region says who has the page (DOR-4428).
-                          ''
+                          // status region says who has the page (DOR-4428). With no
+                          // tab there is no pill, so the header still says it.
+                          sharedElsewhere || selected
+                          ? ''
+                          : state.paused
+                            ? 'Agent paused'
+                            : 'Connected'
                         : hadConnection
                           ? 'Disconnected'
                           : 'Not open yet'}
@@ -414,13 +407,20 @@ export function LocalBrowserPanel({
       {showsPage && (
         <LocalBrowserView
           tab={selected ?? null}
+          connectionId={state.connectionId ?? null}
           embedded={mode === 'embedded'}
-          surface={surface}
+          pageVisible={visible && !query.isError && !surfaceUnavailable}
           surfaceUnavailable={surfaceUnavailable}
+          onUnavailable={unavailable}
           busy={busy}
           action={action}
           onReconnect={open}
           agentDriving={pill?.kind === 'driving'}
+          onTakeOver={
+            pill && chromeTakesOver(pill)
+              ? () => void action(() => transport.takeOverLocalBrowser())
+              : undefined
+          }
           status={
             pill && (
               <BrowserStatusPill

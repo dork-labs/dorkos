@@ -349,6 +349,7 @@ const REFUSED: readonly (readonly [reason: string, routes: readonly string[]])[]
       'POST /api/sessions/:id/mcp-app/resource',
       'POST /api/sessions/:id/opened',
       'POST /api/sessions/:id/process/switch',
+      'POST /api/sessions/:id/queue/:messageId/steer',
       'POST /api/sessions/:id/reload-plugins',
       'POST /api/sessions/:id/ui-action',
       'POST /api/sessions/:id/wait',

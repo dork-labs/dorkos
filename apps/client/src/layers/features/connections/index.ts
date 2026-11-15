@@ -46,7 +46,7 @@ export type {
   ConnectionAccessCardProps,
   PageAccessCardProps,
   AgentAccessCardProps,
-} from './ui/access/ConnectionAccessCard';
+} from './ui/access/access-card-props';
 export { AgentRequestCard } from './ui/agent-request/AgentRequestCard';
 export type { AgentRequestCardProps } from './ui/agent-request/AgentRequestCard';
 export { ChatAgentRequest } from './ui/agent-request/ChatAgentRequest';

@@ -18,13 +18,20 @@ function hoursFromNow(hours: number): string {
 
 describe('formatCadence', () => {
   it('says the cadence in words, anchored to its timezone', () => {
-    expect(formatCadence('0 3 * * *', 'America/Chicago')).toBe('At 03:00 AM (America/Chicago)');
+    expect(formatCadence('0 3 * * *', 'America/Chicago')).toBe('3:00 AM (America/Chicago)');
+  });
+
+  it('names weekdays without a formal prefix or a leading zero', () => {
+    const cadence = formatCadence('0 9 * * 1-5', 'America/Chicago');
+
+    expect(cadence).toBe('Weekdays at 9:00 AM (America/Chicago)');
+    expect(cadence).not.toMatch(/At 0|\b0\d:\d{2}/);
   });
 
   it('leaves the zone off when the schedule carries none', () => {
     // A parenthetical with nothing in it reads as a missing value; saying only
     // what is known is the honest shape.
-    expect(formatCadence('0 3 * * *', null)).toBe('At 03:00 AM');
+    expect(formatCadence('0 3 * * *', null)).toBe('3:00 AM');
   });
 
   it('falls back to the raw expression for a cron it cannot parse', () => {

@@ -13,6 +13,7 @@ import {
   ceilingCarrying,
   marksHold,
   marksOfLevel,
+  mayJoinRunningTurn,
   mergeMarks,
   NO_MARKS,
   type TurnMarks,
@@ -136,7 +137,7 @@ export function parseCeiling(json: string): TurnPermissionCeiling | undefined {
  * The ceiling a queue row launches under, from every sending row behind it: a teammate's chain any
  * sender carried, or nothing.
  *
- * @param rows - The chat message rows batched into the queue row.
+ * @param rows - The chat message rows joined behind the queue row.
  */
 export function rowsCeiling(
   rows: readonly { ceilingJson: string }[]
@@ -151,7 +152,7 @@ export function rowsCeiling(
 /**
  * Whether any sending row behind a queue row carries its sender's Wi-Fi hold on (DOR-3561).
  *
- * @param rows - The chat message rows batched into the queue row.
+ * @param rows - The chat message rows joined behind the queue row.
  */
 export function rowsCarryHold(rows: readonly { ceilingJson: string }[]): boolean {
   return rows.some((row) => parseCarriedHold(row.ceilingJson));
@@ -160,7 +161,7 @@ export function rowsCarryHold(rows: readonly { ceilingJson: string }[]): boolean
 /**
  * Whether any sending row behind a queue row carries its sender's outside words on (DOR-4029).
  *
- * @param rows - The chat message rows batched into the queue row.
+ * @param rows - The chat message rows joined behind the queue row.
  */
 export function rowsCarryWords(rows: readonly { ceilingJson: string }[]): boolean {
   return rows.some((row) => parseCarriedWords(row.ceilingJson));
@@ -179,6 +180,28 @@ export function holdBlocksSteer(fromSessionId: string, toSessionId: string): boo
     return true;
   }
   return chatReadOutsideWords(fromSessionId) && !chatReadOutsideWords(toSessionId);
+}
+
+/**
+ * Whether one chat's words may join another chat's running turn.
+ *
+ * Unknown levels fail closed. The running turn must already be at least as
+ * strict as the sender and carry every one of its marks, because neither can
+ * be added after a turn starts.
+ *
+ * @param deps - Reads the level each chat's current turn hands on.
+ * @param fromSessionId - The sending chat.
+ * @param toSessionId - The chat whose turn is running.
+ */
+export function mayChatSteer(
+  deps: { turnLevelOf: (sessionId: string) => TurnPermissionLevel | undefined },
+  fromSessionId: string,
+  toSessionId: string
+): boolean {
+  const sender = deps.turnLevelOf(fromSessionId);
+  const receiver = deps.turnLevelOf(toSessionId);
+  if (holdBlocksSteer(fromSessionId, toSessionId)) return false;
+  return sender !== undefined && receiver !== undefined && mayJoinRunningTurn(sender, receiver);
 }
 
 /**

@@ -154,6 +154,14 @@ export const FEATURE_SURFACE_SECTIONS: PlaygroundSection[] = [
     category: 'Home',
     keywords: ['browser', 'agent browser', 'panel', 'not open yet', 'disconnected'],
   },
+  // BrowserPageErrorShowcases
+  {
+    id: 'agent-browser-page-errors-and-loading',
+    title: 'Agent browser page errors and loading',
+    page: 'home-inbox',
+    category: 'Home',
+    keywords: ['browser', 'agent browser', 'error', 'offline', 'certificate', 'loading', 'seam'],
+  },
   // ScheduleApprovalShowcases
   {
     id: 'schedule-approval-card',
@@ -363,6 +371,20 @@ export const FEATURE_SURFACE_SECTIONS: PlaygroundSection[] = [
       'account',
       'chat card',
     ],
+  },
+  {
+    id: 'connectionaccessdialog',
+    title: 'ConnectionAccessDialog',
+    page: 'home-inbox',
+    category: 'Connections',
+    keywords: ['access', 'read only', 'disabled', 'write', 'Linear', 'Scout'],
+  },
+  {
+    id: 'read-only-agent-request',
+    title: 'Read-only agent request',
+    page: 'home-inbox',
+    category: 'Connections',
+    keywords: ['request', 'read only', 'allow', 'Linear', 'Scout'],
   },
   {
     id: 'agentrequestcard',

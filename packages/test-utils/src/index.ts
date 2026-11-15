@@ -37,6 +37,7 @@ export * from './mock-todos.js';
 export * from './mock-global-mcp.js';
 export * from './runtime-conformance.js';
 export * from './runtime-conformance-session-list.js';
+export * from './runtime-guard-conformance.js';
 export * from './sse-helpers.js';
 export * from './sse-test-helpers.js';
 export * from './test-scenarios.js';

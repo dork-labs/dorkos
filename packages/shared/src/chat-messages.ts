@@ -129,9 +129,10 @@ export type ChatMessageSender = z.infer<typeof ChatMessageSenderSchema>;
 /**
  * One message another chat sent, as a queued row shows it to a person
  * (DOR-3060): who sent it, from which chat, and their words, never the fenced
- * envelope the model gets. A row carries several when agent messages wait
- * together as one turn. The words are the sender's: a client renders them as
- * plain text, with no markdown and no links.
+ * envelope the model gets. A queued row carries one entry until the dispatcher
+ * joins adjacent agent rows as their turn drains; the surviving row then
+ * carries every joined entry in order. The words are the sender's: a client
+ * renders them as plain text, with no markdown and no links.
  */
 export const QueuedChatEntrySchema = z
   .object({

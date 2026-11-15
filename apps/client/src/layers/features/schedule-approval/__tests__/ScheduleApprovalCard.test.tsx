@@ -77,6 +77,9 @@ function proposal(overrides: Partial<Task> = {}): Task {
     effort: null,
     account: null,
     status: 'pending_approval',
+    approvedAt: null,
+    approvedBy: null,
+    approvedVia: null,
     filePath: '/tmp/nightly-sweep/SKILL.md',
     createdAt: minutesFromLoad(-20),
     updatedAt: minutesFromLoad(-20),
@@ -119,6 +122,7 @@ function taskRun(overrides: Partial<TaskRun> = {}): TaskRun {
 const SHOWN = {
   expectedApprovalRevision: 'a'.repeat(64),
   approvedPromptHash: expect.stringMatching(/^sha256:[A-Za-z0-9_-]{43}$/),
+  approvalSurface: 'home',
 };
 
 /** Render one card over a mock transport. */
@@ -159,7 +163,9 @@ function renderCard(
   }
   return {
     transport,
-    ...render(<ScheduleApprovalCard task={task} {...props} />, { wrapper: Wrapper }),
+    ...render(<ScheduleApprovalCard task={task} approvalSurface="home" {...props} />, {
+      wrapper: Wrapper,
+    }),
   };
 }
 
@@ -212,6 +218,14 @@ afterEach(() => {
 const AGENT_UNNAMED_COPY = 'An agent asked. DorkOS can’t tell which.';
 
 describe('ScheduleApprovalCard — what it says', () => {
+  it('uses the normal card surface without a status edge or active outline', async () => {
+    renderCard();
+
+    await screen.findByText('Nightly sweep');
+    expect(card()).toHaveClass('border', 'border-l', 'border-border', 'bg-card', 'ring-0');
+    expect(card()).not.toHaveClass('border-l-2', 'border-status-info', 'ring-2', 'ring-ring/30');
+  });
+
   it('names the schedule, its proposer, and how long it has waited', async () => {
     renderCard();
 
@@ -265,8 +279,8 @@ describe('ScheduleApprovalCard — what it says', () => {
     renderCard();
 
     const cadence = await findSlot('schedule-cadence');
-    expect(cadence).toHaveTextContent(/At 03:00 AM/i);
-    expect(cadence).toHaveTextContent('(UTC)');
+    expect(cadence).toHaveTextContent('3:00 AM (UTC)');
+    expect(cadence).not.toHaveTextContent(/At 0|\b0\d:\d{2}/);
   });
 
   it('falls back to the raw expression for a cron nothing can read', async () => {
@@ -303,7 +317,8 @@ describe('ScheduleApprovalCard — what it says', () => {
     expect(region).toBe(slot('schedule-prompt'));
     expect(region.getAttribute('tabindex')).toBe('0');
     expect(region.className).toContain('focus-ring');
-    expect(region.className).toContain('text-sm');
+    expect(region.className).toContain('text-xs');
+    expect(region.className).not.toContain('text-sm');
     expect(region.className).toContain('whitespace-pre-wrap');
     expect(region.className).toContain('break-words');
     expect(region.className).toContain('max-h-[40dvh]');
@@ -362,6 +377,7 @@ describe('ScheduleApprovalCard — what it says', () => {
       expect(updateTask).toHaveBeenCalledWith('task-1', {
         status: 'active',
         expectedApprovalRevision: 'a'.repeat(64),
+        approvalSurface: 'home',
       })
     );
   });
@@ -380,6 +396,7 @@ describe('ScheduleApprovalCard — what it says', () => {
         status: 'active',
         approvedPromptHash: shown,
         expectedApprovalRevision: 'a'.repeat(64),
+        approvalSurface: 'home',
       })
     );
   });
@@ -394,6 +411,7 @@ describe('ScheduleApprovalCard — what it says', () => {
         expect(updateTask).toHaveBeenCalledWith('task-1', {
           status: 'active',
           expectedApprovalRevision: 'a'.repeat(64),
+          approvalSurface: 'home',
         })
       );
     } finally {
@@ -409,6 +427,17 @@ describe('ScheduleApprovalCard — what it says', () => {
     expect(screen.getByText('Agent: Scout')).toBeVisible();
   });
 
+  it.each([
+    ['has no agent', { agentId: null, runsAsName: null }],
+    ['cannot resolve the agent name', { agentId: 'agent-b', runsAsName: null }],
+  ] as const)('drops the agent line when the schedule %s', async (_case, overrides) => {
+    renderCard(proposal(overrides));
+
+    await screen.findByText('Nightly sweep');
+    expect(screen.queryByText(/^Agent:/)).toBeNull();
+    expect(screen.queryByText(/an agent/i)).toBeNull();
+  });
+
   it('says a proposal has no agent identity rather than inventing one', async () => {
     // The sessionless external `/mcp` registration stamps no path. A disc and a
     // name invented from nothing would put a request under a mark it never earned.
@@ -420,7 +449,6 @@ describe('ScheduleApprovalCard — what it says', () => {
     // unchanged: no name and no agent mark are invented.
     expect(await screen.findByText(AGENT_UNNAMED_COPY)).toBeInTheDocument();
     expect(slot('ask-detail')).toHaveTextContent('Proposed by an agent');
-    expect(screen.getByText('No agent', { exact: true })).toBeVisible();
     expect(screen.queryByText(/^Agent:/)).toBeNull();
   });
 
@@ -570,8 +598,24 @@ describe('ScheduleApprovalCard — answering it', () => {
       })
     );
     expect(await findSlot('schedule-receipt')).toHaveTextContent(
-      'Approved at Accept edits. Off until you turn it on.'
+      /Approved by you at .+, in Home\. At Accept edits\. Off until you turn it on\./
     );
+  });
+
+  it('uses the profile name and server timestamp in the receipt', async () => {
+    const approvedAt = new Date(2026, 0, 15, 14, 30).toISOString();
+    renderCard(proposal(), {
+      getConfig: vi.fn().mockResolvedValue({ profile: { displayName: 'Dorian' } }),
+      updateTask: vi.fn().mockResolvedValue(proposal({ status: 'active', approvedAt })),
+    });
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Approve Nightly sweep' }));
+
+    const receipt = await findSlot('schedule-receipt');
+    expect(receipt).toHaveTextContent('Approved by Dorian at 2:30 PM, in Home.');
+    expect(receipt).toHaveClass('items-start');
+    expect(receipt).not.toHaveClass('items-center');
+    expect(receipt.querySelector('svg')).toHaveClass('mt-px', 'size-3.5', 'shrink-0');
   });
 
   it.each(['button', 'shortcut'] as const)(
@@ -642,7 +686,9 @@ describe('ScheduleApprovalCard — answering it', () => {
     expect(receipt).toHaveAttribute('data-tone', 'allowed');
     // Not a bare "Approved": the whole point of the card is that a person knows
     // what they just armed, and the first run is the fact they were weighing.
-    expect(receipt).toHaveTextContent(/^Approved at Accept edits. First run /);
+    expect(receipt).toHaveTextContent(
+      /^Approved by you at .+, in Home\. At Accept edits\. First run /
+    );
   });
 
   it('says only "Approved" when there was no first run to promise', async () => {
@@ -824,8 +870,14 @@ describe('ScheduleApprovalCard — the rejection really lands', () => {
     render(
       <QueryClientProvider client={queryClient}>
         <TransportProvider transport={transport}>
-          <ScheduleApprovalCard task={proposal({ id: 'task-1', displayName: 'First' })} />
-          <ScheduleApprovalCard task={proposal({ id: 'task-2', displayName: 'Second' })} />
+          <ScheduleApprovalCard
+            task={proposal({ id: 'task-1', displayName: 'First' })}
+            approvalSurface="home"
+          />
+          <ScheduleApprovalCard
+            task={proposal({ id: 'task-2', displayName: 'Second' })}
+            approvalSurface="home"
+          />
         </TransportProvider>
       </QueryClientProvider>
     );
@@ -862,7 +914,7 @@ describe('ScheduleApprovalCard — the receipt outlives the refetch', () => {
     return (
       <>
         {shown.map((task) => (
-          <ScheduleApprovalCard key={task.id} task={task} />
+          <ScheduleApprovalCard key={task.id} task={task} approvalSurface="home" />
         ))}
       </>
     );
@@ -1185,7 +1237,7 @@ describe('ScheduleApprovalCard — choosing the run permissions', () => {
         permissionMode: 'dontAsk',
       })
     );
-    expect(await findSlot('schedule-receipt')).toHaveTextContent(/Approved at/);
+    expect(await findSlot('schedule-receipt')).toHaveTextContent(/Approved by you at/);
   });
 
   it('flags a mismatch before approval and saves the person’s override', async () => {
@@ -1395,6 +1447,7 @@ describe('stale schedule approval', () => {
       rerender(
         <ScheduleApprovalCard
           task={proposal({ prompt: 'Changed work.', approvalRevision: 'b'.repeat(64) })}
+          approvalSurface="home"
           pinActions={pinActions}
         />
       );
@@ -1425,7 +1478,7 @@ describe('stale schedule approval', () => {
         expect(screen.getByRole('button', { name: 'Approve Nightly sweep' })).toBeEnabled()
       );
       screen.getByRole('button', { name: 'Approve Nightly sweep' }).focus();
-      rerender(<ScheduleApprovalCard task={fresh} pinActions />);
+      rerender(<ScheduleApprovalCard task={fresh} approvalSurface="home" pinActions />);
       expect(await screen.findByRole('status')).toHaveTextContent(
         'This schedule changed. Review it again.'
       );
@@ -1461,6 +1514,7 @@ describe('stale schedule approval', () => {
     rerender(
       <ScheduleApprovalCard
         task={proposal({ status: 'active', approvalRevision: 'b'.repeat(64) })}
+        approvalSurface="home"
       />
     );
     expect(slot('schedule-receipt')).not.toBeNull();

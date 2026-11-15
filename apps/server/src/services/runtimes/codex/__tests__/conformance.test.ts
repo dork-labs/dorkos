@@ -42,7 +42,7 @@ import { randomUUID } from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { runtimeConformance, type HandedGrants } from '@dorkos/test-utils';
+import { runtimeConformance, runtimeGuardConformance, type HandedGrants } from '@dorkos/test-utils';
 import { createTestDb } from '@dorkos/test-utils/db';
 import {
   makeMockThread,
@@ -393,6 +393,16 @@ const LIVE_MODEL = LIVE
       })
     )
   : undefined;
+
+// Codex declares no safety guard yet (DOR-3597, DOR-3598), so it proves none.
+runtimeGuardConformance(
+  () =>
+    new CodexRuntime({
+      transport: new ScriptedCodexTransport((options) => new Codex(options)),
+      threadMap: new CodexThreadMap(createTestDb()),
+      resolveBinary: async () => '/bin/codex',
+    })
+);
 
 runtimeConformance(
   // Fresh runtime per test over an isolated in-memory thread map; binaryPath

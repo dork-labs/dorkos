@@ -5,6 +5,7 @@ import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { agentBrowserProfileAgents, eq, type Db } from '@dorkos/db';
 import { createTestDb } from '@dorkos/test-utils/db';
+import type { RuntimeGuards } from '@dorkos/shared/agent-runtime';
 import {
   BrowserProfileAccessGate,
   MAX_HOLDER_TITLE,
@@ -18,6 +19,14 @@ describe('who may use a named browser profile', () => {
   const profiles = {
     isBound: vi.fn((_profile: string, agent: string, _folder: string) => agent === 'bound'),
   };
+  /** What each runtime declares here; only Claude Code keeps its shell off a profile's sign-ins. */
+  const GUARDS: Readonly<Record<string, RuntimeGuards | undefined>> = {
+    'claude-code': { protectedPaths: true, ownFolder: true },
+    codex: { protectedPaths: false },
+    opencode: { protectedPaths: false },
+    'says-nothing': undefined,
+    'own-folder-only': { ownFolder: true },
+  };
   const deps = (
     runtime: { type: string; bound: boolean },
     agentPath: string | null,
@@ -27,6 +36,7 @@ describe('who may use a named browser profile', () => {
     createLocalBrowserProfileAccess({
       profiles,
       resolveSessionRuntime: async () => runtime,
+      guardsOf: (type) => GUARDS[type],
       getSessionAgentPath: async () => agentPath,
       agentIdAtPath: () => id,
       realFolder: () => folder,
@@ -59,6 +69,7 @@ describe('who may use a named browser profile', () => {
     const access = createLocalBrowserProfileAccess({
       profiles,
       resolveSessionRuntime: async () => claude,
+      guardsOf: (type) => GUARDS[type],
       getSessionAgentPath: async () => '/agents/a',
       agentIdAtPath: () => 'bound',
       realFolder: () => undefined,
@@ -69,12 +80,28 @@ describe('who may use a named browser profile', () => {
   it.each([
     [{ type: 'codex', bound: true }],
     [{ type: 'opencode', bound: true }],
+    // A runtime that declares no guards gets the strictest answer (DOR-3596).
+    [{ type: 'says-nothing', bound: true }],
+    [{ type: 'own-folder-only', bound: true }],
     // A runtime only inferred, never launched, is not proof of how the agent runs.
     [{ type: 'claude-code', bound: false }],
   ])('refuses %o even when the agent is bound', async (runtime) => {
     await expect(deps(runtime, '/agents/a', 'bound')('p', 's')).rejects.toMatchObject({
       code: 'profile_runtime',
+      message: 'Named browser profiles aren’t available on this agent’s runtime yet.',
     });
+  });
+
+  it('reads the declared guard, not the runtime’s name', async () => {
+    const access = createLocalBrowserProfileAccess({
+      profiles,
+      resolveSessionRuntime: async () => claude,
+      guardsOf: () => ({ protectedPaths: false }),
+      getSessionAgentPath: async () => '/agents/a',
+      agentIdAtPath: () => 'bound',
+      realFolder: () => '/agents/a',
+    });
+    await expect(access('p', 's')).rejects.toMatchObject({ code: 'profile_runtime' });
   });
 });
 

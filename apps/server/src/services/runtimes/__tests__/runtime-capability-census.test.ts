@@ -166,10 +166,14 @@ if (shared.parseErrors > 0) unparsed.push(CONFORMANCE);
 /** The ids the shared conformance suite's titles claim. */
 const sharedClaims = new Set(shared.titles.flatMap(idsClaimedBy));
 
-/** Whether a runtime's conformance file runs the shared suite. */
-function runsSharedSuite(runtime: MatrixRuntime): boolean {
+/** Whether a runtime's conformance file calls this conformance entry point. */
+function runsSuite(
+  runtime: MatrixRuntime,
+  entry: 'runtimeConformance' | 'runtimeGuardConformance'
+): boolean {
   const file = join(ROOT, runtimeDir(runtime), '__tests__/conformance.test.ts');
-  return /\bruntimeConformance\s*\(/.test(readFileSync(file, 'utf8'));
+  const { code } = lexWithoutComments(readFileSync(file, 'utf8'), file);
+  return new RegExp(`\\b${entry}\\s*\\(`).test(code);
 }
 
 /** Every id a test claims anywhere this census reads. */
@@ -191,9 +195,15 @@ describe('the runtime capabilities census', () => {
         runtime,
         titles: true,
       });
-      expect({ runtime, runsShared: runsSharedSuite(runtime) }).toEqual({
+      expect({ runtime, runsShared: runsSuite(runtime, 'runtimeConformance') }).toEqual({
         runtime,
         runsShared: true,
+      });
+      // The safety-guard cases (DOR-3596): every declared guard has a proof, and a runtime that
+      // declares none is held to that too, so gaining a guard means declaring it.
+      expect({ runtime, runsGuards: runsSuite(runtime, 'runtimeGuardConformance') }).toEqual({
+        runtime,
+        runsGuards: true,
       });
     }
     expect(unparsed).toEqual([]);
@@ -216,7 +226,7 @@ describe('the runtime capabilities census', () => {
         if (!cell.evidence?.includes('U')) continue;
         const own = ownClaims.get(runtime) ?? new Set<string>();
         const proven = claimIds.some(
-          (id) => own.has(id) || (sharedClaims.has(id) && runsSharedSuite(runtime))
+          (id) => own.has(id) || (sharedClaims.has(id) && runsSuite(runtime, 'runtimeConformance'))
         );
         if (!proven) unproven.push(`${row.id} × ${runtime}`);
       }

@@ -1,0 +1,107 @@
+name: Codex binary (macOS)
+
+# The real Codex binary suites from test.yml's `codex-sandbox` job, on a hosted
+# macOS runner. That job runs them on Linux only, and the macOS answer used to
+# mean running the binary on a team member's Mac. This gives a release gate a
+# macOS result without that.
+#
+# NOT a required check, and it never runs on merge_group: it holds a macOS
+# runner, the scarcest GitHub-hosted resource. It runs on a pull request only
+# when the Codex runtime, its pinned packages, this file or VERSION change
+# (VERSION is the file every release PR edits), and when a person dispatches it.
+#
+# Same four files and the same protected probes as `codex-sandbox`, minus the
+# Linux bubblewrap setup. One difference: many app-server rows are Linux-only by
+# design (`it.skipIf(process.platform !== 'linux')`), so a skip is allowed here.
+# A missing binary still fails: every file must pass at least one test, and the
+# binary-missing placeholder must not appear.
+on:
+  pull_request:
+    paths:
+      - apps/server/src/services/runtimes/codex/**
+      - apps/server/package.json
+      - pnpm-lock.yaml
+      - VERSION
+      - .github/workflows/codex-binary-macos.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: codex-binary-macos-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
+
+jobs:
+  codex-binary-macos:
+    runs-on: macos-latest
+    # codex-sandbox's ceiling, with room for a cold macOS install and build.
+    # Lower it once there are runs to measure.
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    env:
+      NODE_OPTIONS: --max-old-space-size=8192
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7.1.0
+        with:
+          node-version: 24
+      - run: pnpm install --frozen-lockfile
+      - name: Build the server's workspace dependencies
+        run: pnpm exec turbo run build --filter='@dorkos/server^...'
+      - name: Run the real Codex binary and protected-file controls
+        timeout-minutes: 20
+        run: |
+          pnpm vitest run apps/server/src/services/runtimes/codex/app-server/__tests__/app-server.binary.test.ts apps/server/src/services/runtimes/codex/app-server/__tests__/protocol-snapshot.binary.test.ts apps/server/src/services/runtimes/codex/app-server/__tests__/default-permissions.binary.test.ts apps/server/src/services/runtimes/codex/__tests__/credits-provider.binary.test.ts --reporter=default --reporter=json --outputFile=vitest-report.json
+      - name: Require every file to run, both protected probes, and no missing binary
+        if: ${{ !cancelled() }}
+        run: |
+          node --input-type=module <<'NODE'
+          import { readFileSync, appendFileSync } from 'node:fs';
+          import assert from 'node:assert/strict';
+          const report = JSON.parse(readFileSync('vitest-report.json', 'utf8'));
+          const rows = ['| File | Passed | Failed | Skipped |', '| --- | --- | --- | --- |'];
+          for (const suite of report.testResults) {
+            const count = (s) => suite.assertionResults.filter((t) => t.status === s).length;
+            rows.push(`| ${suite.name.slice(process.cwd().length + 1)} | ${count('passed')} | ${count('failed')} | ${count('skipped') + count('pending')} |`);
+          }
+          const tests = report.testResults.flatMap((suite) => suite.assertionResults);
+          const failed = tests.filter((t) => t.status === 'failed');
+          if (failed.length) rows.push('', '**Failed:**', ...failed.map((t) => `- ${t.fullName}`));
+          appendFileSync(process.env.GITHUB_STEP_SUMMARY, rows.join('\n') + '\n');
+          console.log(rows.join('\n'));
+          assert(tests.length > 0, 'No native tests ran');
+          assert(!tests.some((t) => t.title.startsWith('SKIPPED: no vendored Codex binary')),
+            'No vendored Codex binary is installed for this platform');
+          for (const file of [
+            'app-server/__tests__/app-server.binary.test.ts',
+            'app-server/__tests__/protocol-snapshot.binary.test.ts',
+            'app-server/__tests__/default-permissions.binary.test.ts',
+            '__tests__/credits-provider.binary.test.ts',
+          ]) {
+            assert(report.testResults.some((suite) =>
+              suite.name.endsWith('/codex/' + file) && suite.assertionResults.some((t) => t.status === 'passed')),
+              `Native suite passed no test: ${file}`);
+          }
+          for (const kind of ['app-server', 'exec']) {
+            assert(tests.some((t) => t.status === 'passed' && t.title ===
+              `protects fake secrets through ${kind} despite a loaded legacy Full setting`),
+              `Protected probe did not pass: ${kind}`);
+          }
+          assert.equal(failed.length, 0, `${failed.length} native test(s) failed`);
+          NODE
+      - name: Keep the report
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: codex-binary-macos-report
+          path: vitest-report.json
+          if-no-files-found: warn
+          retention-days: 14
