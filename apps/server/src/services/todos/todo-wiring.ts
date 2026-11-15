@@ -25,6 +25,7 @@ import { logger } from '../../lib/logger.js';
 import { notify } from '../notifications/notification-service.js';
 import { getChatMessageService } from '../session/chat-messages/chat-message-current.js';
 import { createTodoRecipientNotice } from './notice/todo-recipient-notice.js';
+import { readOperatorTimeZone } from '../core/config/operator-time-zone.js';
 
 /** How often queued to-do turns are checked for a new day. */
 const TODO_QUEUE_DRAIN_MS = 60 * 60 * 1000;
@@ -139,6 +140,13 @@ export function wireTodos(deps: TodoWiringDeps): TodoWiring {
       tellRecipient: createTodoRecipientNotice({
         isAgent: agentExists,
         agentName: (id) => deps.meshCore()?.get(id)?.name,
+        dateWords: (iso) =>
+          new Date(iso).toLocaleDateString('en-US', {
+            weekday: 'short',
+            month: 'short',
+            day: 'numeric',
+            timeZone: readOperatorTimeZone(),
+          }),
         notifyPerson: async (payload) => {
           await notify('todo.changed', payload);
         },

@@ -15,6 +15,11 @@ export const TODO_SOON_MS = 24 * 60 * 60 * 1000;
 export interface TodoReader {
   /** List to-dos. */
   list(filter: { agentId?: string; state?: 'open' }, limit?: number): TodoPromise[];
+  /**
+   * The last wake for a promise's current date: its start, its check-in, or none yet (DOR-3034).
+   * Absent where wakes are not tracked; then a due promise reads as due, as before.
+   */
+  wakePhaseOf?(id: string): 'start' | 'checkin' | null;
 }
 
 /**
@@ -35,17 +40,24 @@ export function createTodosGatherer(todoPromises: TodoReader, openWork?: OpenWor
       const due = Date.parse(promise.dueAt);
       if (Number.isNaN(due) || due - now > TODO_SOON_MS) continue;
       const overdue = due < now;
+      // A start or check-in wake came for this date (DOR-3034): its own key, so the beat it woke
+      // counts it as new work even though an earlier beat already saw the promise due soon.
+      const phase = overdue ? null : (todoPromises.wakePhaseOf?.(promise.id) ?? null);
       changes.push({
         gatherer: 'todos',
-        key: `commitment:${promise.id}`,
+        key: phase ? `commitment:${promise.id}:${phase}` : `commitment:${promise.id}`,
         // Its words stay out of the summary: they can be somebody else's (a to-do, DOR-3088), and
         // the prompt shows them only inside the fenced open-promises list, by this id.
         summary: overdue
           ? `Overdue since ${promise.dueAt}: promise ${promise.id}`
-          : `Due ${promise.dueAt}: promise ${promise.id}`,
+          : phase === 'start'
+            ? `Start now, due ${promise.dueAt}: promise ${promise.id}`
+            : phase === 'checkin'
+              ? `Check in, due ${promise.dueAt}: promise ${promise.id}`
+              : `Due ${promise.dueAt}: promise ${promise.id}`,
         at: promise.dueAt,
         ref: { kind: 'commitment', id: promise.id },
-        signal: overdue ? 'commitment-overdue' : 'commitment-due',
+        signal: overdue ? 'commitment-overdue' : phase ? 'commitment-start' : 'commitment-due',
       });
     }
     return changes;

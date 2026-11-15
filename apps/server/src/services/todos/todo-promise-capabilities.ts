@@ -74,7 +74,7 @@ declare module '../core/capabilities/capability-definition.js' {
     /** Present when the to-dos service is running; gates the `todos` domain. */
     todoPromiseDeps?: {
       /** Records, reads and changes to-dos. */
-      service: Pick<TodoPromiseService, 'create' | 'update' | 'list'>;
+      service: Pick<TodoPromiseService, 'create' | 'update' | 'list' | 'get'>;
       /**
        * The Mesh id of the agent living at a home folder, or undefined when Mesh
        * does not know it.
@@ -231,7 +231,8 @@ export const todoPromisesDomain: CapabilityDomain = {
         '8601 with an offset, never in the past): it is when the work is finished, not started. ' +
         'Give `estimate` (hour, half-day or day) and you are woken that long, plus a buffer, ' +
         'before it to start, and once partway to check in; with none you are woken an hour ' +
-        'before. Fifteen minutes after the due time it is marked missed unless you kept it or ' +
+        'before; if there is not that much time left you are woken at the due time, so start now. ' +
+        'Fifteen minutes after the due time it is marked missed unless you kept it or ' +
         'moved the date. A promise to an outsider ' +
         '(a date, a price, a discount) commits other people: ask first, then record it. When you ' +
         'have done it, mark it kept with the promise-update tool.',
@@ -360,6 +361,7 @@ export const todoPromisesDomain: CapabilityDomain = {
         const todoPromiseDeps = requireTodoPromiseDeps(deps);
         const actor = actorOf(todoPromiseDeps, context);
         if ('ok' in actor) return actor;
+        const wasOpen = todoPromiseDeps.service.get(input.id)?.state === 'open';
         const result = answer(() => ({
           ok: true as const,
           todoPromise: todoPromiseDeps.service.update(actor, input.id, {
@@ -370,10 +372,11 @@ export const todoPromisesDomain: CapabilityDomain = {
           }),
         }));
         // The agent's own move or drop is told to whoever the promise was made to (DOR-3034).
+        // A reopen is not a move: it brings back a promise rather than changing one still owed.
         const change =
           input.state === 'dropped'
             ? 'dropped'
-            : input.state === 'open' && input.dueAt !== undefined
+            : input.state === 'open' && input.dueAt !== undefined && wasOpen
               ? 'moved'
               : null;
         if (result.ok && change && actor.kind === 'agent' && todoPromiseDeps.tellRecipient) {

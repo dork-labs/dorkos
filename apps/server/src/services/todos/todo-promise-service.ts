@@ -176,6 +176,18 @@ export class TodoPromiseService {
     else this.timers.clear(id);
   }
 
+  /**
+   * The last wake for a promise's current date, for the beat it woke (DOR-3034).
+   *
+   * @param id - The row id.
+   * @returns `checkin`, `start`, or null when neither has come.
+   */
+  wakePhaseOf(id: string): 'start' | 'checkin' | null {
+    const row = this.store.get(id);
+    if (!row || row.state !== 'open') return null;
+    return row.checkinNotifiedAt ? 'checkin' : row.dueNotifiedAt ? 'start' : null;
+  }
+
   /** Disarm every timer. */
   stop(): void {
     this.timers.stop();
@@ -591,7 +603,8 @@ export class TodoPromiseService {
   private handleCheckin(id: string): void {
     const row = this.store.get(id);
     if (!row || row.state !== 'open' || !row.dueAt) return;
-    if (row.checkinNotifiedAt) {
+    // A timer that slept through the due time owes no check-in: the miss comes next.
+    if (row.checkinNotifiedAt || this.now().getTime() >= Date.parse(row.dueAt)) {
       this.arm(row);
       return;
     }

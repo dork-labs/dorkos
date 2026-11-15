@@ -30,6 +30,8 @@ export interface TodoChangePayloads {
     change: 'moved' | 'dropped';
     /** The reason the agent gave, or null when it gave none. */
     note: string | null;
+    /** A moved promise's new date in the person's own words ("Fri, Nov 20"), or null. */
+    newDue: string | null;
     /** ISO time of the change. */
     at: string;
   };
@@ -52,7 +54,11 @@ export const TODO_CHANGE_ENTRIES: {
     subjectType: 'agent',
     locate: (p) => ({ subjectId: p.agentId, agentId: p.agentId }),
     title: (p) => `${p.agentName} ${p.change} ${quoted(p.what)}`,
-    body: (p) => (p.note ? `Why: ${p.note}` : 'No reason given.'),
+    body: (p) => {
+      const why = p.note ? `Why: ${p.note}` : 'No reason given.';
+      if (p.change !== 'moved') return why;
+      return `${p.newDue ? `Now due ${p.newDue}.` : 'Now with no date.'} ${why}`;
+    },
     dedupeKey: (p) => `todo-changed:${p.todoId}:${p.at}`,
     relay: 'never',
   },

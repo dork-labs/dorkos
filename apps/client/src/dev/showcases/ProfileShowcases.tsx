@@ -203,6 +203,8 @@ function fixtureMeasures(since: string): HeartbeatMeasures {
         '90% or more',
         'Due this window. A late move stays late; a dropped one counts as missed.'
       ),
+      todosMoved: 1,
+      todosMissed: 0,
       noEndBeat: 1,
       triage: { checks: 41, tokens: 18_400 },
       turns: { count: 12, tokensPerTurn: null },

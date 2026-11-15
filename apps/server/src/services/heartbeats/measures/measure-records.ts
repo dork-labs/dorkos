@@ -110,6 +110,8 @@ export interface MeasureTodo {
    * later than its drop (DOR-3034).
    */
   scoreDueAt: string;
+  /** How many times its date moved. */
+  moveCount: number;
   /** When it closed (ISO 8601), or null while open. */
   closedAt: string | null;
 }
@@ -392,6 +394,7 @@ export function readMeasureRecords(
       state: todos.state,
       dueAt: todos.dueAt,
       scoreDueAt: scoredDueAt,
+      moveCount: todos.moveCount,
       closedAt: todos.closedAt,
     })
     .from(todos)

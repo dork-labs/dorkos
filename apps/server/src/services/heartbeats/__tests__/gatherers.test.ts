@@ -213,6 +213,23 @@ describe('todos', () => {
       ['commitment:c2', 'commitment-due'],
     ]);
   });
+
+  it('names a start or check-in wake as new work under its own key (DOR-3034)', async () => {
+    const list = () =>
+      [
+        { id: 'c1', what: 'Quote to Acme', dueAt: '2026-10-12T20:00:00Z' },
+        { id: 'c2', what: 'Invoice run', dueAt: '2026-10-12T21:00:00Z' },
+        { id: 'c3', what: 'Not woken yet', dueAt: '2026-10-12T22:00:00Z' },
+      ] as never;
+    const wakePhaseOf = (id: string) => (id === 'c1' ? 'start' : id === 'c2' ? 'checkin' : null);
+    const changes = await createTodosGatherer({ list, wakePhaseOf })(ctx());
+    expect(changes.map((c) => [c.key, c.signal])).toEqual([
+      ['commitment:c1:start', 'commitment-start'],
+      ['commitment:c2:checkin', 'commitment-start'],
+      ['commitment:c3', 'commitment-due'],
+    ]);
+    expect(triageByRules(changes.slice(0, 1), { failureStorm: false }).verdict).toBe('work');
+  });
 });
 
 describe('schedules', () => {

@@ -105,6 +105,27 @@ describe('HeartbeatMeasures', () => {
     expect(within(mutes).getByText('Target trending to 0')).toBeInTheDocument();
   });
 
+  it('says how many promises moved or were missed beside the on-time rate (DOR-3034)', async () => {
+    const base = emptyHeartbeatMeasures();
+    render(
+      <HeartbeatMeasures
+        measures={measured({
+          supporting: {
+            ...base.supporting,
+            beats: 20,
+            todosOnTime: { ...base.supporting.todosOnTime, value: 0.7, part: 7, whole: 10 },
+            todosMoved: 2,
+            todosMissed: 1,
+          },
+        })}
+      />
+    );
+    await userEvent.click(screen.getByRole('button', { name: 'Supporting measures' }));
+    const list = screen.getByRole('list', { name: 'Supporting measures' });
+    expect(within(list).getByText('Promises kept on time: 70%, 7 of 10.')).toBeInTheDocument();
+    expect(within(list).getByText('Moved: 2 of 10. Missed: 1 of 10.')).toBeInTheDocument();
+  });
+
   it('keeps the supporting measures behind one disclosure', async () => {
     const base = emptyHeartbeatMeasures();
     render(

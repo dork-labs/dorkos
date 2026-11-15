@@ -38,6 +38,8 @@ export interface TodoRecipientNoticeDeps {
   isAgent: (id: string) => boolean;
   /** An agent's name, or undefined when the team does not know it. */
   agentName: (id: string) => string | undefined;
+  /** A date in the person's own words, on their clock ("Fri, Nov 20"). */
+  dateWords: (iso: string) => string;
   /** Raise the Inbox event for a person. */
   notifyPerson: (payload: TodoChangePayloads['todo.changed']) => Promise<void> | void;
   /** Send one message from the promising agent's chat to another agent. */
@@ -105,6 +107,10 @@ export function createTodoRecipientNotice(
           what: todoPromise.what,
           change: notice.change,
           note: notice.reason,
+          newDue:
+            notice.change === 'moved' && todoPromise.dueAt
+              ? deps.dateWords(todoPromise.dueAt)
+              : null,
           at: now().toISOString(),
         });
         return;

@@ -114,6 +114,7 @@ const PAYLOADS: { [K in NotificationKind]: NotificationPayloads[K] } = {
     what: 'Send Acme the revised quote',
     change: 'moved',
     note: 'Waiting on their numbers',
+    newDue: 'Fri, Nov 20',
     at: '2026-11-15T17:00:00.000Z',
   },
   'update.installed': { version: '0.61.0', previousVersion: '0.60.0' },

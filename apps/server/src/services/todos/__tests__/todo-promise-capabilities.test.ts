@@ -311,6 +311,18 @@ describe('to-dos domain', () => {
       expect(tellRecipient.mock.calls[0]![0].agentPath).toBe('/agents/ana');
     });
 
+    it('does not tell anyone when the agent reopens a closed promise with a date', async () => {
+      const tellRecipient = vi.fn().mockResolvedValue(undefined);
+      const told = {
+        ...deps,
+        todoPromiseDeps: { ...deps.todoPromiseDeps!, tellRecipient },
+      } as CapabilityDeps;
+      await call(told, 'todo_promises.update', { id, state: 'kept' }, { identity: ana });
+      const dueAt = new Date(Date.now() + 2 * 86_400_000).toISOString();
+      await call(told, 'todo_promises.update', { id, state: 'open', dueAt }, { identity: ana });
+      expect(tellRecipient).not.toHaveBeenCalled();
+    });
+
     it('tells nobody when a person drops it, or when an agent keeps it', async () => {
       const tellRecipient = vi.fn().mockResolvedValue(undefined);
       const told = {

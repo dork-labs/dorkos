@@ -11,6 +11,7 @@ import {
   recipientOf,
   type TodoRecipientNoticeDeps,
 } from '../notice/todo-recipient-notice.js';
+import { TODO_CHANGE_ENTRIES } from '../notice/todo-change-notifications.js';
 
 const AT = new Date('2026-11-15T17:00:00.000Z');
 
@@ -39,6 +40,7 @@ function build(over: Partial<TodoRecipientNoticeDeps> = {}) {
   const deps = {
     isAgent: (id: string) => id.startsWith('agent-'),
     agentName: (id: string) => (id === 'agent-ana' ? 'Ana' : undefined),
+    dateWords: () => 'Fri, Nov 20',
     notifyPerson: vi.fn(),
     sendToAgent: vi.fn().mockResolvedValue(undefined),
     now: () => AT,
@@ -68,6 +70,7 @@ describe('createTodoRecipientNotice', () => {
       what: 'Send Acme the revised quote',
       change: 'moved',
       note: 'Waiting on their numbers',
+      newDue: 'Fri, Nov 20',
       at: AT.toISOString(),
     });
   });
@@ -106,6 +109,33 @@ describe('createTodoRecipientNotice', () => {
     await expect(
       tell({ todoPromise: promise(), change: 'dropped', reason: 'No longer needed' })
     ).resolves.toBeUndefined();
+  });
+});
+
+describe('the todo.changed notice', () => {
+  const base = {
+    todoId: 't',
+    agentId: 'agent-ana',
+    agentName: 'Ana',
+    what: 'Send Acme the revised quote',
+    at: AT.toISOString(),
+  };
+
+  it('says the new date and the reason for a move, and only the reason for a drop', () => {
+    const entry = TODO_CHANGE_ENTRIES['todo.changed'];
+    const body = entry.body!;
+    expect(entry.title({ ...base, change: 'moved', note: null, newDue: 'Fri, Nov 20' })).toBe(
+      'Ana moved “Send Acme the revised quote”'
+    );
+    expect(body({ ...base, change: 'moved', note: 'Blocked', newDue: 'Fri, Nov 20' })).toBe(
+      'Now due Fri, Nov 20. Why: Blocked'
+    );
+    expect(body({ ...base, change: 'moved', note: null, newDue: null })).toBe(
+      'Now with no date. No reason given.'
+    );
+    expect(body({ ...base, change: 'dropped', note: 'Not needed', newDue: null })).toBe(
+      'Why: Not needed'
+    );
   });
 });
 

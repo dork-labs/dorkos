@@ -410,6 +410,23 @@ describe('TodoPromiseService', () => {
       expect(due).toHaveLength(2);
     });
 
+    it('owes no check-in once a sleeping computer passed the due time; the miss comes next', () => {
+      const due: TodoPromiseDueEvent[] = [];
+      service.observe((event) => due.push(event));
+      const made = service.create('agent-a', {
+        what: 'Draft the proposal',
+        dueAt: new Date(START.getTime() + 10 * HOUR).toISOString(),
+        estimate: 'half-day',
+      });
+      vi.advanceTimersByTime(5 * HOUR);
+      expect(service.wakePhaseOf(made.id)).toBe('start');
+      // The computer sleeps through the check-in and the due time; the timer fires late.
+      vi.setSystemTime(START.getTime() + 10 * HOUR + 60_000);
+      vi.advanceTimersByTime(3 * HOUR);
+      expect(due.map((e) => e.phase)).toEqual(['start']);
+      expect(service.get(made.id)!.state).toBe('missed');
+    });
+
     it('wakes a promise made inside its own lead at the due time, not at once', () => {
       const onDue = vi.fn();
       service.observe(onDue);
