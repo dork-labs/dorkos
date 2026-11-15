@@ -436,11 +436,9 @@ export class AppServerCodexTransport implements CodexTransport {
       return;
     }
 
-    const keyTurn = threadKeyTurn(
-      this.options.connectorTools()?.threadKeys,
-      loaded,
-      request,
-      sessionId
+    const keys = this.options.connectorTools()?.threadKeys;
+    const keyTurn = threadKeyTurn(keys, loaded, request, sessionId, () =>
+      this.loader.markToolsLost(process, loaded.threadId)
     );
     const queue = new EventQueue();
     const priorContextTokens = this.contextTokens.get(loaded.threadId);

@@ -100,6 +100,9 @@ export class CodexSessionRegistry {
     const preview = toPreview(content);
     // MessageOpts.title is only honored on the first turn (see AgentRuntime).
     if (session.title === '') session.title = title ?? (deriveSessionTitle(content) || preview);
+    // "Tools are back" shows until the next message (DOR-4393). Null, not
+    // absent, so the client's list-to-detail merge overwrites it.
+    if (session.dorkosTools === 'back') session.dorkosTools = null;
     session.lastMessagePreview = preview;
     session.updatedAt = new Date().toISOString();
     this.emit({ type: 'session_upserted', session: { ...session } });
@@ -114,6 +117,23 @@ export class CodexSessionRegistry {
     if (!this.sessions.has(sessionId)) return false;
     this.register(sessionId, patch);
     return true;
+  }
+
+  /**
+   * Record whether a completed turn's thread listed its DorkOS tools
+   * (DOR-4393): not listed makes the chat `lost`; listed after that makes it
+   * `back`. Announces only a change. A chat it does not track is ignored.
+   *
+   * @param sessionId - The chat.
+   * @param listed - The server's own record of the `tools/list` answer.
+   */
+  noteDorkosTools(sessionId: string, listed: boolean): void {
+    const session = this.sessions.get(sessionId);
+    if (!session) return;
+    const next = !listed ? 'lost' : session.dorkosTools === 'lost' ? 'back' : session.dorkosTools;
+    if (next === session.dorkosTools) return;
+    session.dorkosTools = next;
+    this.emit({ type: 'session_upserted', session: { ...session } });
   }
 
   /** Set a tracked session's display title, tracking it first if needed. */
@@ -154,6 +174,7 @@ export class CodexSessionRegistry {
             ...(current.model !== undefined ? { model: current.model } : {}),
             ...(current.effort !== undefined ? { effort: current.effort } : {}),
             ...(current.fastMode !== undefined ? { fastMode: current.fastMode } : {}),
+            ...(current.dorkosTools !== undefined ? { dorkosTools: current.dorkosTools } : {}),
           }
         : {}),
     };

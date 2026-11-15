@@ -91,6 +91,12 @@ export interface CodexTurnRequest {
    */
   onThreadBound(threadId: string, replaces?: string): void;
   /**
+   * Whether the turn's thread fetched its DorkOS tool list, once a turn that
+   * was handed them has completed (DOR-4393). Only the server's own record of
+   * the `tools/list` answer counts, never anything a tool returned.
+   */
+  onDorkosToolsListing?(listed: boolean): void;
+  /**
    * The turn's own options, opaque to the transport: kept on any work the turn
    * leaves running and handed back with its wake, so the turn a wake starts
    * runs as the same agent with the same settings. Absent means a wake from

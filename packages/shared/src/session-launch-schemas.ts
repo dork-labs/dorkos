@@ -20,6 +20,19 @@ export const SessionLaunchWarningShape = {
   warnings: z.array(SessionLaunchWarningSchema).optional(),
 };
 
+/**
+ * A chat that had its DorkOS tools and lost them partway through (`lost`),
+ * or got them back after (`back`, until the next message). Null once neither
+ * holds. Set only from the server's own record of the tool-list answer.
+ */
+export const SessionDorkosToolsSchema = z
+  .enum(['lost', 'back'])
+  .nullable()
+  .openapi('SessionDorkosTools');
+
+/** Whether a chat lost its DorkOS tools, or got them back. */
+export type SessionDorkosTools = z.infer<typeof SessionDorkosToolsSchema>;
+
 /** The new chat and any warning the extension should show with its Watch link. */
 export const StartWorkResponseSchema = z
   .object({

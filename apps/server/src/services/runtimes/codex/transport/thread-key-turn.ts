@@ -69,14 +69,17 @@ function warnIfUnlisted(
  *
  * @param keys - The thread-key registry, when the listener is wired.
  * @param loaded - The loaded thread and the key it was loaded with.
- * @param request - The turn's tools: its DorkOS tools and its binding.
+ * @param request - The turn's tools, and who hears whether they were listed.
  * @param sessionId - The DorkOS chat.
+ * @param markLost - Have the next turn reload this thread with a fresh key
+ *   (DOR-4393): what makes "It tries again with your next message" true.
  */
 export function threadKeyTurn(
   keys: ConnectorThreadKeyPort | undefined,
   loaded: { readonly threadId: string; readonly keyId: string | undefined },
-  request: Pick<CodexTurnRequest, 'tools'>,
-  sessionId: string
+  request: Pick<CodexTurnRequest, 'tools' | 'onDorkosToolsListing'>,
+  sessionId: string,
+  markLost: () => void = () => {}
 ): ThreadKeyTurn {
   const attached =
     loaded.keyId !== undefined && request.tools.connectorBindingId !== undefined
@@ -104,7 +107,15 @@ export function threadKeyTurn(
       const keyId = loaded.keyId;
       if (completed === undefined || keyId === undefined || !request.tools.dorkosTools) return;
       void completed.then((status) => {
-        if (status === 'completed') warnIfUnlisted(keys, keyId, { sessionId, ...loaded });
+        if (status !== 'completed') return;
+        // The server's own record of the `tools/list` answer, never tool output.
+        const listed = keys?.toolListing?.(keyId)?.listed;
+        if (listed === undefined) return;
+        if (!listed) {
+          warnIfUnlisted(keys, keyId, { sessionId, ...loaded });
+          markLost();
+        }
+        request.onDorkosToolsListing?.(listed);
       });
     },
   };
