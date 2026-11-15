@@ -545,6 +545,8 @@ describe('credits', () => {
     expect(dones(events)).toHaveLength(1);
     expect(h.pool.list()[0]!.spec.onCredits).toBe(true);
     const fake = h.host.home(CREDITS_ENV_HOME).processes[0]!;
+    expect(fake.requestsOf('config/read')).toEqual([]);
+    expect(fake.requestsOf('model/list')).toEqual([]);
     const config = fake.requestsOf('thread/start')[0]!.config as Record<string, unknown>;
     expect(config).toMatchObject({
       model_provider: 'dorkos-credits',

@@ -1842,6 +1842,41 @@ describe('CodexRuntime — the transport seam (ADR 261005-113107)', () => {
     return out;
   }
 
+  it('remembers a verified account-default replacement for the next turn and a restarted runtime', async () => {
+    const db = createTestDb();
+    const threadMap = new CodexThreadMap(db);
+    const { transport, requests } = recordingTransport();
+    const settings = new Map<string, import('@dorkos/shared/types').SessionSettings>();
+    const port: SessionSettingsPort = {
+      getSessionSettings: async (id) => settings.get(id) ?? null,
+      saveSessionSettings: async (id, patch) => {
+        settings.set(id, { ...settings.get(id), ...patch });
+      },
+    };
+    const runtime = new CodexRuntime({
+      threadMap,
+      resolveBinary: async () => '/opt/codex',
+      transport,
+    });
+    runtime.setSessionSettings(port);
+    runtime.ensureSession('s1', { cwd: '/project' });
+    await drain(runtime.sendMessage('s1', 'first', { cwd: '/project' }));
+    expect(requests[0]!.onModelReplacement).toBeTypeOf('function');
+    await requests[0]!.onModelReplacement!('account-default');
+    expect(settings.get('s1')).toMatchObject({ model: 'account-default' });
+    await drain(runtime.sendMessage('s1', 'second', { cwd: '/project' }));
+    expect(requests[1]!.settings).toMatchObject({ model: 'account-default' });
+    const next = recordingTransport();
+    const restarted = new CodexRuntime({
+      threadMap,
+      resolveBinary: async () => '/opt/codex',
+      transport: next.transport,
+    });
+    restarted.setSessionSettings(port);
+    await drain(restarted.sendMessage('s1', 'after restart', { cwd: '/project' }));
+    expect(next.requests[0]!.settings).toMatchObject({ model: 'account-default' });
+  });
+
   it('hands the transport one resolved turn and persists the binding it reports', async () => {
     const db = createTestDb();
     const threadMap = new CodexThreadMap(db);

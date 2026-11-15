@@ -3,15 +3,16 @@
  * `codex-app-server-transport` §3, ADR 261005-113107).
  *
  * Everything above "run one resolved turn" stays in the runtime: settings, the
- * cwd chain, who pays (and the refusal when credits cannot), the model swap,
+ * cwd chain, who pays (and the refusal when credits cannot), the credits model swap,
  * the connector binding and its lease, the identity token, the managed MCP
  * servers, the context gate, prompt assembly, registry and `codex_threads`
  * writes, and media capture. A transport receives one {@link CodexTurnRequest}
- * with all of that already decided and turns it into StreamEvents.
+ * with all of that decided and turns it into StreamEvents. Personal model
+ * availability is checked on the acquired account process before the thread
+ * loads; a verified fallback is handed back for the runtime to remember.
  *
- * Two implementations: `exec` (one `codex exec` per turn through the SDK, the
- * code that shipped before this seam, moved unchanged) and `app-server` (one
- * long-lived `codex app-server` per home).
+ * Production uses `app-server` (one long-lived process per home), including
+ * the legacy `exec` setting. Scripted exec transports remain test fixtures.
  *
  * @module services/runtimes/codex/transport/codex-transport
  */
@@ -90,6 +91,8 @@ export interface CodexTurnRequest {
    * rather than first-write-wins.
    */
   onThreadBound(threadId: string, replaces?: string): void;
+  /** Remember a verified account-default replacement for subsequent turns. */
+  onModelReplacement?(model: string): Promise<void>;
   /**
    * Whether the turn's thread fetched its DorkOS tool list, once a turn that
    * was handed them has completed (DOR-4393). Only the server's own record of

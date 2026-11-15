@@ -285,13 +285,7 @@ export function AssistantMessageContent({
       );
     }
     if (part.type === 'model_substituted') {
-      return (
-        <ModelSubstitutedRow
-          key={`model-substituted-${i}`}
-          fromName={part.fromName}
-          toName={part.toName}
-        />
-      );
+      return <ModelSubstitutedRow key={`model-substituted-${i}`} {...part} />;
     }
     if (part.type === 'work_left_running') {
       return <WorkLeftRunningRow key={`work-left-${i}`} sessionId={sessionId} part={part} />;

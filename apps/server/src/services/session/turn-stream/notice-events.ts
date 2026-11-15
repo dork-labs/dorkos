@@ -48,7 +48,8 @@ export function toNoticeEvent(event: StreamEvent): RawSessionEvent | null {
         fromName: String(data.fromName ?? data.from ?? ''),
         to: String(data.to ?? ''),
         toName: String(data.toName ?? data.to ?? ''),
-        reason: 'credits-not-covered',
+        reason:
+          data.reason === 'account-not-available' ? 'account-not-available' : 'credits-not-covered',
       };
       return substituted;
     }
