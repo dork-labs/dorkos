@@ -32,6 +32,7 @@ import {
   onDispatchLifecycle,
   resetMessageDispatcher,
   setQueuedChatCeilingResolver,
+  setQueuedChatHoldResolver,
   type DispatchLifecycleEvent,
 } from '../message-dispatcher.js';
 import { rearmChatQueues } from '../message-dispatcher/queue-upkeep.js';
@@ -171,6 +172,7 @@ afterEach(async () => {
   releaseLongTurn = undefined;
   await vi.waitFor(() => expect(inner.isTurnOpen(sessionId)).toBe(false));
   setQueuedChatCeilingResolver(undefined);
+  setQueuedChatHoldResolver(undefined);
   resetMessageDispatcher();
   setMessageQueueStore(undefined);
   disposeProjector(sessionId);
@@ -489,6 +491,117 @@ describe('a pause between a queued turn’s start and its first model request (D
     expect(listQueuedMessages(sessionId)).toEqual([]);
     expect(answered).toEqual(['from A: add the totals']);
     expect(events.map((event) => event.phase)).not.toContain('held');
+  });
+
+  /**
+   * A's message starts with `cut` as its turn, which shows `shown` and then
+   * waits until interrupted; B is paused there and resumed. Returns how many
+   * times B's runtime was asked to run A's words, and the options of each.
+   */
+  async function cutPauseResume(
+    shown: StreamEvent[],
+    extra: Partial<Parameters<typeof dispatchMessage>[0]> = {}
+  ): Promise<{ runs: number; opts: Array<Record<string, unknown>> }> {
+    const cut = async function* (): AsyncGenerator<StreamEvent> {
+      for (const event of shown) yield event;
+      await new Promise<void>((resolve) => {
+        atModelRequest = resolve;
+      });
+      yield { type: 'done', data: {} };
+    };
+    inner.withScenarios([longTurn, cut, answers, answers]);
+    const runtime = runtimeRegistry.get(inner.type);
+    const projector = getOrCreateProjector(sessionId, BETA.home);
+    await dispatchMessage({
+      sessionId,
+      clientId: 'person-window',
+      content: 'start the census',
+      projector,
+      runtime,
+      cwd: BETA.home,
+    });
+    await vi.waitFor(() => expect(inner.isTurnOpen(sessionId)).toBe(true));
+    await dispatchMessage({
+      sessionId,
+      clientId: chatClientId('chat-alpha'),
+      content: 'from A: add the totals',
+      projector,
+      runtime,
+      cwd: BETA.home,
+      ...extra,
+    });
+    releaseLongTurn?.();
+    await vi.waitFor(() => expect(atModelRequest).toBeDefined(), { timeout: 2000 });
+    await pauses.pause(BETA.id, PERSON);
+    await vi.waitFor(() => expect(inner.isTurnOpen(sessionId)).toBe(false));
+    await settle();
+    // A different caller lifts the pause: its limits must not reach the run.
+    pauses.resume(BETA.id, {
+      accountId: '01ALPHAAGENTULID0000000000',
+      kind: 'agent',
+      name: 'alpha',
+    });
+    await rearm();
+    await settle();
+    await settle();
+    const calls = inner.sendMessage.mock.calls.filter(
+      (call) => call[1] === 'from A: add the totals'
+    );
+    return {
+      runs: calls.length,
+      opts: calls.map((call) => (call[2] ?? {}) as Record<string, unknown>),
+    };
+  }
+
+  it('never reruns a turn whose tool call had started (Security Must 1)', async () => {
+    const { runs } = await cutPauseResume([
+      { type: 'tool_call_start', data: { toolCallId: 'call-1', toolName: 'Bash', input: '' } },
+    ] as StreamEvent[]);
+    expect(runs).toBe(1);
+    expect(listQueuedMessages(sessionId)).toEqual([]);
+  });
+
+  it('never reruns a turn that raised a card (Security Must 1)', async () => {
+    const { runs } = await cutPauseResume([
+      {
+        type: 'approval_required',
+        data: { toolCallId: 'call-1', toolName: 'Bash', input: '{}', timeoutMs: 60_000 },
+      },
+    ] as unknown as StreamEvent[]);
+    expect(runs).toBe(1);
+    expect(listQueuedMessages(sessionId)).toEqual([]);
+  });
+
+  it('still reruns a turn that only made its model request (the PM’s ruling: a repeat beats a loss)', async () => {
+    const { runs } = await cutPauseResume([
+      { type: 'model_request', data: { requestId: 'r-1', phase: 'start', startedAt: 1 } },
+    ] as unknown as StreamEvent[]);
+    expect(runs).toBe(2);
+    expect(answered).toEqual(['from A: add the totals']);
+  });
+
+  it('keeps the author and every mark on the rerun, never the resumer’s (Security Must 2)', async () => {
+    // A Wi-Fi hold (held to the default) and a chat-recorded outsider mark. No
+    // chat ceiling, so the default level can only come from the row's own hold.
+    setQueuedChatCeilingResolver(undefined);
+    setQueuedChatHoldResolver(() => true);
+    const { runs, opts } = await cutPauseResume([], { permissionCeiling: 'runtime-default' });
+    setQueuedChatHoldResolver(undefined);
+
+    expect(runs).toBe(2);
+    const rerun = opts[1]!;
+    expect((rerun.carriedMarks as { outsider?: boolean } | undefined)?.outsider).toBe(true);
+    expect(boundsOf(rerun.permissionCeiling)).toContain('runtime-default');
+    const asked = inner.sendMessage.mock.calls.at(-1);
+    expect(asked?.[1]).toBe('from A: add the totals');
+  });
+
+  it('a mark that lived only in memory is held to the default on the rerun (Security Must 2)', async () => {
+    setQueuedChatCeilingResolver(undefined);
+    const { runs, opts } = await cutPauseResume([], { carriedMarks: { outsider: true } });
+
+    expect(runs).toBe(2);
+    expect(boundsOf(opts[1]!.permissionCeiling)).toContain('runtime-default');
   });
 
   it('tells the sender it is held, not that it failed or ran', async () => {
