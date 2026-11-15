@@ -205,7 +205,7 @@ function ComposerDemo({
                     onRemove={() => {}}
                     onSend={() => {}}
                     onMoveUp={() => {}}
-                    statusNote="Sending one at a time as the agent finishes"
+                    statusNote="Sent one at a time as the agent finishes"
                     agentActions={SAMPLE_AGENT_ACTIONS}
                   />
                 ),

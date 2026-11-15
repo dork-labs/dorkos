@@ -26,12 +26,16 @@ export const SAMPLE_QUEUE: QueueItem[] = [
       summary: 'Two lockfile fixes to bump before the cut',
     },
   }),
-  // A sender whose chat could not be read: the row says it can't open.
+  // A sender whose chat could not be read: the row says it can't open. Its
+  // long name wraps to a second line rather than truncating.
   createQueueItem({
     content: 'The docs for the queue panel are ready for a look.',
     mine: false,
     fromChat: true,
-    sender: { agentName: 'Docs Writer', chatId: 'demo-chat-unreadable' },
+    sender: {
+      agentName: 'Release Notes and Docs Writer for the Desktop App',
+      chatId: 'demo-chat-unreadable',
+    },
   }),
   // A sender that cannot be named at all: "Another chat".
   createQueueItem({

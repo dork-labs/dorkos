@@ -40,7 +40,7 @@ const AGENT_ACTIONS = {
   sending: new Set<string>(),
 };
 
-const STATUS_NOTE = 'Sending one at a time as the agent finishes';
+const STATUS_NOTE = 'Sent one at a time as the agent finishes';
 
 /** Renders the panel with the props a plain waiting queue has. */
 function renderPanel(props: Partial<React.ComponentProps<typeof QueuePanel>> = {}) {

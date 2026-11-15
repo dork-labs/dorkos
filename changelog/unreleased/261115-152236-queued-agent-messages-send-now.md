@@ -6,6 +6,7 @@ covers:
   - 'fix(chat): a quoted fence keeps its room or channel author, Send now waits for itself, and focus stays in the queue (DOR-3060)'
   - "test(server): the agent-computer write census refuses Send now, a person's decision (DOR-3060)"
   - "fix(chat): a failed Send now or Don't deliver stops waiting for its row to leave (DOR-3060)"
+  - 'fix(chat): the queue strip says how many wait, not who sent them; long agent names wrap (DOR-3060)'
 ---
 
 ### Changed

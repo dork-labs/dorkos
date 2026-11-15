@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import { AppWindow, ArrowUp, CornerDownLeft, X } from 'lucide-react';
 import { cn, COLLAPSE_TRANSITION, COLLAPSE_VARIANTS, SPRING } from '@/layers/shared/lib';
@@ -140,6 +140,14 @@ export function QueuePanel({
     []
   );
 
+  const [moreBelow, setMoreBelow] = useState(false);
+  const measureMoreBelow = (): void => {
+    const list = listRef.current;
+    if (list) setMoreBelow(list.scrollHeight - list.scrollTop - list.clientHeight > 1);
+  };
+  // Rows arriving, leaving or growing change the answer as surely as a scroll.
+  useLayoutEffect(measureMoreBelow, [queue]);
+
   const noteLeaving = (id: string): void => {
     const index = queue.findIndex((item) => item.id === id);
     leaving.current = { id, index, last: queue.length === 1 };
@@ -170,15 +178,24 @@ export function QueuePanel({
       animate="animate"
       exit="exit"
       transition={COLLAPSE_TRANSITION}
-      className="mb-1.5 overflow-hidden"
+      className="relative mb-1.5 overflow-hidden"
     >
       {/* The count alone never said the one thing a person waiting actually
-          wants to know — when these go out. */}
+          wants to know — when these go out. On a phone, a queue with another
+          agent's rows keeps only the count: those rows are taller and say more. */}
       <div className="text-muted-foreground mb-1 flex items-baseline gap-1 text-xs">
         <span className="font-medium">{queueHeaderCount(queue)}</span>
-        <span className="truncate">&middot; {statusNote}</span>
+        <span
+          className={cn('truncate', queue.some((item) => item.fromChat) && 'max-[480px]:hidden')}
+        >
+          &middot; {statusNote}
+        </span>
       </div>
-      <div ref={listRef} className="max-h-[40vh] space-y-0.5 overflow-y-auto">
+      <div
+        ref={listRef}
+        onScroll={measureMoreBelow}
+        className="max-h-[40vh] space-y-0.5 overflow-y-auto"
+      >
         <AnimatePresence mode="popLayout">
           {queue.map((item, i) => (
             <motion.div
@@ -316,6 +333,15 @@ export function QueuePanel({
           ))}
         </AnimatePresence>
       </div>
+      {/* Says more rows sit below the fold, at the list's bottom edge (the
+          list is the panel's last child). An overlay, not the list's own
+          background: the tinted rows would paint over that. */}
+      {moreBelow && (
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-x-0 bottom-0 h-2 bg-[radial-gradient(farthest-side_at_50%_100%,hsl(var(--dui-scroll-edge)),transparent)]"
+        />
+      )}
     </motion.div>
   );
 }

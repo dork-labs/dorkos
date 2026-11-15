@@ -80,7 +80,7 @@ function panel(
       onRemove={vi.fn()}
       onSend={vi.fn()}
       onMoveUp={vi.fn()}
-      statusNote="Sending one at a time"
+      statusNote="Sent one at a time as the agent finishes"
       agentActions={{ ...actions, notices }}
       onFocusComposer={onFocusComposer}
     />
@@ -96,7 +96,7 @@ function renderPanel(queue: QueueItem[], notices: Record<string, string> = {}) {
       onRemove={vi.fn()}
       onSend={vi.fn()}
       onMoveUp={vi.fn()}
-      statusNote="Sending one at a time"
+      statusNote="Sent one at a time as the agent finishes"
       agentActions={{ ...actions, notices }}
     />
   );
@@ -114,7 +114,21 @@ describe('QueuePanel: who sent a queued message', () => {
     fireEvent.click(link);
     expect(navigate).toHaveBeenCalledWith(expect.objectContaining({ search: expect.anything() }));
     expect(screen.queryByRole('button', { name: /Please hold/ })).not.toBeInTheDocument();
-    expect(screen.getByText('1 from Security')).toBeInTheDocument();
+  });
+
+  it('wraps a long agent name, and truncates only the chat line with its title in a tooltip', () => {
+    const long = {
+      ...SECURITY,
+      agentName: 'Quarterly compliance and dependency audit agent',
+      chatTitle: 'A very long chat title that will never fit on one line of a phone',
+    };
+    renderPanel([fromChat('a', 'Hi', long)]);
+    const name = screen.getByText(long.agentName);
+    expect(name).not.toHaveClass('truncate');
+    expect(name).toHaveClass('break-words');
+    const chatLine = screen.getByRole('link', { name: long.chatTitle }).parentElement!;
+    expect(chatLine).toHaveClass('truncate');
+    expect(chatLine).toHaveAttribute('title', long.chatTitle);
   });
 
   it("says can't open, with no link, when the chat cannot be read", () => {
@@ -141,9 +155,20 @@ describe('QueuePanel: who sent a queued message', () => {
     expect(screen.getByText('Queued (1)')).toBeInTheDocument();
   });
 
-  it('counts a mixed queue by who sent what', () => {
+  it('counts a queue with another chat’s rows as waiting, naming nobody', () => {
     renderPanel([mine('a', 'mine'), fromChat('b', 'theirs', SECURITY)]);
-    expect(screen.getByText('2 queued · 1 yours, 1 from Security')).toBeInTheDocument();
+    const count = screen.getByText('2 waiting');
+    const header = count.parentElement!;
+    expect(header.textContent).toBe('2 waiting· Sent one at a time as the agent finishes');
+    expect(header.textContent).not.toContain('Security');
+  });
+
+  it('drops the note under 480px only when another chat’s rows are queued', () => {
+    renderPanel([fromChat('a', 'theirs', SECURITY)]);
+    expect(screen.getByText(/Sent one at a time/)).toHaveClass('max-[480px]:hidden');
+    cleanup();
+    renderPanel([mine('a', 'mine')]);
+    expect(screen.getByText(/Sent one at a time/)).not.toHaveClass('max-[480px]:hidden');
   });
 });
 
@@ -221,22 +246,13 @@ describe('QueuePanel: focus after a row leaves (DOR-3060)', () => {
 });
 
 describe('queueHeaderCount', () => {
-  const row = (agentName: string | null) => ({
-    fromChat: true,
-    sender: agentName === null ? null : { ...SECURITY, agentName },
-  });
-  it('says the top sender and how many others, across three or more senders', () => {
-    expect(
-      queueHeaderCount([
-        row('Security'),
-        row('Security'),
-        row('Security'),
-        row('Designer'),
-        row('QA'),
-      ])
-    ).toBe('3 from Security and 2 others');
-    expect(queueHeaderCount([row('Security'), row('QA')])).toBe('1 from Security and 1 other');
-    expect(queueHeaderCount([row(null)])).toBe('1 from Another chat');
+  it.each([
+    [[false, false], 'Queued (2)'],
+    [[true], '1 waiting'],
+    [[true, true, true], '3 waiting'],
+    [[false, true], '2 waiting'],
+  ])('%j reads %s', (fromChats, expected) => {
+    expect(queueHeaderCount(fromChats.map((fromChat) => ({ fromChat })))).toBe(expected);
   });
 });
 
