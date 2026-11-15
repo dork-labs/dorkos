@@ -1,4 +1,4 @@
-import { useState, type RefObject } from 'react';
+import { useState, type ReactNode, type RefObject } from 'react';
 import type { LocalBrowserState } from '@dorkos/shared/local-browser';
 import { useOwnOrigins } from '@/layers/entities/config';
 import { isThisAppsAddress, normalizeAddressInput } from '@/layers/shared/lib';
@@ -21,6 +21,8 @@ export interface LocalBrowserViewProps {
   action: (run: () => Promise<LocalBrowserState>) => Promise<boolean>;
   /** Open the browser again after the page could not be drawn. */
   onReconnect: () => void;
+  /** The chrome's ⋯ menu. */
+  menu?: ReactNode;
 }
 
 /**
@@ -40,6 +42,7 @@ export function LocalBrowserView({
   busy,
   action,
   onReconnect,
+  menu,
 }: LocalBrowserViewProps) {
   const transport = useTransport();
   const ownOrigins = useOwnOrigins();
@@ -118,6 +121,7 @@ export function LocalBrowserView({
           tooltips={false}
           retry={shownRetry}
           notice={shownRetry?.notice ?? null}
+          menu={menu}
         />
       )}
       {embedded ? (

@@ -19,6 +19,11 @@ export class LocalBrowserPage {
     }
     await expect(this.controls).toBeVisible();
   }
+  /** Close the browser from the chrome's ⋯ menu, which draws outside the panel. */
+  async close(): Promise<void> {
+    await this.controls.getByRole('button', { name: 'Browser menu', exact: true }).click();
+    await this.page.getByRole('menuitem', { name: 'Close browser', exact: true }).click();
+  }
   /** Navigate the one live page through the app's normal human control: the address field. */
   async navigate(url: string): Promise<void> {
     const atRest = this.controls.getByRole('button', { name: /^Address:/ });

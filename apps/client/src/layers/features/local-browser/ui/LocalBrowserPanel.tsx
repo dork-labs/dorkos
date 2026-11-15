@@ -18,6 +18,7 @@ import { useFirstFocus } from '../model/use-first-focus';
 import { BrowserPreparation } from './BrowserPreparation';
 import { WaitingElsewhere } from './WaitingElsewhere';
 import { SavedSignIns } from './SavedSignIns';
+import { LocalBrowserMenu } from './LocalBrowserMenu';
 import { LocalBrowserView } from './LocalBrowserView';
 import { SharedElsewhere } from './SharedElsewhere';
 
@@ -192,6 +193,7 @@ export function LocalBrowserPanel({
       setCancelling(false);
     }
   };
+  const signInsReadable = !!state && !!capabilities && !query.isError && !capabilityQuery.isError;
   const supported =
     capabilities &&
     (mode === 'embedded'
@@ -200,6 +202,19 @@ export function LocalBrowserPanel({
   const { openButton, rememberFocus } = useActionFocusReturn(
     busy || cancelling || connected || needsChoice || !supported
   );
+  // Closing ends a handoff as Stop task does (outcome `window-closed`), and that
+  // ends the agent's turn. Only this one: a handoff that ended first must not
+  // cost that chat its next turn.
+  const close = (from: HTMLElement) => {
+    rememberFocus(from);
+    const asked = state?.handoff?.outcome === null ? state.handoff.id : null;
+    let answer: LocalBrowserPersonState | undefined;
+    void action(async () => (answer = await transport.disconnectLocalBrowser())).then((closed) => {
+      const ended = answer?.handoff;
+      if (closed && ended?.id === asked && ended?.outcome === 'window-closed')
+        void transport.interruptSession(ended.sessionId).catch(() => {});
+    });
+  };
   // Open browser is the one main action while nothing is open, so focus starts there.
   useFirstFocus(
     openButton,
@@ -377,47 +392,7 @@ export function LocalBrowserPanel({
               >
                 {state.paused ? 'Resume agent' : 'Pause agent'}
               </Button>
-              <Button
-                size="sm"
-                variant="ghost"
-                disabled={busy}
-                onClick={(event) => {
-                  rememberFocus(event.currentTarget);
-                  const asked = state.handoff?.outcome === null ? state.handoff.id : null;
-                  let answer: LocalBrowserPersonState | undefined;
-                  void action(async () => (answer = await transport.disconnectLocalBrowser())).then(
-                    (closed) => {
-                      // Disconnect ends a handoff as Stop task does (outcome `window-closed`), and
-                      // that ends the agent's turn. Only this one: a handoff that ended first must
-                      // not cost that chat its next turn.
-                      const ended = answer?.handoff;
-                      if (closed && ended?.id === asked && ended?.outcome === 'window-closed')
-                        void transport.interruptSession(ended.sessionId).catch(() => {});
-                    }
-                  );
-                }}
-              >
-                Disconnect
-              </Button>
             </div>
-            <label className="text-sm">
-              {state.sessionId ? `Shared with ${agentName || 'this chat’s agent'}` : 'Browser tab'}
-              <select
-                className="bg-muted/40 mt-1 block w-full rounded-md p-2"
-                value={state.selectedTabId ?? ''}
-                disabled={busy}
-                onChange={(event) => {
-                  void action(() => transport.selectLocalBrowserTab(event.target.value));
-                }}
-              >
-                {!state.selectedTabId && <option value="">Choose a tab</option>}
-                {state.tabs.map((tab) => (
-                  <option key={tab.id} value={tab.id}>
-                    {tab.title || (tab.url === 'about:blank' ? 'New tab' : tab.url)}
-                  </option>
-                ))}
-              </select>
-            </label>
             {state.paused && (
               <div className="text-muted-foreground space-y-1 text-xs">
                 <p>Pause stops new actions. An action already started may finish.</p>
@@ -436,11 +411,9 @@ export function LocalBrowserPanel({
             )}
           </>
         )}
-        {!waitingElsewhere && (
-          <SavedSignIns
-            enabled={!!state && !!capabilities && !query.isError && !capabilityQuery.isError}
-            disabled={busy || cancelling}
-          />
+        {/* With a page open, Forget is in the browser's ⋯ menu. */}
+        {!waitingElsewhere && !showsPage && (
+          <SavedSignIns enabled={signInsReadable} disabled={busy || cancelling} />
         )}
       </div>
       {showsPage && (
@@ -452,6 +425,15 @@ export function LocalBrowserPanel({
           busy={busy}
           action={action}
           onReconnect={open}
+          menu={
+            <LocalBrowserMenu
+              state={state}
+              busy={busy}
+              action={action}
+              canForgetSignIns={signInsReadable}
+              onClose={close}
+            />
+          }
         />
       )}
     </section>

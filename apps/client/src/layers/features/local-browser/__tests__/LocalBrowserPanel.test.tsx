@@ -112,6 +112,26 @@ async function typeAddress(typed: string): Promise<void> {
   fireEvent.submit(field.closest('form') as HTMLFormElement);
 }
 
+/** Open the browser's ⋯ menu from the keyboard, as Radix expects in jsdom. */
+async function openMenu(): Promise<HTMLElement> {
+  const trigger = await screen.findByRole('button', { name: 'Browser menu' });
+  trigger.focus();
+  fireEvent.keyDown(trigger, { key: 'Enter' });
+  return screen.findByRole('menu');
+}
+
+/** Choose one item from the browser's ⋯ menu. */
+async function chooseFromMenu(name: string): Promise<void> {
+  const menu = await openMenu();
+  fireEvent.click(within(menu).getByRole('menuitem', { name }));
+}
+
+/** Show another of this chat's pages from the menu's Pages group. */
+async function choosePage(name: string): Promise<void> {
+  const menu = await openMenu();
+  fireEvent.click(within(menu).getByRole('menuitemradio', { name }));
+}
+
 describe('LocalBrowserPanel', () => {
   it('never labels another chat’s browser with the current agent name', async () => {
     transport.getLocalBrowserState.mockResolvedValue({ ...connected, sessionId: 'other-chat' });
@@ -203,7 +223,7 @@ describe('LocalBrowserPanel', () => {
           sessionId: 'chat-one',
         })
       );
-      expect(await screen.findByLabelText('Shared with Kai')).toBeInTheDocument();
+      expect(await screen.findByRole('button', { name: 'Browser menu' })).toBeInTheDocument();
     });
     it('in a room, names the chat but offers no take', async () => {
       transport.getLocalBrowserState.mockResolvedValue(elsewhere);
@@ -279,7 +299,7 @@ describe('LocalBrowserPanel', () => {
       for (const name of [
         'Resume agent',
         'Pause agent',
-        'Disconnect',
+        'Browser menu',
         'Open browser',
         'Reconnect',
         'Take it here',
@@ -333,7 +353,7 @@ describe('LocalBrowserPanel', () => {
         signIn: null,
       });
       mount();
-      expect(await screen.findByRole('button', { name: 'Disconnect' })).toBeInTheDocument();
+      expect(await screen.findByRole('button', { name: 'Browser menu' })).toBeInTheDocument();
       expect(screen.queryByText(/is waiting for you to finish signing in here/)).toBeNull();
     });
   });
@@ -481,7 +501,7 @@ describe('LocalBrowserPanel', () => {
       'Finish signing in first. The sign-in window is open.'
     );
   });
-  describe('Disconnect during a handoff', () => {
+  describe('Close browser during a handoff', () => {
     const handoff = {
       id: 'h1',
       sessionId: 'chat-one',
@@ -503,7 +523,7 @@ describe('LocalBrowserPanel', () => {
         signIn: null,
       });
       const view = mount();
-      fireEvent.click(await screen.findByRole('button', { name: 'Disconnect' }));
+      await chooseFromMenu('Close browser');
       await waitFor(() =>
         expect(transport.interruptSession).toHaveBeenCalledExactlyOnceWith('chat-one')
       );
@@ -523,7 +543,7 @@ describe('LocalBrowserPanel', () => {
         signIn: null,
       });
       const view = mount();
-      fireEvent.click(await screen.findByRole('button', { name: 'Disconnect' }));
+      await chooseFromMenu('Close browser');
       await waitFor(() =>
         expect(view.client.getQueryData(['local-browser', 'state'])).toMatchObject({
           handoff: answered,
@@ -538,7 +558,7 @@ describe('LocalBrowserPanel', () => {
         Object.assign(new Error('closing'), { code: 'busy' })
       );
       mount();
-      fireEvent.click(await screen.findByRole('button', { name: 'Disconnect' }));
+      await chooseFromMenu('Close browser');
       await waitFor(() => expect(transport.disconnectLocalBrowser).toHaveBeenCalledOnce());
       await screen.findByText(/Browser is busy|Couldn’t reach the browser/);
       expect(transport.interruptSession).not.toHaveBeenCalled();
@@ -547,7 +567,7 @@ describe('LocalBrowserPanel', () => {
       transport.getLocalBrowserState.mockResolvedValue(connected);
       transport.disconnectLocalBrowser.mockResolvedValue(disconnected);
       mount();
-      fireEvent.click(await screen.findByRole('button', { name: 'Disconnect' }));
+      await chooseFromMenu('Close browser');
       await waitFor(() => expect(transport.disconnectLocalBrowser).toHaveBeenCalledOnce());
       await screen.findByRole('button', { name: 'Open browser' });
       expect(transport.interruptSession).not.toHaveBeenCalled();
@@ -567,8 +587,7 @@ describe('LocalBrowserPanel', () => {
     await waitFor(() => expect(open).toBeEnabled());
     fireEvent.click(open);
     expect(await screen.findByRole('heading', { name: 'Agent browser' })).toBeInTheDocument();
-    expect(await screen.findByLabelText('Shared with Kai')).toHaveValue('one');
-    fireEvent.click(screen.getByRole('button', { name: 'Disconnect' }));
+    await chooseFromMenu('Close browser');
     expect(await screen.findByRole('button', { name: 'Open browser' })).toBeEnabled();
     first.unmount();
     mount();
@@ -781,7 +800,7 @@ describe('LocalBrowserPanel', () => {
     transport.getLocalBrowserState.mockResolvedValue(connected);
     transport.disconnectLocalBrowser.mockResolvedValue(disconnected);
     mount();
-    fireEvent.click(await screen.findByRole('button', { name: 'Disconnect' }));
+    await chooseFromMenu('Close browser');
     expect(await screen.findByText('Disconnected')).toBeInTheDocument();
     expect(screen.queryByText('Not open yet')).not.toBeInTheDocument();
   });
@@ -791,9 +810,7 @@ describe('LocalBrowserPanel', () => {
     transport.getLocalBrowserState.mockResolvedValue(connected);
     transport.disconnectLocalBrowser.mockResolvedValue(disconnected);
     mount();
-    const disconnect = await screen.findByRole('button', { name: 'Disconnect' });
-    disconnect.focus();
-    fireEvent.click(disconnect);
+    await chooseFromMenu('Close browser');
     await waitFor(() => expect(screen.getByRole('button', { name: 'Open browser' })).toHaveFocus());
   });
   it('does not reclaim keyboard focus when the person moves to the native page', async () => {
@@ -806,9 +823,7 @@ describe('LocalBrowserPanel', () => {
       })
     );
     mount();
-    const disconnect = await screen.findByRole('button', { name: 'Disconnect' });
-    disconnect.focus();
-    fireEvent.click(disconnect);
+    await chooseFromMenu('Close browser');
     hasFocus.mockReturnValue(false);
     fireEvent(window, new Event('blur'));
     await act(async () => finishDisconnect(disconnected));
@@ -986,9 +1001,7 @@ describe('LocalBrowserPanel', () => {
     mount();
     const next = { ...connected, selectedTabId: 'two' };
     transport.selectLocalBrowserTab.mockResolvedValue(next);
-    fireEvent.change(await screen.findByLabelText('Shared with Kai'), {
-      target: { value: 'two' },
-    });
+    await choosePage('Second page');
     await waitFor(() => expect(transport.selectLocalBrowserTab).toHaveBeenCalledWith('two'));
   });
   it('keeps the selected tab when another tab stops responding', async () => {
@@ -997,12 +1010,12 @@ describe('LocalBrowserPanel', () => {
       Object.assign(new Error('raw browser focus error'), { code: 'focus_unavailable' })
     );
     mount();
-    const tabs = await screen.findByLabelText('Shared with Kai');
-    fireEvent.change(tabs, { target: { value: 'two' } });
+    await choosePage('Second page');
     expect(await screen.findByRole('alert')).toHaveTextContent(
       'This tab stopped responding. Choose it again.'
     );
-    expect(tabs).toHaveValue('one');
+    const menu = await openMenu();
+    expect(within(menu).getByRole('menuitemradio', { name: 'First page' })).toBeChecked();
     expect(screen.queryByText('raw browser focus error')).not.toBeInTheDocument();
     expect(transport.selectLocalBrowserTab).toHaveBeenCalledTimes(1);
   });
@@ -1041,7 +1054,7 @@ describe('LocalBrowserPanel', () => {
     mount();
     await typeAddress('file:///etc/hosts');
     expect(await screen.findByRole('alert')).toHaveTextContent('Files don’t open here.');
-    fireEvent.change(screen.getByLabelText('Shared with Kai'), { target: { value: 'two' } });
+    await choosePage('Second page');
     await waitFor(() => expect(screen.queryByRole('alert')).not.toBeInTheDocument());
   });
   it('names its buttons without Radix tooltips, which would hide the native page', async () => {
@@ -1308,5 +1321,104 @@ describe('LocalBrowserPanel', () => {
         visible: true,
       })
     );
+  });
+  describe('the ⋯ menu (DOR-4429)', () => {
+    it('holds the page’s actions, and nothing above the page repeats them', async () => {
+      transport.getLocalBrowserState.mockResolvedValue(connected);
+      mount();
+      const menu = await openMenu();
+      const items = [...menu.querySelectorAll('[role^="menuitem"]')].map(
+        (item) => item.textContent
+      );
+      // jsdom lays nothing out, so the row reads as narrow and Forward moves in here.
+      expect(items).toEqual([
+        'Forward',
+        'First page',
+        'Second page',
+        'Copy address',
+        'Open in your browser',
+        'Forget saved sign-ins…',
+        'Close browser',
+      ]);
+      // Close loses nothing saved, so it is a plain item, never a red one.
+      expect(within(menu).getByRole('menuitem', { name: 'Close browser' })).not.toHaveAttribute(
+        'data-variant',
+        'destructive'
+      );
+      expect(screen.queryByRole('combobox')).toBeNull();
+      expect(screen.queryByRole('button', { name: 'Disconnect' })).toBeNull();
+      expect(screen.queryByLabelText('Saved sign-ins')).toBeNull();
+    });
+    it('lists Pages only when the chat has more than one', async () => {
+      transport.getLocalBrowserState.mockResolvedValue({
+        ...connected,
+        tabs: [connected.tabs[0]!],
+      });
+      mount();
+      const menu = await openMenu();
+      expect(within(menu).queryByText('Pages')).toBeNull();
+      expect(within(menu).queryByRole('menuitemradio')).toBeNull();
+    });
+    it('offers no address actions on a new empty page', async () => {
+      transport.getLocalBrowserState.mockResolvedValue({
+        ...connected,
+        tabs: [{ id: 'one', title: '', url: 'about:blank' }],
+      });
+      mount();
+      const menu = await openMenu();
+      expect(within(menu).queryByRole('menuitem', { name: 'Copy address' })).toBeNull();
+      expect(within(menu).queryByRole('menuitem', { name: 'Open in your browser' })).toBeNull();
+      expect(within(menu).getByRole('menuitem', { name: 'Close browser' })).toBeInTheDocument();
+    });
+    it('opens the page in the person’s own browser', async () => {
+      const opened = vi.spyOn(window, 'open').mockReturnValue(null);
+      transport.getLocalBrowserState.mockResolvedValue(connected);
+      mount();
+      await chooseFromMenu('Open in your browser');
+      expect(opened).toHaveBeenCalledOnce();
+      expect(opened.mock.calls[0]?.[0]).toBe('https://example.com/');
+    });
+    it('Forget saved sign-ins… opens today’s dialog and hands focus back to the menu', async () => {
+      transport.getLocalBrowserState.mockResolvedValue(connected);
+      mount();
+      await chooseFromMenu('Forget saved sign-ins…');
+      const dialog = await screen.findByRole('alertdialog', { name: 'Forget saved sign-ins?' });
+      await waitFor(() => expect(dialog).toContainElement(document.activeElement as HTMLElement));
+      fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+      await waitFor(() =>
+        expect(screen.getByRole('button', { name: 'Browser menu' })).toHaveFocus()
+      );
+    });
+    it('waits while another browser action runs', async () => {
+      transport.getLocalBrowserState.mockResolvedValue(connected);
+      transport.pauseLocalBrowser.mockReturnValue(new Promise(() => {}));
+      mount();
+      fireEvent.click(await screen.findByRole('button', { name: 'Pause agent' }));
+      const menu = await openMenu();
+      for (const name of ['Forget saved sign-ins…', 'Close browser'])
+        expect(within(menu).getByRole('menuitem', { name })).toHaveAttribute('data-disabled');
+    });
+    it('hides the native page while it is open over it, and shows it again after', async () => {
+      const setBounds = vi.fn().mockResolvedValue(undefined);
+      window.electronAPI = { localBrowser: { setBounds } } as unknown as ElectronAPI;
+      transport.getLocalBrowserState.mockResolvedValue({ ...connected, mode: 'embedded' });
+      transport.getLocalBrowserCapabilities.mockResolvedValue({ ...capabilities, embedded: true });
+      vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue({
+        x: 100,
+        y: 100,
+        width: 400,
+        height: 300,
+      } as DOMRect);
+      vi.spyOn(HTMLElement.prototype, 'getClientRects').mockReturnValue({
+        length: 1,
+      } as DOMRectList);
+      mount();
+      await waitFor(() => expect(setBounds.mock.calls.at(-1)?.[0].visible).toBe(true));
+      await openMenu();
+      await waitFor(() => expect(setBounds.mock.calls.at(-1)?.[0].visible).toBe(false));
+      fireEvent.keyDown(screen.getByRole('menu'), { key: 'Escape' });
+      await waitFor(() => expect(screen.queryByRole('menu')).toBeNull());
+      await waitFor(() => expect(setBounds.mock.calls.at(-1)?.[0].visible).toBe(true));
+    });
   });
 });

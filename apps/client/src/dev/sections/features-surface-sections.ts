@@ -136,7 +136,19 @@ export const FEATURE_SURFACE_SECTIONS: PlaygroundSection[] = [
     title: 'Browser chrome',
     page: 'home-inbox',
     category: 'Home',
-    keywords: ['browser', 'address bar', 'back', 'forward', 'reload', 'not secure', 'chrome'],
+    keywords: [
+      'browser',
+      'address bar',
+      'back',
+      'forward',
+      'reload',
+      'not secure',
+      'chrome',
+      'menu',
+      'pages',
+      'copy address',
+      'close browser',
+    ],
   },
   // LocalBrowserPanelShowcases
   {
