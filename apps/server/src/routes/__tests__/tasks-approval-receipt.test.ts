@@ -12,12 +12,16 @@ import os from 'node:os';
 import path from 'node:path';
 import type { IncomingMessage } from 'node:http';
 import { Hono } from 'hono';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createTestDb } from '@dorkos/test-utils/db';
 import { pulseSchedules, type Db } from '@dorkos/db';
 import { eq } from 'drizzle-orm';
 import { createTasksRoutes } from '../tasks.js';
 import { personTaskApprover } from '../task-approval-actor.js';
+import { FakeAgentRuntime } from '@dorkos/test-utils';
+import { configManager, initConfigManager } from '../../services/core/config-manager.js';
+import { runtimeRegistry } from '../../services/core/runtime-registry.js';
+import { CLAUDE_CODE_CAPABILITIES } from '../../services/runtimes/claude-code/runtime-constants.js';
 import { TaskRegistrar } from '../../services/tasks/task-registrar.js';
 import { TaskStore } from '../../services/tasks/task-store.js';
 import type { TaskSchedulerService } from '../../services/tasks/task-scheduler-service.js';
@@ -25,35 +29,19 @@ import type { ActivityService } from '../../services/activity/activity-service.j
 import type { ApiEnv } from '../../http/api-chain.js';
 import type { Task } from '@dorkos/shared/types';
 
-vi.mock('../../services/core/config-manager.js', () => ({
-  configManager: {
-    get: (key: string) => {
-      if (key === 'auth') return { enabled: false };
-      if (key === 'permissions') return { preset: 'careful' };
-      if (key === 'profile') return { displayName: 'Dorian' };
-      return undefined;
-    },
-  },
-}));
-
-vi.mock('../../services/core/runtime-registry.js', async () => {
-  const { CLAUDE_CODE_CAPABILITIES } =
-    await import('../../services/runtimes/claude-code/runtime-constants.js');
-  return {
-    runtimeRegistry: {
-      getDefaultType: () => 'claude-code',
-      has: () => true,
-      getAllCapabilities: () => ({ 'claude-code': CLAUDE_CODE_CAPABILITIES }),
-      computerRuntimeForAgentPath: () => undefined,
-      getNativeSessionCwd: () => null,
-    },
-  };
-});
-
 /** What these routes answer: a task, or a list of them for GET `/`. */
 type ResponseBody = Partial<Task> & Record<string, unknown> & Pick<Task[], 'find'>;
 
 describe('scheduled task approval receipts', () => {
+  beforeAll(() => {
+    // The real registry, holding one runtime that declares Claude Code's modes,
+    // so an approval is judged against the modes a real install offers.
+    const runtime = new FakeAgentRuntime('claude-code');
+    runtime.getCapabilities.mockReturnValue(CLAUDE_CODE_CAPABILITIES);
+    runtimeRegistry.register(runtime);
+    runtimeRegistry.setDefault('claude-code');
+  });
+
   let store: TaskStore;
   let db: Db;
   let dorkHome: string;
@@ -64,6 +52,11 @@ describe('scheduled task approval receipts', () => {
     db = createTestDb();
     store = new TaskStore(db);
     dorkHome = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'task-receipt-')));
+    // The real config, in a throwaway home: login off, Careful, and the
+    // owner's saved name, which a receipt may only use while login is off.
+    initConfigManager(dorkHome);
+    configManager.set('permissions', { ...configManager.get('permissions'), preset: 'careful' });
+    configManager.set('profile', { ...configManager.get('profile'), displayName: 'Dorian' });
     emitted = [];
     const scheduler = {
       registerTask: vi.fn(),
