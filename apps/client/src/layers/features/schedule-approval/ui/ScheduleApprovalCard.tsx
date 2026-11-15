@@ -43,6 +43,8 @@ import { holdApprovedSchedule, releaseSettledSchedule } from '../model/settling-
 import { useScheduleTestRun } from '../model/use-schedule-test-run';
 import { TestRunStrip } from './TestRunStrip';
 import { ScheduleOriginMarks } from './ScheduleOriginMarks';
+import { useProfile } from '@/layers/entities/user-profile';
+import { ScheduleApprovalReceipt, type ScheduleApprovalSurface } from './ScheduleApprovalReceipt';
 
 /** What a person answered, once they have. */
 type Decision = 'approved' | 'rejected';
@@ -53,6 +55,8 @@ const AGE_TICK_MS = 30_000;
 export interface ScheduleApprovalCardProps {
   /** The schedule waiting on a yes or a no. */
   task: Task;
+  /** Where this approval card is shown, for its durable receipt. */
+  approvalSurface: ScheduleApprovalSurface;
   /**
    * Whether this card is the keyboard shortcut's current target. Defaults to
    * true, as {@link AskCard} does — a surface drawing a queue passes false for
@@ -152,6 +156,7 @@ function ChangeValue({ value, unbroken }: { value: string; unbroken: boolean }) 
  */
 function ScheduleApprovalContent({
   task,
+  approvalSurface,
   isActive = true,
   onNavigate,
   className,
@@ -173,6 +178,8 @@ function ScheduleApprovalContent({
   const [decision, setDecision] = useState<Decision | null>(null);
   const [pickedMode, setPickedMode] = useState<string | null>(null);
   const [grantedLabel, setGrantedLabel] = useState<string | null>(null);
+  const [approvedAt, setApprovedAt] = useState<string | null>(null);
+  const { displayName } = useProfile();
   // A yes that approves the task's SKILL file shows the prompt it approves,
   // open from the start (DOR-3703, M4): an agent's proposal, or any task whose
   // file this approval would vouch for.
@@ -189,8 +196,9 @@ function ScheduleApprovalContent({
 
   const name = task.displayName ?? task.name;
   const proposer = task.proposedByName ?? 'an agent';
-  // Who its runs act as, which is whose turn it would be (DOR-3640 R1).
-  const runsAs = task.agentId ? (task.runsAsName ?? 'an agent') : 'no agent';
+  // Who its runs act as, resolved from the agent roster by the server. An id
+  // alone is not a name, so an unresolved or absent agent draws no claim.
+  const runsAs = task.agentId ? task.runsAsName : null;
   // A schedule DorkOS found on disk, rather than one anybody asked for. Nobody
   // proposed it, so every part of this card that credits a proposer has to say
   // something else — the file it came from (ADR `260823-200726`).
@@ -255,6 +263,7 @@ function ScheduleApprovalContent({
   const approve = async (turnOn = false) => {
     if (answered !== null || !selected || refreshing || !task.approvalRevision) return;
     setDecision('approved');
+    setApprovedAt(new Date().toISOString());
     setGrantedLabel(currentLabel);
     setTurnedOn(turnOn);
     const approvedTask = { ...task, permissionMode: selectedMode as PermissionMode };
@@ -266,6 +275,7 @@ function ScheduleApprovalContent({
         id: task.id,
         status: 'active',
         expectedApprovalRevision: task.approvalRevision,
+        approvalSurface,
         ...(approvedPromptHash && { approvedPromptHash }),
         ...(turnOn && { enabled: true }),
         // Omit an unchanged value for package-owned schedules, which do not
@@ -275,11 +285,15 @@ function ScheduleApprovalContent({
         }),
       },
       {
-        onSuccess: () => onApproved?.(),
+        onSuccess: (approved) => {
+          if (approved?.approvedAt) setApprovedAt(approved.approvedAt);
+          onApproved?.();
+        },
         onError: (error) => {
           if ('code' in error && error.code === 'schedule_review_changed') onStale();
           releaseSettledSchedule(task.id);
           setDecision(null);
+          setApprovedAt(null);
           setGrantedLabel(null);
         },
       }
@@ -343,7 +357,7 @@ function ScheduleApprovalContent({
       data-testid="schedule-approval-card"
       data-task-id={task.id}
       className={cn(
-        'flex min-w-0 flex-col gap-2',
+        'border-border bg-card flex min-w-0 flex-col gap-2 border border-l ring-0 ring-transparent',
         pinActions && 'bg-background max-h-[76dvh] min-h-0 flex-1 ring-inset',
         className
       )}
@@ -411,9 +425,7 @@ function ScheduleApprovalContent({
         </div>
 
         <AskCard.Headline className="min-w-0 break-words">{name}</AskCard.Headline>
-        <p className="text-muted-foreground text-xs">
-          {task.agentId ? `Agent: ${runsAs}` : 'No agent'}
-        </p>
+        {runsAs && <p className="text-muted-foreground text-xs">Agent: {runsAs}</p>}
 
         <AskCard.Detail className="text-xs">
           <p className="min-w-0 break-words">
@@ -615,17 +627,20 @@ function ScheduleApprovalContent({
         </AskCard.Actions>
       ) : (
         <AskCard.Actions>
-          <AskCard.Receipt
-            data-slot="schedule-receipt"
-            tone={answered === 'approved' ? 'allowed' : 'denied'}
-          >
-            {answered === 'approved'
-              ? `Approved${grantedLabel ? ` at ${grantedLabel}` : ''}` +
-                (task.enabled || turnedOn
-                  ? `${firstRuns ? `. First run ${firstRuns.first}` : ''}`
-                  : '. Off until you turn it on.')
-              : 'Rejected'}
-          </AskCard.Receipt>
+          {answered === 'approved' && approvedAt ? (
+            <ScheduleApprovalReceipt
+              name={displayName ?? 'you'}
+              approvedAt={approvedAt}
+              surface={approvalSurface}
+              grantedLabel={grantedLabel}
+              firstRun={firstRuns?.first ?? null}
+              enabled={task.enabled || turnedOn}
+            />
+          ) : (
+            <AskCard.Receipt data-slot="schedule-receipt" tone="denied">
+              Rejected
+            </AskCard.Receipt>
+          )}
           {/* Live for as long as the DELETE has not been sent. Once the window
               closes the offer goes, because a button that cannot do what it says
               is worse than no button. */}

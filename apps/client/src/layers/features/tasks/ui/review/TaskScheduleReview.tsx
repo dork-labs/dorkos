@@ -62,6 +62,7 @@ function ReviewContent({ task, onOpenChange, returnFocus, turnOnApproval }: Revi
       >
         <ScheduleApprovalCard
           task={task}
+          approvalSurface="schedules"
           pinActions
           reviewHeader={isDesktop ? undefined : header}
           onApproved={() => onOpenChange(false)}

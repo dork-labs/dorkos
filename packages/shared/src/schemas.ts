@@ -17,10 +17,19 @@ export {
 } from './timing-events.js';
 import {
   ScheduleOriginMarksSchema,
+  TaskApprovalReceiptSchema,
   TaskReviewPresentationSchema,
 } from './task-approval-schemas.js';
-export { ScheduleOriginMarksSchema } from './task-approval-schemas.js';
-export type { ScheduleOriginMarks } from './task-approval-schemas.js';
+export {
+  ScheduleOriginMarksSchema,
+  TaskApproverSchema,
+  TaskApprovalViaSchema,
+} from './task-approval-schemas.js';
+export type {
+  ScheduleOriginMarks,
+  TaskApprover,
+  TaskApprovalVia,
+} from './task-approval-schemas.js';
 import { CanvasChannelDeclarationSchema } from './canvas-channel-schemas.js';
 import {
   SendMessageReceiptSchema,
@@ -6018,6 +6027,8 @@ export const TaskSchema = z
      */
     account: z.string().nullable().default(null),
     status: TaskStatusSchema,
+    /** Who approved the current task content, when, and through which surface or policy. */
+    ...TaskApprovalReceiptSchema.shape,
     filePath: z.string(),
     createdAt: z.string(),
     updatedAt: z.string(),
@@ -6563,6 +6574,7 @@ export const UpdateTaskRequestSchema = z
     account: z.string().min(1).nullable().optional(),
     permissionMode: PermissionModeSchema.optional(),
     status: SettableTaskStatusSchema.optional(),
+    approvalSurface: z.enum(['inbox', 'schedules', 'home']).optional(), // Audit context, never permission.
     /** Why this schedule should exist. See {@link CreateTaskRequestSchema}. */
     reason: z.string().optional(),
     /**

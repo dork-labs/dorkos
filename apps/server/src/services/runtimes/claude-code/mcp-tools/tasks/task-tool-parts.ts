@@ -171,6 +171,11 @@ export function createListSchedulesHandler(deps: McpToolDeps) {
     const err = requireTasks(deps);
     if (err) return err;
     let schedules = deps.taskStore!.getTasks();
+    const history = deps.taskStore!.runHistory();
+    schedules = schedules.map((schedule) => ({
+      ...schedule,
+      lastRunAt: history(schedule.id).lastRunAt,
+    }));
     if (args.enabled_only) {
       schedules = schedules.filter((s) => s.enabled);
     }

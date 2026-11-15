@@ -25,13 +25,13 @@ const DAY_MS = 86_400_000;
  *
  * @param cron - The cron expression, or null for an on-demand task.
  * @param timezone - The IANA zone the cron is evaluated in, when it has one.
- * @returns A sentence like `At 03:00 AM, Monday through Friday (America/Chicago)`.
+ * @returns A sentence like `Weekdays at 9:00 AM (America/Chicago)`.
  */
 export function formatCadence(cron: string | null, timezone: string | null): string {
   if (!cron) return 'On demand. It only runs when something asks it to';
   let words: string;
   try {
-    words = cronstrue.toString(cron);
+    words = naturalCadence(cronstrue.toString(cron, { use24HourTimeFormat: false }));
   } catch {
     // The raw expression, deliberately. A cron this library cannot read is
     // still the literal thing the scheduler will run, and showing it is what
@@ -39,6 +39,16 @@ export function formatCadence(cron: string | null, timezone: string | null): str
     words = cron;
   }
   return timezone ? `${words} (${timezone})` : words;
+}
+
+/** Turn cronstrue's formal clock sentence into the card's shorter cadence. */
+function naturalCadence(words: string): string {
+  const cadence = words.replace(/^At /, '').replace(/\b0(?=\d:\d{2}\s(?:AM|PM)\b)/g, '');
+  const weekdaySuffix = ', Monday through Friday';
+  if (cadence.endsWith(weekdaySuffix)) {
+    return `Weekdays at ${cadence.slice(0, -weekdaySuffix.length)}`;
+  }
+  return cadence;
 }
 
 /**

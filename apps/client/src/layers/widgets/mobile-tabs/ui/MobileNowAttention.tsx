@@ -153,7 +153,7 @@ export function useNowAttentionSlot(): NowAttentionSlot {
             so, as the Inbox's own schedule group does. */}
         <AnimatePresence initial={false}>
           {shownSchedules.map((task) => (
-            <ScheduleApprovalCard key={task.id} task={task} />
+            <ScheduleApprovalCard key={task.id} task={task} approvalSurface="home" />
           ))}
         </AnimatePresence>
         {rows.length > 0 && (
