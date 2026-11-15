@@ -166,7 +166,7 @@ describe('page errors DorkOS draws in the page area (DOR-4430)', () => {
     [
       'ERR_BLOCKED_BY_CLIENT',
       'DorkOS doesn’t open this page',
-      'Pages like this stay closed to the Agent browser.',
+      'The Agent browser keeps pages like this closed.',
       'Go back',
     ],
     [

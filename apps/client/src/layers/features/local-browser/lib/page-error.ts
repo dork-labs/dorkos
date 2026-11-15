@@ -70,7 +70,7 @@ export function pageErrorBlock(
       return {
         kind,
         title,
-        line: 'Pages like this stay closed to the Agent browser.',
+        line: 'The Agent browser keeps pages like this closed.',
         primary: GO_BACK,
       };
     case 'blocked-by-policy':
