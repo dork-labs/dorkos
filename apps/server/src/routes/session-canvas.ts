@@ -36,6 +36,7 @@ import {
   peekCanvasService,
   sessionScope,
   type CanvasService,
+  type CanvasTreePlacement,
 } from '../services/canvas/index.js';
 import { RoomError } from '../services/rooms/index.js';
 import { peekProjector } from '../services/session/session-state-projector.js';
@@ -149,6 +150,33 @@ function namesAKnownSession(sessionId: string): boolean {
   }
 }
 
+/**
+ * Where a document the person opens records it was resolved: the session's own
+ * agent folder, read from the server's binding row and never from the request.
+ *
+ * The same placement an agent's own open records (`applyToSessionCanvas`), so a
+ * file the person opens can be saved through the same folder and boundary
+ * checks. Without it the row records no folder and every save of it is refused.
+ *
+ * A chat with no agent, a session with no binding row yet, or a database this
+ * process cannot read records nothing: a missing folder only ever refuses a
+ * save, so failing to read one must never invent one. A row opened that way is
+ * filled in the next time the person opens the same file.
+ *
+ * @param sessionId - The validated session id.
+ * @returns The placement, or `undefined` to record no folder.
+ */
+async function sessionTreeOf(sessionId: string): Promise<CanvasTreePlacement | undefined> {
+  let agentPath: string | null;
+  try {
+    agentPath = await runtimeRegistry.getSessionAgentPath(sessionId);
+  } catch {
+    return undefined;
+  }
+  if (!agentPath) return undefined;
+  return { resolvedCwd: agentPath, sourceLabel: null, treeKind: null, aheadOfMain: null };
+}
+
 const NO_SUCH_DOCUMENT = errorBody('No such document on this canvas', 'CANVAS_DOCUMENT_NOT_FOUND');
 
 /**
@@ -177,18 +205,21 @@ export function createSessionCanvasRoutes(): Hono<ApiEnv> {
   });
 
   /** POST / — put something on this session's canvas. */
-  router.post('/', (c) => {
+  router.post('/', async (c) => {
     const body = parseCanvasBody(c, OpenCanvasDocumentRequestSchema);
     if (body instanceof Response) return body;
     const access = requireCanvasAccess(c);
     if (access instanceof Response) return access;
-    if (!namesAKnownSession(c.req.param('id')!)) {
+    const sessionId = c.req.param('id')!;
+    if (!namesAKnownSession(sessionId)) {
       return c.json(errorBody('Session not found', 'SESSION_NOT_FOUND'), 404);
     }
+    const tree = await sessionTreeOf(sessionId);
     try {
       const document = access.canvas.open(access.scope, SESSION_OWNER_AUTHOR, body.content, {
         ...(body.pinned !== undefined ? { pinned: body.pinned } : {}),
         ...(body.channel ? { channel: body.channel } : {}),
+        ...(tree ? { tree } : {}),
       });
       return c.json(document, 201);
     } catch (err) {
