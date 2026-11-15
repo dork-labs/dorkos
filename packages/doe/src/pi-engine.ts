@@ -327,22 +327,22 @@ export class PiEngine implements Engine {
           request.tools.find((t) => t.name === ctx.toolCall.name) ??
           this.currentTools.find((t) => t.name === ctx.toolCall.name);
         if (!descriptor) return { block: true, reason: 'Unknown selected tool' };
-        if (
-          request.approve &&
-          (await cancellable(
-            request.approve(descriptor, ctx.args as JsonValue, {
-              ...request.context,
-              emit,
-              callId: ctx.toolCall.id,
-              signal: combined,
-            }),
-            combined
-          )) !== 'allow'
-        ) {
-          approvalDenied = true;
-          return { block: true, reason: 'Host refused tool approval' };
-        }
-        return undefined;
+        if (!request.approve) return undefined;
+        const decision = await cancellable(
+          request.approve(descriptor, ctx.args as JsonValue, {
+            ...request.context,
+            emit,
+            callId: ctx.toolCall.id,
+            signal: combined,
+          }),
+          combined
+        );
+        if (decision === 'allow') return undefined;
+        approvalDenied = true;
+        return {
+          block: true,
+          reason: typeof decision === 'object' ? decision.reason : 'Host refused tool approval',
+        };
       },
       prepareRequest: async (ctx, signal) => {
         if (persistenceError) throw persistenceError;

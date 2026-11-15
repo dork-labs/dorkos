@@ -612,3 +612,49 @@ describe('PermissionPreviewSection — what its extensions can reach (DOR-2686)'
     expect(screen.queryByText(REACH)).not.toBeInTheDocument();
   });
 });
+
+describe('PermissionPreviewSection — where hooks run (DOR-4379)', () => {
+  afterEach(cleanup);
+
+  it('names Codex when every hook is a shell check', () => {
+    render(
+      <PermissionPreviewSection
+        preview={makePreview({
+          hooks: [{ event: 'PreToolUse', matcher: 'Bash', command: 'node guard.mjs' }],
+        })}
+      />
+    );
+    expect(screen.getByTestId('preview-hooks-runtime-note')).toHaveTextContent(
+      "Its hooks don't run on Codex yet."
+    );
+  });
+
+  it('names every runtime that skips a hook that is not a shell check', () => {
+    render(
+      <PermissionPreviewSection
+        preview={makePreview({ hooks: [{ event: 'Stop', command: 'node remind.mjs' }] })}
+      />
+    );
+    expect(screen.getByTestId('preview-hooks-runtime-note')).toHaveTextContent(
+      "Its hooks don't run on Codex, OpenCode, or DorkOS yet."
+    );
+  });
+
+  it('counts a shell check that also guards edits as not fully running on OpenCode', () => {
+    render(
+      <PermissionPreviewSection
+        preview={makePreview({
+          hooks: [{ event: 'PreToolUse', matcher: '*', command: 'node guard.mjs' }],
+        })}
+      />
+    );
+    expect(screen.getByTestId('preview-hooks-runtime-note')).toHaveTextContent(
+      "Its hooks don't run on Codex, OpenCode, or DorkOS yet."
+    );
+  });
+
+  it('says nothing for a package with no hooks', () => {
+    render(<PermissionPreviewSection preview={makePreview()} />);
+    expect(screen.queryByTestId('preview-hooks-runtime-note')).toBeNull();
+  });
+});

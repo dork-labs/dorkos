@@ -28,6 +28,9 @@ const expected: Record<string, number> = {
   'opencode/providers/provision.ts': 1,
   'opencode/providers/ollama-provision.ts': 2,
   'opencode/providers/ollama-catalog.ts': 1,
+  // An installed package's own shell guards, for OpenCode and Doe (DOR-4379):
+  // credential-free `process-inspection` env, the guard's command via `sh -c`.
+  'shared/policy/package-hooks.ts': 1,
   'shared/run-probe.ts': 1,
 };
 function files(dir: string): string[] {

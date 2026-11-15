@@ -56,6 +56,14 @@ export interface RuntimeDescriptor {
    * built-in default and dev-only runtimes.
    */
   setup?: RuntimeSetupHint;
+  /**
+   * Which of an installed package's hooks run on this runtime (DOR-4379).
+   * `all`: the runtime reads them itself. `shell-checks`: DorkOS runs a
+   * package's shell checks (`PreToolUse` on `Bash`) for it, and nothing else.
+   * `none`: no package hook runs here yet. Present on the runtimes a person
+   * chooses between.
+   */
+  packageHooks?: 'all' | 'shell-checks' | 'none';
 }
 
 /**
@@ -77,6 +85,7 @@ export const RUNTIME_DESCRIPTORS: Record<string, RuntimeDescriptor> = {
     icon: DefaultAdapterIcon,
     accent: 'var(--color-primary)',
     subtitle: 'Your own models or DorkOS credits',
+    packageHooks: 'shell-checks',
   },
   'claude-code': {
     type: 'claude-code',
@@ -84,6 +93,7 @@ export const RUNTIME_DESCRIPTORS: Record<string, RuntimeDescriptor> = {
     icon: AnthropicLogo,
     accent: 'var(--color-orange-500)',
     subtitle: 'Anthropic · frontier models in the cloud',
+    packageHooks: 'all',
   },
   opencode: {
     type: 'opencode',
@@ -91,6 +101,7 @@ export const RUNTIME_DESCRIPTORS: Record<string, RuntimeDescriptor> = {
     icon: OpenCodeLogo,
     accent: 'var(--color-violet-500)',
     subtitle: 'Your own models, local or any service',
+    packageHooks: 'shell-checks',
     setup: {
       installCommand: 'npm i -g opencode-ai',
       infoUrl: 'https://opencode.ai/docs/server',
@@ -102,6 +113,7 @@ export const RUNTIME_DESCRIPTORS: Record<string, RuntimeDescriptor> = {
     icon: CodexLogo,
     accent: 'var(--color-teal-500)',
     subtitle: 'OpenAI · GPT models',
+    packageHooks: 'none',
     setup: {
       installCommand: 'npm i -g @openai/codex',
       infoUrl: 'https://developers.openai.com/codex',

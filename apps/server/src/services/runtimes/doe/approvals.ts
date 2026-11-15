@@ -5,7 +5,8 @@ import type { ToolDecisionOptions } from '@dorkos/shared/agent-runtime';
 
 import { isProtectedPath, type ProtectedPathRoots } from '../shared/policy/protected-path-check.js';
 import { protectedPathRoots } from '../shared/policy/protected-path-roots.js';
-import { logger } from '../../../lib/logger.js';
+import { checkShellCommand, type ShellCommandVerdict } from '../shared/policy/package-hooks.js';
+import { logger, logError } from '../../../lib/logger.js';
 import { SESSIONS } from '../../../config/constants.js';
 const READ_TOOLS = new Set(['read', 'search', 'load_skill', 'tool_search', 'end_beat']);
 const EDIT_TOOLS = new Set(['write', 'edit']);
@@ -50,6 +51,39 @@ export class DoeApprovals {
           });
           return 'deny';
         }
+      }
+      // An installed package's own shell guards run before any mode allows the
+      // call, Full included: Doe has no hooks of its own (DOR-4379). A call
+      // whose command cannot be read is still checked, and refused if a guard
+      // applies; a check that throws refuses.
+      if (tool.name === 'shell') {
+        const command =
+          args &&
+          typeof args === 'object' &&
+          !Array.isArray(args) &&
+          typeof args.command === 'string'
+            ? args.command
+            : undefined;
+        let verdict: ShellCommandVerdict;
+        try {
+          verdict = await checkShellCommand({
+            runtime: 'doe',
+            cwd: context.workingDirectory,
+            command,
+            sessionId: context.sessionId,
+            permissionMode: mode,
+            signal: context.signal,
+          });
+        } catch (err) {
+          logger.warn('[PackageHooks] Doe shell check failed', logError(err));
+          verdict = {
+            allowed: false,
+            packageName: 'DorkOS',
+            reason:
+              "DorkOS could not run this project's safety checks, so this command was blocked.",
+          };
+        }
+        if (!verdict.allowed) return { decision: 'deny', reason: verdict.reason };
       }
       if (
         mode === 'bypassPermissions' ||

@@ -16,6 +16,7 @@ export * from './plan/hooks-projection.js';
 export * from './plan/instructions.js';
 export * from './plan/command-formats.js';
 export * from './plan/installed-projector.js';
+export { pluginEnvPrefix } from './plan/plugin-paths.js';
 export * from './plan/dev-link-labels.js';
 export * from './plan/global-projector.js';
 export * from './plan/global-installs.js';
