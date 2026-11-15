@@ -2,11 +2,11 @@
  * Whether a connected-app write reaches people outside the team (DOR-3683).
  *
  * At Full autonomy a turn that read an outsider's words still asks a person before a connector
- * action that reaches people outside the team or cannot be undone. Every destructive action
- * cannot be undone, so it asks by its class alone (`destructive-hold-window.ts`). A write is
- * decided here, by the operation and its arguments: a sent or replied email reaches other
- * people, and so does a new calendar event with invitees or any changed one; a draft, a label or a trashed message
- * stays in the account.
+ * action that reaches people outside the team or cannot be undone. The destructive class also
+ * covers actions requiring an exact choice, including moving mail to trash. It is handled by
+ * class alone (`destructive-hold-window.ts`). A write is decided here, by its operation and
+ * arguments: a sent or replied email reaches other people, as does a new calendar event with
+ * invitees or any changed event. Drafts, labels and restoring mail from trash stay in the account.
  *
  * Written as an allowlist: only the writes named below as staying in the account answer no, and
  * a new event answers no only when it names nobody. A changed event always answers yes. Every
@@ -18,14 +18,12 @@
 import type { CapabilityPreflightResult } from '../../core/capabilities/index.js';
 import type { AuthorizedConnectorExecution } from './authorization-service.js';
 
-/** Writes that change only the person's own account: drafts, labels, trash, their calendars. */
+/** Writes that change only the person's own account: drafts, labels, restoring trash, their calendars. */
 const STAYS_IN_ACCOUNT: ReadonlySet<string> = new Set([
   'GMAIL_ADD_LABEL_TO_EMAIL',
   'GMAIL_CREATE_EMAIL_DRAFT',
   'GMAIL_CREATE_LABEL',
   'GMAIL_MODIFY_THREAD_LABELS',
-  'GMAIL_MOVE_THREAD_TO_TRASH',
-  'GMAIL_MOVE_TO_TRASH',
   'GMAIL_PATCH_LABEL',
   'GMAIL_UNTRASH_MESSAGE',
   'GMAIL_UNTRASH_THREAD',

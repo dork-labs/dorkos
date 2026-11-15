@@ -7,6 +7,7 @@ import type {
   ConnectorProviderInstanceId,
 } from '../../connector-schemas.js';
 import { PINNED_WRITE_SLUGS } from './pinned-write-slugs.js';
+import { PINNED_READ_SLUGS } from './pinned-read-slugs.js';
 import { createComposioHostedClients } from '../hosted-client-factory.js';
 import { ComposioSdkClient, normalizeComposioCatalogAuthentication } from '../sdk-client.js';
 
@@ -387,7 +388,7 @@ describe('ComposioSdkClient', () => {
     ['GOOGLECALENDAR_CREATE_EVENT', ['createHint'], 'write'],
     // Every app gets a write tier for clean create and update verdicts.
     ['GITHUB_UPDATE_AN_ISSUE', ['updateHint', 'idempotentHint'], 'write'],
-    ['GOOGLEDRIVE_CREATE_FILE', ['createHint'], 'write'],
+    ['GOOGLEDRIVE_CREATE_FILE', ['createHint'], 'destructive'],
     // DorkOS keeps account-reach actions out of levels, by name for future tools too.
     ['GOOGLEDRIVE_CREATE_PERMISSION', ['createHint'], 'destructive'],
     ['OUTLOOK_CREATE_EMAIL_RULE', ['createHint'], 'destructive'],
@@ -536,6 +537,12 @@ describe('ComposioSdkClient', () => {
           .map((operation) => operation.operationSlug)
           .sort()
       ).toEqual(PINNED_WRITE_SLUGS[toolkit]);
+      expect(
+        result.page.operations
+          .filter((operation) => operation.capabilityClassification === 'read')
+          .map((operation) => operation.operationSlug)
+          .sort()
+      ).toEqual(PINNED_READ_SLUGS[toolkit]);
     }
   );
 

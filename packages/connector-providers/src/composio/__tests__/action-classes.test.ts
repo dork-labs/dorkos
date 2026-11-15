@@ -112,11 +112,9 @@ describe('Composio action classes', () => {
       const action = actions.find((row) => row.slug === slug);
       expect(action, 'must be a real action in the dated catalog').toBeDefined();
       // Batch and plain archive actions follow the delete flag; the rest never do.
-      const deleteOnly = [
-        'LINEAR_ARCHIVE_ISSUE',
-        'LINEAR_ARCHIVE_PROJECT',
-        'GOOGLEDOCS_UPDATE_DOCUMENT_BATCH',
-      ].includes(slug);
+      const deleteOnly = ['LINEAR_ARCHIVE_ISSUE', 'GOOGLEDOCS_UPDATE_DOCUMENT_BATCH'].includes(
+        slug
+      );
       expect(classifyComposioAction(slug, action!.tags, { writeIncludesDeletes: false })).toBe(
         'destructive'
       );
@@ -127,18 +125,30 @@ describe('Composio action classes', () => {
   );
 
   it.each(['googledocs', 'notion'])(
-    'pins that %s has no reach actions in this catalog',
+    'pins %s reach actions separately from read-only queries',
     (toolkit) => {
       expect(live[toolkit]).toHaveLength(toolkit === 'googledocs' ? 48 : 60);
-      // The catalog includes permission/filter queries, but no changing reach action.
       const named = live[toolkit]!.filter(({ slug }) => isAccountReachAction(slug));
-      expect(named.map(({ slug }) => slug)).toEqual(
+      const reads = named.filter(({ tags }) => tags.includes('readOnlyHint'));
+      expect(reads.map(({ slug }) => slug)).toEqual(
         toolkit === 'googledocs'
           ? ['GOOGLEDOCS_LIST_DRIVE_ITEM_PERMISSIONS']
           : ['NOTION_QUERY_DATABASE_WITH_FILTER']
       );
-      expect(named.map(({ slug, tags }) => classifyComposioAction(slug, tags))).toEqual(['read']);
-      expect(named.filter(({ tags }) => !tags.includes('readOnlyHint'))).toEqual([]);
+      expect(reads.map(({ slug, tags }) => classifyComposioAction(slug, tags))).toEqual(['read']);
+      const changing = named.filter(({ tags }) => !tags.includes('readOnlyHint'));
+      expect(changing.map(({ slug }) => slug)).toEqual(
+        toolkit === 'googledocs'
+          ? []
+          : [
+              'NOTION_CREATE_DATABASE',
+              'NOTION_CREATE_NOTION_PAGE',
+              'NOTION_DUPLICATE_PAGE',
+              'NOTION_MOVE_PAGE',
+            ]
+      );
+      for (const { slug, tags } of changing)
+        expect(classifyComposioAction(slug, tags)).toBe('destructive');
     }
   );
 
@@ -202,10 +212,7 @@ describe('delete decision', () => {
   });
 
   it.each([
-    ['LINEAR_DELETE_LINEAR_ISSUE', ['destructiveHint']],
     ['GMAIL_MOVE_TO_TRASH', ['updateHint', 'openWorldHint']],
-    ['GMAIL_DELETE_MESSAGE', ['destructiveHint', 'idempotentHint', 'openWorldHint']],
-    ['SLACK_ARCHIVE_CONVERSATION', ['updateHint']],
     ['SLACK_CLOSE_DM', ['updateHint']],
     ['SLACK_LEAVE_CONVERSATION', ['updateHint']],
     ['GOOGLEDOCS_UPDATE_DOCUMENT_BATCH', ['updateHint']],

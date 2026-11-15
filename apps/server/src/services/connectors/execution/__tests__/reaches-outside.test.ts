@@ -14,18 +14,24 @@ describe('writeReachesOutside', () => {
     }
   });
 
-  it('a draft, a label and the trash stay in the account', () => {
+  it('a draft, a label and restoring trash stay in the account', () => {
     for (const slug of [
       'GMAIL_CREATE_EMAIL_DRAFT',
       'GMAIL_UPDATE_DRAFT',
       'GMAIL_ADD_LABEL_TO_EMAIL',
-      'GMAIL_MOVE_TO_TRASH',
       'GMAIL_UNTRASH_MESSAGE',
       'GOOGLECALENDAR_CREATE_CALENDAR',
     ]) {
       expect(writeReachesOutside(slug, { recipient_email: 'a@example.com' }), slug).toBe(false);
     }
   });
+
+  it.each(['GMAIL_MOVE_TO_TRASH', 'GMAIL_MOVE_THREAD_TO_TRASH'])(
+    'does not exempt %s from the outward default',
+    (slug) => {
+      expect(writeReachesOutside(slug, {})).toBe(true);
+    }
+  );
 
   it('a new event reaches people only when it names someone', () => {
     expect(writeReachesOutside('GOOGLECALENDAR_CREATE_EVENT', { summary: 'Focus' })).toBe(false);
