@@ -1,6 +1,7 @@
 ---
 covers:
   - 'fix(sessions): a chat set to a mode its runtime doesn’t have is refused, and never runs at the agent’s level (DOR-4411)'
+  - 'fix(sessions): an unknown mode under a ceiling below every trust mode keeps the old fallback (DOR-4411)'
 ---
 
 ### Fixed
