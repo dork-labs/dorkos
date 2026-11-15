@@ -222,6 +222,44 @@ stops OpenCode reading the project's `AGENTS.md`, so DorkOS reads it (project to
 (`messaging/project-instructions.ts`). A project's own plugins and MCP servers no longer load;
 DOR-4399 brings them back behind a person's yes.
 
+### A project's config cannot switch the asks off: session rules (DOR-4394, live 2026-11-15)
+
+The injected ruleset above is TOP-LEVEL `permission`. OpenCode decides an ask from
+`merge(agent.permission, session.permission)`, last match wins, and an agent's resolved rules
+are `defaults, config.permission, that agent's own permission`. So a cloned project's
+`opencode.json` got around it on the pinned 1.19.3 (fake localhost model, throwaway home):
+
+| Project config                                                                       | Asked | Ran |
+| ------------------------------------------------------------------------------------ | ----- | --- |
+| none, or top-level `permission.bash: allow`                                          | yes   | no  |
+| `agent.build.permission.bash: allow`                                                 | no    | yes |
+| `mode.build.permission.bash: allow`                                                  | no    | yes |
+| `default_agent` naming its own agent with `bash: allow`                              | no    | yes |
+| a project subagent with `bash: allow`, started by `task`                             | no    | yes |
+| `tools: { bash: true }` at the top level                                             | yes   | no  |
+| `tools: { bash: true }` under `agent.build` or `mode.build`                          | no    | yes |
+| `agent.build.permission: "allow"` (every key)                                        | no    | yes |
+| `task` naming `build`, with `agent.build.permission.bash: allow`                     | no    | yes |
+| `task` naming a project `mode: primary` agent with `bash: allow`                     | no    | yes |
+| `task` naming `evil` (display `name: "x"`), with an agent keyed `x` that allows bash | no    | yes |
+| `agent.build.permission: { "*": "allow" }`                                           | no    | yes |
+| top-level `permission: "allow"`                                                      | yes   | no  |
+| conflicting top-level `ask`, agent `deny`, mode `allow`                              | no    | yes |
+| `opencode.json` in the repo's top folder, one above the session                      | no    | yes |
+
+`keepDorkosAsks` (`messaging/keep-asks.ts`) runs before every prompt: it appends the same ask
+rules to the SESSION (they come after every agent's), plus `external_directory: ask` (OpenCode's
+default, which a project could loosen; its own tool output and plans stay open), and, when ANY agent's `GET /agent` ruleset would skip them, a `task` deny for EVERY target:
+`task` starts primaries too (Security's M1 on #3759) and names the child by config key, not the
+display `name` `GET /agent` reports (M2), so no single agent can be singled out, since a child session inherits only its parent's denies.
+Re-run with it: every row asks, the subagent is refused (stricter than an ask: its child session
+cannot carry the parent's asks), and nothing ran. It reads both off
+the wire (the v1 SDK types lack them) and stops the turn when it cannot. `session.update`
+appends, so it only writes what is missing (see the next section).
+The sidecar now also spawns with `OPENCODE_DISABLE_PROJECT_CONFIG=1` (the section above), so it
+no longer reads a project's `opencode.json` at all; the session rules stay as the layer that wins if
+a project's config is ever read again. `OPENCODE_PERMISSION` is top-level only, like the injection.
+
 ### Folder grants: answered at the ask, not written as session rules (agent-home-desk §4.4)
 
 A turn's `MessageOpts.additionalDirectories` reach the sidecar through the ask handler

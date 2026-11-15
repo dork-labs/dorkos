@@ -127,6 +127,7 @@ describe('what an OpenCode turn carries', () => {
           return { stream: queue };
         }),
       },
+      app: { agents: vi.fn(async () => ({ data: [] })) },
       session: {
         create: vi.fn(async () => ({ data: info })),
         get: vi.fn(async () => ({ data: info })),

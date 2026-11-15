@@ -110,6 +110,8 @@ import {
   parseModelSelection,
   recordOpenCodeTurn,
 } from './messaging/turn-input.js';
+import { keepDorkosAsks } from './messaging/keep-asks.js';
+import { sessionDirectoryOf } from './sessions/session-directory.js';
 import { resolveCompactionModel } from './messaging/compaction-model.js';
 import type { OpenCodeTurnOptions } from './messaging/turn-options.js';
 import { validatedGrants } from './messaging/directory-grants.js';
@@ -443,7 +445,9 @@ export class OpenCodeRuntime implements AgentRuntime {
             }
           : opts;
         // The model's window, so a small one gets a trimmed system prompt (DOR-2839).
-        const at = await this.resolveSessionDirectory(client, ocSessionId);
+        const at = await sessionDirectoryOf(this.directoryByOcId, client, ocSessionId);
+        // A project's opencode.json must not switch DorkOS's asks off (DOR-4394).
+        await keepDorkosAsks(client, ocSessionId, at);
         const window = await this.contextWindows.lookup(
           client,
           at,
@@ -454,10 +458,9 @@ export class OpenCodeRuntime implements AgentRuntime {
         // The exact body the sidecar is handed, for the turn's context record.
         recordOpenCodeTurn(sessionId, body, turnOpts, settings);
         const prompted = await client.session.promptAsync({ path: { id: ocSessionId }, body });
-        if (prompted.error === undefined) accessContext?.commit();
-        if (prompted.error !== undefined) {
+        if (prompted.error !== undefined)
           throw new Error(`OpenCode session.promptAsync failed: ${JSON.stringify(prompted.error)}`);
-        }
+        accessContext?.commit();
       },
       {
         connectorTurn: true,
@@ -624,7 +627,7 @@ export class OpenCodeRuntime implements AgentRuntime {
       ocSessionId = await this.resolveOpenCodeSession(sessionId, cwd, title);
       client = await this.provider.getClient(cwd);
       await this.provider.bindSessionEnvironment?.(sessionId, ocSessionId);
-      directory = await this.resolveSessionDirectory(client, ocSessionId);
+      directory = await sessionDirectoryOf(this.directoryByOcId, client, ocSessionId);
     } catch (err) {
       this.settingUp.delete(settingUp);
       void this.provider.turnSettled?.().catch(() => undefined);
@@ -1474,24 +1477,6 @@ export class OpenCodeRuntime implements AgentRuntime {
       });
     this.binding.set(sessionId, creating);
     return creating;
-  }
-
-  /**
-   * The directory AS STORED BY OPENCODE for a session — the demux key half
-   * that must never be substituted with the DorkOS cwd (strict string
-   * equality; trailing-slash or symlink drift would silently drop every
-   * event). Read once via `session.get` and cached; failure is loud — a turn
-   * without a trustworthy demux key must not run.
-   */
-  private async resolveSessionDirectory(
-    client: OpencodeClient,
-    ocSessionId: string
-  ): Promise<string> {
-    const cached = this.directoryByOcId.get(ocSessionId);
-    if (cached !== undefined) return cached;
-    const session = unwrap(await client.session.get({ path: { id: ocSessionId } }), 'session.get');
-    this.directoryByOcId.set(ocSessionId, session.directory);
-    return session.directory;
   }
 
   /**

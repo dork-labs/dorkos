@@ -304,9 +304,11 @@ function makeOpenCodeSidecar() {
         })(),
       })),
     },
+    app: { agents: vi.fn(async () => ({ data: [] })) },
     session: {
       create: vi.fn(async () => ({ data: ocSessionInfo() })),
       get: vi.fn(async () => ({ data: ocSessionInfo() })),
+      update: vi.fn(async () => ({ data: {} })),
       list: vi.fn(async () => ({ data: [] as unknown[] })),
       messages: vi.fn(async () => ({ data: opencodeHistory() })),
       promptAsync: vi.fn(async () => ({})),
