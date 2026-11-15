@@ -36,6 +36,27 @@ describe('Composio access-level security policy', () => {
     }
   });
 
+  it.each([
+    // Made-up Linear actions: a later catalog entry on a pinned app.
+    ['LINEAR_CREATE_WEBHOOK_SUBSCRIPTION', 'reach'],
+    ['LINEAR_INVITE_WORKSPACE_MEMBER', 'reach'],
+    ['LINEAR_CREATE_API_TOKEN', 'reach'],
+    ['LINEAR_PURCHASE_SEATS', 'money'],
+    ['LINEAR_PURGE_ARCHIVED_ISSUES', 'irreversible'],
+    ['LINEAR_DELETE_CYCLE', 'delete'],
+  ])('keeps a new Linear action named for %s (%s) out of Read and write', (slug) => {
+    expect(policy.classifyComposioAction(slug, ['openWorldHint', 'createHint'])).toBe(
+      'destructive'
+    );
+  });
+
+  it('gives a new, plainly named create action on a pinned app write, by design', () => {
+    expect(policy.classifyComposioAction('LINEAR_CREATE_ISSUE_TEMPLATE', ['createHint'])).toBe(
+      'write'
+    );
+    expect(policy.classifyComposioAction('LINEAR_CREATE_ISSUE_TEMPLATE', [])).toBe('destructive');
+  });
+
   it('keeps WRITE_INCLUDES_DELETES a source constant with no runtime setter', () => {
     const source = ts.createSourceFile(
       'action-classes.ts',
