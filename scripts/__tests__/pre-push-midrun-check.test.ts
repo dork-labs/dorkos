@@ -110,6 +110,24 @@ describe('a run still going from the last push', () => {
     expect(calls).toMatch(/--branch feature\/x/);
   });
 
+  it('reads all of a long answer before parsing it', () => {
+    // On Linux the child's `exit` can arrive before the last of its stdout has
+    // been read, which the first version parsed as "not JSON" and let the push
+    // through. An answer far larger than a pipe buffer makes that window wide.
+    const filler = Array.from({ length: 4000 }, (_, i) => ({
+      status: 'completed',
+      createdAt: ago(60),
+      databaseId: i,
+      pad: 'x'.repeat(100),
+    }));
+    fakeGh({
+      'test.yml': [...filler, { status: 'in_progress', createdAt: ago(2), databaseId: 9 }],
+    });
+    const r = runCheck();
+    expect(r.stdout + r.stderr).not.toMatch(/not JSON/);
+    expect(r.status).not.toBe(0);
+  });
+
   it('lets the push through when the run is over ten minutes old', () => {
     fakeGh({ 'test.yml': [{ status: 'in_progress', createdAt: ago(12), databaseId: 1 }] });
     expect(runCheck().status).toBe(0);

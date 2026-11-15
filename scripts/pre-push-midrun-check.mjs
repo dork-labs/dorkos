@@ -71,8 +71,11 @@ function git(args) {
 /**
  * Asks gh for the latest runs of one workflow on a branch.
  *
- * Resolves on the child's exit rather than on its pipes closing, so a gh that
- * leaves a grandchild holding stdout cannot hold the push past the limit.
+ * Resolves on `close`, once stdout has been read to the end: on Linux `exit`
+ * can arrive while the last of the answer is still in the pipe, and parsing
+ * then reads a cut-off answer as "not JSON". A gh that never closes its pipe
+ * (or leaves a grandchild holding it) is still cut off by the timer, which
+ * resolves on its own.
  *
  * @param {string} workflow - The workflow file name.
  * @param {string} branch - The branch to ask about.
@@ -112,20 +115,17 @@ function runList(workflow, branch) {
       clearTimeout(timer);
       resolve({ ok: false, why: 'gh is not installed' });
     });
-    child.on('exit', (code) => {
+    child.on('close', (code) => {
       clearTimeout(timer);
-      // Give the pipe a tick to flush what the child already wrote.
-      setImmediate(() => {
-        if (code !== 0) {
-          resolve({ ok: false, why: `gh exited ${code ?? 'on a signal'} (signed in?)` });
-          return;
-        }
-        try {
-          resolve({ ok: true, runs: JSON.parse(out) });
-        } catch {
-          resolve({ ok: false, why: 'gh printed something that is not JSON' });
-        }
-      });
+      if (code !== 0) {
+        resolve({ ok: false, why: `gh exited ${code ?? 'on a signal'} (signed in?)` });
+        return;
+      }
+      try {
+        resolve({ ok: true, runs: JSON.parse(out) });
+      } catch {
+        resolve({ ok: false, why: 'gh printed something that is not JSON' });
+      }
     });
   });
 }
