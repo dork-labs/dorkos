@@ -202,6 +202,7 @@ const REFUSED: readonly (readonly [reason: string, routes: readonly string[]])[]
       'POST /api/feedback',
       'POST /api/files/reveal',
       'POST /api/local-browser/disconnect',
+      'POST /api/local-browser/history',
       'POST /api/local-browser/navigate',
       'POST /api/local-browser/open',
       'POST /api/local-browser/pause',

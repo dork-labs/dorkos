@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { ArrowLeft, ArrowRight, RotateCw, X, type LucideIcon } from 'lucide-react';
+import { ArrowLeft, ArrowRight, CircleAlert, RotateCw, X, type LucideIcon } from 'lucide-react';
 import { cn } from '@/layers/shared/lib/utils';
 import { Button } from '../button';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../tooltip';
@@ -21,10 +21,10 @@ export interface BrowserChromeProps {
   canBack: boolean;
   /** Whether there is a page to go forward to. */
   canForward: boolean;
-  /** Go back. Omit it where the browser cannot yet, and the button says it is coming soon. */
-  onBack?: () => void;
-  /** Go forward. Omit it where the browser cannot yet, and the button says it is coming soon. */
-  onForward?: () => void;
+  /** Go back one page in the page's own history. */
+  onBack: () => void;
+  /** Go forward one page in the page's own history. */
+  onForward: () => void;
   /** Reload the page. */
   onReload: () => void;
   /**
@@ -125,7 +125,7 @@ export function BrowserChrome({
             label={stopping ? 'Stop' : 'Reload'}
             icon={stopping ? X : RotateCw}
             disabled={busy && !stopping}
-            onClick={stopping ? onStop : onReload}
+            onClick={stopping ? () => onStop?.() : onReload}
             tooltip={tooltips}
           />
           {/* Keyed on the retry so a refused address reopens the field in edit
@@ -154,9 +154,11 @@ export function BrowserChrome({
         {notice && (
           <p
             role="alert"
-            className="text-muted-foreground flex min-h-7 shrink-0 items-center px-2.5 py-1 text-xs"
+            className="text-foreground flex min-h-7 shrink-0 items-center gap-1.5 px-2.5 py-1 text-xs"
           >
-            {notice}
+            {/* Only the glyph is red: muted words would read weaker than the refusal is (spec §2). */}
+            <CircleAlert aria-hidden className="text-destructive size-3.5 shrink-0" />
+            <span>{notice}</span>
           </p>
         )}
       </div>
@@ -164,10 +166,7 @@ export function BrowserChrome({
   );
 }
 
-/**
- * One 28px ghost icon button (44px on a phone) with its name in a tooltip. With
- * no handler it says it is coming soon, because a dead button needs a reason.
- */
+/** One 28px ghost icon button (44px on a phone) with its name in a tooltip. */
 export function ChromeButton({
   label,
   icon: Icon,
@@ -179,36 +178,21 @@ export function ChromeButton({
   label: string;
   icon: LucideIcon;
   disabled?: boolean;
-  onClick?: () => void;
+  onClick: () => void;
   /** Name it in a Radix tooltip, or in the browser's own `title` hint when off. */
   tooltip?: boolean;
   className?: string;
 }) {
   const classes = cn('text-muted-foreground hover:text-foreground md:size-7', className);
   if (!tooltip) {
-    const unbuilt = onClick === undefined;
     return (
       <Button
         variant="ghost"
         size="icon-sm"
         aria-label={label}
-        title={unbuilt ? `${label} is coming soon` : label}
-        disabled={unbuilt || disabled}
+        title={label}
+        disabled={disabled}
         onClick={onClick}
-        className={classes}
-      >
-        <Icon aria-hidden />
-      </Button>
-    );
-  }
-  if (onClick === undefined) {
-    // The button's own reason tooltip names it, so it needs no second one.
-    return (
-      <Button
-        variant="ghost"
-        size="icon-sm"
-        aria-label={label}
-        disabledReason={`${label} is coming soon`}
         className={classes}
       >
         <Icon aria-hidden />

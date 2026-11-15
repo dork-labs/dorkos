@@ -43,6 +43,8 @@ describe('BrowserChrome', () => {
         url="http://localhost:5173/"
         canBack
         canForward
+        onBack={vi.fn()}
+        onForward={vi.fn()}
         onReload={vi.fn()}
         onSubmit={vi.fn()}
       />
@@ -111,21 +113,20 @@ describe('BrowserChrome', () => {
     expect(screen.queryByRole('button', { name: 'Reload' })).not.toBeInTheDocument();
   });
 
-  it('says a button with no handler is coming soon', async () => {
-    renderChrome({ onBack: undefined });
-    const back = screen.getByRole('button', { name: 'Back' });
-    expect(back).toHaveAttribute('aria-disabled', 'true');
-    fireEvent.focus(back);
-    expect(await screen.findByRole('tooltip')).toHaveTextContent('Back is coming soon');
+  it('names Back in a tooltip, and never says it is coming soon', async () => {
+    renderChrome();
+    fireEvent.focus(screen.getByRole('button', { name: 'Back' }));
+    expect(await screen.findByRole('tooltip')).toHaveTextContent(/^Back$/);
   });
 
-  it('names its buttons with a title hint when tooltips are off', () => {
-    renderChrome({ onBack: undefined, tooltips: false });
-    expect(screen.getByRole('button', { name: 'Back' })).toHaveAttribute(
-      'title',
-      'Back is coming soon'
-    );
-    expect(screen.getByRole('button', { name: 'Back' })).toBeDisabled();
+  it('names its buttons with a title hint when tooltips are off, and still drives them', () => {
+    const { onBack } = renderChrome({ canBack: true, canForward: false, tooltips: false });
+    const back = screen.getByRole('button', { name: 'Back' });
+    expect(back).toHaveAttribute('title', 'Back');
+    expect(back).toBeEnabled();
+    fireEvent.click(back);
+    expect(onBack).toHaveBeenCalledOnce();
+    expect(screen.getByRole('button', { name: 'Forward' })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Reload' })).toHaveAttribute('title', 'Reload');
   });
 
@@ -148,13 +149,20 @@ describe('BrowserChrome', () => {
         url="https://example.com"
         canBack
         canForward
+        onBack={vi.fn()}
+        onForward={vi.fn()}
         onReload={vi.fn()}
         onSubmit={vi.fn()}
         notice="Only web pages open here. Try an address starting with https://."
       />
     );
-    expect(screen.getByRole('alert')).toHaveTextContent('Only web pages open here.');
-    expect(screen.getByRole('alert')).toHaveClass('min-h-7');
+    const alert = screen.getByRole('alert');
+    expect(alert).toHaveTextContent('Only web pages open here.');
+    expect(alert).toHaveClass('min-h-7');
+    // The words are full strength; only the glyph is red (spec §2).
+    expect(alert).toHaveClass('text-foreground');
+    expect(alert).not.toHaveClass('text-muted-foreground');
+    expect(alert.querySelector('svg')).toHaveClass('text-destructive');
   });
 
   it('turns the seam brand orange while an agent drives', () => {
@@ -166,6 +174,8 @@ describe('BrowserChrome', () => {
         url="https://example.com"
         canBack
         canForward
+        onBack={vi.fn()}
+        onForward={vi.fn()}
         onReload={vi.fn()}
         onSubmit={vi.fn()}
         agentDriving
@@ -182,6 +192,8 @@ describe('BrowserChrome', () => {
         url="https://example.com"
         canBack
         canForward
+        onBack={vi.fn()}
+        onForward={vi.fn()}
         onReload={vi.fn()}
         onSubmit={vi.fn()}
         menu={<button type="button">More</button>}
@@ -198,6 +210,8 @@ describe('BrowserChrome', () => {
       url: 'https://example.com',
       canBack: true,
       canForward: true,
+      onBack: vi.fn(),
+      onForward: vi.fn(),
       onReload: vi.fn(),
       onSubmit: vi.fn(),
     };

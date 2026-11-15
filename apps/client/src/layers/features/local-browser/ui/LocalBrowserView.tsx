@@ -1,5 +1,5 @@
 import { useState, type RefObject } from 'react';
-import type { LocalBrowserState } from '@dorkos/shared/local-browser';
+import type { LocalBrowserHistoryDirection, LocalBrowserState } from '@dorkos/shared/local-browser';
 import { useOwnOrigins } from '@/layers/entities/config';
 import { isThisAppsAddress, normalizeAddressInput } from '@/layers/shared/lib';
 import { useTransport } from '@/layers/shared/model';
@@ -27,8 +27,10 @@ export interface LocalBrowserViewProps {
  * The Agent browser's page: the shared browser chrome over the native page,
  * which runs flush to the panel's edges. What the person types is read by the
  * shared address rules (DOR-4419); a refusal shows on the chrome's notice line
- * and keeps the typed text. Back and Forward wait on a way to move the page's
- * own history, so they say they are coming soon. Its buttons name themselves
+ * and keeps the typed text. Back and Forward move the page's own history on
+ * the server, which re-checks every step against the same address rules and
+ * takes the page from an agent that is driving it (DOR-4449); they are enabled
+ * only when the server says there is an allowed page that way. Its buttons name themselves
  * with the browser's own hint, not a Radix tooltip, because the desktop host
  * hides the native page under any Radix popper (`use-native-browser-surface`).
  */
@@ -84,6 +86,12 @@ export function LocalBrowserView({
     return failed;
   };
 
+  /** Back or Forward. A refusal or a failure is the panel's to say, as for a navigation. */
+  const step = (direction: LocalBrowserHistoryDirection) => {
+    setRetry(null);
+    void action(() => transport.stepLocalBrowserHistory(direction));
+  };
+
   const submit = (tabId: string, url: string, typed: string) => {
     const input = normalizeAddressInput(typed, {
       current: url,
@@ -110,8 +118,10 @@ export function LocalBrowserView({
       {tab && (
         <BrowserChrome
           url={tab.url}
-          canBack={false}
-          canForward={false}
+          canBack={!busy && (tab.canGoBack ?? false)}
+          canForward={!busy && (tab.canGoForward ?? false)}
+          onBack={() => step('back')}
+          onForward={() => step('forward')}
           onReload={() => void go(tab.url)}
           onSubmit={(typed) => submit(tab.id, tab.url, typed)}
           busy={busy}

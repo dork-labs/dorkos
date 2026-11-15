@@ -529,6 +529,7 @@
     "POST /api/local-browser/disconnect",
     "POST /api/local-browser/handoff/hand-back",
     "POST /api/local-browser/handoff/stop",
+    "POST /api/local-browser/history",
     "POST /api/local-browser/navigate",
     "POST /api/local-browser/open",
     "POST /api/local-browser/pause",
