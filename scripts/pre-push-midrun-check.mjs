@@ -27,10 +27,20 @@
 // delete-only push, or a push of some other ref). It takes no stdin: the
 // pre-push hook deliberately gives the ref list to nobody.
 //
+// `CI_PUSH_ANYWAY=1` still asks. When it overrides a refusal, it appends one
+// JSON line to `<git common dir>/ci-midrun/overrides.jsonl`: the time, the git
+// user, $USER, the branch, the full head SHA and the runs it would have
+// cancelled. That file is outside the work tree, shared by every worktree of
+// the clone, and never committed. If the line cannot be written, the push still
+// goes through with a warning. A failed read of GitHub still allows, and logs
+// nothing, because no refusal was overridden.
+//
 // The gh calls run in parallel under one hard limit (4 s, or
 // CI_MIDRUN_TIMEOUT_MS) measured by node itself, so it needs no GNU `timeout`.
 
 import { spawn, spawnSync } from 'node:child_process';
+import { appendFileSync, mkdirSync } from 'node:fs';
+import path from 'node:path';
 
 const WORKFLOWS = ['test.yml', 'browser-test.yml'];
 const WINDOW_MINUTES = 10;
@@ -120,8 +130,6 @@ function runList(workflow, branch) {
   });
 }
 
-if (process.env.CI_PUSH_ANYWAY === '1') process.exit(0);
-
 const branch = git(['symbolic-ref', '--quiet', '--short', 'HEAD']);
 if (!branch) letThrough('detached HEAD');
 if (branch === 'main') process.exit(0);
@@ -147,6 +155,33 @@ for (const [i, result] of results.entries()) {
 }
 
 if (running.length === 0) process.exit(0);
+
+if (process.env.CI_PUSH_ANYWAY === '1') {
+  const record = {
+    time: new Date(now).toISOString(),
+    gitUser: git(['config', 'user.name']) ?? null,
+    gitEmail: git(['config', 'user.email']) ?? null,
+    user: process.env.USER ?? null,
+    branch,
+    head: head ?? null,
+    runs: running.map(({ workflow, minutes, run }) => ({ workflow, minutes, id: run.databaseId })),
+  };
+  try {
+    const common = git(['rev-parse', '--path-format=absolute', '--git-common-dir']);
+    if (!common) throw new Error('no git common dir');
+    const dir = path.join(common, 'ci-midrun');
+    mkdirSync(dir, { recursive: true });
+    appendFileSync(path.join(dir, 'overrides.jsonl'), JSON.stringify(record) + '\n');
+    console.log(
+      `pre-push midrun: CI_PUSH_ANYWAY=1 overrode a refusal (${running.length} run(s) will be cancelled); logged to ${path.join(dir, 'overrides.jsonl')}.`
+    );
+  } catch (err) {
+    console.log(
+      `pre-push midrun: CI_PUSH_ANYWAY=1 overrode a refusal; could not log it (${err.message}).`
+    );
+  }
+  process.exit(0);
+}
 
 console.log(`\ngit push refused: CI from your last push to ${branch} is still running.\n`);
 for (const { workflow, minutes, run } of running) {

@@ -6,7 +6,8 @@
  * `cancel-in-progress` on `pull_request`). Over Nov 12 00Z to Nov 15 16Z that
  * threw away 74 job-hours. The guard refuses a push while one of those runs is
  * under ten minutes old, and gets out of the way in every other case: an old
- * run, a finished run, `CI_PUSH_ANYWAY=1`, or any failure to ask GitHub.
+ * run, a finished run, `CI_PUSH_ANYWAY=1`, or any failure to ask GitHub. An
+ * override of a real refusal is logged outside git, under the common git dir.
  *
  * Every case runs the real script against a throwaway git repository with a
  * fake `gh` first on PATH. Nothing here talks to GitHub. PATH holds only a
@@ -15,7 +16,15 @@
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { spawnSync } from 'node:child_process';
-import { chmodSync, existsSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import {
+  chmodSync,
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
@@ -131,11 +140,43 @@ describe('a run still going from the last push', () => {
     expect(runCheck().status).toBe(0);
   });
 
-  it('lets the push through with CI_PUSH_ANYWAY=1, and never asks GitHub', () => {
-    fakeGh({ 'test.yml': [{ status: 'in_progress', createdAt: ago(2), databaseId: 1 }] });
-    const r = runCheck({ CI_PUSH_ANYWAY: '1' });
+  it('lets the push through with CI_PUSH_ANYWAY=1, and logs the override outside git', () => {
+    fakeGh({ 'test.yml': [{ status: 'in_progress', createdAt: ago(2), databaseId: 55 }] });
+    const before = Date.now();
+    const r = runCheck({ CI_PUSH_ANYWAY: '1', USER: 'pat' });
     expect(r.status).toBe(0);
-    expect(existsSync(path.join(work, 'gh-calls'))).toBe(false);
+    expect(r.stdout + r.stderr).toMatch(/overrode a refusal/);
+
+    // Under the common git dir: shared by every worktree, never in the work tree.
+    const log = path.join(repo, '.git', 'ci-midrun', 'overrides.jsonl');
+    const lines = readFileSync(log, 'utf8').trim().split('\n');
+    expect(lines).toHaveLength(1);
+    const entry = JSON.parse(lines[0] as string);
+    expect(entry.gitUser).toBe('Test');
+    expect(entry.gitEmail).toBe('test@example.com');
+    expect(entry.user).toBe('pat');
+    expect(entry.branch).toBe('feature/x');
+    expect(entry.head).toBe(git('rev-parse', 'HEAD'));
+    expect(entry.head).toMatch(/^[0-9a-f]{40}$/);
+    expect(Date.parse(entry.time)).toBeGreaterThanOrEqual(before - 1000);
+    expect(entry.runs).toEqual([{ workflow: 'test.yml', minutes: 2, id: 55 }]);
+    expect(git('status', '--porcelain')).toBe('');
+
+    // A second override appends rather than overwrites.
+    runCheck({ CI_PUSH_ANYWAY: '1', USER: 'pat' });
+    expect(readFileSync(log, 'utf8').trim().split('\n')).toHaveLength(2);
+  });
+
+  it('logs nothing when CI_PUSH_ANYWAY=1 overrides no refusal', () => {
+    fakeGh({ 'test.yml': [{ status: 'completed', createdAt: ago(2), databaseId: 1 }] });
+    expect(runCheck({ CI_PUSH_ANYWAY: '1' }).status).toBe(0);
+    expect(existsSync(path.join(repo, '.git', 'ci-midrun'))).toBe(false);
+  });
+
+  it('a failed read still allows under CI_PUSH_ANYWAY=1, and logs nothing', () => {
+    fakeGh({}, { body: 'exit 4' });
+    expect(runCheck({ CI_PUSH_ANYWAY: '1' }).status).toBe(0);
+    expect(existsSync(path.join(repo, '.git', 'ci-midrun'))).toBe(false);
   });
 });
 

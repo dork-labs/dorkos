@@ -22,7 +22,10 @@ field-changes: []
 were a fix commit pushed minutes after the previous one. The new pre-push
 command `ci-midrun` (`scripts/pre-push-midrun-check.mjs`) asks `gh run list`
 for both workflows on the current branch and refuses the push while one is
-queued or in progress and under ten minutes old. `CI_PUSH_ANYWAY=1` skips it.
+queued or in progress and under ten minutes old. `CI_PUSH_ANYWAY=1` lets it
+through and logs the override (time, git user, `$USER`, branch, head SHA) to
+`ci-midrun/overrides.jsonl` under the common git dir, so overrides can be
+counted beside the cancelled hours.
 Anything that fails (no gh, no auth, no network, a 4 s timeout, detached HEAD,
 unreadable output) prints one line and lets the push through. It skips `main`
 and a push where HEAD already equals the remote-tracking ref. It tests nothing,
