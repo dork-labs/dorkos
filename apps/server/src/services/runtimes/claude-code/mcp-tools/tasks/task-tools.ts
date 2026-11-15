@@ -176,7 +176,8 @@ export function createCreateScheduleHandler(
     prompt: string;
     cron: string;
     reason: string;
-    target: string;
+    /** Left out means `global`, which files it under the caller (DOR-4067). */
+    target?: string;
     description?: string;
     timezone?: string;
     maxRuntime?: string;
@@ -197,6 +198,9 @@ export function createCreateScheduleHandler(
     /** Advertised so it can be REFUSED; see {@link REFUSED_AGENT_ID_DESCRIPTION}. */
     agentId?: string;
   }) => {
+    // Defaulted here, not in the schema: a `.default()` never reaches the Agent SDK's raw
+    // field map, so an agent that left `target` out would fail outright (DOR-2053).
+    const target = args.target ?? 'global';
     const err = requireTasks(deps);
     if (err) return err;
     const refusal = refuseOperatorOnlyTaskFields(args);
@@ -209,7 +213,7 @@ export function createCreateScheduleHandler(
     // sent an agent looking for another way to own its own task.
     if (args.agentId !== undefined) return jsonContent(AGENT_ID_ON_CREATE_REFUSAL, true);
     // For another agent only from a Full, unmarked turn (DOR-3938). Below Full, today's refusal.
-    const forOther = decideCrossAgent(deps, args.target, resolveProvenance, callerAgent);
+    const forOther = decideCrossAgent(deps, target, resolveProvenance, callerAgent);
     if (isMarkedRefusal(forOther)) return jsonContent(forOther.refusal, true);
 
     // A mode the agent names is decided as `tasks.set_mode` (DOR-3703).
@@ -219,7 +223,7 @@ export function createCreateScheduleHandler(
       door: 'create',
       body,
       input: args,
-      target: args.target,
+      target,
       caller,
     });
     if (mode.refusal) return jsonContent(mode.refusal, true);
@@ -250,7 +254,7 @@ export function createCreateScheduleHandler(
           cron: args.cron,
           ...(args.timezone !== undefined && { timezone: args.timezone }),
           ...(args.maxRuntime !== undefined && { maxRuntime: args.maxRuntime }),
-          target: args.target,
+          target,
           reason: args.reason,
           ...(args.sticky !== undefined && { sticky: args.sticky }),
           ...(args.runtime !== undefined && { runtime: args.runtime }),
@@ -719,7 +723,7 @@ export function getTasksTools(
         prompt: z.string().describe('The prompt to send to the agent on each run'),
         cron: z.string().describe('Cron expression (e.g., "0 2 * * *" for daily at 2am)'),
         reason: z.string().describe(REASON_DESCRIPTION),
-        target: z.string().min(1).default('global').describe(TARGET_DESCRIPTION),
+        target: z.string().min(1).optional().describe(TARGET_DESCRIPTION),
         description: z.string().optional().describe('Description of what this scheduled task does'),
         timezone: z.string().optional().describe('IANA timezone (e.g., "America/New_York")'),
         maxRuntime: DURATION_ARG.describe('Maximum run time (e.g., "5m", "1h")'),
