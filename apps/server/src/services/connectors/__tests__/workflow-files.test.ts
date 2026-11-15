@@ -21,18 +21,23 @@ afterEach(() => {
   for (const h of opened.splice(0)) h.db.$client.close();
 });
 
-async function setup() {
+async function setup(toolkit = 'github') {
   const h = levelHarness({ type: 'composio' });
   opened.push(h);
-  h.db
-    .update(connections)
-    .set({ toolkit: 'github' })
-    .where(eq(connections.id, CONNECTION_ID))
-    .run();
+  h.db.update(connections).set({ toolkit }).where(eq(connections.id, CONNECTION_ID)).run();
   h.catalog.splice(
     0,
     h.catalog.length,
-    ...[CONTENTS, TREE, MULTIPLE, DELETE, 'GitHubCreateOrUpdateFileContents'].map((slug) => ({
+    ...[
+      CONTENTS,
+      TREE,
+      MULTIPLE,
+      DELETE,
+      'GitHubCreateOrUpdateFileContents',
+      'GITHUB_MCP_CREATE_OR_UPDATE_FILE',
+      'GITHUB_MCP_PUSH_FILES',
+      'GITLAB_SAVE_FILE',
+    ].map((slug) => ({
       slug,
       classification: 'write' as const,
     }))
@@ -139,5 +144,65 @@ describe('workflow files need the agent’s own exact grant', () => {
     await expect(run('writer', slug, args)).rejects.toMatchObject({
       payload: { code: 'CONNECTOR_GRANT_REQUIRED' },
     });
+  });
+});
+
+describe('repository-control paths need the agent’s own exact grant', () => {
+  it.each(['.github', '.github/workflows'])('refuses a nested tree entry at %s', async (path) => {
+    const run = await setup();
+    await expect(
+      run('writer', TREE, { tree: [{ path, type: 'tree', mode: '040000', sha: 'tree-sha' }] })
+    ).rejects.toMatchObject({ payload: { code: 'CONNECTOR_GRANT_REQUIRED' } });
+  });
+  it.each([
+    ['GITHUB_MCP_CREATE_OR_UPDATE_FILE', { path: '.github/actions/action.yml' }],
+    ['GITHUB_MCP_PUSH_FILES', { files: [{ path: 'src/x.ts' }, { path: '.github/CODEOWNERS' }] }],
+  ] as const)('refuses repository controls through github_mcp action %s', async (slug, args) => {
+    const run = await setup('github_mcp');
+    await expect(run('writer', slug, args)).rejects.toMatchObject({
+      payload: { code: 'CONNECTOR_GRANT_REQUIRED' },
+    });
+  });
+  it.each([
+    '.github/config.yml',
+    '.gitlab-ci.yml',
+    '.gitlab/ci/build.yml',
+    '.gitea/workflows/ci.yml',
+    '.forgejo/workflows/ci.yml',
+    'bitbucket-pipelines.yml',
+    '.circleci/config.yml',
+    '.buildkite/pipeline.yml',
+  ])('refuses a control path on a made-up GitLab action: %s', async (path) => {
+    const run = await setup('gitlab');
+    await expect(
+      run('writer', 'GITLAB_SAVE_FILE', { input: { files: [{ repositoryPath: path }] } })
+    ).rejects.toMatchObject({ payload: { code: 'CONNECTOR_GRANT_REQUIRED' } });
+  });
+  it.each([
+    '%2Egithub%2Fworkflows%2Fx.yml',
+    '%252Egithub%252Fworkflows%252Fx.yml',
+    '.github\\workflows\\x.yml',
+    ' .github /workflows/x.yml',
+    'src/../.github/workflows/x.yml',
+    '%broken/path',
+  ])('refuses a disguised or undecodable control path %s', async (path) => {
+    const run = await setup('gitlab');
+    await expect(
+      run('writer', 'GITLAB_SAVE_FILE', { destinationPaths: [path] })
+    ).rejects.toMatchObject({ payload: { code: 'CONNECTOR_GRANT_REQUIRED' } });
+  });
+  it('allows an exact grant to use nested control paths on another toolkit', async () => {
+    const run = await setup('github_mcp');
+    await expect(
+      run('exact', 'GITHUB_MCP_PUSH_FILES', { files: [{ path: '.github/CODEOWNERS' }] })
+    ).resolves.toMatchObject({ agentId: 'exact' });
+  });
+  it('allows ordinary paths and does not treat file content as a path', async () => {
+    const run = await setup('gitlab');
+    await expect(
+      run('writer', 'GITLAB_SAVE_FILE', {
+        files: [{ path: 'src/./nested/../x.ts', content: '.github/workflows/ci.yml' }],
+      })
+    ).resolves.toMatchObject({ agentId: 'writer' });
   });
 });

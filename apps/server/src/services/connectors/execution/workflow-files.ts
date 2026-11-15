@@ -1,47 +1,55 @@
-/** Argument-sensitive GitHub file changes that require the agent's own exact grant. */
+/** Argument-sensitive repository-control changes require the agent's own exact grant. */
 
-/** Whether a path names a workflow file, accepting the catalog's path spellings. */
-function workflowPath(value: unknown): boolean {
-  if (typeof value !== 'string') return false;
+const CONTROL_ROOTS = new Set([
+  '.github',
+  '.gitlab-ci.yml',
+  '.gitlab',
+  '.gitea',
+  '.forgejo',
+  'bitbucket-pipelines.yml',
+  '.circleci',
+  '.buildkite',
+]);
+
+/** Decode first: malformed paths cannot qualify for an access level. */
+function controlPath(value: string): boolean {
+  let decoded = value;
+  try {
+    for (;;) {
+      const next = decodeURIComponent(decoded);
+      if (next === decoded) break;
+      decoded = next;
+    }
+  } catch {
+    return true;
+  }
   const parts: string[] = [];
-  for (const part of value.toLowerCase().split('/')) {
+  for (const raw of decoded.replace(/\\/g, '/').toLowerCase().split('/')) {
+    const part = raw.trim();
     if (!part || part === '.') continue;
     if (part === '..') parts.pop();
     else parts.push(part);
+    // A path entering a control root stays explicit even if later segments back out.
+    if (CONTROL_ROOTS.has(parts[0] ?? '')) return true;
   }
-  return parts.join('/').startsWith('.github/workflows/');
+  return false;
 }
 
-function paths(value: unknown): unknown[] {
-  if (!Array.isArray(value)) return [];
-  return value.map((entry: unknown) =>
-    entry !== null && typeof entry === 'object' && 'path' in entry ? entry.path : undefined
+/** Inspect nested path arguments, including path lists and legacy multi-file deletes. */
+function containsControlPath(value: unknown, isPath = false): boolean {
+  if (typeof value === 'string') return isPath && controlPath(value);
+  if (Array.isArray(value)) return value.some((entry) => containsControlPath(entry, isPath));
+  if (value === null || typeof value !== 'object') return false;
+  return Object.entries(value).some(([key, entry]) =>
+    containsControlPath(entry, isPath || /path/i.test(key) || key === 'deletes')
   );
 }
 
 /**
- * Whether this GitHub operation changes any workflow path.
+ * Whether any action's arguments name repository controls, regardless of its toolkit.
  *
- * @param operation - The catalog action being run.
- * @param args - Its arguments, before schema validation and execution.
+ * @param args - Arguments before schema validation and execution.
  */
-export function changesWorkflowFiles(
-  operation: { toolkit: string; operationSlug: string },
-  args: Record<string, unknown>
-): boolean {
-  if (operation.toolkit.toLowerCase() !== 'github') return false;
-  const slug = operation.operationSlug.replace(/[^a-z0-9]/gi, '').toUpperCase();
-  switch (slug) {
-    case 'GITHUBCREATEORUPDATEFILECONTENTS':
-    case 'GITHUBDELETEAFILE':
-      return workflowPath(args.path);
-    case 'GITHUBCREATEATREE':
-      return paths(args.tree).some(workflowPath);
-    case 'GITHUBCOMMITMULTIPLEFILES':
-      return [...paths(args.upserts), ...(Array.isArray(args.deletes) ? args.deletes : [])].some(
-        workflowPath
-      );
-    default:
-      return false;
-  }
+export function changesRepositoryControlFiles(args: Record<string, unknown>): boolean {
+  return containsControlPath(args);
 }

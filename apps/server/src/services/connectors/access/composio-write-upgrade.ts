@@ -148,7 +148,8 @@ export function upgradeComposioWriteLevels(db: Db, now = new Date().toISOString(
       told.add(app.id);
       const payload = {
         connectionId: app.id,
-        appName: `${serviceNameFromToolkit(app.toolkit)} (${app.label})`,
+        appName: serviceNameFromToolkit(app.toolkit),
+        accountLabel: app.label,
       };
       const entry = COMPOSIO_WRITE_NOTICE_ENTRIES['connector.write_available'];
       // Startup writes the durable inbox row inside this transaction: the

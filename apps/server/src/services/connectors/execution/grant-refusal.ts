@@ -3,7 +3,7 @@
  *
  * Its own grant (or its chat's, or its extension's) counts, and so does
  * the owner's every-agent share. Money actions cannot come through a share
- * or an access level. Workflow-file changes require the agent's own exact
+ * or an access level. Repository-control changes require the agent's own exact
  * action: a level, a chat grant or a shared grant cannot replace it.
  *
  * A paid row under a level predates that rule and is kept only until the
@@ -20,7 +20,7 @@ import {
   type Db,
 } from '@dorkos/db';
 import { isPaidOperation } from '@dorkos/shared/connector-schemas';
-import { changesWorkflowFiles } from './workflow-files.js';
+import { changesRepositoryControlFiles } from './workflow-files.js';
 
 /** Why a paid operation was refused. */
 export const PAID_NEEDS_OWN_GRANT =
@@ -43,7 +43,7 @@ export function grantRefusal(
   operation: { toolkit: string; operationSlug: string }
 ): string | null {
   if (
-    changesWorkflowFiles(operation, target.arguments) &&
+    changesRepositoryControlFiles(target.arguments) &&
     !holdsOwnExactAction(db, agentId, target)
   ) {
     return 'Changing workflow files needs this action given to this agent on its own.';

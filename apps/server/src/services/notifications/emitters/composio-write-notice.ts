@@ -3,7 +3,7 @@ import type { NotificationRegistryEntry } from '../notification-registry.js';
 
 /** The account named by the write-access upgrade notice. */
 export interface ComposioWriteNoticePayloads {
-  'connector.write_available': { connectionId: string; appName: string };
+  'connector.write_available': { connectionId: string; appName: string; accountLabel?: string };
 }
 
 /** The entry used both for the atomic boot write and for reading its history. */
@@ -16,7 +16,14 @@ export const COMPOSIO_WRITE_NOTICE_ENTRIES: {
     storage: 'event',
     subjectType: 'system',
     locate: (p) => ({ subjectId: p.connectionId }),
-    title: (p) => `Write access for ${p.appName}`,
+    title: (p) => {
+      const label = p.accountLabel?.trim();
+      const account =
+        label && label.toLowerCase() !== p.appName.trim().toLowerCase()
+          ? `${p.appName} (${label})`
+          : p.appName;
+      return `${account} access changed to Read`;
+    },
     body: () => 'Access is now Read. Review this account to allow changes.',
     dedupeKey: (p) => `composio-write-upgrade:${p.connectionId}`,
     relay: 'never',

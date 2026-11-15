@@ -81,6 +81,13 @@ The actions available after OAuth depend on the scopes approved during consent. 
 - **Read and write** also lets agents send, create and edit in every connected Composio app. This includes sending email, saving drafts and adding calendar events.
 - Deleting, sharing or changing access always need an exact choice. So do spending money and actions marked as irreversible (they cannot be undone). Forwarding mail, changing delivery settings, moving files or pages, publishing, and changing security settings also need exact choices. An action whose effect DorkOS cannot tell stays outside both levels.
 
+Money apps (ads, payments, crypto and shopping) keep every change a one-by-one pick.
+Changing a repository’s workflow, CI, access-control or release files is also a one-by-one pick for each agent.
+
+Saved **Read and write** choices on apps that had no write actions show **Read** again.
+The notice opens that account. Pick **Read and write** to allow changes.
+Gmail, Google Calendar and actions you picked one by one keep their choices.
+
 On **Trusted**, when an agent working on its own runs one of these high-risk actions, it waits 60 seconds first, and anyone except that agent can cancel it. See [High-risk actions wait 60 seconds](/docs/connections#high-risk-actions-wait-60-seconds). Everywhere else, it still asks you first.
 
 A level keeps its meaning when the app changes. If the app adds a way to read your mail, agents on **Read** get it. If an action starts changing things, it leaves **Read**. It stays in **Read and write** unless it becomes one of the actions above, which no level covers. This happens the next time DorkOS reads the app's actions: every 12 hours while it runs, right after DorkOS is updated, and whenever you open **Who can use it?** A level never covers more than its kind of action. Actions you picked one by one under **Exact actions per agent** stay exactly as you picked them. An action the app changed stays off for them until you choose it again.
@@ -133,10 +140,3 @@ These commands return stable DorkOS connection IDs. They do not expose Composio 
 ## Disconnect
 
 Disconnecting closes local action and notification authority before DorkOS asks Composio to remove the account. If that external cleanup fails, the connection stays closed and the app shows that cleanup is pending. Do not repeat an action whose outcome is unknown. Check its existing receipt first.
-
-Money apps (ads, payments, crypto and shopping) keep every change a one-by-one pick.
-Changing a repository’s workflow files or release files is also a one-by-one pick for each agent.
-
-If an app had no write actions before this update, its saved **Read and write** choices
-now show **Read**. Its notice opens that account. Pick **Read and write** again to allow changes.
-Gmail, Google Calendar and actions you picked one by one keep their choices.

@@ -33,6 +33,18 @@ async function setup(toolkit: string, type = 'composio', managed = false) {
 }
 
 describe('one-time Composio write upgrade', () => {
+  it.each([
+    ['Work', 'Linear (Work) access changed to Read'],
+    ['Linear', 'Linear access changed to Read'],
+    [' linear ', 'Linear access changed to Read'],
+  ])('names the access change without repeating the app label %j', async (label, title) => {
+    const h = await setup('linear');
+    h.db.update(connections).set({ label }).where(eq(connections.id, CONNECTION_ID)).run();
+    upgradeComposioWriteLevels(h.db, NOW.toISOString());
+    expect(h.db.select().from(notifications).all()).toMatchObject([
+      { title, body: 'Access is now Read. Review this account to allow changes.' },
+    ]);
+  });
   it('runs from connector startup before any catalog following can start', async () => {
     const h = await setup('linear');
     createConnectorAccess({

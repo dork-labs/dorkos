@@ -168,7 +168,7 @@ it('opens the exact account whose write level needs choosing again', () => {
       kind: 'connector.write_available',
       tier: 'notable',
       subject: { type: 'system', id: 'work-linear' },
-      title: 'Write access for Linear',
+      title: 'Linear access changed to Read',
       createdAt: '2026-11-15T12:00:00Z',
     })
   ).toEqual({ to: '/connections', search: { app: 'work-linear' } });

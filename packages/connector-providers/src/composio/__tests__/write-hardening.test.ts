@@ -3,6 +3,17 @@ import { accessLevelRevisionIds } from '../../connector-schemas.js';
 import { classifyComposioAction, isAccountReachAction, MONEY_TOOLKITS } from '../action-classes.js';
 
 describe('Composio write hardening', () => {
+  it.each(['brex', 'zoho_books', 'freshbooks', 'plaid', 'polymarket'])(
+    'keeps every new money app %s outside write levels',
+    (toolkit) => {
+      expect(classifyComposioAction(toolkit, 'FUTUREAPP_CREATE_ITEM', ['createHint'])).toBe(
+        'destructive'
+      );
+      expect(classifyComposioAction(toolkit, 'FUTUREAPP_LIST_ITEMS', ['readOnlyHint'])).toBe(
+        'read'
+      );
+    }
+  );
   it.each(['CAMPAIGN', 'BUDGET', 'BID', 'BOOST', 'CRYPTO', 'WITHDRAW', 'TRADE', 'BUY'])(
     'keeps a new %s money action explicit on a neutral app',
     (name) => {
@@ -46,6 +57,7 @@ describe('Composio write hardening', () => {
       'apaleo',
       'baselinker',
       'billsby',
+      'brex',
       'btcpay_server',
       'cashfree_payments_mcp',
       'check_cherry',
@@ -72,6 +84,7 @@ describe('Composio write hardening', () => {
       'finmo',
       'flutterwave',
       'fraudlabs_pro',
+      'freshbooks',
       'gocardless_mcp',
       'goody',
       'google_adsense',
@@ -108,9 +121,11 @@ describe('Composio write hardening', () => {
       'paypal',
       'paystack',
       'pinterest_ads',
+      'plaid',
       'plisio',
       'polygon',
       'polygon_io',
+      'polymarket',
       'poof',
       'printify',
       'quickbooks',
@@ -146,6 +161,7 @@ describe('Composio write hardening', () => {
       'xero',
       'zernio_mcp',
       'zip',
+      'zoho_books',
       'zoho_invoice',
     ]);
   });
