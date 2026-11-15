@@ -4,6 +4,7 @@ covers:
   - 'fix(connections): preserve stored access during read-only review (DOR-4444)'
   - 'fix(connections): compare displayed levels for named agents (DOR-4444)'
   - 'fix(connections): trim unavailable write request controls (DOR-4444)'
+  - 'fix(connections): keep account choice for read requests (DOR-4444)'
 ---
 
 ### Fixed
