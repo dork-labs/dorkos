@@ -127,13 +127,16 @@ describe('TaskFileWatcher (real chokidar)', () => {
     // A crash-left backup of a schedule skill is a full copy. A live event for
     // it never passes the shared scanner, so the watcher itself must refuse it,
     // or the same schedule runs twice with no reconciler to retire the copy.
-    watcher.watch(skillsRoot(skillsDir, 'global'));
     await mkdir(path.join(skillsDir, 'probe'), { recursive: true });
     const probe = path.join(skillsDir, 'probe', 'SKILL.md');
     await writeFile(probe, skillFile('probe'), 'utf-8');
-    await waitUntil(() => store.fileSync.getByFilePath(probe) !== null, 'the watch to be live');
+    watcher.watch(skillsRoot(skillsDir, 'global'));
+    await watcher.ready();
+    expect(watcher.rootsWithoutLiveWatch(), errorLogs().join('\n')).toEqual([]);
+    expect(store.fileSync.getByFilePath(probe)).not.toBeNull();
 
-    // The sibling arrives as a live event, then a normal task as the barrier.
+    // Only live events can deliver these files after the startup scan has drained.
+    // The normal task is the positive barrier beside the rejected sibling.
     const siblingDir = path.join(
       skillsDir,
       `real-task.dorkos-bak-${Date.now()}-9f1c2d3e-0000-4000-8000-000000000000`
