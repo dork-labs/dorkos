@@ -121,3 +121,59 @@ export function hasTier1SendGate(config: Tier1GateConfig | undefined | null): bo
   if (config == null) return false;
   return config.userHasDecided === true || config.lastPromptedVersion !== null;
 }
+
+/** The three anonymous, first-party channels a person answers once for (ADR 260727-181825). */
+export const TIER1_CHANNELS = ['install', 'heartbeat', 'usage'] as const;
+
+/** One of {@link TIER1_CHANNELS}. */
+export type Tier1Channel = (typeof TIER1_CHANNELS)[number];
+
+/**
+ * The stored telemetry shape these helpers read. Loose on purpose: it is read
+ * straight from a settings file a person may have written by hand, so nothing
+ * in it is trusted to be the type the schema says.
+ */
+export interface Tier1ConsentConfig {
+  userHasDecided?: unknown;
+  install?: unknown;
+  heartbeat?: unknown;
+  usage?: unknown;
+}
+
+/**
+ * Whether one Tier 1 channel may send, read from the person's answer and never
+ * from a migration having run (DOR-4400).
+ *
+ * The channel is on only when the person has answered (`userHasDecided` is
+ * exactly `true`), its flag is exactly `true`, and no env kill switch is set.
+ * Anything else, including stored `true` flags in a file nobody answered for,
+ * reads as off. Every Tier 1 sender (marketplace installs, the heartbeat,
+ * usage events) reads its consent through here.
+ *
+ * @param config - The stored telemetry block (`config.telemetry`), if any.
+ * @param channel - Which channel is asking.
+ * @param env - The environment record to read (e.g. `process.env`).
+ * @returns True when the channel may send.
+ */
+export function resolveTier1ChannelConsent(
+  config: Tier1ConsentConfig | undefined | null,
+  channel: Tier1Channel,
+  env: TelemetryEnv
+): boolean {
+  if (config == null || config.userHasDecided !== true) return false;
+  return resolveTelemetryConsent(config[channel] === true, env);
+}
+
+/**
+ * The telemetry block as it is in force, for anything that shows it to a
+ * person: when nobody has answered, the three Tier 1 channels read off,
+ * whatever the file says, so a switch never shows "on" for a channel that
+ * sends nothing (DOR-4400). Every other field is passed through unchanged.
+ *
+ * @param config - The stored telemetry block.
+ * @returns The same block, with the Tier 1 channels off when unanswered.
+ */
+export function effectiveTier1Telemetry<T extends Tier1ConsentConfig>(config: T): T {
+  if (config.userHasDecided === true) return config;
+  return { ...config, install: false, heartbeat: false, usage: false };
+}

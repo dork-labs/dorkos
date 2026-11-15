@@ -1421,6 +1421,34 @@ describe('GET /api/config', () => {
       owner.email = null;
     }
   });
+  it('shows an unanswered file’s "on" channels as off, and an answered one as stored (DOR-4400)', async () => {
+    const { configManager } = await import('../../services/core/config-manager.js');
+    const telemetry = configManager.get('telemetry');
+    configManager.set('telemetry', {
+      ...telemetry,
+      install: true,
+      heartbeat: true,
+      usage: true,
+      userHasDecided: false,
+    });
+    const unanswered = await request(server).get('/api/config').expect(200);
+    expect(unanswered.body.telemetry).toMatchObject({
+      install: false,
+      heartbeat: false,
+      usage: false,
+      userHasDecided: false,
+    });
+
+    configManager.set('telemetry', { ...configManager.get('telemetry'), userHasDecided: true });
+    const answered = await request(server).get('/api/config').expect(200);
+    expect(answered.body.telemetry).toMatchObject({
+      install: true,
+      heartbeat: true,
+      usage: true,
+      userHasDecided: true,
+    });
+  });
+
   it('reads company certificates back, with nothing loaded outside the desktop app (DOR-3361)', async () => {
     const empty = await request(server).get('/api/config').expect(200);
     expect(empty.body.network).toEqual({ extraCaCertsPath: null, companyCertificates: null });

@@ -52,7 +52,7 @@ import { shutdownUsageReporter } from './services/core/usage-reporter.js';
 import { flushServerError } from './services/core/error-reporter.js';
 import { createProcessFaultHandlers } from './lib/process/network-fault.js';
 import { shutdownAiMetadataReporter } from './services/core/ai-metadata-reporter.js';
-import { resolveTelemetryConsent } from '@dorkos/shared/telemetry-consent';
+import { resolveTier1ChannelConsent } from '@dorkos/shared/telemetry-consent';
 import { keepAwakeService } from './services/core/keep-awake/index.js';
 import { setAccountUsageStore } from './services/core/usage/current-usage-store.js';
 import { shutdownObservability } from './services/observability/index.js';
@@ -414,8 +414,7 @@ async function start() {
       ];
       registerHeartbeat({
         consent:
-          resolveTelemetryConsent(telemetryConfig?.heartbeat ?? false, telemetryEnv) &&
-          tier1SendGate,
+          resolveTier1ChannelConsent(telemetryConfig, 'heartbeat', telemetryEnv) && tier1SendGate,
         debug: telemetryDebug,
         dorkHome,
         dorkosVersion: SERVER_VERSION,

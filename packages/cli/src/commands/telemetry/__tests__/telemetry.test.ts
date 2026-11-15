@@ -146,6 +146,22 @@ describe('runTelemetryStatus', () => {
     expect(deps.lines.join('\n')).toContain('Debug mode is on');
   });
 
+  it('shows stored "on" channels as off until the person chooses (DOR-4400)', () => {
+    const store = createMockStore({
+      install: true,
+      heartbeat: true,
+      usage: true,
+      userHasDecided: false,
+    });
+    const deps = makeDeps(store);
+    runTelemetryStatus(deps);
+    const rows = deps.lines.filter((line) =>
+      /Install events|Daily heartbeat|Feature usage/.test(line)
+    );
+    expect(rows).toHaveLength(3);
+    for (const row of rows) expect(row).toMatch(/\soff \(off until you choose\)$/);
+  });
+
   it('says the user has not chosen yet when undecided', () => {
     const store = createMockStore({});
     const deps = makeDeps(store);

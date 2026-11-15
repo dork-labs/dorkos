@@ -25,6 +25,7 @@ import { describeExecutionDefaults } from '../services/session/resolution/resolv
 // hands over the capability map instead of the module reaching for it.
 import { runtimeRegistry } from '../services/core/runtime-registry.js';
 import { localDialHost } from '@dorkos/shared/local-dial-host';
+import { effectiveTier1Telemetry } from '@dorkos/shared/telemetry-consent';
 import { env } from '../env.js';
 import { DEFAULT_CWD } from '../lib/resolve-root.js';
 import {
@@ -337,16 +338,20 @@ router.get('/', async (c) => {
     })(),
     // Fallback mirrors the schema defaults: every channel off until a person
     // says otherwise (ADR 260727-181825). Absence is never read as consent.
-    telemetry: configManager.get('telemetry') ?? {
-      userHasDecided: false,
-      install: false,
-      heartbeat: false,
-      errorReporting: false,
-      lastPromptedVersion: null,
-      usage: false,
-      linkAnalyticsToAccount: false,
-      aiMetadata: false,
-    },
+    // An unanswered file's stored "on" flags read as off here too, so Privacy
+    // never shows a switch on for a channel that sends nothing (DOR-4400).
+    telemetry: effectiveTier1Telemetry(
+      configManager.get('telemetry') ?? {
+        userHasDecided: false,
+        install: false,
+        heartbeat: false,
+        errorReporting: false,
+        lastPromptedVersion: null,
+        usage: false,
+        linkAnalyticsToAccount: false,
+        aiMetadata: false,
+      }
+    ),
     // The owner's email rides with the flag so Settings › Login & security can
     // tell "sign in as the owner" from "create one" before the switch flips.
     // Turning login on for an install that already has an owner used to open

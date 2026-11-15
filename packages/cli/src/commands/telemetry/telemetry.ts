@@ -23,7 +23,9 @@ import {
   isTelemetryDisabledByEnv,
   isTelemetryDebugEnabled,
   resolveTelemetryConsent,
+  resolveTier1ChannelConsent,
   TELEMETRY_DISABLE_ENV_VARS,
+  type Tier1Channel,
 } from '@dorkos/shared/telemetry-consent';
 import type { ConfigStore } from '../../config-commands.js';
 
@@ -78,18 +80,33 @@ export function runTelemetryStatus(deps: TelemetryDeps): number {
   const { store, env, io } = deps;
   const killed = isTelemetryDisabledByEnv(env);
 
+  const decided = store.getDot('telemetry.userHasDecided') === true;
+
   io.log('Telemetry status');
   io.log('');
   for (const channel of TELEMETRY_CHANNELS) {
     const configValue = readConfigFlag(store, channel);
-    const effective = resolveTelemetryConsent(configValue, env);
+    // Install, heartbeat and usage stay off until a person has answered,
+    // whatever the file says (DOR-4400); crash reports are their own opt-in.
+    const tier1 = channel !== 'errors';
+    const effective = tier1
+      ? resolveTier1ChannelConsent(
+          { userHasDecided: decided, [CHANNEL_META[channel].configKey]: configValue },
+          channel as Tier1Channel,
+          env
+        )
+      : resolveTelemetryConsent(configValue, env);
     const state = effective ? 'on ' : 'off';
-    const note = killed && configValue ? ' (forced off by env)' : ` (config: ${configValue})`;
+    const note =
+      killed && configValue
+        ? ' (forced off by env)'
+        : tier1 && configValue && !decided
+          ? ' (off until you choose)'
+          : ` (config: ${configValue})`;
     io.log(`  ${CHANNEL_META[channel].label.padEnd(18)}${state}${note}`);
   }
   io.log('');
 
-  const decided = store.getDot('telemetry.userHasDecided') === true;
   io.log(
     decided
       ? 'You have made a telemetry choice, so the first-run prompt stays hidden.'
