@@ -24,6 +24,7 @@ import {
   isTelemetryDebugEnabled,
   resolveTelemetryConsent,
   resolveTier1ChannelConsent,
+  tier1ChannelsSettledByFirstAnswer,
   TELEMETRY_DISABLE_ENV_VARS,
   type Tier1Channel,
 } from '@dorkos/shared/telemetry-consent';
@@ -144,8 +145,16 @@ function writeChannels(deps: TelemetryDeps, enabled: boolean, channel?: Telemetr
   const { store, io } = deps;
   const targets = channel ? [channel] : TELEMETRY_CHANNELS;
 
-  for (const target of targets) {
-    store.setDot(`telemetry.${CHANNEL_META[target].configKey}`, enabled);
+  const written: Record<string, unknown> = { userHasDecided: true };
+  for (const target of targets) written[CHANNEL_META[target].configKey] = enabled;
+  // A first answer about one channel stores the unnamed Tier 1 channels off,
+  // so a stored "on" nobody agreed to cannot come into force behind it (DOR-4400).
+  const settled = tier1ChannelsSettledByFirstAnswer(
+    { userHasDecided: store.getDot('telemetry.userHasDecided') },
+    written
+  );
+  for (const [key, value] of Object.entries({ ...written, ...settled })) {
+    if (key !== 'userHasDecided') store.setDot(`telemetry.${key}`, value);
   }
   store.setDot('telemetry.userHasDecided', true);
 

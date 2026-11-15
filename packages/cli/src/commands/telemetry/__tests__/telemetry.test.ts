@@ -72,7 +72,9 @@ describe('runTelemetryEnable', () => {
     const deps = makeDeps(store);
     runTelemetryEnable(deps, 'heartbeat');
     expect(store.telemetry.heartbeat).toBe(true);
-    expect(store.telemetry.install).toBeUndefined();
+    // A first answer stores the Tier 1 channels it does not name off (DOR-4400).
+    expect(store.telemetry.install).toBe(false);
+    expect(store.telemetry.usage).toBe(false);
     expect(store.telemetry.errorReporting).toBeUndefined();
     expect(store.telemetry.userHasDecided).toBe(true);
   });
@@ -108,8 +110,16 @@ describe('runTelemetryDisable', () => {
     const deps = makeDeps(store);
     runTelemetryDisable(deps, 'install');
     expect(store.telemetry.install).toBe(false);
-    expect(store.telemetry.heartbeat).toBe(true);
+    // Nobody had answered, so a stored "on" for heartbeat was never a yes (DOR-4400).
+    expect(store.telemetry.heartbeat).toBe(false);
     expect(store.telemetry.userHasDecided).toBe(true);
+  });
+
+  it('turns off a single channel and leaves an earlier answer for the others', () => {
+    const store = createMockStore({ install: true, heartbeat: true, userHasDecided: true });
+    runTelemetryDisable(makeDeps(store), 'install');
+    expect(store.telemetry.install).toBe(false);
+    expect(store.telemetry.heartbeat).toBe(true);
   });
 });
 
@@ -167,5 +177,46 @@ describe('runTelemetryStatus', () => {
     const deps = makeDeps(store);
     runTelemetryStatus(deps);
     expect(deps.lines.join('\n')).toContain('have not chosen yet');
+  });
+});
+
+// DOR-4400 Security M1: a first answer about one channel is not a yes to the others.
+describe('a first answer never switches on what nobody said yes to', () => {
+  const caseOne = () =>
+    createMockStore({ install: true, heartbeat: true, usage: true, userHasDecided: false });
+
+  it('`enable errors` on an unanswered all-on file stores install, heartbeat and usage off', () => {
+    const store = caseOne();
+    runTelemetryEnable(makeDeps(store), 'errors');
+    expect(store.telemetry).toMatchObject({
+      errorReporting: true,
+      install: false,
+      heartbeat: false,
+      usage: false,
+      userHasDecided: true,
+    });
+  });
+
+  it('`disable heartbeat` on an unanswered all-on file stores the other two off too', () => {
+    const store = caseOne();
+    runTelemetryDisable(makeDeps(store), 'heartbeat');
+    expect(store.telemetry).toMatchObject({ install: false, heartbeat: false, usage: false });
+  });
+
+  it('`enable install` keeps that yes and stores the other two off', () => {
+    const store = caseOne();
+    runTelemetryEnable(makeDeps(store), 'install');
+    expect(store.telemetry).toMatchObject({ install: true, heartbeat: false, usage: false });
+  });
+
+  it('leaves an earlier answer alone', () => {
+    const store = createMockStore({
+      install: true,
+      heartbeat: true,
+      usage: true,
+      userHasDecided: true,
+    });
+    runTelemetryEnable(makeDeps(store), 'errors');
+    expect(store.telemetry).toMatchObject({ install: true, heartbeat: true, usage: true });
   });
 });

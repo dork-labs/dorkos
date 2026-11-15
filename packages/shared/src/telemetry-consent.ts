@@ -84,7 +84,8 @@ export function isTelemetryDebugEnabled(env: TelemetryEnv): boolean {
  */
 export function resolveTelemetryConsent(configValue: boolean, env: TelemetryEnv): boolean {
   if (isTelemetryDisabledByEnv(env)) return false;
-  return configValue;
+  // Exactly `true`: anything a hand-edited file could hold instead reads as off.
+  return configValue === true;
 }
 
 /**
@@ -176,4 +177,32 @@ export function resolveTier1ChannelConsent(
 export function effectiveTier1Telemetry<T extends Tier1ConsentConfig>(config: T): T {
   if (config.userHasDecided === true) return config;
   return { ...config, install: false, heartbeat: false, usage: false };
+}
+
+/**
+ * The Tier 1 channels a person's FIRST answer turns off without naming them
+ * (DOR-4400, Security M1).
+ *
+ * While nobody has answered, stored "on" flags read as off
+ * ({@link resolveTier1ChannelConsent}) and are shown as off. The first write
+ * that records an answer (`userHasDecided: true`) would otherwise bring every
+ * flag it did not touch into force, so one crash-report switch could turn on
+ * install, heartbeat and usage data nobody said yes to. This names those
+ * channels so the same write stores them as `false`, which is what the person
+ * was shown.
+ *
+ * @param stored - The telemetry block as it is stored before the write.
+ * @param written - The telemetry part of the write; it may set other channels too.
+ * @returns `false` for each Tier 1 channel to store off; empty when the write
+ *   is not a first answer.
+ */
+export function tier1ChannelsSettledByFirstAnswer(
+  stored: Tier1ConsentConfig | undefined | null,
+  written: Readonly<Record<string, unknown>> | undefined | null
+): Partial<Record<Tier1Channel, false>> {
+  if (written == null || written.userHasDecided !== true) return {};
+  if (stored != null && stored.userHasDecided === true) return {};
+  const settled: Partial<Record<Tier1Channel, false>> = {};
+  for (const channel of TIER1_CHANNELS) if (!(channel in written)) settled[channel] = false;
+  return settled;
 }

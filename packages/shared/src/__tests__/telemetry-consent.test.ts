@@ -6,6 +6,7 @@ import {
   hasTier1SendGate,
   resolveTier1ChannelConsent,
   effectiveTier1Telemetry,
+  tier1ChannelsSettledByFirstAnswer,
   TIER1_CHANNELS,
   TELEMETRY_DISABLE_ENV_VARS,
   TELEMETRY_DEBUG_ENV_VAR,
@@ -159,5 +160,49 @@ describe('effectiveTier1Telemetry', () => {
   it('leaves an answered block exactly as stored', () => {
     const stored = { install: true, heartbeat: false, usage: true, userHasDecided: true };
     expect(effectiveTier1Telemetry(stored)).toEqual(stored);
+  });
+});
+
+describe('tier1ChannelsSettledByFirstAnswer (DOR-4400 M1)', () => {
+  const unanswered = { install: true, heartbeat: true, usage: true, userHasDecided: false };
+
+  it('stores off every channel a first answer does not name', () => {
+    expect(
+      tier1ChannelsSettledByFirstAnswer(unanswered, { errorReporting: true, userHasDecided: true })
+    ).toEqual({ install: false, heartbeat: false, usage: false });
+  });
+
+  it('keeps the channels the answer names', () => {
+    expect(
+      tier1ChannelsSettledByFirstAnswer(unanswered, { usage: true, userHasDecided: true })
+    ).toEqual({ install: false, heartbeat: false });
+  });
+
+  it('does nothing when the person had already answered, or this is not an answer', () => {
+    expect(
+      tier1ChannelsSettledByFirstAnswer(
+        { ...unanswered, userHasDecided: true },
+        { userHasDecided: true }
+      )
+    ).toEqual({});
+    expect(tier1ChannelsSettledByFirstAnswer(unanswered, { errorReporting: true })).toEqual({});
+    expect(tier1ChannelsSettledByFirstAnswer(unanswered, undefined)).toEqual({});
+  });
+
+  it('treats a missing stored block as unanswered', () => {
+    expect(tier1ChannelsSettledByFirstAnswer(undefined, { userHasDecided: true })).toEqual({
+      install: false,
+      heartbeat: false,
+      usage: false,
+    });
+  });
+});
+
+describe('resolveTelemetryConsent (DOR-4400 S3)', () => {
+  it('reads only an exact true as on', () => {
+    expect(resolveTelemetryConsent(true, {})).toBe(true);
+    for (const value of [1, 'true', null, undefined, {}]) {
+      expect(resolveTelemetryConsent(value as unknown as boolean, {})).toBe(false);
+    }
   });
 });

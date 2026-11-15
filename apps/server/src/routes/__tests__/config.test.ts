@@ -1449,6 +1449,34 @@ describe('GET /api/config', () => {
     });
   });
 
+  it('a Privacy toggle on an unanswered all-on file switches nothing else on (DOR-4400 M1)', async () => {
+    const { configManager } = await import('../../services/core/config-manager.js');
+    const { resolveTier1ChannelConsent } = await import('@dorkos/shared/telemetry-consent');
+    configManager.set('telemetry', {
+      ...configManager.get('telemetry'),
+      install: true,
+      heartbeat: true,
+      usage: true,
+      userHasDecided: false,
+    });
+    // What PrivacyTab sends for one switch: that channel plus `userHasDecided`.
+    await request(server)
+      .patch('/api/config')
+      .send({ telemetry: { errorReporting: true, userHasDecided: true } })
+      .expect(200);
+    const stored = configManager.get('telemetry');
+    expect(stored).toMatchObject({
+      errorReporting: true,
+      install: false,
+      heartbeat: false,
+      usage: false,
+      userHasDecided: true,
+    });
+    for (const channel of ['install', 'heartbeat', 'usage'] as const) {
+      expect(resolveTier1ChannelConsent(stored, channel, {})).toBe(false);
+    }
+  });
+
   it('reads company certificates back, with nothing loaded outside the desktop app (DOR-3361)', async () => {
     const empty = await request(server).get('/api/config').expect(200);
     expect(empty.body.network).toEqual({ extraCaCertsPath: null, companyCertificates: null });
