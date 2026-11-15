@@ -5,4 +5,4 @@ covers:
 
 ### Fixed
 
-- Show when a chat has no DorkOS tools (DOR-4385).
+- A Codex chat started without an agent now says it has no DorkOS tools, so you know why it can't use them (DOR-4385).
