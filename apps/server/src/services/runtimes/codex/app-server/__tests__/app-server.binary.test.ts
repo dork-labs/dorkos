@@ -80,6 +80,16 @@ let stallNext = false;
 const scripted: Array<(res: http.ServerResponse, body: string) => void> = [];
 /** Tool calls the third-party MCP server ran, by name. */
 const mcpCalls: string[] = [];
+/**
+ * When set, the fake `dorkos` server refuses any request whose key does not
+ * resolve through the real principal service, as the listener does, and
+ * offers one tool only to a resolved caller (DOR-3169).
+ */
+let gateDorkos = false;
+/** DorkOS tool calls the gated `dorkos` server ran, by name. */
+const dorkosCalls: string[] = [];
+/** Every request the gated `dorkos` server saw, and how its key resolved. */
+const gatedLog: Array<{ method: string | undefined; verdict: string }> = [];
 /** `turn/started` notifications every spawned process sent, counted off its stdout. */
 let turnStartedSeen = 0;
 const seen: Seen = { responses: 0, mcpAuthorizations: [], resolvedDuringTurn: [] };
@@ -273,6 +283,10 @@ function handle(req: http.IncomingMessage, res: http.ServerResponse, body: strin
     res.end(JSON.stringify({ jsonrpc: '2.0', id: message.id, result }));
     return;
   }
+  if (req.url?.startsWith('/mcp') && gateDorkos) {
+    void handleGatedDorkos(req, res, body);
+    return;
+  }
   if (req.url?.startsWith('/mcp')) {
     if (req.headers.authorization) seen.mcpAuthorizations.push(req.headers.authorization);
     let message: { id?: number; method?: string } = {};
@@ -300,6 +314,63 @@ function handle(req: http.IncomingMessage, res: http.ServerResponse, body: strin
     return;
   }
   res.writeHead(404).end();
+}
+
+/**
+ * The `dorkos` server as the listener treats it: every request's key goes
+ * through the real principal service, and a refused key gets a 401 before any
+ * tool is listed or run.
+ */
+async function handleGatedDorkos(
+  req: http.IncomingMessage,
+  res: http.ServerResponse,
+  body: string
+): Promise<void> {
+  const authorization = req.headers.authorization ?? '';
+  seen.mcpAuthorizations.push(authorization);
+  const verdict = await principals.resolve({
+    bearer: authorization.replace(/^Bearer /, ''),
+    expectedRuntime: 'codex',
+    expectedCanonicalCwd: project,
+  });
+  gatedLog.push({
+    method: (JSON.parse(body || '{}') as { method?: string }).method,
+    verdict: verdict.status === 'resolved' ? 'resolved' : `refused:${verdict.reason}`,
+  });
+  if (verdict.status !== 'resolved') {
+    res.writeHead(401, { 'content-type': 'application/json' });
+    res.end(JSON.stringify({ error: 'unauthorized' }));
+    return;
+  }
+  const message = JSON.parse(body || '{}') as { id?: number; method?: string; params?: unknown };
+  if (message.id === undefined) {
+    res.writeHead(202).end();
+    return;
+  }
+  const result =
+    message.method === 'initialize'
+      ? {
+          protocolVersion: '2025-06-18',
+          capabilities: { tools: {} },
+          serverInfo: { name: 'fake-dorkos', version: '0' },
+        }
+      : message.method === 'tools/list'
+        ? {
+            tools: [
+              {
+                name: 'ping_team',
+                description: 'Say hello to the team',
+                inputSchema: { type: 'object', properties: {} },
+                annotations: { readOnlyHint: true },
+              },
+            ],
+          }
+        : message.method === 'tools/call'
+          ? (dorkosCalls.push((message.params as { name: string }).name),
+            { content: [{ type: 'text', text: 'team pinged' }] })
+          : {};
+  res.writeHead(200, { 'content-type': 'application/json' });
+  res.end(JSON.stringify({ jsonrpc: '2.0', id: message.id, result }));
 }
 
 function makeTransport(
@@ -1251,6 +1322,117 @@ nativeSuite('the app-server transport against the real Codex binary', NATIVE_LIM
 
     // A writable-mode thread did not write the trust list.
     expect(fs.readFileSync(path.join(codexHome, 'config.toml'), 'utf8')).toBe(configBefore);
+  });
+
+  describe('DorkOS tools behind a listener that checks every key (DOR-3169)', () => {
+    const open = async (sessionId: string) =>
+      (
+        await principals.openTurn(
+          {
+            runtime: 'codex',
+            canonicalSessionId: sessionId,
+            agentPath: project,
+            canonicalCwd: project,
+            signal: new AbortController().signal,
+          },
+          { isCurrent: () => true }
+        )
+      ).bindingId;
+    const drain = async (
+      transport: AppServerCodexTransport,
+      turn: CodexTurnRequest
+    ): Promise<StreamEvent[]> => {
+      const events: StreamEvent[] = [];
+      for await (const event of transport.runTurn(turn)) events.push(event);
+      return events;
+    };
+    const callsTool = () =>
+      scripted.push(
+        (res) => res.end(sseCall({}, { name: 'ping_team', namespace: 'mcp__dorkos' })),
+        (res) => res.end(sse('done'))
+      );
+    const expectToolRan = (events: StreamEvent[]) => {
+      expect(
+        gatedLog.filter((entry) => entry.verdict !== 'resolved'),
+        JSON.stringify(gatedLog)
+      ).toEqual([]);
+      expect(dorkosCalls, JSON.stringify(events)).toEqual(['ping_team']);
+    };
+
+    beforeEach(() => {
+      gateDorkos = true;
+      dorkosCalls.length = 0;
+      gatedLog.length = 0;
+    });
+    afterEach(() => {
+      gateDorkos = false;
+    });
+
+    it.for(['default', 'acceptEdits'] as const)(
+      'lists and runs one on a fresh thread at %s',
+      async (mode) => {
+        callsTool();
+        const events = await drain(
+          makeTransport(),
+          request(`fresh-${mode}`, await open(`fresh-${mode}`), {
+            settings: { permissionMode: mode, model: 'fake-model' },
+          })
+        );
+        expectToolRan(events);
+      }
+    );
+
+    it('lists and runs one after a cold resume', async () => {
+      const bound: string[] = [];
+      await drain(
+        makeTransport(),
+        request('cold', await open('cold'), { onThreadBound: (id) => bound.push(id) })
+      );
+      expect(bound).toHaveLength(1);
+      // Cold: the process that knew the thread is gone.
+      await pools.at(-1)!.shutdown();
+      gatedLog.length = 0;
+      dorkosCalls.length = 0;
+      callsTool();
+      const events = await drain(
+        makeTransport(),
+        request('cold', await open('cold'), { boundThreadId: bound[0] })
+      );
+      expectToolRan(events);
+    });
+
+    it('lists and runs one on a forked thread', async () => {
+      const transport = makeTransport();
+      const bound: string[] = [];
+      // A changed managed header forces a reload, which forks the thread.
+      const managed = (value: string) => ({
+        servers: {
+          refreshed: { url: `${base}/repo-mcp`, env_http_headers: { Authorization: 'H' } },
+        },
+        env: { H: value },
+      });
+      await drain(
+        transport,
+        request('forked', await open('forked'), {
+          tools: { ...request('x', undefined).tools, managed: managed('Bearer one') },
+          onThreadBound: (id) => bound.push(id),
+        })
+      );
+      gatedLog.length = 0;
+      dorkosCalls.length = 0;
+      callsTool();
+      const events = await drain(
+        transport,
+        request('forked', await open('forked'), {
+          boundThreadId: bound[0],
+          tools: { ...request('x', undefined).tools, managed: managed('Bearer two') },
+          onThreadBound: (id) => bound.push(id),
+        })
+      );
+      expect(bound).toHaveLength(2);
+      expect(bound[1]).not.toBe(bound[0]);
+      expectToolRan(events);
+    });
   });
 
   // Spec §9 asks P1 to RECORD whether a stdio MCP server Codex launches sees
