@@ -665,6 +665,10 @@
       "types": "./src/local-browser.ts",
       "default": "./dist/local-browser.js"
     },
+    "./local-browser-page-error": {
+      "types": "./src/local-browser-page-error.ts",
+      "default": "./dist/local-browser-page-error.js"
+    },
     "./transport-local-browser": {
       "types": "./src/transport-local-browser.ts",
       "default": "./dist/transport-local-browser.js"
