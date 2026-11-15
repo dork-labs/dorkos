@@ -6,10 +6,8 @@ import type { ConnectorReconciliationPreview } from '@dorkos/shared/connector-sc
 import { createMockTransport } from '@dorkos/test-utils';
 import { TransportProvider } from '@/layers/shared/model';
 import { cardDecision } from '../lib/access-card-selection';
-import {
-  ConnectionAccessCard,
-  type ConnectionAccessCardProps,
-} from '../ui/access/ConnectionAccessCard';
+import { ConnectionAccessCard } from '../ui/access/ConnectionAccessCard';
+import type { ConnectionAccessCardProps } from '../ui/access/access-card-props';
 
 // The UI already hides levels below what a chat agent holds, so the lower
 // guard is unreachable by clicking. Spy on the decision to pin its wiring.
