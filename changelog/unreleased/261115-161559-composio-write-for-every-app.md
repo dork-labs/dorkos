@@ -1,5 +1,6 @@
 ---
 covers:
+  - 'fix(connections): require exact repository actions and preserve percent filenames (DOR-4194)'
   - 'fix(connections): require exact grants for repository controls across apps (DOR-4194)'
   - 'fix(connections): harden Composio write classification (DOR-4194)'
   - 'fix(connections): review write grants and protect workflow files (DOR-4194, DOR-4461)'
