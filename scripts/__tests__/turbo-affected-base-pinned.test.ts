@@ -153,7 +153,7 @@ function writeStub(binDir: string, name: string, body: string): void {
 }
 
 /**
- * Execute the real root verify script while replacing its external commands
+ * Execute the real root `verify:checks` script while replacing its external commands
  * with deterministic stubs, returning the Turbo calls that reached the runner.
  */
 function captureVerifyTurboInvocations(): TurboInvocation[] {
@@ -170,8 +170,9 @@ function captureVerifyTurboInvocations(): TurboInvocation[] {
     );
 
     const scripts = JSON.parse(packageText) as { scripts?: Record<string, string> };
-    const verify = scripts.scripts?.verify;
-    expect(verify, 'root package.json has no `verify` script').toBeTypeOf('string');
+    // `pnpm verify` wraps `verify:checks` to record proof; the checks are what reach Turbo.
+    const verify = scripts.scripts?.['verify:checks'];
+    expect(verify, 'root package.json has no `verify:checks` script').toBeTypeOf('string');
 
     // eslint-disable-next-line no-restricted-syntax -- scripts/ has no env.ts; the fixture must preserve PATH while prepending its command stubs
     const inheritedEnv = process.env;
@@ -212,7 +213,7 @@ describe('local turbo --affected gates pin their diff base', () => {
     ]);
     expect(sites.map((s) => s.label).sort()).toEqual([
       'lefthook.yml pre-commit.lint',
-      'package.json scripts.verify',
+      'package.json scripts.verify:checks',
     ]);
   });
 

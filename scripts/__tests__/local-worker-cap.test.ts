@@ -71,7 +71,7 @@ describe('the root config caps local runs', () => {
 describe('the turbo entry points carry the same cap', () => {
   // `pnpm vitest run <path>` and `pnpm test` load different configs, so a cap
   // in one is not a cap in the other.
-  it.each(['test', 'verify'])('the root `%s` script sets VITEST_MAX_WORKERS', (name) => {
+  it.each(['test', 'verify:checks'])('the root `%s` script sets VITEST_MAX_WORKERS', (name) => {
     expect(
       pkg.scripts[name],
       `the root \`${name}\` script no longer sets VITEST_MAX_WORKERS, so the turbo path runs ` +
@@ -82,7 +82,7 @@ describe('the turbo entry points carry the same cap', () => {
 
   it('sets the same number the root config declares', () => {
     // Two places that must agree, with no way to notice from either alone.
-    for (const name of ['test', 'verify']) {
+    for (const name of ['test', 'verify:checks']) {
       const n = /VITEST_MAX_WORKERS=\$\(test -n "\$CI" \|\| echo (\d+)\)/.exec(
         pkg.scripts[name] as string
       );
