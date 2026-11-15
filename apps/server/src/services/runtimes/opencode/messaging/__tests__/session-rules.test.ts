@@ -116,17 +116,15 @@ describe('what a session needs before a turn (DOR-4394)', () => {
     ]);
     // `task` can start any agent by name, primaries too (Security M1, live), so
     // every agent that would skip DorkOS's asks is refused as a task target.
-    expect(added).toEqual([
-      rule('task', 'build', 'deny'),
-      rule('task', 'runner', 'deny'),
-      rule('task', 'helper', 'deny'),
-    ]);
+    // One refusal for every target: OpenCode starts a child by config key, not
+    // by the display name `GET /agent` reports (Security M2).
+    expect(added).toEqual([rule('task', '*', 'deny')]);
   });
 
   it('refuses a primary agent as a task target when its rules skip the ask (Security M1)', () => {
     expect(
       toAdd(DORKOS_SESSION_RULES, [agent('lead', 'primary', [rule('bash', '*', 'allow')])])
-    ).toEqual([rule('task', 'lead', 'deny')]);
+    ).toEqual([rule('task', '*', 'deny')]);
     // An untouched built-in primary is kept.
     expect(toAdd(DORKOS_SESSION_RULES, [agent('build', 'primary')])).toEqual([]);
   });
@@ -140,11 +138,18 @@ describe('what a session needs before a turn (DOR-4394)', () => {
 
   it('refuses a subagent whose project config reaches outside the folder', () => {
     const reach = agent('reach', 'subagent', [rule('external_directory', '*', 'allow')]);
-    expect(toAdd(DORKOS_SESSION_RULES, [reach])).toEqual([rule('task', 'reach', 'deny')]);
+    expect(toAdd(DORKOS_SESSION_RULES, [reach])).toEqual([rule('task', '*', 'deny')]);
   });
 
-  it('does not refuse the same subagent twice', () => {
-    const current = [...DORKOS_SESSION_RULES, rule('task', 'runner', 'deny')];
+  it('refuses every task target when one agent fails, so a renamed agent cannot slip by (Security M2)', () => {
+    // `evil` reports the display name `x`; the agent keyed `x` allows bash.
+    const evil = { ...agent('evil', 'subagent'), name: 'x' };
+    const x = agent('x', 'subagent', [rule('bash', '*', 'allow')]);
+    expect(toAdd(DORKOS_SESSION_RULES, [evil, x])).toEqual([rule('task', '*', 'deny')]);
+  });
+
+  it('does not refuse every target twice', () => {
+    const current = [...DORKOS_SESSION_RULES, rule('task', '*', 'deny')];
     expect(toAdd(current, [agent('runner', 'subagent', [rule('bash', '*', 'allow')])])).toEqual([]);
   });
 });

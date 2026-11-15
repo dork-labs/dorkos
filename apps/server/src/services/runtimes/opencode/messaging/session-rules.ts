@@ -16,8 +16,8 @@
  *   agent's, so they win whichever agent runs the turn.
  * - **An unsafe task target is refused.** `task` starts whichever agent it
  *   names, a primary one included, and that child session keeps only its
- *   parent's denies, not its asks. So any agent whose own rules would skip the
- *   ask gets a `task` deny, which also passes down to anything it would start.
+ *   parent's denies, not its asks. So when any agent's own rules would skip
+ *   the ask, `task` is refused for every target, which also passes down.
  *
  * @module services/runtimes/opencode/messaging/session-rules
  */
@@ -118,8 +118,8 @@ export function holdsDorkosAsks(
 
 /**
  * The rules a session needs added before a turn: DorkOS's asks when it does
- * not hold them yet (a new or older session), and a `task` deny for each
- * subagent whose own rules would skip them. Empty when nothing is missing.
+ * not hold them yet (a new or older session), and a `task` deny for every
+ * target when any agent's own rules would skip them. Empty when nothing is missing.
  * OpenCode only ever appends to a session's rules, so this never repeats one.
  *
  * @param session - The session's stored rules, if any.
@@ -133,16 +133,20 @@ export function sessionRulesToAdd(
 ): OpenCodeRule[] {
   const current = session ?? [];
   const added = holdsDorkosAsks(current, dataDir) ? [] : dorkosSessionRules(dataDir);
-  for (const agent of agents) {
-    // Any agent, whatever its mode: `task` starts whichever agent it is named,
-    // a primary one too, and that child keeps only its parent's denies.
-    if (holdsDorkosAsks(agent.permission, dataDir, [OPENCODE_SCRATCH])) continue;
-    const refusal: OpenCodeRule = { permission: 'task', pattern: agent.name, action: 'deny' };
-    const last = lastIndexWhere(
-      current,
-      (r) => matchesKey(r.permission, 'task') && (r.pattern === agent.name || r.pattern === '*')
-    );
-    if (current[last]?.action !== 'deny') added.push(refusal);
+  // `task` starts whichever agent it is named, a primary one too, and that
+  // child keeps only its parent's denies. It names the child by config key,
+  // while `GET /agent` reports a display `name` a project can set to anything
+  // (Security M2), so no single agent can be singled out: if any agent would
+  // skip DorkOS's asks, every task target is refused for this session.
+  const unsafe = agents.some(
+    (agent) => !holdsDorkosAsks(agent.permission, dataDir, [OPENCODE_SCRATCH])
+  );
+  const last = lastIndexWhere(
+    current,
+    (r) => matchesKey(r.permission, 'task') && r.pattern === '*'
+  );
+  if (unsafe && current[last]?.action !== 'deny') {
+    added.push({ permission: 'task', pattern: '*', action: 'deny' });
   }
   return added;
 }

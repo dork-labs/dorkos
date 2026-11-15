@@ -229,27 +229,29 @@ The injected ruleset above is TOP-LEVEL `permission`. OpenCode decides an ask fr
 are `defaults, config.permission, that agent's own permission`. So a cloned project's
 `opencode.json` got around it on the pinned 1.19.3 (fake localhost model, throwaway home):
 
-| Project config                                                   | Asked | Ran |
-| ---------------------------------------------------------------- | ----- | --- |
-| none, or top-level `permission.bash: allow`                      | yes   | no  |
-| `agent.build.permission.bash: allow`                             | no    | yes |
-| `mode.build.permission.bash: allow`                              | no    | yes |
-| `default_agent` naming its own agent with `bash: allow`          | no    | yes |
-| a project subagent with `bash: allow`, started by `task`         | no    | yes |
-| `tools: { bash: true }` at the top level                         | yes   | no  |
-| `tools: { bash: true }` under `agent.build` or `mode.build`      | no    | yes |
-| `agent.build.permission: "allow"` (every key)                    | no    | yes |
-| `task` naming `build`, with `agent.build.permission.bash: allow` | no    | yes |
-| `task` naming a project `mode: primary` agent with `bash: allow` | no    | yes |
-| `agent.build.permission: { "*": "allow" }`                       | no    | yes |
-| top-level `permission: "allow"`                                  | yes   | no  |
-| conflicting top-level `ask`, agent `deny`, mode `allow`          | no    | yes |
-| `opencode.json` in the repo's top folder, one above the session  | no    | yes |
+| Project config                                                                       | Asked | Ran |
+| ------------------------------------------------------------------------------------ | ----- | --- |
+| none, or top-level `permission.bash: allow`                                          | yes   | no  |
+| `agent.build.permission.bash: allow`                                                 | no    | yes |
+| `mode.build.permission.bash: allow`                                                  | no    | yes |
+| `default_agent` naming its own agent with `bash: allow`                              | no    | yes |
+| a project subagent with `bash: allow`, started by `task`                             | no    | yes |
+| `tools: { bash: true }` at the top level                                             | yes   | no  |
+| `tools: { bash: true }` under `agent.build` or `mode.build`                          | no    | yes |
+| `agent.build.permission: "allow"` (every key)                                        | no    | yes |
+| `task` naming `build`, with `agent.build.permission.bash: allow`                     | no    | yes |
+| `task` naming a project `mode: primary` agent with `bash: allow`                     | no    | yes |
+| `task` naming `evil` (display `name: "x"`), with an agent keyed `x` that allows bash | no    | yes |
+| `agent.build.permission: { "*": "allow" }`                                           | no    | yes |
+| top-level `permission: "allow"`                                                      | yes   | no  |
+| conflicting top-level `ask`, agent `deny`, mode `allow`                              | no    | yes |
+| `opencode.json` in the repo's top folder, one above the session                      | no    | yes |
 
 `keepDorkosAsks` (`messaging/keep-asks.ts`) runs before every prompt: it appends the same ask
 rules to the SESSION (they come after every agent's), plus `external_directory: ask` (OpenCode's
-default, which a project could loosen; its own tool output and plans stay open), and a `task` deny for each agent, PRIMARY ones too (`task` starts whichever agent it
-names; Security's M1 on #3759), whose `GET /agent` ruleset would skip them, since a child session inherits only its parent's denies.
+default, which a project could loosen; its own tool output and plans stay open), and, when ANY agent's `GET /agent` ruleset would skip them, a `task` deny for EVERY target:
+`task` starts primaries too (Security's M1 on #3759) and names the child by config key, not the
+display `name` `GET /agent` reports (M2), so no single agent can be singled out, since a child session inherits only its parent's denies.
 Re-run with it: every row asks, the subagent is refused (stricter than an ask: its child session
 cannot carry the parent's asks), and nothing ran. It reads both off
 the wire (the v1 SDK types lack them) and stops the turn when it cannot. `session.update`

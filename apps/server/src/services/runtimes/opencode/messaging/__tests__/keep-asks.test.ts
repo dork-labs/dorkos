@@ -65,7 +65,7 @@ describe('keeping DorkOS’s asks on an OpenCode session', () => {
     await keepDorkosAsks(fake, 'oc-1', DIR);
     expect(update).toHaveBeenCalledWith({
       path: { id: 'oc-1' },
-      body: { permission: [{ permission: 'task', pattern: 'runner', action: 'deny' }] },
+      body: { permission: [{ permission: 'task', pattern: '*', action: 'deny' }] },
     });
   });
 
