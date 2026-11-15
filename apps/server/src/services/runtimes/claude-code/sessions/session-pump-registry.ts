@@ -94,6 +94,7 @@ import {
   type SessionPumpOptions,
 } from './session-pump.js';
 import { WarmSlotBook } from './warm-slot-book.js';
+import type { PumpTeardownReason } from './session-pump-contract.js';
 import { logger } from '../../../../lib/logger.js';
 
 /**
@@ -317,12 +318,13 @@ export class SessionPumpRegistry {
    * private `replaceProcess`, always with an already-resolved key.
    *
    * @param sessionId - Session going away, in any id it answers to
+   * @param reason - Why: `sweep` for DorkOS's own record clean-up, else `evict`
    */
-  async evict(sessionId: string): Promise<void> {
+  async evict(sessionId: string, reason: PumpTeardownReason = 'evict'): Promise<void> {
     const key = this.sessionKeyOf(sessionId);
     const entry = this.entries.get(key);
     if (!entry) return;
-    await entry.pump.teardown();
+    await entry.pump.teardown(reason);
     // Only if it is still this pump: a fresh one acquired under the same key
     // while the teardown ran is not the one going away.
     if (this.entries.get(key) === entry) this.drop(key);
