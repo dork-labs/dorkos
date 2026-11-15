@@ -14,8 +14,7 @@
  *   the `dorkos` / connector servers authenticated by a THREAD KEY (minted
  *   here, memory only, resolved by the listener to the open turn's binding);
  * - `shell_environment_policy.set`: the agent identity token, for the commands
- *   the agent runs, and an empty npm user config in place of the denied
- *   `~/.npmrc` (DOR-4358);
+ *   the agent runs;
  * - `projects.<realpath cwd>.trust_level`: so Codex never writes the person's
  *   trust list (spike 2c);
  * - on credits, the provider pointing at the credits relay;
@@ -723,11 +722,9 @@ export function buildLoadOverrides(
     }
   }
   if (Object.keys(servers).length > 0) config.mcp_servers = servers;
-  // npm and pnpm read `~/.npmrc` on every run, and the profile denies it (it can
-  // hold a token), so they stopped with EPERM. Pointing their user config at an
-  // empty file (`/dev/null`) keeps it denied and lets them run (Security, DOR-4358).
-  const npm = { NPM_CONFIG_USERCONFIG: '/dev/null' };
-  config.shell_environment_policy = { set: { ...npm, ...input.tools.agentTokenEnv } };
+  if (Object.keys(input.tools.agentTokenEnv).length > 0) {
+    config.shell_environment_policy = { set: { ...input.tools.agentTokenEnv } };
+  }
   if (secrets.trust !== undefined) {
     config.projects = { [secrets.realCwd]: { trust_level: secrets.trust } };
   }
