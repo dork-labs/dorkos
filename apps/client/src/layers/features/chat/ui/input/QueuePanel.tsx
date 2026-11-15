@@ -147,6 +147,18 @@ export function QueuePanel({
   };
   // Rows arriving, leaving or growing change the answer as surely as a scroll.
   useLayoutEffect(measureMoreBelow, [queue]);
+  // So does the window resizing or a row's words re-wrapping: the list and
+  // every row are watched for a change of size.
+  useEffect(() => {
+    const list = listRef.current;
+    if (!list || typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(() => {
+      setMoreBelow(list.scrollHeight - list.scrollTop - list.clientHeight > 1);
+    });
+    observer.observe(list);
+    for (const row of Array.from(list.children)) observer.observe(row);
+    return () => observer.disconnect();
+  }, [queue]);
 
   const noteLeaving = (id: string): void => {
     const index = queue.findIndex((item) => item.id === id);
@@ -339,7 +351,8 @@ export function QueuePanel({
       {moreBelow && (
         <div
           aria-hidden="true"
-          className="pointer-events-none absolute inset-x-0 bottom-0 h-2 bg-[radial-gradient(farthest-side_at_50%_100%,hsl(var(--dui-scroll-edge)),transparent)]"
+          data-testid="queue-more-below"
+          className="pointer-events-none absolute inset-x-0 bottom-0 h-2 bg-[radial-gradient(farthest-side_at_50%_100%,hsl(var(--scroll-edge)),transparent)]"
         />
       )}
     </motion.div>

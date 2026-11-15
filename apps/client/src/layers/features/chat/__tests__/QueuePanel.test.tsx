@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, afterEach, beforeAll } from 'vitest';
-import { render, screen, fireEvent, cleanup } from '@testing-library/react';
+import { render, screen, fireEvent, cleanup, act } from '@testing-library/react';
 import { QueuePanel } from '../ui/input/QueuePanel';
 import type { QueueItem } from '../model/use-message-queue';
 
@@ -308,5 +308,58 @@ describe('QueuePanel — a message held for background work (DOR-2065)', () => {
     fireEvent.click(button);
     expect(onSwitchNow).toHaveBeenCalledTimes(1);
     expect(screen.getAllByRole('button', { name: 'Switch now' })).toHaveLength(1);
+  });
+});
+
+describe('QueuePanel — the "more below" fade (DOR-3060)', () => {
+  /** Give every element the box the browser would measure: jsdom reports 0×0. */
+  function withBox(scrollHeight: number, clientHeight: number) {
+    vi.spyOn(HTMLElement.prototype, 'scrollHeight', 'get').mockReturnValue(scrollHeight);
+    vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockReturnValue(clientHeight);
+  }
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+  });
+
+  it('shows when rows sit below the fold, painted with the real scroll-edge token', () => {
+    withBox(400, 200);
+    renderPanel({ queue: [makeItem('First', 0), makeItem('Second', 1)] });
+    const fade = screen.getByTestId('queue-more-below');
+    expect(fade.className).toContain('var(--scroll-edge)');
+    expect(fade.className).not.toContain('--dui-scroll-edge');
+  });
+
+  it('stays hidden when every row fits', () => {
+    withBox(200, 200);
+    renderPanel({ queue: [makeItem('First', 0)] });
+    expect(screen.queryByTestId('queue-more-below')).toBeNull();
+  });
+
+  it('re-measures when the list or a row changes size', () => {
+    let notify: (() => void) | undefined;
+    const observed: Element[] = [];
+    vi.stubGlobal(
+      'ResizeObserver',
+      class {
+        constructor(private readonly callback: ResizeObserverCallback) {}
+        observe(el: Element): void {
+          observed.push(el);
+          notify = () => this.callback([], this as unknown as ResizeObserver);
+        }
+        unobserve(): void {}
+        disconnect(): void {}
+      }
+    );
+    withBox(200, 200);
+    renderPanel({ queue: [makeItem('First', 0), makeItem('Second', 1)] });
+    expect(screen.queryByTestId('queue-more-below')).toBeNull();
+    // The list plus its two rows.
+    expect(observed).toHaveLength(3);
+
+    withBox(400, 200);
+    act(() => notify?.());
+    expect(screen.getByTestId('queue-more-below')).toBeDefined();
   });
 });
