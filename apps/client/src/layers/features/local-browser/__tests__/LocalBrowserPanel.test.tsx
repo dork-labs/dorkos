@@ -4,6 +4,7 @@ import { act, fireEvent, render, screen, waitFor, within } from '@testing-librar
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { LocalBrowserCapabilities, LocalBrowserState } from '@dorkos/shared/local-browser';
 import { LocalBrowserPanel } from '../ui/LocalBrowserPanel';
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/layers/shared/ui';
 import { useSessionListStore } from '@/layers/entities/session';
 import { useAppStore } from '@/layers/shared/model';
 import { STORAGE_KEYS } from '@/layers/shared/lib/constants';
@@ -410,6 +411,53 @@ describe('LocalBrowserPanel', () => {
       );
       expect(within(next).getByText('Continue in the chat').tagName).toBe('STRONG');
       expect(screen.queryByText(/Finish in the sign-in window/)).toBeNull();
+    });
+  });
+  describe('while this chat’s agent waits on a person in the Mac app (DOR-3111)', () => {
+    const here = {
+      id: 'h1',
+      sessionId: 'chat-one',
+      agentName: 'Atlas',
+      agentId: null,
+      agentFolder: null,
+      profileId: null,
+      reason: 'wall',
+      site: 'northwind.example',
+      askedAt: '2026-11-03T00:00:00.000Z',
+      outcome: null,
+    };
+    // In the Mac app the agent's page stays here, paused, while the person has it.
+    const handedOver = { ...connected, mode: 'embedded' as const, paused: true };
+    const strip = () =>
+      screen.queryByText(
+        (_, element) =>
+          element?.getAttribute('data-slot') === 'your-turn-strip' &&
+          element.textContent === 'Your turn: Atlas can’t see or use this window.'
+      );
+    it('puts the Your turn strip above the page, with the card’s words', async () => {
+      transport.getLocalBrowserState.mockResolvedValue({
+        ...handedOver,
+        handoff: here,
+        signIn: null,
+      });
+      mount();
+      await waitFor(() => expect(strip()).toBeInTheDocument());
+      expect(within(strip()!).getByText('Your turn:').tagName).toBe('STRONG');
+      // A hand leads it, hidden from screen readers so the sentence reads alone.
+      expect(strip()!.querySelector('svg[aria-hidden="true"]')).not.toBeNull();
+    });
+    it.each([
+      ['the handoff ended', { ...handedOver, handoff: { ...here, outcome: 'handed-back' } }],
+      ['another chat’s agent asked', { ...handedOver, handoff: { ...here, sessionId: 'x' } }],
+      ['nobody asked', { ...handedOver, paused: false, handoff: null }],
+    ])('shows no strip when %s', async (_case, state) => {
+      transport.getLocalBrowserState.mockResolvedValue({ ...state, signIn: null });
+      mount();
+      // The browser was read: the header names its state.
+      await waitFor(() =>
+        expect(screen.getAllByRole('status')[0]).toHaveTextContent(/Agent paused|Connected/)
+      );
+      expect(document.querySelector('[data-slot="your-turn-strip"]')).toBeNull();
     });
   });
   it('shows the server’s signing_in refusal, not a reconnect hint (DOR-4325)', async () => {
@@ -1051,12 +1099,17 @@ describe('LocalBrowserPanel', () => {
     vi.spyOn(HTMLElement.prototype, 'getClientRects').mockReturnValue({ length: 1 } as DOMRectList);
     const view = mount();
     await waitFor(() => expect(setBounds.mock.calls.at(-1)?.[0].visible).toBe(true));
-    const dialog = document.createElement('div');
-    dialog.setAttribute('role', 'dialog');
-    dialog.setAttribute('aria-modal', 'true');
-    document.body.append(dialog);
+    // A real shared Dialog: Radix never sets aria-modal, so a hand-built one proves nothing.
+    const dialog = render(
+      <Dialog open>
+        <DialogContent>
+          <DialogTitle>Settings</DialogTitle>
+          <DialogDescription>Your preferences</DialogDescription>
+        </DialogContent>
+      </Dialog>
+    );
     await waitFor(() => expect(setBounds.mock.calls.at(-1)?.[0].visible).toBe(false));
-    dialog.remove();
+    dialog.unmount();
     await waitFor(() => expect(setBounds.mock.calls.at(-1)?.[0].visible).toBe(true));
     act(() =>
       view.client.setQueryData(['local-browser', 'state'], { ...native, sessionId: 'another-chat' })

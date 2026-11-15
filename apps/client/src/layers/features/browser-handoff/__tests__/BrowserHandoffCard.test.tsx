@@ -27,6 +27,13 @@ vi.mock('@/layers/shared/model', async (importOriginal) => ({
   useCoalescedInvalidation: () => () => undefined,
 }));
 
+/** The shared "Your turn" strip, whose bold lead splits its text across two nodes. */
+const findStrip = (text: string) =>
+  screen.findByText(
+    (_, element) =>
+      element?.getAttribute('data-slot') === 'your-turn-strip' && element.textContent === text
+  );
+
 const ASKED_AT = '2026-11-03T14:30:00.000Z';
 const handoff: LocalBrowserHandoff = {
   id: 'h1',
@@ -123,7 +130,7 @@ describe('BrowserHandoffCard', () => {
   it('says the agent can’t see or use the window while the person has it (DOR-3111)', async () => {
     transport.getLocalBrowserState.mockResolvedValue(person());
     mount();
-    expect(await screen.findByText('Your turn: Atlas can’t see or use this window.')).toBeTruthy();
+    expect(await findStrip('Your turn: Atlas can’t see or use this window.')).toBeTruthy();
   });
 
   it('says it of "The agent" when the call carried no identity', async () => {
@@ -131,9 +138,7 @@ describe('BrowserHandoffCard', () => {
       person({ handoff: { ...handoff, agentName: null, agentFolder: null } })
     );
     mount();
-    expect(
-      await screen.findByText('Your turn: The agent can’t see or use this window.')
-    ).toBeTruthy();
+    expect(await findStrip('Your turn: The agent can’t see or use this window.')).toBeTruthy();
   });
 
   it('shows the home folder as ~', async () => {

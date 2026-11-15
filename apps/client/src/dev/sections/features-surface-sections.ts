@@ -156,6 +156,14 @@ export const FEATURE_SURFACE_SECTIONS: PlaygroundSection[] = [
     category: 'Home',
     keywords: ['browser', 'agent browser', 'panel', 'not open yet', 'disconnected'],
   },
+  // BrowserPageErrorShowcases
+  {
+    id: 'agent-browser-page-errors-and-loading',
+    title: 'Agent browser page errors and loading',
+    page: 'home-inbox',
+    category: 'Home',
+    keywords: ['browser', 'agent browser', 'error', 'offline', 'certificate', 'loading', 'seam'],
+  },
   // ScheduleApprovalShowcases
   {
     id: 'schedule-approval-card',

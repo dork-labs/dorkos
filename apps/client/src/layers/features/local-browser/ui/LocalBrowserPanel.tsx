@@ -6,10 +6,13 @@ import type {
   LocalBrowserState,
 } from '@dorkos/shared/local-browser';
 import { useLocalBrowser, LOCAL_BROWSER_STATE_KEY } from '@/layers/entities/local-browser';
+import { YourTurnStrip } from '@/layers/features/browser-handoff';
 import { useAppStore, useTransport } from '@/layers/shared/model';
 import { Button, Input } from '@/layers/shared/ui';
 import { BrowserModeChoice } from './BrowserModeChoice';
-import { useNativeBrowserSurface } from '../model/use-native-browser-surface';
+import { useGuestPage } from '../model/use-guest-page';
+import { searchAddress } from '../lib/page-error';
+import { BrowserPageArea } from './BrowserPageArea';
 import { browserErrorMessage } from '../lib/browser-error-message';
 import { useActionFocusReturn } from '../model/use-action-focus-return';
 import { useFirstFocus } from '../model/use-first-focus';
@@ -62,7 +65,8 @@ export function LocalBrowserPanel({
   const [error, setError] = useState<string | null>(null);
   const [address, setAddress] = useState<string | null>(null);
   const [surfaceUnavailable, setSurfaceUnavailable] = useState(false);
-  const surface = useRef<HTMLDivElement>(null);
+  // What the person last typed and went to: only their own words are ever searched for.
+  const [typed, setTyped] = useState<{ text: string; host: string } | null>(null);
   const connected = state?.status === 'connected';
   // "Disconnected" before anything was ever opened reads as broken (DOR-4104).
   const [hadConnection, setHadConnection] = useState(false);
@@ -97,17 +101,8 @@ export function LocalBrowserPanel({
     },
     []
   );
-  useNativeBrowserSurface(
-    surface,
-    state?.connectionId ?? null,
-    visible &&
-      connected &&
-      !query.isError &&
-      !sharedElsewhere &&
-      mode === 'embedded' &&
-      !surfaceUnavailable,
-    unavailable
-  );
+  const page = useGuestPage(connected && mode === 'embedded' ? state.connectionId : null);
+  const typedFailed = !!typed && !!page.failure && page.failure.host === typed.host;
 
   const action = async (run: () => Promise<LocalBrowserState>, setup = false) => {
     const ticket = ++operation.current;
@@ -346,6 +341,9 @@ export function LocalBrowserPanel({
       )}
       {connected && !waitingElsewhere && !sharedElsewhere && (
         <>
+          {/* In the Mac app the agent's page stays here while the person has it. DorkOS
+              draws this, outside the page, so the page can't hide or fake it (DOR-3111). */}
+          {handoffHere && <YourTurnStrip agentName={handoffHere.agentName ?? agentName} />}
           {!state.sessionId && (
             <p className="text-muted-foreground text-xs">
               Only you can use this page. Open from an agent chat to share it.
@@ -409,13 +407,15 @@ export function LocalBrowserPanel({
           {selected && (
             <form
               className="flex gap-2"
+              aria-busy={page.loading}
               onSubmit={(event) => {
                 event.preventDefault();
-                const url = address ?? selected.url;
+                const url = address ?? (page.failure?.url || selected.url);
                 try {
                   const parsed = new URL(url);
                   if (!['http:', 'https:'].includes(parsed.protocol))
                     throw new Error('unsupported');
+                  if (address !== null) setTyped({ text: address, host: parsed.host });
                   void action(() => transport.navigateLocalBrowser(parsed.href)).then((ok) => {
                     if (ok) setAddress(null);
                   });
@@ -426,13 +426,20 @@ export function LocalBrowserPanel({
             >
               <Input
                 aria-label="Web address"
-                value={address ?? selected.url}
+                // A failed load keeps its address in the field (DOR-4430).
+                value={address ?? (page.failure?.url || selected.url)}
                 onChange={(event) => setAddress(event.target.value)}
                 className="min-w-0"
               />
-              <Button size="sm" variant="outline" type="submit" disabled={busy}>
-                Go
-              </Button>
+              {page.loading ? (
+                <Button size="sm" variant="outline" type="button" onClick={() => page.run('stop')}>
+                  Stop
+                </Button>
+              ) : (
+                <Button size="sm" variant="outline" type="submit" disabled={busy}>
+                  Go
+                </Button>
+              )}
             </form>
           )}
           {state.paused && (
@@ -457,10 +464,18 @@ export function LocalBrowserPanel({
             </p>
           )}
           {mode === 'embedded' && (
-            <div
-              ref={surface}
-              data-slot="native-browser-surface"
-              className="bg-muted/20 relative min-h-48 flex-1 rounded-lg"
+            <BrowserPageArea
+              connectionId={state.connectionId ?? null}
+              visible={visible && !query.isError && !surfaceUnavailable}
+              page={page}
+              typed={typedFailed}
+              onSearch={() => {
+                if (!typed) return;
+                setAddress(null);
+                void action(() => transport.navigateLocalBrowser(searchAddress(typed.text)));
+              }}
+              onUnavailable={unavailable}
+              disabled={busy}
             >
               {surfaceUnavailable && (
                 <div className="space-y-2 p-3">
@@ -472,7 +487,7 @@ export function LocalBrowserPanel({
                   </Button>
                 </div>
               )}
-            </div>
+            </BrowserPageArea>
           )}
         </>
       )}
