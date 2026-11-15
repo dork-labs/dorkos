@@ -10,8 +10,8 @@ import { migrate } from 'drizzle-orm/better-sqlite3/migrator';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createDb } from '../index.js';
 
-const MIGRATION_IDX = 195;
-const MIGRATION_TAG = '20261114004307_dor3034_due_history';
+const MIGRATION_IDX = 196;
+const MIGRATION_TAG = '20261115175108_dor3034_due_history';
 const MIGRATIONS = fileURLToPath(new URL('../../drizzle/', import.meta.url));
 
 describe('the to-do due history migration (DOR-3034)', () => {
