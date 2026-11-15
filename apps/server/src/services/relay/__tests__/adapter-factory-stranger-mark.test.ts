@@ -10,20 +10,6 @@ import type { RelayEnvelope } from '@dorkos/shared/relay-schemas';
 import type { StreamEvent } from '@dorkos/shared/types';
 import { env } from '../../../env.js';
 
-vi.mock('../../core/runtime-registry.js', () => ({
-  runtimeRegistry: {
-    computerRuntimeForAgentPath: () => undefined,
-    getNativeSessionCwd: vi.fn(() => null),
-    getSessionAgentPath: vi.fn(async () => null),
-    getDefaultType: () => 'claude-code',
-    persistSessionRuntime: vi.fn(async () => {}),
-  },
-}));
-
-vi.mock('../turn-execution-settings.js', () => ({
-  createTurnExecutionSettingsResolver: () => async () => ({}),
-}));
-
 import { createAdapter, type AdapterFactoryDeps } from '../adapter-factory.js';
 
 const SUBJECT = 'relay.agent.default.agent-scout';
