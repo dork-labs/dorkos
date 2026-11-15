@@ -98,26 +98,30 @@ function realpathOr(absPath: string): string {
 }
 
 /**
- * A skill's declared frontmatter `name`, or `undefined` when it has none.
+ * A skill's declared frontmatter `name`, two ways: trimmed (absent when it is
+ * blank), and exactly as the YAML parsed it.
  *
  * Read here rather than inferred from the directory, because the difference
  * between the two is the whole question for the three harnesses that key on the
  * name and the two that require the pair to match. A `SKILL.md` that will not
- * parse answers `undefined`, which is the same answer as "no name" — the hook
+ * parse answers neither, which is the same answer as "no name" — the hook
  * inventory reports that parse failure separately, so the silence is not total.
+ *
+ * The exact form is what OpenCode compares: it keeps `c` and `"c "` apart, and
+ * loads a skill named `""` (DOR-4392, observed against `opencode 1.19.3`).
  *
  * @param repoRoot - absolute path to the repository root.
  * @param sourceDir - the skill's repo-relative directory.
- * @returns the trimmed name, or `undefined`.
+ * @returns the trimmed and the exact name, each absent when there is none.
  */
-function declaredName(repoRoot: string, sourceDir: string): string | undefined {
+function declaredName(repoRoot: string, sourceDir: string): { trimmed?: string; exact?: string } {
   const rel = relPath(sourceDir, SKILL_FILENAME);
   const { text } = readTextFile(join(repoRoot, rel), rel, 'skill');
-  if (text === undefined) return undefined;
+  if (text === undefined) return {};
   const declared = readRawFrontmatter(text)?.data.name;
-  if (typeof declared !== 'string') return undefined;
+  if (typeof declared !== 'string') return {};
   const trimmed = declared.trim();
-  return trimmed === '' ? undefined : trimmed;
+  return { exact: declared, ...(trimmed === '' ? {} : { trimmed }) };
 }
 
 /**
@@ -213,7 +217,8 @@ function collect(
       provenance: 'authored',
       isSymlink,
       root,
-      ...(declared === undefined ? {} : { frontmatterName: declared }),
+      ...(declared.trimmed === undefined ? {} : { frontmatterName: declared.trimmed }),
+      ...(declared.exact === undefined ? {} : { exactFrontmatterName: declared.exact }),
     });
   }
   return {

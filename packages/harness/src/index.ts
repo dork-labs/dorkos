@@ -35,6 +35,8 @@ export * from './sources/installed.js';
 export * from './sources/dev-links.js';
 export * from './sources/running-extension-skills.js';
 export * from './plan/extension-skills.js';
+export * from './plan/package-skill-collisions.js';
+export * from './plan/package-skill-preview.js';
 export * from './generate/hooks.js';
 export * from './adopt/index.js';
 export * from './apply/apply.js';

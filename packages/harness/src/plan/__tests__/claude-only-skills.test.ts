@@ -256,15 +256,18 @@ describe('claudeOnlySkills — the entry’s path is a symlink to something else
     // The link is also a real skill a person put where Claude Code reads, so it
     // gets the same per-harness account any other `.claude/skills` skill gets.
     // Claude Code documents following symlinks, so it loads; Codex does not read
-    // the directory at all; OpenCode reads it and documents nothing about links,
-    // so the plan refuses to decide exactly as `harnessCoverage` does.
+    // the directory at all; OpenCode reads it and was observed following links
+    // (`opencode 1.19.3`), so it loads there too.
     expect(
       plan.actions.filter((a) => a.name === 'vaulted').map((a) => [a.harness, a.kind])
-    ).toEqual([['claude-code', 'native']]);
+    ).toEqual([
+      ['claude-code', 'native'],
+      ['opencode', 'native'],
+    ]);
     expect(plan.drops.filter((a) => a.name === 'vaulted').map((a) => a.harness)).toEqual(['codex']);
-    const undecided = plan.warnings.filter((w) => w.name === 'vaulted' && w.harness === 'opencode');
-    expect(undecided).toHaveLength(1);
-    expect(undecided[0].reason).toContain('does not document whether it follows one');
+    expect(plan.warnings.filter((w) => w.name === 'vaulted' && w.harness === 'opencode')).toEqual(
+      []
+    );
   });
 });
 

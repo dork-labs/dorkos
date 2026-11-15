@@ -91,16 +91,20 @@ describe('a .claude/skills line agrees with what the harness would really do', (
       ['native'],
     ]);
 
-    // OpenCode keys by the frontmatter name and requires it to match the
-    // directory; Cursor adds a charset rule the directory breaks. Neither vendor
-    // documents what happens next, so neither the walk nor the plan may decide.
-    for (const harness of ['opencode', 'cursor'] as const) {
-      expect([harness, walkSays(repo, harness, source), planSays(plan, harness, source)]).toEqual([
-        harness,
-        'uncertain',
-        ['warning'],
-      ]);
-    }
+    // OpenCode keys by the frontmatter name, which is valid here, and its binary
+    // does not hold the name to the directory: both say it loads.
+    expect([walkSays(repo, 'opencode', source), planSays(plan, 'opencode', source)]).toEqual([
+      'discovered',
+      ['native'],
+    ]);
+
+    // Cursor keys by directory and has a charset rule the directory breaks, and
+    // documents nothing about what happens next, so neither the walk nor the
+    // plan may decide.
+    expect([walkSays(repo, 'cursor', source), planSays(plan, 'cursor', source)]).toEqual([
+      'uncertain',
+      ['warning'],
+    ]);
   });
 
   it('says the same thing about a listed skill as an identical unlisted one', () => {

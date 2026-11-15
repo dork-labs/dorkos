@@ -36,9 +36,10 @@
  *
  * **On a tree DorkOS has already projected into, `uncertain` is not empty, and
  * that is not a failure.** The engine's whole skills projection is a symlink
- * into `.claude/skills`, and three of the six harnesses do not document whether
- * they follow one — so on this repo's own worktree cursor, opencode and copilot
- * each report 31 discovered and 18 uncertain, every one of the 18 a symlink
+ * into `.claude/skills`, and some harnesses do not document whether they follow
+ * one — so on this repo's own worktree cursor and copilot each reported 31
+ * discovered and 18 uncertain (opencode did too, until its binary was observed
+ * following links), every one of the 18 a symlink
  * reason for a skill they also reach as a real directory under `.agents/skills`.
  * The assertion for a projected tree is therefore the weaker, still-honest one:
  * `uncertain` is empty **or** holds only symlink-reason entries whose skill also
@@ -55,8 +56,8 @@
  *   there is touched, which no static walk can express (SK-15). The test plan
  *   (§2, T1c) puts it out of scope on purpose rather than inventing a fourth walk.
  *
- * Three values in the facts vocabulary have no row today and so no fixture here:
- * `dedupe: 'by-name'`, `onInvalidName: 'skip'` and `onInvalidName: 'warn-and-load'`.
+ * Two values in the facts vocabulary have no row today and so no fixture here:
+ * `onInvalidName: 'skip'` and `onInvalidName: 'warn-and-load'`.
  * That is asserted rather than assumed — `vendor-facts.test.ts` censuses every
  * behaviour cell, so the first row to use one of them reds a test and the author
  * has to bring a fixture with it.

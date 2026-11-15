@@ -139,14 +139,18 @@ describe('SK-12 — one name in two folders one tool reads', () => {
     // Each line is read from its own file's point of view and names the OTHER
     // copy, so the terminal prints two sentences a person can tell apart and each
     // row in the app carries the one about the file that row is.
-    const undocumented = 'Its own documentation does not say which one wins. Keep one.';
+    // OpenCode collapses by name (observed against `opencode 1.19.3`), so the
+    // sentence says one loads rather than that the docs are silent.
+    const collapses =
+      'Only one of them loads, and which one is not something you choose. Keep one.';
     expect(warningsAbout(p, 'opencode', '.claude/skills/review-pr')).toEqual([
-      `another skill named "review-pr" is in .opencode/skills, and OpenCode reads both folders. ${undocumented}`,
+      `another skill named "review-pr" is in .opencode/skills, and OpenCode reads both folders. ${collapses}`,
     ]);
     expect(warningsAbout(p, 'opencode', '.opencode/skills/review-pr')).toEqual([
-      `another skill named "review-pr" is in .claude/skills, and OpenCode reads both folders. ${undocumented}`,
+      `another skill named "review-pr" is in .claude/skills, and OpenCode reads both folders. ${collapses}`,
     ]);
-    // Both copies genuinely load, so neither `native` line goes away.
+    // Each file sits where OpenCode reads, so neither `native` line goes away;
+    // the warning beside each is what says only one of them loads.
     expect(nativeAbout(p, 'opencode', '.claude/skills/review-pr')).toHaveLength(1);
     expect(nativeAbout(p, 'opencode', '.opencode/skills/review-pr')).toHaveLength(1);
   });

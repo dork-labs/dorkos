@@ -23,9 +23,10 @@
  *   reason for a skill that is also discovered by another path. Anything else is
  *   a real finding.
  * - **Installed skills — reachability.** A `<pkg>__<name>` directory breaks
- *   OpenCode's and Cursor's documented name rules twice over (charset, and
- *   must-match-the-directory), and four harnesses do not document whether they
- *   follow a symlink — so on those, an installed skill is legitimately
+ *   Cursor's documented name rules twice over (charset, and
+ *   must-match-the-directory; OpenCode's binary was observed not enforcing the
+ *   second), and several harnesses do not document whether they follow a
+ *   symlink — so on those, an installed skill is legitimately
  *   `uncertain`, and the contract says so (SK-09, SK-12, both unverified until
  *   the H tier runs a real binary). What is NOT legitimate, and is what this
  *   tier pins, is the walk never reaching the skill at all: every installed
