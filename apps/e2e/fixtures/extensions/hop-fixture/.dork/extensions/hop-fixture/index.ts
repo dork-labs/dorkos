@@ -9,6 +9,10 @@
 // - from a button: a real click or Enter, which DorkOS honours. Pressing the
 //   button stops the no-click tries, so only the button can open the page.
 //
+// It also adds a right-panel tab, "Hop B": a second view, so a second frame,
+// with one button that does nothing but log. A click there must never let the
+// page's frame open anything.
+//
 // Every result goes to the console as a `hop:` line. The spec reads them from
 // there because a Playwright read of the page counts as a click in Chromium.
 //
@@ -35,6 +39,12 @@ interface NavigateResult {
 /** The host calls this fixture makes. */
 interface FixtureApi {
   registerPage(path: string, view: () => unknown, options: { title: string }): void;
+  registerComponent(
+    slot: 'right-panel',
+    id: string,
+    component: () => unknown,
+    options: { label: string }
+  ): void;
   navigate(path: string): Promise<NavigateResult>;
 }
 
@@ -45,7 +55,7 @@ const TARGET = '/x/hello-world';
  * activation window, so a spec can find what it clicks first and let the
  * activation that finding raised run out before any try.
  */
-const PESTER_DELAY_MS = 12_000;
+const PESTER_DELAY_MS = 16_000;
 /** How often a no-click try runs, and how many. */
 const PESTER_EVERY_MS = 250;
 const PESTER_TRIES = 80;
@@ -104,11 +114,23 @@ function HopPage({ api }: { api: FixtureApi }): unknown {
   );
 }
 
+/** The right-panel view: a second frame whose button only says it was pressed. */
+function HopPanel(): unknown {
+  return React.createElement(
+    'button',
+    { type: 'button', onPointerDown: () => report('b pressed') },
+    'Hop B button'
+  );
+}
+
 /**
- * Register the page at `/x/hop-fixture`.
+ * Register the page at `/x/hop-fixture` and the "Hop B" right-panel tab.
  *
  * @param api - The host API handed to every app.
  */
 export function activate(api: FixtureApi): void {
   api.registerPage('', () => React.createElement(HopPage, { api }), { title: 'Hop' });
+  api.registerComponent('right-panel', 'hop-b', () => React.createElement(HopPanel, null), {
+    label: 'Hop B',
+  });
 }

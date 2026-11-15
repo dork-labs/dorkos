@@ -11,10 +11,11 @@
  *    A capture listener on the host window counts every trusted pointer, touch
  *    and key event. Any of them since the activation was last seen down makes the
  *    current activation the host's, not the frame's.
- * 2. **Focus moved into this very frame while the host watched, and the host has
- *    had no input since.** The host saw its window blur with the frame focused,
- *    or the frame already had focus when the fence started. A frame that focuses
- *    itself gets no activation from it, and a later host click falls to rule 1.
+ * 2. **Focus moved into this very frame by the person, and the host has had no
+ *    input since.** The fence arms a frame only when the host window blurs to
+ *    it (or it has focus when the fence starts) while an activation is live
+ *    that no host input touched. A frame that focuses itself raises no
+ *    activation, so it is never armed, and a later host click falls to rule 1.
  * 3. **Spent once, failed closed.** An honoured open spends the activation until
  *    the browser reports it over. No `navigator.userActivation`, no gesture.
  *
@@ -77,11 +78,14 @@ export function noteHostInput(event: Pick<Event, 'isTrusted'>): void {
   watchActivation();
 }
 
-/** Note the frame focus moved into, when the host window loses focus to one. */
+/**
+ * Arm the frame focus moved into, when the person moved it there: an
+ * activation is live and no host input touched it. Anything else disarms.
+ */
 function noteFocusLeft(): void {
   const active = document.activeElement;
-  if (!(active instanceof HTMLIFrameElement)) return;
-  focusedFrame = active;
+  const byPerson = activationLive() && hostInputs === hostInputsAtRest;
+  focusedFrame = active instanceof HTMLIFrameElement && byPerson ? active : null;
   hostInputsAtFocus = hostInputs;
 }
 
@@ -94,11 +98,14 @@ function install(): void {
   installed = true;
   for (const type of HOST_INPUT) window.addEventListener(type, noteHostInput, { capture: true });
   window.addEventListener('blur', noteFocusLeft);
-  if (document.activeElement instanceof HTMLIFrameElement) noteFocusLeft();
   if (activationLive()) {
     hostInputs += 1;
     watchActivation();
   }
+  // The same check as a blur, after the line above. The fence saw no person
+  // move this focus, so it never arms here: no activation, or one counted as
+  // the host's.
+  if (document.activeElement instanceof HTMLIFrameElement) noteFocusLeft();
 }
 
 /**
@@ -108,7 +115,9 @@ function install(): void {
  */
 export function frameHasGesture(iframe: HTMLIFrameElement | null): boolean {
   if (iframe === null || spent || !activationLive()) return false;
-  if (hostInputs !== hostInputsAtRest) return false;
+  // Rule 1 is checked when the frame is armed (`noteFocusLeft`): it is armed
+  // only with no host input in the activation, and any host input since breaks
+  // the count below.
   if (focusedFrame !== iframe || hostInputs !== hostInputsAtFocus) return false;
   return document.activeElement === iframe;
 }

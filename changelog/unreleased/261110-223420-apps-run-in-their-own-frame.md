@@ -36,6 +36,7 @@ covers:
   - 'fix(server): a call between apps whose path part hides a slash is refused, never read as two parts (DOR-3293)'
   - 'fix(extensions): one click in an app opens at most one other app’s page (DOR-3293)'
   - 'fix(extensions): tighten cross-app open gesture check (DOR-3293)'
+  - 'fix(extensions): fence arms only on person focus (DOR-3293)'
 ---
 
 ### Security

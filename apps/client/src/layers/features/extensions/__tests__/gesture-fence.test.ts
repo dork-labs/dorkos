@@ -28,6 +28,12 @@ function focusMovesInto(frame: HTMLIFrameElement): void {
   window.dispatchEvent(new FocusEvent('blur'));
 }
 
+/** The person clicks inside a frame: the browser raises activation, then focus moves in. */
+function personClicksInto(frame: HTMLIFrameElement): void {
+  activation(true);
+  focusMovesInto(frame);
+}
+
 /** One trusted pointer, touch or key event on the host's own page. */
 function hostInput(): void {
   noteHostInput({ isTrusted: true });
@@ -59,16 +65,15 @@ afterEach(() => {
 });
 
 describe('a gesture in the calling frame', () => {
-  it('passes after focus moved into that frame and the activation came with no host input', () => {
+  it('passes after the person clicked into that frame, with no host input', () => {
     const atlas = frame();
-    focusMovesInto(atlas);
-    activation(true);
+    personClicksInto(atlas);
     expect(frameHasGesture(atlas)).toBe(true);
   });
 
   it('refuses with no activation, and with no frame', () => {
     const atlas = frame();
-    focusMovesInto(atlas);
+    personClicksInto(atlas);
     activation(false);
     expect(frameHasGesture(atlas)).toBe(false);
     activation(true);
@@ -92,20 +97,16 @@ describe('rule 1: no input to the host’s own page in this activation', () => {
     expect(frameHasGesture(atlas)).toBe(false);
   });
 
-  it('counts again once the host’s activation has run out', () => {
+  it('refuses a host click after the person clicked into the frame', () => {
     const atlas = frame();
-    activation(true);
+    personClicksInto(atlas);
     hostInput();
-    focusMovesInto(atlas);
-    activationEnds();
-    activation(true);
-    expect(frameHasGesture(atlas)).toBe(true);
+    expect(frameHasGesture(atlas)).toBe(false);
   });
 
   it('ignores events a script made', () => {
     const atlas = frame();
-    focusMovesInto(atlas);
-    activation(true);
+    personClicksInto(atlas);
     noteHostInput({ isTrusted: false });
     window.dispatchEvent(new PointerEvent('pointerdown'));
     window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }));
@@ -119,14 +120,15 @@ describe('rule 1: no input to the host’s own page in this activation', () => {
     const atlas = frame();
     focusMovesInto(atlas);
     expect(fence.frameHasGesture(atlas)).toBe(false);
+    // Once it runs out, a real click into the frame counts.
     activationEnds();
-    activation(true);
+    personClicksInto(atlas);
     expect(fence.frameHasGesture(atlas)).toBe(true);
     fence.resetGestureFence();
   });
 });
 
-describe('rule 2: focus moved into that frame, with no host input since', () => {
+describe('rule 2: the person moved focus into that frame, with no host input since', () => {
   it('refuses focus the host never saw move in', () => {
     const atlas = frame();
     atlas.focus();
@@ -134,9 +136,18 @@ describe('rule 2: focus moved into that frame, with no host input since', () => 
     expect(frameHasGesture(atlas)).toBe(false);
   });
 
-  it('refuses after a host click, until focus moves in again', () => {
+  it('never arms a frame that focused itself, even once an activation comes', () => {
     const atlas = frame();
+    // No activation as focus moves in: the frame did it, not the person.
+    activation(false);
     focusMovesInto(atlas);
+    activation(true);
+    expect(frameHasGesture(atlas)).toBe(false);
+  });
+
+  it('refuses after a host click, until the person moves focus in again', () => {
+    const atlas = frame();
+    personClicksInto(atlas);
     hostInput();
     activationEnds();
     // Focus never left the frame, but the host had input since it moved in.
@@ -146,19 +157,17 @@ describe('rule 2: focus moved into that frame, with no host input since', () => 
     expect(frameHasGesture(atlas)).toBe(true);
   });
 
-  it('refuses one frame riding focus that moved into another', () => {
+  it('refuses one frame riding focus the person moved into another', () => {
     const atlas = frame();
     const quill = frame();
-    focusMovesInto(quill);
-    activation(true);
+    personClicksInto(quill);
     expect(frameHasGesture(atlas)).toBe(false);
     expect(frameHasGesture(quill)).toBe(true);
   });
 
   it('refuses once focus has left the frame', () => {
     const atlas = frame();
-    focusMovesInto(atlas);
-    activation(true);
+    personClicksInto(atlas);
     atlas.blur();
     expect(frameHasGesture(atlas)).toBe(false);
   });
@@ -167,8 +176,7 @@ describe('rule 2: focus moved into that frame, with no host input since', () => 
 describe('rule 3: one open per gesture', () => {
   it('spends the gesture: a second open in the same activation is refused', () => {
     const atlas = frame();
-    focusMovesInto(atlas);
-    activation(true);
+    personClicksInto(atlas);
     expect(frameHasGesture(atlas)).toBe(true);
 
     arriveAtAppPage(() => {});
@@ -180,8 +188,7 @@ describe('rule 3: one open per gesture', () => {
 
     // Only once that activation has run out does a new click count again.
     activationEnds();
-    activation(true);
-    focusMovesInto(atlas);
+    personClicksInto(atlas);
     expect(frameHasGesture(atlas)).toBe(true);
   });
 });

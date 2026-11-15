@@ -334,10 +334,10 @@ describe('isolated app host', () => {
       });
     /** The person clicked inside the calling app's own frame just now. */
     const clickInCallingFrame = () => {
-      document.querySelector('iframe')!.focus();
-      // The host window blurs as focus moves into the frame, which the fence watches.
-      window.dispatchEvent(new FocusEvent('blur'));
+      // The click raises activation; then focus moves in and the host window blurs.
       activation(true);
+      document.querySelector('iframe')!.focus();
+      window.dispatchEvent(new FocusEvent('blur'));
     };
 
     it('opens a listed app’s item page after a click in this app, and answers ok', async () => {

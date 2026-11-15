@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import type { Locator, Page } from '@playwright/test';
 import { test, expect } from '../../fixtures';
 import { appFrame, appPage } from '../../pages/app-frame.js';
+import { RightPanelPage } from '../../pages/RightPanelPage';
 import { leaveNoUnreadRows } from './inbox-hygiene';
 
 /**
@@ -11,9 +12,11 @@ import { leaveNoUnreadRows } from './inbox-hygiene';
  * press in its frame (DOR-3293, Security's Musts of Nov 15).
  *
  * The fixture `hop-fixture`, named "Hop", lists `hello-world` with
- * `navigate: true`. From 12 s after load it keeps focusing its own frame and
+ * `navigate: true`. From 16 s after load it keeps focusing its own frame and
  * calling `api.navigate` with no click, logging each answer as a `hop:` line.
- * Its "Open Hello World" button is the honest path.
+ * Its "Open Hello World" button is the honest path. Its right-panel tab,
+ * "Hop B", is a second frame with a button that only logs, for the cases where
+ * the person clicks one frame while the other tries.
  *
  * READ THE CONSOLE, NEVER THE PAGE, WHILE THE APP IS TRYING. Every Playwright
  * read of a page in Chromium (a locator, a bounding box, an evaluate) goes out
@@ -107,6 +110,16 @@ async function clickInDorkosWhileHopTries(
   expect(page.url()).toMatch(HOP_URL);
 }
 
+/** Show Hop's second view, the "Hop B" right-panel tab, and find its button. */
+async function showHopB(page: Page): Promise<{ x: number; y: number }> {
+  await new RightPanelPage(page).selectView('Hop B');
+  return middleOf(
+    appFrame(page.locator('#right-panel-content'), 'Hop').getByRole('button', {
+      name: 'Hop B button',
+    })
+  );
+}
+
 test.describe('Opening another app’s page needs a click in the app', () => {
   test.describe.configure({ mode: 'serial' });
 
@@ -192,5 +205,19 @@ test.describe('Opening another app’s page needs a click in the app', () => {
     // The button opened it, not a no-click try: none had started.
     expect(lines).toContain('button pressed');
     expect(tries(lines)).toEqual([]);
+  });
+
+  test('(f) refuses every try while the person clicks the app’s other frame', async ({ page }) => {
+    test.setTimeout(90_000);
+    const lines = await openHop(page);
+    const hopB = await showHopB(page);
+    // Hop's page keeps focusing itself from here; the person clicks Hop B.
+    await waitForLines(lines, /^try \d+ /, 2);
+    await page.mouse.click(hopB.x, hopB.y);
+    await waitForLines(lines, /^b pressed$/);
+    const before = tries(lines).length;
+    await waitForLines(lines, /^try \d+ /, before + TRIES_AFTER);
+    expect(tries(lines).every((line) => line.endsWith('refused: no-gesture'))).toBe(true);
+    expect(page.url()).toMatch(HOP_URL);
   });
 });
