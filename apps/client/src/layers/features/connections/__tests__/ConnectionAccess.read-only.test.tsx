@@ -249,6 +249,37 @@ describe('access for an app with no write actions', () => {
     expect(transport.applyConnectorReconciliation).not.toHaveBeenCalled();
   });
 
+  it('treats mixed stored levels as the same displayed Read when adding an agent', async () => {
+    const user = userEvent.setup();
+    const snapshot = readOnlyPreview();
+    snapshot.agents.push(
+      { agentId: 'atlas', displayName: 'Atlas' },
+      { agentId: 'nova', displayName: 'Nova' }
+    );
+    snapshot.currentGrants = [
+      { agentId: 'scout', operationRevisionIds: ['read'], level: 'read-write' },
+      { agentId: 'atlas', operationRevisionIds: ['read'], level: 'read' },
+    ];
+    const transport = renderWith(
+      snapshot,
+      <ConnectionAccessCard mode="page" connectionId="connection-1" serviceName="Linear" />
+    );
+    await screen.findByText(readOnlyCopy);
+    expect(
+      screen.queryByText('Your agents have different access. Pick one for every ticked agent.')
+    ).not.toBeInTheDocument();
+    await user.click(screen.getByRole('checkbox', { name: 'Nova' }));
+    const save = screen.getByRole('button', { name: 'Save' });
+    expect(save).toBeEnabled();
+    await user.click(save);
+    await waitFor(() =>
+      expect(transport.applyConnectorReconciliation).toHaveBeenCalledWith({
+        previewId: 'preview-1',
+        grants: [{ agentId: 'nova', operationRevisionIds: ['read'], level: 'read' }],
+      })
+    );
+  });
+
   it('names an agent’s own Read access without attributing it to every agent', async () => {
     const snapshot = readOnlyPreview();
     snapshot.currentGrants = [

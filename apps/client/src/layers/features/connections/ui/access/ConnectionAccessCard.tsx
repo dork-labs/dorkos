@@ -100,7 +100,11 @@ function AccessStep(
           : props.mode === 'agent'
             ? // Counts an "Every agent" grant: the question is what THIS agent can do.
               initialCardLevel([agentHeldAccess(preview, props.agentId, Boolean(props.onAllowed))])
-            : initialCardLevel(subjects.map((agentId) => heldAccess(current[agentId])));
+            : initialCardLevel(
+                subjects.map((agentId) =>
+                  displayedAccessLevel(heldAccess(current[agentId]), preview.candidates)
+                )
+              );
       // Start on the requested or held level when available. An app whose
       // write level adds nothing starts on Read, matching what the card shows.
       const asked = props.mode === 'agent' && props.request ? props.request.access : null;
