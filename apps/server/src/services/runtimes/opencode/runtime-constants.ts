@@ -141,8 +141,8 @@ export const OPENCODE_CAPABILITIES: RuntimeCapabilities = {
   // (`credits-mode.ts`). It speaks the chat-completions format.
   credits: { protocol: 'openai-chat-completions', scope: 'runtime' },
   // Not yet: its file tools refuse the shared protected list
-  // (`messaging/protected-files.ts`), but its shell is not checked against it.
-  // Its own `opencode.json` and `.agents/` are not held below Full (DOR-3598).
+  // (`messaging/protected-files.ts`), but its shell is not checked against it
+  // (DOR-4445). Its own `opencode.json` and `.agents/` are not held below Full (DOR-3598).
   guards: { protectedPaths: false, ownFolder: false },
   features: {},
 };

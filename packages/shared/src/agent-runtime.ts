@@ -904,16 +904,22 @@ export type RuntimeMediaOutput = 'none' | 'attachments';
 
 /**
  * The safety guards a runtime can declare in {@link RuntimeCapabilities.guards}.
- * Each is a promise about every turn the runtime runs, whatever its level:
+ * Each is a promise about every turn the runtime runs:
  *
- * - `protectedPaths` — the agent's file tools refuse every path on the shared
- *   protected list (`runtimes/shared/policy/protected-paths.ts`), and its shell
- *   is kept off the list's protected reads too. So it cannot read DorkOS's
- *   secrets or a browser profile's sign-ins, by any tool. A runtime whose
- *   shell can still reach them does not have this guard.
- * - `ownFolder` — below Full, the agent cannot change its own setup (hooks,
- *   skills, settings, MCP servers), and at any level it cannot change its
- *   `.dork/agent.json` (its level, account and held servers).
+ * - `protectedPaths` — the agent's file tools refuse the shared protected list
+ *   (`runtimes/shared/policy/protected-paths.ts`): its protected reads at every
+ *   level, its protected writes below Full. And below Full, a shell command that
+ *   reads a protected file goes to a person first. A runtime whose shell reads
+ *   them unasked below Full does not have this guard.
+ * - `ownFolder` — below Full, the agent's file tools cannot change its own setup
+ *   (hooks, skills, settings, MCP servers), and at any level they cannot change
+ *   its `.dork/agent.json` (its level, account and held servers); a shell command
+ *   that plainly writes them is refused too.
+ *
+ * Neither is an OS boundary. A shell check reads the command's text, so a path
+ * built while the command runs gets past it, and at Full the shell reads what it
+ * names: the stated limit of that level. The boundary is agents running as their
+ * own OS user (DOR-3053).
  *
  * A guard that used to be listed here by runtime name is gone with the rule it
  * served: a teammate's or a stranger's words no longer lower a turn on any

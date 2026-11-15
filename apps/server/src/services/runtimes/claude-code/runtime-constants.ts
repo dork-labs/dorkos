@@ -203,9 +203,10 @@ export const CLAUDE_CODE_CAPABILITIES: RuntimeCapabilities = {
   // existing send path (DOR-109 task 2.1, ADR-0273); `executeCommandIntent`
   // carries that body.
   commandIntents: { compact: { supported: true } },
-  // Deny rules keep every file tool off the shared protected list, and the shell
-  // guard keeps Bash off its protected reads (`secret-files/`, `shell-guard/`).
-  // Below Full the agent's own setup stays closed (`folder-settings/own-folder-open.ts`).
+  // Deny rules keep file tools off the shared protected list (`secret-files/`,
+  // `messaging/directory-grants.ts`), and below Full the shell hook asks before a
+  // protected read (`shell-guard/`). Below Full the agent's own setup stays closed
+  // (`folder-settings/own-folder-open.ts`).
   // Proved in `__tests__/safety-guards.test.ts`.
   guards: { protectedPaths: true, ownFolder: true },
   // `session_status.costUsd` is the session's running total; a turn's own share is `turnCostUsd`.

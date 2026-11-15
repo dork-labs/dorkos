@@ -211,8 +211,8 @@ To add a capability, add a row to `packages/test-utils/src/runtime-capability-ma
 | RT-GRD-01 | Keep the agent off protected files | yes (U) | planned DOR-3597 | planned DOR-4445 | planned DOR-4445 | n/a |
 | RT-GRD-02 | Keep the agent’s own setup closed below Full | yes (U) | planned DOR-3598 | planned DOR-3598 | planned DOR-3598 | n/a |
 
-- **RT-GRD-01** Every file tool refuses the shared protected list, and the shell is kept off its protected reads, so the agent cannot read DorkOS’s secrets or a browser profile’s sign-ins, or change the files that grant power. _(flag `guards.protectedPaths`)_
-- **RT-GRD-02** Below Full the agent cannot change its own hooks, skills, settings or MCP servers, and at any level it cannot change its `.dork/agent.json`. _(flag `guards.ownFolder`)_
+- **RT-GRD-01** File tools refuse the shared protected list: its secrets at every level, the files that grant power below Full. Below Full, a shell command that reads a protected file, such as a browser profile’s sign-ins, goes to a person first. _(flag `guards.protectedPaths`)_
+- **RT-GRD-02** Below Full, file tools cannot change the agent’s own hooks, skills, settings or MCP servers, and at any level they cannot change its `.dork/agent.json`. A shell command that plainly writes them is refused too. _(flag `guards.ownFolder`)_
 
 ## Gaps
 

@@ -113,8 +113,9 @@ export function createLocalBrowserProfileAccess(
 ): LocalBrowserProfileAccess {
   return async (profileId, sessionId) => {
     const runtime = await deps.resolveSessionRuntime(sessionId);
-    // A profile holds live sign-ins, so its runtime must keep every tool, the shell included, off
-    // the profiles folder. Read from what the runtime declares, which fails closed (DOR-3596).
+    // A profile holds live sign-ins, so its runtime must keep file tools off the profiles folder
+    // and put a shell read of it to a person below Full. Read from what the runtime declares,
+    // which fails closed (DOR-3596).
     if (!runtime.bound || !declaresGuard({ guards: deps.guardsOf(runtime.type) }, 'protectedPaths'))
       throw new LocalBrowserError(
         'profile_runtime',

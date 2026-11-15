@@ -176,11 +176,6 @@ function runsSuite(
   return new RegExp(`\\b${entry}\\s*\\(`).test(code);
 }
 
-/** Whether a runtime's conformance file runs the shared suite. */
-function runsSharedSuite(runtime: MatrixRuntime): boolean {
-  return runsSuite(runtime, 'runtimeConformance');
-}
-
 /** Every id a test claims anywhere this census reads. */
 const everyClaim = new Set([
   ...sharedClaims,
@@ -200,7 +195,7 @@ describe('the runtime capabilities census', () => {
         runtime,
         titles: true,
       });
-      expect({ runtime, runsShared: runsSharedSuite(runtime) }).toEqual({
+      expect({ runtime, runsShared: runsSuite(runtime, 'runtimeConformance') }).toEqual({
         runtime,
         runsShared: true,
       });
@@ -231,7 +226,7 @@ describe('the runtime capabilities census', () => {
         if (!cell.evidence?.includes('U')) continue;
         const own = ownClaims.get(runtime) ?? new Set<string>();
         const proven = claimIds.some(
-          (id) => own.has(id) || (sharedClaims.has(id) && runsSharedSuite(runtime))
+          (id) => own.has(id) || (sharedClaims.has(id) && runsSuite(runtime, 'runtimeConformance'))
         );
         if (!proven) unproven.push(`${row.id} × ${runtime}`);
       }

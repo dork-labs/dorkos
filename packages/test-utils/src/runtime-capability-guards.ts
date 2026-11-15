@@ -27,7 +27,7 @@ export const GUARD_CAPABILITIES: readonly RuntimeCapability[] = [
     group: 'GRD',
     title: 'Keep the agent off protected files',
     expected:
-      'Every file tool refuses the shared protected list, and the shell is kept off its protected reads, so the agent cannot read DorkOS’s secrets or a browser profile’s sign-ins, or change the files that grant power.',
+      'File tools refuse the shared protected list: its secrets at every level, the files that grant power below Full. Below Full, a shell command that reads a protected file, such as a browser profile’s sign-ins, goes to a person first.',
     flag: guard('protectedPaths'),
     cells: {
       'claude-code': { status: 'supported', evidence: ['U'] },
@@ -55,7 +55,7 @@ export const GUARD_CAPABILITIES: readonly RuntimeCapability[] = [
     group: 'GRD',
     title: 'Keep the agent’s own setup closed below Full',
     expected:
-      'Below Full the agent cannot change its own hooks, skills, settings or MCP servers, and at any level it cannot change its `.dork/agent.json`.',
+      'Below Full, file tools cannot change the agent’s own hooks, skills, settings or MCP servers, and at any level they cannot change its `.dork/agent.json`. A shell command that plainly writes them is refused too.',
     flag: guard('ownFolder'),
     cells: {
       'claude-code': { status: 'supported', evidence: ['U'] },
