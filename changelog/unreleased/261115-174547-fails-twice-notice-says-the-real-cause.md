@@ -1,6 +1,7 @@
 ---
 covers:
   - 'fix(tasks): the fails-twice notice says the real cause, the whole name and a 12-hour next try, and opens the schedule (DOR-4121)'
+  - 'fix(tasks): review fixes for the fails-twice notice (DOR-4121)'
 ---
 
 ### Fixed

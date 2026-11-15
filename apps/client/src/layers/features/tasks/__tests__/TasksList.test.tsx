@@ -58,6 +58,9 @@ function schedule(id: string): Task {
     origin: null,
     reasonSource: null,
     nextRuns: [],
+    approvedAt: null,
+    approvedBy: null,
+    approvedVia: null,
   };
 }
 
