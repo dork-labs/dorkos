@@ -19,6 +19,8 @@ import {
   disposeProjector,
 } from '../../../session/session-state-projector.js';
 import { RuntimeRegistry } from '../../../core/runtime-registry.js';
+import { dorkosSessionRules } from '../messaging/session-rules.js';
+import { resolveOpenCodeDataDir } from '../opencode-data-dir.js';
 import { OpenCodeRuntime } from '../opencode-runtime.js';
 import { deriveDorkosSessionId } from '../sessions/session-mapper.js';
 import { OPENCODE_CAPABILITIES } from '../runtime-constants.js';
@@ -157,6 +159,7 @@ function createMockClient() {
   const source = makeGlobalSource();
   const client = {
     global: { event: source.impl },
+    app: { agents: vi.fn(async () => ({ data: [] })) },
     session: {
       create: vi.fn(async () => ({ data: sessionInfo(OC_SESSION_A, DIRECTORY) })),
       get: vi.fn(async () => ({ data: sessionInfo(OC_SESSION_A, DIRECTORY) })),
@@ -312,6 +315,47 @@ describe('OpenCodeRuntime', () => {
   });
 
   describe('sendMessage', () => {
+    it('puts DorkOS’s asks on the session before the prompt, so a project cannot switch them off (DOR-4394)', async () => {
+      const harness = makeRuntime();
+      const sessionId = nextSessionId();
+
+      const { finished } = consume(
+        harness.runtime.sendMessage(sessionId, 'hello', { cwd: DIRECTORY })
+      );
+      const connection = await openTurn(harness);
+      for (const event of opencodeSimpleTurn(OC_SESSION_A, 'Hello there')) {
+        connection.push(globalEvent(DIRECTORY, event));
+      }
+      await finished;
+
+      expect(harness.client.app.agents).toHaveBeenCalledWith({ query: { directory: DIRECTORY } });
+      expect(harness.client.session.update).toHaveBeenCalledWith({
+        path: { id: OC_SESSION_A },
+        body: { permission: dorkosSessionRules(resolveOpenCodeDataDir()) },
+      });
+      const updated = harness.client.session.update.mock.invocationCallOrder.at(-1)!;
+      const prompted = harness.client.session.promptAsync.mock.invocationCallOrder[0]!;
+      expect(updated).toBeLessThan(prompted);
+    });
+
+    it('does not prompt when it cannot read the project’s agents (DOR-4394)', async () => {
+      const harness = makeRuntime();
+      harness.client.app.agents.mockResolvedValue({ error: { name: 'BadRequest' } } as never);
+      const sessionId = nextSessionId();
+
+      const events: StreamEvent[] = [];
+      try {
+        for await (const event of harness.runtime.sendMessage(sessionId, 'hello', {
+          cwd: DIRECTORY,
+        }))
+          events.push(event);
+      } catch {
+        // A refused turn may throw or end on an error event; either way it never prompts.
+      }
+
+      expect(harness.client.session.promptAsync).not.toHaveBeenCalled();
+    });
+
     it('creates the sidecar session on a cold first send without eager initialization', async () => {
       const harness = makeRuntime();
       const sessionId = nextSessionId();

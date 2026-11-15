@@ -34,9 +34,11 @@ function sidecar(list: () => Promise<unknown>) {
         return { stream: queue };
       }),
     },
+    app: { agents: vi.fn(async () => ({ data: [] })) },
     session: {
       create: vi.fn(async () => ({ data: sessionInfo(OC_SESSION_A, DIRECTORY) })),
       get: vi.fn(async () => ({ data: sessionInfo(OC_SESSION_A, DIRECTORY) })),
+      update: vi.fn(async () => ({ data: {} })),
       list: vi.fn(async () => ({ data: [] })),
       messages: vi.fn(async () => ({ data: [] })),
       promptAsync: vi.fn(async () => ({})),
