@@ -1,7 +1,6 @@
 /** @vitest-environment jsdom */
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, render, screen, waitFor } from '@testing-library/react';
-import '@testing-library/jest-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createMockSession, createMockTransport } from '@dorkos/test-utils';
 import { TransportProvider } from '@/layers/shared/model';

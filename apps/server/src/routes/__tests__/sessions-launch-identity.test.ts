@@ -56,6 +56,7 @@ vi.mock('../../services/core/runtime-registry.js', () => ({
     resolveForSessionWithOwnership: vi.fn(async () => ({ runtime: fakeRuntime, bound: false })),
     resolveSessionRuntime: vi.fn(async () => ({ type: 'fake', bound: false })),
     getSessionAgentPath: vi.fn(async () => null),
+    getSessionSettingsMany: vi.fn(() => new Map()),
     getSessionRuntimeType: vi.fn(async () => 'fake'),
   },
   RuntimeNotRegisteredError: class RuntimeNotRegisteredError extends Error {},

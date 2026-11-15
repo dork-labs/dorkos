@@ -17,10 +17,7 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
 import { runtimeRegistry } from '../services/core/runtime-registry.js';
-import {
-  recordedAgentOf,
-  sessionToolWarnings,
-} from '../services/session/launch/session-tool-warnings.js';
+import { openedChatToolWarnings } from '../services/session/launch/session-tool-warnings.js';
 import { sessionMessageReceipt } from './session-message-receipt.js';
 import {
   UpdateSessionRequestSchema,
@@ -467,7 +464,7 @@ export function createSessionRoutes(deps: SessionRouteDeps = {}): Hono<ApiEnv> {
     }
     return c.json({
       ...session,
-      ...sessionToolWarnings(runtime.type, projectDir, await recordedAgentOf(sessionId)),
+      ...(await openedChatToolWarnings(runtime.type, projectDir, sessionId)),
     });
   });
 

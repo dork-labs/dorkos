@@ -21,6 +21,19 @@ export function sessionToolWarnings(
   };
 }
 
+/**
+ * The same warning for an opened chat, from its recorded owner. Only a Codex
+ * chat can lack DorkOS tools, so only it pays for the owner lookup.
+ */
+export async function openedChatToolWarnings(
+  runtime: string,
+  cwd: string,
+  sessionId: string
+): Promise<{ warnings?: SessionLaunchWarning[] }> {
+  if (runtime !== 'codex') return {};
+  return sessionToolWarnings(runtime, cwd, await recordedAgentOf(sessionId));
+}
+
 /** Read a chat's recorded owner without inventing one when the lookup fails. */
 export async function recordedAgentOf(sessionId: string): Promise<string | null> {
   try {
