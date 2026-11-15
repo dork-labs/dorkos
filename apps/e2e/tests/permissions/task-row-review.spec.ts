@@ -45,6 +45,9 @@ function sampleTask(off: boolean): Task {
     origin: off ? 'file' : null,
     nextRuns: [],
     approvalRevision: 'a'.repeat(64),
+    approvedAt: null,
+    approvedBy: null,
+    approvedVia: null,
     folderRules: { status: 'none', applied: [], pending: [] },
   };
 }
