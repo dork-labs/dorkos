@@ -128,6 +128,19 @@ export interface ConnectorThreadKeyScope {
   readonly canonicalCwd: string;
   /** Opaque key of the runtime process holding the thread; revokes with it. */
   readonly processKey: string;
+  /** How the thread was loaded under this key, for the logs (DOR-4384). */
+  readonly loadKind?: ThreadLoadKind;
+}
+
+/** How a runtime loaded a thread: a fresh start, a cold resume, or a fork. */
+export type ThreadLoadKind = 'start' | 'resume' | 'fork';
+
+/** Whether the thread behind a live key has fetched its DorkOS tool list (DOR-4384). */
+export interface ThreadKeyToolListing {
+  /** True once a `tools/list` on the DorkOS tools route was answered for this key. */
+  readonly listed: boolean;
+  /** What the key stands for. */
+  readonly scope: ConnectorThreadKeyScope;
 }
 
 /** A freshly minted thread key. `key` is the secret; `keyId` is safe to log. */
@@ -163,4 +176,10 @@ export interface ConnectorThreadKeyPort {
   revoke(keyId: string, reason: RevokeConnectorThreadKeyReason): void;
   /** Revoke every key minted for one runtime process. Idempotent. */
   revokeProcess(processKey: string, reason: RevokeConnectorThreadKeyReason): void;
+  /**
+   * Whether a live key's thread has fetched its DorkOS tool list, or
+   * `undefined` for a key that is not live. Optional: a port without it is
+   * never asked (DOR-4384).
+   */
+  toolListing?(keyId: string): ThreadKeyToolListing | undefined;
 }

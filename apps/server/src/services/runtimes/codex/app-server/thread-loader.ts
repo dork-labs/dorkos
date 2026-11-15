@@ -338,7 +338,7 @@ export class CodexThreadLoader {
       this.dropThread(input.process, threadId);
       void input.process.client.request('thread/unsubscribe', { threadId }).catch(() => undefined);
     };
-    const key = this.mintKey(input);
+    const key = this.mintKey(input, 'fork');
     let forked: string;
     try {
       const overrides = await this.overrides(input, key?.key);
@@ -416,7 +416,7 @@ export class CodexThreadLoader {
       if (isCodexRpcError(err, 'thread-not-found')) return freshWith(THREAD_STARTS_FRESH_NOTICE);
       // Anything else: the resume below has the final word.
     }
-    const key = this.mintKey(input);
+    const key = this.mintKey(input, 'resume');
     try {
       const overrides = await this.overrides(input, key?.key);
       await withThreadLoadBinding(input, key?.keyId, this.options.threadKeys(), () =>
@@ -458,7 +458,7 @@ export class CodexThreadLoader {
     credentials: string,
     replaces: string | undefined
   ): Promise<LoadedThread> {
-    const key = this.mintKey(input);
+    const key = this.mintKey(input, 'start');
     let threadId: string;
     try {
       const overrides = await this.overrides(input, key?.key);
@@ -571,7 +571,8 @@ export class CodexThreadLoader {
     return records;
   }
 
-  private mintKey(input: ThreadLoadInput): { keyId: string; key: string } | undefined {
+  // `loadKind` names the load in the key's scope, for the DOR-4384 warning.
+  private mintKey(input: ThreadLoadInput, loadKind: 'start' | 'resume' | 'fork') {
     if (!input.tools.dorkosTools && !input.tools.connectorTools) return undefined;
     const keys = this.options.threadKeys();
     if (!keys) return undefined;
@@ -580,6 +581,7 @@ export class CodexThreadLoader {
       canonicalSessionId: input.sessionId,
       canonicalCwd: input.cwd,
       processKey: input.process.key,
+      loadKind,
     });
   }
 

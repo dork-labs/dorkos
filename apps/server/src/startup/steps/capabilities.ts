@@ -367,6 +367,8 @@ export async function composeCapabilities(refs: ServerRefs, built: ComposeCapabi
       principals: agentScopedRuntimePrincipals,
       // Only the test runtime's server-run probes speak as Claude Code here.
       acceptInProcessRuntime: Boolean(env.DORKOS_TEST_RUNTIME),
+      // A thread key's thread fetched its DorkOS tools (DOR-4384).
+      onAgentToolsListed: (bearer) => connectorThreadKeys.noteToolsListed(bearer),
       serverFactory: (principal) =>
         createConnectorRuntimeMcpServer(refs.capabilityRegistry!, principal),
       agentServerFactory: async (principal) => {
