@@ -171,27 +171,6 @@ afterAll(() => {
 });
 
 /**
- * The config routes behind the `/api` chain, with the request-shaping step every
- * config-route app needs: the user the session gate would have resolved, and
- * the agent header a caller would have sent.
- *
- * The listener is imported dynamically, like the router, so after a test that
- * resets the module graph the chain and the routes still come from the SAME
- * graph and read the same config manager.
- *
- * Why the graph is NOT reset per test (it was, until DOR-4190): the router and
- * the chain behind it pull in most of the server, and re-importing that before
- * all ~150 tests was most of this file's run time and once took the worker past
- * the heap limit. Everything a test changes lives either in the config manager,
- * which `initConfigManager` replaces on a fresh directory per test, or in a
- * named singleton that the test or its block puts back through its own hook
- * (task/relay flags, the remote-stream registry). Besides the one in the file's
- * `beforeAll` (see there), the only resets left are the
- * cases whose subject is a value read at MODULE LOAD — `lockedByEnv`,
- * `todos.enabled`, and a restart — and each one resets again on the way out so
- * the next test never inherits a graph built under its environment.
- */
-/**
  * Load the module graph once for the file, the way every test used to see it.
  *
  * Loaded TWICE, with one reset between, and the second load is the one the tests
@@ -216,6 +195,26 @@ beforeAll(async () => {
   await import('../../http/__tests__/hono-group-listener.js');
 }, 120_000);
 
+/**
+ * The config routes behind the `/api` chain, with the request-shaping step every
+ * config-route app needs: the user the session gate would have resolved, and
+ * the agent header a caller would have sent.
+ *
+ * The listener is imported dynamically, like the router, so after a test that
+ * resets the module graph the chain and the routes still come from the SAME
+ * graph and read the same config manager.
+ *
+ * Why the graph is NOT reset per test (it was, until DOR-4190): the router and
+ * the chain behind it pull in most of the server, and re-importing that before
+ * all ~150 tests was most of this file's run time and once took the worker past
+ * the heap limit. Everything a test changes lives either in the config manager,
+ * which `initConfigManager` replaces on a fresh directory per test, or in a
+ * named singleton that the test or its block puts back through its own hook
+ * (task/relay flags, the remote-stream registry). Besides the one in the file's
+ * `beforeAll` above, the only resets left are the cases whose subject is a value read at MODULE LOAD — `lockedByEnv`,
+ * `todos.enabled`, and a restart — and each one resets again on the way out so
+ * the next test never inherits a graph built under its environment.
+ */
 async function configApp(configRouter: Hono<ApiEnv>) {
   const { honoGroupListener } = await import('../../http/__tests__/hono-group-listener.js');
   signedInUser = { userId: 'user_cockpit', credential: 'cookie' };
