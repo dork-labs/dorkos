@@ -80,7 +80,11 @@ export function closedLabel(
 ): string {
   if (todoPromise.state === 'open') return '';
   const word = CLOSED_STATE_LABEL[todoPromise.state];
-  if (todoPromise.confirmState === 'asked' && !awaitsConfirm(todoPromise, now)) {
+  if (
+    todoPromise.state === 'kept' &&
+    todoPromise.confirmState === 'asked' &&
+    !awaitsConfirm(todoPromise, now)
+  ) {
     return `${word} · unconfirmed`;
   }
   return word;
@@ -88,14 +92,17 @@ export function closedLabel(
 
 /**
  * Split a list into the open promises, the kept ones waiting for the person's answer, and the
- * closed ones, keeping the server's order (open soonest due first, closed newest first).
+ * closed ones, keeping the server's order (open soonest due first, closed newest first). A viewer
+ * who may not answer sees a waiting one among the closed, as plain "Kept".
  *
  * @param to-dos - The list as the server sent it.
  * @param now - The moment to judge a waiting answer at.
+ * @param mayAnswer - Whether this viewer may answer one; everyone by default.
  */
 export function splitTodos(
   todoPromises: readonly TodoPromise[],
-  now: Date = new Date()
+  now: Date = new Date(),
+  mayAnswer: (todoPromise: TodoPromise) => boolean = () => true
 ): {
   open: TodoPromise[];
   confirm: TodoPromise[];
@@ -103,8 +110,10 @@ export function splitTodos(
 } {
   return {
     open: todoPromises.filter((c) => c.state === 'open'),
-    confirm: todoPromises.filter((c) => awaitsConfirm(c, now)),
-    closed: todoPromises.filter((c) => c.state !== 'open' && !awaitsConfirm(c, now)),
+    confirm: todoPromises.filter((c) => awaitsConfirm(c, now) && mayAnswer(c)),
+    closed: todoPromises.filter(
+      (c) => c.state !== 'open' && !(awaitsConfirm(c, now) && mayAnswer(c))
+    ),
   };
 }
 

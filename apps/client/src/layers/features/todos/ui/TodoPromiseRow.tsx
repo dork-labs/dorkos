@@ -26,12 +26,13 @@ export interface TodoPromiseRowProps {
   busy?: boolean;
 }
 
-/** A delivered link the row can open: only a web address, never a script or a local path. */
-function webLink(delivered: string | null): string | null {
+/** A delivered link the row can open, and its site: only a web address, never a script or a path. */
+function webLink(delivered: string | null): { href: string; host: string } | null {
   if (!delivered) return null;
   try {
     const url = new URL(delivered);
-    return url.protocol === 'https:' || url.protocol === 'http:' ? url.href : null;
+    if (url.protocol !== 'https:' && url.protocol !== 'http:') return null;
+    return { href: url.href, host: url.host };
   } catch {
     return null;
   }
@@ -82,12 +83,12 @@ export function TodoPromiseRow({
             {moved && <span>{moved}</span>}
             {link ? (
               <a
-                href={link}
+                href={link.href}
                 target="_blank"
                 rel="noreferrer noopener"
                 className="focus-ring hover:text-foreground rounded-sm underline underline-offset-2"
               >
-                Delivered
+                Delivered · {link.host}
               </a>
             ) : (
               todoPromise.delivered && (

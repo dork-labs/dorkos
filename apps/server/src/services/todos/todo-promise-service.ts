@@ -35,8 +35,9 @@ import type { AuditChange } from '@dorkos/shared/audit-schemas';
 import { recordAudit } from '../audit/audit-trail.js';
 import { runOutsideAuditScope } from '../audit/audit-context.js';
 import { logger } from '../../lib/logger.js';
-import { TodoDueTimers, type TimedTodo } from './timing/todo-due-timers.js';
+import { TodoDueTimers, timedTodo } from './timing/todo-due-timers.js';
 import {
+  CLOSE_ACTION,
   TodoPromiseError,
   type NewTodoPromise,
   type TodoPromiseActor,
@@ -118,13 +119,6 @@ export interface TodoPromiseServiceDeps {
   now?: () => Date;
 }
 
-/** The audit action for a to-do arriving in each closed state. */
-const CLOSE_ACTION: Record<Exclude<TodoState, 'open'>, string> = {
-  kept: 'commitment.kept',
-  missed: 'commitment.missed',
-  dropped: 'commitment.dropped',
-};
-
 /** Normalize an ISO date-time to UTC `Z` form, so stored dates sort and compare alike. */
 function normalizeIso(value: string): string {
   return new Date(value).toISOString();
@@ -161,7 +155,7 @@ export class TodoPromiseService {
   /** Arm one timer per open to-do with a due date, from the table. */
   start(): void {
     const rows = this.store.openWithDueDate();
-    this.timers.rebuild(rows.map((row) => timed(row)!));
+    this.timers.rebuild(rows.map((row) => timedTodo(row)!));
   }
 
   /**
@@ -180,11 +174,13 @@ export class TodoPromiseService {
    * The last wake for a promise's current date, for the beat it woke (DOR-3034).
    *
    * @param id - The row id.
-   * @returns `checkin`, `start`, or null when neither has come.
+   * @returns `not-yet` after a person's Not yet, else `checkin`, `start`, or null.
    */
-  wakePhaseOf(id: string): 'start' | 'checkin' | null {
+  wakePhaseOf(id: string): 'start' | 'checkin' | 'not-yet' | null {
     const row = this.store.get(id);
     if (!row || row.state !== 'open') return null;
+    // The person said it was not done yet: news to the agent even past its date.
+    if (row.confirmState === 'not-yet') return 'not-yet';
     return row.checkinNotifiedAt ? 'checkin' : row.dueNotifiedAt ? 'start' : null;
   }
 
@@ -391,8 +387,17 @@ export class TodoPromiseService {
         'A new due date applies only with state open. Leave dueAt out to close it.'
       );
     }
+    if (change.delivered !== undefined && change.state !== 'kept') {
+      throw new TodoPromiseError(
+        'NOTHING_TO_CHANGE',
+        'A delivered link goes only with state kept.'
+      );
+    }
     if (change.state === row.state) {
-      if (change.note !== undefined) return this.saveNote(row, change.note);
+      // A link added to a promise already kept is saved, so it can be given after the fact.
+      if (change.note !== undefined || change.delivered !== undefined) {
+        return this.saveNote(row, change.note, change.delivered);
+      }
       throw new TodoPromiseError('NOTHING_TO_CHANGE', `That promise is already ${row.state}.`);
     }
     return this.close(row, change.state, change.note, change.delivered);
@@ -520,8 +525,9 @@ export class TodoPromiseService {
           : row.dueNotifiedAt,
       // A new date owes a fresh check-in; the old date keeps whatever it had.
       ...(dateMoves ? { checkinNotifiedAt: null, dueSetAt: now.toISOString() } : {}),
-      // A reopened promise is owed again: any ask to confirm it was kept is over.
+      // A reopened promise is owed again: any ask to confirm it, and what was delivered, are over.
       confirmState: null,
+      delivered: null,
       ...(change.note !== undefined ? { note: change.note || null } : {}),
     };
     const updated = this.store.update(row.id, patch)!;
@@ -545,15 +551,18 @@ export class TodoPromiseService {
   }
 
   /** Save a note and nothing else, recorded as a change to the promise. */
-  private saveNote(row: AgentTodoRow, note: string): TodoPromise {
-    const updated = this.store.update(row.id, { note: note || null })!;
-    this.audit(
-      updated,
-      'commitment.noted',
-      'modify',
-      [{ field: 'note', before: row.note, after: updated.note }],
-      note
-    );
+  private saveNote(row: AgentTodoRow, note?: string, delivered?: string): TodoPromise {
+    const updated = this.store.update(row.id, {
+      ...(note !== undefined ? { note: note || null } : {}),
+      ...(delivered !== undefined ? { delivered } : {}),
+    })!;
+    const fields = [...(note !== undefined ? ['note'] : []), ...(delivered ? ['delivered'] : [])];
+    const change = (fields as ('note' | 'delivered')[]).map((field) => ({
+      field,
+      before: row[field],
+      after: updated[field],
+    }));
+    this.audit(updated, 'commitment.noted', 'modify', change, note);
     return toTodoPromise(updated, this.now().getTime());
   }
 
@@ -569,6 +578,8 @@ export class TodoPromiseService {
       closedAt: this.now().toISOString(),
       ...(note !== undefined ? { note: note || null } : {}),
       ...(state === 'kept' && delivered ? { delivered } : {}),
+      // Only a kept promise has something delivered, or an answer to wait for.
+      ...(state !== 'kept' ? { confirmState: null, delivered: null } : {}),
     };
     const updated = this.store.update(row.id, patch)!;
     this.timers.clear(row.id);
@@ -584,7 +595,7 @@ export class TodoPromiseService {
 
   /** Arm (or clear) the timer for a row as it now stands. */
   private arm(row: AgentTodoRow): void {
-    const todo = row.state === 'open' ? timed(row) : null;
+    const todo = row.state === 'open' ? timedTodo(row) : null;
     if (todo) {
       this.timers.schedule(todo);
     } else {
@@ -656,7 +667,7 @@ export class TodoPromiseService {
     if (!isOwnPromise(row)) return;
     // A date moved since this timer was armed clears the wake and re-arms; only a promise still
     // open past its due time and grace (counted from a late wake, when it was late) is missed.
-    if (wakeMoments(timed(row)!).missedAt > this.now().getTime()) {
+    if (wakeMoments(timedTodo(row)!).missedAt > this.now().getTime()) {
       this.arm(row);
       return;
     }
@@ -682,17 +693,4 @@ export class TodoPromiseService {
       visibility: 'space',
     });
   }
-}
-
-/** What the timers need from a row, or null when it has no due date. */
-function timed(row: AgentTodoRow): TimedTodo | null {
-  if (!row.dueAt) return null;
-  return {
-    id: row.id,
-    dueAt: row.dueAt,
-    estimateMinutes: row.estimateMinutes,
-    dueSetAt: row.dueSetAt,
-    dueNotifiedAt: row.dueNotifiedAt,
-    checkinNotifiedAt: row.checkinNotifiedAt,
-  };
 }

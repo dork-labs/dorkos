@@ -18,6 +18,7 @@
  * @module services/todos/timing/todo-due-timers
  */
 import { nextWakeStep, type WakeInputs, type WakeStep } from './todo-wake-plan.js';
+import type { AgentTodoRow } from '../todo-promise-store.js';
 
 /** The longest single wait `setTimeout` honours (2^31 - 1 ms). */
 const MAX_TIMER_MS = 2_147_483_647;
@@ -123,4 +124,21 @@ export class TodoDueTimers {
     timer.unref?.();
     this.timers.set(id, timer);
   }
+}
+
+/**
+ * What the timers need from a row, or null when it has no due date.
+ *
+ * @param row - The stored row.
+ */
+export function timedTodo(row: AgentTodoRow): TimedTodo | null {
+  if (!row.dueAt) return null;
+  return {
+    id: row.id,
+    dueAt: row.dueAt,
+    estimateMinutes: row.estimateMinutes,
+    dueSetAt: row.dueSetAt,
+    dueNotifiedAt: row.dueNotifiedAt,
+    checkinNotifiedAt: row.checkinNotifiedAt,
+  };
 }

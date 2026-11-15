@@ -157,7 +157,7 @@ describe('TodoPromiseList', () => {
       </QueryClientProvider>
     );
     const waiting = await screen.findByRole('list', { name: 'Kept, waiting for your answer' });
-    expect(within(waiting).getByRole('link', { name: 'Delivered' })).toHaveAttribute(
+    expect(within(waiting).getByRole('link', { name: 'Delivered · github.com' })).toHaveAttribute(
       'href',
       'https://github.com/acme/app/pull/12'
     );
@@ -165,6 +165,44 @@ describe('TodoPromiseList', () => {
     await waitFor(() => expect(transport.confirmTodoPromise).toHaveBeenCalledWith('k', 'yes'));
     expect(
       within(waiting).getByRole('button', { name: 'Not yet: Ship the fix' })
+    ).toBeInTheDocument();
+  });
+
+  it('shows a read-only viewer a waiting promise as plainly kept, with no question', async () => {
+    const user = userEvent.setup();
+    renderList(
+      [
+        todoPromise({
+          id: 'k',
+          what: 'Ship the fix',
+          state: 'kept',
+          confirmState: 'asked',
+          closedAt: new Date().toISOString(),
+        }),
+      ],
+      { readOnly: true }
+    );
+    await user.click(await screen.findByRole('button', { name: 'Closed (1)' }));
+    expect(screen.queryByRole('list', { name: 'Kept, waiting for your answer' })).toBeNull();
+    const closed = screen.getByRole('list', { name: 'Closed to-dos' });
+    expect(within(closed).getByText('Kept')).toBeInTheDocument();
+    expect(within(closed).queryByRole('button')).not.toBeInTheDocument();
+  });
+
+  it('reads a dropped promise as dropped, whatever was asked of it before', async () => {
+    const user = userEvent.setup();
+    renderList([
+      todoPromise({
+        id: 'd',
+        what: 'Ship the fix',
+        state: 'dropped',
+        confirmState: 'asked',
+        closedAt: new Date(Date.now() - 2 * 86_400_000).toISOString(),
+      }),
+    ]);
+    await user.click(await screen.findByRole('button', { name: 'Closed (1)' }));
+    expect(
+      within(screen.getByRole('list', { name: 'Closed to-dos' })).getByText('Dropped')
     ).toBeInTheDocument();
   });
 

@@ -119,3 +119,10 @@ export interface TodoPromiseDueEvent {
 
 /** Something listening for to-dos coming due. */
 export type TodoPromiseObserver = (event: TodoPromiseDueEvent) => void;
+
+/** The audit action for a to-do arriving in each closed state. */
+export const CLOSE_ACTION: Record<Exclude<TodoState, 'open'>, string> = {
+  kept: 'commitment.kept',
+  missed: 'commitment.missed',
+  dropped: 'commitment.dropped',
+};

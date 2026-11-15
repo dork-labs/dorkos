@@ -19,7 +19,7 @@ export interface TodoReader {
    * The last wake for a promise's current date: its start, its check-in, or none yet (DOR-3034).
    * Absent where wakes are not tracked; then a due promise reads as due, as before.
    */
-  wakePhaseOf?(id: string): 'start' | 'checkin' | null;
+  wakePhaseOf?(id: string): 'start' | 'checkin' | 'not-yet' | null;
 }
 
 /**
@@ -42,22 +42,27 @@ export function createTodosGatherer(todoPromises: TodoReader, openWork?: OpenWor
       const overdue = due < now;
       // A start or check-in wake came for this date (DOR-3034): its own key, so the beat it woke
       // counts it as new work even though an earlier beat already saw the promise due soon.
-      const phase = overdue ? null : (todoPromises.wakePhaseOf?.(promise.id) ?? null);
+      // A person's Not yet is news even past the date, so it keeps its own key then too.
+      const wake = todoPromises.wakePhaseOf?.(promise.id) ?? null;
+      const phase = overdue && wake !== 'not-yet' ? null : wake;
       changes.push({
         gatherer: 'todos',
         key: phase ? `commitment:${promise.id}:${phase}` : `commitment:${promise.id}`,
         // Its words stay out of the summary: they can be somebody else's (a to-do, DOR-3088), and
         // the prompt shows them only inside the fenced open-promises list, by this id.
-        summary: overdue
-          ? `Overdue since ${promise.dueAt}: promise ${promise.id}`
-          : phase === 'start'
-            ? `Start now, due ${promise.dueAt}: promise ${promise.id}`
-            : phase === 'checkin'
-              ? `Check in, due ${promise.dueAt}: promise ${promise.id}`
-              : `Due ${promise.dueAt}: promise ${promise.id}`,
+        summary:
+          phase === 'not-yet'
+            ? `Not done yet, says the person, due ${promise.dueAt}: promise ${promise.id}`
+            : overdue
+              ? `Overdue since ${promise.dueAt}: promise ${promise.id}`
+              : phase === 'start'
+                ? `Start now, due ${promise.dueAt}: promise ${promise.id}`
+                : phase === 'checkin'
+                  ? `Check in, due ${promise.dueAt}: promise ${promise.id}`
+                  : `Due ${promise.dueAt}: promise ${promise.id}`,
         at: promise.dueAt,
         ref: { kind: 'commitment', id: promise.id },
-        signal: overdue ? 'commitment-overdue' : phase ? 'commitment-start' : 'commitment-due',
+        signal: phase ? 'commitment-start' : overdue ? 'commitment-overdue' : 'commitment-due',
       });
     }
     return changes;

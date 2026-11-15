@@ -1,7 +1,7 @@
 /**
  * "Kept" asks the person it was promised to (DOR-3034). An agent signing off its own promise is
  * not the same as the person agreeing it happened, so a promise to a person, marked kept by its
- * agent, waits for one answer: **Yes** confirms it, **Not yet** reopens it. Nobody has to answer:
+ * agent, waits for one answer: **Yes** confirms it, **Not yet** reopens it and wakes the agent. Nobody has to answer:
  * after a day with no answer the app reads it as "kept · unconfirmed", so the person is given no
  * chore. Promises between agents are never asked.
  *
@@ -22,6 +22,8 @@ export interface TodoConfirmDeps {
   store: Pick<TodoPromiseStore, 'get' | 'update'>;
   /** Reopens a promise the way every other reopen does: its timers, its audit, its floor. */
   reopen: (actor: TodoPromiseActor, id: string, note: string) => TodoPromise;
+  /** Marks the Inbox ask for this promise read, once it is answered. */
+  clearNotice?: (id: string) => void;
   /** The clock. Defaults to the system clock. */
   now?: () => Date;
 }
@@ -47,7 +49,14 @@ export class TodoConfirm {
    */
   ask(id: string): boolean {
     const row = this.deps.store.get(id);
-    if (!row || row.state !== 'kept' || row.confirmState !== null) return false;
+    // Asked once per keep: a fresh keep after a Not yet asks again.
+    if (
+      !row ||
+      row.state !== 'kept' ||
+      (row.confirmState !== null && row.confirmState !== 'not-yet')
+    ) {
+      return false;
+    }
     this.deps.store.update(id, { confirmState: 'asked' });
     return true;
   }
@@ -66,7 +75,15 @@ export class TodoConfirm {
     if (row.state !== 'kept' || row.confirmState !== 'asked') {
       throw new TodoPromiseError('NOTHING_TO_CHANGE', 'Nothing is waiting for an answer there.');
     }
-    if (answer === 'not-yet') return this.deps.reopen(actor, id, 'Not yet, said the person.');
+    this.deps.clearNotice?.(id);
+    if (answer === 'not-yet') {
+      // Owed again, and news to its agent even past the date: with its old wakes forgotten, the
+      // reopen wakes it to start now, and its grace runs from that wake, never a miss on the spot.
+      this.deps.store.update(id, { dueNotifiedAt: null, checkinNotifiedAt: null });
+      this.deps.reopen(actor, id, 'Not yet, said the person.');
+      const reopened = this.deps.store.update(id, { confirmState: 'not-yet' })!;
+      return toTodoPromise(reopened, this.now().getTime());
+    }
     const updated = this.deps.store.update(id, { confirmState: 'confirmed' })!;
     recordAudit({
       action: 'commitment.confirmed',

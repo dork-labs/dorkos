@@ -424,6 +424,8 @@ export class TodoService {
       }
       patch.state = change.state;
       patch.closedAt = change.state === 'open' ? null : this.now().toISOString();
+      // Leaving kept ends any ask to confirm it and what was delivered (DOR-3034).
+      if (change.state !== 'kept') Object.assign(patch, { confirmState: null, delivered: null });
       audit.push({ field: 'state', before: row.state, after: change.state });
       action =
         change.state === 'kept'

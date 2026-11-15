@@ -92,9 +92,10 @@ export const todos = sqliteTable(
     checkinNotifiedAt: text('checkin_notified_at'),
     /**
      * Whether the person it was promised to confirmed it kept (DOR-3034): `asked` after its agent
-     * marked it kept, `confirmed` once they said yes, NULL when nobody was asked.
+     * marked it kept, `confirmed` once they said yes, `not-yet` once they said not yet (it is open
+     * again), NULL when nobody was asked.
      */
-    confirmState: text('confirm_state', { enum: ['asked', 'confirmed'] }),
+    confirmState: text('confirm_state', { enum: ['asked', 'confirmed', 'not-yet'] }),
     /** A link to what was delivered (a pull request, a message, a file), or NULL. */
     delivered: text('delivered'),
     /** When it left `open` (ISO 8601), or NULL while open. */

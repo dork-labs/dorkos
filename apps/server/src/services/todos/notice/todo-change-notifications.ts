@@ -46,6 +46,17 @@ function quoted(what: string): string {
   return `“${words}”`;
 }
 
+/** The site a delivered link points at ("github.com"), or null for anything but a web address. */
+function hostOf(delivered: string | null | undefined): string | null {
+  if (!delivered) return null;
+  try {
+    const url = new URL(delivered);
+    return url.protocol === 'https:' || url.protocol === 'http:' ? url.host : null;
+  } catch {
+    return null;
+  }
+}
+
 /** The promise-changed entry, spread into the registry's `ENTRIES`. */
 export const TODO_CHANGE_ENTRIES: {
   [K in keyof TodoChangePayloads]: NotificationRegistryEntry<K>;
@@ -59,8 +70,9 @@ export const TODO_CHANGE_ENTRIES: {
     title: (p) => `${p.agentName} ${p.change} ${quoted(p.what)}`,
     body: (p) => {
       if (p.change === 'kept') {
-        const ask = 'Done? Answer Yes or Not yet on the promise.';
-        return p.delivered ? `${ask} Delivered: ${p.delivered}` : ask;
+        const ask = `Done? Answer Yes or Not yet on ${p.agentName}’s to-dos.`;
+        const host = hostOf(p.delivered);
+        return host ? `${ask} Delivered · ${host}` : ask;
       }
       const why = p.note ? `Why: ${p.note}` : 'No reason given.';
       if (p.change !== 'moved') return why;

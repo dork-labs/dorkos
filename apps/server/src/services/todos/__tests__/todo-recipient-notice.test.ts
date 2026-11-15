@@ -162,8 +162,17 @@ describe('the todo.changed notice', () => {
     expect(body({ ...base, change: 'moved', note: null, newDue: null })).toBe(
       'Now with no date. No reason given.'
     );
+    expect(
+      body({
+        ...base,
+        change: 'kept',
+        note: null,
+        newDue: null,
+        delivered: 'https://github.com/acme/app/pull/12',
+      })
+    ).toBe('Done? Answer Yes or Not yet on Ana’s to-dos. Delivered · github.com');
     expect(body({ ...base, change: 'kept', note: null, newDue: null, delivered: 'pr/1' })).toBe(
-      'Done? Answer Yes or Not yet on the promise. Delivered: pr/1'
+      'Done? Answer Yes or Not yet on Ana’s to-dos.'
     );
     expect(body({ ...base, change: 'dropped', note: 'Not needed', newDue: null })).toBe(
       'Why: Not needed'

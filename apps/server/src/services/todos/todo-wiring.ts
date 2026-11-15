@@ -22,7 +22,7 @@ import { TodoTurns } from './todo-turns.js';
 import { todoTurnSeams } from './todo-turn-wiring.js';
 import { agentInRoom, readTodoSourceFacts } from './todo-source.js';
 import { logger } from '../../lib/logger.js';
-import { notify } from '../notifications/notification-service.js';
+import { getNotificationService, notify } from '../notifications/notification-service.js';
 import { getChatMessageService } from '../session/chat-messages/chat-message-current.js';
 import { createTodoRecipientNotice } from './notice/todo-recipient-notice.js';
 import { TodoConfirm } from './notice/todo-confirm.js';
@@ -78,6 +78,7 @@ export function wireTodos(deps: TodoWiringDeps): TodoWiring {
   const confirm = new TodoConfirm({
     store: promiseStore,
     reopen: (actor, id, note) => service.update(actor, id, { state: 'open', note, from: 'kept' }),
+    clearNotice: (id) => markKeptNoticeRead(id, service.get(id)?.agentId),
   });
   const agentIdForPath = (agentPath: string) => deps.meshCore()?.getByPath(agentPath)?.id;
   const agentExists = (agentId: string) => deps.meshCore()?.get(agentId) !== undefined;
@@ -172,4 +173,22 @@ export function wireTodos(deps: TodoWiringDeps): TodoWiring {
       service.stop();
     },
   };
+}
+
+/**
+ * Mark the Inbox ask for a kept promise read once its person answered it (DOR-3034), so a
+ * question already answered never sits there as if it were waiting.
+ *
+ * @param todoId - The promise.
+ * @param agentId - Its agent, whose notices are searched.
+ */
+function markKeptNoticeRead(todoId: string, agentId: string | undefined): void {
+  const notifications = getNotificationService();
+  if (!notifications || !agentId) return;
+  const unread = notifications.list({ agentId, kind: ['todo.changed'], unread: true, limit: 100 });
+  for (const item of unread.notifications) {
+    const stored = notifications.payloadOf(item.id)?.payload as
+      { todoId?: string; change?: string } | undefined;
+    if (stored?.todoId === todoId && stored.change === 'kept') notifications.markRead(item.id);
+  }
 }

@@ -150,6 +150,8 @@ export function createTodoPromisesRoutes(deps: TodoPromiseRouterDeps): Hono<ApiE
     }
   });
 
+  // Any owner of this install may answer: one install is one person until spaces ship, and the
+  // same owner bar as PATCH holds. An agent caller is refused (DOR-3034).
   router.post('/:id/confirm', (c) => {
     const body = ConfirmTodoPromiseRequestSchema.safeParse(readJsonBody(c, { emptyAs: {} }));
     if (!body.success) return c.json(validationFailureBody(body.error), 400);

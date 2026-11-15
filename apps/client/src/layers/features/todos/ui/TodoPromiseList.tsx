@@ -96,7 +96,15 @@ export function TodoPromiseList({
     return <p className="text-muted-foreground text-sm">Couldn’t read to-dos.</p>;
   }
 
-  const { open, confirm: waiting, closed } = splitTodos(query.data);
+  const {
+    open,
+    confirm: waiting,
+    closed,
+  } = splitTodos(
+    query.data,
+    new Date(),
+    (todoPromise) => !readOnly && (!canChange || canChange(todoPromise))
+  );
   const busyId = update.isPending
     ? update.variables?.id
     : confirm.isPending
@@ -133,12 +141,7 @@ export function TodoPromiseList({
               agentName={spansAgents ? nameOf?.(todoPromise.agentId) : undefined}
               nameOf={nameOf}
               busy={busyId === todoPromise.id}
-              {...(readOnly || (canChange && !canChange(todoPromise))
-                ? {}
-                : {
-                    onConfirm: (answer: 'yes' | 'not-yet') =>
-                      confirm.mutate({ id: todoPromise.id, answer }),
-                  })}
+              onConfirm={(answer) => confirm.mutate({ id: todoPromise.id, answer })}
             />
           ))}
         </ul>

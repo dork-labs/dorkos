@@ -223,7 +223,7 @@ describe('to-do routes', () => {
       .post(`/api/todo-promises/${notYet.id}/confirm`)
       .send({ answer: 'not-yet' });
     expect(reopened.status).toBe(200);
-    expect(reopened.body).toMatchObject({ state: 'open', confirmState: null });
+    expect(reopened.body).toMatchObject({ state: 'open', confirmState: 'not-yet' });
   });
 
   it('refuses a person who is not the owner, on add and on change', async () => {

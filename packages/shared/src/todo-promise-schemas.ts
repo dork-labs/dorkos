@@ -65,9 +65,10 @@ export const TodoPromiseSchema = z
     note: z.string().nullable(),
     /**
      * Whether the person it was promised to confirmed it kept: `asked` while their answer waits,
-     * `confirmed` once they said yes, null when nobody was asked (DOR-3034).
+     * `confirmed` once they said yes, `not-yet` once they reopened it, null when nobody was
+     * asked (DOR-3034).
      */
-    confirmState: z.enum(['asked', 'confirmed']).nullable(),
+    confirmState: z.enum(['asked', 'confirmed', 'not-yet']).nullable(),
     /** A link to what was delivered when it was kept (a pull request, a message, a file), or null. */
     delivered: z.string().nullable(),
   })
