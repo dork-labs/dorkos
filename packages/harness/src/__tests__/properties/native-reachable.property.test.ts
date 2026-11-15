@@ -23,9 +23,10 @@
  *   reason for a skill that is also discovered by another path. Anything else is
  *   a real finding.
  * - **Installed skills — reachability.** A `<pkg>__<name>` directory breaks
- *   OpenCode's and Cursor's documented name rules twice over (charset, and
- *   must-match-the-directory), and four harnesses do not document whether they
- *   follow a symlink — so on those, an installed skill is legitimately
+ *   Cursor's documented name rules twice over (charset, and
+ *   must-match-the-directory; OpenCode's binary was observed not enforcing the
+ *   second), and several harnesses do not document whether they follow a
+ *   symlink — so on those, an installed skill is legitimately
  *   `uncertain`, and the contract says so (SK-09, SK-12, both unverified until
  *   the H tier runs a real binary). What is NOT legitimate, and is what this
  *   tier pins, is the walk never reaching the skill at all: every installed
@@ -42,6 +43,7 @@ import { join } from 'node:path';
 import { loadManifest, project } from '../../engine.js';
 import { applyPlan } from '../../apply/apply.js';
 import { harnessCoverage, type CoverageResult } from '../../vendor-facts/coverage.js';
+import { skillsFactsFor } from '../../vendor-facts/index.js';
 import { inventorySourceTree } from '../../inventory/index.js';
 import { CLAUDE_SKILLS_DIR } from '../../plan/installed-projector.js';
 import type { HarnessId } from '../../manifest/schema.js';
@@ -125,6 +127,24 @@ describe('P9b — a `native` skill is somewhere its harness actually reads', () 
               checked += 1;
               const target = realpath(join(repoRoot, action.source));
               const coverage = coverageFor(action.harness);
+              // A harness that collapses by name keeps one of two skills sharing a
+              // name (OpenCode, observed). The other is legitimately missing only
+              // when the plan already warned about that collision on that harness,
+              // and the name itself must still be found.
+              const warnedCollision =
+                skillsFactsFor(action.harness).dedupe === 'by-name' &&
+                plan.warnings.some(
+                  (w) =>
+                    w.harness === action.harness &&
+                    w.reason.includes(`frontmatter name "${action.name}" collides`)
+                );
+              if (warnedCollision) {
+                expect(
+                  coverage.discovered.some((d) => d.key === action.name),
+                  `${action.harness} should still load one "${action.name}"`
+                ).toBe(true);
+                continue;
+              }
               expect({
                 harness: action.harness,
                 skill: action.name,

@@ -17,12 +17,11 @@
  *    were read from, and leaves the five nobody looked at alone. Read
  *    `verified: 'binary'` as "a run touched this row", never as "every cell here
  *    is measured"; that is what `observed.cells` is for.
- * 2. **`unknown` is an answer.** Where a vendor page said nothing — OpenCode's
- *    and Cursor's and Copilot's symlink handling, Gemini's identity rule,
+ * 2. **`unknown` is an answer.** Where a vendor page said nothing — Cursor's and
+ *    Copilot's symlink handling, Gemini's identity rule,
  *    several live-reload clauses — the cell says `unknown` and the coverage walk
  *    reports an `uncertain` finding rather than guessing. Filling one of those in
- *    without a citation is the single most damaging edit that can be made here.
- * 3. **Dates, not vibes.** `source.fetchedAt` is the day the page was read.
+ *    without a citation is the single most damaging edit that can be made here. * 3. **Dates, not vibes.** `source.fetchedAt` is the day the page was read.
  *    Updating a cell means re-fetching the page, quoting the sentence, and
  *    bumping the date — see `contributing/harness-sync.md` §5.
  *
@@ -223,11 +222,13 @@ export const HARNESS_VENDOR_FACTS: Readonly<Record<HarnessId, HarnessFacts>> = {
       // 1–64 chars, lowercase alphanumeric segments joined by single hyphens
       // (so no leading, trailing or doubled `-`), transcribed from the docs rule.
       nameRegex: /^(?=.{1,64}$)[a-z0-9]+(?:-[a-z0-9]+)*$/,
-      nameMustMatchDir: true,
+      // The docs say the name must match the directory; the binary does not
+      // enforce it (observed below), so the row records what OpenCode does.
+      nameMustMatchDir: false,
       nameRequired: 'unknown',
       onInvalidName: 'unknown',
-      dedupe: 'unknown',
-      symlinks: 'unknown',
+      dedupe: 'by-name',
+      symlinks: 'followed',
       liveReload: 'unknown — the vendor page states nothing',
       source: {
         url: 'https://opencode.ai/docs/skills/',
@@ -235,10 +236,24 @@ export const HARNESS_VENDOR_FACTS: Readonly<Record<HarnessId, HarnessFacts>> = {
         quote:
           '`.opencode/skills/`, `.claude/skills/`, `.agents/skills/` — walking up from cwd to the git worktree; … `name`: 1–64 chars, lowercase alphanumeric with single hyphens, no `--`, **must match the directory** (docs); source keyed on frontmatter `name` at the 2026-07 check',
       },
-      verified: 'docs',
+      verified: 'binary',
+      observed: {
+        binary: 'opencode 1.19.3',
+        observedAt: '2026-11-14',
+        report: 'meta/harness-smoke/20261114-opencode-skill-probe.md',
+        cells: ['readPaths', 'identity', 'nameMustMatchDir', 'dedupe', 'symlinks'],
+        summary:
+          'In a throwaway home, `opencode debug skill` listed every projected `.agents/skills/<pkg>__<skill>` ' +
+          'symlink, and one in `~/.agents/skills`, under its FRONTMATTER name, so identity is the ' +
+          'frontmatter key and the directory need not match; a `skill` tool call against a fake ' +
+          'local model loaded the body and the skill’s other files through the link, so symlinks ' +
+          'are followed; and the same skill linked from `.claude/skills` and `.agents/skills`, or ' +
+          'two packs sharing a frontmatter name, listed once, so duplicates collapse by name.',
+      },
       notes: [
-        'The 2026-07 source check the contract records ("source keyed on frontmatter `name` … which **would** collapse the pair") is the standing hypothesis for what happens to a skill reachable through two of these three directories — but it is a hypothesis, not a documented outcome: the vendor page says nothing, and SK-12 lists the answer as unverified pending the H tier, exactly as it does for Cursor and Copilot. So `dedupe` stays `unknown` and this note carries the reasoning. When the H tier confirms it, the cell becomes `by-name` and `verified` becomes `binary` in the same edit.',
-        'The docs state the name rule but not what happens to a skill that breaks it, hence `onInvalidName: unknown` — which is what makes a `<pkg>__<name>` directory an `uncertain` finding here rather than a discovery or a drop (SK-09).',
+        'A same-name collision is silent: of two packs whose skills share a frontmatter `name`, one is listed and the other is dropped with no warning. `pack-a` won in both runs; that the order is alphabetical is not measured.',
+        'Loading needs ripgrep: the `skill` tool lists a skill’s files with `rg`, and with none on `PATH` and no network to download one every load failed (`ripgrep execution failed`) while the listing still worked.',
+        '`onInvalidName` stays `unknown`: every frontmatter name the probe used met the documented rule, so what happens to one that breaks it was not observed. `walk`, `nameRequired` and `liveReload` were not observed either; the probe ran at the repository root.',
       ],
     },
   },

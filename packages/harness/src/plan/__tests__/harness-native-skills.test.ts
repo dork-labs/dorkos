@@ -101,14 +101,15 @@ describe('XA-06 — a skill in another agent tool’s own folder', () => {
 
   it('XA-06: refuses to decide when the vendor documented the rule and not its consequence', () => {
     // Seeded defect: call it `native` because the folder is on the read path.
-    // OpenCode documents that a skill's frontmatter name must match its
-    // directory, and documents nothing about what it does when it does not — so
-    // the plan says so, exactly as the coverage walk does.
+    // OpenCode documents a charset rule for the frontmatter name, and documents
+    // nothing about what it does with a name that breaks it — so the plan says
+    // so, exactly as the coverage walk does. (A name that merely differs from
+    // its directory is no longer this case: the binary loads it.)
     stage(['opencode']);
-    stageSkill('.opencode/skills/Review_PR', 'totally-different');
+    stageSkill('.opencode/skills/Review_PR', 'Review_PR');
 
     expect(linesAbout(plan(), '.opencode/skills/Review_PR')).toEqual([
-      'warning opencode: kept in .opencode/skills, which OpenCode reads — but whether it loads this one is undocumented: the frontmatter name "totally-different" does not match the directory "Review_PR", which OpenCode documents as required, and OpenCode does not document what it does with such a skill',
+      'warning opencode: kept in .opencode/skills, which OpenCode reads — but whether it loads this one is undocumented: the name "Review_PR" breaks OpenCode\'s documented charset rule /^(?=.{1,64}$)[a-z0-9]+(?:-[a-z0-9]+)*$/, and OpenCode does not document what it does with such a skill',
     ]);
   });
 
