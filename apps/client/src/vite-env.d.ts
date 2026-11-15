@@ -165,6 +165,11 @@ declare global {
       ): Promise<DesktopBrowserPageState | null>;
       /** Subscribe to guest pages this window shows starting, stopping or failing a load. */
       onPageChange?(cb: (state: DesktopBrowserPageState) => void): () => void;
+      /**
+       * A JPEG still of the page this window shows now, or `null` (DOR-4438). Absent
+       * on a shell older than this call, where a covered page is simply hidden.
+       */
+      captureStill?(connectionId: string): Promise<Uint8Array | null>;
     };
     /**
      * Get the port the Express server is listening on, or `null` when it is

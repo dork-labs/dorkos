@@ -4,6 +4,7 @@ import type { GuestPage } from '../model/use-guest-page';
 import { pageErrorBlock, type PageErrorAction } from '../lib/page-error';
 import { BrowserLoadingBar } from './BrowserLoadingBar';
 import { PageErrorBlock } from './PageErrorBlock';
+import { NativeBrowserStill } from './NativeBrowserStill';
 
 /** Props for {@link BrowserPageArea}. */
 interface BrowserPageAreaProps {
@@ -38,7 +39,8 @@ export function BrowserPageArea({
 }: BrowserPageAreaProps) {
   const surface = useRef<HTMLDivElement>(null);
   const block = page.failure ? pageErrorBlock(page.failure, typed) : null;
-  useNativeBrowserSurface(surface, connectionId, visible && !block, onUnavailable);
+  // While an app layer covers the page, a still of it sits in its place (DOR-4438).
+  const still = useNativeBrowserSurface(surface, connectionId, visible && !block, onUnavailable);
   const act = (action: PageErrorAction) => {
     if (action === 'search') onSearch();
     else page.run(action);
@@ -56,7 +58,10 @@ export function BrowserPageArea({
             <PageErrorBlock block={block} onAction={act} disabled={disabled} />
           </div>
         ) : (
-          children
+          <>
+            {still && <NativeBrowserStill still={still} />}
+            {children}
+          </>
         )}
       </div>
     </div>

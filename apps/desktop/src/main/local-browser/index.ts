@@ -9,12 +9,15 @@ import { forgetGuestSignIns } from './forget-sign-ins';
 import { chromeIdentity } from './browser-identity';
 import { pageTransport } from './page-transport';
 import { isGuestPageAction, watchGuestPage } from './page-events';
+import { capturePageStill } from './page-still';
 
 export const LOCAL_BROWSER_BOUNDS_CHANNEL = 'local-browser:set-bounds';
 /** The app asks about or acts on one guest page (DOR-4430, DOR-4431). */
 const LOCAL_BROWSER_PAGE_CHANNEL = 'local-browser:page';
 /** The shell tells the window showing a guest that its page started, stopped or failed a load. */
 const LOCAL_BROWSER_PAGE_CHANGED_CHANNEL = 'local-browser:page-changed';
+/** A still of the page the asking window shows now (DOR-4438); see `page-still.ts`. */
+export const LOCAL_BROWSER_STILL_CHANNEL = 'local-browser:capture-still';
 export interface BrowserBounds {
   connectionId: string;
   x: number;
@@ -361,6 +364,13 @@ export async function startLocalBrowserBridge(
       return guest.page.read();
     }
   );
+  ipcMain.handle(LOCAL_BROWSER_STILL_CHANNEL, (event, connectionId: unknown) => {
+    if (!isAppSender(event, getRendererUrl) || event.senderFrame !== event.sender.mainFrame)
+      return null;
+    const guest = typeof connectionId === 'string' ? guests.get(connectionId) : undefined;
+    if (!guest) return null;
+    return capturePageStill(guest.view, guest.parent, BrowserWindow.fromWebContents(event.sender));
+  });
   try {
     await new Promise<void>((resolve, reject) => {
       server.once('error', reject);
@@ -369,6 +379,7 @@ export async function startLocalBrowserBridge(
   } catch (error) {
     ipcMain.removeHandler(LOCAL_BROWSER_BOUNDS_CHANNEL);
     ipcMain.removeHandler(LOCAL_BROWSER_PAGE_CHANNEL);
+    ipcMain.removeHandler(LOCAL_BROWSER_STILL_CHANNEL);
     sockets.close();
     server.close();
     throw error;
@@ -381,6 +392,7 @@ export async function startLocalBrowserBridge(
     async close() {
       ipcMain.removeHandler(LOCAL_BROWSER_BOUNDS_CHANNEL);
       ipcMain.removeHandler(LOCAL_BROWSER_PAGE_CHANNEL);
+      ipcMain.removeHandler(LOCAL_BROWSER_STILL_CHANNEL);
       for (const id of guests.keys()) closeGuest(id);
       sockets.close();
       await new Promise<void>((resolve) => server.close(() => resolve()));
