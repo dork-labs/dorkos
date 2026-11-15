@@ -675,6 +675,12 @@ export class AgentSendService {
       });
       return;
     }
+    // A pause cut its turn before the agent read it: it waits in the queue again
+    // and starts afresh on resume (DOR-4353).
+    if (event.phase === 'held') {
+      if (row.status === 'started') this.deps.store.update(row.id, { status: 'queued' });
+      return;
+    }
     if (row.status === 'queued' || row.status === 'held') this.fail(row, event.reason);
   }
 
