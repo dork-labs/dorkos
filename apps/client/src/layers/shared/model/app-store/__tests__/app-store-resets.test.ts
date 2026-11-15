@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 import { describe, it, expect, beforeEach } from 'vitest';
 import { useAppStore } from '../app-store';
 import { DEFAULT_FONT } from '@/layers/shared/lib/font-config';

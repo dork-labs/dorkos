@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 /**
  * Which document on a room's table becomes a review, and which stays a card
  * (spec `canvas-agent-seat` §8).

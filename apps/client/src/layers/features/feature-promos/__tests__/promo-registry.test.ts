@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 import { describe, it, expect } from 'vitest';
 import { PROMO_REGISTRY } from '../model/promo-registry';
 import type { PromoPlacement } from '../model/promo-types';

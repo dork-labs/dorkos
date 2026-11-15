@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { CLIENT_ID_STORAGE_KEY_FOR_TEST, resolveStableClientId } from '../client-id';
 import { HttpTransport } from '../http-transport';

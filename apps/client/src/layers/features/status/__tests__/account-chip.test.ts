@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 /**
  * The account chip's display rules (spec `claude-account-ui` §6.1): its tone,
  * its words, and when the popover may offer to continue on another account.

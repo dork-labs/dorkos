@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 /**
  * The one sentence under the name (spec `profile-unification` §1.2).
  *

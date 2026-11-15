@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 import { createMockTransport } from '@dorkos/test-utils';
 import { subscribeDocChannelNotifications } from '../doc-channel-notifications';
 import { DOC_EVENT, DOC_SNAPSHOT } from './doc-channel-fixtures';

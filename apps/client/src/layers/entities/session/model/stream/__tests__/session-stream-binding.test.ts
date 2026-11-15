@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import type { ConnectionState } from '@dorkos/shared/types';
 import type { SessionEvent, SessionSnapshot, SessionStatus } from '@dorkos/shared/session-stream';

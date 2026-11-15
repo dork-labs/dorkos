@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 /**
  * The decision window is hours long, so the countdown has to read in hours as
  * well as minutes — and has to stay honest at both ends of the window.

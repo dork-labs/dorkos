@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 /**
  * What `uploadFiles` promises the composer: it always ends, and it can always
  * be ended (DOR-494).

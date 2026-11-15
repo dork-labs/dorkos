@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 import { describe, it, expect } from 'vitest';
 import { STATUS_BAR_PIN_KEYS, STATUS_BAR_PREFS_DEFAULTS } from '@dorkos/shared/config-schema';
 import type { PermissionModeDescriptor } from '@dorkos/shared/agent-runtime';

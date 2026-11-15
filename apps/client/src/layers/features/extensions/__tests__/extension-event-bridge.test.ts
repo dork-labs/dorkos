@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { SessionEvent, SessionListEvent } from '@dorkos/shared/session-stream';
 import type { ExtensionEvent } from '@dorkos/extension-api';

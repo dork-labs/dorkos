@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 import { describe, expect, it } from 'vitest';
 import type { CanvasChannelFrame } from '@dorkos/shared/canvas-channel-schemas';
 import { DocChannelCursor } from '../model/doc-channel-cursor-state';

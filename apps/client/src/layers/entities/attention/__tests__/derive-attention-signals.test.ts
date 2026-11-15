@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 /**
  * What is allowed to need the operator, and what is not (BC-5, BC-6, BC-39).
  *

@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 import { describe, it, expect } from 'vitest';
 import type { CommandEntry } from '@dorkos/shared/types';
 import { buildPaletteCommands, compactComposerGate } from '../build-palette-commands';

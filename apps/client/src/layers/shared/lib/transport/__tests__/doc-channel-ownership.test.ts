@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 import { describe, expect, it, vi } from 'vitest';
 import { createMockTransport } from '@dorkos/test-utils/mock-factories';
 import { ownDocChannelConnection, openOwnedRoomDocStream } from '../doc-channel-ownership';

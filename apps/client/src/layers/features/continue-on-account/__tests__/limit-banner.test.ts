@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 /**
  * The banner's pure display rules (spec `claude-account-ui` §6.7): its tone
  * agrees with the sidebar row and the header badge, and its words.

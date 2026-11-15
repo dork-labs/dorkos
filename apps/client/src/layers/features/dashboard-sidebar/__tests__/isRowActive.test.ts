@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 /**
  * Which sidebar row looks open — including on Home, which draws a room without
  * having a room "active" (spec `one-bar-header` §3.5, phase R1).

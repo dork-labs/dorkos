@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 import { describe, it, expect, beforeEach } from 'vitest';
 import type { SessionStatus, SessionContextUsage } from '@dorkos/shared/session-stream';
 import { useSessionListStore, selectSessionActivity } from '../session-list-store';

@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { fetchJSON, fetchNoContent, buildQueryString } from '../http-client';
 import { createProfileMethods } from '../profile-methods';

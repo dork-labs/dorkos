@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { NO_PROVENANCE, provenanceLine } from '../lib/provenance';
 

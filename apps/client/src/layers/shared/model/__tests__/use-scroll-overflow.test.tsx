@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 /**
  * Whether a scroller has more content past an edge — the question a fade cue is
  * drawn from (DOR-1043 vertically, DOR-1180 horizontally).

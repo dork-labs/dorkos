@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 /**
  * `press.ts`'s own card/row/mark ladder has three stops and the numbers are
  * the design system's, not an author's taste. Before it existed the codebase

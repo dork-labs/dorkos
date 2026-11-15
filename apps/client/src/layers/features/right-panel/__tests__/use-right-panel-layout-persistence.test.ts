@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { renderHook, cleanup } from '@testing-library/react';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';

@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 /**
  * The one builder for links into a conversation (DOR-2077).
  */

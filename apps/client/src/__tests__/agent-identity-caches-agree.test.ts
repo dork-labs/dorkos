@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 /**
  * The literal keys `useAgentsSync` sweeps really are the caches they name.
  *

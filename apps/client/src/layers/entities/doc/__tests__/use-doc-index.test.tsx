@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 /**
  * `useDocIndex` and `useInvalidateDocIndex` (DOR-2982): the space's docs over
  * the Transport, idle until asked, and read again when invalidated.

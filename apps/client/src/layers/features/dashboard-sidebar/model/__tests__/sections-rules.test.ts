@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 /**
  * The list — what it holds, in what order, and what it never holds: a session
  * or a thread. An agent is a row once, as its direct message.

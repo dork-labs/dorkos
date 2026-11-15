@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 /**
  * The follow store: which frames it owns, what it remembers, and what it forgets
  * (spec `canvas-agent-seat` §6).

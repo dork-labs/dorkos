@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 import { describe, it, expect } from 'vitest';
 import { sessionDisplayTitle, UNTITLED_SESSION_LABEL } from '../session-display-title';
 

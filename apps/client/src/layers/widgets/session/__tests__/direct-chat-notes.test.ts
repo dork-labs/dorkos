@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 /**
  * How a Direct chat's pings sit in its transcript (rule S12, DOR-2997): once,
  * where they landed, as their author's message, with the unread rule above the

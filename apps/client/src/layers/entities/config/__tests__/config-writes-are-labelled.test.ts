@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 /**
  * Every config write in the entity layer carries the shared mutation key.
  *

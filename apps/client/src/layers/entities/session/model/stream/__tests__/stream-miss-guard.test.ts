@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 /**
  * The open chat's live stream missed a turn the server ran: the window must
  * notice, say so to the server, and rebuild the stream from a fresh snapshot.

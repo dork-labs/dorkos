@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 /**
  * The person's own author line: their name, then a muted "(you)" that never
  * truncates (FB-38/55).

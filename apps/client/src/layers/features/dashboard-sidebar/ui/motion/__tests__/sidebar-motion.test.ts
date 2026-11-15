@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 /**
  * The continuity layer's numbers, asserted as numbers (spec D5).
  *

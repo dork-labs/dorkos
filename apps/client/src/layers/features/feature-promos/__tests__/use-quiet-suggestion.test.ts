@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 /**
  * One suggestion, or none (team-room-home spec D5.3).
  *

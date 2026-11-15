@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 /** Build a visibility context with or without server capabilities. */
 import { describe, it, expect, beforeEach } from 'vitest';
 import type { Transport } from '@dorkos/shared/transport';

@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 import { describe, it, expect, vi } from 'vitest';
 import { createMemoryHistory } from '@tanstack/react-router';
 import { QueryClient } from '@tanstack/react-query';

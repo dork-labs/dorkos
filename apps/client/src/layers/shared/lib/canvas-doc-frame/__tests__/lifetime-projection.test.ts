@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 import { describe, it, expect, vi } from 'vitest';
 import { FrameLifetimeController } from '../frame-lifetime';
 import { createBoundDocPort } from '../bound-doc-port';

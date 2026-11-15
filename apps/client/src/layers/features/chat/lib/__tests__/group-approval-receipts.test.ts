@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 import { describe, it, expect } from 'vitest';
 import type { MessagePart } from '@dorkos/shared/types';
 import { groupApprovalReceipts } from '../group-approval-receipts';

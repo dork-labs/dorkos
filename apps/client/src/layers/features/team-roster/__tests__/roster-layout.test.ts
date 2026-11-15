@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 /**
  * The one decision that arms the roster's layout animation.
  *

@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 import { describe, it, expect } from 'vitest';
 import type { InstallationUpdateCheck, InstalledPackage } from '@dorkos/shared/marketplace-schemas';
 import {

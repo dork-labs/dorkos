@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 import { describe, it, expect, beforeEach } from 'vitest';
 import type { HistoryMessage } from '@dorkos/shared/types';
 import { useHistoryWindowStore, EMPTY_HISTORY_WINDOW } from '../history-window-store';

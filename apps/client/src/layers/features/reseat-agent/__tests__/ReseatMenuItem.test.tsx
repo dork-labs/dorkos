@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 /**
  * "Continue on another account…" in a member's menu: offered only when the
  * seat has answered here and another account can take it, and otherwise shown

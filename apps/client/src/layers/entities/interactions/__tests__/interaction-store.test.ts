@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { MAX_INTERACTION_RECORDS, interactionKey, useInteractionStore } from '../index';
 

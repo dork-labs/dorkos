@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { createExtensionAPI } from '../model/extension-api-factory';
 import { setRunningApps } from '../frame/running-apps';

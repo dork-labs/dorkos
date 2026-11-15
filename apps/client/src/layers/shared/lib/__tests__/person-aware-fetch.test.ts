@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 /**
  * The app window's `fetch` and the owner's step-up at this computer
  * (DOR-3330): the person proof goes only to this page's own API, and a change

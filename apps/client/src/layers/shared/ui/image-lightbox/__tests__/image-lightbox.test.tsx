@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 /**
  * The lightbox, driven the way a reader drives it: click a thumbnail, step
  * through the gallery, save a picture, close it, and land back where they were.

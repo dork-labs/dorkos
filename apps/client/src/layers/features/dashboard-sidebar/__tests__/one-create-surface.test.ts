@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 /**
  * **P2 AC-7: exactly one create surface exists.**
  *

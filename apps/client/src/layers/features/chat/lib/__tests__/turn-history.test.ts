@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 /**
  * The end-of-turn reload reads only what the turn added (DOR-2890).
  */

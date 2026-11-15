@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 /**
  * `/`'s search contract — the addresses the home tab has to keep answering
  * after it became the #team room (team-room-home spec D3.2/D3.5).

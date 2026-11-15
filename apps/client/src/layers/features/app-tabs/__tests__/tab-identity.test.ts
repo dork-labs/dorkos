@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 import { describe, it, expect } from 'vitest';
 import { Hash, MessageSquare, Puzzle } from 'lucide-react';
 import { APP_ROUTE_PATHS } from '@/layers/shared/lib';

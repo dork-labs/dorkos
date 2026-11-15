@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 /**
  * The question prompt's option cursor stays hidden until a shortcut is used.
  *

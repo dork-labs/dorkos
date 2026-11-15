@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 /**
  * `CandidateCard` hands its root node to whoever renders it.
  *
