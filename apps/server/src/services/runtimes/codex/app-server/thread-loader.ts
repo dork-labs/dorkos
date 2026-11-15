@@ -42,7 +42,7 @@ import { guardedMountTargetRecorder } from '../policy/writable-missing-targets.j
 import { codexPermissionProfile, codexProtectedConfig } from '../policy/protected-profile.js';
 import { loadWithProtectedProfile } from './profile-load.js';
 import { withThreadLoadBinding } from './thread-load-binding.js';
-import { sandboxFor, trustLevelFor } from './thread-trust.js';
+import { loadTrust, sandboxFor } from './thread-trust.js';
 export { trustLevelFor } from './thread-trust.js';
 import { credentialsOf } from './thread-credentials.js';
 import { approvalPolicyFor } from './turn-parts.js';
@@ -602,7 +602,7 @@ export class CodexThreadLoader {
       { ...input, tools: { ...input.tools, agentTokenEnv } },
       {
         threadKey,
-        trust: trustLevelFor(input.home, sandbox, recorded),
+        trust: loadTrust(input.home, sandbox, recorded, this.realpath(input.cwd)),
         realCwd: this.realpath(input.cwd),
         onMissingTargets:
           input.tools.filePolicy && this.options.recordMissingTargets

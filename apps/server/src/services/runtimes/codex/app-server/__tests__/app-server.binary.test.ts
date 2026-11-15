@@ -51,6 +51,11 @@ import { ConnectorRuntimePrincipalService } from '../../../../connectors/princip
 import type { ConnectorRuntimeTools } from '../../../connector-tools.js';
 import type { CodexTurnRequest } from '../../transport/codex-transport.js';
 import type { AppServerTransportOptions } from '../../transport/app-server-transport.js';
+import {
+  forgetProjectConfigActivity,
+  setProjectConfigActivity,
+  type ProjectConfigActivityEntry,
+} from '../project-config-activity.js';
 import { spawn as nodeSpawn } from 'node:child_process';
 import {
   protectedProbe,
@@ -1470,6 +1475,57 @@ nativeSuite('the app-server transport against the real Codex binary', NATIVE_LIM
     // Recorded: the token does NOT reach a stdio MCP server's environment on
     // app-server (it is set for the agent's own shell commands only).
     expect(JSON.parse(fs.readFileSync(report, 'utf8'))).toEqual({ sawToken: false });
+  });
+
+  // DOR-4408: a cloned repo's `.codex/config.toml` names an MCP server whose
+  // `command` would start outside Codex's sandbox. It loads only at Full, and
+  // the person is told in Activity when it does.
+  it('starts a cloned repo’s own MCP server only at Full, and says so (DOR-4408)', async () => {
+    const lines: ProjectConfigActivityEntry[] = [];
+    setProjectConfigActivity((entry) => lines.push(entry));
+    try {
+      fs.mkdirSync(path.join(project, '.git'), { recursive: true });
+      fs.mkdirSync(path.join(project, '.codex'), { recursive: true });
+      const started: Record<string, boolean> = {};
+      for (const mode of ['default', 'acceptEdits', 'bypassPermissions'] as const) {
+        const report = path.join(root, `repo-mcp-${mode}.json`);
+        const script = path.join(root, `repo-mcp-${mode}.cjs`);
+        fs.writeFileSync(
+          script,
+          [
+            "const fs = require('fs');",
+            `fs.writeFileSync(${JSON.stringify(report)}, '{}');`,
+            "let buf = '';",
+            "process.stdin.on('data', (c) => { buf += c; let i; while ((i = buf.indexOf('\\n')) >= 0) { const line = buf.slice(0, i); buf = buf.slice(i + 1);",
+            '  let m; try { m = JSON.parse(line); } catch { continue; } if (m.id === undefined) continue;',
+            "  const result = m.method === 'initialize' ? { protocolVersion: '2025-06-18', capabilities: { tools: {} }, serverInfo: { name: 'r', version: '0' } } : m.method === 'tools/list' ? { tools: [] } : {};",
+            "  process.stdout.write(JSON.stringify({ jsonrpc: '2.0', id: m.id, result }) + '\\n'); } });",
+          ].join('\n')
+        );
+        fs.writeFileSync(
+          path.join(project, '.codex', 'config.toml'),
+          `[mcp_servers.repo_probe]\ncommand = ${JSON.stringify(process.execPath)}\nargs = [${JSON.stringify(script)}]\n`
+        );
+        const transport = makeTransport();
+        const turn = request(`repo-${mode}`, undefined, {
+          settings: { permissionMode: mode, model: 'fake-model' },
+        });
+        for await (const _event of transport.runTurn(turn)) {
+          // drained
+        }
+        started[mode] = fs.existsSync(report);
+      }
+      expect(started).toEqual({ default: false, acceptEdits: false, bypassPermissions: true });
+      expect(lines).toEqual([
+        {
+          cwd: project,
+          summary: `Codex loaded .codex/config.toml in ${path.basename(project)} at Full.`,
+        },
+      ]);
+    } finally {
+      setProjectConfigActivity(undefined);
+      forgetProjectConfigActivity();
+    }
   });
 
   // DOR-3837: a managed server's key reaches the server, and no file Codex

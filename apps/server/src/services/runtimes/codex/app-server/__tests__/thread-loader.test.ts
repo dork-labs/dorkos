@@ -12,6 +12,11 @@ import {
   type ThreadLoadInput,
 } from '../thread-loader.js';
 import type { CodexTurnTools } from '../../transport/codex-transport.js';
+import {
+  AppServerCodexTransport,
+  createCodexTransport,
+  resolveCodexTransport,
+} from '../../transport/index.js';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -312,7 +317,8 @@ describe('load config (§9)', () => {
     expect(config.shell_environment_policy).toEqual({
       set: { DORKOS_AGENT_TOKEN: 'identity-secret' },
     });
-    expect(config.projects).toEqual({ '/real/project': { trust_level: 'trusted' } });
+    // Workspace write with no verdict: the project's own Codex settings stay off (DOR-4408).
+    expect(config.projects).toEqual({ '/real/project': { trust_level: 'untrusted' } });
     // The key resolves to this session, and nothing is attached yet.
     const key = keys.lookup(authorization.slice('Bearer '.length));
     expect(key).toMatchObject({
@@ -341,11 +347,47 @@ describe('load config (§9)', () => {
     });
   });
 
-  it('applies the trust rule: credits never trust; the person’s home trusts writable modes only', () => {
+  // DOR-4408: Codex loads a folder's own `.codex/config.toml` only when the load trusts it.
+  it.each([
+    ['default', undefined],
+    ['acceptEdits', 'untrusted'],
+    ['bypassPermissions', 'trusted'],
+  ] as const)('loads a folder with no verdict at %s with trust %s', async (mode, trust) => {
+    const { loader, fake, input } = await setup();
+    await loader.ensureLoaded(input({ settings: { permissionMode: mode } }));
+    const projects = (fake.requestsOf('thread/start')[0]!.config as Record<string, unknown>)
+      .projects;
+    expect(projects).toEqual(trust ? { '/real/project': { trust_level: trust } } : undefined);
+  });
+
+  it('still loads a folder the person trusted in Codex, below Full', async () => {
+    const { host, loader, fake, input } = await setup();
+    host.home(HOME).projects['/real/project'] = { trust_level: 'trusted' };
+    await loader.ensureLoaded(input({ settings: { permissionMode: 'acceptEdits' } }));
+    expect(
+      (fake.requestsOf('thread/start')[0]!.config as Record<string, unknown>).projects
+    ).toEqual({ '/real/project': { trust_level: 'trusted' } });
+  });
+
+  it('builds the same app-server load for the legacy exec setting', () => {
+    expect(resolveCodexTransport('exec')).toBe('app-server');
+    expect(createCodexTransport('exec', { connectorTools: () => undefined })).toBeInstanceOf(
+      AppServerCodexTransport
+    );
+  });
+
+  // DOR-4408: a cloned repo's `.codex/config.toml` (and the MCP servers it starts,
+  // outside Codex's sandbox) loads only at Full, or where the person trusted it.
+  it('applies the trust rule: credits never trust; the person’s home trusts a folder at Full only', () => {
     expect(trustLevelFor('credits', 'danger-full-access', 'trusted')).toBe('untrusted');
+    // Ask first sends no override, as before.
     expect(trustLevelFor('person', 'read-only', undefined)).toBeUndefined();
-    expect(trustLevelFor('person', 'workspace-write', undefined)).toBe('trusted');
+    expect(trustLevelFor('person', 'workspace-write', undefined)).toBe('untrusted');
+    expect(trustLevelFor('person', 'danger-full-access', undefined)).toBe('trusted');
     expect(trustLevelFor('person', 'workspace-write', 'untrusted')).toBe('untrusted');
+    // A folder the person trusted in Codex still loads its settings.
+    expect(trustLevelFor('person', 'workspace-write', 'trusted')).toBe('trusted');
+    expect(trustLevelFor('person', 'read-only', 'trusted')).toBe('trusted');
   });
 
   it('points a credits thread at the relay with its key, and turns web search off', () => {
