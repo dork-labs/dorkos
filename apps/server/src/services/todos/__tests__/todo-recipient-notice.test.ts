@@ -1,0 +1,120 @@
+/**
+ * Telling whoever a promise was made to that its agent moved or dropped it (DOR-3034): a person
+ * through the Inbox, an agent through a message from the promising agent's chat, an outsider not
+ * at all, and a failed notice never breaking the change.
+ */
+import { describe, expect, it, vi } from 'vitest';
+import type { TodoPromise } from '@dorkos/shared/todo-promise-schemas';
+import {
+  agentNoticeText,
+  createTodoRecipientNotice,
+  recipientOf,
+  type TodoRecipientNoticeDeps,
+} from '../notice/todo-recipient-notice.js';
+
+const AT = new Date('2026-11-15T17:00:00.000Z');
+
+function promise(over: Partial<TodoPromise> = {}): TodoPromise {
+  return {
+    id: 'todo-1',
+    agentId: 'agent-ana',
+    to: 'owner',
+    what: 'Send Acme the revised quote',
+    dueAt: '2026-11-20T17:00:00.000Z',
+    originalDueAt: '2026-11-18T17:00:00.000Z',
+    scoreDueAt: '2026-11-20T17:00:00.000Z',
+    moveCount: 1,
+    state: 'open',
+    overdue: false,
+    sourceSessionId: null,
+    sourceRoomEntryId: null,
+    createdAt: '2026-11-10T09:00:00.000Z',
+    closedAt: null,
+    note: 'An old note',
+    ...over,
+  };
+}
+
+function build(over: Partial<TodoRecipientNoticeDeps> = {}) {
+  const deps = {
+    isAgent: (id: string) => id.startsWith('agent-'),
+    agentName: (id: string) => (id === 'agent-ana' ? 'Ana' : undefined),
+    notifyPerson: vi.fn(),
+    sendToAgent: vi.fn().mockResolvedValue(undefined),
+    now: () => AT,
+    ...over,
+  };
+  return { deps, tell: createTodoRecipientNotice(deps) };
+}
+
+describe('recipientOf', () => {
+  it('reads an agent id as an agent, an outsider as nobody, and anything else as a person', () => {
+    const isAgent = (id: string) => id === 'agent-bo';
+    expect(recipientOf('agent-bo', isAgent)).toEqual({ kind: 'agent', agentId: 'agent-bo' });
+    expect(recipientOf('external:Acme', isAgent)).toBeNull();
+    expect(recipientOf(null, isAgent)).toBeNull();
+    expect(recipientOf('owner', isAgent)).toEqual({ kind: 'person' });
+  });
+});
+
+describe('createTodoRecipientNotice', () => {
+  it('tells a person in the Inbox with the reason given for this change, not an older note', async () => {
+    const { deps, tell } = build();
+    await tell({ todoPromise: promise(), change: 'moved', reason: 'Waiting on their numbers' });
+    expect(deps.notifyPerson).toHaveBeenCalledWith({
+      todoId: 'todo-1',
+      agentId: 'agent-ana',
+      agentName: 'Ana',
+      what: 'Send Acme the revised quote',
+      change: 'moved',
+      note: 'Waiting on their numbers',
+      at: AT.toISOString(),
+    });
+  });
+
+  it('tells an agent from the promising agent’s chat', async () => {
+    const { deps, tell } = build();
+    await tell({
+      todoPromise: promise({ to: 'agent-bo' }),
+      change: 'dropped',
+      reason: null,
+      sessionId: 'chat-1',
+      agentPath: '/agents/ana',
+    });
+    expect(deps.sendToAgent).toHaveBeenCalledWith(
+      { sessionId: 'chat-1', agentPath: '/agents/ana' },
+      'agent-bo',
+      'Ana dropped the promise it made you: "Send Acme the revised quote". No reason given.'
+    );
+    expect(deps.notifyPerson).not.toHaveBeenCalled();
+  });
+
+  it('tells nobody about a promise to an outsider or to the agent itself', async () => {
+    const { deps, tell } = build();
+    await tell({ todoPromise: promise({ to: 'external:Acme' }), change: 'moved', reason: null });
+    await tell({ todoPromise: promise({ to: 'agent-ana' }), change: 'moved', reason: null });
+    expect(deps.notifyPerson).not.toHaveBeenCalled();
+    expect(deps.sendToAgent).not.toHaveBeenCalled();
+  });
+
+  it('never throws when the notice fails', async () => {
+    const { tell } = build({
+      notifyPerson: vi.fn(() => {
+        throw new Error('down');
+      }),
+    });
+    await expect(
+      tell({ todoPromise: promise(), change: 'dropped', reason: 'No longer needed' })
+    ).resolves.toBeUndefined();
+  });
+});
+
+describe('agentNoticeText', () => {
+  it('says the new date of a moved promise', () => {
+    expect(
+      agentNoticeText('Ana', { todoPromise: promise(), change: 'moved', reason: 'Blocked' })
+    ).toBe(
+      'Ana moved the promise it made you: "Send Acme the revised quote", now due 2026-11-20T17:00:00.000Z. Why: Blocked'
+    );
+  });
+});

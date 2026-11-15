@@ -76,6 +76,7 @@ export const notifications = sqliteTable(
         'account.signin_review',
         'shell.check_down',
         'report.undelivered',
+        'todo.changed',
       ],
     }).notNull(),
 

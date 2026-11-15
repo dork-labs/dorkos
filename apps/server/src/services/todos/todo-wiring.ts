@@ -22,6 +22,9 @@ import { TodoTurns } from './todo-turns.js';
 import { todoTurnSeams } from './todo-turn-wiring.js';
 import { agentInRoom, readTodoSourceFacts } from './todo-source.js';
 import { logger } from '../../lib/logger.js';
+import { notify } from '../notifications/notification-service.js';
+import { getChatMessageService } from '../session/chat-messages/chat-message-current.js';
+import { createTodoRecipientNotice } from './notice/todo-recipient-notice.js';
 
 /** How often queued to-do turns are checked for a new day. */
 const TODO_QUEUE_DRAIN_MS = 60 * 60 * 1000;
@@ -130,7 +133,22 @@ export function wireTodos(deps: TodoWiringDeps): TodoWiring {
       readSource: (entryId) => readTodoSourceFacts(deps.db, entryId),
       agentInRoom: (roomId, agentPath) => agentInRoom(deps.db, roomId, agentPath),
     },
-    capabilityDeps: { service, agentIdForPath },
+    capabilityDeps: {
+      service,
+      agentIdForPath,
+      tellRecipient: createTodoRecipientNotice({
+        isAgent: agentExists,
+        agentName: (id) => deps.meshCore()?.get(id)?.name,
+        notifyPerson: async (payload) => {
+          await notify('todo.changed', payload);
+        },
+        sendToAgent: async (from, toAgentId, text) => {
+          const chat = getChatMessageService();
+          if (!chat) throw new Error('chat messages are not running');
+          await chat.send(from, { to: toAgentId, message: text, summary: 'A promise changed' });
+        },
+      }),
+    },
     routeDeps: routerDeps,
     stop: () => {
       clearInterval(drainTimer);

@@ -56,6 +56,8 @@ export type TodoPromisePatch = Partial<
     | 'scoreDueAt'
     | 'moveCount'
     | 'dueNotifiedAt'
+    | 'checkinNotifiedAt'
+    | 'dueSetAt'
     | 'closedAt'
     | 'note'
     | 'authority'

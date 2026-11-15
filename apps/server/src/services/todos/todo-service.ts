@@ -50,7 +50,7 @@ import { isOverdue } from './todo-promise-view.js';
 import { listTodoRows } from './todo-list.js';
 import { mayChangeState, mayEdit, mayRank, mayReassign } from './todo-policy.js';
 import type { TodoPatch, TodoStore } from './todo-store.js';
-import { isLateMove, nextDueHistory } from './due-history.js';
+import { isLateMove, nextDueHistory } from './timing/due-history.js';
 
 /** Who a to-do is assigned to. */
 export type TodoAssignee =
@@ -340,6 +340,9 @@ export class TodoService {
       sourceRoomEntryId: input.source?.entryId ?? null,
       createdAt: this.now().toISOString(),
       dueNotifiedAt: null,
+      estimateMinutes: null,
+      checkinNotifiedAt: null,
+      dueSetAt: dueAt ? this.now().toISOString() : null,
       closedAt: null,
       note: null,
       originMarks: null,
@@ -466,6 +469,8 @@ export class TodoService {
         const now = this.now().getTime();
         Object.assign(patch, nextDueHistory(row, nextDue, now));
         patch.dueNotifiedAt = null;
+        patch.checkinNotifiedAt = null;
+        patch.dueSetAt = new Date(now).toISOString();
         audit.push({ field: 'dueAt', before: row.dueAt, after: nextDue });
         audit.push({
           field: 'lateMove',
@@ -489,6 +494,7 @@ export class TodoService {
       patch.chainDepth = chain.depth;
       patch.chainAgents = JSON.stringify(chain.agents);
       patch.dueNotifiedAt = null;
+      patch.checkinNotifiedAt = null;
       audit.push({
         field: 'assignee',
         before: assigneeLabel(row),

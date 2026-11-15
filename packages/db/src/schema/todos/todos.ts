@@ -75,6 +75,21 @@ export const todos = sqliteTable(
      * repeated for the same date, across restarts included.
      */
     dueNotifiedAt: text('due_notified_at'),
+    /**
+     * How long the work takes, in minutes, as the agent guessed it when it promised (60, 240 or
+     * 480), or NULL when it gave no guess. Sets how early it is woken to start (DOR-3034).
+     */
+    estimateMinutes: integer('estimate_minutes'),
+    /**
+     * When the current `due_at` was set (ISO 8601), or NULL on a row older than DOR-3034. A start
+     * wake that would fall before it (a date set inside its own lead) waits for the due time.
+     */
+    dueSetAt: text('due_set_at'),
+    /**
+     * When the agent was woken partway through for a check-in on the current `due_at` (ISO 8601),
+     * or NULL. Cleared with `due_notified_at` whenever `due_at` moves.
+     */
+    checkinNotifiedAt: text('checkin_notified_at'),
     /** When it left `open` (ISO 8601), or NULL while open. */
     closedAt: text('closed_at'),
     /** A short note on how it ended or why it moved, or NULL. */

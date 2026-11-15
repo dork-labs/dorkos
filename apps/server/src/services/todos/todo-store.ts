@@ -19,6 +19,8 @@ export type TodoPatch = Partial<
     | 'scoreDueAt'
     | 'moveCount'
     | 'dueNotifiedAt'
+    | 'checkinNotifiedAt'
+    | 'dueSetAt'
     | 'state'
     | 'closedAt'
     | 'note'

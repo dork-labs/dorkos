@@ -73,7 +73,7 @@ export function TodoPromiseList({
         onSuccess: () =>
           toast.success(CLOSED_TOAST[state], {
             // Reopening keeps the old date; the server gives an overdue one a
-            // fresh hour rather than marking it missed the moment it reopens.
+            // fresh grace rather than marking it missed the moment it reopens.
             action: {
               label: 'Undo',
               // `from` makes the Undo refuse if someone changed it since.

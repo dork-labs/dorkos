@@ -55,6 +55,7 @@ import {
   type CapabilityDomain,
   type CapabilityHandlerContext,
 } from '../core/capabilities/index.js';
+import type { TodoChangeNotice } from './notice/todo-recipient-notice.js';
 import {
   TodoPromiseError,
   type TodoPromiseActor,
@@ -81,6 +82,11 @@ declare module '../core/capabilities/capability-definition.js' {
        * @param agentPath - The agent's home folder.
        */
       agentIdForPath(agentPath: string): string | undefined;
+      /**
+       * Tell whoever a promise was made to that its agent moved or dropped it (DOR-3034). Absent
+       * where nothing can be told, as in most tests.
+       */
+      tellRecipient?: (notice: TodoChangeNotice) => Promise<void>;
     };
   }
 }
@@ -222,9 +228,11 @@ export const todoPromisesDomain: CapabilityDomain = {
         'chat. Everyone on the team can read your list. `what` is the promise in one plain line ' +
         '("Send Acme the revised quote"). `to` is who it was made to: a person, an agent id, or ' +
         '`external:<name>` for someone outside the business. `dueAt` is when it is due (ISO ' +
-        '8601 with an offset, never in the past); when it comes due you are woken to deal with ' +
-        'it, and an hour later it is marked missed ' +
-        'unless you kept it or moved the date. A promise to an outsider ' +
+        '8601 with an offset, never in the past): it is when the work is finished, not started. ' +
+        'Give `estimate` (hour, half-day or day) and you are woken that long, plus a buffer, ' +
+        'before it to start, and once partway to check in; with none you are woken an hour ' +
+        'before. Fifteen minutes after the due time it is marked missed unless you kept it or ' +
+        'moved the date. A promise to an outsider ' +
         '(a date, a price, a discount) commits other people: ask first, then record it. When you ' +
         'have done it, mark it kept with the promise-update tool.',
       tier: 'act',
@@ -246,6 +254,10 @@ export const todoPromisesDomain: CapabilityDomain = {
           .optional()
           .describe('Who it was made to: a person, an agent id, or `external:<name>`.'),
         dueAt: DueAtInput.optional().describe('When it is due, ISO 8601 with an offset.'),
+        estimate: z
+          .enum(['hour', 'half-day', 'day'])
+          .optional()
+          .describe('Roughly how long the work takes. Sets how early you are woken to start.'),
         sourceEntryId: z
           .string()
           .min(1)
@@ -288,6 +300,7 @@ export const todoPromisesDomain: CapabilityDomain = {
             what: input.what,
             ...(input.to ? { to: input.to } : {}),
             ...(input.dueAt ? { dueAt: input.dueAt } : {}),
+            ...(input.estimate ? { estimate: input.estimate } : {}),
             ...(context.sessionId ? { sourceSessionId: context.sessionId } : {}),
             ...(input.sourceEntryId ? { sourceRoomEntryId: input.sourceEntryId } : {}),
             // The marks of the calling turn, from its own record (DOR-3036).
@@ -306,7 +319,8 @@ export const todoPromisesDomain: CapabilityDomain = {
       description:
         'Change one of your promises. `state: "kept"` when you have done it, `"dropped"` when it ' +
         'no longer applies (say why in `note`), `"missed"` when you could not make it. To move ' +
-        'the date, pass `state: "open"` with a new `dueAt`, and tell the person you promised. ' +
+        'the date, pass `state: "open"` with a new `dueAt`; DorkOS tells whoever you promised, ' +
+        'with your `note` as the reason, and the same when you drop it. ' +
         'The first date is kept: a move after the date has passed still counts as late, and a ' +
         'dropped promise counts as not kept on time. ' +
         'The same reopens a closed promise. Only the agent that promised, or a person, can ' +
@@ -346,7 +360,7 @@ export const todoPromisesDomain: CapabilityDomain = {
         const todoPromiseDeps = requireTodoPromiseDeps(deps);
         const actor = actorOf(todoPromiseDeps, context);
         if ('ok' in actor) return actor;
-        return answer(() => ({
+        const result = answer(() => ({
           ok: true as const,
           todoPromise: todoPromiseDeps.service.update(actor, input.id, {
             state: input.state,
@@ -355,6 +369,23 @@ export const todoPromisesDomain: CapabilityDomain = {
             ...(input.from !== undefined ? { from: input.from } : {}),
           }),
         }));
+        // The agent's own move or drop is told to whoever the promise was made to (DOR-3034).
+        const change =
+          input.state === 'dropped'
+            ? 'dropped'
+            : input.state === 'open' && input.dueAt !== undefined
+              ? 'moved'
+              : null;
+        if (result.ok && change && actor.kind === 'agent' && todoPromiseDeps.tellRecipient) {
+          void todoPromiseDeps.tellRecipient({
+            todoPromise: result.todoPromise,
+            change,
+            reason: input.note || null,
+            ...(context.sessionId ? { sessionId: context.sessionId } : {}),
+            ...(context.identity?.agentPath ? { agentPath: context.identity.agentPath } : {}),
+          });
+        }
+        return result;
       },
     }),
     defineCapability({
