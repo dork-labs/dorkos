@@ -87,6 +87,7 @@ import {
 } from '../../services/session/message-queue-store.js';
 import { ChatMessageStore } from '../../services/session/chat-messages/chat-message-store.js';
 import { setQueuedChatActionsDeps } from '../../services/session/chat-messages/queued/queued-chat-actions.js';
+import { steering } from '../../services/session/message-dispatcher/state.js';
 import {
   dispatchMessage,
   resetMessageDispatcher,
@@ -431,6 +432,26 @@ describe('DELETE /api/sessions/:id/queue/:messageId', () => {
       failureReason: 'Dana removed it before it was delivered.',
     });
     expect(store.get(queued.id)).toBeUndefined();
+  });
+});
+
+describe('DELETE while Send now is carrying the message', () => {
+  it('refuses: the message is already on its way into the running turn', async () => {
+    const queued = store.enqueue({
+      id: 'agent-row-2',
+      sessionId: SESSION_ID,
+      content: 'fenced agent message',
+      clientId: 'chat:sender-chat',
+    });
+    steering.add(queued.id);
+    try {
+      const res = await request(server).delete(`/api/sessions/${SESSION_ID}/queue/${queued.id}`);
+      expect(res.status).toBe(409);
+      expect(res.body.code).toBe('QUEUED_MESSAGE_LAUNCHING');
+      expect(store.get(queued.id)).toBeDefined();
+    } finally {
+      steering.delete(queued.id);
+    }
   });
 });
 

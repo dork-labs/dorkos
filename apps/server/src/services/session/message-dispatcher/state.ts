@@ -195,6 +195,16 @@ export function isQueuedMessageArmed(messageId: string): boolean {
   return pending.has(messageId) || launching.has(messageId);
 }
 
+/**
+ * Whether a person is sending this queued message into the running turn right
+ * now (Send now, DOR-3060): it may not be removed until that ends.
+ *
+ * @param messageId - The queue row's id.
+ */
+export function isQueuedMessageSteering(messageId: string): boolean {
+  return steering.has(messageId);
+}
+
 /** Re-points the chat-message records of a drain-joined row to its surviving row. */
 export type QueuedChatJoiner = (fromRowId: string, toRowId: string) => void;
 

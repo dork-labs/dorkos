@@ -1262,7 +1262,8 @@ registry.registerPath({
   summary: 'Remove a waiting message',
   description:
     'Takes a waiting message off the queue; it will not run. Any client may remove any ' +
-    "message on the session's queue.",
+    "message on the session's queue. A message another chat sent is marked not delivered, " +
+    'naming the person who removed it, so its sender sees why.',
   request: { params: z.object({ id: z.string().uuid(), messageId: z.string() }) },
   responses: {
     200: {
@@ -1275,6 +1276,10 @@ registry.registerPath({
     },
     404: {
       description: 'No such message on this queue',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    409: {
+      description: 'The message is being sent into the running turn right now',
       content: { 'application/json': { schema: ErrorResponseSchema } },
     },
   },

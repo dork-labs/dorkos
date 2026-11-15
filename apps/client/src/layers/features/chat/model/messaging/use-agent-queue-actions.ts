@@ -69,7 +69,13 @@ export function useAgentQueueActions(sessionId: string | null): AgentQueueAction
       void transport.removeQueuedMessage(sessionId, id).then(
         () => toast(notDeliveredLine(senderName)),
         (err: unknown) => {
-          if (!isGone(err)) toast.error('Couldn’t take that message off the queue');
+          if (isGone(err)) return;
+          // Send now was already carrying it into the running turn.
+          if ((err as { code?: string })?.code === 'QUEUED_MESSAGE_LAUNCHING') {
+            toast('It’s already on its way.');
+            return;
+          }
+          toast.error('Couldn’t take that message off the queue');
         }
       );
     },

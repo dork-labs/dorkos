@@ -39,6 +39,7 @@ import {
   steerQueuedChatMessage,
 } from '../services/session/chat-messages/queued/queued-chat-actions.js';
 import { clearsTheAgentBar } from '../lib/caller-authority.js';
+import { isQueuedMessageSteering } from '../services/session/message-dispatcher/state.js';
 
 const INVALID_SESSION_ID = errorBody('Invalid session ID', 'INVALID_SESSION_ID');
 const INVALID_MESSAGE_ID = errorBody('Invalid message ID', 'INVALID_MESSAGE_ID');
@@ -137,6 +138,8 @@ export function sessionQueueRemoveHandler(meshCore: MeshCore | undefined) {
     // business, not a stranger's (DOR-3644 S1).
     const refused = await chatPlaceRefusal(honoRequestFacts(c), meshCore, sessionId);
     if (refused) return c.json(errorBody(refused.message, 'DESK_NOT_OWN'), 403);
+    // Being sent into the running turn right now (Send now): it is on its way.
+    if (isQueuedMessageSteering(messageId)) return c.json(ALREADY_STARTING, 409);
     // Another chat's message: read before it goes, so its sender can be told
     // by name who took it off (DOR-3060).
     const fromChats = queuedChatRecordsOf(sessionId, messageId);

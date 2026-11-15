@@ -7,21 +7,21 @@
  * is the fenced envelope, so the words still arrive as another chat's and never
  * as the person's own. And it joins the running turn only when every sender on
  * the row may (`mayChatSteer`: the turn already runs no looser than the
- * sender and carries its marks); otherwise the row moves to the front and runs
- * next, at the sender's own level.
+ * sender and carries its marks) and the row carries nothing its sender's turn
+ * passed on; otherwise the row moves to the front and runs next, as its own
+ * turn.
  *
  * @module services/session/chat-messages/queued/queued-chat-actions
  */
 import type { ChatMessageRow } from '@dorkos/db';
 import type { TurnPermissionLevel } from '@dorkos/shared/agent-runtime';
 import type { SteerQueuedChatMessageResponse } from '@dorkos/shared/schemas';
-import { holdForSteer, releaseSteerHold } from '../../message-dispatcher/pump.js';
+import { finishSteer, holdForSteer, releaseSteerHold } from '../../message-dispatcher/pump.js';
 import { isQueuedMessageLaunching } from '../../message-dispatcher/state.js';
 import { getMessageQueueStore } from '../../message-queue-store.js';
-import { cancelQueuedMessage } from '../../queued-message-edits.js';
 import { queueKeyOf } from '../../resolution/session-key-registry.js';
 import { isChatClientId } from '../chat-client-id.js';
-import { mayChatSteer } from '../chat-message-ceiling.js';
+import { mayChatSteer, rowsCarryWords, rowsCeiling } from '../chat-message-ceiling.js';
 import type { ChatMessageStore } from '../chat-message-store.js';
 import { noteSteeredInto } from '../chat-started-turns.js';
 import { moveToHead } from '../chat-queue-standing.js';
@@ -70,12 +70,39 @@ function chatRowOf(
   return { content: row.content };
 }
 
+/** Why Send now put a row first instead of joining the running turn. */
+type MoveReason = 'no-running-turn' | 'steer-not-allowed' | 'steer-did-not-land';
+
+/**
+ * Why a row may not join the running turn now, or `null` when it may.
+ *
+ * A message runs at its receiving agent's own level (DOR-3440), but what its
+ * sender's turn carried rides on the row: a teammate's chain, a Wi-Fi hold,
+ * outside words. A running turn cannot take those on after it started, so a
+ * row that carries any of them never joins one; it runs next, as its own turn,
+ * where launch applies them. The rest is the live check the send-time steer
+ * makes, for every sender on the row.
+ */
+async function joinRefusal(
+  deps: QueuedChatActionsDeps,
+  sessionId: string,
+  records: readonly ChatMessageRow[]
+): Promise<MoveReason | null> {
+  if (!(await deps.isBusy(sessionId).catch(() => false))) return 'no-running-turn';
+  const carries = rowsCeiling(records) !== undefined || rowsCarryWords(records);
+  if (records.length === 0 || carries) return 'steer-not-allowed';
+  return records.every((record) => mayChatSteer(deps, record.fromSessionId, sessionId))
+    ? null
+    : 'steer-not-allowed';
+}
+
 /**
  * Send a queued message from another chat into the receiving chat's running
  * turn, or put it first when it may not join that turn.
  *
- * The row is held off the pump while the steer is in flight, so its words
- * reach the model once: steered, or as a turn of their own.
+ * The row is held before the first await: from then on no turn launches it
+ * and no drain join folds it, so its words reach the model once, steered or as
+ * a turn of their own.
  *
  * @param sessionId - The receiving chat.
  * @param queueRowId - The durable queue row.
@@ -88,42 +115,33 @@ export async function steerQueuedChatMessage(
   if (!deps) return { outcome: 'not-found' };
   const row = chatRowOf(sessionId, queueRowId);
   if ('outcome' in row) return row;
-  const records = deps.store.listByQueueMessage(queueRowId);
-  const heldToDefault = getMessageQueueStore()?.get(queueRowId)?.heldToDefault === true;
-  const busy = await deps.isBusy(sessionId).catch(() => false);
-  const moveInstead = (reason: 'no-running-turn' | 'steer-not-allowed' | 'steer-did-not-land') => {
-    moveToHead(sessionId, queueRowId);
-    return { outcome: 'moved-to-front' as const, reason };
-  };
-  if (!busy) return moveInstead('no-running-turn');
-  // No sender on record is never permission to join a live turn, and every
-  // sender on the row has to pass on its own: one marked sender keeps the
-  // whole row out of an unmarked or looser turn.
-  if (
-    heldToDefault ||
-    records.length === 0 ||
-    !records.every((record) => mayChatSteer(deps, record.fromSessionId, sessionId))
-  ) {
-    return moveInstead('steer-not-allowed');
-  }
   if (!holdForSteer(queueRowId)) return { outcome: 'launching' };
-  let landed = false;
+  const records = deps.store.listByQueueMessage(queueRowId);
+  let refusal: MoveReason | null;
   try {
-    landed = await deps.steerInto(sessionId, row.content, queueRowId).catch(() => false);
-  } finally {
-    if (!landed) releaseSteerHold(sessionId, queueRowId);
+    refusal = await joinRefusal(deps, sessionId, records);
+    if (refusal === null) {
+      const landed = await deps.steerInto(sessionId, row.content, queueRowId).catch(() => false);
+      if (!landed) refusal = 'steer-did-not-land';
+    }
+  } catch (err) {
+    releaseSteerHold(sessionId, queueRowId);
+    throw err;
   }
-  if (!landed) return moveInstead('steer-did-not-land');
+  if (refusal !== null) {
+    releaseSteerHold(sessionId, queueRowId);
+    // Stop may have cleared the queue while this waited.
+    if (!getMessageQueueStore()?.get(queueRowId)) return { outcome: 'not-found' };
+    moveToHead(sessionId, queueRowId);
+    return { outcome: 'moved-to-front', reason: refusal };
+  }
 
   const senders = [...new Set(records.map((record) => record.fromSessionId))];
   noteSteeredInto(sessionId, senders);
-  // Marked before the row leaves, so the drop the removal reports finds no
-  // waiting record to call "taken off the queue".
   for (const record of records) {
     deps.store.update(record.id, { status: 'steered', queueMessageId: null });
   }
-  cancelQueuedMessage(sessionId, queueRowId);
-  releaseSteerHold(sessionId, queueRowId);
+  finishSteer(sessionId, queueRowId);
   for (const sender of senders) deps.emitActivity(sender);
   deps.emitActivity(sessionId);
   return { outcome: 'steered' };

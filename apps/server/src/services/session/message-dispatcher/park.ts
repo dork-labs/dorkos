@@ -318,8 +318,16 @@ export function parkDispatch(
     launch: (launchOpts) => {
       if (pending.get(plan.messageId) !== entry) return;
       // A person is sending it into the running turn (Send now): the steer's
-      // end runs the pump again if it did not land (DOR-3060).
-      if (steering.has(plan.messageId)) return;
+      // end runs the pump again if it did not land (DOR-3060). A forced start
+      // (its wait ran out) is tried again shortly, so it is never lost.
+      if (steering.has(plan.messageId)) {
+        if (launchOpts.budgetExhausted) {
+          clearTimeout(entry.timer);
+          entry.timer = setTimeout(() => entry.launch(launchOpts), 1_000);
+          entry.timer.unref?.();
+        }
+        return;
+      }
       if (plan.turn.privateDispatchSignal?.aborted) {
         clearTimeout(entry.timer);
         pending.delete(plan.messageId);

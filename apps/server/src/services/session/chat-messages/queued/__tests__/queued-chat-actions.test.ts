@@ -37,6 +37,7 @@ function seedChatMessage(
     recordId?: string;
     from?: string;
     text?: string;
+    ceilingJson?: string;
   } = {}
 ) {
   const rowId = options.rowId ?? 'chat-row';
@@ -82,7 +83,7 @@ function seedChatMessage(
     delivery: 'queue',
     status: 'queued',
     queueMessageId: rowId,
-    ceilingJson: JSON.stringify('none'),
+    ceilingJson: options.ceilingJson ?? JSON.stringify('none'),
     replyToId: null,
   });
   return { rowId, recordId, rendered };
@@ -153,6 +154,55 @@ describe('steerQueuedChatMessage', () => {
 });
 
 describe('steerQueuedChatMessage, more', () => {
+  it.each([
+    ['a Wi-Fi hold', JSON.stringify([{ carriedOutsider: true }])],
+    ['outside words', JSON.stringify([{ carriedWords: true }])],
+  ])(
+    'never joins a running turn when its sender’s turn passed on %s',
+    async (_what, ceilingJson) => {
+      // The sender's live turn is clean now; what it carried at send time rides on the row.
+      const seeded = seedChatMessage({ ceilingJson });
+
+      await expect(steerQueuedChatMessage(TARGET, seeded.rowId)).resolves.toEqual({
+        outcome: 'moved-to-front',
+        reason: 'steer-not-allowed',
+      });
+      expect(steerInto).not.toHaveBeenCalled();
+    }
+  );
+
+  it('holds the row before its first wait, so no turn or drain join can take it meanwhile', async () => {
+    const seeded = seedChatMessage();
+    let heldWhileChecking = false;
+    setQueuedChatActionsDeps({
+      store,
+      isBusy: async () => {
+        heldWhileChecking = steering.has(seeded.rowId);
+        return true;
+      },
+      turnLevelOf: (sessionId) => levels.get(sessionId),
+      steerInto,
+      emitActivity,
+      operatorName: () => 'Dana',
+    });
+
+    await steerQueuedChatMessage(TARGET, seeded.rowId);
+
+    expect(heldWhileChecking).toBe(true);
+  });
+
+  it('answers not-found when the queue was cleared while it waited', async () => {
+    const seeded = seedChatMessage();
+    steerInto.mockImplementationOnce(async () => {
+      queue.remove(seeded.rowId);
+      return false;
+    });
+
+    await expect(steerQueuedChatMessage(TARGET, seeded.rowId)).resolves.toEqual({
+      outcome: 'not-found',
+    });
+  });
+
   it('holds the row off the queue pump while the steer is in flight, then lets go', async () => {
     const seeded = seedChatMessage();
     let heldDuringSteer = false;

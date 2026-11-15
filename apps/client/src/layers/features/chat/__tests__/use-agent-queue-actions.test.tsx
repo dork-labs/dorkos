@@ -78,6 +78,18 @@ describe('useAgentQueueActions', () => {
   });
 });
 
+describe('Don’t deliver while Send now carries it', () => {
+  it('says it is already on its way, not that something failed', async () => {
+    const { transport, view } = mount();
+    vi.mocked(transport.removeQueuedMessage).mockRejectedValueOnce(
+      Object.assign(new Error('starting'), { code: 'QUEUED_MESSAGE_LAUNCHING' })
+    );
+    act(() => view.result.current.dontDeliver('row-1', 'Security'));
+    await waitFor(() => expect(toast).toHaveBeenCalledWith('It’s already on its way.'));
+    expect(toast.error).not.toHaveBeenCalled();
+  });
+});
+
 describe('the copy', () => {
   it('words each Send now outcome and the removal', () => {
     expect(sendNowNotice({ outcome: 'steered' })).toBeNull();

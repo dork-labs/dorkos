@@ -8,6 +8,10 @@
  * words as their own: the transcript shows them under "Another chat", as the
  * fence's words in plain text.
  *
+ * A person who pastes a whole envelope into their own message reads it back
+ * under "Another chat" too. That only ever names fewer people, never someone
+ * who did not write it, so it is the safe way to be wrong.
+ *
  * @module features/chat/lib/unstamped-chat-message
  */
 import { chatMessageFenceNonces, displayTextOf } from '@dorkos/shared/chat-messages';

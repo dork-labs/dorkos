@@ -61,13 +61,18 @@ export function joinWaitingChatRows(sessionId: string, headRowId: string): void 
     }
     const combined = `${content}\n\n${next.content}`;
     if (combined.length > CHAT_DRAIN_JOIN_MAX) break;
-    if (!store.updateContent(headRowId, combined)) break;
-    repointQueuedChatJoin(next.id, headRowId);
+    // One transaction: a process that dies mid-fold must never leave the
+    // head holding these words while their own row still waits to run them.
+    if (!store.get(headRowId) || !store.get(next.id)) break;
+    store.atomically(() => {
+      store.updateContent(headRowId, combined);
+      repointQueuedChatJoin(next.id, headRowId);
+      store.remove(next.id);
+    });
     const waiting = pending.get(next.id);
     if (waiting) clearTimeout(waiting.timer);
     pending.delete(next.id);
     setQueuedWaitingOn(next.id, undefined);
-    store.remove(next.id);
     // Its words go out with the head's turn: whatever its caller holds until
     // the turn settles (a launch-cap slot, a debug-buffer entry) is released.
     waiting?.folded();

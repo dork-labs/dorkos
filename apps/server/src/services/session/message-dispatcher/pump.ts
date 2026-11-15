@@ -4,7 +4,8 @@
  *
  * @module services/session/message-dispatcher/pump
  */
-import { getMessageQueueStore } from '../message-queue-store.js';
+import { getMessageQueueStore, setQueuedWaitingOn } from '../message-queue-store.js';
+import { emitQueueUpdate } from '../queue-stream-events.js';
 import { primaryOf, projectorFor, queueKeyOf } from '../resolution/session-key-registry.js';
 import { runtimeLockHolder } from '../session-lock.js';
 import { logger } from '../../../lib/logger.js';
@@ -64,6 +65,25 @@ export function holdForSteer(messageId: string): boolean {
  */
 export function releaseSteerHold(sessionId: string, messageId: string): void {
   if (steering.delete(messageId)) schedulePump(sessionId);
+}
+
+/**
+ * A row held by {@link holdForSteer} went into the running turn: take it off
+ * the queue quietly. Not a removal: no `dropped` is reported, and its caller
+ * is settled as answered, the way a drain join settles a folded row.
+ *
+ * @param sessionId - The session whose queue held the row.
+ * @param messageId - The queue row.
+ */
+export function finishSteer(sessionId: string, messageId: string): void {
+  const entry = pending.get(messageId);
+  if (entry) clearTimeout(entry.timer);
+  pending.delete(messageId);
+  setQueuedWaitingOn(messageId, undefined);
+  if (getMessageQueueStore()?.remove(messageId)) emitQueueUpdate(sessionId);
+  entry?.folded();
+  steering.delete(messageId);
+  schedulePump(sessionId);
 }
 
 /**
