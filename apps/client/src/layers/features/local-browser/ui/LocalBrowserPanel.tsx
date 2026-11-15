@@ -8,6 +8,7 @@ import type {
 import { useLocalBrowser, LOCAL_BROWSER_STATE_KEY } from '@/layers/entities/local-browser';
 import { ADDRESS_PLACEHOLDER, isThisAppsAddress, normalizeAddressInput } from '@/layers/shared/lib';
 import { useOwnOrigins } from '@/layers/entities/config';
+import { YourTurnStrip } from '@/layers/features/browser-handoff';
 import { useAppStore, useTransport } from '@/layers/shared/model';
 import { Button, Input } from '@/layers/shared/ui';
 import { BrowserModeChoice } from './BrowserModeChoice';
@@ -349,6 +350,9 @@ export function LocalBrowserPanel({
       )}
       {connected && !waitingElsewhere && !sharedElsewhere && (
         <>
+          {/* In the Mac app the agent's page stays here while the person has it. DorkOS
+              draws this, outside the page, so the page can't hide or fake it (DOR-3111). */}
+          {handoffHere && <YourTurnStrip agentName={handoffHere.agentName ?? agentName} />}
           {!state.sessionId && (
             <p className="text-muted-foreground text-xs">
               Only you can use this page. Open from an agent chat to share it.

@@ -412,6 +412,53 @@ describe('LocalBrowserPanel', () => {
       expect(screen.queryByText(/Finish in the sign-in window/)).toBeNull();
     });
   });
+  describe('while this chat’s agent waits on a person in the Mac app (DOR-3111)', () => {
+    const here = {
+      id: 'h1',
+      sessionId: 'chat-one',
+      agentName: 'Atlas',
+      agentId: null,
+      agentFolder: null,
+      profileId: null,
+      reason: 'wall',
+      site: 'northwind.example',
+      askedAt: '2026-11-03T00:00:00.000Z',
+      outcome: null,
+    };
+    // In the Mac app the agent's page stays here, paused, while the person has it.
+    const handedOver = { ...connected, mode: 'embedded' as const, paused: true };
+    const strip = () =>
+      screen.queryByText(
+        (_, element) =>
+          element?.getAttribute('data-slot') === 'your-turn-strip' &&
+          element.textContent === 'Your turn: Atlas can’t see or use this window.'
+      );
+    it('puts the Your turn strip above the page, with the card’s words', async () => {
+      transport.getLocalBrowserState.mockResolvedValue({
+        ...handedOver,
+        handoff: here,
+        signIn: null,
+      });
+      mount();
+      await waitFor(() => expect(strip()).toBeInTheDocument());
+      expect(within(strip()!).getByText('Your turn:').tagName).toBe('STRONG');
+      // A hand leads it, hidden from screen readers so the sentence reads alone.
+      expect(strip()!.querySelector('svg[aria-hidden="true"]')).not.toBeNull();
+    });
+    it.each([
+      ['the handoff ended', { ...handedOver, handoff: { ...here, outcome: 'handed-back' } }],
+      ['another chat’s agent asked', { ...handedOver, handoff: { ...here, sessionId: 'x' } }],
+      ['nobody asked', { ...handedOver, paused: false, handoff: null }],
+    ])('shows no strip when %s', async (_case, state) => {
+      transport.getLocalBrowserState.mockResolvedValue({ ...state, signIn: null });
+      mount();
+      // The browser was read: the header names its state.
+      await waitFor(() =>
+        expect(screen.getAllByRole('status')[0]).toHaveTextContent(/Agent paused|Connected/)
+      );
+      expect(document.querySelector('[data-slot="your-turn-strip"]')).toBeNull();
+    });
+  });
   it('shows the server’s signing_in refusal, not a reconnect hint (DOR-4325)', async () => {
     transport.openLocalBrowser.mockRejectedValue(
       Object.assign(new Error('Finish signing in first.'), { code: 'signing_in', status: 409 })
