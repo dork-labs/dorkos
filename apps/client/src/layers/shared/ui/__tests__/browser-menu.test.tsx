@@ -78,6 +78,8 @@ describe('BrowserMenu', () => {
       mount({ otherChats: OTHER_CHATS, onOpenChat });
       const menu = openMenu();
       const trigger = within(menu).getByRole('menuitem', { name: 'Also open in 2 other chats' });
+      // Its icon lines its label up with the other items'.
+      expect(trigger.querySelector('svg.lucide-message-square')).not.toBeNull();
       trigger.focus();
       fireEvent.keyDown(trigger, { key: 'ArrowRight' });
       const sub = screen.getAllByRole('menu').at(-1)!;

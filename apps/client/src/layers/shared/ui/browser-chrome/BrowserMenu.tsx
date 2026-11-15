@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react';
-import { ArrowRight, Copy, Ellipsis, ExternalLink, KeyRound, X } from 'lucide-react';
+import { ArrowRight, Copy, Ellipsis, ExternalLink, KeyRound, MessageSquare, X } from 'lucide-react';
 import { useCopyFeedback } from '@/layers/shared/lib/use-copy-feedback';
 import { cn } from '@/layers/shared/lib/utils';
 import { useIsMobile, useMenuCloseFocusGuard } from '../../model';
@@ -212,7 +212,11 @@ export function BrowserMenu({
         </div>
       ) : (
         <DropdownMenuSub key="chats">
-          <DropdownMenuSubTrigger>{chatsLabel}</DropdownMenuSubTrigger>
+          <DropdownMenuSubTrigger>
+            {/* Sized like the other items' icons, so the labels line up. */}
+            <MessageSquare aria-hidden className="size-(--size-icon-xs) shrink-0" />
+            {chatsLabel}
+          </DropdownMenuSubTrigger>
           <DropdownMenuSubContent className="min-w-56">
             {otherChats.map((chat) => (
               <DropdownMenuItem
