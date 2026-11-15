@@ -655,6 +655,20 @@ function collectPortableSkills(
 }
 
 /**
+ * The skills one package folder would contribute, read exactly as the install
+ * scan reads them: `skills/*` and `.dork/tasks/*`, links refused, sorted by
+ * name. For a package that is not installed yet, such as one staged for an
+ * install preview (DOR-4387).
+ *
+ * @param pluginDir - absolute path to the package folder.
+ * @param sourcePrefix - how the package's paths are spelled once installed,
+ *   e.g. `.dork/plugins/<name>`.
+ */
+export function readPackageSkills(pluginDir: string, sourcePrefix: string): InstalledSkill[] {
+  return collectPortableSkills(pluginDir, sourcePrefix).skills;
+}
+
+/**
  * Collect a plugin's top-level slash commands (`commands/*.md`), at either
  * scope, against the prefix that spells this package's paths.
  *

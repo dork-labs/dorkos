@@ -779,3 +779,72 @@ describe('ConflictDetector', () => {
     }
   });
 });
+
+describe('ConflictDetector — skills a by-name harness would skip (DOR-4387)', () => {
+  let dorkHome: string;
+  let staged: string;
+  let project: string;
+
+  /** Write `<dir>/SKILL.md` with a frontmatter name. */
+  async function skillAt(dir: string, name: string): Promise<void> {
+    await mkdir(dir, { recursive: true });
+    await writeFile(
+      join(dir, 'SKILL.md'),
+      `---\nname: ${name}\ndescription: ${name}\n---\n\nbody\n`
+    );
+  }
+
+  /** Enable these harnesses in the project's harness manifest. */
+  async function harnesses(list: string[]): Promise<void> {
+    await mkdir(join(project, '.agents'), { recursive: true });
+    await writeFile(
+      join(project, '.agents', 'harness.manifest.json'),
+      JSON.stringify({ version: 1, harnesses: list })
+    );
+  }
+
+  beforeEach(async () => {
+    dorkHome = await mkdtemp(join(tmpdir(), 'conflict-skip-dorkhome-'));
+    staged = await mkdtemp(join(tmpdir(), 'conflict-skip-staged-'));
+    project = await mkdtemp(join(tmpdir(), 'conflict-skip-project-'));
+    await skillAt(join(project, '.agents', 'skills', 'c'), 'c');
+    await skillAt(join(staged, 'skills', 'c'), 'c');
+  });
+
+  afterEach(async () => {
+    for (const dir of [dorkHome, staged, project]) await rm(dir, { recursive: true, force: true });
+  });
+
+  const detect = () =>
+    new ConflictDetector(dorkHome, buildMockAdapterManager()).detect({
+      packagePath: staged,
+      manifest: pluginManifest('acme'),
+      dorkHome,
+      projectPath: project,
+    });
+
+  it("warns that a package skill named like the person's own will not be added", async () => {
+    await harnesses(['claude-code', 'opencode']);
+
+    const reports = (await detect()).filter((r) => r.type === 'skill-name');
+
+    expect(reports).toEqual([
+      {
+        level: 'warning',
+        type: 'skill-name',
+        description: `"c" won't be added. Your own skill has this name; OpenCode keeps one.`,
+        conflictingPackage: 'acme',
+      },
+    ]);
+  });
+
+  it('warns even when the project does not list OpenCode, because the skip applies anyway', async () => {
+    await harnesses(['claude-code', 'codex']);
+
+    expect((await detect()).filter((r) => r.type === 'skill-name')).toHaveLength(1);
+  });
+
+  it('says nothing when the project has no harness manifest, since nothing is projected', async () => {
+    expect((await detect()).filter((r) => r.type === 'skill-name')).toEqual([]);
+  });
+});

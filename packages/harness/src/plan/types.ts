@@ -221,6 +221,18 @@ export interface DetectedHarness {
   signal?: string;
 }
 
+/** One package skill a plan left out so it could not replace a skill with the same name. */
+export interface SkippedPackageSkill {
+  /** The package that ships the skill. */
+  package: string;
+  /** The skill's folder name inside the package. */
+  skill: string;
+  /** The name a by-name harness keys it by: its frontmatter `name`, else the folder name. */
+  name: string;
+  /** What kept its place: the person's own skill, or a package skill planned first. */
+  winner: { kind: 'own'; source: string } | { kind: 'package'; projection: string };
+}
+
 /**
  * The full result of planning a projection: the actionable projections, the
  * honest drop list, and any warnings. Nothing a harness cannot accept is ever
@@ -294,6 +306,15 @@ export interface ProjectionPlan {
    * `buildPlan` is the only thing that sets it.
    */
   unreadableSkillRoots?: string[];
+  /**
+   * Package skills this plan did NOT project because a harness that keys skills
+   * by name would have let them replace a skill with the same name (DOR-4387).
+   *
+   * The person's own skill always wins, and of two package skills the first
+   * planned wins. Each entry also has a warning; this is the structured form the
+   * install screen and the agent's context read. Absent when nothing was skipped.
+   */
+  skippedPackageSkills?: SkippedPackageSkill[];
   /**
    * What the running extensions' skills ledger said when this plan was built
    * (DOR-2685). Only `read` makes the plan evidence about extension skill

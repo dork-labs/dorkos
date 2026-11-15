@@ -24,6 +24,7 @@ import {
 } from '../../shared/permission-tool-filter.js';
 import { OPENCODE_DORKOS_TOOL_PREFIX } from '../../shared/dorkos-tool-names.js';
 import { joinFitted, type ContextPart } from '../../shared/window/context-fit.js';
+import { renderSkippedSkillLines } from './skipped-skills.js';
 
 /**
  * Build the DorkOS context for one OpenCode turn.
@@ -84,7 +85,14 @@ export async function buildOpenCodeTurnParts(
   source?: AgentContextSource
 ): Promise<ContextPart[]> {
   const append = await buildAgentContextAppend(agentPath, cwd, source);
-  const neutral = append.parts ?? [{ block: null, text: append.text }];
+  // Package skills DorkOS left out so they could not replace a skill with the
+  // same name (DOR-4387). Carried whether or not the DorkOS tools are here: it
+  // is about what is in the skill folders, not about DorkOS.
+  const skipped = renderSkippedSkillLines(cwd);
+  const neutral = [
+    ...(append.parts ?? [{ block: null, text: append.text }]),
+    ...(skipped ? [{ block: null, text: skipped }] : []),
+  ];
   if (!dorkosApplied) return [...neutral];
   // One line per Blocked permission area (spec `agent-permissions` D15); the
   // runtime listener hides the same area's tools from this turn's list.

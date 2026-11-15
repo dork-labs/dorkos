@@ -13,6 +13,7 @@ import { readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { PACKAGE_TEXT_MAX_BYTES, readPackageFileWithin } from '@dorkos/shared/bounded-read';
 import { parseFrontmatter } from '@dorkos/skills/frontmatter';
+import { previewPackageSkillSkips, type SkippedPackageSkill } from '@dorkos/harness';
 import type { MarketplacePackageManifest } from '@dorkos/marketplace';
 import { isInstallSiblingName } from '@dorkos/shared/marketplace-schemas';
 import type { AdapterManager } from '../../relay/adapter-manager.js';
@@ -113,6 +114,8 @@ export class ConflictDetector {
    * 6. (Task name collapses into rule 3 — see above.)
    * 7. Extension scope — agent-scoped install of an extension-bearing package
    *    (warning: extension enable state is global, so it affects all agents).
+   * 8. Skipped skill — on a harness that keys skills by name, a package skill
+   *    named like the person's own or another package's is not added (warning).
    *
    * @param ctx - Detection context (staged path, manifest, scope roots).
    * @returns A list of {@link ConflictReport}s, possibly empty.
@@ -144,8 +147,41 @@ export class ConflictDetector {
     reports.push(...this.#detectCronConflicts(stagedSkills, foreignSkills));
     reports.push(...(await this.#detectAdapterIdConflict(ctx)));
     reports.push(...this.#detectAgentScopeExtensionWarning(ctx, stagedExtensions));
+    reports.push(...this.#detectSkippedPackageSkills(ctx));
 
     return reports;
+  }
+
+  /**
+   * Rule 8 — a skill a by-name harness would let this package swap in for a
+   * skill of the same name (DOR-4387). OpenCode keeps one of two same-name
+   * skills, so the harness plan leaves the package's skill out, and the person
+   * is told here, before confirming. A `warning`: the install is safe, the
+   * skill is just not added. Project installs only; a preview that cannot be
+   * computed says nothing, because the plan enforces the skip either way.
+   *
+   * @param ctx - Detection context; only project installs are previewed.
+   * @returns One warning per skill the install would leave out.
+   */
+  #detectSkippedPackageSkills(ctx: ConflictDetectionContext): ConflictReport[] {
+    if (!ctx.projectPath) return [];
+    let skips: SkippedPackageSkill[];
+    try {
+      skips = previewPackageSkillSkips({
+        repoRoot: ctx.projectPath,
+        packageName: ctx.manifest.name,
+        packageDir: ctx.packagePath,
+        packageType: ctx.manifest.type,
+      });
+    } catch {
+      return [];
+    }
+    return skips.map((skip) => ({
+      level: 'warning' as const,
+      type: 'skill-name' as const,
+      description: skippedSkillDescription(skip, ctx.manifest.name),
+      conflictingPackage: skip.package,
+    }));
   }
 
   /**
@@ -608,6 +644,22 @@ async function readSkillCron(
   }
   const cron = data.cron;
   return typeof cron === 'string' && cron.length > 0 ? cron : null;
+}
+
+/**
+ * The install-screen line for one skipped skill (rule 8).
+ *
+ * @param skip - the skip the harness preview reported.
+ * @param installing - the package being installed.
+ */
+function skippedSkillDescription(skip: SkippedPackageSkill, installing: string): string {
+  if (skip.package !== installing) {
+    return `"${skip.name}" from ${skip.package} stops loading. This package's skill has its name.`;
+  }
+  if (skip.winner.kind === 'own') {
+    return `"${skip.name}" won't be added. Your own skill has this name; OpenCode keeps one.`;
+  }
+  return `"${skip.name}" won't be added. ${skip.winner.projection} has this name; OpenCode keeps one.`;
 }
 
 /**
