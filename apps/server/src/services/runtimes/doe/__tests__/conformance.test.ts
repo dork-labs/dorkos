@@ -4,7 +4,7 @@ import { expect, vi, onTestFinished } from 'vitest';
 import { mkdirSync } from 'node:fs';
 import path from 'node:path';
 import { controlUi } from '../../../session/browser-seat/ui-control.js';
-import { runtimeConformance, type HandedGrants } from '@dorkos/test-utils';
+import { runtimeConformance, runtimeGuardConformance, type HandedGrants } from '@dorkos/test-utils';
 import type { StreamEvent, Session } from '@dorkos/shared/types';
 import { CreditsUnavailableError } from '../../../core/cloud/credits-protocols.js';
 import {
@@ -39,6 +39,9 @@ const failed = (message: string) =>
       }),
   });
 const success = engine().run;
+// Doe declares no safety guard yet (its shell is unchecked; DOR-3598), so it proves none.
+runtimeGuardConformance(() => makeRuntime());
+
 runtimeConformance(() => makeRuntime(), {
   name: 'DoeRuntime — AgentRuntime conformance',
   hangingInterrupt: async (runtime, id) => {
