@@ -166,8 +166,10 @@ export interface CreateScheduledTaskOptions {
   writerMarks?: TurnMarks;
   /**
    * The server found the calling turn at Full autonomy and unmarked. Such an agent may file a
-   * schedule in its own folder even when that folder is home or the data folder, as a person
-   * can (DOR-4067, the DOR-4136 level rule). Never read from the request body.
+   * schedule whose folder is the home folder itself, as a person can (DOR-4067, the DOR-4136
+   * level rule). The data folder and protected folders stay refused at every level, since no
+   * run could start there. This is the caller's level, not the runner's; the run is still
+   * capped at the runner's own level. Never read from the request body.
    */
   callerAtFull?: boolean;
   /**
@@ -367,14 +369,15 @@ export async function createScheduledTask(
       !agentSchedulesArmWithoutAsking(options.callerIsOurAgent === true));
 
   // An agent's omitted or `global` schedule is filed under itself, so it runs in its own folder,
-  // never home (DOR-4067). Below Full, a folder that is home or the data folder is refused.
+  // never home (DOR-4067). The data folder and protected folders are refused at every level;
+  // home itself only below Full.
   if (!trusted) {
     const placement = await agentScheduleTarget(
       data.target,
       { agentPath: callerAgentPath, id: callerId },
       deps,
       {
-        checkFolder: options.callerAtFull !== true,
+        allowHome: options.callerAtFull === true,
       }
     );
     if (!placement.ok) return placement;

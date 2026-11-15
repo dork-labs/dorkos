@@ -1,7 +1,8 @@
 /**
- * An agent's schedule whose own folder is home or the data folder (DOR-4067) follows the
- * DOR-4136 level rule: refused below Full, and allowed at Full, unmarked, as a person's would be.
- * The level is the one the calling turn really ran at, read from the server's own turn record.
+ * An agent's schedule whose own folder is home or the data folder (DOR-4067). The home folder
+ * follows the DOR-4136 level rule: refused below Full, allowed at Full, unmarked, as a person's
+ * would be. The data folder is refused at every level, since no run could ever start there. The
+ * level is the one the calling turn really ran at, read from the server's own turn record.
  */
 import os from 'node:os';
 import path from 'node:path';
@@ -106,9 +107,9 @@ async function create(tools: Record<string, SessionTool>, target?: string) {
 }
 
 describe.each([
-  ['home', () => home],
-  ['the data folder', () => dorkHome],
-])('an agent whose own folder is %s', (_label, folderOf) => {
+  ['home', () => home, true],
+  ['the data folder', () => dorkHome, false],
+])('an agent whose own folder is %s', (_label, folderOf, allowedAtFull) => {
   it.each(['default', 'acceptEdits', 'plan'])(
     'is refused from a turn at %s, and nothing is written',
     async (mode) => {
@@ -133,12 +134,16 @@ describe.each([
   });
 
   it.each([undefined, 'global', 'scout'])(
-    'files target %s under itself from a Full, unmarked turn, as a person could',
+    'from a Full, unmarked turn, target %s is filed under itself only where a run could start',
     async (target) => {
       const outcome = await create(toolsOf(folderOf(), await ranTurn('bypassPermissions')), target);
-      expect(outcome.isError).toBe(false);
-      const [task] = store.getTasks();
-      expect(task?.agentId).toBe('scout');
+      if (allowedAtFull) {
+        expect(outcome.isError).toBe(false);
+        expect(store.getTasks()[0]?.agentId).toBe('scout');
+      } else {
+        expect(outcome.payload.code).toBe('PROTECTED_FOLDER');
+        expect(store.getTasks()).toEqual([]);
+      }
     }
   );
 });
@@ -151,4 +156,12 @@ it('a Full agent with a safe folder still files a global schedule under itself',
   const [task] = store.getTasks();
   expect(task?.agentId).toBe('scout');
   expect(task?.filePath.startsWith(folder)).toBe(true);
+});
+
+it('a Full agent whose folder is a protected one, like ~/.ssh, is refused', async () => {
+  const folder = path.join(home, '.ssh');
+  await fs.mkdir(folder, { recursive: true });
+  const outcome = await create(toolsOf(folder, await ranTurn('bypassPermissions')), 'global');
+  expect(outcome.payload.code).toBe('PROTECTED_FOLDER');
+  expect(store.getTasks()).toEqual([]);
 });

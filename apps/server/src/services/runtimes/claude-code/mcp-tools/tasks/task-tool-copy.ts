@@ -122,16 +122,17 @@ export const PARKED_SCHEDULE_SURFACE_HINT =
  *
  * An agent's schedule runs in its own folder, never in home or the data folder
  * (DOR-4067): an omitted or `global` target is filed under the verified caller,
- * and nothing is created for an agent with no registered folder. Below Full, a
- * caller whose own folder is home, the data folder or a protected folder is
- * refused too; at Full it may file there, as a person can (the DOR-4136 rule).
+ * and nothing is created for an agent with no registered folder. A folder that
+ * is the data folder or a protected one is refused at every level, since no run
+ * could start there; the home folder itself only below Full (the DOR-4136 rule).
  * Global proposals keep their approval requirement after that placement change.
  */
 export const TARGET_DESCRIPTION =
   'Where this scheduled task lives. Omit this, use "global", or give your own agent id to file ' +
   'it under yourself, so it runs in your own folder. A global request still waits for a person ' +
-  'to approve it. DorkOS refuses if your agent has no folder of its own, or, below Full autonomy, if ' +
-  'your folder is the home folder or the DorkOS data folder. From a chat at Full autonomy whose turn ' +
+  'to approve it. DorkOS refuses if your agent has no folder of its own, if your folder is the ' +
+  'DorkOS data folder or a protected one, or, below Full autonomy, if it is the home folder. ' +
+  'From a chat at Full autonomy whose turn ' +
   `${unmarkedTurnClause()}, another agent's id files it under that agent, at that agent's own level at ` +
   'most; anywhere else that is refused.';
 

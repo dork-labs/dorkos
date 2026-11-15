@@ -71,7 +71,7 @@ summary is waiting for you."
 
 ### Say where it lives, too
 
-Omit \`target\`, use \`"global"\`, or give your own agent id to file the task under yourself, in your own folder. A global request still waits for a person to approve it. If your agent has no folder of its own, creation is refused before anything is written. Below Full autonomy, so is a schedule whose folder is the home folder, the data folder, or another protected folder. A person's own global schedules keep their existing placement.
+Omit \`target\`, use \`"global"\`, or give your own agent id to file the task under yourself, in your own folder. A global request still waits for a person to approve it. If your agent has no folder of its own, or its folder is the data folder or another protected folder, creation is refused before anything is written. Below Full autonomy, so is a schedule whose folder is the home folder. A person's own global schedules keep their existing placement.
 An agent it has never heard of is refused and nothing is created. Under an agent
 installed from the marketplace, your task stays through the package's updates; it
 is refused (\`schedule_package_owned\`) if the package uses that name itself, or if

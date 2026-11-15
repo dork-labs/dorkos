@@ -480,7 +480,7 @@ curl http://localhost:4242/api/tasks/templates
 
 Agents can propose scheduled tasks for themselves using the `tasks_create` MCP tool. Leave out `target`, or use `"global"`, to save the schedule under the calling agent. It uses that agent's folder. A global proposal still waits for a person's approval.
 
-DorkOS checks the folder before saving. An agent's schedule needs an agent with a folder of its own. Below Full autonomy, it also needs a folder that isn't your home folder or the DorkOS data folder. An agent at Full autonomy may use those, as you can. Schedules you create yourself keep their existing placement.
+DorkOS checks the folder before saving. An agent's schedule needs an agent with a folder of its own. Its folder can't be the DorkOS data folder or a protected folder, because no run could start there. Below Full autonomy, it can't be your home folder either. An agent at Full autonomy may use your home folder, as you can. Schedules you create yourself keep their existing placement.
 
 ```
 tasks_create({
