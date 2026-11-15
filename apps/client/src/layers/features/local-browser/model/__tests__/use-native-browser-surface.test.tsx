@@ -9,6 +9,10 @@ import {
   DialogContent,
   DialogDescription,
   DialogTitle,
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetTitle,
   Tooltip,
   TooltipContent,
   TooltipProvider,
@@ -259,9 +263,11 @@ describe('useNativeBrowserSurface', () => {
           ? WINDOW
           : this.matches('[data-radix-popper-content-wrapper]')
             ? tooltipRect
-            : this.closest('[role="dialog"]')
-              ? { x: 700, y: 300, width: 400, height: 300 }
-              : rect;
+            : this.contains(document.querySelector('[data-testid="surface"]'))
+              ? rect
+              : this.closest('[role="dialog"]')
+                ? { x: 700, y: 300, width: 400, height: 300 }
+                : rect;
         return {
           ...box,
           top: box.y,
@@ -348,6 +354,50 @@ describe('useNativeBrowserSurface', () => {
       expect(setBounds).toHaveBeenLastCalledWith(expect.objectContaining({ visible: false }));
 
       view.rerender(<WithLayers dialog={false} tooltip={false} />);
+      await settle();
+      await settle();
+      expect(setBounds).toHaveBeenLastCalledWith(expect.objectContaining({ visible: true }));
+    });
+
+    // Below desktop width the right panel is itself a Sheet, with its own backdrop.
+    function InPanelSheet({ dialog }: { dialog: boolean }) {
+      return (
+        <>
+          <Sheet open>
+            <SheetContent>
+              <SheetTitle>Panel</SheetTitle>
+              <SheetDescription>Right panel content.</SheetDescription>
+              <Surface onUnavailable={noop} />
+            </SheetContent>
+          </Sheet>
+          <Dialog open={dialog}>
+            <DialogContent>
+              <DialogTitle>Settings</DialogTitle>
+              <DialogDescription>Your preferences</DialogDescription>
+            </DialogContent>
+          </Dialog>
+        </>
+      );
+    }
+
+    it('shows inside the panel sheet, whose own backdrop sits under it', async () => {
+      render(<InPanelSheet dialog={false} />);
+      await settle();
+
+      expect(document.querySelector('[data-slot="sheet-overlay"]')).not.toBeNull();
+      expect(setBounds).toHaveBeenLastCalledWith(expect.objectContaining({ visible: true }));
+      expect(setBounds).not.toHaveBeenCalledWith(expect.objectContaining({ visible: false }));
+    });
+
+    it('still hides for a dialog opened over the panel sheet', async () => {
+      const view = render(<InPanelSheet dialog={false} />);
+      await settle();
+
+      view.rerender(<InPanelSheet dialog />);
+      await settle();
+      expect(setBounds).toHaveBeenLastCalledWith(expect.objectContaining({ visible: false }));
+
+      view.rerender(<InPanelSheet dialog={false} />);
       await settle();
       await settle();
       expect(setBounds).toHaveBeenLastCalledWith(expect.objectContaining({ visible: true }));

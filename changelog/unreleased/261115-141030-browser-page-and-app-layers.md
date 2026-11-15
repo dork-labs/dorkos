@@ -1,6 +1,7 @@
 ---
 covers:
   - 'fix(client): the browser page stays put for tooltips elsewhere and hides behind dialogs (DOR-4417, DOR-4418)'
+  - 'fix(client): the browser page shows inside the narrow-window panel sheet (DOR-4417, DOR-4418)'
 ---
 
 ### Fixed

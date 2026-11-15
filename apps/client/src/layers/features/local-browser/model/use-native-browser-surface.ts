@@ -43,9 +43,15 @@ export function useNativeBrowserSurface(
       }
     }
     // A native page cannot be drawn under HTML, so it steps aside while a layer overlaps it.
-    const overlapped = (x: number, y: number, right: number, bottom: number) =>
-      [...document.querySelectorAll<HTMLElement>(FLOATING_LAYERS)].some((element) => {
+    const overlapped = (x: number, y: number, right: number, bottom: number) => {
+      // Below desktop width the panel is itself a sheet. Layers portal into the
+      // page in the order they open, so its own backdrop, and anything opened
+      // before it, sit under the page; a dialog opened over it comes later.
+      const own = ref.current?.parentElement?.closest(FLOATING_LAYERS);
+      return [...document.querySelectorAll<HTMLElement>(FLOATING_LAYERS)].some((element) => {
         if (element.hidden || element.contains(ref.current)) return false;
+        if (own && element.compareDocumentPosition(own) & Node.DOCUMENT_POSITION_FOLLOWING)
+          return false;
         const area = element.getBoundingClientRect();
         return (
           area.width > 0 &&
@@ -56,6 +62,7 @@ export function useNativeBrowserSurface(
           area.y + area.height > y
         );
       });
+    };
     const publish = () => {
       if (disposed || broken) return;
       const rect = ref.current?.getBoundingClientRect();
