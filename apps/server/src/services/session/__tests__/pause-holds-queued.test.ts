@@ -593,6 +593,8 @@ describe('a pause between a queued turn’s start and its first model request (D
     setQueuedChatHoldResolver(undefined);
 
     expect(runs).toBe(2);
+    // Sent under a fresh runtime id, and still marked: the marks are keyed to the row's id.
+    expect(opts[1]!.messageId).not.toBe(opts[0]!.messageId);
     const rerun = opts[1]!;
     expect((rerun.carriedMarks as { outsider?: boolean } | undefined)?.outsider).toBe(true);
     expect(boundsOf(rerun.permissionCeiling)).toContain('runtime-default');
@@ -636,6 +638,25 @@ describe('a pause between a queued turn’s start and its first model request (D
     ] as unknown as StreamEvent[]);
     expect(runs).toBe(2);
     expect(answered).toEqual(['from A: add the totals']);
+  });
+
+  it('reruns under a fresh runtime message id, the row keeping its own (QA W1)', async () => {
+    // A cut turn's message can already be in the runtime's transcript under the id it was sent
+    // with, and Claude Code runs nothing for an id it already holds: the rerun never started.
+    const started: string[] = [];
+    const stop = onDispatchLifecycle((event) => {
+      if (event.phase === 'started') started.push(event.messageId);
+    });
+    const { runs, opts } = await cutPauseResume(LAUNCH_EVENTS);
+    stop();
+
+    expect(runs).toBe(2);
+    expect(answered).toEqual(['from A: add the totals']);
+    // The same queue row both times, so its chat record and marks still match it ...
+    expect(started.slice(-2)).toEqual([opts[0]!.messageId, opts[0]!.messageId]);
+    // ... sent to the runtime under a new id the second time.
+    expect(opts[1]!.messageId).toEqual(expect.any(String));
+    expect(opts[1]!.messageId).not.toBe(opts[0]!.messageId);
   });
 
   it('tells the sender it is held, not that it failed or ran', async () => {
