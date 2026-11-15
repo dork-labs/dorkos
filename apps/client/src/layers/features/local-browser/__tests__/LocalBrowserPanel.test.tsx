@@ -308,8 +308,7 @@ describe('LocalBrowserPanel', () => {
       expect(screen.queryByRole('combobox')).toBeNull();
       expect(screen.queryByRole('button', { name: /^Address:/ })).toBeNull();
       // Forget stays out of reach too: nothing here may change that chat's browser.
-      expect(screen.queryByLabelText('Saved sign-ins')).toBeNull();
-      expect(screen.queryByRole('button', { name: 'Forget…' })).toBeNull();
+      expect(screen.queryByRole('button', { name: /^Forget/ })).toBeNull();
     });
     it('names the waiting agent and links its chat by title', async () => {
       transport.getSession.mockResolvedValue({
@@ -344,7 +343,9 @@ describe('LocalBrowserPanel', () => {
       });
       mount();
       expect(await screen.findByRole('button', { name: 'Take it here' })).toBeEnabled();
-      expect(await screen.findByLabelText('Saved sign-ins')).toBeInTheDocument();
+      expect(
+        await screen.findByRole('button', { name: 'Forget saved sign-ins…' })
+      ).toBeInTheDocument();
     });
     it('keeps the controls in the waiting chat’s own panel', async () => {
       transport.getLocalBrowserState.mockResolvedValue({
@@ -1347,7 +1348,7 @@ describe('LocalBrowserPanel', () => {
       );
       expect(screen.queryByRole('combobox')).toBeNull();
       expect(screen.queryByRole('button', { name: 'Disconnect' })).toBeNull();
-      expect(screen.queryByLabelText('Saved sign-ins')).toBeNull();
+      expect(screen.queryByRole('button', { name: 'Forget saved sign-ins…' })).toBeNull();
     });
     it('lists Pages only when the chat has more than one', async () => {
       transport.getLocalBrowserState.mockResolvedValue({
@@ -1419,6 +1420,83 @@ describe('LocalBrowserPanel', () => {
       fireEvent.keyDown(screen.getByRole('menu'), { key: 'Escape' });
       await waitFor(() => expect(screen.queryByRole('menu')).toBeNull());
       await waitFor(() => expect(setBounds.mock.calls.at(-1)?.[0].visible).toBe(true));
+    });
+  });
+  describe('the page area with no page (DOR-4433)', () => {
+    const block = () => document.querySelector('[data-slot="local-browser-page-area-block"]');
+    it('is one centred block, with the state as its only heading', async () => {
+      mount();
+      await screen.findByRole('button', { name: 'Open browser' });
+      expect(document.querySelectorAll('[data-slot="local-browser-page-area-block"]')).toHaveLength(
+        1
+      );
+      expect(block()).toHaveClass('items-center', 'justify-center');
+      expect(block()!.firstElementChild).toHaveClass('max-w-[360px]');
+      expect(within(block() as HTMLElement).getByRole('status')).toHaveTextContent('Not open yet');
+      // The old stack is gone: no panel heading, no Saved sign-ins row or its hint.
+      expect(screen.queryByRole('heading', { name: 'Agent browser' })).toBeNull();
+      expect(screen.queryByText(/Kept apart from your own browser/)).toBeNull();
+      expect(
+        await screen.findByRole('button', { name: 'Forget saved sign-ins…' })
+      ).toBeInTheDocument();
+    });
+    it('says it can’t reach the browser in one line, with Reconnect', async () => {
+      transport.getLocalBrowserState.mockRejectedValue(new Error('down'));
+      mount();
+      expect(await screen.findByRole('alert')).toHaveTextContent(
+        'Couldn’t reach the browser. Reconnect and try again.'
+      );
+      expect(
+        within(block() as HTMLElement).getByRole('button', { name: 'Reconnect' })
+      ).toBeEnabled();
+      // Only the way back: no browser choice to make until it answers.
+      expect(screen.queryByRole('button', { name: 'Open browser' })).toBeNull();
+      expect(screen.queryByRole('radio')).toBeNull();
+      // The alert says it; a visible "Not open yet" over it would contradict it.
+      expect(screen.getAllByRole('status')[0]).toHaveClass('sr-only');
+    });
+    it('names another chat’s hold in the block, with no second heading', async () => {
+      transport.getLocalBrowserState.mockResolvedValue({ ...connected, sessionId: 'other-chat' });
+      mount();
+      const take = await screen.findByRole('button', { name: 'Take it here' });
+      expect(block()).toContainElement(take);
+      expect(screen.getByText('This browser is open in another chat')).toBeInTheDocument();
+      expect(screen.getAllByRole('status')[0]).toHaveClass('sr-only');
+    });
+    it('puts the own-window line in the page area', async () => {
+      transport.getLocalBrowserState.mockResolvedValue(connected);
+      mount();
+      const line = await screen.findByText('This page is in the separate browser window.');
+      expect(line.closest('[data-slot="local-browser-page-area-block"]')).not.toBeNull();
+    });
+    it('on a new empty page, keeps the native page hidden and says what to do', async () => {
+      const setBounds = vi.fn().mockResolvedValue(undefined);
+      window.electronAPI = { localBrowser: { setBounds } } as unknown as ElectronAPI;
+      const empty = {
+        ...connected,
+        mode: 'embedded' as const,
+        tabs: [{ id: 'one', title: '', url: 'about:blank' }],
+      };
+      transport.getLocalBrowserState.mockResolvedValue(empty);
+      transport.getLocalBrowserCapabilities.mockResolvedValue({ ...capabilities, embedded: true });
+      vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue({
+        x: 100,
+        y: 100,
+        width: 400,
+        height: 300,
+      } as DOMRect);
+      const view = mount();
+      expect(await screen.findByText('Type an address or a search above.')).toBeInTheDocument();
+      expect(setBounds.mock.calls.every(([bounds]) => !bounds.visible)).toBe(true);
+      // Once a page loads, the native page shows and the line goes.
+      act(() =>
+        view.client.setQueryData(['local-browser', 'state'], {
+          ...empty,
+          tabs: [{ id: 'one', title: 'Fares', url: 'https://northwind.example/fares' }],
+        })
+      );
+      await waitFor(() => expect(setBounds.mock.calls.at(-1)?.[0].visible).toBe(true));
+      expect(screen.queryByText('Type an address or a search above.')).toBeNull();
     });
   });
 });

@@ -4,6 +4,13 @@ import { useOwnOrigins } from '@/layers/entities/config';
 import { isThisAppsAddress, normalizeAddressInput } from '@/layers/shared/lib';
 import { useTransport } from '@/layers/shared/model';
 import { BrowserChrome, Button } from '@/layers/shared/ui';
+import { PageAreaBlock } from './PageAreaBlock';
+
+/** The address of a new empty page. */
+export const EMPTY_PAGE = 'about:blank';
+
+/** What a new empty page says in its place (DOR-4420 spec §9). */
+const EMPTY_PAGE_LINE = 'Type an address or a search above.';
 
 /** Props for {@link LocalBrowserView}. */
 export interface LocalBrowserViewProps {
@@ -128,23 +135,32 @@ export function LocalBrowserView({
         <div
           ref={surface}
           data-slot="native-browser-surface"
-          className="bg-muted/20 relative min-h-48 flex-1"
+          className="bg-muted/20 relative flex min-h-48 flex-1 flex-col"
         >
-          {surfaceUnavailable && (
-            <div className="space-y-2 p-3">
+          {surfaceUnavailable ? (
+            <PageAreaBlock>
               <p role="alert" className="text-sm">
                 Couldn’t show the page. Reconnect to try again.
               </p>
               <Button size="sm" variant="outline" onClick={onReconnect} disabled={busy}>
                 Reconnect
               </Button>
-            </div>
+            </PageAreaBlock>
+          ) : (
+            tab?.url === EMPTY_PAGE && (
+              // The panel keeps the native page hidden while it is empty, so this shows.
+              <PageAreaBlock>
+                <p className="text-muted-foreground text-center text-sm">{EMPTY_PAGE_LINE}</p>
+              </PageAreaBlock>
+            )
           )}
         </div>
       ) : (
-        <p className="text-muted-foreground p-3 text-sm">
-          This page is in the separate browser window.
-        </p>
+        <PageAreaBlock>
+          <p className="text-muted-foreground text-center text-sm">
+            This page is in the separate browser window.
+          </p>
+        </PageAreaBlock>
       )}
     </div>
   );

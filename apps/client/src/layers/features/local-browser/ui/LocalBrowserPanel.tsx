@@ -6,7 +6,6 @@ import type {
   LocalBrowserState,
 } from '@dorkos/shared/local-browser';
 import { useLocalBrowser, LOCAL_BROWSER_STATE_KEY } from '@/layers/entities/local-browser';
-import { cn } from '@/layers/shared/lib';
 import { YourTurnStrip } from '@/layers/features/browser-handoff';
 import { useAppStore, useTransport } from '@/layers/shared/model';
 import { Button } from '@/layers/shared/ui';
@@ -19,7 +18,8 @@ import { BrowserPreparation } from './BrowserPreparation';
 import { WaitingElsewhere } from './WaitingElsewhere';
 import { SavedSignIns } from './SavedSignIns';
 import { LocalBrowserMenu } from './LocalBrowserMenu';
-import { LocalBrowserView } from './LocalBrowserView';
+import { EMPTY_PAGE, LocalBrowserView } from './LocalBrowserView';
+import { PageAreaBlock } from './PageAreaBlock';
 import { SharedElsewhere } from './SharedElsewhere';
 
 export interface LocalBrowserPanelProps {
@@ -110,7 +110,9 @@ export function LocalBrowserPanel({
       !query.isError &&
       !sharedElsewhere &&
       mode === 'embedded' &&
-      !surfaceUnavailable,
+      !surfaceUnavailable &&
+      // A new empty page is blank; hidden, the page area says what to do instead.
+      selected?.url !== EMPTY_PAGE,
     unavailable
   );
 
@@ -234,143 +236,69 @@ export function LocalBrowserPanel({
       ? state.preparation
       : null;
 
+  const statusWords = cancelling
+    ? 'Cancelling…'
+    : opening
+      ? 'Preparing browser'
+      : busy
+        ? 'Updating…'
+        : !connected && handoffHere
+          ? 'Waiting for you'
+          : state?.status === 'closed'
+            ? 'Browser closed'
+            : connected && sharedElsewhere
+              ? // The page area says where the browser is; the status adds nothing.
+                ''
+              : connected
+                ? state.paused
+                  ? 'Agent paused'
+                  : 'Connected'
+                : hadConnection
+                  ? 'Disconnected'
+                  : 'Not open yet';
+  const readFailed = query.isError || capabilityQuery.isError;
+  // The blocks for another chat and for a read that failed say it in their own words.
+  const statusShown = !waitingElsewhere && !sharedElsewhere && !readFailed;
+  // Why the last action or read failed, and a way back when trying again can help.
+  const problem = (
+    <>
+      {(error || readFailed) && (
+        <p role="alert" className="text-sm">
+          {error ?? readError}
+        </p>
+      )}
+      {readFailed && readCode !== 'local_only' && readCode !== 'owner_only' && (
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={() => {
+            void query.refetch();
+            void capabilityQuery.refetch();
+          }}
+        >
+          Reconnect
+        </Button>
+      )}
+    </>
+  );
+
   return (
     <section
       aria-label="Agent browser"
       data-slot="local-browser-panel"
       className="@container/browser-panel flex h-full min-h-0 flex-col"
     >
-      <div
-        className={cn(
-          'flex min-h-0 flex-col gap-3 overflow-y-auto p-3',
-          showsPage ? 'max-h-[50%] shrink-0' : 'flex-1'
-        )}
-      >
-        {/* Below 480px of panel the state sits under the title, so neither wraps (DOR-4265). */}
-        <div className="flex flex-col items-start gap-0.5 @min-[480px]/browser-panel:flex-row @min-[480px]/browser-panel:items-center @min-[480px]/browser-panel:justify-between @min-[480px]/browser-panel:gap-2">
-          <h3 className="text-sm font-medium">Agent browser</h3>
-          <span role="status" className="text-muted-foreground text-xs">
-            {cancelling
-              ? 'Cancelling…'
-              : opening
-                ? 'Preparing browser'
-                : busy
-                  ? 'Updating…'
-                  : !connected && handoffHere
-                    ? 'Waiting for you'
-                    : state?.status === 'closed'
-                      ? 'Browser closed'
-                      : connected && sharedElsewhere
-                        ? // The body says where the browser is; the header adds nothing.
-                          ''
-                        : connected
-                          ? state.paused
-                            ? 'Agent paused'
-                            : 'Connected'
-                          : hadConnection
-                            ? 'Disconnected'
-                            : 'Not open yet'}
-          </span>
-        </div>
-        {opening && (
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={(event) => {
-              rememberFocus(event.currentTarget);
-              void cancelOpening();
-            }}
-          >
-            Cancel
-          </Button>
-        )}
-        {preparation && <BrowserPreparation preparation={preparation} />}
-        {(error || query.isError || capabilityQuery.isError) && (
-          <p role="alert" className="text-sm">
-            {error ?? readError}
-          </p>
-        )}
-        {(query.isError || capabilityQuery.isError) &&
-          readCode !== 'local_only' &&
-          readCode !== 'owner_only' && (
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => {
-                void query.refetch();
-                void capabilityQuery.refetch();
-              }}
-            >
-              Reconnect
-            </Button>
-          )}
-        {waitingElsewhere && (
-          <WaitingElsewhere
-            sessionId={waitingElsewhere.sessionId}
-            agentName={waitingElsewhere.agentName}
-          />
-        )}
-        {!connected && handoffHere && (
-          <div className="space-y-1 text-sm">
-            <p>
-              {agentName || handoffHere.agentName || 'The agent'} needs you to sign in to{' '}
-              {handoffHere.site}.
-            </p>
-            {signInClosed ? (
-              <p>
-                The sign-in window closed. Press{' '}
-                <strong className="font-medium">Continue in the chat</strong> to hand it back.
-              </p>
-            ) : (
-              <p>
-                Finish in the sign-in window, then press{' '}
-                <strong className="font-medium">Continue in the chat</strong>.
-              </p>
-            )}
-          </div>
-        )}
-        {!connected && !waitingElsewhere && !handoffHere && (
-          <div className="min-h-0 space-y-3 overflow-y-auto">
-            {choiceIssue && (
-              <p className="text-muted-foreground text-xs">
-                {needsChoice
-                  ? 'Choose a browser. The saved choice couldn’t be read.'
-                  : 'Browser choice couldn’t be saved. It lasts until this window closes.'}
-              </p>
-            )}
-            <BrowserModeChoice
-              value={needsChoice ? null : mode}
-              onChange={(next) => {
-                saveChoice({ mode: next });
-              }}
-              capabilities={capabilities}
-              disabled={busy || cancelling}
-            />
-            {state?.status === 'closed' && (
-              <p className="text-muted-foreground text-xs">
-                Open it again to reconnect. Saved sign-ins are kept.
-              </p>
-            )}
-            <Button
-              ref={openButton}
-              disabled={busy || cancelling || needsChoice || !supported}
-              onClick={open}
-            >
-              {state?.mode ? 'Reconnect' : 'Open browser'}
-            </Button>
-          </div>
-        )}
-        {connected && !waitingElsewhere && sharedElsewhere && (
-          <SharedElsewhere
-            holderSessionId={state.sessionId!}
-            canTakeHere={!!sessionId}
-            disabled={busy || cancelling || !supported}
-            visible={visible}
-            onTakeHere={open}
-          />
-        )}
-        {connected && !waitingElsewhere && !sharedElsewhere && (
-          <>
+      {showsPage ? (
+        <>
+          <div className="flex max-h-[50%] min-h-0 shrink-0 flex-col gap-3 overflow-y-auto p-3">
+            {/* Below 480px of panel the state sits under the title, so neither wraps (DOR-4265). */}
+            <div className="flex flex-col items-start gap-0.5 @min-[480px]/browser-panel:flex-row @min-[480px]/browser-panel:items-center @min-[480px]/browser-panel:justify-between @min-[480px]/browser-panel:gap-2">
+              <h3 className="text-sm font-medium">Agent browser</h3>
+              <span role="status" className="text-muted-foreground text-xs">
+                {statusWords}
+              </span>
+            </div>
+            {problem}
             {/* In the Mac app the agent's page stays here while the person has it. DorkOS
               draws this, outside the page, so the page can't hide or fake it (DOR-3111). */}
             {handoffHere && <YourTurnStrip agentName={handoffHere.agentName ?? agentName} />}
@@ -409,32 +337,118 @@ export function LocalBrowserPanel({
                   : 'Extra windows are for you.'}
               </p>
             )}
-          </>
-        )}
-        {/* With a page open, Forget is in the browser's ⋯ menu. */}
-        {!waitingElsewhere && !showsPage && (
-          <SavedSignIns enabled={signInsReadable} disabled={busy || cancelling} />
-        )}
-      </div>
-      {showsPage && (
-        <LocalBrowserView
-          tab={selected ?? null}
-          embedded={mode === 'embedded'}
-          surface={surface}
-          surfaceUnavailable={surfaceUnavailable}
-          busy={busy}
-          action={action}
-          onReconnect={open}
-          menu={
-            <LocalBrowserMenu
-              state={state}
-              busy={busy}
-              action={action}
-              canForgetSignIns={signInsReadable}
-              onClose={close}
+          </div>
+          <LocalBrowserView
+            tab={selected ?? null}
+            embedded={mode === 'embedded'}
+            surface={surface}
+            surfaceUnavailable={surfaceUnavailable}
+            busy={busy}
+            action={action}
+            onReconnect={open}
+            menu={
+              <LocalBrowserMenu
+                state={state}
+                busy={busy}
+                action={action}
+                canForgetSignIns={signInsReadable}
+                onClose={close}
+              />
+            }
+          />
+        </>
+      ) : (
+        <PageAreaBlock title={statusShown ? <span role="status">{statusWords}</span> : undefined}>
+          {!statusShown && (
+            <p role="status" className="sr-only">
+              {statusWords}
+            </p>
+          )}
+          {opening && preparation && <BrowserPreparation preparation={preparation} />}
+          {opening && (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={(event) => {
+                rememberFocus(event.currentTarget);
+                void cancelOpening();
+              }}
+            >
+              Cancel
+            </Button>
+          )}
+          {problem}
+          {waitingElsewhere && (
+            <WaitingElsewhere
+              sessionId={waitingElsewhere.sessionId}
+              agentName={waitingElsewhere.agentName}
             />
-          }
-        />
+          )}
+          {!connected && handoffHere && (
+            <div className="space-y-1 text-sm">
+              <p>
+                {agentName || handoffHere.agentName || 'The agent'} needs you to sign in to{' '}
+                {handoffHere.site}.
+              </p>
+              {signInClosed ? (
+                <p>
+                  The sign-in window closed. Press{' '}
+                  <strong className="font-medium">Continue in the chat</strong> to hand it back.
+                </p>
+              ) : (
+                <p>
+                  Finish in the sign-in window, then press{' '}
+                  <strong className="font-medium">Continue in the chat</strong>.
+                </p>
+              )}
+            </div>
+          )}
+          {/* While it opens, the choice stays in place, frozen, so focus has somewhere to return. */}
+          {!connected && !waitingElsewhere && !handoffHere && !readFailed && (
+            <>
+              {choiceIssue && (
+                <p className="text-muted-foreground text-xs">
+                  {needsChoice
+                    ? 'Choose a browser. The saved choice couldn’t be read.'
+                    : 'Browser choice couldn’t be saved. It lasts until this window closes.'}
+                </p>
+              )}
+              <BrowserModeChoice
+                value={needsChoice ? null : mode}
+                onChange={(next) => {
+                  saveChoice({ mode: next });
+                }}
+                capabilities={capabilities}
+                disabled={busy || cancelling}
+              />
+              {state?.status === 'closed' && (
+                <p className="text-muted-foreground text-xs">
+                  Open it again to reconnect. Saved sign-ins are kept.
+                </p>
+              )}
+              <Button
+                ref={openButton}
+                disabled={busy || cancelling || needsChoice || !supported}
+                onClick={open}
+              >
+                {state?.mode ? 'Reconnect' : 'Open browser'}
+              </Button>
+            </>
+          )}
+          {connected && !waitingElsewhere && sharedElsewhere && (
+            <SharedElsewhere
+              holderSessionId={state.sessionId!}
+              canTakeHere={!!sessionId}
+              disabled={busy || cancelling || !supported}
+              visible={visible}
+              onTakeHere={open}
+            />
+          )}
+          {/* With a page open, Forget is in the browser's ⋯ menu. */}
+          {!waitingElsewhere && !opening && (
+            <SavedSignIns enabled={signInsReadable} disabled={busy || cancelling} />
+          )}
+        </PageAreaBlock>
       )}
     </section>
   );
