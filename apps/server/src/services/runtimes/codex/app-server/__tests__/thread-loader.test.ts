@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ConnectorThreadKeyRegistry } from '../../../../connectors/principal/thread-keys.js';
 import { FakeAppServerHost } from '../../__tests__/fake-app-server.js';
 import { CodexAppServerPool } from '../process-pool.js';
@@ -140,6 +140,59 @@ describe('the load table (§6)', () => {
       ]);
     }
   );
+
+  it('keeps two overlapping loads for different agents on their own bindings', async () => {
+    const { loader, fake, input, keys } = await setup();
+    let release!: () => void;
+    fake.threadStartGate = new Promise<void>((resolve) => (release = resolve));
+    const agent = (sessionId: string, bindingId: string) =>
+      input({
+        sessionId,
+        cwd: `/project/${sessionId}`,
+        tools: {
+          ...TOOLS,
+          agentTokenEnv: { DORKOS_AGENT_TOKEN: `${sessionId}-identity` },
+          connectorBindingId: bindingId,
+        },
+      });
+    const loads = [
+      loader.ensureLoaded(agent('agent-a-chat', 'binding-a')),
+      loader.ensureLoaded(agent('agent-b-chat', 'binding-b')),
+    ];
+    const resolved = () =>
+      fake.requestsOf('thread/start').map((params) => {
+        const servers = (params.config as LoadConfig).mcp_servers;
+        return ['dorkos', 'dorkos_connections'].map((server) => {
+          const bearer = servers[server]!.http_headers!.Authorization!.slice('Bearer '.length);
+          const key = keys.lookup(bearer);
+          return { session: key?.scope.canonicalSessionId, bindingId: key?.bindingId };
+        });
+      });
+    try {
+      // Both loads are in flight at once: Codex holds both replies.
+      await vi.waitFor(() => expect(fake.requestsOf('thread/start')).toHaveLength(2));
+      expect(resolved()).toEqual([
+        [
+          { session: 'agent-a-chat', bindingId: 'binding-a' },
+          { session: 'agent-a-chat', bindingId: 'binding-a' },
+        ],
+        [
+          { session: 'agent-b-chat', bindingId: 'binding-b' },
+          { session: 'agent-b-chat', bindingId: 'binding-b' },
+        ],
+      ]);
+    } finally {
+      release();
+      await Promise.allSettled(loads);
+    }
+    await Promise.all(loads);
+    // Both loads finished: neither key carries any binding until its own turn attaches.
+    expect(
+      resolved()
+        .flat()
+        .map((key) => key.bindingId)
+    ).toEqual([undefined, undefined, undefined, undefined]);
+  });
 
   it('starts a thread for an unbound session and does not bind it yet', async () => {
     const { loader, fake, input } = await setup();
