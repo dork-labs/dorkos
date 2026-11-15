@@ -4,6 +4,11 @@
  * `.codex/config.toml`, and any MCP server that file names runs. Names only:
  * the file, never what it says.
  *
+ * Codex reads that file in every folder from the project's top (the nearest
+ * folder holding `.git`) down to the chat's own, so each of those is checked: a
+ * chat opened in a subfolder still gets the line for the repo's file
+ * (DOR-4410). Outside a repo, only the chat's folder.
+ *
  * Once per folder and file content, so a chat that runs twenty turns there
  * leaves one line. Remembered in memory only: a restart may say it once more.
  *
@@ -25,6 +30,8 @@ export interface ProjectConfigActivityEntry {
   cwd: string;
   /** The sentence. */
   summary: string;
+  /** Each file that loads, by real path, outermost first. */
+  files: string[];
 }
 
 type ProjectConfigActivityPort = (entry: ProjectConfigActivityEntry) => void;
@@ -59,7 +66,7 @@ export function createProjectConfigActivityWriter(
       resourceType: 'folder',
       resourceId: entry.cwd,
       summary: entry.summary,
-      metadata: { file: PROJECT_CONFIG },
+      metadata: { file: PROJECT_CONFIG, files: entry.files },
     });
   };
 }
@@ -76,13 +83,30 @@ export function forgetProjectConfigActivity(): void {
  * @param realCwd - The folder, by real path.
  */
 export function noteProjectConfigTrusted(realCwd: string): void {
-  const digest = digestOf(path.join(realCwd, PROJECT_CONFIG));
-  if (digest === null || said.get(realCwd) === digest) return;
+  const found = projectChain(realCwd).flatMap((dir) => {
+    const file = path.join(dir, PROJECT_CONFIG);
+    const digest = digestOf(file);
+    return digest === null ? [] : [{ file, digest }];
+  });
+  if (found.length === 0) return;
+  const digest = found.map((f) => `${f.file}:${f.digest}`).join('\n');
+  if (said.get(realCwd) === digest) return;
   said.set(realCwd, digest);
   port?.({
     cwd: realCwd,
     summary: `Codex loaded ${PROJECT_CONFIG} in ${path.basename(realCwd)} at Full.`,
+    files: found.map((f) => f.file),
   });
+}
+
+/** The folders from the project's top down to `dir`, outermost first; `dir` alone outside a repo. */
+function projectChain(dir: string): string[] {
+  const chain: string[] = [];
+  for (let at = path.resolve(dir); ; at = path.dirname(at)) {
+    chain.unshift(at);
+    if (fs.existsSync(path.join(at, '.git'))) return chain;
+    if (path.dirname(at) === at) return [path.resolve(dir)];
+  }
 }
 
 /** A short digest of a regular file, or `null` when there is none. */

@@ -392,6 +392,14 @@ DorkOS can now run Codex on one long-lived `codex app-server` per Codex home
 | `initialize` with `experimentalApi`?                   | Works.                                                                                                                   | Always opted in; the snapshot pins that surface.                                                                                                                                                                                                                                                                                                                                                                         |
 | `turn/start` on a busy thread?                         | **Steers into it** and answers the existing turn id.                                                                     | The transport keeps its own open-turn map and refuses a second turn locally.                                                                                                                                                                                                                                                                                                                                             |
 
+**Trust written before Oct 5 2026 (DOR-4410).** Before the app-server, a writable exec chat let
+Codex write `trust_level = "trusted"` into the person's `config.toml`, and a recorded verdict
+wins over the DOR-4408 rule, so those folders still load their own settings below Full. DorkOS
+cannot tell them from the person's own entries and never edits the file: once per install it
+names every folder `config.toml` marks trusted, in one Activity line
+(`app-server/trusted-folders-notice.ts`), so the person can review them in Codex. The Full
+Activity line checks `.codex/config.toml` in every folder from the repo top down to the chat's.
+
 P1 posture (spec phase P1): `approvalPolicy: 'never'` with exec's sandbox mapping, every server
 request refused (nothing is ever accepted), `supportsPersistentSession: true` the only added
 capability, and `auto` still resolves to exec. Stop on app-server answers `acked` when Codex
