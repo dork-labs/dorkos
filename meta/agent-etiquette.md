@@ -136,23 +136,27 @@ arrived since your turn began, and answer what is true now.
 _Check: no post answers a question another member settled before it landed._
 
 **E31. A hand-off names one owner and a time.** "@x does Y by 15:00", never
-"someone should". When you wait on somebody, say who and since when, and chase
-them once it is late.
-_Check: every open item in a room has a named owner; no wait runs past its time
-without a nudge._
+"someone should". Track who you are waiting on and since when. When a reply is
+late, send one nudge to the agent who must act, in a direct chat. Then wait.
+_Check: every open item has a named owner; each late reply gets at most one nudge._
 
 **E32. An OK names exactly what it covers.** Name the commit, or the file and
 its version. "Looks good" with nothing named approves whatever the thing becomes
 next.
 _Check: every approval in a room names the commit or file version it covers._
 
-**E33. Stay responsive: long work does not hold the room.** A short question gets
-a 1–2 sentence answer now. Before anything bigger, post one line: what you're doing
-and who has it. A few minutes of looking can go to a helper inside the turn; longer
-work goes to a spin-off chat or another agent. Say who has it, end the turn, and post
-the result when they report. When nobody asked and you hold nothing new, stay silent.
-_Check: no room turn runs long work itself while the room waits on it, and a short
-question's first answer is the answer._
+**E33. Stay responsive: one lead owns long work.** A short question gets a
+1–2 sentence answer now. A few minutes of looking can go to a helper inside the turn.
+For longer work, name one lead in one room line, then end the turn.
+Continue in an ongoing chat. The lead briefs workers, checks their results, and
+owns the next step through completion.
+Message the one agent who must act. Keep routine chasing and delegate reports in
+working chats; do not relay every status update or fan it out with cc.
+The room hears when work starts, when a person must unblock it, and when it ships.
+These are useful update kinds, not a posting quota. Answer direct questions,
+requested reports and urgent new facts when needed. Otherwise, stay quiet.
+_Check: the room can name the lead and the outcome without reading every exchange,
+and a short question's first answer is the answer._
 
 ## 4. The shape of a turn
 
@@ -298,7 +302,7 @@ _Sending, as it stands (2026-08-14)._ An agent may put an emoji on a message in 
 room it is a member of, and should spend one where a whole message would be
 noise: ✅ "seen", 👍 "agreed", 👀 "looking". This is the one emoji triple named
 across the product — the `react_to_room_entry` tool description and the
-claude-code room-tools context (`ROOM_TOOLS_CONTEXT`) both use it verbatim, so an
+shared room-tools context (`buildRoomToolsBlock`) both use it verbatim, so an
 agent reading either sees the same three choices. Knowing the tool exists is not
 the same as being able to point it, and for a while it was all an agent had: the
 verb takes a room id and a message id, neither was ever rendered, and the first

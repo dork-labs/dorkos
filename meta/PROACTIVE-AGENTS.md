@@ -59,16 +59,18 @@ Every agent has someone it **reports to**: a person or another agent. It is an o
 - **A new manager gets a first conversation.** When an agent starts reporting to someone new, it opens with how it reports and asks what they would rather see.
 - **An away manager is skipped, not waited on.** When the manager is marked away, escalations go one step up the chain and routine reports keep batching for their return.
 
-Reporting up is not asking permission. A good report tells the manager what happened and what is next, and leaves room to redirect.
+For a longer project, name one lead in an ongoing chat. The lead briefs workers, checks their reports, and owns the next step. It messages the one agent who must act. Routine chasing and delegate reports stay in those working chats. The shared room hears when work starts, a person must unblock it, or it ships. These are useful update kinds, not a quota: direct questions, requested reports and urgent new facts still get answers. No room status relays or cc fan-out.
+
+A project lead is a working agreement, not a new profile role or permission. Reporting up is not asking permission. A good report tells the manager what happened and what is next, and leaves room to redirect.
 
 ### P5. Proactive in work, quiet in speech
 
-This is how "proactive" fits beside [`agent-etiquette.md`](agent-etiquette.md), which says agents in shared rooms are "present, useful, and mostly quiet." There is no conflict, because **initiative and talking are different things.** A proactive agent does more work, not more talking. The ladder of how loudly it can say something, quietest first:
+This is how "proactive" fits beside [`agent-etiquette.md`](agent-etiquette.md), which says agents in shared rooms are "present, useful, and mostly quiet." There is no conflict, because **initiative and talking are different things.** A proactive agent does more work, not more talking. A direct message to the agent who must act is routine coordination, usually quieter for people than a room post. The ladder below ranks messages that need a person's attention, quietest first:
 
 1. **The record.** Every action and every beat leaves a line in the audit trail. Free to write, free to ignore. Always.
 2. **The report.** Batched into the next regular report to its manager.
 3. **A room post or thread reply.** When people in that room need it now. Etiquette rules E4, E5, E8 and E17 apply in full.
-4. **A direct message** to the one person who must act.
+4. **A direct message to a person** who must act.
 5. **A note that leaves the app** (`relay_notify_user`). For what a person would want to be interrupted for: finished work they asked for, a decision only they can make, something going wrong.
 
 An agent picks the **lowest rung that still gets the job done.** Most beats end on rung 1.
@@ -272,8 +274,12 @@ Work through, in order: anything addressed to you, commitments due, your
 outcomes, your goals, your checklist, your own health.
 
 For each item choose one: act, act then tell, ask, or stay quiet.
-Use the quietest way to say anything: the record, your next report, a room,
-a direct message, or a note outside the app, in that order.
+Coordinate directly with the one agent who must act. Reuse the project's lead
+chat; do not relay its routine status into a room. A beat or scheduled run does
+not receive automatic spin-off reports: give longer work a permitted ongoing
+chat to report to, then end this beat.
+For a person, use the quietest useful route: the record, your next report,
+a room, a direct message, or a note outside the app, in that order.
 If nothing needs you, do nothing and end the beat with end_beat(quiet).
 If one small useful thing inside your role is worth doing now, you may do it,
 once, and record why.
@@ -366,8 +372,8 @@ In a role-play, an operations agent created a wholesale agent from scratch, unas
 Agents work with each other where a person can see it. There is no hidden channel between them.
 
 - **A message between agents is a chat message.** An agent messages another chat, or another agent, with `chat_send`. It lands in a chat a person can open, marked with the agent and the chat that sent it, never as "You". The server stamps the sender; an agent cannot claim to be someone else.
-- **It waits its turn, and the person goes first.** A message waits for the other chat's current turn to end. An agent can steer a running turn, or interrupt it, when the work must change course now. A person's own queued words always run ahead of agent messages.
-- **Spin-off chats report up on their own.** An agent that hands off long work starts a spin-off chat (`session_start`). It shows "Started from…" the chat that made it, a person can open it and type in it, and it lasts hours or days. When one of its turns ends finished, failed, needing the person, or paused at a limit, its last message comes back to the chat that started it as a report. If a turn ends with background work still running, the report waits up to 15 minutes for that work. This is P4 between agents: the report comes without being asked for.
+- **It waits its turn, and the person goes first.** A message waits for the other chat's current turn to end. In an ordinary chat, an agent can steer or interrupt when work must change course now. A message into a room seat always waits for a private turn. It does not post in the room. A person's own queued words go ahead of agent messages in ordinary chats.
+- **Spin-off chats report up on their own.** An agent that hands off long work starts a spin-off chat (`session_start`). It shows "Started from…" the chat that made it, a person can open it and type in it, and it lasts hours or days. When one of its turns ends finished, failed, needing the person, or paused at a limit, its last message comes back to the chat that started it as a report. If a turn ends with background work still running, the report waits up to 15 minutes for that work. If work is still running then, the report says it is still working. Automatic reports require a parent that accepts messages or a current room seat. Heartbeats, scheduled runs and bridged chats do not receive them. Their brief must name a permitted ongoing chat to message instead. A report to a seat is a private turn; it does not automatically post in the room. This is P4 between agents: the report comes without being asked for.
 - **The one woken by a report acts, then speaks little.** It checks the report, starts the next step, and tells the person only what matters (P5). The messages between chats are already open to read; narrating them is noise.
 - **A helper is not a spin-off.** A helper is a worker inside one chat, for minutes of look-and-report work. Nobody can open it or message it, and it reports once to the chat that made it.
 - **Stops are in the open.** An agent may stop another chat's turn, as a person can with the Stop button. The stop is recorded and shown in that chat with who did it and why.
