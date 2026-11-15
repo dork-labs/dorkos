@@ -1,6 +1,7 @@
 const MESSAGES: Record<string, string> = {
   stale_page: 'Page changed. Read it again before continuing.',
   navigation_uncertain: 'Check what happened before continuing.',
+  navigation_unreachable: 'Couldn’t reach that site. Check the address and try again.',
   uncertain: 'Check what happened before continuing.',
   paused: 'Agent paused. Resume when ready.',
   busy: 'Browser is busy. Wait a moment.',

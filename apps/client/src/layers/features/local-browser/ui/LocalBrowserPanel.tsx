@@ -6,6 +6,8 @@ import type {
   LocalBrowserState,
 } from '@dorkos/shared/local-browser';
 import { useLocalBrowser, LOCAL_BROWSER_STATE_KEY } from '@/layers/entities/local-browser';
+import { ADDRESS_PLACEHOLDER, isThisAppsAddress, normalizeAddressInput } from '@/layers/shared/lib';
+import { useOwnOrigins } from '@/layers/entities/config';
 import { useAppStore, useTransport } from '@/layers/shared/model';
 import { Button, Input } from '@/layers/shared/ui';
 import { BrowserModeChoice } from './BrowserModeChoice';
@@ -63,6 +65,7 @@ export function LocalBrowserPanel({
   const [address, setAddress] = useState<string | null>(null);
   const [surfaceUnavailable, setSurfaceUnavailable] = useState(false);
   const surface = useRef<HTMLDivElement>(null);
+  const ownOrigins = useOwnOrigins();
   const connected = state?.status === 'connected';
   // "Disconnected" before anything was ever opened reads as broken (DOR-4104).
   const [hadConnection, setHadConnection] = useState(false);
@@ -411,21 +414,34 @@ export function LocalBrowserPanel({
               className="flex gap-2"
               onSubmit={(event) => {
                 event.preventDefault();
-                const url = address ?? selected.url;
-                try {
-                  const parsed = new URL(url);
-                  if (!['http:', 'https:'].includes(parsed.protocol))
-                    throw new Error('unsupported');
-                  void action(() => transport.navigateLocalBrowser(parsed.href)).then((ok) => {
-                    if (ok) setAddress(null);
-                  });
-                } catch {
-                  setError('Enter a full web address, starting with https:// or http://.');
+                const input = normalizeAddressInput(address ?? selected.url, {
+                  current: selected.url,
+                  isOwnAddress: (url) => isThisAppsAddress(url, window.location, ownOrigins),
+                });
+                if (input.kind === 'refused') {
+                  setError(input.notice);
+                  return;
                 }
+                const url = input.kind === 'reload' ? selected.url : input.url;
+                // Only a bare host the person typed carries a fallback, and only a page
+                // that could not connect at all tries it, once (DOR-4419).
+                const fallback = input.kind === 'open' ? input.httpFallback : undefined;
+                void action(async () => {
+                  try {
+                    return await transport.navigateLocalBrowser(url);
+                  } catch (cause) {
+                    const code = (cause as { code?: string } | null)?.code;
+                    if (!fallback || code !== 'navigation_unreachable') throw cause;
+                    return transport.navigateLocalBrowser(fallback);
+                  }
+                }).then((ok) => {
+                  if (ok) setAddress(null);
+                });
               }}
             >
               <Input
                 aria-label="Web address"
+                placeholder={ADDRESS_PLACEHOLDER}
                 value={address ?? selected.url}
                 onChange={(event) => setAddress(event.target.value)}
                 className="min-w-0"

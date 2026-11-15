@@ -307,6 +307,17 @@ export { formatDuration } from './format-duration';
 export { humanizePackageName, packageDisplayLabel, isSingleEmoji } from './humanize-name';
 export { readableForeground } from './readable-foreground';
 export { truncateMiddle } from './truncate-middle';
+export {
+  ADDRESS_NOTICES,
+  ADDRESS_PLACEHOLDER,
+  ADDRESS_SEARCH_URL,
+  isLoopbackHost,
+  isThisAppsAddress,
+  normalizeAddressInput,
+  type AddressInput,
+  type AddressInputOptions,
+  type PageAddress,
+} from './browser-address';
 export { queryClient, createQueryClientConfig, isStreamOwnedQuery } from './query-client';
 // `createBootCache` and `BootCache` are NOT here, for the same reason the two
 // Transports are not: building a cache asks `instanceof HttpTransport`, so

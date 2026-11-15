@@ -11,6 +11,7 @@ import {
 } from '../lifecycle.js';
 import { AUDIT_WRITE_RESPONSE_TIMEOUT_MS, LOAD_START_MS } from '../page-action.js';
 import { LocalBrowserService } from '../service.js';
+import { assertLocalBrowserUrl } from '../errors.js';
 import { CLOUD_ORIGIN_REFUSAL } from '@dorkos/shared/cloud-origin';
 import { MAX_BROWSER_SNAPSHOT_BYTES, MAX_BROWSER_SCREENSHOT_EDGE } from '../observation-limits.js';
 import type { LocalBrowserBackend } from '../playwright-backend.js';
@@ -1585,6 +1586,62 @@ describe('the Cloud origin (DOR-3196)', () => {
     navigate('https://cloud.dorkos.ai/some/page?token=secret');
     await expect(service.agentState()).rejects.toMatchObject(refused);
     expect((await service.state()).paused).toBe(true);
+    await service.disconnect();
+  });
+
+  // DOR-4419: the address bar's refusals are UX. With the app's check skipped, a typed
+  // refused address sent straight to the person's navigate still never reaches the page.
+  it.each([
+    'file:///etc/hosts',
+    'javascript:alert(1)',
+    'data:text/html,<h1>x</h1>',
+    'chrome://settings',
+    'mailto:kai@example.com',
+    'about:config',
+  ])('refuses %s from the person even when the app check is bypassed', async (url) => {
+    const { service, page } = await create();
+    await selectOwned(service);
+    vi.mocked(page.goto).mockClear();
+    await expect(service.navigate(url)).rejects.toMatchObject({ code: 'unsupported_address' });
+    expect(page.goto).not.toHaveBeenCalled();
+    await service.disconnect();
+  });
+
+  it('lets the person open about:blank, and never an agent', async () => {
+    const { service, page } = await create();
+    await selectOwned(service);
+    await service.navigate('about:blank');
+    expect(page.goto).toHaveBeenLastCalledWith('about:blank', {
+      waitUntil: 'commit',
+      timeout: 15_000,
+    });
+    expect(() => assertLocalBrowserUrl('about:blank', 'agent')).toThrow(
+      expect.objectContaining({ code: 'unsupported_address' })
+    );
+    await service.disconnect();
+  });
+
+  it('says a page that never connected is unreachable, and a certificate error is not', async () => {
+    const { service, page } = await create();
+    await selectOwned(service);
+    vi.mocked(page.goto).mockRejectedValueOnce(
+      new Error('page.goto: net::ERR_CONNECTION_REFUSED at https://made-up.example/')
+    );
+    await expect(service.navigate('https://made-up.example/')).rejects.toMatchObject({
+      code: 'navigation_unreachable',
+    });
+    vi.mocked(page.goto).mockRejectedValueOnce(
+      Object.assign(new Error('page.goto: Timeout 15000ms exceeded.'), { name: 'TimeoutError' })
+    );
+    await expect(service.navigate('https://made-up.example/')).rejects.toMatchObject({
+      code: 'navigation_unreachable',
+    });
+    vi.mocked(page.goto).mockRejectedValueOnce(
+      new Error('page.goto: net::ERR_CERT_AUTHORITY_INVALID at https://made-up.example/')
+    );
+    await expect(service.navigate('https://made-up.example/')).rejects.toMatchObject({
+      code: 'navigation_uncertain',
+    });
     await service.disconnect();
   });
 

@@ -3,21 +3,23 @@ import { ArrowLeft, ArrowRight, ExternalLink, RotateCw } from 'lucide-react';
 import type { UiCanvasContent } from '@dorkos/shared/types';
 import { useFollowedView } from '@/layers/entities/room';
 import type { BrowserHistoryState } from '@/layers/shared/model';
+import { useOwnOrigins } from '@/layers/entities/config';
 import { useAppStore } from '@/layers/shared/model';
 import { Input } from '@/layers/shared/ui';
-import { cn, openExternalLink } from '@/layers/shared/lib';
+import {
+  ADDRESS_PLACEHOLDER,
+  cn,
+  isThisAppsAddress,
+  normalizeAddressInput,
+  openExternalLink,
+} from '@/layers/shared/lib';
 import { useDevtoolsBridge } from '../model/use-devtools-bridge';
 import { useDocFrameChannel } from '../model/use-doc-frame-channel';
 import { useFrameBridgeRefusal } from '../model/use-frame-bridge-refusal';
 import { roomCanvasRefusal, useRoomCanvasActions } from '../model/use-room-canvas';
 import { useResolvedFrame } from '../model/use-resolved-frame';
 import { BrowserBody } from './BrowserPreviewFrame';
-import {
-  classifyBrowserTarget,
-  describeAddress,
-  loopbackStrategy,
-  normalizeAddressInput,
-} from '../lib/browser-url';
+import { classifyBrowserTarget, describeAddress, loopbackStrategy } from '../lib/browser-url';
 import { FrameBridgeNotice } from './FrameBridgeNotice';
 
 interface CanvasBrowserContentProps {
@@ -202,22 +204,37 @@ export function CanvasBrowserContent({ documentId, content }: CanvasBrowserConte
 
   // Commit an address-bar entry.
   //
-  // **On a room route it is a post, not a navigation** (spec `room-canvas`
-  // §9.5). The Browser tab there shows the room's table, so typing an address is
-  // putting a page on it as yourself: the server answers with a `canvas` frame
-  // that reaches every member, and this frame follows it like everybody else's
-  // does. Typing the same address again is a reload of the page in front of you,
-  // which is nobody else's business and stays local.
+  // What was typed is read by the shared address rules first: a reload, an
+  // address, a search, or a notice saying why it does not open here. A refusal
+  // keeps the typed text in the bar so the fix is an edit, not a retype. The
+  // `http://` fallback those rules offer for a bare host is not tried here: a
+  // framed page's failure to connect cannot be seen from the parent.
+  //
+  // **On a room route an address is a post, not a navigation** (spec
+  // `room-canvas` §9.5). The Browser tab there shows the room's table, so typing
+  // an address is putting a page on it as yourself: the server answers with a
+  // `canvas` frame that reaches every member, and this frame follows it like
+  // everybody else's does. Typing the same address again is a reload of the page
+  // in front of you, which is nobody else's business and stays local.
+  const ownOrigins = useOwnOrigins();
   const submitAddress = useCallback(
     (value: string) => {
-      const next = normalizeAddressInput(value);
-      if (!next || next === currentUrl) {
+      const input = normalizeAddressInput(value, {
+        current: currentUrl,
+        isOwnAddress: (url) => isThisAppsAddress(url, window.location, ownOrigins),
+      });
+      if (input.kind === 'refused') {
+        setRefusedAddress({ url: value.trim(), message: input.notice });
+        return;
+      }
+      setRefusedAddress(null);
+      if (input.kind === 'reload') {
         notePersonNavigated();
         setReloadNonce((n) => n + 1);
         return;
       }
+      const next = input.url;
       if (roomId) {
-        setRefusedAddress(null);
         void openInRoom({ type: 'browser', url: next }).catch((error: unknown) => {
           setRefusedAddress({ url: next, message: roomCanvasRefusal(error) });
         });
@@ -232,7 +249,7 @@ export function CanvasBrowserContent({ documentId, content }: CanvasBrowserConte
       notePersonNavigated();
       navigate(next);
     },
-    [currentUrl, navigate, roomId, openInRoom, notePersonNavigated]
+    [currentUrl, navigate, roomId, openInRoom, notePersonNavigated, ownOrigins]
   );
 
   // Always leaves the app, even for one of our own URLs — that is what the
@@ -365,6 +382,7 @@ function AddressBar({
     <form onSubmit={commit} className="min-w-0 flex-1">
       <Input
         aria-label="Address"
+        placeholder={ADDRESS_PLACEHOLDER}
         autoFocus
         value={draft}
         onChange={(e) => setDraft(e.target.value)}
