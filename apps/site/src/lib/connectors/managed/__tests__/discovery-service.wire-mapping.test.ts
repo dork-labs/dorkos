@@ -6,10 +6,10 @@
  * and the real wire schemas over such shapes, so a spread that forwards an
  * extra field fails here instead of taking a live app's discovery down.
  */
-import { PGlite } from '@electric-sql/pglite';
+import type { PGlite } from '@electric-sql/pglite';
 import type { ComposioOperationClient } from '@dork-labs/connector-providers/composio';
 import { drizzle } from 'drizzle-orm/pglite';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import * as siteSchema from '@/db/schema';
 import {
@@ -24,10 +24,11 @@ import {
   ManagedRequestShapeError,
   resolveManagedToolkitVersion,
 } from '../discovery-service';
-import { provisionManagedTestDatabase } from './managed-database-fixture';
+import { createManagedTestDatabaseTemplate, type PGliteTemplate } from './managed-database-fixture';
 
-// Booting PGlite and replaying the managed migrations costs seconds under load
-// (the sibling integration suites measured the same 5-15s band).
+// Booting PGlite and replaying the managed migrations costs seconds under load,
+// paid once in `beforeAll` (DOR-4190); the sibling integration suites measured
+// the same 5-15s band.
 vi.setConfig({ testTimeout: 30_000, hookTimeout: 30_000 });
 
 const config: ManagedConnectorConfig = {
@@ -156,12 +157,15 @@ describe('managed toolkit version reason', () => {
 });
 
 describe('managed operation wire mapping', () => {
+  let template: PGliteTemplate;
   let client: PGlite;
   let db: ManagedConnectorDatabase;
 
+  beforeAll(async () => {
+    template = await createManagedTestDatabaseTemplate();
+  });
   beforeEach(async () => {
-    client = new PGlite();
-    await provisionManagedTestDatabase(client);
+    client = await template.fresh();
     db = drizzle(client, { schema: siteSchema }) as unknown as ManagedConnectorDatabase;
   });
 
