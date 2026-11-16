@@ -9,6 +9,7 @@ import type { TodoPromise } from '@dorkos/shared/todo-promise-schemas';
 import { Button } from '@/layers/shared/ui';
 import { cn } from '@/layers/shared/lib';
 import { CLOSED_STATE_LABEL, dueLabel, toLabel } from '../lib/todo-promise-labels';
+import { todoMovedLabel } from '../lib/todo-labels';
 
 /** Props for {@link TodoPromiseRow}. */
 export interface TodoPromiseRowProps {
@@ -34,6 +35,8 @@ export function TodoPromiseRow({
   const open = todoPromise.state === 'open';
   const who = [agentName, toLabel(todoPromise.to, nameOf)].filter(Boolean).join(' · ');
   const due = open ? dueLabel(todoPromise.dueAt) : null;
+  // A moved date keeps its history in view, open or closed, so a late move can't hide (DOR-3034).
+  const moved = todoMovedLabel(todoPromise);
 
   return (
     <li
@@ -52,7 +55,7 @@ export function TodoPromiseRow({
         >
           {todoPromise.what}
         </p>
-        {(who || due || !open) && (
+        {(who || due || moved || !open) && (
           <div className="text-muted-foreground mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
             {todoPromise.state !== 'open' && <span>{CLOSED_STATE_LABEL[todoPromise.state]}</span>}
             {who && <span className="min-w-0 truncate">{who}</span>}
@@ -61,6 +64,7 @@ export function TodoPromiseRow({
                 {due}
               </span>
             )}
+            {moved && <span>{moved}</span>}
           </div>
         )}
       </div>

@@ -426,14 +426,21 @@ describe('supporting measures', () => {
       closedAt: null,
       deliverAfter: ago(-HOUR),
     });
-    const promise = (id: string, state: string, dueMsAgo: number, closedMsAgo: number | null) =>
+    const promise = (
+      id: string,
+      state: string,
+      dueMsAgo: number | null,
+      closedMsAgo: number | null,
+      scoreDueMsAgo: number | null = dueMsAgo
+    ) =>
       db
         .insert(todos)
         .values({
           id,
           agentId: AGENT,
           what: id,
-          dueAt: ago(dueMsAgo),
+          dueAt: dueMsAgo === null ? null : ago(dueMsAgo),
+          scoreDueAt: scoreDueMsAgo === null ? null : ago(scoreDueMsAgo),
           state: state as 'open',
           createdAt: ago(5 * DAY),
           closedAt: closedMsAgo === null ? null : ago(closedMsAgo),
@@ -451,12 +458,21 @@ describe('supporting measures', () => {
     promise('missed', 'missed', 3 * DAY, 3 * DAY - HOUR);
     promise('dropped', 'dropped', 3 * DAY, 4 * DAY);
     promise('not-due-yet', 'open', -DAY, null);
+    // Moved late: its new due date is tomorrow, but it missed yesterday's scoring date.
+    promise('moved-late', 'kept', -DAY, HOUR, DAY);
+    // Cleared after it was missed: no date now, but still judged against the date it missed.
+    promise('cleared-late', 'open', null, null, 2 * DAY);
+    // Dropped after clearing its date, or after moving it a year out: judged when dropped, so
+    // neither escapes the score.
+    promise('cleared-then-dropped', 'dropped', null, HOUR, null);
+    promise('moved-out-then-dropped', 'dropped', -365 * DAY, HOUR);
 
     const { supporting } = measure();
     expect(supporting.beats).toBe(6);
     // A beat with no end_beat is unknown, and one that posted around it spoke.
     expect(supporting.quietBeats).toMatchObject({ part: 3, whole: 5 });
-    expect(supporting.todosOnTime).toMatchObject({ part: 1, whole: 3 });
+    // The dropped one counts as not kept on time (DOR-3034): dropping is no free exit.
+    expect(supporting.todosOnTime).toMatchObject({ part: 1, whole: 8 });
     expect(supporting.noEndBeat).toBe(1);
     expect(supporting.triage).toEqual({ checks: 2, tokens: 640 });
     expect(supporting.turns).toEqual({ count: 3, tokensPerTurn: 2000 });

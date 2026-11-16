@@ -1721,6 +1721,24 @@
               "null"
             ]
           },
+          "originalDueAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The first due date this to-do ever had."
+          },
+          "scoreDueAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The due date used to score on-time completion."
+          },
+          "moveCount": {
+            "type": "integer",
+            "description": "Changes made to an existing due date."
+          },
           "state": {
             "$ref": "#/components/schemas/TodoState"
           },
@@ -1761,6 +1779,9 @@
           "to",
           "what",
           "dueAt",
+          "originalDueAt",
+          "scoreDueAt",
+          "moveCount",
           "state",
           "overdue",
           "sourceSessionId",

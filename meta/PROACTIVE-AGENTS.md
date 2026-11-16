@@ -216,7 +216,7 @@ Why these numbers. Alerting fields treat 30 to 50% of alerts being actionable as
 ### 6.2 Supporting measures
 
 - **Quiet-beat share:** beats that ended with no message. Expect most (80% or more). A sudden drop means the agent got chatty.
-- **Commitments kept on time.** Target 90% or more.
+- **Commitments kept on time.** Target 90% or more. Scored against the date as it stood before it passed: moving a date early is a fair renegotiation, moving it after it passed still counts as late, and a dropped commitment counts as not kept (DOR-3034).
 - **Time to notice:** from something going wrong in an outcome it owns to the agent acting on it. Lower is better; compare with how long a person took before.
 - **Cost per useful outcome:** model spend divided by kept actions plus useful raises. For a bring-your-own runtime, spend is a share of the person's plan limit, shown that way where the runtime reports it ("3% of your weekly Claude limit"); a dollar figure would hide the real cost. Watched per agent; a beat that costs more than the work it finds is a design bug.
 - **Asks inside the role:** asks that should have been actions. Target near 0. Each one is a role or prompt fix.

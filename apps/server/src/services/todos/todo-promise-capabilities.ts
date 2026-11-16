@@ -307,6 +307,8 @@ export const todoPromisesDomain: CapabilityDomain = {
         'Change one of your promises. `state: "kept"` when you have done it, `"dropped"` when it ' +
         'no longer applies (say why in `note`), `"missed"` when you could not make it. To move ' +
         'the date, pass `state: "open"` with a new `dueAt`, and tell the person you promised. ' +
+        'The first date is kept: a move after the date has passed still counts as late, and a ' +
+        'dropped promise counts as not kept on time. ' +
         'The same reopens a closed promise. Only the agent that promised, or a person, can ' +
         'change a promise.',
       tier: 'act',

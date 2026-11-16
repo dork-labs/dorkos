@@ -43,13 +43,14 @@ import {
 import {
   TODO_DUE_SKEW_MS,
   TodoPromiseError,
-  isOverdue,
   isOwnPromise,
   PERSON_ASSIGNER,
 } from './todo-promise-service.js';
+import { isOverdue } from './todo-promise-view.js';
 import { listTodoRows } from './todo-list.js';
 import { mayChangeState, mayEdit, mayRank, mayReassign } from './todo-policy.js';
 import type { TodoPatch, TodoStore } from './todo-store.js';
+import { isLateMove, nextDueHistory } from './due-history.js';
 
 /** Who a to-do is assigned to. */
 export type TodoAssignee =
@@ -132,6 +133,9 @@ export interface Todo {
   assignedBy: { kind: TodoRow['assignedByKind']; id: string };
   to: string | null;
   dueAt: string | null;
+  originalDueAt: string | null;
+  scoreDueAt: string | null;
+  moveCount: number;
   state: TodoState;
   overdue: boolean;
   roomId: string | null;
@@ -232,6 +236,9 @@ export function toTodo(row: TodoRow, now: number): Todo {
     assignedBy: { kind: row.assignedByKind, id: row.assignedBy },
     to: row.toAccount,
     dueAt: row.dueAt,
+    originalDueAt: row.originalDueAt,
+    scoreDueAt: row.scoreDueAt,
+    moveCount: row.moveCount,
     state: row.state,
     overdue: isOverdue(row, now),
     roomId: row.roomId,
@@ -317,13 +324,17 @@ export class TodoService {
     const authority = sourceMarks.outsider
       ? (lowerAuthority(own.authority, { kind: 'runtime-default' }) as WritableTodoAuthority)
       : own.authority;
+    const dueAt = input.dueAt ? this.futureDue(input.dueAt) : null;
     const row: TodoRow = {
       id: ulid(),
       agentId: input.assignee.kind === 'agent' ? input.assignee.agentId : null,
       ownerAccount: input.assignee.kind === 'person' ? input.assignee.account : null,
       toAccount: input.to ?? null,
       what,
-      dueAt: input.dueAt ? this.futureDue(input.dueAt) : null,
+      dueAt,
+      originalDueAt: dueAt,
+      scoreDueAt: dueAt,
+      moveCount: 0,
       state: 'open',
       sourceSessionId: null,
       sourceRoomEntryId: input.source?.entryId ?? null,
@@ -452,9 +463,15 @@ export class TodoService {
       );
       const nextDue = change.dueAt ? this.futureDue(change.dueAt) : null;
       if (nextDue !== row.dueAt) {
-        patch.dueAt = nextDue;
+        const now = this.now().getTime();
+        Object.assign(patch, nextDueHistory(row, nextDue, now));
         patch.dueNotifiedAt = null;
         audit.push({ field: 'dueAt', before: row.dueAt, after: nextDue });
+        audit.push({
+          field: 'lateMove',
+          before: null,
+          after: isLateMove(row, now),
+        });
       }
     }
     if (change.assignee !== undefined && assigneeLabel(row) !== labelOf(change.assignee)) {

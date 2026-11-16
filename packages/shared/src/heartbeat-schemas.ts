@@ -420,7 +420,7 @@ export const HeartbeatMeasuresSchema = z
       beats: z.number().int(),
       /** Beats that ended with nothing raised. */
       quietBeats: MeasureRateSchema,
-      /** Promises that came due in the window and were kept by their date. */
+      /** Promises judged in the window (a dropped one at its drop) and kept by their score date. */
       todosOnTime: MeasureRateSchema,
       /** Beat turns that ended without `end_beat`. */
       noEndBeat: z.number().int(),
