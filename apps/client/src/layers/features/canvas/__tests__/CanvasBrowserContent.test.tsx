@@ -9,6 +9,7 @@ import {
   cleanup,
   waitFor,
   act,
+  within,
 } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -85,8 +86,11 @@ const probeLoopbackPort = vi.fn(async () => ({ listening: true }) as { listening
 /** The room write the address bar makes on a room route. */
 const openRoomCanvasDocument = vi.fn(async () => ({}));
 
-vi.mock('@/layers/shared/model', async () => {
+vi.mock('@/layers/shared/model', async (importOriginal) => {
   const { configKeys } = await import('@/layers/shared/model/server-config/query-keys');
+  // The ⋯ menu (DOR-4435) reads these two; they touch no store or transport.
+  const { useIsMobile, useMenuCloseFocusGuard } =
+    await importOriginal<typeof import('@/layers/shared/model')>();
   const useAppStore = (selector: (s: typeof mockState) => unknown) => selector(mockState);
   (useAppStore as unknown as { getState: () => typeof mockState }).getState = () => mockState;
   // A FRESH transport object on every render, deliberately. Which transport is
@@ -110,6 +114,8 @@ vi.mock('@/layers/shared/model', async () => {
     // conversation is open in these tests, which is what an empty search means —
     // the relay stays idle and nothing here depends on it.
     useSafeSearch: () => ({}),
+    useIsMobile,
+    useMenuCloseFocusGuard,
   };
 });
 
@@ -608,9 +614,66 @@ describe('CanvasBrowserContent — a preview that loads badly', () => {
         screen.getByText(/This page hit at least 10,000 errors while loading\./i)
       ).toBeInTheDocument()
     );
+    // The banner keeps its own way out; the toolbar's lives in the ⋯ menu (DOR-4435).
     expect(
       screen.getAllByRole('button', { name: /open in system browser/i }).length
-    ).toBeGreaterThanOrEqual(2);
+    ).toBeGreaterThanOrEqual(1);
+  });
+});
+
+describe('CanvasBrowserContent — the ⋯ menu (DOR-4435)', () => {
+  async function openMenu(): Promise<HTMLElement> {
+    const trigger = await screen.findByRole('button', { name: 'Browser menu' });
+    trigger.focus();
+    fireEvent.keyDown(trigger, { key: 'Enter' });
+    return screen.findByRole('menu');
+  }
+
+  it('moves Open in your browser from the toolbar into the menu', async () => {
+    render(
+      <CanvasBrowserContent
+        documentId="doc"
+        content={{ type: 'browser', url: 'https://a.test/' }}
+      />
+    );
+    await screen.findByTitle('Embedded browser');
+    // The toolbar no longer carries its own button for it.
+    const chrome = document.querySelector('[data-slot="browser-chrome"]') as HTMLElement;
+    expect(
+      within(chrome).queryByRole('button', { name: /open in (system|your) browser/i })
+    ).toBeNull();
+
+    const menu = await openMenu();
+    const items = [...menu.querySelectorAll('[role^="menuitem"]')].map((item) => item.textContent);
+    // jsdom lays nothing out, so the row reads as narrow and Forward moves in here.
+    expect(items).toEqual(['Forward', 'Copy address', 'Open in your browser']);
+  });
+
+  it('opens the page outside the app from the menu', async () => {
+    const opened = vi.spyOn(window, 'open').mockReturnValue(null);
+    try {
+      render(
+        <CanvasBrowserContent
+          documentId="doc"
+          content={{ type: 'browser', url: 'https://a.test/page' }}
+        />
+      );
+      const menu = await openMenu();
+      fireEvent.click(within(menu).getByRole('menuitem', { name: 'Open in your browser' }));
+      expect(opened).toHaveBeenCalledOnce();
+      expect(opened.mock.calls[0]?.[0]).toBe('https://a.test/page');
+    } finally {
+      opened.mockRestore();
+    }
+  });
+
+  it('shows no menu for a local file, so Forward stays in the row', async () => {
+    render(
+      <CanvasBrowserContent documentId="doc" content={{ type: 'browser', url: 'preview.html' }} />
+    );
+    await screen.findByTitle('Embedded browser');
+    expect(screen.queryByRole('button', { name: 'Browser menu' })).toBeNull();
+    expect(screen.getByLabelText('Forward')).not.toHaveClass('hidden');
   });
 });
 
@@ -839,7 +902,7 @@ describe('CanvasBrowserContent — external embed fallback', () => {
 
     await screen.findByTitle('Embedded browser');
     expect(screen.getByText(/can’t always be embedded/i)).toBeInTheDocument();
-    // The escape hatch appears both in the toolbar and the external footer.
+    // The escape hatch appears in the external footer; the toolbar's is in ⋯.
     expect(
       screen.getAllByRole('button', { name: /open in system browser/i }).length
     ).toBeGreaterThanOrEqual(1);
