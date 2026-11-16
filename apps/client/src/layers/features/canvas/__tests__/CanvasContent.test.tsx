@@ -86,10 +86,12 @@ function setActiveDoc(content: MockContent): void {
   }
 }
 
-vi.mock('@/layers/shared/model', async () => {
+vi.mock('@/layers/shared/model', async (importOriginal) => {
   // The real split rule, not a copy of it: one definition of which tab renders
   // a document, so a component test can never pass while the app disagrees.
   const { canvasViewForContent: viewFor } = await import('@dorkos/shared/canvas-view');
+  // The browser's ⋯ menu (DOR-4435) reads it; it touches no store or transport.
+  const { useMenuCloseFocusGuard } = await importOriginal<typeof import('@/layers/shared/model')>();
   const useAppStore = (selector: (s: typeof mockState) => unknown) => selector(mockState);
   (useAppStore as unknown as { getState: () => typeof mockState }).getState = () => mockState;
   return {
@@ -98,6 +100,7 @@ vi.mock('@/layers/shared/model', async () => {
     documentsInView: (docs: MockDoc[], view: string) =>
       docs.filter((d) => viewFor(d.content as UiCanvasContent) === view),
     useIsMobile: () => false,
+    useMenuCloseFocusGuard,
     useTheme: () => ({ theme: 'light', setTheme: vi.fn() }),
     useTransport: () => ({ writeFile: async () => ({ ok: true, hash: 'x', effect: 'changed' }) }),
     // The browser document mounts the DevTools bridge, which asks `useSessionId`

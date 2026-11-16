@@ -56,6 +56,8 @@ const SCRUB_REL = 'scripts/run-credential-free.sh';
 
 const TEST_WORKFLOW_REL = '.github/workflows/test.yml';
 const BROWSER_WORKFLOW_REL = '.github/workflows/browser-test.yml';
+const APP_FRAME_WORKFLOW_REL = '.github/workflows/app-frame-browser.yml';
+const HARNESS_WINDOWS_WORKFLOW_REL = '.github/workflows/harness-windows.yml';
 
 const workflow = readFileSync(path.join(repoRoot, WORKFLOW_REL), 'utf8');
 
@@ -307,15 +309,20 @@ describe('credential-free-build workflow', () => {
     // the `gh-readonly-queue/...` scope the queue deletes on merge — an entry
     // nothing can ever restore, evicting entries other workflows do read.
     //
-    // `[ \t]+(?!- )` rather than `\s+`: `\s` matches newlines and every line
+    // A step-bounded block rather than `\s+`: `\s` matches newlines and every line
     // in the steps region is indented, so a lazy `(?:\s+.*\n)*?` has no
     // barrier — it starts at the FIRST step header in the job and swallows
     // everything down to the save, which made an earlier version of this
     // assertion pass with `if: always()` sitting on an unrelated step. The
-    // negative lookahead stops the block at the next step's `- `.
+    // block stops at the next step: `\1` is the step's own indent, and every
+    // line inside it is indented deeper (`\1[ \t]+\S`), which the next
+    // step's `- ` is not. The `\S` also gives each line exactly one way to
+    // match; the earlier `[ \t]+(?!- )[^\n]*` could split a line's indent
+    // between its two halves, and the backtracking took 5 s once the file
+    // gained a second save step (DOR-4537).
     const saveStep =
       workflow.match(
-        /^[ \t]+- name:[^\n]*\n(?:[ \t]+(?!- )[^\n]*\n)*?[ \t]+uses: actions\/cache\/save@v6\n/m
+        /^([ \t]+)- name:[^\n]*\n(?:\1[ \t]+\S[^\n]*\n)*?\1[ \t]+uses: actions\/cache\/save@v6\n/m
       )?.[0] ?? '';
     expect(
       saveStep,
@@ -340,23 +347,39 @@ describe('credential-free-build workflow', () => {
   // test.yml installs in three jobs that key it: community-pg, test-shard and
   // test-binary (DOR-4190).
   // browser-test.yml installs in four jobs: browser-smoke, browser-shard,
-  // first-run and copy-spec-drift.
+  // first-run and copy-spec-drift. app-frame-browser.yml and the Windows
+  // harness-windows.yml install in one each.
   //
   // The image is read in a step, never as `${{ env.ImageOS }}`: the `env`
   // context only holds variables a workflow sets, not the runner's own, so that
   // form was always empty and the key read `pnpm-store-Linux--X64-…` on every
   // image (ledger 261031-071000).
+  //
+  // Each install restores the store and only `refs/heads/main` saves it
+  // (DOR-4537, ledger 261116-114104): a plain `actions/cache` saved a 735 MB
+  // copy under every queue ref and PR merge ref, scopes nothing else can read,
+  // and that pushed the repo past its 10 GB cache budget. So the key appears
+  // twice per install, once in the restore and once in the save.
   it('keys the pnpm store on the runner image, in every workflow that installs', () => {
     const STORE_KEY =
       "key: pnpm-store-${{ runner.os }}-${{ steps.pnpm-store.outputs.image }}-${{ runner.arch }}-${{ hashFiles('pnpm-lock.yaml') }}";
     const READ_IMAGE =
       'echo "image=${ImageOS:?ImageOS is not set on this runner}" >> "$GITHUB_OUTPUT"';
+    const SAVE_IF =
+      "if: ${{ github.ref == 'refs/heads/main' && steps.pnpm-store-restore.outputs.cache-hit != 'true' }}";
     const testWorkflow = readFileSync(path.join(repoRoot, TEST_WORKFLOW_REL), 'utf8');
     const browserWorkflow = readFileSync(path.join(repoRoot, BROWSER_WORKFLOW_REL), 'utf8');
+    const appFrameWorkflow = readFileSync(path.join(repoRoot, APP_FRAME_WORKFLOW_REL), 'utf8');
+    const harnessWindowsWorkflow = readFileSync(
+      path.join(repoRoot, HARNESS_WINDOWS_WORKFLOW_REL),
+      'utf8'
+    );
     for (const [rel, text, installs] of [
       [WORKFLOW_REL, workflow, 1],
       [TEST_WORKFLOW_REL, testWorkflow, 3],
       [BROWSER_WORKFLOW_REL, browserWorkflow, 4],
+      [APP_FRAME_WORKFLOW_REL, appFrameWorkflow, 1],
+      [HARNESS_WINDOWS_WORKFLOW_REL, harnessWindowsWorkflow, 1],
     ] as const) {
       expect(
         /^\s+cache:\s*pnpm\s*$/m.test(text),
@@ -376,8 +399,25 @@ describe('credential-free-build workflow', () => {
       expect(
         text.split(STORE_KEY).length - 1,
         `${rel} should key its pnpm store on the image its \`pnpm-store\` step read, in ` +
-          `each of its ${installs} job(s) that install the workspace.`
-      ).toBe(installs);
+          `the restore and the save of each of its ${installs} job(s) that install the workspace.`
+      ).toBe(installs * 2);
+      // Every step carrying the store key is a restore or a main-only save;
+      // a plain `actions/cache` would save under queue and PR refs again.
+      const storeSteps = code.split(/\n(?= {6}- )/).filter((step) => step.includes(STORE_KEY));
+      const restores = storeSteps.filter((s) => /uses: actions\/cache\/restore@/.test(s));
+      const saves = storeSteps.filter((s) => /uses: actions\/cache\/save@/.test(s));
+      expect(
+        [restores.length, saves.length, storeSteps.length],
+        `${rel} should restore its pnpm store with actions/cache/restore and save it with ` +
+          `actions/cache/save, once each per install, and nothing else may carry the key.`
+      ).toEqual([installs, installs, installs * 2]);
+      for (const step of saves) {
+        expect(
+          step,
+          `a pnpm store save in ${rel} must run only on refs/heads/main: a queue ref's or a ` +
+            `PR merge ref's cache scope is unreadable by any other ref (DOR-4537).`
+        ).toContain(SAVE_IF);
+      }
       expect(
         text.split(READ_IMAGE).length - 1,
         `${rel} should read \`$ImageOS\` in each of its ${installs} \`pnpm-store\` step(s), ` +

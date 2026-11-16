@@ -24,11 +24,13 @@ export {
   ScheduleOriginMarksSchema,
   TaskApproverSchema,
   TaskApprovalViaSchema,
+  TaskRunPlaceSchema,
 } from './task-approval-schemas.js';
 export type {
   ScheduleOriginMarks,
   TaskApprover,
   TaskApprovalVia,
+  TaskRunPlace,
 } from './task-approval-schemas.js';
 import { CanvasChannelDeclarationSchema } from './canvas-channel-schemas.js';
 import {
