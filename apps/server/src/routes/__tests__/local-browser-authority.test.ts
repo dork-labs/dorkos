@@ -12,9 +12,12 @@ vi.mock('../../services/core/auth/session-gate.js', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../services/core/auth/session-gate.js')>()),
   decideSessionGate: vi.fn(async () => ({ allowed: true })),
 }));
+// Login is on unless a test turns it off (DOR-4450: the one case only the route's own
+// person check can refuse).
+const login = vi.hoisted(() => ({ on: true }));
 vi.mock('../../services/core/config-manager.js', () => ({
   configManager: {
-    get: (key: string) => (key === 'auth' ? { enabled: true } : undefined),
+    get: (key: string) => (key === 'auth' ? { enabled: login.on } : undefined),
     onChange: () => () => {},
   },
 }));
@@ -309,17 +312,31 @@ it('POST /navigate passes the http fallback ask through, and nothing else', asyn
   expect(spies.navigate).toHaveBeenCalledTimes(2);
 });
 
-it.each(['agent', 'api-key'] as const)(
-  'POST /navigate refuses the http fallback ask from an %s caller',
-  async (caller) => {
-    if (caller === 'api-key') user.credential = 'api-key';
-    const call = request(server)
-      .post('/api/local-browser/navigate')
-      .set('Host', 'localhost')
-      .send({ url: 'https://shop.example/', httpFallback: true });
-    if (caller === 'agent') call.set('X-DorkOS-Agent', '');
+// The owner check answers an agent or an API key first, so the route's own person
+// check is proved by the one caller only it refuses: with login off, a program
+// credential and no signed-in person. Each code names the gate that answered.
+it.each([
+  ['an agent', 'owner_only'],
+  ['an API key', 'owner_only'],
+  ['a program credential with login off', 'person_only'],
+] as const)('POST /navigate refuses the http fallback ask from %s', async (caller, code) => {
+  if (caller === 'an API key') user.credential = 'api-key';
+  const call = request(server)
+    .post('/api/local-browser/navigate')
+    .set('Host', 'localhost')
+    .send({ url: 'https://shop.example/', httpFallback: true });
+  if (caller === 'an agent') call.set('X-DorkOS-Agent', '');
+  if (caller === 'a program credential with login off') {
+    login.on = false;
+    user = undefined as unknown as typeof user;
+    call.set('Authorization', 'Bearer made-up');
+  }
+  try {
     const response = await call;
     expect(response.status).toBe(403);
+    expect(response.body.code).toBe(code);
     expect(spies.navigate).not.toHaveBeenCalled();
+  } finally {
+    login.on = true;
   }
-);
+});

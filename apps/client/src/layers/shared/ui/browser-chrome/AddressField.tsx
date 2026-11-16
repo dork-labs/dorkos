@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useId, useMemo, useState } from 'react';
 import {
   describeAddress,
   ADDRESS_PLACEHOLDER,
@@ -6,6 +6,9 @@ import {
 } from '@/layers/shared/lib/browser-address';
 import { cn } from '@/layers/shared/lib/utils';
 import { Input } from '../input';
+
+/** Why a page the one http:// fallback opened is not secure (DOR-4450). */
+const OPENED_OVER_HTTP = 'This site didn’t answer over https, so it opened over http.';
 
 /** The field's box at rest and while typing: a 5% tint, no border, filling the row. */
 const FIELD_BOX = 'h-11 min-w-0 flex-1 rounded-md bg-foreground/5 md:h-7';
@@ -20,8 +23,8 @@ function locationLabel(display: AddressDisplay): string {
 /**
  * The address field. At rest it draws the address simply: no `https://` or
  * `www.`, the host at full strength, the path muted (and gone below 480px of
- * chrome), a muted "Not secure" before plain `http://` off this machine (or
- * "Opened over http" when the one fallback opened it), and a "local" chip
+ * chrome), a muted "Not secure" before plain `http://` off this machine (with
+ * a line saying why when the one fallback opened it), and a "local" chip
  * before a local file. Clicking or tabbing in swaps it for a text box holding
  * the full address, all selected, so typing replaces it.
  *
@@ -51,6 +54,7 @@ export function AddressField({
   const [draft, setDraft] = useState(initialDraft ?? url);
   const display = useMemo(() => describeAddress(url), [url]);
   const showsOpenedOverHttp = openedOverHttp && /^http:/i.test(url);
+  const whyNotSecure = useId();
 
   if (!editing) {
     return (
@@ -58,9 +62,8 @@ export function AddressField({
         type="button"
         // The accessible name carries WHERE the person is, not just what the control
         // is. A local file is announced by its path, never a signed token URL.
-        aria-label={
-          `Address: ${locationLabel(display)}` + (showsOpenedOverHttp ? '. Opened over http' : '')
-        }
+        aria-label={`Address: ${locationLabel(display)}`}
+        aria-describedby={showsOpenedOverHttp ? whyNotSecure : undefined}
         onClick={() => {
           setDraft(url);
           setEditing(true);
@@ -80,11 +83,20 @@ export function AddressField({
         )}
         {display.kind === 'url' && (
           <>
-            {showsOpenedOverHttp ? (
-              <span className="text-muted-foreground shrink-0 text-xs">Opened over http</span>
-            ) : display.notSecure ? (
-              <span className="text-muted-foreground shrink-0 text-xs">Not secure</span>
-            ) : null}
+            {display.notSecure && (
+              <span
+                // A native tooltip draws above the page, so it never blanks it (DOR-4438).
+                title={showsOpenedOverHttp ? OPENED_OVER_HTTP : undefined}
+                className="text-muted-foreground shrink-0 text-xs"
+              >
+                Not secure
+              </span>
+            )}
+            {showsOpenedOverHttp && (
+              <span id={whyNotSecure} className="sr-only">
+                {OPENED_OVER_HTTP}
+              </span>
+            )}
             <span className="truncate">
               <span className="text-foreground">{display.host}</span>
               <span className="text-muted-foreground hidden @min-[480px]/browser-chrome:inline">

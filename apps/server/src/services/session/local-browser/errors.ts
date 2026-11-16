@@ -116,14 +116,29 @@ export function historyAddressAllowed(
   return !isLocalBrowserAppUrl(value, appOrigins);
 }
 
-/** Chromium's words for a page that did not answer before navigation timed out. */
-const TIMED_OUT = /net::ERR_(?:CONNECTION_TIMED_OUT|TIMED_OUT)\b/;
+/**
+ * Chromium's own error code, which Playwright puts first:
+ * `page.goto: net::ERR_X at <address>`. The rest of the message quotes the
+ * address a person typed, so a code anywhere else may be their text and is
+ * never read (Security, #3859). No code in that place reads as none.
+ */
+function chromiumCode(error: unknown): string | null {
+  const message = error instanceof Error ? error.message : '';
+  return /^(?:page\.goto: )?net::(ERR_[A-Z_]+)\b/.exec(message)?.[1] ?? null;
+}
+
+/** Playwright's own timeout, or Chromium's words for a page that did not answer in time. */
+function timedOut(error: unknown): boolean {
+  if (error instanceof Error && error.name === 'TimeoutError') return true;
+  const code = chromiumCode(error);
+  return code === 'ERR_CONNECTION_TIMED_OUT' || code === 'ERR_TIMED_OUT';
+}
 
 /** Chromium's words for a page that never connected: refused, or no route to it. */
-const REFUSED = /net::ERR_(?:CONNECTION_REFUSED|ADDRESS_UNREACHABLE)\b/;
+const REFUSED = new Set(['ERR_CONNECTION_REFUSED', 'ERR_ADDRESS_UNREACHABLE']);
 
 /** A server that answered https in plain http, what `nas.lan:5000` gives. */
-const PLAIN_HTTP_ANSWER = /net::ERR_SSL_PROTOCOL_ERROR\b/;
+const PLAIN_HTTP_ANSWER = 'ERR_SSL_PROTOCOL_ERROR';
 
 /**
  * Whether a person's failed https navigation may try `http://` once (DOR-4450,
@@ -139,9 +154,10 @@ export function httpFallbackAllowed(error: unknown, value: string): boolean {
   if (!URL.canParse(value)) return false;
   const url = new URL(value);
   if (url.protocol !== 'https:') return false;
-  const message = error instanceof Error ? error.message : '';
-  if (REFUSED.test(message)) return true;
-  return PLAIN_HTTP_ANSWER.test(message) && url.port !== '';
+  if (timedOut(error)) return false;
+  const code = chromiumCode(error);
+  if (code !== null && REFUSED.has(code)) return true;
+  return code === PLAIN_HTTP_ANSWER && url.port !== '';
 }
 
 /**
@@ -154,14 +170,13 @@ export function httpFallbackAllowed(error: unknown, value: string): boolean {
  * @param error - What Playwright's `goto` threw.
  */
 export function navigationRefusal(error: unknown): LocalBrowserError {
-  const message = error instanceof Error ? error.message : '';
-  const timedOut = error instanceof Error && error.name === 'TimeoutError';
-  if (timedOut || TIMED_OUT.test(message))
+  if (timedOut(error))
     return new LocalBrowserError(
       'navigation_timed_out',
       'That site didn’t respond. Try again in a moment.'
     );
-  if (REFUSED.test(message) || PLAIN_HTTP_ANSWER.test(message))
+  const code = chromiumCode(error);
+  if (code !== null && (REFUSED.has(code) || code === PLAIN_HTTP_ANSWER))
     return new LocalBrowserError('navigation_unreachable', 'Couldn’t reach that site.');
   return new LocalBrowserError(
     'navigation_uncertain',

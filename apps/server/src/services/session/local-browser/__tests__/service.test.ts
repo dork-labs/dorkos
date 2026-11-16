@@ -11,7 +11,7 @@ import {
 } from '../lifecycle.js';
 import { AUDIT_WRITE_RESPONSE_TIMEOUT_MS, LOAD_START_MS } from '../page-action.js';
 import { LocalBrowserService } from '../service.js';
-import { assertLocalBrowserUrl } from '../errors.js';
+import { assertLocalBrowserUrl, httpFallbackAllowed, navigationRefusal } from '../errors.js';
 import { CLOUD_ORIGIN_REFUSAL } from '@dorkos/shared/cloud-origin';
 import { MAX_BROWSER_SNAPSHOT_BYTES, MAX_BROWSER_SCREENSHOT_EDGE } from '../observation-limits.js';
 import type { LocalBrowserBackend } from '../playwright-backend.js';
@@ -1672,6 +1672,49 @@ describe('the Cloud origin (DOR-3196)', () => {
     const selectedTab = (state: { tabs: { id: string }[]; selectedTabId: string | null }) =>
       state.tabs.find((tab) => tab.id === state.selectedTabId) as
         { openedOverHttp?: boolean } | undefined;
+
+    // Security's proof for #3859: Playwright's message carries the typed address, so
+    // only Chromium's own first error code may decide, never text the person typed.
+    describe('reads only the browser’s own error code, never the typed address', () => {
+      const typed = 'https://bank.example/?q=net::ERR_CONNECTION_REFUSED';
+
+      it('a certificate error never falls back, whatever the typed URL holds', () => {
+        const cert = new Error(`page.goto: net::ERR_CERT_AUTHORITY_INVALID at ${typed}`);
+        expect(httpFallbackAllowed(cert, typed)).toBe(false);
+        expect(navigationRefusal(cert).code).toBe('navigation_uncertain');
+      });
+
+      it('a timeout never falls back, whatever the typed URL holds', () => {
+        const timeout = Object.assign(
+          new Error(
+            `page.goto: Timeout 15000ms exceeded.\nCall log:\n  - navigating to "${typed}", waiting until "commit"\n`
+          ),
+          { name: 'TimeoutError' }
+        );
+        expect(httpFallbackAllowed(timeout, typed)).toBe(false);
+        expect(navigationRefusal(timeout).code).toBe('navigation_timed_out');
+      });
+
+      it('an SSL protocol error on 443 never falls back, whatever the typed URL holds', () => {
+        const url = 'https://bank.example/?q=net::ERR_ADDRESS_UNREACHABLE';
+        const ssl = new Error(`page.goto: net::ERR_SSL_PROTOCOL_ERROR at ${url}`);
+        expect(httpFallbackAllowed(ssl, url)).toBe(false);
+      });
+
+      it('a failure with no code of its own never borrows one from the typed URL', () => {
+        const crashed = new Error(
+          `page.goto: Navigation failed because page crashed!\nCall log:\n  - navigating to "${typed}"\n`
+        );
+        expect(httpFallbackAllowed(crashed, typed)).toBe(false);
+        expect(navigationRefusal(crashed).code).toBe('navigation_uncertain');
+      });
+
+      it('a real refusal still falls back when the typed URL holds another code', () => {
+        const url = 'https://shop.example/?q=net::ERR_CERT_AUTHORITY_INVALID';
+        const refused = new Error(`page.goto: net::ERR_CONNECTION_REFUSED at ${url}`);
+        expect(httpFallbackAllowed(refused, url)).toBe(true);
+      });
+    });
 
     it.each([
       ['a Playwright timeout', failing('Timeout 15000ms exceeded.', 'TimeoutError')],

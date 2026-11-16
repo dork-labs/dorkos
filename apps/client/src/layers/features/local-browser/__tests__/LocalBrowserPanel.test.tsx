@@ -1240,7 +1240,7 @@ describe('LocalBrowserPanel', () => {
       expect(transport.navigateLocalBrowser).toHaveBeenCalledTimes(1);
     });
 
-    it('says Opened over http in the address field while the tab is on a fallback page', async () => {
+    it('says why Not secure while the tab is on a page the fallback opened', async () => {
       const overHttp = {
         ...connected,
         tabs: connected.tabs.map((tab) => ({
@@ -1251,8 +1251,10 @@ describe('LocalBrowserPanel', () => {
       };
       transport.getLocalBrowserState.mockResolvedValue(overHttp);
       mount();
-      expect(await screen.findByText('Opened over http')).toBeInTheDocument();
-      expect(screen.queryByText('Not secure')).not.toBeInTheDocument();
+      expect(await screen.findByText('Not secure')).toHaveAttribute(
+        'title',
+        'This site didn’t answer over https, so it opened over http.'
+      );
     });
 
     it.each([
