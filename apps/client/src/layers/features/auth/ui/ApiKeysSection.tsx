@@ -205,7 +205,11 @@ function ApiKeyRow({
 }) {
   const label = apiKey.name || 'Unnamed key';
   const hint = apiKey.start ? `${apiKey.start}…` : apiKey.prefix || '';
-  const remoteUse = apiKey.lastUsedRemotelyAt;
+  // A value that doesn't parse as a time shows nothing rather than "Invalid Date".
+  const remoteUse =
+    apiKey.lastUsedRemotelyAt && !Number.isNaN(Date.parse(apiKey.lastUsedRemotelyAt))
+      ? apiKey.lastUsedRemotelyAt
+      : null;
   const exactRemoteTime = remoteUse ? new Date(remoteUse).toLocaleString() : null;
   return (
     <div

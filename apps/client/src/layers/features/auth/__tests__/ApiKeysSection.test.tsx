@@ -60,7 +60,7 @@ describe('ApiKeysSection', () => {
     ).toContainElement(remoteUse);
   });
 
-  it.each([null, undefined])(
+  it.each([null, undefined, 'not a time'])(
     'omits remote-use metadata when no use is recorded (%s)',
     async (lastUsedRemotelyAt) => {
       const apiKeyList = vi.fn().mockResolvedValue({
