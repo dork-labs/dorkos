@@ -1,6 +1,7 @@
 ---
 covers:
   - 'feat(connections): set the monthly spend limit in Connections, and see which actions spend money (DOR-4204)'
+  - "feat(db): the spend limit's tables, after main's latest migration, with a down file (DOR-4204)"
 ---
 
 ### Added
