@@ -123,6 +123,8 @@ export function usePendingApprovals(): PendingApprovalsState {
   useEventSubscription('approval_pending', (raw) => {
     const parsed = PendingApprovalSchema.safeParse(raw);
     if (!parsed.success) return;
+    // Broadcasts carry no answering session: refresh its server-derived route.
+    void queryClient.invalidateQueries({ queryKey: PENDING_APPROVALS_QUERY_KEY });
     queryClient.setQueryData<PendingApprovalsResponse>(PENDING_APPROVALS_QUERY_KEY, (current) => {
       const approvals = current?.approvals ?? [];
       // The same approval can arrive twice if a refetch races the event.

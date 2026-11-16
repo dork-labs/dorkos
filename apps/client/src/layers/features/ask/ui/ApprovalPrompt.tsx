@@ -1,3 +1,5 @@
+import { STEP_UP_REQUIRED_CODE } from '@dorkos/shared/step-up';
+import { RequestCode, ApprovalAnswerNote } from '@/layers/shared/ui';
 import {
   useState,
   useEffect,
@@ -10,7 +12,7 @@ import {
 import { motion, useReducedMotion } from 'motion/react';
 import { Check, Lock, X, Shield, ShieldCheck } from 'lucide-react';
 import { useTransport } from '@/layers/shared/model';
-import { useOnWifi } from '@/layers/entities/config';
+import { useOnWifi, useConfig } from '@/layers/entities/config';
 import { DENY_REASON_MAX_LENGTH } from '@dorkos/shared/schemas';
 import type { AlwaysAllowBreadth, AlwaysAllowScope } from '@dorkos/shared/types';
 import {
@@ -106,6 +108,8 @@ interface ApprovalPromptProps {
    * including ones it adds later: the card then asks which (DOR-4101).
    */
   approvalAlwaysAllowBreadth?: AlwaysAllowBreadth;
+  /** Display-only code from the server, matching the confirmation sheet. */
+  approvalRequestCode?: string;
   /**
    * Whether this session's runtime can deliver a free-text deny reason to the
    * agent (`RuntimeCapabilities.permissionModes.denyReason`). Defaults to
@@ -158,6 +162,7 @@ export function ApprovalPrompt({
   approvalHasSuggestions,
   approvalAlwaysAllowScope,
   approvalAlwaysAllowBreadth,
+  approvalRequestCode,
   allowsDenyReason = true,
   agentName,
 }: ApprovalPromptProps) {
@@ -173,6 +178,7 @@ export function ApprovalPrompt({
   // server refuses one (DOR-2969), so the card neither offers it nor answers
   // its shortcut, and says once where it lives instead.
   const onWifi = useOnWifi();
+  const answerContext = useConfig().data?.approvalAnswerContext;
   // A whole-server rule on offer: "Always allow…" asks which first (DOR-4101).
   const mcp = parseMcpToolName(toolName);
   const asksBreadth = approvalAlwaysAllowBreadth === 'server' && mcp !== null && !onWifi;
@@ -335,6 +341,7 @@ export function ApprovalPrompt({
       onDecided?.();
     } catch (err) {
       const code = (err as { code?: string }).code;
+      if (code === STEP_UP_REQUIRED_CODE) return;
       if (code === 'INTERACTION_ALREADY_RESOLVED') {
         setDecided('approved');
         onDecided?.();
@@ -362,6 +369,7 @@ export function ApprovalPrompt({
         onDecided?.();
       } catch (err) {
         const code = (err as { code?: string }).code;
+        if (code === STEP_UP_REQUIRED_CODE) return;
         if (code === 'INTERACTION_ALREADY_RESOLVED') {
           setDecided('approved');
           onDecided?.();
@@ -388,6 +396,7 @@ export function ApprovalPrompt({
       onDecided?.();
     } catch (err) {
       const code = (err as { code?: string }).code;
+      if (code === STEP_UP_REQUIRED_CODE) return;
       if (code === 'INTERACTION_ALREADY_RESOLVED') {
         setDecided('denied');
         onDecided?.();
@@ -544,6 +553,10 @@ export function ApprovalPrompt({
             <ToolArgumentsDisplay toolName={toolName} input={input} />
           </div>
         )}
+        {answerContext?.answerNeedsStepUp && approvalRequestCode && (
+          <RequestCode code={approvalRequestCode} />
+        )}
+        <ApprovalAnswerNote context={answerContext} />
         {error && <p className="text-status-error text-2xs mb-2">{error}</p>}
         {choosing && mcp && (
           <AlwaysAllowChoice

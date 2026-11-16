@@ -24,6 +24,8 @@
  *
  * @module routes/extensions-inbox
  */
+import { holdRemoteExtensionAnswer } from './extension-decision-step-up.js';
+import type { StepUpCommitResult } from '../services/core/auth/step-up/step-up-holds.js';
 import type { Hono } from 'hono';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import {
@@ -95,17 +97,26 @@ export function registerExtensionInboxRoutes(
       }
       const inbox = getExtensionInbox();
       if (!inbox) return c.json({ error: 'The inbox is not available yet.' }, 503);
-      const outcome = await inbox.answer(decisionId, body.data, {
-        kind: 'extension',
-        extensionId: id,
-      });
-      if (!outcome.ok) {
-        return c.json(
-          { error: outcome.message, code: outcome.code },
-          outcome.status as ContentfulStatusCode
+      const run = async (): Promise<StepUpCommitResult> => {
+        const outcome = await inbox.answer(decisionId, body.data, {
+          kind: 'extension',
+          extensionId: id,
+        });
+        return outcome.ok
+          ? { status: 200, body: outcome.response }
+          : { status: outcome.status, body: { error: outcome.message, code: outcome.code } };
+      };
+      const decision = inbox.listOpen(id).find((entry) => entry.id === decisionId);
+      if (body.data.action === 'approve' && (!decision || decision.actions.kind === 'yes-no')) {
+        const held = holdRemoteExtensionAnswer(
+          c,
+          { id: decisionId, kind: 'decision', inbox, copy: DECISION_BAR, extensionId: id },
+          run
         );
+        if (held) return held;
       }
-      return c.json(outcome.response);
+      const outcome = await run();
+      return c.json(outcome.body as never, outcome.status as ContentfulStatusCode);
     } catch (err) {
       logger.error('[Extensions] Failed to answer a decision from an extension page', err);
       return c.json({ error: 'Failed to answer the decision' }, 500);

@@ -39,8 +39,16 @@
  *
  * @module services/core/approvals/approval-service
  */
+import type {
+  ApprovalTicket,
+  ApprovalBinding,
+  ApprovalConsumeResult,
+  AwaitDecisionOptions,
+} from './model/approval-result-types.js';
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import { newApprovalRow, APPROVAL_TOKEN_BYTES } from './approval-new-row.js';
+import { approvalStepUpHash } from './model/approval-step-up-binding.js';
+import { requestCodeForHash } from '../auth/step-up/request-code.js';
 import { purgeExpiredApprovals } from './approval-retention.js';
 import { and, asc, count, desc, eq, gte, isNotNull, isNull, approvals, type Db } from '@dorkos/db';
 import type { ApprovalVerdictData } from '@dorkos/shared/additional-context';
@@ -62,6 +70,7 @@ import {
   toAnswerScope,
   toPendingApproval,
   type ApprovalRow,
+  type ApprovalAnswerScope,
   type CapabilityDescriptorLookup,
 } from './approval-card.js';
 
@@ -216,65 +225,12 @@ export interface ApprovalServiceOptions {
   projectForFolder?: (cwd: string) => ProjectRef | null | undefined;
 }
 
-/** What a requester gets back: an id to watch, and a token to retry with. */
-export interface ApprovalTicket {
-  /** ULID of the new approval. Safe to show a person or log. */
-  approvalId: string;
-  /**
-   * The one-time token. This is the ONLY time it is available — it is not stored
-   * in recoverable form and must never be logged or returned again.
-   */
-  token: string;
-  /** When the token stops being honored. ISO 8601 UTC. */
-  expiresAt: string;
-}
-
-/** The action a token must match to be spent. */
-export interface ApprovalBinding {
-  /** Capability the caller is about to invoke. */
-  capabilityId: string;
-  /** Canonical hash of the input the caller is about to invoke it with. */
-  inputHash: string;
-  /** Current authenticated connector binding; absent for ordinary capabilities. */
-  authorityBindingDigest?: string;
-}
-
-/**
- * The outcome of presenting a token, discriminated by `outcome`.
- *
- * - `granted` — the operator said yes and this call spent the token.
- * - `pending` — nobody has decided yet; present the token again later.
- * - `denied` — the operator said no; the token is spent either way.
- * - `expired` — the decision window closed; the token is written off.
- * - `consumed` — already spent (or written off) by an earlier call.
- * - `unknown` — no such token.
- * - `mismatched` — a real, live token for a DIFFERENT action. Deliberately not
- *   spent: the approval stays available for the action it was granted for.
- */
-export type ApprovalConsumeResult =
-  | {
-      outcome: 'granted';
-      approvalId: string;
-      capabilityId: string;
-      requestedBy?: string;
-      authorityBindingDigest?: string;
-      /** The signed-in account that said yes; absent when nobody was signed in. */
-      decidedByUserId?: string;
-    }
-  | { outcome: 'pending'; approvalId: string; expiresAt: string }
-  | { outcome: 'denied' | 'incomplete'; approvalId: string; reason?: string }
-  | { outcome: 'expired'; approvalId: string }
-  | { outcome: 'consumed'; approvalId: string }
-  | { outcome: 'unknown' }
-  | { outcome: 'mismatched'; approvalId: string };
-
-/** Options for {@link ApprovalService.awaitDecision}. */
-export interface AwaitDecisionOptions {
-  /** Longest the hold waits before it resolves `timeout`. Required — a hold with no cap could outlive the tool call it blocks. */
-  timeoutMs: number;
-  /** Abort the wait (the SDK aborted the held tool call); resolves `timeout`. */
-  signal?: AbortSignal;
-}
+export type {
+  ApprovalTicket,
+  ApprovalBinding,
+  ApprovalConsumeResult,
+  AwaitDecisionOptions,
+} from './model/approval-result-types.js';
 
 /** Hash a token exactly as it is stored: SHA-256, lowercase hex. */
 function hashToken(token: string): string {
@@ -285,26 +241,7 @@ function hashToken(token: string): string {
  * What the grant route needs to answer one approval: the action, the agent that
  * asked, and what the gate recorded about it. Never includes token material.
  */
-export interface ApprovalAnswerScope {
-  /** The capability id or hand-registered tool name. */
-  capabilityId: string;
-  /** The agent's path, or `null` for an unidentified request. */
-  agentPath: string | null;
-  /** The recorded area, or `null` for an action with no area. */
-  area: PermissionAreaId | null;
-  /** Whether "Always allow" may be answered (see {@link isAlwaysOffered}). */
-  alwaysOffered: boolean;
-  /** Whether the agent asked past a Blocked permission. */
-  blockedRequest: boolean;
-  /** Whether granting it could raise what agents may do (DOR-3037). */
-  raisesPermissions: boolean;
-  /** Where the request stands right now. */
-  state: 'pending' | 'granted' | 'denied';
-  /** Whether it is spent, written off, or past its window. */
-  closed: boolean;
-  /** The recorded permission tier of the action. */
-  tier: CapabilityTier;
-}
+export type { ApprovalAnswerScope } from './approval-card.js';
 
 /**
  * Why a blocked request (spec `agent-permissions` D8) may not raise a card,
@@ -419,7 +356,12 @@ export class ApprovalService {
     // text and the escalation needs the key the agent registry joins on.
     raiseCapabilityApproval(pending, input.requestedByPath);
 
-    return { approvalId: row.id, token, expiresAt: row.expiresAt };
+    return {
+      approvalId: row.id,
+      token,
+      expiresAt: row.expiresAt,
+      requestCode: pending.requestCode,
+    };
   }
 
   /**
@@ -630,7 +572,12 @@ export class ApprovalService {
       return { outcome: 'mismatched', approvalId: row.id };
 
     if (row.state === 'pending') {
-      return { outcome: 'pending', approvalId: row.id, expiresAt: row.expiresAt };
+      return {
+        outcome: 'pending',
+        approvalId: row.id,
+        expiresAt: row.expiresAt,
+        requestCode: requestCodeForHash(approvalStepUpHash(row)),
+      };
     }
 
     if (!this.markConsumed(row.id)) return { outcome: 'consumed', approvalId: row.id };
@@ -1055,6 +1002,12 @@ export class ApprovalService {
     const row = this.db.select().from(approvals).where(eq(approvals.id, approvalId)).get();
     if (!row) return undefined;
     return toAnswerScope(row, this.isExpired(row));
+  }
+
+  /** The full server-owned request hash for one remote confirmation, never sent to a client. */
+  stepUpHash(approvalId: string): string | undefined {
+    const row = this.db.select().from(approvals).where(eq(approvals.id, approvalId)).get();
+    return row ? approvalStepUpHash(row) : undefined;
   }
 
   /**

@@ -60,6 +60,7 @@ export { installPersonAwareFetch, personAwareFetch } from './person-aware-fetch'
 export {
   finishActionStepUp,
   getActionStepUpAfterExpiry,
+  getActionStepUpAfterDifferent,
   getActionStepUpShowing,
   requestActionStepUp,
   subscribeActionStepUp,
@@ -477,3 +478,5 @@ export {
   forgetBootCacheOnSignOut,
   resumeBootCacheAfterSignIn,
 } from './boot-cache-session';
+
+export { signedInDevicesKey } from './auth-query-keys';

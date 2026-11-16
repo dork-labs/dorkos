@@ -37,6 +37,11 @@
  *
  * @module services/extensions/extension-inbox
  */
+import {
+  extensionDecisionStepUp,
+  extensionOfferStepUp,
+  pendingOffersForRows,
+} from './extension-step-up-view.js';
 import { outsideAuditScope } from '../../audit/audit-context.js';
 import fs from 'fs';
 import { monotonicFactory } from 'ulidx';
@@ -615,27 +620,20 @@ export class ExtensionInboxService {
 
   /** Follow-up offers the person who answered has not answered yet. */
   pendingOffers(): PendingDecisionOffer[] {
-    const floor = this.now() - DECISION_OFFER_TTL_MS;
-    return this.deps.db
+    const rows = this.deps.db
       .select()
       .from(extensionDecisions)
       .where(and(isNotNull(extensionDecisions.offerJson), isNull(extensionDecisions.offerUsedAt)))
-      .all()
-      .flatMap((row) => {
-        const offer = parseJson<StoredOffer>(row.offerJson);
-        // Only a later credit is listed: an offer in reply to an answer went
-        // back to the one client that answered, and shows nowhere else.
-        if (!offer || row.resolvedBy !== 'person' || offer.via !== 'answering') return [];
-        const made = Date.parse(offer.createdAt);
-        if (Number.isNaN(made) || made < floor) return [];
-        return [
-          {
-            decisionId: row.id,
-            text: offer.text,
-            expiresAt: new Date(made + DECISION_OFFER_TTL_MS).toISOString(),
-          },
-        ];
-      });
+      .all();
+    return pendingOffersForRows(rows, this.now());
+  }
+
+  /** The server-owned snapshot of a decision or offer, never its raw hash on the wire. */
+  stepUpView(id: string, kind: 'decision' | 'offer', extensionId?: string) {
+    const row = this.byId(id);
+    if (!row || (extensionId !== undefined && row.extensionId !== extensionId)) return undefined;
+    if (kind === 'offer') return extensionOfferStepUp(row, this.now());
+    return row.resolvedAt || row.recorded ? undefined : extensionDecisionStepUp(row);
   }
 
   /**

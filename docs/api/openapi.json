@@ -4155,6 +4155,10 @@
               "input": {
                 "type": "string"
               },
+              "requestCode": {
+                "type": "string",
+                "description": "Server-derived display code for the exact request"
+              },
               "title": {
                 "type": "string"
               },
@@ -4787,6 +4791,10 @@
             "type": "string",
             "description": "Why this permission request was triggered"
           },
+          "approvalRequestCode": {
+            "type": "string",
+            "description": "Server-derived display code for the pending request"
+          },
           "approvalHasSuggestions": {
             "type": "boolean",
             "description": "Whether \"Always Allow\" is available"
@@ -5142,6 +5150,16 @@
       "PendingApproval": {
         "type": "object",
         "properties": {
+          "requestCode": {
+            "type": "string",
+            "pattern": "^[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}(?:-[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}){2}$"
+          },
+          "answerNeedsStepUp": {
+            "type": "boolean"
+          },
+          "answeringFrom": {
+            "type": "string"
+          },
           "approvalId": {
             "type": "string"
           },
@@ -6421,6 +6439,9 @@
                 "type": "string"
               },
               "input": {
+                "type": "string"
+              },
+              "requestCode": {
                 "type": "string"
               },
               "title": {
@@ -10516,6 +10537,21 @@
         },
         "required": [
           "toolCallId"
+        ]
+      },
+      "BatchApprovalRequest": {
+        "type": "object",
+        "properties": {
+          "toolCallIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1
+          }
+        },
+        "required": [
+          "toolCallIds"
         ]
       },
       "SubmitAnswersRequest": {
@@ -19944,6 +19980,7 @@
       "NotificationKind": {
         "type": "string",
         "enum": [
+          "step-up.remote-refused",
           "ask.pending",
           "schedule.parked",
           "schedule.armed_by_agent",
@@ -20951,6 +20988,12 @@
       "ExtensionDecision": {
         "type": "object",
         "properties": {
+          "requestCode": {
+            "type": "string"
+          },
+          "answerNeedsStepUp": {
+            "type": "boolean"
+          },
           "id": {
             "type": "string",
             "minLength": 1
@@ -21199,6 +21242,12 @@
       "PendingDecisionOffer": {
         "type": "object",
         "properties": {
+          "requestCode": {
+            "type": "string"
+          },
+          "answerNeedsStepUp": {
+            "type": "boolean"
+          },
           "decisionId": {
             "type": "string",
             "minLength": 1
@@ -21244,6 +21293,12 @@
             "properties": {
               "text": {
                 "type": "string"
+              },
+              "requestCode": {
+                "type": "string"
+              },
+              "answerNeedsStepUp": {
+                "type": "boolean"
               }
             },
             "required": [
@@ -42258,6 +42313,9 @@
                         "input": {
                           "type": "string"
                         },
+                        "requestCode": {
+                          "type": "string"
+                        },
                         "title": {
                           "type": "string"
                         },
@@ -44705,6 +44763,7 @@
           "Sessions"
         ],
         "summary": "Approve pending tool call",
+        "description": "Away from this computer, a yes needs fresh confirmation bound to the pending request. Denying does not ask for confirmation.",
         "parameters": [
           {
             "schema": {
@@ -44754,12 +44813,196 @@
               }
             }
           },
+          "403": {
+            "description": "Only a person may answer; standing yeses are refused from Wi-Fi",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
           "404": {
             "description": "No pending approval",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The pending interaction was already resolved",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "428": {
+            "description": "Fresh confirmation for this request is required before granting it",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "step_up_required"
+                      ]
+                    },
+                    "heldActionId": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "expiresAt": {
+                      "type": "string",
+                      "format": "date-time"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code",
+                    "heldActionId",
+                    "expiresAt"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/sessions/{id}/batch-approve": {
+      "post": {
+        "tags": [
+          "Sessions"
+        ],
+        "summary": "Approve pending tool calls",
+        "description": "Desk batches keep their usual behavior. Remote callers confirm each request separately. A single-item remote batch follows the individual confirmation flow.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BatchApprovalRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Individual results",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "results": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "toolCallId": {
+                            "type": "string"
+                          },
+                          "ok": {
+                            "type": "boolean"
+                          }
+                        },
+                        "required": [
+                          "toolCallId",
+                          "ok"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "results"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Only a person may answer; remote multi-item batches need separate confirmations",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No pending approval",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "428": {
+            "description": "Fresh confirmation for this request is required before granting it",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "step_up_required"
+                      ]
+                    },
+                    "heldActionId": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "expiresAt": {
+                      "type": "string",
+                      "format": "date-time"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code",
+                    "heldActionId",
+                    "expiresAt"
+                  ]
                 }
               }
             }
@@ -88996,7 +89239,7 @@
           "Approvals"
         ],
         "summary": "Allow the requested action",
-        "description": "Grants a pending approval so the requester can spend its token once, on exactly the capability and input the approval is bound to. Deciding is the human half of the gate, and it needs proof of a person rather than the absence of proof of a machine: a caller presenting an agent identity (`X-DorkOS-Agent`) or an approval token (`X-DorkOS-Approval`) is refused in every posture, and when local login is enabled an authenticated user is required. With login disabled DorkOS cannot tell the app apart from a local script, so every decision is recorded in the Activity feed with the posture it was made under.\n\n`answer: 'always'` also sets this action to Allowed for the agent that asked, written through the same permission service Settings uses, before the agent is told the answer, so the resumed call and the new setting agree. It records its own `permission.changed` event beside the `permission.answered` event every answer records. It is refused (409 `ALWAYS_NOT_OFFERED`) when DorkOS does not know which agent asked, the action has no permission area, or the area is one that is never Allowed (Safety limits, Permissions, Reach & secrets). The pending card says so in advance as `alwaysOffered`. A refusal comes before anything is granted.",
+        "description": "Grants a pending approval so the requester can spend its token once, on exactly the capability and input the approval is bound to. Deciding is the human half of the gate, and it needs proof of a person rather than the absence of proof of a machine: a caller presenting an agent identity (`X-DorkOS-Agent`) or an approval token (`X-DorkOS-Approval`) is refused in every posture, and when local login is enabled an authenticated user is required. With login disabled DorkOS cannot tell the app apart from a local script, so every decision is recorded in the Activity feed with the posture it was made under.\n\n`answer: 'always'` also sets this action to Allowed for the agent that asked, written through the same permission service Settings uses, before the agent is told the answer, so the resumed call and the new setting agree. It records its own `permission.changed` event beside the `permission.answered` event every answer records. It is refused (409 `ALWAYS_NOT_OFFERED`) when DorkOS does not know which agent asked, the action has no permission area, or the area is one that is never Allowed (Safety limits, Permissions, Reach & secrets). The pending card says so in advance as `alwaysOffered`. A refusal comes before anything is granted. Away from this computer, a yes needs fresh confirmation for this request. Denying does not ask for confirmation.",
         "parameters": [
           {
             "schema": {
@@ -89073,6 +89316,41 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "428": {
+            "description": "Confirm this approval with the held step-up action; nothing granted yet",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "step_up_required"
+                      ]
+                    },
+                    "heldActionId": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "expiresAt": {
+                      "type": "string",
+                      "format": "date-time"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code",
+                    "heldActionId",
+                    "expiresAt"
+                  ]
                 }
               }
             }
@@ -101192,6 +101470,41 @@
               }
             }
           },
+          "428": {
+            "description": "A remote yes or accepted offer needs fresh confirmation for this request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "step_up_required"
+                      ]
+                    },
+                    "heldActionId": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "expiresAt": {
+                      "type": "string",
+                      "format": "date-time"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code",
+                    "heldActionId",
+                    "expiresAt"
+                  ]
+                }
+              }
+            }
+          },
           "502": {
             "description": "The extension could not take the answer; the decision stays open",
             "content": {
@@ -101290,6 +101603,41 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "428": {
+            "description": "A remote yes or accepted offer needs fresh confirmation for this request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "step_up_required"
+                      ]
+                    },
+                    "heldActionId": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "expiresAt": {
+                      "type": "string",
+                      "format": "date-time"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code",
+                    "heldActionId",
+                    "expiresAt"
+                  ]
                 }
               }
             }
@@ -101413,6 +101761,41 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "428": {
+            "description": "A remote yes or accepted offer needs fresh confirmation for this request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "step_up_required"
+                      ]
+                    },
+                    "heldActionId": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "expiresAt": {
+                      "type": "string",
+                      "format": "date-time"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code",
+                    "heldActionId",
+                    "expiresAt"
+                  ]
                 }
               }
             }

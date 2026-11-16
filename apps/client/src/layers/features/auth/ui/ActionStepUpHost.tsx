@@ -10,11 +10,13 @@ import {
   Button,
   Label,
   PasswordInput,
+  RequestCode,
 } from '@/layers/shared/ui';
 import {
   cn,
   finishActionStepUp,
   getActionStepUpAfterExpiry,
+  getActionStepUpAfterDifferent,
   getActionStepUpShowing,
   subscribeActionStepUp,
   type ActionStepUpOutcome,
@@ -109,6 +111,8 @@ function secondsUntil(until: number): number {
 }
 
 function ActionStepUpSheet({ heldActionId }: { heldActionId: string }) {
+  const reasonId = useId();
+  const codeId = useId();
   const passwordId = useId();
   const newPasswordId = useId();
   const failureId = useId();
@@ -121,6 +125,7 @@ function ActionStepUpSheet({ heldActionId }: { heldActionId: string }) {
   const [secondsLeft, setSecondsLeft] = useState(0);
   const passwordRef = useRef<HTMLInputElement>(null);
   const afterExpiry = useSyncExternalStore(subscribeActionStepUp, getActionStepUpAfterExpiry);
+  const afterDifferent = useSyncExternalStore(subscribeActionStepUp, getActionStepUpAfterDifferent);
 
   useEffect(() => {
     let live = true;
@@ -178,6 +183,17 @@ function ActionStepUpSheet({ heldActionId }: { heldActionId: string }) {
         : await confirmWithPassword(heldActionId, password);
     setPending(false);
     if (result.ok) {
+      const code = (result.result as { code?: string } | null)?.code;
+      if (
+        (stage.view.kind === 'approval.grant' || stage.view.kind === 'approval.grant-always') &&
+        ['APPROVAL_NOT_PENDING', 'APPROVAL_EXPIRED', 'UNKNOWN_APPROVAL'].includes(code ?? '')
+      ) {
+        setStage({
+          kind: 'ended',
+          message: 'This request isn’t waiting anymore. Nothing was allowed.',
+        });
+        return;
+      }
       finishActionStepUp(heldActionId, {
         kind: 'confirmed',
         status: result.status,
@@ -192,14 +208,21 @@ function ActionStepUpSheet({ heldActionId }: { heldActionId: string }) {
     }
     // It expired while open: the action is asked for again, and the new sheet
     // says why (designer, DOR-3467: an expired proof reopens on the same method).
-    if (result.reason === 'expired') {
-      finishActionStepUp(heldActionId, { kind: 'ask-again' });
+    if (result.reason === 'expired' || result.reason === 'different-request') {
+      finishActionStepUp(heldActionId, {
+        kind: 'ask-again',
+        ...(result.reason === 'different-request' ? { reason: 'different-request' as const } : {}),
+      });
       return;
     }
     if (result.reason === 'too-many-attempts') {
       setWaitUntil(Date.now() + (result.retryAfterSeconds ?? 60) * 1000);
     }
-    const ended = endedBy(result);
+    const ended = endedBy(
+      result,
+      stage.view.kind.startsWith('approval.'),
+      stage.view.answeringRemotely
+    );
     if (ended) {
       setStage(ended);
       return;
@@ -218,12 +241,19 @@ function ActionStepUpSheet({ heldActionId }: { heldActionId: string }) {
 
   return (
     <AlertDialog open onOpenChange={(next) => !next && cancel()}>
-      <AlertDialogContent aria-modal="true">
+      <AlertDialogContent
+        aria-modal="true"
+        aria-describedby={view?.requestCode ? `${reasonId} ${codeId}` : reasonId}
+      >
         <AlertDialogHeader className="text-left">
           <AlertDialogTitle>Confirm it’s you</AlertDialogTitle>
-          <AlertDialogDescription className="text-foreground font-medium">
+          <AlertDialogDescription
+            id={reasonId}
+            className="text-foreground max-h-[30dvh] overflow-auto font-medium"
+          >
             {view?.reason ?? (stage.kind === 'loading' ? 'Checking what this will do…' : '')}
           </AlertDialogDescription>
+          {view?.requestCode && <RequestCode id={codeId} code={view.requestCode} />}
           {view?.notes.map((note) => (
             <p
               key={note}
@@ -235,6 +265,11 @@ function ActionStepUpSheet({ heldActionId }: { heldActionId: string }) {
               {note}
             </p>
           ))}
+          {afterDifferent && (
+            <p role="status" className="text-sm">
+              That confirmation was for a different request. Confirm this one.
+            </p>
+          )}
           {afterExpiry && (
             <p role="status" className="text-sm">
               This took too long. Confirm it’s you again.
@@ -252,7 +287,7 @@ function ActionStepUpSheet({ heldActionId }: { heldActionId: string }) {
             onSignInAgain={signInAgain}
           />
         ) : view?.passwordUnavailable === 'no-password' ? (
-          <NoPasswordBody onClose={cancel} />
+          <NoPasswordBody onClose={cancel} remote={view.answeringRemotely} />
         ) : (
           <form onSubmit={handleSubmit} className="space-y-4">
             {stage.kind === 'change' && (
@@ -325,12 +360,18 @@ function ActionStepUpSheet({ heldActionId }: { heldActionId: string }) {
  * The failures that end the sheet, as an ended stage, or `null` for one that
  * stays on the form (a wrong password, a wait, a new password too short).
  */
-function endedBy(failure: ConfirmActionFailure): Extract<Stage, { kind: 'ended' }> | null {
+function endedBy(
+  failure: ConfirmActionFailure,
+  approval = false,
+  remote = false
+): Extract<Stage, { kind: 'ended' }> | null {
   switch (failure.reason) {
     case 'too-many-tries':
       return {
         kind: 'ended',
-        message: 'Too many wrong passwords. Nothing changed.',
+        message: approval
+          ? 'Too many wrong passwords. Nothing was allowed, and the request is still waiting.'
+          : 'Too many wrong passwords. Nothing changed.',
       };
     case 'insecure-connection':
       return {
@@ -345,7 +386,9 @@ function endedBy(failure: ConfirmActionFailure): Extract<Stage, { kind: 'ended' 
     case 'no-password':
       return {
         kind: 'ended',
-        message: `Set a DorkOS password first: run ${RESET_PASSWORD_COMMAND} on this computer.`,
+        message: remote
+          ? 'Set a DorkOS password on the computer running DorkOS.'
+          : `Set a DorkOS password first: run ${RESET_PASSWORD_COMMAND} on this computer.`,
       };
     default:
       return null;
@@ -371,6 +414,8 @@ function EndedBody({ message, onClose }: { message: string; onClose: () => void 
  * "Confirm" otherwise.
  */
 function primaryLabel(kind: StepUpActionKind | undefined): string {
+  if (kind === 'approval.grant') return 'Allow';
+  if (kind === 'approval.grant-always') return 'Always allow';
   if (kind === 'connection.confirm-setting') return 'Confirm setting';
   if (kind === 'connection.use-setting') return 'Allow sending';
   return 'Confirm';
@@ -457,15 +502,24 @@ function ExtensionRiskBody({
   );
 }
 
-function NoPasswordBody({ onClose }: { onClose: () => void }) {
+function NoPasswordBody({ onClose, remote }: { onClose: () => void; remote?: boolean }) {
   return (
     <div className="space-y-4">
       <p role="status" className="text-sm">
-        This computer has no DorkOS password yet. Set one in a terminal here:{' '}
-        <code className="bg-muted rounded px-1 py-0.5 font-mono text-xs">
-          {RESET_PASSWORD_COMMAND}
-        </code>
+        This computer has no DorkOS password yet.
       </p>
+      {remote ? (
+        <p role="status" className="text-sm">
+          Set one on the computer running DorkOS.
+        </p>
+      ) : (
+        <p className="text-sm">
+          Set one in a terminal here:{' '}
+          <code className="bg-muted rounded px-1 py-0.5 font-mono text-xs">
+            {RESET_PASSWORD_COMMAND}
+          </code>
+        </p>
+      )}
       <div className="flex gap-2">
         <Button type="button" className="flex-1" onClick={onClose} autoFocus>
           Close

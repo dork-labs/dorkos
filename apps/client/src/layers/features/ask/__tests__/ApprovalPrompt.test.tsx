@@ -4,8 +4,19 @@ import { render, screen, cleanup, waitFor, act, fireEvent } from '@testing-libra
 import { createRef } from 'react';
 import { ApprovalPrompt, type ApprovalPromptHandle } from '../ui/ApprovalPrompt';
 
-const wifi = vi.hoisted(() => ({ on: false }));
-vi.mock('@/layers/entities/config', () => ({ useOnWifi: () => wifi.on }));
+const wifi = vi.hoisted(() => ({ on: false, remote: false }));
+vi.mock('@/layers/entities/config', () => ({
+  useOnWifi: () => wifi.on,
+  useConfig: () => ({
+    data: {
+      approvalAnswerContext: {
+        answerNeedsStepUp: wifi.remote,
+        answeringFrom: 'Safari on a phone over Remote Access',
+        onWifi: wifi.on,
+      },
+    },
+  }),
+}));
 
 const mockApproveTool = vi.fn().mockResolvedValue(undefined);
 const mockDenyTool = vi.fn().mockResolvedValue(undefined);
@@ -28,6 +39,7 @@ vi.mock('@/layers/shared/lib/tool-arguments-formatter', () => ({
 afterEach(() => {
   cleanup();
   wifi.on = false;
+  wifi.remote = false;
   mockApproveTool.mockClear();
   mockDenyTool.mockClear();
 });
@@ -40,6 +52,30 @@ const baseProps = {
 };
 
 describe('ApprovalPrompt', () => {
+  it('shows the server-owned remote origin and matching code without shortening the request', () => {
+    wifi.remote = true;
+    const text = 'Review this exact command before it runs. ' + 'Made-up input. '.repeat(30);
+    render(
+      <ApprovalPrompt
+        {...baseProps}
+        approvalDescription={text}
+        approvalRequestCode="K7MR-4XQ9-HT3W"
+      />
+    );
+    expect(screen.getByText(text.trim())).toBeDefined();
+    expect(
+      screen.getByText('You’re answering from Safari on a phone over Remote Access.')
+    ).toBeDefined();
+    expect(screen.getByText('Allowing asks you to confirm it’s you.')).toBeDefined();
+    expect(screen.getByText('K7MR-4XQ9-HT3W')).toBeDefined();
+  });
+
+  it('keeps desk cards free of remote confirmation details', () => {
+    render(<ApprovalPrompt {...baseProps} approvalRequestCode="K7MR-4XQ9-HT3W" />);
+    expect(screen.queryByText('K7MR-4XQ9-HT3W')).toBeNull();
+    expect(screen.queryByText('Allowing asks you to confirm it’s you.')).toBeNull();
+  });
+
   it('renders tool name and approve/deny buttons', () => {
     render(<ApprovalPrompt {...baseProps} />);
     expect(screen.getByText('Write test.txt')).toBeDefined();

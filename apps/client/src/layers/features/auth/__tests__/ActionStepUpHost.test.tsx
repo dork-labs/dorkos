@@ -80,6 +80,31 @@ describe('ActionStepUpHost', () => {
     expect(screen.queryByRole('alertdialog')).toBeNull();
   });
 
+  it('shows the server request code with a read-aloud label', async () => {
+    heldWith({ ...VIEW, requestCode: 'K7MR-4XQ9-HT3W' }, [
+      200,
+      { ok: true, status: 200, result: {} },
+    ]);
+    render(<ActionStepUpHost />);
+    void ask();
+    expect(await screen.findByText('K7MR-4XQ9-HT3W')).toBeVisible();
+    expect(screen.getByRole('group', { name: 'Request K 7 M R, 4 X Q 9, H T 3 W' })).toBeVisible();
+  });
+
+  it('re-holds after a confirmation for a different request', async () => {
+    heldWith(VIEW, [
+      409,
+      {
+        code: 'different-request',
+        error: 'That confirmation was for a different request. Confirm this one.',
+      },
+    ]);
+    render(<ActionStepUpHost />);
+    const outcome = ask();
+    await confirmWith('the-password');
+    await expect(outcome).resolves.toEqual({ kind: 'ask-again', reason: 'different-request' });
+  });
+
   it('shows the server’s own sentence about what will run', async () => {
     heldWith(VIEW, [200, { ok: true, status: 201, result: {} }]);
     render(<ActionStepUpHost />);
@@ -272,6 +297,17 @@ describe('ActionStepUpHost', () => {
       ([, init]) => (init as RequestInit)?.method === 'DELETE'
     );
     expect(String(dropped?.[0])).toMatch(/\/step-up\/held-1$/);
+  });
+
+  it('keeps terminal commands off a remote sheet with no password', async () => {
+    heldWith(
+      { ...VIEW, methods: [], answeringRemotely: true, passwordUnavailable: 'no-password' },
+      [200, { ok: true, status: 200, result: {} }]
+    );
+    render(<ActionStepUpHost />);
+    void ask();
+    expect(await screen.findByText('Set one on the computer running DorkOS.')).toBeVisible();
+    expect(screen.queryByText('dorkos auth reset-password')).not.toBeInTheDocument();
   });
 
   it('says how to set a password when the owner has none', async () => {

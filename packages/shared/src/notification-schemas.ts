@@ -51,6 +51,8 @@ export type NotificationTier = (typeof NOTIFICATION_TIERS)[number];
  * Dot-notation `subject.verb`, matching the activity log's event types.
  */
 export const NOTIFICATION_KINDS = [
+  /** Five wrong passwords dropped a remote request's confirmation. */
+  'step-up.remote-refused',
   /** An agent is stopped, waiting on a person to answer. Standing. */
   'ask.pending',
   /** An agent proposed a schedule that only a person can approve. Standing. */

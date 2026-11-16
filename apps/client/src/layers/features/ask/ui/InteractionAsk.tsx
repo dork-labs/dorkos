@@ -11,9 +11,11 @@
  */
 import { useEffect, useRef, useState } from 'react';
 import type { InteractionPendingEvent } from '@dorkos/shared/interaction-events';
+import { useConfig } from '@/layers/entities/config';
+import { cn } from '@/layers/shared/lib';
 import { useAskReceipt } from '@/layers/entities/attention';
 import { useNow } from '@/layers/shared/model';
-import { Button } from '@/layers/shared/ui';
+import { RequestCode, ApprovalAnswerNote, Button } from '@/layers/shared/ui';
 import { askHeadline } from '../lib/ask-headline';
 import { formatAskTimeLeft } from '../lib/format-time-left';
 import { useAnswerAsk } from '../model/use-answer-ask';
@@ -57,6 +59,8 @@ export function InteractionAsk({
   onOpenSession,
   className,
 }: InteractionAskProps) {
+  const answerContext = useConfig().data?.approvalAnswerContext;
+  const remotely = answerContext?.answerNeedsStepUp === true;
   const now = useNow(TICK_MS);
   // Fixed at mount, so the legacy fallback below cannot drift with the tick.
   const [mountedAt] = useState(() => Date.now());
@@ -126,15 +130,28 @@ export function InteractionAsk({
     >
       <div className="flex min-w-0 items-center gap-2">
         <AskCard.Face cwd={ask.cwd} />
-        <AskCard.Headline className="min-w-0 flex-1 truncate">
+        <AskCard.Headline className={cn('min-w-0 flex-1', remotely ? 'break-words' : 'truncate')}>
           {askHeadline(ask, agentName)}
         </AskCard.Headline>
       </div>
 
-      {(detail !== undefined || reason !== undefined) && (
+      {(detail !== undefined ||
+        reason !== undefined ||
+        (remotely && interaction.type === 'approval')) && (
         <AskCard.Detail className="mt-1 pl-8">
-          {detail !== undefined && <p className="truncate font-mono">{detail}</p>}
+          {detail !== undefined && (
+            <p
+              className={cn('font-mono', remotely ? 'break-words whitespace-pre-wrap' : 'truncate')}
+            >
+              {detail}
+            </p>
+          )}
           {reason !== undefined && <p>{reason}</p>}
+          {remotely && interaction.type === 'approval' && (
+            <pre className="max-h-40 overflow-auto break-words whitespace-pre-wrap">
+              {interaction.input}
+            </pre>
+          )}
         </AskCard.Detail>
       )}
 
@@ -149,6 +166,12 @@ export function InteractionAsk({
         </div>
       )}
 
+      {remotely && interaction.type === 'approval' && interaction.requestCode && (
+        <RequestCode code={interaction.requestCode} />
+      )}
+      {interaction.type === 'approval' && receipt === undefined && (
+        <ApprovalAnswerNote context={answerContext} />
+      )}
       {error && <p className="text-status-error text-2xs mt-2">{error}</p>}
 
       <div className="mt-2">
@@ -161,6 +184,7 @@ export function InteractionAsk({
                 size="sm"
                 data-slot="ask-allow"
                 disabled={isAnswering}
+                aria-busy={isAnswering || undefined}
                 onClick={() => void answer(ask, 'allow')}
               >
                 Allow
@@ -171,6 +195,7 @@ export function InteractionAsk({
               variant="outline"
               data-slot="ask-deny"
               disabled={isAnswering}
+              aria-busy={isAnswering || undefined}
               onClick={() => void answer(ask, 'deny')}
             >
               {interaction.type === 'question' ? 'Skip' : 'Don’t allow'}

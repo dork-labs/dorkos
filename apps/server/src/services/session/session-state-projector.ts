@@ -46,7 +46,8 @@ import {
   isNonFatalErrorCode,
   isUnrequestedAbortFailure,
 } from '@dorkos/shared/run-outcome';
-import { listPendingInteractions } from './pending-interactions.js';
+import { withToolApprovalCode } from '../core/approvals/model/tool-approval-binding.js';
+import { listPendingInteractions, pendingInteractionEntry } from './pending-interactions.js';
 import { coldStatus, mergeBaseContextUsage } from './projector/cold-status.js';
 import { RunningTaskDetails, staleUnlessLive } from './projector/running-tasks.js';
 import type { SessionDebugCounters } from './session-debug-counters.js';
@@ -1351,16 +1352,8 @@ export class SessionStateProjector {
     if (!isBlockingInteractionEvent(event)) {
       return;
     }
-    // Strip the union discriminator, seq, and timer fields — the selector
-    // recomputes remainingMs and re-adds id/startedAt — leaving the re-emit body.
-    const { type, seq, id, startedAt, remainingMs, ...snapshot } = event;
-    void seq;
-    void remainingMs;
-    const entry = {
-      type: this.interactionKind(type),
-      startedAt,
-      snapshot,
-    };
+    const id = event.id;
+    const entry = pendingInteractionEntry(event);
     this.interactions.set(id, entry);
     this.status.lifecycle = 'blocked';
     // AFTER the set, and that ordering is load-bearing: a listener that reads
@@ -1373,8 +1366,13 @@ export class SessionStateProjector {
     // the `remainingMs` on the wire is computed exactly as the recovery
     // snapshot's is. An entry that is somehow already past its budget (a replay
     // of an old event) yields nothing here rather than a card that is born dead.
-    const [dto] = listPendingInteractions(new Map([[id, entry]]), Date.now());
-    if (dto === undefined) return;
+    const [tracked] = listPendingInteractions(new Map([[id, entry]]), Date.now());
+    if (tracked === undefined) return;
+    const dto = withToolApprovalCode(this.streamGeneration, tracked);
+    // This projector owns the event before log/ring/live delivery. Stamp the
+    // code here so its transcript row and its global card name the same request.
+    if (event.type === 'approval_required' && dto.type === 'approval')
+      event.requestCode = dto.requestCode;
     // A session whose directory nobody stamped cannot be deep-linked or named
     // from its path, which are the two things `cwd` is on the wire for. Every
     // turn that can raise a prompt was started with one, so this is a "should
@@ -1394,13 +1392,6 @@ export class SessionStateProjector {
       cwd: this.cwd,
       interaction: dto,
     });
-  }
-
-  /** Map a session-event interaction type to the pending-map discriminator. */
-  private interactionKind(type: string): PendingInteractionDTO['type'] {
-    if (type === 'question_prompt') return 'question';
-    if (type === 'elicitation_prompt') return 'elicitation';
-    return 'approval';
   }
 
   /**
@@ -1838,7 +1829,9 @@ export class SessionStateProjector {
    * @param now - Epoch ms to evaluate the countdown against (defaults to now).
    */
   getPendingInteractions(now: number = Date.now()): PendingInteractionDTO[] {
-    return listPendingInteractions(this.interactions, now);
+    return listPendingInteractions(this.interactions, now).map((entry) =>
+      withToolApprovalCode(this.streamGeneration, entry)
+    );
   }
 
   /**

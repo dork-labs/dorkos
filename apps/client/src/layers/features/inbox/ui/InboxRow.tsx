@@ -13,6 +13,7 @@ import { Button } from '@/layers/shared/ui/button';
 import { NOTIFICATION_ICONS, notificationRowTone } from '@/layers/entities/notifications';
 import { AgentAvatar, resolveAgentVisual, type AgentVisualSource } from '@/layers/entities/agent';
 import { UNDO_AGENT_MODE_ACTION_ID, UndoAgentModeAction } from './UndoAgentModeAction';
+import { RemoteStepUpAction } from './RemoteStepUpAction';
 import { AccessChangeActions, UNDO_ACCESS_CHANGE_ACTION_ID } from './AccessChangeActions';
 
 /** The entrance each row inherits from its list's stagger container. */
@@ -232,7 +233,11 @@ export function InboxRow({ notification, agent, onOpen, index }: InboxRowProps) 
     onOpen !== undefined &&
     notification.kind === 'connector.access_narrowed' &&
     notification.actions?.some((a) => a.id === UNDO_ACCESS_CHANGE_ACTION_ID) === true;
-  const hasAction = opensSchedule || opensChat || undoesMode || undoesAccessChange;
+  const signsOutDevice =
+    notification.kind === 'step-up.remote-refused' &&
+    notification.actions?.some((a) => a.id === 'sign-out-device') === true;
+  const hasAction =
+    opensSchedule || opensChat || undoesMode || undoesAccessChange || signsOutDevice;
   // The secret-files notice's body is what to do about it, so it gets the same
   // two lines below `sm` rather than being cut mid-sentence (DOR-3292).
   const twoLineBody = hasAction || notification.kind === 'agent.secret_files';
@@ -244,6 +249,7 @@ export function InboxRow({ notification, agent, onOpen, index }: InboxRowProps) 
   // And a server that stopped reaching agents: its name is the whole point (DOR-4262).
   // And a spin-off report that never arrived names its chat in full (DOR-3561).
   const readsInFull =
+    notification.kind === 'step-up.remote-refused' ||
     notification.mark === 'refused' ||
     notification.kind === 'schedule.armed_by_agent' ||
     notification.kind === 'connector.access_narrowed' ||
@@ -431,6 +437,9 @@ export function InboxRow({ notification, agent, onOpen, index }: InboxRowProps) 
         />
       )}
       {opensChat && <OpenChatAction sessionId={notification.subject.id} />}
+      {signsOutDevice && (
+        <RemoteStepUpAction deviceId={notification.subject.id} notificationId={notification.id} />
+      )}
       {undoesMode && (
         <UndoAgentModeAction taskId={notification.subject.id} notificationId={notification.id} />
       )}

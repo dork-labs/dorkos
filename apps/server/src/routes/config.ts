@@ -1,3 +1,4 @@
+import { approvalAnswerContext } from '../services/core/auth/sessions/remote-answer-device.js';
 import { Hono, type Context } from 'hono';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import type { ApiEnv } from '../http/api-chain.js';
@@ -154,6 +155,7 @@ router.get('/', async (c) => {
     onTrustedConnection:
       isAtThisComputer(honoRequestFacts(c)) || isOnEncryptedConnection(honoRequestFacts(c)),
     callerRoute: requestSessionRoute(honoRequestFacts(c)),
+    approvalAnswerContext: await approvalAnswerContext(honoRequestFacts(c)),
     serverRole: currentServerRole(),
     capacity: await describeCapacity(process.env.DORK_HOME!),
     dismissedUpgradeVersions:
@@ -161,12 +163,12 @@ router.get('/', async (c) => {
         ?.dismissedUpgradeVersions ?? [],
     // The sidebar's bottom slot reads this to know which promo cards the person
     // has already waved away. Flattened to match `dismissedUpgradeVersions`
-    // above: the cockpit's config DTO is curated, not a mirror of the file.
+    // above: the app's config DTO is curated, not a mirror of the file.
     dismissedPromoIds:
       (configManager.get('ui') as { promos?: { dismissedIds?: string[] } } | undefined)?.promos
         ?.dismissedIds ?? [],
     // Sent whole, not flattened like the two dismissal lists above: a settings
-    // screen reads all four of these together, and the cockpit's sound and
+    // screen reads all four of these together, and the app's sound and
     // browser-notification code reads three of them on the same render.
     notifications: configManager.get('notifications') ?? NOTIFICATION_PREFS_DEFAULTS,
     port: env.DORKOS_PORT,
@@ -526,7 +528,7 @@ function requestConfigWriteAuthority(caller: RequestFacts): ConfigWriteAuthority
       //
       // The cockpit must keep working: its own enable-login and disable-login
       // flows legitimately write `auth.enabled` through here, and under
-      // `local-trust` nothing distinguishes the cockpit's request from any other
+      // `local-trust` nothing distinguishes the app's request from any other
       // loopback caller. So this bar is skipped for a caller that presents no
       // agent identity and no approval token, and applied to everyone else.
       //

@@ -24,6 +24,7 @@
  *
  * @module services/openapi-registry
  */
+import { registerSessionApprovalOpenApi } from '../session/asks/session-approval-openapi.js';
 import { ChatActivityResponseSchema } from '@dorkos/shared/chat-messages';
 import { CreateAgentOptionsSchema } from '@dorkos/shared/mesh-schemas';
 import { RUNTIME_CREDITS_PROTOCOLS } from '@dorkos/shared/agent-runtime';
@@ -1380,34 +1381,7 @@ registry.registerPath({
   },
 });
 
-registry.registerPath({
-  method: 'post',
-  path: '/api/sessions/{id}/approve',
-  tags: ['Sessions'],
-  summary: 'Approve pending tool call',
-  request: {
-    params: z.object({ id: z.string().uuid() }),
-    body: {
-      content: { 'application/json': { schema: ApprovalRequestSchema } },
-    },
-  },
-  responses: {
-    200: {
-      description: 'Approved',
-      content: {
-        'application/json': { schema: z.object({ ok: z.boolean() }) },
-      },
-    },
-    400: {
-      description: 'Validation error',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
-    404: {
-      description: 'No pending approval',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
-  },
-});
+registerSessionApprovalOpenApi(registry);
 
 registry.registerPath({
   method: 'post',

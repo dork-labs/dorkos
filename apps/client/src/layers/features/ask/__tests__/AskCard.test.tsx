@@ -22,6 +22,8 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, cleanup, fireEvent, waitFor, act } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
+import type { ApprovalAnswerContext } from '@dorkos/shared/step-up';
+import { configKeys } from '@/layers/entities/config';
 import type { InteractionPendingEvent } from '@dorkos/shared/interaction-events';
 import type { PendingInteractionDTO } from '@dorkos/shared/types';
 import { createMockTransport } from '@dorkos/test-utils/mock-factories';
@@ -63,9 +65,16 @@ function ask(
 let transport: ReturnType<typeof createMockTransport>;
 
 /** Everything a card needs around it, and nothing else. */
-function wrap(children: ReactNode) {
+function wrap(
+  children: ReactNode,
+  answerContext: ApprovalAnswerContext = { answerNeedsStepUp: false, onWifi: false }
+) {
   transport = createMockTransport();
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  client.setQueryData(configKeys.current(), {
+    callerRoute: answerContext.answerNeedsStepUp ? 'tunnel' : 'local',
+    approvalAnswerContext: answerContext,
+  });
   return render(
     <TransportProvider transport={transport}>
       <QueryClientProvider client={client}>{children}</QueryClientProvider>
@@ -85,6 +94,29 @@ afterEach(() => {
 });
 
 describe('the Ask card', () => {
+  it('shows the full remote request, matching code and server-owned origin', () => {
+    const text = 'Review this exact input. ' + 'Made-up detail. '.repeat(30);
+    const input = '{"command":"echo made-up"}';
+    wrap(
+      <InteractionAsk
+        ask={ask('remote', {
+          interaction: { description: text, input, requestCode: 'K7MR-4XQ9-HT3W' },
+        })}
+      />,
+      {
+        answerNeedsStepUp: true,
+        answeringFrom: 'Safari on a phone over Remote Access',
+        onWifi: false,
+      }
+    );
+    expect(screen.getByText(text.trim()).className).not.toContain('truncate');
+    expect(screen.getByText(input)).toBeDefined();
+    expect(screen.getByText('K7MR-4XQ9-HT3W')).toBeDefined();
+    expect(
+      screen.getByText('You’re answering from Safari on a phone over Remote Access.')
+    ).toBeDefined();
+  });
+
   it('answers on A only when the card has focus, and types the letter otherwise', async () => {
     wrap(<InteractionAsk ask={ask('tc-1')} />);
 

@@ -22,6 +22,7 @@
  *
  * @module services/session/pending-interactions
  */
+import type { SessionEvent } from '@dorkos/shared/session-stream';
 import type { PendingInteractionDTO } from '@dorkos/shared/types';
 import { SESSIONS } from '../../config/constants.js';
 
@@ -121,4 +122,25 @@ export function listPendingInteractions(
     out.push({ ...dto, timeoutMs: budgetMs, remainingMs });
   }
   return out;
+}
+
+/** Snapshot only the stable payload; the selector derives its countdown on every read. */
+export function pendingInteractionEntry(
+  event: Extract<
+    SessionEvent,
+    { type: 'approval_required' | 'question_prompt' | 'elicitation_prompt' }
+  >
+): PendingInteractionEntry & { snapshot: Record<string, unknown> } {
+  const { type, seq, id: _id, startedAt, remainingMs: _remaining, ...snapshot } = event;
+  void seq;
+  return {
+    type:
+      type === 'question_prompt'
+        ? 'question'
+        : type === 'elicitation_prompt'
+          ? 'elicitation'
+          : 'approval',
+    startedAt,
+    snapshot,
+  };
 }

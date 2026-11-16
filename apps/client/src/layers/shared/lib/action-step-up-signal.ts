@@ -23,7 +23,7 @@ export type ActionStepUpOutcome =
   /** Cancelled, refused or failed: nothing ran. */
   | { kind: 'not-confirmed' }
   /** It expired: ask for the action again, which holds it afresh. */
-  | { kind: 'ask-again' }
+  | { kind: 'ask-again'; reason?: 'different-request' }
   /**
    * A mini app ran since this sign-in: sign in again, then ask for the action
    * again, which holds it afresh in the new session (M1 on #3401).
@@ -37,6 +37,7 @@ interface Ask {
   openedFrom: HTMLElement | null;
   /** Whether the last ask for this same call expired, so the sheet says so. */
   afterExpiry: boolean;
+  afterDifferent: boolean;
 }
 
 /** The asks waiting, the first one showing. */
@@ -56,14 +57,20 @@ function notify(): void {
  */
 export function requestActionStepUp(
   heldActionId: string,
-  options: { afterExpiry?: boolean } = {}
+  options: { afterExpiry?: boolean; afterDifferent?: boolean } = {}
 ): Promise<ActionStepUpOutcome> {
   return new Promise((resolve) => {
     const openedFrom =
       typeof document !== 'undefined' && document.activeElement instanceof HTMLElement
         ? document.activeElement
         : null;
-    queue.push({ heldActionId, resolve, openedFrom, afterExpiry: options.afterExpiry ?? false });
+    queue.push({
+      heldActionId,
+      resolve,
+      openedFrom,
+      afterExpiry: options.afterExpiry ?? false,
+      afterDifferent: options.afterDifferent ?? false,
+    });
     if (queue.length === 1) notify();
   });
 }
@@ -102,4 +109,9 @@ export function getActionStepUpAfterExpiry(): boolean {
 export function subscribeActionStepUp(listener: Listener): () => void {
   listeners.add(listener);
   return () => listeners.delete(listener);
+}
+
+/** Whether the previous confirmation named a different stored request. */
+export function getActionStepUpAfterDifferent(): boolean {
+  return queue[0]?.afterDifferent ?? false;
 }

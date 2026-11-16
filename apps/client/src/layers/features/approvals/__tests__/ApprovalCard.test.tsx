@@ -16,7 +16,7 @@ import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom/vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { Transport } from '@dorkos/shared/transport';
-import type { PendingApproval } from '@dorkos/shared/approval-schemas';
+import type { ApprovalDecisionResponse, PendingApproval } from '@dorkos/shared/approval-schemas';
 import { APP_LOGO_MAP } from '@dorkos/icons/app-logos';
 import { createMockTransport } from '@dorkos/test-utils/mock-factories';
 import { TransportProvider } from '@/layers/shared/model';
@@ -41,6 +41,7 @@ function buildApproval(overrides: Partial<PendingApproval> = {}): PendingApprova
     hasAgentPath: true,
     area: null,
     alwaysOffered: false,
+    answerNeedsStepUp: false,
     requestedAt: new Date().toISOString(),
     expiresAt: new Date(Date.now() + 90 * 60_000).toISOString(),
     ...overrides,
@@ -93,6 +94,79 @@ afterEach(() => {
 });
 
 describe('ApprovalCard', () => {
+  describe('remote confirmation', () => {
+    const remote = () =>
+      buildApproval({
+        answerNeedsStepUp: true,
+        requestCode: 'K7MR-4XQ9-HT3W',
+        answeringFrom: 'Safari on iPhone over Remote Access',
+        tier: 'act',
+      });
+
+    it('shows the request code and full summary before answering', () => {
+      renderCard(remote());
+      expect(screen.getByText('K7MR-4XQ9-HT3W')).toBeVisible();
+      expect(document.querySelector('[data-slot="approval-step-up-note"]')).toHaveTextContent(
+        'Allowing asks you to confirm it’s you.'
+      );
+      expect(screen.getByText(remote().summary)).not.toHaveClass('line-clamp-2');
+    });
+
+    it('waits for the answer before showing a receipt', async () => {
+      let settle: () => void = () => {};
+      renderCard(remote(), {
+        grantApproval: vi.fn(
+          () =>
+            new Promise<ApprovalDecisionResponse>((resolve) => {
+              settle = () =>
+                resolve({ ok: true, approvalId: remote().approvalId, outcome: 'granted' });
+            })
+        ),
+      });
+      await userEvent.click(screen.getByRole('button', { name: 'Allow' }));
+      expect(screen.queryByText('Allowed once')).not.toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Allow' })).toBeDisabled();
+      expect(screen.getByRole('button', { name: 'Allow' })).toHaveAttribute('aria-busy', 'true');
+      await act(async () => settle());
+      expect(await screen.findByText('Allowed once')).toBeVisible();
+    });
+
+    it('records a confirmed receipt after the clicked card unmounts', async () => {
+      let settle: () => void = () => {};
+      const mounted = renderCard(remote(), {
+        grantApproval: vi.fn(
+          () =>
+            new Promise<ApprovalDecisionResponse>((resolve) => {
+              settle = () =>
+                resolve({ ok: true, approvalId: remote().approvalId, outcome: 'granted' });
+            })
+        ),
+      });
+      await userEvent.click(screen.getByRole('button', { name: 'Allow' }));
+      mounted.unmount();
+      await act(async () => settle());
+      renderCard(remote());
+      expect(await screen.findByText('Allowed once')).toBeVisible();
+    });
+
+    it('keeps the card answerable when confirmation is cancelled', async () => {
+      renderCard(remote(), {
+        grantApproval: vi
+          .fn()
+          .mockRejectedValue(Object.assign(new Error('cancelled'), { code: 'step_up_required' })),
+      });
+      await userEvent.click(screen.getByRole('button', { name: 'Allow' }));
+      await waitFor(() => expect(screen.getByRole('button', { name: 'Allow' })).toBeEnabled());
+      await waitFor(() => expect(screen.getByRole('button', { name: 'Allow' })).toHaveFocus());
+      expect(screen.queryByText('Allowed once')).not.toBeInTheDocument();
+    });
+
+    it('keeps request codes off desk cards', () => {
+      renderCard(buildApproval({ requestCode: 'K7MR-4XQ9-HT3W' }));
+      expect(screen.queryByText('K7MR-4XQ9-HT3W')).not.toBeInTheDocument();
+      expect(document.querySelector('[data-slot="approval-step-up-note"]')).toBeNull();
+    });
+  });
   describe('a card that names what a yes does (DOR-3359)', () => {
     const repoPin = buildApproval({
       capabilityId: 'runtime.apply_repo_tools',
@@ -724,6 +798,14 @@ describe('on Wi-Fi (DOR-2969)', () => {
     expect(vi.mocked(transport.grantApproval).mock.calls[0]![0]).not.toMatchObject({
       answer: 'always',
     });
+  });
+
+  it('says where a Wi-Fi answer can be confirmed', async () => {
+    renderCard(buildApproval({ answerNeedsStepUp: true, requestCode: 'K7MR-4XQ9-HT3W' }), wifi);
+    expect(
+      await screen.findByText('On Wi-Fi, answer on the computer running DorkOS.')
+    ).toBeVisible();
+    expect(screen.queryByText('Allowing asks you to confirm it’s you.')).not.toBeInTheDocument();
   });
 
   it('keeps Always allow at this computer', async () => {

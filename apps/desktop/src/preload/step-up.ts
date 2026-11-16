@@ -43,6 +43,18 @@ function close(): void {
 /** Show the server's words; `textContent` only, so nothing in them is markup. */
 function show(view: StepUpWindowView): void {
   byId('reason').textContent = view.reason;
+  if (view.requestCode) {
+    const row = byId('request-code');
+    byId('request-code-text').textContent = `Request ${view.requestCode}`;
+    row.setAttribute(
+      'aria-label',
+      `Request ${view.requestCode
+        .split('-')
+        .map((group) => group.split('').join(' '))
+        .join(', ')}`
+    );
+    row.hidden = false;
+  }
   const notes = byId('notes');
   for (const note of view.notes) {
     const line = document.createElement('p');

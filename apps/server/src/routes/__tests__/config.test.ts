@@ -1411,6 +1411,20 @@ describe('GET /api/config', () => {
     vi.resetModules();
   });
 
+  it.each([
+    ['the desk', undefined, false, false],
+    ['the own tunnel', 'own-tunnel', true, false],
+    ['managed access', 'managed', true, false],
+    ['Wi-Fi', 'wifi', true, true],
+  ] as const)(
+    'describes approval confirmation from %s with server-owned facts',
+    async (_name, via, needsStepUp, onWifi) => {
+      arrivedVia = via;
+      const res = await request(server).get('/api/config').expect(200);
+      expect(res.body.approvalAnswerContext).toEqual({ answerNeedsStepUp: needsStepUp, onWifi });
+    }
+  );
+
   it('names the owner’s email so turning login on can ask them to sign in (DOR-2964)', async () => {
     const none = await request(server).get('/api/config').expect(200);
     expect(none.body.auth).toMatchObject({ ownerEmail: null });

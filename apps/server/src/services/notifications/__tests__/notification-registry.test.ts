@@ -18,6 +18,12 @@ import { parseExtensionApprovalSubjectId } from '@dorkos/shared/extension-approv
  * file at compile time rather than silently going untested.
  */
 const PAYLOADS: { [K in NotificationKind]: NotificationPayloads[K] } = {
+  'step-up.remote-refused': {
+    heldActionId: 'held-1',
+    deviceId: 'phone-1',
+    deviceLabel: 'Safari on iPhone',
+    requestCode: 'K7MR-4XQ9-HT3W',
+  },
   'ask.pending': {
     sessionId: 'sess-1',
     interactionId: 'int-1',
@@ -238,6 +244,7 @@ const PAYLOADS: { [K in NotificationKind]: NotificationPayloads[K] } = {
 
 /** The tier every kind is declared at, from the spec's own table. */
 const EXPECTED_TIERS: Record<NotificationKind, string> = {
+  'step-up.remote-refused': 'notable',
   'ask.pending': 'blocking',
   'schedule.parked': 'blocking',
   // Live already and nothing waits on the person: told, with Pause, never paged
@@ -402,6 +409,7 @@ describe('notification registry', () => {
       'session.error',
       'shell.check_down',
       'signin.required',
+      'step-up.remote-refused',
       'todo.changed',
       'turn.completed',
       'update.installed',
@@ -457,11 +465,11 @@ describe('notification registry', () => {
     );
   });
 
-  it('keeps every kind but the agent note and the run report inside the app', () => {
+  it('only sends agent notes, run reports and remote confirmation warnings outside the app', () => {
     const leaves = NOTIFICATION_KINDS.filter(
       (k) => resolvePerKind(notificationEntry(k).relay, PAYLOADS[k]) !== 'never'
     );
-    expect([...leaves].sort()).toEqual(['agent.note', 'run.completed']);
+    expect([...leaves].sort()).toEqual(['agent.note', 'run.completed', 'step-up.remote-refused']);
   });
 
   it('builds a stable dedupe key that does not change between calls', () => {

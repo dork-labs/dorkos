@@ -61,6 +61,9 @@ import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
 import { Hono, type MiddlewareHandler } from 'hono';
 import { getRequestListener } from '@hono/node-server';
+import { markIngress } from '../../services/core/remote/ingress-mark.js';
+import { resetHeldStepUpsForTests } from '../../services/core/auth/step-up/step-up-holds.js';
+import { createStepUpRoutes } from '../step-up.js';
 import { createExtensionDecisionsRoutes } from '../extension-decisions.js';
 import type { ApiEnv } from '../../http/api-chain.js';
 import { parseRequestBody } from '../../http/request-body.js';
@@ -93,12 +96,16 @@ afterAll(() => vi.unstubAllEnvs());
 let fx: InboxFixture;
 let dorkHome: string;
 let emitted: Array<{ summary: string }>;
-let signedInUser: { userId: string; credential: 'cookie' } | undefined;
+let signedInUser:
+  { userId: string; credential: 'cookie'; sessionId?: string; route?: 'tunnel' } | undefined;
+let remoteIngress = false;
 let extRouter: Router;
 
 beforeEach(() => {
   state.authEnabled = false;
   signedInUser = undefined;
+  remoteIngress = false;
+  resetHeldStepUpsForTests();
   emitted = [];
   dorkHome = fs.mkdtempSync(path.join(os.tmpdir(), 'ext-decisions-routes-'));
   fx = createInboxFixture({ dorkHome });
@@ -121,6 +128,7 @@ beforeEach(() => {
   };
   // What the session gate would put on `c.var` for a signed-in person.
   const signedIn: MiddlewareHandler<ApiEnv> = async (c, next) => {
+    if (remoteIngress) markIngress(c.env.incoming, 'own-tunnel');
     if (signedInUser) c.set('user', signedInUser);
     await next();
   };
@@ -130,6 +138,16 @@ beforeEach(() => {
     honoGroupListener(
       [
         { path: '/api/extension-decisions', routes: decisions },
+        {
+          path: '/api/step-up',
+          routes: createStepUpRoutes({
+            ownerId: () => 'u1',
+            checkPassword: async (value) => (value === 'made-up password' ? 'ok' : 'wrong'),
+            minPasswordLength: async () => 8,
+            setOwnerPassword: async () => undefined,
+            trustedOrigins: () => [TRUSTED_ORIGIN],
+          }),
+        },
         {
           path: '/api/extensions',
           routes: createExtensionsRoutes({
@@ -456,5 +474,99 @@ describe('ctx.requirePerson through /api/ext/:id/*', () => {
   it('leaves a route without it open (the seam is opt-in)', async () => {
     const res = await request(server).get('/api/ext/flow/open').set('x-dorkos-agent', 'a');
     expect(res.status).toBe(200);
+  });
+});
+
+describe('remote extension confirmation', () => {
+  function remote() {
+    remoteIngress = true;
+    signedInUser = { userId: 'u1', credential: 'cookie', sessionId: 'phone', route: 'tunnel' };
+  }
+  const yes = (id: string) =>
+    request(server)
+      .post(`/api/extension-decisions/${id}/action`)
+      .set('Origin', TRUSTED_ORIGIN)
+      .send({ action: 'approve' });
+  const confirm = (id: string) =>
+    request(server)
+      .post(`/api/step-up/${id}/password`)
+      .set('Origin', TRUSTED_ORIGIN)
+      .send({ password: 'made-up password' });
+
+  it('holds a remote yes before the extension handler hears it', async () => {
+    const handler = vi.fn(() => ({ resolve: 'approved' as const }));
+    fx.inbox.setHandler('flow', handler);
+    const id = await raised();
+    remote();
+    const held = await yes(id);
+    expect(held.status).toBe(428);
+    expect(handler).not.toHaveBeenCalled();
+    const code = fx.inbox.listOpen()[0].requestCode;
+    const sheet = await request(server).get(`/api/step-up/${held.body.heldActionId}`);
+    expect(sheet.body.requestCode).toBe(code);
+    expect((await confirm(held.body.heldActionId)).body).toMatchObject({ ok: true, status: 200 });
+    expect(handler).toHaveBeenCalledTimes(1);
+  });
+
+  it('holds the extension-page alias too, preserving its scope', async () => {
+    const handler = vi.fn(() => ({ resolve: 'approved' as const }));
+    fx.inbox.setHandler('flow', handler);
+    const id = await raised();
+    remote();
+    const wrong = await request(server)
+      .post(`/api/extensions/other/decisions/${id}/action`)
+      .set('Origin', TRUSTED_ORIGIN)
+      .send({ action: 'approve' });
+    expect(wrong.status).toBe(404);
+    const held = await request(server)
+      .post(`/api/extensions/flow/decisions/${id}/action`)
+      .set('Origin', TRUSTED_ORIGIN)
+      .send({ action: 'approve' });
+    expect(held.status).toBe(428);
+    expect(handler).not.toHaveBeenCalled();
+    expect((await confirm(held.body.heldActionId)).body).toMatchObject({ ok: true, status: 200 });
+    expect(handler).toHaveBeenCalledTimes(1);
+  });
+
+  it('refuses a confirmation after the full decision text changes', async () => {
+    const handler = vi.fn(() => ({ resolve: 'approved' as const }));
+    fx.inbox.setHandler('flow', handler);
+    const id = await raised();
+    remote();
+    const held = await yes(id);
+    expect(held.status).toBe(428);
+    await raised('flow', { why: 'Different work will happen.' });
+    expect((await confirm(held.body.heldActionId)).body.code).toBe('different-request');
+    expect(handler).not.toHaveBeenCalled();
+  });
+
+  it('holds a one-time offer accept, while a remote no stays immediate', async () => {
+    const handler = vi.fn(() => ({
+      resolve: 'approved' as const,
+      offer: { text: 'Next time, on its own?', offerId: 'next' },
+    }));
+    fx.inbox.setHandler('flow', handler);
+    const id = await raised();
+    const answered = await yes(id);
+    expect(answered.status).toBe(200);
+    remote();
+    const held = await request(server)
+      .post(`/api/extension-decisions/${id}/offer`)
+      .set('Origin', TRUSTED_ORIGIN)
+      .send({ accept: true });
+    expect(held.status).toBe(428);
+    expect(handler).toHaveBeenCalledTimes(1);
+    const sheet = await request(server).get(`/api/step-up/${held.body.heldActionId}`);
+    expect(sheet.body.requestCode).toBe(answered.body.offer.requestCode);
+    expect((await confirm(held.body.heldActionId)).body).toMatchObject({ ok: true, status: 200 });
+    expect(handler).toHaveBeenCalledTimes(2);
+    const secondId = await raised('flow', { key: 'other' });
+    expect(
+      (
+        await request(server)
+          .post(`/api/extension-decisions/${secondId}/action`)
+          .send({ action: 'reject' })
+      ).status
+    ).toBe(200);
   });
 });

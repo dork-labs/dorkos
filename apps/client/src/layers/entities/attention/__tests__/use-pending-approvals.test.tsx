@@ -118,12 +118,18 @@ describe('usePendingApprovals', () => {
   });
 
   it('adds a card when approval_pending arrives', async () => {
-    const { result } = renderHookWithApprovals([]);
+    const { result, listPendingApprovals } = renderHookWithApprovals([]);
     await waitFor(() => expect(result.current.isLoading).toBe(false));
+    const incoming = buildApproval();
+    listPendingApprovals.mockResolvedValue({
+      approvals: [{ ...incoming, answerNeedsStepUp: true }],
+    });
 
-    act(() => handlers.get('approval_pending')?.(buildApproval()));
+    act(() => handlers.get('approval_pending')?.(incoming));
 
-    await waitFor(() => expect(result.current.approvals).toHaveLength(1));
+    await waitFor(() => expect(result.current.approvals[0]?.answerNeedsStepUp).toBe(true));
+    expect(result.current.approvals).toHaveLength(1);
+    expect(listPendingApprovals).toHaveBeenCalledTimes(2);
     expect(result.current.approvals[0].summary).toBe('Uninstall "sentry-monitor"');
   });
 
