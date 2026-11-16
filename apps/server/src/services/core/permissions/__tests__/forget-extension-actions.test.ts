@@ -76,6 +76,62 @@ describe('PermissionService.forgetExtensionActions', () => {
     expect(line).toMatchObject({ undoable: false });
   });
 
+  it('keeps a Blocked or Ask a person chose when asked to, and clears only Allowed (DOR-4305)', async () => {
+    // Purpose: an extension whose folder went away may come back and be
+    // approved again; its tools must come back no looser than a person left them.
+    const w = createPermissionWorld({
+      defaults: {
+        areas: {},
+        actions: { 'ext_mail.send': 'allowed', 'ext_mail.read': 'blocked' },
+      },
+      agents: [
+        {
+          id: 'agent-a',
+          name: 'a',
+          projectPath: '/agents/a',
+          permissions: {
+            actions: {
+              'ext_mail.send': 'allowed',
+              'ext_mail.read': 'blocked',
+              'ext_mail.list': 'ask',
+            },
+          },
+        },
+      ],
+    });
+    const changes = await w.service.forgetExtensionActions('mail', 'Mail', {
+      keep: ['blocked', 'ask'],
+    });
+
+    expect(w.config.defaults.actions).toEqual({ 'ext_mail.read': 'blocked' });
+    expect(w.agents.get('agent-a')?.permissions).toEqual({
+      actions: { 'ext_mail.read': 'blocked', 'ext_mail.list': 'ask' },
+    });
+    expect(changes.map((c) => c.before)).toEqual(['allowed', 'allowed']);
+  });
+
+  it('writes and records nothing when every setting is one it keeps', async () => {
+    // Purpose: a drop that keeps everything a person chose leaves no history noise.
+    const w = createPermissionWorld({
+      defaults: { areas: {}, actions: { 'ext_mail.read': 'blocked' } },
+      agents: [
+        {
+          id: 'agent-a',
+          name: 'a',
+          projectPath: '/agents/a',
+          permissions: { actions: { 'ext_mail.list': 'ask' } },
+        },
+      ],
+    });
+    const changes = await w.service.forgetExtensionActions('mail', 'Mail', {
+      keep: ['blocked', 'ask'],
+    });
+    expect(changes).toEqual([]);
+    expect(w.events).toEqual([]);
+    expect(w.config.defaults.actions).toEqual({ 'ext_mail.read': 'blocked' });
+    expect(w.agents.get('agent-a')?.permissions).toEqual({ actions: { 'ext_mail.list': 'ask' } });
+  });
+
   it('writes and records nothing when there is nothing to clear', async () => {
     // Purpose: uninstalling an extension nobody configured leaves no noise.
     const w = world();

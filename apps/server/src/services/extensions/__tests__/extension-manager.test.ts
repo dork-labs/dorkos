@@ -185,7 +185,10 @@ describe('ExtensionManager', () => {
       const last = written.at(-1)!;
       expect(last.approvedToRun).toEqual(['kestrel-board']);
       expect(Object.keys(last.approvedSources)).toEqual(['kestrel-board']);
-      expect(forgetToolPermissions).toHaveBeenCalledWith('northwind-sync', 'northwind-sync');
+      // Only Allowed goes: a Blocked or Ask a person chose outlives the drop.
+      expect(forgetToolPermissions).toHaveBeenCalledWith('northwind-sync', 'northwind-sync', {
+        keep: ['blocked', 'ask'],
+      });
       expect(forgetToolPermissions).not.toHaveBeenCalledWith('kestrel-board', expect.anything());
       expect(record).toHaveBeenCalledTimes(1);
       expect(record).toHaveBeenCalledWith(

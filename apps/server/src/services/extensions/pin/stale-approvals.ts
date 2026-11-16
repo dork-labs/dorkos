@@ -27,6 +27,7 @@ import { existsSync } from 'node:fs';
 import path from 'node:path';
 import type { ExtensionRecord } from '@dorkos/extension-api';
 import type { UserConfig } from '@dorkos/shared/config-schema';
+import type { PermissionState } from '@dorkos/shared/permissions';
 import { auditTrail, recordAudit } from '../../audit/audit-trail.js';
 import { configManager } from '../../core/config-manager.js';
 import { logConfigWrite } from '../../core/operator/config-write.js';
@@ -126,6 +127,39 @@ export function dropStaleApprovals(
 }
 
 /**
+ * The permission writer's forget for one extension's tool settings. `keep`
+ * names the states a person chose that stay in place.
+ */
+export type ForgetToolPermissions = (
+  extensionId: string,
+  extensionName: string,
+  opts?: { keep?: readonly PermissionState[] }
+) => Promise<unknown>;
+
+/**
+ * What a drop keeps: a Blocked or Ask a person chose. The extension may come
+ * back and be approved again, and its tools must not come back looser.
+ */
+const KEPT_ON_DROP: readonly PermissionState[] = ['blocked', 'ask'];
+
+/**
+ * Drop the approvals of extensions that are gone, then clear their Allowed
+ * per-tool settings. A Blocked or Ask a person chose stays.
+ *
+ * @param records - The records this scan produced.
+ * @param shadowed - The copies newer ones shadow.
+ * @param forget - The permission writer's forget, or `null` before it is wired.
+ */
+export async function dropGoneExtensions(
+  records: readonly ExtensionRecord[],
+  shadowed: readonly ExtensionRecord[],
+  forget: ForgetToolPermissions | null
+): Promise<void> {
+  for (const id of dropStaleApprovals(records, shadowed))
+    await forgetToolSettings(forget, id, id, { keep: KEPT_ON_DROP });
+}
+
+/**
  * Clear one extension's per-tool permission settings, best-effort: a removed
  * extension's settings must not carry over to whatever is installed under its
  * id next (DOR-2685).
@@ -133,15 +167,18 @@ export function dropStaleApprovals(
  * @param forget - The permission writer's forget, or `null` before it is wired.
  * @param id - The extension.
  * @param name - Its name, for the change record.
+ * @param opts - `keep`: the states that stay; an uninstall passes none.
  */
 export async function forgetToolSettings(
-  forget: ((id: string, name: string) => Promise<unknown>) | null,
+  forget: ForgetToolPermissions | null,
   id: string,
-  name: string
+  name: string,
+  opts?: { keep?: readonly PermissionState[] }
 ): Promise<void> {
   if (!forget) return;
   try {
-    await forget(id, name);
+    // An uninstall passes no options, and its writer is called with exactly two.
+    await (opts ? forget(id, name, opts) : forget(id, name));
   } catch (err) {
     logger.warn(`[Extensions] Could not clear the tool permission settings of ${id}`, err);
   }

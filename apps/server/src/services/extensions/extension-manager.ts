@@ -67,7 +67,8 @@ import {
   settleLegacyApprovals,
   upkeepApprovals,
 } from './pin/extension-approval-upkeep.js';
-import { dropStaleApprovals, forgetToolSettings } from './pin/stale-approvals.js';
+import { dropGoneExtensions, forgetToolSettings } from './pin/stale-approvals.js';
+import type { ForgetToolPermissions } from './pin/stale-approvals.js';
 import {
   reconcileRunningSkills,
   mergeSkillChanges,
@@ -192,8 +193,7 @@ export class ExtensionManager {
   /** What changed while nothing was attached to deliver it (boot). */
   private undeliveredSkills: RunningSkillsChange | null = null;
   /** Clears an uninstalled extension's tool permission settings; see {@link attachAgentTools}. */
-  private forgetToolPermissions:
-    ((extensionId: string, extensionName: string) => Promise<unknown>) | null = null;
+  private forgetToolPermissions: ForgetToolPermissions | null = null;
 
   /**
    * Build the extension system rooted at one DorkOS data directory.
@@ -269,7 +269,7 @@ export class ExtensionManager {
    */
   attachAgentTools(wiring: {
     registry: CapabilityRegistry;
-    forgetToolPermissions?: (extensionId: string, extensionName: string) => Promise<unknown>;
+    forgetToolPermissions?: ForgetToolPermissions;
   }): void {
     this.forgetToolPermissions = wiring.forgetToolPermissions ?? null;
     this.serverLifecycle.attachCapabilityRegistry(wiring.registry);
@@ -443,9 +443,8 @@ export class ExtensionManager {
       this.extensions.set(rec.id, rec);
     }
     upkeepApprovals(records, this.shadowed, this.dorkHome);
-    // Gone, not replaced (DOR-4305): its tool settings go with its approval.
-    for (const id of dropStaleApprovals(records, this.shadowed))
-      await forgetToolSettings(this.forgetToolPermissions, id, id);
+    // Gone, not replaced (DOR-4305): its approval and Allowed tool settings go.
+    await dropGoneExtensions(records, this.shadowed, this.forgetToolPermissions);
     await placeSnapshots(this.dorkHome, records, configManager.get('extensions'));
 
     await this.compileEnabled();
