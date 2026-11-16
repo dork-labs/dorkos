@@ -422,8 +422,12 @@ export interface OperatingSkill {
  *   (DOR-4061), the first skill with files beside its SKILL.md, and names it in
  *   `answering-dorkos-questions`' sibling list. An agent seeded at 55 has no way to
  *   learn how to build an app for its person without an install.
+ * - 57: `scheduling-tasks` teaches the one-shot task (`runOnce`, no cron) and its
+ *   own exact commands (`allowList` at `dontAsk`, no card), and taking them back
+ *   with `allowList: []` after the run (DOR-4315). An agent seeded at 56 would
+ *   still believe the tool needs a cron and would ask the person for a card.
  */
-export const OPERATING_SKILLS_VERSION = 56;
+export const OPERATING_SKILLS_VERSION = 57;
 
 /**
  * The canonical pack, umbrella skill first. Every entry is validated against the

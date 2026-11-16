@@ -46,6 +46,9 @@ import { V1_RELAY_RUNTIME } from './execution/relay-runtime.js';
 import { checkMisplacedMode } from './execution/misplaced-mode.js';
 import { guardRunPlacement, unregisteredAgentError } from './execution/run-place-guard.js';
 import { capRunIfFileChanged } from './agent-mode/file-cap/run-cap.js';
+import { settleRunAllowList } from './allow-list/run-allow-list.js';
+import { oneShotDue } from './store/task-run-controls.js';
+import { failRun, skipRun } from './lifecycle/fail-run.js';
 import { creatorMarked, withCreatorMarks } from './approvals/cross-agent.js';
 import { endRunSessions, noteRunSession } from './session/active-run-sessions.js';
 import { claimRunTurn, SESSION_BUSY_ERROR, type RunTurn } from './session/run-projection.js';
@@ -574,6 +577,12 @@ export class TaskSchedulerService {
    */
   registerTask(task: Task): boolean {
     if (!task.cron) {
+      // A one-shot task runs once, as soon as it is armed, in the process that
+      // may fire and claims it: the claim stops a second fire, here or after a
+      // restart. A run the dispatch then skips (a paused agent, the cap) was its
+      // run. Outside the arming caller's audit scope, as a timer fire is (DOR-4315).
+      if (this.config.mayFire && this.isLeader && oneShotDue(task, this.store.runControls))
+        outsideAuditScope(() => this.wakeSettle.run((at) => this.dispatch(task, at), task.name))();
       logger.debug(`skipping cron registration for on-demand task "${task.name}"`);
       return false;
     }
@@ -986,13 +995,10 @@ export class TaskSchedulerService {
         return;
       }
     } else {
-      // No cron, so no occurrence to claim — an on-demand task can only get
-      // here by being dispatched directly, and the skip reasons still apply.
-      if (skipReason) {
-        logger.warn(`skipped "${task.name}" — ${skipReason}`);
-        return;
-      }
+      // No cron, so no occurrence to claim: only a one-shot task's one fire gets
+      // here (DOR-4315). A skip still writes its row, so that run never vanishes.
       run = this.store.createRun(task.id, 'scheduled');
+      if (skipReason) skipRun(this.store, run, skipReason);
     }
 
     if (skipReason) {
@@ -1079,8 +1085,10 @@ export class TaskSchedulerService {
           // A SKILL file changed outside the task tools runs capped at Never ask, in
           // the mode its resolved runtime declares; a check that fails, fails the run (M4).
           task = await capRunIfFileChanged(task, run, this.store, this.meshCore, execution);
+          // An agent-set allow list rides only on the programs it pinned (DOR-4315).
+          task = await settleRunAllowList(task, run, (id) => this.store.runControls.pinsOf(id));
         } catch (err) {
-          this.failRun(run, err);
+          failRun(this.store, run, err);
           return recordDispatchEnd(dispatchId, 'failed');
         }
         span.setAttr(ATTR.RUNTIME, execution.runtimeType);
@@ -1103,7 +1111,7 @@ export class TaskSchedulerService {
           activityService: this.activityService,
         });
         if (accountRefusal) {
-          this.failRun(run, accountRefusal);
+          failRun(this.store, run, accountRefusal);
           return recordDispatchEnd(dispatchId, 'failed');
         }
         // A Stop during preparation ended this run before a runtime owned it.
@@ -1236,27 +1244,6 @@ export class TaskSchedulerService {
       ...(placement.agentPath !== undefined ? { agentPath: placement.agentPath } : {}),
       ...(checkedAgent !== undefined ? { agentDefaults: checkedAgent } : {}),
     });
-  }
-
-  /**
-   * End a run that never started, with the reason on the row a person reads.
-   *
-   * The activity-feed event rides the TaskStore run-terminal hook (DOR-1573),
-   * fired by this `updateRun('failed')` — the one funnel both dispatch paths
-   * share.
-   *
-   * @param run - The run row, already opened.
-   * @param err - Why it could not start.
-   */
-  private failRun(run: TaskRun, err: unknown): void {
-    const message = err instanceof Error ? err.message : String(err);
-    this.store.updateRun(run.id, {
-      status: 'failed',
-      finishedAt: new Date().toISOString(),
-      durationMs: 0,
-      error: message,
-    });
-    logger.error(`run ${run.id} could not start: ${message}`);
   }
 
   /**

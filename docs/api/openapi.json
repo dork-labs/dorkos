@@ -11345,6 +11345,15 @@
             ],
             "default": null
           },
+          "runOnce": {
+            "type": "boolean"
+          },
+          "ranOnceAt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "status": {
             "$ref": "#/components/schemas/TaskStatus"
           },

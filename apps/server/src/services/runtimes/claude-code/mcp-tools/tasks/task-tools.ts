@@ -43,6 +43,16 @@ import {
 } from './task-tool-copy.js';
 import { CREATE_TASK_INPUT, UPDATE_TASK_INPUT } from './task-tool-inputs.js';
 import {
+  finishOneShotCreate,
+  LIST_ALONE_REFUSAL,
+  listNotRecorded,
+  ONE_SHOT_CRON_REFUSAL,
+  oneShotCreateRefusal,
+  oneShotListNote,
+  settleAllowListCall,
+  updateAllowListAlone,
+} from './task-tool-allow-list.js';
+import {
   clampSchedulePermissionMode,
   taskWorkOf,
 } from '../../../../tasks/schedule-permission-clamp.js';
@@ -144,7 +154,12 @@ export function createCreateScheduleHandler(
   return async (args: {
     name: string;
     prompt: string;
-    cron: string;
+    /** Left out only for a one-shot task (DOR-4315). */
+    cron?: string;
+    /** A one-shot task (DOR-4315); see `task-tool-allow-list.ts`. */
+    runOnce?: true;
+    /** A one-shot task's exact commands (DOR-4315); see `task-tool-allow-list.ts`. */
+    allowList?: string[];
     reason: string;
     /** Left out means `global`, which files it under the caller (DOR-4067). */
     target?: string;
@@ -190,6 +205,8 @@ export function createCreateScheduleHandler(
     // `agentId` is not a create field — `target` is — and a silent strip is what
     // sent an agent looking for another way to own its own task.
     if (args.agentId !== undefined) return jsonContent(AGENT_ID_ON_CREATE_REFUSAL, true);
+    const oneShotRefusal = oneShotCreateRefusal(args);
+    if (oneShotRefusal) return jsonContent(oneShotRefusal, true);
     // For another agent only from a Full, unmarked turn (DOR-3938). Below Full, today's refusal.
     const forOther = decideCrossAgent(deps, target, resolveProvenance, callerAgent);
     if (isMarkedRefusal(forOther)) return jsonContent(forOther.refusal, true);
@@ -205,6 +222,13 @@ export function createCreateScheduleHandler(
       caller,
     });
     if (mode.refusal) return jsonContent(mode.refusal, true);
+    // A one-shot task's own exact commands, decided before anything is written (DOR-4315).
+    const list = await settleAllowListCall(deps, { door: 'create', body, target, caller });
+    if (list.kind === 'refused') return jsonContent(list.body, true);
+    // A card showed the mode alone, so the commands may not ride its yes.
+    if (list.kind === 'write' && mode.grant?.via === 'card') {
+      return jsonContent(LIST_ALONE_REFUSAL, true);
+    }
     if (!auditToolModeChange(deps, mode, null, body))
       return jsonContent(NOT_RECORDED_REFUSAL, true);
 
@@ -222,7 +246,7 @@ export function createCreateScheduleHandler(
         // where the create is about to be refused for a better reason.
         description: args.description ?? (slugify(args.name) || args.name),
         prompt: args.prompt,
-        cron: args.cron,
+        ...(args.cron !== undefined && { cron: args.cron }),
         ...(args.timezone !== undefined && { timezone: args.timezone }),
         ...(args.maxRuntime !== undefined && { maxRuntime: args.maxRuntime }),
         target,
@@ -236,6 +260,8 @@ export function createCreateScheduleHandler(
           requestedPermissionMode: args.requestedPermissionMode,
         }),
         ...(args.requestedAllow !== undefined && { requestedAllow: args.requestedAllow }),
+        // Recorded as the request too, so a parked one-shot shows its commands on its card.
+        ...(list.kind === 'write' && { requestedAllow: list.write.after }),
         ...(mode.grant?.decision.setsMode && { permissionMode: mode.grant.decision.mode }),
       },
       // An MCP tool call IS the agent surface — there is no header to omit and
@@ -284,7 +310,11 @@ export function createCreateScheduleHandler(
     // notification used, so the two cannot disagree about who asked. The sessionless
     // external `/mcp` server carries no session, so the name falls back to "An
     // agent" there and no `actorId` is attached.
-    const task = outcome.task;
+    // The one-shot flag and its commands, once the row exists; it runs from here (DOR-4315).
+    const finished = finishOneShotCreate(deps, outcome.task, list, caller, args.runOnce === true);
+    if (!finished) return jsonContent(listNotRecorded(outcome.task.id), true);
+    const task = finished.task;
+    const listNote = list.kind === 'write' ? ` ${oneShotListNote(task, finished.listApplied)}` : '';
     const armed = outcome.armedPayload;
     // "Made by X for Y": the quiet line a person reads when one agent schedules for another.
     const forWhom = forWhomOf(deps, forOther, task);
@@ -309,16 +339,19 @@ export function createCreateScheduleHandler(
       metadata: { status: task.status },
     });
 
-    if (armed) return jsonContent({ schedule: task, note: armedScheduleNote(armed.execution) });
+    if (armed) {
+      return jsonContent({ schedule: task, note: armedScheduleNote(armed.execution) + listNote });
+    }
 
     return jsonContent({
       schedule: task,
       // The panel hint rides along only where the tool that would open it
       // exists. `resolveProvenance` is absent on the external `/mcp` server, so
       // that surface gets the "tell them" half and nothing it cannot do.
-      note: provenance.sessionId
-        ? `${PARKED_SCHEDULE_NOTE} ${PARKED_SCHEDULE_SURFACE_HINT}`
-        : PARKED_SCHEDULE_NOTE,
+      note:
+        (provenance.sessionId
+          ? `${PARKED_SCHEDULE_NOTE} ${PARKED_SCHEDULE_SURFACE_HINT}`
+          : PARKED_SCHEDULE_NOTE) + listNote,
     });
   };
 }
@@ -365,6 +398,8 @@ export function createUpdateScheduleHandler(
     requestedAllow?: string[];
     /** Refused: only a person applies task-run rules. */
     approvedAllow?: string[];
+    /** A shorter allow list, in a call of its own (DOR-4315); see `task-tool-allow-list.ts`. */
+    allowList?: string[];
     /** Refused: only a person confirms a looser grant. */
     acceptLooserThanRequested?: true;
     /** Put a package's schedule back on its own timing; see {@link RESET_TIMING_DESCRIPTION}. */
@@ -384,6 +419,13 @@ export function createUpdateScheduleHandler(
     if (err) return err;
     const refusal = refuseOperatorOnlyTaskFields(args);
     if (refusal) return refusal;
+    // An allow list narrows in a call of its own, with no card (DOR-4315).
+    if (args.allowList !== undefined) {
+      return updateAllowListAlone(deps, args, {
+        caller: agentModeCallerOf(resolveProvenance, callerMarks, callerAgent, deps.taskStore),
+        ...callerAgentPathOf(resolveProvenance?.() ?? {}, callerAgent),
+      });
+    }
 
     // `id` is a tool ARGUMENT, not a field of the task, so it is stripped before
     // the body is judged. Everything else the SDK let through is measured against
@@ -441,6 +483,8 @@ export function createUpdateScheduleHandler(
     // one question; the call has to pick (DOR-2302).
     const timingConflict = conflictingTimingRequest(args);
     if (timingConflict) return jsonContent({ error: timingConflict }, true);
+    // A one-shot task stays one-shot: a cron would turn its one run into every run (DOR-4315).
+    if (existing.runOnce && args.cron) return jsonContent(ONE_SHOT_CRON_REFUSAL, true);
 
     // The same refusal, in the same words, as `PATCH /api/tasks/:id` (DOR-2384).
     const accountLocked = refuseStickyAccountChange(deps.taskStore!, existing, args);
