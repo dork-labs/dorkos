@@ -87,7 +87,10 @@ export function ScheduleInstructions({
                 className="text-muted-foreground hover:text-foreground -ml-2 h-6 px-2 text-xs"
               >
                 <ChevronRight
-                  className={cn('size-3.5 transition-transform', revealed && 'rotate-90')}
+                  className={cn(
+                    'size-3.5 transition-transform motion-reduce:transition-none',
+                    revealed && 'rotate-90'
+                  )}
                   aria-hidden
                 />
                 {revealed ? 'Hide exact instructions' : 'Show exact instructions'}

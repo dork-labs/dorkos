@@ -617,7 +617,7 @@ describe('ScheduleApprovalCard — answering it', () => {
     const approve = screen.getByRole('button', { name: 'Approve Nightly sweep' });
     expect(approve).toBeDisabled();
     await userEvent.click(
-      screen.getByRole('checkbox', { name: 'Allow Accept edits with nobody there' })
+      screen.getByRole('checkbox', { name: 'Allow Accept edits when you’re not there' })
     );
     expect(approve).toBeEnabled();
     await userEvent.click(approve);
@@ -657,7 +657,7 @@ describe('ScheduleApprovalCard — answering it', () => {
     expect(screen.getByRole('button', { name: 'Approve Nightly sweep' })).toBeDisabled();
     await userEvent.click(
       screen.getByRole('checkbox', {
-        name: 'Allow edits outside its folder with nobody there',
+        name: 'Allow edits outside its folder when you’re not there',
       })
     );
     expect(screen.getByRole('button', { name: 'Approve Nightly sweep' })).toBeEnabled();
@@ -674,7 +674,7 @@ describe('ScheduleApprovalCard — answering it', () => {
     );
     expect(
       await screen.findByRole('checkbox', {
-        name: 'Allow these programs and these reads with nobody there',
+        name: 'Allow these programs and these reads when you’re not there',
       })
     ).toBeInTheDocument();
   });
@@ -690,7 +690,7 @@ describe('ScheduleApprovalCard — answering it', () => {
       'Can read files across this computer.'
     );
     expect(
-      screen.getByRole('checkbox', { name: 'Allow these reads with nobody there' })
+      screen.getByRole('checkbox', { name: 'Allow these reads when you’re not there' })
     ).toBeInTheDocument();
   });
 
@@ -704,12 +704,12 @@ describe('ScheduleApprovalCard — answering it', () => {
     const picker = await screen.findByRole('combobox', { name: 'Run permissions' });
     await waitFor(() => expect(picker).toHaveValue('dontAsk'));
     expect(
-      screen.getByRole('checkbox', { name: 'Allow these programs with nobody there' })
+      screen.getByRole('checkbox', { name: 'Allow these programs when you’re not there' })
     ).toBeInTheDocument();
     await userEvent.selectOptions(picker, 'acceptEdits');
     expect(
       screen.getByRole('checkbox', {
-        name: 'Allow Accept edits and these programs with nobody there',
+        name: 'Allow Accept edits and these programs when you’re not there',
       })
     ).toBeInTheDocument();
   });
@@ -753,7 +753,7 @@ describe('ScheduleApprovalCard — answering it', () => {
     );
     await screen.findByRole('combobox', { name: 'Run permissions' });
     expect(screen.getByRole('button', { name: 'Approve Nightly sweep' })).toBeDisabled();
-    const tick = screen.getByRole('checkbox', { name: 'Allow these reads with nobody there' });
+    const tick = screen.getByRole('checkbox', { name: 'Allow these reads when you’re not there' });
     // Looks 24px tall; a touch screen gets a 44px target from 10px above and below.
     expect(tick.closest('label')).toHaveClass(
       'relative',
@@ -770,7 +770,7 @@ describe('ScheduleApprovalCard — answering it', () => {
     await userEvent.selectOptions(picker, 'acceptEdits');
     expect(screen.getByRole('button', { name: 'Approve Nightly sweep' })).toBeDisabled();
     expect(
-      screen.getByRole('checkbox', { name: 'Allow Accept edits with nobody there' })
+      screen.getByRole('checkbox', { name: 'Allow Accept edits when you’re not there' })
     ).toBeInTheDocument();
   });
 
@@ -1450,7 +1450,7 @@ describe('ScheduleApprovalCard — choosing the run permissions', () => {
     await userEvent.selectOptions(picker, 'bypassPermissions');
     expect(screen.getByRole('button', { name: 'Approve Nightly sweep' })).toBeDisabled();
     expect(
-      screen.getByRole('checkbox', { name: 'Allow Full access with nobody there' })
+      screen.getByRole('checkbox', { name: 'Allow Full access when you’re not there' })
     ).toBeInTheDocument();
   });
 
@@ -1485,7 +1485,7 @@ describe('ScheduleApprovalCard — choosing the run permissions', () => {
     const picker = await screen.findByRole('combobox', { name: 'Run permissions' });
     expect(picker).toHaveValue('acceptEdits');
     const confirm = screen.getByRole('checkbox', {
-      name: 'Allow Accept edits with nobody there',
+      name: 'Allow Accept edits when you’re not there',
     });
     const approve = screen.getByRole('button', { name: 'Approve Nightly sweep' });
     expect(approve).toBeDisabled();
@@ -1548,7 +1548,7 @@ describe('ScheduleApprovalCard — choosing the run permissions', () => {
     expect(screen.getByRole('button', { name: 'Approve Nightly sweep' })).toBeDisabled();
     expect(updateTask).not.toHaveBeenCalled();
     await userEvent.click(
-      screen.getByRole('checkbox', { name: 'Allow Accept edits with nobody there' })
+      screen.getByRole('checkbox', { name: 'Allow Accept edits when you’re not there' })
     );
     await userEvent.click(screen.getByRole('button', { name: 'Approve Nightly sweep' }));
     await waitFor(() =>
@@ -1569,7 +1569,7 @@ describe('ScheduleApprovalCard — choosing the run permissions', () => {
       'DorkBot proposed Accept edits. Selected: Full access.'
     );
     expect(
-      screen.getByRole('checkbox', { name: 'Allow Full access with nobody there' })
+      screen.getByRole('checkbox', { name: 'Allow Full access when you’re not there' })
     ).toBeInTheDocument();
     await userEvent.selectOptions(picker, 'acceptEdits');
     expect(slot('schedule-mode-mismatch')).toBeNull();

@@ -10,6 +10,7 @@ covers:
   - 'fix(schedules): file rules are judged by their shape, so no spelling of home or .git slips past the tick (DOR-3637)'
   - 'fix(schedules): a Read rule that climbs out with .. takes the tick too (DOR-3637)'
   - 'fix(schedules): the approval tick names the mode it allows (DOR-3637)'
+  - 'fix(schedules): the approval tick reads "when you’re not there", and three Playground shots (DOR-3637)'
 ---
 
 ### Security

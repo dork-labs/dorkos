@@ -78,7 +78,7 @@ export function scheduleConfirmReason(
 
 /**
  * The words beside the confirmation tick: everything it allows, at most 15
- * words. "with nobody there" is added while the line stays within that.
+ * words. "when you’re not there" is added while the line stays within that.
  *
  * @param reason - What the tick covers.
  * @param modeLabel - The selected mode in the card's words ("Full access"),
@@ -95,6 +95,6 @@ export function scheduleConfirmLabel(reason: ScheduleConfirmReason, modeLabel?: 
   ].filter((part): part is string => typeof part === 'string');
   const list = parts.length > 1 ? `${parts.slice(0, -1).join(', ')} and ${parts.at(-1)}` : parts[0];
   const label = `Allow ${list}`;
-  const withNobody = `${label} with nobody there`;
-  return withNobody.split(/\s+/).length <= 15 ? withNobody : label;
+  const unattended = `${label} when you’re not there`;
+  return unattended.split(/\s+/).length <= 15 ? unattended : label;
 }

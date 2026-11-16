@@ -143,7 +143,7 @@ function ChangeValue({ value, unbroken }: { value: string; unbroken: boolean }) 
  * ## Three answers, and the third is the point
  *
  * Approve arms it. Reject deletes it — after an undo window, so the receipt is
- * a real offer and not a taunt (see `deferred-rejection`). **Run it once**
+ * a real offer and not a taunt (see `deferred-rejection`). **Try it once now**
  * executes the proposed prompt now, as a single supervised run, and reports
  * what it did: approval by demonstration, with Approve still sitting there
  * afterwards backed by evidence. Nothing about a test run arms a timer, changes

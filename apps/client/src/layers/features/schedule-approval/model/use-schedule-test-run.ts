@@ -1,5 +1,5 @@
 /**
- * "Run it once" — approval by demonstration.
+ * "Try it once now" — approval by demonstration.
  *
  * The signature move of the approval card: before committing to a timer that
  * will fire unattended forever, run the proposed prompt ONCE, supervised, and
