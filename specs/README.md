@@ -6,11 +6,18 @@ the status must agree with the index.
 
 ## Keep current work
 
-Keep unfinished work and any specification referenced by an open issue, project,
-or pull request. Also keep completed specifications used as current contracts by
-instructions, developer guides, live ADRs, docs, source comments or executable
-checks, together with their specification dependencies. Check those references before removing a completed or superseded
-specification. Update the manifest and surviving links in the same commit.
+Keep unfinished work. Keep any specification named by an open issue, an active
+project brief or an open pull request. Keep a completed specification that a
+script or test reads, together with the specifications it depends on.
+
+A completed specification that is only cited (by instructions, developer guides,
+ADRs, docs or source comments) can leave the checkout. Rewrite each of those
+citations to a permalink pinned to an exact commit, never to `main`, so the
+design stays one click away. Update the manifest and every surviving link in the
+same commit.
+
+Each removal batch lists the folders it removes and shows that a search for
+`specs/<slug>` finds no local paths left outside the permalinks.
 
 ## Recover historical work
 
@@ -25,6 +32,6 @@ git log --all -- specs/<slug>
 git show <commit-before-removal>:specs/<slug>/02-specification.md
 ```
 
-Code comments may name a historical specification by its original path. Use the
-same history lookup to recover it. Existing files in `archive/` predate this
+Older code comments may still name a removed specification by its original path.
+Use the same history lookup to recover it. Existing files in `archive/` predate this
 policy; new cleanup batches remove files instead of moving them there.
