@@ -1,6 +1,7 @@
 ---
 covers:
   - 'fix(server): mark turns from people who are not the owner on Telegram, Slack and in rooms, by default (DOR-4453)'
+  - 'fix(server): stranger-mark review fixes: dev off switch, tests the flip broke, Approvers help and copy (DOR-4453)'
 ---
 
 ### Security
