@@ -32,12 +32,6 @@ export interface BrowserChromeProps {
    * Enter keeps the field open on what was typed rather than dropping it.
    */
   busy?: boolean;
-  /**
-   * Name the buttons in Radix tooltips (the default), or in the browser's own
-   * `title` hint. The Agent browser turns them off: a Radix tooltip over its
-   * native page hides that page while it shows (`use-native-browser-surface`).
-   */
-  tooltips?: boolean;
   /** Whether the page is loading, which turns Reload into Stop. */
   loading?: boolean;
   /** Stop loading. Reload shows instead while it is absent. */
@@ -86,7 +80,6 @@ export function BrowserChrome({
   onForward,
   onReload,
   busy = false,
-  tooltips = true,
   loading = false,
   onStop,
   onSubmit,
@@ -110,19 +103,12 @@ export function BrowserChrome({
           aria-busy={loading}
           className="flex h-12 items-center gap-1 px-2.5 md:h-9"
         >
-          <ChromeButton
-            label="Back"
-            icon={ArrowLeft}
-            disabled={!canBack}
-            onClick={onBack}
-            tooltip={tooltips}
-          />
+          <ChromeButton label="Back" icon={ArrowLeft} disabled={!canBack} onClick={onBack} />
           <ChromeButton
             label="Forward"
             icon={ArrowRight}
             disabled={!canForward}
             onClick={onForward}
-            tooltip={tooltips}
             className={menu ? 'hidden @min-[480px]/browser-chrome:inline-flex' : undefined}
           />
           <ChromeButton
@@ -130,7 +116,6 @@ export function BrowserChrome({
             icon={stopping ? X : RotateCw}
             disabled={busy && !stopping}
             onClick={stopping ? onStop : onReload}
-            tooltip={tooltips}
           />
           {/* Keyed on the retry so a refused address reopens the field in edit
               mode, holding what was typed rather than the page still open. */}
@@ -172,41 +157,35 @@ export function BrowserChrome({
 
 /**
  * One 28px ghost icon button (44px on a phone), named by its `aria-label` and
- * shown by a tooltip or a `title` hint. With no handler it stays disabled.
+ * shown in a tooltip. With no handler it stays disabled.
  */
 export function ChromeButton({
   label,
   icon: Icon,
   disabled,
   onClick,
-  tooltip = true,
   className,
 }: {
   label: string;
   icon: LucideIcon;
   disabled?: boolean;
   onClick?: () => void;
-  /** Name it in a Radix tooltip, or in the browser's own `title` hint when off. */
-  tooltip?: boolean;
   className?: string;
 }) {
-  const button = (
-    <Button
-      variant="ghost"
-      size="icon-sm"
-      aria-label={label}
-      title={tooltip ? undefined : label}
-      disabled={onClick === undefined || disabled}
-      onClick={onClick}
-      className={cn('text-muted-foreground hover:text-foreground md:size-7', className)}
-    >
-      <Icon aria-hidden />
-    </Button>
-  );
-  if (!tooltip) return button;
   return (
     <Tooltip>
-      <TooltipTrigger asChild>{button}</TooltipTrigger>
+      <TooltipTrigger asChild>
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          aria-label={label}
+          disabled={onClick === undefined || disabled}
+          onClick={onClick}
+          className={cn('text-muted-foreground hover:text-foreground md:size-7', className)}
+        >
+          <Icon aria-hidden />
+        </Button>
+      </TooltipTrigger>
       <TooltipContent>{label}</TooltipContent>
     </Tooltip>
   );

@@ -36,9 +36,8 @@ export interface LocalBrowserViewProps {
  * load failures (DOR-4430, DOR-4431). What the person types is read by the
  * shared address rules (DOR-4419); a refusal shows on the chrome's notice line
  * and keeps the typed text. Back and Forward stay disabled until the page's own
- * history can be moved (DOR-4449). Its buttons name themselves
- * with the browser's own hint, not a Radix tooltip, because the desktop host
- * hides the native page under any Radix popper (`use-native-browser-surface`).
+ * history can be moved (DOR-4449). A button's tooltip covers the native page,
+ * which leaves a still of itself in its place while it shows (DOR-4438).
  */
 export function LocalBrowserView({
   tab,
@@ -136,7 +135,6 @@ export function LocalBrowserView({
           onStop={() => page.run('stop')}
           onSubmit={(text) => submit(tab.id, tab.url, text)}
           busy={busy}
-          tooltips={false}
           retry={shownRetry}
           notice={shownRetry?.notice ?? null}
         />

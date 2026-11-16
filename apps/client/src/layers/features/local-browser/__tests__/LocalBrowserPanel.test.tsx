@@ -1045,16 +1045,16 @@ describe('LocalBrowserPanel', () => {
     fireEvent.change(screen.getByLabelText('Shared with Kai'), { target: { value: 'two' } });
     await waitFor(() => expect(screen.queryByRole('alert')).not.toBeInTheDocument());
   });
-  it('names its buttons without Radix tooltips, which would hide the native page', async () => {
+  it('names its buttons in Radix tooltips, with no title hint (DOR-4438)', async () => {
     transport.getLocalBrowserState.mockResolvedValue(connected);
     mount();
     const back = await screen.findByRole('button', { name: 'Back' });
-    expect(back).toHaveAttribute('title', 'Back');
-    expect(screen.getByRole('button', { name: 'Forward' })).toHaveAttribute('title', 'Forward');
     expect(back).toBeDisabled();
-    expect(screen.getByRole('button', { name: 'Reload' })).toHaveAttribute('title', 'Reload');
-    fireEvent.focus(screen.getByRole('button', { name: 'Reload' }));
-    expect(document.querySelector('[data-radix-popper-content-wrapper]')).toBeNull();
+    expect(back).not.toHaveAttribute('title');
+    const reload = screen.getByRole('button', { name: 'Reload' });
+    expect(reload).not.toHaveAttribute('title');
+    fireEvent.focus(reload);
+    expect(await screen.findByRole('tooltip')).toHaveTextContent('Reload');
   });
   it('keeps a typed address when navigation becomes stale and never replays it', async () => {
     transport.getLocalBrowserState.mockResolvedValue(connected);

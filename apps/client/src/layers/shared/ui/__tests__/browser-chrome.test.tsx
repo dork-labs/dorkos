@@ -118,20 +118,15 @@ describe('BrowserChrome', () => {
     expect(back).not.toHaveAttribute('title');
   });
 
-  it('names every button with a title hint, keeping its aria-label, when tooltips are off', () => {
-    renderChrome({ onBack: undefined, tooltips: false, loading: true, onStop: vi.fn() });
+  it('names every button in a tooltip, keeping its aria-label and no title hint', async () => {
+    renderChrome({ loading: true, onStop: vi.fn() });
     for (const name of ['Back', 'Forward', 'Stop']) {
       const button = screen.getByRole('button', { name });
       expect(button).toHaveAttribute('aria-label', name);
-      expect(button).toHaveAttribute('title', name);
+      expect(button).not.toHaveAttribute('title');
     }
-    expect(screen.getByRole('button', { name: 'Back' })).toBeDisabled();
-  });
-
-  it('names Reload with a tooltip by default', async () => {
-    renderChrome();
-    fireEvent.focus(screen.getByRole('button', { name: 'Reload' }));
-    expect(await screen.findByRole('tooltip')).toHaveTextContent('Reload');
+    fireEvent.focus(screen.getByRole('button', { name: 'Stop' }));
+    expect(await screen.findByRole('tooltip')).toHaveTextContent('Stop');
   });
 
   it('keeps the field open on Enter while busy, and disables Reload', () => {
