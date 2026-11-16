@@ -1,6 +1,7 @@
 ---
 covers:
   - 'feat: show background work that outlives its turn on the session status and in session reads (DOR-2065)'
+  - 'fix(chat): the background strip says its count once, fits a phone, and a stop on a finished task drops its row (DOR-2065)'
 ---
 
 ### Changed
