@@ -325,7 +325,9 @@ describe('main HTTP admission through the real app', () => {
     expect(mounts).toContain('/api/todos');
     // The off-by-default discovery route remains mounted and must meet admission too.
     expect(mounts).toContain('/api/your-browser');
-    expect(mounts).toHaveLength(88);
+    // 88 -> 89: the empty, sandboxed document every app's screens run in (DOR-3293).
+    expect(mounts).toContain('/api/extension-frame');
+    expect(mounts).toHaveLength(89);
     const byHand = [
       '/',
       '/x/fixture',

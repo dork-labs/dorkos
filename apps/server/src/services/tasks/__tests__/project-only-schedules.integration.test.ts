@@ -18,7 +18,9 @@ import type { Task, UpdateTaskRequest } from '@dorkos/shared/schemas';
 import { TaskStore } from '../task-store.js';
 import { TaskReconciler } from '../task-reconciler.js';
 import { ScheduleIdentityRegistry } from '../schedule-identity.js';
-import type { TaskRegistrar } from '../task-registrar.js';
+import { TaskRegistrar } from '../task-registrar.js';
+import { TaskFileWatcher } from '../task-file-watcher.js';
+import { FakeScheduler } from './fake-scheduler.js';
 import { agentTaskRoots, globalSkillsRoot, globalTaskRoots } from '../skills-roots.js';
 import { applyTaskFileUpdate } from '../lifecycle/update-task-file.js';
 import { needsScheduleApprovalAttention } from '../schedule-permission-clamp.js';
@@ -111,6 +113,69 @@ async function patch(existing: Task, data: UpdateTaskRequest) {
 }
 
 describe('a project-only schedule in a global package', () => {
+  it(
+    'preserves project clocks on unchanged watcher rescans and removes a retired copy',
+    { timeout: 10_000 },
+    async () => {
+      const file = await put(
+        globalSkillsRoot(dorkHome),
+        'flow-drain',
+        skill('flow-drain', 'project')
+      );
+      const scheduler = new FakeScheduler();
+      const clock = new TaskRegistrar({ store, scheduler });
+      const watcher = new TaskFileWatcher(store, clock, new ScheduleIdentityRegistry());
+      const reads = vi.spyOn(store.fileSync, 'upsertFromFile');
+      const until = async (check: () => boolean) => {
+        const deadline = Date.now() + 2500;
+        while (!check()) {
+          if (Date.now() > deadline) throw new Error('The project schedule did not sync.');
+          await new Promise((resolve) => setTimeout(resolve, 20));
+        }
+      };
+      const cue = async (name: string) => {
+        reads.mockClear();
+        await fs.mkdir(path.join(globalSkillsRoot(dorkHome), name));
+        await until(() => reads.mock.calls.length > 0);
+      };
+      try {
+        for (const r of globalTaskRoots(dorkHome)) watcher.watch(r);
+        for (const project of projects)
+          for (const r of agentTaskRoots(project.path, project.agentId)) watcher.watch(r);
+        await watcher.ready();
+        const alpha = store.getTasks().find((task) => task.agentId === 'agent-alpha')!;
+        expect(await patch(alpha, { status: 'active', enabled: true })).toMatchObject({ ok: true });
+        clock.syncTask(alpha.id);
+        // Settle the old approval explanation before comparing unchanged rows.
+        await cue('settle-approval');
+        const count = scheduler.registered.length;
+        await cue('unchanged-copy');
+        expect(scheduler.registered).toHaveLength(count);
+        expect(scheduler.hasJob(alpha.id)).toBe(true);
+        expect(store.fileSync.projectCopiesOf(file)).toHaveLength(2);
+        const beta = store.getTasks().find((task) => task.agentId === 'agent-beta')!;
+        scheduler.jobs.delete(alpha.id);
+        await cue('repair-copy');
+        await until(() => scheduler.hasJob(alpha.id));
+        expect(scheduler.registered).toHaveLength(count + 1);
+        // A never-enabled copy retires when its project stops using the package.
+        // Alpha's explicitly enabled copy keeps the existing ownership rule.
+        await fs.rm(path.join(projects[1]!.path, MARKER));
+        await cue('remove-copy');
+        await until(() => store.getTask(beta.id) === null);
+        expect(scheduler.hasJob(beta.id)).toBe(false);
+        expect(scheduler.hasJob(alpha.id)).toBe(true);
+        expect(scheduler.registered).toHaveLength(count + 1);
+        expect(store.fileSync.projectCopiesOf(file).map((task) => task.agentId)).toEqual([
+          'agent-alpha',
+        ]);
+      } finally {
+        await watcher.stopAll();
+        reads.mockRestore();
+      }
+    }
+  );
+
   it('makes no global schedule, and one switched-off copy per project with no card', async () => {
     const file = await put(
       globalSkillsRoot(dorkHome),

@@ -1,5 +1,5 @@
 import { DEFAULT_ACCOUNT_COLORS } from '@dorkos/shared/account-usage';
-import { describe, it, expect, vi, beforeAll, beforeEach, afterEach, afterAll } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach, afterAll } from 'vitest';
 import { Hono } from 'hono';
 import { request as httpRequest, type IncomingMessage, type RequestListener } from 'node:http';
 import type { AddressInfo } from 'node:net';
@@ -7,6 +7,7 @@ import type { IngressKind } from '../../services/core/remote/ingress-mark.js';
 import type { ApiEnv } from '../../http/api-chain.js';
 import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
+import { preloadConfigRouteModules } from './fixtures/config-cold-imports.js';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
@@ -20,9 +21,7 @@ const owner = vi.hoisted(() => ({
   account: { id: 'user_cockpit', name: 'Owner' } as unknown,
   email: null as string | null,
 }));
-// The session gate lets every request through: with login off it is a
-// pass-through anyway, and the cases that turn login on present the identity it
-// would have proved (`configApp` below) to reach the route's own bars.
+// The gate fixture passes requests; configApp supplies the caller for the route's real bars.
 vi.mock('../../services/core/auth/session-gate.js', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../services/core/auth/session-gate.js')>()),
   decideSessionGate: vi.fn(async () => ({ allowed: true })),
@@ -71,11 +70,8 @@ function createTempDir(): string {
  * `configSection: null` is the case the report has to leave out, and can only
  * be shown leaving out if it was offered.
  *
- * Called after the router is imported so both see the same singleton. The
- * module graph is loaded once for the file, so this re-registers the same four
- * on the one registry each test; `register` replaces by type, so that is the
- * same registry a fresh graph would hold. A test that resets the graph (the
- * env-at-load cases) calls it again on the fresh one.
+ * Called after the router is imported so both see the same singleton: every
+ * test in this file resets the module registry, which mints a fresh one.
  */
 async function registerDeclaringRuntimes(): Promise<void> {
   const { runtimeRegistry } = await import('../../services/core/runtime-registry.js');
@@ -119,8 +115,8 @@ let arrivedVia: 'wifi' | 'own-tunnel' | 'managed' | undefined;
 
 /**
  * ONE listener for the whole file, with the app behind it swapped per test
- * (DOR-483). Each test still gets a FRESH app — its own config directory and a
- * config manager initialised on it — but no port is ever bound and freed mid-file,
+ * (DOR-483). Each test still gets a FRESH app — its own config directory, its
+ * own freshly imported router — but no port is ever bound and freed mid-file,
  * so a pooled keep-alive socket can never be handed to a request meant for a
  * different test's server. See {@link swappableServer}.
  */
@@ -162,6 +158,7 @@ delete process.env.DORKOS_TASKS_ENABLED;
 delete process.env.DORKOS_RELAY_ENABLED;
 delete process.env.DORKOS_A2A_ENABLED;
 delete process.env.DORKOS_TODOS_ENABLED;
+await preloadConfigRouteModules();
 
 afterAll(() => {
   if (AMBIENT_TASKS_ENABLED !== undefined) process.env.DORKOS_TASKS_ENABLED = AMBIENT_TASKS_ENABLED;
@@ -171,49 +168,12 @@ afterAll(() => {
 });
 
 /**
- * Load the module graph once for the file, the way every test used to see it.
- *
- * Loaded TWICE, with one reset between, and the second load is the one the tests
- * use. The first load is not the same graph a later one is. `auth/index.js` is
- * mocked with `importOriginal`, and the real index pulls in `install-owner.ts`,
- * which imports `./index.js` back while the factory is still running. On that
- * first load it binds to the REAL `readOwnerAccount` (no owner, so every
- * front-door write by the owner is refused). `vi.resetModules()` keeps the mock
- * registry, so every later load binds to the mock. When each test reset, only
- * the file's first test ran on the first-load graph, and it writes nothing
- * owner-gated. Running this suite's owner tests on a first-load graph would
- * measure that cycle, not the route.
- *
- * In `beforeAll` with its own timeout, because a cold load of this graph on a
- * busy machine runs past the 10 s hook timeout a `beforeEach` gets.
- */
-beforeAll(async () => {
-  await import('../config.js');
-  await import('../../http/__tests__/hono-group-listener.js');
-  vi.resetModules();
-  await import('../config.js');
-  await import('../../http/__tests__/hono-group-listener.js');
-}, 120_000);
-
-/**
  * The config routes behind the `/api` chain, with the request-shaping step every
  * config-route app needs: the user the session gate would have resolved, and
  * the agent header a caller would have sent.
  *
- * The listener is imported dynamically, like the router, so after a test that
- * resets the module graph the chain and the routes still come from the SAME
- * graph and read the same config manager.
- *
- * Why the graph is NOT reset per test (it was, until DOR-4190): the router and
- * the chain behind it pull in most of the server, and re-importing that before
- * all ~150 tests was most of this file's run time and once took the worker past
- * the heap limit. Everything a test changes lives either in the config manager,
- * which `initConfigManager` replaces on a fresh directory per test, or in a
- * named singleton that the test or its block puts back through its own hook
- * (task/relay flags, the remote-stream registry). Besides the one in the file's
- * `beforeAll` above, the only resets left are the cases whose subject is a value read at MODULE LOAD — `lockedByEnv`,
- * `todos.enabled`, and a restart — and each one resets again on the way out so
- * the next test never inherits a graph built under its environment.
+ * The listener is imported here, after the test's `vi.resetModules()`, so the
+ * chain reads the same freshly initialised config as the routes.
  */
 async function configApp(configRouter: Hono<ApiEnv>) {
   const { honoGroupListener } = await import('../../http/__tests__/hono-group-listener.js');
@@ -253,6 +213,7 @@ describe('PATCH /api/config', () => {
 
   afterEach(() => {
     fs.rmSync(tmpDir, { recursive: true, force: true });
+    vi.resetModules();
   });
 
   it('returns 200 with merged config for valid partial update', async () => {
@@ -429,12 +390,12 @@ describe('PATCH /api/config', () => {
     // pass a status-only test.
     //
     // They share ONE test per direction rather than getting a case each.
-    // That was a memory decision, not a style one: every test in this file used
-    // to mint a fresh module graph (`vi.resetModules()`), and twenty more of
-    // those took the worker past the heap limit — a `FATAL ERROR: JavaScript
-    // heap out of memory` that reads like a hang rather than a failure. The
-    // graph is loaded once now (DOR-4190), but the grouping stays. Each leaf
-    // still carries its own assertion message, so a red names the leaf that broke.
+    // That is a memory decision, not a style one: every test in this file mints
+    // a fresh app, a fresh config directory and a fresh module graph
+    // (`vi.resetModules()`), and twenty more of those took the worker past the
+    // heap limit — a `FATAL ERROR: JavaScript heap out of memory` that reads
+    // like a hang rather than a failure. Each leaf still carries its own
+    // assertion message, so a red names the leaf that broke.
 
     /** One leaf, the value a person tightened it to, and the write an agent tried. */
     const carried: Array<{
@@ -935,8 +896,7 @@ describe('PATCH /api/config', () => {
         expect(res.body.todos).toEqual({ enabled: true });
       } finally {
         delete process.env.DORKOS_TODOS_ENABLED;
-        // `env.ts` parsed the variable when the graph above loaded; drop that
-        // graph so the next test loads one without it.
+        // Drop the graph that captured the environment override before another fixture imports it.
         vi.resetModules();
       }
     });
@@ -1448,6 +1408,7 @@ describe('GET /api/config', () => {
 
   afterEach(() => {
     fs.rmSync(tmpDir, { recursive: true, force: true });
+    vi.resetModules();
   });
 
   it('names the owner’s email so turning login on can ask them to sign in (DOR-2964)', async () => {
@@ -1775,13 +1736,12 @@ describe('GET /api/config', () => {
       ]);
       setTasksEnabled(true);
       setRelayEnabled(true);
+
       try {
         const afterStartup = await request(server).get('/api/config').expect(200);
         expect(afterStartup.body.tasks.enabled).toBe(true);
         expect(afterStartup.body.relay.enabled).toBe(true);
       } finally {
-        // The flags are module singletons the graph keeps between tests; put
-        // back the "not started" every other test begins from.
         setTasksEnabled(false);
         setRelayEnabled(false);
       }
@@ -1927,9 +1887,6 @@ describe('GET /api/config', () => {
       else process.env.DORKOS_TASKS_ENABLED = ORIGINAL_TASKS;
       if (ORIGINAL_RELAY === undefined) delete process.env.DORKOS_RELAY_ENABLED;
       else process.env.DORKOS_RELAY_ENABLED = ORIGINAL_RELAY;
-      // Each test here loads a graph whose `routes/config.ts` captured a lock
-      // at module load. Drop it once the variables are restored, so the next
-      // test loads the router unlocked.
       vi.resetModules();
     });
 
@@ -2430,6 +2387,7 @@ describe('PUT /api/config/agents/defaultAgent', () => {
 
   afterEach(() => {
     fs.rmSync(tmpDir, { recursive: true, force: true });
+    vi.resetModules();
   });
 
   it('sets the default agent and returns success', async () => {
@@ -2500,6 +2458,7 @@ describe('PATCH /api/config, the front-door settings (DOR-2969)', () => {
 
   afterEach(() => {
     fs.rmSync(tmpDir, { recursive: true, force: true });
+    vi.resetModules();
   });
 
   it('lets the owner at this computer change one', async () => {
@@ -2566,6 +2525,7 @@ describe('PATCH /api/config, a Files & commands stop from Wi-Fi (DOR-3037)', () 
 
   afterEach(() => {
     fs.rmSync(tmpDir, { recursive: true, force: true });
+    vi.resetModules();
   });
 
   it('takes a tighter stop for everyone and for one runtime', async () => {
@@ -2688,10 +2648,9 @@ describe('the Remote Access switch (DOR-3650)', () => {
   afterEach(async () => {
     unwatch();
     fs.rmSync(dorkHome, { recursive: true, force: true });
-    // The open-stream and listener sets are module singletons the graph keeps
-    // between tests; start each test with none, as a fresh graph did.
     const { resetRemoteStreamsForTests } = await import('../../middleware/remote-access-switch.js');
     resetRemoteStreamsForTests();
+    vi.resetModules();
   });
 
   /** Each way another device reaches DorkOS, as the request arrives. */

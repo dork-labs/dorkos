@@ -1,6 +1,7 @@
 import type { Todo } from '@dorkos/shared/todo-schemas';
+import type { TodoPromise } from '@dorkos/shared/todo-promise-schemas';
 import type { AgentPathEntry } from '@dorkos/shared/mesh-schemas';
-import { TodoRow } from '@/layers/features/todos';
+import { TodoPromiseRow, TodoRow } from '@/layers/features/todos';
 import { PlaygroundSection } from '../PlaygroundSection';
 import { ShowcaseLabel } from '../ShowcaseLabel';
 import { ShowcaseDemo } from '../ShowcaseDemo';
@@ -15,6 +16,9 @@ const BASE: Todo = {
   assignedBy: { kind: 'person', id: 'owner' },
   to: null,
   dueAt: null,
+  originalDueAt: null,
+  scoreDueAt: null,
+  moveCount: 0,
   state: 'open',
   overdue: false,
   roomId: null,
@@ -41,6 +45,30 @@ const SCOUT: AgentPathEntry = {
 
 const inDays = (days: number) => new Date(Date.now() + days * DAY_MS).toISOString();
 
+/** December 28 of last year, at noon, so the "first due" line shows its year. */
+const LAST_YEAR_DATE = new Date(new Date().getFullYear() - 1, 11, 28, 12).toISOString();
+
+/** An agent's promise that was moved once and then kept: closed rows keep their move history. */
+const KEPT_PROMISE: TodoPromise = {
+  id: 'todo-promise-kept',
+  agentId: SCOUT.id,
+  to: null,
+  what: 'Check the signup form on a phone',
+  dueAt: inDays(-1),
+  originalDueAt: inDays(-3),
+  scoreDueAt: inDays(-3),
+  moveCount: 1,
+  state: 'kept',
+  overdue: false,
+  sourceSessionId: null,
+  sourceRoomEntryId: null,
+  createdAt: inDays(-5),
+  closedAt: inDays(-1),
+  note: null,
+  confirmState: null,
+  delivered: null,
+};
+
 const ROWS: { label: string; todo: Todo; agent?: AgentPathEntry; from: string; room?: string }[] = [
   { label: 'Open, due in a few days', todo: { ...BASE, dueAt: inDays(3) }, from: 'you' },
   {
@@ -56,6 +84,36 @@ const ROWS: { label: string; todo: Todo; agent?: AgentPathEntry; from: string; r
     agent: SCOUT,
     from: 'you',
     room: '#launch',
+  },
+  {
+    label: 'Moved once, with its first date',
+    todo: {
+      ...BASE,
+      id: 'todo-moved-once',
+      what: 'Send the pricing page draft',
+      assignee: { kind: 'agent', agentId: SCOUT.id },
+      dueAt: inDays(4),
+      originalDueAt: inDays(-2),
+      scoreDueAt: inDays(-2),
+      moveCount: 1,
+    },
+    agent: SCOUT,
+    from: 'you',
+  },
+  {
+    label: 'Moved twice, first due last year, with a long title',
+    todo: {
+      ...BASE,
+      id: 'todo-moved-twice',
+      what: 'Write up the quarterly customer interview notes, pull out the top five requests, and share the summary with the whole team before the planning meeting',
+      assignee: { kind: 'agent', agentId: SCOUT.id },
+      dueAt: inDays(6),
+      originalDueAt: LAST_YEAR_DATE,
+      scoreDueAt: LAST_YEAR_DATE,
+      moveCount: 2,
+    },
+    agent: SCOUT,
+    from: 'you',
   },
   {
     label: 'Declined, with its reason',
@@ -129,6 +187,14 @@ export function TodosShowcases() {
           />
         </ul>
       </ShowcaseDemo>
+      <div>
+        <ShowcaseLabel>An agent’s promise, kept after one move</ShowcaseLabel>
+        <ShowcaseDemo responsive>
+          <ul>
+            <TodoPromiseRow todoPromise={KEPT_PROMISE} agentName={SCOUT.displayName} />
+          </ul>
+        </ShowcaseDemo>
+      </div>
     </PlaygroundSection>
   );
 }

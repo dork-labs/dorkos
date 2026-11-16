@@ -213,6 +213,60 @@ describe('todos', () => {
       ['commitment:c2', 'commitment-due'],
     ]);
   });
+
+  it('names a start or check-in wake as new work under its own key (DOR-3034)', async () => {
+    const list = () =>
+      [
+        { id: 'c1', what: 'Quote to Acme', dueAt: '2026-10-12T20:00:00Z' },
+        { id: 'c2', what: 'Invoice run', dueAt: '2026-10-12T21:00:00Z' },
+        { id: 'c3', what: 'Not woken yet', dueAt: '2026-10-12T22:00:00Z' },
+      ] as never;
+    const AT = '2026-10-12T09:30:00Z';
+    const lastWakeOf = (id: string) =>
+      id === 'c1'
+        ? { phase: 'start' as const, at: AT, notYet: false }
+        : id === 'c2'
+          ? { phase: 'checkin' as const, at: AT, notYet: false }
+          : null;
+    const changes = await createTodosGatherer({ list, lastWakeOf })(ctx());
+    expect(changes.map((c) => [c.key, c.signal])).toEqual([
+      [`commitment:c1:start:${AT}`, 'commitment-start'],
+      [`commitment:c2:checkin:${AT}`, 'commitment-start'],
+      ['commitment:c3', 'commitment-due'],
+    ]);
+    expect(triageByRules(changes.slice(0, 1), { failureStorm: false }).verdict).toBe('work');
+  });
+
+  it('reads a later wake as news even after an earlier one was seen (DOR-3034)', async () => {
+    const list = () => [{ id: 'c1', what: 'Quote', dueAt: '2026-10-12T20:00:00Z' }] as never;
+    const wakeAt = (at: string) => () => ({ phase: 'start' as const, at, notYet: false });
+    const first = await createTodosGatherer({ list, lastWakeOf: wakeAt('2026-10-12T08:00:00Z') })(
+      ctx()
+    );
+    const later = await createTodosGatherer({ list, lastWakeOf: wakeAt('2026-10-12T09:00:00Z') })(
+      ctx()
+    );
+    const seen = new Set(first.map(standingKey));
+    expect(triageByRules(later, { failureStorm: false, seenStanding: seen }).verdict).toBe('work');
+  });
+
+  it('names a Not yet on an undated or overdue promise as new work', async () => {
+    const list = () =>
+      [
+        { id: 'u', what: 'No date', dueAt: null },
+        { id: 'o', what: 'Late', dueAt: '2026-10-12T08:00:00Z' },
+      ] as never;
+    const AT = '2026-10-12T09:30:00Z';
+    const changes = await createTodosGatherer({
+      list,
+      lastWakeOf: () => ({ phase: 'start', at: AT, notYet: true }),
+    })(ctx());
+    expect(changes.map((c) => [c.key, c.signal])).toEqual([
+      [`commitment:u:start:${AT}`, 'commitment-start'],
+      [`commitment:o:start:${AT}`, 'commitment-start'],
+    ]);
+    expect(changes[0]!.summary).toMatch(/^Not done yet, says the person, no date/);
+  });
 });
 
 describe('schedules', () => {

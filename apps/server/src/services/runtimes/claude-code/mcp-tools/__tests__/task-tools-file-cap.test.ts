@@ -307,6 +307,8 @@ describe('tasks_update and a SKILL file changed outside the tools (M4)', () => {
       name,
       prompt: 'sweep the backlog',
       cron: '0 3 * * *',
+      // Match fireWith's fixed UTC occurrence, independent of the person's default zone.
+      timezone: 'UTC',
       target: 'agent-a',
       reason: 'The backlog needs sweeping overnight.',
     });
@@ -562,7 +564,11 @@ describe('tasks_update and a SKILL file changed outside the tools (M4)', () => {
       const [run] = store.listRuns({ taskId: id });
       await vi.waitFor(() => expect(isTerminalRunStatus(store.getRun(run!.id)!.status)).toBe(true));
       await service.stop();
-      expect(agentManager.sendMessage).toHaveBeenCalled();
+      const finished = store.getRun(run!.id)!;
+      expect(finished.status, finished.error ?? 'the scheduled turn must complete').toBe(
+        'completed'
+      );
+      expect(agentManager.sendMessage).toHaveBeenCalledTimes(1);
       if (failure) throw failure;
     }
 

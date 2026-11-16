@@ -146,6 +146,11 @@ const ALLOWED_ON_WIFI: Readonly<Record<string, readonly string[]>> = {
     'POST /api/shapes/:name/fork',
     'POST /api/extensions/cwd-changed',
     'PUT /api/extensions/:id/data',
+    // An app's screen data, bound to the app like /data (DOR-3293).
+    'PUT /api/extensions/:id/prefs',
+    // A frame's caller token: names which app is calling, grants nothing the
+    // app's own routes, which Wi-Fi keeps, do not (DOR-3293).
+    'POST /api/extension-frame/caller-token',
     'POST /api/cloud/credits/notices/dismiss',
     'POST /api/cloud/link/cancel',
     'POST /api/cloud/link/check',
@@ -177,6 +182,7 @@ const ALLOWED_ON_WIFI: Readonly<Record<string, readonly string[]>> = {
     'DELETE /api/tasks/:id',
     'POST /api/tasks/runs/:id/cancel',
     'PATCH /api/todo-promises/:id',
+    'POST /api/todo-promises/:id/confirm',
     'POST /api/agents/:id/pause',
     'POST /api/agents/:id/resume',
     'PATCH /api/agents/current',

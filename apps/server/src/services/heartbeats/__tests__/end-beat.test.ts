@@ -61,7 +61,7 @@ beforeEach(() => {
   registry = composeRegistry([heartbeatDomain, todoPromisesDomain], {
     logger: { debug() {}, info() {}, warn() {}, error() {} },
     todoPromiseDeps: {
-      service: { create: vi.fn(), update: vi.fn(), list: vi.fn(() => []) },
+      service: { create: vi.fn(), update: vi.fn(), list: vi.fn(() => []), get: vi.fn() },
       agentIdForPath: () => 'agent-juno',
     },
   });

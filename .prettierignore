@@ -155,3 +155,8 @@ apps/client/src/routeTree.gen.ts
 # Shared Security spelling fixture, copied as-is from marketplace #121. Its
 # pinned Git blob is checked by security-path-parity.test.mjs; keep source bytes.
 scripts/fixtures/security-path-variants.json
+
+# The App Builder Pack, vendored byte for byte at one pinned marketplace version
+# (DOR-4061). Its MANIFEST.sha256 lists a SHA-256 per file and a test checks it,
+# so a reformat would break the pin on files nobody edited.
+packages/operating-skills/src/skills/app-builder-pack/

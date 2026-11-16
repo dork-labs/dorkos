@@ -9,6 +9,26 @@ import { takeToolCommand } from '../turn-work-stop.js';
 const TOOL_CONTEXTUAL_HOOK_EVENTS = new Set(['PreToolUse', 'PostToolUse', 'PostToolUseFailure']);
 
 /**
+ * The coarse kind DorkOS draws for a CLI task (spec `warm-process-lifecycle`
+ * D8). `local_agent` is a helper and `local_bash` a shell; every other type —
+ * a Monitor, a Workflow, a backgrounded MCP task, one a newer CLI adds — is
+ * `other`, which shows its own label. A CLI that names no type keeps the old
+ * rule: a task carrying a session id is a helper.
+ *
+ * @param runtimeTaskType - The CLI's `task_type`, when it sent one
+ * @param hasSessionId - Whether the task message carried a session id
+ */
+function taskKindOf(
+  runtimeTaskType: string | undefined,
+  hasSessionId: boolean
+): 'agent' | 'bash' | 'other' {
+  if (runtimeTaskType === 'local_agent') return 'agent';
+  if (runtimeTaskType === 'local_bash') return 'bash';
+  if (runtimeTaskType) return 'other';
+  return hasSessionId ? 'agent' : 'bash';
+}
+
+/**
  * Map a `system` SDK message (init plus every subtype) to zero or more StreamEvents.
  *
  * Covers session init, background-task lifecycle, status, memory recall, compaction,
@@ -74,17 +94,24 @@ export async function* mapSystemEvent(
       // seen to outlive the CLI's interrupt. Subagents stay the CLI's to stop;
       // a task with no type is treated as a shell. Its command rides along, for
       // the line a Stop leaves when the task will not end.
-      if (msg.task_type !== 'local_agent') {
-        session.turnTaskIds?.set(msg.task_id as string, takeToolCommand(session, msg.tool_use_id));
-      }
+      const shellCommand =
+        msg.task_type !== 'local_agent' ? takeToolCommand(session, msg.tool_use_id) : undefined;
+      if (shellCommand !== undefined) session.turnTaskIds?.set(msg.task_id as string, shellCommand);
+      const runtimeTaskType = typeof msg.task_type === 'string' ? msg.task_type : undefined;
+      const taskType = taskKindOf(runtimeTaskType, Boolean(message.session_id));
       yield {
         type: 'background_task_started',
         data: {
           taskId: msg.task_id as string,
-          taskType: message.session_id ? ('agent' as const) : ('bash' as const),
+          taskType,
+          ...(runtimeTaskType ? { runtimeTaskType } : {}),
           startedAt: Date.now(),
           subagentSessionId: message.session_id,
-          command: message.session_id ? undefined : (msg.command as string | undefined),
+          // A shell's or a Monitor's command, when known; a helper has none.
+          command:
+            taskType !== 'agent'
+              ? ((msg.command as string | undefined) ?? (shellCommand || undefined))
+              : undefined,
           toolUseId: msg.tool_use_id as string | undefined,
           description: msg.description as string,
           // Forwarded only when the runtime said so: absent means not

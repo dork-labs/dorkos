@@ -3,7 +3,7 @@
  * connection, whatever its address, while the stranger-turn flag is on.
  */
 import { describe, expect, it } from 'vitest';
-import { WEBHOOK_MANIFEST } from '@dorkos/relay';
+import { SLACK_MANIFEST, TELEGRAM_MANIFEST, WEBHOOK_MANIFEST } from '@dorkos/relay';
 import type { AdapterManifest } from '@dorkos/shared/relay-schemas';
 import { adapterAddressChanged, hasTypedAdapterSecret } from '../adapter-secret-policy.js';
 import { markedTurnSecretRefusal, movesStoredSecrets } from '../secrets/marked-turn-secret-gate.js';
@@ -84,38 +84,118 @@ describe('markedTurnSecretRefusal', () => {
   });
 });
 
-// DOR-4453 review nit 3: a plugin whose endpoint is typed text. Rule 3 reads only url fields, so
-// a save that moves the endpoint and sends the masks back would carry the stored token along.
+// DOR-4453 review: on a connection holding a stored secret, any change counts, declared or not, of
+// any type, so a plugin's endpoint can't carry the saved token along wherever the plugin reads it.
 const PLUGIN_MANIFEST = {
   configFields: [
     { key: 'endpoint', type: 'text', label: 'Endpoint' },
+    { key: 'retries', type: 'number', label: 'Retries' },
     { key: 'token', type: 'password', label: 'Token', required: true },
   ],
 } as unknown as AdapterManifest;
-const STORED = { endpoint: 'https://owner.example.test/in', token: 'file:relay-adapter:p:token' };
+const STORED = {
+  endpoint: 'https://owner.example.test/in',
+  retries: 3,
+  target: 'https://owner.example.test/undeclared',
+  token: 'file:relay-adapter:p:token',
+};
+const OUTSIDE = 'https://outside.example.test/in';
 
 describe('movesStoredSecrets', () => {
-  it('is true when a text endpoint changes on a connection holding a stored secret', () => {
-    expect(
-      movesStoredSecrets(
-        STORED,
-        { endpoint: 'https://outside.example.test/in', token: '***' },
-        PLUGIN_MANIFEST
-      )
-    ).toBe(true);
+  it.each([
+    ['a text endpoint', { endpoint: OUTSIDE, token: '***' }],
+    ['a number field', { retries: 4 }],
+    ['a key the manifest never declares', { target: OUTSIDE }],
+  ])('counts a change to %s on a connection holding a stored secret', (_name, incoming) => {
+    expect(movesStoredSecrets(STORED, incoming, PLUGIN_MANIFEST)).toBe(true);
+  });
+
+  it('counts every key for a type with no manifest, and an unchanged one as no change', () => {
+    expect(movesStoredSecrets(STORED, { target: OUTSIDE }, undefined)).toBe(true);
+    expect(movesStoredSecrets(STORED, { target: STORED.target }, undefined)).toBe(false);
   });
 
   it.each([
-    ['the same endpoint', STORED, { endpoint: STORED.endpoint, token: '***' }],
-    ['no endpoint sent', STORED, { token: '***' }],
-    ['an add (nothing stored)', undefined, { endpoint: 'https://outside.example.test/in' }],
-    [
-      'nothing stored to carry',
-      { endpoint: STORED.endpoint },
-      { endpoint: 'https://outside.example.test/in' },
-    ],
-  ])('is false for %s', (_name, existing, incoming) => {
-    expect(movesStoredSecrets(existing, incoming, PLUGIN_MANIFEST)).toBe(false);
+    ['the same values', { endpoint: STORED.endpoint, retries: 3, token: '***' }],
+    ['no keys but the masked secret', { token: '***' }],
+  ])('is false for %s', (_name, incoming) => {
+    expect(movesStoredSecrets(STORED, incoming, PLUGIN_MANIFEST)).toBe(false);
+  });
+
+  it('is false for an add, which has nothing stored', () => {
+    expect(movesStoredSecrets(undefined, { endpoint: OUTSIDE }, PLUGIN_MANIFEST)).toBe(false);
+  });
+
+  it('is false when nothing secret is stored', () => {
+    expect(
+      movesStoredSecrets({ endpoint: STORED.endpoint }, { endpoint: OUTSIDE }, PLUGIN_MANIFEST)
+    ).toBe(false);
+  });
+
+  // Re-review nit 1: lists and JSON maps are compared by content once the form shapes resolve.
+  describe('the whole Telegram form saved back', () => {
+    const saved = {
+      token: 'file:relay-adapter:tg:token',
+      mode: 'polling',
+      webhookPort: 8443,
+      dmPolicy: 'allowlist',
+      dmAllowlist: ['111', '222'],
+      approverAllowlist: ['111'],
+    };
+    const form = {
+      token: '***',
+      mode: 'polling',
+      webhookUrl: '',
+      webhookPort: 8443,
+      webhookSecret: '',
+      dmPolicy: 'allowlist',
+      dmAllowlist: '111\n222',
+      approverAllowlist: '111',
+    };
+
+    it('is no change when nothing was edited', () => {
+      expect(movesStoredSecrets(saved, form, TELEGRAM_MANIFEST)).toBe(false);
+    });
+
+    it('is a change when the approver list was edited', () => {
+      expect(
+        movesStoredSecrets(saved, { ...form, approverAllowlist: '111\n999' }, TELEGRAM_MANIFEST)
+      ).toBe(true);
+    });
+  });
+
+  // #3835 review: the gate compares what the save would store, so a blank that resets a field to
+  // its default and a smaller map that drops entries both count, as the save's shallow merge does.
+  describe('a Slack connection holding saved tokens', () => {
+    const saved = {
+      botToken: 'file:relay-adapter:sl:botToken',
+      appToken: 'file:relay-adapter:sl:appToken',
+      respondMode: 'mention-only',
+      channelOverrides: { C123: { enabled: false } },
+    };
+
+    it.each([
+      ['a blank that resets respondMode to its default', { respondMode: '' }],
+      ['an empty map over channelOverrides', { channelOverrides: '{}' }],
+    ])('counts %s as a change', (_name, incoming) => {
+      expect(movesStoredSecrets(saved, incoming, SLACK_MANIFEST)).toBe(true);
+    });
+
+    it('is no change when the whole form is saved back unchanged', () => {
+      expect(
+        movesStoredSecrets(
+          saved,
+          {
+            botToken: '***',
+            appToken: '***',
+            signingSecret: '',
+            respondMode: 'mention-only',
+            channelOverrides: JSON.stringify(saved.channelOverrides),
+          },
+          SLACK_MANIFEST
+        )
+      ).toBe(false);
+    });
   });
 
   it('refuses the move for a marked turn, and says why', () => {

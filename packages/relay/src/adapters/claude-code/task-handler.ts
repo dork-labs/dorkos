@@ -449,6 +449,9 @@ export async function handleTasksMessage(
       // never told it was unattended and would stop to ask questions nobody
       // was there to answer (DOR-1567).
       ...(systemPromptAppend ? { systemPromptAppend } : {}),
+      // The person-approved rules for this task's runs, scoped to this turn's
+      // launch only (DOR-3637).
+      ...(payload.approvedAllow?.length ? { taskApprovedAllow: payload.approvedAllow } : {}),
     });
 
     const stopped = await consumeRunStream(

@@ -187,6 +187,9 @@ export const TASK_WRITE_POLICY = {
   // do, and an agent's change to it on an approved schedule parks it for a
   // person like any other settings change (`TaskApprovals.settleApprovedWorkChange`).
   account: 'agent-writable',
+  // Requests appear on the approval card but never change what a run may do.
+  requestedPermissionMode: 'agent-writable',
+  requestedAllow: 'agent-writable',
 
   // The runtime's safety prompts, for a run nobody is watching.
   //
@@ -207,6 +210,9 @@ export const TASK_WRITE_POLICY = {
   // Where a person approved from (DOR-3641): it labels the receipt only, and
   // means something only beside `status`, which is the person's to send.
   approvalSurface: 'operator-only',
+  // Applied task-run rules and any decision to exceed the proposal belong to a person.
+  approvedAllow: 'operator-only',
+  acceptLooserThanRequested: 'operator-only',
 } as const satisfies Record<string, TaskFieldWriteAccess>;
 
 /** The `operator-only` fields, derived from the table so the two cannot drift. */

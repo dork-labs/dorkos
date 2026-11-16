@@ -12,6 +12,7 @@ import type { AppServerTurnMapper } from '../app-server/notification-mapper.js';
 import { CodexProcessExitedError, isCodexRpcError } from '../app-server/protocol/errors.js';
 import { CodexWritableMissingTargetsError } from '../policy/writable-missing-targets.js';
 import { ProtectedPathNotDirectoryError } from '../policy/collapse-protected-paths.js';
+import { CodexGitMetadataPolicyError } from '../policy/git-metadata.js';
 
 /** The machine refused Linux isolation; retrying the reply cannot repair it. */
 const SANDBOX_UNAVAILABLE_COPY =
@@ -30,6 +31,15 @@ export function* failedSetup(sessionId: string, err: unknown): Generator<StreamE
     yield refusal;
   } else if (err instanceof CodexCrashLoopError) {
     yield { type: 'error', data: { message: err.message, code: 'codex_crash_loop' } };
+  } else if (err instanceof CodexGitMetadataPolicyError) {
+    yield {
+      type: 'error',
+      data: {
+        message: err.message,
+        code: 'codex_git_metadata_unavailable',
+        details: err.cause instanceof Error ? err.cause.message : err.message,
+      },
+    };
   } else if (err instanceof CodexWritableMissingTargetsError) {
     yield {
       type: 'error',
@@ -101,6 +111,8 @@ export function failedCompaction(mapper: AppServerTurnMapper, err: unknown): Str
 export function failedStart(mapper: AppServerTurnMapper, err: unknown): StreamEvent[] {
   if (err instanceof CodexProcessExitedError) return mapper.closeOnCrash(err.detail);
   logger.warn('[CodexAppServer] turn/start failed', { err: String(err) });
+  if (err instanceof CodexGitMetadataPolicyError)
+    return mapper.closeQuietly({ message: err.message, code: 'codex_git_metadata_unavailable' });
   if (isCodexRpcError(err, 'sandbox-unavailable')) {
     return mapper.closeQuietly({
       message: SANDBOX_UNAVAILABLE_COPY,

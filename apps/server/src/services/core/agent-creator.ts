@@ -619,7 +619,7 @@ export async function createAgentWorkspace(
         // file whose contents still match the hash of the pack version it was
         // seeded from, so what was overwritten was DorkOS's own older copy.
         if (outcome.action === 'created') {
-          ledger.noteFile(path.join(seeded.skillsDir, outcome.name, 'SKILL.md'));
+          for (const file of outcome.written) ledger.noteFile(file);
         }
       }
     } catch (err) {

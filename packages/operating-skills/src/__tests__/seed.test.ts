@@ -142,6 +142,76 @@ describe('seedOperatingSkills', () => {
       expect(content.trim()).toBe(skill.body.trim());
     }
   });
+
+  describe('a skill with supporting files', () => {
+    // Read from the pack, not named, so the cases follow whichever skill ships files.
+    const withFiles = OPERATING_SKILLS_PACK.find((s) => s.files && Object.keys(s.files).length);
+    if (!withFiles?.files) throw new Error('No pack skill ships supporting files.');
+    const [firstFile] = Object.keys(withFiles.files);
+    const supportingFile = (file: string) =>
+      path.join(root, '.agents', 'skills', withFiles.name, file);
+
+    /** Rewind every stamp to version 0, keeping each hash, as an older pack left it. */
+    async function rewindStamps(): Promise<void> {
+      for (const skill of OPERATING_SKILLS_PACK) {
+        const { data, content } = parseFrontmatter(await readFile(skillFile(skill.name), 'utf-8'));
+        const meta = { ...(data.metadata as Record<string, string>), dorkosPackVersion: '0' };
+        await writeFile(
+          skillFile(skill.name),
+          stringifyFrontmatter(content, { ...data, metadata: meta }),
+          'utf-8'
+        );
+      }
+    }
+
+    it('reports every file it wrote, so a failed scaffold can undo them all', async () => {
+      const first = await seedOperatingSkills(root);
+      const outcome = first.outcomes.find((o) => o.name === withFiles.name)!;
+      expect([...outcome.written].sort()).toEqual(
+        [skillFile(withFiles.name), ...Object.keys(withFiles.files!).map(supportingFile)].sort()
+      );
+      const again = await seedOperatingSkills(root);
+      expect(again.outcomes.every((o) => o.written.length === 0)).toBe(true);
+    });
+
+    it('writes each one beside SKILL.md, byte for byte', async () => {
+      await seedOperatingSkills(root);
+      for (const [file, content] of Object.entries(withFiles.files!)) {
+        expect(await readFile(supportingFile(file), 'utf-8')).toBe(content);
+      }
+    });
+
+    it('never overwrites an edited supporting file on upgrade', async () => {
+      await seedOperatingSkills(root);
+      const edited = `${withFiles.files![firstFile!]}\nMY OWN NOTES, keep these.\n`;
+      await writeFile(supportingFile(firstFile!), edited, 'utf-8');
+      await rewindStamps();
+
+      const result = await seedOperatingSkills(root);
+      expect(result.outcomes.find((o) => o.name === withFiles.name)?.action).toBe('preserved');
+      expect(await readFile(supportingFile(firstFile!), 'utf-8')).toBe(edited);
+    });
+
+    it('treats a deleted supporting file as the person`s change and leaves it gone', async () => {
+      await seedOperatingSkills(root);
+      await rm(supportingFile(firstFile!));
+      await rewindStamps();
+
+      const result = await seedOperatingSkills(root);
+      expect(result.outcomes.find((o) => o.name === withFiles.name)?.action).toBe('preserved');
+      await expect(readFile(supportingFile(firstFile!), 'utf-8')).rejects.toThrow();
+    });
+
+    it('never writes over a supporting file it did not seed', async () => {
+      // A person's own file sits where the pack would put one, before any seed.
+      await mkdir(path.dirname(supportingFile(firstFile!)), { recursive: true });
+      await writeFile(supportingFile(firstFile!), 'mine', 'utf-8');
+
+      const result = await seedOperatingSkills(root);
+      expect(result.outcomes.find((o) => o.name === withFiles.name)?.action).toBe('preserved');
+      expect(await readFile(supportingFile(firstFile!), 'utf-8')).toBe('mine');
+    });
+  });
 });
 
 describe('isUnmodifiedSeededSkill', () => {

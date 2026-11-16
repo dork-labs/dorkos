@@ -17,7 +17,12 @@ import type {
   TaskRunStatus,
   TaskRunTrigger,
 } from '@dorkos/shared/types';
-import { EffortLevelSchema, TaskApproverSchema } from '@dorkos/shared/schemas';
+import {
+  EffortLevelSchema,
+  PermissionModeSchema,
+  TaskApproverSchema,
+  TaskPermissionRulesSchema,
+} from '@dorkos/shared/schemas';
 import { effectiveContentKey, effectiveTiming, effectiveWork } from './timing/effective-timing.js';
 import {
   isQuietHold,
@@ -99,6 +104,17 @@ function readApprover(stored: string | null): TaskApprover | null {
   }
 }
 
+/** Read task permission rules from JSON, failing closed on malformed data. */
+function readPermissionRules(stored: string | null): string[] | null {
+  if (stored === null) return null;
+  try {
+    const parsed = TaskPermissionRulesSchema.safeParse(JSON.parse(stored));
+    return parsed.success ? parsed.data : null;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Convert a Drizzle schedule row to a Task object.
  *
@@ -142,6 +158,10 @@ export function mapTaskRow(row: typeof pulseSchedules.$inferSelect): Task {
     sticky: row.sticky,
     maxRuntime: row.maxRuntime,
     permissionMode: row.permissionMode,
+    requestedPermissionMode:
+      PermissionModeSchema.safeParse(row.requestedPermissionMode).data ?? null,
+    requestedAllow: readPermissionRules(row.requestedAllow),
+    approvedAllow: readPermissionRules(row.approvedAllow),
     runtime: row.runtime ?? null,
     model: row.model ?? null,
     // The one column parsed rather than cast, for the reason `rowToSettings`

@@ -3,12 +3,13 @@ import type { VisibleBackgroundTask } from '../../model/use-background-tasks';
 import './agent-runner.css';
 
 interface TaskDotSectionProps {
-  /** Visible background tasks — component renders only those with taskType 'bash'. */
+  /** Visible background tasks — component renders every one that is not a helper agent. */
   bashTasks: VisibleBackgroundTask[];
 }
 
 /**
- * Pulsing colored dots representing running bash background tasks.
+ * Pulsing colored dots representing running background shells and other tasks
+ * (Monitors, Workflows): everything that is not a helper agent.
  *
  * Each dot is 6px with a pulsing ring animation for running tasks. Dots enter
  * and exit via Motion AnimatePresence. A count label shows the total number of
@@ -17,7 +18,7 @@ interface TaskDotSectionProps {
 export function TaskDotSection({ bashTasks }: TaskDotSectionProps) {
   const prefersReducedMotion = useReducedMotion();
 
-  const tasks = bashTasks.filter((t) => t.taskType === 'bash');
+  const tasks = bashTasks.filter((t) => t.taskType !== 'agent');
   const count = tasks.length;
 
   if (count === 0) return null;
@@ -26,7 +27,7 @@ export function TaskDotSection({ bashTasks }: TaskDotSectionProps) {
     <div
       role="status"
       aria-live="polite"
-      aria-label={`${count} bash task${count !== 1 ? 's' : ''} running`}
+      aria-label={`${count} background task${count !== 1 ? 's' : ''} running`}
       className="flex items-center gap-1.5"
     >
       <AnimatePresence mode="popLayout">

@@ -132,8 +132,9 @@ export function agentModeCallerOf(
 
 /**
  * Refuse a task write that reaches for a field only a person may set, or return
- * `null` to let the call proceed. With `tasks.agentModeControl` on it always
- * answers `null`: the two fields go to the agent-mode decision instead.
+ * `null` to let the call proceed. With `tasks.agentModeControl` on, only the
+ * legacy mode and status fields go to the agent-mode decision. Applied allow
+ * rules and the looser-grant confirmation remain person-only on every path.
  *
  * Unconditional, and that is the design rather than an omission. The wrong shape
  * here would be "refuse when the caller presented an agent identity", because
@@ -151,8 +152,9 @@ export function agentModeCallerOf(
  * @returns The refusal envelope, or `null` when the call may proceed.
  */
 export function refuseOperatorOnlyTaskFields(args: unknown) {
-  if (agentModeControlOn()) return null;
-  const operatorOnly = findOperatorOnlyTaskFields(args);
+  const operatorOnly = findOperatorOnlyTaskFields(args).filter(
+    (field) => !agentModeControlOn() || (field !== 'permissionMode' && field !== 'status')
+  );
   if (operatorOnly.length === 0) return null;
   return jsonContent(
     {

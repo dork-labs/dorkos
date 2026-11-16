@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { mkdtemp, mkdir, writeFile, rm, realpath } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import { OPERATING_SKILLS_PACK } from '@dorkos/operating-skills';
 import { assembleDoeResources } from '../resources.js';
 const roots: string[] = [];
 async function fixture() {
@@ -58,6 +59,14 @@ describe('direct Doe resources', () => {
     expect(await resources.loadSkill('user-skill', new AbortController().signal)).toContain(
       'USER BODY'
     );
+    // A fallback operating skill whose body links to files beside it carries
+    // those files, since nothing on disk answers the links (DOR-4061).
+    const builder = OPERATING_SKILLS_PACK.find((s) => s.files && Object.keys(s.files).length)!;
+    const loaded = await resources.loadSkill(builder.name, new AbortController().signal);
+    expect(loaded).toContain(builder.body);
+    for (const [file, content] of Object.entries(builder.files!)) {
+      expect(loaded).toContain(`<skill_file path="${file}">\n${content}`);
+    }
   });
   it('loads nested instructions before access and resets absent grants each assembly', async () => {
     const root = await fixture(),

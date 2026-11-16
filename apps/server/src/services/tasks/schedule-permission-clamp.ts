@@ -25,6 +25,7 @@
  * @module services/tasks/schedule-permission-clamp
  */
 import { hasMisplacedSchedulePermissions } from '@dorkos/shared/schedule-file-problems';
+import { isLooserScheduleMode } from '@dorkos/shared/schedule-approval';
 import { EffortLevelSchema, type PermissionMode } from '@dorkos/shared/schemas';
 
 /**
@@ -85,32 +86,10 @@ export interface FileAgentLevel {
 }
 
 /**
- * How loose each mode a schedule file can name is, strictest first. `dontAsk`
- * refuses what is not already allowed, so it sits below the modes that act.
+ * Whether a schedule's mode would get looser (DOR-3425). The ranking lives in
+ * `@dorkos/shared/schedule-approval`, which the approval card reads too.
  */
-const MODE_LOOSENESS: Readonly<Record<PermissionMode, number>> = {
-  plan: 0,
-  default: 1,
-  dontAsk: 1,
-  acceptEdits: 2,
-  auto: 2,
-  bypassPermissions: 3,
-};
-
-/**
- * Whether a schedule's mode would get looser (DOR-3425). A mode a file cannot
- * name (another runtime's own id) reads as the loosest when it is the new one
- * and the strictest when it is the old one, so anything unknown asks a person.
- *
- * @param next - The mode the sync would write.
- * @param current - The mode the row holds.
- */
-export function isLooserMode(next: string, current: string): boolean {
-  if (next === current) return false;
-  const rankOf = (mode: string) =>
-    Object.hasOwn(MODE_LOOSENESS, mode) ? MODE_LOOSENESS[mode as PermissionMode] : undefined;
-  return (rankOf(next) ?? Infinity) > (rankOf(current) ?? -Infinity);
-}
+export const isLooserMode = isLooserScheduleMode;
 
 /**
  * The parts of an existing schedule row that decide whether a file may keep the

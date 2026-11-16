@@ -447,6 +447,15 @@ export const TaskDispatchPayloadSchema = z
      */
     systemPromptAppend: z.string().optional(),
     /**
+     * The allow rules a person approved for this task's runs (DOR-3637), applied
+     * to this turn's launch only and never written to a settings file.
+     *
+     * On the wire beside `permissionMode`, which already travels here at the
+     * same trust: the receiver cannot read the task row. Optional so an older
+     * envelope still parses; a run without it gets no task rules.
+     */
+    approvedAllow: z.array(z.string().min(1).max(300)).max(20).optional(),
+    /**
      * The session this run must execute on (DOR-1571).
      *
      * Absent means "use `runId`" — the isolated-per-run default every

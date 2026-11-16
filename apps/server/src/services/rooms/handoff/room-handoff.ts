@@ -31,6 +31,11 @@
 import { randomUUID } from 'node:crypto';
 import type { Room, RoomEntry } from '@dorkos/shared/room-schemas';
 import { sanitizeIdentity } from '@dorkos/shared/untrusted-text';
+import {
+  isPlatformNamed,
+  PLATFORM_NAMED_ROOM,
+  type RoomBridgeLookup,
+} from '../agent-facing-room-name.js';
 import { logger } from '../../../lib/logger.js';
 import { getChatMessageService } from '../../session/chat-messages/chat-message-current.js';
 import { isChatSendable } from '../../session/chat-messages/chat-target.js';
@@ -119,9 +124,13 @@ function sameWords(a: string, b: string): boolean {
 }
 
 /** A room as a post names it. */
-function roomLabel(room: Room | null): string {
+function roomLabel(room: Room | null, bridges: RoomBridgeLookup): string {
   if (room === null) return 'another chat';
   if (room.kind !== 'channel') return 'a direct message';
+  // A bridged group nobody renamed is named by a stranger's choice; say so instead (DOR-4453).
+  if (isPlatformNamed(room, bridges.findBridgeByRoom(room.id)?.platformTitle)) {
+    return PLATFORM_NAMED_ROOM;
+  }
   return room.slug ? `#${room.slug}` : (sanitizeIdentity(room.title) ?? 'a channel');
 }
 
@@ -307,7 +316,7 @@ export class RoomHandoffs {
       this.pending.delete(settled);
       if (this.chains.get(key) === chain) this.chains.delete(key);
     });
-    const target = roomLabel(this.core.store.getRoom(roomId));
+    const target = roomLabel(this.core.store.getRoom(roomId), this.core.bridges);
     return {
       posted: false,
       handedOff: true,
@@ -341,7 +350,12 @@ export class RoomHandoffs {
             (claim) => claim.authorId === authorId && claim.sessionId === sessionId
           )?.roomId;
     if (roomId === undefined) {
-      return { sessionId, roomId: null, label: roomLabel(null), requester: null };
+      return {
+        sessionId,
+        roomId: null,
+        label: roomLabel(null, this.core.bridges),
+        requester: null,
+      };
     }
     const room = this.core.store.getRoom(roomId);
     const turn = this.core.triggers.activeTurnHere(roomId, authorId);
@@ -350,7 +364,7 @@ export class RoomHandoffs {
       asked && asked.kind === 'post' && asked.authorId !== authorId
         ? nameForAgents(this.core, asked.authorId)
         : null;
-    return { sessionId, roomId, label: roomLabel(room), requester };
+    return { sessionId, roomId, label: roomLabel(room, this.core.bridges), requester };
   }
 
   /** Run one hand-off in its seat, waiting out a busy one, and send the answer back. */
@@ -368,7 +382,7 @@ export class RoomHandoffs {
           room,
           entry: latest,
           authorId: handoff.authorId,
-          prompt: seatPrompt(handoff, roomLabel(room)),
+          prompt: seatPrompt(handoff, roomLabel(room, this.core.bridges)),
           carried: withRoomMarks(this.core, handoff.authorId, handoff.carried, room, latest),
           onClaimed: (dispatchId) => {
             handoff.dispatchId = dispatchId;
@@ -427,7 +441,7 @@ export class RoomHandoffs {
   /** Send a hand-off's answer back to where it came from. Never throws. */
   private async report(handoff: RoomHandoff, outcome: HandoffOutcome): Promise<void> {
     const name = nameForAgents(this.core, handoff.authorId, { sentenceStart: true }) ?? 'An agent';
-    const target = roomLabel(this.core.store.getRoom(handoff.roomId));
+    const target = roomLabel(this.core.store.getRoom(handoff.roomId), this.core.bridges);
     const body = buildHandoffNotice(
       name,
       handoff.authorId,

@@ -76,12 +76,21 @@ describe('TASK_WRITE_POLICY drift guard', () => {
     expect(TASK_WRITE_POLICY.permissionMode).toBe('operator-only');
     expect(TASK_WRITE_POLICY.status).toBe('operator-only');
     expect([...OPERATOR_ONLY_TASK_FIELDS].sort()).toEqual([
+      'acceptLooserThanRequested',
       'approvalSurface',
+      'approvedAllow',
       'approvedPromptHash',
       'expectedApprovalRevision',
       'permissionMode',
       'status',
     ]);
+  });
+
+  it('lets agents request limits but never apply them', () => {
+    expect(TASK_WRITE_POLICY.requestedPermissionMode).toBe('agent-writable');
+    expect(TASK_WRITE_POLICY.requestedAllow).toBe('agent-writable');
+    expect(TASK_WRITE_POLICY.approvedAllow).toBe('operator-only');
+    expect(TASK_WRITE_POLICY.acceptLooserThanRequested).toBe('operator-only');
   });
 });
 

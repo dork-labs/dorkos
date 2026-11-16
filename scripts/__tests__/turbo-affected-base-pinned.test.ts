@@ -162,6 +162,7 @@ function captureVerifyTurboInvocations(): TurboInvocation[] {
 
   try {
     writeStub(fixtureDir, 'pnpm', 'exit 0');
+    writeStub(fixtureDir, 'load-average', 'echo 0');
     writeStub(fixtureDir, 'git', "printf '%s\\n' test-origin-main");
     writeStub(
       fixtureDir,
@@ -183,11 +184,9 @@ function captureVerifyTurboInvocations(): TurboInvocation[] {
         ...inheritedEnv,
         PATH: `${fixtureDir}:${inheritedEnv.PATH ?? ''}`,
         TURBO_CAPTURE: capturePath,
-        // The script wraps each Turbo call in the real host-wide heavy-run lock,
-        // whose `--job` wait is up to 30 minutes. On the shared Mac every slot is
-        // often held, and this test once waited 402s for a stubbed Turbo. The
-        // lock is not what this asserts, so turn it off (its documented opt-out).
-        DORKOS_HEAVY_LOCK: '0',
+        // The real wrappers only run stubs here; unrelated host jobs must not delay them.
+        DORKOS_HEAVY_LOCK_DIR: path.join(fixtureDir, 'locks'),
+        DORKOS_HEAVY_LOADAVG_CMD: path.join(fixtureDir, 'load-average'),
       },
     });
     expect(result.status, result.stderr || result.stdout).toBe(0);
@@ -269,8 +268,6 @@ describe('local turbo --affected gates pin their diff base', () => {
     expect(lint?.text).toContain('turbo lint --affected');
   });
 
-  // Spawns the real script: a shell, two bash wrappers and two node stubs.
-  // Under a load of 30-40 that has run past vitest's 5s default.
   it('runs verify tests through Turbo with the pre-push scheduling contract', () => {
     expect(captureVerifyTurboInvocations()).toEqual([
       {
@@ -282,5 +279,5 @@ describe('local turbo --affected gates pin their diff base', () => {
         base: 'test-origin-main',
       },
     ]);
-  }, 30_000);
+  });
 });

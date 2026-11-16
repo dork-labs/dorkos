@@ -41,6 +41,7 @@ export type { RoomBranchStatus, RoomRepoStatus } from '@dorkos/shared/room-repo'
 export { RoomRepoMutex, MAX_QUEUE_DEPTH } from './room-repo-mutex.js';
 export { ROOM_MD_FILENAME, ROOM_MD_SEED_COMMIT_MESSAGE, seedRoomMd } from './room-md.js';
 export { RoomConventions, ROOM_CONVENTIONS_TAG } from './room-conventions.js';
+export { fenceStaleBridgedRoomMdHeadings } from './bridged-room-md-heading.js';
 export { readRoomRepoConfig, type RoomRepoConfig } from './room-repo-config.js';
 export { GitUnavailableError } from './room-repo-git.js';
 export { RoomFilesService } from './room-files.js';

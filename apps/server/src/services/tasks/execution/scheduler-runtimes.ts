@@ -58,6 +58,8 @@ export interface SchedulerAgentManager {
       permissionMode?: PermissionMode;
       cwd?: string;
       systemPromptAppend?: string;
+      /** Person-approved Claude Code rules scoped to this scheduled task's turn. */
+      taskApprovedAllow?: readonly string[];
       /**
        * Nobody can answer an approval card inside this turn, so it must not hold
        * for one (`MessageOpts.unattendedApprovals`, spec `agent-permissions` D6).

@@ -112,6 +112,10 @@ export function supportingLines(measures: HeartbeatMeasures): string[] {
     onTime
       ? `Promises kept on time: ${onTime}, ${partOfWords(s.todosOnTime)}.`
       : 'No promises came due.',
+    // How the rest went, so a moved or missed promise can't hide behind the rate (DOR-3034).
+    onTime
+      ? `Moved: ${s.todosMoved} of ${s.todosOnTime.whole}. Missed: ${s.todosMissed} of ${s.todosOnTime.whole}.`
+      : null,
     s.noEndBeat > 0 ? `Ended without a summary: ${s.noEndBeat}.` : null,
     s.triage.checks > 0
       ? `Cheap checks: ${s.triage.checks}, ${tokens(s.triage.tokens)} tokens.`

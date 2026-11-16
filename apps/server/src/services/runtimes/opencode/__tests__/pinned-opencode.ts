@@ -20,6 +20,7 @@
  *
  * @module services/runtimes/opencode/__tests__/pinned-opencode
  */
+import { spawn, type SpawnOptions, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -50,9 +51,6 @@ export const OFFLINE_PROXY_ENV: Readonly<Record<string, string>> = {
   NO_PROXY: '127.0.0.1,localhost',
   no_proxy: '127.0.0.1,localhost',
 };
-
-/** Binaries already verified in this process, so each is hashed once. */
-const verified = new Map<string, string>();
 
 /** A file's SHA-256, read a megabyte at a time. */
 function sha256Of(file: string): string {
@@ -87,8 +85,6 @@ export function pinnedOpenCode(
   const key = `${platform}-${arch}`;
   const expected = OPENCODE_PIN.sha256[key];
   if (!expected) return null;
-  const cached = verified.get(key);
-  if (cached) return cached;
   const manifestPath = resolveOpenCodePlatformManifest(key);
   const { version } = JSON.parse(fs.readFileSync(manifestPath, 'utf8')) as { version: string };
   if (version !== OPENCODE_PIN.version) {
@@ -98,6 +94,81 @@ export function pinnedOpenCode(
   if (sha256Of(binary) !== expected) {
     throw new Error(`${binary} does not match its pinned SHA-256; refusing to run it`);
   }
-  verified.set(key, binary);
   return binary;
+}
+
+/** Verify bytes afresh, including after a failed operation on a disposable fixture. */
+export async function withUnchangedBinary<T>(
+  binary: string,
+  expected: string,
+  run: () => Promise<T>
+): Promise<T> {
+  const verify = () => {
+    if (sha256Of(binary) !== expected)
+      throw new Error(`${binary} does not match its pinned SHA-256`);
+  };
+  verify();
+  try {
+    return await run();
+  } finally {
+    verify();
+  }
+}
+
+/** Pin one real spawn, including sidecars launched through the production manager. */
+export function guardedOpenCodeSpawn(
+  spawnBinary: (
+    binary: string,
+    args: readonly string[],
+    options: SpawnOptions
+  ) => ReturnType<typeof spawn>,
+  binary: string,
+  args: readonly string[],
+  options: SpawnOptions
+) {
+  if (pinnedOpenCode() !== binary) throw new Error('Unexpected OpenCode binary');
+  const expected = OPENCODE_PIN.sha256[`${process.platform}-${process.arch}`]!;
+  const config = JSON.parse(String(options.env?.OPENCODE_CONFIG_CONTENT ?? '{}')) as Record<
+    string,
+    unknown
+  >;
+  const child = spawnBinary(binary, args, {
+    ...options,
+    env: {
+      ...options.env,
+      OPENCODE_DISABLE_AUTOUPDATE: '1',
+      OPENCODE_CONFIG_CONTENT: JSON.stringify({ ...config, autoupdate: false }),
+    },
+  });
+  const verified = withUnchangedBinary(
+    binary,
+    expected,
+    () => new Promise<void>((resolve) => child.once('close', () => resolve()))
+  );
+  // Consumers await this after reaping; retain rejection without an unhandled event meanwhile.
+  void verified.catch(() => undefined);
+  return { child, verified };
+}
+
+/** Run a pinned binary without self-updates; reap it before checking its bytes again. */
+export async function runPinnedOpenCode<T>(
+  args: string[],
+  options: { cwd: string; env: Record<string, string> },
+  run: (child: ChildProcessWithoutNullStreams) => Promise<T>
+): Promise<T> {
+  const binary = pinnedOpenCode();
+  if (!binary) throw new Error('No pinned OpenCode binary for this platform');
+  const { child, verified } = guardedOpenCodeSpawn(spawn, binary, args, {
+    ...options,
+    stdio: ['pipe', 'pipe', 'pipe'],
+  });
+  const streams = child as ChildProcessWithoutNullStreams;
+  streams.stdin.end();
+  const failed = new Promise<never>((_, reject) => child.once('error', reject));
+  try {
+    return await Promise.race([run(streams), failed]);
+  } finally {
+    child.kill('SIGKILL');
+    await verified;
+  }
 }

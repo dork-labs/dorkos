@@ -3,7 +3,8 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { expandTilde } from '../../../lib/boundary.js';
 import { isProtectedLaunchFolder } from '../../session/launch/launch-caller.js';
-import type { CreateScheduledTaskRefusal, TaskLifecycleDeps } from './create-task.js';
+import type { CreateScheduledTaskRefusal } from './create-task.js';
+import type { TaskLifecycleDeps } from './create-task-deps.js';
 
 /** A schedule without a known agent cannot inherit the server's working folder. */
 const UNKNOWN_HOME =

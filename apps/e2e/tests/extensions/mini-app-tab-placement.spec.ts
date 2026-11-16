@@ -1,5 +1,6 @@
 import { test, expect, type APIRequestContext, type Page } from '@playwright/test';
 import { RightPanelPage } from '../../pages/RightPanelPage.js';
+import { appFrame, appPage } from '../../pages/app-frame.js';
 
 /**
  * Where a mini app's right-panel tab shows (spec `mini-app-placement`), seen in
@@ -23,6 +24,8 @@ const API_URL = `http://localhost:${MOCK_PORT}`;
 const HELLO = 'hello-world';
 /** Its right-panel tab's namespaced contribution id, as `ui.panelTabs` stores it. */
 const HELLO_TAB = 'hello-world:hello-panel';
+/** Its name, which titles the sandboxed frame each of its views runs in. */
+const HELLO_NAME = 'Hello World';
 
 /** Turn a core extension on or off through the same route Settings uses. */
 async function setEnabled(request: APIRequestContext, id: string, enabled: boolean) {
@@ -63,6 +66,21 @@ async function openPanelOn(page: Page, path: string): Promise<RightPanelPage> {
   await panel.goto(path);
   await panel.ensureTabStripOpen();
   return panel;
+}
+
+/** The tab panel showing hello-world's view: the one holding its frame (DOR-3293). */
+function helloBody(page: Page) {
+  return page.getByRole('tabpanel').filter({ has: page.locator(`iframe[title="${HELLO_NAME}"]`) });
+}
+
+/** What hello-world's tab says, drawn inside its own sandboxed frame. */
+function helloBodyText(page: Page) {
+  return appFrame(helloBody(page), HELLO_NAME).getByText(/Toggle Tab Dot/);
+}
+
+/** hello-world's page heading, drawn inside its own sandboxed frame. */
+function helloHeading(page: Page) {
+  return appFrame(appPage(page), HELLO_NAME).getByRole('heading', { name: 'Hello, there' });
 }
 
 /** The hello-world tab in the panel's strip. */
@@ -148,19 +166,18 @@ test.describe('Mini app tab placement — hide here, show here, open full page',
     const panel = await openPanelOn(page, '/activity');
     await helloTab(panel).click();
     await expect(helloTab(panel)).toHaveAttribute('aria-selected', 'true');
-    const body = page.getByRole('tabpanel').filter({ hasText: 'Toggle Tab Dot' });
-    await expect(body).toBeVisible();
+    await expect(helloBodyText(page)).toBeVisible();
     const placementBefore = await savedPlacements(request);
 
     await panel.header.getByRole('button', { name: 'Close Hello view', exact: true }).click();
     await expect(helloTab(panel)).toHaveCount(0);
-    await expect(body).toHaveCount(0);
+    await expect(helloBody(page)).toHaveCount(0);
     expect(await savedPlacements(request)).toEqual(placementBefore);
 
     await panel.header.getByRole('button', { name: 'Add view', exact: true }).click();
     await page.getByRole('menuitem', { name: 'Hello', exact: true }).click();
     await expect(helloTab(panel)).toHaveAttribute('aria-selected', 'true');
-    await expect(body).toBeVisible();
+    await expect(helloBodyText(page)).toBeVisible();
     expect(await savedPlacements(request)).toEqual(placementBefore);
   });
 
@@ -171,14 +188,13 @@ test.describe('Mini app tab placement — hide here, show here, open full page',
     const panel = await openPanelOn(page, '/activity');
     await helloTab(panel).click();
     await expect(helloTab(panel)).toHaveAttribute('aria-selected', 'true');
-    const body = page.getByRole('tabpanel').filter({ hasText: 'Toggle Tab Dot' });
-    await expect(body).toBeVisible();
+    await expect(helloBodyText(page)).toBeVisible();
 
     try {
       await setEnabled(request, HELLO, false);
       // The live extension reload must unregister its contribution, without navigation/reload.
       await expect(helloTab(panel)).toHaveCount(0);
-      await expect(body).toHaveCount(0);
+      await expect(helloBody(page)).toHaveCount(0);
       await expect(panel.pulseTab).toHaveAttribute('aria-selected', 'true');
       await expect(panel.pulsePanel).toBeVisible();
       await panel.header.getByRole('button', { name: 'Add view', exact: true }).click();
@@ -202,7 +218,7 @@ test.describe('Mini app tab placement — hide here, show here, open full page',
     await menu.getByRole('menuitem', { name: 'Open full page' }).click();
 
     await expect(page).toHaveURL(/\/x\/hello-world$/);
-    await expect(page.getByRole('heading', { name: 'Hello, there' })).toBeVisible();
+    await expect(helloHeading(page)).toBeVisible();
   });
 
   test.describe('on a phone', () => {
@@ -212,7 +228,7 @@ test.describe('Mini app tab placement — hide here, show here, open full page',
       const panel = await openPanelOn(page, '/activity');
       await helloTab(panel).tap();
       await expect(helloTab(panel)).toHaveAttribute('aria-selected', 'true');
-      await expect(page.getByRole('tabpanel').filter({ hasText: 'Toggle Tab Dot' })).toBeVisible();
+      await expect(helloBodyText(page)).toBeVisible();
 
       const add = panel.header.getByRole('button', { name: 'Add view', exact: true });
       await expect(add).toBeInViewport();
@@ -228,7 +244,7 @@ test.describe('Mini app tab placement — hide here, show here, open full page',
       await expect(fullPage).toBeInViewport();
       await fullPage.tap();
       await expect(page).toHaveURL(/\/x\/hello-world$/);
-      await expect(page.getByRole('heading', { name: 'Hello, there' })).toBeVisible();
+      await expect(helloHeading(page)).toBeVisible();
       expect(await savedPlacements(request)).toEqual([]);
     });
   });

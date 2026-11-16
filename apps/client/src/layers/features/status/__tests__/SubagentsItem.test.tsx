@@ -34,7 +34,7 @@ describe('SubagentsItem', () => {
   it('says nothing extra while the agent is still talking', () => {
     render(<SubagentsItem count={1} running={[ROW]} waiting={false} />);
 
-    expect(screen.getByLabelText('1 subagent running')).toBeInTheDocument();
+    expect(screen.getByLabelText('1 background task running')).toBeInTheDocument();
     expect(screen.queryByText(/background/i)).not.toBeInTheDocument();
     expect(screen.getByText('Run the test suite')).toBeInTheDocument();
   });
@@ -44,13 +44,13 @@ describe('SubagentsItem', () => {
   // One phrasing; only the number in it moves.
   it('keeps one accessible phrasing across the turn boundary', () => {
     const { rerender } = render(<SubagentsItem count={2} running={[ROW]} waiting={false} />);
-    expect(screen.getByLabelText('2 subagents running')).toBeInTheDocument();
+    expect(screen.getByLabelText('2 background tasks running')).toBeInTheDocument();
 
     rerender(<SubagentsItem count={2} running={[ROW]} waiting />);
-    expect(screen.getByLabelText('2 subagents running')).toBeInTheDocument();
+    expect(screen.getByLabelText('2 background tasks running')).toBeInTheDocument();
 
     rerender(<SubagentsItem count={1} running={[ROW]} waiting />);
-    expect(screen.getByLabelText('1 subagent running')).toBeInTheDocument();
+    expect(screen.getByLabelText('1 background task running')).toBeInTheDocument();
   });
 
   // DOR-1100: the same number after the turn closes is the reason the session
@@ -58,7 +58,7 @@ describe('SubagentsItem', () => {
   it('explains the wait once the agent has stopped talking', () => {
     render(<SubagentsItem count={2} running={[ROW]} waiting />);
 
-    expect(screen.getByLabelText('2 subagents running')).toBeInTheDocument();
+    expect(screen.getByLabelText('2 background tasks running')).toBeInTheDocument();
     expect(
       screen.getByText('Still working. The agent continues when they finish.')
     ).toBeInTheDocument();

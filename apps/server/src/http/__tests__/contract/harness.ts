@@ -25,7 +25,7 @@ import { randomUUID } from 'node:crypto';
 import http from 'node:http';
 import { once } from 'node:events';
 import { existsSync } from 'node:fs';
-import { mkdir, mkdtemp, readFile, rename, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rename, writeFile } from 'node:fs/promises';
 import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -39,7 +39,9 @@ import {
   SERVER_DIR,
   TSX_ESCAPE_FLAG,
   buildContractServer,
+  isAlive,
 } from './server-build.js';
+import { stopServerAndRemove, whenExited } from './stop-server.js';
 
 const REPO_ROOT = path.resolve(SERVER_DIR, '../..');
 // The CLI script run by this Node, not the `.bin` shim, so it spawns the same way everywhere.
@@ -171,16 +173,6 @@ function runDir(): string {
   const dir = inject('contractServerBuildDir');
   if (!dir) throw new Error('No contract build folder: is global-setup.ts in vitest.config.ts?');
   return dir;
-}
-
-/** Whether process `pid` is still running (`EPERM` means it is, just not ours). */
-function isAlive(pid: number): boolean {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch (error) {
-    return (error as NodeJS.ErrnoException).code === 'EPERM';
-  }
 }
 
 /**
@@ -336,6 +328,7 @@ async function bootOnce(
   });
   running.add(child);
   child.once('exit', () => running.delete(child));
+  const exited = whenExited(child);
   let log = '';
   const keep = (chunk: Buffer): void => {
     log = (log + chunk.toString()).slice(-8_000);
@@ -344,16 +337,7 @@ async function bootOnce(
   child.stderr!.on('data', keep);
 
   const baseUrl = `http://127.0.0.1:${port}`;
-  const close = async (): Promise<void> => {
-    if (child.exitCode === null) {
-      child.kill('SIGTERM');
-      const exited = once(child, 'exit');
-      const timer = setTimeout(() => child.kill('SIGKILL'), 10_000);
-      await exited;
-      clearTimeout(timer);
-    }
-    await rm(dorkHome, { recursive: true, force: true });
-  };
+  const close = (): Promise<void> => stopServerAndRemove(child, exited, dorkHome);
   try {
     await waitUntilUp(baseUrl, version, child, () => log);
   } catch (error) {
