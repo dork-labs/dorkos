@@ -2,6 +2,10 @@
 covers:
   - 'feat(client): the Agent browser says who has the page, and using it takes the page (DOR-4428)'
   - 'fix(client): the browser pill says when no page is open yet, and its phone sheet title lines up (DOR-4428)'
+  - "refactor(dev): the Agent browser's playground sections get their own file"
+  - 'feat(client): the canvas browser and the Agent browser share one browser chrome (DOR-4427)'
+  - "fix(client): address rules search pasted errors and keep the canvas's local files (DOR-4419)"
+  - 'feat(client): the browser address bar reads what you type the way a browser does (DOR-4419)'
 ---
 
 ### Changed
