@@ -32269,7 +32269,8 @@
                             "type": "string"
                           },
                           "openedOverHttp": {
-                            "type": "boolean"
+                            "type": "boolean",
+                            "description": "True while this tab is on a site DorkOS opened over plain http because https failed. The page is not secure: never type a password or payment details."
                           },
                           "canGoBack": {
                             "type": "boolean"
@@ -32633,7 +32634,8 @@
                             "type": "string"
                           },
                           "openedOverHttp": {
-                            "type": "boolean"
+                            "type": "boolean",
+                            "description": "True while this tab is on a site DorkOS opened over plain http because https failed. The page is not secure: never type a password or payment details."
                           },
                           "canGoBack": {
                             "type": "boolean"
@@ -32993,7 +32995,8 @@
                             "type": "string"
                           },
                           "openedOverHttp": {
-                            "type": "boolean"
+                            "type": "boolean",
+                            "description": "True while this tab is on a site DorkOS opened over plain http because https failed. The page is not secure: never type a password or payment details."
                           },
                           "canGoBack": {
                             "type": "boolean"
@@ -33233,7 +33236,8 @@
                             "type": "string"
                           },
                           "openedOverHttp": {
-                            "type": "boolean"
+                            "type": "boolean",
+                            "description": "True while this tab is on a site DorkOS opened over plain http because https failed. The page is not secure: never type a password or payment details."
                           },
                           "canGoBack": {
                             "type": "boolean"
@@ -33494,7 +33498,8 @@
                             "type": "string"
                           },
                           "openedOverHttp": {
-                            "type": "boolean"
+                            "type": "boolean",
+                            "description": "True while this tab is on a site DorkOS opened over plain http because https failed. The page is not secure: never type a password or payment details."
                           },
                           "canGoBack": {
                             "type": "boolean"
@@ -33732,7 +33737,8 @@
                             "type": "string"
                           },
                           "openedOverHttp": {
-                            "type": "boolean"
+                            "type": "boolean",
+                            "description": "True while this tab is on a site DorkOS opened over plain http because https failed. The page is not secure: never type a password or payment details."
                           },
                           "canGoBack": {
                             "type": "boolean"
@@ -33948,7 +33954,8 @@
                             "type": "string"
                           },
                           "openedOverHttp": {
-                            "type": "boolean"
+                            "type": "boolean",
+                            "description": "True while this tab is on a site DorkOS opened over plain http because https failed. The page is not secure: never type a password or payment details."
                           },
                           "canGoBack": {
                             "type": "boolean"
@@ -34704,7 +34711,8 @@
                             "type": "string"
                           },
                           "openedOverHttp": {
-                            "type": "boolean"
+                            "type": "boolean",
+                            "description": "True while this tab is on a site DorkOS opened over plain http because https failed. The page is not secure: never type a password or payment details."
                           },
                           "canGoBack": {
                             "type": "boolean"
@@ -35073,7 +35081,8 @@
                             "type": "string"
                           },
                           "openedOverHttp": {
-                            "type": "boolean"
+                            "type": "boolean",
+                            "description": "True while this tab is on a site DorkOS opened over plain http because https failed. The page is not secure: never type a password or payment details."
                           },
                           "canGoBack": {
                             "type": "boolean"
@@ -35443,7 +35452,8 @@
                             "type": "string"
                           },
                           "openedOverHttp": {
-                            "type": "boolean"
+                            "type": "boolean",
+                            "description": "True while this tab is on a site DorkOS opened over plain http because https failed. The page is not secure: never type a password or payment details."
                           },
                           "canGoBack": {
                             "type": "boolean"
@@ -35813,7 +35823,8 @@
                             "type": "string"
                           },
                           "openedOverHttp": {
-                            "type": "boolean"
+                            "type": "boolean",
+                            "description": "True while this tab is on a site DorkOS opened over plain http because https failed. The page is not secure: never type a password or payment details."
                           },
                           "canGoBack": {
                             "type": "boolean"
