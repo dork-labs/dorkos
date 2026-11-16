@@ -216,6 +216,7 @@ describe('POST /api/tasks resolves an omitted permission mode', () => {
           store,
           scheduler,
           registrar: new TaskRegistrar({ store, scheduler }),
+          defaultTimezone: () => 'UTC',
           dorkHome: DORK_HOME,
         }),
       })
@@ -317,6 +318,7 @@ describe('the guards that stand between an agent and a raised task', () => {
           store,
           scheduler,
           registrar: new TaskRegistrar({ store, scheduler }),
+          defaultTimezone: () => 'UTC',
           dorkHome: DORK_HOME,
         }),
       })
@@ -398,6 +400,7 @@ describe('the un-clamp, for a trusted caller who named no mode', () => {
           store,
           scheduler,
           registrar: new TaskRegistrar({ store, scheduler }),
+          defaultTimezone: () => 'UTC',
           dorkHome: DORK_HOME,
         }),
       })

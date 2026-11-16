@@ -167,6 +167,7 @@ describe('approving a proposed schedule can carry the operator’s trust stop', 
             store,
             scheduler,
             registrar: new TaskRegistrar({ store, scheduler }),
+            defaultTimezone: () => 'UTC',
             dorkHome,
             meshCore: {
               getProjectPath: (id: string) => (id === AGENT_ID ? meshProjectPath : null),

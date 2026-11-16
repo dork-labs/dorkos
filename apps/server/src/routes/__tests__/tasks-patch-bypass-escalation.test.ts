@@ -159,6 +159,7 @@ describe('an agent cannot keep an approved bypass by rewriting the work', () => 
           store,
           scheduler,
           registrar: new TaskRegistrar({ store, scheduler }),
+          defaultTimezone: () => 'UTC',
           dorkHome,
         }),
       })

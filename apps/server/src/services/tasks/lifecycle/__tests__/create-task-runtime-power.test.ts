@@ -125,6 +125,7 @@ async function create(input: Record<string, unknown>) {
     {
       store,
       registrar: null,
+      defaultTimezone: () => 'UTC',
       dorkHome,
       meshCore: { getProjectPath: () => agentProject } as never,
     },
