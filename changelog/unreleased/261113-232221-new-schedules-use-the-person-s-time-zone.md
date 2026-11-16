@@ -1,6 +1,7 @@
 ---
 covers:
   - "fix(schedules): new schedules use the person's time zone, rows show their time, and a wrong-zone offer (DOR-4120)"
+  - 'fix(schedules): the wrong-zone offer says where it is set, with Use my time zone or Keep it as set (DOR-4120)'
 ---
 
 ### Fixed

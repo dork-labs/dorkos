@@ -140,6 +140,14 @@ function nextUtcHalfPastEight(): string {
   return next.toISOString();
 }
 
+/** The next 11:30 PM in Chicago (05:30 UTC in November): "today" until then. */
+function nextChicagoHalfPastEleven(): string {
+  const next = new Date();
+  next.setUTCHours(5, 30, 0, 0);
+  if (next.getTime() <= Date.now()) next.setUTCDate(next.getUTCDate() + 1);
+  return next.toISOString();
+}
+
 /** The next weekday 9:00 AM in Chicago (15:00 UTC in November), from now. */
 function nextWeekdayNineChicago(): string {
   const next = new Date();
@@ -175,10 +183,38 @@ const LOCAL_WEEKDAY_SCHEDULE: Task = {
   nextRun: nextWeekdayNineChicago(),
 };
 
+/** A local schedule whose next run is later today for a reader in Chicago. */
+const LOCAL_TONIGHT_SCHEDULE: Task = {
+  ...RUNNING_SCHEDULE,
+  id: 'sched-day-wrap',
+  name: 'Write the day’s wrap-up',
+  cron: '30 23 * * *',
+  timezone: 'America/Chicago',
+  defaultCron: '30 23 * * *',
+  defaultTimezone: 'America/Chicago',
+  nextRun: nextChicagoHalfPastEleven(),
+};
+
+/** One list per state, so each can be looked at (and shot) on its own. */
+const YOUR_TIME_STATES: { shot: string; label: string; tasks: Task[] }[] = [
+  { shot: 'tz-today', label: 'Next run later today', tasks: [LOCAL_TONIGHT_SCHEDULE] },
+  {
+    shot: 'tz-tomorrow',
+    label: 'Next run tomorrow, or on a weekday name within the week',
+    tasks: [LOCAL_WEEKDAY_SCHEDULE],
+  },
+  {
+    shot: 'tz-overnight',
+    label: 'Set in UTC, overnight for a reader in Chicago: the offer',
+    tasks: [UTC_OVERNIGHT_SCHEDULE],
+  },
+  { shot: 'tz-empty', label: 'No schedules yet', tasks: [] },
+];
+
 /** Rows read in the viewer's own time, with the wrong-zone offer (DOR-4120). */
 function TasksYourTimeShowcase() {
-  const client = useMemo(
-    () => makeTasksQueryClient(true, [UTC_OVERNIGHT_SCHEDULE, LOCAL_WEEKDAY_SCHEDULE]),
+  const clients = useMemo(
+    () => YOUR_TIME_STATES.map((state) => makeTasksQueryClient(true, state.tasks)),
     []
   );
   return (
@@ -186,19 +222,18 @@ function TasksYourTimeShowcase() {
       title="Schedules in your time"
       description="Rows read in the viewer's own time zone, 12-hour, with no seconds. A schedule set in another zone that runs overnight for the viewer offers to keep its clock time in theirs."
     >
-      <ShowcaseLabel>
-        Set in UTC, overnight for a reader in Chicago; and one already local
-      </ShowcaseLabel>
-      <ShowcaseDemo>
-        <QueryClientProvider client={client}>
-          <div
-            className="bg-background max-w-2xl rounded-lg border"
-            data-shot="schedules-your-time"
-          >
-            <TasksPanel />
-          </div>
-        </QueryClientProvider>
-      </ShowcaseDemo>
+      {YOUR_TIME_STATES.map((state, index) => (
+        <div key={state.shot}>
+          <ShowcaseLabel>{state.label}</ShowcaseLabel>
+          <ShowcaseDemo>
+            <QueryClientProvider client={clients[index]!}>
+              <div className="bg-background max-w-2xl rounded-lg border" data-shot={state.shot}>
+                <TasksPanel />
+              </div>
+            </QueryClientProvider>
+          </ShowcaseDemo>
+        </div>
+      ))}
     </PlaygroundSection>
   );
 }

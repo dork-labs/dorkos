@@ -30,9 +30,8 @@ export function WrongTimezoneOffer({ task, viewerTimezone }: WrongTimezoneOfferP
       className="bg-muted/40 mt-1 flex flex-wrap items-center gap-x-1.5 gap-y-1 rounded-md px-2 py-1 text-xs"
     >
       <strong className="text-status-warning-fg font-medium">
-        Runs at {offer.viewerTime} your time.
+        Set in {offer.scheduleZone}, so it runs at {offer.viewerTime} for you.
       </strong>
-      <span className="text-muted-foreground">It’s set in {offer.scheduleZone}.</span>
       {/* The two answers wrap together, so neither is left alone on a line. */}
       <span className="inline-flex flex-wrap items-center gap-x-3 sm:gap-x-1.5">
         <button
@@ -48,7 +47,7 @@ export function WrongTimezoneOffer({ task, viewerTimezone }: WrongTimezoneOfferP
             updateTask.mutate({ id: task.id, timezone: viewerTimezone });
           }}
         >
-          Use my time ({offer.scheduleTime})
+          Use my time zone
         </button>
         <span className="text-muted-foreground hidden sm:inline" aria-hidden="true">
           ·
@@ -65,7 +64,7 @@ export function WrongTimezoneOffer({ task, viewerTimezone }: WrongTimezoneOfferP
             dismiss(task.id);
           }}
         >
-          Keep {offer.scheduleZone}
+          Keep it as set
         </button>
       </span>
     </div>

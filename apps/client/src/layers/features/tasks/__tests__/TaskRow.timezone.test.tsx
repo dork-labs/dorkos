@@ -62,6 +62,9 @@ const overnight: Task = {
   proposedByName: null,
   origin: null,
   reasonSource: null,
+  approvedAt: null,
+  approvedBy: null,
+  approvedVia: null,
   nextRuns: [],
 };
 
@@ -148,10 +151,9 @@ describe('TaskRow viewer-local timing', () => {
   it('shows the offer when a fixed UTC time lands overnight', () => {
     renderRow(overnight);
 
-    expect(screen.getByText('Runs at 2:30 AM your time.')).toBeTruthy();
-    expect(screen.getByText('It’s set in UTC.')).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Use my time (8:30 AM)' })).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Keep UTC' })).toBeTruthy();
+    expect(screen.getByText('Set in UTC, so it runs at 2:30 AM for you.')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Use my time zone' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Keep it as set' })).toBeTruthy();
   });
 
   it('hides the offer when the browser cannot name its zone', () => {
@@ -184,7 +186,7 @@ describe('TaskRow viewer-local timing', () => {
     });
     renderRow(overnight, transport);
 
-    fireEvent.click(screen.getByRole('button', { name: 'Use my time (8:30 AM)' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Use my time zone' }));
     await waitFor(() =>
       expect(transport.updateTask).toHaveBeenCalledWith('utc-morning', {
         timezone: 'America/Chicago',
@@ -194,7 +196,7 @@ describe('TaskRow viewer-local timing', () => {
 
   it('keeps the stored zone and stays hidden after remount', () => {
     const first = renderRow(overnight);
-    fireEvent.click(screen.getByRole('button', { name: 'Keep UTC' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Keep it as set' }));
     expect(document.querySelector('[data-slot="wrong-timezone-offer"]')).toBeNull();
     expect(localStorage.getItem('dorkos:wrong-timezone-dismissals-v1')).toContain('utc-morning');
     first.unmount();

@@ -18,8 +18,6 @@ export interface FixedCronTime {
 export interface WrongTimezoneOfferDetails {
   /** The schedule's zone as a person reads it. */
   scheduleZone: string;
-  /** The cron's wall-clock time in its own zone. */
-  scheduleTime: string;
   /** The next run's wall-clock time in the viewer's zone. */
   viewerTime: string;
 }
@@ -169,7 +167,6 @@ export function wrongTimezoneOffer(
     if (!viewerTime || !Number.isInteger(hour) || hour < 0 || hour >= 6) return null;
     return {
       scheduleZone: scheduleZoneLabel(task.timezone),
-      scheduleTime: formatWallTime(fixed),
       viewerTime,
     };
   } catch {
@@ -212,16 +209,6 @@ function formatInstantTime(instant: string, timezone: string): string | null {
     minute: '2-digit',
     hour12: true,
   }).format(date);
-}
-
-/** Format a cron's own fixed wall-clock time without applying a zone. */
-function formatWallTime({ hour, minute }: FixedCronTime): string {
-  return new Intl.DateTimeFormat('en-US', {
-    timeZone: 'UTC',
-    hour: 'numeric',
-    minute: '2-digit',
-    hour12: true,
-  }).format(new Date(Date.UTC(2020, 0, 1, hour, minute)));
 }
 
 /** Whether one instant falls on the same calendar day in two zones. */
