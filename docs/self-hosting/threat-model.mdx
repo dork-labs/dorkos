@@ -107,7 +107,7 @@ On **Trusted**, an Allowed area covers ordinary removals, with an Activity recor
 
 Some changes always need a person's decision. At Full autonomy, DorkOS refuses certain person-only changes instead of opening a card. A change that only tightens protected settings can proceed, with an Activity entry. Full autonomy does not make every action Allowed. These checks run inside DorkOS's tool and capability paths; they do not isolate a program running as your operating-system user.
 
-Codex and OpenCode receive DorkOS tools through a separate, authenticated runtime listener. It binds calls to the active turn's runtime, chat, registered agent, and working directory. It is separate from public `/mcp`, so disabling that public endpoint does not remove an agent's own tools. Calls still pass through the capability checks. The old single-tool Codex UI bridge is retired.
+Codex, OpenCode and Doe receive DorkOS tools through a separate, authenticated runtime listener. It binds calls to the active turn's runtime, chat, registered agent, and working directory. It is separate from public `/mcp`, so disabling that public endpoint does not remove an agent's own tools. Calls still pass through the capability checks. This covers DorkOS actions only: OpenCode and Doe shell commands at Full aren't checked against protected files yet (DOR-4522). The old single-tool Codex UI bridge is retired.
 
 <Callout type="warn">
   **How much that gate is worth depends on whether login is on, and the two answers are genuinely
