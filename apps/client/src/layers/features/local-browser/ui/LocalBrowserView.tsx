@@ -207,6 +207,8 @@ export function LocalBrowserView({
     // eslint-disable-next-line jsx-a11y/no-static-element-interactions -- the panel's keys reach it from the controls inside; it takes no focus itself
     <div
       data-slot="local-browser-view"
+      // Esc here reverts the address or stops a load; it never closes the sheet around it.
+      data-keeps-escape
       onKeyDown={onKeyDown}
       className="flex min-h-48 flex-1 flex-col"
     >

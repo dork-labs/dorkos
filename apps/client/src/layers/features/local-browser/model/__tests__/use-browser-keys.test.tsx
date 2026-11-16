@@ -7,8 +7,9 @@
  * their chords.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { isMac } from '@/layers/shared/lib';
+import { BrowserChrome } from '@/layers/shared/ui';
 import { useBrowserKeys, type BrowserKeyActions, type BrowserShortcut } from '../use-browser-keys';
 
 // Every chord is pressed with the platform's own modifier: ⌘ on a Mac, Ctrl elsewhere.
@@ -201,6 +202,87 @@ describe('useBrowserKeys: focus in the panel', () => {
     expect(press(field, { ...MOD, key: 'c', code: 'KeyC' })).toBe(false);
     expect(press(field, { ...MOD, key: 'a', code: 'KeyA' })).toBe(false);
     for (const spy of Object.values(handlers)) expect(spy).not.toHaveBeenCalled();
+  });
+});
+
+/** The panel with the real browser row in it, the way the Agent browser draws it. */
+function RowHarness({
+  handlers,
+  loading = false,
+}: {
+  handlers: ReturnType<typeof actions>;
+  loading?: boolean;
+}) {
+  const onKeyDown = useBrowserKeys({ connectionId: 'owned', loading, ...handlers });
+  return (
+    // eslint-disable-next-line jsx-a11y/no-static-element-interactions -- mirrors the panel root
+    <div onKeyDown={onKeyDown}>
+      <BrowserChrome
+        url="https://northwind.example/pricing"
+        canBack
+        canForward
+        onBack={vi.fn()}
+        onForward={vi.fn()}
+        onReload={vi.fn()}
+        loading={loading}
+        onStop={vi.fn()}
+        onSubmit={vi.fn()}
+      />
+    </div>
+  );
+}
+
+describe('useBrowserKeys: focus in the browser row (spec §13)', () => {
+  it('every key works from a row button', () => {
+    const handlers = actions();
+    render(<RowHarness handlers={handlers} loading />);
+    const reload = screen.getByRole('button', { name: 'Stop' });
+    expect(press(reload, { ...MOD, key: 'l', code: 'KeyL' })).toBe(true);
+    expect(press(reload, { ...MOD, key: 'r', code: 'KeyR' })).toBe(true);
+    expect(press(reload, { ...MOD, key: '[', code: 'BracketLeft' })).toBe(true);
+    expect(press(reload, { ...MOD, key: ']', code: 'BracketRight' })).toBe(true);
+    expect(press(reload, { key: 'Escape', code: 'Escape' })).toBe(true);
+    expect(press(reload, { ...MOD, shiftKey: true, key: 'C', code: 'KeyC' })).toBe(true);
+    expect(handlers.onFocusAddress).toHaveBeenCalledOnce();
+    expect(handlers.onReload).toHaveBeenCalledOnce();
+    expect(handlers.onBack).toHaveBeenCalledOnce();
+    expect(handlers.onForward).toHaveBeenCalledOnce();
+    expect(handlers.onStop).toHaveBeenCalledOnce();
+    expect(handlers.onCopyAddress).toHaveBeenCalledOnce();
+  });
+
+  it.skipIf(isMac)('Alt+← and Alt+→ work from a row button', () => {
+    const handlers = actions();
+    render(<RowHarness handlers={handlers} />);
+    const reload = screen.getByRole('button', { name: 'Reload' });
+    expect(press(reload, { altKey: true, key: 'ArrowLeft', code: 'ArrowLeft' })).toBe(true);
+    expect(press(reload, { altKey: true, key: 'ArrowRight', code: 'ArrowRight' })).toBe(true);
+    expect(handlers.onBack).toHaveBeenCalledOnce();
+    expect(handlers.onForward).toHaveBeenCalledOnce();
+  });
+
+  it('in the address field: ⌘L, ⌘R, ⌘[ ⌘] and ⌘⇧C work, and Esc reverts rather than stops', () => {
+    const handlers = actions();
+    render(<RowHarness handlers={handlers} loading />);
+    fireEvent.click(screen.getByRole('button', { name: /^Address:/ }));
+    const field = screen.getByRole('textbox', { name: 'Address' });
+    expect(press(field, { ...MOD, key: 'l', code: 'KeyL' })).toBe(true);
+    expect(press(field, { ...MOD, key: 'r', code: 'KeyR' })).toBe(true);
+    expect(press(field, { ...MOD, key: '[', code: 'BracketLeft' })).toBe(true);
+    expect(press(field, { ...MOD, key: ']', code: 'BracketRight' })).toBe(true);
+    expect(press(field, { ...MOD, shiftKey: true, key: 'C', code: 'KeyC' })).toBe(true);
+    expect(handlers.onFocusAddress).toHaveBeenCalledOnce();
+    expect(handlers.onReload).toHaveBeenCalledOnce();
+    expect(handlers.onBack).toHaveBeenCalledOnce();
+    expect(handlers.onForward).toHaveBeenCalledOnce();
+    expect(handlers.onCopyAddress).toHaveBeenCalledOnce();
+    // Esc while loading: the field puts the address back, and the load goes on.
+    act(() => {
+      press(field, { key: 'Escape', code: 'Escape' });
+    });
+    expect(handlers.onStop).not.toHaveBeenCalled();
+    expect(screen.queryByRole('textbox', { name: 'Address' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^Address:/ })).toBeInTheDocument();
   });
 });
 
