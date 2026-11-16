@@ -904,22 +904,24 @@ export class TaskSchedulerService {
    * @param task - The task whose cron fired, as it was registered.
    * @param fire - When croner's timer ran out and which occurrence it was
    *   waiting for. A bare `Date` is a fire instant with nothing captured.
+   * @returns The run row this fire opened, run or skipped, or `null` when it
+   *   opened none. A one-shot task gives its claim back on `null` (DOR-4315).
    */
-  private async dispatch(task: Task, fire: ScheduledFire | Date): Promise<void> {
+  private async dispatch(task: Task, fire: ScheduledFire | Date): Promise<TaskRun | null> {
     const { firedAt, expected } = fire instanceof Date ? { firedAt: fire, expected: null } : fire;
 
     // Production gate (ADR-285): suppress firing in non-production environments.
     // Crons still register, so display/next-run is unaffected — only firing stops.
     if (!this.config.mayFire) {
       logger.debug(`skipping "${task.name}" — firing suppressed (${this.config.firingReason})`);
-      return;
+      return null;
     }
 
     // Leader gate (ADR-285): only the dorkHome leader fires; followers no-op so
     // N processes sharing a dorkHome fire a scheduled tick exactly once.
     if (!this.isLeader) {
       logger.debug(`skipping "${task.name}" — not the scheduler leader`);
-      return;
+      return null;
     }
 
     // An agent changed outside DorkOS parks the schedules that follow it, so
@@ -929,12 +931,12 @@ export class TaskSchedulerService {
 
     // An agent's approval never covers a later version: one that no longer
     // matches is parked here instead of run (DOR-3703).
-    if (await parkIfAgentApprovalStale(task.id, this.store, this.meshCore)) return;
+    if (await parkIfAgentApprovalStale(task.id, this.store, this.meshCore)) return null;
     // Re-read task to check current state
     const current = this.store.getTask(task.id);
     if (!current || !current.enabled || current.status !== 'active') {
       logger.debug(`skipping "${task.name}" — disabled or not active`);
-      return;
+      return null;
     }
 
     // Which occurrence this fire stands for (DOR-2718), read off the schedule
@@ -994,7 +996,7 @@ export class TaskSchedulerService {
         logger.debug(
           `skipping "${task.name}" — tick ${new Date(tickKey).toISOString()} already dispatched`
         );
-        return;
+        return null;
       }
     } else {
       // No cron, so no occurrence to claim: only a one-shot task's one fire gets
@@ -1017,10 +1019,10 @@ export class TaskSchedulerService {
       if (pausedAgent && skipReason === AGENT_PAUSED_SKIP_REASON) {
         this.pauseHold.recordScheduledSkip(current.id, pausedAgent, run.id);
       }
-      return;
+      return run;
     }
 
-    await this.executeRun(current, run, checkedAgent);
+    return this.executeRun(current, run, checkedAgent).then(() => run);
   }
 
   /**

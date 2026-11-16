@@ -2,6 +2,7 @@
 covers:
   - 'feat(tasks): an agent sets up a one-shot task with its own exact commands, and takes them back, with no card (DOR-4315)'
   - "fix(tasks): a one-shot task's commands ride only while its agent is still at Full, and a fire that never ran gives its turn back (DOR-4315)"
+  - 'fix(tasks): a one-shot fire keeps its turn when it opened a run, however many old runs were pruned (DOR-4315)'
 ---
 
 ### Added

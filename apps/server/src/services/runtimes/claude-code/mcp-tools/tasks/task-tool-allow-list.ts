@@ -181,8 +181,11 @@ export async function settleAllowListCall(
 /**
  * The caller is the task's own agent, in its own chat, in a turn that read no
  * outside words, by an identity its own home vouches for.
+ *
+ * @param caller - Who is calling.
+ * @param owner - The home of the agent the task belongs to, when known.
  */
-function ownChatOwnTask(caller: AgentModeCaller, owner: string | undefined): boolean {
+export function ownChatOwnTask(caller: AgentModeCaller, owner: string | undefined): boolean {
   if (!caller.structural || caller.marked || !caller.agentPath) return false;
   if (caller.resolved !== 'home') return false;
   return sameHome(owner, caller.agentPath);

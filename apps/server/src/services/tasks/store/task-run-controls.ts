@@ -9,7 +9,7 @@
  */
 import { and, eq, isNull } from 'drizzle-orm';
 import { pulseSchedules, type Db } from '@dorkos/db';
-import type { Task } from '@dorkos/shared/types';
+import type { Task, TaskRun } from '@dorkos/shared/types';
 import { outsideAuditScope } from '../../audit/audit-context.js';
 import { parsePins, serializePins, type AllowListPins } from '../allow-list/allow-list-pins.js';
 
@@ -122,35 +122,33 @@ export function oneShotDue(
 
 /** What {@link fireOneShot} reads of the store. */
 export interface OneShotStore {
-  /** How many runs a task has. */
-  countRuns: (taskId?: string) => number;
   /** The claim's release. */
   runControls: Pick<TaskRunControls, 'releaseOneShot'>;
 }
 
 /**
- * Fire a claimed one-shot task's one run, and give the claim back when the
- * fire wrote no run row: a task parked for a person or switched off between
- * arming and firing never ran, so it stays due and runs when it is armed
- * again. A skipped run writes its row, so it keeps the claim: that was its run,
- * and the person reads why on it.
+ * Fire a claimed one-shot task's one run, and give the claim back only when
+ * the dispatch itself says it opened no run: a task parked for a person or
+ * switched off between arming and firing never ran, so it stays due and runs
+ * when it is armed again. A skipped run is a row the dispatch opened, so it
+ * keeps the claim: that was its run, and the person reads why on it.
  *
- * @param store - The store: its run count and run controls.
+ * The dispatch's own answer decides, never a count or a clock: retention
+ * pruning or a clock step can't make an opened run look unopened. A dispatch
+ * that throws keeps the claim, since it may have opened a row first, and a
+ * kept claim can only cost a run, never add one.
+ *
+ * @param store - The store's run controls.
  * @param taskId - The task.
- * @param dispatch - The scheduler's dispatch of this fire.
+ * @param dispatch - The scheduler's dispatch of this fire: the run it opened, or `null`.
  */
 export async function fireOneShot(
   store: OneShotStore,
   taskId: string,
-  dispatch: () => Promise<void>
+  dispatch: () => Promise<Pick<TaskRun, 'id'> | null>
 ): Promise<void> {
-  // Counted before and after, so a trial run from before arming is not this fire's row.
-  const before = store.countRuns(taskId);
-  try {
-    await dispatch();
-  } finally {
-    if (store.countRuns(taskId) === before) store.runControls.releaseOneShot(taskId);
-  }
+  const opened = await dispatch();
+  if (!opened) store.runControls.releaseOneShot(taskId);
 }
 
 /**
@@ -158,16 +156,16 @@ export async function fireOneShot(
  * and this call wins the claim, fire it once the computer has settled,
  * outside the arming caller's audit scope, as a timer fire is.
  *
- * @param store - The store: its run controls and run count.
+ * @param store - The store's run controls: the claim and its release.
  * @param wakeSettle - The scheduler's wake-settle gate.
  * @param task - The task as the scheduler reads it.
- * @param dispatch - The scheduler's dispatch for a fire at an instant.
+ * @param dispatch - The scheduler's dispatch for a fire at an instant: the run it opened, or `null`.
  */
 export function armOneShot(
-  store: OneShotStore & { runControls: Pick<TaskRunControls, 'claimOneShot'> },
+  store: { runControls: Pick<TaskRunControls, 'claimOneShot' | 'releaseOneShot'> },
   wakeSettle: { run: (fire: (at: Date) => Promise<void>, name: string) => void },
   task: Pick<Task, 'id' | 'name' | 'runOnce' | 'ranOnceAt'>,
-  dispatch: (at: Date) => Promise<void>
+  dispatch: (at: Date) => Promise<Pick<TaskRun, 'id'> | null>
 ): void {
   if (!oneShotDue(task, store.runControls)) return;
   const fire = (at: Date) => fireOneShot(store, task.id, () => dispatch(at));

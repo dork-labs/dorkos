@@ -112,25 +112,58 @@ describe('a task’s run controls', () => {
     expect(oneShotDue(store.getTask(task.id)!, store.runControls)).toBe(false);
   });
 
-  it('gives the claim back when a fire wrote no run, so it runs when armed again', async () => {
+  /** A one-shot task with its claim taken, as `armOneShot` takes it. */
+  function claimed() {
     const task = created();
     store.runControls.set(task.id, { runOnce: true });
     expect(oneShotDue(store.getTask(task.id)!, store.runControls)).toBe(true);
-    // Parked or switched off between arming and firing: the dispatch writes no row.
-    await fireOneShot(store, task.id, async () => {});
+    return task;
+  }
+
+  it('gives the claim back when the dispatch opened no run, so it runs when armed again', async () => {
+    const task = claimed();
+    // Parked or switched off between arming and firing: the dispatch opens no row.
+    await fireOneShot(store, task.id, async () => null);
     expect(store.getTask(task.id)?.ranOnceAt ?? null).toBeNull();
     expect(oneShotDue(store.getTask(task.id)!, store.runControls)).toBe(true);
   });
 
-  it('keeps the claim when the fire wrote its run, skipped or not', async () => {
-    const task = created();
-    store.runControls.set(task.id, { runOnce: true });
-    store.createRun(task.id, 'manual'); // a trial before arming is not this fire's row
-    expect(oneShotDue(store.getTask(task.id)!, store.runControls)).toBe(true);
-    await fireOneShot(store, task.id, async () => {
-      store.createRun(task.id, 'scheduled');
-    });
+  it('keeps the claim when the dispatch opened its run, skipped or not', async () => {
+    const task = claimed();
+    await fireOneShot(store, task.id, async () => store.createRun(task.id, 'scheduled'));
     expect(store.getTask(task.id)?.ranOnceAt).toEqual(expect.any(String));
+    expect(oneShotDue(store.getTask(task.id)!, store.runControls)).toBe(false);
+  });
+
+  it('keeps the claim when the run it opened is pruned away before the fire ends', async () => {
+    const task = claimed();
+    await fireOneShot(store, task.id, async () => {
+      const run = store.createRun(task.id, 'scheduled');
+      store.updateRun(run.id, { status: 'completed', finishedAt: new Date().toISOString() });
+      store.pruneRuns(task.id, 0); // no row left for any count or look-back to find
+      return run;
+    });
+    expect(store.countRuns(task.id)).toBe(0);
+    expect(oneShotDue(store.getTask(task.id)!, store.runControls)).toBe(false);
+  });
+
+  it('gives the claim back on the dispatch’s word, whatever other rows appear meanwhile', async () => {
+    const task = claimed();
+    await fireOneShot(store, task.id, async () => {
+      store.createRun(task.id, 'scheduled'); // another writer's row, not this fire's
+      return null;
+    });
+    expect(oneShotDue(store.getTask(task.id)!, store.runControls)).toBe(true);
+  });
+
+  it('keeps the claim when the dispatch throws, since it may have opened a row', async () => {
+    const task = claimed();
+    await expect(
+      fireOneShot(store, task.id, async () => {
+        throw new Error('the run could not start');
+      })
+    ).rejects.toThrow('the run could not start');
+    expect(oneShotDue(store.getTask(task.id)!, store.runControls)).toBe(false);
   });
 
   it('reads no pins for a task that does not exist', () => {

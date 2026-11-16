@@ -4,7 +4,12 @@
  */
 import { describe, expect, it } from 'vitest';
 import type { TurnPermissionLevel } from '@dorkos/shared/agent-runtime';
-import { decideAllowList, addingEntriesAsksAPerson, narrowingOf } from '../allow-list-rule.js';
+import {
+  decideAllowList,
+  addingEntriesAsksAPerson,
+  narrowingOf,
+  runsAnyCommandUnasked,
+} from '../allow-list-rule.js';
 
 const CHECK = 'Bash(/usr/bin/shasum -a 256 -c /home/sample/reviews/sample-backfill.sha256)';
 const RUN = 'Bash(/home/sample/agents/media/bin/derive-sample --backfill)';
@@ -149,6 +154,29 @@ describe('decideAllowList', () => {
     expect(
       decide({ before: [CHECK, RUN, VERIFY], listEverSet: true, body: { allowList: [] } })
     ).toMatchObject({ kind: 'ok', after: [], removed: [CHECK, RUN, VERIFY] });
+  });
+});
+
+describe('runsAnyCommandUnasked', () => {
+  it('is true only for a level that never asks and reaches everything', () => {
+    expect(runsAnyCommandUnasked(FULL)).toBe(true);
+  });
+
+  // Each half on its own: one that never asks but reaches less, and one that
+  // reaches everything but asks.
+  it.each([
+    { asks: 'never', reach: 'workspace' },
+    { asks: 'never', reach: 'edit' },
+    { asks: 'when-risky', reach: 'everything' },
+    { asks: 'always', reach: 'everything' },
+  ] as TurnPermissionLevel[])('is false for %o', (level) => {
+    expect(runsAnyCommandUnasked(level)).toBe(false);
+  });
+
+  it('refuses a first list for a ceiling that never asks but does not reach everything', () => {
+    expect(
+      decide({ ceiling: { asks: 'never', reach: 'workspace' } as TurnPermissionLevel })
+    ).toMatchObject({ kind: 'refused', code: 'allow_list_above_level' });
   });
 });
 

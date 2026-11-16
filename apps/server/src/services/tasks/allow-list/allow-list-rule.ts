@@ -94,6 +94,17 @@ export function addingEntriesAsksAPerson(change: {
 }
 
 /**
+ * Whether a level runs any command without asking: it never asks, and it
+ * reaches everything. The one bar an agent-set list is held to, when it is set
+ * and again when its run fires (`run-allow-list.ts`), so the two can't drift.
+ *
+ * @param level - The agent's level.
+ */
+export function runsAnyCommandUnasked(level: TurnPermissionLevel): boolean {
+  return level.asks === 'never' && level.reach === 'everything';
+}
+
+/**
  * A proposed list that only narrows the stored one: what stays, in the stored
  * order, or `null` when the proposal adds anything (or is not a list). Judged
  * only as a subset, so a rule a person approved can be dropped whatever its
@@ -146,7 +157,7 @@ export function decideAllowList(input: AllowListInput): AllowListVerdict {
   if (input.runtime && input.runtime !== ALLOW_LIST_RUNTIME) {
     return refused('allow_list_runtime', 'Only Claude Code runs carry a task’s allow list.');
   }
-  if (input.ceiling.asks !== 'never' || input.ceiling.reach !== 'everything') {
+  if (!runsAnyCommandUnasked(input.ceiling)) {
     return refused(
       'allow_list_above_level',
       'Your own level asks before running commands, so your task can’t run them without asking.'

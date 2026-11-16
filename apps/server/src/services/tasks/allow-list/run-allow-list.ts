@@ -22,6 +22,7 @@
 import type { MeshCore } from '@dorkos/mesh';
 import type { Task, TaskRun } from '@dorkos/shared/types';
 import { checkPins, type AllowListPins } from './allow-list-pins.js';
+import { runsAnyCommandUnasked } from './allow-list-rule.js';
 import { agentLevelNow } from '../agent-mode/agent-mode-decision.js';
 import { liveAgentModeSources } from '../agent-mode/agent-mode-sources.js';
 
@@ -100,7 +101,7 @@ export function allowListSources(
       const declared = sources.declaredModes(task.runtime);
       if (!owner || !declared) return false;
       const level = await agentLevelNow(owner, task.runtime, declared, sources);
-      return level.asks === 'never' && level.reach === 'everything';
+      return runsAnyCommandUnasked(level);
     },
   };
 }
