@@ -1,0 +1,356 @@
+{
+  "__internal__": {
+    "migrations": {
+      "version": "0.135.5"
+    }
+  },
+  "a2a": {
+    "enabled": false
+  },
+  "activity": {
+    "retentionDays": 365
+  },
+  "agents": {
+    "defaultAgent": "dorkbot",
+    "defaultDirectory": "~/.dork/agents"
+  },
+  "approvals": {
+    "standingGrants": false,
+    "standingGrantsVoidBefore": null,
+    "trustWindowMinutes": 480
+  },
+  "auth": {
+    "enabled": false
+  },
+  "browser": {
+    "enabled": false
+  },
+  "cloud": {
+    "credits": {
+      "agents": [],
+      "defaults": {},
+      "linkedTo": null,
+      "offer": "none"
+    },
+    "instanceName": null,
+    "instanceToken": null,
+    "linkedAccountLabel": null,
+    "previousLinkProof": null,
+    "remote": {
+      "consentVersion": null,
+      "credentialId": null,
+      "credentialRef": null,
+      "edgeProofHeader": null,
+      "edgeProofRef": null,
+      "enrolmentId": null,
+      "fingerprint": null,
+      "hosts": [],
+      "instanceId": null,
+      "mode": "off"
+    }
+  },
+  "computers": {
+    "enabled": false
+  },
+  "connectors": {
+    "rawMcpServers": []
+  },
+  "docs": {
+    "enabled": false
+  },
+  "extensions": {
+    "approvedPermissions": {},
+    "approvedSources": {},
+    "approvedToRun": [],
+    "disabled": [],
+    "dismissedApprovals": {},
+    "enabled": [],
+    "trustedSources": []
+  },
+  "harness": {
+    "approvedFolderConfig": [],
+    "approvedFolderConfigParts": {},
+    "approvedHooks": [],
+    "approvedRepoConfig": [],
+    "autoAdopt": false,
+    "autoSync": true,
+    "folderConfigPinned": false,
+    "global": {
+      "askedAt": null,
+      "harnesses": []
+    },
+    "refusedFolderConfig": [],
+    "refusedHooks": [],
+    "refusedRepoConfig": [],
+    "repoBaselines": {},
+    "repoBaselinesPinned": false
+  },
+  "heartbeats": {
+    "enabled": true,
+    "idleAlertRoomId": null,
+    "triageOnCredits": null
+  },
+  "keepAwake": {
+    "wakeForScheduledTasks": false,
+    "whileAgentsWork": true
+  },
+  "logging": {
+    "level": "info",
+    "maxLogFiles": 14,
+    "maxLogSizeKb": 500
+  },
+  "mcp": {
+    "apiKey": null,
+    "enabled": true,
+    "rateLimit": {
+      "enabled": true,
+      "maxPerWindow": 60,
+      "windowSecs": 60
+    }
+  },
+  "memory": {
+    "provider": "builtin"
+  },
+  "mesh": {
+    "scanRoots": []
+  },
+  "network": {
+    "extraCaCertsPath": null
+  },
+  "notifications": {
+    "browserPermissionPrimerDismissed": false,
+    "escalation": {
+      "phoneAfterMinutes": 2
+    },
+    "notifyOnTurnCompleteWhileAway": true,
+    "sounds": {
+      "allClear": true,
+      "knock": true,
+      "turnEnd": false
+    }
+  },
+  "onboarding": {
+    "completedAt": null,
+    "completedSteps": [],
+    "dismissedAt": null,
+    "firstRunPath": null,
+    "priorRuntime": null,
+    "runtimeDefaultSetAt": null,
+    "skippedSteps": [],
+    "startedAt": null,
+    "welcomeEntryId": null
+  },
+  "permissions": {
+    "approvedFolderAllowRules": {},
+    "approvedFolderAllows": [],
+    "defaults": {
+      "actions": {},
+      "areas": {}
+    },
+    "preset": "trusted",
+    "refusedFolderAllows": [],
+    "sharedAppsAppliedAt": null,
+    "sharedAtUpgrade": [],
+    "trustedStoresAppliedAt": null,
+    "upgradeSweptVersion": null
+  },
+  "profile": {
+    "away": null,
+    "displayName": null,
+    "displayNameSource": null,
+    "identityPromptDismissedAt": null,
+    "rolePromptDismissedAt": null,
+    "roles": [],
+    "timezone": null,
+    "tools": [],
+    "workingHours": null
+  },
+  "providers": {},
+  "relay": {
+    "dataDir": null,
+    "enabled": true,
+    "maxAgentTurnsPerAgentPerHour": 1000,
+    "maxAgentTurnsTotalPerHour": 5000
+  },
+  "remoteAccess": {
+    "enabled": true
+  },
+  "rooms": {
+    "collectDebounceMs": 500,
+    "collectMaxEntries": 20,
+    "engagedWindowMinutes": 60,
+    "engagedWindowPosts": 15,
+    "lateReplyCeilingMinutes": 60,
+    "maxAgentDepth": 30,
+    "maxAutomaticTurnsPerRoomPerHour": 1000,
+    "maxAutomaticTurnsTotalPerHour": 5000,
+    "maxConcurrentTurnsPerAgent": 3,
+    "maxTurnsPerAgentPerCascade": 10,
+    "replyWaitMinutes": 10,
+    "repo": {
+      "enabled": true,
+      "maxFileBytes": 5242880,
+      "maxRepoBytes": 524288000,
+      "maxRoomMdBytes": 24576,
+      "mergeQueueWaitMs": 30000,
+      "worktreeReapDays": 14
+    },
+    "responseGate": "routing",
+    "turnLimitsEnabled": true
+  },
+  "runtimes": {
+    "claudeCode": {
+      "accounts": [],
+      "defaultAccount": null,
+      "defaultAccountColor": null,
+      "defaultAccountOnlyProjects": null,
+      "defaultEffort": null,
+      "defaultModel": null,
+      "defaultTrustStop": null,
+      "dismissedFolders": [],
+      "maxWarmProcesses": null,
+      "persistentSession": true,
+      "projectAccounts": {}
+    },
+    "codex": {
+      "binaryPath": null,
+      "credentialRef": null,
+      "defaultEffort": null,
+      "defaultModel": null,
+      "defaultTrustStop": null,
+      "enabled": true,
+      "transport": "auto"
+    },
+    "default": "claude-code",
+    "defaultTrustStop": "autonomy",
+    "doe": {
+      "defaultModel": null,
+      "defaultTrustStop": null,
+      "enabled": true,
+      "inference": null
+    },
+    "environment": {
+      "inherit": {
+        "claudeCode": [],
+        "codex": [],
+        "doe": [],
+        "opencode": []
+      }
+    },
+    "maxAgentChats": 8,
+    "opencode": {
+      "baseURL": null,
+      "binaryPath": null,
+      "defaultModel": null,
+      "defaultTrustStop": null,
+      "enabled": true,
+      "port": 0,
+      "provider": null
+    }
+  },
+  "scheduler": {
+    "maxConcurrentRuns": 4
+  },
+  "server": {
+    "boundary": null,
+    "cwd": null,
+    "lanAccess": false,
+    "open": true,
+    "port": 4242
+  },
+  "sessionRelay": {
+    "enabled": false
+  },
+  "spaces": {
+    "enabled": false,
+    "official": {
+      "url": ""
+    }
+  },
+  "tasks": {
+    "agentModeControl": true
+  },
+  "telemetry": {
+    "aiMetadata": false,
+    "errorReporting": false,
+    "heartbeat": false,
+    "install": false,
+    "lastPromptedVersion": null,
+    "linkAnalyticsToAccount": false,
+    "usage": false,
+    "userHasDecided": false
+  },
+  "tours": {
+    "declined": [],
+    "seen": []
+  },
+  "tunnel": {
+    "auth": null,
+    "authtoken": null,
+    "domain": null,
+    "enabled": false
+  },
+  "ui": {
+    "communityNavigation": {
+      "owners": [],
+      "version": 1
+    },
+    "composer": {
+      "richText": true
+    },
+    "dismissedUpgradeVersions": [],
+    "dmView": true,
+    "panelTabs": [],
+    "promos": {
+      "dismissedIds": []
+    },
+    "shapes": {
+      "active": null,
+      "agentDefaults": {},
+      "autoFollowAgent": false
+    },
+    "showSessions": false,
+    "sidebar": {
+      "digest": {},
+      "gettingStarted": {
+        "retired": []
+      },
+      "groups": [],
+      "muted": [],
+      "pinned": [],
+      "sections": {}
+    },
+    "statusBar": {
+      "pins": []
+    },
+    "theme": "system",
+    "trustNoticeSeenAt": null
+  },
+  "uploads": {
+    "allowedTypes": [
+      "*/*"
+    ],
+    "maxFileSize": 10485760,
+    "maxFiles": 10
+  },
+  "version": 1,
+  "welcomeBack": {
+    "absenceThresholdMinutes": 240,
+    "enabled": true,
+    "maxPosts": 3,
+    "offersEnabled": true
+  },
+  "workbench": {
+    "autoOpenDiff": true,
+    "defaultViewers": {},
+    "terminalGraceTtlMinutes": 10
+  },
+  "workspace": {
+    "defaultProvider": "worktree",
+    "enabled": true,
+    "portBase": 4250,
+    "portBlockSize": 10,
+    "retentionCap": null,
+    "rootPath": null
+  }
+}

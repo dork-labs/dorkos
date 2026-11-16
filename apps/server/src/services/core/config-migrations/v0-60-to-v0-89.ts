@@ -890,47 +890,10 @@ export function seedHarnessAutoAdopt(store: {
 }
 
 /**
- * Migration body: seed `rooms.maxCanvasOpsPerTurn` on a `rooms` block that
- * predates the room canvas (spec `room-canvas`, DOR-1999).
- *
- * Same mechanism as {@link seedToolOnlyReplyDefaults} and load-bearing for the
- * same reason: `rooms` is a section every stored config already carries, and
- * conf's pre-write merge is SHALLOW, so a stored `rooms` object wins wholesale
- * and never gains a member. Ajv's `useDefaults` does fill the leaf — but only
- * into the copy conf's `store` getter just built and is about to discard, so
- * nothing reaches the file without this body.
- *
- * Safety-neutral: `3` is a ceiling on something no install could do before this
- * shipped, so a bound that refuses a fourth canvas change inside one turn
- * refuses nothing that used to happen.
- *
- * Additive and idempotent — it writes only when the leaf is absent, so a
- * corrupt-recovery re-run leaves a number somebody chose exactly where it is.
- *
- * @internal Exported for testing only.
- * @param store - The `conf` store instance (provides `get`/`set`).
- */
-export function seedRoomCanvasOps(store: {
-  get: (key: string) => unknown;
-  set: (key: string, value: unknown) => void;
-}): void {
-  const rooms = store.get('rooms');
-  if (rooms == null || typeof rooms !== 'object') return;
-  const current = rooms as Record<string, unknown>;
-  if (current.maxCanvasOpsPerTurn != null) return;
-  store.set('rooms', {
-    ...current,
-    // @ts-expect-error -- `rooms.maxCanvasOpsPerTurn` left the schema (DOR-2739).
-    // Same frozen-body note as `retireToolOnlyReplies`: `'0.113.0'` deletes it.
-    maxCanvasOpsPerTurn: USER_CONFIG_DEFAULTS.rooms.maxCanvasOpsPerTurn,
-  });
-}
-
-/**
  * Migration body: seed `rooms.maxConcurrentTurnsPerAgent` on a `rooms` block
  * that predates the setting (DOR-2104).
  *
- * Load-bearing for the same reason as {@link seedRoomCanvasOps}: `rooms` is a
+ * Load-bearing for the same reason as {@link seedRoomRepoDefaults}: `rooms` is a
  * section every stored config already carries, and conf's pre-write merge is
  * SHALLOW, so a stored `rooms` object never gains a member without this body.
  *
@@ -1096,39 +1059,4 @@ export function seedCommunityNavigationPrefs(store: {
     ...(ui as Record<string, unknown>),
     communityNavigation: { version: 1, owners: [] },
   });
-}
-
-/**
- * Carry the first-run power choice into the permission preset (spec
- * `agent-permissions` D13, phase 1): `ui.fullPowerChoice: 'full'` becomes
- * `permissions.preset: 'full'`, `'supervised'` becomes `'careful'`, and an
- * unanswered door leaves the preset `null` (Unchanged, today's behaviour).
- *
- * `permissions` is a new TOP-LEVEL section, so conf's shallow pre-migration
- * defaults merge has already written it by the time this runs: there is no
- * absence case to guard. It never replaces a preset that is already set, so a
- * re-run, or a door answered through the permission routes first, is left
- * alone. It does not touch any trust stop; that coupling is later work.
- *
- * Runs before the Activity service exists, so it records nothing; the boot-time
- * permission upgrade sweep writes the audit event for its effect.
- *
- * @param store - The conf migration store.
- */
-export function seedPermissionPresetFromDoor(store: {
-  get: (key: string) => unknown;
-  set: (key: string, value: unknown) => void;
-}): void {
-  const ui = store.get('ui');
-  if (!ui || typeof ui !== 'object' || Array.isArray(ui)) return;
-  const choice = (ui as Record<string, unknown>).fullPowerChoice;
-  const preset = choice === 'full' ? 'full' : choice === 'supervised' ? 'careful' : null;
-  if (preset === null) return;
-  const stored = store.get('permissions');
-  const section =
-    stored && typeof stored === 'object' && !Array.isArray(stored)
-      ? (stored as Record<string, unknown>)
-      : { preset: null, defaults: { areas: {}, actions: {} }, upgradeSweptVersion: null };
-  if (section.preset !== null && section.preset !== undefined) return;
-  store.set('permissions', { ...section, preset });
 }

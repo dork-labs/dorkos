@@ -1380,6 +1380,13 @@
       "when": 1794758844514,
       "tag": "20261115160724_dor3641_task_approval_receipt",
       "breakpoints": true
+    },
+    {
+      "idx": 197,
+      "version": "6",
+      "when": 1794793925059,
+      "tag": "20261116015205_canvas_opened_by",
+      "breakpoints": true
     }
   ]
 }

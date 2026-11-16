@@ -11,7 +11,7 @@ vi.mock('@/layers/features/dashboard-attention', () => ({
 }));
 
 const route = vi.hoisted(() => ({
-  search: {} as { schedule?: string; run?: string },
+  search: {} as { schedule?: string; run?: string; expand?: string },
   navigate: vi.fn(),
 }));
 
@@ -43,7 +43,9 @@ vi.mock('@/layers/features/tasks', () => ({
     onOpenChange: (open: boolean) => void;
   }) =>
     open ? <button onClick={() => onOpenChange(false)}>Editing {editTask?.name}</button> : null,
-  TasksList: () => <div data-testid="tasks-list" />,
+  TasksList: ({ expandId }: { expandId?: string }) => (
+    <div data-testid="tasks-list" data-expand={expandId ?? ''} />
+  ),
 }));
 
 import { TasksPage } from '../ui/TasksPage';
@@ -85,6 +87,20 @@ describe('TasksPage — the empty state is taller than a phone', () => {
     render(<TasksPage />);
 
     expect(screen.getByTestId('empty-state').closest('.justify-center')).toBeNull();
+  });
+});
+
+it('opens the Needs you card’s schedule in the list, not the editor (DOR-4121)', () => {
+  route.search = { expand: 'nightly' };
+  mockTasks = [{ id: 'nightly', name: 'Nightly sweep' } as Task];
+  render(<TasksPage />);
+  expect(screen.getByTestId('tasks-list')).toHaveAttribute('data-expand', 'nightly');
+  expect(screen.queryByRole('button', { name: 'Editing Nightly sweep' })).toBeNull();
+  // A one-shot: it comes off the URL, so clicking the same card again works.
+  expect(route.navigate).toHaveBeenCalledWith({
+    to: '/tasks',
+    search: { expand: undefined },
+    replace: true,
   });
 });
 

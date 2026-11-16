@@ -20,9 +20,12 @@ import { runningCopiesOnly } from '../lib/running-copies';
  * Polls every 30 seconds so newly compiled extensions appear without a page
  * refresh. Background polling is disabled to avoid unnecessary requests when
  * the tab is hidden.
+ *
+ * @param options - `enabled: false` to skip the fetch where it is not needed.
  */
-export function useExtensionList() {
+export function useExtensionList(options: { enabled?: boolean } = {}) {
   return useQuery<ExtensionRecordPublic[]>({
+    enabled: options.enabled ?? true,
     queryKey: extensionQueryKeys.list(),
     queryFn: async () => {
       const res = await fetch(`${resolveApiBaseUrl()}/extensions`);

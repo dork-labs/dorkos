@@ -168,6 +168,44 @@ describe('InboxBell — an extension waiting to be turned on', () => {
     vi.clearAllMocks();
   });
 
+  // Purpose: screens run sealed off with no access of their own (DOR-3293),
+  // so the card never says they run with yours; "It can change:" says what
+  // they can do, and Runs as stays.
+  it('never says an app’s screens run with your access', async () => {
+    waiting = [
+      {
+        ...FLOW,
+        runsInServer: false,
+        permissions: { ...FLOW.permissions!, writes: ['data', 'canvas'] },
+      },
+    ];
+    renderBell();
+    const { row } = await openRow();
+    expect(row).not.toHaveTextContent(/with your access/);
+    expect(row).not.toHaveTextContent(/Screens run/);
+    const facts = within(row).getByTestId('extension-access-facts-flow');
+    expect(facts).toHaveTextContent('Runs asYou');
+    expect(within(row).getByTestId('extension-permissions-flow')).toHaveTextContent(
+      'It can change:Its own saved data and project settingsDocuments it opens on your canvas'
+    );
+  });
+
+  // Purpose: on a phone the Inbox is a bottom sheet, and Allow and Not now
+  // stay pinned to its bottom while a long card scrolls (designer, DOR-3293).
+  it('pins Allow and Not now to the bottom of the phone sheet', async () => {
+    renderBell();
+    const { row } = await openRow();
+    const answers = within(row)
+      .getByRole('button', { name: 'Allow' })
+      .closest('[data-slot="inbox-answer-buttons"]');
+    expect(answers).toHaveClass(
+      'max-md:sticky',
+      'max-md:bottom-0',
+      'max-md:bg-[var(--dui-scroll-cover,var(--color-popover))]'
+    );
+    expect(within(answers as HTMLElement).getByRole('button', { name: 'Not now' })).toBeVisible();
+  });
+
   it('opens on the card a held app’s tile asked for, ringed and focused (DOR-3970)', async () => {
     renderBell();
     await screen.findByTestId('inbox-bell');

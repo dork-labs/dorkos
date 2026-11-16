@@ -55,6 +55,27 @@ export type {
   ExtensionAllow,
   ExtensionLimits,
 } from './manifest-schema.js';
+export {
+  APP_ROUTE_METHODS,
+  calledApps,
+  decideAppCall,
+  decideAppNavigate,
+  exportedAccess,
+  openableApps,
+  routeMatches,
+  MAX_ITEM_PATH_LENGTH,
+  MAX_ITEM_PATH_SEGMENTS,
+  type AppCallDecision,
+  type AppCallRefusal,
+  type AppNavigateDecision,
+  type AppNavigateRefusal,
+  type AppExportRoute,
+  type AppRouteMethod,
+  type CalledAppEntry,
+  type CrossAppManifest,
+  type ExtensionExports,
+  type PersonOnlyRule,
+} from './cross-app.js';
 export type {
   ExtensionAPI,
   ExtensionDialogControls,
@@ -176,3 +197,15 @@ export type {
   SessionsApi,
 } from './server-extension-api.js';
 export type { ToolsApi, ExtensionToolHandler, ExtensionToolCall } from './extension-tools.js';
+
+export {
+  EXTENSION_BUNDLE_GLOBAL,
+  EXTENSION_CLIENT_API_VERSION,
+  needsClientUpdate,
+} from './frame-api.js';
+export type {
+  AppNavigateResult,
+  AppNavigateResultRefusal,
+  FrameCanvasContent,
+  FrameExtensionAPI,
+} from './frame-api.js';
