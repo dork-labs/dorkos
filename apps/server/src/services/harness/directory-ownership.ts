@@ -22,7 +22,7 @@
  */
 import { join, relative, sep } from 'node:path';
 import type { DirectoryOwnership } from '@dorkos/harness';
-import { canonicalize, isAgentHome } from './project-agent-workspace.js';
+import { canonicalize, isAgentHome } from './workspace-paths.js';
 
 /**
  * What DorkOS owns `dir` as.

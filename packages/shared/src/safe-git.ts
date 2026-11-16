@@ -57,6 +57,9 @@ export const SAFE_REPO_CONFIG_KEY = new RegExp(
       'blame\\.ignorerevsfile',
       'rerere\\.enabled',
       'lfs\\.repositoryformatversion',
+      // Codex metadata, not a Git command/path setting. Apple Git-155 ignores it
+      // (src/git/config.c git_default_config; DOR-4486). Keep this one key exact.
+      'codex\\.localenvironmentconfigpath',
       // Named keys only, never a whole section: `gc.recentObjectsHook` is a
       // shell command gc runs, and a commit or fetch can start gc by itself
       // (DOR-3667). `gtr.*` is read by git-worktree-runner, never by git; its

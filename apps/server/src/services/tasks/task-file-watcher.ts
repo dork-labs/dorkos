@@ -4,9 +4,9 @@
  *
  * ## The watch is the fast path, never the guarantee
  *
- * chokidar has three holes, each measured on macOS against chokidar 5 and
- * Node 24 rather than assumed (DOR-1850 found them under
- * `services/harness/skills-watcher.ts`; DOR-1908 reproduced all three here):
+ * The first three holes below were measured on macOS with chokidar 5 and
+ * Node 24 (DOR-1850 found them under `services/harness/skills-watcher.ts`;
+ * DOR-1908 reproduced them here). The fourth was reproduced with Node 22.
  *
  * 1. **A root that does not exist when the watch opens is deaf — 100%, and for
  *    the life of the process.** chokidar watches the nearest EXISTING ancestor
@@ -28,11 +28,16 @@
  *    the `add` for a file written into the watched directory never arrived. The
  *    initial scan still works; only live notification dies.
  *
+ * 4. **A directory burst can name only one new child.** A real root rename
+ *    reached chokidar for a backup sibling while the adjacent task directory
+ *    never entered its watch set. Directory cues now coalesce a follow-up scan;
+ *    complete native silence still belongs to the periodic reconciler.
+ *
  * So nothing here treats a chokidar event as the mechanism that keeps the
  * promise. Three things do:
  *
  * - **The catch-up scan.** Every time a watch is armed, the root is scanned once
- *   the watch has settled ({@link catchUpRoot}). That is what builds the row set
+ *   the watch has settled ({@link scanTaskWatchRoot}). That is what builds the row set
  *   at boot, what discovers the schedules already sitting in a directory that
  *   has just appeared, and what closes hole 2 — it runs *after* the unreliable
  *   window, and it does not depend on chokidar delivering anything.
@@ -72,7 +77,7 @@
  *
  * @module services/tasks/task-file-watcher
  */
-import { outsideAuditScope } from '../audit/audit-context.js';
+import { outsideAuditScope, runOutsideAuditScope } from '../audit/audit-context.js';
 import chokidar, { type FSWatcher } from 'chokidar';
 import path from 'node:path';
 import fs from 'node:fs/promises';
@@ -82,7 +87,7 @@ import type { TaskRegistrar } from './task-registrar.js';
 import type { ScheduleIdentityRegistry } from './schedule-identity.js';
 import { SKILL_FILENAME } from '@dorkos/skills/constants';
 import { isInstallSiblingName } from '@dorkos/shared/marketplace-schemas';
-import { readTaskRootFile, scanTaskRoot, type ReadOutcome } from './skills-root-discovery.js';
+import { readTaskRootFile, type ReadOutcome } from './skills-root-discovery.js';
 import { carrySwitchIntoReleasedFile, packageOwnershipInRoot } from './task-file-update.js';
 import { fileAgentLevel } from './sync/file-agent-level.js';
 import { reservedDirsFor, type TaskRoot } from './skills-roots.js';
@@ -92,6 +97,11 @@ import {
   syncProjectCopies,
 } from './sync/project-only-schedules.js';
 import { logger } from '../../lib/logger.js';
+import {
+  TaskWatchCatchUp,
+  scanTaskWatchRoot,
+  drainTaskWatchWork,
+} from './watch/task-watch-catch-up.js';
 
 /**
  * How long a file must stop changing before chokidar reports it, and how often
@@ -177,6 +187,7 @@ interface WatchedRoot {
   status: WatchStatus;
   /** Resolves once the current watch has settled and its catch-up scan is done. */
   settled: Promise<void>;
+  catchUp?: TaskWatchCatchUp;
 }
 
 /** Options only tests set. */
@@ -209,6 +220,8 @@ export class TaskFileWatcher implements TaskWatchHealth {
   private readonly rearmMs: number;
   private readonly settleMs: number;
   private stopped = false;
+  private stopping?: Promise<void>;
+  private readonly closing = new Set<Promise<void>>();
 
   constructor(
     private store: TaskStore,
@@ -234,6 +247,7 @@ export class TaskFileWatcher implements TaskWatchHealth {
    * @param root - The directory to watch and how to read what is in it.
    */
   watch(root: TaskRoot): void {
+    if (this.stopped) return;
     if (this.watched.has(root.dir)) {
       logger.warn(`[TaskFileWatcher] Already watching ${root.dir} — skipping duplicate`);
       return;
@@ -261,18 +275,35 @@ export class TaskFileWatcher implements TaskWatchHealth {
     if (!state) return;
     this.watched.delete(tasksDir);
     if (this.watched.size === 0) this.stopRearming();
-    await state.watcher?.close();
     this.identities.releaseRoot(tasksDir);
+    const closing = drainTaskWatchWork([
+      state.catchUp?.stop(),
+      Promise.resolve().then(() => state.watcher?.close()),
+    ]);
+    this.closing.add(closing);
+    try {
+      await closing;
+    } finally {
+      this.closing.delete(closing);
+    }
     logger.info(`[TaskFileWatcher] Stopped watching ${tasksDir}`);
   }
 
   /** Stop all watchers (server shutdown). */
   async stopAll(): Promise<void> {
+    if (this.stopping) return this.stopping;
     this.stopped = true;
     this.stopRearming();
-    const closing = [...this.watched.values()].map((state) => state.watcher?.close());
+    const roots = [...this.watched.values()];
     this.watched.clear();
-    await Promise.all(closing);
+    this.stopping = drainTaskWatchWork([
+      ...this.closing,
+      ...roots.flatMap((state) => [
+        state.catchUp?.stop(),
+        Promise.resolve().then(() => state.watcher?.close()),
+      ]),
+    ]);
+    return this.stopping;
   }
 
   /**
@@ -334,17 +365,42 @@ export class TaskFileWatcher implements TaskWatchHealth {
     // initial walk used to be how the row set got built, which meant boot
     // discovery rode on the same chokidar that has the three holes above — and
     // it could not cover a root armed later at all, because by then its own walk
-    // was long finished. {@link catchUpRoot} does that job for every arm, with
+    // was long finished. {@link scanTaskWatchRoot} does that job for every arm, with
     // one `readdir` instead of a walk, and it reads the root through the same
     // `scanTaskRoot` the reconciler uses, so the two doors cannot disagree.
-    const watcher = chokidar.watch(root.dir, {
-      persistent: true,
-      ignoreInitial: true,
-      depth: 1,
-      awaitWriteFinish: {
-        stabilityThreshold: TASK_WRITE_STABILITY_MS,
-        pollInterval: TASK_WRITE_POLL_MS,
-      },
+    const watcher = runOutsideAuditScope(() =>
+      chokidar.watch(root.dir, {
+        persistent: true,
+        ignoreInitial: true,
+        depth: 1,
+        awaitWriteFinish: {
+          stabilityThreshold: TASK_WRITE_STABILITY_MS,
+          pollInterval: TASK_WRITE_POLL_MS,
+        },
+      })
+    );
+
+    const active = () => !this.stopped && this.watched.get(root.dir) === state;
+    const catchUp = new TaskWatchCatchUp(
+      () => scanTaskWatchRoot(root, (outcome) => this.applyOutcome(outcome, root, active), active),
+      active,
+      this.settleMs,
+      (error) => logger.error(`[TaskFileWatcher] Catch-up failed for ${root.dir}`, error)
+    );
+    state.catchUp = catchUp;
+    state.settled = catchUp.ready;
+    // Native directory notifications can describe only part of a creation burst.
+    // Re-read through the shared scanner, including when the cue names an ignored sibling.
+    watcher.on('addDir', (dir) => {
+      if (path.dirname(dir) === root.dir) catchUp.request();
+    });
+    watcher.on('raw', (_event, _file, details: unknown) => {
+      if (
+        details &&
+        typeof details === 'object' &&
+        Reflect.get(details, 'watchedPath') === root.dir
+      )
+        catchUp.request();
     });
 
     // A task is `<root>/<slug>/SKILL.md`, and `<slug>` may not be a name the
@@ -383,13 +439,13 @@ export class TaskFileWatcher implements TaskWatchHealth {
       !isInstallSiblingName(path.basename(path.dirname(filePath))) &&
       !reservedDirsFor(root).includes(path.basename(path.dirname(filePath)));
     watcher.on('add', (filePath) => {
-      if (isSkillFile(filePath)) void this.handleFileChange(filePath, root);
+      if (active() && isSkillFile(filePath)) void this.handleFileChange(filePath, root, active);
     });
     watcher.on('change', (filePath) => {
-      if (isSkillFile(filePath)) void this.handleFileChange(filePath, root);
+      if (active() && isSkillFile(filePath)) void this.handleFileChange(filePath, root, active);
     });
     watcher.on('unlink', (filePath) => {
-      if (isSkillFile(filePath)) this.handleFileRemove(filePath, root);
+      if (active() && isSkillFile(filePath)) this.handleFileRemove(filePath, root);
     });
 
     // Without this handler a watcher failure (e.g. EMFILE when the machine runs
@@ -418,9 +474,7 @@ export class TaskFileWatcher implements TaskWatchHealth {
       const code = (err as NodeJS.ErrnoException)?.code ?? 'unknown';
       if (seenCodes.has(code)) return;
       seenCodes.add(code);
-      // Logged as an explicit object, never the bare Error: the NDJSON reporter
-      // spreads what it is given, and `message`/`stack` are non-enumerable on
-      // an Error, so they would vanish (DOR-832).
+      // Keep root, scope, code and explicit message/stack fields together in the event.
       logger.error(
         `[watcher-error] TaskFileWatcher: ${root.dir} (${root.scope}) — further ${code} errors from this watcher are suppressed; the reconciler is covering this root every ${UNWATCHED_ROOT_SWEEP_SECONDS}s`,
         {
@@ -437,78 +491,14 @@ export class TaskFileWatcher implements TaskWatchHealth {
 
     state.watcher = watcher;
     state.status = 'live';
-    // Settled either way: a watch that errors out must not leave a caller
-    // waiting for the life of the process. The settle before the scan is the
-    // window in which chokidar drops what it is told about (hole 2); the scan
-    // after it is what makes the arm mean something whether or not a single
-    // event ever arrives.
-    //
-    // ONE `error` listener, doing both jobs. Two — a latch and a settle — is
-    // what this had first, and it is indistinguishable from correct until
-    // something enumerates the registered handlers and finds twice as many as
-    // it expects.
-    state.settled = new Promise<void>((resolve) => {
-      let scheduled = false;
-      const settle = (): void => {
-        if (scheduled) return;
-        scheduled = true;
-        const timer = setTimeout(() => resolve(this.catchUpRoot(root)), this.settleMs);
-        timer.unref?.();
-      };
-      watcher.on('ready', settle);
-      watcher.on('error', (err) => {
-        reportFailure(err);
-        settle();
-      });
+    // Both native outcomes share the helper's cancellable startup scan.
+    watcher.on('ready', () => catchUp.begin());
+    watcher.on('error', (err) => {
+      reportFailure(err);
+      catchUp.begin();
     });
     logger.info(`[TaskFileWatcher] Watching ${root.dir} (${root.scope})`);
     return true;
-  }
-
-  /**
-   * Read every schedule a freshly armed root already holds.
-   *
-   * This is the row-building pass, and it is deliberately not chokidar's initial
-   * walk: it runs after the window in which a watch drops events, it covers a
-   * root armed long after boot exactly as well as one armed at boot, and it goes
-   * through `scanTaskRoot` — the same door the reconciler reads roots with, so a
-   * rule added for one is automatically true of the other.
-   *
-   * Nothing here retires anything. A row whose file has gone is the reconciler's
-   * to end, behind the two gates that keep "could not look" from being read as
-   * "not there".
-   */
-  private async catchUpRoot(root: TaskRoot): Promise<void> {
-    let outcomes: ReadOutcome[];
-    try {
-      outcomes = await scanTaskRoot(root);
-    } catch (err) {
-      // The directory existed a moment ago, so this is EACCES or descriptor
-      // pressure. The reconciler covers the root on its tightened cadence until
-      // a scan succeeds; nothing is retired on the strength of a failed look.
-      logger.warn(`[TaskFileWatcher] Could not scan ${root.dir} after arming its watch`, err);
-      return;
-    }
-    // Per FILE, not per scan. `applyOutcome` writes to SQLite, which can throw
-    // for reasons that have nothing to do with the file in hand — SQLITE_BUSY
-    // under another writer is the ordinary one — and there is nowhere for a
-    // throw to go from here: this whole call IS `state.settled`, which nothing
-    // awaits, so an escaping rejection reaches the process-wide
-    // unhandled-rejection handler. That handler logs a line naming neither the
-    // watcher nor the root, files a crash report, and — because the loop is
-    // abandoned at the first throw — every remaining schedule in the root is
-    // silently never synced. Measured on a root of four: one throw cost the
-    // other three their rows.
-    //
-    // `handleFileChange` and `handleFileRemove` contain themselves for exactly
-    // this reason; this is the third door and it needs the same treatment.
-    for (const outcome of outcomes) {
-      try {
-        await this.applyOutcome(outcome, root);
-      } catch (err) {
-        logger.error(`[TaskFileWatcher] Failed to process ${outcome.filePath}`, err);
-      }
-    }
   }
 
   /** Open a watch on every root whose directory has appeared since the last look. */
@@ -548,10 +538,14 @@ export class TaskFileWatcher implements TaskWatchHealth {
     this.rearmTimer = undefined;
   }
 
-  private async handleFileChange(filePath: string, root: TaskRoot): Promise<void> {
+  private async handleFileChange(
+    filePath: string,
+    root: TaskRoot,
+    active: () => boolean
+  ): Promise<void> {
     try {
       const content = await fs.readFile(filePath, 'utf-8');
-      await this.applyOutcome(await readTaskRootFile(filePath, content, root), root);
+      await this.applyOutcome(await readTaskRootFile(filePath, content, root), root, active);
     } catch (err) {
       logger.error(`[TaskFileWatcher] Failed to process ${filePath}`, err);
     }
@@ -568,7 +562,12 @@ export class TaskFileWatcher implements TaskWatchHealth {
    * @param outcome - What the file turned out to be.
    * @param root - The root it was found in.
    */
-  private async applyOutcome(outcome: ReadOutcome, root: TaskRoot): Promise<void> {
+  private async applyOutcome(
+    outcome: ReadOutcome,
+    root: TaskRoot,
+    active: () => boolean
+  ): Promise<void> {
+    if (!active()) return;
     if (outcome.kind === 'invalid') {
       // The row, if there is one, is left exactly as it was: a typo in
       // frontmatter must never cost a schedule its id and run history.
@@ -613,17 +612,30 @@ export class TaskFileWatcher implements TaskWatchHealth {
       root,
       [...this.watched.values()].map((watched) => watched.root)
     );
+    if (!active()) return;
     if (projects) {
+      const before = new Map(
+        this.store.fileSync
+          .projectCopiesOf(discovered.def.filePath)
+          .map((copy) => [copy.id, copy.updatedAt])
+      );
       const synced = syncProjectCopies(this.store, discovered.def, projects, options);
       for (const id of synced.removedIds) this.registrar.syncTask(id);
-      for (const copy of synced.copies) this.registrar.syncTask(copy.id);
+      for (const copy of synced.copies) {
+        if (before.get(copy.id) !== copy.updatedAt) this.registrar.syncTask(copy.id);
+        else this.registrar.repairTask(copy.id);
+      }
       return;
     }
     for (const id of dropProjectCopies(this.store, discovered.def.filePath)) {
       this.registrar.syncTask(id);
     }
+    const before = this.store.fileSync.getByFilePath(discovered.def.filePath);
     const task = this.store.fileSync.upsertFromFile(discovered.def, root.agentId, options);
-    this.registrar.syncTask(task.id);
+    // Directory cues revisit unchanged rows too. Preserve their running clock,
+    // while retaining the reconciler's repair of a missing or unwanted job.
+    if (before === null || before.updatedAt !== task.updatedAt) this.registrar.syncTask(task.id);
+    else this.registrar.repairTask(task.id);
     // A file that just stopped being a package's gets the switch the row kept
     // for it. That write comes back through here, finds the file agreeing, and
     // records the release; a write that fails is retried by the next sync.
