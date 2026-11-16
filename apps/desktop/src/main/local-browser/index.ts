@@ -4,12 +4,26 @@ import { createServer } from 'node:http';
 import { randomBytes, timingSafeEqual } from 'node:crypto';
 import { WebSocketServer, WebSocket } from 'ws';
 import type { ConnectOverCDPTransport } from 'playwright-core';
-import { isCockpitSender as isAppSender, isWebLink } from '../window-manager';
+import { isCockpitSender as isAppSender } from '../window-manager';
 import { forgetGuestSignIns } from './forget-sign-ins';
 import { chromeIdentity } from './browser-identity';
 import { pageTransport } from './page-transport';
+import { isGuestPageAction, watchGuestPage } from './page-events';
+import { capturePageStill } from './page-still';
+import {
+  guardGuestNavigation,
+  guestNavigationAllowed,
+  readGuestHistory,
+  stepGuestHistory,
+} from './page-history';
 
 export const LOCAL_BROWSER_BOUNDS_CHANNEL = 'local-browser:set-bounds';
+/** The app asks about or acts on one guest page (DOR-4430, DOR-4431). */
+const LOCAL_BROWSER_PAGE_CHANNEL = 'local-browser:page';
+/** The shell tells the window showing a guest that its page started, stopped or failed a load. */
+const LOCAL_BROWSER_PAGE_CHANGED_CHANNEL = 'local-browser:page-changed';
+/** A still of the page the asking window shows now (DOR-4438); see `page-still.ts`. */
+export const LOCAL_BROWSER_STILL_CHANNEL = 'local-browser:capture-still';
 export interface BrowserBounds {
   connectionId: string;
   x: number;
@@ -27,6 +41,18 @@ interface Guest {
   socket?: WebSocket;
   attachTimer?: ReturnType<typeof setTimeout>;
   popups?: Set<BrowserWindow>;
+  page?: ReturnType<typeof watchGuestPage>;
+  /** Loads the navigation guard refused, so a history step can say it was refused. */
+  refusals: number;
+  /** The server's list of its own addresses, refreshed on every history call. */
+  refused: string[];
+}
+
+/** The server's list of its own addresses, as one history call sends it, or null when malformed. */
+function refusedList(value: unknown): string[] | null {
+  if (value === undefined) return [];
+  if (!Array.isArray(value) || value.length > 256) return null;
+  return value.every((entry) => typeof entry === 'string' && entry.length <= 512) ? value : null;
 }
 
 /** A private authenticated bridge from the child server to page-only guest targets. */
@@ -60,6 +86,7 @@ export async function startLocalBrowserBridge(
     if (guest.parent && guest.onParentClosed)
       guest.parent.removeListener('closed', guest.onParentClosed);
     clearTimeout(guest.attachTimer);
+    guest.page?.dispose();
     for (const popup of guest.popups ?? []) if (!popup.isDestroyed()) popup.destroy();
     guest.socket?.terminate();
     guest.transport?.close();
@@ -76,7 +103,15 @@ export async function startLocalBrowserBridge(
       }
       if (
         request.method !== 'POST' ||
-        !['/open', '/close', '/detach', '/reattach', '/forget-sign-ins'].includes(request.url ?? '')
+        ![
+          '/open',
+          '/close',
+          '/detach',
+          '/reattach',
+          '/forget-sign-ins',
+          '/history',
+          '/history/go',
+        ].includes(request.url ?? '')
       ) {
         response.writeHead(404).end();
         return;
@@ -84,14 +119,54 @@ export async function startLocalBrowserBridge(
       let body = '';
       for await (const chunk of request) {
         body += chunk.toString();
-        if (body.length > 1024) {
+        // History calls carry the server's address list; every other call stays tiny.
+        if (body.length > (request.url?.startsWith('/history') ? 65_536 : 1024)) {
           response.writeHead(413).end();
           return;
         }
       }
-      const { connectionId } = JSON.parse(body);
+      const { connectionId, index, urlHash, refused } = JSON.parse(body);
       if (typeof connectionId !== 'string' || !/^[a-zA-Z0-9-]{1,64}$/.test(connectionId)) {
         response.writeHead(400).end();
+        return;
+      }
+      if (request.url === '/history' || request.url === '/history/go') {
+        // Back and Forward (DOR-4449): this process re-checks the entry and refuses
+        // refused loads on the way itself; the server only names which entry.
+        const guest = guests.get(connectionId);
+        if (!guest || guest.detached || guest.view.webContents.isDestroyed()) {
+          response.writeHead(404).end();
+          return;
+        }
+        const list = refusedList(refused);
+        if (!list) {
+          response.writeHead(400).end();
+          return;
+        }
+        guest.refused = list;
+        const contents = guest.view.webContents;
+        if (request.url === '/history') {
+          response.setHeader('Content-Type', 'application/json');
+          response.end(JSON.stringify(readGuestHistory(contents)));
+          return;
+        }
+        if (
+          typeof index !== 'number' ||
+          typeof urlHash !== 'string' ||
+          !/^[a-f0-9]{64}$/.test(urlHash)
+        ) {
+          response.writeHead(400).end();
+          return;
+        }
+        const outcome = await stepGuestHistory(
+          contents,
+          index,
+          urlHash,
+          { rendererUrl: getRendererUrl(), refused: guest.refused },
+          () => guest.refusals
+        );
+        response.setHeader('Content-Type', 'application/json');
+        response.end(JSON.stringify({ outcome }));
         return;
       }
       if (request.url === '/close') {
@@ -157,7 +232,8 @@ export async function startLocalBrowserBridge(
           backgroundThrottling: false,
         },
       });
-      const guest: Guest = { view };
+      const guest: Guest = { view, refusals: 0, refused: [] };
+      const rules = () => ({ rendererUrl: getRendererUrl(), refused: guest.refused });
       const parent = getWindow();
       if (!parent || parent.isDestroyed()) {
         view.webContents.close();
@@ -181,7 +257,8 @@ export async function startLocalBrowserBridge(
       guests.set(connectionId, guest);
       guest.popups = new Set();
       const allowPopup = ({ url }: { url: string }): Electron.WindowOpenHandlerResponse => {
-        if (!isWebLink(url) && url !== 'about:blank' && url !== '') return { action: 'deny' };
+        if (!guestNavigationAllowed(url, rules()) && url !== 'about:blank' && url !== '')
+          return { action: 'deny' };
         const popupParent = guest.parent;
         if (!popupParent || popupParent.isDestroyed()) return { action: 'deny' };
         return {
@@ -216,18 +293,23 @@ export async function startLocalBrowserBridge(
         });
         popup.once('closed', () => guest.popups!.delete(popup));
         popup.webContents.setWindowOpenHandler(allowPopup);
-        popup.webContents.on('will-navigate', (event) => {
-          if (!isWebLink(event.url)) event.preventDefault();
-        });
+        guardGuestNavigation(popup.webContents, rules);
         popup.webContents.on('did-create-window', trackPopup);
       };
       // Preserve window.opener and postMessage for real sign-in windows. They never get our preload.
       view.webContents.setWindowOpenHandler(allowPopup);
       view.webContents.on('did-create-window', trackPopup);
-      view.webContents.on('will-navigate', (event) => {
-        if (!isWebLink(event.url)) event.preventDefault();
+      // Every navigation and every redirect, history steps included, runs the address rules.
+      guardGuestNavigation(view.webContents, rules, () => {
+        guest.refusals += 1;
       });
       view.webContents.once('destroyed', () => closeGuest(connectionId));
+      // Loads and failures go only to the window showing the page, which follows a move.
+      guest.page = watchGuestPage(connectionId, view.webContents, (page) => {
+        const shown = guest.parent;
+        if (shown && !shown.isDestroyed())
+          shown.webContents.send(LOCAL_BROWSER_PAGE_CHANGED_CHANNEL, page);
+      });
       try {
         await view.webContents.loadURL('about:blank');
       } catch (error) {
@@ -332,6 +414,29 @@ export async function startLocalBrowserBridge(
     });
     guest.view.setVisible(bounds.visible === true);
   });
+  ipcMain.handle(
+    LOCAL_BROWSER_PAGE_CHANNEL,
+    (event, input: { connectionId?: unknown; action?: unknown }) => {
+      if (!isAppSender(event, getRendererUrl) || event.senderFrame !== event.sender.mainFrame)
+        return null;
+      const guest =
+        typeof input?.connectionId === 'string' ? guests.get(input.connectionId) : undefined;
+      if (!guest?.page || guest.view.webContents.isDestroyed() || !isGuestPageAction(input.action))
+        return null;
+      // Only the window showing the page may act on it.
+      if (input.action !== 'read' && BrowserWindow.fromWebContents(event.sender) !== guest.parent)
+        return null;
+      guest.page.run(input.action);
+      return guest.page.read();
+    }
+  );
+  ipcMain.handle(LOCAL_BROWSER_STILL_CHANNEL, (event, connectionId: unknown) => {
+    if (!isAppSender(event, getRendererUrl) || event.senderFrame !== event.sender.mainFrame)
+      return null;
+    const guest = typeof connectionId === 'string' ? guests.get(connectionId) : undefined;
+    if (!guest) return null;
+    return capturePageStill(guest.view, guest.parent, BrowserWindow.fromWebContents(event.sender));
+  });
   try {
     await new Promise<void>((resolve, reject) => {
       server.once('error', reject);
@@ -339,6 +444,8 @@ export async function startLocalBrowserBridge(
     });
   } catch (error) {
     ipcMain.removeHandler(LOCAL_BROWSER_BOUNDS_CHANNEL);
+    ipcMain.removeHandler(LOCAL_BROWSER_PAGE_CHANNEL);
+    ipcMain.removeHandler(LOCAL_BROWSER_STILL_CHANNEL);
     sockets.close();
     server.close();
     throw error;
@@ -350,6 +457,8 @@ export async function startLocalBrowserBridge(
   return {
     async close() {
       ipcMain.removeHandler(LOCAL_BROWSER_BOUNDS_CHANNEL);
+      ipcMain.removeHandler(LOCAL_BROWSER_PAGE_CHANNEL);
+      ipcMain.removeHandler(LOCAL_BROWSER_STILL_CHANNEL);
       for (const id of guests.keys()) closeGuest(id);
       sockets.close();
       await new Promise<void>((resolve) => server.close(() => resolve()));

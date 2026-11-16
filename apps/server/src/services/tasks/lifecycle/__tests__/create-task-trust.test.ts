@@ -76,6 +76,7 @@ beforeEach(async () => {
   state.raised = [];
   store = new TaskStore(createTestDb());
   dorkHome = await fs.mkdtemp(path.join(os.tmpdir(), 'create-task-trust-'));
+  await fs.mkdir(agentHome(), { recursive: true });
 });
 
 afterEach(async () => {
@@ -112,7 +113,7 @@ const AGENT_REQUEST = {
  */
 async function agentCreates(callerIsOurAgent: boolean) {
   const outcome = await createScheduledTask(
-    { store, registrar: null, dorkHome, meshCore: agentMesh() },
+    { store, registrar: null, defaultTimezone: () => 'UTC', dorkHome, meshCore: agentMesh() },
     {
       input: AGENT_REQUEST,
       trusted: false,
@@ -135,6 +136,9 @@ describe('an agent schedule on a Trusted install', () => {
     expect(row.proposedBySessionId).toBe('ses-1');
     expect(row.proposedByAgentPath).toBe(agentHome());
     expect(row.reason).toBe(AGENT_REQUEST.reason);
+    expect(row.approvedAt).toEqual(expect.any(String));
+    expect(row.approvedBy).toEqual({ kind: 'policy' });
+    expect(row.approvedVia).toBe('trusted_agent');
 
     expect(state.raised).toEqual([]);
     expect(state.notified).toHaveLength(1);
@@ -182,7 +186,12 @@ describe('an agent schedule on a Trusted install', () => {
     const outcome = await agentCreates(false);
 
     expect(outcome.parked).toBe(true);
-    expect(store.getTask(outcome.task.id)!.status).toBe('pending_approval');
+    expect(store.getTask(outcome.task.id)).toMatchObject({
+      status: 'pending_approval',
+      approvedAt: null,
+      approvedBy: null,
+      approvedVia: null,
+    });
     expect(state.notified).toEqual([]);
     expect(state.raised.map((r) => r.kind)).toEqual(['schedule.parked']);
   });
@@ -244,7 +253,7 @@ describe('runtime lookup for an explicitly named mode', () => {
     'keeps the requested %s runtime and mode without requiring registration',
     async (runtime) => {
       const result = await createScheduledTask(
-        { store, registrar: null, dorkHome, meshCore: agentMesh() },
+        { store, registrar: null, defaultTimezone: () => 'UTC', dorkHome, meshCore: agentMesh() },
         {
           input: { ...AGENT_REQUEST, runtime, permissionMode: 'plan' },
           trusted: true,
@@ -260,7 +269,7 @@ describe('runtime lookup for an explicitly named mode', () => {
     await fs.mkdir(path.join(agentHome(), '.dork'), { recursive: true });
     await fs.writeFile(path.join(agentHome(), '.dork', 'agent.json'), '{broken');
     const result = await createScheduledTask(
-      { store, registrar: null, dorkHome, meshCore: agentMesh() },
+      { store, registrar: null, defaultTimezone: () => 'UTC', dorkHome, meshCore: agentMesh() },
       {
         input: { ...AGENT_REQUEST, permissionMode: 'plan' },
         trusted: true,

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { createMockSession } from '@dorkos/test-utils';
+import { createMockSession } from '@dorkos/test-utils/mock-factories';
 import type { RoomSummary } from '@dorkos/shared/room-schemas';
 import type { Session } from '@dorkos/shared/types';
 import { mergeJumpBackIn, MAX_JUMP_BACK_IN } from '../lib/jump-back-in';

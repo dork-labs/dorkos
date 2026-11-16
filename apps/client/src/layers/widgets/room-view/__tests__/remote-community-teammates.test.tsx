@@ -7,7 +7,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { createMockTransport, withSpacesExperiment } from '@dorkos/test-utils';
+import { createMockTransport, withSpacesExperiment } from '@dorkos/test-utils/mock-factories';
 import { TransportProvider } from '@/layers/shared/model';
 import { TooltipProvider } from '@/layers/shared/ui';
 import { RemoteCommunityTeammates } from '../ui/teammates/RemoteCommunityTeammates';

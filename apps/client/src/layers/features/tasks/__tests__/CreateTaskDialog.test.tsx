@@ -8,7 +8,7 @@ import type { ReactNode } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { Transport } from '@dorkos/shared/transport';
 import type { TaskTemplate } from '@dorkos/shared/types';
-import { createMockTransport, createMockSchedule } from '@dorkos/test-utils';
+import { createMockTransport, createMockSchedule } from '@dorkos/test-utils/mock-factories';
 import { TransportProvider } from '@/layers/shared/model';
 import { queryClient as appQueryClient } from '@/layers/shared/lib/query-client';
 import { toast } from 'sonner';
@@ -226,7 +226,11 @@ describe('CreateTaskDialog', () => {
 
     render(
       <Wrapper>
-        <CreateTaskDialog open={true} onOpenChange={onOpenChange} />
+        <CreateTaskDialog
+          open={true}
+          onOpenChange={onOpenChange}
+          viewerTimezone={() => 'America/Chicago'}
+        />
       </Wrapper>
     );
 
@@ -243,6 +247,8 @@ describe('CreateTaskDialog', () => {
 
     // ScheduleBuilder starts empty. Switch to cron mode and type a cron expression.
     openSchedule();
+    // The picker's default names the zone it will send (DOR-4120).
+    expect(screen.getByRole('button', { name: 'Your time zone (America/Chicago)' })).toBeTruthy();
     fireEvent.click(screen.getByText('Use a cron expression'));
     fireEvent.change(screen.getByPlaceholderText('0 9 * * 1-5'), {
       target: { value: '0 0 * * *' },
@@ -256,6 +262,7 @@ describe('CreateTaskDialog', () => {
           name: 'Nightly build',
           prompt: 'Run the nightly build',
           cron: '0 0 * * *',
+          timezone: 'America/Chicago',
           permissionMode: 'acceptEdits',
         })
       );
@@ -401,6 +408,37 @@ describe('CreateTaskDialog', () => {
 
       await waitFor(() =>
         expect(transport.updateTask).toHaveBeenCalledWith('sched-7', { prompt: 'New prompt' })
+      );
+    });
+
+    it('moves a UTC schedule to the person’s zone when they pick “Your time zone” (DOR-4120)', async () => {
+      // Purpose: an edit sends a zone only when the field names one, so the
+      // default entry must write the real zone, or the save leaves UTC alone.
+      const schedule = createMockSchedule({ id: 'sched-9', timezone: 'UTC' });
+      const transport = createMockTransport({
+        updateTask: vi.fn().mockResolvedValue(schedule),
+      });
+      const Wrapper = createWrapper(transport);
+      render(
+        <Wrapper>
+          <CreateTaskDialog
+            open={true}
+            onOpenChange={vi.fn()}
+            editTask={schedule}
+            viewerTimezone={() => 'America/Chicago'}
+          />
+        </Wrapper>
+      );
+      await waitFor(() => expect(screen.getByDisplayValue('Review open PRs')).toBeTruthy());
+
+      fireEvent.click(screen.getByRole('button', { name: 'UTC' }));
+      fireEvent.click(screen.getByText('Your time zone (America/Chicago)'));
+      fireEvent.click(screen.getByText('Save'));
+
+      await waitFor(() =>
+        expect(transport.updateTask).toHaveBeenCalledWith('sched-9', {
+          timezone: 'America/Chicago',
+        })
       );
     });
 

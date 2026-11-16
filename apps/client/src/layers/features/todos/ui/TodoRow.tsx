@@ -13,7 +13,7 @@ import { AgentAvatar, resolveAgentVisual } from '@/layers/entities/agent';
 import { cn, getAgentDisplayName } from '@/layers/shared/lib';
 import { useIsMobile } from '@/layers/shared/model';
 import { Badge, Button, Tooltip, TooltipContent, TooltipTrigger } from '@/layers/shared/ui';
-import { todoDueLabel } from '../lib/todo-labels';
+import { todoDueLabel, todoMovedLabel } from '../lib/todo-labels';
 
 /** Props for {@link TodoRow}. */
 export interface TodoRowProps {
@@ -166,6 +166,9 @@ export function TodoRow({
       </span>
     );
   }
+  // A moved date keeps its history in view, open or closed, so a late move can't hide (DOR-3034).
+  const moved = todoMovedLabel(todo);
+  if (moved) parts.push(<span>{moved}</span>);
   parts.push(<span>from {from}</span>);
   // Where its words came from: "DorkBot in #team" when its title is somebody's message, else the
   // room it was filed under. Plain text either way.

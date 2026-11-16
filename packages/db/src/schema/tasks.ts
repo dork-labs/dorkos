@@ -70,6 +70,12 @@ export const pulseSchedules = sqliteTable('pulse_schedules', {
    * name would outlive both.
    */
   proposedByAgentPath: text('proposed_by_agent_path'),
+  /** Permission mode the proposer asks a person to approve; never an applied grant. */
+  requestedPermissionMode: text('requested_permission_mode'),
+  /** JSON array of exact Claude Code rules the proposer asks a person to approve. */
+  requestedAllow: text('requested_allow'),
+  /** JSON array of task-run rules a person approved; never folder settings. */
+  approvedAllow: text('approved_allow'),
   /**
    * The working directory of the agent that last changed this schedule (DOR-3703),
    * written on every agent edit through either door. Together with
@@ -139,6 +145,14 @@ export const pulseSchedules = sqliteTable('pulse_schedules', {
    * moment its content drifts.
    */
   approvedContentKey: text('approved_content_key'),
+  /** ISO timestamp for the approval that armed the current task content. */
+  approvedAt: text('approved_at'),
+  /** JSON identifying the person, agent, or policy that approved the task. */
+  approvedBy: text('approved_by'),
+  /** The surface or policy path through which the task was approved. */
+  approvedVia: text('approved_via', {
+    enum: ['inbox', 'schedules', 'home', 'created', 'agent_tool', 'trusted_agent', 'unknown'],
+  }),
   /**
    * The approval a park last withdrew, kept so the approval card can say what
    * changed since (DOR-2323): old and new model, runtime, timing and so on.

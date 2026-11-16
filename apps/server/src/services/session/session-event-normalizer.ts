@@ -38,7 +38,8 @@ import type { RawSessionEvent, SessionStateProjector } from './session-state-pro
 import { CAPABILITY_APPROVAL_HOLD_CAP_MS } from '../core/capabilities/capability-approval-hold.js';
 import { sweepStrandedChildren } from './turn-stream/stranded-children.js';
 import { resolutionForCancelledReason, retireStrandedAsks } from './turn-stream/withdrawn-asks.js';
-import { toNoticeEvent } from './turn-stream/notice-events.js';
+import { NOTICE_EVENT_TYPES, toNoticeEvent } from './turn-stream/notice-events.js';
+import { toStartedTaskUpdate } from './projector/running-tasks.js';
 
 /** A `StreamEvent`'s `data` payload, read defensively as a loose record. */
 type StreamData = Record<string, unknown>;
@@ -72,6 +73,11 @@ export type TurnOrigin = NonNullable<RawOf<'turn_start'>['origin']>;
  */
 export function toRawSessionEvent(event: StreamEvent): RawSessionEvent | null {
   const data = (event.data ?? {}) as StreamData;
+  // A turn that ran on another model than its session names (DOR-2636), a
+  // project's own OpenCode add-ons kept off (DOR-4404), and background commands
+  // a Stop could not end (DOR-3285). Forwarded whole: the runtime's transcript
+  // records none of them, so each event is the only lasting record.
+  if (NOTICE_EVENT_TYPES.has(event.type)) return toNoticeEvent(event);
   switch (event.type) {
     case 'model_request':
       return modelRequestPayload(event.data);
@@ -165,18 +171,9 @@ export function toRawSessionEvent(event: StreamEvent): RawSessionEvent | null {
     case 'task_update':
       return toTodoUpdate(data);
 
-    case 'background_task_started': {
-      const update: RawOf<'subagent_update'> = {
-        type: 'subagent_update',
-        taskId: String(data.taskId ?? ''),
-        status: 'running',
-        ...(data.description !== undefined ? { description: String(data.description) } : {}),
-        // Carried onto the durable event so a client that reconnects mid-turn
-        // still knows this one is housekeeping. Absent stays absent.
-        ...(data.ambient !== undefined ? { ambient: Boolean(data.ambient) } : {}),
-      };
-      return update;
-    }
+    // The start, with what the session-level running list names it by (D8).
+    case 'background_task_started':
+      return toStartedTaskUpdate(data);
     case 'background_task_progress': {
       const update: RawOf<'subagent_update'> = {
         type: 'subagent_update',
@@ -316,15 +313,6 @@ export function toRawSessionEvent(event: StreamEvent): RawSessionEvent | null {
       };
       return denied;
     }
-
-    // A turn that ran on another model than its session names (DOR-2636), and
-    // background commands a Stop could not end (DOR-3285). Forwarded whole: the
-    // runtime's transcript records none of them, so each event is the only
-    // lasting record (`turn-stream/notice-events.ts`).
-    case 'model_substituted':
-    case 'work_left_running':
-    case 'work_left_ended':
-      return toNoticeEvent(event);
 
     // A transient operational status (hook progress, a raw SDK `status` token).
     // Drives the client status strip; forward only the fields present. Operation

@@ -869,6 +869,29 @@ export interface RuntimeCapabilities {
   credits?: RuntimeCreditsSupport;
 
   /**
+   * The safety guards this runtime enforces on its own agents (runtime-parity
+   * plan, DOR-3596). See {@link RUNTIME_GUARDS} for what each one promises.
+   *
+   * **Absent means none**, and so does any value but `true`: DorkOS reads a
+   * guard only through {@link declaresGuard}, so a new runtime, or one that
+   * misspells a key, gets the strictest treatment rather than inheriting a
+   * guard it never built. Declaring one is a promise the conformance suite
+   * holds the runtime to: every declared guard comes with a test that proves
+   * it, and a proof for an undeclared guard fails too. A proof tests the pieces
+   * a launch builds the guard from, not that a launch still wires them in; that
+   * is each runtime's own launch tests' job.
+   */
+  guards?: RuntimeGuards;
+
+  /**
+   * Whether `session_status.costUsd` is the session's RUNNING total rather than
+   * one turn's (Claude Code). Such a runtime reports a turn's own share as
+   * `turnCostUsd`, and a turn without one reports no cost at all rather than
+   * the whole session's. Absent means `costUsd` is already one turn's.
+   */
+  costUsdIsRunningTotal?: boolean;
+
+  /**
    * Runtime-specific extension point for metadata that does not fit the
    * common shape. Consumers must validate what they read — see ADR 0256.
    */
@@ -880,6 +903,52 @@ export interface RuntimeCapabilities {
  * {@link RuntimeCapabilities.mediaOutput}.
  */
 export type RuntimeMediaOutput = 'none' | 'attachments';
+
+/**
+ * The safety guards a runtime can declare in {@link RuntimeCapabilities.guards}.
+ * Each is a promise about every turn the runtime runs:
+ *
+ * - `protectedPaths` — the agent's file tools refuse the shared protected list
+ *   (`runtimes/shared/policy/protected-paths.ts`): its protected reads at every
+ *   level, its protected writes below Full. And below Full, a shell command that
+ *   reads a protected file goes to a person first. A runtime whose shell reads
+ *   them unasked below Full does not have this guard.
+ * - `ownFolder` — below Full, the agent's file tools cannot change its own setup
+ *   (hooks, skills, settings, MCP servers), and at any level they cannot change
+ *   its `.dork/agent.json` (its level, account and held servers); a shell command
+ *   that plainly writes them is refused too.
+ *
+ * Neither is an OS boundary. A shell check reads the command's text, so a path
+ * built while the command runs gets past it, and at Full the shell reads what it
+ * names: the stated limit of that level. The boundary is agents running as their
+ * own OS user (DOR-3053).
+ *
+ * A guard that used to be listed here by runtime name is gone with the rule it
+ * served: a teammate's or a stranger's words no longer lower a turn on any
+ * runtime (DOR-3440), so there is no teammate tier or carried-shell guard to
+ * declare.
+ */
+export const RUNTIME_GUARDS = ['protectedPaths', 'ownFolder'] as const;
+
+/** One of {@link RUNTIME_GUARDS}. */
+export type RuntimeGuard = (typeof RUNTIME_GUARDS)[number];
+
+/** See {@link RuntimeCapabilities.guards}. */
+export type RuntimeGuards = Readonly<Partial<Record<RuntimeGuard, boolean>>>;
+
+/**
+ * Whether a runtime enforces one safety guard. Fails closed: no capabilities,
+ * no `guards`, a missing key or any value but `true` all read as no guard.
+ *
+ * @param capabilities - The runtime's declared capabilities, if known.
+ * @param guard - The guard to ask about.
+ */
+export function declaresGuard(
+  capabilities: Pick<RuntimeCapabilities, 'guards'> | null | undefined,
+  guard: RuntimeGuard
+): boolean {
+  return capabilities?.guards?.[guard] === true;
+}
 
 /**
  * The request formats the DorkOS credits endpoint can serve, one per vendor API
@@ -1034,6 +1103,8 @@ export interface MessageOpts extends SessionSettings {
   /** The current send’s starter, for notices only. Never read from message content or persisted as a session origin. */
   turnStarter?: TurnStarter;
   cwd?: string;
+  /** Task-scoped Claude Code allow rules for this turn only; never persisted. */
+  taskApprovedAllow?: readonly string[];
   systemPromptAppend?: string;
   /**
    * Folders this turn may reach beyond its cwd, recomputed by the dispatcher for
@@ -1236,9 +1307,10 @@ export interface MessageOpts extends SessionSettings {
    */
   continuationHold?: true;
   /**
-   * A mark this turn carries on from work it continues, apart from any
-   * ceiling: a spin-off's Wi-Fi hold reaching the room seat it reports to
-   * (DOR-3561). Recorded on the turn's level, so every raise gate refuses the
+   * A mark this turn carries, apart from any ceiling: a spin-off's Wi-Fi hold
+   * reaching the room seat it reports to (DOR-3561), or, with DOR-3858's boot
+   * flag on, a message from someone other than the owner in a bound chat or a
+   * room. Recorded on the turn's level, so every raise gate refuses the
    * turn on its own, and it lowers nothing: the turn keeps its level for
    * everything else. Server-derived, never from a client. Runtimes ignore it;
    * the turn-level record reads it.

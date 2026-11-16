@@ -1,6 +1,7 @@
 /**
  * The running-chats read: every chat with a live turn right now, per agent,
- * spin-offs included (DOR-3460). One shape for `GET /api/sessions/running` and
+ * spin-offs included (DOR-3460), plus every chat whose turn ended with
+ * background work still running (DOR-2065). One shape for `GET /api/sessions/running` and
  * the `running_chats` tool.
  *
  * @module shared/running-chats
@@ -36,13 +37,17 @@ export const SessionCapacitySchema = z.object({
 
 export type SessionCapacity = z.infer<typeof SessionCapacitySchema>;
 
-/** Where a running chat is: working, or holding its turn until someone answers. */
-export const RunningChatStateSchema = z.enum(['running', 'needs-you']);
+/**
+ * Where a running chat is: working, holding its turn until someone answers, or
+ * `background` — its turn has ended, but work it started (a helper, a shell, a
+ * Monitor) is still running and can wake it again (DOR-2065).
+ */
+export const RunningChatStateSchema = z.enum(['running', 'needs-you', 'background']);
 
 /** Where a running chat is. */
 export type RunningChatState = z.infer<typeof RunningChatStateSchema>;
 
-/** One chat with a live turn. */
+/** One chat with a live turn, or with background work still running. */
 export const RunningChatSchema = z.object({
   /** The chat's id. */
   id: z.string(),
@@ -50,8 +55,13 @@ export const RunningChatSchema = z.object({
   title: z.string().nullable(),
   /** A ready markdown link to the chat. */
   link: z.string(),
-  /** Working, or waiting on an answer. */
+  /** Working, waiting on an answer, or finished talking with work still running. */
   state: RunningChatStateSchema,
+  /**
+   * `true` while background work it started is still running. Absent
+   * otherwise: not every runtime can tell, so absent is not a "no".
+   */
+  backgroundWork: z.literal(true).optional(),
   /** Another chat started this one. */
   spinOff: z.boolean(),
   /** The chat that started it, when the reader may see that chat. */
@@ -63,7 +73,7 @@ export type RunningChat = z.infer<typeof RunningChatSchema>;
 
 /** What one agent, or no agent, has running. */
 const RunningChatsGroupShape = {
-  /** Every live chat here, the private ones included. */
+  /** Every live chat here (background ones included), the private ones too. */
   count: z.number().int().nonnegative(),
   /** How many of `count` are private to a person, so left out of `chats`. */
   privateCount: z.number().int().nonnegative(),
@@ -89,7 +99,7 @@ export type RunningChatsAgent = z.infer<typeof RunningChatsAgentSchema>;
 export const RunningChatsResponseSchema = z.object({
   /** Capped backends report reclaimable slots and a plain refusal when every record is live. */
   capacity: z.array(SessionCapacitySchema).optional(),
-  /** Every live chat on this server. Always the sum of the groups' counts. */
+  /** Every live chat on this server, background ones included. The sum of the groups' counts. */
   total: z.number().int().nonnegative(),
   /** Every registered agent, busiest first. */
   agents: z.array(RunningChatsAgentSchema),

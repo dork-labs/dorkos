@@ -10,7 +10,9 @@ import { MARKETPLACE_INSTALL_SIBLING_MARKERS } from '@dorkos/shared/marketplace-
 // This matrix pins rendering when all literal components exist. Missing-path
 // behavior is exercised against a real throwaway tree in its dedicated suite.
 beforeEach(() => {
-  vi.spyOn(fs, 'lstatSync').mockReturnValue({} as fs.Stats);
+  vi.spyOn(fs, 'lstatSync').mockImplementation((_file, options) =>
+    typeof options === 'object' && options?.throwIfNoEntry === false ? undefined : ({} as fs.Stats)
+  );
   vi.spyOn(fs, 'readdirSync').mockReturnValue([]);
 });
 afterEach(() => vi.restoreAllMocks());

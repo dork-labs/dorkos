@@ -73,10 +73,38 @@
 # IT NEVER BLOCKS CI. With `CI` set (GitHub Actions sets it) it runs the command
 # directly: a runner is one job on its own machine, and nothing there shares it.
 #
-# IT DEGRADES RATHER THAN REFUSES. No perl, an unwritable lock directory, one
-# that is a symlink or someone else's, or a sidecar that dies before answering
-# each print one line and run the command uncapped: this wraps gates, and a
-# gate that refuses to run is a gate that gets skipped.
+# A HEAVY JOB WAITS FOR THE LOAD, THEN REFUSES. THE COMMIT GATE NEVER DOES.
+#
+# Slots cap how many heavy runs this wrapper starts, not how busy the machine
+# is: on 2026-11-15 a load of about 40, mostly from work no slot covers, held
+# QA's gates for hours. So a `--job` (a build, typecheck, full test run, shot or
+# Playwright run) first reads the 1-minute load average. Over
+# `local.heavy_max_load` (24) it waits, re-reading every
+# `local.heavy_load_poll_seconds` (30 s), for up to
+# `local.heavy_load_wait_seconds` (10 min). If the load is still over, it
+# REFUSES with exit 75 (EX_TEMPFAIL: try again later), printing the load and
+# the slot holders, and runs nothing. A job waiting on the load holds no slot.
+#
+# The split is deliberate, and it is the one place this wrapper refuses:
+#
+#   * A job is work an agent or a person chose to start now and can start
+#     later. Refusing it costs a retry; running it at load 40 cost the team a
+#     night.
+#   * The commit gate (no --job) is never load-checked and keeps the rule
+#     below: degrade, never refuse. A gate that refuses is a gate that gets
+#     skipped, with `--no-verify`, and that is worse than a slow commit.
+#
+# Not load-checked either: a nested call (its parent already passed), CI, and
+# `--hold` (a bare `turbo` run's slot; its helper never fails a run, so a
+# refusal there would only lose the slot). A load that cannot be read lets the
+# job through. `DORKOS_HEAVY_LOCK=0` is still the way out, and is now recorded.
+#
+# IT DEGRADES RATHER THAN REFUSES, except for the load guard above. No perl, an
+# unwritable lock directory, one that is a symlink or someone else's, or a
+# sidecar that dies before answering each print one line and run the command
+# uncapped: this wraps gates, and a gate that refuses to run is a gate that
+# gets skipped. The load guard lives in the sidecar, after those checks, so a
+# run that already lost its cap this way is not load-checked either.
 #
 # HARD RULE 7. Nothing here kills anything. The sidecar asks whether a pid
 # exists with `kill 0`, which sends no signal, and it signals no process at all.
@@ -89,9 +117,19 @@
 #                               or local.heavy_job_wait_seconds with --job
 #   DORKOS_HEAVY_POLL_SECONDS   how often the head of the queue retries (1)
 #   DORKOS_HEAVY_LOCK_DIR       where the slots live (/tmp/dorkos-heavy-locks-<uid>)
-#   DORKOS_HEAVY_LOCK=0         switch the cap off entirely for one run
+#   DORKOS_HEAVY_LOCK=0         switch the cap and the load guard off for one
+#                               run (recorded as a `lock_off` note)
 #   DORKOS_HEAVY_PERL           the perl to use (perl); the fixtures point it at
 #                               a missing path to prove the no-perl fallback
+#   DORKOS_HEAVY_MAX_LOAD       the 1-minute load a --job waits under
+#                               (local.heavy_max_load; 24)
+#   DORKOS_HEAVY_LOAD_WAIT_SECONDS  how long a --job waits for the load to drop
+#                               before exit 75 (local.heavy_load_wait_seconds; 600)
+#   DORKOS_HEAVY_LOAD_POLL_SECONDS  how often it re-reads the load
+#                               (local.heavy_load_poll_seconds; 30)
+#   DORKOS_HEAVY_LOADAVG_CMD    a command that prints the load, in place of
+#                               /proc/loadavg or `sysctl -n vm.loadavg`; the
+#                               fixtures use it to fake one
 # The fixture suite (scripts/test-heavy-run-lock.sh) drives every path through
 # them with second-scale values.
 #
@@ -101,8 +139,11 @@
 # carries, so both are written to the local timings as `O` note lines against
 # the running hook command (`ci_steward_note`, packages/ci-steward/bin/time-wrap.sh):
 # `lock_wait <seconds>` when a slot cost a measurable wait, and `lock_timeout
-# <seconds>` when the wait bound ran out and the command ran uncapped. Outside a
-# hook the note function is a no-op, so this script stays usable by hand.
+# <seconds>` when the wait bound ran out and the command ran uncapped. The load
+# guard adds `load_wait <seconds>` when a job waited for the load, and
+# `load_refused <load>` (whole part) when it gave up with exit 75; `lock_off`
+# marks a run that switched everything off. Outside a hook the note function is
+# a no-op, so this script stays usable by hand.
 
 set -uo pipefail
 
@@ -169,6 +210,15 @@ else
 fi
 POLL_SECONDS="${DORKOS_HEAVY_POLL_SECONDS:-1}"
 PERL="${DORKOS_HEAVY_PERL:-perl}"
+# The load guard, for a --job only (see "A HEAVY JOB WAITS FOR THE LOAD" above).
+MAX_LOAD="${DORKOS_HEAVY_MAX_LOAD:-$(config_number heavy_max_load)}"
+MAX_LOAD="${MAX_LOAD:-24}"
+LOAD_WAIT_SECONDS="${DORKOS_HEAVY_LOAD_WAIT_SECONDS:-$(config_number heavy_load_wait_seconds)}"
+LOAD_WAIT_SECONDS="${LOAD_WAIT_SECONDS:-600}"
+LOAD_POLL_SECONDS="${DORKOS_HEAVY_LOAD_POLL_SECONDS:-$(config_number heavy_load_poll_seconds)}"
+LOAD_POLL_SECONDS="${LOAD_POLL_SECONDS:-30}"
+check_load=0
+[ "$job" = 1 ] && [ -z "$hold_pid" ] && check_load=1
 
 run_uncapped() {
   [ -n "$hold_pid" ] && exit 0
@@ -176,7 +226,12 @@ run_uncapped() {
   exit $?
 }
 
-[ "${DORKOS_HEAVY_LOCK:-1}" = 0 ] && run_uncapped "$@"
+if [ "${DORKOS_HEAVY_LOCK:-1}" = 0 ]; then
+  # The way out stays open, and is now on the record: an opt-out nobody can see
+  # is how a cap stops existing.
+  ci_steward_note lock_off
+  run_uncapped "$@"
+fi
 # Nested inside a run that already holds a slot (or already gave up waiting for
 # one): waiting again would wait on our own parent.
 [ -n "${DORKOS_HEAVY_SLOT_HELD:-}" ] && run_uncapped "$@"
@@ -250,14 +305,23 @@ use Fcntl qw(:flock O_RDWR O_RDONLY O_CREAT O_NOFOLLOW);
 use POSIX ();
 use Time::HiRes qw(sleep time);
 
-my ($dir, $slots, $wait, $poll, $owner, $what, $ancestors, $detach) = @ARGV;
+my ($dir, $slots, $wait, $poll, $owner, $what, $ancestors, $detach,
+  $check_load, $max_load, $load_wait, $load_poll, $load_cmd) = @ARGV;
 my %ancestor = map { $_ => 1 } split " ", ($ancestors // "");
 my $start = time;
 my $deadline = $start + $wait;
+my $load_waited = 0;
+$check_load //= 0;
+$max_load //= 0;
+$load_cmd //= "";
+$load_poll = 30 unless defined $load_poll && $load_poll =~ /^\d+(?:\.\d+)?$/ && $load_poll > 0;
+$load_wait = 0 unless defined $load_wait && $load_wait =~ /^\d+$/;
 STDOUT->autoflush(1);
 
 sub left { my $l = $deadline - time; return $l > 0 ? $l : 0 }
-sub done { print STDOUT "$_[0] ", int(time - $start), "\n"; close STDOUT }
+# The answer: the verdict, the seconds waited for a slot, and the seconds
+# waited for the load before that.
+sub done { print STDOUT "$_[0] ", int(time - $start), " $load_waited\n"; close STDOUT }
 
 sub refuse {
   print STDERR "[heavy-run-lock] $_[0] — running without the host-wide cap.\n";
@@ -348,6 +412,63 @@ sub say_waiting {
   print STDERR "                 $_\n" for @h;
 }
 
+# The 1-minute load average, or undef when it cannot be read. A fake command
+# (DORKOS_HEAVY_LOADAVG_CMD) wins, then /proc/loadavg (Linux), then sysctl
+# (macOS, which prints "{ 4.44 7.99 10.98 }"). The first number is the one.
+sub load_now {
+  my $text;
+  if ($load_cmd ne "") {
+    open(my $p, "-|", "sh", "-c", $load_cmd) or return;
+    local $/;
+    $text = <$p>;
+    close $p or return;
+  } elsif (open(my $f, "<", "/proc/loadavg")) {
+    $text = <$f>;
+    close $f;
+  } elsif (open(my $p, "-|", "sysctl", "-n", "vm.loadavg")) {
+    local $/;
+    $text = <$p>;
+    close $p or return;
+  }
+  return defined $text && $text =~ /(\d+(?:\.\d+)?)/ ? $1 : undef;
+}
+
+# A HEAVY JOB WAITS FOR THE LOAD, THEN REFUSES. Only a --job asks (the shell
+# decides), and it asks before queueing, so a job waiting on the load holds no
+# slot. A load nobody can read lets the job through.
+if ($check_load && $max_load =~ /^\d+(?:\.\d+)?$/ && $max_load > 0) {
+  my $load = load_now();
+  if (defined $load && $load > $max_load) {
+    my $load_deadline = time + $load_wait;
+    my $last_said = 0;
+    while (defined $load && $load > $max_load) {
+      my $l = $load_deadline - time;
+      if ($l <= 0) {
+        printf STDERR "[heavy-run-lock] the load is %s, over the max of %s, after waiting %ds — refusing this heavy job (exit 75).\n",
+          $load, $max_load, int(time - $start);
+        my @h = map { $_->[1] } holders();
+        print STDERR "                 heavy-run slots held now:\n" if @h;
+        print STDERR "                   $_\n" for @h;
+        print STDERR "                 Try again later, or run it anyway with DORKOS_HEAVY_LOCK=0.\n";
+        print STDOUT "overloaded ", int(time - $start), " ", int($load), "\n";
+        close STDOUT;
+        exit 0;
+      }
+      if (time - $last_said >= 60) {
+        printf STDERR "[heavy-run-lock] the load is %s, over the max of %s — waiting up to %ds for it to drop.\n",
+          $load, $max_load, int($l);
+        $last_said = time;
+      }
+      sleep($load_poll > $l ? $l : $load_poll);
+      $load = load_now();
+    }
+    $load_waited = int(time - $start);
+    # The slot wait starts now: the load wait does not eat into its bound.
+    $start = time;
+    $deadline = $start + $wait;
+  }
+}
+
 my ($fh, $k) = try_any();
 unless ($fh) {
   say_waiting();
@@ -419,18 +540,30 @@ describe="$(printf '%s' "$*" | tr '\n' ' ' | cut -c1-160) (in $PWD)"
 owner="${hold_pid:-$$}"
 detach=0
 [ -n "$hold_pid" ] && detach=1
-exec 9< <(exec "$PERL" -e "$holder_src" -- "$lock_dir" "$SLOTS" "$WAIT_SECONDS" "$POLL_SECONDS" "$owner" "$describe" "$ancestors" "$detach")
+exec 9< <(exec "$PERL" -e "$holder_src" -- "$lock_dir" "$SLOTS" "$WAIT_SECONDS" "$POLL_SECONDS" "$owner" "$describe" "$ancestors" "$detach" \
+  "$check_load" "$MAX_LOAD" "$LOAD_WAIT_SECONDS" "$LOAD_POLL_SECONDS" "${DORKOS_HEAVY_LOADAVG_CMD:-}")
 verdict=''
 waited=0
-read -r verdict waited <&9
+extra=0
+read -r verdict waited extra <&9
 exec 9<&-
 
+# For acquired and timeout, `extra` is the seconds waited for the load first;
+# for overloaded, it is the load (whole part) the job was refused at.
 case $verdict in
-  acquired)
-    [ "${waited:-0}" -gt 0 ] 2>/dev/null && ci_steward_note lock_wait "$waited"
+  acquired | timeout)
+    [ "${extra:-0}" -gt 0 ] 2>/dev/null && ci_steward_note load_wait "$extra"
+    if [ "$verdict" = timeout ]; then
+      ci_steward_note lock_timeout "$waited"
+    elif [ "${waited:-0}" -gt 0 ] 2>/dev/null; then
+      ci_steward_note lock_wait "$waited"
+    fi
     ;;
-  timeout)
-    ci_steward_note lock_timeout "$waited"
+  overloaded)
+    [ "${waited:-0}" -gt 0 ] 2>/dev/null && ci_steward_note load_wait "$waited"
+    ci_steward_note load_refused "$extra"
+    # EX_TEMPFAIL: nothing is wrong with the command; try again later.
+    exit 75
     ;;
   nested | refused) ;;
   *)

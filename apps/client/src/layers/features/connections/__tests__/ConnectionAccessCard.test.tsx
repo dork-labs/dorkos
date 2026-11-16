@@ -7,12 +7,13 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { Transport } from '@dorkos/shared/transport';
 import type { ConnectorReconciliationPreview } from '@dorkos/shared/connector-schemas';
 import type { ConnectorConnectionSummary } from '@dorkos/shared/connector-resource-schemas';
-import { createMockTransport, createMockConnectionReadiness } from '@dorkos/test-utils';
-import { SETTINGS_RELINK_SECTION, TransportProvider } from '@/layers/shared/model';
 import {
-  ConnectionAccessCard,
-  type ConnectionAccessCardProps,
-} from '../ui/access/ConnectionAccessCard';
+  createMockTransport,
+  createMockConnectionReadiness,
+} from '@dorkos/test-utils/mock-factories';
+import { SETTINGS_RELINK_SECTION, TransportProvider } from '@/layers/shared/model';
+import { ConnectionAccessCard } from '../ui/access/ConnectionAccessCard';
+import type { ConnectionAccessCardProps } from '../ui/access/access-card-props';
 
 const openSettings = vi.hoisted(() => vi.fn());
 vi.mock('@/layers/shared/model', async (importOriginal) => ({

@@ -6,7 +6,7 @@ import { renderHook, waitFor } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { SessionDailyCountsResponse } from '@dorkos/shared/types';
-import { createMockTransport } from '@dorkos/test-utils';
+import { createMockTransport } from '@dorkos/test-utils/mock-factories';
 import { sessionKeys } from '@/layers/entities/session';
 import { TransportProvider } from '@/layers/shared/model';
 import { useSessionActivity, ACTIVITY_WINDOW_DAYS } from '../model/use-session-activity';

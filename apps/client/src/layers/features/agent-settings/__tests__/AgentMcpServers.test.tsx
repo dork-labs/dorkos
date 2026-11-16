@@ -23,7 +23,7 @@ import { AgentMcpServers } from '../ui/AgentMcpServers';
 import { useCapabilitiesForRuntime } from '@/layers/entities/runtime';
 import { TransportProvider } from '@/layers/shared/model';
 import { TooltipProvider } from '@/layers/shared/ui';
-import { createMockTransport } from '@dorkos/test-utils';
+import { createMockTransport } from '@dorkos/test-utils/mock-factories';
 import type {
   Transport,
   CapabilityApprovalRequired,

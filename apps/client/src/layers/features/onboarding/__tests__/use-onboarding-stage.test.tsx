@@ -14,7 +14,7 @@ import {
   RouterProvider,
 } from '@tanstack/react-router';
 import { zodValidator } from '@tanstack/zod-adapter';
-import { createMockTransport } from '@dorkos/test-utils';
+import { createMockTransport } from '@dorkos/test-utils/mock-factories';
 import type { ServerConfig } from '@dorkos/shared/types';
 import { TransportProvider } from '@/layers/shared/model';
 

@@ -66,7 +66,7 @@ import {
   resolveLaunchAccountRoot,
 } from '../claude-config-dir.js';
 import { ensureCreditsClaudeRoot, isCreditsClaudeRoot } from '../credits-root.js';
-import { creditsSettingsEnv, forCredits } from './credits-launch.js';
+import { applyCreditsSettingsEnv, creditsSettingsEnv, forCredits } from './credits-launch.js';
 import { CLAUDE_CODE_CAPABILITIES, NEVER_ASK_MODE_ID } from '../runtime-constants.js';
 import { projectOfFolder } from '../../../core/usage/account-eligibility.js';
 import { noteSessionAccountLaunched } from '../accounts/account-usage-feed.js';
@@ -760,27 +760,24 @@ export async function resolveLaunch(args: {
     cwd: effectiveCwd,
   });
   // A credits turn's endpoint, in the launch's own settings (see above).
-  if (creditsSettings) {
-    const base = typeof sdkOptions.settings === 'object' ? sdkOptions.settings : {};
-    sdkOptions.settings = { ...base, env: creditsSettings };
-  }
+  applyCreditsSettingsEnv(sdkOptions, creditsSettings);
   // The agent's own folder allow list (DOR-3039), which Claude Code drops in a
   // folder it has not been told to trust.
-  const folderAllowsNotice = await applyFolderAllowsToLaunch({
+  await applyFolderAllowsToLaunch({
     agent: meshAgent
       ? { id: meshAgent.id, name: agentDisplayName ?? meshAgent.name ?? meshAgent.id }
       : undefined,
     home: turnAgentPath ?? undefined,
     cwd: effectiveCwd,
     sdkOptions,
+    taskApprovedAllow: messageOpts?.taskApprovedAllow,
+    statusEvents,
     dorkHome: resolveDorkHome(),
     accountRoot,
     neverAsk: effectivePermissionMode === NEVER_ASK_MODE_ID,
     chat: session,
     ownFolderOpen: ownFolder.open,
   });
-  if (folderAllowsNotice) statusEvents.push(folderAllowsNotice);
-
   // Inject MCP tool servers -- create fresh instances per query to avoid
   // "Already connected to a transport" errors from reused Protocol objects.
   if (opts.mcpServerFactory) {

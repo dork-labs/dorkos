@@ -11,7 +11,7 @@ import { render as rtlRender, screen, cleanup, waitFor, act, within } from '@tes
 import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom/vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { createMockTransport } from '@dorkos/test-utils';
+import { createMockTransport } from '@dorkos/test-utils/mock-factories';
 import type { ServerConfig } from '@dorkos/shared/types';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
 import { TransportProvider, configKeys, useAppStore } from '@/layers/shared/model';

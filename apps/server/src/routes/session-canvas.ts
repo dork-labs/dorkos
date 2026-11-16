@@ -25,7 +25,8 @@
  */
 import { Hono, type Context } from 'hono';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
-import type { ZodType } from 'zod';
+import { z, type ZodType } from 'zod';
+import { APP_WIDGET_REFUSAL, appWidgetIsRefused } from '@dorkos/shared/app-widget-actions';
 import {
   CanvasEditingRequestSchema,
   OpenCanvasDocumentRequestSchema,
@@ -36,6 +37,7 @@ import {
   peekCanvasService,
   sessionScope,
   type CanvasService,
+  type CanvasTreePlacement,
 } from '../services/canvas/index.js';
 import { RoomError } from '../services/rooms/index.js';
 import { peekProjector } from '../services/session/session-state-projector.js';
@@ -149,15 +151,88 @@ function namesAKnownSession(sessionId: string): boolean {
   }
 }
 
+/**
+ * An open on a person's own canvas, which the host may mark as opened for an
+ * app (DOR-3293). Only this route takes the mark: a room's canvas and every
+ * agent path open documents without one, and every later write clears it.
+ *
+ * **Who can set it.** Only a person's window: an agent caller is refused
+ * `PEOPLE_ONLY` before the body is used, like every route here, and the MCP
+ * tools never reach this route. With sign-in on, the mark also needs a session
+ * cookie: the caller check refuses a write made with an API key
+ * (`PERSON_SESSION_REQUIRED`), so a program holding one, an app's own server
+ * half included, cannot set it. The window's frame bridge names the app from
+ * its own record of which app it loaded, never from anything the app's frame
+ * says. And the id must be an app whose screens run right now
+ * ({@link SessionCanvasDeps.appScreenRuns}); anything else is refused.
+ */
+const OpenSessionCanvasDocumentRequestSchema = OpenCanvasDocumentRequestSchema.extend({
+  openedBy: z
+    .object({
+      extensionId: z
+        .string()
+        .regex(/^[a-z0-9][a-z0-9-]*$/)
+        .max(120),
+    })
+    .strict()
+    .optional(),
+});
+
+/** What the session canvas routes read from outside the canvas domain. */
+export interface SessionCanvasDeps {
+  /**
+   * Whether an app id names an installed app whose screens run right now, from
+   * the extension manager's records. Unset (no extensions on this server)
+   * refuses every "opened by" mark.
+   */
+  appScreenRuns?: (extensionId: string) => boolean;
+}
+
+const UNKNOWN_APP = errorBody(
+  'No app with that id is running here',
+  'CANVAS_OPENED_BY_UNKNOWN_APP'
+);
+
+const APP_WIDGET_ACTION = errorBody(APP_WIDGET_REFUSAL, 'CANVAS_APP_WIDGET_ACTION');
+
+/**
+ * Where a document the person opens records it was resolved: the session's own
+ * agent folder, read from the server's binding row and never from the request.
+ *
+ * The same placement an agent's own open records (`applyToSessionCanvas`), so a
+ * file the person opens can be saved through the same folder and boundary
+ * checks. Without it the row records no folder and every save of it is refused.
+ *
+ * A chat with no agent, a session with no binding row yet, or a database this
+ * process cannot read records nothing: a missing folder only ever refuses a
+ * save, so failing to read one must never invent one. A row opened that way is
+ * filled in the next time the person opens the same file.
+ *
+ * @param sessionId - The validated session id.
+ * @returns The placement, or `undefined` to record no folder.
+ */
+async function sessionTreeOf(sessionId: string): Promise<CanvasTreePlacement | undefined> {
+  let agentPath: string | null;
+  try {
+    agentPath = await runtimeRegistry.getSessionAgentPath(sessionId);
+  } catch {
+    return undefined;
+  }
+  if (!agentPath) return undefined;
+  return { resolvedCwd: agentPath, sourceLabel: null, treeKind: null, aheadOfMain: null };
+}
+
 const NO_SUCH_DOCUMENT = errorBody('No such document on this canvas', 'CANVAS_DOCUMENT_NOT_FOUND');
 
 /**
  * The six canvas routes, mounted by `routes/sessions.ts` at `/:id/canvas`, so
  * `:id` is the session.
  *
+ * @param deps - See {@link SessionCanvasDeps}. A test that builds the routes
+ *   bare passes none.
  * @returns The routes.
  */
-export function createSessionCanvasRoutes(): Hono<ApiEnv> {
+export function createSessionCanvasRoutes(deps: SessionCanvasDeps = {}): Hono<ApiEnv> {
   const router = new Hono<ApiEnv>();
 
   /** GET / — everything on this session's canvas, pinned first then most recent. */
@@ -177,18 +252,34 @@ export function createSessionCanvasRoutes(): Hono<ApiEnv> {
   });
 
   /** POST / — put something on this session's canvas. */
-  router.post('/', (c) => {
-    const body = parseCanvasBody(c, OpenCanvasDocumentRequestSchema);
+  router.post('/', async (c) => {
+    const body = parseCanvasBody(c, OpenSessionCanvasDocumentRequestSchema);
     if (body instanceof Response) return body;
     const access = requireCanvasAccess(c);
     if (access instanceof Response) return access;
-    if (!namesAKnownSession(c.req.param('id')!)) {
+    const sessionId = c.req.param('id')!;
+    if (!namesAKnownSession(sessionId)) {
       return c.json(errorBody('Session not found', 'SESSION_NOT_FOUND'), 404);
     }
+    if (body.openedBy && !deps.appScreenRuns?.(body.openedBy.extensionId)) {
+      return c.json(UNKNOWN_APP, 400);
+    }
+    // A widget an app opened may only link out; its other actions act for
+    // the person. The window refuses it first; this is the second check.
+    if (
+      body.openedBy &&
+      body.content.type === 'widget' &&
+      appWidgetIsRefused(body.content.definition)
+    ) {
+      return c.json(APP_WIDGET_ACTION, 400);
+    }
+    const tree = await sessionTreeOf(sessionId);
     try {
       const document = access.canvas.open(access.scope, SESSION_OWNER_AUTHOR, body.content, {
         ...(body.pinned !== undefined ? { pinned: body.pinned } : {}),
         ...(body.channel ? { channel: body.channel } : {}),
+        ...(body.openedBy ? { openedByExtensionId: body.openedBy.extensionId } : {}),
+        ...(tree ? { tree } : {}),
       });
       return c.json(document, 201);
     } catch (err) {

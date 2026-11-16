@@ -4,7 +4,7 @@ import type { ReactNode } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { Transport } from '@dorkos/shared/transport';
 import type { Session } from '@dorkos/shared/types';
-import { createMockTransport } from '@dorkos/test-utils';
+import { createMockTransport } from '@dorkos/test-utils/mock-factories';
 import { TransportProvider } from '@/layers/shared/model';
 import { useAgentSessions } from '../model/query/use-agent-sessions';
 import { sessionDisplayTitle, UNTITLED_SESSION_LABEL } from '../lib/session-display-title';

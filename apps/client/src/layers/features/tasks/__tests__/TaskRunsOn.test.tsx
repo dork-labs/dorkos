@@ -18,7 +18,7 @@ import type { Transport } from '@dorkos/shared/transport';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
 import type { PermissionMode } from '@dorkos/shared/types';
 import { UpdateTaskRequestSchema } from '@dorkos/shared/schemas';
-import { createMockTransport, createMockSchedule } from '@dorkos/test-utils';
+import { createMockTransport, createMockSchedule } from '@dorkos/test-utils/mock-factories';
 import { TransportProvider } from '@/layers/shared/model';
 import { configKeys } from '@/layers/entities/config';
 import { CreateTaskDialog } from '../ui/CreateTaskDialog';

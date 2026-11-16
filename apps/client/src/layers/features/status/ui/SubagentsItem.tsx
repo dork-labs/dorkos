@@ -32,7 +32,9 @@ interface SubagentsItemProps {
 }
 
 /**
- * Status line item: how many helper agents are working right now.
+ * Status line item: how much background work is running right now — helper
+ * agents, background shells, Monitors (DOR-2065). The label says "background
+ * task" rather than "subagent" because the server's count includes all of them.
  *
  * It counts what is *running*, which is the only reading that can earn a slot in
  * a quiet-by-default line. The runtime's catalogue of callable agent types is a
@@ -67,7 +69,7 @@ export function SubagentsItem({ count, running, waiting }: SubagentsItemProps) {
   const plural = count === 1 ? '' : 's';
   const unnamed = count - running.length;
   // One phrasing, whatever the turn is doing — see the note above.
-  const label = `${count} subagent${plural} running`;
+  const label = `${count} background task${plural} running`;
   return (
     <Tooltip>
       <TooltipTrigger asChild>

@@ -5,7 +5,7 @@ import type { PlaygroundSection } from '../playground-registry';
  * answers things on.
  *
  * Sources: PipPanelShowcases, ApprovalsShowcases, ScheduleApprovalShowcases,
- * TriageHeaderShowcases, InboxShowcases, PresenceStripShowcases,
+ * TriageHeaderShowcases, InboxShowcases, ExtensionUpdateShowcases, PresenceStripShowcases,
  * HomeStatesShowcases, TodosShowcases, ConnectionsShowcases, PausedConnectionShowcases,
  * CommunityHostingShowcases, McpServerCardShowcases, McpServerSheetShowcases.
  *
@@ -106,6 +106,32 @@ export const FEATURE_SURFACE_SECTIONS: PlaygroundSection[] = [
       're-ask',
     ],
   },
+  // ExtensionUpdateShowcases
+  {
+    id: 'extension-update-card',
+    title: 'Extension update card',
+    page: 'home-inbox',
+    category: 'Inbox',
+    keywords: ['extension', 'update', 'new power', 'files changed', 'approval', 're-ask'],
+  },
+  // AppApprovalCardShowcases
+  {
+    id: 'app-approval-card',
+    title: 'App approval card',
+    page: 'home-inbox',
+    category: 'Inbox',
+    keywords: [
+      'app',
+      'extension',
+      'approval',
+      'can change',
+      'other apps',
+      'frame',
+      'writes',
+      'open its pages',
+      'navigate',
+    ],
+  },
   {
     id: 'inbox-decision-row',
     title: 'Inbox decision row',
@@ -157,6 +183,14 @@ export const FEATURE_SURFACE_SECTIONS: PlaygroundSection[] = [
     page: 'home-inbox',
     category: 'Home',
     keywords: ['browser', 'agent browser', 'panel', 'not open yet', 'disconnected'],
+  },
+  // BrowserPageErrorShowcases
+  {
+    id: 'agent-browser-page-errors-and-loading',
+    title: 'Agent browser page errors and loading',
+    page: 'home-inbox',
+    category: 'Home',
+    keywords: ['browser', 'agent browser', 'error', 'offline', 'certificate', 'loading', 'seam'],
   },
   // ScheduleApprovalShowcases
   {
@@ -367,6 +401,20 @@ export const FEATURE_SURFACE_SECTIONS: PlaygroundSection[] = [
       'account',
       'chat card',
     ],
+  },
+  {
+    id: 'connectionaccessdialog',
+    title: 'ConnectionAccessDialog',
+    page: 'home-inbox',
+    category: 'Connections',
+    keywords: ['access', 'read only', 'disabled', 'write', 'Linear', 'Scout'],
+  },
+  {
+    id: 'read-only-agent-request',
+    title: 'Read-only agent request',
+    page: 'home-inbox',
+    category: 'Connections',
+    keywords: ['request', 'read only', 'allow', 'Linear', 'Scout'],
   },
   {
     id: 'agentrequestcard',

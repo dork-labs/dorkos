@@ -14,7 +14,7 @@ import { TestProviders } from '@dorkos/test-utils/react-helpers';
 
 /** Each render sits in a real query client: the frame reads cached config (DOR-4132). */
 const render = (ui: React.ReactElement) => renderBare(ui, { wrapper: TestProviders });
-import { createMockTransport } from '@dorkos/test-utils';
+import { createMockTransport } from '@dorkos/test-utils/mock-factories';
 import type { CanvasChannelReplayResponse } from '@dorkos/shared/canvas-channel-schemas';
 import { DocFrameHandshake, FrameLifetimeController } from '@/layers/shared/lib/canvas-doc-frame';
 const transport = createMockTransport();

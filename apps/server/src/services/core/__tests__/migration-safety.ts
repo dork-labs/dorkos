@@ -121,6 +121,18 @@ export const REMOVED_SHIPPED_KEYS: Readonly<Record<string, string>> = {
     'DOR-4188: the 0.115 upgrade floor refuses older configs before Conf opens; no supported upgrade can reach this key.',
   '0.55.0':
     'DOR-4188: the 0.115 upgrade floor refuses older configs before Conf opens; no supported upgrade can reach this key.',
+  '0.60.0':
+    'DOR-4188: re-ran backfillRoomsDefaults, which 0.57.0 calls first on every file the 0.115 ' +
+    'upgrade floor admits (only unstamped files reach it), so it had nothing left to fill. ' +
+    'config-unstamped-equivalence.test.ts proves the settled file is unchanged.',
+  '0.79.0':
+    'DOR-4188: seeded rooms.maxCanvasOpsPerTurn from a default DOR-2739 removed, so it wrote ' +
+    'undefined, which never reaches the file; 0.113.0 deletes the leaf anyway. ' +
+    'config-unstamped-equivalence.test.ts proves the settled file is unchanged.',
+  '0.83.0':
+    'DOR-4188: mapped the power-door answer to a preset; 0.115.0 always runs after it on every ' +
+    'file the 0.115 upgrade floor admits and reaches the same preset from the same answer. ' +
+    'config-unstamped-equivalence.test.ts proves the settled file is unchanged.',
   '0.71.0':
     'seeded runtimes.dorkosTools; DOR-2099 graduated that experiment and deleted the leaf, so ' +
     'there is no behaviour left for a stored value to select and the state change it owed is ' +

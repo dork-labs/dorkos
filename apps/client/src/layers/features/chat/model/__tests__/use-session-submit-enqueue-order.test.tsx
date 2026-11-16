@@ -16,7 +16,7 @@ import { renderHook, act } from '@testing-library/react';
 import React from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { TransportProvider } from '@/layers/shared/model';
-import { createMockTransport } from '@dorkos/test-utils';
+import { createMockTransport } from '@dorkos/test-utils/mock-factories';
 import { useSessionSubmit } from '../use-session-submit';
 
 const SESSION_ID = 'session-under-test';

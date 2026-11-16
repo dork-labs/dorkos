@@ -6,7 +6,7 @@ import { render, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { TransportProvider } from '@/layers/shared/model';
-import { createMockTransport } from '@dorkos/test-utils';
+import { createMockTransport } from '@dorkos/test-utils/mock-factories';
 import type { McpAppResourceResponse } from '@dorkos/shared/schemas';
 import { McpAppFrame } from '../ui/McpAppFrame';
 

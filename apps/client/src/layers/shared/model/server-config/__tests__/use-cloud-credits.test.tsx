@@ -8,7 +8,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { act, renderHook } from '@testing-library/react';
 import React from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { createMockTransport } from '@dorkos/test-utils';
+import { createMockTransport } from '@dorkos/test-utils/mock-factories';
 import { TransportProvider } from '../../TransportContext';
 import { MODELS_KEY } from '../../../lib/models-query-key';
 import { useKeepCreditsOutOfProject, useSetCreditsDefault } from '../use-cloud-credits';

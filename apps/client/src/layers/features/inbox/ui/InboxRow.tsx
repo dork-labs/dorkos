@@ -249,7 +249,9 @@ export function InboxRow({ notification, agent, onOpen, index }: InboxRowProps) 
     notification.kind === 'connector.access_narrowed' ||
     notification.kind === 'mcp-server.tool_added' ||
     notification.kind === 'mcp-server.reserved_name' ||
-    notification.kind === 'report.undelivered';
+    notification.kind === 'report.undelivered' ||
+    // The agent's reason is the point of a changed promise (DOR-3034).
+    notification.kind === 'todo.changed';
   const isScheduleCreation =
     readsInFull && notification.actions?.some((action) => action.id === 'pause') === true;
   const refusalTitle =

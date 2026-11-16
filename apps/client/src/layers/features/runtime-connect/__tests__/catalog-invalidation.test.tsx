@@ -3,7 +3,7 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 import type { ReactNode } from 'react';
 import { act, cleanup, renderHook, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { createMockTransport } from '@dorkos/test-utils';
+import { createMockTransport } from '@dorkos/test-utils/mock-factories';
 import { MODELS_KEY } from '@/layers/shared/lib';
 import { TransportProvider } from '@/layers/shared/model';
 import { useStoreOpenRouterKey } from '../model/use-openrouter-connect';

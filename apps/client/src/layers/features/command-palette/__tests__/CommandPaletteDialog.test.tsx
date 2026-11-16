@@ -8,7 +8,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { sessionKeys } from '@/layers/entities/session';
 import type { Session } from '@dorkos/shared/types';
 import '@testing-library/jest-dom/vitest';
-import { createMockTransport } from '@dorkos/test-utils';
+import { createMockTransport } from '@dorkos/test-utils/mock-factories';
 import { useInteractionStore } from '@/layers/entities/interactions';
 import { CommandPaletteDialog } from '../ui/CommandPaletteDialog';
 import { registerTabOpener } from '@/layers/shared/lib';

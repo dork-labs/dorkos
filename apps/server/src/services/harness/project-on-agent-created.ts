@@ -133,7 +133,7 @@ import { configManager } from '../core/config-manager.js';
 import { dorkosHarness } from './dorkos-harness.js';
 import { storedPresetIsFull } from './hook-consent.js';
 import { provenDorkosInstallsIfFull, type ProvenInstall } from './dorkos-installed.js';
-import { isAgentHome } from './project-agent-workspace.js';
+import { isAgentHome } from './directory-ownership.js';
 import {
   projectWithConsent as defaultProjectWithConsent,
   withProjectLock,

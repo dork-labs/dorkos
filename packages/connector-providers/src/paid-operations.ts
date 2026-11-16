@@ -45,16 +45,27 @@ export const PAID_BY_DEFAULT_TOOLKITS: ReadonlySet<string> = new Set([
 export const REVIEWED_FREE_OPERATIONS: ReadonlySet<string> = new Set();
 
 /**
+ * Operations that spend money inside otherwise free toolkits (DOR-4460), by
+ * toolkit and slug pattern. GitHub Models calls bill the account owner, and
+ * Composio tags them `readOnlyHint`. A pattern, so a model call Composio adds
+ * later is paid from its first catalog read; listing the model catalog runs
+ * no model and stays free.
+ */
+export const PAID_OPERATION_PATTERNS: ReadonlyMap<string, RegExp> = new Map([
+  ['github', /^GITHUB_\w*INFERENCE/],
+]);
+
+/**
  * Whether an operation spends money: every operation of a pay-per-use service,
- * unless Security reviewed it as free.
+ * unless Security reviewed it as free, and the paid operations of a free one.
  *
  * @param op - The service (toolkit) and operation, as the provider names them.
  */
 export function isPaidOperation(op: { toolkit: string; operationSlug: string }): boolean {
-  return (
-    PAID_BY_DEFAULT_TOOLKITS.has(op.toolkit.toLowerCase()) &&
-    !REVIEWED_FREE_OPERATIONS.has(op.operationSlug.toUpperCase())
-  );
+  const toolkit = op.toolkit.toLowerCase();
+  const slug = op.operationSlug.toUpperCase();
+  if (PAID_OPERATION_PATTERNS.get(toolkit)?.test(slug)) return true;
+  return PAID_BY_DEFAULT_TOOLKITS.has(toolkit) && !REVIEWED_FREE_OPERATIONS.has(slug);
 }
 
 /** What an access level reads of one operation: its class, and whether it spends money. */

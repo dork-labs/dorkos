@@ -99,7 +99,30 @@ export async function resourceClosure(
     unsubscribe?.();
   }
 }
-import type { Browser } from 'playwright-core';
+import type { Browser, BrowserContext } from 'playwright-core';
+
+/**
+ * Close everything one connection holds, together: its CDP connection, its own
+ * window's context, and the Mac app's page. Persistent Chromium's protocol-close
+ * event can precede process exit and cookie flushing, so the profile stays owned
+ * until the context's own close request settles; its protocol event cannot
+ * release the persistent profile lease.
+ *
+ * @param browser - The CDP connection, when there is one.
+ * @param context - The agent's own window, when there is one.
+ * @param embeddedClose - Closes the Mac app's page, when there is one.
+ */
+export async function closeConnectionHolders(
+  browser: Browser | undefined,
+  context: BrowserContext | undefined,
+  embeddedClose: (() => Promise<void>) | undefined
+): Promise<void> {
+  await Promise.all([
+    browser && closeBrowserConnection(browser),
+    context?.close(),
+    embeddedClose?.(),
+  ]);
+}
 
 /** Wait for an attached browser's disconnect without releasing a persistent profile lease. */
 export function closeBrowserConnection(browser: Browser): Promise<void> {

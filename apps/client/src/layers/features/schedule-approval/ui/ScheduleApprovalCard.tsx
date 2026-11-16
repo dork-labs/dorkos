@@ -4,6 +4,7 @@ import {
 } from '@dorkos/shared/schedule-file-problems';
 import { appRoutes } from '@/layers/shared/lib';
 import { isNoLooserThan } from '@dorkos/shared/permission-semantics';
+import { isLooserScheduleMode, scheduleApprovalBaseline } from '@dorkos/shared/schedule-approval';
 /**
  * A schedule an agent proposed, and everything you need to decide about it.
  *
@@ -32,8 +33,8 @@ import { RequestingAgent } from '@/layers/features/approvals';
 import { formatCadence, formatFirstRuns } from '../lib/format-schedule-times';
 import { describeApprovalChanges } from '../lib/describe-approval-changes';
 import { useScheduleApprovalPower } from '../model/use-schedule-approval-power';
-import { requestedPermissionMode } from '../lib/requested-permission-mode';
 import { SchedulePermissionChoice } from './SchedulePermissionChoice';
+import { scheduleConfirmReason, schedulePermissionLabel } from '../lib/schedule-permission-copy';
 import {
   cancelRejection,
   rejectAfterUndoWindow,
@@ -43,6 +44,9 @@ import { holdApprovedSchedule, releaseSettledSchedule } from '../model/settling-
 import { useScheduleTestRun } from '../model/use-schedule-test-run';
 import { TestRunStrip } from './TestRunStrip';
 import { ScheduleOriginMarks } from './ScheduleOriginMarks';
+import { useProfile } from '@/layers/entities/user-profile';
+import type { ScheduleApprovalSurface } from './ScheduleApprovalReceipt';
+import { ScheduleApprovalActions } from './ScheduleApprovalActions';
 
 /** What a person answered, once they have. */
 type Decision = 'approved' | 'rejected';
@@ -53,6 +57,8 @@ const AGE_TICK_MS = 30_000;
 export interface ScheduleApprovalCardProps {
   /** The schedule waiting on a yes or a no. */
   task: Task;
+  /** Where this approval card is shown, for its durable receipt. */
+  approvalSurface: ScheduleApprovalSurface;
   /**
    * Whether this card is the keyboard shortcut's current target. Defaults to
    * true, as {@link AskCard} does — a surface drawing a queue passes false for
@@ -87,6 +93,8 @@ export interface ScheduleApprovalCardProps {
   turnOnApproval?: boolean;
   /** Phone review title, scrolling with the instructions above the sticky mode. */
   reviewHeader?: ReactNode;
+  /** Seed the picked mode for previews and the Playground. */
+  initialPickedMode?: string;
   /**
    * The card sits in a short host (Home's pinned header): the prompt block is
    * capped lower, so the title, the prompt and Approve fit in it together.
@@ -135,14 +143,18 @@ function ChangeValue({ value, unbroken }: { value: string; unbroken: boolean }) 
  * ## Three answers, and the third is the point
  *
  * Approve arms it. Reject deletes it — after an undo window, so the receipt is
- * a real offer and not a taunt (see `deferred-rejection`). **Run it once**
+ * a real offer and not a taunt (see `deferred-rejection`). **Try it once now**
  * executes the proposed prompt now, as a single supervised run, and reports
  * what it did: approval by demonstration, with Approve still sitting there
  * afterwards backed by evidence. Nothing about a test run arms a timer, changes
  * the status, or resolves the standing proposal.
  *
- * Approval starts at the saved mode. A reason can suggest a mode, but only
- * the person picks it. Folder rules remain separately approved grants.
+ * Approval starts at the one-click baseline: the tightest of the saved mode,
+ * the requested mode and, for outsider-written work, Allowed commands. A
+ * request only preselects itself when it is that tightest mode and within the
+ * person's ceiling. Anything looser than the baseline takes a separate tick,
+ * measured by the same rule the server uses (`@dorkos/shared/schedule-approval`).
+ * Folder rules remain separately approved grants.
  *
  * Neither answer toasts on success. The receipt is the confirmation, where the
  * decision was made; the app's one failure toast (`query-client.ts`) already
@@ -152,12 +164,13 @@ function ChangeValue({ value, unbroken }: { value: string; unbroken: boolean }) 
  */
 function ScheduleApprovalContent({
   task,
+  approvalSurface,
   isActive = true,
   onNavigate,
   className,
   pinActions = false,
-  turnOnApproval = false,
   reviewHeader,
+  initialPickedMode,
   compact = false,
   onStale,
   onApproved,
@@ -171,8 +184,11 @@ function ScheduleApprovalContent({
   const deleteTask = useDeleteTask();
   const testRun = useScheduleTestRun(task.id);
   const [decision, setDecision] = useState<Decision | null>(null);
-  const [pickedMode, setPickedMode] = useState<string | null>(null);
+  const [pickedMode, setPickedMode] = useState<string | null>(initialPickedMode ?? null);
+  const [confirmLooser, setConfirmLooser] = useState(false);
   const [grantedLabel, setGrantedLabel] = useState<string | null>(null);
+  const [approvedAt, setApprovedAt] = useState<string | null>(null);
+  const { displayName } = useProfile();
   // A yes that approves the task's SKILL file shows the prompt it approves,
   // open from the start (DOR-3703, M4): an agent's proposal, or any task whose
   // file this approval would vouch for.
@@ -189,8 +205,9 @@ function ScheduleApprovalContent({
 
   const name = task.displayName ?? task.name;
   const proposer = task.proposedByName ?? 'an agent';
-  // Who its runs act as, which is whose turn it would be (DOR-3640 R1).
-  const runsAs = task.agentId ? (task.runsAsName ?? 'an agent') : 'no agent';
+  // Who its runs act as, resolved from the agent roster by the server. An id
+  // alone is not a name, so an unresolved or absent agent draws no claim.
+  const runsAs = task.agentId ? task.runsAsName : null;
   // A schedule DorkOS found on disk, rather than one anybody asked for. Nobody
   // proposed it, so every part of this card that credits a proposer has to say
   // something else — the file it came from (ADR `260823-200726`).
@@ -204,18 +221,42 @@ function ScheduleApprovalContent({
   const dorkosWrote = foundInFile || task.reasonSource === 'dorkos';
   const firstRuns = formatFirstRuns(task.nextRuns, now);
   const power = useScheduleApprovalPower(task);
-  const requested =
-    task.reasonSource === 'dorkos' ? null : requestedPermissionMode(task.reason, power.modes);
-  // Agent-written prose is never a grant, including when Approve is a shortcut.
-  const selectedMode = pickedMode ?? task.permissionMode;
+  const requested = task.requestedPermissionMode
+    ? (power.modes.find((mode) => mode.id === task.requestedPermissionMode) ?? null)
+    : null;
+  // One rule for the card and the server (review of #3794): the request can
+  // only narrow what one click grants, never widen it.
+  const baseline = scheduleApprovalBaseline(task);
   const canSuggest =
     !task.originMarks &&
     requested &&
     !isBypassPermissionMode(requested.id) &&
     power.ceiling &&
     isNoLooserThan(power.ceiling, requested);
+  const startsAtBaseline =
+    power.modes.some((mode) => mode.id === baseline) &&
+    (baseline !== requested?.id || canSuggest || task.originMarks?.outsider === true);
+  // Structured proposal fields are requests, never grants. The person still approves below.
+  const selectedMode = pickedMode ?? (startsAtBaseline ? baseline : task.permissionMode);
   const selected = power.modes.find((mode) => mode.id === selectedMode);
-  const currentLabel = selected?.label ?? permissionModeLabel(selectedMode);
+  const looserMode = Boolean(selected && isLooserScheduleMode(selected.id, baseline));
+  // A trial of a pending schedule runs at the baseline when the saved mode is
+  // looser, as the trigger route does (`routes/task-trial-mode.ts`); one whose
+  // runtime does not offer that mode waits for approval.
+  const trialTightened =
+    task.status === 'pending_approval' && isLooserScheduleMode(task.permissionMode, baseline);
+  const trialBlocked = trialTightened && !power.modes.some((mode) => mode.id === baseline);
+  const trialMode = trialTightened ? baseline : task.permissionMode;
+  const trialLabel = schedulePermissionLabel(
+    trialMode,
+    power.modes.find((mode) => mode.id === trialMode)?.label ?? permissionModeLabel(trialMode)
+  );
+  const confirmReason = scheduleConfirmReason(task, looserMode);
+  const needsLooserConfirmation = confirmReason !== null;
+  const currentLabel = schedulePermissionLabel(
+    selectedMode,
+    selected?.label ?? permissionModeLabel(selectedMode)
+  );
 
   // The conversation this was proposed in, when there is one to name. Read
   // under the PROPOSING session's directory rather than whatever this window
@@ -253,11 +294,23 @@ function ScheduleApprovalContent({
    * the SKILL file only while it still holds exactly that text (DOR-3703, M4).
    */
   const approve = async (turnOn = false) => {
-    if (answered !== null || !selected || refreshing || !task.approvalRevision) return;
+    if (
+      answered !== null ||
+      !selected ||
+      refreshing ||
+      !task.approvalRevision ||
+      (needsLooserConfirmation && !confirmLooser)
+    )
+      return;
     setDecision('approved');
+    setApprovedAt(new Date().toISOString());
     setGrantedLabel(currentLabel);
     setTurnedOn(turnOn);
-    const approvedTask = { ...task, permissionMode: selectedMode as PermissionMode };
+    const approvedTask = {
+      ...task,
+      permissionMode: selectedMode as PermissionMode,
+      approvedAllow: task.requestedAllow ?? [],
+    };
     holdApprovedSchedule(approvedTask);
     // Only a card that opened on the prompt names it: a folded one showed nothing (SC2).
     const approvedPromptHash = attestsFile ? await promptHash(task.prompt) : undefined;
@@ -266,6 +319,7 @@ function ScheduleApprovalContent({
         id: task.id,
         status: 'active',
         expectedApprovalRevision: task.approvalRevision,
+        approvalSurface,
         ...(approvedPromptHash && { approvedPromptHash }),
         ...(turnOn && { enabled: true }),
         // Omit an unchanged value for package-owned schedules, which do not
@@ -273,19 +327,28 @@ function ScheduleApprovalContent({
         ...(selectedMode !== task.permissionMode && {
           permissionMode: selectedMode as PermissionMode,
         }),
+        // The rules the proposer asked for, applied exactly; none asked, none sent.
+        ...(task.requestedAllow?.length && { approvedAllow: task.requestedAllow }),
+        ...(needsLooserConfirmation && confirmLooser
+          ? { acceptLooserThanRequested: true as const }
+          : {}),
       },
       {
-        onSuccess: () => onApproved?.(),
+        onSuccess: (approved) => {
+          if (approved?.approvedAt) setApprovedAt(approved.approvedAt);
+          onApproved?.();
+        },
         onError: (error) => {
           if ('code' in error && error.code === 'schedule_review_changed') onStale();
           releaseSettledSchedule(task.id);
           setDecision(null);
+          setApprovedAt(null);
           setGrantedLabel(null);
         },
       }
     );
   };
-  const approveAtSelectedLevel = () => void approve(turnOnApproval);
+  const approveAtSelectedLevel = () => void approve(!task.enabled);
 
   const reject = () => {
     if (answered !== null) return;
@@ -338,12 +401,16 @@ function ScheduleApprovalContent({
     <AskCard.Root
       isActive={isActive}
       isResolved={answered !== null}
-      onAllow={answered === null && !misplacedMode ? approveAtSelectedLevel : undefined}
+      onAllow={
+        answered === null && !misplacedMode && (!needsLooserConfirmation || confirmLooser)
+          ? approveAtSelectedLevel
+          : undefined
+      }
       onDeny={answered === null ? reject : undefined}
       data-testid="schedule-approval-card"
       data-task-id={task.id}
       className={cn(
-        'flex min-w-0 flex-col gap-2',
+        'border-border bg-card flex min-w-0 flex-col gap-2 border border-l ring-0 ring-transparent',
         pinActions && 'bg-background max-h-[76dvh] min-h-0 flex-1 ring-inset',
         className
       )}
@@ -411,9 +478,7 @@ function ScheduleApprovalContent({
         </div>
 
         <AskCard.Headline className="min-w-0 break-words">{name}</AskCard.Headline>
-        <p className="text-muted-foreground text-xs">
-          {task.agentId ? `Agent: ${runsAs}` : 'No agent'}
-        </p>
+        {runsAs && <p className="text-muted-foreground text-xs">Agent: {runsAs}</p>}
 
         <AskCard.Detail className="text-xs">
           <p className="min-w-0 break-words">
@@ -508,7 +573,6 @@ function ScheduleApprovalContent({
           flowing={pinActions}
           selectedMode={selectedMode}
           currentLabel={currentLabel}
-          runtime={power.runtime}
         />
 
         {answered === null && !misplacedMode && (
@@ -517,15 +581,33 @@ function ScheduleApprovalContent({
             modes={power.modes}
             value={selectedMode}
             requested={requested}
-            onChange={setPickedMode}
-            onUseRequested={canSuggest ? () => setPickedMode(requested.id) : undefined}
+            onChange={(mode) => {
+              setPickedMode(mode);
+              setConfirmLooser(false);
+            }}
+            onUseRequested={
+              canSuggest
+                ? () => {
+                    setPickedMode(requested.id);
+                    setConfirmLooser(false);
+                  }
+                : undefined
+            }
+            confirmLooser={confirmLooser}
+            onConfirmLooserChange={setConfirmLooser}
+            confirmReason={confirmReason}
           />
         )}
 
-        {answered === null && selectedMode !== task.permissionMode && (
-          <p className="text-muted-foreground text-xs">
-            Test runs use {power.current?.label ?? permissionModeLabel(task.permissionMode)} until
-            you approve.
+        {/* A test run takes no pick: it uses the saved mode, or the baseline when
+            the saved one is looser. Said only when that differs from the pick. */}
+        {answered === null && (trialBlocked || selectedMode !== trialMode) && (
+          <p data-slot="schedule-try-mode" className="text-muted-foreground text-xs">
+            {trialBlocked
+              ? 'Try it once now waits until you approve it.'
+              : trialTightened
+                ? `Try it once now uses ${trialLabel}.`
+                : `Try it once now uses the saved mode: ${trialLabel}.`}
           </p>
         )}
         {pinActions && answered === null && (
@@ -536,112 +618,43 @@ function ScheduleApprovalContent({
               data-slot="schedule-test-run-start"
               aria-label={`Run ${name} once`}
               className="min-h-11 px-2.5 text-xs sm:min-h-0"
-              disabled={testRun.phase === 'running' || refreshing}
+              disabled={testRun.phase === 'running' || refreshing || trialBlocked}
               onClick={testRun.start}
             >
-              Run it once
+              Try it once now
             </Button>
             {trialNote}
           </div>
         )}
         <TestRunStrip testRun={testRun} onOpenRun={openTestRun()} />
       </div>
-      {answered === null ? (
-        // The review body scrolls; its decisions keep their space below it.
-        <AskCard.Actions
-          className={cn(
-            'flex-col items-stretch sm:flex-row sm:items-center',
-            pinActions && 'shrink-0 pt-2'
-          )}
-        >
-          {(!turnOnApproval || misplacedMode) && (
-            <Button
-              size="sm"
-              data-slot="schedule-approve"
-              aria-label={`Approve ${name}`}
-              disabled={!selected || misplacedMode || refreshing || !task.approvalRevision}
-              className="min-h-11 w-full px-2.5 text-xs sm:h-7 sm:min-h-0 sm:w-auto"
-              onClick={approveAtSelectedLevel}
-            >
-              Approve
-            </Button>
-          )}
-          {/* A plain review can approve without enabling. The switch path explicitly
-              asks to turn it on, so that is its only approval action. */}
-          {!misplacedMode && !task.enabled && (
-            <Button
-              variant={turnOnApproval ? 'default' : 'outline'}
-              size="sm"
-              data-slot="schedule-approve-turn-on"
-              aria-label={`Approve ${name} and turn it on`}
-              className="min-h-11 w-full px-2.5 text-xs sm:h-7 sm:min-h-0 sm:w-auto"
-              disabled={!selected || misplacedMode || refreshing || !task.approvalRevision}
-              onClick={() => void approve(true)}
-            >
-              Approve and turn on
-            </Button>
-          )}
-          {/* After the approvals and quieter than Approve: it is the
-              evidence-gathering move, not the decision. Disabled only while a
-              run of its own is in flight — two supervised runs from one card is
-              two things to read. */}
-          {!pinActions && (
-            <div className="flex flex-wrap items-center gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                data-slot="schedule-test-run-start"
-                aria-label={`Run ${name} once`}
-                className="min-h-11 w-full px-2.5 text-xs sm:h-7 sm:min-h-0 sm:w-auto"
-                disabled={testRun.phase === 'running' || refreshing}
-                onClick={testRun.start}
-              >
-                Run it once
-              </Button>
-              {trialNote}
-            </div>
-          )}
-          {/* Last, so the answers that keep the schedule read first. */}
-          <Button
-            variant="ghost"
-            size="sm"
-            data-slot="schedule-reject"
-            aria-label={`Reject ${name}`}
-            className="min-h-11 w-full px-2.5 text-xs sm:h-7 sm:min-h-0 sm:w-auto"
-            onClick={reject}
-          >
-            Reject
-          </Button>
-        </AskCard.Actions>
-      ) : (
-        <AskCard.Actions>
-          <AskCard.Receipt
-            data-slot="schedule-receipt"
-            tone={answered === 'approved' ? 'allowed' : 'denied'}
-          >
-            {answered === 'approved'
-              ? `Approved${grantedLabel ? ` at ${grantedLabel}` : ''}` +
-                (task.enabled || turnedOn
-                  ? `${firstRuns ? `. First run ${firstRuns.first}` : ''}`
-                  : '. Off until you turn it on.')
-              : 'Rejected'}
-          </AskCard.Receipt>
-          {/* Live for as long as the DELETE has not been sent. Once the window
-              closes the offer goes, because a button that cannot do what it says
-              is worse than no button. */}
-          {answered === 'rejected' && undoable && (
-            <Button
-              variant="ghost"
-              size="sm"
-              data-slot="schedule-undo"
-              className="h-6 px-2 text-xs"
-              onClick={undo}
-            >
-              Undo
-            </Button>
-          )}
-        </AskCard.Actions>
-      )}
+      <ScheduleApprovalActions
+        answered={answered}
+        pinActions={pinActions}
+        name={name}
+        enabled={task.enabled}
+        approveDisabled={
+          !selected ||
+          misplacedMode ||
+          refreshing ||
+          !task.approvalRevision ||
+          (needsLooserConfirmation && !confirmLooser)
+        }
+        onApprove={approveAtSelectedLevel}
+        refreshing={refreshing}
+        trialBlocked={trialBlocked}
+        testRun={testRun}
+        trialNote={trialNote}
+        onReject={reject}
+        approvedAt={approvedAt}
+        approverName={displayName}
+        approvalSurface={approvalSurface}
+        grantedLabel={grantedLabel}
+        firstRun={firstRuns?.first ?? null}
+        turnedOn={turnedOn}
+        undoable={undoable}
+        onUndo={undo}
+      />
     </AskCard.Root>
   );
 }

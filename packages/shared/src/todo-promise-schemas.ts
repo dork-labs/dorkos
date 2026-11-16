@@ -46,6 +46,12 @@ export const TodoPromiseSchema = z
     what: z.string(),
     /** When it is due (ISO 8601), or null. */
     dueAt: z.string().nullable(),
+    /** The first due date it ever had, or null before one is set. */
+    originalDueAt: z.string().nullable().describe('The first due date this to-do ever had.'),
+    /** The date used to score whether it was kept on time, or null when it has none to be judged by. */
+    scoreDueAt: z.string().nullable().describe('The due date used to score on-time completion.'),
+    /** How many times an existing due date changed. */
+    moveCount: z.number().int().describe('Changes made to an existing due date.'),
     state: TodoStateSchema,
     /** Open with a due date in the past. Computed on read, never stored. */
     overdue: z.boolean(),
@@ -57,6 +63,14 @@ export const TodoPromiseSchema = z
     /** When it left `open`, or null while open. */
     closedAt: z.string().nullable(),
     note: z.string().nullable(),
+    /**
+     * Whether the person it was promised to confirmed it kept: `asked` while their answer waits,
+     * `confirmed` once they said yes, `not-yet` once they reopened it, null when nobody was
+     * asked (DOR-3034).
+     */
+    confirmState: z.enum(['asked', 'confirmed', 'not-yet']).nullable(),
+    /** A link to what was delivered when it was kept (a pull request, a message, a file), or null. */
+    delivered: z.string().nullable(),
   })
   .openapi('TodoPromise');
 
@@ -94,6 +108,20 @@ export const UpdateTodoPromiseRequestSchema = z
 
 /** An update-to-do request. */
 export type UpdateTodoPromiseRequest = z.infer<typeof UpdateTodoPromiseRequestSchema>;
+
+/** A person's answer to "was it kept?" (DOR-3034): Yes confirms it, Not yet reopens it. */
+export const ConfirmTodoPromiseRequestSchema = z
+  .object({ answer: z.enum(['yes', 'not-yet']) })
+  .openapi('ConfirmTodoPromiseRequest');
+
+/** A confirm-to-do request. */
+export type ConfirmTodoPromiseRequest = z.infer<typeof ConfirmTodoPromiseRequestSchema>;
+
+/** How long a kept promise waits for its person's Yes or Not yet, in milliseconds (DOR-3034). */
+export const TODO_CONFIRM_WINDOW_MS = 86_400_000;
+
+/** The longest link to what was delivered. */
+export const TODO_DELIVERED_MAX = 500;
 
 /** The most rows one list request may ask for. */
 export const TODO_PROMISE_LIST_MAX = 500;

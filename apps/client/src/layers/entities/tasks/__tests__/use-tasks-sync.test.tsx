@@ -14,7 +14,7 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 import { renderHook, waitFor, cleanup } from '@testing-library/react';
 import { QueryClient, QueryClientProvider, useQuery } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
-import { createMockTransport, createMockSchedule } from '@dorkos/test-utils';
+import { createMockTransport, createMockSchedule } from '@dorkos/test-utils/mock-factories';
 import { TransportProvider } from '@/layers/shared/model';
 
 /** Handlers registered through `useEventSubscription`, by event name. */

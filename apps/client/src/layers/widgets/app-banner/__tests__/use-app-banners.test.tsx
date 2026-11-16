@@ -19,7 +19,7 @@ import { render, renderHook, screen, cleanup, waitFor } from '@testing-library/r
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
 import '@testing-library/jest-dom/vitest';
-import { createMockTransport } from '@dorkos/test-utils';
+import { createMockTransport } from '@dorkos/test-utils/mock-factories';
 
 // The runtime-sign-in descriptor next door reads the Inbox, which subscribes to
 // the global `/api/events` stream and so wants the app-level

@@ -17,7 +17,7 @@
  *
  * @module features/status/lib/fold-active-subagents
  */
-import type { SessionEvent } from '@dorkos/shared/session-stream';
+import type { RunningTask, SessionEvent } from '@dorkos/shared/session-stream';
 import { isAmbientTask } from '@/layers/shared/lib';
 import type { ActiveSubagent } from '../model/session-diagnostics';
 
@@ -60,6 +60,37 @@ export function foldActiveSubagents(events: readonly SessionEvent[]): ActiveSuba
     rows.push(row);
   }
   return rows;
+}
+
+/**
+ * Add the session-level running list's tasks the turn's fold cannot name (spec
+ * `warm-process-lifecycle` D8).
+ *
+ * The fold only sees the CURRENT turn's events, and a helper, shell or Monitor
+ * outlives the turn that started it; once that turn is reloaded away, the
+ * session-level list is the only thing left that can name it. Rows the fold
+ * has keep their place (they carry the tool tally); a task only the list knows
+ * is appended as running, labelled by its description or command.
+ *
+ * @param rows - A {@link foldActiveSubagents} result.
+ * @param tasks - `status.runningSubagents`, or undefined when the server sent none.
+ */
+export function withRunningTasks(
+  rows: readonly ActiveSubagent[],
+  tasks: readonly RunningTask[] | undefined
+): ActiveSubagent[] {
+  if (!tasks || tasks.length === 0) return [...rows];
+  const named = new Set(rows.map((row) => row.taskId));
+  const extra = tasks
+    .filter((task) => !named.has(task.taskId))
+    .map((task) => ({
+      taskId: task.taskId,
+      status: 'running' as const,
+      ...(task.description || task.command
+        ? { description: task.description || task.command }
+        : {}),
+    }));
+  return [...rows, ...extra];
 }
 
 /** A fold split by whether each subagent is still in flight. */

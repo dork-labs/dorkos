@@ -3,8 +3,24 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, render } from '@testing-library/react';
-import { useRef } from 'react';
-import { useNativeBrowserSurface } from '../use-native-browser-surface';
+import { useRef, type MutableRefObject } from 'react';
+import { toast } from 'sonner';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogTitle,
+  Toaster,
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetTitle,
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/layers/shared/ui';
+import { useNativeBrowserSurface, type NativeStillControls } from '../use-native-browser-surface';
 
 // DOR-3312: the shared-browser surface used to measure itself on every animation
 // frame for as long as it was open, and re-scan the page for overlays on every
@@ -13,14 +29,50 @@ import { useNativeBrowserSurface } from '../use-native-browser-surface';
 
 const FRAME_MS = 16;
 
-function Surface({ onUnavailable }: { onUnavailable: () => void }) {
+function Surface({
+  onUnavailable,
+  connectionId = 'conn-1',
+  stillControls,
+}: {
+  onUnavailable: () => void;
+  connectionId?: string;
+  stillControls?: MutableRefObject<NativeStillControls | null>;
+}) {
   const ref = useRef<HTMLDivElement | null>(null);
-  useNativeBrowserSurface(ref, 'conn-1', true, onUnavailable);
+  const still = useNativeBrowserSurface(
+    ref,
+    connectionId,
+    true,
+    onUnavailable,
+    stillControls ? keep(stillControls) : undefined
+  );
   return (
     <div style={{ overflow: 'hidden' }}>
-      <div ref={ref} data-testid="surface" />
+      <div ref={ref} data-testid="surface">
+        {still && (
+          <img
+            alt=""
+            data-testid="still"
+            src={still.url}
+            style={{ left: still.left, top: still.top, width: still.width, height: still.height }}
+          />
+        )}
+      </div>
     </div>
   );
+}
+
+/** Stable per ref, so the surface does not restart on every render. */
+const keepers = new WeakMap<object, (controls: NativeStillControls | null) => void>();
+function keep(target: MutableRefObject<NativeStillControls | null>) {
+  let keeper = keepers.get(target);
+  if (!keeper) {
+    keeper = (controls) => {
+      target.current = controls;
+    };
+    keepers.set(target, keeper);
+  }
+  return keeper;
 }
 
 class StubResizeObserver {
@@ -37,6 +89,8 @@ class StubResizeObserver {
 }
 
 let setBounds: ReturnType<typeof vi.fn>;
+let captureStill: ReturnType<typeof vi.fn>;
+let stills: number;
 let rect = { x: 10, y: 20, width: 300, height: 200 };
 
 beforeEach(() => {
@@ -44,9 +98,14 @@ beforeEach(() => {
   StubResizeObserver.instances = [];
   vi.stubGlobal('ResizeObserver', StubResizeObserver);
   setBounds = vi.fn(() => Promise.resolve());
+  captureStill = vi.fn(() => Promise.resolve(new Uint8Array([0xff, 0xd8, 0xff])));
   (window as unknown as { electronAPI: unknown }).electronAPI = {
-    localBrowser: { setBounds },
+    localBrowser: { setBounds, captureStill },
   };
+  // jsdom has no object URLs; the still's lives only as long as the still.
+  stills = 0;
+  URL.createObjectURL = vi.fn(() => `blob:still-${(stills += 1)}`);
+  URL.revokeObjectURL = vi.fn();
   rect = { x: 10, y: 20, width: 300, height: 200 };
   vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(
     () =>
@@ -234,26 +293,536 @@ describe('useNativeBrowserSurface', () => {
     expect(query.mock.calls.length).toBeLessThanOrEqual(3);
   });
 
-  it('hides itself when a modal dialog opens over it', async () => {
-    render(<Surface onUnavailable={() => {}} />);
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(FRAME_MS * 30);
-    });
-    setBounds.mockClear();
-    vi.spyOn(HTMLElement.prototype, 'getClientRects').mockReturnValue([
-      {} as DOMRect,
-    ] as unknown as DOMRectList);
+  // DOR-4417 and DOR-4418: real Radix layers, placed where a real window would put them.
+  describe('app layers', () => {
+    const WINDOW = { x: 0, y: 0, width: 1200, height: 800 };
+    // Stable, as in the panel: a new callback would restart the surface on every render.
+    const noop = () => {};
+    let tooltipRect = { x: 600, y: 300, width: 80, height: 24 };
+    let toastRect = { x: 860, y: 720, width: 320, height: 56 };
 
-    const dialog = document.createElement('div');
-    dialog.setAttribute('role', 'dialog');
-    dialog.setAttribute('aria-modal', 'true');
-    await act(async () => {
-      document.body.appendChild(dialog);
-      await Promise.resolve();
-      await vi.advanceTimersByTimeAsync(FRAME_MS * 3);
+    function placeLayers() {
+      vi.mocked(HTMLElement.prototype.getBoundingClientRect).mockImplementation(function (
+        this: HTMLElement
+      ) {
+        const box = this.matches('[data-slot$="-overlay"]')
+          ? WINDOW
+          : this.matches('[data-radix-popper-content-wrapper]')
+            ? tooltipRect
+            : this.matches('[data-sonner-toast]')
+              ? toastRect
+              : this.contains(document.querySelector('[data-testid="surface"]'))
+                ? rect
+                : this.closest('[role="dialog"]')
+                  ? { x: 700, y: 300, width: 400, height: 300 }
+                  : rect;
+        return {
+          ...box,
+          top: box.y,
+          left: box.x,
+          right: box.x + box.width,
+          bottom: box.y + box.height,
+          toJSON: () => box,
+        } as DOMRect;
+      });
+      // jsdom lays nothing out; a real window gives every rendered element a box.
+      vi.spyOn(HTMLElement.prototype, 'getClientRects').mockImplementation(function (
+        this: HTMLElement
+      ) {
+        return [this.getBoundingClientRect()] as unknown as DOMRectList;
+      });
+    }
+
+    function WithLayers({
+      dialog,
+      tooltip,
+      connectionId,
+      stillControls,
+    }: {
+      dialog: boolean;
+      tooltip: boolean;
+      connectionId?: string;
+      stillControls?: MutableRefObject<NativeStillControls | null>;
+    }) {
+      return (
+        <TooltipProvider>
+          <Surface onUnavailable={noop} connectionId={connectionId} stillControls={stillControls} />
+          <Tooltip open={tooltip}>
+            <TooltipTrigger>Help</TooltipTrigger>
+            <TooltipContent>More about this</TooltipContent>
+          </Tooltip>
+          <Dialog open={dialog}>
+            <DialogContent>
+              <DialogTitle>Settings</DialogTitle>
+              <DialogDescription>Your preferences</DialogDescription>
+            </DialogContent>
+          </Dialog>
+        </TooltipProvider>
+      );
+    }
+
+    async function settle() {
+      await act(async () => {
+        await Promise.resolve();
+        await vi.advanceTimersByTimeAsync(FRAME_MS * 10);
+      });
+    }
+
+    beforeEach(() => {
+      tooltipRect = { x: 600, y: 300, width: 80, height: 24 };
+      toastRect = { x: 860, y: 720, width: 320, height: 56 };
+      placeLayers();
     });
 
-    expect(setBounds).toHaveBeenLastCalledWith(expect.objectContaining({ visible: false }));
+    it('stays on screen while a tooltip opens away from it', async () => {
+      const view = render(<WithLayers dialog={false} tooltip={false} />);
+      await settle();
+      setBounds.mockClear();
+
+      view.rerender(<WithLayers dialog={false} tooltip />);
+      await settle();
+
+      expect(document.querySelector('[data-radix-popper-content-wrapper]')).not.toBeNull();
+      expect(setBounds).not.toHaveBeenCalledWith(expect.objectContaining({ visible: false }));
+    });
+
+    it('steps aside while a tooltip overlaps it, and comes back when it closes', async () => {
+      tooltipRect = { x: 100, y: 100, width: 80, height: 24 };
+      const view = render(<WithLayers dialog={false} tooltip={false} />);
+      await settle();
+
+      view.rerender(<WithLayers dialog={false} tooltip />);
+      // One frame for its still to be drawn, then it hides (DOR-4438).
+      await settle();
+      await settle();
+      expect(setBounds).toHaveBeenLastCalledWith(expect.objectContaining({ visible: false }));
+
+      view.rerender(<WithLayers dialog={false} tooltip={false} />);
+      await settle();
+      await settle();
+      expect(setBounds).toHaveBeenLastCalledWith(expect.objectContaining({ visible: true }));
+    });
+
+    it('hides behind a modal dialog even where the dialog box does not reach it', async () => {
+      const view = render(<WithLayers dialog={false} tooltip={false} />);
+      await settle();
+      expect(setBounds).toHaveBeenLastCalledWith(expect.objectContaining({ visible: true }));
+
+      view.rerender(<WithLayers dialog tooltip={false} />);
+      await settle();
+      await settle();
+      // Radix never sets aria-modal; the backdrop is what covers the page.
+      expect(document.querySelector('[role="dialog"]')?.getAttribute('aria-modal')).toBeNull();
+      expect(setBounds).toHaveBeenLastCalledWith(expect.objectContaining({ visible: false }));
+
+      view.rerender(<WithLayers dialog={false} tooltip={false} />);
+      await settle();
+      await settle();
+      expect(setBounds).toHaveBeenLastCalledWith(expect.objectContaining({ visible: true }));
+    });
+
+    // Below desktop width the right panel is itself a Sheet, with its own backdrop.
+    function InPanelSheet({ dialog }: { dialog: boolean }) {
+      return (
+        <>
+          <Sheet open>
+            <SheetContent>
+              <SheetTitle>Panel</SheetTitle>
+              <SheetDescription>Right panel content.</SheetDescription>
+              <Surface onUnavailable={noop} />
+            </SheetContent>
+          </Sheet>
+          <Dialog open={dialog}>
+            <DialogContent>
+              <DialogTitle>Settings</DialogTitle>
+              <DialogDescription>Your preferences</DialogDescription>
+            </DialogContent>
+          </Dialog>
+        </>
+      );
+    }
+
+    it('shows inside the panel sheet, whose own backdrop sits under it', async () => {
+      render(<InPanelSheet dialog={false} />);
+      await settle();
+
+      expect(document.querySelector('[data-slot="sheet-overlay"]')).not.toBeNull();
+      expect(setBounds).toHaveBeenLastCalledWith(expect.objectContaining({ visible: true }));
+      expect(setBounds).not.toHaveBeenCalledWith(expect.objectContaining({ visible: false }));
+    });
+
+    it('still hides for a dialog opened over the panel sheet', async () => {
+      const view = render(<InPanelSheet dialog={false} />);
+      await settle();
+
+      view.rerender(<InPanelSheet dialog />);
+      await settle();
+      await settle();
+      expect(setBounds).toHaveBeenLastCalledWith(expect.objectContaining({ visible: false }));
+
+      view.rerender(<InPanelSheet dialog={false} />);
+      await settle();
+      await settle();
+      expect(setBounds).toHaveBeenLastCalledWith(expect.objectContaining({ visible: true }));
+    });
+
+    // DOR-4438: a covered page leaves a still of itself, not a blank.
+    describe('the still', () => {
+      const still = () => document.querySelector<HTMLImageElement>('[data-testid="still"]');
+
+      it('draws a still where the page was, then hides the page', async () => {
+        const order: string[] = [];
+        setBounds.mockImplementation((bounds: { visible: boolean }) => {
+          order.push(`${bounds.visible ? 'show' : 'hide'}${still() ? ' over still' : ''}`);
+          return Promise.resolve();
+        });
+        const view = render(<WithLayers dialog={false} tooltip={false} />);
+        await settle();
+
+        view.rerender(<WithLayers dialog tooltip={false} />);
+        await settle();
+        await settle();
+
+        expect(captureStill).toHaveBeenCalledWith('conn-1');
+        expect(still()?.getAttribute('src')).toBe('blob:still-1');
+        expect(still()?.style.width).toBe('300px');
+        expect(still()?.style.height).toBe('200px');
+        // The page never steps aside before its still is on screen.
+        expect(order).toEqual(['show', 'hide over still']);
+      });
+
+      it('brings the page back first, then drops the still', async () => {
+        const view = render(<WithLayers dialog={false} tooltip={false} />);
+        await settle();
+        view.rerender(<WithLayers dialog tooltip={false} />);
+        await settle();
+        await settle();
+        expect(still()).not.toBeNull();
+
+        let stillWhenShown: boolean | null = null;
+        setBounds.mockImplementation((bounds: { visible: boolean }) => {
+          if (bounds.visible) stillWhenShown = !!still();
+          return Promise.resolve();
+        });
+        view.rerender(<WithLayers dialog={false} tooltip={false} />);
+        await settle();
+        await settle();
+
+        expect(stillWhenShown).toBe(true);
+        expect(still()).toBeNull();
+        expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:still-1');
+      });
+
+      it('hides the page as before when there is no still', async () => {
+        captureStill.mockResolvedValue(null);
+        const view = render(<WithLayers dialog={false} tooltip={false} />);
+        await settle();
+
+        view.rerender(<WithLayers dialog tooltip={false} />);
+        await settle();
+
+        expect(still()).toBeNull();
+        expect(setBounds).toHaveBeenLastCalledWith(expect.objectContaining({ visible: false }));
+      });
+
+      it('hides the page as before when the capture fails', async () => {
+        captureStill.mockRejectedValue(new Error('gone'));
+        const view = render(<WithLayers dialog={false} tooltip={false} />);
+        await settle();
+
+        view.rerender(<WithLayers dialog tooltip={false} />);
+        await settle();
+
+        expect(still()).toBeNull();
+        expect(setBounds).toHaveBeenLastCalledWith(expect.objectContaining({ visible: false }));
+      });
+
+      it('does not wait long for a slow still, and drops it when it comes late', async () => {
+        let answer!: (bytes: Uint8Array) => void;
+        captureStill.mockReturnValue(new Promise<Uint8Array>((done) => (answer = done)));
+        const view = render(<WithLayers dialog={false} tooltip={false} />);
+        await settle();
+        setBounds.mockClear();
+
+        view.rerender(<WithLayers dialog tooltip={false} />);
+        await act(async () => {
+          await Promise.resolve();
+          await vi.advanceTimersByTimeAsync(100);
+        });
+        expect(setBounds).not.toHaveBeenCalledWith(expect.objectContaining({ visible: false }));
+        await settle();
+        expect(setBounds).toHaveBeenLastCalledWith(expect.objectContaining({ visible: false }));
+
+        await act(async () => {
+          answer(new Uint8Array([1]));
+          await vi.advanceTimersByTimeAsync(FRAME_MS * 4);
+        });
+        expect(still()).toBeNull();
+        expect(URL.createObjectURL).not.toHaveBeenCalled();
+      });
+
+      it('takes one still per cover, and none of a page that is already hidden', async () => {
+        const view = render(<WithLayers dialog={false} tooltip={false} />);
+        await settle();
+        view.rerender(<WithLayers dialog tooltip={false} />);
+        await settle();
+        await settle();
+
+        rect = { ...rect, x: 30 };
+        await act(async () => {
+          window.dispatchEvent(new Event('resize'));
+          await vi.advanceTimersByTimeAsync(FRAME_MS * 10);
+        });
+
+        expect(captureStill).toHaveBeenCalledTimes(1);
+        expect(setBounds).toHaveBeenLastCalledWith(
+          expect.objectContaining({ x: 30, visible: false })
+        );
+      });
+
+      it('tries once per cover when there is no still, then stays hidden', async () => {
+        captureStill.mockResolvedValue(null);
+        const view = render(<WithLayers dialog={false} tooltip={false} />);
+        await settle();
+        view.rerender(<WithLayers dialog tooltip={false} />);
+        await settle();
+        await settle();
+
+        expect(captureStill).toHaveBeenCalledTimes(1);
+      });
+
+      // DOR-4427: the chrome's tooltips take their still first, so the page never blinks.
+      describe('a still taken ahead of a tooltip', () => {
+        const controls = { current: null } as MutableRefObject<NativeStillControls | null>;
+        beforeEach(() => {
+          controls.current = null;
+          tooltipRect = { x: 100, y: 100, width: 80, height: 24 };
+        });
+
+        it('draws the still under the visible page, then hides the page onto it at once', async () => {
+          const order: string[] = [];
+          setBounds.mockImplementation((bounds: { visible: boolean }) => {
+            order.push(`${bounds.visible ? 'show' : 'hide'}${still() ? ' over still' : ''}`);
+            return Promise.resolve();
+          });
+          const view = render(
+            <WithLayers dialog={false} tooltip={false} stillControls={controls} />
+          );
+          await settle();
+
+          let ready: boolean | null = null;
+          await act(async () => {
+            void controls.current!.prepare().then((answer) => (ready = answer));
+            await vi.advanceTimersByTimeAsync(FRAME_MS * 4);
+          });
+          await settle();
+          expect(ready).toBe(true);
+          expect(still()).not.toBeNull();
+          // Preparing never moves the page: it is still showing over its own still.
+          expect(order).toEqual(['show']);
+
+          view.rerender(<WithLayers dialog={false} tooltip stillControls={controls} />);
+          await settle();
+          // One capture only, and the page steps aside straight onto the still.
+          expect(captureStill).toHaveBeenCalledTimes(1);
+          expect(order).toEqual(['show', 'hide over still']);
+        });
+
+        it('answers no, and never hides the page, when there is no still', async () => {
+          captureStill.mockResolvedValue(null);
+          render(<WithLayers dialog={false} tooltip={false} stillControls={controls} />);
+          await settle();
+          setBounds.mockClear();
+
+          let ready: boolean | null = null;
+          await act(async () => {
+            void controls.current!.prepare().then((answer) => (ready = answer));
+            await vi.advanceTimersByTimeAsync(FRAME_MS * 4);
+          });
+          expect(ready).toBe(false);
+          expect(still()).toBeNull();
+          expect(setBounds).not.toHaveBeenCalledWith(expect.objectContaining({ visible: false }));
+        });
+
+        it('answers no in time when the still is slow', async () => {
+          captureStill.mockReturnValue(new Promise<Uint8Array>(() => {}));
+          render(<WithLayers dialog={false} tooltip={false} stillControls={controls} />);
+          await settle();
+
+          let ready: boolean | null = null;
+          await act(async () => {
+            void controls.current!.prepare().then((answer) => (ready = answer));
+            await vi.advanceTimersByTimeAsync(200);
+          });
+          expect(ready).toBe(false);
+        });
+
+        it('answers yes at once while the page already sits behind a still', async () => {
+          // Moving along the row: the last tooltip's still is in place, the page is hidden.
+          const view = render(
+            <WithLayers dialog={false} tooltip={false} stillControls={controls} />
+          );
+          await settle();
+          view.rerender(<WithLayers dialog={false} tooltip stillControls={controls} />);
+          await settle();
+          await settle();
+          expect(setBounds).toHaveBeenLastCalledWith(expect.objectContaining({ visible: false }));
+
+          let ready: boolean | null = null;
+          await act(async () => {
+            void controls.current!.prepare().then((answer) => (ready = answer));
+            await vi.advanceTimersByTimeAsync(FRAME_MS);
+          });
+          expect(ready).toBe(true);
+          expect(captureStill).toHaveBeenCalledTimes(1);
+        });
+
+        it("never strands a cover's own still: a dialog still hides the page", async () => {
+          let answer!: (bytes: Uint8Array) => void;
+          captureStill.mockReturnValueOnce(new Promise<Uint8Array>((done) => (answer = done)));
+          const view = render(
+            <WithLayers dialog={false} tooltip={false} stillControls={controls} />
+          );
+          await settle();
+          view.rerender(<WithLayers dialog tooltip={false} stillControls={controls} />);
+          await act(async () => {
+            await Promise.resolve();
+            await vi.advanceTimersByTimeAsync(FRAME_MS);
+          });
+
+          // A tooltip asks while the dialog's still is being taken: it gets a hint instead.
+          let ready: boolean | null = null;
+          await act(async () => {
+            void controls.current!.prepare().then((value) => (ready = value));
+            controls.current!.release();
+            answer(new Uint8Array([1]));
+            await vi.advanceTimersByTimeAsync(FRAME_MS * 4);
+          });
+          await settle();
+          expect(ready).toBe(false);
+          expect(still()).not.toBeNull();
+          expect(setBounds).toHaveBeenLastCalledWith(expect.objectContaining({ visible: false }));
+        });
+
+        it('drops a prepared still no tooltip came to use, leaving the page alone', async () => {
+          render(<WithLayers dialog={false} tooltip={false} stillControls={controls} />);
+          await settle();
+          await act(async () => {
+            void controls.current!.prepare();
+            await vi.advanceTimersByTimeAsync(FRAME_MS * 4);
+          });
+          expect(still()).not.toBeNull();
+          setBounds.mockClear();
+
+          await act(async () => {
+            controls.current!.release();
+            await vi.advanceTimersByTimeAsync(FRAME_MS * 4);
+          });
+          expect(still()).toBeNull();
+          expect(setBounds).not.toHaveBeenCalledWith(expect.objectContaining({ visible: false }));
+        });
+      });
+
+      it('drops the still when the page closes', async () => {
+        const view = render(<WithLayers dialog={false} tooltip={false} />);
+        await settle();
+        view.rerender(<WithLayers dialog tooltip={false} />);
+        await settle();
+        await settle();
+        expect(still()).not.toBeNull();
+
+        view.unmount();
+
+        expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:still-1');
+      });
+
+      it('drops the still when the browser moves to another chat', async () => {
+        const view = render(<WithLayers dialog={false} tooltip={false} />);
+        await settle();
+        view.rerender(<WithLayers dialog tooltip={false} />);
+        await settle();
+        await settle();
+        expect(still()).not.toBeNull();
+
+        view.rerender(<WithLayers dialog tooltip={false} connectionId="conn-2" />);
+        await settle();
+
+        expect(still()).toBeNull();
+        expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:still-1');
+      });
+
+      // Security's Should: a toast over the page is an app layer like any other.
+      function WithToaster() {
+        return (
+          <>
+            <Surface onUnavailable={noop} />
+            <Toaster />
+          </>
+        );
+      }
+
+      it('leaves a still under a toast that lands on the page, and comes back after', async () => {
+        toastRect = { x: 100, y: 150, width: 180, height: 56 };
+        render(<WithToaster />);
+        await settle();
+
+        await act(async () => {
+          toast('Saved', { id: 'over' });
+        });
+        await settle();
+        await settle();
+        expect(document.querySelector('[data-sonner-toast]')).not.toBeNull();
+        expect(captureStill).toHaveBeenCalledWith('conn-1');
+        expect(still()).not.toBeNull();
+        expect(setBounds).toHaveBeenLastCalledWith(expect.objectContaining({ visible: false }));
+
+        await act(async () => {
+          toast.dismiss('over');
+          await vi.advanceTimersByTimeAsync(1_000);
+        });
+        // Sonner unmounts the toast after its exit; then the page comes back.
+        await settle();
+        await settle();
+        await settle();
+        expect(document.querySelector('[data-sonner-toast]')).toBeNull();
+        expect(setBounds).toHaveBeenLastCalledWith(expect.objectContaining({ visible: true }));
+        expect(still()).toBeNull();
+      });
+
+      it('stays live for a toast in a corner away from the page', async () => {
+        render(<WithToaster />);
+        await settle();
+        setBounds.mockClear();
+
+        await act(async () => {
+          toast('Saved', { id: 'away' });
+        });
+        await settle();
+        await settle();
+
+        expect(document.querySelector('[data-sonner-toast]')).not.toBeNull();
+        expect(captureStill).not.toHaveBeenCalled();
+        expect(setBounds).not.toHaveBeenCalledWith(expect.objectContaining({ visible: false }));
+        await act(async () => {
+          toast.dismiss('away');
+          await vi.advanceTimersByTimeAsync(1_000);
+        });
+      });
+
+      it('works without a still on an older desktop shell', async () => {
+        (window as unknown as { electronAPI: unknown }).electronAPI = {
+          localBrowser: { setBounds },
+        };
+        const view = render(<WithLayers dialog={false} tooltip={false} />);
+        await settle();
+
+        view.rerender(<WithLayers dialog tooltip={false} />);
+        await settle();
+
+        expect(still()).toBeNull();
+        expect(setBounds).toHaveBeenLastCalledWith(expect.objectContaining({ visible: false }));
+      });
+    });
   });
 
   it('stops all work when it closes', async () => {

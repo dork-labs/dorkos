@@ -21,6 +21,7 @@ import { ScheduleOriginMarksSchema, type ScheduleOriginMarks } from '@dorkos/sha
 import { marksHold, type TurnMarks } from '../../core/turn-power/turn-marks.js';
 import { logger } from '../../../lib/logger.js';
 import { planTaskFileUpdate } from '../task-file-update.js';
+import { CLEARED_APPROVAL_RECEIPT } from './task-approval-receipt.js';
 
 /** The names DorkOS knows for a teammate origin, for the card. */
 export interface OriginLabel {
@@ -136,6 +137,8 @@ export async function clearOutsiderParks(db: Db): Promise<number> {
         enabled: false,
         status: 'pending_approval',
         approvedContentKey: null,
+        ...CLEARED_APPROVAL_RECEIPT,
+        approvedAllow: null,
         previousApprovalKey: null,
         updatedAt: new Date().toISOString(),
       })
@@ -185,6 +188,8 @@ export function markScheduleOrigin(db: Db, id: string, marks: TurnMarks): boolea
       originMarks: JSON.stringify(mergeStored(parseOriginMarks(row.originMarks), added)),
       status: 'pending_approval',
       approvedContentKey: null,
+      ...CLEARED_APPROVAL_RECEIPT,
+      approvedAllow: null,
       // What was approved, so the card can say what changed.
       previousApprovalKey: row.approvedContentKey ?? row.previousApprovalKey,
       updatedAt: new Date().toISOString(),

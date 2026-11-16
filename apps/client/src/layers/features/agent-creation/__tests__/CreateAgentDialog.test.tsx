@@ -8,7 +8,7 @@ import '@testing-library/jest-dom/vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { TransportProvider } from '@/layers/shared/model';
 import { createQueryClientConfig } from '@/layers/shared/lib';
-import { createMockTransport } from '@dorkos/test-utils';
+import { createMockTransport } from '@dorkos/test-utils/mock-factories';
 import { useImportProjectsStore, useAgentBirthStore } from '@/layers/shared/model';
 import {
   useAutoKickoff,

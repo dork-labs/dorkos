@@ -1,7 +1,7 @@
 /**
- * `GET /api/sessions/running`: every chat with a live turn, per agent
- * (DOR-3460). Mounted ahead of the session routes, whose `/:id` would otherwise
- * answer it. An agent caller gets its allowed view, the same as `running_chats`.
+ * `GET /api/sessions/running`: every chat with a live turn, or with background
+ * work still running, per agent (DOR-3460, DOR-2065). Mounted ahead of the
+ * session routes, whose `/:id` would otherwise answer it. An agent caller gets its allowed view, the same as `running_chats`.
  *
  * @module routes/running-chats
  */

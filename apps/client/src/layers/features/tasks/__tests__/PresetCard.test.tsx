@@ -9,7 +9,7 @@ import { TaskTemplateCard } from '../ui/TaskTemplateCard';
 vi.mock('../ui/use-spotlight', () => ({
   useSpotlight: () => ({ onMouseMove: vi.fn(), onMouseLeave: vi.fn(), spotlightStyle: null }),
 }));
-vi.mock('../ui/format-cron', () => ({ formatCron: (cron: string) => `cron:${cron}` }));
+vi.mock('../lib/format-cron', () => ({ formatCron: (cron: string) => `cron:${cron}` }));
 
 const PRESET: TaskTemplate = {
   id: 'health-check',

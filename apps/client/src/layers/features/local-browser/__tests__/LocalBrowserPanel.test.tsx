@@ -4,6 +4,7 @@ import { act, fireEvent, render, screen, waitFor, within } from '@testing-librar
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { LocalBrowserCapabilities, LocalBrowserState } from '@dorkos/shared/local-browser';
 import { LocalBrowserPanel } from '../ui/LocalBrowserPanel';
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/layers/shared/ui';
 import { useSessionListStore } from '@/layers/entities/session';
 import { useAppStore } from '@/layers/shared/model';
 import { STORAGE_KEYS } from '@/layers/shared/lib/constants';
@@ -18,6 +19,7 @@ const transport = vi.hoisted(() => ({
   disconnectLocalBrowser: vi.fn(),
   selectLocalBrowserTab: vi.fn(),
   navigateLocalBrowser: vi.fn(),
+  stepLocalBrowserHistory: vi.fn(),
   interruptSession: vi.fn(),
   getSession: vi.fn(),
   getAgentByPath: vi.fn(),
@@ -1057,16 +1059,98 @@ describe('LocalBrowserPanel', () => {
     await choosePage('Second page');
     await waitFor(() => expect(screen.queryByRole('alert')).not.toBeInTheDocument());
   });
-  it('names its buttons without Radix tooltips, which would hide the native page', async () => {
+  it('names its buttons in Radix tooltips, with no title hint (DOR-4438)', async () => {
     transport.getLocalBrowserState.mockResolvedValue(connected);
     mount();
     const back = await screen.findByRole('button', { name: 'Back' });
-    expect(back).toHaveAttribute('title', 'Back');
-    expect(screen.getByRole('button', { name: 'Forward' })).toHaveAttribute('title', 'Forward');
     expect(back).toBeDisabled();
-    expect(screen.getByRole('button', { name: 'Reload' })).toHaveAttribute('title', 'Reload');
-    fireEvent.focus(screen.getByRole('button', { name: 'Reload' }));
-    expect(document.querySelector('[data-radix-popper-content-wrapper]')).toBeNull();
+    expect(back).not.toHaveAttribute('title');
+    const reload = screen.getByRole('button', { name: 'Reload' });
+    expect(reload).not.toHaveAttribute('title');
+    fireEvent.focus(reload);
+    expect(await screen.findByRole('tooltip')).toHaveTextContent('Reload');
+  });
+  describe('Back and Forward (DOR-4449)', () => {
+    const withHistory = (canGoBack: boolean, canGoForward: boolean): LocalBrowserState => ({
+      ...connected,
+      tabs: connected.tabs.map((tab) =>
+        tab.id === 'one' ? { ...tab, canGoBack, canGoForward } : tab
+      ),
+    });
+    it('are enabled only where the server says the page’s history has a page', async () => {
+      transport.getLocalBrowserState.mockResolvedValue(withHistory(true, false));
+      mount();
+      expect(await screen.findByRole('button', { name: 'Back' })).toBeEnabled();
+      expect(screen.getByRole('button', { name: 'Forward' })).toBeDisabled();
+      expect(screen.queryByText(/coming soon/i)).not.toBeInTheDocument();
+    });
+    it('are both disabled when the server says nothing about history', async () => {
+      transport.getLocalBrowserState.mockResolvedValue(connected);
+      mount();
+      expect(await screen.findByRole('button', { name: 'Back' })).toBeDisabled();
+      expect(screen.getByRole('button', { name: 'Forward' })).toBeDisabled();
+    });
+    it('move the page through the server, which answers with the new history', async () => {
+      transport.getLocalBrowserState.mockResolvedValue(withHistory(true, false));
+      transport.stepLocalBrowserHistory.mockResolvedValue({
+        ...withHistory(false, true),
+        paused: true,
+      });
+      mount();
+      fireEvent.click(await screen.findByRole('button', { name: 'Back' }));
+      expect(transport.stepLocalBrowserHistory).toHaveBeenCalledExactlyOnceWith('back');
+      await waitFor(() => expect(screen.getByRole('button', { name: 'Forward' })).toBeEnabled());
+      fireEvent.click(screen.getByRole('button', { name: 'Forward' }));
+      expect(transport.stepLocalBrowserHistory).toHaveBeenLastCalledWith('forward');
+      expect(transport.navigateLocalBrowser).not.toHaveBeenCalled();
+    });
+    it('can’t be pressed twice while a step is running', async () => {
+      transport.getLocalBrowserState.mockResolvedValue(withHistory(true, true));
+      let finish: (state: LocalBrowserState) => void = () => {};
+      transport.stepLocalBrowserHistory.mockReturnValue(
+        new Promise((resolve) => (finish = resolve))
+      );
+      mount();
+      fireEvent.click(await screen.findByRole('button', { name: 'Back' }));
+      expect(screen.getByRole('button', { name: 'Back' })).toBeDisabled();
+      expect(screen.getByRole('button', { name: 'Forward' })).toBeDisabled();
+      await act(async () => finish(withHistory(true, true)));
+      expect(transport.stepLocalBrowserHistory).toHaveBeenCalledTimes(1);
+    });
+    it('say why a refused step stayed put on the chrome’s notice line, as for a refused address', async () => {
+      transport.getLocalBrowserState.mockResolvedValue(withHistory(true, false));
+      transport.stepLocalBrowserHistory.mockRejectedValue(
+        Object.assign(new Error('raw redirect detail'), { code: 'history_refused' })
+      );
+      const { container } = mount();
+      fireEvent.click(await screen.findByRole('button', { name: 'Back' }));
+      const chrome = () => container.querySelector('[data-slot="browser-chrome"]') as HTMLElement;
+      await waitFor(() =>
+        expect(within(chrome()).getByRole('alert')).toHaveTextContent(
+          'DorkOS doesn’t open that page here, so you stayed on this one.'
+        )
+      );
+      // Said once, on the notice line, never as the panel's own error.
+      expect(screen.getAllByRole('alert')).toHaveLength(1);
+      expect(screen.queryByText('raw redirect detail')).not.toBeInTheDocument();
+      // Typing an address clears it.
+      transport.navigateLocalBrowser.mockResolvedValue(withHistory(true, false));
+      await typeAddress('https://example.com/next');
+      await waitFor(() => expect(within(chrome()).queryByRole('alert')).toBeNull());
+    });
+    it('leave a real step failure to the panel, not the notice line', async () => {
+      transport.getLocalBrowserState.mockResolvedValue(withHistory(true, false));
+      transport.stepLocalBrowserHistory.mockRejectedValue(
+        Object.assign(new Error('raw'), { code: 'navigation_uncertain' })
+      );
+      const { container } = mount();
+      fireEvent.click(await screen.findByRole('button', { name: 'Back' }));
+      expect(await screen.findByRole('alert')).toHaveTextContent(
+        'Check what happened before continuing.'
+      );
+      const chrome = container.querySelector('[data-slot="browser-chrome"]') as HTMLElement;
+      expect(within(chrome).queryByRole('alert')).toBeNull();
+    });
   });
   it('keeps a typed address when navigation becomes stale and never replays it', async () => {
     transport.getLocalBrowserState.mockResolvedValue(connected);
@@ -1264,12 +1348,17 @@ describe('LocalBrowserPanel', () => {
     vi.spyOn(HTMLElement.prototype, 'getClientRects').mockReturnValue({ length: 1 } as DOMRectList);
     const view = mount();
     await waitFor(() => expect(setBounds.mock.calls.at(-1)?.[0].visible).toBe(true));
-    const dialog = document.createElement('div');
-    dialog.setAttribute('role', 'dialog');
-    dialog.setAttribute('aria-modal', 'true');
-    document.body.append(dialog);
+    // A real shared Dialog: Radix never sets aria-modal, so a hand-built one proves nothing.
+    const dialog = render(
+      <Dialog open>
+        <DialogContent>
+          <DialogTitle>Settings</DialogTitle>
+          <DialogDescription>Your preferences</DialogDescription>
+        </DialogContent>
+      </Dialog>
+    );
     await waitFor(() => expect(setBounds.mock.calls.at(-1)?.[0].visible).toBe(false));
-    dialog.remove();
+    dialog.unmount();
     await waitFor(() => expect(setBounds.mock.calls.at(-1)?.[0].visible).toBe(true));
     act(() =>
       view.client.setQueryData(['local-browser', 'state'], { ...native, sessionId: 'another-chat' })
@@ -1348,6 +1437,29 @@ describe('LocalBrowserPanel', () => {
       expect(screen.queryByRole('combobox')).toBeNull();
       expect(screen.queryByRole('button', { name: 'Disconnect' })).toBeNull();
       expect(screen.queryByLabelText('Saved sign-ins')).toBeNull();
+    });
+    it('goes forward with the row’s own Forward while the row is narrow (DOR-4449)', async () => {
+      const forwardable: LocalBrowserState = {
+        ...connected,
+        tabs: connected.tabs.map((tab) =>
+          tab.id === 'one' ? { ...tab, canGoForward: true } : tab
+        ),
+      };
+      transport.getLocalBrowserState.mockResolvedValue(forwardable);
+      transport.stepLocalBrowserHistory.mockResolvedValue(forwardable);
+      mount();
+      await waitFor(() => expect(screen.getByRole('button', { name: 'Forward' })).toBeEnabled());
+      await chooseFromMenu('Forward');
+      expect(transport.stepLocalBrowserHistory).toHaveBeenCalledExactlyOnceWith('forward');
+      expect(transport.navigateLocalBrowser).not.toHaveBeenCalled();
+    });
+    it('shows Forward disabled when the page has nowhere to go forward', async () => {
+      transport.getLocalBrowserState.mockResolvedValue(connected);
+      mount();
+      const menu = await openMenu();
+      expect(within(menu).getByRole('menuitem', { name: 'Forward' })).toHaveAttribute(
+        'data-disabled'
+      );
     });
     it('lists Pages only when the chat has more than one', async () => {
       transport.getLocalBrowserState.mockResolvedValue({

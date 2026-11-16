@@ -1,37 +1,11 @@
-import {
-  accessLevelRevisionIds,
-  type ConnectorReconciliationPreview,
-} from '@dorkos/shared/connector-schemas';
 import type { CardAccessLevel } from '../../lib/access-card-selection';
+import type { RequestedWriteOffer } from '../../lib/access-level-offer';
 
 /** What an agent can do in an app at each level, as the request line says it. */
 const ASKED_FOR: Record<CardAccessLevel, (serviceName: string) => string> = {
   read: (serviceName) => `It wants to read ${serviceName}.`,
   'read-write': (serviceName) => `It wants to read and change things in ${serviceName}.`,
 };
-
-/**
- * How the account offers changing things: as the Read and write level, only
- * one action at a time (no level covers them), or not at all.
- */
-export type RequestedWriteOffer = 'level' | 'exact' | 'none';
-
-/**
- * How an account's actions offer changing things (DOR-4193): Read and write
- * adds actions over Read, or every change action is destructive (allowed one
- * at a time), or there are none.
- *
- * @param candidates - The account's actions in one access snapshot.
- */
-export function requestedWriteOffer(
-  candidates: ConnectorReconciliationPreview['candidates']
-): RequestedWriteOffer {
-  const readWrite = accessLevelRevisionIds(candidates, 'read-write').length;
-  if (readWrite > accessLevelRevisionIds(candidates, 'read').length) return 'level';
-  return candidates.some((c) => c.supported && c.capabilityClassification !== 'read')
-    ? 'exact'
-    : 'none';
-}
 
 /**
  * What an agent's request asked for, shown on the one-agent access question:
@@ -65,12 +39,16 @@ export function RequestedAccess({
       <p className="text-muted-foreground text-xs">{ASKED_FOR[access](serviceName)}</p>
       {wantsWrite && writeOffer !== 'level' ? (
         <div className="space-y-0.5 text-xs" role="status" data-testid="requested-write-missing">
-          <p>Allow gives Read only. {serviceName} has no Read and write here.</p>
-          <p className="text-muted-foreground">
+          <p>
             {writeOffer === 'none'
-              ? `If that seems wrong, connect ${serviceName} again.`
-              : 'To let it change things, choose exact actions on the Connections page.'}
+              ? `Allow gives Read only. DorkOS can’t make changes in ${serviceName} yet.`
+              : 'Allow gives Read only.'}
           </p>
+          {writeOffer === 'exact' && (
+            <p className="text-muted-foreground">
+              To let it change things, use Advanced on the Connections page.
+            </p>
+          )}
         </div>
       ) : (
         wantsWrite &&

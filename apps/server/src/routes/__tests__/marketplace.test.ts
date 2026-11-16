@@ -2220,6 +2220,25 @@ describe('Marketplace Routes', () => {
 
       expect(res.status).toBe(400);
       expect(res.body.errors).toEqual(['manifest.version required']);
+      expect(res.body).not.toHaveProperty('codes');
+    });
+
+    // Purpose: the client words a known refusal itself, with the package's
+    // name as its title shows it (DOR-3293), so each reason's code rides along.
+    it('sends each refusal’s code beside its message', async () => {
+      installer.install.mockRejectedValue(
+        new InvalidPackageError(
+          ['Report tools can’t be installed.'],
+          ['EXTENSION_CALLED_APP_INVALID']
+        )
+      );
+
+      const res = await request(fixtureServer)
+        .post('/api/marketplace/packages/sample-plugin/install')
+        .send({});
+
+      expect(res.status).toBe(400);
+      expect(res.body.codes).toEqual(['EXTENSION_CALLED_APP_INVALID']);
     });
   });
 

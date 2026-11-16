@@ -28,6 +28,7 @@ import type { InterruptReceipt } from '@dorkos/shared/types';
 import type { ProjectableAttachment } from './room-context.js';
 import type { RoomTurnUnanswered } from './notices/notice-log.js';
 import type { WaitingKind } from './notices/notice-copy.js';
+import { PLATFORM_NAMED_ROOM } from './agent-facing-room-name.js';
 
 /**
  * The runner's refusal when a room's session is bound to a runtime this server
@@ -87,6 +88,19 @@ export function seatLaunchOf(request: Pick<RoomTurnRequest, 'accountHint' | 'see
     ...(request.accountHint !== undefined ? { accountHint: request.accountHint } : {}),
     ...(request.seedContext !== undefined ? { seedContext: request.seedContext } : {}),
   };
+}
+
+/**
+ * The room as its conventions block names it. The block's label is the room's title, and a
+ * bridged group nobody renamed is titled by a stranger's choice, so it rides under the name the
+ * turn's own context already uses (`agentFacingRoomName`, DOR-4453).
+ *
+ * @param request - The turn.
+ */
+export function conventionsRoomOf(request: Pick<RoomTurnRequest, 'room' | 'roomContext'>): Room {
+  return request.roomContext.room.name === PLATFORM_NAMED_ROOM
+    ? { ...request.room, title: PLATFORM_NAMED_ROOM }
+    : request.room;
 }
 
 /** One agent turn, as the room asks for it. */
@@ -202,9 +216,9 @@ export interface RoomTurnRequest {
    */
   teammate?: true;
   /**
-   * Set when this seat turn carries on work whose turn held a Wi-Fi sign-in's mark (a hand-off or
-   * a spin-off's report, `handoff/seat-carry.ts`, DOR-3561). Sent as `MessageOpts.carriedMarks`:
-   * the turn is refused a raise and keeps its level.
+   * Set when this turn answers a non-owner person while DOR-3858 is on, or carries an outsider mark
+   * from earlier work (a hand-off or spin-off report, `handoff/seat-carry.ts`, DOR-3561). Sent as
+   * `MessageOpts.carriedMarks`: the turn is refused a raise and keeps its level.
    */
   carriedOutsider?: true;
   /**

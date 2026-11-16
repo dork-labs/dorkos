@@ -16,7 +16,7 @@ import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom/vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { PendingExtensionApproval } from '@dorkos/shared/extension-approval-schemas';
-import { createMockTransport } from '@dorkos/test-utils';
+import { createMockTransport } from '@dorkos/test-utils/mock-factories';
 
 const mockNavigate = vi.fn();
 
@@ -168,6 +168,44 @@ describe('InboxBell — an extension waiting to be turned on', () => {
     vi.clearAllMocks();
   });
 
+  // Purpose: screens run sealed off with no access of their own (DOR-3293),
+  // so the card never says they run with yours; "It can change:" says what
+  // they can do, and Runs as stays.
+  it('never says an app’s screens run with your access', async () => {
+    waiting = [
+      {
+        ...FLOW,
+        runsInServer: false,
+        permissions: { ...FLOW.permissions!, writes: ['data', 'canvas'] },
+      },
+    ];
+    renderBell();
+    const { row } = await openRow();
+    expect(row).not.toHaveTextContent(/with your access/);
+    expect(row).not.toHaveTextContent(/Screens run/);
+    const facts = within(row).getByTestId('extension-access-facts-flow');
+    expect(facts).toHaveTextContent('Runs asYou');
+    expect(within(row).getByTestId('extension-permissions-flow')).toHaveTextContent(
+      'It can change:Its own saved data and project settingsDocuments it opens on your canvas'
+    );
+  });
+
+  // Purpose: on a phone the Inbox is a bottom sheet, and Allow and Not now
+  // stay pinned to its bottom while a long card scrolls (designer, DOR-3293).
+  it('pins Allow and Not now to the bottom of the phone sheet', async () => {
+    renderBell();
+    const { row } = await openRow();
+    const answers = within(row)
+      .getByRole('button', { name: 'Allow' })
+      .closest('[data-slot="inbox-answer-buttons"]');
+    expect(answers).toHaveClass(
+      'max-md:sticky',
+      'max-md:bottom-0',
+      'max-md:bg-[var(--dui-scroll-cover,var(--color-popover))]'
+    );
+    expect(within(answers as HTMLElement).getByRole('button', { name: 'Not now' })).toBeVisible();
+  });
+
   it('opens on the card a held app’s tile asked for, ringed and focused (DOR-3970)', async () => {
     renderBell();
     await screen.findByTestId('inbox-bell');
@@ -291,6 +329,88 @@ describe('InboxBell — an extension waiting to be turned on', () => {
     expect(
       within(row).getByTestId('extension-permissions-flow').querySelector('li')
     ).toHaveTextContent('Now also wants to connect to: api.example.com');
+  });
+
+  // Purpose: an update that adds a power names each one as new on the row,
+  // beside "files changed" (DOR-4504).
+  it.each([
+    {
+      power: 'a host',
+      added: { net: ['api.example.com'], run: [], agents: false, runtime: false },
+      line: 'Now also wants to connect to: api.example.com',
+    },
+    {
+      power: 'a program',
+      added: { net: [], run: ['rg'], agents: false, runtime: false },
+      line: 'Now also wants to run: rg',
+    },
+    {
+      power: 'messaging agents',
+      added: { net: [], run: [], agents: true, runtime: false },
+      line: 'Now also wants to message your agents.',
+    },
+    {
+      power: 'full access',
+      added: { net: [], run: [], agents: false, runtime: true },
+      line: 'Now wants to run inside DorkOS with full access.',
+    },
+  ])('marks $power an update adds as new', async ({ added, line }) => {
+    waiting = [
+      { ...FLOW, version: '1.1.0', updatedFrom: '1.0.0', changedFiles: ['extension.json'], added },
+    ];
+    renderBell();
+    const user = userEvent.setup();
+    await user.click(await screen.findByTestId('inbox-bell'));
+
+    const row = (await screen.findByText(PAUSED_TITLE)).closest(
+      '[data-slot="inbox-decision-row"]'
+    ) as HTMLElement;
+    const fresh = within(row)
+      .getByTestId('extension-permissions-flow')
+      .querySelectorAll('li[data-tone="new"]');
+    expect([...fresh].map((li) => li.textContent)).toEqual([line]);
+  });
+
+  // Purpose: an update that starts opening another app's pages (`navigate`)
+  // marks that app New on the row (DOR-4504, QA's case).
+  it('marks an app whose pages an update starts opening as New', async () => {
+    waiting = [
+      {
+        ...FLOW,
+        version: '1.1.0',
+        updatedFrom: '1.0.0',
+        changedFiles: ['extension.json'],
+        permissions: {
+          ...FLOW.permissions!,
+          apps: [{ id: 'planner', name: 'Planner', access: null, opens: true }],
+        },
+        added: { net: [], run: [], agents: false, runtime: false, apps: ['planner'] },
+      },
+    ];
+    renderBell();
+    const user = userEvent.setup();
+    await user.click(await screen.findByTestId('inbox-bell'));
+
+    const row = (await screen.findByText(PAUSED_TITLE)).closest(
+      '[data-slot="inbox-decision-row"]'
+    ) as HTMLElement;
+    const app = row.querySelector('li[data-app="planner"]') as HTMLElement;
+    expect(app).toHaveAttribute('data-new');
+    expect(app).toHaveTextContent('Planner');
+    expect(app).toHaveTextContent('can only open its pages');
+    expect(within(app).getByText('New')).toBeInTheDocument();
+  });
+
+  it('marks nothing new for an update that adds no power', async () => {
+    waiting = [{ ...FLOW, version: '1.1.0', updatedFrom: '1.0.0', changedFiles: ['index.ts'] }];
+    renderBell();
+    const user = userEvent.setup();
+    await user.click(await screen.findByTestId('inbox-bell'));
+
+    const row = (await screen.findByText(PAUSED_TITLE)).closest(
+      '[data-slot="inbox-decision-row"]'
+    ) as HTMLElement;
+    expect(row.querySelector('li[data-tone="new"]')).toBeNull();
   });
 
   it('opens ⓘ in place with the consent sentence and the way to Settings', async () => {

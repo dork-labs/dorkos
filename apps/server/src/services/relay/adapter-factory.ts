@@ -51,6 +51,7 @@ import { createLateTurnSource } from '../session/runtime-turns/late-turns.js';
 import { relayTurnOrigin } from '../session/origin/turn-origin.js';
 import { resolveTurnRuntimeType } from '../runtimes/shared/resolve-agent-runtime-type.js';
 import { AdapterError } from './adapter-error.js';
+import { env } from '../../env.js';
 import { createTurnExecutionSettingsResolver } from './turn-execution-settings.js';
 
 /** Dependencies for constructing runtime adapters. */
@@ -360,6 +361,8 @@ export async function createAdapter(
         taskStore: deps.taskStore,
         onRefusedAsk: deps.onRefusedAsk,
         agentSessionStore: deps.agentSessionStore,
+        // A bound chat's unproven sender marks the turn (DOR-3858), on by default (DOR-4453).
+        ...(env.DORKOS_MARK_STRANGER_TURNS ? { markStrangerTurns: true } : {}),
         // What the turn runs on. One resolver for every runtime: the adapter
         // resolves which runtime a message belongs to and asks about THAT one,
         // so the answer is per turn rather than per adapter (DOR-1614).

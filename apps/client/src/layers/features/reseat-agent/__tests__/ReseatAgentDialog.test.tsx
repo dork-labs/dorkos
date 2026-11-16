@@ -9,7 +9,7 @@ import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom/vitest';
 import type { ReseatOptions } from '@dorkos/shared/room-schemas';
 import type { Transport } from '@dorkos/shared/transport';
-import { createMockTransport } from '@dorkos/test-utils';
+import { createMockTransport } from '@dorkos/test-utils/mock-factories';
 import { createTestQueryClient } from '@dorkos/test-utils/react-helpers';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { TransportProvider } from '@/layers/shared/model';

@@ -2,7 +2,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { createMockSession, createMockTransport } from '@dorkos/test-utils';
+import { createMockSession, createMockTransport } from '@dorkos/test-utils/mock-factories';
 import { TransportProvider, useAppStore } from '@/layers/shared/model';
 import {
   setSessionRouteContext,

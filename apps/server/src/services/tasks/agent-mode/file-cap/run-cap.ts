@@ -191,5 +191,8 @@ export async function capRunIfFileChanged(
     // A fresh chat: a sticky one already launched keeps its own mode.
     sticky: false,
     prompt: `${CAPPED_RUN_PREAMBLE}\n\n${task.prompt}`,
+    // The rules a person approved were for the reviewed prompt, not this one
+    // (DOR-3637): under Don't ask they would be exactly what this run may do.
+    approvedAllow: null,
   };
 }

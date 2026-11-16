@@ -38,6 +38,7 @@ import { setTasksEnabled } from '../services/tasks/task-state.js';
 import type { TaskStore } from '../services/tasks/task-store.js';
 import { ensureDefaultTemplates } from '../services/tasks/task-templates.js';
 import { registerAgentModeEscalators } from '../services/tasks/agent-mode/agent-mode-escalation.js';
+import { readOperatorTimeZone } from '../services/core/config/operator-time-zone.js';
 
 /** What starting Tasks needs from the startup that came before it. */
 export interface TasksStartupDeps {
@@ -197,6 +198,7 @@ export async function startTasks(deps: TasksStartupDeps): Promise<StartedTasks> 
       scheduler: schedulerService,
       registrar: taskRegistrar,
       dorkHome,
+      defaultTimezone: readOperatorTimeZone,
       ...(meshCore && { meshCore }),
       activity: activityService,
     };

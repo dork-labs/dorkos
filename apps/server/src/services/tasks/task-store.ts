@@ -17,6 +17,7 @@ import type {
   UpdateTaskRequest,
 } from '@dorkos/shared/types';
 import { parseDuration } from '@dorkos/skills/duration';
+import { RUN_LINE } from '@dorkos/shared/schedule-notice-copy';
 import { logger } from '../../lib/logger.js';
 import { TaskApprovals } from './approvals/task-approvals.js';
 import { RunSessionStore, type RunSessionBinding } from './session/run-session-store.js';
@@ -26,8 +27,25 @@ import { mapTaskRow, mapRunRow } from './task-row-mappers.js';
 import { lastRunStarts, type ScheduleReliability } from './history/run-history.js';
 import { HEALTHY, scheduleHealth } from './history/schedule-health.js';
 import { FINISHED_RUN_STATUSES, isTerminalRunStatus } from './lifecycle/run-statuses.js';
-import { timingColumnWrites, type TimingLandsOn } from './timing/effective-timing.js';
+import { timingColumnWrites } from './timing/effective-timing.js';
 import { runCreatorColumns } from './approvals/cross-agent.js';
+import {
+  activationTaskApprovalColumns,
+  createTaskApprovalColumns,
+} from './approvals/task-approval-receipt.js';
+import type {
+  CreateTaskStoreInput,
+  UntimedTaskUpdate,
+  UntimedTaskUpdateOptions,
+  UpdateTaskOptions,
+} from './store/task-store-types.js';
+
+export type {
+  CreateTaskStoreInput,
+  UntimedTaskUpdate,
+  UntimedTaskUpdateOptions,
+  UpdateTaskOptions,
+} from './store/task-store-types.js';
 
 /** Options for listing runs. */
 interface ListRunsOptions {
@@ -36,67 +54,6 @@ interface ListRunsOptions {
   limit?: number;
   offset?: number;
 }
-
-/** Server-side input for creating a task from the API route. */
-export interface CreateTaskStoreInput {
-  name: string;
-  displayName?: string;
-  description: string;
-  prompt: string;
-  cron?: string | null;
-  timezone?: string | null;
-  agentId?: string | null;
-  enabled?: boolean;
-  /** Whether every run resumes one persistent session (DOR-1571). Defaults off. */
-  sticky?: boolean;
-  maxRuntime?: number | null;
-  permissionMode?: string;
-  /** Which runtime this task's runs execute on; absent follows the agent (DOR-1615). */
-  runtime?: string | null;
-  /** The model its runs execute on, in the resolved runtime's id space (DOR-1347). */
-  model?: string | null;
-  /** The reasoning-effort rung its runs execute at. */
-  effort?: string | null;
-  /** The Claude account (registry id) its runs start on; absent follows the agent (DOR-2384). */
-  account?: string | null;
-  filePath: string;
-  /** Why the schedule should exist, in the proposer's own words. See {@link CreateTaskStoreInput.proposedByAgentPath}. */
-  reason?: string | null;
-  /** The session that proposed it, when an agent did. */
-  proposedBySessionId?: string | null;
-  /**
-   * The proposing session's working directory — the key the agent-identity
-   * service resolves a display name from. Stored rather than the name itself,
-   * so a rename or a revocation is reflected the next time the task is read.
-   */
-  proposedByAgentPath?: string | null;
-}
-
-/**
- * How {@link TaskStore.updateTask} writes a request's timing — see
- * {@link TimingLandsOn}.
- */
-export interface UpdateTaskOptions {
-  /**
-   * Where `cron` and `timezone` go. `file` is every schedule whose SKILL.md
-   * DorkOS writes; `row` is a package's schedule, whose timing becomes the
-   * row's override. Decided by `applyTaskFileUpdate`, which is the one step
-   * that asks whether a package owns the file.
-   *
-   * Required, with no default, for any update that carries timing: a silent
-   * `file` would write a person's timing over a package's default and drop
-   * their override, which is the one mistake a caller must not be able to make
-   * by leaving an argument out.
-   */
-  timingLandsOn: TimingLandsOn;
-}
-
-/** An update that says nothing about timing, and so needs no {@link UpdateTaskOptions}. */
-export type UntimedTaskUpdate = Omit<UpdateTaskRequest, 'cron' | 'timezone' | 'resetTiming'> & {
-  cron?: never;
-  timezone?: never;
-  resetTiming?: never;
-};
 
 /**
  * Callback fired exactly once when a run transitions to a terminal status
@@ -190,6 +147,11 @@ export class TaskStore {
         sticky: input.sticky ?? false,
         maxRuntime: input.maxRuntime ?? null,
         permissionMode: input.permissionMode ?? 'acceptEdits',
+        requestedPermissionMode: input.requestedPermissionMode ?? null,
+        requestedAllow:
+          input.requestedAllow === undefined || input.requestedAllow === null
+            ? null
+            : JSON.stringify(input.requestedAllow),
         runtime: input.runtime ?? null,
         model: input.model ?? null,
         effort: input.effort ?? null,
@@ -211,6 +173,7 @@ export class TaskStore {
           sticky: input.sticky ?? false,
           account: input.account ?? null,
         }),
+        ...createTaskApprovalColumns(input.approval),
         filePath: input.filePath,
         reason: input.reason ?? null,
         proposedBySessionId: input.proposedBySessionId ?? null,
@@ -237,9 +200,13 @@ export class TaskStore {
    * @param input - The fields to change; an omitted field is left alone.
    * @param options - Where the request's timing lands; see {@link UpdateTaskOptions}.
    */
-  updateTask(id: string, input: UntimedTaskUpdate): Task | null;
+  updateTask(id: string, input: UntimedTaskUpdate, options?: UntimedTaskUpdateOptions): Task | null;
   updateTask(id: string, input: UpdateTaskRequest, options: UpdateTaskOptions): Task | null;
-  updateTask(id: string, input: UpdateTaskRequest, options?: UpdateTaskOptions): Task | null {
+  updateTask(
+    id: string,
+    input: UpdateTaskRequest,
+    options?: UpdateTaskOptions | UntimedTaskUpdateOptions
+  ): Task | null {
     const carriesTiming =
       input.cron !== undefined || input.timezone !== undefined || input.resetTiming !== undefined;
     if (carriesTiming && !options) {
@@ -268,7 +235,8 @@ export class TaskStore {
     // For a package's schedule the same two fields land in the override
     // columns instead, and a reset clears them (DOR-2302) — one rule, in
     // `timingColumnWrites`, so the NOT NULL spelling above holds on both paths.
-    Object.assign(updates, timingColumnWrites(existing, input, options?.timingLandsOn ?? 'file'));
+    const timingLandsOn = options && 'timingLandsOn' in options ? options.timingLandsOn : 'file';
+    Object.assign(updates, timingColumnWrites(existing, input, timingLandsOn));
     // Switching a task either way answers a "Turn on" offer its file made
     // (DOR-3309): on takes it, off declines it.
     if (input.enabled !== undefined)
@@ -279,6 +247,14 @@ export class TaskStore {
         typeof input.maxRuntime === 'string' ? parseDuration(input.maxRuntime) : null;
     }
     if (input.permissionMode !== undefined) updates.permissionMode = input.permissionMode;
+    if (input.requestedPermissionMode !== undefined)
+      updates.requestedPermissionMode = input.requestedPermissionMode;
+    if (input.requestedAllow !== undefined)
+      updates.requestedAllow =
+        input.requestedAllow === null ? null : JSON.stringify(input.requestedAllow);
+    if (input.approvedAllow !== undefined)
+      updates.approvedAllow =
+        input.approvedAllow === null ? null : JSON.stringify(input.approvedAllow);
     // `null` CLEARS the override, which is a state a person chooses: back to
     // "whatever this task's agent runs on". The column and the request spell it
     // the same way, so the three need no translation (DOR-1615/DOR-1347).
@@ -288,6 +264,9 @@ export class TaskStore {
     if (input.account !== undefined) updates.account = input.account;
     if (input.status !== undefined) updates.status = input.status;
 
+    const activates = existing.status === 'pending_approval' && input.status === 'active';
+    if (activates)
+      Object.assign(updates, activationTaskApprovalColumns(existing, updates, options?.approval));
     this.db.update(pulseSchedules).set(updates).where(eq(pulseSchedules.id, id)).run();
 
     // **Status changes through this method ARE the operator's decision.**
@@ -301,8 +280,14 @@ export class TaskStore {
     // Read AFTER the update, deliberately: a single PATCH may change the cron
     // and approve it in the same breath, and what was approved is the content
     // the caller is leaving behind, not the one they found.
-    if (input.status === 'active') this.approvals.recordApproval(id);
-    else if (input.status !== undefined) this.approvals.withdrawApproval(id);
+    if (input.status === 'active') {
+      // An activation wrote its grant and receipt in the update above, in the
+      // same write as the status (DOR-3641); it still tells the listener.
+      if (activates) this.approvals.notifyApproved(existing.agentId);
+      else this.approvals.recordApproval(id, options?.approval);
+    } else if (input.status !== undefined) {
+      this.approvals.withdrawApproval(id);
+    }
 
     return this.getTask(id);
   }
@@ -334,6 +319,8 @@ export class TaskStore {
       reason?: string | null;
       proposedBySessionId?: string | null;
       proposedByAgentPath?: string | null;
+      requestedPermissionMode?: Task['permissionMode'] | null;
+      requestedAllow?: string[] | null;
     }
   ): Task | null {
     if (!this.getTask(id)) return null;
@@ -350,6 +337,11 @@ export class TaskStore {
       updates.proposedBySessionId = proposal.proposedBySessionId;
     if (proposal.proposedByAgentPath !== undefined)
       updates.proposedByAgentPath = proposal.proposedByAgentPath;
+    if (proposal.requestedPermissionMode !== undefined)
+      updates.requestedPermissionMode = proposal.requestedPermissionMode;
+    if (proposal.requestedAllow !== undefined)
+      updates.requestedAllow =
+        proposal.requestedAllow === null ? null : JSON.stringify(proposal.requestedAllow);
 
     this.db.update(pulseSchedules).set(updates).where(eq(pulseSchedules.id, id)).run();
     return this.getTask(id);
@@ -825,7 +817,8 @@ export class TaskStore {
       .set({
         status: 'failed',
         finishedAt: now,
-        error: 'Interrupted by server restart',
+        // The notice reads this opening back as "DorkOS restarted" (DOR-4121).
+        error: RUN_LINE.serverRestart,
       })
       .where(
         and(

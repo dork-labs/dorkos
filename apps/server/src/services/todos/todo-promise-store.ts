@@ -50,7 +50,20 @@ const AGENT_OWNED: SQL = isNotNull(todos.agentId);
 export type TodoPromisePatch = Partial<
   Pick<
     TodoRow,
-    'state' | 'dueAt' | 'dueNotifiedAt' | 'closedAt' | 'note' | 'authority' | 'authorityMarks'
+    | 'state'
+    | 'dueAt'
+    | 'originalDueAt'
+    | 'scoreDueAt'
+    | 'moveCount'
+    | 'dueNotifiedAt'
+    | 'checkinNotifiedAt'
+    | 'dueSetAt'
+    | 'confirmState'
+    | 'delivered'
+    | 'closedAt'
+    | 'note'
+    | 'authority'
+    | 'authorityMarks'
   >
 >;
 

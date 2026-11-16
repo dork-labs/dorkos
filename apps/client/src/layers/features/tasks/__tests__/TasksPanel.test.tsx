@@ -6,9 +6,9 @@ import { render, screen, fireEvent, cleanup, waitFor } from '@testing-library/re
 import type { ReactNode } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { Transport } from '@dorkos/shared/transport';
-import { createMockTransport } from '@dorkos/test-utils';
+import { createMockTransport } from '@dorkos/test-utils/mock-factories';
 import { TransportProvider } from '@/layers/shared/model';
-import { createMockSchedule } from '@dorkos/test-utils';
+import { createMockSchedule } from '@dorkos/test-utils/mock-factories';
 
 // Mock cronstrue to avoid parsing issues in tests
 vi.mock('cronstrue', () => ({
@@ -139,6 +139,17 @@ describe('TasksPanel', () => {
     });
 
     expect(screen.getByText('Weekly cleanup')).toBeTruthy();
+  });
+
+  it('keeps the full accessible name on the responsive New schedule button', async () => {
+    const schedule = createMockSchedule({ id: 'sched-1', name: 'Daily review' });
+    const transport = createMockTransport({
+      listTasks: vi.fn().mockResolvedValue([schedule]),
+    });
+
+    render(<TasksPanel />, { wrapper: createWrapper(transport) });
+
+    expect(await screen.findByRole('button', { name: 'New schedule' })).toBeInTheDocument();
   });
 
   it('shows loading state initially', async () => {

@@ -23,6 +23,10 @@ import { swappableServer } from '@dorkos/test-utils/listening-server';
 import { createTestDb } from '@dorkos/test-utils/db';
 import type { Db } from '@dorkos/db';
 import type { Task } from '@dorkos/shared/schemas';
+import type { MeshCore } from '@dorkos/mesh';
+import os from 'node:os';
+import path from 'node:path';
+import { mkdtempSync, realpathSync, rmSync } from 'node:fs';
 
 /** Mutable posture the mocked config manager reports. */
 const state = vi.hoisted(() => ({ authEnabled: false }));
@@ -57,7 +61,8 @@ vi.mock('../../services/core/config-manager.js', () => ({
   },
 }));
 
-vi.mock('../../lib/boundary.js', () => ({
+vi.mock('../../lib/boundary.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../lib/boundary.js')>()),
   isWithinBoundary: vi.fn().mockResolvedValue(true),
 }));
 
@@ -159,6 +164,7 @@ describe('operator-only task fields on the REST routes', () => {
             store,
             scheduler,
             registrar: new TaskRegistrar({ store, scheduler }),
+            defaultTimezone: () => 'UTC',
             dorkHome: DORK_HOME,
           }),
         },
@@ -315,7 +321,37 @@ describe('operator-only task fields on the REST routes', () => {
     });
 
     it('is credited by its RESOLVED identity, never by anything it sent', async () => {
-      resolvedAgentIdentity = { agentPath: '/tmp/agents/nightly-bot', displayName: 'Nightly Bot' };
+      // A registered agent with a folder of its own: its global request is filed under
+      // itself (DOR-4067), and the credit still comes from the resolved identity.
+      const agentPath = realpathSync(mkdtempSync(path.join(os.tmpdir(), 'nightly-bot-')));
+      const agents = [{ id: 'nightly-bot', projectPath: agentPath }];
+      fixtureTarget.mount(
+        honoGroupListener(
+          {
+            path: '/api/tasks',
+            routes: createTasksRoutes({
+              store,
+              scheduler,
+              registrar: new TaskRegistrar({ store, scheduler }),
+              dorkHome: DORK_HOME,
+              defaultTimezone: () => 'UTC',
+              meshCore: {
+                listWithPaths: () => agents,
+                getProjectPath: (id: string) => agents.find((a) => a.id === id)?.projectPath,
+              } as unknown as MeshCore,
+            }),
+          },
+          {
+            before: (c, next) => {
+              c.set('agentIdentity', {
+                agentPath,
+                displayName: 'Nightly Bot',
+              } as unknown as AgentIdentity);
+              return next();
+            },
+          }
+        )
+      );
 
       const res = await request(fixtureServer)
         .post('/api/tasks')
@@ -335,7 +371,9 @@ describe('operator-only task fields on the REST routes', () => {
 
       expect(res.status).toBe(201);
       const created = store.getTasks().find((t) => t.name === 'credited')!;
-      expect(created.proposedByAgentPath).toBe('/tmp/agents/nightly-bot');
+      expect(created.proposedByAgentPath).toBe(agentPath);
+      expect(created.agentId).toBe('nightly-bot');
+      rmSync(agentPath, { recursive: true, force: true });
     });
 
     it('may still write the ordinary fields', async () => {
@@ -378,15 +416,24 @@ describe('operator-only task fields on the REST routes', () => {
       // Under the default `local-trust` posture a caller presenting no agent
       // identity and no approval token clears `trustedCaller`, exactly as on
       // PATCH /api/config. This is the flow the Approve button drives.
+      // Bypass is looser than the saved mode, which stands in for the proposal,
+      // so the card's separate "Run it looser" choice rides along (DOR-3637).
       const parked = store.updateTask(existing.id, { status: 'pending_approval' })!;
+      const approve = {
+        expectedApprovalRevision: taskReviewRevision(store.getTask(parked.id)!),
+        status: 'active',
+        enabled: true,
+        permissionMode: 'bypassPermissions',
+      };
+      const unconfirmed = await request(fixtureServer)
+        .patch(`/api/tasks/${parked.id}`)
+        .send(approve);
+      expect(unconfirmed.status).toBe(409);
+      expect(store.getTask(parked.id)!.status).toBe('pending_approval');
+
       const res = await request(fixtureServer)
         .patch(`/api/tasks/${parked.id}`)
-        .send({
-          expectedApprovalRevision: taskReviewRevision(store.getTask(parked.id)!),
-          status: 'active',
-          enabled: true,
-          permissionMode: 'bypassPermissions',
-        });
+        .send({ ...approve, acceptLooserThanRequested: true });
 
       expect(res.status).toBe(200);
       const after = store.getTask(parked.id)!;

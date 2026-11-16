@@ -323,7 +323,29 @@ describe('toRawSessionEvent', () => {
         type: 'background_task_started',
         data: { taskId: 'bt1', taskType: 'agent', startedAt: 1, description: 'sub' },
       },
-      expected: { type: 'subagent_update', taskId: 'bt1', status: 'running', description: 'sub' },
+      expected: {
+        type: 'subagent_update',
+        taskId: 'bt1',
+        status: 'running',
+        description: 'sub',
+        taskType: 'agent',
+        startedAt: 1,
+      },
+    },
+    {
+      name: 'background_task_started carries a shell or Monitor kind and command (D8)',
+      input: {
+        type: 'background_task_started',
+        data: { taskId: 'sh', taskType: 'other', startedAt: 7, command: 'tail -f log' },
+      },
+      expected: {
+        type: 'subagent_update',
+        taskId: 'sh',
+        status: 'running',
+        taskType: 'other',
+        command: 'tail -f log',
+        startedAt: 7,
+      },
     },
     {
       name: 'background_task_progress → subagent_update running (toolUses)',
@@ -380,6 +402,8 @@ describe('toRawSessionEvent', () => {
         status: 'running',
         description: 'watch',
         ambient: true,
+        taskType: 'agent',
+        startedAt: 1,
       },
     },
     {

@@ -3,7 +3,7 @@ import { renderHook, waitFor, act } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { Transport } from '@dorkos/shared/transport';
-import { createMockTransport } from '@dorkos/test-utils';
+import { createMockTransport } from '@dorkos/test-utils/mock-factories';
 import { TransportProvider } from '@/layers/shared/model';
 import { useSessions } from '../model/query/use-sessions';
 import { useSessionRuntime } from '../model/query/use-session-runtime';

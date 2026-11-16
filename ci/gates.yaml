@@ -38,10 +38,20 @@ gates:
     source: .github/workflows/browser-native-release-artifact.yml
     purpose: Checks that the Linux CLI build accepts the exact attested Mac browser assets from the same source commit.
 
+  # --- codex-binary-macos.yml ---
+  - id: wf.codex-binary-macos.codex-binary-macos
+    source: .github/workflows/codex-binary-macos.yml
+    purpose: Runs the real Codex binary suites and protected-file probes on macOS, on Codex or release PRs and on request, so a release gets a macOS result.
+
   # --- mac-browser-reading.yml ---
   - id: wf.mac-browser-reading.read
     source: .github/workflows/mac-browser-reading.yml
     purpose: On request, reads on macOS whether http pages stay http and what flags both Agent browser windows run with, for one commit's CLI tarball.
+
+  # --- app-frame-browser.yml ---
+  - id: wf.app-frame-browser.gesture-spec
+    source: .github/workflows/app-frame-browser.yml
+    purpose: On PRs that change the app frame, runs its cross-app page spec in real Chromium, ahead of the merge queue.
 
   # --- mutation-pilot.yml ---
   - id: wf.mutation-pilot.shared
@@ -235,13 +245,16 @@ gates:
     purpose: Proves the packaged local-agent community journey with no public network, on every queue build and canary run, and on pull requests whose diff touches the community slice (scripts/community-packaged-scope.sh).
   - id: wf.test.test-shard-count
     source: .github/workflows/test.yml
-    purpose: Picks how many test shards a run gets; six in the queue, on the canary and on a pull request that changes apps/server or packages/shared, two on other pull requests, and six whenever the diff cannot be read. On a pull request it also picks which suites run, by turbo task hash (scripts/pr-test-plan.sh), and picks every suite on any doubt or on a change to how tests are chosen or run.
+    purpose: Picks how many test shards a run gets; six in the queue, on the canary and on a pull request that changes apps/server or packages/shared, two on other pull requests, and six whenever the diff cannot be read. On a pull request it also picks which suites run, by turbo task hash (scripts/pr-test-plan.sh), and picks every suite on any doubt or on a change to how tests are chosen or run. It also decides, from scripts/no-code-scope.sh on its depth-2 checkout, whether a pull request changes anything but changelog, docs or version lines, and hands test-shard and test-binary that answer.
+  - id: wf.test.test-binary
+    source: .github/workflows/test.yml
+    purpose: Runs every real-CLI suite outside codex/ (`*.binary.test.ts`, which the shards exclude) beside the shards, on PRs whose test plan reaches their package (none on a PR that changes only changelog, docs or version lines) and on every queue build and canary, and fails unless each planned file ran with no skipped test.
   - id: wf.test.test-shard
     source: .github/workflows/test.yml
     purpose: Runs one sixth of the unit suites (on PRs, the suites whose turbo hash the change moved, skipped on PRs that change only changelog, docs or version lines per scripts/no-code-scope.sh; the full sweep in the merge queue).
   - id: wf.test.test
     source: .github/workflows/test.yml
-    purpose: The required test check; fails unless every shard and community job passed and the shards together covered every package.
+    purpose: The required test check; fails unless every shard, the binary and Codex suites and the community jobs passed, the shards together covered every package, and every binary suite was collected by name.
 
   # --- typecheck.yml ---
   - id: wf.typecheck.typecheck
@@ -288,6 +301,9 @@ gates:
   - id: lefthook.pre-push.ledger-coverage
     source: lefthook.yml
     purpose: Requires a ledger entry for changed pipeline paths before pushing.
+  - id: lefthook.pre-push.ci-midrun
+    source: lefthook.yml
+    purpose: Refuses a push while this branch's test or browser-test run from the last push is under ten minutes old, since the push would cancel it.
 
   # --- .claude/settings.json ---
   - id: claude.PreToolUse.file-guard

@@ -22,6 +22,11 @@ import { TodoTurns } from './todo-turns.js';
 import { todoTurnSeams } from './todo-turn-wiring.js';
 import { agentInRoom, readTodoSourceFacts } from './todo-source.js';
 import { logger } from '../../lib/logger.js';
+import { getNotificationService, notify } from '../notifications/notification-service.js';
+import { getChatMessageService } from '../session/chat-messages/chat-message-current.js';
+import { createTodoRecipientNotice } from './notice/todo-recipient-notice.js';
+import { TodoConfirm } from './notice/todo-confirm.js';
+import { readOperatorTimeZone } from '../core/config/operator-time-zone.js';
 
 /** How often queued to-do turns are checked for a new day. */
 const TODO_QUEUE_DRAIN_MS = 60 * 60 * 1000;
@@ -66,8 +71,16 @@ export interface TodoWiring {
  * @param deps - The database and the lazy agent registry.
  */
 export function wireTodos(deps: TodoWiringDeps): TodoWiring {
-  const service = new TodoPromiseService({ store: new TodoPromiseStore(deps.db) });
+  const promiseStore = new TodoPromiseStore(deps.db);
+  const service = new TodoPromiseService({ store: promiseStore });
   service.start();
+  // "Kept" asks the person it was promised to; Not yet reopens it the usual way (DOR-3034).
+  const confirm = new TodoConfirm({
+    store: promiseStore,
+    reopen: (actor, id, note) => service.update(actor, id, { state: 'open', note, from: 'kept' }),
+    wakeNow: (id) => service.wakeNow(id),
+    clearNotice: (id) => markKeptNoticeRead(id, service.get(id)?.agentId),
+  });
   const agentIdForPath = (agentPath: string) => deps.meshCore()?.getByPath(agentPath)?.id;
   const agentExists = (agentId: string) => deps.meshCore()?.get(agentId) !== undefined;
   const routerDeps: TodoPromiseRouterDeps = {
@@ -78,6 +91,7 @@ export function wireTodos(deps: TodoWiringDeps): TodoWiring {
     isOwner: (facts) => refuseUnlessAccountOwner(facts) === undefined,
     // Only the owner's own session cookie mints `person` authority (DOR-3088).
     personProven: personProof,
+    confirm,
   };
   const todoStore = new TodoStore(deps.db);
   const todoTurns = new TodoTurns({ db: deps.db, ...todoTurnSeams(deps) });
@@ -100,6 +114,28 @@ export function wireTodos(deps: TodoWiringDeps): TodoWiring {
   // Turns queued past a charge's daily cap start the next UTC day, and turns a passing refusal
   // held retry; checked hourly. Never at boot: Mesh and the rooms are not up yet then, and a
   // launch there would only fail.
+  // Tell whoever a promise was made to when its agent moves, drops or keeps it (DOR-3034); both
+  // agent tools share it.
+  const tellRecipient = createTodoRecipientNotice({
+    isAgent: agentExists,
+    agentName: (id) => deps.meshCore()?.get(id)?.name,
+    askConfirm: (id) => confirm.ask(id),
+    dateWords: (iso) =>
+      new Date(iso).toLocaleDateString('en-US', {
+        weekday: 'short',
+        month: 'short',
+        day: 'numeric',
+        timeZone: readOperatorTimeZone(),
+      }),
+    notifyPerson: async (payload) => {
+      await notify('todo.changed', payload);
+    },
+    sendToAgent: async (from, toAgentId, text) => {
+      const chat = getChatMessageService();
+      if (!chat) throw new Error('chat messages are not running');
+      await chat.send(from, { to: toAgentId, message: text, summary: 'A promise changed' });
+    },
+  });
   const drain = () =>
     void todoTurns
       .drainQueued((id) => todoStore.get(id))
@@ -129,12 +165,36 @@ export function wireTodos(deps: TodoWiringDeps): TodoWiring {
       parentOf: (sessionId) => todoTurns.parentOf(sessionId, (id) => todoStore.get(id)),
       readSource: (entryId) => readTodoSourceFacts(deps.db, entryId),
       agentInRoom: (roomId, agentPath) => agentInRoom(deps.db, roomId, agentPath),
+      promiseOf: (id) => service.get(id),
+      tellRecipient,
     },
-    capabilityDeps: { service, agentIdForPath },
+    capabilityDeps: {
+      service,
+      agentIdForPath,
+      tellRecipient,
+    },
     routeDeps: routerDeps,
     stop: () => {
       clearInterval(drainTimer);
       service.stop();
     },
   };
+}
+
+/**
+ * Mark the Inbox ask for a kept promise read once its person answered it (DOR-3034), so a
+ * question already answered never sits there as if it were waiting.
+ *
+ * @param todoId - The promise.
+ * @param agentId - Its agent, whose notices are searched.
+ */
+function markKeptNoticeRead(todoId: string, agentId: string | undefined): void {
+  const notifications = getNotificationService();
+  if (!notifications || !agentId) return;
+  const unread = notifications.list({ agentId, kind: ['todo.changed'], unread: true, limit: 100 });
+  for (const item of unread.notifications) {
+    const stored = notifications.payloadOf(item.id)?.payload as
+      { todoId?: string; change?: string } | undefined;
+    if (stored?.todoId === todoId && stored.change === 'kept') notifications.markRead(item.id);
+  }
 }

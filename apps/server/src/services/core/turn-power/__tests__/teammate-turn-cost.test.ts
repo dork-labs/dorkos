@@ -9,9 +9,11 @@ import type { AgentRuntime, MessageOpts } from '@dorkos/shared/agent-runtime';
 import type { StreamEvent } from '@dorkos/shared/types';
 import { meterTeammateTurns, setTeammateTurnCostSink } from '../teammate-turn-cost.js';
 
-function runtime(events: StreamEvent[], type = 'claude-code'): AgentRuntime {
+/** A runtime whose status `costUsd` is a running total unless it says otherwise. */
+function runtime(events: StreamEvent[], costUsdIsRunningTotal = true): AgentRuntime {
   return {
-    type,
+    type: 'claude-code',
+    getCapabilities: () => ({ costUsdIsRunningTotal }),
     async *sendMessage() {
       for (const event of events) yield event;
     },
@@ -58,6 +60,21 @@ describe('the teammate meter', () => {
     );
 
     expect(sink).toHaveBeenCalledWith({ roomId: 'room-a', costUsd: undefined });
+  });
+
+  it('counts the status cost of a runtime that reports each turn on its own', async () => {
+    const sink = vi.fn();
+    setTeammateTurnCostSink(sink);
+
+    await drain(
+      meterTeammateTurns(runtime([status({ costUsd: 0.3 }), done], false)).sendMessage(
+        's',
+        'hi',
+        teammate
+      )
+    );
+
+    expect(sink).toHaveBeenCalledWith({ roomId: 'room-a', costUsd: 0.3 });
   });
 
   it('never counts the owner’s own turns, or a turn outside a room', async () => {

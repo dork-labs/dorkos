@@ -22,7 +22,7 @@ import type {
   ExtensionDecisionDTO,
   PendingDecisionOffer,
 } from '@dorkos/shared/extension-decision-schemas';
-import { createMockTransport } from '@dorkos/test-utils';
+import { createMockTransport } from '@dorkos/test-utils/mock-factories';
 
 const mockNavigate = vi.fn();
 /** Below 768px the Inbox is a bottom sheet rather than a popover. */

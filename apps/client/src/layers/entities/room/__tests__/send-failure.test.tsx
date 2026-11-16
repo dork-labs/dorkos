@@ -9,7 +9,7 @@ import { renderHook, waitFor, act } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { createMockTransport } from '@dorkos/test-utils';
+import { createMockTransport } from '@dorkos/test-utils/mock-factories';
 import type { Transport } from '@dorkos/shared/transport';
 import type { RoomEntry } from '@dorkos/shared/room-schemas';
 import { createQueryClientConfig } from '@/layers/shared/lib';

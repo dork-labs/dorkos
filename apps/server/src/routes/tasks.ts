@@ -27,24 +27,20 @@ import * as personReview from '../services/tasks/approvals/person-review.js';
  * @module routes/tasks
  */
 import { Hono } from 'hono';
-import { createHash } from 'node:crypto';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import { UpdateTaskRequestSchema, ListTaskRunsQuerySchema } from '@dorkos/shared/schemas';
 import type { CreateTaskInput, PermissionMode, Task } from '@dorkos/shared/schemas';
-import type { MeshCore } from '@dorkos/mesh';
-import type { TaskStore } from '../services/tasks/task-store.js';
-import type { TaskSchedulerService } from '../services/tasks/task-scheduler-service.js';
-import type { TaskRegistrar } from '../services/tasks/task-registrar.js';
 import { describeScheduleProblem } from '../services/tasks/cron-validation.js';
 import { createScheduledTask } from '../services/tasks/lifecycle/create-task.js';
 import { wifiRunNowRefusal, wifiScheduleRefusal } from './task-wifi-guard.js';
+import { prepareTaskApprovalRequest } from './task-approval-request.js';
+import { pendingTrialMode, TRIAL_TOO_LOOSE_REFUSAL } from './task-trial-mode.js';
 import {
   deleteOrDeclineTask,
   PROJECT_COPY_DELETE_REFUSAL,
 } from '../services/tasks/lifecycle/delete-task.js';
 import { applyTaskFileUpdate } from '../services/tasks/lifecycle/update-task-file.js';
 import { conflictingTimingRequest } from '../services/tasks/timing/effective-timing.js';
-import type { ActivityService } from '../services/activity/activity-service.js';
 import { readActivityActor } from '../services/activity/activity-actor.js';
 import { loadTemplates } from '../services/tasks/task-templates.js';
 import { validationFailureBody } from '../lib/route-utils.js';
@@ -102,6 +98,10 @@ import {
 import { marksOf } from '../services/core/turn-power/turn-levels.js';
 import { mountTaskModeUndo } from './task-mode-undo.js';
 import { marksHold } from '../services/core/turn-power/turn-marks.js';
+import * as taskApprovalActor from './task-approval-actor.js';
+import type { TasksRouterDeps } from './tasks-deps.js';
+
+export type { TasksRouterDeps } from './tasks-deps.js';
 
 /**
  * What a schedule on DorkOS credits says to a caller that is not the owner.
@@ -113,25 +113,6 @@ const TASK_ON_CREDITS = {
   personOnly: 'Only you can run a scheduled task on your DorkOS credits, from the DorkOS app.',
   action: 'run a scheduled task on DorkOS credits',
 };
-
-/** What the Tasks routes read, handed over by `startup/tasks.ts` when Tasks started. */
-export interface TasksRouterDeps {
-  /** TaskStore for data persistence. */
-  store: TaskStore;
-  /** TaskSchedulerService for dispatch and run-time queries. */
-  scheduler: TaskSchedulerService;
-  /**
-   * The one seam that turns a row into a live cron job, shared with the file
-   * watcher and the reconciler so all four writers agree.
-   */
-  registrar: TaskRegistrar;
-  /** Resolved data directory path. */
-  dorkHome: string;
-  /** Resolves agent project paths; absent when Mesh is disabled. */
-  meshCore?: MeshCore;
-  /** Where task writes are recorded; absent in a test that does not watch it. */
-  activity?: ActivityService;
-}
 
 /**
  * Create the Tasks routes with schedule and run management endpoints.
@@ -212,10 +193,17 @@ export function createTasksRoutes(deps: TasksRouterDeps): Hono<ApiEnv> {
     // credited to no agent, as on update (`scheduleEditorOf`).
     const agentIdentity = caller.agentIdentity?.inactive ? undefined : caller.agentIdentity;
     const outcome = await createScheduledTask(
-      { store, registrar, dorkHome, ...(meshCore && { meshCore }) },
+      {
+        store,
+        registrar,
+        dorkHome,
+        defaultTimezone: deps.defaultTimezone,
+        ...(meshCore && { meshCore }),
+      },
       {
         input: body as CreateTaskInput,
         trusted,
+        ...(trusted && { createdBy: taskApprovalActor.personTaskApprover(caller) }),
         callerIsOurAgent: agentIdentity != null,
         // An agent's HTTP call names no chat, so its turn is read through its
         // agent: the marks of any marked turn of it running now (DOR-3036).
@@ -282,11 +270,13 @@ export function createTasksRoutes(deps: TasksRouterDeps): Hono<ApiEnv> {
 
     const parsed = UpdateTaskRequestSchema.safeParse(body);
     if (!parsed.success) return c.json(validationFailureBody(parsed.error), 400);
-    // The hash an approval card showed is not a field of the task: only the settle reads it.
-    const { approvedPromptHash, expectedApprovalRevision, ...data } = parsed.data;
-
     const existing = store.getTask(id);
     if (!existing) return c.json({ error: 'Scheduled task not found' }, 404);
+    // Rules, then a stale review, then a looser-than-proposed approval (#3794).
+    const prepared = await prepareTaskApprovalRequest(store, existing, parsed.data, meshCore);
+    const { refusal, review, approvedPromptHash, approvalSurface, data } = prepared;
+    if (refusal) return c.json(refusal.body, refusal.status);
+    const approval = taskApprovalActor.personTaskApprovalForTask(caller, existing, approvalSurface);
     // From Wi-Fi a schedule runs at Default at most (DOR-3037).
     const wifiRefusal = wifiScheduleRefusal(caller, body, existing);
     if (wifiRefusal) return c.json(wifiRefusal, 403);
@@ -424,13 +414,6 @@ export function createTasksRoutes(deps: TasksRouterDeps): Hono<ApiEnv> {
     // the next reconciler sweep (DOR-1625). Every gate it runs — the read, the
     // arm blocker, the parse, the package-owned check, the plan — refuses before
     // anything is written, so a refusal here leaves the row untouched too.
-    const review = personReview.preparePersonTaskReview(
-      store,
-      existing,
-      data,
-      expectedApprovalRevision
-    );
-    if (review.stale) return c.json(personReview.STALE_SCHEDULE_REVIEW, 409);
     const fileOutcome = await applyTaskFileUpdate(
       { dorkHome, ...(meshCore && { meshCore }) },
       { existing, data, clampTo, reviewStillMatches: review.beforeWrite }
@@ -455,7 +438,7 @@ export function createTasksRoutes(deps: TasksRouterDeps): Hono<ApiEnv> {
 
     const rowData =
       fileOutcome.clampApplied && clampTo ? { ...data, permissionMode: clampTo } : data;
-    let updated = store.updateTask(id, rowData, { timingLandsOn });
+    let updated = store.updateTask(id, rowData, { timingLandsOn, approval });
     if (!updated) return c.json({ error: 'Scheduled task not found' }, 404);
 
     // **Re-assert the status the caller asked for.** The file is written before
@@ -481,7 +464,7 @@ export function createTasksRoutes(deps: TasksRouterDeps): Hono<ApiEnv> {
       ? (data.status ?? (changesFile && existing.status === 'active' ? 'active' : undefined))
       : undefined;
     if (intendedStatus !== undefined && updated.status !== intendedStatus) {
-      updated = store.updateTask(id, { status: intendedStatus }) ?? updated;
+      updated = store.updateTask(id, { status: intendedStatus }, { approval }) ?? updated;
     }
 
     // **A person editing their own live schedule re-approves it.**
@@ -501,7 +484,7 @@ export function createTasksRoutes(deps: TasksRouterDeps): Hono<ApiEnv> {
     // So the grant is re-issued only for a caller that cleared the agent bar. An
     // agent's edit still re-parks, and a person still has to look at it.
     if (rearms && changesFile && existing.status === 'active' && updated.status === 'active') {
-      store.approvals.recordApproval(updated.id);
+      store.approvals.recordApproval(updated.id, approval);
       updated = store.getTask(updated.id) ?? updated;
     }
 
@@ -588,7 +571,6 @@ export function createTasksRoutes(deps: TasksRouterDeps): Hono<ApiEnv> {
     // picked mode before any write, then record who approved which proposal.
     if (existing.status === 'pending_approval' && updated.status === 'active') {
       const actorPrincipal = readCallerPrincipal(caller);
-      const raised = updated.permissionMode !== existing.permissionMode;
       // Resolved before the call rather than inside its argument: it reads the
       // agent's manifest off disk, and an await buried in a template literal
       // reads like a synchronous format.
@@ -608,15 +590,12 @@ export function createTasksRoutes(deps: TasksRouterDeps): Hono<ApiEnv> {
           `running as ${level}`,
         // The before and after both, so a reader can see a raise without
         // reconstructing what the row used to hold.
-        metadata: {
-          permissionMode: updated.permissionMode,
-          previousPermissionMode: existing.permissionMode,
-          reasonHead: createHash('sha256')
-            .update(existing.reason ?? '')
-            .digest('hex'),
-          personId: caller.user?.userId ?? null,
-          raised,
-        },
+        metadata: taskApprovalActor.taskApprovalActivityMetadata(
+          updated,
+          existing.permissionMode,
+          existing.reason,
+          caller.user?.userId ?? null
+        ),
         linkPath: '/',
       });
       void resolveScheduleParkPayload(updated).then((payload) =>
@@ -762,7 +741,13 @@ export function createTasksRoutes(deps: TasksRouterDeps): Hono<ApiEnv> {
         : undefined;
     if (creditsRefusal) return c.json(creditsRefusal, 403);
 
-    const run = await scheduler.triggerManualRun(id);
+    // A trial of a pending schedule is never looser than one click could approve.
+    const trial = await pendingTrialMode(store.getTask(id), meshCore);
+    if (trial.kind === 'refused') return c.json(TRIAL_TOO_LOOSE_REFUSAL, 409);
+    const run =
+      trial.kind === 'tightened'
+        ? await scheduler.triggerManualRun(id, trial.permissionMode)
+        : await scheduler.triggerManualRun(id);
     if (!run) {
       return c.json({ error: 'Scheduled task not found' }, 404);
     }

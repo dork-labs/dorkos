@@ -13,6 +13,56 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Only /system:release compiles fragments into a version section below.
 -->
 
+## [0.135.11] - 2026-11-15
+
+> DorkOS 0.135.11 keeps a project's own settings out of OpenCode chats, and out of Codex chats below Full, blocks a project's OpenCode plugins at the start of each turn, keeps anonymous data off until you answer, and lets an agent's chats claim a job so two never take the same one.
+
+### Note for people upgrading
+
+- **If you ran an OpenCode or Codex agent in a project you didn't write, update.**
+- **OpenCode chats in DorkOS no longer read a project's own OpenCode settings**, in any project, your own included. That means its `opencode.json` and its `.opencode` folder, with the MCP servers, models, agents and skills set there. Put what you need in `~/.config/opencode`. The project's `AGENTS.md` still reaches the agent; a `CLAUDE.md` on its own no longer does.
+- **An OpenCode chat in a folder with its own OpenCode plugins stops with a message**, even in your own project. DorkOS looks in every folder from the chat's folder up to the top of the disk, your home folder included. Move plugins you want to `~/.config/opencode`. A way to allow your own projects' plugins is coming. (DOR-4394)
+- **Below Full, a Codex chat no longer uses a folder's own Codex settings or the MCP servers they name**, unless you trusted that folder in Codex. Chats on DorkOS credits never load them. (DOR-4408)
+- Anonymous install, heartbeat and usage data now wait for your answer to the sharing question. If you saw the question but never answered it, they stop until you do. (DOR-4400)
+- `dorkos telemetry enable errors` without `--channel` now changes nothing. Use `--channel errors`. (DOR-4414)
+- A Codex, DorkOS runtime or OpenCode chat that had Plan, Auto or Never ask saved now runs in that runtime's most careful mode: Ask first on Codex and the DorkOS runtime, Default on OpenCode. (DOR-4411)
+- Upgrade settings last used before 0.115 through version 0.115 first. DorkOS stops before changing older settings and explains the two steps. A settings file you wrote by hand still starts normally, unless it holds a setting only versions before 0.115 wrote: `sessionSecret`, a tunnel passcode setting, `telemetry.enabled`, or the onboarding steps `tasks` or `adapters`. Remove that setting and start again. (DOR-4188, DOR-4376)
+- On Linux, Codex at Full access doesn't start if Claude Code has run on the same machine, and that includes the Docker image. Use Ask first or Workspace write there for now. We're fixing it (DOR-3965).
+- On a Mac, Codex chats can't delete or move folders (rm -r, rmdir, mv). We're fixing it (DOR-4358).
+- Known issue: offline, OpenCode's first turn in a new folder can take about a minute. Online, the first turn waits about 10 seconds once. A fix is coming in the next release (DOR-4422).
+
+### Security
+
+- **A project's own OpenCode plugins are blocked at the start of each turn.** If the project has any, OpenCode doesn't run that turn, and the chat says "OpenCode can't run in this project. It has its own plugins." Your own plugins in `~/.config/opencode` keep working. More work to close this fully is tracked in DOR-4412. (DOR-4394)
+- A project's own MCP servers don't load in OpenCode chats either. (DOR-4394)
+- **DorkOS's check before an OpenCode agent runs a shell command, edits a file or fetches a page stays on, whatever the project's settings say.** If any agent the project defines would skip that check, that chat can't start helper agents. (DOR-4394)
+- **A Codex chat loads a folder's own Codex settings only at Full on your own Codex sign-in, or when you trusted that folder in Codex.** When DorkOS loads them at Full, Activity says so, also when you open a chat in a subfolder of that repo. (DOR-4408, DOR-4410)
+- DorkOS now lists, one time, every folder your own Codex settings trust in Activity, so you can review them in Codex. It never changes that file. (DOR-4410)
+- When DorkOS hands a project's `AGENTS.md` or `CLAUDE.md` to an agent itself, as it does for OpenCode chats, it now reads only real files: a link is skipped. Past about 32,000 characters in all, the text is cut short with a note saying so, so it can't crowd out the agent's own instructions. (DOR-4405)
+- When DorkOS starts, it asks Claude Code for the list of models. That check now loads only your own Claude settings, never the project settings of your default folder. (DOR-4409)
+- **Setting a chat to a mode its runtime doesn't have is refused**, such as Plan on a Codex chat. The error lists the modes that runtime has. (DOR-4411)
+
+### Added
+
+- **An agent's chats can claim a job**, like a ticket or a pull request, so its other chats see it is taken. When an agent starts a new chat on a job another of its chats holds, DorkOS stops and names that chat, unless the agent says to start anyway. A claim ends when the chat lets it go, or after two hours without work. (DOR-4019)
+- Shell commands agents run can now tell which DorkOS chat they're in, through `DORKOS_SESSION_ID`: on Claude Code (hooks too), Codex and OpenCode, and on the DorkOS runtime at Full autonomy. If OpenCode can't look up the chat, the command still runs without it. (DOR-4380)
+
+### Fixed
+
+- **Anonymous install, heartbeat and usage data stay off until you answer the sharing question**, even if your settings file says otherwise. Settings and `dorkos telemetry status` show them as off until you choose, and your first answer turns on only what you chose. (DOR-4400)
+- `dorkos telemetry enable errors` without `--channel` now asks "Did you mean `--channel errors`?" and changes nothing. `--channel errors` still turns on crash reports alone. (DOR-4414)
+- Pausing an agent just as another agent's message starts no longer loses that message. It goes back in line, waits while the agent is paused, and runs once when you resume it. The agent that sent it sees it as waiting, not failed. (DOR-4353)
+- Codex chats get their DorkOS tools again when they start, open or resume. (DOR-3169)
+- A Codex chat started without an agent now says "This chat has no DorkOS tools." A Codex chat that loses them partway through says so and tries to get them back with your next message, and DorkOS writes a warning to its log. (DOR-4385, DOR-4393, DOR-4384)
+- A Codex agent is now told to use the DorkOS browser for websites, since Codex can't start its own browser on a Mac. (DOR-4357)
+- Safety checks from installed packages, like Safety Hooks, now stop risky shell commands such as `git stash` and `pkill` for agents on OpenCode and the DorkOS runtime too, in every mode. They don't run on Codex yet, and the install screen and the runtime picker say so. (DOR-4379)
+- In the Mac app, when an agent hands you its browser and the page stays in the Agent browser panel, the panel now says so above the page, for example "Your turn: Atlas can't see or use this window." The hand-off card in the chat shows the same strip, now with a hand icon. (DOR-3111)
+- On OpenCode, which keeps only one skill per name, an installed package never replaces a skill of yours with the same name, whether yours is in the project or in your home folder. DorkOS leaves the package's skill out, says so on the install screen, and tells the agent which one it has. (DOR-4387, DOR-4392)
+
+### Going back
+
+0.135.11 adds one table to the database, for job claims. To go back, install 0.135.10; it ignores that table, and claims stop working there. Going back also undoes this release's OpenCode, Codex and sharing changes. OpenCode chats that were kept from starting helpers stay that way, and chats moved to their runtime's most careful mode stay in it.
+
 ## [0.135.10] - 2026-11-14
 
 > DorkOS 0.135.10 adds one switch that turns Remote Access off for every other device, keeps messages waiting for an agent through a restart or a pause, and makes the browser sign-in hand-off clearer.
@@ -104,8 +154,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Note for people upgrading
 
 - On Linux, Codex at Full access doesn't start if Claude Code has run on the same machine, and that includes the Docker image. Use Ask first or Workspace write there for now. We're fixing it (DOR-3965).
-- `/mcp` and `/a2a` now refuse an address with a key or token written into it, from any device. Send the key in the request's header instead. From another device, `/mcp` and `/a2a` no longer accept a sign-in from the app: they need an API key. Settings says so under the MCP address. (DOR-3650)
-- If you set `TUNNEL_PORT` to a port other than DorkOS's own, remote access no longer opens. Unset it, or set it to DorkOS's port. (DOR-3650)
+- `/mcp` and `/a2a` now refuse an address with a key-like name in it, from any device: any name containing key, token, secret, auth, password or bearer, so even `?author=` is refused. Send the key in the request's header instead. From another device, `/mcp` and `/a2a` no longer accept a sign-in from the app: they need an API key. Settings says so under the MCP address. (DOR-3650)
+- If you use your own ngrok tunnel and set `TUNNEL_PORT` to a port other than DorkOS's own, that tunnel no longer opens. Unset it, or set it to DorkOS's port. DorkOS's own remote access doesn't read `TUNNEL_PORT`. (DOR-3650)
 - An MCP server you added in DorkOS under one of DorkOS's own names, like `DorkOS` or `dorkos_connections` in any mix of capitals, no longer reaches any agent. It still shows in the list. Remove it and add it again under another name. (DOR-3600)
 - Agents can no longer change a file at `~/.local/bin/dorkos` with their file tools, even at Full access. Claude Code and Codex also refuse it from a shell; other shells aren't checked for it yet. If your own `dorkos` command lives there, update it yourself. (DOR-3105)
 - On a room's canvas, an agent can no longer show a file from outside its own folder and that room's files. It gets an error that says to copy the file into its folder first. Your own one-on-one window opens files as before. (DOR-3519)
@@ -351,60 +401,10 @@ DorkOS now counts a mini app's post in a room as words it can't vouch for. It do
 
 If you go back to 0.135.0 after an agent approved another agent's request for Read, asking DorkOS for its list of access changes (`GET /api/connectors/access-changes`) returns an error there. No page in the app uses that list, so Needs you and the Connections page still load.
 
-## [0.135.1] - 2026-11-09
+Older releases (v0.1.0 – v0.135.1) are archived in [changelog/archive/CHANGELOG-v0.1.0-to-v0.135.1.md](changelog/archive/CHANGELOG-v0.1.0-to-v0.135.1.md).
 
-> DorkOS 0.135.1 lets an agent give another agent the Read access it asked for, lets you remove an extension, and asks about all of a plugin's extensions on one card. A mini app's post in a room now counts as words DorkOS can't vouch for. This release changes the database, so read Going back before downgrading.
-
-### Note for people upgrading
-
-- This release changes the database. Read Going back below before downgrading.
-- On Linux, Codex at Full access doesn't start if Claude Code has run on the same machine, and that includes the Docker image. Use Ask first or Workspace write there for now. We're fixing it (DOR-3965).
-
-### Security
-
-- **A mini app's post now counts as words from outside your team.** That includes a thread reply a mini app posts and a comment it passes on to an agent. Before, an agent that read one could still take another agent's access away. Now it can't, just as with a message from Telegram or Slack. Notes the agent saves in that turn are marked as having read outside words, and it can't use your shared browser. An agent that read outside words passes that on when it posts in a room, so the agent it wakes is held the same way. (DOR-4023)
-- **At Full autonomy, a refused attempt to take another agent's access shows in Activity** when the turn had read outside words. Full never asks, so that line is your record of it. Other refusals are kept in the audit log.
-
-DorkOS now counts a mini app's post in a room as words it can't vouch for. It doesn't yet count an email or web page read through a connected app, so these limits don't cover those cases. And when such a room turn starts or messages another chat, that chat's memory notes and agent-browser actions aren't yet limited the same way; access changes there are still refused.
-
-### Added
-
-- **An agent can approve another agent's request for Read on an app.** It can give only Read, and only on an app it holds itself, never more than it holds. It can't approve its own request, approve write access, or approve from a turn another agent started or one DorkOS marks as having read words it can't vouch for. You see each approval in Activity and can undo it.
-- **An agent can undo an access change, under the same rules.** Putting access back counts as approving it. Taking it away counts as narrowing it, so it needs a one-line reason and you hear about it in Needs you. When you Undo a change, that's final: no agent can reverse it. Only you can let an agent back into an app it was left out of.
-- **Remove an extension** from Settings → Extensions. Open its row and choose Remove. It asks first, with Cancel ready, and Esc backs out. Its folder and everything it was allowed are deleted, so nothing put back there later can reuse your old yes. Extensions that came with a plugin are removed by uninstalling the plugin. (DOR-3541)
-- **A plugin's extensions show as one row** in Settings → Extensions, with one switch for the ones you already allowed. Open it to see each one and turn them on or off on their own. (DOR-3583)
-- **One card asks about all of a plugin's waiting extensions:** what they can do together, then each one. **Allow all** still allows each one on its own, with its own check of its files. If one can't be allowed, the card says which. An extension added to the plugin later, or one whose files changed since you allowed it, still asks on its own card. ⌘K offers "Review … extensions" to open it. (DOR-3583)
-
-### Changed
-
-- **A request another agent approved says so.** The card still shows who asked and for which app. Under that it reads "Approved by DorkOS PM · Read only", with that agent's picture and the time. It stays in Needs you for a day, then you'll find it in Activity.
-- It shows the agent as it was when it approved. If the agent changes its name later, the card doesn't change. If you undo the approval, it leaves Needs you, and the request in the chat says "Undone by you".
-- A request for write access says "Write access needs you." above the buttons. Agents can only approve Read, so only you can answer it.
-- When an agent asks to approve another agent's request, you see names, not codes. The card shows which agent asked, with its picture, and which app. The request's code is behind the ⓘ button.
-- In the Inbox, an extension that wants to run now says so plainly: "Flow wants to run on this computer." It lists what it can reach on three short lines, Access, Runs as and Network, and you answer with an Allow or Not now button right on the card.
-- An extension whose files changed after you allowed it now says its screens are paused until you look. It shows what changed and when, and you answer with Allow the new version or Keep paused.
-
-### Fixed
-
-- **Your apps show up again.** On 0.135.0, one app that never finished loading left the Apps page empty and hid app settings. Now each app loads on its own, and one that's stuck says "Not working" with Try again.
-- An extension whose folder is gone no longer keeps its approval out of sight. It shows under "Needs you" as "Folder missing", with Forget it to clear what it was allowed. (DOR-3372)
-- Typing "settings" in the command palette and pressing Enter opens Settings again. It had been opening Settings → Extensions with the first app's row already open.
-
-### Going back
-
-0.135.1 changes one table in the database, and 0.135.0 starts on it as it is. To go back, install 0.135.0.
-
-Read access one agent approved for another stays on 0.135.0. To take it away there, change that agent's access on the Connections page.
-
-If an agent was waiting for your OK to approve another agent's request, that card still shows on 0.135.0, without a label, but answering it does nothing. Answer the other agent's request yourself instead.
-
-If an agent undid a change and took another agent's access away while you were on 0.135.1, Undo in Needs you says "Nothing to undo there." on 0.135.0. Change that agent's access on the Connections page instead.
-
-DorkOS still saves a backup before it changes the database, in `~/.dork/backups/`. If you came from 0.135.0, it's named `dork-<date>-<time>-pre-20261109000421_connection_grant_approvals.db` (the time is UTC). To restore it, quit DorkOS, delete `dork.db-wal` and `dork.db-shm` from `~/.dork/`, copy the backup over `~/.dork/dork.db`, then install 0.135.0. You lose anything written since the upgrade, so if you removed access or revoked a connection since then, do it again.
-
-Older releases (v0.1.0 – v0.135.0) are archived in [changelog/archive/CHANGELOG-v0.1.0-to-v0.135.0.md](changelog/archive/CHANGELOG-v0.1.0-to-v0.135.0.md).
-
-[Unreleased]: https://github.com/dork-labs/dorkos/compare/v0.135.10...HEAD
+[Unreleased]: https://github.com/dork-labs/dorkos/compare/v0.135.11...HEAD
+[0.135.11]: https://github.com/dork-labs/dorkos/compare/v0.135.10...v0.135.11
 [0.135.10]: https://github.com/dork-labs/dorkos/compare/v0.135.9...v0.135.10
 [0.135.9]: https://github.com/dork-labs/dorkos/compare/v0.135.8...v0.135.9
 [0.135.8]: https://github.com/dork-labs/dorkos/compare/v0.135.7...v0.135.8
@@ -414,4 +414,3 @@ Older releases (v0.1.0 – v0.135.0) are archived in [changelog/archive/CHANGELO
 [0.135.4]: https://github.com/dork-labs/dorkos/compare/v0.135.3...v0.135.4
 [0.135.3]: https://github.com/dork-labs/dorkos/compare/v0.135.2...v0.135.3
 [0.135.2]: https://github.com/dork-labs/dorkos/compare/v0.135.1...v0.135.2
-[0.135.1]: https://github.com/dork-labs/dorkos/compare/v0.135.0...v0.135.1

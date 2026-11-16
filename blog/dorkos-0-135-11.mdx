@@ -1,0 +1,58 @@
+---
+title: DorkOS 0.135.11
+description: A project's own settings stay out of OpenCode chats and Codex chats below Full, a project's OpenCode plugins are blocked at the start of each turn, anonymous data stays off until you answer, and an agent's chats can claim a job.
+date: 2026-11-15
+author: DorkOS Team
+category: release
+tags: [release, security, opencode, codex, agents]
+---
+
+DorkOS 0.135.11 keeps a project's own settings out of OpenCode chats, and out of Codex chats below Full, blocks a project's OpenCode plugins at the start of each turn, keeps anonymous data off until you answer, and lets an agent's chats claim a job so two never take the same one.
+
+## All Changes
+
+### Note for people upgrading
+
+- **If you ran an OpenCode or Codex agent in a project you didn't write, update.**
+- **OpenCode chats in DorkOS no longer read a project's own OpenCode settings**, in any project, your own included. That means its `opencode.json` and its `.opencode` folder, with the MCP servers, models, agents and skills set there. Put what you need in `~/.config/opencode`. The project's `AGENTS.md` still reaches the agent; a `CLAUDE.md` on its own no longer does.
+- **An OpenCode chat in a folder with its own OpenCode plugins stops with a message**, even in your own project. DorkOS looks in every folder from the chat's folder up to the top of the disk, your home folder included. Move plugins you want to `~/.config/opencode`. A way to allow your own projects' plugins is coming. (DOR-4394)
+- **Below Full, a Codex chat no longer uses a folder's own Codex settings or the MCP servers they name**, unless you trusted that folder in Codex. Chats on DorkOS credits never load them. (DOR-4408)
+- Anonymous install, heartbeat and usage data now wait for your answer to the sharing question. If you saw the question but never answered it, they stop until you do. (DOR-4400)
+- `dorkos telemetry enable errors` without `--channel` now changes nothing. Use `--channel errors`. (DOR-4414)
+- A Codex, DorkOS runtime or OpenCode chat that had Plan, Auto or Never ask saved now runs in that runtime's most careful mode: Ask first on Codex and the DorkOS runtime, Default on OpenCode. (DOR-4411)
+- Upgrade settings last used before 0.115 through version 0.115 first. DorkOS stops before changing older settings and explains the two steps. A settings file you wrote by hand still starts normally, unless it holds a setting only versions before 0.115 wrote: `sessionSecret`, a tunnel passcode setting, `telemetry.enabled`, or the onboarding steps `tasks` or `adapters`. Remove that setting and start again. (DOR-4188, DOR-4376)
+- On Linux, Codex at Full access doesn't start if Claude Code has run on the same machine, and that includes the Docker image. Use Ask first or Workspace write there for now. We're fixing it (DOR-3965).
+- On a Mac, Codex chats can't delete or move folders (rm -r, rmdir, mv). We're fixing it (DOR-4358).
+- Known issue: offline, OpenCode's first turn in a new folder can take about a minute. Online, the first turn waits about 10 seconds once. A fix is coming in the next release (DOR-4422).
+
+### Security
+
+- **A project's own OpenCode plugins are blocked at the start of each turn.** If the project has any, OpenCode doesn't run that turn, and the chat says "OpenCode can't run in this project. It has its own plugins." Your own plugins in `~/.config/opencode` keep working. More work to close this fully is tracked in DOR-4412. (DOR-4394)
+- A project's own MCP servers don't load in OpenCode chats either. (DOR-4394)
+- **DorkOS's check before an OpenCode agent runs a shell command, edits a file or fetches a page stays on, whatever the project's settings say.** If any agent the project defines would skip that check, that chat can't start helper agents. (DOR-4394)
+- **A Codex chat loads a folder's own Codex settings only at Full on your own Codex sign-in, or when you trusted that folder in Codex.** When DorkOS loads them at Full, Activity says so, also when you open a chat in a subfolder of that repo. (DOR-4408, DOR-4410)
+- DorkOS now lists, one time, every folder your own Codex settings trust in Activity, so you can review them in Codex. It never changes that file. (DOR-4410)
+- When DorkOS hands a project's `AGENTS.md` or `CLAUDE.md` to an agent itself, as it does for OpenCode chats, it now reads only real files: a link is skipped. Past about 32,000 characters in all, the text is cut short with a note saying so, so it can't crowd out the agent's own instructions. (DOR-4405)
+- When DorkOS starts, it asks Claude Code for the list of models. That check now loads only your own Claude settings, never the project settings of your default folder. (DOR-4409)
+- **Setting a chat to a mode its runtime doesn't have is refused**, such as Plan on a Codex chat. The error lists the modes that runtime has. (DOR-4411)
+
+### Added
+
+- **An agent's chats can claim a job**, like a ticket or a pull request, so its other chats see it is taken. When an agent starts a new chat on a job another of its chats holds, DorkOS stops and names that chat, unless the agent says to start anyway. A claim ends when the chat lets it go, or after two hours without work. (DOR-4019)
+- Shell commands agents run can now tell which DorkOS chat they're in, through `DORKOS_SESSION_ID`: on Claude Code (hooks too), Codex and OpenCode, and on the DorkOS runtime at Full autonomy. If OpenCode can't look up the chat, the command still runs without it. (DOR-4380)
+
+### Fixed
+
+- **Anonymous install, heartbeat and usage data stay off until you answer the sharing question**, even if your settings file says otherwise. Settings and `dorkos telemetry status` show them as off until you choose, and your first answer turns on only what you chose. (DOR-4400)
+- `dorkos telemetry enable errors` without `--channel` now asks "Did you mean `--channel errors`?" and changes nothing. `--channel errors` still turns on crash reports alone. (DOR-4414)
+- Pausing an agent just as another agent's message starts no longer loses that message. It goes back in line, waits while the agent is paused, and runs once when you resume it. The agent that sent it sees it as waiting, not failed. (DOR-4353)
+- Codex chats get their DorkOS tools again when they start, open or resume. (DOR-3169)
+- A Codex chat started without an agent now says "This chat has no DorkOS tools." A Codex chat that loses them partway through says so and tries to get them back with your next message, and DorkOS writes a warning to its log. (DOR-4385, DOR-4393, DOR-4384)
+- A Codex agent is now told to use the DorkOS browser for websites, since Codex can't start its own browser on a Mac. (DOR-4357)
+- Safety checks from installed packages, like Safety Hooks, now stop risky shell commands such as `git stash` and `pkill` for agents on OpenCode and the DorkOS runtime too, in every mode. They don't run on Codex yet, and the install screen and the runtime picker say so. (DOR-4379)
+- In the Mac app, when an agent hands you its browser and the page stays in the Agent browser panel, the panel now says so above the page, for example "Your turn: Atlas can't see or use this window." The hand-off card in the chat shows the same strip, now with a hand icon. (DOR-3111)
+- On OpenCode, which keeps only one skill per name, an installed package never replaces a skill of yours with the same name, whether yours is in the project or in your home folder. DorkOS leaves the package's skill out, says so on the install screen, and tells the agent which one it has. (DOR-4387, DOR-4392)
+
+### Going back
+
+0.135.11 adds one table to the database, for job claims. To go back, install 0.135.10; it ignores that table, and claims stop working there. Going back also undoes this release's OpenCode, Codex and sharing changes. OpenCode chats that were kept from starting helpers stay that way, and chats moved to their runtime's most careful mode stay in it.

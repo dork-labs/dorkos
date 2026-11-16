@@ -139,6 +139,7 @@ describe('tasks routes, one of our agents on a Trusted install', () => {
             store,
             scheduler,
             registrar: new TaskRegistrar({ store, scheduler }),
+            defaultTimezone: () => 'UTC',
             dorkHome,
             meshCore,
             activity: { emit } as unknown as ActivityService,

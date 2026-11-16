@@ -22,7 +22,7 @@ import type { Transport } from '@dorkos/shared/transport';
 import type { ConnectionState, Task } from '@dorkos/shared/types';
 import type { PendingApproval } from '@dorkos/shared/approval-schemas';
 import type { NotificationDTO } from '@dorkos/shared/notification-schemas';
-import { createMockTransport } from '@dorkos/test-utils';
+import { createMockTransport } from '@dorkos/test-utils/mock-factories';
 
 /** Global stream state the widget reads; mutable so a test can drop the link. */
 let mockConnectionState: ConnectionState = 'connected';
@@ -143,6 +143,9 @@ function parkedSchedule(overrides: Partial<Task> = {}): Task {
     effort: null,
     account: null,
     status: 'pending_approval',
+    approvedAt: null,
+    approvedBy: null,
+    approvedVia: null,
     filePath: '/tmp/nightly-sweep/SKILL.md',
     createdAt: new Date(Date.now() - 20 * 60_000).toISOString(),
     updatedAt: new Date(Date.now() - 20 * 60_000).toISOString(),
@@ -539,6 +542,7 @@ describe('InboxBell', () => {
       expect(updateTask).toHaveBeenCalledWith('task-1', {
         status: 'active',
         expectedApprovalRevision: 'a'.repeat(64),
+        approvalSurface: 'inbox',
         approvedPromptHash: 'sha256:PumzqSIeJOkvMji_z_hHg7UAzmnYW2kSn_2dPHDjyuQ',
       })
     );

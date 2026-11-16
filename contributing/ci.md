@@ -52,7 +52,7 @@ This guide covers everything between an agent's edit and a change on `main`: the
 EDIT     Claude Code hooks: four PreToolUse guards on every Bash call; typecheck, eslint and an any-ban on every edit
 TURN END prettier --write on changed files (Stop hook); checkpoint in worktrees
 COMMIT   lefthook pre-commit: prettier, drizzle generate, dir-size, turbo lint --affected (under the machine-wide slot cap). No typecheck at commit
-PUSH     lefthook pre-push: changed-file formatting, fragment validity, file-size ratchet, pipeline ledger coverage. No tests run at push (DOR-2160)
+PUSH     lefthook pre-push: changed-file formatting, fragment validity, file-size ratchet, pipeline ledger coverage, CI still running from the last push. No tests run at push (DOR-2160)
 PR       ~19-25 Actions jobs; the required checks below must pass ON THE PR before it may enter the queue
 ARM      agents arm with gh pr merge --auto; merge-tail (every 2-3 h, throttled) is the backstop
 QUEUE    merge_group: the required checks re-run on main + everything ahead, up to 5 PRs per group, ALLGREEN
@@ -113,7 +113,12 @@ label, push and edit (`.github/scripts/security-verdict.mjs`), and on `merge_gro
 queue's verdict on the group's SHA. It comments once per observed
 SHA/state transition, recording that observation's status author and ID. Replacing
 a status with the same state adds no comment. It never renders `target_url`.
-After Security approves, rerun the PR verifier. A fully classified nonsensitive
+After Security approves, rerun the PR verifier. While a PR is only waiting (no
+Security label yet, or `hold` on and no Security label on it is wrong), the PR
+run of `security-gate` succeeds with a "Waiting for Security" annotation instead
+of failing. It approves nothing: `security-review` stays short of `success`, so
+`arm.sh` and merge-tail refuse, and the merge-queue run still refuses (DOR-4459).
+A stale label with no `hold`, or a label a bot added, still fails. A fully classified nonsensitive
 PR with no security-review status can pass read-only as "no security paths
 (computed)". The queue can do the same using `base...queuedHead`, never the current
 PR's files. An explicit pending/failure cannot use computed clearance. Incomplete
@@ -167,9 +172,13 @@ Nothing that reaches `main` reaches it with less checking. The queue runs the fu
 
 **Why the fragment check joined it.** Same shape: about 0.1 s, deterministic, and it runs the exact validity command of the required `fragment-present` check (`changelog_backfill.py --validate --changed-only`). Its usual catch is a seeded fragment nobody rewrote, which five PRs found out from CI in the week to 2026-10-30. The commit hook also stops seeding once the branch has a hand-written fragment: it adds the new commit to that fragment's `covers:` list instead.
 
+**Why the mid-run check joined it.** Pushing to a PR branch cancels the `test` and `browser-test` runs still going on the previous head, and that threw away 74 job-hours from 2026-11-12 to 2026-11-15. `scripts/pre-push-midrun-check.mjs` asks `gh run list` about this branch and refuses the push while one of those runs is queued or running and under ten minutes old. Push anyway with `CI_PUSH_ANYWAY=1 git push`; each override of a real refusal adds a line (time, git user, `$USER`, branch, head SHA) to `ci-midrun/overrides.jsonl` in the clone's common git dir, outside the work tree. It tests nothing. If gh is missing, signed out, offline or slower than 4 s, it prints one line and lets the push through. The entry is `ci/ledger/261115-173750-pre-push-midrun.md`.
+
 **Why typecheck left `pre-commit`.** Over the week to 2026-09-24 it ran 838 times on the operator machine, for 12.9 hours in total (p90 139 s), and failed 35 times, 9 of them in 3 s or less, which is a lock or a stale dist rather than a type error. Commits outnumber merged PRs about 8 to 1, so it re-checked the same change about eight times per PR, while `typecheck` is a required check on the PR and in the queue and no type error can merge. **To typecheck before you open a PR, run `pnpm verify` (affected-only), or `pnpm --filter <pkg> typecheck` for one package.** Claude Code sessions also typecheck the edited file's package after every edit. The entry, with the revert condition (the PR-side `typecheck` failure rate), is `ci/ledger/260919-175506-*`.
 
 **Heavy local runs take one of a small number of host-wide slots** (`scripts/heavy-run-lock.sh`, `local.heavy_run_slots` in `ci/config.yaml`, default 3). That covers the commit gate `lint`, the root `pnpm build`, `pnpm typecheck`, `pnpm test` and `pnpm verify`, anything you run as `pnpm heavy <command>` (for example `pnpm heavy pnpm turbo build --filter='@dorkos/server^...'`), and a bare `turbo build`, `typecheck`, `test` or `lint`: every one of those tasks depends on the root task `//#heavy-slot` (`scripts/heavy-turbo-slot.mjs`), which holds a slot for as long as that turbo process runs. A `turbo dev` or `turbo watch` run is let through without one, since it never ends on its own. The lock directory is used only if it is a real directory you own; a symlink or someone else's directory there is refused, and the run goes ahead uncapped with a line saying so (DOR-3509). Several agents each running a full sweep is what pinned this box, and on 2026-10-24 panicked it (DOR-3274): `turbo` lets each task keep a worker per core, so four at once is four machines' work on one. The slots live in `/tmp/dorkos-heavy-locks-<uid>`, shared by every clone, worktree and agent on the host. A slot is an exclusive `flock` held by a sidecar for as long as the run lives, so a holder that dies in any way, SIGKILL included, frees its slot at once and leaves nothing to clean up. A waiter queues and prints each holder's pid, age, command and directory. Waiting is bounded: `local.heavy_lock_wait_seconds` for the commit gate, `local.heavy_job_wait_seconds` for a job, and a wait that runs out runs the command anyway with a `lock_timeout` note. A nested call runs straight through, CI never waits, and fast checks are not capped.
+
+**A heavy job also waits for the machine's load, and may refuse with exit 75.** Slots cap how many heavy runs start, not how busy the box is. So a job (the root `build`, `typecheck`, `test`, `verify` and `test:browser` scripts, anything run as `pnpm heavy <command>`, and the `apps/e2e` `e2e`, `e2e:first-run`, `capture`, `capture:record` and `demo` scripts) first reads the 1-minute load average. Over `local.heavy_max_load` (24) it waits, checking every 30 s, for up to 10 minutes (`local.heavy_load_wait_seconds`). If the load is still too high, it runs nothing and **exits 75**, printing the load and who holds the slots. Exit 75 means "the machine is too busy, try again later": nothing is wrong with your command. Wait and rerun it, or run it anyway with `DORKOS_HEAVY_LOCK=0` (that switches the slot cap off too, and is recorded as a `lock_off` note). The commit gate is never load-checked and never refuses, because a gate that refuses gets skipped. A nested call, CI, a bare `turbo` run's slot and a load that cannot be read are not checked either. The waits are recorded as `load_wait` notes and refusals as `load_refused`.
 
 **Split by what each is good at.** GitHub Actions splits by cost (2026-08-23/24, the CI-saturation fix):
 
@@ -179,6 +188,8 @@ Nothing that reaches `main` reaches it with less checking. The queue runs the fu
 - Push-to-main no longer re-runs the suites: the queue already tested the exact tree content (squash rewrites the SHA, not the content).
 
 **Sharding.** The queue and canary `test` leg is **split six ways** (`test-shard (N/6)`) and the PR leg **two ways** (`test-shard (N/2)`), or six ways when it touches `apps/server/**` or `packages/shared/**` (the `test-shard-count` job picks; DOR-1731 for why the PR leg is split at all). The shard jobs are where the suites run; `test` itself is only their fan-in, so read a red on a PR off the shard, not off `test`. Only `test` is a required context. Never make a shard one.
+
+**Real-CLI suites run beside the shards.** Both shard legs exclude every `*.binary.test.ts` (they spawn a real `claude`, `opencode` or Codex and are the slowest files). `codex-sandbox` runs the Codex ones; `test-binary` runs the rest, on the queue, the canary, and every PR whose test plan reaches their package. Each fails unless every file it owns ran with no skipped test (`scripts/assert-binary-suites-ran.mjs` for `test-binary`), `test` requires both green, and its union check requires every `*.binary.test.ts` in the tree by name (`assert-shard-union.sh --require-files`). A new binary suite needs no workflow edit (DOR-4190).
 
 **`assert-tests-executed.sh`.** Turbo caches `test` and replays a full cache hit in about 280 ms while printing "29 successful". So the merge-group `test` run asserts the suites actually executed (`scripts/assert-tests-executed.sh`, pinned by `scripts/test-assert-tests-executed.sh`). Never weaken that step without reading its header. `scripts/assert-shard-union.sh` is the other half: it restores the zero-collected-files net that `--passWithNoTests` removes from the sharded sweep.
 

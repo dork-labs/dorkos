@@ -118,7 +118,7 @@ test.describe('Agent browser ⋯ menu', () => {
     await expect(sheet).toBeVisible();
     for (const name of ['Forward', 'Copy address', 'Close browser'])
       await expect(sheet.getByRole('button', { name, exact: true })).toBeInViewport();
-    // Page history isn't built yet, so Forward waits, disabled (DOR-4449).
+    // A fresh page has nowhere to go forward, so Forward shows disabled (DOR-4449).
     await expect(sheet.getByRole('button', { name: 'Forward', exact: true })).toBeDisabled();
     const box = (await sheet.boundingBox())!;
     // Anchored to the bottom edge (the drawer runs past it, under the home bar).
