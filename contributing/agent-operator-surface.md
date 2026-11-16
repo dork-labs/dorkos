@@ -71,6 +71,9 @@ Everything above used to be hand-registered (a descriptor here, a CLI handler th
 | Composition root (boot + docs)                | `apps/server/src/services/core/self-description/dorkos-registry.ts`               |
 | Serializable catalog types (shared)           | `packages/shared/src/capabilities.ts`                                             |
 | MCP projection (transport-neutral)            | `apps/server/src/services/core/capabilities/mcp-projection.ts`                    |
+| Advertised object recovery                    | `apps/server/src/services/core/capabilities/input-projection.ts`                  |
+| Extension input checks                        | `packages/extension-api/src/tool-check.ts`                                        |
+| Real SDK schema and authority proof           | `apps/server/src/services/runtimes/claude-code/mcp-tools/__tests__/`              |
 | In-session MCP adapter                        | `apps/server/src/services/runtimes/claude-code/mcp-tools/capability-mcp-tools.ts` |
 | External MCP adapter                          | `apps/server/src/services/core/external-mcp/capability-mcp-tools.ts`              |
 | OpenAPI projection                            | `apps/server/src/services/core/capabilities/openapi-projection.ts`                |
@@ -96,11 +99,31 @@ Everything above used to be hand-registered (a descriptor here, a CLI handler th
 
 A `CapabilityDefinition` carries a `surfaces` object with three optional projections:
 
-- `mcp`: the tool name, which server(s) advertise it (`in-session`, `external`, or both), an optional `readOnlyCarveOut` flag, and the two annotation hints (`openWorldHint`, `idempotentHint`) that a tier alone cannot express. The other two MCP hints (`readOnlyHint`, `destructiveHint`) are derived from the `tier`.
+- `mcp`: the tool name, which server(s) advertise it (`in-session`, `external`, or both), an optional `readOnlyCarveOut` flag, and the two annotation hints (`openWorldHint`, `idempotentHint`) that a tier alone cannot express. External MCP and principal-bound Claude tools derive the other two hints (`readOnlyHint`, `destructiveHint`) from `tier`; ordinary Claude tools retain their exposure metadata without adding derived annotations.
 - `cli`: a curated operator verb (and optional subcommand). Optional: a capability with no `cli` surface is still reachable through the generic `dorkos call`.
 - `http`: a method + path auto-registered into the OpenAPI document.
 
 `composeDorkOsCapabilityRegistry` folds every domain into one immutable registry at boot and throws on any structural conflict (a duplicate id, a duplicate tool name, a duplicate CLI verb, a duplicate HTTP route, or an id not prefixed with its domain). The two MCP adapters and the OpenAPI projection then read that one registry, so a capability appears on every surface it declares with zero extra wiring.
+
+### Ordinary MCP input schemas
+
+Both ordinary MCP paths register the full `ZodObject` returned by `capabilityMcpInputObject`. It clones the advertised object with top-level strictness, preserves object refinements and field defaults, and adds `approvalToken` only when `canRaiseApproval` permits it. Nested JSON maps stay open according to their own declarations. The capability's executable `input` is never mutated.
+
+`capabilityInputObject` peels outer preprocessing pipes only to recover the advertised object. The original executable schema stays on the registry, which parses before permission checks, approval hashing and execution. The shared MCP wrapper removes the retry token before that original parse. Do not introduce a second parsed-input invocation path.
+
+| Tool path                         | Registration contract                                                                                                                                                                                                                         |
+| --------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Ordinary Claude capability        | `registerClaudeCapabilityTools` runs after `createSdkMcpServer`; it registers full objects directly on `server.instance`. SDK `tool()` generates loading/search metadata only.                                                                |
+| Ordinary external capability      | `registerCapabilitiesAsMcpTools` uses the same full input projection, derived annotations and request-scoped context. It keeps sessionless token/poll retries.                                                                                |
+| Principal-bound Claude capability | `registerClaudeConnectorCapabilityTools` enumerates `CONNECTOR_RUNTIME_CAPABILITY_IDS`. Its existing input, audience and tier-based token policy remain separate. Launch inclusion is stable across warm turns; context is resolved per call. |
+| Hand-registered Claude tool       | Stays in the SDK factory's `tools` array and is parsed once. Keep its independent raw-shape authoring guard.                                                                                                                                  |
+| Extension contribution            | Pass `checkDeclaredTools` or `checkContributionShape` before registration. The supported closed subset still excludes records, lazy/open schemas and unrepresentable types.                                                                   |
+
+For ordinary tools, hidden names are filtered before registration. The factory records hand, ordinary and principal-bound entries once each in the complete tool-surface digest, using the schemas actually registered. Preserve fresh session/rekey, cwd, principal and abort facts, plus in-session cards and approval holds, when changing a registrar.
+
+**Avoid rebuilding `z.object({ ...input.shape })`:** it drops object refinements. Use the full projection. Keep SDK imports inside the Claude runtime directory, and obtain loading metadata from the SDK factory instead of copying its private keys.
+
+The installed SDK already handles raw defaulted fields. Full-object registration preserves object semantics; it does not fix a current raw-default failure. Its SDK parse can apply defaults before the registry parses again. The current declarations have measured idempotent defaults/coercions, and the two bounded canvas roots have no defaults. A new prefault, value-changing transform or bounded/default combination needs a concrete SDK → registry proof before adoption; the migration does not establish arbitrary parse equivalence.
 
 ### Permission tiers are enforced
 
@@ -322,11 +345,11 @@ One declaration, and every surface follows:
    - `id`: `${domain}.${verb}` (the prefix must equal the domain name).
    - `title` and `description`: write the description for a model (imperative, name the real inputs and guards, say when to reach for it). The conformance suite rejects an empty or too-short description.
    - `tier`: `observe` / `act` / `destructive`.
-   - `input` / `output`: Zod schemas. `input` must be a `z.object(...)` so the MCP field-map and the OpenAPI request derive cleanly.
+   - `input` / `output`: Zod schemas. `input` must expose a `z.object(...)`, optionally behind an existing preprocessing pipe, so full MCP objects and OpenAPI requests derive cleanly. See [Ordinary MCP input schemas](#ordinary-mcp-input-schemas).
    - `surfaces`: the `mcp` / `cli` / `http` projections you want. Set `readOnlyCarveOut: true` only on an `observe` tool you want reachable tokenless on the external server.
    - `invoke`: the transport-neutral handler. Wrap existing service or route logic; never duplicate route validation. Keep redaction and any confirmation flow here.
 2. **Register the domain** in `dorkos-registry.ts` if it is new (both `composeDorkOsCapabilityRegistry` and `composeCapabilityRegistryForDocs`). An existing domain needs no wiring for a new capability.
-3. **Tests.** Point a unit test at the handler (happy path + each rejection). The [conformance suite](#the-conformance-suite) already asserts the projections; you do not re-test those.
+3. **Tests.** Point a unit test at the handler (happy path + each rejection). The [conformance suite](#the-conformance-suite) asserts surface coverage. For input behavior changes, also cross the real SDK and registry with omitted/explicit defaults and rejection cases beside same-handler positives; use the MCP schema and authority suites below instead of fake registration counters.
 
 That is the whole checklist for the generated surfaces: the MCP tools (both servers), the OpenAPI path, and the self-description entry appear with no extra wiring, and the conformance suite fails CI if a declared projection is missing.
 
@@ -357,6 +380,30 @@ A `cli` surface declares the verb name, but the curated verb handler is still a 
 The per-adapter probes still exist, as ordinary tests in `capability-conformance.test.ts` rather than as a fixture contract. They prove something the registry-level check cannot: that each adapter TRANSLATES a refusal correctly (a `202` on the route, a non-error result on both MCP servers).
 
 The structural checks live in a pure `checkCapabilityConformance` that returns a list of violations, so the suite is itself falsifiable: `packages/test-utils/src/__tests__/capability-conformance.test.ts` seeds drifts (a missing projection, a carve-out on a mutating tool, an OpenAPI collision) and proves each produces a violation. If you add a capability and forget a surface, this suite goes red before review.
+
+### Full-object migration verification — DOR-2067
+
+At pre-delivery review head `5c723eb22d24d3fa928905be538734c7a079a911`, author and independent reviewer each ran a 420-test baseline and restored run across 23 explicit files. This is a finite snapshot of the current declarations, not a production allowlist or a claim about future schema forms.
+
+| Proof                    | Measured scope and durable test                                                                                                                                                                                                                                         |
+| ------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Source census            | 131 capabilities; 129 MCP-relevant declarations; 117 ordinary in the union (116 in-session, 84 external); private IDs enumerated from the source constant. `current-input-contracts.ts`, composed into `mcp-default-arguments.test.ts`.                                 |
+| Defaults and coercions   | All 29 current default nodes, including traits and MCP connection maps; 15 top-level fields across 14 capabilities; 11 numeric coercion nodes. Omitted and distinct explicit values reach recording handlers through original registry schemas.                         |
+| Canvas envelope          | Both original executable canvas inputs accept exactly 16,384 JSON bytes and refuse 16,385 before the recording handler. Neither root contains defaults.                                                                                                                 |
+| Authority and call facts | `capability-authority-wire.test.ts` crosses real SDK/MCP transport, shared invocation, registry gates and the real approval service/local database: parsed-input hash binding, token mismatch, grant/denial, held resume, cancellation, cards and fresh per-call facts. |
+| Exposure and retirement  | `tool-exposure.test.ts` and `tool-surface.test.ts` cover actual listings, SDK-generated metadata, distinct annotation policies, hidden names, complete digests and warm inclusion. The raw portable source/export and all live consumers were removed.                  |
+| Extensions               | `extension-listability-contracts.ts` lists accepted defaulted declarations beside core and refuses unsupported siblings before registration. Existing lifecycle integration tests also run in the broader batch.                                                        |
+
+The safe `list_capabilities` call is a production-handler positive. Other schema probes use recording handlers; they establish input behavior without exercising those production services. These tests do not establish native-runtime or live-model behavior.
+
+The controls were measured from a collected green baseline: removing strictness produced two intended wire-gate failures, raw-object reconstruction one refinement failure, and generated-metadata removal three actual-listing failures. Each change was byte-restored before the green rerun. Server and spaces typechecks and normal lint/hooks passed; a final delivery commit still requires its own mandatory `pnpm verify` receipt.
+
+Run this focused subset from the repository root to exercise the new contracts:
+
+```bash
+pnpm vitest run apps/server/src/services/runtimes/claude-code/mcp-tools/__tests__/mcp-default-arguments.test.ts apps/server/src/services/runtimes/claude-code/mcp-tools/__tests__/capability-authority-wire.test.ts
+pnpm vitest run apps/server/src/services/runtimes/claude-code/mcp-tools/__tests__/tool-exposure.test.ts apps/server/src/services/runtimes/claude-code/mcp-tools/__tests__/tool-surface.test.ts
+```
 
 ## Phase 1 history
 

@@ -2,9 +2,10 @@
  * Project registry capabilities onto MCP tool registrations (spec
  * `capability-registry`, task 2.2).
  *
- * Both MCP servers — the in-session `dorkos` server (Claude Agent SDK `tool()`)
- * and the external `/mcp` server (`McpServer.registerTool`) — generate their
- * tool surface from the same registry through these transport-neutral helpers:
+ * Both MCP servers — the SDK-created in-session `dorkos` server and the
+ * external `/mcp` server — register full objects with `McpServer.registerTool`.
+ * They generate their tool surface from the same registry through these
+ * transport-neutral helpers:
  *
  * - {@link capabilitiesForMcpServer} selects the capabilities a given server
  *   advertises (from each capability's `surfaces.mcp.servers`).
@@ -124,17 +125,16 @@ export function capabilityMcpInputObject(capability: CapabilityDefinition): z.Zo
 }
 
 /**
- * The one extra MCP argument every `destructive` tool advertises, as a one-key
- * field map ready to spread into an input shape.
+ * The retry argument shared by approval-eligible ordinary capabilities and
+ * gated hand tools, as a one-key field map.
  *
- * Both the registry projection ({@link capabilityMcpInputObject}) and the
- * hand-registered tool gate (`services/core/mcp-tool-gate.ts`) build their
- * destructive input shapes from this, because the failure it prevents is the same
- * on both paths and it is silent: an MCP argument that is not advertised is
- * stripped by the SDK before the handler sees it, so a destructive tool that
- * forgets this field tells the model to retry with a token the model has no way to
- * deliver. The gate then asks again, forever. One definition, so a surface cannot
- * advertise a token field the choke point does not read, or the reverse.
+ * Both {@link capabilityMcpInputObject} and `services/core/mcp-tool-gate.ts`
+ * advertise this field under their existing `canRaiseApproval` rule. A full
+ * ordinary object rejects an unadvertised token; a hand tool's raw SDK shape
+ * may strip it. Either would prevent a retry from presenting the approval.
+ * Keeping one definition makes the advertised field match
+ * {@link splitApprovalToken}, which removes it before registry parsing and
+ * input-hash binding.
  *
  * @returns A one-key field map declaring the `approvalToken` argument.
  */

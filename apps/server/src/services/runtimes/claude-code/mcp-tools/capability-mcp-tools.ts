@@ -161,9 +161,10 @@ function strictConnectorInputSchema(registry: CapabilityRegistry, capabilityId: 
  * Register the principal-bound connector tools on Claude's in-process MCP server.
  *
  * These capabilities deliberately declare no ordinary MCP surface. They are added
- * only when a live Claude agent session owns a turn context, and their full strict
- * Zod schemas are passed to the MCP SDK so unknown owner, agent, session, or provider
- * selectors reach validation instead of being stripped by the Agent SDK's raw-shape
+ * according to the launch's session-long inclusion decision, even when a warm
+ * build has no turn context yet. Each invocation resolves the current principal.
+ * Their full strict Zod schemas are passed to the MCP SDK so unknown owner,
+ * agent, session or provider selectors reach validation instead of being stripped by the Agent SDK's raw-shape
  * `tool()` helper.
  *
  * @param server - The real MCP server returned by `createSdkMcpServer`.
