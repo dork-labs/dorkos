@@ -12,7 +12,7 @@
  * DorkOS uses both unevenly on purpose, and this file is where that decision is
  * pinned rather than merely commented:
  *
- * - exactly five tools always-load on a plain session, because a room turn cannot
+ * - the standing tools always-load on a plain session, because a room turn cannot
  *   afford a lookup before it can react and `list_capabilities` is how everything
  *   else is found;
  * - a session that IS a registered mesh agent, with Relay wired, gets six more —
@@ -29,6 +29,8 @@
  * @vitest-environment node
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { z } from 'zod';
+import { tool } from '@anthropic-ai/claude-agent-sdk';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 
@@ -41,7 +43,11 @@ vi.mock('../../../../../lib/logger.js', () => ({
 }));
 vi.mock('@dorkos/shared/manifest', () => ({ readManifest: vi.fn().mockResolvedValue(null) }));
 
-import { createDorkOsToolServer } from '../index.js';
+import {
+  createDorkOsToolServer,
+  handRegisteredInSessionTools,
+  dorkosToolSurfaceOf,
+} from '../index.js';
 import {
   ALWAYS_LOADED_TOOLS,
   AGENT_TO_AGENT_TOOLS,
@@ -49,12 +55,20 @@ import {
   IN_SESSION_TOOL_PREFIX,
   inSessionToolName,
   searchHintFrom,
+  toolExposure,
 } from '../tool-exposure.js';
 import { composeCapabilityRegistryForDocs } from '../../../../core/self-description/dorkos-registry.js';
 import type { McpToolDeps } from '../types.js';
 import { CONNECTOR_RUNTIME_CAPABILITY_IDS } from '../../../../connectors/runtime-capability-scope.js';
 import { createServerPrincipal } from '../../../../connectors/principal/server-principal.js';
 import { composeDorkOsCapabilityRegistry } from '../../../../core/self-description/dorkos-registry.js';
+import {
+  capabilitiesForMcpServer,
+  capabilityMcpInputObject,
+  approvalTokenArgument,
+  deriveMcpAnnotations,
+} from '../../../../core/capabilities/mcp-projection.js';
+import { toolSurfaceDigest } from '../tool-surface.js';
 import { noopLogger } from '@dorkos/shared/logger';
 import type { CapabilityRegistry } from '../../../../core/capabilities/index.js';
 import type { ServerPrincipalProof } from '../../../../connectors/principal/server-principal.js';
@@ -98,6 +112,7 @@ interface AdvertisedTool {
   name: string;
   inputSchema?: Record<string, unknown>;
   _meta?: Record<string, unknown>;
+  annotations?: Record<string, unknown>;
 }
 
 /**
@@ -105,7 +120,7 @@ interface AdvertisedTool {
  *
  * @param session - The per-query session, when the case under test needs one.
  *   Omitted, the server builds as a plain session with no identity — which is
- *   what every assertion about the standing five relies on.
+ *   what every assertion about the standing set relies on.
  * @param deps - Dependency override, for the mesh/relay wiring cases.
  */
 async function advertisedTools(
@@ -182,7 +197,7 @@ function connectorRegistry(access = vi.fn().mockResolvedValue({ connections: [] 
 }
 
 describe('in-session tool exposure', () => {
-  it('RT-MCP-01: adds exactly seven strict connector tools to an authenticated runtime turn', async () => {
+  it('RT-MCP-01: adds every strict principal-bound connector tool to an authenticated runtime turn', async () => {
     const resolvePrincipal = vi.fn().mockResolvedValue(runtimePrincipal('binding-a'));
     const registry = connectorRegistry();
     const tools = await advertisedTools(
@@ -214,7 +229,7 @@ describe('in-session tool exposure', () => {
     expect(resolvePrincipal).not.toHaveBeenCalled();
   });
 
-  it('rejects private selectors on all five Claude tools before resolving a principal', async () => {
+  it('rejects private selectors on every principal-bound Claude tool before resolving a principal', async () => {
     const resolvePrincipal = vi.fn().mockResolvedValue(runtimePrincipal('binding-a'));
     const session = {
       cwd: '/agents/alpha',
@@ -672,7 +687,7 @@ describe('in-session tool exposure', () => {
     expect([...AGENT_TO_AGENT_TOOLS].filter((n) => ALWAYS_LOADED_TOOLS.has(n))).toEqual([]);
   });
 
-  it('leaves a plain session in the same directory family on the standing five', async () => {
+  it('leaves a plain session in the same directory family on the standing set', async () => {
     // Same deps, a cwd Mesh does not recognise: the four stay deferred, which is
     // the half that keeps eighty-odd schemas off most sessions' prompts.
     const tools = await advertisedTools({ cwd: '/tmp/just-a-project' }, createAgentSessionDeps());
@@ -775,4 +790,94 @@ describe('searchHintFrom', () => {
   it('has nothing to say about an empty description', () => {
     expect(searchHintFrom('   ')).toBeUndefined();
   });
+});
+
+describe('complete full-object wire surface', () => {
+  it.each(['plain', 'agent', 'principal'] as const)(
+    'preserves exact names, SDK metadata, annotations and digest on %s sessions',
+    async (kind) => {
+      const registry = composeCapabilityRegistryForDocs();
+      const deps = kind === 'plain' ? createFullDeps() : createAgentSessionDeps();
+      const session =
+        kind === 'plain'
+          ? undefined
+          : ({
+              cwd: '/agents/alpha',
+              eventQueue: [],
+              ...(kind === 'principal'
+                ? {
+                    connectorTurn: {
+                      isConnectorCapabilityId: (id: string) =>
+                        CONNECTOR_RUNTIME_CAPABILITY_IDS.some((candidate) => candidate === id),
+                      resolvePrincipal: vi.fn(async () => runtimePrincipal('surface-binding')),
+                    },
+                  }
+                : {}),
+            } as unknown as Parameters<typeof createDorkOsToolServer>[1]);
+      const hidden = new Set(['list_capabilities', 'mesh_list']);
+      const server = createDorkOsToolServer(deps, session, undefined, undefined, registry, hidden);
+      const hand = handRegisteredInSessionTools(deps, { ...(session ? { session } : {}) }).filter(
+        (entry) => !hidden.has(entry.name)
+      );
+      const ordinary = capabilitiesForMcpServer(registry, 'in-session').filter(
+        (cap) => !hidden.has(cap.surfaces.mcp!.toolName)
+      );
+      expect(ordinary.length).toBeGreaterThan(0);
+      expect(hand.length).toBeGreaterThan(0);
+      const privateCaps =
+        kind === 'principal'
+          ? CONNECTOR_RUNTIME_CAPABILITY_IDS.map((id) => {
+              const cap = registry.get(id);
+              expect(cap, id).toBeDefined();
+              return cap!;
+            })
+          : [];
+      const expected = [
+        ...hand.map(({ name, description, inputSchema }) => ({ name, description, inputSchema })),
+        ...ordinary.map((cap) => ({
+          name: cap.surfaces.mcp!.toolName,
+          description: cap.description,
+          inputSchema: capabilityMcpInputObject(cap),
+        })),
+        ...privateCaps.map((cap) => ({
+          name: cap.id,
+          description: cap.description,
+          inputSchema:
+            cap.tier === 'destructive'
+              ? (cap.input as z.ZodObject).extend(approvalTokenArgument())
+              : cap.input,
+        })),
+      ];
+      const [a, b] = InMemoryTransport.createLinkedPair();
+      const client = new Client({ name: 'full-surface-proof', version: '1.0.0' });
+      try {
+        await Promise.all([server.instance.connect(b), client.connect(a)]);
+        const tools = (await client.listTools()).tools;
+        const names = tools.map((entry) => entry.name);
+        expect(names).toHaveLength(expected.length);
+        expect(new Set(names).size).toBe(names.length);
+        expect([...names].sort()).toEqual(expected.map((entry) => entry.name).sort());
+        expect(names).not.toContain('list_capabilities');
+        expect(names).not.toContain('mesh_list');
+        const byName = new Map(tools.map((entry) => [entry.name, entry]));
+        for (const cap of ordinary) {
+          const name = cap.surfaces.mcp!.toolName;
+          const descriptor = tool(
+            name,
+            cap.description,
+            {},
+            async () => ({ content: [] }),
+            toolExposure(name, cap.title, alwaysLoadedToolsFor(kind !== 'plain'))
+          );
+          expect(byName.get(name)?._meta, name).toEqual(descriptor._meta);
+          expect(byName.get(name)?.annotations, name).toBeUndefined();
+        }
+        for (const cap of privateCaps)
+          expect(byName.get(cap.id)?.annotations, cap.id).toEqual(deriveMcpAnnotations(cap));
+        expect(dorkosToolSurfaceOf(server.instance)).toBe(toolSurfaceDigest(expected));
+      } finally {
+        await client.close();
+      }
+    }
+  );
 });

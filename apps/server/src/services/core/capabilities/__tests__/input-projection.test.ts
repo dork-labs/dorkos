@@ -4,7 +4,7 @@ import { OpenAPIRegistry, OpenApiGeneratorV31 } from '@asteasolutions/zod-to-ope
 import { noopLogger } from '@dorkos/shared/logger';
 import { defineCapability, composeRegistry } from '../index.js';
 import { capabilityInputObject } from '../input-projection.js';
-import { capabilityInputShape, capabilityMcpInputObject } from '../mcp-projection.js';
+import { capabilityMcpInputObject } from '../mcp-projection.js';
 import { registerCapabilitiesInOpenApi } from '../openapi-projection.js';
 
 function fixture(method: 'get' | 'post' = 'post') {
@@ -46,11 +46,11 @@ function fixture(method: 'get' | 'post' = 'post') {
 }
 
 describe('preprocessed capability input projection', () => {
-  it('advertises nested pipe output fields and portable defaults while execution retains the full bound', async () => {
+  it('advertises nested pipe output fields and defaults while execution retains the full bound', async () => {
     const { capability, registry, handler } = fixture();
     expect(Object.keys(capabilityInputObject(capability).shape)).toEqual(['text', 'limit']);
-    const projected = z.object(capabilityInputShape(capability));
-    expect(projected.parse({ text: 'hello' })).toEqual({ text: 'hello' });
+    const projected = capabilityMcpInputObject(capability);
+    expect(projected.parse({ text: 'hello' })).toEqual({ text: 'hello', limit: 5 });
     await registry.invoke('demo.bounded', { text: 'hello' });
     expect(handler).toHaveBeenCalledOnce();
     expect(handler.mock.calls[0]).toEqual(

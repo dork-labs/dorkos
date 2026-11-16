@@ -1,30 +1,11 @@
 /**
- * A tool with a defaulted argument answers a call that omits it (DOR-2053).
- *
- * `list_capabilities` is how an agent finds out what DorkOS can do, and calling
- * it the obvious way — no arguments, or a `query` and nothing else — came back
- * as `MCP error -32602: Input validation error: … expected nonoptional, received
- * undefined` at `limit`, a field whose whole point is that it has a default.
- *
- * The cause is not in the schema; it is in the wire between two Zods. Zod 4.6
- * split optionality into three rungs and put `.default(…)` on a new middle one
- * (`optin: "defaulted"`). A raw field map is not a schema: whoever receives one
- * rebuilds it into an object of their own, and that object reads those rungs to
- * decide which keys may be absent. The Claude Agent SDK inlines its own copies of
- * Zod and the MCP SDK rather than importing ours, and its copy predates the
- * middle rung — it asks `optin === "optional"`, reads `"defaulted"`, and files
- * the key as required. Nine tools were affected, not one.
- *
- * These tests run the real in-session server through a real MCP client, so they
- * fail against the actual SDK the product ships with rather than against a
- * restatement of how it is believed to behave. The last two sweep the WHOLE tool
- * surface, so the next `.default(…)` anyone writes is covered the day it lands.
- *
+ * Defaulted arguments remain optional through real SDK and registry execution.
+ * DOR-2053's older raw-default failure no longer reproduces on the pinned SDK.
+ * Full objects retain defaults, refinements and strict top-level validation.
  * @vitest-environment node
  */
 import { describe, it, expect, vi } from 'vitest';
 import { z } from 'zod';
-import { tool, createSdkMcpServer } from '@anthropic-ai/claude-agent-sdk';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
@@ -45,14 +26,14 @@ import type { McpToolDeps } from '../types.js';
 import { noopLogger } from '@dorkos/shared/logger';
 import {
   capabilitiesForMcpServer,
-  capabilityInputShape,
+  capabilityMcpInputObject,
 } from '../../../../core/capabilities/mcp-projection.js';
 import type {
   CapabilityDefinition,
   CapabilityDeps,
   CapabilityRegistry,
 } from '../../../../core/capabilities/index.js';
-import { defineCapability } from '../../../../core/capabilities/index.js';
+import { composeRegistry, defineCapability } from '../../../../core/capabilities/index.js';
 import { CONNECTOR_RUNTIME_CAPABILITY_IDS } from '../../../../connectors/runtime-capability-scope.js';
 import { composeDorkOsCapabilityRegistry } from '../../../../core/self-description/dorkos-registry.js';
 import { registerCapabilitiesAsMcpTools } from '../../../../core/external-mcp/capability-mcp-tools.js';
@@ -197,10 +178,8 @@ describe('a defaulted argument may be omitted (DOR-2053)', () => {
     await close();
   });
 
-  // This surface never had the bug — it builds its object with OUR Zod, which
-  // knows the middle rung — so this case went green before the fix too. It is
-  // here to pin that the rewrite introduced none: a field re-advertised as
-  // optional must still come back with its default applied where it already was.
+  // The external surface shares the full ordinary object projection and keeps
+  // its own sessionless invocation path.
   it('answers list_capabilities with no arguments on the external /mcp surface too', async () => {
     const registry = createFullRegistry();
     const server = new McpServer({ name: 'dorkos-external', version: '0.0.0' });
@@ -223,31 +202,40 @@ describe('a defaulted argument may be omitted (DOR-2053)', () => {
     // that stopped returning capabilities would otherwise pass by testing none.
     expect(affected.length).toBeGreaterThanOrEqual(9);
 
-    // One probe tool per defaulted field, carrying the shape the real projection
-    // produces, registered on a real SDK server and called with no arguments.
-    const probes = affected.flatMap(({ toolName, fields, capability }) => {
-      const shape = capabilityInputShape(capability);
-      return fields.map((field) =>
-        tool(
-          `${toolName}__${field}`,
-          `probe for ${toolName}.${field}`,
-          { [field]: shape[field]! },
-          async (args: Record<string, unknown>) => ({
-            content: [{ type: 'text' as const, text: JSON.stringify(args) }],
-          })
-        )
-      );
+    const probes = affected.flatMap(({ toolName, fields, capability }) =>
+      fields.map((field) =>
+        defineCapability({
+          id: `probe.${toolName}_${field}`,
+          title: 'Read a default',
+          description: 'Reads one original defaulted field.',
+          tier: 'observe',
+          area: null,
+          input: z.object({ [field]: capabilityMcpInputObject(capability).shape[field]! }),
+          output: z.unknown(),
+          surfaces: { mcp: { toolName: `${toolName}__${field}`, servers: ['in-session'] } },
+          invoke: async (_deps, args) => args,
+        })
+      )
+    );
+    const probeRegistry = composeRegistry([{ name: 'probe', capabilities: probes }], {
+      logger: noopLogger,
     });
-    const server = createSdkMcpServer({ name: 'dor-2053', version: '0.0.0', tools: probes });
+    const server = createDorkOsToolServer(
+      createFullDeps(),
+      undefined,
+      undefined,
+      undefined,
+      probeRegistry
+    );
     const { client, close } = await connect(server.instance);
 
     const refused: string[] = [];
     for (const probe of probes) {
       const result = (await client.callTool({
-        name: probe.name,
+        name: probe.surfaces.mcp!.toolName,
         arguments: {},
       })) as CallToolResult;
-      if (result.isError) refused.push(`${probe.name}: ${JSON.stringify(result.content)}`);
+      if (result.isError) refused.push(`${probe.id}: ${JSON.stringify(result.content)}`);
     }
 
     expect(refused).toEqual([]);
@@ -291,37 +279,18 @@ describe('a defaulted argument may be omitted (DOR-2053)', () => {
     await close();
   });
 
-  it('puts no RAW field map crossing to the Agent SDK on the middle rung', () => {
-    const registry = createFullRegistry();
-    const stranded = [
-      ...handRegisteredInSessionTools(createFullDeps()).flatMap((entry) =>
-        defaultedFields(entry.name, entry.inputSchema)
-      ),
-      ...(['in-session', 'external'] as const).flatMap((surface) =>
-        capabilitiesForMcpServer(registry, surface).flatMap((capability) =>
-          defaultedFields(
-            `${surface} ${capability.surfaces.mcp!.toolName}`,
-            capabilityInputShape(capability)
-          )
-        )
-      ),
-    ];
-
-    // A `.default(…)` reaching a raw field map is invisible until an agent calls
-    // the tool without that argument, and then the call fails outright. The two
-    // halves have different remedies. A CAPABILITY's shape is normalized on its
-    // way out of `capabilityInputShape`, so one showing up here means a capability
-    // reached a surface without going through that projection. A HAND-REGISTERED
-    // tool is parsed once and its handler receives whatever the SDK produced, so
-    // there is nothing that could fill the default in afterwards: apply the
-    // fallback inside the handler, or define the tool as a capability.
-    expect(stranded).toEqual([]);
+  it('keeps the hand-tool once-only parse guard independent', () => {
+    const hand = handRegisteredInSessionTools(createFullDeps());
+    expect(hand.length).toBeGreaterThan(0);
+    // Hand tools receive the SDK's parsed result directly. This deliberately
+    // narrow authoring guard survives the capability raw-map retirement.
+    expect(hand.flatMap((entry) => defaultedFields(entry.name, entry.inputSchema))).toEqual([]);
   });
 
   it('hands the connector capabilities over as whole objects, not as field maps', () => {
     const registry = createFullRegistry();
 
-    // These seven declare `surfaces: {}` and are registered by
+    // These capabilities declare `surfaces: {}` and are registered by
     // `registerClaudeConnectorCapabilityTools` with `capability.input` itself, so
     // the guard above cannot see them — and does not need to. A whole `ZodObject`
     // crosses to the Agent SDK intact and is parsed by its own `run`, which never
@@ -342,60 +311,68 @@ describe('a defaulted argument may be omitted (DOR-2053)', () => {
     );
     expect(defaulted).toContain('connectors.request_connection.requestedEvents');
   });
+});
 
-  it('re-labels a prefaulted field, and a default hidden under an optional', async () => {
-    // Neither spelling is in the product today, and both are one `instanceof`
-    // branch of `substitutingDefault` that nothing else reaches: delete either
-    // branch and the matching probe below goes red rather than silently shipping
-    // a field the Agent SDK reads as required.
-    const fixture = defineCapability({
-      id: 'fixture.substituting',
-      title: 'Substituting field fixture',
-      description: 'Exercises the two substituting wrappers the product does not use yet.',
+describe('ordinary full-object registration through the SDK', () => {
+  it.each(
+    (['in-session', 'external'] as const).flatMap((surface) =>
+      ['extra', 'ownerId'].map((key) => ({ surface, key }))
+    )
+  )('refuses $key on $surface before the same handler', async ({ surface, key }) => {
+    const handler = vi.fn(async (_deps, input) => input);
+    const capability = defineCapability({
+      id: 'fixture.range',
+      title: 'Read a range',
+      description: 'Reads a range.',
       tier: 'observe',
       area: null,
-      input: z.object({
-        prefaulted: z.coerce.number().int().min(1).prefault(7).describe('a prefaulted field'),
-        defaultedThenOptional: z.array(z.string()).default([]).optional().describe('both wrappers'),
-      }),
-      output: z.object({ ok: z.boolean() }),
-      surfaces: {},
-      invoke: async () => ({ ok: true }),
+      input: z
+        .object({ start: z.number().default(1), end: z.number().default(5) })
+        .refine(({ start, end }) => start < end, 'Start must precede end'),
+      output: z.unknown(),
+      surfaces: { mcp: { toolName: 'read_range', servers: ['in-session', 'external'] } },
+      invoke: handler,
     });
-
-    const shape = capabilityInputShape(fixture);
-    const probe = tool(
-      'fixture_substituting',
-      'probe',
-      shape,
-      async (args: Record<string, unknown>) => ({
-        content: [{ type: 'text' as const, text: JSON.stringify(args) }],
-      })
-    );
-    const server = createSdkMcpServer({
-      name: 'dor-2053-fixture',
-      version: '0.0.0',
-      tools: [probe],
+    const registry = composeRegistry([{ name: 'fixture', capabilities: [capability] }], {
+      logger: noopLogger,
     });
-    const { client, close } = await connect(server.instance);
-
-    const result = (await client.callTool({
-      name: 'fixture_substituting',
-      arguments: {},
-    })) as CallToolResult;
-    expect(result.isError, JSON.stringify(result.content)).not.toBe(true);
-
-    // And the substituted value still reaches the model as a JSON Schema default,
-    // which is the half a bare `.optional()` rewrite would have thrown away.
-    const advertised = (await client.listTools()).tools.find(
-      (entry) => entry.name === 'fixture_substituting'
-    )?.inputSchema as unknown as {
-      properties: Record<string, { default?: unknown }>;
-      required?: string[];
-    };
-    expect(advertised.properties.prefaulted?.default).toBe(7);
-    expect(advertised.properties.defaultedThenOptional?.default).toEqual([]);
-    expect(advertised.required ?? []).toEqual([]);
-    await close();
+    const server =
+      surface === 'in-session'
+        ? createDorkOsToolServer(createFullDeps(), undefined, undefined, undefined, registry)
+            .instance
+        : new McpServer({ name: 'external-range-proof', version: '1.0.0' });
+    if (surface === 'external') registerCapabilitiesAsMcpTools(server, registry);
+    const { client, close } = await connect(server);
+    try {
+      const tools = (await client.listTools()).tools;
+      expect(tools.filter((t) => t.name === 'read_range')).toHaveLength(1);
+      expect(
+        payloadOf((await client.callTool({ name: 'read_range', arguments: {} })) as CallToolResult)
+      ).toEqual({ start: 1, end: 5 });
+      expect(handler).toHaveBeenCalledTimes(1);
+      const result = await client.callTool({
+        name: 'read_range',
+        arguments: { start: 2, end: 6, [key]: 'untrusted' },
+      });
+      expect(result.isError).toBe(true);
+      expect(handler).toHaveBeenCalledTimes(1);
+      const refined = await client.callTool({
+        name: 'read_range',
+        arguments: { start: 6, end: 2 },
+      });
+      expect(refined.isError).toBe(true);
+      expect(handler).toHaveBeenCalledTimes(1);
+      expect(
+        payloadOf(
+          (await client.callTool({
+            name: 'read_range',
+            arguments: { start: 2, end: 6 },
+          })) as CallToolResult
+        )
+      ).toEqual({ start: 2, end: 6 });
+      expect(handler).toHaveBeenCalledTimes(2);
+    } finally {
+      await close();
+    }
   });
 });

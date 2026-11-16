@@ -3,10 +3,9 @@
  * (spec `capability-registry`, task 2.2).
  *
  * This is the Claude Agent SDK half of the MCP projection. Ordinary in-session
- * capabilities become the `tools` array passed to `createSdkMcpServer`. The five
- * principal-bound connector capabilities use the real returned `McpServer`
- * instead, because its full-schema registration preserves strict unknown-field
- * rejection that the Agent SDK's raw-shape `tool()` helper would erase. All
+ * capabilities and principal-bound connector capabilities register full objects
+ * on the real `McpServer` returned by `createSdkMcpServer`, retaining strict
+ * unknown-field rejection and object refinements. All
  * transport-neutral invocation work still lives in
  * `core/capabilities/mcp-projection.ts`.
  *
@@ -26,7 +25,7 @@ import type {
 import {
   capabilitiesForMcpServer,
   approvalTokenArgument,
-  capabilityInputShape,
+  capabilityMcpInputObject,
   deriveMcpAnnotations,
   invokeCapabilityAsMcpResult,
   type InSessionSurface,
@@ -61,14 +60,10 @@ export interface InSessionCapabilityHold {
 }
 
 /**
- * Recover the SDK tool call's abort signal from the MCP handler's `extra`, so a
- * mid-turn interrupt ends any in-session hold. Typed `unknown` by the SDK, so it
- * is narrowed defensively — a surface without one simply holds to its own cap.
- */
-/**
- * Build the in-session `dorkos` server tool definitions for every registry
+ * Register full input objects on the in-session `dorkos` server for every registry
  * capability advertised on the in-session surface.
  *
+ * @param server - The real MCP server returned by `createSdkMcpServer`.
  * @param registry - The composed capability registry.
  * @param transport - Which server's tool surface to project (defaults to
  *   `in-session`).
@@ -90,9 +85,11 @@ export interface InSessionCapabilityHold {
  *   An agent session passes the wider set, so the capability-projected
  *   agent-to-agent tools (`chat_send`, `chat_read`) load from turn 1 there just
  *   as the hand-registered ones do. Defaults to the standing set.
- * @returns SDK tool definitions to spread into `createSdkMcpServer({ tools })`.
+ * @param hiddenToolNames - Tools omitted before registration.
+ * @returns The exact registered schemas for the complete tool-surface digest.
  */
-export function capabilityMcpTools(
+export function registerClaudeCapabilityTools(
+  server: McpServer,
   registry: CapabilityRegistry,
   transport: McpServerId = 'in-session',
   resolveContext?: (
@@ -100,13 +97,30 @@ export function capabilityMcpTools(
     signal?: AbortSignal
   ) => Promise<CapabilityInvocationContext | undefined>,
   hold?: InSessionCapabilityHold,
-  alwaysLoaded?: ReadonlySet<string>
-) {
-  return capabilitiesForMcpServer(registry, transport).map((capability) =>
-    tool(
-      capability.surfaces.mcp!.toolName,
+  alwaysLoaded?: ReadonlySet<string>,
+  hiddenToolNames: ReadonlySet<string> = new Set()
+): ToolSurfaceEntry[] {
+  const registered: ToolSurfaceEntry[] = [];
+  for (const capability of capabilitiesForMcpServer(registry, transport)) {
+    const name = capability.surfaces.mcp!.toolName;
+    if (hiddenToolNames.has(name)) continue;
+    const inputSchema = capabilityMcpInputObject(capability);
+    // Let the SDK encode its own loading metadata; this descriptor is never
+    // registered. The full object, not its raw shape, crosses registration.
+    const exposure = tool(
+      name,
       capability.description,
-      capabilityInputShape(capability),
+      {},
+      async () => ({ content: [] }),
+      toolExposure(name, capability.title, alwaysLoaded)
+    );
+    server.registerTool(
+      name,
+      {
+        description: capability.description,
+        inputSchema,
+        ...(exposure._meta ? { _meta: exposure._meta } : {}),
+      },
       async (args: Record<string, unknown>, extra: unknown) => {
         const signal = abortSignalOf(extra);
         const perCall: InSessionSurface | undefined = hold
@@ -126,15 +140,11 @@ export function capabilityMcpTools(
           { ...(await resolveContext?.(capability.id, signal)), mcpServer: transport },
           perCall
         );
-      },
-      // The hint comes from the capability's TITLE, not its description: a title
-      // is already the curated one-liner ("React to a message") that a search
-      // wants, where a description opens with whatever detail it needs to lead
-      // with. Hand-registered tools have no title and fall back to their
-      // description's first sentence — see `tool-exposure.ts`.
-      toolExposure(capability.surfaces.mcp!.toolName, capability.title, alwaysLoaded)
-    )
-  );
+      }
+    );
+    registered.push({ name, description: capability.description, inputSchema });
+  }
+  return registered;
 }
 
 function strictConnectorInputSchema(registry: CapabilityRegistry, capabilityId: string) {
@@ -148,7 +158,7 @@ function strictConnectorInputSchema(registry: CapabilityRegistry, capabilityId: 
 }
 
 /**
- * Register the five principal-bound connector tools on Claude's in-process MCP server.
+ * Register the principal-bound connector tools on Claude's in-process MCP server.
  *
  * These capabilities deliberately declare no ordinary MCP surface. They are added
  * only when a live Claude agent session owns a turn context, and their full strict
@@ -157,7 +167,7 @@ function strictConnectorInputSchema(registry: CapabilityRegistry, capabilityId: 
  * `tool()` helper.
  *
  * @param server - The real MCP server returned by `createSdkMcpServer`.
- * @param registry - The composed capability registry containing the exact five ids.
+ * @param registry - The composed capability registry containing the runtime capability ids.
  * @param resolveContext - Per-call resolver that mints the current turn's principal.
  * @param hold - Optional in-session approval hold for destructive execution.
  * @returns Each registered tool as the server's tool-surface digest reads it
