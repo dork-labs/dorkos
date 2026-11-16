@@ -2,6 +2,7 @@
 covers:
   - 'feat(client): the Agent browser knows the usual browser keys (DOR-4432)'
   - 'fix(client): Esc in the Agent browser never closes the side panel around it (DOR-4432)'
+  - 'refactor(desktop): the page transport cannot be made without its input gate (DOR-4432)'
 ---
 
 ### Added
