@@ -74,7 +74,10 @@ vi.mock('../../services/core/runtime-registry.js', () => ({
   },
 }));
 
-vi.mock('../../lib/boundary.js', () => ({
+// Only the boundary check is faked; `expandTilde` stays real, since the rule
+// check reads the person's home through it.
+vi.mock('../../lib/boundary.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../lib/boundary.js')>()),
   isWithinBoundary: vi.fn().mockResolvedValue(true),
 }));
 
@@ -143,6 +146,7 @@ describe('approving a proposed schedule can carry the operator’s trust stop', 
    * the mesh answer nothing, which is the ordinary shape of a global task.
    */
   let meshProjectPath: string | null;
+  let scheduler: TaskSchedulerService;
 
   beforeEach(() => {
     state.runtimes = autonomyRuntimes();
@@ -157,7 +161,7 @@ describe('approving a proposed schedule can carry the operator’s trust stop', 
     emit = vi.fn();
     meshProjectPath = null;
 
-    const scheduler = createMockScheduler();
+    scheduler = createMockScheduler();
 
     fixtureTarget.mount(
       honoGroupListener(
@@ -249,6 +253,7 @@ describe('approving a proposed schedule can carry the operator’s trust stop', 
         status: 'active',
         enabled: true,
         permissionMode: 'bypassPermissions',
+        acceptLooserThanRequested: true,
       });
 
     expect(res.status).toBe(200);
@@ -269,6 +274,7 @@ describe('approving a proposed schedule can carry the operator’s trust stop', 
         status: 'active',
         enabled: true,
         permissionMode: 'bypassPermissions',
+        acceptLooserThanRequested: true,
       });
 
     // The arm grant is what `resolveFileArmStatus` and `keepsApprovedBypass`
@@ -429,6 +435,211 @@ describe('approving a proposed schedule can carry the operator’s trust stop', 
     expect(store.getTask(task.id)!.permissionMode).toBe('acceptEdits');
   });
 
+  it('stores a proposal without applying its requested mode or allow list', async () => {
+    const response = await request(fixtureServer)
+      .post('/api/tasks')
+      .set('x-dorkos-agent', 'agent-token-abc')
+      .send({
+        name: 'requested-limits',
+        description: 'requested limits',
+        prompt: 'Run the exact script.',
+        cron: '0 3 * * *',
+        target: 'global',
+        reason: 'The script must run overnight.',
+        requestedPermissionMode: 'dontAsk',
+        requestedAllow: ['Bash(/abs/path/script.sh --once)'],
+      });
+
+    expect(response.status).toBe(201);
+    const task = store.getTasks().find((candidate) => candidate.name === 'requested-limits')!;
+    expect(task).toMatchObject({
+      permissionMode: 'acceptEdits',
+      requestedPermissionMode: 'dontAsk',
+      requestedAllow: ['Bash(/abs/path/script.sh --once)'],
+      approvedAllow: null,
+    });
+  });
+
+  it('requires an explicit choice before approving looser than proposed', async () => {
+    const task = await proposedByAgent();
+    db.update(pulseSchedules)
+      .set({ requestedPermissionMode: 'dontAsk' })
+      .where(eq(pulseSchedules.id, task.id))
+      .run();
+
+    const refused = await request(fixtureServer)
+      .patch(`/api/tasks/${task.id}`)
+      .send({
+        expectedApprovalRevision: taskReviewRevision(store.getTask(task.id)!),
+        status: 'active',
+        permissionMode: 'acceptEdits',
+      });
+    expect(refused.status).toBe(409);
+    expect(refused.body.error).toMatch(/looser/i);
+    expect(store.getTask(task.id)?.status).toBe('pending_approval');
+
+    const approved = await request(fixtureServer)
+      .patch(`/api/tasks/${task.id}`)
+      .send({
+        expectedApprovalRevision: taskReviewRevision(store.getTask(task.id)!),
+        status: 'active',
+        permissionMode: 'acceptEdits',
+        approvedAllow: [],
+        acceptLooserThanRequested: true,
+      });
+    expect(approved.status).toBe(200);
+  });
+
+  it('refuses outsider approval at edit power without the explicit choice', async () => {
+    const task = await proposedByAgent();
+    db.update(pulseSchedules)
+      .set({ originMarks: JSON.stringify({ outsider: true }) })
+      .where(eq(pulseSchedules.id, task.id))
+      .run();
+
+    const response = await request(fixtureServer)
+      .patch(`/api/tasks/${task.id}`)
+      .send({
+        expectedApprovalRevision: taskReviewRevision(store.getTask(task.id)!),
+        status: 'active',
+        permissionMode: 'acceptEdits',
+      });
+    expect(response.status).toBe(409);
+    expect(store.getTask(task.id)?.status).toBe('pending_approval');
+  });
+
+  it('never grants a requested Full access in one click (review of #3794)', async () => {
+    const task = await proposedByAgent();
+    db.update(pulseSchedules)
+      .set({ requestedPermissionMode: 'bypassPermissions' })
+      .where(eq(pulseSchedules.id, task.id))
+      .run();
+
+    const response = await request(fixtureServer)
+      .patch(`/api/tasks/${task.id}`)
+      .send({
+        expectedApprovalRevision: taskReviewRevision(store.getTask(task.id)!),
+        status: 'active',
+        permissionMode: 'bypassPermissions',
+      });
+    expect(response.status).toBe(409);
+    expect(response.body.code).toBe('looser_than_requested_confirmation_required');
+    expect(store.getTask(task.id)?.status).toBe('pending_approval');
+  });
+
+  it('refreshes a review the proposal moved past before judging how loose it is', async () => {
+    const task = await proposedByAgent();
+    const revision = taskReviewRevision(task);
+    db.update(pulseSchedules)
+      .set({ requestedAllow: JSON.stringify(['Read(/abs/notes/today.md)']) })
+      .where(eq(pulseSchedules.id, task.id))
+      .run();
+
+    const response = await request(fixtureServer).patch(`/api/tasks/${task.id}`).send({
+      expectedApprovalRevision: revision,
+      status: 'active',
+      permissionMode: 'bypassPermissions',
+    });
+    expect(response.status).toBe(409);
+    expect(response.body.code).toBe('schedule_review_changed');
+  });
+
+  it('measures outsider work that asked for plan against plan, as the card does', async () => {
+    const task = await proposedByAgent();
+    db.update(pulseSchedules)
+      .set({ originMarks: JSON.stringify({ outsider: true }), requestedPermissionMode: 'plan' })
+      .where(eq(pulseSchedules.id, task.id))
+      .run();
+
+    const looser = await request(fixtureServer)
+      .patch(`/api/tasks/${task.id}`)
+      .send({
+        expectedApprovalRevision: taskReviewRevision(store.getTask(task.id)!),
+        status: 'active',
+        permissionMode: 'dontAsk',
+      });
+    expect(looser.status).toBe(409);
+    expect(looser.body.code).toBe('looser_than_requested_confirmation_required');
+  });
+
+  it('runs an outsider-written trial at the baseline, never at the saved mode', async () => {
+    const task = await proposedByAgent();
+    db.update(pulseSchedules)
+      .set({ originMarks: JSON.stringify({ outsider: true }) })
+      .where(eq(pulseSchedules.id, task.id))
+      .run();
+
+    await request(fixtureServer).post(`/api/tasks/${task.id}/trigger`).send({});
+    expect(scheduler.triggerManualRun).toHaveBeenCalledWith(task.id, 'dontAsk');
+  });
+
+  it('refuses a trial the runtime it starts on cannot hold to the baseline', async () => {
+    // The agent runs on Codex (no task override), which offers no Allowed
+    // commands, so an outsider-written trial cannot be tightened: refused, not run.
+    const task = await proposedByAgent();
+    meshProjectPath = path.join(dorkHome, 'codex-agent');
+    await writeManifest(meshProjectPath, baseManifest());
+    db.update(pulseSchedules)
+      .set({ agentId: AGENT_ID, originMarks: JSON.stringify({ outsider: true }) })
+      .where(eq(pulseSchedules.id, task.id))
+      .run();
+
+    const response = await request(fixtureServer).post(`/api/tasks/${task.id}/trigger`).send({});
+    expect(response.status).toBe(409);
+    expect(response.body.code).toBe('trial_looser_than_proposal');
+    expect(scheduler.triggerManualRun).not.toHaveBeenCalled();
+  });
+
+  it('judges rules by the runtime the run starts on, the agent one when the task names none', async () => {
+    const task = await proposedByAgent();
+    meshProjectPath = path.join(dorkHome, 'codex-agent');
+    await writeManifest(meshProjectPath, baseManifest());
+    db.update(pulseSchedules)
+      .set({ agentId: AGENT_ID })
+      .where(eq(pulseSchedules.id, task.id))
+      .run();
+
+    const response = await request(fixtureServer)
+      .patch(`/api/tasks/${task.id}`)
+      .send({ requestedAllow: ['Bash(/abs/path/script.sh --once)'] });
+    expect(response.status).toBe(400);
+    expect(response.body.code).toBe('task_rules_unsupported_runtime');
+  });
+
+  it('refuses rules a Codex run could not apply, at proposal time', async () => {
+    const response = await request(fixtureServer)
+      .post('/api/tasks')
+      .set('x-dorkos-agent', 'agent-token-abc')
+      .send({
+        name: 'codex-rules',
+        description: 'codex rules',
+        prompt: 'Run the exact script.',
+        cron: '0 3 * * *',
+        target: 'global',
+        runtime: 'codex',
+        requestedAllow: ['Bash(/abs/path/script.sh --once)'],
+      });
+    expect(response.status).toBe(400);
+    expect(response.body.code).toBe('task_rules_unsupported_runtime');
+    expect(store.getTasks()).toHaveLength(0);
+  });
+
+  it('refuses a rule that names the whole home folder by its absolute path', async () => {
+    const response = await request(fixtureServer)
+      .post('/api/tasks')
+      .set('x-dorkos-agent', 'agent-token-abc')
+      .send({
+        name: 'home-rule',
+        description: 'home rule',
+        prompt: 'Read everything.',
+        cron: '0 3 * * *',
+        target: 'global',
+        requestedAllow: [`Read(${os.homedir()}/**)`],
+      });
+    expect(response.status).toBe(400);
+    expect(response.body.code).toBe('task_rule_too_broad');
+  });
+
   it('leaves a plain approval exactly where the clamp put it', async () => {
     const task = await proposedByAgent();
 
@@ -453,6 +664,13 @@ describe('approving a proposed schedule can carry the operator’s trust stop', 
 
   it('writes an activity row naming the level, and whether it was raised', async () => {
     const task = await proposedByAgent();
+    db.update(pulseSchedules)
+      .set({
+        requestedPermissionMode: 'bypassPermissions',
+        requestedAllow: JSON.stringify(['Bash(/tmp/task.sh --once)']),
+      })
+      .where(eq(pulseSchedules.id, task.id))
+      .run();
     await request(fixtureServer)
       .patch(`/api/tasks/${task.id}`)
       .send({
@@ -460,6 +678,8 @@ describe('approving a proposed schedule can carry the operator’s trust stop', 
         status: 'active',
         enabled: true,
         permissionMode: 'bypassPermissions',
+        acceptLooserThanRequested: true,
+        approvedAllow: ['Bash(/tmp/task.sh --once)'],
       });
 
     const approval = emit.mock.calls
@@ -474,6 +694,10 @@ describe('approving a proposed schedule can carry the operator’s trust stop', 
     expect(approval!.summary).not.toContain('bypassPermissions');
     expect(approval!.metadata).toMatchObject({
       permissionMode: 'bypassPermissions',
+      proposedPermissionMode: 'bypassPermissions',
+      proposedAllow: ['Bash(/tmp/task.sh --once)'],
+      approvedPermissionMode: 'bypassPermissions',
+      approvedAllow: ['Bash(/tmp/task.sh --once)'],
       previousPermissionMode: 'acceptEdits',
       raised: true,
     });

@@ -12,12 +12,6 @@
  */
 import { tool } from '@anthropic-ai/claude-agent-sdk';
 import { z } from 'zod';
-import {
-  EffortLevelSchema,
-  TaskNameSchema,
-  TASK_DURATION_PATTERN,
-  TASK_DURATION_MAX,
-} from '@dorkos/shared/schemas';
 import type { EffortLevel, PermissionMode, UpdateTaskRequest } from '@dorkos/shared/types';
 import { slugify } from '@dorkos/skills/slug';
 import { CREDITS_ACCOUNT_ID } from '@dorkos/shared/account-usage';
@@ -46,8 +40,8 @@ import {
   STATUS_DESCRIPTION,
   TASKS_CREATE_DESCRIPTION,
   TASKS_UPDATE_DESCRIPTION,
-  TIMEZONE_DESCRIPTION,
 } from './task-tool-copy.js';
+import { CREATE_TASK_INPUT, UPDATE_TASK_INPUT } from './task-tool-inputs.js';
 import {
   clampSchedulePermissionMode,
   taskWorkOf,
@@ -119,32 +113,6 @@ export {
 } from './task-tool-parts.js';
 
 /**
- * The `maxRuntime` argument, validated to the shape the SKILL.md frontmatter
- * accepts — the MCP twin of the same fix on `UpdateTaskRequestSchema` (DOR-1481).
- *
- * Both tools pass this straight through to the store, where `parseDuration`
- * turns anything it cannot read into `0` — which removes the run's time limit
- * rather than rejecting the call — and the same string written into the file
- * makes the file unreadable to every later sync. `tasks_create` used to accept
- * the argument and hardcode `null` in its place; it honors it now (DOR-1568).
- *
- * Capped as well as shaped. The pattern says nothing about LENGTH and `\d+` will
- * match half a megabyte of digits, so without {@link TASK_DURATION_MAX} this
- * tool accepted a duration that `ScheduleBlockSchema` then refuses to read back
- * — the same unreadable-file bug one paragraph up, reached through the argument
- * that was supposed to prevent it. These tools are a THIRD write path into the
- * same SKILL.md beside the two request schemas, so the cap belongs on all three
- * or on none; `packages/skills/src/__tests__/task-request-drift.test.ts` fails
- * if this line stops spelling it.
- */
-const DURATION_ARG = z
-  .string()
-  .min(1)
-  .max(TASK_DURATION_MAX)
-  .regex(TASK_DURATION_PATTERN)
-  .optional();
-
-/**
  * Create a new scheduled job — armed at once for one of our agents on a Trusted
  * install, parked at `pending_approval` otherwise.
  *
@@ -193,6 +161,14 @@ export function createCreateScheduleHandler(
     effort?: EffortLevel;
     /** Which Claude account the runs start on; see {@link ACCOUNT_DESCRIPTION}. */
     account?: string;
+    /** Mode requested for person approval; never applied by this tool. */
+    requestedPermissionMode?: PermissionMode;
+    /** Task-run rules requested for person approval; never applied by this tool. */
+    requestedAllow?: string[];
+    /** Refused: only a person applies task-run rules. */
+    approvedAllow?: string[];
+    /** Refused: only a person confirms a looser grant. */
+    acceptLooserThanRequested?: true;
     /** Refused, or decided as `tasks.set_mode` (DOR-3703); see {@link REFUSED_PERMISSION_MODE_DESCRIPTION}. */
     permissionMode?: string;
     /** Refused: a new task never approves itself; see {@link REFUSED_STATUS_DESCRIPTION}. */
@@ -256,6 +232,10 @@ export function createCreateScheduleHandler(
         ...(args.model !== undefined && { model: args.model }),
         ...(args.effort !== undefined && { effort: args.effort }),
         ...(args.account !== undefined && { account: args.account }),
+        ...(args.requestedPermissionMode !== undefined && {
+          requestedPermissionMode: args.requestedPermissionMode,
+        }),
+        ...(args.requestedAllow !== undefined && { requestedAllow: args.requestedAllow }),
         ...(mode.grant?.decision.setsMode && { permissionMode: mode.grant.decision.mode }),
       },
       // An MCP tool call IS the agent surface — there is no header to omit and
@@ -379,6 +359,14 @@ export function createUpdateScheduleHandler(
     effort?: EffortLevel | null;
     /** Which Claude account the runs start on, or `null` to clear the override. */
     account?: string | null;
+    /** Mode requested for person approval; never applied by this tool. */
+    requestedPermissionMode?: PermissionMode;
+    /** Task-run rules requested for person approval; never applied by this tool. */
+    requestedAllow?: string[];
+    /** Refused: only a person applies task-run rules. */
+    approvedAllow?: string[];
+    /** Refused: only a person confirms a looser grant. */
+    acceptLooserThanRequested?: true;
     /** Put a package's schedule back on its own timing; see {@link RESET_TIMING_DESCRIPTION}. */
     resetTiming?: true;
     /** Accept a SKILL file changed outside the tools; see {@link ACCEPT_FILE_HASH_DESCRIPTION}. */
@@ -499,6 +487,10 @@ export function createUpdateScheduleHandler(
       ...(args.model !== undefined && { model: args.model }),
       ...(args.effort !== undefined && { effort: args.effort }),
       ...(args.account !== undefined && { account: args.account }),
+      ...(args.requestedPermissionMode !== undefined && {
+        requestedPermissionMode: args.requestedPermissionMode,
+      }),
+      ...(args.requestedAllow !== undefined && { requestedAllow: args.requestedAllow }),
       ...(args.resetTiming === true && { resetTiming: true as const }),
       // An approval's mode is written when it is armed, not here (S-C).
       ...(modeOnly(mode) && { permissionMode: mode.grant!.decision.mode }),
@@ -712,60 +704,13 @@ export function getTasksTools(
     tool(
       'tasks_create',
       TASKS_CREATE_DESCRIPTION,
-      {
-        name: z.string().describe('Name for the scheduled task'),
-        prompt: z.string().describe('The prompt to send to the agent on each run'),
-        cron: z.string().describe('Cron expression (e.g., "0 2 * * *" for daily at 2am)'),
-        reason: z.string().describe(REASON_DESCRIPTION),
-        target: z.string().min(1).optional().describe(TARGET_DESCRIPTION),
-        description: z.string().optional().describe('Description of what this scheduled task does'),
-        timezone: z.string().optional().describe(TIMEZONE_DESCRIPTION),
-        maxRuntime: DURATION_ARG.describe('Maximum run time (e.g., "5m", "1h")'),
-        sticky: z.boolean().optional().describe(STICKY_DESCRIPTION),
-        runtime: z.string().min(1).optional().describe(RUNTIME_DESCRIPTION),
-        model: z.string().min(1).optional().describe(MODEL_DESCRIPTION),
-        effort: EffortLevelSchema.optional().describe(EFFORT_DESCRIPTION),
-        account: z.string().min(1).optional().describe(ACCOUNT_DESCRIPTION),
-        permissionMode: z.string().optional().describe(REFUSED_PERMISSION_MODE_DESCRIPTION),
-        status: z.string().optional().describe(REFUSED_STATUS_DESCRIPTION),
-        agentId: z.string().optional().describe(REFUSED_AGENT_ID_DESCRIPTION),
-      },
+      CREATE_TASK_INPUT,
       createCreateScheduleHandler(deps, resolveProvenance, callerMarks, callerAgent)
     ),
     tool(
       'tasks_update',
       TASKS_UPDATE_DESCRIPTION,
-      {
-        id: z.string().describe('Schedule ID to update'),
-        // Bounded to the SKILL.md slug rule, exactly as `UpdateTaskRequest.name`
-        // is on the REST route (`@dorkos/shared`). A task's name is read back to
-        // an unattended run in its system prompt (`Job: ${task.name}` via
-        // `task-append.ts`), so an unbounded name was a prompt-injection primitive
-        // on this surface too — and this handler writes the row directly, so a
-        // multiline/over-64 name would ride the window before the reconciler could
-        // clamp it. The SDK parses this shape before the handler runs, so a bad
-        // name is refused here just as `parseBody` refuses it on REST.
-        name: TaskNameSchema.optional().describe('New name (lowercase kebab-case slug)'),
-        prompt: z.string().optional().describe('New prompt'),
-        cron: z.string().optional().describe('New cron expression'),
-        enabled: z.boolean().optional().describe('Enable or disable the schedule'),
-        timezone: z.string().optional().describe('New timezone'),
-        maxRuntime: DURATION_ARG.describe('New max runtime (e.g., "5m", "1h")'),
-        sticky: z.boolean().optional().describe(STICKY_DESCRIPTION),
-        // Nullable on the UPDATE side alone: clearing an override is a state a
-        // person (or an agent that set one) can want, and `null` is how every
-        // other clearable field on this tool spells it.
-        runtime: z.string().min(1).nullable().optional().describe(RUNTIME_DESCRIPTION),
-        model: z.string().min(1).nullable().optional().describe(MODEL_DESCRIPTION),
-        effort: EffortLevelSchema.nullable().optional().describe(EFFORT_DESCRIPTION),
-        account: z.string().min(1).nullable().optional().describe(ACCOUNT_DESCRIPTION),
-        resetTiming: z.literal(true).optional().describe(RESET_TIMING_DESCRIPTION),
-        acceptFileHash: z.string().optional().describe(ACCEPT_FILE_HASH_DESCRIPTION),
-        permissionMode: z.string().optional().describe(REFUSED_PERMISSION_MODE_DESCRIPTION),
-        status: z.string().optional().describe(STATUS_DESCRIPTION),
-        target: z.string().optional().describe(REFUSED_UPDATE_TARGET_DESCRIPTION),
-        agentId: z.string().optional().describe(REFUSED_AGENT_ID_DESCRIPTION),
-      },
+      UPDATE_TASK_INPUT,
       createUpdateScheduleHandler(deps, resolveProvenance, callerMarks, callerAgent)
     ),
     tool(

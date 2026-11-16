@@ -38,6 +38,7 @@
  * @module services/runtimes/claude-code/messaging/credits-launch
  */
 import fs from 'node:fs';
+import type { Options } from '@anthropic-ai/claude-agent-sdk';
 import path from 'node:path';
 import { BASELINE_ENV_NAMES } from '../../shared/runtime-environment-catalog.js';
 import { runtimeInheritedNames } from '../../shared/runtime-environment-config.js';
@@ -297,6 +298,16 @@ export function creditsSettingsEnv(
   }
   env.ANTHROPIC_BASE_URL = baseUrl;
   return env;
+}
+
+/** Merge a credits endpoint into one launch's highest-precedence settings layer. */
+export function applyCreditsSettingsEnv(
+  sdkOptions: Options,
+  creditsSettings: Record<string, string> | undefined
+): void {
+  if (!creditsSettings) return;
+  const base = typeof sdkOptions.settings === 'object' ? sdkOptions.settings : {};
+  sdkOptions.settings = { ...base, env: creditsSettings };
 }
 
 /**
