@@ -21,6 +21,7 @@ import type { ComposerInputHandle } from '@/layers/features/composer';
 import { Conversation, useConversation } from '@/layers/features/conversation';
 import { SessionAsks } from './SessionAsks';
 import { SessionPausedQueueNotice } from './SessionPausedQueueNotice';
+import { usePausedComposerDraft } from '../model/use-paused-composer-draft';
 import {
   BackgroundTaskBar,
   ChatStatusSection,
@@ -66,6 +67,7 @@ import {
   useSessionRuntime,
   useSessionSteerable,
   useSessionStreamState,
+  useSessionQueue,
 } from '@/layers/entities/session';
 import { useCapabilitiesForRuntime } from '@/layers/entities/runtime';
 
@@ -208,6 +210,18 @@ export function SessionComposer({
   // The box's own words, and how many are held behind it — both read off the
   // conversation's target, which is the one place either fact lives.
   const { target } = useConversation();
+  const serverQueue = useSessionQueue(sessionId);
+  const pausedDraft = usePausedComposerDraft({
+    sessionId,
+    paused: agentPaused,
+    queue: serverQueue,
+    input,
+    setInput,
+    send: async (text) => {
+      if (target?.canSend) await target.send({ text });
+    },
+    remove: (id, messageId) => transport.removeQueuedMessage(id, messageId),
+  });
   const defaultPlaceholder = target?.placeholder ?? 'Send a message…';
   const awaitingDecision = useSessionAwaitingDecision(sessionId);
   // A quick lookup says nothing, so a chat that is set up doesn't flicker. Pressing
@@ -614,8 +628,8 @@ export function SessionComposer({
     // line would be a refusal a person needs told about — it would be a bug
     // worth seeing.
     if (target === null || !target.canSend) return;
-    void target.send({ text: input });
-  }, [autocomplete, target, input]);
+    void pausedDraft.submit();
+  }, [autocomplete, target, pausedDraft]);
 
   const queueAndDismiss = useCallback(() => {
     autocomplete.dismissPalettes();
@@ -786,6 +800,7 @@ export function SessionComposer({
             }
           : {}),
         ...(limitComposer.canSubmit ? {} : { canSubmit: false }),
+        ...(agentPaused || pausedDraft.pending ? { canSubmit: false } : {}),
         onStop: handleStop,
         stopPending,
         onEscape: autocomplete.dismissPalettes,

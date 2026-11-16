@@ -9,23 +9,45 @@ const AGENT = { id: 'scout', name: 'Scout', pausedAt: '2026-11-16T12:00:00.000Z'
 
 function world() {
   const db = createTestDb();
-  db.insert(agents).values({
-    id: AGENT.id, name: 'scout', projectPath: '/demo/scout',
-    runtime: 'claude-code', registeredAt: AGENT.pausedAt, updatedAt: AGENT.pausedAt,
-  }).run();
-  db.insert(sessionMetadata).values({
-    sessionId: 'target', agentPath: '/demo/scout', runtime: 'claude-code',
-    createdAt: AGENT.pausedAt,
-  }).run();
+  db.insert(agents)
+    .values({
+      id: AGENT.id,
+      name: 'scout',
+      projectPath: '/demo/scout',
+      runtime: 'claude-code',
+      registeredAt: AGENT.pausedAt,
+      updatedAt: AGENT.pausedAt,
+    })
+    .run();
+  db.insert(sessionMetadata)
+    .values({
+      sessionId: 'target',
+      agentPath: '/demo/scout',
+      runtime: 'claude-code',
+      createdAt: AGENT.pausedAt,
+    })
+    .run();
   const messages = new ChatMessageStore(db);
   const queue = new MessageQueueStore(db);
   function send(id: string, chat: string, title: string) {
     queue.enqueue({ id, sessionId: 'target', clientId: 'chat:' + chat, content: 'Keep this' });
     messages.insert({
-      id: 'message-' + id, toSessionId: 'target', fromSessionId: chat,
-      fromAgentPath: '/demo/atlas', fromAgentId: 'atlas', fromAgentName: 'Atlas',
-      fromChatTitle: title, kind: 'message', text: 'Keep this', nonce: '12345678',
-      delivery: 'queue', status: 'queued', queueMessageId: id,
+      id: 'message-' + id,
+      toSessionId: 'target',
+      fromSessionId: chat,
+      fromAgentPath: '/demo/atlas',
+      fromAgentId: 'atlas',
+      fromAgentName: 'Atlas',
+      fromChatTitle: title,
+      kind: 'message',
+      text: 'Keep this',
+      nonce: '12345678',
+      delivery: 'queue',
+      status: 'queued',
+      queueMessageId: id,
+      summary: null,
+      ceilingJson: '{}',
+      replyToId: null,
     });
   }
   return { db, send, queue };
@@ -39,9 +61,7 @@ describe('Activity for messages held by a pause', () => {
     recordPausedQueueActivity(db, AGENT);
     const rows = db.select().from(activityEvents).all();
     expect(rows).toHaveLength(1);
-    expect(rows[0]?.summary).toBe(
-      'Scout was paused, so 1 message from Planning is held.'
-    );
+    expect(rows[0]?.summary).toBe('Scout was paused, so 1 message from Planning is held.');
     expect(rows[0]?.linkPath).toBe('/session?session=target');
   });
 

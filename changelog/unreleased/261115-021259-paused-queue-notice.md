@@ -1,8 +1,9 @@
 ---
 covers:
   - 'fix(chat): explain queued messages held by pause (DOR-4348)'
+  - 'fix(chat): keep paused drafts waiting for Send (DOR-4348)'
 ---
 
 ### Fixed
 
-- When an agent is paused, your queued message now stays in view with a note that it waits until you resume the agent and press Send. Messages from other chats say they run once it's resumed. (DOR-4348)
+- Keep your paused message in the box until you resume the agent and press Send. New messages from other chats leave it there. Held messages name the pause in the queue, Activity and the sender’s receipt. (DOR-4348)

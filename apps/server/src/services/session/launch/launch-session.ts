@@ -596,7 +596,9 @@ async function launchSessionMessage(
   });
   // A person typing, here or from the web through the session relay.
   const personTyped = origin.kind === 'interactive' || origin.kind === 'session-relay';
-  if (paused) {
+  // Chat messages have a durable queue row: let the dispatcher keep it under
+  // the pause. Every other launch retains the refusal before any work starts.
+  if (paused && origin.kind !== 'chat-message') {
     agentPause()?.recordHeld(paused, {
       via: personTyped ? 'message' : 'turn',
       sessionId,

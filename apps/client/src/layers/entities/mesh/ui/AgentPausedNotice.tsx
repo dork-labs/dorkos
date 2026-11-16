@@ -65,7 +65,7 @@ export function AgentPausedNotice({ agentId, agentName, held, onResumed }: Agent
       </div>
       <Button
         size="sm"
-        variant="outline"
+        variant={held ? 'default' : 'outline'}
         disabled={resume.isPending}
         onClick={() =>
           resume.mutate(agentId, {

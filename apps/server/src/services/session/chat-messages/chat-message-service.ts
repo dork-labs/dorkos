@@ -51,6 +51,7 @@ import type {
   SentChatMessage,
 } from '@dorkos/shared/chat-messages';
 import { logError, logger } from '../../../lib/logger.js';
+import { agentPause } from '../../mesh/pause/agent-pause.js';
 import { recordAudit } from '../../audit/audit-trail.js';
 import {
   dispatchSessionMessage,
@@ -423,6 +424,17 @@ export class ChatMessageService {
       // not whatever was ahead of it.
       const stopped = await this.deps.interruptTurn(chatId).catch(() => false);
       if (!stopped) note = 'Nothing was running there, so it simply runs next.';
+    }
+    const paused =
+      status === 'queued'
+        ? agentPause()?.pausedAgentOfSession(
+            chatId,
+            () => cwd,
+            target.agent ? { forAgent: target.agent.path } : undefined
+          )
+        : undefined;
+    if (paused) {
+      note = `${paused.name} is paused. Your message is held and runs once it's resumed.`;
     }
     return {
       messageId: row.id,

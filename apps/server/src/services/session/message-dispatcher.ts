@@ -594,6 +594,8 @@ export async function dispatchMessage(opts: DispatchMessageOpts): Promise<Messag
     sessionId,
     projector,
     runtime,
+    // Another chat cannot press Send for the person's held message (DOR-4348).
+    onlyFromChats: isChatClientId(clientId),
     ...(opts.cwd !== undefined ? { cwd: opts.cwd } : {}),
   });
   adoptAcceptedPrivateMessages({
