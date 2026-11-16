@@ -1,0 +1,10 @@
+{
+  "name": "@dorkos/heavy-slot",
+  "version": "0.0.0",
+  "description": "Owns the turbo task @dorkos/heavy-slot#slot, which takes a host-wide heavy-run slot for a bare `turbo build`, `typecheck`, `test` or `lint` (DOR-3274 Phase 2). A workspace package, not a root task, so the root package.json is not in every build's hash (DOR-4190). The script itself is scripts/heavy-turbo-slot.mjs.",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "slot": "node ../../scripts/heavy-turbo-slot.mjs"
+  }
+}

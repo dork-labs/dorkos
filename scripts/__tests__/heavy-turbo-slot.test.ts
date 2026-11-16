@@ -5,9 +5,15 @@
  * scripts in scripts/heavy-run-lock.sh, but `turbo build` typed by hand, or run
  * by a test harness, a Playwright web server or an agent, went straight past
  * it. turbo has no pre-run hook, so the cap rides on the task graph instead:
- * every heavy task depends on the root task `//#heavy-slot`, which runs
+ * every heavy task depends on `@dorkos/heavy-slot#slot`, which runs
  * scripts/heavy-turbo-slot.mjs once per invocation, and that takes a slot for
  * the turbo process's lifetime (`heavy-run-lock.sh --hold`).
+ *
+ * It lives in the workspace package packages/heavy-slot, not at the root
+ * (DOR-4190). turbo hashes the root package.json and turbo.json into every
+ * root task, and every build hash folds in this task's hash, so as a root task
+ * (`//#heavy-slot`, until 2026-11-16) any root script edit changed every build
+ * hash and no restored turbo cache ever hit.
  *
  * THE SILENT REGRESSIONS this pins:
  *
@@ -17,6 +23,8 @@
  *   * The guard task loses `cache: false` and turbo replays it from cache
  *     without running it, or loses its pass-through env (strict mode) and no
  *     longer sees CI or the slot its own `pnpm build` parent holds.
+ *   * The guard moves back to the root (`//#…`), and every build's hash
+ *     depends on the root package.json again.
  *   * A dev or watch run holds a slot until someone stops it.
  */
 import { describe, it, expect } from 'vitest';
@@ -25,24 +33,25 @@ import path from 'node:path';
 import { exempt, findTurbo, longLived, persistentTasks } from '../heavy-turbo-slot.mjs';
 
 const repoRoot = path.resolve(import.meta.dirname, '..', '..');
+const readJson = (...parts: string[]) =>
+  JSON.parse(readFileSync(path.join(repoRoot, ...parts), 'utf8')) as unknown;
 
 interface TurboTask {
   dependsOn?: string[];
   cache?: boolean;
   persistent?: boolean;
   passThroughEnv?: string[];
+  inputs?: string[];
 }
-const turbo = JSON.parse(readFileSync(path.join(repoRoot, 'turbo.json'), 'utf8')) as {
-  tasks: Record<string, TurboTask>;
+const turbo = readJson('turbo.json') as { tasks: Record<string, TurboTask> };
+const rootScripts = (readJson('package.json') as { scripts: Record<string, string> }).scripts;
+const slotPackage = readJson('packages', 'heavy-slot', 'package.json') as {
+  name: string;
+  scripts: Record<string, string>;
 };
-const rootScripts = (
-  JSON.parse(readFileSync(path.join(repoRoot, 'package.json'), 'utf8')) as {
-    scripts: Record<string, string>;
-  }
-).scripts;
 
 const HEAVY = ['build', 'typecheck', 'test', 'lint'];
-const GUARD = '//#heavy-slot';
+const GUARD = '@dorkos/heavy-slot#slot';
 
 describe('turbo.json routes every heavy task through the slot guard', () => {
   const heavy = Object.entries(turbo.tasks).filter(([name]) =>
@@ -54,7 +63,7 @@ describe('turbo.json routes every heavy task through the slot guard', () => {
   });
 
   it.each(heavy.map(([name, task]) => [name, task] as const))(
-    '%s depends on //#heavy-slot',
+    '%s depends on @dorkos/heavy-slot#slot',
     (name, task) => {
       expect(
         task.dependsOn ?? [],
@@ -73,7 +82,20 @@ describe('turbo.json routes every heavy task through the slot guard', () => {
     const guard = turbo.tasks[GUARD];
     expect(guard?.cache).toBe(false);
     expect(guard?.passThroughEnv).toEqual(expect.arrayContaining(['CI', 'DORKOS_HEAVY_*']));
-    expect(rootScripts['heavy-slot']).toBe('node scripts/heavy-turbo-slot.mjs');
+    expect(slotPackage.name).toBe('@dorkos/heavy-slot');
+    expect(slotPackage.scripts.slot).toBe('node ../../scripts/heavy-turbo-slot.mjs');
+  });
+
+  it('the guard is a workspace task, so the root package.json is not in every build hash', () => {
+    // A root task (`//#…`) always hashes the root package.json and turbo.json,
+    // whatever its `inputs` say, and each dependent folds that hash into its
+    // own (DOR-4190). Keep it in packages/heavy-slot.
+    expect(Object.keys(turbo.tasks).filter((name) => name.includes('heavy-slot'))).toEqual([GUARD]);
+    expect(rootScripts['heavy-slot']).toBeUndefined();
+    expect(turbo.tasks[GUARD]?.inputs).toEqual([
+      'package.json',
+      '$TURBO_ROOT$/scripts/heavy-turbo-slot.mjs',
+    ]);
   });
 });
 
@@ -112,7 +134,7 @@ describe('heavy-turbo-slot.mjs', () => {
   it('finds the nearest turbo ancestor, through pnpm and sh', () => {
     const tree: Record<number, { comm: string; ppid: number; args: string }> = {
       40: { comm: 'bash', ppid: 30, args: 'bash' },
-      30: { comm: 'sh', ppid: 20, args: 'sh -c node scripts/heavy-turbo-slot.mjs' },
+      30: { comm: 'sh', ppid: 20, args: 'sh -c node ../../scripts/heavy-turbo-slot.mjs' },
       20: {
         comm: '/repo/node_modules/@turbo/darwin-arm64/bin/turbo',
         ppid: 10,

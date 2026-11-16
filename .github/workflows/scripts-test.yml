@@ -45,7 +45,7 @@ name: scripts-test
 #
 # turbo.json is in the scope for the same reason (DOR-3274 Phase 2):
 # `scripts/__tests__/heavy-turbo-slot.test.ts` asserts that every build,
-# typecheck, test and lint task in it depends on `//#heavy-slot`, the host-wide
+# typecheck, test and lint task in it depends on `@dorkos/heavy-slot#slot`, the host-wide
 # heavy-run cap for a bare `turbo` run. A package override that drops it runs
 # uncapped with nothing red, and an edit to turbo.json alone is that PR's shape.
 #

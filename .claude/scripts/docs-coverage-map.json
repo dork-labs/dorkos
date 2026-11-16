@@ -130,10 +130,9 @@
     },
     {
       "guide": "configuration.md",
-      "description": "Config file system, upgrade refusals, settings reference, Codex transport compatibility, CLI commands, precedence",
+      "description": "Config file system, upgrade floor, settings reference, Codex transport compatibility, CLI commands, precedence",
       "patterns": [
         "config-manager",
-        "config/upgrade-floor",
         "codex/transport",
         "config-migrations",
         "config-schema",
@@ -335,6 +334,13 @@
       "patterns": [
         "docs/guides/flow",
         "contributing/flow-engine"
+      ]
+    },
+    {
+      "guide": "prioritization.md",
+      "description": "Filing and prioritizing DOR issues: MoSCoW mapped to Linear priority, the at-filing fields, the duplicate check, where each bucket goes, the Could expiry",
+      "patterns": [
+        "contributing/prioritization"
       ]
     },
     {

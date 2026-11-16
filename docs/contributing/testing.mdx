@@ -201,22 +201,28 @@ The `@dorkos/test-utils` package provides:
 - `createMockTransport()`: fully mocked Transport with all required methods
 - `FakeAgentRuntime`: full `AgentRuntime` implementation with `vi.fn()` spies and scenario queue
 - `collectDurableEvents(app, sessionId, opts?)`: opens the durable `GET /api/sessions/:id/events` stream against a real listening server and collects parsed SSE frames
-- `TestScenario`: named scenario keys (`SimpleText`, `ToolCall`, `TodoWrite`, `Error`)
-- `testScenarios`: scenario builders that produce `StreamEvent` sequences
+- `TestScenario` and `TestScenarioKey`: named scenario keys and their type (`SimpleText`, `ToolCall`, `TodoWrite`, `Error`)
+- `createMockStreamEvent(type, data)`: builds a `StreamEvent` for a fake runtime's scenario
 - Mock factories for chats, messages, and other domain objects
 
 ### FakeAgentRuntime (Server Route Tests)
 
-Server tests that need an `AgentRuntime` should use `FakeAgentRuntime` instead of hand-rolling mock objects:
+Server tests that need an `AgentRuntime` should use `FakeAgentRuntime` instead of hand-rolling mock objects. Its `withScenarios()` method queues async generator functions that yield `StreamEvent` objects:
 
 ```typescript
-import { FakeAgentRuntime, TestScenario, testScenarios } from '@dorkos/test-utils';
+import { beforeEach } from 'vitest';
+import { FakeAgentRuntime, createMockStreamEvent } from '@dorkos/test-utils';
 
 let fakeRuntime: FakeAgentRuntime;
 
 beforeEach(() => {
   fakeRuntime = new FakeAgentRuntime();
-  fakeRuntime.withScenarios([testScenarios[TestScenario.SimpleText]('Hello')]);
+  fakeRuntime.withScenarios([
+    async function* () {
+      yield createMockStreamEvent('text_delta', { text: 'Hello' });
+      yield createMockStreamEvent('done', {});
+    },
+  ]);
 });
 ```
 
