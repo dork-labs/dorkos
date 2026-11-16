@@ -614,10 +614,11 @@ describe('CanvasBrowserContent — a preview that loads badly', () => {
         screen.getByText(/This page hit at least 10,000 errors while loading\./i)
       ).toBeInTheDocument()
     );
-    // The banner keeps its own way out; the toolbar's lives in the ⋯ menu (DOR-4435).
+    // The banner keeps its own way out, named as the ⋯ menu names it (DOR-4435).
     expect(
-      screen.getAllByRole('button', { name: /open in system browser/i }).length
+      screen.getAllByRole('button', { name: /open in your browser/i }).length
     ).toBeGreaterThanOrEqual(1);
+    expect(screen.queryByRole('button', { name: /open in system browser/i })).toBeNull();
   });
 });
 
@@ -890,7 +891,7 @@ describe('CanvasBrowserContent — address bar (editing)', () => {
 });
 
 describe('CanvasBrowserContent — external embed fallback', () => {
-  it('always surfaces an "open in system browser" affordance for external sites', async () => {
+  it('always surfaces an "open in your browser" affordance for external sites', async () => {
     // XFO/frame-ancestors refusal can't be reliably detected cross-origin, so the
     // escape hatch is always present for external pages (honest by design).
     render(
@@ -904,7 +905,7 @@ describe('CanvasBrowserContent — external embed fallback', () => {
     expect(screen.getByText(/can’t always be embedded/i)).toBeInTheDocument();
     // The escape hatch appears in the external footer; the toolbar's is in ⋯.
     expect(
-      screen.getAllByRole('button', { name: /open in system browser/i }).length
+      screen.getAllByRole('button', { name: /open in your browser/i }).length
     ).toBeGreaterThanOrEqual(1);
   });
 
