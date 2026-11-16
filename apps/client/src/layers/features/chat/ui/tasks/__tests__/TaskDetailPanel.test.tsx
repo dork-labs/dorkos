@@ -54,6 +54,29 @@ describe('TaskDetailPanel', () => {
     expect(screen.getByText('bash')).toBeInTheDocument();
   });
 
+  // Spec warm-process-lifecycle D8 (T30): a Monitor or Workflow shows its own
+  // label and can be stopped, with the same confirm an agent asks for.
+  it('shows an other task by its label and stops it after a confirm', async () => {
+    const onStopTask = vi.fn();
+    const tasks = [
+      makeTask({
+        taskId: 'mon-1',
+        taskType: 'other',
+        description: 'Watch the deploy',
+        toolUses: undefined,
+      }),
+    ];
+
+    render(<TaskDetailPanel tasks={tasks} onStopTask={onStopTask} />);
+    expect(screen.getByText('Watch the deploy')).toBeInTheDocument();
+    expect(screen.getByText('task')).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('button', { name: 'Stop task' }));
+    expect(onStopTask).not.toHaveBeenCalled();
+    await userEvent.click(screen.getByRole('button', { name: 'Press again to stop task' }));
+    expect(onStopTask).toHaveBeenCalledWith('mon-1');
+  });
+
   it('renders kill button only for running tasks', () => {
     const tasks = [
       makeTask({ taskId: 'running-1', status: 'running' }),

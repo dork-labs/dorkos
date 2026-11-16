@@ -77,6 +77,16 @@ export const BUILT_ENTRIES: Readonly<Record<string, string>> = {
   ),
 };
 
+/** Whether process `pid` is still running (`EPERM` means it is, just not ours). */
+export function isAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === 'EPERM';
+  }
+}
+
 /** What tsx targets: the running Node. */
 const TARGET = `node${process.versions.node}`;
 

@@ -103,6 +103,7 @@ beforeEach(async () => {
           store,
           scheduler,
           registrar: new TaskRegistrar({ store, scheduler }),
+          defaultTimezone: () => 'UTC',
           dorkHome: scratch,
           meshCore: mesh(),
         }),

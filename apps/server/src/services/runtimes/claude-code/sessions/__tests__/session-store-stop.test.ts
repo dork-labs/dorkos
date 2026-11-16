@@ -186,6 +186,36 @@ describe('Stop is bounded (DOR-1244)', () => {
     expect(calls.close).toBe(0);
   });
 
+  // DOR-2065: the strip keeps a row for a task that outlived its turn, so Stop
+  // has to reach it there: the held process still takes control requests.
+  it('stops a task that outlived its turn on the held process', async () => {
+    const { query, calls } = fakeQuery({ stopTask: 'acks' });
+    const store = new SessionStore();
+    store.ensureSession(SESSION_ID, { permissionMode: 'default' });
+    // The turn ended: the warm pump's `running -> warm` edge moved the query here.
+    store.findSession(SESSION_ID)!.lastQuery = query;
+
+    await expect(store.stopTask(SESSION_ID, 'monitor-1', true)).resolves.toEqual({
+      outcome: 'acked',
+      runtime: 'claude-code',
+    });
+    expect(calls.stopTask).toEqual(['monitor-1']);
+    expect(calls.close).toBe(0);
+  });
+
+  it('does not aim a stop at a finished process the runtime no longer holds work on', async () => {
+    const { query, calls } = fakeQuery({ stopTask: 'acks' });
+    const store = new SessionStore();
+    store.ensureSession(SESSION_ID, { permissionMode: 'default' });
+    store.findSession(SESSION_ID)!.lastQuery = query;
+
+    await expect(store.stopTask(SESSION_ID, 'gone', false)).resolves.toMatchObject({
+      outcome: 'not-running',
+      reason: 'no-open-turn',
+    });
+    expect(calls.stopTask).toEqual([]);
+  });
+
   it('gives up on a task stop that is never acknowledged, without killing the turn around it', async () => {
     const { query, calls } = fakeQuery({ stopTask: 'never-settles' });
     const store = storeWithLiveTurn(query);

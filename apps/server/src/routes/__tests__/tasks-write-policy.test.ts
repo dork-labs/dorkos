@@ -164,6 +164,7 @@ describe('operator-only task fields on the REST routes', () => {
             store,
             scheduler,
             registrar: new TaskRegistrar({ store, scheduler }),
+            defaultTimezone: () => 'UTC',
             dorkHome: DORK_HOME,
           }),
         },
@@ -333,6 +334,7 @@ describe('operator-only task fields on the REST routes', () => {
               scheduler,
               registrar: new TaskRegistrar({ store, scheduler }),
               dorkHome: DORK_HOME,
+              defaultTimezone: () => 'UTC',
               meshCore: {
                 listWithPaths: () => agents,
                 getProjectPath: (id: string) => agents.find((a) => a.id === id)?.projectPath,

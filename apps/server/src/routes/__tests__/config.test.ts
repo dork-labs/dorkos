@@ -127,6 +127,11 @@ let arrivedVia: 'wifi' | 'own-tunnel' | 'managed' | undefined;
 const target = swappableServer();
 const server = target.server;
 
+// Each beforeEach re-imports the config router after vi.resetModules, and the
+// first one in a worker transforms the whole route graph cold: 7.3 s on a CI
+// shard where it passed, past the 10 s default twice on the same tree.
+vi.setConfig({ hookTimeout: 30_000 });
+
 /**
  * A fresh install is BUILT here, not inherited: this file runs with
  * `DORKOS_TASKS_ENABLED` and `DORKOS_RELAY_ENABLED` absent, whatever the

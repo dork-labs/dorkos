@@ -82,6 +82,7 @@ import { createScheduledTask } from '../../../../tasks/lifecycle/create-task.js'
 import { agentSchedulesArmWithoutAsking } from '../../../../tasks/approvals/agent-trust.js';
 import { auditScheduleUpdate, scheduleEdit } from '../../../../tasks/approvals/schedule-owner.js';
 import { applyTaskFileUpdate } from '../../../../tasks/lifecycle/update-task-file.js';
+import { taskCreateLifecycleDeps } from './task-create-deps.js';
 import { changesApprovedWork } from '../../../../tasks/task-file-update.js';
 import { refuseStickyAccountChange } from '../../../../tasks/session/sticky-session.js';
 import { AGENT_TIMING_CHANGE_REASON } from '../../../../tasks/timing/effective-timing.js';
@@ -211,62 +212,54 @@ export function createCreateScheduleHandler(
     // to its canonical id mid-first-turn (see {@link TaskProvenanceResolver}).
     const provenance = resolveProvenance?.() ?? {};
 
-    const outcome = await createScheduledTask(
-      {
-        store: deps.taskStore!,
-        registrar: deps.resolveTaskRegistrar?.() ?? null,
-        dorkHome: deps.dorkHome,
-        ...(deps.meshCore && { meshCore: deps.meshCore }),
+    const outcome = await createScheduledTask(taskCreateLifecycleDeps(deps), {
+      input: {
+        name: args.name,
+        // The slug, not the raw name, exactly as this tool has always defaulted
+        // it — a name is slugified before it is written, so a description
+        // defaulted from the raw name would carry punctuation and newlines the
+        // name itself cannot. The `|| args.name` is the unusable-name case,
+        // where the create is about to be refused for a better reason.
+        description: args.description ?? (slugify(args.name) || args.name),
+        prompt: args.prompt,
+        cron: args.cron,
+        ...(args.timezone !== undefined && { timezone: args.timezone }),
+        ...(args.maxRuntime !== undefined && { maxRuntime: args.maxRuntime }),
+        target,
+        reason: args.reason,
+        ...(args.sticky !== undefined && { sticky: args.sticky }),
+        ...(args.runtime !== undefined && { runtime: args.runtime }),
+        ...(args.model !== undefined && { model: args.model }),
+        ...(args.effort !== undefined && { effort: args.effort }),
+        ...(args.account !== undefined && { account: args.account }),
+        ...(args.requestedPermissionMode !== undefined && {
+          requestedPermissionMode: args.requestedPermissionMode,
+        }),
+        ...(args.requestedAllow !== undefined && { requestedAllow: args.requestedAllow }),
+        ...(mode.grant?.decision.setsMode && { permissionMode: mode.grant.decision.mode }),
       },
-      {
-        input: {
-          name: args.name,
-          // The slug, not the raw name, exactly as this tool has always defaulted
-          // it — a name is slugified before it is written, so a description
-          // defaulted from the raw name would carry punctuation and newlines the
-          // name itself cannot. The `|| args.name` is the unusable-name case,
-          // where the create is about to be refused for a better reason.
-          description: args.description ?? (slugify(args.name) || args.name),
-          prompt: args.prompt,
-          cron: args.cron,
-          ...(args.timezone !== undefined && { timezone: args.timezone }),
-          ...(args.maxRuntime !== undefined && { maxRuntime: args.maxRuntime }),
-          target,
-          reason: args.reason,
-          ...(args.sticky !== undefined && { sticky: args.sticky }),
-          ...(args.runtime !== undefined && { runtime: args.runtime }),
-          ...(args.model !== undefined && { model: args.model }),
-          ...(args.effort !== undefined && { effort: args.effort }),
-          ...(args.account !== undefined && { account: args.account }),
-          ...(args.requestedPermissionMode !== undefined && {
-            requestedPermissionMode: args.requestedPermissionMode,
-          }),
-          ...(args.requestedAllow !== undefined && { requestedAllow: args.requestedAllow }),
-          ...(mode.grant?.decision.setsMode && { permissionMode: mode.grant.decision.mode }),
-        },
-        // An MCP tool call IS the agent surface — there is no header to omit and
-        // no operator branch to spare.
-        trusted: false,
-        ...createModeOptions(mode),
-        // Only the in-session server knows its caller is one of our agents. A
-        // turn that read words DorkOS cannot vouch for (a stranger's, or a
-        // Wi-Fi sign-in's, DOR-3037) runs at the runtime's default at most, so a
-        // schedule it makes parks for a person instead of arming at its own
-        // level.
-        callerIsOurAgent: resolveProvenance !== undefined && !readOutsiderWords(provenance),
-        // The marks of the turn making the call, from its own record (DOR-3036).
-        originMarks: callerMarks?.() ?? marksOf(provenance.sessionId, provenance.agentPath),
-        proposal: {
-          sessionId: provenance.sessionId ?? null,
-          agentPath: provenance.agentPath ?? null,
-        },
-        // An agent files a schedule only under itself or `global` (DOR-3640 R1).
-        ...callerAgentPathOf(provenance, callerAgent),
-        ...(forOther.kind === 'allowed' && { forAnotherAgent: true, writerMarks: forOther.marks }),
-        // At Full, unmarked, its own folder may be home, as a person's may (DOR-4067, DOR-4136).
-        ...(callingTurnIsFull(resolveProvenance, callerAgent) && { callerAtFull: true }),
-      }
-    );
+      // An MCP tool call IS the agent surface — there is no header to omit and
+      // no operator branch to spare.
+      trusted: false,
+      ...createModeOptions(mode),
+      // Only the in-session server knows its caller is one of our agents. A
+      // turn that read words DorkOS cannot vouch for (a stranger's, or a
+      // Wi-Fi sign-in's, DOR-3037) runs at the runtime's default at most, so a
+      // schedule it makes parks for a person instead of arming at its own
+      // level.
+      callerIsOurAgent: resolveProvenance !== undefined && !readOutsiderWords(provenance),
+      // The marks of the turn making the call, from its own record (DOR-3036).
+      originMarks: callerMarks?.() ?? marksOf(provenance.sessionId, provenance.agentPath),
+      proposal: {
+        sessionId: provenance.sessionId ?? null,
+        agentPath: provenance.agentPath ?? null,
+      },
+      // An agent files a schedule only under itself or `global` (DOR-3640 R1).
+      ...callerAgentPathOf(provenance, callerAgent),
+      ...(forOther.kind === 'allowed' && { forAnotherAgent: true, writerMarks: forOther.marks }),
+      // At Full, unmarked, its own folder may be home, as a person's may (DOR-4067, DOR-4136).
+      ...(callingTurnIsFull(resolveProvenance, callerAgent) && { callerAtFull: true }),
+    });
 
     if (!outcome.ok) {
       return jsonContent(

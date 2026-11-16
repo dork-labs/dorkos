@@ -74,10 +74,16 @@ function title(): string {
   return screen.getByTestId('schedule-failure-title').textContent ?? '';
 }
 
+/** The card's muted status line, read as one string. */
+function status(): string {
+  return screen.getByTestId('schedule-failure-status').textContent ?? '';
+}
+
 describe('schedule Needs you card', () => {
   it('uses fixed cause words and opens the schedule, expanded', () => {
     render(<FailingScheduleList schedules={[task]} />);
-    expect(title()).toBe('Grooming failed twice in a row');
+    expect(title()).toBe('Grooming');
+    expect(status()).toBe('Failed twice in a row');
     expect(screen.getByText('It didn’t finish.')).toBeTruthy();
     expect(screen.queryByText(/IGNORE|evil/)).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: 'Open schedule Grooming' }));
@@ -96,8 +102,19 @@ describe('schedule Needs you card', () => {
   it('shows the whole name, never cut to two words (DOR-4121)', () => {
     const long = { ...task, displayName: 'Hourly uptime check for the status page' };
     render(<FailingScheduleList schedules={[long]} />);
-    expect(title()).toBe('Hourly uptime check for the status page failed twice in a row');
+    expect(title()).toBe('Hourly uptime check for the status page');
     expect(screen.queryByText(/…/)).toBeNull();
+  });
+
+  // Design review on #3806: the name is the title, clamped to two lines with
+  // the whole name on hover, so "failed twice" always sits on its own line.
+  it('titles the card with the name, clamped to two lines', () => {
+    const long = { ...task, displayName: 'Hourly uptime check for the status page' };
+    render(<FailingScheduleList schedules={[long]} />);
+    const heading = screen.getByTestId('schedule-failure-title');
+    expect(heading).toHaveClass('line-clamp-2', 'font-medium');
+    expect(heading).toHaveAttribute('title', 'Hourly uptime check for the status page');
+    expect(heading.textContent).not.toMatch(/failed/);
   });
 
   it('names a blocked schedule and clears when recovery removes it from the queue', () => {
@@ -114,13 +131,14 @@ describe('schedule Needs you card', () => {
       },
     };
     const { rerender } = render(<FailingScheduleList schedules={[blocked]} />);
-    expect(title()).toBe('Grooming was blocked twice in a row');
+    expect(title()).toBe('Grooming');
+    expect(status()).toBe('Was blocked twice in a row');
     expect(screen.getByText('A command was refused.')).toBeTruthy();
     rerender(<FailingScheduleList schedules={[]} />);
     expect(screen.queryByRole('button', { name: /^Open schedule/ })).toBeNull();
   });
 
-  it('says the reason with a 12-hour next try, kept to fifteen words', () => {
+  it('puts a 12-hour next try on the status line, kept to fifteen words', () => {
     const active = {
       ...task,
       status: 'active' as const,
@@ -128,9 +146,9 @@ describe('schedule Needs you card', () => {
       nextRun: new Date(new Date().setHours(23, 0, 0, 0)).toISOString(),
     };
     render(<FailingScheduleList schedules={[active]} />);
-    const reason = screen.getByText(/^It didn’t finish\. Next/);
-    expect(reason.textContent).toBe('It didn’t finish. Next\u00a0try\u00a011:00\u00a0PM.');
-    expect(reason.textContent!.split(/\s+/).length).toBeLessThanOrEqual(15);
+    expect(status()).toBe('Failed twice in a row · Next\u00a0try\u00a011:00\u00a0PM');
+    expect(status().split(/\s+/).length).toBeLessThanOrEqual(15);
+    expect(screen.getByText('It didn’t finish.')).toBeTruthy();
   });
 
   it('names the day when the next try is not today', () => {
@@ -139,8 +157,8 @@ describe('schedule Needs you card', () => {
     tomorrow.setHours(9, 0, 0, 0);
     const active = { ...task, status: 'active' as const, nextRun: tomorrow.toISOString() };
     render(<FailingScheduleList schedules={[active]} />);
-    expect(screen.getByText(/Next/).textContent).toBe(
-      'It didn’t finish. Next\u00a0try\u00a0tomorrow\u00a0at\u00a09:00\u00a0AM.'
+    expect(status()).toBe(
+      'Failed twice in a row · Next\u00a0try\u00a0tomorrow\u00a0at\u00a09:00\u00a0AM'
     );
   });
 
@@ -152,6 +170,7 @@ describe('schedule Needs you card', () => {
       nextRun: new Date(2026, 10, 10, 10, 0).toISOString(),
     };
     render(<FailingScheduleList schedules={[paused]} />);
+    expect(status()).toBe('Failed twice in a row');
     expect(screen.getByText('It didn’t finish.')).toBeTruthy();
   });
 });

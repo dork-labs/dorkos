@@ -30,7 +30,7 @@ const QUEUE_ONLY =
 
 /** Workflows whose required jobs carry the opt-in, and the jobs that must. */
 const OPTED_IN: Record<string, string[]> = {
-  'test.yml': ['community-pg', 'test-shard'],
+  'test.yml': ['community-pg', 'test-shard', 'test-binary'],
   'credential-free-build.yml': ['credential-free-build'],
 };
 

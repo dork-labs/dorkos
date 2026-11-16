@@ -174,5 +174,67 @@ check 'an empty lane changes nothing' 0 "$(run_quarantined "$lists1" "$qempty")"
 
 check 'a missing quarantine list is refused' 1 "$(run_quarantined "$lists1" "$work_dir/nope.txt")"
 
+# ---- required files (DOR-4190) ----
+#
+# The real-CLI suites are excluded from every shard and run by their own jobs,
+# so the per-package check cannot see one go missing among a package's hundreds
+# of files. --require-files names each one; every one must be in the union.
+run_required() {
+  local lists=$1 rfile=$2
+  WORKSPACE_ROOT="$ws" bash "$assert" --require-files "$rfile" "$lists" >/dev/null 2>&1
+  echo $?
+}
+
+lists_bin="$work_dir/case-binary"
+mkdir -p "$lists_bin"
+cp "$lists1"/*.txt "$lists_bin/"
+printf 'apps/alpha/src/__tests__/cli.binary.test.ts\n' > "$lists_bin/shard-files-binary.txt"
+printf 'apps/alpha/src/codex/__tests__/x.binary.test.ts\n' > "$lists_bin/shard-files-codex.txt"
+
+rall="$work_dir/required-all.txt"
+printf 'apps/alpha/src/__tests__/cli.binary.test.ts\napps/alpha/src/codex/__tests__/x.binary.test.ts\n' > "$rall"
+check 'every required file collected passes' 0 "$(run_required "$lists_bin" "$rall")"
+
+# The binary job's list never arrived: alpha still contributes files from the
+# shards, so only the by-name check can fail this — and it must name the file.
+lists_nobin="$work_dir/case-nobinary"
+mkdir -p "$lists_nobin"
+cp "$lists1"/*.txt "$lists_nobin/"
+printf 'apps/alpha/src/codex/__tests__/x.binary.test.ts\n' > "$lists_nobin/shard-files-codex.txt"
+check 'a required file no job collected fails' 1 "$(run_required "$lists_nobin" "$rall")"
+out=$(WORKSPACE_ROOT="$ws" bash "$assert" --require-files "$rall" "$lists_nobin" 2>&1)
+case "$out" in
+*apps/alpha/src/__tests__/cli.binary.test.ts*) check 'the failure names the missing required file' 0 0 ;;
+*) check 'the failure names the missing required file' 0 1
+   printf '        actual output: %s\n' "$out" >&2 ;;
+esac
+
+# Exact match only: a collected path that merely CONTAINS the required one
+# (a same-named file one directory deeper) does not stand in for it.
+lists_deeper="$work_dir/case-deeper"
+mkdir -p "$lists_deeper"
+cp "$lists1"/*.txt "$lists_deeper/"
+printf 'apps/alpha/src/__tests__/cli.binary.test.ts.bak\napps/alpha/src/nested/apps/alpha/src/__tests__/cli.binary.test.ts\n' > "$lists_deeper/shard-files-binary.txt"
+rone="$work_dir/required-one.txt"
+printf 'apps/alpha/src/__tests__/cli.binary.test.ts\n' > "$rone"
+check 'a path that only contains a required one does not satisfy it' 1 "$(run_required "$lists_deeper" "$rone")"
+
+# A list with no trailing newline still checks its last line.
+rnonl="$work_dir/required-no-newline.txt"
+printf 'apps/alpha/src/__tests__/cli.binary.test.ts' > "$rnonl"
+check 'the last line of a list with no trailing newline is checked' 1 "$(run_required "$lists_nobin" "$rnonl")"
+
+rnone="$work_dir/required-empty.txt"
+: > "$rnone"
+check 'an empty required list changes nothing' 0 "$(run_required "$lists1" "$rnone")"
+
+check 'a missing required list is refused' 1 "$(run_required "$lists1" "$work_dir/nope-required.txt")"
+
+# Both options together, in either order.
+result=$(WORKSPACE_ROOT="$ws" bash "$assert" --require-files "$rall" --quarantined "$qempty" "$lists_bin" >/dev/null 2>&1; echo $?)
+check 'both options together pass on a full union' 0 "$result"
+result=$(WORKSPACE_ROOT="$ws" bash "$assert" --quarantined "$qempty" --require-files "$rall" "$lists_nobin" >/dev/null 2>&1; echo $?)
+check 'both options together still fail on a missing required file' 1 "$result"
+
 printf 'test-assert-shard-union: %d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]

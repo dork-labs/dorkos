@@ -26,6 +26,7 @@ import {
   STATUS_DESCRIPTION,
   STICKY_DESCRIPTION,
   TARGET_DESCRIPTION,
+  TIMEZONE_DESCRIPTION,
 } from './task-tool-copy.js';
 
 const durationArgument = z
@@ -55,7 +56,7 @@ export const CREATE_TASK_INPUT = {
   reason: z.string().describe(REASON_DESCRIPTION),
   target: z.string().min(1).optional().describe(TARGET_DESCRIPTION),
   description: z.string().optional().describe('Description of what this scheduled task does'),
-  timezone: z.string().optional().describe('IANA timezone (e.g., "America/New_York")'),
+  timezone: z.string().optional().describe(TIMEZONE_DESCRIPTION),
   maxRuntime: durationArgument.describe('Maximum run time (e.g., "5m", "1h")'),
   sticky: z.boolean().optional().describe(STICKY_DESCRIPTION),
   runtime: z.string().min(1).optional().describe(RUNTIME_DESCRIPTION),

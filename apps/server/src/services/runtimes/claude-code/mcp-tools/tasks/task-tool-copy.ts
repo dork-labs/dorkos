@@ -306,6 +306,10 @@ export const TASKS_CREATE_DESCRIPTION =
   'The schedule returned says which. From a chat at Full autonomy whose turn ' +
   `${unmarkedTurnClause()}, target can be another agent: the task runs at that agent's level at most.`;
 
+/** The zone argument defaults to the person's saved time zone. */
+export const TIMEZONE_DESCRIPTION =
+  'IANA timezone (e.g., "America/New_York"); defaults to the person’s zone';
+
 /**
  * What `tasks_update` says it does, including whose task it may change (DOR-3938).
  */

@@ -25,7 +25,6 @@ import fs from 'node:fs/promises';
 import { z } from 'zod';
 import { CreateTaskRequestSchema } from '@dorkos/shared/schemas';
 import type { CreateTaskInput, Task, TaskApprover } from '@dorkos/shared/schemas';
-import type { MeshCore } from '@dorkos/mesh';
 import { writeSkillFile } from '@dorkos/skills/writer';
 import { parseSkillFile } from '@dorkos/skills/parser';
 import { SkillFrontmatterSchema } from '@dorkos/skills/schema';
@@ -49,8 +48,6 @@ import {
   type PackageOwnershipKind,
 } from '../task-file-update.js';
 import { broadcastTasksChanged } from '../task-sse-events.js';
-import type { TaskStore } from '../task-store.js';
-import type { TaskRegistrar } from '../task-registrar.js';
 import { raiseStanding } from '../../notifications/standing-events.js';
 import { resolveScheduleParkPayload } from '../../notifications/emitters/schedule-park.js';
 import {
@@ -68,6 +65,8 @@ import {
 import { scheduleAccountRefusal, scheduleRunFolder } from './schedule-account-eligibility.js';
 import { scheduleCreditsModelRefusal } from './schedule-credits-model.js';
 import { agentScheduleTarget } from './agent-schedule-target.js';
+import { withDefaultTaskTimezone } from './default-timezone.js';
+import type { TaskLifecycleDeps } from './create-task-deps.js';
 import { marksHold, NO_MARKS, type TurnMarks } from '../../core/turn-power/turn-marks.js';
 import { auditCrossAgentTask, capModeAtAgentLevel } from '../approvals/cross-agent.js';
 import { scheduledTaskCreateApproval } from '../approvals/task-approval-receipt.js';
@@ -91,22 +90,6 @@ export function clampCreatedScheduleMode(
     default:
       return 'acceptEdits';
   }
-}
-
-/** The collaborators a create needs. Every one of them is required to get a task right. */
-export interface TaskLifecycleDeps {
-  /** Where the derived row is written. */
-  store: TaskStore;
-  /**
-   * The one seam that turns a row into a live cron job — shared with the watcher
-   * and the reconciler. Null before the scheduler exists, and during boot, which
-   * is not a reason to fail a create.
-   */
-  registrar: TaskRegistrar | null;
-  /** The resolved data directory, for the `global` skills root. */
-  dorkHome: string;
-  /** Resolves an agent id to its project path. Absent when Mesh is disabled. */
-  meshCore?: MeshCore;
 }
 
 /** Who proposed a task, stamped onto the row when the task parks. */
@@ -343,7 +326,7 @@ export async function createScheduledTask(
       details: z.flattenError(parsed.error),
     };
   }
-  const data = parsed.data;
+  const data = withDefaultTaskTimezone(parsed.data, deps.defaultTimezone);
   // Rules the task's runs could not honour are refused up front (#3794).
   const rules = await taskPermissionRulesRefusal({
     runtime: data.runtime,

@@ -33,6 +33,8 @@ function roomWith(marked: boolean) {
     store: { listEntries: () => [posted] },
     triggers: { deps: { isSpaceRoom: () => false } },
     authors,
+    // The harness's person is the owner; the stranger mark (on by default, DOR-4453) asks.
+    isOwnerAuthor: (id: string) => id === human,
   } as unknown as RoomCore;
   return { core, room, posted };
 }

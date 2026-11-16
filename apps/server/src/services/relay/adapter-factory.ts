@@ -361,7 +361,7 @@ export async function createAdapter(
         taskStore: deps.taskStore,
         onRefusedAsk: deps.onRefusedAsk,
         agentSessionStore: deps.agentSessionStore,
-        // A bound chat's unproven sender marks the turn, off until approved (DOR-3858).
+        // A bound chat's unproven sender marks the turn (DOR-3858), on by default (DOR-4453).
         ...(env.DORKOS_MARK_STRANGER_TURNS ? { markStrangerTurns: true } : {}),
         // What the turn runs on. One resolver for every runtime: the adapter
         // resolves which runtime a message belongs to and asks about THAT one,
