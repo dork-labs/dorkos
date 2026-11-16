@@ -295,6 +295,14 @@ export const WIFI_REFUSED_ROUTES: readonly WifiRefusedRoute[] = [
     reason: `Manage connected apps ${ON_THE_COMPUTER}`,
   },
   {
+    // The monthly spend limit and an app's price decide how much money leaves
+    // with no card, so only the person at the computer changes them (DOR-4204).
+    surface: 'front-door',
+    methods: 'writes',
+    pattern: /^\/api\/connectors\/spending(?:\/|$)/,
+    reason: `Change spending ${ON_THE_COMPUTER}`,
+  },
+  {
     surface: 'file-writes',
     methods: 'writes',
     pattern: /^\/api\/rooms\/[^/]+\/(?:repo|canvas\/[^/]+\/diff)(?:\/|$)/,
