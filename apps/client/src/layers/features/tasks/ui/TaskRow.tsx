@@ -2,7 +2,6 @@ import { hasMisplacedSchedulePermissions } from '@dorkos/shared/schedule-file-pr
 import { TaskScheduleReview } from './review/TaskScheduleReview';
 import { useState, useRef } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
-import cronstrue from 'cronstrue';
 import { MoreHorizontal, Pencil, Play, Trash2, AlertCircle, Shield, RotateCcw } from 'lucide-react';
 import { toast } from 'sonner';
 import {
@@ -13,6 +12,7 @@ import {
   useDeleteTask,
 } from '@/layers/entities/tasks';
 import { AgentAvatar } from '@/layers/entities/agent';
+import { browserTimeZone } from '@/layers/entities/user-profile';
 import { RuntimeMark, formatModelLabel } from '@/layers/entities/runtime';
 import {
   Badge,
@@ -52,6 +52,13 @@ import {
 import { isFailing } from '../lib/schedule-health';
 import { TaskApproveButtons, TaskFileSaysOnNote } from './TaskSwitchOffers';
 import { TaskAgentModeNote, TaskFileCapNote } from './TaskAgentModeNote';
+import {
+  describeCronSchedule,
+  describeTaskTiming,
+  formatNextRun,
+  scheduleZoneLabel,
+} from '../lib/task-time';
+import { WrongTimezoneOffer } from './WrongTimezoneOffer';
 
 /**
  * Density steps controlling how much detail a TaskRow displays.
@@ -63,36 +70,15 @@ import { TaskAgentModeNote, TaskFileCapNote } from './TaskAgentModeNote';
  */
 export type TaskRowSize = 'comfortable' | 'compact' | 'minimal';
 
-/** Formats a cron expression into a human-readable string. */
-function formatCron(cron: string): string {
-  try {
-    return cronstrue.toString(cron);
-  } catch {
-    return cron;
-  }
-}
-
-/** The timezone this browser reads times in. */
-const VIEWER_TIME_ZONE = Intl.DateTimeFormat().resolvedOptions().timeZone;
-
-/**
- * Whether the timing line names the zone its cron runs in: when a person chose
- * the timing, or when the zone is not the reader's own.
- */
-function showsZone(task: Task): boolean {
-  if (!task.timezone) return false;
-  return task.timingOverridden || task.timezone !== VIEWER_TIME_ZONE;
-}
-
 /**
  * The package's own timing for a schedule a person has retimed, as a sentence
  * fragment: "every hour, UTC", "at 09:00 AM, Europe/Berlin", "on demand".
  */
 function describePackageTiming(task: Task): string {
   if (!task.defaultCron) return 'on demand';
-  const words = formatCron(task.defaultCron);
+  const words = describeCronSchedule(task.defaultCron);
   const lowered = words.charAt(0).toLowerCase() + words.slice(1);
-  return task.defaultTimezone ? `${lowered}, ${task.defaultTimezone}` : lowered;
+  return task.defaultTimezone ? `${lowered}, ${scheduleZoneLabel(task.defaultTimezone)}` : lowered;
 }
 
 /**
@@ -175,6 +161,8 @@ interface TaskRowProps {
   size?: TaskRowSize;
   /** Whether to show the agent column. Ignored when size is 'minimal'. */
   showAgent?: boolean;
+  /** Viewer-zone resolver, injectable for deterministic schedule-row tests. */
+  viewerTimezone?: () => string | null;
 }
 
 /**
@@ -194,6 +182,7 @@ export function TaskRow({
   onEdit,
   size = 'comfortable',
   showAgent = true,
+  viewerTimezone = browserTimeZone,
 }: TaskRowProps) {
   const updateTask = useUpdateTask();
   const triggerTask = useTriggerTask();
@@ -208,6 +197,11 @@ export function TaskRow({
   };
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const agentVisual = agent ? resolveAgentVisual(agent) : null;
+  // A browser that can't name its zone reads times in UTC, but never gets the
+  // wrong-zone offer: 'Use my time' would move the schedule to a zone nobody chose.
+  const reportedZone = viewerTimezone();
+  const viewerZone = reportedZone ?? 'UTC';
+  const nextRunLabel = task.nextRun ? formatNextRun(task.nextRun, viewerZone) : null;
 
   const isMinimal = size === 'minimal';
   const misplacedMode = hasMisplacedSchedulePermissions(task);
@@ -289,7 +283,7 @@ export function TaskRow({
           // under them at the card's full width, and any buttons last; from `sm`
           // the text sits beside the switch, as one line of columns.
           className={cn(
-            'hover:bg-accent/50 focus-visible:bg-accent/50 grid cursor-pointer grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-y-1 p-3 transition-colors',
+            'hover:bg-accent/50 focus-visible:bg-accent/50 grid cursor-pointer grid-cols-[auto_minmax(0,1fr)_auto] items-start gap-y-1 p-3 transition-colors sm:items-center',
             "[grid-template-areas:'status_head_actions'_'body_body_body'_'foot_foot_foot']",
             "sm:gap-y-0 sm:[grid-template-areas:'status_head_actions'_'status_body_actions']"
           )}
@@ -297,7 +291,7 @@ export function TaskRow({
           onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && onToggleExpand()}
         >
           <StatusSlot task={task} />
-          <div className="flex min-w-0 items-center gap-1.5 [grid-area:head]">
+          <div className="flex min-w-0 items-start gap-1.5 [grid-area:head] sm:items-center">
             {shouldShowAgent && agent ? (
               <>
                 <AgentAvatar
@@ -308,10 +302,10 @@ export function TaskRow({
                 />
                 {/* Never shrinks below its own cap: a long schedule name
                       once crushed it to one letter at 390px. It keeps up to
-                      40% of the line and ends in "…". */}
+                      30% of a phone line, then 40%, and ends in "…". */}
                 <span
                   data-slot="task-agent-name"
-                  className="max-w-[40%] shrink-0 truncate text-sm font-medium"
+                  className="max-w-[30%] shrink-0 truncate text-sm font-medium sm:max-w-[40%]"
                   title={getAgentDisplayName(agent)}
                 >
                   {getAgentDisplayName(agent)}
@@ -337,7 +331,7 @@ export function TaskRow({
               data-slot="task-name"
               title={task.displayName ?? task.name}
               className={cn(
-                'line-clamp-2 min-w-0 flex-1 break-words',
+                'line-clamp-2 min-w-0 flex-1 break-words sm:line-clamp-1',
                 shouldShowAgent && (agent || task.agentId)
                   ? 'text-muted-foreground text-xs'
                   : 'text-sm font-medium'
@@ -350,13 +344,7 @@ export function TaskRow({
           <div className="min-w-0 [grid-area:body]">
             {shouldShowCron && (
               <div className="text-muted-foreground text-xs">
-                {task.cron ? formatCron(task.cron) : 'On-demand'}
-                {/* The zone the cron is read in, whenever it is not the one the
-                    reader is in or the person chose it — without it "At 07:30"
-                    is a time in a place nobody named, and a timezone-only
-                    override would be marked "Your timing" with nothing on the
-                    row that differs. */}
-                {task.cron && showsZone(task) && <>, {task.timezone}</>}
+                {describeTaskTiming(task, viewerZone)}
                 {/* The timing a person set for a package's schedule, in place
                     of the package's own (DOR-2302). Said on the collapsed row,
                     because it is the answer to "why is this not running when
@@ -364,15 +352,12 @@ export function TaskRow({
                 {task.timingOverridden && (
                   <span data-slot="task-timing-override"> &middot; Your timing</span>
                 )}
-                {task.nextRun && (
-                  <>
-                    {' '}
-                    &middot; Next:{' '}
-                    {new Date(task.nextRun).toLocaleString(undefined, { timeZoneName: 'short' })}
-                  </>
-                )}
+                {nextRunLabel && <> &middot; {nextRunLabel}</>}
                 <TaskFailingSince task={task} />
               </div>
+            )}
+            {!isMinimal && reportedZone && (
+              <WrongTimezoneOffer task={task} viewerTimezone={reportedZone} />
             )}
             {/* Why it is failing, and on a phone the fix under it, full width
                 (DOR-3123, spec `schedules-failing` §2.4). */}

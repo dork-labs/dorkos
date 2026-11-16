@@ -74,16 +74,22 @@ afterEach(async () => {
 });
 
 /** Create a schedule as agent A, the way both agent doors do. */
-function aCreates(target: string, caller: string | null = homeA) {
+function aCreates(
+  target: string,
+  caller: string | null = homeA,
+  timezone?: string,
+  defaultTimezone: () => string = () => 'UTC'
+) {
   const callerAgentPath = caller ?? undefined;
   return createScheduledTask(
-    { store, registrar: null, dorkHome: scratch, meshCore: mesh() },
+    { store, registrar: null, dorkHome: scratch, defaultTimezone, meshCore: mesh() },
     {
       input: {
         name: 'Nightly sweep',
         description: 'Sweep the backlog',
         prompt: 'Sweep the backlog.',
         cron: '0 3 * * *',
+        ...(timezone !== undefined && { timezone }),
         target,
         reason: 'The backlog needs sweeping.',
       },
@@ -96,6 +102,25 @@ function aCreates(target: string, caller: string | null = homeA) {
 }
 
 describe('an agent filing a schedule', () => {
+  it('stores an injected person zone in the row and file when none was requested', async () => {
+    const outcome = await aCreates('agent-a', homeA, undefined, () => 'America/Chicago');
+    expect(outcome.ok).toBe(true);
+    if (!outcome.ok) return;
+    expect(outcome.task.timezone).toBe('America/Chicago');
+    expect(store.getTask(outcome.task.id)?.timezone).toBe('America/Chicago');
+    await expect(fs.readFile(outcome.task.filePath, 'utf8')).resolves.toContain(
+      'timezone: America/Chicago'
+    );
+  });
+
+  it('keeps an explicit UTC zone, which the file reads back as its default', async () => {
+    const outcome = await aCreates('agent-a', homeA, 'UTC', () => 'America/Chicago');
+    expect(outcome.ok).toBe(true);
+    if (!outcome.ok) return;
+    expect(outcome.task.timezone).toBe('UTC');
+    await expect(fs.readFile(outcome.task.filePath, 'utf8')).resolves.not.toContain('timezone:');
+  });
+
   it('is refused for another agent, and writes nothing', async () => {
     const outcome = await aCreates('agent-b');
     expect(outcome.ok).toBe(false);
@@ -132,7 +157,7 @@ describe('an agent filing a schedule', () => {
 });
 
 describe('a caller whose home is a link that matches two agents (DOR-3666)', () => {
-  it('comes back unnamed, and its schedule parks', async () => {
+  it('refuses ambiguous global fallback and writes nothing', async () => {
     // Two registered homes that are one folder by real path, and a caller
     // that reaches it through a third spelling: nobody can say which agent asked.
     const shared = path.join(scratch, 'shared');
@@ -152,7 +177,7 @@ describe('a caller whose home is a link that matches two agents (DOR-3666)', () 
     expect(agentIdOfHome(meshCore, linkC)).toBeUndefined();
 
     const outcome = await createScheduledTask(
-      { store, registrar: null, dorkHome: scratch, meshCore },
+      { store, registrar: null, defaultTimezone: () => 'UTC', dorkHome: scratch, meshCore },
       {
         input: {
           name: 'linked-sweep',
@@ -168,7 +193,8 @@ describe('a caller whose home is a link that matches two agents (DOR-3666)', () 
         proposal: { sessionId: 'ses-c', agentPath: linkC },
       }
     );
-    expect(outcome.ok && outcome.parked).toBe(true);
+    expect(outcome).toMatchObject({ ok: false, status: 403, code: 'not_your_agent' });
+    expect(store.getTasks()).toEqual([]);
     expect(state.notified).toEqual([]);
   });
 });

@@ -159,13 +159,9 @@ api.registerStatusBarItem(id, Item, { label, priority?, when?, urgent? }): () =>
 
 ### UI Control
 
+Client API version 2 (`"clientApiVersion": 2`, DOR-3293) runs every bundle in a sandboxed frame with no origin, so `executeCommand` and `openCanvas` are not offered to extensions (`FrameExtensionAPI` in `packages/extension-api/src/frame-api.ts`). Migration notes for authors: `docs/integrations/extension-frame-migration.mdx`.
+
 ```typescript
-// Execute a UI command (open panel, show toast, etc.)
-api.executeCommand(command: UiCommand): void
-
-// Open the canvas with content
-api.openCanvas(content: UiCanvasContent): void
-
 // Navigate in-app: a core route, or one of your own pages
 api.navigate(path: string): void
 
@@ -1259,11 +1255,10 @@ A server entry that needs nothing from `ctx` can export the handler's owner itse
 
 How the host serves each shape: `services/extensions/http/` (`express-bridge.ts` runs a router on its own private Express app; `fetch-handler.ts` builds the `Request` and passes the caller). In an extension's own process, a fetch-only extension never reaches Express: `@hono/node-server`'s request listener serves it (`isolation/child/virtual-server.ts`). Both runtimes load the bundle with the same injected `require` (`server-bundle/load-in-process.ts`, `isolation/child/load-bundle.ts`), so `@dorkos/extension-api/server`'s helpers resolve from `~/.dork`, where no `node_modules` is. That `require` offers `express`, `@dorkos/extension-api`, `@dorkos/extension-api/server` and Node's built-ins, and nothing else: no `require.resolve`, `require.cache` or `require.main`, and any other module name is refused. Bundle what you use.
 
-From the client-side `index.ts`, call your server routes via `fetch`:
+From the client-side `index.ts`, call your server routes through the frame bridge. The frame has no network access of its own (`connect-src 'none'`, and an opaque origin besides), so a bare `fetch` fails; declare `"capabilities": { "http": true }` and use `api.request`, which the host sends to `/api/ext/<your-id>/` only (`extensionRequestPath` in `apps/client/src/layers/features/extensions/frame/host.tsx`):
 
 ```typescript
-const res = await fetch('/api/ext/my-extension/status');
-const data = await res.json();
+const data = await api.request<Status>('/status');
 ```
 
 ---
@@ -1603,7 +1598,7 @@ From the client:
 
 ```typescript
 // This becomes GET https://api.github.com/user/repos
-const res = await fetch('/api/ext/github-proxy/proxy/user/repos');
+const repos = await api.request('/proxy/user/repos');
 ```
 
 ### Error Responses

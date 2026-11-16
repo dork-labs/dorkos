@@ -16,7 +16,11 @@ import type { AccountUsage } from '@dorkos/shared/account-usage';
 import type { SessionSnapshot, SessionStatus } from '@dorkos/shared/session-stream';
 import type { Session, ServerConfig } from '@dorkos/shared/types';
 import type { Transport } from '@dorkos/shared/transport';
-import { createMockAccountUsage, createMockSession, createMockTransport } from '@dorkos/test-utils';
+import {
+  createMockAccountUsage,
+  createMockSession,
+  createMockTransport,
+} from '@dorkos/test-utils/mock-factories';
 import { createTestQueryClient } from '@dorkos/test-utils/react-helpers';
 import {
   TransportProvider,

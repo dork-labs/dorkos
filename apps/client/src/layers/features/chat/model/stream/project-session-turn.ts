@@ -36,7 +36,7 @@ import { mapHistoryMessages } from './stream-history-helpers';
 import { foldCapabilityApproval, foldCapabilityApprovalResolved } from './capability-approval-fold';
 import { foldMcpSignin, foldMcpSigninResolved } from './mcp-signin-fold';
 import { isPromptResolution, settledInteractionIds } from './turn-resolutions';
-import { applyWorkLeftEnded, noticePart } from './notice-folds';
+import { applyWorkLeftEnded, isNoticeEvent, noticePart } from './notice-folds';
 
 /** Stable id for the synthesized trailing in-progress assistant bubble. */
 const IN_PROGRESS_ASSISTANT_ID = '__in_progress_turn__';
@@ -646,9 +646,12 @@ function foldSubagent(
     parts.push({
       type: 'background_task',
       taskId: event.taskId,
-      taskType: 'agent',
+      // The start names its kind (D8); a server that predates it, or an update
+      // whose start this turn never saw, draws as a helper, as it always has.
+      // A shell's command comes from the session-level list (`withSessionTasks`).
+      taskType: event.taskType ?? 'agent',
       status: event.status,
-      startedAt: 0,
+      startedAt: event.startedAt ?? 0,
       description: event.description,
       toolUses: event.toolUses,
       lastToolName: event.lastToolName,
@@ -886,6 +889,7 @@ export function projectInProgressTurn(events: SessionEvent[]): MessagePart[] {
   // drained by foldToolCall when the part appears (pass-local, never escapes).
   const orphanHooks = new Map<string, HookPart[]>();
   for (const event of events) {
+    if (isNoticeEvent(event)) parts.push(noticePart(event));
     switch (event.type) {
       case 'text_delta':
         foldTextDelta(parts, event);
@@ -943,10 +947,6 @@ export function projectInProgressTurn(events: SessionEvent[]): MessagePart[] {
         break;
       case 'permission_denied':
         foldPermissionDenied(parts, event);
-        break;
-      case 'model_substituted':
-      case 'work_left_running':
-        parts.push(noticePart(event));
         break;
       case 'operation_progress':
         foldOperationProgress(parts, event);

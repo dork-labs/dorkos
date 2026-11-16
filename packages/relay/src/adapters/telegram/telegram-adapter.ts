@@ -28,7 +28,7 @@ import { handleInboundMessage } from './inbound.js';
 import { handleChatMemberUpdate } from './chat-member.js';
 import { GrammyPlatformClient } from './grammy-platform-client.js';
 import { TelegramThreadIdCodec } from '../../lib/thread-id.js';
-import { mayApprove } from '../approver-allowlist.js';
+import { mayApprove, OWNER_ON_APPROVERS_HELP } from '../approver-allowlist.js';
 import { createDeniedChatNotices, type DeniedChatNotices } from '../denied-chat-notices.js';
 import {
   deliverMessage,
@@ -248,7 +248,7 @@ For local development, use a tunnel service (e.g., ngrok, Cloudflare Tunnel).`,
       helpMarkdown:
         'When your agent needs permission to run something, it sends an Approve/Deny card ' +
         'into the chat. Only the people listed here can answer it.\n\n' +
-        'Leave it empty and nothing gets approved from Telegram.',
+        `${OWNER_ON_APPROVERS_HELP}\n\nLeave it empty and nothing gets approved from Telegram.`,
     },
   ],
   setupInstructions:

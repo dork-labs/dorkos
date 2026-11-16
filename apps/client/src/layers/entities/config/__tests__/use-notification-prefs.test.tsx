@@ -9,7 +9,7 @@ import type { Transport } from '@dorkos/shared/transport';
 import type { ServerConfig } from '@dorkos/shared/types';
 import type { NotificationPrefs } from '@dorkos/shared/config-schema';
 import { NOTIFICATION_PREFS_DEFAULTS } from '@dorkos/shared/config-schema';
-import { createMockTransport } from '@dorkos/test-utils';
+import { createMockTransport } from '@dorkos/test-utils/mock-factories';
 import { TransportProvider } from '@/layers/shared/model';
 import { configKeys } from '../api/query-keys';
 import {

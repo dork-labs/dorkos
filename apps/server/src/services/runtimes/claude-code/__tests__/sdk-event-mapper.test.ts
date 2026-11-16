@@ -78,6 +78,35 @@ describe('sdk-event-mapper background task lifecycle', () => {
     expect((events[0].data as Record<string, unknown>).startedAt).toEqual(expect.any(Number));
   });
 
+  describe('task kinds (spec warm-process-lifecycle D8)', () => {
+    it.each([
+      ['local_agent', 'agent'],
+      ['local_bash', 'bash'],
+      ['monitor_mcp', 'other'],
+      ['local_workflow', 'other'],
+    ] as const)('maps task_type %s to %s and keeps the runtime name', async (raw, kind) => {
+      const msg = sdkTaskStarted('task-k', 'Watch the build', undefined, { task_type: raw });
+      const events = await collectEvents(msg, session, sessionId, toolState);
+
+      expect(events[0].data).toMatchObject({ taskType: kind, runtimeTaskType: raw });
+    });
+
+    it('keeps a helper free of any command', async () => {
+      const msg = sdkTaskStarted('task-h', 'Review', undefined, { task_type: 'local_agent' });
+      const events = await collectEvents(msg, session, sessionId, toolState);
+
+      expect((events[0].data as Record<string, unknown>).command).toBeUndefined();
+    });
+
+    it('falls back to the old rule when the CLI names no task_type', async () => {
+      const msg = sdkTaskStarted('task-old', 'Explore codebase');
+      const events = await collectEvents(msg, session, sessionId, toolState);
+
+      expect(events[0].data).toMatchObject({ taskType: 'agent' });
+      expect(events[0].data).not.toHaveProperty('runtimeTaskType');
+    });
+  });
+
   it('maps task_progress to background_task_progress', async () => {
     const msg = sdkTaskProgress('task-1', 3, 5000, 'Read');
     const events = await collectEvents(msg, session, sessionId, toolState);

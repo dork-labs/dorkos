@@ -13,7 +13,7 @@ import {
   type SkillRoot,
 } from '@dorkos/doe';
 import { scanInstalledPlugins, rewritePluginTokens } from '@dorkos/harness';
-import { OPERATING_SKILLS_PACK } from '@dorkos/operating-skills';
+import { OPERATING_SKILLS_PACK, operatingSkillText } from '@dorkos/operating-skills';
 import type { DirectoryGrant } from '@dorkos/shared/agent-runtime';
 import { assertValidDirectoryGrants } from '@dorkos/shared/directory-grants';
 import { resolveDorkHome } from '../../../lib/dork-home.js';
@@ -170,7 +170,7 @@ export async function assembleDoeResources(
       if (!metadata) throw new Error('Unknown skill');
       if (!metadata.location.startsWith('dorkos-operating:')) assertReadable(metadata.location);
       if (metadata.location.startsWith('dorkos-operating:'))
-        return OPERATING_SKILLS_PACK.find((skill) => skill.name === name)!.body;
+        return operatingSkillText(OPERATING_SKILLS_PACK.find((skill) => skill.name === name)!);
       const body = await local.loadSkill(name, signal);
       const pluginRoot = pluginRoots.get(path.dirname(metadata.location));
       // Portable direct reads resolve the install root, never a vendor activation folder.

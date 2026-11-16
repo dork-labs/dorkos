@@ -15,7 +15,7 @@ import type {
   StreamEvent,
 } from '@dorkos/shared/types';
 import type { RefusedAsk } from '@dorkos/shared/run-refusals';
-import type { TurnPermissionCeiling, TurnStarter } from '@dorkos/shared/agent-runtime';
+import type { MessageOpts, TurnPermissionCeiling, TurnStarter } from '@dorkos/shared/agent-runtime';
 import type { ApprovalAuthorizer } from './approval-handler.js';
 
 /**
@@ -261,6 +261,11 @@ export interface AgentRuntimeLike {
        * than the runtime's default, even in a conversation set looser.
        */
       permissionCeiling?: TurnPermissionCeiling;
+      /**
+       * An outsider mark that rides beside the turn's level without lowering
+       * it (DOR-3858). See `MessageOpts.carriedMarks`.
+       */
+      carriedMarks?: MessageOpts['carriedMarks'];
     }
   ): AsyncGenerator<StreamEvent>;
   /**
@@ -509,6 +514,11 @@ export interface ClaudeCodeAdapterDeps {
    * the session's first binding alone cannot say. Absent means nobody is told.
    */
   noteTurnStart?: TurnStartNote;
+  /**
+   * Mark turns from a bound chat's sender the host could not prove is the
+   * owner (DOR-3858's boot flag, off by default). See `turnPowerOptions`.
+   */
+  markStrangerTurns?: boolean;
   /**
    * Whether a click on a chat platform may authorize one session's tool call.
    *

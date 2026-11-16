@@ -71,10 +71,22 @@ name: test
 # same reason: a partitioned run is only as honest as the proof that the
 # partitions add back up.
 #
+# THE REAL-CLI SUITES RUN BESIDE THE SHARDS, NOT IN THEM (DOR-4190, ledger
+# 261115-203006). Every `*.binary.test.ts` file spawns a real CLI (the
+# SDK-bundled `claude`, the pinned `opencode`, Codex) and they are the longest
+# single files in the suite: 216 s, 77 s, then 44-55 s each. Both shard legs
+# exclude them; codex-sandbox runs the Codex ones and test-binary runs every
+# other one, in parallel with the shards, so no shard waits on them. Each of
+# those jobs proves every file it owns ran with no skipped test, and the
+# fan-in's union check requires every `*.binary.test.ts` in the tree by name,
+# so a binary suite cannot stop running without `test` going red.
+#
 # NO separate build step: `test` declares `dependsOn: ["^build"]` in turbo.json,
 # so `turbo test` builds every dependency package first. Turbo computes that
-# from the task graph. (Each shard pays that build; that is the price of the
-# split and it is a few minutes against the ~20 it buys back.)
+# from the task graph. Each shard used to pay that whole build cold; since
+# DOR-4190 the shards restore the builds the last main canary made, and turbo
+# replays the ones whose task hash still matches (see "Restore the builds the
+# last main canary made").
 #
 # `-- --run` is REQUIRED, not decoration. Five packages' `test` scripts are a
 # bare `vitest` (@dorkos/db, harness, marketplace, operating-skills, skills),
@@ -271,6 +283,8 @@ name: test
 # TURBO CACHE: this repository has no remote cache, so a canary run cannot
 # replay another machine's green `test` task; `assert-tests-executed.sh` is
 # measuring a real execution here exactly as it does in the queue. The canary
+# does SAVE turbo's local cache for the shards (DOR-4190), trimmed to `build`
+# entries first, so what it hands on is builds and never a test result. The canary
 # also re-warms the `refs/heads/main` Actions caches (pnpm store, Playwright
 # browsers), which have had no writer since the push-to-main legs were retired
 # on 2026-09-19 and which every PR branch restores from.
@@ -622,6 +636,7 @@ jobs:
       matrix: ${{ steps.count.outputs.matrix }}
       scope: ${{ steps.plan.outputs.scope }}
       packages: ${{ steps.plan.outputs.packages }}
+      tests: ${{ steps.noscope.outputs.run }}
     steps:
       # A canary run is against `main` or it is nothing.
       #
@@ -667,6 +682,54 @@ jobs:
         with:
           fetch-depth: 2
           persist-credentials: false
+      # Decides whether a pull request can affect any test, from
+      # scripts/no-code-scope.sh, and hands test-shard and test-binary the
+      # answer as `tests`. A release PR bumps "version" in package.json files,
+      # which turbo treats as global, so every suite ran for tests nothing in it
+      # could change (PR #3237: 13m18s of turbo time on shard 3/6 alone); a
+      # changelog- or docs-only PR paid the same. HERE, not in the shards: this
+      # job's depth-2 checkout holds the test-merge commit's parents, and the
+      # shards' depth-1 checkout does not (DOR-4484, ledger 261115-205154).
+      # No `if:` of its own; it writes `run=true|false`.
+      #
+      # Every event but pull_request answers true without looking: the queue and
+      # the canary always run the full sweep, which this never touches.
+      # pull_request diffs the test-merge commit against its first parent, for
+      # the reason community-packaged's scope step gives, and requires a second
+      # parent so a checkout that lands on a plain commit cannot score only its
+      # last commit. The script comes from the BASE commit, never this checkout,
+      # so a pull request cannot edit the rule that grades it (Security, #3238).
+      # Every failure on the PR path FAILS OPEN to running the tests: a base git
+      # cannot resolve, a HEAD that is not a merge, a tree that predates the
+      # script, or a script that errors or answers anything but `false`.
+      - name: Decide whether this change can affect a test
+        id: noscope
+        env:
+          EVENT: ${{ github.event_name }}
+        run: |
+          set -uo pipefail
+          if [ "$EVENT" != 'pull_request' ]; then
+            echo "$EVENT run: the tests always run here"
+            echo 'run=true' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          verdict=true
+          if git rev-parse --verify --quiet 'HEAD^2' >/dev/null &&
+            base=$(git rev-parse --verify --quiet 'HEAD^1'); then
+            if git cat-file blob "$base:scripts/no-code-scope.sh" > "$RUNNER_TEMP/no-code-scope.sh" 2>/dev/null; then
+              verdict=$(bash "$RUNNER_TEMP/no-code-scope.sh" "$base" HEAD) || verdict=true
+            else
+              echo "the base commit has no scripts/no-code-scope.sh; running the tests"
+            fi
+          else
+            echo "cannot diff this pull request against its base (no test-merge commit); running the tests"
+          fi
+          if [ "$verdict" != false ]; then
+            verdict=true
+          else
+            echo "::notice title=No-code scope::only changelog, docs or version lines changed, so test-shard and test-binary run no suite here. The merge queue runs the full suite."
+          fi
+          echo "run=$verdict" >> "$GITHUB_OUTPUT"
       # Writes scope=full, or scope=selected with the chosen suites' package
       # names and directories. No `if:`: on every event but pull_request it
       # answers full without looking, and those legs never read it.
@@ -914,6 +977,59 @@ jobs:
             exit 1
           fi
 
+      # THE BUILDS, FROM THE LAST MAIN CANARY (DOR-4190, ledger
+      # 261115-201939-test-shard-build-cache). Every shard rebuilt the same ~19
+      # packages from an empty turbo cache: 141-223 s each, `Cached: 0 cached`
+      # in every turbo summary, about 13.5% of this workflow's job time. This
+      # restores turbo's own local cache directory (the 2.x default, as
+      # credential-free-build.yml found) from GitHub's cache service.
+      #
+      # TURBO DECIDES WHAT IS REUSED, NOT THIS KEY. A restored entry is only
+      # replayed when its turbo task hash matches: the package's files, its
+      # dependencies' task hashes, the lockfile's resolution for it and the env
+      # turbo.json declares. A changed source misses and rebuilds exactly as
+      # before. The key only picks which entry to download: same OS and arch,
+      # the same lockfile if there is one, else the newest entry whatever its
+      # lockfile.
+      #
+      # WHY THE LAST RESTORE KEY DROPS THE LOCKFILE HASH. With the lockfile
+      # in every key, one lockfile change on `main` after the last canary left
+      # every queue build and pull request with nothing to find until the next
+      # canary, which GitHub delivers about twice a day: on 2026-11-16 #3610
+      # changed it at 03:00Z, the canary had saved under the old hash at 01:38Z,
+      # and queue shards logged "Cache not found" and `Cached: 0 cached, 49
+      # total` all morning. Taking an entry from an older lockfile is safe for
+      # the reason above: turbo hashes each package's own resolved
+      # dependencies, so only the packages whose dependencies changed miss.
+      #
+      # WHAT STILL MISSES EVERYTHING: every `build` depends on `//#heavy-slot`,
+      # and turbo always hashes the root package.json and turbo.json into that
+      # root task (an `inputs` negation does not remove them). So a change to
+      # either file since the last canary changes every build hash, and the
+      # restored entry replays nothing until the next canary.
+      #
+      # BUILD ENTRIES ONLY. The saved cache never holds a `test` entry: the
+      # trim before the save keeps only this run's `build` and
+      # `generate:api-docs` entries (scripts/keep-build-cache-only.sh). If a
+      # `test` entry ever did get through, "Prove the suite actually executed"
+      # refuses the replay; it is not weakened here.
+      #
+      # WHO WRITES IT. Only the main canary, at the end of this job. GitHub
+      # scopes caches by branch with a read fallback to `main`, and the
+      # canary is the only run of this workflow on `main`'s scope, so its entry
+      # is the one every queue build and every pull request can read. A queue
+      # build's own scope is deleted with its ref, so a save there would be
+      # waste. Builds that changed since the last canary still miss and
+      # rebuild, so a busy day sees partial hits.
+      - name: Restore the builds the last main canary made
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .turbo/cache
+          key: turbo-test-builds-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('pnpm-lock.yaml') }}-${{ github.sha }}
+          restore-keys: |
+            turbo-test-builds-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('pnpm-lock.yaml') }}-
+            turbo-test-builds-${{ runner.os }}-${{ runner.arch }}-
+
       # --summarize writes a machine-readable record of the run to
       # .turbo/runs/<id>.json. The assert step is the only reason it is here.
       #
@@ -974,7 +1090,7 @@ jobs:
         if: ${{ github.event_name != 'pull_request' }}
         run: |
           set +e
-          pnpm exec turbo test --summarize --continue --concurrency=1 -- --run --shard=${{ matrix.shard }}/6 --config=../../scripts/sharding/config.ts --retry=1 --passWithNoTests --exclude='**/codex/**/*.binary.test.ts' --reporter=default --reporter=json --outputFile.json=vitest-shard-report.json --reporter=../../scripts/vitest-flake-reporter.ts
+          pnpm exec turbo test --summarize --continue --concurrency=1 -- --run --shard=${{ matrix.shard }}/6 --config=../../scripts/sharding/config.ts --retry=1 --passWithNoTests --exclude='**/*.binary.test.ts' --reporter=default --reporter=json --outputFile.json=vitest-shard-report.json --reporter=../../scripts/vitest-flake-reporter.ts
           code=$?
           echo "exit-code=$code" >> "$GITHUB_OUTPUT"
           if [ "$code" -ne 0 ]; then
@@ -987,10 +1103,12 @@ jobs:
       #
       # Quarantine here is per TEST, read out of the shard reports — NOT vitest
       # `exclude`, which can only drop a whole file and would empty a package's
-      # suite behind the union check's back. The only platform partition is the
-      # Codex binary suites: the required scoped Linux probe job runs all three
-      # files, rejects skips and checks the readable controls. Quarantine itself
-      # excludes no file.
+      # suite behind the union check's back. The one file partition is the
+      # real-CLI suites (`*.binary.test.ts`, both legs exclude them): the Codex
+      # ones run in codex-sandbox, every other one in test-binary, and each of
+      # those jobs proves every file it owns ran with no skip. The fan-in's union
+      # check also requires every such file by name (DOR-4190, ledger
+      # 261115-203006). Quarantine itself excludes no file.
       - name: Refuse any failure the quarantine lane does not cover
         if: ${{ github.event_name != 'pull_request' }}
         run: |
@@ -1010,52 +1128,39 @@ jobs:
             "${args[@]}" \
             --title "Quarantine gate — test shard ${{ matrix.shard }}/6"
 
-      # Decides whether the PR leg's tests run at all, from
-      # scripts/no-code-scope.sh. A release PR bumps "version" in package.json
-      # files, which turbo treats as global, so `--affected` ran the whole suite
-      # on every shard for tests nothing in it could change (PR #3237: 13m18s of
-      # turbo time on shard 3/6 alone). No `if:` of its own, so this required
-      # job never skips it; it writes `run=true|false` and the PR test step reads
-      # that.
+      # Decides whether the PR leg's tests run at all. test-shard-count makes
+      # the decision (its "Decide whether this change can affect a test" step,
+      # from scripts/no-code-scope.sh) and hands it here as `tests`; this step
+      # only reads it. It used to decide here, but this job checks out one
+      # commit (fetch-depth 1), where the test-merge commit's parents are not in
+      # the clone, so `HEAD^2` never resolved and every pull request logged
+      # "cannot diff" and ran the shards, docs-only ones included (DOR-4484,
+      # ledger 261115-205154). No `if:` of its own, so this required job never
+      # skips it; it writes `run=true|false` and the PR test step reads that.
       #
-      # Every event but pull_request answers true without looking: the queue and
-      # the canary always run the full sweep, which this never touches.
-      # pull_request diffs the test-merge commit against its first parent, for
-      # the reason community-packaged's scope step gives, and requires a second
-      # parent so a checkout that lands on a plain commit cannot score only its
-      # last commit. Every failure on the PR path FAILS OPEN to running the
-      # tests: a base git cannot resolve, a HEAD that is not a merge, a tree that
-      # predates the script, or a script that errors.
+      # Only the literal answer `false` on a pull_request skips. Every other
+      # event answers true without looking: the queue and the canary always run
+      # the full sweep. An empty, missing or unexpected `tests` FAILS OPEN to
+      # running the tests. The job still runs and reports success, so the
+      # required `test` fan-in reads it as the green it always was.
       - name: Decide whether this change can affect a test
         id: noscope
         env:
           EVENT: ${{ github.event_name }}
+          TESTS: ${{ needs.test-shard-count.outputs.tests }}
         run: |
           set -uo pipefail
           if [ "$EVENT" != 'pull_request' ]; then
             echo "$EVENT run: the shards always run here"
-            echo 'run=true' >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          verdict=true
-          # The script comes from the BASE commit, never this checkout, so a
-          # pull request cannot edit the rule that grades it (Security, #3238).
-          if git rev-parse --verify --quiet 'HEAD^2' >/dev/null &&
-            base=$(git rev-parse --verify --quiet 'HEAD^1'); then
-            if git cat-file blob "$base:scripts/no-code-scope.sh" > "$RUNNER_TEMP/no-code-scope.sh" 2>/dev/null; then
-              verdict=$(bash "$RUNNER_TEMP/no-code-scope.sh" "$base" HEAD) || verdict=true
-            else
-              echo "the base commit has no scripts/no-code-scope.sh; running the shards"
-            fi
-          else
-            echo "cannot diff this pull request against its base (no test-merge commit); running the shards"
-          fi
-          if [ "$verdict" != false ]; then
-            verdict=true
-          else
+            run=true
+          elif [ "${TESTS:-}" = false ]; then
             echo "Only changelog, docs or version lines changed, so the shards did not run here. The merge queue runs the full suite."
+            run=false
+          else
+            echo "test-shard-count answered '${TESTS:-}' (anything but 'false' runs): running the shards"
+            run=true
           fi
-          echo "run=$verdict" >> "$GITHUB_OUTPUT"
+          echo "run=$run" >> "$GITHUB_OUTPUT"
 
       # The PR leg's quarter. Same split, same `--concurrency=1`, narrower
       # scope — and deliberately NOT the queue leg's line with one flag
@@ -1103,7 +1208,7 @@ jobs:
           else
             echo "test plan: every package's suite"
           fi
-          pnpm exec turbo test --continue --concurrency=1 "${filters[@]}" -- --run --shard=${{ matrix.shard }}/${{ strategy.job-total }} --config=../../scripts/sharding/config.ts --passWithNoTests --exclude='**/codex/**/*.binary.test.ts'
+          pnpm exec turbo test --continue --concurrency=1 "${filters[@]}" -- --run --shard=${{ matrix.shard }}/${{ strategy.job-total }} --config=../../scripts/sharding/config.ts --passWithNoTests --exclude='**/*.binary.test.ts'
 
       # THE POINT OF THIS STEP: turbo caches `test`, and a full cache hit prints
       # "Tasks: 31 successful, 31 total" — one per package declaring a `test`
@@ -1268,6 +1373,339 @@ jobs:
           overwrite: true
           retention-days: 7
 
+      # The other half of "Restore the builds the last main canary made": the
+      # main canary saves this run's builds for the queue and pull requests to
+      # restore. `refs/heads/main` is the canary and nothing else here: a pull
+      # request runs on refs/pull/*, a queue build on gh-readonly-queue/*, and
+      # the first step of this job refuses a dispatch on any other branch.
+      # After every step above, so a red shard saves nothing.
+      #
+      # The trim deletes every entry that is not one of THIS run's `build` or
+      # `generate:api-docs` tasks, read from the turbo run summary, so no `test`
+      # entry is ever saved. If it cannot read the summary it deletes the whole
+      # cache and the save is skipped: the next run is cold, never wrong. This
+      # step exits 0 either way, because a cache that was not saved is a
+      # warning, not a failed canary.
+      #
+      # Every shard tries the save, so one green shard is enough. The key ends
+      # in this commit's SHA, so the first shard to save wins and the other
+      # five log "another job may be creating this cache" and skip.
+      - name: Keep only this run's build entries in the turbo cache
+        id: trim
+        if: ${{ github.ref == 'refs/heads/main' }}
+        run: |
+          if bash scripts/keep-build-cache-only.sh; then
+            echo 'save=true' >> "$GITHUB_OUTPUT"
+          else
+            echo '::warning title=Build cache not saved::the turbo cache could not be trimmed to build entries, so this run saves none; the next run rebuilds.'
+            echo 'save=false' >> "$GITHUB_OUTPUT"
+          fi
+      - name: Save the builds for the queue and pull requests
+        if: ${{ steps.trim.outputs.save == 'true' }}
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .turbo/cache
+          key: turbo-test-builds-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('pnpm-lock.yaml') }}-${{ github.sha }}
+
+  # THE REAL-CLI SUITES, BESIDE THE SHARDS (DOR-4190, ledger 261115-203006).
+  # Every `*.binary.test.ts` outside codex/ runs here and nowhere else: both
+  # shard legs exclude the whole pattern, and codex-sandbox below keeps the
+  # Codex ones. They spawn the SDK-bundled `claude` and the pinned `opencode`,
+  # and they are the longest single files in the suite (project-plugin-guard
+  # 216 s, package-grants 77 s, the claude-code deny and guard suites 44-55 s;
+  # 566 s of worker time), so whichever shard drew one waited on it. Here they
+  # run in parallel with the shards, after the same checkout, install, store and
+  # build cache, through the same `turbo test` (so the same strict env), with
+  # the same retry budget, flake reporter and quarantine gate on the full-sweep
+  # events.
+  #
+  # WHICH FILES: `git ls-files` of `apps/*.binary.test.ts` and
+  # `packages/*.binary.test.ts` minus any path with a `codex/` directory, read
+  # from this checkout, so a new binary suite is picked up with no edit here.
+  # That is the same set the shards' exclude pattern (every `*.binary.test.ts`)
+  # drops, less what codex-sandbox owns. scripts/assert-binary-suites-ran.mjs then
+  # requires that exact set to have been collected, each file with at least one
+  # test and none skipped: these suites `skipIf` when their binary is missing,
+  # which would otherwise be a quiet green.
+  #
+  # ON A PULL REQUEST, exactly when the shards would have run them: when
+  # test-shard-count's plan (read from the base commit, failing open to every
+  # suite) is every suite or reaches a package that holds one. On every other
+  # event it always runs. It also honours the no-code scope the shards honour:
+  # when test-shard-count's `tests` is exactly `false` (only changelog, docs or
+  # version lines changed) a pull request runs none, and anything else runs
+  # them (DOR-4484, ledger 261115-205154).
+  #
+  # Not a required context: the `test` fan-in reads its result and fails on
+  # anything but success, and its collected-file list joins the union check.
+  # No job-level `if:`, so it can never skip itself into that fan-in.
+  test-binary:
+    needs: [test-shard-count]
+    # The shards' runner, for the same reasons: hosted on every pull request,
+    # the opt-in queue runner on merge_group only (ledger 261031-090000).
+    runs-on: ${{ github.event_name == 'merge_group' && vars.RUNNER_LABEL || 'ubuntu-latest' }}
+    # Expected ~8 minutes: ~2 of setup and cached builds, then 566 s of suite
+    # work across the runner's workers, its long pole the 216 s
+    # project-plugin-guard file. 20 keeps the headroom SLO (60%) clear.
+    timeout-minutes: 20
+    env:
+      NODE_OPTIONS: --max-old-space-size=8192
+    steps:
+      # A canary run is against `main` or it is nothing.
+      #
+      # `workflow_dispatch` is ref-free, so `--ref <a PR's branch>` would run
+      # this workflow against that branch and post the check run — under the
+      # name of a REQUIRED context — on that pull request's head. This refuses
+      # that, and refuses it by FAILING: a skipped job posts a skipped check
+      # run and GitHub counts skipped as passing, so a skip is how you hand a
+      # pull request a green required check that tested a different tree.
+      #
+      # INLINE, AND FIRST. Inline because this runs BEFORE `actions/checkout`,
+      # where the workspace is still empty: a `bash scripts/…` here would exit
+      # 127 on every event, reddening this required check on every PR and every
+      # queue build (the same 127 that killed a required check on 2026-07-29,
+      # which is why "Prove the browser suite actually executed" carries a
+      # `[ -f ]` guard). First, so a misdirected dispatch costs seconds rather
+      # than 150 job minutes. Byte-identical in every canary job and
+      # pinned that way by packages/ci-steward/src/__tests__/canary-ref-guard.test.ts, which
+      # extracts this very block and runs it.
+      #
+      # No `if:`: the body is a no-op on the gating events, which keeps it out
+      # of the census allowlist while gating exactly the same thing.
+      - name: A canary run is against main
+        env:
+          EVENT: ${{ github.event_name }}
+          REF: ${{ github.ref }}
+        run: |
+          if [ -z "$EVENT" ] || [ -z "$REF" ]; then
+            echo "::error title=The main canary runs against main only::EVENT or REF is empty, so this cannot be shown to be a safe run. Refusing rather than assuming it is not a canary."
+            exit 1
+          fi
+          if [ "$EVENT" != 'schedule' ] && [ "$EVENT" != 'workflow_dispatch' ]; then
+            echo "event '$EVENT' is not a canary event; nothing to check."
+            exit 0
+          fi
+          if [ "$REF" != 'refs/heads/main' ]; then
+            echo "::error title=The main canary runs against main only::this $EVENT run is on '$REF', not 'refs/heads/main'. Nothing was tested. Dispatch it with --ref main; a run on a branch would post this check on that branch's head, under the name of a required context."
+            exit 1
+          fi
+          echo "canary $EVENT run against $REF."
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+      # Own pnpm store keyed on the runner image, as test-shard's (ledger
+      # 261031-012000): node-pty compiles at install.
+      - name: Find the pnpm store
+        id: pnpm-store
+        run: echo "image=${ImageOS:?ImageOS is not set on this runner}" >> "$GITHUB_OUTPUT" && echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
+      - name: Restore the pnpm store built on this runner image
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ steps.pnpm-store.outputs.path }}
+          key: pnpm-store-${{ runner.os }}-${{ steps.pnpm-store.outputs.image }}-${{ runner.arch }}-${{ hashFiles('pnpm-lock.yaml') }}
+      - run: pnpm install --frozen-lockfile
+      # The same build entries the shards restore; see test-shard. Restore only.
+      - name: Restore the builds the last main canary made
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .turbo/cache
+          key: turbo-test-builds-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('pnpm-lock.yaml') }}-${{ github.sha }}
+          restore-keys: |
+            turbo-test-builds-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('pnpm-lock.yaml') }}-
+            turbo-test-builds-${{ runner.os }}-${{ runner.arch }}-
+
+      # Writes the file list and the packages holding them, and run=true|false.
+      # No `if:`, so it decides on every event; only a pull request whose plan
+      # leaves those packages out, or that changes no code, can say false.
+      - name: Decide which binary suites run
+        id: plan
+        env:
+          EVENT: ${{ github.event_name }}
+          SCOPE: ${{ needs.test-shard-count.outputs.scope }}
+          PACKAGES: ${{ needs.test-shard-count.outputs.packages }}
+          TESTS: ${{ needs.test-shard-count.outputs.tests }}
+        run: |
+          set -uo pipefail
+          all=$(git ls-files -- 'apps/*.binary.test.ts' 'packages/*.binary.test.ts') ||
+            { echo '::error::git ls-files failed, so this job cannot say which binary suites exist.'; exit 1; }
+          printf '%s\n' "$all" | { grep -v -e '/codex/' -e '^$' || true; } > "$RUNNER_TEMP/binary-files.txt"
+          cut -d/ -f1-2 "$RUNNER_TEMP/binary-files.txt" | sort -u > "$RUNNER_TEMP/binary-dirs.txt"
+          : > "$RUNNER_TEMP/binary-packages.txt"
+          while IFS= read -r dir; do
+            jq -er .name "$dir/package.json" >> "$RUNNER_TEMP/binary-packages.txt" ||
+              { echo "::error::$dir holds a binary suite but its package.json has no name"; exit 1; }
+          done < "$RUNNER_TEMP/binary-dirs.txt"
+          echo "binary suites outside codex/: $(grep -c '' "$RUNNER_TEMP/binary-files.txt"), in: $(tr '\n' ' ' < "$RUNNER_TEMP/binary-packages.txt")"
+          run=true
+          if [ ! -s "$RUNNER_TEMP/binary-files.txt" ]; then
+            run=false
+            echo "no binary suite outside codex/ in this tree; nothing to run"
+          elif [ "$EVENT" = 'pull_request' ] && [ "${TESTS:-}" = false ]; then
+            run=false
+            echo "only changelog, docs or version lines changed, so the shards run no suite here and neither does this job."
+          elif [ "$EVENT" = 'pull_request' ] && [ "$SCOPE" = 'selected' ]; then
+            reach=false
+            while IFS= read -r name; do
+              case " $PACKAGES " in *" $name "*) reach=true ;; esac
+            done < "$RUNNER_TEMP/binary-packages.txt"
+            if [ "$reach" = false ]; then
+              run=false
+              echo "this pull request's test plan reaches none of those packages, so the shards would not have run these either."
+            fi
+          fi
+          echo "run=$run" >> "$GITHUB_OUTPUT"
+          echo "run=$run"
+
+      # The lane, as each shard reads it; see test-shard. Full-sweep events only.
+      - name: Read the quarantine lane
+        if: ${{ github.event_name != 'pull_request' }}
+        run: |
+          node packages/ci-steward/src/cli.ts quarantine-list \
+            --runner vitest \
+            --out "$RUNNER_TEMP/quarantine.json" \
+            --lines "$RUNNER_TEMP/quarantine.txt" \
+            --title "Quarantine lane — binary CLI suites"
+
+      # One `turbo test` over the packages that hold a binary suite, the files
+      # named as vitest filters (absolute, so each package collects only its
+      # own). No `--passWithNoTests`: a package whose filters match nothing
+      # fails, and the proof step below names any planned file not collected.
+      # `--retry=1` and the gate below on the full-sweep events, as the shards'
+      # queue line; zero retries and a direct failure on a pull request, as the
+      # shards' PR line. The reporters ride both, so the proof step below can
+      # read what ran on either event.
+      - name: Run the binary CLI suites
+        id: sweep
+        env:
+          EVENT: ${{ github.event_name }}
+          RUN: ${{ steps.plan.outputs.run }}
+        run: |
+          # +e: the default shell is `bash -e`, and the suites' exit code must be
+          # caught here, not end the step before the gate below can read it.
+          set +e -uo pipefail
+          if [ "$RUN" != true ]; then
+            echo 'nothing to run here (see the step above).'
+            echo 'exit-code=0' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          retry=1
+          if [ "$EVENT" = 'pull_request' ]; then retry=0; fi
+          filters=()
+          while IFS= read -r name; do filters+=("--filter=$name"); done < "$RUNNER_TEMP/binary-packages.txt"
+          # ABSOLUTE paths: vitest matches a filter against the file's path
+          # relative to the package, so a repo-relative filter matches nothing
+          # from inside apps/server; an absolute one matches exactly that file.
+          mapfile -t files < <(sed "s|^|$PWD/|" "$RUNNER_TEMP/binary-files.txt")
+          pnpm exec turbo test --continue --concurrency=1 "${filters[@]}" -- --run "${files[@]}" --retry=$retry --reporter=default --reporter=json --outputFile.json=vitest-shard-report.json --reporter=../../scripts/vitest-flake-reporter.ts
+          code=$?
+          echo "exit-code=$code" >> "$GITHUB_OUTPUT"
+          if [ "$EVENT" = 'pull_request' ]; then
+            exit "$code"
+          fi
+          if [ "$code" -ne 0 ]; then
+            echo "::notice::the binary suites exited $code; the quarantine gate below decides whether that fails this job."
+          fi
+          exit 0
+
+      - name: Refuse any failure the quarantine lane does not cover
+        if: ${{ github.event_name != 'pull_request' }}
+        run: |
+          args=()
+          while IFS= read -r report; do args+=(--reports "$report"); done < <(
+            find apps packages -mindepth 2 -maxdepth 2 \
+              \( -name vitest-shard-report.json -o -name vitest-flake-report.json \) | sort
+          )
+          if [ ${#args[@]} -eq 0 ]; then
+            echo '::error::no vitest-shard-report.json in any package — the json reporter passthrough is broken, so nothing can be read and nothing can be excused.' >&2
+            exit 1
+          fi
+          node packages/ci-steward/src/cli.ts quarantine-gate \
+            --runner vitest \
+            --suite-exit "${{ steps.sweep.outputs.exit-code }}" \
+            --list "$RUNNER_TEMP/quarantine.json" \
+            "${args[@]}" \
+            --title "Quarantine gate — binary CLI suites"
+
+      # Every planned file collected, each with at least one test and none
+      # skipped, and nothing else collected; writes shard-files-binary.txt for
+      # the fan-in's union check. A no-op that writes an empty list when the
+      # plan said not to run (a pull request only).
+      - name: Prove every binary suite ran
+        env:
+          RUN: ${{ steps.plan.outputs.run }}
+        run: |
+          if [ "$RUN" != true ]; then
+            : > shard-files-binary.txt
+            echo 'nothing ran here, so there is nothing to prove.'
+            exit 0
+          fi
+          node scripts/assert-binary-suites-ran.mjs "$RUNNER_TEMP/binary-files.txt" shard-files-binary.txt
+
+      # The shards' retry naming, word for word in what it refuses: a missing
+      # or unreadable flake report is a broken passthrough, never a clean run.
+      - name: Name the tests that only passed on a retry
+        env:
+          RUN: ${{ steps.plan.outputs.run }}
+        run: |
+          set -o pipefail
+          if [ "$RUN" != true ]; then
+            echo 'nothing ran here.'
+            exit 0
+          fi
+          reports=$(find apps packages -mindepth 2 -maxdepth 2 -name vitest-flake-report.json)
+          [ -n "$reports" ] || { echo 'no vitest-flake-report.json found in any package — the flake reporter passthrough is broken' >&2; exit 1; }
+          if ! named=$(echo "$reports" | xargs jq -r '(.cwd | split("/") | .[-2:] | join("/")) as $pkg | .flaky[] | "\($pkg)/\(.file) › \(.test) (\(.retries) retry)"' | sort); then
+            echo 'a vitest-flake-report.json could not be read (jq failed above) — refusing to certify the binary suites flake-free on a report nothing could parse' >&2
+            exit 1
+          fi
+          if [ -z "$named" ]; then
+            echo "binary suites: no test needed a retry to pass."
+            exit 0
+          fi
+          count=$(printf '%s\n' "$named" | wc -l | tr -d ' ')
+          printf 'WARNING — %s test(s) only passed on a retry:\n' "$count"
+          printf '%s\n' "$named" | sed 's/^/  /'
+          {
+            printf '### Binary CLI suites — %s test(s) only passed on a retry\n\n' "$count"
+            printf '%s\n' "$named" | sed 's/^/- `/; s/$/`/'
+            printf '\nA test named here three times over is a flake to fix (DOR-1007), not a retry budget to widen.\n\n'
+          } >> "$GITHUB_STEP_SUMMARY"
+          printf '%s\n' "$named" | sed -n '1,10p' | while IFS= read -r test; do
+            printf '::warning title=vitest test passed only on a retry::%s\n' "$test"
+          done
+          if [ "$count" -gt 10 ]; then
+            printf '::warning title=vitest tests passed only on a retry::and %s more — see the step log and the job summary for every name.\n' "$((count - 10))"
+          fi
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: shard-files-binary
+          path: shard-files-binary.txt
+          if-no-files-found: error
+          overwrite: true
+
+      # For the CI Steward collector, as each shard's (same artifact pattern, so
+      # flaky-test-runs keeps seeing these suites). Observability only.
+      - name: Upload the binary suites' vitest reports for CI Steward
+        if: ${{ !cancelled() }}
+        continue-on-error: true
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: vitest-shard-report-binary
+          path: |
+            apps/*/vitest-shard-report.json
+            apps/*/vitest-flake-report.json
+            packages/*/vitest-shard-report.json
+            packages/*/vitest-flake-report.json
+          if-no-files-found: warn
+          overwrite: true
+          retention-days: 7
+
   # Distro bubblewrap with its scoped AppArmor profile; never a global sysctl.
   # Every Codex binary suite moves here; Linux still runs mocked refusal tests.
   codex-sandbox:
@@ -1363,10 +1801,11 @@ jobs:
           retention-days: 7
 
   # THE ONE PRODUCER of the required `test` context, on both events.
-  # Fan-in of every unit shard, community proof and the scoped Linux Codex suite.
+  # Fan-in of every unit shard, the binary CLI suites, community proof and the
+  # scoped Linux Codex suite.
   # `always()` lets it report a failure rather than skip when a dependency is red.
   test:
-    needs: [test-shard, community-pg, community-packaged, codex-sandbox]
+    needs: [test-shard, test-binary, community-pg, community-packaged, codex-sandbox]
     if: ${{ always() }}
     runs-on: ubuntu-latest
     # This job runs no tests any more, so this is a ceiling on a gate, an
@@ -1486,6 +1925,15 @@ jobs:
           echo "shard matrix result: $result"
           [ "$result" = "success" ]
 
+      # The real-CLI suites the shards no longer run (DOR-4190). Success only,
+      # on every event: on a pull request whose plan leaves their package out
+      # the job still runs, proves nothing ran and passes.
+      - name: Require the binary CLI suites green
+        run: |
+          result="${{ needs.test-binary.result }}"
+          echo "binary CLI suites result: $result"
+          [ "$result" = "success" ]
+
       - name: Require the real Codex sandbox proof green
         run: |
           result="${{ needs.codex-sandbox.result }}"
@@ -1597,8 +2045,14 @@ jobs:
             fi
           } >> "$GITHUB_STEP_SUMMARY"
 
+      # Every `*.binary.test.ts` in this tree must ALSO be in the union by name
+      # (DOR-4190): the shards exclude them, so the per-package check above
+      # them cannot see one go missing; test-binary and codex-sandbox upload
+      # what they collected as shard-files-binary and shard-files-codex.
       - name: Prove the shards' union covers every package
         if: ${{ github.event_name != 'pull_request' }}
         run: |
+          git ls-files -- 'apps/*.binary.test.ts' 'packages/*.binary.test.ts' > "$RUNNER_TEMP/binary-test-files.txt"
           bash scripts/assert-shard-union.sh \
-            --quarantined "$RUNNER_TEMP/quarantine.txt" shard-files
+            --quarantined "$RUNNER_TEMP/quarantine.txt" \
+            --require-files "$RUNNER_TEMP/binary-test-files.txt" shard-files

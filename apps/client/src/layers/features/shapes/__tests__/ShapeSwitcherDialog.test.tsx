@@ -12,7 +12,7 @@ import type {
 } from '@dorkos/shared/marketplace-schemas';
 import { TransportProvider, useAgentCreationStore, useAppStore } from '@/layers/shared/model';
 import { createQueryClientConfig } from '@/layers/shared/lib';
-import { createMockTransport } from '@dorkos/test-utils';
+import { createMockTransport } from '@dorkos/test-utils/mock-factories';
 import { ShapeSwitcherDialog } from '../ui/ShapeSwitcherDialog';
 
 const mockNavigate = vi.fn();

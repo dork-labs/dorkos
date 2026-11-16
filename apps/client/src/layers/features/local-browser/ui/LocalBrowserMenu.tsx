@@ -29,9 +29,9 @@ export interface LocalBrowserMenuProps {
  * and the Saved sign-ins row that sat above the page.
  *
  * Close says "Close browser" in both modes, because it closes the whole
- * browser, own window included. Forward takes the row's own handler; until
- * page history lands (DOR-4449) there is none, so it shows disabled while the
- * row is narrow. "Also open in other chats" waits on
+ * browser, own window included. Forward takes the row's own handler and
+ * state (DOR-4449), so it works the same while the row is too narrow to show
+ * it. "Also open in other chats" waits on
  * the server listing other chats' pages, so it never shows yet.
  */
 export function LocalBrowserMenu({

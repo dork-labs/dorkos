@@ -31,7 +31,7 @@ import {
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
 import { agentAuthorRef, type RoomSignalEvent } from '@dorkos/shared/room-schemas';
 import type { Transport } from '@dorkos/shared/transport';
-import { createMockTransport } from '@dorkos/test-utils';
+import { createMockTransport } from '@dorkos/test-utils/mock-factories';
 import { TransportProvider } from '@/layers/shared/model';
 import { useInteractionStore } from '@/layers/entities/interactions';
 import { useRoomPresenceStore } from '@/layers/entities/room';

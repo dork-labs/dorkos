@@ -1,7 +1,7 @@
 /** @vitest-environment jsdom */
 /** Proposed private replay membership controls. UNRUN. */
 import { afterEach, expect, it, vi } from 'vitest';
-import { createMockTransport } from '@dorkos/test-utils';
+import { createMockTransport } from '@dorkos/test-utils/mock-factories';
 import { ownDocChannelConnection } from '@/layers/shared/lib/transport/doc-channel-ownership';
 import { createDocChannelOwner } from '../model/doc-channel-owner';
 import { emptyDocChannelView } from '../model/doc-channel-view';

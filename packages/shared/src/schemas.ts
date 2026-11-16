@@ -17,10 +17,19 @@ export {
 } from './timing-events.js';
 import {
   ScheduleOriginMarksSchema,
+  TaskApprovalReceiptSchema,
   TaskReviewPresentationSchema,
 } from './task-approval-schemas.js';
-export { ScheduleOriginMarksSchema } from './task-approval-schemas.js';
-export type { ScheduleOriginMarks } from './task-approval-schemas.js';
+export {
+  ScheduleOriginMarksSchema,
+  TaskApproverSchema,
+  TaskApprovalViaSchema,
+} from './task-approval-schemas.js';
+export type {
+  ScheduleOriginMarks,
+  TaskApprover,
+  TaskApprovalVia,
+} from './task-approval-schemas.js';
 import { CanvasChannelDeclarationSchema } from './canvas-channel-schemas.js';
 import {
   SendMessageReceiptSchema,
@@ -74,6 +83,7 @@ import type { PermissionStop } from './agent-runtime.js';
 // A leaf module (zod only), so this value import forms no load-time cycle.
 import { AccountUsageSchema } from './account-usage.js';
 import { ProjectRefSchema } from './project-schemas.js';
+import { isSpecificPermissionRule } from './permission-rules.js';
 // A leaf module (zod only), so this value import forms no load-time cycle.
 import {
   ChatMessageStampSchema,
@@ -256,6 +266,7 @@ export const StreamEventTypeSchema = z
     'elicitation_complete',
     'permission_denied',
     'model_substituted',
+    'project_addons_off',
     'work_left_running',
     'work_left_ended',
     'interaction_cancelled',
@@ -1512,6 +1523,20 @@ export const UpdateQueuedMessageResponseSchema = z
 
 export type UpdateQueuedMessageResponse = z.infer<typeof UpdateQueuedMessageResponseSchema>;
 
+/** The successful result of sending a queued chat message now. */
+export const SteerQueuedChatMessageResponseSchema = z
+  .discriminatedUnion('outcome', [
+    z.object({ outcome: z.literal('steered') }),
+    z.object({
+      outcome: z.literal('moved-to-front'),
+      reason: z.enum(['no-running-turn', 'steer-not-allowed', 'steer-did-not-land']),
+    }),
+  ])
+  .openapi('SteerQueuedChatMessageResponse');
+
+/** See {@link SteerQueuedChatMessageResponseSchema}. */
+export type SteerQueuedChatMessageResponse = z.infer<typeof SteerQueuedChatMessageResponseSchema>;
+
 /**
  * Longest deny reason accepted. Generous enough for a couple of sentences of
  * context and short enough that a paste accident cannot flood the agent's
@@ -2281,8 +2306,8 @@ export const SessionStatusEventSchema = z
      * turn and so must never read the running figure. Absent when the runtime
      * could not tell this turn's share apart. The observability seam then falls
      * back to `costUsd` ONLY for a runtime whose `costUsd` is already per-turn;
-     * for a runtime whose `costUsd` is the running total (claude-code, see
-     * `RUNNING_COST_RUNTIMES` in `ai-metadata.ts`) it reports no cost at all.
+     * for a runtime whose `costUsd` is the running total (one that declares
+     * `RuntimeCapabilities.costUsdIsRunningTotal`) it reports no cost at all.
      */
     turnCostUsd: z.number().min(0).optional(),
     /** Tokens read from prompt cache (90% cost savings). */
@@ -2416,7 +2441,16 @@ export type RelayMessageEvent = z.infer<typeof RelayMessageEventSchema>;
 
 // === Background Task Type/Status (needed by both events and parts) ===
 
-export const BackgroundTaskTypeSchema = z.enum(['agent', 'bash']).openapi('BackgroundTaskType');
+/**
+ * What kind of background work a task is: a helper `agent`, a background shell
+ * (`bash`), or `other` for every task type DorkOS does not draw on its own — a
+ * Monitor, a Workflow, a backgrounded MCP task, or a type a newer runtime adds
+ * (spec `warm-process-lifecycle` D8). An `other` task shows its own label and
+ * can be stopped like any other.
+ */
+export const BackgroundTaskTypeSchema = z
+  .enum(['agent', 'bash', 'other'])
+  .openapi('BackgroundTaskType');
 export type BackgroundTaskType = z.infer<typeof BackgroundTaskTypeSchema>;
 
 /**
@@ -2453,6 +2487,14 @@ export const BackgroundTaskStartedEventSchema = z
     toolUseId: z.string().optional(),
     description: z.string().optional(),
     command: z.string().optional(),
+    /**
+     * The runtime's own name for the task's type, when it reports one (Claude
+     * Code's `task_type`: `local_agent`, `local_bash`, a Monitor's, a
+     * Workflow's). Kept beside {@link BackgroundTaskTypeSchema}'s coarse answer
+     * so an `other` task still says what it is. Absent when the runtime names
+     * none.
+     */
+    runtimeTaskType: z.string().optional(),
     /**
      * Housekeeping work the runtime asked hosts to keep out of activity
      * indicators — a watcher it started to stay oriented, not work anybody
@@ -2851,6 +2893,28 @@ export const ModelSubstitutedEventSchema = z
 /** Inferred type for {@link ModelSubstitutedEventSchema}. */
 export type ModelSubstitutedEvent = z.infer<typeof ModelSubstitutedEventSchema>;
 
+/**
+ * How many of a project's own OpenCode add-ons DorkOS kept off (DOR-4404).
+ *
+ * The shared OpenCode sidecar loads no project's config or code (DOR-4394),
+ * so a project's plugins, tools and MCP servers stay off. Counts only, from
+ * DorkOS's own record of what it withheld: never a name or any other text the
+ * project wrote.
+ */
+export const ProjectAddonsOffEventSchema = z
+  .object({
+    /** Plugin files and config `plugin` entries kept off. */
+    plugins: z.number().int().nonnegative(),
+    /** Custom tool files kept off. */
+    tools: z.number().int().nonnegative(),
+    /** MCP servers kept off. */
+    mcpServers: z.number().int().nonnegative(),
+  })
+  .openapi('ProjectAddonsOffEvent');
+
+/** Inferred type for {@link ProjectAddonsOffEventSchema}. */
+export type ProjectAddonsOffEvent = z.infer<typeof ProjectAddonsOffEventSchema>;
+
 /** How a background command left running by a Stop finally ended (DOR-3285). */
 export const WorkLeftEndStatusSchema = z
   .enum(['completed', 'failed', 'stopped'])
@@ -3179,6 +3243,7 @@ export const StreamEventSchema = z
       ElicitationCompleteEventSchema,
       PermissionDeniedEventSchema,
       ModelSubstitutedEventSchema,
+      ProjectAddonsOffEventSchema,
       WorkLeftRunningEventSchema,
       WorkLeftEndedEventSchema,
       InteractionCancelledEventSchema,
@@ -3614,6 +3679,21 @@ export const ModelSubstitutedPartSchema = z
 export type ModelSubstitutedPart = z.infer<typeof ModelSubstitutedPartSchema>;
 
 /**
+ * A lasting notice, once per chat, that a project's own OpenCode add-ons are
+ * off (DOR-4404). Sourced from the `project_addons_off` session event, which
+ * reaches the live turn and, recorded durably, a reopened one.
+ */
+export const ProjectAddonsOffPartSchema = z
+  .object({
+    type: z.literal('project_addons_off'),
+    ...ProjectAddonsOffEventSchema.shape,
+  })
+  .openapi('ProjectAddonsOffPart');
+
+/** Inferred type for {@link ProjectAddonsOffPartSchema}. */
+export type ProjectAddonsOffPart = z.infer<typeof ProjectAddonsOffPartSchema>;
+
+/**
  * The lasting line under a stopped turn that names the background commands
  * the Stop could not end (DOR-3285). Sourced from `work_left_running`, with
  * each later `work_left_ended` folded in as that task's `ended`.
@@ -3690,6 +3770,7 @@ export const MessagePartSchema = z.discriminatedUnion('type', [
   MemoryRecallPartSchema,
   PermissionDeniedPartSchema,
   ModelSubstitutedPartSchema,
+  ProjectAddonsOffPartSchema,
   WorkLeftRunningPartSchema,
   CompactBoundaryPartSchema,
 ]);
@@ -5793,6 +5874,14 @@ export const TaskHealthSchema = z
     streak: z.number().int().min(0),
     /** The run the reason was read from; `null` when `ok`. */
     lastRunId: z.string().nullable(),
+    /**
+     * How many runs of the streak started after the schedule last changed
+     * (turned on, edited or approved) and after DorkOS began counting failing
+     * streaks (v0.135.3). Needs you asks for two (DOR-4127), so runs from
+     * before an edit, or from before an upgrade, never raise a card. Absent
+     * from an older server, which reads as none.
+     */
+    recentStreak: z.number().int().min(0).optional(),
   })
   .openapi('TaskHealth');
 
@@ -5844,6 +5933,21 @@ export const TaskFileCapSchema = z
 
 /** {@link TaskFileCapSchema}. */
 export type TaskFileCap = z.infer<typeof TaskFileCapSchema>;
+
+export { isSpecificPermissionRule } from './permission-rules.js';
+
+/** A Claude Code permission rule proposed for one scheduled task's runs. */
+export const TaskPermissionRuleSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(300)
+  .refine((rule) => isSpecificPermissionRule(rule), {
+    message: 'Permission rules must name a specific action',
+  });
+
+/** At most twenty exact Claude Code permission rules for one scheduled task. */
+export const TaskPermissionRulesSchema = z.array(TaskPermissionRuleSchema).max(20);
 
 export const TaskSchema = z
   .object({
@@ -5980,6 +6084,12 @@ export const TaskSchema = z
     sticky: z.boolean().default(false),
     maxRuntime: z.number().int().nullable(),
     permissionMode: PermissionModeSchema,
+    /** The mode the proposer asked a person to approve; never an applied grant. */
+    requestedPermissionMode: PermissionModeSchema.nullable().optional(),
+    /** Exact task-run rules the proposer asked a person to approve. */
+    requestedAllow: TaskPermissionRulesSchema.nullable().optional(),
+    /** Exact task-run rules a person approved; never written to folder settings. */
+    approvedAllow: TaskPermissionRulesSchema.nullable().optional(),
     /** Read-time, person-only preview; absent for older servers and agent callers. */
     ...TaskReviewPresentationSchema.shape,
     /**
@@ -6018,6 +6128,8 @@ export const TaskSchema = z
      */
     account: z.string().nullable().default(null),
     status: TaskStatusSchema,
+    /** Who approved the current task content, when, and through which surface or policy. */
+    ...TaskApprovalReceiptSchema.shape,
     filePath: z.string(),
     createdAt: z.string(),
     updatedAt: z.string(),
@@ -6397,6 +6509,10 @@ export const CreateTaskRequestSchema = z
      * guard tell a caller that SENT the field from one that did not.
      */
     permissionMode: PermissionModeSchema.optional(),
+    /** A requested mode for the approval card. This field grants nothing. */
+    requestedPermissionMode: PermissionModeSchema.optional(),
+    /** Requested task-scoped Claude Code rules. This field grants nothing. */
+    requestedAllow: TaskPermissionRulesSchema.optional(),
     /**
      * Why this schedule should exist, in the proposer's own words.
      *
@@ -6562,7 +6678,16 @@ export const UpdateTaskRequestSchema = z
      */
     account: z.string().min(1).nullable().optional(),
     permissionMode: PermissionModeSchema.optional(),
+    /** A requested mode for the approval card. This field grants nothing. */
+    requestedPermissionMode: PermissionModeSchema.optional(),
+    /** Requested task-scoped Claude Code rules. This field grants nothing. */
+    requestedAllow: TaskPermissionRulesSchema.optional(),
+    /** Task-scoped rules a person approved. Agents may never set this field. */
+    approvedAllow: TaskPermissionRulesSchema.optional(),
+    /** Explicit confirmation that the person chose more power than proposed. */
+    acceptLooserThanRequested: z.literal(true).optional(),
     status: SettableTaskStatusSchema.optional(),
+    approvalSurface: z.enum(['inbox', 'schedules', 'home']).optional(), // Audit context, never permission.
     /** Why this schedule should exist. See {@link CreateTaskRequestSchema}. */
     reason: z.string().optional(),
     /**

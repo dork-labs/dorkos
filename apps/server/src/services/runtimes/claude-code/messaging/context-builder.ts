@@ -22,6 +22,7 @@ import { WORKBENCH } from '../../../../config/constants.js';
 import type { BindingRouter } from '../../../relay/binding-router.js';
 import type { BindingStore } from '../../../relay/binding-store.js';
 import type { AdapterManager } from '../../../relay/adapter-manager.js';
+import { TASKS_TOOLS_CONTEXT } from '../mcp-tools/tasks/tasks-tools-context.js';
 
 /** Dependencies for building the <relay_connections> context block. */
 export interface RelayContextDeps {
@@ -279,35 +280,6 @@ Bindings route adapter messages to agent projects:
 
 Session strategies: per-chat (default, one session per conversation), per-user (shared across chats), stateless (new session each message).
 </adapter_tools>`;
-
-/**
- * The Tasks tool docs, plus the one place an agent is told durable CronCreate
- * is not a scheduler under DorkOS (DOR-2717). The CLI writes a durable job to
- * `.claude/scheduled_tasks.json` and fires it only while a CLI process for the
- * session that owns it is running and idle; a different session will not run
- * it. DorkOS holds a warm process for session-only timers, which the Stop
- * hook's `session_crons` names, but that list is the in-memory store only, so
- * a durable job holds nothing and dies quietly with the next idle reap. Tasks
- * is the scheduler that runs whether or not a chat is open.
- */
-const TASKS_TOOLS_CONTEXT = `<tasks_tools>
-DorkOS Tasks lets you create and manage scheduled agent runs.
-
-Available tools:
-  ${T}tasks_list() -- list all configured schedules
-  ${T}tasks_create(name, cron, prompt, ...) -- create a new schedule (live at once, or pending_approval when DorkOS asks first)
-  ${T}tasks_update(id, ...) -- modify schedule settings
-  ${T}tasks_delete(id) -- remove a schedule
-  ${T}tasks_get_run_history(scheduleId) -- view past run results
-
-A schedule's target is your own agent id, "global", or (only from a chat at Full autonomy whose turn read no messages from outside the team) another agent's id;
-a schedule you make or change for another agent runs at that agent's own level at most, and records that you made it.
-
-Claude Code's own CronCreate with durable: true is not reliable here: its job fires only
-while this chat's Claude Code process is running, and DorkOS ends idle processes. Use
-${T}tasks_create for anything that must run on a schedule. Session-only timers
-(CronCreate, ScheduleWakeup, /loop) are fine for a reminder later in this chat.
-</tasks_tools>`;
 
 const MARKETPLACE_TOOLS_CONTEXT = `<marketplace_tools>
 DorkOS Marketplace lets you find, inspect, and install packages (agents, plugins,

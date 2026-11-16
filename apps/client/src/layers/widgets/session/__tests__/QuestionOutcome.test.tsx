@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, screen, cleanup } from '@testing-library/react';
-import { createMockTransport } from '@dorkos/test-utils';
+import { createMockTransport } from '@dorkos/test-utils/mock-factories';
 import type { ToolCallPart } from '@dorkos/shared/types';
 import { TransportProvider } from '@/layers/shared/model';
 import type { MessageAuthor } from '@/layers/shared/model';

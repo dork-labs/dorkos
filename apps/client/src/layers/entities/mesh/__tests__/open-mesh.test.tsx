@@ -12,7 +12,7 @@ import '@testing-library/jest-dom/vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { Transport } from '@dorkos/shared/transport';
 import type { AgentManifest, TopologyView } from '@dorkos/shared/mesh-schemas';
-import { createMockTransport } from '@dorkos/test-utils';
+import { createMockTransport } from '@dorkos/test-utils/mock-factories';
 import { TransportProvider } from '@/layers/shared/model';
 import { useSetOpenMesh } from '../model/use-mesh-access';
 import { useTopology } from '../model/use-mesh-topology';

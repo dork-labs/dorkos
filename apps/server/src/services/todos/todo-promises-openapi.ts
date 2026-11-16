@@ -12,6 +12,7 @@ import {
   ListTodoPromisesQuerySchema,
   ListTodoPromisesResponseSchema,
   UpdateTodoPromiseRequestSchema,
+  ConfirmTodoPromiseRequestSchema,
 } from '@dorkos/shared/todo-promise-schemas';
 
 /** A refusal: plain words and a stable code. */
@@ -107,6 +108,39 @@ export function registerTodoPromisesOpenApi(registry: OpenAPIRegistry): void {
       },
       409: {
         description: 'It is no longer in the `from` state the caller named (`CONFLICT`)',
+        content: { 'application/json': { schema: TodoPromiseErrorSchema } },
+      },
+    },
+  });
+
+  registry.registerPath({
+    method: 'post',
+    path: '/api/todo-promises/{id}/confirm',
+    tags: ['To-dos'],
+    summary: 'Answer whether a kept promise was kept',
+    description:
+      'When an agent marks a promise to a person kept, that person is asked to confirm it ' +
+      '(DOR-3034). `yes` confirms it; `not-yet` reopens it. A person only: a caller ' +
+      'presenting an agent identity is refused.',
+    request: {
+      params: z.object({ id: z.string() }),
+      body: { content: { 'application/json': { schema: ConfirmTodoPromiseRequestSchema } } },
+    },
+    responses: {
+      200: {
+        description: 'The promise, confirmed or reopened',
+        content: { 'application/json': { schema: TodoPromiseSchema } },
+      },
+      400: {
+        description: 'Invalid body, or no answer is waiting (`NOTHING_TO_CHANGE`)',
+        content: { 'application/json': { schema: TodoPromiseErrorSchema } },
+      },
+      403: {
+        description: 'The caller is an agent (`NOT_A_PERSON`), or not the owner (`NOT_YOURS`)',
+        content: { 'application/json': { schema: TodoPromiseErrorSchema } },
+      },
+      404: {
+        description: 'No promise has that id (`NOT_FOUND`)',
         content: { 'application/json': { schema: TodoPromiseErrorSchema } },
       },
     },

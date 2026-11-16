@@ -336,6 +336,150 @@ describe('the background-work ceiling and its quiet reset', () => {
   });
 });
 
+// DOR-2705. The ceiling bounds work nobody hears from. A turn the agent is
+// still talking in is not that: helpers ran for nearly four hours, the agent
+// opened a turn to report on them, and the reap took the process back mid-turn
+// ("DorkOS closed the agent before it finished this turn").
+describe('an open turn that is still talking is never past the ceiling', () => {
+  it('keeps a turn that talks past four hours of busy time', async () => {
+    let turnOpen = false;
+    const harness = await warmPump({ hasRuntimeTurnOpen: () => turnOpen });
+    await runTask(harness, 'local_agent');
+    vi.advanceTimersByTime(SESSIONS.BACKGROUND_WORK_PARK_CEILING_MS - 60_000);
+
+    // The frame that opens an agent-started turn reaches the pump BEFORE the
+    // windower opens the window for it, so the window opens after the emit.
+    await harness.emit(assistantMessage());
+    turnOpen = true;
+    vi.advanceTimersByTime(5 * 60_000);
+
+    expect(harness.pump.isPastCeiling()).toBe(false);
+    expect(harness.pump.isHoldingWork()).toBe(true);
+    expect(await reapNow(harness.pump)).toBe(false);
+  });
+
+  it('ends a turn that keeps talking at the 16-hour limit', async () => {
+    let turnOpen = false;
+    const harness = await warmPump({ hasRuntimeTurnOpen: () => turnOpen });
+    await harness.emit(assistantMessage());
+    turnOpen = true;
+    // One word every hour: never four quiet hours, but sixteen in all.
+    for (let hour = 1; hour < 16; hour += 1) {
+      vi.advanceTimersByTime(60 * 60_000);
+      await harness.emit(assistantMessage());
+      expect(harness.pump.isPastCeiling()).toBe(false);
+    }
+    vi.advanceTimersByTime(60 * 60_000);
+    await harness.emit(assistantMessage());
+
+    expect(SESSIONS.TURN_HARD_CEILING_MS).toBe(4 * SESSIONS.BACKGROUND_WORK_PARK_CEILING_MS);
+    expect(harness.pump.isPastHardLimit()).toBe(true);
+    expect(harness.pump.isPastCeiling()).toBe(true);
+    expect(await reapNow(harness.pump)).toBe(true);
+  });
+
+  it('ends a chain of short turns at 16 hours of nonstop work', async () => {
+    let turnOpen = false;
+    const harness = await warmPump({ hasRuntimeTurnOpen: () => turnOpen });
+    // A Monitor stays live across every turn, so the process is never quiet.
+    await runTask(harness, 'monitor');
+    // Turn after turn the agent starts itself, each one hour, back to back.
+    for (let hour = 1; hour <= 15; hour += 1) {
+      await harness.emit(assistantMessage());
+      turnOpen = true;
+      vi.advanceTimersByTime(60 * 60_000 - 1_000);
+      await harness.emit(assistantMessage());
+      await harness.emit(resultMessage());
+      turnOpen = false;
+      vi.advanceTimersByTime(1_000);
+    }
+    await harness.emit(assistantMessage());
+    turnOpen = true;
+    expect(harness.pump.isPastCeiling()).toBe(false);
+
+    vi.advanceTimersByTime(60 * 60_000);
+    await harness.emit(assistantMessage());
+
+    // No single turn ran past an hour, but the busy stretch has run sixteen.
+    expect(harness.pump.isPastHardLimit()).toBe(true);
+    expect(harness.pump.isPastCeiling()).toBe(true);
+    expect(harness.pump.isHoldingWork()).toBe(false);
+  });
+
+  it("does not count a helper's frames as the turn talking", async () => {
+    let turnOpen = false;
+    const harness = await warmPump({ hasRuntimeTurnOpen: () => turnOpen });
+    await runTask(harness, 'local_agent');
+    await harness.emit(assistantMessage());
+    turnOpen = true;
+    vi.advanceTimersByTime(SESSIONS.BACKGROUND_WORK_PARK_CEILING_MS);
+    // Only the helper is talking now.
+    await harness.emit({
+      ...assistantMessage(),
+      parent_tool_use_id: 'toolu_helper',
+    } as ReturnType<typeof assistantMessage>);
+
+    expect(harness.pump.isPastCeiling()).toBe(true);
+  });
+
+  it('starts the turn clocks over after a result', async () => {
+    let turnOpen = false;
+    const harness = await warmPump({ hasRuntimeTurnOpen: () => turnOpen });
+    await harness.emit(assistantMessage());
+    turnOpen = true;
+    vi.advanceTimersByTime(15 * 60 * 60_000);
+    await harness.emit(resultMessage());
+    turnOpen = false;
+    // The next turn begins: sixteen hours since the FIRST turn began, one since this.
+    vi.advanceTimersByTime(60 * 60_000);
+    await harness.emit(assistantMessage());
+    turnOpen = true;
+
+    expect(harness.pump.isPastHardLimit()).toBe(false);
+  });
+
+  it('still ends a /loop between its turns once the background clock runs out', async () => {
+    let turnOpen = false;
+    const harness = await warmPump({
+      hasRuntimeTurnOpen: () => turnOpen,
+      hasPendingTimer: () => true,
+    });
+    // A timer wakes the agent every hour; each wake is a short turn that talks.
+    for (let hour = 1; hour <= 4; hour += 1) {
+      vi.advanceTimersByTime(60 * 60_000 - 60_000);
+      await harness.emit(assistantMessage());
+      turnOpen = true;
+      vi.advanceTimersByTime(60_000);
+      turnOpen = false;
+    }
+
+    expect(harness.pump.isPastCeiling()).toBe(true);
+    expect(await reapNow(harness.pump)).toBe(true);
+  });
+
+  it('still reaches the ceiling when an open turn says nothing for four hours', async () => {
+    let turnOpen = false;
+    const harness = await warmPump({ hasRuntimeTurnOpen: () => turnOpen });
+    await runTask(harness, 'local_agent');
+    turnOpen = true;
+    await harness.emit(assistantMessage());
+
+    vi.advanceTimersByTime(SESSIONS.BACKGROUND_WORK_PARK_CEILING_MS);
+
+    expect(harness.pump.isPastCeiling()).toBe(true);
+  });
+
+  it('does not let background frames with no turn open restart the clock', async () => {
+    const harness = await warmPump();
+    await runTask(harness, 'local_agent');
+    vi.advanceTimersByTime(SESSIONS.BACKGROUND_WORK_PARK_CEILING_MS - 60_000);
+    await harness.emit(assistantMessage());
+    vi.advanceTimersByTime(2 * 60_000);
+
+    expect(harness.pump.isPastCeiling()).toBe(true);
+  });
+});
+
 // T35. The one hold with no other way out: a delivery that is owed and never
 // arrives. Before this clock, `owed` on the warm path was cleared only by a
 // delivery segment, and the deadline that bounds it lives in a stdin close the

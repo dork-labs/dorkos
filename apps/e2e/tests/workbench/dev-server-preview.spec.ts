@@ -69,9 +69,16 @@ test.describe('Browser — a dev server running on this machine @smoke', () => {
     const frame = page.frameLocator('iframe[title="Web Page"]');
     await expect(frame.getByTestId(APP_READY)).toBeVisible({ timeout: 15_000 });
 
+    // App screens run in frames of their own on the cockpit's origin
+    // (`/api/extension-frame`, DOR-3293), so name the preview, not the first frame.
     const previewFrame = page
       .frames()
-      .find((candidate) => candidate !== page.mainFrame() && candidate.url().startsWith('http'));
+      .find(
+        (candidate) =>
+          candidate !== page.mainFrame() &&
+          candidate.url().startsWith('http') &&
+          new URL(candidate.url()).pathname !== '/api/extension-frame'
+      );
     expect(previewFrame).toBeDefined();
     const framed = new URL(previewFrame!.url());
 

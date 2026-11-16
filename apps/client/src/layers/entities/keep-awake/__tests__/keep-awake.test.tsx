@@ -10,7 +10,7 @@ import { renderHook, waitFor, cleanup, act } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
 import type { KeepAwakeStatus } from '@dorkos/shared/schemas';
-import { createMockTransport } from '@dorkos/test-utils';
+import { createMockTransport } from '@dorkos/test-utils/mock-factories';
 import { TransportProvider } from '@/layers/shared/model';
 
 const handlers = new Map<string, (data: unknown) => void>();

@@ -430,3 +430,17 @@ local:
   # host on 2026-10-24 (load ~40, 12 GB of disk gone). 30 minutes is about the
   # slowest full test sweep measured here; past it the job runs anyway, loudly.
   heavy_job_wait_seconds: 1800
+  # THE LOAD GUARD (ci/ledger/*-heavy-run-load-guard). Slots cap how many heavy
+  # runs start, not how busy the host is: on 2026-11-15 a load of about 40,
+  # mostly from work no slot covers, held QA's gates for hours. So a `--job`
+  # (never the commit gate) waits while the 1-minute load is over
+  # heavy_max_load, and refuses with exit 75 if it is still over after
+  # heavy_load_wait_seconds.
+  #
+  # 24 on 14 cores is about 1.7 per core: the "hold heavy runs over 24" line
+  # the team already worked to by hand (PM, 2026-11-03 and 11-15). Ten minutes
+  # is long enough for a burst to clear and short enough that a refused agent
+  # retries the same hour rather than sitting out the night.
+  heavy_max_load: 24
+  heavy_load_wait_seconds: 600
+  heavy_load_poll_seconds: 30

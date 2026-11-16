@@ -266,6 +266,12 @@ export const ConfigSchema = z
         heavy_lock_wait_seconds: z.number().int().positive(),
         /** How long a heavy `--job` (build, typecheck, full tests) waits before running anyway. */
         heavy_job_wait_seconds: z.number().int().positive(),
+        /** The 1-minute load a heavy `--job` waits under; never applied to the commit gate. */
+        heavy_max_load: z.number().int().positive(),
+        /** How long a `--job` waits for the load to drop before refusing with exit 75. */
+        heavy_load_wait_seconds: z.number().int().positive(),
+        /** How often a `--job` waiting on the load re-reads it. */
+        heavy_load_poll_seconds: z.number().int().positive(),
       })
       .strict(),
   })

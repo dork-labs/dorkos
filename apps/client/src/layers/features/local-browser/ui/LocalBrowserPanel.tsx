@@ -11,7 +11,6 @@ import { YourTurnStrip } from '@/layers/features/browser-handoff';
 import { useAppStore, useTransport } from '@/layers/shared/model';
 import { Button } from '@/layers/shared/ui';
 import { BrowserModeChoice } from './BrowserModeChoice';
-import { useNativeBrowserSurface } from '../model/use-native-browser-surface';
 import { browserErrorMessage } from '../lib/browser-error-message';
 import { useActionFocusReturn } from '../model/use-action-focus-return';
 import { useFirstFocus } from '../model/use-first-focus';
@@ -19,9 +18,9 @@ import { BrowserPreparation } from './BrowserPreparation';
 import { WaitingElsewhere } from './WaitingElsewhere';
 import { SavedSignIns } from './SavedSignIns';
 import { LocalBrowserMenu } from './LocalBrowserMenu';
-import { EMPTY_PAGE, LocalBrowserView } from './LocalBrowserView';
 import { PageAreaBlock } from './PageAreaBlock';
 import { SharedElsewhere } from './SharedElsewhere';
+import { EMPTY_PAGE, LocalBrowserView } from './LocalBrowserView';
 
 export interface LocalBrowserPanelProps {
   visible?: boolean;
@@ -66,7 +65,6 @@ export function LocalBrowserPanel({
   const pendingSetup = useRef<Promise<boolean> | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [surfaceUnavailable, setSurfaceUnavailable] = useState(false);
-  const surface = useRef<HTMLDivElement>(null);
   const connected = state?.status === 'connected';
   // "Disconnected" before anything was ever opened reads as broken (DOR-4104).
   const [hadConnection, setHadConnection] = useState(false);
@@ -102,19 +100,6 @@ export function LocalBrowserPanel({
       operation.current += 1;
     },
     []
-  );
-  useNativeBrowserSurface(
-    surface,
-    state?.connectionId ?? null,
-    visible &&
-      connected &&
-      !query.isError &&
-      !sharedElsewhere &&
-      mode === 'embedded' &&
-      !surfaceUnavailable &&
-      // A new empty page is blank; hidden, the page area says what to do instead.
-      selected?.url !== EMPTY_PAGE,
-    unavailable
   );
 
   const action = async (run: () => Promise<LocalBrowserState>, setup = false) => {
@@ -341,21 +326,31 @@ export function LocalBrowserPanel({
           </div>
           <LocalBrowserView
             tab={selected ?? null}
+            connectionId={state.connectionId ?? null}
             embedded={mode === 'embedded'}
-            surface={surface}
+            pageVisible={
+              visible &&
+              !query.isError &&
+              !surfaceUnavailable &&
+              // A new empty page is blank; hidden, the page area says what to do instead.
+              selected?.url !== EMPTY_PAGE
+            }
             surfaceUnavailable={surfaceUnavailable}
+            onUnavailable={unavailable}
             busy={busy}
             action={action}
             onReconnect={open}
-            menu={
+            menu={(forward) => (
               <LocalBrowserMenu
                 state={state}
                 busy={busy}
                 action={action}
                 canForgetSignIns={signInsReadable}
                 onClose={close}
+                canForward={forward.canForward}
+                onForward={forward.onForward}
               />
-            }
+            )}
           />
         </>
       ) : (

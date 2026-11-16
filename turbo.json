@@ -75,7 +75,7 @@
       "dependsOn": ["^build"],
       "cache": false,
       "persistent": true,
-      "passThroughEnv": ["DORKOS_YOUR_BROWSER_ENABLED"]
+      "passThroughEnv": ["DORKOS_YOUR_BROWSER_ENABLED", "DORKOS_MARK_STRANGER_TURNS"]
     },
     "test": {
       "dependsOn": ["^build", "//#heavy-slot"],
@@ -333,7 +333,8 @@
         "PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD",
         "CI",
         "PWDEBUG",
-        "ANTHROPIC_API_KEY"
+        "ANTHROPIC_API_KEY",
+        "DORKOS_HEAVY_*"
       ]
     },
     "e2e:ui": {

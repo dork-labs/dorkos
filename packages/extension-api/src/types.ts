@@ -348,5 +348,7 @@ export interface ExtensionRecordPublic {
 
 /** The interface an extension module must export. */
 export interface ExtensionModule {
-  activate(api: import('./extension-api.js').ExtensionAPI): void | (() => void);
+  activate(
+    api: import('./extension-api.js').ExtensionAPI
+  ): void | (() => void) | Promise<void | (() => void)>;
 }

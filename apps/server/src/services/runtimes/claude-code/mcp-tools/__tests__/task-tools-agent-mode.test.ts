@@ -366,6 +366,36 @@ describe('tasks_* and an agent’s mode or approval', () => {
       flag.on = true;
     });
 
+    it('still refuses applied allow rules on create and update', async () => {
+      allowBoth();
+      const id = await ownTask();
+      const tools = toolsOfA();
+      const updated = await call(tools.tasks_update!, {
+        id,
+        prompt: 'a prompt that must not land',
+        approvedAllow: ['Bash(/tmp/task.sh --once)'],
+      });
+      expect(updated.isError).toBe(true);
+      expect(updated.payload.fields).toEqual(['approvedAllow']);
+      expect(store.getTask(id)).toMatchObject({
+        prompt: 'sweep the backlog',
+        approvedAllow: null,
+      });
+
+      const before = store.getTasks().length;
+      const created = await call(tools.tasks_create!, {
+        name: 'self-allowed',
+        prompt: 'x',
+        cron: '0 4 * * *',
+        target: 'agent-a',
+        reason: 'This should remain a proposal for a person to review.',
+        approvedAllow: ['Bash(/tmp/task.sh --once)'],
+      });
+      expect(created.isError).toBe(true);
+      expect(created.payload.fields).toEqual(['approvedAllow']);
+      expect(store.getTasks()).toHaveLength(before);
+    });
+
     it('sets its own task’s mode at the default, with no card', async () => {
       const id = await ownTask();
       const { isError } = await call(toolsOfA().tasks_update!, { id, permissionMode: 'dontAsk' });
@@ -485,13 +515,24 @@ describe('tasks_* and an agent’s mode or approval', () => {
       const id = await waitingOnA();
       const { isError } = await call(toolsOfA().tasks_update!, { id, status: 'active' });
       expect(isError).toBe(false);
-      expect(store.getTask(id)?.status).toBe('active');
+      const approved = store.getTask(id)!;
+      expect(approved).toMatchObject({
+        status: 'active',
+        approvedBy: { kind: 'agent', agentPath: homeA, name: 'a' },
+        approvedVia: 'agent_tool',
+      });
       expect(store.approvals.agentEditsOf(id)?.agentApprovalKey).toMatch(/^sha256:/);
       expect(emit).toHaveBeenCalledWith(
         expect.objectContaining({
           eventType: 'tasks.task_approved',
           actorType: 'agent',
-          metadata: expect.objectContaining({ decidedBy: 'allowed', reachedVia: 'in-session' }),
+          metadata: expect.objectContaining({
+            approvedAt: approved.approvedAt,
+            approvedBy: approved.approvedBy,
+            approvedVia: approved.approvedVia,
+            decidedBy: 'allowed',
+            reachedVia: 'in-session',
+          }),
         })
       );
       // An approval is not an edit: the last editor is still agent B.

@@ -29,7 +29,7 @@ Read current state before changing anything:
 
 - Tool: \`tasks_create\` with \`name\`, \`prompt\` (the instruction the agent runs each
   time), \`cron\` (required, e.g. \`"0 2 * * *"\` for daily at 2am), \`reason\`
-  (required, see below), \`target\` (required, see below), and optional
+  (required, see below), \`target\` (optional, see below), and optional
   \`description\`, \`timezone\` (IANA, e.g. \`"America/New_York"\`), \`maxRuntime\`
   (e.g. \`"5m"\`, \`"1h"\`) to cap how long a run may take, and \`runtime\`, \`model\`
   and \`effort\` (see below).
@@ -71,7 +71,7 @@ summary is waiting for you."
 
 ### Say where it lives, too
 
-\`target\` is required and there is no default. Give your own agent id to file the task under yourself, so it lives in your folder and its runs happen there against your files, or \`"global"\` for a task that belongs to no agent. A task filed in the wrong place runs against the wrong files, so DorkOS will not guess.
+Omit \`target\`, use \`"global"\`, or give your own agent id to file the task under yourself, in your own folder. A global request still waits for a person to approve it. If your agent has no folder of its own, or its folder is the data folder or another protected folder, creation is refused before anything is written. Below Full autonomy, so is a schedule whose folder is the home folder. A person's own global schedules keep their existing placement.
 An agent it has never heard of is refused and nothing is created. Under an agent
 installed from the marketplace, your task stays through the package's updates; it
 is refused (\`schedule_package_owned\`) if the package uses that name itself, or if
@@ -85,7 +85,7 @@ Where a task lives is decided once. \`tasks_update\` refuses \`target\` or
 Read the returned \`status\`. \`active\`: DorkOS trusts its agents, so a task you
 create in a session is live and the person is told, with Pause; say what you
 scheduled and when it runs. \`pending_approval\`: it waits (the person chose
-Careful, or it came over the external MCP connection or without your agent
+Careful, you omitted \`target\` or used \`"global"\`, or it came over the external MCP connection or without your agent
 token); tell them it needs their approval, and promise nothing before that.
 
 Moving a task to \`active\` IS a person's approval, so it is not yours to do:

@@ -22,6 +22,7 @@
  *
  * @module services/observability/ai-metadata
  */
+import type { AgentRuntime } from '@dorkos/shared/agent-runtime';
 import type { StreamEvent } from '@dorkos/shared/types';
 import { startSpan, isTracingEnabled } from './otel.js';
 import { SPAN, ATTR } from './attributes.js';
@@ -69,28 +70,45 @@ export function isAiBridgeEnabled(): boolean {
   return bridge !== null;
 }
 
+/** The runtime a turn ran on, as its cost reading needs it. */
+export type CostRuntime = Pick<AgentRuntime, 'type' | 'getCapabilities'>;
+
+/**
+ * Whether a runtime's status `costUsd` is the session's RUNNING total, never one turn's, as it
+ * declares (`RuntimeCapabilities.costUsdIsRunningTotal`). A runtime whose capabilities can't be
+ * read is taken at its status cost, as every runtime but Claude Code reports it.
+ */
+function reportsRunningCost(runtime: CostRuntime): boolean {
+  try {
+    return runtime.getCapabilities().costUsdIsRunningTotal === true;
+  } catch {
+    return false;
+  }
+}
+
 /**
  * A turn's own cost from what its runtime reported, or `undefined` when it reported none. For a
  * runtime whose status `costUsd` is the session's RUNNING total there is no fallback to it.
  */
-function turnCostOf(runtimeType: string, state: HarvestState): number | undefined {
-  return state.turnCostUsd ?? (RUNNING_COST_RUNTIMES.has(runtimeType) ? undefined : state.costUsd);
+function turnCostOf(runningTotal: boolean, state: HarvestState): number | undefined {
+  return state.turnCostUsd ?? (runningTotal ? undefined : state.costUsd);
 }
 
 /**
  * Read one turn's own cost off its events as they pass, the way the trace and the telemetry bridge
  * read it: `see` each event, then `costUsd` once the turn ends (`undefined` when none was reported).
  *
- * @param runtimeType - The runtime the turn ran on.
+ * @param runtime - The runtime the turn ran on.
  */
-export function turnCostReader(runtimeType: string): {
+export function turnCostReader(runtime: CostRuntime): {
   see: (event: StreamEvent) => void;
   costUsd: () => number | undefined;
 } {
   const state: HarvestState = {};
+  const runningTotal = reportsRunningCost(runtime);
   return {
     see: (event) => harvestEvent(event, state),
-    costUsd: () => turnCostOf(runtimeType, state),
+    costUsd: () => turnCostOf(runningTotal, state),
   };
 }
 
@@ -98,13 +116,6 @@ export function turnCostReader(runtimeType: string): {
 export function isAiObservabilityActive(): boolean {
   return isTracingEnabled() || bridge !== null;
 }
-
-/**
- * Runtimes whose `session_status.costUsd` is the session's RUNNING cost, never
- * one turn's, and which report a turn's own share as `turnCostUsd` instead.
- * Keyed by runtime id because the status carries no other way to say so.
- */
-const RUNNING_COST_RUNTIMES: ReadonlySet<string> = new Set(['claude-code']);
 
 /** Mutable accumulator for the harvest loop; the last-seen value of each field wins. */
 interface HarvestState {
@@ -153,15 +164,16 @@ function harvestEvent(event: StreamEvent, state: HarvestState): void {
  * Only called from {@link import('./trace-runtime.js').traceRuntime} when at
  * least one output is active, so the off-path pays nothing.
  *
- * @param runtimeType - The runtime id (`target.type`).
+ * @param runtime - The runtime the turn runs on (`target`).
  * @param sessionId - The DorkOS session id (an opaque id, stamped on the span).
  * @param source - The runtime's real `sendMessage` generator.
  */
 export async function* observeRuntimeTurn(
-  runtimeType: string,
+  runtime: CostRuntime,
   sessionId: string,
   source: AsyncGenerator<StreamEvent>
 ): AsyncGenerator<StreamEvent> {
+  const runtimeType = runtime.type;
   // A no-op span when tracing is off (bridge-only case) — attribute writes below
   // are then free, and the bridge still fires.
   const span = isTracingEnabled()
@@ -189,7 +201,7 @@ export async function* observeRuntimeTurn(
     // is no fallback: a turn whose share could not be derived (the first result
     // of a resumed session after a restart, `sdk/turn-usage.ts`) reports no cost
     // rather than the whole session's.
-    const costUsd = turnCostOf(runtimeType, state);
+    const costUsd = turnCostOf(reportsRunningCost(runtime), state);
     if (span) {
       span.setAttr(ATTR.EVENT_COUNT, count);
       span.setAttr(ATTR.GEN_AI_SYSTEM, runtimeType);

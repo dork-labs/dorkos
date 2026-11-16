@@ -40,7 +40,7 @@ export function traceRuntime(runtime: AgentRuntime): AgentRuntime {
           content: string,
           opts?: MessageOpts
         ): AsyncGenerator<StreamEvent> =>
-          observeRuntimeTurn(target.type, sessionId, target.sendMessage(sessionId, content, opts));
+          observeRuntimeTurn(target, sessionId, target.sendMessage(sessionId, content, opts));
       }
       // Receiver is the real target (not the proxy) so getters/methods that
       // touch private fields resolve against the instance that owns them.

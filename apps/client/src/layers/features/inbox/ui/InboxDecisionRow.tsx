@@ -388,7 +388,7 @@ export function InboxDecisionRow({
           {watchLine && <p className="text-2xs mt-0.5">{watchLine}</p>}
           {sourceLine && (
             <p
-              className="text-muted-foreground text-2xs mt-0.5 font-mono break-words sm:truncate"
+              className="text-muted-foreground text-2xs mt-0.5 truncate font-mono"
               title={sourceTitle ?? sourceLine}
             >
               {sourceLine}

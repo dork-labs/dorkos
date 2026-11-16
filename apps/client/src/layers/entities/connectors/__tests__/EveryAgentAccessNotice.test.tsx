@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { createMockTransport } from '@dorkos/test-utils';
+import { createMockTransport } from '@dorkos/test-utils/mock-factories';
 import type { ConnectorEveryAgentGrant } from '@dorkos/shared/connector-resource-schemas';
 import { TransportProvider } from '@/layers/shared/model';
 import { EveryAgentAccessNotice } from '../ui/EveryAgentAccessNotice';

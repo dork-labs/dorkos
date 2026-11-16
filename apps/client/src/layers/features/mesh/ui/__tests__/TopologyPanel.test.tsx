@@ -9,7 +9,7 @@ import '@testing-library/jest-dom/vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { Transport } from '@dorkos/shared/transport';
 import type { TopologyView, TopologyAgent } from '@dorkos/shared/mesh-schemas';
-import { createMockTransport } from '@dorkos/test-utils';
+import { createMockTransport } from '@dorkos/test-utils/mock-factories';
 import { TransportProvider } from '@/layers/shared/model';
 import { OPEN_MESH_LABEL } from '@/layers/entities/mesh';
 import { TopologyPanel } from '../TopologyPanel';

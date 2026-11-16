@@ -109,6 +109,66 @@ describe('runSafeGit', () => {
     expect(fs.existsSync(marker)).toBe(false);
   });
 
+  it.each(['sentinel', 'file path', 'shell metacharacters'])(
+    'reads a linked worktree with inert Codex metadata: %s',
+    async (kind) => {
+      const dir = repo(`codex-${kind}`);
+      const tree = path.join(scratch, `linked-${kind}`);
+      git(dir, 'config', 'extensions.worktreeConfig', 'true');
+      git(dir, 'worktree', 'add', '-q', '-b', 'linked', tree);
+      const script = path.join(scratch, 'codex-config.sh');
+      fs.writeFileSync(script, `#!/bin/sh\ntouch '${marker}'\n`, { mode: 0o755 });
+      const value =
+        kind === 'sentinel'
+          ? '__none__'
+          : kind === 'file path'
+            ? script
+            : "$(touch '" + marker + "'); `touch '" + marker + "'`; " + script;
+      git(tree, 'config', '--worktree', 'codex.localEnvironmentConfigPath', value);
+      // The actual linked gitdir owns this config, not the checkout's shared config.
+      expect(
+        fs.readFileSync(git(tree, 'rev-parse', '--git-path', 'config.worktree'), 'utf8')
+      ).toContain('localEnvironmentConfigPath');
+      expect(git(tree, 'config', '--worktree', '--get', 'codex.localEnvironmentConfigPath')).toBe(
+        value
+      );
+      fs.writeFileSync(path.join(tree, 'a.txt'), 'changed\n');
+      // Plain installed Git is a positive control for parsing this exact value without executing it.
+      expect(git(tree, 'status', '--porcelain=v1')).toContain('M a.txt');
+      expect(fs.existsSync(marker)).toBe(false);
+      await expect(runSafeGit(['status', '--porcelain=v1'], tree)).resolves.toContain(' M a.txt');
+      await expect(runSafeGitBuffer(['show', 'HEAD:a.txt'], tree)).resolves.toEqual(
+        Buffer.from('one\n')
+      );
+      expect(fs.existsSync(marker)).toBe(false);
+    }
+  );
+
+  it.each([
+    'codex.other',
+    'codex.localenvironmentconfigpath.extra',
+    'codex.localenvironmentconfigpathx',
+    'xcodex.localenvironmentconfigpath',
+    'include.path',
+    'includeIf.gitdir:/.path',
+    'credential.helper',
+    'filter.mark.clean',
+    'diff.mark.command',
+    'core.fsmonitor',
+    'merge.mark.driver',
+  ])('still refuses %s beside benign Codex worktree metadata', async (key) => {
+    const dir = repo(`codex-hostile-${key.replace(/[^a-z0-9]/gi, '-')}`);
+    const tree = path.join(scratch, `linked-${path.basename(dir)}`);
+    git(dir, 'config', 'extensions.worktreeConfig', 'true');
+    git(dir, 'worktree', 'add', '-q', '-b', 'linked', tree);
+    git(tree, 'config', '--worktree', 'codex.localEnvironmentConfigPath', '__none__');
+    git(tree, 'config', '--worktree', key, "!touch '" + marker + "'");
+    const read = runSafeGit(['status', '--porcelain=v1'], tree);
+    await expect(read).rejects.toBeInstanceOf(GitRepoConfigUnsafeError);
+    await expect(read).rejects.toMatchObject({ keys: expect.arrayContaining([key.toLowerCase()]) });
+    expect(fs.existsSync(marker)).toBe(false);
+  });
+
   it('refuses includes and partial-clone settings rather than following them', async () => {
     const dir = repo('include');
     git(dir, 'config', 'include.path', path.join(scratch, 'elsewhere.cfg'));

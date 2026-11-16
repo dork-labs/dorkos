@@ -8,7 +8,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { createMockTransport } from '@dorkos/test-utils';
+import { createMockTransport } from '@dorkos/test-utils/mock-factories';
 import type { TeamMember } from '@dorkos/shared/team-schemas';
 import type { WorkItem, WorkQueue } from '@dorkos/shared/work-queue-schemas';
 import { MOCK_TEAM_ROSTER } from '@/dev/mock-samples';

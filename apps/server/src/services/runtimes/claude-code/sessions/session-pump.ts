@@ -547,6 +547,14 @@ export class SessionPump {
   }
 
   /**
+   * Has this process passed the 16-hour limit, in one turn or one continuous
+   * busy stretch (DOR-2705)? See `ProcessQuiet.isPastHardLimit`.
+   */
+  isPastHardLimit(): boolean {
+    return this.quiet.isPastHardLimit();
+  }
+
+  /**
    * Are background shells and session timers the only things this process is
    * holding for (DOR-2065, DOR-2717)? See `ProcessQuiet.isHoldingOnlyReclaimable`.
    */

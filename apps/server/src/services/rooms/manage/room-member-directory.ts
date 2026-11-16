@@ -18,6 +18,7 @@ import type { AuthorRecord, AuthorRegistry } from '../author-registry.js';
 import type { RoomCore } from '../service/room-core.js';
 import type { RoomStore } from '../room-store.js';
 import type { RoomVisibility } from '../service/room-visibility.js';
+import { agentFacingRoomName, type RoomBridgeLookup } from '../agent-facing-room-name.js';
 
 /**
  * The most rooms {@link RoomService.listMemberRooms} answers with (agent-memory
@@ -160,19 +161,23 @@ export function normalizeMemberHandle(handle: string): string {
  *
  * `#slug` for a channel, because that is the name a person types and the name
  * the room context block already uses; the title for a direct message, which has
- * no slug and whose title is who it is with.
+ * no slug and whose title is who it is with. A bridged group nobody renamed is
+ * "Bridged channel", because a stranger may have chosen its name
+ * (`agentFacingRoomName`, DOR-4453).
  *
  * @param room - The room.
+ * @param bridges - Where the room's recorded far-end chat title lives.
  * @returns The label, never empty — a room's title is required.
  */
-export function memberRoomName(room: Room): string {
-  return room.kind === 'channel' && room.slug ? `#${room.slug}` : room.title;
+export function memberRoomName(room: Room, bridges: RoomBridgeLookup): string {
+  return agentFacingRoomName(room, bridges);
 }
 
 /** The room directory as a model reaches it: by membership, name and handle. */
 export class RoomMemberDirectory {
   private readonly store: RoomStore;
   private readonly authors: AuthorRegistry;
+  private readonly bridges: RoomBridgeLookup;
 
   constructor(
     core: RoomCore,
@@ -180,6 +185,7 @@ export class RoomMemberDirectory {
   ) {
     this.store = core.store;
     this.authors = core.authors;
+    this.bridges = core.bridges;
   }
 
   /**
@@ -228,7 +234,7 @@ export class RoomMemberDirectory {
       .map((room) => ({
         roomId: room.id,
         kind: room.kind,
-        name: memberRoomName(room),
+        name: memberRoomName(room, this.bridges),
         // Defaulted rather than asserted. The listing INNER JOINS `room_members`,
         // so every room here has a membership row and the fallback is
         // unreachable — but a non-null assertion over two separate reads is a
@@ -404,7 +410,7 @@ export class RoomMemberDirectory {
     return {
       roomId: room.id,
       kind: room.kind,
-      name: memberRoomName(room),
+      name: memberRoomName(room, this.bridges),
       topic: room.topic,
       joinedAt,
       lastActivityAt: room.lastActivityAt,

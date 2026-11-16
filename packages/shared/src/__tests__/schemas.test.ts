@@ -12,11 +12,92 @@ import {
   SessionStatusEventSchema,
   UsageStatusSchema,
   UiActionRequestSchema,
+  CreateTaskRequestSchema,
+  UpdateTaskRequestSchema,
   UpdateSessionRequestSchema,
   UI_ACTION_ID_MAX_LENGTH,
   UI_ACTION_TITLE_MAX_LENGTH,
   UI_ACTION_PAYLOAD_MAX_LENGTH,
 } from '../schemas.js';
+
+describe('task permission requests', () => {
+  it('accepts a requested mode and exact Claude Code rules', () => {
+    const parsed = CreateTaskRequestSchema.parse({
+      name: 'nightly',
+      description: 'Nightly check',
+      prompt: 'Run the nightly check.',
+      target: 'global',
+      requestedPermissionMode: 'dontAsk',
+      requestedAllow: ['Bash(/abs/path/script.sh --once)'],
+    });
+
+    expect(parsed.requestedPermissionMode).toBe('dontAsk');
+    expect(parsed.requestedAllow).toEqual(['Bash(/abs/path/script.sh --once)']);
+  });
+
+  it.each([
+    '',
+    '   ',
+    'Bash',
+    'Bash(*)',
+    'Bash( * )',
+    'Bash(**)',
+    'Bash(:*)',
+    'Bash(* *)',
+    'Bash()',
+    'Read(/**)',
+    'Edit(//**)',
+    'WebFetch(domain:*)',
+    'WebFetch',
+    'mcp__dorkos__*',
+    'mcp__dorkos__*(x)',
+    'Bash(ls)\nBash(*)',
+    // Security Should D-2: the home folder, any wildcard domain, interpreters.
+    'Read(~/**)',
+    'Edit(~/**)',
+    'Read(~)',
+    'Read($HOME/**)',
+    'Edit(${HOME}/**)',
+    'WebFetch(domain:*.com)',
+    'WebFetch(domain:*.example.com)',
+    'Bash(python3:*)',
+    'Bash(node:*)',
+    'Bash(sh -c:*)',
+    'Bash(bash -c:*)',
+    'Bash(bash -c *)',
+    'Bash(python3 *)',
+    'Bash(env:*)',
+    'Bash(env *)',
+    'Bash(xargs:*)',
+    'Bash(perl:*)',
+    'Bash(perl -e *)',
+    'Bash(ruby:*)',
+    'Bash(ruby -e *)',
+    'Bash(npx:*)',
+  ])('refuses unsafe requested rules: %j', (rule) => {
+    expect(UpdateTaskRequestSchema.safeParse({ requestedAllow: [rule] }).success).toBe(false);
+  });
+
+  it.each([
+    'Bash(/abs/path/script.sh --once)',
+    'Bash(pnpm check:watchdog)',
+    'WebFetch(domain:example.com)',
+    'Read(/abs/notes/today.md)',
+  ])('accepts a specific rule: %j', (rule) => {
+    expect(UpdateTaskRequestSchema.safeParse({ requestedAllow: [rule] }).success).toBe(true);
+  });
+
+  it('caps requested rules at twenty and three hundred characters each', () => {
+    expect(
+      UpdateTaskRequestSchema.safeParse({
+        requestedAllow: Array.from({ length: 21 }, (_, i) => `Read(/abs/notes/${i}.md)`),
+      }).success
+    ).toBe(false);
+    expect(
+      UpdateTaskRequestSchema.safeParse({ requestedAllow: [`Read(${'.'.repeat(301)})`] }).success
+    ).toBe(false);
+  });
+});
 
 describe('SessionSchema', () => {
   const baseSession = {

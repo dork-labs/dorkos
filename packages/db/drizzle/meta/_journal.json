@@ -1373,6 +1373,41 @@
       "when": 1794608614333,
       "tag": "20261113222334_dor4019_work_claims",
       "breakpoints": true
+    },
+    {
+      "idx": 196,
+      "version": "6",
+      "when": 1794758844514,
+      "tag": "20261115160724_dor3641_task_approval_receipt",
+      "breakpoints": true
+    },
+    {
+      "idx": 197,
+      "version": "6",
+      "when": 1794793925059,
+      "tag": "20261116015205_canvas_opened_by",
+      "breakpoints": true
+    },
+    {
+      "idx": 198,
+      "version": "6",
+      "when": 1794799768790,
+      "tag": "20261116032928_dor3637_task_permission_requests",
+      "breakpoints": true
+    },
+    {
+      "idx": 199,
+      "version": "6",
+      "when": 1794799828000,
+      "tag": "20261116033028_dor3034_due_history",
+      "breakpoints": true
+    },
+    {
+      "idx": 200,
+      "version": "6",
+      "when": 1794799888000,
+      "tag": "20261116033128_dor3034_wake_and_confirm",
+      "breakpoints": true
     }
   ]
 }

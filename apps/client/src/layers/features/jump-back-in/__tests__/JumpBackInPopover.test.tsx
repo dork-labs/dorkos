@@ -9,7 +9,7 @@ import { agentAuthorRef, type AuthorRef, type RoomSummary } from '@dorkos/shared
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
 import { roomIdentityMark } from '@/layers/entities/room';
 import { mergeJumpBackIn } from '@/layers/entities/recents';
-import { createMockSession } from '@dorkos/test-utils';
+import { createMockSession } from '@dorkos/test-utils/mock-factories';
 import { JumpBackInPopover } from '../ui/JumpBackInPopover';
 import { jumpBackInRowId } from '../model/use-jump-back-in-popover';
 

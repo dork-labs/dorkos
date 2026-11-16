@@ -214,7 +214,8 @@ verdict=$(jq -r --argjson hold "$HOLD_LABELS" --argjson repeat "$REPEAT_EJECTION
 
   # The verdict from main at this head (DOR-3686). `security-gate` runs the PR copy
   # of the gate, so a PR that edits the gate passes its own check, and it passes while a
-  # PR is only waiting for its label. `security-review` is the commit status that
+  # PR is only waiting for its label or for `hold` to come off (DOR-4459; a held PR
+  # is refused above anyway). `security-review` is the commit status that
   # the copy on main writes from `pull_request_target` (#3426): `success` only for a
   # label at this head, from a person, with no hold. Pending, failure or no row
   # all refuse here, before the bucket rules below, so a pending verdict is never

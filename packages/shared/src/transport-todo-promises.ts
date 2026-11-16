@@ -13,6 +13,7 @@ import type {
   ListTodoPromisesQuery,
   ListTodoPromisesResponse,
   UpdateTodoPromiseRequest,
+  ConfirmTodoPromiseRequest,
 } from './todo-promise-schemas.js';
 
 /** The to-do methods every Transport implements. */
@@ -40,4 +41,12 @@ export interface TodoPromiseTransport {
    * @param body - The new state, and optionally a new date and a note.
    */
   updateTodoPromise(id: string, body: UpdateTodoPromiseRequest): Promise<TodoPromise>;
+
+  /**
+   * Answer whether a kept promise was kept (DOR-3034): Yes confirms it, Not yet reopens it.
+   *
+   * @param id - The to-do id.
+   * @param answer - Yes or Not yet.
+   */
+  confirmTodoPromise(id: string, answer: ConfirmTodoPromiseRequest['answer']): Promise<TodoPromise>;
 }

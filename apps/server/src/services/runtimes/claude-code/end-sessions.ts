@@ -206,7 +206,9 @@ export function releaseEvictedSessions(
     // off disk. Dropped rather than paid — nothing was spent, so nothing is
     // recorded (spec `plugin-reload-cache-cost`).
     port.pluginReloads.cancel(sessionId);
-    port.pumps.evict(sessionId).catch((err: unknown) => {
+    // `sweep`: DorkOS's own clean-up, so a turn it ends past the 16-hour limit
+    // can say so, where a person's pause (`endSession`) never does (DOR-2705).
+    port.pumps.evict(sessionId, 'sweep').catch((err: unknown) => {
       logger.warn('[ClaudeCodeRuntime] evicted session failed to give back its process', {
         sessionId,
         error: err instanceof Error ? err.message : String(err),

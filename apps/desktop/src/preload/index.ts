@@ -10,6 +10,7 @@ import type { CertificateFilePickResult } from '../main/certificate-file-picker'
 import type { TerminalCommandResult } from '../main/terminal-command/state';
 import type { HeartbeatReport } from '../main/renderer-health';
 import type { ClosedTab, StartupMode, WindowTabs } from '../main/tab-session';
+import type { GuestPageState as LocalBrowserPageState } from '../main/local-browser/page-events';
 import type { StepUpWindowOutcome } from '../shared/step-up-page';
 
 /**
@@ -49,6 +50,10 @@ const CHOOSE_CERTIFICATE_FILE_CHANNEL = 'company-certificates:choose-file';
 const TERMINAL_COMMAND_STATUS_CHANNEL = 'terminal-command:status';
 const TERMINAL_COMMAND_INSTALL_CHANNEL = 'terminal-command:install';
 const TERMINAL_COMMAND_REMOVE_CHANNEL = 'terminal-command:remove';
+
+/** IPC channels for a guest page's loads and failures (mirror `main/local-browser/index.ts`). */
+const LOCAL_BROWSER_PAGE_CHANNEL = 'local-browser:page';
+const LOCAL_BROWSER_PAGE_CHANGED_CHANNEL = 'local-browser:page-changed';
 
 /** IPC channel a mounted renderer reports itself alive on (mirrors `ALIVE_CHANNEL` in renderer-health/index.ts). */
 const ALIVE_CHANNEL = 'renderer:alive';
@@ -292,6 +297,29 @@ contextBridge.exposeInMainWorld('electronAPI', {
       height: number;
       visible: boolean;
     }): Promise<void> => ipcRenderer.invoke('local-browser:set-bounds', bounds),
+    /**
+     * Read one guest page's load state, or act on it: Stop, Reload, Go back, or Try again
+     * (which reloads only the address the shell itself recorded). `null` when the page
+     * isn't this window's to act on.
+     */
+    page: (
+      connectionId: string,
+      action: 'read' | 'stop' | 'retry' | 'back' | 'reload'
+    ): Promise<LocalBrowserPageState | null> =>
+      ipcRenderer.invoke(LOCAL_BROWSER_PAGE_CHANNEL, { connectionId, action }),
+    /** Subscribe to guest pages this window shows starting, stopping or failing a load. */
+    onPageChange: (cb: (state: LocalBrowserPageState) => void): (() => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, state: LocalBrowserPageState): void =>
+        cb(state);
+      ipcRenderer.on(LOCAL_BROWSER_PAGE_CHANGED_CHANNEL, listener);
+      return () => ipcRenderer.removeListener(LOCAL_BROWSER_PAGE_CHANGED_CHANNEL, listener);
+    },
+    /**
+     * A JPEG still of the page this window shows now, or `null` (DOR-4438). It is
+     * drawn in the page's place while an app layer covers it, and kept in memory only.
+     */
+    captureStill: (connectionId: string): Promise<Uint8Array | null> =>
+      ipcRenderer.invoke('local-browser:capture-still', connectionId),
   },
   /**
    * Open a URL in the system browser.

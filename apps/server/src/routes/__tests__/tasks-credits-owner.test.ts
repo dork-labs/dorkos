@@ -89,6 +89,7 @@ describe('schedules on DorkOS credits are the owner’s alone', () => {
             store,
             scheduler,
             registrar: new TaskRegistrar({ store, scheduler }),
+            defaultTimezone: () => 'UTC',
             dorkHome: '/tmp/dork-test',
           }),
         },

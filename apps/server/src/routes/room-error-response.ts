@@ -142,6 +142,7 @@ export const STATUS_BY_CODE: Record<RoomErrorCode, number> = {
   // is exhaustive over the code union so a code without a status cannot exist.
   ATTACHMENT_PATH_REFUSED: 403,
   CANVAS_PROTECTED_FILE: 403,
+  CANVAS_APP_WIDGET_ACTION: 400,
   CANVAS_MEMBERS_CANT_READ: 403,
   ATTACHMENT_UNREADABLE: 400,
   ATTACHMENT_TOO_LARGE: 413,

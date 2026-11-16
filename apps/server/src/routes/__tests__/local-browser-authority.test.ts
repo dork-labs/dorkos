@@ -36,6 +36,7 @@ const spies = {
   open: vi.fn(async () => ({})),
   selectTab: vi.fn(async () => ({})),
   navigate: vi.fn(async () => ({})),
+  stepHistory: vi.fn(async () => ({})),
   pause: vi.fn(async () => ({})),
   resume: vi.fn(async () => ({})),
   disconnect: vi.fn(async () => ({})),
@@ -57,6 +58,7 @@ const service = {
     open: spies.open,
     selectTab: spies.selectTab,
     navigate: spies.navigate,
+    stepHistory: spies.stepHistory,
     disconnect: spies.disconnect,
     resume: spies.resume,
     signIn: spies.signIn,
@@ -113,6 +115,7 @@ const endpoints = [
   ['post', '/open', { mode: 'new-window' }, 'open'],
   ['post', '/tabs/tab-1/select', undefined, 'selectTab'],
   ['post', '/navigate', { url: 'https://example.test/' }, 'navigate'],
+  ['post', '/history', { direction: 'back' }, 'stepHistory'],
   ['post', '/pause', undefined, 'pause'],
   ['post', '/resume', undefined, 'resume'],
   ['post', '/disconnect', undefined, 'disconnect'],
@@ -158,6 +161,7 @@ describe.each([
   ['/open', { mode: 'new-window' }],
   ['/tabs/tab-1/select', undefined],
   ['/navigate', { url: 'https://example.test/' }],
+  ['/history', { direction: 'forward' }],
   ['/resume', undefined],
   ['/disconnect', undefined],
   ['/sign-in', { url: 'https://example.test/' }],
@@ -202,6 +206,18 @@ it('refuses a force-delete option before removing a profile', async () => {
   expect(response.status).toBe(400);
   expect(spies.deleteProfile).not.toHaveBeenCalled();
 });
+
+it.each([{ direction: 'sideways' }, { direction: 'back', steps: -5 }, {}])(
+  'refuses a history step it does not know: %j',
+  async (body) => {
+    const response = await request(server)
+      .post('/api/local-browser/history')
+      .set('Host', 'localhost')
+      .send(body);
+    expect(response.status).toBe(400);
+    expect(spies.stepHistory).not.toHaveBeenCalled();
+  }
+);
 
 it.each(['forget', 'delete'] as const)(
   'records a person-only profile %s in Activity',

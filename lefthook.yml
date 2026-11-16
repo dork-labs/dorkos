@@ -162,7 +162,8 @@ pre-commit:
       fail_text: 'Lint failed — see the errors above, or turbo could not resolve the diff base / is not installed.'
 
 pre-push:
-  # Push checks formatting, fragments, file size and pipeline ledger coverage.
+  # Push checks formatting, fragments, file size and pipeline ledger coverage,
+  # and refuses a push that would cancel CI still running from the last one.
   # No tests or typecheck run here (DOR-2160; ledger 261101-191731).
   #
   # THE TEST GATE IS GONE. It ran `turbo test --affected` here for months, and
@@ -260,3 +261,16 @@ pre-push:
         ledger_base=$(git merge-base origin/main HEAD) || exit 1
         node packages/ci-steward/src/cli.ts ledger-check --coverage --base "$ledger_base"
       fail_text: Pipeline changes need a ledger entry — see the findings above.
+    ci-midrun:
+      # Not a test and not a gate on the code: it never claims to have tested
+      # anything (DOR-2160 stays true). It refuses a push while `test` or
+      # `browser-test` from this branch's last push is queued or running and
+      # under ten minutes old, because the push would cancel it: 74 job-hours of
+      # PR runs were cancelled that way over 2026-11-12/15 (ledger
+      # 261115-173750). Any failure to ask GitHub lets the push
+      # through with one line; `CI_PUSH_ANYWAY=1` skips it. The script's header
+      # carries the rest.
+      run: |
+        [ -r packages/ci-steward/bin/time-wrap.sh ] && . packages/ci-steward/bin/time-wrap.sh && ci_steward_time_wrap pre-push ci-midrun
+        node scripts/pre-push-midrun-check.mjs
+      fail_text: CI from your last push is still running — wait, or push with CI_PUSH_ANYWAY=1.

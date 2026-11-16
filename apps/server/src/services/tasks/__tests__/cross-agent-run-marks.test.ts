@@ -25,10 +25,13 @@ vi.mock('../../relay/relay-state.js', () => ({ isRelayEnabled: vi.fn(() => false
 const HOME_A = '/home/u/agents/alpha';
 const HOME_B = '/home/u/agents/bravo';
 
-function agentManager(): SchedulerAgentManager {
+/** Tell the fixture when its actual scheduled stream starts being consumed. */
+function agentManager(onTurnStart: () => void): SchedulerAgentManager {
   return {
     ensureSession: vi.fn(),
-    sendMessage: vi.fn().mockImplementation(async function* () {}),
+    sendMessage: vi.fn().mockImplementation(async function* () {
+      onTurnStart();
+    }),
     interruptQuery: vi.fn().mockResolvedValue(true),
     getInternalSessionId: vi.fn(() => undefined),
     acquireLock: vi.fn(() => true),
@@ -51,12 +54,15 @@ describe('a run of a task another agent made', () => {
   let db: Db;
   let manager: SchedulerAgentManager;
   let service: TaskSchedulerService;
+  let turnStarted: Promise<void>;
 
   beforeEach(() => {
     registerTestHomes([HOME_A, HOME_B]);
     db = createTestDb();
     store = new TaskStore(db);
-    manager = agentManager();
+    turnStarted = new Promise<void>((resolve) => {
+      manager = agentManager(resolve);
+    });
     service = new TaskSchedulerService({
       store,
       runtimes: singleRuntimeSource(manager),
@@ -99,7 +105,9 @@ describe('a run of a task another agent made', () => {
 
   async function runNow(id: string) {
     const run = await service.triggerManualRun(id);
-    await vi.waitFor(() => expect(vi.mocked(manager.sendMessage)).toHaveBeenCalled());
+    // The case's original time budget bounds startup; no shorter polling deadline.
+    await turnStarted;
+    expect(manager.sendMessage).toHaveBeenCalledTimes(1);
     return run!;
   }
 

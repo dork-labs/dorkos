@@ -1,8 +1,18 @@
 import { useId } from 'react';
 import type { PermissionModeDescriptor } from '@dorkos/shared/agent-runtime';
 import type { Task } from '@dorkos/shared/types';
-import { Button, PermissionModeScopeNote } from '@/layers/shared/ui';
-import { isNoLooserThan } from '@dorkos/shared/permission-semantics';
+import { Button, Checkbox, PermissionModeScopeNote } from '@/layers/shared/ui';
+import { actsWithoutAsking, isNoLooserThan } from '@dorkos/shared/permission-semantics';
+import {
+  readsBroadly,
+  runsPrograms,
+  writesOutsideTaskFolder,
+} from '@dorkos/shared/permission-rules';
+import {
+  scheduleConfirmLabel,
+  schedulePermissionLabel,
+  type ScheduleConfirmReason,
+} from '../lib/schedule-permission-copy';
 
 /** The run's mode and the separately approved folder rules, before the person approves. */
 export function SchedulePermissionChoice({
@@ -12,6 +22,9 @@ export function SchedulePermissionChoice({
   requested,
   onChange,
   onUseRequested,
+  confirmLooser,
+  onConfirmLooserChange,
+  confirmReason,
 }: {
   task: Task;
   modes: readonly PermissionModeDescriptor[];
@@ -19,6 +32,10 @@ export function SchedulePermissionChoice({
   requested: PermissionModeDescriptor | null;
   onChange: (mode: string) => void;
   onUseRequested?: () => void;
+  confirmLooser: boolean;
+  onConfirmLooserChange: (confirmed: boolean) => void;
+  /** Why approving needs the separate tick, or `null` when it does not. */
+  confirmReason: ScheduleConfirmReason | null;
 }) {
   const id = useId();
   const selected = modes.find((mode) => mode.id === value);
@@ -33,7 +50,7 @@ export function SchedulePermissionChoice({
       <select
         id={id}
         value={value}
-        aria-describedby={selected ? `${id}-${looser ? 'mismatch' : 'promise'}` : undefined}
+        aria-describedby={looser ? `${id}-mismatch` : undefined}
         onChange={(event) => onChange(event.target.value)}
         disabled={modes.length === 0}
         className="focus-ring border-input bg-background min-h-11 w-full rounded-md border px-2 disabled:opacity-50"
@@ -41,7 +58,7 @@ export function SchedulePermissionChoice({
         {!selected && <option value={value}>Saved mode (unavailable)</option>}
         {modes.map((mode) => (
           <option key={mode.id} value={mode.id}>
-            {mode.label}
+            {schedulePermissionLabel(mode.id, mode.label)}
           </option>
         ))}
       </select>
@@ -52,8 +69,9 @@ export function SchedulePermissionChoice({
           data-slot="schedule-mode-mismatch"
           className="text-status-warning-fg"
         >
-          {task.proposedByName ?? 'An agent'} asked for {requested.label}. This will run at{' '}
-          {selected.label}.{looser && ` ${selected.promise}`}
+          {task.proposedByName ?? 'An agent'} proposed{' '}
+          {schedulePermissionLabel(requested.id, requested.label)}. Selected:{' '}
+          {schedulePermissionLabel(selected.id, selected.label)}.
         </p>
       )}
       {mismatch && onUseRequested && (
@@ -63,15 +81,63 @@ export function SchedulePermissionChoice({
           className="min-h-11 w-full text-xs sm:w-auto"
           onClick={onUseRequested}
         >
-          Use {requested.label}
+          Use {schedulePermissionLabel(requested.id, requested.label)}
         </Button>
       )}
-      {selected && !looser && (
-        <p id={`${id}-promise`} className="text-muted-foreground">
-          {selected.promise}
-        </p>
+      {task.requestedAllow && task.requestedAllow.length > 0 && (
+        <div data-slot="schedule-requested-allow" className="space-y-1">
+          {/* Only Allowed commands limits a run to its rules; every other mode
+              keeps what it already allows and adds these on top. */}
+          <p className="font-medium">
+            {value === 'dontAsk'
+              ? 'Runs without asking, and may only:'
+              : 'Also runs these without asking:'}
+          </p>
+          <ul className="space-y-1">
+            {task.requestedAllow.map((rule) => (
+              <li key={rule} className="font-mono break-all">
+                {rule}
+              </li>
+            ))}
+          </ul>
+          {task.requestedAllow.some(runsPrograms) && (
+            <p data-slot="schedule-runs-programs" className="text-status-warning-fg">
+              Can run programs on this computer.
+            </p>
+          )}
+          {task.requestedAllow.some(readsBroadly) && (
+            <p data-slot="schedule-reads-broadly" className="text-status-warning-fg">
+              Can read files across this computer.
+            </p>
+          )}
+          {task.requestedAllow.some(writesOutsideTaskFolder) && (
+            <p data-slot="schedule-writes-outside" className="text-status-warning-fg">
+              Can change files outside its folder.
+            </p>
+          )}
+        </div>
       )}
-      {selected && <PermissionModeScopeNote mode={value} descriptor={selected} />}
+      {/* After what it confirms, so the tick answers what was just read. It
+          looks 24px tall; on a touch screen an invisible layer reaches 10px
+          above and below, so the whole row is a 44px target and nothing moves. */}
+      {confirmReason && (
+        <label className="relative flex min-h-6 items-center gap-2 pointer-coarse:before:absolute pointer-coarse:before:inset-x-0 pointer-coarse:before:-inset-y-2.5 pointer-coarse:before:content-['']">
+          <Checkbox
+            checked={confirmLooser}
+            onCheckedChange={(checked) => onConfirmLooserChange(checked === true)}
+          />
+          <span>
+            {scheduleConfirmLabel(
+              confirmReason,
+              selected ? schedulePermissionLabel(selected.id, selected.label) : undefined
+            )}
+          </span>
+        </label>
+      )}
+      {/* What a never-asks mode still does not cover: DorkOS's own actions. */}
+      {selected && actsWithoutAsking(selected) && (
+        <PermissionModeScopeNote mode={value} descriptor={selected} />
+      )}
       <div data-slot="schedule-folder-rules" className="space-y-1">
         <p className="font-medium">Approved folder rules</p>
         {rules?.status === 'approved' && rules.applied.length > 0 ? (
@@ -110,7 +176,7 @@ export function SchedulePermissionChoice({
         )}
         {value === 'dontAsk' && (
           <p className="text-muted-foreground">
-            Unapproved commands are refused. Nobody is asked during a scheduled run.
+            Unapproved commands are refused during scheduled runs.
           </p>
         )}
       </div>

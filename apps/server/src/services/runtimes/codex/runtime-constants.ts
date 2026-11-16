@@ -163,6 +163,10 @@ export const CODEX_CAPABILITIES: RuntimeCapabilities = {
     scope: 'conversation',
     caveat: "Codex can't search the web on DorkOS credits.",
   },
+  // Not yet (DOR-3597): file-change approvals are not checked against the shared
+  // protected list, and the sandbox profile denies protected paths only under the
+  // folders DorkOS names. Its own `.codex/` setup is not held below Full (DOR-3598).
+  guards: { protectedPaths: false, ownFolder: false },
   features: {},
 };
 

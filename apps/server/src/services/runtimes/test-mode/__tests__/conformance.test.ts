@@ -5,7 +5,7 @@ import {
   assertDocBoundary,
 } from '../../__tests__/doc-events-boundary-fixture.js';
 import { afterEach, expect, it, vi } from 'vitest';
-import { runtimeConformance } from '@dorkos/test-utils';
+import { runtimeConformance, runtimeGuardConformance } from '@dorkos/test-utils';
 import { scenarioStore, requestFinishTurn } from '../scenario-store.js';
 import { heldProcesses } from '../held-process.js';
 import { interactionGate } from '../interaction-gate.js';
@@ -36,6 +36,9 @@ afterEach(() => {
 // The adapter is stateless and EventLog-backed, so green here proves the suite
 // itself bakes in no JSONL/file assumptions — the same assertions must also
 // pass against the JSONL-backed ClaudeCodeRuntime (see its conformance.test.ts).
+// A scripted fixture: it declares no guard, so DorkOS treats it as having none.
+runtimeGuardConformance(() => new TestModeRuntime());
+
 runtimeConformance(() => new TestModeRuntime(), {
   name: 'TestModeRuntime — AgentRuntime conformance',
   // Stateless by design: native history is [] — completed messages live in the

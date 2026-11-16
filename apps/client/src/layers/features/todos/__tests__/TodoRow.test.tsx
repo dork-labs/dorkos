@@ -47,6 +47,26 @@ describe('TodoRow', () => {
     expect(screen.getByText('Due today')).toHaveClass('font-medium');
   });
 
+  it('says how often a date moved and when it was first due (DOR-3034)', () => {
+    const row = renderRow({
+      todo: createMockTodo({
+        dueAt: '2099-03-20T12:00:00.000Z',
+        originalDueAt: '2099-03-14T12:00:00.000Z',
+        moveCount: 2,
+      }),
+      from: 'you',
+    });
+    expect(row).toHaveTextContent(/Moved twice, first due Mar 1[34]/);
+  });
+
+  it('says nothing about moves for a to-do whose date never moved', () => {
+    const row = renderRow({
+      todo: createMockTodo({ dueAt: '2099-03-20T12:00:00.000Z' }),
+      from: 'you',
+    });
+    expect(row).not.toHaveTextContent('Moved');
+  });
+
   it("names the agent that has an agent's to-do", () => {
     const row = renderRow({
       todo: createMockTodo({ assignee: { kind: 'agent', agentId: 'agent-1' } }),

@@ -13,7 +13,7 @@ import type { ReactNode } from 'react';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { createMockSession, createMockTransport } from '@dorkos/test-utils';
+import { createMockSession, createMockTransport } from '@dorkos/test-utils/mock-factories';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
 import type { SessionStatus } from '@dorkos/shared/session-stream';
 import { LinkChipProvider, TransportProvider } from '@/layers/shared/model';

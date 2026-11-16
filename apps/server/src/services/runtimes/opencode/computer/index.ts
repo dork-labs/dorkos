@@ -84,6 +84,8 @@ export function createComputerRuntime(options: ComputerRuntimeOptions): {
           type: options.runtimeId,
           // Sign-in and settings belong to the guest, not the host OpenCode sidecar.
           credits: undefined,
+          // So do safety guards: the guest enforces none of the host's (DOR-3596).
+          guards: undefined,
           settings: { configSection: null, supportsEffort: false, sections: [] },
         });
       if (property === 'getSupportedModels')

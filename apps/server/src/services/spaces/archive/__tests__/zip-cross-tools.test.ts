@@ -47,8 +47,12 @@ function withTool(tool: keyof typeof tools, title: string, check: () => unknown)
   }
 }
 
-function run(command: string, args: string[]) {
-  const result = spawnSync(command, args, { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
+function run(command: string, args: string[], extraEnv: Record<string, string> = {}) {
+  const result = spawnSync(command, args, {
+    encoding: 'utf8',
+    maxBuffer: 64 * 1024 * 1024,
+    env: { ...env, ...extraEnv },
+  });
   if (result.status !== 0) {
     throw new Error(
       `${command} ${args.join(' ')} failed (${result.status}): ${result.stderr}${result.stdout}`
@@ -110,7 +114,9 @@ for (const forceZip64 of [false, true]) {
         const source = entry.source as Buffer;
         expected.set(entry.name, source);
       }
-      digests = Object.fromEntries([...expected].map(([name, bytes]) => [name, sha256(bytes)]));
+      digests = Object.fromEntries(
+        [...expected].map(([name, bytes]) => [name.normalize('NFC'), sha256(bytes)])
+      );
       const written = await writeArchive(groups, tail, { modifiedAt: FIXED_TIME, forceZip64 });
       expect(written.segments).toHaveLength(3);
       path = join(directory, 'export.zip');
@@ -140,12 +146,16 @@ for (const forceZip64 of [false, true]) {
         const out = join(directory, 'independent');
         await mkdir(out);
         if (independentTool === 'bsdtar') {
+          // Two macOS quirks in the listing, neither in the archive: with no UTF-8 locale
+          // (a bare shell, a test runner) bsdtar prints `é` as the octal escape `e\314\201`,
+          // and its libarchive hands back names decomposed (NFD). A UTF-8 locale gives real
+          // characters, and NFC on both sides compares the names, not the encoding.
           expect(
-            run('bsdtar', ['-tf', path])
+            run('bsdtar', ['-tf', path], { LC_ALL: 'C.UTF-8' })
               .trim()
               .split('\n')
               .map((name) => name.normalize('NFC'))
-          ).toEqual([...expected.keys()]);
+          ).toEqual([...expected.keys()].map((name) => name.normalize('NFC')));
           run('bsdtar', ['-xf', path, '-C', out]);
         } else {
           run(independentTool!, ['t', '-bd', path]);

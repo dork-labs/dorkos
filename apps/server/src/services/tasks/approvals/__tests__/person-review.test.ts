@@ -14,6 +14,10 @@ describe('a person’s schedule review revision', () => {
     const revision = taskReviewRevision(task);
     expect(taskReviewRevision({ ...task, permissionMode: 'dontAsk' })).not.toBe(revision);
     expect(taskReviewRevision({ ...task, prompt: 'Different instructions' })).not.toBe(revision);
+    expect(taskReviewRevision({ ...task, requestedPermissionMode: 'dontAsk' })).not.toBe(revision);
+    expect(taskReviewRevision({ ...task, requestedAllow: ['Read(/tmp/report)'] })).not.toBe(
+      revision
+    );
     expect(taskReviewRevision({ ...task, nextRun: 'later', updatedAt: 'later' })).toBe(revision);
   });
   it('refuses a file edit even before the watcher updates the row', () => {

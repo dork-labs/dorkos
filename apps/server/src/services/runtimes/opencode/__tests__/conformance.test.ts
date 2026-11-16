@@ -84,7 +84,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import type { OpencodeClient, GlobalEvent, Message, Part } from '@opencode-ai/sdk';
-import { runtimeConformance, type HandedGrants } from '@dorkos/test-utils';
+import { runtimeConformance, runtimeGuardConformance, type HandedGrants } from '@dorkos/test-utils';
 
 /**
  * The live-mode decision, hoisted so the (also hoisted) vi.mock factory can
@@ -585,6 +585,9 @@ const sidecarSpawns: Record<string, string>[] = [];
  * script. Never set in LIVE mode, where there is no mock to reach.
  */
 let lastClient: ReturnType<typeof makeConformanceClient> | undefined;
+
+// OpenCode declares no safety guard yet (its shell is unchecked; DOR-3598), so it proves none.
+runtimeGuardConformance(() => new OpenCodeRuntime({ provider: makeMockedProvider() }));
 
 runtimeConformance(
   // Fresh runtime per test; the provider is the only dependency (ADR-0308).

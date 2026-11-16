@@ -21,7 +21,6 @@ export function ScheduleInstructions({
   compact,
   selectedMode,
   currentLabel,
-  runtime,
   flowing = false,
   hidePermissions = false,
 }: {
@@ -32,7 +31,6 @@ export function ScheduleInstructions({
   compact: boolean;
   selectedMode: string;
   currentLabel: string;
-  runtime: string | null;
   flowing?: boolean;
   hidePermissions?: boolean;
 }) {
@@ -56,12 +54,7 @@ export function ScheduleInstructions({
               fallback for the frames before the runtime's profile lands; it
               knows every bypass mode the shipped runtimes have. */}
           {!hidePermissions && (
-            <ScheduleRunPermissions
-              mode={selectedMode}
-              label={currentLabel}
-              runtime={runtime}
-              showLabel={!flowing}
-            />
+            <ScheduleRunPermissions mode={selectedMode} label={currentLabel} showLabel={!flowing} />
           )}
           <pre
             data-slot="schedule-prompt"
@@ -72,7 +65,7 @@ export function ScheduleInstructions({
             // eslint-disable-next-line jsx-a11y/no-noninteractive-tabindex
             tabIndex={flowing ? undefined : 0}
             className={cn(
-              'text-foreground/90 rounded-md p-2 font-sans text-sm break-words whitespace-pre-wrap',
+              'text-foreground/90 rounded-md p-2 font-sans text-xs break-words whitespace-pre-wrap',
               !flowing && [
                 'focus-ring overflow-auto',
                 compact ? 'max-h-[25dvh] sm:max-h-40' : 'max-h-[40dvh] sm:max-h-64',
@@ -94,7 +87,10 @@ export function ScheduleInstructions({
                 className="text-muted-foreground hover:text-foreground -ml-2 h-6 px-2 text-xs"
               >
                 <ChevronRight
-                  className={cn('size-3.5 transition-transform', revealed && 'rotate-90')}
+                  className={cn(
+                    'size-3.5 transition-transform motion-reduce:transition-none',
+                    revealed && 'rotate-90'
+                  )}
                   aria-hidden
                 />
                 {revealed ? 'Hide exact instructions' : 'Show exact instructions'}
@@ -113,7 +109,6 @@ export function ScheduleInstructions({
               <ScheduleRunPermissions
                 mode={selectedMode}
                 label={currentLabel}
-                runtime={runtime}
                 showLabel={!flowing}
               />
             )}

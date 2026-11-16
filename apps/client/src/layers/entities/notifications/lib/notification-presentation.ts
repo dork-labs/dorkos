@@ -12,6 +12,7 @@
 import { appRoutes } from '@/layers/shared/lib';
 import {
   Bell,
+  CalendarClock,
   CheckCircle2,
   CircleAlert,
   Clock,
@@ -126,6 +127,8 @@ export const NOTIFICATION_ICONS: Record<NotificationKind, LucideIcon> = {
   'agent.secret_files': ShieldAlert,
   'shell.check_down': ShieldAlert,
   'report.undelivered': MailX,
+  // An agent moved or dropped a promise it made to the person (DOR-3034).
+  'todo.changed': CalendarClock,
   // A Claude folder's sign-in is new or changed (DOR-3245).
   'account.signin_review': UserRoundCheck,
 };

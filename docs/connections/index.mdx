@@ -84,9 +84,15 @@ While it waits, everyone is told. A notification appears in the Inbox (the bell)
 
 This is a cancel, not an undo. Once an action has run, DorkOS can't take it back.
 
-Everything else still asks you first with an approval card: on **Careful**, in a chat that asks before acting, when someone outside your team started the chat (a Telegram or Slack message, say), and when the request doesn't come from an agent's chat.
+Everything else still asks you first with an approval card: on **Careful**, in a chat that asks before acting, when someone other than you messaged the agent over Wi-Fi or in a room, and when the request doesn't come from an agent's chat.
 
-Words from outside your team always bring back the card, even in a chat set to **Full**. Once an agent has read them, it asks you before it sends, replies or forwards an email, creates a calendar event with guests, changes any calendar event, or takes any action that can't be taken back. Drafts, labels and reading still run without asking.
+A message over Wi-Fi from someone other than you brings back the card, even in a chat set to **Full**. After one, the agent asks you before it sends, replies or forwards an email, creates a calendar event with guests, changes any calendar event, or takes any action that can't be taken back. Drafts, labels and reading still run without asking.
+
+A message from someone else on Telegram, Slack or in a room counts too, even at **Full**. DorkOS can't ask you about a connected-app send from a Telegram or Slack chat, so in that turn the send is refused. In a room, the agent asks you first, or the send is refused when nobody is watching.
+
+DorkOS knows it's you on Telegram or Slack only if your own ID is on that connection's **Approvers** list, under **Access Control** in its settings. If it isn't, your own messages count as someone else's and your agent won't send for you. If you can already message the bot privately, your ID is in the **DM Allowlist** right above it. This only works in a private chat with the bot: in a group chat, every message counts as someone else's, yours too.
+
+An email or web page the agent reads doesn't bring the card back. Treat it as untrusted. Setting Telegram and Slack to an allowlist still keeps strangers out of the chat in the first place.
 
 ## Agents can ask, but you decide
 

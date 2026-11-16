@@ -7,6 +7,11 @@ import {
   extensionMcpToolName,
 } from '@dorkos/shared/capabilities';
 import { EXTENSION_ID_REGEX } from '@dorkos/shared/extension-id';
+import {
+  checkCrossAppDeclarations,
+  ExtensionExportsSchema,
+  HttpCapabilitySchema,
+} from './cross-app.js';
 import { validateSlug } from '@dorkos/skills/slug';
 import { EXTENSION_EVENT_DECLARATIONS } from './extension-events.js';
 import { formatNetEntry, isNetEntryError, parseNetEntry } from './net-allowlist.js';
@@ -25,6 +30,12 @@ import {
  * kinds are rejected at runtime — this is the capability gate.
  */
 const ExtensionCapabilitiesSchema = z.object({
+  /**
+   * Allows requests to this app's own server routes through the frame bridge
+   * (`true`), and to the exact apps it lists (`{ apps: [...] }`), which must
+   * each export the route asked for.
+   */
+  http: HttpCapabilitySchema.optional(),
   /** Event kinds or categories this extension is allowed to subscribe to. */
   events: z.array(z.enum(EXTENSION_EVENT_DECLARATIONS)).optional(),
   /**
@@ -418,6 +429,8 @@ const ExtensionManifestObjectSchema = z.object({
   summary: z.string().min(1).max(80).optional(),
   /** Author name or identifier. */
   author: z.string().optional(),
+  /** Client bridge major. Version 2 runs in an isolated frame; older bundles need rebuilding. */
+  clientApiVersion: z.literal(2).optional(),
   /** Minimum DorkOS version required (semver). If host is older, extension cannot be enabled. */
   minHostVersion: z.string().optional(),
   /** Declares which slots this extension contributes to. Informational only — not enforced. */
@@ -426,6 +439,8 @@ const ExtensionManifestObjectSchema = z.object({
   permissions: z.array(z.string()).optional(),
   /** Client-side capability declarations (e.g. which host events to subscribe to). */
   capabilities: ExtensionCapabilitiesSchema.optional(),
+  /** Server routes other apps may call (`exports.http`), and routes they never may (`personOnly`). */
+  exports: ExtensionExportsSchema.optional(),
   /** Server-side capability declarations. Present if the extension has server.ts. */
   serverCapabilities: ServerCapabilitiesSchema.optional(),
   /** Declarative proxy config for zero-code API passthrough. */
@@ -512,7 +527,9 @@ function checkToolDeclarations(
 
 /** Zod schema for `extension.json` manifest files. */
 export const ExtensionManifestSchema =
-  ExtensionManifestObjectSchema.superRefine(checkToolDeclarations);
+  ExtensionManifestObjectSchema.superRefine(checkToolDeclarations).superRefine(
+    checkCrossAppDeclarations
+  );
 
 export type ExtensionManifest = z.infer<typeof ExtensionManifestSchema>;
 export type SecretDeclaration = z.infer<typeof SecretDeclarationSchema>;

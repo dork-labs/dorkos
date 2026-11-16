@@ -25,7 +25,7 @@ import { Settings } from 'lucide-react';
 import { toast } from 'sonner';
 import { OPERATOR_FALLBACK_DISPLAY_NAME } from '@dorkos/shared/team-schemas';
 import type { CommunityConnectionOwnerNotice } from '@dorkos/shared/community-connections';
-import { spacesExperiment } from '@dorkos/test-utils';
+import { spacesExperiment } from '@dorkos/test-utils/mock-factories';
 import { confirmCommunityAuthority, invalidateCommunityAuthority } from '@/layers/shared/lib';
 import { commitCommunityRouteEpoch, configKeys } from '@/layers/shared/model';
 import { PageHeading, type SidebarMenuNode } from '@/layers/shared/ui';

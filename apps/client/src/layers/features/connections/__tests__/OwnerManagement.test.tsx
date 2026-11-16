@@ -10,7 +10,10 @@ import type {
   ConnectorReconciliationPreview,
 } from '@dorkos/shared/connector-schemas';
 import { CONNECTION_READINESS_COPY } from '@dorkos/shared/connector-schemas';
-import { createMockConnectionReadiness, createMockTransport } from '@dorkos/test-utils';
+import {
+  createMockConnectionReadiness,
+  createMockTransport,
+} from '@dorkos/test-utils/mock-factories';
 import { mockConnection } from '@/dev/mock-samples';
 import { TransportProvider } from '@/layers/shared/model';
 import { ConnectionAccessDialog } from '../ui/access/ConnectionAccessDialog';

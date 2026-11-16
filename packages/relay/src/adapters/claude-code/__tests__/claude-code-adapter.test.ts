@@ -1229,6 +1229,25 @@ describe('ClaudeCodeAdapter', () => {
       );
     });
 
+    it('passes approved task rules to the run turn as task-scoped rules', async () => {
+      const rule = 'Bash(/abs/path/script.sh --once)';
+      await adapter.start(relay);
+      const envelope = createTasksEnvelope({
+        payload: {
+          ...(createTasksEnvelope().payload as Record<string, unknown>),
+          approvedAllow: [rule],
+        },
+      });
+
+      await adapter.deliver(envelope.subject, envelope);
+
+      expect(agentManager.sendMessage).toHaveBeenCalledWith(
+        expect.any(String),
+        'Check the budget',
+        expect.objectContaining({ taskApprovedAllow: [rule] })
+      );
+    });
+
     it('runs a dispatch that carries no briefing rather than sending an empty one', async () => {
       // A dead-letter replay written before the field existed.
       await adapter.start(relay);

@@ -70,12 +70,16 @@ describe('owned Node endpoint and preflight custody', () => {
     const addresses = await endpoints.listen();
     const clients: Socket[] = [];
     try {
-      for (const port of [addresses.tcpPort, addresses.originPort]) {
+      for (const [port, server] of [
+        [addresses.tcpPort, endpoints.tcp],
+        [addresses.originPort, endpoints.origin],
+      ] as const) {
+        const delivered = once(server, 'connection');
         const client = connect(port, '127.0.0.1');
         clients.push(client);
         await once(client, 'connect');
+        await delivered;
       }
-      await new Promise((resolve) => setImmediate(resolve));
       expect(endpoints.snapshot().sockets).toBe(2);
       await endpoints.close();
       expect(endpoints.snapshot()).toMatchObject({

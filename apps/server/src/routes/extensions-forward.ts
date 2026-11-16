@@ -41,6 +41,7 @@
  *
  * @module routes/extensions-forward
  */
+import { declaresBridgeCapability } from '@dorkos/shared/extension-approval-schemas';
 import type { Context, Hono } from 'hono';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import { z } from 'zod';
@@ -146,7 +147,8 @@ const FORWARD_AGENTS_BAR: PersonBarCopy = {
 
 /** Whether a mini app's manifest asks to forward (`capabilities.forward`). */
 function asksToForward(record: { manifest: { capabilities?: { forward?: boolean } } }): boolean {
-  return record.manifest.capabilities?.forward === true;
+  // The same rule as the bridge gate and the approval card (`BRIDGE_WRITES`).
+  return declaresBridgeCapability(record.manifest, 'forward');
 }
 
 /**

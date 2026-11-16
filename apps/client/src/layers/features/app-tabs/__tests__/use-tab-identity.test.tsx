@@ -5,7 +5,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { ReactNode } from 'react';
 import { act, render, renderHook, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider, useQuery } from '@tanstack/react-query';
-import { createMockSessionLimit, createMockTransport } from '@dorkos/test-utils';
+import { createMockSessionLimit, createMockTransport } from '@dorkos/test-utils/mock-factories';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
 import type { SessionStatus } from '@dorkos/shared/session-stream';
 import type { Session } from '@dorkos/shared/types';
@@ -374,6 +374,29 @@ describe('useTabIdentity', () => {
     // Gone with its page: a badge never outlives what it was set on.
     act(() => unregister());
     expect(result.current).toMatchObject({ primary: 'Add-on', status: undefined });
+  });
+
+  // Purpose: an app that registers no page (built for an older DorkOS) is
+  // named in its tab and window title as its page header names it (DOR-3293).
+  it('names an app page with nothing registered by DorkOS’s name for the app', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        Response.json([
+          {
+            id: 'field-notes',
+            manifest: { id: 'field-notes', name: 'Field notes', version: '1.0.0' },
+            status: 'active',
+          },
+        ])
+      )
+    );
+    try {
+      const { result } = renderHook(() => useTabIdentity('/x/field-notes'), { wrapper });
+      await waitFor(() => expect(result.current.primary).toBe('Field notes'));
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 
   describe('a room (DOR-3593)', () => {

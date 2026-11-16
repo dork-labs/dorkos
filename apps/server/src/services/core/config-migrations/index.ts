@@ -43,10 +43,8 @@ import {
   seedHarnessRefusedHooks,
   seedHarnessGlobal,
   seedHarnessAutoAdopt,
-  seedRoomCanvasOps,
   seedMaxConcurrentTurnsPerAgent,
   seedCommunityNavigationPrefs,
-  seedPermissionPresetFromDoor,
 } from './v0-60-to-v0-89.js';
 import {
   seedExtensionsDismissedApprovals,
@@ -405,33 +403,22 @@ export const CONFIG_MIGRATIONS = {
     // Independent of everything above (a different section) and idempotent.
     backfillClaudeCodePersistentSession(store);
   },
-  // v0.59.0 is tagged, so the next key that can still run for everybody is
-  // 0.60.0 — strictly above the newest `v*` tag (`conf` runs a key only in
-  // `(storedVersion, projectVersion]`). Enforced by
-  // `__tests__/migration-safety.ts`.
+  // **`'0.60.0'` was REMOVED here (DOR-4188), as a no-op on every file the
+  // upgrade floor admits.** It re-ran `backfillRoomsDefaults` so a stored
+  // `rooms` block gained `collectDebounceMs` and `collectMaxEntries`. `'0.57.0'`
+  // calls that same helper, and the helper fills only absent keys; the floor
+  // refuses every stamped file below 0.115, so any file that reaches this point
+  // is unstamped and has just run `'0.57.0'`, which left nothing for this key to
+  // fill. `config-unstamped-equivalence.test.ts` proves it, and the removal is
+  // recorded in `REMOVED_SHIPPED_KEYS` (`__tests__/migration-safety.ts`).
   //
-  // Merged and therefore closed. It has run for nobody yet — VERSION still
-  // reads 0.59.0, and `conf` runs a key only in
-  // `(storedVersion, projectVersion]` — but it goes live the moment the release
-  // bump lands, which happens before any tag exists and with no gate in
-  // between. So it is frozen from merge, not from the bump: there is no point
-  // after merging at which somebody checks whether this body is still the one
-  // that should ship. Anything further opens `'0.61.0'`, and
-  // `merged-migration-hashes.ts` fails the build if this one changes.
-  '0.60.0': (store: {
-    get: (key: string) => unknown;
-    set: (key: string, value: unknown) => void;
-  }) => {
-    // `rooms.collectDebounceMs` / `rooms.collectMaxEntries` — how long a room
-    // gathers a burst of messages before answering it as one, and the most
-    // messages one answer covers (room-participation spec §10.4, DOR-1201).
-    // Re-runs the whole `rooms` backfill because conf merges top-level defaults
-    // SHALLOWLY: a `rooms` block already on disk never inherits a new nested
-    // field on its own, so an upgraded install would gather nothing and answer
-    // every message on its own. Additive + idempotent; the body fills only
-    // absent keys.
-    backfillRoomsDefaults(store);
-  },
+  // The reason later notes here cite as "the reason `'0.60.0'` above states" is
+  // that a key is frozen from MERGE, not from the release bump. A merged key has
+  // run for nobody until the bump lands, but the bump happens before any tag
+  // exists and with no gate in between, so there is no point after merging at
+  // which somebody checks whether the body is still the one that should ship.
+  // `merged-migration-hashes.ts` fails the build if a merged body changes.
+  //
   // v0.61.0 is tagged, so 0.62.0 is the next key that can still run for
   // everybody — strictly above the newest `v*` tag. Frozen from merge, not from
   // the release bump, for the reason `'0.60.0'` above states; anything further
@@ -740,25 +727,14 @@ export const CONFIG_MIGRATIONS = {
     // body is the only thing that writes it; see `seedHarnessAutoAdopt`.
     seedHarnessAutoAdopt(store);
   },
-  // 0.78.0 has merged (DOR-1853, a `harness` leaf) and 0.74.0 is the newest
-  // tag, so 0.79.0 is the next key. Frozen from merge, not from the release
-  // bump, for the reason `'0.60.0'` above states; anything further opens
-  // `'0.80.0'`.
+  // **`'0.79.0'` was REMOVED here (DOR-4188), as a no-op on every file the
+  // upgrade floor admits.** It seeded `rooms.maxCanvasOpsPerTurn` from
+  // `USER_CONFIG_DEFAULTS`, and that leaf left the schema in DOR-2739, so the
+  // value it wrote was `undefined`, which never reaches the file. `'0.113.0'`
+  // deletes the leaf anyway. `config-unstamped-equivalence.test.ts` proves it,
+  // and the removal is recorded in `REMOVED_SHIPPED_KEYS`
+  // (`__tests__/migration-safety.ts`).
   //
-  // Disjoint from every other key here: it writes one nested leaf under
-  // `rooms`. `'0.66.0'` and `'0.70.0'` also touch that section — rewriting three
-  // sibling numbers and adding `repo` — and `'0.81.0'` below retires
-  // `toolOnlyReplies` and seeds `maxPostsPerTurn`. This body writes none of
-  // those members, so sequencing them any way round lands the same config.
-  '0.79.0': (store: {
-    get: (key: string) => unknown;
-    set: (key: string, value: unknown) => void;
-  }) => {
-    // `rooms.maxCanvasOpsPerTurn` — how many times one agent may change a room's
-    // shared canvas inside one turn (spec `room-canvas` §3.4). A nested leaf, so
-    // this body is the only thing that writes it; see `seedRoomCanvasOps`.
-    seedRoomCanvasOps(store);
-  },
   // 0.79.0 has merged (the canvas op ceiling), so 0.80.0 is the next key. Frozen
   // from merge, not from the release bump, for the reason `'0.60.0'` above
   // states; anything further opens `'0.81.0'`.
@@ -807,16 +783,17 @@ export const CONFIG_MIGRATIONS = {
   }) => {
     seedCommunityNavigationPrefs(store);
   },
-  // 0.82.0 has merged, so 0.83.0 is the next key. Disjoint from every other key
-  // here: it writes one leaf of the new top-level `permissions` section, which
-  // nothing above touches, and only READS `ui.fullPowerChoice`, which `'0.67.0'`
-  // seeded.
-  '0.83.0': (store: {
-    get: (key: string) => unknown;
-    set: (key: string, value: unknown) => void;
-  }) => {
-    seedPermissionPresetFromDoor(store);
-  },
+  // **`'0.83.0'` was REMOVED here (DOR-4188), as a no-op on every file the
+  // upgrade floor admits.** It mapped the power door's answer to a preset while
+  // the preset was unset: `'full'` to `'full'`, `'supervised'` to `'careful'`.
+  // `'0.115.0'` (`applyTrustedPosture`) always runs after it on such a file and
+  // reads the same answer: an unset preset with `'supervised'` becomes
+  // `'careful'`, and `'full'` or an unset preset becomes `'trusted'`, so both of
+  // this key's results land where they would have without it. Where the
+  // section is not an object, both build the same three keys.
+  // `config-unstamped-equivalence.test.ts` proves it, and the removal is
+  // recorded in `REMOVED_SHIPPED_KEYS` (`__tests__/migration-safety.ts`).
+  //
   // 0.83.0 is the newest tag, so 0.84.0 is the next key. Frozen from merge, not
   // from the release bump, for the reason `'0.60.0'` above states; anything
   // further opens `'0.85.0'`.

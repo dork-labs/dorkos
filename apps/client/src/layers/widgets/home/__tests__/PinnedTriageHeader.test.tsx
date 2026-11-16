@@ -26,7 +26,7 @@ import type {
   ListNotificationsResponse,
   NotificationDTO,
 } from '@dorkos/shared/notification-schemas';
-import { createMockTransport } from '@dorkos/test-utils';
+import { createMockTransport } from '@dorkos/test-utils/mock-factories';
 
 /**
  * The viewport, as a box a test can set. jsdom has no media queries worth
@@ -228,6 +228,9 @@ function parkedSchedule(overrides: Partial<Task> = {}): Task {
     effort: null,
     account: null,
     status: 'pending_approval',
+    approvedAt: null,
+    approvedBy: null,
+    approvedVia: null,
     filePath: '/tmp/nightly-sweep/SKILL.md',
     createdAt: new Date(Date.now() - 20 * 60_000).toISOString(),
     updatedAt: new Date(Date.now() - 20 * 60_000).toISOString(),
@@ -915,7 +918,7 @@ describe('PinnedTriageHeader', () => {
     expect(screen.getByRole('button', { name: 'Approve Nightly sweep' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Reject Nightly sweep' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Run Nightly sweep once' })).toBeInTheDocument();
-    expect(screen.getByText(/At 03:00 AM/i)).toBeInTheDocument();
+    expect(screen.getByText(/^3:00 AM/)).toBeInTheDocument();
   });
 
   it('says nothing about a schedule that is already running', async () => {
@@ -952,6 +955,7 @@ describe('PinnedTriageHeader', () => {
       expect(updateTask).toHaveBeenCalledWith('task-1', {
         status: 'active',
         expectedApprovalRevision: 'a'.repeat(64),
+        approvalSurface: 'home',
       })
     );
   });

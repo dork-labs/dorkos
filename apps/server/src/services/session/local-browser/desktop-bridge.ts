@@ -1,4 +1,26 @@
 /* eslint-disable no-restricted-syntax -- Read and delete the private shell handoff before any agent child can inherit it. */
+import { createHash } from 'node:crypto';
+import { z } from 'zod';
+import { LocalBrowserError } from './errors.js';
+import type { HistoryStepOutcome, PageHistoryEntries } from './history/page-history.js';
+
+/**
+ * What the Mac app says a guest's history is. An entry too long to be a real
+ * address (a page's own `pushState` can make one) reads as no address, which
+ * the rules refuse, so one odd entry never turns Back and Forward off.
+ */
+const GuestHistorySchema = z
+  .object({
+    index: z.number().int().nonnegative(),
+    entries: z
+      .array(z.object({ url: z.string().transform((url) => (url.length > 65_536 ? '' : url)) }))
+      .max(1_000),
+  })
+  .refine(({ index, entries }) => index < entries.length);
+
+/** A history step waits on the page: longer than the Mac app's own 15 s step limit. */
+const HISTORY_STEP_BRIDGE_TIMEOUT_MS = 25_000;
+
 /** Desktop returns an authenticated connection to one guest page, never its app shell. */
 export interface EmbeddedBrowserPort {
   forgetSignIns?(): Promise<void>;
@@ -8,6 +30,14 @@ export interface EmbeddedBrowserPort {
     close(): Promise<void>;
     detach?(): Promise<void>;
     reattach?(): Promise<void>;
+    /** The guest's history, read by the Mac app (DOR-4449). Absent on an older app. */
+    history?(refused: readonly string[]): Promise<PageHistoryEntries>;
+    /** Move to an entry the Mac app re-checks against its own rules first. */
+    goToHistory?(
+      index: number,
+      url: string,
+      refused: readonly string[]
+    ): Promise<HistoryStepOutcome>;
   }>;
 }
 
@@ -23,12 +53,17 @@ export function desktopBrowserPort(): EmbeddedBrowserPort | undefined {
   const address = new URL(endpoint);
   if (address.protocol !== 'http:' || address.hostname !== '127.0.0.1' || !address.port)
     return undefined;
-  const call = async (operation: string, connectionId: string): Promise<Response> => {
+  const call = async (
+    operation: string,
+    connectionId: string,
+    extra: Record<string, unknown> = {},
+    timeoutMs = 15_000
+  ): Promise<Response> => {
     const response = await fetch(new URL(operation, address), {
       method: 'POST',
       headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ connectionId }),
-      signal: AbortSignal.timeout(15_000),
+      body: JSON.stringify({ ...extra, connectionId }),
+      signal: AbortSignal.timeout(timeoutMs),
     });
     if (!response.ok) throw new Error('The desktop browser did not answer');
     return response;
@@ -64,6 +99,28 @@ export function desktopBrowserPort(): EmbeddedBrowserPort | undefined {
         },
         close: async () => {
           await call('/close', connectionId);
+        },
+        // Every call hands the host DorkOS's own addresses, which its guard refuses.
+        history: async (refused) =>
+          GuestHistorySchema.parse(
+            await (await call('/history', connectionId, { refused })).json()
+          ),
+        // The address goes as its hash: the host compares it with the entry it holds.
+        goToHistory: async (index, url, refused) => {
+          const urlHash = createHash('sha256').update(url).digest('hex');
+          const response = await call(
+            '/history/go',
+            connectionId,
+            { index, urlHash, refused },
+            HISTORY_STEP_BRIDGE_TIMEOUT_MS
+          );
+          const { outcome } = (await response.json()) as { outcome?: unknown };
+          if (outcome === 'changed')
+            throw new LocalBrowserError(
+              'history_changed',
+              'The page’s history changed. Try again.'
+            );
+          return outcome === 'moved' ? 'moved' : 'refused';
         },
       };
     },

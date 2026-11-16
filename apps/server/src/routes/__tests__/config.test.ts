@@ -7,6 +7,7 @@ import type { IngressKind } from '../../services/core/remote/ingress-mark.js';
 import type { ApiEnv } from '../../http/api-chain.js';
 import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
+import { preloadConfigRouteModules } from './fixtures/config-cold-imports.js';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
@@ -20,9 +21,7 @@ const owner = vi.hoisted(() => ({
   account: { id: 'user_cockpit', name: 'Owner' } as unknown,
   email: null as string | null,
 }));
-// The session gate lets every request through: with login off it is a
-// pass-through anyway, and the cases that turn login on present the identity it
-// would have proved (`configApp` below) to reach the route's own bars.
+// The gate fixture passes requests; configApp supplies the caller for the route's real bars.
 vi.mock('../../services/core/auth/session-gate.js', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../services/core/auth/session-gate.js')>()),
   decideSessionGate: vi.fn(async () => ({ allowed: true })),
@@ -159,6 +158,7 @@ delete process.env.DORKOS_TASKS_ENABLED;
 delete process.env.DORKOS_RELAY_ENABLED;
 delete process.env.DORKOS_A2A_ENABLED;
 delete process.env.DORKOS_TODOS_ENABLED;
+await preloadConfigRouteModules();
 
 afterAll(() => {
   if (AMBIENT_TASKS_ENABLED !== undefined) process.env.DORKOS_TASKS_ENABLED = AMBIENT_TASKS_ENABLED;
@@ -896,6 +896,8 @@ describe('PATCH /api/config', () => {
         expect(res.body.todos).toEqual({ enabled: true });
       } finally {
         delete process.env.DORKOS_TODOS_ENABLED;
+        // Drop the graph that captured the environment override before another fixture imports it.
+        vi.resetModules();
       }
     });
   });
@@ -1735,9 +1737,14 @@ describe('GET /api/config', () => {
       setTasksEnabled(true);
       setRelayEnabled(true);
 
-      const afterStartup = await request(server).get('/api/config').expect(200);
-      expect(afterStartup.body.tasks.enabled).toBe(true);
-      expect(afterStartup.body.relay.enabled).toBe(true);
+      try {
+        const afterStartup = await request(server).get('/api/config').expect(200);
+        expect(afterStartup.body.tasks.enabled).toBe(true);
+        expect(afterStartup.body.relay.enabled).toBe(true);
+      } finally {
+        setTasksEnabled(false);
+        setRelayEnabled(false);
+      }
     });
 
     it('reports both configured on for a fresh install', async () => {
@@ -1880,6 +1887,7 @@ describe('GET /api/config', () => {
       else process.env.DORKOS_TASKS_ENABLED = ORIGINAL_TASKS;
       if (ORIGINAL_RELAY === undefined) delete process.env.DORKOS_RELAY_ENABLED;
       else process.env.DORKOS_RELAY_ENABLED = ORIGINAL_RELAY;
+      vi.resetModules();
     });
 
     it('flags each subsystem whose environment variable is set, whatever its value', async () => {
@@ -2637,9 +2645,11 @@ describe('the Remote Access switch (DOR-3650)', () => {
     await mount();
   });
 
-  afterEach(() => {
+  afterEach(async () => {
     unwatch();
     fs.rmSync(dorkHome, { recursive: true, force: true });
+    const { resetRemoteStreamsForTests } = await import('../../middleware/remote-access-switch.js');
+    resetRemoteStreamsForTests();
     vi.resetModules();
   });
 

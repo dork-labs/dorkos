@@ -4,6 +4,7 @@
  * @module relay/adapters/slack/slack-manifest
  */
 import type { AdapterManifest } from '@dorkos/shared/relay-schemas';
+import { OWNER_ON_APPROVERS_HELP } from '../approver-allowlist.js';
 
 /**
  * Slack API error codes that indicate permanent auth/permission failures.
@@ -276,7 +277,8 @@ export const SLACK_MANIFEST: AdapterManifest = {
         'into the conversation. Only the people listed here can answer it.\n\n' +
         'This is deliberately a separate list from the DM allowlist: being able to talk to ' +
         'your agent and being able to let it run a command on your machine are different ' +
-        'things. Leave it empty and nothing gets approved from Slack.',
+        'things. Leave it empty and nothing gets approved from Slack.\n\n' +
+        OWNER_ON_APPROVERS_HELP,
     },
     {
       key: 'channelOverrides',

@@ -70,6 +70,40 @@ export function todoDueLabel(
   return `Due ${when.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}`;
 }
 
+/** How many times, in a word where one reads better than a number. */
+function timesWord(count: number): string {
+  if (count === 1) return 'once';
+  if (count === 2) return 'twice';
+  return `${count} times`;
+}
+
+/**
+ * How often a to-do's date moved and when it was first due (DOR-3034): "Moved twice, first due
+ * Mar 14", with the year when it is not this one ("first due Dec 28, 2025"). A date set once and
+ * never changed says nothing.
+ *
+ * @param todo - The to-do, or an agent's promise: its move count and its first and current dates.
+ * @param now - The moment to read it from; it decides whether the year is shown.
+ * @returns The label, or null when the date never moved.
+ */
+export function todoMovedLabel(
+  todo: Pick<Todo, 'moveCount' | 'originalDueAt' | 'dueAt'>,
+  now: Date = new Date()
+): string | null {
+  if (todo.moveCount < 1) return null;
+  const moved = `Moved ${timesWord(todo.moveCount)}`;
+  if (!todo.originalDueAt || todo.originalDueAt === todo.dueAt) return moved;
+  const first = new Date(todo.originalDueAt);
+  if (Number.isNaN(first.getTime())) return moved;
+  const date = first.toLocaleDateString(undefined, {
+    month: 'short',
+    day: 'numeric',
+    ...(first.getFullYear() === now.getFullYear() ? {} : { year: 'numeric' }),
+  });
+  // Non-breaking spaces keep the date whole, so a phone never wraps "Dec / 28, 2025".
+  return `${moved}, first due ${date.replace(/ /g, ' ')}`;
+}
+
 /**
  * Who made a to-do, for the quiet "from" line: you, an agent by name, or a guest.
  *
