@@ -2,11 +2,16 @@
  * Where a parked schedule's runs would stand, for its approval card (DOR-4067,
  * design pass row 3).
  *
- * It asks the run's own guard ({@link decideRunPlacement}), fed the same folder
- * the scheduler's `resolveRunPlacement` starts from, so the card and the run
- * cannot disagree. Two differences, both because a read must not change
- * anything: a managed binding is named, never provisioned, and an agent-less
- * run's fresh folder is named, never made.
+ * It runs the scheduler's own chain ({@link chainRunPlacement}) and asks the
+ * run's own guard ({@link decideRunPlacement}), so the card follows the run's
+ * rules: the binding, the boundary check, the desk guard and the home and data
+ * folder rule. A read must change nothing, so two collaborators are swapped:
+ *
+ * - **A managed checkout is looked up, never made.** An existing, ready one is
+ *   reused at run time too. Without one the run asks a person first and works
+ *   in the agent's own folder meanwhile, which is what the lookup's refusal
+ *   makes the chain answer here.
+ * - **A fresh run folder is named, never made.**
  *
  * An agent-made schedule's agent was settled at creation (`agentScheduleTarget`
  * in `lifecycle/agent-schedule-target.ts`) and stored as `agentId`, which is
@@ -14,72 +19,96 @@
  *
  * @module services/tasks/execution/run-place-preview
  */
-import { readManifest } from '@dorkos/shared/manifest';
-import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
+import fs from 'node:fs';
+import path from 'node:path';
 import type { Task, TaskRunPlace } from '@dorkos/shared/types';
-import { DEFAULT_CWD } from '../../../lib/resolve-root.js';
+import { sanitizeWorkspaceKey, type EnsureWorkspaceRequest } from '@dorkos/shared/workspace';
+import { sessionCwdDeps, type ResolveSessionCwdDeps } from '../../workspace/resolve-session-cwd.js';
+import { getWorkspaceManager } from '../../workspace/index.js';
 import { decideRunPlacement } from './run-place-guard.js';
+import { chainRunPlacement, type RunPlaceMesh } from './run-placement.js';
 
-/** The registry lookup this needs; `MeshCore` satisfies it. */
-export interface RunPlaceMesh {
-  /** The agent's own folder, or nothing when the registry does not hold it. */
-  getProjectPath(agentId: string): string | null | undefined;
-}
+export type { RunPlaceMesh } from './run-placement.js';
 
 /** Collaborators, injected so a test can name the server's folders. */
 export interface RunPlacePreviewDeps {
-  /** Where an agent-less run starts, before the guard: the server's own folder. */
-  serverCwd(): string;
-  /** Where a `none` binding starts, before the guard. */
-  defaultCwd: string;
-  /** The agent's manifest, for its workspace binding. */
-  readManifest(agentPath: string): Promise<AgentManifest | null>;
+  /** The cwd chain's collaborators, with a read-only `ensureWorkspace`. */
+  cwdDeps: () => ResolveSessionCwdDeps;
+  /** Where an agent-less run starts: the server's own folder. */
+  serverCwd: () => string;
+}
+
+/**
+ * The managed checkout the run would reuse, or a refusal when there is none:
+ * the same answer `ensure` gives a run before it would make one.
+ *
+ * @param req - The checkout the chain asks for.
+ */
+async function existingCheckout(req: EnsureWorkspaceRequest) {
+  const key = sanitizeWorkspaceKey(req.key);
+  const found = (await getWorkspaceManager().list({ projectKey: req.projectKey })).find(
+    (workspace) => workspace.key === key && workspace.status === 'ready'
+  );
+  if (!found) throw new Error('No ready checkout yet; a run would ask a person first.');
+  return found;
 }
 
 const PRODUCTION_DEPS: RunPlacePreviewDeps = {
+  cwdDeps: () => sessionCwdDeps({ ensureWorkspace: existingCheckout }),
   serverCwd: () => process.cwd(),
-  defaultCwd: DEFAULT_CWD,
-  readManifest: (agentPath) => readManifest(agentPath),
 };
 
 /**
  * Where this schedule's runs would stand, or `undefined` when no run could
- * start (an agent the registry no longer holds, or a folder the guard refuses).
+ * start (an agent the registry no longer holds, another agent's folder, or a
+ * folder the guard refuses).
  *
- * @param task - The schedule; only its agent matters.
+ * @param task - The schedule; only its id and agent matter.
  * @param mesh - The agent registry.
  * @param deps - See {@link RunPlacePreviewDeps}.
  */
 export async function previewRunPlace(
-  task: Pick<Task, 'agentId'>,
-  mesh: RunPlaceMesh | undefined,
+  task: Pick<Task, 'id' | 'agentId'>,
+  mesh: RunPlaceMesh | null | undefined,
   deps: RunPlacePreviewDeps = PRODUCTION_DEPS
 ): Promise<TaskRunPlace | undefined> {
-  if (!task.agentId) return placeOf({ cwd: deps.serverCwd() });
-  const agentPath = mesh?.getProjectPath(task.agentId);
-  if (!agentPath) return undefined;
-  // The run's chain reads an unreadable manifest as the home binding, too.
-  const mode = await deps.readManifest(agentPath).then(
-    (manifest) => manifest?.workspace.mode ?? 'home',
-    () => 'home'
-  );
-  if (mode === 'managed') return { kind: 'agent_checkout' };
-  return placeOf({ cwd: mode === 'none' ? deps.defaultCwd : agentPath, agentPath });
-}
-
-/** The guard's answer for one placement, in the card's terms. */
-function placeOf(placement: { cwd: string; agentPath?: string }): TaskRunPlace | undefined {
-  const { cwd, agentPath } = placement;
+  let chained;
+  try {
+    chained = await chainRunPlacement(task, mesh, {
+      cwdDeps: deps.cwdDeps(),
+      serverCwd: deps.serverCwd(),
+      log: false,
+    });
+  } catch {
+    return undefined;
+  }
+  const { cwd, agentPath, managed } = chained;
+  const placement = agentPath === undefined ? { cwd } : { cwd, agentPath };
   switch (decideRunPlacement(placement)) {
     case 'fresh':
       return { kind: 'private' };
+    case 'refuse':
+      return undefined;
     case 'agent':
       return agentPath === undefined ? undefined : { kind: 'agent', path: agentPath };
     case 'keep':
-      return cwd === agentPath ? { kind: 'agent', path: cwd } : { kind: 'folder', path: cwd };
-    case 'refuse':
-      return undefined;
+      if (managed) return { kind: 'agent_checkout' };
+      return agentPath !== undefined && samePlace(cwd, agentPath)
+        ? { kind: 'agent', path: agentPath }
+        : { kind: 'folder', path: cwd };
   }
+}
+
+/** Whether two spellings name one folder. */
+function samePlace(a: string, b: string): boolean {
+  const real = (dir: string) => {
+    try {
+      return fs.realpathSync.native(dir);
+    } catch {
+      return path.resolve(dir);
+    }
+  };
+  return real(a) === real(b);
 }
 
 /**
@@ -93,7 +122,7 @@ function placeOf(placement: { cwd: string; agentPath?: string }): TaskRunPlace |
  */
 export async function withTaskRunPlace(
   task: Task,
-  mesh: RunPlaceMesh | undefined,
+  mesh: RunPlaceMesh | null | undefined,
   deps: RunPlacePreviewDeps = PRODUCTION_DEPS
 ): Promise<Task> {
   if (task.status !== 'pending_approval') return task;

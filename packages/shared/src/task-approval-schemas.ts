@@ -75,7 +75,7 @@ export const TaskFolderRulesSchema = z.object({
 
 /**
  * Where a parked schedule's runs would stand, read with the run's own guard
- * (`execution/run-place-guard.ts`), so the card and the run cannot disagree.
+ * (`execution/run-place-guard.ts`) after the same folder chain (`execution/run-placement.ts`).
  */
 export const TaskRunPlaceSchema = z
   .discriminatedUnion('kind', [

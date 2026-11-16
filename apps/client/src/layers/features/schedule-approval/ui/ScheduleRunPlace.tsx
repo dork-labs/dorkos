@@ -16,12 +16,12 @@ export function ScheduleRunPlace({
   agentName: string | null | undefined;
 }) {
   if (!place) return null;
-  const owner = agentName ? `${agentName}'s` : "Its agent's";
+  const owner = agentName ? `${agentName}'s` : "The agent's";
   const where =
     place.kind === 'agent'
       ? `${owner} folder`
       : place.kind === 'agent_checkout'
-        ? `A private copy of ${agentName ? owner : "its agent's"} project`
+        ? `A private copy of ${agentName ? owner : "the agent's"} project`
         : place.kind === 'folder'
           ? "DorkOS's default folder"
           : 'A fresh private folder';

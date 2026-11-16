@@ -457,7 +457,7 @@ describe('ScheduleApprovalCard — what it says', () => {
     [
       "the agent's folder when its name is unknown",
       { runsAsName: null, runPlace: { kind: 'agent', path: '/Users/sam/agents/quill' } },
-      "Where: Its agent's folder",
+      "Where: The agent's folder",
       '~/agents/quill',
     ],
     [
