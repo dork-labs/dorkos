@@ -66,6 +66,7 @@ import {
   taskModeRefusal,
   scheduleEditorOf,
   namesCredits,
+  changesCreditsWork,
 } from './task-route-answers.js';
 import { refuseUnknownTaskUpdateFields } from '../services/tasks/task-write-policy.js';
 import {
@@ -134,19 +135,18 @@ export async function updateTaskHttp(
       ? errorRefusalUnlessOwner(caller, TASK_ON_CREDITS)
       : undefined;
   if (creditsRefusal) return c.json(creditsRefusal, 403);
-  // Any change to the work of a live credits schedule can increase later spending.
-  // Pausing, switching away from credits and display-only edits do not grant it.
+  // Hold live credits work changes; pausing, lower caps and display-only edits stay free.
   const grantsCredits =
     runsOnCredits &&
     data.enabled !== false &&
     data.status !== 'pending_approval' &&
     (namesCredits(body) ||
       data.status === 'active' ||
-      data.enabled === true ||
+      (data.enabled === true && !existing.enabled) ||
       (existing.enabled &&
         trusted &&
         refuseUnlessAccountOwner(caller) === undefined &&
-        changesApprovedWork(data, existing)));
+        changesCreditsWork(data, existing)));
   if (grantsCredits && !confirming) {
     const revision = personReview.taskReviewRevision(existing);
     return runAccountWrite(c, {

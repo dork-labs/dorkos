@@ -13,6 +13,7 @@ import {
 } from '../../../session-relay/approval-challenges.js';
 import {
   MAX_HELD_STEP_UPS,
+  MAX_HELD_STEP_UPS_PER_SESSION,
   cancelHeldStepUp,
   holdStepUp,
   parseLocalStepUpStatement,
@@ -141,12 +142,25 @@ describe('holdStepUp', () => {
     expect(peekHeldStepUp(other.heldActionId, NOW)).toBeDefined();
   });
 
-  it('drops the oldest once too many are held', () => {
+  it('refuses a new hold at the browser cap without dropping any older action', () => {
     const first = holdStepUp(action({ target: 't-0' }), 'session-a', NOW);
-    for (let i = 1; i <= MAX_HELD_STEP_UPS; i++) {
+    for (let i = 1; i < MAX_HELD_STEP_UPS_PER_SESSION; i++) {
       holdStepUp(action({ target: `t-${i}` }), 'session-a', NOW);
     }
-    expect(peekHeldStepUp(first.heldActionId, NOW)).toBeUndefined();
+    expect(() => holdStepUp(action({ target: 'overflow' }), 'session-a', NOW)).toThrow(
+      'Too many actions are waiting.'
+    );
+    expect(() => holdStepUp(action({ target: 't-0' }), 'session-a', NOW)).toThrow();
+    expect(peekHeldStepUp(first.heldActionId, NOW)).toBeDefined();
+  });
+
+  it('refuses at the global cap even when the caller already owns a hold', () => {
+    const first = holdStepUp(action(), 'session-a', NOW);
+    for (let i = 1; i < MAX_HELD_STEP_UPS; i++) {
+      holdStepUp(action({ target: `t-${i}` }), `session-${i}`, NOW);
+    }
+    expect(() => holdStepUp(action({ target: 'overflow' }), 'session-a', NOW)).toThrow();
+    expect(peekHeldStepUp(first.heldActionId, NOW)).toBeDefined();
   });
 });
 

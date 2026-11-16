@@ -58,7 +58,11 @@ const EXCEPTIONS: Record<string, string> = {
   'config PUT /agents/defaultAgent': 'Changes a preference.',
 };
 const OTHER_FRONT_DOOR_CALLERS: Record<string, string> = {
-  'admin.ts': 'Reset retains its existing separate ceremony.',
+  'admin.ts': 'Reset prepare creates only a one-use reset token; no lasting credential (N).',
+  'extension-caller-token.ts':
+    'Short-lived, session-bound frame identity only; no lasting credential (N).',
+  'workbench-serve.ts':
+    'Scoped serve/proxy URLs are transient preview grants, not front-door credentials (N).',
   'mcp-servers.ts': 'Already holds add, replace and widen; mcp-servers-step-up.test.ts covers it.',
   'runtimes-http.ts': 'Runtime sign-in and model settings are N.',
   'runtimes-doe-setup.ts': 'Runtime sign-in and model settings are N.',
@@ -82,9 +86,9 @@ const OTHER_FRONT_DOOR_CALLERS: Record<string, string> = {
   'tasks-update-http.ts':
     'Holds credits grants and live work edits, binds the task revision and revalidates before dispatch.',
   'sessions.ts':
-    'Per-session Runs on choices end with that session; no lasting grant after sign-out (N).',
+    'Session Runs on ends with that session; session-tools/task-tools credits tests prove children do not inherit it (N).',
   'session-continue.ts':
-    'Per-session Runs on choices end with that session; no lasting grant after sign-out (N).',
+    'Per-session Runs on is N; limit-plans-eligibility proves automatic carry-over uses its independently allowed target.',
   'relay-adapter-setting-routes.ts': 'Connection settings retain their separate approval flow.',
   'mesh-agent-patch-http.ts':
     'Delegated mesh PATCH holds credits-on and rechecks the agent and manifest; mesh-credits-step-up.test.ts covers it.',

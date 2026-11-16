@@ -1,6 +1,7 @@
 ---
 covers:
   - 'fix(auth): confirm lasting access changes (DOR-4355)'
+  - 'fix(auth): preserve confirmations and allow lower spending limits'
 ---
 
 ### Security

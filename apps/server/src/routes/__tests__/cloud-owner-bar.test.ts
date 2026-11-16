@@ -345,6 +345,7 @@ function refusalOf(body: { code?: unknown; message?: unknown; error?: unknown })
 describe('the DorkOS account owner bar', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    resetHeldStepUpsForTests();
     posture.authEnabled = false;
     signedInUser = undefined;
   });
@@ -638,7 +639,7 @@ describe('DorkOS account confirmation', () => {
       }
     }
   );
-  it.each(['cancelled', 'evicted'] as const)(
+  it.each(['cancelled', 'capacity refused'] as const)(
     'removes a %s staged export and caps pending moves per browser',
     async (ending) => {
       via = 'own-tunnel';
@@ -662,16 +663,8 @@ describe('DorkOS account confirmation', () => {
         expect(existsSync(filePath)).toBe(true);
         expect((await send()).status).toBe(409);
         expect(moveUploads.stageArchive).toHaveBeenCalledOnce();
-        if (ending === 'cancelled') {
-          expect(
-            (
-              await request(confirmedServer)
-                .delete(`/api/step-up/${held.body.heldActionId}`)
-                .set('Origin', origin)
-            ).status
-          ).toBe(204);
-        } else {
-          for (let i = 0; i < MAX_HELD_STEP_UPS_PER_SESSION; i++)
+        if (ending === 'capacity refused') {
+          for (let i = 1; i < MAX_HELD_STEP_UPS_PER_SESSION; i++)
             holdStepUp(
               {
                 kind: 'cloud.space',
@@ -682,7 +675,29 @@ describe('DorkOS account confirmation', () => {
               },
               'owner-browser'
             );
+          expect(() =>
+            holdStepUp(
+              {
+                kind: 'cloud.space',
+                target: 'overflow',
+                input: {},
+                reason: 'Move another space.',
+                commit: async () => ({ status: 200, body: {} }),
+              },
+              'owner-browser'
+            )
+          ).toThrow('Too many actions are waiting.');
+          expect(existsSync(filePath)).toBe(true);
+          expect((await send()).status).toBe(409);
+          expect(moveUploads.stageArchive).toHaveBeenCalledOnce();
         }
+        expect(
+          (
+            await request(confirmedServer)
+              .delete(`/api/step-up/${held.body.heldActionId}`)
+              .set('Origin', origin)
+          ).status
+        ).toBe(204);
         await vi.waitFor(() => expect(existsSync(filePath)).toBe(false));
         expect(hosted.startMove).not.toHaveBeenCalled();
         expect(moveUploads.uploads.begin).not.toHaveBeenCalled();

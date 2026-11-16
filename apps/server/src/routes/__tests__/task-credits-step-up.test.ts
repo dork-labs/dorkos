@@ -10,6 +10,7 @@ import type { TaskSchedulerService } from '../../services/tasks/task-scheduler-s
 import { createTasksRoutes } from '../tasks.js';
 import { frontDoorStepUpHarness } from './front-door-step-up-harness.js';
 import { taskRuntimeCapabilitiesFixture } from './fixtures/task-runtime-capabilities.js';
+import { resetHeldStepUpsForTests } from '../../services/core/auth/step-up/step-up-holds.js';
 
 taskRuntimeCapabilitiesFixture();
 describe('scheduled task credits confirmation', () => {
@@ -41,6 +42,7 @@ describe('scheduled task credits confirmation', () => {
   afterAll(() => rmSync(home, { recursive: true, force: true }));
   afterEach(() => vi.restoreAllMocks());
   beforeEach(() => {
+    resetHeldStepUpsForTests();
     vi.spyOn(creation, 'createScheduledTask').mockImplementation(async (_deps, options) => ({
       ok: true,
       parked: false,
@@ -135,4 +137,61 @@ describe('scheduled task credits confirmation', () => {
       .send({ name: 'check-stock', prompt: 'Check stock.', cron: '0 9 * * *' });
     expect(response.status).toBe(201);
   });
+
+  function liveCreditTask() {
+    const name = `live-${store.getTasks().length}`;
+    const dir = path.join(home, name);
+    mkdirSync(dir, { recursive: true });
+    const filePath = path.join(dir, 'SKILL.md');
+    writeFileSync(
+      filePath,
+      `---\nname: ${name}\ndescription: Check stock\nschedule:\n  cron: '0 9 * * *'\n  max-runtime: 30m\n---\nCheck stock.\n`
+    );
+    return store.createTask({
+      name,
+      description: 'Check stock.',
+      prompt: 'Check stock.',
+      cron: '0 9 * * *',
+      enabled: true,
+      maxRuntime: 1_800_000,
+      account: 'dorkos-credits',
+      filePath,
+    });
+  }
+
+  it.each([
+    { prompt: 'Buy stock.' },
+    { cron: '* * * * *' },
+    { resetTiming: true },
+    { maxRuntime: '1h' },
+    { maxRuntime: null },
+  ])('holds changes to live credits work: %j', async (patch) => {
+    const task = liveCreditTask();
+    const response = await owner.call('patch', `/api/tasks/${task.id}`, 'own-tunnel').send(patch);
+    expect(response.status).toBe(428);
+    expect(store.getTask(task.id)).toMatchObject({
+      prompt: 'Check stock.',
+      cron: '0 9 * * *',
+      maxRuntime: 1_800_000,
+    });
+  });
+  it.each(['agentId', 'target'])('refuses unsupported target changes through %s', async (key) => {
+    const task = liveCreditTask();
+    const response = await owner
+      .call('patch', `/api/tasks/${task.id}`, 'own-tunnel')
+      .send({ [key]: 'other-agent' });
+    expect(response.status).toBe(400);
+    expect(store.getTask(task.id)?.agentId).toBe(task.agentId);
+  });
+  it.each([{}, { enabled: true }])(
+    'applies a lower runtime cap without a confirmation (%j)',
+    async (unchanged) => {
+      const task = liveCreditTask();
+      const response = await owner
+        .call('patch', `/api/tasks/${task.id}`, 'own-tunnel')
+        .send({ ...unchanged, maxRuntime: '15m' });
+      expect(response.status, JSON.stringify(response.body)).toBe(200);
+      expect(store.getTask(task.id)?.maxRuntime).toBe(900_000);
+    }
+  );
 });

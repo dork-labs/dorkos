@@ -30,6 +30,8 @@ import { TaskStore } from '../../../../tasks/task-store.js';
 import type { McpToolDeps } from '../types.js';
 import { getTasksTools } from '../tasks/task-tools.js';
 import { CREDITS_SCHEDULE_AGENT_REFUSAL } from '../../../../tasks/task-write-policy.js';
+import { runtimeRegistry } from '../../../../core/runtime-registry.js';
+import { creditsClaudeRoot } from '../../credits-root.js';
 
 interface SessionTool {
   name: string;
@@ -81,13 +83,19 @@ beforeEach(async () => {
     },
   } as unknown as McpToolDeps;
   tools = Object.fromEntries(
-    (getTasksTools(deps, undefined, undefined, () => projectPath) as unknown as SessionTool[]).map(
-      (t) => [t.name, t]
-    )
+    (
+      getTasksTools(
+        deps,
+        () => ({ sessionId: 'credits-parent', agentPath: projectPath }),
+        undefined,
+        () => projectPath
+      ) as unknown as SessionTool[]
+    ).map((t) => [t.name, t])
   );
 });
 
 afterEach(async () => {
+  vi.restoreAllMocks();
   store.close();
   await fs.rm(root, { recursive: true, force: true });
 });
@@ -101,6 +109,15 @@ async function call(name: string, args: Record<string, unknown>) {
 }
 
 describe('an agent and DorkOS credits', () => {
+  it('does not inherit a parent chat’s credits when creating a schedule', async () => {
+    vi.spyOn(runtimeRegistry, 'getNativeSessionAccount').mockImplementation((id) =>
+      id === 'credits-parent' ? creditsClaudeRoot() : null
+    );
+    const created = await call('tasks_create', BASE);
+    expect(created.isError).toBe(false);
+    const id = (created.payload.schedule as Task).id;
+    expect(store.getTask(id)?.account).toBeNull();
+  });
   it('cannot propose a schedule on credits', async () => {
     const { isError, payload } = await call('tasks_create', { ...BASE, account: 'dorkos-credits' });
     expect(isError).toBe(true);

@@ -43,9 +43,9 @@ import { logger, logError } from '../../../../lib/logger.js';
 
 /** The most actions held at once; new callers wait when the pool is full. */
 export const MAX_HELD_STEP_UPS = 16;
-/** One browser can replace only its own oldest holds, leaving other browsers intact. */
+/** New actions are refused once one browser reaches this cap. */
 export const MAX_HELD_STEP_UPS_PER_SESSION = 4;
-/** The pool is full and this browser owns no hold it could replace. */
+/** A browser or the shared pool has reached its hold cap. */
 export class HeldStepUpCapacityError extends Error {
   constructor() {
     super('Too many actions are waiting. Try again shortly.');
@@ -163,7 +163,7 @@ function prune(now: number, sessionId: string | null, kind: string, inputSha256:
  * @param sessionId - The browser session asking, or `null`.
  * @param now - The current time, for tests.
  * @returns The statement it is bound to.
- * @throws HeldStepUpCapacityError when every slot belongs to another browser.
+ * @throws HeldStepUpCapacityError when the browser or shared pool is full.
  * @throws ApprovalInputNotBindableError when the input is not plain JSON, so
  *   nothing is held that its hash would not really bind.
  */
@@ -173,13 +173,15 @@ export function holdStepUp(
   now = Date.now()
 ): LocalStepUpStatementV1 {
   const inputSha256 = stepUpActionHash(action);
-  prune(now, sessionId, action.kind, inputSha256);
-  const own = [...held].filter(([, entry]) => entry.sessionId === sessionId).map(([id]) => id);
-  while (own.length >= MAX_HELD_STEP_UPS_PER_SESSION || held.size >= MAX_HELD_STEP_UPS) {
-    const oldest = own.shift();
-    if (oldest === undefined) throw new HeldStepUpCapacityError();
-    drop(oldest);
+  // Expiration may free space; a new request never evicts a live confirmation,
+  // including a duplicate from the same browser when that browser is full.
+  for (const [id, entry] of held) {
+    if (now >= Date.parse(entry.statement.expiresAt)) drop(id);
   }
+  const ownCount = [...held.values()].filter((entry) => entry.sessionId === sessionId).length;
+  if (ownCount >= MAX_HELD_STEP_UPS_PER_SESSION || held.size >= MAX_HELD_STEP_UPS)
+    throw new HeldStepUpCapacityError();
+  prune(now, sessionId, action.kind, inputSha256);
   const statement: LocalStepUpStatementV1 = {
     t: LOCAL_STEP_UP_STATEMENT_TYPE,
     purpose: 'step-up',

@@ -88,4 +88,15 @@ describe('hub auth keeps its existing owner ceremony', () => {
     expect(response.status).toBe(403);
     expect(response.body.code).toBe('not-a-person');
   });
+  it('holds a tunnel key write on a computer despite hub-looking headers', async () => {
+    env.DORKOS_SERVER_ROLE = 'computer';
+    await owner.renew('own-tunnel');
+    const response = await owner
+      .call('post', '/api/auth/api-key/create', 'own-tunnel')
+      .set('x-dorkos-server-role', 'hub')
+      .set('x-dorkos-route', 'hub')
+      .send({ name: 'Spoofed hub' });
+    expect(response.status).toBe(428);
+    expect(response.body.heldActionId).toEqual(expect.any(String));
+  });
 });
