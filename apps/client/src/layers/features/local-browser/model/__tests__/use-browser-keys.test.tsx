@@ -15,21 +15,20 @@ import { useBrowserKeys, type BrowserKeyActions, type BrowserShortcut } from '..
 // Every chord is pressed with the platform's own modifier: ⌘ on a Mac, Ctrl elsewhere.
 const MOD = isMac ? { metaKey: true } : { ctrlKey: true };
 
-function actions(): Required<
-  Pick<
-    BrowserKeyActions,
-    'onFocusAddress' | 'onReload' | 'onBack' | 'onForward' | 'onStop' | 'onCopyAddress'
-  >
-> {
-  // Each action did something unless a test says otherwise.
+/** One action as a mock, so a test can change what it answers. */
+const action = () => vi.fn<() => boolean>(() => true);
+
+// Each action did something unless a test says otherwise. Typed by `satisfies`, not a
+// return annotation, so each stays a mock rather than widening to a plain function.
+function actions() {
   return {
-    onFocusAddress: vi.fn(() => true),
-    onReload: vi.fn(() => true),
-    onBack: vi.fn(() => true),
-    onForward: vi.fn(() => true),
-    onStop: vi.fn(() => true),
-    onCopyAddress: vi.fn(() => true),
-  };
+    onFocusAddress: action(),
+    onReload: action(),
+    onBack: action(),
+    onForward: action(),
+    onStop: action(),
+    onCopyAddress: action(),
+  } satisfies Omit<BrowserKeyActions, 'connectionId' | 'loading'>;
 }
 
 function Harness({
