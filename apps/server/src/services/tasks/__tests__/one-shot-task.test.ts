@@ -107,9 +107,10 @@ describe('a one-shot task', () => {
     expect(agent.sendMessage).toHaveBeenCalledTimes(1);
   });
 
-  it('keeps a skipped run on its row, so its one chance never vanishes', async () => {
+  it('keeps a skipped run on its row, and keeps its claim: that skip was its run', async () => {
     const task = oneShot();
-    await scheduler({ ...CONFIG, maxConcurrentRuns: 0 }).start();
+    const service = scheduler({ ...CONFIG, maxConcurrentRuns: 0 });
+    await service.start();
     await settled();
     expect(store.listRuns()).toEqual([
       expect.objectContaining({
@@ -118,6 +119,13 @@ describe('a one-shot task', () => {
         error: expect.any(String),
       }),
     ]);
+    // The dispatch reported the skipped row it opened, so the claim stays: the
+    // give-back runs after the row, so wait past it before reading the claim.
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    expect(store.getTask(task.id)?.ranOnceAt).toEqual(expect.any(String));
+    service.registerTask(store.getTask(task.id)!);
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    expect(store.listRuns()).toHaveLength(1);
     expect(agent.sendMessage).not.toHaveBeenCalled();
   });
 
