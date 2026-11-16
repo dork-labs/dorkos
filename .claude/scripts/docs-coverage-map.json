@@ -337,6 +337,13 @@
       ]
     },
     {
+      "guide": "prioritization.md",
+      "description": "Filing and prioritizing DOR issues: MoSCoW mapped to Linear priority, the at-filing fields, the duplicate check, where each bucket goes, the Could expiry",
+      "patterns": [
+        "contributing/prioritization"
+      ]
+    },
+    {
       "guide": "observability.md",
       "description": "The dispatch correlation id, log conventions and the refusal rule, the `/api/debug` read surfaces, and the doctor split",
       "patterns": [
