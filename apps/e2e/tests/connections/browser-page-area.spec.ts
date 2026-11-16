@@ -20,6 +20,7 @@ const NOT_OPEN = {
   preparation: null,
   signIn: null,
   handoff: null,
+  takenOver: false,
 };
 
 /** Open a chat whose browser reports `state`, then its Agent browser panel. */
