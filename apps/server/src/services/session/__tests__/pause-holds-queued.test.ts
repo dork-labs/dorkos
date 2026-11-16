@@ -327,6 +327,25 @@ describe('pausing an agent holds its queued messages (DOR-4327)', () => {
       'person: one more thing',
     ]);
 
+    // A new message from another chat cannot press Send for the person.
+    await dispatchMessage({
+      sessionId,
+      clientId: chatClientId('chat-gamma'),
+      content: 'from C: check the totals',
+      projector,
+      runtime,
+      cwd: BETA.home,
+    });
+    await settle();
+    expect(ran()).toEqual([
+      'start the census',
+      'from A: add the totals',
+      'from C: check the totals',
+    ]);
+    expect(listQueuedMessages(sessionId).map((row) => row.content)).toEqual([
+      'person: one more thing',
+    ]);
+
     // Pressing send runs it, then what they just sent.
     await dispatchMessage({
       sessionId,
@@ -337,8 +356,8 @@ describe('pausing an agent holds its queued messages (DOR-4327)', () => {
       cwd: BETA.home,
     });
     await vi.waitFor(() => expect(listQueuedMessages(sessionId)).toEqual([]), { timeout: 2000 });
-    await vi.waitFor(() => expect(ran()).toHaveLength(4), { timeout: 2000 });
-    expect(ran().slice(2).sort()).toEqual(['person: and this', 'person: one more thing']);
+    await vi.waitFor(() => expect(ran()).toHaveLength(5), { timeout: 2000 });
+    expect(ran().slice(3).sort()).toEqual(['person: and this', 'person: one more thing']);
   });
 });
 

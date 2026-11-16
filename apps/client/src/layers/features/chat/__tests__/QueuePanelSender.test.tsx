@@ -287,10 +287,11 @@ describe('QueuePanel: messages held while the agent is paused (DOR-4348)', () =>
         onSend={vi.fn()}
         onMoveUp={vi.fn()}
         statusNote="Sending one at a time"
+        agentActions={actions}
         pausedLine={PAUSED_LINE}
       />
     );
-    const chatRow = screen.getByRole('group', { name: 'From Security: Please hold PR #12.' });
+    const chatRow = screen.getByRole('group', { name: /Queued message from Security/ });
     expect(within(chatRow).getByText(PAUSED_LINE)).toBeInTheDocument();
     // The person's own message waits for their Send, so it never promises to run.
     expect(screen.getAllByText(PAUSED_LINE)).toHaveLength(1);

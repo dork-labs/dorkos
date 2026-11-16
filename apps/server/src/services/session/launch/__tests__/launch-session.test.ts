@@ -585,6 +585,25 @@ describe('a message for a paused agent (spec audit-trail PR5)', () => {
     resetAgentPause();
   });
 
+  it('accepts another chat’s message into the pause hold instead of refusing it', async () => {
+    const { initAgentPause } = await import('../../../mesh/pause/agent-pause.js');
+    initAgentPause({
+      pausedAgentOfTurn: () => ({ id: 'agent-1', name: 'Scout' }),
+      recordHeld: vi.fn(),
+    } as never);
+    vi.mocked(dispatchMessage).mockClear();
+    const result = await dispatchSessionMessage({
+      sessionId: SESSION,
+      request: { content: 'Keep this message' },
+      clientId: 'chat:sender',
+      meshCore: mesh,
+      roomSessionPlace: undefined,
+      origin: { kind: 'chat-message' },
+    });
+    expect(result).not.toHaveProperty('refused');
+    expect(dispatchMessage).toHaveBeenCalledOnce();
+  });
+
   it('is refused with AGENT_PAUSED before anything is bound or queued, and recorded', async () => {
     const { initAgentPause } = await import('../../../mesh/pause/agent-pause.js');
     vi.clearAllMocks();

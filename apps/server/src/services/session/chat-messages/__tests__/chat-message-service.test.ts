@@ -29,6 +29,7 @@ vi.mock('../../../core/turn-power/turn-levels.js', async (importOriginal) => {
 });
 
 import { recordAudit } from '../../../audit/audit-trail.js';
+import { initAgentPause, resetAgentPause } from '../../../mesh/pause/agent-pause.js';
 import { ceilingOnlyRecords, marksOfCeiling } from '../../../core/turn-power/turn-marks.js';
 import { rowsCarryHold } from '../chat-message-ceiling.js';
 import type { DispatchLifecycleEvent } from '../../message-dispatcher.js';
@@ -178,6 +179,23 @@ function build(overrides: Partial<ChatMessageServiceDeps> = {}): ChatMessageServ
 function sentByAna() {
   return store.listSentFrom(ANA.sessionId);
 }
+
+it('tells the sender that a paused agent holds the message until resumed', async () => {
+  initAgentPause({
+    pausedAgentOfSession: () => ({ id: 'agent-bo', name: 'Bo' }),
+  } as never);
+  try {
+    chat('chat-b');
+    busy.add('chat-b');
+    const receipt = await service.send(ANA, { to: 'chat-b', message: 'Keep these words' });
+    expect(receipt.status).toBe('queued');
+    expect(receipt.note).toBe(
+      "Bo is paused. Your message is held and runs once it's resumed."
+    );
+  } finally {
+    resetAgentPause();
+  }
+});
 
 async function refusal(promise: Promise<unknown>): Promise<ChatMessageError> {
   const err = await promise.catch((e: unknown) => e);
