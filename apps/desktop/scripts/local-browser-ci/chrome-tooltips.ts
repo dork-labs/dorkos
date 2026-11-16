@@ -21,6 +21,8 @@ import { LOCAL_BROWSER_STILL_CHANNEL, startLocalBrowserBridge } from '../../src/
 const CONNECTION = 'chrome-tooltip-witness';
 /** The chrome's tooltip delay; the "before" frame is taken well inside it. */
 const TOOLTIP_DELAY_MS = 500;
+/** Longer than Radix's skip-delay window, so each case starts as a fresh hover. */
+const SKIP_DELAY_GAP_MS = 600;
 const delay = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
 async function main(): Promise<void> {
@@ -145,6 +147,9 @@ async function main(): Promise<void> {
   const hoverWithStill = async (name: string) => {
     away();
     await shown(true, `${name}: start`);
+    // Past Radix's skip-delay window (300 ms), so this hover is a fresh one: right
+    // after a tooltip closes, the next opens at once by design, for moving along a row.
+    await delay(SKIP_DELAY_GAP_MS);
     const target = await back();
     pointer(target.x, target.y);
     await delay(TOOLTIP_DELAY_MS / 2);
@@ -168,6 +173,9 @@ async function main(): Promise<void> {
   const hoverWithoutStill = async (name: string) => {
     away();
     await shown(true, `${name}: start`);
+    // Past Radix's skip-delay window (300 ms), so this hover is a fresh one: right
+    // after a tooltip closes, the next opens at once by design, for moving along a row.
+    await delay(SKIP_DELAY_GAP_MS);
     const target = await back();
     pointer(target.x, target.y);
     for (const until = Date.now() + TOOLTIP_DELAY_MS + 1_000; Date.now() < until; await delay(16)) {
