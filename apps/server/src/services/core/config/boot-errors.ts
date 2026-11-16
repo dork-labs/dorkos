@@ -41,12 +41,16 @@ export abstract class ConfigBootError extends Error {
 
 /** A present migration stamp cannot establish a safe upgrade path. */
 export class ConfigVersionUnreadableError extends ConfigBootError {
-  /** @param configPath - The settings file left untouched. */
+  /**
+   * Build the message for a version stamp DorkOS cannot read.
+   *
+   * @param configPath - The settings file left untouched.
+   */
   constructor(configPath: string) {
     const advice = 'Restore a saved copy of your settings, then restart DorkOS.';
     super(
       [
-        'DorkOS can’t read the version saved in your settings.',
+        'DorkOS cannot read the version saved in your settings.',
         'Your settings have not been changed.',
         '',
         `Settings file: ${configPath}`,
@@ -63,6 +67,8 @@ export class ConfigVersionUnreadableError extends ConfigBootError {
 /** An unstamped file needs its retired settings removed, not an older app. */
 export class ConfigRetiredSettingsError extends ConfigBootError {
   /**
+   * Build the message for retired settings in an unstamped file.
+   *
    * @param configPath - The settings file left untouched.
    * @param keys - Retired paths or known retired list entries, never secret values.
    */
@@ -73,7 +79,7 @@ export class ConfigRetiredSettingsError extends ConfigBootError {
     ].join('\n');
     super(
       [
-        'DorkOS can’t use retired settings in this file.',
+        'DorkOS cannot use retired settings in this file.',
         'Your settings have not been changed.',
         '',
         `Settings file: ${configPath}`,

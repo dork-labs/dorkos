@@ -1,8 +1,9 @@
 ---
 covers:
   - 'fix(config): preserve settings with unreadable versions (DOR-4341, DOR-4479)'
+  - 'fix(config): clarify settings upgrade refusals (DOR-4341, DOR-4479)'
 ---
 
 ### Fixed
 
-- Keep your settings untouched when DorkOS cannot read their saved version. Name retired settings in hand-written files so you can remove them and restart (DOR-4341, DOR-4479).
+- DorkOS now leaves your settings untouched when it cannot read their saved version, and names retired settings to remove (DOR-4341, DOR-4479).

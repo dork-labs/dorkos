@@ -93,7 +93,7 @@ describe('config upgrade floor through a real manager', () => {
     expect(thrown).toBeInstanceOf(ConfigBootError);
     expect(thrown).toBeInstanceOf(ConfigVersionUnreadableError);
     expect((thrown as Error).message).toContain(
-      'DorkOS can’t read the version saved in your settings.'
+      'DorkOS cannot read the version saved in your settings.'
     );
     expect((thrown as Error).message).toContain('Your settings have not been changed.');
     expect((thrown as Error).message).not.toContain('Upgrade to 0.115');
