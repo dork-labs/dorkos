@@ -337,9 +337,24 @@ describe('repository history and branch arguments need exact grants', () => {
     });
   });
   it.each([
+    { force: 'true' },
+    { force: 1 },
+    { force_push: 'yes' },
+    { forcePush: true },
+    { Force_Push: 'TRUE' },
+    { newBranch: 'topic' },
+    { START_BRANCH: ' main ' },
+  ])('fails closed on a loosely spelled history argument %j', async (args) => {
+    const run = await setup();
+    await expect(run('writer', MULTIPLE, args)).rejects.toMatchObject({
+      payload: { code: 'CONNECTOR_GRANT_REQUIRED' },
+    });
+  });
+  it.each([
     { force: false, force_push: false },
     { new_branch: '', start_branch: '', base_branch: '' },
-    { force: 'true', force_push: 'true', new_branch: null, start_branch: false },
+    { force: 'false', force_push: '0', new_branch: null, start_branch: false },
+    { new_branch: '   ' },
     { content: 'force: true', branch: 'main', forceful: true },
   ])('allows ordinary file changes with %j', async (args) => {
     const run = await setup();

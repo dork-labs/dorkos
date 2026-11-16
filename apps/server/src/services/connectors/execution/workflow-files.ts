@@ -79,19 +79,41 @@ export function changesRepositoryControlFiles(args: Record<string, unknown>): bo
   return containsControlPath(args);
 }
 
+/** Argument names that replace history when set; any value but an explicit "off" counts. */
+const FORCE_KEYS = new Set(['force', 'forcepush']);
+
+/** Argument names that create a branch when given a name. */
+const NEW_BRANCH_KEYS = new Set(['newbranch', 'startbranch', 'basebranch']);
+
+/** Values that plainly leave a force argument off. Anything else fails closed. */
+function forceIsOff(value: unknown): boolean {
+  return (
+    value === undefined ||
+    value === null ||
+    value === false ||
+    value === 0 ||
+    (typeof value === 'string' && ['', 'false', '0', 'no'].includes(value.trim().toLowerCase()))
+  );
+}
+
+/** Argument key spelled without case or separators, so `force_push` and `forcePush` match. */
+function looseKey(key: string): string {
+  return key.toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+
 /** Whether nested arguments request history replacement or a new branch. */
 export function changesRepositoryHistory(args: Record<string, unknown>): boolean {
   function changes(value: unknown): boolean {
     if (Array.isArray(value)) return value.some(changes);
     if (value === null || typeof value !== 'object') return false;
-    return Object.entries(value).some(
-      ([key, entry]) =>
-        ((key === 'force' || key === 'force_push') && entry === true) ||
-        ((key === 'new_branch' || key === 'start_branch' || key === 'base_branch') &&
-          typeof entry === 'string' &&
-          entry.length > 0) ||
+    return Object.entries(value).some(([key, entry]) => {
+      const loose = looseKey(key);
+      return (
+        (FORCE_KEYS.has(loose) && !forceIsOff(entry)) ||
+        (NEW_BRANCH_KEYS.has(loose) && typeof entry === 'string' && entry.trim().length > 0) ||
         changes(entry)
-    );
+      );
+    });
   }
   return changes(args);
 }
