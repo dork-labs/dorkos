@@ -70,14 +70,14 @@ const badgeVariants = cva(
  * The old fill axis. Every value now draws the one tint, and `destructive`
  * resolves to `tone="error"`.
  *
- * @deprecated since 0.135, remove in 0.155. Removed with the Badge codemod (Phase 2 PR B). Drop it.
+ * @deprecated since 0.135, remove in 0.155; remove earlier with the Badge codemod (Phase 2 PR B).
  */
 type BadgeVariant = 'default' | 'secondary' | 'destructive' | 'outline' | null;
 
 /**
  * The old shape axis. Every badge is a pill now.
  *
- * @deprecated since 0.135, remove in 0.155. Removed with the Badge codemod (Phase 2 PR B). Drop it.
+ * @deprecated since 0.135, remove in 0.155; remove earlier with the Badge codemod (Phase 2 PR B).
  */
 type BadgeShape = 'default' | 'pill' | null;
 

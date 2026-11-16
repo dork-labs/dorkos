@@ -35,7 +35,7 @@ export default {
     messages: {
       missingSchedule: 'Use "@deprecated since 0.x, remove in 0.y" with a later removal version.',
       expired:
-        'Removal version {{removal}} has passed (VERSION {{version}}). Remove this deprecated API.',
+        'Removal version {{removal}} has been reached (VERSION {{version}}). Remove this deprecated API.',
     },
   },
   create(context) {
@@ -57,14 +57,14 @@ export default {
               end: source.getLocFromIndex(offset + '@deprecated'.length),
             };
             const schedule =
-              /^\s*since (\d+\.\d+(?:\.\d+)?), remove in (\d+\.\d+(?:\.\d+)?)(?=\s|$|\.(?:\s|$))/.exec(
+              /^\s*since (\d+\.\d+(?:\.\d+)?), remove in (\d+\.\d+(?:\.\d+)?)(?=\s|$|[,;)]|\.(?:\s|$))/.exec(
                 tag[1]
               );
             const since = schedule && parseVersion(schedule[1]);
             const removal = schedule && parseVersion(schedule[2]);
             if (!since || !removal || compareVersions(removal, since) <= 0) {
               context.report({ loc, messageId: 'missingSchedule' });
-            } else if (compareVersions(current, removal) > 0) {
+            } else if (compareVersions(current, removal) >= 0) {
               context.report({
                 loc,
                 messageId: 'expired',

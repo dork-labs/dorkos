@@ -774,11 +774,11 @@ export const SessionSchema = z
      * `id` is the item identifier; `stage` and `runStatus` are the run's own.
      * ABSENT when no run names this session.
      *
-     * @deprecated since 0.135, remove in 0.155. Read `trackerItems`, which lists every item, including work
-     *   this chat started in chats of their own. Kept for older flow installs;
-     *   removed in the first DorkOS minor release at least 60 days after a flow
-     *   release that reads only `trackerItems`, and only once the extension
-     *   seam contract records the removal (spec `flow-multiproject` §6.8).
+     * @deprecated since 0.135, remove in 0.155; remove earlier in the first minor release
+     *   at least 60 days after a flow release reads only `trackerItems`, once the
+     *   extension seam contract records removal (spec `flow-multiproject` §6.8).
+     * Read `trackerItems` for every item, including work this chat started in
+     * chats of their own; kept for older flow installs.
      */
     trackerItem: z
       .object({

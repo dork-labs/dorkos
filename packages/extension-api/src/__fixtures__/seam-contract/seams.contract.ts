@@ -117,7 +117,7 @@ export interface SessionsApi {
 export interface SessionInfoSeams {
   /** Every tracker item the session works on, newest first. */
   trackerItems: { id: string; via: 'this-chat' | 'own-chat' }[];
-  /** @deprecated since 0.135, remove in 0.155. The newest `this-chat` item. */
+  /** @deprecated since 0.135, remove in 0.200. The newest `this-chat` item. */
   trackerItem?: { id: string };
 }
 

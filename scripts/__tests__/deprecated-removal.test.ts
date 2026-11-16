@@ -7,7 +7,7 @@ const ruleId = 'dorkos/deprecated-removal';
 
 function check(code: string, version?: string, filename = 'example.ts') {
   const linter = new Linter();
-  const config = version
+  const config: Linter.Config[] = version
     ? [...baseConfig, { rules: { [ruleId]: ['error', { version }] } }]
     : baseConfig;
   return linter.verify(code, config, { filename }).filter((message) => message.ruleId === ruleId);
@@ -37,11 +37,11 @@ describe('deprecation removal policy', () => {
 
   it.each([
     ['0.134.9', '0.135', false],
-    ['0.135.0', '0.135', false],
+    ['0.135.0', '0.135', true],
     ['0.135.1', '0.135', true],
     ['0.135.12', '0.136', false],
     ['0.135.12', '0.135.11', true],
-    ['0.135.12', '0.135.12', false],
+    ['0.135.12', '0.135.12', true],
     ['0.135.12', '0.135.13', false],
     ['0.100.0', '0.99', true],
     ['1.0.0', '0.999', true],
@@ -52,6 +52,21 @@ describe('deprecation removal policy', () => {
     );
     expect(messages).toHaveLength(expired ? 1 : 0);
     if (expired) expect(messages[0]).toMatchObject({ severity: 2, messageId: 'expired' });
+  });
+
+  it.each([',', ';', ')'])('accepts trailing %s after the removal version', (punctuation) => {
+    expect(
+      check(
+        `/** @deprecated since 0.135, remove in 0.155${punctuation} use replacement. */\nconst old = 1;`,
+        '0.135.12'
+      )
+    ).toEqual([]);
+    expect(
+      check(
+        `/** @deprecated since 0.135, remove in 0.155${punctuation} use replacement. */\nconst old = 1;`,
+        '0.155.0'
+      )
+    ).toMatchObject([{ severity: 2, messageId: 'expired' }]);
   });
 
   it.each([

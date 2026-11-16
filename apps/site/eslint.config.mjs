@@ -2,6 +2,7 @@ import js from '@eslint/js';
 import { defineConfig, globalIgnores } from 'eslint/config';
 import nextVitals from 'eslint-config-next/core-web-vitals';
 import nextTs from 'eslint-config-next/typescript';
+import deprecatedRemoval from '../../packages/eslint-config/rules/deprecated-removal.js';
 
 const eslintConfig = defineConfig([
   // Core `eslint:recommended` (DOR-169). `eslint-config-next` brings its own
@@ -31,7 +32,9 @@ const eslintConfig = defineConfig([
   { settings: { react: { version: '19.3' } } },
 
   {
+    plugins: { dorkos: { rules: { 'deprecated-removal': deprecatedRemoval } } },
     rules: {
+      'dorkos/deprecated-removal': 'error',
       // Matches the monorepo-wide setting in `@dorkos/eslint-config/base`; see
       // the comment there for why the default is a bypass rather than a default.
       'preserve-caught-error': ['error', { requireCatchParameter: true }],
