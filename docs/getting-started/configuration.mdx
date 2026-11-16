@@ -26,7 +26,9 @@ DORKOS_PORT=5000 dorkos
 
 ## Upgrading older settings
 
-If your settings were last used before version 0.115, upgrade to 0.115 first. Then upgrade to the current version. DorkOS stops before changing older settings and shows these steps. A settings file you wrote by hand starts normally.
+If your settings were last used before version 0.115, upgrade to 0.115 first. Then upgrade to the current version. DorkOS stops before changing older settings and shows these steps.
+
+A settings file you wrote by hand starts normally unless it includes retired settings. If it does, DorkOS names the settings or list entries to remove. Remove only those items, then start DorkOS again. If DorkOS cannot read the saved version, it stops and leaves the file unchanged. Restore a saved copy of your settings, then restart DorkOS.
 
 ## Required
 
