@@ -818,11 +818,16 @@ describe('ScheduleApprovalCard — answering it', () => {
     expect(await findSlot('schedule-receipt')).toHaveTextContent(/Approved by you at/);
   });
 
-  it('uses the profile name and server timestamp in the receipt', async () => {
+  it('uses the recorded approver and server timestamp in the receipt', async () => {
     const approvedAt = new Date(2026, 0, 15, 14, 30).toISOString();
     renderCard(proposal(), {
-      getConfig: vi.fn().mockResolvedValue({ profile: { displayName: 'Dorian' } }),
-      updateTask: vi.fn().mockResolvedValue(proposal({ status: 'active', approvedAt })),
+      updateTask: vi.fn().mockResolvedValue(
+        proposal({
+          status: 'active',
+          approvedAt,
+          approvedBy: { kind: 'person', userId: null, name: 'Dorian' },
+        })
+      ),
     });
 
     await userEvent.click(await screen.findByRole('button', { name: 'Approve Nightly sweep' }));
@@ -832,6 +837,27 @@ describe('ScheduleApprovalCard — answering it', () => {
     expect(receipt).toHaveClass('items-start');
     expect(receipt).not.toHaveClass('items-center');
     expect(receipt.querySelector('svg')).toHaveClass('mt-px', 'size-3.5', 'shrink-0');
+  });
+
+  it('never names the owner for an approval the server recorded without a name (DOR-3641)', async () => {
+    renderCard(proposal(), {
+      // The owner's saved name is not who approved: with login on, a signed-in
+      // teammate's yes is recorded by id alone.
+      getConfig: vi.fn().mockResolvedValue({ profile: { displayName: 'Dorian' } }),
+      updateTask: vi.fn().mockResolvedValue(
+        proposal({
+          status: 'active',
+          approvedAt: new Date(2026, 0, 15, 14, 30).toISOString(),
+          approvedBy: { kind: 'person', userId: 'user-2', name: null },
+        })
+      ),
+    });
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Approve Nightly sweep' }));
+
+    const receipt = await findSlot('schedule-receipt');
+    await waitFor(() => expect(receipt).toHaveTextContent('Approved by you at 2:30 PM, in Home.'));
+    expect(receipt).not.toHaveTextContent('Dorian');
   });
 
   it.each(['button', 'shortcut'] as const)(

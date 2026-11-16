@@ -8,3 +8,4 @@
 export { heartbeatKeys } from './model/heartbeat-keys';
 export { useAgentHeartbeat } from './model/use-agent-heartbeat';
 export { useChooseTriageCredits } from './model/use-choose-triage-credits';
+export { useWakersOff } from './model/use-wakers-off';

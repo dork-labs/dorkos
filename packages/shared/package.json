@@ -661,6 +661,10 @@
       "types": "./src/heartbeat-schemas.ts",
       "default": "./dist/heartbeat-schemas.js"
     },
+    "./waker-schemas": {
+      "types": "./src/waker-schemas.ts",
+      "default": "./dist/waker-schemas.js"
+    },
     "./computer-schemas": {
       "types": "./src/computer-schemas.ts",
       "default": "./dist/computer-schemas.js"

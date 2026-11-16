@@ -348,6 +348,29 @@ describe('a person’s own timing on a package’s schedule', () => {
       );
     });
 
+    it('records the person who moved the approval as its approver (DOR-3641)', () => {
+      // Purpose: the earlier receipt covered the package's timing, not theirs.
+      const id = approvedSchedule();
+      store.updateTask(id, { cron: MY_CRON }, { timingLandsOn: 'row' });
+
+      store.approvals.settleApprovedWorkChange(
+        id,
+        { ...SETTINGS, prompt: PROMPT, cron: PACKAGE_CRON, timezone: 'UTC', status: 'active' },
+        {
+          trusted: true,
+          approval: {
+            approvedBy: { kind: 'person', userId: 'user-2', name: null },
+            approvedVia: 'schedules',
+          },
+        }
+      );
+
+      expect(store.getTask(id)).toMatchObject({
+        approvedBy: { kind: 'person', userId: 'user-2', name: null },
+        approvedVia: 'schedules',
+      });
+    });
+
     it('keeps a paused schedule the person approved approved, so it comes back live', () => {
       // Purpose: keyed on the grant, not on `active` — a paused schedule is
       // still one the person approved.
