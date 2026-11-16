@@ -4,13 +4,36 @@ on:
   push:
     branches: [main]
   pull_request:
-    # The tarball under test bundles apps/server and apps/client (esbuild), so
-    # they gate PRs alongside the CLI package itself.
+    # The tarball under test bundles apps/server and apps/client (esbuild), and
+    # with them every workspace package they depend on at runtime, so all of
+    # those gate PRs alongside the CLI package itself. This list is the
+    # workspace closure of packages/cli: its own workspace deps (they sit in
+    # devDependencies because esbuild inlines them), then each one's
+    # `dependencies`, recursively. Add a package here when it joins that
+    # closure; #3812 changed packages/db and got no tarball because db was missing.
     paths:
       - 'packages/cli/**'
-      - 'packages/shared/**'
       - 'apps/server/**'
       - 'apps/client/**'
+      - 'packages/a2a-gateway/**'
+      - 'packages/browser/**'
+      - 'packages/cloud-api/**'
+      - 'packages/connector-providers/**'
+      - 'packages/db/**'
+      - 'packages/decisions/**'
+      - 'packages/doe/**'
+      - 'packages/extension-api/**'
+      - 'packages/harness/**'
+      - 'packages/icons/**'
+      - 'packages/keep-awake/**'
+      - 'packages/marketplace/**'
+      - 'packages/memory/**'
+      - 'packages/mesh/**'
+      - 'packages/operating-skills/**'
+      - 'packages/relay/**'
+      - 'packages/shared/**'
+      - 'packages/skills/**'
+      - 'packages/ui/**'
       - 'Dockerfile'
       - '.dockerignore'
       - 'scripts/smoke-test.sh'
