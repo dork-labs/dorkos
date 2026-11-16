@@ -245,11 +245,16 @@ describe('a request with no person’s setting', () => {
   });
 
   it('an agent’s request runs as the agent, which never approves a setting', async () => {
-    const res = await request(app())
-      .patch('/api/relay/adapters/wh/config')
-      .set('Origin', OWN_ORIGIN)
-      .set('X-DorkOS-Agent', 'agent-1')
-      .send({ config: WITH_SETTING });
+    // 'agent-1' resolves to no agent, and with the stranger mark on by default (DOR-4453) an
+    // unresolved agent header may not change a connection holding saved secrets; that refusal is
+    // pinned below. This case is about the writer label, so it runs with the mark off.
+    const res = await withStrangerMarkFlag(false, () =>
+      request(app())
+        .patch('/api/relay/adapters/wh/config')
+        .set('Origin', OWN_ORIGIN)
+        .set('X-DorkOS-Agent', 'agent-1')
+        .send({ config: WITH_SETTING })
+    );
     expect(res.status).not.toBe(428);
     expect(manager.updateConfig).toHaveBeenCalledWith('wh', expect.any(Object), 'agent');
   });
