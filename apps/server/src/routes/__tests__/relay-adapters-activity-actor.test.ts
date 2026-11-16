@@ -149,6 +149,8 @@ describe('who the Activity feed says changed a connection or a chat route', () =
       addAdapter: vi.fn(async () => undefined),
       removeAdapter: vi.fn(async () => undefined),
       resolveAdapterName: vi.fn(() => 'Telegram Bot'),
+      // Read by the marked-turn secret gate for an unresolved agent header (DOR-4453, on by default).
+      getManifest: vi.fn(() => undefined),
       getAdapter: vi.fn(() => ({ id: 'tg-bot', config: { id: 'tg-bot', label: 'Telegram Bot' } })),
       getBindingStore: vi.fn(() => bindingStore),
       getBindingRouter: vi.fn(() => undefined),

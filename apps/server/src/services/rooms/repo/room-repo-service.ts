@@ -55,6 +55,7 @@ import { RoomWorktreeManager } from './room-worktree-manager.js';
 import { readMainCheckoutState } from './room-main-checkout.js';
 import { ROOM_MD_FILENAME, ROOM_MD_SEED_COMMIT_MESSAGE, seedRoomMd } from './room-md.js';
 import { RoomConventions } from './room-conventions.js';
+import { isPlatformNamed, PLATFORM_NAMED_ROOM } from '../agent-facing-room-name.js';
 
 /**
  * The code a caller sees when the room already has files.
@@ -883,7 +884,12 @@ export class RoomRepoService {
     await initRepo(repoDir, ceiling);
     await fs.writeFile(
       path.join(repoDir, ROOM_MD_FILENAME),
-      seedRoomMd({ title: room.title, topic: room.topic }),
+      // A bridged group nobody renamed is titled by a stranger's choice, and this file rides
+      // every member's turns, so it is seeded under the name agents see instead (DOR-4453).
+      seedRoomMd({
+        title: isPlatformNamed(room, room.bridge?.platformTitle) ? PLATFORM_NAMED_ROOM : room.title,
+        topic: room.topic,
+      }),
       'utf-8'
     );
     await commitAll(

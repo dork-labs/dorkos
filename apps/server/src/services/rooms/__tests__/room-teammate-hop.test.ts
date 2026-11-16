@@ -137,7 +137,9 @@ describe('a teammate wakes Ana, and Ana’s post wakes Bo (DOR-3036)', () => {
     expect(bo.permissionCeiling).toEqual(record);
     const level = lastTurnLevelOf(sessionOf.get('/agents/bo')!);
     expect(level).toMatchObject(record);
-    expect(level?.outsider).toBeUndefined();
+    // Priya's post sits in Bo's window, and a remote author's post marks the turn that shows it
+    // (DOR-4453 F1, on by default): the outsider mark comes from that post, not the teammate one.
+    expect(level?.outsider).toBe(true);
   });
 
   it('Bo’s turn is sent as any other, with its words still read as words only', async () => {

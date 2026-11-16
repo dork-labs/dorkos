@@ -66,7 +66,7 @@ import { sessionStandsInRoomCopy } from './repo/room-turn-place.js';
 // The one VALUE this module takes from the port, so it comes straight from the
 // port rather than through `room-trigger.js`'s type re-export below: a value
 // import there would load the dispatcher to raise a refusal it hands back to it.
-import { RoomTurnRuntimeGoneError, seatLaunchOf } from './room-turn-port.js';
+import { conventionsRoomOf, RoomTurnRuntimeGoneError, seatLaunchOf } from './room-turn-port.js';
 import { resolveTurnRuntimeType } from '../runtimes/shared/resolve-agent-runtime-type.js';
 import {
   dispatchMessage,
@@ -688,7 +688,7 @@ export function createSessionRoomTurnRunner(options: RoomTurnRunnerOptions = {})
       // without its conventions.
       let roomConventions: string | null = null;
       try {
-        roomConventions = await readRoomConventionsBlock(request.room);
+        roomConventions = await readRoomConventionsBlock(conventionsRoomOf(request));
       } catch (err) {
         logger.warn('[rooms] could not read the room’s conventions; answering without them', {
           roomId: request.room.id,
