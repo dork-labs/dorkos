@@ -1,5 +1,6 @@
 import type { WebContents } from 'electron';
 import type { chromeIdentity } from './browser-identity';
+import type { createAgentInputGate } from './page-keys';
 import type { ConnectOverCDPTransport } from 'playwright-core';
 
 interface Message {
@@ -12,7 +13,8 @@ interface Message {
 /** Adapts one real guest debugger to Playwright, never the shell's target tree. */
 export function pageTransport(
   contents: WebContents,
-  identity?: ReturnType<typeof chromeIdentity>
+  identity?: ReturnType<typeof chromeIdentity>,
+  inputGate?: ReturnType<typeof createAgentInputGate>
 ): ConnectOverCDPTransport {
   const debuggerApi = contents.debugger;
   debuggerApi.attach('1.3');
@@ -107,11 +109,16 @@ export function pageTransport(
             ) {
               throw new Error('Page target is unavailable');
             }
-            result = await debuggerApi.sendCommand(
-              message.method,
-              message.params,
-              message.sessionId === rootSession ? undefined : message.sessionId
-            );
+            const sendCommand = () =>
+              debuggerApi.sendCommand(
+                message.method,
+                message.params,
+                message.sessionId === rootSession ? undefined : message.sessionId
+              );
+            result =
+              inputGate && message.method.startsWith('Input.')
+                ? await inputGate.run(sendCommand)
+                : await sendCommand();
           }
           transport.onmessage?.({ id: message.id, sessionId: message.sessionId, result });
         } catch (error) {
