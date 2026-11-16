@@ -20,7 +20,10 @@ import { strangerMarkForEntries } from './turn-ceiling.js';
  * - the room's topic, up to 500 characters, rendered on every turn. No editor is recorded for it,
  *   so a turn cannot be marked by who set it;
  * - canvas document titles and links, whose author the canvas names by handle only;
- * - roster names, a forum topic's name and a bridged chat's title.
+ * - roster names and a forum topic's name.
+ *
+ * A bridged group's far-end title is not shown at all while it still names the room
+ * (`room-context.ts` `roomName`), so it needs no mark.
  *
  * @param context - The context `buildRoomContext` returned for this turn.
  */
