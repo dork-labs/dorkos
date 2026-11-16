@@ -91,6 +91,8 @@ const explicit = [
   'GITHUB_DELETE_APP_AUTHORIZATION', // credentials
   'GITHUB_UPLOAD_RELEASE_ASSET', // release files
   'GITHUB_UPDATE_A_RELEASE_ASSET', // release files
+  'GITHUB_CREATE_A_RELEASE', // a new tag name creates the tag
+  'GITHUB_UPDATE_A_RELEASE', // can point a release at a new tag
 ];
 
 describe('reviewed Composio exceptions', () => {
@@ -124,8 +126,6 @@ describe('reviewed Composio exceptions', () => {
   });
 
   it.each([
-    'GITHUB_CREATE_A_RELEASE',
-    'GITHUB_UPDATE_A_RELEASE',
     'GITHUB_CREATE_OR_UPDATE_FILE_CONTENTS',
     'GOOGLEDRIVE_CREATE_FILE',
     'GOOGLEDRIVE_CREATE_FILE_FROM_TEXT',

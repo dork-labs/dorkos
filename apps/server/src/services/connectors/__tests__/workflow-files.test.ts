@@ -21,6 +21,9 @@ afterEach(() => {
   for (const h of opened.splice(0)) h.db.$client.close();
 });
 
+/** Repository actions the classifier keeps as one-by-one picks (no level covers them). */
+const HAND_PICKED: readonly string[] = ['GITHUB_MERGE_A_PULL_REQUEST', 'GITHUB_CREATE_A_RELEASE'];
+
 async function setup(toolkit = 'github') {
   const h = levelHarness({ type: 'composio' });
   opened.push(h);
@@ -47,7 +50,7 @@ async function setup(toolkit = 'github') {
       slug,
       classification: 'write' as const,
     })),
-    { slug: 'GITHUB_MERGE_A_PULL_REQUEST', classification: 'destructive' }
+    ...HAND_PICKED.map((slug) => ({ slug, classification: 'destructive' as const }))
   );
   const list = vi.mocked(h.provider.listOperationSchemas).getMockImplementation()!;
   vi.spyOn(h.provider, 'listOperationSchemas').mockImplementation(async (request) => {
@@ -85,10 +88,9 @@ async function setup(toolkit = 'github') {
   });
   return (agentId: string, slug: string, args: Record<string, unknown>) =>
     authorization.prepare({
-      capabilityId:
-        slug === 'GITHUB_MERGE_A_PULL_REQUEST'
-          ? 'connectors.execute_destructive'
-          : 'connectors.execute_write',
+      capabilityId: HAND_PICKED.includes(slug)
+        ? 'connectors.execute_destructive'
+        : 'connectors.execute_write',
       principal: createServerPrincipal({
         kind: 'agent',
         owner: OWNER,
@@ -359,6 +361,14 @@ describe('repository history and branch arguments need exact grants', () => {
   ])('allows ordinary file changes with %j', async (args) => {
     const run = await setup();
     await expect(run('writer', MULTIPLE, args)).resolves.toMatchObject({ agentId: 'writer' });
+  });
+  it('runs a hand-picked GITHUB_CREATE_A_RELEASE, and refuses it to a Read and write level', async () => {
+    const run = await setup();
+    const args = { owner: 'acme', repo: 'demo', tag_name: 'v9.9.9', target_commitish: 'topic' };
+    await expect(run('exact', 'GITHUB_CREATE_A_RELEASE', args)).resolves.toMatchObject({
+      agentId: 'exact',
+    });
+    await expect(run('writer', 'GITHUB_CREATE_A_RELEASE', args)).rejects.toBeDefined();
   });
   it('allows an exact grant of GITHUB_MERGE_A_PULL_REQUEST', async () => {
     const run = await setup();
