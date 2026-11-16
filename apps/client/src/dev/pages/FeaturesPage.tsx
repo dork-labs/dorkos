@@ -26,6 +26,7 @@ import { BrowserChromeShowcases } from '../showcases/BrowserChromeShowcases';
 import { BrowserPageErrorShowcases } from '../showcases/BrowserPageErrorShowcases';
 import { TriageHeaderShowcases } from '../showcases/TriageHeaderShowcases';
 import { InboxShowcases } from '../showcases/InboxShowcases';
+import { ExtensionUpdateShowcases } from '../showcases/ExtensionUpdateShowcases';
 import { AccessChangeShowcases } from '../showcases/AccessChangeShowcases';
 import { PresenceStripShowcases } from '../showcases/PresenceStripShowcases';
 import { HomeStatesShowcases } from '../showcases/HomeStatesShowcases';
@@ -109,6 +110,7 @@ export function HomeInboxPage() {
       <BrowserPageErrorShowcases />
       <TriageHeaderShowcases />
       <InboxShowcases />
+      <ExtensionUpdateShowcases />
       <AccessChangeShowcases />
       <PresenceStripShowcases />
       <HomeStatesShowcases />
