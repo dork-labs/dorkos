@@ -939,9 +939,19 @@ jobs:
       # replayed when its turbo task hash matches: the package's files, its
       # dependencies' task hashes, the lockfile's resolution for it and the env
       # turbo.json declares. A changed source misses and rebuilds exactly as
-      # before. The key only picks which entry to download: same OS, arch and
-      # lockfile, newest first. Turbo hashes the resolved dependencies anyway,
-      # so the lockfile in the key just keeps stale entries from downloading at all.
+      # before. The key only picks which entry to download: same OS and arch,
+      # the same lockfile if there is one, else the newest entry whatever its
+      # lockfile.
+      #
+      # WHY THE LAST RESTORE KEY DROPS THE LOCKFILE HASH. With the lockfile
+      # in every key, one lockfile change on `main` after the last canary left
+      # every queue build and pull request with nothing to find until the next
+      # canary, which GitHub delivers about twice a day: on 2026-11-16 #3610
+      # changed it at 03:00Z, the canary had saved under the old hash at 01:38Z,
+      # and queue shards logged "Cache not found" and `Cached: 0 cached, 49
+      # total` all morning. Taking an entry from an older lockfile is safe for
+      # the reason above: turbo hashes each package's own resolved
+      # dependencies, so only the packages whose dependencies changed miss.
       #
       # BUILD ENTRIES ONLY. The saved cache never holds a `test` entry: the
       # trim before the save keeps only this run's `build` and
@@ -963,6 +973,7 @@ jobs:
           key: turbo-test-builds-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('pnpm-lock.yaml') }}-${{ github.sha }}
           restore-keys: |
             turbo-test-builds-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('pnpm-lock.yaml') }}-
+            turbo-test-builds-${{ runner.os }}-${{ runner.arch }}-
 
       # --summarize writes a machine-readable record of the run to
       # .turbo/runs/<id>.json. The assert step is the only reason it is here.
@@ -1464,6 +1475,7 @@ jobs:
           key: turbo-test-builds-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('pnpm-lock.yaml') }}-${{ github.sha }}
           restore-keys: |
             turbo-test-builds-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('pnpm-lock.yaml') }}-
+            turbo-test-builds-${{ runner.os }}-${{ runner.arch }}-
 
       # Writes the file list and the packages holding them, and run=true|false.
       # No `if:`, so it decides on every event; only a pull request whose plan

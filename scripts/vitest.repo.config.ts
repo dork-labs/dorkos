@@ -98,6 +98,7 @@ export const HERMETIC_SUITES = [
   '__tests__/shell-suite-parity.test.ts',
   '__tests__/space-runtime-packages.test.ts',
   '__tests__/turbo-affected-base-pinned.test.ts',
+  '__tests__/turbo-build-cache-restore.test.ts',
   '__tests__/unit-shard-workdivision.test.ts',
   '__tests__/verify-proof.test.ts',
   '__tests__/vitest-flake-reporter.test.ts',
