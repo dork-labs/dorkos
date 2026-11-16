@@ -130,9 +130,10 @@
     },
     {
       "guide": "configuration.md",
-      "description": "Config file system, upgrade floor, settings reference, Codex transport compatibility, CLI commands, precedence",
+      "description": "Config file system, upgrade refusals, settings reference, Codex transport compatibility, CLI commands, precedence",
       "patterns": [
         "config-manager",
+        "config/upgrade-floor",
         "codex/transport",
         "config-migrations",
         "config-schema",
