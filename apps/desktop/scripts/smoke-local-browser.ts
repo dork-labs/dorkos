@@ -1,6 +1,6 @@
 import { execFile } from 'node:child_process';
 import { createRequire } from 'node:module';
-import { mkdtemp, mkdir, rm } from 'node:fs/promises';
+import { mkdtemp, mkdir, readdir, rm } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { promisify } from 'node:util';
@@ -10,6 +10,16 @@ import { build, type Plugin } from 'esbuild';
 const witness = (file: string) =>
   fileURLToPath(new URL(`./local-browser-ci/${file}`, import.meta.url));
 const client = fileURLToPath(new URL('../../client', import.meta.url));
+const desktop = fileURLToPath(new URL('..', import.meta.url));
+
+/** The app's own built stylesheet, from the renderer the job built before this ran. */
+async function builtStylesheet(): Promise<string | null> {
+  const assets = path.join(desktop, 'dist', 'renderer', 'assets');
+  const css = (await readdir(assets).catch(() => [] as string[])).find((name) =>
+    name.endsWith('.css')
+  );
+  return css ? path.join(assets, css) : null;
+}
 
 /** CI-only macOS spec for the real native guest: handoff and Stop, then app layers over it. */
 export async function assertEmbeddedBrowserHandoff(): Promise<string> {
@@ -41,7 +51,7 @@ export async function assertEmbeddedBrowserHandoff(): Promise<string> {
     });
     return outfile;
   };
-  const run = async (outfile: string, env: Record<string, string> = {}) => {
+  const run = async (outfile: string, env: Record<string, string> = {}, timeout = 60_000) => {
     const { stdout } = await promisify(execFile)(
       require('electron') as string,
       [
@@ -51,7 +61,7 @@ export async function assertEmbeddedBrowserHandoff(): Promise<string> {
         `--user-data-dir=${path.join(scratch, `profile-${path.basename(outfile, '.cjs')}`)}`,
       ],
       {
-        timeout: 60_000,
+        timeout,
         maxBuffer: 1024 * 1024,
         env: {
           PATH: '/usr/bin:/bin:/usr/sbin:/sbin',
@@ -96,7 +106,33 @@ export async function assertEmbeddedBrowserHandoff(): Promise<string> {
       DORKOS_OVERLAY_PAGE: page,
       DORKOS_OVERLAY_PRELOAD: preload,
     });
-    return `${handoff} ${overlays}`;
+
+    // DOR-4427: the real browser chrome over the same native page. Its tooltips
+    // wait, and open only onto a still; the frames go up with the browser proof.
+    const chromePage = path.join(scratch, 'chrome-tooltip-page.js');
+    await build({
+      entryPoints: [witness('chrome-tooltip-page.tsx')],
+      outfile: chromePage,
+      bundle: true,
+      platform: 'browser',
+      format: 'iife',
+      tsconfig: path.join(client, 'tsconfig.json'),
+      nodePaths: [path.join(client, 'node_modules')],
+      jsx: 'automatic',
+      define: { 'process.env.NODE_ENV': '"production"' },
+    });
+    const stylesheet = await builtStylesheet();
+    const tooltips = await run(
+      await mainProcess('chrome-tooltips.ts'),
+      {
+        DORKOS_CHROME_PAGE: chromePage,
+        DORKOS_OVERLAY_PRELOAD: preload,
+        DORKOS_CHROME_PROOF_DIR: path.join(desktop, 'browser-proof-artifacts', 'chrome-tooltips'),
+        ...(stylesheet ? { DORKOS_CHROME_CSS: stylesheet } : {}),
+      },
+      120_000
+    );
+    return `${handoff} ${overlays} ${tooltips}`;
   } finally {
     await rm(scratch, { recursive: true, force: true });
   }
