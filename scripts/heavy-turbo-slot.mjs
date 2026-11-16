@@ -1,7 +1,10 @@
 #!/usr/bin/env node
-// The turbo task `//#heavy-slot` (DOR-3274 Phase 2). Every build, typecheck,
-// test and lint task in turbo.json depends on it, so it runs once, first, in any
-// `turbo` invocation that would run one of them. It finds the turbo process that
+// The turbo task `@dorkos/heavy-slot#slot` (DOR-3274 Phase 2), run as the
+// `slot` script of the workspace package packages/heavy-slot. Every build,
+// typecheck, test and lint task in turbo.json depends on it, so it runs once,
+// first, in any `turbo` invocation that would run one of them. It is a package
+// task, not a root one, because turbo hashes the root package.json into every
+// root task and so into every build that depends on it (DOR-4190). It finds the turbo process that
 // started it and takes a host-wide heavy-run slot for that process's lifetime
 // (`scripts/heavy-run-lock.sh --job --hold <pid>`), so a bare `turbo build`
 // queues behind the other heavy runs on the host exactly like `pnpm build`.

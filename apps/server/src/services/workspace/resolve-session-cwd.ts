@@ -210,17 +210,21 @@ export function agentWorkspaceKey(
  *
  * @param req - What the caller knows about the turn.
  * @param deps - Injected collaborators; the production ones when omitted.
+ * @param options.log - Write the one `[cwd] resolved` line. Off only for a read
+ *   that starts no turn.
  * @returns The directory to run in, the rung that chose it, and any degradation.
  */
 export async function resolveSessionCwd(
   req: ResolveSessionCwdRequest,
-  deps: ResolveSessionCwdDeps = sessionCwdDeps()
+  deps: ResolveSessionCwdDeps = sessionCwdDeps(),
+  options: { log?: boolean } = {}
 ): Promise<ResolvedCwd> {
   const resolved = await resolve(req, deps);
   // One line per turn naming the rung, the directory and any degradation —
   // written through the shared reporter so every turn's decision is one
-  // greppable event.
-  logResolvedCwd(resolved, { sessionId: req.sessionId ?? null });
+  // greppable event. A preview that starts no turn (the schedule approval
+  // card, `tasks/execution/run-place-preview.ts`) passes `log: false`.
+  if (options.log !== false) logResolvedCwd(resolved, { sessionId: req.sessionId ?? null });
   return resolved;
 }
 

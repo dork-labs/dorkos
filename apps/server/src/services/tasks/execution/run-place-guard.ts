@@ -36,6 +36,23 @@ export const GLOBAL_RUN_HOME_MESSAGE =
   "Scheduled runs can't use your home folder. Pick an agent for this schedule.";
 
 /**
+ * What the guard does with a placement: keep it, move it to the agent's own
+ * folder, give it a fresh run folder, or refuse it. Reads only, so the approval
+ * card can ask the same question the run does (`run-place-preview.ts`).
+ *
+ * @param placement - Where the folder chain put the run, and the agent's home.
+ */
+export function decideRunPlacement(placement: {
+  cwd: string;
+  agentPath?: string;
+}): 'keep' | 'agent' | 'fresh' | 'refuse' {
+  const { cwd, agentPath } = placement;
+  if (agentPath === undefined) return isHomeOrDataFolder(cwd) ? 'fresh' : 'keep';
+  if (!isProtectedLaunchFolder(cwd, agentPath)) return 'keep';
+  return isProtectedLaunchFolder(agentPath, agentPath) ? 'refuse' : 'agent';
+}
+
+/**
  * The placement a run may use, or a throw that records the run failed.
  *
  * @param placement - Where the folder chain put the run, and the agent's home.
@@ -44,13 +61,12 @@ export const GLOBAL_RUN_HOME_MESSAGE =
  *   folder is not a private folder holding only run folders.
  */
 export function guardRunPlacement<T extends { cwd: string; agentPath?: string }>(placement: T): T {
-  const { cwd, agentPath } = placement;
-  if (agentPath === undefined) {
-    if (isHomeOrDataFolder(cwd)) return { ...placement, cwd: freshRunFolder() };
-    return placement;
+  const decision = decideRunPlacement(placement);
+  if (decision === 'keep') return placement;
+  if (decision === 'fresh') return { ...placement, cwd: freshRunFolder() };
+  if (decision === 'agent' && placement.agentPath !== undefined) {
+    return { ...placement, cwd: placement.agentPath };
   }
-  if (!isProtectedLaunchFolder(cwd, agentPath)) return placement;
-  if (!isProtectedLaunchFolder(agentPath, agentPath)) return { ...placement, cwd: agentPath };
   throw new Error(GLOBAL_RUN_HOME_MESSAGE);
 }
 

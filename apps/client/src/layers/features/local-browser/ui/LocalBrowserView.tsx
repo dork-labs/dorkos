@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useMemo, useRef, useState, type ReactNode } from 'react';
 import type { LocalBrowserHistoryDirection, LocalBrowserState } from '@dorkos/shared/local-browser';
 import { useOwnOrigins } from '@/layers/entities/config';
 import { isThisAppsAddress, normalizeAddressInput } from '@/layers/shared/lib';
@@ -31,6 +31,11 @@ export interface LocalBrowserViewProps {
   action: (run: () => Promise<LocalBrowserState>) => Promise<boolean>;
   /** Open the browser again after the page could not be drawn. */
   onReconnect: () => void;
+  /**
+   * The chrome's ⋯ menu, given the row's own Forward, which the menu offers
+   * while the row is too narrow to show it.
+   */
+  menu?: (forward: { canForward: boolean; onForward: () => void }) => ReactNode;
 }
 
 /**
@@ -55,6 +60,7 @@ export function LocalBrowserView({
   busy,
   action,
   onReconnect,
+  menu,
 }: LocalBrowserViewProps) {
   const transport = useTransport();
   const ownOrigins = useOwnOrigins();
@@ -166,6 +172,9 @@ export function LocalBrowserView({
     });
   };
 
+  const canForward = !busy && (tab?.canGoForward ?? false);
+  const onForward = () => step('forward');
+
   // The browser's keys, with focus in the panel or forwarded from the page (DOR-4432).
   const onKeyDown = useBrowserKeys({
     connectionId: embedded ? connectionId : null,
@@ -187,8 +196,8 @@ export function LocalBrowserView({
       return true;
     },
     onForward: () => {
-      if (!tab || busy || !tab.canGoForward) return false;
-      step('forward');
+      if (!canForward) return false;
+      onForward();
       return true;
     },
     onStop: () => {
@@ -218,9 +227,9 @@ export function LocalBrowserView({
           url={page.failure?.url || tab.url}
           focusAddress={focusAddress}
           canBack={!busy && (tab.canGoBack ?? false)}
-          canForward={!busy && (tab.canGoForward ?? false)}
+          canForward={canForward}
           onBack={() => step('back')}
-          onForward={() => step('forward')}
+          onForward={onForward}
           onReload={() => void go(page.failure?.url || tab.url)}
           loading={page.loading}
           onStop={() => page.run('stop')}
@@ -229,6 +238,7 @@ export function LocalBrowserView({
           tooltipStill={embedded ? tooltipStill : undefined}
           retry={shownRetry}
           notice={shownRetry?.notice ?? shownStepNotice}
+          menu={menu?.({ canForward, onForward })}
         />
       )}
       {embedded ? (

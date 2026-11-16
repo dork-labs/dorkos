@@ -447,6 +447,80 @@ describe('ScheduleApprovalCard — what it says', () => {
     expect(screen.queryByText(/an agent/i)).toBeNull();
   });
 
+  it.each([
+    [
+      "the agent's folder, with its path",
+      { runsAsName: 'Quill', runPlace: { kind: 'agent', path: '/Users/sam/agents/quill' } },
+      "Where: Quill's folder",
+      '~/agents/quill',
+      null,
+    ],
+    [
+      "the agent's folder when its name is unknown",
+      { runsAsName: null, runPlace: { kind: 'agent', path: '/Users/sam/agents/quill' } },
+      "Where: The agent's folder",
+      '~/agents/quill',
+      null,
+    ],
+    [
+      "a private copy of the agent's project",
+      { runsAsName: 'Quill', runPlace: { kind: 'agent_checkout', ready: true } },
+      "Where: A private copy of Quill's project",
+      null,
+      null,
+    ],
+    [
+      'a private copy that is not made yet',
+      { runsAsName: 'Quill', runPlace: { kind: 'agent_checkout', ready: false } },
+      "Where: A private copy of Quill's project",
+      null,
+      "Not made yet. Until it is, runs use Quill's folder.",
+    ],
+    [
+      "DorkOS's default folder, with its path",
+      {
+        runsAsName: 'Quill',
+        runPlace: { kind: 'folder', path: '/Users/sam/projects/site', of: 'default' },
+      },
+      "Where: DorkOS's default folder",
+      '~/projects/site',
+      null,
+    ],
+    [
+      'the folder DorkOS runs in, for no agent',
+      {
+        agentId: null,
+        runPlace: { kind: 'folder', path: '/Users/sam/projects/site', of: 'server' },
+      },
+      'Where: The folder DorkOS runs in',
+      '~/projects/site',
+      null,
+    ],
+    [
+      'a fresh private folder',
+      { agentId: null, runPlace: { kind: 'private' } },
+      'Where: A fresh private folder',
+      null,
+      null,
+    ],
+  ] as const)('says where it runs: %s (DOR-4067)', async (_case, overrides, where, path, note) => {
+    renderCard(proposal({ agentId: 'agent-b', ...overrides } as Partial<Task>));
+    await screen.findByText('Nightly sweep');
+    expect(slot('schedule-run-place')).toHaveTextContent(where);
+    const shown = slot('schedule-run-place-path');
+    if (path === null) expect(shown).toBeNull();
+    else expect(shown).toHaveTextContent(path);
+    const said = slot('schedule-run-place-note');
+    if (note === null) expect(said).toBeNull();
+    else expect(said).toHaveTextContent(note);
+  });
+
+  it('claims no place when the server sent none', async () => {
+    renderCard(proposal({ runPlace: undefined }));
+    await screen.findByText('Nightly sweep');
+    expect(slot('schedule-run-place')).toBeNull();
+  });
+
   it('says a proposal has no agent identity rather than inventing one', async () => {
     // The sessionless external `/mcp` registration stamps no path. A disc and a
     // name invented from nothing would put a request under a mark it never earned.
