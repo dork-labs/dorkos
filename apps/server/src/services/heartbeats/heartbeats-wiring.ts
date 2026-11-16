@@ -31,6 +31,8 @@ import { onDispatchLifecycle } from '../session/message-dispatcher.js';
 import { auditTrail } from '../audit/audit-trail.js';
 import type { HeartbeatRouterDeps } from '../../routes/heartbeats.js';
 import type { HeartbeatTriageRouterDeps } from '../../routes/heartbeat-triage.js';
+import type { WakersOffRouterDeps } from '../../routes/wakers-off.js';
+import { liveWakersOffReader } from './wakers-off/live-wakers-off.js';
 import type { SessionOriginResolvers } from '../session/origin/session-origin-overlays.js';
 import { createReportsToChain, OWNER_FALLBACK_ACCOUNT_ID } from './reports-to.js';
 import { HeartbeatStore } from './heartbeat-store.js';
@@ -74,7 +76,11 @@ export interface HeartbeatsWiringDeps extends DeliveryDeps {
    * (`GET /api/agents/:id/heartbeat`) and the credits answer's
    * (`PUT /api/heartbeats/triage-credits`), both mounted by `http/hono-api.ts`.
    */
-  routes: { heartbeat?: HeartbeatRouterDeps; heartbeatTriage?: HeartbeatTriageRouterDeps };
+  routes: {
+    heartbeat?: HeartbeatRouterDeps;
+    heartbeatTriage?: HeartbeatTriageRouterDeps;
+    wakersOff?: WakersOffRouterDeps;
+  };
   /** The session list's origin overlays, which gain the chat list's Heartbeat label. */
   origins: SessionOriginResolvers;
   /** Mesh, once it runs. */
@@ -288,6 +294,15 @@ export function startHeartbeats(deps: HeartbeatsWiringDeps): HeartbeatsHandle {
     },
   });
   mountStatus(deps, { store, raises, managerOf, runner, agents, enabled, triage });
+  // The team page's line for every waker that cannot wake (DOR-3641).
+  deps.routes.wakersOff = liveWakersOffReader({
+    db,
+    agents,
+    store,
+    chain,
+    ownerAccountId,
+    isOwner,
+  });
   const handle: HeartbeatsHandle = {
     runner,
     stop: () => {

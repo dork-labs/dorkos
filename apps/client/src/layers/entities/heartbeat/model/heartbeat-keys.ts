@@ -14,4 +14,6 @@ export const heartbeatKeys = {
   all: HEARTBEAT_KEY,
   /** `GET /api/agents/:id/heartbeat` for one agent. */
   agent: (agentId: string) => [...HEARTBEAT_KEY, 'agent', agentId] as const,
+  /** `GET /api/heartbeats/wakers-off`: every schedule and heartbeat that cannot wake. */
+  wakersOff: () => [...HEARTBEAT_KEY, 'wakers-off'] as const,
 };

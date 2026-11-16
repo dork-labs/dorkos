@@ -61,6 +61,7 @@ import { resolveStanding } from '../services/notifications/notification-service.
 import { raiseStanding } from '../services/notifications/standing-events.js';
 import { resolveScheduleParkPayload } from '../services/notifications/emitters/schedule-park.js';
 import { withTaskFolderRules } from './task-approval-rules.js';
+import { withTaskRunPlace } from '../services/tasks/execution/run-place-preview.js';
 import { withProposerNames } from '../services/tasks/task-provenance.js';
 import {
   withTaskProjects,
@@ -161,7 +162,11 @@ export function createTasksRoutes(deps: TasksRouterDeps): Hono<ApiEnv> {
     const tasks = await presentAll(store.getTasks());
     return c.json(
       clearsTheAgentBar(honoRequestFacts(c))
-        ? await Promise.all(tasks.map((task) => withTaskFolderRules(task, meshCore)))
+        ? await Promise.all(
+            tasks.map(async (task) =>
+              withTaskRunPlace(await withTaskFolderRules(task, meshCore), meshCore)
+            )
+          )
         : tasks
     );
   });
@@ -501,6 +506,7 @@ export function createTasksRoutes(deps: TasksRouterDeps): Hono<ApiEnv> {
     if (!rearms || !changesFile) {
       store.approvals.settleApprovedWorkChange(updated.id, before, {
         trusted: rearms,
+        approval,
         // Only an agent's own schedule stays live through its edit (DOR-3640 R1),
         // and not one an agent approved or a person set looser than Don't ask (DOR-3703).
         armsAgentWork: !trusted && edit.armsAgentWork && agentEditMayStayLive(existing, store),

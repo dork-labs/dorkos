@@ -75,7 +75,12 @@ describe('only the main canary saves, and only build entries', () => {
   const shard = jobText('test-shard');
 
   it('has exactly one save of the build cache in the whole workflow', () => {
-    expect(workflow.split('actions/cache/save@').length - 1).toBe(1);
+    // The pnpm store has main-only saves of its own (DOR-4537); count only the
+    // steps that save this key.
+    const saves = workflow
+      .split(/\n(?= {6}- )/)
+      .filter((step) => step.includes('uses: actions/cache/save@'));
+    expect(saves.filter((step) => step.includes(`key: ${KEY}\n`))).toHaveLength(1);
     expect(workflow.split(`key: ${KEY}\n`).length - 1).toBe(3);
   });
 

@@ -152,6 +152,7 @@ export const NOTIFICATION_KINDS = [
    * `agent-grant-autonomy`, Security G2). The person can undo it in one tap.
    */
   'connector.access_narrowed',
+  'connector.write_available',
   /**
    * A global MCP server added a tool that an agent may use without asking,
    * because it allows every tool on that server (DOR-4118). Once per tool.

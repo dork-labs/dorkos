@@ -46,7 +46,9 @@ import { patchAgentModeColumnOf, readAgentModeColumnOf } from './agent-mode-colu
 import {
   CLEARED_APPROVAL_RECEIPT,
   completeTaskApproval,
+  reapprovalReceipt,
   taskApprovalColumns,
+  taskApprovalReceiptColumns,
   trustedAgentReceiptColumns,
   type TaskApprovalInput,
 } from './task-approval-receipt.js';
@@ -151,7 +153,7 @@ export class TaskApprovals {
     // an approval of work nobody looked at.
     this.db
       .update(pulseSchedules)
-      .set(taskApprovalColumns(row, completeTaskApproval(approval)))
+      .set(taskApprovalColumns(row, reapprovalReceipt(row, completeTaskApproval(approval))))
       .where(eq(pulseSchedules.id, id))
       .run();
     this.notifyApproved(row.agentId);
@@ -373,7 +375,13 @@ export class TaskApprovals {
   settleApprovedWorkChange(
     id: string,
     before: IncomingTaskContent & { status: string },
-    caller: { trusted: boolean; armsAgentWork?: boolean; ownAgentVouches?: boolean }
+    caller: {
+      trusted: boolean;
+      armsAgentWork?: boolean;
+      ownAgentVouches?: boolean;
+      /** Who a trusted caller is, for the receipt of the work they re-keyed. */
+      approval?: TaskApprovalInput;
+    }
   ): WorkChangeSettlement {
     const row = this.db.select().from(pulseSchedules).where(eq(pulseSchedules.id, id)).get();
     if (!row) return 'unchanged';
@@ -385,7 +393,13 @@ export class TaskApprovals {
       if (row.approvedContentKey !== previousKey) return 'unchanged';
       this.db
         .update(pulseSchedules)
-        .set({ approvedContentKey: key, previousApprovalKey: null })
+        .set({
+          approvedContentKey: key,
+          previousApprovalKey: null,
+          // The person who moved the grant approved this content, not whoever
+          // approved the work it replaced (DOR-3641 review, nit 4).
+          ...taskApprovalReceiptColumns(completeTaskApproval(caller.approval)),
+        })
         .where(eq(pulseSchedules.id, id))
         .run();
       return 'rekeyed';

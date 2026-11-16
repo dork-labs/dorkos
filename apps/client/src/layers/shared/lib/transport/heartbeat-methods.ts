@@ -5,6 +5,7 @@
  * @module shared/lib/transport/heartbeat-methods
  */
 import type { HeartbeatStatus, TriageCreditsChoice } from '@dorkos/shared/heartbeat-schemas';
+import type { WakersOff } from '@dorkos/shared/waker-schemas';
 import { fetchJSON } from './http-client';
 
 /**
@@ -22,6 +23,9 @@ export function createHeartbeatMethods(baseUrl: string) {
         method: 'PUT',
         body: JSON.stringify({ useCredits }),
       });
+    },
+    listWakersOff(): Promise<WakersOff> {
+      return fetchJSON(baseUrl, '/heartbeats/wakers-off');
     },
   };
 }

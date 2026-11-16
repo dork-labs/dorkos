@@ -327,7 +327,9 @@ describe('main HTTP admission through the real app', () => {
     expect(mounts).toContain('/api/your-browser');
     // 88 -> 89: the empty, sandboxed document every app's screens run in (DOR-3293).
     expect(mounts).toContain('/api/extension-frame');
-    expect(mounts).toHaveLength(89);
+    // 89 -> 90: every schedule and heartbeat that cannot wake (DOR-3641).
+    expect(mounts).toContain('/api/heartbeats/wakers-off');
+    expect(mounts).toHaveLength(90);
     const byHand = [
       '/',
       '/x/fixture',

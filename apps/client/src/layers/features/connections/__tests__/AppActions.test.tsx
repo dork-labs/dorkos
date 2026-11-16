@@ -121,6 +121,33 @@ describe('AppActions on a connected account', () => {
     expect(transport.getConnectorAppActions).toHaveBeenCalledWith('gmail', 'composio:1');
   });
 
+  it.each(['read', 'read-write'] as const)(
+    'does not promise a paid write on %s or in the level copy',
+    async (level) => {
+      const paid = {
+        operationSlug: 'APIFY_SCRAPE_TWITTER_POSTS',
+        displayName: 'Scrape Twitter posts',
+        capabilityClassification: 'write' as const,
+        important: true,
+      };
+      renderActions(transportWith({ ...LISTED, toolkit: 'apify', actions: [paid] }), {
+        toolkit: 'apify',
+        appName: 'Apify',
+        grant: {
+          level,
+          candidates: [candidate(paid.operationSlug, 'write', { toolkit: 'apify' })],
+        },
+      });
+      const section = screen.getByTestId('app-actions');
+      await waitFor(() =>
+        expect(section).toHaveTextContent('Scrape twitter posts isn’t part of “Read”.')
+      );
+      expect(screen.queryByTestId('app-actions-change')).not.toBeInTheDocument();
+      expect(section).not.toHaveTextContent('either level');
+      expect(section).not.toHaveTextContent('Pick “Read and write”');
+    }
+  );
+
   it('keeps only Look on "Read"', async () => {
     renderActions(transportWith(LISTED), { grant: { candidates: CANDIDATES, level: 'read' } });
 

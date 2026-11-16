@@ -140,6 +140,21 @@ entries:
     step: Save the builds for the queue and pull requests
     kind: step-if
     reason: Saves the build-only turbo cache from the main canary when the trim succeeded (DOR-4190, ledger 261115-201939). It asserts nothing; skipping it on pull_request and merge_group only means those runs save no cache, whose scope nothing else could read.
+  - workflow: test.yml
+    job: community-pg
+    step: Save the pnpm store for the queue and pull requests
+    kind: step-if
+    reason: Saves the pnpm store only on refs/heads/main and only on a restore miss, right after the install (DOR-4537, ledger 261116-114104). It asserts nothing; on pull_request and merge_group the job restores main's store and saves none, because a queue ref's or a PR merge ref's cache scope is unreadable by any other ref and those copies pushed the repo past its 10 GB cache budget.
+  - workflow: test.yml
+    job: test-shard
+    step: Save the pnpm store for the queue and pull requests
+    kind: step-if
+    reason: Saves the pnpm store only on refs/heads/main and only on a restore miss, right after the install (DOR-4537, ledger 261116-114104). It asserts nothing; on pull_request and merge_group the job restores main's store and saves none, because a queue ref's or a PR merge ref's cache scope is unreadable by any other ref and those copies pushed the repo past its 10 GB cache budget.
+  - workflow: test.yml
+    job: test-binary
+    step: Save the pnpm store for the queue and pull requests
+    kind: step-if
+    reason: Saves the pnpm store only on refs/heads/main and only on a restore miss, right after the install (DOR-4537, ledger 261116-114104). It asserts nothing; on pull_request and merge_group the job restores main's store and saves none, because a queue ref's or a PR merge ref's cache scope is unreadable by any other ref and those copies pushed the repo past its 10 GB cache budget.
 
   # --- browser-test.yml ---
   - workflow: browser-test.yml
@@ -207,6 +222,21 @@ entries:
     step: Save the OS packages Chromium needs (scheduled runs on main only)
     kind: step-if
     reason: Saves the Chromium OS-package cache on a scheduled run on main only, so a pull request or a queue build can never plant packages main later installs (Security's rule for ledger 261112-190000); it asserts nothing.
+  - workflow: browser-test.yml
+    job: browser-smoke
+    step: Save the pnpm store for the queue and pull requests
+    kind: step-if
+    reason: Saves the pnpm store only on refs/heads/main and only on a restore miss, right after the install (DOR-4537, ledger 261116-114104). It asserts nothing; on pull_request and merge_group the job restores main's store and saves none, because a queue ref's or a PR merge ref's cache scope is unreadable by any other ref and those copies pushed the repo past its 10 GB cache budget.
+  - workflow: browser-test.yml
+    job: browser-shard
+    step: Save the pnpm store for the queue and pull requests
+    kind: step-if
+    reason: Saves the pnpm store only on refs/heads/main and only on a restore miss, right after the install (DOR-4537, ledger 261116-114104). It asserts nothing; on pull_request and merge_group the job restores main's store and saves none, because a queue ref's or a PR merge ref's cache scope is unreadable by any other ref and those copies pushed the repo past its 10 GB cache budget.
+  - workflow: browser-test.yml
+    job: first-run
+    step: Save the pnpm store for the queue and pull requests
+    kind: step-if
+    reason: Saves the pnpm store only on refs/heads/main and only on a restore miss, right after the install (DOR-4537, ledger 261116-114104). It asserts nothing; on pull_request and merge_group the job restores main's store and saves none, because a queue ref's or a PR merge ref's cache scope is unreadable by any other ref and those copies pushed the repo past its 10 GB cache budget.
 
   # --- credential-free-build.yml ---
   - workflow: credential-free-build.yml
@@ -214,6 +244,11 @@ entries:
     step: Save turbo's local cache
     kind: step-if
     reason: Saves the turbo cache on pull_request only, because a cache saved under a merge-queue ref can never be read by any other ref; it asserts nothing.
+  - workflow: credential-free-build.yml
+    job: credential-free-build
+    step: Save the pnpm store for the queue and pull requests
+    kind: step-if
+    reason: Saves the pnpm store only on refs/heads/main and only on a restore miss, right after the install (DOR-4537, ledger 261116-114104). It asserts nothing; on pull_request and merge_group the job restores main's store and saves none, because a queue ref's or a PR merge ref's cache scope is unreadable by any other ref and those copies pushed the repo past its 10 GB cache budget.
 
   # --- jobs the required fan-ins need (the census follows needs:) ---
   - workflow: test.yml
