@@ -10,6 +10,7 @@
  */
 export { OPERATING_SKILLS_PACK, OPERATING_SKILLS_VERSION, type OperatingSkill } from './pack.js';
 export { TOOL_NAME_NOTE } from './tool-name-note.js';
+export { operatingSkillText } from './skill-text.js';
 export {
   isUnmodifiedSeededSkill,
   seedOperatingSkills,
