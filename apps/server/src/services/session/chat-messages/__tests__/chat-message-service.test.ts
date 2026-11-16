@@ -180,22 +180,26 @@ function sentByAna() {
   return store.listSentFrom(ANA.sessionId);
 }
 
-it('tells the sender that a paused agent holds the message until resumed', async () => {
-  initAgentPause({
-    pausedAgentOfSession: () => ({ id: 'agent-bo', name: 'Bo' }),
-  } as never);
-  try {
-    chat('chat-b');
-    busy.add('chat-b');
-    const receipt = await service.send(ANA, { to: 'chat-b', message: 'Keep these words' });
-    expect(receipt.status).toBe('queued');
-    expect(receipt.note).toBe(
-      "Bo is paused. Your message is held and runs once it's resumed."
-    );
-  } finally {
-    resetAgentPause();
+it.each([false, true])(
+  'tells the sender a paused agent holds the message (busy: %s)',
+  async (isBusy) => {
+    initAgentPause({
+      pausedAgentOfSession: () => ({ id: 'agent-bo', name: 'Bo' }),
+    } as never);
+    try {
+      chat('chat-b');
+      service.stop();
+      service = build({ isBusy: async () => isBusy });
+      // The dispatcher holds a paused target even when no turn is running.
+      busy.add('chat-b');
+      const receipt = await service.send(ANA, { to: 'chat-b', message: 'Keep these words' });
+      expect(receipt.status).toBe('queued');
+      expect(receipt.note).toBe("Bo is paused. Your message is held and runs once it's resumed.");
+    } finally {
+      resetAgentPause();
+    }
   }
-});
+);
 
 async function refusal(promise: Promise<unknown>): Promise<ChatMessageError> {
   const err = await promise.catch((e: unknown) => e);
@@ -900,6 +904,31 @@ describe('send — answering a scheduled run or a beat', () => {
     expect(dispatched[0]!.request.agentPath).toBe('/agents/bo');
     expect(store.dmChat(ANA.agentPath, 'agent-bo')).toBe('opened-dm');
     expect(store.get('aaaa1111')!.status).toBe('replied');
+  });
+
+  it('keeps the held-message note when an answer goes to the paused agent’s DM', async () => {
+    chat('beat-b', { launchOrigin: 'heartbeat' });
+    chat('dm-bo', { launchOrigin: 'chat-message', agentPath: '/agents/bo' });
+    store.keepDmChat(ANA.agentPath, 'agent-bo', 'dm-bo');
+    askedBy('beat-b', 'aaaa1111');
+    busy.add('dm-bo');
+    initAgentPause({
+      pausedAgentOfSession: () => ({ id: 'agent-bo', name: 'Bo' }),
+    } as never);
+    try {
+      const receipt = await service.send(ANA, {
+        to: 'beat-b',
+        message: 'answer',
+        replyTo: 'aaaa1111',
+      });
+      expect(receipt.status).toBe('queued');
+      expect(receipt.note).toContain(
+        "Bo is paused. Your message is held and runs once it's resumed."
+      );
+      expect(receipt.note).toMatch(/Bo's direct chat with you/);
+    } finally {
+      resetAgentPause();
+    }
   });
 
   it('still refuses a message to a beat that answers nothing it asked', async () => {

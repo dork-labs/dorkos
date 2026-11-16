@@ -15,6 +15,9 @@ import type { PausedAgentRef } from './agent-pause.js';
  * Record the waiting chat messages once per pause. This is a snapshot of the
  * held queue, not a counter rewritten as messages arrive: Activity and its audit
  * copy are append-only. The durable pause time also deduplicates after restart.
+ *
+ * @param db - The Activity and queue store
+ * @param agent - The paused agent and durable pause time
  */
 export function recordPausedQueueActivity(db: Db, agent: PausedAgentRef): void {
   if (!agent.pausedAt) return;

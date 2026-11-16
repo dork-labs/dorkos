@@ -1,5 +1,7 @@
 import { AgentPausedNotice, useAgentPause } from '@/layers/entities/mesh';
 import { useSessionQueue } from '@/layers/entities/session';
+import { useTransport } from '@/layers/shared/model';
+import { isPausedComposerRow } from '../lib/paused-composer-row';
 
 interface SessionPausedQueueNoticeProps {
   sessionId: string;
@@ -14,11 +16,12 @@ export function SessionPausedQueueNotice({
   agentName,
 }: SessionPausedQueueNoticeProps) {
   const pause = useAgentPause(agentId);
+  const transport = useTransport();
   // The visible queue omits an idle head as "about to start". A pause holds
   // exactly that head, so the notice must read the raw server queue instead.
   const queue = useSessionQueue(sessionId);
-  const hasOwnMessage = queue.some(
-    (message) => message.fromChats === undefined && !message.enqueuedBy.startsWith('chat:')
+  const hasOwnMessage = queue.some((message) =>
+    isPausedComposerRow(message, transport.clientId ? [transport.clientId] : [])
   );
   if (!pause || !hasOwnMessage || agentId === null) return null;
 

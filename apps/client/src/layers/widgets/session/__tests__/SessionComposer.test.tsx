@@ -627,17 +627,16 @@ describe('SessionComposer — a failed attachment blocks the send (DOR-480)', ()
     expect(vi.mocked(QueuePanel)).not.toHaveBeenCalled();
   });
 
-  it('keeps Send closed while paused and keeps the draft after resume', () => {
+  it('lets a fresh draft reach the existing pause refusal when no held row is restored', async () => {
     const submit = vi.fn();
     const view = render(
       <SessionComposerBench {...baseProps} input="Keep these words" agentPaused submit={submit} />
     );
-    expect(lastChatInputProps().canSubmit).toBe(false);
-    act(() => lastChatInputProps().onSubmit!());
-    expect(submit).not.toHaveBeenCalled();
-    view.rerender(
-      <SessionComposerBench {...baseProps} input="Keep these words" submit={submit} />
-    );
+    expect(lastChatInputProps().canSubmit).toBe(true);
+    await act(async () => lastChatInputProps().onSubmit!());
+    expect(submit).toHaveBeenCalledExactlyOnceWith('Keep these words');
+    submit.mockClear();
+    view.rerender(<SessionComposerBench {...baseProps} input="Keep these words" submit={submit} />);
     expect(lastChatInputProps().canSubmit).toBe(true);
     expect(lastChatInputProps().value).toBe('Keep these words');
     expect(submit).not.toHaveBeenCalled();

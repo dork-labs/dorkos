@@ -1327,6 +1327,11 @@ export const QueuedMessageSchema = z
     /** The client that enqueued it, so a window can tell its own from another's. */
     enqueuedBy: z.string(),
     /**
+     * True only when a person's window may restore this row as typed words.
+     * Missing means no: private authority marks never cross the queue boundary.
+     */
+    canRestoreToComposer: z.boolean().optional(),
+    /**
      * Present while this message is held for the agent's background work
      * (DOR-2065). The rows behind it wait too, in order.
      */

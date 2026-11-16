@@ -57,6 +57,19 @@ export interface AdoptQueuedMessagesOpts {
 }
 
 /**
+ * Recover older rows before a new dispatch joins the queue. Another chat may
+ * recover peer messages, but cannot press Send for a person's held words.
+ *
+ * @param opts - The new dispatch's sender and the queue recovery context
+ */
+export function adoptMessagesForDispatch(
+  opts: AdoptQueuedMessagesOpts & { clientId: string }
+): void {
+  adoptQueuedMessages({ ...opts, onlyFromChats: isChatClientId(opts.clientId) });
+  adoptAcceptedPrivateMessages({ ...opts, excludeDocumentMessages: true });
+}
+
+/**
  * Take ownership of queue rows this process did not accept, so they run.
  *
  * A row that survives a restart is INERT on its own: the row is still there and

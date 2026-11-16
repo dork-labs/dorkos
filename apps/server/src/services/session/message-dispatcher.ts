@@ -197,7 +197,7 @@ import {
   heldMessageMayJoin,
 } from './message-dispatcher/held-to-default.js';
 import { parkDispatch, unwatchedSettle } from './message-dispatcher/park.js';
-import { adoptAcceptedPrivateMessages, adoptQueuedMessages } from './message-dispatcher/adopt.js';
+import { adoptMessagesForDispatch } from './message-dispatcher/adopt.js';
 import { hasHeldMessage, noteTurnBoundary, schedulePump } from './message-dispatcher/pump.js';
 import { clearCompactionTimers } from './message-dispatcher/agent-compaction.js';
 import { noteSessionOrphaned } from './message-dispatcher/queue-upkeep.js';
@@ -590,19 +590,11 @@ export async function dispatchMessage(opts: DispatchMessageOpts): Promise<Messag
   // Anything a previous server process left queued is picked up first, so this
   // message joins a queue that is whole rather than jumping a person's own
   // older words that nothing else would ever run again.
-  adoptQueuedMessages({
+  adoptMessagesForDispatch({
     sessionId,
     projector,
     runtime,
-    // Another chat cannot press Send for the person's held message (DOR-4348).
-    onlyFromChats: isChatClientId(clientId),
-    ...(opts.cwd !== undefined ? { cwd: opts.cwd } : {}),
-  });
-  adoptAcceptedPrivateMessages({
-    sessionId,
-    projector,
-    runtime,
-    excludeDocumentMessages: true,
+    clientId,
     ...(opts.cwd !== undefined ? { cwd: opts.cwd } : {}),
   });
 

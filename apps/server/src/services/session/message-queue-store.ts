@@ -117,7 +117,14 @@ export function toQueuedMessage(record: QueuedMessageRecord): QueuedMessage {
   const { id, content, disposition, enqueuedAt, enqueuedBy } = record;
   const waitingOn = heldFor.get(id);
   const base = { id, content, disposition, enqueuedAt, enqueuedBy };
-  return { ...base, ...(waitingOn ? { waitingOn } : {}), ...queuedChatView?.(base) };
+  return {
+    ...base,
+    ...(enqueuedBy.startsWith('web-') && !record.heldToDefault
+      ? { canRestoreToComposer: true }
+      : {}),
+    ...(waitingOn ? { waitingOn } : {}),
+    ...queuedChatView?.(base),
+  };
 }
 
 /** What a row another chat sent shows a person instead of its stored text. */

@@ -17,12 +17,13 @@ const PAUSE = {
   pausedBy: { accountId: 'owner', kind: 'person' as const, name: 'Owner' },
   pausedAt: '2026-11-14T00:00:00.000Z',
 };
-const MESSAGE: QueuedMessage = {
+const MESSAGE: QueuedMessage & { canRestoreToComposer?: boolean } = {
   id: 'queued-1',
   content: 'Keep these words',
   disposition: 'queue',
   enqueuedAt: 1,
-  enqueuedBy: 'window-1',
+  enqueuedBy: 'web-window-1',
+  canRestoreToComposer: true,
 };
 
 function seedQueue(queue: QueuedMessage[]) {
@@ -37,6 +38,7 @@ function setup(queue: QueuedMessage[], pausedAgentId: string | null = 'agent-1')
   seedQueue(queue);
   let paused = pausedAgentId !== null;
   const transport = createMockTransport({
+    clientId: 'web-window-1',
     listAgentPauses: vi.fn(async () => ({
       pauses: paused ? [{ ...PAUSE, agentId: pausedAgentId! }] : [],
     })),
@@ -86,6 +88,8 @@ describe('a person’s queued message held by pause (DOR-4348)', () => {
   it.each([
     ['no queued message', [], 'agent-1'],
     ['only another chat’s message', [{ ...MESSAGE, enqueuedBy: 'chat:sender' }], 'agent-1'],
+    ['a heartbeat row', [{ ...MESSAGE, enqueuedBy: 'heartbeat' }], 'agent-1'],
+    ['a row held to the default', [{ ...MESSAGE, canRestoreToComposer: false }], 'agent-1'],
     ['a different agent paused', [MESSAGE], 'agent-2'],
     ['the agent resumed', [MESSAGE], null],
   ] as const)('says nothing for %s', async (_label, queue, pausedAgentId) => {

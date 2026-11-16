@@ -604,6 +604,25 @@ describe('a message for a paused agent (spec audit-trail PR5)', () => {
     expect(dispatchMessage).toHaveBeenCalledOnce();
   });
 
+  it('keeps a to-do refused even when it uses the chat-message origin', async () => {
+    const { initAgentPause } = await import('../../../mesh/pause/agent-pause.js');
+    initAgentPause({
+      pausedAgentOfTurn: () => ({ id: 'agent-1', name: 'Scout' }),
+      recordHeld: vi.fn(),
+    } as never);
+    vi.mocked(dispatchMessage).mockClear();
+    const result = await dispatchSessionMessage({
+      sessionId: SESSION,
+      request: { content: 'A queued to-do' },
+      clientId: 'todos',
+      meshCore: mesh,
+      roomSessionPlace: undefined,
+      origin: { kind: 'chat-message' },
+    });
+    expect(result).toMatchObject({ refused: 'AGENT_PAUSED' });
+    expect(dispatchMessage).not.toHaveBeenCalled();
+  });
+
   it('is refused with AGENT_PAUSED before anything is bound or queued, and recorded', async () => {
     const { initAgentPause } = await import('../../../mesh/pause/agent-pause.js');
     vi.clearAllMocks();

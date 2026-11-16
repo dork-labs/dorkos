@@ -21,7 +21,7 @@ import type { ComposerInputHandle } from '@/layers/features/composer';
 import { Conversation, useConversation } from '@/layers/features/conversation';
 import { SessionAsks } from './SessionAsks';
 import { SessionPausedQueueNotice } from './SessionPausedQueueNotice';
-import { usePausedComposerDraft } from '../model/use-paused-composer-draft';
+import { useSessionPausedComposer } from '../model/use-session-paused-composer';
 import {
   BackgroundTaskBar,
   ChatStatusSection,
@@ -67,7 +67,6 @@ import {
   useSessionRuntime,
   useSessionSteerable,
   useSessionStreamState,
-  useSessionQueue,
 } from '@/layers/entities/session';
 import { useCapabilitiesForRuntime } from '@/layers/entities/runtime';
 
@@ -210,17 +209,13 @@ export function SessionComposer({
   // The box's own words, and how many are held behind it — both read off the
   // conversation's target, which is the one place either fact lives.
   const { target } = useConversation();
-  const serverQueue = useSessionQueue(sessionId);
-  const pausedDraft = usePausedComposerDraft({
+  const pausedComposer = useSessionPausedComposer({
     sessionId,
     paused: agentPaused,
-    queue: serverQueue,
     input,
     setInput,
-    send: async (text) => {
-      if (target?.canSend) await target.send({ text });
-    },
-    remove: (id, messageId) => transport.removeQueuedMessage(id, messageId),
+    waiting,
+    dismissPalettes: autocomplete.dismissPalettes,
   });
   const defaultPlaceholder = target?.placeholder ?? 'Send a message…';
   const awaitingDecision = useSessionAwaitingDecision(sessionId);
@@ -294,7 +289,7 @@ export function SessionComposer({
     setInput,
     sessionId,
     selectedCwd,
-    waiting,
+    waiting: pausedComposer.waiting,
     onEnqueue: holdForTurn,
     onSteer: steerContent,
     onStage: addContextContent,
@@ -608,51 +603,6 @@ export function SessionComposer({
   // than briefly the wrong field.
   const richText = useComposerRichText();
 
-  // Sending closes the palettes. It used to happen by accident: an open palette
-  // swallowed Enter, and `onCommandSelect` found no row and closed the panel on
-  // its way out. Now that Enter falls through to the send when there is nothing
-  // to pick, nothing else would take the "No commands found." card down —
-  // `detectTrigger` only runs on typing or a caret move — so it would float
-  // over the agent's reply until the next keystroke.
-  const submitAndDismiss = useCallback(() => {
-    autocomplete.dismissPalettes();
-    // The held row stays durable until this Send. The paused-draft hook removes
-    // its queued copy before delivery, so the same words cannot run twice.
-    // The ordinary target send still owns attachments and the confirmed clear.
-    if (target === null || !target.canSend) return;
-    void pausedDraft.submit();
-  }, [autocomplete, target, pausedDraft]);
-
-  const queueAndDismiss = useCallback(() => {
-    if (agentPaused) return;
-    autocomplete.dismissPalettes();
-    if (pausedDraft.restored) {
-      void pausedDraft.submit(async (text) => {
-        if (!(await holdForTurn(text))) throw new Error('Queue did not accept the message');
-      }, true);
-    } else chatQueue.handleQueue();
-  }, [agentPaused, autocomplete, chatQueue, pausedDraft, holdForTurn]);
-
-  const steerAndDismiss = useCallback(() => {
-    if (agentPaused) return;
-    autocomplete.dismissPalettes();
-    if (pausedDraft.restored) {
-      void pausedDraft.submit(async (text) => {
-        if (!(await steerContent(text))) throw new Error('Steer did not accept the message');
-      }, true);
-    } else chatQueue.handleSteer();
-  }, [agentPaused, autocomplete, chatQueue, pausedDraft, steerContent]);
-
-  const addContextAndDismiss = useCallback(() => {
-    if (agentPaused) return;
-    autocomplete.dismissPalettes();
-    if (pausedDraft.restored) {
-      void pausedDraft.submit(async (text) => {
-        if (!(await addContextContent(text))) throw new Error('Context did not accept the message');
-      }, true);
-    } else chatQueue.handleStage();
-  }, [agentPaused, autocomplete, chatQueue, pausedDraft, addContextContent]);
-
   return (
     <Conversation.Composer
       // `chat-input-container` is not decoration: it is the hook for the
@@ -667,7 +617,7 @@ export function SessionComposer({
       inputRef={chatInputRef}
       value={input}
       onChange={autocomplete.handleInputChange}
-      onSubmit={submitAndDismiss}
+      onSubmit={pausedComposer.submit}
       head={
         /* Chat-only, so it arrives as a slot rather than living in the card. */
         <AnimatePresence>
@@ -807,7 +757,7 @@ export function SessionComposer({
             }
           : {}),
         ...(limitComposer.canSubmit ? {} : { canSubmit: false }),
-        ...(agentPaused || pausedDraft.pending ? { canSubmit: false } : {}),
+        ...(pausedComposer.blocked ? { canSubmit: false } : {}),
         onStop: handleStop,
         stopPending,
         onEscape: autocomplete.dismissPalettes,
@@ -831,12 +781,12 @@ export function SessionComposer({
         editingQueueItem: chatQueue.editingIndex !== null,
         ...(chatQueue.editingIndex === null ? {} : { editingPosition: chatQueue.editingIndex + 1 }),
         queueDepth: chatQueue.queue.length,
-        onQueue: queueAndDismiss,
+        onQueue: pausedComposer.delivery(chatQueue.handleQueue),
         // Present ONLY when the runtime can honour them, so the composer hides
         // Steer / Add context (never greys them) on a runtime that can only
         // queue. Presence of the callback IS the capability.
-        ...(canSteer ? { onSteer: steerAndDismiss } : {}),
-        ...(canAddContext ? { onStage: addContextAndDismiss } : {}),
+        ...(canSteer ? { onSteer: pausedComposer.delivery(chatQueue.handleSteer) } : {}),
+        ...(canAddContext ? { onStage: pausedComposer.delivery(chatQueue.handleStage) } : {}),
         onSaveEdit: chatQueue.handleQueueSaveEdit,
         onCancelEdit: chatQueue.handleQueueCancelEdit,
         onQueueNavigateUp: chatQueue.handleQueueNavigateUp,
