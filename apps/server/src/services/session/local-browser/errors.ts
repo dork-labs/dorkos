@@ -116,27 +116,52 @@ export function historyAddressAllowed(
   return !isLocalBrowserAppUrl(value, appOrigins);
 }
 
-/**
- * Chromium's words for a page that never connected over https: refused, timed
- * out, unreachable, or a server that answered in plain http
- * (`ERR_SSL_PROTOCOL_ERROR`, what `nas.lan:5000` gives). Never an `ERR_CERT_*`.
- */
-const UNREACHABLE =
-  /net::ERR_(?:CONNECTION_REFUSED|CONNECTION_TIMED_OUT|TIMED_OUT|ADDRESS_UNREACHABLE|SSL_PROTOCOL_ERROR)\b/;
+/** Chromium's words for a page that did not answer before navigation timed out. */
+const TIMED_OUT = /net::ERR_(?:CONNECTION_TIMED_OUT|TIMED_OUT)\b/;
+
+/** Chromium's words for a page that never connected: refused, or no route to it. */
+const REFUSED = /net::ERR_(?:CONNECTION_REFUSED|ADDRESS_UNREACHABLE)\b/;
+
+/** A server that answered https in plain http, what `nas.lan:5000` gives. */
+const PLAIN_HTTP_ANSWER = /net::ERR_SSL_PROTOCOL_ERROR\b/;
 
 /**
- * Why a person's navigation failed, as a refusal. A page that never connected
- * is `navigation_unreachable`, which is what lets the address bar try
- * `http://` once for a bare host the person typed. Anything else, a
- * certificate error included, stays `navigation_uncertain`: the page may have
- * half-loaded, and a certificate error must never be stepped around.
+ * Whether a person's failed https navigation may try `http://` once (DOR-4450,
+ * Security's ruling of Nov 16). A refused or unreachable page may. A plain-http
+ * answer may only on a port the person named other than 443: `URL` drops `:443`,
+ * so a bare name and `:443` never do. A timeout, a certificate error or anything
+ * else never does.
+ *
+ * @param error - What Playwright's `goto` threw.
+ * @param value - The https address that failed.
+ */
+export function httpFallbackAllowed(error: unknown, value: string): boolean {
+  if (!URL.canParse(value)) return false;
+  const url = new URL(value);
+  if (url.protocol !== 'https:') return false;
+  const message = error instanceof Error ? error.message : '';
+  if (REFUSED.test(message)) return true;
+  return PLAIN_HTTP_ANSWER.test(message) && url.port !== '';
+}
+
+/**
+ * Why a person's navigation failed, as a refusal. A timeout is
+ * `navigation_timed_out`; a refused, unreachable, or wrong-protocol page is
+ * `navigation_unreachable`. Anything else, a certificate error included,
+ * stays `navigation_uncertain`: the page may have half-loaded, and a
+ * certificate error must never be stepped around.
  *
  * @param error - What Playwright's `goto` threw.
  */
 export function navigationRefusal(error: unknown): LocalBrowserError {
   const message = error instanceof Error ? error.message : '';
   const timedOut = error instanceof Error && error.name === 'TimeoutError';
-  if (timedOut || UNREACHABLE.test(message))
+  if (timedOut || TIMED_OUT.test(message))
+    return new LocalBrowserError(
+      'navigation_timed_out',
+      'That site didn’t respond. Try again in a moment.'
+    );
+  if (REFUSED.test(message) || PLAIN_HTTP_ANSWER.test(message))
     return new LocalBrowserError('navigation_unreachable', 'Couldn’t reach that site.');
   return new LocalBrowserError(
     'navigation_uncertain',

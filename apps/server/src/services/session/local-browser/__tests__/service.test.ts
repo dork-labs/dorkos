@@ -1640,11 +1640,13 @@ describe('the Cloud origin (DOR-3196)', () => {
     await expect(service.navigate('https://made-up.example/')).rejects.toMatchObject({
       code: 'navigation_unreachable',
     });
+    // DOR-4450: a site that never answered in time didn't respond; it is not unreachable.
     vi.mocked(page.goto).mockRejectedValueOnce(
       Object.assign(new Error('page.goto: Timeout 15000ms exceeded.'), { name: 'TimeoutError' })
     );
     await expect(service.navigate('https://made-up.example/')).rejects.toMatchObject({
-      code: 'navigation_unreachable',
+      code: 'navigation_timed_out',
+      message: 'That site didn’t respond. Try again in a moment.',
     });
     vi.mocked(page.goto).mockRejectedValueOnce(
       new Error('page.goto: net::ERR_SSL_PROTOCOL_ERROR at https://made-up.example:5000/')
@@ -1659,6 +1661,189 @@ describe('the Cloud origin (DOR-3196)', () => {
       code: 'navigation_uncertain',
     });
     await service.disconnect();
+  });
+
+  // DOR-4450, Security's ruling (Nov 16): which failures may try http:// once, and
+  // that every page opened that way says so to the person and to the agent.
+  describe('the http:// fallback for a bare host the person typed', () => {
+    const failing = (message: string, name?: string) =>
+      Object.assign(new Error(`page.goto: ${message}`), name ? { name } : {});
+    const gotoUrls = (page: Page) => vi.mocked(page.goto).mock.calls.map(([url]) => url);
+    const selectedTab = (state: { tabs: { id: string }[]; selectedTabId: string | null }) =>
+      state.tabs.find((tab) => tab.id === state.selectedTabId) as
+        { openedOverHttp?: boolean } | undefined;
+
+    it.each([
+      ['a Playwright timeout', failing('Timeout 15000ms exceeded.', 'TimeoutError')],
+      ['ERR_CONNECTION_TIMED_OUT', failing('net::ERR_CONNECTION_TIMED_OUT at https://x/')],
+      ['ERR_TIMED_OUT', failing('net::ERR_TIMED_OUT at https://x/')],
+    ])('never falls back after %s', async (_name, error) => {
+      const { service, page } = await create();
+      await selectOwned(service);
+      vi.mocked(page.goto).mockClear();
+      vi.mocked(page.goto).mockRejectedValueOnce(error);
+      await expect(
+        service.navigate('https://slow.example/', { httpFallback: true })
+      ).rejects.toMatchObject({ code: 'navigation_timed_out' });
+      expect(gotoUrls(page)).toEqual(['https://slow.example/']);
+      await service.disconnect();
+    });
+
+    it.each(['https://nas.example/', 'https://nas.example:443/'])(
+      'never falls back after an SSL protocol error on %s',
+      async (url) => {
+        const { service, page } = await create();
+        await selectOwned(service);
+        vi.mocked(page.goto).mockClear();
+        vi.mocked(page.goto).mockRejectedValueOnce(
+          failing('net::ERR_SSL_PROTOCOL_ERROR at https://nas.example/')
+        );
+        await expect(service.navigate(url, { httpFallback: true })).rejects.toMatchObject({
+          code: expect.stringMatching(/^navigation_/),
+        });
+        expect(gotoUrls(page)).toHaveLength(1);
+        await service.disconnect();
+      }
+    );
+
+    it('falls back after an SSL protocol error on a port other than 443, and says so', async () => {
+      const { service, page } = await create();
+      await selectOwned(service);
+      vi.mocked(page.goto).mockClear();
+      vi.mocked(page.goto).mockRejectedValueOnce(
+        failing('net::ERR_SSL_PROTOCOL_ERROR at https://nas.example:5000/')
+      );
+      const state = await service.navigate('https://nas.example:5000/', { httpFallback: true });
+      expect(gotoUrls(page)).toEqual(['https://nas.example:5000/', 'http://nas.example:5000/']);
+      expect(selectedTab(state)?.openedOverHttp).toBe(true);
+      expect(selectedTab(await service.agentState())?.openedOverHttp).toBe(true);
+      await service.disconnect();
+    });
+
+    it.each(['ERR_CONNECTION_REFUSED', 'ERR_ADDRESS_UNREACHABLE'])(
+      'falls back once after %s, and the person and the agent both hear it opened over http',
+      async (reason) => {
+        const { service, page } = await create();
+        await selectOwned(service);
+        vi.mocked(page.goto).mockClear();
+        vi.mocked(page.goto).mockRejectedValueOnce(
+          failing(`net::${reason} at https://shop.example/`)
+        );
+        const state = await service.navigate('https://shop.example/', { httpFallback: true });
+        expect(gotoUrls(page)).toEqual(['https://shop.example/', 'http://shop.example/']);
+        expect(selectedTab(state)?.openedOverHttp).toBe(true);
+        expect(selectedTab(await service.agentState())?.openedOverHttp).toBe(true);
+        expect((await service.observe()).openedOverHttp).toBe(true);
+        await service.disconnect();
+      }
+    );
+
+    it('tries http:// only once, and a page opened over https never says it', async () => {
+      const { service, page } = await create();
+      await selectOwned(service);
+      vi.mocked(page.goto).mockClear();
+      vi.mocked(page.goto)
+        .mockRejectedValueOnce(failing('net::ERR_CONNECTION_REFUSED at https://shop.example/'))
+        .mockRejectedValueOnce(failing('net::ERR_CONNECTION_REFUSED at http://shop.example/'));
+      await expect(
+        service.navigate('https://shop.example/', { httpFallback: true })
+      ).rejects.toMatchObject({ code: 'navigation_unreachable' });
+      expect(gotoUrls(page)).toHaveLength(2);
+      const state = await service.navigate('https://shop.example/', { httpFallback: true });
+      expect(selectedTab(state)?.openedOverHttp).toBeFalsy();
+      expect((await service.observe()).openedOverHttp).toBeFalsy();
+      await service.disconnect();
+    });
+
+    it('stops saying it once the page leaves http, and a new address clears it', async () => {
+      const f = await create();
+      await selectOwned(f.service);
+      vi.mocked(f.page.goto).mockRejectedValueOnce(
+        failing('net::ERR_CONNECTION_REFUSED at https://shop.example/')
+      );
+      await f.service.navigate('https://shop.example/', { httpFallback: true });
+      f.navigate('http://shop.example/cart');
+      expect(selectedTab(await f.service.agentState())?.openedOverHttp).toBe(true);
+      f.navigate('https://shop.example/cart');
+      expect(selectedTab(await f.service.agentState())?.openedOverHttp).toBeFalsy();
+      f.navigate('http://shop.example/');
+      expect(selectedTab(await f.service.agentState())?.openedOverHttp).toBeFalsy();
+
+      vi.mocked(f.page.goto).mockRejectedValueOnce(
+        failing('net::ERR_CONNECTION_REFUSED at https://shop.example/')
+      );
+      await f.service.navigate('https://shop.example/', { httpFallback: true });
+      const typed = await f.service.navigate('http://other.example/');
+      expect(selectedTab(typed)?.openedOverHttp).toBeFalsy();
+      await f.service.disconnect();
+    });
+
+    it('never falls back after a certificate error', async () => {
+      const { service, page } = await create();
+      await selectOwned(service);
+      vi.mocked(page.goto).mockClear();
+      vi.mocked(page.goto).mockRejectedValueOnce(
+        failing('net::ERR_CERT_AUTHORITY_INVALID at https://shop.example/')
+      );
+      await expect(
+        service.navigate('https://shop.example/', { httpFallback: true })
+      ).rejects.toMatchObject({ code: 'navigation_uncertain' });
+      expect(gotoUrls(page)).toHaveLength(1);
+      await service.disconnect();
+    });
+
+    it('never falls back without the flag: a reload or an address typed with https://', async () => {
+      const { service, page } = await create();
+      await selectOwned(service);
+      vi.mocked(page.goto).mockClear();
+      vi.mocked(page.goto).mockRejectedValueOnce(
+        failing('net::ERR_CONNECTION_REFUSED at https://shop.example/')
+      );
+      await expect(service.navigate('https://shop.example/')).rejects.toMatchObject({
+        code: 'navigation_unreachable',
+      });
+      expect(gotoUrls(page)).toHaveLength(1);
+      await service.disconnect();
+    });
+
+    it('never falls back from http:// itself, flag or not', async () => {
+      const { service, page } = await create();
+      await selectOwned(service);
+      vi.mocked(page.goto).mockClear();
+      vi.mocked(page.goto).mockRejectedValueOnce(
+        failing('net::ERR_CONNECTION_REFUSED at http://shop.example/')
+      );
+      await expect(
+        service.navigate('http://shop.example/', { httpFallback: true })
+      ).rejects.toMatchObject({ code: 'navigation_unreachable' });
+      expect(gotoUrls(page)).toHaveLength(1);
+      await service.disconnect();
+    });
+
+    it('never falls back for an address an agent opens', async () => {
+      const { service, page } = await create();
+      vi.mocked(page.goto).mockRejectedValueOnce(
+        failing('net::ERR_CONNECTION_REFUSED at https://shop.example/')
+      );
+      await expect(
+        service.open({ mode: 'new-window', url: 'https://shop.example/' })
+      ).rejects.toBeDefined();
+      expect(gotoUrls(page)).toEqual(['https://shop.example/']);
+
+      const opened = await create();
+      await selectOwned(opened.service);
+      const observed = await opened.service.observe();
+      vi.mocked(opened.page.goto).mockClear();
+      vi.mocked(opened.page.goto).mockRejectedValueOnce(
+        failing('net::ERR_CONNECTION_REFUSED at https://shop.example/')
+      );
+      await opened.service
+        .action({ kind: 'navigate', url: 'https://shop.example/', revision: observed.revision })
+        .catch(() => undefined);
+      expect(gotoUrls(opened.page).filter((url) => url.startsWith('http://'))).toEqual([]);
+      expect(selectedTab(await opened.service.agentState())?.openedOverHttp).toBeFalsy();
+      await opened.service.disconnect();
+    });
   });
 
   it('still lets the person open the Cloud origin themselves', async () => {

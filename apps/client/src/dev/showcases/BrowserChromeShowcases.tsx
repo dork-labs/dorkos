@@ -60,6 +60,10 @@ export function BrowserChromeShowcases() {
       <ShowcaseDemo>
         <ChromeDemo width={640} url="http://printer.example/status" />
       </ShowcaseDemo>
+      <ShowcaseLabel>Opened by the http fallback says Opened over http</ShowcaseLabel>
+      <ShowcaseDemo>
+        <ChromeDemo width={640} url="http://printer.example/status" openedOverHttp />
+      </ShowcaseDemo>
       <ShowcaseLabel>A dev server on this machine keeps its port</ShowcaseLabel>
       <ShowcaseDemo>
         <ChromeDemo width={640} url="http://localhost:5173/settings" />

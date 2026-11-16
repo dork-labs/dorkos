@@ -286,3 +286,40 @@ it('POST /pause ignores a body that names a handoff, a page or a tab', async () 
   for (const [name, spy] of Object.entries(spies))
     if (name !== 'pause') expect(spy, name).not.toHaveBeenCalled();
 });
+
+// DOR-4450: the address bar asks for the one http:// fallback; the server decides if it runs.
+it('POST /navigate passes the http fallback ask through, and nothing else', async () => {
+  const asked = await request(server)
+    .post('/api/local-browser/navigate')
+    .set('Host', 'localhost')
+    .send({ url: 'https://shop.example/', httpFallback: true });
+  expect(asked.status).toBe(200);
+  expect(spies.navigate).toHaveBeenLastCalledWith('https://shop.example/', { httpFallback: true });
+  const plain = await request(server)
+    .post('/api/local-browser/navigate')
+    .set('Host', 'localhost')
+    .send({ url: 'https://shop.example/' });
+  expect(plain.status).toBe(200);
+  expect(spies.navigate).toHaveBeenLastCalledWith('https://shop.example/', { httpFallback: false });
+  const stray = await request(server)
+    .post('/api/local-browser/navigate')
+    .set('Host', 'localhost')
+    .send({ url: 'https://shop.example/', httpFallback: 'http://elsewhere.example/' });
+  expect(stray.status).toBe(400);
+  expect(spies.navigate).toHaveBeenCalledTimes(2);
+});
+
+it.each(['agent', 'api-key'] as const)(
+  'POST /navigate refuses the http fallback ask from an %s caller',
+  async (caller) => {
+    if (caller === 'api-key') user.credential = 'api-key';
+    const call = request(server)
+      .post('/api/local-browser/navigate')
+      .set('Host', 'localhost')
+      .send({ url: 'https://shop.example/', httpFallback: true });
+    if (caller === 'agent') call.set('X-DorkOS-Agent', '');
+    const response = await call;
+    expect(response.status).toBe(403);
+    expect(spies.navigate).not.toHaveBeenCalled();
+  }
+);

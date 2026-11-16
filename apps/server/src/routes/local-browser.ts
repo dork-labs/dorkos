@@ -70,8 +70,11 @@ export function createLocalBrowserRoutes(
     c.json(await service.handover.selectTab(c.req.param('id')))
   );
   router.post('/navigate', personOnly, async (c) => {
-    const { url } = z.object({ url: z.string().url() }).strict().parse(readJsonBody(c));
-    return c.json(await service.handover.navigate(url));
+    const { url, httpFallback } = z
+      .object({ url: z.string().url(), httpFallback: z.boolean().optional() })
+      .strict()
+      .parse(readJsonBody(c));
+    return c.json(await service.handover.navigate(url, { httpFallback: httpFallback === true }));
   });
   // Back and Forward move the page too, and take it from a driving agent (DOR-4449).
   router.post('/history', personOnly, async (c) => {

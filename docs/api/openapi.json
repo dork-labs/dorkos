@@ -33018,7 +33018,7 @@
           "Local browser"
         ],
         "summary": "Open a web address in the selected tab",
-        "description": "Only the owner on this computer can call this route. Only the owner, in person, can call this route: no agent, API key or approval token. Accepts HTTP or HTTPS addresses and invalidates earlier observations. Refused during a handoff.",
+        "description": "Only the owner on this computer can call this route. Only the owner, in person, can call this route: no agent, API key or approval token. Accepts HTTP or HTTPS addresses and invalidates earlier observations. A bare host may ask for one HTTP fallback when the HTTPS page cannot connect; a timeout never falls back. Refused during a handoff.",
         "requestBody": {
           "required": true,
           "content": {
@@ -33029,6 +33029,10 @@
                   "url": {
                     "type": "string",
                     "format": "uri"
+                  },
+                  "httpFallback": {
+                    "type": "boolean",
+                    "description": "Ask for the one safe HTTP fallback for a bare host."
                   }
                 },
                 "required": [
@@ -33177,7 +33181,7 @@
             }
           },
           "400": {
-            "description": "The web address is invalid",
+            "description": "The web address or HTTP fallback choice is invalid",
             "content": {
               "application/json": {
                 "schema": {
@@ -33221,7 +33225,7 @@
             }
           },
           "409": {
-            "description": "The browser cannot complete this request in its current state",
+            "description": "The browser cannot complete the navigation (`navigation_timed_out`, `navigation_unreachable`, or `navigation_uncertain`)",
             "content": {
               "application/json": {
                 "schema": {

@@ -10,7 +10,14 @@ import type {
   LocalBrowserState,
 } from '@dorkos/shared/local-browser';
 import type { EmbeddedBrowserAttachment } from '../connection/embedded-attachment.js';
-import { LocalBrowserError, historyAddressAllowed, navigationRefusal } from '../errors.js';
+import {
+  LocalBrowserError,
+  assertLocalBrowserUrl,
+  historyAddressAllowed,
+  httpFallbackAllowed,
+  navigationRefusal,
+} from '../errors.js';
+import { setOpenedOverHttp } from './opened-over-http.js';
 import {
   cdpPageHistory,
   embeddedPageHistory,
@@ -48,10 +55,29 @@ export class PersonPageMoves {
    *
    * @param page - The selected tab.
    * @param url - Where to go.
+   * @param options - Whether a bare host the person typed may try HTTP once.
    */
-  async open(page: Page, url: string): Promise<void> {
+  async open(page: Page, url: string, options: { httpFallback?: boolean } = {}): Promise<void> {
+    setOpenedOverHttp(page, await this.load(page, url, options.httpFallback === true));
+  }
+
+  /**
+   * Load the address, and for a bare host the person typed, try `http://` once
+   * when Security's rules allow it (DOR-4450). Answers whether that fallback opened it.
+   */
+  private async load(page: Page, url: string, httpFallback: boolean): Promise<boolean> {
     try {
       await page.goto(url, { waitUntil: 'commit', timeout: 15_000 });
+      return false;
+    } catch (error) {
+      if (!httpFallback || !httpFallbackAllowed(error, url)) throw navigationRefusal(error);
+    }
+    const fallback = new URL(url);
+    fallback.protocol = 'http:';
+    assertLocalBrowserUrl(fallback.href, 'person');
+    try {
+      await page.goto(fallback.href, { waitUntil: 'commit', timeout: 15_000 });
+      return true;
     } catch (error) {
       throw navigationRefusal(error);
     }

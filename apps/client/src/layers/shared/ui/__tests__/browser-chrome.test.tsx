@@ -52,6 +52,21 @@ describe('BrowserChrome', () => {
     expect(screen.queryByText('Not secure')).not.toBeInTheDocument();
   });
 
+  // DOR-4450: a page the http:// fallback opened says so, for as long as it stays on http.
+  it('says Opened over http in place of Not secure for a fallback page, and in its name', () => {
+    renderChrome({ url: 'http://nas.example:5000/', openedOverHttp: true });
+    expect(screen.getByText('Opened over http')).toBeInTheDocument();
+    expect(screen.queryByText('Not secure')).not.toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: /^Address: nas\.example.*\. Opened over http$/ })
+    ).toBeInTheDocument();
+  });
+
+  it('ignores the fallback mark once the address is no longer http://', () => {
+    renderChrome({ url: 'https://nas.example/', openedOverHttp: true });
+    expect(screen.queryByText('Opened over http')).not.toBeInTheDocument();
+  });
+
   it('opens the full address, all selected, and Enter commits what was typed', () => {
     const { onSubmit } = renderChrome();
     fireEvent.click(screen.getByRole('button', { name: /^Address:/ }));

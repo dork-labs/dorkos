@@ -86,6 +86,11 @@ export interface LocalBrowserTab {
   url: string;
   title: string;
   /**
+   * The page was opened by the one http:// fallback for a bare host the person
+   * typed, and is still on http.
+   */
+  openedOverHttp?: boolean;
+  /**
    * Whether Back has a page to go to: an earlier page in this tab's own history
    * that the address rules still allow. Only the selected tab, and only in a
    * person's state; absent elsewhere.
@@ -126,6 +131,8 @@ export interface LocalBrowserObservation {
   snapshot: string;
   url: string;
   tabId: string;
+  /** The selected page was opened by the one HTTP fallback and is still on HTTP. */
+  openedOverHttp?: boolean;
 }
 export interface LocalBrowserCapabilities {
   platform: string;
@@ -149,6 +156,7 @@ export const LocalBrowserStateSchema = z.object({
       id: z.string(),
       url: z.string(),
       title: z.string(),
+      openedOverHttp: z.boolean().optional(),
       canGoBack: z.boolean().optional(),
       canGoForward: z.boolean().optional(),
     })
@@ -245,6 +253,7 @@ export const LocalBrowserObservationSchema = z.object({
   snapshot: z.string(),
   url: z.string(),
   tabId: z.string(),
+  openedOverHttp: z.boolean().optional(),
 });
 
 export const LocalBrowserCapabilitiesSchema = z.object({

@@ -1183,7 +1183,9 @@ describe('LocalBrowserPanel', () => {
       mount();
       await submit('example.com/docs');
       await waitFor(() =>
-        expect(transport.navigateLocalBrowser).toHaveBeenCalledWith('https://example.com/docs')
+        expect(transport.navigateLocalBrowser).toHaveBeenCalledWith('https://example.com/docs', {
+          httpFallback: true,
+        })
       );
       await submit('192.168.1.1');
       await waitFor(() =>
@@ -1191,22 +1193,20 @@ describe('LocalBrowserPanel', () => {
       );
     });
 
-    it('tries http:// once when a bare host it put https:// on cannot connect', async () => {
+    // DOR-4450: the server decides whether http:// is tried, so the page asks once.
+    it('asks the server for the one http:// fallback for a bare host, in one call', async () => {
       transport.getLocalBrowserState.mockResolvedValue(connected);
-      transport.navigateLocalBrowser
-        .mockRejectedValueOnce(unreachable())
-        .mockResolvedValueOnce(connected);
+      transport.navigateLocalBrowser.mockResolvedValue(connected);
       mount();
       await submit('shop.example');
-      await waitFor(() => expect(transport.navigateLocalBrowser).toHaveBeenCalledTimes(2));
-      expect(transport.navigateLocalBrowser.mock.calls).toEqual([
-        ['https://shop.example'],
-        ['http://shop.example'],
-      ]);
+      await waitFor(() => expect(transport.navigateLocalBrowser).toHaveBeenCalledTimes(1));
+      expect(transport.navigateLocalBrowser).toHaveBeenCalledWith('https://shop.example', {
+        httpFallback: true,
+      });
       expect(screen.queryByRole('alert')).not.toBeInTheDocument();
     });
 
-    it('never falls back from an address typed with https://', async () => {
+    it('never asks for a fallback from an address typed with https://', async () => {
       transport.getLocalBrowserState.mockResolvedValue(connected);
       transport.navigateLocalBrowser.mockRejectedValue(unreachable());
       mount();
@@ -1215,25 +1215,44 @@ describe('LocalBrowserPanel', () => {
         'Couldn’t reach that site. Check the address and try again.'
       );
       expect(transport.navigateLocalBrowser).toHaveBeenCalledTimes(1);
+      expect(transport.navigateLocalBrowser).toHaveBeenCalledWith('https://example.com');
     });
 
-    it('never falls back after a certificate error, and tries http:// only once', async () => {
+    it('never retries a failed bare host itself, whatever the failure', async () => {
       transport.getLocalBrowserState.mockResolvedValue(connected);
-      transport.navigateLocalBrowser.mockRejectedValueOnce(
-        Object.assign(new Error('cert'), { code: 'navigation_uncertain' })
+      transport.navigateLocalBrowser.mockRejectedValue(unreachable());
+      mount();
+      await submit('news.example');
+      expect(await screen.findByRole('alert')).toHaveTextContent('Couldn’t reach that site.');
+      expect(transport.navigateLocalBrowser).toHaveBeenCalledTimes(1);
+    });
+
+    it('says a site that timed out didn’t respond', async () => {
+      transport.getLocalBrowserState.mockResolvedValue(connected);
+      transport.navigateLocalBrowser.mockRejectedValue(
+        Object.assign(new Error('slow'), { code: 'navigation_timed_out' })
       );
       mount();
-      await submit('shop.example');
-      expect(await screen.findByText('Check what happened before continuing.')).toBeInTheDocument();
+      await submit('slow.example');
+      expect(await screen.findByRole('alert')).toHaveTextContent(
+        'That site didn’t respond. Try again in a moment.'
+      );
       expect(transport.navigateLocalBrowser).toHaveBeenCalledTimes(1);
+    });
 
-      transport.navigateLocalBrowser.mockClear();
-      transport.navigateLocalBrowser.mockRejectedValue(unreachable());
-      await submit('news.example');
-      await waitFor(() => expect(transport.navigateLocalBrowser).toHaveBeenCalledTimes(2));
-      expect(transport.navigateLocalBrowser).toHaveBeenNthCalledWith(1, 'https://news.example');
-      expect(transport.navigateLocalBrowser).toHaveBeenNthCalledWith(2, 'http://news.example');
-      expect(await screen.findByRole('alert')).toHaveTextContent('Couldn’t reach that site.');
+    it('says Opened over http in the address field while the tab is on a fallback page', async () => {
+      const overHttp = {
+        ...connected,
+        tabs: connected.tabs.map((tab) => ({
+          ...tab,
+          url: 'http://shop.example/',
+          openedOverHttp: true,
+        })),
+      };
+      transport.getLocalBrowserState.mockResolvedValue(overHttp);
+      mount();
+      expect(await screen.findByText('Opened over http')).toBeInTheDocument();
+      expect(screen.queryByText('Not secure')).not.toBeInTheDocument();
     });
 
     it.each([

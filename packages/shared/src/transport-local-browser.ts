@@ -22,7 +22,16 @@ export interface LocalBrowserTransport {
   deleteLocalBrowserProfile(profileId: string): Promise<{ success: true }>;
   openLocalBrowser(input: LocalBrowserOpen): Promise<LocalBrowserPersonState>;
   selectLocalBrowserTab(id: string): Promise<LocalBrowserState>;
-  navigateLocalBrowser(url: string): Promise<LocalBrowserState>;
+  /**
+   * Open an address.
+   *
+   * @param url - The address to open.
+   * @param options - Whether a bare host may ask the server for one safe HTTP fallback.
+   */
+  navigateLocalBrowser(
+    url: string,
+    options?: { httpFallback?: boolean }
+  ): Promise<LocalBrowserState>;
   /** Move the page one step back or forward through its own history. Takes the page from an agent. */
   stepLocalBrowserHistory(direction: LocalBrowserHistoryDirection): Promise<LocalBrowserState>;
   pauseLocalBrowser(): Promise<LocalBrowserState>;

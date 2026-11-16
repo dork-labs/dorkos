@@ -41,8 +41,10 @@ export function createLocalBrowserMethods(baseUrl: string): LocalBrowserTranspor
       LocalBrowserPersonStateSchema.parse(await request('/open', input)),
     selectLocalBrowserTab: async (id) =>
       LocalBrowserStateSchema.parse(await request(`/tabs/${encodeURIComponent(id)}/select`, {})),
-    navigateLocalBrowser: async (url) =>
-      LocalBrowserStateSchema.parse(await request('/navigate', { url })),
+    navigateLocalBrowser: async (url, options) =>
+      LocalBrowserStateSchema.parse(
+        await request('/navigate', options?.httpFallback ? { url, httpFallback: true } : { url })
+      ),
     stepLocalBrowserHistory: async (direction) =>
       LocalBrowserStateSchema.parse(await request('/history', { direction })),
     pauseLocalBrowser: async () => LocalBrowserStateSchema.parse(await request('/pause', {})),
