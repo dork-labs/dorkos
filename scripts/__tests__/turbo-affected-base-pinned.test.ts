@@ -162,6 +162,7 @@ function captureVerifyTurboInvocations(): TurboInvocation[] {
 
   try {
     writeStub(fixtureDir, 'pnpm', 'exit 0');
+    writeStub(fixtureDir, 'load-average', 'echo 0');
     writeStub(fixtureDir, 'git', "printf '%s\\n' test-origin-main");
     writeStub(
       fixtureDir,
@@ -185,6 +186,7 @@ function captureVerifyTurboInvocations(): TurboInvocation[] {
         TURBO_CAPTURE: capturePath,
         // The real wrappers only run stubs here; unrelated host jobs must not delay them.
         DORKOS_HEAVY_LOCK_DIR: path.join(fixtureDir, 'locks'),
+        DORKOS_HEAVY_LOADAVG_CMD: path.join(fixtureDir, 'load-average'),
       },
     });
     expect(result.status, result.stderr || result.stdout).toBe(0);
