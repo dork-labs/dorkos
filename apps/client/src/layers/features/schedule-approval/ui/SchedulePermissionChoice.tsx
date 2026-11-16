@@ -126,7 +126,12 @@ export function SchedulePermissionChoice({
             checked={confirmLooser}
             onCheckedChange={(checked) => onConfirmLooserChange(checked === true)}
           />
-          <span>{scheduleConfirmLabel(confirmReason)}</span>
+          <span>
+            {scheduleConfirmLabel(
+              confirmReason,
+              selected ? schedulePermissionLabel(selected.id, selected.label) : undefined
+            )}
+          </span>
         </label>
       )}
       {/* What a never-asks mode still does not cover: DorkOS's own actions. */}

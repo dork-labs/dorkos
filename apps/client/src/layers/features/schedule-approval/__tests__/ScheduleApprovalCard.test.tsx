@@ -617,7 +617,7 @@ describe('ScheduleApprovalCard — answering it', () => {
     const approve = screen.getByRole('button', { name: 'Approve Nightly sweep' });
     expect(approve).toBeDisabled();
     await userEvent.click(
-      screen.getByRole('checkbox', { name: 'Allow a looser mode with nobody there' })
+      screen.getByRole('checkbox', { name: 'Allow Accept edits with nobody there' })
     );
     expect(approve).toBeEnabled();
     await userEvent.click(approve);
@@ -709,7 +709,7 @@ describe('ScheduleApprovalCard — answering it', () => {
     await userEvent.selectOptions(picker, 'acceptEdits');
     expect(
       screen.getByRole('checkbox', {
-        name: 'Allow a looser mode and these programs with nobody there',
+        name: 'Allow Accept edits and these programs with nobody there',
       })
     ).toBeInTheDocument();
   });
@@ -769,7 +769,9 @@ describe('ScheduleApprovalCard — answering it', () => {
     const picker = await screen.findByRole('combobox', { name: 'Run permissions' });
     await userEvent.selectOptions(picker, 'acceptEdits');
     expect(screen.getByRole('button', { name: 'Approve Nightly sweep' })).toBeDisabled();
-    expect(screen.getByRole('checkbox', { name: /a looser mode/i })).toBeInTheDocument();
+    expect(
+      screen.getByRole('checkbox', { name: 'Allow Accept edits with nobody there' })
+    ).toBeInTheDocument();
   });
 
   it('defaults outsider work to the tightest unattended mode', async () => {
@@ -1447,7 +1449,9 @@ describe('ScheduleApprovalCard — choosing the run permissions', () => {
     expect(screen.getByRole('button', { name: 'Approve Nightly sweep' })).toBeEnabled();
     await userEvent.selectOptions(picker, 'bypassPermissions');
     expect(screen.getByRole('button', { name: 'Approve Nightly sweep' })).toBeDisabled();
-    expect(screen.getByRole('checkbox', { name: /a looser mode/i })).toBeInTheDocument();
+    expect(
+      screen.getByRole('checkbox', { name: 'Allow Full access with nobody there' })
+    ).toBeInTheDocument();
   });
 
   it('measures outsider work that asked for plan against plan, as the server does', async () => {
@@ -1481,7 +1485,7 @@ describe('ScheduleApprovalCard — choosing the run permissions', () => {
     const picker = await screen.findByRole('combobox', { name: 'Run permissions' });
     expect(picker).toHaveValue('acceptEdits');
     const confirm = screen.getByRole('checkbox', {
-      name: 'Allow a looser mode with nobody there',
+      name: 'Allow Accept edits with nobody there',
     });
     const approve = screen.getByRole('button', { name: 'Approve Nightly sweep' });
     expect(approve).toBeDisabled();
@@ -1543,7 +1547,9 @@ describe('ScheduleApprovalCard — choosing the run permissions', () => {
     );
     expect(screen.getByRole('button', { name: 'Approve Nightly sweep' })).toBeDisabled();
     expect(updateTask).not.toHaveBeenCalled();
-    await userEvent.click(screen.getByRole('checkbox', { name: /a looser mode/i }));
+    await userEvent.click(
+      screen.getByRole('checkbox', { name: 'Allow Accept edits with nobody there' })
+    );
     await userEvent.click(screen.getByRole('button', { name: 'Approve Nightly sweep' }));
     await waitFor(() =>
       expect(updateTask).toHaveBeenCalledWith('task-1', {
@@ -1562,7 +1568,9 @@ describe('ScheduleApprovalCard — choosing the run permissions', () => {
     expect(slot('schedule-mode-mismatch')).toHaveTextContent(
       'DorkBot proposed Accept edits. Selected: Full access.'
     );
-    expect(screen.getByRole('checkbox', { name: /a looser mode/i })).toBeInTheDocument();
+    expect(
+      screen.getByRole('checkbox', { name: 'Allow Full access with nobody there' })
+    ).toBeInTheDocument();
     await userEvent.selectOptions(picker, 'acceptEdits');
     expect(slot('schedule-mode-mismatch')).toBeNull();
     expect(slot('schedule-requested-mode')).toBeNull();

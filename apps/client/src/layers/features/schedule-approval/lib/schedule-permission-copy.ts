@@ -81,11 +81,13 @@ export function scheduleConfirmReason(
  * words. "with nobody there" is added while the line stays within that.
  *
  * @param reason - What the tick covers.
+ * @param modeLabel - The selected mode in the card's words ("Full access"),
+ *   named instead of "a looser mode" when the tick covers it.
  */
-export function scheduleConfirmLabel(reason: ScheduleConfirmReason): string {
+export function scheduleConfirmLabel(reason: ScheduleConfirmReason, modeLabel?: string): string {
   const named = [reason.mode, reason.programs, reason.writes, reason.reads].some(Boolean);
   const parts = [
-    reason.mode && 'a looser mode',
+    reason.mode && (modeLabel ?? 'a looser mode'),
     reason.programs && 'these programs',
     reason.writes && 'edits outside its folder',
     reason.reads && 'these reads',
