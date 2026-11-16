@@ -39,6 +39,7 @@ import {
   SERVER_DIR,
   TSX_ESCAPE_FLAG,
   buildContractServer,
+  isAlive,
 } from './server-build.js';
 import { stopServerAndRemove, whenExited } from './stop-server.js';
 
@@ -172,16 +173,6 @@ function runDir(): string {
   const dir = inject('contractServerBuildDir');
   if (!dir) throw new Error('No contract build folder: is global-setup.ts in vitest.config.ts?');
   return dir;
-}
-
-/** Whether process `pid` is still running (`EPERM` means it is, just not ours). */
-function isAlive(pid: number): boolean {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch (error) {
-    return (error as NodeJS.ErrnoException).code === 'EPERM';
-  }
 }
 
 /**
