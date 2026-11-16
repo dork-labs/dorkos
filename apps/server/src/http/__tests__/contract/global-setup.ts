@@ -61,6 +61,6 @@ export default function setup(project: TestProject): () => void {
       const parity = mode === 'bundle' && booted.includes('tsx') ? '; tsx parity boot ran' : '';
       console.log(`[contract] server boot mode: ${mode} (${why}${built})${parity}`);
     }
-    rmSync(dir, { recursive: true, force: true });
+    rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
   };
 }
