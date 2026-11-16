@@ -1,6 +1,6 @@
 {
  "schema": 1,
- "updated_at": "2026-11-09T13:45:01.231Z",
+ "updated_at": "2026-11-16T13:29:21.422Z",
  "slos": {
   "headroom": {
    "floor": {
@@ -37,6 +37,10 @@
     },
     {
      "week": "2026-W45",
+     "status": "ok"
+    },
+    {
+     "week": "2026-W46",
      "status": "ok"
     }
    ],
@@ -78,6 +82,10 @@
     {
      "week": "2026-W45",
      "status": "ok"
+    },
+    {
+     "week": "2026-W46",
+     "status": "ok"
     }
    ],
    "moved": []
@@ -118,6 +126,10 @@
     {
      "week": "2026-W45",
      "status": "breach"
+    },
+    {
+     "week": "2026-W46",
+     "status": "ok"
     }
    ],
    "moved": [
@@ -164,6 +176,10 @@
     {
      "week": "2026-W45",
      "status": "unmeasured"
+    },
+    {
+     "week": "2026-W46",
+     "status": "unmeasured"
     }
    ],
    "moved": []
@@ -204,6 +220,10 @@
     {
      "week": "2026-W45",
      "status": "breach"
+    },
+    {
+     "week": "2026-W46",
+     "status": "breach"
     }
    ],
    "moved": []
@@ -243,6 +263,10 @@
     },
     {
      "week": "2026-W45",
+     "status": "ok"
+    },
+    {
+     "week": "2026-W46",
      "status": "ok"
     }
    ],
@@ -292,6 +316,10 @@
     {
      "week": "2026-W45",
      "status": "insufficient"
+    },
+    {
+     "week": "2026-W46",
+     "status": "insufficient"
     }
    ],
    "moved": []
@@ -331,6 +359,10 @@
     },
     {
      "week": "2026-W45",
+     "status": "breach"
+    },
+    {
+     "week": "2026-W46",
      "status": "breach"
     }
    ],
@@ -380,6 +412,10 @@
     {
      "week": "2026-W45",
      "status": "ok"
+    },
+    {
+     "week": "2026-W46",
+     "status": "ok"
     }
    ],
    "moved": []
@@ -419,6 +455,10 @@
     },
     {
      "week": "2026-W45",
+     "status": "breach"
+    },
+    {
+     "week": "2026-W46",
      "status": "breach"
     }
    ],
@@ -460,6 +500,10 @@
     {
      "week": "2026-W45",
      "status": "ok"
+    },
+    {
+     "week": "2026-W46",
+     "status": "breach"
     }
    ],
    "moved": [
@@ -474,8 +518,8 @@
   },
   "local-push": {
    "floor": {
-    "p90": 360,
-    "killed_share": 0.075
+    "p90": 240,
+    "killed_share": 0.0375
    },
    "weeks": [
     {
@@ -509,6 +553,10 @@
     {
      "week": "2026-W45",
      "status": "met"
+    },
+    {
+     "week": "2026-W46",
+     "status": "ok"
     }
    ],
    "moved": [
@@ -524,6 +572,20 @@
      "stat": "killed_share",
      "from": 0.15,
      "to": 0.075,
+     "why": "4 consecutive weeks met or ok: tightened halfway to the objective"
+    },
+    {
+     "week": "2026-W46",
+     "stat": "p90",
+     "from": 360,
+     "to": 240,
+     "why": "4 consecutive weeks met or ok: tightened halfway to the objective"
+    },
+    {
+     "week": "2026-W46",
+     "stat": "killed_share",
+     "from": 0.075,
+     "to": 0.0375,
      "why": "4 consecutive weeks met or ok: tightened halfway to the objective"
     }
    ]
