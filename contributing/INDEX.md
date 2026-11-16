@@ -57,6 +57,7 @@ Maps source code patterns to the guides that document them. Patterns use `grep -
 | `external-agent-marketplace-access.md` | Marketplace MCP server: external-agent tools, confirmation flow, endpoints | `apps/server/src/services/marketplace-mcp/` |
 | `workspace-manager.md` | Server-managed isolated workspaces: provider port, port allocation, file-first cache | `apps/server/src/services/workspace/\|packages/shared/src/workspace\|packages/db/src/schema/workspace` |
 | `flow-engine.md` | The `/flow` engine: stage model, typed engine, the adapter seam, templates, Pulse seat | `docs/guides/flow\|contributing/flow-engine` |
+| `prioritization.md` | Filing and prioritizing DOR issues: MoSCoW mapped to Linear priority, the at-filing fields, the duplicate check, where each bucket goes, the Could expiry | `contributing/prioritization` |
 | `observability.md` | The dispatch correlation id, log conventions and the refusal rule, the `/api/debug` read surfaces, and the doctor split | `lib/logger\|lib/dispatch-context\|services/observability/\|routes/debug\|doctor-checks\|dispatch-id` |
 | `harness-sync.md` | @dorkos/harness projects .agents/ skills/hooks/tasks + marketplace plugins to every harness | `packages/harness/\|harness-sync-command\|apps/server/src/services/harness/\|harness-schemas` |
 | `boundary-guard.md` | The public/private boundary gate: what a `path:line rule-id` failure means and why it says nothing more, the two tiers, modes and exit codes, the allowlist, and the operator setup for the private ruleset | `scripts/check-boundary.ts\|scripts/boundary/` |
