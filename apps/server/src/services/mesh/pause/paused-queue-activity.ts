@@ -1,4 +1,5 @@
 import { ulid } from 'ulidx';
+import { sessionPath } from '@dorkos/shared/session-link';
 import {
   activityEvents,
   agents,
@@ -68,7 +69,7 @@ export function recordPausedQueueActivity(db: Db, agent: PausedAgentRef): void {
         resourceId: agent.id,
         resourceLabel: agent.name,
         summary,
-        linkPath: `/session?session=${held[0]!.sessionId}`,
+        linkPath: sessionPath({ session: held[0]!.sessionId }),
         metadata: JSON.stringify({ pausedAt: agent.pausedAt, messages: held.length, chats }),
       })
       .run();
