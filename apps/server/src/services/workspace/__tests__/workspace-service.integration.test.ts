@@ -118,6 +118,16 @@ describe('WorkspaceService — DOR-84 acceptance', () => {
     expect(resolved?.id).toBe(ws.id);
   });
 
+  it('getByKey finds what ensure would reuse, by the same key spelling, without touching it', async () => {
+    const ws = await sub.service.ensure({ projectKey: 'core', key: 'DOR 1/x', source }, open);
+    const found = await sub.service.getByKey('core', 'DOR 1/x');
+    expect(found?.id).toBe(ws.id);
+    expect(found?.status).toBe('ready');
+    expect(found?.lastUsedAt).toBe(ws.lastUsedAt);
+    expect(await sub.service.getByKey('core', 'DOR-404')).toBeNull();
+    expect(await sub.service.getByKey('other', 'DOR-1')).toBeNull();
+  });
+
   it('a clean workspace is removable without force', async () => {
     const ws = await sub.service.ensure({ projectKey: 'core', key: 'DOR-3', source }, open);
     const result = await sub.service.remove(ws.id, { force: false });

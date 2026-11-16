@@ -119,6 +119,7 @@ export type {
   TaskStatus,
   TaskApprover,
   TaskApprovalVia,
+  TaskRunPlace,
   TaskRunStatus,
   TaskRunOutcome,
   TaskFailureReason,

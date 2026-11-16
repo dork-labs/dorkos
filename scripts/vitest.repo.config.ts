@@ -30,6 +30,7 @@ import { defineConfig } from 'vitest/config';
 export const REPO_WIDE_SUITES = [
   '__tests__/agents-service-census.test.ts',
   '__tests__/binary-lane-job.test.ts',
+  '__tests__/binary-test-glob.test.ts',
   '__tests__/check-boundary.test.ts',
   '__tests__/check-design-tokens.test.ts',
   '__tests__/check-own-mocks.test.ts',

@@ -190,9 +190,35 @@ jobs:
       - uses: actions/setup-node@v7.1.0
         with:
           node-version: 24
-          cache: pnpm
+
+      # An explicit pnpm store in place of setup-node's `cache: pnpm`, so that
+      # only `refs/heads/main` saves it (DOR-4537, ledger 261116-114104).
+      # `cache: pnpm` saved a 695 MB `node-cache-Windows-x64-pnpm-*` entry under
+      # every queue ref and PR merge ref, because no run on main ever saved one
+      # to hit: scopes nothing else can read, which evicted the caches main's
+      # runs leave for the queue. Same shape as test.yml's test-shard, which
+      # says why the save sits right after the install.
+      #
+      # This workflow has no schedule and no push trigger, so the save only
+      # fires on a `workflow_dispatch` with `--ref main`. Until one runs per
+      # lockfile, queue and PR runs here install from the registry.
+      - name: Find the pnpm store
+        id: pnpm-store
+        run: echo "image=${ImageOS:?ImageOS is not set on this runner}" >> "$GITHUB_OUTPUT" && echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
+      - name: Restore the pnpm store built on this runner image
+        id: pnpm-store-restore
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ steps.pnpm-store.outputs.path }}
+          key: pnpm-store-${{ runner.os }}-${{ steps.pnpm-store.outputs.image }}-${{ runner.arch }}-${{ hashFiles('pnpm-lock.yaml') }}
 
       - run: pnpm install --frozen-lockfile
+      - name: Save the pnpm store for the queue and pull requests
+        if: ${{ github.ref == 'refs/heads/main' && steps.pnpm-store-restore.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ steps.pnpm-store.outputs.path }}
+          key: pnpm-store-${{ runner.os }}-${{ steps.pnpm-store.outputs.image }}-${{ runner.arch }}-${{ hashFiles('pnpm-lock.yaml') }}
 
       # Says out loud what this run's filesystem could actually do, so a green
       # check is never mistaken for coverage of a capability the runner did not

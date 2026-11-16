@@ -57,13 +57,13 @@
     "VITEST_SHARD_EPOCH"
   ],
   "tasks": {
-    "//#heavy-slot": {
+    "@dorkos/heavy-slot#slot": {
       "cache": false,
-      "inputs": ["scripts/heavy-turbo-slot.mjs"],
+      "inputs": ["package.json", "$TURBO_ROOT$/scripts/heavy-turbo-slot.mjs"],
       "passThroughEnv": ["CI", "DORKOS_HEAVY_*"]
     },
     "build": {
-      "dependsOn": ["generate:api-docs", "^build", "//#heavy-slot"],
+      "dependsOn": ["generate:api-docs", "^build", "@dorkos/heavy-slot#slot"],
       "outputs": ["dist/**", "dist-server/**", ".next/**", "!.next/cache/**", "!.next/dev/**"],
       "env": ["NODE_ENV", "VITE_*", "!VITE_PORT", "NEXT_PUBLIC_*", "POSTHOG_*"]
     },
@@ -78,13 +78,13 @@
       "passThroughEnv": ["DORKOS_YOUR_BROWSER_ENABLED", "DORKOS_MARK_STRANGER_TURNS"]
     },
     "test": {
-      "dependsOn": ["^build", "//#heavy-slot"],
+      "dependsOn": ["^build", "@dorkos/heavy-slot#slot"],
       "cache": true,
       "inputs": ["$TURBO_DEFAULT$", "$TURBO_ROOT$/scripts/sharding/**"],
       "env": ["VITEST_SHARD_MODE"]
     },
     "@dorkos/harness#test": {
-      "dependsOn": ["^build", "//#heavy-slot"],
+      "dependsOn": ["^build", "@dorkos/heavy-slot#slot"],
       "cache": true,
       "inputs": [
         "$TURBO_DEFAULT$",
@@ -109,7 +109,7 @@
       "env": ["VITEST_SHARD_MODE"]
     },
     "@dorkos/server#test": {
-      "dependsOn": ["^build", "//#heavy-slot"],
+      "dependsOn": ["^build", "@dorkos/heavy-slot#slot"],
       "cache": true,
       "inputs": [
         "$TURBO_DEFAULT$",
@@ -160,7 +160,7 @@
       "env": ["VITEST_SHARD_MODE"]
     },
     "@dorkos/server#typecheck": {
-      "dependsOn": ["^build", "//#heavy-slot"],
+      "dependsOn": ["^build", "@dorkos/heavy-slot#slot"],
       "cache": true,
       "inputs": [
         "$TURBO_DEFAULT$",
@@ -174,7 +174,7 @@
       ]
     },
     "@dorkos/community#build": {
-      "dependsOn": ["generate:api-docs", "^build", "//#heavy-slot"],
+      "dependsOn": ["generate:api-docs", "^build", "@dorkos/heavy-slot#slot"],
       "outputs": ["dist/**", "dist-server/**"],
       "env": ["NODE_ENV", "VITE_*"],
       "inputs": [
@@ -185,7 +185,7 @@
       ]
     },
     "@dorkos/community#typecheck": {
-      "dependsOn": ["^build", "//#heavy-slot"],
+      "dependsOn": ["^build", "@dorkos/heavy-slot#slot"],
       "cache": true,
       "inputs": [
         "$TURBO_DEFAULT$",
@@ -195,7 +195,7 @@
       ]
     },
     "@dorkos/community#test": {
-      "dependsOn": ["^build", "//#heavy-slot"],
+      "dependsOn": ["^build", "@dorkos/heavy-slot#slot"],
       "cache": true,
       "inputs": [
         "$TURBO_DEFAULT$",
@@ -207,7 +207,7 @@
       "env": ["VITEST_SHARD_MODE"]
     },
     "@dorkos/test-utils#test": {
-      "dependsOn": ["^build", "//#heavy-slot"],
+      "dependsOn": ["^build", "@dorkos/heavy-slot#slot"],
       "cache": true,
       "inputs": [
         "$TURBO_DEFAULT$",
@@ -225,7 +225,7 @@
       "env": ["VITEST_SHARD_MODE"]
     },
     "@dorkos/ci-steward#test": {
-      "dependsOn": ["^build", "//#heavy-slot"],
+      "dependsOn": ["^build", "@dorkos/heavy-slot#slot"],
       "cache": true,
       "inputs": [
         "$TURBO_DEFAULT$",
@@ -244,7 +244,7 @@
       "env": ["VITEST_SHARD_MODE"]
     },
     "dorkos#test": {
-      "dependsOn": ["^build", "//#heavy-slot"],
+      "dependsOn": ["^build", "@dorkos/heavy-slot#slot"],
       "cache": true,
       "inputs": [
         "$TURBO_DEFAULT$",
@@ -254,7 +254,7 @@
       "env": ["VITEST_SHARD_MODE"]
     },
     "@dorkos/marketplace#test": {
-      "dependsOn": ["^build", "//#heavy-slot"],
+      "dependsOn": ["^build", "@dorkos/heavy-slot#slot"],
       "cache": true,
       "inputs": [
         "$TURBO_DEFAULT$",
@@ -264,13 +264,13 @@
       "env": ["VITEST_SHARD_MODE"]
     },
     "@dorkos/evals#test": {
-      "dependsOn": ["^build", "//#heavy-slot"],
+      "dependsOn": ["^build", "@dorkos/heavy-slot#slot"],
       "cache": true,
       "inputs": ["$TURBO_DEFAULT$", "$TURBO_ROOT$/turbo.json", "$TURBO_ROOT$/scripts/sharding/**"],
       "env": ["VITEST_SHARD_MODE"]
     },
     "@dorkos/client#test": {
-      "dependsOn": ["^build", "//#heavy-slot"],
+      "dependsOn": ["^build", "@dorkos/heavy-slot#slot"],
       "cache": true,
       "inputs": [
         "$TURBO_DEFAULT$",
@@ -290,7 +290,7 @@
         "@dorkos/relay#build",
         "@dorkos/extension-api#build",
         "@dorkos/keep-awake#build",
-        "//#heavy-slot"
+        "@dorkos/heavy-slot#slot"
       ],
       "cache": true,
       "inputs": [
@@ -308,15 +308,15 @@
       "persistent": true
     },
     "typecheck": {
-      "dependsOn": ["^build", "//#heavy-slot"],
+      "dependsOn": ["^build", "@dorkos/heavy-slot#slot"],
       "cache": true
     },
     "lint": {
-      "dependsOn": ["^lint", "//#heavy-slot"],
+      "dependsOn": ["^lint", "@dorkos/heavy-slot#slot"],
       "cache": true
     },
     "@dorkos/server#lint": {
-      "dependsOn": ["^lint", "//#heavy-slot"],
+      "dependsOn": ["^lint", "@dorkos/heavy-slot#slot"],
       "cache": true,
       "inputs": ["$TURBO_DEFAULT$", "$TURBO_ROOT$/apps/space/package.json"]
     },

@@ -170,11 +170,20 @@ jobs:
       - name: Find the pnpm store
         id: pnpm-store
         run: echo "image=${ImageOS:?ImageOS is not set on this runner}" >> "$GITHUB_OUTPUT" && echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      - name: Restore the pnpm store built on this runner image
+        id: pnpm-store-restore
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ steps.pnpm-store.outputs.path }}
           key: pnpm-store-${{ runner.os }}-${{ steps.pnpm-store.outputs.image }}-${{ runner.arch }}-${{ hashFiles('pnpm-lock.yaml') }}
       - run: pnpm install --frozen-lockfile
+      # main only, after a good install: test.yml's test-shard says why (DOR-4537).
+      - name: Save the pnpm store for the queue and pull requests
+        if: ${{ github.ref == 'refs/heads/main' && steps.pnpm-store-restore.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ steps.pnpm-store.outputs.path }}
+          key: pnpm-store-${{ runner.os }}-${{ steps.pnpm-store.outputs.image }}-${{ runner.arch }}-${{ hashFiles('pnpm-lock.yaml') }}
       - name: Resolve the Playwright version
         id: pw
         run: echo "version=$(pnpm --filter @dorkos/e2e exec playwright --version | awk '{print $2}')" >> "$GITHUB_OUTPUT"
@@ -515,12 +524,20 @@ jobs:
         id: pnpm-store
         run: echo "image=${ImageOS:?ImageOS is not set on this runner}" >> "$GITHUB_OUTPUT" && echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
       - name: Restore the pnpm store built on this runner image
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        id: pnpm-store-restore
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ steps.pnpm-store.outputs.path }}
           key: pnpm-store-${{ runner.os }}-${{ steps.pnpm-store.outputs.image }}-${{ runner.arch }}-${{ hashFiles('pnpm-lock.yaml') }}
 
       - run: pnpm install --frozen-lockfile
+      # main only, after a good install: test.yml's test-shard says why (DOR-4537).
+      - name: Save the pnpm store for the queue and pull requests
+        if: ${{ github.ref == 'refs/heads/main' && steps.pnpm-store-restore.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ steps.pnpm-store.outputs.path }}
+          key: pnpm-store-${{ runner.os }}-${{ steps.pnpm-store.outputs.image }}-${{ runner.arch }}-${{ hashFiles('pnpm-lock.yaml') }}
 
       # `--with-deps` installs the OS libraries headless Chromium needs, which
       # ubuntu-latest does not ship in full. Without it the browser is present
@@ -894,11 +911,19 @@ jobs:
         id: pnpm-store
         run: echo "image=${ImageOS:?ImageOS is not set on this runner}" >> "$GITHUB_OUTPUT" && echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
       - name: Restore the pnpm store built on this runner image
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        id: pnpm-store-restore
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ steps.pnpm-store.outputs.path }}
           key: pnpm-store-${{ runner.os }}-${{ steps.pnpm-store.outputs.image }}-${{ runner.arch }}-${{ hashFiles('pnpm-lock.yaml') }}
       - run: pnpm install --frozen-lockfile
+      # main only, after a good install: test.yml's test-shard says why (DOR-4537).
+      - name: Save the pnpm store for the queue and pull requests
+        if: ${{ github.ref == 'refs/heads/main' && steps.pnpm-store-restore.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ steps.pnpm-store.outputs.path }}
+          key: pnpm-store-${{ runner.os }}-${{ steps.pnpm-store.outputs.image }}-${{ runner.arch }}-${{ hashFiles('pnpm-lock.yaml') }}
       - name: Resolve the Playwright version the cache is keyed on
         id: pw
         run: echo "version=$(pnpm --filter @dorkos/e2e exec playwright --version | awk '{print $2}')" >> "$GITHUB_OUTPUT"
@@ -1228,12 +1253,20 @@ jobs:
         id: pnpm-store
         run: echo "image=${ImageOS:?ImageOS is not set on this runner}" >> "$GITHUB_OUTPUT" && echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
       - name: Restore the pnpm store built on this runner image
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        id: pnpm-store-restore
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ steps.pnpm-store.outputs.path }}
           key: pnpm-store-${{ runner.os }}-${{ steps.pnpm-store.outputs.image }}-${{ runner.arch }}-${{ hashFiles('pnpm-lock.yaml') }}
 
       - run: pnpm install --frozen-lockfile
+      # main only, after a good install: test.yml's test-shard says why (DOR-4537).
+      - name: Save the pnpm store for the queue and pull requests
+        if: ${{ github.ref == 'refs/heads/main' && steps.pnpm-store-restore.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ steps.pnpm-store.outputs.path }}
+          key: pnpm-store-${{ runner.os }}-${{ steps.pnpm-store.outputs.image }}-${{ runner.arch }}-${{ hashFiles('pnpm-lock.yaml') }}
 
       # The base differs by event and neither payload carries the other's field,
       # so it is resolved here rather than guessed by the script: a pull request

@@ -371,7 +371,7 @@ export async function proveInstalledLocalBrowserUi(
         keyEffects,
       };
       await page.screenshot({ path: path.join(output, 'browser-key-focus.png') });
-      await ui.controls.getByRole('button', { name: 'Disconnect', exact: true }).click();
+      await ui.close();
       await expect(ui.controls.getByRole('status')).toHaveText('Disconnected');
       evidence.productionTools = {
         sameLivePage: true,

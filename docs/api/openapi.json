@@ -11299,6 +11299,9 @@
               "pending"
             ]
           },
+          "runPlace": {
+            "$ref": "#/components/schemas/TaskRunPlace"
+          },
           "runsAsName": {
             "type": [
               "string",
@@ -11504,6 +11507,86 @@
           "dontAsk",
           "bypassPermissions",
           "auto"
+        ]
+      },
+      "TaskRunPlace": {
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "agent"
+                ]
+              },
+              "path": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind",
+              "path"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "agent_checkout"
+                ]
+              },
+              "ready": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "kind",
+              "ready"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "folder"
+                ]
+              },
+              "path": {
+                "type": "string"
+              },
+              "of": {
+                "type": "string",
+                "enum": [
+                  "default",
+                  "server"
+                ]
+              }
+            },
+            "required": [
+              "kind",
+              "path",
+              "of"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "private"
+                ]
+              }
+            },
+            "required": [
+              "kind"
+            ]
+          }
         ]
       },
       "TaskStatus": {
