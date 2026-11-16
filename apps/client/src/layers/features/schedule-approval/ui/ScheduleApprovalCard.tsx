@@ -24,6 +24,7 @@ import {
 import { useNow, useSafeNavigate } from '@/layers/shared/model';
 import { Button } from '@/layers/shared/ui';
 import { ScheduleInstructions } from './ScheduleInstructions';
+import { ScheduleRunPlace } from './ScheduleRunPlace';
 import { ScheduleReviewCard } from './ScheduleReviewCard';
 import { useDeleteTask, useUpdateTask, ScheduleFileProblem } from '@/layers/entities/tasks';
 import { promptHash } from '../lib/prompt-hash';
@@ -565,6 +566,7 @@ function ScheduleApprovalContent({
             </p>
           )}
         </AskCard.Detail>
+        <ScheduleRunPlace place={task.runPlace} agentName={runsAs} />
 
         <ScheduleInstructions
           task={task}

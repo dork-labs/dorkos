@@ -104,6 +104,8 @@ function proposal(overrides: Partial<Task> = {}): Task {
     origin: null,
     reasonSource: null,
     nextRuns: weekdayRuns(3, 9, 'America/Chicago'),
+    runsAsName: 'DorkBot',
+    runPlace: { kind: 'agent', path: '/Users/dev/agents/dorkbot' },
     ...overrides,
   };
 }
@@ -206,6 +208,22 @@ export function ScheduleApprovalShowcases() {
                 applied: ['Bash(pnpm check:watchdog)'],
                 pending: [],
               },
+            })}
+          />
+        </div>
+      </ShowcaseDemo>
+      <ShowcaseLabel>No agent: each run gets a fresh private folder</ShowcaseLabel>
+      <ShowcaseDemo>
+        <div className="w-full max-w-lg" data-shot="run-place-private">
+          <ScheduleApprovalCard
+            approvalSurface="home"
+            task={proposal({
+              id: 'task-run-place-private',
+              agentId: null,
+              runsAsName: null,
+              displayName: 'Broken docs links',
+              reason: 'Find broken links in the docs every night.',
+              runPlace: { kind: 'private' },
             })}
           />
         </div>
