@@ -13,3 +13,5 @@
 export { InboxBell } from './ui/InboxBell';
 export { InboxBellPill } from './ui/InboxBellPill';
 export type { InboxBellPillProps, InboxBellGlyph } from './ui/InboxBellPill';
+export { ExtensionApprovalList } from './ui/ExtensionApprovalList';
+export type { ExtensionApprovalListProps } from './ui/ExtensionApprovalList';
