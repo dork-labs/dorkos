@@ -1,7 +1,33 @@
-# Changelog archive: v0.1.0 – v0.135.1
+# Changelog archive: v0.1.0 – v0.135.2
 
 Released versions aged out of the top-level [CHANGELOG.md](../../CHANGELOG.md).
 See [changelog/README.md](../README.md) for the fragment workflow.
+
+## [0.135.2] - 2026-11-09
+
+> DorkOS 0.135.2 holds a chat to the same limits as an agent that read outside words and then messaged it. It also shows Starting… or isn't working on an app's own page, and keeps Needs you loading when it finds a notice from a newer version.
+
+### Note for people upgrading
+
+- On Linux, Codex at Full access doesn't start if Claude Code has run on the same machine, and that includes the Docker image. Use Ask first or Workspace write there for now. We're fixing it (DOR-3965).
+
+### Security
+
+- **An agent that read words from outside your team passes that on when it messages another chat or starts one.** The chat it wakes is held the same way: it can add notes but not change them, and it can't ask you to take over your shared browser. The same goes for a room post from a Telegram or Slack chat, and for a spin-off's report back to the room it came from. (DOR-4029)
+
+DorkOS now counts a mini app's post in a room as words it can't vouch for. It doesn't yet count an email or web page read through a connected app, so these limits don't cover those cases.
+
+### Fixed
+
+- **An app's own page tells you what's happening.** While the app loads, the page says Starting…. If it never finishes, the page says the app isn't working, with Try again. Before, it could say the app didn't have that page. (DOR-4071)
+- Connecting Outlook through Composio will stop failing before its sign-in page opens once DorkOS Cloud updates. (DOR-4063)
+- Needs you still loads when it finds a notice from a newer version of DorkOS, for example after you go back to this version. (DOR-4021)
+
+### Going back
+
+0.135.2 doesn't change the database. To go back, install 0.135.1.
+
+If you go back to 0.135.0 after an agent approved another agent's request for Read, asking DorkOS for its list of access changes (`GET /api/connectors/access-changes`) returns an error there. No page in the app uses that list, so Needs you and the Connections page still load.
 
 ## [0.135.1] - 2026-11-09
 
@@ -8343,6 +8369,7 @@ save also made DorkOS reload that file. Now it writes only when something actual
 - Keyboard shortcuts for navigation
 - Directory picker for working directory selection
 
+[0.135.2]: https://github.com/dork-labs/dorkos/compare/v0.135.1...v0.135.2
 [0.135.1]: https://github.com/dork-labs/dorkos/compare/v0.135.0...v0.135.1
 [0.135.0]: https://github.com/dork-labs/dorkos/compare/v0.134.1...v0.135.0
 [0.134.1]: https://github.com/dork-labs/dorkos/compare/v0.134.0...v0.134.1
