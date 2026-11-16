@@ -3,7 +3,7 @@
 > ⚠️ **Schema superseded** — The `marketplace.json` schema shipped in
 > this spec was a draft that did not pass `claude plugin validate`. It
 > has been superseded by
-> [marketplace-05-claude-code-format-superset](../marketplace-05-claude-code-format-superset/02-specification.md),
+> [marketplace-05-claude-code-format-superset](https://github.com/dork-labs/dorkos/tree/885b00fa627fad4bcefa918a93105d427f1a0f7c/specs/marketplace-05-claude-code-format-superset),
 > which converts the format to a strict superset of the Claude Code
 > marketplace format. Spec 05 covers the new schema, the sidecar
 > strategy for DorkOS extensions (ADR-0236), the same-repo monorepo

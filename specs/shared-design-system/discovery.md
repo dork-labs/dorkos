@@ -42,7 +42,7 @@ These are title/state observations, not completed investigations of every issue 
 - `contributing/design-system.md`: canonical location and semantic token contract.
 - `contributing/styling-theming.md`: CSS imports, themes, new component procedure.
 - `contributing/INDEX.md`: package and catalog routing.
-- `specs/dev-playground-navigation-overhaul/`: historical context; preserve historical completed specs rather than rewriting their claims to the new design.
+- [`specs/dev-playground-navigation-overhaul/`](https://github.com/dork-labs/dorkos/tree/885b00fa627fad4bcefa918a93105d427f1a0f7c/specs/dev-playground-navigation-overhaul): historical context; preserve historical completed specs rather than rewriting their claims to the new design.
 - `specs/dev-playground-chat-simulator/`: feature-local simulator context.
 - Architecture docs and diagrams: show shared build-time UI dependencies separately from network protocols. No new server connection is introduced by component extraction.
 

@@ -61,7 +61,7 @@ status: ideation
 
 - `research/20260317_relay_adapter_event_whitelist.md`: Root cause analysis of event filtering. Confirms `approval_required` was silently dropped by the old blacklist approach. The whitelist fix (Phase 1 from the relay-adapter-event-whitelist spec) is a prerequisite.
 
-- `specs/relay-adapter-event-whitelist/02-specification.md`: Detailed Phase 1 fix for the whitelist model. Prerequisite for this feature.
+- [`specs/relay-adapter-event-whitelist/02-specification.md`](https://github.com/dork-labs/dorkos/tree/885b00fa627fad4bcefa918a93105d427f1a0f7c/specs/relay-adapter-event-whitelist): Detailed Phase 1 fix for the whitelist model. Prerequisite for this feature.
 
 ## 3) Codebase Map
 

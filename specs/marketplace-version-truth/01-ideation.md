@@ -20,7 +20,7 @@ project: Marketplace Package Management
 
 - **Task brief:** `dorkos update` (and the app's Update button, and the update route under both) can never tell that a marketplace package has a newer version. Every package reports "up to date" forever. Fix the cause, not the symptom: decide where a package's version is true, make the update check read it from there, and stop the version files inside a package from drifting apart. The operator asked for a proper fix with drift prevention and no bandaids.
 - **Assumptions:**
-  - DorkOS marketplaces are a superset of the Claude Code plugin marketplace format (ADR-0238, `specs/marketplace-05-claude-code-format-superset`). Where Claude Code has settled a rule, DorkOS follows it rather than inventing a second one.
+  - DorkOS marketplaces are a superset of the Claude Code plugin marketplace format (ADR-0238, [`specs/marketplace-05-claude-code-format-superset`](https://github.com/dork-labs/dorkos/tree/885b00fa627fad4bcefa918a93105d427f1a0f7c/specs/marketplace-05-claude-code-format-superset)). Where Claude Code has settled a rule, DorkOS follows it rather than inventing a second one.
   - The update check may use the network. It already fetches `marketplace.json` for every package it checks.
   - Every package install already records `commitSha` in `.dork/install-metadata.json` (DOR-147), and the package cache is keyed by `<name>@<sha>` (ADR-0232).
 - **Out of scope (split out at triage, each its own item):**

@@ -1,6 +1,6 @@
 # OpenCode adapter — task 3.2 findings (sidecar × per-session cwd, permissions, auth, port)
 
-Spec: `specs/additional-agent-runtimes/03-tasks.json` task 3.2. Consumed by tasks 3.3 (server-manager),
+Spec: [`specs/additional-agent-runtimes/03-tasks.json`](https://github.com/dork-labs/dorkos/tree/885b00fa627fad4bcefa918a93105d427f1a0f7c/specs/additional-agent-runtimes) task 3.2. Consumed by tasks 3.3 (server-manager),
 3.4 (event mapper), 3.5 (session mapper), 3.6 (permission forwarding).
 
 **Verification basis** (2026-07-02): the `opencode` binary is NOT installed on this machine, so no live

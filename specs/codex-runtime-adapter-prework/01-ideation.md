@@ -34,8 +34,8 @@ status: ideation
 - `AGENTS.md`: Confirms repo standards, spec placement, architecture expectations, and the existing `AgentRuntime` positioning.
 - `meta/dorkos-litepaper.md`: Product-level positioning already promises pluggable runtimes and explicitly names Codex as part of the runtime landscape.
 - `plans/archive/2026-03-06-claude-code-adapter-audit.md`: Historical audit of Claude-specific coupling. It correctly predicted that route routing, transcript storage, client assumptions, and relay internals would block true multi-runtime support.
-- `specs/agent-runtime-abstraction/02-specification.md`: Introduced `AgentRuntime` and `RuntimeRegistry`, but the current implementation still leaves default-runtime assumptions in production paths.
-- `specs/agent-runtime-review-remediation/02-specification.md`: Documents cleanup work after the abstraction refactor. Useful for understanding which seams were intentionally deferred.
+- [`specs/agent-runtime-abstraction/02-specification.md`](https://github.com/dork-labs/dorkos/tree/885b00fa627fad4bcefa918a93105d427f1a0f7c/specs/agent-runtime-abstraction): Introduced `AgentRuntime` and `RuntimeRegistry`, but the current implementation still leaves default-runtime assumptions in production paths.
+- [`specs/agent-runtime-review-remediation/02-specification.md`](https://github.com/dork-labs/dorkos/tree/885b00fa627fad4bcefa918a93105d427f1a0f7c/specs/agent-runtime-review-remediation): Documents cleanup work after the abstraction refactor. Useful for understanding which seams were intentionally deferred.
 - `specs/relay-runtime-adapters/01-ideation.md`: Shows the intended shape of runtime adapters in Relay and confirms Codex was explicitly deferred as future work.
 - `research/20260306_agent_runtime_interface_design_patterns.md`: Confirms the runtime abstraction direction is sound and that narrow shared ports are preferred over concrete runtime dependencies.
 - `research/20260405_ai_coding_agent_runtime_landscape.md`: Confirms Codex is a strong candidate runtime with a TypeScript SDK and structured streaming interface.

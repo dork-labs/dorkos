@@ -65,7 +65,7 @@ Telegram user sends message
 
 **Gap 1: Bug #70 (publish pipeline early return)**
 
-- Spec exists: `specs/relay-publish-pipeline-fix/`
+- Spec exists: [`specs/relay-publish-pipeline-fix/`](https://github.com/dork-labs/dorkos/tree/885b00fa627fad4bcefa918a93105d427f1a0f7c/specs/relay-publish-pipeline-fix)
 - When no Maildir endpoints match, `publish()` dead-letters immediately and skips adapter delivery
 - Fix: remove early return, always attempt adapter delivery, dead-letter only when nothing delivered
 
@@ -109,13 +109,13 @@ This keeps the routing logic inside TelegramAdapter (no new components), leverag
 
 ## Files Reference
 
-| File                                                 | Role                                                      |
-| ---------------------------------------------------- | --------------------------------------------------------- |
-| `packages/relay/src/adapters/telegram-adapter.ts`    | Telegram adapter (start, stop, deliver, echo guard)       |
-| `packages/relay/src/types.ts`                        | `RelayAdapter` interface with optional `testConnection()` |
-| `packages/relay/src/relay-core.ts`                   | Publish pipeline (Bug #70 lives here)                     |
-| `packages/relay/src/adapter-registry.ts`             | Routes messages to adapters by subject prefix             |
-| `packages/relay/src/adapters/claude-code-adapter.ts` | Handles `relay.agent.*` messages                          |
-| `apps/server/src/services/relay/adapter-manager.ts`  | Adapter lifecycle, testConnection, addAdapter             |
-| `specs/relay-publish-pipeline-fix/`                  | Spec #70 for the early-return bug                         |
-| `specs/relay-external-adapters/`                     | Original spec for Telegram/external adapters              |
+| File                                                                                                                                                      | Role                                                      |
+| --------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------- |
+| `packages/relay/src/adapters/telegram-adapter.ts`                                                                                                         | Telegram adapter (start, stop, deliver, echo guard)       |
+| `packages/relay/src/types.ts`                                                                                                                             | `RelayAdapter` interface with optional `testConnection()` |
+| `packages/relay/src/relay-core.ts`                                                                                                                        | Publish pipeline (Bug #70 lives here)                     |
+| `packages/relay/src/adapter-registry.ts`                                                                                                                  | Routes messages to adapters by subject prefix             |
+| `packages/relay/src/adapters/claude-code-adapter.ts`                                                                                                      | Handles `relay.agent.*` messages                          |
+| `apps/server/src/services/relay/adapter-manager.ts`                                                                                                       | Adapter lifecycle, testConnection, addAdapter             |
+| [`specs/relay-publish-pipeline-fix/`](https://github.com/dork-labs/dorkos/tree/885b00fa627fad4bcefa918a93105d427f1a0f7c/specs/relay-publish-pipeline-fix) | Spec #70 for the early-return bug                         |
+| `specs/relay-external-adapters/`                                                                                                                          | Original spec for Telegram/external adapters              |

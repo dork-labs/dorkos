@@ -319,7 +319,7 @@ None. All decisions resolved during ideation (see Section 6 of `01-ideation.md`)
 - `research/20260322_fix_chatsdk_thread_id_subject_validation.md` — Full research report with 4 approaches evaluated
 - `research/20260322_chat_sdk_telegram_relay_integration.md` — Chat SDK integration patterns
 - `research/20260321_relay_subject_folder_names.md` — Subject-as-filesystem-path constraints
-- `specs/chat-sdk-relay-adapter-refactor/02-specification.md` — Spec that created the Chat SDK adapter
-- `specs/adapter-binding-improvements/02-specification.md` — Instance-aware subjects and `parseSubject()`
+- [`specs/chat-sdk-relay-adapter-refactor/02-specification.md`](https://github.com/dork-labs/dorkos/tree/885b00fa627fad4bcefa918a93105d427f1a0f7c/specs/chat-sdk-relay-adapter-refactor) — Spec that created the Chat SDK adapter
+- [`specs/adapter-binding-improvements/02-specification.md`](https://github.com/dork-labs/dorkos/tree/885b00fa627fad4bcefa918a93105d427f1a0f7c/specs/adapter-binding-improvements) — Instance-aware subjects and `parseSubject()`
 - [NATS Subject-Based Messaging](https://docs.nats.io/nats-concepts/subjects) — Character constraints DorkOS follows
 - [Enterprise Integration Patterns: Messaging Bridge](https://www.enterpriseintegrationpatterns.com/patterns/messaging/MessagingBridge.html) — Bridges normalize IDs at boundaries

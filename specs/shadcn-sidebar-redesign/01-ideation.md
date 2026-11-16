@@ -46,7 +46,7 @@ status: ideation
 - `apps/client/src/layers/entities/mesh/index.ts`: Exports `useRegisteredAgents`, `useMeshStatus` — needed for Mesh status chip.
 - `contributing/design-system.md`: Sidebar width documented as 256px, but current implementation uses 320px (`w-80`). Motion timing: 200ms ease-out for enter/exit.
 - `research/20260303_shadcn_sidebar_redesign.md`: Full research report covering Shadcn Sidebar API, Zustand integration, mobile Sheet behavior, Tailwind v4 compatibility, CSS variable requirements, and dialog lifting patterns.
-- `specs/agent-centric-ux/01-ideation.md`: Parent spec (85) that established the agent-centric UX vision, command palette, and initial sidebar redesign direction. This spec (#86) focuses specifically on the Shadcn Sidebar migration and agent context chips.
+- [`specs/agent-centric-ux/01-ideation.md`](https://github.com/dork-labs/dorkos/tree/885b00fa627fad4bcefa918a93105d427f1a0f7c/specs/agent-centric-ux): Parent spec (85) that established the agent-centric UX vision, command palette, and initial sidebar redesign direction. This spec (#86) focuses specifically on the Shadcn Sidebar migration and agent context chips.
 - `meta/personas/the-autonomous-builder.md`: Kai — runs 10+ agents across 5 projects, needs quick agent switching and at-a-glance status. "I don't need another chatbot wrapper. I need my agents to work while I sleep and tell me what they did."
 - `meta/archive/personas/the-knowledge-architect.md`: Priya — values clean architecture and seamless cross-client sessions. "It just... stays out of the way."
 

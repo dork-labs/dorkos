@@ -607,7 +607,7 @@ Remove the Agents tab from MeshPanel:
 - `research/20260320_agents_page_ux_patterns.md` — UX pattern research (dense list, filter bar, session launch)
 - `research/20260226_agents_first_class_entity.md` — Agent elevation research
 - `research/20260225_mesh_panel_ux_overhaul.md` — Mesh panel UX research
-- `specs/dynamic-sidebar-content/02-specification.md` — Prerequisite: route-aware sidebar/header slots
+- [`specs/dynamic-sidebar-content/02-specification.md`](https://github.com/dork-labs/dorkos/tree/885b00fa627fad4bcefa918a93105d427f1a0f7c/specs/dynamic-sidebar-content) — Prerequisite: route-aware sidebar/header slots
 - `specs/dashboard-content/02-specification.md` — Companion: dashboard overview with Mesh status card linking to `/agents`
 - `contributing/architecture.md` — Hexagonal Transport architecture
 - `contributing/project-structure.md` — FSD layer organization

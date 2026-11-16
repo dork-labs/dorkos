@@ -55,7 +55,7 @@ This report synthesizes findings from two prior deep-research files and seven ta
 - Initial `UiCommand` type proposed: navigate, open/close panel, switch sidebar tab, open command palette, scroll to message
 - Confirmed: no confirmation needed for UI actions
 
-### From `specs/ext-platform-01-agent-ui-control/00-brief.md`
+### From [`specs/ext-platform-01-agent-ui-control/00-brief.md`](https://github.com/dork-labs/dorkos/tree/885b00fa627fad4bcefa918a93105d427f1a0f7c/specs/ext-platform-01-agent-ui-control)
 
 - Settled decisions: hybrid approach, no route navigation in v1, no confirmation, canvas starts closed, dispatcher is a plain function
 - Open questions numbered 1–7 (this report addresses all seven)
@@ -520,7 +520,7 @@ The `deps` object already carries router and store references (based on `stream-
 - `research/20260323_ai_agent_host_ui_control_patterns.md` — Cursor, Copilot, Bolt, CopilotKit, AG-UI, A2UI, Vercel AI SDK (16 searches, 32 sources)
 - `research/20260323_plugin_extension_ui_architecture_patterns.md` — VSCode, Obsidian, Grafana, Backstage (14 searches, 38 sources)
 - `specs/agent-ui-control-ideation.md` — DorkOS-specific ideation (2026-03-24)
-- `specs/ext-platform-01-agent-ui-control/00-brief.md` — Feature brief with settled decisions and open questions
+- [`specs/ext-platform-01-agent-ui-control/00-brief.md`](https://github.com/dork-labs/dorkos/tree/885b00fa627fad4bcefa918a93105d427f1a0f7c/specs/ext-platform-01-agent-ui-control) — Feature brief with settled decisions and open questions
 
 ### From New Searches
 

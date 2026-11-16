@@ -136,6 +136,6 @@ ADR-0185 (two-layer DorkOS knowledge), ADR-0273 (runtime-neutral context injecti
 
 - `research/20260722_agents-as-first-class-operators.md` (ideation of record; full audit + external sources)
 - `specs/eval-harness/02-specification.md` (DOR-357)
-- `specs/marketplace-05-agent-installer/02-specification.md`
+- [`specs/marketplace-05-agent-installer/02-specification.md`](https://github.com/dork-labs/dorkos/tree/885b00fa627fad4bcefa918a93105d427f1a0f7c/specs/marketplace-05-agent-installer)
 - `contributing/configuration.md`, `contributing/adding-a-runtime.md`
 - REVIEW.md (reviewer rubric for all PRs in this program)

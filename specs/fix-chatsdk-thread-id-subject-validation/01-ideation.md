@@ -42,8 +42,8 @@ status: ideation
 - `research/20260322_chat_sdk_telegram_relay_integration.md`: Documents Chat SDK thread ID format and `postMessage` API contract.
 - `research/20260321_relay_subject_folder_names.md`: Subjects used as filesystem directory names. Colons forbidden on Windows, discouraged on macOS HFS+.
 - `research/20260322_fix_chatsdk_thread_id_subject_validation.md`: Full research report evaluating 4 approaches.
-- `specs/adapter-binding-improvements/02-specification.md`: Recently implemented spec that added instance-aware subjects and `parseSubject()`.
-- `specs/chat-sdk-relay-adapter-refactor/02-specification.md`: Spec that created the Chat SDK adapter — the original source of this bug.
+- [`specs/adapter-binding-improvements/02-specification.md`](https://github.com/dork-labs/dorkos/tree/885b00fa627fad4bcefa918a93105d427f1a0f7c/specs/adapter-binding-improvements): Recently implemented spec that added instance-aware subjects and `parseSubject()`.
+- [`specs/chat-sdk-relay-adapter-refactor/02-specification.md`](https://github.com/dork-labs/dorkos/tree/885b00fa627fad4bcefa918a93105d427f1a0f7c/specs/chat-sdk-relay-adapter-refactor): Spec that created the Chat SDK adapter — the original source of this bug.
 
 ## 3) Codebase Map
 

@@ -26,7 +26,7 @@ tags: [marketplace, install, cli, transactions, rollback]
 This is the SECOND of 5 sequential specs implementing the DorkOS Marketplace. Read the parent ideation first for full vision and context:
 
 - **Parent ideation:** [`specs/dorkos-marketplace/01-ideation.md`](../dorkos-marketplace/01-ideation.md)
-- **Foundation spec (must ship first):** [`specs/marketplace-01-foundation/02-specification.md`](../marketplace-01-foundation/02-specification.md)
+- **Foundation spec (must ship first):** [`specs/marketplace-01-foundation/02-specification.md`](https://github.com/dork-labs/dorkos/tree/885b00fa627fad4bcefa918a93105d427f1a0f7c/specs/marketplace-01-foundation)
 - **Source brief:** [`research/20260331_marketplace_project_brief.md`](../../research/20260331_marketplace_project_brief.md)
 
 ---

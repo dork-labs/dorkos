@@ -410,7 +410,7 @@ Each contract is stated so a test can fail. Fixture names refer to the four jour
   automated-session activity and update-ready notices are excluded by construction — the model
   has no branch that can put them there. (§18, §7)
 
-  > Amended 2026-08-20 (DOR-1391, `specs/notification-system`). The fourth member was
+  > Amended 2026-08-20 (DOR-1391, [`specs/notification-system`](https://github.com/dork-labs/dorkos/tree/885b00fa627fad4bcefa918a93105d427f1a0f7c/specs/notification-system)). The fourth member was
   > `idle-timeout` nudges and is now `schedule-approval`. **Idle nudges are retired outright:**
   > "this session went quiet" is a heuristic about somebody's afternoon rather than something
   > waiting on an answer, and a zone that asks for attention on a guess is a zone people learn
@@ -449,7 +449,7 @@ Each contract is stated so a test can fail. Fixture names refer to the four jour
   > "Blocking states go to Heads up like the rest."
 
 - **BC-10 — ~~Idle nudges are dismissible, permanently for that episode.~~ RETIRED
-  2026-08-20** (DOR-1391, `specs/notification-system`). The contract described the dismissal
+  2026-08-20** (DOR-1391, [`specs/notification-system`](https://github.com/dork-labs/dorkos/tree/885b00fa627fad4bcefa918a93105d427f1a0f7c/specs/notification-system)). The contract described the dismissal
   store behind the one waveable-away row in Heads up; the row itself is gone (see BC-5's
   amendment), so nothing in the zone can be dismissed at all and the store, its helper and the
   row menu that ran it were deleted with it. **BC-42 now holds without an exception.** What the

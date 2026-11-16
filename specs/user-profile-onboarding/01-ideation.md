@@ -1,6 +1,6 @@
 # User Profile + Onboarding — Ideation
 
-**Id:** 260729-084310 · **Created:** 2026-07-29 · **Origin:** founder direction (DorkOS should learn who the user is) · **Builds on:** `specs/dorkbot-is-the-onboarding/` (ADR 260722-111314), coordinates with `specs/connector-completion/` (Connections page, specced separately)
+**Id:** 260729-084310 · **Created:** 2026-07-29 · **Origin:** founder direction (DorkOS should learn who the user is) · **Builds on:** [`specs/dorkbot-is-the-onboarding/`](https://github.com/dork-labs/dorkos/tree/885b00fa627fad4bcefa918a93105d427f1a0f7c/specs/dorkbot-is-the-onboarding) (ADR 260722-111314), coordinates with `specs/connector-completion/` (Connections page, specced separately)
 
 ## The problem
 

@@ -17,7 +17,7 @@
 
 ### Product blockers (`09` §2.1)
 
-- [x] 2026-07-10 **(GATE)** DOR-189: Codex/OpenCode transcripts survive server restart — Jul 12 · shipped in PR #202 (durable SQLite session-event store; spec `specs/durable-event-log/`, ADR 260710-024641); acceptance verified: turn → process kill → fresh boot → identical transcript; cross-process durability now protected in CI
+- [x] 2026-07-10 **(GATE)** DOR-189: Codex/OpenCode transcripts survive server restart — Jul 12 · shipped in PR #202 (durable SQLite session-event store; spec [`specs/durable-event-log/`](https://github.com/dork-labs/dorkos/tree/885b00fa627fad4bcefa918a93105d427f1a0f7c/specs/durable-event-log), ADR 260710-024641); acceptance verified: turn → process kill → fresh boot → identical transcript; cross-process durability now protected in CI
 - [x] 2026-07-10 DOR-188: Codex disk leak: upstream 0.143.0 adopted, or Codex gated behind a documented flag — decision by Aug 1 · **upstream adopted**: @openai/codex-sdk 0.144.1 (leak fix = openai/codex PR #29599 in 0.143.0), PR #212; SDK JS byte-identical, conformance green
 - [x] 2026-07-10 DOR-190 + clean-machine install verified (curl + npx, macOS VM + Linux, Node 22/24) — Jul 19 · DOR-190 fixed in PR #209 (root package rename ended a dual-build race over packages/cli/dist; client/server declared as CLI dev-deps; clean dist-free tree builds green). npx verified in clean Linux containers (DOR-234); macOS-VM curl pass still open if wanted — containers + this Mac cover the practical matrix
 

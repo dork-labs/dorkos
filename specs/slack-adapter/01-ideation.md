@@ -49,7 +49,7 @@ status: ideation
 - `apps/server/src/services/relay/adapter-manager.ts`: Lifecycle orchestration, manifest registration, hot-reload via chokidar.
 - `research/20260227_slack_vs_telegram_relay_adapter.md`: Prior Slack research — SDK comparison, scopes, DM handling, rate limits.
 - `research/20260313_slack_bot_adapter_best_practices.md`: Fresh research — native streaming API, threading, Socket Mode confirmation, `slackify-markdown`.
-- `specs/relay-adapter-dx/`: Recently completed DX improvements — `BaseRelayAdapter`, API versioning, plugin loader fixes.
+- [`specs/relay-adapter-dx/`](https://github.com/dork-labs/dorkos/tree/885b00fa627fad4bcefa918a93105d427f1a0f7c/specs/relay-adapter-dx): Recently completed DX improvements — `BaseRelayAdapter`, API versioning, plugin loader fixes.
 - `packages/relay/src/adapters/telegram/__tests__/telegram-adapter.test.ts`: Test patterns — mock grammy, mock relay publisher, test idempotency/error handling/stream buffering.
 
 ## 3) Codebase Map

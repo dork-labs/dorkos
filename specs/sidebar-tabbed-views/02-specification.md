@@ -615,10 +615,10 @@ _No open questions — all decisions resolved during ideation._
 ## References
 
 - Ideation: `specs/sidebar-tabbed-views/01-ideation.md`
-- Parent spec: `specs/agent-centric-ux/02-specification.md`
+- Parent spec: [`specs/agent-centric-ux/02-specification.md`](https://github.com/dork-labs/dorkos/tree/885b00fa627fad4bcefa918a93105d427f1a0f7c/specs/agent-centric-ux)
 - Shadcn Sidebar spec: `specs/shadcn-sidebar-redesign/02-specification.md`
-- Pulse UI spec: `specs/pulse-ui-overhaul/02-specification.md`
-- Adapter catalog spec: `specs/adapter-catalog-management/02-specification.md`
+- Pulse UI spec: [`specs/pulse-ui-overhaul/02-specification.md`](https://github.com/dork-labs/dorkos/tree/885b00fa627fad4bcefa918a93105d427f1a0f7c/specs/pulse-ui-overhaul)
+- Adapter catalog spec: [`specs/adapter-catalog-management/02-specification.md`](https://github.com/dork-labs/dorkos/tree/885b00fa627fad4bcefa918a93105d427f1a0f7c/specs/adapter-catalog-management)
 - Mesh panel spec: `specs/mesh-panel-ux-overhaul/02-specification.md`
 - Research: `research/20260310_sidebar_tabbed_views_ux.md`
 - Design system: `contributing/design-system.md`

@@ -106,7 +106,7 @@ Telegram: no mention-parsing/stripping/translation code exists anywhere in `tele
 
 ## 3. Identity and multi-sender context
 
-**Sender name is captured at inbound on both platforms**, matching `specs/channel-sender-identity` (manifest marks it `"status": "implemented"` — verified against code, not trusted from the spec text):
+**Sender name is captured at inbound on both platforms**, matching [`specs/channel-sender-identity`](https://github.com/dork-labs/dorkos/tree/885b00fa627fad4bcefa918a93105d427f1a0f7c/specs/channel-sender-identity) (manifest marks it `"status": "implemented"` — verified against code, not trusted from the spec text):
 
 - Slack, `inbound.ts:590-598`:
   ```ts

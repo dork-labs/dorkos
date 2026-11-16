@@ -62,7 +62,7 @@ All dependencies are already in the project. No new packages required.
 
 ### Prerequisite: Bug #70 Fix
 
-The relay publish pipeline fix (`specs/relay-publish-pipeline-fix/`) must be verified as complete before BindingRouter can function. The fix removes the early-return at `relay-core.ts:308-315` that skips adapter delivery when no Maildir endpoints match. Status: in-progress. This spec includes verification as Phase 1.
+The relay publish pipeline fix ([`specs/relay-publish-pipeline-fix/`](https://github.com/dork-labs/dorkos/tree/885b00fa627fad4bcefa918a93105d427f1a0f7c/specs/relay-publish-pipeline-fix)) must be verified as complete before BindingRouter can function. The fix removes the early-return at `relay-core.ts:308-315` that skips adapter delivery when no Maildir endpoints match. Status: in-progress. This spec includes verification as Phase 1.
 
 ## 6. Detailed Design
 
@@ -310,7 +310,7 @@ export class BindingRouter {
 
 ### 6.5 Bug #70 Fix Verification
 
-The publish pipeline fix (`specs/relay-publish-pipeline-fix/`) ensures adapter delivery is reachable even when no Maildir endpoints match. At `relay-core.ts:308-315`, the early return must be removed so that the adapter delivery path (lines 317+) is always reached.
+The publish pipeline fix ([`specs/relay-publish-pipeline-fix/`](https://github.com/dork-labs/dorkos/tree/885b00fa627fad4bcefa918a93105d427f1a0f7c/specs/relay-publish-pipeline-fix)) ensures adapter delivery is reachable even when no Maildir endpoints match. At `relay-core.ts:308-315`, the early return must be removed so that the adapter delivery path (lines 317+) is always reached.
 
 Phase 1 of this spec verifies this fix is in place. If not yet merged, the fix must be applied before BindingRouter integration.
 
@@ -720,7 +720,7 @@ Agents can manage bindings via MCP tools:
 - [React Flow v12 Documentation](https://reactflow.dev/api-reference)
 - [React Flow Custom Nodes](https://reactflow.dev/learn/customization/custom-nodes)
 - [React Flow Custom Edges](https://reactflow.dev/learn/customization/custom-edges)
-- `specs/relay-publish-pipeline-fix/02-specification.md` — Bug #70 fix (prerequisite)
-- `specs/adapter-catalog-management/02-specification.md` — Adapter catalog system
+- [`specs/relay-publish-pipeline-fix/02-specification.md`](https://github.com/dork-labs/dorkos/tree/885b00fa627fad4bcefa918a93105d427f1a0f7c/specs/relay-publish-pipeline-fix) — Bug #70 fix (prerequisite)
+- [`specs/adapter-catalog-management/02-specification.md`](https://github.com/dork-labs/dorkos/tree/885b00fa627fad4bcefa918a93105d427f1a0f7c/specs/adapter-catalog-management) — Adapter catalog system
 - `specs/mesh-network-topology/02-specification.md` — TopologyGraph foundation
-- `specs/agents-first-class-entity/02-specification.md` — Agent identity system
+- [`specs/agents-first-class-entity/02-specification.md`](https://github.com/dork-labs/dorkos/tree/885b00fa627fad4bcefa918a93105d427f1a0f7c/specs/agents-first-class-entity) — Agent identity system

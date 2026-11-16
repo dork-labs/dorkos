@@ -31,8 +31,8 @@ linearIssue: DOR-338
 ## 2) Pre-reading Log
 
 - `research/20260716_cross_app_sidebar_organization_patterns.md` §4: Telegram — live membership = include minus exclude, re-evaluated continuously; multi-presence is structural; folders auto-surface on a data threshold. §9/takeaway 9: agents have rich metadata (runtime, project, status, last-active) so rule-based groups need zero maintenance.
-- `specs/agent-sidebar-organization/02-specification.md`: `SidebarGroupSchema { id, name, agentPaths, sortMode, collapsed }` at `packages/shared/src/config-schema.ts:75`; the spec's Non-Goals name smart groups as "strongest v2 candidate; the schema deliberately leaves room (a future `kind` discriminator)". ADR 260717-001409 (sidebar state in user config) applies unchanged.
-- `specs/agent-list-settings/01-ideation.md` (sibling, this drain): defines the `AttentionState` derivation module in `entities` — the substrate for `status`-shaped predicates here.
+- [`specs/agent-sidebar-organization/02-specification.md`](https://github.com/dork-labs/dorkos/tree/885b00fa627fad4bcefa918a93105d427f1a0f7c/specs/agent-sidebar-organization): `SidebarGroupSchema { id, name, agentPaths, sortMode, collapsed }` at `packages/shared/src/config-schema.ts:75`; the spec's Non-Goals name smart groups as "strongest v2 candidate; the schema deliberately leaves room (a future `kind` discriminator)". ADR 260717-001409 (sidebar state in user config) applies unchanged.
+- [`specs/agent-list-settings/01-ideation.md`](https://github.com/dork-labs/dorkos/tree/885b00fa627fad4bcefa918a93105d427f1a0f7c/specs/agent-list-settings) (sibling, this drain): defines the `AttentionState` derivation module in `entities` — the substrate for `status`-shaped predicates here.
 - `apps/client/src/layers/features/dashboard-sidebar/model/sort-agents.ts`: ordering already flows through pure model functions — rule evaluation should be a sibling pure module.
 
 ## 3) Codebase Map

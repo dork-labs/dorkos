@@ -46,8 +46,8 @@ status: ideation
 - `apps/client/src/layers/features/relay/ui/AdapterCard.tsx`: Status display with enable/disable, configure, remove actions
 - `packages/shared/src/relay-schemas.ts`: AdapterManifestSchema with `multiInstance: boolean`, ConfigFieldSchema for form generation
 - `packages/shared/src/mesh-schemas.ts`: AgentManifestSchema with persona, color, icon fields
-- `specs/adapter-catalog-management/02-specification.md`: Adapter metadata and UI management (draft)
-- `specs/agents-first-class-entity/02-specification.md`: Agents elevated to first-class entities (specified)
+- [`specs/adapter-catalog-management/02-specification.md`](https://github.com/dork-labs/dorkos/tree/885b00fa627fad4bcefa918a93105d427f1a0f7c/specs/adapter-catalog-management): Adapter metadata and UI management (draft)
+- [`specs/agents-first-class-entity/02-specification.md`](https://github.com/dork-labs/dorkos/tree/885b00fa627fad4bcefa918a93105d427f1a0f7c/specs/agents-first-class-entity): Agents elevated to first-class entities (specified)
 - `contributing/architecture.md`: Hexagonal architecture, Transport interface, dependency injection patterns
 - `research/20260228_adapter_agent_routing.md`: Full research findings — OpenClaw reference architecture, React Flow patterns, security model, phased implementation plan
 
