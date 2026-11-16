@@ -236,7 +236,7 @@ describe('the agent’s own ⌘R through its page transport', () => {
       personFocused: () => true,
       send,
     });
-    const transport = pageTransport(contents as unknown as WebContents, undefined, gate);
+    const transport = pageTransport(contents as unknown as WebContents, gate);
     transport.onmessage = vi.fn();
     transport.send({
       id: 1,
@@ -268,7 +268,7 @@ describe('the agent’s own ⌘R through its page transport', () => {
       }),
     });
     Object.assign(contents, { debugger: debuggerApi });
-    const transport = pageTransport(contents as unknown as WebContents, undefined, gate);
+    const transport = pageTransport(contents as unknown as WebContents, gate);
     transport.onmessage = vi.fn();
     transport.send({ id: 1, method: 'Page.navigate', params: {}, sessionId: 'dorkos-page-8' });
     await new Promise<void>((resolve) => setImmediate(resolve));
@@ -278,5 +278,15 @@ describe('the agent’s own ⌘R through its page transport', () => {
     await new Promise<void>((resolve) => setImmediate(resolve));
     await new Promise<void>((resolve) => setImmediate(resolve));
     expect(seen).toBe(true);
+  });
+
+  it('a transport cannot be made without the gate', () => {
+    // Checked by the desktop typecheck, which includes this file: if the gate ever
+    // turns optional again, this expected error goes unused and the typecheck fails.
+    // The function is never called, so nothing attaches here.
+    const withoutGate = (contents: WebContents) =>
+      // @ts-expect-error -- the input gate is required
+      pageTransport(contents);
+    expect(withoutGate).toBeTypeOf('function');
   });
 });

@@ -361,7 +361,7 @@ export async function startLocalBrowserBridge(
       clearTimeout(guest.attachTimer);
       guest.socket = ws;
       try {
-        guest.transport = pageTransport(guest.view.webContents, identity, guest.inputGate);
+        guest.transport = pageTransport(guest.view.webContents, guest.inputGate, identity);
       } catch {
         ws.close(1011);
         guest.socket = undefined;
