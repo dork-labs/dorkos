@@ -1,3 +1,4 @@
+import { spawnSync } from 'node:child_process';
 import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -50,6 +51,66 @@ function runDown(): void {
 }
 
 describe('seat delivery route migration', () => {
+  it.skipIf(process.platform !== 'darwin')(
+    'restores the down migration with the native macOS sqlite3 shell',
+    () => {
+      db.$client.exec(insert);
+      db.$client.exec(
+        "INSERT INTO chat_messages SELECT 'seat',to_session_id,from_session_id,from_agent_path,from_agent_id,from_agent_name,from_chat_title,kind,text,summary,'seat-nonce',delivery,'working',failure_reason,queue_message_id,ceiling_json,'seat','room','author','2026-11-15','original-seat',reply_to_id,created_at,updated_at FROM chat_messages WHERE id='ordinary'"
+      );
+      const ordinary = db.$client
+        .prepare("SELECT * FROM chat_messages WHERE id='ordinary'")
+        .get() as Record<string, unknown>;
+      const directory = mkdtempSync(join(tmpdir(), 'seat-chat-native-down-'));
+      directories.push(directory);
+      const database = join(directory, 'fabricated.sqlite');
+      writeFileSync(database, db.$client.serialize());
+      const down = readFileSync(
+        new URL('../down/20261116110632_seat_chat_delivery_route.down.sql', import.meta.url),
+        'utf8'
+      );
+      const result = spawnSync('/usr/bin/sqlite3', [database], {
+        input: down,
+        encoding: 'utf8',
+        timeout: 10_000,
+      });
+      expect(result.error).toBeUndefined();
+      expect(result.status, result.stderr).toBe(0);
+      const restored = createDb(database);
+      try {
+        const columns = (
+          restored.$client.prepare("PRAGMA table_info('chat_messages')").all() as { name: string }[]
+        ).map((column) => column.name);
+        expect(columns).not.toContain('delivery_route');
+        expect(
+          restored.$client.prepare("SELECT * FROM chat_messages WHERE id='ordinary'").get()
+        ).toEqual(
+          Object.fromEntries(Object.entries(ordinary).filter(([key]) => columns.includes(key)))
+        );
+        expect(
+          restored.$client
+            .prepare("SELECT status,failure_reason FROM chat_messages WHERE id='seat'")
+            .get()
+        ).toEqual({
+          status: 'failed',
+          failure_reason: 'Private seat delivery interrupted by downgrade.',
+        });
+        expect(
+          restored.$client
+            .prepare('SELECT count(*) AS n FROM __drizzle_migrations WHERE created_at=?')
+            .get(WHEN)
+        ).toEqual({ n: 0 });
+        expect(restored.$client.prepare('PRAGMA integrity_check').get()).toEqual({
+          integrity_check: 'ok',
+        });
+        expect(() =>
+          restored.$client.exec("UPDATE chat_messages SET kind='invalid' WHERE id='ordinary'")
+        ).toThrow();
+      } finally {
+        restored.$client.close();
+      }
+    }
+  );
   it('defaults legacy-shaped inserts to the unchanged ordinary route', () => {
     runDown();
     db.$client.exec(insert);

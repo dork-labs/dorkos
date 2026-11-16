@@ -25,7 +25,7 @@ CREATE TABLE `__new_chat_messages` (
 	`reply_to_id` text,
 	`created_at` text NOT NULL,
 	`updated_at` text NOT NULL,
-	CONSTRAINT "chat_messages_kind" CHECK("__new_chat_messages"."kind" IN ('message', 'report', 'start', 'stop'))
+	CONSTRAINT "chat_messages_kind" CHECK("kind" IN ('message', 'report', 'start', 'stop'))
 );
 INSERT INTO __new_chat_messages("id", "to_session_id", "from_session_id", "from_agent_path", "from_agent_id", "from_agent_name", "from_chat_title", "kind", "text", "summary", "nonce", "delivery", "status", "failure_reason", "queue_message_id", "ceiling_json", "reply_to_id", "created_at", "updated_at") SELECT "id", "to_session_id", "from_session_id", "from_agent_path", "from_agent_id", "from_agent_name", "from_chat_title", "kind", "text", "summary", "nonce", "delivery", "status", "failure_reason", "queue_message_id", "ceiling_json", "reply_to_id", "created_at", "updated_at" FROM chat_messages;
 DROP TABLE chat_messages;
