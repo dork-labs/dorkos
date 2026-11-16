@@ -26,7 +26,7 @@ export interface LocalBrowserTransport {
    * Open an address.
    *
    * @param url - The address to open.
-   * @param options - Whether a bare host may ask the server for one safe HTTP fallback.
+   * @param options - Whether a bare host may ask the server for one HTTP fallback.
    */
   navigateLocalBrowser(
     url: string,

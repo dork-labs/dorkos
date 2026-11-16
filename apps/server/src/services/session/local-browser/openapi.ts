@@ -206,7 +206,7 @@ export function registerLocalBrowserOpenApi(registry: OpenAPIRegistry): void {
                 httpFallback: z
                   .boolean()
                   .optional()
-                  .describe('Ask for the one safe HTTP fallback for a bare host.'),
+                  .describe('Ask for one HTTP fallback for a bare host.'),
               })
               .strict(),
           },

@@ -17,7 +17,8 @@ import {
   httpFallbackAllowed,
   navigationRefusal,
 } from '../errors.js';
-import { setOpenedOverHttp } from './opened-over-http.js';
+import { isLocalBrowserAppUrl } from '../app-origins.js';
+import { markOpenedOverHttp } from './opened-over-http.js';
 import {
   cdpPageHistory,
   embeddedPageHistory,
@@ -58,12 +59,13 @@ export class PersonPageMoves {
    * @param options - Whether a bare host the person typed may try HTTP once.
    */
   async open(page: Page, url: string, options: { httpFallback?: boolean } = {}): Promise<void> {
-    setOpenedOverHttp(page, await this.load(page, url, options.httpFallback === true));
+    if (await this.load(page, url, options.httpFallback === true)) markOpenedOverHttp(page);
   }
 
   /**
    * Load the address, and for a bare host the person typed, try `http://` once
-   * when Security's rules allow it (DOR-4450). Answers whether that fallback opened it.
+   * when Security's rules allow it (DOR-4450). Never onto this DorkOS app's own
+   * address. Answers whether that fallback opened it.
    */
   private async load(page: Page, url: string, httpFallback: boolean): Promise<boolean> {
     try {
@@ -71,12 +73,19 @@ export class PersonPageMoves {
       return false;
     } catch (error) {
       if (!httpFallback || !httpFallbackAllowed(error, url)) throw navigationRefusal(error);
+      const fallback = new URL(url);
+      fallback.protocol = 'http:';
+      if (isLocalBrowserAppUrl(fallback.href, this.host.appOrigins()))
+        throw navigationRefusal(error);
+      return this.loadFallback(page, fallback.href);
     }
-    const fallback = new URL(url);
-    fallback.protocol = 'http:';
-    assertLocalBrowserUrl(fallback.href, 'person');
+  }
+
+  /** The one `http://` try, refused as its own failure when it fails too. */
+  private async loadFallback(page: Page, url: string): Promise<true> {
+    assertLocalBrowserUrl(url, 'person');
     try {
-      await page.goto(fallback.href, { waitUntil: 'commit', timeout: 15_000 });
+      await page.goto(url, { waitUntil: 'commit', timeout: 15_000 });
       return true;
     } catch (error) {
       throw navigationRefusal(error);

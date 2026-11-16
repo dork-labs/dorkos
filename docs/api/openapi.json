@@ -32185,6 +32185,9 @@
                           "title": {
                             "type": "string"
                           },
+                          "openedOverHttp": {
+                            "type": "boolean"
+                          },
                           "canGoBack": {
                             "type": "boolean"
                           },
@@ -32546,6 +32549,9 @@
                           "title": {
                             "type": "string"
                           },
+                          "openedOverHttp": {
+                            "type": "boolean"
+                          },
                           "canGoBack": {
                             "type": "boolean"
                           },
@@ -32903,6 +32909,9 @@
                           "title": {
                             "type": "string"
                           },
+                          "openedOverHttp": {
+                            "type": "boolean"
+                          },
                           "canGoBack": {
                             "type": "boolean"
                           },
@@ -33032,7 +33041,7 @@
                   },
                   "httpFallback": {
                     "type": "boolean",
-                    "description": "Ask for the one safe HTTP fallback for a bare host."
+                    "description": "Ask for one HTTP fallback for a bare host."
                   }
                 },
                 "required": [
@@ -33139,6 +33148,9 @@
                           },
                           "title": {
                             "type": "string"
+                          },
+                          "openedOverHttp": {
+                            "type": "boolean"
                           },
                           "canGoBack": {
                             "type": "boolean"
@@ -33398,6 +33410,9 @@
                           "title": {
                             "type": "string"
                           },
+                          "openedOverHttp": {
+                            "type": "boolean"
+                          },
                           "canGoBack": {
                             "type": "boolean"
                           },
@@ -33633,6 +33648,9 @@
                           "title": {
                             "type": "string"
                           },
+                          "openedOverHttp": {
+                            "type": "boolean"
+                          },
                           "canGoBack": {
                             "type": "boolean"
                           },
@@ -33845,6 +33863,9 @@
                           },
                           "title": {
                             "type": "string"
+                          },
+                          "openedOverHttp": {
+                            "type": "boolean"
                           },
                           "canGoBack": {
                             "type": "boolean"
@@ -34599,6 +34620,9 @@
                           "title": {
                             "type": "string"
                           },
+                          "openedOverHttp": {
+                            "type": "boolean"
+                          },
                           "canGoBack": {
                             "type": "boolean"
                           },
@@ -34964,6 +34988,9 @@
                           },
                           "title": {
                             "type": "string"
+                          },
+                          "openedOverHttp": {
+                            "type": "boolean"
                           },
                           "canGoBack": {
                             "type": "boolean"
@@ -35332,6 +35359,9 @@
                           "title": {
                             "type": "string"
                           },
+                          "openedOverHttp": {
+                            "type": "boolean"
+                          },
                           "canGoBack": {
                             "type": "boolean"
                           },
@@ -35698,6 +35728,9 @@
                           },
                           "title": {
                             "type": "string"
+                          },
+                          "openedOverHttp": {
+                            "type": "boolean"
                           },
                           "canGoBack": {
                             "type": "boolean"

@@ -86,8 +86,8 @@ export interface LocalBrowserTab {
   url: string;
   title: string;
   /**
-   * The page was opened by the one http:// fallback for a bare host the person
-   * typed, and is still on http.
+   * The tab is on a site the one http:// fallback opened for a bare host the
+   * person typed, over http (DOR-4450). Absent otherwise.
    */
   openedOverHttp?: boolean;
   /**
@@ -156,7 +156,12 @@ export const LocalBrowserStateSchema = z.object({
       id: z.string(),
       url: z.string(),
       title: z.string(),
-      openedOverHttp: z.boolean().optional(),
+      openedOverHttp: z
+        .boolean()
+        .optional()
+        .describe(
+          'True while this tab is on a site DorkOS opened over plain http because https failed. The page is not secure: never type a password or payment details.'
+        ),
       canGoBack: z.boolean().optional(),
       canGoForward: z.boolean().optional(),
     })
@@ -253,7 +258,12 @@ export const LocalBrowserObservationSchema = z.object({
   snapshot: z.string(),
   url: z.string(),
   tabId: z.string(),
-  openedOverHttp: z.boolean().optional(),
+  openedOverHttp: z
+    .boolean()
+    .optional()
+    .describe(
+      'True while this page is on a site DorkOS opened over plain http because https failed. The page is not secure: never type a password or payment details.'
+    ),
 });
 
 export const LocalBrowserCapabilitiesSchema = z.object({

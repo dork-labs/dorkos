@@ -1,34 +1,39 @@
 /**
- * Which tabs the one http:// fallback opened (DOR-4450). A page the fallback
- * opened says so, to the person and to the agent, for as long as it stays on
- * http, so nobody types a password into a page they think is secure. Keyed by
+ * Which sites the one http:// fallback opened in each tab (DOR-4450). A page on
+ * one of those sites, over http, says so to the person and to the agent, so
+ * nobody types a password into a page they think is secure. The mark follows the
+ * site the fallback opened, not the tab: another http site the tab reaches
+ * never carries it, and Back to the fallback's site carries it again. Keyed by
  * the page handle, so a new browser connection starts with none.
  */
 import type { Page } from 'playwright-core';
 
-const marked = new WeakSet<Page>();
+const opened = new WeakMap<Page, Set<string>>();
 
-/**
- * Record how a person's navigation opened this page: by the http:// fallback, or not.
- *
- * @param page - The tab the person moved.
- * @param opened - Whether the fallback opened it.
- */
-export function setOpenedOverHttp(page: Page, opened: boolean): void {
-  if (opened) marked.add(page);
-  else marked.delete(page);
+/** The page's origin, or null when its address doesn't parse. */
+function originOf(url: string): string | null {
+  return URL.canParse(url) ? new URL(url).origin : null;
 }
 
 /**
- * Whether the fallback opened this page and it is still on http. Once the page
- * leaves http the mark is gone for good, so a later return to http does not
- * bring it back.
+ * Record that the http:// fallback opened this page, at the address it landed on.
+ *
+ * @param page - The tab the person moved.
+ */
+export function markOpenedOverHttp(page: Page): void {
+  const origin = originOf(page.url());
+  if (!origin?.startsWith('http:')) return;
+  const sites = opened.get(page) ?? new Set<string>();
+  sites.add(origin);
+  opened.set(page, sites);
+}
+
+/**
+ * Whether this page is, right now, on a site the fallback opened, over http.
  *
  * @param page - The tab to describe.
  */
 export function openedOverHttp(page: Page): boolean {
-  if (!marked.has(page)) return false;
-  if (page.url().startsWith('http:')) return true;
-  marked.delete(page);
-  return false;
+  const origin = originOf(page.url());
+  return origin !== null && origin.startsWith('http:') && !!opened.get(page)?.has(origin);
 }

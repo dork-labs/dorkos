@@ -1755,7 +1755,7 @@ describe('the Cloud origin (DOR-3196)', () => {
       await service.disconnect();
     });
 
-    it('stops saying it once the page leaves http, and a new address clears it', async () => {
+    it('follows the site the fallback opened, not the tab', async () => {
       const f = await create();
       await selectOwned(f.service);
       vi.mocked(f.page.goto).mockRejectedValueOnce(
@@ -1764,18 +1764,51 @@ describe('the Cloud origin (DOR-3196)', () => {
       await f.service.navigate('https://shop.example/', { httpFallback: true });
       f.navigate('http://shop.example/cart');
       expect(selectedTab(await f.service.agentState())?.openedOverHttp).toBe(true);
+      // Over https it is secure, and back on the fallback's site over http it says so again.
       f.navigate('https://shop.example/cart');
       expect(selectedTab(await f.service.agentState())?.openedOverHttp).toBeFalsy();
       f.navigate('http://shop.example/');
+      expect(selectedTab(await f.service.agentState())?.openedOverHttp).toBe(true);
+      // Another http site nobody typed never carries it.
+      f.navigate('http://other.example/login');
       expect(selectedTab(await f.service.agentState())?.openedOverHttp).toBeFalsy();
+      expect((await f.service.observe()).openedOverHttp).toBeFalsy();
+      const typed = await f.service.navigate('http://other.example/');
+      expect(selectedTab(typed)?.openedOverHttp).toBeFalsy();
+      await f.service.disconnect();
+    });
 
+    it('an agent moving a marked tab to another http site drops the mark', async () => {
+      const f = await create();
+      await selectOwned(f.service);
       vi.mocked(f.page.goto).mockRejectedValueOnce(
         failing('net::ERR_CONNECTION_REFUSED at https://shop.example/')
       );
       await f.service.navigate('https://shop.example/', { httpFallback: true });
-      const typed = await f.service.navigate('http://other.example/');
-      expect(selectedTab(typed)?.openedOverHttp).toBeFalsy();
+      const observed = await f.service.observe();
+      expect(observed.openedOverHttp).toBe(true);
+      const moved = await f.service.action({
+        kind: 'navigate',
+        url: 'http://other.example/login',
+        revision: observed.revision,
+      });
+      expect(selectedTab(moved)?.openedOverHttp).toBeFalsy();
+      expect((await f.service.observe()).openedOverHttp).toBeFalsy();
       await f.service.disconnect();
+    });
+
+    it('never falls back onto this DorkOS app’s own address', async () => {
+      const { service, page } = await create(() => ['http://dorkos.example:4242']);
+      await selectOwned(service);
+      vi.mocked(page.goto).mockClear();
+      vi.mocked(page.goto).mockRejectedValueOnce(
+        failing('net::ERR_SSL_PROTOCOL_ERROR at https://dorkos.example:4242/')
+      );
+      await expect(
+        service.navigate('https://dorkos.example:4242/', { httpFallback: true })
+      ).rejects.toMatchObject({ code: 'navigation_unreachable' });
+      expect(gotoUrls(page)).toEqual(['https://dorkos.example:4242/']);
+      await service.disconnect();
     });
 
     it('never falls back after a certificate error', async () => {
