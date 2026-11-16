@@ -15,9 +15,13 @@
  *    merged as `{ ...existing, ...incoming }`). So on a connection holding a
  *    stored secret, a save that changes ANY config key, declared or not, of any
  *    type, is refused outright. Only the secret fields themselves are left to
- *    rule 1, where a masked or blank value means "keep it". Values are compared
- *    structurally, after the form shapes resolve, so saving the whole form back
- *    unchanged (a list, a JSON map) is not a change. No manifest marks a field
+ *    rule 1, where a masked or blank value means "keep it". The gate compares
+ *    what the save would actually store with what is stored now: the edit merged
+ *    over the saved config the way the save merges it (shallow, so a nested map
+ *    is replaced whole), with the form shapes resolved and blanks dropped. So a
+ *    blank that resets a field to its default, or a smaller map that removes
+ *    entries, counts as a change, while saving the whole form back unchanged (a
+ *    list, a JSON map) does not. No manifest marks a field
  *    as safe display text yet, so a label counts too. A type with no manifest
  *    counts as holding a stored secret, and every key in it counts.
  *
@@ -35,7 +39,8 @@
  * @module services/relay/secrets/marked-turn-secret-gate
  */
 import type { AdapterManifest } from '@dorkos/shared/relay-schemas';
-import { readIncoming, secretValues, type SecretWriter } from '../adapter-secret-policy.js';
+import { normalizeFormConfig } from '../adapter-config.js';
+import { secretValues, type SecretWriter } from '../adapter-secret-policy.js';
 
 /** Whether two config values are the same, structurally: lists and maps by content. */
 function sameValue(a: unknown, b: unknown): boolean {
@@ -60,17 +65,6 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-/**
- * Whether every key an edit sends matches what is saved: a partial edit leaves
- * the rest alone, so only the keys it names are compared, at every depth.
- */
-function editMatchesSaved(edit: unknown, saved: unknown): boolean {
-  if (isPlainObject(edit) && isPlainObject(saved)) {
-    return Object.entries(edit).every(([key, value]) => editMatchesSaved(value, saved[key]));
-  }
-  return sameValue(edit, saved);
-}
-
 /** Remove the leaf at `parts` from a cloned object, if it is there. */
 function dropPath(obj: Record<string, unknown>, parts: string[]): void {
   let current: unknown = obj;
@@ -85,8 +79,14 @@ function dropPath(obj: Record<string, unknown>, parts: string[]): void {
  * Whether a save would change anything on a connection that holds a stored
  * secret, so the secret would travel with the change. Every config key counts,
  * declared or not, of any type, except the secret fields themselves (rule 1
- * judges those). Values are compared structurally after the form shapes
- * resolve, so the whole form saved back unchanged is not a change.
+ * judges those). It compares the config the save would store, `{ ...existing,
+ * ...incoming }` with the form shapes resolved and blanks dropped (the merge in
+ * `mergeWithPasswordPreservation` and the cleaning in `normalizeFormConfig`),
+ * with the config stored now, cleaned the same way.
+ *
+ * The comparison is strict on purpose, and each strictness fails safe: a
+ * reordered list, a number sent back as text ('8443' for 8443), and, for a type
+ * with no manifest, a secret sent back as the mask all count as changes.
  *
  * An add or a test has nothing stored to carry. A type with no manifest counts
  * as holding a stored secret: nothing says which of its keys are secret.
@@ -104,11 +104,24 @@ export function movesStoredSecrets(
   if (manifest && !secretValues(existing, manifest).some(({ value }) => value !== '')) {
     return false;
   }
-  const edit = structuredClone(readIncoming(incoming, manifest));
+  const projected = cleaned({ ...existing, ...incoming }, manifest);
+  const stored = cleaned(existing, manifest);
+  return !sameValue(projected, stored);
+}
+
+/**
+ * A config as the save would leave it, minus its secret fields: form shapes
+ * resolved and blanks dropped (`normalizeFormConfig`), on a copy.
+ */
+function cleaned(
+  config: Record<string, unknown>,
+  manifest: AdapterManifest | undefined
+): Record<string, unknown> {
+  const out = structuredClone(normalizeFormConfig(config, manifest)) as Record<string, unknown>;
   for (const field of manifest?.configFields ?? []) {
-    if (field.type === 'password') dropPath(edit, field.key.split('.'));
+    if (field.type === 'password') dropPath(out, field.key.split('.'));
   }
-  return !editMatchesSaved(edit, existing);
+  return out;
 }
 
 /** Why the gate refused, as the code the route answers with. */
@@ -148,7 +161,9 @@ export function markedTurnSecretRefusal(input: {
   }
   if (input.movesSecrets === true) {
     return {
-      error: `${why}, so it can't change a connection that holds saved secrets. Ask a person to change it.`,
+      error: input.turnMarked
+        ? "A marked turn can't change a connection with saved secrets. Ask a person."
+        : "An unrecognized agent can't change a connection with saved secrets. Ask a person.",
       code: 'marked_turn_moves_secret',
     };
   }

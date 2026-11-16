@@ -3,7 +3,7 @@
  * connection, whatever its address, while the stranger-turn flag is on.
  */
 import { describe, expect, it } from 'vitest';
-import { TELEGRAM_MANIFEST, WEBHOOK_MANIFEST } from '@dorkos/relay';
+import { SLACK_MANIFEST, TELEGRAM_MANIFEST, WEBHOOK_MANIFEST } from '@dorkos/relay';
 import type { AdapterManifest } from '@dorkos/shared/relay-schemas';
 import { adapterAddressChanged, hasTypedAdapterSecret } from '../adapter-secret-policy.js';
 import { markedTurnSecretRefusal, movesStoredSecrets } from '../secrets/marked-turn-secret-gate.js';
@@ -161,6 +161,40 @@ describe('movesStoredSecrets', () => {
       expect(
         movesStoredSecrets(saved, { ...form, approverAllowlist: '111\n999' }, TELEGRAM_MANIFEST)
       ).toBe(true);
+    });
+  });
+
+  // #3835 review: the gate compares what the save would store, so a blank that resets a field to
+  // its default and a smaller map that drops entries both count, as the save's shallow merge does.
+  describe('a Slack connection holding saved tokens', () => {
+    const saved = {
+      botToken: 'file:relay-adapter:sl:botToken',
+      appToken: 'file:relay-adapter:sl:appToken',
+      respondMode: 'mention-only',
+      channelOverrides: { C123: { enabled: false } },
+    };
+
+    it.each([
+      ['a blank that resets respondMode to its default', { respondMode: '' }],
+      ['an empty map over channelOverrides', { channelOverrides: '{}' }],
+    ])('counts %s as a change', (_name, incoming) => {
+      expect(movesStoredSecrets(saved, incoming, SLACK_MANIFEST)).toBe(true);
+    });
+
+    it('is no change when the whole form is saved back unchanged', () => {
+      expect(
+        movesStoredSecrets(
+          saved,
+          {
+            botToken: '***',
+            appToken: '***',
+            signingSecret: '',
+            respondMode: 'mention-only',
+            channelOverrides: JSON.stringify(saved.channelOverrides),
+          },
+          SLACK_MANIFEST
+        )
+      ).toBe(false);
     });
   });
 
