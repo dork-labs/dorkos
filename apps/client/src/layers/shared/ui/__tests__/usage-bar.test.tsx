@@ -5,7 +5,7 @@ import { describe, it, expect, afterEach } from 'vitest';
 import { render, screen, cleanup, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom/vitest';
-import { createMockAccountUsage } from '@dorkos/test-utils';
+import { createMockAccountUsage } from '@dorkos/test-utils/mock-factories';
 import type { AccountWindow } from '@/layers/shared/lib/claude-accounts';
 import { UsageBar, UsageMiniBars } from '../usage-bar';
 import { TooltipProvider } from '../tooltip';

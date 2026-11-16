@@ -1384,8 +1384,36 @@
     {
       "idx": 197,
       "version": "6",
-      "when": 1794776770235,
-      "tag": "20261115210610_dor3641_waker_off_since",
+      "when": 1794793925059,
+      "tag": "20261116015205_canvas_opened_by",
+      "breakpoints": true
+    },
+    {
+      "idx": 198,
+      "version": "6",
+      "when": 1794799768790,
+      "tag": "20261116032928_dor3637_task_permission_requests",
+      "breakpoints": true
+    },
+    {
+      "idx": 199,
+      "version": "6",
+      "when": 1794799828000,
+      "tag": "20261116033028_dor3034_due_history",
+      "breakpoints": true
+    },
+    {
+      "idx": 200,
+      "version": "6",
+      "when": 1794799888000,
+      "tag": "20261116033128_dor3034_wake_and_confirm",
+      "breakpoints": true
+    },
+    {
+      "idx": 201,
+      "version": "6",
+      "when": 1794799948000,
+      "tag": "20261116033228_dor3641_waker_off_since",
       "breakpoints": true
     }
   ]

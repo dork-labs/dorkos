@@ -14,7 +14,7 @@ import '@testing-library/jest-dom/vitest';
 import type { WidgetDocument } from '@dorkos/shared/ui-widget';
 import type { CanvasChannelEventReceipt, PageEvent } from '@dorkos/shared/canvas-channel-schemas';
 import { useDocChannel } from '@/layers/features/canvas';
-import { createMockTransport } from '@dorkos/test-utils';
+import { createMockTransport } from '@dorkos/test-utils/mock-factories';
 import { TransportProvider } from '@/layers/shared/model';
 import { WidgetRenderer } from '../ui/WidgetRenderer';
 import { useWidgetChannelActions, type WidgetChannelPort } from '../model/widget-channel';

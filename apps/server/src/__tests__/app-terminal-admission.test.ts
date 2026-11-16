@@ -325,9 +325,11 @@ describe('main HTTP admission through the real app', () => {
     expect(mounts).toContain('/api/todos');
     // The off-by-default discovery route remains mounted and must meet admission too.
     expect(mounts).toContain('/api/your-browser');
-    // 88 -> 89: every schedule and heartbeat that cannot wake (DOR-3641).
+    // 88 -> 89: the empty, sandboxed document every app's screens run in (DOR-3293).
+    expect(mounts).toContain('/api/extension-frame');
+    // 89 -> 90: every schedule and heartbeat that cannot wake (DOR-3641).
     expect(mounts).toContain('/api/heartbeats/wakers-off');
-    expect(mounts).toHaveLength(89);
+    expect(mounts).toHaveLength(90);
     const byHand = [
       '/',
       '/x/fixture',

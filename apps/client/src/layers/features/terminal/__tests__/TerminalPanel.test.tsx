@@ -7,7 +7,7 @@ import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom/vitest';
 import type { TerminalHandle } from '@dorkos/shared/transport';
 import { TERMINAL_CLOSE_SUPERSEDED } from '@dorkos/shared/terminal-schemas';
-import { createMockTransport } from '@dorkos/test-utils';
+import { createMockTransport } from '@dorkos/test-utils/mock-factories';
 import {
   TransportProvider,
   useAppStore,

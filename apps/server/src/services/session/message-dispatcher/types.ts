@@ -86,6 +86,12 @@ export interface PendingDispatch {
    * message is taken off the queue while it waits.
    */
   abandon: () => void;
+  /**
+   * Tell the message's caller its words left with another row's turn: a drain
+   * join folded it into the head about to launch (DOR-3060), so whatever it holds
+   * until the turn settles is handed back as answered rather than failed.
+   */
+  folded: () => void;
   /** A protected document's durable budget wait, independent of lock waiting. */
   notBefore?: number;
   /**

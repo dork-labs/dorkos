@@ -20,7 +20,7 @@ import { renderHook, waitFor } from '@testing-library/react';
 import { QueryClient } from '@tanstack/react-query';
 import { PersistQueryClientProvider } from '@tanstack/react-query-persist-client';
 import type { Persister } from '@tanstack/react-query-persist-client';
-import { createMockTransport } from '@dorkos/test-utils';
+import { createMockTransport } from '@dorkos/test-utils/mock-factories';
 import type { Transport } from '@dorkos/shared/transport';
 import { TransportProvider } from '@/layers/shared/model';
 import { useOnboarding } from '../model/use-onboarding';

@@ -10,7 +10,11 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, renderHook, waitFor } from '@testing-library/react';
 import type { PropsWithChildren } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { createMockTransport, spacesExperiment, withSpacesExperiment } from '@dorkos/test-utils';
+import {
+  createMockTransport,
+  spacesExperiment,
+  withSpacesExperiment,
+} from '@dorkos/test-utils/mock-factories';
 import { configKeys, TransportProvider } from '@/layers/shared/model';
 import { useHostedCommunities } from '../model/hosted-communities';
 

@@ -309,6 +309,14 @@
       "types": "./src/memory-provider.ts",
       "default": "./dist/memory-provider.js"
     },
+    "./permission-rules": {
+      "types": "./src/permission-rules.ts",
+      "default": "./dist/permission-rules.js"
+    },
+    "./schedule-approval": {
+      "types": "./src/schedule-approval.ts",
+      "default": "./dist/schedule-approval.js"
+    },
     "./permission-semantics": {
       "types": "./src/permission-semantics.ts",
       "default": "./dist/permission-semantics.js"
@@ -476,6 +484,10 @@
     "./ui-widget": {
       "types": "./src/ui-widget.ts",
       "default": "./dist/ui-widget.js"
+    },
+    "./app-widget-actions": {
+      "types": "./src/app-widget-actions.ts",
+      "default": "./dist/app-widget-actions.js"
     },
     "./viewer-registry": {
       "types": "./src/viewer-registry.ts",

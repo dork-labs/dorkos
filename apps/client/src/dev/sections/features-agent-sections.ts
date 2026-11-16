@@ -329,6 +329,13 @@ export const FEATURE_AGENT_SECTIONS: PlaygroundSection[] = [
     keywords: ['preset', 'card', 'schedule', 'toggle', 'selectable', 'cron', 'tasks'],
   },
   {
+    id: 'schedules-in-your-time',
+    title: 'Schedules in your time',
+    page: 'features',
+    category: 'Tasks',
+    keywords: ['schedule', 'time zone', 'timezone', 'utc', 'your time', 'overnight'],
+  },
+  {
     id: 'taskspanel',
     title: 'TasksPanel',
     page: 'features',

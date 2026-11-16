@@ -290,11 +290,15 @@ export interface PumpCrash {
  * Why a pump was torn down (`SessionPump.teardown`), for whoever decides what
  * survives it (DOR-2065).
  *
- * - `evict` — the session record went away, a dispatch is relaunching the
- *   process, or a caller ended it for good.
+ * - `evict` — a caller ended it for good (a person's pause, a credits unlink)
+ *   or a dispatch is relaunching the process.
+ * - `sweep` — DorkOS's own clean-up let the session record go: the idle sweep
+ *   or a record reclaimed at capacity. Survives like `evict`; kept apart so a
+ *   turn ended by the 16-hour limit can say so, and one a person ended does
+ *   not (DOR-2705).
  * - `shutdown` — the server is stopping; the next boot picks up what is owed.
  */
-export type PumpTeardownReason = 'evict' | 'shutdown';
+export type PumpTeardownReason = 'evict' | 'sweep' | 'shutdown';
 
 /** One message being dispatched into the pump. */
 export interface PumpDispatch {

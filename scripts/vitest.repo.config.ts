@@ -29,6 +29,7 @@ import { defineConfig } from 'vitest/config';
 /** Suites with at least one test that reads files outside `scripts/`'s harness scope. */
 export const REPO_WIDE_SUITES = [
   '__tests__/agents-service-census.test.ts',
+  '__tests__/binary-lane-job.test.ts',
   '__tests__/check-boundary.test.ts',
   '__tests__/check-design-tokens.test.ts',
   '__tests__/check-own-mocks.test.ts',
@@ -44,6 +45,7 @@ export const REPO_WIDE_SUITES = [
   '__tests__/connector-public-copy.test.ts',
   '__tests__/credential-free-workflow.test.ts',
   '__tests__/decision-narrow-only.test.ts',
+  '__tests__/dependabot-lockfile-repair-paths.test.ts',
   '__tests__/dependabot-lockstep-families.test.ts',
   '__tests__/extension-child-build-entry.test.ts',
   '__tests__/gray-matter-import-boundary.test.ts',

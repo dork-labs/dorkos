@@ -6,7 +6,7 @@ import { renderHook, waitFor, cleanup } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { QueryClientProvider } from '@tanstack/react-query';
 import type { ServerConfig } from '@dorkos/shared/types';
-import { createMockTransport } from '@dorkos/test-utils';
+import { createMockTransport } from '@dorkos/test-utils/mock-factories';
 import { createTestQueryClient } from '@dorkos/test-utils/react-helpers';
 import { TransportProvider } from '../../TransportContext';
 import { useClaudeAccounts } from '../use-claude-accounts';

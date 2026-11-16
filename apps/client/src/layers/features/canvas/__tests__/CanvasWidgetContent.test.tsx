@@ -8,7 +8,7 @@ import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom/vitest';
 import type { UiCanvasContent } from '@dorkos/shared/types';
 import { TransportProvider } from '@/layers/shared/model';
-import { createMockTransport } from '@dorkos/test-utils';
+import { createMockTransport } from '@dorkos/test-utils/mock-factories';
 
 // The canvas resolves the active session id from the router; stub only that hook
 // so the unit test doesn't need a RouterProvider. Keep the rest of the module

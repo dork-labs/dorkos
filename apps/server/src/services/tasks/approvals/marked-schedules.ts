@@ -138,6 +138,7 @@ export async function clearOutsiderParks(db: Db): Promise<number> {
         status: 'pending_approval',
         approvedContentKey: null,
         ...CLEARED_APPROVAL_RECEIPT,
+        approvedAllow: null,
         previousApprovalKey: null,
         updatedAt: new Date().toISOString(),
       })
@@ -188,6 +189,7 @@ export function markScheduleOrigin(db: Db, id: string, marks: TurnMarks): boolea
       status: 'pending_approval',
       approvedContentKey: null,
       ...CLEARED_APPROVAL_RECEIPT,
+      approvedAllow: null,
       // What was approved, so the card can say what changed.
       previousApprovalKey: row.approvedContentKey ?? row.previousApprovalKey,
       updatedAt: new Date().toISOString(),

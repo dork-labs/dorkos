@@ -12,7 +12,7 @@ import { cleanup, fireEvent, render, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { UiCanvasContent } from '@dorkos/shared/types';
 import type { Transport } from '@dorkos/shared/transport';
-import { createMockTransport } from '@dorkos/test-utils';
+import { createMockTransport } from '@dorkos/test-utils/mock-factories';
 import '@testing-library/jest-dom/vitest';
 
 const { executeUiCommand } = vi.hoisted(() => ({ executeUiCommand: vi.fn() }));

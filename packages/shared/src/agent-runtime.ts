@@ -1103,6 +1103,8 @@ export interface MessageOpts extends SessionSettings {
   /** The current send’s starter, for notices only. Never read from message content or persisted as a session origin. */
   turnStarter?: TurnStarter;
   cwd?: string;
+  /** Task-scoped Claude Code allow rules for this turn only; never persisted. */
+  taskApprovedAllow?: readonly string[];
   systemPromptAppend?: string;
   /**
    * Folders this turn may reach beyond its cwd, recomputed by the dispatcher for

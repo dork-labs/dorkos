@@ -43,8 +43,17 @@
 # checked where the whole union is visible. Playwright entries in the list are
 # ignored here; browser coverage is assert-browser-tests-executed.sh's.
 #
+# REQUIRED FILES (DOR-4190). `--require-files <file>` names test files, one
+# repo-relative path per line, that must each appear in the union BY NAME. The
+# per-package check above cannot see a single file go missing from a package
+# with hundreds of others, and that is exactly the shape of the real-CLI suites:
+# both shard legs exclude every `*.binary.test.ts`, and two other jobs
+# (test-binary, codex-sandbox) run them and upload what they collected beside
+# the shards' lists. The workflow passes `git ls-files` of those suites, so a
+# binary suite that no job ran fails here by name, whichever job lost it.
+#
 # Usage:
-#   scripts/assert-shard-union.sh [--quarantined <file>] <dir-of-shard-lists>
+#   scripts/assert-shard-union.sh [--quarantined <file>] [--require-files <file>] <dir-of-shard-lists>
 #
 # <dir-of-shard-lists> holds one or more *.txt files, one collected test-file
 # path per line, repo-relative (e.g. apps/server/src/__tests__/foo.test.ts).
@@ -70,6 +79,7 @@ fail() {
 command -v jq >/dev/null 2>&1 || fail 'jq is required but was not found on PATH.'
 
 quarantined_file=''
+required_file=''
 while [ $# -gt 0 ]; do
   case "$1" in
   --quarantined)
@@ -81,13 +91,22 @@ succeeds and writes an empty file when nothing is quarantined. A MISSING file
 means that step did not run, and this gate will not guess which it was."
     shift 2
     ;;
+  --require-files)
+    required_file=${2:-}
+    [ -n "$required_file" ] || fail '--require-files needs a file.'
+    [ -f "$required_file" ] || fail "no required-files list at $required_file.
+The workflow writes it with \`git ls-files\` just before this runs; a MISSING
+file means that did not happen, and an empty one is how \"none required\" is
+said. This gate will not read the one as the other."
+    shift 2
+    ;;
   --*) fail "unknown option: $1" ;;
   *) break ;;
   esac
 done
 
 lists_dir=${1:-}
-[ -n "$lists_dir" ] || fail 'usage: assert-shard-union.sh [--quarantined <file>] <dir-of-shard-lists>'
+[ -n "$lists_dir" ] || fail 'usage: assert-shard-union.sh [--quarantined <file>] [--require-files <file>] <dir-of-shard-lists>'
 [ -d "$lists_dir" ] || fail "shard-list directory not found: $lists_dir"
 
 # The union lives in a FILE, and each package's membership test greps that
@@ -133,6 +152,26 @@ include globs, whether its __tests__ files still exist, and whether the shard
 collect step is reading its report."
 fi
 
+# Every required file must be in the union by name. Exact line match (-Fx), so
+# a path that merely contains a required one does not stand in for it.
+required_count=0
+required_missing=''
+if [ -n "$required_file" ]; then
+  while IFS= read -r file || [ -n "$file" ]; do
+    [ -n "$file" ] || continue
+    required_count=$((required_count + 1))
+    grep -q -Fx -- "$file" "$union_file" || required_missing="$required_missing  $file"$'\n'
+  done <"$required_file"
+fi
+if [ -n "$required_missing" ]; then
+  fail "these test files must each be collected by some job, and NONE collected them:
+$required_missing
+They are run outside the shards (the shard legs exclude every
+\`*.binary.test.ts\`), by test-binary or codex-sandbox, which upload what they
+collected as shard-files-binary / shard-files-codex. Check that job's file list,
+its proof step and its upload, and the shards' --exclude pattern."
+fi
+
 # A quarantined test's file must still be collected. Quarantine is per test and
 # removes nothing from the run, so a file that vanished from the union did so
 # for some other reason — and a lane entry watching a file nothing collects is
@@ -172,5 +211,10 @@ if [ -n "$quarantined_file" ]; then
 else
   lane_note='no quarantine list was given, so nothing was checked against one'
 fi
-printf 'assert-shard-union: %s package(s) all contributed to a union of %s collected test file(s); %s.\n' \
-  "$checked" "$total" "$lane_note"
+if [ -n "$required_file" ]; then
+  required_note="all $required_count required file(s) collected"
+else
+  required_note='no required-files list was given'
+fi
+printf 'assert-shard-union: %s package(s) all contributed to a union of %s collected test file(s); %s; %s.\n' \
+  "$checked" "$total" "$required_note" "$lane_note"

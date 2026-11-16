@@ -9,7 +9,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { renderHook, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { ChatActivityResponse } from '@dorkos/shared/chat-messages';
-import { createMockTransport } from '@dorkos/test-utils';
+import { createMockTransport } from '@dorkos/test-utils/mock-factories';
 import { TransportProvider } from '@/layers/shared/model';
 import { useSessionStreamStore } from '@/layers/entities/session';
 import { useChatActivity } from '../use-chat-activity';

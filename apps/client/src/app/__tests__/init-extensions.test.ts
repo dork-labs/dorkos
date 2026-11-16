@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { createMockTransport } from '@dorkos/test-utils';
+import { createMockTransport } from '@dorkos/test-utils/mock-factories';
 import {
   useExtensionRegistry,
   createInitialSlots,
@@ -38,6 +38,13 @@ describe('initializeExtensions — right-panel contributions', () => {
     for (const c of contextual) {
       expect(pulse!.priority!).toBeLessThan(c.priority!);
     }
+  });
+
+  it('offers the canvas on an app’s own page, so its documents open beside it (DOR-3293)', () => {
+    const canvas = getRightPanelContribution('canvas');
+    expect(canvas?.visibleWhen?.({ pathname: '/x/ledger' })).toBe(true);
+    expect(canvas?.visibleWhen?.({ pathname: '/x/ledger/report' })).toBe(true);
+    expect(canvas?.visibleWhen?.({ pathname: '/marketplace' })).toBe(false);
   });
 
   it('registers the Profile contribution, under that name', () => {

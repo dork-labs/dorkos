@@ -21,6 +21,7 @@ import {
   mayRunExtensionCode,
 } from './extension-load-policy.js';
 import { bundleDigestOf } from './pin/extension-path-trust.js';
+import { clientBundleExports } from './client-bundle-exports.js';
 import { configManager } from '../core/config-manager.js';
 import { logger } from '../../lib/logger.js';
 
@@ -260,8 +261,9 @@ export async function testClientExtension(
 
   // Step 3: Evaluate the bundle and extract activate()
   try {
-    const dataUri = `data:text/javascript;base64,${Buffer.from(bundle).toString('base64')}`;
-    const module = await import(/* webpackIgnore: true */ dataUri);
+    const module = clientBundleExports(bundle, `${id}.bundle.js`) as {
+      activate?: (api: MockExtensionAPI) => unknown;
+    };
 
     if (typeof module.activate !== 'function') {
       return {

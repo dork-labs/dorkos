@@ -33,6 +33,8 @@ beforeAll(() => {
 afterEach(() => {
   cleanup();
   navigate.mockReset();
+  actions.sendNow.mockReset();
+  actions.dontDeliver.mockReset();
 });
 
 const SECURITY = {
@@ -58,7 +60,34 @@ const fromChat = (id: string, content: string, sender: QueueItem['sender']): Que
   notice: null,
 });
 
-function renderPanel(queue: QueueItem[]) {
+const actions = {
+  sendNow: vi.fn(),
+  dontDeliver: vi.fn(),
+  notices: {} as Record<string, string>,
+  sending: new Set<string>(),
+};
+
+function panel(
+  queue: QueueItem[],
+  notices: Record<string, string> = {},
+  onFocusComposer: () => void = () => {}
+) {
+  return (
+    <QueuePanel
+      queue={queue}
+      editingId={null}
+      onEdit={vi.fn()}
+      onRemove={vi.fn()}
+      onSend={vi.fn()}
+      onMoveUp={vi.fn()}
+      statusNote="Sent one at a time as the agent finishes"
+      agentActions={{ ...actions, notices }}
+      onFocusComposer={onFocusComposer}
+    />
+  );
+}
+
+function renderPanel(queue: QueueItem[], notices: Record<string, string> = {}) {
   return render(
     <QueuePanel
       queue={queue}
@@ -67,21 +96,39 @@ function renderPanel(queue: QueueItem[]) {
       onRemove={vi.fn()}
       onSend={vi.fn()}
       onMoveUp={vi.fn()}
-      statusNote="Sending one at a time"
+      statusNote="Sent one at a time as the agent finishes"
+      agentActions={{ ...actions, notices }}
     />
   );
 }
 
 describe('QueuePanel: who sent a queued message', () => {
-  it('names an agent sender above its words, links its chat, and starts the name with "From"', () => {
+  it('names an agent sender above its words and links its chat', () => {
     renderPanel([fromChat('a', 'Please hold PR #12.', SECURITY)]);
-    const row = screen.getByRole('group', { name: 'From Security: Please hold PR #12.' });
+    const row = screen.getByRole('group', {
+      name: 'Queued message from Security, from Dependency audit for 0.121',
+    });
+    expect(within(row).getByText('Please hold PR #12.')).toBeInTheDocument();
     expect(within(row).getByText('Security')).toHaveClass('font-semibold');
     const link = within(row).getByRole('link', { name: 'Dependency audit for 0.121' });
     fireEvent.click(link);
     expect(navigate).toHaveBeenCalledWith(expect.objectContaining({ search: expect.anything() }));
     expect(screen.queryByRole('button', { name: /Please hold/ })).not.toBeInTheDocument();
-    expect(screen.getByText('1 from Security')).toBeInTheDocument();
+  });
+
+  it('wraps a long agent name, and truncates only the chat line with its title in a tooltip', () => {
+    const long = {
+      ...SECURITY,
+      agentName: 'Quarterly compliance and dependency audit agent',
+      chatTitle: 'A very long chat title that will never fit on one line of a phone',
+    };
+    renderPanel([fromChat('a', 'Hi', long)]);
+    const name = screen.getByText(long.agentName);
+    expect(name).not.toHaveClass('truncate');
+    expect(name).toHaveClass('break-words');
+    const chatLine = screen.getByRole('link', { name: long.chatTitle }).parentElement!;
+    expect(chatLine).toHaveClass('truncate');
+    expect(chatLine).toHaveAttribute('title', long.chatTitle);
   });
 
   it("says can't open, with no link, when the chat cannot be read", () => {
@@ -93,7 +140,11 @@ describe('QueuePanel: who sent a queued message', () => {
 
   it('reads "Another chat" for an unknown sender, with no link', () => {
     renderPanel([fromChat('a', 'Hi', null)]);
-    expect(screen.getByRole('group', { name: 'From Another chat: Hi' })).toBeInTheDocument();
+    expect(
+      screen.getByRole('group', {
+        name: 'Queued message from Another chat',
+      })
+    ).toBeInTheDocument();
     expect(screen.queryByRole('link')).not.toBeInTheDocument();
   });
 
@@ -104,29 +155,104 @@ describe('QueuePanel: who sent a queued message', () => {
     expect(screen.getByText('Queued (1)')).toBeInTheDocument();
   });
 
-  it('counts a mixed queue by who sent what', () => {
+  it('counts a queue with another chat’s rows as waiting, naming nobody', () => {
     renderPanel([mine('a', 'mine'), fromChat('b', 'theirs', SECURITY)]);
-    expect(screen.getByText('2 queued · 1 yours, 1 from Security')).toBeInTheDocument();
+    const count = screen.getByText('2 waiting');
+    const header = count.parentElement!;
+    expect(header.textContent).toBe('2 waiting· Sent one at a time as the agent finishes');
+    expect(header.textContent).not.toContain('Security');
+  });
+
+  it('drops the note under 480px only when another chat’s rows are queued', () => {
+    renderPanel([fromChat('a', 'theirs', SECURITY)]);
+    expect(screen.getByText(/Sent one at a time/)).toHaveClass('max-[480px]:hidden');
+    cleanup();
+    renderPanel([mine('a', 'mine')]);
+    expect(screen.getByText(/Sent one at a time/)).not.toHaveClass('max-[480px]:hidden');
+  });
+});
+
+describe('QueuePanel: focus after a row leaves (DOR-3060)', () => {
+  const a = fromChat('a', 'first', SECURITY);
+  const b = fromChat('b', 'second', { ...SECURITY, agentName: 'QA' });
+
+  it('moves to the row now in its place after Don’t deliver', () => {
+    const view = render(panel([a, b]));
+    const rowA = screen.getByRole('group', { name: /from Security/ });
+    fireEvent.click(within(rowA).getByRole('button', { name: 'Don’t deliver' }));
+    const confirm = within(rowA).getAllByRole('button', { name: 'Don’t deliver' }).at(-1)!;
+    confirm.focus();
+    fireEvent.click(confirm);
+
+    view.rerender(panel([b]));
+
+    const rowB = screen.getByRole('group', { name: /from QA/ });
+    expect(rowB.contains(document.activeElement)).toBe(true);
+  });
+
+  it('moves to the row before it when the last row in line leaves', () => {
+    const view = render(panel([a, b]));
+    const rowB = screen.getByRole('group', { name: /from QA/ });
+    const sendB = within(rowB).getByRole('button', { name: /^Send now/ });
+    sendB.focus();
+    fireEvent.click(sendB);
+
+    view.rerender(panel([a]));
+
+    const rowA = screen.getByRole('group', { name: /from Security/ });
+    expect(rowA.contains(document.activeElement)).toBe(true);
+  });
+
+  it('moves to the composer when the only row leaves', () => {
+    const onFocusComposer = vi.fn();
+    const view = render(panel([a], {}, onFocusComposer));
+    const send = screen.getByRole('button', { name: /^Send now/ });
+    send.focus();
+    fireEvent.click(send);
+
+    view.rerender(panel([], {}, onFocusComposer));
+
+    expect(onFocusComposer).toHaveBeenCalledOnce();
+  });
+
+  it('forgets the row when Send now fails, so a later drain never moves focus', () => {
+    const onFocusComposer = vi.fn();
+    actions.sendNow.mockImplementationOnce((_id: string, onFailed?: () => void) => onFailed?.());
+    const view = render(panel([a], {}, onFocusComposer));
+    const send = screen.getByRole('button', { name: /^Send now/ });
+    send.focus();
+    fireEvent.click(send);
+
+    // The row ran later, as its own turn, while focus had fallen to the page.
+    send.blur();
+    view.rerender(panel([], {}, onFocusComposer));
+    view.unmount();
+
+    expect(onFocusComposer).not.toHaveBeenCalled();
+  });
+
+  it('stays put when Send now could only move the row first', () => {
+    const onFocusComposer = vi.fn();
+    const view = render(panel([a], {}, onFocusComposer));
+    const send = screen.getByRole('button', { name: /^Send now/ });
+    send.focus();
+    fireEvent.click(send);
+
+    view.rerender(panel([a], { a: 'Sends next.' }, onFocusComposer));
+    view.unmount();
+
+    expect(onFocusComposer).not.toHaveBeenCalled();
   });
 });
 
 describe('queueHeaderCount', () => {
-  const row = (agentName: string | null) => ({
-    fromChat: true,
-    sender: agentName === null ? null : { ...SECURITY, agentName },
-  });
-  it('says the top sender and how many others, across three or more senders', () => {
-    expect(
-      queueHeaderCount([
-        row('Security'),
-        row('Security'),
-        row('Security'),
-        row('Designer'),
-        row('QA'),
-      ])
-    ).toBe('3 from Security and 2 others');
-    expect(queueHeaderCount([row('Security'), row('QA')])).toBe('1 from Security and 1 other');
-    expect(queueHeaderCount([row(null)])).toBe('1 from Another chat');
+  it.each([
+    [[false, false], 'Queued (2)'],
+    [[true], '1 waiting'],
+    [[true, true, true], '3 waiting'],
+    [[false, true], '2 waiting'],
+  ])('%j reads %s', (fromChats, expected) => {
+    expect(queueHeaderCount(fromChats.map((fromChat) => ({ fromChat })))).toBe(expected);
   });
 });
 

@@ -81,6 +81,7 @@ describe('scheduled task approval receipts', () => {
         scheduler,
         registrar: new TaskRegistrar({ store, scheduler }),
         dorkHome,
+        defaultTimezone: () => 'UTC',
         activity,
       })
     );

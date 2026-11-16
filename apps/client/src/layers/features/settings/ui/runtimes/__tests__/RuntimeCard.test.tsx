@@ -6,7 +6,7 @@ import '@testing-library/jest-dom/vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { ModelOption } from '@dorkos/shared/types';
 import type { SystemRequirements } from '@dorkos/shared/agent-runtime';
-import { createMockTransport } from '@dorkos/test-utils';
+import { createMockTransport } from '@dorkos/test-utils/mock-factories';
 import { TransportProvider } from '@/layers/shared/model';
 import { RuntimeCard, type RuntimeCardProps } from '../RuntimeCard';
 

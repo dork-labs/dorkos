@@ -6,7 +6,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { Transport } from '@dorkos/shared/transport';
 import type { ConnectorReconciliationPreview } from '@dorkos/shared/connector-schemas';
 import type { ConnectorAuthoritySyncState } from '@dorkos/shared/connector-resource-schemas';
-import { createMockTransport } from '@dorkos/test-utils';
+import { createMockTransport } from '@dorkos/test-utils/mock-factories';
 import { TransportProvider } from '@/layers/shared/model';
 import { useAccessReconciliation } from '../model/use-access-reconciliation';
 

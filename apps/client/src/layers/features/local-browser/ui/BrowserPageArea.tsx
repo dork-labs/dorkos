@@ -1,5 +1,8 @@
 import { useRef, type ReactNode } from 'react';
-import { useNativeBrowserSurface } from '../model/use-native-browser-surface';
+import {
+  useNativeBrowserSurface,
+  type NativeStillControls,
+} from '../model/use-native-browser-surface';
 import type { GuestPage } from '../model/use-guest-page';
 import { pageErrorBlock, type PageErrorAction } from '../lib/page-error';
 import { BrowserLoadingBar } from './BrowserLoadingBar';
@@ -16,10 +19,17 @@ interface BrowserPageAreaProps {
   typed: boolean;
   /** Runs "Search for it" with the person's own words. */
   onSearch: () => void;
+  /**
+   * Runs the block's "Go back": the same history step as the chrome's Back, so it
+   * takes the page from a driving agent and keeps the address rules (DOR-4449).
+   */
+  onBack: () => void;
   onUnavailable: () => void;
   disabled?: boolean;
   /** What shows in place of the page when it couldn't be shown at all. */
   children?: ReactNode;
+  /** Hands over a way to take a still ahead of a layer, for the chrome's tooltips. */
+  onStillControls?: (controls: NativeStillControls | null) => void;
 }
 
 /**
@@ -33,16 +43,25 @@ export function BrowserPageArea({
   page,
   typed,
   onSearch,
+  onBack,
   onUnavailable,
   disabled,
   children,
+  onStillControls,
 }: BrowserPageAreaProps) {
   const surface = useRef<HTMLDivElement>(null);
   const block = page.failure ? pageErrorBlock(page.failure, typed) : null;
   // While an app layer covers the page, a still of it sits in its place (DOR-4438).
-  const still = useNativeBrowserSurface(surface, connectionId, visible && !block, onUnavailable);
+  const still = useNativeBrowserSurface(
+    surface,
+    connectionId,
+    visible && !block,
+    onUnavailable,
+    onStillControls
+  );
   const act = (action: PageErrorAction) => {
     if (action === 'search') onSearch();
+    else if (action === 'back') onBack();
     else page.run(action);
   };
   return (
@@ -51,7 +70,7 @@ export function BrowserPageArea({
       <div
         ref={surface}
         data-slot="native-browser-surface"
-        className="bg-muted/20 relative min-h-48 flex-1 rounded-lg"
+        className="bg-muted/20 relative min-h-48 flex-1"
       >
         {block ? (
           <div className="absolute inset-0 flex overflow-y-auto p-4">

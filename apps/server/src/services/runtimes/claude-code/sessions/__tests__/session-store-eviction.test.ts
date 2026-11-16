@@ -200,11 +200,33 @@ describe('checkSessionHealth exempts a session whose turn is still running', () 
     expect(store.findSession(SESSION_ID)).toBeDefined();
   });
 
-  it('evicts it once the turn has run past the background-work ceiling', () => {
+  it('evicts it once the turn has been silent past the background-work ceiling', () => {
     // The bound: a turn whose `finally` never ran must not keep the record
     // forever. The stall watchdog ends a turn that has gone dark long before.
+    // A turn still producing frames re-stamps `lastActivity` and is never
+    // here (DOR-2705, `pump-turn-stream-activity.test.ts`).
     const store = storeRunningTurn(SESSIONS.BACKGROUND_WORK_PARK_CEILING_MS + 60_000);
 
     expect(store.checkSessionHealth(new SessionLockManager(), () => false)).toEqual([SESSION_ID]);
+  });
+
+  // DOR-2705. A turn that keeps talking re-stamps `lastActivity` for ever, so
+  // the 16-hour limit from its start is what ends one stuck in a loop.
+  it('evicts a turn still talking once it has run past the 16-hour limit', () => {
+    const store = storeRunningTurn(THIRTY_ONE_MINUTES);
+    const session = store.findSession(SESSION_ID)!;
+    session.lastActivity = Date.now() - 60_000;
+    session.turnStartedAwake = performance.now() - SESSIONS.TURN_HARD_CEILING_MS - 1;
+
+    expect(store.checkSessionHealth(new SessionLockManager(), () => false)).toEqual([SESSION_ID]);
+  });
+
+  it('keeps that turn one minute short of the 16-hour limit', () => {
+    const store = storeRunningTurn(THIRTY_ONE_MINUTES);
+    const session = store.findSession(SESSION_ID)!;
+    session.lastActivity = Date.now() - 60_000;
+    session.turnStartedAwake = performance.now() - SESSIONS.TURN_HARD_CEILING_MS + 60_000;
+
+    expect(store.checkSessionHealth(new SessionLockManager(), () => false)).toEqual([]);
   });
 });

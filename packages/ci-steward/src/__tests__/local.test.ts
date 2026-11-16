@@ -520,6 +520,9 @@ describe('the heavy-run lock agrees with ci/config.yaml', () => {
     ['SLOTS', 'heavy_run_slots'],
     ['GATE_WAIT_SECONDS', 'heavy_lock_wait_seconds'],
     ['JOB_WAIT_SECONDS', 'heavy_job_wait_seconds'],
+    ['MAX_LOAD', 'heavy_max_load'],
+    ['LOAD_WAIT_SECONDS', 'heavy_load_wait_seconds'],
+    ['LOAD_POLL_SECONDS', 'heavy_load_poll_seconds'],
   ] as const)('%s falls back to the configured %s', (variable, key) => {
     const fallback = new RegExp(`^${variable}="\\$\\{${variable}:-(\\d+)\\}"$`, 'm').exec(script);
     expect(fallback, `heavy-run-lock.sh has no literal fallback for ${variable}`).not.toBeNull();
@@ -529,7 +532,14 @@ describe('the heavy-run lock agrees with ci/config.yaml', () => {
   it('reads the config keys it claims to read', () => {
     // The sed expression takes the key name as an argument, so a renamed key
     // would silently fall back rather than fail.
-    for (const key of ['heavy_run_slots', 'heavy_lock_wait_seconds', 'heavy_job_wait_seconds'])
+    for (const key of [
+      'heavy_run_slots',
+      'heavy_lock_wait_seconds',
+      'heavy_job_wait_seconds',
+      'heavy_max_load',
+      'heavy_load_wait_seconds',
+      'heavy_load_poll_seconds',
+    ])
       expect(script).toContain(`config_number ${key}`);
   });
 });

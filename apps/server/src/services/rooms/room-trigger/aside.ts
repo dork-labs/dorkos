@@ -16,6 +16,8 @@ import { recordDispatchStart } from '../../observability/dispatch-buffers.js';
 import { agentKey, type ClaimOutcome } from '../room-claims.js';
 import { isLiveAuthor } from '../handles/author-handles.js';
 import { buildRoomContext } from '../room-context.js';
+import { strangerMarkForShown } from '../limits/context-entries.js';
+import { env } from '../../../env.js';
 import { roomLaunchStepFor } from '../repo/room-launch-step.js';
 import type { TurnPermissionCeiling } from '@dorkos/shared/agent-runtime';
 import { pendingSeatLaunch, settleSeatLaunch } from './reseat.js';
@@ -268,7 +270,17 @@ export async function runAsideInDispatch(
         ? { permissionCeiling: input.carried.permissionCeiling }
         : {}),
       ...(input.carried?.teammate ? { teammate: true as const } : {}),
-      ...(input.carried?.outsider ? { carriedOutsider: true as const } : {}),
+      // Or a non-owner's post its context showed: a thread opener or the channel glance, when the
+      // greeter's post sits in a thread (DOR-4453 F1).
+      ...(input.carried?.outsider
+        ? { carriedOutsider: true as const }
+        : strangerMarkForShown(
+            env.DORKOS_MARK_STRANGER_TURNS,
+            self.deps,
+            room.id,
+            [],
+            turnContext.context
+          )),
       ...(input.carried?.outsideWords ? { outsideWords: true as const } : {}),
       prompt: input.prompt,
       roomContext: turnContext.context,

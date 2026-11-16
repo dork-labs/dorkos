@@ -40,6 +40,21 @@ function injectedCalls(source: string): number {
  */
 describe('extension-templates', () => {
   describe('generateManifest', () => {
+    it('makes every new app a version 2 app, so it loads instead of asking for an update', () => {
+      for (const kind of [
+        'dashboard-card',
+        'right-panel-tab',
+        'command',
+        'settings-panel',
+        'data-provider',
+      ] as const) {
+        expect(generateManifest('sample', undefined, kind)).toMatchObject({ clientApiVersion: 2 });
+      }
+      expect(generateManifest('sample', undefined, 'data-provider')).toMatchObject({
+        capabilities: { http: true },
+      });
+    });
+
     it('declares the right-panel slot for the right-panel-tab template', () => {
       const manifest = generateManifest('my-panel', 'A panel', 'right-panel-tab') as {
         id: string;
@@ -70,16 +85,14 @@ describe('extension-templates', () => {
       expect(source).toContain("api.registerComponent('right-panel', 'my-panel-panel'");
     });
 
-    it('passes a label, an icon, and a priority', () => {
+    it('passes a label and a priority', () => {
       expect(source).toContain("label: 'My Panel'");
-      expect(source).toContain('icon: MyPanelTabIcon');
       expect(source).toContain('priority: 50');
     });
 
-    it('ships an inline-SVG icon component that takes a className', () => {
-      expect(source).toContain('function MyPanelTabIcon({ className }: { className?: string })');
-      expect(source).toContain('<svg');
-      expect(source).toContain('stroke="currentColor"');
+    it('passes no icon component, which cannot cross the sandboxed frame', () => {
+      expect(source).not.toContain('icon:');
+      expect(source).not.toContain('<svg');
     });
 
     it('renders a panel body component', () => {
@@ -87,7 +100,9 @@ describe('extension-templates', () => {
     });
 
     it('imports the API as a type only and never imports React', () => {
-      expect(source).toContain("import type { ExtensionAPI } from '@dorkos/extension-api'");
+      expect(source).toContain(
+        "import type { FrameExtensionAPI as ExtensionAPI } from '@dorkos/extension-api'"
+      );
       expect(source).not.toContain('import React');
     });
   });

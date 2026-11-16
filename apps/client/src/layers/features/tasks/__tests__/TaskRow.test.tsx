@@ -6,7 +6,7 @@ import { render, screen, fireEvent, waitFor, cleanup, act } from '@testing-libra
 import type { ReactNode } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { Transport } from '@dorkos/shared/transport';
-import { createMockTransport } from '@dorkos/test-utils';
+import { createMockTransport } from '@dorkos/test-utils/mock-factories';
 import { TransportProvider } from '@/layers/shared/model';
 import { TooltipProvider } from '@/layers/shared/ui';
 import {
@@ -747,18 +747,23 @@ describe('ScheduleRow', () => {
       };
     }
 
-    it('keeps the agent name at its cap and wraps a long schedule name to two lines', () => {
+    it('caps names and top-aligns the two-line phone heading', () => {
       // At 390px a long schedule name used to squeeze the agent name to "q"
-      // and cut itself to one line (QA, DOR-3123).
+      // and cut itself to one line (QA, DOR-4120).
       const { agentName, taskName } = renderNames(
         'an agent name that is much too long for a phone row',
         'A schedule name that also cannot fit on a phone row'
       );
 
-      expect(agentName).toHaveClass('shrink-0', 'max-w-[40%]', 'truncate');
+      const heading = taskName?.parentElement;
+      const row = taskName?.closest('[role="button"]');
+
+      expect(agentName).toHaveClass('shrink-0', 'max-w-[30%]', 'sm:max-w-[40%]', 'truncate');
       expect(agentName).not.toHaveClass('shrink');
-      expect(taskName).toHaveClass('min-w-0', 'line-clamp-2');
+      expect(taskName).toHaveClass('min-w-0', 'line-clamp-2', 'break-words', 'sm:line-clamp-1');
       expect(taskName).not.toHaveClass('truncate');
+      expect(heading).toHaveClass('items-start', 'sm:items-center');
+      expect(row).toHaveClass('items-start', 'sm:items-center');
       expect(agentName).toHaveAttribute(
         'title',
         'an agent name that is much too long for a phone row'
@@ -775,9 +780,9 @@ describe('ScheduleRow', () => {
         'Backup'
       );
 
-      expect(agentName).toHaveClass('shrink-0', 'max-w-[40%]', 'truncate');
+      expect(agentName).toHaveClass('shrink-0', 'max-w-[30%]', 'sm:max-w-[40%]', 'truncate');
       expect(taskName).toHaveTextContent('Backup');
-      expect(taskName).toHaveClass('min-w-0', 'line-clamp-2');
+      expect(taskName).toHaveClass('min-w-0', 'line-clamp-2', 'sm:line-clamp-1');
     });
 
     it('draws the agent as an agent — square, filled, Bot-marked — not a bare colour dot', () => {
@@ -935,13 +940,13 @@ describe('ScheduleRow', () => {
       expect(screen.getByText(/Every: 30 7 \* \* 1-5, Europe\/Berlin/)).toBeTruthy();
     });
 
-    it('explains a timezone-only change by showing the zone', () => {
-      // Purpose: with only the zone overridden, the zone is the one thing on
-      // the row that says why it is "Your timing".
+    it('keeps a timezone-only override marked without repeating the viewer’s zone', () => {
       const viewerZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
       renderScheduleRow({ ...activeSchedule, timezone: viewerZone, timingOverridden: true });
 
-      expect(screen.getByText(new RegExp(`, ${viewerZone.replace('/', '\\/')}`))).toBeTruthy();
+      expect(screen.queryByText(new RegExp(`, ${viewerZone.replace('/', '\\/')}`))).toBeNull();
+      const marker = document.querySelector('[data-slot="task-timing-override"]');
+      expect(marker).toHaveTextContent('Your timing');
     });
 
     it('names a zone that is not the reader’s own, and leaves out the one that is', () => {

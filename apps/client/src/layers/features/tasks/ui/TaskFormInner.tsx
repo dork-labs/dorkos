@@ -21,7 +21,8 @@ import {
 } from '@/layers/shared/ui';
 import { useAppForm } from '@/layers/shared/lib/form';
 import { isBypassPermissionMode, permissionModeLabel } from '@/layers/shared/lib';
-import type { EffortLevel, PermissionMode, Task } from '@dorkos/shared/types';
+import type { PermissionMode, Task } from '@dorkos/shared/types';
+import { createTaskInput } from '../lib/create-task-input';
 import { ScheduleBuilder, isCronValid } from './TaskBuilder';
 import { TimezoneCombobox } from './TimezoneCombobox';
 import { TaskAgentField, type TaskAgentRoster } from './TaskAgentField';
@@ -99,6 +100,8 @@ export interface ScheduleFormProps {
   onMakeCopy?: (values: ScheduleFormValues) => void;
   /** Shown at the top of the form, above every field. */
   leading?: ReactNode;
+  /** The browser's current zone for a new schedule whose picker stays at its default. */
+  defaultTimezone: () => string | null;
 }
 
 /** Inner form component. Remounted via `key` when defaultValues change. */
@@ -112,6 +115,7 @@ export function ScheduleForm({
   isPending,
   onMakeCopy,
   leading,
+  defaultTimezone,
 }: ScheduleFormProps) {
   const createTask = useCreateTask();
   // An edit the server refuses because the schedule came with an installed
@@ -140,9 +144,6 @@ export function ScheduleForm({
   const form = useAppForm({
     defaultValues,
     onSubmit: ({ value }) => {
-      const resolvedAgentId = value.agentId.trim() || undefined;
-      const cronTrimmed = value.cron.trim();
-
       if (editTask) {
         // Only what the person changed (`changedUpdateFields`): a field sent
         // unchanged is still a field the server has to act on, and a package's
@@ -154,25 +155,7 @@ export function ScheduleForm({
         }
         updateTask.mutate({ id: editTask.id, ...input }, { onSuccess: onSubmitSuccess });
       } else {
-        const target = resolvedAgentId ?? 'global';
-        const input = {
-          name: value.name.trim(),
-          description: value.description.trim() || value.name.trim(),
-          prompt: value.prompt.trim(),
-          target,
-          cron: cronTrimmed || undefined,
-          ...(cronTrimmed && value.timezone ? { timezone: value.timezone } : {}),
-          permissionMode: value.permissionMode,
-          maxRuntime: value.maxRuntime.trim() || undefined,
-          ...(value.sticky ? { sticky: true } : {}),
-          // Omitted rather than nulled on a CREATE: there is nothing to clear
-          // yet, and a body that carries only what was chosen is the shape the
-          // rest of this call already has.
-          ...(value.runtime ? { runtime: value.runtime } : {}),
-          ...(value.model ? { model: value.model } : {}),
-          ...(value.effort ? { effort: value.effort as EffortLevel } : {}),
-        };
-        createTask.mutate(input, { onSuccess: onSubmitSuccess });
+        createTask.mutate(createTaskInput(value, defaultTimezone), { onSuccess: onSubmitSuccess });
       }
     },
   });
@@ -377,6 +360,7 @@ export function ScheduleForm({
                     <Label>Timezone</Label>
                     <TimezoneCombobox
                       value={field.state.value}
+                      browserTimezone={defaultTimezone()}
                       onChange={(tz) => field.handleChange(tz)}
                     />
                   </div>

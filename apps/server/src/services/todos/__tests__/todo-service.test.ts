@@ -514,6 +514,37 @@ describe('TodoService', () => {
     });
   });
 
+  it('applies due-date history and late-move audit rules through TodoService.update', () => {
+    const made = todos.create(PERSON, {
+      what: 'Ship it',
+      assignee: { kind: 'agent', agentId: 'agent-a' },
+      dueAt: new Date(START.getTime() + HOUR).toISOString(),
+    });
+    const early = todos.update(PERSON, made.id, {
+      dueAt: new Date(START.getTime() + 3 * HOUR).toISOString(),
+    });
+    expect(early).toMatchObject({
+      originalDueAt: made.dueAt,
+      scoreDueAt: new Date(START.getTime() + 3 * HOUR).toISOString(),
+      moveCount: 1,
+    });
+    expect(JSON.parse(db.select().from(auditEvents).all().at(-1)!.change!)).toContainEqual({
+      field: 'lateMove',
+      before: null,
+      after: false,
+    });
+    vi.setSystemTime(START.getTime() + 3 * HOUR);
+    const late = todos.update(PERSON, made.id, {
+      dueAt: new Date(START.getTime() + 5 * HOUR).toISOString(),
+    });
+    expect(late).toMatchObject({ scoreDueAt: early.scoreDueAt, moveCount: 2 });
+    expect(JSON.parse(db.select().from(auditEvents).all().at(-1)!.change!)).toContainEqual({
+      field: 'lateMove',
+      before: null,
+      after: true,
+    });
+  });
+
   it('audits each change with the actor, the chain depth, the authority applied and the source', () => {
     const made = todos.create(PERSON, {
       what: 'Ship it',

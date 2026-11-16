@@ -21,7 +21,7 @@ import {
 } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import '@testing-library/jest-dom/vitest';
-import { createMockTransport } from '@dorkos/test-utils';
+import { createMockTransport } from '@dorkos/test-utils/mock-factories';
 import type { RoomSummary } from '@dorkos/shared/room-schemas';
 import { CommandPaletteDialog } from '../ui/CommandPaletteDialog';
 

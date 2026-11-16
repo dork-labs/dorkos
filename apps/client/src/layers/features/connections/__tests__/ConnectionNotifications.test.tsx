@@ -10,7 +10,7 @@ import type {
   ConnectionEventSubscription,
 } from '@dorkos/shared/connector-event-schemas';
 import type { TeamMember } from '@dorkos/shared/team-schemas';
-import { createMockTransport } from '@dorkos/test-utils';
+import { createMockTransport } from '@dorkos/test-utils/mock-factories';
 import { TransportProvider } from '@/layers/shared/model';
 import { gmailFilterSchema } from './event-filter-fixtures';
 import { ConnectionNotifications } from '../ui/ConnectionNotifications';

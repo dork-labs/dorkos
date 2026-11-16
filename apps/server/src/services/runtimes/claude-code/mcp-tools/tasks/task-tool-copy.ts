@@ -120,21 +120,21 @@ export const PARKED_SCHEDULE_SURFACE_HINT =
 /**
  * The description `tasks_create` gives the `target` argument.
  *
- * Required, and that is the fix rather than an inconvenience (DOR-1568). The tool
- * never asked where a task should live, so it wrote no file and set no owner: the
- * row landed with `filePath: ''` and `agentId: null`, the reconciler skipped it
- * because there was nothing on disk to reconcile, and its runs happened in
- * whatever directory the server itself was started in. There is no safe default
- * to fall back on — `global` would quietly file an agent's own work where it does
- * not belong — so the caller says, or nothing is created.
+ * An agent's schedule runs in its own folder, never in home or the data folder
+ * (DOR-4067): an omitted or `global` target is filed under the verified caller,
+ * and nothing is created for an agent with no registered folder. A folder that
+ * is the data folder or a protected one is refused at every level, since no run
+ * could start there; the home folder itself only below Full (the DOR-4136 rule).
+ * Global proposals keep their approval requirement after that placement change.
  */
 export const TARGET_DESCRIPTION =
-  'Where this scheduled task lives. Give your own agent id to file it under yourself — it then ' +
-  'runs in your folder, with your files — or "global" for a scheduled task that belongs to no ' +
-  'agent and runs in the DorkOS data folder. From a chat at Full autonomy whose turn ' +
+  'Where this scheduled task lives. Omit this, use "global", or give your own agent id to file ' +
+  'it under yourself, so it runs in your own folder. A global request still waits for a person ' +
+  'to approve it. DorkOS refuses if your agent has no folder of its own, if your folder is the ' +
+  'DorkOS data folder or a protected one, or, below Full autonomy, if it is the home folder. ' +
+  'From a chat at Full autonomy whose turn ' +
   `${unmarkedTurnClause()}, another agent's id files it under that agent, at that agent's own level at ` +
-  'most; anywhere else that is refused. Required: DorkOS will not guess, because a scheduled ' +
-  'task filed in the wrong place runs against the wrong files.';
+  'most; anywhere else that is refused.';
 
 /**
  * The description both tools give the `agentId` argument, which neither accepts.
@@ -218,6 +218,23 @@ export const REASON_DESCRIPTION =
   'Why this schedule should exist, in your own words. The person reads it on the schedule, ' +
   'and decides on it when DorkOS asks them first.';
 
+/** The proposed mode argument shown on both task tools. */
+export const REQUESTED_PERMISSION_MODE_DESCRIPTION =
+  'The permission mode you ask the person to approve. This request never changes the applied mode.';
+
+/** The proposed task-run allow rules shown on both task tools. */
+export const REQUESTED_ALLOW_DESCRIPTION =
+  'Exact Claude Code permission rules you ask the person to approve for this task only. ' +
+  'They never change folder settings and do nothing until a person approves them.';
+
+/** Operator-only task-run rules stay advertised so an attempted write is refused whole. */
+export const REFUSED_APPROVED_ALLOW_DESCRIPTION =
+  'Not yours to set. Only a person may apply task-run allow rules; DorkOS refuses the whole call.';
+
+/** Operator-only confirmation stays advertised so an attempted write is refused whole. */
+export const REFUSED_LOOSER_CONFIRMATION_DESCRIPTION =
+  'Not yours to set. Only a person may choose more power than you requested.';
+
 /**
  * The description both servers give the `permissionMode` argument (DOR-504).
  *
@@ -288,6 +305,10 @@ export const TASKS_CREATE_DESCRIPTION =
   'them first: then it waits at pending_approval and never runs until they approve it. ' +
   'The schedule returned says which. From a chat at Full autonomy whose turn ' +
   `${unmarkedTurnClause()}, target can be another agent: the task runs at that agent's level at most.`;
+
+/** The zone argument defaults to the person's saved time zone. */
+export const TIMEZONE_DESCRIPTION =
+  'IANA timezone (e.g., "America/New_York"); defaults to the person’s zone';
 
 /**
  * What `tasks_update` says it does, including whose task it may change (DOR-3938).

@@ -5,7 +5,14 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { createTestDb } from '@dorkos/test-utils/db';
 import { pulseRuns, pulseSchedules, type Db } from '@dorkos/db';
-import { healthOf, HEALTHY, scheduleHealth } from '../schedule-health.js';
+import { eq } from 'drizzle-orm';
+import {
+  healthOf,
+  HEALTHY,
+  scheduleHealth,
+  STREAKS_COUNTED_FROM,
+  streakCountsFrom,
+} from '../schedule-health.js';
 
 /** One finished run, newest-first order is the caller's job. */
 function run(
@@ -38,6 +45,8 @@ describe('healthOf', () => {
       since: '2026-10-25T02:00:00.000Z',
       streak: 1,
       lastRunId: 'r2',
+      // October is before fails-twice notices shipped, so none of it counts.
+      recentStreak: 0,
     });
   });
 
@@ -78,6 +87,28 @@ describe('healthOf', () => {
     expect(healthOf([run('r1', 'failed', { error: 'Sign in again: 401' })]).reason?.kind).toBe(
       'signin_needed'
     );
+  });
+});
+
+describe('the recent streak (DOR-4127)', () => {
+  it('counts only the streak runs that started at or after the cutoff', () => {
+    const health = healthOf(
+      [
+        run('r3', 'failed', { startedAt: '2026-11-12T03:00:00.000Z' }),
+        run('r2', 'failed', { startedAt: '2026-11-12T02:00:00.000Z' }),
+        run('r1', 'failed', { startedAt: '2026-11-01T01:00:00.000Z' }),
+      ],
+      Date.parse('2026-11-12T00:00:00.000Z')
+    );
+    expect(health).toMatchObject({ streak: 3, recentStreak: 2 });
+  });
+
+  it('counts from the later of the release and the schedule’s last change', () => {
+    expect(streakCountsFrom('2026-10-01T00:00:00.000Z')).toBe(Date.parse(STREAKS_COUNTED_FROM));
+    expect(streakCountsFrom('2026-11-14T00:00:00.000Z')).toBe(
+      Date.parse('2026-11-14T00:00:00.000Z')
+    );
+    expect(streakCountsFrom(null)).toBe(Date.parse(STREAKS_COUNTED_FROM));
   });
 });
 
@@ -128,5 +159,32 @@ describe('scheduleHealth', () => {
     const health = scheduleHealth(db);
     expect(health.get('s1')).toMatchObject({ state: 'failing', streak: 1, lastRunId: 'a1' });
     expect(health.get('s2')).toEqual(HEALTHY);
+  });
+
+  it('counts two failures after the schedule last changed', () => {
+    insert('c1', 's1', 'failed', '2026-11-13T01:00:00.000Z');
+    insert('c2', 's1', 'failed', '2026-11-13T02:00:00.000Z');
+    expect(scheduleHealth(db).get('s1')).toMatchObject({ streak: 2, recentStreak: 2 });
+  });
+
+  it('does not count failures older than the schedule’s last change', () => {
+    insert('d1', 's1', 'failed', '2026-11-13T01:00:00.000Z');
+    insert('d2', 's1', 'failed', '2026-11-13T02:00:00.000Z');
+    db.update(pulseSchedules)
+      .set({ updatedAt: '2026-11-14T00:00:00.000Z' })
+      .where(eq(pulseSchedules.id, 's1'))
+      .run();
+    // Still failing on its row; nothing new for Needs you.
+    expect(scheduleHealth(db).get('s1')).toMatchObject({
+      state: 'failing',
+      streak: 2,
+      recentStreak: 0,
+    });
+  });
+
+  it('never counts weeks-old failures from before the notice shipped', () => {
+    insert('e1', 's1', 'failed', '2026-10-19T01:00:00.000Z');
+    insert('e2', 's1', 'failed', '2026-11-04T01:00:00.000Z');
+    expect(scheduleHealth(db).get('s1')).toMatchObject({ streak: 2, recentStreak: 0 });
   });
 });

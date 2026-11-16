@@ -186,6 +186,7 @@ export class TaskApprovals {
         status: 'pending_approval',
         approvedContentKey: null,
         ...CLEARED_APPROVAL_RECEIPT,
+        approvedAllow: null,
         previousApprovalKey: row.approvedContentKey ?? row.previousApprovalKey,
         declinedContentKey: effectiveContentKey(row),
         updatedAt: new Date().toISOString(),
@@ -295,6 +296,7 @@ export class TaskApprovals {
               status: 'pending_approval',
               approvedContentKey: null,
               ...CLEARED_APPROVAL_RECEIPT,
+              approvedAllow: null,
               previousApprovalKey: row.approvedContentKey ?? row.previousApprovalKey,
               followedAgentChanges: merged,
               reason: AGENT_DEFAULTS_CHANGED_OUTSIDE_REASON,
@@ -309,6 +311,7 @@ export class TaskApprovals {
             .set({
               approvedContentKey: null,
               ...CLEARED_APPROVAL_RECEIPT,
+              approvedAllow: null,
               previousApprovalKey: row.approvedContentKey,
               followedAgentChanges: merged,
               updatedAt: now,
@@ -424,6 +427,9 @@ export class TaskApprovals {
           // The agent's trust approved this work, not the person whose earlier
           // yes covered different content (Security Should C-1).
           ...trustedAgentReceiptColumns(),
+          // Rules a person approved for the old work never carry to new work
+          // nobody reviewed (DOR-3637), whichever way the sync race went.
+          ...(substitutesWork ? { approvedAllow: null } : {}),
           ...(parkedMidRequest
             ? {
                 status: 'active' as const,
@@ -446,6 +452,7 @@ export class TaskApprovals {
         status: 'pending_approval',
         approvedContentKey: null,
         ...CLEARED_APPROVAL_RECEIPT,
+        approvedAllow: null,
         // What was approved, so the card can say what the agent changed. A sync
         // that parked mid-request already moved it here; keep that.
         previousApprovalKey: row.approvedContentKey ?? row.previousApprovalKey,
@@ -469,7 +476,7 @@ export class TaskApprovals {
   withdrawApproval(id: string): void {
     this.db
       .update(pulseSchedules)
-      .set({ approvedContentKey: null, ...CLEARED_APPROVAL_RECEIPT })
+      .set({ approvedContentKey: null, ...CLEARED_APPROVAL_RECEIPT, approvedAllow: null })
       .where(eq(pulseSchedules.id, id))
       .run();
   }
@@ -730,6 +737,7 @@ export class TaskApprovals {
             status: 'pending_approval',
             approvedContentKey: null,
             ...CLEARED_APPROVAL_RECEIPT,
+            approvedAllow: null,
             // Kept for the card's "what changed" (DOR-2323).
             previousApprovalKey: existing.approvedContentKey ?? existing.previousApprovalKey,
             ...fileProvenance(existing, { reason }),

@@ -1,5 +1,6 @@
 import type {
   LocalBrowserCapabilities,
+  LocalBrowserHistoryDirection,
   LocalBrowserOpen,
   LocalBrowserPersonState,
   LocalBrowserProfile,
@@ -22,6 +23,8 @@ export interface LocalBrowserTransport {
   openLocalBrowser(input: LocalBrowserOpen): Promise<LocalBrowserPersonState>;
   selectLocalBrowserTab(id: string): Promise<LocalBrowserState>;
   navigateLocalBrowser(url: string): Promise<LocalBrowserState>;
+  /** Move the page one step back or forward through its own history. Takes the page from an agent. */
+  stepLocalBrowserHistory(direction: LocalBrowserHistoryDirection): Promise<LocalBrowserState>;
   pauseLocalBrowser(): Promise<LocalBrowserState>;
   resumeLocalBrowser(): Promise<LocalBrowserPersonState>;
   disconnectLocalBrowser(): Promise<LocalBrowserPersonState>;

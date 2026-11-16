@@ -5,7 +5,7 @@ import type { PlaygroundSection } from '../playground-registry';
  * answers things on.
  *
  * Sources: PipPanelShowcases, ApprovalsShowcases, ScheduleApprovalShowcases,
- * TriageHeaderShowcases, InboxShowcases, PresenceStripShowcases,
+ * TriageHeaderShowcases, InboxShowcases, ExtensionUpdateShowcases, PresenceStripShowcases,
  * HomeStatesShowcases, TodosShowcases, ConnectionsShowcases, PausedConnectionShowcases,
  * CommunityHostingShowcases, McpServerCardShowcases, McpServerSheetShowcases.
  *
@@ -106,6 +106,32 @@ export const FEATURE_SURFACE_SECTIONS: PlaygroundSection[] = [
       're-ask',
     ],
   },
+  // ExtensionUpdateShowcases
+  {
+    id: 'extension-update-card',
+    title: 'Extension update card',
+    page: 'home-inbox',
+    category: 'Inbox',
+    keywords: ['extension', 'update', 'new power', 'files changed', 'approval', 're-ask'],
+  },
+  // AppApprovalCardShowcases
+  {
+    id: 'app-approval-card',
+    title: 'App approval card',
+    page: 'home-inbox',
+    category: 'Inbox',
+    keywords: [
+      'app',
+      'extension',
+      'approval',
+      'can change',
+      'other apps',
+      'frame',
+      'writes',
+      'open its pages',
+      'navigate',
+    ],
+  },
   {
     id: 'inbox-decision-row',
     title: 'Inbox decision row',
@@ -129,6 +155,14 @@ export const FEATURE_SURFACE_SECTIONS: PlaygroundSection[] = [
     page: 'home-inbox',
     category: 'Home',
     keywords: ['browser', 'agent browser', 'handoff', 'sign in', 'password', 'paused', 'continue'],
+  },
+  // BrowserChromeShowcases
+  {
+    id: 'browser-chrome',
+    title: 'Browser chrome',
+    page: 'home-inbox',
+    category: 'Home',
+    keywords: ['browser', 'address bar', 'back', 'forward', 'reload', 'not secure', 'chrome'],
   },
   // LocalBrowserPanelShowcases
   {

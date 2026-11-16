@@ -66,7 +66,7 @@ import { logger } from '../../../lib/logger.js';
  * agent whose room seat moved to another account to finish, not repeat.
  */
 const PACK_NAMES = OPERATING_SKILLS_PACK.map((skill) => skill.name).sort();
-const PACK_SIZE = 11;
+const PACK_SIZE = 12;
 
 let tmpRoot: string;
 

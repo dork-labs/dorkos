@@ -1,6 +1,12 @@
-import type { ExtensionModule } from '@dorkos/extension-api';
+import type { ExtensionManifest, ExtensionModule } from '@dorkos/extension-api';
+import { isolatedExtensionModule } from '../frame/host';
 
-/** Import the bundle through the server's approval and integrity gate. */
-export function importExtensionModule(url: string): Promise<ExtensionModule> {
-  return import(/* @vite-ignore */ url) as Promise<ExtensionModule>;
+/** Fetch approved bytes as data; only an opaque frame may evaluate them. */
+export async function importExtensionModule(
+  url: string,
+  manifest: ExtensionManifest
+): Promise<ExtensionModule> {
+  const response = await fetch(url);
+  if (!response.ok) throw new Error('The app bundle could not be read.');
+  return isolatedExtensionModule(await response.text(), manifest);
 }

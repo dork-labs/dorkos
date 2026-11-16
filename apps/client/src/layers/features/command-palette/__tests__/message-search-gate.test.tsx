@@ -13,7 +13,7 @@ import type { ReactNode } from 'react';
 import { render, screen, fireEvent, cleanup, act, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import '@testing-library/jest-dom/vitest';
-import { createMockTransport } from '@dorkos/test-utils';
+import { createMockTransport } from '@dorkos/test-utils/mock-factories';
 import type { Session } from '@dorkos/shared/types';
 
 import { TransportProvider, useAppStore } from '@/layers/shared/model';

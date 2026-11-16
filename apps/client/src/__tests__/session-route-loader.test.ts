@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { QueryClient } from '@tanstack/react-query';
-import { createMockTransport, createMockSession } from '@dorkos/test-utils';
+import { createMockTransport, createMockSession } from '@dorkos/test-utils/mock-factories';
 import { sessionRouteLoader, sessionLoaderDeps, reloadSessionMatches } from '../router';
 import { sessionSearchSchema, newSessionTarget } from '@/layers/shared/lib';
 import {

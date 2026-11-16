@@ -98,6 +98,7 @@ beforeEach(() => {
           store,
           scheduler,
           registrar: new TaskRegistrar({ store, scheduler }),
+          defaultTimezone: () => 'UTC',
           dorkHome,
         }),
       },

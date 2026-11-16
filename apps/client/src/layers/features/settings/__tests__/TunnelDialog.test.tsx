@@ -5,7 +5,7 @@ import userEvent from '@testing-library/user-event';
 
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { Transport } from '@dorkos/shared/transport';
-import { createMockTransport } from '@dorkos/test-utils';
+import { createMockTransport } from '@dorkos/test-utils/mock-factories';
 import { TransportProvider } from '@/layers/shared/model';
 import { TunnelDialog } from '../ui/TunnelDialog';
 

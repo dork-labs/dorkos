@@ -47,6 +47,8 @@ export function emptyHeartbeatMeasures(): HeartbeatMeasures {
       beats: 0,
       quietBeats: emptyRate('80% or more'),
       todosOnTime: emptyRate('90% or more'),
+      todosMoved: 0,
+      todosMissed: 0,
       noEndBeat: 0,
       triage: { checks: 0, tokens: 0 },
       turns: { count: 0, tokensPerTurn: null },

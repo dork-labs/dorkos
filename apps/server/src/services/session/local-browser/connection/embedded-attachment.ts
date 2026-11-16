@@ -2,6 +2,7 @@ import type { Browser } from 'playwright-core';
 import type { EmbeddedBrowserPort } from '../desktop-bridge.js';
 import type { LocalBrowserBackend } from '../playwright-backend.js';
 import { LocalBrowserError } from '../errors.js';
+import type { EmbeddedHistoryBridge } from '../history/page-history.js';
 
 /** The guest stays visible while its debugger and the old Playwright connection go away. */
 export class EmbeddedBrowserAttachment {
@@ -21,6 +22,17 @@ export class EmbeddedBrowserAttachment {
       if (this.browser === browser && !this.detached) this.closed();
     });
     return browser;
+  }
+
+  /** The host's own history calls (DOR-4449). A Mac app too old to have them says so. */
+  history(): EmbeddedHistoryBridge {
+    const { history, goToHistory } = this.guest;
+    if (!history || !goToHistory)
+      throw new LocalBrowserError(
+        'connect_failed',
+        'Update the desktop app to use Back and Forward.'
+      );
+    return { history, goToHistory };
   }
 
   /** The authenticated host acknowledges only after debugger.detach() has returned. */

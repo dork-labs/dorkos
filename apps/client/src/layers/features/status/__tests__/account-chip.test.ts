@@ -3,7 +3,7 @@
  * its words, and when the popover may offer to continue on another account.
  */
 import { describe, it, expect } from 'vitest';
-import { createMockAccountUsage, createMockSessionLimit } from '@dorkos/test-utils';
+import { createMockAccountUsage, createMockSessionLimit } from '@dorkos/test-utils/mock-factories';
 import type { LimitState, SessionLimitView } from '@/layers/shared/lib';
 import {
   accountChipText,

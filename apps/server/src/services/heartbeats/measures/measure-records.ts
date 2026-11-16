@@ -102,8 +102,16 @@ export function isRealAction(action: string, summary: string): boolean {
 export interface MeasureTodo {
   /** Where it stands. */
   state: 'open' | 'kept' | 'missed' | 'dropped';
-  /** When it was due (ISO 8601). */
-  dueAt: string;
+  /** When it is due now (ISO 8601), or null when the date was cleared after it was missed. */
+  dueAt: string | null;
+  /**
+   * The date on-time completion is judged against (ISO 8601): the score date, or the due date on a
+   * legacy row. A late move or clear leaves it on the date missed, and a dropped one is judged no
+   * later than its drop (DOR-3034).
+   */
+  scoreDueAt: string;
+  /** How many times its date moved. */
+  moveCount: number;
   /** When it closed (ISO 8601), or null while open. */
   closedAt: string | null;
 }
@@ -375,12 +383,23 @@ export function readMeasureRecords(
       spokenRaises.set(row.beatId, (spokenRaises.get(row.beatId) ?? 0) + 1);
     }
   }
+  // The date each to-do is judged against. A dropped one is judged no later than when it was
+  // dropped, so clearing its date or moving it far out first cannot keep the drop off the score
+  // (DOR-3034); one that never had a date counts from its drop.
+  const scoredDueAt = sql<string>`case when ${todos.state} = 'dropped' and ${todos.closedAt} is not null
+    then min(coalesce(${todos.scoreDueAt}, ${todos.dueAt}, ${todos.closedAt}), ${todos.closedAt})
+    else coalesce(${todos.scoreDueAt}, ${todos.dueAt}) end`;
   const due = db
-    .select({ state: todos.state, dueAt: todos.dueAt, closedAt: todos.closedAt })
+    .select({
+      state: todos.state,
+      dueAt: todos.dueAt,
+      scoreDueAt: scoredDueAt,
+      moveCount: todos.moveCount,
+      closedAt: todos.closedAt,
+    })
     .from(todos)
-    .where(and(eq(todos.agentId, agentId), gte(todos.dueAt, since), lte(todos.dueAt, now)))
-    .all()
-    .filter((row): row is MeasureTodo => row.dueAt !== null);
+    .where(and(eq(todos.agentId, agentId), gte(scoredDueAt, since), lte(scoredDueAt, now)))
+    .all();
   return {
     beats,
     deliveries: [...delivered, ...held],

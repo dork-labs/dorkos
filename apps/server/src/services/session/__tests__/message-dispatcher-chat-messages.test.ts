@@ -192,7 +192,7 @@ describe('the level ceiling of a row another chat sent', () => {
 
     await send('the running turn', PERSON);
     await send('from another chat', CHAT_A);
-    // A second sender batched in while it waited: its bound joins the row's.
+    // A second sender joined while it waited: its bound joins the row's.
     current = [MIDDLE, TIGHT];
     first.open();
     await settle();

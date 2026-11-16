@@ -26,6 +26,10 @@ import {
 export interface FolderAllowsLaunch extends FolderAllowsTurn {
   /** The launch options, mutated when a list applies. */
   sdkOptions: Options;
+  /** Person-approved rules that exist only for this task launch. */
+  taskApprovedAllow?: readonly string[];
+  /** The launch's status queue, when notices should be appended directly. */
+  statusEvents?: StreamEvent[];
   /** DorkOS's data folder. */
   dorkHome: string;
   /** The launch's Claude Code account folder. */
@@ -39,10 +43,41 @@ export interface FolderAllowsLaunch extends FolderAllowsTurn {
 }
 
 /**
+ * Merge a task's person-approved rules into this launch only (DOR-3637), with
+ * the same protected-path denies a folder list gets, so an approved rule can
+ * never reach the files that would grant every later session more. When those
+ * denies cannot be built, none of the task's rules ride.
+ *
+ * @param launch - The turn and the launch it rides.
+ */
+function applyTaskApprovedAllow(launch: FolderAllowsLaunch): void {
+  const rules = launch.taskApprovedAllow ?? [];
+  if (rules.length === 0) return;
+  const home = launch.home ?? launch.cwd;
+  const deny = home
+    ? selfGrantDenyRules({
+        home,
+        dorkHome: launch.dorkHome,
+        accountRoot: launch.accountRoot,
+        ownFolderOpen: launch.ownFolderOpen === true,
+      })
+    : undefined;
+  if (!deny) {
+    logger.warn('[FolderAllows] Not applying task rules: a protected path cannot be named', {
+      agentId: launch.agent?.id,
+      rules: rules.length,
+    });
+    return;
+  }
+  mergeFolderAllows(launch.sdkOptions, rules, deny);
+}
+
+/**
  * Apply the agent's own folder allow list to one launch. Only an approved list
  * rides, only into `settings.permissions.allow` (never `allowedTools`,
  * DOR-519), always beside its self-grant deny rules, only in the exact
- * registered home, and never on a teammate's turn.
+ * registered home, and never on a teammate's turn. A task's own approved rules
+ * ride first, on the same terms (DOR-3637).
  *
  * @param launch - The turn and the launch it rides.
  * @returns The status line to show first, when a Never ask chat should hear
@@ -52,6 +87,7 @@ export async function applyFolderAllowsToLaunch(
   launch: FolderAllowsLaunch
 ): Promise<StreamEvent | undefined> {
   const { sdkOptions, agent } = launch;
+  applyTaskApprovedAllow(launch);
   const decision = await resolveFolderAllows(launch);
   if (decision.kind === 'none') return undefined;
   const agentId = agent?.id;
@@ -99,10 +135,12 @@ export async function applyFolderAllowsToLaunch(
   }
   // Never ask refuses what the list would have allowed; say why (DOR-3042).
   if (launch.neverAsk && firstTimeToldAbout(launch.chat, decision.request)) {
-    return {
+    const notice: StreamEvent = {
       type: 'system_status',
       data: { message: folderAllowsWaitingStatus(decision.request.agentName) },
     };
+    launch.statusEvents?.push(notice);
+    return notice;
   }
   return undefined;
 }

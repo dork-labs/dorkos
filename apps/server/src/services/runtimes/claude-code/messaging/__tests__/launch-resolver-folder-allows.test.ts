@@ -4,7 +4,7 @@
  * (DOR-3039, DOR-3042).
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { setAgentHomeRegistry } from '../../../../core/agent-identity/index.js';
@@ -86,14 +86,25 @@ function makeOpts(cwd: string): MessageSenderOpts {
 
 const launch = (
   cwd: string,
-  extra: { teammate?: boolean; mode?: AgentSession['permissionMode'] } = {}
+  extra: {
+    teammate?: boolean;
+    mode?: AgentSession['permissionMode'];
+    taskApprovedAllow?: string[];
+  } = {}
 ) =>
   resolveLaunch({
     sessionId: 's1',
     content: 'hello',
     session: makeSession(extra.mode),
     opts: makeOpts(cwd),
-    ...(extra.teammate ? { messageOpts: { roomTurn: { teammate: true } } as never } : {}),
+    ...(extra.teammate || extra.taskApprovedAllow
+      ? {
+          messageOpts: {
+            ...(extra.teammate ? { roomTurn: { teammate: true } } : {}),
+            ...(extra.taskApprovedAllow ? { taskApprovedAllow: extra.taskApprovedAllow } : {}),
+          } as never,
+        }
+      : {}),
     effectiveCwd: cwd,
   });
 
@@ -183,6 +194,23 @@ describe('an agent folder allow list at launch', () => {
     expect(resolved.sdkOptions.allowedTools).toBeUndefined();
     expect(resolved.sdkOptions.permissionMode).toBe('dontAsk');
     expect(asked).toHaveLength(0);
+  });
+
+  it('applies a task rule with self-grant denies to one launch without writing settings', async () => {
+    const taskRule = 'Bash(/abs/path/script.sh --once)';
+    const settingsDir = path.join(home, '.claude');
+    rmSync(settingsDir, { recursive: true, force: true });
+
+    const scheduled = await launch(home, { taskApprovedAllow: [taskRule] });
+    const plain = await launch(home);
+
+    expect(allowOf(scheduled.sdkOptions.settings)).toContain(taskRule);
+    expect(
+      denyOf(scheduled.sdkOptions.settings).some((rule) => rule.includes(`${home}/.claude`))
+    ).toBe(true);
+    expect(existsSync(settingsDir)).toBe(false);
+    expect(allowOf(plain.sdkOptions.settings)).toBeUndefined();
+    expect(scheduled.sdkOptions.allowedTools).toBeUndefined();
   });
 
   it('denies the self-grant files beside an applied list, and only then (M1)', async () => {

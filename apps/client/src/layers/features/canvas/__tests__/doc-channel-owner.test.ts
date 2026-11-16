@@ -2,7 +2,7 @@
 /** Proposed genuine owner controls. UNRUN; no fixture grants source authority. */
 import type { SetStateAction } from 'react';
 import { afterEach, expect, it, vi } from 'vitest';
-import { createMockTransport } from '@dorkos/test-utils';
+import { createMockTransport } from '@dorkos/test-utils/mock-factories';
 import { createDocChannelOwner } from '../model/doc-channel-owner';
 import { emptyDocChannelView, type DocChannelView } from '../model/doc-channel-view';
 const birth = {

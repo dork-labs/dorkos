@@ -1,7 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
   classifyBrowserTarget,
-  describeAddress,
   loopbackStrategy,
   WORKBENCH_SANDBOX_ISOLATED,
   WORKBENCH_SANDBOX_EXTERNAL,
@@ -58,7 +57,6 @@ describe('classifyBrowserTarget', () => {
 
   it('reads about:blank as a new empty page, framed as nothing', () => {
     expect(classifyBrowserTarget('about:blank')).toEqual({ mode: 'blank' });
-    expect(describeAddress('about:blank')).toEqual({ kind: 'raw', text: '' });
   });
 
   it('blocks script/URI-smuggling protocols', () => {
@@ -94,54 +92,5 @@ describe('sandbox posture', () => {
 
   it('external content keeps allow-same-origin (it lives on its own origin)', () => {
     expect(WORKBENCH_SANDBOX_EXTERNAL).toContain('allow-same-origin');
-  });
-});
-
-describe('describeAddress', () => {
-  it('strips the scheme and splits host (emphasized) from path (dimmed)', () => {
-    expect(describeAddress('https://example.com/docs/guide?x=1')).toEqual({
-      kind: 'url',
-      host: 'example.com',
-      rest: '/docs/guide?x=1',
-    });
-  });
-
-  it('strips a leading www. from the host', () => {
-    expect(describeAddress('https://www.example.com/')).toEqual({
-      kind: 'url',
-      host: 'example.com',
-      rest: '',
-    });
-  });
-
-  it('keeps the port — it is the identity of a dev server', () => {
-    expect(describeAddress('http://localhost:5173/foo')).toEqual({
-      kind: 'url',
-      host: 'localhost:5173',
-      rest: '/foo',
-    });
-  });
-
-  it('renders a root path as empty rest (host only)', () => {
-    expect(describeAddress('https://example.com')).toEqual({
-      kind: 'url',
-      host: 'example.com',
-      rest: '',
-    });
-  });
-
-  it('shows a local file as its logical path (never a token URL)', () => {
-    expect(describeAddress('demo/index.html')).toEqual({ kind: 'local', path: 'demo/index.html' });
-    expect(describeAddress('file:///proj/dist/index.html')).toEqual({
-      kind: 'local',
-      path: '/proj/dist/index.html',
-    });
-  });
-
-  it('falls back to raw text for a blocked target', () => {
-    expect(describeAddress('javascript:alert(1)')).toEqual({
-      kind: 'raw',
-      text: 'javascript:alert(1)',
-    });
   });
 });

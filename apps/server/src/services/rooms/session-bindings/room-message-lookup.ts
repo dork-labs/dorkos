@@ -10,6 +10,7 @@ import type { RoomMessageLookup } from '../../session/chat-messages/room-message
 import { readOwnerAccount } from '../../core/auth/index.js';
 import { isOwnerVoiceRecord, toAuthorRef, type AuthorRegistry } from '../author-registry.js';
 import type { RoomStore } from '../room-store.js';
+import { agentFacingRoomName, type RoomBridgeLookup } from '../agent-facing-room-name.js';
 
 /**
  * Build the lookup over this process's room store and author registry.
@@ -21,11 +22,14 @@ import type { RoomStore } from '../room-store.js';
  *
  * @param store - The room store.
  * @param authors - The author registry.
+ * @param bridges - Where a bridged room's recorded chat title lives, so a group nobody renamed is
+ *   named as every agent surface names it (`agentFacingRoomName`, DOR-4453).
  * @param ownerUserId - The owner account's user id, or null with no accounts.
  */
 export function createRoomMessageLookup(
   store: RoomStore,
   authors: AuthorRegistry,
+  bridges: RoomBridgeLookup,
   ownerUserId: () => string | null = () => readOwnerAccount()?.id ?? null
 ): RoomMessageLookup {
   return (roomId, entryId) => {
@@ -36,7 +40,7 @@ export function createRoomMessageLookup(
     const ref = toAuthorRef(author);
     return {
       text: entry.body.text,
-      roomLabel: room.kind === 'channel' && room.slug ? `#${room.slug}` : room.title,
+      roomLabel: agentFacingRoomName(room, bridges),
       author: {
         id: ref.id,
         kind: ref.kind,

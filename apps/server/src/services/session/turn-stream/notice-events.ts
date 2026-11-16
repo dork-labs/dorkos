@@ -32,6 +32,14 @@ function toWorkLeftTasks(raw: unknown): RawOf<'work_left_running'>['tasks'] {
   });
 }
 
+/** The event types {@link toNoticeEvent} converts; the normalizer routes them here. */
+export const NOTICE_EVENT_TYPES: ReadonlySet<string> = new Set([
+  'model_substituted',
+  'project_addons_off',
+  'work_left_running',
+  'work_left_ended',
+]);
+
 /**
  * Map a notice `StreamEvent` to its session event, or `null` for any other
  * type.
@@ -58,6 +66,18 @@ export function toNoticeEvent(event: StreamEvent): RawSessionEvent | null {
         tasks: toWorkLeftTasks(data.tasks),
       };
       return running.tasks.length > 0 ? running : null;
+    }
+    case 'project_addons_off': {
+      // Counts only (DOR-4404): nothing a project wrote reaches the record.
+      const count = (value: unknown): number =>
+        Number.isInteger(value) && (value as number) > 0 ? (value as number) : 0;
+      const off: RawOf<'project_addons_off'> = {
+        type: 'project_addons_off',
+        plugins: count(data.plugins),
+        tools: count(data.tools),
+        mcpServers: count(data.mcpServers),
+      };
+      return off.plugins + off.tools + off.mcpServers > 0 ? off : null;
     }
     case 'work_left_ended': {
       if (typeof data.taskId !== 'string' || data.taskId === '') return null;

@@ -136,9 +136,9 @@ describe('to-dos domain', () => {
     ]);
   });
 
-  it('tells an agent it is woken when a promise comes due: its beat does that (DOR-2788 PR 3)', () => {
+  it('tells an agent it is woken before a promise is due: its beat does that (DOR-3034)', () => {
     const add = todoPromisesDomain.capabilities.find((c) => c.id === 'todo_promises.add')!;
-    expect(add.description).toContain('when it comes due you are woken to deal with it');
+    expect(add.description).toContain('you are woken an hour before');
   });
 
   describe('a turn nobody can read is marked (Security, #3454 Must 1)', () => {
@@ -288,6 +288,88 @@ describe('to-dos domain', () => {
       );
       expect(result).toMatchObject({ ok: false, code: 'NOT_YOURS' });
       expect(service.get(id)!.state).toBe('open');
+    });
+
+    it('tells the recipient when the agent moves or drops it, never when it keeps it (DOR-3034)', async () => {
+      const tellRecipient = vi.fn().mockResolvedValue(undefined);
+      const told = {
+        ...deps,
+        todoPromiseDeps: { ...deps.todoPromiseDeps!, tellRecipient },
+      } as CapabilityDeps;
+      const dueAt = new Date(Date.now() + 2 * 86_400_000).toISOString();
+      await call(
+        told,
+        'todo_promises.update',
+        { id, state: 'open', dueAt, note: 'Blocked on Acme' },
+        { identity: ana, sessionId: 'chat-1' }
+      );
+      await call(told, 'todo_promises.update', { id, state: 'dropped' }, { identity: ana });
+      expect(tellRecipient.mock.calls.map(([n]) => [n.change, n.reason, n.sessionId])).toEqual([
+        ['moved', 'Blocked on Acme', 'chat-1'],
+        ['dropped', null, undefined],
+      ]);
+      expect(tellRecipient.mock.calls[0]![0].agentPath).toBe('/agents/ana');
+    });
+
+    it('does not tell anyone a reopen with a date is a move', async () => {
+      const tellRecipient = vi.fn().mockResolvedValue(undefined);
+      const told = {
+        ...deps,
+        todoPromiseDeps: { ...deps.todoPromiseDeps!, tellRecipient },
+      } as CapabilityDeps;
+      await call(told, 'todo_promises.update', { id, state: 'kept' }, { identity: ana });
+      const dueAt = new Date(Date.now() + 2 * 86_400_000).toISOString();
+      await call(told, 'todo_promises.update', { id, state: 'open', dueAt }, { identity: ana });
+      // Told it was kept, then nothing for the reopen.
+      expect(tellRecipient.mock.calls.map(([n]) => n.change)).toEqual(['kept']);
+    });
+
+    it('tells a drop once, not again for a note on the dropped promise', async () => {
+      const tellRecipient = vi.fn().mockResolvedValue(undefined);
+      const told = {
+        ...deps,
+        todoPromiseDeps: { ...deps.todoPromiseDeps!, tellRecipient },
+      } as CapabilityDeps;
+      await call(
+        told,
+        'todo_promises.update',
+        { id, state: 'dropped', note: 'No longer needed' },
+        { identity: ana }
+      );
+      await call(
+        told,
+        'todo_promises.update',
+        { id, state: 'dropped', note: 'Really' },
+        { identity: ana }
+      );
+      expect(tellRecipient.mock.calls.map(([n]) => n.change)).toEqual(['dropped']);
+    });
+
+    it('tells nobody when a person keeps or drops it', async () => {
+      const tellRecipient = vi.fn().mockResolvedValue(undefined);
+      const told = {
+        ...deps,
+        todoPromiseDeps: { ...deps.todoPromiseDeps!, tellRecipient },
+      } as CapabilityDeps;
+      await call(told, 'todo_promises.update', { id, state: 'kept' }, {});
+      await call(told, 'todo_promises.update', { id, state: 'dropped' }, {});
+      expect(tellRecipient).not.toHaveBeenCalled();
+    });
+
+    it('tells the recipient when the agent keeps it, with what it delivered', async () => {
+      const tellRecipient = vi.fn().mockResolvedValue(undefined);
+      const told = {
+        ...deps,
+        todoPromiseDeps: { ...deps.todoPromiseDeps!, tellRecipient },
+      } as CapabilityDeps;
+      const kept = await call(
+        told,
+        'todo_promises.update',
+        { id, state: 'kept', delivered: 'https://github.com/acme/app/pull/12' },
+        { identity: ana }
+      );
+      expect(kept.todoPromise).toMatchObject({ delivered: 'https://github.com/acme/app/pull/12' });
+      expect(tellRecipient.mock.calls.map(([n]) => n.change)).toEqual(['kept']);
     });
 
     it('lets a person (no agent behind the call) drop it', async () => {

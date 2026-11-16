@@ -124,6 +124,7 @@ describe('PATCH /api/tasks/:id — an agent edits a file-backed schedule (DOR-23
           store,
           scheduler,
           registrar: new TaskRegistrar({ store, scheduler }),
+          defaultTimezone: () => 'UTC',
           dorkHome,
         }),
       })

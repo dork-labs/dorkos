@@ -9,7 +9,7 @@ import {
   createRouter,
   RouterProvider,
 } from '@tanstack/react-router';
-import { createMockTransport } from '@dorkos/test-utils';
+import { createMockTransport } from '@dorkos/test-utils/mock-factories';
 import type { SignInLanding } from '@dorkos/shared/sign-in-landing';
 import { TransportProvider } from '@/layers/shared/model';
 import { SignInLandingPage } from '../ui/SignInLandingPage';

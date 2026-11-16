@@ -4,7 +4,7 @@ import { renderHook, waitFor, act, cleanup } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { Transport } from '@dorkos/shared/transport';
-import { createMockTransport } from '@dorkos/test-utils';
+import { createMockTransport } from '@dorkos/test-utils/mock-factories';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
 import { TransportProvider, useAppStore } from '@/layers/shared/model';
 import { useReconcileExplicitAgentPath } from '../model/use-reconcile-explicit-agent-path';

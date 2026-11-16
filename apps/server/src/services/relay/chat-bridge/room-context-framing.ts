@@ -33,6 +33,12 @@ export interface BridgedRoomFraming {
    * channel, whose messages are DorkOS markdown on both sides.
    */
   formatting?: { instructions: string; maxLength: number };
+  /**
+   * The far-end chat's title as recorded at bridge time, when it has one: anyone in a bridged
+   * group can set it, so `room_context` names the room by it only after the owner renames the
+   * room (DOR-4453, Security on #3821). Absent for a bridged DM and a space's channel.
+   */
+  platformTitle?: string;
 }
 
 /**
@@ -50,6 +56,7 @@ export function bridgedRoomFraming(bridge: Bridge): BridgedRoomFraming {
   return {
     visibility: bridge.platformChatType === 'private' ? null : resolveVisibility(bridge),
     formatting: { instructions: TELEGRAM_FORMATTING_RULES, maxLength: MAX_MESSAGE_LENGTH },
+    ...(bridge.platformTitle !== null ? { platformTitle: bridge.platformTitle } : {}),
   };
 }
 

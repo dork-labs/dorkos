@@ -12,6 +12,7 @@ import type {
   ListTodoPromisesQuery,
   ListTodoPromisesResponse,
   UpdateTodoPromiseRequest,
+  ConfirmTodoPromiseRequest,
 } from '@dorkos/shared/todo-promise-schemas';
 import { fetchJSON } from './http-client';
 
@@ -42,6 +43,16 @@ export function createTodoPromiseMethods(baseUrl: string) {
       return fetchJSON(baseUrl, `/todo-promises/${encodeURIComponent(id)}`, {
         method: 'PATCH',
         body: JSON.stringify(body),
+      });
+    },
+
+    confirmTodoPromise(
+      id: string,
+      answer: ConfirmTodoPromiseRequest['answer']
+    ): Promise<TodoPromise> {
+      return fetchJSON(baseUrl, `/todo-promises/${encodeURIComponent(id)}/confirm`, {
+        method: 'POST',
+        body: JSON.stringify({ answer }),
       });
     },
   };

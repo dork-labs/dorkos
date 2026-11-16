@@ -2,6 +2,13 @@ import { cn } from '@/layers/shared/lib';
 import type { VisibleBackgroundTask } from '../../model/use-background-tasks';
 import { InlineKillButton } from './InlineKillButton';
 
+/** The short kind shown before each row's label. */
+const TYPE_BADGE: Record<VisibleBackgroundTask['taskType'], string> = {
+  agent: 'agent',
+  bash: 'bash',
+  other: 'task',
+};
+
 interface TaskDetailRowProps {
   task: VisibleBackgroundTask;
   onStop: () => void;
@@ -18,7 +25,9 @@ export function TaskDetailRow({ task, onStop }: TaskDetailRowProps) {
   const label =
     task.taskType === 'agent'
       ? (task.description ?? 'Background agent')
-      : (task.command ?? 'Background task');
+      : task.taskType === 'bash'
+        ? (task.command ?? task.description ?? 'Background task')
+        : (task.description ?? task.command ?? 'Background task');
 
   const durationSeconds = task.durationMs ? Math.round(task.durationMs / 1000) : 0;
   const isActive = task.status === 'running';
@@ -35,7 +44,7 @@ export function TaskDetailRow({ task, onStop }: TaskDetailRowProps) {
 
       {/* Type badge */}
       <span className="text-muted-foreground/60 text-3xs shrink-0 tracking-wider uppercase">
-        {task.taskType}
+        {TYPE_BADGE[task.taskType]}
       </span>
 
       {/* Label — truncated for long descriptions/commands */}

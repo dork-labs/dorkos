@@ -135,6 +135,7 @@ describe('the HTTP door and an agent’s mode or approval', () => {
             store,
             scheduler,
             registrar: new TaskRegistrar({ store, scheduler }),
+            defaultTimezone: () => 'UTC',
             dorkHome: DORK_HOME,
           }),
         },

@@ -100,6 +100,7 @@ describe('Task mutation authority — DELETE and cancel (DOR-1574)', () => {
             store,
             scheduler,
             registrar: new TaskRegistrar({ store, scheduler }),
+            defaultTimezone: () => 'UTC',
             dorkHome: '/tmp/dork-test',
           }),
         },

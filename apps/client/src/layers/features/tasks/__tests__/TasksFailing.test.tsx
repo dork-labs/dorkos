@@ -10,7 +10,7 @@ import { render, screen, cleanup, fireEvent, within } from '@testing-library/rea
 import '@testing-library/jest-dom/vitest';
 import type { ReactNode } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { createMockSchedule, createMockTransport } from '@dorkos/test-utils';
+import { createMockSchedule, createMockTransport } from '@dorkos/test-utils/mock-factories';
 import type { Task, TaskHealth } from '@dorkos/shared/types';
 import { TransportProvider } from '@/layers/shared/model';
 import { TooltipProvider } from '@/layers/shared/ui';

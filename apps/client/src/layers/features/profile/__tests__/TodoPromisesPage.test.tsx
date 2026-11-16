@@ -8,7 +8,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, render, screen } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { createMockTransport } from '@dorkos/test-utils';
+import { createMockTransport } from '@dorkos/test-utils/mock-factories';
 import type { TeamMember } from '@dorkos/shared/team-schemas';
 import { MOCK_TEAM_ROSTER } from '@/dev/mock-samples';
 import { TransportProvider } from '@/layers/shared/model';
@@ -41,6 +41,11 @@ function renderPage(member: TeamMember) {
         to: null,
         what: 'Ship the fix',
         dueAt: null,
+        originalDueAt: null,
+        scoreDueAt: null,
+        moveCount: 0,
+        confirmState: null,
+        delivered: null,
         state: 'open',
         overdue: false,
         sourceSessionId: null,
