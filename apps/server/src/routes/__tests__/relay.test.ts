@@ -13,6 +13,7 @@ import {
   WEBHOOK_SERVER_SUBJECT_REFUSAL,
 } from '@dorkos/shared/relay-schemas';
 import { SERVER_MANAGED_PREFIXES } from '@dorkos/relay';
+import { withStrangerMarkFlag } from '../../services/rooms/__tests__/stranger-mark-flag.js';
 
 // Legacy mocked-Core route fixtures explicitly use the login-off policy.
 // Actual credential and ownership behavior is covered by the integration suites.
@@ -1152,18 +1153,23 @@ describe('Adapter routes', () => {
     });
 
     it('tells the manager an agent wrote it when the caller names an agent (DOR-3271)', async () => {
-      await request(server)
-        .post('/api/relay/adapters')
-        .set('X-DorkOS-Agent', 'agent-1')
-        .send({
-          type: 'webhook',
-          id: 'wh-agent',
-          config: { inbound: { subject: 'relay.webhook.agent', secret: 'secret-long-enough' } },
-        });
-      await request(server)
-        .patch('/api/relay/adapters/wh-agent/config')
-        .set('X-DorkOS-Agent', 'agent-1')
-        .send({ config: { outbound: { url: 'https://example.com/x' } } });
+      // 'agent-1' resolves to no agent here, and the stranger-mark gate (on by default, DOR-4453)
+      // refuses an unresolved agent header any typed secret. That gate is pinned in
+      // relay-setting-step-up.test.ts; this case is about the writer label, so it runs with it off.
+      await withStrangerMarkFlag(false, async () => {
+        await request(server)
+          .post('/api/relay/adapters')
+          .set('X-DorkOS-Agent', 'agent-1')
+          .send({
+            type: 'webhook',
+            id: 'wh-agent',
+            config: { inbound: { subject: 'relay.webhook.agent', secret: 'secret-long-enough' } },
+          });
+        await request(server)
+          .patch('/api/relay/adapters/wh-agent/config')
+          .set('X-DorkOS-Agent', 'agent-1')
+          .send({ config: { outbound: { url: 'https://example.com/x' } } });
+      });
 
       expect(vi.mocked(adapterManager.addAdapter).mock.calls.at(-1)?.[5]).toBe('agent');
       expect(vi.mocked(adapterManager.updateConfig).mock.calls.at(-1)?.[2]).toBe('agent');

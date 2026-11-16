@@ -33,6 +33,7 @@ import {
   armAgentApproval,
   grantedModeMayRun,
   parkIfAgentApprovalStale,
+  recordAgentModeOutcome,
 } from '../agent-mode-record.js';
 import { agentModeRecordText } from '../agent-mode-record-field.js';
 import { CLAUDE_CODE_CAPABILITIES } from '../../../runtimes/claude-code/runtime-constants.js';
@@ -119,6 +120,48 @@ describe('an approval arms only the file the decision read (N-b)', () => {
       meshCore: undefined,
     });
     expect(armed?.status).toBe('active');
+  });
+});
+
+describe('agent approval Activity metadata', () => {
+  it('records the proposed and approved mode and allow list', async () => {
+    const store = new TaskStore(createTestDb());
+    const emit = vi.fn();
+    const before = store.createTask({
+      name: 'sweep',
+      description: 'sweep',
+      prompt: 'sweep the backlog',
+      cron: '0 3 * * *',
+      filePath: '',
+      requestedPermissionMode: 'dontAsk',
+      requestedAllow: ['Bash(/tmp/task.sh --once)'],
+    });
+    const after = store.updateTask(before.id, {
+      permissionMode: 'dontAsk',
+      approvedAllow: ['Bash(/tmp/task.sh --once)'],
+    })!;
+
+    await recordAgentModeOutcome({
+      grant: grantOf({ approves: true, aboveDontAsk: false }),
+      before,
+      after,
+      store,
+      meshCore: undefined,
+      activity: { emit },
+    });
+
+    expect(emit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        eventType: 'tasks.task_approved',
+        metadata: expect.objectContaining({
+          proposedPermissionMode: 'dontAsk',
+          proposedAllow: ['Bash(/tmp/task.sh --once)'],
+          approvedPermissionMode: 'dontAsk',
+          approvedAllow: ['Bash(/tmp/task.sh --once)'],
+        }),
+      })
+    );
+    store.close();
   });
 });
 

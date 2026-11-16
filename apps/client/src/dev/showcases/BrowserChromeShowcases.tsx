@@ -88,6 +88,14 @@ export function BrowserChromeShowcases() {
       <ShowcaseDemo>
         <ChromeDemo width={640} onBack={undefined} onForward={undefined} />
       </ShowcaseDemo>
+      <ShowcaseLabel>The first page in a tab: nowhere to go back or forward</ShowcaseLabel>
+      <ShowcaseDemo>
+        <ChromeDemo width={640} canBack={false} canForward={false} />
+      </ShowcaseDemo>
+      <ShowcaseLabel>After going back: Forward has a page again</ShowcaseLabel>
+      <ShowcaseDemo>
+        <ChromeDemo width={640} canBack={false} canForward />
+      </ShowcaseDemo>
       <ShowcaseLabel>A new empty page</ShowcaseLabel>
       <ShowcaseDemo>
         <ChromeDemo width={640} url="about:blank" />

@@ -221,6 +221,10 @@ export async function recordAgentModeOutcome(ctx: {
         ? `Approved scheduled task ${label}, running as ${after.permissionMode}`
         : `Set scheduled task ${label} to run as ${after.permissionMode}`,
       metadata: {
+        proposedPermissionMode: after.requestedPermissionMode,
+        proposedAllow: after.requestedAllow,
+        approvedPermissionMode: after.permissionMode,
+        approvedAllow: after.approvedAllow,
         permissionMode: after.permissionMode,
         previousPermissionMode: before?.permissionMode ?? null,
         decidedBy: grant.via,

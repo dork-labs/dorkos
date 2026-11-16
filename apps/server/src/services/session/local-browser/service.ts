@@ -7,8 +7,8 @@ import {
   assertLocalBrowserUrl,
   protectedPageRefusal,
   browserSetupCancelled,
-  navigationRefusal,
 } from './errors.js';
+import { PersonPageMoves } from './history/person-page-moves.js';
 import { assertOpenable } from './open-input.js';
 import { localBrowserAppOrigins } from './app-origins.js';
 import { prepareProfileFolder } from './profile-folders.js';
@@ -18,7 +18,7 @@ import { cloudOriginsForThisServer } from '../../core/cloud/cloud-api-origin.js'
 import {
   BrowserActionFlight,
   responseDeadline,
-  closeBrowserConnection,
+  closeConnectionHolders,
   CLOSE_RESPONSE_TIMEOUT_MS,
   PAGE_READ_RESPONSE_TIMEOUT_MS,
   closingError,
@@ -45,6 +45,7 @@ export { LocalBrowserError } from './errors.js';
 import type {
   LocalBrowserAction,
   LocalBrowserCapabilities,
+  LocalBrowserHistoryDirection,
   LocalBrowserMode,
   LocalBrowserObservation,
   LocalBrowserOpen,
@@ -97,6 +98,12 @@ export class LocalBrowserService {
   private readonly preparation = new BrowserPreparation();
   private readonly metadata = new LocalBrowserTabMetadata();
   private readonly fullScreen = new FullScreenGuard();
+  private readonly moves = new PersonPageMoves({
+    mode: () => this.mode,
+    attachment: () => this.embeddedAttachment,
+    appOrigins: () => this.appOrigins(),
+    agentActing: () => this.actions.active,
+  });
   /** The chat's agent name, for the title of the window it drives (DOR-3111). */
   readonly windowNames = new AgentWindowNames();
   /** Handing the browser to the person and back, and the plain sign-in window. */
@@ -116,8 +123,10 @@ export class LocalBrowserService {
     return localBrowserCapabilities(Boolean(this.embedded), this.hostFacts());
   }
 
+  /** The person's view, with whether Back and Forward have a page to go to (DOR-4449). */
   async state(): Promise<LocalBrowserState> {
-    return this.snapshot();
+    const page = this.detachedState ? undefined : this.tabs.get(this.selectedTabId ?? '');
+    return this.moves.describe(this.snapshot(), page);
   }
 
   private snapshot(selectedOnly = false): LocalBrowserState {
@@ -373,11 +382,19 @@ export class LocalBrowserService {
     const revision = this.revision;
     const page = this.page();
     if (revision !== this.revision) throw this.stale();
-    try {
-      await page.goto(url, { waitUntil: 'commit', timeout: 15_000 });
-    } catch (error) {
-      throw navigationRefusal(error);
-    }
+    await this.moves.open(page, url);
+    return this.state();
+  }
+
+  /**
+   * A person's Back or Forward through the page's own history. While an agent
+   * drives, the step pauses it first, so the agent's next action is refused
+   * rather than racing the person (DOR-4428's take-over, in one step). Every
+   * load the step makes runs the address rules (`page-history.ts`).
+   */
+  async stepHistory(direction: LocalBrowserHistoryDirection): Promise<LocalBrowserState> {
+    const driving = this.sessionId !== null && !this.paused;
+    await this.moves.step(this.page(), direction, () => driving && this.pause());
     return this.state();
   }
 
@@ -431,17 +448,7 @@ export class LocalBrowserService {
       const acquisition = this.acquisition;
       const closing = Promise.resolve().then(async () => {
         await acquisition?.catch(() => undefined);
-        const context = this.ownedContext;
-        const browser = this.browser;
-        const embeddedClose = this.embeddedClose;
-        await Promise.all([
-          browser && closeBrowserConnection(browser),
-          // Persistent Chromium's protocol-close event can precede process exit and
-          // cookie flushing. Keep this profile owned until the original close request
-          // settles; its protocol event cannot release the persistent profile lease.
-          context?.close(),
-          embeddedClose?.(),
-        ]);
+        await closeConnectionHolders(this.browser, this.ownedContext, this.embeddedClose);
         this.ownedContext = undefined;
         this.browser = undefined;
         this.embeddedClose = undefined;

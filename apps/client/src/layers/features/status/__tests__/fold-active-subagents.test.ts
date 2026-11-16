@@ -1,6 +1,10 @@
 import { describe, it, expect } from 'vitest';
 import type { SessionEvent } from '@dorkos/shared/session-stream';
-import { foldActiveSubagents, partitionSubagents } from '../lib/fold-active-subagents';
+import {
+  foldActiveSubagents,
+  partitionSubagents,
+  withRunningTasks,
+} from '../lib/fold-active-subagents';
 import type { ActiveSubagent } from '../model/session-diagnostics';
 
 /** A `subagent_update` frame at `seq`. */
@@ -145,5 +149,29 @@ describe('partitionSubagents', () => {
 
   it('returns two empty lists for a turn that handed nothing off', () => {
     expect(partitionSubagents([])).toEqual({ running: [], finished: [] });
+  });
+});
+
+// Spec warm-process-lifecycle D8: the status item and the inspector name work
+// from the session-level list once the turn that started it is reloaded away.
+describe('withRunningTasks', () => {
+  it('appends work only the session list names, labelled, after the fold rows', () => {
+    const rows: ActiveSubagent[] = [{ taskId: 'a', status: 'running', toolUses: 2 }];
+    expect(
+      withRunningTasks(rows, [
+        { taskId: 'a', taskType: 'agent', description: 'ignored, the row wins' },
+        { taskId: 'sh', taskType: 'bash', command: 'pnpm test' },
+        { taskId: 'x' },
+      ])
+    ).toEqual([
+      { taskId: 'a', status: 'running', toolUses: 2 },
+      { taskId: 'sh', status: 'running', description: 'pnpm test' },
+      { taskId: 'x', status: 'running' },
+    ]);
+  });
+
+  it('leaves the fold alone without a list', () => {
+    const rows: ActiveSubagent[] = [{ taskId: 'a', status: 'complete' }];
+    expect(withRunningTasks(rows, undefined)).toEqual(rows);
   });
 });

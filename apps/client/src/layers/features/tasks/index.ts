@@ -10,7 +10,7 @@ export { TaskRunHistoryPanel } from './ui/TaskRunHistoryPanel';
 export { AgentPicker } from './ui/AgentPicker';
 export { TaskTemplateCard } from './ui/TaskTemplateCard';
 export { TaskTemplateGallery } from './ui/TaskTemplateGallery';
-export { formatCron } from './ui/format-cron';
+export { formatCron } from './lib/format-cron';
 export { TasksList } from './ui/TasksList';
 export { TasksDialog } from './ui/TasksDialog';
 export { taskFilterSchema, taskSortOptions } from './lib/task-filter-schema';

@@ -1,6 +1,6 @@
 /**
  * The refusals `tasks_update` gives an edit that points a schedule's runs at
- * an account or a model they may not use. Moved out of `task-tools.ts` so the
+ * an account or a model they may not use, or proposes rules they cannot honour. Moved out of `task-tools.ts` so the
  * handler stays under the file-length limit; the rules are unchanged.
  *
  * @module services/runtimes/claude-code/mcp-tools/tasks/task-tool-run-refusals
@@ -8,6 +8,7 @@
 import type { Task } from '@dorkos/shared/types';
 import type { McpToolDeps } from '../types.js';
 import { jsonContent } from '../types.js';
+import { taskPermissionRulesRefusal } from '../../../../tasks/task-permission-rules.js';
 import {
   scheduleAccountRefusal,
   scheduleRunFolder,
@@ -19,6 +20,7 @@ interface RunFields {
   account?: string | null;
   runtime?: string | null;
   model?: string | null;
+  requestedAllow?: string[];
 }
 
 /**
@@ -54,6 +56,16 @@ export async function updateRunRefusal(
       folder: folder(),
     });
     if (modelRefusal) return jsonContent({ error: modelRefusal, code: 'UNSUPPORTED_MODEL' }, true);
+  }
+  // Rules the task's runs could not honour are refused up front (#3794).
+  if (args.requestedAllow !== undefined || args.runtime !== undefined) {
+    const rules = await taskPermissionRulesRefusal({
+      runtime: args.runtime !== undefined ? args.runtime : existing.runtime,
+      agentPath: existing.agentId ? deps.meshCore?.getProjectPath(existing.agentId) : null,
+      rules:
+        (args.requestedAllow !== undefined ? args.requestedAllow : existing.requestedAllow) ?? [],
+    });
+    if (rules) return jsonContent(rules, true);
   }
   return null;
 }

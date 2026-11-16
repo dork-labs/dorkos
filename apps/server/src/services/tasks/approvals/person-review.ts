@@ -17,6 +17,8 @@ export function taskReviewRowRevision(task: Task): string {
         task.id,
         task.prompt,
         task.permissionMode,
+        task.requestedPermissionMode,
+        task.requestedAllow,
         task.cron,
         task.timezone,
         task.runtime,

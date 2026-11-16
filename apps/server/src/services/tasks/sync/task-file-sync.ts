@@ -235,6 +235,7 @@ export class TaskFileSync {
                 ? {
                     approvedContentKey: null,
                     ...CLEARED_APPROVAL_RECEIPT,
+                    approvedAllow: null,
                     // Kept for the card's "what changed" (DOR-2323).
                     previousApprovalKey:
                       existing.approvedContentKey ?? existing.previousApprovalKey,
@@ -331,6 +332,7 @@ export class TaskFileSync {
               cron: incomingCron,
               timezone: schedule.timezone,
             }),
+        approvedAllow: null,
         ...(approval ? taskApprovalReceiptColumns(approval) : {}),
         filePath: def.filePath,
         packageOwned: options?.packageOwned ?? null,

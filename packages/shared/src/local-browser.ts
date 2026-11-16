@@ -85,7 +85,18 @@ export interface LocalBrowserTab {
   id: string;
   url: string;
   title: string;
+  /**
+   * Whether Back has a page to go to: an earlier page in this tab's own history
+   * that the address rules still allow. Only the selected tab, and only in a
+   * person's state; absent elsewhere.
+   */
+  canGoBack?: boolean;
+  /** Whether Forward has a page to go to, by the same rule as {@link canGoBack}. */
+  canGoForward?: boolean;
 }
+/** Which way a person's Back or Forward moves the page through its own history. */
+export const LocalBrowserHistoryDirectionSchema = z.enum(['back', 'forward']);
+export type LocalBrowserHistoryDirection = z.infer<typeof LocalBrowserHistoryDirectionSchema>;
 /** Genuine managed-browser acquisition state; percent belongs only to its current component. */
 export const LocalBrowserPreparationSchema = z.object({
   stage: z.enum(['checking', 'downloading', 'launching']),
@@ -133,7 +144,15 @@ export const LocalBrowserStateSchema = z.object({
   mode: LocalBrowserModeSchema.nullable(),
   status: z.enum(['disconnected', 'connected', 'closed']),
   paused: z.boolean(),
-  tabs: z.array(z.object({ id: z.string(), url: z.string(), title: z.string() })),
+  tabs: z.array(
+    z.object({
+      id: z.string(),
+      url: z.string(),
+      title: z.string(),
+      canGoBack: z.boolean().optional(),
+      canGoForward: z.boolean().optional(),
+    })
+  ),
   selectedTabId: z.string().nullable(),
   revision: z.number().int().nonnegative(),
 });

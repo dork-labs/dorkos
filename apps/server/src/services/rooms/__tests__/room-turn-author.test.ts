@@ -106,7 +106,9 @@ beforeEach(() => {
   operatorAuthorId = authors.localHuman().id;
   post(ENTRY, marketplaceAuthorId, POST);
   // No owner account: the local person is the owner.
-  setRoomMessageLookup(createRoomMessageLookup(store, authors, () => null));
+  setRoomMessageLookup(
+    createRoomMessageLookup(store, authors, { findBridgeByRoom: () => null }, () => null)
+  );
 });
 
 afterEach(() => {

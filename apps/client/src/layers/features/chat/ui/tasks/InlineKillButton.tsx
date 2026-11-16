@@ -1,9 +1,10 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { X } from 'lucide-react';
+import type { BackgroundTaskType } from '@dorkos/shared/types';
 import { cn } from '@/layers/shared/lib';
 
 interface InlineKillButtonProps {
-  taskType: 'agent' | 'bash';
+  taskType: BackgroundTaskType;
   onConfirm: () => void;
 }
 
@@ -11,7 +12,8 @@ interface InlineKillButtonProps {
 const CONFIRM_DISMISS_MS = 3000;
 
 /**
- * Inline kill button — instant for bash tasks, "Stop?" confirmation for agents.
+ * Inline kill button — instant for bash tasks, "Stop?" confirmation for agents
+ * and every other kind (a Monitor or a Workflow can be long work to lose).
  *
  * For bash: clicking the x immediately calls onConfirm (low-stakes, like Ctrl+C).
  * For agents: first click morphs x to "Stop?" label; second click confirms.

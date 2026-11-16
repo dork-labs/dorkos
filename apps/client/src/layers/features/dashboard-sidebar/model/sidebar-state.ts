@@ -66,8 +66,11 @@ export interface SidebarPinnedApp {
   path: string;
   /** The page's contribution id while it is registered (for its icon), else `null`. */
   pageId: string | null;
-  /** What it is doing. An `off` app is never pinned in the panel. */
-  state: 'starting' | 'ok' | 'held' | 'error';
+  /**
+   * What it is doing. An `off` app is never pinned in the panel; one that
+   * `needs-update` stays pinned and opens its page, which says so.
+   */
+  state: 'starting' | 'ok' | 'held' | 'error' | 'needs-update';
   /** Its own count of things waiting; 0 for none. */
   count: number;
   /** The name with its state in words. */

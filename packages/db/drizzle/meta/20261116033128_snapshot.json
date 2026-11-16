@@ -1,8 +1,8 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "85c9ddc7-6267-4e5b-b953-1e6437c17934",
-  "prevId": "de13bb00-c4b4-4eea-918d-ce47a730cd16",
+  "id": "f8a155df-3c18-461f-bcaf-45eaa97a6db2",
+  "prevId": "85c9ddc7-6267-4e5b-b953-1e6437c17934",
   "tables": {
     "a2a_tasks": {
       "name": "a2a_tasks",
@@ -1772,6 +1772,27 @@
         },
         "proposed_by_agent_path": {
           "name": "proposed_by_agent_path",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "requested_permission_mode": {
+          "name": "requested_permission_mode",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "requested_allow": {
+          "name": "requested_allow",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "approved_allow": {
+          "name": "approved_allow",
           "type": "text",
           "primaryKey": false,
           "notNull": false,
@@ -9867,6 +9888,13 @@
           "primaryKey": false,
           "notNull": false,
           "autoincrement": false
+        },
+        "opened_by_extension_id": {
+          "name": "opened_by_extension_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
         }
       },
       "indexes": {
@@ -14358,6 +14386,41 @@
         },
         "due_notified_at": {
           "name": "due_notified_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "estimate_minutes": {
+          "name": "estimate_minutes",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "due_set_at": {
+          "name": "due_set_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "checkin_notified_at": {
+          "name": "checkin_notified_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "confirm_state": {
+          "name": "confirm_state",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "delivered": {
+          "name": "delivered",
           "type": "text",
           "primaryKey": false,
           "notNull": false,

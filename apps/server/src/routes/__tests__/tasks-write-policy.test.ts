@@ -164,6 +164,7 @@ describe('operator-only task fields on the REST routes', () => {
             store,
             scheduler,
             registrar: new TaskRegistrar({ store, scheduler }),
+            defaultTimezone: () => 'UTC',
             dorkHome: DORK_HOME,
           }),
         },
@@ -333,6 +334,7 @@ describe('operator-only task fields on the REST routes', () => {
               scheduler,
               registrar: new TaskRegistrar({ store, scheduler }),
               dorkHome: DORK_HOME,
+              defaultTimezone: () => 'UTC',
               meshCore: {
                 listWithPaths: () => agents,
                 getProjectPath: (id: string) => agents.find((a) => a.id === id)?.projectPath,
@@ -414,15 +416,24 @@ describe('operator-only task fields on the REST routes', () => {
       // Under the default `local-trust` posture a caller presenting no agent
       // identity and no approval token clears `trustedCaller`, exactly as on
       // PATCH /api/config. This is the flow the Approve button drives.
+      // Bypass is looser than the saved mode, which stands in for the proposal,
+      // so the card's separate "Run it looser" choice rides along (DOR-3637).
       const parked = store.updateTask(existing.id, { status: 'pending_approval' })!;
+      const approve = {
+        expectedApprovalRevision: taskReviewRevision(store.getTask(parked.id)!),
+        status: 'active',
+        enabled: true,
+        permissionMode: 'bypassPermissions',
+      };
+      const unconfirmed = await request(fixtureServer)
+        .patch(`/api/tasks/${parked.id}`)
+        .send(approve);
+      expect(unconfirmed.status).toBe(409);
+      expect(store.getTask(parked.id)!.status).toBe('pending_approval');
+
       const res = await request(fixtureServer)
         .patch(`/api/tasks/${parked.id}`)
-        .send({
-          expectedApprovalRevision: taskReviewRevision(store.getTask(parked.id)!),
-          status: 'active',
-          enabled: true,
-          permissionMode: 'bypassPermissions',
-        });
+        .send({ ...approve, acceptLooserThanRequested: true });
 
       expect(res.status).toBe(200);
       const after = store.getTask(parked.id)!;

@@ -43,6 +43,8 @@ export function createLocalBrowserMethods(baseUrl: string): LocalBrowserTranspor
       LocalBrowserStateSchema.parse(await request(`/tabs/${encodeURIComponent(id)}/select`, {})),
     navigateLocalBrowser: async (url) =>
       LocalBrowserStateSchema.parse(await request('/navigate', { url })),
+    stepLocalBrowserHistory: async (direction) =>
+      LocalBrowserStateSchema.parse(await request('/history', { direction })),
     pauseLocalBrowser: async () => LocalBrowserStateSchema.parse(await request('/pause', {})),
     resumeLocalBrowser: async () =>
       LocalBrowserPersonStateSchema.parse(await request('/resume', {})),

@@ -83,6 +83,7 @@ import type { PermissionStop } from './agent-runtime.js';
 // A leaf module (zod only), so this value import forms no load-time cycle.
 import { AccountUsageSchema } from './account-usage.js';
 import { ProjectRefSchema } from './project-schemas.js';
+import { isSpecificPermissionRule } from './permission-rules.js';
 // A leaf module (zod only), so this value import forms no load-time cycle.
 import {
   ChatMessageStampSchema,
@@ -2440,7 +2441,16 @@ export type RelayMessageEvent = z.infer<typeof RelayMessageEventSchema>;
 
 // === Background Task Type/Status (needed by both events and parts) ===
 
-export const BackgroundTaskTypeSchema = z.enum(['agent', 'bash']).openapi('BackgroundTaskType');
+/**
+ * What kind of background work a task is: a helper `agent`, a background shell
+ * (`bash`), or `other` for every task type DorkOS does not draw on its own — a
+ * Monitor, a Workflow, a backgrounded MCP task, or a type a newer runtime adds
+ * (spec `warm-process-lifecycle` D8). An `other` task shows its own label and
+ * can be stopped like any other.
+ */
+export const BackgroundTaskTypeSchema = z
+  .enum(['agent', 'bash', 'other'])
+  .openapi('BackgroundTaskType');
 export type BackgroundTaskType = z.infer<typeof BackgroundTaskTypeSchema>;
 
 /**
@@ -2477,6 +2487,14 @@ export const BackgroundTaskStartedEventSchema = z
     toolUseId: z.string().optional(),
     description: z.string().optional(),
     command: z.string().optional(),
+    /**
+     * The runtime's own name for the task's type, when it reports one (Claude
+     * Code's `task_type`: `local_agent`, `local_bash`, a Monitor's, a
+     * Workflow's). Kept beside {@link BackgroundTaskTypeSchema}'s coarse answer
+     * so an `other` task still says what it is. Absent when the runtime names
+     * none.
+     */
+    runtimeTaskType: z.string().optional(),
     /**
      * Housekeeping work the runtime asked hosts to keep out of activity
      * indicators — a watcher it started to stay oriented, not work anybody
@@ -5916,6 +5934,21 @@ export const TaskFileCapSchema = z
 /** {@link TaskFileCapSchema}. */
 export type TaskFileCap = z.infer<typeof TaskFileCapSchema>;
 
+export { isSpecificPermissionRule } from './permission-rules.js';
+
+/** A Claude Code permission rule proposed for one scheduled task's runs. */
+export const TaskPermissionRuleSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(300)
+  .refine((rule) => isSpecificPermissionRule(rule), {
+    message: 'Permission rules must name a specific action',
+  });
+
+/** At most twenty exact Claude Code permission rules for one scheduled task. */
+export const TaskPermissionRulesSchema = z.array(TaskPermissionRuleSchema).max(20);
+
 export const TaskSchema = z
   .object({
     id: z.string(),
@@ -6051,6 +6084,12 @@ export const TaskSchema = z
     sticky: z.boolean().default(false),
     maxRuntime: z.number().int().nullable(),
     permissionMode: PermissionModeSchema,
+    /** The mode the proposer asked a person to approve; never an applied grant. */
+    requestedPermissionMode: PermissionModeSchema.nullable().optional(),
+    /** Exact task-run rules the proposer asked a person to approve. */
+    requestedAllow: TaskPermissionRulesSchema.nullable().optional(),
+    /** Exact task-run rules a person approved; never written to folder settings. */
+    approvedAllow: TaskPermissionRulesSchema.nullable().optional(),
     /** Read-time, person-only preview; absent for older servers and agent callers. */
     ...TaskReviewPresentationSchema.shape,
     /**
@@ -6470,6 +6509,10 @@ export const CreateTaskRequestSchema = z
      * guard tell a caller that SENT the field from one that did not.
      */
     permissionMode: PermissionModeSchema.optional(),
+    /** A requested mode for the approval card. This field grants nothing. */
+    requestedPermissionMode: PermissionModeSchema.optional(),
+    /** Requested task-scoped Claude Code rules. This field grants nothing. */
+    requestedAllow: TaskPermissionRulesSchema.optional(),
     /**
      * Why this schedule should exist, in the proposer's own words.
      *
@@ -6635,6 +6678,14 @@ export const UpdateTaskRequestSchema = z
      */
     account: z.string().min(1).nullable().optional(),
     permissionMode: PermissionModeSchema.optional(),
+    /** A requested mode for the approval card. This field grants nothing. */
+    requestedPermissionMode: PermissionModeSchema.optional(),
+    /** Requested task-scoped Claude Code rules. This field grants nothing. */
+    requestedAllow: TaskPermissionRulesSchema.optional(),
+    /** Task-scoped rules a person approved. Agents may never set this field. */
+    approvedAllow: TaskPermissionRulesSchema.optional(),
+    /** Explicit confirmation that the person chose more power than proposed. */
+    acceptLooserThanRequested: z.literal(true).optional(),
     status: SettableTaskStatusSchema.optional(),
     approvalSurface: z.enum(['inbox', 'schedules', 'home']).optional(), // Audit context, never permission.
     /** Why this schedule should exist. See {@link CreateTaskRequestSchema}. */

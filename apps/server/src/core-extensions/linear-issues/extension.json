@@ -10,6 +10,10 @@
   },
   "defaultEnabled": false,
   "canDisable": true,
+  "clientApiVersion": 2,
+  "capabilities": {
+    "http": true
+  },
   "serverCapabilities": {
     "serverEntry": "./server.ts",
     "externalHosts": ["https://api.linear.app"],

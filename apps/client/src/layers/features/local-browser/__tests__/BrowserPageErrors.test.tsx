@@ -14,6 +14,7 @@ const transport = vi.hoisted(() => ({
   getLocalBrowserCapabilities: vi.fn(),
   openLocalBrowser: vi.fn(),
   navigateLocalBrowser: vi.fn(),
+  stepLocalBrowserHistory: vi.fn(),
   getSession: vi.fn(),
   getAgentByPath: vi.fn(),
 }));
@@ -194,12 +195,29 @@ describe('page errors DorkOS draws in the page area (DOR-4430)', () => {
   });
 
   it('a certificate error has no way through, and Go back goes back', async () => {
+    transport.getLocalBrowserState.mockResolvedValue({
+      ...embedded,
+      tabs: [{ ...embedded.tabs[0]!, canGoBack: true, canGoForward: false }],
+    });
+    transport.stepLocalBrowserHistory.mockResolvedValue(embedded);
     await mountOpen();
     emit({ failure: failure('ERR_CERT_DATE_INVALID') });
     await screen.findByRole('alert');
     expect(screen.queryByRole('button', { name: /proceed|continue|anyway/i })).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: 'Go back' }));
-    expect(page).toHaveBeenCalledWith('owned', 'back');
+    // The same guarded step as the chrome's Back (DOR-4449), never the host's own goBack.
+    await waitFor(() => expect(transport.stepLocalBrowserHistory).toHaveBeenCalledWith('back'));
+    expect(page).not.toHaveBeenCalledWith('owned', 'back');
+  });
+
+  it('with no allowed page behind, Go back opens an empty page', async () => {
+    await mountOpen();
+    emit({ failure: failure('ERR_CERT_DATE_INVALID') });
+    await screen.findByRole('alert');
+    fireEvent.click(screen.getByRole('button', { name: 'Go back' }));
+    await waitFor(() => expect(transport.navigateLocalBrowser).toHaveBeenCalledWith('about:blank'));
+    expect(transport.stepLocalBrowserHistory).not.toHaveBeenCalled();
+    expect(page).not.toHaveBeenCalledWith('owned', 'back');
   });
 
   it('a page that commits takes the block away and shows the page again', async () => {
@@ -229,6 +247,20 @@ describe('page errors DorkOS draws in the page area (DOR-4430)', () => {
     });
     expect(screen.queryByRole('alert')).toBeNull();
     expect(document.querySelector('[data-slot="browser-loading-bar"]')).toBeNull();
+  });
+});
+
+// DOR-4427: a tooltip over the native page waits for a still, and never blanks it.
+describe('the chrome tooltips over the embedded page', () => {
+  it('keeps the page and a plain hint on a desktop shell that takes no stills', async () => {
+    await mountOpen();
+    await waitFor(() => expect(setBounds.mock.calls.at(-1)?.[0].visible).toBe(true));
+    setBounds.mockClear();
+    const reload = screen.getByRole('button', { name: 'Reload' });
+    fireEvent.focus(reload);
+    await waitFor(() => expect(reload).toHaveAttribute('title', 'Reload'));
+    expect(screen.queryByRole('tooltip')).toBeNull();
+    expect(setBounds).not.toHaveBeenCalledWith(expect.objectContaining({ visible: false }));
   });
 });
 

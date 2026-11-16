@@ -1,8 +1,8 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "f8a155df-3c18-461f-bcaf-45eaa97a6db2",
-  "prevId": "85c9ddc7-6267-4e5b-b953-1e6437c17934",
+  "id": "2bfc612f-fd4f-424b-ae34-22a4f0014c5a",
+  "prevId": "de13bb00-c4b4-4eea-918d-ce47a730cd16",
   "tables": {
     "a2a_tasks": {
       "name": "a2a_tasks",
@@ -9867,6 +9867,13 @@
           "primaryKey": false,
           "notNull": false,
           "autoincrement": false
+        },
+        "opened_by_extension_id": {
+          "name": "opened_by_extension_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
         }
       },
       "indexes": {
@@ -14306,28 +14313,6 @@
           "notNull": false,
           "autoincrement": false
         },
-        "original_due_at": {
-          "name": "original_due_at",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "score_due_at": {
-          "name": "score_due_at",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "move_count": {
-          "name": "move_count",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false,
-          "default": 0
-        },
         "state": {
           "name": "state",
           "type": "text",
@@ -14358,41 +14343,6 @@
         },
         "due_notified_at": {
           "name": "due_notified_at",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "estimate_minutes": {
-          "name": "estimate_minutes",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "due_set_at": {
-          "name": "due_set_at",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "checkin_notified_at": {
-          "name": "checkin_notified_at",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "confirm_state": {
-          "name": "confirm_state",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "delivered": {
-          "name": "delivered",
           "type": "text",
           "primaryKey": false,
           "notNull": false,
