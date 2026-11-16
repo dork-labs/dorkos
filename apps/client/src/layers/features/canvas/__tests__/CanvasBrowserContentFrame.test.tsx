@@ -28,10 +28,15 @@ const state = {
   writeBrowserHistory: vi.fn(),
 };
 
-vi.mock('@/layers/shared/model', async () => {
+vi.mock('@/layers/shared/model', async (importOriginal) => {
+  // The ⋯ menu (DOR-4435) reads these two; they touch no store or transport.
+  const { useIsMobile, useMenuCloseFocusGuard } =
+    await importOriginal<typeof import('@/layers/shared/model')>();
   const useAppStore = (select: (value: typeof state) => unknown) => select(state);
   useAppStore.getState = () => state;
   return {
+    useIsMobile,
+    useMenuCloseFocusGuard,
     useAppStore,
     useTransport: () => currentTransport,
     useSafeSearch: () => ({}),

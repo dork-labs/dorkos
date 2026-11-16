@@ -170,6 +170,8 @@ React 19 + Vite 6 + Tailwind 4 + shadcn/ui (new-york, neutral gray). **Feature-S
 
 `/flow` is the PM-agnostic workflow engine (stage spine `CAPTURE → … → DONE`) — it lives entirely in the external marketplace plugin (`dork-labs/marketplace`, `plugins/flow/`; ADR-0297). Install it from the DorkOS Marketplace at project scope: Harness Sync projects it into `.claude/commands/flow/` + `.claude/skills/flow__*` (ADR 260706-192819), so `/flow:*` works in DorkOS sessions and the bare `claude` CLI alike (`claude --plugin-dir <marketplace-checkout>/plugins/flow` also works for a one-off). There is no in-repo fallback; without the plugin installed, `/flow:*` does not exist. All tracker I/O goes through its `linear-adapter` skill; Linear team key `DOR`. Reach Linear via Linear MCP or `composio execute LINEAR_* --account personal` — **never the `artblocks` work account**. Reference: `contributing/flow-engine.md`.
 
+**Filing an issue means triaging it** ([contributing/prioritization.md](contributing/prioritization.md)): every new DOR issue carries a MoSCoW priority (Must = High and confirmed by @dorkos-pm, Should = Medium, Could = Low, Won't = not filed; a cycle is one week), a size, a project, proof, a "done when" and a duplicate check, or it is not filed. Small follow-ups from one PR go in one parent issue with a checklist.
+
 If compaction fires mid-`/flow`, preserve verbatim: the work item id + title, current stage + sub-step, gate state, artifact pointers (spec dir, worktree path + branch, `flow-state.json`, open PR), and the assumption trail. Filesystem + tracker are ground truth; recover the rest from `flow-state.json` and the tracker.
 
 ## Worktrees

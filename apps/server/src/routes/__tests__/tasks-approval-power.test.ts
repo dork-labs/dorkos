@@ -345,6 +345,24 @@ describe('approving a proposed schedule can carry the operator’s trust stop', 
     );
   });
 
+  it("tells only a person where a parked schedule's runs would stand (DOR-4067)", async () => {
+    // An unidentified caller's proposal stays agent-less; this test runs from
+    // the checkout, a folder the run's guard keeps.
+    const task = await proposedByAgent();
+    const person = await request(fixtureServer).get('/api/tasks');
+    expect(person.body.find((value: { id: string }) => value.id === task.id).runPlace).toEqual({
+      kind: 'folder',
+      path: process.cwd(),
+      of: 'server',
+    });
+    const agent = await request(fixtureServer)
+      .get('/api/tasks')
+      .set('x-dorkos-agent', 'agent-token-abc');
+    expect(agent.body.find((value: { id: string }) => value.id === task.id)).not.toHaveProperty(
+      'runPlace'
+    );
+  });
+
   it('approves Don’t ask and records exactly that mode in the row, file and audit event (DOR-3651)', async () => {
     const task = await proposedByAgent();
     const rule = 'Bash(pnpm check:watchdog)';

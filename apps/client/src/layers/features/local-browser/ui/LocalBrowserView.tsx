@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useMemo, useRef, useState, type ReactNode } from 'react';
 import type { LocalBrowserHistoryDirection, LocalBrowserState } from '@dorkos/shared/local-browser';
 import { useOwnOrigins } from '@/layers/entities/config';
 import { isThisAppsAddress, normalizeAddressInput } from '@/layers/shared/lib';
@@ -30,6 +30,20 @@ export interface LocalBrowserViewProps {
   action: (run: () => Promise<LocalBrowserState>) => Promise<boolean>;
   /** Open the browser again after the page could not be drawn. */
   onReconnect: () => void;
+  /** The status pill, in the chrome's pill place. */
+  status?: ReactNode;
+  /** Whether an agent drives the page now, which turns the seam orange. */
+  agentDriving?: boolean;
+  /**
+   * Take the page from an agent that has it, before a chrome action the server
+   * doesn't see (Stop). Reload and Enter navigate, which takes it on the server.
+   */
+  onTakeOver?: () => void;
+  /**
+   * The chrome's ⋯ menu, given the row's own Forward, which the menu offers
+   * while the row is too narrow to show it.
+   */
+  menu?: (forward: { canForward: boolean; onForward: () => void }) => ReactNode;
 }
 
 /**
@@ -54,6 +68,10 @@ export function LocalBrowserView({
   busy,
   action,
   onReconnect,
+  status,
+  agentDriving = false,
+  onTakeOver,
+  menu,
 }: LocalBrowserViewProps) {
   const transport = useTransport();
   const ownOrigins = useOwnOrigins();
@@ -164,6 +182,9 @@ export function LocalBrowserView({
     });
   };
 
+  const canForward = !busy && (tab?.canGoForward ?? false);
+  const onForward = () => step('forward');
+
   return (
     <div data-slot="local-browser-view" className="flex min-h-48 flex-1 flex-col">
       {tab && (
@@ -171,17 +192,24 @@ export function LocalBrowserView({
           // A failed load keeps its address in the bar, so Reload retries it (DOR-4430).
           url={page.failure?.url || tab.url}
           canBack={!busy && (tab.canGoBack ?? false)}
-          canForward={!busy && (tab.canGoForward ?? false)}
+          canForward={canForward}
           onBack={() => step('back')}
-          onForward={() => step('forward')}
+          onForward={onForward}
           onReload={() => void go(page.failure?.url || tab.url)}
           loading={page.loading}
-          onStop={() => page.run('stop')}
+          onStop={() => {
+            // Stopping is using the page, so it takes it from the agent too (DOR-4428).
+            page.run('stop');
+            onTakeOver?.();
+          }}
           onSubmit={(text) => submit(tab.id, tab.url, text)}
           busy={busy}
           tooltipStill={embedded ? tooltipStill : undefined}
           retry={shownRetry}
           notice={shownRetry?.notice ?? shownStepNotice}
+          status={status}
+          agentDriving={agentDriving}
+          menu={menu?.({ canForward, onForward })}
         />
       )}
       {embedded ? (

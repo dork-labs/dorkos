@@ -215,7 +215,7 @@ function PreviewFrame({
             onClick={onOpenExternally}
             className="text-foreground hover:underline"
           >
-            Open in system browser
+            Open in your browser
           </button>
         </div>
       )}
@@ -247,7 +247,7 @@ function FrameBanner({
           onClick={onOpenExternally}
           className="text-foreground hover:underline"
         >
-          Open in system browser
+          Open in your browser
         </button>
       </span>
     </div>
