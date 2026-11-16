@@ -65,7 +65,8 @@ The `Auth` column describes authentication, not permission. “Local read carve-
 | `marketplace_update`            | Check for newer versions (confirmation only with `apply`)    | Always required      |
 | `marketplace_uninstall`         | Remove a package; follows permission checks                  | Always required      |
 | `marketplace_create_package`    | Scaffold a new package in your personal marketplace          | Always required      |
-| `marketplace_link`              | Run a plugin or skill pack from an approved local folder     | Always required      |
+
+One more tool sits outside that table: `marketplace_link` runs a plugin or skill pack from an approved local folder. It always requires auth, and it is a destructive action: it asks a person before it runs.
 
 ## The Confirmation Flow for External Agents
 
