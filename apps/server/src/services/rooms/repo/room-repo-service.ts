@@ -55,6 +55,7 @@ import { RoomWorktreeManager } from './room-worktree-manager.js';
 import { readMainCheckoutState } from './room-main-checkout.js';
 import { ROOM_MD_FILENAME, ROOM_MD_SEED_COMMIT_MESSAGE, seedRoomMd } from './room-md.js';
 import { RoomConventions } from './room-conventions.js';
+import { fenceRoomMdHeadingAt } from './bridged-room-md-heading.js';
 import { isPlatformNamed, PLATFORM_NAMED_ROOM } from '../agent-facing-room-name.js';
 
 /**
@@ -234,6 +235,37 @@ export class RoomRepoService {
    */
   conventionsFor(room: { id: string; title: string }): Promise<string | null> {
     return this.conventions.compose(room);
+  }
+
+  /**
+   * Replace a bridged room's seeded `# <far-end title>` heading, under the room's queue
+   * (`bridged-room-md-heading.ts`, DOR-4453). Commits as the operator, the way every fix DorkOS
+   * makes on their behalf is attributed.
+   *
+   * @param roomId - The room.
+   * @param staleTitle - The far-end chat's title the file was seeded under.
+   * @param replacement - "Bridged channel", or the room's own name once the owner renamed it.
+   * @returns Whether a commit was made; `false` for a room without files or with nothing to do.
+   */
+  async fenceBridgedRoomMdHeading(
+    roomId: string,
+    staleTitle: string,
+    replacement: string
+  ): Promise<boolean> {
+    if (!this.hasRepo(roomId) || !(await this.repoIsInitialised(roomId))) return false;
+    const target = {
+      repoDir: this.deps.store.repoPath(roomId),
+      ceiling: this.deps.store.homeDir(roomId),
+      identity: { name: gitAuthorName(this.deps.operatorGitName()), email: OPERATOR_GIT_EMAIL },
+    };
+    return this.deps.mutex.run(
+      roomId,
+      {
+        waitMs: this.deps.queueWaitMs(),
+        busy: () => new RoomError('MERGE_IN_FLIGHT', 'This room’s files are busy.'),
+      },
+      () => fenceRoomMdHeadingAt(target, staleTitle, replacement)
+    );
   }
 
   /**
