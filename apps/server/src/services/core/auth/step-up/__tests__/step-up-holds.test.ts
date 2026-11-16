@@ -89,6 +89,25 @@ describe('holdStepUp', () => {
     expect(parseLocalStepUpStatement(statement)).toEqual(statement);
   });
 
+  it('binds a stored request to its full server-owned hash', () => {
+    const binding = { hash: 'a'.repeat(64), currentHash: () => 'a'.repeat(64) };
+    const statement = holdStepUp(action({ binding }), 'session-a', NOW);
+    expect(statement.inputSha256).toBe(binding.hash);
+    expect(peekHeldStepUp(statement.heldActionId, NOW)?.binding?.currentHash()).toBe(binding.hash);
+    binding.hash = 'b'.repeat(64);
+    expect(peekHeldStepUp(statement.heldActionId, NOW)?.binding?.hash).toBe('a'.repeat(64));
+  });
+
+  it('refuses a stored binding that is not a full SHA-256 hash', () => {
+    expect(() =>
+      holdStepUp(
+        action({ binding: { hash: 'K7MR-4XQ9-HT3W', currentHash: () => '' } }),
+        'session-a',
+        NOW
+      )
+    ).toThrow();
+  });
+
   it('removes a held action when its time is up, with nothing else asking about it', () => {
     vi.useFakeTimers();
     try {

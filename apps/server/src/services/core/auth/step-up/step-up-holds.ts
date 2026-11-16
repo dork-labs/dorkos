@@ -56,6 +56,8 @@ export interface StepUpActionInput {
   target: string;
   /** Exactly what will run, as plain JSON; its hash binds the statement. */
   input: unknown;
+  /** A server-owned request snapshot, re-read immediately before committing. */
+  binding?: { hash: string; currentHash: () => string | undefined };
   /** The sheet's sentence, built by the server from `input`, never from a name an agent chose alone. */
   reason: string;
   /** Quiet extra lines for the sheet. */
@@ -83,6 +85,7 @@ export interface HeldStepUp {
   /** The browser session that held it, or `null` when the caller had none. */
   sessionId: string | null;
   commit: StepUpActionInput['commit'];
+  binding?: StepUpActionInput['binding'];
   /** Wrong passwords it will still take. */
   triesLeft: number;
 }
@@ -151,7 +154,10 @@ export function holdStepUp(
   sessionId: string | null,
   now = Date.now()
 ): LocalStepUpStatementV1 {
-  const inputSha256 = stepUpActionHash(action);
+  // Still validate the input even when a stored request supplies its own binding.
+  const canonicalHash = stepUpActionHash(action);
+  const inputSha256 = action.binding?.hash ?? canonicalHash;
+  if (!/^[0-9a-f]{64}$/.test(inputSha256)) throw new Error('Step-up binding must be SHA-256');
   prune(now, sessionId, action.kind, inputSha256);
   while (held.size >= MAX_HELD_STEP_UPS) {
     const oldest = held.keys().next().value;
@@ -176,6 +182,7 @@ export function holdStepUp(
     warnings: action.warnings ?? [],
     sessionId,
     commit: action.commit,
+    ...(action.binding ? { binding: { ...action.binding } } : {}),
     triesLeft: STEP_UP_MAX_PASSWORD_TRIES,
   });
   const expiry = setTimeout(() => drop(statement.heldActionId), STEP_UP_TTL_MS);
