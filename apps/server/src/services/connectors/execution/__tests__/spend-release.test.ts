@@ -8,13 +8,6 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const notified = vi.hoisted(() => [] as Array<{ kind: string; payload: unknown }>);
-vi.mock('../../../notifications/notification-service.js', () => ({
-  notify: vi.fn(async (kind: string, payload: unknown) => {
-    notified.push({ kind, payload });
-    return { deduped: false };
-  }),
-}));
 import {
   connectionOperationGrants,
   connections,
@@ -44,6 +37,7 @@ const PAID = ConnectionIdSchema.parse('connection-acme-search');
 const REVISION = 'revision-acme-search';
 const DOLLAR = 1_000_000;
 const activity: Array<{ eventType: string; summary: string }> = [];
+const notified: Array<{ kind: string; payload: unknown }> = [];
 
 describe('a paid run where it is let go', () => {
   let db: Db;
@@ -119,6 +113,7 @@ describe('a paid run where it is let go', () => {
       outsider: () => outsider,
       activity: { emit: async (event) => void activity.push(event) },
       agentName: () => 'Kestrel',
+      notify: async (kind, payload) => void notified.push({ kind, payload }),
     });
     // Only `approval-spend` was a paid-run card.
     setSpendCardLookup((approvalId) => approvalId === 'approval-spend');

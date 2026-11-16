@@ -31,6 +31,8 @@ export interface ConnectorSpendingPort {
   readonly activity?: Pick<ActivityService, 'emit'>;
   /** What to call an agent in those lines, by Mesh id. */
   readonly agentName?: (agentId: string) => string | undefined;
+  /** Raises the 80% and limit notices; omitted, the notification service does. */
+  readonly notify?: (kind: string, payload: unknown) => Promise<unknown>;
 }
 
 /**

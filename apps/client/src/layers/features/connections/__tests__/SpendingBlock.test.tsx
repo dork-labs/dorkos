@@ -125,12 +125,10 @@ describe('the Spending block', () => {
 
   it('fails closed when the meter can’t be read (spec §7.9)', async () => {
     renderBlock({
-      getConnectorSpending: vi
-        .fn()
-        .mockResolvedValue({
-          ...emptySpendingSummary({ limitMicro: '40000000' }),
-          meterReadable: false,
-        }),
+      getConnectorSpending: vi.fn().mockResolvedValue({
+        ...emptySpendingSummary({ limitMicro: '40000000' }),
+        meterReadable: false,
+      }),
     });
     expect(await screen.findByText(/Couldn’t read this month’s spending\./)).toBeVisible();
     expect(screen.getByText(/Paid actions ask every time\./)).toBeVisible();

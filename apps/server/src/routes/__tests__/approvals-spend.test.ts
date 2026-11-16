@@ -5,24 +5,18 @@
  *
  * @vitest-environment node
  */
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-
-const wifi = vi.hoisted(() => ({ on: false }));
-vi.mock('../../services/core/auth/sessions/wifi-level.js', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('../../services/core/auth/sessions/wifi-level.js')>()),
-  isFromWifi: () => wifi.on,
-}));
-vi.mock('../../services/core/auth/install-owner.js', () => ({
-  isInstallOwner: (user?: { userId: string }) => user?.userId === 'owner',
-}));
-vi.mock('../../services/core/config-manager.js', () => ({
-  configManager: { get: vi.fn(() => undefined), set: vi.fn() },
-}));
-
+import fs from 'node:fs';
 import type { Server } from 'node:http';
+import os from 'node:os';
+import path from 'node:path';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { user } from '@dorkos/db';
 import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
 import { createTestDb } from '@dorkos/test-utils/db';
+import { initConfigManager } from '../../services/core/config-manager.js';
+import { initAuth } from '../../services/core/auth/index.js';
+import { markIngress } from '../../services/core/remote/ingress-mark.js';
 import { ApprovalService, hashApprovalInput } from '../../services/core/approvals/index.js';
 import { AGENT_IDENTITY_HEADER } from '../../middleware/agent-identity.js';
 import { eventFanOut } from '../../services/core/event-fan-out.js';
@@ -33,8 +27,18 @@ import { createPermissionWorld } from '../../services/core/permissions/__tests__
 
 const LIMIT_RECEIPT = 'The monthly limit was reached. Nothing was spent.';
 
+// A real, throwaway config and sign-in store: no module stands in for either.
+const home = fs.mkdtempSync(path.join(os.tmpdir(), 'dorkos-approvals-spend-'));
+beforeAll(() => {
+  initConfigManager(home);
+});
+afterAll(() => {
+  fs.rmSync(home, { recursive: true, force: true });
+});
+
 describe('a paid-run card', () => {
   const target = swappableServer();
+  const wifi = { on: false };
   let approvals: ApprovalService;
   let tapRefusal: string | null;
   let app: Server;
@@ -44,7 +48,21 @@ describe('a paid-run card', () => {
   beforeEach(() => {
     wifi.on = false;
     tapRefusal = null;
-    approvals = new ApprovalService(createTestDb(), {
+    const db = createTestDb();
+    initAuth(db, home);
+    // The first account is the owner; a later one is a teammate.
+    db.insert(user)
+      .values([
+        { id: 'owner', name: 'Owner', email: 'owner@example.test', createdAt: new Date(1) },
+        {
+          id: 'teammate',
+          name: 'Teammate',
+          email: 'teammate@example.test',
+          createdAt: new Date(2),
+        },
+      ])
+      .run();
+    approvals = new ApprovalService(db, {
       describeCapability: () => ({ title: 'Run a connected app action', tier: 'observe' }),
     });
     vi.spyOn(eventFanOut, 'broadcast').mockImplementation(() => {});
@@ -55,7 +73,18 @@ describe('a paid-run card', () => {
       isLoginEnabled: () => loginOn,
       spending: { tapRefusal: () => tapRefusal },
     });
-    app = target.mount(honoGroupListener({ path: '/api/approvals', routes }));
+    app = target.mount(
+      honoGroupListener(
+        { path: '/api/approvals', routes },
+        {
+          before: async (c, next) => {
+            // Marked as the Wi-Fi listener marks a request it accepted.
+            if (wifi.on) markIngress(c.env.incoming, 'wifi');
+            await next();
+          },
+        }
+      )
+    );
   });
 
   afterEach(() => vi.restoreAllMocks());

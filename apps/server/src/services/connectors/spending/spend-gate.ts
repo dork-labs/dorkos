@@ -200,7 +200,8 @@ function raiseNotices(
   )[]
 ): void {
   for (const notice of notices) {
-    void notify(notice.kind, notice.payload as never).catch(() => {
+    const send = connectorSpending()?.notify ?? notify;
+    void send(notice.kind, notice.payload as never).catch(() => {
       // A notice that could not be raised changes nothing about the run.
     });
   }

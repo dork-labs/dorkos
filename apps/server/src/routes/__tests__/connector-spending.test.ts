@@ -4,32 +4,12 @@
  * for "Confirm it's you"; anything that narrows goes straight through; an
  * agent is refused either way.
  */
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-
-vi.mock('../../services/core/config-manager.js', () => ({
-  configManager: {
-    get: vi.fn((key: string) => (key === 'auth' ? { enabled: false } : undefined)),
-    set: vi.fn(),
-    onChange: vi.fn(() => () => undefined),
-  },
-}));
-vi.mock('../../services/core/auth/session-gate.js', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('../../services/core/auth/session-gate.js')>()),
-  decideSessionGate: vi.fn(async () => ({ allowed: true })),
-}));
-vi.mock('../../services/core/auth/install-owner.js', () => ({
-  isInstallOwner: (user?: { userId: string }) => user?.userId === 'owner',
-}));
-vi.mock('../../services/core/auth/index.js', () => ({
-  readOwnerAccount: () => ({ id: 'owner' }),
-  hasAnyUser: () => true,
-}));
-vi.mock('../../services/audit/audit-trail.js', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('../../services/audit/audit-trail.js')>()),
-  recordAudit: vi.fn(),
-}));
-
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import request from '@dorkos/test-utils/supertest';
+import { initConfigManager } from '../../services/core/config-manager.js';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
 import { createTestDb } from '@dorkos/test-utils/db';
 import { StepUpRequiredBodySchema } from '@dorkos/shared/step-up';
@@ -42,6 +22,14 @@ import { createConnectorSpendingRoutes } from '../connector-spending.js';
 import { createStepUpRoutes, type StepUpRouteDeps } from '../step-up.js';
 
 const target = swappableServer();
+// A real, throwaway config: login off, so the person at the app is the owner.
+const configDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dorkos-spending-routes-'));
+beforeAll(() => {
+  initConfigManager(configDir);
+});
+afterAll(() => {
+  fs.rmSync(configDir, { recursive: true, force: true });
+});
 const OWN_ORIGIN = 'http://localhost:4242';
 const PASSWORD = 'correct horse battery';
 const OWNER: RequestUser = { userId: 'owner', credential: 'cookie', sessionId: 'sess-a' };
