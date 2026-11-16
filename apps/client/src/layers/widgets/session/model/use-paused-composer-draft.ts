@@ -32,12 +32,18 @@ export function usePausedComposerDraft({
   send,
   remove,
 }: PausedComposerDraftOptions) {
-  const held = useRef<{ sessionId: string; messageId: string } | null>(null);
+  const held = useRef<{ sessionId: string; messageId: string; content?: string } | null>(null);
   const rememberedId = useSessionChatStore(
     (state) => state.sessions[sessionId]?.pausedComposerMessageId ?? null
   );
   if (held.current?.sessionId !== sessionId) held.current = null;
-  if (!held.current && rememberedId) held.current = { sessionId, messageId: rememberedId };
+  if (!held.current && rememberedId) {
+    held.current = {
+      sessionId,
+      messageId: rememberedId,
+      content: queue.find((row) => row.id === rememberedId)?.content,
+    };
+  }
   const removing = useRef<typeof held.current>(null);
   const sending = useRef(false);
   const currentSession = useRef(sessionId);
@@ -45,26 +51,27 @@ export function usePausedComposerDraft({
   const [pending, setPending] = useState(false);
 
   useEffect(() => {
+    const queued = queue.find((row) => row.id === held.current?.messageId);
+    if (held.current && queued) held.current.content = queued.content;
     if (
       held.current &&
       !(
         removing.current?.sessionId === sessionId &&
         removing.current.messageId === held.current.messageId
       ) &&
-      !queue.some(
-        (row) => row.id === held.current?.messageId && isPausedComposerRow(row, personClientIds)
-      )
+      (!queued || !isPausedComposerRow(queued, personClientIds))
     ) {
+      const unchanged = input === held.current.content;
       held.current = null;
       useSessionChatStore.getState().updateSession(sessionId, { pausedComposerMessageId: null });
-      // Another window sent or removed the row. Its composer copy cannot send again.
-      setInput('');
+      // Clear an unchanged copy; the person's edits remain an unsent draft.
+      if (unchanged) setInput('');
       return;
     }
     if (!paused || input !== '' || held.current) return;
     const own = queue.find((row) => isPausedComposerRow(row, personClientIds));
     if (!own) return;
-    held.current = { sessionId, messageId: own.id };
+    held.current = { sessionId, messageId: own.id, content: own.content };
     useSessionChatStore.getState().updateSession(sessionId, { pausedComposerMessageId: own.id });
     setInput(own.content);
   }, [sessionId, paused, queue, personClientIds, input, setInput]);

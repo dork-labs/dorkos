@@ -250,6 +250,47 @@ describe('pausing an agent holds its queued messages (DOR-4327)', () => {
     expect(ran()).toEqual([]);
   });
 
+  it.each(['heartbeat', 'todos', 'task:demo', 'extension:flow'])(
+    'keeps a person’s held row queued when %s dispatches after resume',
+    async (clientId) => {
+      inner.withScenarios([quick, quick]);
+      const runtime = runtimeRegistry.get(inner.type);
+      const projector = getOrCreateProjector(sessionId, BETA.home);
+      await pauses.pause(BETA.id, PERSON);
+      await dispatchMessage({
+        sessionId,
+        clientId: 'web-person-window',
+        content: 'My held words',
+        projector,
+        runtime,
+        cwd: BETA.home,
+      });
+      await settle();
+      const [held] = listQueuedMessages(sessionId);
+      expect(held?.content).toBe('My held words');
+      expect(ran()).toEqual([]);
+
+      pauses.onResumed(() => void rearm());
+      pauses.resume(BETA.id, PERSON);
+      await settle();
+      expect(isQueuedMessageArmed(held!.id)).toBe(false);
+      await dispatchMessage({
+        sessionId,
+        clientId,
+        content: 'A background check',
+        projector,
+        runtime,
+        cwd: BETA.home,
+        unattended: true,
+      });
+      await vi.waitFor(() => expect(ran()).toContain('A background check'));
+      await settle();
+      expect(ran()).not.toContain('My held words');
+      expect(listQueuedMessages(sessionId).map((row) => row.id)).toEqual([held!.id]);
+      expect(isQueuedMessageArmed(held!.id)).toBe(false);
+    }
+  );
+
   it('holds it when the pause lands while its launch is under way', async () => {
     await pauses.pause(BETA.id, PERSON);
     // The launch's own check runs a beat before the pause is in force; the

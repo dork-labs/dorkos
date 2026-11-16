@@ -599,7 +599,7 @@ async function launchSessionMessage(
   const personTyped = origin.kind === 'interactive' || origin.kind === 'session-relay';
   // Chat messages have a durable queue row: let the dispatcher keep it under
   // the pause. Every other launch retains the refusal before any work starts.
-  if (paused && !isChatClientId(clientId)) {
+  if (paused && !(origin.kind === 'chat-message' && isChatClientId(clientId))) {
     agentPause()?.recordHeld(paused, {
       via: personTyped ? 'message' : 'turn',
       sessionId,

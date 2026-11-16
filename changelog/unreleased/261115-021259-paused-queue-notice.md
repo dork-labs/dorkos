@@ -4,6 +4,7 @@ covers:
   - 'fix(chat): keep paused drafts waiting for Send (DOR-4348)'
   - 'fix(chat): guard resumed drafts across delivery modes (DOR-4348)'
   - 'fix(chat): harden paused draft ownership and delivery (DOR-4348)'
+  - 'fix(chat): guard paused sends and held draft recovery (DOR-4348)'
 ---
 
 ### Fixed

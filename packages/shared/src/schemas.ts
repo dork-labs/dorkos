@@ -1327,8 +1327,8 @@ export const QueuedMessageSchema = z
     /** The client that enqueued it, so a window can tell its own from another's. */
     enqueuedBy: z.string(),
     /**
-     * True only when a person's window may restore this row as typed words.
-     * Missing means no: private authority marks never cross the queue boundary.
+     * True for a `web-` queue row not marked `heldToDefault`
+     * in the store. Missing means no.
      */
     canRestoreToComposer: z.boolean().optional(),
     /**
