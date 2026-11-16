@@ -149,7 +149,7 @@ export interface SessionInfo {
   /**
    * The tracker item it serves, when one is known.
    *
-   * @deprecated The newest `this-chat` item of `trackerItems`; removed per spec `flow-multiproject` §6.8's condition.
+   * @deprecated since 0.135, remove in 0.155. The newest `this-chat` item of `trackerItems`; removed per spec `flow-multiproject` §6.8's condition.
    */
   trackerItem?: { id: string };
   /** Every tracker item it works on, newest first; `own-chat` items run in chats it started. */
@@ -175,7 +175,7 @@ export interface LimitedSessionInfo {
   /**
    * The tracker item it serves, when one is known.
    *
-   * @deprecated The newest `this-chat` item of `trackerItems`; removed per spec `flow-multiproject` §6.8's condition.
+   * @deprecated since 0.135, remove in 0.155. The newest `this-chat` item of `trackerItems`; removed per spec `flow-multiproject` §6.8's condition.
    */
   trackerItem?: { id: string };
   /** Every tracker item it works on, newest first; `own-chat` items run in chats it started. */

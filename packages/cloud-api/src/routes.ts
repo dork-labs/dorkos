@@ -41,7 +41,7 @@ export const V1_ROUTES = {
   topup: '/v1/topup',
   portal: '/v1/portal',
   /**
-   * @deprecated Withdrawn. DorkOS Cloud does not offer refunds through this
+   * @deprecated since 0.135, remove in 0.155. Withdrawn. DorkOS Cloud does not offer refunds through this
    * API, and the service answers `not_found` here. Kept so `/v1` code that
    * names it still compiles; removed in `/v2`.
    */

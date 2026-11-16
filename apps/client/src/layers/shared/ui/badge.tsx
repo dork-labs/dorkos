@@ -70,14 +70,14 @@ const badgeVariants = cva(
  * The old fill axis. Every value now draws the one tint, and `destructive`
  * resolves to `tone="error"`.
  *
- * @deprecated Removed with the Badge codemod (Phase 2 PR B). Drop it.
+ * @deprecated since 0.135, remove in 0.155. Removed with the Badge codemod (Phase 2 PR B). Drop it.
  */
 type BadgeVariant = 'default' | 'secondary' | 'destructive' | 'outline' | null;
 
 /**
  * The old shape axis. Every badge is a pill now.
  *
- * @deprecated Removed with the Badge codemod (Phase 2 PR B). Drop it.
+ * @deprecated since 0.135, remove in 0.155. Removed with the Badge codemod (Phase 2 PR B). Drop it.
  */
 type BadgeShape = 'default' | 'pill' | null;
 
@@ -96,9 +96,9 @@ export interface BadgeProps extends React.ComponentProps<'span'> {
   live?: boolean;
   /** Render the caller's own element as the badge: a link, a `<dd>`. */
   asChild?: boolean;
-  /** @deprecated See {@link BadgeVariant}. */
+  /** @deprecated since 0.135, remove in 0.155. See {@link BadgeVariant}. */
   variant?: BadgeVariant;
-  /** @deprecated See {@link BadgeShape}. */
+  /** @deprecated since 0.135, remove in 0.155. See {@link BadgeShape}. */
   shape?: BadgeShape;
 }
 

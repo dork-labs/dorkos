@@ -687,7 +687,7 @@ const REFUNDS_WITHDRAWN =
 /**
  * `POST /v1/refunds` — withdrawn. A request no release of the service accepts.
  *
- * @deprecated DorkOS Cloud does not offer refunds through this API, and the
+ * @deprecated since 0.135, remove in 0.155. DorkOS Cloud does not offer refunds through this API, and the
  * route answers `not_found`. Kept only so an import from an earlier release
  * still compiles; it is removed in `/v2`.
  */
@@ -700,14 +700,14 @@ export const RefundRequestSchema = z
 /**
  * A withdrawn refund request.
  *
- * @deprecated See {@link RefundRequestSchema}.
+ * @deprecated since 0.135, remove in 0.155. See {@link RefundRequestSchema}.
  */
 export type RefundRequest = z.infer<typeof RefundRequestSchema>;
 
 /**
  * `POST /v1/refunds` — withdrawn. An answer no release of the service sends.
  *
- * @deprecated DorkOS Cloud does not offer refunds through this API, and the
+ * @deprecated since 0.135, remove in 0.155. DorkOS Cloud does not offer refunds through this API, and the
  * route answers `not_found`. Kept only so an import from an earlier release
  * still compiles; it is removed in `/v2`.
  */
@@ -723,6 +723,6 @@ export const RefundResponseSchema = z
 /**
  * A withdrawn refund answer.
  *
- * @deprecated See {@link RefundResponseSchema}.
+ * @deprecated since 0.135, remove in 0.155. See {@link RefundResponseSchema}.
  */
 export type RefundResponse = z.infer<typeof RefundResponseSchema>;
