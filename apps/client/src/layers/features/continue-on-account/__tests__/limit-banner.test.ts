@@ -3,7 +3,7 @@
  * agrees with the sidebar row and the header badge, and its words.
  */
 import { describe, it, expect } from 'vitest';
-import { createMockSessionLimit } from '@dorkos/test-utils';
+import { createMockSessionLimit } from '@dorkos/test-utils/mock-factories';
 import { sessionLimitDisplay } from '@/layers/entities/session';
 import type { LimitState } from '@/layers/shared/lib';
 import {

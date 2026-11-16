@@ -6,13 +6,11 @@ import type {
   LocalBrowserState,
 } from '@dorkos/shared/local-browser';
 import { useLocalBrowser, LOCAL_BROWSER_STATE_KEY } from '@/layers/entities/local-browser';
+import { cn } from '@/layers/shared/lib';
 import { YourTurnStrip } from '@/layers/features/browser-handoff';
 import { useAppStore, useTransport } from '@/layers/shared/model';
-import { Button, Input } from '@/layers/shared/ui';
+import { Button } from '@/layers/shared/ui';
 import { BrowserModeChoice } from './BrowserModeChoice';
-import { useGuestPage } from '../model/use-guest-page';
-import { searchAddress } from '../lib/page-error';
-import { BrowserPageArea } from './BrowserPageArea';
 import { browserErrorMessage } from '../lib/browser-error-message';
 import { useActionFocusReturn } from '../model/use-action-focus-return';
 import { useFirstFocus } from '../model/use-first-focus';
@@ -20,6 +18,7 @@ import { BrowserPreparation } from './BrowserPreparation';
 import { WaitingElsewhere } from './WaitingElsewhere';
 import { SavedSignIns } from './SavedSignIns';
 import { SharedElsewhere } from './SharedElsewhere';
+import { LocalBrowserView } from './LocalBrowserView';
 
 export interface LocalBrowserPanelProps {
   visible?: boolean;
@@ -63,10 +62,7 @@ export function LocalBrowserPanel({
   const operation = useRef(0);
   const pendingSetup = useRef<Promise<boolean> | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [address, setAddress] = useState<string | null>(null);
   const [surfaceUnavailable, setSurfaceUnavailable] = useState(false);
-  // What the person last typed and went to: only their own words are ever searched for.
-  const [typed, setTyped] = useState<{ text: string; host: string } | null>(null);
   const connected = state?.status === 'connected';
   // "Disconnected" before anything was ever opened reads as broken (DOR-4104).
   const [hadConnection, setHadConnection] = useState(false);
@@ -94,6 +90,8 @@ export function LocalBrowserPanel({
       : (choice?.mode ??
         (capabilities?.embedded && window.electronAPI?.localBrowser ? 'embedded' : 'new-window'));
   const selected = state?.tabs.find((tab) => tab.id === state.selectedTabId);
+  // The page and its chrome run flush to the panel's edges, under the controls.
+  const showsPage = connected && !waitingElsewhere && !sharedElsewhere;
   const unavailable = useCallback(() => setSurfaceUnavailable(true), []);
   useEffect(
     () => () => {
@@ -101,8 +99,6 @@ export function LocalBrowserPanel({
     },
     []
   );
-  const page = useGuestPage(connected && mode === 'embedded' ? state.connectionId : null);
-  const typedFailed = !!typed && !!page.failure && page.failure.host === typed.host;
 
   const action = async (run: () => Promise<LocalBrowserState>, setup = false) => {
     const ticket = ++operation.current;
@@ -214,287 +210,237 @@ export function LocalBrowserPanel({
     <section
       aria-label="Agent browser"
       data-slot="local-browser-panel"
-      className="@container/browser-panel flex h-full min-h-0 flex-col gap-3 overflow-y-auto p-3"
+      className="@container/browser-panel flex h-full min-h-0 flex-col"
     >
-      {/* Below 480px of panel the state sits under the title, so neither wraps (DOR-4265). */}
-      <div className="flex flex-col items-start gap-0.5 @min-[480px]/browser-panel:flex-row @min-[480px]/browser-panel:items-center @min-[480px]/browser-panel:justify-between @min-[480px]/browser-panel:gap-2">
-        <h3 className="text-sm font-medium">Agent browser</h3>
-        <span role="status" className="text-muted-foreground text-xs">
-          {cancelling
-            ? 'Cancelling…'
-            : opening
-              ? 'Preparing browser'
-              : busy
-                ? 'Updating…'
-                : !connected && handoffHere
-                  ? 'Waiting for you'
-                  : state?.status === 'closed'
-                    ? 'Browser closed'
-                    : connected && sharedElsewhere
-                      ? // The body says where the browser is; the header adds nothing.
-                        ''
-                      : connected
-                        ? state.paused
-                          ? 'Agent paused'
-                          : 'Connected'
-                        : hadConnection
-                          ? 'Disconnected'
-                          : 'Not open yet'}
-        </span>
-      </div>
-      {opening && (
-        <Button
-          size="sm"
-          variant="outline"
-          onClick={(event) => {
-            rememberFocus(event.currentTarget);
-            void cancelOpening();
-          }}
-        >
-          Cancel
-        </Button>
-      )}
-      {preparation && <BrowserPreparation preparation={preparation} />}
-      {(error || query.isError || capabilityQuery.isError) && (
-        <p role="alert" className="text-sm">
-          {error ?? readError}
-        </p>
-      )}
-      {(query.isError || capabilityQuery.isError) &&
-        readCode !== 'local_only' &&
-        readCode !== 'owner_only' && (
+      <div
+        className={cn(
+          'flex min-h-0 flex-col gap-3 overflow-y-auto p-3',
+          showsPage ? 'max-h-[50%] shrink-0' : 'flex-1'
+        )}
+      >
+        {/* Below 480px of panel the state sits under the title, so neither wraps (DOR-4265). */}
+        <div className="flex flex-col items-start gap-0.5 @min-[480px]/browser-panel:flex-row @min-[480px]/browser-panel:items-center @min-[480px]/browser-panel:justify-between @min-[480px]/browser-panel:gap-2">
+          <h3 className="text-sm font-medium">Agent browser</h3>
+          <span role="status" className="text-muted-foreground text-xs">
+            {cancelling
+              ? 'Cancelling…'
+              : opening
+                ? 'Preparing browser'
+                : busy
+                  ? 'Updating…'
+                  : !connected && handoffHere
+                    ? 'Waiting for you'
+                    : state?.status === 'closed'
+                      ? 'Browser closed'
+                      : connected && sharedElsewhere
+                        ? // The body says where the browser is; the header adds nothing.
+                          ''
+                        : connected
+                          ? state.paused
+                            ? 'Agent paused'
+                            : 'Connected'
+                          : hadConnection
+                            ? 'Disconnected'
+                            : 'Not open yet'}
+          </span>
+        </div>
+        {opening && (
           <Button
             size="sm"
             variant="outline"
-            onClick={() => {
-              void query.refetch();
-              void capabilityQuery.refetch();
+            onClick={(event) => {
+              rememberFocus(event.currentTarget);
+              void cancelOpening();
             }}
           >
-            Reconnect
+            Cancel
           </Button>
         )}
-      {waitingElsewhere && (
-        <WaitingElsewhere
-          sessionId={waitingElsewhere.sessionId}
-          agentName={waitingElsewhere.agentName}
-        />
-      )}
-      {!connected && handoffHere && (
-        <div className="space-y-1 text-sm">
-          <p>
-            {agentName || handoffHere.agentName || 'The agent'} needs you to sign in to{' '}
-            {handoffHere.site}.
+        {preparation && <BrowserPreparation preparation={preparation} />}
+        {(error || query.isError || capabilityQuery.isError) && (
+          <p role="alert" className="text-sm">
+            {error ?? readError}
           </p>
-          {signInClosed ? (
-            <p>
-              The sign-in window closed. Press{' '}
-              <strong className="font-medium">Continue in the chat</strong> to hand it back.
-            </p>
-          ) : (
-            <p>
-              Finish in the sign-in window, then press{' '}
-              <strong className="font-medium">Continue in the chat</strong>.
-            </p>
-          )}
-        </div>
-      )}
-      {!connected && !waitingElsewhere && !handoffHere && (
-        <div className="min-h-0 space-y-3 overflow-y-auto">
-          {choiceIssue && (
-            <p className="text-muted-foreground text-xs">
-              {needsChoice
-                ? 'Choose a browser. The saved choice couldn’t be read.'
-                : 'Browser choice couldn’t be saved. It lasts until this window closes.'}
-            </p>
-          )}
-          <BrowserModeChoice
-            value={needsChoice ? null : mode}
-            onChange={(next) => {
-              saveChoice({ mode: next });
-            }}
-            capabilities={capabilities}
-            disabled={busy || cancelling}
-          />
-          {state?.status === 'closed' && (
-            <p className="text-muted-foreground text-xs">
-              Open it again to reconnect. Saved sign-ins are kept.
-            </p>
-          )}
-          <Button
-            ref={openButton}
-            disabled={busy || cancelling || needsChoice || !supported}
-            onClick={open}
-          >
-            {state?.mode ? 'Reconnect' : 'Open browser'}
-          </Button>
-        </div>
-      )}
-      {connected && !waitingElsewhere && sharedElsewhere && (
-        <SharedElsewhere
-          holderSessionId={state.sessionId!}
-          canTakeHere={!!sessionId}
-          disabled={busy || cancelling || !supported}
-          visible={visible}
-          onTakeHere={open}
-        />
-      )}
-      {connected && !waitingElsewhere && !sharedElsewhere && (
-        <>
-          {/* In the Mac app the agent's page stays here while the person has it. DorkOS
-              draws this, outside the page, so the page can't hide or fake it (DOR-3111). */}
-          {handoffHere && <YourTurnStrip agentName={handoffHere.agentName ?? agentName} />}
-          {!state.sessionId && (
-            <p className="text-muted-foreground text-xs">
-              Only you can use this page. Open from an agent chat to share it.
-            </p>
-          )}
-          <div className="flex flex-wrap items-center gap-2">
+        )}
+        {(query.isError || capabilityQuery.isError) &&
+          readCode !== 'local_only' &&
+          readCode !== 'owner_only' && (
             <Button
               size="sm"
               variant="outline"
-              disabled={busy}
-              onClick={() =>
-                void action(() =>
-                  state.paused ? transport.resumeLocalBrowser() : transport.pauseLocalBrowser()
-                )
-              }
-            >
-              {state.paused ? 'Resume agent' : 'Pause agent'}
-            </Button>
-            <Button
-              size="sm"
-              variant="ghost"
-              disabled={busy}
-              onClick={(event) => {
-                rememberFocus(event.currentTarget);
-                const asked = state.handoff?.outcome === null ? state.handoff.id : null;
-                let answer: LocalBrowserPersonState | undefined;
-                void action(async () => (answer = await transport.disconnectLocalBrowser())).then(
-                  (closed) => {
-                    // Disconnect ends a handoff as Stop task does (outcome `window-closed`), and
-                    // that ends the agent's turn. Only this one: a handoff that ended first must
-                    // not cost that chat its next turn.
-                    const ended = answer?.handoff;
-                    if (closed && ended?.id === asked && ended?.outcome === 'window-closed')
-                      void transport.interruptSession(ended.sessionId).catch(() => {});
-                  }
-                );
+              onClick={() => {
+                void query.refetch();
+                void capabilityQuery.refetch();
               }}
             >
-              Disconnect
+              Reconnect
+            </Button>
+          )}
+        {waitingElsewhere && (
+          <WaitingElsewhere
+            sessionId={waitingElsewhere.sessionId}
+            agentName={waitingElsewhere.agentName}
+          />
+        )}
+        {!connected && handoffHere && (
+          <div className="space-y-1 text-sm">
+            <p>
+              {agentName || handoffHere.agentName || 'The agent'} needs you to sign in to{' '}
+              {handoffHere.site}.
+            </p>
+            {signInClosed ? (
+              <p>
+                The sign-in window closed. Press{' '}
+                <strong className="font-medium">Continue in the chat</strong> to hand it back.
+              </p>
+            ) : (
+              <p>
+                Finish in the sign-in window, then press{' '}
+                <strong className="font-medium">Continue in the chat</strong>.
+              </p>
+            )}
+          </div>
+        )}
+        {!connected && !waitingElsewhere && !handoffHere && (
+          <div className="min-h-0 space-y-3 overflow-y-auto">
+            {choiceIssue && (
+              <p className="text-muted-foreground text-xs">
+                {needsChoice
+                  ? 'Choose a browser. The saved choice couldn’t be read.'
+                  : 'Browser choice couldn’t be saved. It lasts until this window closes.'}
+              </p>
+            )}
+            <BrowserModeChoice
+              value={needsChoice ? null : mode}
+              onChange={(next) => {
+                saveChoice({ mode: next });
+              }}
+              capabilities={capabilities}
+              disabled={busy || cancelling}
+            />
+            {state?.status === 'closed' && (
+              <p className="text-muted-foreground text-xs">
+                Open it again to reconnect. Saved sign-ins are kept.
+              </p>
+            )}
+            <Button
+              ref={openButton}
+              disabled={busy || cancelling || needsChoice || !supported}
+              onClick={open}
+            >
+              {state?.mode ? 'Reconnect' : 'Open browser'}
             </Button>
           </div>
-          <label className="text-sm">
-            {state.sessionId ? `Shared with ${agentName || 'this chat’s agent'}` : 'Browser tab'}
-            <select
-              className="bg-muted/40 mt-1 block w-full rounded-md p-2"
-              value={state.selectedTabId ?? ''}
-              disabled={busy}
-              onChange={(event) => {
-                setAddress(null);
-                void action(() => transport.selectLocalBrowserTab(event.target.value));
-              }}
-            >
-              {!state.selectedTabId && <option value="">Choose a tab</option>}
-              {state.tabs.map((tab) => (
-                <option key={tab.id} value={tab.id}>
-                  {tab.title || (tab.url === 'about:blank' ? 'New tab' : tab.url)}
-                </option>
-              ))}
-            </select>
-          </label>
-          {selected && (
-            <form
-              className="flex gap-2"
-              aria-busy={page.loading}
-              onSubmit={(event) => {
-                event.preventDefault();
-                const url = address ?? (page.failure?.url || selected.url);
-                try {
-                  const parsed = new URL(url);
-                  if (!['http:', 'https:'].includes(parsed.protocol))
-                    throw new Error('unsupported');
-                  if (address !== null) setTyped({ text: address, host: parsed.host });
-                  void action(() => transport.navigateLocalBrowser(parsed.href)).then((ok) => {
-                    if (ok) setAddress(null);
-                  });
-                } catch {
-                  setError('Enter a full web address, starting with https:// or http://.');
+        )}
+        {connected && !waitingElsewhere && sharedElsewhere && (
+          <SharedElsewhere
+            holderSessionId={state.sessionId!}
+            canTakeHere={!!sessionId}
+            disabled={busy || cancelling || !supported}
+            visible={visible}
+            onTakeHere={open}
+          />
+        )}
+        {connected && !waitingElsewhere && !sharedElsewhere && (
+          <>
+            {/* In the Mac app the agent's page stays here while the person has it. DorkOS
+              draws this, outside the page, so the page can't hide or fake it (DOR-3111). */}
+            {handoffHere && <YourTurnStrip agentName={handoffHere.agentName ?? agentName} />}
+            {!state.sessionId && (
+              <p className="text-muted-foreground text-xs">
+                Only you can use this page. Open from an agent chat to share it.
+              </p>
+            )}
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={busy}
+                onClick={() =>
+                  void action(() =>
+                    state.paused ? transport.resumeLocalBrowser() : transport.pauseLocalBrowser()
+                  )
                 }
-              }}
-            >
-              <Input
-                aria-label="Web address"
-                // A failed load keeps its address in the field (DOR-4430).
-                value={address ?? (page.failure?.url || selected.url)}
-                onChange={(event) => setAddress(event.target.value)}
-                className="min-w-0"
-              />
-              {page.loading ? (
-                <Button size="sm" variant="outline" type="button" onClick={() => page.run('stop')}>
-                  Stop
-                </Button>
-              ) : (
-                <Button size="sm" variant="outline" type="submit" disabled={busy}>
-                  Go
-                </Button>
-              )}
-            </form>
-          )}
-          {state.paused && (
-            <div className="text-muted-foreground space-y-1 text-xs">
-              <p>Pause stops new actions. An action already started may finish.</p>
-              <p>Your mouse and keyboard still work.</p>
+              >
+                {state.paused ? 'Resume agent' : 'Pause agent'}
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                disabled={busy}
+                onClick={(event) => {
+                  rememberFocus(event.currentTarget);
+                  const asked = state.handoff?.outcome === null ? state.handoff.id : null;
+                  let answer: LocalBrowserPersonState | undefined;
+                  void action(async () => (answer = await transport.disconnectLocalBrowser())).then(
+                    (closed) => {
+                      // Disconnect ends a handoff as Stop task does (outcome `window-closed`), and
+                      // that ends the agent's turn. Only this one: a handoff that ended first must
+                      // not cost that chat its next turn.
+                      const ended = answer?.handoff;
+                      if (closed && ended?.id === asked && ended?.outcome === 'window-closed')
+                        void transport.interruptSession(ended.sessionId).catch(() => {});
+                    }
+                  );
+                }}
+              >
+                Disconnect
+              </Button>
             </div>
-          )}
-          {mode !== 'embedded' && (
-            <p className="text-muted-foreground text-sm">
-              This page is in the separate browser window.
-            </p>
-          )}
-          {mode === 'embedded' && (
-            <p className="text-muted-foreground text-xs">This page stays in the right panel.</p>
-          )}
-          {mode === 'embedded' && (
-            <p className="text-muted-foreground text-xs">
-              {state.sessionId
-                ? 'Extra windows are for you. Your agent stays on this page.'
-                : 'Extra windows are for you.'}
-            </p>
-          )}
-          {mode === 'embedded' && (
-            <BrowserPageArea
-              connectionId={state.connectionId ?? null}
-              visible={visible && !query.isError && !surfaceUnavailable}
-              page={page}
-              typed={typedFailed}
-              onSearch={() => {
-                if (!typed) return;
-                setAddress(null);
-                void action(() => transport.navigateLocalBrowser(searchAddress(typed.text)));
-              }}
-              onUnavailable={unavailable}
-              disabled={busy}
-            >
-              {surfaceUnavailable && (
-                <div className="space-y-2 p-3">
-                  <p role="alert" className="text-sm">
-                    Couldn’t show the page. Reconnect to try again.
-                  </p>
-                  <Button size="sm" variant="outline" onClick={open} disabled={busy}>
-                    Reconnect
-                  </Button>
-                </div>
-              )}
-            </BrowserPageArea>
-          )}
-        </>
-      )}
-      {!waitingElsewhere && (
-        <SavedSignIns
-          enabled={!!state && !!capabilities && !query.isError && !capabilityQuery.isError}
-          disabled={busy || cancelling}
+            <label className="text-sm">
+              {state.sessionId ? `Shared with ${agentName || 'this chat’s agent'}` : 'Browser tab'}
+              <select
+                className="bg-muted/40 mt-1 block w-full rounded-md p-2"
+                value={state.selectedTabId ?? ''}
+                disabled={busy}
+                onChange={(event) => {
+                  void action(() => transport.selectLocalBrowserTab(event.target.value));
+                }}
+              >
+                {!state.selectedTabId && <option value="">Choose a tab</option>}
+                {state.tabs.map((tab) => (
+                  <option key={tab.id} value={tab.id}>
+                    {tab.title || (tab.url === 'about:blank' ? 'New tab' : tab.url)}
+                  </option>
+                ))}
+              </select>
+            </label>
+            {state.paused && (
+              <div className="text-muted-foreground space-y-1 text-xs">
+                <p>Pause stops new actions. An action already started may finish.</p>
+                <p>Your mouse and keyboard still work.</p>
+              </div>
+            )}
+            {mode === 'embedded' && (
+              <p className="text-muted-foreground text-xs">This page stays in the right panel.</p>
+            )}
+            {mode === 'embedded' && (
+              <p className="text-muted-foreground text-xs">
+                {state.sessionId
+                  ? 'Extra windows are for you. Your agent stays on this page.'
+                  : 'Extra windows are for you.'}
+              </p>
+            )}
+          </>
+        )}
+        {!waitingElsewhere && (
+          <SavedSignIns
+            enabled={!!state && !!capabilities && !query.isError && !capabilityQuery.isError}
+            disabled={busy || cancelling}
+          />
+        )}
+      </div>
+      {showsPage && (
+        <LocalBrowserView
+          tab={selected ?? null}
+          connectionId={state.connectionId ?? null}
+          embedded={mode === 'embedded'}
+          pageVisible={visible && !query.isError && !surfaceUnavailable}
+          surfaceUnavailable={surfaceUnavailable}
+          onUnavailable={unavailable}
+          busy={busy}
+          action={action}
+          onReconnect={open}
         />
       )}
     </section>

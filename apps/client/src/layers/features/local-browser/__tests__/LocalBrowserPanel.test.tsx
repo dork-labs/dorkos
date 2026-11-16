@@ -103,6 +103,16 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
+/** Type into the Agent browser's address field and press Enter, as a person would. */
+async function typeAddress(typed: string): Promise<void> {
+  // After a failure the field stays open on what was typed, so it may be open already.
+  if (!screen.queryByRole('textbox', { name: 'Address' }))
+    fireEvent.click(await screen.findByRole('button', { name: /^Address:/ }));
+  const field = screen.getByRole('textbox', { name: 'Address' });
+  fireEvent.change(field, { target: { value: typed } });
+  fireEvent.submit(field.closest('form') as HTMLFormElement);
+}
+
 describe('LocalBrowserPanel', () => {
   it('never labels another chat’s browser with the current agent name', async () => {
     transport.getLocalBrowserState.mockResolvedValue({ ...connected, sessionId: 'other-chat' });
@@ -132,7 +142,7 @@ describe('LocalBrowserPanel', () => {
       );
       // Nothing of that chat but its title: no tabs, address, or controls for its page.
       expect(screen.queryByRole('combobox')).toBeNull();
-      expect(screen.queryByLabelText('Web address')).toBeNull();
+      expect(screen.queryByRole('button', { name: /^Address:/ })).toBeNull();
       expect(screen.queryByText('First page')).toBeNull();
       expect(screen.queryByText(/Shared with another chat/)).toBeNull();
       expect(screen.queryByText(/loses it/)).toBeNull();
@@ -277,7 +287,7 @@ describe('LocalBrowserPanel', () => {
       ])
         expect(screen.queryByRole('button', { name })).toBeNull();
       expect(screen.queryByRole('combobox')).toBeNull();
-      expect(screen.queryByLabelText('Web address')).toBeNull();
+      expect(screen.queryByRole('button', { name: /^Address:/ })).toBeNull();
       // Forget stays out of reach too: nothing here may change that chat's browser.
       expect(screen.queryByLabelText('Saved sign-ins')).toBeNull();
       expect(screen.queryByRole('button', { name: 'Forget…' })).toBeNull();
@@ -1004,10 +1014,47 @@ describe('LocalBrowserPanel', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Pause agent' }));
     expect(await screen.findByRole('button', { name: 'Resume agent' })).toBeEnabled();
     expect(screen.getByText('Your mouse and keyboard still work.')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Go' })).toBeEnabled();
     expect(
       screen.getByText('Pause stops new actions. An action already started may finish.')
     ).toBeInTheDocument();
+    // The person can still go somewhere while the agent is paused.
+    transport.navigateLocalBrowser.mockResolvedValue({ ...connected, paused: true });
+    await typeAddress('https://new.example.com');
+    await waitFor(() =>
+      expect(transport.navigateLocalBrowser).toHaveBeenCalledWith('https://new.example.com')
+    );
+  });
+  it('keeps what was typed when Enter comes while the browser is busy', async () => {
+    transport.getLocalBrowserState.mockResolvedValue(connected);
+    let finish: (state: typeof connected) => void = () => {};
+    transport.pauseLocalBrowser.mockReturnValue(new Promise((resolve) => (finish = resolve)));
+    mount();
+    fireEvent.click(await screen.findByRole('button', { name: 'Pause agent' }));
+    await typeAddress('https://new.example.com');
+    expect(screen.getByRole('textbox', { name: 'Address' })).toHaveValue('https://new.example.com');
+    expect(screen.getByRole('button', { name: 'Reload' })).toBeDisabled();
+    expect(transport.navigateLocalBrowser).not.toHaveBeenCalled();
+    await act(async () => finish({ ...connected, paused: true }));
+  });
+  it('drops a refusal when the person picks another tab', async () => {
+    transport.getLocalBrowserState.mockResolvedValue(connected);
+    transport.selectLocalBrowserTab.mockResolvedValue({ ...connected, selectedTabId: 'two' });
+    mount();
+    await typeAddress('file:///etc/hosts');
+    expect(await screen.findByRole('alert')).toHaveTextContent('Files don’t open here.');
+    fireEvent.change(screen.getByLabelText('Shared with Kai'), { target: { value: 'two' } });
+    await waitFor(() => expect(screen.queryByRole('alert')).not.toBeInTheDocument());
+  });
+  it('names its buttons without Radix tooltips, which would hide the native page', async () => {
+    transport.getLocalBrowserState.mockResolvedValue(connected);
+    mount();
+    const back = await screen.findByRole('button', { name: 'Back' });
+    expect(back).toHaveAttribute('title', 'Back');
+    expect(screen.getByRole('button', { name: 'Forward' })).toHaveAttribute('title', 'Forward');
+    expect(back).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Reload' })).toHaveAttribute('title', 'Reload');
+    fireEvent.focus(screen.getByRole('button', { name: 'Reload' }));
+    expect(document.querySelector('[data-radix-popper-content-wrapper]')).toBeNull();
   });
   it('keeps a typed address when navigation becomes stale and never replays it', async () => {
     transport.getLocalBrowserState.mockResolvedValue(connected);
@@ -1015,13 +1062,13 @@ describe('LocalBrowserPanel', () => {
       Object.assign(new Error('changed'), { code: 'stale_page' })
     );
     mount();
-    const address = await screen.findByRole('textbox', { name: 'Web address' });
-    fireEvent.change(address, { target: { value: 'https://new.example.com' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Go' }));
+    await typeAddress('https://new.example.com');
     expect(
       await screen.findByText('Page changed. Read it again before continuing.')
     ).toBeInTheDocument();
-    expect(address).toHaveValue('https://new.example.com');
+    expect(await screen.findByRole('textbox', { name: 'Address' })).toHaveValue(
+      'https://new.example.com'
+    );
     expect(transport.navigateLocalBrowser).toHaveBeenCalledTimes(1);
   });
   it.each(['navigation_uncertain', 'uncertain'])(
@@ -1032,15 +1079,121 @@ describe('LocalBrowserPanel', () => {
         Object.assign(new Error('unknown outcome'), { code })
       );
       mount();
-      const address = await screen.findByRole('textbox', { name: 'Web address' });
-      fireEvent.change(address, { target: { value: 'https://new.example.com' } });
-      fireEvent.click(screen.getByRole('button', { name: 'Go' }));
+      await typeAddress('https://new.example.com');
       expect(await screen.findByText('Check what happened before continuing.')).toBeInTheDocument();
-      expect(address).toHaveValue('https://new.example.com');
+      expect(await screen.findByRole('textbox', { name: 'Address' })).toHaveValue(
+        'https://new.example.com'
+      );
       expect(screen.queryByRole('button', { name: 'Reconnect' })).not.toBeInTheDocument();
       expect(transport.navigateLocalBrowser).toHaveBeenCalledTimes(1);
     }
   );
+  // DOR-4419: the address box reads what the person typed with the shared address rules.
+  describe('typed addresses', () => {
+    const unreachable = () =>
+      Object.assign(new Error('no answer'), { code: 'navigation_unreachable' });
+    const submit = typeAddress;
+
+    it('puts https:// in front of a bare host, and http:// for a private one', async () => {
+      transport.getLocalBrowserState.mockResolvedValue(connected);
+      transport.navigateLocalBrowser.mockResolvedValue(connected);
+      mount();
+      await submit('example.com/docs');
+      await waitFor(() =>
+        expect(transport.navigateLocalBrowser).toHaveBeenCalledWith('https://example.com/docs')
+      );
+      await submit('192.168.1.1');
+      await waitFor(() =>
+        expect(transport.navigateLocalBrowser).toHaveBeenLastCalledWith('http://192.168.1.1')
+      );
+    });
+
+    it('tries http:// once when a bare host it put https:// on cannot connect', async () => {
+      transport.getLocalBrowserState.mockResolvedValue(connected);
+      transport.navigateLocalBrowser
+        .mockRejectedValueOnce(unreachable())
+        .mockResolvedValueOnce(connected);
+      mount();
+      await submit('shop.example');
+      await waitFor(() => expect(transport.navigateLocalBrowser).toHaveBeenCalledTimes(2));
+      expect(transport.navigateLocalBrowser.mock.calls).toEqual([
+        ['https://shop.example'],
+        ['http://shop.example'],
+      ]);
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    });
+
+    it('never falls back from an address typed with https://', async () => {
+      transport.getLocalBrowserState.mockResolvedValue(connected);
+      transport.navigateLocalBrowser.mockRejectedValue(unreachable());
+      mount();
+      await submit('https://example.com');
+      expect(await screen.findByRole('alert')).toHaveTextContent(
+        'Couldn’t reach that site. Check the address and try again.'
+      );
+      expect(transport.navigateLocalBrowser).toHaveBeenCalledTimes(1);
+    });
+
+    it('never falls back after a certificate error, and tries http:// only once', async () => {
+      transport.getLocalBrowserState.mockResolvedValue(connected);
+      transport.navigateLocalBrowser.mockRejectedValueOnce(
+        Object.assign(new Error('cert'), { code: 'navigation_uncertain' })
+      );
+      mount();
+      await submit('shop.example');
+      expect(await screen.findByText('Check what happened before continuing.')).toBeInTheDocument();
+      expect(transport.navigateLocalBrowser).toHaveBeenCalledTimes(1);
+
+      transport.navigateLocalBrowser.mockClear();
+      transport.navigateLocalBrowser.mockRejectedValue(unreachable());
+      await submit('news.example');
+      await waitFor(() => expect(transport.navigateLocalBrowser).toHaveBeenCalledTimes(2));
+      expect(transport.navigateLocalBrowser).toHaveBeenNthCalledWith(1, 'https://news.example');
+      expect(transport.navigateLocalBrowser).toHaveBeenNthCalledWith(2, 'http://news.example');
+      expect(await screen.findByRole('alert')).toHaveTextContent('Couldn’t reach that site.');
+    });
+
+    it.each([
+      ['file:///etc/hosts', 'Files don’t open here. Ask the agent to put it on the canvas.'],
+      ['javascript:alert(1)', 'Only web pages open here. Try an address starting with https://.'],
+      ['http://[bad', 'That address isn’t complete. Check it and try again.'],
+    ])('refuses %s with its notice and never asks the server', async (typed, notice) => {
+      transport.getLocalBrowserState.mockResolvedValue(connected);
+      mount();
+      await submit(typed);
+      expect(await screen.findByRole('alert')).toHaveTextContent(notice);
+      expect(transport.navigateLocalBrowser).not.toHaveBeenCalled();
+      expect(await screen.findByRole('textbox', { name: 'Address' })).toHaveValue(typed);
+    });
+
+    it('refuses DorkOS’s own address', async () => {
+      transport.getLocalBrowserState.mockResolvedValue(connected);
+      mount();
+      await submit(`${window.location.origin}/connections`);
+      expect(await screen.findByRole('alert')).toHaveTextContent(
+        'DorkOS doesn’t open its own pages in the Agent browser.'
+      );
+      expect(transport.navigateLocalBrowser).not.toHaveBeenCalled();
+    });
+
+    it('searches DuckDuckGo for words, and names it in the placeholder', async () => {
+      transport.getLocalBrowserState.mockResolvedValue(connected);
+      transport.navigateLocalBrowser.mockResolvedValue(connected);
+      mount();
+      fireEvent.click(await screen.findByRole('button', { name: /^Address:/ }));
+      expect(screen.getByRole('textbox', { name: 'Address' })).toHaveAttribute(
+        'placeholder',
+        'Search DuckDuckGo or type an address'
+      );
+      fireEvent.keyDown(screen.getByRole('textbox', { name: 'Address' }), { key: 'Escape' });
+      await submit('best tacos');
+      await waitFor(() =>
+        expect(transport.navigateLocalBrowser).toHaveBeenCalledWith(
+          'https://duckduckgo.com/?q=best+tacos'
+        )
+      );
+    });
+  });
   it('offers reconnect after the browser closes without claiming the page is still open', async () => {
     transport.getLocalBrowserState.mockResolvedValue({ ...connected, status: 'closed', tabs: [] });
     mount();

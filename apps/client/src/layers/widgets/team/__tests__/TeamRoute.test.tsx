@@ -20,7 +20,7 @@ import {
   RouterProvider,
 } from '@tanstack/react-router';
 import type { Transport } from '@dorkos/shared/transport';
-import { createMockTransport } from '@dorkos/test-utils';
+import { createMockTransport } from '@dorkos/test-utils/mock-factories';
 import { TransportProvider } from '@/layers/shared/model';
 import { TeamRoute } from '../ui/TeamRoute';
 

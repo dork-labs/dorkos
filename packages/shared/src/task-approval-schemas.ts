@@ -29,6 +29,41 @@ export const ScheduleOriginMarksSchema = z
 
 export type ScheduleOriginMarks = z.infer<typeof ScheduleOriginMarksSchema>;
 
+/** Who approved a scheduled task, stored with its audit receipt. */
+export const TaskApproverSchema = z
+  .discriminatedUnion('kind', [
+    z.object({
+      kind: z.literal('person'),
+      userId: z.string().nullable(),
+      name: z.string().nullable(),
+    }),
+    z.object({
+      kind: z.literal('agent'),
+      agentPath: z.string(),
+      name: z.string().nullable(),
+    }),
+    z.object({ kind: z.literal('policy') }),
+  ])
+  .openapi('TaskApprover');
+
+/** {@link TaskApproverSchema}. */
+export type TaskApprover = z.infer<typeof TaskApproverSchema>;
+
+/** The surface or policy path through which a scheduled task was approved. */
+export const TaskApprovalViaSchema = z
+  .enum(['inbox', 'schedules', 'home', 'created', 'agent_tool', 'trusted_agent', 'unknown'])
+  .openapi('TaskApprovalVia');
+
+/** {@link TaskApprovalViaSchema}. */
+export type TaskApprovalVia = z.infer<typeof TaskApprovalViaSchema>;
+
+/** The nullable audit receipt carried by every scheduled task row. */
+export const TaskApprovalReceiptSchema = z.object({
+  approvedAt: z.string().datetime().nullable(),
+  approvedBy: TaskApproverSchema.nullable(),
+  approvedVia: TaskApprovalViaSchema.nullable(),
+});
+
 /** Read-only folder rules for a person reviewing a schedule; never a grant. */
 export const TaskFolderRulesSchema = z.object({
   status: z.enum(['approved', 'waiting', 'none', 'unavailable']),

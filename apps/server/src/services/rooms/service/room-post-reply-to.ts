@@ -28,3 +28,12 @@ export const POST_REPLY_TO_INPUT = z
 export const POST_HANDED_OFF_NOTE =
   'posted:false with handedOff:true means it was passed to your seat in that room, not ' +
   "refused. Don't retry; check how it went with the check-a-hand-off tool, by its handoffId.";
+
+/** The unchanged word-for-word handoff option, kept beside the other room-post arguments. */
+export const POST_VERBATIM_INPUT = z
+  .boolean()
+  .optional()
+  .describe(
+    'From a chat that is not your own chat in that room: ask that chat to post your words ' +
+      'exactly as written, or not at all.'
+  );

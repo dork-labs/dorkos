@@ -130,6 +130,14 @@ export const FEATURE_SURFACE_SECTIONS: PlaygroundSection[] = [
     category: 'Home',
     keywords: ['browser', 'agent browser', 'handoff', 'sign in', 'password', 'paused', 'continue'],
   },
+  // BrowserChromeShowcases
+  {
+    id: 'browser-chrome',
+    title: 'Browser chrome',
+    page: 'home-inbox',
+    category: 'Home',
+    keywords: ['browser', 'address bar', 'back', 'forward', 'reload', 'not secure', 'chrome'],
+  },
   // LocalBrowserPanelShowcases
   {
     id: 'agent-browser-panel',
@@ -355,6 +363,20 @@ export const FEATURE_SURFACE_SECTIONS: PlaygroundSection[] = [
       'account',
       'chat card',
     ],
+  },
+  {
+    id: 'connectionaccessdialog',
+    title: 'ConnectionAccessDialog',
+    page: 'home-inbox',
+    category: 'Connections',
+    keywords: ['access', 'read only', 'disabled', 'write', 'Linear', 'Scout'],
+  },
+  {
+    id: 'read-only-agent-request',
+    title: 'Read-only agent request',
+    page: 'home-inbox',
+    category: 'Connections',
+    keywords: ['request', 'read only', 'allow', 'Linear', 'Scout'],
   },
   {
     id: 'agentrequestcard',

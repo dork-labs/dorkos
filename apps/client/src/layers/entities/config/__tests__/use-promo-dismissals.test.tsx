@@ -4,7 +4,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { renderHook, waitFor, act } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { createMockTransport } from '@dorkos/test-utils';
+import { createMockTransport } from '@dorkos/test-utils/mock-factories';
 import type { ServerConfig } from '@dorkos/shared/types';
 import { TransportProvider } from '@/layers/shared/model';
 import { usePromoDismissals, resetLegacyPromoImportForTests } from '../model/use-promo-dismissals';

@@ -8,7 +8,7 @@ import {
   focusManager,
   onlineManager,
 } from '@tanstack/react-query';
-import { createMockTransport, mockRoomEntryPage } from '@dorkos/test-utils';
+import { createMockTransport, mockRoomEntryPage } from '@dorkos/test-utils/mock-factories';
 import type { Transport } from '@dorkos/shared/transport';
 import type { RoomEntry, RoomEvent } from '@dorkos/shared/room-schemas';
 import { isStreamOwnedQuery } from '@/layers/shared/lib';

@@ -24,7 +24,7 @@ import {
   buildSoulContent,
 } from '@dorkos/shared/convention-files';
 import { DEFAULT_TRAITS, renderTraits } from '@dorkos/shared/trait-renderer';
-import { createMockTransport } from '@dorkos/test-utils';
+import { createMockTransport } from '@dorkos/test-utils/mock-factories';
 import { seedAgentFace } from '@dorkos/shared/agent-face';
 import { createQueryClientConfig } from '@/layers/shared/lib';
 import { TransportProvider } from '@/layers/shared/model';

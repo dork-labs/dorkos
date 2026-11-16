@@ -20,7 +20,7 @@ afterEach(cleanup);
 import type { ReactNode } from 'react';
 import type { WidgetDocument } from '@dorkos/shared/ui-widget';
 import { TransportProvider } from '@/layers/shared/model';
-import { createMockTransport } from '@dorkos/test-utils';
+import { createMockTransport } from '@dorkos/test-utils/mock-factories';
 import { WidgetRenderer } from '../ui/WidgetRenderer';
 import { WidgetFence } from '../ui/WidgetFence';
 import { WidgetErrorCard } from '../ui/WidgetErrorCard';

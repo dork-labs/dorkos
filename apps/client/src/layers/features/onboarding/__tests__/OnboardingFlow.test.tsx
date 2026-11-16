@@ -13,7 +13,7 @@ import {
   RouterProvider,
 } from '@tanstack/react-router';
 import { zodValidator } from '@tanstack/zod-adapter';
-import { createMockTransport } from '@dorkos/test-utils';
+import { createMockTransport } from '@dorkos/test-utils/mock-factories';
 import type { CloudCreditsStatus } from '@dorkos/shared/cloud-schemas';
 import type { Transport } from '@dorkos/shared/transport';
 import { cloudCreditsKeys, TransportProvider } from '@/layers/shared/model';

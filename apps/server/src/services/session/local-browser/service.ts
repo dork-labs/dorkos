@@ -7,6 +7,7 @@ import {
   assertLocalBrowserUrl,
   protectedPageRefusal,
   browserSetupCancelled,
+  navigationRefusal,
 } from './errors.js';
 import { assertOpenable } from './open-input.js';
 import { localBrowserAppOrigins } from './app-origins.js';
@@ -374,11 +375,8 @@ export class LocalBrowserService {
     if (revision !== this.revision) throw this.stale();
     try {
       await page.goto(url, { waitUntil: 'commit', timeout: 15_000 });
-    } catch {
-      throw new LocalBrowserError(
-        'navigation_uncertain',
-        'Couldn’t finish opening the page. Check the browser.'
-      );
+    } catch (error) {
+      throw navigationRefusal(error);
     }
     return this.state();
   }

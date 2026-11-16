@@ -10,7 +10,7 @@ import { render, screen, cleanup, fireEvent } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import '@testing-library/jest-dom/vitest';
 import type { KeepAwakeStatus } from '@dorkos/shared/schemas';
-import { createMockTransport } from '@dorkos/test-utils';
+import { createMockTransport } from '@dorkos/test-utils/mock-factories';
 import { TransportProvider } from '@/layers/shared/model';
 
 const { openSettings } = vi.hoisted(() => ({ openSettings: vi.fn() }));

@@ -1,8 +1,8 @@
 /** @vitest-environment node */
-import { PGlite } from '@electric-sql/pglite';
+import type { PGlite } from '@electric-sql/pglite';
 import { drizzle } from 'drizzle-orm/pglite';
 import { eq } from 'drizzle-orm';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   createComposioHostedClients,
   normalizeComposioToolkitAuthentication,
@@ -12,7 +12,7 @@ import {
   type ComposioOperationClient,
 } from '@dork-labs/connector-providers/composio';
 import * as schema from '@/db/schema';
-import { provisionManagedTestDatabase } from './managed-database-fixture';
+import { createManagedTestDatabaseTemplate, type PGliteTemplate } from './managed-database-fixture';
 import { resolveManagedAuthenticationConfiguration } from '../auth-config-resolver';
 import { createManagedAuthenticationOwnerService } from '../authentication-owner-service';
 import {
@@ -36,11 +36,14 @@ const signal = () => new AbortController().signal;
 const SECRET = 'SYNTHETIC-CREDENTIAL-NOT-STORED';
 
 describe('hosted owner field completion', () => {
+  let template: PGliteTemplate;
   let client: PGlite;
   let db: ManagedConnectorDatabase;
+  beforeAll(async () => {
+    template = await createManagedTestDatabaseTemplate();
+  });
   beforeEach(async () => {
-    client = new PGlite();
-    await provisionManagedTestDatabase(client);
+    client = await template.fresh();
     db = drizzle(client, { schema }) as unknown as ManagedConnectorDatabase;
   });
   afterEach(async () => {

@@ -26,6 +26,12 @@ export interface RequestUsage {
 /** In-memory state for an active agent session. */
 export interface AgentSession {
   sdkSessionId: string;
+  /**
+   * Epoch ms of the session's last sign of life: its creation, a turn's start,
+   * and every frame of a turn's main thread doing work (`isTurnActivity`,
+   * DOR-2705). Record eviction measures idle time and a running turn's silence
+   * from here.
+   */
   lastActivity: number;
   /**
    * The mode this session runs under — any id a runtime declared, not only a
@@ -216,9 +222,10 @@ export interface AgentSession {
    */
   liveHelperCount?: () => number;
   /**
-   * When the running resume-path turn started, on the awake clock
-   * (`performance.now()`), which stops while the machine sleeps. What that
-   * path's background-work ceiling is measured from (DOR-2717).
+   * When the latest turn started, on the awake clock (`performance.now()`),
+   * which stops while the machine sleeps. Set on both paths. The resume path
+   * measures its background-work ceiling from it (DOR-2717), and record
+   * eviction measures the absolute turn limit from it (DOR-2705).
    */
   turnStartedAwake?: number;
   /** Last completed SDK query — persisted after streaming for post-stream control (reloadPlugins). */

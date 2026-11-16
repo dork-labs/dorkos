@@ -10,6 +10,7 @@ import { createPlaygroundTransport } from '../playground-transport';
 import { PlaygroundSection } from '../PlaygroundSection';
 import { ShowcaseLabel } from '../ShowcaseLabel';
 import { ShowcaseDemo } from '../ShowcaseDemo';
+import { NativeBrowserStillDemo } from './NativeBrowserStillDemo';
 
 /** A browser nobody has opened yet. */
 const NOT_OPEN: LocalBrowserPersonState = {
@@ -41,6 +42,13 @@ const IN_USE_ELSEWHERE: LocalBrowserPersonState = {
 const IN_USE_WORKING: LocalBrowserPersonState = {
   ...IN_USE_ELSEWHERE,
   sessionId: 'chat-scout-busy',
+};
+
+/** Shared with this chat's agent, Atlas, in a separate window, on a made-up page. */
+const CONNECTED_HERE: LocalBrowserPersonState = {
+  ...IN_USE_ELSEWHERE,
+  sessionId: 'chat-atlas',
+  tabs: [{ id: 'demo-tab', title: 'Pricing', url: 'https://www.example.com/pricing?plan=team' }],
 };
 
 /** Made-up holder chat titles, one long enough to cut off. */
@@ -219,6 +227,10 @@ export function LocalBrowserPanelShowcases() {
       <ShowcaseDemo>
         <PanelDemo state={NOT_OPEN} />
       </ShowcaseDemo>
+      <ShowcaseLabel>Shared with this chat’s agent: the browser chrome over the page</ShowcaseLabel>
+      <ShowcaseDemo>
+        <PanelDemo state={CONNECTED_HERE} />
+      </ShowcaseDemo>
       <ShowcaseLabel>In use in another chat: Take it here moves it</ShowcaseLabel>
       <ShowcaseDemo>
         <PanelDemo state={IN_USE_ELSEWHERE} />
@@ -256,6 +268,10 @@ export function LocalBrowserPanelShowcases() {
       <ShowcaseLabel>Forget refused: the sign-ins folder was changed outside DorkOS</ShowcaseLabel>
       <ShowcaseDemo>
         <FolderChangedDemo />
+      </ShowcaseDemo>
+      <ShowcaseLabel>Page covered by an app layer: open ⋯ or Settings over its still</ShowcaseLabel>
+      <ShowcaseDemo>
+        <NativeBrowserStillDemo />
       </ShowcaseDemo>
     </PlaygroundSection>
   );

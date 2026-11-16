@@ -83,6 +83,7 @@ export { shouldShowTurnFailedNotice } from './model/stream/turn-failure';
 export { useApprovalAnnouncer } from './model/stream/use-approval-announcer';
 export { useBackgroundTasks } from './model/use-background-tasks';
 export { useChatQueue } from './model/use-chat-queue';
+export { useAgentQueueActions } from './model/messaging/use-agent-queue-actions';
 export { useRotatingPlaceholder } from './model/use-rotating-placeholder';
 export { selectRenderedMessages } from './model/stream/derive-rendered-state';
 export { selectWaitingQueue } from './lib/queue-chips';

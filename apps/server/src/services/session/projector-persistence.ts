@@ -93,6 +93,7 @@ export const RECORDED_EVENT_TYPES: ReadonlySet<string> = new Set([
   'interaction_resolved',
   'permission_denied',
   'model_substituted',
+  'project_addons_off',
   'work_left_running',
   'work_left_ended',
 ]);
@@ -162,6 +163,7 @@ export const EAGERLY_RECORDED_EVENT_TYPES: ReadonlySet<string> = new Set([
   'interaction_resolved',
   'permission_denied',
   'model_substituted',
+  'project_addons_off',
   'work_left_running',
   'work_left_ended',
 ]);

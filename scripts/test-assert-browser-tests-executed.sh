@@ -51,6 +51,7 @@ make_workspace() {
   : >"$root/apps/e2e/tests/chat/held-process.ts"
   : >"$root/apps/e2e/tests/chat/interactive-prompts.ts"
   : >"$root/apps/e2e/tests/chat/live-turn-visibility.ts"
+  : >"$root/apps/e2e/tests/chat/project-addons-notice.ts"
   : >"$root/apps/e2e/tests/chat/runtime-capability-parity.ts"
   : >"$root/apps/e2e/tests/chat/session-read-state.ts"
   : >"$root/apps/e2e/tests/connections/chat-connect-card.ts"
@@ -89,6 +90,9 @@ make_workspace() {
                    "tests": [ { "status": "expected" } ] } ] },
     { "title": "chat/live-turn-visibility.ts", "file": "chat/live-turn-visibility.ts",
       "specs": [ { "title": "the live-turn-visibility module's suite runs", "file": "chat/live-turn-visibility.ts",
+                   "tests": [ { "status": "expected" } ] } ] },
+    { "title": "chat/project-addons-notice.ts", "file": "chat/project-addons-notice.ts",
+      "specs": [ { "title": "the project-addons-notice module's suite runs", "file": "chat/project-addons-notice.ts",
                    "tests": [ { "status": "expected" } ] } ] },
     { "title": "chat/runtime-capability-parity.ts", "file": "chat/runtime-capability-parity.ts",
       "specs": [ { "title": "the parity module's suite runs", "file": "chat/runtime-capability-parity.ts",
@@ -142,7 +146,7 @@ make_workspace() {
                                  "tests": [ { "status": "skipped" } ] } ] } ] }
   ],
   "config": { "shard": null },
-  "stats": { "expected": 21, "unexpected": 0, "flaky": 0, "skipped": 2 }
+  "stats": { "expected": 22, "unexpected": 0, "flaky": 0, "skipped": 2 }
 }
 JSON
 }
@@ -227,7 +231,7 @@ make_workspace "$tmp/healthy"
 # The count is the FIXTURE's, not the real suite's — two ordinary specs plus one
 # test per registered module — so it moves when make_workspace does and never
 # because somebody added a browser test.
-check 'a healthy run passes' "$tmp/healthy" 0 '21 test(s) executed'
+check 'a healthy run passes' "$tmp/healthy" 0 '22 test(s) executed'
 
 # A spec on disk that the run never collected — the testIgnore/testMatch hole.
 make_workspace "$tmp/uncollected"
@@ -431,7 +435,7 @@ PY
 }
 make_hosted "$tmp/hostedOnly" expected
 check 'a spec made only of register calls counts its modules'"'"' tests' \
-  "$tmp/hostedOnly" 0 '21 test(s) executed'
+  "$tmp/hostedOnly" 0 '22 test(s) executed'
 
 # The same spec with every registered test skipped: both the module and the spec
 # that loaded it ran nothing, and the spec is not excused by the module's name.
@@ -527,7 +531,7 @@ check 'a missing quarantine list is refused, never assumed empty' "$tmp/qMissing
 
 make_workspace "$tmp/qEmpty"
 : >"$tmp/qEmpty/quarantine.txt"
-check 'an empty lane changes nothing' "$tmp/qEmpty" 0 '21 test(s) executed' \
+check 'an empty lane changes nothing' "$tmp/qEmpty" 0 '22 test(s) executed' \
   --quarantined "$tmp/qEmpty/quarantine.txt"
 
 # The tally check must keep working WHILE the lane is absorbing. It used to be
@@ -619,7 +623,7 @@ check 'a stats block with no numbers is refused, not skipped past' \
 make_workspace "$tmp/sharded"
 make_shards "$tmp/sharded" 3
 sharded=$tmp/sharded/apps/e2e/test-results
-check 'a healthy three-shard run passes' "$tmp/sharded" 0 '21 test(s) executed' \
+check 'a healthy three-shard run passes' "$tmp/sharded" 0 '22 test(s) executed' \
   "$sharded/shard-1.json" "$sharded/shard-2.json" "$sharded/shard-3.json"
 
 # The size CI actually runs (browser-test.yml's matrix, six since 2026-09-27).
@@ -628,7 +632,7 @@ check 'a healthy three-shard run passes' "$tmp/sharded" 0 '21 test(s) executed' 
 make_workspace "$tmp/sharded6"
 make_shards "$tmp/sharded6" 6
 sharded6=$tmp/sharded6/apps/e2e/test-results
-check 'a healthy six-shard run passes' "$tmp/sharded6" 0 '21 test(s) executed' \
+check 'a healthy six-shard run passes' "$tmp/sharded6" 0 '22 test(s) executed' \
   "$sharded6/shard-1.json" "$sharded6/shard-2.json" "$sharded6/shard-3.json" \
   "$sharded6/shard-4.json" "$sharded6/shard-5.json" "$sharded6/shard-6.json"
 check 'a six-shard run missing one shard is refused by count' "$tmp/sharded6" 1 \

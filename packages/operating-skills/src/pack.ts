@@ -407,8 +407,12 @@ export interface OperatingSkill {
  *   it a profile (DOR-3219; Security's no-named-profiles condition), and says
  *   "the person" where it said "the operator", as the browser tools do. An agent
  *   seeded at 53 could still tell a person it has browser "profiles".
+ * - 55: `scheduling-tasks` says `target` is optional: left out or `"global"`, the
+ *   schedule is filed under the agent, in its own folder, and below Full one whose
+ *   folder is home is refused, and one in the data folder at every level (DOR-4067). An agent seeded at 54
+ *   would still believe `target` is required and that `"global"` belongs to no agent.
  */
-export const OPERATING_SKILLS_VERSION = 54;
+export const OPERATING_SKILLS_VERSION = 55;
 
 /**
  * The canonical pack, umbrella skill first. Every entry is validated against the

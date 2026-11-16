@@ -18,11 +18,11 @@
  * @module features/canvas/model/use-resolved-frame
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { isThisAppsAddress } from '@/layers/shared/lib';
+import { useOwnOrigins } from '@/layers/entities/config';
 import { useTransport } from '@/layers/shared/model';
-import { useOwnOrigins } from './use-own-origins';
 import {
   classifyBrowserTarget,
-  isThisAppsAddress,
   splicePreviewPath,
   type LoopbackStrategy,
   PREVIEW_HEALTH_PATH,
@@ -257,7 +257,7 @@ export function useResolvedFrame({
     async function resolve(): Promise<void> {
       setResolveError(null);
       setResolved(null);
-      if (target.mode === 'blocked') return;
+      if (target.mode === 'blocked' || target.mode === 'blank') return;
       if (target.mode === 'external') {
         publishResolved({
           src: target.url,

@@ -12,7 +12,7 @@ import {
   MAX_CONCURRENT_TURNS_PER_AGENT_DEFAULT,
   ROOM_TURN_LIMIT_DEFAULTS,
 } from '@dorkos/shared/config-schema';
-import { createMockTransport } from '@dorkos/test-utils';
+import { createMockTransport } from '@dorkos/test-utils/mock-factories';
 import { toast } from 'sonner';
 import { TransportProvider } from '@/layers/shared/model';
 import { createQueryClientConfig } from '@/layers/shared/lib/query-client';

@@ -61,6 +61,8 @@ export function protectedPageRefusal(
 /**
  * Keep browser navigation on websites rather than browser settings or local
  * files. Agents also stay off this app and Cloud; the person may go there.
+ * The person may also open `about:blank`, exactly that and nothing else under
+ * `about:`, which is the address bar's "new empty page" (DOR-4419).
  *
  * @param value - The address to open.
  * @param who - Who asked: an agent unless the person's own control said so.
@@ -73,6 +75,7 @@ export function assertLocalBrowserUrl(
   cloudOrigins: readonly CloudOriginEntry[] = cloudOriginEntries(),
   appOrigins: readonly string[] = localBrowserAppOrigins()
 ): void {
+  if (who === 'person' && value === 'about:blank') return;
   let parsed: URL;
   try {
     parsed = new URL(value);
@@ -89,6 +92,34 @@ export function assertLocalBrowserUrl(
     );
   if (who === 'agent' && isCloudOriginUrl(value, cloudOrigins)) throw cloudOriginRefusal();
   if (who === 'agent' && isLocalBrowserAppUrl(value, appOrigins)) throw appOriginRefusal();
+}
+
+/**
+ * Chromium's words for a page that never connected over https: refused, timed
+ * out, unreachable, or a server that answered in plain http
+ * (`ERR_SSL_PROTOCOL_ERROR`, what `nas.lan:5000` gives). Never an `ERR_CERT_*`.
+ */
+const UNREACHABLE =
+  /net::ERR_(?:CONNECTION_REFUSED|CONNECTION_TIMED_OUT|TIMED_OUT|ADDRESS_UNREACHABLE|SSL_PROTOCOL_ERROR)\b/;
+
+/**
+ * Why a person's navigation failed, as a refusal. A page that never connected
+ * is `navigation_unreachable`, which is what lets the address bar try
+ * `http://` once for a bare host the person typed. Anything else, a
+ * certificate error included, stays `navigation_uncertain`: the page may have
+ * half-loaded, and a certificate error must never be stepped around.
+ *
+ * @param error - What Playwright's `goto` threw.
+ */
+export function navigationRefusal(error: unknown): LocalBrowserError {
+  const message = error instanceof Error ? error.message : '';
+  const timedOut = error instanceof Error && error.name === 'TimeoutError';
+  if (timedOut || UNREACHABLE.test(message))
+    return new LocalBrowserError('navigation_unreachable', 'Couldn’t reach that site.');
+  return new LocalBrowserError(
+    'navigation_uncertain',
+    'Couldn’t finish opening the page. Check the browser.'
+  );
 }
 
 /** One recovery message for setup cancelled before the browser is ready. */

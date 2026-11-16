@@ -2,7 +2,7 @@
  * @vitest-environment jsdom
  */
 import { describe, it, expect, beforeEach } from 'vitest';
-import { createMockSessionLimit } from '@dorkos/test-utils';
+import { createMockSessionLimit } from '@dorkos/test-utils/mock-factories';
 import { renderHook } from '@testing-library/react';
 import type { SessionStatus, SessionLifecycle } from '@dorkos/shared/session-stream';
 import { useSessionChatStore, type SessionState } from '../../stream/session-chat-store';

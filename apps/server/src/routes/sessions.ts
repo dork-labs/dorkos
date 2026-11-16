@@ -76,11 +76,7 @@ import { projectsOfFolders } from '../services/projects/project-registry.js';
 import { getAccountUsageStore } from '../services/core/usage/current-usage-store.js';
 import { createSessionAnswerRoutes } from './session-answers.js';
 import { sessionUiActionHandler } from './session-ui-action-handler.js';
-import {
-  sessionQueueListHandler,
-  sessionQueueRemoveHandler,
-  sessionQueueUpdateHandler,
-} from './session-queue-handler.js';
+import { registerSessionQueueRoutes } from './session-queue-handler.js';
 import { sessionEventsHandler } from './session-events-handler.js';
 import { guardSessionParam, readableSessions } from './session-read-guard.js';
 import {
@@ -920,13 +916,11 @@ export function createSessionRoutes(deps: SessionRouteDeps = {}): Hono<ApiEnv> {
     return c.json(body);
   });
 
-  // GET|PATCH|DELETE /api/sessions/:id/queue — the messages waiting on a session.
+  // GET|PATCH|DELETE|POST /api/sessions/:id/queue — the messages waiting on a session.
   // Handlers live in `session-queue-handler.ts` so this file stays under the size
   // rule. The queue is per SESSION: any window may edit or remove any message on
   // it, whichever window typed it. See the handler's module doc.
-  router.get('/:id/queue', sessionQueueListHandler);
-  router.patch('/:id/queue/:messageId', sessionQueueUpdateHandler(deps.meshCore));
-  router.delete('/:id/queue/:messageId', sessionQueueRemoveHandler(deps.meshCore));
+  registerSessionQueueRoutes(router, deps.meshCore);
 
   // POST /api/sessions/:id/{approve,deny,batch-approve,batch-deny,submit-answers,
   // submit-elicitation} — answering a prompt (`session-answers.ts`). The answer

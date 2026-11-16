@@ -12,10 +12,10 @@
  *    dispatch, with the fence nonce and the sender's level, so the turn it
  *    starts finds both.
  * 3. **How it arrives.** Queue by default (the dispatcher holds it while the
- *    receiver is busy; an idle receiver starts at once). Agent messages that
- *    wait together are appended into one queue row, so they run as one turn
- *    at the receiver's next turn boundary, in the order they were sent,
- *    however long apart they were sent (DOR-3054).
+ *    receiver is busy; an idle receiver starts at once). Every message keeps
+ *    its own queue row. At the receiver's next turn boundary, the dispatcher
+ *    joins adjacent agent rows into one turn, in the order they were sent
+ *    (DOR-3054, DOR-3060).
  *    `steer` joins the running turn only when the receiver's turn runs no
  *    looser than the sender, because a steer cannot be held to a ceiling the
  *    running turn already passed; otherwise it waits in the queue and the
@@ -34,7 +34,7 @@
  */
 import {
   CHAT_MESSAGE_ORIGIN,
-  holdBlocksSteer,
+  mayChatSteer,
   rowsCeiling,
   senderCeilingJson,
 } from './chat-message-ceiling.js';
@@ -42,7 +42,7 @@ import crypto from 'node:crypto';
 import type { MeshCore } from '@dorkos/mesh';
 import type { ChatMessageRow } from '@dorkos/db';
 import type { TurnPermissionCeiling, TurnPermissionLevel } from '@dorkos/shared/agent-runtime';
-import { mayJoinRunningTurn, type TurnMarks } from '../../core/turn-power/turn-marks.js';
+import type { TurnMarks } from '../../core/turn-power/turn-marks.js';
 import type {
   ChatDelivery,
   ChatMessageKind,
@@ -58,13 +58,7 @@ import {
   type DispatchSessionMessageOpts,
   type DispatchSessionMessageResult,
 } from '../launch/launch-session.js';
-import {
-  emitQueueUpdate,
-  isQueuedMessageArmed,
-  isQueuedMessageLaunching,
-  onDispatchLifecycle,
-  type DispatchLifecycleEvent,
-} from '../message-dispatcher.js';
+import { onDispatchLifecycle, type DispatchLifecycleEvent } from '../message-dispatcher.js';
 import { getMessageQueueStore } from '../message-queue-store.js';
 import { queueKeyOf } from '../resolution/session-key-registry.js';
 import {
@@ -75,7 +69,7 @@ import {
 import { cancelQueuedMessage } from '../queued-message-edits.js';
 import type { RoomSessionPlacePort } from '../../workspace/room-session-place.js';
 import type { SessionFacts } from '../../extensions/agent-send/agent-send-defaults.js';
-import { chatClientId, isChatClientId } from './chat-client-id.js';
+import { CHAT_MESSAGE_MAX, chatClientId, isChatClientId } from './chat-client-id.js';
 import { renderChatMessage } from './chat-message-fence.js';
 import { stampOf } from './chat-message-stamps.js';
 import type { ChatMessageStore } from './chat-message-store.js';
@@ -92,12 +86,7 @@ import {
 
 export { ChatMessageError } from './chat-message-error.js';
 export { CHAT_SENDABLE_ORIGINS, CHAT_UNATTENDED_ORIGINS } from './chat-target.js';
-
-/** The longest message. */
-export const CHAT_MESSAGE_MAX = 20_000;
-
-/** What a steer that has to wait is told once it waits with other agent messages. */
-const BATCHED_STEER_NOTE = 'It waits with the other agent messages there; they run as one turn.';
+export { CHAT_MESSAGE_MAX } from './chat-client-id.js';
 
 /** The longest Sent-card summary. */
 export const CHAT_SUMMARY_MAX = 80;
@@ -383,15 +372,6 @@ export class ChatMessageService {
       }
     }
 
-    // Batching: agent messages that wait together run as one turn, and a steer
-    // that has to wait (`note` says why) waits with them rather than behind
-    // them. One row per message used to mean one turn per message, so the
-    // fifth message waited out four whole turns (DOR-3054).
-    if (target.sessionId !== null && busy && (delivery === 'queue' || note !== undefined)) {
-      const batched = this.batchInto(target.sessionId, row, content);
-      if (batched) return note ? { ...batched, note: `${note} ${BATCHED_STEER_NOTE}` } : batched;
-    }
-
     const sessionId = target.sessionId ?? target.newSessionId ?? crypto.randomUUID();
     const cwd = target.sessionId ? await this.deps.sessionCwd(target.sessionId) : undefined;
     const result = await this.dispatch({
@@ -457,60 +437,12 @@ export class ChatMessageService {
   }
 
   /**
-   * Append a message to the agent-sent row waiting at the tail of a chat's
-   * queue, so they run as one turn.
-   *
-   * However long that row has waited (DOR-3054). There used to be a two-minute
-   * window, and messages sent a few minutes apart to a chat in a long turn each
-   * got a row of their own; each row is a turn, so they arrived one per turn,
-   * an hour or more late, and the receiver acted on the first before it could
-   * see the last that changed it. Waiting together means arriving together.
-   *
-   * Only the tail, so it never runs ahead of a row queued behind the one it
-   * joins (a person's message, or a hand reorder). And only up to a size
-   * limit, past which it starts a row of its own.
-   */
-  private batchInto(
-    sessionId: string,
-    row: ChatMessageRow,
-    content: string
-  ): ChatSendReceipt | null {
-    const queue = getMessageQueueStore();
-    if (!queue) return null;
-    const rows = queue.list(queueKeyOf(sessionId));
-    const tail = rows.at(-1);
-    if (!tail || !isChatClientId(tail.enqueuedBy) || tail.disposition !== 'queue') return null;
-    // Read and written in one tick: a row whose words are being read into a
-    // turn right now would lose anything appended to it. And a row nothing will
-    // run (a restart left it) would take this message down with it; the
-    // dispatcher adopts that row instead and gives this message its own (DOR-3348).
-    if (isQueuedMessageLaunching(tail.id) || !isQueuedMessageArmed(tail.id)) return null;
-    // One batched turn grows to five messages' worth at most: past it a message
-    // starts a row of its own, so hours of messages into a chat stuck in a long
-    // turn cannot become one prompt that fails all at once.
-    if (tail.content.length + content.length > 5 * CHAT_MESSAGE_MAX) return null;
-    if (!queue.updateContent(tail.id, `${tail.content}\n\n${content}`)) return null;
-    this.deps.store.update(row.id, { toSessionId: sessionId, queueMessageId: tail.id });
-    emitQueueUpdate(sessionId);
-    return {
-      messageId: row.id,
-      chatId: sessionId,
-      status: 'queued',
-      ...(standing.queueStanding(sessionId, tail.id) ?? { position: rows.length }),
-      note: 'It joins the other agent messages waiting there, and they run as one turn.',
-    };
-  }
-
-  /**
    * Whether a steer from one chat may join another's running turn, by the two
    * turns' levels and marks (`mayJoinRunningTurn`). Unknown levels never steer, and a sender's
    * Wi-Fi hold joins only a turn that holds one too: a running turn cannot be marked (DOR-3561).
    */
   private maySteer(fromSessionId: string, toSessionId: string): boolean {
-    const sender = this.deps.turnLevelOf(fromSessionId);
-    const receiver = this.deps.turnLevelOf(toSessionId);
-    if (holdBlocksSteer(fromSessionId, toSessionId)) return false;
-    return sender !== undefined && receiver !== undefined && mayJoinRunningTurn(sender, receiver);
+    return mayChatSteer(this.deps, fromSessionId, toSessionId);
   }
 
   /** Mark a chat message answered, and tell its sender's windows. */

@@ -35,7 +35,7 @@ vi.mock('@/layers/shared/model', async () => {
 import { renderHook, waitFor, act } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { createMockTransport } from '@dorkos/test-utils';
+import { createMockTransport } from '@dorkos/test-utils/mock-factories';
 import { TransportProvider, useAppStore, useTransport } from '@/layers/shared/model';
 import {
   useSessionDetail,

@@ -96,6 +96,9 @@ function Wrapper({ children }: { children: React.ReactNode }) {
 function makeSchedule(overrides: Partial<Task> & { id: string; name: string }): Task {
   return {
     status: 'active',
+    approvedAt: null,
+    approvedBy: null,
+    approvedVia: null,
     enabled: true,
     nextRun: null,
     prompt: 'test',

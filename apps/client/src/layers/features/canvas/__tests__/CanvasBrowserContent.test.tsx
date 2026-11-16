@@ -724,6 +724,69 @@ describe('CanvasBrowserContent — address bar (editing)', () => {
     await waitFor(() => expect(iframeSrc()).toBe('https://example.com'));
   });
 
+  // DOR-4419: the shared address rules, as the canvas browser reads them.
+  const typeAddress = (value: string) => {
+    fireEvent.click(screen.getByRole('button', { name: /^Address:/ }));
+    const input = screen.getByLabelText('Address') as HTMLInputElement;
+    fireEvent.change(input, { target: { value } });
+    fireEvent.submit(input.closest('form') as HTMLFormElement);
+  };
+
+  it('searches DuckDuckGo for words typed into the address bar', async () => {
+    render(
+      <CanvasBrowserContent
+        documentId="doc"
+        content={{ type: 'browser', url: 'https://a.test/' }}
+      />
+    );
+    await waitFor(() => expect(iframeSrc()).toBe('https://a.test/'));
+    typeAddress('Error: ENOENT');
+    await waitFor(() => expect(iframeSrc()).toBe('https://duckduckgo.com/?q=Error%3A+ENOENT'));
+  });
+
+  it('refuses another scheme with a notice and keeps what was typed', async () => {
+    render(
+      <CanvasBrowserContent
+        documentId="doc"
+        content={{ type: 'browser', url: 'https://a.test/' }}
+      />
+    );
+    await waitFor(() => expect(iframeSrc()).toBe('https://a.test/'));
+    typeAddress('javascript:alert(1)');
+    expect(
+      await screen.findByText('Only web pages open here. Try an address starting with https://.')
+    ).toBeInTheDocument();
+    expect(screen.getByLabelText('Address')).toHaveValue('javascript:alert(1)');
+    expect(iframeSrc()).toBe('https://a.test/');
+  });
+
+  it('opens about:blank as an empty page with no frame', async () => {
+    render(
+      <CanvasBrowserContent
+        documentId="doc"
+        content={{ type: 'browser', url: 'https://a.test/' }}
+      />
+    );
+    await waitFor(() => expect(iframeSrc()).toBe('https://a.test/'));
+    typeAddress('about:blank');
+    await waitFor(() => expect(document.querySelector('iframe')).toBeNull());
+    expect(document.querySelector('[data-slot="blank-page"]')).not.toBeNull();
+  });
+
+  it('still opens a local file typed as a path', async () => {
+    render(
+      <CanvasBrowserContent
+        documentId="doc"
+        content={{ type: 'browser', url: 'https://a.test/' }}
+      />
+    );
+    await waitFor(() => expect(iframeSrc()).toBe('https://a.test/'));
+    typeAddress('demo/index.html');
+    expect(
+      await screen.findByRole('button', { name: 'Address: demo/index.html' })
+    ).toBeInTheDocument();
+  });
+
   it('Escape reverts without navigating', async () => {
     render(
       <CanvasBrowserContent
@@ -928,7 +991,7 @@ describe('CanvasBrowserContent — the address bar on a room route', () => {
     render(<CanvasBrowserContent documentId="d1" content={roomPage} />);
     await typeAddress('https://example.com');
 
-    expect(await screen.findByRole('status')).toHaveTextContent('No such room');
+    expect(await screen.findByRole('alert')).toHaveTextContent('No such room');
     expect(screen.getByRole('textbox', { name: 'Address' })).toHaveValue('https://example.com');
   });
 
@@ -937,7 +1000,7 @@ describe('CanvasBrowserContent — the address bar on a room route', () => {
     render(<CanvasBrowserContent documentId="d1" content={roomPage} />);
     await typeAddress('https://example.com');
 
-    expect(await screen.findByRole('status')).toHaveTextContent(/couldn’t reach DorkOS/i);
+    expect(await screen.findByRole('alert')).toHaveTextContent(/couldn’t reach DorkOS/i);
   });
 });
 

@@ -58,9 +58,19 @@ export function scheduleNextClause(label: 'run' | 'try', time: string): string {
   return `Next\u00a0${label}:\u00a0${time}.`;
 }
 
-/** A standing schedule problem disappears as soon as run history becomes healthy. */
+/**
+ * Whether a failing schedule belongs in Needs you. It needs two failed runs in
+ * a row since it last changed (`health.recentStreak`, DOR-4127), and it must
+ * be on: nobody can act on a card for a schedule that is turned off, so
+ * turning one off clears its card. A healthy run clears it too.
+ */
 export function scheduleNeedsAttention(task: Task): boolean {
-  return task.health?.state === 'failing' && task.health.streak >= 2;
+  return (
+    task.enabled &&
+    task.status === 'active' &&
+    task.health?.state === 'failing' &&
+    (task.health.recentStreak ?? 0) >= 2
+  );
 }
 
 /** The shared Needs you title, using the run's recorded cause rather than current settings. */

@@ -79,6 +79,11 @@ const TABLE: Array<[string, MessagePart, boolean]> = [
     false,
   ],
   [
+    'project_addons_off',
+    { type: 'project_addons_off', plugins: 2, tools: 0, mcpServers: 1 } as MessagePart,
+    false,
+  ],
+  [
     'work_left_running',
     { type: 'work_left_running', tasks: [{ taskId: 't', command: 'sleep 9' }] } as MessagePart,
     false,
@@ -106,6 +111,7 @@ describe('isWorkPart', () => {
       memory_recall: true,
       permission_denied: true,
       model_substituted: true,
+      project_addons_off: true,
       work_left_running: true,
       compact_boundary: true,
     };

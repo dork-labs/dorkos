@@ -3,7 +3,10 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, render, screen } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { createMockConnectionReadiness, createMockTransport } from '@dorkos/test-utils';
+import {
+  createMockConnectionReadiness,
+  createMockTransport,
+} from '@dorkos/test-utils/mock-factories';
 import { CONNECTION_READINESS_COPY } from '@dorkos/shared/connector-schemas';
 import { TransportProvider } from '@/layers/shared/model';
 

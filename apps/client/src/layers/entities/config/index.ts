@@ -21,6 +21,7 @@ export { useConfigSync } from './model/use-config-sync';
 export { useLocalCaller, useTrustedConnection } from './model/use-local-caller';
 export { useOnWifi } from './model/use-on-wifi';
 export { useIsHub } from './model/use-is-hub';
+export { useOwnOrigins } from './model/use-own-origins';
 export { useEngagedWindow } from './model/use-engaged-window';
 export { useRoomTurnLimits } from './model/use-room-turn-limits';
 export type {

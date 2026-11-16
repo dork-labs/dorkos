@@ -6,7 +6,7 @@ import { renderHook, waitFor, cleanup } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { QueryClientProvider, type QueryClient } from '@tanstack/react-query';
 import type { Transport } from '@dorkos/shared/transport';
-import { createMockAccountUsage, createMockTransport } from '@dorkos/test-utils';
+import { createMockAccountUsage, createMockTransport } from '@dorkos/test-utils/mock-factories';
 import { createTestQueryClient } from '@dorkos/test-utils/react-helpers';
 import { TransportProvider } from '../../TransportContext';
 import { accountKeys } from '../query-keys';

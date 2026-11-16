@@ -4,7 +4,7 @@
  */
 import { describe, it, expect } from 'vitest';
 import type { ContinueOptionAccount } from '@dorkos/shared/account-usage';
-import { createMockAccountUsage } from '@dorkos/test-utils';
+import { createMockAccountUsage } from '@dorkos/test-utils/mock-factories';
 import { canOpenPicker, isSelectable, keptOutLine, rowName } from '../lib/continue-picker';
 
 function row(extra: Partial<ContinueOptionAccount> = {}): ContinueOptionAccount {
