@@ -7,6 +7,7 @@ import type { IngressKind } from '../../services/core/remote/ingress-mark.js';
 import type { ApiEnv } from '../../http/api-chain.js';
 import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
+import { preloadConfigRouteModules } from './fixtures/config-cold-imports.js';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
@@ -20,9 +21,7 @@ const owner = vi.hoisted(() => ({
   account: { id: 'user_cockpit', name: 'Owner' } as unknown,
   email: null as string | null,
 }));
-// The session gate lets every request through: with login off it is a
-// pass-through anyway, and the cases that turn login on present the identity it
-// would have proved (`configApp` below) to reach the route's own bars.
+// The gate fixture passes requests; configApp supplies the caller for the route's real bars.
 vi.mock('../../services/core/auth/session-gate.js', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../services/core/auth/session-gate.js')>()),
   decideSessionGate: vi.fn(async () => ({ allowed: true })),
@@ -159,6 +158,7 @@ delete process.env.DORKOS_TASKS_ENABLED;
 delete process.env.DORKOS_RELAY_ENABLED;
 delete process.env.DORKOS_A2A_ENABLED;
 delete process.env.DORKOS_TODOS_ENABLED;
+await preloadConfigRouteModules();
 
 afterAll(() => {
   if (AMBIENT_TASKS_ENABLED !== undefined) process.env.DORKOS_TASKS_ENABLED = AMBIENT_TASKS_ENABLED;
