@@ -8,7 +8,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, render, screen, within } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import type { WakerOff } from '@dorkos/shared/waker-schemas';
-import { WakersOffList, wakerStatus } from '../ui/WakersOffList';
+import { WakersOffList, sinceWords, wakerStatus } from '../ui/WakersOffList';
 
 afterEach(() => {
   cleanup();
@@ -53,7 +53,7 @@ describe('WakersOffList', () => {
     );
 
     const lines = within(screen.getByRole('list')).getAllByRole('listitem');
-    expect(lines[0]).toHaveTextContent('Nightly sweepOff since Nov 2, 9 am, waiting on Dorian.');
+    expect(lines[0]).toHaveTextContent('Nightly sweepOff since Nov 2, 9:00 am, waiting on Dorian.');
     expect(lines[1]).toHaveTextContent('Scout’s heartbeatOff, waiting on a person.');
     expect(screen.getByRole('heading', { name: 'Off or waiting' })).toBeInTheDocument();
   });
@@ -71,8 +71,27 @@ describe('WakersOffList', () => {
     );
   });
 
-  it('says why: waiting for approval, or paused', () => {
-    expect(wakerStatus(waker({ state: 'waiting' }))).toBe('Needs approval, waiting on Dorian.');
-    expect(wakerStatus(waker({ state: 'paused' }))).toBe('Paused, waiting on Dorian.');
+  it('says why after the time, so a later park never relabels when it stopped', () => {
+    // Switched off Nov 2, parked for approval Nov 9: off_since keeps Nov 2.
+    const since = new Date(2026, 10, 2, 9, 0).toISOString();
+    expect(wakerStatus(waker({ state: 'waiting', offSince: since }))).toBe(
+      'Off since Nov 2, 9:00 am, needs approval from Dorian.'
+    );
+    expect(wakerStatus(waker({ state: 'paused' }))).toBe(
+      'Off, its file is missing, waiting on Dorian.'
+    );
+    expect(wakerStatus(waker({ kind: 'heartbeat', state: 'paused', offSince: since }))).toBe(
+      'Paused since Nov 2, 9:00 am, waiting on Dorian.'
+    );
+  });
+
+  it('writes one absolute date and time, even just after midnight', () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    // 2:00 am, three hours after the waker stopped late the day before.
+    vi.setSystemTime(new Date(2026, 10, 15, 2, 0));
+    expect(sinceWords(new Date(2026, 10, 14, 23, 40).toISOString())).toBe('Nov 14, 11:40 pm');
+    // Earlier today reads the same way, never "3h ago".
+    vi.setSystemTime(new Date(2026, 10, 14, 23, 59));
+    expect(sinceWords(new Date(2026, 10, 14, 20, 5).toISOString())).toBe('Nov 14, 8:05 pm');
   });
 });

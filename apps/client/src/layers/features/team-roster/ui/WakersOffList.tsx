@@ -1,5 +1,4 @@
 import type { WakerOff } from '@dorkos/shared/waker-schemas';
-import { formatRelativeTime } from '@/layers/shared/lib';
 
 /** Props for {@link WakersOffList}. */
 export interface WakersOffListProps {
@@ -14,22 +13,33 @@ function wakerTitle(waker: WakerOff): string {
   return waker.state === 'paused' ? `${waker.name} (agent)` : `${waker.name}’s heartbeat`;
 }
 
-/** When it stopped, in the app's time words: a clock time today, else a day. */
-function sinceWords(iso: string): string {
+/**
+ * When it stopped, as one absolute date and time ("Nov 14, 11:40 pm"). A
+ * relative time drifts while the page stays open and reads wrong across
+ * midnight ("since 3h ago"), and these lines are read days later.
+ */
+export function sinceWords(iso: string): string {
   const at = new Date(iso);
-  const now = new Date();
-  if (at.toDateString() === now.toDateString()) {
-    return at.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
-  }
-  return formatRelativeTime(iso).replace(/^Yesterday/, 'yesterday');
+  const day = at.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  const time = at.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+  return `${day}, ${time.toLowerCase()}`;
 }
 
-/** The line's status: why it cannot wake, since when, and who can turn it back on. */
+/**
+ * The line's status: since when it cannot wake, why, and who can turn it back
+ * on. A schedule's time is when it first stopped, whatever stopped it, so the
+ * reason follows the time rather than claiming it (an approval asked later
+ * does not move it). A paused agent's time is the pause's own.
+ */
 export function wakerStatus(waker: WakerOff): string {
-  const verb =
-    waker.state === 'waiting' ? 'Needs approval' : waker.state === 'paused' ? 'Paused' : 'Off';
-  const since = waker.offSince ? ` since ${sinceWords(waker.offSince)}` : '';
-  return `${verb}${since}, waiting on ${waker.waitingOn.name ?? 'a person'}.`;
+  const person = waker.waitingOn.name ?? 'a person';
+  const lead = waker.kind === 'heartbeat' && waker.state === 'paused' ? 'Paused' : 'Off';
+  const since = waker.offSince ? `${lead} since ${sinceWords(waker.offSince)}` : lead;
+  if (waker.state === 'waiting') return `${since}, needs approval from ${person}.`;
+  if (waker.state === 'paused' && waker.kind === 'schedule') {
+    return `${since}, its file is missing, waiting on ${person}.`;
+  }
+  return `${since}, waiting on ${person}.`;
 }
 
 /**

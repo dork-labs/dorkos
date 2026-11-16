@@ -2,6 +2,7 @@
 covers:
   - 'fix(schedules): every waker that is off shows on the team page, and every approval keeps an honest record (DOR-3641)'
   - "fix(schedules): a person's approval outranks an agent's, and a returning or granted schedule keeps a record (DOR-3641)"
+  - 'fix(schedules): the team list says when a waker stopped, in one date format, and keeps switched-off project copies (DOR-3641)'
 ---
 
 ### Added

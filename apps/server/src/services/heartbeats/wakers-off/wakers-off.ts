@@ -80,7 +80,12 @@ export function readOffSchedules(db: Db): OffScheduleRow[] {
       .all()
       // A project's copy starts off on purpose until that project's person turns
       // it on (DOR-3376); listing every one would bury the wakers that stopped.
-      .filter((row) => !(row.projectOnly && !row.enabled && row.status === 'active'))
+      // One never turned on has no `off_since` (the insert trigger skips it), so
+      // one a person turned on and then off still shows.
+      .filter(
+        (row) =>
+          !(row.projectOnly && !row.enabled && row.status === 'active' && row.offSince === null)
+      )
   );
 }
 

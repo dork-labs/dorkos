@@ -141,6 +141,40 @@ describe('the waker off-since migration (DOR-3641)', () => {
     expect(row('born-on').offSince).toBeNull();
   });
 
+  it('leaves a project copy born off blank, and dates one a person turned on and off', () => {
+    migrateThrough(MIGRATION_IDX);
+    const projectCopy = (id: string) =>
+      db.$client
+        .prepare(
+          `INSERT INTO pulse_schedules (id, name, cron, prompt, file_path, created_at, updated_at, enabled, status, project_only)
+           VALUES (?, ?, '0 3 * * *', 'sweep', '', '2026-11-01T00:00:00.000Z', '2026-11-02T00:00:00.000Z', 0, 'active', 1)`
+        )
+        .run(id, id);
+    projectCopy('never-on');
+    projectCopy('turned-off');
+
+    set('turned-off', 'enabled = 1');
+    expect(row('turned-off').offSince).toBeNull();
+    set('turned-off', 'enabled = 0');
+
+    expect(row('never-on').offSince).toBeNull();
+    expect(row('turned-off').offSince).not.toBeNull();
+  });
+
+  it('does not date a project copy that was off before the upgrade', () => {
+    migrateThrough(MIGRATION_IDX - 1);
+    db.$client
+      .prepare(
+        `INSERT INTO pulse_schedules (id, name, cron, prompt, file_path, created_at, updated_at, enabled, status, project_only)
+         VALUES ('copy', 'copy', '0 3 * * *', 'sweep', '', '2026-11-01T00:00:00.000Z', '2026-11-02T00:00:00.000Z', 0, 'active', 1)`
+      )
+      .run();
+
+    migrateThrough(MIGRATION_IDX);
+
+    expect(row('copy').offSince).toBeNull();
+  });
+
   it('still has both triggers after every migration, so a later table rebuild cannot drop them', () => {
     runMigrations(db);
     const triggers = db.$client

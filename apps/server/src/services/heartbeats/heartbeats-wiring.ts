@@ -32,7 +32,7 @@ import { auditTrail } from '../audit/audit-trail.js';
 import type { HeartbeatRouterDeps } from '../../routes/heartbeats.js';
 import type { HeartbeatTriageRouterDeps } from '../../routes/heartbeat-triage.js';
 import type { WakersOffRouterDeps } from '../../routes/wakers-off.js';
-import { wakersOffReader } from './wakers-off/wakers-off.js';
+import { liveWakersOffReader } from './wakers-off/live-wakers-off.js';
 import type { SessionOriginResolvers } from '../session/origin/session-origin-overlays.js';
 import { createReportsToChain, OWNER_FALLBACK_ACCOUNT_ID } from './reports-to.js';
 import { HeartbeatStore } from './heartbeat-store.js';
@@ -295,20 +295,13 @@ export function startHeartbeats(deps: HeartbeatsWiringDeps): HeartbeatsHandle {
   });
   mountStatus(deps, { store, raises, managerOf, runner, agents, enabled, triage });
   // The team page's line for every waker that cannot wake (DOR-3641).
-  deps.routes.wakersOff = wakersOffReader({
+  deps.routes.wakersOff = liveWakersOffReader({
     db,
     agents,
-    // The person's own switch: on an agent computer the hub drives beats, which
-    // is not "off" (DOR-2940).
-    enabled: () => configManager.get('heartbeats').enabled,
     store,
-    pauses: () => agentPause()?.list() ?? [],
-    personOf: (agentId) =>
-      agentId ? chain.resolveChainPerson(agentId).accountId : ownerAccountId(),
-    nameOf: (accountId) =>
-      isOwner(accountId)
-        ? (configManager.get('profile').displayName ?? auditTrail()?.accounts.owner().name ?? null)
-        : null,
+    chain,
+    ownerAccountId,
+    isOwner,
   });
   const handle: HeartbeatsHandle = {
     runner,

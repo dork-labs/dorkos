@@ -202,7 +202,8 @@ export const pulseSchedules = sqliteTable('pulse_schedules', {
    * `dor3641_waker_off_since`), never by app code: more than a dozen writers
    * flip `enabled` or `status`, and a trigger is the one place none of them can
    * forget. A table rebuild drops triggers, so `waker-off-since-migration.test.ts`
-   * checks they survive every migration.
+   * checks they survive every migration. A project's copy born off (DOR-3376)
+   * stays NULL until a person has turned it on and off again.
    */
   offSince: text('off_since'),
   /**

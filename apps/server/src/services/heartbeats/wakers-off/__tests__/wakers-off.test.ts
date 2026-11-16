@@ -96,13 +96,24 @@ describe('wakers off (DOR-3641)', () => {
     expect(wakers.find((waker) => waker.id === 'running')).toBeUndefined();
   });
 
-  it('leaves out a project’s copy that was never turned on, but not one that is waiting', async () => {
+  it('leaves out a project’s copy never turned on, but shows one turned off or waiting', async () => {
     schedule('project-copy', { enabled: false, projectOnly: true, agentId: SCOUT.id });
     schedule('project-waiting', { status: 'pending_approval', projectOnly: true });
+    schedule('project-turned-off', { enabled: false, projectOnly: true });
+    // A person turned it on, then off: the trigger dates the second switch.
+    for (const enabled of [true, false]) {
+      db.update(pulseSchedules)
+        .set({ enabled })
+        .where(eq(pulseSchedules.id, 'project-turned-off'))
+        .run();
+    }
 
     const { wakers } = await listWakersOff(input());
 
-    expect(wakers.map((waker) => waker.id)).toEqual(['project-waiting']);
+    expect(wakers.map((waker) => waker.id).sort()).toEqual([
+      'project-turned-off',
+      'project-waiting',
+    ]);
   });
 
   it('answers on GET /api/heartbeats/wakers-off', async () => {
