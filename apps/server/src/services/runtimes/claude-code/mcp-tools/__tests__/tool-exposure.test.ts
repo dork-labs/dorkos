@@ -270,6 +270,12 @@ describe('in-session tool exposure', () => {
       await expect(client.callTool(request)).resolves.toMatchObject({ isError: true });
     }
     expect(resolvePrincipal).not.toHaveBeenCalled();
+    const allowed = await client.callTool({
+      name: 'connectors.list_granted_connections',
+      arguments: {},
+    });
+    expect(allowed.isError).not.toBe(true);
+    expect(resolvePrincipal).toHaveBeenCalledTimes(1);
     await Promise.all([client.close(), server.instance.close()]);
   });
 
@@ -294,12 +300,18 @@ describe('in-session tool exposure', () => {
     const client = new Client({ name: 'connector-warm-turn-probe', version: '0.0.0' });
     await Promise.all([server.instance.connect(serverTransport), client.connect(clientTransport)]);
 
-    await client.callTool({ name: 'connectors.list_granted_connections', arguments: {} });
+    expect(
+      (await client.callTool({ name: 'connectors.list_granted_connections', arguments: {} }))
+        .isError
+    ).not.toBe(true);
     session!.connectorTurn = {
       isConnectorCapabilityId: () => true,
       resolvePrincipal: second,
     };
-    await client.callTool({ name: 'connectors.list_granted_connections', arguments: {} });
+    expect(
+      (await client.callTool({ name: 'connectors.list_granted_connections', arguments: {} }))
+        .isError
+    ).not.toBe(true);
 
     expect(first).toHaveBeenCalledTimes(1);
     expect(second).toHaveBeenCalledTimes(1);

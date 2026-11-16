@@ -12,7 +12,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 
 vi.mock('../../../../../env.js', () => ({
-  env: { DORKOS_PORT: 4242, MCP_API_KEY: undefined },
+  env: { DORKOS_PORT: 4242, MCP_API_KEY: undefined, DORKOS_TODOS_ENABLED: true },
 }));
 vi.mock('../../../../../lib/version.js', () => ({ SERVER_VERSION: 'test', IS_DEV_BUILD: false }));
 vi.mock('../../../../../lib/logger.js', () => ({
@@ -37,6 +37,8 @@ import { composeRegistry, defineCapability } from '../../../../core/capabilities
 import { CONNECTOR_RUNTIME_CAPABILITY_IDS } from '../../../../connectors/runtime-capability-scope.js';
 import { composeDorkOsCapabilityRegistry } from '../../../../core/self-description/dorkos-registry.js';
 import { registerCapabilitiesAsMcpTools } from '../../../../core/external-mcp/capability-mcp-tools.js';
+import { registerCurrentInputContractTests } from './current-input-contracts.js';
+import { registerExtensionListabilityTests } from './extension-listability-contracts.js';
 import { DEFAULT_CAPABILITY_LIMIT } from '../../../../core/self-description/catalog-projection.js';
 
 /** Deps with every optional service handle present, so the whole surface builds. */
@@ -376,3 +378,61 @@ describe('ordinary full-object registration through the SDK', () => {
     }
   });
 });
+
+it('reads the canonical session id and cwd afresh after SDK rekey on one actual factory server', async () => {
+  const contexts: Array<{ sessionId?: string; cwd?: string; signal?: AbortSignal }> = [];
+  const capability = defineCapability({
+    id: 'factory.context',
+    title: 'Read context',
+    description: 'Records factory-owned call facts.',
+    tier: 'observe',
+    area: null,
+    input: z.object({}),
+    output: z.unknown(),
+    surfaces: { mcp: { toolName: 'factory_context', servers: ['in-session'] } },
+    invoke: async (_deps, _input, context) => {
+      contexts.push(context);
+      return { sessionId: context.sessionId, cwd: context.cwd };
+    },
+  });
+  const registry = composeRegistry([{ name: 'factory', capabilities: [capability] }], {
+    logger: noopLogger,
+  });
+  const session = { sdkSessionId: 'canonical-first', cwd: '/work/first', eventQueue: [] };
+  const server = createDorkOsToolServer(
+    createFullDeps(),
+    session,
+    'trigger-id',
+    undefined,
+    registry
+  );
+  const { client, close } = await connect(server.instance);
+  try {
+    expect(
+      payloadOf(
+        (await client.callTool({ name: 'factory_context', arguments: {} })) as CallToolResult
+      )
+    ).toEqual({ sessionId: 'canonical-first', cwd: '/work/first' });
+    session.sdkSessionId = 'canonical-second';
+    session.cwd = '/work/second';
+    expect(
+      payloadOf(
+        (await client.callTool({ name: 'factory_context', arguments: {} })) as CallToolResult
+      )
+    ).toEqual({ sessionId: 'canonical-second', cwd: '/work/second' });
+    session.sdkSessionId = '';
+    expect(
+      payloadOf(
+        (await client.callTool({ name: 'factory_context', arguments: {} })) as CallToolResult
+      )
+    ).toEqual({ sessionId: 'trigger-id', cwd: '/work/second' });
+    expect(contexts).toHaveLength(3);
+    expect(new Set(contexts.map((context) => context.signal)).size).toBe(3);
+    for (const context of contexts) expect(context.signal).toBeInstanceOf(AbortSignal);
+  } finally {
+    await close();
+  }
+});
+
+registerCurrentInputContractTests({ createFullDeps, connect, payloadOf });
+registerExtensionListabilityTests({ createFullDeps, connect, payloadOf });
