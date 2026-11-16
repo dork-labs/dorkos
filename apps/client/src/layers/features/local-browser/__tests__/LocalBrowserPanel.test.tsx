@@ -1104,17 +1104,39 @@ describe('LocalBrowserPanel', () => {
       await act(async () => finish(withHistory(true, true)));
       expect(transport.stepLocalBrowserHistory).toHaveBeenCalledTimes(1);
     });
-    it('say why when a step is refused, in DorkOS’s own words', async () => {
+    it('say why a refused step stayed put on the chrome’s notice line, as for a refused address', async () => {
       transport.getLocalBrowserState.mockResolvedValue(withHistory(true, false));
       transport.stepLocalBrowserHistory.mockRejectedValue(
         Object.assign(new Error('raw redirect detail'), { code: 'history_refused' })
       );
-      mount();
+      const { container } = mount();
+      fireEvent.click(await screen.findByRole('button', { name: 'Back' }));
+      const chrome = () => container.querySelector('[data-slot="browser-chrome"]') as HTMLElement;
+      await waitFor(() =>
+        expect(within(chrome()).getByRole('alert')).toHaveTextContent(
+          'DorkOS doesn’t open that page here, so you stayed on this one.'
+        )
+      );
+      // Said once, on the notice line, never as the panel's own error.
+      expect(screen.getAllByRole('alert')).toHaveLength(1);
+      expect(screen.queryByText('raw redirect detail')).not.toBeInTheDocument();
+      // Typing an address clears it.
+      transport.navigateLocalBrowser.mockResolvedValue(withHistory(true, false));
+      await typeAddress('https://example.com/next');
+      await waitFor(() => expect(within(chrome()).queryByRole('alert')).toBeNull());
+    });
+    it('leave a real step failure to the panel, not the notice line', async () => {
+      transport.getLocalBrowserState.mockResolvedValue(withHistory(true, false));
+      transport.stepLocalBrowserHistory.mockRejectedValue(
+        Object.assign(new Error('raw'), { code: 'navigation_uncertain' })
+      );
+      const { container } = mount();
       fireEvent.click(await screen.findByRole('button', { name: 'Back' }));
       expect(await screen.findByRole('alert')).toHaveTextContent(
-        'DorkOS doesn’t open that page here, so you stayed on this one.'
+        'Check what happened before continuing.'
       );
-      expect(screen.queryByText('raw redirect detail')).not.toBeInTheDocument();
+      const chrome = container.querySelector('[data-slot="browser-chrome"]') as HTMLElement;
+      expect(within(chrome).queryByRole('alert')).toBeNull();
     });
   });
   it('keeps a typed address when navigation becomes stale and never replays it', async () => {

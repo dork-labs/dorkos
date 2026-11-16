@@ -6,6 +6,7 @@ import { useTransport } from '@/layers/shared/model';
 import { BrowserChrome, Button } from '@/layers/shared/ui';
 import { useGuestPage } from '../model/use-guest-page';
 import { searchAddress } from '../lib/page-error';
+import { browserErrorMessage } from '../lib/browser-error-message';
 import { BrowserPageArea } from './BrowserPageArea';
 
 /** Props for {@link LocalBrowserView}. */
@@ -76,6 +77,9 @@ export function LocalBrowserView({
     setRetry((last) => ({ tabId, draft: typed.trim(), attempt: (last?.attempt ?? 0) + 1, notice }));
   // What was held belongs to the tab it was typed in; another tab starts clean.
   const shownRetry = retry && tab && retry.tabId === tab.id ? retry : null;
+  /** Why the last Back or Forward was refused, on the notice line like a refused address (spec §6). */
+  const [stepNotice, setStepNotice] = useState<{ tabId: string; text: string } | null>(null);
+  const shownStepNotice = stepNotice && tab && stepNotice.tabId === tab.id ? stepNotice.text : null;
 
   /** Navigate, and answer whether it failed: an action a newer one replaced did not. */
   const go = async (url: string, fallback?: string) => {
@@ -102,10 +106,24 @@ export function LocalBrowserView({
     return failed;
   };
 
-  /** Back or Forward. A refusal or a failure is the panel's to say, as for a navigation. */
+  /**
+   * Back or Forward. A step the address rules refused says so on the notice line,
+   * as a refused address does, and the page stays where it was; any other failure
+   * is the panel's to say, as for a navigation.
+   */
   const step = (direction: LocalBrowserHistoryDirection) => {
     setRetry(null);
-    void action(() => transport.stepLocalBrowserHistory(direction));
+    setStepNotice(null);
+    const tabId = tab?.id;
+    void action(async () => {
+      try {
+        return await transport.stepLocalBrowserHistory(direction);
+      } catch (cause) {
+        if ((cause as { code?: string } | null)?.code !== 'history_refused' || !tabId) throw cause;
+        setStepNotice({ tabId, text: browserErrorMessage(cause) });
+        return transport.getLocalBrowserState();
+      }
+    });
   };
 
   const submit = (tabId: string, url: string, text: string) => {
@@ -113,6 +131,7 @@ export function LocalBrowserView({
       current: url,
       isOwnAddress: (candidate) => isThisAppsAddress(candidate, window.location, ownOrigins),
     });
+    setStepNotice(null);
     if (input.kind === 'refused') {
       holdTyped(tabId, text, input.notice);
       return;
@@ -148,7 +167,7 @@ export function LocalBrowserView({
           busy={busy}
           tooltips={false}
           retry={shownRetry}
-          notice={shownRetry?.notice ?? null}
+          notice={shownRetry?.notice ?? shownStepNotice}
         />
       )}
       {embedded ? (
