@@ -2624,6 +2624,88 @@
           "useCredits"
         ]
       },
+      "WakersOff": {
+        "type": "object",
+        "properties": {
+          "wakers": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/WakerOff"
+            }
+          }
+        },
+        "required": [
+          "wakers"
+        ]
+      },
+      "WakerOff": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "schedule",
+              "heartbeat"
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "agentId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "state": {
+            "$ref": "#/components/schemas/WakerOffState"
+          },
+          "offSince": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "waitingOn": {
+            "type": "object",
+            "properties": {
+              "accountId": {
+                "type": "string"
+              },
+              "name": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "accountId",
+              "name"
+            ]
+          }
+        },
+        "required": [
+          "kind",
+          "id",
+          "name",
+          "agentId",
+          "state",
+          "offSince",
+          "waitingOn"
+        ]
+      },
+      "WakerOffState": {
+        "type": "string",
+        "enum": [
+          "off",
+          "waiting",
+          "paused"
+        ]
+      },
       "FileDocumentSaveReceipt": {
         "type": "object",
         "properties": {
@@ -19890,6 +19972,7 @@
           "connector.destructive_pending",
           "connector.destructive_executed",
           "connector.access_narrowed",
+          "connector.write_available",
           "mcp-server.tool_added",
           "mcp-server.reserved_name",
           "web.new_device",
@@ -24643,6 +24726,27 @@
           },
           "403": {
             "description": "Only the owner of this DorkOS can answer"
+          }
+        }
+      }
+    },
+    "/api/heartbeats/wakers-off": {
+      "get": {
+        "tags": [
+          "Heartbeats"
+        ],
+        "summary": "Every schedule and heartbeat that cannot wake",
+        "description": "Each schedule that is switched off, waiting for approval or paused, each heartbeat set to off, each paused agent, and heartbeats as a whole when they are off. Each says since when, when DorkOS knows, and the person who can turn it back on. Longest off first.",
+        "responses": {
+          "200": {
+            "description": "The wakers that cannot wake",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WakersOff"
+                }
+              }
+            }
           }
         }
       }

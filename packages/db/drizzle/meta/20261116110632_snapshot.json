@@ -2,7 +2,7 @@
   "version": "6",
   "dialect": "sqlite",
   "id": "6c72b0b6-b6cf-4910-bddc-0529c87f2cf5",
-  "prevId": "f8a155df-3c18-461f-bcaf-45eaa97a6db2",
+  "prevId": "03961734-24b3-4911-8438-109527093e3a",
   "tables": {
     "a2a_tasks": {
       "name": "a2a_tasks",
@@ -2019,6 +2019,13 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
+          "autoincrement": false
+        },
+        "off_since": {
+          "name": "off_since",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
           "autoincrement": false
         }
       },

@@ -20,7 +20,9 @@ import {
   TeamRosterSkeleton,
   TeamRosterToolbar,
   TeamRosterWarnings,
+  WakersOffList,
 } from '@/layers/features/team-roster';
+import { useWakersOff } from '@/layers/entities/heartbeat';
 
 /** The page driven by something outside it — in practice, the route's search params. */
 interface ControlledTeamPageProps {
@@ -87,6 +89,8 @@ export function TeamPage({ filters, onFiltersChange }: TeamPageProps) {
   // `ownedAgentCount` are resolved by the caller.
   const setLinkedToMe = useSetIdentityLinkedToMe();
   const { data, isLoading: isFetchingRoster, isError, refetch } = useTeamRoster();
+  // Every schedule and heartbeat that cannot wake, so none goes unnoticed (DOR-3641).
+  const wakersOff = useWakersOff();
   // "The read has not settled" is not "there is nobody" (DOR-1419) — without
   // this the grid below renders "Nobody to show yet." for a beat before the real
   // roster lands. Why `isLoading` cannot answer that on its own is in
@@ -182,6 +186,7 @@ export function TeamPage({ filters, onFiltersChange }: TeamPageProps) {
           <AgentGhostRows />
         </div>
       )}
+      {!isLoading && <WakersOffList wakers={wakersOff.data?.wakers ?? []} />}
       {/* Every agent's promises, readable by everyone (spec `heartbeats` §12).
           Below the roster, and only once there are agents to have promised. */}
       {!isLoading && hasAgents && (

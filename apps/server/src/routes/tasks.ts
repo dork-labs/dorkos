@@ -501,6 +501,7 @@ export function createTasksRoutes(deps: TasksRouterDeps): Hono<ApiEnv> {
     if (!rearms || !changesFile) {
       store.approvals.settleApprovedWorkChange(updated.id, before, {
         trusted: rearms,
+        approval,
         // Only an agent's own schedule stays live through its edit (DOR-3640 R1),
         // and not one an agent approved or a person set looser than Don't ask (DOR-3703).
         armsAgentWork: !trusted && edit.armsAgentWork && agentEditMayStayLive(existing, store),

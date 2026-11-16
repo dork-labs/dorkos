@@ -3,6 +3,7 @@ import { CONNECTION_READINESS_COPY } from '@dorkos/shared/connector-schemas';
 import { beforeEach, describe, expect, it } from 'vitest';
 import {
   connectionOperationGrants,
+  connectionAccessLevels,
   connections,
   connectorManagedAuthorityOutbox,
   connectorOperationRevisions,
@@ -271,6 +272,91 @@ describe('ConnectorExecutionBroker', () => {
       signal: new AbortController().signal,
     });
   }
+
+  it('fails closed on an unknown action even with a Read and write grant', async () => {
+    db.insert(connectionAccessLevels)
+      .values({
+        subjectType: 'agent',
+        subjectId: 'agent-a',
+        agentId: 'agent-a',
+        connectionId: CONNECTION_ID,
+        level: 'read-write',
+        createdBy: 'operator',
+        updatedAt: '2026-09-06T12:00:00.000Z',
+      })
+      .run();
+    await expect(execute()).resolves.toMatchObject({ result: { status: 'success' } });
+    expect(provider.dispatchedCommands).toHaveLength(1);
+    await expect(
+      execute(principal(), 'connectors.execute_write', undefined, {
+        ...target,
+        operationRevisionId: 'revision-never-discovered',
+      })
+    ).rejects.toMatchObject({ payload: { code: 'CONNECTOR_TARGET_NOT_FOUND' } });
+    expect(provider.commands).toHaveLength(1);
+    expect(provider.dispatchedCommands).toHaveLength(1);
+    expect(db.select().from(connectorUsageAttempts).all()).toHaveLength(1);
+  });
+
+  it('refuses a paid write at execution under a stored Read and write grant', async () => {
+    // Model a level row saved before paid-operation filtering existed.
+    db.update(connections).set({ toolkit: 'apify' }).where(eq(connections.id, CONNECTION_ID)).run();
+    const paidTarget = { ...target, operationRevisionId: 'revision-paid' };
+    db.insert(connectorOperationRevisions)
+      .values({
+        id: paidTarget.operationRevisionId,
+        providerInstanceId: provider.instanceId,
+        toolkit: 'apify',
+        operationSlug: 'apify.run',
+        toolkitVersion: '2026-09-01',
+        capabilityClassification: 'write',
+        retryPolicy: 'never',
+        schemaHash: 'sha256:paid',
+        providerRevisionRef: '10000000-0000-4000-8000-000000000004',
+        inputSchemaJson: JSON.stringify(PROVIDER_SHAPED_INPUT_SCHEMA),
+        discoveredAt: '2026-09-06T12:00:00.000Z',
+      })
+      .run();
+    db.insert(connectionOperationGrants)
+      .values({
+        id: 'grant-paid',
+        subjectType: 'agent',
+        subjectId: 'agent-a',
+        agentId: 'agent-a',
+        connectionId: CONNECTION_ID,
+        operationRevisionId: paidTarget.operationRevisionId,
+        createdBy: 'operator',
+        createdAt: '2026-09-06T12:00:00.000Z',
+      })
+      .run();
+    db.insert(connectionAccessLevels)
+      .values({
+        subjectType: 'agent',
+        subjectId: 'agent-a',
+        agentId: 'agent-a',
+        connectionId: CONNECTION_ID,
+        level: 'read-write',
+        createdBy: 'operator',
+        updatedAt: '2026-09-06T12:00:00.000Z',
+      })
+      .run();
+    await expect(
+      execute(principal(), 'connectors.execute_write', undefined, paidTarget)
+    ).rejects.toMatchObject({
+      payload: {
+        code: 'CONNECTOR_GRANT_REQUIRED',
+        error: expect.stringContaining('spends money'),
+      },
+    });
+    expect(provider.commands).toEqual([]);
+    expect(db.select().from(connectorUsageAttempts).all()).toEqual([]);
+    // The same exact action runs once the grant is hand-picked rather than a level.
+    db.delete(connectionAccessLevels).run();
+    await expect(
+      execute(principal(), 'connectors.execute_write', undefined, paidTarget)
+    ).resolves.toMatchObject({ result: { status: 'success' } });
+    expect(provider.dispatchedCommands).toHaveLength(1);
+  });
 
   it('persists intent before dispatch and a separate terminal receipt without provider-private ids', async () => {
     provider.results.push({

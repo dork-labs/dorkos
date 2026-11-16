@@ -24,6 +24,7 @@ import {
 import { LevelFollower } from '../resources/level-follower.js';
 import type { EveryAgentChangeWriter } from '../every-agent-activity.js';
 import { ConnectorGrantExclusionService } from './grant-exclusions.js';
+import { upgradeComposioWriteLevels } from './composio-write-upgrade.js';
 import { TrustedConnectionSharing } from './trusted-sharing.js';
 
 /** What {@link createConnectorAccess} needs from the server. */
@@ -55,6 +56,7 @@ export interface ConnectorAccess {
  * @param deps - The connector database, registry, agents, Activity and config.
  */
 export function createConnectorAccess(deps: ConnectorAccessDeps): ConnectorAccess {
+  upgradeComposioWriteLevels(deps.db);
   // With login off DorkOS cannot tell the app from a program on this
   // computer, so the trail says exactly that rather than "You".
   const writer = (): EveryAgentChangeWriter =>
