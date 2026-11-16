@@ -70,6 +70,7 @@ import type { TaskLifecycleDeps } from './create-task-deps.js';
 import { marksHold, NO_MARKS, type TurnMarks } from '../../core/turn-power/turn-marks.js';
 import { auditCrossAgentTask, capModeAtAgentLevel } from '../approvals/cross-agent.js';
 import { scheduledTaskCreateApproval } from '../approvals/task-approval-receipt.js';
+import { taskPermissionRulesRefusal } from '../task-permission-rules.js';
 
 /**
  * An ungranted agent create may preserve only these known modes. In particular,
@@ -326,6 +327,13 @@ export async function createScheduledTask(
     };
   }
   const data = withDefaultTaskTimezone(parsed.data, deps.defaultTimezone);
+  // Rules the task's runs could not honour are refused up front (#3794).
+  const rules = await taskPermissionRulesRefusal({
+    runtime: data.runtime,
+    agentPath: data.target === 'global' ? null : deps.meshCore?.getProjectPath(data.target),
+    rules: data.requestedAllow ?? [],
+  });
+  if (rules) return { ok: false, status: 400, error: rules.error, code: rules.code };
   const { trusted } = options;
   // An untrusted caller parks unless it is one of our agents on a Trusted
   // install (ADR 261006-225605). Read once, so the park and the reply agree.
@@ -600,6 +608,10 @@ export async function createScheduledTask(
       ...(data.sticky !== undefined && { sticky: data.sticky }),
       maxRuntime: data.maxRuntime ? parseDuration(data.maxRuntime) : null,
       permissionMode: effectivePermissionMode,
+      ...(data.requestedPermissionMode !== undefined && {
+        requestedPermissionMode: data.requestedPermissionMode,
+      }),
+      ...(data.requestedAllow !== undefined && { requestedAllow: data.requestedAllow }),
       ...(data.runtime !== undefined && { runtime: data.runtime }),
       ...(data.model !== undefined && { model: data.model }),
       ...(data.effort !== undefined && { effort: data.effort }),
@@ -637,6 +649,10 @@ export async function createScheduledTask(
       ...(options.proposal?.agentPath !== undefined && {
         proposedByAgentPath: options.proposal.agentPath,
       }),
+      ...(data.requestedPermissionMode !== undefined && {
+        requestedPermissionMode: data.requestedPermissionMode,
+      }),
+      ...(data.requestedAllow !== undefined && { requestedAllow: data.requestedAllow }),
     });
     // Its maker is its first editor, so no agent in its chain approves it (DOR-3703).
     deps.store.approvals.recordAgentEdit(schedule.id, {

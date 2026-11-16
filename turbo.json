@@ -333,7 +333,8 @@
         "PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD",
         "CI",
         "PWDEBUG",
-        "ANTHROPIC_API_KEY"
+        "ANTHROPIC_API_KEY",
+        "DORKOS_HEAVY_*"
       ]
     },
     "e2e:ui": {

@@ -71,6 +71,14 @@ export function buildTaskAppend(task: Task, run: TaskRun): string {
 export function taskTurnOpts(
   task: Task,
   run: TaskRun
-): { systemPromptAppend: string; contextPlace: 'task' } {
-  return { systemPromptAppend: buildTaskAppend(task, run), contextPlace: 'task' };
+): {
+  systemPromptAppend: string;
+  contextPlace: 'task';
+  taskApprovedAllow?: readonly string[];
+} {
+  return {
+    systemPromptAppend: buildTaskAppend(task, run),
+    contextPlace: 'task',
+    ...(task.approvedAllow?.length ? { taskApprovedAllow: task.approvedAllow } : {}),
+  };
 }

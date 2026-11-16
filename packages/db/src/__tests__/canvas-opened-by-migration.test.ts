@@ -3,20 +3,51 @@
  * nullable column and keeps every row; down removes it and its ledger row, and
  * refuses, changing nothing, once a later migration has run.
  */
-import { readFileSync } from 'node:fs';
+import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { beforeEach, describe, expect, it } from 'vitest';
-import { createDb, runMigrations, type Db } from '../index.js';
+import { migrate } from 'drizzle-orm/better-sqlite3/migrator';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { createDb, type Db } from '../index.js';
 
+const TAG = '20261116015205_canvas_opened_by';
 const WHEN = 1794793925059;
-const DOWN = fileURLToPath(
-  new URL('../down/20261116015205_canvas_opened_by.down.sql', import.meta.url)
-);
+const MIGRATIONS = fileURLToPath(new URL('../../drizzle/', import.meta.url));
+const DOWN = fileURLToPath(new URL(`../down/${TAG}.down.sql`, import.meta.url));
 
+let directory: string;
 let db: Db;
+
+/**
+ * Apply every migration up to and including this one, and none after it: the
+ * down file refuses once a later migration has run, so the real head would
+ * stop it from coming off as soon as anything lands on top.
+ */
+function migrateThroughThis(): void {
+  const data = JSON.parse(readFileSync(join(MIGRATIONS, 'meta/_journal.json'), 'utf8')) as {
+    entries: Array<{ idx: number; tag: string }>;
+  };
+  const own = data.entries.find((entry) => entry.tag === TAG);
+  expect(own).toBeDefined();
+  const entries = data.entries.filter((entry) => entry.idx <= own!.idx);
+  for (const entry of entries) {
+    copyFileSync(join(MIGRATIONS, `${entry.tag}.sql`), join(directory, `${entry.tag}.sql`));
+  }
+  writeFileSync(join(directory, 'meta/_journal.json'), JSON.stringify({ ...data, entries }));
+  migrate(db, { migrationsFolder: directory });
+}
+
 beforeEach(() => {
+  directory = mkdtempSync(join(tmpdir(), 'canvas-opened-by-migration-'));
+  mkdirSync(join(directory, 'meta'));
   db = createDb(':memory:');
-  runMigrations(db);
+  migrateThroughThis();
+});
+
+afterEach(() => {
+  if (db.$client.open) db.$client.close();
+  rmSync(directory, { recursive: true, force: true });
 });
 
 function columns(): string[] {
@@ -63,7 +94,7 @@ describe('canvas_documents.opened_by_extension_id', () => {
     runDown();
     expect(columns()).not.toContain('opened_by_extension_id');
     expect(ledger()).toBe(0);
-    runMigrations(db);
+    migrateThroughThis();
     expect(columns()).toContain('opened_by_extension_id');
   });
 

@@ -2390,6 +2390,41 @@ describe('TaskSchedulerService', () => {
       await service.stop();
     });
 
+    it('puts approved task rules on only the matching relay dispatch', async () => {
+      const rule = 'Bash(/abs/path/script.sh --once)';
+      const approvedTask = store.createTask(taskInput({ name: 'Approved relay rules' }));
+      const approved = store.updateTask(approvedTask.id, { approvedAllow: [rule] })!;
+      const plain = store.createTask(taskInput({ name: 'Plain relay rules' }));
+      const service = new TaskSchedulerService({
+        store,
+        runtimes: singleRuntimeSource(mockAgent),
+        config: DEFAULT_CONFIG,
+        relay: mockRelay as unknown as RelayCore,
+      });
+
+      await (service as unknown as Dispatchable).dispatch(approved, new Date(1_700_000_000_000));
+      await vi.waitFor(() => expect(mockRelay.publish).toHaveBeenCalledOnce());
+      const approvedDispatch = mockRelay.publish.mock.calls[0]![1] as TaskDispatchPayload;
+      store.updateRun(approvedDispatch.runId, {
+        status: 'completed',
+        finishedAt: new Date().toISOString(),
+      });
+      await (service as unknown as Dispatchable).dispatch(plain, new Date(1_700_000_000_000));
+      await vi.waitFor(() => expect(mockRelay.publish).toHaveBeenCalledTimes(2));
+
+      const dispatches = mockRelay.publish.mock.calls.map(
+        ([, payload]) => payload as TaskDispatchPayload
+      );
+      expect(dispatches.find((payload) => payload.taskId === approved.id)?.approvedAllow).toEqual([
+        rule,
+      ]);
+      expect(dispatches.find((payload) => payload.taskId === plain.id)).not.toHaveProperty(
+        'approvedAllow'
+      );
+
+      await service.stop();
+    });
+
     it('names the task`s agent on the wire, so the receiver reads identity from its home (DOR-2355)', async () => {
       const agentHome = await mkdtemp(path.join(tmpdir(), 'relay-task-agent-'));
       try {
@@ -3621,6 +3656,26 @@ describe('TaskSchedulerService — per-task runtime, model and effort (DOR-1615)
       expect.any(String),
       expect.any(String),
       expect.objectContaining({ model: 'claude-opus-4-6', effort: 'xhigh' })
+    );
+    await service.stop();
+  });
+
+  it('passes an approved allow rule only on that task turn', async () => {
+    const rule = 'Bash(/abs/path/script.sh --once)';
+    const task = store.createTask(taskInput({ name: 'Scoped allow' }));
+    store.updateTask(task.id, { approvedAllow: [rule] });
+    const service = scheduler(['claude-code']);
+
+    await runToCompletion(service, task.id);
+
+    expect(managers['claude-code']!.sendMessage).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.any(String),
+      expect.objectContaining({ taskApprovedAllow: [rule] })
+    );
+    expect(managers['claude-code']!.ensureSession).not.toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({ taskApprovedAllow: expect.anything() })
     );
     await service.stop();
   });

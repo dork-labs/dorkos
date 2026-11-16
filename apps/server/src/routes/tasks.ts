@@ -33,6 +33,8 @@ import type { CreateTaskInput, PermissionMode, Task } from '@dorkos/shared/schem
 import { describeScheduleProblem } from '../services/tasks/cron-validation.js';
 import { createScheduledTask } from '../services/tasks/lifecycle/create-task.js';
 import { wifiRunNowRefusal, wifiScheduleRefusal } from './task-wifi-guard.js';
+import { prepareTaskApprovalRequest } from './task-approval-request.js';
+import { pendingTrialMode, TRIAL_TOO_LOOSE_REFUSAL } from './task-trial-mode.js';
 import {
   deleteOrDeclineTask,
   PROJECT_COPY_DELETE_REFUSAL,
@@ -268,15 +270,13 @@ export function createTasksRoutes(deps: TasksRouterDeps): Hono<ApiEnv> {
 
     const parsed = UpdateTaskRequestSchema.safeParse(body);
     if (!parsed.success) return c.json(validationFailureBody(parsed.error), 400);
-    // The hash an approval card showed is not a field of the task: only the settle reads it.
-    const { approvedPromptHash, expectedApprovalRevision, approvalSurface, ...data } = parsed.data;
-
     const existing = store.getTask(id);
     if (!existing) return c.json({ error: 'Scheduled task not found' }, 404);
-    const approval = taskApprovalActor.personTaskApproval(
-      caller,
-      existing.status === 'pending_approval' ? (approvalSurface ?? 'unknown') : 'unknown'
-    );
+    // Rules, then a stale review, then a looser-than-proposed approval (#3794).
+    const prepared = await prepareTaskApprovalRequest(store, existing, parsed.data, meshCore);
+    const { refusal, review, approvedPromptHash, approvalSurface, data } = prepared;
+    if (refusal) return c.json(refusal.body, refusal.status);
+    const approval = taskApprovalActor.personTaskApprovalForTask(caller, existing, approvalSurface);
     // From Wi-Fi a schedule runs at Default at most (DOR-3037).
     const wifiRefusal = wifiScheduleRefusal(caller, body, existing);
     if (wifiRefusal) return c.json(wifiRefusal, 403);
@@ -414,13 +414,6 @@ export function createTasksRoutes(deps: TasksRouterDeps): Hono<ApiEnv> {
     // the next reconciler sweep (DOR-1625). Every gate it runs — the read, the
     // arm blocker, the parse, the package-owned check, the plan — refuses before
     // anything is written, so a refusal here leaves the row untouched too.
-    const review = personReview.preparePersonTaskReview(
-      store,
-      existing,
-      data,
-      expectedApprovalRevision
-    );
-    if (review.stale) return c.json(personReview.STALE_SCHEDULE_REVIEW, 409);
     const fileOutcome = await applyTaskFileUpdate(
       { dorkHome, ...(meshCore && { meshCore }) },
       { existing, data, clampTo, reviewStillMatches: review.beforeWrite }
@@ -597,14 +590,12 @@ export function createTasksRoutes(deps: TasksRouterDeps): Hono<ApiEnv> {
           `running as ${level}`,
         // The before and after both, so a reader can see a raise without
         // reconstructing what the row used to hold.
-        metadata: {
-          ...taskApprovalActor.taskApprovalActivityMetadata(
-            updated,
-            existing.permissionMode,
-            existing.reason,
-            caller.user?.userId ?? null
-          ),
-        },
+        metadata: taskApprovalActor.taskApprovalActivityMetadata(
+          updated,
+          existing.permissionMode,
+          existing.reason,
+          caller.user?.userId ?? null
+        ),
         linkPath: '/',
       });
       void resolveScheduleParkPayload(updated).then((payload) =>
@@ -750,7 +741,13 @@ export function createTasksRoutes(deps: TasksRouterDeps): Hono<ApiEnv> {
         : undefined;
     if (creditsRefusal) return c.json(creditsRefusal, 403);
 
-    const run = await scheduler.triggerManualRun(id);
+    // A trial of a pending schedule is never looser than one click could approve.
+    const trial = await pendingTrialMode(store.getTask(id), meshCore);
+    if (trial.kind === 'refused') return c.json(TRIAL_TOO_LOOSE_REFUSAL, 409);
+    const run =
+      trial.kind === 'tightened'
+        ? await scheduler.triggerManualRun(id, trial.permissionMode)
+        : await scheduler.triggerManualRun(id);
     if (!run) {
       return c.json({ error: 'Scheduled task not found' }, 404);
     }

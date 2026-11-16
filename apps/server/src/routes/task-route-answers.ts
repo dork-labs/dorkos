@@ -11,7 +11,8 @@ import type { PermissionModeDescriptor } from '@dorkos/shared/agent-runtime';
 import type { RequestFacts } from '../http/request-facts.js';
 import type { ScheduleEditor } from '../services/tasks/approvals/schedule-owner.js';
 import { capabilitiesForTaskRuntime } from '../services/tasks/scheduled-run-power.js';
-import { readAgentExecutionDefaults } from '../services/session/resolution/resolve-session-defaults.js';
+import { taskRunRuntime } from '../services/tasks/execution/run-runtime.js';
+import { runtimeRegistry } from '../services/core/runtime-registry.js';
 import {
   describeOperatorOnlyTaskRefusal,
   findOperatorOnlyTaskFields,
@@ -83,17 +84,8 @@ export async function taskPermissionModes(
   task: Pick<Task, 'runtime' | 'agentId'>,
   meshCore?: MeshCore
 ): Promise<readonly PermissionModeDescriptor[]> {
-  const agentPath = task.agentId ? meshCore?.getProjectPath(task.agentId) : undefined;
-  const agentRuntime = agentPath
-    ? ((await readAgentExecutionDefaults(agentPath)).runtime ?? null)
-    : null;
-  // The agent's runtime only when this build can actually run it — the same
-  // `has(...)` guard `resolveRuntimeType` applies, asked through the function
-  // that already answers it. Without this the label and the run disagree for
-  // an agent pinned to a runtime with no adapter here.
-  const runtime =
-    task.runtime ??
-    (agentRuntime && capabilitiesForTaskRuntime(agentRuntime) ? agentRuntime : null);
+  // The run's own ladder (`execution/run-runtime.ts`), so the label and the run agree.
+  const runtime = await taskRunRuntime(task, runtimeRegistry, meshCore);
   return capabilitiesForTaskRuntime(runtime)?.permissionModes?.values ?? [];
 }
 

@@ -52,7 +52,12 @@ CHECK="${CHECK:-$repo_root/scripts/heavy-run-lock.sh}"
 
 # CI sets these, and the wrapper rightly runs uncapped under them. Every case
 # below except the CI one is about the capped path.
-unset CI DORKOS_HEAVY_SLOT_HELD DORKOS_HEAVY_LOCK DORKOS_HEAVY_WAIT_SECONDS DORKOS_HEAVY_SLOTS
+unset CI DORKOS_HEAVY_SLOT_HELD DORKOS_HEAVY_LOCK DORKOS_HEAVY_WAIT_SECONDS DORKOS_HEAVY_SLOTS \
+  DORKOS_HEAVY_MAX_LOAD DORKOS_HEAVY_LOAD_WAIT_SECONDS DORKOS_HEAVY_LOAD_POLL_SECONDS \
+  CI_STEWARD_TIMINGS_FILE CI_STEWARD_RUN_ID
+# This machine's real load must never decide a case: a busy host would make
+# every --job case below wait out the load bound. The load cases set their own.
+export DORKOS_HEAVY_LOADAVG_CMD='echo 0.00'
 
 work=$(mktemp -d)
 # Only ever the pids this suite itself forked, by the pid, never by name
@@ -459,6 +464,129 @@ out=$(DORKOS_HEAVY_LOCK_DIR="$locks" DORKOS_HEAVY_SLOTS=1 DORKOS_HEAVY_WAIT_SECO
   bash "$CHECK" env -u DORKOS_HEAVY_SLOT_HELD bash "$CHECK" bash -c 'echo nested-without-env' 2>&1)
 check_eq 'a nested call that lost the env still runs straight through' 'nested-without-env' "$out"
 check_le 'a nested call that lost the env does not wait on its ancestor' 2 "$(($(date +%s) - started))"
+
+echo ""
+echo "== a heavy job waits for the load to drop, then refuses (exit 75) =="
+
+# The load is faked: DORKOS_HEAVY_LOADAVG_CMD prints the 1-minute average the
+# wrapper reads, here from a file a case can change while a run waits. Max 24,
+# as configured, and second-scale waits.
+loadf="$work/load"
+notes="$work/notes.jsonl"
+: >"$notes"
+load_env() {
+  env DORKOS_HEAVY_LOADAVG_CMD="cat $loadf" DORKOS_HEAVY_MAX_LOAD=24 \
+    CI_STEWARD_TIMINGS_FILE="$notes" CI_STEWARD_RUN_ID=fixture "$@"
+}
+
+locks=$(new_locks)
+echo 5.10 >"$loadf"
+started=$(date +%s)
+out=$(load_env DORKOS_HEAVY_LOCK_DIR="$locks" DORKOS_HEAVY_LOAD_WAIT_SECONDS=20 \
+  bash "$CHECK" --job bash -c 'echo ran-under-the-max' 2>&1)
+check_eq 'a job under the max load exits 0' 0 "$?"
+check_eq 'a job under the max load runs at once and says nothing' 'ran-under-the-max' "$out"
+check_le 'a job under the max load does not wait' 2 "$(($(date +%s) - started))"
+
+# Over the max, then the load drops: the job waits for it, then runs.
+locks=$(new_locks)
+: >"$notes"
+echo 40.00 >"$loadf"
+(sleep 2 && echo 3.00 >"$loadf") &
+own_pids+=("$!")
+started=$(date +%s)
+out=$(load_env DORKOS_HEAVY_LOCK_DIR="$locks" DORKOS_HEAVY_LOAD_WAIT_SECONDS=20 DORKOS_HEAVY_LOAD_POLL_SECONDS=0.3 \
+  bash "$CHECK" --job bash -c 'echo ran-once-the-load-dropped' 2>&1)
+status=$?
+elapsed=$(($(date +%s) - started))
+check_eq 'a job that waited out the load exits 0' 0 "$status"
+check_contains 'a job that waited out the load runs' 'ran-once-the-load-dropped' "$out"
+check_contains 'a waiting job says the load it waits on' '40.00' "$out"
+check_lacks 'a job that waited out the load does not refuse' 'refusing' "$out"
+if [ "$elapsed" -ge 2 ]; then ok "it waited for the load to drop (${elapsed}s)"; else not_ok "it ran before the load dropped (${elapsed}s)"; fi
+check_le 'and ran soon after it did' 6 "$elapsed"
+check_contains 'the wait is recorded as load_wait' '"o":"load_wait"' "$(cat "$notes")"
+
+# Over the max the whole time: exit 75, the load and the slot holders printed,
+# and the command never runs.
+locks=$(new_locks)
+: >"$notes"
+echo 41.37 >"$loadf"
+DORKOS_HEAVY_LOCK_DIR="$locks" DORKOS_HEAVY_SLOTS=2 bash "$CHECK" sleep 30 >/dev/null 2>&1 &
+holder=$!
+own_pids+=("$holder")
+await_locked "$locks" 1 || not_ok 'the holder never took slot-1, so the holder line proves nothing'
+started=$(date +%s)
+out=$(load_env DORKOS_HEAVY_LOCK_DIR="$locks" DORKOS_HEAVY_SLOTS=2 DORKOS_HEAVY_LOAD_WAIT_SECONDS=2 \
+  DORKOS_HEAVY_LOAD_POLL_SECONDS=0.3 bash "$CHECK" --job bash -c 'echo must-not-run' 2>&1)
+status=$?
+check_eq 'a job over the max load the whole time exits 75' 75 "$status"
+check_lacks 'a refused job never runs its command' 'must-not-run' "$out"
+check_contains 'a refused job prints the load' '41.37' "$out"
+check_contains 'a refused job prints the max' '24' "$out"
+check_contains 'a refused job names the slot holders' "pid $holder" "$out"
+check_contains 'a refused job says how to run it anyway' 'DORKOS_HEAVY_LOCK=0' "$out"
+check_le 'the load wait is bounded against a 2s bound' 5 "$(($(date +%s) - started))"
+check_contains 'the refusal is recorded as load_refused with the load' '"o":"load_refused","d":41' "$(cat "$notes")"
+if slot_locked "$locks" 2; then not_ok 'a refused job holds a slot'; else ok 'a refused job holds no slot'; fi
+signal_tree KILL "$holder"
+wait "$holder" 2>/dev/null
+
+# THE COMMIT GATE NEVER REFUSES. Without --job the load is not checked at all:
+# a gate that refuses is a gate that gets skipped.
+locks=$(new_locks)
+echo 99.00 >"$loadf"
+started=$(date +%s)
+out=$(load_env DORKOS_HEAVY_LOCK_DIR="$locks" DORKOS_HEAVY_LOAD_WAIT_SECONDS=20 \
+  bash "$CHECK" bash -c 'echo the-gate-ran' 2>&1)
+check_eq 'the commit gate over the max load exits 0' 0 "$?"
+check_eq 'the commit gate over the max load runs at once and says nothing' 'the-gate-ran' "$out"
+check_le 'the commit gate does not wait on the load' 2 "$(($(date +%s) - started))"
+
+# DORKOS_HEAVY_LOCK=0 is still the way out, and now it leaves a note.
+: >"$notes"
+out=$(load_env DORKOS_HEAVY_LOCK_DIR="$locks" DORKOS_HEAVY_LOCK=0 DORKOS_HEAVY_LOAD_WAIT_SECONDS=20 \
+  bash "$CHECK" --job bash -c 'echo opted-out' 2>&1)
+check_eq 'DORKOS_HEAVY_LOCK=0 runs a job over the max load' 'opted-out' "$out"
+check_contains 'DORKOS_HEAVY_LOCK=0 is recorded as lock_off' '"o":"lock_off"' "$(cat "$notes")"
+
+started=$(date +%s)
+out=$(load_env CI=true DORKOS_HEAVY_LOCK_DIR="$locks" DORKOS_HEAVY_LOAD_WAIT_SECONDS=20 \
+  bash "$CHECK" --job bash -c 'echo ci-over-load' 2>&1)
+check_eq 'under CI the load is not checked' 'ci-over-load' "$out"
+check_le 'under CI nothing waits on the load' 2 "$(($(date +%s) - started))"
+
+# A load that cannot be read is not a reason to refuse: it degrades.
+locks=$(new_locks)
+out=$(env DORKOS_HEAVY_LOADAVG_CMD="false" DORKOS_HEAVY_MAX_LOAD=24 DORKOS_HEAVY_LOCK_DIR="$locks" \
+  DORKOS_HEAVY_LOAD_WAIT_SECONDS=20 bash "$CHECK" --job bash -c 'echo unreadable-load' 2>&1)
+check_eq 'an unreadable load runs the job' 0 "$?"
+check_contains 'an unreadable load keeps the output' 'unreadable-load' "$out"
+
+# A nested job whose parent holds a slot is not checked again, even after the
+# parent's own run pushed the load up, and even when turbo dropped the env.
+locks=$(new_locks)
+echo 5.00 >"$loadf"
+started=$(date +%s)
+out=$(load_env DORKOS_HEAVY_LOCK_DIR="$locks" DORKOS_HEAVY_LOAD_WAIT_SECONDS=20 bash "$CHECK" --job \
+  bash -c "echo 60.00 >'$loadf' && env -u DORKOS_HEAVY_SLOT_HELD bash '$CHECK' --job bash -c 'echo nested-over-load'" 2>&1)
+check_eq 'a nested job is not refused for the load its parent made' 'nested-over-load' "$out"
+check_le 'a nested job does not wait on the load' 2 "$(($(date +%s) - started))"
+
+# --hold (a bare turbo run's slot) is not load-checked: its helper never fails
+# a run, so a refusal there would only be a lost slot.
+locks=$(new_locks)
+echo 60.00 >"$loadf"
+sleep 30 &
+owner=$!
+own_pids+=("$owner")
+started=$(date +%s)
+out=$(load_env DORKOS_HEAVY_LOCK_DIR="$locks" DORKOS_HEAVY_SLOTS=1 DORKOS_HEAVY_LOAD_WAIT_SECONDS=20 \
+  bash "$CHECK" --job --hold "$owner" turbo build 2>&1)
+check_eq '--hold over the max load still takes the slot' '0:' "$?:$out"
+check_le '--hold does not wait on the load' 2 "$(($(date +%s) - started))"
+kill -KILL "$owner" 2>/dev/null
+wait "$owner" 2>/dev/null
 
 echo ""
 printf '%s passed, %s failed\n' "$pass" "$fail"
