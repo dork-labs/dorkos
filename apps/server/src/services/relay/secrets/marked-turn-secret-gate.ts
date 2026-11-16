@@ -9,36 +9,87 @@
  *    two calls: add the connection at the outsider's URL with no secret, then
  *    save the secret at what is now the same address.
  * 2. **Move the stored secrets.** Rule 3 (`adapter-secret-policy.ts`) clears
- *    stored secrets only when a `url`-typed field changes. A plugin's manifest
- *    may type its endpoint as `text` or `textarea`, so a save that changes any
- *    `url`, `text` or `textarea` field of a connection holding a stored secret
- *    is refused outright. Labels and other plain text fields are caught too:
- *    no manifest says which text field is an address, so the gate takes all of
- *    them.
+ *    stored secrets only when a `url`-typed field changes, but a plugin may read
+ *    its endpoint from a `text`, `number` or `select` field, or from a key its
+ *    manifest never declares (a plugin type has no config schema, and a save is
+ *    merged as `{ ...existing, ...incoming }`). So on a connection holding a
+ *    stored secret, a save that changes ANY config key, declared or not, of any
+ *    type, is refused outright. Only the secret fields themselves are left to
+ *    rule 1, where a masked or blank value means "keep it". Values are compared
+ *    structurally, after the form shapes resolve, so saving the whole form back
+ *    unchanged (a list, a JSON map) is not a change. No manifest marks a field
+ *    as safe display text yet, so a label counts too. A type with no manifest
+ *    counts as holding a stored secret, and every key in it counts.
  *
  * An agent writer DorkOS can't identify has no turn to read marks from, so it
  * is refused the same way: the gate fails closed. A person is never refused,
  * and the boot flag preserves prior behavior while it is off.
  *
- * Not covered: a manifest that types a secret as plain `text`. Its value is
- * read at its word, so a typed value there is not seen as a secret.
+ * Not covered:
+ * - a manifest that types a secret as plain `text` (or any non-`password`
+ *   type): typing a value into it is not seen as typing a secret. Rule 2 still
+ *   refuses changing it on a connection that holds another stored secret;
+ * - a plugin that reads a secret from outside its config (its own files or
+ *   environment): DorkOS never sees that secret, so no rule here can hold it.
  *
  * @module services/relay/secrets/marked-turn-secret-gate
  */
 import type { AdapterManifest } from '@dorkos/shared/relay-schemas';
-import { getNestedValue } from '../adapter-config.js';
 import { readIncoming, secretValues, type SecretWriter } from '../adapter-secret-policy.js';
 
-/** The field types an address can hide in. */
-const ADDRESS_LIKE_TYPES: ReadonlySet<string> = new Set(['url', 'text', 'textarea']);
+/** Whether two config values are the same, structurally: lists and maps by content. */
+function sameValue(a: unknown, b: unknown): boolean {
+  if (Object.is(a, b)) return true;
+  if (Array.isArray(a) || Array.isArray(b)) {
+    return (
+      Array.isArray(a) &&
+      Array.isArray(b) &&
+      a.length === b.length &&
+      a.every((item, i) => sameValue(item, b[i]))
+    );
+  }
+  if (isPlainObject(a) && isPlainObject(b)) {
+    const keys = new Set([...Object.keys(a), ...Object.keys(b)]);
+    return [...keys].every((key) => sameValue(a[key], b[key]));
+  }
+  return false;
+}
+
+/** Whether a value is a plain object (not a list, not null). */
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
 
 /**
- * Whether a save would carry a connection's stored secrets to a changed
- * address-like field: the saved config holds at least one secret, and the edit
- * sends a different value for any `url`, `text` or `textarea` field.
+ * Whether every key an edit sends matches what is saved: a partial edit leaves
+ * the rest alone, so only the keys it names are compared, at every depth.
+ */
+function editMatchesSaved(edit: unknown, saved: unknown): boolean {
+  if (isPlainObject(edit) && isPlainObject(saved)) {
+    return Object.entries(edit).every(([key, value]) => editMatchesSaved(value, saved[key]));
+  }
+  return sameValue(edit, saved);
+}
+
+/** Remove the leaf at `parts` from a cloned object, if it is there. */
+function dropPath(obj: Record<string, unknown>, parts: string[]): void {
+  let current: unknown = obj;
+  for (const part of parts.slice(0, -1)) {
+    if (!isPlainObject(current)) return;
+    current = current[part];
+  }
+  if (isPlainObject(current)) delete current[parts[parts.length - 1]!];
+}
+
+/**
+ * Whether a save would change anything on a connection that holds a stored
+ * secret, so the secret would travel with the change. Every config key counts,
+ * declared or not, of any type, except the secret fields themselves (rule 1
+ * judges those). Values are compared structurally after the form shapes
+ * resolve, so the whole form saved back unchanged is not a change.
  *
- * An add has no stored secrets to carry, and a type with no manifest is caught
- * by the typed-secret rule instead (every entered string counts there).
+ * An add or a test has nothing stored to carry. A type with no manifest counts
+ * as holding a stored secret: nothing says which of its keys are secret.
  *
  * @param existing - The saved config, or `undefined` for an add or a test.
  * @param incoming - The config exactly as the route received it.
@@ -49,16 +100,15 @@ export function movesStoredSecrets(
   incoming: Record<string, unknown>,
   manifest: AdapterManifest | undefined
 ): boolean {
-  if (!existing || !manifest) return false;
-  if (!secretValues(existing, manifest).some(({ value }) => value !== '')) return false;
-  const read = readIncoming(incoming, manifest);
-  return manifest.configFields
-    .filter((field) => ADDRESS_LIKE_TYPES.has(field.type))
-    .some((field) => {
-      const parts = field.key.split('.');
-      const next = getNestedValue(read, parts);
-      return next !== undefined && next !== getNestedValue(existing, parts);
-    });
+  if (!existing) return false;
+  if (manifest && !secretValues(existing, manifest).some(({ value }) => value !== '')) {
+    return false;
+  }
+  const edit = structuredClone(readIncoming(incoming, manifest));
+  for (const field of manifest?.configFields ?? []) {
+    if (field.type === 'password') dropPath(edit, field.key.split('.'));
+  }
+  return !editMatchesSaved(edit, existing);
 }
 
 /** Why the gate refused, as the code the route answers with. */
@@ -69,8 +119,8 @@ export type MarkedSecretRefusalCode = 'marked_turn_typed_secret' | 'marked_turn_
  *
  * @param input - The independently resolved facts for this attempted write.
  * @param input.unidentified - The writer is an agent DorkOS could not identify.
- * @param input.movesSecrets - The save would carry stored secrets to a changed
- *   address-like field ({@link movesStoredSecrets}).
+ * @param input.movesSecrets - The save changes a connection that holds stored
+ *   secrets ({@link movesStoredSecrets}).
  */
 export function markedTurnSecretRefusal(input: {
   enabled: boolean;
@@ -98,7 +148,7 @@ export function markedTurnSecretRefusal(input: {
   }
   if (input.movesSecrets === true) {
     return {
-      error: `${why}, so it can't change where a connection with saved secrets sends. Ask a person to change it.`,
+      error: `${why}, so it can't change a connection that holds saved secrets. Ask a person to change it.`,
       code: 'marked_turn_moves_secret',
     };
   }
