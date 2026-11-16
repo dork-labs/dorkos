@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { isLateMove, nextDueHistory } from '../due-history.js';
+import { isLateMove, nextDueHistory } from '../timing/due-history.js';
 
 const FIRST = '2026-11-13T10:00:00.000Z';
 const SECOND = '2026-11-13T12:00:00.000Z';

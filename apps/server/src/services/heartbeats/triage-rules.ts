@@ -5,7 +5,7 @@
  * - `quiet`: nothing needs the agent — only informational changes, and only
  *   ones that touch nothing serious.
  * - `work`: the agent should work on it now — a local message to it unanswered,
- *   an overdue to-do, a failed or parked run, a lost connection, a failing
+ *   a to-do it was just woken to start or check in on (DOR-3034), an overdue to-do, a failed or parked run, a lost connection, a failing
  *   check on its own branch, open work gone quiet (DOR-3674).
  * - `undecided`: anything else, including any change with non-empty
  *   `touches`. In PR 3 `undecided` means a turn: unsure goes up to the runtime,
@@ -27,6 +27,7 @@ export type TriageVerdict = 'quiet' | 'work' | 'undecided';
 /** Signals that mean "work on it now". */
 const WORK_SIGNALS: ReadonlySet<Change['signal']> = new Set([
   'unanswered',
+  'commitment-start',
   'commitment-overdue',
   'run-failed',
   'connection-lost',
@@ -48,6 +49,7 @@ export const STANDING_SIGNALS: ReadonlySet<Change['signal']> = new Set([
   'connection-lost',
   'check-failed',
   'commitment-due',
+  'commitment-start',
   'commitment-overdue',
   'work-stalled',
 ]);

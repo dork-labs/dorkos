@@ -17,6 +17,8 @@
  *   start (DOR-3300).
  * - `session/chat-messages/report-undelivered-notice.ts`: a spin-off report
  *   never reached its parent chat (DOR-3561).
+ * - `todos/notice/todo-change-notifications.ts`: an agent moved or dropped a promise it
+ *   made to a person (DOR-3034).
  *
  * @module services/notifications/declared-entries
  */
@@ -41,6 +43,10 @@ import {
   type ReportUndeliveredPayloads,
 } from '../session/chat-messages/report-undelivered-notice.js';
 
+import {
+  TODO_CHANGE_ENTRIES,
+  type TodoChangePayloads,
+} from '../todos/notice/todo-change-notifications.js';
 import {
   BROWSER_HANDOFF_ENTRIES,
   type BrowserHandoffPayloads,
@@ -68,7 +74,8 @@ export interface DeclaredPayloads
     ReportUndeliveredPayloads,
     AccessChangePayloads,
     McpToolAddedPayloads,
-    McpReservedNamePayloads {}
+    McpReservedNamePayloads,
+    TodoChangePayloads {}
 
 /** Every declared entry, spread into the registry's `ENTRIES`. */
 export const DECLARED_ENTRIES = {
@@ -83,6 +90,7 @@ export const DECLARED_ENTRIES = {
   ...ACCESS_CHANGE_ENTRIES,
   ...MCP_TOOL_ADDED_ENTRIES,
   ...MCP_RESERVED_NAME_ENTRIES,
+  ...TODO_CHANGE_ENTRIES,
 };
 
 /**
@@ -102,4 +110,5 @@ export const DECLARED_WIRED_KINDS = [
   'connector.access_narrowed',
   'mcp-server.tool_added',
   'mcp-server.reserved_name',
+  'todo.changed',
 ] as const;

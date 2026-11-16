@@ -65,6 +65,8 @@ const KEPT_PROMISE: TodoPromise = {
   createdAt: inDays(-5),
   closedAt: inDays(-1),
   note: null,
+  confirmState: null,
+  delivered: null,
 };
 
 const ROWS: { label: string; todo: Todo; agent?: AgentPathEntry; from: string; room?: string }[] = [

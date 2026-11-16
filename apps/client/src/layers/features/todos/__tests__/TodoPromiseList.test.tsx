@@ -33,6 +33,8 @@ function todoPromise(overrides: Partial<TodoPromise>): TodoPromise {
     originalDueAt: null,
     scoreDueAt: null,
     moveCount: 0,
+    confirmState: null,
+    delivered: null,
     state: 'open',
     overdue: false,
     sourceSessionId: null,
@@ -126,6 +128,98 @@ describe('TodoPromiseList', () => {
     expect(within(closed).getByText('Already done')).toBeInTheDocument();
     expect(within(closed).getByText('Missed')).toBeInTheDocument();
     // A closed promise offers nothing to do.
+    expect(within(closed).queryByRole('button')).not.toBeInTheDocument();
+  });
+
+  it('asks the person about a freshly kept promise: Yes or Not yet, with what was delivered (DOR-3034)', async () => {
+    const user = userEvent.setup();
+    const transport = createMockTransport();
+    vi.mocked(transport.listTodoPromises).mockResolvedValue({
+      todoPromises: [
+        todoPromise({
+          id: 'k',
+          what: 'Ship the fix',
+          state: 'kept',
+          confirmState: 'asked',
+          closedAt: new Date().toISOString(),
+          delivered: 'https://github.com/acme/app/pull/12',
+        }),
+      ],
+    });
+    vi.mocked(transport.confirmTodoPromise).mockResolvedValue(
+      todoPromise({ id: 'k', state: 'kept', confirmState: 'confirmed' })
+    );
+    render(
+      <QueryClientProvider client={new QueryClient()}>
+        <TransportProvider transport={transport}>
+          <TodoPromiseList />
+        </TransportProvider>
+      </QueryClientProvider>
+    );
+    const waiting = await screen.findByRole('list', { name: 'Kept, waiting for your answer' });
+    expect(within(waiting).getByRole('link', { name: 'Delivered · github.com' })).toHaveAttribute(
+      'href',
+      'https://github.com/acme/app/pull/12'
+    );
+    await user.click(within(waiting).getByRole('button', { name: 'Yes, kept: Ship the fix' }));
+    await waitFor(() => expect(transport.confirmTodoPromise).toHaveBeenCalledWith('k', 'yes'));
+    expect(
+      within(waiting).getByRole('button', { name: 'Not yet: Ship the fix' })
+    ).toBeInTheDocument();
+  });
+
+  it('shows a read-only viewer a waiting promise as plainly kept, with no question', async () => {
+    const user = userEvent.setup();
+    renderList(
+      [
+        todoPromise({
+          id: 'k',
+          what: 'Ship the fix',
+          state: 'kept',
+          confirmState: 'asked',
+          closedAt: new Date().toISOString(),
+        }),
+      ],
+      { readOnly: true }
+    );
+    await user.click(await screen.findByRole('button', { name: 'Closed (1)' }));
+    expect(screen.queryByRole('list', { name: 'Kept, waiting for your answer' })).toBeNull();
+    const closed = screen.getByRole('list', { name: 'Closed to-dos' });
+    expect(within(closed).getByText('Kept')).toBeInTheDocument();
+    expect(within(closed).queryByRole('button')).not.toBeInTheDocument();
+  });
+
+  it('reads a dropped promise as dropped, whatever was asked of it before', async () => {
+    const user = userEvent.setup();
+    renderList([
+      todoPromise({
+        id: 'd',
+        what: 'Ship the fix',
+        state: 'dropped',
+        confirmState: 'asked',
+        closedAt: new Date(Date.now() - 2 * 86_400_000).toISOString(),
+      }),
+    ]);
+    await user.click(await screen.findByRole('button', { name: 'Closed (1)' }));
+    expect(
+      within(screen.getByRole('list', { name: 'Closed to-dos' })).getByText('Dropped')
+    ).toBeInTheDocument();
+  });
+
+  it('reads a kept promise nobody answered for a day as kept, unconfirmed, with no chore', async () => {
+    const user = userEvent.setup();
+    renderList([
+      todoPromise({
+        id: 'k',
+        what: 'Ship the fix',
+        state: 'kept',
+        confirmState: 'asked',
+        closedAt: new Date(Date.now() - 2 * 86_400_000).toISOString(),
+      }),
+    ]);
+    await user.click(await screen.findByRole('button', { name: 'Closed (1)' }));
+    const closed = screen.getByRole('list', { name: 'Closed to-dos' });
+    expect(within(closed).getByText('Kept · unconfirmed')).toBeInTheDocument();
     expect(within(closed).queryByRole('button')).not.toBeInTheDocument();
   });
 

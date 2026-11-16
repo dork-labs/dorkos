@@ -182,6 +182,7 @@ const ALLOWED_ON_WIFI: Readonly<Record<string, readonly string[]>> = {
     'DELETE /api/tasks/:id',
     'POST /api/tasks/runs/:id/cancel',
     'PATCH /api/todo-promises/:id',
+    'POST /api/todo-promises/:id/confirm',
     'POST /api/agents/:id/pause',
     'POST /api/agents/:id/resume',
     'PATCH /api/agents/current',

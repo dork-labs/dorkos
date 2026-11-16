@@ -441,6 +441,7 @@ describe('supporting measures', () => {
           what: id,
           dueAt: dueMsAgo === null ? null : ago(dueMsAgo),
           scoreDueAt: scoreDueMsAgo === null ? null : ago(scoreDueMsAgo),
+          moveCount: id.startsWith('moved') ? 1 : 0,
           state: state as 'open',
           createdAt: ago(5 * DAY),
           closedAt: closedMsAgo === null ? null : ago(closedMsAgo),
@@ -473,6 +474,8 @@ describe('supporting measures', () => {
     expect(supporting.quietBeats).toMatchObject({ part: 3, whole: 5 });
     // The dropped one counts as not kept on time (DOR-3034): dropping is no free exit.
     expect(supporting.todosOnTime).toMatchObject({ part: 1, whole: 8 });
+    // The two rows whose dates moved, and the one marked missed (DOR-3034).
+    expect(supporting).toMatchObject({ todosMoved: 2, todosMissed: 1 });
     expect(supporting.noEndBeat).toBe(1);
     expect(supporting.triage).toEqual({ checks: 2, tokens: 640 });
     expect(supporting.turns).toEqual({ count: 3, tokensPerTurn: 2000 });

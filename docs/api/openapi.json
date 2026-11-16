@@ -1771,6 +1771,24 @@
               "string",
               "null"
             ]
+          },
+          "confirmState": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "asked",
+              "confirmed",
+              "not-yet",
+              null
+            ]
+          },
+          "delivered": {
+            "type": [
+              "string",
+              "null"
+            ]
           }
         },
         "required": [
@@ -1788,7 +1806,9 @@
           "sourceRoomEntryId",
           "createdAt",
           "closedAt",
-          "note"
+          "note",
+          "confirmState",
+          "delivered"
         ]
       },
       "TodoState": {
@@ -1860,6 +1880,21 @@
         },
         "required": [
           "state"
+        ]
+      },
+      "ConfirmTodoPromiseRequest": {
+        "type": "object",
+        "properties": {
+          "answer": {
+            "type": "string",
+            "enum": [
+              "yes",
+              "not-yet"
+            ]
+          }
+        },
+        "required": [
+          "answer"
         ]
       },
       "WorkQueue": {
@@ -2474,6 +2509,12 @@
               "todosOnTime": {
                 "$ref": "#/components/schemas/MeasureRate"
               },
+              "todosMoved": {
+                "type": "integer"
+              },
+              "todosMissed": {
+                "type": "integer"
+              },
               "noEndBeat": {
                 "type": "integer"
               },
@@ -2521,6 +2562,8 @@
               "beats",
               "quietBeats",
               "todosOnTime",
+              "todosMoved",
+              "todosMissed",
               "noEndBeat",
               "triage",
               "turns",
@@ -19853,7 +19896,8 @@
           "agent.secret_files",
           "account.signin_review",
           "shell.check_down",
-          "report.undelivered"
+          "report.undelivered",
+          "todo.changed"
         ]
       },
       "NotificationTier": {
@@ -24027,6 +24071,76 @@
           },
           "409": {
             "description": "It is no longer in the `from` state the caller named (`CONFLICT`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TodoPromiseError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/todo-promises/{id}/confirm": {
+      "post": {
+        "tags": [
+          "To-dos"
+        ],
+        "summary": "Answer whether a kept promise was kept",
+        "description": "When an agent marks a promise to a person kept, that person is asked to confirm it (DOR-3034). `yes` confirms it; `not-yet` reopens it. A person only: a caller presenting an agent identity is refused.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConfirmTodoPromiseRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The promise, confirmed or reopened",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TodoPromise"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid body, or no answer is waiting (`NOTHING_TO_CHANGE`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TodoPromiseError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is an agent (`NOT_A_PERSON`), or not the owner (`NOT_YOURS`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TodoPromiseError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No promise has that id (`NOT_FOUND`)",
             "content": {
               "application/json": {
                 "schema": {

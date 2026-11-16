@@ -16,6 +16,8 @@ const given: TodoPromise = {
   originalDueAt: '2026-11-03T10:00:00.000Z',
   scoreDueAt: '2026-11-03T10:00:00.000Z',
   moveCount: 0,
+  confirmState: null,
+  delivered: null,
   state: 'open',
   overdue: true,
   sourceSessionId: null,

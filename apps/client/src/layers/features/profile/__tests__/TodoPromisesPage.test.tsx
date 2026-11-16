@@ -44,6 +44,8 @@ function renderPage(member: TeamMember) {
         originalDueAt: null,
         scoreDueAt: null,
         moveCount: 0,
+        confirmState: null,
+        delivered: null,
         state: 'open',
         overdue: false,
         sourceSessionId: null,

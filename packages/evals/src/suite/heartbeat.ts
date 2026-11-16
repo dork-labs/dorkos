@@ -177,6 +177,8 @@ const OVERDUE_REMINDER: TodoPromise = {
   originalDueAt: '2026-10-10T17:00:00.000Z',
   scoreDueAt: '2026-10-10T17:00:00.000Z',
   moveCount: 0,
+  confirmState: null,
+  delivered: null,
   overdue: true,
   state: 'open',
   sourceSessionId: null,

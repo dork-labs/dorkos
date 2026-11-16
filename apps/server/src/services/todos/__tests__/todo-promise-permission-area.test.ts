@@ -51,6 +51,7 @@ describe('the to-do promise tools — the To-dos permission area (DOR-3936)', ()
     create: Mock<TodoPromiseService['create']>;
     update: Mock<TodoPromiseService['update']>;
     list: Mock<TodoPromiseService['list']>;
+    get: Mock<TodoPromiseService['get']>;
   };
   let preset: PermissionPreset | null;
   let defaults: {
@@ -67,6 +68,7 @@ describe('the to-do promise tools — the To-dos permission area (DOR-3936)', ()
       create: vi.fn(() => ({ id: 'todo-1' }) as never),
       update: vi.fn(() => ({ id: 'todo-1' }) as never),
       list: vi.fn(() => []),
+      get: vi.fn(() => undefined),
     };
     vi.spyOn(eventFanOut, 'broadcast').mockImplementation(() => {});
     initCapabilityTierGate({ approvals: new ApprovalService(createTestDb()) });

@@ -3,7 +3,11 @@
  *
  * @module features/todos/lib/todo-promise-labels
  */
-import { TODO_EXTERNAL_PREFIX, type TodoPromise } from '@dorkos/shared/todo-promise-schemas';
+import {
+  TODO_CONFIRM_WINDOW_MS,
+  TODO_EXTERNAL_PREFIX,
+  type TodoPromise,
+} from '@dorkos/shared/todo-promise-schemas';
 import type { TeamMember } from '@dorkos/shared/team-schemas';
 
 /**
@@ -50,18 +54,67 @@ export function toLabel(
 }
 
 /**
- * Split a list into the open promises and the closed ones, keeping the
- * server's order (open soonest due first, closed newest first).
+ * Whether a kept promise is still waiting for its person's Yes or Not yet (DOR-3034): asked, and
+ * kept within the last day. Past that it reads "Kept · unconfirmed" and asks nothing more.
+ *
+ * @param todoPromise - The promise.
+ * @param now - The moment to judge it at.
+ */
+export function awaitsConfirm(
+  todoPromise: Pick<TodoPromise, 'state' | 'confirmState' | 'closedAt'>,
+  now: Date = new Date()
+): boolean {
+  if (todoPromise.state !== 'kept' || todoPromise.confirmState !== 'asked') return false;
+  const closed = todoPromise.closedAt ? Date.parse(todoPromise.closedAt) : NaN;
+  return !Number.isNaN(closed) && now.getTime() - closed < TODO_CONFIRM_WINDOW_MS;
+}
+
+/**
+ * The word a closed promise reads as: its state, and "unconfirmed" on a kept one nobody answered.
+ *
+ * @param todoPromise - The closed promise.
+ * @param now - The moment to judge it at.
+ */
+export function closedLabel(
+  todoPromise: Pick<TodoPromise, 'state' | 'confirmState' | 'closedAt'>,
+  now: Date = new Date()
+): string {
+  if (todoPromise.state === 'open') return '';
+  const word = CLOSED_STATE_LABEL[todoPromise.state];
+  if (
+    todoPromise.state === 'kept' &&
+    todoPromise.confirmState === 'asked' &&
+    !awaitsConfirm(todoPromise, now)
+  ) {
+    return `${word} · unconfirmed`;
+  }
+  return word;
+}
+
+/**
+ * Split a list into the open promises, the kept ones waiting for the person's answer, and the
+ * closed ones, keeping the server's order (open soonest due first, closed newest first). A viewer
+ * who may not answer sees a waiting one among the closed, as plain "Kept".
  *
  * @param to-dos - The list as the server sent it.
+ * @param now - The moment to judge a waiting answer at.
+ * @param mayAnswer - Whether this viewer may answer one; everyone by default.
  */
-export function splitTodos(todoPromises: readonly TodoPromise[]): {
+export function splitTodos(
+  todoPromises: readonly TodoPromise[],
+  now: Date = new Date(),
+  mayAnswer: (todoPromise: TodoPromise) => boolean = () => true
+): {
   open: TodoPromise[];
+  confirm: TodoPromise[];
   closed: TodoPromise[];
 } {
   return {
     open: todoPromises.filter((c) => c.state === 'open'),
-    closed: todoPromises.filter((c) => c.state !== 'open'),
+    confirm: todoPromises.filter((c) => awaitsConfirm(c, now) && mayAnswer(c)),
+    closed: todoPromises.filter(
+      (c) => c.state !== 'open' && !(awaitsConfirm(c, now) && mayAnswer(c))
+    ),
   };
 }
 

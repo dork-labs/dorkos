@@ -298,7 +298,8 @@ export function computeMeasures(
   ).length;
   // A dropped promise counts too, as one not kept on time: dropping is no longer a free exit from
   // the score (DOR-3034). A missed one reopened and then kept closes after its date, so it stays late.
-  const counted = records.todoPromises.filter((c) => ms(c.scoreDueAt) <= ctx.now).length;
+  const promisesDue = records.todoPromises.filter((c) => ms(c.scoreDueAt) <= ctx.now);
+  const counted = promisesDue.length;
   return {
     windowDays: ctx.windowDays,
     since: ctx.since,
@@ -338,6 +339,9 @@ export function computeMeasures(
         MEASURE_TARGETS.todoPromises,
         MEASURE_SOURCES.todoPromises
       ),
+      // The rest of the honesty picture on a profile (DOR-3034): how many moved, how many missed.
+      todosMoved: promisesDue.filter((c) => c.moveCount > 0).length,
+      todosMissed: promisesDue.filter((c) => c.state === 'missed').length,
       noEndBeat: records.beats.filter((beat) => beat.outcome === 'no-end-beat').length,
       triage: { checks, tokens },
       turns: {

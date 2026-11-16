@@ -422,6 +422,10 @@ export const HeartbeatMeasuresSchema = z
       quietBeats: MeasureRateSchema,
       /** Promises judged in the window (a dropped one at its drop) and kept by their score date. */
       todosOnTime: MeasureRateSchema,
+      /** Of those, how many had their date moved at least once (DOR-3034). */
+      todosMoved: z.number().int(),
+      /** Of those, how many were marked missed (DOR-3034). */
+      todosMissed: z.number().int(),
       /** Beat turns that ended without `end_beat`. */
       noEndBeat: z.number().int(),
       /** Cheap checks on a decision model, and their tokens. */

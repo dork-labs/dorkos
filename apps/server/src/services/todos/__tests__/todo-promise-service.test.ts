@@ -11,6 +11,7 @@ import { AccountIds } from '../../audit/account-ids.js';
 import { initAuditTrail, resetAuditTrail } from '../../audit/audit-trail.js';
 import { runWithAuditActor } from '../../audit/audit-context.js';
 import { TodoPromiseStore } from '../todo-promise-store.js';
+import { TODO_GRACE_MS } from '../timing/todo-wake-plan.js';
 import {
   TodoPromiseError,
   TodoPromiseService,
@@ -203,8 +204,8 @@ describe('TodoPromiseService', () => {
 
       const undone = service.update({ kind: 'person' }, made.id, { state: 'open' });
       expect(undone).toMatchObject({ state: 'open', overdue: true });
-      // A fresh hour from the undo, not an instant missed mark, and no new wake.
-      vi.advanceTimersByTime(HOUR - 1);
+      // A fresh grace from the undo, not an instant missed mark, and no new wake.
+      vi.advanceTimersByTime(TODO_GRACE_MS - 1);
       expect(service.get(made.id)!.state).toBe('open');
       vi.advanceTimersByTime(1);
       expect(service.get(made.id)!.state).toBe('missed');
@@ -226,7 +227,7 @@ describe('TodoPromiseService', () => {
 
       service.update({ kind: 'person' }, made.id, { state: 'open' });
       expect(onDue).toHaveBeenCalledTimes(1);
-      vi.advanceTimersByTime(HOUR - 1);
+      vi.advanceTimersByTime(TODO_GRACE_MS - 1);
       expect(service.get(made.id)!.state).toBe('open');
       vi.advanceTimersByTime(1);
       expect(service.get(made.id)!.state).toBe('missed');
@@ -360,7 +361,7 @@ describe('TodoPromiseService', () => {
   });
 
   describe('the due timer', () => {
-    it('emits commitment.due at the due time, and marks it missed an hour later', () => {
+    it('wakes an hour before the due time, and marks it missed after the grace (DOR-3034)', () => {
       const due: TodoPromiseDueEvent[] = [];
       service.observe((event) => due.push(event));
       const made = service.create('agent-a', {
@@ -368,21 +369,74 @@ describe('TodoPromiseService', () => {
         dueAt: new Date(START.getTime() + 2 * HOUR).toISOString(),
       });
 
-      vi.advanceTimersByTime(2 * HOUR - 1);
+      vi.advanceTimersByTime(HOUR - 1);
       expect(due).toHaveLength(0);
       vi.advanceTimersByTime(1);
       expect(due).toHaveLength(1);
-      expect(due[0]).toMatchObject({ type: 'commitment.due', todoPromise: { id: made.id } });
+      expect(due[0]).toMatchObject({
+        type: 'commitment.due',
+        phase: 'start',
+        todoPromise: { id: made.id },
+      });
       expect(due[0]!.todoPromise.overdue).toBe(false);
       expect(service.get(made.id)!.state).toBe('open');
 
-      vi.advanceTimersByTime(HOUR - 1);
+      vi.advanceTimersByTime(HOUR + TODO_GRACE_MS - 1);
       expect(service.get(made.id)!.state).toBe('open');
       vi.advanceTimersByTime(1);
       expect(service.get(made.id)!.state).toBe('missed');
 
       const missed = auditRows().at(-1)!;
       expect(missed).toMatchObject({ action: 'commitment.missed', actorId: 'system' });
+    });
+
+    it('wakes to start before a guessed half day, then checks in partway, once each (DOR-3034)', () => {
+      const due: TodoPromiseDueEvent[] = [];
+      service.observe((event) => due.push(event));
+      service.create('agent-a', {
+        what: 'Draft the proposal',
+        dueAt: new Date(START.getTime() + 10 * HOUR).toISOString(),
+        estimate: 'half-day',
+      });
+      // Four hours of work plus an hour of buffer: woken five hours before, at +5h.
+      vi.advanceTimersByTime(5 * HOUR - 1);
+      expect(due).toHaveLength(0);
+      vi.advanceTimersByTime(1);
+      expect(due.map((e) => e.phase)).toEqual(['start']);
+      // Halfway from the start to the due time: +7h30.
+      vi.advanceTimersByTime(2.5 * HOUR);
+      expect(due.map((e) => e.phase)).toEqual(['start', 'checkin']);
+      vi.advanceTimersByTime(3 * HOUR);
+      expect(due).toHaveLength(2);
+    });
+
+    it('owes no check-in once a sleeping computer passed the due time; the miss comes next', () => {
+      const due: TodoPromiseDueEvent[] = [];
+      service.observe((event) => due.push(event));
+      const made = service.create('agent-a', {
+        what: 'Draft the proposal',
+        dueAt: new Date(START.getTime() + 10 * HOUR).toISOString(),
+        estimate: 'half-day',
+      });
+      vi.advanceTimersByTime(5 * HOUR);
+      expect(service.lastWakeOf(made.id)?.phase).toBe('start');
+      // The computer sleeps through the check-in and the due time; the timer fires late.
+      vi.setSystemTime(START.getTime() + 10 * HOUR + 60_000);
+      vi.advanceTimersByTime(3 * HOUR);
+      expect(due.map((e) => e.phase)).toEqual(['start']);
+      expect(service.get(made.id)!.state).toBe('missed');
+    });
+
+    it('wakes a promise made inside its own lead at the due time, not at once', () => {
+      const onDue = vi.fn();
+      service.observe(onDue);
+      service.create('agent-a', {
+        what: 'Reply',
+        dueAt: new Date(START.getTime() + 30 * 60_000).toISOString(),
+      });
+      expect(onDue).not.toHaveBeenCalled();
+      vi.advanceTimersByTime(30 * 60_000);
+      expect(onDue).toHaveBeenCalledTimes(1);
     });
 
     it('names DorkOS as the actor of the missed mark even when an agent armed the timer', () => {
@@ -465,7 +519,7 @@ describe('TodoPromiseService', () => {
       restarted.stop();
     });
 
-    it('at startup, treats a long-overdue promise as due now and gives it a fresh hour', () => {
+    it('at startup, treats a long-overdue promise as due now and gives it a fresh grace', () => {
       // Created with nobody listening, then the server went down before it came due.
       const made = service.create('agent-a', {
         what: 'Reply',
@@ -480,7 +534,7 @@ describe('TodoPromiseService', () => {
       restarted.start();
       expect(onDue).toHaveBeenCalledTimes(1);
       expect(restarted.get(made.id)!.state).toBe('open');
-      vi.advanceTimersByTime(HOUR - 1);
+      vi.advanceTimersByTime(TODO_GRACE_MS - 1);
       expect(restarted.get(made.id)!.state).toBe('open');
       vi.advanceTimersByTime(1);
       expect(restarted.get(made.id)!.state).toBe('missed');

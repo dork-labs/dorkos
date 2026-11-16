@@ -9,6 +9,7 @@ import { createTestDb } from '@dorkos/test-utils/db';
 import { createAgentTodoPromisesRoutes, createTodoPromisesRoutes } from '../todo-promises.js';
 import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
 import { TodoPromiseService, TodoPromiseStore } from '../../services/todos/index.js';
+import { TodoConfirm } from '../../services/todos/notice/todo-confirm.js';
 import { AGENT_IDENTITY_HEADER } from '../../middleware/agent-identity.js';
 import { personProof } from '../../services/todos/caller.js';
 import { todos, eq, type Db } from '@dorkos/db';
@@ -50,6 +51,12 @@ describe('to-do routes', () => {
       isOwner: () => owner,
       // The real proof: these requests carry no session cookie, as a local program's would not.
       personProven: personProof,
+      confirm: new TodoConfirm({
+        store: new TodoPromiseStore(db),
+        reopen: (actor, id, note) =>
+          service.update(actor, id, { state: 'open', note, from: 'kept' }),
+        wakeNow: (id) => service.wakeNow(id),
+      }),
       service,
       agentExists: (id: string) => Object.values(AGENTS).includes(id),
     };
@@ -183,6 +190,42 @@ describe('to-do routes', () => {
       .send({ state: 'open' });
     expect(reopened.status).toBe(200);
     expect(reopened.body.state).toBe('open');
+  });
+
+  it("takes a person's Yes or Not yet on a kept promise, and refuses an agent (DOR-3034)", async () => {
+    const confirm = new TodoConfirm({
+      store: new TodoPromiseStore(db),
+      reopen: (actor, id, note) => service.update(actor, id, { state: 'open', note, from: 'kept' }),
+      wakeNow: (id) => service.wakeNow(id),
+    });
+    const yes = service.create('agent-ana', { what: 'Ship it', to: 'owner' });
+    service.update({ kind: 'agent', agentId: 'agent-ana' }, yes.id, { state: 'kept' });
+    expect(confirm.ask(yes.id)).toBe(true);
+
+    const agent = await request(fixtureServer)
+      .post(`/api/todo-promises/${yes.id}/confirm`)
+      .set(AGENT_IDENTITY_HEADER, '/agents/ana')
+      .send({ answer: 'yes' });
+    expect(agent.status).toBe(403);
+
+    const confirmed = await request(fixtureServer)
+      .post(`/api/todo-promises/${yes.id}/confirm`)
+      .send({ answer: 'yes' });
+    expect(confirmed.status).toBe(200);
+    expect(confirmed.body.confirmState).toBe('confirmed');
+    const twice = await request(fixtureServer)
+      .post(`/api/todo-promises/${yes.id}/confirm`)
+      .send({ answer: 'not-yet' });
+    expect(twice.body.code).toBe('NOTHING_TO_CHANGE');
+
+    const notYet = service.create('agent-ana', { what: 'Send the deck', to: 'owner' });
+    service.update({ kind: 'agent', agentId: 'agent-ana' }, notYet.id, { state: 'kept' });
+    confirm.ask(notYet.id);
+    const reopened = await request(fixtureServer)
+      .post(`/api/todo-promises/${notYet.id}/confirm`)
+      .send({ answer: 'not-yet' });
+    expect(reopened.status).toBe(200);
+    expect(reopened.body).toMatchObject({ state: 'open', confirmState: 'not-yet' });
   });
 
   it('refuses a person who is not the owner, on add and on change', async () => {
