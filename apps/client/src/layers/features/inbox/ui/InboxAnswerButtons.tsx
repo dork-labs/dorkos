@@ -7,6 +7,13 @@
 import type { Ref } from 'react';
 import { Button } from '@/layers/shared/ui';
 
+/**
+ * A button that never runs past its row: at most the row's width, its label
+ * wrapping onto a second line with the height growing to fit, never below the
+ * size's own 44px (phone) and 32px (desktop).
+ */
+const WRAPPING = 'h-auto min-h-11 max-w-full py-1.5 whitespace-normal md:h-auto md:min-h-8';
+
 /** Props for {@link InboxAnswerButtons}. */
 export interface InboxAnswerButtonsProps {
   /** The yes, as an outcome: "Allow". */
@@ -25,6 +32,8 @@ export interface InboxAnswerButtonsProps {
 
 /**
  * Two worded answers, left-aligned: 32px tall on a desktop, 44px on a phone.
+ * On a phone they stack, full width, the yes first; a label too long for its
+ * button wraps inside it rather than running past the card's edge.
  *
  * @param props - {@link InboxAnswerButtonsProps}.
  */
@@ -38,8 +47,15 @@ export function InboxAnswerButtons({
   rejectExpanded,
 }: InboxAnswerButtonsProps) {
   return (
-    <div className="mt-2 flex flex-wrap items-center gap-2" data-slot="inbox-answer-buttons">
-      <Button type="button" size="sm" onClick={onApprove} disabled={disabled}>
+    // On a phone the Inbox is a bottom sheet, and a long card would push its
+    // answer below the fold: the buttons stay pinned to the sheet's bottom
+    // while the card is on screen (designer, DOR-3293). The cover is the
+    // sheet's own composite fill (its dark-mode lift), else the plain fill.
+    <div
+      className="mt-2 flex flex-wrap items-center gap-2 max-md:sticky max-md:bottom-0 max-md:bg-[var(--dui-scroll-cover,var(--color-popover))] max-md:py-2 max-sm:flex-col max-sm:items-stretch"
+      data-slot="inbox-answer-buttons"
+    >
+      <Button type="button" size="sm" onClick={onApprove} disabled={disabled} className={WRAPPING}>
         {approveLabel}
       </Button>
       <Button
@@ -49,6 +65,7 @@ export function InboxAnswerButtons({
         variant="secondary"
         onClick={onReject}
         disabled={disabled}
+        className={WRAPPING}
         {...(rejectExpanded !== undefined ? { 'aria-expanded': rejectExpanded } : {})}
       >
         {rejectLabel}

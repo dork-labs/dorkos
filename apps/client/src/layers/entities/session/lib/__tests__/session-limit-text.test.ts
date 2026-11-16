@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { createMockSessionLimit } from '@dorkos/test-utils';
+import { createMockSessionLimit } from '@dorkos/test-utils/mock-factories';
 import type { SessionLimitView } from '@/layers/shared/lib';
 import { sessionLimitDisplay } from '../session-limit-text';
 

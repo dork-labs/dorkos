@@ -20,7 +20,7 @@ import { render, screen, fireEvent, act, cleanup } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import '@testing-library/jest-dom/vitest';
 import type { UiCanvasContent } from '@dorkos/shared/types';
-import { createMockTransport } from '@dorkos/test-utils';
+import { createMockTransport } from '@dorkos/test-utils/mock-factories';
 
 // Same for CodeMirror, which is what a non-markdown `file` document opens in.
 vi.mock('../ui/CodeMirrorEditor', () => ({

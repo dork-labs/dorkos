@@ -38,12 +38,14 @@ import { marksOf } from '../services/core/turn-power/turn-levels.js';
 import { marksHold } from '../services/core/turn-power/turn-marks.js';
 import { AdapterError, type AdapterManager } from '../services/relay/adapter-manager.js';
 import {
-  adapterAddressChanged,
   hasTypedAdapterSecret,
   isPersonReference,
-  markedTurnSecretToNewAddressRefusal,
   type SecretWriter,
 } from '../services/relay/adapter-secret-policy.js';
+import {
+  markedTurnSecretRefusal,
+  movesStoredSecrets,
+} from '../services/relay/secrets/marked-turn-secret-gate.js';
 import { errorRefusalUnlessOwner } from './cloud-owner-bar.js';
 import {
   adapterResult,
@@ -134,8 +136,11 @@ async function runOrHold(
 }
 
 /**
- * Apply DOR-3858's marked-turn secret gate using the adapter policy's shared
- * address comparison and normalized secret-field reader.
+ * Apply DOR-3858's marked-turn secret gate using the adapter policy's
+ * normalized secret-field reader (`marked-turn-secret-gate.ts`). Every typed
+ * secret is refused, whatever the address (DOR-4453 F2). A save that changes any
+ * config key of a connection holding saved secrets is refused too, so it reads
+ * the saved config; add and test pass none.
  *
  * An HTTP agent call names no chat, so its current marks are read through its
  * verified agent folder, matching the other route-level gates. A caller that
@@ -148,9 +153,9 @@ function markedAdapterSecretRefusal(
   c: Context<ApiEnv>,
   adapterManager: AdapterManager,
   type: string,
-  existing: Record<string, unknown> | undefined,
-  incoming: Record<string, unknown>
-): ReturnType<typeof markedTurnSecretToNewAddressRefusal> | AdapterError {
+  incoming: Record<string, unknown>,
+  existing?: Record<string, unknown>
+): ReturnType<typeof markedTurnSecretRefusal> | AdapterError {
   try {
     if (!env.DORKOS_MARK_STRANGER_TURNS) return null;
     const writer = secretWriter(c);
@@ -164,13 +169,13 @@ function markedAdapterSecretRefusal(
     const turnMarked = identity !== undefined && marksHold(marksOf(undefined, identity.agentPath));
     if (!unidentified && !turnMarked) return null;
     const manifest = adapterManager.getManifest(type);
-    return markedTurnSecretToNewAddressRefusal({
+    return markedTurnSecretRefusal({
       enabled: env.DORKOS_MARK_STRANGER_TURNS,
       writer,
       turnMarked,
       unidentified,
       typedSecret: hasTypedAdapterSecret(incoming, manifest),
-      addressChanged: adapterAddressChanged(existing, incoming, manifest),
+      movesSecrets: movesStoredSecrets(existing, incoming, manifest),
     });
   } catch (err) {
     if (err instanceof AdapterError) return err;
@@ -201,7 +206,7 @@ export function registerSettingRoutes(router: Hono<ApiEnv>, deps: SettingRouteDe
     if (!parsed.success) return c.json(validationFailureBody(parsed.error), 400);
     const { type, config } = parsed.data;
     // A test connects with what it is given, so it is held to the add's rule (DOR-3858).
-    const markedRefusal = markedAdapterSecretRefusal(c, adapterManager, type, undefined, config);
+    const markedRefusal = markedAdapterSecretRefusal(c, adapterManager, type, config);
     if (markedRefusal instanceof AdapterError) return sendAdapterError(c, markedRefusal);
     if (markedRefusal) return c.json(markedRefusal, 403);
     const settings = personSettingsIn(config);
@@ -226,7 +231,7 @@ export function registerSettingRoutes(router: Hono<ApiEnv>, deps: SettingRouteDe
     const parsed = AdapterCreateRequestSchema.safeParse(readJsonBody(c));
     if (!parsed.success) return c.json(validationFailureBody(parsed.error), 400);
     const { type, id, config, enabled, label: topLabel } = parsed.data;
-    const markedRefusal = markedAdapterSecretRefusal(c, adapterManager, type, undefined, config);
+    const markedRefusal = markedAdapterSecretRefusal(c, adapterManager, type, config);
     if (markedRefusal instanceof AdapterError) return sendAdapterError(c, markedRefusal);
     if (markedRefusal) return c.json(markedRefusal, 403);
     // The client may embed label inside config (Transport interface doesn't have a separate
@@ -275,8 +280,8 @@ export function registerSettingRoutes(router: Hono<ApiEnv>, deps: SettingRouteDe
       c,
       adapterManager,
       existing?.type ?? '',
-      existing?.config as Record<string, unknown> | undefined,
-      config
+      config,
+      existing?.config as Record<string, unknown> | undefined
     );
     if (markedRefusal instanceof AdapterError) return sendAdapterError(c, markedRefusal);
     if (markedRefusal) return c.json(markedRefusal, 403);

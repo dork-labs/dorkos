@@ -2,7 +2,7 @@
  * `chat_send`, `chat_stop` and the lifecycle that follows a sent message
  * (spec `spin-off-chats` §1-§3), below the capability boundary.
  *
- * The chat-message store and the dispatcher's queue are real SQLite: batching,
+ * The chat-message store and the dispatcher's queue are real SQLite: queueing,
  * interrupt and stop are rules about the rows in that queue, and a fake would
  * be asserting them against itself. The launch path (`dispatchSessionMessage`)
  * is a stand-in that writes the queue row a busy chat would get, so what the
@@ -14,17 +14,6 @@ import { chatMessageFenceNonces } from '@dorkos/shared/chat-messages';
 import type { TurnPermissionLevel } from '@dorkos/shared/agent-runtime';
 
 vi.mock('../../../audit/audit-trail.js', () => ({ recordAudit: vi.fn() }));
-// Two seams on the real dispatcher module: whether a queue row is being read
-// into a turn this tick, which only a real launch can make true, and whether a
-// row has a live entry to run it, which the fake dispatch below never creates.
-vi.mock('../../message-dispatcher.js', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../../message-dispatcher.js')>();
-  return {
-    ...actual,
-    isQueuedMessageLaunching: vi.fn(() => false),
-    isQueuedMessageArmed: vi.fn(() => true),
-  };
-});
 // Which chats' turns hold a Wi-Fi mark, as `marksOf` reads them. In production the levels a chat
 // hands on (`passedOnLevelOf`) never carry the hold, so this is the only place it shows.
 const heldChats = vi.hoisted(() => new Set<string>());
@@ -42,11 +31,7 @@ vi.mock('../../../core/turn-power/turn-levels.js', async (importOriginal) => {
 import { recordAudit } from '../../../audit/audit-trail.js';
 import { ceilingOnlyRecords, marksOfCeiling } from '../../../core/turn-power/turn-marks.js';
 import { rowsCarryHold } from '../chat-message-ceiling.js';
-import {
-  isQueuedMessageArmed,
-  isQueuedMessageLaunching,
-  type DispatchLifecycleEvent,
-} from '../../message-dispatcher.js';
+import type { DispatchLifecycleEvent } from '../../message-dispatcher.js';
 import { MessageQueueStore, setMessageQueueStore } from '../../message-queue-store.js';
 import type {
   DispatchSessionMessageOpts,
@@ -58,7 +43,6 @@ import { TURN_NO_ANSWER } from '../../launch/turn-not-started.js';
 import { ChatMessageStore } from '../chat-message-store.js';
 import { chatLaunchCapMessage } from '../chat-queue-standing.js';
 import {
-  CHAT_MESSAGE_MAX,
   ChatMessageError,
   ChatMessageService,
   type ChatMessageServiceDeps,
@@ -219,15 +203,13 @@ beforeEach(() => {
   lifecycle = undefined;
   nonceCounter = 0xa0;
   openedCounter = 0;
-  vi.mocked(isQueuedMessageLaunching).mockReturnValue(false);
-  vi.mocked(isQueuedMessageArmed).mockReturnValue(true);
   vi.mocked(recordAudit).mockClear();
   chat(ANA.sessionId, { agentPath: ANA.agentPath });
   service = build();
 });
 
 afterEach(() => {
-  service.stop();
+  service?.stop();
   setMessageQueueStore(undefined);
 });
 
@@ -326,8 +308,8 @@ describe('send — to a busy chat', () => {
     );
     const receipt = await service.send(ANA, { to: 'chat-b', message: 'hi' });
 
-    // It joins the other chat's row, so the person's message is the one ahead.
-    expect(receipt).toMatchObject({ position: 2, ahead: 1 });
+    // Each agent message waits on its own row (DOR-3060): both are ahead.
+    expect(receipt).toMatchObject({ position: 3, ahead: 2 });
   });
 });
 
@@ -568,129 +550,26 @@ describe('send — to an agent id', () => {
   });
 });
 
-describe('send — batching', () => {
-  it('appends to an agent-sent row waiting at the tail, so both run as one turn', async () => {
+describe('send — one queue row per message', () => {
+  it('keeps two senders in separate rows with separate chat-message records', async () => {
     chat('chat-b');
     busy.add('chat-b');
-    levels.set(ANA.sessionId, TIGHT);
-    const first = await service.send(ANA, { to: 'chat-b', message: 'first words' });
-    const tail = queue.list('chat-b').at(-1)!;
-    expect(dispatched).toHaveLength(1);
+    const first = await service.send(ANA, { to: 'chat-b', message: 'from Ana' });
+    const second = await service.send(
+      { sessionId: 'chat-c', agentPath: '/agents/bo' },
+      { to: 'chat-b', message: 'from Bo' }
+    );
 
-    const second = await service.send(ANA, { to: 'chat-b', message: 'second words' });
-
-    expect(dispatched).toHaveLength(1);
-    expect(second).toMatchObject({ status: 'queued', position: 1, chatId: 'chat-b' });
+    expect(dispatched).toHaveLength(2);
     const rows = queue.list('chat-b');
-    expect(rows).toHaveLength(1);
-    expect(rows[0]!.content).toContain('first words');
-    expect(rows[0]!.content).toContain('second words');
-    // Two fences, each its own nonce, each its own record, one queue row.
-    const sent = store.listByQueueMessage(tail.id);
-    expect(sent.map((r) => r.id)).toEqual([first.messageId, second.messageId]);
-    expect(chatMessageFenceNonces(rows[0]!.content)).toEqual(sent.map((r) => r.nonce));
-    // Plain senders bound nothing (DOR-3440).
-    expect(service.ceilingForQueuedMessage(tail.id)).toBeUndefined();
-  });
-
-  it('batches another chat’s message behind a third chat’s row too', async () => {
-    chat('chat-b');
-    busy.add('chat-b');
-    queue.enqueue({ id: 'q-c', sessionId: 'chat-b', content: 'from C', clientId: 'chat:chat-c' });
-
-    await service.send(ANA, { to: 'chat-b', message: 'from A' });
-
-    expect(dispatched).toEqual([]);
-    expect(queue.get('q-c')!.content).toMatch(/^from C\n\n/);
-    expect(sentByAna()[0]!.queueMessageId).toBe('q-c');
-  });
-
-  it('does not batch behind a person’s row', async () => {
-    chat('chat-b');
-    busy.add('chat-b');
-    queue.enqueue({ id: 'q-p', sessionId: 'chat-b', content: 'person', clientId: PERSON });
-
-    await service.send(ANA, { to: 'chat-b', message: 'from A' });
-
-    expect(dispatched).toHaveLength(1);
-    expect(queue.get('q-p')!.content).toBe('person');
-    expect(queue.list('chat-b')).toHaveLength(2);
-  });
-
-  // DOR-3054: five messages sent minutes apart to a chat in an hour-long turn
-  // each got a row, so each ran as its own turn and the last arrived hours late.
-  it('batches behind an agent row however long it has waited', async () => {
-    chat('chat-b');
-    busy.add('chat-b');
-    queue.enqueue({ id: 'q-c', sessionId: 'chat-b', content: 'from C', clientId: 'chat:chat-c' });
-    service.stop();
-    service = build({ now: () => Date.now() + 60 * 60_000 });
-
-    await service.send(ANA, { to: 'chat-b', message: 'from A' });
-
-    expect(dispatched).toEqual([]);
-    expect(queue.get('q-c')!.content).toMatch(/^from C\n\n/);
-  });
-
-  // DOR-3054: hours of messages into a chat stuck in a long turn must not
-  // become one prompt that fails all at once.
-  it('starts a new row once a batch would pass its size limit', async () => {
-    chat('chat-b');
-    busy.add('chat-b');
-    queue.enqueue({
-      id: 'q-c',
-      sessionId: 'chat-b',
-      content: 'x'.repeat(5 * CHAT_MESSAGE_MAX - 10),
-      clientId: 'chat:chat-c',
-    });
-
-    await service.send(ANA, { to: 'chat-b', message: 'from A, long enough to pass the limit' });
-
-    expect(dispatched).toHaveLength(1);
-    expect(queue.list('chat-b')).toHaveLength(2);
-    expect(queue.get('q-c')!.content).not.toContain('from A');
-  });
-
-  // DOR-3054, the done-when: N messages sent minutes apart to a busy chat all
-  // run at its next turn boundary, as one turn, in the order they were sent.
-  it('delivers N messages sent minutes apart together, in send order', async () => {
-    chat('chat-b');
-    busy.add('chat-b');
-    let clock = Date.now();
-    service.stop();
-    service = build({ now: () => clock });
-    const words = ['one', 'two', 'three', 'four', 'five'];
-    for (const word of words) {
-      await service.send(ANA, { to: 'chat-b', message: `message ${word}` });
-      clock += 3 * 60_000;
-    }
-
-    const rows = queue.list('chat-b');
-    expect(rows).toHaveLength(1);
-    expect(dispatched).toHaveLength(1);
-    const at = words.map((word) => rows[0]!.content.indexOf(`message ${word}`));
-    expect(at.every((index) => index >= 0)).toBe(true);
-    expect([...at].sort((a, b) => a - b)).toEqual(at);
-    expect(sentByAna().every((row) => row.queueMessageId === rows[0]!.id)).toBe(true);
-  });
-
-  it('does not batch into a row being read into a turn right now', async () => {
-    chat('chat-b');
-    busy.add('chat-b');
-    queue.enqueue({ id: 'q-c', sessionId: 'chat-b', content: 'from C', clientId: 'chat:chat-c' });
-    vi.mocked(isQueuedMessageLaunching).mockImplementation((id) => id === 'q-c');
-
-    await service.send(ANA, { to: 'chat-b', message: 'from A' });
-
-    expect(dispatched).toHaveLength(1);
-    expect(queue.get('q-c')!.content).toBe('from C');
-  });
-
-  it('does not batch an idle chat’s message (it starts a turn at once)', async () => {
-    chat('chat-b');
-    queue.enqueue({ id: 'q-c', sessionId: 'chat-b', content: 'from C', clientId: 'chat:chat-c' });
-    await service.send(ANA, { to: 'chat-b', message: 'from A' });
-    expect(dispatched).toHaveLength(1);
+    expect(rows).toHaveLength(2);
+    expect(rows.map((row) => chatMessageFenceNonces(row.content))).toEqual([
+      [store.get(first.messageId)!.nonce],
+      [store.get(second.messageId)!.nonce],
+    ]);
+    expect(store.get(first.messageId)!.queueMessageId).toBe(rows[0]!.id);
+    expect(store.get(second.messageId)!.queueMessageId).toBe(rows[1]!.id);
+    expect(rows[0]!.id).not.toBe(rows[1]!.id);
   });
 });
 
@@ -780,20 +659,20 @@ describe('send — steer', () => {
     expect(receipt.status).toBe('steered');
   });
 
-  // DOR-3054: a steer that has to wait waits with the other agent messages,
-  // not a turn behind them.
-  it('batches a steer that has to wait with the agent messages already waiting', async () => {
+  it('gives a steer fallback its own row while keeping the refusal note', async () => {
     levels.set(ANA.sessionId, MIDDLE);
     levels.set('chat-b', LOOSE);
     queue.enqueue({ id: 'q-c', sessionId: 'chat-b', content: 'from C', clientId: 'chat:chat-c' });
 
     const receipt = await service.send(ANA, { to: 'chat-b', message: 'hi', delivery: 'steer' });
 
-    expect(dispatched).toEqual([]);
+    expect(dispatched).toHaveLength(1);
     expect(receipt.status).toBe('queued');
     expect(receipt.note).toMatch(/may do more than your chat can/);
-    expect(receipt.note).toMatch(/waits with the other agent messages there/);
-    expect(sentByAna()[0]!.queueMessageId).toBe('q-c');
+    expect(receipt.note).not.toMatch(/waits with the other agent messages there/);
+    expect(queue.get('q-c')!.content).toBe('from C');
+    expect(sentByAna()[0]!.queueMessageId).not.toBe('q-c');
+    expect(queue.list('chat-b')).toHaveLength(2);
   });
 
   it('never steers into a turn looser than the sender: it waits, with a note', async () => {
@@ -1044,7 +923,10 @@ describe('the lifecycle of a sent message', () => {
     const a = await service.send(ANA, { to: 'chat-b', message: 'one' });
     const b = await service.send(ANA, { to: 'chat-b', message: 'two' });
     const queueId = store.get(a.messageId)!.queueMessageId!;
-    expect(store.get(b.messageId)!.queueMessageId).toBe(queueId);
+    // Each waits on its own row (DOR-3060); the dispatcher joins them into the
+    // head's turn as the queue drains, re-pointing the second at the first.
+    expect(store.get(b.messageId)!.queueMessageId).not.toBe(queueId);
+    store.update(b.messageId, { queueMessageId: queueId });
     return { queueId, ids: [a.messageId, b.messageId] };
   }
 

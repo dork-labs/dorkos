@@ -263,6 +263,17 @@ describe('reading a thread', () => {
     expect(res.body.code).toBe('room_not_allowed');
   });
 
+  it('refuses a room reply from a mini app that does not declare rooms, posting nothing', async () => {
+    state.extensions = { roomAccess: { plain: [roomId] } };
+    const before = storedReplies().length;
+    const res = await request(server)
+      .post(`/api/extensions/plain/rooms/${roomId}/threads/${rootId}/replies`)
+      .set(APP)
+      .send({ text: 'not mine to say' });
+    expect(res.status).toBe(403);
+    expect(storedReplies()).toHaveLength(before);
+  });
+
   it('refuses a root from another room, named under an allowed one', async () => {
     const otherRoot = service.post(otherRoomId, { authorId: anaId, text: 'elsewhere' }).id;
     allow(roomId);

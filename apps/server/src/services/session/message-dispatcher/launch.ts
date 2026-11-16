@@ -29,6 +29,7 @@ import {
   privateLaunches,
   releases,
   runtimeTurns,
+  steering,
   sweptWhileLaunching,
   buildTurnDeps,
 } from './state.js';
@@ -45,6 +46,7 @@ import {
 import { logger } from '../../../lib/logger.js';
 import type { PausedAgentRef } from '../../mesh/pause/agent-pause.js';
 import type { DispatchPlan, InFlightTurn } from './types.js';
+import { joinWaitingChatRows } from './join-chat-rows.js';
 
 /** How many times a recovered row may fail to start before it is given up (DOR-3287). */
 export const RECOVERED_START_TRIES = 3;
@@ -60,6 +62,7 @@ const recoveryFailures = new Map<string, number>();
 export function forgetLaunchMemory(): void {
   recoveryFailures.clear();
   forgetRecordedHolds();
+  steering.clear();
 }
 
 /**
@@ -182,6 +185,7 @@ export function launchDispatchInner(
   // id behind, and each of them hands the message back to `pending` (or to
   // nobody, if it ran) in the same synchronous beat.
   launching.add(messageId);
+  joinWaitingChatRows(sessionKey, messageId);
   const clearIfOurs = (): void => {
     launching.delete(messageId);
     if (inFlight.get(sessionKey)?.token === token) inFlight.delete(sessionKey);

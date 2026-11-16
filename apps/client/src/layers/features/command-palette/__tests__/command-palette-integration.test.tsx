@@ -6,7 +6,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render as rtlRender, screen, fireEvent, cleanup, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import '@testing-library/jest-dom/vitest';
-import { createMockTransport } from '@dorkos/test-utils';
+import { createMockTransport } from '@dorkos/test-utils/mock-factories';
 import { useInteractionStore } from '@/layers/entities/interactions';
 import { CommandPaletteDialog } from '../ui/CommandPaletteDialog';
 import type { AgentPathEntry } from '@dorkos/shared/mesh-schemas';

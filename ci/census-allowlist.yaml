@@ -130,6 +130,16 @@ entries:
     step: Agree on the lane this build ran under
     kind: step-if
     reason: Intersects the full-sweep shards' copies of the lane for the union proof, on the queue and on the main canary alike; there is no lane and no full union on a pull request.
+  - workflow: test.yml
+    job: test-shard
+    step: Keep only this run's build entries in the turbo cache
+    kind: step-if
+    reason: Runs only on the main canary (refs/heads/main) because only main's cache scope is readable by later queue builds and pull requests (DOR-4190, ledger 261115-201939). It asserts nothing; it trims turbo's cache to build entries before the save, after every gating step has already passed.
+  - workflow: test.yml
+    job: test-shard
+    step: Save the builds for the queue and pull requests
+    kind: step-if
+    reason: Saves the build-only turbo cache from the main canary when the trim succeeded (DOR-4190, ledger 261115-201939). It asserts nothing; skipping it on pull_request and merge_group only means those runs save no cache, whose scope nothing else could read.
 
   # --- browser-test.yml ---
   - workflow: browser-test.yml

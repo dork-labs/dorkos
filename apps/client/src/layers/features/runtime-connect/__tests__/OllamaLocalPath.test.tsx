@@ -13,7 +13,7 @@ import type {
   OllamaStatus,
 } from '@dorkos/shared/runtime-connect';
 import type { SystemRequirements } from '@dorkos/shared/agent-runtime';
-import { createMockTransport } from '@dorkos/test-utils';
+import { createMockTransport } from '@dorkos/test-utils/mock-factories';
 import { TransportProvider } from '@/layers/shared/model';
 import { RuntimeSetupDialog } from '@/layers/entities/runtime';
 import { renderRuntimeConnect } from '../ui/RuntimeConnectFlow';

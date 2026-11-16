@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import type { StreamEvent } from '@dorkos/shared/types';
-import type { Options } from '@anthropic-ai/claude-agent-sdk';
+import { query, type Options } from '@anthropic-ai/claude-agent-sdk';
+import { readManifest } from '@dorkos/shared/manifest';
 import type { ConnectorRuntimePrincipalPort } from '../../../connectors/runtime-principal-port.js';
 import type { ServerPrincipalProof } from '../../../connectors/principal/server-principal.js';
 import { wrapSdkQuery, sdkSimpleText, sdkToolCall } from './sdk-scenarios.js';
@@ -11,6 +12,19 @@ import {
   PLUGIN_RELOAD_RECHECK_MS,
   PLUGIN_RELOAD_SILENT_TOKENS,
 } from '../messaging/plugin-reload-policy.js';
+import { ClaudeCodeRuntime } from '../claude-code-runtime.js';
+import { registerEveryFolderAsHome } from '../../../core/agent-identity/__tests__/agent-home-fixture.js';
+
+// The secrets the spawn env must never carry are present BEFORE the static
+// imports below load `env.ts`, which parses `process.env` once at module load.
+// The graph used to be re-imported after `beforeEach` stubbed them; this keeps
+// that load-time view identical now that it loads once (DOR-4190). The per-test
+// stubs in `beforeEach` are what each spawn actually reads.
+vi.hoisted(() => {
+  vi.stubEnv('MCP_API_KEY', 'synthetic-server-token');
+  vi.stubEnv('NANGO_ENCRYPTION_KEY', 'synthetic-nango-key');
+  vi.stubEnv('DO_NOT_TRACK', '1');
+});
 
 // Hoist shared mock functions so the test and ClaudeCodeRuntime share the same
 // vi.fn() instances for context-builder.
@@ -138,30 +152,32 @@ vi.mock('../messaging/plugin-activation.js', () => ({
 }));
 
 describe('ClaudeCodeRuntime', () => {
-  let agentManager: InstanceType<typeof import('../claude-code-runtime.js').ClaudeCodeRuntime>;
+  let agentManager: ClaudeCodeRuntime;
 
-  beforeEach(async () => {
+  // The module graph is loaded ONCE for the file and each test gets a new
+  // runtime (DOR-4190). It used to `vi.resetModules()` and re-import the runtime
+  // before every test, which was most of this file's run time. Nothing a test
+  // asserts depends on module state read at import: the env stubs below are
+  // read per spawn, not at load (the afterEach proves it on every call), and
+  // what a test mutates on a module-level mock is put back here.
+  beforeEach(() => {
     vi.stubEnv('MCP_API_KEY', 'synthetic-server-token');
     vi.stubEnv('NANGO_ENCRYPTION_KEY', 'synthetic-nango-key');
     vi.stubEnv('DO_NOT_TRACK', '1');
-    vi.resetModules();
-    // Re-mock after resetModules
-    vi.mock('@anthropic-ai/claude-agent-sdk', () => ({
-      query: vi.fn(),
-    }));
-    const mod = await import('../claude-code-runtime.js');
-    agentManager = new mod.ClaudeCodeRuntime('/tmp/dorkos-test');
+    // A fresh graph minted these two mocks fresh. `query` carries each test's
+    // scripted turn and its call log, which the env-secret check below reads,
+    // so it must start empty; `readManifest` is set to throw by one test.
+    vi.mocked(query).mockReset();
+    vi.mocked(readManifest).mockReset().mockResolvedValue(null);
+    agentManager = new ClaudeCodeRuntime('/tmp/dorkos-test');
     // Every scratch folder counts as a registered home here, so this suite's
     // mocked mesh decides who is an agent, as it did before homes (DOR-2355).
-    // Wired on the module instance the runtime just loaded (`resetModules`).
-    const { registerEveryFolderAsHome } =
-      await import('../../../core/agent-identity/__tests__/agent-home-fixture.js');
     registerEveryFolderAsHome();
   });
 
   afterEach(async () => {
     try {
-      const { query } = await import('@anthropic-ai/claude-agent-sdk');
+      // Every spawn THIS test made (the log is cleared in beforeEach).
       for (const [args] of vi.mocked(query).mock.calls) {
         expect(args.options?.env).toBeDefined();
         expect(args.options?.env).not.toHaveProperty('MCP_API_KEY');
@@ -200,7 +216,7 @@ describe('ClaudeCodeRuntime', () => {
   describe('the binary a spawn is pointed at', () => {
     /** Drive one full turn and hand back the options the SDK was called with. */
     async function turnOptions(
-      runtime: InstanceType<typeof import('../claude-code-runtime.js').ClaudeCodeRuntime>,
+      runtime: ClaudeCodeRuntime,
       sessionId: string
     ): Promise<Record<string, unknown>> {
       const { query: mockedQuery } = await import('@anthropic-ai/claude-agent-sdk');
@@ -215,8 +231,7 @@ describe('ClaudeCodeRuntime', () => {
       // Boot on a host with no `claude` anywhere.
       _binary.atBoot = undefined;
       _binary.beforePath = null;
-      const mod = await import('../claude-code-runtime.js');
-      const runtime = new mod.ClaudeCodeRuntime('/tmp/dorkos-test');
+      const runtime = new ClaudeCodeRuntime('/tmp/dorkos-test');
 
       const before = await turnOptions(runtime, 'no-binary');
       expect(before.pathToClaudeCodeExecutable).toBeUndefined();
@@ -234,8 +249,7 @@ describe('ClaudeCodeRuntime', () => {
       // A ladder that would answer differently must not be consulted at all once
       // a binary is in hand — a resolved binary does not move under a live server.
       _binary.beforePath = '/somewhere/else/claude';
-      const mod = await import('../claude-code-runtime.js');
-      const runtime = new mod.ClaudeCodeRuntime('/tmp/dorkos-test');
+      const runtime = new ClaudeCodeRuntime('/tmp/dorkos-test');
 
       const options = await turnOptions(runtime, 'bundled');
 
@@ -1371,8 +1385,8 @@ describe('ClaudeCodeRuntime', () => {
     });
 
     it('RT-CMP-02: the agent’s own request runs /compact with its note, and the record keeps who asked', async () => {
-      // Loaded after `resetModules`, so the dispatcher, projector and store are
-      // the same module instances this runtime uses.
+      // The same module instances this runtime uses: the graph is loaded once
+      // for the file, so these are the dispatcher, projector and store it holds.
       const { AgentCompactionService } =
         await import('../../../session/agent-compaction/agent-compaction-service.js');
       const session = await import('../../../session/index.js');
@@ -1501,8 +1515,9 @@ describe('ClaudeCodeRuntime', () => {
     // dropped so the registry Map does not grow forever, and an in-flight turn
     // is finalized `interrupted` first (no phantom `streaming` post-restart).
     it('marks an in-flight turn interrupted and disposes the projector on eviction', async () => {
-      // Import the projector from the SAME module graph the runtime uses
-      // (vi.resetModules() in beforeEach gives each test a fresh singleton).
+      // Import the projector from the SAME module graph the runtime uses. The
+      // registry outlives the test (the graph is loaded once), so the session
+      // id here is this test's own.
       const { getOrCreateProjector, peekProjector } =
         await import('../../../session/session-state-projector.js');
 
@@ -1886,10 +1901,8 @@ describe('ClaudeCodeRuntime', () => {
       // something they already did, so the timeout must stay distinguishable all
       // the way out to the route.
       const { query: mockedQuery } = await import('@anthropic-ai/claude-agent-sdk');
-      // From the SAME registry the runtime under test was imported from:
-      // `vi.resetModules()` in `beforeEach` means a top-level import of this
-      // module would be a DIFFERENT class object, and `instanceof` would fail
-      // against an error that is in every other respect the right one.
+      // From the SAME registry the runtime under test was imported from, so
+      // `instanceof` checks the class the runtime actually throws.
       const { ControlRequestTimeoutError, PLUGIN_RELOAD_ACK_TIMEOUT_MS } =
         await import('../sessions/bounded-control.js');
       const queryResult = wrapSdkQuery(sdkSimpleText(''));

@@ -2,10 +2,10 @@
  * @vitest-environment node
  */
 
-import { PGlite } from '@electric-sql/pglite';
+import type { PGlite } from '@electric-sql/pglite';
 import { createServer } from 'node:http';
 import { AddressInfo } from 'node:net';
-import { provisionManagedTestDatabase } from './managed-database-fixture';
+import { createManagedTestDatabaseTemplate, type PGliteTemplate } from './managed-database-fixture';
 import {
   ComposioAuthenticationSetupError,
   ComposioManagedAccountError,
@@ -19,7 +19,7 @@ import {
 } from '../auth-config-resolver';
 import { and, eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import * as siteSchema from '@/db/schema';
 import {
@@ -58,8 +58,9 @@ import {
   ManagedUsageNotFoundError,
 } from '../usage-service';
 
-// Booting PGlite and replaying the managed-connector migrations costs seconds,
-// and every case pays it in `beforeEach`, so both budgets are real here:
+// Booting PGlite and replaying the managed-connector migrations costs seconds;
+// `beforeAll` pays it once and each case loads its own copy of that database
+// (DOR-4190). The budgets were set when every case paid it in `beforeEach`:
 // measured at 6.1s of vitest's 10s hook default at a load average of 296 and
 // peaking at 12.14s across three rounds at 300-405 — the 5-15s band, so 30s
 // (DOR-1886). Each case seeds its own graph, so the fixture stays per-case and
@@ -74,12 +75,15 @@ const EXECUTION_ATTRIBUTION = {
 };
 
 describe('hosted managed authority service', () => {
+  let template: PGliteTemplate;
   let client: PGlite;
   let db: ManagedConnectorDatabase;
 
+  beforeAll(async () => {
+    template = await createManagedTestDatabaseTemplate();
+  });
   beforeEach(async () => {
-    client = new PGlite();
-    await provisionManagedTestDatabase(client);
+    client = await template.fresh();
     db = drizzle(client, { schema: siteSchema }) as unknown as ManagedConnectorDatabase;
   });
 

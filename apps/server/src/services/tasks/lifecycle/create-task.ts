@@ -67,6 +67,7 @@ import {
 } from '../approvals/schedule-owner.js';
 import { scheduleAccountRefusal, scheduleRunFolder } from './schedule-account-eligibility.js';
 import { scheduleCreditsModelRefusal } from './schedule-credits-model.js';
+import { agentScheduleTarget } from './agent-schedule-target.js';
 import { marksHold, NO_MARKS, type TurnMarks } from '../../core/turn-power/turn-marks.js';
 import { auditCrossAgentTask, capModeAtAgentLevel } from '../approvals/cross-agent.js';
 import { scheduledTaskCreateApproval } from '../approvals/task-approval-receipt.js';
@@ -167,6 +168,14 @@ export interface CreateScheduledTaskOptions {
   forAnotherAgent?: boolean;
   /** The calling turn's marks the server checked for `forAnotherAgent`, kept for its runs. */
   writerMarks?: TurnMarks;
+  /**
+   * The server found the calling turn at Full autonomy and unmarked. Such an agent may file a
+   * schedule whose folder is the home folder itself, as a person can (DOR-4067, the DOR-4136
+   * level rule). The data folder and protected folders stay refused at every level, since no
+   * run could start there. This is the caller's level, not the runner's; the run is still
+   * capped at the runner's own level. Never read from the request body.
+   */
+  callerAtFull?: boolean;
   /**
    * The agent's named mode was decided as `tasks.set_mode` and granted
    * (DOR-3703): by a person's card, or by a setting for that action. It lands
@@ -322,7 +331,10 @@ export async function createScheduledTask(
   deps: TaskLifecycleDeps,
   options: CreateScheduledTaskOptions
 ): Promise<CreateScheduledTaskOutcome> {
-  const parsed = CreateTaskRequestSchema.safeParse(options.input);
+  const input = options.input;
+  const parsed = CreateTaskRequestSchema.safeParse(
+    !options.trusted && input && input.target === undefined ? { ...input, target: 'global' } : input
+  );
   if (!parsed.success) {
     return {
       ok: false,
@@ -371,6 +383,22 @@ export async function createScheduledTask(
     trusted,
     ...(options.createdBy && { createdBy: options.createdBy }),
   });
+
+  // An agent's omitted or `global` schedule is filed under itself, so it runs in its own folder,
+  // never home (DOR-4067). The data folder and protected folders are refused at every level;
+  // home itself only below Full.
+  if (!trusted) {
+    const placement = await agentScheduleTarget(
+      data.target,
+      { agentPath: callerAgentPath, id: callerId },
+      deps,
+      {
+        allowHome: options.callerAtFull === true,
+      }
+    );
+    if (!placement.ok) return placement;
+    data.target = placement.target;
+  }
 
   // Asked before ANY write, because the file is written first and never
   // withdrawn: a cron or timezone croner cannot read would otherwise leave a
@@ -672,7 +700,7 @@ export async function createScheduledTask(
     // The arrival goes out and the escalation clock starts here (DOR-1387,
     // DOR-1570). Parked schedules have no observer seam, so the hook lands at
     // the write that parks one. `raiseStanding` both announces the arrival to
-    // the periphery (a desktop banner has no cockpit query to derive it from)
+    // the periphery (a desktop banner has no app query to derive it from)
     // and arms the ladder. Still nothing STORED at this edge: `schedule.parked`
     // is a STANDING kind, which stores nothing while it stands (ADR
     // 260819-234828), and its resolution is recorded where the operator decides

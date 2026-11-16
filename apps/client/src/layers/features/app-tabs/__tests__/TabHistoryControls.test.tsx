@@ -6,7 +6,7 @@ import { render, screen, cleanup, act, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom/vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { createMockTransport } from '@dorkos/test-utils';
+import { createMockTransport } from '@dorkos/test-utils/mock-factories';
 import { TransportProvider, useAppTabsStore } from '@/layers/shared/model';
 import { TooltipProvider } from '@/layers/shared/ui';
 import { enterDesktopShell, leaveDesktopShell } from '@/test-helpers/desktop-shell';

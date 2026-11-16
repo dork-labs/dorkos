@@ -28,6 +28,7 @@ import { CapabilityApprovalTimedOut } from './CapabilityApprovalTimedOut';
 import { McpSigninCard } from './McpSigninCard';
 import { CompactBoundaryRow } from './rows/CompactBoundaryRow';
 import { ModelSubstitutedRow } from './rows/ModelSubstitutedRow';
+import { ProjectAddonsOffRow } from './rows/ProjectAddonsOffRow';
 import { WorkLeftRunningRow } from './rows/WorkLeftRunningRow';
 import { MessageImage } from './MessageImage';
 import { CompactPendingRow } from '../primitives';
@@ -290,6 +291,16 @@ export function AssistantMessageContent({
           key={`model-substituted-${i}`}
           fromName={part.fromName}
           toName={part.toName}
+        />
+      );
+    }
+    if (part.type === 'project_addons_off') {
+      return (
+        <ProjectAddonsOffRow
+          key={`project-addons-off-${i}`}
+          plugins={part.plugins}
+          tools={part.tools}
+          mcpServers={part.mcpServers}
         />
       );
     }

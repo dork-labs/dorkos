@@ -23,7 +23,7 @@ afterEach(cleanup);
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { TransportProvider } from '@/layers/shared/model';
 import { TooltipProvider } from '@/layers/shared/ui';
-import { createMockTransport } from '@dorkos/test-utils';
+import { createMockTransport } from '@dorkos/test-utils/mock-factories';
 import type { Transport } from '@dorkos/shared/transport';
 import type { WorktreeScanEntry, WorktreeScanResult } from '@dorkos/shared/workspace';
 import { WorkspacesPage } from '../ui/WorkspacesPage';

@@ -8,7 +8,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { Transport } from '@dorkos/shared/transport';
 import type { SessionStatusEvent } from '@dorkos/shared/types';
 import { TransportProvider } from '@/layers/shared/model';
-import { createMockTransport } from '@dorkos/test-utils';
+import { createMockTransport } from '@dorkos/test-utils/mock-factories';
 import { toast } from 'sonner';
 import { useSessionStatus } from '../model/settings/use-session-status';
 import { useSessionSettingsOverridesStore } from '../model/settings/session-settings-overrides';

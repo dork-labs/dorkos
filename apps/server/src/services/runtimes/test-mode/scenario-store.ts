@@ -536,6 +536,15 @@ const BUILT_IN_SCENARIOS: Record<string, ScenarioFn> = {
     } as StreamEvent;
     yield { type: 'done', data: { sessionId: 'test-mode' } } as StreamEvent;
   },
+  // A project's own OpenCode add-ons kept off (DOR-4404): the once-per-chat
+  // notice the OpenCode runtime sends, then an ordinary reply. Made-up counts.
+  'project-addons-off': async function* (content, ctx, opts) {
+    yield {
+      type: 'project_addons_off',
+      data: { plugins: 2, tools: 0, mcpServers: 1 },
+    } as StreamEvent;
+    yield* BUILT_IN_SCENARIOS['simple-text']!(content, ctx, opts);
+  },
   error: async function* (_content) {
     yield {
       type: 'session_status',

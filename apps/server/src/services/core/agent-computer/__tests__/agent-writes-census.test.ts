@@ -202,6 +202,7 @@ const REFUSED: readonly (readonly [reason: string, routes: readonly string[]])[]
       'POST /api/feedback',
       'POST /api/files/reveal',
       'POST /api/local-browser/disconnect',
+      'POST /api/local-browser/history',
       'POST /api/local-browser/navigate',
       'POST /api/local-browser/open',
       'POST /api/local-browser/pause',
@@ -240,6 +241,8 @@ const REFUSED: readonly (readonly [reason: string, routes: readonly string[]])[]
       'DELETE /api/extensions/trusted-sources',
       'POST /api/extension-decisions/:id/action',
       'POST /api/extension-decisions/:id/offer',
+      // A frame's caller token, for one app calling another (DOR-3293).
+      'POST /api/extension-frame/caller-token',
       'POST /api/extensions/:id/approve',
       'POST /api/extensions/:id/decisions/:decisionId/action',
       'POST /api/extensions/:id/disable',
@@ -256,6 +259,8 @@ const REFUSED: readonly (readonly [reason: string, routes: readonly string[]])[]
       'POST /api/extensions/reload',
       'POST /api/extensions/trusted-sources',
       'PUT /api/extensions/:id/data',
+      // An app's screen data, bound to the app like /data (DOR-3293).
+      'PUT /api/extensions/:id/prefs',
       'PUT /api/extensions/:id/project-settings',
       'PUT /api/extensions/:id/secrets/:key',
       'PUT /api/extensions/:id/settings/:key',
@@ -348,6 +353,7 @@ const REFUSED: readonly (readonly [reason: string, routes: readonly string[]])[]
       'POST /api/sessions/:id/mcp-app/resource',
       'POST /api/sessions/:id/opened',
       'POST /api/sessions/:id/process/switch',
+      'POST /api/sessions/:id/queue/:messageId/steer',
       'POST /api/sessions/:id/reload-plugins',
       'POST /api/sessions/:id/ui-action',
       'POST /api/sessions/:id/wait',

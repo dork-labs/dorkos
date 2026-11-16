@@ -24,7 +24,7 @@ import '@testing-library/jest-dom/vitest';
 import type { ReactNode } from 'react';
 import type { WidgetAction, WidgetDocument } from '@dorkos/shared/ui-widget';
 import { TransportProvider, useAppStore } from '@/layers/shared/model';
-import { createMockTransport } from '@dorkos/test-utils';
+import { createMockTransport } from '@dorkos/test-utils/mock-factories';
 import { WidgetRenderer } from '../ui/WidgetRenderer';
 import { WidgetActionProvider, useWidgetActions } from '../model/widget-context';
 

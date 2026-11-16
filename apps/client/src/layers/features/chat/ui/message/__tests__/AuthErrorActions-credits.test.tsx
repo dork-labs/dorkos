@@ -18,7 +18,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { Session } from '@dorkos/shared/types';
 import type { DependencyCheck } from '@dorkos/shared/agent-runtime';
 import { CREDITS_ACCOUNT_ID } from '@dorkos/shared/account-usage';
-import { createMockTransport } from '@dorkos/test-utils';
+import { createMockTransport } from '@dorkos/test-utils/mock-factories';
 import {
   CreditsOfferProvider,
   TransportProvider,

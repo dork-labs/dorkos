@@ -209,7 +209,11 @@ import { registerRoomPreGateChecks } from './attachments/protected-file-checks.j
 import { callerAuthor, toolCallerOf } from './service/room-caller-author.js';
 import { projectEntry, UNTRUSTED_NOTE } from './service/room-entry-projection.js';
 import { projectDetail } from './service/room-detail-projection.js';
-import { POST_HANDED_OFF_NOTE, POST_REPLY_TO_INPUT } from './service/room-post-reply-to.js';
+import {
+  POST_HANDED_OFF_NOTE,
+  POST_REPLY_TO_INPUT,
+  POST_VERBATIM_INPUT,
+} from './service/room-post-reply-to.js';
 import { holdIfStale, noteHistoryRead, noteSeen } from './messages/room-freshness.js';
 
 export { callerAuthor };
@@ -368,13 +372,7 @@ export const roomsDomain: CapabilityDomain = {
             'Post even though messages arrived since you last read the room. Set it only after ' +
               'a post came back unposted with those messages and yours still fits.'
           ),
-        verbatim: z
-          .boolean()
-          .optional()
-          .describe(
-            'From a chat that is not your own chat in that room: ask that chat to post your words ' +
-              'exactly as written, or not at all.'
-          ),
+        verbatim: POST_VERBATIM_INPUT,
       }),
       output: z.unknown(),
       surfaces: {
@@ -392,7 +390,9 @@ export const roomsDomain: CapabilityDomain = {
         const author = answering(() => callerAuthor(rooms, context));
         const authorId = author.id;
         // One seat per agent per room (DOR-3397): another chat's post goes to the seat instead.
-        const seat = answering(() => rooms.handoffs.gate(author, input, context.sessionId));
+        const seat = await answeringAsync(() =>
+          rooms.handoffs.gate(author, input, context.sessionId)
+        );
         if ('result' in seat) return seat.result;
         // The stale-post check (DOR-3398), before any file is staged: an agent
         // that missed what was said since it last read gets it back instead.

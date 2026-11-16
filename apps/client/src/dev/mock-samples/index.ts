@@ -23,7 +23,7 @@ export {
   SAMPLE_MESSAGE_MULTI_SELECT,
 } from './chat';
 export { SAMPLE_FILES, SAMPLE_FILE_ENTRIES } from './files';
-export { SAMPLE_QUEUE, SAMPLE_QUEUE_MIXED_ORIGINS } from './queue';
+export { SAMPLE_AGENT_ACTIONS, SAMPLE_QUEUE, SAMPLE_QUEUE_MIXED_ORIGINS } from './queue';
 export { SAMPLE_COMMANDS, SAMPLE_COMMANDS_LONG } from './commands';
 export { SESSION_DIAGNOSTICS } from './session-diagnostics';
 export {

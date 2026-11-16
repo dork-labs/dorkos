@@ -32,7 +32,7 @@ const mockFetch = vi.fn();
 /** A record the loader lists (its bundle import cannot resolve in jsdom). */
 const desk = {
   id: 'desk',
-  manifest: { id: 'desk', name: 'Desk', version: '1.0.0' },
+  manifest: { clientApiVersion: 2, id: 'desk', name: 'Desk', version: '1.0.0' },
   status: 'compiled',
   scope: 'global',
   bundleReady: true,

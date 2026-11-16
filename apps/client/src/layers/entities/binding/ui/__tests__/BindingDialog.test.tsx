@@ -6,7 +6,7 @@ import { render, screen, fireEvent, cleanup, within, waitFor } from '@testing-li
 import '@testing-library/jest-dom/vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { TransportProvider } from '@/layers/shared/model';
-import { createMockTransport } from '@dorkos/test-utils';
+import { createMockTransport } from '@dorkos/test-utils/mock-factories';
 import type { CatalogEntry, ObservedChat } from '@dorkos/shared/relay-schemas';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
 import { BindingDialog } from '../BindingDialog';

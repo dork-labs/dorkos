@@ -15,7 +15,7 @@ import '@testing-library/jest-dom/vitest';
 import type { ReactNode } from 'react';
 import type { WidgetAction } from '@dorkos/shared/ui-widget';
 import { TransportProvider, useAppStore } from '@/layers/shared/model';
-import { createMockTransport } from '@dorkos/test-utils';
+import { createMockTransport } from '@dorkos/test-utils/mock-factories';
 import { WidgetActionProvider, useWidgetActions } from '../model/widget-context';
 
 vi.mock('sonner', () => ({ toast: { error: vi.fn(), success: vi.fn(), info: vi.fn() } }));

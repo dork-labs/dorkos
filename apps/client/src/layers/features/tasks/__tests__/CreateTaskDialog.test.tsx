@@ -8,7 +8,7 @@ import type { ReactNode } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { Transport } from '@dorkos/shared/transport';
 import type { TaskTemplate } from '@dorkos/shared/types';
-import { createMockTransport, createMockSchedule } from '@dorkos/test-utils';
+import { createMockTransport, createMockSchedule } from '@dorkos/test-utils/mock-factories';
 import { TransportProvider } from '@/layers/shared/model';
 import { queryClient as appQueryClient } from '@/layers/shared/lib/query-client';
 import { toast } from 'sonner';

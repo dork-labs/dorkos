@@ -22,7 +22,7 @@ import {
 import { zodValidator } from '@tanstack/zod-adapter';
 import type { ActivityItem } from '@dorkos/shared/activity-schemas';
 import type { AuditEvent } from '@dorkos/shared/audit-schemas';
-import { createMockTransport } from '@dorkos/test-utils';
+import { createMockTransport } from '@dorkos/test-utils/mock-factories';
 import { TransportProvider } from '@/layers/shared/model';
 import { activitySearchSchema } from '@/app/route-search';
 

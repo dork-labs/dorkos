@@ -19,7 +19,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, act, cleanup, fireEvent, within } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { RoomEntry, RoomRosterEntry, RoomSignalEvent } from '@dorkos/shared/room-schemas';
-import { createMockTransport } from '@dorkos/test-utils';
+import { createMockTransport } from '@dorkos/test-utils/mock-factories';
 import { EventStreamProvider, TransportProvider } from '@/layers/shared/model';
 import { SILENT_FINISH_DISPLAY_MS, useRoomPresenceStore } from '@/layers/entities/room';
 import { RoomLiveLane } from '../ui/RoomLiveLane';

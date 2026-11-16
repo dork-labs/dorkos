@@ -6,7 +6,7 @@ import { render, screen, cleanup, fireEvent, waitFor, within } from '@testing-li
 import '@testing-library/jest-dom/vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
-import { createMockTransport } from '@dorkos/test-utils';
+import { createMockTransport } from '@dorkos/test-utils/mock-factories';
 import type { Transport } from '@dorkos/shared/transport';
 import { TransportProvider } from '@/layers/shared/model';
 import { AddMcpServerForm, TRANSPORTS } from '../ui/AddMcpServerForm';

@@ -15,7 +15,7 @@ import type {
   ConnectorCatalogService,
 } from '@dorkos/shared/connector-resource-schemas';
 import type { ConnectorReconciliationPreview } from '@dorkos/shared/connector-schemas';
-import { createMockTransport } from '@dorkos/test-utils';
+import { createMockTransport } from '@dorkos/test-utils/mock-factories';
 import { TransportProvider } from '@/layers/shared/model';
 import { ConnectDialog } from '../ui/ConnectDialog';
 

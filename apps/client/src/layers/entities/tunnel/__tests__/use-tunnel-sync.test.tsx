@@ -5,7 +5,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
 import type { ServerConfig } from '@dorkos/shared/types';
 import type { Transport } from '@dorkos/shared/transport';
-import { createMockTransport } from '@dorkos/test-utils';
+import { createMockTransport } from '@dorkos/test-utils/mock-factories';
 
 // Partially mock @/layers/shared/lib — preserve all real exports, override createChannel only
 vi.mock('@/layers/shared/lib', async (importOriginal) => {

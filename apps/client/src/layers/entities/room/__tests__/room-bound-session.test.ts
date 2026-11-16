@@ -13,7 +13,7 @@ import {
   type RoomSessionBinding,
   type RoomWithRoster,
 } from '@dorkos/shared/room-schemas';
-import { createMockTransport } from '@dorkos/test-utils';
+import { createMockTransport } from '@dorkos/test-utils/mock-factories';
 import { roomBoundSessionId } from '../lib/room-bound-session';
 import { resolveRoomBoundSession } from '../model/use-room-bound-session';
 import { roomKeys } from '../api/query-keys';

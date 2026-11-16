@@ -48,14 +48,21 @@ describe('tasks_create / tasks_update carry runtime, model and effort', () => {
     root = await fs.mkdtemp(path.join(os.tmpdir(), 'dorkos-task-exec-'));
     dorkHome = path.join(root, 'dork');
     await fs.mkdir(dorkHome, { recursive: true });
+    const projectPath = path.join(root, 'agent');
+    await fs.mkdir(projectPath, { recursive: true });
     const deps = {
       taskStore: store,
       defaultCwd: '/tmp/test',
       dorkHome,
-      meshCore: { getProjectPath: () => null },
+      meshCore: {
+        getProjectPath: () => projectPath,
+        listWithPaths: () => [{ id: 'fixture-agent', projectPath }],
+      },
     } as unknown as McpToolDeps;
     tools = Object.fromEntries(
-      (getTasksTools(deps) as unknown as SessionTool[]).map((t) => [t.name, t])
+      (
+        getTasksTools(deps, undefined, undefined, () => projectPath) as unknown as SessionTool[]
+      ).map((t) => [t.name, t])
     );
   });
 
@@ -81,8 +88,9 @@ describe('tasks_create / tasks_update carry runtime, model and effort', () => {
     reason: 'The overnight backlog needs sweeping before you start.',
   };
 
-  /** The SKILL.md a global task with the base name is written to. */
-  const skillPath = () => path.join(dorkHome, 'skills', 'nightly-sweep', 'SKILL.md');
+  /** The SKILL.md under the calling agent, with the base name. */
+  const skillPath = () =>
+    path.join(root, 'agent', '.agents', 'skills', 'nightly-sweep', 'SKILL.md');
 
   it('advertises all three as optional arguments on both tools', () => {
     // Optional is the contract: omitting them is the ordinary case and means

@@ -1,7 +1,7 @@
 /** @vitest-environment jsdom */
 import { beforeEach, expect, it, vi } from 'vitest';
 import { act, renderHook, waitFor } from '@testing-library/react';
-import { createMockTransport } from '@dorkos/test-utils';
+import { createMockTransport } from '@dorkos/test-utils/mock-factories';
 import type { WriteFileResult } from '@dorkos/shared/transport';
 import type { FileSaveDiscovery } from '@dorkos/shared/file-save/recovery';
 const port = { discover: vi.fn(), recover: vi.fn() };

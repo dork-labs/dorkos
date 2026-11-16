@@ -85,6 +85,9 @@ import {
   MessageQueueStore,
   setMessageQueueStore,
 } from '../../services/session/message-queue-store.js';
+import { ChatMessageStore } from '../../services/session/chat-messages/chat-message-store.js';
+import { setQueuedChatActionsDeps } from '../../services/session/chat-messages/queued/queued-chat-actions.js';
+import { steering } from '../../services/session/message-dispatcher/state.js';
 import {
   dispatchMessage,
   resetMessageDispatcher,
@@ -107,6 +110,7 @@ const REMOVED_ADOPTED_MESSAGE = 'reworded after the restart';
 let releaseTurn: () => void;
 /** The case's store, for seeding rows no route would create. */
 let store: MessageQueueStore;
+let chatStore: ChatMessageStore;
 /** Resolves from the queued fixture scenario once the runtime starts it. */
 let secondTurnStarted: Promise<void>;
 let signalSecondTurnStarted!: () => void;
@@ -139,8 +143,18 @@ async function readQueue(sessionId = SESSION_ID) {
 }
 
 beforeEach(async () => {
-  store = new MessageQueueStore(createTestDb());
+  const db = createTestDb();
+  store = new MessageQueueStore(db);
+  chatStore = new ChatMessageStore(db);
   setMessageQueueStore(store);
+  setQueuedChatActionsDeps({
+    store: chatStore,
+    isBusy: async () => true,
+    turnLevelOf: () => ({ asks: 'always', reach: 'edit' }),
+    steerInto: async () => true,
+    emitActivity: () => {},
+    operatorName: () => 'Dana',
+  });
   fakeRuntime = new FakeAgentRuntime();
   vi.clearAllMocks();
   fakeRuntime.acquireLock.mockReturnValue(true);
@@ -196,6 +210,7 @@ beforeEach(async () => {
 afterEach(() => {
   releaseTurn();
   resetMessageDispatcher();
+  setQueuedChatActionsDeps(undefined);
   setMessageQueueStore(undefined);
   disposeProjector(SESSION_ID);
   disposeProjector(OTHER_SESSION_ID);
@@ -382,6 +397,89 @@ describe('DELETE /api/sessions/:id/queue/:messageId', () => {
     const res = await request(server).delete('/api/sessions/not-a-uuid/queue/whatever');
     expect(res.status).toBe(400);
     expect(res.body.code).toBe('INVALID_SESSION_ID');
+  });
+
+  it('names the person in the sender’s record when it removes an agent message', async () => {
+    const queued = store.enqueue({
+      id: 'agent-row',
+      sessionId: SESSION_ID,
+      content: 'fenced agent message',
+      clientId: 'chat:sender-chat',
+    });
+    chatStore.insert({
+      id: 'agent-message',
+      toSessionId: SESSION_ID,
+      fromSessionId: 'sender-chat',
+      fromAgentPath: '/agents/ana',
+      fromAgentId: 'agent-ana',
+      fromAgentName: 'Ana',
+      fromChatTitle: null,
+      kind: 'message',
+      text: 'agent words',
+      summary: null,
+      nonce: 'a0b0c0d0',
+      delivery: 'queue',
+      status: 'queued',
+      queueMessageId: queued.id,
+      ceilingJson: JSON.stringify('none'),
+      replyToId: null,
+    });
+    const res = await request(server).delete(`/api/sessions/${SESSION_ID}/queue/${queued.id}`);
+
+    expect(res.status).toBe(200);
+    expect(chatStore.get('agent-message')).toMatchObject({
+      status: 'failed',
+      failureReason: 'Dana removed it before it was delivered.',
+    });
+    expect(store.get(queued.id)).toBeUndefined();
+  });
+});
+
+describe('DELETE while Send now is carrying the message', () => {
+  it('refuses: the message is already on its way into the running turn', async () => {
+    const queued = store.enqueue({
+      id: 'agent-row-2',
+      sessionId: SESSION_ID,
+      content: 'fenced agent message',
+      clientId: 'chat:sender-chat',
+    });
+    steering.add(queued.id);
+    try {
+      const res = await request(server).delete(`/api/sessions/${SESSION_ID}/queue/${queued.id}`);
+      expect(res.status).toBe(409);
+      expect(res.body.code).toBe('QUEUED_MESSAGE_LAUNCHING');
+      expect(store.get(queued.id)).toBeDefined();
+    } finally {
+      steering.delete(queued.id);
+    }
+  });
+});
+
+describe('POST /api/sessions/:id/queue/:messageId/steer', () => {
+  it('refuses an agent caller and leaves the row waiting', async () => {
+    const queued = await post('wait here', 'client-a');
+
+    const res = await request(server)
+      .post(`/api/sessions/${SESSION_ID}/queue/${queued.messageId}/steer`)
+      .set('x-dorkos-agent', 'agent-token-abc');
+
+    expect(res.status).toBe(403);
+    // The person bar refuses, not the desk check: an agent may never send another
+    // chat's words into a running turn, whatever chat it is in.
+    expect(res.body.code).toBe('person_only');
+    expect((await readQueue()).map((row) => row.id)).toEqual([queued.messageId]);
+  });
+
+  it('refuses the person’s own message: only another chat’s is sent this way', async () => {
+    const queued = await post('wait here', 'client-a');
+
+    const res = await request(server).post(
+      `/api/sessions/${SESSION_ID}/queue/${queued.messageId}/steer`
+    );
+
+    expect(res.status).toBe(409);
+    expect(res.body.code).toBe('NOT_A_CHAT_MESSAGE');
+    expect((await readQueue()).map((row) => row.id)).toEqual([queued.messageId]);
   });
 });
 

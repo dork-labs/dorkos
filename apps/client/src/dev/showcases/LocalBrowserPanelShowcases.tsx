@@ -1,7 +1,10 @@
 import { useEffect, useState } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { Transport } from '@dorkos/shared/transport';
-import type { LocalBrowserPersonState } from '@dorkos/shared/local-browser';
+import type {
+  LocalBrowserHistoryDirection,
+  LocalBrowserPersonState,
+} from '@dorkos/shared/local-browser';
 import type { SessionStatus } from '@dorkos/shared/session-stream';
 import { useSessionListStore } from '@/layers/entities/session';
 import { TransportProvider } from '@/layers/shared/model';
@@ -43,6 +46,38 @@ const IN_USE_WORKING: LocalBrowserPersonState = {
   ...IN_USE_ELSEWHERE,
   sessionId: 'chat-scout-busy',
 };
+
+/** Shared with this chat's agent, Atlas, in a separate window, on a made-up page. */
+const CONNECTED_HERE: LocalBrowserPersonState = {
+  ...IN_USE_ELSEWHERE,
+  sessionId: 'chat-atlas',
+  tabs: [{ id: 'demo-tab', title: 'Pricing', url: 'https://www.example.com/pricing?plan=team' }],
+};
+
+/**
+ * Shared with Atlas, two pages into a made-up site (DOR-4449): Back goes to the
+ * first page, Forward comes back. Each press really moves this demo's history.
+ */
+const HISTORY_PAGES = [
+  { title: 'Fares', url: 'https://northwind.example/fares' },
+  { title: 'Lisbon fares', url: 'https://northwind.example/fares/lisbon' },
+  { title: 'Lisbon in May', url: 'https://northwind.example/fares/lisbon?month=may' },
+];
+
+/** The history demo's state at one place in {@link HISTORY_PAGES}. */
+function historyState(at: number): LocalBrowserPersonState {
+  return {
+    ...CONNECTED_HERE,
+    tabs: [
+      {
+        id: 'demo-tab',
+        ...HISTORY_PAGES[at]!,
+        canGoBack: at > 0,
+        canGoForward: at < HISTORY_PAGES.length - 1,
+      },
+    ],
+  };
+}
 
 /** Made-up holder chat titles, one long enough to cut off. */
 const HOLDER_TITLES: Record<string, string> = {
@@ -112,11 +147,13 @@ async function refuseWhileSigningIn(): Promise<never> {
  * @param state - What the browser reports, or a reader for a state that changes.
  * @param forget - What Forget does; the playground's own by default.
  * @param open - What Open browser does; the playground's own by default.
+ * @param step - What Back and Forward do; the playground's own by default.
  */
 function browserTransport(
   state: LocalBrowserPersonState | (() => LocalBrowserPersonState),
   forget?: () => Promise<never>,
-  open?: () => Promise<never>
+  open?: () => Promise<never>,
+  step?: (direction: LocalBrowserHistoryDirection) => Promise<LocalBrowserPersonState>
 ): Transport {
   const base = createPlaygroundTransport();
   return new Proxy(base, {
@@ -131,6 +168,7 @@ function browserTransport(
       if (prop === 'listLocalBrowserProfiles') return async () => ({ profiles: [] });
       if (prop === 'forgetLocalBrowserSignIns' && forget) return forget;
       if (prop === 'openLocalBrowser' && open) return open;
+      if (prop === 'stepLocalBrowserHistory' && step) return step;
       return Reflect.get(target, prop, receiver) as unknown;
     },
   });
@@ -186,6 +224,38 @@ function PanelDemo({
 }
 
 /**
+ * Back and Forward over a made-up history (DOR-4449). `refuse` answers every
+ * step as the server does when the page now redirects somewhere refused.
+ */
+function HistoryDemo({ start, refuse = false }: { start: number; refuse?: boolean }) {
+  const [transport] = useState<Transport>(() => {
+    let at = start;
+    return browserTransport(
+      () => historyState(at),
+      undefined,
+      undefined,
+      async (direction) => {
+        if (refuse) throw Object.assign(new Error('Refused.'), { code: 'history_refused' });
+        at = Math.max(0, Math.min(HISTORY_PAGES.length - 1, at + (direction === 'back' ? -1 : 1)));
+        return historyState(at);
+      }
+    );
+  });
+  const [queryClient] = useState(
+    () => new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  );
+  return (
+    <QueryClientProvider client={queryClient}>
+      <TransportProvider transport={transport}>
+        <div className="bg-background h-[36rem] w-full max-w-sm rounded-lg border">
+          <LocalBrowserPanel visible={false} sessionId="chat-atlas" agentName="Atlas" />
+        </div>
+      </TransportProvider>
+    </QueryClientProvider>
+  );
+}
+
+/**
  * Forget refused because the sign-ins folder was changed outside DorkOS (DOR-4172).
  * Press Forget… then Forget sign-ins: the dialog becomes the answer, with only Close.
  */
@@ -219,6 +289,18 @@ export function LocalBrowserPanelShowcases() {
       <ShowcaseLabel>Before the browser was ever opened</ShowcaseLabel>
       <ShowcaseDemo>
         <PanelDemo state={NOT_OPEN} />
+      </ShowcaseDemo>
+      <ShowcaseLabel>Shared with this chat’s agent: the browser chrome over the page</ShowcaseLabel>
+      <ShowcaseDemo>
+        <PanelDemo state={CONNECTED_HERE} />
+      </ShowcaseDemo>
+      <ShowcaseLabel>Back and Forward follow the page’s own history: press them</ShowcaseLabel>
+      <ShowcaseDemo>
+        <HistoryDemo start={1} />
+      </ShowcaseDemo>
+      <ShowcaseLabel>Back refused: the page now leads somewhere DorkOS doesn’t open</ShowcaseLabel>
+      <ShowcaseDemo>
+        <HistoryDemo start={1} refuse />
       </ShowcaseDemo>
       <ShowcaseLabel>In use in another chat: Take it here moves it</ShowcaseLabel>
       <ShowcaseDemo>

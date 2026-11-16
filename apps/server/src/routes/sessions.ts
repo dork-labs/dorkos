@@ -76,11 +76,7 @@ import { projectsOfFolders } from '../services/projects/project-registry.js';
 import { getAccountUsageStore } from '../services/core/usage/current-usage-store.js';
 import { createSessionAnswerRoutes } from './session-answers.js';
 import { sessionUiActionHandler } from './session-ui-action-handler.js';
-import {
-  sessionQueueListHandler,
-  sessionQueueRemoveHandler,
-  sessionQueueUpdateHandler,
-} from './session-queue-handler.js';
+import { registerSessionQueueRoutes } from './session-queue-handler.js';
 import { sessionEventsHandler } from './session-events-handler.js';
 import { guardSessionParam, readableSessions } from './session-read-guard.js';
 import {
@@ -92,7 +88,7 @@ import {
 import { mountWindowSignalRoutes, touchedSinceKeeper } from './session-touch-handler.js';
 import { sessionCommandIntentHandler } from './session-command-intent-handler.js';
 import { sessionDevtoolsActionHandler, sessionDevtoolsIngestHandler } from './session-devtools.js';
-import { createSessionCanvasRoutes } from './session-canvas.js';
+import { createSessionCanvasRoutes, type SessionCanvasDeps } from './session-canvas.js';
 import { sessionDevtoolsRecordingHandler } from './session-recording.js';
 import { sessionAttachmentHandler } from './session-attachments-handler.js';
 import { sessionMcpAppResourceHandler } from './session-mcp-app-resource-handler.js';
@@ -128,7 +124,7 @@ import { ControlRequestTimeoutError } from '../services/runtimes/claude-code/ses
  * Tasks whether it is a scheduled run, without importing either store. One
  * left unset is a safe no-op.
  */
-export interface SessionRouteDeps extends SessionOriginResolvers {
+export interface SessionRouteDeps extends SessionOriginResolvers, SessionCanvasDeps {
   /**
    * The agent registry: the project paths `/recent` and `/daily-counts` fan
    * out over (DOR-329), and what a message's launch and a handoff read.
@@ -920,13 +916,11 @@ export function createSessionRoutes(deps: SessionRouteDeps = {}): Hono<ApiEnv> {
     return c.json(body);
   });
 
-  // GET|PATCH|DELETE /api/sessions/:id/queue — the messages waiting on a session.
+  // GET|PATCH|DELETE|POST /api/sessions/:id/queue — the messages waiting on a session.
   // Handlers live in `session-queue-handler.ts` so this file stays under the size
   // rule. The queue is per SESSION: any window may edit or remove any message on
   // it, whichever window typed it. See the handler's module doc.
-  router.get('/:id/queue', sessionQueueListHandler);
-  router.patch('/:id/queue/:messageId', sessionQueueUpdateHandler(deps.meshCore));
-  router.delete('/:id/queue/:messageId', sessionQueueRemoveHandler(deps.meshCore));
+  registerSessionQueueRoutes(router, deps.meshCore);
 
   // POST /api/sessions/:id/{approve,deny,batch-approve,batch-deny,submit-answers,
   // submit-elicitation} — answering a prompt (`session-answers.ts`). The answer
@@ -958,7 +952,7 @@ export function createSessionRoutes(deps: SessionRouteDeps = {}): Hono<ApiEnv> {
   // file for the same reason the devtools sink is: this one stays under the size
   // rule. A person is the gate; an agent is refused `PEOPLE_ONLY` and reaches its
   // own canvas through `control_ui` and `read_canvas_document` instead.
-  router.route('/:id/canvas', createSessionCanvasRoutes());
+  router.route('/:id/canvas', createSessionCanvasRoutes(deps));
 
   // Out of usage: continue on another account or model, or wait for the reset
   // (spec claude-account-fleet D9). Handlers in `session-continue.ts`.

@@ -9,6 +9,7 @@ import { FileAttachmentList } from './FileAttachmentList';
 import { OutputRenderer } from './OutputRenderer';
 import { useOptionalMessageContext } from './MessageContext';
 import { ReceivedChatMessages } from '../messaging/ReceivedChatMessage';
+import { isUnstampedChatMessage, unstampedChatWords } from '../../lib/unstamped-chat-message';
 
 /**
  * Renders user message content based on messageType.
@@ -32,6 +33,19 @@ export function UserMessageContent({ message }: { message: ChatMessage }) {
   if (message.chatMessages && message.chatMessages.length > 0) {
     return (
       <ReceivedChatMessages stamps={message.chatMessages} {...(sessionId ? { sessionId } : {})} />
+    );
+  }
+
+  // Another chat's words whose sender is no longer on record: the fence's
+  // words in plain text, never the envelope the agent read (DOR-3060).
+  if (isUnstampedChatMessage(message)) {
+    return (
+      <div
+        data-testid="unstamped-chat-message"
+        className="border-status-info-border bg-status-info-bg max-w-[var(--msg-content-max-width)] rounded-r-md border-l-2 py-1.5 pr-2 pl-3 break-words whitespace-pre-wrap"
+      >
+        {unstampedChatWords(message.content)}
+      </div>
     );
   }
 

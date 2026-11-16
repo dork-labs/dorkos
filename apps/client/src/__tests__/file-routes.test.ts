@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { createMemoryHistory } from '@tanstack/react-router';
 import { QueryClient } from '@tanstack/react-query';
-import { createMockTransport } from '@dorkos/test-utils';
+import { createMockTransport } from '@dorkos/test-utils/mock-factories';
 import { createAppRouter } from '../router';
 
 // Cold route chunk transforms contend with the other client suites.

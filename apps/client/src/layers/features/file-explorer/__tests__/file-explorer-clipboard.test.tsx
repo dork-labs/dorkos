@@ -5,7 +5,7 @@ import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vite
 import { render, screen, cleanup, fireEvent, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { createMockTransport } from '@dorkos/test-utils';
+import { createMockTransport } from '@dorkos/test-utils/mock-factories';
 import type { FileEntry, ServerConfig } from '@dorkos/shared/types';
 import { TransportProvider, useAppStore } from '@/layers/shared/model';
 import { useFileExplorerStore } from '../model/file-explorer-store';

@@ -26,7 +26,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { ExecutionDefaults, SessionSettings } from '@dorkos/shared/schemas';
 import type { RuntimeCapabilities } from '@dorkos/shared/agent-runtime';
 import { TransportProvider } from '@/layers/shared/model';
-import { createMockSession, createMockTransport } from '@dorkos/test-utils';
+import { createMockSession, createMockTransport } from '@dorkos/test-utils/mock-factories';
 import { useSessionStatus } from '../use-session-status';
 
 /**

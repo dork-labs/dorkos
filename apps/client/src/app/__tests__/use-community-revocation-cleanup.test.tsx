@@ -4,7 +4,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, renderHook, waitFor } from '@testing-library/react';
 import type { PropsWithChildren } from 'react';
 import { toast } from 'sonner';
-import { createMockTransport, withSpacesExperiment } from '@dorkos/test-utils';
+import { createMockTransport, withSpacesExperiment } from '@dorkos/test-utils/mock-factories';
 import type { CommunityConnectionDescriptor } from '@dorkos/shared/community-connections';
 import type { CommunityNavigationState } from '@dorkos/shared/community-navigation';
 import {

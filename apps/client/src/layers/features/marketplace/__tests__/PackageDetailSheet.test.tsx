@@ -410,6 +410,39 @@ describe('PackageDetailSheet', () => {
     expect(screen.getByRole('alert')).toHaveTextContent("can't ship .mcp.json");
   });
 
+  // Purpose: a package DorkOS refuses offers no Install at all, and Close is
+  // the one, primary action (designer, DOR-3293). An app that names another
+  // app badly is named exactly as the sheet's title names the package.
+  it('offers only Close on a refused package, naming it as the title does', () => {
+    openPackage(makePackage({ type: 'plugin', name: 'report-tools' }));
+    setDetailState({ data: makeDetail() });
+    setPreviewState({
+      error: Object.assign(new Error('Package failed validation'), {
+        body: {
+          errors: [
+            'Report tools can’t be installed. It names another app in a way DorkOS doesn’t accept. Ask its maker for an update.',
+          ],
+          codes: ['EXTENSION_CALLED_APP_INVALID'],
+        },
+      }),
+    });
+    setInstalledState([]);
+
+    render(<PackageDetailSheet />);
+
+    expect(screen.getByRole('heading', { name: 'Report Tools' })).toBeInTheDocument();
+    const headline = within(screen.getByRole('alert')).getByText(
+      'Report Tools can’t be installed.'
+    );
+    expect(headline.tagName).toBe('STRONG');
+    expect(screen.queryByRole('button', { name: /^install/i })).not.toBeInTheDocument();
+    // The footer's Close (the sheet's ✕ is also named Close).
+    const close = screen
+      .getAllByRole('button', { name: 'Close' })
+      .find((button) => button.textContent === 'Close');
+    expect(close).toHaveAttribute('data-variant', 'primary');
+  });
+
   it('shows the Install button when the package is not installed and uses the store action on click', async () => {
     const user = userEvent.setup();
     // A non-agent package queues the confirm dialog; agent packages leave for
