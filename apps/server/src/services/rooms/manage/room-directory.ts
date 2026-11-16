@@ -35,6 +35,7 @@ import type { RoomStore } from '../room-store.js';
 import type { RoomTriggerDispatcher } from '../room-trigger.js';
 import type { RoomVisibility } from '../service/room-visibility.js';
 import { countAwaitingByRoom } from '../awaiting/room-awaiting.js';
+import { agentFacingRoomName } from '../agent-facing-room-name.js';
 
 /** Every read that answers "what rooms are there, and where am I in them". */
 export class RoomDirectory {
@@ -322,7 +323,8 @@ export class RoomDirectory {
    * The provenance suffix on an agent's memory has to be something the agent
    * cannot choose (agent-memory spec D4 / review M4), so it is derived from the
    * session rather than passed in — and the session id is not a value the model
-   * supplies either. `#slug` for a channel; `null` for a direct message, an
+   * supplies either. `#slug` for a channel ("Bridged channel" for a bridged
+   * group nobody renamed, `agentFacingRoomName`); `null` for a direct message, an
    * unbound session, or a room that has since gone, all of which the note
    * records honestly as a direct chat.
    *
@@ -339,7 +341,7 @@ export class RoomDirectory {
     if (!binding) return null;
     const room = this.store.getRoom(binding.roomId);
     if (!room || room.kind !== 'channel') return null;
-    return room.slug ? `#${room.slug}` : room.title;
+    return agentFacingRoomName(room, this.bridges);
   }
 
   /**

@@ -90,7 +90,7 @@ A message over Wi-Fi from someone other than you brings back the card, even in a
 
 A message from someone else on Telegram, Slack or in a room counts too, even at **Full**. DorkOS can't ask you about a connected-app send from a Telegram or Slack chat, so in that turn the send is refused. In a room, the agent asks you first, or the send is refused when nobody is watching.
 
-DorkOS knows it's you on Telegram or Slack only if your own ID is on that connection's **Approvers** list, under **Access Control** in its settings. If it isn't, your own messages count as someone else's and your agent won't send for you. If you can already message the bot privately, your ID is in the **DM Allowlist** right above it.
+DorkOS knows it's you on Telegram or Slack only if your own ID is on that connection's **Approvers** list, under **Access Control** in its settings. If it isn't, your own messages count as someone else's and your agent won't send for you. If you can already message the bot privately, your ID is in the **DM Allowlist** right above it. This only works in a private chat with the bot: in a group chat, every message counts as someone else's, yours too.
 
 An email or web page the agent reads doesn't bring the card back. Treat it as untrusted. Setting Telegram and Slack to an allowlist still keeps strangers out of the chat in the first place.
 

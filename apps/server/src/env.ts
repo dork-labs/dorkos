@@ -9,11 +9,15 @@ const boolFlag = z
 
 /**
  * {@link boolFlag} for a switch that is ON unless somebody sets it to 'false': a
- * safety default that an operator may still turn off.
+ * safety default that an operator may still turn off. An empty value (`FLAG=`)
+ * reads as unset, so on; anything else but the two words refuses the boot with
+ * a message saying which two words it takes.
  */
 const boolFlagDefaultOn = z
-  .enum(['true', 'false'])
-  .default('true')
+  .preprocess(
+    (v) => (v === undefined || v === '' ? 'true' : v),
+    z.enum(['true', 'false'], { message: "use 'true' or 'false' (unset means 'true')" })
+  )
   .transform((v) => v === 'true');
 
 /**

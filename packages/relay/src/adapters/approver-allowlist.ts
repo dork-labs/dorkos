@@ -87,4 +87,5 @@ export function mayApprove(allowlist: unknown, userId: string | undefined): bool
 export const OWNER_ON_APPROVERS_HELP =
   'This list is also how DorkOS knows a message is from you. Put your own ID here, or your ' +
   'messages count as someone else’s and your agent won’t send through a connected app for ' +
-  'you. If you can already message the bot privately, your ID is in the DM Allowlist.';
+  'you. If you can already message the bot privately, your ID is in the DM Allowlist. In a group ' +
+  'chat, every message counts as someone else’s, yours too.';

@@ -43,6 +43,10 @@ describe('serverEnv', () => {
     vi.resetModules();
     vi.stubEnv('DORKOS_MARK_STRANGER_TURNS', 'false');
     expect((await import('../env.js')).env.DORKOS_MARK_STRANGER_TURNS).toBe(false);
+    // An empty value is unset, so on; it never stops the boot (Security S4 on #3832).
+    vi.resetModules();
+    vi.stubEnv('DORKOS_MARK_STRANGER_TURNS', '');
+    expect((await import('../env.js')).env.DORKOS_MARK_STRANGER_TURNS).toBe(true);
   });
 
   it('keeps an explicit DORKOS_RELAY_ENABLED=false as an override', async () => {

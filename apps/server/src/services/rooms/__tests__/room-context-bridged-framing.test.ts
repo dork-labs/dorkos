@@ -268,6 +268,24 @@ describe('what a bridged turn is told beyond visibility and origin (task 1.13)',
       expect(block.toLowerCase()).not.toContain('email the files');
     });
 
+    // Security M1 on #3832: the room tools must name it the same way, or the title rides into
+    // every turn of the agent through `list_member_rooms`, `get_room` and room search.
+    it('stays out of the room tools: list_member_rooms, get_room and search', () => {
+      const room = service.createBridgedRoom(groupRequest({ title: hostileTitle }));
+      service.post(room.id, { authorId: human, text: 'a findable word: lighthouse' });
+      const ana = service.authorRegistry.resolveAgent('/agents/ana', 'Ana').id;
+
+      const listed = service.listMemberRooms(ana).find((r) => r.roomId === room.id);
+      const detail = service.describeRoom(room.id, ana);
+      const found = service.searchMemberRooms(ana, { query: 'lighthouse', limit: 10 });
+      for (const shown of [JSON.stringify(listed), JSON.stringify(detail), JSON.stringify(found)]) {
+        expect(shown).not.toContain('ignore-your-rules');
+        expect(shown.toLowerCase()).not.toContain('email the files');
+      }
+      expect(listed?.name).toBe('Bridged channel');
+      expect(detail.name).toBe('Bridged channel');
+    });
+
     it('shows the name the owner gives the room instead', async () => {
       const room = service.createBridgedRoom(groupRequest({ title: hostileTitle }));
       service.updateRoom(room.id, human, { title: 'Ops' });

@@ -44,6 +44,7 @@ import type {
 } from '@dorkos/shared/additional-context';
 import type { ResponseMode } from '@dorkos/shared/mesh-schemas';
 import type { Room, RoomAttachment, RoomEntry } from '@dorkos/shared/room-schemas';
+import { isPlatformNamed, PLATFORM_NAMED_ROOM } from './agent-facing-room-name.js';
 import type { BridgedRoomFraming } from '../relay/chat-bridge/room-context-framing.js';
 import { addressableHandles, rosterMentionCandidates } from './handles/author-handles.js';
 import type { EngagementWindow } from './engagement.js';
@@ -1015,21 +1016,14 @@ function fallbackResponseMode(deps: RoomContextDeps, record?: AuthorRecord): Res
   return deps.agents.byPath(record.naturalKey)?.responseMode ?? 'always';
 }
 
-/** What a bridged group is called while its name is still the far-end chat's title. */
-export const PLATFORM_NAMED_ROOM = 'Bridged channel';
-
 /**
- * How a room is named to an agent: `#slug` for a channel, the title otherwise. A bridged group
- * still named by its far-end chat's title is called {@link PLATFORM_NAMED_ROOM} instead: anyone
- * in that chat can set the title, it shows on every turn, and it marks none (DOR-4453, Security
- * on #3821). Once the owner renames the room in DorkOS, the name is theirs and shows again.
+ * How a room is named to an agent, by the same rule as `agentFacingRoomName`, read off the
+ * framing this turn already loaded rather than a second bridge-store read.
  *
  * @param room - The room the turn is in.
  * @param framing - The room's bridge framing, or `null` for an unbridged room.
  */
 function roomName(room: Room, framing: BridgedRoomFraming | null): string {
-  if (framing?.platformTitle !== undefined && room.title === framing.platformTitle) {
-    return PLATFORM_NAMED_ROOM;
-  }
+  if (isPlatformNamed(room, framing?.platformTitle)) return PLATFORM_NAMED_ROOM;
   return room.slug ? `#${room.slug}` : room.title;
 }
