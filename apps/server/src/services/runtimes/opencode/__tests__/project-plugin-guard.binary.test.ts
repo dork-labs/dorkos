@@ -23,15 +23,26 @@
 import http from 'node:http';
 import fs from 'node:fs';
 import os from 'node:os';
+import * as childProcess from 'node:child_process';
 import path from 'node:path';
-import { spawn } from 'node:child_process';
 import type { AddressInfo } from 'node:net';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { StreamEvent } from '@dorkos/shared/types';
 import { buildSidecarSpawnEnv } from '../server-manager.js';
 import { OPENCODE_OWN_PLAN } from '../credits-sidecar.js';
 import { PROJECT_PLUGINS_CODE } from '../messaging/project-plugin-guard.js';
-import { OFFLINE_PROXY_ENV, pinnedOpenCode } from './pinned-opencode.js';
+import {
+  OFFLINE_PROXY_ENV,
+  pinnedOpenCode,
+  runPinnedOpenCode,
+  guardedOpenCodeSpawn,
+} from './pinned-opencode.js';
+
+// Keep the real OS process, while observing manager launches as well as CLI launches.
+vi.mock('node:child_process', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:child_process')>();
+  return { ...actual, spawn: vi.fn(actual.spawn) };
+});
 
 const BINARY = pinnedOpenCode();
 
@@ -97,24 +108,20 @@ function projectWithMarkerPlugin(root: string, marker: string): string {
 
 /** Run `opencode run` in `cwd` until it exits; 100 s at most. */
 async function runOnce(cwd: string, env: Record<string, string>): Promise<string> {
-  const child = spawn(BINARY!, ['run', '-m', 'fake/x', 'hello'], {
-    cwd,
-    env,
-    stdio: ['ignore', 'pipe', 'pipe'],
-  });
-  let output = '';
-  child.stdout.on('data', (data) => (output += String(data)));
-  child.stderr.on('data', (data) => (output += String(data)));
-  await new Promise<void>((resolve) => {
-    // Let the run finish: the plugin is imported after the first model call.
-    const deadline = setTimeout(resolve, 100_000);
-    child.once('exit', () => {
-      clearTimeout(deadline);
-      resolve();
+  return runPinnedOpenCode(['run', '-m', 'fake/x', 'hello'], { cwd, env }, async (child) => {
+    let output = '';
+    child.stdout.on('data', (data) => (output += String(data)));
+    child.stderr.on('data', (data) => (output += String(data)));
+    await new Promise<void>((resolve) => {
+      // Let the run finish: the plugin is imported after the first model call.
+      const deadline = setTimeout(resolve, 100_000);
+      child.once('close', () => {
+        clearTimeout(deadline);
+        resolve();
+      });
     });
+    return output;
   });
-  child.kill('SIGKILL');
-  return output;
 }
 
 describe.skipIf(BINARY === null)('a project plugin on the real OpenCode (DOR-4394)', () => {
@@ -123,7 +130,15 @@ describe.skipIf(BINARY === null)('a project plugin on the real OpenCode (DOR-439
   let model: Awaited<ReturnType<typeof fakeModel>>;
   let manager: { shutdown: () => Promise<void> } | undefined;
 
+  const integrityChecks: Promise<void>[] = [];
   beforeAll(async () => {
+    const realSpawn = vi.mocked(childProcess.spawn).getMockImplementation()!;
+    vi.spyOn(childProcess, 'spawn').mockImplementation(((binary, args, options) => {
+      if (binary !== BINARY) return realSpawn(binary, args ?? [], options ?? {});
+      const result = guardedOpenCodeSpawn(realSpawn, binary, args ?? [], options ?? {});
+      integrityChecks.push(result.verified);
+      return result.child;
+    }) as typeof childProcess.spawn);
     root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'oc-plugin-guard-live-')));
     calls = [];
     model = await fakeModel(calls);
@@ -180,10 +195,15 @@ describe.skipIf(BINARY === null)('a project plugin on the real OpenCode (DOR-439
   }, 120_000);
 
   afterAll(async () => {
-    await manager?.shutdown();
-    vi.unstubAllEnvs();
-    await model.close();
-    fs.rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+    try {
+      await manager?.shutdown();
+      await Promise.all(integrityChecks);
+    } finally {
+      vi.restoreAllMocks();
+      vi.unstubAllEnvs();
+      await model?.close();
+      if (root) fs.rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+    }
   });
 
   it('control: the switch alone does not stop the plugin, so the marker is a real signal', async () => {

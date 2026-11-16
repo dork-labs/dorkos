@@ -1,4 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import chokidar from 'chokidar';
+import { once } from 'node:events';
+import { TASK_DIRECTORY_CATCH_UP_MS } from '../watch/task-watch-catch-up.js';
 import { mkdtemp, mkdir, readFile, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -94,6 +97,8 @@ describe('TaskFileWatcher (real chokidar)', () => {
   });
 
   afterEach(async () => {
+    // A failed native wait must not leave a constructor spy in the next test.
+    vi.restoreAllMocks();
     await watcher.stopAll();
     await rm(dorkHome, { recursive: true, force: true });
   });
@@ -127,13 +132,16 @@ describe('TaskFileWatcher (real chokidar)', () => {
     // A crash-left backup of a schedule skill is a full copy. A live event for
     // it never passes the shared scanner, so the watcher itself must refuse it,
     // or the same schedule runs twice with no reconciler to retire the copy.
-    watcher.watch(skillsRoot(skillsDir, 'global'));
     await mkdir(path.join(skillsDir, 'probe'), { recursive: true });
     const probe = path.join(skillsDir, 'probe', 'SKILL.md');
     await writeFile(probe, skillFile('probe'), 'utf-8');
-    await waitUntil(() => store.fileSync.getByFilePath(probe) !== null, 'the watch to be live');
+    watcher.watch(skillsRoot(skillsDir, 'global'));
+    await watcher.ready();
+    expect(watcher.rootsWithoutLiveWatch(), errorLogs().join('\n')).toEqual([]);
+    expect(store.fileSync.getByFilePath(probe)).not.toBeNull();
 
-    // The sibling arrives as a live event, then a normal task as the barrier.
+    // Post-startup directory cues must discover the normal task beside the sibling.
+    // Recovery scans use the same rejection policy as individual live file events.
     const siblingDir = path.join(
       skillsDir,
       `real-task.dorkos-bak-${Date.now()}-9f1c2d3e-0000-4000-8000-000000000000`
@@ -151,6 +159,158 @@ describe('TaskFileWatcher (real chokidar)', () => {
       'sibling to stay unsynced'
     );
     expect(store.fileSync.getByFilePath(sibling)).toBeNull();
+  });
+
+  it('discovers a task whose native delivery is lost beside a real directory cue', async () => {
+    const normalDir = path.join(skillsDir, 'real-task');
+    const originalWatch = chokidar.watch.bind(chokidar);
+    let native: ReturnType<typeof chokidar.watch> | undefined;
+    let restoreEmit = () => {};
+    const watch = vi.spyOn(chokidar, 'watch').mockImplementation((...args) => {
+      const actual = originalWatch(...args);
+      native = actual;
+      const emit = actual.emit;
+      const normal = (value: unknown) =>
+        typeof value === 'string' &&
+        (value === normalDir || value.startsWith(normalDir + path.sep));
+      // Lose only this actual child's delivery, not its filesystem or the sibling cue.
+      Reflect.defineProperty(actual, 'emit', {
+        configurable: true,
+        value(event: string | symbol, ...values: unknown[]) {
+          const details = values[2];
+          const watchedPath =
+            details && typeof details === 'object'
+              ? Reflect.get(details, 'watchedPath')
+              : undefined;
+          const lost =
+            event === 'raw'
+              ? normal(values[1]) ||
+                normal(watchedPath) ||
+                (watchedPath === skillsDir && values[1] === 'real-task')
+              : normal(event === 'all' ? values[1] : values[0]);
+          return lost ? false : Reflect.apply(emit, actual, [event, ...values]);
+        },
+      });
+      restoreEmit = () => Reflect.defineProperty(actual, 'emit', { value: emit });
+      return actual;
+    });
+    try {
+      watcher.watch(skillsRoot(skillsDir, 'global'));
+      await watcher.ready();
+      if (!native) throw new Error('The real watcher did not open.');
+      const siblingDir = path.join(
+        skillsDir,
+        `real-task.dorkos-bak-${Date.now()}-9f1c2d3e-0000-4000-8000-000000000000`
+      );
+      const delivered = once(native, 'addDir');
+      await mkdir(siblingDir);
+      expect((await delivered)[0]).toBe(siblingDir);
+      const sibling = path.join(siblingDir, 'SKILL.md');
+      await writeFile(sibling, skillFile('real-task'));
+      await mkdir(normalDir);
+      const file = path.join(normalDir, 'SKILL.md');
+      await writeFile(file, skillFile('real-task'));
+      await waitUntil(
+        () => store.fileSync.getByFilePath(file) !== null,
+        'the lost live task',
+        3500
+      );
+      await holdsFor(() => store.fileSync.getByFilePath(sibling) === null, 'the rejected sibling');
+      expect(store.getTasks().map((task) => task.filePath)).toEqual([file]);
+      const recovered = store.fileSync.getByFilePath(file)!;
+      expect(recovered).toMatchObject({ cron: '0 9 * * *', status: 'pending_approval' });
+      expect(scheduler.hasJob(recovered.id)).toBe(false);
+      expect(watcher.rootsWithoutLiveWatch(), errorLogs().join('\n')).toEqual([]);
+    } finally {
+      try {
+        await watcher.stopAll();
+      } finally {
+        restoreEmit();
+        watch.mockRestore();
+      }
+    }
+  });
+
+  it('keeps an unchanged live job through directory rescans and repairs a missing job', async () => {
+    const file = path.join(skillsDir, 'clock', 'SKILL.md');
+    await mkdir(path.dirname(file));
+    await writeFile(file, skillFile('clock'));
+    watcher.watch(skillsRoot(skillsDir, 'global'));
+    await watcher.ready();
+    const task = store.fileSync.getByFilePath(file)!;
+    // A person approves the discovered task; rescanning its unchanged file
+    // must preserve that live clock rather than restarting it every second.
+    store.updateTask(task.id, { status: 'active' });
+    new TaskRegistrar({ store, scheduler }).syncTask(task.id);
+    expect(scheduler.hasJob(task.id)).toBe(true);
+    const reads = vi.spyOn(store.fileSync, 'upsertFromFile');
+    const cue = async (suffix: string) => {
+      reads.mockClear();
+      await mkdir(path.join(skillsDir, `clock.dorkos-bak-${suffix}`));
+      await waitUntil(() => reads.mock.calls.length > 0, 'a directory-cue rescan', 2000);
+    };
+
+    // The first read after approval clears the old discovery explanation.
+    // Settle that actual row change before asserting an unchanged-row scan.
+    await cue('settle');
+    const approved = store.getTask(task.id);
+    const registrations = scheduler.registered.length;
+    await cue('one');
+    expect(store.getTask(task.id)).toEqual(approved);
+    await holdsFor(() => scheduler.registered.length === registrations, 'the original clock');
+    expect(store.getTask(task.id)?.status).toBe('active');
+
+    scheduler.jobs.delete(task.id);
+    await cue('two');
+    await waitUntil(() => scheduler.hasJob(task.id), 'the missing clock to be repaired', 1000);
+    expect(scheduler.registered).toHaveLength(registrations + 1);
+
+    await writeFile(file, skillFile('clock').replace("'0 9 * * *'", "'0 10 * * *'"));
+    await waitUntil(
+      () => store.getTask(task.id)?.cron === '0 10 * * *' && !scheduler.hasJob(task.id),
+      'the changed task to await approval',
+      1000
+    );
+    store.updateTask(task.id, { status: 'active' });
+    new TaskRegistrar({ store, scheduler }).syncTask(task.id);
+    expect(scheduler.cronFor(task.id)).toBe('0 10 * * *');
+    expect(scheduler.registered).toHaveLength(registrations + 2);
+  });
+
+  it('cancels a removed root’s queued scan and permits a fresh watch of that path', async () => {
+    const opened = vi.spyOn(chokidar, 'watch');
+    const root = skillsRoot(skillsDir, 'global');
+    try {
+      watcher.watch(root);
+      await watcher.ready();
+      const first = opened.mock.results[0];
+      if (first?.type !== 'return') throw new Error('The real watcher did not open.');
+      vi.useFakeTimers();
+      const delivered = once(first.value, 'addDir');
+      const child = path.join(skillsDir, 'later');
+      await mkdir(child);
+      await delivered;
+      await watcher.stopWatching(skillsDir);
+      const file = path.join(child, 'SKILL.md');
+      await writeFile(file, skillFile('later'));
+      await vi.advanceTimersByTimeAsync(TASK_DIRECTORY_CATCH_UP_MS * 2);
+      expect(store.fileSync.getByFilePath(file)).toBeNull();
+
+      watcher.watch(root);
+      const second = opened.mock.results[1];
+      if (second?.type !== 'return') throw new Error('The replacement watcher did not open.');
+      await once(second.value, 'ready');
+      await vi.advanceTimersByTimeAsync(100);
+      await watcher.ready();
+      expect(store.getTasks().map((task) => task.filePath)).toEqual([file]);
+      await watcher.stopAll();
+      watcher.watch(root);
+      expect(opened).toHaveBeenCalledTimes(2);
+    } finally {
+      await watcher.stopAll();
+      vi.useRealTimers();
+      opened.mockRestore();
+    }
   });
 
   // DOR-1908, hole 1. Measured on this machine against chokidar 5 before the
