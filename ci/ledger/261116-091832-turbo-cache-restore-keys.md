@@ -34,6 +34,16 @@ and env), so only packages whose dependencies changed rebuild. Unchanged: only `
 build-only trim before the save, `assert-tests-executed.sh` and `assert-shard-union.sh`. Pinned by
 `scripts/__tests__/turbo-build-cache-restore.test.ts`.
 
+A second limit this does not fix: every `build` depends on `//#heavy-slot` (#3368), and turbo
+always hashes the root `package.json` and `turbo.json` into that root task, so a change to either
+file since the canary changes every build hash (measured with `turbo run build --dry=json`: one
+added root script changed `@dorkos/icons#build` from `722b6d1b…` to `0da450fd…`; negating them in
+`inputs` does not remove them). Three queue runs that did restore the canary's entry before the
+lockfile change (43788991004, 43790299474, 43794818748) still logged `Cached: 0 cached, 49 total`
+for that reason: root `package.json` changed 21 times on `main` from 2026-11-09 to 11-16. Until
+that coupling is resolved separately, hits come only in the windows where neither file changed
+since the last canary, so the target may not be reached by this entry alone.
+
 Expected: queue shards log "Cache restored from key: turbo-test-builds-…" and turbo
 `Cached: N cached` with N most of the build tasks, and the build phase under ~40 s per shard
 instead of 141-223 s. This shares its gate and window with 261115-201939, so the computed verdict

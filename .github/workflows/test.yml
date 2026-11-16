@@ -953,6 +953,12 @@ jobs:
       # the reason above: turbo hashes each package's own resolved
       # dependencies, so only the packages whose dependencies changed miss.
       #
+      # WHAT STILL MISSES EVERYTHING: every `build` depends on `//#heavy-slot`,
+      # and turbo always hashes the root package.json and turbo.json into that
+      # root task (an `inputs` negation does not remove them). So a change to
+      # either file since the last canary changes every build hash, and the
+      # restored entry replays nothing until the next canary.
+      #
       # BUILD ENTRIES ONLY. The saved cache never holds a `test` entry: the
       # trim before the save keeps only this run's `build` and
       # `generate:api-docs` entries (scripts/keep-build-cache-only.sh). If a
