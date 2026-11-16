@@ -144,37 +144,36 @@ export function BackgroundTaskBar({ tasks, onStopTask }: BackgroundTaskBarProps)
 
             {count > 0 && (
               <>
-                {/* Task count label */}
-                <span className="text-muted-foreground text-xs whitespace-nowrap">
-                  <strong className="text-foreground font-semibold">{count}</strong> task
-                  {count !== 1 ? 's' : ''} running
+                {/* Count label — the one place the bar states its count. It
+                    truncates rather than pushing the row past a phone's edge. */}
+                <span className="text-muted-foreground min-w-0 truncate text-xs">
+                  <strong className="text-foreground font-semibold">{count}</strong> running in
+                  background
                 </span>
 
-                {/* Stats — tools and max duration */}
-                <span className="text-muted-foreground/60 text-2xs ml-auto font-mono whitespace-nowrap">
+                {/* Stats — tools and max duration. Hidden below `sm`: the rows
+                    in the panel carry their own times. */}
+                <span className="text-muted-foreground/60 text-2xs ml-auto hidden font-mono whitespace-nowrap sm:inline">
                   {totalTools > 0 && <>{totalTools} tools &middot; </>}
                   {maxDurationSeconds}s
                 </span>
               </>
             )}
 
-            {/* ExpandToggle — chevron + task count */}
+            {/* ExpandToggle — the chevron alone; the count is said once, above */}
             <button
               type="button"
               onClick={() => setIsExpanded((prev) => !prev)}
               className={cn(
                 'text-muted-foreground hover:text-foreground flex shrink-0 items-center gap-1 transition-colors duration-150',
                 // Pushed to the far end when the stats span that usually holds
-                // that place is not drawn.
-                count > 0 ? 'ml-1' : 'ml-auto',
+                // that place is not drawn (always, below `sm`).
+                count > 0 ? 'ml-auto sm:ml-1' : 'ml-auto',
                 EXPAND_TOGGLE_TOUCH_REACH
               )}
               aria-label={isExpanded ? 'Collapse task details' : 'Expand task details'}
               aria-expanded={isExpanded}
             >
-              {/* No number when there is nothing to count: the hidden tally is
-                  stated inside the panel and nowhere else. */}
-              {count > 0 && <span className="text-3xs tabular-nums">{count}</span>}
               <ChevronDown
                 className={cn(
                   'size-3.5 transition-transform duration-200',

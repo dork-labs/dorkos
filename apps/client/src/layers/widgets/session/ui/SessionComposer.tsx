@@ -539,9 +539,12 @@ export function SessionComposer({
     () => ({ tasks: runningTasks, ambientIds }),
     [runningTasks, ambientIds]
   );
-  const backgroundTasks = useBackgroundTasks(messages, sessionRunning);
-
-  const handleStopTask = useStopTask(sessionId, transport);
+  const { stopTask: handleStopTask, finishedTaskIds } = useStopTask(sessionId, transport);
+  const allBackgroundTasks = useBackgroundTasks(messages, sessionRunning);
+  const backgroundTasks = useMemo(
+    () => allBackgroundTasks.filter((task) => !finishedTaskIds.has(task.taskId)),
+    [allBackgroundTasks, finishedTaskIds]
+  );
 
   // Switch now on a message held for the agent's background work (DOR-2065).
   // The queue update that follows clears the row; only a failure needs words.

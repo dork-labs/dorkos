@@ -218,7 +218,7 @@ export function BackgroundTaskShowcases() {
           <div className="max-w-md">
             <BackgroundTaskBar tasks={[agentTasks[0]!, ...ambientTasks]} onStopTask={logStop} />
             <p className="text-muted-foreground mt-2 text-xs">
-              (Reads &ldquo;1 task running&rdquo;; the chevron reveals the two hidden ones)
+              (Reads &ldquo;1 running in background&rdquo;; the chevron reveals the two hidden ones)
             </p>
           </div>
         </ShowcaseDemo>
