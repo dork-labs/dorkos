@@ -169,6 +169,7 @@ async function createSchedule(agentDir: string, name = 'my-own-sweep') {
     {
       store,
       registrar: null,
+      defaultTimezone: () => 'UTC',
       dorkHome,
       meshCore: { getProjectPath: () => agentDir } as never,
     },

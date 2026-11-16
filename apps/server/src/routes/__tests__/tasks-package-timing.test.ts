@@ -100,6 +100,7 @@ describe('PATCH /api/tasks/:id — a package’s schedule’s timing', () => {
           store,
           scheduler,
           registrar: new TaskRegistrar({ store, scheduler }),
+          defaultTimezone: () => 'UTC',
           dorkHome,
         }),
       })

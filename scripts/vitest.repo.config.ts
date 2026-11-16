@@ -29,6 +29,7 @@ import { defineConfig } from 'vitest/config';
 /** Suites with at least one test that reads files outside `scripts/`'s harness scope. */
 export const REPO_WIDE_SUITES = [
   '__tests__/agents-service-census.test.ts',
+  '__tests__/binary-lane-job.test.ts',
   '__tests__/check-boundary.test.ts',
   '__tests__/check-design-tokens.test.ts',
   '__tests__/check-own-mocks.test.ts',
@@ -89,6 +90,7 @@ export const HERMETIC_SUITES = [
   '__tests__/local-gate-shape.test.ts',
   '__tests__/local-worker-cap.test.ts',
   '__tests__/neon-preview-sweep.test.ts',
+  '__tests__/no-code-scope-step.test.ts',
   '__tests__/origin-branch-janitor.test.ts',
   '__tests__/pr-test-plan.test.ts',
   '__tests__/pre-push-format-gate.test.ts',
@@ -97,6 +99,7 @@ export const HERMETIC_SUITES = [
   '__tests__/shell-suite-parity.test.ts',
   '__tests__/space-runtime-packages.test.ts',
   '__tests__/turbo-affected-base-pinned.test.ts',
+  '__tests__/turbo-build-cache-restore.test.ts',
   '__tests__/unit-shard-workdivision.test.ts',
   '__tests__/verify-proof.test.ts',
   '__tests__/vitest-flake-reporter.test.ts',

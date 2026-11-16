@@ -16,6 +16,18 @@ export interface NativeBrowserStill {
   height: number;
 }
 
+/**
+ * A still taken ahead of a layer, for a layer that must never blank the page:
+ * the browser chrome's tooltips. `prepare` draws a still under the visible page
+ * and answers whether one is in place; the layer opens only then, so the page
+ * steps aside onto a picture that is already there. `release` drops a prepared
+ * still that no layer came to cover.
+ */
+export interface NativeStillControls {
+  prepare: () => Promise<boolean>;
+  release: () => void;
+}
+
 /** Two frames: the first one paints what was just committed, the second follows it. */
 const afterPaint = (run: () => void) =>
   requestAnimationFrame(() => {
@@ -52,7 +64,8 @@ export function useNativeBrowserSurface(
   ref: RefObject<HTMLDivElement | null>,
   connectionId: string | null,
   visible: boolean,
-  onUnavailable: () => void
+  onUnavailable: () => void,
+  onStillControls?: (controls: NativeStillControls | null) => void
 ): NativeBrowserStill | null {
   const [still, setStill] = useState<NativeBrowserStill | null>(null);
   // Runs once the still is committed to the page, so the page steps aside only after.
@@ -81,10 +94,15 @@ export function useNativeBrowserSurface(
     let stillUrl: string | null = null;
     // The page was told to come back, and its still goes once that has painted.
     let returning = false;
+    // A still was prepared ahead of a layer, so it stays while the page is up.
+    let held = false;
+    // Where the page was last shown, for a still taken ahead of a layer.
+    let shownAt: { x: number; y: number; width: number; height: number } | null = null;
     const dropStill = () => {
       if (stillUrl) URL.revokeObjectURL(stillUrl);
       stillUrl = null;
       returning = false;
+      held = false;
       setStill(null);
     };
     const capture = (x: number, y: number, width: number, height: number) => {
@@ -136,6 +154,66 @@ export function useNativeBrowserSurface(
       })();
       return true;
     };
+    // Its own count, so a prepared still never abandons a cover's capture, or the reverse.
+    let preparing = 0;
+    const prepare = async (): Promise<boolean> => {
+      if (disposed || broken) return false;
+      // Already in place (a cover's, or the last tooltip's while moving along the row).
+      if (stillUrl) {
+        held = true;
+        return true;
+      }
+      const captureStill = bridge.captureStill;
+      const rect = ref.current?.getBoundingClientRect();
+      const at = shownAt;
+      // A cover's capture is under way, or the page is not up to capture: no still to offer.
+      if (capturing || !live || !captureStill || !rect || !at) return false;
+      const mine = ++preparing;
+      held = true;
+      let url: string | null = null;
+      const timedOut = () =>
+        new Promise<null>((done) => setTimeout(() => done(null), STILL_WAIT_MS));
+      try {
+        const bytes = await Promise.race([captureStill(connectionId), timedOut()]);
+        if (mine !== preparing || disposed || !held || !bytes || stillUrl)
+          return !!stillUrl && held;
+        url = URL.createObjectURL(new Blob([bytes as BlobPart], { type: 'image/jpeg' }));
+        const image = new Image();
+        image.src = url;
+        await image.decode?.();
+        if (mine !== preparing || disposed || !held || stillUrl) return !!stillUrl && held;
+        stillUrl = url;
+        url = null;
+        // Answer only once the still is drawn, so the layer opens onto it.
+        const drawn = await Promise.race([
+          new Promise<true>((done) => {
+            onStillDrawn.current = () => requestAnimationFrame(() => done(true));
+            setStill({
+              url: stillUrl!,
+              left: at.x - rect.x,
+              top: at.y - rect.y,
+              width: at.width,
+              height: at.height,
+            });
+          }),
+          timedOut(),
+        ]);
+        return drawn === true && mine === preparing && !disposed && held && stillUrl !== null;
+      } catch {
+        return false;
+      } finally {
+        if (url) URL.revokeObjectURL(url);
+        if (mine === preparing && held && !stillUrl) held = false;
+      }
+    };
+    const release = () => {
+      preparing += 1;
+      if (!held) return;
+      held = false;
+      if (live && stillUrl && !returning) dropStill();
+      schedule();
+    };
+    onStillControls?.({ prepare, release });
     const clipping: HTMLElement[] = [];
     for (let parent = ref.current?.parentElement; parent; parent = parent.parentElement) {
       const style = getComputedStyle(parent);
@@ -209,6 +287,7 @@ export function useNativeBrowserSurface(
       if (key !== previous) {
         previous = key;
         live = shown;
+        shownAt = shown ? { x, y, width, height } : shownAt;
         const sent = bridge.setBounds(bounds);
         if (shown && stillUrl) {
           // The page is back on top; the still goes a frame later, so nothing flashes.
@@ -226,7 +305,7 @@ export function useNativeBrowserSurface(
             onUnavailable();
           }
         });
-      } else if (shown && stillUrl && !returning) {
+      } else if (shown && stillUrl && !returning && !held) {
         // Already back (a capture was abandoned before the page hid).
         dropStill();
       }
@@ -296,6 +375,7 @@ export function useNativeBrowserSurface(
     return () => {
       disposed = true;
       ticket += 1;
+      onStillControls?.(null);
       onStillDrawn.current = null;
       // Closing, or moving to another chat, drops the still with the page.
       dropStill();
@@ -311,6 +391,6 @@ export function useNativeBrowserSurface(
           /* The host may already be closed. */
         });
     };
-  }, [ref, connectionId, visible, onUnavailable]);
+  }, [ref, connectionId, visible, onUnavailable, onStillControls]);
   return still;
 }

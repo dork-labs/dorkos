@@ -113,7 +113,7 @@ const AGENT_REQUEST = {
  */
 async function agentCreates(callerIsOurAgent: boolean) {
   const outcome = await createScheduledTask(
-    { store, registrar: null, dorkHome, meshCore: agentMesh() },
+    { store, registrar: null, defaultTimezone: () => 'UTC', dorkHome, meshCore: agentMesh() },
     {
       input: AGENT_REQUEST,
       trusted: false,
@@ -253,7 +253,7 @@ describe('runtime lookup for an explicitly named mode', () => {
     'keeps the requested %s runtime and mode without requiring registration',
     async (runtime) => {
       const result = await createScheduledTask(
-        { store, registrar: null, dorkHome, meshCore: agentMesh() },
+        { store, registrar: null, defaultTimezone: () => 'UTC', dorkHome, meshCore: agentMesh() },
         {
           input: { ...AGENT_REQUEST, runtime, permissionMode: 'plan' },
           trusted: true,
@@ -269,7 +269,7 @@ describe('runtime lookup for an explicitly named mode', () => {
     await fs.mkdir(path.join(agentHome(), '.dork'), { recursive: true });
     await fs.writeFile(path.join(agentHome(), '.dork', 'agent.json'), '{broken');
     const result = await createScheduledTask(
-      { store, registrar: null, dorkHome, meshCore: agentMesh() },
+      { store, registrar: null, defaultTimezone: () => 'UTC', dorkHome, meshCore: agentMesh() },
       {
         input: { ...AGENT_REQUEST, permissionMode: 'plan' },
         trusted: true,

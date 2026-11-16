@@ -169,7 +169,9 @@ export type ActivitySearch = z.infer<typeof activitySearchSchema>;
 /**
  * Search params for `/tasks`: the Schedules list's filters and its sort, as
  * `useFilterState` writes them, so a link can land on a filtered list
- * (`?health=failing`, the failing-schedule notice's Open schedule, DOR-3123).
+ * (`?health=failing`, the failing-schedule notice's Open schedule, DOR-3123),
+ * or on one schedule opened to its run history (`?expand=<id>`, the Needs you
+ * card's Open schedule, DOR-4121).
  */
 export const tasksSearchSchema = mergeDialogSearch(
   z
@@ -177,6 +179,7 @@ export const tasksSearchSchema = mergeDialogSearch(
       sort: z.string().optional(),
       schedule: z.string().optional(),
       run: z.string().optional(),
+      expand: z.string().optional(),
     })
     .merge(taskFilterSchema.searchValidator)
 );

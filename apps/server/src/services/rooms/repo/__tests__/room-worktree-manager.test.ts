@@ -461,6 +461,15 @@ describe('RoomWorktreeManager', () => {
     async function legacyWorktree(name: string): Promise<string> {
       const dir = await worktreeFor(name);
       await seedOperatingSkills(dir);
+      // No such release wrote files beside a SKILL.md (DOR-4061 is the first
+      // skill that ships them), so today's seeder's are taken back out, unless
+      // a case committed them as the room's own.
+      for (const skill of OPERATING_SKILLS_PACK) {
+        for (const file of Object.keys(skill.files ?? {})) {
+          const rel = path.join('.agents', 'skills', skill.name, file);
+          if ((await git(['ls-files', rel], dir)) === '') await rm(path.join(dir, rel));
+        }
+      }
       projectAgentWorkspace(dir);
       await mkdir(path.join(dir, PROJECTED_ATTACHMENTS_ROOT, 'entry-1'), { recursive: true });
       await writeFile(path.join(dir, PROJECTED_ATTACHMENTS_ROOT, 'entry-1', 'a.txt'), 'x', 'utf-8');

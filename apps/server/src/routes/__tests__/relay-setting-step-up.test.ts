@@ -245,11 +245,16 @@ describe('a request with no person’s setting', () => {
   });
 
   it('an agent’s request runs as the agent, which never approves a setting', async () => {
-    const res = await request(app())
-      .patch('/api/relay/adapters/wh/config')
-      .set('Origin', OWN_ORIGIN)
-      .set('X-DorkOS-Agent', 'agent-1')
-      .send({ config: WITH_SETTING });
+    // 'agent-1' resolves to no agent, and with the stranger mark on by default (DOR-4453) an
+    // unresolved agent header may not change a connection holding saved secrets; that refusal is
+    // pinned below. This case is about the writer label, so it runs with the mark off.
+    const res = await withStrangerMarkFlag(false, () =>
+      request(app())
+        .patch('/api/relay/adapters/wh/config')
+        .set('Origin', OWN_ORIGIN)
+        .set('X-DorkOS-Agent', 'agent-1')
+        .send({ config: WITH_SETTING })
+    );
     expect(res.status).not.toBe(428);
     expect(manager.updateConfig).toHaveBeenCalledWith('wh', expect.any(Object), 'agent');
   });
@@ -478,12 +483,13 @@ describe('a marked agent turn typing secrets into a connection (DOR-3858, DOR-44
 
   // DOR-4453 review nit 3: a plugin whose endpoint is typed text. Rule 3 clears stored secrets only
   // for a url field, so without this gate the masks would carry the saved token to the new endpoint.
-  describe('a plugin connection whose endpoint is typed text', () => {
+  describe('a plugin connection holding a saved token', () => {
     const PLUGIN_MANIFEST = {
       ...WEBHOOK_MANIFEST,
       type: 'example-plugin',
       configFields: [
         { key: 'endpoint', type: 'text', label: 'Endpoint' },
+        { key: 'retries', type: 'number', label: 'Retries' },
         { key: 'token', type: 'password', label: 'Token', required: true },
       ],
     } as typeof WEBHOOK_MANIFEST;
@@ -499,6 +505,8 @@ describe('a marked agent turn typing secrets into a connection (DOR-3858, DOR-44
           builtin: false,
           config: {
             endpoint: 'https://owner.example.test/in',
+            retries: 3,
+            target: 'https://owner.example.test/undeclared',
             token: 'file:relay-adapter:wh:token',
           },
         },
@@ -519,6 +527,46 @@ describe('a marked agent turn typing secrets into a connection (DOR-3858, DOR-44
       expect(res.status).toBe(403);
       expect(res.body.code).toBe('marked_turn_moves_secret');
       expect(manager.updateConfig).not.toHaveBeenCalled();
+    });
+
+    // Re-review nit 2: a plugin may read its endpoint from a number field or an undeclared key.
+    it.each([
+      ['a number field', { retries: 4, token: '***' }],
+      ['a key the manifest never declares', { target: 'https://outside.example.test/x' }],
+    ])('refuses a marked turn that changes %s', async (_name, config) => {
+      const res = await withStrangerMarkFlag(true, () =>
+        duringMarkedTurn(() =>
+          request(app())
+            .patch('/api/relay/adapters/wh/config')
+            .set(...AGENT)
+            .send({ config })
+        )
+      );
+
+      expect(res.status).toBe(403);
+      expect(res.body.code).toBe('marked_turn_moves_secret');
+      expect(manager.updateConfig).not.toHaveBeenCalled();
+    });
+
+    it('lets a marked turn save the whole form back unchanged', async () => {
+      const res = await withStrangerMarkFlag(true, () =>
+        duringMarkedTurn(() =>
+          request(app())
+            .patch('/api/relay/adapters/wh/config')
+            .set(...AGENT)
+            .send({
+              config: {
+                endpoint: 'https://owner.example.test/in',
+                retries: 3,
+                target: 'https://owner.example.test/undeclared',
+                token: '***',
+              },
+            })
+        )
+      );
+
+      expect(res.status).toBe(200);
+      expect(manager.updateConfig).toHaveBeenCalledOnce();
     });
 
     it('refuses an agent it cannot identify the same way', async () => {

@@ -83,6 +83,23 @@ export function createDb(dbPath: string) {
   }
 }
 
+/**
+ * Opens an in-memory database from a serialized image, configured exactly as
+ * {@link createDb} configures a connection.
+ *
+ * For test fixtures that migrate one database and copy it, rather than replay
+ * every migration per test (`createTestDb` in `@dorkos/test-utils`). The image
+ * is copied into the new connection, so writes never reach the image or any
+ * other copy. Pragmas are per-connection and are not in the image, which is why
+ * this shares `createDb`'s configuration step instead of opening the image
+ * itself.
+ *
+ * @param image - Bytes from `Database#serialize()` of a database opened through `createDb`
+ */
+export function createDbFromImage(image: Buffer) {
+  return configureAndWrap(new Database(image));
+}
+
 /** Apply the house pragmas to an open connection and wrap it in Drizzle. */
 function configureAndWrap(sqlite: Database.Database) {
   sqlite.pragma('journal_mode = WAL');

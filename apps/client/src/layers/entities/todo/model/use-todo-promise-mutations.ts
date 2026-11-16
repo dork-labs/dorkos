@@ -1,5 +1,6 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import type {
+  ConfirmTodoPromiseRequest,
   CreateTodoPromiseRequest,
   UpdateTodoPromiseRequest,
 } from '@dorkos/shared/todo-promise-schemas';
@@ -43,6 +44,27 @@ export function useUpdateTodoPromise() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: ({ id, body }: UpdateTodoPromiseInput) => transport.updateTodoPromise(id, body),
+    onSettled: () => queryClient.invalidateQueries({ queryKey: todoPromiseKeys.all }),
+  });
+}
+
+/** One answer: which kept promise, and Yes or Not yet. */
+export interface ConfirmTodoPromiseInput {
+  id: string;
+  answer: ConfirmTodoPromiseRequest['answer'];
+}
+
+/**
+ * Answer whether a kept promise was kept (DOR-3034): Yes confirms it, Not yet reopens it.
+ *
+ * @returns The TanStack mutation.
+ */
+export function useConfirmTodoPromise() {
+  const transport = useTransport();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, answer }: ConfirmTodoPromiseInput) =>
+      transport.confirmTodoPromise(id, answer),
     onSettled: () => queryClient.invalidateQueries({ queryKey: todoPromiseKeys.all }),
   });
 }

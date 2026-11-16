@@ -5,11 +5,16 @@
  * scheduled runs count too, because they use an agent's capacity just the same,
  * so this can read higher than the sidebar's chip, which leaves them out.
  *
+ * A chat whose turn has ended while work it started still runs — a helper, a
+ * background shell, a Monitor — is listed too, as `background` (DOR-2065): it
+ * holds its agent's process and will speak again, so it is not free.
+ *
  * An agent reader never gets a person's own chat, not even its title (spec
  * `audit-trail` §3.4). It gets the number, as `get_session_count` already gives.
  *
  * @module services/session/running-chats
  */
+import path from 'node:path';
 import { chatMarkdownLink } from '@dorkos/shared/session-link';
 import { isWithinDirectory } from '@dorkos/shared/paths';
 import type {
@@ -50,6 +55,28 @@ export interface RunningChatSources {
   titleOf: (sessionId: string) => Promise<string | null>;
   /** The chat that started a session, if another chat did. */
   starterOf: (sessionId: string) => string | null;
+  /** `true` while a session's background work still runs; absent when nothing says so. */
+  backgroundWork?: (sessionId: string, status: SessionStatus) => true | undefined;
+}
+
+/**
+ * Whether background work a session started is still running (DOR-2065): the
+ * one server answer the running read and `get_session_count` share.
+ *
+ * Read from the session's projected running list alone — helpers, shells,
+ * Monitors and other tasks the runtime reported, the same list the strip draws.
+ * Not from `AgentRuntime.holdsBackgroundWork`, which is also true for a timer
+ * the agent set (`/loop`, a scheduled wake) or a report still owed: a chat
+ * waiting on a timer has nothing running, so it is not `background`.
+ *
+ * `true` while anything is counted; otherwise absent, never `false`, because
+ * not every runtime reports its background work.
+ *
+ * @param _sessionId - The session (kept for the sources signature)
+ * @param status - Its projected status
+ */
+export function backgroundWorkOf(_sessionId: string, status: SessionStatus): true | undefined {
+  return (status.runningSubagentCount ?? 0) > 0 ? true : undefined;
 }
 
 const LIVE_SOURCES: RunningChatSources = {
@@ -66,7 +93,30 @@ const LIVE_SOURCES: RunningChatSources = {
     const record = getSessionStartedByStore()?.get(sessionId);
     return record?.kind === 'chat' ? record.startedBySessionId : null;
   },
+  backgroundWork: backgroundWorkOf,
 };
+
+/**
+ * How many chats working in `folder` still have background work running, by
+ * {@link backgroundWorkOf}: the number `get_session_count` reports beside its
+ * total (DOR-2065). The same chats that total counts — the ones whose folder
+ * is exactly `folder` — so it can never exceed it for a nested agent's work.
+ *
+ * @param folder - The agent's folder
+ * @param statuses - Every live projector, replaced in tests
+ */
+export function countBackgroundWorkIn(
+  folder: string,
+  statuses: () => LiveProjector[] = listProjectorStatuses
+): number {
+  const target = path.resolve(folder);
+  return statuses().filter(
+    (entry) =>
+      entry.cwd !== undefined &&
+      path.resolve(entry.cwd) === target &&
+      backgroundWorkOf(entry.sessionId, entry.status) === true
+  ).length;
+}
 
 /** The roster fields this read uses. */
 type Roster = Pick<MeshCore, 'listWithPaths'>;
@@ -99,13 +149,20 @@ export async function listRunningChats(
   sources: RunningChatSources = LIVE_SOURCES
 ): Promise<RunningChatsResponse> {
   const live = sources.statuses().flatMap((entry) => {
-    const state = chatStateOf({
+    const turn = chatStateOf({
       status: entry.status,
       needsYou: sources.needsYou(entry.sessionId),
     });
-    return state === 'running' || state === 'needs-you'
-      ? [{ ...entry, state: state as RunningChatState }]
-      : [];
+    const backgroundWork = sources.backgroundWork?.(entry.sessionId, entry.status);
+    // `background` only for a chat that finished cleanly: a failed, stopped or
+    // limit-paused one keeps saying so elsewhere, and is not listed here.
+    const state: RunningChatState | null =
+      turn === 'running' || turn === 'needs-you'
+        ? turn
+        : turn === 'done' && backgroundWork === true
+          ? 'background'
+          : null;
+    return state ? [{ ...entry, state, backgroundWork }] : [];
   });
   live.sort((a, b) => a.sessionId.localeCompare(b.sessionId));
 
@@ -130,6 +187,7 @@ export async function listRunningChats(
         title,
         link: chatMarkdownLink(chat.sessionId, title),
         state: chat.state,
+        ...(chat.backgroundWork !== undefined ? { backgroundWork: chat.backgroundWork } : {}),
         spinOff: starter !== null,
         startedBy:
           starter && readable.has(starter)

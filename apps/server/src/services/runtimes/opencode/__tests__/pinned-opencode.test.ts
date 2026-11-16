@@ -1,10 +1,19 @@
 /**
  * @vitest-environment node
  */
+import { EventEmitter } from 'node:events';
+import type { spawn, SpawnOptions } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import fs from 'node:fs';
-import { describe, expect, it } from 'vitest';
-import { OPENCODE_PIN, pinnedOpenCode } from './pinned-opencode.js';
+import os from 'node:os';
+import path from 'node:path';
+import { describe, expect, it, vi } from 'vitest';
+import {
+  OPENCODE_PIN,
+  pinnedOpenCode,
+  withUnchangedBinary,
+  guardedOpenCodeSpawn,
+} from './pinned-opencode.js';
 
 type Manifest = {
   dependencies?: Record<string, string>;
@@ -70,3 +79,85 @@ describe('the pinned OpenCode binary', () => {
     expect(actual).toBe(OPENCODE_PIN.sha256[HERE]);
   });
 });
+
+describe('fresh binary integrity checks', () => {
+  async function fixture(run: (file: string, hash: string) => Promise<void>) {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'opencode-integrity-'));
+    const file = path.join(root, 'binary');
+    fs.writeFileSync(file, 'original executable bytes');
+    const hash = createHash('sha256').update(fs.readFileSync(file)).digest('hex');
+    try {
+      await run(file, hash);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  }
+
+  it('returns the result when the binary is unchanged', async () => {
+    await fixture(async (file, hash) => {
+      await expect(withUnchangedBinary(file, hash, async () => 42)).resolves.toBe(42);
+    });
+  });
+
+  it.each([false, true])('refuses post-run mutation even when the run fails: %s', async (fails) => {
+    await fixture(async (file, hash) => {
+      await expect(
+        withUnchangedBinary(file, hash, async () => {
+          fs.writeFileSync(file, 'changed executable bytes');
+          if (fails) throw new Error('run failed');
+        })
+      ).rejects.toThrow('does not match its pinned SHA-256');
+    });
+  });
+
+  it('refuses changed bytes before a subsequent run starts', async () => {
+    await fixture(async (file, hash) => {
+      await withUnchangedBinary(file, hash, async () => undefined);
+      fs.writeFileSync(file, 'changed between runs');
+      let started = false;
+      await expect(
+        withUnchangedBinary(file, hash, async () => {
+          started = true;
+        })
+      ).rejects.toThrow('does not match its pinned SHA-256');
+      expect(started).toBe(false);
+    });
+  });
+
+  it('preserves an operation failure when the binary is unchanged', async () => {
+    await fixture(async (file, hash) => {
+      await expect(
+        withUnchangedBinary(file, hash, async () => {
+          throw new Error('run failed');
+        })
+      ).rejects.toThrow('run failed');
+    });
+  });
+});
+
+it.skipIf(!OPENCODE_PIN.sha256[HERE])(
+  'every guarded spawn overrides self-update settings while preserving config',
+  async () => {
+    const child = new EventEmitter();
+    const spawnBinary = vi.fn(() => child);
+    const result = guardedOpenCodeSpawn(
+      spawnBinary as unknown as typeof spawn,
+      pinnedOpenCode()!,
+      ['serve'],
+      {
+        env: {
+          OPENCODE_DISABLE_AUTOUPDATE: '0',
+          OPENCODE_CONFIG_CONTENT: JSON.stringify({ autoupdate: true, model: 'fake/x' }),
+        },
+      }
+    );
+    const options = spawnBinary.mock.calls[0] as unknown as [string, string[], SpawnOptions];
+    expect(options[2].env?.OPENCODE_DISABLE_AUTOUPDATE).toBe('1');
+    expect(JSON.parse(String(options[2].env?.OPENCODE_CONFIG_CONTENT))).toEqual({
+      autoupdate: false,
+      model: 'fake/x',
+    });
+    child.emit('close');
+    await expect(result.verified).resolves.toBeUndefined();
+  }
+);

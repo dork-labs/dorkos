@@ -48,7 +48,7 @@ import {
   useSubagents,
 } from '@/layers/entities/session';
 import { useConfig } from '@/layers/entities/config';
-import { foldActiveSubagents } from '../lib/fold-active-subagents';
+import { foldActiveSubagents, withRunningTasks } from '../lib/fold-active-subagents';
 import { gitDiagnosticsFrom, useGitStatus } from './use-git-status';
 import { useResolvedSessionRuntime } from './use-runtime-chip';
 import type { ActiveSubagent, SessionDiagnostics } from './session-diagnostics';
@@ -119,6 +119,8 @@ export function useSessionDiagnostics(sessionId: string): SessionDiagnostics {
   const triggerPending = useSessionTriggerPending(sessionId);
   const queueDepth = useSessionQueue(sessionId).length;
   const inProgressTurn = useSessionInProgressTurn(sessionId);
+  // The session-level list names work the turn's fold no longer can (D8).
+  const runningTasks = streamStatus?.runningSubagents;
   // Deferred, not eager. `TURN_EVENT_TYPES` includes `text_delta`, so a long
   // turn's event list runs to thousands of entries and folding it on assembly
   // rescanned all of them on every applied frame — an O(turn²) cost paid by the
@@ -127,8 +129,8 @@ export function useSessionDiagnostics(sessionId: string): SessionDiagnostics {
   // rows folds once per frame and every other caller pays nothing.
   const foldSubagents = useMemo(() => {
     let folded: ActiveSubagent[] | null = null;
-    return () => (folded ??= foldActiveSubagents(inProgressTurn));
-  }, [inProgressTurn]);
+    return () => (folded ??= withRunningTasks(foldActiveSubagents(inProgressTurn), runningTasks));
+  }, [inProgressTurn, runningTasks]);
   // Server truth to cross-check the fold against (see `runningSubagentCount`).
   const runningSubagentCount = streamStatus?.runningSubagentCount ?? null;
   const git = useMemo(() => gitDiagnosticsFrom(gitStatus), [gitStatus]);

@@ -179,6 +179,26 @@ describe('to-do tools', () => {
     });
   });
 
+  it('tells the recipient when the agent drops or moves a to-do through todos_update (DOR-3034)', async () => {
+    const tellRecipient = vi.fn().mockResolvedValue(undefined);
+    (deps.todoDeps as { promiseOf?: unknown; tellRecipient?: unknown }).promiseOf = (id: string) =>
+      promises.get(id);
+    (deps.todoDeps as { tellRecipient?: unknown }).tellRecipient = tellRecipient;
+    const given = todos.create(
+      { kind: 'person', proven: true },
+      { what: 'Send the deck', to: 'owner', assignee: { kind: 'agent', agentId: 'agent-a' } }
+    );
+    await ran('chat-clean', false);
+    const context = { identity: identity('/agents/a'), sessionId: 'chat-clean' };
+    const dueAt = new Date(Date.now() + 2 * 86_400_000).toISOString();
+    await call('todos.update', { id: given.id, dueAt }, context);
+    await call('todos.update', { id: given.id, state: 'dropped', note: 'Not needed' }, context);
+    expect(tellRecipient.mock.calls.map(([n]) => [n.change, n.reason])).toEqual([
+      ['moved', null],
+      ['dropped', 'Not needed'],
+    ]);
+  });
+
   it('refuses to make or hand on a to-do from a marked turn, Full or not (Must 7)', async () => {
     const mine = todos.create(
       { kind: 'person', proven: true },

@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { motion } from 'motion/react';
 import { SearchX } from 'lucide-react';
 import type { Task } from '@dorkos/shared/types';
@@ -17,6 +17,7 @@ import {
 } from '../lib/task-filter-schema';
 import { failingFirst, isFailing } from '../lib/schedule-health';
 import { TaskRow } from './TaskRow';
+import { useLinkedExpansion } from '../lib/use-linked-expansion';
 import { FailingChip, FailingCount, NothingFailing } from './TasksFailing';
 
 /** Items beyond this index are rendered without stagger delay to keep animation snappy. */
@@ -43,20 +44,32 @@ interface TasksListProps {
   onEditTask: (task: Task) => void;
   /** Pre-filter tasks by agent ID (e.g. when shown in an agent-scoped dialog). */
   agentId?: string;
+  /**
+   * A schedule to open to its run history and bring into view, from a
+   * notice's Open schedule (`/tasks?expand=<id>`, DOR-4121).
+   */
+  expandId?: string;
 }
 
 /**
  * Task list container -- renders expandable TaskRow components with
  * composable filter bar, sort options, and entrance animations.
  */
-export function TasksList({ tasks, isLoading, agentMap, onEditTask, agentId }: TasksListProps) {
+export function TasksList({
+  tasks,
+  isLoading,
+  agentMap,
+  onEditTask,
+  agentId,
+  expandId,
+}: TasksListProps) {
   const filterState = useFilterState(taskFilterSchema, {
     debounce: { search: 200 },
   });
   // staggerKey is intentionally never updated -- keeping it stable prevents the
   // stagger container from remounting (and re-animating) on filter changes.
   const [staggerKey] = useState(0);
-  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const { expandedId, toggle } = useLinkedExpansion(expandId);
 
   // Pre-filter by agent when agentId is provided
   const baseTasks = useMemo(
@@ -88,6 +101,15 @@ export function TasksList({ tasks, isLoading, agentMap, onEditTask, agentId }: T
     // theirs (DOR-3123, spec `schedules-failing` §2.3).
     return filterState.sortField ? sorted : failingFirst(sorted);
   }, [baseTasks, filterState.values, filterState.sortField, filterState.sortDirection]);
+
+  // Bring the linked row into view once it is on the page.
+  const linkedRowShown = !!expandId && filteredTasks.some((task) => task.id === expandId);
+  useEffect(() => {
+    if (!linkedRowShown) return;
+    document
+      .querySelector(`[data-schedule-row="${CSS.escape(expandId!)}"]`)
+      ?.scrollIntoView?.({ block: 'nearest' });
+  }, [expandId, linkedRowShown]);
 
   const failingCount = useMemo(() => baseTasks.filter(isFailing).length, [baseTasks]);
   const failingFilterOn = filterState.values.health === 'failing';
@@ -165,6 +187,7 @@ export function TasksList({ tasks, isLoading, agentMap, onEditTask, agentId }: T
               {filteredTasks.map((task, index) => (
                 <motion.div
                   key={task.id}
+                  data-schedule-row={task.id}
                   variants={index < STAGGER_ITEM_LIMIT ? staggerItemVariants : undefined}
                   transition={{ duration: 0.15 }}
                 >
@@ -172,7 +195,7 @@ export function TasksList({ tasks, isLoading, agentMap, onEditTask, agentId }: T
                     task={task}
                     agent={(task.agentId ? agentMap.get(task.agentId) : undefined) ?? null}
                     expanded={expandedId === task.id}
-                    onToggleExpand={() => setExpandedId(expandedId === task.id ? null : task.id)}
+                    onToggleExpand={() => toggle(task.id)}
                     onEdit={() => onEditTask(task)}
                   />
                 </motion.div>

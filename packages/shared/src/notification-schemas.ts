@@ -187,6 +187,8 @@ export const NOTIFICATION_KINDS = [
   'shell.check_down',
   /** A spin-off report never reached the chat that started it (DOR-3561). */
   'report.undelivered',
+  /** An agent moved or dropped a promise it made to a person, with its reason (DOR-3034). */
+  'todo.changed',
 ] as const;
 
 /** What the app shows about DorkOS's check on agents' shell commands (DOR-3300). */

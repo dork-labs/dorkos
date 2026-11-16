@@ -10,7 +10,8 @@
  * @module services/todos/todo-list
  */
 import type { TodoRow } from '@dorkos/db';
-import { isOverdue, PERSON_ASSIGNER } from './todo-promise-service.js';
+import { PERSON_ASSIGNER } from './todo-promise-service.js';
+import { isOverdue } from './todo-promise-view.js';
 import type { TodoListFilter } from './todo-service.js';
 
 /** The rows a list shows, before they are turned into to-dos. */

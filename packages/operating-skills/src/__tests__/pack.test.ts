@@ -46,7 +46,7 @@ function listedSiblings(body: string): string[] {
 }
 
 describe('OPERATING_SKILLS_PACK', () => {
-  it('ships the eleven canonical skills, umbrella first', () => {
+  it('ships the twelve canonical skills, umbrella first', () => {
     expect(OPERATING_SKILLS_PACK.map((s) => s.name)).toEqual([
       'operating-dorkos',
       'managing-agents',
@@ -59,6 +59,7 @@ describe('OPERATING_SKILLS_PACK', () => {
       'working-with-spin-off-chats',
       'working-on-a-heartbeat',
       'continuing-on-another-account',
+      'building-dorkos-apps',
     ]);
   });
 
@@ -97,6 +98,17 @@ describe('OPERATING_SKILLS_PACK', () => {
       it('uses no em-dashes (repo-wide ban, and this is model-facing prose)', () => {
         expect(skill.description).not.toContain('—');
         expect(skill.body).not.toContain('—');
+      });
+
+      it('names each supporting file plainly, so it lands beside SKILL.md and nowhere else', () => {
+        // The seeder joins these names onto the skill folder and stamps them as
+        // `name=hash` pairs joined by `,`, so a separator, `..`, `=` or `,` in
+        // one would write outside the folder or corrupt the stamp.
+        for (const file of Object.keys(skill.files ?? {})) {
+          expect(file).toMatch(/^[A-Za-z0-9][A-Za-z0-9._-]*$/);
+          expect(file).not.toContain('..');
+          expect(file).not.toBe('SKILL.md');
+        }
       });
     });
   }

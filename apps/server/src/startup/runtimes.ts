@@ -12,6 +12,7 @@
 import { claimReplayIsolation } from '../lib/replay/isolation.js';
 import { reconcileMountTargets } from '../services/runtimes/codex/policy/reconcile-mount-targets.js';
 import { registerComputerRuntime } from './computers.js';
+import { setLiveTaskProbe } from '../services/session/projector/running-tasks.js';
 import type { AgentRuntimeLike } from '@dorkos/relay';
 import type { Db } from '@dorkos/db';
 import { env } from '../env.js';
@@ -73,6 +74,10 @@ export interface RegisteredRuntimes {
  * @returns See {@link RegisteredRuntimes}.
  */
 export async function registerRuntimes(deps: RuntimeStartupDeps): Promise<RegisteredRuntimes> {
+  // The silence sweep spares a quiet task its runtime still runs (DOR-2065).
+  setLiveTaskProbe((sessionId) =>
+    runtimeRegistry.listRuntimes().flatMap((runtime) => runtime.liveHelperIds?.(sessionId) ?? [])
+  );
   if (claimReplayIsolation(deps.dorkHome)) {
     const { registerReplayRuntimes } = await import('./replay-runtimes.js');
     return registerReplayRuntimes(deps);

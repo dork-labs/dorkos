@@ -82,7 +82,7 @@ export const MEASURE_SOURCES = {
   surprises: 'Not measured yet. It needs the manager to say so.',
   mutes: 'Pauses, heartbeat switched off, and mutes, by a person.',
   quiet: 'Checks that sent no message. Lines saved for a report still count.',
-  todoPromises: 'Promises due in this window, kept by their date.',
+  todoPromises: 'Due this window. A late move stays late; a dropped one counts as missed.',
 } as const;
 
 /** What the computation needs beside the rows. */
@@ -291,12 +291,15 @@ export function computeMeasures(
     checks += used.checks;
     tokens += used.tokens;
   }
+  // Score against the last date renegotiated before it was due. A late move keeps the missed
+  // score date, so moving a promise after its deadline cannot turn it into an on-time one (DOR-3034).
   const onTime = records.todoPromises.filter(
-    (c) => c.state === 'kept' && c.closedAt !== null && ms(c.closedAt) <= ms(c.dueAt)
+    (c) => c.state === 'kept' && c.closedAt !== null && ms(c.closedAt) <= ms(c.scoreDueAt)
   ).length;
-  const counted = records.todoPromises.filter(
-    (c) => c.state !== 'dropped' && ms(c.dueAt) <= ctx.now
-  ).length;
+  // A dropped promise counts too, as one not kept on time: dropping is no longer a free exit from
+  // the score (DOR-3034). A missed one reopened and then kept closes after its date, so it stays late.
+  const promisesDue = records.todoPromises.filter((c) => ms(c.scoreDueAt) <= ctx.now);
+  const counted = promisesDue.length;
   return {
     windowDays: ctx.windowDays,
     since: ctx.since,
@@ -336,6 +339,9 @@ export function computeMeasures(
         MEASURE_TARGETS.todoPromises,
         MEASURE_SOURCES.todoPromises
       ),
+      // The rest of the honesty picture on a profile (DOR-3034): how many moved, how many missed.
+      todosMoved: promisesDue.filter((c) => c.moveCount > 0).length,
+      todosMissed: promisesDue.filter((c) => c.state === 'missed').length,
       noEndBeat: records.beats.filter((beat) => beat.outcome === 'no-end-beat').length,
       triage: { checks, tokens },
       turns: {

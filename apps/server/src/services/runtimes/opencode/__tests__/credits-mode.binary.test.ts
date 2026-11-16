@@ -30,14 +30,13 @@ import http from 'node:http';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { spawn } from 'node:child_process';
 import type { AddressInfo } from 'node:net';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { InferenceModel } from '@dork-labs/cloud-api';
 import { buildSidecarSpawnEnv } from '../server-manager.js';
 import { OPENCODE_OWN_PLAN, type OpenCodeSidecarPlan } from '../credits-sidecar.js';
 import { startCreditsRelay, type CreditsRelay } from '../../../core/cloud/credits-relay.js';
-import { OFFLINE_PROXY_ENV, pinnedOpenCode } from './pinned-opencode.js';
+import { OFFLINE_PROXY_ENV, pinnedOpenCode, runPinnedOpenCode } from './pinned-opencode.js';
 
 const BINARY = pinnedOpenCode();
 const TOKEN = 'fake-credits-token-never-real';
@@ -103,22 +102,20 @@ async function runTurn(
   model: string,
   done: (seen: Hit[]) => boolean = (seen) => seen.length > 0
 ): Promise<Hit[]> {
-  const child = spawn(BINARY!, ['run', '-m', model, 'hello'], {
-    cwd: folder,
-    env,
-    stdio: ['ignore', 'ignore', 'ignore'],
+  return runPinnedOpenCode(['run', '-m', model, 'hello'], { cwd: folder, env }, async (child) => {
+    child.stdout.resume();
+    child.stderr.resume();
+    let deadline: ReturnType<typeof setTimeout> | undefined;
+    let watcher: ReturnType<typeof setInterval> | undefined;
+    await new Promise<void>((resolve) => {
+      deadline = setTimeout(resolve, 40_000);
+      watcher = setInterval(() => done(hits) && resolve(), 100);
+      child.once('close', () => resolve());
+    });
+    clearTimeout(deadline);
+    clearInterval(watcher);
+    return hits;
   });
-  let deadline: ReturnType<typeof setTimeout> | undefined;
-  let watcher: ReturnType<typeof setInterval> | undefined;
-  await new Promise<void>((resolve) => {
-    deadline = setTimeout(resolve, 40_000);
-    watcher = setInterval(() => done(hits) && resolve(), 100);
-    child.once('exit', () => resolve());
-  });
-  clearTimeout(deadline);
-  clearInterval(watcher);
-  child.kill('SIGKILL');
-  return hits;
 }
 
 function creditsPlan(): OpenCodeSidecarPlan {

@@ -17,6 +17,7 @@ import type {
   UpdateTaskRequest,
 } from '@dorkos/shared/types';
 import { parseDuration } from '@dorkos/skills/duration';
+import { RUN_LINE } from '@dorkos/shared/schedule-notice-copy';
 import { logger } from '../../lib/logger.js';
 import { TaskApprovals } from './approvals/task-approvals.js';
 import { RunSessionStore, type RunSessionBinding } from './session/run-session-store.js';
@@ -26,13 +27,25 @@ import { mapTaskRow, mapRunRow } from './task-row-mappers.js';
 import { lastRunStarts, type ScheduleReliability } from './history/run-history.js';
 import { HEALTHY, scheduleHealth } from './history/schedule-health.js';
 import { FINISHED_RUN_STATUSES, isTerminalRunStatus } from './lifecycle/run-statuses.js';
-import { timingColumnWrites, type TimingLandsOn } from './timing/effective-timing.js';
+import { timingColumnWrites } from './timing/effective-timing.js';
 import { runCreatorColumns } from './approvals/cross-agent.js';
 import {
   activationTaskApprovalColumns,
   createTaskApprovalColumns,
-  type TaskApprovalInput,
 } from './approvals/task-approval-receipt.js';
+import type {
+  CreateTaskStoreInput,
+  UntimedTaskUpdate,
+  UntimedTaskUpdateOptions,
+  UpdateTaskOptions,
+} from './store/task-store-types.js';
+
+export type {
+  CreateTaskStoreInput,
+  UntimedTaskUpdate,
+  UntimedTaskUpdateOptions,
+  UpdateTaskOptions,
+} from './store/task-store-types.js';
 
 /** Options for listing runs. */
 interface ListRunsOptions {
@@ -41,74 +54,6 @@ interface ListRunsOptions {
   limit?: number;
   offset?: number;
 }
-
-/** Server-side input for creating a task from the API route. */
-export interface CreateTaskStoreInput {
-  name: string;
-  displayName?: string;
-  description: string;
-  prompt: string;
-  cron?: string | null;
-  timezone?: string | null;
-  agentId?: string | null;
-  enabled?: boolean;
-  /** Whether every run resumes one persistent session (DOR-1571). Defaults off. */
-  sticky?: boolean;
-  maxRuntime?: number | null;
-  permissionMode?: string;
-  /** Which runtime this task's runs execute on; absent follows the agent (DOR-1615). */
-  runtime?: string | null;
-  /** The model its runs execute on, in the resolved runtime's id space (DOR-1347). */
-  model?: string | null;
-  /** The reasoning-effort rung its runs execute at. */
-  effort?: string | null;
-  /** The Claude account (registry id) its runs start on; absent follows the agent (DOR-2384). */
-  account?: string | null;
-  filePath: string;
-  /** Why the schedule should exist, in the proposer's own words. See {@link CreateTaskStoreInput.proposedByAgentPath}. */
-  reason?: string | null;
-  /** The session that proposed it, when an agent did. */
-  proposedBySessionId?: string | null;
-  /**
-   * The proposing session's working directory — the key the agent-identity
-   * service resolves a display name from. Stored rather than the name itself,
-   * so a rename or a revocation is reflected the next time the task is read.
-   */
-  proposedByAgentPath?: string | null;
-  /** The create's approval receipt, or null when it must start parked. */
-  approval?: TaskApprovalInput | null;
-}
-
-/**
- * How {@link TaskStore.updateTask} writes a request's timing — see
- * {@link TimingLandsOn}.
- */
-export interface UpdateTaskOptions {
-  /** Who approved an activation; omitted fails closed to policy/unknown. */
-  approval?: TaskApprovalInput;
-  /**
-   * Where `cron` and `timezone` go. `file` is every schedule whose SKILL.md
-   * DorkOS writes; `row` is a package's schedule, whose timing becomes the
-   * row's override. Decided by `applyTaskFileUpdate`, which is the one step
-   * that asks whether a package owns the file.
-   *
-   * Required, with no default, for any update that carries timing: a silent
-   * `file` would write a person's timing over a package's default and drop
-   * their override, which is the one mistake a caller must not be able to make
-   * by leaving an argument out.
-   */
-  timingLandsOn: TimingLandsOn;
-}
-
-/** An update that says nothing about timing, and so needs no {@link UpdateTaskOptions}. */
-export type UntimedTaskUpdate = Omit<UpdateTaskRequest, 'cron' | 'timezone' | 'resetTiming'> & {
-  cron?: never;
-  timezone?: never;
-  resetTiming?: never;
-};
-
-/** Options accepted by an update that carries no timing. */
-export type UntimedTaskUpdateOptions = Pick<UpdateTaskOptions, 'approval'>;
 
 /**
  * Callback fired exactly once when a run transitions to a terminal status
@@ -202,6 +147,11 @@ export class TaskStore {
         sticky: input.sticky ?? false,
         maxRuntime: input.maxRuntime ?? null,
         permissionMode: input.permissionMode ?? 'acceptEdits',
+        requestedPermissionMode: input.requestedPermissionMode ?? null,
+        requestedAllow:
+          input.requestedAllow === undefined || input.requestedAllow === null
+            ? null
+            : JSON.stringify(input.requestedAllow),
         runtime: input.runtime ?? null,
         model: input.model ?? null,
         effort: input.effort ?? null,
@@ -297,6 +247,14 @@ export class TaskStore {
         typeof input.maxRuntime === 'string' ? parseDuration(input.maxRuntime) : null;
     }
     if (input.permissionMode !== undefined) updates.permissionMode = input.permissionMode;
+    if (input.requestedPermissionMode !== undefined)
+      updates.requestedPermissionMode = input.requestedPermissionMode;
+    if (input.requestedAllow !== undefined)
+      updates.requestedAllow =
+        input.requestedAllow === null ? null : JSON.stringify(input.requestedAllow);
+    if (input.approvedAllow !== undefined)
+      updates.approvedAllow =
+        input.approvedAllow === null ? null : JSON.stringify(input.approvedAllow);
     // `null` CLEARS the override, which is a state a person chooses: back to
     // "whatever this task's agent runs on". The column and the request spell it
     // the same way, so the three need no translation (DOR-1615/DOR-1347).
@@ -361,6 +319,8 @@ export class TaskStore {
       reason?: string | null;
       proposedBySessionId?: string | null;
       proposedByAgentPath?: string | null;
+      requestedPermissionMode?: Task['permissionMode'] | null;
+      requestedAllow?: string[] | null;
     }
   ): Task | null {
     if (!this.getTask(id)) return null;
@@ -377,6 +337,11 @@ export class TaskStore {
       updates.proposedBySessionId = proposal.proposedBySessionId;
     if (proposal.proposedByAgentPath !== undefined)
       updates.proposedByAgentPath = proposal.proposedByAgentPath;
+    if (proposal.requestedPermissionMode !== undefined)
+      updates.requestedPermissionMode = proposal.requestedPermissionMode;
+    if (proposal.requestedAllow !== undefined)
+      updates.requestedAllow =
+        proposal.requestedAllow === null ? null : JSON.stringify(proposal.requestedAllow);
 
     this.db.update(pulseSchedules).set(updates).where(eq(pulseSchedules.id, id)).run();
     return this.getTask(id);
@@ -852,7 +817,8 @@ export class TaskStore {
       .set({
         status: 'failed',
         finishedAt: now,
-        error: 'Interrupted by server restart',
+        // The notice reads this opening back as "DorkOS restarted" (DOR-4121).
+        error: RUN_LINE.serverRestart,
       })
       .where(
         and(

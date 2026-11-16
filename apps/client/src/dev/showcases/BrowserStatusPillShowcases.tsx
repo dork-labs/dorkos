@@ -56,7 +56,6 @@ function PillDemo({ state, width }: { state: BrowserPillState; width: number }) 
         canForward={false}
         onReload={() => {}}
         onSubmit={() => {}}
-        tooltips={false}
         agentDriving={state.kind === 'driving'}
         status={<BrowserStatusPill state={state} agentName="Atlas" now={NOW} {...NOOP_ACTIONS} />}
       />

@@ -275,7 +275,31 @@ describe('MCP Tool Handlers', () => {
       const parsed = JSON.parse(result.content[0].text);
       expect(parsed.count).toBe(3);
       expect(parsed.cwd).toBe('/test/cwd');
+      // Nothing is running in the background here, and the read says so (DOR-2065).
+      expect(parsed.backgroundWork).toBe(0);
       expect(listSessions).toHaveBeenCalledWith('/test/cwd');
+    });
+
+    // DOR-2065: a chat in this folder whose shell is still running counts.
+    it('counts this folder’s chats with background work still running', async () => {
+      const { getOrCreateProjector, disposeProjector } =
+        await import('../../session/session-state-projector.js');
+      const projector = getOrCreateProjector('bg-count-chat', '/test/bg-folder');
+      projector.ingest({
+        type: 'subagent_update',
+        taskId: 'sh-1',
+        status: 'running',
+        taskType: 'bash',
+      } as never);
+      try {
+        const handler = createGetSessionCountHandler(
+          makeMockDeps({ listSessions: vi.fn().mockResolvedValue([{ id: 'bg-count-chat' }]) })
+        );
+        const parsed = JSON.parse((await handler({ cwd: '/test/bg-folder' })).content[0].text);
+        expect(parsed).toMatchObject({ count: 1, backgroundWork: 1 });
+      } finally {
+        disposeProjector('bg-count-chat');
+      }
     });
 
     it('returns isError when transcript reader fails', async () => {

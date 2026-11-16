@@ -68,13 +68,14 @@ export function createSessionCanvasMethods(baseUrl: string) {
     openSessionCanvasDocument(
       sessionId: string,
       content: UiCanvasContent,
-      opts?: { pinned?: boolean }
+      opts?: { pinned?: boolean; openedBy?: { extensionId: string } }
     ): Promise<CanvasDocument> {
       return fetchJSON<CanvasDocument>(baseUrl, canvasPath(sessionId), {
         method: 'POST',
         body: JSON.stringify({
           content,
           ...(opts?.pinned !== undefined && { pinned: opts.pinned }),
+          ...(opts?.openedBy && { openedBy: opts.openedBy }),
         }),
       });
     },

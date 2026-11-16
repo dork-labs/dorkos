@@ -46,13 +46,6 @@ const ALLOWED: Readonly<Record<string, { count: number; reason: string }>> = {
     count: 2,
     reason: 'its own listener, bound to the same literal',
   },
-  // An extension bundle reaches nothing but `@dorkos/extension-api`, so it
-  // cannot import the helper; the shell pins the server to `localhost`, the
-  // same host the window it runs in was loaded from.
-  'apps/server/src/core-extensions/linear-issues/index.ts': {
-    count: 1,
-    reason: 'extension bundle, cannot import the helper',
-  },
   'apps/server/src/env.ts': { count: 1, reason: "Ollama's default address, another program" },
   'apps/server/src/services/runtimes/doe/presets.ts': {
     count: 2,

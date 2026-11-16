@@ -6,7 +6,7 @@ import { extensionPageState } from '../model/extension-page-state';
 function record(overrides: Partial<ExtensionRecordPublic> = {}): ExtensionRecordPublic {
   return {
     id: 'garden',
-    manifest: { id: 'garden', name: 'Garden', version: '1.0.0' },
+    manifest: { clientApiVersion: 2, id: 'garden', name: 'Garden', version: '1.0.0' },
     status: 'compiled',
     scope: 'global',
     origin: 'user',

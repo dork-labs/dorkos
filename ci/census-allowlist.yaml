@@ -225,7 +225,7 @@ entries:
     job: test-shard
     step: Run the affected packages' test suites (shard ${{ matrix.shard }}/${{ strategy.job-total }})
     kind: step-if
-    reason: The pull_request leg, which runs the suites test-shard-count's turbo-hash plan picked (every suite on any doubt); the merge_group twin above runs the full sweep. Exactly one of the pair runs on each event. On a pull request it is also gated on the job's noscope step, which skips it only when scripts/no-code-scope.sh finds nothing but changelog, docs or version lines changed, and fails open to running it.
+    reason: The pull_request leg, which runs the suites test-shard-count's turbo-hash plan picked (every suite on any doubt); the merge_group twin above runs the full sweep. Exactly one of the pair runs on each event. On a pull request it is also gated on the job's noscope step, which reads test-shard-count's `tests` output (scripts/no-code-scope.sh, run there on the depth-2 checkout) and skips it only on the literal `false`, when nothing but changelog, docs or version lines changed; anything else runs it.
   - workflow: test.yml
     job: test-shard
     step: Hand this shard's quarantine lane to the fan-in
@@ -271,6 +271,21 @@ entries:
     step: Upload this shard's vitest reports for CI Steward
     kind: continue-on-error
     reason: Observability for the CI Steward collector (flaky-test-runs); an artifact-service 403 must cost one sample, never a queue build. Phase 2's ratchet will read these in the fan-in and fail closed there instead.
+  - workflow: test.yml
+    job: test-binary
+    step: Read the quarantine lane
+    kind: step-if
+    reason: The binary CLI suites read the same lane as the full-sweep shards, on the queue and the main canary (DOR-4190, ledger 261115-203006); on a pull request they run with no lane and no retry and fail on any failure, as the shards' PR leg does.
+  - workflow: test.yml
+    job: test-binary
+    step: Refuse any failure the quarantine lane does not cover
+    kind: step-if
+    reason: The gate for the binary suites' exit code on the queue and the main canary; on a pull request the sweep step itself exits with the suites' code, so nothing is ungated on any event.
+  - workflow: test.yml
+    job: test-binary
+    step: Upload the binary suites' vitest reports for CI Steward
+    kind: continue-on-error
+    reason: Observability for the CI Steward collector (flaky-test-runs), the same upload each shard makes; an artifact-service 403 must cost one sample, never a queue build. The proof step and the shard-files-binary upload before it carry no continue-on-error.
   - workflow: test.yml
     job: community-packaged
     step: Build and test without public network access

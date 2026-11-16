@@ -27,6 +27,8 @@ import { BrowserStatusPillShowcases } from '../showcases/BrowserStatusPillShowca
 import { BrowserPageErrorShowcases } from '../showcases/BrowserPageErrorShowcases';
 import { TriageHeaderShowcases } from '../showcases/TriageHeaderShowcases';
 import { InboxShowcases } from '../showcases/InboxShowcases';
+import { ExtensionUpdateShowcases } from '../showcases/ExtensionUpdateShowcases';
+import { AppApprovalCardShowcases } from '../showcases/AppApprovalCardShowcases';
 import { AccessChangeShowcases } from '../showcases/AccessChangeShowcases';
 import { PresenceStripShowcases } from '../showcases/PresenceStripShowcases';
 import { HomeStatesShowcases } from '../showcases/HomeStatesShowcases';
@@ -111,6 +113,8 @@ export function HomeInboxPage() {
       <BrowserPageErrorShowcases />
       <TriageHeaderShowcases />
       <InboxShowcases />
+      <ExtensionUpdateShowcases />
+      <AppApprovalCardShowcases />
       <AccessChangeShowcases />
       <PresenceStripShowcases />
       <HomeStatesShowcases />

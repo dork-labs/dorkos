@@ -3,7 +3,8 @@ import { readManifest } from '@dorkos/shared/manifest';
 import type { Task } from '@dorkos/shared/types';
 import type { MeshCore } from '@dorkos/mesh';
 import { capabilitiesForTaskRuntime } from '../services/tasks/scheduled-run-power.js';
-import { readAgentExecutionDefaults } from '../services/session/resolution/resolve-session-defaults.js';
+import { taskRunRuntime } from '../services/tasks/execution/run-runtime.js';
+import { runtimeRegistry } from '../services/core/runtime-registry.js';
 import { readFolderAllowList } from '../services/runtimes/claude-code/folder-settings/agent-folder-allows.js';
 import {
   isFolderAllowListApproved,
@@ -26,11 +27,7 @@ export async function withTaskFolderRules(task: Task, mesh?: MeshCore): Promise<
   const home = task.agentId ? mesh?.getProjectPath(task.agentId) : undefined;
   if (!home || !task.agentId) return empty();
   try {
-    const agentRuntime = (await readAgentExecutionDefaults(home)).runtime;
-    const profile = capabilitiesForTaskRuntime(
-      task.runtime ??
-        (agentRuntime && capabilitiesForTaskRuntime(agentRuntime) ? agentRuntime : null)
-    );
+    const profile = capabilitiesForTaskRuntime(await taskRunRuntime(task, runtimeRegistry, mesh));
     if (profile?.type !== 'claude-code') return empty();
     const manifest = await readManifest(home);
     if (manifest && manifest.workspace.mode !== 'home') {

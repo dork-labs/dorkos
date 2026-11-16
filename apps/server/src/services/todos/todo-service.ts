@@ -43,13 +43,14 @@ import {
 import {
   TODO_DUE_SKEW_MS,
   TodoPromiseError,
-  isOverdue,
   isOwnPromise,
   PERSON_ASSIGNER,
 } from './todo-promise-service.js';
+import { isOverdue } from './todo-promise-view.js';
 import { listTodoRows } from './todo-list.js';
 import { mayChangeState, mayEdit, mayRank, mayReassign } from './todo-policy.js';
 import type { TodoPatch, TodoStore } from './todo-store.js';
+import { isLateMove, nextDueHistory } from './timing/due-history.js';
 
 /** Who a to-do is assigned to. */
 export type TodoAssignee =
@@ -132,6 +133,9 @@ export interface Todo {
   assignedBy: { kind: TodoRow['assignedByKind']; id: string };
   to: string | null;
   dueAt: string | null;
+  originalDueAt: string | null;
+  scoreDueAt: string | null;
+  moveCount: number;
   state: TodoState;
   overdue: boolean;
   roomId: string | null;
@@ -232,6 +236,9 @@ export function toTodo(row: TodoRow, now: number): Todo {
     assignedBy: { kind: row.assignedByKind, id: row.assignedBy },
     to: row.toAccount,
     dueAt: row.dueAt,
+    originalDueAt: row.originalDueAt,
+    scoreDueAt: row.scoreDueAt,
+    moveCount: row.moveCount,
     state: row.state,
     overdue: isOverdue(row, now),
     roomId: row.roomId,
@@ -317,18 +324,27 @@ export class TodoService {
     const authority = sourceMarks.outsider
       ? (lowerAuthority(own.authority, { kind: 'runtime-default' }) as WritableTodoAuthority)
       : own.authority;
+    const dueAt = input.dueAt ? this.futureDue(input.dueAt) : null;
     const row: TodoRow = {
       id: ulid(),
       agentId: input.assignee.kind === 'agent' ? input.assignee.agentId : null,
       ownerAccount: input.assignee.kind === 'person' ? input.assignee.account : null,
       toAccount: input.to ?? null,
       what,
-      dueAt: input.dueAt ? this.futureDue(input.dueAt) : null,
+      dueAt,
+      originalDueAt: dueAt,
+      scoreDueAt: dueAt,
+      moveCount: 0,
       state: 'open',
       sourceSessionId: null,
       sourceRoomEntryId: input.source?.entryId ?? null,
       createdAt: this.now().toISOString(),
       dueNotifiedAt: null,
+      estimateMinutes: null,
+      checkinNotifiedAt: null,
+      dueSetAt: dueAt ? this.now().toISOString() : null,
+      confirmState: null,
+      delivered: null,
       closedAt: null,
       note: null,
       originMarks: null,
@@ -408,6 +424,8 @@ export class TodoService {
       }
       patch.state = change.state;
       patch.closedAt = change.state === 'open' ? null : this.now().toISOString();
+      // Leaving kept ends any ask to confirm it and what was delivered (DOR-3034).
+      if (change.state !== 'kept') Object.assign(patch, { confirmState: null, delivered: null });
       audit.push({ field: 'state', before: row.state, after: change.state });
       action =
         change.state === 'kept'
@@ -452,9 +470,18 @@ export class TodoService {
       );
       const nextDue = change.dueAt ? this.futureDue(change.dueAt) : null;
       if (nextDue !== row.dueAt) {
-        patch.dueAt = nextDue;
+        const now = this.now().getTime();
+        Object.assign(patch, nextDueHistory(row, nextDue, now));
         patch.dueNotifiedAt = null;
+        patch.checkinNotifiedAt = null;
+        patch.dueSetAt = new Date(now).toISOString();
+        if (row.state === 'open') patch.confirmState = null;
         audit.push({ field: 'dueAt', before: row.dueAt, after: nextDue });
+        audit.push({
+          field: 'lateMove',
+          before: null,
+          after: isLateMove(row, now),
+        });
       }
     }
     if (change.assignee !== undefined && assigneeLabel(row) !== labelOf(change.assignee)) {
@@ -472,6 +499,7 @@ export class TodoService {
       patch.chainDepth = chain.depth;
       patch.chainAgents = JSON.stringify(chain.agents);
       patch.dueNotifiedAt = null;
+      patch.checkinNotifiedAt = null;
       audit.push({
         field: 'assignee',
         before: assigneeLabel(row),

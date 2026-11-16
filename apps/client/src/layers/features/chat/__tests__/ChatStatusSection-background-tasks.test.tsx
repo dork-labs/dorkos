@@ -203,7 +203,7 @@ describe('ChatStatusSection — background tasks outliving their turn', () => {
 
     render(<ChatStatusSection {...props} />);
 
-    expect(screen.getByLabelText('2 subagents running')).toBeInTheDocument();
+    expect(screen.getByLabelText('2 background tasks running')).toBeInTheDocument();
     expect(
       screen.getByText('Still working. The agent continues when they finish.')
     ).toBeInTheDocument();
@@ -231,7 +231,7 @@ describe('ChatStatusSection — background tasks outliving their turn', () => {
     render(<ChatStatusSection {...props} />);
 
     expect(useSessionStreamStore.getState().sessions['session-1']?.inProgressTurn).toEqual([]);
-    expect(screen.getByLabelText('1 subagent running')).toBeInTheDocument();
+    expect(screen.getByLabelText('1 background task running')).toBeInTheDocument();
   });
 
   it('draws no subagent item at all when nothing is running', () => {
@@ -255,7 +255,7 @@ describe('ChatStatusSection — background tasks outliving their turn', () => {
 
     render(<ChatStatusSection {...props} isStreaming />);
 
-    expect(screen.getByLabelText('1 subagent running')).toBeInTheDocument();
+    expect(screen.getByLabelText('1 background task running')).toBeInTheDocument();
     expect(screen.queryByText(/Still working in the background/)).not.toBeInTheDocument();
   });
 
@@ -274,7 +274,7 @@ describe('ChatStatusSection — background tasks outliving their turn', () => {
       render(<ChatStatusSection {...props} />);
 
       // The count is still honest — those children really are running…
-      expect(screen.getByLabelText('2 subagents running')).toBeInTheDocument();
+      expect(screen.getByLabelText('2 background tasks running')).toBeInTheDocument();
       // …but nothing claims the agent is about to carry on.
       expect(screen.queryByText(/Still working in the background/)).not.toBeInTheDocument();
     });

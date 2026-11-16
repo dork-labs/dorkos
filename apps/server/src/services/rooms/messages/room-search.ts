@@ -15,6 +15,7 @@
 import type { RoomEntry } from '@dorkos/shared/room-schemas';
 import type { RoomCore } from '../service/room-core.js';
 import { memberRoomName, type MemberRoomMatch } from '../manage/room-member-directory.js';
+import type { RoomBridgeLookup } from '../agent-facing-room-name.js';
 import type { RoomProjection } from '../service/room-projection.js';
 import { HISTORY_PAGE_MAX, clampHistoryLimit } from './room-reads.js';
 import type { RoomMessageFinder, RoomSearchScope } from '../service/room-service-deps.js';
@@ -41,6 +42,8 @@ export class RoomSearch {
   private readonly store: RoomStore;
   /** Words in, entry coordinates out. The message index, behind its port. */
   private readonly findMessages: RoomMessageFinder;
+  /** Read to name a bridged group the way every agent surface does (DOR-4453). */
+  private readonly bridges: RoomBridgeLookup;
 
   constructor(
     core: RoomCore,
@@ -49,6 +52,7 @@ export class RoomSearch {
   ) {
     this.store = core.store;
     this.findMessages = core.findMessages;
+    this.bridges = core.bridges;
   }
 
   /**
@@ -303,7 +307,7 @@ export class RoomSearch {
         roomId,
         this.store.listEntriesBySeq(roomId, seqs).filter((entry) => entry.seq > floor)
       );
-      const name = memberRoomName(room);
+      const name = memberRoomName(room, this.bridges);
       for (const entry of entries) matches.push({ roomId, name, entry });
     }
 

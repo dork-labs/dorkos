@@ -241,6 +241,46 @@ describe('a turn', () => {
     expect(h.host.spawns).toHaveLength(0);
   });
 
+  it('puts the required folder change in the metadata refusal headline', async () => {
+    const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'codex-metadata-error-')));
+    const cwd = path.join(root, 'project');
+    const data = path.join(root, 'data');
+    const home = path.join(root, 'home');
+    for (const folder of [cwd, data, home]) fs.mkdirSync(folder);
+    fs.writeFileSync(path.join(cwd, '.git'), 'not a Git pointer');
+    try {
+      const h = harness();
+      const events = await h.run(
+        h.request({
+          sessionId: 'metadata-refusal',
+          cwd,
+          tools: {
+            agentTokenEnv: {},
+            managed: { servers: {}, env: {} },
+            dorkosTools: null,
+            connectorTools: null,
+            filePolicy: {
+              writable: [],
+              roots: { cwd, data, home, accounts: [], agentFolders: [cwd], agentHomes: [] },
+            },
+          },
+        })
+      );
+      expect(events.map((event) => event.type)).toEqual(['error', 'done']);
+      expect(events[0]).toMatchObject({
+        data: {
+          code: 'codex_git_metadata_unavailable',
+          message: 'Codex can’t protect this folder’s Git files. Choose another folder.',
+        },
+      });
+      expect(
+        h.host.home(PERSON_HOME).processes.flatMap((process) => process.requestsOf('turn/start'))
+      ).toEqual([]);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it('starts a thread, streams, ends with exactly one done, and binds at turn/started', async () => {
     const h = harness();
     const events = await h.run(
