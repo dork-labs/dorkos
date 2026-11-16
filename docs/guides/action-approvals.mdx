@@ -71,7 +71,7 @@ The action, your permissions, and the caller decide whether a card appears. Ther
 
 **Code can have another confirmation step.** Installing or updating a package can still ask for confirmation when Tools & packages is Allowed. Creating a new package has a confirmation step too. An approval for that exact call, or an explicit permission for that action, can cover it. Running a package from a folder asks about the folder and its commands. New commands added later need another decision. See [Marketplace package trust](/docs/self-hosting/threat-model#marketplace-package-trust).
 
-**Person-only changes have stricter rules.** Changing an agent's safety boundaries needs your decision. At Full, DorkOS refuses that change and records the refusal instead of opening a card. See [Settings your agents cannot change](#settings-your-agents-cannot-change).
+**Person-only changes have stricter rules.** Changing an agent's safety boundaries needs your decision. At Full, DorkOS refuses that change and records the refusal instead of opening a card. See [Settings only you decide](#settings-only-you-decide).
 
 Your [permissions](/docs/guides/permissions) can add more questions. Any area set to **Ask**, like Rooms, needs your approval before a change there. An area set to **Blocked** refuses the action. See [When something is blocked](#when-something-is-blocked).
 
@@ -94,7 +94,7 @@ Every action carries a size label, and when a card shows at all, the label is on
 
 When an Allowed action proceeds, its label appears in Activity. A label describes the change; it does not decide whether approval is required.
 
-## Settings your agents cannot change
+## Settings only you decide
 
 Most settings are preferences, and an agent can change one on your word. A few are not preferences. Most of them protect this DorkOS: they decide who can reach it, what it can reach on your computer, where your keys go, what leaves the machine, and whether you get asked before an agent acts:
 
@@ -124,7 +124,7 @@ The last group is different again. These are the dials you turn **down** to give
 
 The Control Center opens with `⌘⇧L` (`Ctrl+Shift+L` on Windows and Linux). The last three have no switch anywhere in the app, so the command line is the way to them — and once you set one there, it stays set.
 
-These settings do not follow the ordinary preference rule. Through DorkOS's action tools, a change that needs your decision asks below Full. In a chat set to Full autonomy, or on the older Full power preset, it is refused instead. The refusal names the setting and records an Activity entry. You can change it yourself in Settings, the Control Center, or from the command line.
+These settings do not follow the ordinary preference rule. Through DorkOS's action tools, a change that needs your decision asks below Full, or is refused when its area is Blocked. In a chat set to Full autonomy, or on the older Full power preset, it is refused instead. The refusal names the setting and records an Activity entry. You can change it yourself in Settings, the Control Center, or from the command line.
 
 A change that only tightens these settings can proceed at Full, with an Activity entry. For example, an agent can turn remote access off. It cannot use that exception to turn it on again. Other routes have their own checks and gaps, described below.
 
@@ -224,7 +224,7 @@ Some things about it are worth knowing before you use it:
 - **It covers one agent doing one action.** The same agent doing something else still asks, and so does a different agent doing the same thing. There is no "trust this agent with everything" button on a card, on purpose.
 - **It lasts until you change it.** Set the action back to Ask or Blocked on the agent's Permissions page and the next request asks again. It does not undo anything that already ran.
 - **Every use is still recorded.** For an action that cannot be undone, your activity feed says each time the agent went ahead without asking.
-- **Some requests never offer it.** Changing safety limits, and anything that opens this computer to the internet or touches keys and sign-ins, always need your yes, every time. Those cards show Allow and Deny, with a line saying so. A request DorkOS cannot tie to a named agent does not offer it either, because there would be no agent to remember it for.
+- **Some requests never offer it.** Changing safety limits, and anything that opens this computer to the internet or touches keys and sign-ins, always need your yes below Full, every time. Those cards show Allow and Deny, with a line saying so. A request DorkOS cannot tie to a named agent does not offer it either, because there would be no agent to remember it for.
 
 <Callout type="warn">
   **With "Ask for a password on this computer too" off, DorkOS cannot tell who pressed it.** Always

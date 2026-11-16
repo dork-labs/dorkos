@@ -183,7 +183,7 @@ do:
 
 ### Working directories
 
-Each chat has a working directory: the folder the runtime starts in. The directory picker lets you choose one before starting a chat. DorkOS checks paths supplied to its session routes against the configured directory boundary, including its managed agent folders where permitted.
+Each chat has a working directory: the folder the runtime starts in. The directory picker lets you choose one before starting a chat. DorkOS checks every folder a chat asks it to use against the folders you allowed, including its own agent folders where permitted.
 
 That check is not a sandbox around the agent process. A runtime's own file and command permissions still matter. Software running as your operating-system user can reach files that your account can reach. See [What permissions can't stop](/docs/guides/permissions#what-permissions-cant-stop).
 

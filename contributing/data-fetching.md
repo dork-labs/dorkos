@@ -48,7 +48,7 @@ For an agent's sessions, use `useAgentSessions(projectPath)` from `@/layers/enti
 
 **Background-tab optimization:** Polling hooks should avoid refetching in a hidden tab unless their contract requires it. Do not add a poll to `useSessions`: it already has a durable stream.
 
-### Sending Messages with SSE Streaming
+### Sending Messages
 
 The app uses WebSockets for durable delivery; SSE remains supported for external consumers. `useChatSession` composes `useSessionSubmit` in `apps/client/src/layers/features/chat/model/use-session-submit.ts`. Submission is a trigger-only `postMessage()` call; events arrive through the stream owned by `StreamManager`.
 
