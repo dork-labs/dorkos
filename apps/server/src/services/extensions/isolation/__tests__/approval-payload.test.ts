@@ -190,4 +190,98 @@ describe('PendingExtensionApproval.permissions and .added', () => {
       { name: 'gone', found: false },
     ]);
   });
+
+  describe('an update whose files changed since the yes (DOR-4504)', () => {
+    const APPROVED_DIGEST = `sha256:${'a'.repeat(64)}`;
+    const UPDATED_DIGEST = `sha256:${'b'.repeat(64)}`;
+    const BEFORE = { runtime: 'subprocess', net: ['a.example.com'], run: ['git'], agents: false };
+
+    /** The approved copy, updated: new files, and `allow` as the update declares it. */
+    async function updated(
+      allow: { net: string[]; run: string[]; agents: boolean },
+      serverRuntime: 'subprocess' | 'in-process' = 'subprocess'
+    ) {
+      const app = await record(
+        'notes',
+        serverRuntime === 'subprocess'
+          ? { serverEntry: './server.ts', runtime: 'subprocess', allow }
+          : { serverEntry: './server.ts' },
+        {
+          isolation:
+            serverRuntime === 'subprocess'
+              ? {
+                  runtime: 'subprocess',
+                  net: allow.net,
+                  run: allow.run,
+                  resolvedRun: allow.run.map((name) => ({ name, path: `/usr/bin/${name}` })),
+                  agents: allow.agents,
+                  memoryMb: 256,
+                }
+              : null,
+        }
+      );
+      // The update rewrote extension.json, so its files no longer match the yes.
+      app.currentDigest = UPDATED_DIGEST;
+      state.extensions = {
+        approvedToRun: ['notes'],
+        approvedSources: { notes: { path: app.path, digest: APPROVED_DIGEST } },
+        approvedPermissions: { notes: BEFORE },
+      };
+      return app;
+    }
+
+    // Purpose: each power an update adds is named on the card, even though its
+    // files changed and the approval no longer matches them.
+    it.each([
+      {
+        power: 'a new host',
+        allow: { net: ['a.example.com', 'b.example.com'], run: ['git'], agents: false },
+        added: { net: ['b.example.com'], run: [], agents: false, runtime: false },
+      },
+      {
+        power: 'a new program',
+        allow: { net: ['a.example.com'], run: ['git', 'rg'], agents: false },
+        added: { net: [], run: ['rg'], agents: false, runtime: false },
+      },
+      {
+        power: 'messaging agents',
+        allow: { net: ['a.example.com'], run: ['git'], agents: true },
+        added: { net: [], run: [], agents: true, runtime: false },
+      },
+    ])('names $power as added', async ({ allow, added }) => {
+      const [pending] = await list([await updated(allow)]);
+      expect(pending!.added).toEqual(added);
+    });
+
+    // Purpose: an update that moves its server part inside DorkOS is named as
+    // asking for full access, whatever its files.
+    it('names running inside DorkOS as added', async () => {
+      const [pending] = await list([
+        await updated({ net: [], run: [], agents: false }, 'in-process'),
+      ]);
+      expect(pending!.added).toEqual({ net: [], run: [], agents: false, runtime: true });
+    });
+
+    // Purpose: an update that changes files but asks for nothing new marks
+    // nothing new.
+    it('names nothing for a file change that adds no power', async () => {
+      const [pending] = await list([
+        await updated({ net: ['a.example.com'], run: ['git'], agents: false }),
+      ]);
+      expect(pending!.added).toBeNull();
+    });
+
+    // Purpose: what counts as approved comes only from DorkOS's own record. An
+    // approval with no stored set is the full in-process set, which covers
+    // anything, so nothing is new.
+    it('takes the approved set only from the stored approval', async () => {
+      const app = await updated({ net: ['b.example.com'], run: [], agents: true });
+      state.extensions = {
+        approvedToRun: ['notes'],
+        approvedSources: { notes: { path: app.path, digest: APPROVED_DIGEST } },
+      };
+      const [pending] = await list([app]);
+      expect(pending!.added).toBeNull();
+    });
+  });
 });

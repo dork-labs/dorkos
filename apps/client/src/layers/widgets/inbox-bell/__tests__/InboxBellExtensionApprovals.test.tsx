@@ -293,6 +293,58 @@ describe('InboxBell — an extension waiting to be turned on', () => {
     ).toHaveTextContent('Now also wants to connect to: api.example.com');
   });
 
+  // Purpose: an update that adds a power names each one as new on the row,
+  // beside "files changed" (DOR-4504).
+  it.each([
+    {
+      power: 'a host',
+      added: { net: ['api.example.com'], run: [], agents: false, runtime: false },
+      line: 'Now also wants to connect to: api.example.com',
+    },
+    {
+      power: 'a program',
+      added: { net: [], run: ['rg'], agents: false, runtime: false },
+      line: 'Now also wants to run: rg',
+    },
+    {
+      power: 'messaging agents',
+      added: { net: [], run: [], agents: true, runtime: false },
+      line: 'Now also wants to message your agents.',
+    },
+    {
+      power: 'full access',
+      added: { net: [], run: [], agents: false, runtime: true },
+      line: 'Now wants to run inside DorkOS with full access.',
+    },
+  ])('marks $power an update adds as new', async ({ added, line }) => {
+    waiting = [
+      { ...FLOW, version: '1.1.0', updatedFrom: '1.0.0', changedFiles: ['extension.json'], added },
+    ];
+    renderBell();
+    const user = userEvent.setup();
+    await user.click(await screen.findByTestId('inbox-bell'));
+
+    const row = (await screen.findByText(PAUSED_TITLE)).closest(
+      '[data-slot="inbox-decision-row"]'
+    ) as HTMLElement;
+    const fresh = within(row)
+      .getByTestId('extension-permissions-flow')
+      .querySelectorAll('li[data-tone="new"]');
+    expect([...fresh].map((li) => li.textContent)).toEqual([line]);
+  });
+
+  it('marks nothing new for an update that adds no power', async () => {
+    waiting = [{ ...FLOW, version: '1.1.0', updatedFrom: '1.0.0', changedFiles: ['index.ts'] }];
+    renderBell();
+    const user = userEvent.setup();
+    await user.click(await screen.findByTestId('inbox-bell'));
+
+    const row = (await screen.findByText(PAUSED_TITLE)).closest(
+      '[data-slot="inbox-decision-row"]'
+    ) as HTMLElement;
+    expect(row.querySelector('li[data-tone="new"]')).toBeNull();
+  });
+
   it('opens ⓘ in place with the consent sentence and the way to Settings', async () => {
     renderBell();
     const { user, row } = await openRow();
