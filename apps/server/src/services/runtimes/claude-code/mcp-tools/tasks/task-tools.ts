@@ -46,6 +46,7 @@ import {
   STATUS_DESCRIPTION,
   TASKS_CREATE_DESCRIPTION,
   TASKS_UPDATE_DESCRIPTION,
+  TIMEZONE_DESCRIPTION,
 } from './task-tool-copy.js';
 import {
   clampSchedulePermissionMode,
@@ -87,6 +88,7 @@ import { createScheduledTask } from '../../../../tasks/lifecycle/create-task.js'
 import { agentSchedulesArmWithoutAsking } from '../../../../tasks/approvals/agent-trust.js';
 import { auditScheduleUpdate, scheduleEdit } from '../../../../tasks/approvals/schedule-owner.js';
 import { applyTaskFileUpdate } from '../../../../tasks/lifecycle/update-task-file.js';
+import { taskCreateLifecycleDeps } from './task-create-deps.js';
 import { changesApprovedWork } from '../../../../tasks/task-file-update.js';
 import { refuseStickyAccountChange } from '../../../../tasks/session/sticky-session.js';
 import { AGENT_TIMING_CHANGE_REASON } from '../../../../tasks/timing/effective-timing.js';
@@ -100,6 +102,7 @@ import { attestNewTask, attestToolWrite, fileStateBefore } from './task-tool-fil
 import { marksOf } from '../../../../core/turn-power/turn-levels.js';
 import { marksHold } from '../../../../core/turn-power/turn-marks.js';
 import {
+  callingTurnIsFull,
   capPatch,
   decideCrossAgent,
   forWhomOf,
@@ -175,7 +178,8 @@ export function createCreateScheduleHandler(
     prompt: string;
     cron: string;
     reason: string;
-    target: string;
+    /** Left out means `global`, which files it under the caller (DOR-4067). */
+    target?: string;
     description?: string;
     timezone?: string;
     maxRuntime?: string;
@@ -196,6 +200,9 @@ export function createCreateScheduleHandler(
     /** Advertised so it can be REFUSED; see {@link REFUSED_AGENT_ID_DESCRIPTION}. */
     agentId?: string;
   }) => {
+    // Defaulted here, not in the schema: a `.default()` never reaches the Agent SDK's raw
+    // field map, so an agent that left `target` out would fail outright (DOR-2053).
+    const target = args.target ?? 'global';
     const err = requireTasks(deps);
     if (err) return err;
     const refusal = refuseOperatorOnlyTaskFields(args);
@@ -208,7 +215,7 @@ export function createCreateScheduleHandler(
     // sent an agent looking for another way to own its own task.
     if (args.agentId !== undefined) return jsonContent(AGENT_ID_ON_CREATE_REFUSAL, true);
     // For another agent only from a Full, unmarked turn (DOR-3938). Below Full, today's refusal.
-    const forOther = decideCrossAgent(deps, args.target, resolveProvenance, callerAgent);
+    const forOther = decideCrossAgent(deps, target, resolveProvenance, callerAgent);
     if (isMarkedRefusal(forOther)) return jsonContent(forOther.refusal, true);
 
     // A mode the agent names is decided as `tasks.set_mode` (DOR-3703).
@@ -218,7 +225,7 @@ export function createCreateScheduleHandler(
       door: 'create',
       body,
       input: args,
-      target: args.target,
+      target,
       caller,
     });
     if (mode.refusal) return jsonContent(mode.refusal, true);
@@ -229,56 +236,50 @@ export function createCreateScheduleHandler(
     // to its canonical id mid-first-turn (see {@link TaskProvenanceResolver}).
     const provenance = resolveProvenance?.() ?? {};
 
-    const outcome = await createScheduledTask(
-      {
-        store: deps.taskStore!,
-        registrar: deps.resolveTaskRegistrar?.() ?? null,
-        dorkHome: deps.dorkHome,
-        ...(deps.meshCore && { meshCore: deps.meshCore }),
+    const outcome = await createScheduledTask(taskCreateLifecycleDeps(deps), {
+      input: {
+        name: args.name,
+        // The slug, not the raw name, exactly as this tool has always defaulted
+        // it — a name is slugified before it is written, so a description
+        // defaulted from the raw name would carry punctuation and newlines the
+        // name itself cannot. The `|| args.name` is the unusable-name case,
+        // where the create is about to be refused for a better reason.
+        description: args.description ?? (slugify(args.name) || args.name),
+        prompt: args.prompt,
+        cron: args.cron,
+        ...(args.timezone !== undefined && { timezone: args.timezone }),
+        ...(args.maxRuntime !== undefined && { maxRuntime: args.maxRuntime }),
+        target,
+        reason: args.reason,
+        ...(args.sticky !== undefined && { sticky: args.sticky }),
+        ...(args.runtime !== undefined && { runtime: args.runtime }),
+        ...(args.model !== undefined && { model: args.model }),
+        ...(args.effort !== undefined && { effort: args.effort }),
+        ...(args.account !== undefined && { account: args.account }),
+        ...(mode.grant?.decision.setsMode && { permissionMode: mode.grant.decision.mode }),
       },
-      {
-        input: {
-          name: args.name,
-          // The slug, not the raw name, exactly as this tool has always defaulted
-          // it — a name is slugified before it is written, so a description
-          // defaulted from the raw name would carry punctuation and newlines the
-          // name itself cannot. The `|| args.name` is the unusable-name case,
-          // where the create is about to be refused for a better reason.
-          description: args.description ?? (slugify(args.name) || args.name),
-          prompt: args.prompt,
-          cron: args.cron,
-          ...(args.timezone !== undefined && { timezone: args.timezone }),
-          ...(args.maxRuntime !== undefined && { maxRuntime: args.maxRuntime }),
-          target: args.target,
-          reason: args.reason,
-          ...(args.sticky !== undefined && { sticky: args.sticky }),
-          ...(args.runtime !== undefined && { runtime: args.runtime }),
-          ...(args.model !== undefined && { model: args.model }),
-          ...(args.effort !== undefined && { effort: args.effort }),
-          ...(args.account !== undefined && { account: args.account }),
-          ...(mode.grant?.decision.setsMode && { permissionMode: mode.grant.decision.mode }),
-        },
-        // An MCP tool call IS the agent surface — there is no header to omit and
-        // no operator branch to spare.
-        trusted: false,
-        ...createModeOptions(mode),
-        // Only the in-session server knows its caller is one of our agents. A
-        // turn that read words DorkOS cannot vouch for (a stranger's, or a
-        // Wi-Fi sign-in's, DOR-3037) runs at the runtime's default at most, so a
-        // schedule it makes parks for a person instead of arming at its own
-        // level.
-        callerIsOurAgent: resolveProvenance !== undefined && !readOutsiderWords(provenance),
-        // The marks of the turn making the call, from its own record (DOR-3036).
-        originMarks: callerMarks?.() ?? marksOf(provenance.sessionId, provenance.agentPath),
-        proposal: {
-          sessionId: provenance.sessionId ?? null,
-          agentPath: provenance.agentPath ?? null,
-        },
-        // An agent files a schedule only under itself or `global` (DOR-3640 R1).
-        ...callerAgentPathOf(provenance, callerAgent),
-        ...(forOther.kind === 'allowed' && { forAnotherAgent: true, writerMarks: forOther.marks }),
-      }
-    );
+      // An MCP tool call IS the agent surface — there is no header to omit and
+      // no operator branch to spare.
+      trusted: false,
+      ...createModeOptions(mode),
+      // Only the in-session server knows its caller is one of our agents. A
+      // turn that read words DorkOS cannot vouch for (a stranger's, or a
+      // Wi-Fi sign-in's, DOR-3037) runs at the runtime's default at most, so a
+      // schedule it makes parks for a person instead of arming at its own
+      // level.
+      callerIsOurAgent: resolveProvenance !== undefined && !readOutsiderWords(provenance),
+      // The marks of the turn making the call, from its own record (DOR-3036).
+      originMarks: callerMarks?.() ?? marksOf(provenance.sessionId, provenance.agentPath),
+      proposal: {
+        sessionId: provenance.sessionId ?? null,
+        agentPath: provenance.agentPath ?? null,
+      },
+      // An agent files a schedule only under itself or `global` (DOR-3640 R1).
+      ...callerAgentPathOf(provenance, callerAgent),
+      ...(forOther.kind === 'allowed' && { forAnotherAgent: true, writerMarks: forOther.marks }),
+      // At Full, unmarked, its own folder may be home, as a person's may (DOR-4067, DOR-4136).
+      ...(callingTurnIsFull(resolveProvenance, callerAgent) && { callerAtFull: true }),
+    });
 
     if (!outcome.ok) {
       return jsonContent(
@@ -716,9 +717,9 @@ export function getTasksTools(
         prompt: z.string().describe('The prompt to send to the agent on each run'),
         cron: z.string().describe('Cron expression (e.g., "0 2 * * *" for daily at 2am)'),
         reason: z.string().describe(REASON_DESCRIPTION),
-        target: z.string().min(1).describe(TARGET_DESCRIPTION),
+        target: z.string().min(1).optional().describe(TARGET_DESCRIPTION),
         description: z.string().optional().describe('Description of what this scheduled task does'),
-        timezone: z.string().optional().describe('IANA timezone (e.g., "America/New_York")'),
+        timezone: z.string().optional().describe(TIMEZONE_DESCRIPTION),
         maxRuntime: DURATION_ARG.describe('Maximum run time (e.g., "5m", "1h")'),
         sticky: z.boolean().optional().describe(STICKY_DESCRIPTION),
         runtime: z.string().min(1).optional().describe(RUNTIME_DESCRIPTION),

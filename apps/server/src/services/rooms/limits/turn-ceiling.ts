@@ -32,7 +32,8 @@ export function isEntryAuthorExternal(authors: AuthorRegistry, authorId: string)
 }
 
 /**
- * Whether any triggering entry was written by a person other than the install owner.
+ * Whether any entry a turn answers or was shown was written by a person other than the install
+ * owner. An extension that posts or relays outside text is not a person and sets no mark.
  *
  * A bridged author is always marked. The room dispatcher has no clean path to
  * the owning connection's approver allowlist, so it cannot prove that a
@@ -41,7 +42,7 @@ export function isEntryAuthorExternal(authors: AuthorRegistry, authorId: string)
  * Agents and the room's system voice are not people and remain out of scope.
  *
  * @param authors - The registry holding the stored author records.
- * @param entries - Every message the turn answers.
+ * @param entries - Every message the turn answers or was shown (`context-entries.ts`).
  * @param owner - The room subsystem's authoritative owner predicate. Its registry method delegates
  *   to `isOwnerRecord`; a platform identity's `linkedOwnerKey` does not affect it.
  */
@@ -64,7 +65,7 @@ export function answersStranger(
  *
  * @param enabled - Whether the boot flag is on.
  * @param authors - The registry holding the stored author records.
- * @param entries - Every message the turn answers.
+ * @param entries - Every message the turn answers or was shown (`context-entries.ts`).
  * @param owner - The room subsystem's authoritative owner predicate.
  */
 export function strangerMarkForEntries(

@@ -13,7 +13,7 @@ import {
 import { zodValidator } from '@tanstack/zod-adapter';
 import { z } from 'zod';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { createMockTransport } from '@dorkos/test-utils';
+import { createMockTransport } from '@dorkos/test-utils/mock-factories';
 import { DORKBOT_ONBOARDING_LINES } from '@dorkos/shared/dorkbot-templates';
 import { mergeDialogSearch, TransportProvider } from '@/layers/shared/model';
 import { resetLegacyPromoImportForTests } from '@/layers/entities/config';

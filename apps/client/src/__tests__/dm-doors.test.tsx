@@ -29,7 +29,7 @@ import { zodValidator } from '@tanstack/zod-adapter';
 import { z } from 'zod';
 import type { TeamMember } from '@dorkos/shared/team-schemas';
 import { agentAuthorRef, type RoomWithRoster } from '@dorkos/shared/room-schemas';
-import { createMockTransport } from '@dorkos/test-utils';
+import { createMockTransport } from '@dorkos/test-utils/mock-factories';
 import { configKeys, mergeDialogSearch, TransportProvider } from '@/layers/shared/model';
 import { TooltipProvider } from '@/layers/shared/ui';
 import { useInteractionStore } from '@/layers/entities/interactions';

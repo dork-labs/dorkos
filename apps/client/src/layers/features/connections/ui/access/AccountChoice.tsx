@@ -10,7 +10,7 @@ import {
 } from '@/layers/shared/ui';
 import { offerableAccounts } from '../../lib/readiness';
 import { AccessCardFrame } from './AccessCardFrame';
-import type { AgentAccessCardProps } from './ConnectionAccessCard';
+import type { AgentAccessCardProps } from './access-card-props';
 
 /**
  * Fixed-agent mode without a known account: find it, and ask which one when

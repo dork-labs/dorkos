@@ -1,7 +1,7 @@
 /** @vitest-environment jsdom */
 /** Proposed exact captured frame retirement controls. UNRUN. */
 import { afterEach, expect, it, vi } from 'vitest';
-import { createMockTransport } from '@dorkos/test-utils';
+import { createMockTransport } from '@dorkos/test-utils/mock-factories';
 import { FrameLifetimeController } from '@/layers/shared/lib/canvas-doc-frame';
 import { createDocChannelOwner } from '../model/doc-channel-owner';
 import { emptyDocChannelView } from '../model/doc-channel-view';

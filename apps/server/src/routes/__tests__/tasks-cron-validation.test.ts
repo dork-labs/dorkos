@@ -136,6 +136,7 @@ describe('Tasks routes — a schedule nothing can read is refused at the door', 
           store,
           scheduler,
           registrar: new TaskRegistrar({ store, scheduler }),
+          defaultTimezone: () => 'UTC',
           dorkHome: DORK_HOME,
         }),
       })

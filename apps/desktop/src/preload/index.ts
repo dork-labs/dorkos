@@ -314,6 +314,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.on(LOCAL_BROWSER_PAGE_CHANGED_CHANNEL, listener);
       return () => ipcRenderer.removeListener(LOCAL_BROWSER_PAGE_CHANGED_CHANNEL, listener);
     },
+    /**
+     * A JPEG still of the page this window shows now, or `null` (DOR-4438). It is
+     * drawn in the page's place while an app layer covers it, and kept in memory only.
+     */
+    captureStill: (connectionId: string): Promise<Uint8Array | null> =>
+      ipcRenderer.invoke('local-browser:capture-still', connectionId),
   },
   /**
    * Open a URL in the system browser.

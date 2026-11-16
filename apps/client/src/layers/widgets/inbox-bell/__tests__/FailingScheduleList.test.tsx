@@ -34,6 +34,9 @@ function makeTask(overrides: Partial<Task> & Pick<Task, 'id'>): Task {
     effort: null,
     account: null,
     status: 'pending_approval',
+    approvedAt: null,
+    approvedBy: null,
+    approvedVia: null,
     filePath: `/tmp/${overrides.id}/SKILL.md`,
     createdAt: '2026-08-19T09:00:00.000Z',
     updatedAt: '2026-08-19T09:00:00.000Z',
@@ -66,14 +69,52 @@ const task = makeTask({
   },
 });
 
+/** The card's title line, read as one string. */
+function title(): string {
+  return screen.getByTestId('schedule-failure-title').textContent ?? '';
+}
+
+/** The card's muted status line, read as one string. */
+function status(): string {
+  return screen.getByTestId('schedule-failure-status').textContent ?? '';
+}
+
 describe('schedule Needs you card', () => {
-  it('uses fixed cause words and opens the actual failed run', () => {
+  it('uses fixed cause words and opens the schedule, expanded', () => {
     render(<FailingScheduleList schedules={[task]} />);
-    expect(screen.getByText('Grooming failed twice in a row')).toBeTruthy();
-    expect(screen.getByText('An unknown error.')).toBeTruthy();
+    expect(title()).toBe('Grooming');
+    expect(status()).toBe('Failed twice in a row');
+    expect(screen.getByText('It didn’t finish.')).toBeTruthy();
     expect(screen.queryByText(/IGNORE|evil/)).toBeNull();
-    fireEvent.click(screen.getByRole('button', { name: 'Open run' }));
-    expect(navigate).toHaveBeenCalledWith({ href: '/tasks?schedule=schedule&run=run-two' });
+    fireEvent.click(screen.getByRole('button', { name: 'Open schedule Grooming' }));
+    expect(navigate).toHaveBeenCalledWith({ href: '/tasks?expand=schedule' });
+  });
+
+  it('says "An unknown error" only when nothing was recorded', () => {
+    const unknown = {
+      ...task,
+      health: { ...task.health!, reason: { ...task.health!.reason!, message: null } },
+    };
+    render(<FailingScheduleList schedules={[unknown]} />);
+    expect(screen.getByText('An unknown error.')).toBeTruthy();
+  });
+
+  it('shows the whole name, never cut to two words (DOR-4121)', () => {
+    const long = { ...task, displayName: 'Hourly uptime check for the status page' };
+    render(<FailingScheduleList schedules={[long]} />);
+    expect(title()).toBe('Hourly uptime check for the status page');
+    expect(screen.queryByText(/…/)).toBeNull();
+  });
+
+  // Design review on #3806: the name is the title, clamped to two lines with
+  // the whole name on hover, so "failed twice" always sits on its own line.
+  it('titles the card with the name, clamped to two lines', () => {
+    const long = { ...task, displayName: 'Hourly uptime check for the status page' };
+    render(<FailingScheduleList schedules={[long]} />);
+    const heading = screen.getByTestId('schedule-failure-title');
+    expect(heading).toHaveClass('line-clamp-2', 'font-medium');
+    expect(heading).toHaveAttribute('title', 'Hourly uptime check for the status page');
+    expect(heading.textContent).not.toMatch(/failed/);
   });
 
   it('names a blocked schedule and clears when recovery removes it from the queue', () => {
@@ -90,23 +131,35 @@ describe('schedule Needs you card', () => {
       },
     };
     const { rerender } = render(<FailingScheduleList schedules={[blocked]} />);
-    expect(screen.getByText('Grooming was blocked twice in a row')).toBeTruthy();
+    expect(title()).toBe('Grooming');
+    expect(status()).toBe('Was blocked twice in a row');
     expect(screen.getByText('A command was refused.')).toBeTruthy();
     rerender(<FailingScheduleList schedules={[]} />);
-    expect(screen.queryByRole('button', { name: 'Open run' })).toBeNull();
+    expect(screen.queryByRole('button', { name: /^Open schedule/ })).toBeNull();
   });
 
-  it('says the reason as a sentence with when it tries again, kept on one line', () => {
+  it('puts a 12-hour next try on the status line, kept to fifteen words', () => {
     const active = {
       ...task,
       status: 'active' as const,
-      // Local 10:00, so the card reads the same time in any test timezone.
-      nextRun: new Date(2026, 10, 10, 10, 0).toISOString(),
+      // 11:00 PM local today, so the card reads the same in any test time zone.
+      nextRun: new Date(new Date().setHours(23, 0, 0, 0)).toISOString(),
     };
     render(<FailingScheduleList schedules={[active]} />);
-    const reason = screen.getByText(/^An unknown error\. Next/);
-    expect(reason.textContent).toBe('An unknown error. Next try: 10:00.');
-    expect(reason.textContent!.split(/\s+/).length).toBeLessThanOrEqual(15);
+    expect(status()).toBe('Failed twice in a row · Next\u00a0try\u00a011:00\u00a0PM');
+    expect(status().split(/\s+/).length).toBeLessThanOrEqual(15);
+    expect(screen.getByText('It didn’t finish.')).toBeTruthy();
+  });
+
+  it('names the day when the next try is not today', () => {
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    tomorrow.setHours(9, 0, 0, 0);
+    const active = { ...task, status: 'active' as const, nextRun: tomorrow.toISOString() };
+    render(<FailingScheduleList schedules={[active]} />);
+    expect(status()).toBe(
+      'Failed twice in a row · Next\u00a0try\u00a0tomorrow\u00a0at\u00a09:00\u00a0AM'
+    );
   });
 
   it('drops the next try for a paused schedule', () => {
@@ -117,6 +170,7 @@ describe('schedule Needs you card', () => {
       nextRun: new Date(2026, 10, 10, 10, 0).toISOString(),
     };
     render(<FailingScheduleList schedules={[paused]} />);
-    expect(screen.getByText('An unknown error.')).toBeTruthy();
+    expect(status()).toBe('Failed twice in a row');
+    expect(screen.getByText('It didn’t finish.')).toBeTruthy();
   });
 });

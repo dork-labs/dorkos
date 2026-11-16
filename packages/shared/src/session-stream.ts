@@ -38,12 +38,14 @@ import {
   ElicitationModeSchema,
   TaskItemSchema,
   BackgroundTaskStatusSchema,
+  BackgroundTaskTypeSchema,
   TerminalReasonSchema,
   HookStatusSchema,
   MemoryRecallEventSchema,
   CompactBoundaryEventSchema,
   PermissionDeniedEventSchema,
   ModelSubstitutedEventSchema,
+  ProjectAddonsOffEventSchema,
   WorkLeftRunningEventSchema,
   WorkLeftEndedEventSchema,
   SessionImageEventSchema,
@@ -193,6 +195,30 @@ export type SessionActivity = z.infer<typeof SessionActivitySchema>;
  * and as a partial on each `status_change` event. Runtime-neutral: every
  * adapter projects into this shape regardless of its persistence backend.
  */
+/**
+ * One piece of background work still running under a session: a helper, a
+ * background shell, a Monitor or another task (spec `warm-process-lifecycle`
+ * D8). What the session-level running list carries, so a client can name the
+ * work after the turn that started it has been reloaded away (FB-18).
+ */
+export const RunningTaskSchema = z
+  .object({
+    /** The runtime-assigned id `subagent_update` carries, and Stop takes. */
+    taskId: z.string(),
+    /** Its kind; absent when no start was seen (it began before a restart). */
+    taskType: BackgroundTaskTypeSchema.optional(),
+    /** What the agent said it is for. */
+    description: z.string().optional(),
+    /** A background shell's command. */
+    command: z.string().optional(),
+    /** Epoch ms it started, when known. */
+    startedAt: z.number().optional(),
+  })
+  .openapi('RunningTask');
+
+/** One piece of background work still running under a session. */
+export type RunningTask = z.infer<typeof RunningTaskSchema>;
+
 export const SessionStatusSchema = z
   .object({
     /** Token usage breakdown, or `null` before the first turn. */
@@ -247,6 +273,18 @@ export const SessionStatusSchema = z
      * turn's events alone, which are gone moments after the turn closes.
      */
     runningSubagentCount: z.number().int().default(0),
+    /**
+     * The work {@link runningSubagentCount} counts, by name (spec
+     * `warm-process-lifecycle` D8): the session-level list a client draws its
+     * background-task strip from, so a helper keeps its row through `turn_end`
+     * and the history reload after it (FB-18).
+     *
+     * ABSENT means nothing is known — a session no background work has been
+     * reported on, or a server that predates the field; consumers fall back to
+     * the count. Never carried by a `status_change`: it changes only with a
+     * `subagent_update`, which a client folds itself.
+     */
+    runningSubagents: z.array(RunningTaskSchema).optional(),
     /** Coarse lifecycle phase of the session. */
     lifecycle: SessionLifecycleSchema,
     /**
@@ -520,9 +558,15 @@ export const SessionEventSchema = z
     z.object({
       ...seqShape,
       type: z.literal('status_change'),
-      status: SessionStatusSchema.omit({ activity: true, accountUsage: true }).partial().extend({
-        contextUsage: SessionContextUsageSchema.partial().nullable().optional(),
-      }),
+      status: SessionStatusSchema.omit({
+        activity: true,
+        accountUsage: true,
+        runningSubagents: true,
+      })
+        .partial()
+        .extend({
+          contextUsage: SessionContextUsageSchema.partial().nullable().optional(),
+        }),
     }),
     // A todo-list update.
     z.object({
@@ -550,6 +594,12 @@ export const SessionEventSchema = z
        * today is claude-code.
        */
       ambient: z.boolean().optional(),
+      /** Its kind, on the start only; absent on progress and terminal updates. */
+      taskType: BackgroundTaskTypeSchema.optional(),
+      /** A background shell's command, on the start only. */
+      command: z.string().optional(),
+      /** Epoch ms it started, on the start only. */
+      startedAt: z.number().optional(),
     }),
     // A hook lifecycle update, collapsing the adapter's started/progress/response
     // phases into one member keyed by `hookId` (the `subagent_update` precedent).
@@ -613,6 +663,14 @@ export const SessionEventSchema = z
       ...seqShape,
       type: z.literal('model_substituted'),
       ...ModelSubstitutedEventSchema.shape,
+    }),
+    // A project's own OpenCode add-ons kept off, said once per chat (DOR-4404).
+    // NOT a fidelity member, for the same reason as `model_substituted`: the
+    // transcript does not say it, so it is recorded durably and overlaid back.
+    z.object({
+      ...seqShape,
+      type: z.literal('project_addons_off'),
+      ...ProjectAddonsOffEventSchema.shape,
     }),
     // Background commands a Stop could not end, and each one's later end
     // (DOR-3285). NOT fidelity members: both happen after the turn they belong

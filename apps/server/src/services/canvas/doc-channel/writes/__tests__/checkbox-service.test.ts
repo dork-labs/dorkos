@@ -13,9 +13,8 @@ import {
 import { join } from 'node:path';
 import { fork } from 'node:child_process';
 import { once } from 'node:events';
-import { fileURLToPath } from 'node:url';
 import Database from 'better-sqlite3';
-import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, expect, it, vi } from 'vitest';
 import { canvasDocChannels, canvasDocWriteIntents, type DbTransaction } from '@dorkos/db';
 import { fixture as makeFixture, AuthorityRefused } from './checkbox-fixture.js';
 import { DocCheckboxWriteService } from '../checkbox-service.js';
@@ -36,6 +35,19 @@ import { recoverCheckboxPage } from '../write-recovery.js';
 import { VerifiedCheckboxAuthoritySchema } from '../checkbox-evidence.js';
 import { observeCheckboxSource } from '../authority-snapshot.js';
 import { readDocSourceDescriptor } from '../../http-composition.js';
+import { buildCrashWorkerBundle, type CrashWorkerBundle } from './checkbox-crash-worker-bundle.js';
+
+// The crash worker, compiled once for this file: each crash test still forks a
+// fresh child of its own, on plain node rather than `--import tsx` (see
+// `checkbox-crash-worker-bundle.ts`). `execArgv: []` keeps the fork from
+// inheriting this Vitest worker's flags, as the explicit tsx list did.
+let crashWorker: CrashWorkerBundle;
+beforeAll(async () => {
+  crashWorker = await buildCrashWorkerBundle();
+}, 60_000);
+afterAll(async () => {
+  await crashWorker?.dispose();
+});
 
 const crashTests: { drain(): Promise<void> }[] = [];
 function crashTestOwnership() {
@@ -218,14 +230,10 @@ beforeEach(async (context) => {
   )
     return;
   const owner = crashTestOwnership();
-  const child = fork(
-    fileURLToPath(new URL('./checkbox-crash-worker.ts', import.meta.url)),
-    ['--await-original-case'],
-    {
-      execArgv: ['--import', 'tsx'],
-      stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
-    }
-  );
+  const child = fork(crashWorker.path, ['--await-original-case'], {
+    execArgv: [],
+    stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
+  });
   const checkpoint = owner.capture(child, true);
   preloaded = { owner, child, checkpoint };
   await owner.awaitReady();
@@ -623,7 +631,7 @@ it('drains a held pre-checkpoint child and retires its late fixture continuation
   seed.db.$client.close();
   owner.assertActive();
   const child = fork(
-    fileURLToPath(new URL('./checkbox-crash-worker.ts', import.meta.url)),
+    crashWorker.path,
     [
       'prepared',
       JSON.stringify({
@@ -634,7 +642,7 @@ it('drains a held pre-checkpoint child and retires its late fixture continuation
         request,
       }),
     ],
-    { execArgv: ['--import', 'tsx'], stdio: ['ignore', 'pipe', 'pipe', 'ipc'] }
+    { execArgv: [], stdio: ['ignore', 'pipe', 'pipe', 'ipc'] }
   );
   const checkpoint = owner.capture(child);
   const closed = once(child, 'close');
@@ -674,7 +682,7 @@ it('drains a held pre-checkpoint child and retires its late fixture continuation
     await heldBeforeFork;
     lateOwner.assertActive();
     lateChild = fork(
-      fileURLToPath(new URL('./checkbox-crash-worker.ts', import.meta.url)),
+      crashWorker.path,
       [
         'prepared',
         JSON.stringify({
@@ -685,7 +693,7 @@ it('drains a held pre-checkpoint child and retires its late fixture continuation
           request,
         }),
       ],
-      { execArgv: ['--import', 'tsx'], stdio: ['ignore', 'pipe', 'pipe', 'ipc'] }
+      { execArgv: [], stdio: ['ignore', 'pipe', 'pipe', 'ipc'] }
     );
     lateClosed = once(lateChild, 'close');
     lateChild.stdout!.resume();

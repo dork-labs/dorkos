@@ -70,10 +70,15 @@ describe('tasks_create writes a file and files the task under an agent', () => {
       dorkHome,
       // Only `nightly-bot` is registered. Everything else is an agent DorkOS has
       // never heard of, which is what the "refuse rather than orphan" case needs.
-      meshCore: { getProjectPath: (id: string) => (id === 'nightly-bot' ? projectPath : null) },
+      meshCore: {
+        listWithPaths: () => [{ id: 'nightly-bot', projectPath }],
+        getProjectPath: (id: string) => (id === 'nightly-bot' ? projectPath : null),
+      },
     } as unknown as McpToolDeps;
     tools = Object.fromEntries(
-      (getTasksTools(deps) as unknown as SessionTool[]).map((t) => [t.name, t])
+      (
+        getTasksTools(deps, undefined, undefined, () => projectPath) as unknown as SessionTool[]
+      ).map((t) => [t.name, t])
     );
   });
 
@@ -98,13 +103,9 @@ describe('tasks_create writes a file and files the task under an agent', () => {
     reason: 'The overnight backlog needs sweeping before you start.',
   };
 
-  it('asks where the task goes, and will not guess', () => {
-    // Required in the ADVERTISED schema, which is what the SDK enforces before the
-    // handler is ever reached — the same mechanism that makes `reason` unskippable.
-    // A default would be the bug in a politer form: `global` files an agent's own
-    // work where it does not belong.
-    expect(tools.tasks_create!.inputSchema.target?.isOptional?.()).not.toBe(true);
-    expect(tools.tasks_create!.inputSchema.target?.description).toContain('Required');
+  it('advertises a caller-owned default when no target is named', () => {
+    expect(tools.tasks_create!.inputSchema.target?.isOptional?.()).toBe(true);
+    expect(tools.tasks_create!.inputSchema.target?.description).toContain('your own folder');
   });
 
   it('writes a SKILL.md under the agent and points the row at it', async () => {
@@ -123,13 +124,28 @@ describe('tasks_create writes a file and files the task under an agent', () => {
     expect(content).toContain('0 3 * * *');
   });
 
-  it('writes a global task into the DorkOS skills root, owned by nobody', async () => {
-    const { isError, payload } = await call('tasks_create', { ...BASE, target: 'global' });
+  it.each([undefined, 'global'])('files target %s under the calling agent', async (target) => {
+    const { isError, payload } = await call('tasks_create', {
+      ...BASE,
+      ...(target ? { target } : {}),
+    });
     expect(isError).toBe(false);
 
     const created = payload.schedule as Task;
-    expect(created.agentId).toBeNull();
-    expect(await exists(path.join(dorkHome, 'skills', 'nightly-sweep', 'SKILL.md'))).toBe(true);
+    expect(created.agentId).toBe('nightly-bot');
+    expect(
+      await exists(path.join(projectPath, '.agents', 'skills', 'nightly-sweep', 'SKILL.md'))
+    ).toBe(true);
+  });
+
+  it('refuses protected global placement before writing a file or task', async () => {
+    projectPath = dorkHome;
+    const { isError, payload } = await call('tasks_create', { ...BASE, target: 'global' });
+    expect(isError).toBe(true);
+    expect(payload.code).toBe('PROTECTED_FOLDER');
+    expect(store.getTasks()).toEqual([]);
+    expect(await exists(path.join(dorkHome, '.agents', 'skills', 'nightly-sweep'))).toBe(false);
+    expect(await exists(path.join(dorkHome, 'skills', 'nightly-sweep'))).toBe(false);
   });
 
   it('refuses an agent nobody registered, and creates nothing at all', async () => {
@@ -140,7 +156,7 @@ describe('tasks_create writes a file and files the task under an agent', () => {
     });
 
     expect(isError).toBe(true);
-    expect(String(payload.error)).toContain('not found in registry');
+    expect(payload.code).toBe('not_your_agent');
     // The point of refusing: an unresolvable target used to become an orphan.
     expect(store.getTasks()).toHaveLength(before);
   });
@@ -159,7 +175,7 @@ describe('tasks_create writes a file and files the task under an agent', () => {
     expect(created.maxRuntime).toBe(15 * 60 * 1000);
 
     const content = await fs.readFile(
-      path.join(dorkHome, 'skills', 'nightly-sweep', 'SKILL.md'),
+      path.join(projectPath, '.agents', 'skills', 'nightly-sweep', 'SKILL.md'),
       'utf-8'
     );
     expect(content).toContain('15m');
@@ -181,7 +197,7 @@ describe('tasks_create writes a file and files the task under an agent', () => {
     expect(isError).toBe(true);
     expect(String(payload.error).length).toBeGreaterThan(0);
     expect(store.getTasks()).toHaveLength(0);
-    expect(await exists(path.join(dorkHome, 'skills', 'nightly-sweep'))).toBe(false);
+    expect(await exists(path.join(projectPath, '.agents', 'skills', 'nightly-sweep'))).toBe(false);
   });
 
   it('refuses `agentId` rather than dropping it, and points at `target`', async () => {
@@ -203,7 +219,7 @@ describe('tasks_create writes a file and files the task under an agent', () => {
     // agent was told it was gone.
     const { payload } = await call('tasks_create', { ...BASE, target: 'global' });
     const created = payload.schedule as Task;
-    const dir = path.join(dorkHome, 'skills', 'nightly-sweep');
+    const dir = path.join(projectPath, '.agents', 'skills', 'nightly-sweep');
     expect(await exists(dir)).toBe(true);
 
     const deleted = await call('tasks_delete', { id: created.id });

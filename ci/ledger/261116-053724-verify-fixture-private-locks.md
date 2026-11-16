@@ -22,3 +22,10 @@ fixture finishes while that slot stays held; a direct wrapper control still queu
 
 This is test-fixture hygiene, with no aggregate CI speed or flake claim. Revert if
 the fixture stops checking the real verify commands or touches shared host slots.
+
+Main integration at d9993507b247c84825d407e5621b1728b60fb965 also changes this
+fixture to disable the heavy lock and allow 30 seconds (DOR-4456). Retain the
+stronger private-directory isolation here: real wrappers/Perl locks and the
+original five-second case. Main's separate 8 GiB verify typecheck heap remains
+unchanged. Repeat the seven command assertions and owned held-slot/concurrency
+controls against the integrated actual command; do not occupy real host slots.

@@ -53,28 +53,56 @@ export function decideCrossAgent(
   const provenance = resolveProvenance?.() ?? {};
   const { callerAgentPath } = callerAgentPathOf(provenance, callerAgent);
   if (!isForAnotherAgent(target, callerAgentPath, deps.meshCore)) return { kind: 'own' };
+  const turn = callingTurnOf(resolveProvenance, callerAgent);
   // Only a verified agent in a chat of its own: the external server has no turn to read.
-  if (resolveProvenance === undefined || callerAgentPath === undefined || !provenance.sessionId) {
+  if (!turn) {
     return {
       kind: 'refused',
       refusal: { error: CROSS_AGENT_NEEDS_FULL_MESSAGE, code: 'cross_agent_needs_full' },
     };
   }
-  const turn = {
-    sessionId: provenance.sessionId,
-    ...(provenance.turnSessionIds ? { turnSessionIds: provenance.turnSessionIds } : {}),
-    agentPath: callerAgentPath,
-  };
   const refusal = crossAgentRefusal(turn);
   return refusal
     ? { kind: 'refused', refusal }
     : // The same merged marks the gate checked are the ones the task keeps.
       {
         kind: 'allowed',
-        callerAgentPath,
-        sessionId: provenance.sessionId,
+        callerAgentPath: turn.agentPath,
+        sessionId: turn.sessionId,
         marks: turnMarksOf(turn),
       };
+}
+
+/**
+ * Whether the calling turn runs at Full autonomy, unmarked: the level its turn really ran at,
+ * so a stranger's turn in a chat set to Full stays below Full (the DOR-4136 rule). The external
+ * `/mcp` server has no turn to read, so it is never Full here.
+ *
+ * @param resolveProvenance - The in-session caller; absent on the external server.
+ * @param callerAgent - The external caller's verified home.
+ */
+export function callingTurnIsFull(
+  resolveProvenance: TaskProvenanceResolver | undefined,
+  callerAgent: CallerAgentResolver | undefined
+): boolean {
+  const turn = callingTurnOf(resolveProvenance, callerAgent);
+  return turn !== undefined && crossAgentRefusal(turn) === null;
+}
+
+/** The calling turn as the cross-agent rule reads it, or `undefined` with no verified chat. */
+function callingTurnOf(
+  resolveProvenance: TaskProvenanceResolver | undefined,
+  callerAgent: CallerAgentResolver | undefined
+): { sessionId: string; turnSessionIds?: string[]; agentPath: string } | undefined {
+  if (resolveProvenance === undefined) return undefined;
+  const provenance = resolveProvenance();
+  const { callerAgentPath } = callerAgentPathOf(provenance, callerAgent);
+  if (callerAgentPath === undefined || !provenance.sessionId) return undefined;
+  return {
+    sessionId: provenance.sessionId,
+    ...(provenance.turnSessionIds ? { turnSessionIds: provenance.turnSessionIds } : {}),
+    agentPath: callerAgentPath,
+  };
 }
 
 /**

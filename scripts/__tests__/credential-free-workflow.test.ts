@@ -337,6 +337,8 @@ describe('credential-free-build workflow', () => {
   // a store saved on ubuntu-26.04 kills the boot probe on a 24.04 runner
   // (2026-10-30, ledger 261031-012000). test.yml's server suite and the
   // browser suite load node-pty the same way, so they carry the same store.
+  // test.yml installs in three jobs that key it: community-pg, test-shard and
+  // test-binary (DOR-4190).
   // browser-test.yml installs in four jobs: browser-smoke, browser-shard,
   // first-run and copy-spec-drift.
   //
@@ -353,7 +355,7 @@ describe('credential-free-build workflow', () => {
     const browserWorkflow = readFileSync(path.join(repoRoot, BROWSER_WORKFLOW_REL), 'utf8');
     for (const [rel, text, installs] of [
       [WORKFLOW_REL, workflow, 1],
-      [TEST_WORKFLOW_REL, testWorkflow, 2],
+      [TEST_WORKFLOW_REL, testWorkflow, 3],
       [BROWSER_WORKFLOW_REL, browserWorkflow, 4],
     ] as const) {
       expect(

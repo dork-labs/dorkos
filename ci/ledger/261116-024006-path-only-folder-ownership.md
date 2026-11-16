@@ -39,3 +39,10 @@ loses a public export, makes room adoption write files, or stops the boundary
 from catching a restored configuration dependency. Integrated exact-head and
 Linux CI verification remain required; an isolated local pass does not replace
 them.
+
+Main integration at d9993507b247c84825d407e5621b1728b60fb965 independently
+places these same path helpers directly in directory-ownership.ts (FG-005).
+Keep that canonical leaf and remove the now-unneeded workspace-paths
+intermediary. Main rewires every production helper caller to that leaf; no
+caller needs helper reexports through project-agent-workspace. The canonical
+exported signatures, real-path/import boundary and CLI refusal controls remain. This consolidates identical helper bodies, not ownership semantics.

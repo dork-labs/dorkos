@@ -24,8 +24,7 @@ import path from 'node:path';
 import fs from 'node:fs/promises';
 import { z } from 'zod';
 import { CreateTaskRequestSchema } from '@dorkos/shared/schemas';
-import type { CreateTaskInput, Task } from '@dorkos/shared/schemas';
-import type { MeshCore } from '@dorkos/mesh';
+import type { CreateTaskInput, Task, TaskApprover } from '@dorkos/shared/schemas';
 import { writeSkillFile } from '@dorkos/skills/writer';
 import { parseSkillFile } from '@dorkos/skills/parser';
 import { SkillFrontmatterSchema } from '@dorkos/skills/schema';
@@ -49,8 +48,6 @@ import {
   type PackageOwnershipKind,
 } from '../task-file-update.js';
 import { broadcastTasksChanged } from '../task-sse-events.js';
-import type { TaskStore } from '../task-store.js';
-import type { TaskRegistrar } from '../task-registrar.js';
 import { raiseStanding } from '../../notifications/standing-events.js';
 import { resolveScheduleParkPayload } from '../../notifications/emitters/schedule-park.js';
 import {
@@ -67,8 +64,12 @@ import {
 } from '../approvals/schedule-owner.js';
 import { scheduleAccountRefusal, scheduleRunFolder } from './schedule-account-eligibility.js';
 import { scheduleCreditsModelRefusal } from './schedule-credits-model.js';
+import { agentScheduleTarget } from './agent-schedule-target.js';
+import { withDefaultTaskTimezone } from './default-timezone.js';
+import type { TaskLifecycleDeps } from './create-task-deps.js';
 import { marksHold, NO_MARKS, type TurnMarks } from '../../core/turn-power/turn-marks.js';
 import { auditCrossAgentTask, capModeAtAgentLevel } from '../approvals/cross-agent.js';
+import { scheduledTaskCreateApproval } from '../approvals/task-approval-receipt.js';
 
 /**
  * An ungranted agent create may preserve only these known modes. In particular,
@@ -88,22 +89,6 @@ export function clampCreatedScheduleMode(
     default:
       return 'acceptEdits';
   }
-}
-
-/** The collaborators a create needs. Every one of them is required to get a task right. */
-export interface TaskLifecycleDeps {
-  /** Where the derived row is written. */
-  store: TaskStore;
-  /**
-   * The one seam that turns a row into a live cron job — shared with the watcher
-   * and the reconciler. Null before the scheduler exists, and during boot, which
-   * is not a reason to fail a create.
-   */
-  registrar: TaskRegistrar | null;
-  /** The resolved data directory, for the `global` skills root. */
-  dorkHome: string;
-  /** Resolves an agent id to its project path. Absent when Mesh is disabled. */
-  meshCore?: MeshCore;
 }
 
 /** Who proposed a task, stamped onto the row when the task parks. */
@@ -131,6 +116,8 @@ export interface CreateScheduledTaskOptions {
    * {@link CreateScheduledTaskOptions.callerIsOurAgent} arms it.
    */
   trusted: boolean;
+  /** The person who created it, for a trusted operator create receipt. */
+  createdBy?: TaskApprover;
   /**
    * Whether the server identified an untrusted caller as one of this install's
    * agents: an in-session tool call, or a verified agent token. On a Trusted
@@ -163,6 +150,14 @@ export interface CreateScheduledTaskOptions {
   forAnotherAgent?: boolean;
   /** The calling turn's marks the server checked for `forAnotherAgent`, kept for its runs. */
   writerMarks?: TurnMarks;
+  /**
+   * The server found the calling turn at Full autonomy and unmarked. Such an agent may file a
+   * schedule whose folder is the home folder itself, as a person can (DOR-4067, the DOR-4136
+   * level rule). The data folder and protected folders stay refused at every level, since no
+   * run could start there. This is the caller's level, not the runner's; the run is still
+   * capped at the runner's own level. Never read from the request body.
+   */
+  callerAtFull?: boolean;
   /**
    * The agent's named mode was decided as `tasks.set_mode` and granted
    * (DOR-3703): by a person's card, or by a setting for that action. It lands
@@ -318,7 +313,10 @@ export async function createScheduledTask(
   deps: TaskLifecycleDeps,
   options: CreateScheduledTaskOptions
 ): Promise<CreateScheduledTaskOutcome> {
-  const parsed = CreateTaskRequestSchema.safeParse(options.input);
+  const input = options.input;
+  const parsed = CreateTaskRequestSchema.safeParse(
+    !options.trusted && input && input.target === undefined ? { ...input, target: 'global' } : input
+  );
   if (!parsed.success) {
     return {
       ok: false,
@@ -327,7 +325,7 @@ export async function createScheduledTask(
       details: z.flattenError(parsed.error),
     };
   }
-  const data = parsed.data;
+  const data = withDefaultTaskTimezone(parsed.data, deps.defaultTimezone);
   const { trusted } = options;
   // An untrusted caller parks unless it is one of our agents on a Trusted
   // install (ADR 261006-225605). Read once, so the park and the reply agree.
@@ -355,6 +353,27 @@ export async function createScheduledTask(
       options.parkForPerson === true ||
       (!forAnother && !runsAsItsCreator(data.target, callerId)) ||
       !agentSchedulesArmWithoutAsking(options.callerIsOurAgent === true));
+  const approval = scheduledTaskCreateApproval({
+    parks,
+    trusted,
+    ...(options.createdBy && { createdBy: options.createdBy }),
+  });
+
+  // An agent's omitted or `global` schedule is filed under itself, so it runs in its own folder,
+  // never home (DOR-4067). The data folder and protected folders are refused at every level;
+  // home itself only below Full.
+  if (!trusted) {
+    const placement = await agentScheduleTarget(
+      data.target,
+      { agentPath: callerAgentPath, id: callerId },
+      deps,
+      {
+        allowHome: options.callerAtFull === true,
+      }
+    );
+    if (!placement.ok) return placement;
+    data.target = placement.target;
+  }
 
   // Asked before ANY write, because the file is written first and never
   // withdrawn: a cron or timezone croner cannot read would otherwise leave a
@@ -561,7 +580,10 @@ export async function createScheduledTask(
 
   let schedule: Task;
   if (discovered) {
-    schedule = deps.store.fileSync.upsertFromFile(discovered.def, home.agentId ?? undefined);
+    schedule = deps.store.fileSync.upsertFromFile(discovered.def, home.agentId ?? undefined, {
+      source: 'operator',
+      approval,
+    });
   } else {
     // Fallback: create the row directly. NOT a file path, so it gets none of
     // `upsertFromFile`'s clamping — which is why the mode handed in was clamped at
@@ -583,6 +605,7 @@ export async function createScheduledTask(
       ...(data.effort !== undefined && { effort: data.effort }),
       ...(data.account !== undefined && { account: data.account }),
       filePath,
+      approval,
     });
   }
 
@@ -644,7 +667,7 @@ export async function createScheduledTask(
     // The arrival goes out and the escalation clock starts here (DOR-1387,
     // DOR-1570). Parked schedules have no observer seam, so the hook lands at
     // the write that parks one. `raiseStanding` both announces the arrival to
-    // the periphery (a desktop banner has no cockpit query to derive it from)
+    // the periphery (a desktop banner has no app query to derive it from)
     // and arms the ladder. Still nothing STORED at this edge: `schedule.parked`
     // is a STANDING kind, which stores nothing while it stands (ADR
     // 260819-234828), and its resolution is recorded where the operator decides

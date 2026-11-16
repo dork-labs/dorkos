@@ -48,6 +48,7 @@ function fakeBrowser(initial = connected()) {
     open: vi.fn(async () => (state = connected())),
     selectTab: vi.fn(async () => state),
     navigate: vi.fn(async () => state),
+    stepHistory: vi.fn(async () => state),
     pause: vi.fn(async () => (state = { ...state, paused: true })),
     handToPerson: vi.fn(async () => (state = { ...state, paused: true })),
     resume: vi.fn(async () => (state = { ...state, paused: false })),
@@ -632,6 +633,19 @@ describe('a person’s own browser controls during a handoff', () => {
     expect(browser.selectTab).not.toHaveBeenCalled();
     await handover.selectTab('t1');
     expect(browser.selectTab).toHaveBeenCalledExactlyOnceWith('t1');
+  });
+
+  it('refuses Back and Forward during a handoff, and passes them through once it ends', async () => {
+    const { handover, browser } = setup();
+    const { handoffId } = await handover.ask('chat-1', 'wall');
+    for (const direction of ['back', 'forward'] as const)
+      await expect(handover.stepHistory(direction)).rejects.toMatchObject({
+        code: 'handoff_open',
+      });
+    expect(browser.stepHistory).not.toHaveBeenCalled();
+    await handover.handBack(handoffId);
+    await handover.stepHistory('back');
+    expect(browser.stepHistory).toHaveBeenCalledExactlyOnceWith('back');
   });
 
   it('takes a new address and any tab once the handoff has ended, or with none open', async () => {

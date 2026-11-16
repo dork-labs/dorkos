@@ -7,7 +7,7 @@ import { PGlite } from '@electric-sql/pglite';
 import { applyCurrentManagedMigrations } from './managed-database-fixture';
 import { eq, sql } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ConnectorEventPayloadProtector } from '@dork-labs/connector-providers';
 import type {
   ConnectorEventCapability,
@@ -22,6 +22,7 @@ import * as eventProtection from '../event-protection';
 import * as dbClient from '@/db/transaction-client';
 import { POST as receiveSignedEvent } from '@/app/api/connectors/managed/events/route';
 import * as schema from '@/db/schema';
+import { createPGliteTemplate, type PGliteTemplate } from '@/db/__tests__/pglite-template';
 import {
   applyManagedAuthorityCommand,
   managedRequestHash,
@@ -128,8 +129,9 @@ async function provisionBase(client: PGlite, recovery = true): Promise<void> {
   await applyCurrentManagedMigrations(client);
 }
 
-// Booting PGlite and replaying the managed-connector migrations costs seconds,
-// and every case pays it in `beforeEach`, so both budgets are real here:
+// Booting PGlite and replaying the managed-connector migrations costs seconds;
+// `beforeAll` pays it once and each case loads its own copy of that database
+// (DOR-4190). The budgets were set when every case paid it in `beforeEach`:
 // measured at 9.8s of vitest's 10s hook default at a load average of 298 — 154ms
 // of margin — and peaking at 12.61s across three rounds at 300-405, the 5-15s
 // band, so 30s (DOR-1886). Each case seeds its own graph, so the fixture stays
@@ -137,11 +139,14 @@ async function provisionBase(client: PGlite, recovery = true): Promise<void> {
 vi.setConfig({ testTimeout: 30_000, hookTimeout: 30_000 });
 
 describe('managed signed event persistence and handoff', () => {
+  let template: PGliteTemplate;
   let client: PGlite;
   let db: ManagedConnectorDatabase;
+  beforeAll(async () => {
+    template = await createPGliteTemplate((base) => provisionBase(base));
+  });
   beforeEach(async () => {
-    client = new PGlite();
-    await provisionBase(client);
+    client = await template.fresh();
     db = drizzle(client, { schema }) as unknown as ManagedConnectorDatabase;
   });
   afterEach(async () => {
@@ -1179,6 +1184,8 @@ describe('managed signed event persistence and handoff', () => {
   }
 
   it('upgrades pending hosted disable receipts without changing their exact authority or original outcome', async () => {
+    // The pre-0013 shape is this case's alone, so it builds its own database
+    // rather than a second template it would be the only user of.
     await client.close();
     client = new PGlite();
     await provisionBase(client, false);

@@ -8,7 +8,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { TransportProvider } from '@/layers/shared/model';
 import { createQueryClientConfig } from '@/layers/shared/lib';
-import { createMockTransport } from '@dorkos/test-utils';
+import { createMockTransport } from '@dorkos/test-utils/mock-factories';
 import { useFileUpload } from '../use-file-upload';
 import type { UploadResult } from '@dorkos/shared/types';
 

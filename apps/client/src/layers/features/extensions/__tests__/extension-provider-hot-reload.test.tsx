@@ -34,7 +34,7 @@ const mockFetch = vi.fn();
 function desk(overrides: Partial<ExtensionRecordPublic> = {}): ExtensionRecordPublic {
   return {
     id: 'desk',
-    manifest: { id: 'desk', name: 'Desk', version: '1.0.0' },
+    manifest: { clientApiVersion: 2, id: 'desk', name: 'Desk', version: '1.0.0' },
     status: 'compiled',
     scope: 'global',
     origin: 'user',

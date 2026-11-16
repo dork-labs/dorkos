@@ -1,12 +1,8 @@
-import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { RefreshCw } from 'lucide-react';
-import {
-  accessLevelRevisionIds,
-  type ConnectorReconciliationPreview,
-} from '@dorkos/shared/connector-schemas';
-import type { ServiceLogo } from '@/layers/entities/connectors';
+import type { ConnectorReconciliationPreview } from '@dorkos/shared/connector-schemas';
 import { useRegisteredAgents } from '@/layers/entities/mesh';
-import { Button, SegmentedControl, SegmentedControlItem, Skeleton } from '@/layers/shared/ui';
+import { Button, Skeleton } from '@/layers/shared/ui';
 import {
   agentHeldAccess,
   cardDecision,
@@ -20,93 +16,17 @@ import {
   type EveryAgentDecision,
   type WhoCanUse,
 } from '../../lib/access-card-selection';
+import { displayedAccessLevel, requestedWriteOffer } from '../../lib/access-level-offer';
 import { selectionsFromPreview } from '../../lib/reconciliation-selection';
 import { useAccessReconciliation } from '../../model/use-access-reconciliation';
-import { AppActions } from '../AppActions';
 import { LoadFailedState } from '../LoadFailedState';
-import { AccessCardFrame, type AccessCardVariant } from './AccessCardFrame';
+import { AccessCardFrame } from './AccessCardFrame';
+import type { ConnectionAccessCardProps } from './access-card-props';
+import { AccessEditor, ExactActionsLink } from './AccessEditor';
 import { AccessOutcome } from './AccessOutcome';
 import { AccountChoice } from './AccountChoice';
-import { AgentChecklist } from './AgentChecklist';
-import { LEVEL_LABELS } from './access-labels';
-import { EveryAgentWarning } from './EveryAgentWarning';
-import { RequestedAccess, requestedWriteOffer } from './RequestedAccess';
 import { savedSummary } from './saved-summary';
 import { StopSharingFallback } from './StopSharingFallback';
-import { WhoCanUseChoice } from './WhoCanUseChoice';
-
-interface SharedCardProps {
-  /** The app's display name, e.g. "Gmail". */
-  serviceName: string;
-  /** What the catalog says about the app's logo, when the caller has its entry. */
-  logo?: ServiceLogo;
-  /** Leave without changing anything. Labelled "Skip" on the page and "Not now" for one agent. */
-  onSkip?: () => void;
-  /** Leave after a save has an outcome. Labelled "Done" once confirmed, "Close" otherwise. */
-  onFinished?: () => void;
-  /** Open the exact per-action editor for this account. Hidden when omitted. */
-  onEditExactActions?: (connectionId: string) => void;
-  /** A framed card of its own, or one section of a panel (see {@link AccessCardVariant}). */
-  variant?: AccessCardVariant;
-  /** Extra classes for the card's outer frame. */
-  className?: string;
-}
-
-/**
- * The page's planning question: pick which agents can use one account.
- *
- * The agent checklist is the "Only agents you pick" answer. An "Every agent"
- * answer (DOR-2420) sits beside it as a sibling choice above the checklist;
- * the level switch and the save path below do not change for it.
- */
-export interface PageAccessCardProps extends SharedCardProps {
-  /** Pick agents for one connected account. */
-  mode: 'page';
-  /** The connected account whose access is chosen. */
-  connectionId: string;
-  /** Agents the caller knows are relevant right now; listed first after agents with access. */
-  preferredAgentIds?: string[];
-  /**
-   * Start "Who can use it?" on this answer instead of the account's own, the
-   * first time the card loads (the trust notice's Choose agents). Nothing
-   * changes until Save.
-   */
-  startWho?: WhoCanUse;
-  /**
-   * Show what the picked level lets agents do in this app, right under the
-   * level switch (the app's side panel). Hidden when omitted.
-   */
-  appActions?: { toolkit: string; providerInstanceId: string };
-}
-
-/** The chat's question: may this one agent use the app? It never offers "every agent". */
-export interface AgentAccessCardProps extends SharedCardProps {
-  /** Answer for one fixed agent. */
-  mode: 'agent';
-  /** The agent asking. */
-  agentId: string;
-  /** The app's slug; with two connected accounts of it, the card asks which one first. */
-  toolkit: string;
-  /** A known account; skips the account question. */
-  connectionId?: string;
-  /**
-   * Called once this agent's access is live on an account: after a save the
-   * server confirmed and finished applying, or straight away when the agent
-   * already holds what is picked. The chat card answers the agent's request
-   * with it. When set, "Allow" stays pressable for an agent that can already
-   * do this, since the question still needs an answer.
-   */
-  onAllowed?: (connectionId: string) => void;
-  /**
-   * What the agent asked for, when a request opened the card: the level starts
-   * on the one it asked for, and the card shows the reason and the level
-   * asked for, and says plainly what a lower pick leaves out.
-   */
-  request?: { readonly reason: string; readonly access: CardAccessLevel };
-}
-
-/** Props for {@link ConnectionAccessCard}. */
-export type ConnectionAccessCardProps = PageAccessCardProps | AgentAccessCardProps;
 
 /**
  * "Who can use this app, and what can they do?" as one card, shared by the
@@ -180,15 +100,27 @@ function AccessStep(
           : props.mode === 'agent'
             ? // Counts an "Every agent" grant: the question is what THIS agent can do.
               initialCardLevel([agentHeldAccess(preview, props.agentId, Boolean(props.onAllowed))])
-            : initialCardLevel(subjects.map((agentId) => heldAccess(current[agentId])));
-      // A request starts on the level the agent asked for, and never below
-      // what it already holds.
+            : initialCardLevel(
+                subjects.map((agentId) =>
+                  displayedAccessLevel(heldAccess(current[agentId]), preview.candidates)
+                )
+              );
+      // Start on the requested or held level when available. An app whose
+      // write level adds nothing starts on Read, matching what the card shows.
       const asked = props.mode === 'agent' && props.request ? props.request.access : null;
-      setLevel(asked === 'read-write' || heldLevel === 'read-write' ? 'read-write' : heldLevel);
+      const requestedLevel =
+        asked === 'read-write' || heldLevel === 'read-write' ? 'read-write' : heldLevel;
+      setLevel(displayedAccessLevel(requestedLevel, preview.candidates));
       setLevelTouched(false);
     },
   });
   const { preview } = access;
+  const writeOffer = preview ? requestedWriteOffer(preview.candidates) : undefined;
+  const onWriteOfferChange = props.mode === 'agent' ? props.onWriteOfferChange : undefined;
+  useEffect(() => {
+    onWriteOfferChange?.(writeOffer);
+    return () => onWriteOfferChange?.(undefined);
+  }, [writeOffer, onWriteOfferChange]);
 
   const fixedAgentId = props.mode === 'agent' ? props.agentId : null;
   const decision = useMemo<CardDecision>(
@@ -344,12 +276,16 @@ function AccessStep(
       ) : null}
 
       {/* Another agent can approve Read, never more, so a request for write access is always the
-          person's to answer: said once, quietly, just above the buttons it is about (DOR-3959). */}
-      {props.mode === 'agent' && props.request?.access === 'read-write' && preview && !outcome && (
-        <p data-testid="agent-request-write-note" className="text-muted-foreground text-xs">
-          Write access needs you.
-        </p>
-      )}
+          person's to answer. An app with no change actions cannot offer it (DOR-3959, DOR-4444). */}
+      {props.mode === 'agent' &&
+        props.request?.access === 'read-write' &&
+        writeOffer !== 'none' &&
+        preview &&
+        !outcome && (
+          <p data-testid="agent-request-write-note" className="text-muted-foreground text-xs">
+            Write access needs you.
+          </p>
+        )}
       <div className="flex flex-wrap items-center justify-end gap-2">
         {access.needsReconciliation ? (
           <Button variant="secondary" onClick={access.refresh}>
@@ -404,193 +340,5 @@ function AccessStep(
         )}
       </div>
     </AccessCardFrame>
-  );
-}
-
-function AccessEditor({
-  props,
-  preview,
-  picked,
-  setPicked,
-  who,
-  setWho,
-  decision,
-  level,
-  setLevel,
-  showAll,
-  setShowAll,
-  systemAgentIds,
-}: {
-  props: ConnectionAccessCardProps & { connectionId: string };
-  preview: ConnectorReconciliationPreview;
-  picked: Set<string>;
-  setPicked: (next: Set<string>) => void;
-  who: WhoCanUse;
-  setWho: (next: WhoCanUse) => void;
-  decision: CardDecision;
-  level: CardAccessLevel | null;
-  setLevel: (next: CardAccessLevel) => void;
-  showAll: boolean;
-  setShowAll: (next: boolean) => void;
-  systemAgentIds: string[];
-}) {
-  const baseId = useId();
-  const current = selectionsFromPreview(preview);
-  const readIds = accessLevelRevisionIds(preview.candidates, 'read');
-  const readWriteIds = accessLevelRevisionIds(preview.candidates, 'read-write');
-  const offered: CardAccessLevel[] =
-    readWriteIds.length > readIds.length ? ['read', 'read-write'] : ['read'];
-  // The chat's one-agent answer only offers levels at or above what it holds.
-  const levels =
-    props.mode === 'agent' &&
-    agentHeldAccess(preview, props.agentId, Boolean(props.onAllowed)) === 'read-write'
-      ? offered.filter((option) => option === 'read-write')
-      : offered;
-  const nothingToGrant = readWriteIds.length === 0;
-
-  const exactActionsLink = props.onEditExactActions && (
-    <ExactActionsLink onClick={() => props.onEditExactActions?.(props.connectionId)} />
-  );
-
-  let whoView: ReactNode;
-  if (props.mode === 'agent') {
-    const agent = preview.agents.find((candidate) => candidate.agentId === props.agentId);
-    const held = heldAccess(current[props.agentId]);
-    const effective = agentHeldAccess(preview, props.agentId, Boolean(props.onAllowed));
-    const covered = effective === level || (effective === 'read-write' && level === 'read');
-    whoView = !agent ? (
-      <p role="alert" className="text-destructive text-sm">
-        This agent isn’t registered here, so it can’t get access.
-      </p>
-    ) : held === 'custom' ? (
-      <p className="text-muted-foreground text-sm">
-        {agent.displayName} already has exact actions here.{' '}
-        {props.onEditExactActions
-          ? 'Choose exact actions to change them.'
-          : 'Change them on the Connections page.'}
-      </p>
-    ) : held === level ? (
-      <p className="text-muted-foreground text-sm">{agent.displayName} can already do this.</p>
-    ) : covered ? (
-      <p className="text-muted-foreground text-sm">
-        {agent.displayName} already can, like every agent.
-      </p>
-    ) : null;
-  } else if (who === 'every') {
-    whoView = null;
-  } else if (preview.agents.length === 0) {
-    whoView = <p className="text-muted-foreground text-sm">No agents yet. Add one first.</p>;
-  } else {
-    whoView = (
-      <AgentChecklist
-        preview={preview}
-        serviceName={props.serviceName}
-        preferredAgentIds={props.preferredAgentIds}
-        systemAgentIds={systemAgentIds}
-        picked={picked}
-        setPicked={setPicked}
-        decision={decision}
-        showAll={showAll}
-        setShowAll={setShowAll}
-      />
-    );
-  }
-
-  const agentMissing =
-    props.mode === 'agent' && !preview.agents.some((agent) => agent.agentId === props.agentId);
-  const agentCustom = props.mode === 'agent' && heldAccess(current[props.agentId]) === 'custom';
-
-  return (
-    <div className="space-y-4">
-      {props.mode === 'page' && (
-        <WhoCanUseChoice
-          value={who}
-          onChange={setWho}
-          everyAgentAvailable={preview.everyAgent.available}
-        />
-      )}
-      {props.mode === 'agent' && props.request && (
-        <RequestedAccess
-          agentName={
-            preview.agents.find((agent) => agent.agentId === props.agentId)?.displayName ??
-            'The agent'
-          }
-          serviceName={props.serviceName}
-          request={props.request}
-          level={level}
-          writeOffer={requestedWriteOffer(preview.candidates)}
-        />
-      )}
-      {whoView}
-      {nothingToGrant ? (
-        <p className="text-muted-foreground text-sm">
-          {props.serviceName} has no actions for agents yet.
-        </p>
-      ) : (
-        !agentMissing &&
-        !agentCustom && (
-          <div className="space-y-1.5">
-            <p id={`${baseId}-level`} className="text-muted-foreground text-xs font-medium">
-              {props.mode === 'page' ? 'They can' : 'It can'}
-            </p>
-            {levels.length > 1 ? (
-              <SegmentedControl
-                aria-labelledby={`${baseId}-level`}
-                // Mixed: no segment is selected until the person picks one for everyone.
-                value={level ?? ''}
-                onValueChange={(next) => setLevel(next as CardAccessLevel)}
-              >
-                {levels.map((option) => (
-                  <SegmentedControlItem key={option} value={option} className="min-h-9">
-                    {LEVEL_LABELS[option]}
-                  </SegmentedControlItem>
-                ))}
-              </SegmentedControl>
-            ) : (
-              <p className="text-sm">{LEVEL_LABELS[levels[0]]}</p>
-            )}
-            {level === null && (
-              <p className="text-muted-foreground text-xs">
-                {who === 'every'
-                  ? preview.everyAgent.operationRevisionIds.length > 0
-                    ? 'Every agent has exact actions now. Pick a level to replace them.'
-                    : 'Pick what every agent can do.'
-                  : 'Your agents have different access. Pick one for every ticked agent.'}
-              </p>
-            )}
-            {props.mode === 'page' && who === 'every' && (
-              <EveryAgentWarning preview={preview} level={level} serviceName={props.serviceName} />
-            )}
-          </div>
-        )
-      )}
-      {props.mode === 'page' && props.appActions && (
-        <AppActions
-          toolkit={props.appActions.toolkit}
-          appName={props.serviceName}
-          providerInstanceId={props.appActions.providerInstanceId}
-          // The buckets come from this account's own snapshot, so they are
-          // exactly what the picked level grants. With no level on offer
-          // there is nothing to tie them to.
-          grant={{ candidates: preview.candidates, level: nothingToGrant ? null : level }}
-        />
-      )}
-      {(props.mode === 'page' || exactActionsLink) && (
-        <div className="text-muted-foreground flex flex-wrap items-center justify-between gap-2 text-xs">
-          {props.mode === 'page' && who === 'picked' && (
-            <span>Others can still ask you in chat.</span>
-          )}
-          {exactActionsLink}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function ExactActionsLink({ onClick }: { onClick: () => void }) {
-  return (
-    <Button variant="link" size="xs" className="h-auto p-0" onClick={onClick}>
-      Choose exact actions
-    </Button>
   );
 }

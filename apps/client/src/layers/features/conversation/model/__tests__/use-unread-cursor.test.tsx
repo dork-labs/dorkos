@@ -12,7 +12,7 @@ import { renderHook, act, waitFor } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import type { Transport } from '@dorkos/shared/transport';
 import type { ReadCursor } from '@dorkos/shared/read-cursor-schemas';
-import { createMockTransport } from '@dorkos/test-utils';
+import { createMockTransport } from '@dorkos/test-utils/mock-factories';
 
 /** Handlers the hook registered, keyed by the event they wait for. */
 const handlers = new Map<string, (payload?: unknown) => void>();

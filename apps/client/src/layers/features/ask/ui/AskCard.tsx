@@ -352,10 +352,14 @@ function AskCardReceipt({
       data-slot={dataSlot}
       data-tone={tone}
       role="status"
-      className={cn('text-muted-foreground flex items-center gap-1.5 text-xs', className)}
+      className={cn('text-muted-foreground flex items-start gap-1.5 text-xs', className)}
     >
-      {tone === 'allowed' && <Check className="text-status-success size-3.5" aria-hidden />}
-      {tone === 'denied' && <X className="text-muted-foreground size-3.5" aria-hidden />}
+      {tone === 'allowed' && (
+        <Check className="text-status-success mt-px size-3.5 shrink-0" aria-hidden />
+      )}
+      {tone === 'denied' && (
+        <X className="text-muted-foreground mt-px size-3.5 shrink-0" aria-hidden />
+      )}
       {children}
     </p>
   );

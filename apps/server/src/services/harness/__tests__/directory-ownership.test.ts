@@ -5,8 +5,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import ts from 'typescript';
-import { resolveDirectoryOwnership } from '../directory-ownership.js';
-import { canonicalize } from '../workspace-paths.js';
+import { canonicalize, resolveDirectoryOwnership } from '../directory-ownership.js';
 
 const roots: string[] = [];
 afterEach(() => {

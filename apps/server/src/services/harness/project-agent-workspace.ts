@@ -107,10 +107,8 @@ import { setImmediate as yieldToEventLoop } from 'node:timers/promises';
 import { resolveDorkHome } from '../../lib/dork-home.js';
 import { logger } from '../../lib/logger.js';
 import { adoptInOwnedWorkspace } from './adopt-owned-workspace.js';
+import { isAgentHome } from './directory-ownership.js';
 import { projectUserSkills } from './global-scope.js';
-import { isAgentHome } from './workspace-paths.js';
-
-export { canonicalize, isAgentHome } from './workspace-paths.js';
 
 /** Workspace-relative directory holding an agent's canonical skills. */
 const AGENT_SKILLS_DIR = join('.agents', 'skills');

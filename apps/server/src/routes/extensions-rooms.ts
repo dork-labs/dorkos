@@ -29,6 +29,7 @@
  *
  * @module routes/extensions-rooms
  */
+import { declaresBridgeCapability } from '@dorkos/shared/extension-approval-schemas';
 import type { Context, Hono } from 'hono';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import { z } from 'zod';
@@ -81,7 +82,8 @@ const NO_ROOMS_DECLARED =
 
 /** Whether a mini app's manifest asks for rooms (`capabilities.rooms`). */
 function asksForRooms(record: { manifest: { capabilities?: { rooms?: boolean } } }): boolean {
-  return record.manifest.capabilities?.rooms === true;
+  // The same rule as the bridge gate and the approval card (`BRIDGE_WRITES`).
+  return declaresBridgeCapability(record.manifest, 'rooms');
 }
 
 /** Longest reply, in characters. Mirrors `ROOM_THREAD_REPLY_MAX_CHARS`. */

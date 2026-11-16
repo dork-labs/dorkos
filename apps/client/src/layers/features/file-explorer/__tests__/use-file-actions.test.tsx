@@ -11,7 +11,7 @@ import type { ReactNode } from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { createMockTransport } from '@dorkos/test-utils';
+import { createMockTransport } from '@dorkos/test-utils/mock-factories';
 import type { FileEntry } from '@dorkos/shared/types';
 import { TransportProvider } from '@/layers/shared/model';
 import { useFileActions } from '../model/use-file-actions';

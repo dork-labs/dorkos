@@ -353,6 +353,13 @@ jobs:
       - name: Test-execution assertion fixtures
         run: bash scripts/test-assert-tests-executed.sh
 
+      # keep-build-cache-only.sh is what keeps test.yml's saved turbo cache
+      # build-only (DOR-4190). If it let one `test` entry through, the next
+      # queue run would replay that suite instead of running it, so its
+      # verdicts are pinned the same hermetic way.
+      - name: Build-only turbo cache trim fixtures
+        run: bash scripts/test-keep-build-cache-only.sh
+
       # assert-shard-union.sh is the other half of the same gate: it restores
       # the zero-collected-files net that --passWithNoTests removes from the
       # sharded merge-queue sweep. A union check that stops discriminating

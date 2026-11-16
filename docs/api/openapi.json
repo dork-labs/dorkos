@@ -4335,6 +4335,9 @@
                   "$ref": "#/components/schemas/ModelSubstitutedPart"
                 },
                 {
+                  "$ref": "#/components/schemas/ProjectAddonsOffPart"
+                },
+                {
                   "$ref": "#/components/schemas/WorkLeftRunningPart"
                 },
                 {
@@ -4356,6 +4359,7 @@
                   "memory_recall": "#/components/schemas/MemoryRecallPart",
                   "permission_denied": "#/components/schemas/PermissionDeniedPart",
                   "model_substituted": "#/components/schemas/ModelSubstitutedPart",
+                  "project_addons_off": "#/components/schemas/ProjectAddonsOffPart",
                   "work_left_running": "#/components/schemas/WorkLeftRunningPart",
                   "compact_boundary": "#/components/schemas/CompactBoundaryPart"
                 }
@@ -4813,7 +4817,8 @@
         "type": "string",
         "enum": [
           "agent",
-          "bash"
+          "bash",
+          "other"
         ]
       },
       "BackgroundTaskStatus": {
@@ -5586,6 +5591,35 @@
           "to",
           "toName",
           "reason"
+        ]
+      },
+      "ProjectAddonsOffPart": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "project_addons_off"
+            ]
+          },
+          "plugins": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "tools": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "mcpServers": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "type",
+          "plugins",
+          "tools",
+          "mcpServers"
         ]
       },
       "WorkLeftRunningPart": {
@@ -6542,6 +6576,15 @@
               },
               "ambient": {
                 "type": "boolean"
+              },
+              "taskType": {
+                "$ref": "#/components/schemas/BackgroundTaskType"
+              },
+              "command": {
+                "type": "string"
+              },
+              "startedAt": {
+                "type": "number"
               }
             },
             "required": [
@@ -6845,6 +6888,40 @@
               "to",
               "toName",
               "reason"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "seq": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "project_addons_off"
+                ]
+              },
+              "plugins": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "tools": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "mcpServers": {
+                "type": "integer",
+                "minimum": 0
+              }
+            },
+            "required": [
+              "seq",
+              "type",
+              "plugins",
+              "tools",
+              "mcpServers"
             ]
           },
           {
@@ -9371,6 +9448,19 @@
           "threadRootEntryId": {
             "type": "string",
             "minLength": 1
+          },
+          "openedBy": {
+            "type": "object",
+            "properties": {
+              "extensionId": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "required": [
+              "extensionId"
+            ],
+            "additionalProperties": false
           }
         },
         "required": [
@@ -9649,6 +9739,12 @@
             "type": "integer",
             "default": 0
           },
+          "runningSubagents": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RunningTask"
+            }
+          },
           "lifecycle": {
             "$ref": "#/components/schemas/SessionLifecycle"
           },
@@ -9706,6 +9802,29 @@
           "outputTokens",
           "cacheReadTokens",
           "cacheCreationTokens"
+        ]
+      },
+      "RunningTask": {
+        "type": "object",
+        "properties": {
+          "taskId": {
+            "type": "string"
+          },
+          "taskType": {
+            "$ref": "#/components/schemas/BackgroundTaskType"
+          },
+          "description": {
+            "type": "string"
+          },
+          "command": {
+            "type": "string"
+          },
+          "startedAt": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "taskId"
         ]
       },
       "SessionActivity": {
@@ -10176,6 +10295,47 @@
               "after"
             ],
             "additionalProperties": false
+          }
+        ]
+      },
+      "SteerQueuedChatMessageResponse": {
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "outcome": {
+                "type": "string",
+                "enum": [
+                  "steered"
+                ]
+              }
+            },
+            "required": [
+              "outcome"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "outcome": {
+                "type": "string",
+                "enum": [
+                  "moved-to-front"
+                ]
+              },
+              "reason": {
+                "type": "string",
+                "enum": [
+                  "no-running-turn",
+                  "steer-not-allowed",
+                  "steer-did-not-land"
+                ]
+              }
+            },
+            "required": [
+              "outcome",
+              "reason"
+            ]
           }
         ]
       },
@@ -11005,6 +11165,19 @@
           "status": {
             "$ref": "#/components/schemas/TaskStatus"
           },
+          "approvedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "approvedBy": {
+            "$ref": "#/components/schemas/TaskApprover"
+          },
+          "approvedVia": {
+            "$ref": "#/components/schemas/TaskApprovalVia"
+          },
           "filePath": {
             "type": "string"
           },
@@ -11122,6 +11295,9 @@
           "maxRuntime",
           "permissionMode",
           "status",
+          "approvedAt",
+          "approvedBy",
+          "approvedVia",
           "filePath",
           "createdAt",
           "updatedAt"
@@ -11144,6 +11320,96 @@
           "active",
           "paused",
           "pending_approval"
+        ]
+      },
+      "TaskApprover": {
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "person"
+                ]
+              },
+              "userId": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "name": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "kind",
+              "userId",
+              "name"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "agent"
+                ]
+              },
+              "agentPath": {
+                "type": "string"
+              },
+              "name": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "kind",
+              "agentPath",
+              "name"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "policy"
+                ]
+              }
+            },
+            "required": [
+              "kind"
+            ]
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "TaskApprovalVia": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "enum": [
+          "inbox",
+          "schedules",
+          "home",
+          "created",
+          "agent_tool",
+          "trusted_agent",
+          "unknown",
+          null
         ]
       },
       "ScheduleOriginMarks": {
@@ -11309,6 +11575,10 @@
               "string",
               "null"
             ]
+          },
+          "recentStreak": {
+            "type": "integer",
+            "minimum": 0
           }
         },
         "required": [
@@ -11549,6 +11819,14 @@
           },
           "status": {
             "$ref": "#/components/schemas/SettableTaskStatus"
+          },
+          "approvalSurface": {
+            "type": "string",
+            "enum": [
+              "inbox",
+              "schedules",
+              "home"
+            ]
           },
           "reason": {
             "type": "string"
@@ -14201,6 +14479,58 @@
           },
           "hasPage": {
             "type": "boolean"
+          },
+          "writes": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "data",
+                "canvas",
+                "inbox",
+                "work",
+                "files",
+                "rooms",
+                "forward"
+              ]
+            }
+          },
+          "apps": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "access": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "enum": [
+                    "reads",
+                    "changes",
+                    "both",
+                    null
+                  ]
+                },
+                "opens": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "id",
+                "name",
+                "access"
+              ]
+            }
           }
         },
         "default": null,
@@ -14235,6 +14565,12 @@
           },
           "runtime": {
             "type": "boolean"
+          },
+          "apps": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           }
         },
         "default": null,
@@ -14345,6 +14681,31 @@
               },
               "agents": {
                 "type": "boolean"
+              },
+              "apps": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 20
+              },
+              "appAccess": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "string",
+                  "enum": [
+                    "reads",
+                    "changes",
+                    "both"
+                  ]
+                }
+              },
+              "appOpens": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 20
               }
             },
             "required": [
@@ -20958,6 +21319,31 @@
                         },
                         "agents": {
                           "type": "boolean"
+                        },
+                        "apps": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          },
+                          "maxItems": 20
+                        },
+                        "appAccess": {
+                          "type": "object",
+                          "additionalProperties": {
+                            "type": "string",
+                            "enum": [
+                              "reads",
+                              "changes",
+                              "both"
+                            ]
+                          }
+                        },
+                        "appOpens": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          },
+                          "maxItems": 20
                         }
                       },
                       "required": [
@@ -21108,6 +21494,31 @@
                     },
                     "agents": {
                       "type": "boolean"
+                    },
+                    "apps": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      },
+                      "maxItems": 20
+                    },
+                    "appAccess": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "string",
+                        "enum": [
+                          "reads",
+                          "changes",
+                          "both"
+                        ]
+                      }
+                    },
+                    "appOpens": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      },
+                      "maxItems": 20
                     }
                   },
                   "required": [
@@ -31458,6 +31869,12 @@
                           },
                           "title": {
                             "type": "string"
+                          },
+                          "canGoBack": {
+                            "type": "boolean"
+                          },
+                          "canGoForward": {
+                            "type": "boolean"
                           }
                         },
                         "required": [
@@ -31813,6 +32230,12 @@
                           },
                           "title": {
                             "type": "string"
+                          },
+                          "canGoBack": {
+                            "type": "boolean"
+                          },
+                          "canGoForward": {
+                            "type": "boolean"
                           }
                         },
                         "required": [
@@ -32164,6 +32587,12 @@
                           },
                           "title": {
                             "type": "string"
+                          },
+                          "canGoBack": {
+                            "type": "boolean"
+                          },
+                          "canGoForward": {
+                            "type": "boolean"
                           }
                         },
                         "required": [
@@ -32391,6 +32820,12 @@
                           },
                           "title": {
                             "type": "string"
+                          },
+                          "canGoBack": {
+                            "type": "boolean"
+                          },
+                          "canGoForward": {
+                            "type": "boolean"
                           }
                         },
                         "required": [
@@ -32428,6 +32863,264 @@
           },
           "400": {
             "description": "The web address is invalid",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is not the owner on this computer",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The browser cannot complete this request in its current state",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The browser operation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/local-browser/history": {
+      "post": {
+        "tags": [
+          "Local browser"
+        ],
+        "summary": "Move the selected tab back or forward through its own history",
+        "description": "Only the owner on this computer can call this route. Only the owner, in person, can call this route: no agent, API key or approval token. Goes to the nearest page that way the address rules still allow, skipping refused ones. Every load on the way, a redirect included, runs the same rules; a refused one leaves the person on the page they were on (`history_refused`). While an agent drives, the step pauses it first. Refused during a handoff.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "direction": {
+                    "type": "string",
+                    "enum": [
+                      "back",
+                      "forward"
+                    ]
+                  }
+                },
+                "required": [
+                  "direction"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Current browser state",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "preparation": {
+                      "type": [
+                        "object",
+                        "null"
+                      ],
+                      "properties": {
+                        "stage": {
+                          "type": "string",
+                          "enum": [
+                            "checking",
+                            "downloading",
+                            "launching"
+                          ]
+                        },
+                        "component": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "enum": [
+                            "chromium",
+                            "headless-shell",
+                            "ffmpeg",
+                            null
+                          ]
+                        },
+                        "percent": {
+                          "type": [
+                            "number",
+                            "null"
+                          ],
+                          "minimum": 0,
+                          "maximum": 100
+                        }
+                      },
+                      "required": [
+                        "stage",
+                        "component",
+                        "percent"
+                      ]
+                    },
+                    "connectionId": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "sessionId": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "mode": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "enum": [
+                        "embedded",
+                        "new-window",
+                        null
+                      ]
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "disconnected",
+                        "connected",
+                        "closed"
+                      ]
+                    },
+                    "paused": {
+                      "type": "boolean"
+                    },
+                    "tabs": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "url": {
+                            "type": "string"
+                          },
+                          "title": {
+                            "type": "string"
+                          },
+                          "canGoBack": {
+                            "type": "boolean"
+                          },
+                          "canGoForward": {
+                            "type": "boolean"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "url",
+                          "title"
+                        ]
+                      }
+                    },
+                    "selectedTabId": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "revision": {
+                      "type": "integer",
+                      "minimum": 0
+                    }
+                  },
+                  "required": [
+                    "preparation",
+                    "connectionId",
+                    "sessionId",
+                    "mode",
+                    "status",
+                    "paused",
+                    "tabs",
+                    "selectedTabId",
+                    "revision"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The direction is not back or forward",
             "content": {
               "application/json": {
                 "schema": {
@@ -32620,6 +33313,12 @@
                           },
                           "title": {
                             "type": "string"
+                          },
+                          "canGoBack": {
+                            "type": "boolean"
+                          },
+                          "canGoForward": {
+                            "type": "boolean"
                           }
                         },
                         "required": [
@@ -32827,6 +33526,12 @@
                           },
                           "title": {
                             "type": "string"
+                          },
+                          "canGoBack": {
+                            "type": "boolean"
+                          },
+                          "canGoForward": {
+                            "type": "boolean"
                           }
                         },
                         "required": [
@@ -33574,6 +34279,12 @@
                           },
                           "title": {
                             "type": "string"
+                          },
+                          "canGoBack": {
+                            "type": "boolean"
+                          },
+                          "canGoForward": {
+                            "type": "boolean"
                           }
                         },
                         "required": [
@@ -33934,6 +34645,12 @@
                           },
                           "title": {
                             "type": "string"
+                          },
+                          "canGoBack": {
+                            "type": "boolean"
+                          },
+                          "canGoForward": {
+                            "type": "boolean"
                           }
                         },
                         "required": [
@@ -34295,6 +35012,12 @@
                           },
                           "title": {
                             "type": "string"
+                          },
+                          "canGoBack": {
+                            "type": "boolean"
+                          },
+                          "canGoForward": {
+                            "type": "boolean"
                           }
                         },
                         "required": [
@@ -34656,6 +35379,12 @@
                           },
                           "title": {
                             "type": "string"
+                          },
+                          "canGoBack": {
+                            "type": "boolean"
+                          },
+                          "canGoForward": {
+                            "type": "boolean"
                           }
                         },
                         "required": [
@@ -41513,6 +42242,15 @@
                         },
                         "ambient": {
                           "type": "boolean"
+                        },
+                        "taskType": {
+                          "$ref": "#/components/schemas/BackgroundTaskType"
+                        },
+                        "command": {
+                          "type": "string"
+                        },
+                        "startedAt": {
+                          "type": "number"
                         }
                       },
                       "required": [
@@ -41816,6 +42554,40 @@
                         "to",
                         "toName",
                         "reason"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "seq": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "type": {
+                          "type": "string",
+                          "enum": [
+                            "project_addons_off"
+                          ]
+                        },
+                        "plugins": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "tools": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "mcpServers": {
+                          "type": "integer",
+                          "minimum": 0
+                        }
+                      },
+                      "required": [
+                        "seq",
+                        "type",
+                        "plugins",
+                        "tools",
+                        "mcpServers"
                       ]
                     },
                     {
@@ -43369,7 +44141,7 @@
           "Sessions"
         ],
         "summary": "Remove a waiting message",
-        "description": "Takes a waiting message off the queue; it will not run. Any client may remove any message on the session's queue.",
+        "description": "Takes a waiting message off the queue; it will not run. Any client may remove any message on the session's queue. A message another chat sent is marked not delivered, naming the person who removed it, so its sender sees why.",
         "parameters": [
           {
             "schema": {
@@ -43412,6 +44184,96 @@
           },
           "404": {
             "description": "No such message on this queue",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The message is being sent into the running turn right now",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/sessions/{id}/queue/{messageId}/steer": {
+      "post": {
+        "tags": [
+          "Sessions"
+        ],
+        "summary": "Send a queued agent message now",
+        "description": "Joins another chat's queued message to the running turn when every sender may join that turn: the turn already runs no looser than each sender and carries its marks. Otherwise it moves the row to the front so it runs next, at the senders' own level. The model still reads the fenced message. A person in the app only; an agent is refused.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "messageId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The message joined the running turn or moved to the front",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SteerQueuedChatMessageResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid ids",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller cannot act on this chat, or is not a person",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such message on this queue",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The row is not from another chat, or it is already starting",
             "content": {
               "application/json": {
                 "schema": {
@@ -99180,7 +100042,7 @@
           "Audit"
         ],
         "summary": "See every running chat",
-        "description": "Every chat running right now, per agent, spin-offs, room turns and scheduled runs included: its title, a ready markdown link, whether it is working or waiting on an answer, and who started it. Every registered agent is listed, zero included, so you can see who is free. `total` is the live count for this server. A person’s own chat is counted in `privateCount` and never named. Use the link, never the id, when you tell a person about a chat. `capacity` reports each capped backend’s live records and available starts, including reclaimable idle records. When every record is busy, its message says to wait for a chat to finish; restarting is not needed.",
+        "description": "Every chat running right now, per agent, spin-offs, room turns and scheduled runs included: its title, a ready markdown link, whether it is working or waiting on an answer, and who started it. A chat whose turn ended while its helpers, shells or Monitors still run is listed as `background`; `backgroundWork` is true while such work runs, and absent when nothing says so. Every registered agent is listed, zero included, so you can see who is free. `total` is the live count for this server. A person’s own chat is counted in `privateCount` and never named. Use the link, never the id, when you tell a person about a chat. `capacity` reports each capped backend’s live records and available starts, including reclaimable idle records. When every record is busy, its message says to wait for a chat to finish; restarting is not needed.",
         "responses": {
           "200": {
             "description": "See every running chat result",
@@ -99277,7 +100139,14 @@
                                   "type": "string",
                                   "enum": [
                                     "running",
-                                    "needs-you"
+                                    "needs-you",
+                                    "background"
+                                  ]
+                                },
+                                "backgroundWork": {
+                                  "type": "boolean",
+                                  "enum": [
+                                    true
                                   ]
                                 },
                                 "spinOff": {
@@ -99358,7 +100227,14 @@
                                 "type": "string",
                                 "enum": [
                                   "running",
-                                  "needs-you"
+                                  "needs-you",
+                                  "background"
+                                ]
+                              },
+                              "backgroundWork": {
+                                "type": "boolean",
+                                "enum": [
+                                  true
                                 ]
                               },
                               "spinOff": {

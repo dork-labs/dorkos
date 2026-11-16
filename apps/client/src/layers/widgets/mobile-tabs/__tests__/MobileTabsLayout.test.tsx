@@ -15,7 +15,7 @@ import { act, fireEvent, render, screen, cleanup, waitFor, within } from '@testi
 import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom/vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { createMockTransport } from '@dorkos/test-utils';
+import { createMockTransport } from '@dorkos/test-utils/mock-factories';
 import type { PendingApproval } from '@dorkos/shared/approval-schemas';
 import type { InteractionPendingEvent } from '@dorkos/shared/interaction-events';
 

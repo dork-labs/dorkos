@@ -14,7 +14,7 @@ import type { HistoryMessage } from '@dorkos/shared/types';
 import { streamManager } from '@/layers/shared/lib/transport';
 import { TransportProvider, useAppStore } from '@/layers/shared/model';
 import { useSessionListStore, useSessionStreamStore } from '@/layers/entities/session';
-import { createMockTransport } from '@dorkos/test-utils';
+import { createMockTransport } from '@dorkos/test-utils/mock-factories';
 import { LiveSessionWidget } from '../ui/LiveSessionWidget';
 
 vi.mock('sonner', () => ({ toast: { error: vi.fn(), success: vi.fn(), info: vi.fn() } }));

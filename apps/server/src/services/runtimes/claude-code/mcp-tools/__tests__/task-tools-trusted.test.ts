@@ -28,7 +28,13 @@ import {
 
 vi.mock('../../../../core/config-manager.js', () => ({
   configManager: {
-    get: (key: string) => (key === 'permissions' ? { preset: 'trusted' } : undefined),
+    get: (key: string) =>
+      key === 'permissions'
+        ? { preset: 'trusted' }
+        : // The person's saved zone, which no test machine is in (DOR-4120).
+          key === 'profile'
+          ? { timezone: 'Pacific/Auckland' }
+          : undefined,
   },
 }));
 
@@ -138,6 +144,28 @@ describe('tasks_* on a Trusted install', () => {
     expect((payload.schedule as { status: string }).status).toBe('active');
   });
 
+  it('stores a schedule that names no zone in the person’s zone (DOR-4120)', async () => {
+    const { payload } = await call(inSession().tasks_create!, GOOD_ARGS);
+
+    const schedule = payload.schedule as { timezone: string; filePath: string };
+    expect(schedule.timezone).toBe('Pacific/Auckland');
+    expect(store.getTask((payload.schedule as { id: string }).id)?.timezone).toBe(
+      'Pacific/Auckland'
+    );
+    await expect(fs.readFile(schedule.filePath, 'utf8')).resolves.toContain(
+      'timezone: Pacific/Auckland'
+    );
+  });
+
+  it('gives an on-demand task no zone line (DOR-4120)', async () => {
+    const { cron: _cron, ...onDemand } = GOOD_ARGS;
+    const { isError, payload } = await call(inSession().tasks_create!, onDemand);
+
+    expect(isError).toBe(false);
+    const schedule = payload.schedule as { filePath: string };
+    await expect(fs.readFile(schedule.filePath, 'utf8')).resolves.not.toContain('timezone:');
+  });
+
   it('parks a schedule made over the external /mcp server', async () => {
     const { payload } = await call(toolsWith().tasks_create!, GOOD_ARGS);
 
@@ -176,6 +204,21 @@ describe('tasks_* on a Trusted install', () => {
     }
     const changed = await call(tools.tasks_update!, { id, prompt: 'New instructions.' });
     expect(changed.payload.schedule).not.toHaveProperty('folderRules');
+  });
+
+  it('includes lastRunAt for a task whose latest run needs attention', async () => {
+    const tools = inSession();
+    const created = await call(tools.tasks_create!, GOOD_ARGS);
+    const id = (created.payload.schedule as { id: string }).id;
+    const run = store.createRun(id, 'scheduled');
+    store.updateRun(run.id, { status: 'needs_attention', outcome: 'partial' });
+
+    const { payload } = await call(tools.tasks_list!, {});
+
+    const listed = (payload.schedules as Array<{ id: string; lastRunAt: string }>).find(
+      (schedule) => schedule.id === id
+    );
+    expect(listed?.lastRunAt).toBe(run.startedAt);
   });
 
   it.each([{ permissionMode: 'dontAsk' }, { target: 'someone-else' }])(

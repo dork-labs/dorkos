@@ -4,6 +4,7 @@
  * @module services/tasks/notices/schedule-notices
  */
 import { Cron } from 'croner';
+import { streakCountsFrom } from '../history/schedule-health.js';
 import type { Task, TaskRun } from '@dorkos/shared/types';
 import type { RoomEntryBody } from '@dorkos/shared/room-schemas';
 import {
@@ -16,6 +17,9 @@ import {
 import type { TaskStore } from '../task-store.js';
 import { STALE_SKIP_REASON } from '../timing/occurrence.js';
 import { failureReasonOf } from '../history/schedule-health.js';
+
+/** The app-copy cap a room line keeps to (`writing-app-copy`). */
+const MAX_LINE_WORDS = 15;
 
 /** Only the quiet room writer, a current store and the person's timezone are needed. */
 export interface ScheduleNoticeDeps {
@@ -87,9 +91,13 @@ export class ScheduleNotices {
       )
       .sort((a, b) => b.id.localeCompare(a.id));
     const older = history.filter((r) => r.id !== run.id);
+    // Only runs since the schedule last changed count, the same rule as the
+    // Needs you card (DOR-4127), so the room line and the card agree.
+    const from = streakCountsFrom(task.updatedAt);
     const streak = (rows: TaskRun[]) => {
-      const completed = rows.findIndex((r) => r.status === 'completed');
-      return completed < 0 ? rows.length : completed;
+      const recent = rows.filter((r) => Date.parse(r.startedAt ?? r.createdAt) >= from);
+      const completed = recent.findIndex((r) => r.status === 'completed');
+      return completed < 0 ? recent.length : completed;
     };
     if (run.status === 'completed') {
       const recoveredAt = run.finishedAt ?? run.startedAt;
@@ -113,8 +121,13 @@ export class ScheduleNotices {
       outcome: run.outcome ?? null,
       refusedTools: run.refusedTools ? JSON.stringify(run.refusedTools) : null,
     });
+    const line = `${scheduleFailureTitle(task, reason.kind === 'tool_refused' || reason.kind === 'tools_refused')}: ${scheduleFailureClause(reason)}.`;
+    const withNext = `${line}${this.next(task, 'try')}`;
+    // A room line stays within fifteen words. A longer cause beside a two-word
+    // name can leave no room for the next try, which the Needs you card and
+    // the Schedules row still say.
     this.deps.post(task, {
-      text: `${scheduleFailureTitle(task, reason.kind === 'tool_refused' || reason.kind === 'tools_refused')}: ${scheduleFailureClause(reason)}.${this.next(task, 'try')}`,
+      text: withNext.split(/\s+/).length <= MAX_LINE_WORDS ? withNext : line,
       notice: 'schedule_failed',
       scheduleRun: { scheduleId: task.id, runId: run.id },
     });

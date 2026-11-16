@@ -14,7 +14,7 @@ import { toast } from 'sonner';
 import type { Transport } from '@dorkos/shared/transport';
 import { CommunityRefSchema } from '@dorkos/shared/community-adapter';
 import type { CommunityConnectionDescriptor } from '@dorkos/shared/community-connections';
-import { createMockTransport, withSpacesExperiment } from '@dorkos/test-utils';
+import { createMockTransport, withSpacesExperiment } from '@dorkos/test-utils/mock-factories';
 import { invalidateCommunityAuthority } from '@/layers/shared/lib';
 import { TransportProvider } from '@/layers/shared/model';
 import {

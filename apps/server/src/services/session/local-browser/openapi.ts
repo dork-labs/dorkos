@@ -4,6 +4,7 @@ import { z } from 'zod';
 import {
   LocalBrowserCapabilitiesSchema,
   LocalBrowserHandoffAnswerSchema,
+  LocalBrowserHistoryDirectionSchema,
   LocalBrowserOpenSchema,
   LocalBrowserPersonStateSchema,
   LocalBrowserProfileBindSchema,
@@ -199,6 +200,30 @@ export function registerLocalBrowserOpenApi(registry: OpenAPIRegistry): void {
       },
     },
     responses: { ...stateResponses, 400: refusal('The web address is invalid') },
+  });
+  registry.registerPath({
+    method: 'post',
+    path: '/api/local-browser/history',
+    tags: ['Local browser'],
+    summary: 'Move the selected tab back or forward through its own history',
+    description:
+      authority +
+      inPerson +
+      'Goes to the nearest page that way the address rules still allow, skipping refused ones. ' +
+      'Every load on the way, a redirect included, runs the same rules; a refused one leaves the ' +
+      'person on the page they were on (`history_refused`). While an agent drives, the step pauses ' +
+      'it first. Refused during a handoff.',
+    request: {
+      body: {
+        required: true,
+        content: {
+          'application/json': {
+            schema: z.object({ direction: LocalBrowserHistoryDirectionSchema }).strict(),
+          },
+        },
+      },
+    },
+    responses: { ...stateResponses, 400: refusal('The direction is not back or forward') },
   });
   registry.registerPath({
     method: 'post',

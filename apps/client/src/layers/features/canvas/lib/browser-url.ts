@@ -15,8 +15,13 @@
  * they live on their own origin, so it grants them nothing against the DorkOS
  * origin.
  *
+ * What a person TYPES into the address bar is read by `normalizeAddressInput`
+ * in `shared/lib/browser-address`, which also owns the loopback and own-address
+ * checks both browsers share.
+ *
  * @module features/canvas/lib/browser-url
  */
+import { isLoopbackHost } from '@/layers/shared/lib';
 
 /**
  * Sandbox tokens for served/proxied (untrusted, same-serving-origin) content.
@@ -37,100 +42,13 @@ export const WORKBENCH_SANDBOX_EXTERNAL =
 /** Protocols never loaded in the browser frame (script/URI-smuggling vectors). */
 const BLOCKED_PROTOCOLS = new Set(['javascript:', 'data:', 'blob:']);
 
-/**
- * Hostnames treated as loopback (routed through the localhost proxy).
- *
- * `0.0.0.0` is in this set on purpose, and the server's `trusted-origins.ts`
- * deliberately treats it as public — the two are answering different questions.
- * The server is asked "may a request claiming this origin be trusted", where
- * `0.0.0.0` means every interface and so cannot be vouched for. Here the question
- * is "where will this page's browser go if it loads this URL", and a browser
- * pointed at `0.0.0.0` goes to the machine it is running on. Same string,
- * opposite meaning, both correct.
- */
-const LOOPBACK_HOSTS = new Set(['localhost', '127.0.0.1', '0.0.0.0', '[::1]', '::1']);
-
 /** A classified browser target. */
 export type BrowserTarget =
   | { mode: 'external'; url: string }
   | { mode: 'proxy'; hostname: string; port: number; path: string }
   | { mode: 'serve'; path: string }
+  | { mode: 'blank' }
   | { mode: 'blocked' };
-
-/**
- * Whether a URL's hostname is a loopback address. A trailing dot (`localhost.`)
- * names the same host, so it is read the same.
- */
-function isLoopbackHost(hostname: string): boolean {
-  const host = withoutTrailingDot(hostname);
-  return LOOPBACK_HOSTS.has(host) || host.endsWith('.localhost');
-}
-
-/** A hostname with its one trailing dot, if any, removed: `a.example.` names `a.example`. */
-function withoutTrailingDot(hostname: string): string {
-  return hostname.endsWith('.') ? hostname.slice(0, -1) : hostname;
-}
-
-/** The parts of the page's own `Location` {@link isThisAppsAddress} reads. */
-export interface PageAddress {
-  /** The page's origin, e.g. `http://localhost:4242`. */
-  origin: string;
-  /** The page's hostname, e.g. `localhost`. */
-  hostname: string;
-  /** The page's port as `Location` reports it (`''` for the scheme's default). */
-  port: string;
-  /** The page's scheme with its colon, e.g. `http:`. */
-  protocol: string;
-}
-
-/**
- * Whether a frame source is this app's own server, so framing it with
- * `allow-same-origin` would hand the framed page the app's own powers.
- *
- * Three shapes count. The page's exact origin, which a tunnel or Wi-Fi address
- * reaches as an `external` target. Any of the server's own other addresses
- * (`ownOrigins`: its tunnel, Wi-Fi and hub origins, from the server's config),
- * which a page open on `localhost` would otherwise read as a stranger's (DOR-4132).
- * And, while the page is on a loopback name, any loopback name on the page's own
- * port: `127.0.0.1:4242` is a different origin string from `localhost:4242` but
- * the same server, and the server trusts both. A trailing dot on the source's
- * host names the same host and is ignored. A source that does not parse is
- * treated as this app's, since a relative URL resolves onto the page's own origin.
- *
- * @param src - The URL about to be framed (absolute, or relative to the page).
- * @param page - The page rendering the frame, normally `window.location`.
- * @param ownOrigins - The server's own other origins, as `GET /api/config` reports them.
- */
-export function isThisAppsAddress(
-  src: string,
-  page: PageAddress,
-  ownOrigins: readonly string[] = []
-): boolean {
-  let target: URL;
-  try {
-    target = new URL(src, page.origin);
-  } catch {
-    return true;
-  }
-  target.hostname = withoutTrailingDot(target.hostname);
-  if (target.origin === page.origin) return true;
-  if (ownOrigins.some((origin) => sameOrigin(origin, target.origin))) return true;
-  if (!isLoopbackHost(page.hostname) || !isLoopbackHost(target.hostname)) return false;
-  const pagePort = page.port || String(defaultPort(page.protocol));
-  const targetPort = target.port || String(defaultPort(target.protocol));
-  return pagePort === targetPort;
-}
-
-/** Whether a configured origin names `origin`. One that does not parse names nothing. */
-function sameOrigin(configured: string, origin: string): boolean {
-  try {
-    const parsed = new URL(configured);
-    parsed.hostname = withoutTrailingDot(parsed.hostname);
-    return parsed.origin === origin;
-  } catch {
-    return false;
-  }
-}
 
 /** How a loopback (`proxy`) target is loaded: straight into the frame, or via the server. */
 export type LoopbackStrategy = 'direct' | 'server';
@@ -224,6 +142,7 @@ function defaultPort(protocol: string): number {
  *
  * A string that parses as an `http(s)` URL is `proxy` when its host is loopback,
  * else `external`. A `file:` URL or any non-URL string is a local `serve` path.
+ * `about:blank` is an empty page (`blank`), framed as nothing at all.
  * `javascript:`/`data:`/`blob:` URLs are `blocked`.
  *
  * @param raw - The raw URL or local path to classify.
@@ -239,6 +158,7 @@ export function classifyBrowserTarget(raw: string): BrowserTarget {
   }
 
   if (BLOCKED_PROTOCOLS.has(parsed.protocol)) return { mode: 'blocked' };
+  if (parsed.href === 'about:blank') return { mode: 'blank' };
 
   if (parsed.protocol === 'file:') {
     return { mode: 'serve', path: decodeURIComponent(parsed.pathname) };
@@ -263,81 +183,4 @@ export function classifyBrowserTarget(raw: string): BrowserTarget {
 
   // Any other scheme (mailto:, about:, etc.) is not something we frame.
   return { mode: 'blocked' };
-}
-
-/**
- * Normalize address-bar input into a navigable target. The rules, in order:
- * - empty → empty;
- * - already a `scheme://…` URL (http/https/file) → untouched (requiring `//`
- *   avoids misreading `localhost:3000` host:port as a scheme);
- * - an explicit local path (`/…`, `./…`, `../…`) → untouched (routed to `serve`);
- * - a slash-bearing value whose first segment isn't host-like — no dot, no port
- *   (e.g. `demo/index.html`) → untouched, treated as a relative local path so it
- *   re-mints a signed serve URL against the session cwd rather than becoming a
- *   bogus `https://demo/…`;
- * - otherwise host-like (`example.com`, `localhost:3000`) → gets a scheme: `http`
- *   for a loopback host (dev servers are overwhelmingly plain http), `https`
- *   otherwise.
- *
- * Known edge: a bare single-segment filename like `preview.html` reads as a host
- * and becomes `https://preview.html` — re-navigating a lone local file by typing
- * its name is inherently ambiguous, and links (not retyping) are the common path.
- *
- * @param input - Raw address-bar text.
- * @returns A URL or path string ready for {@link classifyBrowserTarget}.
- */
-export function normalizeAddressInput(input: string): string {
-  const trimmed = input.trim();
-  if (trimmed === '') return trimmed;
-  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(trimmed)) return trimmed;
-  if (trimmed.startsWith('/') || trimmed.startsWith('./') || trimmed.startsWith('../')) {
-    return trimmed;
-  }
-  const firstSegment = trimmed.split('/')[0];
-  const looksLikeRelativePath =
-    trimmed.includes('/') && !firstSegment.includes('.') && !firstSegment.includes(':');
-  if (looksLikeRelativePath) return trimmed;
-  const host = firstSegment.split(':')[0];
-  const scheme = isLoopbackHost(host) ? 'http' : 'https';
-  return `${scheme}://${trimmed}`;
-}
-
-/**
- * How the address bar should render a logical URL at rest (Chrome/Safari-style
- * simplification). The bar never displays the signed serve/proxy token URL — it
- * shows the logical target the user navigated to.
- */
-export type AddressDisplay =
-  | { kind: 'local'; path: string }
-  | { kind: 'url'; host: string; rest: string }
-  | { kind: 'raw'; text: string };
-
-/**
- * Simplify a logical URL into display segments for the at-rest address bar:
- * - a local `serve` target → `{ kind: 'local', path }` (shown with a "local"
- *   chip; the path is the logical source, never the signed token URL);
- * - an `http(s)` / loopback target → `{ kind: 'url', host, rest }` with the
- *   scheme and a leading `www.` stripped, the host (including a non-default
- *   port, which is the identity of a dev server) emphasized, and the path/query
- *   de-emphasized;
- * - anything else (blocked/unparsable) → `{ kind: 'raw', text }`.
- *
- * @param raw - The logical URL or path currently loaded in the browser.
- * @returns The {@link AddressDisplay} segments to render.
- */
-export function describeAddress(raw: string): AddressDisplay {
-  const target = classifyBrowserTarget(raw);
-  if (target.mode === 'serve') return { kind: 'local', path: target.path };
-  if (target.mode === 'blocked') return { kind: 'raw', text: raw };
-  try {
-    const parsed = new URL(raw);
-    const host = parsed.host.replace(/^www\./, '');
-    const rest =
-      parsed.pathname === '/' && parsed.search === '' && parsed.hash === ''
-        ? ''
-        : `${parsed.pathname}${parsed.search}${parsed.hash}`;
-    return { kind: 'url', host, rest };
-  } catch {
-    return { kind: 'raw', text: raw };
-  }
 }

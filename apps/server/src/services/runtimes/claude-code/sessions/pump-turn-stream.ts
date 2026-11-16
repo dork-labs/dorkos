@@ -74,6 +74,7 @@ import {
 import type { MessageSenderOpts } from '../messaging/message-sender-shared.js';
 import { detectPhantomCancellations } from '../messaging/phantom-cancellation.js';
 import { mapSdkMessageWithMedia } from '../media-capture.js';
+import { isTurnActivity } from './records/turn-activity.js';
 import type { TurnWindow } from './session-turn-windows.js';
 
 /** What one window needs to become a turn on the durable stream. */
@@ -113,6 +114,8 @@ export interface PumpTurnStreamArgs {
 export async function* streamTurnWindow(args: PumpTurnStreamArgs): AsyncGenerator<StreamEvent> {
   const { sessionId, session, window, opts, meshAgentId } = args;
   const streamStart = Date.now();
+  // The absolute turn limit is measured from here, in awake time (DOR-2705).
+  session.turnStartedAwake = performance.now();
   const toolState = createToolState();
   const messages = window.messages[Symbol.asyncIterator]();
   let emittedDone = false;
@@ -164,6 +167,11 @@ export async function* streamTurnWindow(args: PumpTurnStreamArgs): AsyncGenerato
       pending = null;
       if (winner.done) break;
       const message = winner.value;
+      // A turn that is still working is active, however long ago it started.
+      // Record eviction spares a running turn only while this is under the
+      // four-hour ceiling, so stamping it at the start alone ended every turn
+      // still working four hours in (DOR-2705). One rule decides what counts.
+      if (isTurnActivity(message)) session.lastActivity = Date.now();
 
       if (message.type === 'assistant' && message.parent_tool_use_id === null) {
         lastMainAssistantUuid = message.uuid;

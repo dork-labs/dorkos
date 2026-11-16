@@ -44,3 +44,13 @@ restored on failure, a retained module instance bypasses fresh fixture state,
 or any existing config/auth/environment assertion stops detecting its subject.
 Independent REVIEW.md review and a fresh immutable-head full pass remain
 required; isolated green does not replace the failed integrated gate.
+
+Main integration at d9993507b247c84825d407e5621b1728b60fb965 brings a competing
+whole-file graph strategy (DOR-4190). Retain this owned bootstrap and fresh
+per-test graphs rather than combining two bootstrap strategies or adding the
+120-second beforeAll and 30-second hook escape. Carry main's actual cleanup
+improvements forward: restore task/relay flags in finally, discard
+environment-override graphs after restoring variables, and clear remote-stream
+state before the existing module reset. The same 147 route assertions and three
+bootstrap isolation controls must pass. No timing or full-gate claim follows
+from the merge; the previous clean-head receipt belongs to the previous head.

@@ -466,8 +466,9 @@ export function createRoomSubsystem(opts: {
   const attachments = new AttachmentRowStore(opts.db);
   const agentLookup = opts.agents ?? createAgentLookup(opts.db);
   const authors = new AuthorRegistry(opts.db, agentLookup);
+  const bridges = new BridgeStore(opts.db);
   // A room post that reaches a room-attached chat shows its real author there (DOR-2113).
-  setRoomMessageLookup(createRoomMessageLookup(store, authors));
+  setRoomMessageLookup(createRoomMessageLookup(store, authors, bridges));
   // A Wi-Fi post's hold, read from its row after a restart (DOR-3037).
   setStoredEntryHoldReader(storedEntryHoldReader(opts.db));
   const mirrorRuntime = opts.createMirrorRuntime?.({ store, authors, attachments });
@@ -555,7 +556,6 @@ export function createRoomSubsystem(opts: {
     ...(opts.canvasNow ? { now: opts.canvasNow } : {}),
   });
   setCanvasService(canvas);
-  const bridges = new BridgeStore(opts.db);
   const readCursors = opts.readCursors ?? new ReadCursorService(new ReadCursorStore(opts.db));
   const service = new RoomService({
     store,

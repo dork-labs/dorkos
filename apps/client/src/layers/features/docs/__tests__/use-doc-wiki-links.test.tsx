@@ -12,7 +12,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { WikiLink } from 'blintz';
 import type { DocIndex } from '@dorkos/shared/doc-links';
 import type { Transport } from '@dorkos/shared/transport';
-import { createMockTransport } from '@dorkos/test-utils';
+import { createMockTransport } from '@dorkos/test-utils/mock-factories';
 
 const { executeUiCommand, toastInfo } = vi.hoisted(() => ({
   executeUiCommand: vi.fn(),

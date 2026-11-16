@@ -16,7 +16,10 @@ import type {
 } from '@dorkos/shared/connector-schemas';
 import { CONNECTION_READINESS_COPY } from '@dorkos/shared/connector-schemas';
 import type { Transport } from '@dorkos/shared/transport';
-import { createMockTransport, createMockConnectionReadiness } from '@dorkos/test-utils';
+import {
+  createMockTransport,
+  createMockConnectionReadiness,
+} from '@dorkos/test-utils/mock-factories';
 import { TransportProvider } from '@/layers/shared/model';
 import { AccountPanel } from '../ui/panel/AccountPanel';
 

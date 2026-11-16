@@ -235,6 +235,20 @@ function turnThatEndsAsItIsStopped(stopAtEnd: () => void): AsyncGenerator<Stream
  */
 const SESSION_UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
+/**
+ * `vi.waitFor`, polling every 5 ms instead of the default 50 ms.
+ *
+ * Every wait in this file is for a run the scheduler settles on its own a
+ * few ticks later; at 50 ms the poll, not the scheduler, set how long each
+ * one took. Same timeout (default 1 s, or the caller's), same assertion.
+ */
+function waitFor<T>(
+  callback: () => T | Promise<T>,
+  options: { timeout?: number } = {}
+): Promise<T> {
+  return vi.waitFor(callback, { interval: 5, ...options });
+}
+
 /** Build a minimal CreateTaskStoreInput with defaults for required fields. */
 function taskInput(
   overrides: Partial<CreateTaskStoreInput> & { name: string }
@@ -720,7 +734,7 @@ describe('TaskSchedulerService', () => {
       // `triggerManualRun` is fire-and-forget, so the run it returns has not
       // executed yet. Wait for the run row to reach a terminal status — the
       // outcome — rather than for a fixed number of milliseconds (DOR-1840).
-      await vi.waitFor(() => expect(isTerminalRunStatus(store.getRun(run!.id)!.status)).toBe(true));
+      await waitFor(() => expect(isTerminalRunStatus(store.getRun(run!.id)!.status)).toBe(true));
 
       await service.stop();
     });
@@ -741,7 +755,7 @@ describe('TaskSchedulerService', () => {
       const service = new TaskSchedulerService(store, mockAgent, DEFAULT_CONFIG);
       await service.triggerManualRun(task.id);
 
-      await vi.waitFor(() => expect(mockAgent.sendMessage).toHaveBeenCalledOnce());
+      await waitFor(() => expect(mockAgent.sendMessage).toHaveBeenCalledOnce());
 
       const [, , opts] = vi.mocked(mockAgent.sendMessage).mock.calls[0];
       expect(opts?.systemPromptAppend).toBeDefined();
@@ -810,7 +824,7 @@ describe('TaskSchedulerService', () => {
       const service = new TaskSchedulerService(store, mockAgent, DEFAULT_CONFIG);
 
       await service.triggerManualRun(task.id);
-      await vi.waitFor(() => expect(mockAgent.ensureSession).toHaveBeenCalledOnce());
+      await waitFor(() => expect(mockAgent.ensureSession).toHaveBeenCalledOnce());
 
       expect(vi.mocked(mockAgent.ensureSession).mock.calls[0]?.[1]).toMatchObject({
         unattended: false,
@@ -843,7 +857,7 @@ describe('TaskSchedulerService', () => {
       const service = new TaskSchedulerService(store, mockAgent, DEFAULT_CONFIG);
 
       const run = await service.triggerManualRun(task.id);
-      await vi.waitFor(() => expect(isTerminalRunStatus(store.getRun(run!.id)!.status)).toBe(true));
+      await waitFor(() => expect(isTerminalRunStatus(store.getRun(run!.id)!.status)).toBe(true));
 
       const finished = store.getRun(run!.id)!;
       // First line, because the run-history row and the finished-run message
@@ -890,13 +904,13 @@ describe('TaskSchedulerService', () => {
       // A timer fire, the trigger that has nobody watching.
       await (service as unknown as Fireable).dispatch(task, ON_TIME_HOURLY);
       const [run] = store.listRuns({ taskId: task.id });
-      await vi.waitFor(() => expect(isTerminalRunStatus(store.getRun(run!.id)!.status)).toBe(true));
+      await waitFor(() => expect(isTerminalRunStatus(store.getRun(run!.id)!.status)).toBe(true));
 
       const finished = store.getRun(run!.id)!;
       expect(finished.trigger).toBe('scheduled');
       expect(finished.status).toBe('needs_attention');
       expect(finished.refusedTools).toEqual(['Bash']);
-      await vi.waitFor(() =>
+      await waitFor(() =>
         expect(notifications.list({ limit: 25, unread: false }).notifications).toEqual(
           expect.arrayContaining([
             expect.objectContaining({
@@ -945,7 +959,7 @@ describe('TaskSchedulerService', () => {
       const service = new TaskSchedulerService(store, mockAgent, DEFAULT_CONFIG);
 
       const run = (await service.triggerManualRun(task.id))!;
-      await vi.waitFor(() => expect(isTerminalRunStatus(store.getRun(run.id)!.status)).toBe(true));
+      await waitFor(() => expect(isTerminalRunStatus(store.getRun(run.id)!.status)).toBe(true));
 
       const finished = store.getRun(run.id)!;
       expect(finished.status).toBe('needs_attention');
@@ -989,7 +1003,7 @@ describe('TaskSchedulerService', () => {
       const service = new TaskSchedulerService(store, mockAgent, DEFAULT_CONFIG);
 
       const run = await service.triggerManualRun(task.id);
-      await vi.waitFor(() => expect(isTerminalRunStatus(store.getRun(run!.id)!.status)).toBe(true));
+      await waitFor(() => expect(isTerminalRunStatus(store.getRun(run!.id)!.status)).toBe(true));
 
       const finished = store.getRun(run!.id)!;
       expect(finished.refusedTools).toEqual(['Bash']);
@@ -1018,7 +1032,7 @@ describe('TaskSchedulerService', () => {
       const service = new TaskSchedulerService(store, mockAgent, DEFAULT_CONFIG);
 
       const run = await service.triggerManualRun(task.id);
-      await vi.waitFor(() => expect(isTerminalRunStatus(store.getRun(run!.id)!.status)).toBe(true));
+      await waitFor(() => expect(isTerminalRunStatus(store.getRun(run!.id)!.status)).toBe(true));
 
       const finished = store.getRun(run!.id)!;
       expect(finished.status).toBe('needs_attention');
@@ -1045,7 +1059,7 @@ describe('TaskSchedulerService', () => {
       const service = new TaskSchedulerService(store, mockAgent, DEFAULT_CONFIG);
 
       const run = await service.triggerManualRun(task.id);
-      await vi.waitFor(() => expect(isTerminalRunStatus(store.getRun(run!.id)!.status)).toBe(true));
+      await waitFor(() => expect(isTerminalRunStatus(store.getRun(run!.id)!.status)).toBe(true));
 
       expect(store.getRun(run!.id)!.outputSummary).toBe('All good.');
 
@@ -1069,7 +1083,7 @@ describe('TaskSchedulerService', () => {
       });
 
       const run = await service.triggerManualRun(task.id);
-      await vi.waitFor(() => expect(isTerminalRunStatus(store.getRun(run!.id)!.status)).toBe(true));
+      await waitFor(() => expect(isTerminalRunStatus(store.getRun(run!.id)!.status)).toBe(true));
 
       const refusals = activityService.emit.mock.calls
         .map(([event]) => event as { eventType: string; summary: string })
@@ -1102,7 +1116,7 @@ describe('TaskSchedulerService', () => {
       });
 
       const run = await service.triggerManualRun(task.id);
-      await vi.waitFor(() => expect(isTerminalRunStatus(store.getRun(run!.id)!.status)).toBe(true));
+      await waitFor(() => expect(isTerminalRunStatus(store.getRun(run!.id)!.status)).toBe(true));
 
       const refusals = activityService.emit.mock.calls
         .map(([event]) => event as { eventType: string })
@@ -1198,7 +1212,7 @@ describe('TaskSchedulerService', () => {
       const run = await service.triggerManualRun(task.id);
       await turn.parked;
 
-      await vi.waitFor(
+      await waitFor(
         () => {
           expect(store.getRun(run!.id)!.status).toBe('cancelled');
         },
@@ -1235,7 +1249,7 @@ describe('TaskSchedulerService', () => {
       expect(service.getActiveRunCount()).toBe(1);
       await expect(service.cancelRun(run!.id)).resolves.toEqual({ state: 'stopping' });
 
-      await vi.waitFor(
+      await waitFor(
         () => {
           expect(store.getRun(run!.id)!.status).toBe('cancelled');
         },
@@ -1253,7 +1267,7 @@ describe('TaskSchedulerService', () => {
       // attended run hands its session back — the turn window, the write-lock,
       // the chain slot — before it stops counting against the cap, so that the
       // next run to start never finds the session still held.
-      await vi.waitFor(() => expect(service.getActiveRunCount()).toBe(0), { timeout: 2000 });
+      await waitFor(() => expect(service.getActiveRunCount()).toBe(0), { timeout: 2000 });
 
       await service.stop();
     });
@@ -1278,7 +1292,7 @@ describe('TaskSchedulerService', () => {
 
       const run = await service.triggerManualRun(task.id);
 
-      await vi.waitFor(() => {
+      await waitFor(() => {
         expect(store.getRun(run!.id)!.finishedAt).not.toBeNull();
       });
 
@@ -1299,7 +1313,7 @@ describe('TaskSchedulerService', () => {
       const service = new TaskSchedulerService(store, mockAgent, DEFAULT_CONFIG);
       const run = await service.triggerManualRun(task.id);
 
-      await vi.waitFor(() => {
+      await waitFor(() => {
         expect(store.getRun(run!.id)!.status).toBe('completed');
       });
 
@@ -1328,7 +1342,7 @@ describe('TaskSchedulerService', () => {
       const cancelled = await service.triggerManualRun(task.id);
       await cancelTurn.parked;
       await service.cancelRun(cancelled!.id);
-      await vi.waitFor(() => {
+      await waitFor(() => {
         expect(store.getRun(cancelled!.id)!.status).toBe('cancelled');
       });
       expect(activityService.emit).not.toHaveBeenCalled();
@@ -1340,7 +1354,7 @@ describe('TaskSchedulerService', () => {
         taskInput({ name: 'Deadline', prompt: 'test', cron: '0 * * * *', maxRuntime: 50 })
       );
       const timedRun = await service.triggerManualRun(timedTask.id);
-      await vi.waitFor(
+      await waitFor(
         () => {
           expect(store.getRun(timedRun!.id)!.status).toBe('cancelled');
         },
@@ -1367,7 +1381,7 @@ describe('TaskSchedulerService', () => {
 
       // A rejected interrupt must not become an unhandled rejection, and must
       // not leave the run pinned to `running` holding a concurrency slot.
-      await vi.waitFor(
+      await waitFor(
         () => {
           expect(store.getRun(run!.id)!.status).toBe('cancelled');
         },
@@ -1391,7 +1405,7 @@ describe('TaskSchedulerService', () => {
       );
       const service = new TaskSchedulerService(store, mockAgent, DEFAULT_CONFIG);
       const run = await service.triggerManualRun(task.id);
-      await vi.waitFor(() => {
+      await waitFor(() => {
         expect(store.getRun(run!.id)!.finishedAt).not.toBeNull();
       });
       await service.stop();
@@ -1533,7 +1547,7 @@ describe('TaskSchedulerService', () => {
       const run = await service.triggerManualRun(task.id);
       await turn.parked;
 
-      await vi.waitFor(
+      await waitFor(
         () => {
           expect(store.getRun(run!.id)!.status).toBe('cancelled');
         },
@@ -1602,7 +1616,7 @@ describe('TaskSchedulerService', () => {
     ): Promise<TaskRun | null> {
       const before = mockRelay.publish.mock.calls.length;
       await (service as unknown as Dispatchable).dispatch(task, when);
-      await vi.waitFor(() => expect(mockRelay.publish.mock.calls.length).toBeGreaterThan(before));
+      await waitFor(() => expect(mockRelay.publish.mock.calls.length).toBeGreaterThan(before));
       return store.listRuns({ taskId: task.id })[0] ?? null;
     }
 
@@ -2314,7 +2328,7 @@ describe('TaskSchedulerService', () => {
       });
 
       await (service as unknown as Dispatchable).dispatch(task, new Date(1_700_000_000_000));
-      await vi.waitFor(() => expect(mockRelay.publish).toHaveBeenCalledOnce());
+      await waitFor(() => expect(mockRelay.publish).toHaveBeenCalledOnce());
 
       const [subject] = mockRelay.publish.mock.calls[0];
       expect(subject).toBe(`relay.system.tasks.${task.id}`);
@@ -2342,7 +2356,7 @@ describe('TaskSchedulerService', () => {
       // An on-time fire of its 02:30 occurrence; one hours away from it would
       // be skipped as stale before anything was published (DOR-2718).
       await (service as unknown as Dispatchable).dispatch(task, new Date('2023-11-14T02:30:00Z'));
-      await vi.waitFor(() => expect(mockRelay.publish).toHaveBeenCalledOnce());
+      await waitFor(() => expect(mockRelay.publish).toHaveBeenCalledOnce());
 
       const [, payload, options] = mockRelay.publish.mock.calls[0];
       const dispatch = payload as TaskDispatchPayload;
@@ -2389,7 +2403,7 @@ describe('TaskSchedulerService', () => {
         });
 
         await (service as unknown as Dispatchable).dispatch(task, new Date(1_700_000_000_000));
-        await vi.waitFor(() => expect(mockRelay.publish).toHaveBeenCalledOnce());
+        await waitFor(() => expect(mockRelay.publish).toHaveBeenCalledOnce());
 
         const dispatch = mockRelay.publish.mock.calls[0][1] as TaskDispatchPayload;
         expect(dispatch.forAgent).toBe(agentHome);
@@ -2420,7 +2434,7 @@ describe('TaskSchedulerService', () => {
       });
 
       await (service as unknown as Dispatchable).dispatch(approved, new Date(1_700_000_000_000));
-      await vi.waitFor(() => expect(mockRelay.publish).toHaveBeenCalledOnce());
+      await waitFor(() => expect(mockRelay.publish).toHaveBeenCalledOnce());
 
       const [, payload] = mockRelay.publish.mock.calls[0];
       expect((payload as TaskDispatchPayload).permissionMode).toBe('bypassPermissions');
@@ -2446,7 +2460,7 @@ describe('TaskSchedulerService', () => {
       });
 
       await (service as unknown as Dispatchable).dispatch(task, new Date(1_700_000_000_000));
-      await vi.waitFor(() => expect(mockRelay.publish).toHaveBeenCalledOnce());
+      await waitFor(() => expect(mockRelay.publish).toHaveBeenCalledOnce());
 
       const [, payload] = mockRelay.publish.mock.calls[0];
       if (expected === undefined) expect(payload).not.toHaveProperty('account');
@@ -2550,7 +2564,7 @@ describe('TaskSchedulerService', () => {
         task,
         new Date(1_700_000_000_000)
       );
-      await vi.waitFor(() => expect(mockRelay.publish).toHaveBeenCalledTimes(1));
+      await waitFor(() => expect(mockRelay.publish).toHaveBeenCalledTimes(1));
       const run = store.listRuns({ taskId: task.id })[0]!;
       store.updateRun(run.id, { status: 'cancelled', error: 'Run cancelled' });
       await settleUnderFakeClock(pending);
@@ -2599,7 +2613,7 @@ describe('TaskSchedulerService', () => {
         task,
         new Date(1_700_000_000_000)
       );
-      await vi.waitFor(() => expect(mockRelay.publish).toHaveBeenCalledTimes(1));
+      await waitFor(() => expect(mockRelay.publish).toHaveBeenCalledTimes(1));
       const run = store.listRuns({ taskId: task.id })[0]!;
       const finish = async () => {
         await settleUnderFakeClock(pending);
@@ -2703,7 +2717,7 @@ describe('TaskSchedulerService', () => {
       );
       vi.useRealTimers();
       const run = store.listRuns({ taskId: task.id })[0];
-      await vi.waitFor(() => expect(store.getRun(run!.id)!.status).toBe('failed'));
+      await waitFor(() => expect(store.getRun(run!.id)!.status).toBe('failed'));
 
       expect(mockRelay.publish).toHaveBeenCalledTimes(2);
       const updatedRun = store.listRuns({ taskId: task.id }).find((r) => r.id === run!.id);
@@ -2744,7 +2758,7 @@ describe('TaskSchedulerService', () => {
 
       await (service as unknown as Dispatchable).dispatch(task, new Date(1_700_000_000_000));
       const run = store.listRuns({ taskId: task.id })[0];
-      await vi.waitFor(() =>
+      await waitFor(() =>
         expect(wroteRunning).toHaveBeenCalledWith(run!.id, { status: 'running' })
       );
 
@@ -2786,7 +2800,7 @@ describe('TaskSchedulerService', () => {
 
       await (service as unknown as Dispatchable).dispatch(task, new Date(1_700_000_000_000));
       const run = store.listRuns({ taskId: task.id })[0];
-      await vi.waitFor(() => expect(store.getRun(run!.id)!.status).toBe('completed'));
+      await waitFor(() => expect(store.getRun(run!.id)!.status).toBe('completed'));
 
       const updatedRun = store.getRun(run!.id);
       expect(updatedRun?.status).toBe('completed');
@@ -2816,7 +2830,7 @@ describe('TaskSchedulerService', () => {
       });
 
       await (service as unknown as Dispatchable).dispatch(task, new Date(1_700_000_000_000));
-      await vi.waitFor(() => expect(mockRelay.publish).toHaveBeenCalledOnce());
+      await waitFor(() => expect(mockRelay.publish).toHaveBeenCalledOnce());
 
       const [, , options] = mockRelay.publish.mock.calls[0];
       // TTL should be roughly now + 600_000 (10 minutes)
@@ -2844,7 +2858,7 @@ describe('TaskSchedulerService', () => {
       });
 
       await (service as unknown as Dispatchable).dispatch(task, new Date(1_700_000_000_000));
-      await vi.waitFor(() => expect(mockRelay.publish).toHaveBeenCalledOnce());
+      await waitFor(() => expect(mockRelay.publish).toHaveBeenCalledOnce());
 
       const [, , options] = mockRelay.publish.mock.calls[0];
       // Default TTL: 3_600_000 (1 hour)
@@ -2891,7 +2905,7 @@ describe('TaskSchedulerService', () => {
       // row that reads `cancelled` here means that branch has already made its
       // decision, and the negative assertion below is judging a finished
       // dispatch rather than a 100ms guess at one.
-      await vi.waitFor(() => expect(store.getRun(run!.id)!.status).toBe('cancelled'));
+      await waitFor(() => expect(store.getRun(run!.id)!.status).toBe('cancelled'));
 
       expect(activityService.emit).not.toHaveBeenCalled();
 
@@ -3106,7 +3120,7 @@ describe('agent CWD resolution (via triggerManualRun)', () => {
     });
 
     const run = await service.triggerManualRun(task.id);
-    await vi.waitFor(() => expect(store.getRun(run!.id)!.status).toBe('failed'));
+    await waitFor(() => expect(store.getRun(run!.id)!.status).toBe('failed'));
 
     const updatedRun = store.getRun(run!.id);
     expect(updatedRun!.error).toContain('not found in registry');
@@ -3129,7 +3143,7 @@ describe('agent CWD resolution (via triggerManualRun)', () => {
 
     const service = new TaskSchedulerService(store, mockAgent, DEFAULT_CONFIG);
     const run = await service.triggerManualRun(task.id);
-    await vi.waitFor(() => expect(store.getRun(run!.id)!.status).toBe('failed'));
+    await waitFor(() => expect(store.getRun(run!.id)!.status).toBe('failed'));
 
     // The session id is a freshly minted UUID now, not the run's own id — pull
     // it from the call that opened the session and check the failed row was
@@ -3171,7 +3185,7 @@ describe('agent CWD resolution (via triggerManualRun)', () => {
     // below. A fixed sleep here raced the scheduler's real async work and failed
     // 1 run in 5 under concurrent-suite load with `Number of calls: 0`
     // (DOR-1840).
-    await vi.waitFor(() =>
+    await waitFor(() =>
       expect(mockAgent.ensureSession).toHaveBeenCalledWith(
         expect.any(String),
         expect.objectContaining({ cwd: agentDir })
@@ -3179,7 +3193,7 @@ describe('agent CWD resolution (via triggerManualRun)', () => {
     );
     // And the turn names its agent, so identity is read from that home
     // wherever the run stands (DOR-2355).
-    await vi.waitFor(() =>
+    await waitFor(() =>
       expect(mockAgent.sendMessage).toHaveBeenCalledWith(
         expect.any(String),
         'test',
@@ -3227,7 +3241,7 @@ describe('agent CWD resolution (via triggerManualRun)', () => {
     });
 
     await service.triggerManualRun(tasks[0].id);
-    await vi.waitFor(() =>
+    await waitFor(() =>
       expect(mockAgent.ensureSession).toHaveBeenCalledWith(
         expect.any(String),
         expect.objectContaining({ cwd: process.cwd() })
@@ -3261,7 +3275,7 @@ describe('agent CWD resolution (via triggerManualRun)', () => {
     });
 
     await service.triggerManualRun(tasks[0].id);
-    await vi.waitFor(() =>
+    await waitFor(() =>
       expect(mockAgent.ensureSession).toHaveBeenCalledWith(
         expect.any(String),
         expect.objectContaining({ cwd: process.cwd() })
@@ -3350,7 +3364,7 @@ describe('TaskSchedulerService — per-task runtime, model and effort (DOR-1615)
    */
   async function runToCompletion(service: TaskSchedulerService, taskId: string): Promise<TaskRun> {
     const run = await service.triggerManualRun(taskId);
-    await vi.waitFor(() => {
+    await waitFor(() => {
       const row = store.getRun(run!.id)!;
       expect(isTerminalRunStatus(row.status)).toBe(true);
     });
@@ -3815,7 +3829,7 @@ describe('TaskSchedulerService — per-task runtime, model and effort (DOR-1615)
       const service = scheduler(['claude-code', 'codex'], relay as unknown as RelayCore);
 
       await (service as unknown as Dispatchable).dispatch(task, new Date(1_700_000_000_000));
-      await vi.waitFor(() => expect(relay.publish).toHaveBeenCalledOnce());
+      await waitFor(() => expect(relay.publish).toHaveBeenCalledOnce());
 
       expect(managers['claude-code']!.sendMessage).not.toHaveBeenCalled();
       await service.stop();
@@ -3845,7 +3859,7 @@ describe('TaskSchedulerService — per-task runtime, model and effort (DOR-1615)
       const service = scheduler(['claude-code'], relay as unknown as RelayCore);
 
       await (service as unknown as Dispatchable).dispatch(task, new Date(1_700_000_000_000));
-      await vi.waitFor(() => expect(relay.publish).toHaveBeenCalledOnce());
+      await waitFor(() => expect(relay.publish).toHaveBeenCalledOnce());
 
       const [, payload] = relay.publish.mock.calls[0] as [string, TaskDispatchPayload];
       expect(payload.model).toBe('haiku');
@@ -3860,7 +3874,7 @@ describe('TaskSchedulerService — per-task runtime, model and effort (DOR-1615)
       const service = scheduler(['claude-code'], relay as unknown as RelayCore);
 
       await (service as unknown as Dispatchable).dispatch(task, new Date(1_700_000_000_000));
-      await vi.waitFor(() => expect(relay.publish).toHaveBeenCalledOnce());
+      await waitFor(() => expect(relay.publish).toHaveBeenCalledOnce());
 
       const [, payload] = relay.publish.mock.calls[0] as [string, TaskDispatchPayload];
       expect(payload).not.toHaveProperty('model');
@@ -3908,7 +3922,7 @@ describe('TaskSchedulerService — per-task runtime, model and effort (DOR-1615)
       );
 
       await (service as unknown as Dispatchable).dispatch(task, new Date(1_700_000_000_000));
-      await vi.waitFor(() => expect(relay.publish).toHaveBeenCalledOnce());
+      await waitFor(() => expect(relay.publish).toHaveBeenCalledOnce());
 
       expect(managers['codex']!.sendMessage).not.toHaveBeenCalled();
       await service.stop();
@@ -3927,7 +3941,7 @@ describe('TaskSchedulerService — per-task runtime, model and effort (DOR-1615)
       );
 
       await (service as unknown as Dispatchable).dispatch(task, new Date(1_700_000_000_000));
-      await vi.waitFor(() => expect(relay.publish).toHaveBeenCalledOnce());
+      await waitFor(() => expect(relay.publish).toHaveBeenCalledOnce());
 
       const [, payload] = relay.publish.mock.calls[0] as [string, TaskDispatchPayload];
       expect(payload.runtime).toBe('codex');
@@ -3966,7 +3980,7 @@ describe('TaskSchedulerService — per-task runtime, model and effort (DOR-1615)
       const service = scheduler(['test-mode'], relay as unknown as RelayCore, HOLDS_EVERYTHING);
 
       await (service as unknown as Dispatchable).dispatch(task, new Date(1_700_000_000_000));
-      await vi.waitFor(() => expect(relay.publish).toHaveBeenCalledOnce());
+      await waitFor(() => expect(relay.publish).toHaveBeenCalledOnce());
 
       const [, payload] = relay.publish.mock.calls[0] as [string, TaskDispatchPayload];
       expect(payload.runtime).toBe('test-mode');
@@ -4040,7 +4054,7 @@ describe('TaskSchedulerService — per-task runtime, model and effort (DOR-1615)
       );
 
       await (service as unknown as Dispatchable).dispatch(task, new Date(1_700_000_000_000));
-      await vi.waitFor(() => expect(relay.publish).toHaveBeenCalledOnce());
+      await waitFor(() => expect(relay.publish).toHaveBeenCalledOnce());
 
       expect(managers['claude-code']!.sendMessage).not.toHaveBeenCalled();
       await service.stop();
@@ -4113,7 +4127,7 @@ describe('TaskSchedulerService — per-task runtime, model and effort (DOR-1615)
       });
 
       await (service as unknown as Dispatchable).dispatch(task, new Date(1_700_000_000_000));
-      await vi.waitFor(() => expect(relay.publish).toHaveBeenCalledOnce());
+      await waitFor(() => expect(relay.publish).toHaveBeenCalledOnce());
 
       expect(asked).toEqual([taskDispatchSubject(task.id)]);
       expect(relay.publish.mock.calls[0]![0]).toBe(taskDispatchSubject(task.id));
@@ -4147,6 +4161,9 @@ describe('buildTaskAppend', () => {
       effort: null,
       account: null,
       status: 'active',
+      approvedAt: null,
+      approvedBy: null,
+      approvedVia: null,
       filePath: '/tmp/tasks/daily-cleanup/SKILL.md',
       createdAt: '2026-01-01T00:00:00Z',
       updatedAt: '2026-01-01T00:00:00Z',
@@ -4235,6 +4252,9 @@ describe('buildTaskAppend', () => {
       effort: null,
       account: null,
       status: 'active',
+      approvedAt: null,
+      approvedBy: null,
+      approvedVia: null,
       filePath: '/tmp/tasks/daily-cleanup/SKILL.md',
       createdAt: '2026-01-01T00:00:00Z',
       updatedAt: '2026-01-01T00:00:00Z',

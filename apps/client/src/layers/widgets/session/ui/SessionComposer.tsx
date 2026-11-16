@@ -30,6 +30,7 @@ import {
   selectRenderedMessages,
   sessionContextKey,
   useBackgroundTasks,
+  useAgentQueueActions,
   useChatQueue,
   useRotatingPlaceholder,
   shouldReofferStop,
@@ -55,6 +56,7 @@ import {
 import { useCurrentAgent, useAgentVisual } from '@/layers/entities/agent';
 import { AGENT_IDENTITY_LIMIT_MS, useWaitedPast } from '@/layers/shared/lib';
 import { useLoadingTooLong } from '../model/use-transcript-hold';
+import { useStopTask } from '../model/use-stop-task';
 import {
   useDirectoryState,
   useSessionAwaitingDecision,
@@ -281,6 +283,7 @@ export function SessionComposer({
     tryNativeCommand,
     chatInputRef,
   });
+  const agentQueueActions = useAgentQueueActions(sessionId);
 
   // Stop means stop everything queued. When messages are waiting, the person is
   // asked first and told the cost, because a Stop that silently emptied a queue
@@ -528,18 +531,19 @@ export function SessionComposer({
     () => selectRenderedMessages(streamState, legacyMessages),
     [streamState, legacyMessages]
   );
-  const backgroundTasks = useBackgroundTasks(messages);
-
-  const handleStopTask = useCallback(
-    async (taskId: string) => {
-      if (!sessionId) return;
-      try {
-        await transport.stopTask(sessionId, taskId);
-      } catch (err) {
-        console.error('[chat] Failed to stop task:', err);
-      }
-    },
-    [sessionId, transport]
+  // The session-level running set decides which tasks the strip shows, so a
+  // helper keeps its row through `turn_end` and the reload after it (FB-18).
+  const runningTasks = streamState.status?.runningSubagents;
+  const ambientIds = streamState.ambientSubagentIds;
+  const sessionRunning = useMemo(
+    () => ({ tasks: runningTasks, ambientIds }),
+    [runningTasks, ambientIds]
+  );
+  const { stopTask: handleStopTask, finishedTaskIds } = useStopTask(sessionId, transport);
+  const allBackgroundTasks = useBackgroundTasks(messages, sessionRunning);
+  const backgroundTasks = useMemo(
+    () => allBackgroundTasks.filter((task) => !finishedTaskIds.has(task.taskId)),
+    [allBackgroundTasks, finishedTaskIds]
   );
 
   // Switch now on a message held for the agent's background work (DOR-2065).
@@ -704,6 +708,8 @@ export function SessionComposer({
               onSend={chatQueue.handleQueueSend}
               onMoveUp={chatQueue.handleQueueMoveUp}
               onSwitchNow={handleSwitchNow}
+              agentActions={agentQueueActions}
+              onFocusComposer={() => chatInputRef.current?.focus()}
               // The server dispatches the head the moment the session frees up,
               // so what genuinely holds the line is the agent parked on a
               // person, or the head held for the agent's background work.
@@ -712,7 +718,7 @@ export function SessionComposer({
                   ? 'Waiting for your answer above'
                   : chatQueue.queue[0]?.waiting !== undefined
                     ? 'Sending when the agent is free'
-                    : 'Sending one at a time as the agent finishes'
+                    : 'Sent one at a time as the agent finishes'
               }
             />
           )}

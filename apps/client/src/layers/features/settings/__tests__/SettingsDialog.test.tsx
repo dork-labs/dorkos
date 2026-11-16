@@ -3,7 +3,7 @@ import { describe, it, expect, vi, afterEach, beforeAll } from 'vitest';
 import { render, screen, fireEvent, cleanup, within, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { Transport } from '@dorkos/shared/transport';
-import { createMockTransport } from '@dorkos/test-utils';
+import { createMockTransport } from '@dorkos/test-utils/mock-factories';
 // The Security panel carries the standing-permissions block, which subscribes to
 // the global event stream. This suite mounts the dialog without the app shell,
 // so there is no provider — stubbing the subscription keeps the suite about the

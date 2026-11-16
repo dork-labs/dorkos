@@ -193,6 +193,7 @@ describe('a task write tells the world it happened', () => {
           store,
           scheduler,
           registrar: new TaskRegistrar({ store, scheduler }),
+          defaultTimezone: () => 'UTC',
           dorkHome: DORK_HOME,
           activity: activityService,
         }),

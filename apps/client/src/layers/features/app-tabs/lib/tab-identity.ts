@@ -725,20 +725,24 @@ export function marketplaceTabIdentity(input: MarketplaceTabInput): TabIdentity 
 export const EXTENSION_PAGE_FALLBACK_LABEL = 'Add-on';
 
 /**
- * A page an extension registered (`/x/<ext>`): its own title and icon, or a
- * puzzle piece and "Add-on" while it is not registered (loading, or gone).
+ * A page an extension registered (`/x/<ext>`): its own title and icon. While
+ * it is not registered (loading, or an app that cannot run) it is the app's
+ * name from DorkOS's records, as the page header shows it (DOR-3293), and
+ * "Add-on" only when DorkOS has no record of the app at all.
  *
  * @param page - What the extension registered, when it has.
  * @param badge - What the page reports for its tab, when anything.
+ * @param appName - DorkOS's name for the app, when it has a record of it.
  */
 export function extensionTabIdentity(
   page: { title?: string; icon?: unknown } | null | undefined,
-  badge?: RouteBadge | null
+  badge?: RouteBadge | null,
+  appName?: string
 ): TabIdentity {
   const status = badge?.status;
   return identity({
     icon: { kind: 'extension', icon: page?.icon ?? Puzzle },
-    primary: page?.title || EXTENSION_PAGE_FALLBACK_LABEL,
+    primary: page?.title || appName || EXTENSION_PAGE_FALLBACK_LABEL,
     status,
     statusSentence: badge?.sentence ?? (status ? tabStatusSentence(status) : undefined),
     count: positive(badge?.count),

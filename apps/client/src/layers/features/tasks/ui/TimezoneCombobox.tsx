@@ -12,6 +12,7 @@ import { cn } from '@/layers/shared/lib';
 
 interface TimezoneComboboxProps {
   value: string;
+  browserTimezone?: string | null;
   onChange: (tz: string) => void;
 }
 
@@ -27,7 +28,7 @@ function groupByContinent(timezones: string[]): Map<string, string[]> {
 }
 
 /** Searchable combobox for IANA timezone selection, grouped by continent. */
-export function TimezoneCombobox({ value, onChange }: TimezoneComboboxProps) {
+export function TimezoneCombobox({ value, browserTimezone, onChange }: TimezoneComboboxProps) {
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -41,8 +42,6 @@ export function TimezoneCombobox({ value, onChange }: TimezoneComboboxProps) {
 
   const groups = useMemo(() => groupByContinent(timezones), [timezones]);
 
-  const detectedTz = useMemo(() => Intl.DateTimeFormat().resolvedOptions().timeZone, []);
-
   // Close dropdown when clicking outside
   useEffect(() => {
     if (!open) return;
@@ -55,7 +54,11 @@ export function TimezoneCombobox({ value, onChange }: TimezoneComboboxProps) {
     return () => document.removeEventListener('mousedown', handleClick);
   }, [open]);
 
-  const displayValue = value || 'System default';
+  const defaultLabel = browserTimezone ? `Your time zone (${browserTimezone})` : 'Your time zone';
+  // The person's own zone reads as "Your time zone" whether the field is empty
+  // (a new schedule's default) or names it outright (an edit, or a pick).
+  const isOwnZone = value === '' || (browserTimezone != null && value === browserTimezone);
+  const displayValue = isOwnZone ? defaultLabel : value;
 
   function handleSelect(tz: string) {
     onChange(tz);
@@ -86,19 +89,15 @@ export function TimezoneCombobox({ value, onChange }: TimezoneComboboxProps) {
             <CommandList className="max-h-60">
               <CommandEmpty>No timezone found.</CommandEmpty>
               <CommandGroup heading="Default">
-                <CommandItem value="system-default" onSelect={() => handleSelect('')}>
-                  <span>System default</span>
-                  {value === '' && <Check className="ml-auto size-4" />}
+                <CommandItem
+                  value="system-default"
+                  // The real zone, never '': an edit sends a zone only when the field
+                  // names one, so '' would leave a UTC schedule in UTC.
+                  onSelect={() => handleSelect(browserTimezone ?? '')}
+                >
+                  <span>{defaultLabel}</span>
+                  {isOwnZone && <Check className="ml-auto size-4" />}
                 </CommandItem>
-                {detectedTz && (
-                  <CommandItem
-                    value={`${detectedTz}-detected`}
-                    onSelect={() => handleSelect(detectedTz)}
-                  >
-                    <span>{detectedTz} (detected)</span>
-                    {value === detectedTz && <Check className="ml-auto size-4" />}
-                  </CommandItem>
-                )}
               </CommandGroup>
               {[...groups.entries()].map(([continent, tzList]) => (
                 <CommandGroup key={continent} heading={continent}>

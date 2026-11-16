@@ -896,6 +896,8 @@ describe('PATCH /api/config', () => {
         expect(res.body.todos).toEqual({ enabled: true });
       } finally {
         delete process.env.DORKOS_TODOS_ENABLED;
+        // Drop the graph that captured the environment override before another fixture imports it.
+        vi.resetModules();
       }
     });
   });
@@ -1735,9 +1737,14 @@ describe('GET /api/config', () => {
       setTasksEnabled(true);
       setRelayEnabled(true);
 
-      const afterStartup = await request(server).get('/api/config').expect(200);
-      expect(afterStartup.body.tasks.enabled).toBe(true);
-      expect(afterStartup.body.relay.enabled).toBe(true);
+      try {
+        const afterStartup = await request(server).get('/api/config').expect(200);
+        expect(afterStartup.body.tasks.enabled).toBe(true);
+        expect(afterStartup.body.relay.enabled).toBe(true);
+      } finally {
+        setTasksEnabled(false);
+        setRelayEnabled(false);
+      }
     });
 
     it('reports both configured on for a fresh install', async () => {
@@ -1880,6 +1887,7 @@ describe('GET /api/config', () => {
       else process.env.DORKOS_TASKS_ENABLED = ORIGINAL_TASKS;
       if (ORIGINAL_RELAY === undefined) delete process.env.DORKOS_RELAY_ENABLED;
       else process.env.DORKOS_RELAY_ENABLED = ORIGINAL_RELAY;
+      vi.resetModules();
     });
 
     it('flags each subsystem whose environment variable is set, whatever its value', async () => {
@@ -2637,9 +2645,11 @@ describe('the Remote Access switch (DOR-3650)', () => {
     await mount();
   });
 
-  afterEach(() => {
+  afterEach(async () => {
     unwatch();
     fs.rmSync(dorkHome, { recursive: true, force: true });
+    const { resetRemoteStreamsForTests } = await import('../../middleware/remote-access-switch.js');
+    resetRemoteStreamsForTests();
     vi.resetModules();
   });
 

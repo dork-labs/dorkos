@@ -299,7 +299,10 @@ export const auditDomain: CapabilityDomain = {
       description:
         'Every chat running right now, per agent, spin-offs, room turns and scheduled runs ' +
         'included: its title, a ready markdown link, whether it is working or waiting on an ' +
-        'answer, and who started it. Every registered agent is listed, zero included, so you ' +
+        'answer, and who started it. A chat whose turn ended while its helpers, shells or ' +
+        'Monitors still run is listed as `background`; `backgroundWork` is true while such work ' +
+        'runs, and absent when nothing says so. ' +
+        'Every registered agent is listed, zero included, so you ' +
         'can see who is free. `total` is the live count for this server. A person’s own chat ' +
         'is counted in `privateCount` and never named. Use the link, never the id, when you ' +
         'tell a person about a chat. `capacity` reports each capped backend’s live records ' +

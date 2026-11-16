@@ -1,10 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   classifyBrowserTarget,
-  describeAddress,
-  isThisAppsAddress,
   loopbackStrategy,
-  normalizeAddressInput,
   WORKBENCH_SANDBOX_ISOLATED,
   WORKBENCH_SANDBOX_EXTERNAL,
 } from '../browser-url';
@@ -58,6 +55,10 @@ describe('classifyBrowserTarget', () => {
     });
   });
 
+  it('reads about:blank as a new empty page, framed as nothing', () => {
+    expect(classifyBrowserTarget('about:blank')).toEqual({ mode: 'blank' });
+  });
+
   it('blocks script/URI-smuggling protocols', () => {
     expect(classifyBrowserTarget('javascript:alert(1)')).toEqual({ mode: 'blocked' });
     expect(classifyBrowserTarget('data:text/html,<h1>x</h1>')).toEqual({ mode: 'blocked' });
@@ -91,146 +92,5 @@ describe('sandbox posture', () => {
 
   it('external content keeps allow-same-origin (it lives on its own origin)', () => {
     expect(WORKBENCH_SANDBOX_EXTERNAL).toContain('allow-same-origin');
-  });
-});
-
-describe('normalizeAddressInput', () => {
-  it('adds https:// to a bare public host', () => {
-    expect(normalizeAddressInput('example.com')).toBe('https://example.com');
-  });
-
-  it('adds http:// to a bare loopback host (dev servers are plain http)', () => {
-    expect(normalizeAddressInput('localhost:3000')).toBe('http://localhost:3000');
-  });
-
-  it('leaves an explicit scheme or a local path untouched', () => {
-    expect(normalizeAddressInput('https://a.test')).toBe('https://a.test');
-    expect(normalizeAddressInput('./index.html')).toBe('./index.html');
-    expect(normalizeAddressInput('/abs/index.html')).toBe('/abs/index.html');
-  });
-
-  it('leaves a slash-bearing relative path (non-domain first segment) untouched', () => {
-    // `demo/index.html` is a local file, not the host `demo` — do not add a scheme.
-    expect(normalizeAddressInput('demo/index.html')).toBe('demo/index.html');
-  });
-
-  it('still schemes a slash-bearing public URL whose first segment is a domain', () => {
-    expect(normalizeAddressInput('example.com/docs')).toBe('https://example.com/docs');
-  });
-});
-
-describe('describeAddress', () => {
-  it('strips the scheme and splits host (emphasized) from path (dimmed)', () => {
-    expect(describeAddress('https://example.com/docs/guide?x=1')).toEqual({
-      kind: 'url',
-      host: 'example.com',
-      rest: '/docs/guide?x=1',
-    });
-  });
-
-  it('strips a leading www. from the host', () => {
-    expect(describeAddress('https://www.example.com/')).toEqual({
-      kind: 'url',
-      host: 'example.com',
-      rest: '',
-    });
-  });
-
-  it('keeps the port — it is the identity of a dev server', () => {
-    expect(describeAddress('http://localhost:5173/foo')).toEqual({
-      kind: 'url',
-      host: 'localhost:5173',
-      rest: '/foo',
-    });
-  });
-
-  it('renders a root path as empty rest (host only)', () => {
-    expect(describeAddress('https://example.com')).toEqual({
-      kind: 'url',
-      host: 'example.com',
-      rest: '',
-    });
-  });
-
-  it('shows a local file as its logical path (never a token URL)', () => {
-    expect(describeAddress('demo/index.html')).toEqual({ kind: 'local', path: 'demo/index.html' });
-    expect(describeAddress('file:///proj/dist/index.html')).toEqual({
-      kind: 'local',
-      path: '/proj/dist/index.html',
-    });
-  });
-
-  it('falls back to raw text for a blocked target', () => {
-    expect(describeAddress('javascript:alert(1)')).toEqual({
-      kind: 'raw',
-      text: 'javascript:alert(1)',
-    });
-  });
-});
-
-// DOR-3370: the frame fallback must know this app's own server when it sees it,
-// under every name the server answers to, or it frames it with same-origin powers.
-describe('isThisAppsAddress', () => {
-  const local = {
-    origin: 'http://localhost:4242',
-    hostname: 'localhost',
-    port: '4242',
-    protocol: 'http:',
-  };
-  const tunnel = {
-    origin: 'https://box.tail.ts.net',
-    hostname: 'box.tail.ts.net',
-    port: '',
-    protocol: 'https:',
-  };
-
-  it('knows the page’s own origin', () => {
-    expect(isThisAppsAddress('http://localhost:4242/api/health', local)).toBe(true);
-    expect(isThisAppsAddress('https://box.tail.ts.net/x', tunnel)).toBe(true);
-  });
-
-  it('knows every loopback name for the page’s own port', () => {
-    for (const host of ['127.0.0.1', '0.0.0.0', '[::1]', 'app.localhost']) {
-      expect(isThisAppsAddress(`http://${host}:4242/`, local)).toBe(true);
-    }
-  });
-
-  it('treats a relative or unparseable source as the page’s own', () => {
-    expect(isThisAppsAddress('/api/files', local)).toBe(true);
-    expect(isThisAppsAddress('http://[bad', local)).toBe(true);
-  });
-
-  it('leaves another port, and another site, alone', () => {
-    expect(isThisAppsAddress('http://localhost:5173/', local)).toBe(false);
-    expect(isThisAppsAddress('http://127.0.0.1:4243/', local)).toBe(false);
-    expect(isThisAppsAddress('https://example.com/', local)).toBe(false);
-    // From a tunnel, localhost:443 is the viewer's own machine, not this app.
-    expect(isThisAppsAddress('https://localhost/', tunnel)).toBe(false);
-  });
-
-  // DOR-4132: the server answers to more names than the page's own. Made-up addresses.
-  const own = ['https://box.tail.ts.net', 'http://192.168.1.20:4242', 'https://hub.example.com'];
-
-  it('knows a trailing-dot loopback name for the page’s own port', () => {
-    expect(isThisAppsAddress('http://localhost.:4242/', local)).toBe(true);
-    expect(isThisAppsAddress('http://app.localhost.:4242/', local)).toBe(true);
-    expect(isThisAppsAddress('http://localhost.:5173/', local)).toBe(false);
-  });
-
-  it('knows this server’s own tunnel, Wi-Fi and hub addresses from a local page', () => {
-    for (const src of [
-      'https://box.tail.ts.net/api/health',
-      'http://192.168.1.20:4242/',
-      'https://hub.example.com/x',
-      'https://BOX.tail.ts.net./x',
-    ]) {
-      expect(isThisAppsAddress(src, local, own)).toBe(true);
-    }
-  });
-
-  it('leaves other ports and sites alone when it knows the server’s own addresses', () => {
-    expect(isThisAppsAddress('http://192.168.1.20:5173/', local, own)).toBe(false);
-    expect(isThisAppsAddress('http://box.tail.ts.net/', local, own)).toBe(false);
-    expect(isThisAppsAddress('https://example.com/', local, own)).toBe(false);
   });
 });

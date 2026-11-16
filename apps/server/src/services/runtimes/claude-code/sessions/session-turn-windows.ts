@@ -1,4 +1,6 @@
 import { crashResult } from './diagnostics/session-crash-result.js';
+import { logRetiredTurn, retiredResult, retireReasonOf } from './diagnostics/retired-turn.js';
+import type { RetiringPump } from './diagnostics/retired-turn.js';
 /**
  * Turn windowing over the pump's single continuous output (spec
  * `persistent-session-runtime` §5, task 3.3).
@@ -421,7 +423,7 @@ export interface TurnWindow {
 }
 
 /** The slice of `SessionPump` the windower drives. `SessionPump` satisfies it. */
-export interface WindowedPump {
+export interface WindowedPump extends RetiringPump {
   /** Run one dequeued batch as one turn. */
   dispatch(batch: readonly PumpDispatch[]): Promise<void>;
   /** `RUNNING → WARM`, once the closing window's accounting is done. */
@@ -872,23 +874,6 @@ function stoppedResult(crash: PumpCrash): SDKMessage {
     errors: ['This reply was stopped, so DorkOS ended the agent that was writing it.'],
     uuid: `stopped-${crash.sessionId}`,
     session_id: crash.sessionId,
-  } as unknown as SDKMessage;
-}
-
-/**
- * The `result` for a turn whose process DorkOS ended on purpose while the turn
- * was still running (DOR-2681): an eviction, a reclaim, or a shutdown.
- *
- * @param sessionId - The session the window belongs to
- */
-function retiredResult(sessionId: string): SDKMessage {
-  return {
-    type: 'result',
-    subtype: 'error_during_execution',
-    is_error: true,
-    errors: ['DorkOS closed the agent before it finished this turn.'],
-    uuid: `retired-${sessionId}`,
-    session_id: sessionId,
   } as unknown as SDKMessage;
 }
 
@@ -1614,11 +1599,17 @@ export class SessionTurnWindows {
    * silence, which is right for the process and wrong for a turn still open on
    * it. That turn's stream never ended, so it sat dark until the stall watchdog
    * gave up ten minutes later with nothing left to interrupt. Closing it at the
-   * moment the process is let go ends it at once, saying why. A no-op with no
-   * window open, which is every reap: a reap only takes a quiet process.
+   * moment the process is let go ends it at once, saying why, and logs the
+   * reason, which used to be invisible (DOR-2705). A no-op with no window open,
+   * which is every idle reap: an idle reap only takes a quiet process.
+   *
+   * @param to - The state the pump moved to; with the pump's own teardown
+   *   reason it names why the process was let go
    */
-  onRetired(): void {
-    this.closeForGoneProcess(retiredResult(this.opts.sessionId));
+  onRetired(to: 'cold' | 'reaped'): void {
+    const reason = retireReasonOf(to, this.opts.pump);
+    const window = this.closeForGoneProcess(retiredResult(this.opts.sessionId, reason));
+    if (window !== undefined) logRetiredTurn(this.opts.sessionId, reason, window.ids);
   }
 
   /**
@@ -1627,8 +1618,9 @@ export class SessionTurnWindows {
    * ledgers belong to that process, whichever way it went.
    *
    * @param terminal - The synthetic `result` the window ends on
+   * @returns The window it closed, or undefined when none was open
    */
-  private closeForGoneProcess(terminal: SDKMessage): void {
+  private closeForGoneProcess(terminal: SDKMessage): TurnWindow | undefined {
     this.discardHeld();
     // The process that owed these answers is gone, and a relaunched one owes
     // nothing under an id it never read. Keeping them would let a fresh
@@ -1646,6 +1638,7 @@ export class SessionTurnWindows {
     record.channel.end();
     this.opts.onWindowClose?.(record.window);
     record.markSettled();
+    return record.window;
   }
 
   /** Route a `result` by the ids it answers. See the module doc's table. */

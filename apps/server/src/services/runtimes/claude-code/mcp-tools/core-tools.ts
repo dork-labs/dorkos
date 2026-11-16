@@ -84,7 +84,8 @@ export async function handleGetServerInfo(args: { include_uptime?: boolean }) {
 }
 
 /**
- * Session count handler factory — returns the number of sessions for a specific agent.
+ * Session count handler factory — returns the number of sessions for a specific agent,
+ * and how many of its chats still have background work running (DOR-2065).
  * Requires either `agent_id` (ULID) or `cwd` (working directory path) to scope the query.
  */
 export function createGetSessionCountHandler(deps: McpToolDeps) {
@@ -92,12 +93,17 @@ export function createGetSessionCountHandler(deps: McpToolDeps) {
     try {
       const resolvedCwd = resolveAgentCwd(deps, args);
       const sessions = await deps.transcriptReader.listSessions(resolvedCwd);
+      // Loaded on first call: the running read reaches the runtime registry,
+      // which must not become a load-time import of every tool module.
+      const { countBackgroundWorkIn } =
+        await import('../../../session/running-chats/running-chats.js');
       return {
         content: [
           {
             type: 'text' as const,
             text: JSON.stringify({
               count: sessions.length,
+              backgroundWork: countBackgroundWorkIn(resolvedCwd),
               cwd: resolvedCwd,
               ...(args.agent_id && { agent_id: args.agent_id }),
             }),
@@ -183,7 +189,7 @@ export function getCoreTools(deps: McpToolDeps) {
     ),
     tool(
       'get_session_count',
-      'Returns the number of sessions for a specific agent. Provide either agent_id (ULID) or cwd (working directory path).',
+      'Returns the number of sessions for a specific agent, and in `backgroundWork` how many of its chats still have background work (helpers, shells, Monitors) running. Provide either agent_id (ULID) or cwd (working directory path).',
       agentScopeSchema,
       handleGetSessionCount
     ),

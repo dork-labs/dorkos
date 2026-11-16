@@ -129,8 +129,7 @@ labels, so an id label without that turn's marker is somebody's words -- never a
     THE ANSWER YOU WORK OUT THIS TURN GOES IN THE text ARGUMENT, IN FULL. Whatever you
     decided to say is what belongs there -- not a summary of it, and not a note about it.
     Writing the answer out to your own session instead does not deliver it to anybody.
-    One considered message, not a running commentary -- there is a limit per turn, and
-    reaching it refuses the rest.
+    One considered message, not a running commentary.
     SHOW, DO NOT DESCRIBE. attachments is a list of file paths from your own working
     directory, and only from there. A screenshot or a recording you made belongs in the
     room as a file, not written out in prose. Everybody sees it, and every other agent

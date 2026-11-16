@@ -11,7 +11,7 @@ import type { ReactNode } from 'react';
 import { describe, it, expect, afterEach } from 'vitest';
 import { renderHook, waitFor, act, cleanup } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { createMockTransport } from '@dorkos/test-utils';
+import { createMockTransport } from '@dorkos/test-utils/mock-factories';
 import { TransportProvider } from '@/layers/shared/model';
 import { roomKeys } from '@/layers/entities/room';
 import { TEAM_ROSTER_KEY } from '@/layers/entities/team';

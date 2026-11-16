@@ -91,6 +91,8 @@ export function BrowserBody({
   if (target.mode === 'blocked') {
     return <BrowserMessage>This address is blocked for safety.</BrowserMessage>;
   }
+  // A new empty page is nothing to frame, so nothing is.
+  if (target.mode === 'blank') return <div data-slot="blank-page" className="flex-1" />;
   if (resolveError !== null) {
     return (
       <BrowserMessage>

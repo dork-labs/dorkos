@@ -10,7 +10,10 @@ import type {
   ConnectorConnectionSummary,
 } from '@dorkos/shared/connector-resource-schemas';
 import type { ConnectorProviderStatus } from '@dorkos/shared/connector-provider';
-import { createMockTransport, createMockConnectionReadiness } from '@dorkos/test-utils';
+import {
+  createMockTransport,
+  createMockConnectionReadiness,
+} from '@dorkos/test-utils/mock-factories';
 import { TransportProvider } from '@/layers/shared/model';
 import { ConnectionWays } from '../ui/ConnectionWays';
 

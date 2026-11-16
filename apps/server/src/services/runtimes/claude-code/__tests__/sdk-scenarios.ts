@@ -711,6 +711,8 @@ export interface SdkTaskRuntimeFields {
   is_backgrounded?: boolean;
   /** Nesting depth of a spawned subagent. */
   spawn_depth?: number;
+  /** The CLI's task type: `local_agent`, `local_bash`, a Monitor's, a Workflow's. */
+  task_type?: string;
 }
 
 /**
