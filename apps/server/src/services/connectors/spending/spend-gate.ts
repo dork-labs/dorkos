@@ -102,7 +102,7 @@ export function spendPreflightFor(
 ): SpendPreflight | undefined {
   const port = connectorSpending();
   if (!port || subject.actorKind === 'operator') return undefined;
-  const spend = spendPreflightOf(spendFactsFor(port, subject.operation, subject.sessionId, now));
+  const spend = spendPreflightOf(spendFactsFor(port, subject.operation, subject, now));
   if (spend?.kind !== 'refuse') return spend;
   // The gate refuses before the broker's reserve runs, so it writes the line.
   const line = spend.code === SPEND_OUTSIDER ? recordOutsider : recordLimit;
@@ -129,13 +129,15 @@ export function reserveSpend(
 ): string | undefined {
   const port = connectorSpending();
   if (!port || subject.actorKind === 'operator') return undefined;
-  const facts = spendFactsFor(port, subject.operation, subject.sessionId, now);
+  const facts = spendFactsFor(port, subject.operation, subject, now);
   if (!facts.paid) return undefined;
   if (facts.outsider) {
     recordOutsider(subject);
     throw new CapabilityToolError({ error: SPEND_COPY.outsider, code: SPEND_OUTSIDER });
   }
-  const allowedOnce = approval?.via === 'approval';
+  // Only a yes on a paid-run card is the owner's yes to spend: a yes on an
+  // ordinary card may come from someone else, for another reason (Must 2).
+  const allowedOnce = approval?.via === 'approval' && approval.spendCard === true;
   const decision = decideSpend(facts);
   if (!allowedOnce) {
     // Only a quiet run reaches here without a person's yes.

@@ -263,6 +263,8 @@ export type ApprovalConsumeResult =
       authorityBindingDigest?: string;
       /** The signed-in account that said yes; absent when nobody was signed in. */
       decidedByUserId?: string;
+      /** The card was a paid-run card, so this yes is the owner's yes to spend (DOR-4204). */
+      spendCard?: true;
     }
   | { outcome: 'pending'; approvalId: string; expiresAt: string }
   | { outcome: 'denied' | 'incomplete'; approvalId: string; reason?: string }
@@ -631,6 +633,9 @@ export class ApprovalService {
       capabilityId: row.capabilityId,
       ...(row.requestedBy ? { requestedBy: row.requestedBy } : {}),
       ...(row.decidedByUserId ? { decidedByUserId: row.decidedByUserId } : {}),
+      ...(withServiceAction(row.serviceAction).serviceAction?.spend
+        ? { spendCard: true as const }
+        : {}),
       // Both halves or neither: a label with no id behind it is the shape this
       // field exists to avoid, since the id is what makes the name checkable.
       ...(row.subjectKind && row.subjectLabel && row.subjectId
@@ -1021,6 +1026,16 @@ export class ApprovalService {
   }
 
   /**
+   * The app and action a card is about, as stored with it (DOR-4204 PR 2).
+   *
+   * @param approvalId - The card.
+   */
+  serviceActionOf(approvalId: string): ApprovalServiceAction | undefined {
+    const row = this.db.select().from(approvals).where(eq(approvals.id, approvalId)).get();
+    return row ? withServiceAction(row.serviceAction).serviceAction : undefined;
+  }
+
+  /**
    * What the grant route needs to answer this approval: which action, which
    * agent, and whether "Always allow" is on offer.
    *
@@ -1032,16 +1047,6 @@ export class ApprovalService {
    * @param approvalId - ULID of the approval.
    * @returns The scope, or `undefined` when there is no such approval.
    */
-  /**
-   * The app and action a card is about, as stored with it (DOR-4204 PR 2).
-   *
-   * @param approvalId - The card.
-   */
-  serviceActionOf(approvalId: string): ApprovalServiceAction | undefined {
-    const row = this.db.select().from(approvals).where(eq(approvals.id, approvalId)).get();
-    return row ? withServiceAction(row.serviceAction).serviceAction : undefined;
-  }
-
   answerScope(approvalId: string): ApprovalAnswerScope | undefined {
     const row = this.db.select().from(approvals).where(eq(approvals.id, approvalId)).get();
     if (!row) return undefined;

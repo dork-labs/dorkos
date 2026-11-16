@@ -1,7 +1,6 @@
 /**
  * The monthly spend meter (DOR-4204 PR 2): one limit per DorkOS, a price per
- * app, and a meter per UTC month that reserves a run's price before it runs
- * and settles it after.
+ * app, and a meter per UTC month that reserves a run's price before it runs.
  *
  * Real SQLite through the test database; the names and amounts are made up.
  */
@@ -93,7 +92,8 @@ describe('the spending meter', () => {
     ).toEqual({ ok: false, reason: 'reached', leftMicro: 0 });
   });
 
-  it('reserves atomically: two runs at 60% of what is left, one goes (Security Must 3)', () => {
+  // The side-by-side proof is the broker's (spend-release.test.ts); this pins the limit check.
+  it('fits only one of two runs at 60% of what is left (Security Must 3)', () => {
     store.setLimit(DOLLAR);
     const reserve = (id: string) =>
       store.reserve({
@@ -121,21 +121,6 @@ describe('the spending meter', () => {
       })
     ).toEqual({ ok: true });
     expect(store.meter()).toMatchObject({ usedMicro: 0, unknownRuns: 1 });
-  });
-
-  it('replaces an estimate with the reported cost once, and a replay changes nothing', () => {
-    store.reserve({
-      id: 'a',
-      toolkit: 'acmesearch',
-      agentId: 'agent-kestrel',
-      amountMicro: 300_000,
-      source: 'person',
-      enforceLimit: false,
-    });
-    expect(store.meter().estimated).toBe(true);
-    expect(store.settle('a', 420_000)).toBe(true);
-    expect(store.settle('a', 420_000)).toBe(false);
-    expect(store.meter()).toMatchObject({ usedMicro: 420_000, estimated: false });
   });
 
   it('gives a released run back', () => {

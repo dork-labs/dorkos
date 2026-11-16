@@ -50,10 +50,13 @@ export type SpendingSummary = z.infer<typeof SpendingSummarySchema>;
 /** One app's line in "Where it went". */
 export type SpendingAppLine = z.infer<typeof SpendingAppLineSchema>;
 
-/** An amount a person sends: up to 16 digits of micro-units, or null to clear it. */
+/**
+ * An amount a person sends, in micro-units, or null to clear it. At most 11
+ * digits: the $10,000 maximum is 11, and more could round when read as a number.
+ */
 const SpendingAmountSchema = z
   .string()
-  .regex(/^\d{1,16}$/)
+  .regex(/^\d{1,11}$/)
   .nullable();
 
 /** The body that sets, lowers or clears the monthly limit. */

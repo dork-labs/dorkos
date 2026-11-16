@@ -79,7 +79,6 @@ import {
   wireSessionRelay,
 } from '../../services/core/session-relay/index.js';
 import { wireConnectorSpending } from '../../services/connectors/spending/spending-port.js';
-import { chatReadOutsideWords } from '../../services/core/turn-power/chat-outside-words.js';
 
 /** What {@link mountCoreRoutes} reads from the startup steps before it. */
 export interface MountCoreRoutesInput {
@@ -183,7 +182,7 @@ export function mountCoreRoutes(refs: ServerRefs, built: MountCoreRoutesInput) {
     loginEnabled: personSessionRequired,
   };
   // The monthly spend limit on paid app actions (DOR-4204 PR 2): one meter for the routes, the gate and the broker.
-  const connectorSpending = wireConnectorSpending(db, activityService, chatReadOutsideWords);
+  const connectorSpending = wireConnectorSpending(db, activityService);
   const connectorRoutes: ConnectorRoutesDeps = {
     providers: { bootstrapper: connectorBootstrapper, credentialStore },
     events: {

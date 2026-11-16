@@ -4,8 +4,8 @@
  *
  * Money is integer micro-units of the currency everywhere here, never a float.
  * A run's price is reserved before it runs and counts as used at once (spec
- * 1.1); a reported cost replaces it after, and a run that never started gives
- * it back. Every write is synchronous, so a reserve's read of the month and
+ * 1.1), and a run that never started gives it back. No provider reports a
+ * cost yet, so a reserved run keeps its price. Every write is synchronous, so a reserve's read of the month and
  * its write of the run happen in one SQLite transaction with nothing between
  * them: two runs side by side cannot both fit the last of the limit (Security
  * Must 3).
@@ -253,27 +253,6 @@ export class SpendingStore {
         .run();
       return { ok: true } as const;
     });
-  }
-
-  /**
-   * Settle a reserved run at the cost its provider reported. Idempotent: a
-   * second report for the same run changes nothing.
-   *
-   * @param id - The run.
-   * @param reportedMicro - What the provider says it cost.
-   * @returns Whether this call changed the run.
-   */
-  settle(id: string, reportedMicro: number): boolean {
-    const changed = this.db
-      .update(spendingRuns)
-      .set({
-        amountMicro: Math.max(0, Math.round(reportedMicro)),
-        source: 'reported',
-        state: 'settled',
-      })
-      .where(and(eq(spendingRuns.id, id), eq(spendingRuns.state, 'reserved')))
-      .run();
-    return changed.changes > 0;
   }
 
   /**

@@ -9,6 +9,8 @@
 import { agents, eq, type Db } from '@dorkos/db';
 import { isPaidOperation } from '@dorkos/shared/connector-schemas';
 import type { ActivityService } from '../../activity/activity-service.js';
+import { chatReadOutsideWords } from '../../core/turn-power/chat-outside-words.js';
+import { agentMarksRunning } from '../../core/turn-power/turn-marks.js';
 import { nextMonthStart, SpendingStore } from './spending-store.js';
 import type { SpendFacts } from './spend-decision.js';
 
@@ -21,8 +23,9 @@ export interface ConnectorSpendingPort {
    * Must 1): such a turn never spends.
    *
    * @param sessionId - The calling session, when the surface verified one.
+   * @param agentId - The agent the run is for, by Mesh id.
    */
-  readonly outsider: (sessionId: string | undefined) => boolean;
+  readonly outsider: (sessionId: string | undefined, agentId: string) => boolean;
   /** Writes the Activity lines of spec §9; omitted, nothing is recorded. */
   readonly activity?: Pick<ActivityService, 'emit'>;
   /** What to call an agent in those lines, by Mesh id. */
@@ -35,17 +38,17 @@ export interface ConnectorSpendingPort {
  *
  * @param port - The wired spend limit.
  * @param op - The operation about to run.
- * @param sessionId - The calling session.
+ * @param caller - The calling session, if any, and the agent the run is for.
  * @param now - The decision's instant.
  */
 export function spendFactsFor(
   port: ConnectorSpendingPort,
   op: { toolkit: string; operationSlug: string },
-  sessionId: string | undefined,
+  caller: { sessionId?: string; agentId: string },
   now: Date
 ): SpendFacts {
   const paid = isPaidOperation(op);
-  const outsider = paid && port.outsider(sessionId);
+  const outsider = paid && port.outsider(caller.sessionId, caller.agentId);
   try {
     const usedMicro = paid ? port.store.meter().usedMicro : 0;
     return {
@@ -101,20 +104,46 @@ export function agentNameIn(db: Db): (agentId: string) => string | undefined {
 }
 
 /**
+ * Whether a paid run's turn read outside words (Security Must 1), as memory
+ * and the browser read it: the session's own record when one is named. A
+ * caller that names none (an agent token over `/mcp`, a program) carries
+ * every mark its agent's running turns carry. An agent that can't be found
+ * reads as outside: money fails closed.
+ *
+ * @param db - The consolidated database, to find the agent's home.
+ */
+export function turnReadOutsideWords(
+  db: Db
+): (sessionId: string | undefined, agentId: string) => boolean {
+  return (sessionId, agentId) => {
+    const home = db
+      .select({ path: agents.projectPath })
+      .from(agents)
+      .where(eq(agents.id, agentId))
+      .get()?.path;
+    if (sessionId) return chatReadOutsideWords(sessionId, home);
+    return home === undefined || agentMarksRunning(home).outsider === true;
+  };
+}
+
+/**
  * Make the spend limit's meter and wire it for the gate and the broker, once
  * at startup. An outsider-marked turn never spends.
  *
  * @param db - The consolidated database.
  * @param activity - Where its Activity lines go.
- * @param outsider - Whether a calling turn read outside words.
  * @returns The meter, for the routes.
  */
 export function wireConnectorSpending(
   db: Db,
-  activity: Pick<ActivityService, 'emit'>,
-  outsider: (sessionId: string | undefined) => boolean
+  activity: Pick<ActivityService, 'emit'>
 ): SpendingStore {
   const store = new SpendingStore(db);
-  initConnectorSpending({ store, outsider, activity, agentName: agentNameIn(db) });
+  initConnectorSpending({
+    store,
+    outsider: turnReadOutsideWords(db),
+    activity,
+    agentName: agentNameIn(db),
+  });
   return store;
 }
