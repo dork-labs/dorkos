@@ -5,6 +5,7 @@ covers:
   - 'fix(server): a later move or a cleared date cannot wipe a missed to-do from the score (DOR-3034)'
   - 'fix(server): a dropped to-do counts from its drop, whatever its date was moved to (DOR-3034)'
   - 'fix(todos): a first date from another year shows its year (DOR-3034)'
+  - "fix(todos): a moved to-do's first date never wraps mid-date on a phone (DOR-3034)"
 ---
 
 ### Fixed
