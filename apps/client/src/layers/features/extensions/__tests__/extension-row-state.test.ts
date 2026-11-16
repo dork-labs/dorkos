@@ -26,7 +26,7 @@ function ext(id: string, overrides: Partial<ExtensionRecordPublic> = {}): Extens
     approvedToRun: true,
     shadowedBy: null,
     ...overrides,
-    manifest: { id, name: id, version: '1.0.0', ...overrides.manifest },
+    manifest: { clientApiVersion: 2, id, name: id, version: '1.0.0', ...overrides.manifest },
   };
 }
 
@@ -134,6 +134,7 @@ describe('the one line and the search', () => {
       extensionPurpose(
         ext('a', {
           manifest: {
+            clientApiVersion: 2,
             id: 'a',
             name: 'a',
             version: '1.0.0',
@@ -146,7 +147,13 @@ describe('the one line and the search', () => {
     expect(
       extensionPurpose(
         ext('a', {
-          manifest: { id: 'a', name: 'a', version: '1.0.0', description: 'Long. Longer.' },
+          manifest: {
+            clientApiVersion: 2,
+            id: 'a',
+            name: 'a',
+            version: '1.0.0',
+            description: 'Long. Longer.',
+          },
         })
       )
     ).toBe('Long.');
@@ -160,6 +167,7 @@ describe('the one line and the search', () => {
   it('matches the name, the line, the author and a tool, ignoring case', () => {
     const mail = ext('mail', {
       manifest: {
+        clientApiVersion: 2,
         id: 'mail',
         name: 'Mail',
         version: '1.0.0',

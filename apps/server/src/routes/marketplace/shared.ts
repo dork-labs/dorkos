@@ -120,7 +120,14 @@ export function validationFailed(c: Context, error: z.ZodError): Response {
  */
 export function mapErrorToStatus(err: unknown): { status: number; body: Record<string, unknown> } {
   if (err instanceof InvalidPackageError) {
-    return { status: 400, body: { error: err.message, errors: err.errors } };
+    return {
+      status: 400,
+      body: {
+        error: err.message,
+        errors: err.errors,
+        ...(err.codes.length > 0 ? { codes: err.codes } : {}),
+      },
+    };
   }
   // A containment assertion fired somewhere below. Its message names the root
   // the path escaped — a cache directory under dorkHome, which spells the

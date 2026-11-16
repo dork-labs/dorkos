@@ -8,7 +8,8 @@
  *
  * @module features/extensions/lib/extension-row-state
  */
-import type { ExtensionRecordPublic } from '@dorkos/extension-api';
+import { needsClientUpdate, type ExtensionRecordPublic } from '@dorkos/extension-api';
+import { APP_NEEDS_UPDATE_COPY } from '@/layers/entities/extension';
 import { isExtensionServerErrorCode } from '@dorkos/shared/extension-server-status';
 
 /** Statuses of an extension that is not running because it is off. */
@@ -16,7 +17,7 @@ const OFF_STATUSES = new Set(['disabled', 'discovered']);
 
 /** Why a row needs the person, if it does. */
 export type ExtensionRowNeed =
-  'screens-paused' | 'needs-ok' | 'not-working' | 'cant-load' | 'needs-newer';
+  'screens-paused' | 'needs-ok' | 'not-working' | 'cant-load' | 'needs-update' | 'needs-newer';
 
 /** What a row's chip says and how loud it is. */
 export interface ExtensionRowChip {
@@ -51,6 +52,7 @@ const NEED_CHIP: Record<ExtensionRowNeed, ExtensionRowChip> = {
   'needs-ok': { label: 'Needs your OK', tone: 'warning' },
   'not-working': { label: 'Not working', tone: 'error' },
   'cant-load': { label: 'Can’t load', tone: 'error' },
+  'needs-update': { label: APP_NEEDS_UPDATE_COPY.chip, tone: 'neutral' },
   'needs-newer': { label: 'Needs newer DorkOS', tone: 'neutral' },
 };
 
@@ -60,6 +62,7 @@ const NEED_RANK: Record<ExtensionRowNeed, number> = {
   'needs-ok': 1,
   'not-working': 2,
   'cant-load': 3,
+  'needs-update': 4,
   'needs-newer': 5,
 };
 
@@ -88,6 +91,9 @@ export function isExtensionOff(ext: Pick<ExtensionRecordPublic, 'status'>): bool
  */
 export function extensionRowNeed(ext: ExtensionRecordPublic): ExtensionRowNeed | null {
   if (ext.status === 'invalid') return 'cant-load';
+  // Built for an older extension API (DOR-3293): no yes or retry can run it,
+  // so this comes before asking for one. One a person turned off is not asked about.
+  if (needsClientUpdate(ext.manifest) && !isExtensionOff(ext)) return 'needs-update';
   // An installed extension a person has not allowed never runs, and its
   // switch is never the way in: the person reads the panel first.
   // One a person turned off is not asked about, the same rule the Activity

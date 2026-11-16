@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { FileText, Globe, SquareTerminal } from 'lucide-react';
+import { FileText, Globe, Puzzle, SquareTerminal, type LucideIcon } from 'lucide-react';
 import { useComputer } from '@/layers/entities/computer';
 import { useRoom } from '@/layers/entities/room';
 import { useSessionId } from '@/layers/entities/session';
@@ -8,6 +8,7 @@ import { toast } from 'sonner';
 import type { AuthorRef } from '@dorkos/shared/room-schemas';
 import type { UiCanvasContent } from '@dorkos/shared/types';
 import { links } from '@dorkos/shared/links';
+import { parseExtensionPagePath } from '@/layers/shared/lib';
 import {
   documentPanelScope,
   legacyDocumentPanelScope,
@@ -40,6 +41,18 @@ export interface PanelView extends RightPanelContribution {
   permanent?: boolean;
 }
 
+/**
+ * The tab icon for a document an app opened: the puzzle piece every app
+ * wears (an app's own icon cannot cross its frame); a document no app opened
+ * keeps its own.
+ *
+ * @param openedByApp - Whether the host marked it as opened by an app.
+ * @param own - The icon the document's kind uses.
+ */
+function appIconOr(openedByApp: boolean, own: LucideIcon): LucideIcon {
+  return openedByApp ? Puzzle : own;
+}
+
 /** Relevant defaults and concrete resource tabs, preserving the existing route and placement gates. */
 export function usePanelViews(contributions: RightPanelContribution[], pathname: string) {
   const activeCategory = useAppStore((s) => s.activeRightPanelTab);
@@ -64,7 +77,17 @@ export function usePanelViews(contributions: RightPanelContribution[], pathname:
     ? `resource/browser/${browserScope}/${encodeURIComponent(browserConnection.connectionId!)}`
     : 'local-browser';
   const roomId = useAppStore((s) => s.roomCanvasLiveRoomId);
-  const sessionDocuments = useAppStore((s) => s.openDocuments);
+  const allDocuments = useAppStore((s) => s.openDocuments);
+  // On an app's own page the canvas holds only what that app opened
+  // (DOR-3293): a chat's documents stay with the chat.
+  const appPageId = parseExtensionPagePath(pathname)?.extensionId ?? null;
+  const sessionDocuments = useMemo(
+    () =>
+      appPageId === null
+        ? allDocuments
+        : allDocuments?.filter((doc) => doc.openedBy?.extensionId === appPageId),
+    [allDocuments, appPageId]
+  );
   const roomDocuments = useAppStore((s) => (roomId ? s.roomCanvasDocuments[roomId] : undefined));
   const unread = useAppStore((s) => (roomId ? s.roomCanvasUnread[roomId] : undefined));
   const presence = useAppStore((s) => (roomId ? s.roomCanvasPresence[roomId] : undefined));
@@ -184,7 +207,11 @@ export function usePanelViews(contributions: RightPanelContribution[], pathname:
           id: `resource/${doc.id}`,
           title:
             ('title' in doc ? doc.title || doc.sourceLabel : doc.sourceLabel) || contribution.title,
-          icon: category === 'browser' ? Globe : FileText,
+          // An app's document shows the app's icon, never the page's (DOR-3293).
+          icon: appIconOr(
+            'openedBy' in doc && Boolean(doc.openedBy),
+            category === 'browser' ? Globe : FileText
+          ),
           activate: () => {
             if (roomId) activateRoom(roomId, doc.id);
             else activateSession(doc.id);

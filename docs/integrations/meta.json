@@ -3,6 +3,7 @@
   "pages": [
     "building-integrations",
     "extensions",
+    "extension-frame-migration",
     "mcp-server",
     "building-relay-adapters",
     "sse-protocol"

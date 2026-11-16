@@ -469,6 +469,15 @@ describe('Marketplace and extension pages', () => {
     });
   });
 
+  it('reads the app’s own name while no page is registered, when DorkOS knows it', () => {
+    expect(extensionTabIdentity(null, null, 'Field notes')).toMatchObject({
+      primary: 'Field notes',
+      icon: { kind: 'extension', icon: Puzzle },
+    });
+    // The page's own title still wins once it registers.
+    expect(extensionTabIdentity({ title: 'Notes' }, null, 'Field notes').primary).toBe('Notes');
+  });
+
   it('wears the badge a page reports for its own tab', () => {
     expect(
       routeTabIdentity('/tasks', { status: 'failed', count: 2, sentence: '2 runs failed' })
