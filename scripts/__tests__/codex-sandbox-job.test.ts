@@ -97,10 +97,11 @@ describe('the hosted Codex proof receipt', () => {
     );
     expect(workflow.match(/sudo apparmor_parser/g)).toHaveLength(1);
     expect(workflow).toContain(
-      'needs: [test-shard, community-pg, community-packaged, codex-sandbox]'
+      'needs: [test-shard, test-binary, community-pg, community-packaged, codex-sandbox]'
     );
     expect(workflow).toContain('needs.codex-sandbox.result');
-    expect(workflow.match(/--exclude='\*\*\/codex\/\*\*\/\*\.binary\.test\.ts'/g)).toHaveLength(2);
+    // Both shard legs exclude every binary suite, these included (DOR-4190).
+    expect(workflow.match(/--exclude='\*\*\/\*\.binary\.test\.ts'/g)).toHaveLength(2);
     expect(job).toContain(
       'pnpm vitest run apps/server/src/services/runtimes/codex/app-server/__tests__/app-server.binary.test.ts'
     );

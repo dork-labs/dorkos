@@ -880,10 +880,19 @@ export class SessionStore {
    * reports failure and leaves the turn alone — deliberately NOT escalating to
    * `close()`, because the button asked to end ONE background task and killing
    * the subprocess would take the whole turn with it.
+   *
+   * Between turns there is no `activeQuery`, but a task can outlive its turn on
+   * a held process — and the strip keeps its row there (DOR-2065). When the
+   * caller has confirmed that process still runs this task, the stop goes to
+   * the process's preserved `lastQuery`: a warm CLI still takes control requests.
+   *
+   * @param sessionId - The session, in any id it answers to
+   * @param taskId - The task to stop
+   * @param heldTask - The held process between turns still reports this task live
    */
-  async stopTask(sessionId: string, taskId: string): Promise<InterruptReceipt> {
+  async stopTask(sessionId: string, taskId: string, heldTask = false): Promise<InterruptReceipt> {
     const session = this.findSession(sessionId);
-    const query = session?.activeQuery;
+    const query = session?.activeQuery ?? (heldTask ? session?.lastQuery : undefined);
     if (!session || !query) return receipt('not-running', 'no-open-turn');
     // Like interruptQuery: an operator-driven cancellation may surface as the
     // CLI's interrupt sentinel on the task's pending calls — stamp it so the

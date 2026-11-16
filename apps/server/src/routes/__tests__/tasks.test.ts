@@ -192,6 +192,7 @@ describe('Tasks routes', () => {
           store,
           scheduler,
           registrar: new TaskRegistrar({ store, scheduler }),
+          defaultTimezone: () => 'UTC',
           dorkHome: DORK_HOME,
         }),
       })
@@ -898,6 +899,7 @@ describe('POST /api/tasks/runs/:id/cancel — relay-dispatched run', () => {
           store,
           scheduler,
           registrar: new TaskRegistrar({ store, scheduler }),
+          defaultTimezone: () => 'UTC',
           dorkHome: DORK_HOME,
         }),
       })

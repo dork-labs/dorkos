@@ -201,6 +201,7 @@ describe('who the Activity feed says changed a scheduled task', () => {
           store,
           scheduler,
           registrar: new TaskRegistrar({ store, scheduler }),
+          defaultTimezone: () => 'UTC',
           dorkHome: '/tmp/dork-test',
           activity: activityService,
         }),

@@ -10,7 +10,12 @@ import {
   type SessionVisibility,
 } from '../../../audit/session-visibility.js';
 import { OWNER_READER, type AuditReader } from '../../../audit/visibility.js';
-import { listRunningChats, type RunningChatSources } from '../running-chats.js';
+import {
+  backgroundWorkOf,
+  countBackgroundWorkIn,
+  listRunningChats,
+  type RunningChatSources,
+} from '../running-chats.js';
 
 const AGENT_READER: AuditReader = { kind: 'agent', accountId: 'unidentified' };
 
@@ -226,5 +231,74 @@ describe('listRunningChats', () => {
     expect(result.agents).toEqual([]);
     expect(result.unassigned.count).toBe(1);
     expect(result.total).toBe(1);
+  });
+
+  // DOR-2065: an agent whose turn ended while its helpers, shells or Monitors
+  // still run is not free, and a reader has to be able to see that.
+  it('lists a cleanly finished chat whose background work still runs as background', async () => {
+    const working = new Set(['working-bg', 'waiting', 'failed-bg']);
+    const result = await listRunningChats(
+      ROSTER,
+      OWNER_READER,
+      sources({
+        statuses: () => [
+          { sessionId: 'working-bg', cwd: '/keep/dorkos', status: status('streaming') },
+          { sessionId: 'working', cwd: '/keep/dorkos', status: status('streaming') },
+          { sessionId: 'waiting', cwd: '/keep/dorkos', status: status('idle') },
+          { sessionId: 'done', cwd: '/keep/dorkos', status: status('idle') },
+          // A failed chat says so elsewhere; background work does not relabel it.
+          { sessionId: 'failed-bg', cwd: '/keep/dorkos', status: status('error') },
+        ],
+        backgroundWork: (id) => (working.has(id) ? true : undefined),
+      })
+    );
+
+    const code = result.agents.find((a) => a.agentId === 'a-code')!;
+    expect(code.chats.map((c) => [c.id, c.state, c.backgroundWork])).toEqual([
+      ['waiting', 'background', true],
+      ['working', 'running', undefined],
+      ['working-bg', 'running', true],
+    ]);
+    // Nothing says so, and the read does not claim a "no".
+    expect(code.chats.find((c) => c.id === 'working')).not.toHaveProperty('backgroundWork');
+    expect(result.total).toBe(3);
+  });
+});
+
+describe('backgroundWorkOf', () => {
+  it('answers true from the projected count', () => {
+    const counted = { lifecycle: 'idle', runningSubagentCount: 2 } as unknown as SessionStatus;
+    expect(backgroundWorkOf('no-such-session', counted)).toBe(true);
+  });
+
+  // A chat on `/loop` holds its process for a pending wake, so the runtime's
+  // holdsBackgroundWork says yes, but nothing is running: not `background`.
+  it('does not count a pending wake with nothing running', async () => {
+    const waking = { lifecycle: 'idle', runningSubagentCount: 0 } as unknown as SessionStatus;
+    expect(backgroundWorkOf('loop-chat', waking)).toBeUndefined();
+    const result = await listRunningChats(
+      ROSTER,
+      OWNER_READER,
+      sources({
+        statuses: () => [{ sessionId: 'loop-chat', cwd: '/keep/dorkos', status: waking }],
+        backgroundWork: backgroundWorkOf,
+      })
+    );
+    expect(result.total).toBe(0);
+  });
+});
+
+describe('countBackgroundWorkIn', () => {
+  it("counts this folder's chats whose background work still runs, not a nested agent's", () => {
+    const with2 = { lifecycle: 'idle', runningSubagentCount: 2 } as unknown as SessionStatus;
+    const none = { lifecycle: 'idle', runningSubagentCount: 0 } as unknown as SessionStatus;
+    const count = countBackgroundWorkIn('/keep/dorkos', () => [
+      { sessionId: 'here', cwd: '/keep/dorkos', status: with2 },
+      { sessionId: 'here-too', cwd: '/keep/dorkos/', status: with2 },
+      { sessionId: 'nested', cwd: '/keep/dorkos/apps/x', status: with2 },
+      { sessionId: 'quiet', cwd: '/keep/dorkos', status: none },
+      { sessionId: 'elsewhere', cwd: '/keep/cloud', status: with2 },
+    ]);
+    expect(count).toBe(2);
   });
 });

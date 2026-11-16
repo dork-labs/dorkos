@@ -37,7 +37,7 @@ import {
 } from '@dorkos/shared/convention-files';
 import { MANIFEST_DIR, readManifest } from '@dorkos/shared/manifest';
 import { dorkbotClaudeMdTemplate } from '@dorkos/shared/dorkbot-templates';
-import { isAgentHome } from '../harness/project-agent-workspace.js';
+import { isAgentHome } from '../harness/directory-ownership.js';
 import { logger, logError } from '../../lib/logger.js';
 import { DORKBOT_AGENT_NAME } from './ensure-dorkbot.js';
 

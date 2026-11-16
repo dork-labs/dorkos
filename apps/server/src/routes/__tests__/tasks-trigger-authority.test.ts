@@ -112,6 +112,7 @@ describe('POST /api/tasks/:id/trigger', () => {
             store,
             scheduler,
             registrar: new TaskRegistrar({ store, scheduler }),
+            defaultTimezone: () => 'UTC',
             dorkHome: '/tmp/dork-test',
           }),
         },

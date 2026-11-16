@@ -85,7 +85,20 @@ describe('BackgroundTaskBar', () => {
     const status = screen.getByRole('status');
     expect(status).toBeInTheDocument();
     expect(status).toHaveAttribute('aria-label', '1 background task running');
-    expect(screen.getByText(/task running/)).toBeInTheDocument();
+    expect(screen.getByText(/running in background/)).toBeInTheDocument();
+  });
+
+  // Design review on #3813: the count is said once, in the label. The chevron
+  // carries no second copy of it, and the mono stats give way on a phone.
+  it('states the count once and hides the stats below sm', () => {
+    const tasks = [makeTask({ taskId: 'c-1' }), makeTask({ taskId: 'c-2' })];
+    render(<BackgroundTaskBar tasks={tasks} onStopTask={vi.fn()} />);
+
+    const label = screen.getByText(/running in background/);
+    expect(label).toHaveTextContent('2 running in background');
+    expect(label).toHaveClass('truncate');
+    expect(screen.getByLabelText('Expand task details')).toHaveTextContent('');
+    expect(screen.getByText(/\d+s$/)).toHaveClass('hidden', 'sm:inline');
   });
 
   // DOR-1108: the runner draws four marks and the task has five statuses, so the
@@ -111,7 +124,7 @@ describe('BackgroundTaskBar', () => {
     render(<BackgroundTaskBar tasks={tasks} onStopTask={vi.fn()} />);
 
     expect(screen.getByRole('status')).toHaveAttribute('aria-label', '2 background tasks running');
-    expect(screen.getByText(/tasks running/)).toBeInTheDocument();
+    expect(screen.getByText(/running in background/)).toHaveTextContent('2 running in background');
   });
 
   it('renders AgentRunner for agent tasks', () => {

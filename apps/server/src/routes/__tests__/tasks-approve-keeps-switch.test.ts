@@ -112,6 +112,7 @@ describe('PATCH /api/tasks/:id — only a person turns a task on (DOR-3309)', ()
           store,
           scheduler,
           registrar: new TaskRegistrar({ store, scheduler }),
+          defaultTimezone: () => 'UTC',
           dorkHome,
         }),
       })

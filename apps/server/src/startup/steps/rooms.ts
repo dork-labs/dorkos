@@ -65,6 +65,7 @@ import {
   RoomWorktreeManager,
   RoomMergeService,
   RoomRepoReconciler,
+  fenceStaleBridgedRoomMdHeadings,
 } from '../../services/rooms/repo/index.js';
 import { readOwnerAccount } from '../../services/core/auth/index.js';
 import { sanitizeIdentity } from '@dorkos/shared/untrusted-text';
@@ -356,6 +357,18 @@ export async function wireRooms(refs: ServerRefs, built: WireRoomsInput) {
     },
   });
   setRoomRepoService(roomRepoService);
+  // Notes seeded before DOR-4453 still name a bridged group by a stranger's choice; replace the
+  // seeded heading once, in the background. Idempotent, never throws, never holds the boot.
+  void fenceStaleBridgedRoomMdHeadings({
+    bridges: roomBridges,
+    titleOf: (roomId) => roomStore.getRoom(roomId)?.title ?? null,
+    fence: (roomId, staleTitle, replacement) =>
+      roomRepoService.fenceBridgedRoomMdHeading(roomId, staleTitle, replacement),
+  }).catch((err: unknown) =>
+    logger.warn('[rooms] the bridged notes heading check failed', {
+      error: err instanceof Error ? err.message : String(err),
+    })
+  );
   // Reading those files back (spec §3.9). It shares the store and nothing
   // else: `hasRepo` already folds the feature flag in, so a room whose files
   // are switched off reads exactly as a room that never had any, and the size

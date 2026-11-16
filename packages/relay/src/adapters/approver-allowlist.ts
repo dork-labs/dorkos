@@ -78,3 +78,14 @@ export function mayApprove(allowlist: unknown, userId: string | undefined): bool
   if (approvers.length === 0) return false;
   return approvers.includes(userId);
 }
+
+/**
+ * The Approvers field's help on what else the list decides (DOR-4453): with the stranger mark on
+ * by default, an approver's message counts as the owner's, so the owner's own id belongs on it.
+ * One sentence pair shared by the Telegram and Slack manifests.
+ */
+export const OWNER_ON_APPROVERS_HELP =
+  'This list is also how DorkOS knows a message is from you. Put your own ID here, or your ' +
+  'messages count as someone else’s and your agent won’t send through a connected app for ' +
+  'you. If you can already message the bot privately, your ID is in the DM Allowlist. In a group ' +
+  'chat, every message counts as someone else’s, yours too.';

@@ -109,7 +109,7 @@ function proposal(overrides: Partial<Task> = {}): Task {
 }
 
 /**
- * A transport that answers the two calls "Run it once" makes.
+ * A transport that answers the two calls "Try it once now" makes.
  *
  * The shared playground transport resolves `null` for everything, which is
  * right for a bench of props-only showcases and wrong for this one: the card
@@ -190,9 +190,9 @@ export function ScheduleApprovalShowcases() {
   return (
     <PlaygroundSection
       title="Schedule approval card"
-      description="An agent that proposes a scheduled run never arms it — it parks until somebody says yes or no. This is where they say so, and the card's whole job is that the answer is informed: who proposed it, why in their own words, the cadence with its timezone, the first few concrete run times, and the exact instructions one disclosure away. Three answers — Approve, Reject (undoable for a few seconds, because the delete is simply not sent yet), and Run it once, which executes the prompt now as a single supervised run so the decision can be made on evidence rather than on faith. Answerable with A and D while focus is inside the card."
+      description="An agent that proposes a scheduled run never arms it — it parks until somebody says yes or no. This is where they say so, and the card's whole job is that the answer is informed: who proposed it, why in their own words, the cadence with its timezone, the first few concrete run times, and the exact instructions one disclosure away. Three answers — Approve, Reject (undoable for a few seconds, because the delete is simply not sent yet), and Try it once now, which executes the prompt now as a single supervised run so the decision can be made on evidence rather than on faith. Answerable with A and D while focus is inside the card."
     >
-      <ShowcaseLabel>Choosing Don’t ask with an approved watchdog command</ShowcaseLabel>
+      <ShowcaseLabel>Choosing Allowed commands with an approved watchdog command</ShowcaseLabel>
       <ShowcaseDemo>
         <div className="w-full max-w-lg">
           <ScheduleApprovalCard
@@ -207,6 +207,40 @@ export function ScheduleApprovalShowcases() {
                 pending: [],
               },
             })}
+          />
+        </div>
+      </ShowcaseDemo>
+      <ShowcaseLabel>A looser picked mode needs its own tick</ShowcaseLabel>
+      <ShowcaseDemo>
+        <div className="w-full max-w-lg" data-shot="run-looser">
+          <ScheduleApprovalCard
+            approvalSurface="home"
+            task={proposal({
+              requestedPermissionMode: 'dontAsk',
+              permissionMode: 'dontAsk',
+              displayName: 'Weekly cleanup',
+              reason: 'Tidy old branches every Sunday.',
+            })}
+            initialPickedMode="acceptEdits"
+          />
+        </div>
+      </ShowcaseDemo>
+      <ShowcaseLabel>A looser picked mode and a program rule share one tick</ShowcaseLabel>
+      <ShowcaseDemo>
+        <div className="w-full max-w-lg" data-shot="looser-programs">
+          <ScheduleApprovalCard
+            approvalSurface="inbox"
+            task={proposal({
+              id: 'task-looser-programs',
+              approvalRevision: 'c'.repeat(64),
+              folderRules: { status: 'none', applied: [], pending: [] },
+              displayName: 'Nightly report',
+              reason: 'Run the report script each night and nothing else.',
+              permissionMode: 'dontAsk',
+              requestedPermissionMode: 'dontAsk',
+              requestedAllow: ['Bash(/Users/sam/reports/nightly.sh --once)'],
+            })}
+            initialPickedMode="acceptEdits"
           />
         </div>
       </ShowcaseDemo>
@@ -229,11 +263,59 @@ export function ScheduleApprovalShowcases() {
       </ShowcaseDemo>
 
       <ShowcaseLabel>
+        The agent asked for Allowed commands and one exact command: shown, flagged as running
+        programs, and confirmed with its own tick
+      </ShowcaseLabel>
+      <ShowcaseDemo>
+        <div className="w-full max-w-lg" data-shot="requested-allow">
+          <ScheduleApprovalCard
+            approvalSurface="inbox"
+            task={proposal({
+              id: 'task-requested-allow',
+              displayName: 'Nightly report',
+              reason: 'Run the report script each night and nothing else.',
+              permissionMode: 'dontAsk',
+              requestedPermissionMode: 'dontAsk',
+              requestedAllow: ['Bash(/Users/sam/reports/nightly.sh --once)'],
+            })}
+          />
+        </div>
+      </ShowcaseDemo>
+
+      <ShowcaseLabel>
+        Proposed after reading outside words: starts at the tightest mode, and its rules take a
+        separate tick
+      </ShowcaseLabel>
+      <ShowcaseDemo>
+        <div className="w-full max-w-lg" data-shot="outsider-default">
+          <ScheduleApprovalCard
+            approvalSurface="schedules"
+            task={proposal({
+              id: 'task-outsider-default',
+              folderRules: { status: 'none', applied: [], pending: [] },
+              approvalRevision: 'd'.repeat(64),
+              displayName: 'Inbox digest',
+              reason: 'Sum up the support inbox every morning.',
+              originMarks: { outsider: true },
+              requestedPermissionMode: 'acceptEdits',
+              requestedAllow: ['Read(/Users/sam/support/inbox.md)'],
+            })}
+          />
+        </div>
+      </ShowcaseDemo>
+
+      <ShowcaseLabel>
         Everything present: a reason, a named proposer, a session to open, three run times
       </ShowcaseLabel>
       <ShowcaseDemo>
-        <div className="w-full max-w-lg">
-          <ScheduleApprovalCard task={proposal()} approvalSurface="home" />
+        <div className="w-full max-w-lg" data-shot="plain-approve">
+          <ScheduleApprovalCard
+            task={proposal({
+              approvalRevision: 'b'.repeat(64),
+              folderRules: { status: 'none', applied: [], pending: [] },
+            })}
+            approvalSurface="home"
+          />
         </div>
       </ShowcaseDemo>
 
@@ -439,8 +521,8 @@ export function ScheduleApprovalShowcases() {
       </ShowcaseDemo>
 
       <ShowcaseLabel>
-        Run it once — press it on each card for the strip’s three readings: still going, finished
-        with a way into what it did, and an honest failure
+        Try it once now — press it on each card for the strip’s three readings: still going,
+        finished with a way into what it did, and an honest failure
       </ShowcaseLabel>
       <ShowcaseDemo>
         <div className="flex w-full max-w-lg flex-col gap-3">

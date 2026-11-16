@@ -141,6 +141,17 @@ describe('TasksPanel', () => {
     expect(screen.getByText('Weekly cleanup')).toBeTruthy();
   });
 
+  it('keeps the full accessible name on the responsive New schedule button', async () => {
+    const schedule = createMockSchedule({ id: 'sched-1', name: 'Daily review' });
+    const transport = createMockTransport({
+      listTasks: vi.fn().mockResolvedValue([schedule]),
+    });
+
+    render(<TasksPanel />, { wrapper: createWrapper(transport) });
+
+    expect(await screen.findByRole('button', { name: 'New schedule' })).toBeInTheDocument();
+  });
+
   it('shows loading state initially', async () => {
     // Use a transport where config resolves (to enable tasks) but schedules never resolve
     const transport = createMockTransport({

@@ -218,6 +218,23 @@ export const REASON_DESCRIPTION =
   'Why this schedule should exist, in your own words. The person reads it on the schedule, ' +
   'and decides on it when DorkOS asks them first.';
 
+/** The proposed mode argument shown on both task tools. */
+export const REQUESTED_PERMISSION_MODE_DESCRIPTION =
+  'The permission mode you ask the person to approve. This request never changes the applied mode.';
+
+/** The proposed task-run allow rules shown on both task tools. */
+export const REQUESTED_ALLOW_DESCRIPTION =
+  'Exact Claude Code permission rules you ask the person to approve for this task only. ' +
+  'They never change folder settings and do nothing until a person approves them.';
+
+/** Operator-only task-run rules stay advertised so an attempted write is refused whole. */
+export const REFUSED_APPROVED_ALLOW_DESCRIPTION =
+  'Not yours to set. Only a person may apply task-run allow rules; DorkOS refuses the whole call.';
+
+/** Operator-only confirmation stays advertised so an attempted write is refused whole. */
+export const REFUSED_LOOSER_CONFIRMATION_DESCRIPTION =
+  'Not yours to set. Only a person may choose more power than you requested.';
+
 /**
  * The description both servers give the `permissionMode` argument (DOR-504).
  *
@@ -288,6 +305,10 @@ export const TASKS_CREATE_DESCRIPTION =
   'them first: then it waits at pending_approval and never runs until they approve it. ' +
   'The schedule returned says which. From a chat at Full autonomy whose turn ' +
   `${unmarkedTurnClause()}, target can be another agent: the task runs at that agent's level at most.`;
+
+/** The zone argument defaults to the person's saved time zone. */
+export const TIMEZONE_DESCRIPTION =
+  'IANA timezone (e.g., "America/New_York"); defaults to the person’s zone';
 
 /**
  * What `tasks_update` says it does, including whose task it may change (DOR-3938).

@@ -4,8 +4,8 @@
  * existing connected-app gate ask; the boot flag and owner allowlist exempt
  * the same turns they exempt in production. The last block drives a send all
  * the way through the capability registry, as DOR-3858 asked: proof that a
- * bridged stranger at Full sends with no card while unmarked, and is held once
- * marked.
+ * bridged stranger at Full is held by default (DOR-4453 turned the flag on), and
+ * sends with no card only where the flag is switched off.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AgentRuntime, TurnPermissionLevel } from '@dorkos/shared/agent-runtime';
@@ -41,6 +41,7 @@ import {
   type AgentModeDecision,
   type AgentModeSources,
 } from '../../tasks/agent-mode/agent-mode-decision.js';
+import { env } from '../../../env.js';
 
 const NOW = Date.UTC(2026, 10, 13, 15, 0, 0);
 const AGENT_PATH = '/agents/scout';
@@ -130,11 +131,15 @@ function envelope(subject: string, senderId: string, approvers: readonly string[
   };
 }
 
-/** Run one Telegram-bound turn through the relay handler and level recorder. */
+/**
+ * Run one Telegram-bound turn through the relay handler and level recorder. Leave
+ * `markStrangerTurns` out to use this boot's parsed flag, the value the adapter factory hands the
+ * handler (`adapter-factory-stranger-mark.test.ts` pins that wiring).
+ */
 async function runTelegramTurn(input: {
   senderId: string;
   approvers: readonly string[];
-  markStrangerTurns: boolean;
+  markStrangerTurns?: boolean;
 }): Promise<RelayTurnResult> {
   const subject = `relay.agent.default.scout-${input.senderId}`;
   let sentSessionId = '';
@@ -168,7 +173,7 @@ async function runTelegramTurn(input: {
       agentManager: runtime as unknown as AgentRuntimeLike,
       traceStore: { insertSpan: vi.fn(), updateSpan: vi.fn() },
       turnController: new AbortController(),
-      markStrangerTurns: input.markStrangerTurns,
+      markStrangerTurns: input.markStrangerTurns ?? env.DORKOS_MARK_STRANGER_TURNS,
       now: () => NOW,
       logger: { warn: vi.fn(), info: vi.fn(), error: vi.fn(), debug: vi.fn() },
     },
@@ -203,7 +208,7 @@ describe('Telegram stranger turns at Full (DOR-3858)', () => {
     area: null,
   };
 
-  it('keeps today’s no-card behavior while the flag is off', async () => {
+  it('keeps the old no-card behavior when the flag is switched off', async () => {
     const turn = await runTelegramTurn({
       senderId: 'telegram-stranger-off',
       approvers: ['telegram-owner'],
@@ -364,9 +369,9 @@ describe('a connected-app send from a bridged Telegram turn at Full (DOR-3858)',
     return { result, sent };
   }
 
-  // The gap the ticket names, pinned as today's behavior: with the flag off a stranger's turn
-  // carries no mark, so a send runs with no card.
-  it('sends with no card while unmarked (flag off)', async () => {
+  // The gap the ticket named, now only where the operator switches the flag off: a stranger's
+  // turn carries no mark, so a send runs with no card.
+  it('sends with no card while unmarked (flag switched off)', async () => {
     const turn = await runTelegramTurn({
       senderId: 'telegram-stranger-send-off',
       approvers: ['telegram-owner'],
@@ -381,16 +386,17 @@ describe('a connected-app send from a bridged Telegram turn at Full (DOR-3858)',
   });
 
   // Held, and stricter than a card: nobody is watching a bridged run, so the person's OK it needs
-  // can't be asked for in it, and the send is refused without asking.
-  it('refuses the send once the stranger turn is marked (flag on)', async () => {
+  // can't be asked for in it, and the send is refused without asking. No flag is set here: this
+  // is the default boot (DOR-4453).
+  it('refuses the stranger’s send by default', async () => {
     const turn = await runTelegramTurn({
       senderId: 'telegram-stranger-send-on',
       approvers: ['telegram-owner'],
-      markStrangerTurns: true,
     });
 
     const { result, sent } = await send(turn);
 
+    expect(env.DORKOS_MARK_STRANGER_TURNS).toBe(true);
     expect(turn.level).toEqual({ asks: 'never', reach: 'everything', outsider: true });
     expect(result).toMatchObject({
       decision: {
@@ -401,15 +407,15 @@ describe('a connected-app send from a bridged Telegram turn at Full (DOR-3858)',
     expect(sent).toEqual([]);
   });
 
-  it('still sends with no card for the owner on the approver list (flag on)', async () => {
+  it('still sends with no card for the owner on the approver list, by default', async () => {
     const turn = await runTelegramTurn({
       senderId: 'telegram-owner-send',
       approvers: ['telegram-owner-send'],
-      markStrangerTurns: true,
     });
 
     const { result, sent } = await send(turn);
 
+    expect(turn.marked).toBe(false);
     expect(result).toEqual({ ok: true });
     expect(sent).toEqual(['send']);
   });

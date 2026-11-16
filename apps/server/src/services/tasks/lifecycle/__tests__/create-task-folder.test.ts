@@ -59,7 +59,13 @@ function create({
   permissionMode?: string;
 } = {}) {
   return createScheduledTask(
-    { store, registrar: { syncTask } as never, dorkHome, meshCore: mesh },
+    {
+      store,
+      registrar: { syncTask } as never,
+      dorkHome,
+      defaultTimezone: () => 'UTC',
+      meshCore: mesh,
+    },
     {
       input: {
         name: 'Nightly sweep',

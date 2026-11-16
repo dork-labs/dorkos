@@ -149,18 +149,18 @@ describe('request-vs-frontmatter drift — the fields POST /api/tasks writes int
     }
   });
 
-  it('the real MCP DURATION_ARG source carries .max, not just the pattern', () => {
+  it('the real MCP duration argument carries .max, not just the pattern', () => {
     // The restated schema above proves the RULE; this proves the shipped tool
     // actually spells it, since a mirror nobody applied is not a mirror.
     const source = readFileSync(
       new URL(
-        '../../../../apps/server/src/services/runtimes/claude-code/mcp-tools/tasks/task-tools.ts',
+        '../../../../apps/server/src/services/runtimes/claude-code/mcp-tools/tasks/task-tool-inputs.ts',
         import.meta.url
       ),
       'utf8'
     );
-    const start = source.indexOf('const DURATION_ARG');
-    expect(start, 'DURATION_ARG must still exist under that name').toBeGreaterThan(-1);
+    const start = source.indexOf('const durationArgument');
+    expect(start, 'durationArgument must still exist under that name').toBeGreaterThan(-1);
     // The whole declaration, not its first line — it spans several.
     const declaration = source.slice(start, source.indexOf(';', start));
     expect(declaration).toContain('TASK_DURATION_MAX');

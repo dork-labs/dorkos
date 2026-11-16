@@ -167,7 +167,7 @@ async function withReviewModes(page: Page) {
             stop: 'act',
             asks: 'when-risky',
             reach: 'edit',
-            promise: 'Edits files without asking.',
+            promise: 'Edits files on its own.',
           },
           {
             id: 'bypassPermissions',
@@ -368,7 +368,7 @@ for (const surface of ['light', 'dark', 'phone'] as const) {
 
 // Keep this independent of the multi-state review flow: CI's 30-second budget
 // belongs to one behavior, rather than a fifth reload at the end of that flow.
-test('dark schedule review shows the Full autonomy warning @smoke', async ({
+test('dark schedule review shows the Full access warning @smoke', async ({
   page,
   basePage,
   tasksPage,
@@ -406,7 +406,7 @@ test('dark schedule review shows the Full autonomy warning @smoke', async ({
   await tasksPage.open();
   await tasksPage.dialog.getByRole('button', { name: 'Review Sample ledger', exact: true }).click();
   const review = page.getByRole('dialog', { name: 'Review schedule', exact: true });
-  const full = review.getByText('Runs as: Full autonomy', { exact: true });
+  const full = review.getByText('Runs as: Full access', { exact: true });
   await expect(full).toHaveClass(/text-status-warning-fg/);
   await page.screenshot({ path: testInfo.outputPath('dark-full-review.png') });
 });
@@ -464,12 +464,14 @@ for (const surface of ['light', 'phone'] as const) {
     await expect(review.getByRole('alert')).toHaveText(
       'permissions is in the wrong place, so this schedule won’t run. Move it under schedule.'
     );
+    // One approve button (DOR-3637): this task is off, so it would also turn it
+    // on, and the misplaced mode keeps it disabled.
     await expect(
-      review.getByRole('button', { name: 'Approve Sample ledger', exact: true })
+      review.getByRole('button', { name: 'Approve Sample ledger and turn it on', exact: true })
     ).toBeDisabled();
     await expect(review.locator('[data-slot="schedule-prompt"]')).toHaveText(task.prompt);
     await expect(
-      review.getByRole('button', { name: 'Approve Sample ledger and turn it on' })
+      review.getByRole('button', { name: 'Approve Sample ledger', exact: true })
     ).toHaveCount(0);
     const body = review.locator('[data-slot="schedule-review-body"]');
     if (surface === 'phone') {

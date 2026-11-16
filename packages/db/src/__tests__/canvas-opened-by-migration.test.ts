@@ -2,9 +2,6 @@
  * The "opened by an app" column on canvas documents (DOR-3293). Up adds one
  * nullable column and keeps every row; down removes it and its ledger row, and
  * refuses, changing nothing, once a later migration has run.
- *
- * It migrates only through its own journal entry, so a later migration landing
- * on main does not trip the down file's own "a later one ran" guard.
  */
 import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -17,32 +14,26 @@ import { createDb, type Db } from '../index.js';
 const TAG = '20261116015205_canvas_opened_by';
 const WHEN = 1794793925059;
 const MIGRATIONS = fileURLToPath(new URL('../../drizzle/', import.meta.url));
-const DOWN = fileURLToPath(
-  new URL('../down/20261116015205_canvas_opened_by.down.sql', import.meta.url)
-);
+const DOWN = fileURLToPath(new URL(`../down/${TAG}.down.sql`, import.meta.url));
 
 let directory: string;
 let db: Db;
 
-function journal() {
-  return JSON.parse(readFileSync(join(MIGRATIONS, 'meta/_journal.json'), 'utf8')) as {
-    entries: Array<{ idx: number; tag: string; when: number }>;
+/**
+ * Apply every migration up to and including this one, and none after it: the
+ * down file refuses once a later migration has run, so the real head would
+ * stop it from coming off as soon as anything lands on top.
+ */
+function migrateThroughThis(): void {
+  const data = JSON.parse(readFileSync(join(MIGRATIONS, 'meta/_journal.json'), 'utf8')) as {
+    entries: Array<{ idx: number; tag: string }>;
   };
-}
-
-/** This migration's journal index, found by its tag so a renumber cannot hide it. */
-function ownIdx(): number {
-  const found = journal().entries.find((entry) => entry.tag === TAG);
-  expect(found).toBeDefined();
-  return found!.idx;
-}
-
-/** Migrate up to and including one journal index, no further. */
-function migrateThrough(lastIdx: number): void {
-  const data = journal();
-  const entries = data.entries.filter((entry) => entry.idx <= lastIdx);
-  for (const entry of entries)
+  const own = data.entries.find((entry) => entry.tag === TAG);
+  expect(own).toBeDefined();
+  const entries = data.entries.filter((entry) => entry.idx <= own!.idx);
+  for (const entry of entries) {
     copyFileSync(join(MIGRATIONS, `${entry.tag}.sql`), join(directory, `${entry.tag}.sql`));
+  }
   writeFileSync(join(directory, 'meta/_journal.json'), JSON.stringify({ ...data, entries }));
   migrate(db, { migrationsFolder: directory });
 }
@@ -51,7 +42,7 @@ beforeEach(() => {
   directory = mkdtempSync(join(tmpdir(), 'canvas-opened-by-migration-'));
   mkdirSync(join(directory, 'meta'));
   db = createDb(':memory:');
-  migrateThrough(ownIdx());
+  migrateThroughThis();
 });
 
 afterEach(() => {
@@ -103,7 +94,7 @@ describe('canvas_documents.opened_by_extension_id', () => {
     runDown();
     expect(columns()).not.toContain('opened_by_extension_id');
     expect(ledger()).toBe(0);
-    migrateThrough(ownIdx());
+    migrateThroughThis();
     expect(columns()).toContain('opened_by_extension_id');
   });
 
@@ -112,7 +103,7 @@ describe('canvas_documents.opened_by_extension_id', () => {
       .prepare('INSERT INTO __drizzle_migrations (hash, created_at) VALUES (?, ?)')
       .run('later', WHEN + 1);
     expect(() => runDown()).toThrow();
-    if (db.$client.inTransaction) db.$client.exec('ROLLBACK');
+    db.$client.exec('ROLLBACK');
     expect(columns()).toContain('opened_by_extension_id');
     expect(ledger()).toBe(1);
   });

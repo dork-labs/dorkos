@@ -2,7 +2,7 @@
   "version": "6",
   "dialect": "sqlite",
   "id": "85c9ddc7-6267-4e5b-b953-1e6437c17934",
-  "prevId": "2bfc612f-fd4f-424b-ae34-22a4f0014c5a",
+  "prevId": "3c0db051-b8dc-4f51-a59e-28a2ebc0b925",
   "tables": {
     "a2a_tasks": {
       "name": "a2a_tasks",
@@ -1772,6 +1772,27 @@
         },
         "proposed_by_agent_path": {
           "name": "proposed_by_agent_path",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "requested_permission_mode": {
+          "name": "requested_permission_mode",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "requested_allow": {
+          "name": "requested_allow",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "approved_allow": {
+          "name": "approved_allow",
           "type": "text",
           "primaryKey": false,
           "notNull": false,

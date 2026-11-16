@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
-import { FeatureDisabledState, RemovableChip } from '@/layers/shared/ui';
+import { FeatureDisabledState, RemovableChip, TOUCH_TARGET_MIN_H } from '@/layers/shared/ui';
+import { cn } from '@/layers/shared/lib';
 import { useAppStore } from '@/layers/shared/model';
 import { icons } from '@dorkos/icons/registry';
 import { useTasksEnabled, useTasks, useTaskTemplateDialog } from '@/layers/entities/tasks';
@@ -11,6 +12,12 @@ import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
 import { CreateTaskDialog } from './CreateTaskDialog';
 import { TasksEmptyState } from './TasksEmptyState';
 import { TaskRow } from './TaskRow';
+
+/** A "New schedule" button: 44px under a thumb on a phone, compact past md. */
+const NEW_SCHEDULE_BUTTON = cn(
+  TOUCH_TARGET_MIN_H,
+  'border-input hover:bg-accent hover:text-accent-foreground focus-ring inline-flex items-center rounded-md border bg-transparent px-3 py-1.5 text-sm font-medium shadow-xs transition-colors md:min-h-0'
+);
 
 /** Main Tasks panel — renders schedule list or empty/loading/disabled states. */
 export function TasksPanel() {
@@ -125,10 +132,7 @@ export function TasksPanel() {
           <div className="flex flex-col items-center gap-3 p-8">
             <AgentFilterChip name={filterAgentName} onClear={() => setTasksAgentFilter(null)} />
             <p className="text-muted-foreground text-sm">No schedules for this agent.</p>
-            <button
-              onClick={handleCreateBlank}
-              className="border-input hover:bg-accent hover:text-accent-foreground inline-flex items-center rounded-md border bg-transparent px-3 py-1.5 text-sm font-medium shadow-xs transition-colors"
-            >
+            <button onClick={handleCreateBlank} className={NEW_SCHEDULE_BUTTON}>
               New schedule
             </button>
           </div>
@@ -168,13 +172,15 @@ export function TasksPanel() {
             )}
           </div>
           <button
+            aria-label="New schedule"
             onClick={() => {
               setEditTask(undefined);
               setDialogOpen(true);
             }}
-            className="border-input hover:bg-accent hover:text-accent-foreground inline-flex items-center rounded-md border bg-transparent px-3 py-1.5 text-sm font-medium shadow-xs transition-colors"
+            className={NEW_SCHEDULE_BUTTON}
           >
-            New schedule
+            <span className="sm:hidden">New</span>
+            <span className="hidden sm:inline">New schedule</span>
           </button>
         </div>
       </div>

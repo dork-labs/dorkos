@@ -8,8 +8,9 @@
  * gateway or an outside MCP client (its `runtime-default` ceiling reads as the
  * outsider mark, `turnPowerOptions`); and a hand-off or spin-off report that
  * carries a mark on (`seat-carry.ts`). With DOR-3858's boot flag on
- * (`DORKOS_MARK_STRANGER_TURNS`), a message from someone other than the owner
- * on Telegram, Slack or in a room marks it too. Pages, mail and tool results
+ * (`DORKOS_MARK_STRANGER_TURNS`, on by default since DOR-4453), a message from
+ * someone other than the owner on Telegram, Slack or in a room marks it too.
+ * The flag-off wording stays for a boot that switches it off. Pages, mail and tool results
  * never do, in either state. The older wording ("a turn that read no messages
  * from outside the team") promised more than the code did, which is why the
  * sentences live here and take the flag.
