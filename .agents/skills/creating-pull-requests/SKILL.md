@@ -31,7 +31,10 @@ exists**. Opening the PR is the last step, not the first:
 6. Check the exact final commit with `node scripts/verify-proof/cli.ts check HEAD`.
    `pnpm verify` records its pass locally in the common git directory only when
    HEAD and the working tree stay clean and unchanged throughout the run. A new
-   commit needs its own pass. The checker runs no gates. If an exceptional PR
+   commit needs its own pass. It leaves the real-CLI suites listed in
+   `scripts/ci/binary-test-glob.txt` to CI, since they test whatever CLI this
+   computer has installed, and the proof names them under `excluded`. The
+   checker runs no gates. If an exceptional PR
    must open without proof, add `--no-verify-proof` to the checker; it logs who,
    when, and which commit locally. This does not bypass CI.
 7. **Then** open the PR, already reviewed, so the repo's automated review spends
