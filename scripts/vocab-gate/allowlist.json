@@ -913,11 +913,6 @@
       "reason": "TEMPORARY, DOR-2789: open PR #2677 also rewrites this page, so its chat wording waits for that to land. Sweep the page and remove this entry then."
     },
     {
-      "path": "docs/guides/agent-browser.mdx",
-      "terms": ["session", "sessions", "conversation", "conversations"],
-      "reason": "TEMPORARY, DOR-2789: open PR #2686 also rewrites this page, so its chat wording waits for that to land. Sweep the page and remove this entry then."
-    },
-    {
       "path": "docs/guides/cli-usage.mdx",
       "terms": ["session", "sessions", "conversation", "conversations"],
       "reason": "TEMPORARY, DOR-2789: open PR #2677 also rewrites this page, so its chat wording waits for that to land. Sweep the page and remove this entry then."
