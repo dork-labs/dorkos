@@ -205,5 +205,76 @@ describe('a paid run at the permission gate', () => {
     await expect(call(approvalToken)).resolves.toMatchObject({ result: { status: 'success' } });
     await expect(call(approvalToken)).rejects.toBeInstanceOf(CapabilityGateRefusal);
     expect(execute).toHaveBeenCalledTimes(1);
+    expect(execute).toHaveBeenCalledWith(
+      expect.objectContaining({ approval: expect.objectContaining({ spendCard: true }) })
+    );
+  });
+
+  it('hands the broker a yes that is not a yes to spend when the card was an ordinary one (Security Must 2)', async () => {
+    // Careful: the write asks for its own reason, not for money.
+    initPermissionGate({
+      readConfig: () => ({ preset: 'careful', defaults: { areas: {}, actions: {} } }),
+    });
+    spend = { kind: 'run' };
+    const write = () =>
+      registry().invoke('connectors.execute_write', TARGET, {
+        identity: {
+          agentPath: '/agents/kestrel',
+          displayName: 'Kestrel',
+          createdAt: '2026-11-01T00:00:00.000Z',
+        },
+        serverPrincipal: createServerPrincipal({
+          kind: 'runtime',
+          owner: { kind: 'local_install', installationId: 'install-a' },
+          bindingId: 'binding-a',
+          runtime: 'claude-code',
+          canonicalSessionId: 'session-a',
+          agentId: 'agent-kestrel',
+          agentPath: '/agents/kestrel',
+          canonicalCwd: '/agents/kestrel',
+        }),
+        sessionId: 'session-a',
+      });
+    const first = await write().catch((error: unknown) => error);
+    if (
+      !(first instanceof CapabilityGateRefusal) ||
+      first.decision.outcome !== 'approval_required'
+    ) {
+      throw first;
+    }
+    const { approvalId, approvalToken } = first.decision.payload as {
+      approvalId: string;
+      approvalToken: string;
+    };
+    expect(request).toHaveBeenCalledWith(
+      expect.objectContaining({
+        serviceAction: expect.not.objectContaining({ spend: expect.anything() }),
+      })
+    );
+    approvals.grant(approvalId);
+    await registry()
+      .invoke('connectors.execute_write', TARGET, {
+        identity: {
+          agentPath: '/agents/kestrel',
+          displayName: 'Kestrel',
+          createdAt: '2026-11-01T00:00:00.000Z',
+        },
+        serverPrincipal: createServerPrincipal({
+          kind: 'runtime',
+          owner: { kind: 'local_install', installationId: 'install-a' },
+          bindingId: 'binding-a',
+          runtime: 'claude-code',
+          canonicalSessionId: 'session-a',
+          agentId: 'agent-kestrel',
+          agentPath: '/agents/kestrel',
+          canonicalCwd: '/agents/kestrel',
+        }),
+        sessionId: 'session-a',
+        approvalToken,
+      })
+      .catch(() => undefined);
+    expect(execute).toHaveBeenCalledWith(
+      expect.objectContaining({ approval: expect.not.objectContaining({ spendCard: true }) })
+    );
   });
 });

@@ -134,7 +134,8 @@ describe('a paid run where it is let go', () => {
 
   afterEach(() => initConnectorSpending(undefined));
 
-  async function run(approved = false) {
+  /** `approved`: a person's yes; `'ordinary'` is a yes on a card that was not about money. */
+  async function run(approved: boolean | 'ordinary' = false) {
     const caller = createServerPrincipal({
       kind: 'agent',
       owner: OWNER,
@@ -158,6 +159,7 @@ describe('a paid run where it is let go', () => {
               via: 'approval' as const,
               approvalId: 'approval-spend',
               authorityBindingDigest: prepared.authorityBinding.approvalScope.digest,
+              ...(approved === true ? { spendCard: true as const } : {}),
             },
           }
         : {}),
@@ -194,6 +196,19 @@ describe('a paid run where it is let go', () => {
   it('runs a paid action a person allowed once with no limit set, and counts it', async () => {
     await expect(run(true)).resolves.toMatchObject({ result: { status: 'success' } });
     expect(spending.meter()).toMatchObject({ unknownRuns: 1 });
+  });
+
+  it('never takes a yes on an ordinary card as a yes to spend (Security Must 2)', async () => {
+    await expect(run('ordinary')).rejects.toMatchObject({
+      payload: { code: 'SPEND_APPROVAL_REQUIRED' },
+    });
+    spending.setLimit(40 * DOLLAR);
+    spending.setPrice('tavily', 300_000);
+    db.$client.exec('DROP TABLE spending_runs');
+    await expect(run('ordinary')).rejects.toMatchObject({
+      payload: { code: 'SPEND_APPROVAL_REQUIRED' },
+    });
+    expect(executeProvider).not.toHaveBeenCalled();
   });
 
   it('lets three $0.30 runs fit a $1.00 limit, then refuses the fourth (spec §13 #2)', async () => {
