@@ -51,6 +51,10 @@ import {
   BROWSER_HANDOFF_ENTRIES,
   type BrowserHandoffPayloads,
 } from './browser-handoff-notifications.js';
+import {
+  COMPOSIO_WRITE_NOTICE_ENTRIES,
+  type ComposioWriteNoticePayloads,
+} from './emitters/composio-write-notice.js';
 import { ACCESS_CHANGE_ENTRIES, type AccessChangePayloads } from './access-change-notifications.js';
 import {
   MCP_TOOL_ADDED_ENTRIES,
@@ -73,6 +77,7 @@ export interface DeclaredPayloads
     ShellCheckPayloads,
     ReportUndeliveredPayloads,
     AccessChangePayloads,
+    ComposioWriteNoticePayloads,
     McpToolAddedPayloads,
     McpReservedNamePayloads,
     TodoChangePayloads {}
@@ -88,6 +93,7 @@ export const DECLARED_ENTRIES = {
   ...SHELL_CHECK_ENTRIES,
   ...REPORT_UNDELIVERED_ENTRIES,
   ...ACCESS_CHANGE_ENTRIES,
+  ...COMPOSIO_WRITE_NOTICE_ENTRIES,
   ...MCP_TOOL_ADDED_ENTRIES,
   ...MCP_RESERVED_NAME_ENTRIES,
   ...TODO_CHANGE_ENTRIES,
@@ -108,6 +114,7 @@ export const DECLARED_WIRED_KINDS = [
   'shell.check_down',
   'report.undelivered',
   'connector.access_narrowed',
+  'connector.write_available',
   'mcp-server.tool_added',
   'mcp-server.reserved_name',
   'todo.changed',

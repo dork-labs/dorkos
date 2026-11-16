@@ -5,7 +5,8 @@
  */
 import { describe, expect, it } from 'vitest';
 import { accessLevelRevisionIds } from '../connector-schemas.js';
-import { isPaidOperation } from '../paid-operations.js';
+import { isPaidOperation, PAID_BY_DEFAULT_TOOLKITS } from '../paid-operations.js';
+import { classifyComposioAction } from '../composio/action-classes.js';
 
 describe('isPaidOperation', () => {
   it('marks an Apify actor run as paid, though the service calls it read-only', () => {
@@ -33,6 +34,31 @@ describe('isPaidOperation', () => {
 });
 
 describe('accessLevelRevisionIds with a paid operation', () => {
+  it.each([...PAID_BY_DEFAULT_TOOLKITS])(
+    'never grants a clean %s create under a level',
+    (toolkit) => {
+      // Synthetic create action: this checks the paid mark independently of the name families.
+      const slug = `${toolkit.toUpperCase()}_CREATE_ITEM`;
+      const capabilityClassification = classifyComposioAction(
+        slug.split('_')[0]!.toLowerCase(),
+        slug,
+        ['createHint']
+      );
+      expect(capabilityClassification).toBe('write');
+      const operations = [
+        {
+          operationRevisionId: slug,
+          toolkit,
+          operationSlug: slug,
+          capabilityClassification,
+          supported: true,
+        },
+      ];
+      expect(accessLevelRevisionIds(operations, 'read')).toEqual([]);
+      expect(accessLevelRevisionIds(operations, 'read-write')).toEqual([]);
+    }
+  );
+
   const candidates = [
     {
       operationRevisionId: 'apify-scrape',

@@ -1,0 +1,98 @@
+{
+  "github": [
+    {
+      "slug": "GITHUB_CREATE_A_REFERENCE",
+      "tags": ["git", "openWorldHint", "important", "createHint"]
+    },
+    {
+      "slug": "GITHUB_CREATE_A_RELEASE",
+      "tags": ["openWorldHint", "important", "Releases", "createHint"]
+    },
+    {
+      "slug": "GITHUB_CREATE_BRANCH",
+      "tags": ["important", "createHint", "openWorldHint", "Branches"]
+    },
+    {
+      "slug": "GITHUB_MERGE_A_BRANCH",
+      "tags": ["openWorldHint", "repos", "updateHint"]
+    },
+    {
+      "slug": "GITHUB_MERGE_A_PULL_REQUEST",
+      "tags": ["openWorldHint", "pulls", "updateHint"]
+    },
+    {
+      "slug": "GITHUB_RENAME_A_BRANCH",
+      "tags": ["openWorldHint", "repos", "updateHint"]
+    },
+    {
+      "slug": "GITHUB_SYNC_FORK_BRANCH_WITH_UPSTREAM",
+      "tags": ["openWorldHint", "repos", "updateHint"]
+    },
+    {
+      "slug": "GITHUB_UPDATE_A_RELEASE",
+      "tags": ["updateHint", "openWorldHint", "Repositories"]
+    }
+  ],
+  "github_mcp": [
+    {
+      "slug": "GITHUB_MCP_CREATE_BRANCH",
+      "tags": ["createHint"]
+    },
+    {
+      "slug": "GITHUB_MCP_MERGE_PULL_REQUEST",
+      "tags": ["destructiveHint"]
+    }
+  ],
+  "gitlab": [
+    {
+      "slug": "GITLAB_CHERRY_PICK_COMMIT",
+      "tags": ["createHint", "updateHint"]
+    },
+    {
+      "slug": "GITLAB_CREATE_RELEASE",
+      "tags": ["Releases", "createHint"]
+    },
+    {
+      "slug": "GITLAB_CREATE_RELEASE_ASSET_LINK",
+      "tags": ["Releases", "createHint"]
+    },
+    {
+      "slug": "GITLAB_CREATE_REPOSITORY_BRANCH",
+      "tags": ["important", "createHint"]
+    },
+    {
+      "slug": "GITLAB_CREATE_REPOSITORY_TAG",
+      "tags": ["Repository Tags", "createHint"]
+    },
+    {
+      "slug": "GITLAB_MERGE_MERGE_REQUEST",
+      "tags": ["important", "updateHint", "destructiveHint", "openWorldHint", "Merge Requests"]
+    },
+    {
+      "slug": "GITLAB_REBASE_MERGE_REQUEST",
+      "tags": ["Merge Requests", "updateHint"]
+    },
+    {
+      "slug": "GITLAB_REVERT_COMMIT",
+      "tags": ["updateHint", "Commits"]
+    },
+    {
+      "slug": "GITLAB_UPDATE_RELEASE",
+      "tags": ["Releases", "idempotentHint", "updateHint"]
+    },
+    {
+      "slug": "GITLAB_UPDATE_RELEASE_ASSET_LINK",
+      "tags": ["Releases", "idempotentHint", "updateHint"]
+    }
+  ],
+  "gitea": [
+    {
+      "slug": "GITEA_CREATE_BRANCH",
+      "tags": ["openWorldHint", "createHint", "repositories"]
+    },
+    {
+      "slug": "GITEA_MERGE_PULL_REQUEST",
+      "tags": ["openWorldHint", "updateHint", "repositories", "pull-requests"]
+    }
+  ]
+}

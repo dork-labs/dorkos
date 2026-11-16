@@ -5,8 +5,8 @@
  * Look and Change come straight from the safety classification the grant
  * review enforces: `read` is Look, anything else is Change. Which actions a
  * level includes comes from {@link levelIncludes}, the same rule the level
- * presets grant with. Once an app is connected, the actions themselves come
- * from the account's grant snapshot ({@link actionsFromCandidates}), so the
+ * presets grant with. Paid actions stay outside both levels. Once an app is
+ * connected, the actions themselves come from the account's grant snapshot ({@link actionsFromCandidates}), so the
  * panel can never promise more or less than a level actually allows.
  *
  * @module features/connections/lib/app-actions
@@ -15,6 +15,7 @@ import type { ConnectorAppAction } from '@dorkos/shared/connector-resource-schem
 import {
   actionNameFromSlug,
   levelIncludes,
+  isPaidOperation,
   type ConnectorOperationClassification,
   type ConnectorReconciliationCandidate,
 } from '@dorkos/shared/connector-schemas';
@@ -114,8 +115,8 @@ export interface ActionBuckets {
    */
   addedByReadWrite: ConnectorAppAction[];
   /**
-   * Changing actions that neither level includes, such as deleting. They can
-   * only be allowed one by one through exact actions.
+   * Actions that neither level includes, such as deleting or paid actions.
+   * They can only be allowed one by one through exact actions.
    */
   outsideLevels: ConnectorAppAction[];
 }
@@ -129,10 +130,12 @@ export interface ActionBuckets {
  *
  * @param actions - The app's listed actions.
  * @param level - The level the person picked, or `null` for none.
+ * @param toolkit - The service id, used to exclude paid actions from levels.
  */
 export function actionBuckets(
   actions: readonly ConnectorAppAction[],
-  level: CardAccessLevel | null
+  level: CardAccessLevel | null,
+  toolkit: string
 ): ActionBuckets {
   const ranked = byImportance(actions);
   const look = ranked.filter((a) => actionKind(a.capabilityClassification) === 'look');
@@ -140,15 +143,14 @@ export function actionBuckets(
   if (level === null) {
     return { look, change: changing, addedByReadWrite: [], outsideLevels: [] };
   }
+  const includes = (action: ConnectorAppAction, picked: CardAccessLevel) =>
+    !isPaidOperation({ toolkit, operationSlug: action.operationSlug }) &&
+    levelIncludes(action.capabilityClassification, picked);
   return {
-    look: look.filter((a) => levelIncludes(a.capabilityClassification, level)),
-    change: changing.filter((a) => levelIncludes(a.capabilityClassification, level)),
-    addedByReadWrite: changing.filter(
-      (a) =>
-        !levelIncludes(a.capabilityClassification, level) &&
-        levelIncludes(a.capabilityClassification, 'read-write')
-    ),
-    outsideLevels: changing.filter((a) => !levelIncludes(a.capabilityClassification, 'read-write')),
+    look: look.filter((a) => includes(a, level)),
+    change: changing.filter((a) => includes(a, level)),
+    addedByReadWrite: changing.filter((a) => !includes(a, level) && includes(a, 'read-write')),
+    outsideLevels: ranked.filter((a) => !includes(a, 'read-write')),
   };
 }
 
@@ -158,10 +160,12 @@ export function actionBuckets(
  * the same rule.
  *
  * @param actions - The app's listed actions.
+ * @param toolkit - The service id, used to exclude paid actions from levels.
  */
-export function offersReadWrite(actions: readonly ConnectorAppAction[]): boolean {
+export function offersReadWrite(actions: readonly ConnectorAppAction[], toolkit: string): boolean {
   return actions.some(
     (a) =>
+      !isPaidOperation({ toolkit, operationSlug: a.operationSlug }) &&
       levelIncludes(a.capabilityClassification, 'read-write') &&
       !levelIncludes(a.capabilityClassification, 'read')
   );

@@ -207,6 +207,7 @@ const PAYLOADS: { [K in NotificationKind]: NotificationPayloads[K] } = {
     targetAgentId: 'agent-2',
     title: 'Scout took Gmail (Work) access away from Bea',
   },
+  'connector.write_available': { connectionId: 'connection-1', appName: 'Linear' },
   'mcp-server.tool_added': { server: 'tracker', tool: 'export_all', agentNames: ['Quill'] },
   'mcp-server.reserved_name': { server: 'dorkos' },
   'web.new_device': { deviceRef: 'ref-1', label: 'Safari on iPhone' },
@@ -282,6 +283,7 @@ const EXPECTED_TIERS: Record<NotificationKind, string> = {
   'connector.destructive_executed': 'quiet',
   // One agent took another's access away: the person sees it now (Security G2).
   'connector.access_narrowed': 'blocking',
+  'connector.write_available': 'notable',
   // A server added a tool an agent already allows wholesale: worth seeing, not urgent.
   'mcp-server.tool_added': 'notable',
   // A saved server stopped reaching agents: worth fixing, nothing waits on it (DOR-4262).
@@ -382,6 +384,7 @@ describe('notification registry', () => {
       'connector.access_narrowed',
       'connector.destructive_executed',
       'connector.destructive_pending',
+      'connector.write_available',
       'credits.refused',
       'dead-letter.created',
       'dm.received',

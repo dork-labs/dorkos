@@ -402,3 +402,27 @@ it('reads a reserved-name notice in full, with the name as plain text (DOR-4262)
   expect(shown!.querySelector('img, strong, b, a')).toBeNull();
   expect(document.querySelector('[data-slot="inbox-row-body"]')).toHaveTextContent(body);
 });
+
+it('shows the write-upgrade notice in full and opens the affected account', async () => {
+  const onOpen = vi.fn();
+  const title = 'Linear access changed to Read';
+  const body =
+    'Linear now allows changes. Your agents stay on Read until you choose Read and write.';
+  render(
+    <InboxRow
+      notification={build({
+        kind: 'connector.write_available',
+        subject: { type: 'system', id: 'work-linear' },
+        title,
+        body,
+      })}
+      onOpen={onOpen}
+    />
+  );
+  const shown = document.querySelector('[data-slot="inbox-row-title"]');
+  expect(shown).toHaveTextContent(title);
+  expect(shown).not.toHaveClass('truncate');
+  expect(document.querySelector('[data-slot="inbox-row-body"]')).toHaveTextContent(body);
+  fireEvent.click(shown!);
+  expect(onOpen).toHaveBeenCalledTimes(1);
+});

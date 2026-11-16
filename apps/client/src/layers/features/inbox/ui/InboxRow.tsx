@@ -247,6 +247,7 @@ export function InboxRow({ notification, agent, onOpen, index }: InboxRowProps) 
     notification.mark === 'refused' ||
     notification.kind === 'schedule.armed_by_agent' ||
     notification.kind === 'connector.access_narrowed' ||
+    notification.kind === 'connector.write_available' ||
     notification.kind === 'mcp-server.tool_added' ||
     notification.kind === 'mcp-server.reserved_name' ||
     notification.kind === 'report.undelivered' ||

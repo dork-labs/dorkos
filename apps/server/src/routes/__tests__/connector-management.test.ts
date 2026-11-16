@@ -403,6 +403,36 @@ describe('connector management routes', () => {
     expect(reconciliation.preview).not.toHaveBeenCalled();
   });
 
+  it('lets only a person widen a named agent to Read and write', async () => {
+    const app = fixtureTarget.mount(
+      buildApp({
+        user: { userId: 'user-a', credential: 'cookie' },
+        loginEnabled: true,
+      })
+    );
+    const body = {
+      previewId: 'preview-a',
+      grants: [
+        { agentId: 'agent-a', operationRevisionIds: ['read-v1', 'write-v1'], level: 'read-write' },
+      ],
+    };
+    for (const [header, value] of [
+      ['X-DorkOS-Agent', 'agent-a'],
+      ['Authorization', 'Bearer machine'],
+      ['x-dorkos-approval', 'approval-token'],
+    ]) {
+      await request(app)
+        .post('/api/connectors/reconciliation/apply')
+        .set(header!, value!)
+        .send(body)
+        .expect(403);
+    }
+    expect(reconciliation.apply).not.toHaveBeenCalled();
+    await request(app).post('/api/connectors/reconciliation/apply').send(body).expect(200);
+    expect(reconciliation.apply).toHaveBeenCalledTimes(1);
+    expect(reconciliation.apply).toHaveBeenCalledWith(OWNER, body, expect.any(AbortSignal));
+  });
+
   it('lets only the owner turn on "every agent" (ADR 260926-192625)', async () => {
     const body = {
       previewId: 'preview-a',

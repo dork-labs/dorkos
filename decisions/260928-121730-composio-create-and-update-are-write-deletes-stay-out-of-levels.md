@@ -16,6 +16,8 @@ Accepted (owner decision A on DOR-2466, 2026-09-28).
 
 Amended by `260929-071355` (DOR-2506, 2026-09-29): a level is now stored as the owner's intent and follows the app by class, so a "Read" grant no longer keeps exactly the revisions it had; exact actions still do. `levelIncludes` moved to `packages/shared/src/connector-schemas.ts`.
 
+Amended by [261115-161559](261115-161559-composio-write-for-every-app.md) (DOR-4194, DOR-4270, 2026-11-15): “Only audited apps get a write tier” is retired, and “DorkOS keeps these out of levels” now covers the wider reach, money, irreversible and delete families. The consequence that moving mail to trash is write is retired while the new delete switch is off; the pending delete decision is tracked in DOR-4451. The hint rules, exact-action grants and shared local/hosted classification still govern. This ADR stays accepted; `superseded-by` remains null because the replacement is partial.
+
 ## Context
 
 The access levels read one rule (`levelIncludes`): "Read" grants `read` actions, "Read and write" adds `write`, and no level ever grants `destructive`, which is allowed one action at a time. Composio's classifier (`classify` in `packages/connector-providers/src/composio/sdk-client.ts`) only ever returned `read` or `destructive`, so every Composio app offered "Read" alone, and sending an email or adding an event meant picking exact actions.
