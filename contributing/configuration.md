@@ -1799,6 +1799,7 @@ Two kinds of writer, and the difference decides what each one owes you.
 | `services/core/auth/seed-legacy-mcp-key.ts`                                                | `mcp`                   | the MCP key migration                                                                          |
 | `services/shapes/shape-services.ts`                                                        | `ui`                    | applying a Shape / clearing the active Shape                                                   |
 | `services/extensions/extension-manager.ts`                                                 | `extensions`            | the extensions manager / approving an extension to run / withdrawing an extension run approval |
+| `services/extensions/pin/stale-approvals.ts` (scan-time, only removes)                     | `extensions`            | dropping approvals for extensions that are no longer installed                                 |
 | `services/harness/hook-approval.ts`                                                        | `harness`               | approving a package hook                                                                       |
 
 The section is passed explicitly because a purpose-built writer only ever moves its own, and the diff is scoped to it.
