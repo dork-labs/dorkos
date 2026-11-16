@@ -183,6 +183,8 @@ function captureVerifyTurboInvocations(): TurboInvocation[] {
         ...inheritedEnv,
         PATH: `${fixtureDir}:${inheritedEnv.PATH ?? ''}`,
         TURBO_CAPTURE: capturePath,
+        // The real wrappers only run stubs here; unrelated host jobs must not delay them.
+        DORKOS_HEAVY_LOCK_DIR: path.join(fixtureDir, 'locks'),
       },
     });
     expect(result.status, result.stderr || result.stdout).toBe(0);
