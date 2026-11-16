@@ -10,9 +10,11 @@ import path from 'node:path';
 import { createMockSchedule } from '@dorkos/test-utils';
 import { pinPrograms, mergePins, parsePins, type AllowListPins } from '../allow-list-pins.js';
 import {
+  LEVEL_DROPPED_MESSAGE,
   PINS_UNREADABLE_MESSAGE,
   PROGRAM_CHANGED_MESSAGE,
   settleRunAllowList,
+  type RunAllowListSources,
 } from '../run-allow-list.js';
 
 let dir: string;
@@ -36,16 +38,21 @@ afterEach(async () => {
 
 const scheduled = { trigger: 'scheduled' as const };
 
+/** The run's sources: these pins, and an agent still at Full unless told otherwise. */
+function src(atFull = true): RunAllowListSources {
+  return { pinsOf: () => pins, agentStillRunsCommands: async () => atFull };
+}
+
 describe('settleRunAllowList', () => {
   it('carries a list whose programs still match their pins', async () => {
     const task = createMockSchedule({ approvedAllow: [rule], runOnce: true, cron: '' });
-    await expect(settleRunAllowList(task, scheduled, () => pins)).resolves.toBe(task);
+    await expect(settleRunAllowList(task, scheduled, src())).resolves.toBe(task);
   });
 
   it('refuses the run when a pinned program changed', async () => {
     await fs.writeFile(program, '#!/bin/sh\necho changed\n');
     const task = createMockSchedule({ approvedAllow: [rule], runOnce: true, cron: '' });
-    await expect(settleRunAllowList(task, scheduled, () => pins)).rejects.toThrow(
+    await expect(settleRunAllowList(task, scheduled, src())).rejects.toThrow(
       PROGRAM_CHANGED_MESSAGE
     );
   });
@@ -56,21 +63,21 @@ describe('settleRunAllowList', () => {
     await fs.rm(program);
     await fs.symlink(other, program);
     const task = createMockSchedule({ approvedAllow: [rule], runOnce: true, cron: '' });
-    await expect(settleRunAllowList(task, scheduled, () => pins)).rejects.toThrow(
+    await expect(settleRunAllowList(task, scheduled, src())).rejects.toThrow(
       PROGRAM_CHANGED_MESSAGE
     );
   });
 
   it('does not check a rule a person approved, which has no pin', async () => {
     const task = createMockSchedule({ approvedAllow: ['Read(notes/today.md)'] });
-    await expect(settleRunAllowList(task, scheduled, () => pins)).resolves.toBe(task);
+    await expect(settleRunAllowList(task, scheduled, src())).resolves.toBe(task);
   });
 
   it.each(['manual', 'agent'] as const)(
     'runs a one-shot task’s %s run without its list',
     async (trigger) => {
       const task = createMockSchedule({ approvedAllow: [rule], runOnce: true, cron: '' });
-      await expect(settleRunAllowList(task, { trigger }, () => pins)).resolves.toMatchObject({
+      await expect(settleRunAllowList(task, { trigger }, src())).resolves.toMatchObject({
         approvedAllow: null,
       });
     }
@@ -78,20 +85,32 @@ describe('settleRunAllowList', () => {
 
   it('runs a one-shot task that was later given a cron without its list', async () => {
     const task = createMockSchedule({ approvedAllow: [rule], runOnce: true, cron: '*/5 * * * *' });
-    await expect(settleRunAllowList(task, scheduled, () => pins)).resolves.toMatchObject({
+    await expect(settleRunAllowList(task, scheduled, src())).resolves.toMatchObject({
       approvedAllow: null,
     });
   });
 
   it('refuses the run when the pins can’t be read', async () => {
     const task = createMockSchedule({ approvedAllow: [rule], runOnce: true, cron: '' });
-    await expect(settleRunAllowList(task, scheduled, () => parsePins('{not json'))).rejects.toThrow(
-      PINS_UNREADABLE_MESSAGE
-    );
+    await expect(
+      settleRunAllowList(task, scheduled, { ...src(), pinsOf: () => parsePins('{not json') })
+    ).rejects.toThrow(PINS_UNREADABLE_MESSAGE);
   });
 
   it('leaves a task with no list alone', async () => {
     const task = createMockSchedule();
-    await expect(settleRunAllowList(task, scheduled, () => pins)).resolves.toBe(task);
+    await expect(settleRunAllowList(task, scheduled, src())).resolves.toBe(task);
+  });
+
+  it('refuses the run when its agent no longer runs commands without asking', async () => {
+    const task = createMockSchedule({ approvedAllow: [rule], runOnce: true, cron: '' });
+    await expect(settleRunAllowList(task, scheduled, src(false))).rejects.toThrow(
+      LEVEL_DROPPED_MESSAGE
+    );
+  });
+
+  it('does not ask about the agent’s level for rules a person approved', async () => {
+    const task = createMockSchedule({ approvedAllow: ['Read(notes/today.md)'] });
+    await expect(settleRunAllowList(task, scheduled, src(false))).resolves.toBe(task);
   });
 });

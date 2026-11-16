@@ -335,6 +335,24 @@ export async function ceilingOf(
 }
 
 /**
+ * The level an agent's unattended chats run at now, on a task's runtime, for a
+ * caller outside this module: a task run re-checks it at fire time (DOR-4315).
+ *
+ * @param agentPath - The agent's home.
+ * @param runtime - The task's runtime.
+ * @param declared - The modes that runtime declares.
+ * @param sources - What the decision reads.
+ */
+export function agentLevelNow(
+  agentPath: string,
+  runtime: string | null | undefined,
+  declared: DeclaredModes,
+  sources: AgentModeSources
+): Promise<TurnPermissionLevel> {
+  return levelOfAgent(agentPath, runtime, declared, sources);
+}
+
+/**
  * The home of the agent a task belongs to, for a caller outside this module.
  *
  * @param call - The write.

@@ -1,6 +1,7 @@
 ---
 covers:
   - 'feat(tasks): an agent sets up a one-shot task with its own exact commands, and takes them back, with no card (DOR-4315)'
+  - "fix(tasks): a one-shot task's commands ride only while its agent is still at Full, and a fire that never ran gives its turn back (DOR-4315)"
 ---
 
 ### Added
@@ -9,4 +10,4 @@ covers:
 
 ### Security
 
-- Those commands must each be one exact line, with no wildcards or shell tricks, and no wider than what the agent itself may already do. DorkOS records each program when the list is set. If a program changes before the run, the run stops and nothing runs. Adding commands later still takes a person's yes. (DOR-4315)
+- Those commands must each be one exact line, with no wildcards or shell tricks, and no wider than what the agent itself may already do. DorkOS records each program when the list is set. If a program changes before the run, or the agent's own level drops below Full, the run stops and nothing runs. Adding commands later still takes a person's yes. (DOR-4315)

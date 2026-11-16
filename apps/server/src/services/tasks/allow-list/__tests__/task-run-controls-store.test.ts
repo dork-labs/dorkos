@@ -10,7 +10,7 @@ import { pulseSchedules, type Db } from '@dorkos/db';
 import { SKILL_FILENAME } from '@dorkos/skills/constants';
 import { TaskStore } from '../../task-store.js';
 import type { TaskFileSync } from '../../sync/task-file-sync.js';
-import { oneShotDue } from '../../store/task-run-controls.js';
+import { fireOneShot, oneShotDue } from '../../store/task-run-controls.js';
 
 const FILE_PATH = `/home/sample/.dork/agents/media/.dork/tasks/sample-backfill/${SKILL_FILENAME}`;
 const RUN = 'Bash(/home/sample/agents/media/bin/derive-sample --backfill)';
@@ -110,6 +110,27 @@ describe('a task’s run controls', () => {
     expect(oneShotDue(fresh, store.runControls)).toBe(true);
     expect(oneShotDue(fresh, store.runControls)).toBe(false);
     expect(oneShotDue(store.getTask(task.id)!, store.runControls)).toBe(false);
+  });
+
+  it('gives the claim back when a fire wrote no run, so it runs when armed again', async () => {
+    const task = created();
+    store.runControls.set(task.id, { runOnce: true });
+    expect(oneShotDue(store.getTask(task.id)!, store.runControls)).toBe(true);
+    // Parked or switched off between arming and firing: the dispatch writes no row.
+    await fireOneShot(store, task.id, async () => {});
+    expect(store.getTask(task.id)?.ranOnceAt ?? null).toBeNull();
+    expect(oneShotDue(store.getTask(task.id)!, store.runControls)).toBe(true);
+  });
+
+  it('keeps the claim when the fire wrote its run, skipped or not', async () => {
+    const task = created();
+    store.runControls.set(task.id, { runOnce: true });
+    store.createRun(task.id, 'manual'); // a trial before arming is not this fire's row
+    expect(oneShotDue(store.getTask(task.id)!, store.runControls)).toBe(true);
+    await fireOneShot(store, task.id, async () => {
+      store.createRun(task.id, 'scheduled');
+    });
+    expect(store.getTask(task.id)?.ranOnceAt).toEqual(expect.any(String));
   });
 
   it('reads no pins for a task that does not exist', () => {

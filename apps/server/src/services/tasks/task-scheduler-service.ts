@@ -46,8 +46,8 @@ import { V1_RELAY_RUNTIME } from './execution/relay-runtime.js';
 import { checkMisplacedMode } from './execution/misplaced-mode.js';
 import { guardRunPlacement, unregisteredAgentError } from './execution/run-place-guard.js';
 import { capRunIfFileChanged } from './agent-mode/file-cap/run-cap.js';
-import { settleRunAllowList } from './allow-list/run-allow-list.js';
-import { oneShotDue } from './store/task-run-controls.js';
+import { settleRunAllowList, allowListSources } from './allow-list/run-allow-list.js';
+import { armOneShot } from './store/task-run-controls.js';
 import { failRun, skipRun } from './lifecycle/fail-run.js';
 import { creatorMarked, withCreatorMarks } from './approvals/cross-agent.js';
 import { endRunSessions, noteRunSession } from './session/active-run-sessions.js';
@@ -579,10 +579,12 @@ export class TaskSchedulerService {
     if (!task.cron) {
       // A one-shot task runs once, as soon as it is armed, in the process that
       // may fire and claims it: the claim stops a second fire, here or after a
-      // restart. A run the dispatch then skips (a paused agent, the cap) was its
-      // run. Outside the arming caller's audit scope, as a timer fire is (DOR-4315).
-      if (this.config.mayFire && this.isLeader && oneShotDue(task, this.store.runControls))
-        outsideAuditScope(() => this.wakeSettle.run((at) => this.dispatch(task, at), task.name))();
+      // restart. A skipped run (a paused agent, the cap) was its run, on its row;
+      // a fire that wrote no row (parked, switched off) gives the claim back, so
+      // it runs when it is armed again. Outside the arming caller's audit scope,
+      // as a timer fire is (DOR-4315).
+      if (this.config.mayFire && this.isLeader)
+        armOneShot(this.store, this.wakeSettle, task, (at) => this.dispatch(task, at));
       logger.debug(`skipping cron registration for on-demand task "${task.name}"`);
       return false;
     }
@@ -1086,7 +1088,7 @@ export class TaskSchedulerService {
           // the mode its resolved runtime declares; a check that fails, fails the run (M4).
           task = await capRunIfFileChanged(task, run, this.store, this.meshCore, execution);
           // An agent-set allow list rides only on the programs it pinned (DOR-4315).
-          task = await settleRunAllowList(task, run, (id) => this.store.runControls.pinsOf(id));
+          task = await settleRunAllowList(task, run, allowListSources(this.store, this.meshCore));
         } catch (err) {
           failRun(this.store, run, err);
           return recordDispatchEnd(dispatchId, 'failed');

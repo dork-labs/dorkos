@@ -1539,6 +1539,17 @@ describe('tasks_* and an agent’s mode or approval', () => {
       expect(store.getTasks()).toEqual([]);
     });
 
+    it('refuses a list on a one-shot task for another agent, even from a Full chat', async () => {
+      // Refused before the list is read: a mode is set only on the caller's own task.
+      const refused = await backfill({ target: 'agent-b' });
+      expect(refused).toMatchObject({ isError: true, payload: { code: 'not_your_agent' } });
+      expect(store.getTasks()).toEqual([]);
+      // Without a mode in the call, the list itself is refused for another agent's task.
+      const listOnly = await backfill({ target: 'agent-b', permissionMode: undefined });
+      expect(listOnly.isError).toBe(true);
+      expect(store.getTasks().filter((t) => t.approvedAllow?.length)).toEqual([]);
+    });
+
     it('refuses a cron on a one-shot task, so its one run never becomes every run', async () => {
       const { payload } = await backfill();
       const id = (payload.schedule as { id: string }).id;
