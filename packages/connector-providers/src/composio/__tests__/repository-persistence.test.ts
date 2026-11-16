@@ -16,12 +16,16 @@ describe('Security repository persistence choices', () => {
       'GITEA_CREATE_BRANCH',
       'GITEA_MERGE_PULL_REQUEST',
       'GITHUB_CREATE_A_REFERENCE',
+      'GITHUB_CREATE_BRANCH',
       'GITHUB_MCP_CREATE_BRANCH',
       'GITHUB_MCP_MERGE_PULL_REQUEST',
       'GITHUB_MERGE_A_BRANCH',
       'GITHUB_MERGE_A_PULL_REQUEST',
+      'GITHUB_RENAME_A_BRANCH',
+      'GITHUB_SYNC_FORK_BRANCH_WITH_UPSTREAM',
       'GITLAB_CHERRY_PICK_COMMIT',
       'GITLAB_CREATE_REPOSITORY_BRANCH',
+      'GITLAB_CREATE_REPOSITORY_TAG',
       'GITLAB_MERGE_MERGE_REQUEST',
       'GITLAB_REBASE_MERGE_REQUEST',
       'GITLAB_REVERT_COMMIT',
@@ -44,6 +48,13 @@ describe('Security repository persistence choices', () => {
       }
     }
   );
+  it.each([
+    'GITHUB_UPDATE_A_PULL_REQUEST_BRANCH',
+    'GITHUB_MCP_UPDATE_PULL_REQUEST_BRANCH',
+    'GITHUB_CREATE_A_TAG_OBJECT',
+  ])('keeps reviewed ordinary repository action %s write', (slug) => {
+    expect(classifyComposioAction('github', slug, ['updateHint'])).toBe('write');
+  });
   it.each(['GOOGLEDOCS_MERGE_TABLE_CELLS', 'FUTUREAPP_MERGE_RECORDS'])(
     'does not turn %s into a repository action by name alone',
     (slug) => {

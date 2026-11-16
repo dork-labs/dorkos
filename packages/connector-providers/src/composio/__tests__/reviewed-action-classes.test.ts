@@ -10,6 +10,9 @@ const live = JSON.parse(
 const actions = Object.values(live).flat();
 // Each slug was reviewed against its description in the 2026-11-15 catalog.
 const explicit = [
+  'GITHUB_CREATE_BRANCH', // repository persistence
+  'GITHUB_RENAME_A_BRANCH', // repository persistence
+  'GITHUB_SYNC_FORK_BRANCH_WITH_UPSTREAM', // repository persistence
   'GITHUB_MERGE_A_BRANCH', // repository persistence
   'GITHUB_MERGE_A_PULL_REQUEST', // repository persistence
   'GITHUB_CREATE_A_REFERENCE', // repository persistence

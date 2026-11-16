@@ -39,10 +39,15 @@ async function setup(toolkit = 'github') {
       'GITLAB_SAVE_FILE',
       'GITEA_SAVE_FILE',
       'DROPBOX_SAVE_FILE',
+      'GITLAB_CREATE_COMMIT',
+      'GITLAB_CREATE_FILE',
+      'GITEA_CHANGE_REPOSITORY_FILES',
+      'GITEA_UPSERT_REPOSITORY_FILE',
     ].map((slug) => ({
       slug,
       classification: 'write' as const,
-    }))
+    })),
+    { slug: 'GITHUB_MERGE_A_PULL_REQUEST', classification: 'destructive' }
   );
   const list = vi.mocked(h.provider.listOperationSchemas).getMockImplementation()!;
   vi.spyOn(h.provider, 'listOperationSchemas').mockImplementation(async (request) => {
@@ -68,7 +73,10 @@ async function setup(toolkit = 'github') {
         operationRevisionIds: levelIds(snapshot, 'read-write'),
         level: 'read-write',
       },
-      { agentId: 'exact', operationRevisionIds: levelIds(snapshot, 'read-write') },
+      {
+        agentId: 'exact',
+        operationRevisionIds: snapshot.candidates.map((row) => row.operationRevisionId),
+      },
     ],
     everyAgent: { operationRevisionIds: levelIds(snapshot, 'read-write'), level: 'read-write' },
   });
@@ -77,7 +85,10 @@ async function setup(toolkit = 'github') {
   });
   return (agentId: string, slug: string, args: Record<string, unknown>) =>
     authorization.prepare({
-      capabilityId: 'connectors.execute_write',
+      capabilityId:
+        slug === 'GITHUB_MERGE_A_PULL_REQUEST'
+          ? 'connectors.execute_destructive'
+          : 'connectors.execute_write',
       principal: createServerPrincipal({
         kind: 'agent',
         owner: OWNER,
@@ -221,6 +232,8 @@ describe('more repository controls and ordinary percent filenames', () => {
     '.travis.yml',
     '.drone.yml',
     '.woodpecker.yml',
+    '.woodpecker.yaml',
+    '.appveyor.yml',
     '.woodpecker/',
     '.woodpecker/pipeline.yml',
     'appveyor.yml',
@@ -236,20 +249,25 @@ describe('more repository controls and ordinary percent filenames', () => {
       });
     }
   });
-  it.each(['/Reports/50% off.pdf', '/Reports/50%25 off.pdf', '%broken/path', 'src/CODEOWNERS'])(
-    'allows an ordinary Dropbox path %s through a level',
-    async (path) => {
-      const run = await setup('dropbox');
-      await expect(run('writer', 'DROPBOX_SAVE_FILE', { path })).resolves.toMatchObject({
-        agentId: 'writer',
-      });
-    }
-  );
   it.each([
-    '%2Egithub%2Fworkflows%2Fx.yml',
+    '/Reports/50% off.pdf',
+    '/Reports/50%25 off.pdf',
+    '%broken/path',
+    'src/CODEOWNERS',
+    '/Q3 50% plan/Jenkinsfile',
     '50%%2F.github/workflows/x.yml',
     '50%%252F.github/workflows/x.yml',
     '%FF%2F.github/workflows/x.yml',
+  ])('allows an ordinary Dropbox path %s through a level', async (path) => {
+    const run = await setup('dropbox');
+    await expect(run('writer', 'DROPBOX_SAVE_FILE', { path })).resolves.toMatchObject({
+      agentId: 'writer',
+    });
+  });
+  it.each([
+    '%2Egithub%2Fworkflows%2Fx.yml',
+    '%2Egithub%2Fworkflows%2F50% off.yml',
+    '%252Egithub%252Fworkflows%252F50% off.yml',
     '.github/workflows/50% off.yml',
   ])('keeps encoded or mixed percent control path %s explicit', async (path) => {
     const run = await setup('dropbox');
@@ -275,5 +293,62 @@ describe('more repository controls and ordinary percent filenames', () => {
     await expect(run('writer', slug, args)).rejects.toMatchObject({
       payload: { code: 'CONNECTOR_GRANT_REQUIRED' },
     });
+  });
+});
+
+// Keys confirmed against each action's real Composio input schema.
+const historyChanges = [
+  ['github', MULTIPLE, { force: true }],
+  ['github', MULTIPLE, { base_branch: 'main' }],
+  ['gitlab', 'GITLAB_CREATE_COMMIT', { force: true }],
+  ['gitlab', 'GITLAB_CREATE_COMMIT', { start_branch: 'main' }],
+  ['gitlab', 'GITLAB_CREATE_FILE', { start_branch: 'main' }],
+  ['gitea', 'GITEA_CHANGE_REPOSITORY_FILES', { force_push: true }],
+  ['gitea', 'GITEA_CHANGE_REPOSITORY_FILES', { new_branch: 'topic' }],
+  ['gitea', 'GITEA_UPSERT_REPOSITORY_FILE', { force_push: true }],
+  ['gitea', 'GITEA_UPSERT_REPOSITORY_FILE', { new_branch: 'topic' }],
+] as const;
+
+describe('repository history and branch arguments need exact grants', () => {
+  it.each(historyChanges)(
+    'refuses a level for %s action %s with %j',
+    async (toolkit, slug, args) => {
+      const run = await setup(toolkit);
+      await expect(run('writer', slug, args)).rejects.toMatchObject({
+        payload: {
+          code: 'CONNECTOR_GRANT_REQUIRED',
+          error:
+            'Changing repository control files needs this action given to this agent on its own.',
+        },
+      });
+    }
+  );
+  it.each(historyChanges)(
+    'allows an exact grant for %s action %s with %j',
+    async (toolkit, slug, args) => {
+      const run = await setup(toolkit);
+      await expect(run('exact', slug, args)).resolves.toMatchObject({ agentId: 'exact' });
+    }
+  );
+  it('checks nested history arguments inside objects and arrays', async () => {
+    const run = await setup();
+    await expect(run('writer', MULTIPLE, { options: [{ force: true }] })).rejects.toMatchObject({
+      payload: { code: 'CONNECTOR_GRANT_REQUIRED' },
+    });
+  });
+  it.each([
+    { force: false, force_push: false },
+    { new_branch: '', start_branch: '', base_branch: '' },
+    { force: 'true', force_push: 'true', new_branch: null, start_branch: false },
+    { content: 'force: true', branch: 'main', forceful: true },
+  ])('allows ordinary file changes with %j', async (args) => {
+    const run = await setup();
+    await expect(run('writer', MULTIPLE, args)).resolves.toMatchObject({ agentId: 'writer' });
+  });
+  it('allows an exact grant of GITHUB_MERGE_A_PULL_REQUEST', async () => {
+    const run = await setup();
+    await expect(
+      run('exact', 'GITHUB_MERGE_A_PULL_REQUEST', { pull_number: 7 })
+    ).resolves.toMatchObject({ agentId: 'exact' });
   });
 });

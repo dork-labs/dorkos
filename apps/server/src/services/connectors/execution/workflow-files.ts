@@ -16,8 +16,10 @@ const CONTROL_ROOTS = new Set([
   '.travis.yml',
   '.drone.yml',
   '.woodpecker.yml',
+  '.woodpecker.yaml',
   '.woodpecker',
   'appveyor.yml',
+  '.appveyor.yml',
   '.semaphore',
   'cloudbuild.yaml',
   'cloudbuild.yml',
@@ -26,7 +28,6 @@ const CONTROL_ROOTS = new Set([
 /** Keep each decoded spelling without treating a literal percent as a refusal. */
 function controlPath(value: string): boolean {
   let decoded = value;
-  let malformed = false;
   const candidates = new Set<string>();
   for (;;) {
     candidates.add(decoded);
@@ -34,7 +35,6 @@ function controlPath(value: string): boolean {
     try {
       next = decodeURIComponent(decoded);
     } catch {
-      malformed = true;
       next = decoded.replace(/%([0-9a-f]{2})/gi, (_, hex: string) =>
         String.fromCharCode(Number.parseInt(hex, 16))
       );
@@ -42,25 +42,18 @@ function controlPath(value: string): boolean {
     if (next === decoded) break;
     decoded = next;
   }
-  return [...candidates].some((candidate) => controlSpelling(candidate, malformed));
+  return [...candidates].some((candidate) => controlSpelling(candidate));
 }
 
-/** Normalize path segments; malformed prefixes can coexist with encoded separators. */
-function controlSpelling(value: string, malformed: boolean): boolean {
+/** Normalize each spelling from its repository root, including dot segments. */
+function controlSpelling(value: string): boolean {
   const parts: string[] = [];
   for (const raw of value.replace(/\\/g, '/').toLowerCase().split('/')) {
     const part = raw.trim();
     if (!part || part === '.') continue;
     if (part === '..') parts.pop();
     else parts.push(part);
-    // A malformed prefix cannot hide a control path after its decoded separator.
-    if (
-      parts.some(
-        (entry, index) =>
-          (index === 0 || malformed) &&
-          (CONTROL_ROOTS.has(entry) || (entry === 'docs' && parts[index + 1] === 'codeowners'))
-      )
-    )
+    if (CONTROL_ROOTS.has(parts[0] ?? '') || (parts[0] === 'docs' && parts[1] === 'codeowners'))
       return true;
   }
   return false;
@@ -84,4 +77,21 @@ function containsControlPath(value: unknown, isPath = false): boolean {
  */
 export function changesRepositoryControlFiles(args: Record<string, unknown>): boolean {
   return containsControlPath(args);
+}
+
+/** Whether nested arguments request history replacement or a new branch. */
+export function changesRepositoryHistory(args: Record<string, unknown>): boolean {
+  function changes(value: unknown): boolean {
+    if (Array.isArray(value)) return value.some(changes);
+    if (value === null || typeof value !== 'object') return false;
+    return Object.entries(value).some(
+      ([key, entry]) =>
+        ((key === 'force' || key === 'force_push') && entry === true) ||
+        ((key === 'new_branch' || key === 'start_branch' || key === 'base_branch') &&
+          typeof entry === 'string' &&
+          entry.length > 0) ||
+        changes(entry)
+    );
+  }
+  return changes(args);
 }

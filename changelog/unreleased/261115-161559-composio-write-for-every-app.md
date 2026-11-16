@@ -15,4 +15,4 @@ covers:
 - “Read and write” now works across connected Composio apps. Agents can create and edit there when the app offers those actions. Deleting, sharing, spending money and changing who has access still need you to pick those actions one by one. (DOR-4194, DOR-4270)
 
 - If you gave an agent Read and write on an app that had no write actions, it now shows Read. Pick Read and write again to let it change things. Gmail, Google Calendar and actions picked one by one keep their choices. (DOR-4461)
-- Changes in money apps remain one-by-one picks. Writing repository workflow, CI, access-control or release files also needs a one-by-one pick. Merging and creating branches or references also need a one-by-one pick.
+- Changes in money apps remain one-by-one picks. Writing repository workflow, CI, access-control or release files also needs a one-by-one pick. Merging and creating branches or references need a one-by-one pick.

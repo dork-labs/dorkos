@@ -5,12 +5,24 @@
       "tags": ["git", "openWorldHint", "important", "createHint"]
     },
     {
+      "slug": "GITHUB_CREATE_BRANCH",
+      "tags": ["important", "createHint", "openWorldHint", "Branches"]
+    },
+    {
       "slug": "GITHUB_MERGE_A_BRANCH",
       "tags": ["openWorldHint", "repos", "updateHint"]
     },
     {
       "slug": "GITHUB_MERGE_A_PULL_REQUEST",
       "tags": ["openWorldHint", "pulls", "updateHint"]
+    },
+    {
+      "slug": "GITHUB_RENAME_A_BRANCH",
+      "tags": ["openWorldHint", "repos", "updateHint"]
+    },
+    {
+      "slug": "GITHUB_SYNC_FORK_BRANCH_WITH_UPSTREAM",
+      "tags": ["openWorldHint", "repos", "updateHint"]
     }
   ],
   "github_mcp": [
@@ -31,6 +43,10 @@
     {
       "slug": "GITLAB_CREATE_REPOSITORY_BRANCH",
       "tags": ["important", "createHint"]
+    },
+    {
+      "slug": "GITLAB_CREATE_REPOSITORY_TAG",
+      "tags": ["Repository Tags", "createHint"]
     },
     {
       "slug": "GITLAB_MERGE_MERGE_REQUEST",
