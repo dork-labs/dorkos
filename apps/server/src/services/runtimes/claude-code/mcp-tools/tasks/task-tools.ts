@@ -46,6 +46,7 @@ import {
   STATUS_DESCRIPTION,
   TASKS_CREATE_DESCRIPTION,
   TASKS_UPDATE_DESCRIPTION,
+  TIMEZONE_DESCRIPTION,
 } from './task-tool-copy.js';
 import {
   clampSchedulePermissionMode,
@@ -87,6 +88,7 @@ import { createScheduledTask } from '../../../../tasks/lifecycle/create-task.js'
 import { agentSchedulesArmWithoutAsking } from '../../../../tasks/approvals/agent-trust.js';
 import { auditScheduleUpdate, scheduleEdit } from '../../../../tasks/approvals/schedule-owner.js';
 import { applyTaskFileUpdate } from '../../../../tasks/lifecycle/update-task-file.js';
+import { taskCreateLifecycleDeps } from './task-create-deps.js';
 import { changesApprovedWork } from '../../../../tasks/task-file-update.js';
 import { refuseStickyAccountChange } from '../../../../tasks/session/sticky-session.js';
 import { AGENT_TIMING_CHANGE_REASON } from '../../../../tasks/timing/effective-timing.js';
@@ -235,12 +237,7 @@ export function createCreateScheduleHandler(
     const provenance = resolveProvenance?.() ?? {};
 
     const outcome = await createScheduledTask(
-      {
-        store: deps.taskStore!,
-        registrar: deps.resolveTaskRegistrar?.() ?? null,
-        dorkHome: deps.dorkHome,
-        ...(deps.meshCore && { meshCore: deps.meshCore }),
-      },
+      taskCreateLifecycleDeps(deps),
       {
         input: {
           name: args.name,
@@ -725,7 +722,7 @@ export function getTasksTools(
         reason: z.string().describe(REASON_DESCRIPTION),
         target: z.string().min(1).optional().describe(TARGET_DESCRIPTION),
         description: z.string().optional().describe('Description of what this scheduled task does'),
-        timezone: z.string().optional().describe('IANA timezone (e.g., "America/New_York")'),
+        timezone: z.string().optional().describe(TIMEZONE_DESCRIPTION),
         maxRuntime: DURATION_ARG.describe('Maximum run time (e.g., "5m", "1h")'),
         sticky: z.boolean().optional().describe(STICKY_DESCRIPTION),
         runtime: z.string().min(1).optional().describe(RUNTIME_DESCRIPTION),

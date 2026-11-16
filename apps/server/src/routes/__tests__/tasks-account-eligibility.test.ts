@@ -100,6 +100,7 @@ beforeEach(async () => {
         store,
         scheduler,
         registrar: new TaskRegistrar({ store, scheduler }),
+        defaultTimezone: () => 'UTC',
         dorkHome,
         activity: { emit } as unknown as ActivityService,
       }),

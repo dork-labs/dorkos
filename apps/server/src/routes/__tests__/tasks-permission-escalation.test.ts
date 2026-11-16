@@ -133,6 +133,7 @@ describe('an agent cannot escalate a schedule to bypassPermissions', () => {
           store,
           scheduler,
           registrar: new TaskRegistrar({ store, scheduler }),
+          defaultTimezone: () => 'UTC',
           dorkHome,
         }),
       })

@@ -132,6 +132,77 @@ function makeTasksQueryClient(tasksEnabled: boolean, tasks: Task[]): QueryClient
   return qc;
 }
 
+/** The next 08:30 UTC from now, so the demo's next run is always ahead. */
+function nextUtcHalfPastEight(): string {
+  const next = new Date();
+  next.setUTCHours(8, 30, 0, 0);
+  if (next.getTime() <= Date.now()) next.setUTCDate(next.getUTCDate() + 1);
+  return next.toISOString();
+}
+
+/** The next weekday 9:00 AM in Chicago (15:00 UTC in November), from now. */
+function nextWeekdayNineChicago(): string {
+  const next = new Date();
+  next.setUTCHours(15, 0, 0, 0);
+  do {
+    if (next.getTime() <= Date.now()) next.setUTCDate(next.getUTCDate() + 1);
+    while (next.getUTCDay() === 0 || next.getUTCDay() === 6) next.setUTCDate(next.getUTCDate() + 1);
+  } while (next.getTime() <= Date.now());
+  return next.toISOString();
+}
+
+/** A schedule set in UTC that lands overnight for a reader in Chicago (DOR-4120). */
+const UTC_OVERNIGHT_SCHEDULE: Task = {
+  ...RUNNING_SCHEDULE,
+  id: 'sched-inbox-sweep',
+  name: 'Morning inbox sweep',
+  cron: '30 8 * * *',
+  timezone: 'UTC',
+  defaultCron: '30 8 * * *',
+  defaultTimezone: 'UTC',
+  nextRun: nextUtcHalfPastEight(),
+};
+
+/** A schedule already in the reader's zone: one line, their time, no offer. */
+const LOCAL_WEEKDAY_SCHEDULE: Task = {
+  ...RUNNING_SCHEDULE,
+  id: 'sched-pr-labels',
+  name: 'Label new pull requests',
+  cron: '0 9 * * 1-5',
+  timezone: 'America/Chicago',
+  defaultCron: '0 9 * * 1-5',
+  defaultTimezone: 'America/Chicago',
+  nextRun: nextWeekdayNineChicago(),
+};
+
+/** Rows read in the viewer's own time, with the wrong-zone offer (DOR-4120). */
+function TasksYourTimeShowcase() {
+  const client = useMemo(
+    () => makeTasksQueryClient(true, [UTC_OVERNIGHT_SCHEDULE, LOCAL_WEEKDAY_SCHEDULE]),
+    []
+  );
+  return (
+    <PlaygroundSection
+      title="Schedules in your time"
+      description="Rows read in the viewer's own time zone, 12-hour, with no seconds. A schedule set in another zone that runs overnight for the viewer offers to keep its clock time in theirs."
+    >
+      <ShowcaseLabel>
+        Set in UTC, overnight for a reader in Chicago; and one already local
+      </ShowcaseLabel>
+      <ShowcaseDemo>
+        <QueryClientProvider client={client}>
+          <div
+            className="bg-background max-w-2xl rounded-lg border"
+            data-shot="schedules-your-time"
+          >
+            <TasksPanel />
+          </div>
+        </QueryClientProvider>
+      </ShowcaseDemo>
+    </PlaygroundSection>
+  );
+}
+
 /** `TasksPanel` in its disabled, empty, and populated states, each its own isolated client. */
 function TasksPanelShowcase() {
   const disabledClient = useMemo(() => makeTasksQueryClient(false, []), []);
@@ -255,6 +326,7 @@ export function TasksShowcases() {
       </PlaygroundSection>
 
       <TasksPanelShowcase />
+      <TasksYourTimeShowcase />
     </>
   );
 }

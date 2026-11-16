@@ -164,6 +164,7 @@ describe('operator-only task fields on the REST routes', () => {
             store,
             scheduler,
             registrar: new TaskRegistrar({ store, scheduler }),
+            defaultTimezone: () => 'UTC',
             dorkHome: DORK_HOME,
           }),
         },

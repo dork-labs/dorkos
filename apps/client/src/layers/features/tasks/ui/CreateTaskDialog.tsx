@@ -10,6 +10,7 @@ import {
 import type { TaskTemplate } from '@/layers/entities/tasks';
 import { useMeshAgentPaths } from '@/layers/entities/mesh';
 import { useConfig } from '@/layers/entities/config';
+import { browserTimeZone } from '@/layers/entities/user-profile';
 import { useCapabilitiesForRuntime, useRuntimeCapabilities } from '@/layers/entities/runtime';
 import { operatorStopForRuntime, resolveConfiguredStopMode } from '@/layers/shared/lib';
 import {
@@ -49,6 +50,8 @@ interface Props {
   initialPreset?: TaskTemplate | null;
   /** Pre-select this agent when creating a new schedule. */
   initialAgentId?: string;
+  /** Browser-zone resolver, injectable for deterministic form tests. */
+  viewerTimezone?: () => string | null;
 }
 
 // ── CreateTaskDialog ──────────────────────────────────────────────────────
@@ -60,6 +63,7 @@ export function CreateTaskDialog({
   editTask,
   initialPreset,
   initialAgentId,
+  viewerTimezone = browserTimeZone,
 }: Props) {
   const deleteTask = useDeleteTask();
   const updateTask = useUpdateTask();
@@ -350,6 +354,7 @@ export function CreateTaskDialog({
             onDeleteClick={() => setDeleteConfirmOpen(true)}
             isPending={isPending}
             onMakeCopy={handleMakeCopy}
+            defaultTimezone={viewerTimezone}
             leading={
               isCopy && editTask ? (
                 <div className="flex items-start gap-2 rounded-md border px-3 py-2">

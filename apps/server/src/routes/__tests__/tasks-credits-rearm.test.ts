@@ -113,6 +113,7 @@ describe('PATCH /api/tasks/:id — a live schedule on DorkOS credits (DOR-2678)'
             store,
             scheduler,
             registrar: new TaskRegistrar({ store, scheduler }),
+            defaultTimezone: () => 'UTC',
             dorkHome,
           }),
         },

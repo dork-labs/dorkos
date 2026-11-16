@@ -30,10 +30,6 @@ import { Hono } from 'hono';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import { UpdateTaskRequestSchema, ListTaskRunsQuerySchema } from '@dorkos/shared/schemas';
 import type { CreateTaskInput, PermissionMode, Task } from '@dorkos/shared/schemas';
-import type { MeshCore } from '@dorkos/mesh';
-import type { TaskStore } from '../services/tasks/task-store.js';
-import type { TaskSchedulerService } from '../services/tasks/task-scheduler-service.js';
-import type { TaskRegistrar } from '../services/tasks/task-registrar.js';
 import { describeScheduleProblem } from '../services/tasks/cron-validation.js';
 import { createScheduledTask } from '../services/tasks/lifecycle/create-task.js';
 import { wifiRunNowRefusal, wifiScheduleRefusal } from './task-wifi-guard.js';
@@ -43,7 +39,6 @@ import {
 } from '../services/tasks/lifecycle/delete-task.js';
 import { applyTaskFileUpdate } from '../services/tasks/lifecycle/update-task-file.js';
 import { conflictingTimingRequest } from '../services/tasks/timing/effective-timing.js';
-import type { ActivityService } from '../services/activity/activity-service.js';
 import { readActivityActor } from '../services/activity/activity-actor.js';
 import { loadTemplates } from '../services/tasks/task-templates.js';
 import { validationFailureBody } from '../lib/route-utils.js';
@@ -102,6 +97,9 @@ import { marksOf } from '../services/core/turn-power/turn-levels.js';
 import { mountTaskModeUndo } from './task-mode-undo.js';
 import { marksHold } from '../services/core/turn-power/turn-marks.js';
 import * as taskApprovalActor from './task-approval-actor.js';
+import type { TasksRouterDeps } from './tasks-deps.js';
+
+export type { TasksRouterDeps } from './tasks-deps.js';
 
 /**
  * What a schedule on DorkOS credits says to a caller that is not the owner.
@@ -113,25 +111,6 @@ const TASK_ON_CREDITS = {
   personOnly: 'Only you can run a scheduled task on your DorkOS credits, from the DorkOS app.',
   action: 'run a scheduled task on DorkOS credits',
 };
-
-/** What the Tasks routes read, handed over by `startup/tasks.ts` when Tasks started. */
-export interface TasksRouterDeps {
-  /** TaskStore for data persistence. */
-  store: TaskStore;
-  /** TaskSchedulerService for dispatch and run-time queries. */
-  scheduler: TaskSchedulerService;
-  /**
-   * The one seam that turns a row into a live cron job, shared with the file
-   * watcher and the reconciler so all four writers agree.
-   */
-  registrar: TaskRegistrar;
-  /** Resolved data directory path. */
-  dorkHome: string;
-  /** Resolves agent project paths; absent when Mesh is disabled. */
-  meshCore?: MeshCore;
-  /** Where task writes are recorded; absent in a test that does not watch it. */
-  activity?: ActivityService;
-}
 
 /**
  * Create the Tasks routes with schedule and run management endpoints.
@@ -212,7 +191,13 @@ export function createTasksRoutes(deps: TasksRouterDeps): Hono<ApiEnv> {
     // credited to no agent, as on update (`scheduleEditorOf`).
     const agentIdentity = caller.agentIdentity?.inactive ? undefined : caller.agentIdentity;
     const outcome = await createScheduledTask(
-      { store, registrar, dorkHome, ...(meshCore && { meshCore }) },
+      {
+        store,
+        registrar,
+        dorkHome,
+        defaultTimezone: deps.defaultTimezone,
+        ...(meshCore && { meshCore }),
+      },
       {
         input: body as CreateTaskInput,
         trusted,
