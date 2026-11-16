@@ -28,7 +28,7 @@
 # every worktree, clone and agent on the machine shares, and the root `build`,
 # `typecheck`, `test` and `verify` scripts take a slot too. Since DOR-3274
 # Phase 2 a bare `turbo build`, `typecheck`, `test` or `lint` does as well: each
-# of those tasks depends on the root task `//#heavy-slot`, which holds a slot
+# of those tasks depends on `@dorkos/heavy-slot#slot`, which holds a slot
 # for the turbo process's life (`--hold`). That directory is used only if it is
 # a real directory this user owns (DOR-3509).
 #

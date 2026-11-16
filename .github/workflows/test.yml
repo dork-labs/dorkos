@@ -1002,11 +1002,15 @@ jobs:
       # the reason above: turbo hashes each package's own resolved
       # dependencies, so only the packages whose dependencies changed miss.
       #
-      # WHAT STILL MISSES EVERYTHING: every `build` depends on `//#heavy-slot`,
-      # and turbo always hashes the root package.json and turbo.json into that
-      # root task (an `inputs` negation does not remove them). So a change to
-      # either file since the last canary changes every build hash, and the
-      # restored entry replays nothing until the next canary.
+      # THE ROOT package.json IS NOT IN ANY BUILD HASH. Every `build` depends
+      # on the heavy-run cap's task, and until DOR-4536 that was the root task
+      # `//#heavy-slot`: turbo always hashes the root package.json and
+      # turbo.json into a root task (an `inputs` negation does not remove
+      # them), so any edit to either since the last canary changed every build
+      # hash and the restored entry replayed nothing. The cap is now
+      # `@dorkos/heavy-slot#slot` in packages/heavy-slot, whose hash covers
+      # only its own files. Keep it out of the root (pinned by
+      # scripts/__tests__/heavy-turbo-slot.test.ts).
       #
       # BUILD ENTRIES ONLY. The saved cache never holds a `test` entry: the
       # trim before the save keeps only this run's `build` and
