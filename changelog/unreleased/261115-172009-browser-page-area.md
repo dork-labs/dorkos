@@ -2,6 +2,9 @@
 covers:
   - 'feat(client): the Agent browser says what is going on where the page would be (DOR-4433)'
   - 'fix(client): the browser choice is out of reach and dimmed while the browser opens (DOR-4433)'
+  - 'feat(client): the canvas browser and the Agent browser share one browser chrome (DOR-4427)'
+  - "fix(client): address rules search pasted errors and keep the canvas's local files (DOR-4419)"
+  - 'feat(client): the browser address bar reads what you type the way a browser does (DOR-4419)'
 ---
 
 ### Changed
