@@ -29,8 +29,15 @@ const NOTES_UPDATE: PendingExtensionApproval = {
     run: [{ name: 'git', found: true }],
     agents: true,
     hasPage: true,
+    apps: [{ id: 'sample-planner', name: 'Planner', access: 'reads', opens: true }],
   },
-  added: { net: ['sync.notes.example.com'], run: [], agents: true, runtime: false },
+  added: {
+    net: ['sync.notes.example.com'],
+    run: [],
+    agents: true,
+    runtime: false,
+    apps: ['sample-planner'],
+  },
   agentTools: [],
   agentSkills: [],
   digest: null,
@@ -56,7 +63,7 @@ export function ExtensionUpdateShowcases() {
       title="Extension update card"
       description="An app update waits for a yes. Each power it adds is listed as new; an update that only changed files lists none."
     >
-      <ShowcaseLabel>An update that adds a host and agent access</ShowcaseLabel>
+      <ShowcaseLabel>An update that adds a host, agent access and opening Planner</ShowcaseLabel>
       <ShowcaseDemo>
         <div
           data-testid="extension-update-adds"

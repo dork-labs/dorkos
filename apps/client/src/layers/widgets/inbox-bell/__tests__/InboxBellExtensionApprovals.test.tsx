@@ -371,6 +371,36 @@ describe('InboxBell — an extension waiting to be turned on', () => {
     expect([...fresh].map((li) => li.textContent)).toEqual([line]);
   });
 
+  // Purpose: an update that starts opening another app's pages (`navigate`)
+  // marks that app New on the row (DOR-4504, QA's case).
+  it('marks an app whose pages an update starts opening as New', async () => {
+    waiting = [
+      {
+        ...FLOW,
+        version: '1.1.0',
+        updatedFrom: '1.0.0',
+        changedFiles: ['extension.json'],
+        permissions: {
+          ...FLOW.permissions!,
+          apps: [{ id: 'planner', name: 'Planner', access: null, opens: true }],
+        },
+        added: { net: [], run: [], agents: false, runtime: false, apps: ['planner'] },
+      },
+    ];
+    renderBell();
+    const user = userEvent.setup();
+    await user.click(await screen.findByTestId('inbox-bell'));
+
+    const row = (await screen.findByText(PAUSED_TITLE)).closest(
+      '[data-slot="inbox-decision-row"]'
+    ) as HTMLElement;
+    const app = row.querySelector('li[data-app="planner"]') as HTMLElement;
+    expect(app).toHaveAttribute('data-new');
+    expect(app).toHaveTextContent('Planner');
+    expect(app).toHaveTextContent('can only open its pages');
+    expect(within(app).getByText('New')).toBeInTheDocument();
+  });
+
   it('marks nothing new for an update that adds no power', async () => {
     waiting = [{ ...FLOW, version: '1.1.0', updatedFrom: '1.0.0', changedFiles: ['index.ts'] }];
     renderBell();
