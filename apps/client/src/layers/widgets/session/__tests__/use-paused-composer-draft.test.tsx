@@ -96,6 +96,30 @@ describe('a paused message in the composer', () => {
     }
   );
 
+  it('never restores a person row another window queued', () => {
+    const { result } = setup('', undefined, [{ ...message, enqueuedBy: 'web-other-window' }]);
+    expect(result.current.input).toBe('');
+    expect(result.current.restored).toBe(false);
+  });
+
+  it('never restores a row another chat sent, even under a person window id', () => {
+    const { result } = setup('', undefined, [
+      {
+        ...message,
+        fromChats: [
+          {
+            id: 'chat-message-1',
+            kind: 'message',
+            from: { chatId: 'chat-demo', agentName: 'Demo agent' },
+            text: 'Keep these words',
+          },
+        ],
+      },
+    ]);
+    expect(result.current.input).toBe('');
+    expect(result.current.restored).toBe(false);
+  });
+
   it('never restores a row the server cannot safely return to the composer', () => {
     const { result } = setup('', undefined, [{ ...message, canRestoreToComposer: false }]);
     expect(result.current.input).toBe('');

@@ -291,6 +291,33 @@ describe('pausing an agent holds its queued messages (DOR-4327)', () => {
     }
   );
 
+  it('runs a person’s row a previous process left queued, with no pause holding it', async () => {
+    inner.withScenarios([quick, quick]);
+    // Queued behind a busy turn, then the server restarted: the row is on
+    // disk and nothing in this process carries it. No pause ever held it.
+    const leftover = queue.enqueue({
+      sessionId,
+      content: 'My words from before the restart',
+      clientId: 'web-person-window',
+      disposition: 'queue',
+      context: null,
+    });
+    await dispatchMessage({
+      sessionId,
+      clientId: 'heartbeat',
+      content: 'A background check',
+      projector: getOrCreateProjector(sessionId, BETA.home),
+      runtime: runtimeRegistry.get(inner.type),
+      cwd: BETA.home,
+      unattended: true,
+    });
+    await vi.waitFor(() => expect(ran()).toHaveLength(2), { timeout: 2000 });
+    await vi.waitFor(() => expect(listQueuedMessages(sessionId)).toEqual([]), { timeout: 2000 });
+
+    expect([...ran()].sort()).toEqual(['A background check', 'My words from before the restart']);
+    expect(isQueuedMessageArmed(leftover.id)).toBe(false);
+  });
+
   it('holds it when the pause lands while its launch is under way', async () => {
     await pauses.pause(BETA.id, PERSON);
     // The launch's own check runs a beat before the pause is in force; the

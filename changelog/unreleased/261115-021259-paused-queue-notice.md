@@ -5,6 +5,7 @@ covers:
   - 'fix(chat): guard resumed drafts across delivery modes (DOR-4348)'
   - 'fix(chat): harden paused draft ownership and delivery (DOR-4348)'
   - 'fix(chat): guard paused sends and held draft recovery (DOR-4348)'
+  - "fix(chat): a person's queued message still runs after a restart, unless a pause holds it (DOR-4348)"
 ---
 
 ### Fixed

@@ -20,10 +20,10 @@ import {
   PrivateSessionMessageRefusalError,
 } from '../private-messages/acceptance.js';
 import { isChatClientId } from '../chat-messages/chat-client-id.js';
-import { isPersonWindowClientId } from '../person-window-client-id.js';
 import { launching, pending } from './state.js';
 import { parkDispatch, unwatchedSettle } from './park.js';
 import { schedulePump } from './pump.js';
+import { awaitsPersonSend } from './pause-hold.js';
 import type { DispatchPlan } from './types.js';
 
 /** Inputs for {@link adoptQueuedMessages}. */
@@ -108,8 +108,10 @@ export function adoptQueuedMessages(opts: AdoptQueuedMessagesOpts): number {
   let swept = 0;
   for (const row of rows) {
     if (pending.has(row.id) || launching.has(row.id)) continue;
-    // An unarmed window's row waits for that person's explicit Send.
-    if (isPersonWindowClientId(row.enqueuedBy)) continue;
+    // A person's row a pause held waits in their composer for their Send, so
+    // no other dispatch may press it for them after a resume. Any other person
+    // row (queued behind a busy turn, then a restart) is adopted and runs.
+    if (awaitsPersonSend(row.id)) continue;
     if (opts.onlyFromChats && !isChatClientId(row.enqueuedBy)) continue;
     // Protected rows have their own adoption path because their visible queue
     // text is only a placeholder. Generic recovery must never send it or bypass
