@@ -353,6 +353,7 @@ describe('approving a proposed schedule can carry the operator’s trust stop', 
     expect(person.body.find((value: { id: string }) => value.id === task.id).runPlace).toEqual({
       kind: 'folder',
       path: process.cwd(),
+      of: 'server',
     });
     const agent = await request(fixtureServer)
       .get('/api/tasks')
