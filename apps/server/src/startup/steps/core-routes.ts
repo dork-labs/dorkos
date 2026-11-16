@@ -54,6 +54,8 @@ import {
   notifyAgentCreated,
 } from '../../services/core/agent-created-hook.js';
 import { joinTeamRoom } from '../../services/rooms/ensure-team-room.js';
+import { fenceRoomOrigins } from '../../services/rooms/agent-facing-room-name.js';
+import { getBridgeStore } from '../../services/rooms/index.js';
 import { runAgentCreatedProjection } from '../../services/harness/project-on-agent-created.js';
 import { rebindShapeSchedulesForAgent } from '../../services/shapes/rebind-schedules.js';
 import { listInstalledShapeManifests } from '../../services/shapes/shape-services.js';
@@ -70,6 +72,7 @@ import type { WireTeamRoomAndRelayAdaptersResult } from './team-room-relay-adapt
 import type { WireSessionServicesResult } from './session-services.js';
 import type { ClaimDataDirectoryResult } from './data-directory.js';
 import type { ServerRefs } from '../server-refs.js';
+import { appScreenRunsIn } from '../../routes/app-screen-runs.js';
 import { personSessionRequired } from '../../services/core/auth/gate-policy.js';
 import {
   watchSessionRelaySwitch,
@@ -296,7 +299,9 @@ export function mountCoreRoutes(refs: ServerRefs, built: MountCoreRoutesInput) {
     origins.resolveTaskOrigins = (sessionIds: string[]) =>
       refs.taskStore!.resolveTaskOrigins(sessionIds);
   }
-  origins.resolveRoomOrigins = (sessionIds: string[]) => roomStore.resolveRoomOrigins(sessionIds);
+  // A bridged group nobody renamed is labelled as every agent surface names it (DOR-4453).
+  origins.resolveRoomOrigins = (sessionIds: string[]) =>
+    fenceRoomOrigins(roomStore.resolveRoomOrigins(sessionIds), roomStore, getBridgeStore());
   // Who started a chat (spec `flow-multiproject` §7.7): the third overlay, a
   // batched read of `session_started_by`, and the extension names its first
   // line says.
@@ -422,6 +427,10 @@ export function mountCoreRoutes(refs: ServerRefs, built: MountCoreRoutesInput) {
     meshCore: refs.meshCore,
     roomSessionBindings: roomStore.sessionLedger,
     roomSessionPlace: refs.roomSessionPlacePort,
+    // An app's "opened by" mark on a canvas names only an app whose screens
+    // run (DOR-3293), answered by the extension manager's own records.
+    appScreenRuns: (id) =>
+      refs.extensionManager ? appScreenRunsIn(refs.extensionManager)(id) : false,
   };
 
   // Deep health (`GET /api/health/deep`) — the checks `dorkos doctor --deep`

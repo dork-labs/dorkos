@@ -133,6 +133,27 @@ function liveBrowser(
 }
 
 describe('relevant panel views', () => {
+  // Purpose: an app's openCanvas from its own page opens a tab beside it
+  // (designer, DOR-3293), and that page's panel holds only what the app opened.
+  it('shows on an app’s page only the documents that app opened', () => {
+    const markdown = (id: string, openedBy?: string): CanvasDocument => ({
+      ...document(id),
+      content: { type: 'markdown', content: id, title: id },
+      sourceLabel: id,
+      ...(openedBy ? { openedBy: { extensionId: openedBy } } : {}),
+    });
+    useAppStore.setState({
+      openDocuments: [
+        markdown('chat-notes'),
+        markdown('summary', 'ledger'),
+        markdown('desk', 'desk'),
+      ],
+    });
+    const { result } = renderHook(() => usePanelViews(contributions, '/x/ledger'));
+    const canvasTabs = result.current.allViews.filter((view) => view.category === 'canvas');
+    expect(canvasTabs.map((view) => view.title)).toEqual(['summary']);
+  });
+
   it('keeps browser controls optional until opened, even without contextual defaults', () => {
     const browser = contributions.find((view) => view.id === 'local-browser')!;
     const { result } = renderHook(() =>

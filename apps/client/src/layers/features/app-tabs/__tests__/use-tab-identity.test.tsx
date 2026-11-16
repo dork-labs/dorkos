@@ -376,6 +376,29 @@ describe('useTabIdentity', () => {
     expect(result.current).toMatchObject({ primary: 'Add-on', status: undefined });
   });
 
+  // Purpose: an app that registers no page (built for an older DorkOS) is
+  // named in its tab and window title as its page header names it (DOR-3293).
+  it('names an app page with nothing registered by DorkOS’s name for the app', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        Response.json([
+          {
+            id: 'field-notes',
+            manifest: { id: 'field-notes', name: 'Field notes', version: '1.0.0' },
+            status: 'active',
+          },
+        ])
+      )
+    );
+    try {
+      const { result } = renderHook(() => useTabIdentity('/x/field-notes'), { wrapper });
+      await waitFor(() => expect(result.current.primary).toBe('Field notes'));
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   describe('a room (DOR-3593)', () => {
     /** One channel the viewer is in, with this much unread. */
     function channelRoom(unreadCount: number, mentionCount?: number) {

@@ -1,12 +1,17 @@
 import { useMemo, useRef, useState, useEffect, useLayoutEffect } from 'react';
-import type { BackgroundTaskPart, BackgroundTaskStatus } from '@dorkos/shared/types';
+import type {
+  BackgroundTaskPart,
+  BackgroundTaskStatus,
+  BackgroundTaskType,
+} from '@dorkos/shared/types';
+import type { RunningTask } from '@dorkos/shared/session-stream';
 import { isAmbientTask, useRenderSlot } from '@/layers/shared/lib';
 import type { ChatMessage } from './chat-types';
 
 /** A background task with a stable color assignment, ready for display. */
 export interface VisibleBackgroundTask {
   taskId: string;
-  taskType: 'agent' | 'bash';
+  taskType: BackgroundTaskType;
   status: BackgroundTaskStatus;
   color: string;
   startedAt: number;
@@ -55,11 +60,80 @@ const BASH_TIMER_INTERVAL_MS = 1000;
 /** How long (ms) a just-completed task stays visible (celebration window). */
 const CELEBRATION_DURATION_MS = 1500;
 
+/**
+ * The session-level running set, as the session's stream projection holds it
+ * (spec `warm-process-lifecycle` D8). It outlives the turn that started the
+ * work; the turn's message parts do not.
+ */
+export interface SessionRunningTasks {
+  /**
+   * `status.runningSubagents`: every running task an indicator may show, named.
+   * Undefined when the server sent no list, which leaves the parts in charge.
+   */
+  tasks: readonly RunningTask[] | undefined;
+  /** Housekeeping tasks still running, which the list leaves out. */
+  ambientIds: readonly string[];
+}
+
+/**
+ * Fold the session-level running set into the parts' view of the tasks.
+ *
+ * The set decides membership: a part still saying `running` for a task the
+ * session no longer runs is stale and is dropped, and a task the session runs
+ * that no part names any more — the turn that started it was reloaded away —
+ * is drawn from the set's own facts (FB-18). A task whose kind never reached
+ * this client is `other`: it shows its label and can be stopped.
+ */
+function withSessionTasks(
+  parts: Map<string, BackgroundTaskPart>,
+  session: SessionRunningTasks | undefined
+): Map<string, BackgroundTaskPart> {
+  if (!session?.tasks) return parts;
+  const live = new Set([...session.tasks.map((task) => task.taskId), ...session.ambientIds]);
+  const known = new Map(session.tasks.map((task) => [task.taskId, task]));
+  const merged = new Map<string, BackgroundTaskPart>();
+  for (const [taskId, part] of parts) {
+    if (part.status === 'running' && !live.has(taskId)) continue;
+    // The list knows what the turn may not: a shell's command rides only the
+    // list, and a turn that never saw the start guessed a helper with no clock.
+    const task = known.get(taskId);
+    merged.set(
+      taskId,
+      task
+        ? {
+            ...part,
+            ...(task.taskType !== undefined ? { taskType: task.taskType } : {}),
+            ...(part.command === undefined && task.command !== undefined
+              ? { command: task.command }
+              : {}),
+            ...(part.startedAt === 0 && task.startedAt !== undefined
+              ? { startedAt: task.startedAt }
+              : {}),
+          }
+        : part
+    );
+  }
+  for (const task of session.tasks) {
+    if (merged.has(task.taskId)) continue;
+    merged.set(task.taskId, {
+      type: 'background_task',
+      taskId: task.taskId,
+      taskType: task.taskType ?? 'other',
+      status: 'running',
+      startedAt: task.startedAt ?? 0,
+      ...(task.description !== undefined ? { description: task.description } : {}),
+      ...(task.command !== undefined ? { command: task.command } : {}),
+    });
+  }
+  return merged;
+}
+
 /** Stable empty set so the initial celebration state keeps one identity across renders. */
 const NO_CELEBRATIONS: ReadonlySet<string> = new Set();
 
 /**
- * Derive visible background tasks from the message stream.
+ * Derive visible background tasks from the message stream and the session's
+ * running set.
  *
  * Agent tasks appear immediately when running. Bash tasks are suppressed until
  * they have been running for at least 5 seconds, preventing UI churn from
@@ -77,9 +151,17 @@ const NO_CELEBRATIONS: ReadonlySet<string> = new Set();
  * split the list with `partitionAmbientTasks` (`shared/lib`) and show only
  * `shown`.
  *
+ * Which tasks are running comes from the session-level set when there is one
+ * (see {@link withSessionTasks}), so a helper keeps its place through the end of
+ * its turn and the reload after it.
+ *
  * @param messages - The current chat message list to scan for BackgroundTaskPart entries.
+ * @param session - The session's running set, when its stream projection has one.
  */
-export function useBackgroundTasks(messages: ChatMessage[]): VisibleBackgroundTask[] {
+export function useBackgroundTasks(
+  messages: ChatMessage[],
+  session?: SessionRunningTasks
+): VisibleBackgroundTask[] {
   const prevStatusRef = useRef<Map<string, string>>(new Map());
   // Each task's colour, pinned the first time it is actually DRAWN. A render
   // slot rather than a ref because the list below is built during render and has
@@ -104,8 +186,8 @@ export function useBackgroundTasks(messages: ChatMessage[]): VisibleBackgroundTa
         }
       }
     }
-    return map;
-  }, [messages]);
+    return withSessionTasks(map, session);
+  }, [messages, session]);
 
   // Timer to re-evaluate bash tasks that are still below the 5s threshold.
   // Runs only while pending bash tasks exist; cleaned up on unmount or when none remain.

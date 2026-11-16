@@ -45,7 +45,7 @@ export interface DispatcherStore {
    * protection is enforced inside the store action: a re-activated document that
    * is being edited keeps its content (ADR-0292).
    */
-  openCanvasDocument: (content: UiCanvasContent) => void;
+  openCanvasDocument: (content: UiCanvasContent, openedBy?: { extensionId: string }) => void;
   /** Take one document off the canvas by id (the `close_canvas` documentId arm). */
   closeCanvasDocument: (id: string) => void;
   /**

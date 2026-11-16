@@ -4817,7 +4817,8 @@
         "type": "string",
         "enum": [
           "agent",
-          "bash"
+          "bash",
+          "other"
         ]
       },
       "BackgroundTaskStatus": {
@@ -6575,6 +6576,15 @@
               },
               "ambient": {
                 "type": "boolean"
+              },
+              "taskType": {
+                "$ref": "#/components/schemas/BackgroundTaskType"
+              },
+              "command": {
+                "type": "string"
+              },
+              "startedAt": {
+                "type": "number"
               }
             },
             "required": [
@@ -9438,6 +9448,19 @@
           "threadRootEntryId": {
             "type": "string",
             "minLength": 1
+          },
+          "openedBy": {
+            "type": "object",
+            "properties": {
+              "extensionId": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "required": [
+              "extensionId"
+            ],
+            "additionalProperties": false
           }
         },
         "required": [
@@ -9716,6 +9739,12 @@
             "type": "integer",
             "default": 0
           },
+          "runningSubagents": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RunningTask"
+            }
+          },
           "lifecycle": {
             "$ref": "#/components/schemas/SessionLifecycle"
           },
@@ -9773,6 +9802,29 @@
           "outputTokens",
           "cacheReadTokens",
           "cacheCreationTokens"
+        ]
+      },
+      "RunningTask": {
+        "type": "object",
+        "properties": {
+          "taskId": {
+            "type": "string"
+          },
+          "taskType": {
+            "$ref": "#/components/schemas/BackgroundTaskType"
+          },
+          "description": {
+            "type": "string"
+          },
+          "command": {
+            "type": "string"
+          },
+          "startedAt": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "taskId"
         ]
       },
       "SessionActivity": {
@@ -11033,6 +11085,43 @@
           "permissionMode": {
             "$ref": "#/components/schemas/PermissionMode"
           },
+          "requestedPermissionMode": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PermissionMode"
+              },
+              {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            ]
+          },
+          "requestedAllow": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 300
+            },
+            "maxItems": 20
+          },
+          "approvedAllow": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 300
+            },
+            "maxItems": 20
+          },
           "folderRules": {
             "type": "object",
             "properties": {
@@ -11665,6 +11754,18 @@
           "permissionMode": {
             "$ref": "#/components/schemas/PermissionMode"
           },
+          "requestedPermissionMode": {
+            "$ref": "#/components/schemas/PermissionMode"
+          },
+          "requestedAllow": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 300
+            },
+            "maxItems": 20
+          },
           "reason": {
             "type": "string"
           }
@@ -11764,6 +11865,33 @@
           },
           "permissionMode": {
             "$ref": "#/components/schemas/PermissionMode"
+          },
+          "requestedPermissionMode": {
+            "$ref": "#/components/schemas/PermissionMode"
+          },
+          "requestedAllow": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 300
+            },
+            "maxItems": 20
+          },
+          "approvedAllow": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 300
+            },
+            "maxItems": 20
+          },
+          "acceptLooserThanRequested": {
+            "type": "boolean",
+            "enum": [
+              true
+            ]
           },
           "status": {
             "$ref": "#/components/schemas/SettableTaskStatus"
@@ -14427,6 +14555,58 @@
           },
           "hasPage": {
             "type": "boolean"
+          },
+          "writes": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "data",
+                "canvas",
+                "inbox",
+                "work",
+                "files",
+                "rooms",
+                "forward"
+              ]
+            }
+          },
+          "apps": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "access": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "enum": [
+                    "reads",
+                    "changes",
+                    "both",
+                    null
+                  ]
+                },
+                "opens": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "id",
+                "name",
+                "access"
+              ]
+            }
           }
         },
         "default": null,
@@ -14461,6 +14641,12 @@
           },
           "runtime": {
             "type": "boolean"
+          },
+          "apps": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           }
         },
         "default": null,
@@ -14571,6 +14757,31 @@
               },
               "agents": {
                 "type": "boolean"
+              },
+              "apps": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 20
+              },
+              "appAccess": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "string",
+                  "enum": [
+                    "reads",
+                    "changes",
+                    "both"
+                  ]
+                }
+              },
+              "appOpens": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 20
               }
             },
             "required": [
@@ -21184,6 +21395,31 @@
                         },
                         "agents": {
                           "type": "boolean"
+                        },
+                        "apps": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          },
+                          "maxItems": 20
+                        },
+                        "appAccess": {
+                          "type": "object",
+                          "additionalProperties": {
+                            "type": "string",
+                            "enum": [
+                              "reads",
+                              "changes",
+                              "both"
+                            ]
+                          }
+                        },
+                        "appOpens": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          },
+                          "maxItems": 20
                         }
                       },
                       "required": [
@@ -21334,6 +21570,31 @@
                     },
                     "agents": {
                       "type": "boolean"
+                    },
+                    "apps": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      },
+                      "maxItems": 20
+                    },
+                    "appAccess": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "string",
+                        "enum": [
+                          "reads",
+                          "changes",
+                          "both"
+                        ]
+                      }
+                    },
+                    "appOpens": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      },
+                      "maxItems": 20
                     }
                   },
                   "required": [
@@ -42057,6 +42318,15 @@
                         },
                         "ambient": {
                           "type": "boolean"
+                        },
+                        "taskType": {
+                          "$ref": "#/components/schemas/BackgroundTaskType"
+                        },
+                        "command": {
+                          "type": "string"
+                        },
+                        "startedAt": {
+                          "type": "number"
                         }
                       },
                       "required": [
@@ -99848,7 +100118,7 @@
           "Audit"
         ],
         "summary": "See every running chat",
-        "description": "Every chat running right now, per agent, spin-offs, room turns and scheduled runs included: its title, a ready markdown link, whether it is working or waiting on an answer, and who started it. Every registered agent is listed, zero included, so you can see who is free. `total` is the live count for this server. A person’s own chat is counted in `privateCount` and never named. Use the link, never the id, when you tell a person about a chat. `capacity` reports each capped backend’s live records and available starts, including reclaimable idle records. When every record is busy, its message says to wait for a chat to finish; restarting is not needed.",
+        "description": "Every chat running right now, per agent, spin-offs, room turns and scheduled runs included: its title, a ready markdown link, whether it is working or waiting on an answer, and who started it. A chat whose turn ended while its helpers, shells or Monitors still run is listed as `background`; `backgroundWork` is true while such work runs, and absent when nothing says so. Every registered agent is listed, zero included, so you can see who is free. `total` is the live count for this server. A person’s own chat is counted in `privateCount` and never named. Use the link, never the id, when you tell a person about a chat. `capacity` reports each capped backend’s live records and available starts, including reclaimable idle records. When every record is busy, its message says to wait for a chat to finish; restarting is not needed.",
         "responses": {
           "200": {
             "description": "See every running chat result",
@@ -99945,7 +100215,14 @@
                                   "type": "string",
                                   "enum": [
                                     "running",
-                                    "needs-you"
+                                    "needs-you",
+                                    "background"
+                                  ]
+                                },
+                                "backgroundWork": {
+                                  "type": "boolean",
+                                  "enum": [
+                                    true
                                   ]
                                 },
                                 "spinOff": {
@@ -100026,7 +100303,14 @@
                                 "type": "string",
                                 "enum": [
                                   "running",
-                                  "needs-you"
+                                  "needs-you",
+                                  "background"
+                                ]
+                              },
+                              "backgroundWork": {
+                                "type": "boolean",
+                                "enum": [
+                                  true
                                 ]
                               },
                               "spinOff": {

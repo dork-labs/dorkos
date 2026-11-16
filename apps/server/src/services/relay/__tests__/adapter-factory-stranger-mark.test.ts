@@ -37,8 +37,11 @@ function strangerEnvelope(): RelayEnvelope {
   };
 }
 
-/** Build the adapter through the factory with the flag set, deliver, and return the turn options. */
-async function sentOptions(enabled: boolean): Promise<Record<string, unknown>> {
+/**
+ * Build the adapter through the factory, deliver, and return the turn options. Leave `enabled` out
+ * to build with this boot's parsed flag, untouched.
+ */
+async function sentOptions(enabled?: boolean): Promise<Record<string, unknown>> {
   const sendMessage = vi.fn().mockImplementation(() =>
     (async function* () {
       yield { type: 'done', data: {} } as StreamEvent;
@@ -61,7 +64,9 @@ async function sentOptions(enabled: boolean): Promise<Record<string, unknown>> {
   const target = env as unknown as Record<string, unknown>;
   const key = 'DORKOS_MARK_STRANGER_TURNS';
   const previous = Object.getOwnPropertyDescriptor(target, key);
-  Object.defineProperty(target, key, { configurable: true, enumerable: true, value: enabled });
+  if (enabled !== undefined) {
+    Object.defineProperty(target, key, { configurable: true, enumerable: true, value: enabled });
+  }
   let adapter: RelayAdapter | null;
   try {
     adapter = await createAdapter(
@@ -90,6 +95,15 @@ async function sentOptions(enabled: boolean): Promise<Record<string, unknown>> {
 }
 
 describe('the factory-built adapter and the stranger mark (DOR-3858)', () => {
+  // DOR-4453: with nothing set, a bound chat stranger's turn is marked.
+  it('marks a bound chat stranger’s turn by default', async () => {
+    const opts = await sentOptions();
+
+    expect(env.DORKOS_MARK_STRANGER_TURNS).toBe(true);
+    expect(opts.carriedMarks).toEqual({ outsider: true });
+    expect(opts.permissionMode).toBe('bypassPermissions');
+  });
+
   it('marks a bound chat stranger’s turn when the flag is on, keeping its level', async () => {
     const opts = await sentOptions(true);
 

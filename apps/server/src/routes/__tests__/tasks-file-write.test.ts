@@ -146,6 +146,7 @@ describe('PATCH /api/tasks/:id and the file on disk', () => {
           store,
           scheduler,
           registrar: new TaskRegistrar({ store, scheduler }),
+          defaultTimezone: () => 'UTC',
           dorkHome,
         }),
       })
@@ -473,6 +474,7 @@ describe('PATCH /api/tasks/:id and a schedule-block file', () => {
           store,
           scheduler,
           registrar: new TaskRegistrar({ store, scheduler }),
+          defaultTimezone: () => 'UTC',
           dorkHome,
         }),
       })
@@ -700,7 +702,13 @@ describe('PATCH /api/tasks/:id and a live schedule’s approval', () => {
     fixtureTarget.mount(
       honoGroupListener({
         path: '/api/tasks',
-        routes: createTasksRoutes({ store, scheduler, registrar, dorkHome }),
+        routes: createTasksRoutes({
+          store,
+          scheduler,
+          registrar,
+          defaultTimezone: () => 'UTC',
+          dorkHome,
+        }),
       })
     );
   });

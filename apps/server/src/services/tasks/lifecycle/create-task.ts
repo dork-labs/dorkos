@@ -25,7 +25,6 @@ import fs from 'node:fs/promises';
 import { z } from 'zod';
 import { CreateTaskRequestSchema } from '@dorkos/shared/schemas';
 import type { CreateTaskInput, Task, TaskApprover } from '@dorkos/shared/schemas';
-import type { MeshCore } from '@dorkos/mesh';
 import { writeSkillFile } from '@dorkos/skills/writer';
 import { parseSkillFile } from '@dorkos/skills/parser';
 import { SkillFrontmatterSchema } from '@dorkos/skills/schema';
@@ -49,8 +48,6 @@ import {
   type PackageOwnershipKind,
 } from '../task-file-update.js';
 import { broadcastTasksChanged } from '../task-sse-events.js';
-import type { TaskStore } from '../task-store.js';
-import type { TaskRegistrar } from '../task-registrar.js';
 import { raiseStanding } from '../../notifications/standing-events.js';
 import { resolveScheduleParkPayload } from '../../notifications/emitters/schedule-park.js';
 import {
@@ -68,9 +65,12 @@ import {
 import { scheduleAccountRefusal, scheduleRunFolder } from './schedule-account-eligibility.js';
 import { scheduleCreditsModelRefusal } from './schedule-credits-model.js';
 import { agentScheduleTarget } from './agent-schedule-target.js';
+import { withDefaultTaskTimezone } from './default-timezone.js';
+import type { TaskLifecycleDeps } from './create-task-deps.js';
 import { marksHold, NO_MARKS, type TurnMarks } from '../../core/turn-power/turn-marks.js';
 import { auditCrossAgentTask, capModeAtAgentLevel } from '../approvals/cross-agent.js';
 import { scheduledTaskCreateApproval } from '../approvals/task-approval-receipt.js';
+import { taskPermissionRulesRefusal } from '../task-permission-rules.js';
 
 /**
  * An ungranted agent create may preserve only these known modes. In particular,
@@ -90,22 +90,6 @@ export function clampCreatedScheduleMode(
     default:
       return 'acceptEdits';
   }
-}
-
-/** The collaborators a create needs. Every one of them is required to get a task right. */
-export interface TaskLifecycleDeps {
-  /** Where the derived row is written. */
-  store: TaskStore;
-  /**
-   * The one seam that turns a row into a live cron job — shared with the watcher
-   * and the reconciler. Null before the scheduler exists, and during boot, which
-   * is not a reason to fail a create.
-   */
-  registrar: TaskRegistrar | null;
-  /** The resolved data directory, for the `global` skills root. */
-  dorkHome: string;
-  /** Resolves an agent id to its project path. Absent when Mesh is disabled. */
-  meshCore?: MeshCore;
 }
 
 /** Who proposed a task, stamped onto the row when the task parks. */
@@ -342,7 +326,14 @@ export async function createScheduledTask(
       details: z.flattenError(parsed.error),
     };
   }
-  const data = parsed.data;
+  const data = withDefaultTaskTimezone(parsed.data, deps.defaultTimezone);
+  // Rules the task's runs could not honour are refused up front (#3794).
+  const rules = await taskPermissionRulesRefusal({
+    runtime: data.runtime,
+    agentPath: data.target === 'global' ? null : deps.meshCore?.getProjectPath(data.target),
+    rules: data.requestedAllow ?? [],
+  });
+  if (rules) return { ok: false, status: 400, error: rules.error, code: rules.code };
   const { trusted } = options;
   // An untrusted caller parks unless it is one of our agents on a Trusted
   // install (ADR 261006-225605). Read once, so the park and the reply agree.
@@ -617,6 +608,10 @@ export async function createScheduledTask(
       ...(data.sticky !== undefined && { sticky: data.sticky }),
       maxRuntime: data.maxRuntime ? parseDuration(data.maxRuntime) : null,
       permissionMode: effectivePermissionMode,
+      ...(data.requestedPermissionMode !== undefined && {
+        requestedPermissionMode: data.requestedPermissionMode,
+      }),
+      ...(data.requestedAllow !== undefined && { requestedAllow: data.requestedAllow }),
       ...(data.runtime !== undefined && { runtime: data.runtime }),
       ...(data.model !== undefined && { model: data.model }),
       ...(data.effort !== undefined && { effort: data.effort }),
@@ -654,6 +649,10 @@ export async function createScheduledTask(
       ...(options.proposal?.agentPath !== undefined && {
         proposedByAgentPath: options.proposal.agentPath,
       }),
+      ...(data.requestedPermissionMode !== undefined && {
+        requestedPermissionMode: data.requestedPermissionMode,
+      }),
+      ...(data.requestedAllow !== undefined && { requestedAllow: data.requestedAllow }),
     });
     // Its maker is its first editor, so no agent in its chain approves it (DOR-3703).
     deps.store.approvals.recordAgentEdit(schedule.id, {

@@ -1,7 +1,7 @@
 import { Switch } from '@/layers/shared/ui';
 import { cn } from '@/layers/shared/lib';
 import type { TaskTemplate } from '@/layers/entities/tasks';
-import { formatCron } from './format-cron';
+import { formatCron } from '../lib/format-cron';
 import { useSpotlight } from './use-spotlight';
 
 interface TaskTemplateCardProps {

@@ -3,7 +3,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, render } from '@testing-library/react';
-import { useRef } from 'react';
+import { useRef, type MutableRefObject } from 'react';
 import { toast } from 'sonner';
 import {
   Dialog,
@@ -20,7 +20,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '@/layers/shared/ui';
-import { useNativeBrowserSurface } from '../use-native-browser-surface';
+import { useNativeBrowserSurface, type NativeStillControls } from '../use-native-browser-surface';
 
 // DOR-3312: the shared-browser surface used to measure itself on every animation
 // frame for as long as it was open, and re-scan the page for overlays on every
@@ -32,12 +32,20 @@ const FRAME_MS = 16;
 function Surface({
   onUnavailable,
   connectionId = 'conn-1',
+  stillControls,
 }: {
   onUnavailable: () => void;
   connectionId?: string;
+  stillControls?: MutableRefObject<NativeStillControls | null>;
 }) {
   const ref = useRef<HTMLDivElement | null>(null);
-  const still = useNativeBrowserSurface(ref, connectionId, true, onUnavailable);
+  const still = useNativeBrowserSurface(
+    ref,
+    connectionId,
+    true,
+    onUnavailable,
+    stillControls ? keep(stillControls) : undefined
+  );
   return (
     <div style={{ overflow: 'hidden' }}>
       <div ref={ref} data-testid="surface">
@@ -52,6 +60,19 @@ function Surface({
       </div>
     </div>
   );
+}
+
+/** Stable per ref, so the surface does not restart on every render. */
+const keepers = new WeakMap<object, (controls: NativeStillControls | null) => void>();
+function keep(target: MutableRefObject<NativeStillControls | null>) {
+  let keeper = keepers.get(target);
+  if (!keeper) {
+    keeper = (controls) => {
+      target.current = controls;
+    };
+    keepers.set(target, keeper);
+  }
+  return keeper;
 }
 
 class StubResizeObserver {
@@ -316,14 +337,16 @@ describe('useNativeBrowserSurface', () => {
       dialog,
       tooltip,
       connectionId,
+      stillControls,
     }: {
       dialog: boolean;
       tooltip: boolean;
       connectionId?: string;
+      stillControls?: MutableRefObject<NativeStillControls | null>;
     }) {
       return (
         <TooltipProvider>
-          <Surface onUnavailable={noop} connectionId={connectionId} />
+          <Surface onUnavailable={noop} connectionId={connectionId} stillControls={stillControls} />
           <Tooltip open={tooltip}>
             <TooltipTrigger>Help</TooltipTrigger>
             <TooltipContent>More about this</TooltipContent>
@@ -566,6 +589,138 @@ describe('useNativeBrowserSurface', () => {
         await settle();
 
         expect(captureStill).toHaveBeenCalledTimes(1);
+      });
+
+      // DOR-4427: the chrome's tooltips take their still first, so the page never blinks.
+      describe('a still taken ahead of a tooltip', () => {
+        const controls = { current: null } as MutableRefObject<NativeStillControls | null>;
+        beforeEach(() => {
+          controls.current = null;
+          tooltipRect = { x: 100, y: 100, width: 80, height: 24 };
+        });
+
+        it('draws the still under the visible page, then hides the page onto it at once', async () => {
+          const order: string[] = [];
+          setBounds.mockImplementation((bounds: { visible: boolean }) => {
+            order.push(`${bounds.visible ? 'show' : 'hide'}${still() ? ' over still' : ''}`);
+            return Promise.resolve();
+          });
+          const view = render(
+            <WithLayers dialog={false} tooltip={false} stillControls={controls} />
+          );
+          await settle();
+
+          let ready: boolean | null = null;
+          await act(async () => {
+            void controls.current!.prepare().then((answer) => (ready = answer));
+            await vi.advanceTimersByTimeAsync(FRAME_MS * 4);
+          });
+          await settle();
+          expect(ready).toBe(true);
+          expect(still()).not.toBeNull();
+          // Preparing never moves the page: it is still showing over its own still.
+          expect(order).toEqual(['show']);
+
+          view.rerender(<WithLayers dialog={false} tooltip stillControls={controls} />);
+          await settle();
+          // One capture only, and the page steps aside straight onto the still.
+          expect(captureStill).toHaveBeenCalledTimes(1);
+          expect(order).toEqual(['show', 'hide over still']);
+        });
+
+        it('answers no, and never hides the page, when there is no still', async () => {
+          captureStill.mockResolvedValue(null);
+          render(<WithLayers dialog={false} tooltip={false} stillControls={controls} />);
+          await settle();
+          setBounds.mockClear();
+
+          let ready: boolean | null = null;
+          await act(async () => {
+            void controls.current!.prepare().then((answer) => (ready = answer));
+            await vi.advanceTimersByTimeAsync(FRAME_MS * 4);
+          });
+          expect(ready).toBe(false);
+          expect(still()).toBeNull();
+          expect(setBounds).not.toHaveBeenCalledWith(expect.objectContaining({ visible: false }));
+        });
+
+        it('answers no in time when the still is slow', async () => {
+          captureStill.mockReturnValue(new Promise<Uint8Array>(() => {}));
+          render(<WithLayers dialog={false} tooltip={false} stillControls={controls} />);
+          await settle();
+
+          let ready: boolean | null = null;
+          await act(async () => {
+            void controls.current!.prepare().then((answer) => (ready = answer));
+            await vi.advanceTimersByTimeAsync(200);
+          });
+          expect(ready).toBe(false);
+        });
+
+        it('answers yes at once while the page already sits behind a still', async () => {
+          // Moving along the row: the last tooltip's still is in place, the page is hidden.
+          const view = render(
+            <WithLayers dialog={false} tooltip={false} stillControls={controls} />
+          );
+          await settle();
+          view.rerender(<WithLayers dialog={false} tooltip stillControls={controls} />);
+          await settle();
+          await settle();
+          expect(setBounds).toHaveBeenLastCalledWith(expect.objectContaining({ visible: false }));
+
+          let ready: boolean | null = null;
+          await act(async () => {
+            void controls.current!.prepare().then((answer) => (ready = answer));
+            await vi.advanceTimersByTimeAsync(FRAME_MS);
+          });
+          expect(ready).toBe(true);
+          expect(captureStill).toHaveBeenCalledTimes(1);
+        });
+
+        it("never strands a cover's own still: a dialog still hides the page", async () => {
+          let answer!: (bytes: Uint8Array) => void;
+          captureStill.mockReturnValueOnce(new Promise<Uint8Array>((done) => (answer = done)));
+          const view = render(
+            <WithLayers dialog={false} tooltip={false} stillControls={controls} />
+          );
+          await settle();
+          view.rerender(<WithLayers dialog tooltip={false} stillControls={controls} />);
+          await act(async () => {
+            await Promise.resolve();
+            await vi.advanceTimersByTimeAsync(FRAME_MS);
+          });
+
+          // A tooltip asks while the dialog's still is being taken: it gets a hint instead.
+          let ready: boolean | null = null;
+          await act(async () => {
+            void controls.current!.prepare().then((value) => (ready = value));
+            controls.current!.release();
+            answer(new Uint8Array([1]));
+            await vi.advanceTimersByTimeAsync(FRAME_MS * 4);
+          });
+          await settle();
+          expect(ready).toBe(false);
+          expect(still()).not.toBeNull();
+          expect(setBounds).toHaveBeenLastCalledWith(expect.objectContaining({ visible: false }));
+        });
+
+        it('drops a prepared still no tooltip came to use, leaving the page alone', async () => {
+          render(<WithLayers dialog={false} tooltip={false} stillControls={controls} />);
+          await settle();
+          await act(async () => {
+            void controls.current!.prepare();
+            await vi.advanceTimersByTimeAsync(FRAME_MS * 4);
+          });
+          expect(still()).not.toBeNull();
+          setBounds.mockClear();
+
+          await act(async () => {
+            controls.current!.release();
+            await vi.advanceTimersByTimeAsync(FRAME_MS * 4);
+          });
+          expect(still()).toBeNull();
+          expect(setBounds).not.toHaveBeenCalledWith(expect.objectContaining({ visible: false }));
+        });
       });
 
       it('drops the still when the page closes', async () => {

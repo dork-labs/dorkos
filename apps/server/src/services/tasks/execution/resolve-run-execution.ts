@@ -68,6 +68,9 @@ import {
   resolveUnattendedSessionDefaults,
 } from '../../session/resolution/resolve-session-defaults.js';
 import { createTaggedLogger } from '../../../lib/logger.js';
+import { resolveRuntimeType, type RunExecutionRuntimes } from './run-runtime.js';
+
+export type { RunExecutionRuntimes } from './run-runtime.js';
 
 const logger = createTaggedLogger('Tasks');
 
@@ -81,21 +84,6 @@ const logger = createTaggedLogger('Tasks');
  * it is not this.
  */
 const SKILL_DIALECT_RUNTIME = 'claude-code';
-
-/**
- * What this resolver needs from the runtime registry — no more, so a test can
- * hand it three functions instead of a registry with a database behind it.
- *
- * `runtimeRegistry` satisfies it structurally.
- */
-export interface RunExecutionRuntimes {
-  /** Whether a runtime type is registered and can take a run. */
-  has(type: string): boolean;
-  /** The runtime a caller that named none gets. */
-  getDefaultType(): string;
-  /** Every registered runtime's capability profile, keyed by type. */
-  getAllCapabilities(): Record<string, RuntimeCapabilities>;
-}
 
 /** What one scheduled run resolved to execute on. */
 export interface RunExecution {
@@ -165,37 +153,6 @@ export class TaskRuntimeUnavailableError extends Error {
     );
     this.name = 'TaskRuntimeUnavailableError';
   }
-}
-
-/**
- * Which runtime this task's next run executes on, before asking whether it is
- * registered.
- *
- * Split out so the answer and the availability check are separate facts: the
- * check needs to know WHICH tier answered, because a task that named its own
- * runtime and a machine with nothing registered are different problems with
- * different fixes.
- *
- * The tier is reported accurately, `agent` included — it used to report the
- * agent tier as `default`, which was simply wrong about where the answer came
- * from (DOR-1615 review).
- *
- * @param task - The task about to fire.
- * @param runtimes - The registry.
- * @param agentRuntime - The runtime the task's agent manifest names, if any.
- */
-function resolveRuntimeType(
-  task: Task,
-  runtimes: RunExecutionRuntimes,
-  agentRuntime: string | undefined
-): { type: string; tier: 'task' | 'agent' | 'default' } {
-  if (task.runtime) return { type: task.runtime, tier: 'task' };
-  // The agent's runtime only when this build can actually run it. An agent
-  // pinned to a runtime with no adapter here — the packaged desktop app bundles
-  // only the claude-code SDK — falls through to the default rather than failing
-  // a run nobody asked it to own. The same tolerance `resolveForAgent` applies.
-  if (agentRuntime && runtimes.has(agentRuntime)) return { type: agentRuntime, tier: 'agent' };
-  return { type: runtimes.getDefaultType(), tier: 'default' };
 }
 
 /**

@@ -18,6 +18,9 @@ import type { TaskStore } from '../task-store.js';
 import { STALE_SKIP_REASON } from '../timing/occurrence.js';
 import { failureReasonOf } from '../history/schedule-health.js';
 
+/** The app-copy cap a room line keeps to (`writing-app-copy`). */
+const MAX_LINE_WORDS = 15;
+
 /** Only the quiet room writer, a current store and the person's timezone are needed. */
 export interface ScheduleNoticeDeps {
   store: TaskStore;
@@ -118,8 +121,13 @@ export class ScheduleNotices {
       outcome: run.outcome ?? null,
       refusedTools: run.refusedTools ? JSON.stringify(run.refusedTools) : null,
     });
+    const line = `${scheduleFailureTitle(task, reason.kind === 'tool_refused' || reason.kind === 'tools_refused')}: ${scheduleFailureClause(reason)}.`;
+    const withNext = `${line}${this.next(task, 'try')}`;
+    // A room line stays within fifteen words. A longer cause beside a two-word
+    // name can leave no room for the next try, which the Needs you card and
+    // the Schedules row still say.
     this.deps.post(task, {
-      text: `${scheduleFailureTitle(task, reason.kind === 'tool_refused' || reason.kind === 'tools_refused')}: ${scheduleFailureClause(reason)}.${this.next(task, 'try')}`,
+      text: withNext.split(/\s+/).length <= MAX_LINE_WORDS ? withNext : line,
       notice: 'schedule_failed',
       scheduleRun: { scheduleId: task.id, runId: run.id },
     });

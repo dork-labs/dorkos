@@ -48,6 +48,7 @@ import {
 } from '@dorkos/shared/run-outcome';
 import { listPendingInteractions } from './pending-interactions.js';
 import { coldStatus, mergeBaseContextUsage } from './projector/cold-status.js';
+import { RunningTaskDetails, staleUnlessLive } from './projector/running-tasks.js';
 import type { SessionDebugCounters } from './session-debug-counters.js';
 import { logger } from '../../lib/logger.js';
 import { EventLog } from './replay/event-log.js';
@@ -574,6 +575,9 @@ export class SessionStateProjector {
    */
   private readonly ambientSubagents = new Set<string>();
 
+  /** What each running task is, for the status's named list (spec `warm-process-lifecycle` D8). */
+  private readonly runningTaskDetails = new RunningTaskDetails();
+
   /**
    * Armed liveness sweep for {@link runningSubagents}, or `undefined` when none
    * is (no children, or a turn is open and the clock is not running).
@@ -985,7 +989,7 @@ export class SessionStateProjector {
         this.applyTodoUpdate(event.tasks);
         break;
       case 'subagent_update':
-        this.applySubagentUpdate(event.taskId, event.status, event.ambient);
+        this.applySubagentUpdate(event);
         break;
       // Kept in sync with `BLOCKING_INTERACTION_EVENT_TYPES` — a switch cannot
       // be driven by the constant, but `trackInteraction` re-checks it.
@@ -1218,29 +1222,29 @@ export class SessionStateProjector {
    * housekeeping to stay out of those. The mark arrives with the start and is
    * remembered, because the progress reports that follow do not repeat it.
    *
-   * @param taskId - The child's runtime-assigned id.
-   * @param status - Its reported lifecycle; only `running` is still in flight.
-   * @param ambient - Whether the runtime marked this child as housekeeping.
+   * The start's facts (kind, label, start time) are remembered beside the
+   * clock, so the status names the work as well as counting it (spec
+   * `warm-process-lifecycle` D8).
+   *
+   * @param event - The update: its id, its lifecycle (only `running` is still in
+   *   flight), the housekeeping mark, and the facts a start carries.
    */
-  private applySubagentUpdate(taskId: string, status: string, ambient?: boolean): void {
+  private applySubagentUpdate(event: Extract<SessionEvent, { type: 'subagent_update' }>): void {
+    const { taskId, status, ambient } = event;
     if (ambient) this.ambientSubagents.add(taskId);
     if (status === 'running') {
       this.runningSubagents.set(taskId, Date.now());
+      this.runningTaskDetails.note(event);
     } else {
       this.runningSubagents.delete(taskId);
       this.ambientSubagents.delete(taskId);
+      this.runningTaskDetails.forget(taskId);
     }
-    this.status.runningSubagentCount = this.countReportableSubagents();
+    // The count and the named list are one answer, so they move together.
+    const shown = this.runningTaskDetails.list(this.runningSubagents.keys(), this.ambientSubagents);
+    this.status.runningSubagents = shown;
+    this.status.runningSubagentCount = shown.length;
     this.scheduleSubagentExpiry();
-  }
-
-  /** Live children an activity indicator may count — everything but housekeeping. */
-  private countReportableSubagents(): number {
-    let count = 0;
-    for (const taskId of this.runningSubagents.keys()) {
-      if (!this.ambientSubagents.has(taskId)) count += 1;
-    }
-    return count;
   }
 
   /**
@@ -1288,10 +1292,10 @@ export class SessionStateProjector {
   private expireStaleSubagents(): void {
     if (this.runningSubagents.size === 0 || this.inProgressTurn !== null) return;
     const cutoff = Date.now() - SUBAGENT_SILENCE_TIMEOUT_MS;
-    const stale = [...this.runningSubagents]
-      .filter(([, lastSeenAt]) => lastSeenAt <= cutoff)
-      .map(([taskId]) => taskId);
-    if (stale.length === 0) return;
+    // A task its runtime still reports alive is quiet, not lost: a Monitor or a
+    // `tail -f` shell may never send progress (DOR-2065). Its clock restarts.
+    const stale = staleUnlessLive(this._sessionId, this.runningSubagents, cutoff);
+    if (stale.length === 0) return this.scheduleSubagentExpiry();
     // Read the housekeeping marks BEFORE the map is emptied: the retirement has
     // to carry the same mark the start did, or a client that hid this child
     // counts its ending as one of the children it could not name.

@@ -48,12 +48,15 @@ function agentEdits(task: Task, armsAgentWork: boolean) {
 
 describe('an agent changing the work of an approved schedule', () => {
   it('parks a prompt substitution even on the agent’s own Trusted schedule', () => {
-    const { settled, after } = agentEdits(approvedSchedule(), true);
+    const approved = approvedSchedule();
+    store.updateTask(approved.id, { approvedAllow: ['Bash(/abs/path/script.sh --once)'] });
+    const { settled, after } = agentEdits(store.getTask(approved.id)!, true);
 
     expect(settled).toBe('parked');
     expect(after.status).toBe('pending_approval');
     const row = db.select().from(pulseSchedules).where(eq(pulseSchedules.id, after.id)).get()!;
     expect(row.approvedContentKey).toBeNull();
+    expect(row.approvedAllow).toBeNull();
   });
 
   it('parks a schedule that came from a file, even for our agent, and clears its record', () => {
@@ -172,6 +175,36 @@ describe('an agent changing the work of an approved schedule', () => {
       approvedBy: { kind: 'policy' },
       approvedVia: 'trusted_agent',
     });
+  });
+
+  it('clears approved rules only when a vouched edit substitutes the task work', () => {
+    const rule = 'Bash(/abs/path/script.sh --once)';
+    const task = approvedSchedule();
+    store.updateTask(task.id, { approvedAllow: [rule] });
+    const beforePromptEdit = { ...taskWorkOf(store.getTask(task.id)!), status: task.status };
+    store.updateTask(task.id, { prompt: 'Post a replacement digest.' });
+
+    expect(
+      store.approvals.settleApprovedWorkChange(task.id, beforePromptEdit, {
+        trusted: false,
+        armsAgentWork: true,
+        ownAgentVouches: true,
+      })
+    ).toBe('rekeyed');
+    expect(store.getTask(task.id)?.approvedAllow).toBeNull();
+
+    store.updateTask(task.id, { approvedAllow: [rule] });
+    const beforeNameEdit = { ...taskWorkOf(store.getTask(task.id)!), status: task.status };
+    store.updateTask(task.id, { name: 'Morning digest' });
+
+    expect(
+      store.approvals.settleApprovedWorkChange(task.id, beforeNameEdit, {
+        trusted: false,
+        armsAgentWork: true,
+        ownAgentVouches: true,
+      })
+    ).toBe('rekeyed');
+    expect(store.getTask(task.id)?.approvedAllow).toEqual([rule]);
   });
 
   it('leaves a schedule nobody approved waiting', () => {

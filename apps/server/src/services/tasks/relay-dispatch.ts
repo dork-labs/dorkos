@@ -17,6 +17,7 @@ import type { PublishResult, RelayCore } from '@dorkos/relay';
 import type { Task, TaskRun } from '@dorkos/shared/types';
 import type { TaskDispatchPayload } from '@dorkos/shared/relay-schemas';
 import { TASK_SCHEDULER_PRINCIPAL, taskDispatchSubject } from '@dorkos/shared/relay-schemas';
+import { RUN_LINE } from '@dorkos/shared/schedule-notice-copy';
 import { buildTaskAppend } from './task-append.js';
 import { resolveRunSession } from './session/sticky-session.js';
 import { recordRunSession } from './session/record-run-session.js';
@@ -74,28 +75,31 @@ function nothingAnswered(result: PublishResult): boolean {
  * (DOR-3033). Every run used to read "nothing was available", including the
  * ones a two-minute delivery timeout had cut off while they ran.
  *
+ * Each sentence opens with a {@link RUN_LINE} constant, which the fails-twice
+ * notice reads back into fixed words (DOR-4121).
+ *
  * @param trigger - What started the run
  * @param result - What the publish returned
  */
 function notStartedError(trigger: TaskRun['trigger'], result: PublishResult): string {
   if (result.adapterResult?.code === 'at_capacity') {
-    return 'Every agent slot stayed busy, so this run didn’t start.';
+    return `${RUN_LINE.slotsBusy}, so this run didn’t start.`;
   }
   const refused = result.rejected?.[0]?.reason;
   if (refused === 'turn_ceiling') {
-    return 'The hourly limit on agent turns was reached, so this run didn’t start.';
+    return `${RUN_LINE.turnLimit} was reached, so this run didn’t start.`;
   }
-  if (refused !== undefined) return 'DorkOS was too busy to take this run, so it didn’t start.';
+  if (refused !== undefined) return `${RUN_LINE.tooBusy} to take this run, so it didn’t start.`;
   const error = result.adapterResult?.error ?? '';
   // Raised when a run that DID start never reported how it ended; it must not
   // read as one that never started. The raw adapter text stays in the log.
   if (error.startsWith('adapter delivery timeout')) {
-    return 'This run went past its time limit without reporting how it ended.';
+    return `${RUN_LINE.pastTimeLimit} without reporting how it ended.`;
   }
   if (error.startsWith('No agent runtime registered')) {
-    return 'The program this task runs on isn’t running, so this run didn’t start.';
+    return `${RUN_LINE.runtimeMissing}, so this run didn’t start.`;
   }
-  if (error !== '') return 'This run couldn’t start. The server log has the reason.';
+  if (error !== '') return `${RUN_LINE.couldNotStart}. The server log has the reason.`;
   return noReceiverError(trigger);
 }
 
@@ -113,8 +117,8 @@ function notStartedError(trigger: TaskRun['trigger'], result: PublishResult): st
  */
 function noReceiverError(trigger: TaskRun['trigger']): string {
   return trigger === 'scheduled'
-    ? 'Nothing was available to run this scheduled task, so the run never started.'
-    : 'Nothing was available to run this task, so the run never started.';
+    ? `${RUN_LINE.nothingAvailable} this scheduled task, so the run never started.`
+    : `${RUN_LINE.nothingAvailable} this task, so the run never started.`;
 }
 
 /**
@@ -224,6 +228,9 @@ export async function dispatchRunViaRelay(
     // receiver runs in another process and cannot rebuild it — the task's agent
     // and the run's trigger are not otherwise on the wire — so it travels.
     systemPromptAppend: buildTaskAppend(task, run),
+    // The person-approved rules for this task's runs, the same list the direct
+    // path hands its turn (`taskTurnOpts`, DOR-3637).
+    ...(task.approvedAllow?.length ? { approvedAllow: [...task.approvedAllow] } : {}),
     // The session this run's turn executes under, and whether it already has
     // history to resume. `resumeSession` is false for every non-sticky run and
     // for a sticky task's first fire.

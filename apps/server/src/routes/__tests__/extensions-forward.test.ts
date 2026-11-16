@@ -855,6 +855,7 @@ describe('the Direct chat view', () => {
     const facts = createRoomMessageLookup(
       roomStore,
       service.authorRegistry,
+      { findBridgeByRoom: () => null },
       () => 'acct-owner'
     )(chat.roomId, sent.body.id);
     expect(facts?.via).toEqual({

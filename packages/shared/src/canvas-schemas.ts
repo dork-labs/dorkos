@@ -114,6 +114,16 @@ export const CanvasDocumentSchema = z
      * thread.
      */
     threadRootEntryId: z.string().min(1).optional(),
+    /**
+     * The app whose screen opened this document (DOR-3293). Host-written
+     * metadata, never part of `content`: only DorkOS sets it, when it opens a
+     * document for an app, and any later write clears it. The tab names the app
+     * from DorkOS's own records, looked up by this id.
+     */
+    openedBy: z
+      .object({ extensionId: z.string().min(1) })
+      .strict()
+      .optional(),
   })
   .openapi('CanvasDocument');
 

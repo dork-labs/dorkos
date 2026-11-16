@@ -39,6 +39,7 @@ import { CAPABILITY_APPROVAL_HOLD_CAP_MS } from '../core/capabilities/capability
 import { sweepStrandedChildren } from './turn-stream/stranded-children.js';
 import { resolutionForCancelledReason, retireStrandedAsks } from './turn-stream/withdrawn-asks.js';
 import { NOTICE_EVENT_TYPES, toNoticeEvent } from './turn-stream/notice-events.js';
+import { toStartedTaskUpdate } from './projector/running-tasks.js';
 
 /** A `StreamEvent`'s `data` payload, read defensively as a loose record. */
 type StreamData = Record<string, unknown>;
@@ -170,18 +171,9 @@ export function toRawSessionEvent(event: StreamEvent): RawSessionEvent | null {
     case 'task_update':
       return toTodoUpdate(data);
 
-    case 'background_task_started': {
-      const update: RawOf<'subagent_update'> = {
-        type: 'subagent_update',
-        taskId: String(data.taskId ?? ''),
-        status: 'running',
-        ...(data.description !== undefined ? { description: String(data.description) } : {}),
-        // Carried onto the durable event so a client that reconnects mid-turn
-        // still knows this one is housekeeping. Absent stays absent.
-        ...(data.ambient !== undefined ? { ambient: Boolean(data.ambient) } : {}),
-      };
-      return update;
-    }
+    // The start, with what the session-level running list names it by (D8).
+    case 'background_task_started':
+      return toStartedTaskUpdate(data);
     case 'background_task_progress': {
       const update: RawOf<'subagent_update'> = {
         type: 'subagent_update',
