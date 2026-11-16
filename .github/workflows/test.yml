@@ -407,7 +407,8 @@ jobs:
         id: pnpm-store
         run: echo "image=${ImageOS:?ImageOS is not set on this runner}" >> "$GITHUB_OUTPUT" && echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
       - name: Restore the pnpm store built on this runner image
-        uses: actions/cache@v6
+        id: pnpm-store-restore
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ steps.pnpm-store.outputs.path }}
           key: pnpm-store-${{ runner.os }}-${{ steps.pnpm-store.outputs.image }}-${{ runner.arch }}-${{ hashFiles('pnpm-lock.yaml') }}
@@ -418,6 +419,13 @@ jobs:
       - name: Read where the space server lives
         run: grep -E '^SPACE_[A-Z_]*=.' ci/space-server.env >> "$GITHUB_ENV" && grep -qE '^SPACE_DIR=.' ci/space-server.env
       - run: pnpm install --frozen-lockfile
+      # main only, after a good install: test.yml's test-shard says why (DOR-4537).
+      - name: Save the pnpm store for the queue and pull requests
+        if: ${{ github.ref == 'refs/heads/main' && steps.pnpm-store-restore.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ steps.pnpm-store.outputs.path }}
+          key: pnpm-store-${{ runner.os }}-${{ steps.pnpm-store.outputs.image }}-${{ runner.arch }}-${{ hashFiles('pnpm-lock.yaml') }}
       - run: pnpm --filter @dork-labs/cloud-api build && pnpm --filter @dork-labs/connector-providers build && pnpm --filter @dorkos/shared build && pnpm --filter @dork-labs/ui build && pnpm --filter @dorkos/decisions build
       # The space server's code lives in apps/server and its package, web page
       # and image in apps/space (server-merge step 7d). Each half's tests
@@ -949,12 +957,29 @@ jobs:
         id: pnpm-store
         run: echo "image=${ImageOS:?ImageOS is not set on this runner}" >> "$GITHUB_OUTPUT" && echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
       - name: Restore the pnpm store built on this runner image
-        uses: actions/cache@v6
+        id: pnpm-store-restore
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ steps.pnpm-store.outputs.path }}
           key: pnpm-store-${{ runner.os }}-${{ steps.pnpm-store.outputs.image }}-${{ runner.arch }}-${{ hashFiles('pnpm-lock.yaml') }}
 
       - run: pnpm install --frozen-lockfile
+      # ONLY MAIN SAVES THE STORE (DOR-4537, ledger 261116-114104). GitHub
+      # scopes caches by ref, with a read fallback to `main`. A plain
+      # `actions/cache` saved a 735 MB store under every queue ref
+      # (`gh-readonly-queue/main/pr-*`, deleted on merge) and every PR merge
+      # ref whenever main had no entry for the lockfile: on 2026-11-16 13 of 20
+      # entries (~9.5 GB of the 10 GB budget) sat on refs nothing else can
+      # read, and they evicted main's `turbo-test-builds-*` within hours. So
+      # every ref restores, and only a run on `refs/heads/main` (the canary)
+      # saves, straight after the install rather than in a post step, so a red
+      # later step still leaves the store for the queue. A hit skips the save.
+      - name: Save the pnpm store for the queue and pull requests
+        if: ${{ github.ref == 'refs/heads/main' && steps.pnpm-store-restore.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ steps.pnpm-store.outputs.path }}
+          key: pnpm-store-${{ runner.os }}-${{ steps.pnpm-store.outputs.image }}-${{ runner.arch }}-${{ hashFiles('pnpm-lock.yaml') }}
 
       # The community archive cross-checks (apps/server/src/services/spaces/archive/__tests__/
       # zip-cross-tools.test.ts) read our ZIP64 exports with Info-ZIP, Python's zipfile,
@@ -1504,11 +1529,19 @@ jobs:
         id: pnpm-store
         run: echo "image=${ImageOS:?ImageOS is not set on this runner}" >> "$GITHUB_OUTPUT" && echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
       - name: Restore the pnpm store built on this runner image
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        id: pnpm-store-restore
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ steps.pnpm-store.outputs.path }}
           key: pnpm-store-${{ runner.os }}-${{ steps.pnpm-store.outputs.image }}-${{ runner.arch }}-${{ hashFiles('pnpm-lock.yaml') }}
       - run: pnpm install --frozen-lockfile
+      # main only, after a good install: test.yml's test-shard says why (DOR-4537).
+      - name: Save the pnpm store for the queue and pull requests
+        if: ${{ github.ref == 'refs/heads/main' && steps.pnpm-store-restore.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ steps.pnpm-store.outputs.path }}
+          key: pnpm-store-${{ runner.os }}-${{ steps.pnpm-store.outputs.image }}-${{ runner.arch }}-${{ hashFiles('pnpm-lock.yaml') }}
       # The same build entries the shards restore; see test-shard. Restore only.
       - name: Restore the builds the last main canary made
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
