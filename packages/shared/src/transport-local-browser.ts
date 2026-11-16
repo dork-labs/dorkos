@@ -1,5 +1,6 @@
 import type {
   LocalBrowserCapabilities,
+  LocalBrowserHistoryDirection,
   LocalBrowserOpen,
   LocalBrowserPersonState,
   LocalBrowserProfile,
@@ -23,6 +24,10 @@ export interface LocalBrowserTransport {
   selectLocalBrowserTab(id: string): Promise<LocalBrowserState>;
   /** A person's navigation, which takes the page from an agent sharing it (DOR-4428). */
   navigateLocalBrowser(url: string): Promise<LocalBrowserPersonState>;
+  /** Move the page one step back or forward through its own history. Takes the page from an agent. */
+  stepLocalBrowserHistory(
+    direction: LocalBrowserHistoryDirection
+  ): Promise<LocalBrowserPersonState>;
   /** Take the page from the chat it is shared with, until the person resumes the agent. */
   takeOverLocalBrowser(): Promise<LocalBrowserPersonState>;
   pauseLocalBrowser(): Promise<LocalBrowserState>;

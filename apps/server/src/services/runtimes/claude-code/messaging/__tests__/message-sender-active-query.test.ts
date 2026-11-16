@@ -13,7 +13,7 @@
  * rather than through a trigger — the guard has to hold on its own, whatever
  * upstream does.
  */
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { executeSdkQuery, type MessageSenderOpts } from '../message-sender.js';
 import type { AgentSession } from '../../agent-types.js';
 import { query, type SDKMessage } from '@anthropic-ai/claude-agent-sdk';
@@ -177,5 +177,46 @@ describe('executeSdkQuery — activeQuery ownership (DOR-1088)', () => {
 
     expect(session.activeQuery).toBeUndefined();
     expect(session.lastQuery).toBe(queries[0]);
+  });
+});
+
+// DOR-2705. Record eviction spares a running turn only while `lastActivity` is
+// under the four-hour ceiling. Stamped only at the turn's start, every turn
+// still working four hours in was evicted mid-work.
+describe('executeSdkQuery — a turn that is still talking is active (DOR-2705)', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('stamps lastActivity on every message the turn produces', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(1_000_000_000);
+    const session = makeSession();
+    const fourHoursLater = 1_000_000_000 + 4 * 60 * 60 * 1000 + 5 * 60_000;
+    let seenMidTurn: number | undefined;
+    vi.mocked(query).mockImplementation(() => {
+      const handle = {
+        [Symbol.asyncIterator]: async function* () {
+          vi.setSystemTime(fourHoursLater);
+          yield {
+            type: 'assistant',
+            parent_tool_use_id: null,
+            uuid: 'a-1',
+            message: { role: 'assistant', content: [{ type: 'text', text: 'still at it' }] },
+            session_id: 'sdk-1',
+          } as unknown as SDKMessage;
+          // Read while the turn is still open, before its `result`.
+          seenMidTurn = session.lastActivity;
+          yield resultMsg();
+        },
+      };
+      return handle as unknown as ReturnType<typeof query>;
+    });
+
+    for await (const _event of executeSdkQuery('s1', 'long', session, makeOpts())) {
+      // drain
+    }
+
+    expect(seenMidTurn).toBe(fourHoursLater);
   });
 });

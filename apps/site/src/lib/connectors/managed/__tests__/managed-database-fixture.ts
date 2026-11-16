@@ -6,6 +6,9 @@ import { fileURLToPath } from 'node:url';
 import type { PGlite } from '@electric-sql/pglite';
 import { drizzle } from 'drizzle-orm/pglite';
 import { migrate } from 'drizzle-orm/pglite/migrator';
+import { createPGliteTemplate, type PGliteTemplate } from '@/db/__tests__/pglite-template';
+
+export type { PGliteTemplate };
 const MIGRATIONS_DIR = fileURLToPath(new URL('../../../../../drizzle/', import.meta.url));
 const MANAGED_MIGRATION_PREFIXES = ['0011_', '0012_', '0013_', '0015_', '0016_'];
 /**
@@ -97,6 +100,14 @@ export async function provisionManagedTestDatabase(client: PGlite): Promise<void
     rmSync(folder, { recursive: true, force: true });
   }
   await applyCurrentManagedMigrations(client);
+}
+
+/**
+ * Provision the managed schema once per file; each test then takes its own
+ * `fresh()` copy, built through {@link provisionManagedTestDatabase} itself.
+ */
+export function createManagedTestDatabaseTemplate(): Promise<PGliteTemplate> {
+  return createPGliteTemplate(provisionManagedTestDatabase);
 }
 
 /** Apply the managed-table migrations made after the frozen history. */

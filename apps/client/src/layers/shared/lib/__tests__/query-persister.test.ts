@@ -17,7 +17,7 @@ import {
 // enforces: `['config','current']` may be written in exactly one file.
 import { configKeys } from '../../model/server-config/query-keys';
 import { HttpTransport } from '../transport';
-import { createMockTransport } from '@dorkos/test-utils';
+import { createMockTransport } from '@dorkos/test-utils/mock-factories';
 
 /** A `Storage` that lives in a plain object, so each test starts from nothing. */
 function fakeStorage(seed: Record<string, string> = {}): Storage {

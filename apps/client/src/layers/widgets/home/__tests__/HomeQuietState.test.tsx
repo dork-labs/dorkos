@@ -24,7 +24,7 @@ import type {
   NotificationDTO,
 } from '@dorkos/shared/notification-schemas';
 import type { ExtensionDecisionDTO } from '@dorkos/shared/extension-decision-schemas';
-import { createMockTransport } from '@dorkos/test-utils';
+import { createMockTransport } from '@dorkos/test-utils/mock-factories';
 
 // The attention rows navigate, and the session list reads `?session=`. Neither
 // is what this file is about, so the router is stubbed rather than stood up.

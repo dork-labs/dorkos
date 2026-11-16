@@ -13,7 +13,7 @@ import {
   parseSessionSnapshot,
 } from '../tolerant-session-frames';
 import { createSessionMethods } from '../session-methods';
-import { createMockSession } from '@dorkos/test-utils';
+import { createMockSession } from '@dorkos/test-utils/mock-factories';
 
 const STATUS: SessionStatus = {
   contextUsage: null,

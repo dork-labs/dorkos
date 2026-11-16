@@ -8,7 +8,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { Session, ServerConfig, SubagentInfo } from '@dorkos/shared/types';
 import type { QueuedMessage } from '@dorkos/shared/schemas';
 import type { SessionSnapshot } from '@dorkos/shared/session-stream';
-import { createMockTransport } from '@dorkos/test-utils';
+import { createMockTransport } from '@dorkos/test-utils/mock-factories';
 import { TransportProvider, useAppStore } from '@/layers/shared/model';
 
 // The runtime resolution reads the session list for its "started" signal; the

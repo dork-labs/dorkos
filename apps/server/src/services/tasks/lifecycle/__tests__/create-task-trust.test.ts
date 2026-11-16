@@ -76,6 +76,7 @@ beforeEach(async () => {
   state.raised = [];
   store = new TaskStore(createTestDb());
   dorkHome = await fs.mkdtemp(path.join(os.tmpdir(), 'create-task-trust-'));
+  await fs.mkdir(agentHome(), { recursive: true });
 });
 
 afterEach(async () => {

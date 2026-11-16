@@ -2,7 +2,7 @@ import { useEffect } from 'react';
 import { describe, it, expect } from 'vitest';
 import { render } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { createMockTransport } from '@dorkos/test-utils';
+import { createMockTransport } from '@dorkos/test-utils/mock-factories';
 import { useAppStore, TransportProvider } from '@/layers/shared/model';
 import { useDefaultCwd } from '../use-default-cwd';
 

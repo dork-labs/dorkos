@@ -13,7 +13,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { QueryClient } from '@tanstack/react-query';
 import type { Session, SessionOrigin } from '@dorkos/shared/types';
-import { createMockTransport } from '@dorkos/test-utils';
+import { createMockTransport } from '@dorkos/test-utils/mock-factories';
 import { useInteractionStore } from '@/layers/entities/interactions';
 import { sessionKeys } from '../../api/query-keys';
 import { cachedSessionForCwd, resolveSessionForCwd } from '../resolve-session-for-cwd';

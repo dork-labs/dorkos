@@ -23,7 +23,7 @@ import type {
   RefreshedMarketplaceSource,
   SourceLastFetch,
 } from '@dorkos/shared/marketplace-schemas';
-import { createMockTransport } from '@dorkos/test-utils';
+import { createMockTransport } from '@dorkos/test-utils/mock-factories';
 import { TransportProvider } from '@/layers/shared/model';
 import { MarketplaceSourcesView } from '../ui/MarketplaceSourcesView';
 

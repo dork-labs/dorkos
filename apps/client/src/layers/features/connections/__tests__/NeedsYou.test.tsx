@@ -9,7 +9,7 @@ import type {
   ConnectorManagementReviewItem,
 } from '@dorkos/shared/connector-schemas';
 import type { Transport } from '@dorkos/shared/transport';
-import { createMockTransport } from '@dorkos/test-utils';
+import { createMockTransport } from '@dorkos/test-utils/mock-factories';
 import { TransportProvider } from '@/layers/shared/model';
 import { NeedsYou } from '../ui/NeedsYou';
 

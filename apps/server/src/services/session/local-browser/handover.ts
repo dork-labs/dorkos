@@ -13,6 +13,7 @@ import type {
   LocalBrowserHandoff,
   LocalBrowserHandoffOutcome,
   LocalBrowserHandoffReason,
+  LocalBrowserHistoryDirection,
   LocalBrowserOpen,
   LocalBrowserPersonState,
   LocalBrowserSignInRequest,
@@ -34,6 +35,7 @@ export interface HandoverBrowser {
   open(input: LocalBrowserOpen): Promise<LocalBrowserState>;
   selectTab(id: string): Promise<LocalBrowserState>;
   navigate(url: string): Promise<LocalBrowserState>;
+  stepHistory(direction: LocalBrowserHistoryDirection): Promise<LocalBrowserState>;
   pause(): Promise<LocalBrowserState>;
   handToPerson(): Promise<LocalBrowserState>;
   resume(): Promise<LocalBrowserState>;
@@ -575,6 +577,21 @@ export class BrowserHandover {
     this.refuseDuringHandoff();
     await this.takeOver();
     await this.browser.navigate(url);
+    return this.state();
+  }
+
+  /**
+   * A person's Back or Forward, refused during a handoff for the same reason as
+   * {@link navigate}: the page must not leave the site the card names. Like the
+   * address bar, it takes the page from an agent sharing it first, so the agent is
+   * shut out even when the step itself is refused (DOR-4428).
+   *
+   * @param direction - Back or Forward.
+   */
+  async stepHistory(direction: LocalBrowserHistoryDirection): Promise<LocalBrowserPersonState> {
+    this.refuseDuringHandoff();
+    await this.takeOver();
+    await this.browser.stepHistory(direction);
     return this.state();
   }
 

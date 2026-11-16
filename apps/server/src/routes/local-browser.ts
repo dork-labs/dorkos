@@ -3,6 +3,7 @@ import { Hono, type MiddlewareHandler } from 'hono';
 import { z } from 'zod';
 import {
   LocalBrowserHandoffAnswerSchema,
+  LocalBrowserHistoryDirectionSchema,
   LocalBrowserOpenSchema,
   LocalBrowserSignInRequestSchema,
 } from '@dorkos/shared/local-browser';
@@ -64,7 +65,7 @@ export function createLocalBrowserRoutes(
   router.post('/open', personOnly, async (c) =>
     c.json(await service.handover.open(LocalBrowserOpenSchema.parse(readJsonBody(c))))
   );
-  // These three can move or close the page under an open card, so they take a person too.
+  // These can move or close the page under an open card, so they take a person too.
   router.post('/tabs/:id/select', personOnly, async (c) =>
     c.json(await service.handover.selectTab(c.req.param('id')))
   );
@@ -74,6 +75,14 @@ export function createLocalBrowserRoutes(
   });
   // Taking the page shuts an agent out of it, so only a person can.
   router.post('/take-over', personOnly, async (c) => c.json(await service.handover.takeOver()));
+  // Back and Forward move the page too, and take it from a driving agent (DOR-4449).
+  router.post('/history', personOnly, async (c) => {
+    const { direction } = z
+      .object({ direction: LocalBrowserHistoryDirectionSchema })
+      .strict()
+      .parse(readJsonBody(c));
+    return c.json(await service.handover.stepHistory(direction));
+  });
   router.post('/pause', async (c) => c.json(await service.handover.pause()));
   router.post('/resume', personOnly, async (c) => c.json(await service.handover.resume()));
   // Signing in and answering a handoff take a person: no agent, API key or approval token.

@@ -11,7 +11,7 @@ import '@testing-library/jest-dom/vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { AuditEvent } from '@dorkos/shared/audit-schemas';
 import type { TeamMember } from '@dorkos/shared/team-schemas';
-import { createMockTransport } from '@dorkos/test-utils';
+import { createMockTransport } from '@dorkos/test-utils/mock-factories';
 import { TransportProvider } from '@/layers/shared/model';
 import { MOCK_TEAM_ROSTER } from '@/dev/mock-samples';
 import { buildProfileDeepLinkHarness } from '@/test-helpers/profile-deep-link';

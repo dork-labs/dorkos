@@ -6,9 +6,9 @@ import { STALE_SKIP_REASON } from '../timing/occurrence.js';
 
 afterEach(() => vi.useRealTimers());
 
-function setup() {
+function setup(now = '2026-11-12T08:45:00Z') {
   vi.useFakeTimers();
-  vi.setSystemTime(new Date('2026-11-10T08:45:00Z'));
+  vi.setSystemTime(new Date(now));
   const db = createTestDb();
   const store = new TaskStore(db);
   const task = store.createTask({
@@ -46,7 +46,7 @@ describe('schedule notices', () => {
     const { store, task, post } = setup();
     store.claimScheduledRun(
       task.id,
-      Date.parse('2026-11-10T08:00:00Z'),
+      Date.parse('2026-11-12T08:00:00Z'),
       { status: 'skipped', reason: STALE_SKIP_REASON },
       7
     );
@@ -110,8 +110,9 @@ describe('schedule notices', () => {
 
   it('drops next time for paused schedules, reading their current state', async () => {
     const { finish, post, store, task } = setup();
-    await finish('failed');
+    // Turning it off is a change, so the count starts again after it.
     store.updateTask(task.id, { enabled: false });
+    await finish('failed');
     await finish('failed');
     expect(post.mock.calls[0][1].text).not.toContain('Next try');
   });
@@ -128,10 +129,33 @@ describe('schedule notices', () => {
   });
 });
 
+describe('the room line counts like the card (DOR-4127)', () => {
+  it('counts only failures since the schedule last changed', async () => {
+    const { finish, post, store, task } = setup();
+    await finish('failed');
+    vi.advanceTimersByTime(1000);
+    store.updateTask(task.id, { description: 'edited' });
+    await finish('failed');
+    // One failure since the edit: nothing yet, as on the card.
+    expect(post).not.toHaveBeenCalled();
+    await finish('failed');
+    expect(post).toHaveBeenCalledTimes(1);
+    expect(post.mock.calls[0][1].notice).toBe('schedule_failed');
+  });
+
+  it('never counts failures from before fails-twice notices shipped', async () => {
+    // The schedule and both failures all predate v0.135.3.
+    const { finish, post } = setup('2026-11-01T08:00:00Z');
+    await finish('failed');
+    await finish('failed');
+    expect(post).not.toHaveBeenCalled();
+  });
+});
+
 describe('schedule notice copy', () => {
   it('reports one missed occurrence with the qualified cause and next time', async () => {
     const { store, task, post } = setup();
-    store.claimScheduledRun(task.id, Date.parse('2026-11-10T08:00:00Z'), {
+    store.claimScheduledRun(task.id, Date.parse('2026-11-12T08:00:00Z'), {
       status: 'skipped',
       reason: STALE_SKIP_REASON,
     });
@@ -144,7 +168,7 @@ describe('schedule notice copy', () => {
   it('reports one stale occurrence and omits next time when off', async () => {
     const { store, task, post } = setup();
     store.updateTask(task.id, { enabled: false });
-    store.claimScheduledRun(task.id, Date.parse('2026-11-10T08:00:00Z'), {
+    store.claimScheduledRun(task.id, Date.parse('2026-11-12T08:00:00Z'), {
       status: 'skipped',
       reason: STALE_SKIP_REASON,
     });

@@ -2,7 +2,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, cleanup, render, renderHook, screen, waitFor } from '@testing-library/react';
 import type { PropsWithChildren } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { createMockTransport, spacesExperiment } from '@dorkos/test-utils';
+import { createMockTransport, spacesExperiment } from '@dorkos/test-utils/mock-factories';
 import type {
   CommunityConnectionDescriptor,
   CommunityDisconnectResponse,

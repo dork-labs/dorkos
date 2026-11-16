@@ -3,7 +3,7 @@ import type { ConnectorConnectionSummary } from '@dorkos/shared/connector-resour
 import type { ConnectorProviderStatus } from '@dorkos/shared/connector-provider';
 import { appCount, splitByImpact } from '@/layers/entities/connectors';
 import { groupAppsByWay } from '../lib/connection-ways';
-import { createMockConnectionReadiness } from '@dorkos/test-utils';
+import { createMockConnectionReadiness } from '@dorkos/test-utils/mock-factories';
 
 function connection(over: Partial<ConnectorConnectionSummary>): ConnectorConnectionSummary {
   return {

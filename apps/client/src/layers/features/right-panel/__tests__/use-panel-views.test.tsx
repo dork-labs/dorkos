@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, renderHook } from '@testing-library/react';
-import { createMockTransport } from '@dorkos/test-utils';
+import { createMockTransport } from '@dorkos/test-utils/mock-factories';
 import type { LocalBrowserState } from '@dorkos/shared/local-browser';
 import type { CanvasDocument as ServerCanvasDocument } from '@dorkos/shared/room-schemas';
 import {

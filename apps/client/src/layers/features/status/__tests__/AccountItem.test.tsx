@@ -16,7 +16,7 @@ import {
   createMockSessionLimit,
   createMockTrackerItem,
   createMockTransport,
-} from '@dorkos/test-utils';
+} from '@dorkos/test-utils/mock-factories';
 import { createTestQueryClient } from '@dorkos/test-utils/react-helpers';
 import { TransportProvider } from '@/layers/shared/model';
 import { TooltipProvider } from '@/layers/shared/ui';

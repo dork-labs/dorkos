@@ -5,7 +5,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { renderHook, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { TransportProvider } from '@/layers/shared/model';
-import { createMockTransport, createMockSession } from '@dorkos/test-utils';
+import { createMockTransport, createMockSession } from '@dorkos/test-utils/mock-factories';
 import type { ModelOption } from '@dorkos/shared/types';
 import type { SessionContextUsage } from '@dorkos/shared/session-stream';
 import { useSessionListStore } from '../../stream/session-list-store';

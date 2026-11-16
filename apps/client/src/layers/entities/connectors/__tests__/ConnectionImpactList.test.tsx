@@ -5,7 +5,7 @@ import '@testing-library/jest-dom/vitest';
 import type { ConnectorConnectionSummary } from '@dorkos/shared/connector-resource-schemas';
 import { toImpactApp } from '../lib/connection-impact';
 import { ConnectionImpactList } from '../ui/ConnectionImpactList';
-import { createMockConnectionReadiness } from '@dorkos/test-utils';
+import { createMockConnectionReadiness } from '@dorkos/test-utils/mock-factories';
 
 afterEach(cleanup);
 

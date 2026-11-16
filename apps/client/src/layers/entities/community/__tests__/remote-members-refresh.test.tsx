@@ -6,7 +6,7 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { cleanup, render, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { createMockTransport, spacesExperiment } from '@dorkos/test-utils';
+import { createMockTransport, spacesExperiment } from '@dorkos/test-utils/mock-factories';
 import type { CommunityRef } from '@dorkos/shared/community-adapter';
 import type {
   RemoteCommunityMember,

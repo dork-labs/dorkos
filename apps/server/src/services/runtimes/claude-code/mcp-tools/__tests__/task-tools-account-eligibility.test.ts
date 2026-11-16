@@ -74,14 +74,21 @@ beforeEach(async () => {
   root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'dorkos-task-tools-acct-')));
   const dorkHome = path.join(root, 'dork');
   await fs.mkdir(path.join(dorkHome, 'skills'), { recursive: true });
+  const projectPath = path.join(root, 'agent');
+  await fs.mkdir(projectPath, { recursive: true });
   const deps = {
     taskStore: store,
     defaultCwd: '/tmp/test',
     dorkHome,
-    meshCore: { getProjectPath: () => null },
+    meshCore: {
+      getProjectPath: () => projectPath,
+      listWithPaths: () => [{ id: 'fixture-agent', projectPath }],
+    },
   } as unknown as McpToolDeps;
   tools = Object.fromEntries(
-    (getTasksTools(deps) as unknown as SessionTool[]).map((t) => [t.name, t])
+    (getTasksTools(deps, undefined, undefined, () => projectPath) as unknown as SessionTool[]).map(
+      (t) => [t.name, t]
+    )
   );
 });
 

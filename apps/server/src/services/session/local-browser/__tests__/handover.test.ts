@@ -48,6 +48,7 @@ function fakeBrowser(initial = connected()) {
     open: vi.fn(async () => (state = connected())),
     selectTab: vi.fn(async () => state),
     navigate: vi.fn(async () => state),
+    stepHistory: vi.fn(async () => state),
     pause: vi.fn(async () => (state = { ...state, paused: true })),
     handToPerson: vi.fn(async () => (state = { ...state, paused: true })),
     resume: vi.fn(async () => (state = { ...state, paused: false })),
@@ -634,6 +635,23 @@ describe('a person’s own browser controls during a handoff', () => {
     expect(browser.selectTab).toHaveBeenCalledExactlyOnceWith('t1');
   });
 
+  it('refuses Back and Forward during a handoff, and passes them through once it ends', async () => {
+    const { handover, browser } = setup();
+    const { handoffId } = await handover.ask('chat-1', 'wall');
+    for (const direction of ['back', 'forward'] as const)
+      await expect(handover.stepHistory(direction)).rejects.toMatchObject({
+        code: 'handoff_open',
+      });
+    expect(browser.stepHistory).not.toHaveBeenCalled();
+    await handover.handBack(handoffId);
+    await handover.stepHistory('back');
+    expect(browser.stepHistory).toHaveBeenCalledExactlyOnceWith('back');
+    // Like the address bar, Back took the page from the agent it was handed back to.
+    await expect(handover.requireAgentMayUse('chat-1')).rejects.toMatchObject({
+      code: 'taken_by_person',
+    });
+  });
+
   it('takes a new address and any tab once the handoff has ended, or with none open', async () => {
     const { handover, browser } = setup();
     await handover.selectTab('t2');
@@ -955,6 +973,32 @@ describe('a person takes the page (DOR-4428)', () => {
     await expect(handover.requireAgentMayUse('chat-1')).rejects.toMatchObject({
       code: 'taken_by_person',
     });
+  });
+
+  it.each(['back', 'forward'] as const)(
+    'takes the page before %s moves it, and shuts the agent out',
+    async (direction) => {
+      const { handover, browser } = setup();
+      const next = await handover.stepHistory(direction);
+      expect(next.takenOver).toBe(true);
+      // The take-over (its pause) lands before the page moves.
+      expect(browser.pause.mock.invocationCallOrder[0]).toBeLessThan(
+        browser.stepHistory.mock.invocationCallOrder[0]!
+      );
+      await expect(handover.requireAgentMayUse('chat-1')).rejects.toMatchObject({
+        code: 'taken_by_person',
+      });
+    }
+  );
+
+  it('keeps the agent shut out when Back itself is refused', async () => {
+    const { handover, browser } = setup();
+    browser.stepHistory.mockRejectedValueOnce(new Error('no page to go back to'));
+    await expect(handover.stepHistory('back')).rejects.toThrow();
+    await expect(handover.requireAgentMayUse('chat-1')).rejects.toMatchObject({
+      code: 'taken_by_person',
+    });
+    expect((await handover.state()).takenOver).toBe(true);
   });
 
   it('has nothing to take when no chat shares the page', async () => {

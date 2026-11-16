@@ -19,7 +19,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
 import type { Transport } from '@dorkos/shared/transport';
 import type { ServerConfig } from '@dorkos/shared/types';
-import { createMockTransport } from '@dorkos/test-utils';
+import { createMockTransport } from '@dorkos/test-utils/mock-factories';
 import { TransportProvider, useAppStore } from '@/layers/shared/model';
 import { resetRemoteAccessStore } from '@/layers/entities/tunnel';
 import { RemoteAccessRow } from '@/layers/widgets/control-center';

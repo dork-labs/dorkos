@@ -21,7 +21,7 @@ import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { HarnessRow } from '@dorkos/shared/harness-schemas';
 import type { Transport } from '@dorkos/shared/transport';
-import { createMockTransport } from '@dorkos/test-utils';
+import { createMockTransport } from '@dorkos/test-utils/mock-factories';
 import { TransportProvider } from '@/layers/shared/model';
 import { HARNESS_STATUS_READY } from '../../__fixtures__/harness-status';
 import { SkillHarnessRow } from '../SkillHarnessRow';

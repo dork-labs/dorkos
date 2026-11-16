@@ -19,7 +19,7 @@ import { toast } from 'sonner';
 import type { ReactNode } from 'react';
 import type { Transport } from '@dorkos/shared/transport';
 import type { ServerConfig } from '@dorkos/shared/types';
-import { createMockTransport } from '@dorkos/test-utils';
+import { createMockTransport } from '@dorkos/test-utils/mock-factories';
 import { TransportProvider } from '@/layers/shared/model';
 import { configKeys } from '@/layers/entities/config';
 import { getOwnerSetupRequest, clearOwnerSetupRequest } from '@/layers/shared/lib';

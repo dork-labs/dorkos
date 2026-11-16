@@ -6,7 +6,7 @@
 import { describe, it, expect } from 'vitest';
 import type { AccountUsage } from '@dorkos/shared/account-usage';
 import type { UsageStatus } from '@dorkos/shared/types';
-import { createMockAccountUsage } from '@dorkos/test-utils';
+import { createMockAccountUsage } from '@dorkos/test-utils/mock-factories';
 import {
   accountUsageToStatus,
   isWindowExpired,

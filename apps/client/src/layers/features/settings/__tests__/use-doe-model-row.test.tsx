@@ -10,7 +10,7 @@ import type { ReactNode } from 'react';
 import { renderHook, waitFor, cleanup } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { DoeInferenceStatus } from '@dorkos/shared/runtime-connect';
-import { createMockTransport } from '@dorkos/test-utils';
+import { createMockTransport } from '@dorkos/test-utils/mock-factories';
 import { TransportProvider } from '@/layers/shared/model';
 import { doeModelRowCopy, useDoeModelRow } from '../model/use-doe-model-row';
 

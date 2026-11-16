@@ -534,6 +534,135 @@ describe('warmth is answered honestly', () => {
     const events = await hanging;
     expect(events.some((e) => e.type === 'error')).toBe(true);
     expect(events.filter((e) => e.type === 'done')).toHaveLength(1);
+    // DOR-2705: the reason is logged, not left for someone to guess.
+    const { logger } = await import('../../../../../lib/logger.js');
+    expect(vi.mocked(logger.warn)).toHaveBeenCalledWith(
+      '[SessionTurnWindows] ended an open turn with its process',
+      expect.objectContaining({ reason: 'evict', turnIds: expect.any(Array) })
+    );
+  });
+
+  // DOR-2705. The same sweep, but the turn is still talking four hours and five
+  // minutes in. Every non-shutdown "DorkOS closed the agent" in the logs was
+  // this: a working turn evicted at 240 to 244 minutes because the record and
+  // the busy spell were both measured from when the turn STARTED.
+  it('keeps a running turn that is still talking past the four-hour ceiling', async () => {
+    const sessionId = nextSession();
+    await turn(sessionId);
+    const first = cli.processes[0]!;
+    first.goSilent();
+
+    const working = turn(sessionId, 'a long job');
+    await vi.waitFor(() => {
+      expect(first.received).toHaveLength(2);
+    });
+    first.say('step one');
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    const later = SESSIONS.BACKGROUND_WORK_PARK_CEILING_MS + 5 * 60_000;
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(Date.now() + later);
+    const awake = vi.spyOn(performance, 'now').mockReturnValue(performance.now() + later);
+    try {
+      // Still working, four hours and five minutes after the turn began.
+      first.say('step two hundred');
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      runtime.checkSessionHealth();
+    } finally {
+      clock.mockRestore();
+      awake.mockRestore();
+    }
+
+    expect(runtime.getSessionWarmth(sessionId)).toBe('running');
+    first.answer(first.received[1]!);
+    const events = await working;
+    expect(events.some((e) => e.type === 'error')).toBe(false);
+    expect(events.filter((e) => e.type === 'done')).toHaveLength(1);
+    expect(cli.launches).toBe(1);
+  });
+
+  /**
+   * Run `act` with both clocks moved `ms` ahead, letting the pump read any
+   * frame `act` emits under the moved clocks.
+   */
+  async function withClocksAhead(ms: number, act: () => void | Promise<void>): Promise<void> {
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(Date.now() + ms);
+    const awake = vi.spyOn(performance, 'now').mockReturnValue(performance.now() + ms);
+    try {
+      await act();
+      await new Promise<void>((resolve) => setImmediate(resolve));
+    } finally {
+      clock.mockRestore();
+      awake.mockRestore();
+    }
+  }
+
+  // DOR-2705. A turn that keeps talking is exempt from the four-hour ceiling,
+  // so the 16-hour limit is the only thing that ends a runaway one.
+  it('ends a turn that is still talking at the 16-hour limit, and says so', async () => {
+    const sessionId = nextSession();
+    await turn(sessionId);
+    const first = cli.processes[0]!;
+    first.goSilent();
+
+    const working = turn(sessionId, 'a job that never ends');
+    await vi.waitFor(() => {
+      expect(first.received).toHaveLength(2);
+    });
+    first.say('step one');
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    await withClocksAhead(SESSIONS.TURN_HARD_CEILING_MS + 5 * 60_000, () => {
+      // Still talking: not four quiet hours, but past sixteen in all.
+      first.say('step ten thousand');
+    });
+    await withClocksAhead(SESSIONS.TURN_HARD_CEILING_MS + 5 * 60_000, () => {
+      runtime.checkSessionHealth();
+    });
+
+    const events = await working;
+    expect(JSON.stringify(events)).toContain(
+      'The agent hit the 16-hour limit on nonstop work, so DorkOS closed it.'
+    );
+    expect(events.filter((e) => e.type === 'done')).toHaveLength(1);
+    const { logger } = await import('../../../../../lib/logger.js');
+    expect(vi.mocked(logger.warn)).toHaveBeenCalledWith(
+      '[SessionTurnWindows] ended an open turn with its process',
+      expect.objectContaining({ reason: 'limit' })
+    );
+  });
+
+  // DOR-2705. The reap that takes an agent-started turn whose main thread has
+  // said nothing for four hours, end to end: the reason and the words.
+  it('reaps an agent-started turn silent for four hours, naming the ceiling', async () => {
+    const sessionId = nextSession();
+    const runtimeEvents: StreamEvent[] = [];
+    let settled = false;
+    runtime.onRuntimeTurn((_id, events) => {
+      void (async () => {
+        for await (const event of events) runtimeEvents.push(event);
+        settled = true;
+      })();
+    });
+    await turn(sessionId);
+    const process = cli.processes[0]!;
+    process.reportTasks([{ task_id: 'helper-1', task_type: 'local_agent' }]);
+    await vi.waitFor(() => expect(runtime.holdsBackgroundWork(sessionId)).toBe(true));
+    // The agent starts a turn of its own, then only its helper is busy.
+    process.say('checking on the helper');
+    await vi.waitFor(() => expect(runtimeEvents.length).toBeGreaterThan(0));
+
+    await withClocksAhead(SESSIONS.BACKGROUND_WORK_PARK_CEILING_MS + 5 * 60_000, () =>
+      runtime.reapSession(sessionId)
+    );
+
+    await vi.waitFor(() => expect(settled).toBe(true));
+    expect(runtime.getSessionWarmth(sessionId)).toBe('cold');
+    expect(JSON.stringify(runtimeEvents)).toContain(
+      'The agent sent nothing for four hours, so DorkOS closed it.'
+    );
+    const { logger } = await import('../../../../../lib/logger.js');
+    expect(vi.mocked(logger.warn)).toHaveBeenCalledWith(
+      '[SessionTurnWindows] ended an open turn with its process',
+      expect.objectContaining({ reason: 'ceiling' })
+    );
   });
 });
 
