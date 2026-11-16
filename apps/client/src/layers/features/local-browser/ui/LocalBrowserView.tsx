@@ -1,10 +1,11 @@
-import { useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import type { LocalBrowserState } from '@dorkos/shared/local-browser';
 import { useOwnOrigins } from '@/layers/entities/config';
 import { isThisAppsAddress, normalizeAddressInput } from '@/layers/shared/lib';
 import { useTransport } from '@/layers/shared/model';
 import { BrowserChrome, Button } from '@/layers/shared/ui';
 import { useGuestPage } from '../model/use-guest-page';
+import type { NativeStillControls } from '../model/use-native-browser-surface';
 import { searchAddress } from '../lib/page-error';
 import { BrowserPageArea } from './BrowserPageArea';
 
@@ -36,8 +37,9 @@ export interface LocalBrowserViewProps {
  * load failures (DOR-4430, DOR-4431). What the person types is read by the
  * shared address rules (DOR-4419); a refusal shows on the chrome's notice line
  * and keeps the typed text. Back and Forward stay disabled until the page's own
- * history can be moved (DOR-4449). A button's tooltip covers the native page,
- * which leaves a still of itself in its place while it shows (DOR-4438).
+ * history can be moved (DOR-4449). A button's tooltip opens only once a still of
+ * the page is drawn under it (DOR-4438), so the page never blinks out; with no
+ * still, the button keeps a plain hint.
  */
 export function LocalBrowserView({
   tab,
@@ -58,6 +60,19 @@ export function LocalBrowserView({
   // What the person last typed and went to: only their own words are ever searched for.
   const [typed, setTyped] = useState<{ text: string; host: string } | null>(null);
   const typedFailed = !!typed && !!page.failure && page.failure.host === typed.host;
+  // A tooltip over the embedded page opens only once a still of the page is under it,
+  // so the page never blinks out; with no still, the button keeps a plain hint.
+  const stillControls = useRef<NativeStillControls | null>(null);
+  const keepStillControls = useCallback((controls: NativeStillControls | null) => {
+    stillControls.current = controls;
+  }, []);
+  const tooltipStill = useMemo(
+    () => ({
+      prepare: () => stillControls.current?.prepare() ?? Promise.resolve(false),
+      release: () => stillControls.current?.release(),
+    }),
+    []
+  );
   /**
    * What was typed, held when it did not open so the field reopens on it, with
    * the notice when the address rules refused it. A navigation that failed has
@@ -135,6 +150,7 @@ export function LocalBrowserView({
           onStop={() => page.run('stop')}
           onSubmit={(text) => submit(tab.id, tab.url, text)}
           busy={busy}
+          tooltipStill={embedded ? tooltipStill : undefined}
           retry={shownRetry}
           notice={shownRetry?.notice ?? null}
         />
@@ -150,6 +166,7 @@ export function LocalBrowserView({
           }}
           onUnavailable={onUnavailable}
           disabled={busy}
+          onStillControls={keepStillControls}
         >
           {surfaceUnavailable && (
             <div className="space-y-2 p-3">

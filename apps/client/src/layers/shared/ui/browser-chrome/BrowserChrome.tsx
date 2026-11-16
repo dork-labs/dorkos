@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
 import { ArrowLeft, ArrowRight, CircleAlert, RotateCw, X, type LucideIcon } from 'lucide-react';
 import { cn } from '@/layers/shared/lib/utils';
 import { Button } from '../button';
@@ -12,6 +12,26 @@ import { AddressField } from './AddressField';
  * wheel is a judgment call. Off, the seam stays its resting tint.
  */
 export const SEAM_SHOWS_AGENT_DRIVING = true;
+
+/**
+ * How long a pointer rests on a chrome button before its tooltip opens. Passing
+ * over the row on the way to the page opens nothing, which matters most over a
+ * native page: each tooltip there puts a still in the page's place (DOR-4427).
+ */
+export const CHROME_TOOLTIP_DELAY_MS = 500;
+
+/**
+ * A still of the page taken before a tooltip opens over it, for a page that a
+ * tooltip would otherwise blank: `prepare` answers whether one is in place, and
+ * `release` drops one no tooltip came to use.
+ */
+export interface ChromeTooltipStill {
+  prepare: () => Promise<boolean>;
+  release: () => void;
+}
+
+/** The still the chrome's buttons ask for, when the page under them needs one. */
+const TooltipStillContext = createContext<ChromeTooltipStill | null>(null);
 
 /** Props for {@link BrowserChrome}. */
 export interface BrowserChromeProps {
@@ -47,6 +67,12 @@ export interface BrowserChromeProps {
   notice?: string | null;
   /** Whether an agent is driving the page right now. */
   agentDriving?: boolean;
+  /**
+   * For a page a tooltip would blank (the Agent browser's native page): each
+   * tooltip opens only once a still is in the page's place, and with no still
+   * the button keeps a plain `title` hint instead.
+   */
+  tooltipStill?: ChromeTooltipStill;
   /** The status pill's place, right of the address. */
   status?: ReactNode;
   /**
@@ -86,6 +112,7 @@ export function BrowserChrome({
   retry = null,
   notice = null,
   agentDriving = false,
+  tooltipStill,
   status,
   menu,
   trailing,
@@ -93,71 +120,78 @@ export function BrowserChrome({
 }: BrowserChromeProps) {
   const stopping = loading && onStop !== undefined;
   return (
-    <TooltipProvider>
-      <div
-        data-slot="browser-chrome"
-        className={cn('bg-background @container/browser-chrome flex shrink-0 flex-col', className)}
-      >
+    <TooltipProvider delayDuration={CHROME_TOOLTIP_DELAY_MS}>
+      <TooltipStillContext.Provider value={tooltipStill ?? null}>
         <div
-          data-slot="browser-chrome-row"
-          aria-busy={loading}
-          className="flex h-12 items-center gap-1 px-2.5 md:h-9"
-        >
-          <ChromeButton label="Back" icon={ArrowLeft} disabled={!canBack} onClick={onBack} />
-          <ChromeButton
-            label="Forward"
-            icon={ArrowRight}
-            disabled={!canForward}
-            onClick={onForward}
-            className={menu ? 'hidden @min-[480px]/browser-chrome:inline-flex' : undefined}
-          />
-          <ChromeButton
-            label={stopping ? 'Stop' : 'Reload'}
-            icon={stopping ? X : RotateCw}
-            disabled={busy && !stopping}
-            onClick={stopping ? onStop : onReload}
-          />
-          {/* Keyed on the retry so a refused address reopens the field in edit
-              mode, holding what was typed rather than the page still open. */}
-          <AddressField
-            key={retry === null ? 'address' : `retry:${retry.attempt}`}
-            url={url}
-            startEditing={retry !== null}
-            initialDraft={retry?.draft}
-            busy={busy}
-            onSubmit={onSubmit}
-          />
-          {status}
-          {trailing}
-          {menu}
-        </div>
-        <div
-          aria-hidden
-          data-slot="browser-chrome-seam"
-          data-agent-driving={agentDriving || undefined}
+          data-slot="browser-chrome"
           className={cn(
-            'h-0.5 shrink-0',
-            agentDriving && SEAM_SHOWS_AGENT_DRIVING ? 'bg-brand' : 'bg-foreground/5'
+            'bg-background @container/browser-chrome flex shrink-0 flex-col',
+            className
           )}
-        />
-        {notice && (
-          <p
-            role="alert"
-            className="text-muted-foreground flex min-h-7 shrink-0 items-center gap-1.5 px-2.5 py-1 text-xs"
+        >
+          <div
+            data-slot="browser-chrome-row"
+            aria-busy={loading}
+            className="flex h-12 items-center gap-1 px-2.5 md:h-9"
           >
-            {/* The glyph is what makes it read as a refusal rather than a hint (spec §6). */}
-            <CircleAlert aria-hidden className="text-destructive size-4 shrink-0" />
-            <span className="min-w-0">{notice}</span>
-          </p>
-        )}
-      </div>
+            <ChromeButton label="Back" icon={ArrowLeft} disabled={!canBack} onClick={onBack} />
+            <ChromeButton
+              label="Forward"
+              icon={ArrowRight}
+              disabled={!canForward}
+              onClick={onForward}
+              className={menu ? 'hidden @min-[480px]/browser-chrome:inline-flex' : undefined}
+            />
+            <ChromeButton
+              label={stopping ? 'Stop' : 'Reload'}
+              icon={stopping ? X : RotateCw}
+              disabled={busy && !stopping}
+              onClick={stopping ? onStop : onReload}
+            />
+            {/* Keyed on the retry so a refused address reopens the field in edit
+              mode, holding what was typed rather than the page still open. */}
+            <AddressField
+              key={retry === null ? 'address' : `retry:${retry.attempt}`}
+              url={url}
+              startEditing={retry !== null}
+              initialDraft={retry?.draft}
+              busy={busy}
+              onSubmit={onSubmit}
+            />
+            {status}
+            {trailing}
+            {menu}
+          </div>
+          <div
+            aria-hidden
+            data-slot="browser-chrome-seam"
+            data-agent-driving={agentDriving || undefined}
+            className={cn(
+              'h-0.5 shrink-0',
+              agentDriving && SEAM_SHOWS_AGENT_DRIVING ? 'bg-brand' : 'bg-foreground/5'
+            )}
+          />
+          {notice && (
+            <p
+              role="alert"
+              className="text-muted-foreground flex min-h-7 shrink-0 items-center gap-1.5 px-2.5 py-1 text-xs"
+            >
+              {/* The glyph is what makes it read as a refusal rather than a hint (spec §6). */}
+              <CircleAlert aria-hidden className="text-destructive size-4 shrink-0" />
+              <span className="min-w-0">{notice}</span>
+            </p>
+          )}
+        </div>
+      </TooltipStillContext.Provider>
     </TooltipProvider>
   );
 }
 
 /**
  * One 28px ghost icon button (44px on a phone), named by its `aria-label` and
- * shown in a tooltip. With no handler it stays disabled.
+ * shown in a tooltip. With no handler it stays disabled. Over a page that needs
+ * a still, the tooltip opens only once the still is in place, and without one
+ * the button falls back to a plain `title` hint for that hover.
  */
 export function ChromeButton({
   label,
@@ -172,15 +206,75 @@ export function ChromeButton({
   onClick?: () => void;
   className?: string;
 }) {
+  const still = useContext(TooltipStillContext);
+  const [open, setOpen] = useState(false);
+  const [hintOnly, setHintOnly] = useState(false);
+  // The latest request for a still; an older answer, or one after leaving, is ignored.
+  const request = useRef(0);
+  const pending = useRef(false);
+  const holding = useRef(false);
+  const leave = () => {
+    request.current += 1;
+    pending.current = false;
+    setHintOnly(false);
+    setOpen(false);
+    if (holding.current) {
+      holding.current = false;
+      still?.release();
+    }
+  };
+  // A button that goes away mid-hover gives its still back, so no old picture lingers.
+  const stillRef = useRef(still);
+  useEffect(() => {
+    stillRef.current = still;
+  }, [still]);
+  useEffect(
+    () => () => {
+      request.current += 1;
+      if (holding.current) stillRef.current?.release();
+    },
+    []
+  );
+  const onOpenChange = (next: boolean) => {
+    if (!next) {
+      leave();
+      return;
+    }
+    if (!still) {
+      setOpen(true);
+      return;
+    }
+    if (hintOnly || pending.current || open) return;
+    const mine = ++request.current;
+    pending.current = true;
+    holding.current = true;
+    void still.prepare().then((ready) => {
+      if (mine !== request.current) return;
+      pending.current = false;
+      if (ready) {
+        setOpen(true);
+        return;
+      }
+      // No still: keep the page and name the button the plain way instead.
+      holding.current = false;
+      still.release();
+      setHintOnly(true);
+    });
+  };
+  // Over a page that needs a still, leaving or pressing ends the request at once;
+  // elsewhere Radix keeps its own grace area for moving onto the tooltip.
+  const stillHandlers = still ? { onPointerLeave: leave, onPointerDown: leave, onBlur: leave } : {};
   return (
-    <Tooltip>
+    <Tooltip open={open} onOpenChange={onOpenChange}>
       <TooltipTrigger asChild>
         <Button
           variant="ghost"
           size="icon-sm"
           aria-label={label}
+          title={hintOnly ? label : undefined}
           disabled={onClick === undefined || disabled}
           onClick={onClick}
+          {...stillHandlers}
           className={cn('text-muted-foreground hover:text-foreground md:size-7', className)}
         >
           <Icon aria-hidden />

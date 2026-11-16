@@ -1,6 +1,6 @@
-import { describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen } from '@testing-library/react';
-import { BrowserChrome, type BrowserChromeProps } from '../browser-chrome';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { act, fireEvent, render, screen } from '@testing-library/react';
+import { BrowserChrome, CHROME_TOOLTIP_DELAY_MS, type BrowserChromeProps } from '../browser-chrome';
 
 // The real packages/ui Button and Radix Tooltip, never stand-ins.
 function renderChrome(props: Partial<BrowserChromeProps> = {}) {
@@ -220,5 +220,111 @@ describe('BrowserChrome', () => {
     expect(screen.getByRole('button', { name: 'Address: New page' })).toHaveTextContent(
       'Search DuckDuckGo or type an address'
     );
+  });
+
+  // DOR-4427: over a native page, a tooltip must never blank the page.
+  describe('tooltips over a page that needs a still', () => {
+    afterEach(() => vi.useRealTimers());
+
+    /** A still that arrives when the test says so. */
+    function deferredStill() {
+      let answer!: (ready: boolean) => void;
+      const prepare = vi.fn(() => new Promise<boolean>((done) => (answer = done)));
+      const release = vi.fn();
+      return { still: { prepare, release }, answer: (ready: boolean) => answer(ready) };
+    }
+
+    it('waits 500ms on a pointer before it opens a tooltip', async () => {
+      vi.useFakeTimers();
+      expect(CHROME_TOOLTIP_DELAY_MS).toBeGreaterThanOrEqual(500);
+      renderChrome();
+      const reload = screen.getByRole('button', { name: 'Reload' });
+      fireEvent.pointerMove(reload, { pointerType: 'mouse' });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(CHROME_TOOLTIP_DELAY_MS - 100);
+      });
+      expect(screen.queryByRole('tooltip')).toBeNull();
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(200);
+      });
+      expect(screen.getByRole('tooltip')).toHaveTextContent('Reload');
+    });
+
+    it('opens only once the still is in place', async () => {
+      const { still, answer } = deferredStill();
+      renderChrome({ tooltipStill: still });
+      fireEvent.focus(screen.getByRole('button', { name: 'Reload' }));
+      expect(still.prepare).toHaveBeenCalledOnce();
+      // No tooltip, so no cover, until the still is drawn: the page never blinks.
+      expect(screen.queryByRole('tooltip')).toBeNull();
+      await act(async () => answer(true));
+      expect(await screen.findByRole('tooltip')).toHaveTextContent('Reload');
+      expect(screen.getByRole('button', { name: 'Reload' })).not.toHaveAttribute('title');
+    });
+
+    it('keeps the page and a plain hint when there is no still', async () => {
+      const { still, answer } = deferredStill();
+      renderChrome({ tooltipStill: still });
+      fireEvent.focus(screen.getByRole('button', { name: 'Reload' }));
+      await act(async () => answer(false));
+      expect(screen.queryByRole('tooltip')).toBeNull();
+      expect(screen.getByRole('button', { name: 'Reload' })).toHaveAttribute('title', 'Reload');
+      expect(screen.getByRole('button', { name: 'Reload' })).toHaveAttribute(
+        'aria-label',
+        'Reload'
+      );
+      expect(still.release).toHaveBeenCalled();
+    });
+
+    it('opens nothing when the pointer left before the still came', async () => {
+      const { still, answer } = deferredStill();
+      renderChrome({ tooltipStill: still });
+      const reload = screen.getByRole('button', { name: 'Reload' });
+      fireEvent.focus(reload);
+      fireEvent.blur(reload);
+      expect(still.release).toHaveBeenCalledOnce();
+      await act(async () => answer(true));
+      // The late answer is ignored: no tooltip, and nothing more to give back.
+      expect(screen.queryByRole('tooltip')).toBeNull();
+      expect(still.release).toHaveBeenCalledOnce();
+    });
+
+    it('opens nothing when the button is pressed before the still came', async () => {
+      const { still, answer } = deferredStill();
+      const { onReload } = renderChrome({ tooltipStill: still });
+      const reload = screen.getByRole('button', { name: 'Reload' });
+      fireEvent.focus(reload);
+      fireEvent.pointerDown(reload);
+      fireEvent.click(reload);
+      await act(async () => answer(true));
+      expect(onReload).toHaveBeenCalledOnce();
+      expect(screen.queryByRole('tooltip')).toBeNull();
+    });
+
+    it('asks for one still per hover, however many ways the button is reached', async () => {
+      vi.useFakeTimers();
+      const { still, answer } = deferredStill();
+      renderChrome({ tooltipStill: still });
+      const reload = screen.getByRole('button', { name: 'Reload' });
+      fireEvent.pointerMove(reload, { pointerType: 'mouse' });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(CHROME_TOOLTIP_DELAY_MS + 50);
+      });
+      fireEvent.focus(reload);
+      expect(still.prepare).toHaveBeenCalledOnce();
+      await act(async () => answer(true));
+      expect(screen.getByRole('tooltip')).toHaveTextContent('Reload');
+      expect(still.release).not.toHaveBeenCalled();
+    });
+
+    it('gives its still back when it goes away mid-hover', async () => {
+      const { still, answer } = deferredStill();
+      const view = renderChrome({ tooltipStill: still });
+      fireEvent.focus(screen.getByRole('button', { name: 'Reload' }));
+      await act(async () => answer(true));
+      expect(await screen.findByRole('tooltip')).toBeInTheDocument();
+      view.unmount();
+      expect(still.release).toHaveBeenCalledOnce();
+    });
   });
 });
