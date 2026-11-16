@@ -132,7 +132,8 @@ describe('a paid-run card', () => {
   it('is never allowed always: the limit is what "always" means for money', async () => {
     const card = spendCard();
     const res = await grant(card.approvalId, { answer: 'always' });
-    expect(res.status).toBeGreaterThanOrEqual(400);
+    expect(res.status).toBe(409);
+    expect(res.body).toMatchObject({ code: 'SPEND_ONCE_ONLY' });
     expect(approvals.answerScope(card.approvalId)).toBeDefined();
   });
 
@@ -178,6 +179,7 @@ describe('a paid-run card', () => {
       .post(`/api/approvals/${card.approvalId}/grant`)
       .send({});
     expect(teammate.status).toBe(403);
+    expect(teammate.body).toMatchObject({ code: 'SPEND_OWNER_ONLY' });
     expect(approvals.answerScope(card.approvalId)?.state).toBe('pending');
     const owner = await request(asUser('owner'))
       .post(`/api/approvals/${card.approvalId}/grant`)
