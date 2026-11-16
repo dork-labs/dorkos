@@ -6,7 +6,7 @@ status: proposed
 actor: agent
 gates:
   - wf.security-review-initialize.initialize
-prs: []
+prs: [3865]
 ratchet-release: []
 field-changes: []
 ---
