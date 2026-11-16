@@ -616,35 +616,42 @@ export function SessionComposer({
   // over the agent's reply until the next keystroke.
   const submitAndDismiss = useCallback(() => {
     autocomplete.dismissPalettes();
-    // Where the session's words actually go: `ConversationTarget.send`, the
-    // same port a channel's Enter ends in. Nothing is taken out of the box
-    // here — the send owns the clear, and empties it only once the attachment
-    // transform has succeeded (DOR-480), which is the one thing a session's
-    // send does that a room's does not.
-    //
-    // No `.catch` here, and that is deliberate rather than an omission: the
-    // session's submit turns a refused trigger into the composer's own error
-    // banner (with its Retry) instead of throwing, so nothing that reaches this
-    // line would be a refusal a person needs told about — it would be a bug
-    // worth seeing.
+    // The held row stays durable until this Send. The paused-draft hook removes
+    // its queued copy before delivery, so the same words cannot run twice.
+    // The ordinary target send still owns attachments and the confirmed clear.
     if (target === null || !target.canSend) return;
     void pausedDraft.submit();
   }, [autocomplete, target, pausedDraft]);
 
   const queueAndDismiss = useCallback(() => {
+    if (agentPaused) return;
     autocomplete.dismissPalettes();
-    chatQueue.handleQueue();
-  }, [autocomplete, chatQueue]);
+    if (pausedDraft.restored) {
+      void pausedDraft.submit(async (text) => {
+        if (!(await holdForTurn(text))) throw new Error('Queue did not accept the message');
+      }, true);
+    } else chatQueue.handleQueue();
+  }, [agentPaused, autocomplete, chatQueue, pausedDraft, holdForTurn]);
 
   const steerAndDismiss = useCallback(() => {
+    if (agentPaused) return;
     autocomplete.dismissPalettes();
-    chatQueue.handleSteer();
-  }, [autocomplete, chatQueue]);
+    if (pausedDraft.restored) {
+      void pausedDraft.submit(async (text) => {
+        if (!(await steerContent(text))) throw new Error('Steer did not accept the message');
+      }, true);
+    } else chatQueue.handleSteer();
+  }, [agentPaused, autocomplete, chatQueue, pausedDraft, steerContent]);
 
   const addContextAndDismiss = useCallback(() => {
+    if (agentPaused) return;
     autocomplete.dismissPalettes();
-    chatQueue.handleStage();
-  }, [autocomplete, chatQueue]);
+    if (pausedDraft.restored) {
+      void pausedDraft.submit(async (text) => {
+        if (!(await addContextContent(text))) throw new Error('Context did not accept the message');
+      }, true);
+    } else chatQueue.handleStage();
+  }, [agentPaused, autocomplete, chatQueue, pausedDraft, addContextContent]);
 
   return (
     <Conversation.Composer

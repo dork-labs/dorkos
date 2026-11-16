@@ -30,10 +30,15 @@ export function usePausedComposerDraft({
   const sending = useRef(false);
   const currentSession = useRef(sessionId);
   currentSession.current = sessionId;
+  const currentInput = useRef(input);
+  currentInput.current = input;
   const [pending, setPending] = useState(false);
 
   useEffect(() => {
     if (held.current?.sessionId !== sessionId) held.current = null;
+    if (held.current && !queue.some((row) => row.id === held.current?.messageId)) {
+      held.current = null;
+    }
     if (!paused || input !== '' || held.current) return;
     const own = queue.find(
       (row) => row.fromChats === undefined && !row.enqueuedBy.startsWith('chat:')
@@ -43,7 +48,10 @@ export function usePausedComposerDraft({
     setInput(own.content);
   }, [sessionId, paused, queue, input, setInput]);
 
-  async function submit(): Promise<void> {
+  async function submit(
+    deliver: (text: string) => Promise<void> = send,
+    clearOnConfirmed = false
+  ): Promise<void> {
     if (paused || sending.current || !input.trim()) return;
     sending.current = true;
     setPending(true);
@@ -54,7 +62,14 @@ export function usePausedComposerDraft({
         if (held.current === row) held.current = null;
       }
       if (currentSession.current !== sessionId) return;
-      await send(input);
+      await deliver(input);
+      if (
+        clearOnConfirmed &&
+        currentSession.current === sessionId &&
+        currentInput.current === input
+      ) {
+        setInput('');
+      }
     } catch {
       toast.error('Couldn’t send that message. Try again.');
     } finally {
@@ -62,5 +77,5 @@ export function usePausedComposerDraft({
       setPending(false);
     }
   }
-  return { submit, pending };
+  return { submit, pending, restored: held.current?.sessionId === sessionId };
 }

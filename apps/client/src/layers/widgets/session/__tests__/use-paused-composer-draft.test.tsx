@@ -56,6 +56,18 @@ describe('a paused message in the composer', () => {
     expect(result.current.input).toBe('A newer draft');
   });
 
+  it('queues the edited held draft once when a peer’s turn is already running', async () => {
+    const { result, rerender, send, remove } = setup();
+    const enqueue = vi.fn(async (_text: string) => undefined);
+    act(() => result.current.setInput('Keep these edited words'));
+    rerender({ paused: false, sessionId: 'demo' });
+    expect(result.current.restored).toBe(true);
+    await act(() => result.current.submit(enqueue));
+    expect(remove).toHaveBeenCalledExactlyOnceWith('demo', 'held');
+    expect(enqueue).toHaveBeenCalledExactlyOnceWith('Keep these edited words');
+    expect(send).not.toHaveBeenCalled();
+  });
+
   it('keeps the words and sends nothing if taking the held row off fails', async () => {
     const { result, rerender, send } = setup(
       '',
