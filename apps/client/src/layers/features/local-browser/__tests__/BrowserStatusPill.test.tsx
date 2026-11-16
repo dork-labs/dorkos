@@ -203,7 +203,13 @@ describe('BrowserStatusPill', () => {
       ['Show the sign-in'],
       'Agent paused',
     ],
-    ['waiting', 'Waiting', 'Waiting for a page to open.', [], 'Waiting for a page'],
+    [
+      'waiting',
+      'Waiting',
+      'Atlas hasn’t opened a page yet. It shows here when it does.',
+      [],
+      'Waiting for a page',
+    ],
   ] as const)('%s: says %s', async (kind, label, sentence, buttons, status) => {
     const handlers = {
       onTakeOver: vi.fn(),
@@ -297,6 +303,15 @@ describe('BrowserStatusPill', () => {
     expect(sheet).toHaveAttribute('data-slot', 'drawer-content');
     expect(document.querySelector('[data-radix-popper-content-wrapper]')).toBeNull();
     expect(screen.getByRole('button', { name: 'Take over' })).toBeInTheDocument();
+  });
+
+  it('titles the phone sheet on the body’s own left edge, P9 in full', async () => {
+    phone = true;
+    render(<BrowserStatusPill state={{ kind: 'waiting' }} agentName="Atlas" />);
+    fireEvent.click(pill());
+    const title = await screen.findByRole('heading', { name: 'Waiting for a page' });
+    // The sheet's body already has its inset; the header adds none on top.
+    expect(title.closest('[data-slot="drawer-header"]')).toHaveClass('px-0');
   });
 
   it('says "The agent" when the chat names none, and never invents a site', () => {

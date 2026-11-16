@@ -37,6 +37,8 @@ interface PillCopy {
   icon: LucideIcon;
   /** The pill's own word, 14 characters at most. */
   label: string;
+  /** The sheet's title on a phone, when it says more than the label. */
+  title?: string;
   /** The popover's lines; the first is the pill's accessible name too. */
   lines: string[];
   /** What the hidden status region says, in the words the panel always used. */
@@ -162,7 +164,8 @@ export function browserPillCopy(
       return {
         icon: Clock,
         label: 'Waiting',
-        lines: ['Waiting for a page to open.'],
+        title: 'Waiting for a page',
+        lines: [`${agent} hasn’t opened a page yet. It shows here when it does.`],
         status: 'Waiting for a page',
       };
   }
@@ -239,7 +242,10 @@ export function BrowserStatusPill({
           </button>
         </ResponsivePopoverTrigger>
         <ResponsivePopoverContent align="end" className="w-72 space-y-3 p-3 text-sm">
-          <ResponsivePopoverTitle>{copy.label}</ResponsivePopoverTitle>
+          {/* The sheet's body already has its inset, so the title takes none of its own. */}
+          <ResponsivePopoverTitle headerClassName="px-0">
+            {copy.title ?? copy.label}
+          </ResponsivePopoverTitle>
           <div className="space-y-1">
             {copy.lines.map((line, index) => (
               <p key={line} className={cn(index > 0 && 'text-muted-foreground')}>

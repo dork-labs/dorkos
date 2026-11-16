@@ -1,6 +1,7 @@
 ---
 covers:
   - 'feat(client): the Agent browser says who has the page, and using it takes the page (DOR-4428)'
+  - 'fix(client): the browser pill says when no page is open yet, and its phone sheet title lines up (DOR-4428)'
 ---
 
 ### Changed
@@ -10,4 +11,4 @@ covers:
 
 ### Added
 
-- Reloading the Agent browser or typing an address while an agent uses it now takes the page for you in one step. The agent can't see or use the page until you hand it back.
+- Reloading, stopping or typing an address in the Agent browser while an agent uses it now takes the page for you in one step. The agent can't see or use the page until you hand it back.
