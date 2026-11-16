@@ -56,6 +56,27 @@ export interface TodoRecipientNoticeDeps {
 }
 
 /**
+ * What a change told the recipient, read from the promise before and after it (DOR-3034): a drop
+ * (once, not again on a note), a keep of an open promise, or a new date on one still open. A
+ * reopen, a note or a repeat tells nobody. Both agent tools use it, so either way is told.
+ *
+ * @param before - The promise before the change, or undefined when it was not found.
+ * @param after - The promise after it.
+ */
+export function changeToTell(
+  before: Pick<TodoPromise, 'state' | 'dueAt'> | undefined,
+  after: Pick<TodoPromise, 'state' | 'dueAt'>
+): TodoChangeNotice['change'] | null {
+  if (!before) return null;
+  if (after.state === 'dropped' && before.state !== 'dropped') return 'dropped';
+  if (after.state === 'kept' && before.state === 'open') return 'kept';
+  if (after.state === 'open' && before.state === 'open' && after.dueAt !== before.dueAt) {
+    return 'moved';
+  }
+  return null;
+}
+
+/**
  * Who a promise's `to` names: a person, an agent on the team, or nobody this can reach.
  *
  * @param to - The stored recipient.
@@ -74,13 +95,14 @@ export function recipientOf(to: string | null, isAgent: (id: string) => boolean)
  * @param notice - The change.
  */
 export function agentNoticeText(agentName: string, notice: TodoChangeNotice): string {
-  const { what, dueAt } = notice.todoPromise;
+  // By id, never its words: they can be somebody else's. todo_promises_list reads it.
+  const { id, dueAt } = notice.todoPromise;
   const reason = notice.reason ? ` Why: ${notice.reason}` : ' No reason given.';
   if (notice.change === 'dropped') {
-    return `${agentName} dropped the promise it made you: "${what}".${reason}`;
+    return `${agentName} dropped the promise it made you (${id}).${reason}`;
   }
   const when = dueAt ? `now due ${dueAt}` : 'now with no date';
-  return `${agentName} moved the promise it made you: "${what}", ${when}.${reason}`;
+  return `${agentName} moved the promise it made you (${id}), ${when}.${reason}`;
 }
 
 /**
@@ -110,7 +132,6 @@ export function createTodoRecipientNotice(
           todoId: todoPromise.id,
           agentId: todoPromise.agentId,
           agentName,
-          what: todoPromise.what,
           change: notice.change,
           note: notice.reason,
           newDue:

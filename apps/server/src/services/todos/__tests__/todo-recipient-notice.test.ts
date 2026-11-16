@@ -70,7 +70,6 @@ describe('createTodoRecipientNotice', () => {
       todoId: 'todo-1',
       agentId: 'agent-ana',
       agentName: 'Ana',
-      what: 'Send Acme the revised quote',
       change: 'moved',
       note: 'Waiting on their numbers',
       newDue: 'Fri, Nov 20',
@@ -91,7 +90,7 @@ describe('createTodoRecipientNotice', () => {
     expect(deps.sendToAgent).toHaveBeenCalledWith(
       { sessionId: 'chat-1', agentPath: '/agents/ana' },
       'agent-bo',
-      'Ana dropped the promise it made you: "Send Acme the revised quote". No reason given.'
+      'Ana dropped the promise it made you (todo-1). No reason given.'
     );
     expect(deps.notifyPerson).not.toHaveBeenCalled();
   });
@@ -146,7 +145,6 @@ describe('the todo.changed notice', () => {
     todoId: 't',
     agentId: 'agent-ana',
     agentName: 'Ana',
-    what: 'Send Acme the revised quote',
     at: AT.toISOString(),
   };
 
@@ -154,7 +152,7 @@ describe('the todo.changed notice', () => {
     const entry = TODO_CHANGE_ENTRIES['todo.changed'];
     const body = entry.body!;
     expect(entry.title({ ...base, change: 'moved', note: null, newDue: 'Fri, Nov 20' })).toBe(
-      'Ana moved “Send Acme the revised quote”'
+      'Ana moved a promise to you'
     );
     expect(body({ ...base, change: 'moved', note: 'Blocked', newDue: 'Fri, Nov 20' })).toBe(
       'Now due Fri, Nov 20. Why: Blocked'
@@ -170,9 +168,9 @@ describe('the todo.changed notice', () => {
         newDue: null,
         delivered: 'https://github.com/acme/app/pull/12',
       })
-    ).toBe('Done? Answer Yes or Not yet on Ana’s to-dos. Delivered · github.com');
+    ).toBe('Done? Answer Yes or Not yet on Ana’s to-dos within a day. Delivered · github.com');
     expect(body({ ...base, change: 'kept', note: null, newDue: null, delivered: 'pr/1' })).toBe(
-      'Done? Answer Yes or Not yet on Ana’s to-dos.'
+      'Done? Answer Yes or Not yet on Ana’s to-dos within a day.'
     );
     expect(body({ ...base, change: 'dropped', note: 'Not needed', newDue: null })).toBe(
       'Why: Not needed'
@@ -185,7 +183,7 @@ describe('agentNoticeText', () => {
     expect(
       agentNoticeText('Ana', { todoPromise: promise(), change: 'moved', reason: 'Blocked' })
     ).toBe(
-      'Ana moved the promise it made you: "Send Acme the revised quote", now due 2026-11-20T17:00:00.000Z. Why: Blocked'
+      'Ana moved the promise it made you (todo-1), now due 2026-11-20T17:00:00.000Z. Why: Blocked'
     );
   });
 });

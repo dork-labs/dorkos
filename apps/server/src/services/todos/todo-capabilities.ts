@@ -32,7 +32,12 @@
  */
 import { z } from 'zod';
 import type { TurnPermissionLevel } from '@dorkos/shared/agent-runtime';
-import { TODO_NOTE_MAX, TODO_TO_MAX, TODO_WHAT_MAX } from '@dorkos/shared/todo-promise-schemas';
+import {
+  TODO_NOTE_MAX,
+  TODO_TO_MAX,
+  TODO_WHAT_MAX,
+  type TodoPromise,
+} from '@dorkos/shared/todo-promise-schemas';
 import { TODO_NOTES_MAX, TODO_RANK_MAX, TodoSchema } from '@dorkos/shared/todo-schemas';
 import { marksOf, passedOnLevelOf } from '../core/turn-power/turn-levels.js';
 import { hasMarks } from '../core/turn-power/turn-marks.js';
@@ -47,6 +52,7 @@ import { TodoPromiseError, PERSON_ASSIGNER } from './todo-promise-service.js';
 import type { TodoActor } from './todo-authority.js';
 import type { TodoAssignee, TodoParent, TodoService, TodoSource } from './todo-service.js';
 import { titleIsFromSource, type TodoSourceFacts } from './todo-source.js';
+import { changeToTell, type TodoChangeNotice } from './notice/todo-recipient-notice.js';
 
 /** The MCP tool names. */
 export const TODO_ADD_TOOL = 'todo_add';
@@ -69,6 +75,10 @@ declare module '../core/capabilities/capability-definition.js' {
       readSource(entryId: string): TodoSourceFacts | undefined;
       /** Whether an agent may cite a message in a room. */
       agentInRoom(roomId: string, agentPath: string): boolean;
+      /** A to-do as a promise, so a change through this tool tells its recipient (DOR-3034). */
+      promiseOf?(id: string): TodoPromise | undefined;
+      /** Tell whoever a promise was made to; the same hook `todo_promise_update` uses. */
+      tellRecipient?: (notice: TodoChangeNotice) => Promise<void>;
     };
   }
 }
@@ -321,7 +331,8 @@ export const todosDomain: CapabilityDomain = {
         const { id, assignee, ...rest } = input;
         if (call.marked && ownOnlyFieldsBreached(input)) return MARKED_TURN_EDIT;
         if (assignee !== undefined && call.parent?.capped) return CAPPED_TURN;
-        return answer(() => ({
+        const before = todoDeps.promiseOf?.(id);
+        const result = answer(() => ({
           ok: true as const,
           todo: todoDeps.todos.update(
             call.actor,
@@ -330,6 +341,19 @@ export const todosDomain: CapabilityDomain = {
             call.parent
           ),
         }));
+        // A move, drop or keep through this tool is told the same way (DOR-3034).
+        const after = result.ok ? todoDeps.promiseOf?.(id) : undefined;
+        const change = after ? changeToTell(before, after) : null;
+        if (after && change && call.actor.kind === 'agent' && todoDeps.tellRecipient) {
+          void todoDeps.tellRecipient({
+            todoPromise: after,
+            change,
+            reason: input.note || null,
+            ...(context.sessionId ? { sessionId: context.sessionId } : {}),
+            ...(context.identity?.agentPath ? { agentPath: context.identity.agentPath } : {}),
+          });
+        }
+        return result;
       },
     }),
     defineCapability({

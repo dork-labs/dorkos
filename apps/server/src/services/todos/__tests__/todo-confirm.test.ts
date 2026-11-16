@@ -15,6 +15,7 @@ import { TodoService } from '../todo-service.js';
 import { TodoStore } from '../todo-store.js';
 import { TodoConfirm } from '../notice/todo-confirm.js';
 import { createTodosGatherer } from '../../heartbeats/gatherers/todo-promises.js';
+import { standingKey, triageByRules } from '../../heartbeats/triage-rules.js';
 
 const START = new Date('2026-11-15T09:00:00.000Z');
 const HOUR = 60 * 60 * 1000;
@@ -40,7 +41,7 @@ describe('TodoConfirm', () => {
     confirm = new TodoConfirm({
       store: new TodoPromiseStore(db),
       reopen: (actor, id, note) => service.update(actor, id, { state: 'open', note, from: 'kept' }),
-
+      wakeNow: (id) => service.wakeNow(id),
       clearNotice,
     });
   });
@@ -77,7 +78,7 @@ describe('TodoConfirm', () => {
     const reopened = confirm.answer(PERSON, id, 'not-yet');
     expect(reopened).toMatchObject({ state: 'open', confirmState: 'not-yet', delivered: null });
     expect(wakes.map((event) => event.phase)).toEqual(['start']);
-    expect(service.wakePhaseOf(id)).toBe('not-yet');
+    expect(service.lastWakeOf(id)).toMatchObject({ phase: 'start', notYet: true });
     vi.advanceTimersByTime(10 * 60_000);
     expect(service.get(id)!.state).toBe('open');
   });
@@ -90,10 +91,72 @@ describe('TodoConfirm', () => {
       agent: { id: 'agent-a' },
       now: new Date(),
     } as never);
+    const wake = service.lastWakeOf(id)!;
     expect(changes.map((c) => [c.key, c.signal])).toContainEqual([
-      `commitment:${id}:not-yet`,
+      `commitment:${id}:start:${wake.at}`,
       'commitment-start',
     ]);
+  });
+
+  it('after a Not yet and a moved date, the new start, check-in and overdue each reach the agent', async () => {
+    const wakes: TodoPromiseDueEvent[] = [];
+    service.observe((event) => wakes.push(event));
+    const made = service.create('agent-a', {
+      what: 'Ship the fix',
+      to: 'owner',
+      dueAt: new Date(START.getTime() + 5 * HOUR).toISOString(),
+      estimate: 'hour',
+    });
+    service.update(AGENT, made.id, { state: 'kept' });
+    confirm.ask(made.id);
+    confirm.answer(PERSON, made.id, 'not-yet');
+    const gather = async () =>
+      createTodosGatherer(service)({ agent: { id: 'agent-a' }, now: new Date() } as never);
+    const seen = new Set<string>();
+    const isWork = async () => {
+      const changes = await gather();
+      const verdict = triageByRules(changes, { failureStorm: false, seenStanding: seen }).verdict;
+      changes.forEach((c) => seen.add(standingKey(c)));
+      return verdict;
+    };
+    expect(await isWork()).toBe('work');
+    // A new date ten hours out: an hour of work starts 75 minutes before, checks in halfway.
+    service.update(AGENT, made.id, {
+      state: 'open',
+      dueAt: new Date(Date.now() + 10 * HOUR).toISOString(),
+    });
+    expect(service.get(made.id)!.confirmState).toBeNull();
+    vi.advanceTimersByTime(10 * HOUR - 75 * 60_000);
+    expect(wakes.map((e) => e.phase)).toEqual(['start', 'start']);
+    expect(await isWork()).toBe('work');
+    vi.advanceTimersByTime(37.5 * 60_000);
+    expect(wakes.map((e) => e.phase)).toEqual(['start', 'start', 'checkin']);
+    expect(await isWork()).toBe('work');
+    vi.advanceTimersByTime(38 * 60_000);
+    expect(await isWork()).toBe('work');
+  });
+
+  it('wakes the agent at once on a Not yet before the start window, and on an undated promise', () => {
+    const wakes: TodoPromiseDueEvent[] = [];
+    service.observe((event) => wakes.push(event));
+    const early = keptAndAsked(new Date(START.getTime() + 3 * 24 * HOUR).toISOString());
+    confirm.answer(PERSON, early, 'not-yet');
+    expect(wakes.map((e) => e.todoPromise.id)).toEqual([early]);
+    const undated = service.create('agent-a', { what: 'Tidy up', to: 'owner' });
+    service.update(AGENT, undated.id, { state: 'kept' });
+    confirm.ask(undated.id);
+    confirm.answer(PERSON, undated.id, 'not-yet');
+    expect(wakes.map((e) => e.todoPromise.id)).toEqual([early, undated.id]);
+    expect(service.lastWakeOf(undated.id)).toMatchObject({ notYet: true });
+  });
+
+  it('takes no answer after the day it waits, and marks the ask read only once answered', () => {
+    const id = keptAndAsked();
+    vi.advanceTimersByTime(25 * HOUR);
+    expect(() => confirm.answer(PERSON, id, 'yes')).toThrow(
+      expect.objectContaining({ code: 'NOTHING_TO_CHANGE' })
+    );
+    expect(clearNotice).not.toHaveBeenCalled();
   });
 
   it('asks again after a Not yet is kept again', () => {

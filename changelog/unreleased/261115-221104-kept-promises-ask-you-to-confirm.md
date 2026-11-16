@@ -2,6 +2,7 @@
 covers:
   - 'feat(todos): a kept promise asks the person it was made to, Yes or Not yet (DOR-3034)'
   - 'fix(todos): a Not yet wakes the agent, and every way out of kept ends the ask (DOR-3034)'
+  - 'fix(todos): every wake is news to the beat, Not yet wakes at once, and both tools tell the recipient (DOR-3034)'
 ---
 
 ### Added

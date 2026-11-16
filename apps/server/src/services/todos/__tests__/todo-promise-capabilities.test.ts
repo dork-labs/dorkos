@@ -324,6 +324,27 @@ describe('to-dos domain', () => {
       expect(tellRecipient.mock.calls.map(([n]) => n.change)).toEqual(['kept']);
     });
 
+    it('tells a drop once, not again for a note on the dropped promise', async () => {
+      const tellRecipient = vi.fn().mockResolvedValue(undefined);
+      const told = {
+        ...deps,
+        todoPromiseDeps: { ...deps.todoPromiseDeps!, tellRecipient },
+      } as CapabilityDeps;
+      await call(
+        told,
+        'todo_promises.update',
+        { id, state: 'dropped', note: 'No longer needed' },
+        { identity: ana }
+      );
+      await call(
+        told,
+        'todo_promises.update',
+        { id, state: 'dropped', note: 'Really' },
+        { identity: ana }
+      );
+      expect(tellRecipient.mock.calls.map(([n]) => n.change)).toEqual(['dropped']);
+    });
+
     it('tells nobody when a person keeps or drops it', async () => {
       const tellRecipient = vi.fn().mockResolvedValue(undefined);
       const told = {

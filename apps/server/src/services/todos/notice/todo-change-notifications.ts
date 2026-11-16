@@ -12,9 +12,6 @@
  */
 import type { NotificationRegistryEntry } from '../../notifications/notification-registry.js';
 
-/** The longest stretch of a promise's words a title quotes before it trims. */
-const WHAT_IN_TITLE_MAX = 60;
-
 /** The payload of the promise-changed kind, joined into `NotificationPayloads`. */
 export interface TodoChangePayloads {
   /** An agent moved, dropped or kept a promise it made to a person. */
@@ -25,8 +22,6 @@ export interface TodoChangePayloads {
     agentId: string;
     /** That agent's name, as the team knows it. */
     agentName: string;
-    /** The promise, in its own words. */
-    what: string;
     /** What happened to it. */
     change: 'moved' | 'dropped' | 'kept';
     /** The reason the agent gave, or null when it gave none. */
@@ -38,12 +33,6 @@ export interface TodoChangePayloads {
     /** ISO time of the change. */
     at: string;
   };
-}
-
-/** The promise's words, short enough for a title. */
-function quoted(what: string): string {
-  const words = what.length > WHAT_IN_TITLE_MAX ? `${what.slice(0, WHAT_IN_TITLE_MAX - 1)}…` : what;
-  return `“${words}”`;
 }
 
 /** The site a delivered link points at ("github.com"), or null for anything but a web address. */
@@ -67,10 +56,12 @@ export const TODO_CHANGE_ENTRIES: {
     storage: 'event',
     subjectType: 'agent',
     locate: (p) => ({ subjectId: p.agentId, agentId: p.agentId }),
-    title: (p) => `${p.agentName} ${p.change} ${quoted(p.what)}`,
+    // Fixed words, never the promise's own: they can be somebody else's (a to-do a guest's message
+    // made), so the person opens the promise to read it, as the heartbeat gatherer does.
+    title: (p) => `${p.agentName} ${p.change} a promise to you`,
     body: (p) => {
       if (p.change === 'kept') {
-        const ask = `Done? Answer Yes or Not yet on ${p.agentName}’s to-dos.`;
+        const ask = `Done? Answer Yes or Not yet on ${p.agentName}’s to-dos within a day.`;
         const host = hostOf(p.delivered);
         return host ? `${ask} Delivered · ${host}` : ask;
       }
@@ -78,7 +69,9 @@ export const TODO_CHANGE_ENTRIES: {
       if (p.change !== 'moved') return why;
       return `${p.newDue ? `Now due ${p.newDue}.` : 'Now with no date.'} ${why}`;
     },
-    dedupeKey: (p) => `todo-changed:${p.todoId}:${p.at}`,
+    // One ask per promise, however often it is kept again; each move or drop is its own news.
+    dedupeKey: (p) =>
+      p.change === 'kept' ? `todo-kept:${p.todoId}` : `todo-changed:${p.todoId}:${p.at}`,
     relay: 'never',
   },
 };

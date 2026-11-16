@@ -55,6 +55,7 @@ describe('to-do routes', () => {
         store: new TodoPromiseStore(db),
         reopen: (actor, id, note) =>
           service.update(actor, id, { state: 'open', note, from: 'kept' }),
+        wakeNow: (id) => service.wakeNow(id),
       }),
       service,
       agentExists: (id: string) => Object.values(AGENTS).includes(id),
@@ -195,6 +196,7 @@ describe('to-do routes', () => {
     const confirm = new TodoConfirm({
       store: new TodoPromiseStore(db),
       reopen: (actor, id, note) => service.update(actor, id, { state: 'open', note, from: 'kept' }),
+      wakeNow: (id) => service.wakeNow(id),
     });
     const yes = service.create('agent-ana', { what: 'Ship it', to: 'owner' });
     service.update({ kind: 'agent', agentId: 'agent-ana' }, yes.id, { state: 'kept' });

@@ -3,7 +3,11 @@
  *
  * @module features/todos/lib/todo-promise-labels
  */
-import { TODO_EXTERNAL_PREFIX, type TodoPromise } from '@dorkos/shared/todo-promise-schemas';
+import {
+  TODO_CONFIRM_WINDOW_MS,
+  TODO_EXTERNAL_PREFIX,
+  type TodoPromise,
+} from '@dorkos/shared/todo-promise-schemas';
 import type { TeamMember } from '@dorkos/shared/team-schemas';
 
 /**
@@ -49,9 +53,6 @@ export function toLabel(
   return `To ${nameOf?.(to) ?? to}`;
 }
 
-/** How long a kept promise waits for its person's answer before it reads as unconfirmed. */
-const CONFIRM_WINDOW_MS = 86_400_000;
-
 /**
  * Whether a kept promise is still waiting for its person's Yes or Not yet (DOR-3034): asked, and
  * kept within the last day. Past that it reads "Kept · unconfirmed" and asks nothing more.
@@ -65,7 +66,7 @@ export function awaitsConfirm(
 ): boolean {
   if (todoPromise.state !== 'kept' || todoPromise.confirmState !== 'asked') return false;
   const closed = todoPromise.closedAt ? Date.parse(todoPromise.closedAt) : NaN;
-  return !Number.isNaN(closed) && now.getTime() - closed < CONFIRM_WINDOW_MS;
+  return !Number.isNaN(closed) && now.getTime() - closed < TODO_CONFIRM_WINDOW_MS;
 }
 
 /**

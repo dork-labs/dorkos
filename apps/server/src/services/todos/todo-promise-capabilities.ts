@@ -56,7 +56,7 @@ import {
   type CapabilityDomain,
   type CapabilityHandlerContext,
 } from '../core/capabilities/index.js';
-import type { TodoChangeNotice } from './notice/todo-recipient-notice.js';
+import { changeToTell, type TodoChangeNotice } from './notice/todo-recipient-notice.js';
 import {
   TodoPromiseError,
   type TodoPromiseActor,
@@ -373,7 +373,7 @@ export const todoPromisesDomain: CapabilityDomain = {
         const todoPromiseDeps = requireTodoPromiseDeps(deps);
         const actor = actorOf(todoPromiseDeps, context);
         if ('ok' in actor) return actor;
-        const wasOpen = todoPromiseDeps.service.get(input.id)?.state === 'open';
+        const before = todoPromiseDeps.service.get(input.id);
         const result = answer(() => ({
           ok: true as const,
           todoPromise: todoPromiseDeps.service.update(actor, input.id, {
@@ -385,15 +385,7 @@ export const todoPromisesDomain: CapabilityDomain = {
           }),
         }));
         // The agent's own move or drop is told to whoever the promise was made to (DOR-3034).
-        // A reopen is not a move: it brings back a promise rather than changing one still owed.
-        const change =
-          input.state === 'dropped'
-            ? 'dropped'
-            : input.state === 'kept' && wasOpen
-              ? 'kept'
-              : input.state === 'open' && input.dueAt !== undefined && wasOpen
-                ? 'moved'
-                : null;
+        const change = result.ok ? changeToTell(before, result.todoPromise) : null;
         if (result.ok && change && actor.kind === 'agent' && todoPromiseDeps.tellRecipient) {
           void todoPromiseDeps.tellRecipient({
             todoPromise: result.todoPromise,

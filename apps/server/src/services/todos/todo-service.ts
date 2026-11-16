@@ -475,6 +475,7 @@ export class TodoService {
         patch.dueNotifiedAt = null;
         patch.checkinNotifiedAt = null;
         patch.dueSetAt = new Date(now).toISOString();
+        if (row.state === 'open') patch.confirmState = null;
         audit.push({ field: 'dueAt', before: row.dueAt, after: nextDue });
         audit.push({
           field: 'lateMove',

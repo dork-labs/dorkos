@@ -419,7 +419,7 @@ describe('TodoPromiseService', () => {
         estimate: 'half-day',
       });
       vi.advanceTimersByTime(5 * HOUR);
-      expect(service.wakePhaseOf(made.id)).toBe('start');
+      expect(service.lastWakeOf(made.id)?.phase).toBe('start');
       // The computer sleeps through the check-in and the due time; the timer fires late.
       vi.setSystemTime(START.getTime() + 10 * HOUR + 60_000);
       vi.advanceTimersByTime(3 * HOUR);

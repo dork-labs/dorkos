@@ -117,6 +117,9 @@ export const ConfirmTodoPromiseRequestSchema = z
 /** A confirm-to-do request. */
 export type ConfirmTodoPromiseRequest = z.infer<typeof ConfirmTodoPromiseRequestSchema>;
 
+/** How long a kept promise waits for its person's Yes or Not yet, in milliseconds (DOR-3034). */
+export const TODO_CONFIRM_WINDOW_MS = 86_400_000;
+
 /** The longest link to what was delivered. */
 export const TODO_DELIVERED_MAX = 500;
 

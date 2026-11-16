@@ -111,7 +111,6 @@ const PAYLOADS: { [K in NotificationKind]: NotificationPayloads[K] } = {
     todoId: 'todo-1',
     agentId: 'agent-1',
     agentName: 'Ana',
-    what: 'Send Acme the revised quote',
     change: 'moved',
     note: 'Waiting on their numbers',
     newDue: 'Fri, Nov 20',

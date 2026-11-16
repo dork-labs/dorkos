@@ -120,6 +120,16 @@ export interface TodoPromiseDueEvent {
 /** Something listening for to-dos coming due. */
 export type TodoPromiseObserver = (event: TodoPromiseDueEvent) => void;
 
+/** A promise's last wake for its current date (DOR-3034). */
+export interface LastTodoWake {
+  /** The start wake, or the check-in. */
+  phase: 'start' | 'checkin';
+  /** When it came (ISO 8601): part of the beat's key, so each wake is news. */
+  at: string;
+  /** Whether a person's Not yet caused it. */
+  notYet: boolean;
+}
+
 /** The audit action for a to-do arriving in each closed state. */
 export const CLOSE_ACTION: Record<Exclude<TodoState, 'open'>, string> = {
   kept: 'commitment.kept',

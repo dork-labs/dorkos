@@ -34,8 +34,8 @@ import type { TodoPromise, TodoState } from '@dorkos/shared/todo-promise-schemas
 import type { AuditChange } from '@dorkos/shared/audit-schemas';
 import { recordAudit } from '../audit/audit-trail.js';
 import { runOutsideAuditScope } from '../audit/audit-context.js';
-import { logger } from '../../lib/logger.js';
 import { TodoDueTimers, timedTodo } from './timing/todo-due-timers.js';
+import { TodoWakeHub } from './timing/todo-wake-hub.js';
 import {
   CLOSE_ACTION,
   TodoPromiseError,
@@ -44,6 +44,7 @@ import {
   type TodoPromiseChange,
   type TodoPromiseDueEvent,
   type TodoPromiseObserver,
+  type LastTodoWake,
 } from './todo-promise-types.js';
 
 export {
@@ -54,6 +55,7 @@ export {
   type TodoPromiseDueEvent,
   type TodoPromiseErrorCode,
   type TodoPromiseObserver,
+  type LastTodoWake,
 } from './todo-promise-types.js';
 import { TODO_ESTIMATES, wakeMoments } from './timing/todo-wake-plan.js';
 import {
@@ -96,9 +98,6 @@ export const PERSON_ASSIGNER = 'owner';
 /** How far in the past a new due date may be, for clock skew between devices. */
 export const TODO_DUE_SKEW_MS = 60 * 1000;
 
-/** The most wakes held for a first observer; older ones are dropped beyond it. */
-const PENDING_WAKES_MAX = 500;
-
 /**
  * Whether a row is an agent's own promise, made by that agent for itself: the only kind DorkOS
  * marks `missed`. A to-do somebody else gave stays open past its date (DOR-3088).
@@ -128,8 +127,7 @@ function normalizeIso(value: string): string {
 export class TodoPromiseService {
   private readonly store: TodoPromiseStore;
   private readonly now: () => Date;
-  private readonly observers = new Set<TodoPromiseObserver>();
-  private readonly pendingWakes: TodoPromiseDueEvent[] = [];
+  private readonly hub = new TodoWakeHub();
   private readonly timers: TodoDueTimers;
 
   /**
@@ -171,17 +169,31 @@ export class TodoPromiseService {
   }
 
   /**
-   * The last wake for a promise's current date, for the beat it woke (DOR-3034).
+   * The last wake for a promise's current date, for the beat it woke (DOR-3034): which one, when
+   * (so every wake reads as new to the beat), and whether a person's Not yet caused it.
    *
    * @param id - The row id.
-   * @returns `not-yet` after a person's Not yet, else `checkin`, `start`, or null.
+   * @returns The wake, or null before the first one.
    */
-  wakePhaseOf(id: string): 'start' | 'checkin' | 'not-yet' | null {
+  lastWakeOf(id: string): LastTodoWake | null {
     const row = this.store.get(id);
     if (!row || row.state !== 'open') return null;
-    // The person said it was not done yet: news to the agent even past its date.
-    if (row.confirmState === 'not-yet') return 'not-yet';
-    return row.checkinNotifiedAt ? 'checkin' : row.dueNotifiedAt ? 'start' : null;
+    const notYet = row.confirmState === 'not-yet';
+    if (row.checkinNotifiedAt) return { phase: 'checkin', at: row.checkinNotifiedAt, notYet };
+    return row.dueNotifiedAt ? { phase: 'start', at: row.dueNotifiedAt, notYet } : null;
+  }
+
+  /**
+   * Wake a promise's agent now, whatever its date: a person said it is not done yet (DOR-3034).
+   * The wake counts as its start, so its grace runs from now and later wakes follow the plan.
+   *
+   * @param id - The row id.
+   */
+  wakeNow(id: string): void {
+    const row = this.store.get(id);
+    if (!row || row.state !== 'open') return;
+    this.arm(row);
+    this.wake(row, 'start');
   }
 
   /** Disarm every timer. */
@@ -197,12 +209,7 @@ export class TodoPromiseService {
    * @returns A function that stops listening.
    */
   observe(fn: TodoPromiseObserver): () => void {
-    this.observers.add(fn);
-    const held = this.pendingWakes.splice(0);
-    for (const event of held) this.deliver(event);
-    return () => {
-      this.observers.delete(fn);
-    };
+    return this.hub.observe(fn);
   }
 
   /**
@@ -477,6 +484,8 @@ export class TodoPromiseService {
       dueNotifiedAt: null,
       checkinNotifiedAt: null,
       dueSetAt: new Date(now).toISOString(),
+      // A moved date is a new plan: a person's earlier Not yet is behind it.
+      confirmState: null,
       ...(change.note !== undefined ? { note: change.note || null } : {}),
     })!;
     this.audit(
@@ -637,26 +646,7 @@ export class TodoPromiseService {
       phase,
       todoPromise: toTodoPromise(row, this.now().getTime()),
     };
-    if (this.observers.size === 0) {
-      this.pendingWakes.push(event);
-      if (this.pendingWakes.length > PENDING_WAKES_MAX) this.pendingWakes.shift();
-      return;
-    }
-    this.deliver(event);
-  }
-
-  /** Hand one wake to every observer; one that throws never stops the rest. */
-  private deliver(event: TodoPromiseDueEvent): void {
-    for (const observer of this.observers) {
-      try {
-        observer(event);
-      } catch (err) {
-        logger.warn('[to-dos] a commitment.due observer threw', {
-          id: event.todoPromise.id,
-          error: err instanceof Error ? err.message : String(err),
-        });
-      }
-    }
+    this.hub.emit(event);
   }
 
   /** The due time plus its grace: mark it missed, if nobody kept it or moved the date. */

@@ -16,10 +16,11 @@ export interface TodoReader {
   /** List to-dos. */
   list(filter: { agentId?: string; state?: 'open' }, limit?: number): TodoPromise[];
   /**
-   * The last wake for a promise's current date: its start, its check-in, or none yet (DOR-3034).
-   * Absent where wakes are not tracked; then a due promise reads as due, as before.
+   * The last wake for a promise's current date (DOR-3034): start or check-in, when, and whether a
+   * person's Not yet caused it. Absent where wakes are not tracked; then a due promise reads as
+   * due, as before.
    */
-  wakePhaseOf?(id: string): 'start' | 'checkin' | 'not-yet' | null;
+  lastWakeOf?(id: string): { phase: 'start' | 'checkin'; at: string; notYet: boolean } | null;
 }
 
 /**
@@ -36,33 +37,34 @@ export function createTodosGatherer(todoPromises: TodoReader, openWork?: OpenWor
     const open = todoPromises.list({ agentId: ctx.agent.id, state: 'open' }, 200);
     if (openWork) changes.push(...(await openWorkChanges(ctx, open, openWork)));
     for (const promise of open) {
-      if (!promise.dueAt) continue;
-      const due = Date.parse(promise.dueAt);
-      if (Number.isNaN(due) || due - now > TODO_SOON_MS) continue;
-      const overdue = due < now;
-      // A start or check-in wake came for this date (DOR-3034): its own key, so the beat it woke
-      // counts it as new work even though an earlier beat already saw the promise due soon.
-      // A person's Not yet is news even past the date, so it keeps its own key then too.
-      const wake = todoPromises.wakePhaseOf?.(promise.id) ?? null;
-      const phase = overdue && wake !== 'not-yet' ? null : wake;
+      const due = promise.dueAt ? Date.parse(promise.dueAt) : NaN;
+      const overdue = !Number.isNaN(due) && due < now;
+      const wake = todoPromises.lastWakeOf?.(promise.id) ?? null;
+      // A wake counts as news to the beat it woke (DOR-3034): a start or check-in before the date,
+      // or any wake a person's Not yet caused, dated or not and past the date or not. Its key
+      // carries the wake's moment, so a later wake is never read as one already seen.
+      const news = wake !== null && (wake.notYet || !overdue);
+      if (!news && (Number.isNaN(due) || due - now > TODO_SOON_MS)) continue;
+      const when = promise.dueAt ? `due ${promise.dueAt}` : 'no date';
       changes.push({
         gatherer: 'todos',
-        key: phase ? `commitment:${promise.id}:${phase}` : `commitment:${promise.id}`,
+        key: news
+          ? `commitment:${promise.id}:${wake.phase}:${wake.at}`
+          : `commitment:${promise.id}`,
         // Its words stay out of the summary: they can be somebody else's (a to-do, DOR-3088), and
         // the prompt shows them only inside the fenced open-promises list, by this id.
-        summary:
-          phase === 'not-yet'
-            ? `Not done yet, says the person, due ${promise.dueAt}: promise ${promise.id}`
-            : overdue
-              ? `Overdue since ${promise.dueAt}: promise ${promise.id}`
-              : phase === 'start'
-                ? `Start now, due ${promise.dueAt}: promise ${promise.id}`
-                : phase === 'checkin'
-                  ? `Check in, due ${promise.dueAt}: promise ${promise.id}`
-                  : `Due ${promise.dueAt}: promise ${promise.id}`,
-        at: promise.dueAt,
+        summary: news
+          ? wake.notYet
+            ? `Not done yet, says the person, ${when}: promise ${promise.id}`
+            : wake.phase === 'start'
+              ? `Start now, ${when}: promise ${promise.id}`
+              : `Check in, ${when}: promise ${promise.id}`
+          : overdue
+            ? `Overdue since ${promise.dueAt}: promise ${promise.id}`
+            : `Due ${promise.dueAt}: promise ${promise.id}`,
+        at: news ? wake.at : promise.dueAt!,
         ref: { kind: 'commitment', id: promise.id },
-        signal: phase ? 'commitment-start' : overdue ? 'commitment-overdue' : 'commitment-due',
+        signal: news ? 'commitment-start' : overdue ? 'commitment-overdue' : 'commitment-due',
       });
     }
     return changes;
