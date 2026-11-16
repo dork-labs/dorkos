@@ -1,6 +1,7 @@
 ---
 covers:
   - 'fix(codex): refuse protected file-change approvals (DOR-3597)'
+  - 'fix(codex): reject Git metadata identity aliases (DOR-3597)'
 ---
 
 ### Security

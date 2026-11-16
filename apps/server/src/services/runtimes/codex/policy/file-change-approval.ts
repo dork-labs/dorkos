@@ -1,4 +1,6 @@
 /** The shared protected-file backstop for one native Codex patch approval. */
+import fs from 'node:fs';
+import path from 'node:path';
 import { isSameOrInside } from '@dorkos/shared/directory-grants';
 import type { ServerRequestTurnView, MappedServerRequest } from '../app-server/server-requests.js';
 import { PATCH_TOOL_NAME } from '../event-mapper.js';
@@ -7,6 +9,30 @@ import {
   protectedPathSpellings,
   type ProtectedPathRoots,
 } from '../../shared/policy/protected-path-check.js';
+
+/**
+ * Compare existing ancestor identities as well as spellings. A missing child can still
+ * name an existing case alias; lowercasing would instead deny distinct POSIX directories.
+ * Stat errors other than a missing child propagate to the whole-patch refusal.
+ */
+function isReadOnlyGit(target: string, directories: readonly string[]): boolean {
+  if (directories.length === 0) return false;
+  if (directories.some((dir) => isSameOrInside(target, dir))) return true;
+  const identities = directories.map((dir) => fs.statSync(dir, { bigint: true }));
+  let ancestor = target;
+  for (;;) {
+    try {
+      const found = fs.statSync(ancestor, { bigint: true });
+      if (identities.some((entry) => entry.dev === found.dev && entry.ino === found.ino))
+        return true;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+    }
+    const parent = path.dirname(ancestor);
+    if (parent === ancestor) return false;
+    ancestor = parent;
+  }
+}
 
 /**
  * Whether every source and destination of a recorded native patch may be offered for approval.
@@ -64,7 +90,7 @@ export function fileChangeMayAsk(
           !isProtectedPath(file, 'write', roots) &&
           !isProtectedPath(file, 'read', roots) &&
           !protectedPathSpellings(file, roots.cwd).some((target) =>
-            readOnlyGit.some((dir) => isSameOrInside(target, dir))
+            isReadOnlyGit(target, readOnlyGit)
           )
       );
     });

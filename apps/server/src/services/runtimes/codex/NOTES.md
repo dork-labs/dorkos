@@ -15,6 +15,14 @@ opening a card or broker entry. Add, delete and update sources, plus update
 refuses the whole patch. Missing item input and unfamiliar change shapes refuse,
 rather than guessing paths from request `cwd` or `grantRoot`. Below Full, the same
 Git metadata paths made read-only by the native profile are refused here too.
+Metadata checks also compare filesystem device/inode identity while walking each
+resolved target's existing ancestors. This refuses case aliases such as `.GIT`
+on case-insensitive volumes, including children not created yet and either end
+of a rename. Distinct case-sensitive directories remain distinct; paths are not
+lowercased. Missing captured metadata or unexpected lookup errors refuse the patch.
+This is a synchronous approval-time check, not an atomic filesystem transaction;
+filesystem changes after checking remain a limitation.
+
 This is a refusal where Codex asks, not a guarantee that every write raises a request.
 
 The real pinned 0.163.0 binary can reach this approval through its shell

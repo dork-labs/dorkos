@@ -1978,17 +1978,43 @@ nativeSuite('the app-server transport against the real Codex binary', NATIVE_LIM
     }
   );
 
-  it.each(['ordinary', 'protected', 'git-default', 'git-full'])(
+  it.each([
+    'ordinary',
+    'protected',
+    'git-default',
+    'git-full',
+    'git-case-default',
+    'git-case-full',
+  ])(
     'native patch approval preserves an ordinary write and refuses a protected target: %s',
     async (kind) => {
-      const protectedTarget = kind === 'protected' || kind === 'git-default';
-      const mode = kind === 'git-full' ? 'bypassPermissions' : 'default';
+      const mode = kind.endsWith('full') ? 'bypassPermissions' : 'default';
       const outside = path.join(root, 'outside');
       fs.mkdirSync(outside);
       if (kind.startsWith('git-'))
         execFileSync('git', ['init', '-q', '-b', 'main', project], { env: minimalGitEnv() });
+      const caseSpelling = kind.startsWith('git-case-');
+      let caseAlias = false;
+      if (caseSpelling) {
+        const original = fs.statSync(path.join(project, '.git'), { bigint: true });
+        const alias = path.join(project, '.GIT');
+        if (fs.existsSync(alias)) {
+          const found = fs.statSync(alias, { bigint: true });
+          caseAlias = found.dev === original.dev && found.ino === original.ino;
+          expect(caseAlias, 'existing spelling must identify this fixture metadata').toBe(true);
+        } else {
+          // A case-sensitive volume must keep this distinct ordinary folder writable.
+          fs.mkdirSync(alias);
+          expect(fs.statSync(alias, { bigint: true }).ino).not.toBe(original.ino);
+        }
+      }
+      if (caseSpelling) console.info('native Git case-alias fixture', { caseAlias, mode });
+      const protectedTarget =
+        kind === 'protected' ||
+        kind === 'git-default' ||
+        (kind === 'git-case-default' && caseAlias);
       const target = kind.startsWith('git-')
-        ? path.join(project, '.git', 'patch-probe.txt')
+        ? path.join(project, caseSpelling ? '.GIT' : '.git', 'patch-probe.txt')
         : path.join(outside, kind === 'protected' ? '.credentials-probe' : 'ordinary.txt');
       const content = 'NATIVE-PATCH-WRITTEN';
       const patch = `*** Begin Patch\n*** Add File: ${target}\n+${content}\n*** End Patch`;
@@ -2044,17 +2070,22 @@ nativeSuite('the app-server transport against the real Codex binary', NATIVE_LIM
           ).toBe(true);
         }
       }
-      expect(
-        nativeRequests,
-        'native file approval count; returned patch result: ' + returned.slice(-500)
-      ).toHaveLength(kind === 'git-full' ? 0 : 1);
+      // A distinct case-sensitive directory is an ordinary in-workspace write:
+      // the native profile may allow it directly or ask; either must still write.
+      if (caseSpelling && !caseAlias && mode !== 'bypassPermissions')
+        expect(nativeRequests.length).toBeLessThanOrEqual(1);
+      else
+        expect(
+          nativeRequests,
+          'native file approval count; returned patch result: ' + returned.slice(-500)
+        ).toHaveLength(mode === 'bypassPermissions' ? 0 : 1);
       expect(
         events.filter(
           (event) =>
             event.type === 'approval_required' &&
             (event.data as { toolName: string }).toolName === 'ApplyPatch'
         )
-      ).toHaveLength(protectedTarget || kind === 'git-full' ? 0 : 1);
+      ).toHaveLength(protectedTarget ? 0 : nativeRequests.length);
       expect(fs.existsSync(target)).toBe(!protectedTarget);
       if (!protectedTarget) expect(fs.readFileSync(target, 'utf8')).toContain(content);
       expect(events.filter((event) => event.type === 'done')).toHaveLength(1);

@@ -15,7 +15,9 @@ pinned-binary suite, alongside modeled RPC and shared-path tests. A sealed
 local scripted Responses service drives the real binary, with throwaway homes
 and no credentials. Native ordinary patches must ask and succeed, protected
 patches must receive a refusal without an answerable card, and Git metadata
-must remain protected below Full but writable at Full.
+must remain protected below Full but writable at Full. Case-spelling controls
+compare actual fixture identity, including a missing destination under an existing
+case alias; distinct directories on case-sensitive volumes remain ordinary.
 
 This records regression coverage for an approval-policy fix, not a pipeline
 performance experiment. Existing secret canaries, positive controls, timeout,

@@ -95,6 +95,52 @@ describe('native file-change approval policy', () => {
     expect(fileChangeMayAsk(input(patch('alias/../new-file')), local, [metadata])).toBe(false);
     expect(fileChangeMayAsk(input(patch('alias/../new-file')), local, [])).toBe(true);
   });
+  it('uses actual Git metadata identity for case aliases, missing children and both rename ends', () => {
+    const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'patch-case-')));
+    temps.push(dir);
+    const metadata = path.join(dir, '.git');
+    const alias = path.join(dir, '.GIT');
+    fs.mkdirSync(metadata);
+    const identity = fs.statSync(metadata, { bigint: true });
+    const caseAlias =
+      fs.existsSync(alias) && fs.statSync(alias, { bigint: true }).ino === identity.ino;
+    if (!caseAlias) fs.mkdirSync(alias);
+    const local = { ...roots, cwd: dir, agentFolders: [dir] };
+    for (const type of ['add', 'update', 'delete']) {
+      expect(
+        fileChangeMayAsk(input(patch('.GIT/missing/child', { type })), local, [metadata])
+      ).toBe(!caseAlias);
+    }
+    fs.writeFileSync(path.join(alias, 'existing'), 'fake');
+    expect(fileChangeMayAsk(input(patch('.GIT/existing')), local, [metadata])).toBe(!caseAlias);
+    expect(
+      fileChangeMayAsk(
+        input(patch('.GIT/existing', { type: 'update', move_path: 'ordinary' })),
+        local,
+        [metadata]
+      )
+    ).toBe(!caseAlias);
+    expect(
+      fileChangeMayAsk(
+        input(patch('ordinary', { type: 'update', move_path: '.GIT/missing/child' })),
+        local,
+        [metadata]
+      )
+    ).toBe(!caseAlias);
+    expect(fileChangeMayAsk(input(patch('.GIT/missing/child')), local, [])).toBe(true);
+    expect(fileChangeMayAsk(input(patch('ordinary')), local, [metadata])).toBe(true);
+  });
+  it('refuses stale metadata roots and non-directory traversal instead of guessing identity', () => {
+    const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'patch-identity-')));
+    temps.push(dir);
+    const local = { ...roots, cwd: dir, agentFolders: [dir] };
+    const metadata = path.join(dir, 'metadata');
+    fs.mkdirSync(metadata);
+    fs.writeFileSync(path.join(dir, 'file'), 'fake');
+    expect(fileChangeMayAsk(input(patch('file/child')), local, [metadata])).toBe(false);
+    fs.rmdirSync(metadata);
+    expect(fileChangeMayAsk(input(patch('ordinary')), local, [metadata])).toBe(false);
+  });
   it('requires active turn roots rather than an implicit default', () => {
     expect(fileChangeMayAsk(input(patch('ordinary.ts')), undefined)).toBe(false);
   });
