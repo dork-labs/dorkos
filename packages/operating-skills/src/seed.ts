@@ -55,6 +55,12 @@ export interface SeedOutcome {
   name: string;
   /** What happened to it. */
   action: SeedAction;
+  /**
+   * Absolute paths of every file this run wrote for the skill: its SKILL.md
+   * and any files beside it. Empty unless `action` is `created` or `upgraded`,
+   * so a caller undoing a failed scaffold can remove exactly these.
+   */
+  written: string[];
 }
 
 /** The result of seeding the whole pack into one workspace. */
@@ -215,6 +221,7 @@ export async function seedOperatingSkills(rootDir: string): Promise<SeedResult> 
   for (const skill of OPERATING_SKILLS_PACK) {
     const filePath = path.join(skillsDir, skill.name, 'SKILL.md');
     const action = await decide(filePath, skill);
+    const written: string[] = [];
     if (action === 'created' || action === 'upgraded') {
       // `writeSkillFile` makes this directory itself, but only a recursive
       // `mkdir` reports the topmost directory it had to create, and that
@@ -230,10 +237,13 @@ export async function seedOperatingSkills(rootDir: string): Promise<SeedResult> 
         const temp = path.join(path.dirname(filePath), `.${name}-${randomUUID()}.tmp`);
         await writeFile(temp, content, 'utf-8');
         await rename(temp, target);
+        written.push(target);
       }
-      await writeSkillFile(skillsDir, skill.name, buildFrontmatter(skill), skill.body);
+      written.push(
+        await writeSkillFile(skillsDir, skill.name, buildFrontmatter(skill), skill.body)
+      );
     }
-    outcomes.push({ name: skill.name, action });
+    outcomes.push({ name: skill.name, action, written });
   }
 
   return { skillsDir, outcomes, createdDirs };

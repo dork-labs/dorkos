@@ -164,6 +164,16 @@ describe('seedOperatingSkills', () => {
       }
     }
 
+    it('reports every file it wrote, so a failed scaffold can undo them all', async () => {
+      const first = await seedOperatingSkills(root);
+      const outcome = first.outcomes.find((o) => o.name === withFiles.name)!;
+      expect([...outcome.written].sort()).toEqual(
+        [skillFile(withFiles.name), ...Object.keys(withFiles.files!).map(supportingFile)].sort()
+      );
+      const again = await seedOperatingSkills(root);
+      expect(again.outcomes.every((o) => o.written.length === 0)).toBe(true);
+    });
+
     it('writes each one beside SKILL.md, byte for byte', async () => {
       await seedOperatingSkills(root);
       for (const [file, content] of Object.entries(withFiles.files!)) {
