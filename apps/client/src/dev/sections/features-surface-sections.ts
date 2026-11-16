@@ -1,4 +1,5 @@
 import type { PlaygroundSection } from '../playground-registry';
+import { FEATURE_BROWSER_SECTIONS } from './features-browser-sections';
 
 /**
  * Sections for the Home, Inbox & Approvals page: the surfaces a person
@@ -148,58 +149,8 @@ export const FEATURE_SURFACE_SECTIONS: PlaygroundSection[] = [
       'thumbs',
     ],
   },
-  // BrowserHandoffShowcases
-  {
-    id: 'browser-handoff-card',
-    title: 'Browser handoff card',
-    page: 'home-inbox',
-    category: 'Home',
-    keywords: ['browser', 'agent browser', 'handoff', 'sign in', 'password', 'paused', 'continue'],
-  },
-  // BrowserChromeShowcases
-  {
-    id: 'browser-chrome',
-    title: 'Browser chrome',
-    page: 'home-inbox',
-    category: 'Home',
-    keywords: [
-      'browser',
-      'address bar',
-      'back',
-      'forward',
-      'reload',
-      'not secure',
-      'chrome',
-      'menu',
-      'pages',
-      'copy address',
-      'close browser',
-    ],
-  },
-  // BrowserStatusPillShowcases
-  {
-    id: 'browser-status-pill',
-    title: 'Browser status pill',
-    page: 'home-inbox',
-    category: 'Home',
-    keywords: ['browser', 'agent browser', 'pill', 'take over', 'your turn', 'hand back', 'paused'],
-  },
-  // LocalBrowserPanelShowcases
-  {
-    id: 'agent-browser-panel',
-    title: 'Agent browser panel',
-    page: 'home-inbox',
-    category: 'Home',
-    keywords: ['browser', 'agent browser', 'panel', 'not open yet', 'disconnected'],
-  },
-  // BrowserPageErrorShowcases
-  {
-    id: 'agent-browser-page-errors-and-loading',
-    title: 'Agent browser page errors and loading',
-    page: 'home-inbox',
-    category: 'Home',
-    keywords: ['browser', 'agent browser', 'error', 'offline', 'certificate', 'loading', 'seam'],
-  },
+  // The Agent browser's five (features-browser-sections.ts)
+  ...FEATURE_BROWSER_SECTIONS,
   // ScheduleApprovalShowcases
   {
     id: 'schedule-approval-card',
