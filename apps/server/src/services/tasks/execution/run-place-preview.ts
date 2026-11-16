@@ -5,13 +5,16 @@
  * It runs the scheduler's own chain ({@link chainRunPlacement}) and asks the
  * run's own guard ({@link decideRunPlacement}), so the card follows the run's
  * rules: the binding, the boundary check, the desk guard and the home and data
- * folder rule. A read must change nothing, so two collaborators are swapped:
+ * folder rule. A read must change nothing, so three collaborators are swapped:
  *
- * - **A managed checkout is looked up, never made.** An existing, ready one is
- *   reused at run time too. Without one the run asks a person first and works
- *   in the agent's own folder meanwhile, which is what the lookup's refusal
- *   makes the chain answer here.
+ * - **A managed checkout is looked up, never made** (no git, no `lastUsedAt`
+ *   bump). A ready one is what a run reuses. Without one, the card says it is
+ *   not made yet: a run makes it first, or, when making it waits on a person's
+ *   OK, works in the agent's own folder meanwhile. The card cannot tell those
+ *   two apart without asking, so it says both.
  * - **A fresh run folder is named, never made.**
+ * - **A broken manifest is read without its warning**, which the next run
+ *   writes anyway; a list read is not a place to repeat it every poll.
  *
  * An agent-made schedule's agent was settled at creation (`agentScheduleTarget`
  * in `lifecycle/agent-schedule-target.ts`) and stored as `agentId`, which is
@@ -21,8 +24,9 @@
  */
 import fs from 'node:fs';
 import path from 'node:path';
+import { readManifest } from '@dorkos/shared/manifest';
 import type { Task, TaskRunPlace } from '@dorkos/shared/types';
-import { sanitizeWorkspaceKey, type EnsureWorkspaceRequest } from '@dorkos/shared/workspace';
+import type { Workspace } from '@dorkos/shared/workspace';
 import { sessionCwdDeps, type ResolveSessionCwdDeps } from '../../workspace/resolve-session-cwd.js';
 import { getWorkspaceManager } from '../../workspace/index.js';
 import { decideRunPlacement } from './run-place-guard.js';
@@ -32,29 +36,28 @@ export type { RunPlaceMesh } from './run-placement.js';
 
 /** Collaborators, injected so a test can name the server's folders. */
 export interface RunPlacePreviewDeps {
-  /** The cwd chain's collaborators, with a read-only `ensureWorkspace`. */
+  /** The cwd chain's collaborators. Their `ensureWorkspace` is replaced by {@link findCheckout}. */
   cwdDeps: () => ResolveSessionCwdDeps;
+  /** The managed checkout `ensure` would find, or `null`. Reads only. */
+  findCheckout: (projectKey: string, key: string) => Promise<Workspace | null>;
   /** Where an agent-less run starts: the server's own folder. */
   serverCwd: () => string;
 }
 
-/**
- * The managed checkout the run would reuse, or a refusal when there is none:
- * the same answer `ensure` gives a run before it would make one.
- *
- * @param req - The checkout the chain asks for.
- */
-async function existingCheckout(req: EnsureWorkspaceRequest) {
-  const key = sanitizeWorkspaceKey(req.key);
-  const found = (await getWorkspaceManager().list({ projectKey: req.projectKey })).find(
-    (workspace) => workspace.key === key && workspace.status === 'ready'
-  );
-  if (!found) throw new Error('No ready checkout yet; a run would ask a person first.');
-  return found;
-}
+/** A warn sink that drops the line. */
+const QUIET = { warn: () => {} };
 
 const PRODUCTION_DEPS: RunPlacePreviewDeps = {
-  cwdDeps: () => sessionCwdDeps({ ensureWorkspace: existingCheckout }),
+  cwdDeps: () => sessionCwdDeps({ readManifest: (dir) => readManifest(dir, QUIET) }),
+  // Not wired (a server without workspaces) reads as not made: a run's
+  // `ensure` would fail the same way and work in the agent's own folder.
+  findCheckout: async (projectKey, key) => {
+    try {
+      return await getWorkspaceManager().getByKey(projectKey, key);
+    } catch {
+      return null;
+    }
+  },
   serverCwd: () => process.cwd(),
 };
 
@@ -72,10 +75,22 @@ export async function previewRunPlace(
   mesh: RunPlaceMesh | null | undefined,
   deps: RunPlacePreviewDeps = PRODUCTION_DEPS
 ): Promise<TaskRunPlace | undefined> {
+  let unmade = false;
+  const cwdDeps: ResolveSessionCwdDeps = {
+    ...deps.cwdDeps(),
+    ensureWorkspace: async (req) => {
+      const found = await deps.findCheckout(req.projectKey, req.key);
+      if (found?.status === 'ready') return found;
+      // The chain then answers the agent's own folder, as it does for a run
+      // whose checkout waits on a person.
+      unmade = true;
+      throw new Error('The checkout is not made yet.');
+    },
+  };
   let chained;
   try {
     chained = await chainRunPlacement(task, mesh, {
-      cwdDeps: deps.cwdDeps(),
+      cwdDeps,
       serverCwd: deps.serverCwd(),
       log: false,
     });
@@ -84,19 +99,16 @@ export async function previewRunPlace(
   }
   const { cwd, agentPath, managed } = chained;
   const placement = agentPath === undefined ? { cwd } : { cwd, agentPath };
-  switch (decideRunPlacement(placement)) {
-    case 'fresh':
-      return { kind: 'private' };
-    case 'refuse':
-      return undefined;
-    case 'agent':
-      return agentPath === undefined ? undefined : { kind: 'agent', path: agentPath };
-    case 'keep':
-      if (managed) return { kind: 'agent_checkout' };
-      return agentPath !== undefined && samePlace(cwd, agentPath)
-        ? { kind: 'agent', path: agentPath }
-        : { kind: 'folder', path: cwd };
-  }
+  const decision = decideRunPlacement(placement);
+  if (decision === 'refuse') return undefined;
+  if (decision === 'fresh') return { kind: 'private' };
+  if (agentPath === undefined) return { kind: 'folder', path: cwd, of: 'server' };
+  const inOwnFolder = decision === 'agent' || samePlace(cwd, agentPath);
+  // Only while runs really fall back to the agent's folder: a refused home falls further.
+  if (unmade && inOwnFolder) return { kind: 'agent_checkout', ready: false };
+  if (inOwnFolder) return { kind: 'agent', path: agentPath };
+  if (managed) return { kind: 'agent_checkout', ready: true };
+  return { kind: 'folder', path: cwd, of: 'default' };
 }
 
 /** Whether two spellings name one folder. */

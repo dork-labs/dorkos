@@ -11528,10 +11528,14 @@
                 "enum": [
                   "agent_checkout"
                 ]
+              },
+              "ready": {
+                "type": "boolean"
               }
             },
             "required": [
-              "kind"
+              "kind",
+              "ready"
             ]
           },
           {
@@ -11545,11 +11549,19 @@
               },
               "path": {
                 "type": "string"
+              },
+              "of": {
+                "type": "string",
+                "enum": [
+                  "default",
+                  "server"
+                ]
               }
             },
             "required": [
               "kind",
-              "path"
+              "path",
+              "of"
             ]
           },
           {

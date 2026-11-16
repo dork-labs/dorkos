@@ -81,10 +81,17 @@ export const TaskRunPlaceSchema = z
   .discriminatedUnion('kind', [
     /** The agent's own folder. */
     z.object({ kind: z.literal('agent'), path: z.string() }),
-    /** A private checkout DorkOS makes for the agent when the run starts. */
-    z.object({ kind: z.literal('agent_checkout') }),
-    /** A fixed folder that is not the agent's own: the server's default folder. */
-    z.object({ kind: z.literal('folder'), path: z.string() }),
+    /**
+     * The agent's managed checkout. `ready` is false when it is not made yet:
+     * a run makes it first, or works in the agent's own folder while making it
+     * waits on a person's OK.
+     */
+    z.object({ kind: z.literal('agent_checkout'), ready: z.boolean() }),
+    /**
+     * A fixed folder that is not the agent's own: DorkOS's default folder for an
+     * agent set to use it, or the folder the server runs in for a run with no agent.
+     */
+    z.object({ kind: z.literal('folder'), path: z.string(), of: z.enum(['default', 'server']) }),
     /** A new, empty, private folder for each run. */
     z.object({ kind: z.literal('private') }),
   ])

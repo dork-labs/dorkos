@@ -4,8 +4,9 @@
  *
  * Every case runs the run's own path, `chainRunPlacement` then
  * `guardRunPlacement` (what `TaskSchedulerService.resolveRunPlacement` calls),
- * and the card's, on the same collaborators, and asserts they agree. Real
- * folders in a fixture home with a dummy value only.
+ * and the card's, on the same collaborators (the card swaps in only its
+ * lookup-only checkout read), and asserts they agree. Real folders in a
+ * fixture home with a dummy value only.
  */
 import fs from 'node:fs';
 import os from 'node:os';
@@ -68,46 +69,69 @@ function meshWith(folder: string | undefined) {
   return { getProjectPath: (id: string) => (id === 'quill' ? folder : undefined) };
 }
 
-/** The cwd chain's collaborators for one case; the same set feeds the run and the card. */
-function chainDeps(opts: {
+/** One case: the agent's binding, its folders, and its checkout as the run and the card meet it. */
+interface Case {
   mode?: 'home' | 'managed' | 'none';
   defaultCwd?: string;
-  ready?: boolean;
   boundaryRefuses?: boolean;
-}): ResolveSessionCwdDeps {
+  /** The managed checkout's record, as the card's lookup reads it. */
+  checkout?: 'ready' | 'failed' | 'none';
+  /**
+   * What a run's `ensure` does when there is no ready checkout: make it at
+   * once (a worktree that brings nothing, or one a person already approved),
+   * or wait on a person's OK.
+   */
+  runWithout?: 'makes' | 'waits';
+}
+
+/** The cwd chain's collaborators a RUN gets for one case. */
+function chainDeps(c: Case): ResolveSessionCwdDeps {
   return sessionCwdDeps({
     readManifest: async () =>
-      opts.mode
+      c.mode
         ? ({
             name: 'quill',
-            workspace:
-              opts.mode === 'managed' ? { mode: 'managed', source: agent } : { mode: opts.mode },
+            workspace: c.mode === 'managed' ? { mode: 'managed', source: agent } : { mode: c.mode },
           } as unknown as AgentManifest)
         : null,
     ensureWorkspace: async () => {
-      // A checkout not made yet waits on a person's card, as a real run's does.
-      if (!opts.ready) throw new Error('waits on a person');
-      return { id: 'ws-1', path: checkout } as Workspace;
+      if (c.checkout === 'ready' || c.runWithout === 'makes') {
+        return { id: 'ws-1', path: checkout, status: 'ready' } as Workspace;
+      }
+      throw new Error('waits on a person');
     },
     validateAgentHome: async (dir) => {
-      if (opts.boundaryRefuses) throw new Error('outside the boundary');
+      if (c.boundaryRefuses) throw new Error('outside the boundary');
       return dir;
     },
     validateManagedCheckout: async (dir) => dir,
     canonicalize: async (dir) => dir,
-    defaultCwd: opts.defaultCwd ?? elsewhere,
+    defaultCwd: c.defaultCwd ?? elsewhere,
   });
+}
+
+/** The card's lookup for one case: the record `ensure` would find, by its sanitized key. */
+function findCheckout(c: Case) {
+  return async (_projectKey: string, key: string): Promise<Workspace | null> => {
+    expect(key).toMatch(/^agent-quill-[0-9a-f]{8}$/);
+    if (!c.checkout || c.checkout === 'none') return null;
+    return { id: 'ws-1', key, path: checkout, status: c.checkout } as Workspace;
+  };
 }
 
 /** Where the run really stands, or `refused` when it would not start. */
 async function runFolder(
   task: Pick<Task, 'id' | 'agentId'>,
   mesh: ReturnType<typeof meshWith>,
-  cwdDeps: ResolveSessionCwdDeps,
+  c: Case,
   serverCwd: string
 ): Promise<string> {
   try {
-    const chained = await chainRunPlacement(task, mesh, { cwdDeps, serverCwd, log: false });
+    const chained = await chainRunPlacement(task, mesh, {
+      cwdDeps: chainDeps(c),
+      serverCwd,
+      log: false,
+    });
     return guardRunPlacement(chained).cwd;
   } catch {
     return 'refused';
@@ -118,14 +142,15 @@ async function runFolder(
 async function both(
   task: Pick<Task, 'id' | 'agentId'>,
   mesh: ReturnType<typeof meshWith>,
-  cwdDeps: ResolveSessionCwdDeps,
+  c: Case,
   serverCwd = home
 ): Promise<{ card: TaskRunPlace | undefined; run: string }> {
   const card = await previewRunPlace(task, mesh, {
-    cwdDeps: () => cwdDeps,
+    cwdDeps: () => chainDeps(c),
+    findCheckout: findCheckout(c),
     serverCwd: () => serverCwd,
   });
-  return { card, run: await runFolder(task, mesh, cwdDeps, serverCwd) };
+  return { card, run: await runFolder(task, mesh, c, serverCwd) };
 }
 
 /** The card names the folder the run stands in, or says nothing for a run that won't start. */
@@ -133,65 +158,78 @@ function expectAgree({ card, run }: { card: TaskRunPlace | undefined; run: strin
   if (card === undefined) return expect(run).toBe('refused');
   if (card.kind === 'private')
     return expect(path.dirname(run)).toBe(path.join(dork, SCHEDULED_RUNS_DIR));
-  if (card.kind === 'agent_checkout') return expect(run).toBe(checkout);
+  // Not made yet: the card says the run makes it, or uses the agent's folder meanwhile.
+  if (card.kind === 'agent_checkout') {
+    return expect(card.ready ? [checkout] : [checkout, agent]).toContain(run);
+  }
   return expect(run).toBe(card.path);
 }
 
 describe("an agent's parked schedule says where the run stands", () => {
-  it.each([
-    ['the default binding', { mode: 'home' as const }, () => ({ kind: 'agent', path: agent })],
+  it.each<[string, Case, () => TaskRunPlace | undefined]>([
+    ['the default binding', { mode: 'home' }, () => ({ kind: 'agent', path: agent })],
     ['no readable manifest', {}, () => ({ kind: 'agent', path: agent })],
     [
       'a managed binding with a ready checkout',
-      { mode: 'managed' as const, ready: true },
-      () => ({ kind: 'agent_checkout' }),
+      { mode: 'managed', checkout: 'ready' },
+      () => ({ kind: 'agent_checkout', ready: true }),
+    ],
+    [
+      'a managed binding whose checkout a run makes at once',
+      { mode: 'managed', checkout: 'none', runWithout: 'makes' },
+      () => ({ kind: 'agent_checkout', ready: false }),
     ],
     [
       'a managed binding whose checkout waits on a person',
-      { mode: 'managed' as const, ready: false },
-      () => ({ kind: 'agent', path: agent }),
+      { mode: 'managed', checkout: 'none', runWithout: 'waits' },
+      () => ({ kind: 'agent_checkout', ready: false }),
+    ],
+    [
+      'a managed binding whose last checkout failed',
+      { mode: 'managed', checkout: 'failed', runWithout: 'waits' },
+      () => ({ kind: 'agent_checkout', ready: false }),
+    ],
+    [
+      'a managed binding with no copy yet whose home the boundary refuses',
+      { mode: 'managed', checkout: 'none', runWithout: 'waits', boundaryRefuses: true },
+      () => ({ kind: 'folder', path: elsewhere, of: 'default' }),
     ],
     [
       'a `none` binding whose default is home, which the guard moves',
-      { mode: 'none' as const, defaultCwd: '<home>' },
+      { mode: 'none', defaultCwd: '<home>' },
       () => ({ kind: 'agent', path: agent }),
     ],
     [
       'a `none` binding whose default the guard keeps',
-      { mode: 'none' as const },
-      () => ({ kind: 'folder', path: elsewhere }),
+      { mode: 'none' },
+      () => ({ kind: 'folder', path: elsewhere, of: 'default' }),
     ],
     [
       'a home the boundary refuses, falling to the default',
-      { mode: 'home' as const, boundaryRefuses: true },
-      () => ({ kind: 'folder', path: elsewhere }),
+      { mode: 'home', boundaryRefuses: true },
+      () => ({ kind: 'folder', path: elsewhere, of: 'default' }),
     ],
     [
       "a `none` binding whose default is another agent's folder, which the desk guard refuses",
-      { mode: 'none' as const, defaultCwd: '<other>' },
+      { mode: 'none', defaultCwd: '<other>' },
       () => undefined,
     ],
-  ])('%s', async (_name, caseOpts, expected) => {
-    const opts: Parameters<typeof chainDeps>[0] = caseOpts;
+  ])('%s', async (_name, c, expected) => {
     const defaultCwd =
-      opts.defaultCwd === '<home>' ? home : opts.defaultCwd === '<other>' ? other : undefined;
-    const result = await both(
-      TASK,
-      meshWith(agent),
-      chainDeps({ ...opts, ...(defaultCwd !== undefined && { defaultCwd }) })
-    );
+      c.defaultCwd === '<home>' ? home : c.defaultCwd === '<other>' ? other : c.defaultCwd;
+    const result = await both(TASK, meshWith(agent), { ...c, defaultCwd });
     expect(result.card).toEqual(expected());
     expectAgree(result);
   });
 
   it('claims nothing for an agent the registry no longer holds', async () => {
-    const result = await both(TASK, meshWith(undefined), chainDeps({}));
+    const result = await both(TASK, meshWith(undefined), {});
     expect(result.card).toBeUndefined();
     expectAgree(result);
   });
 
   it('claims nothing when its own folder is the data folder, where no run may start', async () => {
-    const result = await both(TASK, meshWith(dork), chainDeps({}));
+    const result = await both(TASK, meshWith(dork), {});
     expect(result.card).toBeUndefined();
     expectAgree(result);
   });
@@ -203,20 +241,21 @@ describe('a parked schedule with no agent says where the run stands', () => {
     ['a folder above it', () => above],
     ['the data folder', () => dork],
   ])('a fresh private folder when the server stands in %s', async (_name, cwd) => {
-    const result = await both(NO_AGENT, meshWith(agent), chainDeps({}), cwd());
+    const result = await both(NO_AGENT, meshWith(agent), {}, cwd());
     expect(result.card).toEqual({ kind: 'private' });
     expectAgree(result);
   });
 
-  it("the server's folder when the guard keeps it", async () => {
-    const result = await both(NO_AGENT, meshWith(agent), chainDeps({}), elsewhere);
-    expect(result.card).toEqual({ kind: 'folder', path: elsewhere });
+  it("the server's own folder when the guard keeps it", async () => {
+    const result = await both(NO_AGENT, meshWith(agent), {}, elsewhere);
+    expect(result.card).toEqual({ kind: 'folder', path: elsewhere, of: 'server' });
     expectAgree(result);
   });
 
   it('makes no run folder just to answer', async () => {
     await previewRunPlace(NO_AGENT, meshWith(agent), {
       cwdDeps: () => chainDeps({}),
+      findCheckout: findCheckout({}),
       serverCwd: () => home,
     });
     expect(fs.existsSync(path.join(dork, SCHEDULED_RUNS_DIR))).toBe(false);
@@ -225,7 +264,11 @@ describe('a parked schedule with no agent says where the run stands', () => {
 
 describe('withTaskRunPlace', () => {
   const parked = { id: 't1', agentId: 'quill', status: 'pending_approval' } as Task;
-  const deps = { cwdDeps: () => chainDeps({ mode: 'home' }), serverCwd: () => home };
+  const deps = {
+    cwdDeps: () => chainDeps({ mode: 'home' }),
+    findCheckout: findCheckout({}),
+    serverCwd: () => home,
+  };
 
   it('stamps a parked schedule', async () => {
     const task = await withTaskRunPlace(parked, meshWith(agent), deps);

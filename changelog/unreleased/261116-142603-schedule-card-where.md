@@ -2,6 +2,7 @@
 covers:
   - "feat(schedules): the approval card says where a schedule's runs will happen (DOR-4067)"
   - 'fix(schedules): the run and the approval card share one folder chain (DOR-4067)'
+  - "fix(schedules): the card says when an agent's private copy isn't made yet (DOR-4067)"
 ---
 
 ### Changed
