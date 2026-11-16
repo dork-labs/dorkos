@@ -1120,33 +1120,41 @@ describe('contract: the Relay groups, driven by hand (login off)', () => {
   });
 
   it('records who changed a connection in the activity feed', async () => {
-    await setup(
-      server,
-      'POST',
-      '/api/relay/adapters',
-      {
-        type: 'webhook',
-        id: 'contract-agent-hook',
-        config: {
-          inbound: { subject: 'relay.webhook.contract-agent', secret: HOOK_SECRET },
-          outbound: { url: sink!.url, secret: HOOK_SECRET },
-        },
+    const hook = {
+      type: 'webhook',
+      id: 'contract-agent-hook',
+      config: {
+        inbound: { subject: 'relay.webhook.contract-agent', secret: HOOK_SECRET },
+        outbound: { url: sink!.url, secret: HOOK_SECRET },
       },
-      AGENT
-    );
-    const feed = await setup(server, 'GET', '/api/activity?categories=relay');
-    const added = (
-      feed.json.items as { eventType: string; resourceId: string; actorLabel: string }[]
-    ).find(
-      (item) =>
-        item.eventType === 'relay.adapter_added' && item.resourceId === 'contract-agent-hook'
-    );
-    expect(added?.actorLabel).toBe('Unidentified caller');
+    };
+    // An agent header that resolves to nobody may type no secret, with the stranger mark on by
+    // default (DOR-4453 F2): the gate fails closed on a caller it can't place.
+    await check(server, {
+      method: 'POST',
+      path: '/api/relay/adapters',
+      headers: AGENT,
+      body: hook,
+      expect: {
+        status: 403,
+        schema: z.object({ code: z.literal('marked_turn_typed_secret') }).loose(),
+      },
+    });
+    await setup(server, 'POST', '/api/relay/adapters', hook);
     await check(server, {
       method: 'DELETE',
       path: '/api/relay/adapters/contract-agent-hook',
+      headers: AGENT,
       expect: { status: 200, body: { ok: true } },
     });
+    const feed = await setup(server, 'GET', '/api/activity?categories=relay');
+    const removed = (
+      feed.json.items as { eventType: string; resourceId: string; actorLabel: string }[]
+    ).find(
+      (item) =>
+        item.eventType === 'relay.adapter_removed' && item.resourceId === 'contract-agent-hook'
+    );
+    expect(removed?.actorLabel).toBe('Unidentified caller');
   });
 });
 
