@@ -18,8 +18,14 @@ const root = path.resolve(import.meta.dirname, '../..');
 const globs = readBinaryTestGlobs(root);
 const workflow = readFileSync(path.join(root, '.github/workflows/test.yml'), 'utf8');
 
-/** Every shard line in test.yml that runs vitest through turbo. */
-const shardLines = workflow.split('\n').filter((line) => /pnpm exec turbo test\b/.test(line));
+/**
+ * Every shard line in test.yml that runs vitest through turbo. The test-binary
+ * job's turbo line is not a shard: it runs the binary suites, so it has no
+ * exclude to match.
+ */
+const shardLines = workflow
+  .split('\n')
+  .filter((line) => /pnpm exec turbo test\b/.test(line) && /--shard=/.test(line));
 
 describe('the binary-test glob file', () => {
   it('lists at least one glob, each matching at least one tracked binary suite', () => {

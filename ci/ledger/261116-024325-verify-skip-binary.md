@@ -19,8 +19,9 @@ field-changes: []
 DOR-4501. `pnpm verify` ran the real-CLI suites (`*.binary.test.ts`), which spawn
 whatever Codex binary this computer has installed. On Nov 15 three
 app-server.binary.test.ts tests failed only on the operator machine and blocked a
-proof for a branch that never touched Codex. CI runs those suites in codex-sandbox,
-so the local result said nothing about the branch.
+proof for a branch that never touched Codex. CI runs the Codex suites in
+codex-sandbox and every other one in test-binary, so the local result said nothing
+about the branch.
 
 The change: the verify wrapper reads `scripts/ci/binary-test-glob.txt` and passes
 each glob to vitest as `--exclude`, and the proof records the list as `excluded`.

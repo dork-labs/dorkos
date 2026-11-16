@@ -5,4 +5,4 @@
 # --exclude and records the list in the proof. This file must equal the
 # binary-test --exclude on every shard line of .github/workflows/test.yml
 # (scripts/__tests__/binary-test-glob.test.ts).
-**/codex/**/*.binary.test.ts
+**/*.binary.test.ts
