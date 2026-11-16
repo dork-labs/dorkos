@@ -22,7 +22,7 @@ Read the north-star set in `meta/` before you decide or write anything about wha
 
 ## Quality Standard
 
-**Upgrade support:** DorkOS supports upgrades from the 20 minor versions before the current `VERSION`. Each minor release advances the floor by one after verifying the supported upgrade path. Every JSDoc `@deprecated` tag must start with `since 0.x, remove in 0.y`; the rule flags missing schedules and expired tags in lint when the root `VERSION` reaches the removal version.
+**Upgrade support:** DorkOS supports upgrades from the 20 minor versions before the current `VERSION`. Each minor release advances the floor by one after verifying the supported upgrade path. Every JSDoc `@deprecated` tag must start with `since 0.x, remove in 0.y`; missing schedules fail lint, and lint warns two minor versions before the removal version, then fails at it.
 
 World-class UI/UX **and** world-class DX, neither negotiable. Every interaction is crafted; every surface works on mobile, tablet, and desktop. API surfaces are clean, types precise, errors helpful — internals must survive the scrutiny of an architect who reads source code before adopting tools.
 
