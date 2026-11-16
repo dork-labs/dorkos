@@ -21,17 +21,25 @@ export type SpendAskReason = 'no-limit' | 'unknown-price' | 'meter-unreadable';
 export type SpendPreflight =
   | { kind: 'run' }
   | { kind: 'ask'; reason: SpendAskReason; card: ApprovalSpend }
-  | { kind: 'refuse'; code: 'SPEND_LIMIT' | 'SPEND_OUTSIDER'; message: string };
+  | {
+      kind: 'refuse';
+      code: 'SPEND_LIMIT' | 'SPEND_OUTSIDER';
+      message: string;
+      /** Writes the refusal's Activity line; the gate stops it before the broker would. */
+      record?: () => void;
+    };
 
 /**
  * Refuse a paid run the preflight refused: past the limit, or on an
- * outsider-marked turn. No card is raised (spec §4.1, Security Must 1).
+ * outsider-marked turn. No card is raised (spec §4.1, Security Must 1), and
+ * the refusal's Activity line is written here, once.
  *
  * @param spend - The preflight's answer, if the run is paid.
  * @throws {CapabilityToolError} When the answer is a refusal.
  */
 export function refuseSpend(spend: SpendPreflight | undefined): void {
   if (spend?.kind === 'refuse') {
+    spend.record?.();
     throw new CapabilityToolError({ error: spend.message, code: spend.code });
   }
 }

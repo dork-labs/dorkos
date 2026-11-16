@@ -30,7 +30,7 @@ export function PaidActionMarker({
       <Coins
         role="img"
         aria-label="spends money"
-        className={cn('size-3.5 shrink-0 max-sm:size-5', className)}
+        className={cn('text-muted-foreground size-3.5 shrink-0 max-sm:size-5', className)}
       />
     );
   }

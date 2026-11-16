@@ -65,13 +65,27 @@ function record(
   });
 }
 
-/** A paid run refused at the limit: recorded, then thrown. */
-function refuseAtLimit(subject: SpendSubject, message: string): never {
+/** The Activity line for a paid run refused on an outsider-marked turn. */
+function recordOutsider(subject: SpendSubject): void {
+  record(
+    subject,
+    'spending.refused',
+    (agent) => `${agent}'s paid run was refused: the turn read outside content.`
+  );
+}
+
+/** The Activity line for a paid run refused at the limit. */
+function recordLimit(subject: SpendSubject): void {
   record(
     subject,
     'spending.refused',
     (agent, action) => `Refused ${agent}: ${action} · monthly limit reached`
   );
+}
+
+/** A paid run refused at the limit: recorded, then thrown. */
+function refuseAtLimit(subject: SpendSubject, message: string): never {
+  recordLimit(subject);
   throw new CapabilityToolError({ error: message, code: SPEND_LIMIT });
 }
 
@@ -88,7 +102,11 @@ export function spendPreflightFor(
 ): SpendPreflight | undefined {
   const port = connectorSpending();
   if (!port || subject.actorKind === 'operator') return undefined;
-  return spendPreflightOf(spendFactsFor(port, subject.operation, subject.sessionId, now));
+  const spend = spendPreflightOf(spendFactsFor(port, subject.operation, subject.sessionId, now));
+  if (spend?.kind !== 'refuse') return spend;
+  // The gate refuses before the broker's reserve runs, so it writes the line.
+  const line = spend.code === SPEND_OUTSIDER ? recordOutsider : recordLimit;
+  return { ...spend, record: () => line(subject) };
 }
 
 /**
@@ -114,11 +132,7 @@ export function reserveSpend(
   const facts = spendFactsFor(port, subject.operation, subject.sessionId, now);
   if (!facts.paid) return undefined;
   if (facts.outsider) {
-    record(
-      subject,
-      'spending.refused',
-      (agent) => `${agent}'s paid run was refused: the turn read outside content.`
-    );
+    recordOutsider(subject);
     throw new CapabilityToolError({ error: SPEND_COPY.outsider, code: SPEND_OUTSIDER });
   }
   const allowedOnce = approval?.via === 'approval';

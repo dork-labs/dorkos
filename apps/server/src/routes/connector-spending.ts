@@ -129,12 +129,15 @@ export function createConnectorSpendingRoutes(deps: ConnectorSpendingRouteDeps):
     if (next instanceof Response) return next;
     const current = spending.limit();
     const apply = (caller: RequestFacts, confirmed = false) => {
+      // Re-read: the limit may have moved while "Confirm it's you" was open.
+      const before = spending.limit();
+      if (next === before) return { status: 200, body: summary(spending, now()) };
       spending.setLimit(next);
       record(
         caller,
         next === null
           ? 'Set spending to ask every time'
-          : `${current !== null && next < current ? 'Lowered' : 'Raised'} the monthly limit to ${limitMoney(next)}${confirmed ? ' · confirmed with password' : ''}`,
+          : `${before !== null && next < before ? 'Lowered' : 'Raised'} the monthly limit to ${limitMoney(next)}${confirmed ? ' · confirmed with password' : ''}`,
         'spending.limit_changed'
       );
       return { status: 200, body: summary(spending, now()) };
@@ -171,6 +174,7 @@ export function createConnectorSpendingRoutes(deps: ConnectorSpendingRouteDeps):
     if (next instanceof Response) return next;
     const current = spending.price(toolkit);
     const apply = (caller: RequestFacts, confirmed = false) => {
+      if (next === spending.price(toolkit)) return { status: 200, body: summary(spending, now()) };
       spending.setPrice(toolkit, next);
       record(
         caller,
