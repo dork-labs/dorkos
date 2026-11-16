@@ -2440,7 +2440,16 @@ export type RelayMessageEvent = z.infer<typeof RelayMessageEventSchema>;
 
 // === Background Task Type/Status (needed by both events and parts) ===
 
-export const BackgroundTaskTypeSchema = z.enum(['agent', 'bash']).openapi('BackgroundTaskType');
+/**
+ * What kind of background work a task is: a helper `agent`, a background shell
+ * (`bash`), or `other` for every task type DorkOS does not draw on its own — a
+ * Monitor, a Workflow, a backgrounded MCP task, or a type a newer runtime adds
+ * (spec `warm-process-lifecycle` D8). An `other` task shows its own label and
+ * can be stopped like any other.
+ */
+export const BackgroundTaskTypeSchema = z
+  .enum(['agent', 'bash', 'other'])
+  .openapi('BackgroundTaskType');
 export type BackgroundTaskType = z.infer<typeof BackgroundTaskTypeSchema>;
 
 /**
@@ -2477,6 +2486,14 @@ export const BackgroundTaskStartedEventSchema = z
     toolUseId: z.string().optional(),
     description: z.string().optional(),
     command: z.string().optional(),
+    /**
+     * The runtime's own name for the task's type, when it reports one (Claude
+     * Code's `task_type`: `local_agent`, `local_bash`, a Monitor's, a
+     * Workflow's). Kept beside {@link BackgroundTaskTypeSchema}'s coarse answer
+     * so an `other` task still says what it is. Absent when the runtime names
+     * none.
+     */
+    runtimeTaskType: z.string().optional(),
     /**
      * Housekeeping work the runtime asked hosts to keep out of activity
      * indicators — a watcher it started to stay oriented, not work anybody
