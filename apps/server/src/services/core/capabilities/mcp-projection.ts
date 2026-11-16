@@ -110,6 +110,22 @@ export function capabilitiesForMcpServer(
 }
 
 /**
+ * Project the full ordinary MCP input object, closing top-level arguments while
+ * retaining refinements, defaults and nested maps. Outer preprocess pipes stay
+ * on the registry's original executable input; this clone never changes it.
+ *
+ * Eligible tools advertise the retry token beside their declared input. The
+ * invocation wrapper removes it before registry parsing and approval binding.
+ *
+ * @param capability - The capability whose advertised input to project.
+ * @returns A strict full object for ordinary MCP registration.
+ */
+export function capabilityMcpInputObject(capability: CapabilityDefinition): z.ZodObject {
+  const input = capabilityInputObject(capability).strict();
+  return canRaiseApproval(capability) ? input.safeExtend(approvalTokenArgument()) : input;
+}
+
+/**
  * Recover the Zod field-map (a `ZodRawShape`) both MCP SDKs expect as a tool's
  * input schema from a capability's `input` object schema. Every migrated
  * capability exposes an object, optionally behind preprocessing pipes. Its
