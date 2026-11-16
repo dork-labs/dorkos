@@ -25,3 +25,7 @@ ci/space-server.env text eol=lf
 # A registry index captured byte for byte: its test proves the bytes hash to the attested digest,
 # so any line-ending conversion on checkout (Windows) would break it. Never treat it as text.
 *.oci -text
+
+# The App Builder Pack, vendored byte for byte (DOR-4061): its test hashes every file against
+# the pinned MANIFEST.sha256, so a line-ending conversion on checkout would break the pin.
+packages/operating-skills/src/skills/app-builder-pack/** -text

@@ -16,6 +16,7 @@ import { workingInRoomRepos } from './skills/working-in-room-repos.js';
 import { usingTheAgentBrowser } from './skills/using-the-agent-browser.js';
 import { workingWithSpinOffChats } from './skills/working-with-spin-off-chats.js';
 import { workingOnAHeartbeat } from './skills/working-on-a-heartbeat.js';
+import { buildingDorkosApps } from './skills/building-dorkos-apps.js';
 
 /** One authored skill in the pack: its kebab-case name, discovery description, and body. */
 export interface OperatingSkill {
@@ -25,6 +26,12 @@ export interface OperatingSkill {
   description: string;
   /** Markdown body written for models (ACI-style, imperative). */
   body: string;
+  /**
+   * Files seeded beside `SKILL.md`, by file name, written verbatim. The body
+   * links to them by relative path. Covered by the same stamp as the body, so
+   * an edited or deleted one is the person's and is never rewritten.
+   */
+  files?: Readonly<Record<string, string>>;
 }
 
 /**
@@ -411,8 +418,12 @@ export interface OperatingSkill {
  *   schedule is filed under the agent, in its own folder, and below Full one whose
  *   folder is home is refused, and one in the data folder at every level (DOR-4067). An agent seeded at 54
  *   would still believe `target` is required and that `"global"` belongs to no agent.
+ * - 56: adds `building-dorkos-apps`, App Builder Pack 1.1.1 vendored byte for byte
+ *   (DOR-4061), the first skill with files beside its SKILL.md, and names it in
+ *   `answering-dorkos-questions`' sibling list. An agent seeded at 55 has no way to
+ *   learn how to build an app for its person without an install.
  */
-export const OPERATING_SKILLS_VERSION = 55;
+export const OPERATING_SKILLS_VERSION = 56;
 
 /**
  * The canonical pack, umbrella skill first. Every entry is validated against the
@@ -430,4 +441,5 @@ export const OPERATING_SKILLS_PACK: readonly OperatingSkill[] = [
   workingWithSpinOffChats,
   workingOnAHeartbeat,
   continuingOnAnotherAccount,
+  buildingDorkosApps,
 ];

@@ -1048,6 +1048,7 @@ describe('the claude-code prompt names tools the way the runtime exposes them', 
     const advertised = await advertisedToolNames();
     expect(OPERATING_SKILLS_PACK.map((skill) => skill.name).sort()).toEqual([
       'answering-dorkos-questions',
+      'building-dorkos-apps',
       'continuing-on-another-account',
       'managing-agents',
       'operating-dorkos',
@@ -1060,10 +1061,19 @@ describe('the claude-code prompt names tools the way the runtime exposes them', 
       'working-with-spin-off-chats',
     ]);
 
+    // `building-dorkos-apps` is App Builder Pack 1.1.1 vendored byte for byte
+    // (DOR-4061): Security reviewed that exact text, so DorkOS may not add the
+    // note to it. The note belongs in the next pack version, upstream. Only the
+    // note is waived; the prefix rule below still holds for it.
+    const VENDORED_VERBATIM = new Set(['building-dorkos-apps']);
     const offenders: string[] = [];
     for (const skill of OPERATING_SKILLS_PACK) {
       const names = [...new Set(namedAsCallable(skill.body, advertised))];
-      if (names.length > 0 && !skill.body.includes(TOOL_NAME_NOTE)) {
+      if (
+        names.length > 0 &&
+        !skill.body.includes(TOOL_NAME_NOTE) &&
+        !VENDORED_VERBATIM.has(skill.name)
+      ) {
         offenders.push(`${skill.name}: names ${names.sort().join(', ')} without the endings note`);
       }
       // The prefix itself is never right here: one of the three runtimes would be
