@@ -1,5 +1,6 @@
 ---
 covers:
+  - 'fix(connections): the write-upgrade notice says the app now allows changes (DOR-4194)'
   - 'fix(connections): creating or changing a release is a one-by-one pick (DOR-4194)'
   - 'fix(connections): a loosely spelled force or new-branch argument still needs an exact grant (DOR-4194)'
   - 'fix(connections): require exact grants for branch and history changes (DOR-4194)'

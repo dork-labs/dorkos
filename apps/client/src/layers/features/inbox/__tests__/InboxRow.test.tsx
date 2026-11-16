@@ -406,7 +406,8 @@ it('reads a reserved-name notice in full, with the name as plain text (DOR-4262)
 it('shows the write-upgrade notice in full and opens the affected account', async () => {
   const onOpen = vi.fn();
   const title = 'Linear access changed to Read';
-  const body = 'Access is now Read. Review this account to allow changes.';
+  const body =
+    'Linear now allows changes. Your agents stay on Read until you choose Read and write.';
   render(
     <InboxRow
       notification={build({

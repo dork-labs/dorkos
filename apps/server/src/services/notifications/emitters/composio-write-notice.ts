@@ -24,7 +24,8 @@ export const COMPOSIO_WRITE_NOTICE_ENTRIES: {
           : p.appName;
       return `${account} access changed to Read`;
     },
-    body: () => 'Access is now Read. Review this account to allow changes.',
+    body: (p) =>
+      `${p.appName} now allows changes. Your agents stay on Read until you choose Read and write.`,
     dedupeKey: (p) => `composio-write-upgrade:${p.connectionId}`,
     relay: 'never',
   },

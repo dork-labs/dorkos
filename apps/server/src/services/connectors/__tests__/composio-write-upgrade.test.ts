@@ -42,7 +42,10 @@ describe('one-time Composio write upgrade', () => {
     h.db.update(connections).set({ label }).where(eq(connections.id, CONNECTION_ID)).run();
     upgradeComposioWriteLevels(h.db, NOW.toISOString());
     expect(h.db.select().from(notifications).all()).toMatchObject([
-      { title, body: 'Access is now Read. Review this account to allow changes.' },
+      {
+        title,
+        body: 'Linear now allows changes. Your agents stay on Read until you choose Read and write.',
+      },
     ]);
   });
   it('runs from connector startup before any catalog following can start', async () => {
