@@ -447,6 +447,80 @@ describe('ScheduleApprovalCard — what it says', () => {
     expect(screen.queryByText(/an agent/i)).toBeNull();
   });
 
+  it.each([
+    [
+      "the agent's folder, with its path",
+      { runsAsName: 'Quill', runPlace: { kind: 'agent', path: '/Users/sam/agents/quill' } },
+      "Where: Quill's folder",
+      '~/agents/quill',
+      null,
+    ],
+    [
+      "the agent's folder when its name is unknown",
+      { runsAsName: null, runPlace: { kind: 'agent', path: '/Users/sam/agents/quill' } },
+      "Where: The agent's folder",
+      '~/agents/quill',
+      null,
+    ],
+    [
+      "a private copy of the agent's project",
+      { runsAsName: 'Quill', runPlace: { kind: 'agent_checkout', ready: true } },
+      "Where: A private copy of Quill's project",
+      null,
+      null,
+    ],
+    [
+      'a private copy that is not made yet',
+      { runsAsName: 'Quill', runPlace: { kind: 'agent_checkout', ready: false } },
+      "Where: A private copy of Quill's project",
+      null,
+      "Not made yet. Until it is, runs use Quill's folder.",
+    ],
+    [
+      "DorkOS's default folder, with its path",
+      {
+        runsAsName: 'Quill',
+        runPlace: { kind: 'folder', path: '/Users/sam/projects/site', of: 'default' },
+      },
+      "Where: DorkOS's default folder",
+      '~/projects/site',
+      null,
+    ],
+    [
+      'the folder DorkOS runs in, for no agent',
+      {
+        agentId: null,
+        runPlace: { kind: 'folder', path: '/Users/sam/projects/site', of: 'server' },
+      },
+      'Where: The folder DorkOS runs in',
+      '~/projects/site',
+      null,
+    ],
+    [
+      'a fresh private folder',
+      { agentId: null, runPlace: { kind: 'private' } },
+      'Where: A fresh private folder',
+      null,
+      null,
+    ],
+  ] as const)('says where it runs: %s (DOR-4067)', async (_case, overrides, where, path, note) => {
+    renderCard(proposal({ agentId: 'agent-b', ...overrides } as Partial<Task>));
+    await screen.findByText('Nightly sweep');
+    expect(slot('schedule-run-place')).toHaveTextContent(where);
+    const shown = slot('schedule-run-place-path');
+    if (path === null) expect(shown).toBeNull();
+    else expect(shown).toHaveTextContent(path);
+    const said = slot('schedule-run-place-note');
+    if (note === null) expect(said).toBeNull();
+    else expect(said).toHaveTextContent(note);
+  });
+
+  it('claims no place when the server sent none', async () => {
+    renderCard(proposal({ runPlace: undefined }));
+    await screen.findByText('Nightly sweep');
+    expect(slot('schedule-run-place')).toBeNull();
+  });
+
   it('says a proposal has no agent identity rather than inventing one', async () => {
     // The sessionless external `/mcp` registration stamps no path. A disc and a
     // name invented from nothing would put a request under a mark it never earned.
@@ -818,11 +892,16 @@ describe('ScheduleApprovalCard — answering it', () => {
     expect(await findSlot('schedule-receipt')).toHaveTextContent(/Approved by you at/);
   });
 
-  it('uses the profile name and server timestamp in the receipt', async () => {
+  it('uses the recorded approver and server timestamp in the receipt', async () => {
     const approvedAt = new Date(2026, 0, 15, 14, 30).toISOString();
     renderCard(proposal(), {
-      getConfig: vi.fn().mockResolvedValue({ profile: { displayName: 'Dorian' } }),
-      updateTask: vi.fn().mockResolvedValue(proposal({ status: 'active', approvedAt })),
+      updateTask: vi.fn().mockResolvedValue(
+        proposal({
+          status: 'active',
+          approvedAt,
+          approvedBy: { kind: 'person', userId: null, name: 'Dorian' },
+        })
+      ),
     });
 
     await userEvent.click(await screen.findByRole('button', { name: 'Approve Nightly sweep' }));
@@ -832,6 +911,27 @@ describe('ScheduleApprovalCard — answering it', () => {
     expect(receipt).toHaveClass('items-start');
     expect(receipt).not.toHaveClass('items-center');
     expect(receipt.querySelector('svg')).toHaveClass('mt-px', 'size-3.5', 'shrink-0');
+  });
+
+  it('never names the owner for an approval the server recorded without a name (DOR-3641)', async () => {
+    renderCard(proposal(), {
+      // The owner's saved name is not who approved: with login on, a signed-in
+      // teammate's yes is recorded by id alone.
+      getConfig: vi.fn().mockResolvedValue({ profile: { displayName: 'Dorian' } }),
+      updateTask: vi.fn().mockResolvedValue(
+        proposal({
+          status: 'active',
+          approvedAt: new Date(2026, 0, 15, 14, 30).toISOString(),
+          approvedBy: { kind: 'person', userId: 'user-2', name: null },
+        })
+      ),
+    });
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Approve Nightly sweep' }));
+
+    const receipt = await findSlot('schedule-receipt');
+    await waitFor(() => expect(receipt).toHaveTextContent('Approved by you at 2:30 PM, in Home.'));
+    expect(receipt).not.toHaveTextContent('Dorian');
   });
 
   it.each(['button', 'shortcut'] as const)(

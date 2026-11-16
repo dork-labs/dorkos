@@ -175,7 +175,7 @@ function ListedActions({
   if (actions.length === 0) {
     return <p className="text-muted-foreground text-sm">{appName} offers no actions.</p>;
   }
-  const buckets = actionBuckets(actions, level);
+  const buckets = actionBuckets(actions, level, toolkit);
   const outside = buckets.outsideLevels;
   const notes: string[] = [];
   if (level === 'read-write' && buckets.change.length > 0) {
@@ -190,7 +190,7 @@ function ListedActions({
     const plural = outside.length > 1;
     notes.push(
       `${upperFirst(examplePhrase(outside, toolkit))} ${plural ? 'aren’t' : 'isn’t'} part of ${
-        offersReadWrite(actions) ? 'either level' : '“Read”'
+        offersReadWrite(actions, toolkit) ? 'either level' : '“Read”'
       }. To allow ${plural ? 'them' : 'it'}, choose exact actions.`
     );
   }

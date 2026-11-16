@@ -6,6 +6,8 @@ import type {
   ConnectorOperationRevision,
   ConnectorProviderInstanceId,
 } from '../../connector-schemas.js';
+import { PINNED_WRITE_SLUGS } from './pinned-write-slugs.js';
+import { PINNED_READ_SLUGS } from './pinned-read-slugs.js';
 import { createComposioHostedClients } from '../hosted-client-factory.js';
 import { ComposioSdkClient, normalizeComposioCatalogAuthentication } from '../sdk-client.js';
 
@@ -384,17 +386,15 @@ describe('ComposioSdkClient', () => {
     ['GMAIL_SEND_EMAIL', ['important', 'openWorldHint', 'createHint'], 'write'],
     ['GMAIL_CREATE_EMAIL_DRAFT', ['important', 'openWorldHint', 'createHint'], 'write'],
     ['GOOGLECALENDAR_CREATE_EVENT', ['createHint'], 'write'],
-    // Only audited apps (Gmail, Google Calendar) get a write tier; every other
-    // app's create and update actions stay one at a time.
-    ['GITHUB_UPDATE_AN_ISSUE', ['updateHint', 'idempotentHint'], 'destructive'],
-    ['GOOGLEDRIVE_CREATE_FILE', ['createHint'], 'destructive'],
+    // Every app gets a write tier for clean create and update verdicts.
+    ['GITHUB_UPDATE_AN_ISSUE', ['updateHint', 'idempotentHint'], 'write'],
+    ['GOOGLEDRIVE_CREATE_FILE', ['createHint'], 'write'],
     // DorkOS keeps account-reach actions out of levels, by name for future tools too.
     ['GOOGLEDRIVE_CREATE_PERMISSION', ['createHint'], 'destructive'],
     ['OUTLOOK_CREATE_EMAIL_RULE', ['createHint'], 'destructive'],
     ['GITHUB_ADD_A_REPOSITORY_COLLABORATOR', ['createHint'], 'destructive'],
     ['GOOGLEDRIVE_WATCH_FILE', ['createHint'], 'destructive'],
-    // Every word of the name pattern, inside an audited app where only the
-    // pattern stops it (none of these is on the exact list).
+    // Future action names are tightened by family too.
     ['GOOGLECALENDAR_CREATE_ACL_ENTRY', ['createHint'], 'destructive'], // _ACL_
     ['GMAIL_SET_FORWARDING_ADDRESS', ['createHint'], 'destructive'], // FORWARD
     ['GMAIL_CREATE_SEND_AS_ALIAS', ['createHint'], 'destructive'], // SEND_AS
@@ -502,13 +502,15 @@ describe('ComposioSdkClient', () => {
     expect(local.requests.map(({ method }) => method)).toEqual(['GET']);
   });
 
-  it('classifies Composio’s live Gmail and Calendar tags: deletes never in a level', async () => {
-    // Slugs and tags exactly as Composio listed them (latest versions, 2026-09-28).
-    const live = JSON.parse(
-      readFileSync(new URL('./fixtures/live-tool-tags.json', import.meta.url), 'utf8')
-    ) as Record<string, Array<{ slug: string; tags: string[] }>>;
-    const classOf = new Map<string, string>();
-    for (const [toolkit, actions] of Object.entries(live)) {
+  const live = JSON.parse(
+    readFileSync(new URL('./fixtures/live-tool-tags.json', import.meta.url), 'utf8')
+  ) as Record<string, Array<{ slug: string; tags: string[] }>>;
+
+  it.each(Object.keys(live))(
+    'pins the complete live %s write list through the SDK',
+    async (toolkit) => {
+      // Slugs and tags exactly as listed on 2026-11-15; never calls Composio.
+      const actions = live[toolkit]!;
       const items = actions.map(({ slug, tags }) => ({
         ...tool(slug, tags),
         toolkit: { slug: toolkit, name: toolkit, logo: 'https://fixture.invalid/app.svg' },
@@ -528,96 +530,21 @@ describe('ComposioSdkClient', () => {
         limit: 1_000,
         signal: new AbortController().signal,
       });
-      for (const operation of result.page.operations)
-        classOf.set(operation.operationSlug, operation.capabilityClassification);
+      expect(result.page.operations).toHaveLength(actions.length);
+      expect(
+        result.page.operations
+          .filter((operation) => operation.capabilityClassification === 'write')
+          .map((operation) => operation.operationSlug)
+          .sort()
+      ).toEqual(PINNED_WRITE_SLUGS[toolkit]);
+      expect(
+        result.page.operations
+          .filter((operation) => operation.capabilityClassification === 'read')
+          .map((operation) => operation.operationSlug)
+          .sort()
+      ).toEqual(PINNED_READ_SLUGS[toolkit]);
     }
-    expect(classOf.size).toBe(Object.values(live).flat().length);
-
-    const removing = [...classOf.keys()].filter((slug) => /DELETE|REMOVE|CLEAR/.test(slug));
-    expect(removing.length).toBeGreaterThan(0);
-    for (const slug of removing) expect([slug, classOf.get(slug)]).toEqual([slug, 'destructive']);
-    for (const slug of [
-      'GMAIL_SEND_EMAIL',
-      'GMAIL_REPLY_TO_THREAD',
-      'GMAIL_CREATE_EMAIL_DRAFT',
-      'GMAIL_ADD_LABEL_TO_EMAIL',
-      'GMAIL_MOVE_TO_TRASH',
-      'GOOGLECALENDAR_CREATE_EVENT',
-      'GOOGLECALENDAR_UPDATE_EVENT',
-      'GOOGLECALENDAR_QUICK_ADD',
-    ])
-      expect([slug, classOf.get(slug)]).toEqual([slug, 'write']);
-    // Composio calls these create/update, but they share access, redirect
-    // mail, change the sending identity or delivery, or start a subscription:
-    // DorkOS keeps them out of every level.
-    const accountReach = [
-      'GOOGLECALENDAR_ACL_INSERT',
-      'GOOGLECALENDAR_ACL_PATCH',
-      'GOOGLECALENDAR_ACL_UPDATE',
-      'GOOGLECALENDAR_ACL_WATCH',
-      'GOOGLECALENDAR_CALENDAR_LIST_WATCH',
-      'GOOGLECALENDAR_EVENTS_WATCH',
-      'GOOGLECALENDAR_SETTINGS_WATCH',
-      'GMAIL_CREATE_FILTER',
-      'GMAIL_FORWARD_MESSAGE',
-      'GMAIL_PATCH_SEND_AS',
-      'GMAIL_UPDATE_SEND_AS',
-      'GMAIL_UPDATE_IMAP_SETTINGS',
-      'GMAIL_UPDATE_POP_SETTINGS',
-      'GMAIL_IMPORT_MESSAGE',
-      'GMAIL_INSERT_MESSAGE',
-      'GMAIL_UPDATE_VACATION_SETTINGS',
-      'GMAIL_BATCH_MODIFY_MESSAGES',
-      'GOOGLECALENDAR_EVENTS_MOVE',
-    ];
-    for (const slug of accountReach)
-      expect([slug, classOf.get(slug)]).toEqual([slug, 'destructive']);
-    // The tightening only ever moves write to destructive: reads it names stay reads.
-    expect(classOf.get('GOOGLECALENDAR_ACL_LIST')).toBe('read');
-    expect(classOf.get('GMAIL_LIST_FILTERS')).toBe('read');
-    for (const slug of [
-      'GMAIL_LIST_MESSAGES',
-      'GMAIL_GET_DRAFT',
-      'GOOGLECALENDAR_EVENTS_LIST',
-      'GOOGLECALENDAR_FIND_FREE_SLOTS',
-    ])
-      expect([slug, classOf.get(slug)]).toEqual([slug, 'read']);
-    expect(classOf.get('GMAIL_SEND_DRAFT')).toBe('destructive');
-    // The whole of "Read and write" for these two apps, pinned so any change is reviewed.
-    expect(
-      [...classOf]
-        .filter(([, classification]) => classification === 'write')
-        .map(([slug]) => slug)
-        .sort()
-    ).toEqual([
-      'GMAIL_ADD_LABEL_TO_EMAIL',
-      'GMAIL_CREATE_EMAIL_DRAFT',
-      'GMAIL_CREATE_LABEL',
-      'GMAIL_MODIFY_THREAD_LABELS',
-      'GMAIL_MOVE_THREAD_TO_TRASH',
-      'GMAIL_MOVE_TO_TRASH',
-      'GMAIL_PATCH_LABEL',
-      'GMAIL_REPLY_TO_THREAD',
-      'GMAIL_SEND_EMAIL',
-      'GMAIL_UNTRASH_MESSAGE',
-      'GMAIL_UNTRASH_THREAD',
-      'GMAIL_UPDATE_DRAFT',
-      'GMAIL_UPDATE_LABEL',
-      'GMAIL_UPDATE_LANGUAGE_SETTINGS',
-      'GOOGLECALENDAR_CALENDARS_UPDATE',
-      'GOOGLECALENDAR_CALENDAR_LIST_INSERT',
-      'GOOGLECALENDAR_CALENDAR_LIST_PATCH',
-      'GOOGLECALENDAR_CALENDAR_LIST_UPDATE',
-      'GOOGLECALENDAR_CREATE_CALENDAR',
-      'GOOGLECALENDAR_CREATE_EVENT',
-      'GOOGLECALENDAR_DUPLICATE_CALENDAR',
-      'GOOGLECALENDAR_EVENTS_IMPORT',
-      'GOOGLECALENDAR_PATCH_CALENDAR',
-      'GOOGLECALENDAR_PATCH_EVENT',
-      'GOOGLECALENDAR_QUICK_ADD',
-      'GOOGLECALENDAR_UPDATE_EVENT',
-    ]);
-  });
+  );
 
   it('classifies identically on this computer and in the hosted DorkOS account path', async () => {
     const gmail = { slug: 'gmail', name: 'Gmail', logo: 'https://fixture.invalid/gmail.svg' };

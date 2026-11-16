@@ -229,7 +229,7 @@ describe('scheduled task approval receipts', () => {
     expect(row?.approvedContentKey).toEqual(expect.any(String));
   });
 
-  it('ignores approvalSurface when the task was already active', async () => {
+  it('ignores approvalSurface on an active task, and keeps the receipt it already had', async () => {
     const created = await call('/', 'POST', {
       name: 'already-active',
       description: 'already-active',
@@ -245,6 +245,72 @@ describe('scheduled task approval receipts', () => {
     });
 
     expect(response.status, JSON.stringify(response.body)).toBe(200);
-    expect(response.body.approvedVia).toBe('unknown');
+    // Approving the same content again is not a new approval: the create's
+    // receipt says more than "a person, somewhere" (DOR-3641 review, nit 4).
+    expect(response.body).toMatchObject({
+      approvedAt: created.body.approvedAt,
+      approvedBy: { kind: 'person', userId: 'user-1', name: null },
+      approvedVia: 'created',
+    });
+  });
+
+  it('lets a re-approval of the same content fill in a receipt that said less', async () => {
+    const task = await parked('policy-first');
+    store.updateTask(task.id, { status: 'active' });
+    expect(store.getTask(task.id)).toMatchObject({ approvedBy: { kind: 'policy' } });
+
+    const response = await call(`/${task.id}`, 'PATCH', {
+      status: 'active',
+      expectedApprovalRevision: await revision(task.id),
+    });
+
+    expect(response.status, JSON.stringify(response.body)).toBe(200);
+    expect(response.body).toMatchObject({
+      approvedBy: { kind: 'person', userId: 'user-1', name: null },
+      approvedVia: 'unknown',
+    });
+  });
+
+  it('lets a person’s re-approval outrank an agent’s record of the same content', async () => {
+    const task = await parked('agent-first');
+    store.updateTask(
+      task.id,
+      { status: 'active' },
+      {
+        approval: {
+          approvedBy: { kind: 'agent', agentPath: '/agents/scout', name: 'Scout' },
+          approvedVia: 'agent_tool',
+        },
+      }
+    );
+
+    const response = await call(`/${task.id}`, 'PATCH', {
+      status: 'active',
+      expectedApprovalRevision: await revision(task.id),
+    });
+
+    expect(response.status, JSON.stringify(response.body)).toBe(200);
+    expect(response.body.approvedBy).toEqual({ kind: 'person', userId: 'user-1', name: null });
+  });
+
+  it('stamps the person whose edit changed the work, not the approver of the old work', async () => {
+    const task = await parked('edited-live');
+    await call(`/${task.id}`, 'PATCH', {
+      status: 'active',
+      approvalSurface: 'inbox',
+      expectedApprovalRevision: await revision(task.id),
+    });
+    db.update(pulseSchedules)
+      .set({ approvedBy: JSON.stringify({ kind: 'policy' }), approvedVia: 'trusted_agent' })
+      .where(eq(pulseSchedules.id, task.id))
+      .run();
+
+    const response = await call(`/${task.id}`, 'PATCH', { prompt: 'Run the new report.' });
+
+    expect(response.status, JSON.stringify(response.body)).toBe(200);
+    expect(response.body).toMatchObject({
+      status: 'active',
+      approvedBy: { kind: 'person', userId: 'user-1', name: null },
+    });
   });
 });

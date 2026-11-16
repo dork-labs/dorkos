@@ -389,6 +389,12 @@ export interface WorkspaceManager {
   /** Fetch one workspace by id, or `null`. */
   get(id: string): Promise<Workspace | null>;
 
+  /**
+   * The workspace `ensure` would find for `(projectKey, key)`, or `null`. Reads
+   * only: no git, no `lastUsedAt` bump.
+   */
+  getByKey(projectKey: string, key: string): Promise<Workspace | null>;
+
   /** Resolve an absolute path (e.g. a session cwd) to its containing workspace. */
   resolveByPath(absPath: string): Promise<Workspace | null>;
 

@@ -56,7 +56,7 @@ describe('plainActionName', () => {
 
 describe('actionBuckets', () => {
   it('shows only Look on "Read", and names what each other level would add', () => {
-    const buckets = actionBuckets(GMAIL, 'read');
+    const buckets = actionBuckets(GMAIL, 'read', 'gmail');
     expect(buckets.look.map((a) => a.operationSlug)).toEqual([
       'GMAIL_FETCH_EMAILS',
       'GMAIL_LIST_LABELS',
@@ -70,7 +70,7 @@ describe('actionBuckets', () => {
   });
 
   it('adds write actions to Change on "Read and write", never delete-class ones', () => {
-    const buckets = actionBuckets(GMAIL, 'read-write');
+    const buckets = actionBuckets(GMAIL, 'read-write', 'gmail');
     expect(buckets.change.map((a) => a.operationSlug)).toEqual([
       'GMAIL_SEND_EMAIL',
       'GMAIL_ADD_LABEL',
@@ -80,7 +80,7 @@ describe('actionBuckets', () => {
   });
 
   it('describes the app itself with no level: every change in Change, main ones first', () => {
-    const buckets = actionBuckets(GMAIL, null);
+    const buckets = actionBuckets(GMAIL, null, 'gmail');
     expect(buckets.change.map((a) => a.operationSlug)).toEqual([
       'GMAIL_SEND_EMAIL',
       'GMAIL_ADD_LABEL',
@@ -101,7 +101,7 @@ describe('actionBuckets', () => {
       supported: true,
     }));
     for (const level of ['read', 'read-write'] as const) {
-      const buckets = actionBuckets(GMAIL, level);
+      const buckets = actionBuckets(GMAIL, level, 'gmail');
       const shown = [...buckets.look, ...buckets.change].map((a) => a.operationSlug).sort();
       expect(shown).toEqual(accessLevelRevisionIds(candidates, level));
     }
@@ -110,10 +110,13 @@ describe('actionBuckets', () => {
 
 describe('offersReadWrite', () => {
   it('is true only when some action is in "Read and write" but not "Read"', () => {
-    expect(offersReadWrite(GMAIL)).toBe(true);
-    expect(offersReadWrite(GMAIL.filter((a) => a.capabilityClassification !== 'write'))).toBe(
-      false
-    );
+    expect(offersReadWrite(GMAIL, 'gmail')).toBe(true);
+    expect(
+      offersReadWrite(
+        GMAIL.filter((a) => a.capabilityClassification !== 'write'),
+        'gmail'
+      )
+    ).toBe(false);
   });
 });
 
@@ -173,7 +176,30 @@ describe('actionsFromCandidates', () => {
       ['GMAIL_TRASH', 'read'],
       ['GMAIL_TRASH', 'destructive'],
     ]);
-    expect(actionBuckets(actions, 'read').look).toHaveLength(1);
-    expect(actionBuckets(actions, 'read').outsideLevels).toHaveLength(1);
+    expect(actionBuckets(actions, 'read', 'gmail').look).toHaveLength(1);
+    expect(actionBuckets(actions, 'read', 'gmail').outsideLevels).toHaveLength(1);
+  });
+});
+
+describe('paid actions in app details', () => {
+  const paid = [action('APIFY_SCRAPE_TWITTER_POSTS', 'write')];
+  it('does not offer Read and write for a paid write alone', () => {
+    expect(offersReadWrite(paid, 'apify')).toBe(false);
+  });
+  it.each(['read', 'read-write'] as const)(
+    'keeps paid writes out of the %s bucket and upgrade copy',
+    (level) => {
+      const buckets = actionBuckets(paid, level, 'apify');
+      expect(buckets.look).toEqual([]);
+      expect(buckets.change).toEqual([]);
+      expect(buckets.addedByReadWrite).toEqual([]);
+      expect(buckets.outsideLevels).toEqual(paid);
+    }
+  );
+  it('keeps paid reads outside levels too', () => {
+    const paidRead = [action('APIFY_SCRAPE_TWITTER_POSTS', 'read')];
+    const buckets = actionBuckets(paidRead, 'read-write', 'apify');
+    expect(buckets.look).toEqual([]);
+    expect(buckets.outsideLevels).toEqual(paidRead);
   });
 });

@@ -117,6 +117,7 @@ export const NOTIFICATION_ICONS: Record<NotificationKind, LucideIcon> = {
   'connector.destructive_executed': CheckCircle2,
   // One agent took another agent's access to an app away (agent-grant-autonomy).
   'connector.access_narrowed': Bell,
+  'connector.write_available': Bell,
   // A global MCP server added a tool an agent already allows wholesale (DOR-4118).
   'mcp-server.tool_added': Bell,
   // A saved MCP server's name is one of DorkOS's own, so no agent gets it (DOR-4262).
@@ -367,6 +368,9 @@ export function notificationLink(notification: NotificationDTO): NotificationLin
       return { ...appRoutes.home(), search: { inbox: subject.id } };
     }
     return sessionId === undefined ? null : toSession({ session: sessionId });
+  }
+  if (kind === 'connector.write_available') {
+    return { ...appRoutes.connections(), search: { app: subject.id } };
   }
   if (kind === 'connector.access_narrowed') {
     // Who can use which app, where the change shows and can be put back.
