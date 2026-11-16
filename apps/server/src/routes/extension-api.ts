@@ -18,6 +18,7 @@
 import { Hono, type Context } from 'hono';
 import type { ApiEnv } from '../http/api-chain.js';
 import type { ExtensionManager } from '../services/extensions/extension-manager.js';
+import { refusedAppCall, type AppCallRecords } from './extension-app-call.js';
 
 /**
  * The mount and the path below it: `req.baseUrl` and `req.path` on Express.
@@ -42,19 +43,27 @@ export function splitExtensionMount(url: string, id: string): { mount: string; s
 /**
  * The `/api/ext` routes.
  *
+ * A request that names a calling app (one app calling another, DOR-3293) is
+ * checked against both apps' manifests first ({@link refusedAppCall}).
+ *
  * @param manager - Where each extension's handler is looked up, per request,
  *   so turning one off takes effect on the next one.
+ * @param records - Each app's manifest and whether its screens run, for a
+ *   call from one app to another. Unset refuses every such call.
  * @returns The routes, for `app.route('/api/ext', …)`.
  */
 export function createExtensionApiRoutes(
-  manager: Pick<ExtensionManager, 'getServerHandler'>
+  manager: Pick<ExtensionManager, 'getServerHandler'>,
+  records: AppCallRecords = { manifest: () => undefined, callerRuns: () => false }
 ): Hono<ApiEnv> {
   const routes = new Hono<ApiEnv>();
   const serve = async (c: Context<ApiEnv>): Promise<Response> => {
     const id = c.req.param('id') ?? '';
     const handler = manager.getServerHandler(id);
-    if (!handler) return c.json({ error: `Extension '${id}' has no server routes` }, 404);
     const { mount, subPath } = splitExtensionMount(c.req.url, id);
+    const refused = refusedAppCall(c, id, handler !== null, subPath, records);
+    if (refused) return refused;
+    if (!handler) return c.json({ error: `Extension '${id}' has no server routes` }, 404);
     return (await handler({ c, mount, subPath })) ?? c.notFound();
   };
   routes.all('/:id', serve);

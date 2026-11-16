@@ -51,6 +51,7 @@ function handover(launchOrigin: string | null) {
     open: vi.fn(async () => state),
     selectTab: vi.fn(async () => state),
     navigate: vi.fn(async () => state),
+    stepHistory: vi.fn(async () => state),
     pause: vi.fn(async () => state),
     handToPerson: vi.fn(async () => state),
     resume: vi.fn(async () => state),

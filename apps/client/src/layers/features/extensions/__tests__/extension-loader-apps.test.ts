@@ -10,7 +10,9 @@ import {
   getExtensionClientStates,
   setExtensionClientState,
 } from '@/layers/shared/lib/extension-client-state';
+import { getExtensionNames, setExtensionNames } from '@/layers/shared/lib/extension-names';
 import { importExtensionModule } from '../model/extension-bundle-import';
+import { runningAppManifest, setRunningApps } from '../frame/running-apps';
 import { ExtensionLoader, EXTENSION_IMPORT_TIMEOUT_MS } from '../model/extension-loader';
 import type { ExtensionAPIDeps } from '../model/types';
 
@@ -62,7 +64,7 @@ afterEach(() => {
 function record(id: string, scope: 'global' | 'local' = 'global'): ExtensionRecordPublic {
   return {
     id,
-    manifest: { id, name: id, version: '1.0.0' },
+    manifest: { clientApiVersion: 2, id, name: id, version: '1.0.0' },
     status: 'compiled',
     scope,
     origin: 'user',
@@ -86,6 +88,51 @@ function catalog(records: ExtensionRecordPublic[]) {
     clientStates: getExtensionClientStates(),
   });
 }
+
+describe('apps built for the old extension API', () => {
+  function oldApp(id: string, rightPanel = false): ExtensionRecordPublic {
+    const old = record(id);
+    delete (old.manifest as { clientApiVersion?: 2 }).clientApiVersion;
+    if (rightPanel) old.manifest.contributions = { 'right-panel': true };
+    return old;
+  }
+
+  it('never fetches their code, and leaves no error tab or frame behind', async () => {
+    const old = oldApp('meadow');
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => ({ ok: true, json: async () => [old] }))
+    );
+    await loader.initialize();
+    expect(importExtensionModule).not.toHaveBeenCalled();
+    expect(loader.getLoaded().has('meadow')).toBe(false);
+    expect(getExtensionClientStates().meadow).toBeUndefined();
+    const ids = useExtensionRegistry.getState().slots['settings.tabs'].map((tab) => tab.id);
+    expect(ids).not.toContain('meadow:load-error');
+    // The catalog reads the record: its tile says it needs an update.
+    expect(catalog([old]).apps.map((app) => [app.id, app.state])).toEqual([
+      ['meadow', 'needs-update'],
+    ]);
+  });
+
+  it('keeps a declared right-panel tab that says, in the same words, it needs an update', async () => {
+    const old = oldApp('meadow', true);
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => ({ ok: true, json: async () => [old] }))
+    );
+    await loader.initialize();
+    const tab = useExtensionRegistry
+      .getState()
+      .slots['right-panel'].find((entry) => entry.id === 'meadow:needs-update');
+    expect(tab).toBeDefined();
+    render(createElement(tab!.component));
+    expect(screen.getByText('meadow needs an update to run safely.')).toBeInTheDocument();
+    expect(
+      screen.getByText('It was built for an older version of DorkOS. Ask its maker for an update.')
+    ).toBeInTheDocument();
+  });
+});
 
 describe('independent app loads', () => {
   it('activates two good apps and their Settings before a third import settles', async () => {
@@ -164,7 +211,8 @@ describe('independent app loads', () => {
     });
     expect(fetch).toHaveBeenCalledTimes(2);
     expect(importExtensionModule).toHaveBeenLastCalledWith(
-      expect.stringMatching(/\/extensions\/pond\/bundle\?t=\d+/)
+      expect.stringMatching(/\/extensions\/pond\/bundle\?t=\d+/),
+      expect.objectContaining({ id: 'pond' })
     );
     expect(loader.getLoaded().has('pond')).toBe(true);
     expect(useExtensionRegistry.getState().slots['settings.tabs'].map((tab) => tab.id)).toEqual([
@@ -245,5 +293,31 @@ describe('independent app loads', () => {
         .sort()
     ).toEqual(['garden:settings', 'pond:load-error']);
     expect(getExtensionClientStates().pond).toBe('error');
+  });
+});
+
+// Purpose: "Opened by Ledger" on a canvas tab, and a frame's call to another
+// app, read DorkOS's listing; the first load fills it, not only a reload
+// (DOR-3293, where only a reload did).
+describe('the listing other surfaces read', () => {
+  afterEach(() => {
+    setExtensionNames({});
+    setRunningApps([]);
+  });
+
+  it('names every app and knows which ones run, from the first load', async () => {
+    const ledger = {
+      ...record('ledger'),
+      manifest: { ...record('ledger').manifest, name: 'Ledger' },
+    };
+    const off = { ...record('desk'), approvedToRun: false };
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => ({ ok: true, json: async () => [ledger, off] }))
+    );
+    await loader.initialize();
+    expect(getExtensionNames()).toEqual({ ledger: 'Ledger', desk: 'desk' });
+    expect(runningAppManifest('ledger')?.name).toBe('Ledger');
+    expect(runningAppManifest('desk')).toBeNull();
   });
 });

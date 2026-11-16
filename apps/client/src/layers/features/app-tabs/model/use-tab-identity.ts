@@ -20,6 +20,7 @@ import {
   useRemoteCommunityRoom,
 } from '@/layers/entities/community';
 import { teamMemberFace, useTeamRoster } from '@/layers/entities/team';
+import { useExtensionList } from '@/layers/entities/extension';
 import {
   channelsTabIdentity,
   chatTabIdentity,
@@ -211,6 +212,13 @@ export function useTabIdentity(href: string): TabIdentity {
   // An extension page's own badge (`api.setPageBadge`), read only while the
   // page is registered: a badge never outlives the page it was set on.
   const pageBadge = usePageBadge(extensionAt?.match?.page.id ?? null);
+  // An app page with nothing registered (loading, or an app that cannot run)
+  // is named by DorkOS's record of the app, as its page header is.
+  const unregisteredApp = extensionAt !== null && !extensionAt.match;
+  const { data: extensions } = useExtensionList({ enabled: unregisteredApp });
+  const appName = unregisteredApp
+    ? extensions?.find((extension) => extension.id === extensionAt.extensionId)?.manifest.name
+    : undefined;
   const needsYouCount = useTabSignalsStore((state) => state.needsYouCount);
   const badge = useTabSignalsStore((state) => state.routeBadges[target.pathname]);
 
@@ -247,7 +255,7 @@ export function useTabIdentity(href: string): TabIdentity {
       });
     case 'route':
       return extensionAt !== null
-        ? extensionTabIdentity(extensionAt.match?.page, pageBadge)
+        ? extensionTabIdentity(extensionAt.match?.page, pageBadge, appName)
         : routeTabIdentity(target.pathname, badge);
   }
 }

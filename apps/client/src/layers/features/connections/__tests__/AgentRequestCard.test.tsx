@@ -17,7 +17,10 @@ import type {
   ConnectorConnectionSummary,
 } from '@dorkos/shared/connector-resource-schemas';
 import type { Transport } from '@dorkos/shared/transport';
-import { createMockTransport, createMockConnectionReadiness } from '@dorkos/test-utils';
+import {
+  createMockTransport,
+  createMockConnectionReadiness,
+} from '@dorkos/test-utils/mock-factories';
 import { TransportProvider } from '@/layers/shared/model';
 import { AgentRequestCard } from '../ui/agent-request/AgentRequestCard';
 import { ChatAgentRequest } from '../ui/agent-request/ChatAgentRequest';

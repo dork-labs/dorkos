@@ -23,6 +23,10 @@ import { swappableServer } from '@dorkos/test-utils/listening-server';
 import { createTestDb } from '@dorkos/test-utils/db';
 import type { Db } from '@dorkos/db';
 import type { Task } from '@dorkos/shared/schemas';
+import type { MeshCore } from '@dorkos/mesh';
+import os from 'node:os';
+import path from 'node:path';
+import { mkdtempSync, realpathSync, rmSync } from 'node:fs';
 
 /** Mutable posture the mocked config manager reports. */
 const state = vi.hoisted(() => ({ authEnabled: false }));
@@ -57,7 +61,8 @@ vi.mock('../../services/core/config-manager.js', () => ({
   },
 }));
 
-vi.mock('../../lib/boundary.js', () => ({
+vi.mock('../../lib/boundary.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../lib/boundary.js')>()),
   isWithinBoundary: vi.fn().mockResolvedValue(true),
 }));
 
@@ -315,7 +320,36 @@ describe('operator-only task fields on the REST routes', () => {
     });
 
     it('is credited by its RESOLVED identity, never by anything it sent', async () => {
-      resolvedAgentIdentity = { agentPath: '/tmp/agents/nightly-bot', displayName: 'Nightly Bot' };
+      // A registered agent with a folder of its own: its global request is filed under
+      // itself (DOR-4067), and the credit still comes from the resolved identity.
+      const agentPath = realpathSync(mkdtempSync(path.join(os.tmpdir(), 'nightly-bot-')));
+      const agents = [{ id: 'nightly-bot', projectPath: agentPath }];
+      fixtureTarget.mount(
+        honoGroupListener(
+          {
+            path: '/api/tasks',
+            routes: createTasksRoutes({
+              store,
+              scheduler,
+              registrar: new TaskRegistrar({ store, scheduler }),
+              dorkHome: DORK_HOME,
+              meshCore: {
+                listWithPaths: () => agents,
+                getProjectPath: (id: string) => agents.find((a) => a.id === id)?.projectPath,
+              } as unknown as MeshCore,
+            }),
+          },
+          {
+            before: (c, next) => {
+              c.set('agentIdentity', {
+                agentPath,
+                displayName: 'Nightly Bot',
+              } as unknown as AgentIdentity);
+              return next();
+            },
+          }
+        )
+      );
 
       const res = await request(fixtureServer)
         .post('/api/tasks')
@@ -335,7 +369,9 @@ describe('operator-only task fields on the REST routes', () => {
 
       expect(res.status).toBe(201);
       const created = store.getTasks().find((t) => t.name === 'credited')!;
-      expect(created.proposedByAgentPath).toBe('/tmp/agents/nightly-bot');
+      expect(created.proposedByAgentPath).toBe(agentPath);
+      expect(created.agentId).toBe('nightly-bot');
+      rmSync(agentPath, { recursive: true, force: true });
     });
 
     it('may still write the ordinary fields', async () => {

@@ -1,7 +1,7 @@
 import { afterEach, expect, it, vi } from 'vitest';
 import type { Transport } from '@dorkos/shared/transport';
 import type { RelayDeliveryReceipt } from '@dorkos/shared/relay-schemas';
-import { createMockTransport } from '@dorkos/test-utils';
+import { createMockTransport } from '@dorkos/test-utils/mock-factories';
 import { createRelayMethods } from '../relay-methods';
 import { HttpTransport } from '../http-transport';
 

@@ -19,7 +19,7 @@ import { RouterContextProvider } from '@tanstack/react-router';
 import type { ExtensionPageProps } from '@dorkos/extension-api';
 import { createInitialSlots, useExtensionRegistry } from '@/layers/shared/model';
 import { QueryClient } from '@tanstack/react-query';
-import { createMockTransport } from '@dorkos/test-utils';
+import { createMockTransport } from '@dorkos/test-utils/mock-factories';
 import type { Transport } from '@dorkos/shared/transport';
 import { createAppRouter } from '../router';
 import {

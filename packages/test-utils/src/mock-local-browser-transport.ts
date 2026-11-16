@@ -34,6 +34,7 @@ export function createMockLocalBrowserTransport(): LocalBrowserTransport {
     openLocalBrowser: vi.fn().mockRejectedValue(new Error('Browser unavailable')),
     selectLocalBrowserTab: vi.fn().mockRejectedValue(new Error('Browser unavailable')),
     navigateLocalBrowser: vi.fn().mockRejectedValue(new Error('Browser unavailable')),
+    stepLocalBrowserHistory: vi.fn().mockRejectedValue(new Error('Browser unavailable')),
     pauseLocalBrowser: vi.fn().mockResolvedValue({ ...state, paused: true }),
     resumeLocalBrowser: vi.fn().mockResolvedValue(state),
     disconnectLocalBrowser: vi.fn().mockResolvedValue(state),

@@ -7,12 +7,13 @@ import tailwindcss from '@tailwindcss/vite';
 import path from 'path';
 import { DEFAULT_PORT } from '@dorkos/shared/constants';
 import { clientDefines } from './vite-define';
+import { extensionFramePlugin } from './extension-frame-plugin';
 
 export default defineConfig({
   // Shared with the desktop shell's renderer build, which bundles this same
   // source — see `vite-define.ts` for what an unshared `define` costs.
   define: clientDefines(),
-  plugins: [tanstackRouter(clientRouterOptions()), react(), tailwindcss()],
+  plugins: [extensionFramePlugin(), tanstackRouter(clientRouterOptions()), react(), tailwindcss()],
   test: {
     // What `--project <name>` matches from the repo root. Rationale:
     // apps/server/vitest.config.ts. Pinned for every project by

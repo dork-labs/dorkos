@@ -8,7 +8,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { createMockTransport } from '@dorkos/test-utils';
+import { createMockTransport } from '@dorkos/test-utils/mock-factories';
 import { PALETTE_QUICK_ACTIONS } from '../model/palette-contributions';
 import { usePaletteActions } from '../model/use-palette-actions';
 import { usePaletteSearch, type SearchableItem } from '../model/use-palette-search';

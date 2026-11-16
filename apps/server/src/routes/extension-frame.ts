@@ -1,0 +1,109 @@
+/**
+ * `GET /api/extension-frame` — the empty document every app's screens run in
+ * (DOR-3293).
+ *
+ * The client puts an app in an `<iframe sandbox="allow-scripts">` pointed here,
+ * never in a `srcdoc` frame: a `srcdoc` document inherits the app shell's CSP,
+ * whose `script-src` allows `'unsafe-inline'`. This response sends its own
+ * policy instead. It sandboxes the document whatever the frame attribute says,
+ * runs only scripts that carry this response's nonce, and reaches no network.
+ *
+ * The page carries no app code and no data, only a bootstrap that takes the
+ * frame runtime once, from the window that framed it, and runs it under the
+ * same nonce. The runtime then receives the app's approved bundle over the
+ * private port the host hands it (`apps/client/src/layers/features/extensions/frame/`).
+ *
+ * @module routes/extension-frame
+ */
+import { randomBytes } from 'node:crypto';
+import { Hono } from 'hono';
+import type { ApiEnv } from '../http/api-chain.js';
+import { resolveAuthTrustedOrigins } from '../lib/trusted-origins.js';
+import { registerCallerTokenRoute, type CallerTokenDeps } from './extension-caller-token.js';
+
+/**
+ * The script that runs first in the frame. It keeps this load's nonce for the
+ * runtime, then accepts exactly one runtime message: from the window that
+ * framed it, sent from one of DorkOS's own origins. It stops listening after
+ * that message, so a second one is ignored, and it records which origin sent
+ * it so the runtime takes its setup from that origin only. The code runs as a
+ * script element carrying the nonce, never through `eval`.
+ *
+ * @param parentOrigins - The exact origins DorkOS serves the app from.
+ */
+export function frameBootstrap(parentOrigins: readonly string[]): string {
+  // `<` escaped so an origin can never close the script element.
+  const origins = JSON.stringify(parentOrigins).replace(/</g, '\\u003c');
+  return `(() => {
+  const nonce = document.currentScript.nonce;
+  const origins = ${origins};
+  Object.defineProperty(globalThis, '__dorkosFrameNonce', { value: nonce });
+  addEventListener('message', function boot(event) {
+    if (event.source !== parent || !origins.includes(event.origin)) return;
+    if (!event.data || event.data.type !== 'dorkos-frame-runtime') return;
+    if (typeof event.data.runtime !== 'string') return;
+    removeEventListener('message', boot);
+    Object.defineProperty(globalThis, '__dorkosFrameParentOrigin', { value: event.origin });
+    const script = document.createElement('script');
+    script.nonce = nonce;
+    script.textContent = event.data.runtime;
+    document.head.append(script);
+  });
+})();`;
+}
+
+/**
+ * The frame document's policy, around one nonce.
+ *
+ * - `sandbox allow-scripts`: an opaque origin even if the iframe attribute is
+ *   ever dropped; no forms, popups, downloads or top navigation.
+ * - `script-src 'nonce-…'`: only scripts DorkOS put there, never `'unsafe-inline'`.
+ * - `connect-src 'none'`: the app reaches DorkOS only through the bridge.
+ * - `style-src`/`font-src`: the host's own styles and font choice, copied in.
+ * - `img-src`/`media-src` `blob:`: pictures and video an app fetched through
+ *   the bridge (Security, 2026-11-10).
+ *
+ * @param nonce - This response's nonce.
+ */
+export function extensionFrameCsp(nonce: string): string {
+  return [
+    'sandbox allow-scripts',
+    "default-src 'none'",
+    `script-src 'nonce-${nonce}'`,
+    "style-src 'unsafe-inline' https://fonts.googleapis.com",
+    "font-src 'self' data: https://fonts.gstatic.com",
+    'img-src data: blob:',
+    'media-src blob:',
+    "connect-src 'none'",
+    "form-action 'none'",
+    "base-uri 'none'",
+    `frame-ancestors 'self' ${resolveAuthTrustedOrigins().join(' ')}`,
+  ].join('; ');
+}
+
+/**
+ * The frame document's routes, and the caller-token mint beside them.
+ *
+ * @param tokenDeps - DorkOS's records of each app, for the caller-token mint.
+ *   Unset mounts no mint, so no app can call another.
+ * @returns The routes, for `app.route('/api/extension-frame', …)`.
+ */
+export function createExtensionFrameRoutes(tokenDeps?: CallerTokenDeps): Hono<ApiEnv> {
+  const router = new Hono<ApiEnv>();
+  // One app calling another: the token that says which app is calling (DOR-3293).
+  if (tokenDeps) registerCallerTokenRoute(router, tokenDeps);
+  router.get('/', (c) => {
+    const nonce = randomBytes(18).toString('base64url');
+    // This listener's own origin, plus the others DorkOS is served from (Vite,
+    // the desktop shell, the tunnel): the only windows that may hand over code.
+    const origins = [...new Set([new URL(c.req.url).origin, ...resolveAuthTrustedOrigins()])];
+    c.header('Content-Security-Policy', extensionFrameCsp(nonce));
+    c.header('Cache-Control', 'no-store');
+    c.header('X-Content-Type-Options', 'nosniff');
+    c.header('Referrer-Policy', 'no-referrer');
+    return c.html(
+      `<!doctype html><html><head><meta charset="utf-8"></head><body><div id="root"></div><script nonce="${nonce}">${frameBootstrap(origins)}</script></body></html>`
+    );
+  });
+  return router;
+}

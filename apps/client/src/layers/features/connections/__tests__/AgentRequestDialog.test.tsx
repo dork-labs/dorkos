@@ -8,7 +8,10 @@ import type {
   ConnectorReconciliationPreview,
 } from '@dorkos/shared/connector-schemas';
 import type { Transport } from '@dorkos/shared/transport';
-import { createMockConnectionReadiness, createMockTransport } from '@dorkos/test-utils';
+import {
+  createMockConnectionReadiness,
+  createMockTransport,
+} from '@dorkos/test-utils/mock-factories';
 import { TransportProvider } from '@/layers/shared/model';
 import { AgentRequestDialog } from '../ui/AgentRequestDialog';
 

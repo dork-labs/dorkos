@@ -34,6 +34,12 @@
  */
 
 /**
+ * How every time-limit line opens. The fails-twice notice reads a run line back
+ * into fixed words by its opening (`schedule-notice-copy.ts`, DOR-4121).
+ */
+export const RUN_TIME_LIMIT_OPENING = 'Run stopped after passing its';
+
+/**
  * How a run that the clock stopped is described on its run row.
  *
  * @param limit - The run's time limit, already formatted for a person ("5m",
@@ -43,6 +49,6 @@
  */
 export function runTimeLimitError(limit?: string): string {
   return limit
-    ? `Run stopped after passing its ${limit} time limit`
-    : 'Run stopped after passing its time limit';
+    ? `${RUN_TIME_LIMIT_OPENING} ${limit} time limit`
+    : `${RUN_TIME_LIMIT_OPENING} time limit`;
 }

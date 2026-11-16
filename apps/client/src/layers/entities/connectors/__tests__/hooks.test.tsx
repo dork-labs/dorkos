@@ -8,7 +8,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { Transport } from '@dorkos/shared/transport';
 import type { ConnectorProviderStatus } from '@dorkos/shared/connector-provider';
 import type { ConnectorAppConnections } from '@dorkos/shared/connector-resource-schemas';
-import { createMockTransport } from '@dorkos/test-utils';
+import { createMockTransport } from '@dorkos/test-utils/mock-factories';
 import { TransportProvider } from '@/layers/shared/model';
 import {
   useConnectorConnection,

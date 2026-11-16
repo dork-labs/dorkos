@@ -6,7 +6,7 @@ import { renderHook, act, waitFor } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { TransportProvider } from '@/layers/shared/model';
 import { CONTEXT_ACTION_PERCENT } from '@/layers/entities/session';
-import { createMockTransport } from '@dorkos/test-utils';
+import { createMockTransport } from '@dorkos/test-utils/mock-factories';
 import {
   shouldShowCompactionChip,
   useCompactionChip,

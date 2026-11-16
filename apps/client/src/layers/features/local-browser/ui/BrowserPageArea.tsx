@@ -19,6 +19,11 @@ interface BrowserPageAreaProps {
   typed: boolean;
   /** Runs "Search for it" with the person's own words. */
   onSearch: () => void;
+  /**
+   * Runs the block's "Go back": the same history step as the chrome's Back, so it
+   * takes the page from a driving agent and keeps the address rules (DOR-4449).
+   */
+  onBack: () => void;
   onUnavailable: () => void;
   disabled?: boolean;
   /** What shows in place of the page when it couldn't be shown at all. */
@@ -38,6 +43,7 @@ export function BrowserPageArea({
   page,
   typed,
   onSearch,
+  onBack,
   onUnavailable,
   disabled,
   children,
@@ -55,6 +61,7 @@ export function BrowserPageArea({
   );
   const act = (action: PageErrorAction) => {
     if (action === 'search') onSearch();
+    else if (action === 'back') onBack();
     else page.run(action);
   };
   return (

@@ -6,7 +6,7 @@ import type { ReactNode } from 'react';
 import { render, screen, cleanup } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { Transport } from '@dorkos/shared/transport';
-import { createMockTransport } from '@dorkos/test-utils';
+import { createMockTransport } from '@dorkos/test-utils/mock-factories';
 import { TransportProvider } from '@/layers/shared/model';
 import { HARNESS_STATUS_READY } from '../../__fixtures__/harness-status';
 import { harnessKeys } from '../../api/query-keys';

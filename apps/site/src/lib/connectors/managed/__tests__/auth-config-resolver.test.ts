@@ -1,10 +1,11 @@
 /** @vitest-environment node */
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { PGlite } from '@electric-sql/pglite';
+import type { PGlite } from '@electric-sql/pglite';
 import { drizzle } from 'drizzle-orm/pglite';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as schema from '@/db/schema';
+import { createPGliteTemplate, type PGliteTemplate } from '@/db/__tests__/pglite-template';
 import type { ManagedConnectorDatabase } from '../authority-service';
 import {
   resolveManagedAuthenticationConfiguration,
@@ -74,14 +75,22 @@ function fakeClient() {
 }
 
 describe('durable default authentication configuration', () => {
+  let template: PGliteTemplate;
   let client: PGlite;
   let db: ManagedConnectorDatabase;
+  // Each case gets its own copy of one database built by the real 0016 migration
+  // over a pre-existing OAuth flow; building it per case cost a PGlite boot each
+  // (DOR-4190).
+  beforeAll(async () => {
+    template = await createPGliteTemplate(async (base) => {
+      await base.exec(
+        "CREATE TABLE managed_connector_auth_flow (id text PRIMARY KEY); INSERT INTO managed_connector_auth_flow VALUES ('old-oauth-flow');"
+      );
+      await base.exec(migration);
+    });
+  });
   beforeEach(async () => {
-    client = new PGlite();
-    await client.exec(
-      "CREATE TABLE managed_connector_auth_flow (id text PRIMARY KEY); INSERT INTO managed_connector_auth_flow VALUES ('old-oauth-flow');"
-    );
-    await client.exec(migration);
+    client = await template.fresh();
     db = drizzle(client, { schema }) as unknown as ManagedConnectorDatabase;
   });
   afterEach(async () => {

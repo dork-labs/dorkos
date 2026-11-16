@@ -2,7 +2,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { render, screen, cleanup, fireEvent } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
-import { mockCanvasDocument } from '@dorkos/test-utils';
+import { mockCanvasDocument } from '@dorkos/test-utils/mock-factories';
 import type { CanvasDocument } from '@dorkos/shared/room-schemas';
 import { useAppStore } from '@/layers/shared/model';
 import { RoomMdHint } from '../ui/empty-state/RoomMdHint';

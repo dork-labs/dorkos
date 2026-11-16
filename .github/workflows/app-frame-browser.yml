@@ -1,0 +1,135 @@
+name: App frame browser
+
+# Runs one Playwright spec in real Chromium on the pull requests that change
+# the sandboxed frame apps run in: `tests/extensions/app-navigate-gesture.spec.ts`,
+# which checks when one app may open another app's page (DOR-3293).
+#
+# WHY ON THE PR: that spec lives in the `chromium-extension-seams` project,
+# which only the merge queue runs (browser-test.yml defers the full suite off
+# pull requests, ADR 260728-112203). Its unit tests fake the browser's user
+# activation, so a change to the frame code could pass every PR check and only
+# red in the queue, where a red is an ejection. This answers on the PR instead.
+#
+# DELIBERATELY NOT A REQUIRED CHECK, and the `paths:` filter is why it can
+# never be one without losing the filter: a workflow skipped by path filtering
+# reports nothing, and a required check that never reports blocks the queue
+# (desktop-renderer.yml's header has the citation). The queue's browser-shard
+# jobs still run this spec on every queue build; this is the early answer, not
+# the gate. No `merge_group:` trigger for the same reason.
+#
+# ONE PROJECT, ONE SPEC, NO SITE OR PRODUCTION LEG: `E2E_SITE=0` and
+# `E2E_PROD=0` keep the run to the legs this project uses.
+on:
+  pull_request:
+    paths:
+      - 'apps/client/src/layers/features/extensions/frame/**'
+      - 'apps/e2e/tests/extensions/app-navigate-gesture.spec.ts'
+      - 'apps/e2e/fixtures/extensions/hop-fixture/**'
+      - '.github/workflows/app-frame-browser.yml'
+  workflow_dispatch:
+
+# Same Node 24 opt-in as the other workflows.
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
+
+# PR-only, so cancel superseded runs on the same ref.
+concurrency:
+  group: app-frame-browser-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  gesture-spec:
+    name: app frame gesture spec
+    # Pinned for the reason browser-test.yml pins (ledger 261027-053504).
+    runs-on: ubuntu-24.04
+    # Setup and build ~8 min (browser-test.yml's measured fixed cost), boot
+    # ~3-5 min, the spec ~2 min. Bounds a hang, not the happy path.
+    timeout-minutes: 30
+    env:
+      NODE_ENV: development
+      E2E_SITE: '0'
+      E2E_PROD: '0'
+    steps:
+      # No saved credential: nothing here pushes, and the specs make git
+      # repositories inside the checkout (ledger 261030-062000).
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+      # Image-keyed pnpm store: browser-test.yml's browser-shard says why (ledger 261030-001500).
+      - name: Find the pnpm store
+        id: pnpm-store
+        run: echo "image=${ImageOS:?ImageOS is not set on this runner}" >> "$GITHUB_OUTPUT" && echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ steps.pnpm-store.outputs.path }}
+          key: pnpm-store-${{ runner.os }}-${{ steps.pnpm-store.outputs.image }}-${{ runner.arch }}-${{ hashFiles('pnpm-lock.yaml') }}
+      - run: pnpm install --frozen-lockfile
+      - name: Resolve the Playwright version
+        id: pw
+        run: echo "version=$(pnpm --filter @dorkos/e2e exec playwright --version | awk '{print $2}')" >> "$GITHUB_OUTPUT"
+      - name: Restore the Chromium browser Playwright drives
+        id: pw-cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-chromium-${{ runner.os }}-${{ steps.pw.outputs.version }}
+      # The same browser and OS-package install as browser-test.yml's
+      # browser-smoke, which says why for each step. This job restores the
+      # OS-package cache and never saves it.
+      - name: Plan the OS packages Chromium needs, from the image's apt lists
+        id: apt-plan
+        run: |
+          pnpm --filter @dorkos/e2e exec playwright install-deps --dry-run chromium >"$RUNNER_TEMP/playwright-deps.txt" 2>&1 || true
+          bash scripts/playwright-apt-debs.sh plan "$RUNNER_TEMP/playwright-deps.txt" "$RUNNER_TEMP/playwright-apt"
+      - name: Restore the OS packages Chromium needs
+        id: apt-cache
+        if: ${{ steps.apt-plan.outputs.mode == 'cache' }}
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/playwright-apt/debs
+          key: ${{ steps.apt-plan.outputs.key }}
+      - name: Install Chromium
+        timeout-minutes: 10
+        env:
+          BROWSER_CACHE_HIT: ${{ steps.pw-cache.outputs.cache-hit }}
+          APT_MODE: ${{ steps.apt-plan.outputs.mode }}
+          APT_CACHE_HIT: ${{ steps.apt-cache.outputs.cache-hit }}
+        run: |
+          printf 'Acquire::http::Timeout "20";\nAcquire::https::Timeout "20";\nAcquire::Retries "2";\n' \
+            | sudo tee /etc/apt/apt.conf.d/99-ci-acquire-timeouts >/dev/null
+          if [ -f /etc/apt/apt-mirrors.txt ]; then
+            sudo sed -i '/azure\.archive\.ubuntu\.com/d' /etc/apt/apt-mirrors.txt
+          fi
+          bash scripts/playwright-apt-debs.sh install "$RUNNER_TEMP/playwright-apt"
+      - name: Build what the legs boot from
+        run: pnpm exec turbo run build --filter=@dorkos/server --filter=@dorkos/client
+      - name: Run the app frame gesture spec
+        timeout-minutes: 15
+        run: pnpm --filter @dorkos/e2e exec playwright test tests/extensions/app-navigate-gesture.spec.ts --project chromium-extension-seams
+      # Refuse a run that executed nothing: a renamed spec or project must not pass green.
+      - name: Refuse a run that tested nothing
+        run: |
+          node --input-type=module -e '
+            import fs from "node:fs";
+            const report = JSON.parse(fs.readFileSync("apps/e2e/test-results/results.json", "utf8"));
+            if (!(report.stats.expected + report.stats.flaky > 0)) {
+              throw new Error("No test in app-navigate-gesture.spec.ts ran. Check the spec path and the chromium-extension-seams project.");
+            }
+          '
+      - name: Upload the Playwright report
+        if: ${{ failure() || cancelled() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: app-frame-browser-report
+          path: |
+            apps/e2e/test-results/
+            apps/e2e/playwright-report/
+          overwrite: true
+          retention-days: 7

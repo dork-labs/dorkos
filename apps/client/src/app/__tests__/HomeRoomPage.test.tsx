@@ -18,7 +18,7 @@ import { act, fireEvent, render, screen, cleanup, waitFor } from '@testing-libra
 import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom/vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { createMockTransport, mockRoomEntryPage } from '@dorkos/test-utils';
+import { createMockTransport, mockRoomEntryPage } from '@dorkos/test-utils/mock-factories';
 import type { Transport } from '@dorkos/shared/transport';
 import {
   REACTION_FREQUENTS_DEFAULT,

@@ -22,7 +22,7 @@ import { render, screen, fireEvent, cleanup, waitFor } from '@testing-library/re
 import '@testing-library/jest-dom/vitest';
 import { createRef, type ReactNode } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { createMockTransport } from '@dorkos/test-utils';
+import { createMockTransport } from '@dorkos/test-utils/mock-factories';
 import { REACTION_FREQUENTS_DEFAULT, type RoomWithRoster } from '@dorkos/shared/room-schemas';
 
 // The plain textarea, pinned. `ui.composer.richText` defaults on since

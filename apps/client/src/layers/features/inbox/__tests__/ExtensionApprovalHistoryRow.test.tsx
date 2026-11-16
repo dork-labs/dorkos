@@ -13,7 +13,7 @@ import '@testing-library/jest-dom/vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { ExtensionRecordPublic } from '@dorkos/extension-api';
 import type { NotificationDTO } from '@dorkos/shared/notification-schemas';
-import { createMockTransport } from '@dorkos/test-utils';
+import { createMockTransport } from '@dorkos/test-utils/mock-factories';
 import { extensionApprovalSubjectId } from '@dorkos/shared/extension-approval-schemas';
 
 /** Where the answered copy lived. */

@@ -52,6 +52,8 @@ export const STRIPPED_HEADERS: ReadonlySet<string> = new Set([
   // The person proof the app page keeps beside its session (DOR-3330): with a
   // cookie from anywhere, it would be the person.
   'x-dorkos-person',
+  // A calling app's token (DOR-3293): the window's proof, never an upstream's.
+  'x-dorkos-caller-token',
   // `AGENT_IDENTITY_HEADER` from `middleware/agent-identity.ts`, spelled out
   // rather than imported so this file does not pull in the identity service.
   // A test imports the real constant and asserts it is in this set, so a rename

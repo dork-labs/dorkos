@@ -39,7 +39,7 @@ import {
 import { zodValidator } from '@tanstack/zod-adapter';
 import { z } from 'zod';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { createMockTransport } from '@dorkos/test-utils';
+import { createMockTransport } from '@dorkos/test-utils/mock-factories';
 import { mergeDialogSearch, TransportProvider } from '@/layers/shared/model';
 
 vi.mock('@/layers/shared/model', async (importOriginal) => {

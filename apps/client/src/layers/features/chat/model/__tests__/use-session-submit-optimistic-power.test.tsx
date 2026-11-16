@@ -20,7 +20,7 @@ import type { ExecutionDefaults } from '@dorkos/shared/schemas';
 import type { Session } from '@dorkos/shared/types';
 import { TransportProvider, useAppStore } from '@/layers/shared/model';
 import { sessionKeys } from '@/layers/entities/session';
-import { createMockSession, createMockTransport } from '@dorkos/test-utils';
+import { createMockSession, createMockTransport } from '@dorkos/test-utils/mock-factories';
 import { useSessionSubmit } from '../use-session-submit';
 
 const SESSION_ID = '22222222-2222-4222-8222-222222222222';

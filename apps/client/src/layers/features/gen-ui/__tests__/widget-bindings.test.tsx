@@ -3,7 +3,7 @@ import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import type { WidgetDocument, WidgetNode } from '@dorkos/shared/ui-widget';
-import { createMockTransport } from '@dorkos/test-utils';
+import { createMockTransport } from '@dorkos/test-utils/mock-factories';
 import { TransportProvider } from '@/layers/shared/model';
 import { readWidgetStatePath, resolveWidgetBindings } from '../lib/widget-bindings';
 import type { WidgetChannelPort } from '../model/widget-channel';

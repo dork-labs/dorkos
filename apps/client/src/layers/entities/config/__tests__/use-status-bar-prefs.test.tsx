@@ -9,7 +9,7 @@ import type { Transport } from '@dorkos/shared/transport';
 import type { ServerConfig } from '@dorkos/shared/types';
 import type { StatusBarPrefs } from '@dorkos/shared/config-schema';
 import { STATUS_BAR_PREFS_DEFAULTS } from '@dorkos/shared/config-schema';
-import { createMockTransport } from '@dorkos/test-utils';
+import { createMockTransport } from '@dorkos/test-utils/mock-factories';
 import { TransportProvider } from '@/layers/shared/model';
 import { configKeys } from '../api/query-keys';
 import { useStatusBarPrefs, useUpdateStatusBarPrefs } from '../model/use-status-bar-prefs';

@@ -2,27 +2,31 @@
  * @vitest-environment node
  */
 
-import { PGlite } from '@electric-sql/pglite';
+import type { PGlite } from '@electric-sql/pglite';
 import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import * as siteSchema from '@/db/schema';
 import { resolveConnectorTenant, type ManagedConnectorDatabase } from '../authority-service';
-import { provisionManagedTestDatabase } from './managed-database-fixture';
+import { createManagedTestDatabaseTemplate, type PGliteTemplate } from './managed-database-fixture';
 
-// Booting PGlite and replaying the managed migrations costs seconds per case
-// under load; the sibling integration suites measured the same 5-15s band.
+// Booting PGlite and replaying the managed migrations costs seconds under load,
+// paid once in `beforeAll`; each case loads its own copy (DOR-4190);
+// the sibling integration suites measured the same 5-15s band.
 vi.setConfig({ testTimeout: 30_000, hookTimeout: 30_000 });
 
 describe('resolveConnectorTenant over a non-unique owner index', () => {
+  let template: PGliteTemplate;
   let client: PGlite;
   let db: ManagedConnectorDatabase;
   let queries: Array<{ query: string; params: unknown[] }>;
 
+  beforeAll(async () => {
+    template = await createManagedTestDatabaseTemplate();
+  });
   beforeEach(async () => {
-    client = new PGlite();
-    await provisionManagedTestDatabase(client);
+    client = await template.fresh();
     queries = [];
     db = drizzle(client, {
       schema: siteSchema,

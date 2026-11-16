@@ -13,6 +13,7 @@
  */
 import { useAppStore, documentsInView, useUnifiedPanelChrome } from '@/layers/shared/model';
 import type { CanvasView } from '@/layers/shared/lib';
+import { useAppOpeners } from '@/layers/entities/extension';
 import { CanvasHeader, canvasPanelId, canvasTabDomId } from './CanvasHeader';
 import { CanvasErrorBoundary } from './CanvasErrorBoundary';
 import { CanvasRenderer } from './CanvasRenderer';
@@ -44,11 +45,17 @@ function CanvasBody({ view }: { view: CanvasView }) {
 
   const documents = documentsInView(openDocuments, view);
   const active = documents.find((d) => d.id === activeDocumentId) ?? null;
-  const headerDocs = documents.map((d) => ({
-    id: d.id,
-    sourceLabel: d.sourceLabel,
-    contentType: d.content.type,
-  }));
+  const openerOf = useAppOpeners();
+  const headerDocs = documents.map((d) => {
+    const openedBy = openerOf(d.openedBy?.extensionId);
+    return {
+      id: d.id,
+      sourceLabel: d.sourceLabel,
+      contentType: d.content.type,
+      ...(openedBy && { openedBy }),
+    };
+  });
+  const activeOpener = openerOf(active?.openedBy?.extensionId);
   const panelId = canvasPanelId(view);
 
   return (
@@ -67,6 +74,15 @@ function CanvasBody({ view }: { view: CanvasView }) {
       {/* Above the scroll container, so the choice stays put while the document
           scrolls under it — and outside the tabpanel, because it is about the
           document rather than part of it. */}
+      {/* Who opened it, from DorkOS's records: never the page's own title or icon. */}
+      {activeOpener && (
+        <p
+          data-testid="canvas-opened-by"
+          className="text-muted-foreground truncate px-3 py-1 text-xs"
+        >
+          Opened by {activeOpener.name}
+        </p>
+      )}
       {active?.heldUpdate && (
         <CanvasHeldUpdateBanner
           onReload={() => applyHeldUpdate(active.id)}

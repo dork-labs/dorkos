@@ -21,7 +21,7 @@ afterEach(() => {
 function makeExtension(overrides: Partial<ExtensionRecordPublic> = {}): ExtensionRecordPublic {
   return {
     id: 'mail',
-    manifest: { id: 'mail', name: 'Mail', version: '1.0.0' },
+    manifest: { clientApiVersion: 2, id: 'mail', name: 'Mail', version: '1.0.0' },
     status: 'compiled',
     scope: 'global',
     origin: 'user',

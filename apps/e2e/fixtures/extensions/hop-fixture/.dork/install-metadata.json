@@ -1,0 +1,7 @@
+{
+  "name": "hop-fixture",
+  "version": "1.0.0",
+  "type": "plugin",
+  "installedAt": "2026-11-12T00:00:00.000Z",
+  "sourceRepo": "dorkos/e2e-fixtures"
+}

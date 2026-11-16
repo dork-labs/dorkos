@@ -66,10 +66,11 @@ describe('tasks_update writes the SKILL.md, not just the row', () => {
     // the same file rather than updating the one under test.
     root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'dorkos-update-file-')));
     dorkHome = path.join(root, 'dork');
-    skillsDir = path.join(dorkHome, 'skills');
+    agentDir = path.join(root, 'agent');
+    skillsDir = path.join(agentDir, '.agents', 'skills');
+    await fs.mkdir(dorkHome, { recursive: true });
     await fs.mkdir(skillsDir, { recursive: true });
 
-    agentDir = null;
     const deps = {
       taskStore: store,
       defaultCwd: '/tmp/test',
@@ -118,7 +119,7 @@ describe('tasks_update writes the SKILL.md, not just the row', () => {
     reason: 'The overnight backlog needs sweeping before you start.',
   };
 
-  /** The SKILL.md a global task with the base name is written to. */
+  /** The SKILL.md under the calling agent, with the base name. */
   const skillPath = () => path.join(skillsDir, 'nightly-sweep', 'SKILL.md');
 
   /** Create the base task through the tool and hand back its id. */
@@ -128,14 +129,14 @@ describe('tasks_update writes the SKILL.md, not just the row', () => {
     return (payload.schedule as Task).id;
   }
 
-  /** One real reconciler pass over the global skills root. */
+  /** One real reconciler pass over the calling agent’s skills root. */
   async function reconcile(): Promise<{ upserted: number; orphaned: number }> {
     const reconciler = new TaskReconciler(
       store,
       new TaskRegistrar({ store, scheduler: new FakeScheduler() }),
       new ScheduleIdentityRegistry()
     );
-    reconciler.addRoot(skillsRoot(skillsDir, 'global'));
+    reconciler.addRoot(skillsRoot(skillsDir, 'project', agentDir!, 'agent-1'));
     try {
       return await reconciler.reconcile();
     } finally {

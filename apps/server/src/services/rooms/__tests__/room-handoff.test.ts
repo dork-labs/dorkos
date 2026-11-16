@@ -29,6 +29,9 @@ import {
   type ScriptedTurnRunner,
 } from './room-test-harness.js';
 import { withStrangerMarkFlag } from './stranger-mark-flag.js';
+import { logger } from '../../../lib/logger.js';
+import { eq, sessionMetadata, type Db } from '@dorkos/db';
+import { runtimeRegistry } from '../../core/runtime-registry.js';
 
 vi.mock('../../core/auth/index.js', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../core/auth/index.js')>()),
@@ -138,6 +141,7 @@ describe('one seat per agent per room, and the hand-off', () => {
   let busy: (request: RoomTurnRequest) => boolean;
   let runner: ReturnType<typeof asyncRunner>;
   let harnessAuthors: AuthorRegistry;
+  let db: Db;
 
   /** Post as Bo from `sessionId`, the way the in-session server calls. */
   function postAsBo(sessionId: string, input: Record<string, unknown>): Promise<PostResult> {
@@ -184,7 +188,20 @@ describe('one seat per agent per room, and the hand-off', () => {
       (request) => busy(request)
     );
     const harness = createRoomHarness({ agents, runner, operatorName: () => 'Dorian' });
-    ({ service, store, human } = harness);
+    ({ service, store, human, db } = harness);
+    runtimeRegistry.setDb(db);
+    // Real persisted target facts, read by the same registry as production chat admission.
+    db.insert(sessionMetadata)
+      .values(
+        ['bo-chat', 'cy-chat'].map((sessionId) => ({
+          sessionId,
+          runtime: 'claude-code',
+          agentPath: '/agents/bo',
+          launchOrigin: 'interactive',
+          createdAt: new Date().toISOString(),
+        }))
+      )
+      .run();
     harnessAuthors = harness.authors;
     registry = composeRegistry([roomsDomain], {
       logger: { debug() {}, info() {}, warn() {}, error() {} },
@@ -346,7 +363,7 @@ describe('one seat per agent per room, and the hand-off', () => {
       [bo, 'bo-chat'],
       [cy, 'cy-chat'],
     ] as const) {
-      service.handoffs.handOff({
+      await service.handoffs.handOff({
         roomId: dorkos.id,
         author: harnessAuthors.getById(authorId)!,
         text: 'ship it',
@@ -494,6 +511,54 @@ describe('one seat per agent per room, and the hand-off', () => {
     expect(bosPosts(dorkos)).toEqual(['exact words\n\n_Shared from another chat._']);
   });
 
+  // M1: a terminal outcome remains readable even when its drafting chat cannot receive notices.
+  it.each(
+    ['heartbeat', 'schedule', 'relay-binding', null].flatMap((origin) =>
+      ['posted', 'declined'].map((outcome) => [origin, outcome] as const)
+    )
+  )(
+    'does not send or warn for a %s drafting chat when its handoff is %s',
+    async (launchOrigin, outcome) => {
+      db.update(sessionMetadata)
+        .set({ launchOrigin })
+        .where(eq(sessionMetadata.sessionId, 'bo-chat'))
+        .run();
+      const send = vi
+        .fn()
+        .mockResolvedValue({ messageId: 'm', chatId: 'bo-chat', status: 'queued' });
+      setChatMessageService({ send } as unknown as ChatMessageService);
+      const warn = vi.spyOn(logger, 'warn').mockImplementation(() => {});
+      const debug = vi.spyOn(logger, 'debug').mockImplementation(() => {});
+      try {
+        if (outcome === 'posted') seatPostsDraft();
+        else scripts[dorkos.id] = async () => 'The room already heard this.';
+        const receipt = await postAsBo('bo-chat', { roomId: dorkos.id, text: 'note for the room' });
+        await settle();
+        expect(send).not.toHaveBeenCalled();
+        expect(warn).not.toHaveBeenCalled();
+        expect(debug).toHaveBeenCalledWith(
+          '[rooms] hand-off answer skipped for a chat that cannot receive messages',
+          expect.objectContaining({ handoffId: receipt.handoffId, sessionId: 'bo-chat' })
+        );
+        const standing = await registry.invoke(
+          'rooms.handoff_status',
+          { handoffId: receipt.handoffId },
+          {
+            identity: BO,
+            sessionId: 'bo-chat',
+            retryChannel: 'mcp-argument',
+          }
+        );
+        expect(standing).toMatchObject({ status: outcome });
+        expect(receipt.instruction).toContain('No answer comes back to this chat');
+        expect(receipt.instruction).toContain('room_handoff_status');
+      } finally {
+        warn.mockRestore();
+        debug.mockRestore();
+      }
+    }
+  );
+
   it('reports back into a chat no room keeps', async () => {
     const send = vi.fn(() =>
       Promise.resolve({ messageId: 'm', chatId: 'bo-chat', status: 'queued' })
@@ -501,9 +566,10 @@ describe('one seat per agent per room, and the hand-off', () => {
     setChatMessageService({ send } as unknown as ChatMessageService);
     seatPostsDraft();
 
-    await postAsBo('bo-chat', { roomId: dorkos.id, text: 'note for the room' });
+    const receipt = await postAsBo('bo-chat', { roomId: dorkos.id, text: 'note for the room' });
     await settle();
 
+    expect(receipt.instruction).toContain('The answer comes back to this chat.');
     expect(send).toHaveBeenCalledWith(
       expect.objectContaining({ agentPath: '/agents/bo' }),
       expect.objectContaining({ to: 'bo-chat', message: 'Bo shared it in #dorkos.' }),

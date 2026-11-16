@@ -95,6 +95,28 @@ export function assertLocalBrowserUrl(
 }
 
 /**
+ * Whether a person's Back or Forward may load this address (DOR-4449): exactly
+ * `about:blank`, the first page of every tab, or a website that is not this
+ * DorkOS app. The same rules the address bar keeps for typed addresses, on
+ * every load a step makes, its redirects included.
+ *
+ * @param value - The address a step would load or landed on.
+ * @param appOrigins - The live addresses of this DorkOS app.
+ */
+export function historyAddressAllowed(
+  value: string,
+  appOrigins: readonly string[] = localBrowserAppOrigins()
+): boolean {
+  if (value === 'about:blank') return true;
+  try {
+    if (!['http:', 'https:'].includes(new URL(value).protocol)) return false;
+  } catch {
+    return false;
+  }
+  return !isLocalBrowserAppUrl(value, appOrigins);
+}
+
+/**
  * Chromium's words for a page that never connected over https: refused, timed
  * out, unreachable, or a server that answered in plain http
  * (`ERR_SSL_PROTOCOL_ERROR`, what `nas.lan:5000` gives). Never an `ERR_CERT_*`.

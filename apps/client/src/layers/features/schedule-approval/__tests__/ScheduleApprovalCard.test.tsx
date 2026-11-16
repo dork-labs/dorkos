@@ -17,7 +17,7 @@ import '@testing-library/jest-dom/vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { Transport } from '@dorkos/shared/transport';
 import type { Session, Task, TaskRun } from '@dorkos/shared/types';
-import { createMockTransport, createMockSession } from '@dorkos/test-utils';
+import { createMockTransport, createMockSession } from '@dorkos/test-utils/mock-factories';
 
 /** Where the card said to go, if anywhere. */
 const mockNavigate = vi.fn();
