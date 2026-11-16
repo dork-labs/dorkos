@@ -545,6 +545,7 @@ describe('the merge queue is unchanged by pending (DOR-4459)', () => {
       assert.equal(verdictOf(gh.written).sha, 'group1');
       assert.equal(verdictOf(gh.written).state, 'failure');
       // The reason the PR head shows as pending is the reason the group fails.
+      assert.match(verdictOf(head.written).description, why);
       const reason = verdictOf(head.written).description.split('; ')[0];
       assert.match(verdictOf(gh.written).description, /^PR #1: /);
       assert.ok(verdictOf(gh.written).description.includes(reason), reason);
