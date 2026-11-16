@@ -52,7 +52,9 @@ function createRule(earlyWarning) {
           for (const comment of source.getAllComments()) {
             // Only JSDoc tags, never example strings, prose mentions or ordinary comments.
             if (comment.type !== 'Block' || !comment.value.startsWith('*')) continue;
-            const tags = comment.value.matchAll(/(?:^|\r?\n)[ \t]*\*?[ \t]*@deprecated\b([^\r\n]*)/g);
+            const tags = comment.value.matchAll(
+              /(?:^|\r?\n)[ \t]*\*?[ \t]*@deprecated\b([^\r\n]*)/g
+            );
             for (const tag of tags) {
               const offset = comment.range[0] + 2 + tag.index + tag[0].indexOf('@deprecated');
               const loc = {
@@ -93,6 +95,9 @@ function createRule(earlyWarning) {
 }
 
 // ESLint sets severity per rule, so the warning uses the same parser at warn level.
-/** Warn during the two minor versions before a deprecation deadline. */
+/**
+ * Warn during the two minor versions before a deprecation deadline.
+ * Windows stay within the removal major: N.0 has none, and N.1 warns only in N.0.x.
+ */
 export const deprecatedRemovalSoon = createRule(true);
 export default createRule(false);

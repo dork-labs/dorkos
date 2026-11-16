@@ -15,7 +15,9 @@ function check(code: string, version?: string, filename = 'example.ts') {
         { rules: { [ruleId]: ['error', { version }], [warningRuleId]: ['warn', { version }] } },
       ]
     : baseConfig;
-  return linter.verify(code, config, { filename }).filter((message) => message.ruleId === ruleId || message.ruleId === warningRuleId);
+  return linter
+    .verify(code, config, { filename })
+    .filter((message) => message.ruleId === ruleId || message.ruleId === warningRuleId);
 }
 
 describe('deprecation removal policy', () => {
@@ -36,7 +38,9 @@ describe('deprecation removal policy', () => {
     const [major, minor] = version.split('.').map(Number);
     const removal = `${major}.${Number(minor) + 2}`;
     expect(
-      check(`/** @deprecated since ${major}.0, remove in ${removal}. Use replacement. */\nconst old = 1;`)
+      check(
+        `/** @deprecated since ${major}.0, remove in ${removal}. Use replacement. */\nconst old = 1;`
+      )
     ).toMatchObject([{ ruleId: warningRuleId, severity: 1, messageId: 'approaching' }]);
   });
 
@@ -85,6 +89,20 @@ describe('deprecation removal policy', () => {
       expect(messages[0]).toMatchObject({ ruleId: warningRuleId, messageId: 'approaching' });
       expect(messages[0]?.message).toContain('becomes an error in 0.155');
     }
+  });
+
+  it('has no warning window for removal in 1.0', () => {
+    const code = '/** @deprecated since 0.135, remove in 1.0. */\nconst old = 1;';
+    expect(check(code, '0.999.99')).toEqual([]);
+    expect(check(code, '1.0.0')).toMatchObject([{ severity: 2, messageId: 'expired' }]);
+  });
+
+  it('warns only at 1.0.x for removal in 1.1', () => {
+    const code = '/** @deprecated since 0.135, remove in 1.1. */\nconst old = 1;';
+    expect(check(code, '0.999.99')).toEqual([]);
+    expect(check(code, '1.0.0')).toMatchObject([{ severity: 1, messageId: 'approaching' }]);
+    expect(check(code, '1.0.99')).toMatchObject([{ severity: 1, messageId: 'approaching' }]);
+    expect(check(code, '1.1.0')).toMatchObject([{ severity: 2, messageId: 'expired' }]);
   });
 
   it.each([',', ';', ')'])('accepts trailing %s after the removal version', (punctuation) => {
