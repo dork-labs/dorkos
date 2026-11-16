@@ -17,12 +17,11 @@ import http from 'node:http';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { spawn } from 'node:child_process';
 import type { AddressInfo } from 'node:net';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { buildSidecarSpawnEnv } from '../server-manager.js';
 import { OPENCODE_OWN_PLAN } from '../credits-sidecar.js';
-import { OFFLINE_PROXY_ENV, pinnedOpenCode } from './pinned-opencode.js';
+import { OFFLINE_PROXY_ENV, pinnedOpenCode, runPinnedOpenCode } from './pinned-opencode.js';
 
 const BINARY = pinnedOpenCode();
 const CANARY = 'CANARY-dor3292-opencode';
@@ -157,43 +156,43 @@ describe.skipIf(BINARY === null)('OpenCode and a secret file in its folder (DOR-
         config.permission.read['*'] = 'allow';
         env.OPENCODE_CONFIG_CONTENT = JSON.stringify(config);
       }
-      const child = spawn(BINARY!, ['run', '-m', 'fake/x', 'find the canary'], {
-        cwd: folder,
-        env,
-        stdio: ['ignore', 'pipe', 'pipe'],
-      });
-      let output = '';
-      child.stdout.on('data', (data) => {
-        output += String(data);
-      });
-      child.stderr.on('data', (data) => {
-        output += String(data);
-      });
-      child.once('error', (err) => results.push(`spawn failed: ${err.message}`));
-      await new Promise<void>((resolve) => {
-        const deadline = setTimeout(resolve, 60_000);
-        const watcher = setInterval(() => {
-          if (results.length > 0) {
-            clearTimeout(deadline);
-            clearInterval(watcher);
-            resolve();
+      await runPinnedOpenCode(
+        ['run', '-m', 'fake/x', 'find the canary'],
+        { cwd: folder, env },
+        async (child) => {
+          let output = '';
+          child.stdout.on('data', (data) => {
+            output += String(data);
+          });
+          child.stderr.on('data', (data) => {
+            output += String(data);
+          });
+          child.once('error', (err) => results.push(`spawn failed: ${err.message}`));
+          await new Promise<void>((resolve) => {
+            const deadline = setTimeout(resolve, 60_000);
+            const watcher = setInterval(() => {
+              if (results.length > 0) {
+                clearTimeout(deadline);
+                clearInterval(watcher);
+                resolve();
+              }
+            }, 100);
+            child.once('close', () => {
+              clearTimeout(deadline);
+              clearInterval(watcher);
+              resolve();
+            });
+          });
+          expect(calls.length, output).toBeGreaterThan(0);
+          const evidence = output + results.join('\n');
+          if (file === 'readable.txt') {
+            expect(evidence).toContain(CANARY);
+            return;
           }
-        }, 100);
-        child.once('exit', () => {
-          clearTimeout(deadline);
-          clearInterval(watcher);
-          resolve();
-        });
-      });
-      child.kill('SIGKILL');
-      expect(calls.length, output).toBeGreaterThan(0);
-      const evidence = output + results.join('\n');
-      if (file === 'readable.txt') {
-        expect(evidence).toContain(CANARY);
-        return;
-      }
-      expect(evidence).not.toContain(CANARY);
-      expect(evidence).toMatch(/permission|reject|denied/i);
+          expect(evidence).not.toContain(CANARY);
+          expect(evidence).toMatch(/permission|reject|denied/i);
+        }
+      );
     },
     90_000
   );

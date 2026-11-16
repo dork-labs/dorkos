@@ -226,7 +226,9 @@ describe('an agent’s copy of the room’s files is brought up to date at turn 
     );
 
     // Ana changes the plan again; Bo has an uncommitted change to the same file.
-    await ask(room.id, '@ana keep going');
+    // Bring Ana's fixture copy up to main before her next commit, as her shell can.
+    // Only Bo's launch-time refresh is under test; another Ana turn repeats its reads.
+    await runGit(['merge', '--ff-only', '--quiet', 'main'], anaCopy, repoStore.homeDir(room.id));
     await commitIn(anaCopy, 'PLAN.md', '# plan v2\n', 'Plan v2');
     await merges.merge(room.id, authorIdOf(room.id, anaPath), { summary: 'Plan v2' });
     await writeFile(path.join(boCopy, 'PLAN.md'), '# plan, Bo’s edit\n', 'utf-8');
