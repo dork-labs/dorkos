@@ -3,7 +3,7 @@
  * planted-file cases run the real script against a throwaway git repo with
  * its own ESLint config, so the gate is seen failing, not just reasoned about.
  */
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { mkdtempSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -12,6 +12,13 @@ import { fileURLToPath } from 'node:url';
 import { BASELINE_PATH, compare, lowered, raisedAgainst } from '../check-max-lines.js';
 
 const SCRIPT = join(dirname(fileURLToPath(import.meta.url)), '..', 'check-max-lines.ts');
+
+// Every planted-tree case spawns the real script (node plus ESLint) at least
+// twice, once in its beforeEach and once or more in the test, around git
+// commands. That takes 1.7-4.4s each at a load average near 100, against
+// vitest's 5s test and 10s hook defaults, so on the shared Mac they timed out.
+// 60s for both leaves room for that load without hiding a hang.
+vi.setConfig({ testTimeout: 60_000, hookTimeout: 60_000 });
 
 describe('compare', () => {
   it('passes a tree that matches its baseline', () => {

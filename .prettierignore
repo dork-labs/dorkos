@@ -28,6 +28,12 @@ docs/api/api/
 # file nobody's generator wrote.
 apps/server/src/services/runtimes/codex/app-server/protocol/schema-snapshot.json
 
+# The settled config.json for each of QA's 17 upgrade-floor inputs, written by
+# `main` through `toMatchFileSnapshot` (config-unstamped-equivalence.test.ts,
+# DOR-4188). The test compares the file byte for byte, so a reformat would make
+# it fail on a file the code never wrote.
+apps/server/src/services/core/__tests__/__snapshots__/unstamped-equivalence/
+
 # Drizzle's migration bookkeeping — written by `drizzle-kit generate`, read by
 # drizzle, never by a person. The lefthook pre-commit hook regenerates and
 # `git add`s these AFTER its format step, so every new migration would land an

@@ -1384,8 +1384,15 @@
     {
       "idx": 197,
       "version": "6",
-      "when": 1794791812683,
-      "tag": "20261116011652_dor3034_due_history",
+      "when": 1794793925059,
+      "tag": "20261116015205_canvas_opened_by",
+      "breakpoints": true
+    },
+    {
+      "idx": 198,
+      "version": "6",
+      "when": 1794799828000,
+      "tag": "20261116033028_dor3034_due_history",
       "breakpoints": true
     }
   ]

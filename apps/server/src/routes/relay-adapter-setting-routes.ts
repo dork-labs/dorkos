@@ -138,9 +138,9 @@ async function runOrHold(
 /**
  * Apply DOR-3858's marked-turn secret gate using the adapter policy's
  * normalized secret-field reader (`marked-turn-secret-gate.ts`). Every typed
- * secret is refused, whatever the address (DOR-4453 F2). A save is also refused
- * when it would carry the saved secrets to a changed `url`, `text` or
- * `textarea` field, so it reads the saved config; add and test pass none.
+ * secret is refused, whatever the address (DOR-4453 F2). A save that changes any
+ * config key of a connection holding saved secrets is refused too, so it reads
+ * the saved config; add and test pass none.
  *
  * An HTTP agent call names no chat, so its current marks are read through its
  * verified agent folder, matching the other route-level gates. A caller that

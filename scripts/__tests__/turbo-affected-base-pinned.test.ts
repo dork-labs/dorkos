@@ -183,6 +183,11 @@ function captureVerifyTurboInvocations(): TurboInvocation[] {
         ...inheritedEnv,
         PATH: `${fixtureDir}:${inheritedEnv.PATH ?? ''}`,
         TURBO_CAPTURE: capturePath,
+        // The script wraps each Turbo call in the real host-wide heavy-run lock,
+        // whose `--job` wait is up to 30 minutes. On the shared Mac every slot is
+        // often held, and this test once waited 402s for a stubbed Turbo. The
+        // lock is not what this asserts, so turn it off (its documented opt-out).
+        DORKOS_HEAVY_LOCK: '0',
       },
     });
     expect(result.status, result.stderr || result.stdout).toBe(0);
@@ -264,6 +269,8 @@ describe('local turbo --affected gates pin their diff base', () => {
     expect(lint?.text).toContain('turbo lint --affected');
   });
 
+  // Spawns the real script: a shell, two bash wrappers and two node stubs.
+  // Under a load of 30-40 that has run past vitest's 5s default.
   it('runs verify tests through Turbo with the pre-push scheduling contract', () => {
     expect(captureVerifyTurboInvocations()).toEqual([
       {
@@ -275,5 +282,5 @@ describe('local turbo --affected gates pin their diff base', () => {
         base: 'test-origin-main',
       },
     ]);
-  });
+  }, 30_000);
 });

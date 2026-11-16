@@ -159,6 +159,18 @@ export const ApprovedPermissionSetSchema = z.object({
   run: z.array(z.string()),
   /** Whether agent access (`allow.agents`) was approved. */
   agents: z.boolean(),
+  /** The other apps it was approved to call (`capabilities.http.apps`, DOR-3293). Absent: none. */
+  apps: z.array(z.string()).optional(),
+  /**
+   * What each of those apps shared with it when the person said yes
+   * (DOR-3293). A target that now shares more asks again. Absent: none shared.
+   */
+  appAccess: z.record(z.string(), z.enum(['reads', 'changes', 'both'])).optional(),
+  /**
+   * The apps whose pages it was approved to open (`navigate: true`, DOR-3293).
+   * One it starts opening asks again. Absent: none.
+   */
+  appOpens: z.array(z.string()).optional(),
 });
 
 /** The permission set a person approved for one extension. */

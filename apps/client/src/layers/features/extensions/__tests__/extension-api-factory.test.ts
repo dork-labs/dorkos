@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { createExtensionAPI } from '../model/extension-api-factory';
+import { setRunningApps } from '../frame/running-apps';
 import { StartWorkError } from '@dorkos/extension-api';
 import type { ExtensionAPIDeps } from '../model/types';
 import type { UiCanvasContent } from '@dorkos/shared/types';
@@ -16,9 +17,11 @@ vi.mock('sonner', () => ({
 // Mock ui-action-dispatcher
 vi.mock('@/layers/shared/lib/ui-action-dispatcher', () => ({
   executeUiCommand: vi.fn(),
+  revealForContent: vi.fn(),
 }));
 
 import { toast } from 'sonner';
+import { revealForContent } from '@/layers/shared/lib/ui-action-dispatcher';
 import { executeUiCommand } from '@/layers/shared/lib/ui-action-dispatcher';
 
 // --- Helpers ---
@@ -463,20 +466,24 @@ describe('createExtensionAPI', () => {
   });
 
   // 7. openCanvas
-  it('openCanvas dispatches an open_canvas command with agent origin', () => {
-    const { api } = createExtensionAPI('my-ext', deps);
+  it('openCanvas opens through the host store, stamped with this app’s own id (DOR-3293)', () => {
+    const openCanvasDocument = vi.fn();
+    const store = { openCanvasDocument } as unknown as ReturnType<
+      ExtensionAPIDeps['dispatcherContext']['getStore']
+    >;
+    const ownDeps = makeDeps({
+      dispatcherContext: { ...deps.dispatcherContext, getStore: () => store },
+    });
+    const { api } = createExtensionAPI('my-ext', ownDeps);
     const content: UiCanvasContent = { type: 'markdown', content: '# Hello' };
 
     api.openCanvas(content);
 
-    expect(executeUiCommand).toHaveBeenCalledWith(
-      deps.dispatcherContext,
-      {
-        action: 'open_canvas',
-        content,
-      },
-      'agent'
-    );
+    // The id is this API's, never anything the app sends.
+    expect(openCanvasDocument).toHaveBeenCalledWith(content, { extensionId: 'my-ext' });
+    expect(revealForContent).toHaveBeenCalledWith(store, 'agent', content);
+    // It is not an agent's open_canvas command, which could never carry the mark.
+    expect(executeUiCommand).not.toHaveBeenCalled();
   });
 
   // 8. navigate
@@ -502,6 +509,54 @@ describe('createExtensionAPI', () => {
     api.navigate(path);
 
     expect(deps.navigate).not.toHaveBeenCalled();
+  });
+
+  describe('navigate to another app’s page (DOR-3293)', () => {
+    const caller = { capabilities: { http: { apps: [{ id: 'ledger', navigate: true }, 'desk'] } } };
+    beforeEach(() =>
+      setRunningApps([
+        {
+          id: 'ledger',
+          status: 'compiled',
+          approvedToRun: true,
+          manifest: { id: 'ledger', name: 'Ledger', version: '1.0.0' },
+        },
+      ] as never)
+    );
+    afterEach(() => setRunningApps([]));
+
+    it('opens a page of an app this one lists, by the item path alone', () => {
+      const deps = makeDeps();
+      const { api } = createExtensionAPI('my-ext', deps, [], caller);
+      api.navigate('/x/ledger/item/entry/e-17');
+      expect(deps.navigate).toHaveBeenCalledWith({ to: '/x/ledger/item/entry/e-17' });
+    });
+
+    it.each([
+      ['a query', '/x/ledger/item/entry/e-17?approve=1'],
+      ['a hash', '/x/ledger/item/entry/e-17#approve'],
+      ['an encoded segment', '/x/ledger/item/entry/e%2F17'],
+      ['a page of an app it does not list', '/x/quill/item/entry/e-17'],
+      ['a page of an app it lists only to call', '/x/desk/item/entry/e-17'],
+      ['a dot-dot that resolves to another app', '/x/my-ext/../ledger/item'],
+    ])('refuses %s', (_name, path) => {
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      const deps = makeDeps();
+      const { api } = createExtensionAPI('my-ext', deps, [], caller);
+      api.navigate(path);
+      expect(deps.navigate).not.toHaveBeenCalled();
+      warn.mockRestore();
+    });
+
+    it('refuses an app that is not running', () => {
+      setRunningApps([]);
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      const deps = makeDeps();
+      const { api } = createExtensionAPI('my-ext', deps, [], caller);
+      api.navigate('/x/ledger/item/entry/e-17');
+      expect(deps.navigate).not.toHaveBeenCalled();
+      warn.mockRestore();
+    });
   });
 
   it('navigate keeps the search an in-app path carries', () => {
@@ -792,9 +847,21 @@ describe('createExtensionAPI', () => {
         })
       );
       const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
-      const { api } = createExtensionAPI('my-ext', deps);
+      // Even one this app lists: only the app's own screens may open another app's page.
+      setRunningApps([
+        {
+          id: 'other-ext',
+          status: 'compiled',
+          approvedToRun: true,
+          manifest: { id: 'other-ext', name: 'Other', version: '1.0.0' },
+        },
+      ] as never);
+      const { api } = createExtensionAPI('my-ext', deps, [], {
+        capabilities: { http: { apps: [{ id: 'other-ext', navigate: true }] } },
+      });
       await api.answerDecision(decision.id, { action: 'approve' });
       expect(deps.navigate).not.toHaveBeenCalled();
+      setRunningApps([]);
       warn.mockRestore();
     });
 

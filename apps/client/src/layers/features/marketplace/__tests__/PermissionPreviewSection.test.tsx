@@ -583,8 +583,8 @@ describe('PermissionPreviewSection — what its extensions can reach (DOR-2686)'
   });
 
   // Purpose: an extension with only screens is never described as having
-  // full access to the computer.
-  it('says screens only for an extension with no server half', () => {
+  // full access, nor as running with yours: its screens are sealed off.
+  it('draws no reach row for an extension with only screens', () => {
     render(
       <PermissionPreviewSection
         preview={makePreview({
@@ -599,9 +599,9 @@ describe('PermissionPreviewSection — what its extensions can reach (DOR-2686)'
         })}
       />
     );
-    const lines = screen.getByTestId('preview-extension-reach-panel');
-    expect(lines).toHaveTextContent('Its screens run in DorkOS with your access.');
-    expect(lines).not.toHaveTextContent('full access');
+    expect(screen.queryByTestId('preview-extension-reach')).not.toBeInTheDocument();
+    expect(document.body).not.toHaveTextContent('with your access');
+    expect(document.body).not.toHaveTextContent('full access');
   });
 
   // Purpose: an older server sends no isolation; the section is left out.

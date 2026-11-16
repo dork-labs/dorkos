@@ -429,6 +429,21 @@ describe('approveExtensionSet', () => {
     expect(approveToRun).not.toHaveBeenCalled();
   });
 
+  it('refuses a member whose list of apps it calls grew since the card (DOR-3293)', async () => {
+    const writer = ext('writer', 'marketing');
+    const { source, approveToRun } = sourceOf([writer, ext('social', 'marketing')]);
+    const card = await cardFor(source);
+    // Same files, same digest: only the apps it calls moved since the card.
+    (writer.manifest as { capabilities?: unknown }).capabilities = {
+      http: { apps: ['ledger'] },
+    };
+
+    const outcome = await approveExtensionSet(source, card);
+
+    expect(outcome).toMatchObject({ ok: false, code: 'stale_set' });
+    expect(approveToRun).not.toHaveBeenCalled();
+  });
+
   it('refuses a member whose files changed since the card, before approving any (Must 3)', async () => {
     const { source, approveToRun } = sourceOf([
       ext('writer', 'marketing'),

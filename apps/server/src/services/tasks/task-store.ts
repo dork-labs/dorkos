@@ -17,6 +17,7 @@ import type {
   UpdateTaskRequest,
 } from '@dorkos/shared/types';
 import { parseDuration } from '@dorkos/skills/duration';
+import { RUN_LINE } from '@dorkos/shared/schedule-notice-copy';
 import { logger } from '../../lib/logger.js';
 import { TaskApprovals } from './approvals/task-approvals.js';
 import { RunSessionStore, type RunSessionBinding } from './session/run-session-store.js';
@@ -852,7 +853,8 @@ export class TaskStore {
       .set({
         status: 'failed',
         finishedAt: now,
-        error: 'Interrupted by server restart',
+        // The notice reads this opening back as "DorkOS restarted" (DOR-4121).
+        error: RUN_LINE.serverRestart,
       })
       .where(
         and(

@@ -70,6 +70,7 @@ import type { WireTeamRoomAndRelayAdaptersResult } from './team-room-relay-adapt
 import type { WireSessionServicesResult } from './session-services.js';
 import type { ClaimDataDirectoryResult } from './data-directory.js';
 import type { ServerRefs } from '../server-refs.js';
+import { appScreenRunsIn } from '../../routes/app-screen-runs.js';
 import { personSessionRequired } from '../../services/core/auth/gate-policy.js';
 import {
   watchSessionRelaySwitch,
@@ -422,6 +423,10 @@ export function mountCoreRoutes(refs: ServerRefs, built: MountCoreRoutesInput) {
     meshCore: refs.meshCore,
     roomSessionBindings: roomStore.sessionLedger,
     roomSessionPlace: refs.roomSessionPlacePort,
+    // An app's "opened by" mark on a canvas names only an app whose screens
+    // run (DOR-3293), answered by the extension manager's own records.
+    appScreenRuns: (id) =>
+      refs.extensionManager ? appScreenRunsIn(refs.extensionManager)(id) : false,
   };
 
   // Deep health (`GET /api/health/deep`) — the checks `dorkos doctor --deep`

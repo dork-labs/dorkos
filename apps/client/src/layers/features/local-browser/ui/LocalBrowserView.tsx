@@ -1,11 +1,12 @@
 import { useState } from 'react';
-import type { LocalBrowserState } from '@dorkos/shared/local-browser';
+import type { LocalBrowserHistoryDirection, LocalBrowserState } from '@dorkos/shared/local-browser';
 import { useOwnOrigins } from '@/layers/entities/config';
 import { isThisAppsAddress, normalizeAddressInput } from '@/layers/shared/lib';
 import { useTransport } from '@/layers/shared/model';
 import { BrowserChrome, Button } from '@/layers/shared/ui';
 import { useGuestPage } from '../model/use-guest-page';
 import { searchAddress } from '../lib/page-error';
+import { browserErrorMessage } from '../lib/browser-error-message';
 import { BrowserPageArea } from './BrowserPageArea';
 
 /** Props for {@link LocalBrowserView}. */
@@ -35,8 +36,10 @@ export interface LocalBrowserViewProps {
  * which runs flush to the panel's edges, in the page area that draws loads and
  * load failures (DOR-4430, DOR-4431). What the person types is read by the
  * shared address rules (DOR-4419); a refusal shows on the chrome's notice line
- * and keeps the typed text. Back and Forward stay disabled until the page's own
- * history can be moved (DOR-4449). Its buttons name themselves
+ * and keeps the typed text. Back and Forward move the page's own history on
+ * the server, which re-checks every step against the same address rules and
+ * takes the page from an agent that is driving it (DOR-4449); they are enabled
+ * only when the server says there is an allowed page that way. Its buttons name themselves
  * with the browser's own hint, not a Radix tooltip, because the desktop host
  * hides the native page under any Radix popper (`use-native-browser-surface`).
  */
@@ -74,6 +77,9 @@ export function LocalBrowserView({
     setRetry((last) => ({ tabId, draft: typed.trim(), attempt: (last?.attempt ?? 0) + 1, notice }));
   // What was held belongs to the tab it was typed in; another tab starts clean.
   const shownRetry = retry && tab && retry.tabId === tab.id ? retry : null;
+  /** Why the last Back or Forward was refused, on the notice line like a refused address (spec §6). */
+  const [stepNotice, setStepNotice] = useState<{ tabId: string; text: string } | null>(null);
+  const shownStepNotice = stepNotice && tab && stepNotice.tabId === tab.id ? stepNotice.text : null;
 
   /** Navigate, and answer whether it failed: an action a newer one replaced did not. */
   const go = async (url: string, fallback?: string) => {
@@ -100,11 +106,32 @@ export function LocalBrowserView({
     return failed;
   };
 
+  /**
+   * Back or Forward. A step the address rules refused says so on the notice line,
+   * as a refused address does, and the page stays where it was; any other failure
+   * is the panel's to say, as for a navigation.
+   */
+  const step = (direction: LocalBrowserHistoryDirection) => {
+    setRetry(null);
+    setStepNotice(null);
+    const tabId = tab?.id;
+    void action(async () => {
+      try {
+        return await transport.stepLocalBrowserHistory(direction);
+      } catch (cause) {
+        if ((cause as { code?: string } | null)?.code !== 'history_refused' || !tabId) throw cause;
+        setStepNotice({ tabId, text: browserErrorMessage(cause) });
+        return transport.getLocalBrowserState();
+      }
+    });
+  };
+
   const submit = (tabId: string, url: string, text: string) => {
     const input = normalizeAddressInput(text, {
       current: url,
       isOwnAddress: (candidate) => isThisAppsAddress(candidate, window.location, ownOrigins),
     });
+    setStepNotice(null);
     if (input.kind === 'refused') {
       holdTyped(tabId, text, input.notice);
       return;
@@ -129,8 +156,10 @@ export function LocalBrowserView({
         <BrowserChrome
           // A failed load keeps its address in the bar, so Reload retries it (DOR-4430).
           url={page.failure?.url || tab.url}
-          canBack={false}
-          canForward={false}
+          canBack={!busy && (tab.canGoBack ?? false)}
+          canForward={!busy && (tab.canGoForward ?? false)}
+          onBack={() => step('back')}
+          onForward={() => step('forward')}
           onReload={() => void go(page.failure?.url || tab.url)}
           loading={page.loading}
           onStop={() => page.run('stop')}
@@ -138,7 +167,7 @@ export function LocalBrowserView({
           busy={busy}
           tooltips={false}
           retry={shownRetry}
-          notice={shownRetry?.notice ?? null}
+          notice={shownRetry?.notice ?? shownStepNotice}
         />
       )}
       {embedded ? (
@@ -150,6 +179,8 @@ export function LocalBrowserView({
           onSearch={() => {
             if (typed) void go(searchAddress(typed.text));
           }}
+          // With no allowed page behind, "Go back" opens an empty page instead.
+          onBack={() => (tab?.canGoBack ? step('back') : void go('about:blank'))}
           onUnavailable={onUnavailable}
           disabled={busy}
         >

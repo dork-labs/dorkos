@@ -158,9 +158,10 @@ export function BrowserChrome({
         {notice && (
           <p
             role="alert"
-            className="text-muted-foreground flex min-h-7 shrink-0 items-center gap-1.5 px-2.5 py-1 text-xs"
+            className="text-foreground flex min-h-7 shrink-0 items-center gap-1.5 px-2.5 py-1 text-xs"
           >
-            {/* The glyph is what makes it read as a refusal rather than a hint (spec §6). */}
+            {/* The glyph is what makes it read as a refusal rather than a hint (spec §6).
+                Only it is red: muted words would read weaker than the refusal is (spec §2). */}
             <CircleAlert aria-hidden className="text-destructive size-4 shrink-0" />
             <span className="min-w-0">{notice}</span>
           </p>

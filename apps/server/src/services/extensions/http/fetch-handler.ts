@@ -153,6 +153,8 @@ export async function extensionRequest(
   const { incoming, outgoing } = c.env;
   const headers = new Headers(c.req.raw.headers);
   headers.delete(PERSON_VERDICT_HEADER);
+  // The calling app's token is the window's proof, never the target's to keep (DOR-3293).
+  headers.delete('x-dorkos-caller-token');
   const parsed = c.get('body');
   let body: BodyInit | null = null;
   if (parsed !== undefined) {

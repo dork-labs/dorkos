@@ -87,10 +87,8 @@ test.describe('An extension waiting to run asks in the inbox', () => {
     // The row states the access level before the yes (DOR-2686), in Security's
     // words, and the yes echoes that set, which the server compares before
     // turning it on. The fixture has screens and no server half, so it never
-    // claims full access.
-    await expect(
-      page.getByText('Screens run inside DorkOS, with your access', { exact: true })
-    ).toBeVisible();
+    // claims full access, and its sealed-off screens get no Access line.
+    await expect(page.getByText(/with your access/)).toHaveCount(0);
     await expect(page.getByTestId(`extension-access-facts-${EXT_ID}`)).toContainText('Runs asYou');
     await expect(page.getByText(/full access to this computer/)).toHaveCount(0);
 

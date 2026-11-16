@@ -43,6 +43,8 @@ describe('BrowserChrome', () => {
         url="http://localhost:5173/"
         canBack
         canForward
+        onBack={vi.fn()}
+        onForward={vi.fn()}
         onReload={vi.fn()}
         onSubmit={vi.fn()}
       />
@@ -162,6 +164,9 @@ describe('BrowserChrome', () => {
     expect(screen.getByRole('alert')).toHaveClass('min-h-7');
     // A glyph in front of the words makes it read as a refusal, not a hint.
     expect(screen.getByRole('alert').querySelector('svg.text-destructive')).not.toBeNull();
+    // The words are full strength; only the glyph is red (spec §2).
+    expect(screen.getByRole('alert')).toHaveClass('text-foreground');
+    expect(screen.getByRole('alert')).not.toHaveClass('text-muted-foreground');
   });
 
   it('turns the seam brand orange while an agent drives', () => {
@@ -173,6 +178,8 @@ describe('BrowserChrome', () => {
         url="https://example.com"
         canBack
         canForward
+        onBack={vi.fn()}
+        onForward={vi.fn()}
         onReload={vi.fn()}
         onSubmit={vi.fn()}
         agentDriving
@@ -189,6 +196,8 @@ describe('BrowserChrome', () => {
         url="https://example.com"
         canBack
         canForward
+        onBack={vi.fn()}
+        onForward={vi.fn()}
         onReload={vi.fn()}
         onSubmit={vi.fn()}
         menu={<button type="button">More</button>}
@@ -205,6 +214,8 @@ describe('BrowserChrome', () => {
       url: 'https://example.com',
       canBack: true,
       canForward: true,
+      onBack: vi.fn(),
+      onForward: vi.fn(),
       onReload: vi.fn(),
       onSubmit: vi.fn(),
     };

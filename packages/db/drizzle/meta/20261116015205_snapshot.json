@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "85c9ddc7-6267-4e5b-b953-1e6437c17934",
+  "id": "2bfc612f-fd4f-424b-ae34-22a4f0014c5a",
   "prevId": "de13bb00-c4b4-4eea-918d-ce47a730cd16",
   "tables": {
     "a2a_tasks": {
@@ -9867,6 +9867,13 @@
           "primaryKey": false,
           "notNull": false,
           "autoincrement": false
+        },
+        "opened_by_extension_id": {
+          "name": "opened_by_extension_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
         }
       },
       "indexes": {
@@ -14305,28 +14312,6 @@
           "primaryKey": false,
           "notNull": false,
           "autoincrement": false
-        },
-        "original_due_at": {
-          "name": "original_due_at",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "score_due_at": {
-          "name": "score_due_at",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "move_count": {
-          "name": "move_count",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false,
-          "default": 0
         },
         "state": {
           "name": "state",
