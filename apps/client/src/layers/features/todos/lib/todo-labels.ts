@@ -100,7 +100,8 @@ export function todoMovedLabel(
     day: 'numeric',
     ...(first.getFullYear() === now.getFullYear() ? {} : { year: 'numeric' }),
   });
-  return `${moved}, first due ${date}`;
+  // Non-breaking spaces keep the date whole, so a phone never wraps "Dec / 28, 2025".
+  return `${moved}, first due ${date.replace(/ /g, ' ')}`;
 }
 
 /**

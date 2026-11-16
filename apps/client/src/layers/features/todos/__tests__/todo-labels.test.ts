@@ -14,7 +14,19 @@ describe('todoMovedLabel (DOR-3034)', () => {
       },
       NOW
     );
-    expect(label).toMatch(/^Moved once, first due Mar 14$/);
+    expect(label).toBe('Moved once, first due Mar 14');
+  });
+
+  it('keeps the date whole, so a narrow row never wraps it mid-date', () => {
+    const label = todoMovedLabel(
+      {
+        moveCount: 2,
+        originalDueAt: new Date(2025, 11, 28, 12).toISOString(),
+        dueAt: new Date(2026, 0, 9, 12).toISOString(),
+      },
+      NOW
+    );
+    expect(label!.slice('Moved twice, first due '.length)).not.toContain(' ');
   });
 
   it('adds the year to a first date in another year', () => {
@@ -26,7 +38,7 @@ describe('todoMovedLabel (DOR-3034)', () => {
       },
       NOW
     );
-    expect(label).toBe('Moved twice, first due Dec 28, 2025');
+    expect(label).toBe('Moved twice, first due Dec 28, 2025');
   });
 
   it('says only how often when the first date is the current one', () => {
