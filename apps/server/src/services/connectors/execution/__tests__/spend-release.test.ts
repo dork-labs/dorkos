@@ -335,7 +335,8 @@ describe('a paid run where it is let go', () => {
       source: 'person',
       enforceLimit: true,
     });
-    expect(() => refuseSpend(await preflight())).toThrow(CapabilityToolError);
+    const atLimit = await preflight();
+    expect(() => refuseSpend(atLimit)).toThrow(CapabilityToolError);
     expect(activity.map((a) => [a.eventType, a.summary])).toEqual([
       ['spending.refused', "Kestrel's paid run was refused: the turn read outside content."],
       ['spending.refused', expect.stringMatching(/^Refused Kestrel: .+ · monthly limit reached$/)],

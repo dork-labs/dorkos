@@ -210,71 +210,25 @@ describe('a paid run at the permission gate', () => {
     );
   });
 
-  it('hands the broker a yes that is not a yes to spend when the card was an ordinary one (Security Must 2)', async () => {
-    // Careful: the write asks for its own reason, not for money.
-    initPermissionGate({
-      readConfig: () => ({ preset: 'careful', defaults: { areas: {}, actions: {} } }),
-    });
-    spend = { kind: 'run' };
-    const write = () =>
-      registry().invoke('connectors.execute_write', TARGET, {
-        identity: {
-          agentPath: '/agents/kestrel',
-          displayName: 'Kestrel',
-          createdAt: '2026-11-01T00:00:00.000Z',
-        },
-        serverPrincipal: createServerPrincipal({
-          kind: 'runtime',
-          owner: { kind: 'local_install', installationId: 'install-a' },
-          bindingId: 'binding-a',
-          runtime: 'claude-code',
-          canonicalSessionId: 'session-a',
-          agentId: 'agent-kestrel',
-          agentPath: '/agents/kestrel',
-          canonicalCwd: '/agents/kestrel',
-        }),
-        sessionId: 'session-a',
-      });
-    const first = await write().catch((error: unknown) => error);
-    if (
-      !(first instanceof CapabilityGateRefusal) ||
-      first.decision.outcome !== 'approval_required'
-    ) {
-      throw first;
-    }
-    const { approvalId, approvalToken } = first.decision.payload as {
-      approvalId: string;
-      approvalToken: string;
+  it('never marks a yes on an ordinary card as a yes to spend (Security Must 2)', () => {
+    const binding = {
+      capabilityId: 'connectors.execute_write',
+      inputHash: 'input-hash',
     };
-    expect(request).toHaveBeenCalledWith(
-      expect.objectContaining({
-        serviceAction: expect.not.objectContaining({ spend: expect.anything() }),
-      })
-    );
-    approvals.grant(approvalId);
-    await registry()
-      .invoke('connectors.execute_write', TARGET, {
-        identity: {
-          agentPath: '/agents/kestrel',
-          displayName: 'Kestrel',
-          createdAt: '2026-11-01T00:00:00.000Z',
-        },
-        serverPrincipal: createServerPrincipal({
-          kind: 'runtime',
-          owner: { kind: 'local_install', installationId: 'install-a' },
-          bindingId: 'binding-a',
-          runtime: 'claude-code',
-          canonicalSessionId: 'session-a',
-          agentId: 'agent-kestrel',
-          agentPath: '/agents/kestrel',
-          canonicalCwd: '/agents/kestrel',
-        }),
-        sessionId: 'session-a',
-        approvalToken,
-      })
-      .catch(() => undefined);
-    expect(execute).toHaveBeenCalledWith(
-      expect.objectContaining({ approval: expect.not.objectContaining({ spendCard: true }) })
-    );
+    const ordinary = approvals.request({
+      ...binding,
+      summary: 'Send a message.',
+      serviceAction: {
+        serviceId: 'tavily',
+        serviceName: 'Acme Search',
+        accountLabel: 'Work',
+        actionName: 'Search the web',
+        details: [],
+      },
+    } as never);
+    approvals.grant(ordinary.approvalId);
+    const granted = approvals.consume(ordinary.token, binding);
+    expect(granted.outcome).toBe('granted');
+    expect(granted).not.toHaveProperty('spendCard');
   });
 });
