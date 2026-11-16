@@ -8,7 +8,7 @@ import type { ReactNode } from 'react';
 import { renderHook, waitFor, act, cleanup } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { Task } from '@dorkos/shared/types';
-import { createMockTransport } from '@dorkos/test-utils';
+import { createMockTransport } from '@dorkos/test-utils/mock-factories';
 import { TransportProvider } from '@/layers/shared/model';
 import { useTasks } from '@/layers/entities/tasks';
 import { usePendingScheduleApprovals } from '../model/use-pending-schedule-approvals';

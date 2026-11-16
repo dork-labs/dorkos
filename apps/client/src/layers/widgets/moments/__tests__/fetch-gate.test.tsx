@@ -28,7 +28,7 @@ import { useEffect, useState } from 'react';
 import { QueryClient, QueryClientProvider, dehydrate, useIsRestoring } from '@tanstack/react-query';
 import { PersistQueryClientProvider } from '@tanstack/react-query-persist-client';
 
-import { createMockTransport } from '@dorkos/test-utils';
+import { createMockTransport } from '@dorkos/test-utils/mock-factories';
 import type { Transport } from '@dorkos/shared/transport';
 
 import { TransportProvider, useAppStore, configKeys } from '@/layers/shared/model';

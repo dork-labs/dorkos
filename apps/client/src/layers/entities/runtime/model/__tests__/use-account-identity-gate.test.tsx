@@ -7,7 +7,7 @@ import type { ReactNode } from 'react';
 import { QueryClientProvider } from '@tanstack/react-query';
 import type { ServerConfig } from '@dorkos/shared/types';
 import type { Transport } from '@dorkos/shared/transport';
-import { createMockTransport } from '@dorkos/test-utils';
+import { createMockTransport } from '@dorkos/test-utils/mock-factories';
 import { createTestQueryClient } from '@dorkos/test-utils/react-helpers';
 import { TransportProvider, configKeys } from '@/layers/shared/model';
 import { useAccountIdentityGate } from '../use-account-identity-gate';

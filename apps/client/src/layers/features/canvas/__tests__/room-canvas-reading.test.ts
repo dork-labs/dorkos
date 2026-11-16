@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { mockCanvasDocument } from '@dorkos/test-utils';
+import { mockCanvasDocument } from '@dorkos/test-utils/mock-factories';
 import type { CanvasDocument } from '@dorkos/shared/room-schemas';
 import { roomDocumentReading } from '../lib/room-canvas-reading';
 

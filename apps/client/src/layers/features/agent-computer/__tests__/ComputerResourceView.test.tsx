@@ -2,7 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { createMockTransport } from '@dorkos/test-utils';
+import { createMockTransport } from '@dorkos/test-utils/mock-factories';
 import type { ComputerStatus } from '@dorkos/shared/computer-schemas';
 import { TransportProvider, useAppStore, type PipContent } from '@/layers/shared/model';
 import { COMPUTER_QUERY_KEY } from '@/layers/entities/computer';

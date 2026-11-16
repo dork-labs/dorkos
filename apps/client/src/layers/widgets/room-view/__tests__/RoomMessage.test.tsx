@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeAll, afterEach } from 'vitest';
 import { render, screen, within, cleanup, fireEvent } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { createMockTransport } from '@dorkos/test-utils';
+import { createMockTransport } from '@dorkos/test-utils/mock-factories';
 import type { Transport } from '@dorkos/shared/transport';
 import type { RoomAttachment, RoomEntry, RoomEntryReaction } from '@dorkos/shared/room-schemas';
 import { useRoomDraftStore, useRoomOpenThreadStore } from '@/layers/entities/room';

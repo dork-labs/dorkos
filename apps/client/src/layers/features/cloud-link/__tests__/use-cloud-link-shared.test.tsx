@@ -10,7 +10,7 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 import { act, renderHook } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { QueryClient, QueryClientProvider, focusManager } from '@tanstack/react-query';
-import { createMockTransport } from '@dorkos/test-utils';
+import { createMockTransport } from '@dorkos/test-utils/mock-factories';
 import type { Transport } from '@dorkos/shared/transport';
 import { TransportProvider } from '@/layers/shared/model';
 import { useCloudLink } from '../model/use-cloud-link';

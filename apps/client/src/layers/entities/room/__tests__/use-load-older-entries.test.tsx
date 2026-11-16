@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderHook, waitFor, act } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { createMockTransport, mockRoomEntryPage } from '@dorkos/test-utils';
+import { createMockTransport, mockRoomEntryPage } from '@dorkos/test-utils/mock-factories';
 import type { Transport } from '@dorkos/shared/transport';
 import { ROOM_ENTRY_PAGE_SIZE_DEFAULT, type RoomEntry } from '@dorkos/shared/room-schemas';
 import { TransportProvider } from '@/layers/shared/model';

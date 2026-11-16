@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { TransportProvider } from '@/layers/shared/model';
-import { createMockTransport } from '@dorkos/test-utils';
+import { createMockTransport } from '@dorkos/test-utils/mock-factories';
 import { renderHook, act } from '@testing-library/react';
 
 let mockStoreDir: string | null = null;

@@ -21,7 +21,7 @@ import type {
   QueueMoveTarget,
 } from '@dorkos/shared/schemas';
 import type { Transport } from '@dorkos/shared/transport';
-import { createMockTransport } from '@dorkos/test-utils';
+import { createMockTransport } from '@dorkos/test-utils/mock-factories';
 import { useSessionQueue, useSessionStreamStore } from '@/layers/entities/session';
 import { useRenderSlot } from '@/layers/shared/lib';
 

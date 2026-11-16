@@ -15,7 +15,11 @@ import { ACCOUNT_RESUME_PROMPT } from '@dorkos/shared/account-usage';
 import type { LimitPlan, SessionLimit } from '@dorkos/shared/session-stream';
 import type { Session, ServerConfig } from '@dorkos/shared/types';
 import type { Transport } from '@dorkos/shared/transport';
-import { createMockSession, createMockSessionLimit, createMockTransport } from '@dorkos/test-utils';
+import {
+  createMockSession,
+  createMockSessionLimit,
+  createMockTransport,
+} from '@dorkos/test-utils/mock-factories';
 import { createTestQueryClient } from '@dorkos/test-utils/react-helpers';
 import {
   CreditsOfferProvider,

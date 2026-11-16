@@ -5,7 +5,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { renderHook, cleanup, waitFor } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { TransportProvider, useAppTabsStore, type AppTab } from '@/layers/shared/model';
-import { createMockTransport } from '@dorkos/test-utils';
+import { createMockTransport } from '@dorkos/test-utils/mock-factories';
 
 const navigate = vi.fn((_options: { href: string }) => Promise.resolve());
 let locationHref = '/';

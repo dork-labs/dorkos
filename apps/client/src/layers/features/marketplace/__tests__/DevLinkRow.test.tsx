@@ -7,7 +7,7 @@ import type { ReactNode } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { InstalledPackage } from '@dorkos/shared/marketplace-schemas';
 import type { Transport } from '@dorkos/shared/transport';
-import { createMockTransport } from '@dorkos/test-utils';
+import { createMockTransport } from '@dorkos/test-utils/mock-factories';
 
 // Capture the event handler so the test can deliver the server's event.
 vi.mock('@/layers/shared/model', async (importOriginal) => ({

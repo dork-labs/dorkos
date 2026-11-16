@@ -2,7 +2,7 @@
 import { describe, it, expect, vi, beforeAll, afterEach } from 'vitest';
 import { render, screen, cleanup } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
-import { createMockAccountUsage } from '@dorkos/test-utils';
+import { createMockAccountUsage } from '@dorkos/test-utils/mock-factories';
 import { UsageRevealPopover } from '../ui/UsageRevealPopover';
 
 beforeAll(() => {

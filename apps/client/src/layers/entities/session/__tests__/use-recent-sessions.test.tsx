@@ -6,7 +6,7 @@ import { renderHook, waitFor } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { RecentSessionsResponse } from '@dorkos/shared/types';
-import { createMockTransport } from '@dorkos/test-utils';
+import { createMockTransport } from '@dorkos/test-utils/mock-factories';
 import { TransportProvider } from '@/layers/shared/model';
 import { overnightBoundary } from '@/layers/shared/lib/overnight-boundary';
 import { RECENT_SESSIONS_WINDOW, useRecentSessions } from '../model/query/use-recent-sessions';

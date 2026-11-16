@@ -8,7 +8,7 @@ import type { ReactNode } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { ServerConfig } from '@dorkos/shared/types';
 import type { StatusBarPin } from '@dorkos/shared/config-schema';
-import { createMockTransport } from '@dorkos/test-utils';
+import { createMockTransport } from '@dorkos/test-utils/mock-factories';
 import { TransportProvider } from '@/layers/shared/model';
 import { configKeys } from '@/layers/entities/config';
 import { SessionPopover } from '../ui/SessionPopover';

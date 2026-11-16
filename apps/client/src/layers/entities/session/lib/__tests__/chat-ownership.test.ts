@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { createMockSession } from '@dorkos/test-utils';
+import { createMockSession } from '@dorkos/test-utils/mock-factories';
 import type { SessionOrigin } from '@dorkos/shared/types';
 import {
   chatOwnership,

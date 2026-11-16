@@ -22,7 +22,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, cleanup, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { createMockTransport } from '@dorkos/test-utils';
+import { createMockTransport } from '@dorkos/test-utils/mock-factories';
 import { SIDEBAR_PREFS_DEFAULTS } from '@dorkos/shared/config-schema';
 import { TooltipProvider } from '@/layers/shared/ui';
 import { EventStreamProvider, TransportProvider } from '@/layers/shared/model';

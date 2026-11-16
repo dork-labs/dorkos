@@ -26,7 +26,7 @@ import {
   useQuery,
 } from '@tanstack/react-query';
 import type { Transport } from '@dorkos/shared/transport';
-import { createMockTransport } from '@dorkos/test-utils';
+import { createMockTransport } from '@dorkos/test-utils/mock-factories';
 import { TransportProvider } from '@/layers/shared/model';
 import { configKeys } from '@/layers/entities/config';
 import { TooltipProvider } from '@/layers/shared/ui';

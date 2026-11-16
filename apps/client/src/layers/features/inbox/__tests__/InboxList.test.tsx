@@ -14,7 +14,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { Transport } from '@dorkos/shared/transport';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
 import type { NotificationDTO } from '@dorkos/shared/notification-schemas';
-import { createMockTransport } from '@dorkos/test-utils';
+import { createMockTransport } from '@dorkos/test-utils/mock-factories';
 
 const navigate = vi.fn();
 

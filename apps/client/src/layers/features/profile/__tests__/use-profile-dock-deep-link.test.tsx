@@ -25,7 +25,7 @@ import {
 import { zodValidator } from '@tanstack/zod-adapter';
 import { z } from 'zod';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { createMockTransport } from '@dorkos/test-utils';
+import { createMockTransport } from '@dorkos/test-utils/mock-factories';
 import { mergeDialogSearch, useAppStore, TransportProvider } from '@/layers/shared/model';
 import { useProfileStore } from '../model/profile-store';
 import { useProfileLeaveGuard } from '../model/profile-leave-guard';

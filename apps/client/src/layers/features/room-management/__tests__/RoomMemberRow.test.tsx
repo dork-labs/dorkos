@@ -4,7 +4,7 @@ import { render, screen, cleanup, fireEvent, waitFor, within } from '@testing-li
 import '@testing-library/jest-dom/vitest';
 import { QueryClientProvider } from '@tanstack/react-query';
 import type { AuthorRef, ReseatOptions, RoomRosterEntry } from '@dorkos/shared/room-schemas';
-import { createMockTransport } from '@dorkos/test-utils';
+import { createMockTransport } from '@dorkos/test-utils/mock-factories';
 import { createTestQueryClient } from '@dorkos/test-utils/react-helpers';
 import { TransportProvider } from '@/layers/shared/model';
 import { hashToHslColor, type AgentVisual } from '@/layers/shared/lib';
