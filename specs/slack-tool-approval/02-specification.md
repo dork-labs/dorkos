@@ -858,7 +858,7 @@ When multiple tool approvals are pending (e.g., agent wants to write several fil
 ## References
 
 - Ideation: `specs/slack-tool-approval/01-ideation.md`
-- Prerequisite spec: `specs/relay-adapter-event-whitelist/`
+- Prerequisite spec: [`relay-adapter-event-whitelist`](https://github.com/dork-labs/dorkos/tree/2b98f06e42fab0c9f36c789387138bfc1b211116/specs/relay-adapter-event-whitelist)
 - Research: `research/20260317_relay_adapter_event_whitelist.md`
 - Interactive handlers source: `apps/server/src/services/runtimes/claude-code/interactive-handlers.ts`
 - AgentRuntime interface: `packages/shared/src/agent-runtime.ts` (line 140: `approveTool`)

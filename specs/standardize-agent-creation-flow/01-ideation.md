@@ -47,7 +47,7 @@ status: ideation
 - `apps/client/src/layers/entities/agent/model/use-init-agent.ts`: Simpler creation hook used only by onboarding. Calls `transport.initAgent(path, name, description, runtime)`.
 - `apps/server/src/services/core/agent-creator.ts`: Server-side `createAgentWorkspace()` — validates, creates directory, optionally clones template, scaffolds `.dork/` with `agent.json`, `SOUL.md`, `NOPE.md`.
 - `apps/server/src/routes/agents.ts`: POST `/api/agents` (init existing dir) and POST `/api/agents/create` (full pipeline with mkdir).
-- `specs/agent-creation-and-templates/`: Prior spec covering creation pipeline, naming conventions, template system.
+- [`agent-creation-and-templates`](https://github.com/dork-labs/dorkos/tree/2b98f06e42fab0c9f36c789387138bfc1b211116/specs/agent-creation-and-templates): Prior spec covering creation pipeline, naming conventions, template system.
 
 ## 3) Codebase Map
 

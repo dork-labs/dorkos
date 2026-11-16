@@ -790,8 +790,8 @@ None — all decisions resolved during ideation (see Section 6 of `01-ideation.m
 
 - `specs/dashboard-content/01-ideation.md` — Full ideation with research and decisions
 - `specs/dashboard-content/00-brainstorm.md` — Wide brainstorm
-- `specs/dynamic-sidebar-content/02-specification.md` — Infrastructure spec (implemented)
-- `specs/dashboard-home-route/01-ideation.md` — Signal hierarchy (Tier 1/2/3)
+- [`dynamic-sidebar-content/02-specification.md`](https://github.com/dork-labs/dorkos/blob/2b98f06e42fab0c9f36c789387138bfc1b211116/specs/dynamic-sidebar-content/02-specification.md) — Infrastructure spec (implemented)
+- [`dashboard-home-route/01-ideation.md`](https://github.com/dork-labs/dorkos/blob/2b98f06e42fab0c9f36c789387138bfc1b211116/specs/dashboard-home-route/01-ideation.md) — Signal hierarchy (Tier 1/2/3)
 - `research/20260320_dashboard_content_design_patterns.md` — Comprehensive design research
 - `contributing/design-system.md` — Calm Tech design language
 - `contributing/animations.md` — Motion library patterns

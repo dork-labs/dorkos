@@ -258,4 +258,4 @@ The persisted cache holds room titles, session titles and agent names in `localS
 
 ## References
 
-`research/20260819_sidebar-simplification-review.md` · `specs/sidebar-now-today-library/*` · `specs/sidebar-groups/*` · `specs/smart-agent-groups/*` · `specs/feature-promo-system/*` · `specs/rooms/02-specification.md` §8.5/§14.4 · `specs/unified-conversation/*` · Linear DOR-1105, DOR-1098, DOR-906, DOR-1143, DOR-772, DOR-588, DOR-1094, DOR-1097, DOR-654, DOR-1220, DOR-603, DOR-341, DOR-329.
+`research/20260819_sidebar-simplification-review.md` · `specs/sidebar-now-today-library/*` · `specs/sidebar-groups/*` · `specs/smart-agent-groups/*` · [`feature-promo-system`](https://github.com/dork-labs/dorkos/tree/2b98f06e42fab0c9f36c789387138bfc1b211116/specs/feature-promo-system) · `specs/rooms/02-specification.md` §8.5/§14.4 · `specs/unified-conversation/*` · Linear DOR-1105, DOR-1098, DOR-906, DOR-1143, DOR-772, DOR-588, DOR-1094, DOR-1097, DOR-654, DOR-1220, DOR-603, DOR-341, DOR-329.

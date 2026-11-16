@@ -55,7 +55,7 @@ design-session: .dork/visual-companion/83310-1775832929
 - `apps/server/src/lib/dork-home.ts`: Single source of truth for data directory (`~/.dork/`).
 - `apps/server/src/services/marketplace/marketplace-cache.ts`: Existing file-based cache pattern with TTL — prior art for `~/.dork/cache/` structure.
 - `contributing/design-system.md`: Calm Tech design language — card radius 16px, button radius 10px, 8pt grid, 100-300ms animations.
-- `specs/dynamic-model-options/02-specification.md`: Existing spec for dynamic model options (predecessor work).
+- [`dynamic-model-options/02-specification.md`](https://github.com/dork-labs/dorkos/blob/2b98f06e42fab0c9f36c789387138bfc1b211116/specs/dynamic-model-options/02-specification.md): Existing spec for dynamic model options (predecessor work).
 
 ## 3) Codebase Map
 

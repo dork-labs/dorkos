@@ -1041,7 +1041,7 @@ All resolved during SPECIFY. Originals preserved as the audit trail.
   (what tier C was left holding).
 - `research/20260316_tool_approval_timeout_visibility_ux.md` — the countdown
   thresholds the first ten minutes keep.
-- `specs/tool-approval-timeout-visibility/`, `specs/approvals-resume-inline/`,
+- [`tool-approval-timeout-visibility`](https://github.com/dork-labs/dorkos/tree/2b98f06e42fab0c9f36c789387138bfc1b211116/specs/tool-approval-timeout-visibility), `specs/approvals-resume-inline/`,
   `specs/persistent-session-runtime/` (held-process semantics),
   `apps/e2e/tests/chat/held-process.ts`.
 - `meta/agent-etiquette.md` §9, `.claude/rules/room-conduct.md`,

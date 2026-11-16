@@ -1758,13 +1758,6 @@
       "linearIssue": "DOR-63"
     },
     {
-      "number": 210,
-      "slug": "activity-feed",
-      "title": "Activity Feed",
-      "created": "2026-03-29",
-      "status": "implemented"
-    },
-    {
       "number": 209,
       "slug": "extension-manifest-settings",
       "title": "Extension Manifest Settings",
@@ -1775,13 +1768,6 @@
       "number": 207,
       "slug": "tool-progress-streaming",
       "title": "Tool Progress Streaming — Specification",
-      "created": "2026-03-29",
-      "status": "implemented"
-    },
-    {
-      "number": 204,
-      "slug": "result-error-distinction",
-      "title": "Result Error/Success Distinction",
       "created": "2026-03-29",
       "status": "implemented"
     },
@@ -1807,13 +1793,6 @@
       "status": "specified"
     },
     {
-      "number": 196,
-      "slug": "extended-thinking-visibility",
-      "title": "Extended Thinking Visibility",
-      "created": "2026-03-29",
-      "status": "implemented"
-    },
-    {
       "number": 195,
       "slug": "electron-desktop-app",
       "title": "Electron Desktop App — Native macOS Distribution for DorkOS",
@@ -1826,50 +1805,6 @@
       "title": "Specification: Agents as First-Class Entity",
       "created": "2026-03-29",
       "status": "implemented"
-    },
-    {
-      "number": 192,
-      "slug": "linear-issue-status-extension",
-      "title": "Server-Side Extension Hooks + Linear Issue Status Extension",
-      "created": "2026-03-29",
-      "status": "implemented"
-    },
-    {
-      "number": 191,
-      "slug": "client-error-handling",
-      "title": "Client Error Handling Improvements",
-      "created": "2026-03-28",
-      "status": "implemented"
-    },
-    {
-      "number": 190,
-      "slug": "session-state-manager",
-      "title": "Session State Manager",
-      "created": "2026-03-28",
-      "status": "implemented"
-    },
-    {
-      "number": 189,
-      "slug": "canvas-persistence-and-toggle",
-      "title": "Canvas Persistence & Toggle",
-      "created": "2026-03-28",
-      "status": "implemented"
-    },
-    {
-      "number": 188,
-      "slug": "sse-connection-optimization-02-fetch-transport",
-      "title": "SSE Connection Optimization Phase 2 — Fetch-Based SSE Transport",
-      "created": "2026-03-27",
-      "status": "implemented",
-      "project": "sse-connection-optimization"
-    },
-    {
-      "number": 187,
-      "slug": "sse-connection-optimization-01-consolidate",
-      "title": "SSE Connection Optimization Phase 1 — Consolidate SSE Connections",
-      "created": "2026-03-27",
-      "status": "implemented",
-      "project": "sse-connection-optimization"
     },
     {
       "number": 186,
@@ -1903,14 +1838,6 @@
       "project": "extensibility-platform"
     },
     {
-      "number": 181,
-      "slug": "ext-platform-01-agent-ui-control",
-      "title": "Extensibility Platform Phase 1 — Agent UI Control & Canvas",
-      "created": "2026-03-26",
-      "status": "implemented",
-      "project": "extensibility-platform"
-    },
-    {
       "number": 180,
       "slug": "composable-filter-system",
       "title": "Composable Filter System — Shared Filtering Infrastructure for List Views",
@@ -1925,39 +1852,11 @@
       "status": "specified"
     },
     {
-      "number": 178,
-      "slug": "feature-promo-system",
-      "title": "Feature Promo System — Declarative Feature Discovery Framework",
-      "created": "2026-03-24",
-      "status": "implemented"
-    },
-    {
-      "number": 177,
-      "slug": "background-task-visibility",
-      "title": "Background Task Visibility — Unified Indicator for Agents and Bash",
-      "created": "2026-03-24",
-      "status": "implemented"
-    },
-    {
       "number": 176,
       "slug": "friendly-tool-name-display",
       "title": "Friendly Tool Name Display in ToolApproval",
       "created": "2026-03-24",
       "status": "specified"
-    },
-    {
-      "number": 175,
-      "slug": "relay-outbound-awareness",
-      "title": "Relay Outbound Awareness — Agent-Initiated Messaging",
-      "created": "2026-03-24",
-      "status": "implemented"
-    },
-    {
-      "number": 174,
-      "slug": "sse-resilience-connection-health",
-      "title": "SSE Resilience & Connection Health",
-      "created": "2026-03-24",
-      "status": "implemented"
     },
     {
       "number": 173,
@@ -1967,116 +1866,11 @@
       "status": "superseded"
     },
     {
-      "number": 171,
-      "slug": "improved-new-session-creation",
-      "title": "Improved New Session Creation",
-      "created": "2026-03-23",
-      "status": "implemented"
-    },
-    {
-      "number": 170,
-      "slug": "real-brand-adapter-logos",
-      "title": "Real Brand Adapter Logos",
-      "created": "2026-03-23",
-      "status": "implemented"
-    },
-    {
-      "number": 168,
-      "slug": "agent-creation-and-templates",
-      "title": "Agent Creation & Workspace Templates",
-      "created": "2026-03-23",
-      "status": "implemented"
-    },
-    {
-      "number": 167,
-      "slug": "agents-page-10x-redesign",
-      "title": "Agents Page 10x Redesign",
-      "created": "2026-03-22",
-      "status": "implemented"
-    },
-    {
       "number": 164,
       "slug": "fix-chatsdk-thread-id-subject-validation",
       "title": "Fix Chat SDK Thread ID Subject Validation",
       "created": "2026-03-22",
       "status": "specified"
-    },
-    {
-      "number": 163,
-      "slug": "tanstack-form-adoption",
-      "title": "TanStack Form Adoption",
-      "created": "2026-03-22",
-      "status": "implemented"
-    },
-    {
-      "number": 162,
-      "slug": "adapter-binding-improvements",
-      "title": "Relay Binding Robustness & Multi-Instance Routing",
-      "created": "2026-03-22",
-      "status": "implemented"
-    },
-    {
-      "number": 161,
-      "slug": "chat-sdk-relay-adapter-refactor",
-      "title": "Chat SDK Relay Adapter Refactor",
-      "created": "2026-03-22",
-      "status": "implemented"
-    },
-    {
-      "number": 159,
-      "slug": "enable-subsystems-by-default",
-      "title": "Enable Relay and Pulse by Default",
-      "created": "2026-03-21",
-      "status": "implemented"
-    },
-    {
-      "number": 158,
-      "slug": "relay-subject-folder-names",
-      "title": "Use Subject Strings as Mailbox Folder Names Instead of SHA-256 Hashes",
-      "created": "2026-03-21",
-      "status": "implemented"
-    },
-    {
-      "number": 157,
-      "slug": "agents-page",
-      "title": "Agents Page — Dedicated Fleet Management",
-      "created": "2026-03-20",
-      "status": "implemented"
-    },
-    {
-      "number": 156,
-      "slug": "dynamic-sidebar-content",
-      "title": "Dynamic Route-Aware Sidebar & Header Content",
-      "created": "2026-03-20",
-      "status": "implemented"
-    },
-    {
-      "number": 155,
-      "slug": "site-feature-catalog",
-      "title": "Feature Catalog System for Marketing Site",
-      "created": "2026-03-20",
-      "status": "implemented"
-    },
-    {
-      "number": 154,
-      "slug": "dashboard-home-route",
-      "title": "Dashboard Home Route & Navigation Restructure",
-      "created": "2026-03-20",
-      "status": "implemented"
-    },
-    {
-      "number": 153,
-      "slug": "unified-status-strip",
-      "title": "Unified Status Strip — Consolidate InferenceIndicator & SystemStatusZone",
-      "created": "2026-03-20",
-      "status": "implemented"
-    },
-    {
-      "number": 152,
-      "slug": "chat-streaming-motion",
-      "title": "Chat Streaming Motion — Premium Text & Scroll Animation",
-      "created": "2026-03-20",
-      "status": "implemented"
     },
     {
       "number": 151,
@@ -2086,81 +1880,11 @@
       "status": "ideation"
     },
     {
-      "number": 150,
-      "slug": "streaming-message-integrity",
-      "title": "Streaming Message Integrity — Eliminate Post-Stream Replace",
-      "created": "2026-03-19",
-      "status": "implemented"
-    },
-    {
       "number": 148,
       "slug": "sdk-error-observability",
       "title": "SDK Error Observability — Break Infinite Retry Loop, Surface Errors to Adapters",
       "created": "2026-03-18",
       "status": "specified"
-    },
-    {
-      "number": 147,
-      "slug": "relay-adapter-event-whitelist",
-      "title": "Relay Adapter Event Whitelist Overhaul",
-      "created": "2026-03-17",
-      "status": "implemented"
-    },
-    {
-      "number": 143,
-      "slug": "dev-playground-navigation-overhaul",
-      "title": "Dev Playground Navigation Overhaul",
-      "created": "2026-03-16",
-      "status": "implemented"
-    },
-    {
-      "number": 141,
-      "slug": "hook-lifecycle-events",
-      "title": "Surface SDK Hook Lifecycle Events in Chat UI",
-      "created": "2026-03-16",
-      "status": "implemented"
-    },
-    {
-      "number": 139,
-      "slug": "error-categorization-retry",
-      "title": "Error Categorization & Retry Affordance",
-      "created": "2026-03-16",
-      "status": "implemented"
-    },
-    {
-      "number": 138,
-      "slug": "tool-approval-timeout-visibility",
-      "title": "Tool Approval Timeout Visibility",
-      "created": "2026-03-16",
-      "status": "implemented"
-    },
-    {
-      "number": 136,
-      "slug": "system-status-compact-boundary",
-      "title": "Surface SDK System Status Messages & Compact Boundary Events",
-      "created": "2026-03-16",
-      "status": "implemented"
-    },
-    {
-      "number": 135,
-      "slug": "agent-permission-mode",
-      "title": "Agent Permission Mode for Adapter Bindings",
-      "created": "2026-03-15",
-      "status": "implemented"
-    },
-    {
-      "number": 133,
-      "slug": "sdk-command-discovery",
-      "title": "SDK-Based Command Discovery",
-      "created": "2026-03-15",
-      "status": "implemented"
-    },
-    {
-      "number": 132,
-      "slug": "relay-panel-redesign",
-      "title": "Relay Panel Redesign — Jobs/Ive Design Overhaul",
-      "created": "2026-03-15",
-      "status": "implemented"
     },
     {
       "number": 131,
@@ -2174,20 +1898,6 @@
       "slug": "slack-adapter",
       "title": "Slack Adapter for Relay",
       "created": "2026-03-13",
-      "status": "implemented"
-    },
-    {
-      "number": 125,
-      "slug": "client-direct-sse",
-      "title": "Client Direct SSE — Remove Relay Message Path from Web Client",
-      "created": "2026-03-12",
-      "status": "implemented"
-    },
-    {
-      "number": 124,
-      "slug": "pulse-schedule-templates",
-      "title": "Pulse Schedule Preset Gallery",
-      "created": "2026-03-11",
       "status": "implemented"
     },
     {
@@ -2206,13 +1916,6 @@
       "status": "implemented"
     },
     {
-      "number": 118,
-      "slug": "shortcut-discoverability",
-      "title": "Keyboard Shortcut Discoverability",
-      "created": "2026-03-11",
-      "status": "implemented"
-    },
-    {
       "number": 117,
       "slug": "sidebar-tabbed-views",
       "title": "Sidebar Tabbed Views — Sessions, Schedules, Connections",
@@ -2227,52 +1930,10 @@
       "status": "ideation"
     },
     {
-      "number": 113,
-      "slug": "fix-chat-streaming-and-model-selector-bugs",
-      "title": "Fix Chat Streaming & Model Selector Bugs",
-      "created": "2026-03-10",
-      "status": "implemented"
-    },
-    {
       "number": 107,
       "slug": "mcp-server",
       "title": "MCP Server — Expose DorkOS Tools to External Agents",
       "created": "2026-03-09",
-      "status": "implemented"
-    },
-    {
-      "number": 106,
-      "slug": "upload-files",
-      "title": "File Uploads in Chat",
-      "created": "2026-03-09",
-      "status": "implemented"
-    },
-    {
-      "number": 105,
-      "slug": "chat-message-theming",
-      "title": "Chat Message Theming & MessageItem Architecture",
-      "created": "2026-03-09",
-      "status": "implemented"
-    },
-    {
-      "number": 104,
-      "slug": "chat-microinteractions-polish",
-      "title": "Chat Microinteractions & Animation Polish",
-      "created": "2026-03-09",
-      "status": "implemented"
-    },
-    {
-      "number": 103,
-      "slug": "fix-relay-ghost-messages",
-      "title": "Fix Relay-Mode SSE Subscriber Race Condition (Ghost Messages)",
-      "created": "2026-03-08",
-      "status": "implemented"
-    },
-    {
-      "number": 102,
-      "slug": "fix-chat-streaming-history-consistency",
-      "title": "Fix Chat UI Streaming vs History Inconsistencies",
-      "created": "2026-03-08",
       "status": "implemented"
     },
     {
@@ -2281,83 +1942,6 @@
       "title": "Fix Two Relay-Mode Streaming Bugs",
       "created": "2026-03-07",
       "status": "specified"
-    },
-    {
-      "number": 99,
-      "slug": "agent-runtime-review-remediation",
-      "title": "Agent Runtime Abstraction — Review Remediation",
-      "created": "2026-03-06",
-      "status": "implemented"
-    },
-    {
-      "number": 98,
-      "slug": "eslint-per-package-config",
-      "title": "ESLint Per-Package Config Refactor",
-      "created": "2026-03-06",
-      "status": "implemented"
-    },
-    {
-      "number": 97,
-      "slug": "agent-runtime-abstraction",
-      "title": "Agent Runtime Abstraction",
-      "created": "2026-03-06",
-      "status": "implemented"
-    },
-    {
-      "number": 94,
-      "slug": "unify-discovery-system",
-      "title": "Unify Discovery System",
-      "created": "2026-03-06",
-      "status": "implemented"
-    },
-    {
-      "number": 93,
-      "slug": "chat-streaming-session-reliability",
-      "title": "Chat Streaming & Session Reliability Fixes",
-      "created": "2026-03-05",
-      "status": "implemented"
-    },
-    {
-      "number": 92,
-      "slug": "relay-inbox-lifecycle",
-      "title": "Relay Inbox Lifecycle — Endpoint Types, Dispatch TTL, relay_send_and_wait Streaming",
-      "created": "2026-03-05",
-      "status": "implemented"
-    },
-    {
-      "number": 91,
-      "slug": "relay-async-query",
-      "title": "Relay Async Dispatch + CCA Streaming Progress",
-      "created": "2026-03-04",
-      "status": "implemented"
-    },
-    {
-      "number": 90,
-      "slug": "fix-relay-agent-routing-cwd",
-      "title": "Fix Relay Agent-to-Agent Routing CWD Bug + Harden ClaudeCodeAdapter Pipeline",
-      "created": "2026-03-04",
-      "status": "implemented"
-    },
-    {
-      "number": 89,
-      "slug": "agent-tools-elevation",
-      "title": "Agent Tools Elevation",
-      "created": "2026-03-04",
-      "status": "implemented"
-    },
-    {
-      "number": 88,
-      "slug": "agent-tool-context-injection",
-      "title": "Agent Tool Context Injection",
-      "created": "2026-03-03",
-      "status": "implemented"
-    },
-    {
-      "number": 87,
-      "slug": "command-palette-10x",
-      "title": "10x Command Palette UX",
-      "created": "2026-03-03",
-      "status": "implemented"
     },
     {
       "number": 86,
@@ -2384,13 +1968,6 @@
       "number": 82,
       "slug": "settings-reset-restart",
       "title": "Settings Reset & Server Restart",
-      "created": "2026-03-01",
-      "status": "implemented"
-    },
-    {
-      "number": 79,
-      "slug": "first-time-user-experience",
-      "title": "First Time User Experience (FTUE)",
       "created": "2026-03-01",
       "status": "implemented"
     },
@@ -2423,13 +2000,6 @@
       "status": "implemented"
     },
     {
-      "number": 69,
-      "slug": "dynamic-model-options",
-      "title": "Dynamic Model Options",
-      "created": "2026-02-27",
-      "status": "implemented"
-    },
-    {
       "number": 67,
       "slug": "adapter-catalog-management",
       "title": "Adapter Catalog & Management UI",
@@ -2444,27 +2014,6 @@
       "status": "ideation"
     },
     {
-      "number": 65,
-      "slug": "mesh-registry-integrity",
-      "title": "Mesh Registry Integrity & Reconciliation",
-      "created": "2026-02-26",
-      "status": "implemented"
-    },
-    {
-      "number": 64,
-      "slug": "env-var-discipline",
-      "title": "Disciplined Environment Variable Handling",
-      "created": "2026-02-25",
-      "status": "implemented"
-    },
-    {
-      "number": 63,
-      "slug": "db-drizzle-consolidation",
-      "title": "Database Consolidation — Single DB, packages/db, Drizzle ORM",
-      "created": "2026-02-25",
-      "status": "implemented"
-    },
-    {
       "number": 62,
       "slug": "mesh-panel-ux-overhaul",
       "title": "Mesh Panel UI/UX Overhaul",
@@ -2477,13 +2026,6 @@
       "title": "Browser Testing System",
       "created": "2026-02-25",
       "status": "specified"
-    },
-    {
-      "number": 59,
-      "slug": "mesh-observability-lifecycle",
-      "title": "Mesh Observability & Lifecycle Events",
-      "created": "2026-02-25",
-      "status": "implemented"
     },
     {
       "number": 58,
@@ -2521,31 +2063,10 @@
       "status": "implemented"
     },
     {
-      "number": 52,
-      "slug": "relay-advanced-reliability",
-      "title": "Relay Advanced Reliability",
-      "created": "2026-02-24",
-      "status": "implemented"
-    },
-    {
-      "number": 51,
-      "slug": "relay-server-client-integration",
-      "title": "Relay Server & Client Integration",
-      "created": "2026-02-24",
-      "status": "implemented"
-    },
-    {
       "number": 50,
       "slug": "relay-core-library",
       "title": "Relay Core Library",
       "created": "2026-02-24",
-      "status": "implemented"
-    },
-    {
-      "number": 48,
-      "slug": "pulse-v2-enhancements",
-      "title": "Pulse V2 Enhancements — Visual Cron Builder, DirectoryPicker, Calm Notifications",
-      "created": "2026-02-21",
       "status": "implemented"
     },
     {
@@ -2560,20 +2081,6 @@
       "slug": "world-class-release-notes",
       "title": "World-Class Release Notes & Blog Infrastructure",
       "created": "2026-02-18",
-      "status": "implemented"
-    },
-    {
-      "number": 43,
-      "slug": "pulse-scheduler",
-      "title": "DorkOS Pulse (Scheduler)",
-      "created": "2026-02-18",
-      "status": "implemented"
-    },
-    {
-      "number": 41,
-      "slug": "dynamic-mcp-tools",
-      "title": "Dynamic MCP Tool Injection Architecture",
-      "created": "2026-02-17",
       "status": "implemented"
     },
     {
@@ -2605,23 +2112,9 @@
       "status": "implemented"
     },
     {
-      "number": 30,
-      "slug": "fsd-architecture",
-      "title": "Feature-Sliced Design Architecture for DorkOS",
-      "created": "2026-02-15",
-      "status": "implemented"
-    },
-    {
       "number": 28,
       "slug": "tab-identity",
       "title": "Tab Identity: Differentiate Multiple Browser Tabs",
-      "created": "2026-02-13",
-      "status": "implemented"
-    },
-    {
-      "number": 25,
-      "slug": "cross-client-session-sync",
-      "title": "Cross-Client Session Synchronization",
       "created": "2026-02-13",
       "status": "implemented"
     },
@@ -2631,62 +2124,6 @@
       "title": "Improve Slash Command System",
       "created": "2026-02-13",
       "status": "specified"
-    },
-    {
-      "number": 17,
-      "slug": "file-autocomplete",
-      "title": "File Autocomplete in Chat Input",
-      "created": "2026-02-13",
-      "status": "implemented"
-    },
-    {
-      "number": 16,
-      "slug": "chat-message-area-improvements",
-      "title": "Chat Message Area Improvements",
-      "created": "2026-02-13",
-      "status": "implemented"
-    },
-    {
-      "number": 10,
-      "slug": "smart-chat-scroll",
-      "title": "Smart Chat Scroll Behavior",
-      "created": "2026-02-12",
-      "status": "implemented"
-    },
-    {
-      "number": 8,
-      "slug": "inference-status-indicator",
-      "title": "Inference Status Indicator",
-      "created": "2026-02-12",
-      "status": "implemented"
-    },
-    {
-      "number": 6,
-      "slug": "url-persisted-directory-state",
-      "title": "URL-Persisted Directory State",
-      "created": "2026-02-11",
-      "status": "implemented"
-    },
-    {
-      "number": 5,
-      "slug": "monorepo-turborepo-migration",
-      "title": "Turborepo Monorepo Migration",
-      "created": "2026-02-11",
-      "status": "implemented"
-    },
-    {
-      "number": 3,
-      "slug": "chat-ui-aesthetic-refinement",
-      "title": "Chat UI Aesthetic Refinement",
-      "created": "2026-02-07",
-      "status": "implemented"
-    },
-    {
-      "number": 1,
-      "slug": "claude-code-webui-api",
-      "title": "Claude Code WebUI & Reusable API",
-      "created": "2026-02-06",
-      "status": "implemented"
     },
     {
       "id": "260708-111226",

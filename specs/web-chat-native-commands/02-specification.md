@@ -285,5 +285,5 @@ execution semantics, and empty-title handling.
   outside of).
 - DOR-104 — producer-less `ui_command` event (agent→client; separate direction).
 - DOR-119 / DOR-120 — command palette ranking & alias provenance.
-- specs/sdk-command-discovery (#133) — runtime command source.
+- [sdk-command-discovery](https://github.com/dork-labs/dorkos/tree/2b98f06e42fab0c9f36c789387138bfc1b211116/specs/sdk-command-discovery) (#133) — runtime command source.
 - `specs/web-chat-native-commands/01-ideation.md` — ideation + decisions.
