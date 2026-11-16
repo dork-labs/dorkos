@@ -9,6 +9,7 @@ import { parseFrontmatter } from '@dorkos/skills/frontmatter';
 import { OPERATING_SKILLS_PACK } from '../pack.js';
 import { seedOperatingSkills } from '../seed.js';
 import { APP_BUILDER_PACK_PIN, buildingDorkosApps } from '../skills/building-dorkos-apps.js';
+import { BUILDING_DORKOS_APPS_FILES } from '../skills/building-dorkos-apps.files.js';
 
 /**
  * The App Builder Pack is vendored byte for byte from one pinned marketplace
@@ -89,8 +90,15 @@ describe('the shipped skill is the vendored tree', () => {
     expect(OPERATING_SKILLS_PACK).toContain(buildingDorkosApps);
   });
 
+  it('builds from a SKILL.md byte-equal to the vendored one', () => {
+    expect(sha256(BUILDING_DORKOS_APPS_FILES['SKILL.md'])).toBe(sha256(vendoredSkill));
+  });
+
   it('takes its name, description and body from the vendored SKILL.md', () => {
     const { data, content } = parseFrontmatter(vendoredSkill);
+    // The seeder writes back only these two keys, so a later pack version that
+    // adds one (say `allowed-tools`) must fail here rather than lose it quietly.
+    expect(Object.keys(data).sort()).toEqual(['description', 'name']);
     expect(buildingDorkosApps.name).toBe('building-dorkos-apps');
     expect(buildingDorkosApps.name).toBe(data.name);
     expect(buildingDorkosApps.description).toBe(data.description);

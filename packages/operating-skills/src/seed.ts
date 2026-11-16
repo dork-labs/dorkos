@@ -23,8 +23,8 @@
  *
  * @module seed
  */
-import { createHash } from 'node:crypto';
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { createHash, randomUUID } from 'node:crypto';
+import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { writeSkillFile } from '@dorkos/skills/writer';
 import { parseSkillFile } from '@dorkos/skills/parser';
@@ -185,9 +185,9 @@ async function decide(filePath: string, skill: OperatingSkill): Promise<SeedActi
 /**
  * Whether a file is a pack skill this seeder wrote and nobody has edited since:
  * it carries the pack marker, and its body still hashes to the stamp written
- * with it — whichever pack version wrote it. The same test the seeder uses to
- * decide it may overwrite a copy; a caller retiring copies DorkOS left behind
- * uses it to decide it may delete one.
+ * with it — whichever pack version wrote it. The seeder's test for the SKILL.md
+ * alone (it also checks any files seeded beside one); a caller retiring copies
+ * DorkOS left behind uses it to decide it may delete one.
  *
  * @param filePath - Where the file is, for the parser's messages.
  * @param raw - The file's contents.
@@ -223,8 +223,13 @@ export async function seedOperatingSkills(rootDir: string): Promise<SeedResult> 
       const firstCreated = await mkdir(path.dirname(filePath), { recursive: true });
       if (firstCreated) createdDirs.push(firstCreated);
       // Supporting files first: SKILL.md carries the stamp, so it lands last.
+      // Each lands whole through a rename, like `writeSkillFile`: a truncated
+      // copy would read as the person's and keep the skill preserved for good.
       for (const [name, content] of Object.entries(skill.files ?? {})) {
-        await writeFile(path.join(path.dirname(filePath), name), content, 'utf-8');
+        const target = path.join(path.dirname(filePath), name);
+        const temp = path.join(path.dirname(filePath), `.${name}-${randomUUID()}.tmp`);
+        await writeFile(temp, content, 'utf-8');
+        await rename(temp, target);
       }
       await writeSkillFile(skillsDir, skill.name, buildFrontmatter(skill), skill.body);
     }
