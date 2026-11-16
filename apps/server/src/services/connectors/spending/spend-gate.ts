@@ -18,7 +18,7 @@ import type { GrantedApproval } from '../../core/capabilities/tier-enforcement.j
 import { CapabilityToolError } from '../../core/capabilities/mcp-envelope.js';
 import type { SpendPreflight } from '../../core/capabilities/spend-permission.js';
 import { notify } from '../../notifications/notification-service.js';
-import { connectorSpending, spendFactsFor } from './spending-port.js';
+import { connectorSpending, spendFactsFor, wasSpendCard } from './spending-port.js';
 import { spendingNoticesAfter, type SpendingNotice } from './spending-notices.js';
 import { monthOf } from './spending-store.js';
 import { decideSpend, spendPreflightOf } from './spend-decision.js';
@@ -137,7 +137,7 @@ export function reserveSpend(
   }
   // Only a yes on a paid-run card is the owner's yes to spend: a yes on an
   // ordinary card may come from someone else, for another reason (Must 2).
-  const allowedOnce = approval?.via === 'approval' && approval.spendCard === true;
+  const allowedOnce = approval?.via === 'approval' && wasSpendCard(approval.approvalId);
   const decision = decideSpend(facts);
   if (!allowedOnce) {
     // Only a quiet run reaches here without a person's yes.

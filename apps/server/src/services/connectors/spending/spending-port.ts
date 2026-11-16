@@ -9,6 +9,7 @@
 import { agents, eq, type Db } from '@dorkos/db';
 import { isPaidOperation } from '@dorkos/shared/connector-schemas';
 import type { ActivityService } from '../../activity/activity-service.js';
+import type { ApprovalService } from '../../core/approvals/approval-service.js';
 import { chatReadOutsideWords } from '../../core/turn-power/chat-outside-words.js';
 import { agentMarksRunning } from '../../core/turn-power/turn-marks.js';
 import { nextMonthStart, SpendingStore } from './spending-store.js';
@@ -85,6 +86,45 @@ export function initConnectorSpending(port: ConnectorSpendingPort | undefined): 
 /** The wired spend limit, or `undefined` before startup wires it. */
 export function connectorSpending(): ConnectorSpendingPort | undefined {
   return active;
+}
+
+let spendCardLookup: ((approvalId: string) => boolean) | undefined;
+
+/**
+ * How a paid-run card is told from any other card, by the approval it was.
+ * Wired at startup with {@link spendCardLookupFrom}, or cleared (tests).
+ *
+ * @param lookup - Whether an approval was a paid-run card.
+ */
+export function setSpendCardLookup(lookup: ((approvalId: string) => boolean) | undefined): void {
+  spendCardLookup = lookup;
+}
+
+/**
+ * Whether a person's yes was given on a paid-run card: only that yes is the
+ * owner's yes to spend (Security Must 2). A yes on any other card may come
+ * from someone else, for another reason. Unwired or unreadable reads `false`,
+ * so the run goes back through the limit.
+ *
+ * @param approvalId - The approval the gate spent to let the call through.
+ */
+export function wasSpendCard(approvalId: string): boolean {
+  try {
+    return spendCardLookup?.(approvalId) === true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * The paid-run card lookup, read from the approval store.
+ *
+ * @param approvals - The approval store.
+ */
+export function spendCardLookupFrom(
+  approvals: Pick<ApprovalService, 'serviceActionOf'>
+): (approvalId: string) => boolean {
+  return (approvalId) => approvals.serviceActionOf(approvalId)?.keptCardBecause === 'spend';
 }
 
 /**

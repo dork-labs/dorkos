@@ -411,8 +411,6 @@ export type GrantedApproval =
       authorityBindingDigest?: string;
       /** The signed-in account that said yes; absent when nobody was signed in. */
       decidedByUserId?: string;
-      /** The card was a paid-run card: only then is this yes a yes to spend (DOR-4204). */
-      spendCard?: true;
     }
   /**
    * The action's permission resolved to Allowed, so it ran without a card. The
@@ -1076,7 +1074,6 @@ export function enforceCapabilityTier(request: TierEnforcementRequest): TierEnfo
             ? { authorityBindingDigest: result.authorityBindingDigest }
             : {}),
           ...(result.decidedByUserId ? { decidedByUserId: result.decidedByUserId } : {}),
-          ...(result.spendCard ? { spendCard: true as const } : {}),
         },
       };
 

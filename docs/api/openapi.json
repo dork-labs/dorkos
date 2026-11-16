@@ -23163,7 +23163,7 @@
                       "string",
                       "null"
                     ],
-                    "pattern": "^\\d{1,16}$"
+                    "pattern": "^\\d{1,11}$"
                   }
                 },
                 "required": [
@@ -23317,7 +23317,7 @@
                       "string",
                       "null"
                     ],
-                    "pattern": "^\\d{1,16}$"
+                    "pattern": "^\\d{1,11}$"
                   }
                 },
                 "required": [

@@ -4,6 +4,7 @@ covers:
   - "feat(db): the spend limit's tables, after main's latest migration, with a down file (DOR-4204)"
   - 'fix(connectors): a paid run the gate refuses is written to Activity, and only real changes to spending are recorded (DOR-4204)'
   - 'fix(connectors): only a yes on a paid-run card lets a run spend, and an agent with no session is checked for outside words (DOR-4204)'
+  - "fix(connectors): tell a paid-run card's yes by the card it answered, and keep two big files from growing (DOR-4204)"
 ---
 
 ### Added

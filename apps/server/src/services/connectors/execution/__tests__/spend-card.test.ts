@@ -23,6 +23,7 @@ import { createCapabilityAuthorityBinding } from '../../principal/capability-aut
 import { createServerPrincipal } from '../../principal/server-principal.js';
 import { connectorExecutionDomain } from '../execution-capabilities.js';
 import type { SpendPreflight } from '../../spending/spend-decision.js';
+import { spendCardLookupFrom } from '../../spending/spending-port.js';
 
 const TARGET = {
   connectionId: 'connection-acme-search',
@@ -206,17 +207,16 @@ describe('a paid run at the permission gate', () => {
     await expect(call(approvalToken)).rejects.toBeInstanceOf(CapabilityGateRefusal);
     expect(execute).toHaveBeenCalledTimes(1);
     expect(execute).toHaveBeenCalledWith(
-      expect.objectContaining({ approval: expect.objectContaining({ spendCard: true }) })
+      expect.objectContaining({ approval: expect.objectContaining({ approvalId }) })
     );
+    // The broker reads this to take the yes as the owner's yes to spend.
+    expect(spendCardLookupFrom(approvals)(approvalId)).toBe(true);
   });
 
-  it('never marks a yes on an ordinary card as a yes to spend (Security Must 2)', () => {
-    const binding = {
+  it('never reads a yes on an ordinary card as a yes to spend (Security Must 2)', () => {
+    const ordinary = approvals.request({
       capabilityId: 'connectors.execute_write',
       inputHash: 'input-hash',
-    };
-    const ordinary = approvals.request({
-      ...binding,
       summary: 'Send a message.',
       serviceAction: {
         serviceId: 'tavily',
@@ -227,8 +227,8 @@ describe('a paid run at the permission gate', () => {
       },
     } as never);
     approvals.grant(ordinary.approvalId);
-    const granted = approvals.consume(ordinary.token, binding);
-    expect(granted.outcome).toBe('granted');
-    expect(granted).not.toHaveProperty('spendCard');
+    const isSpendCard = spendCardLookupFrom(approvals);
+    expect(isSpendCard(ordinary.approvalId)).toBe(false);
+    expect(isSpendCard('approval-nobody-made')).toBe(false);
   });
 });

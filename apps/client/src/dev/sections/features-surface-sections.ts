@@ -1,4 +1,5 @@
 import type { PlaygroundSection } from '../playground-registry';
+import { SPENDING_SECTIONS } from './spending-sections';
 
 /**
  * Sections for the Home, Inbox & Approvals page: the surfaces a person
@@ -299,28 +300,7 @@ export const FEATURE_SURFACE_SECTIONS: PlaygroundSection[] = [
     category: 'To-dos',
     keywords: ['to-do', 'todo', 'check', 'due', 'overdue', 'declined', 'limited', 'undo'],
   },
-  // SpendingShowcases
-  {
-    id: 'spending',
-    title: 'Spending',
-    page: 'home-inbox',
-    category: 'Connections',
-    keywords: ['spending', 'limit', 'monthly', 'money', 'paid', 'meter', 'where it went'],
-  },
-  {
-    id: 'paid-run-card',
-    title: 'Paid-run card',
-    page: 'home-inbox',
-    category: 'Connections',
-    keywords: ['paid', 'spend', 'approval', 'card', 'allow once', 'price', 'set a limit'],
-  },
-  {
-    id: 'spends-money-marker',
-    title: 'Spends money marker',
-    page: 'home-inbox',
-    category: 'Connections',
-    keywords: ['spends money', 'coins', 'marker', 'paid', 'chip'],
-  },
+  ...SPENDING_SECTIONS,
   // ConnectionsShowcases
   {
     id: 'approw',

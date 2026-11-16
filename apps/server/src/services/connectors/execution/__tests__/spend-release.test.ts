@@ -33,7 +33,7 @@ import { ConnectorExecutionAuthorizationService } from '../authorization-service
 import { ConnectorExecutionBroker } from '../execution-broker.js';
 import { ConnectorUsageStore } from '../usage-store.js';
 import { SpendingStore } from '../../spending/spending-store.js';
-import { initConnectorSpending } from '../../spending/spending-port.js';
+import { initConnectorSpending, setSpendCardLookup } from '../../spending/spending-port.js';
 import { refuseSpend } from '../../../core/capabilities/spend-permission.js';
 import { CapabilityToolError } from '../../../core/capabilities/mcp-envelope.js';
 
@@ -120,6 +120,8 @@ describe('a paid run where it is let go', () => {
       activity: { emit: async (event) => void activity.push(event) },
       agentName: () => 'Kestrel',
     });
+    // Only `approval-spend` was a paid-run card.
+    setSpendCardLookup((approvalId) => approvalId === 'approval-spend');
     executeProvider = vi.spyOn(provider, 'execute').mockImplementation(async (command) => {
       await command.authorizeDispatch();
       return { status: 'success', data: { ok: true } } as never;
@@ -132,7 +134,10 @@ describe('a paid run where it is let go', () => {
     );
   });
 
-  afterEach(() => initConnectorSpending(undefined));
+  afterEach(() => {
+    initConnectorSpending(undefined);
+    setSpendCardLookup(undefined);
+  });
 
   /** `approved`: a person's yes; `'ordinary'` is a yes on a card that was not about money. */
   async function run(approved: boolean | 'ordinary' = false) {
@@ -157,9 +162,8 @@ describe('a paid run where it is let go', () => {
         ? {
             approval: {
               via: 'approval' as const,
-              approvalId: 'approval-spend',
+              approvalId: approved === true ? 'approval-spend' : 'approval-ordinary',
               authorityBindingDigest: prepared.authorityBinding.approvalScope.digest,
-              ...(approved === true ? { spendCard: true as const } : {}),
             },
           }
         : {}),
