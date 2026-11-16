@@ -37,10 +37,10 @@ Reply (trimmed):
 
 `compiled` is the build. `autoApproved` appears because this is a Trusted install and
 the starter is untouched. It says what the template may run with: in-process, no hosts,
-no commands, no agent access. The first file you change goes back to the person before
-it runs, so say that when you report it. If the reply says `approval_required` instead,
-it's waiting for the person: tell them, and call again with the token only after they
-approve.
+no commands, no agent access. This app is screen code only, so a change to it waits for
+the person's yes before it shows; say that when you report it. If the reply says
+`approval_required` instead, it's waiting for the person: tell them, and call again
+with the token only after they approve.
 
 ## 2. The files
 

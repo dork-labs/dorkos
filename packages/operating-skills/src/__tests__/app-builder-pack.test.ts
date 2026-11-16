@@ -18,8 +18,8 @@ import { BUILDING_DORKOS_APPS_FILES } from '../skills/building-dorkos-apps.files
  * DorkOS ships is the vendored tree, and what the seeder writes is that skill.
  */
 
-/** The reviewed tree's `MANIFEST.sha256`, hashed. Security and Design OK'd this exact value. */
-const REVIEWED_MANIFEST_SHA256 = 'e23f5eb8de5229a141d9890c3a20d6389453a84c57be4c727e1d1ca517010ade';
+/** The pinned tree's `MANIFEST.sha256`, hashed: the exact value Security reviews. */
+const REVIEWED_MANIFEST_SHA256 = 'f851eb9f5f2c1632c5eb898c10ef743069bf653ac88be04a575b5a2c1f797d98';
 
 const PACK_DIR = fileURLToPath(new URL('../skills/app-builder-pack/', import.meta.url));
 const SKILL_DIR = path.join(PACK_DIR, 'skills', 'building-dorkos-apps');
@@ -79,7 +79,7 @@ describe('the vendored App Builder Pack is the reviewed tree', () => {
     );
     expect(manifest.name).toBe('app-builder-pack');
     expect(APP_BUILDER_PACK_PIN.version).toBe(manifest.version);
-    expect(APP_BUILDER_PACK_PIN.version).toBe('1.1.1');
+    expect(APP_BUILDER_PACK_PIN.version).toBe('1.1.2');
   });
 });
 

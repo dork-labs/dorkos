@@ -4,14 +4,14 @@ import { BUILDING_DORKOS_APPS_FILES } from './building-dorkos-apps.files.js';
 
 /**
  * The marketplace pack this skill is vendored from, and the hash of the
- * `MANIFEST.sha256` Security and Design reviewed (DOR-4061). The vendored tree
+ * `MANIFEST.sha256` Security reviews (DOR-4061). The vendored tree
  * sits in `./app-builder-pack/`; `../../scripts/sync-app-builder-pack.ts` turns it
  * into the strings this module reads.
  */
 export const APP_BUILDER_PACK_PIN = {
   name: 'app-builder-pack',
-  version: '1.1.1',
-  manifestSha256: 'e23f5eb8de5229a141d9890c3a20d6389453a84c57be4c727e1d1ca517010ade',
+  version: '1.1.2',
+  manifestSha256: 'f851eb9f5f2c1632c5eb898c10ef743069bf653ac88be04a575b5a2c1f797d98',
 } as const;
 
 const { 'SKILL.md': skillFile, ...supportingFiles } = BUILDING_DORKOS_APPS_FILES;
