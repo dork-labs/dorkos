@@ -917,6 +917,11 @@ async function productionSources(dir: string): Promise<string[]> {
 
 const SOURCES = await productionSources(SERVER_SRC);
 
+/** One raw snapshot shared by the code-only and literal-name scans. */
+const RAW: readonly (readonly [string, string])[] = await Promise.all(
+  SOURCES.map(async (file) => [file, await readFile(file, 'utf-8')] as const)
+);
+
 /**
  * Every source, read and lexed ONCE, as `[relative path, code-only text]`.
  *
@@ -943,11 +948,8 @@ const SOURCES = await productionSources(SERVER_SRC);
  * `code-only-corpus.test.ts` beside this file — including that every source
  * actually PARSES, since a file the parser chokes on scans as innocent.
  */
-const LEXED: readonly (readonly [string, string])[] = await Promise.all(
-  SOURCES.map(
-    async (file) =>
-      [path.relative(SERVER_SRC, file), codeOnly(await readFile(file, 'utf-8'), file)] as const
-  )
+const LEXED: readonly (readonly [string, string])[] = RAW.map(
+  ([file, text]) => [path.relative(SERVER_SRC, file), codeOnly(text, file)] as const
 );
 
 /** Files that call `call`, as paths relative to `apps/server/src`. */
@@ -970,14 +972,13 @@ function callersOf(call: string): string[] {
 }
 
 describe('the managed credential store names (DOR-2086)', () => {
-  it('appear in exactly one production module', async () => {
+  it('appear in exactly one production module', () => {
     // `remote-credentials.ts` is the only place a managed secret's store name
     // is built. A second module spelling `remote-tunnel-` or `remote-edge-`
     // could read or overwrite a managed secret around every entry above. Read
     // RAW, comments and strings included: here the string IS the door.
     const hits: string[] = [];
-    for (const file of SOURCES) {
-      const text = await readFile(file, 'utf-8');
+    for (const [file, text] of RAW) {
       if (text.includes('remote-tunnel-') || text.includes('remote-edge-')) {
         hits.push(path.relative(SERVER_SRC, file));
       }

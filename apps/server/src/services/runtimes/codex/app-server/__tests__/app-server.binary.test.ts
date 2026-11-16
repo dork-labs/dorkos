@@ -56,7 +56,8 @@ import {
   setProjectConfigActivity,
   type ProjectConfigActivityEntry,
 } from '../project-config-activity.js';
-import { spawn as nodeSpawn } from 'node:child_process';
+import { spawn as nodeSpawn, execFileSync } from 'node:child_process';
+import { minimalGitEnv } from '@dorkos/shared/safe-git';
 import {
   protectedProbe,
   shellControlReturned,
@@ -1738,6 +1739,127 @@ nativeSuite('the app-server transport against the real Codex binary', NATIVE_LIM
       expect(mcpCalls).toEqual(['read_file']);
     });
   });
+
+  it.skipIf(process.platform === 'win32').for(['acceptEdits', 'bypassPermissions'] as const)(
+    'keeps real worktree git metadata protected at %s when temporary roots overlap',
+    { timeout: 180_000 },
+    async (permissionMode) => {
+      const git = (...args: string[]) =>
+        execFileSync('git', ['-c', 'core.hooksPath=/dev/null', ...args], {
+          cwd: project,
+          env: minimalGitEnv(),
+          stdio: 'pipe',
+        });
+      git('init', '-q', '--initial-branch=main');
+      git(
+        '-c',
+        'user.name=Fixture',
+        '-c',
+        'user.email=fixture@example.test',
+        'commit',
+        '-q',
+        '--allow-empty',
+        '-m',
+        'fixture'
+      );
+      const tree = path.join(root, 'linked');
+      git('worktree', 'add', '-q', '-b', 'side', tree);
+      const cwd = path.join(tree, 'subfolder');
+      fs.mkdirSync(cwd);
+      const pointer = path.join(tree, '.git');
+      const pointerBefore = fs.readFileSync(pointer, 'utf8');
+      const gitDir = pointerBefore.trim().slice('gitdir: '.length);
+      const metadata = [gitDir, path.join(project, '.git')].map((dir) =>
+        path.join(dir, 'dor4485-write-control')
+      );
+      for (const file of metadata) fs.writeFileSync(file, 'original-metadata');
+      const ordinary = path.join(cwd, 'ordinary.txt');
+      fs.writeFileSync(ordinary, 'original-ordinary');
+      const tmp = fs.realpathSync(fs.mkdtempSync('/tmp/codex-public-temp-'));
+      const temporary = path.join(tmp, 'ordinary.txt');
+      fs.writeFileSync(temporary, 'original-temporary');
+      const quote = (value: string) => "'" + value.replaceAll("'", "'\\''") + "'";
+      const turn = request('real-worktree-temp-policy', undefined, {
+        cwd,
+        settings: { permissionMode, model: 'fake-model' },
+      });
+      const policy = turn.tools.filePolicy!;
+      policy.roots.cwd = cwd;
+      policy.roots.agentFolders = [cwd];
+      policy.writable = [tree];
+      completeHostFixture(policy, [project, cwd]);
+      const env = vi.spyOn(runtimeEnv, 'runtimeEnvironment').mockImplementation(() => ({
+        PATH: process.env.PATH ?? '',
+        HOME: policy.roots.home,
+        CODEX_HOME: codexHome,
+        HTTP_PROXY: 'http://127.0.0.1:9',
+        HTTPS_PROXY: 'http://127.0.0.1:9',
+        NO_PROXY: '127.0.0.1,localhost',
+      }));
+      const secretFiles = metadata.map((file) =>
+        path.join(path.dirname(file), '.credentials-dor4485')
+      );
+      for (const file of secretFiles) fs.writeFileSync(file, 'CANARY-git-metadata-secret');
+      const secretRepo = path.join(policy.roots.home, '.ssh', 'private-repository');
+      fs.mkdirSync(secretRepo, { recursive: true });
+      git('-C', secretRepo, 'init', '-q');
+      policy.writable = [...policy.writable, secretRepo];
+      const metadataAlias = path.join(root, 'metadata-alias');
+      fs.symlinkSync(path.join(project, '.git'), metadataAlias, 'dir');
+      const aliasSecret = path.join(metadataAlias, '.credentials-dor4485');
+      const ancestorSecret = path.join(secretRepo, '.git', 'ancestor-secret');
+      fs.writeFileSync(ancestorSecret, 'CANARY-git-ancestor-secret');
+      let result = '';
+      scripted.push(
+        (res) =>
+          res.end(
+            sseCall({
+              cmd: [
+                ...[...secretFiles, aliasSecret, ancestorSecret].map(
+                  (file) => `cat ${quote(file)}`
+                ),
+                `git -C ${quote(tree)} status --porcelain >/dev/null && printf PUBLIC-git-status`,
+                `cat ${quote(path.join(gitDir, 'HEAD'))}`,
+                ...metadata.map((file) => `printf changed > ${quote(file)}`),
+                `printf changed > ${quote(pointer)}`,
+                `printf edited-ordinary > ${quote(ordinary)}`,
+                `printf edited-temporary > ${quote(temporary)}`,
+                'printf PUBLIC-worktree-probe-finished',
+              ].join('; '),
+              login: false,
+            })
+          ),
+        (res, body) => {
+          result = body;
+          res.end(sse('done'));
+        }
+      );
+      const transport = makeTransport();
+      try {
+        const events: StreamEvent[] = [];
+        for await (const event of transport.runTurn(turn)) events.push(event);
+        expect(events.filter((event) => event.type === 'error')).toEqual([]);
+        expect(shellControlReturned(result, 'PUBLIC-git-status')).toBe(true);
+        expect(shellControlReturned(result, 'PUBLIC-worktree-probe-finished')).toBe(true);
+        expect(result).toContain('refs/heads/side');
+        expect(result).not.toContain('CANARY-git-metadata-secret');
+        expect(result).not.toContain('CANARY-git-ancestor-secret');
+        expect(fs.readFileSync(pointer, 'utf8')).toBe(
+          permissionMode === 'bypassPermissions' ? 'changed' : pointerBefore
+        );
+        for (const file of metadata)
+          expect(fs.readFileSync(file, 'utf8')).toBe(
+            permissionMode === 'bypassPermissions' ? 'changed' : 'original-metadata'
+          );
+        expect(fs.readFileSync(ordinary, 'utf8')).toBe('edited-ordinary');
+        expect(fs.readFileSync(temporary, 'utf8')).toBe('edited-temporary');
+      } finally {
+        env.mockRestore();
+        await transport.shutdown();
+        fs.rmSync(tmp, { recursive: true, force: true });
+      }
+    }
+  );
 
   it.for(['app-server', 'exec'] as const)(
     'protects fake secrets through %s despite a loaded legacy Full setting',

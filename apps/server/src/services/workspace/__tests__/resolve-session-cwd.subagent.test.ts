@@ -151,10 +151,16 @@ describe('the subagent invariant — one resolution per turn', () => {
     expect(files).toContain('services/workspace/index.ts');
 
     const importers: string[] = [];
-    for (const rel of files) {
-      if (CHAIN_ITSELF.has(rel)) continue;
-      const source = withoutTypeImports(await readFile(path.join(SERVER_SRC, rel), 'utf-8'));
-      if (RESOLVER_SPECIFIERS.some((specifier) => source.includes(specifier))) importers.push(rel);
+    // Bound concurrent reads while keeping the complete scan inside this test's budget.
+    for (let offset = 0; offset < files.length; offset += 64) {
+      await Promise.all(
+        files.slice(offset, offset + 64).map(async (rel) => {
+          if (CHAIN_ITSELF.has(rel)) return;
+          const source = withoutTypeImports(await readFile(path.join(SERVER_SRC, rel), 'utf-8'));
+          if (RESOLVER_SPECIFIERS.some((specifier) => source.includes(specifier)))
+            importers.push(rel);
+        })
+      );
     }
 
     expect(new Set(importers)).toEqual(ALLOWED);
