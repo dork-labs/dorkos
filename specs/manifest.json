@@ -2,6 +2,15 @@
   "version": 1,
   "specs": [
     {
+      "id": "261116-062114",
+      "slug": "shared-native-runtime-tools",
+      "title": "Give every runtime the shared DorkOS tool outcomes",
+      "created": "2026-11-16",
+      "status": "specified",
+      "project": "Codex, OpenCode and Doe work like Claude Code",
+      "linearIssue": "DOR-4481"
+    },
+    {
       "id": "261116-033650",
       "slug": "capability-mcp-full-schemas",
       "title": "Register capability MCP tools with full input schemas",

@@ -2,6 +2,22 @@
   "version": 1,
   "decisions": [
     {
+      "id": "261116-065134",
+      "slug": "runtime-tool-context-rides-existing-turn-ownership",
+      "title": "Runtime tool context rides the existing process-owned turn",
+      "status": "proposed",
+      "created": "2026-11-16",
+      "extractedFrom": "shared-native-runtime-tools",
+      "specSlug": "shared-native-runtime-tools",
+      "supersedes": null,
+      "affects": [
+        "apps/server/src/services/connectors/runtime-principal-port.ts",
+        "apps/server/src/services/connectors/principal/runtime-principal-service.ts",
+        "apps/server/src/services/runtimes/**",
+        "apps/server/src/services/core/capabilities/**"
+      ]
+    },
+    {
       "id": "261103-181907",
       "slug": "codex-file-protections-have-no-exec-fallback",
       "title": "Codex file protections have no exec fallback",
