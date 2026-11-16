@@ -34,7 +34,7 @@ Maps source code patterns to the guides that document them. Patterns use `grep -
 | `design-review.md` | The design review checklist: what passes a review or audit, numbered rules, measured floors (type, icons, targets, contrast, focus), phone tokens, severity mapped to the audit charter | `audits/ui.md\|.agents/skills/auditing-ui/\|packages/ui/src/touch-target.ts` |
 | `shared-ui.md` | Shared primitive ownership, portal themes, CSS imports, catalog, packed proof, release and upgrades | `packages/ui/\|apps/design-system/\|apps/client/src/layers/shared/ui/\|apps/client/src/space/components/Admission` |
 | `api-reference.md` | OpenAPI spec, Scalar docs UI, Zod schema patterns | `openapi-registry\|apps/server/src/routes/\|packages/shared/src/schemas` |
-| `configuration.md` | Config file system, upgrade floor, settings reference, Codex transport compatibility, CLI commands, precedence | `config-manager\|codex/transport\|config-migrations\|config-schema\|packages/cli/` |
+| `configuration.md` | Config file system, upgrade refusals, settings reference, Codex transport compatibility, CLI commands, precedence | `config-manager\|config/upgrade-floor\|codex/transport\|config-migrations\|config-schema\|packages/cli/` |
 | `interactive-tools.md` | Tool approval, AskUserQuestion, TaskList interactive flows | `interactive-handlers\|apps/client/src/layers/features/chat/` |
 | `keyboard-shortcuts.md` | Keyboard shortcuts and hotkeys | `use-interactive-shortcuts` |
 | `desktop-app-development.md` | Electron packaging model, server bundling, localhost serving, signing/notarization, the Gatekeeper launch-QA gotcha and the Vitest/better-sqlite3 poisoning gotcha | `apps/desktop/` |
