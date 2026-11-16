@@ -39,6 +39,11 @@ export interface LocalBrowserViewProps {
    * doesn't see (Stop). Reload and Enter navigate, which takes it on the server.
    */
   onTakeOver?: () => void;
+  /**
+   * The chrome's ⋯ menu, given the row's own Forward, which the menu offers
+   * while the row is too narrow to show it.
+   */
+  menu?: (forward: { canForward: boolean; onForward: () => void }) => ReactNode;
 }
 
 /**
@@ -66,6 +71,7 @@ export function LocalBrowserView({
   status,
   agentDriving = false,
   onTakeOver,
+  menu,
 }: LocalBrowserViewProps) {
   const transport = useTransport();
   const ownOrigins = useOwnOrigins();
@@ -176,6 +182,9 @@ export function LocalBrowserView({
     });
   };
 
+  const canForward = !busy && (tab?.canGoForward ?? false);
+  const onForward = () => step('forward');
+
   return (
     <div data-slot="local-browser-view" className="flex min-h-48 flex-1 flex-col">
       {tab && (
@@ -183,9 +192,9 @@ export function LocalBrowserView({
           // A failed load keeps its address in the bar, so Reload retries it (DOR-4430).
           url={page.failure?.url || tab.url}
           canBack={!busy && (tab.canGoBack ?? false)}
-          canForward={!busy && (tab.canGoForward ?? false)}
+          canForward={canForward}
           onBack={() => step('back')}
-          onForward={() => step('forward')}
+          onForward={onForward}
           onReload={() => void go(page.failure?.url || tab.url)}
           loading={page.loading}
           onStop={() => {
@@ -200,6 +209,7 @@ export function LocalBrowserView({
           notice={shownRetry?.notice ?? shownStepNotice}
           status={status}
           agentDriving={agentDriving}
+          menu={menu?.({ canForward, onForward })}
         />
       )}
       {embedded ? (
