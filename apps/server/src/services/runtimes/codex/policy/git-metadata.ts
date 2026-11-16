@@ -13,10 +13,12 @@ import {
  *
  * @param folders - The turn's working folder and additional writable folders.
  * @param roots - The shared protected-file roots; a read rule must not reopen their secrets.
+ * @param platform - Native sandbox strategy; Linux cannot mount these nested denials.
  */
 export function gitMetadataReadRules(
   folders: readonly string[],
-  roots: ProtectedPathRoots
+  roots: ProtectedPathRoots,
+  platform: NodeJS.Platform = process.platform
 ): Record<string, 'read' | 'deny'> {
   const rules: Record<string, 'read' | 'deny'> = {};
   try {
@@ -37,9 +39,14 @@ export function gitMetadataReadRules(
         for (const spelling of new Set([path.resolve(target), fs.realpathSync.native(target)])) {
           // Codex treats these as patterns, and does not support read-only wildcard entries.
           if (/[*?[\]{}]/.test(spelling)) throw new Error('Git metadata needs a literal path.');
-          rules[spelling.split(path.sep).join('/')] = isProtectedPath(spelling, 'read', roots)
-            ? 'deny'
-            : 'read';
+          const denied = isProtectedPath(spelling, 'read', roots);
+          // Bubblewrap applies this exact deny before re-binding a writable
+          // root. Under an already hidden ancestor, creating its mountpoint
+          // would fail on read-only tmpfs. Refuse before running any tools;
+          // dropping this deny would reopen secrets through that writable root.
+          if (denied && platform === 'linux')
+            throw new Error('Git metadata is inside a protected folder.');
+          rules[spelling.split(path.sep).join('/')] = denied ? 'deny' : 'read';
         }
       }
     }

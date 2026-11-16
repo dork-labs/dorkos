@@ -5,7 +5,7 @@ kind: hygiene
 status: proposed
 actor: agent
 gates: [wf.test.codex-sandbox, wf.codex-binary-macos.codex-binary-macos]
-prs: []
+prs: [3836]
 ratchet-release: []
 field-changes: []
 ---
@@ -29,3 +29,22 @@ performance experiment. No workflow, required check, timeout, retry, shard,
 permissions or quality floor changes. Revisit the added case if it is
 nondeterministic or no longer catches removal of the protection; preserve an
 equivalent real-binary negative and ordinary-write positive control.
+
+PR #3836's first Linux run passed 47 native cases and failed the two new
+worktree rows. The Full row planted Claude sign-in backups both in shared
+setup and in its local setup, triggering the existing DOR-3965 mount refusal
+before its Git controls ran. Its setup now uses the existing Full-only backup
+precondition; the dedicated backup-refusal rows remain unchanged. The Git
+status positive assertion now includes its scripted response in a failure,
+so the separate Accept edits failure can be diagnosed without weakening it.
+Linux proof remains outstanding until the actual native job passes.
+
+QA's sealed Ubuntu reproduction found the Accept edits cause: an exact metadata
+deny below an already denied ancestor is mounted before its writable root, so
+Bubblewrap fails before the scripted command runs. Linux now refuses this
+unsupported combination before tools can run, rather than dropping the denial.
+The ordinary-worktree rows retain their successful Git and ordinary-write
+controls; separate Linux rows assert refusal before process acquisition for a
+protected-ancestor writable grant. Seatbelt's working overlap control stays in
+the macOS rows. Direct rendering tests cover Linux refusal and macOS denial.
+These modeled and macOS results do not substitute for the actual Linux job.

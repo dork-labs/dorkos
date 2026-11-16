@@ -38,6 +38,10 @@ it('keeps native and recovery registrations outside the request that armed the r
       seen.push({ actor: currentAuditActor(), cron: store.getTask(id)?.cron ?? null });
       super.syncTask(id);
     }
+    override repairTask(id: string): void {
+      seen.push({ actor: currentAuditActor(), cron: store.getTask(id)?.cron ?? null });
+      super.repairTask(id);
+    }
   }
   const watcher = new TaskFileWatcher(
     store,

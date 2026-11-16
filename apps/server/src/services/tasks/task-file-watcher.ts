@@ -614,16 +614,28 @@ export class TaskFileWatcher implements TaskWatchHealth {
     );
     if (!active()) return;
     if (projects) {
+      const before = new Map(
+        this.store.fileSync
+          .projectCopiesOf(discovered.def.filePath)
+          .map((copy) => [copy.id, copy.updatedAt])
+      );
       const synced = syncProjectCopies(this.store, discovered.def, projects, options);
       for (const id of synced.removedIds) this.registrar.syncTask(id);
-      for (const copy of synced.copies) this.registrar.syncTask(copy.id);
+      for (const copy of synced.copies) {
+        if (before.get(copy.id) !== copy.updatedAt) this.registrar.syncTask(copy.id);
+        else this.registrar.repairTask(copy.id);
+      }
       return;
     }
     for (const id of dropProjectCopies(this.store, discovered.def.filePath)) {
       this.registrar.syncTask(id);
     }
+    const before = this.store.fileSync.getByFilePath(discovered.def.filePath);
     const task = this.store.fileSync.upsertFromFile(discovered.def, root.agentId, options);
-    this.registrar.syncTask(task.id);
+    // Directory cues revisit unchanged rows too. Preserve their running clock,
+    // while retaining the reconciler's repair of a missing or unwanted job.
+    if (before === null || before.updatedAt !== task.updatedAt) this.registrar.syncTask(task.id);
+    else this.registrar.repairTask(task.id);
     // A file that just stopped being a package's gets the switch the row kept
     // for it. That write comes back through here, finds the file agreeing, and
     // records the release; a write that fails is retried by the next sync.

@@ -97,6 +97,8 @@ describe('TaskFileWatcher (real chokidar)', () => {
   });
 
   afterEach(async () => {
+    // A failed native wait must not leave a constructor spy in the next test.
+    vi.restoreAllMocks();
     await watcher.stopAll();
     await rm(dorkHome, { recursive: true, force: true });
   });
@@ -208,7 +210,11 @@ describe('TaskFileWatcher (real chokidar)', () => {
       await mkdir(normalDir);
       const file = path.join(normalDir, 'SKILL.md');
       await writeFile(file, skillFile('real-task'));
-      await waitUntil(() => store.fileSync.getByFilePath(file) !== null, 'the lost live task');
+      await waitUntil(
+        () => store.fileSync.getByFilePath(file) !== null,
+        'the lost live task',
+        3500
+      );
       await holdsFor(() => store.fileSync.getByFilePath(sibling) === null, 'the rejected sibling');
       expect(store.getTasks().map((task) => task.filePath)).toEqual([file]);
       const recovered = store.fileSync.getByFilePath(file)!;
@@ -216,10 +222,59 @@ describe('TaskFileWatcher (real chokidar)', () => {
       expect(scheduler.hasJob(recovered.id)).toBe(false);
       expect(watcher.rootsWithoutLiveWatch(), errorLogs().join('\n')).toEqual([]);
     } finally {
-      await watcher.stopAll();
-      restoreEmit();
-      watch.mockRestore();
+      try {
+        await watcher.stopAll();
+      } finally {
+        restoreEmit();
+        watch.mockRestore();
+      }
     }
+  });
+
+  it('keeps an unchanged live job through directory rescans and repairs a missing job', async () => {
+    const file = path.join(skillsDir, 'clock', 'SKILL.md');
+    await mkdir(path.dirname(file));
+    await writeFile(file, skillFile('clock'));
+    watcher.watch(skillsRoot(skillsDir, 'global'));
+    await watcher.ready();
+    const task = store.fileSync.getByFilePath(file)!;
+    // A person approves the discovered task; rescanning its unchanged file
+    // must preserve that live clock rather than restarting it every second.
+    store.updateTask(task.id, { status: 'active' });
+    new TaskRegistrar({ store, scheduler }).syncTask(task.id);
+    expect(scheduler.hasJob(task.id)).toBe(true);
+    const reads = vi.spyOn(store.fileSync, 'upsertFromFile');
+    const cue = async (suffix: string) => {
+      reads.mockClear();
+      await mkdir(path.join(skillsDir, `clock.dorkos-bak-${suffix}`));
+      await waitUntil(() => reads.mock.calls.length > 0, 'a directory-cue rescan', 2000);
+    };
+
+    // The first read after approval clears the old discovery explanation.
+    // Settle that actual row change before asserting an unchanged-row scan.
+    await cue('settle');
+    const approved = store.getTask(task.id);
+    const registrations = scheduler.registered.length;
+    await cue('one');
+    expect(store.getTask(task.id)).toEqual(approved);
+    await holdsFor(() => scheduler.registered.length === registrations, 'the original clock');
+    expect(store.getTask(task.id)?.status).toBe('active');
+
+    scheduler.jobs.delete(task.id);
+    await cue('two');
+    await waitUntil(() => scheduler.hasJob(task.id), 'the missing clock to be repaired', 1000);
+    expect(scheduler.registered).toHaveLength(registrations + 1);
+
+    await writeFile(file, skillFile('clock').replace("'0 9 * * *'", "'0 10 * * *'"));
+    await waitUntil(
+      () => store.getTask(task.id)?.cron === '0 10 * * *' && !scheduler.hasJob(task.id),
+      'the changed task to await approval',
+      1000
+    );
+    store.updateTask(task.id, { status: 'active' });
+    new TaskRegistrar({ store, scheduler }).syncTask(task.id);
+    expect(scheduler.cronFor(task.id)).toBe('0 10 * * *');
+    expect(scheduler.registered).toHaveLength(registrations + 2);
   });
 
   it('cancels a removed root’s queued scan and permits a fresh watch of that path', async () => {

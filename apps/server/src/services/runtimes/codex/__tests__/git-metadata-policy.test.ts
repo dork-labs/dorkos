@@ -5,6 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { minimalGitEnv } from '@dorkos/shared/safe-git';
 import { codexPermissionProfile, codexProtectedConfig } from '../policy/protected-profile.js';
+import { gitMetadataReadRules } from '../policy/git-metadata.js';
 
 const key = (file: string) => file.split(path.sep).join('/');
 let root: string;
@@ -108,9 +109,36 @@ describe('Codex git metadata below Full (DOR-4485)', () => {
     const grant = path.join(secret, 'repository');
     fs.mkdirSync(cwd);
     fs.mkdirSync(path.join(grant, '.git'), { recursive: true });
-    const files = render(cwd, 'acceptEdits', [grant]);
-    expect(files[key(secret)]).toBe('deny');
-    expect(files[key(path.join(grant, '.git'))]).toBe('deny');
+    if (process.platform === 'linux') {
+      expect(() => render(cwd, 'acceptEdits', [grant])).toThrow(/Choose another folder/);
+    } else {
+      const files = render(cwd, 'acceptEdits', [grant]);
+      expect(files[key(secret)]).toBe('deny');
+      expect(files[key(path.join(grant, '.git'))]).toBe('deny');
+    }
+  });
+
+  it('refuses Linux nested-denial mount conflicts without dropping the secret denial', () => {
+    const cwd = path.join(root, 'desk');
+    const home = path.join(root, 'home');
+    const grant = path.join(home, '.ssh', 'repository');
+    fs.mkdirSync(path.join(cwd, '.git'), { recursive: true });
+    fs.mkdirSync(path.join(grant, '.git'), { recursive: true });
+    const roots = {
+      cwd,
+      home,
+      data: path.join(root, 'data'),
+      accounts: [],
+      agentFolders: [cwd],
+      agentHomes: [],
+    };
+    expect(gitMetadataReadRules([cwd], roots, 'linux')[key(path.join(cwd, '.git'))]).toBe('read');
+    expect(() => gitMetadataReadRules([cwd, grant], roots, 'linux')).toThrow(
+      /Choose another folder/
+    );
+    expect(gitMetadataReadRules([cwd, grant], roots, 'darwin')[key(path.join(grant, '.git'))]).toBe(
+      'deny'
+    );
   });
 
   it('refuses an unreadable git pointer instead of quietly granting its folder writes', () => {
@@ -118,6 +146,20 @@ describe('Codex git metadata below Full (DOR-4485)', () => {
     fs.mkdirSync(cwd);
     fs.writeFileSync(path.join(cwd, '.git'), 'not a git pointer');
     expect(() => render(cwd)).toThrow(/git/i);
+  });
+
+  it.each([
+    '[client]',
+    '{client}',
+    // Windows cannot create names containing these characters.
+    ...(process.platform === 'win32' ? [] : ['client*', 'client?']),
+  ])('refuses metadata paths that Codex would interpret as patterns: %s', (name) => {
+    const cwd = path.join(root, name);
+    fs.mkdirSync(path.join(cwd, '.git'), { recursive: true });
+    for (const mode of ['default', 'acceptEdits', 'bypassPermissions']) {
+      // Full still needs literal metadata roots for the shared secret scan.
+      expect(() => render(cwd, mode)).toThrow(/Choose another folder/);
+    }
   });
 
   it('protects a git pointer target without a worktree common-directory marker', () => {

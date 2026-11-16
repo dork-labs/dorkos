@@ -114,6 +114,7 @@ const STARTS_AT_FULL = [
   'never wakes for a command that never ends, and Stop terminates it without a model turn',
   'stops a never-ending command once at the ceiling, and still wakes no model turn',
   'starts a cloned repo’s own MCP server only at Full',
+  'keeps real worktree git metadata protected at bypassPermissions when temporary roots overlap',
   // The refusal rows plant their one backup themselves.
   'refuses Full while a Claude Code backup sits in',
 ];
@@ -1740,6 +1741,39 @@ nativeSuite('the app-server transport against the real Codex binary', NATIVE_LIM
     });
   });
 
+  it.skipIf(process.platform !== 'linux').each(['acceptEdits', 'bypassPermissions'] as const)(
+    'refuses a writable Git repository inside a protected folder before acquisition at %s',
+    async (permissionMode) => {
+      const turn = request('protected-git-grant', undefined, {
+        settings: { permissionMode, model: 'fake-model' },
+      });
+      const policy = turn.tools.filePolicy!;
+      const repo = path.join(policy.roots.home, '.ssh', 'private-repository');
+      fs.mkdirSync(repo, { recursive: true });
+      execFileSync('git', ['-c', 'core.hooksPath=/dev/null', '-C', repo, 'init', '-q'], {
+        env: minimalGitEnv(),
+        stdio: 'pipe',
+      });
+      const secret = path.join(repo, '.git', 'ancestor-secret');
+      fs.writeFileSync(secret, 'CANARY-protected-git-grant');
+      policy.writable = [repo];
+      const count = spawned.length;
+      const responses = seen.responses;
+      const transport = makeTransport();
+      const events: StreamEvent[] = [];
+      try {
+        for await (const event of transport.runTurn(turn)) events.push(event);
+        expect(events.map((event) => event.type)).toEqual(['error', 'done']);
+        expect(JSON.stringify(events)).toContain('Choose another folder');
+        expect(spawned).toHaveLength(count);
+        expect(seen.responses).toBe(responses);
+        expect(fs.readFileSync(secret, 'utf8')).toBe('CANARY-protected-git-grant');
+      } finally {
+        await transport.shutdown();
+      }
+    }
+  );
+
   it.skipIf(process.platform === 'win32').for(['acceptEdits', 'bypassPermissions'] as const)(
     'keeps real worktree git metadata protected at %s when temporary roots overlap',
     { timeout: 180_000 },
@@ -1787,7 +1821,11 @@ nativeSuite('the app-server transport against the real Codex binary', NATIVE_LIM
       policy.roots.cwd = cwd;
       policy.roots.agentFolders = [cwd];
       policy.writable = [tree];
-      completeHostFixture(policy, [project, cwd]);
+      completeHostFixture(policy, [project, cwd], {
+        // The separate DOR-3965 rows assert Linux's backup refusal. This row
+        // must start at Full to prove its intentional Git metadata writes.
+        withoutClaudeBackups: permissionMode === 'bypassPermissions',
+      });
       const env = vi.spyOn(runtimeEnv, 'runtimeEnvironment').mockImplementation(() => ({
         PATH: process.env.PATH ?? '',
         HOME: policy.roots.home,
@@ -1803,7 +1841,9 @@ nativeSuite('the app-server transport against the real Codex binary', NATIVE_LIM
       const secretRepo = path.join(policy.roots.home, '.ssh', 'private-repository');
       fs.mkdirSync(secretRepo, { recursive: true });
       git('-C', secretRepo, 'init', '-q');
-      policy.writable = [...policy.writable, secretRepo];
+      // Seatbelt can express this overlap; Linux refuses it in the dedicated
+      // pre-acquisition rows above rather than failing a bwrap mount mid-turn.
+      if (process.platform !== 'linux') policy.writable = [...policy.writable, secretRepo];
       const metadataAlias = path.join(root, 'metadata-alias');
       fs.symlinkSync(path.join(project, '.git'), metadataAlias, 'dir');
       const aliasSecret = path.join(metadataAlias, '.credentials-dor4485');
@@ -1839,7 +1879,7 @@ nativeSuite('the app-server transport against the real Codex binary', NATIVE_LIM
         const events: StreamEvent[] = [];
         for await (const event of transport.runTurn(turn)) events.push(event);
         expect(events.filter((event) => event.type === 'error')).toEqual([]);
-        expect(shellControlReturned(result, 'PUBLIC-git-status')).toBe(true);
+        expect(shellControlReturned(result, 'PUBLIC-git-status'), result).toBe(true);
         expect(shellControlReturned(result, 'PUBLIC-worktree-probe-finished')).toBe(true);
         expect(result).toContain('refs/heads/side');
         expect(result).not.toContain('CANARY-git-metadata-secret');
