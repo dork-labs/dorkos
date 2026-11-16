@@ -24,6 +24,7 @@ function sharedWith(sessionId: string) {
     preparation: null,
     signIn: null,
     handoff: null,
+    takenOver: false,
   };
 }
 

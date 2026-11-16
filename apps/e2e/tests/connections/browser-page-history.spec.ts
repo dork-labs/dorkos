@@ -152,6 +152,7 @@ test.describe('Agent browser Back and Forward in the panel', () => {
       preparation: null,
       signIn: null,
       handoff: null,
+      takenOver: false,
     });
     let current = state('https://northwind.example/fares/lisbon', true, false);
     const steps: string[] = [];
