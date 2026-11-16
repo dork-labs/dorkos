@@ -646,12 +646,18 @@ describe('a person’s own browser controls during a handoff', () => {
     await handover.handBack(handoffId);
     await handover.stepHistory('back');
     expect(browser.stepHistory).toHaveBeenCalledExactlyOnceWith('back');
+    // Like the address bar, Back took the page from the agent it was handed back to.
+    await expect(handover.requireAgentMayUse('chat-1')).rejects.toMatchObject({
+      code: 'taken_by_person',
+    });
   });
 
   it('takes a new address and any tab once the handoff has ended, or with none open', async () => {
     const { handover, browser } = setup();
     await handover.selectTab('t2');
     await handover.navigate('https://other.example/');
+    // Navigating took the page from the agent (DOR-4428); Resume gives it back.
+    await handover.resume();
     const { handoffId } = await handover.ask('chat-1', 'wall');
     await handover.handBack(handoffId);
     await handover.selectTab('t2');
@@ -896,5 +902,126 @@ describe('a handoff waiting on a profile (DOR-3887)', () => {
     await handover.handBack(handoffId);
     await expect(removal.delete(id, profiles)).resolves.toBeUndefined();
     expect(profiles.get(id)).toBeUndefined();
+  });
+});
+
+describe('a person takes the page (DOR-4428)', () => {
+  it('pauses the sharing chat and refuses its reads until a person resumes', async () => {
+    const { handover, browser } = setup();
+    const changed = vi.fn();
+    handover.useChangeListener(changed);
+    const taken = await handover.takeOver();
+    expect(taken.takenOver).toBe(true);
+    expect(browser.pause).toHaveBeenCalledOnce();
+    expect(changed).toHaveBeenCalled();
+    await expect(handover.requireAgentMayUse('chat-1')).rejects.toMatchObject({
+      code: 'taken_by_person',
+    });
+    // The agent can't hand the page back to itself by asking for a person.
+    await expect(handover.ask('chat-1', 'wall')).rejects.toMatchObject({
+      code: 'taken_by_person',
+    });
+    const resumed = await handover.resume();
+    expect(resumed.takenOver).toBe(false);
+    expect(browser.resume).toHaveBeenCalledOnce();
+    await expect(handover.requireAgentMayUse('chat-1')).resolves.toBeUndefined();
+  });
+
+  it('refuses the agent from the moment the take-over starts, before the pause lands', async () => {
+    const { handover, browser } = setup();
+    let release!: () => void;
+    browser.pause.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          release = () => resolve({ ...connected(), paused: true });
+        })
+    );
+    const taking = handover.takeOver();
+    await vi.waitFor(() => expect(browser.pause).toHaveBeenCalled());
+    await expect(handover.requireAgentMayUse('chat-1')).rejects.toMatchObject({
+      code: 'taken_by_person',
+    });
+    release();
+    await taking;
+  });
+
+  it('takes nothing when an agent’s handoff starts while the take-over reads the browser', async () => {
+    const { handover, browser } = setup();
+    let release!: () => void;
+    browser.state.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          release = () => resolve(connected());
+        })
+    );
+    const taking = handover.takeOver();
+    await vi.waitFor(() => expect(browser.state).toHaveBeenCalled());
+    // The agent asks while the take-over is still reading.
+    const asking = handover.ask('chat-1', 'password');
+    release();
+    await asking;
+    expect((await taking).takenOver).toBe(false);
+  });
+
+  it('takes the page first when the person navigates, in the same call', async () => {
+    const { handover, browser } = setup();
+    const next = await handover.navigate('https://northwind.example/pricing');
+    expect(next.takenOver).toBe(true);
+    expect(browser.pause.mock.invocationCallOrder[0]).toBeLessThan(
+      browser.navigate.mock.invocationCallOrder[0]!
+    );
+    await expect(handover.requireAgentMayUse('chat-1')).rejects.toMatchObject({
+      code: 'taken_by_person',
+    });
+  });
+
+  it.each(['back', 'forward'] as const)(
+    'takes the page before %s moves it, and shuts the agent out',
+    async (direction) => {
+      const { handover, browser } = setup();
+      const next = await handover.stepHistory(direction);
+      expect(next.takenOver).toBe(true);
+      // The take-over (its pause) lands before the page moves.
+      expect(browser.pause.mock.invocationCallOrder[0]).toBeLessThan(
+        browser.stepHistory.mock.invocationCallOrder[0]!
+      );
+      await expect(handover.requireAgentMayUse('chat-1')).rejects.toMatchObject({
+        code: 'taken_by_person',
+      });
+    }
+  );
+
+  it('keeps the agent shut out when Back itself is refused', async () => {
+    const { handover, browser } = setup();
+    browser.stepHistory.mockRejectedValueOnce(new Error('no page to go back to'));
+    await expect(handover.stepHistory('back')).rejects.toThrow();
+    await expect(handover.requireAgentMayUse('chat-1')).rejects.toMatchObject({
+      code: 'taken_by_person',
+    });
+    expect((await handover.state()).takenOver).toBe(true);
+  });
+
+  it('has nothing to take when no chat shares the page', async () => {
+    const { handover, browser, set } = setup();
+    set({ ...connected(), sessionId: null });
+    expect((await handover.takeOver()).takenOver).toBe(false);
+    expect((await handover.navigate('https://northwind.example')).takenOver).toBe(false);
+    expect(browser.pause).not.toHaveBeenCalled();
+  });
+
+  it('leaves an agent’s own handoff alone: the person already has the page', async () => {
+    const { handover } = setup();
+    await handover.ask('chat-1', 'password');
+    expect((await handover.takeOver()).takenOver).toBe(false);
+  });
+
+  it.each(['disconnect', 'open'] as const)('gives the page back on %s', async (how) => {
+    const { handover } = setup();
+    await handover.takeOver();
+    const next =
+      how === 'disconnect'
+        ? await handover.disconnect()
+        : await handover.open({ mode: 'embedded', sessionId: 'chat-1' });
+    expect(next.takenOver).toBe(false);
   });
 });

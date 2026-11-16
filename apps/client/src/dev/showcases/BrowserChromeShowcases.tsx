@@ -1,9 +1,7 @@
 import { useState } from 'react';
-import { ExternalLink } from 'lucide-react';
 import {
   BrowserChrome,
   BrowserMenu,
-  ChromeButton,
   type BrowserChromeProps,
   type BrowserMenuOtherChat,
   type BrowserMenuPage,
@@ -90,13 +88,7 @@ export function BrowserChromeShowcases() {
     >
       <ShowcaseLabel>Wide: everything shows (640px)</ShowcaseLabel>
       <ShowcaseDemo>
-        <ChromeDemo
-          width={640}
-          trailing={
-            <ChromeButton label="Open in system browser" icon={ExternalLink} onClick={() => {}} />
-          }
-          menu={<DemoMenu />}
-        />
+        <ChromeDemo width={640} menu={<DemoMenu />} />
       </ShowcaseDemo>
       <ShowcaseLabel>Narrow: host only, Forward moves into ⋯ (400px)</ShowcaseLabel>
       <ShowcaseDemo>

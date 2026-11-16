@@ -19,6 +19,8 @@ const transport = vi.hoisted(() => ({
   disconnectLocalBrowser: vi.fn(),
   selectLocalBrowserTab: vi.fn(),
   navigateLocalBrowser: vi.fn(),
+  takeOverLocalBrowser: vi.fn(),
+  handBackLocalBrowser: vi.fn(),
   stepLocalBrowserHistory: vi.fn(),
   interruptSession: vi.fn(),
   getSession: vi.fn(),
@@ -112,6 +114,20 @@ async function typeAddress(typed: string): Promise<void> {
   const field = screen.getByRole('textbox', { name: 'Address' });
   fireEvent.change(field, { target: { value: typed } });
   fireEvent.submit(field.closest('form') as HTMLFormElement);
+}
+
+/** The chrome's status pill, once the browser was read. */
+async function findPill(): Promise<HTMLElement> {
+  await waitFor(() =>
+    expect(document.querySelector('[data-slot="browser-status-pill"]')).not.toBeNull()
+  );
+  return document.querySelector<HTMLElement>('[data-slot="browser-status-pill"]')!;
+}
+
+/** Open the status pill's popover and press one of its buttons. */
+async function pressInPill(name: string): Promise<void> {
+  fireEvent.click(await findPill());
+  fireEvent.click(await screen.findByRole('button', { name }));
 }
 
 /** Open the browser's ⋯ menu from the keyboard, as Radix expects in jsdom. */
@@ -460,36 +476,53 @@ describe('LocalBrowserPanel', () => {
     };
     // In the Mac app the agent's page stays here, paused, while the person has it.
     const handedOver = { ...connected, mode: 'embedded' as const, paused: true };
-    const strip = () =>
-      screen.queryByText(
-        (_, element) =>
-          element?.getAttribute('data-slot') === 'your-turn-strip' &&
-          element.textContent === 'Your turn: Atlas can’t see or use this window.'
-      );
-    it('puts the Your turn strip above the page, with the card’s words', async () => {
+    it('says Your turn in the chrome’s pill, naming the site DorkOS read (DOR-4428)', async () => {
       transport.getLocalBrowserState.mockResolvedValue({
         ...handedOver,
         handoff: here,
         signIn: null,
       });
       mount();
-      await waitFor(() => expect(strip()).toBeInTheDocument());
-      expect(within(strip()!).getByText('Your turn:').tagName).toBe('STRONG');
-      // A hand leads it, hidden from screen readers so the sentence reads alone.
-      expect(strip()!.querySelector('svg[aria-hidden="true"]')).not.toBeNull();
+      const pill = await findPill();
+      expect(pill).toHaveTextContent('Your turn');
+      expect(pill).toHaveAccessibleName('Atlas needs you to finish a step on northwind.example.');
+      // The stacked strip is gone: the pill is the one place that says it.
+      expect(document.querySelector('[data-slot="your-turn-strip"]')).toBeNull();
+      expect(
+        screen.getByText('Waiting for you', { selector: '[role="status"]' })
+      ).toBeInTheDocument();
+    });
+    it('hands the page back from the pill, then says Handed back', async () => {
+      transport.getLocalBrowserState.mockResolvedValue({ ...handedOver, handoff: here });
+      transport.handBackLocalBrowser.mockResolvedValue({
+        ...handedOver,
+        paused: false,
+        handoff: { ...here, outcome: 'handed-back' },
+        signIn: null,
+        takenOver: false,
+      });
+      mount();
+      await pressInPill('Hand back to Atlas');
+      await waitFor(() => expect(transport.handBackLocalBrowser).toHaveBeenCalledWith('h1'));
+      await waitFor(async () => expect(await findPill()).toHaveTextContent('Handed back'));
     });
     it.each([
       ['the handoff ended', { ...handedOver, handoff: { ...here, outcome: 'handed-back' } }],
-      ['another chat’s agent asked', { ...handedOver, handoff: { ...here, sessionId: 'x' } }],
       ['nobody asked', { ...handedOver, paused: false, handoff: null }],
-    ])('shows no strip when %s', async (_case, state) => {
+    ])('shows no Your turn when %s', async (_case, state) => {
       transport.getLocalBrowserState.mockResolvedValue({ ...state, signIn: null });
       mount();
-      // The browser was read: the header names its state.
-      await waitFor(() =>
-        expect(screen.getAllByRole('status')[0]).toHaveTextContent(/Agent paused|Connected/)
-      );
-      expect(document.querySelector('[data-slot="your-turn-strip"]')).toBeNull();
+      expect((await findPill()).dataset.stateKind).not.toBe('your-turn');
+    });
+    it('shows no Your turn when another chat’s agent asked', async () => {
+      transport.getLocalBrowserState.mockResolvedValue({
+        ...handedOver,
+        handoff: { ...here, sessionId: 'x' },
+        signIn: null,
+      });
+      mount();
+      expect(await screen.findByText(/is waiting for you to finish signing in/)).toBeVisible();
+      expect(document.querySelector('[data-slot="browser-status-pill"]')).toBeNull();
     });
   });
   it('shows the server’s signing_in refusal, not a reconnect hint (DOR-4325)', async () => {
@@ -750,11 +783,12 @@ describe('LocalBrowserPanel', () => {
     );
     expect(screen.queryByRole('progressbar')).not.toBeInTheDocument();
   });
-  it('explains embedded extra windows as human-only', async () => {
+  it('explains extra windows as human-only, in the pill’s popover', async () => {
     transport.getLocalBrowserState.mockResolvedValue({ ...connected, mode: 'embedded' });
     mount();
+    fireEvent.click(await findPill());
     expect(
-      await screen.findByText('Extra windows are for you. Your agent stays on this page.')
+      await screen.findByText('Kai stays on this page. Other windows are yours.')
     ).toBeInTheDocument();
   });
   it('freezes browser choices until cancellation completes', async () => {
@@ -983,7 +1017,7 @@ describe('LocalBrowserPanel', () => {
     expect(view.client.getQueryData(['local-browser', 'state'])).toEqual(disconnected);
     await waitFor(() => expect(transport.openLocalBrowser).toHaveBeenCalledTimes(2));
     await act(async () => second({ ...connected, connectionId: 'new-opening' }));
-    expect(await screen.findByRole('button', { name: 'Pause agent' })).toBeEnabled();
+    expect(await findPill()).toHaveAccessibleName('Kai is using this page.');
     expect(view.client.getQueryData(['local-browser', 'state'])).toMatchObject({
       connectionId: 'new-opening',
     });
@@ -1030,16 +1064,19 @@ describe('LocalBrowserPanel', () => {
     expect(screen.queryByText('raw browser focus error')).not.toBeInTheDocument();
     expect(transport.selectLocalBrowserTab).toHaveBeenCalledTimes(1);
   });
-  it('pauses agent actions while leaving human controls available', async () => {
+  it('pauses agent actions from the pill while leaving human controls available', async () => {
     transport.getLocalBrowserState.mockResolvedValue(connected);
     transport.pauseLocalBrowser.mockResolvedValue({ ...connected, paused: true });
     mount();
-    fireEvent.click(await screen.findByRole('button', { name: 'Pause agent' }));
+    await pressInPill('Pause agent');
+    await waitFor(async () => expect(await findPill()).toHaveTextContent('Paused'));
+    fireEvent.click(await findPill());
     expect(await screen.findByRole('button', { name: 'Resume agent' })).toBeEnabled();
-    expect(screen.getByText('Your mouse and keyboard still work.')).toBeInTheDocument();
     expect(
-      screen.getByText('Pause stops new actions. An action already started may finish.')
+      screen.getByText('Kai won’t start anything new. It can still see this page.')
     ).toBeInTheDocument();
+    expect(screen.getByText('An action already started may finish.')).toBeInTheDocument();
+    fireEvent.keyDown(document.activeElement ?? document.body, { key: 'Escape' });
     // The person can still go somewhere while the agent is paused.
     transport.navigateLocalBrowser.mockResolvedValue({ ...connected, paused: true });
     await typeAddress('https://new.example.com');
@@ -1052,12 +1089,85 @@ describe('LocalBrowserPanel', () => {
     let finish: (state: typeof connected) => void = () => {};
     transport.pauseLocalBrowser.mockReturnValue(new Promise((resolve) => (finish = resolve)));
     mount();
-    fireEvent.click(await screen.findByRole('button', { name: 'Pause agent' }));
+    await pressInPill('Pause agent');
     await typeAddress('https://new.example.com');
     expect(screen.getByRole('textbox', { name: 'Address' })).toHaveValue('https://new.example.com');
     expect(screen.getByRole('button', { name: 'Reload' })).toBeDisabled();
     expect(transport.navigateLocalBrowser).not.toHaveBeenCalled();
     await act(async () => finish({ ...connected, paused: true }));
+  });
+  describe('using the chrome takes the page (DOR-4428)', () => {
+    const takenLine = 'You have the page. Kai can’t see it until you hand it back.';
+    it.each([
+      ['Reload', false],
+      ['Reload', true],
+      ['Enter', false],
+      ['Enter', true],
+    ] as const)(
+      '%s while the agent drives (paused: %s) takes it in one step',
+      async (how, paused) => {
+        transport.getLocalBrowserState.mockResolvedValue({ ...connected, paused });
+        transport.navigateLocalBrowser.mockResolvedValue({
+          ...connected,
+          paused: true,
+          handoff: null,
+          signIn: null,
+          takenOver: true,
+        });
+        mount();
+        expect((await findPill()).dataset.stateKind).toBe(paused ? 'paused' : 'driving');
+        if (how === 'Reload') fireEvent.click(screen.getByRole('button', { name: 'Reload' }));
+        else await typeAddress('https://new.example.com');
+        // One step: the action itself, with no confirm in between.
+        await waitFor(() => expect(transport.navigateLocalBrowser).toHaveBeenCalledOnce());
+        expect(screen.queryByRole('alertdialog')).toBeNull();
+        expect(screen.queryByRole('dialog')).toBeNull();
+        const pill = await findPill();
+        await waitFor(() => expect(pill.dataset.stateKind).toBe('you'));
+        expect(screen.getByText(takenLine, { selector: '[role="status"]' })).toBeInTheDocument();
+        // Announced, not focused: focus stays where the person was.
+        expect(pill).not.toHaveFocus();
+      }
+    );
+    it('takes the page from the pill, and hands it back with Resume', async () => {
+      transport.getLocalBrowserState.mockResolvedValue(connected);
+      transport.takeOverLocalBrowser.mockResolvedValue({
+        ...connected,
+        paused: true,
+        handoff: null,
+        signIn: null,
+        takenOver: true,
+      });
+      transport.resumeLocalBrowser.mockResolvedValue({
+        ...connected,
+        handoff: null,
+        signIn: null,
+        takenOver: false,
+      });
+      mount();
+      await pressInPill('Take over');
+      await waitFor(async () => expect((await findPill()).dataset.stateKind).toBe('you'));
+      await pressInPill('Hand back to Kai');
+      await waitFor(() => expect(transport.resumeLocalBrowser).toHaveBeenCalledOnce());
+      await waitFor(async () => expect(await findPill()).toHaveTextContent('Handed back'));
+    });
+    it('keeps the page taken when an answer says nothing about it', async () => {
+      transport.getLocalBrowserState.mockResolvedValue({
+        ...connected,
+        paused: true,
+        handoff: null,
+        signIn: null,
+        takenOver: true,
+      });
+      // A plain browser answer, as Pause and tab choice give, carries no takenOver.
+      transport.navigateLocalBrowser.mockResolvedValue({ ...connected, paused: true });
+      mount();
+      expect((await findPill()).dataset.stateKind).toBe('you');
+      fireEvent.click(screen.getByRole('button', { name: 'Reload' }));
+      await waitFor(() => expect(transport.navigateLocalBrowser).toHaveBeenCalled());
+      await waitFor(() => expect(screen.getByRole('button', { name: 'Reload' })).toBeEnabled());
+      expect((await findPill()).dataset.stateKind).toBe('you');
+    });
   });
   it('drops a refusal when the person picks another tab', async () => {
     transport.getLocalBrowserState.mockResolvedValue(connected);
@@ -1514,7 +1624,8 @@ describe('LocalBrowserPanel', () => {
       transport.getLocalBrowserState.mockResolvedValue(connected);
       transport.pauseLocalBrowser.mockReturnValue(new Promise(() => {}));
       mount();
-      fireEvent.click(await screen.findByRole('button', { name: 'Pause agent' }));
+      // Pause is in the status pill (DOR-4428); its popover closes as Pause runs.
+      await pressInPill('Pause agent');
       const menu = await openMenu();
       for (const name of ['Forget saved sign-ins…', 'Close browser'])
         expect(within(menu).getByRole('menuitem', { name })).toHaveAttribute('data-disabled');

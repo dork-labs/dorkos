@@ -37,6 +37,15 @@ export interface LocalBrowserViewProps {
   action: (run: () => Promise<LocalBrowserState>) => Promise<boolean>;
   /** Open the browser again after the page could not be drawn. */
   onReconnect: () => void;
+  /** The status pill, in the chrome's pill place. */
+  status?: ReactNode;
+  /** Whether an agent drives the page now, which turns the seam orange. */
+  agentDriving?: boolean;
+  /**
+   * Take the page from an agent that has it, before a chrome action the server
+   * doesn't see (Stop). Reload and Enter navigate, which takes it on the server.
+   */
+  onTakeOver?: () => void;
   /**
    * The chrome's ⋯ menu, given the row's own Forward, which the menu offers
    * while the row is too narrow to show it.
@@ -66,6 +75,9 @@ export function LocalBrowserView({
   busy,
   action,
   onReconnect,
+  status,
+  agentDriving = false,
+  onTakeOver,
   menu,
 }: LocalBrowserViewProps) {
   const transport = useTransport();
@@ -192,12 +204,18 @@ export function LocalBrowserView({
           onForward={onForward}
           onReload={() => void go(page.failure?.url || tab.url)}
           loading={page.loading}
-          onStop={() => page.run('stop')}
+          onStop={() => {
+            // Stopping is using the page, so it takes it from the agent too (DOR-4428).
+            page.run('stop');
+            onTakeOver?.();
+          }}
           onSubmit={(text) => submit(tab.id, tab.url, text)}
           busy={busy}
           tooltipStill={embedded ? tooltipStill : undefined}
           retry={shownRetry}
           notice={shownRetry?.notice ?? shownStepNotice}
+          status={status}
+          agentDriving={agentDriving}
           menu={menu?.({ canForward, onForward })}
         />
       )}

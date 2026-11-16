@@ -210,6 +210,7 @@ const REFUSED: readonly (readonly [reason: string, routes: readonly string[]])[]
       'POST /api/local-browser/navigate',
       'POST /api/local-browser/open',
       'POST /api/local-browser/pause',
+      'POST /api/local-browser/take-over',
       'POST /api/local-browser/resume',
       'POST /api/local-browser/tabs/:id/select',
       'POST /api/local-browser/profiles',
