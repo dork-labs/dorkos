@@ -178,7 +178,8 @@ export const serverEnvSchema = z.object({
   // caps and its turns are built either way; nothing reaches them while this is off.
   DORKOS_TODOS_ENABLED: boolFlag,
   // DOR-3858: turns from someone other than the owner on Telegram, Slack or in a room carry the
-  // outsider mark, so raises, grants, connector sends and destructive actions ask a person. The
+  // outsider mark, so raises, grants, connector sends and destructive actions ask a person or are
+  // refused. The
   // turn keeps its level. On by default since DOR-4453; 'false' turns it off. The owner's own
   // Telegram and Slack accounts belong on each connection's approver allowlist, or the owner's
   // phone is marked too (a room always marks it until DOR-4318). Text an
