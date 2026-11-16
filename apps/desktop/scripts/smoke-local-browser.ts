@@ -1,6 +1,6 @@
 import { execFile } from 'node:child_process';
 import { createRequire } from 'node:module';
-import { mkdtemp, mkdir, readdir, rm } from 'node:fs/promises';
+import { mkdtemp, mkdir, readdir, rm, stat } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { promisify } from 'node:util';
@@ -12,13 +12,20 @@ const witness = (file: string) =>
 const client = fileURLToPath(new URL('../../client', import.meta.url));
 const desktop = fileURLToPath(new URL('..', import.meta.url));
 
-/** The app's own built stylesheet, from the renderer the job built before this ran. */
+/**
+ * The app's own built stylesheet, from the renderer the job built before this ran:
+ * the largest `index-*.css`, which is the app shell's (the others are lazy chunks).
+ */
 async function builtStylesheet(): Promise<string | null> {
   const assets = path.join(desktop, 'dist', 'renderer', 'assets');
-  const css = (await readdir(assets).catch(() => [] as string[])).find((name) =>
-    name.endsWith('.css')
+  const names = (await readdir(assets).catch(() => [] as string[])).filter(
+    (name) => name.startsWith('index-') && name.endsWith('.css')
   );
-  return css ? path.join(assets, css) : null;
+  const sized = await Promise.all(
+    names.map(async (name) => ({ name, size: (await stat(path.join(assets, name))).size }))
+  );
+  const largest = sized.sort((a, b) => b.size - a.size)[0];
+  return largest ? path.join(assets, largest.name) : null;
 }
 
 /** CI-only macOS spec for the real native guest: handoff and Stop, then app layers over it. */
@@ -122,6 +129,8 @@ export async function assertEmbeddedBrowserHandoff(): Promise<string> {
       define: { 'process.env.NODE_ENV': '"production"' },
     });
     const stylesheet = await builtStylesheet();
+    if (!stylesheet)
+      console.warn('Chrome tooltips: no built stylesheet, so the frames are unstyled.');
     const tooltips = await run(
       await mainProcess('chrome-tooltips.ts'),
       {
