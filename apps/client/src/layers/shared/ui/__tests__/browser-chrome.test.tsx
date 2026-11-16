@@ -261,6 +261,31 @@ describe('BrowserChrome', () => {
       expect(screen.getByRole('tooltip')).toHaveTextContent('Reload');
     });
 
+    it('waits the full delay again on the next hover, once the quick-reopen window has passed', async () => {
+      vi.useFakeTimers();
+      const still = { prepare: vi.fn(() => Promise.resolve(true)), release: vi.fn() };
+      renderChrome({ tooltipStill: still });
+      const reload = screen.getByRole('button', { name: 'Reload' });
+      const hover = async (ms: number) => {
+        fireEvent.pointerMove(reload, { pointerType: 'mouse' });
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(ms);
+        });
+      };
+      await hover(CHROME_TOOLTIP_DELAY_MS + 100);
+      expect(screen.getByRole('tooltip')).toHaveTextContent('Reload');
+      fireEvent.pointerLeave(reload, { pointerType: 'mouse' });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1_000);
+      });
+      expect(screen.queryByRole('tooltip')).toBeNull();
+      // A fresh hover: nothing inside the delay, exactly as the first time.
+      await hover(CHROME_TOOLTIP_DELAY_MS - 100);
+      expect(screen.queryByRole('tooltip')).toBeNull();
+      await hover(200);
+      expect(screen.getByRole('tooltip')).toHaveTextContent('Reload');
+    });
+
     it('opens only once the still is in place', async () => {
       const { still, answer } = deferredStill();
       renderChrome({ tooltipStill: still });

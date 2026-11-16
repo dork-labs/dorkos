@@ -191,8 +191,12 @@ export function BrowserChrome({
 /**
  * One 28px ghost icon button (44px on a phone), named by its `aria-label` and
  * shown in a tooltip. With no handler it stays disabled. Over a page that needs
- * a still, the tooltip opens only once the still is in place, and without one
- * the button falls back to a plain `title` hint for that hover.
+ * a still, the tooltip's words appear only once the still is in place, and
+ * without one the button falls back to a plain `title` hint for that hover.
+ *
+ * Radix keeps its own open state, so its delay bookkeeping (and the quick
+ * reopen while moving along the row) stays right; this only holds back the
+ * content until the page under it is safe to cover.
  */
 export function ChromeButton({
   label,
@@ -208,27 +212,24 @@ export function ChromeButton({
   className?: string;
 }) {
   const still = useContext(TooltipStillContext);
-  const [open, setOpen] = useState(false);
+  const [ready, setReady] = useState(false);
   const [hintOnly, setHintOnly] = useState(false);
-  // The latest request for a still; an older answer, or one after leaving, is ignored.
+  // The latest request for a still; an older answer, or one after closing, is ignored.
   const request = useRef(0);
-  const pending = useRef(false);
   const holding = useRef(false);
-  const leave = () => {
-    request.current += 1;
-    pending.current = false;
-    setHintOnly(false);
-    setOpen(false);
-    if (holding.current) {
-      holding.current = false;
-      still?.release();
-    }
-  };
-  // A button that goes away mid-hover gives its still back, so no old picture lingers.
   const stillRef = useRef(still);
   useEffect(() => {
     stillRef.current = still;
   }, [still]);
+  const giveBack = () => {
+    request.current += 1;
+    setReady(false);
+    if (holding.current) {
+      holding.current = false;
+      stillRef.current?.release();
+    }
+  };
+  // A button that goes away mid-hover gives its still back, so no old picture lingers.
   useEffect(
     () => () => {
       request.current += 1;
@@ -236,24 +237,19 @@ export function ChromeButton({
     },
     []
   );
-  const onOpenChange = (next: boolean) => {
-    if (!next) {
-      leave();
+  const onOpenChange = (open: boolean) => {
+    if (!still) return;
+    if (!open) {
+      giveBack();
+      setHintOnly(false);
       return;
     }
-    if (!still) {
-      setOpen(true);
-      return;
-    }
-    if (hintOnly || pending.current || open) return;
     const mine = ++request.current;
-    pending.current = true;
     holding.current = true;
-    void still.prepare().then((ready) => {
+    void still.prepare().then((drawn) => {
       if (mine !== request.current) return;
-      pending.current = false;
-      if (ready) {
-        setOpen(true);
+      if (drawn) {
+        setReady(true);
         return;
       }
       // No still: keep the page and name the button the plain way instead.
@@ -262,11 +258,8 @@ export function ChromeButton({
       setHintOnly(true);
     });
   };
-  // Over a page that needs a still, leaving or pressing ends the request at once;
-  // elsewhere Radix keeps its own grace area for moving onto the tooltip.
-  const stillHandlers = still ? { onPointerLeave: leave, onPointerDown: leave, onBlur: leave } : {};
   return (
-    <Tooltip open={open} onOpenChange={onOpenChange}>
+    <Tooltip onOpenChange={onOpenChange} disableHoverableContent={still !== null}>
       <TooltipTrigger asChild>
         <Button
           variant="ghost"
@@ -275,13 +268,12 @@ export function ChromeButton({
           title={hintOnly ? label : undefined}
           disabled={onClick === undefined || disabled}
           onClick={onClick}
-          {...stillHandlers}
           className={cn('text-muted-foreground hover:text-foreground md:size-7', className)}
         >
           <Icon aria-hidden />
         </Button>
       </TooltipTrigger>
-      <TooltipContent>{label}</TooltipContent>
+      {(still === null || ready) && <TooltipContent>{label}</TooltipContent>}
     </Tooltip>
   );
 }

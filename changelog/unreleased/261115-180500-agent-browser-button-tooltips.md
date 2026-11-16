@@ -2,6 +2,7 @@
 covers:
   - "feat(client): the Agent browser's buttons name themselves in tooltips again (DOR-4427)"
   - 'fix(client): browser bar tooltips wait half a second and never blank the Agent browser page (DOR-4427)'
+  - "fix(client): the browser bar's tooltip delay holds on every hover, not only the first (DOR-4427)"
 ---
 
 ### Changed
