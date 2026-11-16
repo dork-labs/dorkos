@@ -112,9 +112,7 @@ export function QueueAgentRow({
         {item.waiting !== undefined && (
           <p className="text-muted-foreground line-clamp-1 text-xs">{item.waiting.line}</p>
         )}
-        {pausedLine !== undefined && (
-          <p className="text-muted-foreground text-xs">{pausedLine}</p>
-        )}
+        {pausedLine !== undefined && <p className="text-muted-foreground text-xs">{pausedLine}</p>}
       </div>
       {confirming ? (
         <div className="ml-auto flex basis-full flex-wrap items-center justify-end gap-1 text-xs sm:basis-auto">
