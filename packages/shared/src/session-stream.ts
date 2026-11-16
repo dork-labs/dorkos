@@ -44,6 +44,7 @@ import {
   CompactBoundaryEventSchema,
   PermissionDeniedEventSchema,
   ModelSubstitutedEventSchema,
+  ProjectAddonsOffEventSchema,
   WorkLeftRunningEventSchema,
   WorkLeftEndedEventSchema,
   SessionImageEventSchema,
@@ -613,6 +614,14 @@ export const SessionEventSchema = z
       ...seqShape,
       type: z.literal('model_substituted'),
       ...ModelSubstitutedEventSchema.shape,
+    }),
+    // A project's own OpenCode add-ons kept off, said once per chat (DOR-4404).
+    // NOT a fidelity member, for the same reason as `model_substituted`: the
+    // transcript does not say it, so it is recorded durably and overlaid back.
+    z.object({
+      ...seqShape,
+      type: z.literal('project_addons_off'),
+      ...ProjectAddonsOffEventSchema.shape,
     }),
     // Background commands a Stop could not end, and each one's later end
     // (DOR-3285). NOT fidelity members: both happen after the turn they belong

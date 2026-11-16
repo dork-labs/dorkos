@@ -19,13 +19,21 @@ export class LocalBrowserPage {
     }
     await expect(this.controls).toBeVisible();
   }
-  /** Navigate the one live page through the app's normal human control. */
+  /** Navigate the one live page through the app's normal human control: the address field. */
   async navigate(url: string): Promise<void> {
-    await this.controls.getByRole('textbox', { name: 'Web address', exact: true }).fill(url);
-    await this.controls.getByRole('button', { name: 'Go', exact: true }).click();
-    await expect(this.controls.getByRole('button', { name: 'Go', exact: true })).toBeEnabled();
-    await expect(
-      this.controls.getByRole('textbox', { name: 'Web address', exact: true })
-    ).toHaveValue(url);
+    const atRest = this.controls.getByRole('button', { name: /^Address:/ });
+    await atRest.click();
+    const field = this.controls.getByRole('textbox', { name: 'Address', exact: true });
+    await field.fill(url);
+    await field.press('Enter');
+    // At rest the field names where the page is: host (no `www.`) and path.
+    const target = new URL(url);
+    const atRoot = target.pathname === '/' && target.search === '' && target.hash === '';
+    const rest = atRoot ? '' : `${target.pathname}${target.search}${target.hash}`;
+    await expect(atRest).toHaveAccessibleName(
+      `Address: ${target.host.replace(/^www\./, '')}${rest}`
+    );
+    // And the panel is no longer busy with it: Reload is enabled again.
+    await expect(this.controls.getByRole('button', { name: 'Reload', exact: true })).toBeEnabled();
   }
 }

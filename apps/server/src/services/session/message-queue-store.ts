@@ -407,6 +407,17 @@ export class MessageQueueStore {
   }
 
   /**
+   * Run several writes as one: all of them land, or none do. Every write on
+   * this database's connection inside `fn` joins the transaction, the chat
+   * message records included (a drain join folds rows this way, DOR-3060).
+   *
+   * @param fn - The writes.
+   */
+  atomically<T>(fn: () => T): T {
+    return this.db.transaction(() => fn());
+  }
+
+  /**
    * Empty a session's queue and hand back what was removed, IN ORDER.
    *
    * The order is the promise: Stop cancels the queue (D4) and the cockpit has

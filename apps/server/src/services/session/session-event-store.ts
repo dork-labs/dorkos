@@ -102,6 +102,14 @@ export interface RecordedModelSubstitution {
   createdAt: string;
 }
 
+/** One recorded `project_addons_off` row (DOR-4404), with the wall-clock it was written at. */
+export interface RecordedProjectAddonsOff {
+  /** The event as it was projected, `seq` included. */
+  event: Extract<SessionEvent, { type: 'project_addons_off' }>;
+  /** ISO-8601 wall-clock the row was written at. */
+  createdAt: string;
+}
+
 /**
  * One recorded `work_left_running` or `work_left_ended` row (DOR-3285), with
  * the wall-clock it was written at. Both are written the instant they are
@@ -366,6 +374,33 @@ export class SessionEventStore {
       }
     }
     return substitutions;
+  }
+
+  /**
+   * A session's `project_addons_off` rows only (DOR-4404), filtered in SQLite
+   * like {@link SessionEventStore.readModelSubstitutions}, because it too runs
+   * on every history read.
+   *
+   * @param sessionId - DorkOS session identifier
+   */
+  readProjectAddonsOff(sessionId: string): RecordedProjectAddonsOff[] {
+    const rows = this.db
+      .select()
+      .from(sessionEvents)
+      .where(
+        and(
+          eq(sessionEvents.sessionId, sessionId),
+          sql`${sessionEvents.payload} LIKE '%"type":"project_addons_off"%'`
+        )
+      )
+      .orderBy(sessionEvents.seq)
+      .all();
+    const notices: RecordedProjectAddonsOff[] = [];
+    for (const row of rows) {
+      const event = parsePayload(row);
+      if (event?.type === 'project_addons_off') notices.push({ event, createdAt: row.createdAt });
+    }
+    return notices;
   }
 
   /**

@@ -44,6 +44,13 @@ const IN_USE_WORKING: LocalBrowserPersonState = {
   sessionId: 'chat-scout-busy',
 };
 
+/** Shared with this chat's agent, Atlas, in a separate window, on a made-up page. */
+const CONNECTED_HERE: LocalBrowserPersonState = {
+  ...IN_USE_ELSEWHERE,
+  sessionId: 'chat-atlas',
+  tabs: [{ id: 'demo-tab', title: 'Pricing', url: 'https://www.example.com/pricing?plan=team' }],
+};
+
 /** Made-up holder chat titles, one long enough to cut off. */
 const HOLDER_TITLES: Record<string, string> = {
   'chat-scout': 'Fix the release notes',
@@ -219,6 +226,10 @@ export function LocalBrowserPanelShowcases() {
       <ShowcaseLabel>Before the browser was ever opened</ShowcaseLabel>
       <ShowcaseDemo>
         <PanelDemo state={NOT_OPEN} />
+      </ShowcaseDemo>
+      <ShowcaseLabel>Shared with this chat’s agent: the browser chrome over the page</ShowcaseLabel>
+      <ShowcaseDemo>
+        <PanelDemo state={CONNECTED_HERE} />
       </ShowcaseDemo>
       <ShowcaseLabel>In use in another chat: Take it here moves it</ShowcaseLabel>
       <ShowcaseDemo>

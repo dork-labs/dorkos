@@ -318,3 +318,63 @@ function parses(url: string): boolean {
     return false;
   }
 }
+
+/** A `file:` URL's path with its escapes decoded, or as it is when one is malformed (`%ZZ`). */
+function decodedPath(pathname: string): string {
+  try {
+    return decodeURIComponent(pathname);
+  } catch {
+    return pathname;
+  }
+}
+
+/**
+ * How the address bar draws a URL at rest. The bar never shows a signed
+ * serve or proxy URL, only the address the person navigated to.
+ */
+export type AddressDisplay =
+  | { kind: 'local'; path: string }
+  | {
+      kind: 'url';
+      /** The host, port included, with a leading `www.` dropped. Drawn at full strength. */
+      host: string;
+      /** The path, query and hash, or `''` at the root. Drawn muted. */
+      rest: string;
+      /** Plain `http://` to anywhere but this machine, shown as a muted "Not secure". */
+      notSecure: boolean;
+    }
+  | { kind: 'raw'; text: string };
+
+/**
+ * Split an address into what the bar draws at rest:
+ * - `about:blank` → an empty bar;
+ * - a `file:` URL, or anything that is not a URL (a local path) → `local`;
+ * - `http(s)` → `url`, with the scheme and a leading `www.` dropped, the host
+ *   (port included, the identity of a dev server) kept apart from the path, and
+ *   `notSecure` for plain `http://` off loopback;
+ * - anything else → `raw`.
+ *
+ * @param raw - The address currently open.
+ */
+export function describeAddress(raw: string): AddressDisplay {
+  if (raw === 'about:blank') return { kind: 'raw', text: '' };
+  let parsed: URL;
+  try {
+    parsed = new URL(raw);
+  } catch {
+    return { kind: 'local', path: raw };
+  }
+  if (parsed.protocol === 'file:') return { kind: 'local', path: decodedPath(parsed.pathname) };
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:')
+    return { kind: 'raw', text: raw };
+  const rest =
+    parsed.pathname === '/' && parsed.search === '' && parsed.hash === ''
+      ? ''
+      : `${parsed.pathname}${parsed.search}${parsed.hash}`;
+  return {
+    kind: 'url',
+    host: parsed.host.replace(/^www\./, ''),
+    rest,
+    notSecure: parsed.protocol === 'http:' && !isLoopbackHost(parsed.hostname),
+  };
+}

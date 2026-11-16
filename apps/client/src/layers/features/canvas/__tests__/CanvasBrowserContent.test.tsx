@@ -991,7 +991,7 @@ describe('CanvasBrowserContent — the address bar on a room route', () => {
     render(<CanvasBrowserContent documentId="d1" content={roomPage} />);
     await typeAddress('https://example.com');
 
-    expect(await screen.findByRole('status')).toHaveTextContent('No such room');
+    expect(await screen.findByRole('alert')).toHaveTextContent('No such room');
     expect(screen.getByRole('textbox', { name: 'Address' })).toHaveValue('https://example.com');
   });
 
@@ -1000,7 +1000,7 @@ describe('CanvasBrowserContent — the address bar on a room route', () => {
     render(<CanvasBrowserContent documentId="d1" content={roomPage} />);
     await typeAddress('https://example.com');
 
-    expect(await screen.findByRole('status')).toHaveTextContent(/couldn’t reach DorkOS/i);
+    expect(await screen.findByRole('alert')).toHaveTextContent(/couldn’t reach DorkOS/i);
   });
 });
 

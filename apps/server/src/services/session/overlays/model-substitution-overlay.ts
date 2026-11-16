@@ -17,36 +17,55 @@
  * it. Each record belongs to the turn whose `turn_start` precedes it in `seq`,
  * and lands right after that turn's message.
  *
+ * It also puts back the other turn-start notice placed the same way: a
+ * project's own OpenCode add-ons kept off (`project_addons_off`, DOR-4404).
+ *
  * @module services/session/overlays/model-substitution-overlay
  */
 import type { HistoryMessage, MessagePart } from '@dorkos/shared/types';
 import { logger } from '../../../lib/logger.js';
 import { getSessionEventStore, peekProjector } from '../session-state-projector.js';
-import type { RecordedModelSubstitution } from '../session-event-store.js';
+import type {
+  RecordedModelSubstitution,
+  RecordedProjectAddonsOff,
+} from '../session-event-store.js';
+
+/** A recorded notice laid back at the start of the turn it opened. */
+export type RecordedTurnNotice = RecordedModelSubstitution | RecordedProjectAddonsOff;
 
 /** The `seq` of every substitution the open turn is still carrying live. */
 function openTurnSeqs(sessionId: string): Set<number> {
   const seqs = new Set<number>();
   for (const event of peekProjector(sessionId)?.peekInProgressTurn() ?? []) {
-    if (event.type === 'model_substituted') seqs.add(event.seq);
+    if (event.type === 'model_substituted' || event.type === 'project_addons_off') {
+      seqs.add(event.seq);
+    }
   }
   return seqs;
 }
 
-/** The standalone history row one recorded substitution becomes. */
-function substitutionMessage(row: RecordedModelSubstitution): HistoryMessage {
+/** The standalone history row one recorded notice becomes. */
+function substitutionMessage(row: RecordedTurnNotice): HistoryMessage {
   const { event } = row;
-  const part: MessagePart = {
-    type: 'model_substituted',
-    from: event.from,
-    fromName: event.fromName,
-    to: event.to,
-    toName: event.toName,
-    reason: event.reason,
-  };
+  const part: MessagePart =
+    event.type === 'project_addons_off'
+      ? {
+          type: 'project_addons_off',
+          plugins: event.plugins,
+          tools: event.tools,
+          mcpServers: event.mcpServers,
+        }
+      : {
+          type: 'model_substituted',
+          from: event.from,
+          fromName: event.fromName,
+          to: event.to,
+          toName: event.toName,
+          reason: event.reason,
+        };
   return {
     // Deterministic from the seq, so a reload reconciles onto the same row.
-    id: `model-substituted-${event.seq}`,
+    id: `${event.type === 'project_addons_off' ? 'project-addons-off' : 'model-substituted'}-${event.seq}`,
     role: 'assistant',
     content: '',
     parts: [part],
@@ -103,7 +122,7 @@ export function turnOpenerIndex(
  */
 function openingMessageIndex(
   messages: readonly HistoryMessage[],
-  row: RecordedModelSubstitution,
+  row: RecordedTurnNotice,
   starts: readonly RecordedTurnStart[]
 ): number | null {
   const byText = turnOpenerIndex(messages, row.event.seq, starts);
@@ -133,7 +152,7 @@ function openingMessageIndex(
  */
 export function applyModelSubstitutions(
   messages: HistoryMessage[],
-  rows: RecordedModelSubstitution[],
+  rows: RecordedTurnNotice[],
   starts: RecordedTurnStart[] = []
 ): HistoryMessage[] {
   if (rows.length === 0) return messages;
@@ -167,11 +186,14 @@ export function overlayModelSubstitutions(
   sessionId: string,
   messages: HistoryMessage[]
 ): HistoryMessage[] {
-  let rows: RecordedModelSubstitution[];
+  let rows: RecordedTurnNotice[];
   let starts: RecordedTurnStart[] = [];
   try {
     const store = getSessionEventStore();
-    const recorded = store?.readModelSubstitutions(sessionId) ?? [];
+    const recorded: RecordedTurnNotice[] = [
+      ...(store?.readModelSubstitutions(sessionId) ?? []),
+      ...(store?.readProjectAddonsOff(sessionId) ?? []),
+    ].sort((a, b) => a.event.seq - b.event.seq);
     if (recorded.length > 0) starts = store?.readTurnStarts(sessionId) ?? [];
     const live = openTurnSeqs(sessionId);
     rows = live.size === 0 ? recorded : recorded.filter((row) => !live.has(row.event.seq));

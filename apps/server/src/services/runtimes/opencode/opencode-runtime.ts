@@ -120,6 +120,7 @@ import {
   projectPluginRefusal,
   ProjectPluginsRefusedError,
 } from './messaging/project-plugin-guard.js';
+import { projectAddonsNotice } from './messaging/project-addons-notice.js';
 import { discoverOpenCodeModels } from './model-discovery.js';
 import { OpenCodeContextWindows } from './providers/context-windows.js';
 import { protectedPathRoots } from '../shared/policy/protected-path-roots.js';
@@ -175,11 +176,8 @@ interface ActiveTurn {
   connectorRevocation?: Promise<void>;
 }
 
-/** One turn that has started and is not yet tracked as active. Identity-compared. */
-interface SettingUpTurn {
-  /** The session the turn belongs to. */
-  sessionId: string;
-}
+/** A turn started but not yet tracked as active, by its session. Identity-compared. */
+type SettingUpTurn = { sessionId: string };
 
 /**
  * OpenCode runtime implementing the universal AgentRuntime interface.
@@ -648,6 +646,8 @@ export class OpenCodeRuntime implements AgentRuntime {
     };
     this.activeTurns.set(sessionId, turn);
     this.settingUp.delete(settingUp);
+    // Once per chat: the project's own add-ons the sidecar kept off (DOR-4404).
+    yield* projectAddonsNotice(sessionId, directory);
     let lease: ConnectorTurnLease | undefined;
     let connectorInjection: ConnectorRuntimeMcpInjection | undefined;
     let connectorRevokeReason: RevokeConnectorTurnReason = 'setup_failed';

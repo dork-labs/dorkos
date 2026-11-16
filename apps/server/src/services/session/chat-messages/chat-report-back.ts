@@ -44,7 +44,7 @@
  *
  * One plain status line and the spin-off's last message in that turn, trimmed
  * to {@link REPORT_TEXT_MAX}; the parent reads the rest with `chat_read`. It
- * rides `chat_send`'s own rules (queue by default, the person first, batching,
+ * rides `chat_send`'s own rules (queue by default, the person first, drain joining,
  * the spin-off's level as the ceiling), so a parent busy with its person hears
  * the report when that turn ends, and an idle parent wakes.
  *

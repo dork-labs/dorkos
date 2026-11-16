@@ -655,6 +655,7 @@
     "POST /api/sessions/:id/messages",
     "POST /api/sessions/:id/opened",
     "POST /api/sessions/:id/process/switch",
+    "POST /api/sessions/:id/queue/:messageId/steer",
     "POST /api/sessions/:id/reload-plugins",
     "POST /api/sessions/:id/stream-health",
     "POST /api/sessions/:id/submit-answers",

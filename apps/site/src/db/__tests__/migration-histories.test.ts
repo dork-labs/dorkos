@@ -12,6 +12,8 @@ import { drizzle, type PgliteDatabase } from 'drizzle-orm/pglite';
 import { migrate } from 'drizzle-orm/pglite/migrator';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 
+import { createPGliteTemplate, type PGliteTemplate } from './pglite-template';
+
 import controlPlaneConfig from '../../../drizzle.control-plane.config';
 import publicConfig from '../../../drizzle.public.config';
 import {
@@ -23,10 +25,14 @@ import {
   type SqlExecutor,
 } from '../../../scripts/migration-histories';
 
-// Every case boots its own PGlite and replays a migration history into it,
-// because the pre-migration states under test are the point — a shared fixture
-// would have nothing left to prove. That costs seconds per case on an idle box
-// and more on a busy one; same budget rationale as account-issuer-migration.test.ts.
+// Every case that tests a migration RUN boots its own PGlite and replays the
+// history into it, because the pre-migration states under test are the point —
+// a shared fixture would have nothing left to prove. A case that only needs the
+// END state of a history (the frozen production shape, the public half) gets its
+// own copy of a database that history was applied to once, by the real migrator,
+// in `beforeAll` (DOR-4190). No copy is shared between cases. A fresh run costs
+// seconds per case on an idle box and more on a busy one; same budget rationale
+// as account-issuer-migration.test.ts.
 vi.setConfig({ testTimeout: 60_000 });
 
 const PUBLIC = MIGRATION_HISTORIES.find((h) => h.id === 'public')!;
@@ -126,19 +132,37 @@ async function journalRows(
   return rows.rows;
 }
 
+/** A copy of a template database with a drizzle handle over it. */
+async function copyOf(template: PGliteTemplate): Promise<{ client: PGlite; db: Db }> {
+  const client = await template.fresh();
+  return { client, db: drizzle(client) as Db };
+}
+
+/** A fresh database the frozen history was applied to, once, by the migrator. */
+let frozenTemplate: PGliteTemplate;
+
+beforeAll(async () => {
+  frozenTemplate = await createPGliteTemplate((client) =>
+    applyFrozenHistory(drizzle(client) as Db)
+  );
+}, 120_000);
+
 describe('the two migration histories', () => {
   let frozenTables: string[];
   let publicTables: string[];
   let controlPlaneTables: string[];
+  /** A fresh database the public history was applied to, once, by the migrator. */
+  let publicTemplate: PGliteTemplate;
 
   beforeAll(async () => {
-    const frozen = freshDatabase();
-    await applyFrozenHistory(frozen.db);
+    const frozen = await copyOf(frozenTemplate);
     frozenTables = await tableNames(frozen.client);
     await frozen.client.close();
 
-    const pub = freshDatabase();
-    await applyHistory(pub.db, PUBLIC);
+    publicTemplate = await createPGliteTemplate((client) =>
+      applyHistory(drizzle(client) as Db, PUBLIC)
+    );
+    const pub = await copyOf(publicTemplate);
     publicTables = await tableNames(pub.client);
     await pub.client.close();
 
@@ -158,8 +182,7 @@ describe('the two migration histories', () => {
   });
 
   it('keeps instance_heartbeats public and free of foreign keys', async () => {
-    const { client, db } = freshDatabase();
-    await applyHistory(db, PUBLIC);
+    const { client } = await copyOf(publicTemplate);
     const fks = await client.query<{ conname: string }>(
       `SELECT conname FROM pg_constraint
        WHERE contype = 'f' AND conrelid = 'instance_heartbeats'::regclass`
@@ -183,10 +206,8 @@ describe('the two migration histories', () => {
                 WHERE schemaname = 'public' ORDER BY 1, 2`,
     } as const;
 
-    /** Dump the three catalogue views after applying the given histories. */
-    async function endState(apply: (db: Db) => Promise<void>): Promise<Record<string, unknown[]>> {
-      const { client, db } = freshDatabase();
-      await apply(db);
+    /** Dump the three catalogue views of a database. */
+    async function endState({ client }: { client: PGlite }): Promise<Record<string, unknown[]>> {
       const dump: Record<string, unknown[]> = {};
       for (const [name, query] of Object.entries(catalogue)) {
         dump[name] = (await client.query(query)).rows;
@@ -195,11 +216,13 @@ describe('the two migration histories', () => {
       return dump;
     }
 
-    const frozen = await endState(applyFrozenHistory);
-    const split = await endState(async (db) => {
-      await applyBaseline(db, PUBLIC);
-      await applyBaseline(db, CONTROL_PLANE);
-    });
+    // The reference is the frozen history's end state; the baselines are what is
+    // under test, so they are replayed into a fresh database here.
+    const frozen = await endState(await copyOf(frozenTemplate));
+    const fresh = freshDatabase();
+    await applyBaseline(fresh.db, PUBLIC);
+    await applyBaseline(fresh.db, CONTROL_PLANE);
+    const split = await endState(fresh);
 
     expect(split.columns).toEqual(frozen.columns);
     expect(split.constraints).toEqual(frozen.constraints);
@@ -287,10 +310,12 @@ describe('the two migration histories', () => {
 // hypothetical here — it is a database built by the frozen 17-migration history,
 // which is exactly what the live one is. Everything below seeds from that.
 describe('adopting the split on a database built by the frozen history', () => {
-  /** A PGlite database in the pre-split production shape, with rows in it. */
+  /**
+   * A PGlite database in the pre-split production shape, with rows in it: its
+   * own copy of the database the frozen history was applied to.
+   */
   async function seededFromFrozenHistory(): Promise<{ client: PGlite; db: Db }> {
-    const { client, db } = freshDatabase();
-    await applyFrozenHistory(db);
+    const { client, db } = await copyOf(frozenTemplate);
     // Rows on both sides of the split. If any baseline DDL were to run, these
     // would be gone (or the run would fail) — that is what makes them the check.
     await client.exec(`

@@ -7,13 +7,13 @@ import { afterEach, describe, expect, it } from 'vitest';
 import type { ChatMessageRow } from '@dorkos/db';
 import { CHAT_MESSAGE_FENCE_LABEL, displayTextOf } from '@dorkos/shared/chat-messages';
 import type { QueuedMessage } from '@dorkos/shared/schemas';
-import { CHAT_MESSAGE_LEAD, renderChatMessage } from '../chat-message-fence.js';
+import { CHAT_MESSAGE_LEAD, renderChatMessage } from '../../chat-message-fence.js';
 import { LEGACY_SENDER_NAME, LEGACY_WORDS, queuedChatViewOf } from '../queued-chat-view.js';
 import {
   setQueuedChatView,
   toQueuedMessage,
   type QueuedMessageRecord,
-} from '../../message-queue-store.js';
+} from '../../../message-queue-store.js';
 
 const BEGIN = `BEGIN ${CHAT_MESSAGE_FENCE_LABEL}`;
 
