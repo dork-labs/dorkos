@@ -1,7 +1,7 @@
 /** @vitest-environment jsdom */
 import { beforeEach, expect, it, vi } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
-import { createMockTransport } from '@dorkos/test-utils';
+import { createMockTransport } from '@dorkos/test-utils/mock-factories';
 import type { WriteFileOptions, WriteFileResult } from '@dorkos/shared/transport';
 const transport = createMockTransport();
 let activeTransport = transport;

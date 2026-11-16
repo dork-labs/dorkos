@@ -6,7 +6,7 @@ import { render, screen, cleanup, fireEvent, waitFor } from '@testing-library/re
 import '@testing-library/jest-dom/vitest';
 import type { ReactNode } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { createMockTransport } from '@dorkos/test-utils';
+import { createMockTransport } from '@dorkos/test-utils/mock-factories';
 import type { FileEntry } from '@dorkos/shared/types';
 import { TransportProvider, useAppStore } from '@/layers/shared/model';
 import { docKeys } from '@/layers/entities/doc';

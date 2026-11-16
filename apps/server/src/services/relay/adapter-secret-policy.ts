@@ -252,6 +252,37 @@ export function readIncoming(
   return normalizeFormConfig(view, manifest) as Record<string, unknown>;
 }
 
+/**
+ * Whether an incoming adapter config contains any secret the caller typed,
+ * rather than an empty value or {@link SECRET_MASK} asking to keep one.
+ * Password maps are inspected after {@link normalizeFormConfig} resolves their
+ * JSON-text form, so every header value is checked separately.
+ *
+ * With no manifest nothing says which fields are secret, so any entered string
+ * anywhere in the config counts (DOR-4453): the gate fails closed. A manifest
+ * that types a secret as plain text is still read at its word.
+ *
+ * @param incoming - The adapter config exactly as the route received it.
+ * @param manifest - The adapter type's manifest.
+ */
+export function hasTypedAdapterSecret(
+  incoming: Record<string, unknown>,
+  manifest: AdapterManifest | undefined
+): boolean {
+  if (!manifest) return hasEnteredString(incoming);
+  return secretValues(readIncoming(incoming, manifest), manifest).some(
+    ({ value }) => freshSecret(value) !== undefined
+  );
+}
+
+/** Whether any string in a config, at any depth, is entered: not blank and not the mask. */
+function hasEnteredString(value: unknown): boolean {
+  if (typeof value === 'string') return value !== '' && value !== SECRET_MASK;
+  if (Array.isArray(value)) return value.some(hasEnteredString);
+  if (isSecretMap(value)) return Object.values(value).some(hasEnteredString);
+  return false;
+}
+
 /** A `url` value with blank read as no address. */
 function addressOf(config: Record<string, unknown>, key: string): unknown {
   const value = getNestedValue(config, key.split('.'));
@@ -262,6 +293,27 @@ function addressOf(config: Record<string, unknown>, key: string): unknown {
 function urlFieldKeys(manifest: AdapterManifest | undefined): string[] {
   if (!manifest) return [];
   return manifest.configFields.filter((f) => f.type === 'url').map((f) => f.key);
+}
+
+/**
+ * Whether an adapter edit names a new or changed address, using rule 3's own
+ * address comparison. For an add, any non-blank `url` field is new. An omitted
+ * or blank address is not a move.
+ *
+ * @param existing - The saved config, or `undefined` for an add.
+ * @param incoming - The config exactly as the route received it.
+ * @param manifest - The adapter type's manifest.
+ */
+export function adapterAddressChanged(
+  existing: Record<string, unknown> | undefined,
+  incoming: Record<string, unknown>,
+  manifest: AdapterManifest | undefined
+): boolean {
+  const read = readIncoming(incoming, manifest);
+  return urlFieldKeys(manifest).some((key) => {
+    const next = addressOf(read, key);
+    return next !== undefined && next !== addressOf(existing ?? {}, key);
+  });
 }
 
 /**
@@ -307,10 +359,7 @@ export function mergeSecretUpdate(
   incoming = structuredClone(incoming);
   const read = readIncoming(incoming, manifest);
   assertSecretReferences(adapterId, read, manifest, writer);
-  const moved = urlFieldKeys(manifest).some((key) => {
-    const next = addressOf(read, key);
-    return next !== undefined && next !== addressOf(existing, key);
-  });
+  const moved = adapterAddressChanged(existing, incoming, manifest);
   if (!moved) return mergeWithPasswordPreservation(existing, incoming, manifest);
 
   const merged = { ...existing, ...incoming };

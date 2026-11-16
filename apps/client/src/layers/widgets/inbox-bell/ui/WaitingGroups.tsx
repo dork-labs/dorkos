@@ -199,6 +199,7 @@ export function WaitingGroups({
               <ScheduleApprovalCard
                 key={task.id}
                 task={task}
+                approvalSurface="inbox"
                 className="mt-2"
                 onNavigate={onScheduleNavigate}
                 // On a phone the bell's panel is a full-height sheet.

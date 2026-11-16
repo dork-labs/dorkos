@@ -28,6 +28,11 @@ import { HEALTHY, scheduleHealth } from './history/schedule-health.js';
 import { FINISHED_RUN_STATUSES, isTerminalRunStatus } from './lifecycle/run-statuses.js';
 import { timingColumnWrites, type TimingLandsOn } from './timing/effective-timing.js';
 import { runCreatorColumns } from './approvals/cross-agent.js';
+import {
+  activationTaskApprovalColumns,
+  createTaskApprovalColumns,
+  type TaskApprovalInput,
+} from './approvals/task-approval-receipt.js';
 
 /** Options for listing runs. */
 interface ListRunsOptions {
@@ -70,6 +75,8 @@ export interface CreateTaskStoreInput {
    * so a rename or a revocation is reflected the next time the task is read.
    */
   proposedByAgentPath?: string | null;
+  /** The create's approval receipt, or null when it must start parked. */
+  approval?: TaskApprovalInput | null;
 }
 
 /**
@@ -77,6 +84,8 @@ export interface CreateTaskStoreInput {
  * {@link TimingLandsOn}.
  */
 export interface UpdateTaskOptions {
+  /** Who approved an activation; omitted fails closed to policy/unknown. */
+  approval?: TaskApprovalInput;
   /**
    * Where `cron` and `timezone` go. `file` is every schedule whose SKILL.md
    * DorkOS writes; `row` is a package's schedule, whose timing becomes the
@@ -97,6 +106,9 @@ export type UntimedTaskUpdate = Omit<UpdateTaskRequest, 'cron' | 'timezone' | 'r
   timezone?: never;
   resetTiming?: never;
 };
+
+/** Options accepted by an update that carries no timing. */
+export type UntimedTaskUpdateOptions = Pick<UpdateTaskOptions, 'approval'>;
 
 /**
  * Callback fired exactly once when a run transitions to a terminal status
@@ -211,6 +223,7 @@ export class TaskStore {
           sticky: input.sticky ?? false,
           account: input.account ?? null,
         }),
+        ...createTaskApprovalColumns(input.approval),
         filePath: input.filePath,
         reason: input.reason ?? null,
         proposedBySessionId: input.proposedBySessionId ?? null,
@@ -237,9 +250,13 @@ export class TaskStore {
    * @param input - The fields to change; an omitted field is left alone.
    * @param options - Where the request's timing lands; see {@link UpdateTaskOptions}.
    */
-  updateTask(id: string, input: UntimedTaskUpdate): Task | null;
+  updateTask(id: string, input: UntimedTaskUpdate, options?: UntimedTaskUpdateOptions): Task | null;
   updateTask(id: string, input: UpdateTaskRequest, options: UpdateTaskOptions): Task | null;
-  updateTask(id: string, input: UpdateTaskRequest, options?: UpdateTaskOptions): Task | null {
+  updateTask(
+    id: string,
+    input: UpdateTaskRequest,
+    options?: UpdateTaskOptions | UntimedTaskUpdateOptions
+  ): Task | null {
     const carriesTiming =
       input.cron !== undefined || input.timezone !== undefined || input.resetTiming !== undefined;
     if (carriesTiming && !options) {
@@ -268,7 +285,8 @@ export class TaskStore {
     // For a package's schedule the same two fields land in the override
     // columns instead, and a reset clears them (DOR-2302) — one rule, in
     // `timingColumnWrites`, so the NOT NULL spelling above holds on both paths.
-    Object.assign(updates, timingColumnWrites(existing, input, options?.timingLandsOn ?? 'file'));
+    const timingLandsOn = options && 'timingLandsOn' in options ? options.timingLandsOn : 'file';
+    Object.assign(updates, timingColumnWrites(existing, input, timingLandsOn));
     // Switching a task either way answers a "Turn on" offer its file made
     // (DOR-3309): on takes it, off declines it.
     if (input.enabled !== undefined)
@@ -288,6 +306,9 @@ export class TaskStore {
     if (input.account !== undefined) updates.account = input.account;
     if (input.status !== undefined) updates.status = input.status;
 
+    const activates = existing.status === 'pending_approval' && input.status === 'active';
+    if (activates)
+      Object.assign(updates, activationTaskApprovalColumns(existing, updates, options?.approval));
     this.db.update(pulseSchedules).set(updates).where(eq(pulseSchedules.id, id)).run();
 
     // **Status changes through this method ARE the operator's decision.**
@@ -301,8 +322,14 @@ export class TaskStore {
     // Read AFTER the update, deliberately: a single PATCH may change the cron
     // and approve it in the same breath, and what was approved is the content
     // the caller is leaving behind, not the one they found.
-    if (input.status === 'active') this.approvals.recordApproval(id);
-    else if (input.status !== undefined) this.approvals.withdrawApproval(id);
+    if (input.status === 'active') {
+      // An activation wrote its grant and receipt in the update above, in the
+      // same write as the status (DOR-3641); it still tells the listener.
+      if (activates) this.approvals.notifyApproved(existing.agentId);
+      else this.approvals.recordApproval(id, options?.approval);
+    } else if (input.status !== undefined) {
+      this.approvals.withdrawApproval(id);
+    }
 
     return this.getTask(id);
   }

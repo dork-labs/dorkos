@@ -21,7 +21,8 @@
  * ## Two clocks, because two holds could otherwise last forever
  *
  * - **The busy spell** ({@link SESSIONS.BACKGROUND_WORK_PARK_CEILING_MS}, 4 h)
- *   bounds "this process is working". Reset only by
+ *   bounds "this process is working", except while an open turn is still
+ *   talking (DOR-2705). Reset only by
  *   {@link SESSIONS.BACKGROUND_QUIET_RESET_MS} of CONTINUOUS quiet, so a level
  *   frame dropping one helper and naming the next — which arrive inside one
  *   output burst — is a single spell rather than a fresh four hours each time.
@@ -42,6 +43,7 @@ import type { SDKMessage } from '@anthropic-ai/claude-agent-sdk';
 import { logger } from '../../../../lib/logger.js';
 import { SESSIONS } from '../../../../config/constants.js';
 import type { LiveTaskCounts, LivenessChange, TurnLiveness } from './turn-liveness.js';
+import { isTurnActivity } from '../sessions/records/turn-activity.js';
 import {
   OWED_DELIVERY_TIMEOUT_MS,
   type Quietness,
@@ -118,6 +120,16 @@ export class ProcessQuiet {
   /** When the current run of continuous quiet began, on the awake clock, or undefined while busy. */
   private quietSinceAwake: number | undefined;
   /**
+   * When the current turn's main thread last did work, on the awake clock
+   * (DOR-2705). Read only while a turn is open: see {@link isPastCeiling}.
+   */
+  private lastTurnOutputAwake: number | undefined;
+  /**
+   * When the current turn's main thread first did work, on the awake clock:
+   * what the absolute turn limit is measured from (DOR-2705).
+   */
+  private turnBeganAwake: number | undefined;
+  /**
    * True between a frame that proves a segment is running and the `result` that
    * ends it. The owed-delivery clock arms only when nothing is running to
    * deliver into.
@@ -178,8 +190,34 @@ export class ProcessQuiet {
     // Every frame is also a chance to notice the busy spell has ended, so the
     // sixty seconds of quiet do not wait on a consumer happening to ask.
     this.noteBusySpell(this.blockingReason(this.opts.liveness().liveTaskCounts()) === undefined);
+    this.noteTurnOutput(message);
     this.noteHoldingWork();
     return change;
+  }
+
+  /**
+   * Note when a turn's main thread began and last did work (DOR-2705).
+   *
+   * Counts the frames {@link isTurnActivity} counts, the same rule record
+   * eviction uses, so a helper's frames never keep a silent turn alive.
+   * Stamped whether or not a window is open yet: the frame that opens an
+   * agent-started turn reaches this before the windower opens its window.
+   * Only ever read while a turn is open. A `result` ends the turn, so both
+   * clocks start over with the next one. The busy spell is left alone on
+   * purpose: it still bounds the background work between turns, which is what
+   * ends a `/loop` or a Monitor that would otherwise hold the process for ever.
+   *
+   * @param message - The frame just observed
+   */
+  private noteTurnOutput(message: SDKMessage): void {
+    if (message.type === 'result') {
+      this.lastTurnOutputAwake = undefined;
+      this.turnBeganAwake = undefined;
+      return;
+    }
+    if (!isTurnActivity(message)) return;
+    this.lastTurnOutputAwake = this.awakeNow();
+    this.turnBeganAwake ??= this.lastTurnOutputAwake;
   }
 
   /**
@@ -219,8 +257,10 @@ export class ProcessQuiet {
    * OUTRANKS background work in {@link blockingReason}, a turn the agent started
    * — a helper's report still being written — was evicted mid-turn.
    *
-   * Bounded by the four-hour ceiling, which is what stops work that will never
-   * finish from making a session record immortal.
+   * Bounded by {@link isPastCeiling}: the four-hour ceiling for background
+   * work and silent turns, and the absolute turn limit for a turn that keeps
+   * talking. That is what stops work that will never finish from making a
+   * session record immortal.
    */
   isHoldingWork(): boolean {
     const quietness = this.quietness();
@@ -257,9 +297,10 @@ export class ProcessQuiet {
    * Monitor, a Workflow or a backgrounded MCP task; each was cut at ten
    * minutes when only helpers counted. Shells are left out on purpose: a dev
    * server started in the background runs for hours, and counting it would
-   * hide every genuinely hung turn behind it. Bounded by the same four-hour
-   * ceiling the reaper honours, so work that never finishes cannot keep a
-   * turn open forever.
+   * hide every genuinely hung turn behind it. Bounded by the same
+   * {@link isPastCeiling} the reaper honours: four hours after the turn last
+   * did work, or the absolute turn limit at most. So work that never finishes
+   * cannot keep a turn open for ever.
    */
   isHelperWorking(): boolean {
     const counts = this.opts.liveness().liveTaskCounts();
@@ -272,12 +313,40 @@ export class ProcessQuiet {
    * Measured in awake time (DOR-2717). A laptop asleep overnight moves the wall
    * clock by hours while the process does nothing, and measuring that would
    * reap the agent's waiting work the moment the machine woke up.
+   *
+   * Never while a turn is open and has spoken inside the ceiling (DOR-2705).
+   * The ceiling bounds work nobody hears from, and a talking turn is not that:
+   * helpers ran for nearly four hours, the agent opened a turn to report on
+   * them, and the ceiling took the process back mid-sentence. A turn silent
+   * for four hours still meets it, and the stall watchdog long before. A turn
+   * that keeps talking meets {@link isPastHardLimit} instead.
    */
   isPastCeiling(): boolean {
-    return (
-      this.busySinceAwake !== undefined &&
-      this.awakeNow() - this.busySinceAwake >= SESSIONS.BACKGROUND_WORK_PARK_CEILING_MS
-    );
+    const now = this.awakeNow();
+    const ceiling = SESSIONS.BACKGROUND_WORK_PARK_CEILING_MS;
+    if (this.busySinceAwake === undefined || now - this.busySinceAwake < ceiling) return false;
+    if (this.isPastHardLimit()) return true;
+    const turnOpen = this.opts.isTurnOpen() || this.opts.hasRuntimeTurnOpen();
+    const spoke = this.lastTurnOutputAwake;
+    return !(turnOpen && spoke !== undefined && now - spoke < ceiling);
+  }
+
+  /**
+   * Has this process passed the 16-hour limit,
+   * {@link SESSIONS.TURN_HARD_CEILING_MS}, however much it is still saying
+   * (DOR-2705)? Two ways, both in awake time:
+   *
+   * - One turn ran 16 hours, from its first main-thread work.
+   * - One continuous busy spell ran 16 hours. A chain of turns the agent starts
+   *   itself (a Monitor, a `/loop`, an event stream) restarts the turn clock at
+   *   every `result` and never goes a minute quiet, so without this it would
+   *   run for ever: no check is sure to land in the gap between two turns.
+   */
+  isPastHardLimit(): boolean {
+    const now = this.awakeNow();
+    const limit = SESSIONS.TURN_HARD_CEILING_MS;
+    if (this.busySinceAwake !== undefined && now - this.busySinceAwake >= limit) return true;
+    return this.turnBeganAwake !== undefined && now - this.turnBeganAwake >= limit;
   }
 
   /**
@@ -300,6 +369,8 @@ export class ProcessQuiet {
     this.busySince = undefined;
     this.busySinceAwake = undefined;
     this.quietSinceAwake = undefined;
+    this.lastTurnOutputAwake = undefined;
+    this.turnBeganAwake = undefined;
     this.segmentRunning = false;
     this.owedExpiredAt = undefined;
     this.lastFrame = now;

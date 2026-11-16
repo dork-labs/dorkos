@@ -24,7 +24,7 @@ import type {
   NotificationDTO,
 } from '@dorkos/shared/notification-schemas';
 import type { ExtensionDecisionDTO } from '@dorkos/shared/extension-decision-schemas';
-import { createMockTransport } from '@dorkos/test-utils';
+import { createMockTransport } from '@dorkos/test-utils/mock-factories';
 
 // The attention rows navigate, and the session list reads `?session=`. Neither
 // is what this file is about, so the router is stubbed rather than stood up.
@@ -106,6 +106,9 @@ function buildTask(overrides: Partial<Task> = {}): Task {
     effort: null,
     account: null,
     status: 'active',
+    approvedAt: null,
+    approvedBy: null,
+    approvedVia: null,
     filePath: '/tasks/morning-standup.md',
     createdAt: '2026-08-01T09:00:00.000Z',
     updatedAt: '2026-08-01T09:00:00.000Z',

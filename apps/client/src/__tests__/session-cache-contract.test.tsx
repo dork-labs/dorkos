@@ -20,7 +20,7 @@ import type { ReactNode } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { Session } from '@dorkos/shared/types';
 import type { Transport } from '@dorkos/shared/transport';
-import { createMockTransport } from '@dorkos/test-utils';
+import { createMockTransport } from '@dorkos/test-utils/mock-factories';
 import { TransportProvider } from '@/layers/shared/model';
 import { createQueryClientConfig } from '@/layers/shared/lib';
 import { TooltipProvider } from '@/layers/shared/ui';

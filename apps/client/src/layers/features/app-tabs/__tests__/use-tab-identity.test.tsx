@@ -5,7 +5,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { ReactNode } from 'react';
 import { act, render, renderHook, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider, useQuery } from '@tanstack/react-query';
-import { createMockSessionLimit, createMockTransport } from '@dorkos/test-utils';
+import { createMockSessionLimit, createMockTransport } from '@dorkos/test-utils/mock-factories';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
 import type { SessionStatus } from '@dorkos/shared/session-stream';
 import type { Session } from '@dorkos/shared/types';

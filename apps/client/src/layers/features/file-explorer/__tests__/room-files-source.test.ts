@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { QueryClient } from '@tanstack/react-query';
-import { createMockTransport } from '@dorkos/test-utils';
+import { createMockTransport } from '@dorkos/test-utils/mock-factories';
 import { roomKeys } from '@/layers/entities/room';
 import { createRoomFilesSource } from '../model/room-files-source';
 import { ROOM_FILES_REFRESH_INTERVAL_MS } from '../model/room-entry-watch';

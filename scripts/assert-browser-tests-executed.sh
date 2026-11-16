@@ -251,6 +251,11 @@ FILTERED_SPECS=(
 #     `supportsCostTracking: false` are the whole available surface. Same
 #     directory as the two chat modules above, and the extension matters for the
 #     same reason — `tests/chat/` is otherwise a cockpit-leg directory.
+#   chat/project-addons-notice.ts — the lasting note that a project's own
+#     OpenCode add-ons are off (DOR-4404). Registered into chat-mock-turns.spec.ts:
+#     its `project-addons-off` scenario exists only behind DORKOS_TEST_RUNTIME,
+#     and it reloads the page to prove the note survives, so it needs that
+#     file's sequential worker. Same `tests/chat/` extension rule as above.
 #   connections/owner-management.ts and connections/event-notifications.ts —
 #     owner review, permission changes, notification delivery, and session
 #     access. Registered into connections.spec.ts on its sequential worker
@@ -269,6 +274,7 @@ REGISTERED_MODULES=(
   'chat/held-process.ts'
   'chat/interactive-prompts.ts'
   'chat/live-turn-visibility.ts'
+  'chat/project-addons-notice.ts'
   'chat/runtime-capability-parity.ts'
   'chat/session-read-state.ts'
   'connections/chat-connect-card.ts'

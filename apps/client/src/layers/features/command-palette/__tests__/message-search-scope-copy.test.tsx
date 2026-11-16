@@ -36,7 +36,7 @@ import type { ReactNode } from 'react';
 import { render, screen, fireEvent, cleanup, act } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import '@testing-library/jest-dom/vitest';
-import { createMockTransport } from '@dorkos/test-utils';
+import { createMockTransport } from '@dorkos/test-utils/mock-factories';
 import { SEARCH_DEBOUNCE_MS } from '@dorkos/shared/search-schemas';
 import type { SearchHit } from '@dorkos/shared/search-schemas';
 import { TransportProvider, useAppStore } from '@/layers/shared/model';

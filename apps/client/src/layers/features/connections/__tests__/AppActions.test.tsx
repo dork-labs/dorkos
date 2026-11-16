@@ -11,7 +11,7 @@ import type {
   ConnectorReconciliationPreview,
 } from '@dorkos/shared/connector-schemas';
 import type { Transport } from '@dorkos/shared/transport';
-import { createMockTransport } from '@dorkos/test-utils';
+import { createMockTransport } from '@dorkos/test-utils/mock-factories';
 import { SETTINGS_RELINK_SECTION, TransportProvider } from '@/layers/shared/model';
 
 const openSettings = vi.hoisted(() => vi.fn());

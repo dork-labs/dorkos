@@ -72,7 +72,7 @@ export function ScheduleInstructions({
             // eslint-disable-next-line jsx-a11y/no-noninteractive-tabindex
             tabIndex={flowing ? undefined : 0}
             className={cn(
-              'text-foreground/90 rounded-md p-2 font-sans text-sm break-words whitespace-pre-wrap',
+              'text-foreground/90 rounded-md p-2 font-sans text-xs break-words whitespace-pre-wrap',
               !flowing && [
                 'focus-ring overflow-auto',
                 compact ? 'max-h-[25dvh] sm:max-h-40' : 'max-h-[40dvh] sm:max-h-64',

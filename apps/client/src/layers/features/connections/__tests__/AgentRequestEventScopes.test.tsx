@@ -8,7 +8,7 @@ import type {
   ConnectorReceiveScope,
 } from '@dorkos/shared/connector-event-schemas';
 import type { Transport } from '@dorkos/shared/transport';
-import { createMockTransport } from '@dorkos/test-utils';
+import { createMockTransport } from '@dorkos/test-utils/mock-factories';
 import { TransportProvider } from '@/layers/shared/model';
 import { gmailFilterSchema } from './event-filter-fixtures';
 import { AgentRequestEventScopes } from '../ui/AgentRequestEventScopes';

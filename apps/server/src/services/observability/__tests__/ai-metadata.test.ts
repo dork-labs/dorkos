@@ -14,6 +14,16 @@ import {
   isAiObservabilityActive,
   type AiTurnMetadata,
 } from '../ai-metadata.js';
+import { CLAUDE_CODE_CAPABILITIES } from '../../runtimes/claude-code/runtime-constants.js';
+import { CODEX_CAPABILITIES } from '../../runtimes/codex/runtime-constants.js';
+import { OPENCODE_CAPABILITIES } from '../../runtimes/opencode/runtime-constants.js';
+
+/** Each runtime as the cost reading sees it: its id and its real declared capabilities. */
+const RUNTIMES = {
+  'claude-code': { type: 'claude-code', getCapabilities: () => CLAUDE_CODE_CAPABILITIES },
+  opencode: { type: 'opencode', getCapabilities: () => OPENCODE_CAPABILITIES },
+  codex: { type: 'codex', getCapabilities: () => CODEX_CAPABILITIES },
+};
 
 function tmpHome(): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'dorkos-ai-obs-'));
@@ -73,7 +83,7 @@ describe('ai-metadata — span attributes (Plane 2, tracing on)', () => {
     const home = tmpHome();
     const file = await initObservability({ debug: true, dorkHome: home, version: '1.0.0' });
 
-    await drain(observeRuntimeTurn('claude-code', 'sess-1', craftedTurn()));
+    await drain(observeRuntimeTurn(RUNTIMES['claude-code'], 'sess-1', craftedTurn()));
     await shutdownObservability();
 
     const raw = fs.readFileSync(file!, 'utf-8');
@@ -126,7 +136,7 @@ describe('ai-metadata — the opt-in bridge (Plane 1 Tier 2)', () => {
     expect(isAiBridgeEnabled()).toBe(true);
     expect(isAiObservabilityActive()).toBe(true);
 
-    await drain(observeRuntimeTurn('claude-code', 'sess-1', craftedTurn()));
+    await drain(observeRuntimeTurn(RUNTIMES['claude-code'], 'sess-1', craftedTurn()));
 
     expect(seen).toHaveLength(1);
     const meta = seen[0];
@@ -160,7 +170,7 @@ describe('ai-metadata — the opt-in bridge (Plane 1 Tier 2)', () => {
       } as unknown as StreamEvent;
       yield { type: 'done', data: { sessionId: 's' } } as unknown as StreamEvent;
     }
-    await drain(observeRuntimeTurn('claude-code', 's', splitTurn()));
+    await drain(observeRuntimeTurn(RUNTIMES['claude-code'], 's', splitTurn()));
 
     expect(seen[0].costUsd).toBe(0.003597);
   });
@@ -176,12 +186,41 @@ describe('ai-metadata — the opt-in bridge (Plane 1 Tier 2)', () => {
       } as unknown as StreamEvent;
       yield { type: 'done', data: { sessionId: 's' } } as unknown as StreamEvent;
     }
-    await drain(observeRuntimeTurn('claude-code', 's', unsplit()));
-    await drain(observeRuntimeTurn('opencode', 's', unsplit()));
+    await drain(observeRuntimeTurn(RUNTIMES['claude-code'], 's', unsplit()));
+    await drain(observeRuntimeTurn(RUNTIMES.opencode, 's', unsplit()));
+    // Read off the declaration, never the name: a runtime called claude-code that does not
+    // declare a running total keeps its status cost too.
+    await drain(
+      observeRuntimeTurn(
+        {
+          type: 'claude-code',
+          getCapabilities: () => ({
+            ...CLAUDE_CODE_CAPABILITIES,
+            costUsdIsRunningTotal: undefined,
+          }),
+        },
+        's',
+        unsplit()
+      )
+    );
+    await drain(
+      observeRuntimeTurn(
+        {
+          type: 'x',
+          getCapabilities: () => {
+            throw new Error('gone');
+          },
+        },
+        's',
+        unsplit()
+      )
+    );
 
     expect(seen[0]).not.toHaveProperty('costUsd');
     // A runtime whose status cost is not a running total keeps it.
     expect(seen[1].costUsd).toBe(3.21);
+    expect(seen[2].costUsd).toBe(3.21);
+    expect(seen[3].costUsd).toBe(3.21);
   });
 
   it('omits unknown fields when the runtime reports no model/tokens/cost', async () => {
@@ -191,7 +230,7 @@ describe('ai-metadata — the opt-in bridge (Plane 1 Tier 2)', () => {
     async function* sparseTurn(): AsyncGenerator<StreamEvent> {
       yield { type: 'done', data: { sessionId: 's' } } as unknown as StreamEvent;
     }
-    await drain(observeRuntimeTurn('codex', 's', sparseTurn()));
+    await drain(observeRuntimeTurn(RUNTIMES.codex, 's', sparseTurn()));
 
     expect(seen).toHaveLength(1);
     expect(seen[0]).toEqual({ runtime: 'codex', latencyMs: expect.any(Number) });
@@ -209,9 +248,9 @@ describe('ai-metadata — the opt-in bridge (Plane 1 Tier 2)', () => {
       throw new Error('boom');
     }
 
-    await expect(drain(observeRuntimeTurn('claude-code', 's', throwingTurn()))).rejects.toThrow(
-      'boom'
-    );
+    await expect(
+      drain(observeRuntimeTurn(RUNTIMES['claude-code'], 's', throwingTurn()))
+    ).rejects.toThrow('boom');
     expect(seen).toHaveLength(1);
     expect(seen[0].inputTokens).toBe(10);
   });

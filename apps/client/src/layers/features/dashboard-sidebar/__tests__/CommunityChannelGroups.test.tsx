@@ -9,7 +9,7 @@ import {
   createRouter,
   RouterProvider,
 } from '@tanstack/react-router';
-import { createMockTransport, withSpacesExperiment } from '@dorkos/test-utils';
+import { createMockTransport, withSpacesExperiment } from '@dorkos/test-utils/mock-factories';
 import { CommunityConnectionDescriptorSchema } from '@dorkos/shared/community-connections';
 import { RemoteCommunityRoomSchema } from '@dorkos/shared/community-views';
 import { TransportProvider } from '@/layers/shared/model';

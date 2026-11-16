@@ -12,7 +12,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { Transport } from '@dorkos/shared/transport';
 import type { ServerConfig } from '@dorkos/shared/types';
 import type { TopologyView } from '@dorkos/shared/mesh-schemas';
-import { createMockTransport } from '@dorkos/test-utils';
+import { createMockTransport } from '@dorkos/test-utils/mock-factories';
 import { TransportProvider } from '@/layers/shared/model';
 import { ControlCenterSwitches } from '../ui/ControlCenterSwitches';
 

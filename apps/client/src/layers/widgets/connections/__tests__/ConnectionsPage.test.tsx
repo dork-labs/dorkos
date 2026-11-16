@@ -6,7 +6,10 @@ import '@testing-library/jest-dom/vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { ConnectorConnectionSummary } from '@dorkos/shared/connector-resource-schemas';
 import type { Transport } from '@dorkos/shared/transport';
-import { createMockTransport, createMockConnectionReadiness } from '@dorkos/test-utils';
+import {
+  createMockTransport,
+  createMockConnectionReadiness,
+} from '@dorkos/test-utils/mock-factories';
 import { TransportProvider } from '@/layers/shared/model';
 import { connectorKeys } from '@/layers/entities/connectors';
 import { ConnectionsPage } from '../ui/ConnectionsPage';

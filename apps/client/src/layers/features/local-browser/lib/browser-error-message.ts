@@ -1,6 +1,7 @@
 const MESSAGES: Record<string, string> = {
   stale_page: 'Page changed. Read it again before continuing.',
   navigation_uncertain: 'Check what happened before continuing.',
+  navigation_unreachable: 'Couldn’t reach that site. Check the address and try again.',
   uncertain: 'Check what happened before continuing.',
   paused: 'Agent paused. Resume when ready.',
   busy: 'Browser is busy. Wait a moment.',
@@ -11,6 +12,9 @@ const MESSAGES: Record<string, string> = {
   cancelled: 'Browser setup stopped. Open it again to continue.',
   focus_unavailable: 'This tab stopped responding. Choose it again.',
   handoff_open: 'An agent is waiting on you in this browser. Answer its card first.',
+  history_refused: 'DorkOS doesn’t open that page here, so you stayed on this one.',
+  no_history: 'There’s no page to go to that way.',
+  history_changed: 'The page’s history changed. Try again.',
 };
 /** Refusals the server writes for a person, so its own words show. The fallback covers an empty one. */
 const SERVER_WORDED: Record<string, string> = {

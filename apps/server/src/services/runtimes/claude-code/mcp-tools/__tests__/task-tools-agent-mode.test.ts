@@ -485,13 +485,24 @@ describe('tasks_* and an agent’s mode or approval', () => {
       const id = await waitingOnA();
       const { isError } = await call(toolsOfA().tasks_update!, { id, status: 'active' });
       expect(isError).toBe(false);
-      expect(store.getTask(id)?.status).toBe('active');
+      const approved = store.getTask(id)!;
+      expect(approved).toMatchObject({
+        status: 'active',
+        approvedBy: { kind: 'agent', agentPath: homeA, name: 'a' },
+        approvedVia: 'agent_tool',
+      });
       expect(store.approvals.agentEditsOf(id)?.agentApprovalKey).toMatch(/^sha256:/);
       expect(emit).toHaveBeenCalledWith(
         expect.objectContaining({
           eventType: 'tasks.task_approved',
           actorType: 'agent',
-          metadata: expect.objectContaining({ decidedBy: 'allowed', reachedVia: 'in-session' }),
+          metadata: expect.objectContaining({
+            approvedAt: approved.approvedAt,
+            approvedBy: approved.approvedBy,
+            approvedVia: approved.approvedVia,
+            decidedBy: 'allowed',
+            reachedVia: 'in-session',
+          }),
         })
       );
       // An approval is not an edit: the last editor is still agent B.

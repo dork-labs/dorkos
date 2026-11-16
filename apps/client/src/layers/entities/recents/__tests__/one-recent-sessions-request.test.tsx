@@ -16,7 +16,7 @@ import type { ReactNode } from 'react';
 import { renderHook, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { RecentSessionsResponse } from '@dorkos/shared/types';
-import { createMockTransport } from '@dorkos/test-utils';
+import { createMockTransport } from '@dorkos/test-utils/mock-factories';
 import { TransportProvider } from '@/layers/shared/model';
 import { RECENT_SESSIONS_WINDOW, useRecentSessions } from '@/layers/entities/session';
 import { useJumpBackIn } from '../model/use-jump-back-in';

@@ -298,6 +298,9 @@ gates:
   - id: lefthook.pre-push.ledger-coverage
     source: lefthook.yml
     purpose: Requires a ledger entry for changed pipeline paths before pushing.
+  - id: lefthook.pre-push.ci-midrun
+    source: lefthook.yml
+    purpose: Refuses a push while this branch's test or browser-test run from the last push is under ten minutes old, since the push would cancel it.
 
   # --- .claude/settings.json ---
   - id: claude.PreToolUse.file-guard

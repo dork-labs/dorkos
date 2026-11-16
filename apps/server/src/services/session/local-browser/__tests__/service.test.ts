@@ -11,6 +11,7 @@ import {
 } from '../lifecycle.js';
 import { AUDIT_WRITE_RESPONSE_TIMEOUT_MS, LOAD_START_MS } from '../page-action.js';
 import { LocalBrowserService } from '../service.js';
+import { assertLocalBrowserUrl } from '../errors.js';
 import { CLOUD_ORIGIN_REFUSAL } from '@dorkos/shared/cloud-origin';
 import { MAX_BROWSER_SNAPSHOT_BYTES, MAX_BROWSER_SCREENSHOT_EDGE } from '../observation-limits.js';
 import type { LocalBrowserBackend } from '../playwright-backend.js';
@@ -76,6 +77,16 @@ function fixture() {
   const page = {
     on: events.on.bind(events),
     off: events.off.bind(events),
+    once: events.once.bind(events),
+    waitForEvent: (name: string, options: { predicate: (value: unknown) => boolean }) =>
+      new Promise((resolve) => {
+        const on = (value: unknown) => {
+          if (!options.predicate(value)) return;
+          events.off(name, on);
+          resolve(value);
+        };
+        events.on(name, on);
+      }),
     context: () => context,
     url: () => url,
     title: async () => 'Fixture',
@@ -1588,6 +1599,68 @@ describe('the Cloud origin (DOR-3196)', () => {
     await service.disconnect();
   });
 
+  // DOR-4419: the address bar's refusals are UX. With the app's check skipped, a typed
+  // refused address sent straight to the person's navigate still never reaches the page.
+  it.each([
+    'file:///etc/hosts',
+    'javascript:alert(1)',
+    'data:text/html,<h1>x</h1>',
+    'chrome://settings',
+    'mailto:kai@example.com',
+    'about:config',
+  ])('refuses %s from the person even when the app check is bypassed', async (url) => {
+    const { service, page } = await create();
+    await selectOwned(service);
+    vi.mocked(page.goto).mockClear();
+    await expect(service.navigate(url)).rejects.toMatchObject({ code: 'unsupported_address' });
+    expect(page.goto).not.toHaveBeenCalled();
+    await service.disconnect();
+  });
+
+  it('lets the person open about:blank, and never an agent', async () => {
+    const { service, page } = await create();
+    await selectOwned(service);
+    await service.navigate('about:blank');
+    expect(page.goto).toHaveBeenLastCalledWith('about:blank', {
+      waitUntil: 'commit',
+      timeout: 15_000,
+    });
+    expect(() => assertLocalBrowserUrl('about:blank', 'agent')).toThrow(
+      expect.objectContaining({ code: 'unsupported_address' })
+    );
+    await service.disconnect();
+  });
+
+  it('says a page that never connected is unreachable, and a certificate error is not', async () => {
+    const { service, page } = await create();
+    await selectOwned(service);
+    vi.mocked(page.goto).mockRejectedValueOnce(
+      new Error('page.goto: net::ERR_CONNECTION_REFUSED at https://made-up.example/')
+    );
+    await expect(service.navigate('https://made-up.example/')).rejects.toMatchObject({
+      code: 'navigation_unreachable',
+    });
+    vi.mocked(page.goto).mockRejectedValueOnce(
+      Object.assign(new Error('page.goto: Timeout 15000ms exceeded.'), { name: 'TimeoutError' })
+    );
+    await expect(service.navigate('https://made-up.example/')).rejects.toMatchObject({
+      code: 'navigation_unreachable',
+    });
+    vi.mocked(page.goto).mockRejectedValueOnce(
+      new Error('page.goto: net::ERR_SSL_PROTOCOL_ERROR at https://made-up.example:5000/')
+    );
+    await expect(service.navigate('https://made-up.example:5000/')).rejects.toMatchObject({
+      code: 'navigation_unreachable',
+    });
+    vi.mocked(page.goto).mockRejectedValueOnce(
+      new Error('page.goto: net::ERR_CERT_AUTHORITY_INVALID at https://made-up.example/')
+    );
+    await expect(service.navigate('https://made-up.example/')).rejects.toMatchObject({
+      code: 'navigation_uncertain',
+    });
+    await service.disconnect();
+  });
+
   it('still lets the person open the Cloud origin themselves', async () => {
     const { service, page } = await create();
     await selectOwned(service);
@@ -2015,4 +2088,127 @@ it('retries a failed native detach before publishing a handoff', async () => {
   await service.handover.ask('chat-1', 'wall');
   expect(bridge.detach).toHaveBeenCalledTimes(2);
   await service.disconnect();
+});
+
+/**
+ * Back and Forward (DOR-4449) over a made-up DevTools history: the page's
+ * entries, moved by entry id, with every document load the step's guard sees.
+ */
+function withHistory(f: ReturnType<typeof fixture>, urls: string[], index: number) {
+  const history = { urls: [...urls], index };
+  const session = new EventEmitter();
+  const sent: string[] = [];
+  const cdp = {
+    on: session.on.bind(session),
+    off: session.off.bind(session),
+    send: vi.fn(async (method: string, params: { entryId?: number } = {}) => {
+      sent.push(method);
+      if (method === 'Page.getNavigationHistory')
+        return {
+          currentIndex: history.index,
+          entries: history.urls.map((url, at) => ({ id: at + 1, url })),
+        };
+      if (method === 'Page.getFrameTree') return { frameTree: { frame: { id: 'main' } } };
+      if (method === 'Page.navigateToHistoryEntry') {
+        history.index = params.entryId! - 1;
+        queueMicrotask(() => f.navigate(history.urls[history.index]!));
+      }
+      return {};
+    }),
+  };
+  Object.assign(f.context, { newCDPSession: vi.fn(async () => cdp) });
+  f.navigate(urls[index]!);
+  return { history, sent };
+}
+
+describe('Back and Forward (DOR-4449)', () => {
+  it('says which ways have a page, counting only pages the rules allow', async () => {
+    const f = await create(() => ['http://localhost:4242']);
+    await f.service.open({ mode: 'new-window' });
+    withHistory(
+      f,
+      ['about:blank', 'http://localhost:4242/', 'https://a.example/', 'https://b.example/'],
+      2
+    );
+    const tab = (await f.service.state()).tabs[0]!;
+    expect(tab).toMatchObject({ canGoBack: true, canGoForward: true });
+    await f.service.stepHistory('back');
+    // Back skipped DorkOS's own page and landed on the empty first page.
+    expect(f.page.url()).toBe('about:blank');
+    expect((await f.service.state()).tabs[0]).toMatchObject({
+      canGoBack: false,
+      canGoForward: true,
+    });
+  });
+
+  it('takes the page from a driving agent in the same step', async () => {
+    const f = await create();
+    await f.service.open({ mode: 'new-window', sessionId: 'chat-one' });
+    withHistory(f, ['https://a.example/', 'https://b.example/'], 1);
+    expect((await f.service.state()).paused).toBe(false);
+    const state = await f.service.stepHistory('back');
+    expect(state.paused).toBe(true);
+    expect(f.page.url()).toBe('https://a.example/');
+    // The agent's next action is refused rather than racing the person.
+    await expect(
+      f.service.action({ kind: 'navigate', revision: state.revision, url: 'https://c.example/' })
+    ).rejects.toMatchObject({ code: 'paused' });
+  });
+
+  it('leaves a browser no agent shares unpaused', async () => {
+    const f = await create();
+    await f.service.open({ mode: 'new-window' });
+    withHistory(f, ['https://a.example/', 'https://b.example/'], 1);
+    expect((await f.service.state()).paused).toBe(false);
+    expect((await f.service.stepHistory('back')).paused).toBe(false);
+  });
+
+  it('refuses a step with nowhere to go', async () => {
+    const f = await create();
+    await f.service.open({ mode: 'new-window' });
+    const { sent } = withHistory(f, ['https://a.example/'], 0);
+    await expect(f.service.stepHistory('forward')).rejects.toMatchObject({ code: 'no_history' });
+    expect(sent).not.toContain('Page.navigateToHistoryEntry');
+  });
+
+  it('in the Mac app, asks the app to move and passes its refusal on', async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), 'embedded-history-'));
+    directories.push(dir);
+    const f = fixture();
+    const bridge = {
+      endpoint: 'ws://127.0.0.1:9876/page/guest',
+      headers: {},
+      close: vi.fn(async () => undefined),
+      history: vi.fn(async () => ({
+        index: 1,
+        entries: [{ url: 'https://a.example/' }, { url: 'https://b.example/' }],
+      })),
+      goToHistory: vi.fn(async () => 'refused' as const),
+    };
+    f.navigate('https://b.example/');
+    const service = new LocalBrowserService(dir, { open: async () => bridge }, f.backend);
+    await service.open({ mode: 'embedded' });
+    expect((await service.state()).tabs[0]).toMatchObject({ canGoBack: true, canGoForward: false });
+    await expect(service.stepHistory('back')).rejects.toMatchObject({ code: 'history_refused' });
+    expect(bridge.goToHistory).toHaveBeenCalledWith(0, 'https://a.example/', expect.any(Array));
+    await service.disconnect();
+  });
+
+  it('in a Mac app too old to move history, says neither way', async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), 'embedded-history-old-'));
+    directories.push(dir);
+    const f = fixture();
+    const bridge = {
+      endpoint: 'ws://127.0.0.1:9876/page/guest',
+      headers: {},
+      close: vi.fn(async () => undefined),
+    };
+    const service = new LocalBrowserService(dir, { open: async () => bridge }, f.backend);
+    await service.open({ mode: 'embedded' });
+    expect((await service.state()).tabs[0]).toMatchObject({
+      canGoBack: false,
+      canGoForward: false,
+    });
+    await service.disconnect();
+  });
 });

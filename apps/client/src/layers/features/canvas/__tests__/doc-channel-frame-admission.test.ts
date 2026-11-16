@@ -2,7 +2,7 @@
 /** Genuine recovery issuance plus helper host-load controls. UNRUN; no native-browser claim. */
 import { afterEach, expect, it, vi } from 'vitest';
 import { waitFor } from '@testing-library/react';
-import { createMockTransport } from '@dorkos/test-utils';
+import { createMockTransport } from '@dorkos/test-utils/mock-factories';
 import { ownDocChannelConnection } from '@/layers/shared/lib/transport/doc-channel-ownership';
 import { FrameLifetimeController } from '@/layers/shared/lib/canvas-doc-frame';
 import { createDocChannelRecovery } from '../model/doc-channel-recovery';

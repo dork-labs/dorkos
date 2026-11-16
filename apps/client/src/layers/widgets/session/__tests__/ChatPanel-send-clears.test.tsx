@@ -25,7 +25,7 @@ import React from 'react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, cleanup, waitFor, act } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { createMockTransport } from '@dorkos/test-utils';
+import { createMockTransport } from '@dorkos/test-utils/mock-factories';
 import type { Transport } from '@dorkos/shared/transport';
 import type { Session } from '@dorkos/shared/types';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';

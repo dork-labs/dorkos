@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render as renderBare, screen, fireEvent, cleanup } from '@testing-library/react';
-import { createMockTransport } from '@dorkos/test-utils';
+import { createMockTransport } from '@dorkos/test-utils/mock-factories';
 import { TransportProvider } from '@/layers/shared/model';
 import type { ToolCallState } from '@/layers/shared/model/chat-message-types';
 import { SessionAsks } from '../ui/SessionAsks';

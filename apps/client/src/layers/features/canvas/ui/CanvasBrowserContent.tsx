@@ -1,23 +1,18 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowLeft, ArrowRight, ExternalLink, RotateCw } from 'lucide-react';
+import { ExternalLink } from 'lucide-react';
 import type { UiCanvasContent } from '@dorkos/shared/types';
 import { useFollowedView } from '@/layers/entities/room';
 import type { BrowserHistoryState } from '@/layers/shared/model';
 import { useAppStore } from '@/layers/shared/model';
-import { Input } from '@/layers/shared/ui';
-import { cn, openExternalLink } from '@/layers/shared/lib';
+import { BrowserChrome, ChromeButton } from '@/layers/shared/ui';
+import { normalizeAddressInput, openExternalLink } from '@/layers/shared/lib';
 import { useDevtoolsBridge } from '../model/use-devtools-bridge';
 import { useDocFrameChannel } from '../model/use-doc-frame-channel';
 import { useFrameBridgeRefusal } from '../model/use-frame-bridge-refusal';
 import { roomCanvasRefusal, useRoomCanvasActions } from '../model/use-room-canvas';
 import { useResolvedFrame } from '../model/use-resolved-frame';
 import { BrowserBody } from './BrowserPreviewFrame';
-import {
-  classifyBrowserTarget,
-  describeAddress,
-  loopbackStrategy,
-  normalizeAddressInput,
-} from '../lib/browser-url';
+import { classifyBrowserTarget, loopbackStrategy } from '../lib/browser-url';
 import { FrameBridgeNotice } from './FrameBridgeNotice';
 
 interface CanvasBrowserContentProps {
@@ -166,8 +161,16 @@ export function CanvasBrowserContent({ documentId, content }: CanvasBrowserConte
    * to the page already on screen and nothing said why. The bar reopens on this
    * value instead, so the fix is an edit rather than a retype.
    */
-  const [refusedAddress, setRefusedAddress] = useState<{ url: string; message: string } | null>(
-    null
+  const [refusedAddress, setRefusedAddress] = useState<{
+    url: string;
+    message: string;
+    attempt: number;
+  } | null>(null);
+  // Each refusal is a new attempt, so the same address refused twice still reopens the bar.
+  const holdRefused = useCallback(
+    (url: string, message: string) =>
+      setRefusedAddress((last) => ({ url, message, attempt: (last?.attempt ?? 0) + 1 })),
+    []
   );
 
   const navigate = useCallback(
@@ -202,24 +205,37 @@ export function CanvasBrowserContent({ documentId, content }: CanvasBrowserConte
 
   // Commit an address-bar entry.
   //
-  // **On a room route it is a post, not a navigation** (spec `room-canvas`
-  // §9.5). The Browser tab there shows the room's table, so typing an address is
-  // putting a page on it as yourself: the server answers with a `canvas` frame
-  // that reaches every member, and this frame follows it like everybody else's
-  // does. Typing the same address again is a reload of the page in front of you,
-  // which is nobody else's business and stays local.
+  // What was typed is read by the shared address rules first: a reload, an
+  // address, a search, or a notice saying why it does not open here. A refusal
+  // keeps the typed text in the bar so the fix is an edit, not a retype. Local
+  // files open, because this browser serves them. This app's own address is not
+  // refused here: the frame already loads it without the app's powers
+  // (`use-resolved-frame`). The `http://` fallback is not tried either, since a
+  // framed page's failure to connect cannot be seen from the parent.
+  //
+  // **On a room route an address is a post, not a navigation** (spec
+  // `room-canvas` §9.5). The Browser tab there shows the room's table, so typing
+  // an address is putting a page on it as yourself: the server answers with a
+  // `canvas` frame that reaches every member, and this frame follows it like
+  // everybody else's does. Typing the same address again is a reload of the page
+  // in front of you, which is nobody else's business and stays local.
   const submitAddress = useCallback(
     (value: string) => {
-      const next = normalizeAddressInput(value);
-      if (!next || next === currentUrl) {
+      const input = normalizeAddressInput(value, { current: currentUrl, allowLocalPaths: true });
+      if (input.kind === 'refused') {
+        holdRefused(value.trim(), input.notice);
+        return;
+      }
+      setRefusedAddress(null);
+      if (input.kind === 'reload') {
         notePersonNavigated();
         setReloadNonce((n) => n + 1);
         return;
       }
+      const next = input.url;
       if (roomId) {
-        setRefusedAddress(null);
         void openInRoom({ type: 'browser', url: next }).catch((error: unknown) => {
-          setRefusedAddress({ url: next, message: roomCanvasRefusal(error) });
+          holdRefused(next, roomCanvasRefusal(error));
         });
         return;
       }
@@ -232,7 +248,7 @@ export function CanvasBrowserContent({ documentId, content }: CanvasBrowserConte
       notePersonNavigated();
       navigate(next);
     },
-    [currentUrl, navigate, roomId, openInRoom, notePersonNavigated]
+    [currentUrl, navigate, roomId, openInRoom, notePersonNavigated, holdRefused]
   );
 
   // Always leaves the app, even for one of our own URLs — that is what the
@@ -241,41 +257,24 @@ export function CanvasBrowserContent({ documentId, content }: CanvasBrowserConte
 
   return (
     <div className="flex h-full flex-col">
-      <div className="border-border/60 flex shrink-0 flex-wrap items-center gap-1 border-b px-2 py-1 lg:h-9 lg:flex-nowrap lg:py-0">
-        <ChromeButton label="Back" disabled={!canBack} onClick={() => setCursor((c) => c - 1)}>
-          <ArrowLeft className="size-4" />
-        </ChromeButton>
-        <ChromeButton
-          label="Forward"
-          disabled={!canForward}
-          onClick={() => setCursor((c) => c + 1)}
-        >
-          <ArrowRight className="size-4" />
-        </ChromeButton>
-        <ChromeButton label="Reload" onClick={() => setReloadNonce((n) => n + 1)}>
-          <RotateCw className="size-4" />
-        </ChromeButton>
-        {/* Keyed on the refusal so a failed post remounts the bar in edit mode,
-            seeded with what was typed rather than with the page still on
-            screen. */}
-        <div className="order-first flex w-full min-w-0 lg:order-none lg:w-auto lg:flex-1">
-          <AddressBar
-            key={refusedAddress === null ? 'address' : `retry:${refusedAddress.url}`}
-            url={refusedAddress?.url ?? currentUrl}
-            startEditing={refusedAddress !== null}
-            onSubmit={submitAddress}
+      <BrowserChrome
+        url={currentUrl}
+        canBack={canBack}
+        canForward={canForward}
+        onBack={() => setCursor((c) => c - 1)}
+        onForward={() => setCursor((c) => c + 1)}
+        onReload={() => setReloadNonce((n) => n + 1)}
+        onSubmit={submitAddress}
+        retry={refusedAddress && { draft: refusedAddress.url, attempt: refusedAddress.attempt }}
+        notice={refusedAddress?.message ?? null}
+        trailing={
+          <ChromeButton
+            label="Open in system browser"
+            icon={ExternalLink}
+            onClick={openExternally}
           />
-        </div>
-        <ChromeButton label="Open in system browser" onClick={openExternally}>
-          <ExternalLink className="size-4" />
-        </ChromeButton>
-      </div>
-
-      {refusedAddress !== null && (
-        <p role="status" className="text-destructive border-border/60 border-b px-2 py-1 text-xs">
-          {refusedAddress.message}
-        </p>
-      )}
+        }
+      />
 
       {docFrame.requiresReload && (
         <div className="text-muted-foreground border-border/60 flex items-center justify-between gap-2 border-b px-2 py-1 text-xs">
@@ -317,141 +316,5 @@ export function CanvasBrowserContent({ documentId, content }: CanvasBrowserConte
         }}
       />
     </div>
-  );
-}
-
-/**
- * Chrome/Safari-style address bar. At rest it shows a simplified, honest view of
- * the logical URL (scheme + `www.` stripped, host emphasized, path dimmed; local
- * files shown as their source path behind a "local" chip — never the signed
- * token URL). Clicking or tab-focusing swaps to a text input pre-filled with the
- * full logical URL and select-all, so typing replaces immediately.
- *
- * Enter commits (navigate or reload); Escape and blur revert without navigating,
- * so an accidental focus never changes the page.
- */
-function AddressBar({
-  url,
-  startEditing = false,
-  onSubmit,
-}: {
-  url: string;
-  /** Open as a text box rather than at rest — how a refused address is offered back. */
-  startEditing?: boolean;
-  onSubmit: (value: string) => void;
-}) {
-  const [editing, setEditing] = useState(startEditing);
-  const [draft, setDraft] = useState(url);
-
-  if (!editing) {
-    return (
-      <AddressDisplay
-        url={url}
-        onActivate={() => {
-          setDraft(url);
-          setEditing(true);
-        }}
-      />
-    );
-  }
-
-  const commit = (e: React.FormEvent) => {
-    e.preventDefault();
-    setEditing(false);
-    onSubmit(draft);
-  };
-
-  return (
-    <form onSubmit={commit} className="min-w-0 flex-1">
-      <Input
-        aria-label="Address"
-        autoFocus
-        value={draft}
-        onChange={(e) => setDraft(e.target.value)}
-        // Select-all on focus so typing replaces the current URL (browser behavior).
-        onFocus={(e) => e.currentTarget.select()}
-        // Revert on blur/Escape — focus alone must never navigate.
-        onBlur={() => setEditing(false)}
-        onKeyDown={(e) => {
-          if (e.key === 'Escape') {
-            e.preventDefault();
-            setEditing(false);
-          }
-        }}
-        spellCheck={false}
-        autoCapitalize="off"
-        autoCorrect="off"
-        className="h-11 w-full text-base lg:h-7 lg:text-sm"
-      />
-    </form>
-  );
-}
-
-/** The spoken location for an {@link AddressDisplay} accessible name. */
-function locationLabel(display: ReturnType<typeof describeAddress>): string {
-  if (display.kind === 'local') return display.path;
-  if (display.kind === 'url') return `${display.host}${display.rest}`;
-  return display.text;
-}
-
-/** At-rest address display: a focusable button rendering the simplified URL. */
-function AddressDisplay({ url, onActivate }: { url: string; onActivate: () => void }) {
-  const display = useMemo(() => describeAddress(url), [url]);
-
-  return (
-    <button
-      type="button"
-      // The accessible name carries WHERE the user is, not just what the
-      // control is — a bare "Address" would override the visible location for
-      // screen readers. Local files announce their logical path, never the
-      // signed token URL.
-      aria-label={`Address: ${locationLabel(display)}`}
-      onClick={onActivate}
-      className="text-muted-foreground hover:bg-muted focus-ring flex h-11 min-w-0 flex-1 items-center gap-1.5 rounded-md px-2 text-left text-sm transition-colors lg:h-7"
-    >
-      {display.kind === 'local' && (
-        <>
-          <span className="bg-muted-foreground/15 text-3xs rounded px-1 py-0.5 font-medium tracking-wide uppercase">
-            local
-          </span>
-          <span className="text-foreground truncate">{display.path}</span>
-        </>
-      )}
-      {display.kind === 'url' && (
-        <span className="truncate">
-          <span className="text-foreground">{display.host}</span>
-          <span className="text-muted-foreground">{display.rest}</span>
-        </span>
-      )}
-      {display.kind === 'raw' && <span className="truncate">{display.text}</span>}
-    </button>
-  );
-}
-
-/** A single navigation-chrome icon button. */
-function ChromeButton({
-  label,
-  disabled,
-  onClick,
-  children,
-}: {
-  label: string;
-  disabled?: boolean;
-  onClick: () => void;
-  children: React.ReactNode;
-}) {
-  return (
-    <button
-      type="button"
-      aria-label={label}
-      disabled={disabled}
-      onClick={onClick}
-      className={cn(
-        'text-muted-foreground hover:text-foreground hover:bg-muted focus-ring flex size-11 shrink-0 items-center justify-center rounded-md transition-colors lg:size-7',
-        disabled && 'pointer-events-none opacity-40'
-      )}
-    >
-      {children}
-    </button>
   );
 }

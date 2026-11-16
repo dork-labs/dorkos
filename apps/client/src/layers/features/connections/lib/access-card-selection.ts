@@ -16,6 +16,7 @@ import {
   type ConnectorReconciliationPreview,
   type ConnectorRequestAccess,
 } from '@dorkos/shared/connector-schemas';
+import { displayedAccessLevel } from './access-level-offer';
 import {
   sameSelection,
   selectionsFromPreview,
@@ -249,7 +250,7 @@ export function everyAgentDecision(
   if (held === 'custom' && !levelTouched) return { needsLevel: false };
   if (!level) return { needsLevel: held === 'none' };
   const target = accessLevelRevisionIds(preview.candidates, level);
-  return held === level || target.length === 0
+  return displayedAccessLevel(held, preview.candidates) === level || target.length === 0
     ? { needsLevel: false }
     : { everyAgent: { operationRevisionIds: target, level }, needsLevel: false };
 }

@@ -1395,7 +1395,7 @@ export class PersistentDispatch {
         // for the stall watchdog (DOR-2681). Read through the bundle, not
         // through `this.bundles`: eviction forgets the bundle before it tears
         // the process down.
-        if (change.to === 'cold' || change.to === 'reaped') bundle.windows?.onRetired();
+        if (change.to === 'cold' || change.to === 'reaped') bundle.windows?.onRetired(change.to);
         // Session timers live in the process, so they end with it; the next
         // process has none until its own first Stop hook says otherwise.
         if (change.to === 'cold' || change.to === 'reaped' || change.to === 'crashed') {

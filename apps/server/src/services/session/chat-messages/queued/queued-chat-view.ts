@@ -12,7 +12,7 @@
  * falls back to the fence's words under "Another chat"; the envelope itself is
  * never shown.
  *
- * @module services/session/chat-messages/queued-chat-view
+ * @module services/session/chat-messages/queued/queued-chat-view
  */
 import type { ChatMessageRow } from '@dorkos/db';
 import {
@@ -21,8 +21,8 @@ import {
   type QueuedChatEntry,
 } from '@dorkos/shared/chat-messages';
 import type { QueuedMessage } from '@dorkos/shared/schemas';
-import type { QueuedChatView } from '../message-queue-store.js';
-import { isChatClientId } from './chat-client-id.js';
+import type { QueuedChatView } from '../../message-queue-store.js';
+import { isChatClientId } from '../chat-client-id.js';
 
 /** The sender name on a row whose sender could not be found again. */
 export const LEGACY_SENDER_NAME = 'Another chat';

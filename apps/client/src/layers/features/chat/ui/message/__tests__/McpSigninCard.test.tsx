@@ -16,7 +16,7 @@ import type { ReactNode } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { MessagePart } from '@dorkos/shared/types';
 import type { McpSigninPollResult, Transport } from '@dorkos/shared/transport';
-import { createMockTransport } from '@dorkos/test-utils';
+import { createMockTransport } from '@dorkos/test-utils/mock-factories';
 import { TransportProvider } from '@/layers/shared/model';
 import { McpSigninCard } from '../McpSigninCard';
 

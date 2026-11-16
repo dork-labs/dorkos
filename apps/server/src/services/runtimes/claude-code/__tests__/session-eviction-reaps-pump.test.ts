@@ -38,7 +38,8 @@ describe('session eviction gives the session process back', () => {
     runtime.ensureSession('capacity-new', { permissionMode: 'default' });
     expect(runtime.hasSession('capacity-new')).toBe(true);
     expect(runtime.hasSession('capacity-0')).toBe(false);
-    expect(evict).toHaveBeenCalledWith('capacity-0');
+    // `sweep`: DorkOS's own clean-up, kept apart from a person's pause (DOR-2705).
+    expect(evict).toHaveBeenCalledWith('capacity-0', 'sweep');
     expect(peekProjector('capacity-0')).toBeUndefined();
     expect(runtime.getSessionCapacity()).toMatchObject({
       runtime: 'claude-code',

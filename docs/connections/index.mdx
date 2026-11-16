@@ -84,9 +84,11 @@ While it waits, everyone is told. A notification appears in the Inbox (the bell)
 
 This is a cancel, not an undo. Once an action has run, DorkOS can't take it back.
 
-Everything else still asks you first with an approval card: on **Careful**, in a chat that asks before acting, when someone outside your team started the chat (a Telegram or Slack message, say), and when the request doesn't come from an agent's chat.
+Everything else still asks you first with an approval card: on **Careful**, in a chat that asks before acting, when someone other than you messaged the agent over Wi-Fi, and when the request doesn't come from an agent's chat.
 
-Words from outside your team always bring back the card, even in a chat set to **Full**. Once an agent has read them, it asks you before it sends, replies or forwards an email, creates a calendar event with guests, changes any calendar event, or takes any action that can't be taken back. Drafts, labels and reading still run without asking.
+A message over Wi-Fi from someone other than you brings back the card, even in a chat set to **Full**. After one, the agent asks you before it sends, replies or forwards an email, creates a calendar event with guests, changes any calendar event, or takes any action that can't be taken back. Drafts, labels and reading still run without asking.
+
+Other outside words don't bring the card back. That includes a message from someone else on Telegram or Slack, and an email or web page the agent reads. An agent runs at its set level, whoever messages it. So set Telegram and Slack to an allowlist, and don't connect an agent at **Full** to a chat other people can write in.
 
 ## Agents can ask, but you decide
 

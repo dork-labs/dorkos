@@ -153,7 +153,7 @@ function writeStub(binDir: string, name: string, body: string): void {
 }
 
 /**
- * Execute the real root verify script while replacing its external commands
+ * Execute the real root `verify:checks` script while replacing its external commands
  * with deterministic stubs, returning the Turbo calls that reached the runner.
  */
 function captureVerifyTurboInvocations(): TurboInvocation[] {
@@ -170,8 +170,9 @@ function captureVerifyTurboInvocations(): TurboInvocation[] {
     );
 
     const scripts = JSON.parse(packageText) as { scripts?: Record<string, string> };
-    const verify = scripts.scripts?.verify;
-    expect(verify, 'root package.json has no `verify` script').toBeTypeOf('string');
+    // `pnpm verify` wraps `verify:checks` to record proof; the checks are what reach Turbo.
+    const verify = scripts.scripts?.['verify:checks'];
+    expect(verify, 'root package.json has no `verify:checks` script').toBeTypeOf('string');
 
     // eslint-disable-next-line no-restricted-syntax -- scripts/ has no env.ts; the fixture must preserve PATH while prepending its command stubs
     const inheritedEnv = process.env;
@@ -182,6 +183,11 @@ function captureVerifyTurboInvocations(): TurboInvocation[] {
         ...inheritedEnv,
         PATH: `${fixtureDir}:${inheritedEnv.PATH ?? ''}`,
         TURBO_CAPTURE: capturePath,
+        // The script wraps each Turbo call in the real host-wide heavy-run lock,
+        // whose `--job` wait is up to 30 minutes. On the shared Mac every slot is
+        // often held, and this test once waited 402s for a stubbed Turbo. The
+        // lock is not what this asserts, so turn it off (its documented opt-out).
+        DORKOS_HEAVY_LOCK: '0',
       },
     });
     expect(result.status, result.stderr || result.stdout).toBe(0);
@@ -212,7 +218,7 @@ describe('local turbo --affected gates pin their diff base', () => {
     ]);
     expect(sites.map((s) => s.label).sort()).toEqual([
       'lefthook.yml pre-commit.lint',
-      'package.json scripts.verify',
+      'package.json scripts.verify:checks',
     ]);
   });
 
@@ -263,6 +269,8 @@ describe('local turbo --affected gates pin their diff base', () => {
     expect(lint?.text).toContain('turbo lint --affected');
   });
 
+  // Spawns the real script: a shell, two bash wrappers and two node stubs.
+  // Under a load of 30-40 that has run past vitest's 5s default.
   it('runs verify tests through Turbo with the pre-push scheduling contract', () => {
     expect(captureVerifyTurboInvocations()).toEqual([
       {
@@ -274,5 +282,5 @@ describe('local turbo --affected gates pin their diff base', () => {
         base: 'test-origin-main',
       },
     ]);
-  });
+  }, 30_000);
 });

@@ -14,6 +14,7 @@ const transport = vi.hoisted(() => ({
   getLocalBrowserCapabilities: vi.fn(),
   openLocalBrowser: vi.fn(),
   navigateLocalBrowser: vi.fn(),
+  stepLocalBrowserHistory: vi.fn(),
   getSession: vi.fn(),
   getAgentByPath: vi.fn(),
 }));
@@ -70,7 +71,7 @@ function mount() {
 
 async function mountOpen() {
   mount();
-  await screen.findByRole('textbox', { name: 'Web address' });
+  await screen.findByRole('button', { name: /^Address:/ });
   await waitFor(() => expect(page).toHaveBeenCalledWith('owned', 'read'));
 }
 
@@ -117,9 +118,9 @@ describe('page errors DorkOS draws in the page area (DOR-4430)', () => {
     const block = await screen.findByRole('alert');
     expect(block).toHaveTextContent('Can’t find northwind.example');
     expect(block).toHaveTextContent('Check the spelling. If it’s right, the site may be down.');
-    expect(screen.getByRole('textbox', { name: 'Web address' })).toHaveValue(
-      'https://northwind.example/pricing'
-    );
+    expect(
+      screen.getByRole('button', { name: 'Address: northwind.example/pricing' })
+    ).toBeInTheDocument();
     await waitFor(() => expect(setBounds.mock.calls.at(-1)?.[0].visible).toBe(false));
     // An agent's address is never searched for.
     expect(screen.queryByRole('button', { name: 'Search for it' })).toBeNull();
@@ -129,7 +130,8 @@ describe('page errors DorkOS draws in the page area (DOR-4430)', () => {
 
   it('offers to search only for what the person typed, in their own words', async () => {
     await mountOpen();
-    const field = screen.getByRole('textbox', { name: 'Web address' });
+    fireEvent.click(screen.getByRole('button', { name: /^Address:/ }));
+    const field = screen.getByRole('textbox', { name: 'Address' });
     fireEvent.change(field, { target: { value: 'https://northwind.example/' } });
     fireEvent.submit(field.closest('form')!);
     await waitFor(() =>
@@ -193,12 +195,29 @@ describe('page errors DorkOS draws in the page area (DOR-4430)', () => {
   });
 
   it('a certificate error has no way through, and Go back goes back', async () => {
+    transport.getLocalBrowserState.mockResolvedValue({
+      ...embedded,
+      tabs: [{ ...embedded.tabs[0]!, canGoBack: true, canGoForward: false }],
+    });
+    transport.stepLocalBrowserHistory.mockResolvedValue(embedded);
     await mountOpen();
     emit({ failure: failure('ERR_CERT_DATE_INVALID') });
     await screen.findByRole('alert');
     expect(screen.queryByRole('button', { name: /proceed|continue|anyway/i })).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: 'Go back' }));
-    expect(page).toHaveBeenCalledWith('owned', 'back');
+    // The same guarded step as the chrome's Back (DOR-4449), never the host's own goBack.
+    await waitFor(() => expect(transport.stepLocalBrowserHistory).toHaveBeenCalledWith('back'));
+    expect(page).not.toHaveBeenCalledWith('owned', 'back');
+  });
+
+  it('with no allowed page behind, Go back opens an empty page', async () => {
+    await mountOpen();
+    emit({ failure: failure('ERR_CERT_DATE_INVALID') });
+    await screen.findByRole('alert');
+    fireEvent.click(screen.getByRole('button', { name: 'Go back' }));
+    await waitFor(() => expect(transport.navigateLocalBrowser).toHaveBeenCalledWith('about:blank'));
+    expect(transport.stepLocalBrowserHistory).not.toHaveBeenCalled();
+    expect(page).not.toHaveBeenCalledWith('owned', 'back');
   });
 
   it('a page that commits takes the block away and shows the page again', async () => {
@@ -232,20 +251,20 @@ describe('page errors DorkOS draws in the page area (DOR-4430)', () => {
 });
 
 describe('the loading bar (DOR-4431)', () => {
-  it('runs in the seam while loading, turns Go into Stop and marks the row busy', async () => {
+  it('runs in the seam while loading, turns Reload into Stop and marks the row busy', async () => {
     await mountOpen();
-    const form = screen.getByRole('textbox', { name: 'Web address' }).closest('form')!;
+    const form = document.querySelector('[data-slot="browser-chrome-row"]')!;
     expect(form).toHaveAttribute('aria-busy', 'false');
     expect(document.querySelector('[data-slot="browser-loading-bar"]')).toBeNull();
     emit({ loading: true });
     expect(form).toHaveAttribute('aria-busy', 'true');
     expect(document.querySelector('[data-slot="browser-loading-bar"]')).not.toBeNull();
-    expect(screen.queryByRole('button', { name: 'Go' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Reload' })).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: 'Stop' }));
     expect(page).toHaveBeenCalledWith('owned', 'stop');
     emit({ loading: false });
     expect(form).toHaveAttribute('aria-busy', 'false');
-    expect(screen.getByRole('button', { name: 'Go' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Reload' })).toBeInTheDocument();
   });
 
   it('picks up a load that started before the panel opened', async () => {
@@ -257,6 +276,6 @@ describe('the loading bar (DOR-4431)', () => {
   it('stays idle on a desktop shell without the page bridge', async () => {
     window.electronAPI = { localBrowser: { setBounds } } as unknown as ElectronAPI;
     mount();
-    expect(await screen.findByRole('button', { name: 'Go' })).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: 'Reload' })).toBeInTheDocument();
   });
 });

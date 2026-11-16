@@ -132,7 +132,7 @@ describe('an agent filing a schedule', () => {
 });
 
 describe('a caller whose home is a link that matches two agents (DOR-3666)', () => {
-  it('comes back unnamed, and its schedule parks', async () => {
+  it('refuses ambiguous global fallback and writes nothing', async () => {
     // Two registered homes that are one folder by real path, and a caller
     // that reaches it through a third spelling: nobody can say which agent asked.
     const shared = path.join(scratch, 'shared');
@@ -168,7 +168,8 @@ describe('a caller whose home is a link that matches two agents (DOR-3666)', () 
         proposal: { sessionId: 'ses-c', agentPath: linkC },
       }
     );
-    expect(outcome.ok && outcome.parked).toBe(true);
+    expect(outcome).toMatchObject({ ok: false, status: 403, code: 'not_your_agent' });
+    expect(store.getTasks()).toEqual([]);
     expect(state.notified).toEqual([]);
   });
 });

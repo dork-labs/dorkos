@@ -20,6 +20,8 @@ import {
   ceilingForEntries,
   isEntryAuthorExternal,
 } from '../limits/turn-ceiling.js';
+import { strangerMarkForShown } from '../limits/context-entries.js';
+import { env } from '../../../env.js';
 import { teammateOf } from '../limits/space-teammates.js';
 import { turnRefusalOf } from '../turn-guards/paused-turn.js';
 import { buildRoomContext } from '../room-context.js';
@@ -130,6 +132,15 @@ export async function runOneInDispatch(
       ),
       // Only a Wi-Fi sign-in's post or a teammate's bounds the turn (`turn-ceiling.ts`).
       ...ceilingForEntries(self.deps.authors, answered, inSpaceRoom, room.id),
+      // Over what the context SHOWED as well as what it answers: a non-owner's unaddressed post
+      // in the window reaches the model just the same (DOR-4453 F1, as `seat-carry.ts` does).
+      ...strangerMarkForShown(
+        env.DORKOS_MARK_STRANGER_TURNS,
+        self.deps,
+        room.id,
+        answered,
+        turnContext.context
+      ),
       ...(answersUntrustedText(self.deps.authors, answered, room.id)
         ? { untrustedText: true as const }
         : {}),

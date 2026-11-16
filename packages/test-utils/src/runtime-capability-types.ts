@@ -59,6 +59,7 @@ export const MATRIX_GROUPS = {
   MEDIA: 'Attachments and media',
   COST: 'Cost and usage',
   CMP: 'Compaction',
+  GRD: 'Safety guards',
 } as const;
 
 /** A group key. */

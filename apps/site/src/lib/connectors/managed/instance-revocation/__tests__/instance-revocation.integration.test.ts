@@ -2,10 +2,10 @@
  * @vitest-environment node
  */
 
-import { PGlite } from '@electric-sql/pglite';
+import type { PGlite } from '@electric-sql/pglite';
 import { and, eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ConnectorEventCapability } from '@dorkos/shared/connector-events';
 
 import * as schema from '@/db/schema';
@@ -22,15 +22,19 @@ import {
   recoverManagedEventCleanup,
   type ManagedCleanupProvider,
 } from '../../event-cleanup-service';
-import { provisionManagedTestDatabase } from '../../__tests__/managed-database-fixture';
+import {
+  createManagedTestDatabaseTemplate,
+  type PGliteTemplate,
+} from '../../__tests__/managed-database-fixture';
 import { endRevokedInstanceConnections, sweepRevokedInstances } from '../cleanup';
 import { endOwnerConnectionsBeforeErasure, prepareAccountErasure } from '../erasure';
 import { countRevokedInstanceOrphans, runRevokedInstanceOrphanCleanup } from '../orphans';
 import { REVOKED_INSTANCE_CONNECTION_GRACE_MS, revokedInstanceConnectionsDue } from '../policy';
 
-// Booting PGlite and replaying the managed migrations costs seconds per case,
-// paid in `beforeEach`; the sibling managed suites measured the same 5-15s band
-// under load (DOR-1886), so both budgets move to 30s.
+// Booting PGlite and replaying the managed migrations costs seconds, paid once
+// in `beforeAll`; each case loads its own copy (DOR-4190). The sibling managed
+// suites measured the same 5-15s band under load (DOR-1886), so both
+// budgets move to 30s.
 vi.setConfig({ testTimeout: 30_000, hookTimeout: 30_000 });
 
 const definition = {
@@ -49,12 +53,15 @@ const c = schema.managedConnectorConnection;
 const k = schema.managedConnectorAuthorityCommand;
 
 describe('ending a revoked instance’s managed connections', () => {
+  let template: PGliteTemplate;
   let client: PGlite;
   let db: ManagedConnectorDatabase;
 
+  beforeAll(async () => {
+    template = await createManagedTestDatabaseTemplate();
+  });
   beforeEach(async () => {
-    client = new PGlite();
-    await provisionManagedTestDatabase(client);
+    client = await template.fresh();
     db = drizzle(client, { schema }) as unknown as ManagedConnectorDatabase;
   });
 

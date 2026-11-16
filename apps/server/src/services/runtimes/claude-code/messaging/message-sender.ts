@@ -56,6 +56,7 @@ import { recordPhantomCancellation } from '../../../observability/phantom-cancel
 import { TURN_REOPENING_STREAM_EVENT_TYPES } from '../../../session/session-event-normalizer.js';
 import { describeAuthError, detectAuthError } from '@dorkos/shared/runtime-error-classification';
 import { CLAUDE_CODE_RUNTIME_TYPE } from '../sdk/sdk-error-mapping.js';
+import { isTurnActivity } from '../sessions/records/turn-activity.js';
 
 // The vocabulary and the two small helpers both dispatch paths use. Re-exported
 // rather than moved-and-rewired: every import site in the tree names this
@@ -364,6 +365,9 @@ export async function* executeSdkQuery(
       pendingSdkPromise = null;
       const { result } = winner;
       if (result.done) break;
+      // Still working is still active: record eviction measures a running turn
+      // from its last activity, not from its start (DOR-2705).
+      if (isTurnActivity(result.value)) session.lastActivity = Date.now();
       initGuard.observe(result.value);
 
       // Track the last MAIN-THREAD assistant message uuid so the NEXT turn can

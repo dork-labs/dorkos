@@ -17,7 +17,10 @@ import type {
   ConnectorConnectionSummary,
 } from '@dorkos/shared/connector-resource-schemas';
 import type { Transport } from '@dorkos/shared/transport';
-import { createMockTransport, createMockConnectionReadiness } from '@dorkos/test-utils';
+import {
+  createMockTransport,
+  createMockConnectionReadiness,
+} from '@dorkos/test-utils/mock-factories';
 import { TransportProvider } from '@/layers/shared/model';
 import { AgentRequestCard } from '../ui/agent-request/AgentRequestCard';
 import { ChatAgentRequest } from '../ui/agent-request/ChatAgentRequest';
@@ -622,6 +625,9 @@ describe('AgentRequestCard — an account exists', () => {
     renderWith(transport, <AgentRequestCard request={{ ...REQUEST, access: 'read-write' }} />);
     const note = await screen.findByTestId('agent-request-write-note');
     expect(note).toHaveTextContent('Write access needs you.');
+    expect(
+      screen.getByRole('button', { name: 'Connect another Gmail account' })
+    ).toBeInTheDocument();
     const allow = screen.getByRole('button', { name: 'Allow' });
     // The note comes right before the buttons' row, in the same card.
     expect(note.nextElementSibling).toContainElement(allow);
@@ -651,36 +657,78 @@ describe('AgentRequestCard — an account exists', () => {
       renderWith(transport, <AgentRequestCard request={{ ...REQUEST, access: 'read-write' }} />);
 
       const missing = await screen.findByTestId('requested-write-missing');
-      expect(missing).toHaveTextContent('Allow gives Read only. Gmail has no Read and write here.');
+      expect(missing).toHaveTextContent('Allow gives Read only.');
+      expect(missing).not.toHaveTextContent('DorkOS can’t make changes');
       expect(missing).toHaveTextContent(
-        'To let it change things, choose exact actions on the Connections page.'
+        'To let it change things, use Advanced on the Connections page.'
       );
     });
 
-    it('says to connect again when the account has no actions that change things', async () => {
+    it('names Advanced even when the page can open the access dialog', async () => {
+      const user = userEvent.setup();
+      const onEditExactActions = vi.fn();
+      const transport = transportWith([account('connection-1')]);
+      vi.mocked(transport.previewConnectorReconciliation).mockResolvedValue(
+        previewOf(['read', 'destructive'])
+      );
+      renderWith(
+        transport,
+        <AgentRequestCard
+          request={{ ...REQUEST, access: 'read-write' }}
+          onEditExactActions={onEditExactActions}
+        />
+      );
+      const missing = await screen.findByTestId('requested-write-missing');
+      expect(missing).toHaveTextContent(
+        'To let it change things, use Advanced on the Connections page.'
+      );
+      await user.click(screen.getByRole('button', { name: 'Choose exact actions' }));
+      expect(onEditExactActions).toHaveBeenCalledExactlyOnceWith('connection-1');
+      expect(screen.getAllByRole('button', { name: 'Choose exact actions' })).toHaveLength(1);
+      expect(screen.getByTestId('agent-request-write-note')).toHaveTextContent(
+        'Write access needs you.'
+      );
+      expect(
+        screen.getByRole('button', { name: 'Connect another Gmail account' })
+      ).toBeInTheDocument();
+    });
+
+    it('omits write and reconnect controls when the app has no change actions', async () => {
       const transport = transportWith([account('connection-1')]);
       vi.mocked(transport.previewConnectorReconciliation).mockResolvedValue(previewOf(['read']));
       renderWith(transport, <AgentRequestCard request={{ ...REQUEST, access: 'read-write' }} />);
 
       const missing = await screen.findByTestId('requested-write-missing');
-      expect(missing).toHaveTextContent('Allow gives Read only.');
-      expect(missing).toHaveTextContent('If that seems wrong, connect Gmail again.');
+      expect(missing).toHaveTextContent(
+        'Allow gives Read only. DorkOS can’t make changes in Gmail yet.'
+      );
+      expect(
+        screen.queryByText('If that seems wrong, connect Gmail again.')
+      ).not.toBeInTheDocument();
+      expect(screen.queryByTestId('agent-request-write-note')).not.toBeInTheDocument();
+      expect(
+        screen.queryByRole('button', { name: 'Connect another Gmail account' })
+      ).not.toBeInTheDocument();
     });
 
-    it('says nothing of the kind when Read and write is on offer, or only Read was asked', async () => {
+    it('says nothing of the kind when Read and write is on offer', async () => {
       renderWith(
         transportWith([account('connection-1')]),
         <AgentRequestCard request={{ ...REQUEST, access: 'read-write' }} />
       );
       await screen.findByTestId('requested-access');
       expect(screen.queryByTestId('requested-write-missing')).not.toBeInTheDocument();
-      cleanup();
+    });
 
+    it('keeps Connect another account for a Read request on an app without change actions', async () => {
       const transport = transportWith([account('connection-1')]);
       vi.mocked(transport.previewConnectorReconciliation).mockResolvedValue(previewOf(['read']));
       renderWith(transport, <AgentRequestCard request={REQUEST} />);
       await screen.findByTestId('requested-access');
       expect(screen.queryByTestId('requested-write-missing')).not.toBeInTheDocument();
+      expect(
+        screen.getByRole('button', { name: 'Connect another Gmail account' })
+      ).toBeInTheDocument();
     });
   });
 });

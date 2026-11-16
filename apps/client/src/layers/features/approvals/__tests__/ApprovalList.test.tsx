@@ -14,7 +14,7 @@ import { act, render, screen, cleanup } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { PendingApproval } from '@dorkos/shared/approval-schemas';
-import { createMockTransport } from '@dorkos/test-utils';
+import { createMockTransport } from '@dorkos/test-utils/mock-factories';
 import { TransportProvider } from '@/layers/shared/model';
 import { discardSettlingApprovals, holdDecidedApproval } from '../model/settling-approvals';
 import { ApprovalList } from '../ui/ApprovalList';

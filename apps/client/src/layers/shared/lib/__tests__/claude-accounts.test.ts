@@ -6,7 +6,7 @@
  * they came from is not the platform the cockpit runs on.
  */
 import { afterAll, beforeAll, describe, it, expect } from 'vitest';
-import { createMockAccountUsage, createMockSessionLimit } from '@dorkos/test-utils';
+import { createMockAccountUsage, createMockSessionLimit } from '@dorkos/test-utils/mock-factories';
 import type { AccountUsage } from '@dorkos/shared/account-usage';
 import {
   accountIdentity,

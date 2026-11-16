@@ -16,7 +16,7 @@ import type { RuntimeCapabilities } from '@dorkos/shared/agent-runtime';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
 import type { Transport } from '@dorkos/shared/transport';
 import type { ModelOption } from '@dorkos/shared/types';
-import { createMockTransport } from '@dorkos/test-utils';
+import { createMockTransport } from '@dorkos/test-utils/mock-factories';
 import { TransportProvider } from '@/layers/shared/model';
 import { useExecutionExceptions } from '../model/use-execution-exceptions';
 

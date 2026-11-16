@@ -21,6 +21,16 @@ const PREFIX = 'mcp__dorkos__';
 describe('the room tools block', () => {
   const block = buildRoomToolsBlock(PREFIX);
 
+  it.each(['mcp__dorkos__', 'dorkos_'])(
+    'describes concise posting without a retired quota (%s)',
+    (prefix) => {
+      // Trusted agents have no per-turn posting cap; every runtime must receive truthful guidance.
+      const words = buildRoomToolsBlock(prefix).replace(/\s+/g, ' ');
+      expect(words).toContain('One considered message, not a running commentary');
+      expect(words).not.toMatch(/limit per turn|reaching it refuses the rest/i);
+    }
+  );
+
   it('says the answer the turn worked out is what goes in the tool call', () => {
     // The DOR-1643 inversion in one sentence: an agent that knows the tool is
     // "how you speak" can still decide it spoke by writing. This is the line

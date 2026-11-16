@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { QueryClient } from '@tanstack/react-query';
-import { createMockTransport } from '@dorkos/test-utils';
+import { createMockTransport } from '@dorkos/test-utils/mock-factories';
 import type { Transport } from '@dorkos/shared/transport';
 import type { Session } from '@dorkos/shared/types';
 import {

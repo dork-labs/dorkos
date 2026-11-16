@@ -21,7 +21,7 @@ import type { ReactNode } from 'react';
 import { renderHook, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { Transport } from '@dorkos/shared/transport';
-import { createMockTransport } from '@dorkos/test-utils';
+import { createMockTransport } from '@dorkos/test-utils/mock-factories';
 import { TransportProvider } from '@/layers/shared/model';
 import { useTeamRoster } from '@/layers/entities/team';
 import { useRegisterAgent, useUnregisterAgent, useDeleteAgentData } from '@/layers/entities/mesh';

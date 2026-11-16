@@ -28,7 +28,7 @@ import {
 import userEvent, { type UserEvent } from '@testing-library/user-event';
 import '@testing-library/jest-dom/vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { createMockTransport } from '@dorkos/test-utils';
+import { createMockTransport } from '@dorkos/test-utils/mock-factories';
 import type { Transport } from '@dorkos/shared/transport';
 import { agentAuthorRef } from '@dorkos/shared/room-schemas';
 import type { RoomEntry, RoomRosterEntry } from '@dorkos/shared/room-schemas';

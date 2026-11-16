@@ -2,7 +2,7 @@
 import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, cleanup, waitFor, act } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { createMockTransport } from '@dorkos/test-utils';
+import { createMockTransport } from '@dorkos/test-utils/mock-factories';
 import { MAX_FEEDBACK_ROUTE_LEN } from '@dorkos/shared/telemetry-events';
 import { REPLY_EMAIL_STORAGE_KEY } from '../lib/reply-email';
 import { TransportProvider } from '@/layers/shared/model';

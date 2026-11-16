@@ -53,6 +53,8 @@ import type { McpToolDeps } from '../../../runtimes/claude-code/mcp-tools/types.
 
 /** A real, empty data directory: `tasks_create` writes a SKILL.md before the row. */
 const tasksHome = mkdtempSync(path.join(os.tmpdir(), 'dorkos-teammate-mark-tasks-'));
+/** Bo's own folder, apart from the data folder: no schedule is made in the data folder (DOR-4067). */
+const boHome = mkdtempSync(path.join(os.tmpdir(), 'dorkos-teammate-mark-bo-'));
 
 /** What the in-session task tools need, over a real store. */
 function scheduleDeps(store: TaskStore): McpToolDeps {
@@ -217,7 +219,7 @@ describe('one mention later, the teammate mark still carries (DOR-3036)', () => 
       meshCore: {
         listWithPaths: () => [{ id: 'agent-bo', projectPath: '/agents/bo' }],
         // Where its runs start: a real folder, as a registered agent's home always is.
-        getProjectPath: (id: string) => (id === 'agent-bo' ? tasksHome : undefined),
+        getProjectPath: (id: string) => (id === 'agent-bo' ? boHome : undefined),
       },
     } as unknown as McpToolDeps;
     const create = createCreateScheduleHandler(deps, () => ({

@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "fa29b918-158d-4154-ad8c-ef7b50e98010",
+  "id": "de13bb00-c4b4-4eea-918d-ce47a730cd16",
   "prevId": "9c489387-db2c-46ee-a9bd-0b8da1f32c50",
   "tables": {
     "a2a_tasks": {
@@ -1828,6 +1828,27 @@
         },
         "approved_content_key": {
           "name": "approved_content_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "approved_at": {
+          "name": "approved_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "approved_by": {
+          "name": "approved_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "approved_via": {
+          "name": "approved_via",
           "type": "text",
           "primaryKey": false,
           "notNull": false,
@@ -9842,13 +9863,6 @@
         },
         "thread_root_entry_id": {
           "name": "thread_root_entry_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "opened_by_extension_id": {
-          "name": "opened_by_extension_id",
           "type": "text",
           "primaryKey": false,
           "notNull": false,

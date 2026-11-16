@@ -14,7 +14,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { ReactNode } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, cleanup, renderHook, waitFor } from '@testing-library/react';
-import { createMockTransport } from '@dorkos/test-utils';
+import { createMockTransport } from '@dorkos/test-utils/mock-factories';
 import type { SessionStatus } from '@dorkos/shared/session-stream';
 
 const NOW = new Date('2026-08-09T09:15:00.000Z').getTime();

@@ -1,8 +1,10 @@
 import type {
   ConnectorAccessLevel,
+  ConnectorReconciliationCandidate,
   ConnectorReconciliationGrantSelection,
   ConnectorReconciliationPreview,
 } from '@dorkos/shared/connector-schemas';
+import { displayedAccessLevel } from './access-level-offer';
 
 /**
  * What one agent holds, or is set to hold: its exact revisions, and the level
@@ -37,15 +39,19 @@ export function selectionsFromPreview(
   );
 }
 
-/** Whether two selections are the same revisions and the same level. */
+/** Compare revisions and levels; with candidates, compare levels as currently offered. */
 export function sameSelection(
   left: AgentAccessSelection | undefined,
-  right: AgentAccessSelection | undefined
+  right: AgentAccessSelection | undefined,
+  candidates?: readonly ConnectorReconciliationCandidate[]
 ): boolean {
   const a = [...(left?.operationRevisionIds ?? [])].sort();
   const b = [...(right?.operationRevisionIds ?? [])].sort();
   return (
-    left?.level === right?.level &&
+    (candidates
+      ? displayedAccessLevel(left?.level, candidates) ===
+        displayedAccessLevel(right?.level, candidates)
+      : left?.level === right?.level) &&
     a.length === b.length &&
     a.every((value, index) => value === b[index])
   );
@@ -64,7 +70,7 @@ export function changedGrantSelections(
   const original = selectionsFromPreview(preview);
   return preview.agents.flatMap((agent) => {
     const after = selections[agent.agentId];
-    if (sameSelection(original[agent.agentId], after)) return [];
+    if (sameSelection(original[agent.agentId], after, preview.candidates)) return [];
     return [
       {
         agentId: agent.agentId,

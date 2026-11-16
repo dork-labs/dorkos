@@ -12,7 +12,7 @@ import '@testing-library/jest-dom/vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { Transport } from '@dorkos/shared/transport';
 import type { MarketplaceApprovalSummary, PendingApproval } from '@dorkos/shared/approval-schemas';
-import { createMockTransport } from '@dorkos/test-utils';
+import { createMockTransport } from '@dorkos/test-utils/mock-factories';
 import { TransportProvider } from '@/layers/shared/model';
 import { discardSettlingApprovals } from '../model/settling-approvals';
 import { ApprovalCard } from '../ui/ApprovalCard';

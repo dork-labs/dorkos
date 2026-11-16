@@ -23,16 +23,17 @@ export function QueueSenderLine({ sender }: { sender: QueueSender | null }) {
   }
   const { color, emoji } = resolveAgentVisual({ id: sender.agentId ?? sender.agentName });
   // "from" and the chat title are one piece: with no room beside the name it
-  // drops to its own line and truncates there, so the name stays whole and
-  // nothing runs under the row's buttons. Only a name wider than the whole
-  // line ends in an ellipsis.
+  // drops to its own line and truncates there, with the full title in its
+  // tooltip. The name never truncates: a name wider than the line wraps.
   return (
     <span className="text-muted-foreground flex min-w-0 flex-wrap items-center gap-x-1 text-xs">
-      <span className="flex max-w-full shrink-0 items-center gap-1">
+      <span className="flex max-w-full min-w-0 items-start gap-1">
         <AgentAvatar color={color} emoji={emoji} size="xs" className="shrink-0" />
-        <span className="text-foreground truncate font-semibold">{sender.agentName}</span>
+        <span className="text-foreground min-w-0 font-semibold break-words">
+          {sender.agentName}
+        </span>
       </span>
-      <span className="max-w-full min-w-0 truncate">
+      <span className="max-w-full min-w-0 truncate" title={sender.chatTitle}>
         from{' '}
         {sender.chatTitle ? (
           <a
