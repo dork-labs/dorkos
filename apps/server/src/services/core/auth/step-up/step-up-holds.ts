@@ -39,9 +39,18 @@ import {
 
 import type { RequestFacts } from '../../../../http/request-facts.js';
 import { hashApprovalInput } from '../../approvals/approval-input-hash.js';
+import { logger, logError } from '../../../../lib/logger.js';
 
-/** The most actions held at once; past it the oldest is dropped. */
+/** The most actions held at once; new callers wait when the pool is full. */
 export const MAX_HELD_STEP_UPS = 16;
+/** One browser can replace only its own oldest holds, leaving other browsers intact. */
+export const MAX_HELD_STEP_UPS_PER_SESSION = 4;
+/** The pool is full and this browser owns no hold it could replace. */
+export class HeldStepUpCapacityError extends Error {
+  constructor() {
+    super('Too many actions are waiting. Try again shortly.');
+  }
+}
 
 /** What committing a held action answered: its own status and body. */
 export interface StepUpCommitResult {
@@ -51,6 +60,8 @@ export interface StepUpCommitResult {
 
 /** What a guarded route holds. */
 export interface StepUpActionInput {
+  /** Release resources if this action is discarded without committing. */
+  onDiscard?: () => void;
   kind: StepUpActionKind;
   /** What it acts on, in the server's words. */
   target: string;
@@ -76,6 +87,7 @@ export interface StepUpActionInput {
 
 /** One held action. */
 export interface HeldStepUp {
+  onDiscard?: StepUpActionInput['onDiscard'];
   statement: LocalStepUpStatementV1;
   reason: string;
   notes: readonly string[];
@@ -98,11 +110,19 @@ const held = new Map<string, HeldStepUp>();
 const expiries = new Map<string, ReturnType<typeof setTimeout>>();
 
 /** Drop one held action and its timer. */
-function drop(heldActionId: string): void {
+function drop(heldActionId: string, discard = true): void {
+  const entry = held.get(heldActionId);
   const expiry = expiries.get(heldActionId);
   if (expiry !== undefined) clearTimeout(expiry);
   expiries.delete(heldActionId);
   held.delete(heldActionId);
+  if (discard && entry?.onDiscard) {
+    try {
+      entry.onDiscard();
+    } catch (error) {
+      logger.warn('[StepUp] Could not release a discarded action', logError(error));
+    }
+  }
 }
 
 /**
@@ -143,6 +163,7 @@ function prune(now: number, sessionId: string | null, kind: string, inputSha256:
  * @param sessionId - The browser session asking, or `null`.
  * @param now - The current time, for tests.
  * @returns The statement it is bound to.
+ * @throws HeldStepUpCapacityError when every slot belongs to another browser.
  * @throws ApprovalInputNotBindableError when the input is not plain JSON, so
  *   nothing is held that its hash would not really bind.
  */
@@ -153,9 +174,10 @@ export function holdStepUp(
 ): LocalStepUpStatementV1 {
   const inputSha256 = stepUpActionHash(action);
   prune(now, sessionId, action.kind, inputSha256);
-  while (held.size >= MAX_HELD_STEP_UPS) {
-    const oldest = held.keys().next().value;
-    if (oldest === undefined) break;
+  const own = [...held].filter(([, entry]) => entry.sessionId === sessionId).map(([id]) => id);
+  while (own.length >= MAX_HELD_STEP_UPS_PER_SESSION || held.size >= MAX_HELD_STEP_UPS) {
+    const oldest = own.shift();
+    if (oldest === undefined) throw new HeldStepUpCapacityError();
     drop(oldest);
   }
   const statement: LocalStepUpStatementV1 = {
@@ -176,6 +198,7 @@ export function holdStepUp(
     warnings: action.warnings ?? [],
     sessionId,
     commit: action.commit,
+    onDiscard: action.onDiscard,
     triesLeft: STEP_UP_MAX_PASSWORD_TRIES,
   });
   const expiry = setTimeout(() => drop(statement.heldActionId), STEP_UP_TTL_MS);
@@ -209,7 +232,7 @@ export function peekHeldStepUp(heldActionId: string, now = Date.now()): HeldStep
  */
 export function takeHeldStepUp(heldActionId: string, now = Date.now()): HeldStepUp | undefined {
   const entry = peekHeldStepUp(heldActionId, now);
-  drop(heldActionId);
+  drop(heldActionId, false);
   return entry;
 }
 

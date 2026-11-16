@@ -38,6 +38,7 @@ import {
   requirePersonAtThisComputer,
 } from '../lib/caller-authority.js';
 import { errorBody } from '../lib/route-utils.js';
+import { runFrontDoorWrite } from './front-door-step-up.js';
 import { presentsAgentIdentity } from '../middleware/agent-identity.js';
 import { getAuth, readOwnerAccount, type Auth } from '../services/core/auth/index.js';
 import { authRequiredBody, verifyRequestAuth } from '../services/core/auth/session-gate.js';
@@ -93,7 +94,10 @@ async function resolveCaller(c: Context<ApiEnv>): Promise<DevicesCaller | null |
   if (user && user.credential !== 'cookie') return peopleOnly();
   const withUser: RequestFacts = { ...facts, user };
   const atThisComputer = requirePersonAtThisComputer(withUser) === undefined;
-  if (user) return { userId: user.userId, sessionId: user.sessionId, atThisComputer };
+  if (user) {
+    c.set('user', user);
+    return { userId: user.userId, sessionId: user.sessionId, atThisComputer };
+  }
   if (!atThisComputer) return c.json(authRequiredBody(), 401);
   // The person at this computer, with no sign-in of their own: the owner's.
   const owner = readOwnerAccount();
@@ -147,8 +151,19 @@ export function createDevicesRoutes(auth: () => Auth | undefined = getAuth): Hon
         403
       );
     }
-    if (!(await signOutSession(instance, caller.userId, sessionId))) return notFound();
-    return c.body(null, 204);
+    const run = async () => {
+      if (!(await signOutSession(instance, caller.userId, sessionId))) return notFound();
+      return c.body(null, 204);
+    };
+    if (own) return run();
+    return runFrontDoorWrite(c, {
+      kind: 'devices.sign-out-one',
+      target: c.req.param('id'),
+      input: { deviceId: c.req.param('id'), userId: caller.userId },
+      reason: 'Sign this other device out of DorkOS.',
+      subject: 'signed-in devices',
+      run,
+    });
   });
 
   router.post('/sign-out-all', async (c) => {
@@ -164,12 +179,18 @@ export function createDevicesRoutes(auth: () => Auth | undefined = getAuth): Hon
         403
       );
     }
-    const signedOut =
-      instance && caller
-        ? await signOutOtherSessions(instance, caller.userId, caller.sessionId)
-        : 0;
-    const body: SignOutEverywhereElseResult = { signedOut };
-    return c.json(body);
+    if (!instance || !caller) return c.json({ signedOut: 0 } satisfies SignOutEverywhereElseResult);
+    return runFrontDoorWrite(c, {
+      kind: 'devices.sign-out-others',
+      target: 'other-sessions',
+      input: { userId: caller.userId, keepSessionId: caller.sessionId ?? null },
+      reason: 'Sign every other device out of DorkOS.',
+      subject: 'signed-in devices',
+      run: async () =>
+        c.json({
+          signedOut: await signOutOtherSessions(instance, caller.userId, caller.sessionId),
+        } satisfies SignOutEverywhereElseResult),
+    });
   });
 
   return router;

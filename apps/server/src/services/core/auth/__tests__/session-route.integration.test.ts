@@ -4,6 +4,8 @@
  * A sign-in works only on the route it was made on (F4 part 1, DOR-2969),
  * through real Better Auth, the real chain and the real stream and MCP gates.
  */
+import { createStepUpRoutes } from '../../../../routes/step-up.js';
+import { confirmAuthFixture } from './confirm-write.js';
 import { NOT_FROM_WIFI } from '../sessions/wifi-level.js';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -19,11 +21,7 @@ import { apikey, createDb, runMigrations, session, type Db } from '@dorkos/db';
 import { getAuth, initAuth } from '../index.js';
 import { WIFI_SESSION_MAX_SECONDS } from '../sessions/session-route.js';
 import { createApiApp } from '../../../../http/api-chain.js';
-import {
-  API_KEY_NEEDS_THIS_COMPUTER,
-  mayWriteApiKeys,
-  mountBetterAuth,
-} from '../../../../http/better-auth.js';
+import { mayWriteApiKeys, mountBetterAuth } from '../../../../http/better-auth.js';
 import { frontDoorListener } from '../../../../http/front-door.js';
 import { MainRequestAdmission } from '../../lifecycle/main-request-admission.js';
 import { configManager, initConfigManager } from '../../config-manager.js';
@@ -46,6 +44,7 @@ function buildApp(): RequestListener {
     admission: new MainRequestAdmission(),
     beforeBodyParsing: (early) => mountBetterAuth(early, { auth: getAuth()!, maxAttempts: 1000 }),
   });
+  app.route('/api/step-up', createStepUpRoutes());
   app.get('/api/sessions', (c) => c.json({ user: c.get('user') ?? null }));
   app.post('/api/sessions', (c) => c.json({ user: c.get('user') ?? null }));
   const chain = frontDoorListener(app);
@@ -215,8 +214,9 @@ describe('a sign-in works only on the route it was made on', () => {
       const created = await authCall('post', 'api-key/create', elsewhere, cookie).send({
         name: 'stolen',
       });
-      // At this computer the key bar lets it through, and the session is nobody.
-      expect(created.status).toBe(elsewhere === 'direct' ? 401 : 403);
+      // The route-bound cookie proves nobody, so no action can be held.
+      expect(created.status).toBe(403);
+      expect(created.body.code).toBe('not-a-person');
       expect(keys()).toBe(before);
       const listed = await authCall('get', 'list-sessions', elsewhere, cookie);
       expect(listed.status).toBe(401);
@@ -225,7 +225,7 @@ describe('a sign-in works only on the route it was made on', () => {
       expect(who.status).toBe(200);
       expect(who.body).toBeNull();
       expect((await authCall('post', 'revoke-sessions', elsewhere, cookie).send({})).status).toBe(
-        401
+        403
       );
       expect(
         (await authCall('post', 'update-user', elsewhere, cookie).send({ name: 'Taken' })).status
@@ -269,13 +269,18 @@ describe('a sign-in works only on the route it was made on', () => {
     }
   });
 
-  it('makes and changes API keys only at this computer', async () => {
+  it('holds key changes on encrypted routes and refuses Wi-Fi', async () => {
     const local = await signInVia('direct');
     const keys = () => db.select().from(apikey).all().length;
     const before = keys();
-    const made = await authCall('post', 'api-key/create', 'direct', local.cookie).send({
-      name: 'here',
-    });
+    const made = await confirmAuthFixture(
+      authCall('post', 'api-key/create', 'direct', local.cookie).send({
+        name: 'here',
+      }),
+      target.server,
+      { Host: LOCAL, Origin: ORIGIN, Cookie: local.cookie },
+      PASSWORD
+    );
     expect(made.status).toBe(200);
     expect(keys()).toBe(before + 1);
 
@@ -286,19 +291,13 @@ describe('a sign-in works only on the route it was made on', () => {
           name: 'there',
           keyId: made.body.id,
         });
-        expect(refused.status).toBe(403);
-        // Wi-Fi meets the Wi-Fi level first, which refuses every key route there.
-        expect(refused.body).toEqual(
-          ingress === 'wifi'
-            ? {
-                code: NOT_FROM_WIFI,
-                error: 'API keys are managed only at this computer.',
-              }
-            : {
-                code: API_KEY_NEEDS_THIS_COMPUTER,
-                message: 'API keys can only be made on this computer.',
-              }
-        );
+        if (ingress === 'wifi') {
+          expect(refused.status).toBe(403);
+          expect(refused.body.code).toBe(NOT_FROM_WIFI);
+        } else {
+          expect(refused.status).toBe(428);
+          expect(refused.body.code).toBe('step_up_required');
+        }
       }
     }
     expect(keys()).toBe(before + 1);

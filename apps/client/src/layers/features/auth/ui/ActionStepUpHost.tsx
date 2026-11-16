@@ -1,5 +1,6 @@
 import { useEffect, useId, useRef, useState, useSyncExternalStore, type FormEvent } from 'react';
-import type { HeldStepUpView, StepUpActionKind, StepUpExtensionRisk } from '@dorkos/shared/step-up';
+import type { HeldStepUpView, StepUpExtensionRisk } from '@dorkos/shared/step-up';
+import { primaryLabel } from '../model/step-up-primary-label';
 import { useSettingsDeepLink } from '@/layers/shared/model';
 import {
   AlertDialog,
@@ -363,17 +364,6 @@ function EndedBody({ message, onClose }: { message: string; onClose: () => void 
       </Button>
     </div>
   );
-}
-
-/**
- * The sheet's main button, named for the action where the designer named it
- * (DOR-3467: "Confirm setting"; a connection using a setting: "Allow sending");
- * "Confirm" otherwise.
- */
-function primaryLabel(kind: StepUpActionKind | undefined): string {
-  if (kind === 'connection.confirm-setting') return 'Confirm setting';
-  if (kind === 'connection.use-setting') return 'Allow sending';
-  return 'Confirm';
 }
 
 /** One line for a mini app that keeps confirming off (PM, DOR-3234 Must 3). */

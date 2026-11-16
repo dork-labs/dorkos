@@ -22,7 +22,11 @@ import { STEP_UP_REQUIRED_CODE, type StepUpRequiredBody } from '@dorkos/shared/s
 import type { ApiEnv } from '../http/api-chain.js';
 import { honoRequestFacts } from '../http/request-facts.js';
 import { readOwnerAccount } from '../services/core/auth/index.js';
-import { holdStepUp, type StepUpActionInput } from '../services/core/auth/step-up/step-up-holds.js';
+import {
+  holdStepUp,
+  HeldStepUpCapacityError,
+  type StepUpActionInput,
+} from '../services/core/auth/step-up/step-up-holds.js';
 import { ApprovalInputNotBindableError } from '../services/core/approvals/approval-input-hash.js';
 import { errorBody } from '../lib/route-utils.js';
 
@@ -45,6 +49,8 @@ export function holdForStepUp(c: Context<ApiEnv>, action: StepUpActionInput): Re
   try {
     statement = holdStepUp(action, sessionId);
   } catch (error) {
+    if (error instanceof HeldStepUpCapacityError)
+      return c.json(errorBody(error.message, 'too-many-actions'), 429);
     if (error instanceof ApprovalInputNotBindableError) {
       return c.json(errorBody('That can’t be confirmed as asked.', 'NOT_BINDABLE'), 400);
     }

@@ -765,8 +765,8 @@ interface ProgramKey {
 
 /**
  * Issue an ephemeral program key through real local owner authentication:
- * register the owner, step up as the person the way the app does, and create
- * the key with that session and its proof.
+ * register the owner, get the app's person proof, then confirm this key
+ * creation with the same session and proof.
  */
 async function createProgramKey(request: APIRequestContext, apiUrl: string): Promise<ProgramKey> {
   await ensureTestOwner(request, apiUrl, PROGRAM_KEY_OWNER);
@@ -775,7 +775,19 @@ async function createProgramKey(request: APIRequestContext, apiUrl: string): Pro
     headers: { origin: apiUrl, ...personHeaders(proof) },
     data: { name: 'Connections browser protocol', expiresIn: 86400 },
   });
-  expect(created.ok(), await created.text()).toBe(true);
-  const { id, key } = (await created.json()) as { id: string; key: string };
-  return { id, key, proof };
+  expect(created.status(), await created.text()).toBe(428);
+  const { heldActionId } = (await created.json()) as { heldActionId: string };
+  const confirmed = await request.post(`${apiUrl}/api/step-up/${heldActionId}/password`, {
+    headers: { origin: apiUrl, ...personHeaders(proof) },
+    data: { password: PROGRAM_KEY_OWNER.password },
+  });
+  expect(confirmed.ok(), await confirmed.text()).toBe(true);
+  const answer = (await confirmed.json()) as {
+    ok: boolean;
+    status: number;
+    result: { id: string; key: string };
+  };
+  expect(answer.ok).toBe(true);
+  expect(answer.status).toBe(200);
+  return { ...answer.result, proof };
 }

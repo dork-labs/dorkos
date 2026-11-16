@@ -48,6 +48,54 @@ export const STEP_UP_MAX_PASSWORD_TRIES = 5;
  * the server knows.
  */
 export const STEP_UP_ACTION_KINDS = [
+  /** Make a lasting API key. */
+  'api-key.create',
+  /** Change a lasting API key. */
+  'api-key.update',
+  /** Start managed Remote Access. */
+  'remote-access.enrolment',
+  /** Enable or change Remote Access. */
+  'remote-access.mode',
+  /** Open the own tunnel. */
+  'tunnel.start',
+  /** Open Wi-Fi access. */
+  'lan-access.enable',
+  /** Reveal the local MCP credential. */
+  'mcp-token.reveal',
+  /** Replace the local MCP credential. */
+  'mcp-token.rotate',
+  /** Change lasting access or spending settings. */
+  'config.front-door',
+  /** Link chat from the web. */
+  'session-relay.link',
+  /** Raise web chat access. */
+  'session-relay.level',
+  /** Resume web chat access. */
+  'session-relay.resume',
+  /** Begin adding an approval passkey. */
+  'relay-passkey.enrol',
+  /** Trust an installed extension source. */
+  'extensions.trust-source',
+  /** Link this computer to an account. */
+  'cloud.link',
+  /** Open an account billing action. */
+  'cloud.billing',
+  /** Request account deletion. */
+  'cloud.delete',
+  /** Export account data. */
+  'cloud.export',
+  /** Assign an account seat. */
+  'cloud.seats',
+  /** Enable credits for a runtime. */
+  'cloud.credits',
+  /** Change account-hosted spaces. */
+  'cloud.space',
+  /** Sign out another device. */
+  'devices.sign-out-one',
+  /** Sign out every other device. */
+  'devices.sign-out-others',
+  /** Sign out every device through the auth API. */
+  'devices.sign-out-all',
   /** Allow an MCP server for every agent (DOR-3213). */
   'mcp-server.allow-global',
   /** Turn on the person's own browser for agents (DOR-3214). */

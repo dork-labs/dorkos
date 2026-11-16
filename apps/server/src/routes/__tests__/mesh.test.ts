@@ -1,3 +1,4 @@
+import { createStepUpRoutes } from '../step-up.js';
 import {
   creditsAllowedForAgent,
   creditsIsDefaultFor,
@@ -139,10 +140,22 @@ describe('Mesh routes', () => {
   /** Serve the mesh routes behind the `/api` chain, recording into `activity` if given. */
   function mountMesh(activity?: ActivityService): void {
     fixtureTarget.mount(
-      honoGroupListener({
-        path: '/api/mesh',
-        routes: createMeshRoutes({ meshCore: meshCore as unknown as MeshCore, activity }),
-      })
+      honoGroupListener([
+        {
+          path: '/api/mesh',
+          routes: createMeshRoutes({ meshCore: meshCore as unknown as MeshCore, activity }),
+        },
+        {
+          path: '/api/step-up',
+          routes: createStepUpRoutes({
+            ownerId: () => 'user_owner',
+            checkPassword: async (password) => (password === 'made-up-password' ? 'ok' : 'wrong'),
+            minPasswordLength: async () => 8,
+            setOwnerPassword: async () => undefined,
+            trustedOrigins: () => ['http://localhost:4242'],
+          }),
+        },
+      ])
     );
   }
   /** Real directories a test made on disk, removed after it. */
@@ -968,7 +981,8 @@ describe('Mesh routes', () => {
 
     // Only a person can put an agent on DorkOS credits (ADR 261001-000811): the
     // consent is recorded in DorkOS config, never trusted from the file.
-    it('records a person’s consent when they put an agent on DorkOS credits', async () => {
+    it('records no credits consent from an unconfirmed request', async () => {
+      meshCore.get.mockReturnValue(MOCK_MANIFEST);
       meshCore.update.mockReturnValue({ ...MOCK_MANIFEST, account: 'dorkos-credits' });
       vi.mocked(setCreditsAllowedForAgent).mockClear();
 
@@ -976,8 +990,8 @@ describe('Mesh routes', () => {
         .patch('/api/mesh/agents/agent-1')
         .send({ account: 'dorkos-credits' });
 
-      expect(res.status).toBe(200);
-      expect(setCreditsAllowedForAgent).toHaveBeenCalledExactlyOnceWith('agent-1', true);
+      expect(res.body.heldActionId).toBeUndefined();
+      expect(setCreditsAllowedForAgent).not.toHaveBeenCalled();
     });
 
     it('withdraws the consent when a person moves the agent off credits', async () => {
@@ -1082,13 +1096,30 @@ describe('Mesh routes', () => {
         // Stands in for a browser session the gate proved.
         vi.mocked(decideSessionGate).mockResolvedValueOnce({
           allowed: true,
-          user: { userId, credential: 'cookie' },
+          user: { userId, credential: 'cookie', sessionId: 'fixture-owner-browser' },
         });
+        meshCore.get.mockReturnValue(MOCK_MANIFEST);
         meshCore.update.mockReturnValue({ ...MOCK_MANIFEST, account: 'dorkos-credits' });
         vi.mocked(setCreditsAllowedForAgent).mockClear();
-        return request(fixtureServer)
+        const response = await request(fixtureServer)
           .patch('/api/mesh/agents/agent-1')
+          .set('Origin', 'http://localhost:4242')
           .send({ account: 'dorkos-credits' });
+        if (userId === 'user_owner') {
+          expect(response.status).toBe(428);
+          expect(setCreditsAllowedForAgent).not.toHaveBeenCalled();
+        }
+        if (response.status !== 428) return response;
+        vi.mocked(decideSessionGate).mockResolvedValueOnce({
+          allowed: true,
+          user: { userId, credential: 'cookie', sessionId: 'fixture-owner-browser' },
+        });
+        const confirmed = await request(fixtureServer)
+          .post(`/api/step-up/${response.body.heldActionId}/password`)
+          .set('Origin', 'http://localhost:4242')
+          .send({ password: 'made-up-password' });
+        expect(confirmed.status).toBe(200);
+        return { ...response, status: confirmed.body.status, body: confirmed.body.result };
       }
 
       afterEach(async () => {
@@ -1104,7 +1135,7 @@ describe('Mesh routes', () => {
       });
 
       it('records the owner’s consent', async () => {
-        await patchAs('user_owner');
+        expect((await patchAs('user_owner')).status).toBe(200);
         expect(setCreditsAllowedForAgent).toHaveBeenCalledExactlyOnceWith('agent-1', true);
       });
     });

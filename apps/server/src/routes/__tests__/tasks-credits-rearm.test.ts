@@ -1,3 +1,4 @@
+import { createStepUpRoutes } from '../step-up.js';
 import { taskReviewRevision } from '../../services/tasks/approvals/person-review.js';
 /**
  * An edit to a live schedule on DorkOS credits keeps it approved only for the
@@ -107,20 +108,37 @@ describe('PATCH /api/tasks/:id — a live schedule on DorkOS credits (DOR-2678)'
 
     target.mount(
       honoGroupListener(
-        {
-          path: '/api/tasks',
-          routes: createTasksRoutes({
-            store,
-            scheduler,
-            registrar: new TaskRegistrar({ store, scheduler }),
-            defaultTimezone: () => 'UTC',
-            dorkHome,
-          }),
-        },
+        [
+          {
+            path: '/api/tasks',
+            routes: createTasksRoutes({
+              store,
+              scheduler,
+              registrar: new TaskRegistrar({ store, scheduler }),
+              defaultTimezone: () => 'UTC',
+              dorkHome,
+            }),
+          },
+          {
+            path: '/api/step-up',
+            routes: createStepUpRoutes({
+              ownerId: () => 'user_owner',
+              checkPassword: async (password) => (password === 'made-up-password' ? 'ok' : 'wrong'),
+              minPasswordLength: async () => 8,
+              setOwnerPassword: async () => undefined,
+              trustedOrigins: () => ['http://localhost:4242'],
+            }),
+          },
+        ],
         {
           // Stands in for the browser session the session gate proved.
           before: (c, next) => {
-            if (signedInAs) c.set('user', { userId: signedInAs, credential: 'cookie' });
+            if (signedInAs)
+              c.set('user', {
+                userId: signedInAs,
+                credential: 'cookie',
+                sessionId: 'owner-test-browser',
+              });
             return next();
           },
         }
@@ -133,8 +151,8 @@ describe('PATCH /api/tasks/:id — a live schedule on DorkOS credits (DOR-2678)'
     await fs.rm(dorkHome, { recursive: true, force: true });
   });
 
-  const patch = (id: string, body: Record<string, unknown>) =>
-    request(target.server)
+  const patch = async (id: string, body: Record<string, unknown>) => {
+    const result = await request(target.server)
       .patch(`/api/tasks/${id}`)
       .send({
         ...body,
@@ -142,6 +160,14 @@ describe('PATCH /api/tasks/:id — a live schedule on DorkOS credits (DOR-2678)'
           expectedApprovalRevision: taskReviewRevision(store.getTask(id)!),
         }),
       });
+    if (result.status !== 428) return result;
+    const confirmed = await request(target.server)
+      .post(`/api/step-up/${result.body.heldActionId}/password`)
+      .set('Origin', 'http://localhost:4242')
+      .send({ password: 'made-up-password' });
+    expect(confirmed.status).toBe(200);
+    return { ...result, status: confirmed.body.status, body: confirmed.body.result };
+  };
 
   /** The schedule, discovered, put on credits and approved by the owner. */
   async function approvedOnCredits(): Promise<Task> {
@@ -175,9 +201,10 @@ describe('PATCH /api/tasks/:id — a live schedule on DorkOS credits (DOR-2678)'
 
   it('refuses another signed-in account switching it back on', async () => {
     const task = await approvedOnCredits();
-    await patch(task.id, { enabled: false }).expect(200);
+    expect((await patch(task.id, { enabled: false })).status).toBe(200);
     signedInAs = 'user_member';
-    const res = await patch(task.id, { enabled: true }).expect(403);
+    const res = await patch(task.id, { enabled: true });
+    expect(res.status).toBe(403);
     expect(res.body).toEqual({
       error: 'Only the owner of this DorkOS can run a scheduled task on DorkOS credits.',
       code: 'owner_only',
@@ -187,7 +214,7 @@ describe('PATCH /api/tasks/:id — a live schedule on DorkOS credits (DOR-2678)'
 
   it('refuses an agent switching it back on', async () => {
     const task = await approvedOnCredits();
-    await patch(task.id, { enabled: false }).expect(200);
+    expect((await patch(task.id, { enabled: false })).status).toBe(200);
     const res = await request(target.server)
       .patch(`/api/tasks/${task.id}`)
       .set('x-dorkos-agent', 'agent-token-abc')
@@ -199,8 +226,9 @@ describe('PATCH /api/tasks/:id — a live schedule on DorkOS credits (DOR-2678)'
 
   it('lets the owner switch it back on', async () => {
     const task = await approvedOnCredits();
-    await patch(task.id, { enabled: false }).expect(200);
-    const res = await patch(task.id, { enabled: true }).expect(200);
+    expect((await patch(task.id, { enabled: false })).status).toBe(200);
+    const res = await patch(task.id, { enabled: true });
+    expect(res.status).toBe(200);
     expect(res.body.enabled).toBe(true);
   });
 
@@ -208,8 +236,8 @@ describe('PATCH /api/tasks/:id — a live schedule on DorkOS credits (DOR-2678)'
     const found = await resync();
     posture.loginOn = true;
     signedInAs = 'user_owner';
-    await patch(found.id, { status: 'active', enabled: true }).expect(200);
-    await patch(found.id, { enabled: false }).expect(200);
+    expect((await patch(found.id, { status: 'active', enabled: true })).status).toBe(200);
+    expect((await patch(found.id, { enabled: false })).status).toBe(200);
     signedInAs = undefined;
     posture.loginOn = false;
     const res = await request(target.server)
@@ -226,10 +254,10 @@ describe('PATCH /api/tasks/:id — a live schedule on DorkOS credits (DOR-2678)'
     expect(res.body.status).toBe('active');
   });
 
-  it('with login off, keeps it approved when the person edits it', async () => {
+  it('with login off, keeps it approved when the owner browser edits it', async () => {
     const task = await approvedOnCredits();
     posture.loginOn = false;
-    signedInAs = undefined;
+    signedInAs = 'user_owner';
     const res = await patch(task.id, { prompt: 'Drain everything.' });
     expect(res.body.status).toBe('active');
   });

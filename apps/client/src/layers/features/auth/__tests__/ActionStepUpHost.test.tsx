@@ -75,6 +75,24 @@ async function confirmWith(password: string): Promise<void> {
 }
 
 describe('ActionStepUpHost', () => {
+  it.each([
+    ['api-key.create', 'Create key'],
+    ['api-key.update', 'Save key'],
+    ['devices.sign-out-one', 'Sign it out'],
+    ['devices.sign-out-others', 'Sign out others'],
+    ['devices.sign-out-all', 'Sign out everywhere'],
+    ['extensions.trust-source', 'Trust source'],
+    ['session-relay.link', 'Create link'],
+    ['relay-passkey.enrol', 'Add passkey'],
+  ] as const)('names the confirmation for %s', async (kind, label) => {
+    heldWith({ ...VIEW, kind }, [200, { ok: true, status: 200, result: {} }]);
+    render(<ActionStepUpHost />);
+    const outcome = ask();
+    const button = await screen.findByRole('button', { name: label });
+    await userEvent.type(await screen.findByLabelText('DorkOS password'), 'made-up-password');
+    await userEvent.click(button);
+    await expect(outcome).resolves.toEqual({ kind: 'confirmed', status: 200, result: {} });
+  });
   it('shows nothing until an action is held', () => {
     render(<ActionStepUpHost />);
     expect(screen.queryByRole('alertdialog')).toBeNull();

@@ -46,6 +46,7 @@ import {
   type ComposedServer,
   type ContractCase,
   stepUpAt,
+  confirmSetupAnswer,
 } from './harness.js';
 
 /** The repository root: the composed server's directory boundary. */
@@ -715,9 +716,12 @@ async function setup(
   method: string,
   url: string,
   body?: unknown,
-  headers: Record<string, string> = {}
+  headers: Record<string, string> = {},
+  confirmationPassword?: string
 ): Promise<Answer> {
-  const answer = await call(server, method, url, body, headers);
+  let answer = await call(server, method, url, body, headers);
+  if (confirmationPassword)
+    answer = await confirmSetupAnswer(server!.baseUrl, answer, confirmationPassword, headers);
   if (answer.status >= 300) {
     throw new Error(`${method} ${url} answered ${answer.status}: ${JSON.stringify(answer.json)}`);
   }
@@ -1086,14 +1090,16 @@ describe('contract: the marketplace groups with login on', () => {
       'PATCH',
       '/api/config',
       { auth: { enabled: true } },
-      { ...person, ...origin }
+      { ...person, ...origin },
+      OWNER.password
     );
     const created = await setup(
       server,
       'POST',
       '/api/auth/api-key/create',
       { name: 'c' },
-      { ...cookie, ...origin }
+      { ...cookie, ...origin },
+      OWNER.password
     );
     apiKey = { authorization: `Bearer ${created.json.key as string}` };
   }, BOOT_HOOK_TIMEOUT_MS);

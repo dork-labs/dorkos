@@ -74,6 +74,12 @@ const FACTS_PARAMETERS: Record<string, string> = {
   // Each handler binds `const caller = honoRequestFacts(c)` and spreads it.
   'runtimes-account-eligibility.ts': 'caller',
   'tasks.ts': 'caller',
+  // The extracted HTTP handlers receive the same caller facts, or the verified
+  // confirming request when a credits action commits.
+  'tasks-create-http.ts': 'caller',
+  'tasks-update-http.ts': 'caller',
+  // The held source addition records the browser that confirmed the write.
+  'extensions-trusted-sources.ts': 'confirming',
 };
 
 /** The `routes/` directory this guard walks. */

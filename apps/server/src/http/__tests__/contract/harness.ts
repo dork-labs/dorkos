@@ -558,3 +558,44 @@ export async function stepUpAt(baseUrl: string, password: string): Promise<Recor
     [PERSON_PROOF_HEADER]: proof,
   };
 }
+
+/** Complete an explicitly approved fixture write through the real per-action ceremony. */
+export async function confirmSetupAt(
+  baseUrl: string,
+  response: Response,
+  password: string,
+  headers: Record<string, string>
+): Promise<Response> {
+  if (response.status !== 428) return response;
+  const held = (await response.json()) as { heldActionId: string };
+  const confirmed = await fetch(new URL(`/api/step-up/${held.heldActionId}/password`, baseUrl), {
+    method: 'POST',
+    headers: { origin: baseUrl, ...headers, 'content-type': 'application/json' },
+    body: JSON.stringify({ password }),
+  });
+  if (!confirmed.ok)
+    throw new Error(`fixture confirmation answered ${confirmed.status}: ${await confirmed.text()}`);
+  const result = (await confirmed.json()) as { status: number; result: unknown };
+  return new Response(result.status === 204 ? null : JSON.stringify(result.result), {
+    status: result.status,
+    headers: response.headers,
+  });
+}
+
+/** Confirm a setup sender that keeps status, parsed JSON and raw text together. */
+export async function confirmSetupAnswer<T extends { status: number; json: unknown }>(
+  baseUrl: string,
+  answer: T,
+  password: string,
+  headers: Record<string, string>
+): Promise<T> {
+  if (answer.status !== 428) return answer;
+  const confirmed = await confirmSetupAt(
+    baseUrl,
+    new Response(JSON.stringify(answer.json), { status: answer.status }),
+    password,
+    headers
+  );
+  const text = await confirmed.text();
+  return { ...answer, status: confirmed.status, json: text ? JSON.parse(text) : {}, text };
+}

@@ -24,6 +24,7 @@
  *
  * @module services/openapi-registry
  */
+import { documentFrontDoorStepUps } from './auth/step-up/front-door-openapi.js';
 import { ChatActivityResponseSchema } from '@dorkos/shared/chat-messages';
 import { CreateAgentOptionsSchema } from '@dorkos/shared/mesh-schemas';
 import { RUNTIME_CREDITS_PROTOCOLS } from '@dorkos/shared/agent-runtime';
@@ -8648,6 +8649,8 @@ registerCapabilitiesInOpenApi(composeCapabilityRegistryForDocs(), registry);
 registerExtensionDecisionsOpenApi(registry);
 registerExtensionRemovalOpenApi(registry);
 registerExtensionApprovalSetOpenApi(registry);
+
+documentFrontDoorStepUps(registry);
 
 // --- Generator ---
 

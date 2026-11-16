@@ -6,7 +6,11 @@ import { AccountIds, credentialRef } from '../../../audit/account-ids.js';
 import { initAuditTrail, resetAuditTrail } from '../../../audit/audit-trail.js';
 import { runWithAuditActor } from '../../../audit/audit-context.js';
 import type { RequestFacts } from '../../../../http/request-facts.js';
-import { annotateRemoteMcpKeyList, recordRemoteMcpSession } from '../remote-mcp-audit.js';
+import {
+  annotateRemoteMcpKeyList,
+  recordApiKeyCreationRoute,
+  recordRemoteMcpSession,
+} from '../remote-mcp-audit.js';
 
 afterEach(() => resetAuditTrail());
 
@@ -108,8 +112,8 @@ describe('remote MCP audit and key-list projection', () => {
     );
     expect(await response.json()).toEqual({
       apiKeys: [
-        { id: 'key-test', name: 'Test', lastUsedRemotelyAt: at },
-        { id: 'unused-test', name: 'Unused', lastUsedRemotelyAt: null },
+        { id: 'key-test', name: 'Test', lastUsedRemotelyAt: at, createdFrom: null },
+        { id: 'unused-test', name: 'Unused', lastUsedRemotelyAt: null, createdFrom: null },
       ],
       total: 2,
     });
@@ -123,7 +127,7 @@ describe('remote MCP audit and key-list projection', () => {
       Response.json({ apiKeys: [{ id: 'key-test' }] })
     );
     expect(await response.json()).toEqual({
-      apiKeys: [{ id: 'key-test', lastUsedRemotelyAt: null }],
+      apiKeys: [{ id: 'key-test', lastUsedRemotelyAt: null, createdFrom: null }],
     });
   });
 
@@ -133,5 +137,64 @@ describe('remote MCP audit and key-list projection', () => {
     expect(await annotateRemoteMcpKeyList(refused)).toBe(refused);
     const other = Response.json({ ok: true });
     expect(await annotateRemoteMcpKeyList(other)).toBe(other);
+  });
+
+  it('records a remote key’s creation device without retaining its secret', async () => {
+    const { db, request } = fixture();
+    const secret = 'made-up-created-key-secret';
+    const response = Response.json({ id: 'key-created', key: secret });
+    const facts = {
+      ...request,
+      ingress: 'own-tunnel' as const,
+      headers: {
+        host: 'localhost:4242',
+        'user-agent':
+          'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 Version/18.0 Mobile/15E148 Safari/604.1',
+      },
+    };
+    const same = await runWithAuditActor(
+      {
+        actor: { accountId: 'person-test', kind: 'person', name: 'Test person' },
+        surface: 'app',
+      },
+      () => recordApiKeyCreationRoute(facts, response)
+    );
+    expect(same).toBe(response);
+    expect((await same.json()).key).toBe(secret);
+    const rows = db.select().from(auditEvents).all();
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      action: 'api_key.created_remotely',
+      targetId: credentialRef('api-key', 'key-created').idHash,
+    });
+    expect(JSON.stringify(rows)).not.toContain(secret);
+    resetAuditTrail();
+    initAuditTrail({
+      log: new AuditLog(db),
+      accounts: new AccountIds({
+        db,
+        installId: 'test-install',
+        readOwnerAccount: () => null,
+      }),
+    });
+    const listed = await annotateRemoteMcpKeyList(
+      Response.json({ apiKeys: [{ id: 'key-created' }] })
+    );
+    const madeFrom = (await listed.json()).apiKeys[0].createdFrom;
+    expect(madeFrom).toContain('iPhone');
+    expect(madeFrom).toContain('over Remote Access');
+  });
+
+  it('does not label local or refused key creation as remote', async () => {
+    const { db, request } = fixture();
+    await recordApiKeyCreationRoute(
+      { ...request, peerAddress: '127.0.0.1', forwardedAddress: '127.0.0.1' },
+      Response.json({ id: 'key-local' })
+    );
+    await recordApiKeyCreationRoute(
+      { ...request, ingress: 'managed' },
+      Response.json({ error: 'Not created' }, { status: 403 })
+    );
+    expect(db.select().from(auditEvents).all()).toHaveLength(0);
   });
 });

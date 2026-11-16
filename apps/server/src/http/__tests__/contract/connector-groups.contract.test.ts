@@ -44,6 +44,7 @@ import {
   type ComposedServer,
   type ContractCase,
   stepUpAt,
+  confirmSetupAnswer,
 } from './harness.js';
 
 /** The offline service's project key and signing secret (`test-composio/data.ts`). */
@@ -846,14 +847,19 @@ async function setup(
   method: string,
   url: string,
   body?: unknown,
-  headers: Record<string, string> = {}
+  headers: Record<string, string> = {},
+  confirmationPassword?: string
 ): Promise<Answer> {
-  const answer = await call(server, method, url, body, headers);
+  let answer = await call(server, method, url, body, headers);
+  if (confirmationPassword)
+    answer = await confirmSetupAnswer(server!.baseUrl, answer, confirmationPassword, headers);
   if (answer.status >= 300) {
     throw new Error(`${method} ${url} answered ${answer.status}: ${JSON.stringify(answer.json)}`);
   }
   return answer;
 }
+
+const OWNER_PASSWORD = 'a-long-password-1';
 
 /** Sign up the owner, step up, and mint an API key; the person's headers and the key. */
 async function ownerCredentials(
@@ -861,7 +867,7 @@ async function ownerCredentials(
 ): Promise<{ cookie: Record<string, string>; apiKey: Record<string, string> }> {
   const owner = {
     email: `owner-${randomUUID().slice(0, 8)}@dork.test`,
-    password: 'a-long-password-1',
+    password: OWNER_PASSWORD,
   };
   const origin = { origin: server!.baseUrl };
   await setup(server, 'POST', '/api/auth/sign-up/email', { ...owner, name: 'Owner' }, origin);
@@ -872,7 +878,8 @@ async function ownerCredentials(
     'POST',
     '/api/auth/api-key/create',
     { name: 'contract' },
-    { ...cookie, ...origin }
+    { ...cookie, ...origin },
+    OWNER_PASSWORD
   );
   return { cookie, apiKey: { authorization: `Bearer ${created.json.key as string}` } };
 }
@@ -1554,7 +1561,14 @@ describe('contract: the connector groups with login on', () => {
     server = await bootComposedServer();
     ({ cookie, apiKey } = await ownerCredentials(server));
     // Asking for a password is the owner's own act, after their step-up (DOR-3330).
-    await setup(server, 'PATCH', '/api/config', { auth: { enabled: true } }, cookie);
+    await setup(
+      server,
+      'PATCH',
+      '/api/config',
+      { auth: { enabled: true } },
+      cookie,
+      OWNER_PASSWORD
+    );
   }, BOOT_HOOK_TIMEOUT_MS);
   afterAll(async () => {
     await server?.close();

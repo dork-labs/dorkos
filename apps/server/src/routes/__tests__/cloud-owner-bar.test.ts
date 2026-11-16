@@ -10,6 +10,10 @@
  * covered, and the reads below pin that the bar did not spread to them.
  */
 import { describe, it, expect, vi, beforeEach, type Mock } from 'vitest';
+import { mkdtempSync, writeFileSync, rmSync, existsSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+import type { StagedArchive } from '../../services/core/cloud/community-move-upload.js';
 import request from '@dorkos/test-utils/supertest';
 import { listeningServer } from '@dorkos/test-utils/listening-server';
 
@@ -31,6 +35,7 @@ const manager = vi.hoisted(() => ({
 }));
 vi.mock('../../services/core/auth/cloud-link.js', () => ({
   getCloudLinkManager: () => manager,
+  getCloudLinkGeneration: () => 0,
 }));
 
 const plan = vi.hoisted(() => ({
@@ -72,7 +77,7 @@ vi.mock('../../services/core/cloud/credits-availability.js', () => ({
 }));
 vi.mock('../../services/core/cloud/credits-runtimes.js', () => ({
   creditsStatus: async () => ({}),
-  creditsRuntimeViews: () => [],
+  creditsRuntimeViews: () => [{ type: 'claude-code', wired: true }],
 }));
 const credits = vi.hoisted(() => ({
   // The default route asks whether a change changes anything before it asks
@@ -101,7 +106,7 @@ vi.mock('../../services/core/cloud/hosted-communities.js', () => hosted);
 const moveUploads = vi.hoisted(() => ({
   // Refused as an empty file, the way staging refuses one: reaching it is all
   // these tests need to see.
-  stageArchive: vi.fn(async () => {
+  stageArchive: vi.fn(async (): Promise<StagedArchive> => {
     const { StagingError } = await import('../../services/core/cloud/community-move-upload.js');
     throw new StagingError('empty');
   }),
@@ -148,9 +153,17 @@ import cloudRouter from '../cloud.js';
 // After the route: the chain imports the auth module, which must load after
 // the mocks above have replaced who owns this install.
 import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
+import { createStepUpRoutes } from '../step-up.js';
+import { markIngress } from '../../services/core/remote/ingress-mark.js';
+import {
+  resetHeldStepUpsForTests,
+  holdStepUp,
+  MAX_HELD_STEP_UPS_PER_SESSION,
+} from '../../services/core/auth/step-up/step-up-holds.js';
 
 /** Who `sessionGate` resolved, as a test sets it; nobody by default (login off). */
-let signedInUser: { userId: string; credential: 'cookie' | 'api-key' } | undefined;
+let signedInUser:
+  { userId: string; credential: 'cookie' | 'api-key'; sessionId?: string } | undefined;
 
 const server = listeningServer(
   honoGroupListener(
@@ -371,15 +384,35 @@ describe('the DorkOS account owner bar', () => {
 
     it('with login on, lets the owner signed in to the app through', async () => {
       posture.authEnabled = true;
-      signedInUser = { userId: OWNER_ID, credential: 'cookie' };
+      signedInUser = { userId: OWNER_ID, credential: 'cookie', sessionId: 'owner-browser' };
       const res = await send(write);
-      expect(res.status).not.toBe(403);
-      expect(write.effect).toHaveBeenCalled();
+      if (
+        [
+          'start a link',
+          'assign a seat',
+          'open the portal page',
+          'open the topup page',
+          'open the checkout page',
+          'request an export',
+          'request deletion',
+          'start a space',
+          'take a claim link',
+          'keep a space',
+          'reopen a space',
+          'resend a move',
+        ].includes(write.name)
+      ) {
+        expect(res.status).toBe(428);
+        expect(write.effect).not.toHaveBeenCalled();
+      } else {
+        expect(res.status).not.toBe(403);
+        expect(write.effect).toHaveBeenCalled();
+      }
     });
 
     it('with login on, refuses everyone when no owner account can be read', async () => {
       posture.authEnabled = true;
-      signedInUser = { userId: OWNER_ID, credential: 'cookie' };
+      signedInUser = { userId: OWNER_ID, credential: 'cookie', sessionId: 'owner-browser' };
       owner.account = null;
       try {
         const res = await send(write).expect(403);
@@ -391,9 +424,14 @@ describe('the DorkOS account owner bar', () => {
     });
 
     it('with login off, lets the person at this computer through', async () => {
-      const res = await send(write);
-      expect(res.status).not.toBe(403);
-      expect(write.effect).toHaveBeenCalled();
+      owner.account = null;
+      try {
+        const res = await send(write);
+        expect(res.status).not.toBe(403);
+        expect(write.effect).toHaveBeenCalled();
+      } finally {
+        owner.account = { id: OWNER_ID, name: 'Owner' };
+      }
     });
   });
 
@@ -459,4 +497,202 @@ describe('the DorkOS account owner bar', () => {
       });
     });
   });
+});
+
+describe('DorkOS account confirmation', () => {
+  let via: 'direct' | 'own-tunnel' | 'managed' | 'wifi' = 'direct';
+  let browser = 'owner-browser';
+  const origin = 'http://localhost:4242';
+  const confirmedServer = listeningServer(
+    honoGroupListener(
+      [
+        { path: '/api/cloud', routes: cloudRouter },
+        {
+          path: '/api/step-up',
+          routes: createStepUpRoutes({
+            ownerId: () => OWNER_ID,
+            checkPassword: async (password) => (password === 'made-up-password' ? 'ok' : 'wrong'),
+            minPasswordLength: async () => 8,
+            setOwnerPassword: async () => undefined,
+            trustedOrigins: () => [origin],
+          }),
+        },
+      ],
+      {
+        before: async (c, next) => {
+          c.set('user', { userId: OWNER_ID, credential: 'cookie', sessionId: browser });
+          if (via !== 'direct') markIngress(c.env.incoming, via);
+          await next();
+        },
+      }
+    )
+  );
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    resetHeldStepUpsForTests();
+    posture.authEnabled = false;
+    browser = 'owner-browser';
+    owner.account = { id: OWNER_ID, name: 'Owner' };
+  });
+  const heldWrites: Write[] = [
+    ...WRITES.filter((write) =>
+      [
+        'start a link',
+        'assign a seat',
+        'open the portal page',
+        'open the topup page',
+        'open the checkout page',
+        'request an export',
+        'request deletion',
+        'start a space',
+        'resend a move',
+        'take a claim link',
+        'keep a space',
+        'reopen a space',
+      ].includes(write.name)
+    ),
+    {
+      name: 'choose DorkOS credits',
+      method: 'put',
+      path: '/credits/default',
+      body: { runtime: 'claude-code', useCredits: true },
+      effect: credits.setCreditsDefault,
+      action: 'choose what runs on DorkOS credits',
+    },
+  ];
+  function sendConfirmed(write: Write) {
+    const req = request(confirmedServer)
+      [write.method](`/api/cloud${write.path}`)
+      .set('Origin', origin);
+    return write.body === undefined ? req : req.send(write.body);
+  }
+  function confirm(id: string) {
+    return request(confirmedServer)
+      .post(`/api/step-up/${id}/password`)
+      .set('Origin', origin)
+      .send({ password: 'made-up-password' });
+  }
+  describe.each(heldWrites)('$name', (write) => {
+    it.each(['direct', 'own-tunnel', 'managed'] as const)(
+      'holds the write from %s',
+      async (route) => {
+        via = route;
+        const held = await sendConfirmed(write);
+        expect(held.status).toBe(428);
+        expect(write.effect).not.toHaveBeenCalled();
+        browser = 'other-browser';
+        expect((await confirm(held.body.heldActionId)).body.code).toBe('not-your-action');
+        expect(write.effect).not.toHaveBeenCalled();
+        browser = 'owner-browser';
+        expect((await confirm(held.body.heldActionId)).body).toMatchObject({
+          ok: true,
+          status: 200,
+        });
+        expect(write.effect).toHaveBeenCalledOnce();
+      }
+    );
+    it('keeps the Wi-Fi refusal', async () => {
+      via = 'wifi';
+      expect((await sendConfirmed(write)).status).toBe(403);
+      expect(write.effect).not.toHaveBeenCalled();
+    });
+  });
+  it.each(['direct', 'own-tunnel', 'managed'] as const)(
+    'holds a staged move from %s before any outgoing upload',
+    async (route) => {
+      via = route;
+      const directory = mkdtempSync(path.join(tmpdir(), 'held-space-move-'));
+      const filePath = path.join(directory, 'export.zip');
+      writeFileSync(filePath, 'made-up-export');
+      moveUploads.stageArchive.mockResolvedValueOnce({
+        filePath,
+        bytes: 14,
+        sha256: 'a'.repeat(64),
+      });
+      hosted.startMove.mockResolvedValueOnce({
+        move: { moveId: 'northwind-move', state: 'ready' },
+        upload: null,
+      });
+      try {
+        const held = await request(confirmedServer)
+          .post('/api/cloud/communities/moves?idempotencyKey=held&name=Northwind')
+          .set('Origin', origin)
+          .set('Content-Type', 'application/zip')
+          .send(Buffer.from('made-up-export'));
+        expect(held.status).toBe(428);
+        expect(hosted.startMove).not.toHaveBeenCalled();
+        expect(moveUploads.uploads.begin).not.toHaveBeenCalled();
+        browser = 'other-browser';
+        expect((await confirm(held.body.heldActionId)).body.code).toBe('not-your-action');
+        expect(hosted.startMove).not.toHaveBeenCalled();
+        browser = 'owner-browser';
+        expect((await confirm(held.body.heldActionId)).body).toMatchObject({
+          ok: true,
+          status: 200,
+        });
+        expect(hosted.startMove).toHaveBeenCalledOnce();
+        expect(moveUploads.uploads.begin).not.toHaveBeenCalled();
+      } finally {
+        rmSync(directory, { recursive: true, force: true });
+      }
+    }
+  );
+  it.each(['cancelled', 'evicted'] as const)(
+    'removes a %s staged export and caps pending moves per browser',
+    async (ending) => {
+      via = 'own-tunnel';
+      const directory = mkdtempSync(path.join(tmpdir(), 'discarded-space-move-'));
+      const filePath = path.join(directory, 'export.zip');
+      writeFileSync(filePath, 'made-up-export');
+      moveUploads.stageArchive.mockResolvedValueOnce({
+        filePath,
+        bytes: 14,
+        sha256: 'b'.repeat(64),
+      });
+      const send = () =>
+        request(confirmedServer)
+          .post('/api/cloud/communities/moves?idempotencyKey=bounded&name=Northwind')
+          .set('Origin', origin)
+          .set('Content-Type', 'application/zip')
+          .send(Buffer.from('made-up-export'));
+      try {
+        const held = await send();
+        expect(held.status).toBe(428);
+        expect(existsSync(filePath)).toBe(true);
+        expect((await send()).status).toBe(409);
+        expect(moveUploads.stageArchive).toHaveBeenCalledOnce();
+        if (ending === 'cancelled') {
+          expect(
+            (
+              await request(confirmedServer)
+                .delete(`/api/step-up/${held.body.heldActionId}`)
+                .set('Origin', origin)
+            ).status
+          ).toBe(204);
+        } else {
+          for (let i = 0; i < MAX_HELD_STEP_UPS_PER_SESSION; i++)
+            holdStepUp(
+              {
+                kind: 'cloud.space',
+                target: 'another-move',
+                input: { i },
+                reason: 'Move another space.',
+                commit: async () => ({ status: 200, body: {} }),
+              },
+              'owner-browser'
+            );
+        }
+        await vi.waitFor(() => expect(existsSync(filePath)).toBe(false));
+        expect(hosted.startMove).not.toHaveBeenCalled();
+        expect(moveUploads.uploads.begin).not.toHaveBeenCalled();
+        // Its reservation is gone too: the next request reaches ordinary staging validation.
+        expect((await send()).status).toBe(400);
+        expect(moveUploads.stageArchive).toHaveBeenCalledTimes(2);
+      } finally {
+        resetHeldStepUpsForTests();
+        rmSync(directory, { recursive: true, force: true });
+      }
+    }
+  );
 });

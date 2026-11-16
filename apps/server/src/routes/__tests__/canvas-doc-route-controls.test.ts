@@ -5,6 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import request from '@dorkos/test-utils/supertest';
+import { confirmAuthFixture } from '../../services/core/auth/__tests__/confirm-write.js';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
 import {
   createDb,
@@ -438,11 +439,16 @@ describe('document route controls over the mounted app', () => {
     expect((await request(server).get(`${endpoint()}/routes`).set('Cookie', cookies)).status).toBe(
       200
     );
-    const created = await request(server)
-      .post('/api/auth/api-key/create')
-      .set('Cookie', cookies)
-      .set('Origin', origin)
-      .send({ name: 'routes' });
+    const created = await confirmAuthFixture(
+      request(server)
+        .post('/api/auth/api-key/create')
+        .set('Cookie', cookies)
+        .set('Origin', origin)
+        .send({ name: 'routes' }),
+      server,
+      { origin, cookie: cookies.map((value) => value.split(';')[0]).join('; ') },
+      'correct-horse-battery-staple'
+    );
     expect(created.status).toBe(200);
     const reviewed = await review('helper').set('Cookie', cookies);
     expect(reviewed.status).toBe(200);
