@@ -26,14 +26,17 @@ const NOTES_UPDATE: PendingExtensionApproval = {
   permissions: {
     runtime: 'subprocess',
     net: ['api.notes.example.com', 'sync.notes.example.com'],
-    run: [{ name: 'git', found: true }],
+    run: [
+      { name: 'git', found: true },
+      { name: 'rg', found: true },
+    ],
     agents: true,
     hasPage: true,
-    apps: [{ id: 'sample-planner', name: 'Planner', access: 'reads', opens: true }],
+    apps: [{ id: 'sample-planner', name: 'Planner', access: null, opens: true }],
   },
   added: {
     net: ['sync.notes.example.com'],
-    run: [],
+    run: ['rg'],
     agents: true,
     runtime: false,
     apps: ['sample-planner'],
@@ -63,7 +66,9 @@ export function ExtensionUpdateShowcases() {
       title="Extension update card"
       description="An app update waits for a yes. Each power it adds is listed as new; an update that only changed files lists none."
     >
-      <ShowcaseLabel>An update that adds a host, agent access and opening Planner</ShowcaseLabel>
+      <ShowcaseLabel>
+        An update that adds a host, a program, agent access and opening Planner
+      </ShowcaseLabel>
       <ShowcaseDemo>
         <div
           data-testid="extension-update-adds"
