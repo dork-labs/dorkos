@@ -1,0 +1,620 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { ExtensionAPI, ExtensionManifest } from '@dorkos/extension-api';
+import {
+  isolatedExtensionModule,
+  extensionRequestPath,
+  EXTENSION_FRAME_PATH,
+  EXTENSION_FRAME_SANDBOX,
+} from '../frame/host';
+
+import { setRunningApps } from '../frame/running-apps';
+import { resetArrivalPause } from '../frame/app-arrival';
+import type { ExtensionPermissionView } from '@/layers/entities/extension';
+
+vi.mock('virtual:dorkos-extension-frame', () => ({ default: '' }));
+
+class FakePort {
+  onmessage?: (event: { data: unknown }) => unknown;
+  messages: unknown[] = [];
+  closed = false;
+  postMessage(message: unknown) {
+    this.messages.push(message);
+  }
+  start() {}
+  close() {
+    this.closed = true;
+  }
+  async receive(data: unknown) {
+    await this.onmessage?.({ data });
+  }
+}
+let port: FakePort;
+let stop: undefined | (() => void);
+const manifest: ExtensionManifest = {
+  id: 'atlas',
+  name: 'Atlas',
+  version: '1.0.0',
+  clientApiVersion: 2,
+};
+const state = {
+  currentCwd: null,
+  activeSessionId: null,
+  agentId: null,
+  requireLogin: false,
+  currentProject: null,
+};
+let api: ExtensionAPI;
+let requestId = 0;
+async function call(method: string, args: unknown[], extensionId = 'atlas') {
+  const id = ++requestId;
+  await port.receive({ type: 'call', extensionId, requestId: id, method, args });
+  return port.messages.find((message) => (message as { requestId?: number }).requestId === id);
+}
+async function start(extra: Partial<ExtensionManifest> = {}) {
+  const result = isolatedExtensionModule('globalThis.executed = true', {
+    ...manifest,
+    ...extra,
+  }).activate(api);
+  await port.receive({ type: 'ready' });
+  stop = (await result) || undefined;
+}
+beforeEach(() => {
+  requestId = 0;
+  vi.stubGlobal(
+    'MessageChannel',
+    class {
+      port1 = new FakePort();
+      port2 = new FakePort();
+      constructor() {
+        port = this.port1;
+      }
+    }
+  );
+  api = {
+    id: 'atlas',
+    getState: () => state,
+    subscribe: vi.fn(() => vi.fn()),
+    isSlotAvailable: vi.fn(() => true),
+    registerPage: vi.fn(() => vi.fn()),
+    registerComponent: vi.fn(() => vi.fn()),
+    registerSettingsTab: vi.fn(() => vi.fn()),
+    registerStatusBarItem: vi.fn(() => vi.fn()),
+    saveData: vi.fn(),
+    loadData: vi.fn(async () => ({ own: true })),
+    executeCommand: vi.fn(),
+    navigate: vi.fn(),
+  } as unknown as ExtensionAPI;
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async () => new Response(JSON.stringify({ own: true })))
+  );
+});
+afterEach(() => {
+  stop?.();
+  stop = undefined;
+  document.body.innerHTML = '';
+  vi.unstubAllGlobals();
+});
+
+describe('isolated app host', () => {
+  it('creates a script-only sandbox and never evaluates bundle code in the host', async () => {
+    await start();
+    const frame = document.querySelector('iframe')!;
+    expect(frame.getAttribute('sandbox')).toBe(EXTENSION_FRAME_SANDBOX);
+    expect(frame.getAttribute('sandbox')).not.toContain('allow-same-origin');
+    // Never a srcdoc frame, which would inherit the shell's 'unsafe-inline' policy:
+    // DorkOS's own frame route sends the document and its policy.
+    expect(frame.hasAttribute('srcdoc')).toBe(false);
+    expect(frame.getAttribute('src')).toBe(`/api${EXTENSION_FRAME_PATH}`);
+    expect((globalThis as Record<string, unknown>).executed).toBeUndefined();
+    stop?.();
+    expect(port.closed).toBe(true);
+    expect(document.querySelector('iframe')).toBeNull();
+  });
+  it('refuses an identity change before executing a scoped write', async () => {
+    await start();
+    expect(await call('saveData', [{ value: 1 }], 'quill')).toHaveProperty('error');
+    expect(fetch).not.toHaveBeenCalled();
+    expect(await call('saveData', [{ value: 1 }])).toHaveProperty('value', null);
+    expect(fetch).toHaveBeenCalledWith(
+      '/api/extensions/atlas/prefs',
+      expect.objectContaining({ method: 'PUT', body: JSON.stringify({ value: 1 }) })
+    );
+  });
+  it('keeps screen data in its own store, never the server half’s ctx.storage (item 7)', async () => {
+    await start();
+    await call('saveData', [{ theme: 'compact' }]);
+    expect(await call('loadData', [])).toHaveProperty('value', { own: true });
+    const urls = vi.mocked(fetch).mock.calls.map(([url]) => String(url));
+    expect(urls).toEqual(['/api/extensions/atlas/prefs', '/api/extensions/atlas/prefs']);
+    // The /data blob is the server half's storage: the frame never reaches it.
+    expect(urls.some((url) => url.endsWith('/data'))).toBe(false);
+    expect(api.saveData).not.toHaveBeenCalled();
+    expect(api.loadData).not.toHaveBeenCalled();
+  });
+  it('refuses core commands and raw host fetch operations', async () => {
+    await start();
+    expect(await call('executeCommand', [{ action: 'open_settings' }])).toHaveProperty('error');
+    expect(await call('fetch', ['/api/connectors/mini-app-access/quill/revoke'])).toHaveProperty(
+      'error'
+    );
+    expect(api.executeCommand).not.toHaveBeenCalled();
+    expect(fetch).not.toHaveBeenCalled();
+  });
+  it('passes a light or dark switch on to the open frame', async () => {
+    await start();
+    document.documentElement.className = 'dark';
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(port.messages).toContainEqual({
+      type: 'theme',
+      theme: { className: 'dark', style: '' },
+    });
+    document.documentElement.className = '';
+  });
+  it('hands an app its own route’s failure as status and body, with no headers', async () => {
+    await start({ capabilities: { http: true } });
+    vi.mocked(fetch).mockResolvedValueOnce(
+      new Response(JSON.stringify({ error: 'locked' }), {
+        status: 423,
+        headers: { 'Set-Cookie': 'session=secret' },
+      })
+    );
+    const reply = await call('request', ['/loop', {}]);
+    expect(reply).toMatchObject({ failure: { status: 423, body: { error: 'locked' } } });
+    expect(JSON.stringify(reply)).not.toContain('secret');
+  });
+  it('brings a picture from the app’s own route as a Blob, only with its declared capability', async () => {
+    await start();
+    expect(await call('media', ['/cover.png'])).toHaveProperty('error');
+    expect(fetch).not.toHaveBeenCalled();
+    stop?.();
+    await start({ capabilities: { http: true } });
+    vi.mocked(fetch).mockResolvedValueOnce(
+      new Response(new Uint8Array([1, 2]), { headers: { 'Content-Type': 'image/png' } })
+    );
+    const reply = (await call('media', ['/cover.png'])) as { value: Blob };
+    expect(reply.value).toBeInstanceOf(Blob);
+    expect(reply.value.type).toBe('image/png');
+    expect(fetch).toHaveBeenCalledWith(
+      '/api/ext/atlas/cover.png',
+      expect.objectContaining({
+        headers: expect.objectContaining({ 'X-DorkOS-Extension': 'atlas' }),
+      })
+    );
+    expect(await call('media', ['/../quill/cover.png'])).toHaveProperty('error');
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+  describe('calling another app (DOR-3293)', () => {
+    const ledger = {
+      id: 'ledger',
+      status: 'compiled',
+      approvedToRun: true,
+      manifest: {
+        id: 'ledger',
+        name: 'Ledger',
+        version: '1.0.0',
+        exports: {
+          http: [
+            { path: '/entries', methods: ['GET'] },
+            { path: '/entries/:id', methods: ['GET', 'PATCH'] },
+            { path: '/approvals', methods: ['GET'] },
+          ],
+          personOnly: ['/approve', { path: '/approvals', methods: ['POST'] }],
+        },
+      },
+    };
+    beforeEach(() => {
+      setRunningApps([ledger] as never);
+      // The caller token this frame load is given, then each route's answer.
+      vi.mocked(fetch).mockImplementation(async (url) =>
+        String(url).endsWith('/extension-frame/caller-token')
+          ? new Response(JSON.stringify({ token: `token-${++minted}` }), { status: 201 })
+          : new Response(JSON.stringify({ own: true }))
+      );
+    });
+    let minted = 0;
+    /** The calls that reached a route, leaving out asking for the token. */
+    const routeCalls = () =>
+      vi.mocked(fetch).mock.calls.filter(([url]) => !String(url).endsWith('/caller-token'));
+    afterEach(() => setRunningApps([]));
+    const callsLedger: Partial<ExtensionManifest> = {
+      capabilities: { http: { apps: ['ledger'] } },
+    };
+
+    it('reaches an exported route with this frame load’s token, asked for once', async () => {
+      minted = 0;
+      await start(callsLedger);
+      expect(await call('request', ['/entries', { app: 'ledger' }])).toHaveProperty('value');
+      expect(await call('request', ['/entries/e-1', { app: 'ledger' }])).toHaveProperty('value');
+      expect(fetch).toHaveBeenCalledWith(
+        '/api/extension-frame/caller-token',
+        expect.objectContaining({ method: 'POST', body: JSON.stringify({ appId: 'atlas' }) })
+      );
+      expect(routeCalls()).toHaveLength(2);
+      for (const [, init] of routeCalls()) {
+        expect(init?.headers).toMatchObject({
+          'X-DorkOS-Extension': 'atlas',
+          'X-DorkOS-Caller-App': 'atlas',
+          'X-DorkOS-Caller-Token': 'token-1',
+        });
+      }
+    });
+    it('asks for a new token once when the server has forgotten it', async () => {
+      minted = 0;
+      let forgotten = true;
+      vi.mocked(fetch).mockImplementation(async (url) => {
+        if (String(url).endsWith('/caller-token')) {
+          return new Response(JSON.stringify({ token: `token-${++minted}` }), { status: 201 });
+        }
+        if (forgotten) {
+          forgotten = false;
+          return new Response(JSON.stringify({ code: 'caller_token_invalid' }), { status: 403 });
+        }
+        return new Response(JSON.stringify({ own: true }));
+      });
+      await start(callsLedger);
+      expect(await call('request', ['/entries', { app: 'ledger' }])).toHaveProperty('value', {
+        own: true,
+      });
+      expect(minted).toBe(2);
+    });
+    it('refuses a target this app does not list', async () => {
+      await start({ capabilities: { http: true } });
+      expect(await call('request', ['/entries', { app: 'ledger' }])).toHaveProperty('error');
+      expect(fetch).not.toHaveBeenCalled();
+    });
+    it('refuses a route the target does not export, and a personOnly one', async () => {
+      await start(callsLedger);
+      expect(await call('request', ['/secrets', { app: 'ledger' }])).toHaveProperty('error');
+      expect(await call('request', ['/approve', { app: 'ledger', method: 'POST' }])).toHaveProperty(
+        'error'
+      );
+      expect(fetch).not.toHaveBeenCalled();
+    });
+    it('sends a read on a path whose write is personOnly, and never the write', async () => {
+      await start(callsLedger);
+      expect(await call('request', ['/approvals', { app: 'ledger' }])).toHaveProperty('value');
+      expect(
+        await call('request', ['/approvals', { app: 'ledger', method: 'POST', body: {} }])
+      ).toHaveProperty('error');
+      expect(routeCalls()).toHaveLength(1);
+    });
+    it('refuses a write the export does not list', async () => {
+      await start(callsLedger);
+      expect(
+        await call('request', ['/entries', { app: 'ledger', method: 'POST', body: {} }])
+      ).toHaveProperty('error');
+      expect(
+        await call('request', ['/entries/e-17', { app: 'ledger', method: 'PATCH', body: {} }])
+      ).toHaveProperty('value');
+      expect(routeCalls()).toHaveLength(1);
+    });
+    it('refuses a target that is not running', async () => {
+      setRunningApps([]);
+      await start(callsLedger);
+      expect(await call('request', ['/entries', { app: 'ledger' }])).toHaveProperty('error');
+      expect(fetch).not.toHaveBeenCalled();
+    });
+    it('never takes a header from the frame, so a forged caller header goes nowhere', async () => {
+      await start(callsLedger);
+      const forged = { app: 'ledger', headers: { 'X-DorkOS-Caller-App': 'quill' } };
+      expect(await call('request', ['/entries', forged])).toHaveProperty('error');
+      expect(fetch).not.toHaveBeenCalled();
+      // An own call never carries a caller header at all.
+      await call('request', ['/loop', { app: 'atlas' }]);
+      const [, init] = vi.mocked(fetch).mock.calls[0]!;
+      expect(init?.headers).not.toHaveProperty('X-DorkOS-Caller-App');
+      expect(init?.headers).not.toHaveProperty('X-DorkOS-Caller-Token');
+    });
+  });
+  describe('opening another app’s page (DOR-3293)', () => {
+    beforeEach(() =>
+      setRunningApps([
+        {
+          id: 'ledger',
+          status: 'compiled',
+          approvedToRun: true,
+          manifest: { id: 'ledger', name: 'Ledger', version: '1.0.0' },
+        },
+      ] as never)
+    );
+    afterEach(() => {
+      setRunningApps([]);
+      resetArrivalPause();
+      Reflect.deleteProperty(navigator, 'userActivation');
+    });
+    const callsLedger: Partial<ExtensionManifest> = {
+      capabilities: { http: { apps: [{ id: 'ledger', navigate: true }] } },
+    };
+    /** The browser's own record of a real click, which no frame can set. */
+    const activation = (isActive: boolean) =>
+      Object.defineProperty(navigator, 'userActivation', {
+        configurable: true,
+        value: { isActive, hasBeenActive: isActive },
+      });
+    /** The person clicked inside the calling app's own frame just now. */
+    const clickInCallingFrame = () => {
+      // The click raises activation; then focus moves in and the host window blurs.
+      activation(true);
+      document.querySelector('iframe')!.focus();
+      window.dispatchEvent(new FocusEvent('blur'));
+    };
+
+    it('opens a listed app’s item page after a click in this app, and answers ok', async () => {
+      await start(callsLedger);
+      clickInCallingFrame();
+      expect(await call('navigate', ['/x/ledger/item/entry/e-17'])).toHaveProperty('value', {
+        ok: true,
+      });
+      expect(api.navigate).toHaveBeenCalledWith('/x/ledger/item/entry/e-17');
+      // Input waits out the arrival pause, which started with the navigation.
+      expect(document.body.hasAttribute('inert')).toBe(true);
+    });
+
+    it('answers not-declared for an app listed only to call, even after a click', async () => {
+      await start({ capabilities: { http: { apps: ['ledger'] } } });
+      clickInCallingFrame();
+      const reply = (await call('navigate', ['/x/ledger/item/entry/e-17'])) as {
+        value: { ok: boolean; reason: string; message: string };
+      };
+      expect(reply.value).toMatchObject({ ok: false, reason: 'not-declared' });
+      expect(reply.value.message).toContain('"navigate": true');
+      expect(api.navigate).not.toHaveBeenCalled();
+    });
+
+    it('answers no-gesture with no click, and goes nowhere', async () => {
+      await start(callsLedger);
+      activation(false);
+      document.querySelector('iframe')!.focus();
+      const reply = (await call('navigate', ['/x/ledger/item/entry/e-17'])) as {
+        value: { ok: boolean; reason: string; message: string };
+      };
+      expect(reply.value).toMatchObject({ ok: false, reason: 'no-gesture' });
+      expect(reply.value.message).toEqual(expect.any(String));
+      expect(api.navigate).not.toHaveBeenCalled();
+    });
+
+    it('opens once per click: a second navigate in the same activation is no-gesture', async () => {
+      await start(callsLedger);
+      clickInCallingFrame();
+      expect(await call('navigate', ['/x/ledger/item/entry/e-17'])).toHaveProperty('value', {
+        ok: true,
+      });
+      // The app focuses its own frame again, with no new click.
+      document.querySelector('iframe')!.focus();
+      expect(await call('navigate', ['/x/ledger/item/entry/e-18'])).toHaveProperty(
+        'value',
+        expect.objectContaining({ ok: false, reason: 'no-gesture' })
+      );
+      expect(api.navigate).toHaveBeenCalledTimes(1);
+    });
+
+    it('answers no-gesture when the click was in a sibling app’s frame', async () => {
+      await start(callsLedger);
+      const sibling = document.createElement('iframe');
+      document.body.append(sibling);
+      activation(true);
+      sibling.focus();
+      expect(await call('navigate', ['/x/ledger/item/entry/e-17'])).toHaveProperty(
+        'value',
+        expect.objectContaining({ ok: false, reason: 'no-gesture' })
+      );
+      expect(api.navigate).not.toHaveBeenCalled();
+    });
+
+    it('a frame cannot claim a gesture: an argument saying so changes nothing', async () => {
+      await start(callsLedger);
+      expect(
+        await call('navigate', ['/x/ledger/item/entry/e-17', { userActivation: true }])
+      ).toHaveProperty('error');
+      expect(api.navigate).not.toHaveBeenCalled();
+    });
+
+    it('still opens its own pages and core routes, with their query and no click', async () => {
+      await start();
+      expect(await call('navigate', ['/x/atlas/p/one?tab=2'])).toHaveProperty('value', {
+        ok: true,
+      });
+      expect(await call('navigate', ['/team'])).toHaveProperty('value', { ok: true });
+      expect(api.navigate).toHaveBeenCalledTimes(2);
+    });
+
+    it.each([
+      ['not-declared', '/x/quill/item/entry/e-17', {}],
+      ['not-declared', '/x/ledger/item/entry/e-17', { capabilities: { http: true } }],
+      ['not-an-item-path', '/x/ledger/item/entry/e-17?approve=1', undefined],
+      ['not-an-item-path', '/x/ledger/item/entry/e-17#approve', undefined],
+      ['not-an-item-path', '/x/ledger/item/entry/e%2F17', undefined],
+      ['unknown-route', 'https://evil.example/x/ledger', undefined],
+      ['unknown-route', 'javascript:alert(1)', undefined],
+    ] as const)(
+      'answers a refusal the app can show (%s) for %s, and goes nowhere',
+      async (reason, path, extra) => {
+        await start(extra ?? callsLedger);
+        const reply = (await call('navigate', [path])) as {
+          value: { ok: boolean; reason: string; message: string };
+        };
+        expect(reply.value).toMatchObject({ ok: false, reason });
+        expect(reply.value.message).toEqual(expect.any(String));
+        expect(api.navigate).not.toHaveBeenCalled();
+      }
+    );
+
+    it('answers target-unavailable for an app that is not running', async () => {
+      setRunningApps([]);
+      await start(callsLedger);
+      expect(await call('navigate', ['/x/ledger/item/entry/e-17'])).toHaveProperty(
+        'value',
+        expect.objectContaining({ ok: false, reason: 'target-unavailable' })
+      );
+      expect(api.navigate).not.toHaveBeenCalled();
+    });
+  });
+  describe('approve, add navigate: true, ask again, then allow (Security, Nov 11)', () => {
+    // The window half; the server half (the update does not run until the new
+    // yes) is the server's `isolation/__tests__/navigate-opt-in-chain.test.ts`.
+    beforeEach(() =>
+      setRunningApps([
+        {
+          id: 'mkt-newsletter',
+          status: 'compiled',
+          approvedToRun: true,
+          manifest: { id: 'mkt-newsletter', name: 'Mkt Newsletter', version: '1.0.0' },
+        },
+      ] as never)
+    );
+    afterEach(() => {
+      setRunningApps([]);
+      resetArrivalPause();
+      Reflect.deleteProperty(navigator, 'userActivation');
+    });
+    const clickInCallingFrame = () => {
+      Object.defineProperty(navigator, 'userActivation', {
+        configurable: true,
+        value: { isActive: true, hasBeenActive: true },
+      });
+      document.querySelector('iframe')!.focus();
+      window.dispatchEvent(new FocusEvent('blur'));
+    };
+    const card = (opens: boolean): ExtensionPermissionView => ({
+      runtime: 'in-process',
+      net: [],
+      run: [],
+      agents: false,
+      hasServer: false,
+      apps: [{ id: 'mkt-newsletter', name: 'Mkt Newsletter', access: null, opens }],
+    });
+
+    it('refuses before the new yes, even after a click, and allows after it', async () => {
+      // Loaded here: the barrel touches the root element's style, which the theme test reads.
+      const { approvedSetOf, extensionPermissionLines, permissionLineText, permissionsAddedSince } =
+        await import('@/layers/entities/extension');
+      // 1. Approved while it listed the target as a plain id.
+      const seen = approvedSetOf(card(false))!;
+      await start({ capabilities: { http: { apps: ['mkt-newsletter'] } } });
+      clickInCallingFrame();
+      expect(await call('navigate', ['/x/mkt-newsletter/issue/v-1'])).toHaveProperty(
+        'value',
+        expect.objectContaining({ ok: false, reason: 'not-declared' })
+      );
+      expect(api.navigate).not.toHaveBeenCalled();
+
+      // 2. The update lists it with navigate: true; the card comes back, the target marked new.
+      const now = approvedSetOf(card(true))!;
+      const added = permissionsAddedSince(seen, now);
+      expect(added?.apps).toEqual(['mkt-newsletter']);
+      const line = extensionPermissionLines(card(true), added).find(({ key }) => key === 'apps');
+      expect(line && permissionLineText(line)).toBe(
+        'It uses other apps: Mkt Newsletter\u00a0· can only open its pages'
+      );
+      expect(line?.apps?.[0]?.isNew).toBe(true);
+
+      // 3. Until that yes, the frame still runs the approved manifest: still not-declared.
+      expect(await call('navigate', ['/x/mkt-newsletter/issue/v-1'])).toHaveProperty(
+        'value',
+        expect.objectContaining({ ok: false, reason: 'not-declared' })
+      );
+
+      // 4. After the yes, the app starts again on the new manifest; with a click it opens.
+      stop?.();
+      stop = undefined;
+      document.body.innerHTML = '';
+      await start({ capabilities: { http: { apps: [{ id: 'mkt-newsletter', navigate: true }] } } });
+      clickInCallingFrame();
+      expect(await call('navigate', ['/x/mkt-newsletter/issue/v-1'])).toHaveProperty('value', {
+        ok: true,
+      });
+      expect(api.navigate).toHaveBeenCalledWith('/x/mkt-newsletter/issue/v-1');
+    });
+  });
+  it('refuses a room reply or a forward to an app that does not declare them (BRIDGE_WRITES)', async () => {
+    await start();
+    expect(await call('rooms.reply', ['room-1', 'entry-1', 'hello'])).toHaveProperty('error');
+    expect(await call('forward.send', [{ text: 'hi', itemId: 'i' }])).toHaveProperty('error');
+  });
+  it('refuses prototype names as bridge operations', async () => {
+    await start();
+    for (const method of ['constructor', '__proto__', 'toString', 'hasOwnProperty']) {
+      expect(await call(method, [])).toHaveProperty('error');
+    }
+  });
+  it('binds custom requests to this app and requires its declared capability', async () => {
+    await start();
+    expect(await call('request', ['/loop', {}])).toHaveProperty('error');
+    expect(fetch).not.toHaveBeenCalled();
+    stop?.();
+    await start({ capabilities: { http: true } });
+    expect(await call('request', ['/loop', {}])).toHaveProperty('value', { own: true });
+    expect(fetch).toHaveBeenCalledWith(
+      '/api/ext/atlas/loop',
+      expect.objectContaining({
+        headers: expect.objectContaining({ 'X-DorkOS-Extension': 'atlas' }),
+        method: 'GET',
+      })
+    );
+    for (const path of [
+      '/../quill',
+      '/%2e%2e/quill',
+      '//evil.example',
+      '/x/%2f../quill',
+      '/loop#x',
+    ]) {
+      expect(await call('request', [path, {}])).toHaveProperty('error');
+    }
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+  it('registers pages, panels, and Activity views using host wrappers', async () => {
+    await start();
+    const records = [
+      { kind: 'page', key: 'page::', id: '', options: { title: 'Atlas' } },
+      { kind: 'component', key: 'component:right-panel:tools', id: 'tools', slot: 'right-panel' },
+      {
+        kind: 'component',
+        key: 'component:dashboard.sections:summary',
+        id: 'summary',
+        slot: 'dashboard.sections',
+      },
+    ];
+    for (const record of records)
+      expect(await call('register', [record])).toHaveProperty('value', null);
+    expect(api.registerPage).toHaveBeenCalledWith('', expect.any(Function), {
+      title: 'Atlas',
+      menu: undefined,
+    });
+    expect(api.registerComponent).toHaveBeenCalledWith(
+      'right-panel',
+      'tools',
+      expect.any(Function),
+      {}
+    );
+    expect(api.registerComponent).toHaveBeenCalledWith(
+      'dashboard.sections',
+      'summary',
+      expect.any(Function),
+      {}
+    );
+    expect(
+      await call('register', [{ kind: 'component', key: 'x', id: 'x', slot: 'sidebar.body' }])
+    ).toHaveProperty('error');
+  });
+  it('ignores malformed calls and stops listening after disposal', async () => {
+    await start();
+    await port.receive({
+      type: 'call',
+      extensionId: 'atlas',
+      requestId: 1,
+      method: 'loadData',
+      args: [],
+      extra: true,
+    });
+    expect(fetch).not.toHaveBeenCalled();
+    stop?.();
+    await call('saveData', [{}]);
+    expect(fetch).not.toHaveBeenCalled();
+  });
+});
+
+it('keeps request paths under their bound app', () => {
+  expect(extensionRequestPath('atlas', '/loop?state=open')).toBe('/ext/atlas/loop?state=open');
+  expect(() => extensionRequestPath('atlas', '/%2e%2e/quill')).toThrow();
+});

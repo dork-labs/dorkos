@@ -40,6 +40,13 @@ describe('initializeExtensions — right-panel contributions', () => {
     }
   });
 
+  it('offers the canvas on an app’s own page, so its documents open beside it (DOR-3293)', () => {
+    const canvas = getRightPanelContribution('canvas');
+    expect(canvas?.visibleWhen?.({ pathname: '/x/ledger' })).toBe(true);
+    expect(canvas?.visibleWhen?.({ pathname: '/x/ledger/report' })).toBe(true);
+    expect(canvas?.visibleWhen?.({ pathname: '/marketplace' })).toBe(false);
+  });
+
   it('registers the Profile contribution, under that name', () => {
     const profile = getRightPanelContribution('profile');
     expect(profile).toBeDefined();

@@ -9438,6 +9438,19 @@
           "threadRootEntryId": {
             "type": "string",
             "minLength": 1
+          },
+          "openedBy": {
+            "type": "object",
+            "properties": {
+              "extensionId": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "required": [
+              "extensionId"
+            ],
+            "additionalProperties": false
           }
         },
         "required": [
@@ -14427,6 +14440,58 @@
           },
           "hasPage": {
             "type": "boolean"
+          },
+          "writes": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "data",
+                "canvas",
+                "inbox",
+                "work",
+                "files",
+                "rooms",
+                "forward"
+              ]
+            }
+          },
+          "apps": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "access": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "enum": [
+                    "reads",
+                    "changes",
+                    "both",
+                    null
+                  ]
+                },
+                "opens": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "id",
+                "name",
+                "access"
+              ]
+            }
           }
         },
         "default": null,
@@ -14461,6 +14526,12 @@
           },
           "runtime": {
             "type": "boolean"
+          },
+          "apps": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           }
         },
         "default": null,
@@ -14571,6 +14642,31 @@
               },
               "agents": {
                 "type": "boolean"
+              },
+              "apps": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 20
+              },
+              "appAccess": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "string",
+                  "enum": [
+                    "reads",
+                    "changes",
+                    "both"
+                  ]
+                }
+              },
+              "appOpens": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 20
               }
             },
             "required": [
@@ -21184,6 +21280,31 @@
                         },
                         "agents": {
                           "type": "boolean"
+                        },
+                        "apps": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          },
+                          "maxItems": 20
+                        },
+                        "appAccess": {
+                          "type": "object",
+                          "additionalProperties": {
+                            "type": "string",
+                            "enum": [
+                              "reads",
+                              "changes",
+                              "both"
+                            ]
+                          }
+                        },
+                        "appOpens": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          },
+                          "maxItems": 20
                         }
                       },
                       "required": [
@@ -21334,6 +21455,31 @@
                     },
                     "agents": {
                       "type": "boolean"
+                    },
+                    "apps": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      },
+                      "maxItems": 20
+                    },
+                    "appAccess": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "string",
+                        "enum": [
+                          "reads",
+                          "changes",
+                          "both"
+                        ]
+                      }
+                    },
+                    "appOpens": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      },
+                      "maxItems": 20
                     }
                   },
                   "required": [

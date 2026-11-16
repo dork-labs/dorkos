@@ -173,7 +173,11 @@ describe('canvas channel production migration', () => {
     const receipts = db.select().from(sessionMessageAcceptanceReceipts).all();
     const receiptSchema = schemaSql(db, 'session_message_acceptance_receipts');
     runMigrations(db);
-    expect(db.$client.prepare('SELECT * FROM canvas_documents').get()).toEqual(document);
+    // Unchanged, plus the later nullable "opened by an app" column, empty (DOR-3293).
+    expect(db.$client.prepare('SELECT * FROM canvas_documents').get()).toEqual({
+      ...(document as object),
+      opened_by_extension_id: null,
+    });
     expect(db.select().from(sessionMessageAcceptanceReceipts).all()).toEqual(receipts);
     expect(schemaSql(db, 'session_message_acceptance_receipts')).toBe(receiptSchema);
     expect(sessionMessageAcceptanceReceipts.sourceKind.enumValues).toEqual([

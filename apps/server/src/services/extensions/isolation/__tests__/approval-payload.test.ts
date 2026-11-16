@@ -118,6 +118,8 @@ describe('PendingExtensionApproval.permissions and .added', () => {
       ],
       agents: false,
       hasPage: true,
+      // What its screens can change, in DorkOS's keys (DOR-3293, item 8).
+      writes: ['data', 'canvas', 'inbox', 'work', 'files'],
     });
   });
 

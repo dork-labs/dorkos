@@ -87,6 +87,8 @@ export function bridgeExpressRouter(router: Router): ExtensionHttpHandler {
     // has nothing to answer: Express never runs for it.
     if (router.stack.length === 0) return null;
     const { incoming, outgoing } = c.env;
+    // A calling app's token is the window's proof, never the target's (DOR-3293).
+    delete incoming.headers['x-dorkos-caller-token'];
     // What the chain's identity steps resolved, on `res.locals`, where
     // `ctx.requirePerson` and any extension reading the caller expect there.
     const locals: Record<string, unknown> = Object.create(null);

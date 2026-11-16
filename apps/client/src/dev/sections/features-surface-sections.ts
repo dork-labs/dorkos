@@ -114,6 +114,24 @@ export const FEATURE_SURFACE_SECTIONS: PlaygroundSection[] = [
     category: 'Inbox',
     keywords: ['extension', 'update', 'new power', 'files changed', 'approval', 're-ask'],
   },
+  // AppApprovalCardShowcases
+  {
+    id: 'app-approval-card',
+    title: 'App approval card',
+    page: 'home-inbox',
+    category: 'Inbox',
+    keywords: [
+      'app',
+      'extension',
+      'approval',
+      'can change',
+      'other apps',
+      'frame',
+      'writes',
+      'open its pages',
+      'navigate',
+    ],
+  },
   {
     id: 'inbox-decision-row',
     title: 'Inbox decision row',
