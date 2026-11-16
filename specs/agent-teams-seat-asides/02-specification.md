@@ -10,11 +10,11 @@ status: specified
 **Status:** Approved and frozen — implementation authorized by root
 **Author:** Codex `/root/trust_reconciliation`, gpt-6.1-sol workhorse fallback
 **Date:** 2026-11-15
-**Current integration base:** `c1bd9ecc9984390ca7d51d7c2311371b89092e08` (includes prerequisite merges; current-base verification pending). Earlier f9/d965 proof remains historical evidence.
+**Current integration baseline:** `1d34333f113d25cbc8a24197857dc6b6acc93e89` (Code integrated #3824 before functional fixes). Earlier head-specific proof remains historical; current fix validation is recorded separately.
 
 ## Overview
 
-Allow registered local agents to address room seat chat ids through private room asides. A valid answer to a seat's earlier DM needs no public trace. An unsolicited accepted write records one constant body-free notice in that seat's room. No body is posted on the sender's behalf and no ordinary dispatch enters a seat.
+Allow registered local agents to address room seat chat ids through private room asides. A valid answer to a seat's earlier DM needs no public trace. Unsolicited writes require an unbridged room; one body-free notice covers each pending sending-actor/seat-generation exchange. No body is posted on the sender's behalf and no ordinary dispatch enters a seat.
 
 ## Background / Problem Statement
 
@@ -24,7 +24,7 @@ Prerequisites: DOR-3817 Part A opens/reviews first, then DOR-4468; this branch m
 
 ## Goals
 
-- D1 answers and D2 unsolicited messages arrive as queue-only seat asides, with authoritative identity validation.
+- D1 answers and D2 unsolicited messages in unbridged rooms arrive as queue-only seat asides, with authoritative identity validation.
 - Preserve all immutable sender bounds/marks/outside words and add current sender/room restrictions at launch.
 - Outside provenance remains a stamp and never creates a new whole-level cap; actual existing permission bounds still constrain the turn.
 - New text is fenced and defused, including @file references and leading commands, with untrustedText carried through every runtime's room input.
@@ -60,13 +60,13 @@ Use existing chat_messages for per-message sender/body/nonce/ceilingJson/status,
 
 Each seat row retains a non-null unique queueMessageId; do not use null because that already means normal launch-cap holding. All normal cap retry, plain queue batching and lifecycle/recovery readers must either select route chat or explicitly ignore route seat. A queued seat row must never be offered to dispatchSessionMessage through ordinary retry, including after boot.
 
-Before accepting an unsolicited send, persist its row and one local body-free system notice in the same consolidated DB transaction using trusted collaborator transaction callbacks. If trace or row persistence fails, neither effect commits and admission fails. Publish trace/receipt events only after commit through existing room audience rules. Reserve queue capacity synchronously before acceptance, release reservation on rollback, and avoid a race where receipt exists but no bounded queue slot owns it. Reply sends persist only the row; no trace.
+Admission revalidates active ask state and reserves at most one pending answer per ask using queued/working seat receipts in the same consolidated DB transaction. Only message/start asks in working/delivered/steered state qualify. The transaction’s actual row classification drives every bridge and trace guard. An authentic stale/reserved ask is unsolicited; forged identity never falls back. Before accepting an unsolicited send into an unbridged room, persist its row and, unless the same verified actor/current seat generation already has pending unsolicited work, one local body-free notice. A bridged duplicate refuses even if coalescing would otherwise skip a notice. If trace or row persistence fails, neither effect commits and admission fails. Publish trace/receipt events only after commit through existing room audience rules. Reserve queue capacity synchronously before acceptance, release reservation on rollback, and avoid a race where receipt exists but no bounded queue slot owns it. Valid reserved answers persist only the row; no trace. A winning delivered receipt CAS and active ask→replied update are atomic; thrown ask writes roll delivery back into bounded terminal retry. Failed/recovered CAS losers never mark an ask. Original ask-sender activity is preserved across native aliases.
 
 No automatic restart replay. On boot, explicitly fail leftover queued/working seat-route rows with an interruption reason and emit receipt activity when listeners are ready. Keep the durable row and trace as audit evidence. On orderly stop, settle pending rows failed, stop timers/listeners and release references; do not falsely mark a running aside delivered before terminal outcome. Recovery uses the route metadata, not guesswork over missing ordinary queue rows.
 
 ### 2a. Frozen internal API contract
 
-Root-approved origin amendment: canonical runtime ownership, current ledger membership and registered agent identity must all agree. A seat accepts `room` or the unchanged ordinary `CHAT_SENDABLE_ORIGINS`. Historical `relay-binding` or null origin is accepted only with the exact current server-owned active bridge tuple (bindingId, adapterId, chatId) correlated with that ledger seat; capture and revalidate the tuple through placement/native rekeys. Schedule, heartbeat, outside-sender, connector-event, harness and unknown origins stay closed even under inconsistent ledger/bridge rows. Existing person Direct-room interactive/session-relay ownership stays eligible.
+Root-approved origin amendment: canonical runtime ownership, current ledger membership and registered agent identity must all agree. A seat accepts `room` or the unchanged ordinary `CHAT_SENDABLE_ORIGINS`. Historical `relay-binding` or null origin is accepted for genuine active answers only, with the exact current server-owned active bridge tuple (bindingId, adapterId, chatId) correlated with that ledger seat; capture and revalidate the tuple through placement/native rekeys. Schedule, heartbeat, outside-sender, connector-event, harness and unknown origins stay closed even under inconsistent ledger/bridge rows. Unsolicited sends into any bridged seat, including inactive bridges, are NOT_ALLOWED. Revalidate this policy immediately before the aside starts so a bridge attached while queued cannot extend reach. The authoritative bridged-policy fact is separate from active bridge tuple authority. Existing unbridged person Direct-room interactive/session-relay ownership stays eligible.
 
 The compatibility exception follows real bridge adoption: the adopter takes the router's exact binding/chat candidate and probes its transcript, while persisted launch origin is immutable. Current bridge plus ledger is server authority, not cryptographic proof an adopter invocation ran; arbitrary database writes are outside this threat model. A metadata-free adoption still cannot send until real runtime/agent ownership is recorded. No new adoption schema, caller-supplied flag, broad switch or ordinary-origin change.
 
@@ -79,6 +79,7 @@ interface SeatMessageTarget {
   joinedAt: string;
   sessionId: string;
   agentPath: string;
+  bridged: boolean; // server-owned policy, including inactive bridges
   bridgeOwnership?: { bindingId: string; adapterId: string; chatId: string };
 }
 interface SeatMessageAdmission {
@@ -86,7 +87,6 @@ interface SeatMessageAdmission {
   row: NewChatMessage; // constructed by ChatMessageService from its verified caller
   rendered: string; // per-message fenced/defused text, immutable after admission
   carried: AsideCarry; // immutable snapshot including persisted row bounds/words
-  unsolicited: boolean; // computed from validated reply classification, never request input
 }
 interface RoomSeatMessagesPort {
   resolveSeatTarget(sessionId: string): SeatMessageTarget | null;
@@ -139,16 +139,16 @@ The private turn is not answering the latest room entry: that entry anchors plac
 
 ### 6. Body-free trace (M8)
 
-Each accepted unsolicited message writes one local system notice: “A messaged B's chat in this room.” A/B are bounded sanitized server-derived agent names/handles; no body, caller summary, title, reply excerpt, nonce, filesystem path or private metadata is interpolated. Use sanitizeIdentity plus marker defusing and bounded one-line labels; canonical handles or a generic agent label are safe fallback. Keep the block within app-copy limits (name bounds must not create unbounded word count).
+The first accepted unsolicited message for a verified sending actor and immutable current seat generation writes one local system notice: “A messaged B's chat in this room.” A/B are bounded sanitized server-derived agent names/handles; no body, caller summary, title, reply excerpt, nonce, filesystem path or private metadata is interpolated. Use sanitizeIdentity plus marker defusing and bounded one-line labels; canonical handles or a generic agent label are safe fallback. Keep the block within app-copy limits (name bounds must not create unbounded word count).
 
-Trace is a system notice, not an agent post. It wakes no agent, inherits no answered entry/root, and is never forwarded through a bridge as an exempt reply or initiate. Publish only to existing room audience. A valid reply has no trace. A forged explicit replyTo cannot suppress the trace by being reclassified. Tests inspect durable room rows and outbound bridge deliveries, not only the prompt string.
+Further unsolicited messages from the same actor fold while its receipts remain pending/active; other registered actors get distinct notices even when names match. After durable terminal ownership ends, the next exchange gets a new notice. Actor identity uses verified agent id, falling back conservatively to its server-owned path, never a name or drafting chat. Trace is a system notice, not an agent post. It wakes no agent, inherits no answered entry/root, and is never forwarded through a bridge as an exempt reply or initiate. Publish only to existing room audience. A valid reply has no trace. A forged explicit replyTo cannot suppress the trace by being reclassified. Tests inspect durable room rows and outbound bridge deliveries, not only the prompt string.
 
 ### 7. File ownership and architecture
 
 - New bounded rooms collaborator modules: `rooms/handoff/seat-messages.ts`, `seat-message-queue.ts`, `seat-message-prompt.ts` as needed; one owner for admission/queue/settlement.
 - Routing/ports: `session/chat-messages/chat-target.ts`, a new `chat-seat-target.ts` helper, ChatMessageService early route branch and `chat-message-current.ts`/`chat-message-wiring.ts` composition. Extract oversized service methods rather than grow files over500 lines.
 - Existing aside/carry: `rooms/room-trigger/aside.ts`, `rooms/handoff/seat-carry.ts` minimal typed joins, rooms factory/facade. Keep auto-report behavior and tests separate.
-- Persistence: `packages/db/src/schema/session/chat-messages.ts`, generated migration `20261116110632_seat_chat_delivery_route.sql`, journal idx201 on the 1f86 base, with generated snapshot/journal, a matching down migration and migration tests; store helpers for route-scoped pending/settlement. Real regeneration against 1f86 preserves canvas opened-by197, task-permission198, due-history199 and wake-and-confirm200. Drizzle assigned the new timestamp and idx201 from that actual preceding snapshot; parked DOR-4148/outbox migrations are not integrated here.
+- Persistence: `packages/db/src/schema/session/chat-messages.ts`, generated migration `20261116110632_seat_chat_delivery_route.sql`, current journal idx202 after Code’s #3824 integration, with generated snapshot/journal, a matching down migration and migration tests; store helpers for route-scoped pending/settlement. Real regeneration against 1f86 preserves canvas opened-by197, task-permission198, due-history199 and wake-and-confirm200. Drizzle originally assigned this timestamp at idx201; Code’s integrated1d34333 then preserves main through201 and adjusts seat lineage to202. No author regeneration occurs in this functional-fix phase; parked DOR-4148/outbox migrations are not integrated here.
 - Proof: dedicated seat-message service/target tests, shared chat service tests, room power/downstream and relay initiate-consent integration. No new generic config, no broad runtime edits, no client UI redesign.
 
 ## User Experience
@@ -197,7 +197,7 @@ Update spin-off chat specification §4 and tool description only for the factual
 - ~~(RESOLVED) Origin switches or attendance changes?~~ No switch; bridge direct chats remain closed and schedules/beats keep current behavior.
 - ~~(RESOLVED) Queue defaults?~~ Parent approves25/seat,1000 global,1h wait as resource defaults. Batch bound applies to final rendered/defused text including separators.
 - ~~(RESOLVED) Sender carry timing?~~ Immutable admission snapshot plus current sender/room restriction union at launch; no outside flag transformed into whole-level cap.
-- ~~(RESOLVED) Durable delivery route/scope and atomic trace?~~ Parent approves server-only route plus expected seat identity in existing chat_messages, visible interruption failure after restart and atomic no-body notice. Migration regenerated as `20261116110632_seat_chat_delivery_route.sql`, automatically idx201 after current-main 1f86 reconciliation. Full API/queue/recovery contract is frozen and root authorized implementation after prerequisite PRs3809 and3810 were independently reviewed/opened/required-green.
+- ~~(RESOLVED) Durable delivery route/scope and atomic trace?~~ Parent approves server-only route plus expected seat identity in existing chat_messages, visible interruption failure after restart and atomic no-body notice. Migration regenerated as `20261116110632_seat_chat_delivery_route.sql`, originally idx201 after 1f86 reconciliation, then integrated at idx202 by Code on the current1d34333 baseline. Full API/queue/recovery contract is frozen and root authorized implementation after prerequisite PRs3809 and3810 were independently reviewed/opened/required-green.
 
 ## Related ADRs
 

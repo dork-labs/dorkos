@@ -92,7 +92,6 @@ export async function sendChatMessage(options: SendOptions): Promise<ChatSendRec
         row: rowInput,
         rendered: renderSeatMessage(rowInput),
         carried: seatCarryOf(rowInput),
-        unsolicited: replyToId === null,
       });
     } catch (error) {
       if (error instanceof ChatMessageError) throw error;
@@ -102,13 +101,6 @@ export async function sendChatMessage(options: SendOptions): Promise<ChatSendRec
         to: input.to,
       });
       throw new ChatMessageError('UNAVAILABLE', 'The seat could not take the message. Try again.');
-    }
-    if (replyToId) {
-      try {
-        options.markReplied(replyToId);
-      } catch (error) {
-        logger.warn('[chat_send] accepted seat reply could not update its ask', logError(error));
-      }
     }
     return receipt;
   }

@@ -1,5 +1,5 @@
-import { SeatMessageSettlements } from './seat-message-settlements.js';
 /** Bounded, receipt-backed peer messages into private room-seat asides (DOR-4472). */
+import { SeatMessageSettlements } from './seat-message-settlements.js';
 import { logger, logError } from '../../../lib/logger.js';
 import { ulid } from 'ulidx';
 import type { AsideResult } from '../room-trigger/aside.js';
@@ -59,7 +59,7 @@ export class RoomSeatMessages implements RoomSeatMessagesPort {
   ) {
     this.settlements = new SeatMessageSettlements(
       receipts,
-      (item) => this.release(item),
+      (item, repliedFrom) => this.release(item, repliedFrom),
       () => this.closeOnStorageFault(),
       RECHECK_MS
     );
@@ -75,7 +75,8 @@ export class RoomSeatMessages implements RoomSeatMessagesPort {
   admit(input: SeatMessageAdmission) {
     if (this.stopped || this.faulted)
       throw new ChatMessageError('UNAVAILABLE', 'Seat messages are unavailable. Try again.');
-    if (!currentSeatMessageTarget(this.core, input.target)) this.refuseTarget();
+    const currentSession = currentSeatMessageTarget(this.core, input.target);
+    if (!currentSession) this.refuseTarget();
     const remaining = this.core.triggers.deps.budget.remaining(input.target.roomId);
     if (remaining.room === 0 || remaining.global === 0)
       throw new ChatMessageError('NOT_ALLOWED', 'budget: The room has no automatic turns left.');
@@ -92,6 +93,15 @@ export class RoomSeatMessages implements RoomSeatMessagesPort {
     ) {
       throw new ChatMessageError('UNAVAILABLE', 'The seat message queue is full. Try again later.');
     }
+    // A committed pending exchange is identified by actor and authoritative seat generation,
+    // never by the display name or the drafting chat. No marker outlives its owned receipts.
+    const noticePending = [...(queue?.items ?? []), ...(queue?.active ?? [])].some(
+      (pending) =>
+        pending.unsolicited &&
+        pending.row.fromAgentId === input.row.fromAgentId &&
+        (input.row.fromAgentId !== null || pending.row.fromAgentPath === input.row.fromAgentPath) &&
+        currentSeatMessageTarget(this.core, pending.target) === currentSession
+    );
     const { row, trace } = this.receipts.insertWithTrace(
       {
         ...input.row,
@@ -101,9 +111,21 @@ export class RoomSeatMessages implements RoomSeatMessagesPort {
         seatJoinedAt: input.target.joinedAt,
         seatSessionId: input.target.sessionId,
       },
-      () => (input.unsolicited ? this.writeTrace(input) : null)
+      (stored) => {
+        const unsolicited = stored.replyToId === null;
+        // Classification is transactional: a reserved/stale ask may have become a new ask.
+        // This guard must run even when an existing notice would be coalesced.
+        if (unsolicited && this.core.bridges.findBridgeByRoom(input.target.roomId) !== null)
+          throw new ChatMessageError('NOT_ALLOWED', 'That room seat is unavailable.');
+        return unsolicited && !noticePending ? this.writeTrace(input) : null;
+      }
     );
-    const pending: Pending = { ...input, row, deadline: Date.now() + SEAT_REPORT_WAIT_MAX_MS };
+    const pending: Pending = {
+      ...input,
+      row,
+      unsolicited: row.replyToId === null,
+      deadline: Date.now() + SEAT_REPORT_WAIT_MAX_MS,
+    };
     this.count++;
     if (queue) {
       queue.items.push(pending);
@@ -218,9 +240,15 @@ export class RoomSeatMessages implements RoomSeatMessagesPort {
     this.emitSafely(item.row.toSessionId);
   }
 
-  private release(item: Pending): void {
+  private release(item: Pending, repliedFrom?: string): void {
     this.count--;
     this.activity(item);
+    if (
+      repliedFrom &&
+      repliedFrom !== item.row.fromSessionId &&
+      repliedFrom !== item.row.toSessionId
+    )
+      this.emitSafely(repliedFrom);
   }
 
   private settle(items: Pending[], status: 'delivered' | 'failed', reason?: string): void {
@@ -341,7 +369,11 @@ export class RoomSeatMessages implements RoomSeatMessagesPort {
         !this.stopped &&
         !this.faulted &&
         state.canRun &&
-        batch.every((item) => currentSeatMessageTarget(this.core, item.target) !== null),
+        batch.every(
+          (item) =>
+            currentSeatMessageTarget(this.core, item.target) !== null &&
+            (!item.unsolicited || this.core.bridges.findBridgeByRoom(item.target.roomId) === null)
+        ),
       prepareCarry: () =>
         withRoomMarks(
           this.core,

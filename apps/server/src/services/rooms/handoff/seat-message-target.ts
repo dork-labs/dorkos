@@ -24,6 +24,7 @@ export function resolveSeatMessageTarget(
   const bridge = core.bridges.findBridgeByRoom(binding.roomId);
   return {
     ...binding,
+    bridged: bridge !== null,
     ...(bridge?.archivedAt === null
       ? {
           bridgeOwnership: {

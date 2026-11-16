@@ -199,7 +199,8 @@ export async function runAsideInDispatch(
   const { room, entry, authorId, key } = input;
   const displayName =
     self.deps.authors.getMany([authorId]).get(authorId)?.displayName ?? 'An agent';
-  let outcome: ClaimOutcome = 'quiet';
+  // Pre-run refusals did not complete a turn and must not announce quiet completion.
+  let outcome: ClaimOutcome = 'unavailable';
   let text: string | null = null;
   recordDispatchStart({
     dispatchId: input.dispatchId,

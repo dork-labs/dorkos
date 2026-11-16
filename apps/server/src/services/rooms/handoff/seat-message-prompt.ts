@@ -1,5 +1,5 @@
-import type { TurnPermissionBound } from '@dorkos/shared/agent-runtime';
 /** Private peer messages are fenced/defused data; room traces never contain their words. */
+import type { TurnPermissionBound } from '@dorkos/shared/agent-runtime';
 import { defuseUntrustedPrompt, sanitizeIdentity } from '@dorkos/shared/untrusted-text';
 import { CHAT_MESSAGE_MAX } from '../../session/chat-messages/chat-client-id.js';
 import { defuseMarkers } from '../../session/chat-messages/chat-message-fence.js';

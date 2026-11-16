@@ -6,7 +6,8 @@
  * ## Sending
  *
  * 1. **Where it goes.** An agent's DM chat or a chat id, resolved by
- *    `chat-target.ts`, which also says which chats a chat may write into.
+ *    `chat-target.ts`, which also says which chats a chat may write into. Room-seat ids
+ *    use the distinct verified seat route; bridged seats accept active answers only.
  * 2. **Who sent it.** The calling chat and its agent, read off the verified
  *    turn, never the input. A `chat_messages` row is written BEFORE the
  *    dispatch, with the fence nonce and the sender's level, so the turn it
@@ -19,7 +20,8 @@
  *    `steer` joins the running turn only when the receiver's turn runs no
  *    looser than the sender, because a steer cannot be held to a ceiling the
  *    running turn already passed; otherwise it waits in the queue and the
- *    receipt says why. `interrupt` puts the message at the head of the queue
+ *    receipt says why. Private seats always queue an aside, including steer/interrupt requests.
+ *    Ordinary `interrupt` puts the message at the head of the queue
  *    and stops the running turn, so it runs next.
  * 4. **The power it carries.** None: the turn runs at the receiving agent's own
  *    level, except a teammate's chain, which rides on (`senderCeilingJson`).
@@ -28,7 +30,8 @@
  *
  * Chats may talk to each other for days, weeks or months with no person in
  * between (Dorian 2026-10-08). Nothing here counts turns or caps a
- * conversation; the launch cap counts machine load only.
+ * ordinary-chat conversation; the launch cap counts machine load only. Private room-seat
+ * messages instead use the bounded seat inbox and the existing room automatic-turn budget.
  *
  * @module services/session/chat-messages/chat-message-service
  */

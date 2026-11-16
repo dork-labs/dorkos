@@ -1,4 +1,5 @@
 /** Narrow seat-chat routing; ordinary origins and stop authority remain unchanged. */
+import { isActiveChatAsk } from '../chat-message-store.js';
 import { ChatMessageError } from '../chat-message-error.js';
 import { sameChat, CHAT_SENDABLE_ORIGINS } from '../chat-target.js';
 import type { ChatCaller, ChatSendInput, ChatMessageServiceDeps } from '../chat-message-service.js';
@@ -26,14 +27,7 @@ export async function resolveChatSeatTarget(
   const seat = port?.resolveSeatTarget(input.to);
   const facts = await deps.describeSession(seat?.canonicalSessionId ?? input.to);
   if (!facts.roomBound && !seat) return null;
-  if (
-    !port ||
-    !seat ||
-    !facts.bound ||
-    !facts.roomBound ||
-    facts.agentPath !== seat.agentPath ||
-    !seatOriginAllowed(facts.launchOrigin, seat)
-  ) {
+  if (!port || !seat || !facts.bound || !facts.roomBound || facts.agentPath !== seat.agentPath) {
     throw new ChatMessageError('NOT_ALLOWED', 'That room seat is unavailable.');
   }
   if (
@@ -47,7 +41,7 @@ export async function resolveChatSeatTarget(
       ? deps.store.get(input.replyTo)
       : deps.store.latestUnansweredFromAliases(seat.aliases ?? [input.to], caller.sessionId);
   const sourceSeat = asked ? port.resolveSeatTarget(asked.fromSessionId) : null;
-  const valid =
+  const identityMatches =
     asked !== undefined &&
     asked !== null &&
     sourceSeat?.roomId === seat.roomId &&
@@ -55,18 +49,30 @@ export async function resolveChatSeatTarget(
     sourceSeat?.joinedAt === seat.joinedAt &&
     sourceSeat?.canonicalSessionId === seat.canonicalSessionId &&
     (await sameChat(deps, asked.toSessionId, caller.sessionId));
-  if (input.replyTo !== undefined && !valid)
+  if (input.replyTo !== undefined && !identityMatches)
     throw new ChatMessageError(
       'NOT_ALLOWED',
       'replyTo must name a message this seat sent your chat.'
     );
-  return { port, seat, replyToId: valid ? asked!.id : null };
+  const replyToId = identityMatches && isActiveChatAsk(asked) ? asked.id : null;
+  if (
+    (seat.bridged && replyToId === null) ||
+    !seatOriginAllowed(facts.launchOrigin, seat, replyToId !== null)
+  )
+    throw new ChatMessageError('NOT_ALLOWED', 'That room seat is unavailable.');
+  return { port, seat, replyToId };
 }
 
 /** Existing eligibility plus the room bridge's intentional legacy adoption compatibility. */
-function seatOriginAllowed(origin: string | null, seat: SeatMessageTarget): boolean {
+function seatOriginAllowed(
+  origin: string | null,
+  seat: SeatMessageTarget,
+  answer: boolean
+): boolean {
   if (origin === 'room' || (origin !== null && CHAT_SENDABLE_ORIGINS.has(origin))) return true;
   // Adoption keeps immutable historical origin, including pre-origin-column nulls.
   // This is current server bridge/ledger authority, not proof that an adopter invocation ran.
-  return seat.bridgeOwnership !== undefined && (origin === 'relay-binding' || origin === null);
+  return (
+    answer && seat.bridgeOwnership !== undefined && (origin === 'relay-binding' || origin === null)
+  );
 }

@@ -1,5 +1,9 @@
 import { ChatMessageStore } from '../../../session/chat-messages/chat-message-store.js';
-import { renderSeatMessage, seatCarryOf } from '../../../rooms/handoff/seat-message-prompt.js';
+import { ChatMessageService } from '../../../session/chat-messages/chat-message-service.js';
+import { runtimeRegistry } from '../../../core/runtime-registry.js';
+import { FakeAgentRuntime } from '@dorkos/test-utils';
+import { describeSessionFor } from '../../../extensions/agent-send/agent-send-defaults.js';
+import { roomSessionPlace } from '../../../rooms/repo/room-turn-place.js';
 /**
  * `ChatBridgeDelivery` — the outbound half of the bridge (chats-as-channels spec
  * §6), and the loop-closer: a committed room entry reaches the platform chat.
@@ -302,32 +306,60 @@ describe('ChatBridgeDelivery (chats-as-channels §6, §10)', () => {
     const delivery = makeDelivery(bindingRow(room.id, '555'));
     const receipts = new ChatMessageStore(harness.db);
     const inbox = harness.service.createSeatMessages(receipts, () => undefined);
-    const row = {
-      id: 'm5-message',
-      toSessionId: 'm5-seat',
-      fromSessionId: 'peer-chat',
-      fromAgentPath: '/agents/peer',
-      fromAgentId: 'peer',
-      fromAgentName: 'Peer',
+    runtimeRegistry.setDb(harness.db);
+    runtimeRegistry.register(new FakeAgentRuntime('claude-code'));
+    harness.db.$client
+      .prepare(
+        "INSERT INTO session_metadata(session_id,runtime,agent_path,launch_origin,created_at) VALUES ('m5-seat','claude-code',?,'room','2026-11-15')"
+      )
+      .run(AGENT_PATH);
+    receipts.insert({
+      id: 'm5-ask',
+      fromSessionId: 'm5-seat',
+      toSessionId: 'peer-chat',
+      fromAgentPath: AGENT_PATH,
+      fromAgentId: 'agent-1',
+      fromAgentName: 'Ana',
       fromChatTitle: null,
-      kind: 'message' as const,
-      text: 'PRIVATE_ASIDE_TEST',
+      kind: 'message',
+      text: 'A real private question',
       summary: null,
-      nonce: '33334444',
-      delivery: 'queue' as const,
-      status: 'queued' as const,
-      queueMessageId: 'm5-queue',
+      nonce: null,
+      delivery: 'queue',
+      status: 'delivered',
+      queueMessageId: null,
       ceilingJson: '"none"',
       replyToId: null,
-    };
-    inbox.admit({
-      target: inbox.resolveSeatTarget('m5-seat')!,
-      row,
-      rendered: renderSeatMessage(row),
-      carried: seatCarryOf(row),
-      unsolicited: false,
     });
+    const placement = roomSessionPlace({
+      bindings: harness.store.sessionLedger,
+      authors: harness.authors,
+      worktrees: () => null,
+    });
+    const chats = new ChatMessageService({
+      store: receipts,
+      meshCore: () => undefined,
+      describeSession: describeSessionFor(() => placement),
+      chatTitle: async () => null,
+      sessionCwd: async () => AGENT_PATH,
+      isBusy: async () => false,
+      dispatch: async () => {
+        throw new Error('No ordinary dispatch for a bridged-seat answer');
+      },
+      steerInto: async () => false,
+      interruptTurn: async () => false,
+      canonicalId: async (id) => id,
+      turnLevelOf: () => ({ asks: 'never', reach: 'everything' }),
+      emitActivity: () => undefined,
+      onLifecycle: () => () => undefined,
+      seatMessages: () => inbox,
+    });
+    const answer = await chats.send(
+      { sessionId: 'peer-chat', agentPath: '/agents/peer' },
+      { to: 'm5-seat', message: 'PRIVATE_ASIDE_TEST', replyTo: 'm5-ask' }
+    );
     await inbox.idle();
+    expect(receipts.get(answer.messageId)?.status).toBe('delivered');
     expect(posted).toHaveLength(1);
     // Invoke the real bridge before asserting its classification: the no-aside mutant must
     // actually deliver through the reply exemption, not fail on a decorative root assertion.
@@ -344,6 +376,7 @@ describe('ChatBridgeDelivery (chats-as-channels §6, §10)', () => {
     expect(publish).toHaveBeenCalledTimes(2);
     expect(adapterDelivery).toHaveBeenCalledTimes(1);
     expect(publish.mock.calls[1]![2].from).toBe('relay.bridge.reply.tg-main.555');
+    chats.stop();
     inbox.stop();
   });
 

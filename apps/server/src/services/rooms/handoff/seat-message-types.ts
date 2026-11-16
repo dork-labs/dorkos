@@ -17,6 +17,8 @@ export interface SeatMessageTarget {
   aliases?: readonly string[];
   /** Current binding used to verify runtime ownership after a native rename. */
   canonicalSessionId?: string;
+  /** Server-owned bridge policy, including an archived/inactive bridge; grants no origin reach. */
+  bridged: boolean;
   /** Current server-owned bridge correlated with this ledger seat; not an adoption receipt. */
   bridgeOwnership?: { bindingId: string; adapterId: string; chatId: string };
 }
@@ -27,11 +29,12 @@ export interface SeatMessageAdmission {
   row: NewChatMessage;
   rendered: string;
   carried: AsideCarry;
-  unsolicited: boolean;
 }
 
 /** One capacity-owned receipt; its original wait deadline survives retries. */
 export interface SeatMessagePending extends SeatMessageAdmission {
+  /** Derived only from the receipt classification committed by admission. */
+  unsolicited: boolean;
   deadline: number;
 }
 

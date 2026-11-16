@@ -1,6 +1,7 @@
 ---
 covers:
   - 'feat(rooms): deliver private messages to room seats (DOR-4472)'
+  - 'fix(rooms): validate seat answers and coalesce notices (DOR-4472)'
 ---
 
 ### Added

@@ -30,6 +30,16 @@ import type {
   ChatMessageStatus,
 } from '@dorkos/shared/chat-messages';
 
+const ACTIVE_ASK_KINDS: readonly ChatMessageKind[] = ['message', 'start'];
+const ACTIVE_ASK_STATUSES: readonly ChatMessageStatus[] = ['working', 'delivered', 'steered'];
+
+/** Only an actually read, still-unanswered question can exempt an answer from a new notice. */
+export function isActiveChatAsk(row: ChatMessageRow | null | undefined): row is ChatMessageRow {
+  return (
+    row != null && ACTIVE_ASK_KINDS.includes(row.kind) && ACTIVE_ASK_STATUSES.includes(row.status)
+  );
+}
+
 /** A chat message as the store writes it. */
 export interface NewChatMessage extends Partial<
   Pick<
@@ -115,27 +125,64 @@ export class ChatMessageStore {
   }
 
   /** Commit a receipt and its trusted local trace in the same consolidated database transaction. */
-  insertWithTrace<T>(input: NewChatMessage, trace: () => T): { row: ChatMessageRow; trace: T } {
-    return this.db.transaction(() => ({ row: this.insert(input), trace: trace() }));
+  insertWithTrace<T>(
+    input: NewChatMessage,
+    trace: (row: ChatMessageRow) => T
+  ): { row: ChatMessageRow; trace: T } {
+    return this.db.transaction(() => {
+      let replyToId = input.replyToId;
+      if (input.deliveryRoute === 'seat' && replyToId !== null) {
+        const reserved = this.db
+          .select({ id: chatMessages.id })
+          .from(chatMessages)
+          .where(
+            and(
+              eq(chatMessages.replyToId, replyToId),
+              eq(chatMessages.deliveryRoute, 'seat'),
+              inArray(chatMessages.status, ['queued', 'working'])
+            )
+          )
+          .get();
+        if (!isActiveChatAsk(this.get(replyToId)) || reserved) replyToId = null;
+      }
+      const row = this.insert({ ...input, replyToId });
+      return { row, trace: trace(row) };
+    });
   }
 
-  /** Compare-and-set only live seat receipts; a late completion cannot revive an interrupted row. */
+  /** Live receipt CAS and its delivered answer's ask transition commit or roll back together. */
   updatePendingSeatMessage(id: string, patch: ChatMessagePatch): boolean {
-    const result = this.db
-      .update(chatMessages)
-      .set({ ...patch, updatedAt: this.now().toISOString() })
-      .where(
-        and(
-          eq(chatMessages.id, id),
-          eq(chatMessages.deliveryRoute, 'seat'),
-          inArray(
-            chatMessages.status,
-            patch.status === 'working' ? ['queued'] : ['queued', 'working']
+    return this.db.transaction(() => {
+      const before = patch.status === 'delivered' ? this.get(id) : undefined;
+      const result = this.db
+        .update(chatMessages)
+        .set({ ...patch, updatedAt: this.now().toISOString() })
+        .where(
+          and(
+            eq(chatMessages.id, id),
+            eq(chatMessages.deliveryRoute, 'seat'),
+            inArray(
+              chatMessages.status,
+              patch.status === 'working' ? ['queued'] : ['queued', 'working']
+            )
           )
         )
-      )
-      .run();
-    return result.changes > 0;
+        .run();
+      if (result.changes > 0 && patch.status === 'delivered' && before?.replyToId) {
+        this.db
+          .update(chatMessages)
+          .set({ status: 'replied', updatedAt: this.now().toISOString() })
+          .where(
+            and(
+              eq(chatMessages.id, before.replyToId),
+              inArray(chatMessages.kind, ACTIVE_ASK_KINDS),
+              inArray(chatMessages.status, ACTIVE_ASK_STATUSES)
+            )
+          )
+          .run();
+      }
+      return result.changes > 0;
+    });
   }
 
   /** Pending private-seat rows from an earlier process, never ordinary-dispatch candidates. */
@@ -278,7 +325,7 @@ export class ChatMessageStore {
         and(
           eq(chatMessages.fromSessionId, fromSessionId),
           eq(chatMessages.toSessionId, toSessionId),
-          inArray(chatMessages.kind, ['message', 'start'])
+          inArray(chatMessages.kind, ACTIVE_ASK_KINDS)
         )
       )
       .orderBy(desc(chatMessages.createdAt))
@@ -316,10 +363,10 @@ export class ChatMessageStore {
         and(
           eq(chatMessages.fromSessionId, fromSessionId),
           eq(chatMessages.toSessionId, toSessionId),
-          inArray(chatMessages.kind, ['message', 'start']),
+          inArray(chatMessages.kind, ACTIVE_ASK_KINDS),
           // Not `queued`: a message still waiting has not been read, so nothing
           // sent meanwhile can be its answer (DOR-2994).
-          inArray(chatMessages.status, ['working', 'delivered', 'steered'])
+          inArray(chatMessages.status, ACTIVE_ASK_STATUSES)
         )
       )
       .orderBy(desc(chatMessages.createdAt))
@@ -339,8 +386,8 @@ export class ChatMessageStore {
         and(
           inArray(chatMessages.fromSessionId, [...fromIds]),
           eq(chatMessages.toSessionId, toSessionId),
-          inArray(chatMessages.kind, ['message', 'start']),
-          inArray(chatMessages.status, ['working', 'delivered', 'steered'])
+          inArray(chatMessages.kind, ACTIVE_ASK_KINDS),
+          inArray(chatMessages.status, ACTIVE_ASK_STATUSES)
         )
       )
       .orderBy(desc(chatMessages.createdAt))

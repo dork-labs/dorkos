@@ -96,6 +96,26 @@ function room(bridged: boolean, chatType: 'group' | 'private' = 'group') {
         harness.human
       );
 }
+function seatAsk(sessionId: string) {
+  return store.insert({
+    id: 'bridge-ask',
+    fromSessionId: sessionId,
+    toSessionId: caller.sessionId,
+    fromAgentPath: home,
+    fromAgentId: 'origin-agent',
+    fromAgentName: 'Bo',
+    fromChatTitle: null,
+    kind: 'message',
+    text: 'An actual question for this chat',
+    summary: null,
+    nonce: null,
+    delivery: 'queue',
+    status: 'delivered',
+    queueMessageId: null,
+    ceilingJson: '"none"',
+    replyToId: null,
+  });
+}
 async function adopt(roomId: string, sessionId: string) {
   const author = harness.authors.resolveAgent(home, 'Bo');
   const adopter = new BridgeSessionAdopter({
@@ -181,29 +201,95 @@ it.each([
   ['relay-binding', 'private'],
   [null, 'group'],
   [null, 'private'],
+  ['room', 'group'],
+  ['room', 'private'],
 ] as const)(
-  'M6: actual adoption preserves bound %s origin in bridged room type %s',
+  'Code D3: unsolicited writes refuse a bound %s bridged %s seat',
   async (origin, chatType) => {
     const target = room(true, chatType);
     recordOwner('origin-adopted', origin);
     await adopt(target.id, 'origin-adopted');
-    expect(await describeSession('origin-adopted')).toMatchObject({
-      bound: true,
-      roomBound: true,
-      agentPath: home,
-      launchOrigin: origin,
-    });
+    await expect(
+      chats.send(caller, { to: 'origin-adopted', message: 'No unsolicited external reach' })
+    ).rejects.toMatchObject({ code: 'NOT_ALLOWED' });
+    expect(turns).toHaveLength(0);
+  }
+);
+
+it.each([
+  ['relay-binding', 'group'],
+  ['relay-binding', 'private'],
+  [null, 'group'],
+  [null, 'private'],
+] as const)(
+  'Code D1: an actual answer may enter a bound %s bridged %s seat',
+  async (origin, chatType) => {
+    const target = room(true, chatType);
+    recordOwner('origin-adopted', origin);
+    await adopt(target.id, 'origin-adopted');
+    seatAsk('origin-adopted');
     const receipt = await chats.send(caller, {
       to: 'origin-adopted',
-      message: 'Private adopted-seat request.',
+      message: 'An actual private answer',
+      replyTo: 'bridge-ask',
     });
     await inbox.idle();
+    expect(store.get(receipt.messageId)?.status).toBe('delivered');
     expect(turns).toHaveLength(1);
     expect(turns[0]?.roomContext.triggerEntryId).toBeNull();
-    expect(store.get(receipt.messageId)?.status).toBe('delivered');
     expect(dispatch).not.toHaveBeenCalled();
   }
 );
+
+it('Code D3: an inactive bridge still refuses an unsolicited room-origin seat write', async () => {
+  const target = room(true, 'private');
+  recordOwner('inactive-bridge-seat', 'room');
+  await adopt(target.id, 'inactive-bridge-seat');
+  harness.bridges.archiveBridge(target.id, new Date().toISOString());
+  await expect(
+    chats.send(caller, { to: 'inactive-bridge-seat', message: 'No inactive bridge bypass' })
+  ).rejects.toMatchObject({ code: 'NOT_ALLOWED' });
+  expect(turns).toHaveLength(0);
+});
+
+it('Code D3: a queued duplicate answer into a bridged seat is refused atomically', async () => {
+  const target = room(true, 'group');
+  recordOwner('queued-bridge-seat', 'relay-binding');
+  await adopt(target.id, 'queued-bridge-seat');
+  seatAsk('queued-bridge-seat');
+  const { triggers } = harness.service as unknown as {
+    triggers: import('../room-trigger.js').RoomTriggerDispatcher;
+  };
+  let finish!: () => void;
+  triggers.deps.runner.run = async (request) => {
+    await new Promise<void>((resolve) => {
+      finish = resolve;
+    });
+    if (!request.sessionId) throw new Error('Seat runner requires a bound session');
+    return { text: null, sessionId: request.sessionId };
+  };
+  try {
+    const first = await chats.send(caller, {
+      to: 'queued-bridge-seat',
+      message: 'Actual answer',
+      replyTo: 'bridge-ask',
+    });
+    await vi.waitFor(() => expect(finish).toBeTypeOf('function'));
+    await expect(
+      chats.send(caller, {
+        to: 'queued-bridge-seat',
+        message: 'A new ask disguised as another answer',
+        replyTo: 'bridge-ask',
+      })
+    ).rejects.toMatchObject({ code: 'NOT_ALLOWED' });
+    expect(store.listSentFrom(caller.sessionId)).toHaveLength(1);
+    expect(store.get(first.messageId)?.replyToId).toBe('bridge-ask');
+  } finally {
+    inbox.stop();
+    finish?.();
+    await inbox.idle();
+  }
+});
 
 it('M6: metadata-free adoption remains closed until actual room ownership is recorded', async () => {
   const target = room(true);
@@ -226,7 +312,12 @@ it('M6: metadata-free adoption remains closed until actual room ownership is rec
     agentPath: home,
     launchOrigin: 'room',
   });
-  const receipt = await chats.send(caller, { to: 'metadata-free-adopted', message: 'Now bound.' });
+  seatAsk('metadata-free-adopted');
+  const receipt = await chats.send(caller, {
+    to: 'metadata-free-adopted',
+    message: 'Now bound.',
+    replyTo: 'bridge-ask',
+  });
   await inbox.idle();
   expect(store.get(receipt.messageId)?.status).toBe('delivered');
 });
@@ -266,6 +357,7 @@ it.each(['archive', 'binding-change', 'native-rekey'] as const)(
     const target = room(true);
     recordOwner('bridge-placement-old', 'relay-binding');
     await adopt(target.id, 'bridge-placement-old');
+    seatAsk('bridge-placement-old');
     const { triggers } = harness.service as unknown as {
       triggers: import('../room-trigger.js').RoomTriggerDispatcher;
     };
@@ -286,6 +378,7 @@ it.each(['archive', 'binding-change', 'native-rekey'] as const)(
     try {
       const receipt = await chats.send(caller, {
         to: 'bridge-placement-old',
+        replyTo: 'bridge-ask',
         message: 'Keep exact bridge authority.',
       });
       await placing;

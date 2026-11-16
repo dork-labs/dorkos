@@ -145,6 +145,9 @@ export class RoomService {
       publishPresence: (roomId, authorId, presence) =>
         this.publishSignal(roomId, 'progress', authorId, presence),
     });
+    // These collaborators are complete and stable once parts is constructed. Capturing their
+    // identities here keeps the private inbox factory and lifecycle composition on the same
+    // core, bridge store and publisher; no lazy resolution is needed.
     this.triggers = this.parts.core.triggers;
     this.createSeatMessages = (store, emit) =>
       new RoomSeatMessages(this.parts.core, this.parts.publisher, store, emit);

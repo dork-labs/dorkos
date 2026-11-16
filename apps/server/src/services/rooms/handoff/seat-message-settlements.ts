@@ -20,7 +20,7 @@ export class SeatMessageSettlements {
 
   constructor(
     private readonly store: ChatMessageStore,
-    private readonly release: (item: SeatMessagePending) => void,
+    private readonly release: (item: SeatMessagePending, repliedFrom?: string) => void,
     private readonly fault: () => void,
     private readonly retryMs: number
   ) {}
@@ -68,9 +68,9 @@ export class SeatMessageSettlements {
     this.notify();
   }
 
-  private releaseSafely(item: SeatMessagePending): void {
+  private releaseSafely(item: SeatMessagePending, repliedFrom?: string): void {
     try {
-      this.release(item);
+      this.release(item, repliedFrom);
     } catch {
       logger.warn('[seat-messages] receipt release notification failed', {
         messageId: item.row.id,
@@ -100,11 +100,17 @@ export class SeatMessageSettlements {
     try {
       for (const [id, intent] of this.pending) {
         if (this.stopped) break;
+        let repliedFrom: string | undefined;
         try {
-          this.store.updatePendingSeatMessage(id, {
+          const askSender =
+            intent.status === 'delivered' && intent.item.row.replyToId
+              ? this.store.get(intent.item.row.replyToId)?.fromSessionId
+              : undefined;
+          const changed = this.store.updatePendingSeatMessage(id, {
             status: intent.status,
             ...(intent.reason ? { failureReason: intent.reason } : {}),
           });
+          if (changed) repliedFrom = askSender;
         } catch {
           logger.warn('[seat-messages] receipt settlement retained', { messageId: id });
           try {
@@ -117,7 +123,7 @@ export class SeatMessageSettlements {
         }
         // Success or a terminal row owned by recovery: both release this reference exactly once.
         this.pending.delete(id);
-        this.releaseSafely(intent.item);
+        this.releaseSafely(intent.item, repliedFrom);
       }
     } finally {
       this.flushing = false;
