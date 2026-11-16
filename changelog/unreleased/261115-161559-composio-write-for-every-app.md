@@ -1,5 +1,6 @@
 ---
 covers:
+  - 'fix(connections): a loosely spelled force or new-branch argument still needs an exact grant (DOR-4194)'
   - 'fix(connections): require exact grants for branch and history changes (DOR-4194)'
   - 'fix(connections): require exact repository actions and preserve percent filenames (DOR-4194)'
   - 'fix(connections): require exact grants for repository controls across apps (DOR-4194)'
