@@ -24,9 +24,9 @@ tags: [marketplace, web, registry, content, telemetry]
 ## Source Material
 
 - **Parent ideation:** [`specs/dorkos-marketplace/01-ideation.md`](../dorkos-marketplace/01-ideation.md)
-- **Foundation spec:** [`specs/marketplace-01-foundation/02-specification.md`](https://github.com/dork-labs/dorkos/tree/885b00fa627fad4bcefa918a93105d427f1a0f7c/specs/marketplace-01-foundation)
+- **Foundation spec:** [`specs/marketplace-01-foundation/02-specification.md`](../marketplace-01-foundation/02-specification.md)
 - **Install spec:** [`specs/marketplace-02-install/02-specification.md`](../marketplace-02-install/02-specification.md)
-- **Extension spec:** [`specs/marketplace-03-extension/02-specification.md`](https://github.com/dork-labs/dorkos/tree/885b00fa627fad4bcefa918a93105d427f1a0f7c/specs/marketplace-03-extension)
+- **Extension spec:** [`specs/marketplace-03-extension/02-specification.md`](../marketplace-03-extension/02-specification.md)
 
 This spec depends on specs 01 and 02 implemented. Spec 03 ships in parallel — both 03 and 04 build on 02.
 

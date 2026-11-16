@@ -38,7 +38,7 @@ status: ideation
 ## 2) Pre-reading Log
 
 - `decisions/0262-recover-pending-interactions-hybrid-pull-sse-reemit.md`: DOR-73's hybrid **pull (Path A) + SSE re-emit (Path B)** recovery for pending interactions, idempotent by interaction id. The template to generalize — but scoped only to approvals/questions/elicitations and held in server memory.
-- [`specs/permission-prompt-survives-session-switch/02-specification.md`](https://github.com/dork-labs/dorkos/tree/885b00fa627fad4bcefa918a93105d427f1a0f7c/specs/permission-prompt-survives-session-switch): Full DOR-73 spec; confirms transient in-memory control events with no replay were the failure class.
+- `specs/permission-prompt-survives-session-switch/02-specification.md`: Full DOR-73 spec; confirms transient in-memory control events with no replay were the failure class.
 - `apps/client/src/layers/features/chat/model/use-session-history.ts`: **The smoking gun.** `syncUrl` is gated on `enableCrossClientSync` (`:157`); `refetchInterval` is gated on `enableMessagePolling` (`:99`). Both default off.
 - `apps/client/src/layers/shared/model/app-store/app-store-helpers.ts:85-86`: `enableCrossClientSync` and `enableMessagePolling` **both default `false`**.
 - `apps/client/src/layers/features/settings/ui/AdvancedTab.tsx:64,71`: those flags surface as **"Multi-window sync"** and **"Background refresh"** toggles.

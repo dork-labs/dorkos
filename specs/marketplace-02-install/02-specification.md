@@ -35,7 +35,7 @@ The foundation spec (01) gives us schemas, parsers, and validators. None of that
 
 - `specs/marketplace-02-install/01-ideation.md` — This spec's ideation
 - `specs/dorkos-marketplace/01-ideation.md` — Parent project ideation
-- [`specs/marketplace-01-foundation/02-specification.md`](https://github.com/dork-labs/dorkos/tree/885b00fa627fad4bcefa918a93105d427f1a0f7c/specs/marketplace-01-foundation) — Foundation (must ship first)
+- `specs/marketplace-01-foundation/02-specification.md` — Foundation (must ship first)
 - `apps/server/src/services/core/template-downloader.ts` — Reference: existing git clone + giget + atomic-rollback patterns
 - `apps/server/src/services/extensions/extension-manager.ts` — Reference: extension lifecycle pattern
 - `apps/server/src/services/relay/adapter-manager.ts` — Reference: adapters.json mutation pattern

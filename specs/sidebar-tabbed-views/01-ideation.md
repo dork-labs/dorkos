@@ -38,9 +38,9 @@ status: ideation
 ## 2) Pre-reading Log
 
 - `specs/shadcn-sidebar-redesign/02-specification.md`: Completed spec that established the current Shadcn-based sidebar architecture. Foundation for this feature.
-- [`specs/agent-centric-ux/02-specification.md`](https://github.com/dork-labs/dorkos/tree/885b00fa627fad4bcefa918a93105d427f1a0f7c/specs/agent-centric-ux): Parent spec for agent-centric design direction. Sessions, Schedules, Connections align with agent context model.
-- [`specs/pulse-ui-overhaul/02-specification.md`](https://github.com/dork-labs/dorkos/tree/885b00fa627fad4bcefa918a93105d427f1a0f7c/specs/pulse-ui-overhaul): Defines PulsePanel UI patterns, schedule card layouts, run status indicators.
-- [`specs/adapter-catalog-management/02-specification.md`](https://github.com/dork-labs/dorkos/tree/885b00fa627fad4bcefa918a93105d427f1a0f7c/specs/adapter-catalog-management): Defines adapter catalog UI, connection status patterns.
+- `specs/agent-centric-ux/02-specification.md`: Parent spec for agent-centric design direction. Sessions, Schedules, Connections align with agent context model.
+- `specs/pulse-ui-overhaul/02-specification.md`: Defines PulsePanel UI patterns, schedule card layouts, run status indicators.
+- `specs/adapter-catalog-management/02-specification.md`: Defines adapter catalog UI, connection status patterns.
 - `specs/mesh-panel-ux-overhaul/02-specification.md`: Defines MeshPanel agent roster, topology display.
 - `contributing/design-system.md`: 8pt grid, `text-2xs` for labels, tab styling patterns (`px-3 py-1.5`), color tokens.
 - `contributing/animations.md`: Motion library usage, 200ms normal timing, spring configs for layout transitions.

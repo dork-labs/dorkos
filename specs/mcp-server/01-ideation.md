@@ -31,8 +31,8 @@ status: ideation
 
 ## 2) Pre-reading Log
 
-- [`specs/dynamic-mcp-tools/`](https://github.com/dork-labs/dorkos/tree/885b00fa627fad4bcefa918a93105d427f1a0f7c/specs/dynamic-mcp-tools) (spec 41): Defines the current tool injection architecture — tools injected into SDK sessions via in-process MCP server using `createSdkMcpServer()` from `@anthropic-ai/claude-agent-sdk`
-- [`specs/agent-tool-context-injection/`](https://github.com/dork-labs/dorkos/tree/885b00fa627fad4bcefa918a93105d427f1a0f7c/specs/agent-tool-context-injection) (spec 88): Context blocks for tool usage documentation, injected into system prompt alongside tool definitions
+- `specs/dynamic-mcp-tools/` (spec 41): Defines the current tool injection architecture — tools injected into SDK sessions via in-process MCP server using `createSdkMcpServer()` from `@anthropic-ai/claude-agent-sdk`
+- `specs/agent-tool-context-injection/` (spec 88): Context blocks for tool usage documentation, injected into system prompt alongside tool definitions
 - `contributing/architecture.md`: Hexagonal architecture with Transport interface, RuntimeRegistry for agent backend abstraction
 - `contributing/api-reference.md`: OpenAPI docs, route mounting patterns
 - `apps/server/src/index.ts`: Server startup orchestration — service initialization, route mounting with feature flag gating

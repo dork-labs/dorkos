@@ -544,6 +544,6 @@ The `hookId` is the correlation key across all three events.
 - `ToolCallCard.tsx` — existing `progressOutput` + `hasProgress` auto-expand pattern (lines 50–56) confirms the hook row extension approach
 - `research/20260316_system_status_compact_boundary_ui_patterns.md` — SystemStatusZone design for session-level hook escalation
 - `research/20260316_subagent_activity_streaming_ui_patterns.md` — collapsible streaming block patterns, scroll-lock behavior for auto-collapse
-- [`specs/system-status-compact-boundary/02-specification.md`](https://github.com/dork-labs/dorkos/tree/885b00fa627fad4bcefa918a93105d427f1a0f7c/specs/system-status-compact-boundary) line 343 — confirms hooks are explicitly out of scope for that spec, intended as a separate feature
+- `specs/system-status-compact-boundary/02-specification.md` line 343 — confirms hooks are explicitly out of scope for that spec, intended as a separate feature
 - `claude-code-sdk-agent-capabilities.md` — `HookEvent` type enumeration, hook return values, permission evaluation order
 - GitHub Actions log group UX — nested subprocess visibility pattern (collapsible per step, failures stay expanded)

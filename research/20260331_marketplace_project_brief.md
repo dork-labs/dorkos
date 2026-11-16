@@ -680,7 +680,7 @@ What happens:
 
 **Why this is uniquely possible for DorkOS:**
 
-DorkOS already has agent-built extension capabilities ([specs/ext-platform-04-agent-extensions](https://github.com/dork-labs/dorkos/tree/885b00fa627fad4bcefa918a93105d427f1a0f7c/specs/ext-platform-04-agent-extensions)). MCP tools for `create_extension`, `test_extension`, `reload_extensions` already exist. The missing piece is wiring this into a "publish to marketplace" flow.
+DorkOS already has agent-built extension capabilities (specs/ext-platform-04-agent-extensions). MCP tools for `create_extension`, `test_extension`, `reload_extensions` already exist. The missing piece is wiring this into a "publish to marketplace" flow.
 
 **Implications for the brief:**
 
@@ -812,12 +812,12 @@ Don't add yet (defer to v2):
 ## Related Specs
 
 - `specs/plugin-extension-system/` (Spec #173) — Core extension system
-- [`specs/ext-platform-02-extension-registry/`](https://github.com/dork-labs/dorkos/tree/885b00fa627fad4bcefa918a93105d427f1a0f7c/specs/ext-platform-02-extension-registry) (Spec #182) — Extension point registry
-- [`specs/ext-platform-03-extension-system/`](https://github.com/dork-labs/dorkos/tree/885b00fa627fad4bcefa918a93105d427f1a0f7c/specs/ext-platform-03-extension-system) (Spec #183) — Extension lifecycle
-- [`specs/ext-platform-04-agent-extensions/`](https://github.com/dork-labs/dorkos/tree/885b00fa627fad4bcefa918a93105d427f1a0f7c/specs/ext-platform-04-agent-extensions) — Agent-built extensions
-- [`specs/extension-manifest-settings/`](https://github.com/dork-labs/dorkos/tree/885b00fa627fad4bcefa918a93105d427f1a0f7c/specs/extension-manifest-settings) (Spec #209) — Extension settings
-- [`specs/tasks-system-redesign/`](https://github.com/dork-labs/dorkos/tree/885b00fa627fad4bcefa918a93105d427f1a0f7c/specs/tasks-system-redesign) (Spec #211) — File-based task system
-- [`specs/skills-package/`](https://github.com/dork-labs/dorkos/tree/885b00fa627fad4bcefa918a93105d427f1a0f7c/specs/skills-package) (Spec #212) — `@dorkos/skills` package (SKILL.md standard adoption) — **implemented**
+- `specs/ext-platform-02-extension-registry/` (Spec #182) — Extension point registry
+- `specs/ext-platform-03-extension-system/` (Spec #183) — Extension lifecycle
+- `specs/ext-platform-04-agent-extensions/` — Agent-built extensions
+- `specs/extension-manifest-settings/` (Spec #209) — Extension settings
+- `specs/tasks-system-redesign/` (Spec #211) — File-based task system
+- `specs/skills-package/` (Spec #212) — `@dorkos/skills` package (SKILL.md standard adoption) — **implemented**
 
 ## Related ADRs
 

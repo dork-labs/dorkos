@@ -706,10 +706,10 @@ No changes to the `Transport` interface signature — `label` travels inside the
 - Ideation document: `specs/adapter-binding-ux-overhaul/01-ideation.md`
 - Research: `research/20260311_adapter_binding_configuration_ux_patterns.md`
 - Research: `research/20260311_adapter_binding_ux_overhaul_gaps.md`
-- Related spec 67: [`specs/adapter-catalog-management/02-specification.md`](https://github.com/dork-labs/dorkos/tree/885b00fa627fad4bcefa918a93105d427f1a0f7c/specs/adapter-catalog-management)
+- Related spec 67: `specs/adapter-catalog-management/02-specification.md`
 - Related spec 71: `specs/adapter-agent-routing/02-specification.md`
 - Related spec 117: `specs/sidebar-tabbed-views/02-specification.md`
-- Related spec 119: [`specs/relay-adapter-dx/01-ideation.md`](https://github.com/dork-labs/dorkos/tree/885b00fa627fad4bcefa918a93105d427f1a0f7c/specs/relay-adapter-dx)
+- Related spec 119: `specs/relay-adapter-dx/01-ideation.md`
 
 ## Changelog
 

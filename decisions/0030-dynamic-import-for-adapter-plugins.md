@@ -39,7 +39,7 @@ export default function createAdapter(id: string, config: Record<string, unknown
 
 The `id` is the adapter instance ID from the user's `adapters.json` configuration (e.g., `"my-telegram"`). Without it, plugin-loaded adapters could not set their own `id` property correctly -- the ID was available to the plugin loader via `entry.id` but was never passed through to the factory function.
 
-This change was made as part of the relay adapter DX improvements ([`specs/relay-adapter-dx`](https://github.com/dork-labs/dorkos/tree/885b00fa627fad4bcefa918a93105d427f1a0f7c/specs/relay-adapter-dx)). The built-in adapter factory map was updated in parallel to use the same `(id, config)` signature.
+This change was made as part of the relay adapter DX improvements (`specs/relay-adapter-dx`). The built-in adapter factory map was updated in parallel to use the same `(id, config)` signature.
 
 ## Consequences
 

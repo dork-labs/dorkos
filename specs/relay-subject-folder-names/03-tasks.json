@@ -1,0 +1,117 @@
+{
+  "spec": "specs/relay-subject-folder-names/02-specification.md",
+  "slug": "relay-subject-folder-names",
+  "generatedAt": "2026-03-21T12:00:00.000Z",
+  "mode": "full",
+  "lastDecomposeDate": null,
+  "tasks": [
+    {
+      "id": "1.1",
+      "phase": 1,
+      "phaseName": "Source Changes",
+      "subject": "[relay-subject-folder-names] [P1] Remove hashSubject and use subject directly in endpoint-registry.ts",
+      "description": "Modify `packages/relay/src/endpoint-registry.ts` to remove the `hashSubject()` function, `HASH_LENGTH` constant, and `node:crypto` import. Use the subject string directly as the directory name and set `EndpointInfo.hash = subject`.\n\n## File: `packages/relay/src/endpoint-registry.ts`\n\n### Step 1: Remove the `node:crypto` import (line 14)\n\nRemove this line:\n```typescript\nimport { createHash } from 'node:crypto';\n```\n\n### Step 2: Remove `HASH_LENGTH` constant (line 24)\n\nRemove this line:\n```typescript\nconst HASH_LENGTH = 12;\n```\n\n### Step 3: Remove the `hashSubject()` function and its JSDoc (lines 26-38)\n\nRemove this entire block:\n```typescript\n/**\n * Compute a deterministic, filesystem-safe hash for a subject string.\n *\n * Uses SHA-256, truncated to {@link HASH_LENGTH} hex characters. The same\n * subject always produces the same hash, making directory lookups predictable\n * without maintaining a separate mapping file.\n *\n * @param subject - A validated subject string (e.g. `relay.agent.myproject.backend`)\n * @returns A lowercase hex string of length {@link HASH_LENGTH}\n */\nexport function hashSubject(subject: string): string {\n  return createHash('sha256').update(subject).digest('hex').slice(0, HASH_LENGTH);\n}\n```\n\n### Step 4: Update `registerEndpoint()` method (lines 90-103)\n\nReplace:\n```typescript\n    const hash = hashSubject(subject);\n    const maildirPath = join(this.mailboxesDir, hash);\n```\nWith:\n```typescript\n    const maildirPath = join(this.mailboxesDir, subject);\n```\n\nReplace:\n```typescript\n    const info: EndpointInfo = {\n      subject,\n      hash,\n      maildirPath,\n      registeredAt: new Date().toISOString(),\n    };\n```\nWith:\n```typescript\n    const info: EndpointInfo = {\n      subject,\n      hash: subject,\n      maildirPath,\n      registeredAt: new Date().toISOString(),\n    };\n```\n\n### Step 5: Update module-level JSDoc (lines 1-13)\n\nReplace:\n```typescript\n/**\n * Endpoint registry for the Relay message bus.\n *\n * Manages the lifecycle of message endpoints — registering, unregistering,\n * and looking up endpoints by subject. Each registered endpoint gets a\n * Maildir directory structure (tmp/, new/, cur/, failed/) created under\n * the configured data directory.\n *\n * Endpoint hashes are deterministic SHA-256 digests of the subject string,\n * truncated to 12 hex characters for filesystem-safe directory names.\n *\n * @module relay/endpoint-registry\n */\n```\nWith:\n```typescript\n/**\n * Endpoint registry for the Relay message bus.\n *\n * Manages the lifecycle of message endpoints — registering, unregistering,\n * and looking up endpoints by subject. Each registered endpoint gets a\n * Maildir directory structure (tmp/, new/, cur/, failed/) created under\n * the configured data directory.\n *\n * Directory names use the subject string directly (e.g. `relay.agent.myproject.backend/`).\n * Subject validation ensures all characters are POSIX-safe (`[a-zA-Z0-9_-]` tokens separated by dots).\n *\n * @module relay/endpoint-registry\n */\n```\n\n### Step 6: Update `registerEndpoint()` JSDoc (lines 64-74)\n\nReplace:\n```typescript\n  /**\n   * Register a new message endpoint.\n   *\n   * Validates the subject, computes a deterministic hash, creates the\n   * Maildir directory structure, and stores the endpoint info in memory.\n```\nWith:\n```typescript\n  /**\n   * Register a new message endpoint.\n   *\n   * Validates the subject, creates the Maildir directory structure using\n   * the subject string as the directory name, and stores the endpoint info in memory.\n```\n\n## Acceptance Criteria\n- `node:crypto` import is removed from `endpoint-registry.ts`\n- `HASH_LENGTH` constant is removed\n- `hashSubject()` function is removed\n- `registerEndpoint()` uses `subject` directly for directory path\n- `EndpointInfo.hash` is set to `subject`\n- Module JSDoc no longer references SHA-256 hashing\n- `getEndpointByHash()` method is unchanged (it linear-scans and still works since `hash === subject`)",
+      "activeForm": "Removing hashSubject and using subject directly in endpoint-registry.ts",
+      "size": "medium",
+      "priority": "high",
+      "dependencies": [],
+      "parallelWith": ["1.2", "1.3", "1.4", "1.5"]
+    },
+    {
+      "id": "1.2",
+      "phase": 1,
+      "phaseName": "Source Changes",
+      "subject": "[relay-subject-folder-names] [P1] Remove hashSubject import from relay-publish.ts and use subject directly",
+      "description": "Modify `packages/relay/src/relay-publish.ts` to remove the `hashSubject` import and use the subject string directly in the `deadLetter()` method.\n\n## File: `packages/relay/src/relay-publish.ts`\n\n### Step 1: Remove the `hashSubject` import (line 13)\n\nRemove this line:\n```typescript\nimport { hashSubject } from './endpoint-registry.js';\n```\n\n### Step 2: Update the `deadLetter()` method (lines 318-331)\n\nReplace the current method:\n```typescript\n  /** Dead-letter a message that had no delivery targets. */\n  private async deadLetter(\n    subject: string,\n    envelope: RelayEnvelope,\n    adapterResult: DeliveryResult | null\n  ): Promise<void> {\n    const subjectHash = hashSubject(subject);\n    await this.deps.maildirStore.ensureMaildir(subjectHash);\n\n    const reason = adapterResult?.error\n      ? `adapter delivery failed: ${adapterResult.error}`\n      : 'no matching endpoints or adapters';\n    await this.deps.deadLetterQueue.reject(subjectHash, envelope, reason);\n  }\n```\n\nWith:\n```typescript\n  /** Dead-letter a message that had no delivery targets. */\n  private async deadLetter(\n    subject: string,\n    envelope: RelayEnvelope,\n    adapterResult: DeliveryResult | null\n  ): Promise<void> {\n    await this.deps.maildirStore.ensureMaildir(subject);\n\n    const reason = adapterResult?.error\n      ? `adapter delivery failed: ${adapterResult.error}`\n      : 'no matching endpoints or adapters';\n    await this.deps.deadLetterQueue.reject(subject, envelope, reason);\n  }\n```\n\nThe key changes:\n1. Remove `const subjectHash = hashSubject(subject);`\n2. Replace `subjectHash` with `subject` in `ensureMaildir()` call\n3. Replace `subjectHash` with `subject` in `deadLetterQueue.reject()` call\n\n## Acceptance Criteria\n- `hashSubject` import is removed from `relay-publish.ts`\n- `deadLetter()` method passes `subject` directly to `ensureMaildir()` and `deadLetterQueue.reject()`\n- No other changes to the file\n- TypeScript compiles without errors",
+      "activeForm": "Removing hashSubject import from relay-publish.ts",
+      "size": "small",
+      "priority": "high",
+      "dependencies": [],
+      "parallelWith": ["1.1", "1.3", "1.4", "1.5"]
+    },
+    {
+      "id": "1.3",
+      "phase": 1,
+      "phaseName": "Source Changes",
+      "subject": "[relay-subject-folder-names] [P1] Remove hashSubject import from adapter-delivery.ts and use subject directly",
+      "description": "Modify `packages/relay/src/adapter-delivery.ts` to remove the `hashSubject` import and use the subject string directly when indexing adapter-delivered messages.\n\n## File: `packages/relay/src/adapter-delivery.ts`\n\n### Step 1: Remove the `hashSubject` import (line 10)\n\nRemove this line:\n```typescript\nimport { hashSubject } from './endpoint-registry.js';\n```\n\n### Step 2: Update the `deliver()` method (lines 62-71)\n\nReplace:\n```typescript\n      // Index adapter-delivered messages in SQLite for audit trail\n      if (result && result.success) {\n        const subjectHash = hashSubject(subject);\n        this.sqliteIndex.insertMessage({\n          id: envelope.id,\n          subject,\n          endpointHash: `adapter:${subjectHash}`,\n          status: 'delivered',\n          createdAt: envelope.createdAt,\n          expiresAt: null,\n        });\n      }\n```\n\nWith:\n```typescript\n      // Index adapter-delivered messages in SQLite for audit trail\n      if (result && result.success) {\n        this.sqliteIndex.insertMessage({\n          id: envelope.id,\n          subject,\n          endpointHash: `adapter:${subject}`,\n          status: 'delivered',\n          createdAt: envelope.createdAt,\n          expiresAt: null,\n        });\n      }\n```\n\nThe key changes:\n1. Remove `const subjectHash = hashSubject(subject);`\n2. Replace `adapter:${subjectHash}` with `adapter:${subject}` in `endpointHash`\n\n## Acceptance Criteria\n- `hashSubject` import is removed from `adapter-delivery.ts`\n- `endpointHash` uses `adapter:${subject}` instead of `adapter:${subjectHash}`\n- No other changes to the file\n- TypeScript compiles without errors",
+      "activeForm": "Removing hashSubject import from adapter-delivery.ts",
+      "size": "small",
+      "priority": "high",
+      "dependencies": [],
+      "parallelWith": ["1.1", "1.2", "1.4", "1.5"]
+    },
+    {
+      "id": "1.4",
+      "phase": 1,
+      "phaseName": "Source Changes",
+      "subject": "[relay-subject-folder-names] [P1] Add deprecation JSDoc to EndpointInfo.hash in types.ts",
+      "description": "Update `packages/relay/src/types.ts` to add a deprecation JSDoc comment to the `hash` field of `EndpointInfo`, documenting that it now equals the subject string.\n\n## File: `packages/relay/src/types.ts`\n\n### Step 1: Update the `EndpointInfo` interface (lines 67-72)\n\nReplace:\n```typescript\nexport interface EndpointInfo {\n  subject: string;\n  hash: string;\n  maildirPath: string;\n  registeredAt: string;\n}\n```\n\nWith:\n```typescript\nexport interface EndpointInfo {\n  subject: string;\n  /** @deprecated Equals `subject`. Kept for API compatibility — will be renamed to `id` in a future release. */\n  hash: string;\n  maildirPath: string;\n  registeredAt: string;\n}\n```\n\n## Acceptance Criteria\n- `EndpointInfo.hash` has a `@deprecated` JSDoc tag\n- The deprecation message explains that `hash` now equals `subject`\n- No other changes to the file\n- TypeScript compiles without errors",
+      "activeForm": "Adding deprecation JSDoc to EndpointInfo.hash in types.ts",
+      "size": "small",
+      "priority": "medium",
+      "dependencies": [],
+      "parallelWith": ["1.1", "1.2", "1.3", "1.5"]
+    },
+    {
+      "id": "1.5",
+      "phase": 1,
+      "phaseName": "Source Changes",
+      "subject": "[relay-subject-folder-names] [P1] Remove hashSubject from public exports in index.ts",
+      "description": "Update `packages/relay/src/index.ts` to remove `hashSubject` from the public exports.\n\n## File: `packages/relay/src/index.ts`\n\n### Step 1: Update the EndpointRegistry export (line 18)\n\nReplace:\n```typescript\nexport { EndpointRegistry, hashSubject } from './endpoint-registry.js';\n```\n\nWith:\n```typescript\nexport { EndpointRegistry } from './endpoint-registry.js';\n```\n\n## Acceptance Criteria\n- `hashSubject` is no longer exported from `@dorkos/relay`\n- `EndpointRegistry` remains exported\n- No other changes to the file\n- TypeScript compiles without errors",
+      "activeForm": "Removing hashSubject from public exports in index.ts",
+      "size": "small",
+      "priority": "high",
+      "dependencies": [],
+      "parallelWith": ["1.1", "1.2", "1.3", "1.4"]
+    },
+    {
+      "id": "2.1",
+      "phase": 2,
+      "phaseName": "Test Updates",
+      "subject": "[relay-subject-folder-names] [P2] Update endpoint-registry.test.ts to remove hashSubject tests and update assertions",
+      "description": "Update `packages/relay/src/__tests__/endpoint-registry.test.ts` to remove the `hashSubject` describe block, remove the `hashSubject` import, and update all assertions that referenced the hash function.\n\n## File: `packages/relay/src/__tests__/endpoint-registry.test.ts`\n\n### Step 1: Update the import (line 5)\n\nReplace:\n```typescript\nimport { EndpointRegistry, hashSubject } from '../endpoint-registry.js';\n```\n\nWith:\n```typescript\nimport { EndpointRegistry } from '../endpoint-registry.js';\n```\n\n### Step 2: Remove the entire `hashSubject` describe block (lines 38-62)\n\nRemove this entire block:\n```typescript\ndescribe('hashSubject', () => {\n  it('returns a 12-character hex string', () => {\n    const hash = hashSubject('relay.agent.myproject.backend');\n    expect(hash).toMatch(/^[a-f0-9]{12}$/);\n  });\n\n  it('is deterministic — same input always produces same output', () => {\n    const subject = 'relay.agent.myproject.backend';\n    const hash1 = hashSubject(subject);\n    const hash2 = hashSubject(subject);\n    expect(hash1).toBe(hash2);\n  });\n\n  it('produces different hashes for different subjects', () => {\n    const hash1 = hashSubject('relay.agent.project-a.backend');\n    const hash2 = hashSubject('relay.agent.project-b.backend');\n    expect(hash1).not.toBe(hash2);\n  });\n\n  it('produces different hashes for subjects that differ only in case', () => {\n    const hash1 = hashSubject('relay.agent.MyProject');\n    const hash2 = hashSubject('relay.agent.myproject');\n    expect(hash1).not.toBe(hash2);\n  });\n});\n```\n\n### Step 3: Update `registerEndpoint` test — \"returns EndpointInfo with correct fields\" (lines 70-80)\n\nReplace:\n```typescript\n    it('returns EndpointInfo with correct fields', async () => {\n      const subject = 'relay.agent.myproject.backend';\n      const info = await registry.registerEndpoint(subject);\n\n      expect(info.subject).toBe(subject);\n      expect(info.hash).toBe(hashSubject(subject));\n      expect(info.maildirPath).toBe(join(tempDir, 'mailboxes', info.hash));\n      expect(info.registeredAt).toBeTruthy();\n      // registeredAt is a valid ISO date string\n      expect(new Date(info.registeredAt).toISOString()).toBe(info.registeredAt);\n    });\n```\n\nWith:\n```typescript\n    it('returns EndpointInfo with correct fields', async () => {\n      const subject = 'relay.agent.myproject.backend';\n      const info = await registry.registerEndpoint(subject);\n\n      expect(info.subject).toBe(subject);\n      expect(info.hash).toBe(subject);\n      expect(info.maildirPath).toBe(join(tempDir, 'mailboxes', subject));\n      expect(info.registeredAt).toBeTruthy();\n      // registeredAt is a valid ISO date string\n      expect(new Date(info.registeredAt).toISOString()).toBe(info.registeredAt);\n    });\n```\n\n### Step 4: Update \"hash determinism\" describe block (lines 294-318)\n\nReplace the entire block:\n```typescript\n  describe('hash determinism', () => {\n    it('two registries with same dataDir produce same hash for same subject', () => {\n      const registry2 = new EndpointRegistry(tempDir);\n      const subject = 'relay.agent.test.determinism';\n\n      // hashSubject is a standalone function — deterministic by nature\n      const hash1 = hashSubject(subject);\n      const hash2 = hashSubject(subject);\n      expect(hash1).toBe(hash2);\n\n      // Also verify EndpointRegistry uses the same hash\n      // (we can't register twice in the same dir, but hash should match)\n      expect(hash1).toMatch(/^[a-f0-9]{12}$/);\n      // Ensure the second registry instance is valid (no-op, just showing they're independent)\n      expect(registry2.size).toBe(0);\n    });\n\n    it('maildir path is derived from hash', async () => {\n      const subject = 'relay.agent.path-check';\n      const info = await registry.registerEndpoint(subject);\n      const expectedHash = hashSubject(subject);\n\n      expect(info.maildirPath).toBe(join(tempDir, 'mailboxes', expectedHash));\n    });\n  });\n```\n\nWith:\n```typescript\n  describe('directory naming', () => {\n    it('hash equals subject (API compatibility)', async () => {\n      const subject = 'relay.agent.test.determinism';\n      const info = await registry.registerEndpoint(subject);\n\n      expect(info.hash).toBe(subject);\n    });\n\n    it('maildir path is derived from subject', async () => {\n      const subject = 'relay.agent.path-check';\n      const info = await registry.registerEndpoint(subject);\n\n      expect(info.maildirPath).toBe(join(tempDir, 'mailboxes', subject));\n    });\n  });\n```\n\n## Acceptance Criteria\n- `hashSubject` import is removed\n- `hashSubject` describe block (4 tests) is removed\n- `registerEndpoint` test assertions updated to compare `info.hash` against `subject` directly\n- \"hash determinism\" describe block is replaced with \"directory naming\" block that tests `hash === subject` and maildir path derivation\n- All remaining tests pass with `pnpm vitest run packages/relay/src/__tests__/endpoint-registry.test.ts`",
+      "activeForm": "Updating endpoint-registry.test.ts to remove hashSubject tests",
+      "size": "medium",
+      "priority": "high",
+      "dependencies": ["1.1"],
+      "parallelWith": ["2.2", "2.3"]
+    },
+    {
+      "id": "2.2",
+      "phase": 2,
+      "phaseName": "Test Updates",
+      "subject": "[relay-subject-folder-names] [P2] Update relay-core.test.ts hash length assertion",
+      "description": "Update `packages/relay/src/__tests__/relay-core.test.ts` to replace the `hash.length === 12` assertion with a direct subject comparison.\n\n## File: `packages/relay/src/__tests__/relay-core.test.ts`\n\n### Step 1: Update the endpoint registration test (lines 88-96)\n\nIn the `endpoint registration` describe block, find the test \"registers an endpoint and returns EndpointInfo\" and update the hash assertion.\n\nReplace:\n```typescript\n  it('registers an endpoint and returns EndpointInfo', async () => {\n    const info = await relay.registerEndpoint('relay.agent.backend');\n\n    expect(info.subject).toBe('relay.agent.backend');\n    expect(info.hash).toBeDefined();\n    expect(info.hash.length).toBe(12);\n    expect(info.maildirPath).toContain('mailboxes');\n    expect(info.registeredAt).toBeDefined();\n  });\n```\n\nWith:\n```typescript\n  it('registers an endpoint and returns EndpointInfo', async () => {\n    const info = await relay.registerEndpoint('relay.agent.backend');\n\n    expect(info.subject).toBe('relay.agent.backend');\n    expect(info.hash).toBe('relay.agent.backend');\n    expect(info.maildirPath).toContain('mailboxes');\n    expect(info.registeredAt).toBeDefined();\n  });\n```\n\nThe key change: replace `expect(info.hash).toBeDefined()` + `expect(info.hash.length).toBe(12)` with `expect(info.hash).toBe('relay.agent.backend')`. This directly verifies that `hash` now equals the subject string.\n\n## Acceptance Criteria\n- The hash assertion checks `info.hash === 'relay.agent.backend'` instead of checking length\n- `expect(info.hash).toBeDefined()` line is removed (redundant with direct value check)\n- No other changes to the file\n- Test passes with `pnpm vitest run packages/relay/src/__tests__/relay-core.test.ts`",
+      "activeForm": "Updating relay-core.test.ts hash length assertion",
+      "size": "small",
+      "priority": "high",
+      "dependencies": ["1.1"],
+      "parallelWith": ["2.1", "2.3"]
+    },
+    {
+      "id": "2.3",
+      "phase": 2,
+      "phaseName": "Test Updates",
+      "subject": "[relay-subject-folder-names] [P2] Update maildir-store.test.ts TEST_ENDPOINT to use realistic subject",
+      "description": "Update `packages/relay/src/__tests__/maildir-store.test.ts` to change the `TEST_ENDPOINT` constant from a hash-like value (`abc123`) to a realistic subject string, making the test self-documenting about what the identifier represents.\n\n## File: `packages/relay/src/__tests__/maildir-store.test.ts`\n\n### Step 1: Update the `TEST_ENDPOINT` constant (line 13)\n\nReplace:\n```typescript\nconst TEST_ENDPOINT = 'abc123';\n```\n\nWith:\n```typescript\nconst TEST_ENDPOINT = 'relay.test.subject';\n```\n\nThis is the only change needed. All test logic uses `TEST_ENDPOINT` as an opaque string identifier, so changing its value from a hash-like string to a subject-like string requires no other modifications.\n\n## Acceptance Criteria\n- `TEST_ENDPOINT` value is `'relay.test.subject'` instead of `'abc123'`\n- No other changes to the file\n- All tests pass with `pnpm vitest run packages/relay/src/__tests__/maildir-store.test.ts`",
+      "activeForm": "Updating maildir-store.test.ts TEST_ENDPOINT to realistic subject",
+      "size": "small",
+      "priority": "low",
+      "dependencies": [],
+      "parallelWith": ["2.1", "2.2"]
+    },
+    {
+      "id": "3.1",
+      "phase": 3,
+      "phaseName": "Verification",
+      "subject": "[relay-subject-folder-names] [P3] Run full test suite, typecheck, and lint to verify changes",
+      "description": "Run the full verification suite to confirm all changes are correct and no regressions were introduced.\n\n## Step 1: Run relay package tests\n\n```bash\npnpm vitest run packages/relay/\n```\n\nAll tests in the relay package must pass, including:\n- `endpoint-registry.test.ts` — updated tests without `hashSubject`\n- `relay-core.test.ts` — updated hash assertion\n- `maildir-store.test.ts` — updated `TEST_ENDPOINT` value\n- All other relay tests (they should pass without changes)\n\n## Step 2: Run typecheck\n\n```bash\npnpm typecheck\n```\n\nMust pass with zero type errors. This verifies:\n- No remaining imports of `hashSubject` in any file\n- No remaining references to the removed function\n- `EndpointInfo.hash` type is still `string` (unchanged)\n\n## Step 3: Run lint\n\n```bash\npnpm lint\n```\n\nMust pass with zero errors. This verifies:\n- TSDoc is correct on modified exports\n- No unused imports remain\n- No other lint violations introduced\n\n## Step 4: Run full test suite\n\n```bash\npnpm test -- --run\n```\n\nAll tests across all packages must pass. This catches any downstream consumers of `hashSubject` that may have been missed.\n\n## Acceptance Criteria\n- `pnpm vitest run packages/relay/` passes all tests\n- `pnpm typecheck` passes with zero errors\n- `pnpm lint` passes with zero errors\n- `pnpm test -- --run` passes all tests across all packages",
+      "activeForm": "Running full test suite, typecheck, and lint verification",
+      "size": "small",
+      "priority": "high",
+      "dependencies": ["1.1", "1.2", "1.3", "1.4", "1.5", "2.1", "2.2", "2.3"],
+      "parallelWith": []
+    }
+  ]
+}

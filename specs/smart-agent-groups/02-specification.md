@@ -149,7 +149,7 @@ None blocking. Watch-items: status-flicker UX at the `active/idle` boundary (inh
 
 ## References
 
-- [`specs/agent-sidebar-organization/`](https://github.com/dork-labs/dorkos/tree/885b00fa627fad4bcefa918a93105d427f1a0f7c/specs/agent-sidebar-organization) (DOR-329); [`specs/agent-list-settings/`](https://github.com/dork-labs/dorkos/tree/885b00fa627fad4bcefa918a93105d427f1a0f7c/specs/agent-list-settings) (DOR-339, dependency).
+- `specs/agent-sidebar-organization/` (DOR-329); `specs/agent-list-settings/` (DOR-339, dependency).
 - `research/20260716_cross_app_sidebar_organization_patterns.md` §4 (Telegram), §9.
 
 ---

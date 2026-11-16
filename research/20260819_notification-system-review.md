@@ -19,9 +19,9 @@ tags:
     ux,
   ]
 related:
-  - [specs/notification-system](https://github.com/dork-labs/dorkos/tree/885b00fa627fad4bcefa918a93105d427f1a0f7c/specs/notification-system)
+  - specs/notification-system
   - specs/sidebar-simplification
-  - [specs/feature-promo-system](https://github.com/dork-labs/dorkos/tree/885b00fa627fad4bcefa918a93105d427f1a0f7c/specs/feature-promo-system)
+  - specs/feature-promo-system
   - specs/task-completion-notifications
   - specs/dashboard-content
   - specs/attention-item-detail-navigation
@@ -32,7 +32,7 @@ design-session: .dork/visual-companion/12683-1787180875
 
 **What this is.** A deep pass over every way DorkOS gets the operator's attention — asked for by Dorian on 2026-08-19 with the brief "simultaneously make our system simpler AND better," expanded mid-session to "go all out: 10x better, best on earth." Seven code traces (Needs Attention, Heads up, Scheduled approvals, the Ask system, toasts, promos/tours/celebrations, OS-level channels) plus one external research sweep (~35 sources). Mockups and options live in the visual-companion session named above (`01-notifications-review.html`).
 
-**Decisions (2026-08-19):** **1A · 2A · 3A · 4A · 5A · 6A**, all four "moments" greenlit (Answer from anywhere · Shift Report · the knock · All clear everywhere). Decision record: [`specs/notification-system/design-decisions.md`](https://github.com/dork-labs/dorkos/tree/885b00fa627fad4bcefa918a93105d427f1a0f7c/specs/notification-system); brief: [`specs/notification-system/01-ideation.md`](https://github.com/dork-labs/dorkos/tree/885b00fa627fad4bcefa918a93105d427f1a0f7c/specs/notification-system).
+**Decisions (2026-08-19):** **1A · 2A · 3A · 4A · 5A · 6A**, all four "moments" greenlit (Answer from anywhere · Shift Report · the knock · All clear everywhere). Decision record: `specs/notification-system/design-decisions.md`; brief: `specs/notification-system/01-ideation.md`.
 
 ---
 

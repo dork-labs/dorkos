@@ -45,7 +45,7 @@ carried over and what changed.
 - `apps/server/src/services/core/{approvals,capabilities}/` — the shipped approval primitive (single-use, input-hash-bound, TTL, standing grants, decision authority) and the `observe`/`act`/`destructive` tier gate. The consent machinery already exists; nothing here needs a new one.
 - `research/20260724_multi-user-communities.md` — the rooms design space. Establishes **community → member → channel**; Part 7 names harness distribution as a differentiator ("A community distributing shared skills, workflows, and conventions through it is a genuine differentiator Buzz has no equivalent for"); open question 5 asks whether the marketplace becomes community-scoped and notes it changes the trust model. **This spec is the concrete answer to that line.**
 - `specs/multi-participant-message-list/02-specification.md` — D2 defers the wire-level author shape to "the room model that phase 3 introduces". Confirms the room model is anticipated and unspecified.
-- [`specs/channels-and-agent-adapters/`](https://github.com/dork-labs/dorkos/tree/885b00fa627fad4bcefa918a93105d427f1a0f7c/specs/channels-and-agent-adapters), [`specs/channel-sender-identity/`](https://github.com/dork-labs/dorkos/tree/885b00fa627fad4bcefa918a93105d427f1a0f7c/specs/channel-sender-identity) — **"Channel" is already the user-facing name for a Relay adapter** (a Telegram/Slack/webhook transport bound to one agent). Naming collision; see Decision 8.
+- `specs/channels-and-agent-adapters/`, `specs/channel-sender-identity/` — **"Channel" is already the user-facing name for a Relay adapter** (a Telegram/Slack/webhook transport bound to one agent). Naming collision; see Decision 8.
 
 ## 3) Codebase Map
 

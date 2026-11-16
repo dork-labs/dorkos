@@ -1,0 +1,94 @@
+{
+  "spec": "specs/schedule-approval-experience/02-specification.md",
+  "slug": "schedule-approval-experience",
+  "generatedAt": "2026-08-21T19:10:00-05:00",
+  "mode": "full",
+  "lastDecomposeDate": "2026-08-21",
+  "constraints": {
+    "concurrency": "wipCap.global=2: at most two tasks in flight.",
+    "review": "Every task's branch faces an adversarial review by a separate agent following REVIEW.md before its PR opens.",
+    "conflict": "S1 owns TaskSchema/routes/tasks.ts/OpenAPI alone this programme; C2 lands before C3/C4 touch inbox surfaces; C1 last."
+  },
+  "tasks": [
+    {
+      "id": "S1",
+      "phase": 1,
+      "phaseName": "P1 — server tells the whole story",
+      "subject": "[schedule-approval] [P1] Provenance, run-once on pending, nextRuns preview",
+      "description": "Spec §S1: migration (reason, proposed_by_session_id, proposed_by_agent_path), tasks_create requires reason + stamps session/cwd, schedule.parked titled by resolved proposer, trigger works for pending_approval without arming/resolving anything, previewNextRuns + TaskSchema.nextRuns, OpenAPI regen (both commands).",
+      "activeForm": "Building server provenance + run-once",
+      "size": "large",
+      "priority": "high",
+      "dependencies": [],
+      "parallelWith": [
+        "C2"
+      ],
+      "issue": "DOR-1394"
+    },
+    {
+      "id": "C2",
+      "phase": 1,
+      "phaseName": "P1 — popover honesty",
+      "subject": "[schedule-approval] [P1] Popover copy, mobile a11y headings, all-clear motion",
+      "description": "Spec §C2: waitingSummary speaks in the right nouns, drop the schedule sub-explainer, headings sr-only below md instead of display:none, All-clear beat fades/rises with reduced-motion respect.",
+      "activeForm": "Polishing the popover",
+      "size": "small",
+      "priority": "high",
+      "dependencies": [],
+      "parallelWith": [
+        "S1"
+      ],
+      "issue": "DOR-1395"
+    },
+    {
+      "id": "C3",
+      "phase": 2,
+      "phaseName": "P2 — activity identity",
+      "subject": "[schedule-approval] [P2] Activity rows get faces + burst coalescing",
+      "description": "Spec §C3: xs AgentAvatar on agentId rows (kind icon fallback), consecutive same-agent same-kind rows coalesce with expand-in-place, per-row read state preserved, 50-row cap/cursor invariants untouched.",
+      "activeForm": "Adding activity faces and coalescing",
+      "size": "medium",
+      "priority": "medium",
+      "dependencies": [
+        "C2"
+      ],
+      "parallelWith": [
+        "C4"
+      ],
+      "issue": "DOR-1396"
+    },
+    {
+      "id": "C4",
+      "phase": 2,
+      "phaseName": "P2 — one truth for what's waiting",
+      "subject": "[schedule-approval] [P2] One derivation of what's-waiting",
+      "description": "Spec §C4: extract a shared entities-layer derivation consumed by both the InboxBell composition and useBlockingArrivals; behavior-preserving, both consumers' tests green plus an agreement test on a synthesized mixed state.",
+      "activeForm": "Unifying the waiting derivation",
+      "size": "medium",
+      "priority": "medium",
+      "dependencies": [
+        "C2"
+      ],
+      "parallelWith": [
+        "C3"
+      ],
+      "issue": "DOR-1397"
+    },
+    {
+      "id": "C1",
+      "phase": 3,
+      "phaseName": "P3 — the approval card",
+      "subject": "[schedule-approval] [P3] ScheduleApprovalCard joins the Ask-card family",
+      "description": "Spec §C1: replace ScheduleApprovalRow in all three consumers + barrel with an AskCard-family card: RequestingAgent face, proposer + session-title headline with deep link, reason quote, full cadence, nextRuns line, prompt disclosure, A/D keys, Approve receipt, Reject deferred-delete with Undo, Run-it-once via useTriggerTask + useTaskRuns result strip, askExitTransition melt, AnimatePresence in consumers.",
+      "activeForm": "Building the approval card",
+      "size": "large",
+      "priority": "high",
+      "dependencies": [
+        "S1",
+        "C4"
+      ],
+      "parallelWith": [],
+      "issue": "DOR-1398"
+    }
+  ]
+}

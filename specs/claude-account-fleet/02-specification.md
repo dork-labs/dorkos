@@ -612,6 +612,6 @@ Placement per `.claude/rules/testing.md`; routes with `FakeAgentRuntime`; every 
 ## 14. References
 
 - Ideation: `dork-labs/marketplace` `specs/flow-fleet/01-ideation.md` §4, §6; `04-design-decisions.md`. Contracts: `specs/flow-cli-core/02-specification.md` §1.
-- Prior specs: `specs/claude-code-accounts/`, [`specs/billing-account-ladder/`](https://github.com/dork-labs/dorkos/tree/885b00fa627fad4bcefa918a93105d427f1a0f7c/specs/billing-account-ladder) (invariants preserved).
+- Prior specs: `specs/claude-code-accounts/`, `specs/billing-account-ladder/` (invariants preserved).
 - ADRs 260801-204126/27/28/29, 260821-205323/24, 0255, 260823-200726.
 - Linear: DOR-2379 … DOR-2386 (project "Flow CLI & Account Fleet", umbrella DOR-2366).

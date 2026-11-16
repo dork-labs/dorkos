@@ -7,14 +7,10 @@ the status must agree with the index.
 ## Keep current work
 
 Keep unfinished work and any specification referenced by an open issue, project,
-or pull request. Completed or abandoned specifications can leave after that
-check. Replace surviving document citations with links to the folder at a fixed
-commit. Update the manifest and links in the same commit.
-
-Keep a specification that an executable check reads until its consumer changes
-in a separate, verified change. A source comment is a historical reference, not
-proof that a check reads the specification. ADR metadata may keep its original
-specification slug as a historical identifier.
+or pull request. Also keep completed specifications used as current contracts by
+instructions, developer guides, live ADRs, docs, source comments or executable
+checks, together with their specification dependencies. Check those references before removing a completed or superseded
+specification. Update the manifest and surviving links in the same commit.
 
 ## Recover historical work
 

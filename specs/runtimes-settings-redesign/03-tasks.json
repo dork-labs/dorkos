@@ -1,0 +1,477 @@
+{
+  "spec": "specs/runtimes-settings-redesign/02-specification.md",
+  "slug": "runtimes-settings-redesign",
+  "generatedAt": "2026-08-03T18:35:41Z",
+  "mode": "full",
+  "lastDecomposeDate": null,
+  "tasks": [
+    {
+      "id": "1.1",
+      "phase": 1,
+      "phaseName": "P1 — Declaration layer",
+      "subject": "[runtimes-settings-redesign] [P1] Add RuntimeSettingsCapability to the shared runtime interface",
+      "description": "Add the runtime-declared settings capability to `packages/shared/src/agent-runtime.ts`.\n\nSTEP 1 - insert these two exported interfaces directly above the `RuntimeCapabilities` declaration (currently line 413), copied verbatim. TSDoc on exports is lint-enforced by `eslint-plugin-jsdoc`, so keep the comments:\n\n```ts\n/** One bespoke settings section a runtime's settings card renders. */\nexport interface RuntimeSettingsSection {\n  /**\n   * Renderer key, e.g. 'claude-accounts', 'opencode-power-source'. The client\n   * maps known kinds to feature-supplied renderers (same slot pattern as the\n   * connect flows); unknown kinds render nothing (forward-compatible).\n   */\n  kind: string;\n}\n\n/** Static settings declaration for a runtime. */\nexport interface RuntimeSettingsCapability {\n  /**\n   * Key of this runtime's section under `runtimes.*` in user config\n   * ('claudeCode' | 'codex' | 'opencode' today), or null when the runtime has\n   * no config section (test-mode). Replaces the duplicated\n   * CONFIG_SECTION_BY_RUNTIME maps. Typed `string | null` in shared (the\n   * config schema is host-side); the server validates it against the real\n   * config shape with a type guard and skips unknown sections.\n   */\n  configSection: string | null;\n  /**\n   * Whether this runtime takes an effort setting at all - the runtime-level\n   * static fact (replaces shared `runtimeSupportsEffort()` /\n   * RUNTIMES_WITHOUT_EFFORT). Per-model effort support remains\n   * `ModelOption.supportsEffort` / `supportedEffortLevels`; both gates apply,\n   * exactly as ExecutionDefaultsCard implements today.\n   */\n  supportsEffort: boolean;\n  /** Ordered bespoke sections for the settings card. Empty for most runtimes. */\n  sections: RuntimeSettingsSection[];\n}\n```\n\nSTEP 2 - add a REQUIRED field to `RuntimeCapabilities`, placed as a sibling of `commandIntents` and above `features`:\n\n```ts\n  /**\n   * Required - every adapter declares its settings surface. Compile-time\n   * forcing per the `commandIntents` precedent (ADR-0256): a new runtime\n   * cannot silently omit it. Static only: account lists, current provider and\n   * readiness stay on the refetched surfaces (`GET /api/config`,\n   * `GET /api/system/requirements`) so capabilities remain safe to cache with\n   * `staleTime: Infinity`.\n   */\n  settings: RuntimeSettingsCapability;\n```\n\nDo NOT make it optional. Making it required is the whole point: the four adapters and every capability fixture go red until they declare it, which is task 1.2 and task 1.3.\n\nAcceptance criteria:\n- `pnpm --filter @dorkos/shared typecheck` is green after `packages/shared/src/__tests__/agent-runtime.test.ts` fixtures are updated (that file builds full `RuntimeCapabilities` objects at lines 36, 94 and 114 - add `settings: { configSection: null, supportsEffort: false, sections: [] }` to each unless the test's subject calls for otherwise).\n- Add one test to `packages/shared/src/__tests__/agent-runtime.test.ts` that pins the requiredness: build a capability object literal missing `settings` under `// @ts-expect-error settings is required` and assert the surrounding object still constructs. If the field is ever made optional the `@ts-expect-error` becomes an unused-directive error, which is the failure signal.\n- Run `pnpm vitest run packages/shared/src/__tests__/agent-runtime.test.ts`.\n- Finish with `pnpm --filter @dorkos/shared build` so downstream packages resolve the new type (a stale `@dorkos/shared` dist produces false-red type errors across the monorepo).",
+      "activeForm": "Adding RuntimeSettingsCapability to the shared runtime interface",
+      "size": "small",
+      "priority": "high",
+      "dependencies": [],
+      "parallelWith": [],
+      "issue": null,
+      "parentIssue": null
+    },
+    {
+      "id": "1.2",
+      "phase": 1,
+      "phaseName": "P1 — Declaration layer",
+      "subject": "[runtimes-settings-redesign] [P1] Declare settings capabilities in all four runtime adapters",
+      "description": "Declare `settings` in each adapter's static capability constant. One file per runtime, all under `apps/server/src/services/runtimes/*/runtime-constants.ts`:\n\n| File | Constant | configSection | supportsEffort | sections |\n| --- | --- | --- | --- | --- |\n| `claude-code/runtime-constants.ts` | `CLAUDE_CODE_CAPABILITIES` | `'claudeCode'` | `true` | `[{ kind: 'claude-accounts' }]` |\n| `codex/runtime-constants.ts` | `CODEX_CAPABILITIES` | `'codex'` | `true` | `[]` |\n| `opencode/runtime-constants.ts` | `OPENCODE_CAPABILITIES` | `'opencode'` | `false` | `[{ kind: 'opencode-power-source' }]` |\n| `test-mode/runtime-constants.ts` | test-mode capabilities | `null` | `false` | `[]` |\n\n(Confirm the exact exported constant names by reading each file; `OPENCODE_CAPABILITIES` and `CODEX_CAPABILITIES` are the documented models in `contributing/adding-a-runtime.md`.)\n\nPlace the field next to `permissionModes` in each object, with a short comment per runtime saying WHY the values are what they are:\n- claude-code: effort is real at the API and per-model rungs come from the catalog; the accounts section is the relocated billing-account feature.\n- codex: effort is real; no bespoke section.\n- opencode: `supportsEffort: false` because OpenCode's prompt body carries no effort field in either the pinned or current SDK (this is the exact fact `RUNTIMES_WITHOUT_EFFORT` encoded); the power-source section is the provider picker.\n- test-mode: `configSection: null` because it is a real runtime with no config section, which is why it must stay absent from `executionDefaults.perRuntime[]`.\n\nAcceptance criteria:\n- `pnpm --filter @dorkos/server typecheck` green.\n- `pnpm vitest run apps/server/src/routes/__tests__/capabilities.test.ts` green; extend it with one assertion that `GET /api/capabilities` returns `settings.configSection === 'claudeCode'` for claude-code and `null` for test-mode, so the wire projection is pinned.\n- No dynamic state anywhere in these literals (no account lists, no provider ids, no readiness).",
+      "activeForm": "Declaring settings capabilities in the four runtime adapters",
+      "size": "small",
+      "priority": "high",
+      "dependencies": [
+        "1.1"
+      ],
+      "parallelWith": [
+        "1.3"
+      ],
+      "issue": null,
+      "parentIssue": null
+    },
+    {
+      "id": "1.3",
+      "phase": 1,
+      "phaseName": "P1 — Declaration layer",
+      "subject": "[runtimes-settings-redesign] [P1] Sweep every RuntimeCapabilities fixture for the new required field",
+      "description": "Making `settings` required breaks every test fixture and mock that builds a full `RuntimeCapabilities` object. Find them all and add the field.\n\nGREP FIRST (run both, the second catches objects that spell only some flags):\n```\ngrep -rn \"supportsQuestionPrompt\" --include=\"*.ts\" --include=\"*.tsx\" apps packages | grep -v node_modules | grep -v /dist/\ngrep -rn \"commandIntents\" --include=\"*.ts\" --include=\"*.tsx\" apps packages | grep -v node_modules | grep -v /dist/\n```\n\nKnown call sites at decompose time (re-point any newly found ones too):\n- `packages/test-utils/src/fake-agent-runtime.ts` (FakeAgentRuntime, used by every server session-route test)\n- `packages/test-utils/src/mock-factories.ts`\n- `apps/client/src/dev/playground-transport.ts` (three capability objects, lines ~22, ~81, ~127)\n- `apps/server/src/routes/__tests__/capabilities.test.ts`\n- `apps/client/src/layers/features/tasks/__tests__/CreateTaskDialog.test.tsx`\n- `apps/client/src/layers/features/chat/__tests__/ChatStatusSection-permission-descriptor.test.tsx`\n- `apps/client/src/layers/features/chat/__tests__/RunWithMenu.test.tsx`\n- `apps/client/src/layers/features/chat/__tests__/ChatStatusSection-make-default.test.tsx`\n- `apps/client/src/layers/features/chat/__tests__/ChatStatusSection-autonomy-door.test.tsx`\n- `apps/client/src/layers/features/chat/__tests__/ChatStatusSection-plan-mode.test.tsx`\n- `apps/client/src/layers/features/status/__tests__/RuntimeItem.test.tsx`\n- `apps/client/src/layers/features/status/__tests__/PermissionModeItem.test.tsx`\n- `apps/client/src/layers/entities/runtime/__tests__/runtime-hooks.test.tsx`\n- `apps/client/src/layers/entities/binding/ui/__tests__/BindingAdvancedSection.test.tsx`\n\nRules for the sweep:\n- Objects typed `RuntimeCapabilities` get a real declaration. Default filler for fixtures that do not care: `settings: { configSection: null, supportsEffort: false, sections: [] }`.\n- `playground-transport.ts` is NOT filler: give claude-code `{ configSection: 'claudeCode', supportsEffort: true, sections: [{ kind: 'claude-accounts' }] }`, codex `{ configSection: 'codex', supportsEffort: true, sections: [] }`, opencode `{ configSection: 'opencode', supportsEffort: false, sections: [{ kind: 'opencode-power-source' }] }` - phase 2 showcases render off this transport and need the real declarations.\n- `packages/test-utils/src/fake-agent-runtime.ts` should expose the settings declaration as an override on its options object (same pattern its other capability overrides use) so a conformance test can hand it a deliberately-malformed value (task 1.4 needs this).\n- Objects that are partial casts (`as RuntimeCapabilities`, `as unknown as ...`) are left alone unless the test asserts on `settings`.\n\nAcceptance criteria: `pnpm --filter @dorkos/server typecheck`, `pnpm --filter @dorkos/client typecheck` and `pnpm --filter @dorkos/test-utils typecheck` all green; `pnpm test -- --run` shows no new failures.",
+      "activeForm": "Sweeping RuntimeCapabilities fixtures for the new required field",
+      "size": "medium",
+      "priority": "high",
+      "dependencies": [
+        "1.1"
+      ],
+      "parallelWith": [
+        "1.2"
+      ],
+      "issue": null,
+      "parentIssue": null
+    },
+    {
+      "id": "1.4",
+      "phase": 1,
+      "phaseName": "P1 — Declaration layer",
+      "subject": "[runtimes-settings-redesign] [P1] Add settings assertions to the runtime conformance suite, with a prove-it-can-fail test",
+      "description": "Extend the shared conformance suite so no adapter can ship a malformed settings declaration.\n\nFILE: `packages/test-utils/src/runtime-conformance.ts`, inside the existing `describe('capabilities')` block whose single test is `getCapabilities returns a structurally valid RuntimeCapabilities` (around lines 665-777, right after the `permissionModes` structural assertions).\n\nAdd assertions, re-read from the runtime value (not the compile-time type, because runtime values drift from types via casts - the same reason the permissionModes block re-asserts structurally):\n- `capabilities.settings` is defined (message: `capabilities.settings is required`).\n- `settings.configSection` is either `null` or a string with `.trim().length > 0`. An empty or whitespace-only section key must fail: it would read a config leaf nobody writes.\n- `typeof settings.supportsEffort === 'boolean'`.\n- `Array.isArray(settings.sections)`.\n- Every entry of `sections` is a non-null object with `typeof entry.kind === 'string'` and `entry.kind.trim().length > 0`.\n- Section kinds are unique: `new Set(sections.map((s) => s.kind)).size === sections.length`, message naming the duplicate. Two sections of one kind would render the same bespoke panel twice.\n\nPROVE THE CHECK CAN FAIL (required, not optional). Add a standalone test file `packages/test-utils/src/__tests__/runtime-conformance-settings.test.ts` that does NOT use the suite's `describe` wrapper but exercises the same predicate. Build four deliberately-malformed settings objects and assert each is rejected:\n1. `settings` omitted entirely (cast through `as unknown as RuntimeCapabilities`).\n2. `configSection: ''` (empty string).\n3. `sections: [{ kind: '' }]`.\n4. `sections: [{ kind: 'claude-accounts' }, { kind: 'claude-accounts' }]` (duplicate).\nThe cleanest way to make this testable without re-implementing the assertions is to extract the settings checks into an exported `@internal` predicate in `runtime-conformance.ts` (e.g. `assertSettingsCapability(settings: unknown): void` that throws, or `validateSettingsCapability(settings: unknown): string[]` returning failure messages) and have the suite call it. The four cases above then assert non-empty failure output, and the happy path asserts empty. Do NOT settle for `it.fails()` around a whole conformance run: `it.fails()` passes on ANY throw, which is not evidence the settings check fired.\n\nAcceptance criteria:\n- `pnpm vitest run packages/test-utils/src/__tests__/runtime-conformance-settings.test.ts` green.\n- Every adapter's existing conformance test still passes: `pnpm vitest run apps/server/src/services/runtimes/__tests__` plus each adapter's own conformance spec.\n- Temporarily break one adapter declaration (e.g. set opencode's `configSection` to `''`), confirm its conformance test goes RED, then revert. Note the observed failure in the PR description.",
+      "activeForm": "Adding settings assertions to the runtime conformance suite",
+      "size": "medium",
+      "priority": "high",
+      "dependencies": [
+        "1.2",
+        "1.3"
+      ],
+      "parallelWith": [
+        "1.5"
+      ],
+      "issue": null,
+      "parentIssue": null
+    },
+    {
+      "id": "1.5",
+      "phase": 1,
+      "phaseName": "P1 — Declaration layer",
+      "subject": "[runtimes-settings-redesign] [P1] Add settings to the OpenAPI capabilities schema and regenerate the spec",
+      "description": "`GET /api/capabilities` responses grow the `settings` field. The Zod schema that documents that route is NOT in `packages/shared/src/schemas.ts` (there is no runtime-capabilities Zod schema there); it lives in `apps/server/src/services/core/openapi-registry.ts` as `RuntimeCapabilitiesSchema` (currently around line 899).\n\nAdd, as a sibling of `permissionModes` and above `features`:\n\n```ts\n  settings: z\n    .object({\n      configSection: z.string().nullable().openapi({\n        description:\n          'Key of this runtime\\u2019s section under `runtimes.*` in user config (`claudeCode`, `codex`, `opencode`). `null` when the runtime has no config section, in which case it never appears in `executionDefaults.perRuntime`.',\n      }),\n      supportsEffort: z.boolean().openapi({\n        description:\n          'Whether this runtime takes a reasoning-effort setting at all. Per-model support is a separate, catalog-level fact on `ModelOption.supportsEffort`.',\n      }),\n      sections: z\n        .array(z.object({ kind: z.string() }))\n        .openapi({\n          description:\n            'Ordered bespoke settings sections the runtime declares, by renderer kind (`claude-accounts`, `opencode-power-source`). Unknown kinds render nothing.',\n        }),\n    })\n    .openapi({\n      description:\n        'Static settings declaration: which config section holds this runtime\\u2019s defaults, whether it takes effort, and which bespoke sections its settings card renders.',\n    }),\n```\n\nThen regenerate the committed spec: `pnpm docs:export-api` (writes `docs/api/openapi.json`). CI job `openapi-fresh` in `.github/workflows/docs-openapi-check.yml` fails if the committed JSON drifts from the registry, so the regenerated file MUST be committed in the same change.\n\nAcceptance criteria:\n- `pnpm docs:export-api` produces a diff containing the new `settings` object, and re-running it produces no further diff.\n- `pnpm --filter @dorkos/server typecheck` and `pnpm --filter @dorkos/server lint` green.\n- Note in the PR body that `RuntimeCapabilitiesSchema` documents a subset of the interface (it already omits `commandIntents`, `nativeContext` and `logBackedHistory`); adding `settings` is deliberate because the settings tab is a documented client contract.",
+      "activeForm": "Adding settings to the OpenAPI capabilities schema",
+      "size": "small",
+      "priority": "medium",
+      "dependencies": [
+        "1.2"
+      ],
+      "parallelWith": [
+        "1.4"
+      ],
+      "issue": null,
+      "parentIssue": null
+    },
+    {
+      "id": "1.6",
+      "phase": 1,
+      "phaseName": "P1 — Declaration layer",
+      "subject": "[runtimes-settings-redesign] [P1] Make describeExecutionDefaults capability-driven and retire CONFIG_SECTION_BY_RUNTIME",
+      "description": "Replace the server's hand-kept runtime-to-config-section map with capability-driven iteration.\n\nFILE: `apps/server/src/services/session/resolve-session-defaults.ts`.\n\nSTEP 1 - delete `CONFIG_SECTION_BY_RUNTIME` (currently lines 141-153, the `Readonly<Record<string, 'claudeCode' | 'codex' | 'opencode'>>` literal) and add a type guard in its place:\n\n```ts\n/** The `runtimes.*` config keys that actually exist in {@link UserConfig}. */\nconst RUNTIMES_CONFIG_SECTIONS = ['claudeCode', 'codex', 'opencode'] as const;\n\n/** One of the config keys a runtime's execution defaults can live under. */\ntype RuntimesConfigSection = (typeof RUNTIMES_CONFIG_SECTIONS)[number];\n\n/**\n * Whether a runtime-declared config section is one this config file has.\n *\n * The declaration is typed `string | null` in shared because the config schema\n * is host-side; this is where the two meet. A section this build does not know\n * is skipped rather than thrown on, so a newer adapter never breaks the screen.\n */\nfunction isRuntimesConfigSection(section: string | null): section is RuntimesConfigSection {\n  return section !== null && (RUNTIMES_CONFIG_SECTIONS as readonly string[]).includes(section);\n}\n```\n\nSTEP 2 - change `describeExecutionDefaults` (currently line 317) to take capabilities as a REQUIRED first argument, so every call site is compile-forced:\n\n```ts\nexport function describeExecutionDefaults(\n  capabilities: Record<string, RuntimeCapabilities>,\n  runtimes?: UserConfig['runtimes']\n): ExecutionDefaults\n```\n\nIts `perRuntime` builder becomes: iterate `Object.entries(capabilities)`; skip any runtime whose `settings.configSection` fails `isRuntimesConfigSection`; for the rest read `section?.[key]` exactly as today for `defaultModel`, `defaultTrustStop` and `defaultEffort`, and take `supportsEffort` from `capability.settings.supportsEffort` instead of the shared `runtimeSupportsEffort()` helper. Keep the existing `'defaultEffort' in configured` structural check verbatim - OpenCode's config section genuinely has no `defaultEffort` key, and that check is what keeps structural absence and a configured `null` the same answer. Keep the ordering stable (sort by runtime type id) so the client list never reshuffles.\n\nSTEP 3 - INJECTION, and this is the trap: `apps/server/src/services/core/runtime-registry.ts` line 16 already imports from `resolve-session-defaults.js`, so importing `runtimeRegistry` back into `resolve-session-defaults.ts` is an import cycle. Do not do it. The caller injects instead: `apps/server/src/routes/config.ts` line 109 becomes `executionDefaults: describeExecutionDefaults(runtimeRegistry.getAllCapabilities())`. Update the barrel re-export at `apps/server/src/services/session/index.ts` line 66 if its signature is spelled there.\n\nTESTS - `apps/server/src/services/session/__tests__/resolve-session-defaults.test.ts`:\n- A fake capability map with a runtime declaring `configSection: null` produces NO entry for it in `perRuntime` (this is the test-mode behavior, unchanged).\n- A runtime declaring `configSection: 'codex'` reads `runtimes.codex.defaultModel` / `.defaultTrustStop` / `.defaultEffort` and nothing else.\n- A runtime declaring `configSection: 'notARealSection'` is skipped without throwing (type-guard path).\n- `supportsEffort` in the output equals the declared capability value, including a runtime that declares `supportsEffort: false` while its config section happens to hold a `defaultEffort` (assert the reported `effort` is `null`).\n- `runtime` and `trustStop` top-level fields are unchanged.\nAlso pin the response shape in `apps/server/src/routes/__tests__/config.test.ts`: `GET /api/config` still returns the same `executionDefaults` keys with the same types (no client contract break).\n\nAcceptance: `pnpm vitest run apps/server/src/services/session/__tests__/resolve-session-defaults.test.ts` and `pnpm vitest run apps/server/src/routes/__tests__/config.test.ts` green; `pnpm --filter @dorkos/server typecheck` green; `grep -rn CONFIG_SECTION_BY_RUNTIME apps/server/src` returns nothing.",
+      "activeForm": "Making describeExecutionDefaults capability-driven",
+      "size": "medium",
+      "priority": "high",
+      "dependencies": [
+        "1.2"
+      ],
+      "parallelWith": [
+        "1.4",
+        "1.5"
+      ],
+      "issue": null,
+      "parentIssue": null
+    },
+    {
+      "id": "1.7",
+      "phase": 1,
+      "phaseName": "P1 — Declaration layer",
+      "subject": "[runtimes-settings-redesign] [P1] Re-point the server's runtimeSupportsEffort callers to the capability",
+      "description": "The shared `runtimeSupportsEffort()` helper is being retired (task 1.8 deletes it). This task re-points the two remaining SERVER callers.\n\nAUDIT FIRST, do not work from this list alone:\n```\ngrep -rn \"runtimeSupportsEffort\\\\|RUNTIMES_WITHOUT_EFFORT\" --include=\"*.ts\" --include=\"*.tsx\" . | grep -v node_modules | grep -v /dist/\n```\nKnown server callers at decompose time (re-point any newly found ones too):\n1. `apps/server/src/services/session/resolve-session-defaults.ts:212` - inside `resolveSessionDefaults`, gating whether an agent manifest's `effort` is applied: `...(opts.agent?.effort !== undefined && runtimeSupportsEffort(opts.runtimeType) ? ... : {})`. Add an optional `supportsEffort?: boolean` to the `opts` object, documented the same way `permissionModes` is (`omitted means the caller does not know, and the safe direction is ...`). Decide and document the omitted-value behavior explicitly: default `true`, matching today's `unknown runtimes answer true, so a new adapter is never silently muted`. Update every caller of `resolveSessionDefaults` that already has the runtime's capabilities in hand (search with `grep -rn \"resolveSessionDefaults(\" apps/server/src`) to pass `capabilities.settings.supportsEffort`.\n2. `apps/server/src/services/session/session-settings-overlay.ts:101` - `applyStoredSettings` suppresses a stored effort for a runtime that has none (the display rule: `the screen is where Not supported by OpenCode is either true or a lie`). This function already reaches runtimes through `SessionSettingsOverlayPort` (`port.has(type)` / `port.get(type)` around `settingsKeyFor`). Route the answer through the port: read the runtime's `getCapabilities().settings.supportsEffort`, falling back to `true` when the port has no such runtime, and keep the TSDoc paragraph explaining the display-versus-storage distinction (only update the sentence that named the retired helper).\n\nAlso update `resolve-session-defaults.ts` line 116's doc comment, which names `runtimeSupportsEffort` in prose.\n\nTESTS:\n- `apps/server/src/services/session/__tests__/resolve-session-defaults.test.ts`: an agent manifest carrying `effort: 'high'` on a runtime whose capability declares `supportsEffort: false` yields no `effort` in the resolved settings; the same manifest on a `supportsEffort: true` runtime yields `effort: 'high'`; omitting the new opt keeps today's permissive behavior.\n- The overlay's own test file (`apps/server/src/services/session/__tests__/` - find the `session-settings-overlay` spec): a stored `effort` is suppressed for an OpenCode-shaped fake runtime and preserved for a Claude-shaped one, and the STORED value is not mutated in either case.\n\nAcceptance: `pnpm --filter @dorkos/server typecheck` green; `pnpm vitest run apps/server/src/services/session/__tests__` green; the grep above shows no remaining server hits.",
+      "activeForm": "Re-pointing the server's runtimeSupportsEffort callers",
+      "size": "medium",
+      "priority": "high",
+      "dependencies": [
+        "1.6"
+      ],
+      "parallelWith": [
+        "1.9"
+      ],
+      "issue": null,
+      "parentIssue": null
+    },
+    {
+      "id": "1.8",
+      "phase": 1,
+      "phaseName": "P1 — Declaration layer",
+      "subject": "[runtimes-settings-redesign] [P1] Re-point the client's effort callers and delete runtimeSupportsEffort from shared",
+      "description": "Finish the retirement: re-point the client callers, then delete the shared helper and its constant.\n\nAUDIT FIRST:\n```\ngrep -rn \"runtimeSupportsEffort\\\\|RUNTIMES_WITHOUT_EFFORT\" --include=\"*.ts\" --include=\"*.tsx\" . | grep -v node_modules | grep -v /dist/\n```\nKnown client callers at decompose time (re-point any newly found ones too):\n1. `apps/client/src/layers/shared/lib/execution-config.ts:245` - inside `describeAgentExecution`, deciding the `effort-unsupported-runtime` breakage. This is the `shared` FSD layer and may not import from `entities`, so the answer must arrive as INPUT. Add a field to `DescribeAgentExecutionInput` (declared around line 114):\n```ts\n  /**\n   * Whether the runtime this agent runs on takes an effort setting at all,\n   * from that runtime's declared `settings.supportsEffort`. `undefined` means\n   * the capability map has not answered yet, and the permissive reading is the\n   * right one: an unanswered runtime is never called broken on a guess.\n   */\n  runtimeSupportsEffort?: boolean;\n```\nand change the guard to `if (input.runtimeSupportsEffort === false) { ...breakage... }`.\n2. `apps/client/src/layers/entities/agent/model/use-execution-exceptions.ts:184` - the only non-test caller besides (3). It already holds `capabilityMap` from `useRuntimeCapabilities()` (line ~109), so pass `runtimeSupportsEffort: capabilityMap?.capabilities[runtime]?.settings?.supportsEffort`.\n3. `apps/client/src/layers/features/agent-hub/ui/tabs/AgentExecutionRows.tsx:206` - currently `const runtimeHasEffort = serverForRuntime?.supportsEffort ?? runtimeSupportsEffort(runtime);`. `serverForRuntime` is the `executionDefaults.perRuntime[]` entry, which task 1.6 already makes capability-driven, so drop the fallback call and fall back to the capability map instead (this component can import `entities/runtime`). Pass the same value into its `describeAgentExecution(...)` call at line 211 as `runtimeSupportsEffort`.\n\nTHEN DELETE from `packages/shared/src/constants.ts`: the `RUNTIMES_WITHOUT_EFFORT` const (line 65) and the whole `runtimeSupportsEffort` function with its TSDoc (lines 67-88). Remove the export from any barrel that re-exports it and check `packages/shared/package.json`'s `exports` map is unaffected. Rebuild: `pnpm --filter @dorkos/shared build`.\n\nTESTS:\n- `apps/client/src/layers/shared/lib/__tests__/execution-config.test.ts` (find the actual filename): a report built with `runtimeSupportsEffort: false` and a set effort produces the `effort-unsupported-runtime` breakage; with `true` it does not; with the field OMITTED it does not (the permissive default), and this last case must be an explicit test because it is the behavior change from the old helper's `unknown answers true`.\n- The `use-execution-exceptions` test file: an OpenCode-declaring capability map plus an agent with `effort` set yields a broken row whose message reads `OpenCode has no effort setting, so this one does nothing.`\n- `AgentExecutionRows` test: an OpenCode row shows the runtime-level unsupported state and no effort control.\n\nAcceptance: the audit grep returns ZERO hits repo-wide; `pnpm --filter @dorkos/shared typecheck`, `pnpm --filter @dorkos/client typecheck`, `pnpm --filter @dorkos/server typecheck` all green; `pnpm test -- --run` shows no new failures.",
+      "activeForm": "Re-pointing the client's effort callers and deleting the shared helper",
+      "size": "medium",
+      "priority": "high",
+      "dependencies": [
+        "1.7"
+      ],
+      "parallelWith": [],
+      "issue": null,
+      "parentIssue": null
+    },
+    {
+      "id": "1.9",
+      "phase": 1,
+      "phaseName": "P1 — Declaration layer",
+      "subject": "[runtimes-settings-redesign] [P1] Add the settingsForRuntime selector and retire the client's config-section map",
+      "description": "Retire `apps/client/src/layers/entities/config/lib/runtime-config-section.ts` (whose own doc comment admits it duplicates the server map) and give the client one capability-backed lookup.\n\nSTEP 1 - add a selector to `entities/runtime`. New file `apps/client/src/layers/entities/runtime/lib/settings-for-runtime.ts`:\n\n```ts\n/**\n * One runtime's declared settings surface, from the capability map.\n *\n * Half-loaded map, unregistered runtime, or a nullish type all answer\n * `undefined`, and callers no-op on it - the optional-all-the-way-down\n * convention the settings surfaces already follow. Absence is never an error:\n * a runtime with no config section simply has no per-runtime leaf to write.\n *\n * @param capabilityMap - The `useRuntimeCapabilities()` payload, or undefined.\n * @param type - Runtime type id, e.g. `'claude-code'`.\n */\nexport function settingsForRuntime(\n  capabilityMap: { capabilities: Record<string, RuntimeCapabilities> } | undefined,\n  type: string | null | undefined\n): RuntimeSettingsCapability | undefined {\n  if (!type) return undefined;\n  return capabilityMap?.capabilities[type]?.settings;\n}\n```\nExport it and the `RuntimeSettingsCapability` type re-export from `apps/client/src/layers/entities/runtime/index.ts` (import from the barrel only, never an internal path).\n\nSTEP 2 - re-point the two consumers found by `grep -rn configSectionForRuntime apps/client/src`:\n- `apps/client/src/layers/features/settings/ui/execution-defaults/ExecutionDefaultsCard.tsx` lines 125 and 136 (`writeForRuntime` and `trustStopPatch`). It already calls `useRuntimeCapabilities()` at line 63, so use `settingsForRuntime(capabilityMap, runtime)?.configSection`. Behavior must be IDENTICAL: a runtime with no section still returns early / returns `null` and writes nothing. (This card is retired in phase 2; it must keep working and keep its tests green through phase 1.)\n- `apps/client/src/layers/features/status/model/use-make-default-stop.ts` line 144: `const targetSection = override != null ? settingsForRuntime(capabilityMap, forRuntime)?.configSection : undefined;`. The hook does not currently call `useRuntimeCapabilities()`; add it (it is an entities hook, callable from a feature model). The written patch shape stays exactly `{ [targetSection]: { defaultTrustStop: stop } }` versus the global `{ defaultTrustStop: stop }`, and the ack-plus-stop single-request behavior is untouched.\n\nSTEP 3 - delete `entities/config/lib/runtime-config-section.ts` and its export line in `apps/client/src/layers/entities/config/index.ts` (line 11). Delete any test file dedicated to it.\n\nTESTS:\n- New `apps/client/src/layers/entities/runtime/__tests__/settings-for-runtime.test.ts`: known runtime returns its declaration; unknown runtime, `undefined` map, `null` type and a runtime whose capability object lacks `settings` all return `undefined`.\n- `apps/client/src/layers/features/status/__tests__/` - the existing `use-make-default-stop` tests: accepting the offer with a per-runtime override in force still PATCHes the per-runtime leaf, and with only a global stop set still PATCHes `runtimes.defaultTrustStop`; a Full-autonomy accept still sends `ui.autonomyAcknowledgedAt` and the stop in ONE request. Add a case where the capability map has not loaded: the hook must not write a wrong leaf (it falls back to the global leaf only if that is the current behavior; assert whichever, and comment why).\n- `apps/client/src/layers/features/settings/__tests__/ExecutionDefaultsCard.test.tsx` stays green untouched.\n\nAcceptance: `grep -rn configSectionForRuntime apps/client/src` returns nothing; `pnpm --filter @dorkos/client typecheck` and `lint` green; the three test files above pass.",
+      "activeForm": "Adding the settingsForRuntime selector and retiring the client config-section map",
+      "size": "medium",
+      "priority": "high",
+      "dependencies": [
+        "1.2"
+      ],
+      "parallelWith": [
+        "1.7"
+      ],
+      "issue": null,
+      "parentIssue": null
+    },
+    {
+      "id": "1.10",
+      "phase": 1,
+      "phaseName": "P1 — Declaration layer",
+      "subject": "[runtimes-settings-redesign] [P1] Document the settings declaration in contributing/adding-a-runtime.md",
+      "description": "Give runtime authors the row they need. FILE: `contributing/adding-a-runtime.md`.\n\nSTEP 1 - in the `## Key Files` table near the top (lines 11-30), no new row is needed, but confirm the `The contract` row still reads correctly now that `RuntimeSettingsCapability` lives beside `RuntimeCapabilities`.\n\nSTEP 2 - in `### RuntimeCapabilities` (line 87), which today says `Two parts deserve care` and covers `permissionModes` then `features`, change it to three parts and insert the settings bullet between them, matching the existing voice (guide prose is for coding agents and human authors; follow `contributing/` house style, no marketing tone):\n\n- Lead sentence: `settings` is required, and it is what puts your runtime on the Settings > Runtimes page. Declare it next to `permissionModes`.\n- A three-row field table:\n  | Field | Type | What it answers |\n  | `configSection` | `string \\| null` | Which key under `runtimes.*` in user config holds this runtime's default model, effort and trust stop (`claudeCode`, `codex`, `opencode`). `null` when the runtime has no config section, and then it never appears in `executionDefaults.perRuntime` - `test-mode` is the worked example. |\n  | `supportsEffort` | `boolean` | Whether your backend can be asked for more or less thinking AT ALL. Per-model rungs are a separate, catalog-level fact (`ModelOption.supportsEffort` / `supportedEffortLevels`); both gates apply. OpenCode declares `false` because its prompt body carries no effort field. |\n  | `sections` | `RuntimeSettingsSection[]` | Ordered bespoke panels your settings card renders, by `kind`. Empty for most runtimes. |\n- One paragraph that says the thing an author will otherwise get wrong: a declared section only appears if the CLIENT has a renderer registered for that kind (`apps/client/src/layers/features/settings/ui/runtimes/section-registry.tsx`). An unknown kind renders nothing, deliberately, so an older cockpit against a newer server degrades instead of crashing. Declaring a new kind is therefore a two-sided change.\n- One paragraph on the static/dynamic line: the declaration carries NO dynamic state. Account lists, the current provider and readiness ride `GET /api/config` and `GET /api/system/requirements`, which refetch; capabilities are cached with `staleTime: Infinity` and would go stale.\n- A short code block showing claude-code's real declaration:\n```typescript\nsettings: {\n  configSection: 'claudeCode',\n  supportsEffort: true,\n  sections: [{ kind: 'claude-accounts' }],\n},\n```\n- One sentence naming the conformance assertions an author will hit: `configSection` must be `null` or a non-empty string, and `sections` kinds must be unique.\n\nAcceptance: prose has no em dashes; `pnpm --filter @dorkos/server lint` unaffected; the guide's own coverage check (`/docs:coverage` or `contributing/INDEX.md`) still passes if the file is tracked there.",
+      "activeForm": "Documenting the settings declaration for runtime authors",
+      "size": "small",
+      "priority": "medium",
+      "dependencies": [
+        "1.2"
+      ],
+      "parallelWith": [
+        "1.7",
+        "1.9"
+      ],
+      "issue": null,
+      "parentIssue": null
+    },
+    {
+      "id": "1.11",
+      "phase": 1,
+      "phaseName": "P1 — Declaration layer",
+      "subject": "[runtimes-settings-redesign] [P1] Verify the declaration layer end to end and open PR 1",
+      "description": "Cross-cutting close-out for PR 1. This phase is explicitly a NO-VISUAL-CHANGE change, so the verification is about proving that.\n\nCOMMANDS (run in this order, from the worktree root):\n1. `pnpm --filter @dorkos/shared build` (stale dists cause false-red type errors).\n2. `pnpm --filter @dorkos/shared typecheck && pnpm --filter @dorkos/test-utils typecheck && pnpm --filter @dorkos/server typecheck && pnpm --filter @dorkos/client typecheck`.\n3. `pnpm test -- --run` (full suite via turbo, never bare `pnpm vitest run` for a full run).\n4. `pnpm verify` for the affected-only lint pass.\n5. `pnpm docs:export-api` and confirm it produces NO diff (task 1.5 already committed the regenerated spec).\n\nDEAD-CODE AND RESIDUE CHECKS (all must return zero hits):\n- `grep -rn \"runtimeSupportsEffort\\\\|RUNTIMES_WITHOUT_EFFORT\" --include=\"*.ts\" --include=\"*.tsx\" . | grep -v node_modules | grep -v /dist/`\n- `grep -rn CONFIG_SECTION_BY_RUNTIME apps packages | grep -v node_modules`\n- `grep -rn configSectionForRuntime apps packages | grep -v node_modules`\n- `pnpm knip` (build dists first) shows no newly-orphaned exports.\n\nBEHAVIORAL PROOF that nothing visual moved:\n- Boot the cockpit (`pnpm dev`), open Settings > Runtimes, and confirm the tab is byte-for-byte the same five-component stack: intro, RuntimeSetupPanel, ExecutionDefaultsCard, ExecutionExceptionsStrip, ClaudeAccountsCard. Change the default runtime, a model and an effort and confirm each still round-trips.\n- Confirm `GET /api/config` still returns `executionDefaults` with entries for exactly claude-code, codex and opencode (not test-mode), each carrying `model`, `trustStop`, `effort`, `supportsEffort`.\n\nPR: open from the worktree branch against `origin/main`. Changelog decision: this phase is internal with no user-visible change, so apply the `skip-changelog` label rather than writing a fragment. Record that decision in the PR body (phase 2 carries the user-facing fragment). Review the branch BEFORE opening the PR per `REVIEW.md`.",
+      "activeForm": "Verifying the declaration layer and opening PR 1",
+      "size": "small",
+      "priority": "high",
+      "dependencies": [
+        "1.4",
+        "1.5",
+        "1.6",
+        "1.7",
+        "1.8",
+        "1.9",
+        "1.10"
+      ],
+      "parallelWith": [],
+      "issue": null,
+      "parentIssue": null
+    },
+    {
+      "id": "2.1",
+      "phase": 2,
+      "phaseName": "P2 — The new tab",
+      "subject": "[runtimes-settings-redesign] [P2] Build the pure RuntimeCardSummary segment builder",
+      "description": "Build the collapsed card's one-line summary as a PURE function so every segment rule is table-testable without React.\n\nFILE: `apps/client/src/layers/features/settings/ui/runtimes/RuntimeCardSummary.ts`.\n\nEXPORT a function that takes plain data and returns ordered segments (return structured segments, not a pre-joined string, so the view can style the value half and the separator):\n\n```ts\nexport interface RuntimeSummarySegment {\n  /** Which rule produced this segment. */\n  kind: 'model' | 'effort' | 'trust' | 'section';\n  /** The rendered value, e.g. `Opus 4.6`, `High effort`, `Asks first`. */\n  label: string;\n  /** True when the value is inherited rather than set on this runtime. */\n  inherited?: boolean;\n}\n\nexport interface RuntimeCardSummaryInput { /* see rules below */ }\n\nexport function buildRuntimeCardSummary(input: RuntimeCardSummaryInput): RuntimeSummarySegment[];\n```\n\nSEGMENT RULES, in order (this is the contract; implement exactly):\n1. MODEL - the catalog entry's `displayName` when the configured model id resolves in the loaded catalog; else the raw configured model id (the honest interim truth while the catalog is still loading or the model is gone); else `Runtime's choice` when nothing is configured, marked `inherited: true`.\n2. EFFORT - the effort label (via the existing `effortLabel()` helper in `@/layers/shared/lib`) rendered as `<Label> effort`, and emitted ONLY when the runtime declares `supportsEffort: true` AND an effort is configured. A runtime that takes no effort emits no effort segment at all (it is not an empty segment, it is an absent one).\n3. TRUST - a short label for the EFFECTIVE stop (`ask` -> `Asks first`, `act` -> `Pauses at big steps`, `autonomy` -> `Full autonomy`), with `inherited: true` when the runtime has no override and the value came from the global dial, `inherited: false` when the runtime overrides it.\n4. SECTION - emitted only when the runtime DECLARES a matching bespoke section AND a value exists for it. Claude accounts: `billing <AccountName>`, only when a non-default account is resolved. OpenCode power source: `<ProviderName>`, only when a provider is set. A runtime that declares a section but has no value emits nothing.\n\nNOT-READY SHORT-CIRCUIT: when the runtime is not ready, the function returns an EMPTY array. The view renders `One sign-in away. Settings unlock once it's connected.` instead of a summary; the builder must not invent a summary for a runtime that cannot start a conversation.\n\nTESTS - `apps/client/src/layers/features/settings/ui/runtimes/__tests__/RuntimeCardSummary.test.ts`, written as a table (`it.each`) over at minimum these rows, asserting the full segment array each time:\n- fully configured Claude Code: model displayName + `High effort` + `Asks first` (inherited) + `billing Personal`\n- inherit model: first segment is `Runtime's choice` with `inherited: true`\n- configured model NOT in the catalog: segment label is the raw id (assert it is the id, not `undefined` and not `Runtime's choice`)\n- catalog not loaded at all (empty/undefined list) with a configured model: raw id again\n- `supportsEffort: false` runtime with an effort saved anyway: NO effort segment (this is the stranded-effort case, and it is the row the expanded card warns about; the summary stays quiet)\n- `supportsEffort: true` with no effort configured: NO effort segment\n- trust overridden on the runtime: `inherited: false`\n- trust inherited from global: `inherited: true`\n- runtime declaring no sections: no section segment even when accounts exist elsewhere\n- runtime declaring `claude-accounts` but on the default account: no section segment\n- not-ready runtime: empty array\n\nAcceptance: `pnpm vitest run apps/client/src/layers/features/settings/ui/runtimes/__tests__/RuntimeCardSummary.test.ts` green; the file imports NO React and NO hooks; TSDoc on every export.",
+      "activeForm": "Building the RuntimeCardSummary segment builder",
+      "size": "medium",
+      "priority": "high",
+      "dependencies": [
+        "1.11"
+      ],
+      "parallelWith": [
+        "2.2",
+        "2.3",
+        "2.5"
+      ],
+      "issue": null,
+      "parentIssue": null
+    },
+    {
+      "id": "2.2",
+      "phase": 2,
+      "phaseName": "P2 — The new tab",
+      "subject": "[runtimes-settings-redesign] [P2] Build the three presentational card rows (Model, Effort, Trust)",
+      "description": "Build the expanded card body's three rows as props-only components. No hooks, no queries, no config writes: values in, change callbacks out. This is what makes them showcaseable (design decision 7).\n\nDIRECTORY: `apps/client/src/layers/features/settings/ui/runtimes/rows/`.\n\nModelRow.tsx - a `SettingRow` + `Select` over the runtime's catalog, lifted from `ExecutionDefaultsCard.tsx` lines 252-286. Preserve these exactly:\n- The inherit option renders `Runtime's choice` and writes `null`. It needs a sentinel because Radix refuses an empty-string item value: keep `const INHERIT = '__inherit__'`.\n- A configured model that is NOT in the catalog is still rendered as a selectable item labeled `<id> (no longer offered)`. Never silently swap it.\n- Description copy: `Which <RuntimeLabel> model a new conversation starts on. Leave it on Runtime's choice to let <RuntimeLabel> decide.`\n- Props: `runtimeLabel`, `models: ModelOption[] | undefined`, `value: string | null`, `onChange(value: string | null)`, `disabled?`.\n- Test id: `runtime-model-select-<type>` (scoped per card, since three cards now render this row at once; the old page-global `default-model-select` cannot survive three instances).\n\nEffortRow.tsx - a segmented control (Low / Medium / High / Max style, filtered by the selected model's `supportedEffortLevels`) plus BOTH honest unsupported states, lifted from `ExecutionDefaultsCard.tsx` lines 288-345:\n- Runtime does not take effort: muted text `Not supported by <RuntimeLabel>`, test id `runtime-effort-unsupported-<type>`. The row STAYS; the absence is the answer.\n- Runtime takes effort but the selected model does not: `<ModelDisplayName> doesn't take an effort setting`, test id `runtime-effort-model-unsupported-<type>`, AND when an effort is nonetheless saved, an amber one-tap clear button reading `<EffortLabel> is saved here and does nothing - clear it` (test id `runtime-effort-clear-<type>`) that calls `onChange(null)`.\n- A model whose catalog entry has not arrived leaves the full ladder available (`modelTakesEffort = selectedModel ? (selectedModel.supportsEffort ?? false) : true`): evidence nobody has is never evidence against.\n- Props: `runtimeLabel`, `supportsEffort: boolean`, `selectedModel: ModelOption | undefined`, `configuredModelId: string | null`, `value: EffortLevel | null`, `onChange(value: EffortLevel | null)`.\n\nTrustRow.tsx - the per-runtime trust override, split out of `DefaultTrustStopSection.tsx`'s per-runtime disclosure block (lines 212-266). Reuse its resolution helpers verbatim rather than re-deriving: `resolveTrustStops` and `isDivergent` from `@/layers/shared/lib`, and the `TrustDial` primitive from `@/layers/shared/ui`.\n- Reads `Global setting` until overridden; when overridden it offers a way back (today's `Use the setting above` button, calling `onChange(null)`).\n- A runtime that declares no descriptors renders the existing honest line: `<Label> hasn't said what it can do, so there is nothing to choose from yet - new sessions start where it starts them.` (test id `runtime-trust-unavailable-<type>`).\n- `strandsWorkingMode` and `strandedNote` are passed through to `TrustDial` exactly as the current section does.\n- Props: `runtimeLabel`, `descriptors: readonly PermissionModeDescriptor[]`, `stop: PermissionStop | null` (null = inherits), `globalStop: PermissionStop`, `onChange(stop: PermissionStop | null)`.\n\nTESTS - `apps/client/src/layers/features/settings/ui/runtimes/__tests__/` one file per row, React Testing Library, rendered with plain props (no TransportProvider needed):\n- ModelRow: inherit selection calls `onChange(null)`; a gone model appears as a selectable `(no longer offered)` item; picking a catalog model calls `onChange(id)`.\n- EffortRow: `supportsEffort: false` renders the runtime-unsupported text and NO control; a model with `supportsEffort: false` plus a saved effort renders the clear button and clicking it calls `onChange(null)`; `supportedEffortLevels` filtering hides rungs the model does not offer.\n- TrustRow: unoverridden shows the global-inherited affordance and no revert button; overridden shows the revert button and clicking it calls `onChange(null)`; empty descriptors renders the unavailable line and no dial.\n\nAcceptance: all three files are import-clean of `useConfig`/`useUpdateConfig`/`useQuery`; `pnpm --filter @dorkos/client typecheck` and `lint` green.",
+      "activeForm": "Building the presentational card rows",
+      "size": "large",
+      "priority": "high",
+      "dependencies": [
+        "1.11"
+      ],
+      "parallelWith": [
+        "2.1",
+        "2.3",
+        "2.5"
+      ],
+      "issue": null,
+      "parentIssue": null
+    },
+    {
+      "id": "2.3",
+      "phase": 2,
+      "phaseName": "P2 — The new tab",
+      "subject": "[runtimes-settings-redesign] [P2] Extract the trust-stop write path into a shared use-trust-stop-writes hook",
+      "description": "Both the per-runtime `TrustRow` and the global `GlobalTrustRow` write trust stops through the SAME consent contract. Extract that contract once so it cannot drift.\n\nFILE: `apps/client/src/layers/features/settings/model/use-trust-stop-writes.ts` (same-feature model sharing is allowed under the FSD rules; cross-FEATURE model imports are not, which is why this lives in `features/settings`).\n\nCARRY OVER VERBATIM from `ExecutionDefaultsCard.tsx` lines 100-188. The contract that must not change:\n- `trustStopPatch(forRuntime, stop)`: `forRuntime === null` yields `{ defaultTrustStop: stop }`; otherwise it resolves the runtime's config section via `settingsForRuntime(capabilityMap, forRuntime)?.configSection` (the phase-1 selector) and yields `{ [section]: { defaultTrustStop: stop } }`, or `null` when the runtime has no section (and a `null` patch writes NOTHING).\n- `changeTrustStop(forRuntime, stop)`: when `stop === 'autonomy'` AND `autonomyAck.acknowledgedAt === null`, it does NOT write. It stages `{ runtime: forRuntime, descriptor }` where the descriptor is that runtime's own mode at the autonomy stop (`resolveTrustStops(declared).find((s) => s.stop === 'autonomy')?.mode`, using the runtime being changed, or the default runtime when the change is global), and the caller renders `AutonomyConfirmDialog` off it. A `null` stop is never Full autonomy, so it never asks.\n- `confirmAutonomyDefault()`: sends ONE `PATCH /api/config` carrying BOTH `ui: { autonomyAcknowledgedAt: new Date().toISOString() }` AND `runtimes: <patch>`. This single-request property is load-bearing: the server refuses the stop without an acknowledgement, so two requests would race and the stop could land first and bounce. Any refactor that splits it is a defect.\n- Every successful write invalidates the `['config']` PREFIX (not an exact key): the status bar, sidebar badges and `useFeatureEnabled` read config off a broader key set.\n- Failures surface through `describeWriteFailure(err)` = `(err instanceof Error && err.message) || 'Could not save that. Try again.'`. The server's own refusal wording is shown verbatim; do not write a second wording.\n\nSHAPE: the hook returns `{ changeTrustStop, pendingAutonomy, confirmAutonomy, cancelAutonomy, writeError, clearWriteError, isPending }`. It owns `useConfig`, `useUpdateConfig`, `useAutonomyAcknowledgement`, `useRuntimeCapabilities` and `useQueryClient` internally.\n\nTESTS - `apps/client/src/layers/features/settings/__tests__/use-trust-stop-writes.test.tsx` with a mock `Transport` via `TransportProvider`:\n- Global non-autonomy stop PATCHes exactly `{ runtimes: { defaultTrustStop: 'act' } }`.\n- Per-runtime stop on codex PATCHes exactly `{ runtimes: { codex: { defaultTrustStop: 'act' } } }`.\n- A runtime whose declaration has `configSection: null` produces NO request at all.\n- Autonomy with no standing acknowledgement makes NO request and stages `pendingAutonomy` with the runtime's own descriptor.\n- Confirming sends exactly ONE request whose body contains both `ui.autonomyAcknowledgedAt` and the stop patch. Assert the transport was called once; this is the regression test for the split-request defect.\n- Autonomy WITH a standing acknowledgement writes immediately without staging.\n- A rejected write leaves `writeError` set to the server's message verbatim.",
+      "activeForm": "Extracting the shared trust-stop write hook",
+      "size": "medium",
+      "priority": "high",
+      "dependencies": [
+        "1.11"
+      ],
+      "parallelWith": [
+        "2.1",
+        "2.2",
+        "2.5"
+      ],
+      "issue": null,
+      "parentIssue": null
+    },
+    {
+      "id": "2.4",
+      "phase": 2,
+      "phaseName": "P2 — The new tab",
+      "subject": "[runtimes-settings-redesign] [P2] Build RuntimeCardView, the props-only runtime card",
+      "description": "Build the presentational card: everything the design's card anatomy shows, with zero hooks. This is the component every playground showcase renders.\n\nFILE: `apps/client/src/layers/features/settings/ui/runtimes/RuntimeCardView.tsx`.\n\nHEADER (always visible):\n- Logo tile tinted with the runtime's accent color at 24px. Descriptors come from `getRuntimeDescriptor(type)` in `entities/runtime`: `.icon`, `.label`, `.accent` (a CSS var like `var(--color-orange-500)`); the accents are currently unused on this page and this is where they land.\n- Name and a one-line identity subtitle.\n- Readiness: a `Ready` state, or a `Connect` action slot. Ready keeps the quiet reconnect affordance the setup panel already offers: `Fix sign-in` for login runtimes (Claude, Codex) and `Change` for the provider-picker runtime (OpenCode). Take these as a render prop / slot so the container can supply the real connect flow.\n- Default marker: an accent `Default` pill on the default runtime's card, a quiet `Make default` text affordance on the others. The default card also carries a subtle accent border ring.\n\nCOLLAPSED BODY: the summary line, rendered from the `RuntimeSummarySegment[]` the container passes in (built by `buildRuntimeCardSummary`), joined with a middot separator, values emphasized, inherited values styled muted. A not-ready card renders NO summary and instead reads `One sign-in away. Settings unlock once it's connected.`\n\nEXPANDED BODY, in this order: Model row, Effort row, Trust row, declared bespoke sections (boxed sub-sections, rendered through a `renderSection(kind)` slot prop), then a `Setup details` collapsed disclosure carrying the unchanged dependency rows / install hints / transparency note.\n\nEDGE STATE - default but not connected: the card keeps its `Default` pill AND shows the warning together with Connect: `Your default runtime isn't connected - new conversations can't start here.` The problem and the setting share a card; do not hide the pill and do not hide the warning.\n\nINTERACTION:\n- Expansion is per-card independent state (no accordion auto-close). Collapse restores the summary.\n- The click target is the header/summary region; every control inside stops propagation so changing a model does not collapse the card.\n- Expansion state is controlled from props (`expanded` + `onToggleExpanded`) so showcases can render an expanded card directly.\n\nMOBILE (responsive classes only, same components, no drawer):\n- Cards stack full width and expand inline.\n- The summary line shortens and wraps; status chips never wrap.\n- Redundant `Ready` text drops below the `sm` breakpoint where the pill or Connect already implies it.\n- `Make default` moves into the EXPANDED BODY below `sm` (there is no room for a quiet header affordance).\n\nTESTS - `apps/client/src/layers/features/settings/ui/runtimes/__tests__/RuntimeCardView.test.tsx`:\n- Collapsed renders the summary segments and not the rows; expanded renders the rows and not the summary.\n- The default card renders the `Default` pill and no `Make default`; a non-default card renders `Make default` and clicking it fires the callback.\n- Broken default (isDefault + not ready) renders BOTH the pill and the warning sentence and the Connect slot.\n- Not-ready renders the `One sign-in away.` line and no summary and no rows.\n- Declared sections render via `renderSection` in declared order; a kind the slot returns nothing for renders nothing and does NOT leave an empty boxed container.\n- Clicking the header toggles expansion; clicking a control inside the expanded body does NOT toggle it (assert with a click on a row control).\n- `Fix sign-in` appears for a ready login runtime, `Change` for a ready provider-picker runtime, neither when no connect renderer is supplied.\n\nAcceptance: the file imports nothing from `entities/config`, `@tanstack/react-query`, or any `use*Config` hook; `pnpm --filter @dorkos/client typecheck` and `lint` green.",
+      "activeForm": "Building the props-only RuntimeCardView",
+      "size": "large",
+      "priority": "high",
+      "dependencies": [
+        "2.1",
+        "2.2"
+      ],
+      "parallelWith": [
+        "2.5",
+        "2.6"
+      ],
+      "issue": null,
+      "parentIssue": null
+    },
+    {
+      "id": "2.5",
+      "phase": 2,
+      "phaseName": "P2 — The new tab",
+      "subject": "[runtimes-settings-redesign] [P2] Relocate the Claude billing-accounts feature into ClaudeAccountsSection",
+      "description": "Move the whole accounts feature out of its bolted-on sibling card and into the Claude Code card's declared section, with its write semantics unchanged.\n\nFILE: `apps/client/src/layers/features/settings/ui/runtimes/sections/ClaudeAccountsSection.tsx`. Source: `apps/client/src/layers/features/settings/ui/ClaudeAccountsCard.tsx` (307 lines, including its private `AccountRow` sub-component).\n\nWHAT MOVES UNCHANGED:\n- The account `Select` whose `__default__` sentinel writes `activeAccount: null` (Radix refuses an empty-string item value). The default option reads `Default (<shortenHomePath(resolvedAccount)>)` when inherited and a resolved account exists, else just `Default`.\n- The `AccountRow` list: name via `claudeAccountName(path, accounts)`, `in use` marker on the active one, `shortenHomePath` for the path, the `claude-account-not-ready` warning for a folder that is not an account root, and the remove button labeled `Remove <name>`.\n- ADD-ACCOUNT VALIDATION, both rules: the path must be ABSOLUTE (`isAbsoluteAccountPath`), because nothing between the field and the server expands a `~` and a junk entry still counts towards `more than one account`, which turns account badges on across every session row; and DUPLICATE paths are refused. The two messages (`claude-account-duplicate`, `claude-account-not-absolute`) keep their exact copy.\n- REMOVE RELEASES ACTIVE: removing the account work currently runs on must clear it in the same patch: `const releasesActive = !inherited && resolvedAccount === path; write({ accounts: remaining, ...(releasesActive && { activeAccount: null }) })`. Without it DorkOS keeps billing an account the operator just removed.\n- Every write is one `PATCH /api/config` shaped `{ runtimes: { claudeCode: patch } }` followed by invalidating the `['config']` PREFIX.\n- `describeWriteFailure` shows the server's refusal wording verbatim (both leaves are operator-only, so a refusal is a real outcome, not an edge case).\n- The `DirectoryPicker` browse flow.\n\nWHAT CHANGES: the outer `FieldCard`/`FieldCardContent` wrapper is replaced by the card's boxed sub-section chrome (the section renders INSIDE a runtime card now), and the section gets a heading reading `Billing account`. Keep every `data-testid` byte-identical (`claude-account-select`, `claude-account-row`, `claude-account-path`, `browse-claude-account`, `claude-account-duplicate`, `claude-account-not-absolute`, `claude-account-not-ready`, `claude-account-error`) so the existing tests and showcase assertions keep working at the new location.\n\nTESTS: move `apps/client/src/layers/features/settings/__tests__/ClaudeAccountsCard.test.tsx` to `.../__tests__/ClaudeAccountsSection.test.tsx`, re-point the import, and keep every case. Add one new case: removing the ACTIVE account sends a single patch containing both the trimmed `accounts` array and `activeAccount: null`; removing a non-active account sends `accounts` only.\n\nAcceptance: `pnpm vitest run apps/client/src/layers/features/settings/__tests__/ClaudeAccountsSection.test.tsx` green with no assertion weakened. The old `ClaudeAccountsCard.tsx` is deleted in task 2.10, not here.",
+      "activeForm": "Relocating the Claude accounts feature into a card section",
+      "size": "large",
+      "priority": "high",
+      "dependencies": [
+        "1.11"
+      ],
+      "parallelWith": [
+        "2.1",
+        "2.2",
+        "2.3"
+      ],
+      "issue": null,
+      "parentIssue": null
+    },
+    {
+      "id": "2.6",
+      "phase": 2,
+      "phaseName": "P2 — The new tab",
+      "subject": "[runtimes-settings-redesign] [P2] Build PowerSourceSection and the kind-keyed section registry",
+      "description": "Build OpenCode's declared section and the registry that maps declared kinds to renderers.\n\nFILE 1 - `apps/client/src/layers/features/settings/ui/runtimes/sections/PowerSourceSection.tsx`. A boxed sub-section headed `Power source` that shows the CURRENT provider and a `Change` action which reopens the existing provider-picker connect flow. Do not build a second picker: reuse `renderRuntimeConnect` from `@/layers/features/runtime-connect` with the descriptor `{ kind: 'provider-picker', label: 'Change power source' }`, exactly as `selectReadyReconnect` in `entities/runtime/ui/RuntimeSetupDialog.tsx` constructs it today, and pass the current provider through for the picker's `Currently:` label. The provider id is DYNAMIC state and comes from `GET /api/system/requirements` (`requirements.runtimes[type].provider`), never from the capability declaration. When no provider is set there is nothing to change, so render the section with an honest empty state rather than a dead `Change` button. Props-only: `provider: string | undefined`, `renderConnect` slot, `onDone`.\n\nFILE 2 - `apps/client/src/layers/features/settings/ui/runtimes/section-registry.tsx`. A `kind` to renderer map plus one lookup function:\n\n```tsx\n/**\n * Renderers for the bespoke settings sections runtimes declare.\n *\n * Keyed on the declared `RuntimeSettingsSection.kind`, the same slot pattern\n * `renderRuntimeConnect` uses for `login` / `provider-picker`. An UNKNOWN kind\n * renders nothing, deliberately: an older cockpit against a newer server that\n * declares a section it has never heard of degrades to a card without that\n * panel rather than crashing.\n */\nexport function renderRuntimeSettingsSection(\n  kind: string,\n  ctx: RuntimeSettingsSectionContext\n): ReactNode | null;\n```\n\nKnown kinds: `claude-accounts` -> `ClaudeAccountsSection`, `opencode-power-source` -> `PowerSourceSection`. The context object carries what both renderers need (runtime type, readiness entry, connect slot renderer). Adding a kind must be a one-line registry change plus the component.\n\nTESTS - `apps/client/src/layers/features/settings/ui/runtimes/__tests__/section-registry.test.tsx`:\n- `claude-accounts` resolves to something that renders the accounts select.\n- `opencode-power-source` resolves to something that renders the provider name.\n- An unknown kind (`'not-a-real-kind'`) returns null and renders NOTHING, with no console error and no thrown exception. Assert the container is empty.\n- A kind whose renderer exists but whose context data is absent still renders without throwing (optional-all-the-way-down).\nPlus `apps/client/src/layers/features/settings/ui/runtimes/__tests__/PowerSourceSection.test.tsx`: a set provider renders its name plus an enabled `Change`; no provider renders the empty state and no `Change`; clicking `Change` invokes the injected connect slot with `kind: 'provider-picker'`.\n\nAcceptance: `pnpm --filter @dorkos/client typecheck` and `lint` green; no new picker UI was written.",
+      "activeForm": "Building PowerSourceSection and the section registry",
+      "size": "medium",
+      "priority": "high",
+      "dependencies": [
+        "1.11",
+        "2.5"
+      ],
+      "parallelWith": [
+        "2.1",
+        "2.2",
+        "2.3"
+      ],
+      "issue": null,
+      "parentIssue": null
+    },
+    {
+      "id": "2.7",
+      "phase": 2,
+      "phaseName": "P2 — The new tab",
+      "subject": "[runtimes-settings-redesign] [P2] Build GlobalTrustRow, the one dial beneath the cards",
+      "description": "Build the single global trust control that sits below the cards, splitting it out of `DefaultTrustStopSection`.\n\nFILE: `apps/client/src/layers/features/settings/ui/runtimes/GlobalTrustRow.tsx`.\n\nCONTENT (design decision 3, semantics identical to today's global dial):\n- Heading `Where agents stop for you`.\n- A segmented control with three positions: `Asks before acting` / `Pauses at big steps` / `Full autonomy`, rendered through the existing `TrustDial` primitive with `CANONICAL_TRUST_STOPS` (`@/layers/shared/ui`) - the same descriptors today's global dial uses.\n- Hint line: `Every runtime follows this unless its card says otherwise.`\n- `null` (no preference) has no way to be drawn, so it renders as the stop the runtimes would actually take (the `effectiveStop` prop), exactly as `DefaultTrustStopSection` does today.\n\nWHAT DOES NOT MOVE HERE: the per-runtime override rows (they became `TrustRow` on each card in task 2.2) and the `Customize per runtime` disclosure (deleted; each card is its own disclosure now).\n\nWHAT MUST SURVIVE from `DefaultTrustStopSection`: the standing-autonomy note. When ANY runtime's EFFECTIVE stop resolves to `autonomy` - whether from this dial or from a card override - the row shows the red `ShieldOff` line (`New sessions run without asking` when the global dial is the one at autonomy, else `New sessions on <runtime list> run without asking`) with an inline `change` button that undoes exactly what is set: the global choice when it is the one at autonomy, plus every per-runtime override that is. Keep `data-testid=\"default-trust-stop-standing-note\"` so existing assertions survive. It is fired on the EFFECTIVE resolution, not the global selection, because a card can sit at autonomy while the shared setting reads `Asks first`.\n\nWRITES: consume `use-trust-stop-writes` (task 2.3) with `forRuntime: null`, and render `AutonomyConfirmDialog` off its `pendingAutonomy` state. UI composition across features is allowed, which is how `AutonomyConfirmDialog` comes from `@/layers/features/status`.\n\nMOBILE: the segmented control stacks full width below the `sm` breakpoint.\n\nTESTS - `apps/client/src/layers/features/settings/ui/runtimes/__tests__/GlobalTrustRow.test.tsx`, with a mock Transport:\n- Moving the dial to `act` PATCHes `{ runtimes: { defaultTrustStop: 'act' } }`.\n- Moving it to `autonomy` with no standing acknowledgement opens `AutonomyConfirmDialog` and sends NO request; confirming sends exactly one request carrying both the ack and the stop.\n- With one runtime overridden to autonomy while the global reads `ask`, the standing note appears and names that runtime; clicking `change` clears the OVERRIDE (not the global).\n- With the global at autonomy, `change` sets the global back to `ask`.",
+      "activeForm": "Building the global trust row",
+      "size": "medium",
+      "priority": "high",
+      "dependencies": [
+        "2.2",
+        "2.3"
+      ],
+      "parallelWith": [
+        "2.4"
+      ],
+      "issue": null,
+      "parentIssue": null
+    },
+    {
+      "id": "2.8",
+      "phase": 2,
+      "phaseName": "P2 — The new tab",
+      "subject": "[runtimes-settings-redesign] [P2] Build the RuntimeCard container that owns every write path",
+      "description": "Wire the presentational card to live data. This is the only component in the family that touches hooks.\n\nFILE: `apps/client/src/layers/features/settings/ui/runtimes/RuntimeCard.tsx`. Props: `{ type: string; isDefault: boolean }` plus whatever the tab passes down (requirements payload, connect renderer).\n\nHOOKS IT OWNS: `useConfig`, `useUpdateConfig`, `useRuntimeCapabilities`, `useRuntimeReadiness(type)`, `useProvisionRuntime`, `renderRuntimeConnect`, `renderRuntimeSettingsSection` (the task 2.6 registry), `use-trust-stop-writes` (task 2.3), and `useModels({ runtime })`.\n\nMODEL-CATALOG LAZINESS (spec resolution to open question 2): enable `useModels` ONLY when the runtime is ready AND (the card is expanded OR it has a configured model that needs naming). Do not fetch three catalogs on tab open. While the catalog is absent the summary falls back to the raw model id, which is honest interim truth. Assert this in tests.\n\nWRITE PATHS - all are ONE `PATCH /api/config` followed by invalidating the `['config']` PREFIX (never an exact key: the status bar, sidebar badges and `useFeatureEnabled` read config off a broader key set):\n- Make default: `{ runtimes: { default: type } }`.\n- Model: `{ runtimes: { [section]: { defaultModel: value } } }` where `value` is `null` for inherit.\n- Effort: `{ runtimes: { [section]: { defaultEffort: value } } }`, `null` to clear.\n- `section` comes from `settingsForRuntime(capabilityMap, type)?.configSection` (the phase-1 selector). A runtime with NO section writes nothing at all: return early rather than inventing a key.\n- Trust (per runtime and the autonomy dialog) goes entirely through `use-trust-stop-writes`, preserving the single-request ack-plus-stop contract.\n- Accounts section keeps its own write semantics inside `ClaudeAccountsSection`.\n- Failures render through `describeWriteFailure` (server wording verbatim).\n\nDATA IT DERIVES: the summary segments via `buildRuntimeCardSummary` (task 2.1); the per-runtime entry from `config.executionDefaults.perRuntime.find((e) => e.runtime === type)`; `supportsEffort` from the capability declaration; the selected model's catalog entry for the effort gate; readiness plus provider from `useRuntimeReadiness`. Everything optional-all-the-way-down: a half-loaded capability map renders a card without sections rather than throwing.\n\nTESTS - `apps/client/src/layers/features/settings/ui/runtimes/__tests__/RuntimeCard.test.tsx` with mock Transport via `TransportProvider`:\n- `Make default` on the Codex card PATCHes exactly `{ runtimes: { default: 'codex' } }`.\n- Choosing a model on the CODEX card while claude-code is the default PATCHes `{ runtimes: { codex: { defaultModel: '<id>' } } }`. This is the capability hole closing: assert it explicitly, because before this change setting Codex's model required making Codex the default first.\n- Choosing `Runtime's choice` PATCHes `defaultModel: null`.\n- Clearing a stranded effort PATCHes `defaultEffort: null`.\n- Setting a per-runtime trust stop of `autonomy` with no standing acknowledgement makes NO request, shows the dialog, and confirming sends exactly ONE request containing both `ui.autonomyAcknowledgedAt` and `runtimes.<section>.defaultTrustStop`.\n- Model-catalog laziness: a collapsed, ready card with NO configured model issues no `/api/models` request; expanding it issues exactly one; a collapsed card WITH a configured model issues one so the summary can name it.\n- A card for a runtime whose declaration has `configSection: null` renders but issues no config write when its rows are touched.\n- Removing the active account through the Claude card's accounts section releases it (single patch with `activeAccount: null`).\n- A half-loaded capability map (undefined) renders the card with no bespoke sections and no crash.",
+      "activeForm": "Building the RuntimeCard container",
+      "size": "large",
+      "priority": "high",
+      "dependencies": [
+        "2.4",
+        "2.6",
+        "2.3"
+      ],
+      "parallelWith": [
+        "2.7"
+      ],
+      "issue": null,
+      "parentIssue": null
+    },
+    {
+      "id": "2.9",
+      "phase": 2,
+      "phaseName": "P2 — The new tab",
+      "subject": "[runtimes-settings-redesign] [P2] Recompose RuntimesTab and give ExecutionExceptionsStrip an optional exceptions prop",
+      "description": "Replace the five-component stack with the new composition.\n\nFILE 1 - `apps/client/src/layers/features/settings/ui/runtimes/RuntimesTab.tsx` (new home; the old `ui/tabs/RuntimesTab.tsx` is deleted in task 2.10 and `SettingsDialog.tsx` line 19 re-points its import).\n\nCOMPOSITION, top to bottom:\n1. A ONE-LINE intro (the current three-clause paragraph shrinks; keep it honest and plain).\n2. The runtime cards: `PRIMARY_RUNTIME_TYPES` followed by any other registered runtime that is not primary and not `test-mode`, appended stably so the list never reshuffles when a recheck flips a state. This is the SAME ordering rule `selectTargetRuntimes` in `entities/runtime/ui/RuntimeSetupDialog.tsx` applies; reuse it rather than re-spelling it if it can be exported cleanly, otherwise mirror it with a comment naming the source.\n3. A small refresh ICON affordance replacing the labeled `Check again` row (still `requirementsQuery.refetch()`, still disabled while `isFetching`, with an `aria-label` since it is icon-only). It is a maintenance action, not a primary one.\n4. `GlobalTrustRow`.\n5. `ExecutionExceptionsStrip` (unchanged import, unchanged behavior: read-only, broken rows first, rows open the agent's Config tab).\n\nWHAT IS GONE FROM THE TAB: `RuntimeSetupPanel` (its per-runtime content now lives inside the cards; the panel itself stays untouched for `RuntimeSetupDialog`'s other surfaces), `ExecutionDefaultsCard`, and `ClaudeAccountsCard`. Nothing Claude-specific remains at tab level.\n\nFILE 2 - `apps/client/src/layers/features/settings/ui/execution-defaults/ExecutionExceptionsStrip.tsx`: add an OPTIONAL `exceptions` prop. Today the component calls `useExecutionExceptions({ checkModels: true })` unconditionally, which is exactly why it has no playground coverage. Change to: when `exceptions` is supplied, render it; otherwise fall back to the hook. Keep the hook call unconditional at the top (React rules of hooks) and just ignore its result when the prop is present, or gate the hook's `checkModels` and select between the two results. Document the prop as showcase-only injection. No behavior change for the live tab.\n\nTESTS - `apps/client/src/layers/features/settings/__tests__/RuntimesTab.test.tsx` (rewrite the existing file):\n- Three cards render for claude-code, codex and opencode, in that order.\n- A registered non-primary runtime appends after them; `test-mode` never appears.\n- The default runtime's card carries the `Default` pill and the others carry `Make default`.\n- The global trust row renders once, below the cards.\n- The exceptions strip renders nothing when the fleet all inherits and renders rows when it does not.\n- The refresh affordance calls `refetch` and is disabled while fetching.\n- No `default-runtime-select` combobox exists anywhere on the tab (the dropdown is gone; the default is a card state).\nPlus `ExecutionExceptionsStrip.test.tsx`: an injected `exceptions` array renders without any transport call, and the no-prop path still reads the hook.",
+      "activeForm": "Recomposing the runtimes tab",
+      "size": "medium",
+      "priority": "high",
+      "dependencies": [
+        "2.8",
+        "2.7"
+      ],
+      "parallelWith": [],
+      "issue": null,
+      "parentIssue": null
+    },
+    {
+      "id": "2.10",
+      "phase": 2,
+      "phaseName": "P2 — The new tab",
+      "subject": "[runtimes-settings-redesign] [P2] Retire the superseded settings components",
+      "description": "No dead code, no half-migrations. Delete what the cards replaced, only now that the replacements exist and are green.\n\nDELETE:\n- `apps/client/src/layers/features/settings/ui/execution-defaults/ExecutionDefaultsCard.tsx` and `apps/client/src/layers/features/settings/__tests__/ExecutionDefaultsCard.test.tsx`. Before deleting the test, walk its cases and confirm each has an equivalent in the new suite: default-runtime write, model write, effort write, effort-unsupported-runtime, effort-unsupported-model, stranded-effort clear, gone-model selectable, autonomy consent single-request, write-failure message. Any case with no new home is a missing test, not a retired one; add it to the relevant new file first.\n- `apps/client/src/layers/features/settings/ui/execution-defaults/DefaultTrustStopSection.tsx`. It is SPLIT, not deleted wholesale: the global dial became `GlobalTrustRow`, the per-runtime rows became `TrustRow`. Its `resolveConsequence` and `listRuntimes` helpers are still needed - move them to a shared place both new components import (`features/settings/lib/`), do not copy them twice.\n- `apps/client/src/layers/features/settings/ui/ClaudeAccountsCard.tsx` (its internals now live in `sections/ClaudeAccountsSection.tsx`).\n- `apps/client/src/layers/features/settings/ui/tabs/RuntimesTab.tsx` (replaced by `ui/runtimes/RuntimesTab.tsx`); re-point the import in `apps/client/src/layers/features/settings/ui/SettingsDialog.tsx` line 19 and its tab entry on line 38.\n\nTHEN: re-point or delete every barrel export that named the deleted files (`features/settings/index.ts`), and run `pnpm knip` (build dists first) to catch orphaned exports the deletions left behind - for example helpers that only `ExecutionDefaultsCard` used.\n\nGREP TO CONFIRM THE SWEEP IS COMPLETE (each must return zero non-historical hits):\n```\ngrep -rn \"ExecutionDefaultsCard\\\\|ClaudeAccountsCard\\\\|DefaultTrustStopSection\" apps packages | grep -v node_modules | grep -v /dist/\n```\n(`specs/` and `decisions/` hits are historical documents and stay. If a `contributing/` guide names a deleted component, update that line.)\n\nAcceptance: the grep is clean outside `specs/`, `decisions/` and `changelog/`; `pnpm --filter @dorkos/client typecheck`, `lint` and the full client test run are green; `pnpm knip` reports no new unused exports.",
+      "activeForm": "Retiring the superseded settings components",
+      "size": "medium",
+      "priority": "high",
+      "dependencies": [
+        "2.9"
+      ],
+      "parallelWith": [],
+      "issue": null,
+      "parentIssue": null
+    },
+    {
+      "id": "2.11",
+      "phase": 2,
+      "phaseName": "P2 — The new tab",
+      "subject": "[runtimes-settings-redesign] [P2] Add playground showcases and section-registry entries for every card state",
+      "description": "Playground parity is a HARD requirement (design decision 7): the two components being retired had zero playground coverage precisely because they were hook-coupled, and the replacements are props-first so that gap closes here.\n\nFILE 1 - new `apps/client/src/dev/showcases/RuntimeCardShowcases.tsx` rendering `RuntimeCardView` (props-only) plus the two sections, with these showcases:\n- Collapsed trio: the default card (accent pill + ring), a ready non-default card, and a not-ready card (`One sign-in away.`) side by side, so the page reads as the real status board.\n- Expanded Claude Code, showing the accounts section with several accounts, one in use, and one folder that is not an account root.\n- Expanded OpenCode, showing the power-source section with a provider set, and a second variant with none.\n- Expanded Codex (no declared sections) so the empty-sections case is visible.\n- Broken default: default pill AND the `Your default runtime isn't connected` warning AND Connect, together.\n- Gone model: a configured model rendered `(no longer offered)` and still selectable.\n- Stranded effort: the amber `<Effort> is saved here and does nothing - clear it` affordance.\n- Runtime-level no-effort: `Not supported by OpenCode`.\n- Mobile: the collapsed trio and one expanded card at a phone viewport via `ShowcaseDemo`'s responsive mode, showing inline expansion, the compressed summary, and `Make default` inside the expanded body.\n\nFILE 2 - `apps/client/src/dev/showcases/SettingsShowcases.tsx` and `apps/client/src/dev/showcases/settings-mock-data.ts`: move the Claude Code Accounts showcase off the retired `ClaudeAccountsCard` and onto `ClaudeAccountsSection` in its new card context. Add an `ExecutionExceptionsStrip` showcase now that the component takes an injected `exceptions` prop (task 2.9) - broken rows first, mixed broken/deviating, and the all-inherits case that renders nothing.\n\nFILE 3 - `apps/client/src/dev/sections/settings-sections.ts`: add registry entries for each new showcase (`id`, `title`, `page: 'settings'`, `category`, `keywords`). The existing `claude-code-accounts` entry keeps its id so deep links survive; retitle only if the showcase's content changed. Consider a dedicated `Runtimes` category group for the card showcases rather than burying them under `Tabs`.\n\nFILE 4 - `apps/client/src/dev/playground-transport.ts`: its three capability objects already carry real `settings` declarations from task 1.3; extend its config/requirements fixtures so the showcases can drive ready, not-ready and broken-default without hand-mocking each one.\n\nTESTS: rename/extend `apps/client/src/dev/__tests__/claude-accounts-showcase.test.tsx` to cover the section at its new location, keeping the four existing assertions (`claude-account-row` absent when empty, four rows when populated, `claude-account-not-ready` present, `claude-account-error` message). Add `apps/client/src/dev/__tests__/runtime-card-showcase.test.tsx` asserting each showcase renders without throwing and that the broken-default showcase shows both the pill and the warning.\n\nAcceptance: `/dev` renders every showcase with no console errors; `pnpm vitest run apps/client/src/dev/__tests__` green; the `maintaining-dev-playground` skill's checklist is satisfied.",
+      "activeForm": "Adding playground showcases for the runtime cards",
+      "size": "large",
+      "priority": "medium",
+      "dependencies": [
+        "2.9",
+        "2.10"
+      ],
+      "parallelWith": [
+        "2.12",
+        "2.13"
+      ],
+      "issue": null,
+      "parentIssue": null
+    },
+    {
+      "id": "2.12",
+      "phase": 2,
+      "phaseName": "P2 — The new tab",
+      "subject": "[runtimes-settings-redesign] [P2] Sweep test ids and add the browser flow for the new tab",
+      "description": "The old page-global test ids cannot survive three simultaneous cards. Sweep every reference and add one end-to-end flow.\n\nAUDIT FIRST:\n```\ngrep -rn \"default-runtime-select\\\\|default-model-select\\\\|default-effort\\\\|claude-account-\\\\|execution-defaults\\\\|default-trust-stop\" --include=\"*.ts\" --include=\"*.tsx\" apps | grep -v node_modules\n```\nKnown at decompose time (re-point any newly found ones too):\n- `default-runtime-select`, `default-model-select`, `default-effort-select`, `default-effort-unsupported`, `default-effort-model-unsupported`, `default-effort-clear`, `execution-defaults-timing`, `execution-defaults-error` live ONLY in `ExecutionDefaultsCard.tsx` and its test, both deleted in task 2.10. Confirm nothing else references them.\n- `claude-account-*` ids are preserved byte-identically by task 2.5 and are referenced by `apps/client/src/dev/__tests__/claude-accounts-showcase.test.tsx`.\n- `default-trust-stop-standing-note` must survive on `GlobalTrustRow` (task 2.7).\n- `apps/e2e` has NO references to any of these today. It DOES reference `runtime-setup-panel`, `runtime-section-codex` and `runtime-section-opencode` in `apps/e2e/tests/chat-mock.spec.ts` lines 286-298, but those exercise the status-bar `Add a runtime` path through `RuntimeSetupDialog`, which this spec leaves untouched. Verify that test still passes; do NOT re-point it at the settings tab.\n\nNEW TEST IDS: every per-card control is namespaced by runtime type (`runtime-card-<type>`, `runtime-model-select-<type>`, `runtime-effort-*-<type>`, `runtime-make-default-<type>`, `runtime-default-pill-<type>`). Document the convention in one comment at the top of `RuntimeCardView.tsx`.\n\nNEW BROWSER TEST - add to `apps/e2e/tests/settings/settings-dialog.spec.ts` (or a new `runtimes-tab.spec.ts` in the same directory) one flow, per the `browser-testing` skill:\n1. Open Settings, go to the Runtimes tab.\n2. Expand the Codex card while Claude Code is still the default.\n3. Set Codex's model. This is the capability hole closing: before this change it was impossible without first making Codex the default.\n4. Press `Make default` on the Codex card.\n5. Reload, reopen the tab, and assert the Codex card carries the `Default` pill and its collapsed summary names the chosen model.\n\nAcceptance: the audit grep shows no dangling references; `pnpm --filter @dorkos/e2e test` (or the targeted spec) passes locally; `pnpm vitest run apps/client/src/dev/__tests__` still green.",
+      "activeForm": "Sweeping test ids and adding the browser flow",
+      "size": "medium",
+      "priority": "medium",
+      "dependencies": [
+        "2.10"
+      ],
+      "parallelWith": [
+        "2.11",
+        "2.13"
+      ],
+      "issue": null,
+      "parentIssue": null
+    },
+    {
+      "id": "2.13",
+      "phase": 2,
+      "phaseName": "P2 — The new tab",
+      "subject": "[runtimes-settings-redesign] [P2] Write the user-facing changelog fragment",
+      "description": "Write one changelog fragment for the visible half of this work. Fragments are per-change files compiled into `CHANGELOG.md` at release; never edit `CHANGELOG.md` directly.\n\nFILENAME: `changelog/unreleased/<id>-<slug>.md` where `<id>` is a fresh timestamp id from `date -u +%y%m%d-%H%M%S` and `<slug>` is short kebab-case, e.g. `changelog/unreleased/260803-190000-runtimes-settings-cards.md`.\n\nFRONTMATTER: a `covers:` list naming every commit subject in PR 2 (the CI fragment gate matches on these, and a squash-retitle silently breaks them, so re-check the list against the final squash subject before merge).\n\nBODY: one `### Changed` section following the `writing-for-humans` skill. Plain enough for a smart 9th grader who does not code. No em dashes (use colons, parentheses, commas or hyphens). Describe what happens for the person, not how the system works. No hype. Reference the tracker id `(DOR-888)`.\n\nThe three things worth saying, and nothing else:\n1. The Runtimes settings page now shows one card per runtime, with everything about that runtime in one place.\n2. You can set the model and thinking effort for every runtime, not just the one you start with. (This is the fix people will notice: before, setting Codex's model meant making Codex your default first.)\n3. You pick your default by pressing `Make default` on a card, and the card says it is the default.\n\nExample of the voice to aim for (rewrite, do not paste):\n\n```\n### Changed\n\n- The Runtimes settings page now gives each runtime its own card. Open a card to set the\n  model it starts with, how hard it thinks, and when it stops to ask you something. You can\n  set these for every runtime now, not just the one new chats start on, and you choose that\n  one by pressing Make default on its card (DOR-888)\n```\n\nAcceptance: the file exists with a valid timestamp-id filename; `changelog/README.md`'s rules are followed; the `fragment-present` CI check passes on the PR; no em dashes anywhere in the body.",
+      "activeForm": "Writing the user-facing changelog fragment",
+      "size": "small",
+      "priority": "medium",
+      "dependencies": [
+        "2.9"
+      ],
+      "parallelWith": [
+        "2.11",
+        "2.12"
+      ],
+      "issue": null,
+      "parentIssue": null
+    },
+    {
+      "id": "2.14",
+      "phase": 2,
+      "phaseName": "P2 — The new tab",
+      "subject": "[runtimes-settings-redesign] [P2] Verify the new tab against the mockup and open PR 2",
+      "description": "Cross-cutting close-out for PR 2, stacked on PR 1.\n\nCOMMANDS:\n1. `pnpm --filter @dorkos/client typecheck && pnpm --filter @dorkos/client lint`.\n2. `pnpm test -- --run` (full suite via turbo; never a bare full `pnpm vitest run`).\n3. `pnpm verify` for the affected-only pass.\n4. `pnpm knip` (build dists first) for dead code left by the retirements.\n\nACCEPTANCE REFERENCE: the final composite mockup at `.dork/visual-companion/9035-1785779428/content/04-final-composite.html`. Open it beside the running cockpit and walk the design decisions in order: page structure (decision 1), card anatomy and its five body sections (decision 2), the single global trust row (decision 3), all-collapsed disclosure with summary lines (decision 4), the three edge states said-not-hidden (decision 5), mobile inline expansion (decision 6), playground parity (decision 7).\n\nDRIVE IT, do not just read the diff. Boot with `pnpm dev` and confirm by hand:\n- Every card starts collapsed with a `Starts with ...` summary.\n- Cards expand independently; no accordion auto-close.\n- Set Codex's model and effort while Claude Code is the default, reload, and confirm both stuck.\n- Press `Make default` on a card and confirm the pill, the ring, and that new sessions start there.\n- Move a card's trust row to Full autonomy with no standing acknowledgement and confirm the dialog appears and that accepting sends ONE request (watch the network tab).\n- Disconnect the default runtime and confirm the pill and the warning appear TOGETHER.\n- Resize to a phone width and confirm inline expansion, the compressed summary, `Make default` inside the expanded body, and the full-width global dial.\n- Confirm the exceptions strip still opens the agent's Config tab.\n\nCROSS-SURFACE REGRESSION (this spec must not touch them): the status-bar runtime picker, the `Run this with` menu, the session-launch popover and onboarding all still open `RuntimeSetupDialog` / `RuntimeSetupPanel` unchanged. Exercise each once.\n\nPR: open from the worktree branch, based on `origin/main`, stacked on PR 1 (rebase onto PR 1's branch, or wait for it to land). Review the branch BEFORE opening the PR per `REVIEW.md`, and brief the reviewer by named failure mode: the split-request autonomy consent, a per-runtime write landing on the wrong config leaf, a card writing for the default runtime instead of its own, eager model fetches on tab open, and a retired component still referenced from a barrel.",
+      "activeForm": "Verifying the new tab and opening PR 2",
+      "size": "small",
+      "priority": "high",
+      "dependencies": [
+        "2.11",
+        "2.12",
+        "2.13"
+      ],
+      "parallelWith": [],
+      "issue": null,
+      "parentIssue": null
+    }
+  ]
+}

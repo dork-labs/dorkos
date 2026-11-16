@@ -85,6 +85,6 @@ no app-nav action model).
 
 ## References
 
-- spec: [`specs/web-chat-native-commands/02-specification.md`](https://github.com/dork-labs/dorkos/tree/885b00fa627fad4bcefa918a93105d427f1a0f7c/specs/web-chat-native-commands)
+- spec: `specs/web-chat-native-commands/02-specification.md`
 - DOR-128; DOR-80 (rename capability); specs #85/#87, #133; ADR-0063, ADR-0085,
   ADR-0089.

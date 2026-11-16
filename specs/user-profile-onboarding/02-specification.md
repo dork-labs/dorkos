@@ -1,6 +1,6 @@
 # User Profile + Onboarding — Specification
 
-**Id:** 260729-084310 · **Status:** specified · **Depends on:** shipped Tier 1 conversation ([`specs/dorkbot-is-the-onboarding/`](https://github.com/dork-labs/dorkos/tree/885b00fa627fad4bcefa918a93105d427f1a0f7c/specs/dorkbot-is-the-onboarding), ADR 260722-111314) · **Coordinates with:** `specs/connector-completion/` (Connections page — referenced, never specced here)
+**Id:** 260729-084310 · **Status:** specified · **Depends on:** shipped Tier 1 conversation (`specs/dorkbot-is-the-onboarding/`, ADR 260722-111314) · **Coordinates with:** `specs/connector-completion/` (Connections page — referenced, never specced here)
 
 ## Summary
 

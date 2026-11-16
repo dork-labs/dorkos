@@ -8,7 +8,7 @@ related:
   - specs/sidebar-now-today-library
   - specs/sidebar-groups
   - specs/smart-agent-groups
-  - [specs/feature-promo-system](https://github.com/dork-labs/dorkos/tree/885b00fa627fad4bcefa918a93105d427f1a0f7c/specs/feature-promo-system)
+  - specs/feature-promo-system
   - specs/rooms
   - specs/unified-conversation
 design-session: .dork/visual-companion/88892-1787170146

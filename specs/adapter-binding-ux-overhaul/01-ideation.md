@@ -42,7 +42,7 @@ status: ideation
 - `decisions/0046-central-binding-router-for-adapter-agent-routing.md`: BindingRouter is the central routing layer. Adapters remain dumb protocol bridges. Bindings are the routing configuration.
 - `decisions/0047-most-specific-first-binding-resolution.md`: Binding resolution scoring: adapterId+chatId+channelType (7) > adapterId+chatId (5) > adapterId+channelType (3) > adapterId-only (1). Only one binding wins per message.
 - `specs/adapter-agent-routing/02-specification.md`: Full binding routing spec. BindingDialog specified as session strategy + label only. No chatId/channelType UI fields. Largely implemented.
-- [`specs/adapter-catalog-management/02-specification.md`](https://github.com/dork-labs/dorkos/tree/885b00fa627fad4bcefa918a93105d427f1a0f7c/specs/adapter-catalog-management): Adapter catalog, setup wizard, ConfigField rendering. Largely implemented.
+- `specs/adapter-catalog-management/02-specification.md`: Adapter catalog, setup wizard, ConfigField rendering. Largely implemented.
 - `specs/sidebar-tabbed-views/02-specification.md`: Sidebar tabs: Sessions, Schedules, Connections. Connections tab exists but may need filtering support.
 - `apps/client/src/layers/features/relay/ui/RelayPanel.tsx`: Main relay panel with 4 tabs (Activity, Endpoints, Bindings, Adapters). AdaptersTab renders catalog with wizard state. BindingsTab renders BindingList with no "create" button.
 - `apps/client/src/layers/features/relay/ui/AdapterCard.tsx`: Configured adapter card with toggle, kebab menu (Events, Configure, Remove), status display. No binding count or status badge.

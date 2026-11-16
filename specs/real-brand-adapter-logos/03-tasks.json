@@ -1,0 +1,141 @@
+{
+  "spec": "specs/real-brand-adapter-logos/02-specification.md",
+  "slug": "real-brand-adapter-logos",
+  "generatedAt": "2026-03-23T12:00:00.000Z",
+  "mode": "full",
+  "lastDecomposeDate": null,
+  "tasks": [
+    {
+      "id": "1.1",
+      "phase": 1,
+      "phaseName": "Schema + Icons",
+      "subject": "[real-brand-adapter-logos] [P1] Create adapter logo SVG components and registry map in @dorkos/icons",
+      "description": "Create `packages/icons/src/adapter-logos.tsx` with brand SVG logo components and a registry map.\n\n## Implementation\n\nCreate the file `packages/icons/src/adapter-logos.tsx` with:\n\n1. **Interface:**\n```typescript\ninterface AdapterLogoProps {\n  /** Icon size in pixels. */\n  size?: number;\n  className?: string;\n}\n```\n\n2. **TelegramLogo** - Inline SVG using the Simple Icons `si-telegram` path data (the paper plane mark). Use a 24x24 viewBox, render the path with `fill=\"currentColor\"` so the color is controlled by className.\n\n3. **AnthropicLogo** - Inline SVG using the Simple Icons `si-anthropic` path data. Same pattern: 24x24 viewBox, `fill=\"currentColor\"`.\n\n4. **WebhookIcon** - Re-export from Lucide: `import { Webhook } from 'lucide-react'`. Wrap it as:\n```typescript\nfunction WebhookIcon({ size = 16, className }: AdapterLogoProps) {\n  return <Webhook className={className} style={{ width: size, height: size }} />;\n}\n```\n\n5. **SlackIcon** - Render a styled `#` character in an SVG container. The `#` should use `font-weight: 900` and fill color `#4A154B` (Slack purple). Implementation:\n```typescript\nfunction SlackIcon({ size = 16, className }: AdapterLogoProps) {\n  return (\n    <svg\n      xmlns=\"http://www.w3.org/2000/svg\"\n      width={size}\n      height={size}\n      viewBox=\"0 0 24 24\"\n      className={className}\n      aria-hidden=\"true\"\n    >\n      <text\n        x=\"12\"\n        y=\"18\"\n        textAnchor=\"middle\"\n        fontSize=\"22\"\n        fontWeight=\"900\"\n        fill=\"#4A154B\"\n        fontFamily=\"system-ui, sans-serif\"\n      >\n        #\n      </text>\n    </svg>\n  );\n}\n```\nThis avoids Slack Brand ToS issues while remaining instantly recognizable.\n\n6. **ADAPTER_LOGO_MAP** registry:\n```typescript\n/**\n * Maps adapter type identifiers to their logo components.\n *\n * Telegram, Slack, and Anthropic/Claude are trademarks of their respective owners.\n * Logos are used to identify connected services and do not imply endorsement.\n */\nexport const ADAPTER_LOGO_MAP: Record<string, React.ComponentType<AdapterLogoProps>> = {\n  telegram: TelegramLogo,\n  'telegram-chatsdk': TelegramLogo,\n  'claude-code': AnthropicLogo,\n  slack: SlackIcon,\n  webhook: WebhookIcon,\n};\n```\n\nExport the `AdapterLogoProps` type and all components as named exports.\n\nFollow the existing pattern in `packages/icons/src/logos.tsx` (DorkLogo): module-level TSDoc comment, `aria-hidden=\"true\"` on SVGs, `size` prop for dimensions, `className` for styling.\n\nFor the Simple Icons SVG paths:\n- Telegram: Use the official si-telegram SVG path from simpleicons.org. ViewBox should be `0 0 24 24`.\n- Anthropic: Use the official si-anthropic SVG path from simpleicons.org. ViewBox should be `0 0 24 24`.\n\n## Acceptance Criteria\n- All four components render inline SVGs (no external dependencies)\n- `ADAPTER_LOGO_MAP` maps all 5 adapter type strings to components\n- `telegram-chatsdk` shares `TelegramLogo`\n- SlackIcon uses `#4A154B` fill color, not the official Slack logo\n- All SVGs use `aria-hidden=\"true\"`\n- Module has TSDoc comment following the `@module icons/adapter-logos` pattern",
+      "activeForm": "Creating adapter logo SVG components and registry map",
+      "size": "medium",
+      "priority": "high",
+      "dependencies": [],
+      "parallelWith": ["1.2"]
+    },
+    {
+      "id": "1.2",
+      "phase": 1,
+      "phaseName": "Schema + Icons",
+      "subject": "[real-brand-adapter-logos] [P1] Add adapter-logos export to @dorkos/icons package.json",
+      "description": "Add the `./adapter-logos` subpath export to `packages/icons/package.json`.\n\n## Implementation\n\nEdit `packages/icons/package.json`. In the `exports` object, add a new entry:\n\n```json\n{\n  \"exports\": {\n    \"./registry\": \"./src/registry.ts\",\n    \"./subsystems\": \"./src/subsystems.ts\",\n    \"./brand\": \"./src/brand.ts\",\n    \"./logos\": \"./src/logos.tsx\",\n    \"./adapter-logos\": \"./src/adapter-logos.tsx\"\n  }\n}\n```\n\nThis enables imports like `import { ADAPTER_LOGO_MAP, type AdapterLogoProps } from '@dorkos/icons/adapter-logos'`.\n\n## Acceptance Criteria\n- `packages/icons/package.json` has `\"./adapter-logos\": \"./src/adapter-logos.tsx\"` in exports\n- Import `from '@dorkos/icons/adapter-logos'` resolves correctly in consuming packages\n- No other changes to package.json (do not modify dependencies, the `lucide-react` dep already covers the Webhook import)",
+      "activeForm": "Adding adapter-logos export to icons package",
+      "size": "small",
+      "priority": "high",
+      "dependencies": [],
+      "parallelWith": ["1.1"]
+    },
+    {
+      "id": "1.3",
+      "phase": 1,
+      "phaseName": "Schema + Icons",
+      "subject": "[real-brand-adapter-logos] [P1] Replace iconEmoji with iconId in AdapterManifestSchema and update all adapter manifests",
+      "description": "Replace the `iconEmoji` field with `iconId` in the shared Zod schema and update all 5 adapter manifests to use the new field.\n\n## Part A: Schema Change\n\nEdit `packages/shared/src/relay-adapter-schemas.ts`. In the `AdapterManifestSchema` object (line ~232), replace:\n```typescript\niconEmoji: z.string().optional(),\n```\nwith:\n```typescript\niconId: z.string().optional(),\n```\n\nThe `AdapterManifest` TypeScript type is inferred from the schema, so it will automatically update.\n\n## Part B: Adapter Manifest Updates\n\nUpdate all 5 adapter manifest objects to replace `iconEmoji` with `iconId`:\n\n1. **`packages/relay/src/adapters/telegram/telegram-adapter.ts`** (line ~42):\n   - Before: `iconEmoji: '\\u2708\\uFE0F',`\n   - After: `iconId: 'telegram',`\n\n2. **`packages/relay/src/adapters/slack/slack-adapter.ts`** (line ~108):\n   - Before: `iconEmoji: '#',`\n   - After: `iconId: 'slack',`\n\n3. **`packages/relay/src/adapters/claude-code/claude-code-adapter.ts`** (line ~60):\n   - Before: `iconEmoji: '\\uD83E\\uDD16',` (robot emoji)\n   - After: `iconId: 'claude-code',`\n\n4. **`packages/relay/src/adapters/webhook/webhook-adapter.ts`** (line ~43):\n   - Before: `iconEmoji: '\\uD83D\\uDD17',` (link emoji)\n   - After: `iconId: 'webhook',`\n\n5. **`packages/relay/src/adapters/telegram-chatsdk/manifest.ts`** (line ~15):\n   - Before: `iconEmoji: '\\u2708\\uFE0F',`\n   - After: `iconId: 'telegram-chatsdk',`\n\n## Part C: Schema Test Updates\n\nUpdate `packages/shared/src/__tests__/relay-catalog-schemas.test.ts` which has test fixtures using `iconEmoji`. Replace all occurrences of `iconEmoji: '...'` with the corresponding `iconId` values:\n- `iconEmoji: '\\u2708\\uFE0F'` -> `iconId: 'telegram'`\n- `iconEmoji: '\\uD83D\\uDD17'` -> `iconId: 'webhook'`\n- `iconEmoji: '\\uD83E\\uDD16'` -> `iconId: 'claude-code'`\n\n## Part D: Other Test Fixtures\n\nUpdate `apps/client/src/layers/features/relay/__tests__/AdapterCard.test.tsx` which has manifest fixtures:\n- `iconEmoji: '\\uD83D\\uDCE8'` -> `iconId: 'telegram'` (the telegram manifest fixture)\n- `iconEmoji: '\\uD83E\\uDD16'` -> `iconId: 'claude-code'` (the claude-code manifest fixture)\n\nUpdate `apps/client/src/layers/features/relay/ui/__tests__/RelayHealthBar.test.tsx` which has manifest fixtures:\n- `iconEmoji: '\\uD83D\\uDCE8'` -> `iconId: 'telegram'`\n\n## Part E: Onboarding Component\n\nUpdate `apps/client/src/layers/features/onboarding/ui/AdapterSetupStep.tsx` which has hardcoded adapter data with `iconEmoji` fields and renders them with `role=\"img\"`. Replace:\n- All `iconEmoji: '...'` entries with corresponding `iconId` values\n- The rendering code that checks `adapter.iconEmoji` and renders a `<span role=\"img\">` should be updated to use the `AdapterIcon` component (task 2.1 dependency) or temporarily use the iconId field. Since this is a Phase 1 task, just update the data fields from `iconEmoji` to `iconId` and update the type annotation. The rendering update will happen in Phase 2.\n\nUpdate the local type from `iconEmoji?: string` to `iconId?: string` and the conditional rendering from `adapter.iconEmoji` to `adapter.iconId`.\n\n## Part F: Documentation Updates\n\nUpdate `contributing/relay-adapters.md` and `contributing/adapter-catalog.md` which reference `iconEmoji` in documentation examples. Replace all `iconEmoji` references with `iconId` and update example values from emoji strings to identifier strings.\n\nUpdate `contributing/api-reference.md` similarly.\n\n## Acceptance Criteria\n- `AdapterManifestSchema` has `iconId: z.string().optional()` instead of `iconEmoji`\n- The `AdapterManifest` TypeScript type reflects the change (automatic via Zod inference)\n- All 5 adapter manifests in `packages/relay/` use `iconId` with their type string\n- All test fixtures across the codebase are updated\n- No remaining references to `iconEmoji` in production code (specs, research, and decision docs are excluded)\n- `pnpm typecheck` passes",
+      "activeForm": "Replacing iconEmoji with iconId in schema and adapter manifests",
+      "size": "large",
+      "priority": "high",
+      "dependencies": [],
+      "parallelWith": ["1.1", "1.2"]
+    },
+    {
+      "id": "2.1",
+      "phase": 2,
+      "phaseName": "Client Components",
+      "subject": "[real-brand-adapter-logos] [P2] Create AdapterIcon resolver component",
+      "description": "Create a shared helper component that resolves `iconId` to the correct logo component from `ADAPTER_LOGO_MAP`, with a fallback to the Lucide `Bot` icon.\n\n## Implementation\n\nCreate `apps/client/src/layers/features/relay/ui/AdapterIcon.tsx`:\n\n```typescript\nimport { ADAPTER_LOGO_MAP, type AdapterLogoProps } from '@dorkos/icons/adapter-logos';\nimport { Bot } from 'lucide-react';\n\ninterface AdapterIconProps extends AdapterLogoProps {\n  /** Adapter icon identifier from the manifest. */\n  iconId?: string;\n  /** Adapter type -- used as fallback lookup key when iconId is absent. */\n  adapterType?: string;\n}\n\n/** Resolves an adapter's iconId to the corresponding brand logo component. */\nexport function AdapterIcon({ iconId, adapterType, size = 16, className }: AdapterIconProps) {\n  const Logo = ADAPTER_LOGO_MAP[iconId ?? ''] ?? ADAPTER_LOGO_MAP[adapterType ?? ''];\n  if (Logo) return <Logo size={size} className={className} />;\n  return <Bot className={className} style={{ width: size, height: size }} />;\n}\n```\n\nThis component:\n1. First tries to look up `iconId` in the `ADAPTER_LOGO_MAP`\n2. Falls back to looking up `adapterType` (since built-in adapter iconIds match their type)\n3. Falls back to the Lucide `Bot` icon for unknown adapter types\n\nThe component lives in the `features/relay/ui/` directory following FSD conventions. It imports from `@dorkos/icons/adapter-logos` (cross-package, not a layer violation) and `lucide-react` (external dependency).\n\nAlso export `AdapterIcon` from the relay feature barrel if one exists, or ensure it's importable from its direct path within the features layer.\n\n## Acceptance Criteria\n- Component renders the correct logo for known iconIds (`telegram`, `slack`, `claude-code`, `webhook`, `telegram-chatsdk`)\n- Component falls back to `adapterType` lookup when `iconId` is undefined\n- Component renders Lucide `Bot` icon when neither `iconId` nor `adapterType` match\n- `size` prop controls the icon dimensions\n- `className` prop is passed through for styling\n- No FSD layer violations",
+      "activeForm": "Creating AdapterIcon resolver component",
+      "size": "small",
+      "priority": "high",
+      "dependencies": ["1.1", "1.2"],
+      "parallelWith": []
+    },
+    {
+      "id": "2.2",
+      "phase": 2,
+      "phaseName": "Client Components",
+      "subject": "[real-brand-adapter-logos] [P2] Update AdapterCardHeader to use AdapterIcon instead of emoji span",
+      "description": "Replace the emoji `<span>` in `AdapterCardHeader.tsx` with the new `<AdapterIcon>` component.\n\n## Implementation\n\nEdit `apps/client/src/layers/features/relay/ui/AdapterCardHeader.tsx`.\n\n1. Add import:\n```typescript\nimport { AdapterIcon } from './AdapterIcon';\n```\n\n2. Replace the emoji rendering block (lines ~49-53):\n```typescript\n// REMOVE this:\n{manifest.iconEmoji && (\n  <span className=\"text-sm\" role=\"img\" aria-hidden>\n    {manifest.iconEmoji}\n  </span>\n)}\n\n// REPLACE with:\n<AdapterIcon iconId={manifest.iconId} adapterType={manifest.type} size={16} className=\"text-muted-foreground shrink-0\" />\n```\n\nNote: The `AdapterIcon` always renders (either a brand logo or the Bot fallback), so the conditional `{manifest.iconEmoji && ...}` wrapper is removed.\n\n3. The TSDoc comment on the function (line ~29) says \"emoji\" -- update it to:\n```typescript\n/** Renders the adapter card header: status dot, icon, name, toggle, and kebab dropdown. */\n```\n\n4. The inline comment on line ~45 says \"emoji\" -- update it to:\n```typescript\n{/* Header row: status dot, icon, name, toggle, kebab */}\n```\n\n## Acceptance Criteria\n- No emoji rendering code remains in AdapterCardHeader\n- `<AdapterIcon>` renders with `size={16}` and `className=\"text-muted-foreground shrink-0\"`\n- Both `iconId` and `adapterType` are passed from the manifest\n- The icon always renders (no conditional wrapper)\n- Component compiles without TypeScript errors",
+      "activeForm": "Updating AdapterCardHeader to use AdapterIcon",
+      "size": "small",
+      "priority": "high",
+      "dependencies": ["1.3", "2.1"],
+      "parallelWith": ["2.3", "2.4"]
+    },
+    {
+      "id": "2.3",
+      "phase": 2,
+      "phaseName": "Client Components",
+      "subject": "[real-brand-adapter-logos] [P2] Update CatalogCard to use AdapterIcon instead of emoji span",
+      "description": "Replace the emoji `<span>` in `CatalogCard.tsx` with the new `<AdapterIcon>` component.\n\n## Implementation\n\nEdit `apps/client/src/layers/features/relay/ui/CatalogCard.tsx`.\n\n1. Add import:\n```typescript\nimport { AdapterIcon } from './AdapterIcon';\n```\n\n2. Replace the emoji rendering block (lines ~22-26):\n```typescript\n// REMOVE this:\n{manifest.iconEmoji && (\n  <span className=\"text-lg\" role=\"img\" aria-hidden>\n    {manifest.iconEmoji}\n  </span>\n)}\n\n// REPLACE with:\n<AdapterIcon iconId={manifest.iconId} adapterType={manifest.type} size={20} className=\"text-muted-foreground shrink-0\" />\n```\n\nNote: Size is 20px for catalog cards (larger than the 16px in AdapterCardHeader). The icon always renders, so the conditional wrapper is removed.\n\n## Acceptance Criteria\n- No emoji rendering code remains in CatalogCard\n- `<AdapterIcon>` renders with `size={20}` and `className=\"text-muted-foreground shrink-0\"`\n- Both `iconId` and `adapterType` are passed from the manifest\n- The icon always renders (no conditional wrapper)\n- Component compiles without TypeScript errors",
+      "activeForm": "Updating CatalogCard to use AdapterIcon",
+      "size": "small",
+      "priority": "high",
+      "dependencies": ["1.3", "2.1"],
+      "parallelWith": ["2.2", "2.4"]
+    },
+    {
+      "id": "2.4",
+      "phase": 2,
+      "phaseName": "Client Components",
+      "subject": "[real-brand-adapter-logos] [P2] Update AdapterNode to replace PLATFORM_ICONS map with AdapterIcon",
+      "description": "Replace the local `PLATFORM_ICONS` map and `PlatformIcon` component in `AdapterNode.tsx` with the shared `AdapterIcon` component.\n\n## Implementation\n\nEdit `apps/client/src/layers/features/mesh/ui/AdapterNode.tsx`.\n\n1. Remove these imports (line 4):\n```typescript\n// REMOVE: MessageSquare, Webhook, Bot from lucide-react\nimport { MessageSquare, Webhook, Bot, Plus } from 'lucide-react';\n// REPLACE with:\nimport { Plus } from 'lucide-react';\n```\n\n2. Add import:\n```typescript\nimport { AdapterIcon } from '@/layers/features/relay/ui/AdapterIcon';\n```\nNote: This is a features-layer cross-module UI import, which is allowed by FSD rules (UI composition across features is permitted).\n\n3. Remove the `PLATFORM_ICONS` map (lines ~49-52):\n```typescript\n// REMOVE entirely:\nconst PLATFORM_ICONS: Record<string, React.ElementType> = {\n  telegram: MessageSquare,\n  webhook: Webhook,\n};\n```\n\n4. Replace the `PlatformIcon` component (lines ~55-58):\n```typescript\n// REMOVE:\nfunction PlatformIcon({ adapterType }: { adapterType: string }) {\n  const Icon = PLATFORM_ICONS[adapterType] ?? Bot;\n  return <Icon className=\"text-muted-foreground size-4 shrink-0\" />;\n}\n\n// REPLACE with:\n/** Renders the platform icon for an adapter type. Extracted as a component to satisfy React Compiler. */\nfunction PlatformIcon({ adapterType }: { adapterType: string }) {\n  return <AdapterIcon adapterType={adapterType} size={16} className=\"text-muted-foreground shrink-0\" />;\n}\n```\n\nThe `PlatformIcon` wrapper is kept as a thin adapter to preserve the existing call sites in `AdapterCompactPill` and `AdapterDefaultCard` without changing their props.\n\n## Acceptance Criteria\n- `PLATFORM_ICONS` map is removed\n- `MessageSquare`, `Webhook`, `Bot` imports from lucide-react are removed (only `Plus` remains)\n- `PlatformIcon` delegates to `AdapterIcon` with `size={16}`\n- All adapter types render their correct brand logo in the topology graph\n- Unknown types fall back to Lucide `Bot` via `AdapterIcon`\n- No FSD layer violations (features/mesh importing features/relay UI is allowed)",
+      "activeForm": "Replacing PLATFORM_ICONS with AdapterIcon in AdapterNode",
+      "size": "small",
+      "priority": "high",
+      "dependencies": ["1.3", "2.1"],
+      "parallelWith": ["2.2", "2.3"]
+    },
+    {
+      "id": "2.5",
+      "phase": 2,
+      "phaseName": "Client Components",
+      "subject": "[real-brand-adapter-logos] [P2] Update dev showcase files to use iconId instead of iconEmoji",
+      "description": "Update mock manifests in dev showcases to use `iconId` instead of `iconEmoji`.\n\n## Implementation\n\n### File 1: `apps/client/src/dev/showcases/RelayShowcases.tsx`\n\nThis file has two mock manifests with `iconEmoji`. Replace:\n- `iconEmoji: '\\u2708\\uFE0F',` -> `iconId: 'telegram',` (Telegram manifest)\n- `iconEmoji: '\\uD83D\\uDC19',` -> `iconId: 'github',` (GitHub manifest -- note: no logo exists for GitHub in the map, will use fallback Bot icon which is fine for a dev showcase)\n\n### File 2: `apps/client/src/dev/showcases/adapter-wizard-showcase-data.ts`\n\nThis file has the `SLACK_MANIFEST` mock. Replace:\n- `iconEmoji: '#',` -> `iconId: 'slack',`\n\n### File 3: `apps/client/src/layers/features/onboarding/ui/AdapterSetupStep.tsx`\n\nThis file has hardcoded adapter data with `iconEmoji` fields. Update:\n- `iconEmoji: '\\u2708'` -> `iconId: 'telegram'`\n- `iconEmoji: '\\uD83D\\uDD17'` -> `iconId: 'webhook'`\n- `iconEmoji: '\\uD83D\\uDCAC'` -> `iconId: 'slack'`\n- `iconEmoji: '\\uD83E\\uDD16'` -> `iconId: 'claude-code'`\n\nAlso update the local type from `iconEmoji?: string` to `iconId?: string` and the rendering code:\n```typescript\n// BEFORE:\n{adapter.iconEmoji && (\n  <span className=\"text-lg\" role=\"img\" aria-hidden>\n    {adapter.iconEmoji}\n  </span>\n)}\n\n// AFTER:\n<AdapterIcon iconId={adapter.iconId} size={20} className=\"text-muted-foreground shrink-0\" />\n```\n\nAdd the AdapterIcon import. Note: AdapterSetupStep is in `features/onboarding` importing from `features/relay/ui/AdapterIcon` -- this is allowed by FSD rules (UI composition across features).\n\n## Acceptance Criteria\n- No `iconEmoji` references remain in any dev showcase file\n- All mock manifests use `iconId` with appropriate string identifiers\n- Dev showcases render correctly with the new icon system\n- AdapterSetupStep uses AdapterIcon component instead of emoji spans",
+      "activeForm": "Updating dev showcase files to use iconId",
+      "size": "small",
+      "priority": "medium",
+      "dependencies": ["1.3", "2.1"],
+      "parallelWith": []
+    },
+    {
+      "id": "3.1",
+      "phase": 3,
+      "phaseName": "Tests",
+      "subject": "[real-brand-adapter-logos] [P3] Update AdapterCardHeader test fixtures and assertions for iconId/AdapterIcon",
+      "description": "Update `AdapterCardHeader.test.tsx` to reflect the schema change from `iconEmoji` to `iconId` and the rendering change from emoji spans to SVG components.\n\n## Implementation\n\nEdit `apps/client/src/layers/features/relay/ui/__tests__/AdapterCardHeader.test.tsx`.\n\n### 1. Update fixture (line ~19)\n```typescript\n// BEFORE:\niconEmoji: '\\uD83D\\uDCE8',\n\n// AFTER:\niconId: 'telegram',\n```\n\n### 2. Update the emoji rendering test (lines ~110-113)\n```typescript\n// BEFORE:\nit('renders the icon emoji', () => {\n  render(<AdapterCardHeader {...defaultProps()} />);\n  expect(screen.getByText('\\uD83D\\uDCE8')).toBeInTheDocument();\n});\n\n// AFTER:\nit('renders the adapter icon', () => {\n  const { container } = render(<AdapterCardHeader {...defaultProps()} />);\n  // AdapterIcon renders an SVG for known iconIds\n  const svg = container.querySelector('svg');\n  expect(svg).toBeInTheDocument();\n});\n```\n\nThe test now checks for the presence of an SVG element instead of emoji text, since `AdapterIcon` renders inline SVGs for known adapter types.\n\n### 3. Verify all other tests still pass\nThe remaining tests (primary name, category badge, switch toggle, kebab menu) should pass without changes since they don't depend on the icon rendering.\n\n## Acceptance Criteria\n- `baseManifest` fixture uses `iconId: 'telegram'` instead of `iconEmoji`\n- Emoji text assertion is replaced with SVG element assertion\n- All existing tests pass\n- No `role=\"img\"` assertions remain (SVGs use `aria-hidden` instead)\n- Test runs successfully: `pnpm vitest run apps/client/src/layers/features/relay/ui/__tests__/AdapterCardHeader.test.tsx`",
+      "activeForm": "Updating AdapterCardHeader test fixtures and assertions",
+      "size": "small",
+      "priority": "high",
+      "dependencies": ["2.2"],
+      "parallelWith": ["3.2", "3.3"]
+    },
+    {
+      "id": "3.2",
+      "phase": 3,
+      "phaseName": "Tests",
+      "subject": "[real-brand-adapter-logos] [P3] Update CatalogCard test fixtures and assertions for iconId/AdapterIcon",
+      "description": "Update `CatalogCard.test.tsx` to reflect the schema change from `iconEmoji` to `iconId` and the rendering change from emoji spans to SVG components.\n\n## Implementation\n\nEdit `apps/client/src/layers/features/relay/ui/__tests__/CatalogCard.test.tsx`.\n\n### 1. Update the icon rendering test (lines ~42-48)\n```typescript\n// BEFORE:\nit('renders icon emoji when provided', () => {\n  const manifest: AdapterManifest = { ...baseManifest, iconEmoji: '\\uD83D\\uDCAC' };\n  render(<CatalogCard manifest={manifest} onAdd={vi.fn()} />);\n\n  expect(screen.getByRole('img', { hidden: true })).toBeInTheDocument();\n  expect(screen.getByText('\\uD83D\\uDCAC')).toBeInTheDocument();\n});\n\n// AFTER:\nit('renders adapter icon when iconId provided', () => {\n  const manifest: AdapterManifest = { ...baseManifest, iconId: 'slack' };\n  const { container } = render(<CatalogCard manifest={manifest} onAdd={vi.fn()} />);\n\n  // AdapterIcon renders an SVG for known iconIds\n  const svg = container.querySelector('svg');\n  expect(svg).toBeInTheDocument();\n});\n```\n\n### 2. Update the missing icon test (lines ~50-54)\n```typescript\n// BEFORE:\nit('does not render icon emoji when not provided', () => {\n  render(<CatalogCard manifest={baseManifest} onAdd={vi.fn()} />);\n\n  expect(screen.queryByRole('img', { hidden: true })).not.toBeInTheDocument();\n});\n\n// AFTER:\nit('renders fallback icon when iconId not provided', () => {\n  const { container } = render(<CatalogCard manifest={baseManifest} onAdd={vi.fn()} />);\n\n  // AdapterIcon always renders -- falls back to Bot icon (also an SVG)\n  const svg = container.querySelector('svg');\n  expect(svg).toBeInTheDocument();\n});\n```\n\nNote: The `baseManifest` fixture at the top of the file does NOT have `iconEmoji` set (it's optional), so it already tests the fallback case. Since `AdapterIcon` always renders (either a brand logo or Bot fallback), the test now asserts that an SVG is present rather than absent.\n\n### 3. Verify remaining tests pass\nThe other tests (display name, description, category badge, onAdd callback, category colors) should pass without changes.\n\n## Acceptance Criteria\n- `iconEmoji` references removed from all test cases\n- Icon present test uses `iconId: 'slack'` and asserts SVG renders\n- Icon absent test renamed to \"fallback\" test and asserts Bot SVG renders\n- `role=\"img\"` assertions removed (SVGs use `aria-hidden`)\n- All tests pass: `pnpm vitest run apps/client/src/layers/features/relay/ui/__tests__/CatalogCard.test.tsx`",
+      "activeForm": "Updating CatalogCard test fixtures and assertions",
+      "size": "small",
+      "priority": "high",
+      "dependencies": ["2.3"],
+      "parallelWith": ["3.1", "3.3"]
+    },
+    {
+      "id": "3.3",
+      "phase": 3,
+      "phaseName": "Tests",
+      "subject": "[real-brand-adapter-logos] [P3] Run full verification suite: tests, typecheck, and lint",
+      "description": "Run the full verification suite to ensure all changes are consistent and no regressions were introduced.\n\n## Steps\n\n1. **Run typecheck across all packages:**\n```bash\npnpm typecheck\n```\nExpected: No type errors. The `AdapterManifest` type should have `iconId?: string` instead of `iconEmoji?: string`. All consumers should be updated.\n\n2. **Run all tests:**\n```bash\npnpm test -- --run\n```\nExpected: All tests pass. Key test files to watch:\n- `packages/shared/src/__tests__/relay-catalog-schemas.test.ts`\n- `apps/client/src/layers/features/relay/ui/__tests__/AdapterCardHeader.test.tsx`\n- `apps/client/src/layers/features/relay/ui/__tests__/CatalogCard.test.tsx`\n- `apps/client/src/layers/features/relay/__tests__/AdapterCard.test.tsx`\n- `apps/client/src/layers/features/relay/ui/__tests__/RelayHealthBar.test.tsx`\n\n3. **Run lint:**\n```bash\npnpm lint\n```\nExpected: No lint errors. TSDoc on exported functions should be present.\n\n4. **Verify no remaining `iconEmoji` references in production code:**\nSearch for `iconEmoji` across the codebase. It should only appear in:\n- `specs/` (specification documents)\n- `research/` (research reports)\n- `decisions/` (ADR documents)\n- `contributing/` docs that were updated in task 1.3\n\nNo production TypeScript files should reference `iconEmoji`.\n\n5. **Verify AdapterNode test passes:**\n`AdapterNode.test.tsx` (if it exists) should pass without changes since the `PlatformIcon` refactor preserves the same component interface.\n\n## Acceptance Criteria\n- `pnpm typecheck` passes with zero errors\n- `pnpm test -- --run` passes with zero failures\n- `pnpm lint` passes\n- No `iconEmoji` references in production `.ts`/`.tsx` files\n- All adapter cards, catalog cards, and topology nodes render brand SVGs",
+      "activeForm": "Running full verification suite",
+      "size": "medium",
+      "priority": "high",
+      "dependencies": ["3.1", "3.2", "2.4", "2.5"],
+      "parallelWith": []
+    }
+  ]
+}
