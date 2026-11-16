@@ -20,6 +20,7 @@
  */
 import { constants as fsConstants, promises as fs } from 'node:fs';
 import path from 'node:path';
+import { isRoomCanvasMediaUrl } from '@dorkos/shared/canvas-media-url';
 import type { UiCanvasContent, UiCommand } from '@dorkos/shared/schemas';
 import { FILE_LIMITS } from '../../config/constants.js';
 import { resolveWithinCwd } from '../../lib/file-route-guards.js';
@@ -35,13 +36,15 @@ import { canvasSourcePath } from './document-key.js';
 
 /**
  * A media document's `src` when it names a local file, or `null` for a web
- * address, an inline `data:` value or a document with no `src` at all.
+ * address, an inline `data:` value, a file already copied into a room (served
+ * by its own membership-checked route) or a document with no `src` at all.
  *
  * @param content - The content about to be written.
  */
 function localMediaSource(content: UiCanvasContent): string | null {
   const src = 'src' in content && typeof content.src === 'string' ? content.src : null;
   if (src === null || src.length === 0 || /^(?:https?|data|blob):/i.test(src)) return null;
+  if (isRoomCanvasMediaUrl(src)) return null;
   return src.startsWith('file://') ? decodeURIComponent(new URL(src).pathname) : src;
 }
 
@@ -122,9 +125,9 @@ export interface CanvasFolders {
 }
 
 /**
- * Where `source` really is, when it is inside `folder`: `null` when it is not,
- * `undefined` when the path could not be judged at all (a NUL byte, a folder
- * outside the boundary), which the opener answers in its own words.
+ * Where `source` really is, when it is inside `folder`: `null` when it is not (or
+ * when `folder` itself is outside the boundary), `undefined` when the path could
+ * not be judged at all (a NUL byte), which the opener answers in its own words.
  */
 async function resolvedWithin(folder: string, source: string): Promise<string | null | undefined> {
   try {
@@ -194,10 +197,12 @@ export async function canvasOutsideFolderRefusal(
     isInside(rooms, where) &&
     !roomFolders.some((folder) => isInside(folder, where));
   if (where !== null && !anotherRoomsFile) return null;
-  const allowed = forRoom ? "your folder and this room's files" : 'your folder';
+  const limit = forRoom
+    ? `your folder or this room's files, and ${source} isn't in either`
+    : `your folder, and ${source} is outside it`;
   return {
     code: 'OUTSIDE_FOLDER',
-    message: `The canvas only shows files from ${allowed}, and ${source} is outside it. You can still read the file yourself and show what's in it, or copy it into your folder and open the copy.`,
+    message: `The canvas only shows files from ${limit}. You can still read the file yourself and show what's in it, or copy it into your folder and open the copy.`,
   };
 }
 

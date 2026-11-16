@@ -1,6 +1,7 @@
 ---
 covers:
   - "fix(canvas): a one-on-one chat's canvas refuses a file from outside the agent's folder, and says so (DOR-3519)"
+  - "fix(canvas): a room's copied picture still opens on any canvas, and the outside-folder sentence reads plainly (DOR-3519)"
 ---
 
 ### Fixed

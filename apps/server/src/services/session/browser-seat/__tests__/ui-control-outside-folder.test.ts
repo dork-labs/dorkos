@@ -175,6 +175,8 @@ describe('a local file outside the agent folder, in a one-on-one chat (DOR-3519)
 
   it.each([
     ['open_file', { action: 'open_file', sourcePath: 'OUTSIDE/notes.md' }],
+    ['open_file through a link', { action: 'open_file', sourcePath: 'link/notes.md' }],
+    ['open_diff', { action: 'open_diff', sourcePath: 'OUTSIDE/notes.md' }],
     [
       'open_canvas file',
       { action: 'open_canvas', content: { type: 'file', sourcePath: 'OUTSIDE/notes.md' } },
@@ -201,6 +203,17 @@ describe('a local file outside the agent folder, in a one-on-one chat (DOR-3519)
     [
       'a web src',
       { action: 'open_canvas', content: { type: 'image', src: 'https://example.com/a.png' } },
+    ],
+    [
+      // Already copied into a room; its own route checks membership.
+      'a room canvas picture',
+      {
+        action: 'open_canvas',
+        content: {
+          type: 'image',
+          src: `/api/rooms/${ROOM}/canvas/media/${'c'.repeat(16)}-${'b'.repeat(64)}.png`,
+        },
+      },
     ],
   ])('still opens %s', async (_name, args) => {
     const { isError } = await control(args);
