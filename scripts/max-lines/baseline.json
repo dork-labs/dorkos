@@ -82,7 +82,7 @@
     "apps/server/src/services/runtimes/claude-code/sessions/transcript-reader.ts": 551,
     "apps/server/src/services/runtimes/codex/app-server/notification-mapper.ts": 533,
     "apps/server/src/services/runtimes/codex/codex-runtime.ts": 1064,
-    "apps/server/src/services/runtimes/codex/transport/app-server-transport.ts": 1137,
+    "apps/server/src/services/runtimes/codex/transport/app-server-transport.ts": 1129,
     "apps/server/src/services/runtimes/opencode/opencode-runtime.ts": 831,
     "apps/server/src/services/session/chat-messages/chat-message-service.ts": 609,
     "apps/server/src/services/session/devtools-capture-store.ts": 666,
@@ -133,7 +133,7 @@
     "packages/test-utils/src/community-conformance-branched.ts": 603,
     "packages/test-utils/src/community-conformance-universal.ts": 672,
     "packages/test-utils/src/fake-community-adapter.ts": 789,
-    "packages/test-utils/src/mock-factories.ts": 1225,
+    "packages/test-utils/src/mock-factories.ts": 1224,
     "packages/test-utils/src/runtime-capability-matrix.ts": 773,
     "packages/test-utils/src/runtime-conformance.ts": 2426
   }

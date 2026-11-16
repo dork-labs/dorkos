@@ -32,11 +32,13 @@
  *
  * @module services/runtimes/codex/app-server/server-requests
  */
+import { fileChangeApproval } from '../policy/file-change-approval.js';
+import type { ProtectedPathRoots } from '../../shared/policy/protected-path-check.js';
 import type { StreamEvent } from '@dorkos/shared/types';
 import { SESSIONS } from '../../../../config/constants.js';
 import { logger } from '../../../../lib/logger.js';
 import { logRefusal } from '../../../observability/refusals.js';
-import { PATCH_TOOL_NAME, SHELL_TOOL_NAME } from '../event-mapper.js';
+import { SHELL_TOOL_NAME } from '../event-mapper.js';
 import { refusalFor, type ServerRequest } from './protocol/methods.js';
 
 /** The card a request draws. */
@@ -47,6 +49,10 @@ export const PERMISSIONS_TOOL_NAME = 'Permissions';
 
 /** What the transport knows about the turn a request belongs to. */
 export interface ServerRequestTurnView {
+  /** Captured active-turn roots, identical to the native protected-file policy. */
+  fileChangeRoots?: ProtectedPathRoots;
+  /** This native turn keeps these Git metadata paths read-only (empty at Full). */
+  fileChangeReadOnlyGit?: readonly string[];
   /** The input a tool start carried for an item, if the turn saw one. */
   inputOf(itemId: string): string | undefined;
   /** The MCP tool calls of one server still running in the turn. */
@@ -108,7 +114,7 @@ export function mapServerRequest(
     case 'item/commandExecution/requestApproval':
       return commandApproval(request, params, turn);
     case 'item/fileChange/requestApproval':
-      return fileChangeApproval(request, params, turn);
+      return fileChangeApproval(params, turn);
     case 'item/permissions/requestApproval':
       return permissionsApproval(request, params);
     case 'mcpServer/elicitation/request':
@@ -209,31 +215,6 @@ function commandApproval(
   };
 }
 
-function fileChangeApproval(
-  request: ServerRequest,
-  params: Params,
-  turn: ServerRequestTurnView
-): MappedServerRequest {
-  const itemId = str(params.itemId);
-  return {
-    kind: 'approval',
-    interactionId: interactionIdOf(request, params),
-    toolName: PATCH_TOOL_NAME,
-    card: {
-      type: 'approval_required',
-      data: {
-        toolName: PATCH_TOOL_NAME,
-        input: (itemId && turn.inputOf(itemId)) ?? JSON.stringify({ changes: [] }),
-        ...(str(params.reason) ? { decisionReason: str(params.reason) } : {}),
-        ...(str(params.grantRoot) ? { blockedPath: str(params.grantRoot) } : {}),
-        hasSuggestions: true,
-        alwaysAllowScope: 'session',
-      },
-    },
-    replies: decisionReplies(true),
-  };
-}
-
 function permissionsApproval(request: ServerRequest, params: Params): MappedServerRequest {
   const requested = (params.permissions ?? {}) as Params;
   const none = { permissions: {}, scope: 'turn' };
@@ -272,7 +253,6 @@ function elicitation(
   const server = str(params.serverName) ?? 'mcp';
   const meta = (params._meta ?? null) as Params | null;
   const cancel = { action: 'cancel', content: null, _meta: null };
-  const decline = { action: 'decline', content: null, _meta: null };
   const approval =
     meta?.codex_approval_kind === 'mcp_tool_call'
       ? mcpToolApproval(request, params, server, turn)

@@ -1978,6 +1978,89 @@ nativeSuite('the app-server transport against the real Codex binary', NATIVE_LIM
     }
   );
 
+  it.each(['ordinary', 'protected', 'git-default', 'git-full'])(
+    'native patch approval preserves an ordinary write and refuses a protected target: %s',
+    async (kind) => {
+      const protectedTarget = kind === 'protected' || kind === 'git-default';
+      const mode = kind === 'git-full' ? 'bypassPermissions' : 'default';
+      const outside = path.join(root, 'outside');
+      fs.mkdirSync(outside);
+      if (kind.startsWith('git-'))
+        execFileSync('git', ['init', '-q', '-b', 'main', project], { env: minimalGitEnv() });
+      const target = kind.startsWith('git-')
+        ? path.join(project, '.git', 'patch-probe.txt')
+        : path.join(outside, kind === 'protected' ? '.credentials-probe' : 'ordinary.txt');
+      const content = 'NATIVE-PATCH-WRITTEN';
+      const patch = `*** Begin Patch\n*** Add File: ${target}\n+${content}\n*** End Patch`;
+      let returned = '';
+      scripted.push(
+        (res) =>
+          res.end(sseCall({ cmd: "apply_patch <<'PATCH'\n" + patch + '\nPATCH', login: false })),
+        (res, body) => {
+          returned = body;
+          res.end(sse('patch checked'));
+        }
+      );
+      const nativeRequests: string[] = [];
+      const transport = makeTransport(undefined, 'app-server', (child) => {
+        let buffered = '';
+        child.stdout!.on('data', (chunk: Buffer) => {
+          buffered += chunk.toString();
+          for (;;) {
+            const end = buffered.indexOf('\n');
+            if (end < 0) break;
+            const line = buffered.slice(0, end);
+            buffered = buffered.slice(end + 1);
+            try {
+              const message = JSON.parse(line);
+              if (message.method === 'item/fileChange/requestApproval')
+                nativeRequests.push(message.params.itemId);
+            } catch {
+              /* Non-JSON startup output is not an approval. */
+            }
+          }
+        });
+      });
+      const sessionId = 'native-patch-policy';
+      const events: StreamEvent[] = [];
+      for await (const event of transport.runTurn(
+        request(sessionId, undefined, {
+          settings: { permissionMode: mode, model: 'fake-model' },
+        })
+      )) {
+        events.push(event);
+        if (event.type === 'approval_required') {
+          if ((event.data as { toolName: string }).toolName === 'ApplyPatch')
+            expect(
+              protectedTarget,
+              'protected native patch must never have an answerable card'
+            ).toBe(false);
+          expect(
+            transport.answerApproval(
+              sessionId,
+              (event.data as { toolCallId: string }).toolCallId,
+              true
+            )
+          ).toBe(true);
+        }
+      }
+      expect(
+        nativeRequests,
+        'native file approval count; returned patch result: ' + returned.slice(-500)
+      ).toHaveLength(kind === 'git-full' ? 0 : 1);
+      expect(
+        events.filter(
+          (event) =>
+            event.type === 'approval_required' &&
+            (event.data as { toolName: string }).toolName === 'ApplyPatch'
+        )
+      ).toHaveLength(protectedTarget || kind === 'git-full' ? 0 : 1);
+      expect(fs.existsSync(target)).toBe(!protectedTarget);
+      if (!protectedTarget) expect(fs.readFileSync(target, 'utf8')).toContain(content);
+      expect(events.filter((event) => event.type === 'done')).toHaveLength(1);
+    }
+  );
+
   describe('approvals and steer (spec §10, §11)', () => {
     const made = () => path.join(project, 'approved.txt');
     const askToWrite = () => {

@@ -136,14 +136,27 @@ describe('mapServerRequest (spec §10)', () => {
   });
 
   it('maps a file change to an ApplyPatch card carrying the item’s changes and grant root', () => {
-    const changes = JSON.stringify({ changes: [{ path: 'a.ts' }] });
+    const changes = JSON.stringify({
+      changes: [{ path: 'a.ts', kind: { type: 'update' }, diff: '' }],
+    });
     const mapped = mapServerRequest(
       {
         id: 2,
         method: 'item/fileChange/requestApproval',
         params: { itemId: 'p1', grantRoot: '/outside', reason: 'Write outside?' },
       },
-      { ...noTurn, inputOf: (id) => (id === 'p1' ? changes : undefined) }
+      {
+        ...noTurn,
+        fileChangeRoots: {
+          cwd: '/p',
+          data: '/data',
+          home: '/home',
+          accounts: [],
+          agentFolders: ['/p'],
+          agentHomes: [],
+        },
+        inputOf: (id) => (id === 'p1' ? changes : undefined),
+      }
     );
     expect(mapped).toMatchObject({
       interactionId: 'p1',
@@ -311,6 +324,68 @@ describe('mapServerRequest (spec §10)', () => {
 });
 
 describe('approvals over the fake app-server', () => {
+  it.each(['protected', 'mixed', 'rename', 'missing', 'ordinary'])(
+    'checks the active turn before brokering a %s file approval (modeled RPC)',
+    async (kind) => {
+      const h = harness();
+      let reply: unknown;
+      const changes = [{ path: 'notes.txt', kind: { type: 'update' }, diff: '' }];
+      if (kind === 'protected') changes[0]!.path = '/turn-data/config.json';
+      if (kind === 'mixed')
+        changes.push({ path: '/turn-data/host.key', kind: { type: 'delete' }, diff: '' });
+      if (kind === 'rename')
+        Object.assign(changes[0]!.kind, { move_path: '/turn-data/config.json' });
+      h.host.home(PERSON_HOME).nextTurn(async (ctx) => {
+        if (kind !== 'missing')
+          ctx.emit('item/started', {
+            item: { type: 'fileChange', id: 'patch-policy', changes, status: 'inProgress' },
+          });
+        reply = await ctx.serverRequest('item/fileChange/requestApproval', {
+          itemId: 'patch-policy',
+          grantRoot: '/untrusted',
+          cwd: '/untrusted',
+          permissionMode: 'bypassPermissions',
+        });
+        ctx.agentMessage('finished');
+        ctx.complete('completed');
+      });
+      const baseRequest = h.request({ sessionId: 'patch-policy-session' });
+      const request = {
+        ...baseRequest,
+        tools: {
+          ...baseRequest.tools,
+          filePolicy: {
+            roots: {
+              cwd: baseRequest.cwd,
+              data: '/turn-data',
+              home: '/turn-home',
+              accounts: [],
+              agentFolders: [baseRequest.cwd],
+              agentHomes: [],
+            },
+            writable: [],
+          },
+        },
+      };
+      const events: StreamEvent[] = [];
+      for await (const event of h.transport.runTurn(request)) {
+        events.push(event);
+        if (event.type === 'approval_required') {
+          expect(kind).toBe('ordinary');
+          expect(h.transport.answerApproval(request.sessionId, 'patch-policy', true, true)).toBe(
+            true
+          );
+        }
+      }
+      expect(reply).toEqual({ decision: kind === 'ordinary' ? 'acceptForSession' : 'decline' });
+      expect(events.filter((event) => event.type === 'approval_required')).toHaveLength(
+        kind === 'ordinary' ? 1 : 0
+      );
+      expect(h.transport.answerApproval(request.sessionId, 'patch-policy', true)).toBe(false);
+      expect(dones(events)).toHaveLength(1);
+    }
+  );
+
   it('RT-TOOL-01: draws the card after its tool start, and runs the command once a person approves', async () => {
     const h = harness();
     h.host.home(PERSON_HOME).nextTurn(approvalTurn);

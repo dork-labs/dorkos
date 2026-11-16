@@ -26,6 +26,7 @@
  *
  * @module services/runtimes/codex/transport/app-server-transport
  */
+import { gitMetadataReadRules } from '../policy/git-metadata.js';
 import { recordMountTargets } from '../policy/mount-target-ledger.js';
 import type { InterruptReceipt, StreamEvent } from '@dorkos/shared/types';
 import type {
@@ -39,7 +40,7 @@ import type { CreditsRelay } from '../../../core/cloud/credits-relay.js';
 import { keepAwakeService } from '../../../core/keep-awake/index.js';
 import { CreditsUnavailableError } from '../../../core/cloud/credits-protocols.js';
 import { creditsCodexHome } from '../codex-home.js';
-import { buildSteerText, EFFORT_TO_REASONING } from '../turn-input.js';
+import { buildSteerText } from '../turn-input.js';
 import {
   CodexAppServerPool,
   codexAppServerPool,
@@ -53,7 +54,7 @@ import {
 import { ThreadChannel, turnIdOf, type TurnSink } from '../app-server/thread-channel.js';
 import { AppServerTurnMapper } from '../app-server/notification-mapper.js';
 import { mergeRateLimits, rateLimitsToRolloutShape } from '../app-server/rate-limits.js';
-import { approvalPolicyFor, EventQueue, codexPermissionProfile } from '../app-server/turn-parts.js';
+import { EventQueue, turnParams } from '../app-server/turn-parts.js';
 import { CODEX_APP_SERVER_CAPABILITIES } from '../runtime-constants.js';
 import {
   BACKGROUND_CEILING_MS,
@@ -63,11 +64,7 @@ import {
   type BackgroundWake,
 } from '../app-server/background-work.js';
 import { CodexProcessExitedError, isCodexRpcError } from '../app-server/protocol/errors.js';
-import type {
-  ServerNotification,
-  ServerRequest,
-  TurnStartParams,
-} from '../app-server/protocol/methods.js';
+import type { ServerNotification, ServerRequest } from '../app-server/protocol/methods.js';
 import {
   CodexServerRequestBroker,
   logRefusedServerRequest,
@@ -341,8 +338,15 @@ export class AppServerCodexTransport implements CodexTransport {
     // Whether the thread this turn runs on has no turn of DorkOS's still
     // winding down in Codex.
     let clear: boolean;
+    let fileChangeReadOnlyGit: readonly string[];
     try {
       const filePolicy = await prepareCodexFilePolicy(request, this.options.mountTargets);
+      fileChangeReadOnlyGit =
+        request.settings.permissionMode === 'bypassPermissions'
+          ? []
+          : Object.keys(
+              gitMetadataReadRules([request.cwd, ...filePolicy.writable], filePolicy.roots)
+            );
       process = this.watch(
         await acquireCodexProcess(request.binary, onCredits, this.pool, this.options)
       );
@@ -503,6 +507,11 @@ export class AppServerCodexTransport implements CodexTransport {
       else queue.push(events);
     };
     turn.view = {
+      fileChangeReadOnlyGit,
+      fileChangeRoots: {
+        ...loadInput.tools.filePolicy!.roots,
+        cwd: request.cwd,
+      },
       inputOf: (itemId) => mapper.inputOf(itemId),
       runningMcpCalls: (server) => mapper.runningMcpCalls(server),
     };
@@ -543,7 +552,7 @@ export class AppServerCodexTransport implements CodexTransport {
       try {
         const result = await process.client.request(
           'turn/start',
-          this.turnParams(request, loaded.threadId)
+          turnParams(request, loaded.threadId)
         );
         turnId = result.turn.id;
       } catch (err) {
@@ -1496,25 +1505,6 @@ export class AppServerCodexTransport implements CodexTransport {
     const deadline = Date.now() + this.stopAckMs;
     while (this.lingering.has(threadId) && Date.now() < deadline) await sleep(20);
     return !this.lingering.has(threadId);
-  }
-
-  private turnParams(request: CodexTurnRequest, threadId: string): TurnStartParams {
-    const effort =
-      request.settings.effort !== undefined
-        ? EFFORT_TO_REASONING[request.settings.effort]
-        : undefined;
-    return {
-      threadId,
-      input: [{ type: 'text', text: request.prompt, text_elements: [] }],
-      ...(request.messageId !== undefined ? { clientUserMessageId: request.messageId } : {}),
-      // Sent every turn (they are sticky): a mode or model change between turns lands.
-      cwd: request.cwd,
-      approvalPolicy: approvalPolicyFor(request.settings),
-      permissions: codexPermissionProfile(request.settings),
-      ...(request.settings.model !== undefined ? { model: request.settings.model } : {}),
-      ...(effort !== undefined ? { effort } : {}),
-      summary: 'auto',
-    };
   }
 }
 

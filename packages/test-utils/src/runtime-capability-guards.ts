@@ -34,8 +34,8 @@ export const GUARD_CAPABILITIES: readonly RuntimeCapability[] = [
       codex: {
         status: 'planned',
         reason:
-          'The sandbox denies protected paths only under the folders DorkOS names (DOR-3790), and file-change approvals are not checked against the list.',
-        ticket: 'DOR-3597',
+          'Approval checks refuse protected changes; native shell protection remains bounded to captured paths (DOR-3790).',
+        ticket: 'DOR-3790',
       },
       opencode: {
         status: 'planned',

@@ -64,8 +64,12 @@ function canonical(input: string, cwd: string, hops = 0): string {
   return current;
 }
 
-/** Given and resolved spellings both refuse, including aliases of protected roots. */
-function spellings(file: string, cwd: string): string[] {
+/**
+ * Given and resolved spellings, including links before parent segments and missing destinations.
+ * @param file - A concrete tool path.
+ * @param cwd - The active turn's working directory.
+ */
+export function protectedPathSpellings(file: string, cwd: string): string[] {
   return [...new Set([path.resolve(cwd, file), canonical(file, cwd)])];
 }
 
@@ -78,7 +82,7 @@ function checker(
   const expanded = (base: string): string[] => {
     let found = cache.get(base);
     if (!found) {
-      found = spellings(base, roots.cwd);
+      found = protectedPathSpellings(base, roots.cwd);
       cache.set(base, found);
     }
     return found;
@@ -111,7 +115,7 @@ function checker(
       return rules;
     });
   return (input) => {
-    const targets = spellings(input, roots.cwd);
+    const targets = protectedPathSpellings(input, roots.cwd);
     return rules.some(({ base, regex }) =>
       targets.some((target) => {
         const relative = path.relative(base, target);

@@ -5,9 +5,12 @@
  * @module services/runtimes/codex/app-server/turn-parts
  */
 import type { StreamEvent } from '@dorkos/shared/types';
-export { codexPermissionProfile } from '../policy/protected-profile.js';
+import { codexPermissionProfile } from '../policy/protected-profile.js';
+import { EFFORT_TO_REASONING } from '../turn-input.js';
 import type { CodexTurnRequest } from '../transport/codex-transport.js';
-import type { AskForApproval } from './protocol/methods.js';
+import type { AskForApproval, TurnStartParams } from './protocol/methods.js';
+
+export { codexPermissionProfile };
 
 /** A small single-consumer queue the generator drains. */
 export class EventQueue {
@@ -52,4 +55,29 @@ export function approvalPolicyFor(
   settings: Pick<CodexTurnRequest['settings'], 'permissionMode'>
 ): AskForApproval {
   return settings.permissionMode === 'bypassPermissions' ? 'never' : 'on-request';
+}
+
+/**
+ * Build the sticky native settings for one turn.
+ *
+ * @param request - The active turn request.
+ * @param threadId - Its loaded native thread.
+ */
+export function turnParams(request: CodexTurnRequest, threadId: string): TurnStartParams {
+  const effort =
+    request.settings.effort !== undefined
+      ? EFFORT_TO_REASONING[request.settings.effort]
+      : undefined;
+  return {
+    threadId,
+    input: [{ type: 'text', text: request.prompt, text_elements: [] }],
+    ...(request.messageId !== undefined ? { clientUserMessageId: request.messageId } : {}),
+    // Sent every turn (they are sticky): a mode or model change between turns lands.
+    cwd: request.cwd,
+    approvalPolicy: approvalPolicyFor(request.settings),
+    permissions: codexPermissionProfile(request.settings),
+    ...(request.settings.model !== undefined ? { model: request.settings.model } : {}),
+    ...(effort !== undefined ? { effort } : {}),
+    summary: 'auto',
+  };
 }

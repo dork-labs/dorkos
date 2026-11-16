@@ -125,14 +125,12 @@ export const CODEX_CAPABILITIES: RuntimeCapabilities = {
         id: 'bypassPermissions',
         label: 'Full access',
         description:
-          'No sandbox. Codex can change anything on this machine and reach the network. Use it only where you trust everything it might do.',
+          'Codex edits files and runs commands without asking. Some protected files remain blocked.',
         stop: 'autonomy',
         asks: 'never',
         reach: 'everything',
-        // No softening clause, for the reason claude-code's own bypass promise
-        // gives (DOR-1754): this sentence is what the consent dialog reads out.
-        promise:
-          'Codex can change anything on this machine, network included. It cannot stop to ask you first.',
+        // The consent dialog must retain the native protected-profile limits.
+        promise: 'Codex acts without asking, while keeping its file safeguards.',
         native: 'danger-full-access',
       },
     ],
@@ -163,8 +161,8 @@ export const CODEX_CAPABILITIES: RuntimeCapabilities = {
     scope: 'conversation',
     caveat: "Codex can't search the web on DorkOS credits.",
   },
-  // Not yet (DOR-3597): file-change approvals are not checked against the shared
-  // protected list, and the sandbox profile denies protected paths only under the
+  // Not yet: approval checks cover concrete file changes, but native shell
+  // protection remains bounded to captured paths; the profile denies only under the
   // folders DorkOS names. Its own `.codex/` setup is not held below Full (DOR-3598).
   guards: { protectedPaths: false, ownFolder: false },
   features: {},
@@ -224,13 +222,13 @@ export const CODEX_APP_SERVER_PERMISSION_MODES: RuntimeCapabilities['permissionM
     {
       id: 'bypassPermissions',
       label: 'Full access',
-      description: 'No sandbox. Codex can change anything on this machine and go online.',
+      description:
+        'Codex edits files and runs commands without asking. Some protected files remain blocked.',
       stop: 'autonomy',
       asks: 'never',
       reach: 'everything',
-      // No softening clause (DOR-1754): the consent dialog reads this out.
-      promise:
-        'Codex can change anything on this machine, network included. It never stops to ask.',
+      // The consent dialog states the broad reach without claiming safeguards disappear.
+      promise: 'Codex acts without asking, while keeping its file safeguards.',
       native: 'danger-full-access',
     },
   ],

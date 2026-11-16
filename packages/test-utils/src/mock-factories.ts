@@ -869,8 +869,7 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
                 stop: 'autonomy',
                 asks: 'never',
                 reach: 'everything',
-                promise:
-                  'Codex can change anything on this machine, network included. It cannot stop to ask you first.',
+                promise: 'Codex acts without asking, while keeping its file safeguards.',
               },
             ],
           },

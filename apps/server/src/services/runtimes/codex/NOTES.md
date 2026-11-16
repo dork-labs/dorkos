@@ -1,5 +1,41 @@
 # Codex SDK Verification Notes — task 2.2 (additional-agent-runtimes)
 
+## Current protected-file approval boundary (DOR-3597)
+
+The historical SDK findings below predate named protected profiles. The active
+app-server transport (including the saved `exec` setting) now selects a protected
+profile on every turn. Full retains those file restrictions while allowing broad
+edits, commands and network access; it is not an unprotected fallback. Full's
+intentional write access to Git metadata remains distinct from secret-file rules.
+
+For `item/fileChange/requestApproval`, DorkOS checks the recorded native item's
+complete change list against the active turn's captured file-policy roots before
+opening a card or broker entry. Add, delete and update sources, plus update
+`move_path` destinations, are checked together; one protected or uncheckable path
+refuses the whole patch. Missing item input and unfamiliar change shapes refuse,
+rather than guessing paths from request `cwd` or `grantRoot`. Below Full, the same
+Git metadata paths made read-only by the native profile are refused here too.
+This is a refusal where Codex asks, not a guarantee that every write raises a request.
+
+The real pinned 0.163.0 binary can reach this approval through its shell
+`apply_patch` interception under a local scripted Responses service. Ordinary
+patches raise an answerable card; a shared anywhere-secret patch is declined
+before a card, and paired Git metadata patches distinguish Default from Full.
+Calling an unadvertised `apply_patch` model tool instead returns `unsupported call`;
+that attempt proves nothing about native approval enforcement.
+
+The profiles already deny many reads as well as writes. Their anywhere-secret
+patterns cover captured prefixes, not arbitrary new volumes or folders outside
+those prefixes (DOR-3790). Native filesystem expansion/snapshot behavior also
+varies by OS and binary version; a macOS run does not prove Linux or Windows.
+A new filesystem state after a profile snapshot can remain outside native coverage.
+Approval checks do not close shell reads that never raise a file-change request.
+`guards.protectedPaths` therefore remains false, and own setup protection remains
+DOR-3598. Do not describe this as either whole-machine readability or universal
+file protection.
+
+## Historical SDK investigation
+
 Verification of the permission/sandbox/approval mapping against `@openai/codex-sdk@0.142.5`
 (pinned; bundles CLI `@openai/codex@0.142.5`). Consumed by tasks 2.4 (event mapper) and
 2.5 (facade). Written 2026-07-02.

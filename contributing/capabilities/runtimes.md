@@ -208,7 +208,7 @@ To add a capability, add a row to `packages/test-utils/src/runtime-capability-ma
 
 | ID | Capability | claude-code | codex | opencode | doe | test-mode |
 | --- | --- | --- | --- | --- | --- | --- |
-| RT-GRD-01 | Keep the agent off protected files | yes (U) | planned DOR-3597 | planned DOR-4445 | planned DOR-4445 | n/a |
+| RT-GRD-01 | Keep the agent off protected files | yes (U) | planned DOR-3790 | planned DOR-4445 | planned DOR-4445 | n/a |
 | RT-GRD-02 | Keep the agent’s own setup closed below Full | yes (U) | planned DOR-3598 | planned DOR-3598 | planned DOR-3598 | n/a |
 
 - **RT-GRD-01** File tools refuse the shared protected list: its secrets at every level, the files that grant power below Full. Below Full, a shell command that reads a protected file, such as a browser profile’s sign-ins, goes to a person first. _(flag `guards.protectedPaths`)_
@@ -221,7 +221,7 @@ Every cell that is not `yes`, `no` or `n/a`, planned work first.
 | ID | Runtime | Status | Ticket | Why |
 | --- | --- | --- | --- | --- |
 | RT-LIFE-03 | opencode | planned | DOR-2717 | Nothing delivers work that finishes after an OpenCode turn. |
-| RT-GRD-01 | codex | planned | DOR-3597 | The sandbox denies protected paths only under the folders DorkOS names (DOR-3790), and file-change approvals are not checked against the list. |
+| RT-GRD-01 | codex | planned | DOR-3790 | Approval checks refuse protected changes; native shell protection remains bounded to captured paths (DOR-3790). |
 | RT-GRD-01 | opencode | planned | DOR-4445 | Its file tools refuse the protected list; its shell is not checked against it. |
 | RT-GRD-01 | doe | planned | DOR-4445 | Its file tools refuse the protected list; its shell is not checked against it. |
 | RT-GRD-02 | codex | planned | DOR-3598 | Its own `.codex/` and `.agents/` setup is not held below Full. |
