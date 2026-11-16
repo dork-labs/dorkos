@@ -16,7 +16,7 @@ gates:
   - wf.credential-free-build.credential-free-build
   - wf.harness-windows.harness-windows
   - wf.scripts-test.fixtures
-prs: []
+prs: [3852]
 hypothesis:
   metric: 'tracked.cache-hit-rate'
   baseline: null
