@@ -1,5 +1,5 @@
 /**
- * Types for `heavy-turbo-slot.mjs`, the turbo task `//#heavy-slot` that takes a
+ * Types for `heavy-turbo-slot.mjs`, the turbo task `@dorkos/heavy-slot#slot` that takes a
  * host-wide heavy-run slot for a bare `turbo` run (DOR-3274 Phase 2).
  *
  * @module scripts/heavy-turbo-slot
