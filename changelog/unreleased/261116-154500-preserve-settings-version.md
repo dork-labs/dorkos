@@ -2,6 +2,7 @@
 covers:
   - 'fix(config): preserve settings with unreadable versions (DOR-4341, DOR-4479)'
   - 'fix(config): clarify settings upgrade refusals (DOR-4341, DOR-4479)'
+  - 'fix(config): say how to fix an unreadable settings version (DOR-4341, DOR-4479)'
 ---
 
 ### Fixed

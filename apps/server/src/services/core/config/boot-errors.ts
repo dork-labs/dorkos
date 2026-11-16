@@ -47,7 +47,8 @@ export class ConfigVersionUnreadableError extends ConfigBootError {
    * @param configPath - The settings file left untouched.
    */
   constructor(configPath: string) {
-    const advice = 'Restore a saved copy of your settings, then restart DorkOS.';
+    const advice =
+      'Fix the "version" value in this file, or restore a saved copy, then restart DorkOS.';
     super(
       [
         'DorkOS cannot read the version saved in your settings.',
@@ -74,7 +75,7 @@ export class ConfigRetiredSettingsError extends ConfigBootError {
    */
   constructor(configPath: string, keys: readonly string[]) {
     const advice = [
-      'Remove these retired settings or list entries, then restart DorkOS:',
+      'Remove these retired settings, then restart DorkOS:',
       ...keys.map((key) => `  ${key}`),
     ].join('\n');
     super(

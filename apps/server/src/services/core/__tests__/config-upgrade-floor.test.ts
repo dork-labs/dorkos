@@ -98,7 +98,9 @@ describe('config upgrade floor through a real manager', () => {
     expect((thrown as Error).message).toContain('Your settings have not been changed.');
     expect((thrown as Error).message).not.toContain('Upgrade to 0.115');
     expect((thrown as ConfigBootError).configPath).toBe(file);
-    expect((thrown as ConfigBootError).advice).toContain('Restore a saved copy');
+    expect((thrown as ConfigBootError).advice).toBe(
+      'Fix the "version" value in this file, or restore a saved copy, then restart DorkOS.'
+    );
     expect(fs.readFileSync(file)).toEqual(before);
     expect(fs.readdirSync(dir)).toEqual(['config.json']);
   });
