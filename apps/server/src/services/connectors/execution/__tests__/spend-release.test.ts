@@ -34,6 +34,8 @@ import { ConnectorExecutionBroker } from '../execution-broker.js';
 import { ConnectorUsageStore } from '../usage-store.js';
 import { SpendingStore } from '../../spending/spending-store.js';
 import { initConnectorSpending } from '../../spending/spending-port.js';
+import { refuseSpend } from '../../../core/capabilities/spend-permission.js';
+import { CapabilityToolError } from '../../../core/capabilities/mcp-envelope.js';
 
 const OWNER = { kind: 'local_install', installationId: 'install-a' } as const;
 const NOW = new Date('2026-11-14T00:00:00.000Z');
@@ -286,5 +288,42 @@ describe('a paid run where it is let go', () => {
     );
     expect(lines).toContain("Kestrel's paid run was refused: the turn read outside content.");
     expect(activity.every((a) => a.eventType.startsWith('spending.'))).toBe(true);
+  });
+
+  it('writes the refusal to Activity once when the gate stops a run before the broker', async () => {
+    const preflight = async () =>
+      (
+        await authorization.preflight({
+          capabilityId: 'connectors.execute_read',
+          target: { connectionId: PAID, operationRevisionId: REVISION, arguments: {} },
+          principal: createServerPrincipal({
+            kind: 'agent',
+            owner: OWNER,
+            agentId: 'agent-kestrel',
+            agentPath: '/agents/kestrel',
+          }),
+        })
+      ).spend;
+    spending.setLimit(40 * DOLLAR);
+    spending.setPrice('tavily', 300_000);
+    outsider = true;
+    const outside = await preflight();
+    expect(activity).toEqual([]);
+    expect(() => refuseSpend(outside)).toThrow(CapabilityToolError);
+    outsider = false;
+    spending.setLimit(DOLLAR);
+    spending.reserve({
+      id: 'earlier',
+      toolkit: 'tavily',
+      agentId: 'agent-kestrel',
+      amountMicro: DOLLAR,
+      source: 'person',
+      enforceLimit: true,
+    });
+    expect(() => refuseSpend(await preflight())).toThrow(CapabilityToolError);
+    expect(activity.map((a) => [a.eventType, a.summary])).toEqual([
+      ['spending.refused', "Kestrel's paid run was refused: the turn read outside content."],
+      ['spending.refused', expect.stringMatching(/^Refused Kestrel: .+ · monthly limit reached$/)],
+    ]);
   });
 });

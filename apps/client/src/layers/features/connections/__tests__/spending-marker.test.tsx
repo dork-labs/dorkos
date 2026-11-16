@@ -24,9 +24,11 @@ describe('the Spends money marker (fail-first #11)', () => {
     expect(marker?.className).not.toMatch(/warning|destructive|orange|red/);
   });
 
-  it('names its icon when the icon stands alone on a chip', () => {
+  it('names its icon when the icon stands alone on a chip, muted even on a Change chip', () => {
     render(<PaidActionMarker variant="icon" />);
-    expect(screen.getByRole('img', { name: 'spends money' })).toBeInTheDocument();
+    const icon = screen.getByRole('img', { name: 'spends money' });
+    expect(icon).toBeInTheDocument();
+    expect(icon.getAttribute('class')).toContain('text-muted-foreground');
   });
 
   it('carries the legend line in words', () => {

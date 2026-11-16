@@ -191,4 +191,23 @@ describe('the Activity record (spec §9)', () => {
     await confirm(StepUpRequiredBodySchema.parse(held.body).heldActionId);
     expect(lines).toEqual(['Raised the monthly limit to $60.00 · confirmed with password']);
   });
+
+  it('says nothing when the limit or a price is saved unchanged', async () => {
+    spending.setLimit(40_000_000);
+    spending.setPrice('tavily', 300_000);
+    expect((await putLimit('40000000')).status).toBe(200);
+    expect((await putLimit(null)).status).toBe(200);
+    expect((await putLimit(null)).status).toBe(200);
+    expect((await putPrice('300000')).status).toBe(200);
+    expect(lines).toEqual(['Set spending to ask every time']);
+  });
+
+  it('words a confirmed change against the limit at the moment it is confirmed', async () => {
+    spending.setLimit(40_000_000);
+    const held = await putLimit('60000000');
+    spending.setLimit(80_000_000);
+    await confirm(StepUpRequiredBodySchema.parse(held.body).heldActionId);
+    expect(spending.limit()).toBe(60_000_000);
+    expect(lines).toEqual(['Lowered the monthly limit to $60.00 · confirmed with password']);
+  });
 });
