@@ -152,6 +152,7 @@ import { wifiTurnHeld } from '../services/core/auth/sessions/wifi-turn-ceiling.j
 import { WIFI_DENY_REASON_REFUSAL } from './session-answer-wifi.js';
 import { isAtThisComputer } from '../services/core/auth/gate-policy.js';
 import { deskGoesOnWithoutSheet, holdForStepUp } from './step-up-guard.js';
+import { CHANGE_PERMISSION_ID } from '../services/core/permissions/permission-capabilities.js';
 import {
   CONFIG_PATCH_CAPABILITY,
   configPatchCardTouchesFrontDoor,
@@ -616,6 +617,8 @@ export function createApprovalsRoutes(
     const holdsAtDesk =
       !deskGoesOnWithoutSheet(authority.facts) &&
       (answer === 'always' ||
+        // A permission change lasts whichever answer allows it (Security S1).
+        first?.capabilityId === CHANGE_PERMISSION_ID ||
         (first?.capabilityId === CONFIG_PATCH_CAPABILITY && configPatchCardTouchesFrontDoor(id)));
     if (
       !grantsPower({ kind: 'capability-approve' }) ||

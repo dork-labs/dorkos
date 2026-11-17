@@ -203,6 +203,35 @@ export function registerApprovalStepUpCases(): void {
       });
     });
 
+    describe('a permission change card at this computer (Security S1)', () => {
+      const permissionCard = () =>
+        approvals.request({
+          capabilityId: 'permissions.change',
+          inputHash: hashApprovalInput({ area: 'reach', state: 'allowed' }),
+          summary: 'Allow Kestrel to reach outside services.',
+          requestedBy: 'Kestrel',
+        });
+      const deskOnce = (id: string) =>
+        request(app())
+          .post(`/api/approvals/${id}/grant`)
+          .set('Origin', ORIGIN)
+          .send({ answer: 'once' });
+      afterEach(() => setTestOwner(null));
+
+      it('holds an Allow once once an owner exists: the change lasts, like Always allow', async () => {
+        setTestOwner('owner');
+        const ticket = permissionCard();
+        const held = await deskOnce(ticket.approvalId);
+        expect(held.status).toBe(428);
+        expect(approvals.answerScope(ticket.approvalId)?.state).toBe('pending');
+      });
+
+      it('allows it at once while no owner exists, with no password to ask for', async () => {
+        const ticket = permissionCard();
+        expect((await deskOnce(ticket.approvalId)).status).toBe(200);
+      });
+    });
+
     describe('a settings card that changes a front-door setting (Security M1 on #3878)', () => {
       const settingsCard = (patch?: unknown) => {
         const ticket = approvals.request({
@@ -322,7 +351,7 @@ export function registerApprovalStepUpCases(): void {
 
       it.each([
         [{ heartbeats: { triageOnCredits: true } }, 428],
-        [{ cloud: { credits: { defaults: { chat: { runsOn: 'dorkos-credits' } } } } }, 428],
+        [{ cloud: { credits: { defaults: { chat: { runsOn: 'credits' } } } } }, 428],
         [{ heartbeats: { triageOnCredits: false } }, 200],
         [{ cloud: { credits: { defaults: { chat: { runsOn: 'own-sign-in' } } } } }, 200],
       ] as const)(
