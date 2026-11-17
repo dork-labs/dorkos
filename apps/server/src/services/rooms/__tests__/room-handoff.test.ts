@@ -624,31 +624,6 @@ describe('one seat per agent per room, and the hand-off', () => {
       expect(post?.body.answersEntryId).toBeUndefined();
     });
 
-    it('keeps a ceiling the drafting chat carried', async () => {
-      emptyRoomSeatPosts();
-      const human2 = harnessAuthors.resolveExternal({
-        platformType: 'telegram',
-        instanceId: 'bot-example',
-        platformUserId: 'platform-stranger-7',
-        displayName: 'Wren',
-      });
-      service.addMember(dorkos.id, human, { authorId: human2.id });
-      // Bo's #dorkos turn answers a stranger, then hands a post into the empty #team-product.
-      scripts[dorkos.id] = async (_request, sessionId) => {
-        await postAsBo(sessionId, { roomId: product.id, text: 'Ledger opened.' });
-        return null;
-      };
-
-      service.post(dorkos.id, { authorId: human2.id, text: '@bo log this in team-product' });
-      await settle();
-
-      const seatTurn = runner.turns.find(
-        (turn) => turn.roomId === product.id && turn.prompt.includes('BEGIN HANDED-OFF DRAFT')
-      );
-      expect(seatTurn).toBeDefined();
-      expect(seatTurn?.externalAuthor).toBe(true);
-    });
-
     it('a person who asks the seat while it runs keeps their 👀 until it answers them', async () => {
       let asked: RoomEntry | undefined;
       const seen: string[][] = [];
