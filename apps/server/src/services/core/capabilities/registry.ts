@@ -989,7 +989,7 @@ export function composeRegistry(
           () => capability.invoke(deps, parsed, invocationContext),
           { inSession: supplied.mcpServer === 'in-session' }
         );
-        if (byAgent) markAfterDorkosTool(capability.id, invocationContext);
+        if (byAgent) markAfterDorkosTool(capability.id, invocationContext, result);
         return result;
       };
 

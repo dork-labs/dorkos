@@ -157,13 +157,13 @@ export function bridgedSenderVouched(sessionId: string): boolean {
 }
 
 /**
- * Whether a chat ever held words from outside the team (DOR-3969): its record says a stranger's,
- * which a marked turn of any kind writes and nothing clears, so a chat that read a page or a mail
- * once stays one. `true` when the record cannot be read; `false` with no database.
+ * Whether a stranger's words ever reached a chat (DOR-3969): its record says a stranger's, which a
+ * turn that started marked writes and nothing clears. `true` when the record cannot be read;
+ * `false` with no database.
  *
  * @param sessionId - The chat.
  */
-export function chatHeldOutsideWords(sessionId: string): boolean {
+export function chatHeldStrangerWords(sessionId: string): boolean {
   const keys = chatKeys(sessionId);
   const handle = db;
   if (keys.some((key) => strangers.has(key))) return true;

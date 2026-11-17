@@ -88,6 +88,7 @@ describe('which tool calls read outside text', () => {
     ['opencode', 'notion_search'],
     ['opencode', 'some_tool_nobody_named'],
     ['opencode', ''],
+    ['opencode', 'task'],
     ['doe', 'web_fetch'],
     ['doe', 'mcp_notion_search_0123456789abcdef0123'],
   ])('%s %s does', (runtime, name) => {

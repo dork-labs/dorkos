@@ -13,6 +13,8 @@
  * - `self`: the tool marks the turn itself, only when what it returned holds outside words: a room
  *   read that returned a stranger's or a mini app's post, a chat read of a chat that held outside
  *   words, a connected app's read (every one).
+ * - a check on what came back, for a list that may name a third-party package: an agent or extension
+ *   installed from a marketplace, or a package from anywhere but the person's own marketplace.
  * - `local`: it returns only what DorkOS, a person on this computer or the team wrote: settings,
  *   ids, labels, statuses, the agent's own files and notes, and what the team chose to keep (an
  *   agent it registered, a package or extension it installed). Labels a stranger could set (a chat's
@@ -23,10 +25,37 @@
  *
  * @module services/core/capabilities/dorkos-tool-reads
  */
+import { PERSONAL_MARKETPLACE_NAME } from '../../marketplace-mcp/personal-marketplace.js';
 import { markCallerTurnOutsider, type CallerTurn } from './mark-caller-turn.js';
 
+/**
+ * A check on what a tool returned: whether it holds outside text. For a hand-registered tool, the
+ * value is the JSON its result carries.
+ */
+export type ReturnsOutsideText = (returned: unknown) => boolean;
+
 /** Whether a DorkOS tool can hand its caller outside text, and who marks the turn when it does. */
-export type DorkosToolRead = 'outside' | 'self' | 'local';
+export type DorkosToolRead = 'outside' | 'self' | 'local' | ReturnsOutsideText;
+
+/** Whether any entry in `list` under `key` came from a package someone outside the team published. */
+const anyFromPackage =
+  (key: string): ReturnsOutsideText =>
+  (returned) => {
+    const value = (returned as Record<string, unknown> | null)?.[key];
+    const list = Array.isArray(value) ? value : [value];
+    return list.some((entry) => (entry as { fromPackage?: unknown } | null)?.fromPackage === true);
+  };
+
+/** Whether any installed package came from somewhere but the person's own marketplace. */
+const anyInstalledFromOutside: ReturnsOutsideText = (returned) => {
+  const installed = (returned as { installed?: unknown } | null)?.installed;
+  return (
+    Array.isArray(installed) &&
+    installed.some(
+      (entry) => (entry as { installedFrom?: unknown }).installedFrom !== PERSONAL_MARKETPLACE_NAME
+    )
+  );
+};
 
 /** Every DorkOS tool an agent can reach, by capability id or hand-registered tool name. */
 export const DORKOS_TOOL_READS: Readonly<Record<string, DorkosToolRead>> = {
@@ -67,8 +96,21 @@ export const DORKOS_TOOL_READS: Readonly<Record<string, DorkosToolRead>> = {
   'rooms.read_history': 'self',
   'rooms.search_history': 'self',
   'rooms.search_member_rooms': 'self',
+  // A room with a member on a bridged chat, whose name a stranger wrote.
+  'rooms.list_member_rooms': 'self',
+  'rooms.get_room': 'self',
+  'rooms.find_room': 'self',
   'chat.read': 'self',
+  // A listed chat that holds outside words, whose title may quote them.
+  'audit.running_chats': 'self',
+  // An opened note marks when a line of it was saved while reading outside words.
+  'memory.read': 'self',
   'connectors.execute_read': 'self',
+  // ── Marks when a listed entry came from a third-party package ──────────────
+  'marketplace.list_installed': anyInstalledFromOutside,
+  mesh_list: anyFromPackage('agents'),
+  mesh_inspect: anyFromPackage('agent'),
+  list_extensions: anyFromPackage('extensions'),
   // ── Only what DorkOS, this computer or the team wrote ──────────────────────
   'operator.activity_list': 'local',
   'operator.config_get': 'local',
@@ -83,7 +125,6 @@ export const DORKOS_TOOL_READS: Readonly<Record<string, DorkosToolRead>> = {
   'operator.sidebar_add_to_group': 'local',
   'operator.sidebar_remove_from_group': 'local',
   'marketplace.list_marketplaces': 'local',
-  'marketplace.list_installed': 'local',
   'marketplace.install': 'local',
   'marketplace.update': 'local',
   'marketplace.uninstall': 'local',
@@ -114,9 +155,6 @@ export const DORKOS_TOOL_READS: Readonly<Record<string, DorkosToolRead>> = {
   'rooms.merge': 'local',
   'rooms.set_up_files': 'local',
   'rooms.repo_status': 'local',
-  'rooms.list_member_rooms': 'local',
-  'rooms.get_room': 'local',
-  'rooms.find_room': 'local',
   'rooms.create': 'local',
   'rooms.add_members': 'local',
   'rooms.remove_members': 'local',
@@ -146,15 +184,12 @@ export const DORKOS_TOOL_READS: Readonly<Record<string, DorkosToolRead>> = {
   'audit.query': 'local',
   'audit.get': 'local',
   'audit.account_timeline': 'local',
-  'audit.running_chats': 'local',
   'agent.pause': 'local',
   'agent.resume': 'local',
   'agent.list_paused': 'local',
   'local_browser.state': 'local',
   'local_browser.ask_person': 'local',
   'memory.write': 'local',
-  // The agent's own notes, stamped with where each came from, and already in every session's prompt.
-  'memory.read': 'local',
   'ui.configure_doc_channel': 'local',
   'ui.approve_doc_route': 'local',
   'ui.revoke_doc_route': 'local',
@@ -193,15 +228,12 @@ export const DORKOS_TOOL_READS: Readonly<Record<string, DorkosToolRead>> = {
   binding_delete: 'local',
   binding_list_sessions: 'local',
   mesh_register: 'local',
-  mesh_list: 'local',
   mesh_deny: 'local',
   mesh_unregister: 'local',
   mesh_status: 'local',
-  mesh_inspect: 'local',
   mesh_query_topology: 'local',
   create_agent: 'local',
   get_extension_api: 'local',
-  list_extensions: 'local',
   get_extension_errors: 'local',
   create_extension: 'local',
   reload_extensions: 'local',
@@ -219,11 +251,27 @@ export function dorkosToolReadOf(name: string): DorkosToolRead {
 
 /**
  * Mark the caller's turn after a DorkOS tool returned, when that tool hands its caller outside text
- * on every call. A `self` tool has already decided, and a `local` one never marks.
+ * on every call, or its check finds some in what came back. A `self` tool has already decided, and a
+ * `local` one never marks. A check that throws marks.
  *
  * @param name - The capability id or hand-registered tool name.
  * @param caller - The verified call.
+ * @param returned - What the tool returned.
  */
-export function markAfterDorkosTool(name: string, caller: CallerTurn): void {
-  if (dorkosToolReadOf(name) === 'outside') markCallerTurnOutsider(caller);
+export function markAfterDorkosTool(name: string, caller: CallerTurn, returned?: unknown): void {
+  const read = dorkosToolReadOf(name);
+  if (read === 'outside' || (typeof read === 'function' && holdsOutside(read, returned))) {
+    markCallerTurnOutsider(caller);
+  }
+}
+
+/** Run a check on a tool's result, reading a hand-registered tool's JSON text; a throw marks. */
+function holdsOutside(check: ReturnsOutsideText, returned: unknown): boolean {
+  try {
+    const content = (returned as { content?: { type?: string; text?: string }[] } | null)?.content;
+    const text = content?.[0]?.type === 'text' ? content[0].text : undefined;
+    return check(text !== undefined ? JSON.parse(text) : returned);
+  } catch {
+    return true;
+  }
 }

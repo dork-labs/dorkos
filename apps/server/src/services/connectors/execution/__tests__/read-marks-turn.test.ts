@@ -440,6 +440,32 @@ describe('a connected-app read marks the turn it ran in, at Full', () => {
       });
     });
 
+    it("holds the next step's send after a Codex turn started a helper", async () => {
+      const chat = fresh();
+      let outcome: Awaited<ReturnType<typeof send>> | undefined;
+      const runtime = recordToolUse(
+        recordTurnLevels(
+          {
+            type: 'codex',
+            getCapabilities: () => CLAUDE_CODE_CAPABILITIES,
+            async *sendMessage(): AsyncGenerator<StreamEvent> {
+              yield {
+                type: 'background_task_started',
+                data: { taskId: 'helper-1', taskType: 'agent', description: 'Look around' },
+              } as StreamEvent;
+              outcome = await send(chat);
+              yield { type: 'done', data: {} } as StreamEvent;
+            },
+          } as unknown as AgentRuntime,
+          () => 'bypassPermissions'
+        )
+      );
+      for await (const _event of runtime.sendMessage(chat, 'hi')) {
+        // drain
+      }
+      expect(outcome).toEqual({ outcome: 'approval_required', cards: 1 });
+    });
+
     it('lets the send through after a Codex turn that only ran a shell command', async () => {
       expect(await streamTurn('codex', 'Shell')).toEqual({ outcome: 'ran', cards: 0 });
     });

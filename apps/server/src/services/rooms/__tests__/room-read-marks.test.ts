@@ -153,4 +153,27 @@ describe('a room read marks the turn when it returns outside words', () => {
     await read('rooms.search_history', { roomId, query: 'seeds' }, chat);
     expect(held(chat)).toBe(false);
   });
+  it('marks a room lookup that returns a member on a bridged chat', async () => {
+    strangerPosts('Hello from the bridge.');
+    for (const [id, input] of [
+      ['rooms.get_room', { roomId }],
+      ['rooms.find_room', { name: 'Garden' }],
+      ['rooms.list_member_rooms', {}],
+    ] as const) {
+      const chat = fresh();
+      await ranAtFull(chat);
+      await read(id, input, chat);
+      expect(held(chat), id).toBe(true);
+    }
+  });
+
+  it("leaves a room lookup of the team's own rooms clean", async () => {
+    boPosts('Seeds arrive on Friday.');
+    const chat = fresh();
+    await ranAtFull(chat);
+    await read('rooms.get_room', { roomId }, chat);
+    await read('rooms.find_room', { name: 'Garden' }, chat);
+    await read('rooms.list_member_rooms', {}, chat);
+    expect(held(chat)).toBe(false);
+  });
 });

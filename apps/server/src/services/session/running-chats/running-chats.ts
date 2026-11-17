@@ -33,6 +33,7 @@ import { chatTitleOf } from '../chat-messages/chat-message-wiring.js';
 import { chatStateOf } from '../chat-messages/chat-read.js';
 import { getSessionStartedByStore } from '../origin/session-started-by-store.js';
 import { listProjectorStatuses, peekProjector } from '../session-state-projector.js';
+import { chatReadOutsideWords } from '../../core/turn-power/chat-outside-words.js';
 
 /** A live chat as the sources report it. */
 interface LiveProjector {
@@ -229,4 +230,15 @@ export async function listRunningChats(
     unassigned: groupFor(null),
     ...(capacity.length > 0 ? { capacity } : {}),
   };
+}
+
+/**
+ * Whether any chat in the list holds words from outside the team, so its title may quote them
+ * (DOR-3969): `running_chats` then marks the reader's turn.
+ *
+ * @param running - The list as read.
+ */
+export function listsChatWithOutsideWords(running: RunningChatsResponse): boolean {
+  const chats = [...running.agents.flatMap((agent) => agent.chats), ...running.unassigned.chats];
+  return chats.some((chat) => chatReadOutsideWords(chat.id));
 }

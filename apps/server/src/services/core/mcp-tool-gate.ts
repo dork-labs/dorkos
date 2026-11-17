@@ -377,10 +377,11 @@ async function invokeAudited(
   // A tool that hands an agent someone else's text marks the turn it ran in (DOR-3969).
   const invoke = async (): Promise<CallToolResult> => {
     const result = await handler();
-    markAfterDorkosTool(call.name, {
+    const caller = {
       ...(call.sessionId ? { sessionId: call.sessionId } : {}),
       ...(call.identity ? { identity: call.identity } : {}),
-    });
+    };
+    markAfterDorkosTool(call.name, caller, result);
     return result;
   };
   const trail = auditTrail();

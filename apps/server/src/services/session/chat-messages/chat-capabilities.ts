@@ -55,8 +55,10 @@ import {
   type ChatReadDeps,
 } from './chat-read.js';
 import { markCallerTurnOutsider } from '../../core/capabilities/mark-caller-turn.js';
-import { chatHeldOutsideWords } from '../../core/turn-power/continuation-hold.js';
-import { marksOf } from '../../core/turn-power/turn-levels.js';
+import { chatHeldStrangerWords, lastTurnHeld } from '../../core/turn-power/continuation-hold.js';
+import { chatEverReadOutsideText } from '../../core/turn-power/live-outsider-turns.js';
+import { chatReadOutsideWords } from '../../core/turn-power/chat-outside-words.js';
+import { primaryOf } from '../resolution/session-key-registry.js';
 
 declare module '../../core/capabilities/capability-definition.js' {
   interface CapabilityDeps {
@@ -71,13 +73,20 @@ declare module '../../core/capabilities/capability-definition.js' {
 }
 
 /**
- * Whether a chat's messages may hold words from outside the team (DOR-3969): it ever held them, or
- * its running turn read them.
+ * Whether a chat's messages may hold words from outside the team (DOR-3969): the chat reads them
+ * by its own record (`chatReadOutsideWords`: its running turn's mark, its latest room turn, a
+ * stranger's launch origin), a stranger ever spoke on its bridge, a read in any of its turns handed
+ * it outside text, or its latest turn was held.
  *
  * @param chatId - The chat read.
  */
 function chatHoldsOutsideText(chatId: string): boolean {
-  return chatHeldOutsideWords(chatId) || marksOf(chatId, undefined).outsider === true;
+  return (
+    chatReadOutsideWords(chatId) ||
+    chatHeldStrangerWords(chatId) ||
+    chatEverReadOutsideText(primaryOf(chatId)) ||
+    lastTurnHeld(chatId)
+  );
 }
 
 /** A refusal, as every chat tool answers one. */

@@ -407,18 +407,27 @@ function toolFields(event: StreamEvent): {
  * result is back is held. Claude Code is marked earlier, by its `PreToolUse` hook, and again here,
  * which changes nothing.
  *
+ * A helper those runtimes start runs where this stream may not show its tools (Codex runs one in a
+ * thread of its own), so starting one marks the turn too. Claude Code's hook sees a helper's calls.
+ *
  * Not guarded like the recording: a mark that cannot be placed ends the turn rather than letting it
  * go on unmarked.
  */
+/** Whether this event starts a call, or a helper, that may hand the turn outside text. */
+function readsOutsideText(runtime: string, event: StreamEvent): boolean {
+  if (event.type === 'tool_call_start')
+    return toolReadsOutsideText(runtime, toolFields(event).name);
+  if (event.type !== 'background_task_started' || runtime === 'claude-code') return false;
+  return (event.data as { taskType?: unknown } | undefined)?.taskType === 'agent';
+}
+
 function markOutsideTextStart(
   runtime: string,
   sessionId: string,
   opts: MessageOpts | undefined,
   event: StreamEvent
 ): void {
-  if (event.type !== 'tool_call_start') return;
-  const { name } = toolFields(event);
-  if (!toolReadsOutsideText(runtime, name)) return;
+  if (!readsOutsideText(runtime, event)) return;
   markRunningTurnOutsider(sessionId, homeOf(resolveAgentHome(opts?.cwd, turnAgentOf(opts))));
 }
 

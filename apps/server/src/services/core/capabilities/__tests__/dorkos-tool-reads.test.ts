@@ -160,14 +160,16 @@ describe('a DorkOS tool that returns outside text marks the turn', () => {
   });
 
   describe('through the hand-registered tool gate', () => {
-    const tool = (name: string) =>
+    const tool = (name: string, body: unknown = {}) =>
       gateHandRegisteredMcpTools(
         [
           {
             name,
             description: 'probe',
             inputSchema: {},
-            handler: async () => ({ content: [{ type: 'text' as const, text: '{}' }] }),
+            handler: async () => ({
+              content: [{ type: 'text' as const, text: JSON.stringify(body) }],
+            }),
           },
         ],
         async () => ({ identity: AGENT }),
@@ -194,6 +196,97 @@ describe('a DorkOS tool that returns outside text marks the turn', () => {
         {}
       );
       expect(held(chatInUse)).toBe(false);
+    });
+  });
+  describe('a list that may name a third-party package', () => {
+    const call = (name: string, body: unknown) =>
+      (
+        gateHandRegisteredMcpTools(
+          [
+            {
+              name,
+              description: 'probe',
+              inputSchema: {},
+              handler: async () => ({
+                content: [{ type: 'text' as const, text: JSON.stringify(body) }],
+              }),
+            },
+          ],
+          async () => ({ identity: AGENT }),
+          undefined,
+          () => ({ sessionId: chat })
+        )[0]!.handler as (a: unknown, b: unknown) => Promise<unknown>
+      )({}, {});
+    let chat = '';
+
+    it('marks an agent list naming an agent installed from a marketplace package', async () => {
+      chat = fresh();
+      await ranAtFull(chat);
+      await call('mesh_list', {
+        agents: [{ id: 'a1' }, { id: 'a2', fromPackage: true }],
+        count: 2,
+      });
+      expect(held(chat)).toBe(true);
+    });
+
+    it("leaves a list of the team's own agents and extensions clean", async () => {
+      chat = fresh();
+      await ranAtFull(chat);
+      await call('mesh_list', { agents: [{ id: 'a1' }], count: 1 });
+      await call('mesh_inspect', { agent: { id: 'a1' } });
+      await call('list_extensions', { extensions: [{ id: 'garden-board' }], count: 1 });
+      expect(held(chat)).toBe(false);
+    });
+
+    it('marks an extension list naming one from a package', async () => {
+      chat = fresh();
+      await ranAtFull(chat);
+      await call('list_extensions', { extensions: [{ id: 'x', fromPackage: true }], count: 1 });
+      expect(held(chat)).toBe(true);
+    });
+
+    it("marks installed packages from anywhere but the person's own marketplace", async () => {
+      const registry = composeRegistry(
+        [
+          {
+            name: 'marketplace',
+            capabilities: [
+              defineCapability({
+                id: 'marketplace.list_installed',
+                title: 'Probe',
+                description: 'A stand-in handler under a real id.',
+                tier: 'observe',
+                area: null,
+                input: z.object({ from: z.string() }),
+                output: z.unknown(),
+                surfaces: { mcp: { toolName: 'p_installed', servers: ['in-session'] } },
+                invoke: async (_deps, input) => ({
+                  installed: [{ name: 'garden-kit', installedFrom: input.from }],
+                }),
+              }),
+            ],
+          },
+        ],
+        { logger: { debug() {}, info() {}, warn() {}, error() {} } }
+      );
+      const asAgent = (sessionId: string) => ({
+        identity: AGENT,
+        sessionId,
+        mcpServer: 'in-session' as const,
+        retryChannel: 'mcp-argument' as const,
+      });
+      const own = fresh();
+      await ranAtFull(own);
+      await registry.invoke('marketplace.list_installed', { from: 'personal' }, asAgent(own));
+      expect(held(own)).toBe(false);
+      const outside = fresh();
+      await ranAtFull(outside);
+      await registry.invoke(
+        'marketplace.list_installed',
+        { from: 'garden-market' },
+        asAgent(outside)
+      );
+      expect(held(outside)).toBe(true);
     });
   });
 });

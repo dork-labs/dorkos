@@ -47,7 +47,10 @@ export const CLAUDE_CODE_OUTSIDE_TEXT_MATCHER =
 /** Codex's tool that searches the web. Codex has no page fetch of its own. */
 const CODEX_WEB_SEARCH = 'WebSearch';
 
-/** OpenCode's own tools that only touch this computer, or run nothing by themselves. */
+/**
+ * OpenCode's own tools that only touch this computer, or run nothing by themselves. Not `task`: a
+ * helper it starts may read anything, so starting one marks.
+ */
 const OPENCODE_LOCAL_TOOLS: ReadonlySet<string> = new Set([
   'bash',
   'read',
@@ -62,7 +65,6 @@ const OPENCODE_LOCAL_TOOLS: ReadonlySet<string> = new Set([
   'lsp',
   'todowrite',
   'todoread',
-  'task',
   'skill',
   'question',
   'invalid',
