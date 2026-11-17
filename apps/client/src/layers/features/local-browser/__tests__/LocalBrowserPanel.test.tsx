@@ -1084,6 +1084,16 @@ describe('LocalBrowserPanel', () => {
       expect(transport.navigateLocalBrowser).toHaveBeenCalledWith('https://new.example.com')
     );
   });
+  it('keeps Esc for itself, so a sheet around it never closes on it (DOR-4432)', async () => {
+    transport.getLocalBrowserState.mockResolvedValue(connected);
+    mount();
+    // The right panel's sheet stays open for an Escape from inside `[data-keeps-escape]`.
+    const address = await screen.findByRole('button', { name: /^Address:/ });
+    expect(address.closest('[data-keeps-escape]')).not.toBeNull();
+    expect(
+      screen.getByRole('button', { name: 'Reload' }).closest('[data-keeps-escape]')
+    ).not.toBeNull();
+  });
   it('keeps what was typed when Enter comes while the browser is busy', async () => {
     transport.getLocalBrowserState.mockResolvedValue(connected);
     let finish: (state: typeof connected) => void = () => {};

@@ -4,6 +4,7 @@ import { useOwnOrigins } from '@/layers/entities/config';
 import { isThisAppsAddress, normalizeAddressInput } from '@/layers/shared/lib';
 import { useTransport } from '@/layers/shared/model';
 import { BrowserChrome, Button } from '@/layers/shared/ui';
+import { useBrowserKeys } from '../model/use-browser-keys';
 import { useGuestPage } from '../model/use-guest-page';
 import type { NativeStillControls } from '../model/use-native-browser-surface';
 import { searchAddress } from '../lib/page-error';
@@ -85,6 +86,7 @@ export function LocalBrowserView({
   // The embedded page's loads and failures (DOR-4430, DOR-4431): Reload turns
   // into Stop while it loads, and a failed load keeps its address in the bar.
   const page = useGuestPage(embedded ? connectionId : null);
+  const [focusAddress, setFocusAddress] = useState(0);
   // What the person last typed and went to: only their own words are ever searched for.
   const [typed, setTyped] = useState<{ text: string; host: string } | null>(null);
   const typedFailed = !!typed && !!page.failure && page.failure.host === typed.host;
@@ -192,12 +194,57 @@ export function LocalBrowserView({
   const canForward = !busy && (tab?.canGoForward ?? false);
   const onForward = () => step('forward');
 
+  // The browser's keys, with focus in the panel or forwarded from the page (DOR-4432).
+  const onKeyDown = useBrowserKeys({
+    connectionId: embedded ? connectionId : null,
+    loading: page.loading,
+    // Each answers whether it acted, so a key with nothing to do is left to the app.
+    onFocusAddress: () => {
+      if (!tab) return false;
+      setFocusAddress((request) => request + 1);
+      return true;
+    },
+    onReload: () => {
+      if (!tab || busy) return false;
+      void go(page.failure?.url || tab.url);
+      return true;
+    },
+    onBack: () => {
+      if (!tab || busy || !tab.canGoBack) return false;
+      step('back');
+      return true;
+    },
+    onForward: () => {
+      if (!canForward) return false;
+      onForward();
+      return true;
+    },
+    onStop: () => {
+      if (!tab) return false;
+      page.run('stop');
+      return true;
+    },
+    onCopyAddress: () => {
+      if (!tab || !navigator.clipboard) return false;
+      void navigator.clipboard.writeText(page.failure?.url || tab.url).catch(() => undefined);
+      return true;
+    },
+  });
+
   return (
-    <div data-slot="local-browser-view" className="flex min-h-48 flex-1 flex-col">
+    // eslint-disable-next-line jsx-a11y/no-static-element-interactions -- the panel's keys reach it from the controls inside; it takes no focus itself
+    <div
+      data-slot="local-browser-view"
+      // Esc here reverts the address or stops a load; it never closes the sheet around it.
+      data-keeps-escape
+      onKeyDown={onKeyDown}
+      className="flex min-h-48 flex-1 flex-col"
+    >
       {tab && (
         <BrowserChrome
           // A failed load keeps its address in the bar, so Reload retries it (DOR-4430).
           url={page.failure?.url || tab.url}
+          focusAddress={focusAddress}
           canBack={!busy && (tab.canGoBack ?? false)}
           canForward={canForward}
           onBack={() => step('back')}
