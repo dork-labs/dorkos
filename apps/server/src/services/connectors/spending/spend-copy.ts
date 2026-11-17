@@ -43,6 +43,18 @@ export const SPEND_COPY = {
   limitReceipt: 'The monthly limit was reached. Nothing was spent.',
 } as const;
 
+/**
+ * What a mini app reads when its paid read is refused (DOR-4575). A mini app
+ * can't answer a card, so each case that would ask a person is a refusal.
+ */
+export const EXTENSION_SPEND_COPY = {
+  noLimit:
+    'This read spends money. Mini apps run paid reads only under a monthly limit, set in Connections.',
+  unknownPrice:
+    "This read spends money, and its app has no price per run, so the limit can't count it.",
+  unreadable: "Spending can't be checked right now, so this paid read didn't run.",
+} as const;
+
 /** The full refusal an agent gets past the limit: the case, then what to do. */
 export function limitRefusal(
   reason: 'reached' | 'would-pass',

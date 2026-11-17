@@ -5,6 +5,7 @@ import type { ConnectorAgentRequestItem } from '@dorkos/shared/connector-schemas
 import { CONNECTOR_AUTHENTICATION_FLOW_TTL_MS } from '@dorkos/shared/connector-schemas';
 import {
   miniAppAccessPageUrl,
+  PaidActionMarker,
   useConnectorAgentRequests,
   useConnectorManagementReviews,
   useMiniAppAccess,
@@ -252,6 +253,7 @@ function NeedsYouRow({
             {line.detail}
           </span>
         </span>
+        {line.paid && <PaidActionMarker className="shrink-0" />}
         <span className="text-muted-foreground flex shrink-0 items-center gap-0.5 text-xs font-medium">
           Review
           <ChevronRight className="size-3.5" aria-hidden />

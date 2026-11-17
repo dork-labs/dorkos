@@ -10,7 +10,18 @@
  *
  * @module routes/mini-app-access-page-assets
  */
+import { isPaidOperation } from '@dorkos/shared/connector-schemas';
 import type { MiniAppAccessRequest } from '../services/connectors/extensions/mini-app-access.js';
+
+/**
+ * The app's Coins icon (lucide), inline so the page loads no file for it. The
+ * same mark the app shows wherever an action spends money (DOR-4204 §6).
+ */
+const COINS_ICON =
+  '<svg class="coins" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="6"/><path d="M18.09 10.37A6 6 0 1 1 10.34 18"/><path d="M7 6h1v4"/><path d="m16.71 13.88.7.71-2.82 2.82"/></svg>';
+
+/** The "Spends money" pill beside one paid read: muted, never warning-toned. */
+const PAID_MARKER = `<span class="paid-marker">${COINS_ICON}Spends money</span>`;
 
 /** Escape text for an HTML text node or a quoted attribute. */
 function escapeHtml(value: string): string {
@@ -73,8 +84,14 @@ export function decidePage(request: MiniAppAccessRequest, token: string): string
   ]
     .filter(Boolean)
     .join(' ');
+  const paidOf = (operationSlug: string) =>
+    isPaidOperation({ toolkit: waiting.service, operationSlug });
+  const paid = paidOf('') || waiting.operations.some(paidOf);
   const operations = waiting.operations
-    .map((operation) => `<li><code>${escapeHtml(operation)}</code></li>`)
+    .map(
+      (operation) =>
+        `<li><code>${escapeHtml(operation)}</code>${paidOf(operation) ? ` ${PAID_MARKER}` : ''}</li>`
+    )
     .join('');
   const accounts = request.accounts
     .map(
@@ -97,6 +114,7 @@ export function decidePage(request: MiniAppAccessRequest, token: string): string
     `<h1 tabindex="-1">Let ${name} read ${app}?</h1>
 ${origin ? `<p class="quiet" data-testid="mini-app-origin">${origin}</p>` : ''}
 <p>It could only read. It never sees your password or sign-in.</p>
+${paid ? `<p class="paid" data-testid="mini-app-spends-money">${COINS_ICON}<span>Spends money. Its reads run only under your monthly limit, set in Connections.</span></p>` : ''}
 <section aria-labelledby="reads">
 <h2 id="reads">What it could read</h2>
 <ul class="operations">${operations}</ul>
@@ -245,6 +263,15 @@ p { margin: .5rem 0; }
 .notice { color: var(--warn); }
 .operations { margin: 0; padding-left: 1.1rem; }
 .operations code { font: 12px/1.6 ui-monospace, SFMono-Regular, Menlo, monospace; word-break: break-all; }
+/* "Spends money": a fact about the read, so muted, never warning-toned. */
+.coins { width: 14px; height: 14px; flex-shrink: 0; }
+.paid { display: flex; gap: .4rem; align-items: flex-start; color: var(--muted); font-size: .875rem; }
+.paid .coins { margin-top: .2rem; }
+.paid-marker {
+  display: inline-flex; align-items: center; gap: .25rem; white-space: nowrap;
+  padding: 0 .5rem; border-radius: 999px; background: var(--tint);
+  color: var(--muted); font-size: 12px;
+}
 fieldset { border: 0; padding: 0; margin: 0; }
 .account {
   display: flex; align-items: center; gap: .6rem; min-height: 44px;

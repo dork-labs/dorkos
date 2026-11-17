@@ -14,15 +14,17 @@
  *
  * @module services/connectors/spending/spend-gate
  */
+import { isPaidOperation } from '@dorkos/shared/connector-schemas';
 import type { GrantedApproval } from '../../core/capabilities/tier-enforcement.js';
 import { CapabilityToolError } from '../../core/capabilities/mcp-envelope.js';
 import type { SpendPreflight } from '../../core/capabilities/spend-permission.js';
 import { notify } from '../../notifications/notification-service.js';
 import { connectorSpending, spendFactsFor, wasSpendCard } from './spending-port.js';
 import { spendingNoticesAfter, type SpendingNotice } from './spending-notices.js';
-import { monthOf } from './spending-store.js';
-import { decideSpend, spendPreflightOf } from './spend-decision.js';
+import { monthOf, nextMonthStart } from './spending-store.js';
+import { decideSpend, spendPreflightOf, type SpendFacts } from './spend-decision.js';
 import {
+  EXTENSION_SPEND_COPY,
   SPEND_APPROVAL_REQUIRED,
   SPEND_COPY,
   SPEND_LIMIT,
@@ -191,6 +193,125 @@ export function reserveSpend(
     raiseNotices([{ kind: 'spending.meter-reset', payload: { month: monthOf(now) } }]);
   }
   return runId;
+}
+
+/** The parts of a mini app's read the spend limit reads (DOR-4575). */
+export interface ExtensionSpendSubject {
+  readonly extensionId: string;
+  readonly operation: { readonly toolkit: string; readonly operationSlug: string };
+}
+
+/** What {@link reserveExtensionSpend} answers. */
+export type ExtensionSpendResult =
+  | { readonly ok: true; readonly reservation?: string }
+  | { readonly ok: false; readonly message: string };
+
+/** One Activity line about a mini app's paid read. */
+function recordExtension(
+  subject: ExtensionSpendSubject,
+  eventType: 'spending.ran' | 'spending.refused',
+  summary: string
+): void {
+  void connectorSpending()?.activity?.emit({
+    actorType: 'system',
+    actorId: subject.extensionId,
+    actorLabel: `Mini app ${subject.extensionId}`,
+    category: 'agent',
+    eventType,
+    resourceType: 'connector',
+    resourceLabel: subject.operation.toolkit,
+    summary,
+  });
+}
+
+/**
+ * Reserve a mini app's paid read before the provider is called, or refuse it
+ * (DOR-4575). The same meter and the same one-transaction reserve as an
+ * agent's paid run, so the two together never pass the limit. A mini app
+ * can't answer a card, so every case that would ask a person is refused:
+ * no limit set, no price for the app, a meter that can't be read, or the
+ * spend limit not wired at all.
+ *
+ * @param subject - The mini app and the read about to run.
+ * @param runId - The read's logical operation id: the reservation's key.
+ * @param now - The decision's instant.
+ * @returns The reservation when one was written, or why the read may not run.
+ */
+export function reserveExtensionSpend(
+  subject: ExtensionSpendSubject,
+  runId: string,
+  now: Date = new Date()
+): ExtensionSpendResult {
+  if (!isPaidOperation(subject.operation)) return { ok: true };
+  const refuse = (message: string): ExtensionSpendResult => {
+    recordExtension(
+      subject,
+      'spending.refused',
+      `Refused mini app ${subject.extensionId}: ${subject.operation.toolkit} · paid read`
+    );
+    return { ok: false, message };
+  };
+  const port = connectorSpending();
+  if (!port) return refuse(EXTENSION_SPEND_COPY.unreadable);
+  const resetsAt = nextMonthStart(now);
+  let facts: SpendFacts;
+  try {
+    facts = {
+      paid: true,
+      // A mini app runs no turn, so no turn of it read outside words.
+      outsider: false,
+      limitMicro: port.store.limit(),
+      priceMicro: port.store.price(subject.operation.toolkit),
+      usedMicro: port.store.meter().usedMicro,
+      resetsAt,
+    };
+  } catch {
+    return refuse(EXTENSION_SPEND_COPY.unreadable);
+  }
+  const decision = decideSpend(facts);
+  if (decision.kind === 'refuse') return refuse(decision.message);
+  if (decision.kind === 'ask') {
+    return refuse(
+      decision.reason === 'no-limit'
+        ? EXTENSION_SPEND_COPY.noLimit
+        : decision.reason === 'unknown-price'
+          ? EXTENSION_SPEND_COPY.unknownPrice
+          : EXTENSION_SPEND_COPY.unreadable
+    );
+  }
+  // `paid` is set above, so `free` can't come back; money fails closed anyway.
+  if (decision.kind !== 'run') return refuse(EXTENSION_SPEND_COPY.unreadable);
+  let result;
+  try {
+    result = port.store.reserve({
+      id: runId,
+      toolkit: subject.operation.toolkit,
+      agentId: `extension:${subject.extensionId}`,
+      amountMicro: decision.priceMicro,
+      source: 'person',
+      enforceLimit: true,
+    });
+  } catch {
+    return refuse(EXTENSION_SPEND_COPY.unreadable);
+  }
+  if (!result.ok) return refuse(limitRefusal(result.reason, result.leftMicro, resetsAt));
+  const usedMicro = facts.usedMicro as number;
+  const afterMicro = usedMicro + decision.priceMicro;
+  recordExtension(
+    subject,
+    'spending.ran',
+    `Mini app ${subject.extensionId} ran ${subject.operation.toolkit} · about ${money(decision.priceMicro)} · ${money(Math.max(0, (facts.limitMicro ?? 0) - afterMicro))} left`
+  );
+  raiseNotices(
+    spendingNoticesAfter({
+      beforeMicro: usedMicro,
+      afterMicro,
+      limitMicro: facts.limitMicro,
+      month: monthOf(now),
+      resetsAt,
+    })
+  );
+  return { ok: true, reservation: runId };
 }
 
 /** Raise notices without ever failing the run that crossed them. */

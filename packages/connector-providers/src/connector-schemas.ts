@@ -9,7 +9,7 @@
  */
 import { z } from 'zod';
 import { isPaidOperation, type AccessLevelCandidate } from './paid-operations.js';
-export { isPaidOperation };
+export { isPaidOperation, normalizeToolkit, PAID_BY_DEFAULT_TOOLKITS } from './paid-operations.js';
 
 /** Maximum complete operation set supported by the provider discovery safety ceiling. */
 export const CONNECTOR_OPERATION_SELECTION_LIMIT = 100_000;

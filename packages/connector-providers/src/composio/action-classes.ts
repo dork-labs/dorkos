@@ -130,8 +130,12 @@ export const MONEY_TOOLKITS: ReadonlySet<string> = new Set([
   'shippo',
 ]);
 
-/** Canonical spelling used for every action-name policy match. */
-function normalizeSlug(slug: string): string {
+/**
+ * Canonical spelling used for every action-name policy match.
+ *
+ * @param slug - An action name in any casing or separator style.
+ */
+export function normalizeSlug(slug: string): string {
   return slug
     .replace(/([A-Z])([A-Z][a-z])/g, '$1_$2')
     .replace(/([a-z0-9])([A-Z])/g, '$1_$2')
