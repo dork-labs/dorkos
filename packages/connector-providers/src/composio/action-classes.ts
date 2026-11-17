@@ -37,6 +37,8 @@ export const MONEY_TOOLKITS: ReadonlySet<string> = new Set([
   'coinranking',
   'currencyscoop',
   'finage',
+  // Places trading orders (DOR-4505, Security Nov 17).
+  'longbridge_mcp',
   'minerstat',
   'open_sea',
   'owl_protocol',
@@ -61,6 +63,8 @@ export const MONEY_TOOLKITS: ReadonlySet<string> = new Set([
   'clientary',
   'clio_manage',
   'clover',
+  // Credits and debits accounts (DOR-4505, Security Nov 17).
+  'creem',
   'debitura',
   'era_context_mcp',
   'fidel_api',
@@ -99,10 +103,14 @@ export const MONEY_TOOLKITS: ReadonlySet<string> = new Set([
   'sage_intacct',
   'servicetitan',
   'shopify',
+  // Agent payments: issues pay tokens and charges them (DOR-4505, Security Nov 17).
+  'skyfire',
   'smokeball',
   'spoki',
   'square',
   'storeganise',
+  // Charges per call on every action (DOR-4505, Security Nov 17).
+  'strale',
   'stripe',
   'stripe_mcp',
   'tipalti',
