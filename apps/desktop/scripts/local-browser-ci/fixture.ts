@@ -20,7 +20,21 @@ const echo = createServer((request, response) => {
       receipts.get(phase)?.({ headers: request.headers, js: JSON.parse(body) });
       response.end('saved');
     });
+  } else if (request.url!.startsWith('/worker.js')) {
+    // DOR-4650: a service worker reports what it sends. Electron gives workers the
+    // app-wide user agent, not the session's, so this is where the app name leaked.
+    response.setHeader('Content-Type', 'text/javascript');
+    response.end(`self.addEventListener('install', (event) => {
+      self.skipWaiting();
+      event.waitUntil(fetch('/?phase=' + new URL(location.href).searchParams.get('phase'), {
+        method: 'POST', body: JSON.stringify({
+          ua: navigator.userAgent, brands: navigator.userAgentData?.brands,
+          platform: navigator.userAgentData?.platform
+        }) }));
+    });`);
   } else {
+    const url = new URL(request.url!, 'http://localhost');
+    const extras = url.searchParams.get('extras') === '1';
     response.setHeader('Content-Type', 'text/html');
     response.setHeader('Accept-CH', 'Sec-CH-UA-Full-Version-List, Sec-CH-UA-Platform-Version');
     response.end(`<h1>Made-up browser check</h1><script>
@@ -28,6 +42,12 @@ const echo = createServer((request, response) => {
         ua: navigator.userAgent, brands: navigator.userAgentData?.brands,
         platform: navigator.userAgentData?.platform, webdriver: navigator.webdriver
       }) });
+      ${
+        extras
+          ? `navigator.serviceWorker.register('/worker.js?phase=${phase}-worker');
+      window.open('/?phase=${phase}-popup');`
+          : ''
+      }
     </script>`);
   }
 });
@@ -41,8 +61,9 @@ async function main(): Promise<void> {
   assert(address && typeof address !== 'string');
   const origin = `http://127.0.0.1:${address.port}`;
   const host = new BrowserWindow({ show: false, webPreferences: { sandbox: true } });
+  // The app's own address is a port nothing listens on, so the made-up site may open a popup.
   const bridge = await startLocalBrowserBridge(
-    () => origin,
+    () => 'http://127.0.0.1:9/',
     () => host
   );
   const endpoint = process.env.DORKOS_LOCAL_BROWSER_BRIDGE!;
@@ -72,14 +93,26 @@ async function main(): Promise<void> {
     noDefaults: true,
   });
   assert.equal(guest.debugger.isAttached(), true);
-  const observe = async (phase: string, attached: boolean) => {
-    const receipt = new Promise<{ headers: Record<string, unknown>; js: Record<string, unknown> }>(
-      (resolve) => receipts.set(phase, resolve)
+  const receiptFor = (phase: string) =>
+    new Promise<{ headers: Record<string, unknown>; js: Record<string, unknown> }>((resolve) =>
+      receipts.set(phase, resolve)
     );
+  const observe = async (phase: string, attached: boolean, extras = false) => {
+    const receipt = receiptFor(phase);
+    const worker = extras ? receiptFor(`${phase}-worker`) : undefined;
+    const popup = extras ? receiptFor(`${phase}-popup`) : undefined;
     // Native host navigation is the test witness, never a production agent channel.
-    await guest.loadURL(`${origin}/?phase=${phase}`);
-    const found = await receipt;
+    await guest.loadURL(`${origin}/?phase=${phase}${extras ? '&extras=1' : ''}`);
+    assertIdentity(await receipt, attached ? 'agent' : 'person');
     assert.equal(guest.debugger.isAttached(), attached);
+    // A worker and a popup are never driven: the agent's transport is the page's only.
+    if (worker) assertIdentity(await worker, 'worker');
+    if (popup) assertIdentity(await popup, 'person');
+  };
+  const assertIdentity = (
+    found: { headers: Record<string, unknown>; js: Record<string, unknown> },
+    who: 'agent' | 'person' | 'worker'
+  ) => {
     for (const ua of [found.headers['user-agent'], found.js.ua]) {
       assert.equal(typeof ua, 'string');
       assert.doesNotMatch(String(ua), /electron|dorkos/i);
@@ -100,13 +133,14 @@ async function main(): Promise<void> {
     assert(hint.includes(`"Chromium";v="${process.versions.chrome.split('.')[0]}"`));
     assert.doesNotMatch(hint, /electron|dorkos|Google Chrome/i);
     assert.equal(found.js.platform, 'macOS');
-    if (!attached) assert.equal(found.js.webdriver, false);
+    if (who === 'person') assert.equal(found.js.webdriver, false);
   };
   await observe('agent-before', true);
   await call('detach');
   await browser.close();
   assert(webContents.getAllWebContents().every((contents) => !contents.debugger.isAttached()));
-  await observe('person', false);
+  // The person signs in here, so this is where a worker or popup must not name the app.
+  await observe('person', false, true);
   // A remembered page endpoint cannot attach during the person's handoff.
   await assert.rejects(
     chromium.connectOverCDP(opened.endpoint, {
@@ -130,7 +164,7 @@ async function main(): Promise<void> {
   await new Promise<void>((resolve) => echo.close(() => resolve()));
   host.destroy();
   console.log(
-    'Embedded guest: reduced UA and hints agree; detached during handoff and Stop; fresh CDP after hand-back.'
+    'Embedded guest: reduced UA and hints agree, workers and popups included; detached during handoff and Stop; fresh CDP after hand-back.'
   );
 }
 main()
