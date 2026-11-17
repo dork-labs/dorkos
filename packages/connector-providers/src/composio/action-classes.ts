@@ -220,6 +220,8 @@ function exactActions(slugs: readonly string[]): ReadonlySet<string> {
  * These repository actions stay hand-picked even if their catalog hints change.
  */
 const REPOSITORY_PERSISTENCE_ACTIONS = exactActions([
+  'BITBUCKET_CREATE_BRANCH',
+  'BITBUCKET_MERGE_PULL_REQUEST',
   'GITEA_CREATE_BRANCH',
   'GITEA_MERGE_PULL_REQUEST',
   'GITHUB_CREATE_A_REFERENCE',
@@ -257,17 +259,24 @@ const REPOSITORY_TOOLKITS = new Set(['bitbucket', 'gitea', 'github', 'github_mcp
  * Reads stay reads: callers apply it only to write verdicts.
  */
 const REPOSITORY_PERSISTENCE_NAME =
-  /^(?:MERGE|CHERRY_PICK|REBASE|REVERT|SYNC)(?:_|$)|^(?:CREATE|RENAME|UPDATE|PUBLISH|PUSH|SET)_(?:(?:A|AN|THE|NEW|REPOSITORY|PROJECT)_)?(?:BRANCH|TAG|RELEASE|REFERENCE|REF)(?:_|$)/;
+  /^(?:MERGE(?!_REQUEST(?:_|$))|CHERRY_PICK|REBASE|REVERT|SYNC)(?:_|$)|^(?:CREATE_OR_UPDATE|CREATE|UPSERT|RENAME|UPDATE|PUBLISH|PUSH|SET)_(?:(?:A|AN|THE|NEW|REPOSITORY|PROJECT)_){0,2}(?:BRANCH(?:ES)?|TAGS?|RELEASES?|REF(?:ERENCE)?S?)(?:_|$)/;
 
 /** Reviewed ordinary repository actions the name rule leaves as writes: a tag object isn't a tag. */
 const REVIEWED_REPOSITORY_WRITES = exactActions(['GITHUB_CREATE_A_TAG_OBJECT']);
 
 /** Whether a normalized slug names a repository persistence action of a repository app. */
 function isRepositoryPersistenceName(toolkit: string, slug: string): boolean {
-  const app = normalizeSlug(toolkit);
-  if (!REPOSITORY_TOOLKITS.has(toolkit.toLowerCase()) || !slug.startsWith(`${app}_`)) return false;
+  if (!REPOSITORY_TOOLKITS.has(toolkit.toLowerCase())) return false;
   if (REVIEWED_REPOSITORY_WRITES.has(exactKey(slug))) return false;
-  return REPOSITORY_PERSISTENCE_NAME.test(slug.slice(app.length + 1));
+  // Skip the app prefix however its words split: GITHUB_, GIT_HUB_ (from "GitHub…").
+  const app = exactKey(toolkit);
+  const words = slug.split('_');
+  for (let end = 1; end < words.length; end += 1) {
+    if (words.slice(0, end).join('') === app) {
+      return REPOSITORY_PERSISTENCE_NAME.test(words.slice(end).join('_'));
+    }
+  }
+  return false;
 }
 
 /** Exact reach exceptions retained from the dated catalog when a family is insufficient. */
@@ -442,14 +451,21 @@ function hasOnlyDeleteHints(tags: readonly string[]): boolean {
 const MONEY_TOOLKIT_NAME =
   /(?:^|_)(?:pay|billing|invoic|wallet|checkout|crypto|coin|bank|remit|refund|money|treasury|merchant)|(?:pay|payments?|billing|invoices?|wallet|checkout|crypto|coin|bank|money)(?:_|$)/;
 
+/** A new MCP, API or versioned copy of a listed money app ("square_mcp", "freshbooks_v2") is one too. */
+const MONEY_SIBLING_SUFFIX = /_(?:mcp|api|connect|online|v\d+)$/;
+
 /**
  * Whether an app's every change is a one-by-one pick because it moves money.
  *
  * @param toolkit - Composio's app slug.
  */
 function isMoneyToolkit(toolkit: string): boolean {
-  const name = toolkit.toLowerCase();
-  return MONEY_TOOLKITS.has(name) || MONEY_TOOLKIT_NAME.test(name);
+  const name = toolkit.toLowerCase().replace(/[^a-z0-9]+/g, '_');
+  return (
+    MONEY_TOOLKITS.has(name) ||
+    MONEY_TOOLKITS.has(name.replace(MONEY_SIBLING_SUFFIX, '')) ||
+    MONEY_TOOLKIT_NAME.test(name)
+  );
 }
 
 /**

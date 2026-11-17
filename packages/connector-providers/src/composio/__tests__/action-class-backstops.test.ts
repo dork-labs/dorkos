@@ -24,6 +24,15 @@ describe('money apps by name (DOR-4505)', () => {
     expect(classifyComposioAction(toolkit, slug, WRITE)).toBe('destructive');
   });
 
+  it.each([
+    ['square_mcp', 'SQUARE_MCP_CREATE_NOTE'],
+    ['freshbooks_v2', 'FRESHBOOKS_V2_CREATE_NOTE'],
+    ['stripe_connect', 'STRIPE_CONNECT_UPDATE_LABEL'],
+    ['open-banking', 'OPEN_BANKING_CREATE_NOTE'],
+  ])('treats %s, a copy or spelling of a money app, as one', (toolkit, slug) => {
+    expect(classifyComposioAction(toolkit, slug, WRITE)).toBe('destructive');
+  });
+
   it('still lets a money app read', () => {
     expect(classifyComposioAction('acme_wallet', 'ACME_WALLET_LIST_LABELS', ['readOnlyHint'])).toBe(
       'read'
@@ -40,7 +49,7 @@ describe('money apps by name (DOR-4505)', () => {
 });
 
 describe('camel-case OAuth names (DOR-4506)', () => {
-  it.each(['createOAuthApp', 'updateOAuthClientSecret', 'GitHubCreateOAuthApp'])(
+  it.each(['createOAuthApp', 'updateOAuthApp', 'GitHubCreateOAuthApp'])(
     'reads %s as a credentials action',
     (slug) => {
       expect(classifyComposioAction('github', slug, WRITE)).toBe('destructive');
@@ -60,8 +69,14 @@ describe('repository persistence by name (DOR-4509)', () => {
     ['github_mcp', 'GITHUB_MCP_CREATE_RELEASE'],
     ['gitlab', 'GITLAB_UPDATE_REPOSITORY_BRANCH'],
     ['gitea', 'GITEA_CREATE_TAG'],
-    ['bitbucket', 'BITBUCKET_CREATE_BRANCH'],
-    ['bitbucket', 'bitbucket-merge-pull-request'],
+    ['gitea', 'GITEA_UPSERT_TAG'],
+    ['bitbucket', 'BITBUCKET_CREATE_A_TAG'],
+    ['bitbucket', 'bitbucket-rebase-pull-request'],
+    ['github', 'GITHUB_CREATE_A_NEW_BRANCH'],
+    ['github', 'GITHUB_CREATE_BRANCHES'],
+    ['github', 'GITHUB_CREATE_OR_UPDATE_A_RELEASE'],
+    ['gitlab', 'GITLAB_CREATE_A_REPOSITORY_TAG'],
+    ['GitHub', 'GitHubMergeUpstreamIntoFork'],
   ])('keeps a new %s action %s a one-by-one pick', (toolkit, slug) => {
     for (const hints of [WRITE, ['updateHint']]) {
       for (const writeIncludesDeletes of [false, true]) {
@@ -75,6 +90,7 @@ describe('repository persistence by name (DOR-4509)', () => {
   it.each([
     ['gitlab', 'GITLAB_CREATE_MERGE_REQUEST'],
     ['gitlab', 'GITLAB_UPDATE_MERGE_REQUEST'],
+    ['gitlab', 'GITLAB_MERGE_REQUEST_ADD_NOTE'],
     ['github', 'GITHUB_CREATE_AN_AUTOLINK_REFERENCE_FOR_A_REPOSITORY'],
     ['github', 'GITHUB_CREATE_REACTION_FOR_A_RELEASE'],
     ['github', 'GITHUB_CREATE_A_TAG_OBJECT'],
