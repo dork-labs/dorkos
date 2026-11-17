@@ -111,6 +111,7 @@ export const MONEY_TOOLKITS: ReadonlySet<string> = new Set([
   'wise',
   'workiz',
   'xero',
+  'zettle',
   'zip',
   'zoho_invoice',
   'zoho_books',
@@ -244,6 +245,31 @@ const REPOSITORY_PERSISTENCE_ACTIONS = exactActions([
   'GITLAB_UPDATE_RELEASE_ASSET_LINK',
 ]);
 
+/** Repository apps whose merge, branch, tag and release actions stay hand-picked by name too. */
+const REPOSITORY_TOOLKITS = new Set(['bitbucket', 'gitea', 'github', 'github_mcp', 'gitlab']);
+
+/**
+ * The persistence rule by name (DOR-4509), so a repository app's new merge,
+ * branch, tag or release action needs a person to pick it without a code
+ * change. It reads the verb right after the app prefix and the object right
+ * after the verb, so opening a merge request (`GITLAB_CREATE_MERGE_REQUEST`),
+ * an autolink reference or a reaction on a release stay ordinary writes.
+ * Reads stay reads: callers apply it only to write verdicts.
+ */
+const REPOSITORY_PERSISTENCE_NAME =
+  /^(?:MERGE|CHERRY_PICK|REBASE|REVERT|SYNC)(?:_|$)|^(?:CREATE|RENAME|UPDATE|PUBLISH|PUSH|SET)_(?:(?:A|AN|THE|NEW|REPOSITORY|PROJECT)_)?(?:BRANCH|TAG|RELEASE|REFERENCE|REF)(?:_|$)/;
+
+/** Reviewed ordinary repository actions the name rule leaves as writes: a tag object isn't a tag. */
+const REVIEWED_REPOSITORY_WRITES = exactActions(['GITHUB_CREATE_A_TAG_OBJECT']);
+
+/** Whether a normalized slug names a repository persistence action of a repository app. */
+function isRepositoryPersistenceName(toolkit: string, slug: string): boolean {
+  const app = normalizeSlug(toolkit);
+  if (!REPOSITORY_TOOLKITS.has(toolkit.toLowerCase()) || !slug.startsWith(`${app}_`)) return false;
+  if (REVIEWED_REPOSITORY_WRITES.has(exactKey(slug))) return false;
+  return REPOSITORY_PERSISTENCE_NAME.test(slug.slice(app.length + 1));
+}
+
 /** Exact reach exceptions retained from the dated catalog when a family is insufficient. */
 const ACCOUNT_REACH_ACTIONS = exactActions([
   'GITHUB_UPLOAD_RELEASE_ASSET',
@@ -363,7 +389,8 @@ const LIVE_CONNECTION_REACH = /WEBHOOK|_HOOK|SUBSCRI|WATCH|_RTM_|DISPATCH|UNFURL
 const SHARING_REACH =
   /_ACL_|PERMISSION|SHARING|SHARE|PUBLIC|PUBLISH|VISIBILITY|COLLABORAT|MEMBER|INVIT|PARTICIPANT|_ACCESS|FOLLOW|TRANSFER|GIST|PAGES|GRANT|GUEST|EXPORT/;
 const CREDENTIAL_REACH =
-  /SECRET|TOKEN|_KEY|API_KEY|APIKEY|DEPLOYKEY|OAUTH|CREDENTIAL|GIT_?HUB_APP|INSTALL|INTEGRATION|AUTHORIZE|PASSWORD|MFA|SSO|BOT|RUNNER|OIDC|EMAIL_ADDRESS|SOCIAL_ACCOUNT/;
+  // Camel-case "OAuth" ("createOAuthApp") normalizes to a lone O word, O_AUTH (DOR-4506).
+  /SECRET|TOKEN|_KEY|API_KEY|APIKEY|DEPLOYKEY|OAUTH|(?:^|_)O_AUTH|CREDENTIAL|GIT_?HUB_APP|INSTALL|INTEGRATION|AUTHORIZE|PASSWORD|MFA|SSO|BOT|RUNNER|OIDC|EMAIL_ADDRESS|SOCIAL_ACCOUNT/;
 const PEOPLE_REACH =
   /ADMIN|OWNER|_ROLE|ROLE_|_USER_TO_|USERS_TO_|_TEAM(?:_|$)|ENTERPRISE|WORKSPACE|ORGANIZATION|_ORG(?:_|$)|DEFAULT_CHANNELS|USER_GROUP|USER_PROFILE|PROFILE_PHOTO/;
 const SECURITY_CONTROLS =
@@ -407,6 +434,25 @@ function hasOnlyDeleteHints(tags: readonly string[]): boolean {
 }
 
 /**
+ * A backstop for money apps nobody has reviewed yet (DOR-4505): an app whose
+ * name starts or ends a word with a payment stem ("paystack", "hitpay",
+ * "coin_wallet") keeps every change a one-by-one pick until it is listed or
+ * reviewed. Word edges only, so "campayn" (email) stays an ordinary app.
+ */
+const MONEY_TOOLKIT_NAME =
+  /(?:^|_)(?:pay|billing|invoic|wallet|checkout|crypto|coin|bank|remit|refund|money|treasury|merchant)|(?:pay|payments?|billing|invoices?|wallet|checkout|crypto|coin|bank|money)(?:_|$)/;
+
+/**
+ * Whether an app's every change is a one-by-one pick because it moves money.
+ *
+ * @param toolkit - Composio's app slug.
+ */
+function isMoneyToolkit(toolkit: string): boolean {
+  const name = toolkit.toLowerCase();
+  return MONEY_TOOLKITS.has(name) || MONEY_TOOLKIT_NAME.test(name);
+}
+
+/**
  * Classify a Composio action for any app, then tighten write verdicts by name.
  * Reads stay reads. Reach, money and irreversible writes stay explicit.
  * Only the delete decision can admit a destructive verdict: a named delete
@@ -432,7 +478,8 @@ export function classifyComposioAction(
   const classification = classifyComposioTags(tags);
   if (classification === 'read') return classification;
   if (
-    MONEY_TOOLKITS.has(toolkit.toLowerCase()) ||
+    isMoneyToolkit(toolkit) ||
+    isRepositoryPersistenceName(toolkit, slug) ||
     isAccountReachAction(slug) ||
     MONEY_ACTIONS.test(slug) ||
     IRREVERSIBLE_ACTIONS.test(slug) ||

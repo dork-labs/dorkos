@@ -160,6 +160,7 @@ describe('Composio write hardening', () => {
       'workiz',
       'xero',
       'zernio_mcp',
+      'zettle',
       'zip',
       'zoho_books',
       'zoho_invoice',
