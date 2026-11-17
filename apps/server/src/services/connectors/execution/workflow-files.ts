@@ -59,7 +59,16 @@ function controlSpelling(value: string): boolean {
   return false;
 }
 
-/** Inspect nested path arguments, including path lists and legacy multi-file deletes. */
+/**
+ * Inspect nested path arguments, including path lists and legacy multi-file deletes.
+ *
+ * What it reads, on purpose (DOR-4508): string values under a key whose name
+ * contains `path` (and everything nested under such a key), plus `deletes`.
+ * File content is never read as a path. `__tests__/workflow-file-keys.test.ts`
+ * keeps that honest against a snapshot of every repository write schema: a
+ * location-like argument the check doesn't read fails it until it is read or
+ * listed there with the reason it isn't a repository file.
+ */
 function containsControlPath(value: unknown, isPath = false): boolean {
   if (typeof value === 'string') return isPath && controlPath(value);
   if (Array.isArray(value)) return value.some((entry) => containsControlPath(entry, isPath));
