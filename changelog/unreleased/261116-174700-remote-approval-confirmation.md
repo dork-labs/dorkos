@@ -5,6 +5,7 @@ covers:
   - 'fix(approvals): preserve streamed request cards'
   - 'fix(approvals): confirm lasting decision effects'
   - 'fix(approvals): confirm Always allow on a capability card at the desk'
+  - 'fix(approvals): confirm a settings card that turns spending up at the desk'
 ---
 
 ### Security

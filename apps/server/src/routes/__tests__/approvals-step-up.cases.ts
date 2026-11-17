@@ -320,6 +320,19 @@ export function registerApprovalStepUpCases(): void {
         expect(byId(plain.approvalId)).not.toHaveProperty('answeringFrom');
       });
 
+      it.each([
+        [{ heartbeats: { triageOnCredits: true } }, 428],
+        [{ cloud: { credits: { defaults: { chat: { runsOn: 'dorkos-credits' } } } } }, 428],
+        [{ heartbeats: { triageOnCredits: false } }, 200],
+        [{ cloud: { credits: { defaults: { chat: { runsOn: 'own-sign-in' } } } } }, 200],
+      ] as const)(
+        'treats a spending change %o like #3878 does: %i at this computer',
+        async (patch, status) => {
+          const ticket = settingsCard(patch);
+          expect((await deskGrant(ticket.approvalId)).status).toBe(status);
+        }
+      );
+
       it('leaves an ordinary settings card immediate at this computer', async () => {
         const ticket = settingsCard({ ui: { theme: 'dark' } });
         const res = await deskGrant(ticket.approvalId);
