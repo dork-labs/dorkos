@@ -16,7 +16,9 @@
  *    counts, never a per-user API key (DOR-474).
  *
  * From Wi-Fi a write may lower permissions but never raise them, and an Undo is
- * refused (DOR-3037, `wifi-raise-guard.ts`).
+ * refused (DOR-3037, `wifi-raise-guard.ts`). Anywhere else, a raise and an Undo
+ * (which can put back a looser setting) wait for the owner to confirm it's them
+ * (DOR-4355); lowering stays immediate.
  *
  * With login off the write is recorded as `local-trust` and labelled "Someone on
  * this computer", because DorkOS cannot tell the person at the keyboard from any
@@ -42,6 +44,7 @@ import type { ApiEnv } from '../http/api-chain.js';
 import { readJsonBody } from '../http/request-body.js';
 import { honoRequestFacts } from '../http/request-facts.js';
 import { readQuery } from '../http/request-query.js';
+import { runFrontDoorWrite } from './front-door-step-up.js';
 import {
   resolveDecisionAuthority,
   type LoginEnabledLookup,
@@ -189,6 +192,21 @@ export function createPermissionsRoutes(deps: PermissionsRouterDeps): Hono<ApiEn
   const router = new Hono<ApiEnv>();
   const { permissions, activity, isLoginEnabled } = deps;
   const person = (c: Context<ApiEnv>) => requirePerson(c, isLoginEnabled);
+  /** A raise waits for the owner to confirm; anything else runs now. */
+  const raiseOrRun = (
+    c: Context<ApiEnv>,
+    raises: boolean,
+    held: { target: string; input: unknown; reason: string },
+    run: () => Promise<Response>
+  ): Promise<Response> =>
+    raises
+      ? runFrontDoorWrite(c, {
+          kind: 'permissions.raise',
+          ...held,
+          subject: 'what agents may do',
+          run,
+        })
+      : run();
 
   router.get('/permissions', async (c) => {
     return c.json(await permissions.getOverview());
@@ -211,15 +229,22 @@ export function createPermissionsRoutes(deps: PermissionsRouterDeps): Hono<ApiEn
     if ('refusal' in caller) return caller.refusal;
     const body = SetPermissionPresetBodySchema.safeParse(readJsonBody(c));
     if (!body.success) return c.json(validationFailureBody(body.error), 400);
-    if (fromWifi(c) && presetRaises(body.data.preset, body.data.applyToAgents)) {
-      return c.json(wifiRaiseRefusal(), 403);
-    }
-    try {
-      const changes = await permissions.setPreset(body.data, caller.writer);
-      return c.json({ changes, permissions: await permissions.getOverview() });
-    } catch (err) {
-      return sendPermissionError(c, err);
-    }
+    const raises = presetRaises(body.data.preset, body.data.applyToAgents);
+    if (fromWifi(c) && raises) return c.json(wifiRaiseRefusal(), 403);
+    const run = async () => {
+      try {
+        const changes = await permissions.setPreset(body.data, caller.writer);
+        return c.json({ changes, permissions: await permissions.getOverview() });
+      } catch (err) {
+        return sendPermissionError(c, err);
+      }
+    };
+    return raiseOrRun(
+      c,
+      raises,
+      { target: 'preset', input: body.data, reason: 'Raise what every agent may do.' },
+      run
+    );
   });
 
   router.patch('/permissions/defaults', async (c) => {
@@ -227,15 +252,22 @@ export function createPermissionsRoutes(deps: PermissionsRouterDeps): Hono<ApiEn
     if ('refusal' in caller) return caller.refusal;
     const body = PatchPermissionDefaultsBodySchema.safeParse(readJsonBody(c));
     if (!body.success) return c.json(validationFailureBody(body.error), 400);
-    if (fromWifi(c) && defaultsPatchRaises(body.data, await permissions.getOverview())) {
-      return c.json(wifiRaiseRefusal(), 403);
-    }
-    try {
-      const changes = await permissions.setDefaults(body.data, caller.writer);
-      return c.json({ changes, permissions: await permissions.getOverview() });
-    } catch (err) {
-      return sendPermissionError(c, err);
-    }
+    const raises = defaultsPatchRaises(body.data, await permissions.getOverview());
+    if (fromWifi(c) && raises) return c.json(wifiRaiseRefusal(), 403);
+    const run = async () => {
+      try {
+        const changes = await permissions.setDefaults(body.data, caller.writer);
+        return c.json({ changes, permissions: await permissions.getOverview() });
+      } catch (err) {
+        return sendPermissionError(c, err);
+      }
+    };
+    return raiseOrRun(
+      c,
+      raises,
+      { target: 'defaults', input: body.data, reason: 'Raise what agents may do by default.' },
+      run
+    );
   });
 
   // Undo one recorded change: a new change, audited like any other. A key
@@ -249,11 +281,20 @@ export function createPermissionsRoutes(deps: PermissionsRouterDeps): Hono<ApiEn
     // An Undo can put back a looser setting, and which way it goes is only
     // known once it runs, so from Wi-Fi it is refused (DOR-3037).
     if (fromWifi(c)) return c.json({ error: WIFI_UNDO_REFUSAL, code: NOT_FROM_WIFI }, 403);
-    try {
-      return c.json(await permissions.undo(c.req.param('eventId'), body.data, caller.writer));
-    } catch (err) {
-      return sendPermissionError(c, err);
-    }
+    const eventId = c.req.param('eventId');
+    const run = async () => {
+      try {
+        return c.json(await permissions.undo(eventId, body.data, caller.writer));
+      } catch (err) {
+        return sendPermissionError(c, err);
+      }
+    };
+    return raiseOrRun(
+      c,
+      true,
+      { target: eventId, input: body.data, reason: 'Undo a change to what agents may do.' },
+      run
+    );
   });
 
   router.get('/agents/:id/permissions', async (c) => {
@@ -282,15 +323,27 @@ export function createPermissionsRoutes(deps: PermissionsRouterDeps): Hono<ApiEn
     const body = PatchAgentPermissionsBodySchema.safeParse(readJsonBody(c));
     if (!body.success) return c.json(validationFailureBody(body.error), 400);
     const id = c.req.param('id');
+    let raises: boolean;
     try {
-      if (fromWifi(c) && agentPatchRaises(body.data, await permissions.getAgent(id))) {
-        return c.json(wifiRaiseRefusal(), 403);
-      }
-      const changes = await permissions.setAgent(id, body.data, caller.writer);
-      return c.json({ changes, permissions: await permissions.getAgent(id) });
+      raises = agentPatchRaises(body.data, await permissions.getAgent(id));
     } catch (err) {
       return sendPermissionError(c, err);
     }
+    if (fromWifi(c) && raises) return c.json(wifiRaiseRefusal(), 403);
+    const run = async () => {
+      try {
+        const changes = await permissions.setAgent(id, body.data, caller.writer);
+        return c.json({ changes, permissions: await permissions.getAgent(id) });
+      } catch (err) {
+        return sendPermissionError(c, err);
+      }
+    };
+    return raiseOrRun(
+      c,
+      raises,
+      { target: id, input: body.data, reason: 'Raise what this agent may do.' },
+      run
+    );
   });
 
   return router;

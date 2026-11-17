@@ -51,6 +51,14 @@ export const HELD_WRITES = new Set([
   'post /api/cloud/communities/{communityId}/restore',
   'delete /api/devices/sessions/{id}',
   'post /api/devices/sign-out-all',
+  // A raise, or an Undo, of what agents may do; lowering answers at once.
+  'put /api/permissions/preset',
+  'patch /api/permissions/defaults',
+  'patch /api/agents/{id}/permissions',
+  'post /api/permissions/history/{eventId}/undo',
+  'post /api/extensions/{id}/enable',
+  // Raising or removing the limit; lowering it answers at once.
+  'put /api/community-connections/{ref}/teammate-spend',
 ]);
 
 /** Bodies for newly documented native writes; auth and the general patch validate flexible JSON. */
@@ -70,6 +78,8 @@ function nativeBody(path: string): z.ZodType {
   if (path.endsWith('/keep'))
     return z.object({ expectedHeldCommunityIds: z.array(z.string().min(1)).max(1000) });
   if (path === '/api/auth/revoke-session') return z.object({ token: z.string() });
+  if (path.endsWith('/teammate-spend'))
+    return z.object({ monthlyLimitUsd: z.number().positive().nullable() });
   if (path.includes('/seats/'))
     return z.object({
       subject: z.object({ kind: z.enum(['agent', 'user']), id: z.string().min(1) }),

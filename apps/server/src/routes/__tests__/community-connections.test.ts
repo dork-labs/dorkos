@@ -30,6 +30,8 @@ vi.mock('../../services/core/config-manager.js', () => ({
 vi.mock('../../lib/caller-authority.js', () => ({
   isLocalCaller: () => true,
   requireOperatorCookieUnderLogin: () => undefined,
+  // The limit's confirmation is proved with real sign-ins in teammate-spend-step-up.test.ts.
+  refuseFrontDoorChange: () => undefined,
 }));
 
 const attentionMock = vi.hoisted(() => ({
@@ -1286,11 +1288,16 @@ describe('the teammates’ monthly limit is the owner’s call', () => {
     await spend.record(spendRef, 'author-a', 0.5);
     expect(spend.allows(spendRef, 'author-a')).toBe(false);
 
+    // Removing the limit is a raise: it waits for the owner's own browser to confirm it
+    // (teammate-spend-step-up.test.ts), so this session-less caller is refused, nothing changed.
     const cleared = await request(spendServer)
       .put(path)
       .set('x-test-author', 'author-a')
       .send({ monthlyLimitUsd: null });
-    expect(cleared.body).toMatchObject({ monthlyLimitUsd: null });
+    expect(cleared.status).toBe(403);
+    expect(cleared.body.code).toBe('not-a-person');
+    expect(spend.allows(spendRef, 'author-a')).toBe(false);
+    await spend.setLimit(spendRef, 'author-a', null);
     expect(spend.allows(spendRef, 'author-a')).toBe(true);
   });
 

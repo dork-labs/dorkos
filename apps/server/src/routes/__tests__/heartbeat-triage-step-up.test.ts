@@ -2,6 +2,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createHeartbeatTriageRoutes } from '../heartbeat-triage.js';
 import { frontDoorStepUpHarness } from './front-door-step-up-harness.js';
+import { takeHeldStepUp } from '../../services/core/auth/step-up/step-up-holds.js';
+import { user } from '@dorkos/db';
 
 describe('checks credits confirmation', () => {
   let choice: boolean | null = null;
@@ -40,6 +42,34 @@ describe('checks credits confirmation', () => {
     });
     expect(choice).toBe(true);
     expect(record).toHaveBeenCalledExactlyOnceWith(null, true);
+  });
+  // This write has no caller check of its own, so only the hold's recheck stands here.
+  it('spends nothing when the confirming request fails the front-door bar', async () => {
+    const held = await owner
+      .call('put', '/api/heartbeats/triage-credits', 'own-tunnel')
+      .send({ useCredits: true });
+    expect(held.status).toBe(428);
+    const action = takeHeldStepUp(held.body.heldActionId);
+    expect(action).toBeDefined();
+    const result = await action!.commit({
+      headers: {},
+      peerAddress: '192.0.2.10',
+      forwardedAddress: '192.0.2.10',
+      connectionEncrypted: false,
+      ingress: 'wifi',
+      // The real owner, so only the place the confirmation came from fails.
+      user: {
+        userId: owner.db().select().from(user).get()!.id,
+        credential: 'cookie',
+        sessionId: 'made-up-session',
+      },
+      agentIdentity: undefined,
+      method: 'PUT',
+    });
+    expect(result.status).toBe(403);
+    expect(result.body).toMatchObject({ code: 'NEEDS_PERSON_AT_THIS_COMPUTER' });
+    expect(choice).toBeNull();
+    expect(record).not.toHaveBeenCalled();
   });
   it('refuses Wi-Fi before holding or spending', async () => {
     const result = await owner

@@ -66,6 +66,10 @@ export const STEP_UP_ACTION_KINDS = [
   'mcp-token.rotate',
   /** Change lasting access or spending settings. */
   'config.front-door',
+  /** Raise what agents may do (DOR-4355). */
+  'permissions.raise',
+  /** Raise or remove a space's monthly limit for teammates' turns (DOR-4355). */
+  'community.teammate-spend',
   /** Link chat from the web. */
   'session-relay.link',
   /** Raise web chat access. */
@@ -76,6 +80,8 @@ export const STEP_UP_ACTION_KINDS = [
   'relay-passkey.enrol',
   /** Trust an installed extension source. */
   'extensions.trust-source',
+  /** Turn on an extension (DOR-4355). */
+  'extensions.enable',
   /** Link this computer to an account. */
   'cloud.link',
   /** Open an account billing action. */

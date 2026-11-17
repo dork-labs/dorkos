@@ -53,6 +53,7 @@ import { registerExtensionPrefsRoutes } from './extensions-prefs.js';
 import { liveForwardDeps, registerExtensionForwardRoutes } from './extensions-forward.js';
 import type { PersonForwardDeps } from '../services/extensions/forward/person-forward.js';
 import { refusedNotAPerson, type PersonBarCopy } from './extensions-person-bar.js';
+import { runFrontDoorWrite } from './front-door-step-up.js';
 import {
   OPERATOR_ONLY_CONFIG_CODE,
   OPERATOR_ONLY_CONFIG_ERROR,
@@ -218,6 +219,24 @@ export function createExtensionsRoutes(deps: ExtensionsRouterDeps): Hono<ApiEnv>
       // so, rather than being told whether the extension exists.
       const refused = refusedNotAPerson(c, EXTENSION_TOGGLE_BAR);
       if (refused) return refused;
+      // The same lasting setting `PATCH /api/config` holds for `extensions.enabled` (DOR-4355).
+      return await runFrontDoorWrite(c, {
+        kind: 'extensions.enable',
+        target: id,
+        input: {},
+        reason: `Turn on the extension ${id}.`,
+        subject: 'which extensions run',
+        run: () => enableExtension(c, id),
+      });
+    } catch (err) {
+      logger.error(`[Extensions] Failed to enable ${id}`, err);
+      return c.json({ error: 'Failed to enable extension' }, 500);
+    }
+  });
+
+  /** Turn one extension on, once its bars and confirmation have passed. */
+  async function enableExtension(c: Context<ApiEnv>, id: string): Promise<Response> {
+    try {
       const result = await extensionManager.enable(id);
       if (!result) {
         return c.json({ error: `Extension '${id}' not found or cannot be enabled` }, 404);
@@ -247,7 +266,7 @@ export function createExtensionsRoutes(deps: ExtensionsRouterDeps): Hono<ApiEnv>
       logger.error(`[Extensions] Failed to enable ${id}`, err);
       return c.json({ error: 'Failed to enable extension' }, 500);
     }
-  });
+  }
 
   // POST /api/extensions/:id/disable -- Disable an extension
   router.post('/:id/disable', async (c) => {

@@ -90320,6 +90320,41 @@
                 }
               }
             }
+          },
+          "428": {
+            "description": "Confirm this action in the app. Complete /api/step-up/{heldActionId}/password from the same signed-in browser. Nothing has changed yet. Narrowing and signing out your own device stay immediate.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "step_up_required"
+                      ]
+                    },
+                    "heldActionId": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "expiresAt": {
+                      "type": "string",
+                      "format": "date-time"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code",
+                    "heldActionId",
+                    "expiresAt"
+                  ]
+                }
+              }
+            }
           }
         }
       }
@@ -90393,6 +90428,41 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "428": {
+            "description": "Confirm this action in the app. Complete /api/step-up/{heldActionId}/password from the same signed-in browser. Nothing has changed yet. Narrowing and signing out your own device stay immediate.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "step_up_required"
+                      ]
+                    },
+                    "heldActionId": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "expiresAt": {
+                      "type": "string",
+                      "format": "date-time"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code",
+                    "heldActionId",
+                    "expiresAt"
+                  ]
                 }
               }
             }
@@ -91267,6 +91337,41 @@
                 }
               }
             }
+          },
+          "428": {
+            "description": "Confirm this action in the app. Complete /api/step-up/{heldActionId}/password from the same signed-in browser. Nothing has changed yet. Narrowing and signing out your own device stay immediate.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "step_up_required"
+                      ]
+                    },
+                    "heldActionId": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "expiresAt": {
+                      "type": "string",
+                      "format": "date-time"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code",
+                    "heldActionId",
+                    "expiresAt"
+                  ]
+                }
+              }
+            }
           }
         }
       }
@@ -91399,6 +91504,41 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "428": {
+            "description": "Confirm this action in the app. Complete /api/step-up/{heldActionId}/password from the same signed-in browser. Nothing has changed yet. Narrowing and signing out your own device stay immediate.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "step_up_required"
+                      ]
+                    },
+                    "heldActionId": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "expiresAt": {
+                      "type": "string",
+                      "format": "date-time"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code",
+                    "heldActionId",
+                    "expiresAt"
+                  ]
                 }
               }
             }
@@ -102525,11 +102665,14 @@
                         "mcp-token.reveal",
                         "mcp-token.rotate",
                         "config.front-door",
+                        "permissions.raise",
+                        "community.teammate-spend",
                         "session-relay.link",
                         "session-relay.level",
                         "session-relay.resume",
                         "relay-passkey.enrol",
                         "extensions.trust-source",
+                        "extensions.enable",
                         "cloud.link",
                         "cloud.billing",
                         "cloud.delete",
@@ -104300,6 +104443,171 @@
               "schema": {
                 "type": "object",
                 "properties": {}
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The action completed",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "403": {
+            "description": "This caller cannot change access here"
+          },
+          "428": {
+            "description": "Confirm this action in the app. Complete /api/step-up/{heldActionId}/password from the same signed-in browser. Nothing has changed yet. Narrowing and signing out your own device stay immediate.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "step_up_required"
+                      ]
+                    },
+                    "heldActionId": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "expiresAt": {
+                      "type": "string",
+                      "format": "date-time"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code",
+                    "heldActionId",
+                    "expiresAt"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/extensions/{id}/enable": {
+      "post": {
+        "tags": [
+          "Access"
+        ],
+        "summary": "Confirm a lasting access or account change",
+        "description": "The owner confirms this action in the app before it changes access or account data. Narrowing and signing out your own device stay immediate. Hubs keep their existing owner flow.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {}
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The action completed",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "403": {
+            "description": "This caller cannot change access here"
+          },
+          "428": {
+            "description": "Confirm this action in the app. Complete /api/step-up/{heldActionId}/password from the same signed-in browser. Nothing has changed yet. Narrowing and signing out your own device stay immediate.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "step_up_required"
+                      ]
+                    },
+                    "heldActionId": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "expiresAt": {
+                      "type": "string",
+                      "format": "date-time"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code",
+                    "heldActionId",
+                    "expiresAt"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/community-connections/{ref}/teammate-spend": {
+      "put": {
+        "tags": [
+          "Access"
+        ],
+        "summary": "Confirm a lasting access or account change",
+        "description": "The owner confirms this action in the app before it changes access or account data. Narrowing and signing out your own device stay immediate. Hubs keep their existing owner flow.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "ref",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "monthlyLimitUsd": {
+                    "type": [
+                      "number",
+                      "null"
+                    ],
+                    "exclusiveMinimum": 0
+                  }
+                },
+                "required": [
+                  "monthlyLimitUsd"
+                ]
               }
             }
           }
