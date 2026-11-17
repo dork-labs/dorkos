@@ -74,16 +74,19 @@ export function readOutside(caller: {
 
 /** The longest prompt the credits sheet quotes before it cuts the rest. */
 const PROMPT_NOTE_MAX = 280;
+/** What a cut quote ends with, so nobody reads part of a prompt as all of it. */
+const SHORTENED = '… (shortened)';
 
 /**
  * A task's prompt as one quiet line on the sheet that puts it on credits: on
- * one line, cut at {@link PROMPT_NOTE_MAX} characters.
+ * one line, at most {@link PROMPT_NOTE_MAX} characters, saying so when it cuts.
  *
  * @param prompt - The prompt it will run with.
  */
 export function creditsPromptNote(prompt: string): string {
   const line = prompt.replace(/\s+/gu, ' ').trim();
-  return line.length > PROMPT_NOTE_MAX ? `${line.slice(0, PROMPT_NOTE_MAX - 1)}…` : line;
+  if (line.length <= PROMPT_NOTE_MAX) return line;
+  return `${line.slice(0, PROMPT_NOTE_MAX - SHORTENED.length).trimEnd()}${SHORTENED}`;
 }
 
 /** The tool's answer when a credits raise reached it without a person's yes. */

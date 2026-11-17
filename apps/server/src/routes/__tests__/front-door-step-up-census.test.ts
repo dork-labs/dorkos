@@ -130,8 +130,6 @@ const EXCEPTIONS: Record<string, string> = {
     'Installs Codex at this computer only; grants no account or key.',
   'runtimes POST /claude-code/provision':
     'Installs Claude Code at this computer only; grants no account or key.',
-  'runtimes POST /opencode/openrouter/oauth/start':
-    'Starts a sign-in the person finishes on OpenRouter’s own page; saves no key itself.',
   'runtimes POST /opencode/ollama/pull': 'Downloads a local model at this computer only.',
   'runtimes POST /opencode/ollama/provision': 'Points OpenCode at a local model on this computer.',
   'runtimes POST /opencode/provider/credential/check': 'Tries a key; saves nothing.',
@@ -164,8 +162,6 @@ const EXCEPTIONS: Record<string, string> = {
   'relay-adapters POST /adapters/reload':
     'Re-reads the chat connections a person already saved; adds none.',
   'relay-adapters DELETE /adapters/:id': 'Removes a chat connection.',
-  'relay-adapters POST /adapters/:id/enable':
-    'Turns a chat connection back on with the settings a person already saved; a call for Security.',
   'relay-adapters POST /adapters/:id/disable': 'Turns a chat connection off.',
   'relay-adapters DELETE /bindings/:id': 'Removes a chat route.',
   'relay-adapters POST /bindings/:id/test': 'Sends a test message on a saved chat route.',
@@ -516,18 +512,47 @@ describe('front-door write census', () => {
       'cloud-communities': '/api/cloud/communities',
       'session-relay-passkeys': '/api/session-relay/passkeys',
       'heartbeat-triage': '/api/heartbeats/triage-credits',
+      // DOR-4355 M3: where each group is mounted.
+      'connector-management': '/api/connectors',
+      'connector-resources': '/api/connectors',
+      'connector-events': '/api/connectors',
+      'connector-access-changes': '/api/connectors',
+      'mini-app-access-page': '/api/connectors',
+      'connector-providers': '/api/connectors/providers',
+      'marketplace/package-actions': '/api/marketplace',
+      'marketplace/updates': '/api/marketplace',
+      'marketplace/dev-links': '/api/marketplace',
+      'marketplace/held-back': '/api/marketplace',
+      'marketplace/sources': '/api/marketplace',
+      'task-file-approve': '/api/tasks',
+      'task-mode-undo': '/api/tasks',
+      'runtimes-account-eligibility': '/api/runtimes',
+      'community-connections': '/api/community-connections',
+      'community-answer-in': '/api/community-connections',
+      'community-teammate-spend': '/api/community-connections',
+      'canvas-doc-route-controls': '/api/canvas/docs',
+      permissions: '/api',
+      'relay-adapters': '/api/relay',
+      'relay-binding-step-up': '/api/relay',
+      'relay-adapter-setting-routes': '/api/relay',
+      'unclaimed-chats': '/api/relay/unclaimed-chats',
     };
+    const missing: string[] = [];
     for (const { id, policy } of rows) {
       if (policy === 'exception') continue;
       const [group, method, route] = id.split(' ') as [string, string, string];
-      // Most M3 groups aren't in the OpenAPI registry, so their 428 can't be documented there.
-      if (M3_GROUPS.includes(group)) continue;
-      const path = ((prefixes[group] ?? `/api/${group}`) + (route === '/' ? '' : route)).replace(
-        /:([A-Za-z0-9_]+)/g,
-        '{$1}'
-      );
-      expect(HELD_WRITES.has(`${method.toLowerCase()} ${path}`), id).toBe(true);
+      // Template paths, as their files define them; of pause and resume, resume is the one held.
+      const literal = route
+        .replace('${prefix}', '/connections/:connectionId/events')
+        .replace('${BASE}', '/mini-app-access')
+        .replace('${action}', 'resume');
+      const path = (
+        (prefixes[group] ?? `/api/${group}`) + (literal === '/' ? '' : literal)
+      ).replace(/:([A-Za-z0-9_]+)/g, '{$1}');
+      const key = `${method.toLowerCase()} ${path}`;
+      if (!HELD_WRITES.has(key)) missing.push(key);
     }
+    expect(missing).toEqual([]);
   });
 
   // Security S4 on DOR-4355 M3: a file judged per route is never also excused as a whole.
