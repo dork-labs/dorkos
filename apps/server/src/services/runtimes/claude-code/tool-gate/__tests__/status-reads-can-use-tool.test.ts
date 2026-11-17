@@ -114,10 +114,10 @@ describe.each(['default', 'acceptEdits'] as const)('a scheduled run at %s', (mod
   });
 });
 
-describe('at Plan', () => {
+describe.each(['plan', 'auto'] as const)('at %s', (mode) => {
   it('still asks, so a scheduled run is refused', async () => {
     for (const tool of STATUS_READS) {
-      expect(await call(unattended('plan'), tool, CLEAN), tool).toEqual(REFUSED);
+      expect(await call(unattended(mode), tool, CLEAN), tool).toEqual(REFUSED);
     }
   });
 });
