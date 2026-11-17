@@ -15,7 +15,8 @@
  * {@link dorkosAutoAllows} lets run for this session RIGHT NOW: the running
  * turn's ceilings, `control_ui` per effect, and the identity the room verbs
  * need. Nothing else: never a built-in tool, so Bash, Edit, Write and WebFetch
- * stay refused.
+ * stay refused. Beside them, the named status reads only Never ask needs
+ * ({@link NEVER_ASK_STATUS_READS_QUALIFIED}, DOR-3971), outside a stranger's turn.
  *
  * **Stricter than the gate in one place.** A turn held for a stranger gets no
  * `chat_send` at all, not even a queued one. A turn that only carries an
@@ -47,6 +48,7 @@ import {
   type CeilingedMode,
 } from '../turn-permission.js';
 import { DORKOS_AGENT_TOOLS, dorkosAutoAllows } from './auto-allow.js';
+import { NEVER_ASK_STATUS_READS_QUALIFIED } from './never-ask-status-reads.js';
 import { OWN_CONNECTION_READS_QUALIFIED } from './own-connection-reads.js';
 import type { ToolApprovalContext, ToolGateLogger } from '../messaging/interactive-handlers.js';
 
@@ -104,9 +106,12 @@ export async function neverAskAllows(
   isMarked: () => boolean = () => false
 ): Promise<boolean> {
   if (gatePermissionMode(session) !== NEVER_ASK_MODE_ID) return false;
-  if (!DORKOS_AGENT_TOOLS.has(toolName)) return false;
   // Proven, not assumed: an absent source is NOT the host here.
   if (mcpServer?.source !== 'sdk') return false;
+  // The named status reads (DOR-3971): a stranger's turn asks for them, as for the always-on
+  // reads, and at Never ask asking is refusing.
+  if (NEVER_ASK_STATUS_READS_QUALIFIED.has(toolName)) return ceilingOn(session) !== 'stranger';
+  if (!DORKOS_AGENT_TOOLS.has(toolName)) return false;
   if (toolName === CHAT_SEND_QUALIFIED) {
     // A held turn (a Wi-Fi sign-in's) passes nothing on.
     if (heldForOutsider(session)) return false;
